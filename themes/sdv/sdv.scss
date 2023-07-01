@@ -1,0 +1,99 @@
+/* sdv.scss */
+/* @theme sdv */
+/* Pathes must be written from the location of built slides, not from here : the makefile creates the necessary theme directory to make this work */
+/* The variables such as --color-highlight are defined in a mixin in 'uncover' theme from Marp */
+
+@import 'base';
+
+@font-face {
+  font-family: GothamRoundedBook;
+  src: url('./theme/fonts/Gotham\ Rounded\ Book.otf') format('opentype'),
+       url('.fonts/Gotham\ Rounded\ Book.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: BigJohn;
+  src: url('./theme/fonts/BIG\ JOHN.otf') format('opentype'),
+       url('./fonts/BIG\ JOHN.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+section {
+  font-family: var(--font-family);
+  --color-highlight:#08ab9d;
+  --color-foreground:#666;
+  --font-family: GothamRoundedBook;
+  --font-family-title: var(--font-family);
+  --font-family-lead: BigJohn;
+  text-align: left;
+  background-image:url(./theme/sdv_bandeau.jpg),url(./theme/sdv_logo.png);
+  background-position: top 6% right 0%, bottom 3% right 1%;
+  background-repeat: no-repeat;
+  background-size: 25%, 8%;
+  padding: 88px 100px 30px 100px;
+  justify-content: start;
+  font-size: 1.8em;
+}
+
+/* lead is the title slide */
+section.lead {
+  --color-foreground:#000;
+  --color-highlight:#08ab9d;
+  background-image:url(./theme/sdv_bandeau.jpg);
+  text-align: center;
+  justify-content: center;
+  display:flex;
+}
+
+section.lead > h1 {
+  font-family: var(--font-family-lead);
+  font-size: 2em;
+  width: 100%;
+}
+
+section.lead > h2 {
+  color: var(--color-highlight);
+  font-size: 1.1em;
+}
+
+section > h1 {
+  font-size: 1.4em;
+}
+
+section > h2 {
+  font-size: 1.3em;
+}
+
+section > h3 {
+  font-size: 1.2em;
+  letter-spacing: 2px;
+}
+
+section > h4 {
+  font-size: 1.1em;
+  letter-spacing: 2px;
+}
+
+/* overriden from base theme to have pagination bottom left istead of bottom right */
+section::after {
+  align-items: flex-end;
+  background: linear-gradient(
+    50deg,
+    var(--color-background-paginate) 50%,
+    transparent 50%
+  );
+  background-size: cover;
+  color: var(--color-foreground);
+  display: flex;
+  font-size: 0.5em;
+  height: 80px;
+  justify-content: flex-start;
+  padding: 20px;
+  text-align: left;
+  text-shadow: 0 0 5px var(--color-background);
+  width: 60px;
+  left: 0px;
+}

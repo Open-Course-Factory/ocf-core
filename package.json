@@ -1,0 +1,17 @@
+{
+  "marp": {
+    "author": "Thomas Saquet",
+    "bespoke": {
+      "progress": true
+    },
+    "inputDir": "src",
+    "output": "dist"
+  },
+  "dependencies": {
+    "@marp-team/marp-core": "^3.3.2",
+    "markdown-it": "^13.0.1",
+    "markdown-it-attrs": "^4.1.4",
+    "markdown-it-container": "^3.0.0",
+    "markdown-it-include": "^2.0.0"
+  }
+}

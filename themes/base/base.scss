@@ -1,0 +1,278 @@
+/* base.scss */
+/* @theme base */
+/* @auto-scaling code */
+/* @size 16:9 1280px 720px */
+
+@import 'uncover';
+
+section {
+    display: block;
+}
+
+section .toc {
+    background: #f9f9f9 none repeat scroll 0 0;
+    border: 1px solid #aaa;
+    font-size: 50%;
+    margin-bottom: 2px;
+    margin-left: 5px;
+    padding: 15px;
+    width: 270px;
+    float: right;
+    position: relative;
+    z-index: 3;
+}
+
+section footer {
+    text-align: center;
+    z-index: -1;
+}
+
+section .toc li,
+section .toc ul,
+section .toc ul li {
+    list-style: outside none none;
+    padding-left: 5px;
+}
+
+section.hide-toc .toc {
+    display: none;
+}
+
+section.main-toc>h1 {
+    width: 100%;
+    margin: 20px auto 20px;
+}
+
+b,
+strong {
+    color: var(--color-highlight);
+}
+
+section.schedule {
+    display: flex;
+}
+
+section li,
+section ul,
+section ul li {
+    font-size: 0.85em;
+    margin-left: 0px;
+}
+
+/* Only for schedule page */
+
+.bubble_container {
+    align-items: stretch;
+    display: flex;
+    flex-direction: column;
+}
+
+.bubble {
+    font-family: var(--font-family-title);
+    width: 44%;
+    height: 130px;
+    background: rgba(61, 164, 181, 0.3);
+    position: relative;
+    -moz-border-radius: 10px;
+    -webkit-border-radius: 10px;
+    border-radius: 10px;
+    margin: 1.5% 3%;
+    float: left;
+    font-size: 0.8em;
+}
+
+.bubble_content {
+    flex-direction: column;
+}
+
+.bubble .bubble_content>h1 {
+    font-family: var(--font-family-title);
+    font-size: 1em;
+    color: #357cbf;
+    opacity: 1;
+    margin-top: 10px;
+    margin-bottom: 2px;
+    width: 75%;
+}
+
+.bubble .bubble_content>p:first-of-type {
+    width: 100%;
+}
+
+.circle {
+    font-family: var(--font-family-title);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-content: center;
+    border: 7px solid #fff;
+    background-color: var(--color-highlight);
+    color: #fff;
+    border-radius: 50%;
+    height: 100px;
+    width: 100px;
+    position: relative;
+    float: left;
+    top: -30px;
+    left: -50px;
+    text-align: center;
+}
+
+/* used with markdown-it-container allows to use 
+::: columns to start a column block
+::: to end it */
+
+.columns {
+    column-count: 2;
+    text-align: center;
+}
+
+section.hide-footer footer {
+    display: none;
+}
+
+/* for all themes */
+section.hide-header header {
+    display: none;
+}
+
+section.hide-title h2 {
+    display: none;
+}
+
+hr {
+    border: 0;
+    height: 1px;
+    background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0));
+}
+
+img[alt~="w30"] {
+    width: 30%;
+}
+
+img[alt~="w40"] {
+    width: 40%;
+}
+
+img[alt~="w50"] {
+    width: 60%;
+}
+
+img[alt~="w60"] {
+    width: 60%;
+}
+
+img[alt~="w65"] {
+    width: 65%;
+}
+
+img[alt~="w70"] {
+    width: 70%;
+}
+
+img[alt~="w75"] {
+    width: 75%;
+}
+
+img[alt~="w80"] {
+    width: 80%;
+}
+
+img[alt~="w100"] {
+    width: 100%;
+}
+
+section.code50 code {
+    font-size: 50%;
+}
+
+section.code60 code {
+    font-size: 60%;
+}
+
+section.code80 code {
+    font-size: 80%;
+}
+
+section.code70 code {
+    font-size: 70%;
+}
+
+section.medium code {
+    font-size: medium;
+}
+
+section.large code {
+    font-size: large;
+}
+
+img[alt~="right"] {
+    right: 0px;
+    top: 0px;
+    position: absolute;
+    max-height: 100%;
+    max-width: 45%;
+}
+
+img[alt~="floatright"] {
+    float: right
+}
+
+img[alt~="center"] {
+    display: block;
+    margin: 0 auto;
+}
+
+img[alt~="front"] {
+    z-index: 10;
+}
+
+img[alt~="150fromtop"] {
+    top: 150px;
+    position: absolute;
+    max-height: 100%;
+    max-width: 45%;
+}
+
+img[alt~="200fromtop"] {
+    top: 200px;
+    position: absolute;
+    max-height: 100%;
+    max-width: 45%;
+}
+
+/* tables: always centered */
+section table {
+    margin-right: auto;
+    margin-left: auto;
+    width: auto;
+    border: 1;
+    font-size: 0.6em;
+}
+
+section table th {
+    background-color: var(--color-highlight);
+    color: white;
+    border: 0;
+    border-top: black solid 2px;
+}
+
+section table td {
+    border: 0;
+}
+
+section table tr:nth-child(2n) {
+    background-color: #d3d3d3;
+}
+
+section table tr:last-child {
+    border-bottom: black solid 2px;
+}
+
+img[alt~="hiddenpdf"] {
+    display: block;
+}
+
+img[alt~="hiddenhtml"] {
+    display: none;
+}

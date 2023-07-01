@@ -1,0 +1,9 @@
+node_modules
+dist
+.vscode/*.log
+conf.json
+docs
+src/*.md
+*.db
+__debug_bin
+.env
