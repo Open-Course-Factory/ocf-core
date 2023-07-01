@@ -74,7 +74,7 @@ func (c Course) String() string {
 
 	learningObjectives := ""
 	if len(c.LearningObjectives) > 0 {
-		learningObjectivesPathFile := "./coursesV2/learning_objectives/" + c.LearningObjectives
+		learningObjectivesPathFile := config.COURSES_ROOT + "/learning_objectives/" + c.LearningObjectives
 		_, error := os.Stat(learningObjectivesPathFile)
 		if !os.IsNotExist(error) {
 			learningObjectives = "\n---\n\n@include(" + learningObjectivesPathFile + ")\n"
@@ -196,9 +196,11 @@ func (c *Course) CompileResources(configuration *config.Configuration) error {
 	}
 
 	// Copy global images
-	cpiErr := CopyDir(config.IMAGES_ROOT, outputDir+"/images")
-	if cpiErr != nil {
-		log.Fatal(cpiErr)
+	if _, err := os.Stat(config.IMAGES_ROOT); !os.IsNotExist(err) {
+		cpiErr := CopyDir(config.IMAGES_ROOT, outputDir+"/images")
+		if cpiErr != nil {
+			log.Fatal(cpiErr)
+		}
 	}
 
 	// Copy course specifique images

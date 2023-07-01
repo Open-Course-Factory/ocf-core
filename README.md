@@ -88,8 +88,8 @@ The courses are defined in `XXX.json` files where `XXX` is the trigram of the co
 `main.go` has 3 parameters:
 
 - -c: course trigram
-- -t: name of the theme (sdv (default) / orsys / orsysA4)
-- -e: type of the course (html (default) / pdf)
+- -t: name of the theme (example : sdv)
+- -e: type of the course (example : html / pdf)
 
 Ewamples:
 
