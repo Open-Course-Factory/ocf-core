@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-const COURSES_ROOT = "./coursesV2/"
+const COURSES_ROOT = "./courses/"
 const COURSES_OUTPUT_DIR = "./dist/"
 
 const THEMES_ROOT = "./themes/"

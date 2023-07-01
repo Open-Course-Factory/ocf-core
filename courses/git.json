@@ -1,0 +1,101 @@
+{
+    "name" : "GIT",
+    "version" : "v2.2",
+    "category" : "cicd",
+    "title" : "Git, mise en oeuvre",
+    "subtitle" : "Coder à plusieurs, mais pas que !",
+    "header" : "Git, mise en œuvre",
+    "footer" : "2022 - Git @@version@@ - @@author_fullname@@ - @@author_email@@",
+    "logo" : "",
+    "author" : "author_@@author@@.md",
+    "schedule" : "sdv_b3.html",
+    "prelude" : "sdv.md",
+    "theme" : "sdv",
+    "chapters" : 
+    [
+        {
+            "title" : "Introduction",
+            "footer" : "@@author_fullname@@ - Git - Introduction",
+            "introduction" : "Dans lequel nous aborderons les concepts de base de git",
+            "sections" : [
+                {
+                    "filename" : "cicd/git_introduction_concepts"
+                },
+                {
+                    "filename" : "cicd/git_zones_etats"
+                }
+            ]
+        },
+        {
+            "title" : "Les branches",
+            "footer" : "@@author_fullname@@ - Git - Les branches",
+            "introduction" : "Dans lequel nous aborderons le concept important de branche",
+            "sections" : [
+                {
+                    "filename" : "cicd/git_branch_model"
+                },
+                {
+                    "filename" : "cicd/git_branch_pointers"
+                },
+                {
+                    "filename" : "cicd/git_merge_rebase"
+                }
+            ]
+        },
+        {
+            "title" : "La suite ?",
+            "footer" : "@@author_fullname@@ - Git - Aller plus loin",
+            "introduction" : "Dans lequel nous concluerons cette première partie",
+            "sections" : [
+                {
+                    "filename" : "cicd/git_conclusion"
+                }
+            ]
+        },
+        {
+            "title" : "Git - TP",
+            "footer" : "@@author_fullname@@ - Git - TP",
+            "introduction" : "Où l'on met les mains dans le cambouis",
+            "sections" : [
+                {
+                    "filename" : "cicd/git_TP_jeux"
+                }
+            ]
+        },
+        {
+            "title" : "Github, Gitlab\nDes outils DevOps",
+            "footer" : "@@author_fullname@@ - Git - DevOps Intro",
+            "introduction" : "Où l'on découvre les usines Github et Gitlab",
+            "sections" : [
+                {
+                    "filename" : "cicd/devops_introduction"
+                },
+                {
+                    "filename" : "cicd/git_hublab_intro"
+                }
+            ]
+        },
+        {
+            "title" : "Git - TP 2",
+            "footer" : "@@author_fullname@@ - Git - TP 2",
+            "introduction" : "Où l'on met encore les mains dans le cambouis",
+            "sections" : [
+                {
+                    "filename" : "cicd/git_TP_fork_github"
+                },
+                {
+                    "filename" : "cicd/git_TP_github"
+                },
+                {
+                    "filename" : "cicd/git_TP_rebase_i"
+                },
+                {
+                    "filename" : "cicd/git_TP_bisect"
+                },
+                {
+                    "filename" : "cicd/git_TP_gitlab_collab"
+                }
+            ]
+        }
+    ]
+}

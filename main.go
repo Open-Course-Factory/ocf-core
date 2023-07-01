@@ -133,8 +133,8 @@ func parseFlags() bool {
 	const THEME_FLAG = "t"
 	const TYPE_FLAG = "e"
 
-	courseName := flag.String(COURSE_FLAG, "lxm", "trigram of the course you need to generate")
-	courseTheme := flag.String(THEME_FLAG, "orsys", "theme used to generate the .md file in the right location")
+	courseName := flag.String(COURSE_FLAG, "git", "trigram of the course you need to generate")
+	courseTheme := flag.String(THEME_FLAG, "sdv", "theme used to generate the .md file in the right location")
 	courseType := flag.String(TYPE_FLAG, "html", "type generated : html (default) or pdf")
 	flag.Parse()
 
@@ -142,7 +142,7 @@ func parseFlags() bool {
 		return false
 	}
 
-	jsonConfigurationFilePath := "./generator/conf/conf.json"
+	jsonConfigurationFilePath := "./conf/conf.json"
 	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
 
 	jsonCourseFilePath := config.COURSES_ROOT + *courseName + ".json"
