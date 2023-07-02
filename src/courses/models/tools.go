@@ -1,15 +1,26 @@
 package models
 
 import (
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 	"unicode"
 
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
+)
+
+type URLFormat int
+
+const (
+	UNKNOWN URLFormat = iota
+	GIT_HTTP
+	GIT_SSH
 )
 
 func createFooterAlone(footer string) string {
@@ -103,4 +114,48 @@ func CopyDir(src string, dst string) error {
 		}
 	}
 	return nil
+}
+
+func SSHToHTTP(ssh string) string {
+	// Replace the SSH specific parts with the http equivalent
+	http := strings.Replace(ssh, "git@", "https://", 1)
+	http = strings.Replace(http, ".com:", ".com/", 1)
+	http = strings.Replace(http, ".git", "", 1)
+
+	return http
+}
+
+func HTTPToSSH(http string) string {
+	// Replace the http specific parts with the SSH equivalent
+	ssh := strings.Replace(http, "https://", "git@", 1)
+	ssh = strings.Replace(ssh, ".com/", ".com:", 1)
+	ssh += ".git"
+
+	return ssh
+}
+
+func DetectURLFormat(url string) URLFormat {
+	if strings.HasPrefix(url, "https://") {
+		return GIT_HTTP
+	} else if strings.HasPrefix(url, "git@") {
+		return GIT_SSH
+	}
+	return UNKNOWN
+}
+
+type StringArray []string
+
+func (o *StringArray) Scan(src any) error {
+	bytes, ok := src.([]byte)
+	if !ok {
+		return errors.New("src value cannot cast to []byte")
+	}
+	*o = strings.Split(string(bytes), ",")
+	return nil
+}
+func (o StringArray) Value() (driver.Value, error) {
+	if len(o) == 0 {
+		return nil, nil
+	}
+	return strings.Join(o, ","), nil
 }

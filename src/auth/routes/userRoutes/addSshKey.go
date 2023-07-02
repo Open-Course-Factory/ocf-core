@@ -12,12 +12,11 @@ import (
 
 // Add user ssh key godoc
 //
-//	@Summary		Ajout d'une clé SSH à un utilisateur
-//	@Description	Ajout d'une clé SSH à un utilisateur
+//	@Summary		Ajout d'une clé SSH à l'tilisateur courant
+//	@Description	Ajout d'une clé SSH à l'tilisateur courant
 //	@Tags			users
 //	@Accept			json
 //	@Produce		json
-//	@Param			id	path		int	true	"ID utilisateur"
 //	@Param 			sshKey 	body	dto.CreateSshKeyInput	true	"Clé SSH"
 //	@Param 			Authorization header string true "Insert your access token" default(bearer <Add access token here>)
 //	@Success		201	{object}	string
@@ -26,7 +25,7 @@ import (
 //	@Failure		404	{object}	errors.APIError	"Impossible de récupérer l'ID utilisateur"
 //	@Failure		400	{object}	errors.APIError	"Impossible de créer la clé "
 //
-//	@Router			/users/{id}/sshkey [post]
+//	@Router			/users/sshkey [post]
 func (u userController) AddUserSshKey(ctx *gin.Context) {
 
 	rawUser, ok := ctx.Get("user")

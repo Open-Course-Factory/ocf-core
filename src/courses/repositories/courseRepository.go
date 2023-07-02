@@ -54,6 +54,7 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 		Schedule:           coursedto.Schedule,
 		Prelude:            coursedto.Prelude,
 		LearningObjectives: coursedto.LearningObjectives,
+		Chapters:           coursedto.Chapters,
 	}
 
 	result := c.db.Create(&course)
@@ -73,7 +74,7 @@ func (c courseRepository) DeleteCourse(id uuid.UUID) error {
 
 func (c courseRepository) GetSpecificCourseByUser(owner authModels.User, courseName string) (*models.Course, error) {
 	var course *models.Course
-	err := c.db.First(&course, "owner_id=? AND name=?", owner.ID, courseName).Error
+	err := c.db.Preload("Chapters").Preload("Chapters.Sections").First(&course, "owner_id=? AND name=?", owner.ID.String(), courseName).Error
 	if err != nil {
 		return nil, err
 	}

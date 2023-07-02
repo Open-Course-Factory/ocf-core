@@ -7,3 +7,4 @@ src/*.md
 *.db
 __debug_bin
 .env
+courses/*

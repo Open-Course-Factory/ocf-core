@@ -3,15 +3,29 @@ package models
 import (
 	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // Part of a course
 type Chapter struct {
+	gorm.Model
+	ID           uuid.UUID `gorm:"type:uuid;primarykey"`
 	Title        string
 	Number       int
 	Footer       string
 	Introduction string
-	Sections     []Section
+	Courses      []Course  `gorm:"many2many:course_chapters;" json:"courses"`
+	Sections     []Section `gorm:"many2many:chapter_sections;" json:"sections"`
+}
+
+func (c *Chapter) BeforeCreate(tx *gorm.DB) (err error) {
+	if c.ID == uuid.Nil {
+		c.ID = uuid.New()
+	}
+
+	return
 }
 
 func (c Chapter) String() string {

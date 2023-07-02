@@ -62,6 +62,9 @@ func main() {
 	sqldb.DB.AutoMigrate(&authModels.Organisation{})
 	sqldb.DB.AutoMigrate(&authModels.Permission{})
 
+	sqldb.DB.AutoMigrate(&courseModels.Page{})
+	sqldb.DB.AutoMigrate(&courseModels.Section{})
+	sqldb.DB.AutoMigrate(&courseModels.Chapter{})
 	sqldb.DB.AutoMigrate(&courseModels.Course{})
 
 	initDB()

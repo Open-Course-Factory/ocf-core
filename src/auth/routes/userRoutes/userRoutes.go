@@ -29,5 +29,5 @@ func UsersRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm
 	routes.PATCH("/", middleware.CheckIsLogged(), userController.EditUserSelf)
 	routes.PUT("/:id", middleware.CheckIsLogged(), userController.EditUser)
 
-	routes.POST("/:id/sshkey", middleware.CheckIsLogged(), userController.AddUserSshKey)
+	routes.POST("/sshkey", middleware.CheckIsLogged(), userController.AddUserSshKey)
 }

@@ -1,20 +1,36 @@
 package models
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/jinzhu/gorm"
+)
 
 // Part of a Section
 type Page struct {
-	Number             int
-	ParentSectionTitle string
-	Toc                []string
-	Content            []string
-	Hide               bool
+	gorm.Model
+	ID        uuid.UUID `gorm:"type:uuid;primarykey"`
+	Number    int
+	Toc       []string `gorm:"serializer:json"`
+	Content   []string `gorm:"serializer:json"`
+	Hide      bool
+	SectionID uuid.UUID
+	Section   Section `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"section"`
+}
+
+func (p *Page) BeforeCreate(tx *gorm.DB) (err error) {
+	if p.ID == uuid.Nil {
+		p.ID = uuid.New()
+	}
+
+	return
 }
 
 func (p Page) String() string {
 	firstLine := "---\n\n"
 
-	title := "## " + strings.ToUpper(p.ParentSectionTitle) + "\n\n"
+	title := "## " + strings.ToUpper(p.Section.Title) + "\n\n"
 	var toc string
 	toc = toc + "<div class=\"toc\">\n\n"
 	for _, lineOfToc := range p.Toc {
@@ -38,7 +54,7 @@ func (p Page) String() string {
 func createPage(number int, pageContent []string, parentSectionTitle string, hide bool) (p Page) {
 	p.Number = number
 	p.Content = pageContent
-	p.ParentSectionTitle = parentSectionTitle
+	p.Section.Title = parentSectionTitle
 	p.Hide = hide
 	return
 }
