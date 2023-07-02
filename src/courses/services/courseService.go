@@ -13,7 +13,9 @@ import (
 	"soli/formations/src/courses/models"
 	repositories "soli/formations/src/courses/repositories"
 	marp "soli/formations/src/marp_integration"
+	"strings"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -119,47 +121,26 @@ func (c courseService) GetGitCourse(owner authModels.User, courseURL string) (*d
 	// branches and fetching the objects, exactly as:
 	log.Printf("git clone %s", courseURL)
 
-	firstKey := owner.SshKeys[0]
-
-	key, err := ssh.NewPublicKeys("git", []byte(firstKey.PrivateKey), "")
-
+	gitCloneOption, err := prepareGitCloneOptions(owner, courseURL)
 	if err != nil {
-		log.Printf("creating ssh auth method")
 		return nil, err
 	}
 
 	fs := memfs.New()
 
-	_, errClone := git.Clone(memory.NewStorage(), fs, &git.CloneOptions{
-		Auth:          key,
-		URL:           courseURL,
-		Progress:      os.Stdout,
-		ReferenceName: plumbing.ReferenceName("refs/heads/main"),
-		SingleBranch:  true,
-	})
+	_, errClone := git.Clone(memory.NewStorage(), fs, gitCloneOption)
 
 	if errClone != nil {
 		log.Printf("cloning repository")
 		return nil, errClone
 	}
 
-	file, errFileOpen := fs.Open("golang.json")
-
-	if errFileOpen != nil {
-		log.Printf("opening file")
-		return nil, errFileOpen
+	fileContent, errFc := getCourseJsonFileContent(fs)
+	if errFc != nil {
+		return nil, errFc
 	}
-
-	// close file ?
 
 	var course models.Course
-
-	fileContent, errReadFile := ioutil.ReadAll(file)
-
-	if errReadFile != nil {
-		log.Printf("reading file")
-		return nil, errReadFile
-	}
 
 	errUnmarshall := json.Unmarshal(fileContent, &course)
 
@@ -168,7 +149,7 @@ func (c courseService) GetGitCourse(owner authModels.User, courseURL string) (*d
 		return nil, errUnmarshall
 	}
 
-	course.Description = "imported from" + courseURL
+	course.Description = "imported from " + courseURL
 	course.Owner = &owner
 
 	var chapterTitles []string
@@ -206,6 +187,84 @@ func (c courseService) GetGitCourse(owner authModels.User, courseURL string) (*d
 
 	return courseOutput, nil
 
+}
+
+func getCourseJsonFileContent(fs billy.Filesystem) ([]byte, error) {
+	files, errReadDir := fs.ReadDir("/")
+	if errReadDir != nil {
+		log.Printf("reading directory")
+		return nil, errReadDir
+	}
+
+	var fileContent []byte
+
+	for _, fileInfo := range files {
+		if strings.HasSuffix(fileInfo.Name(), ".json") {
+			file, errFileOpen := fs.Open(fileInfo.Name())
+			if errFileOpen != nil {
+				log.Printf("opening file")
+				return nil, errFileOpen
+			}
+			var err error
+			fileContent, err = ioutil.ReadAll(file)
+
+			if err != nil {
+				log.Printf("reading file")
+				return nil, err
+			}
+
+			break
+		}
+	}
+	return fileContent, nil
+}
+
+func prepareGitCloneOptions(user authModels.User, courseURL string) (*git.CloneOptions, error) {
+	var key ssh.AuthMethod
+	var gitCloneOption *git.CloneOptions
+
+	if len(user.SshKeys) == 0 {
+		log.Printf("No SSH key found, trying without auth")
+
+		urlFormat := models.DetectURLFormat(courseURL)
+
+		if urlFormat == models.GIT_SSH {
+			courseURL = models.SSHToHTML(courseURL)
+		}
+
+		gitCloneOption = &git.CloneOptions{
+			URL:           courseURL,
+			Progress:      os.Stdout,
+			ReferenceName: plumbing.ReferenceName("refs/heads/main"),
+			SingleBranch:  true,
+		}
+
+	} else {
+		firstKey := user.SshKeys[0]
+
+		var err error
+		key, err = ssh.NewPublicKeys("git", []byte(firstKey.PrivateKey), "")
+
+		if err != nil {
+			log.Printf("creating ssh auth method")
+			return nil, err
+		}
+
+		urlFormat := models.DetectURLFormat(courseURL)
+
+		if urlFormat == models.GIT_HTML {
+			courseURL = models.HTMLToSSH(courseURL)
+		}
+
+		gitCloneOption = &git.CloneOptions{
+			Auth:          key,
+			URL:           courseURL,
+			Progress:      os.Stdout,
+			ReferenceName: plumbing.ReferenceName("refs/heads/main"),
+			SingleBranch:  true,
+		}
+	}
+	return gitCloneOption, nil
 }
 
 func (c courseService) GetSpecificCourseByUser(owner authModels.User, courseName string) (*models.Course, error) {

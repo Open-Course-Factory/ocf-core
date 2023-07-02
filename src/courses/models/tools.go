@@ -6,10 +6,19 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 	"unicode"
 
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
+)
+
+type URLFormat int
+
+const (
+	UNKNOWN URLFormat = iota
+	GIT_HTML
+	GIT_SSH
 )
 
 func createFooterAlone(footer string) string {
@@ -103,4 +112,31 @@ func CopyDir(src string, dst string) error {
 		}
 	}
 	return nil
+}
+
+func SSHToHTML(ssh string) string {
+	// Replace the SSH specific parts with the HTML equivalent
+	html := strings.Replace(ssh, "git@", "https://", 1)
+	html = strings.Replace(html, ".com:", ".com/", 1)
+	html = strings.Replace(html, ".git", "", 1)
+
+	return html
+}
+
+func HTMLToSSH(html string) string {
+	// Replace the HTML specific parts with the SSH equivalent
+	ssh := strings.Replace(html, "https://", "git@", 1)
+	ssh = strings.Replace(ssh, ".com/", ".com:", 1)
+	ssh += ".git"
+
+	return ssh
+}
+
+func DetectURLFormat(url string) URLFormat {
+	if strings.HasPrefix(url, "https://") {
+		return GIT_HTML
+	} else if strings.HasPrefix(url, "git@") {
+		return GIT_SSH
+	}
+	return UNKNOWN
 }
