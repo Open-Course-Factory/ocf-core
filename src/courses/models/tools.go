@@ -17,7 +17,7 @@ type URLFormat int
 
 const (
 	UNKNOWN URLFormat = iota
-	GIT_HTML
+	GIT_HTTP
 	GIT_SSH
 )
 
@@ -114,18 +114,18 @@ func CopyDir(src string, dst string) error {
 	return nil
 }
 
-func SSHToHTML(ssh string) string {
-	// Replace the SSH specific parts with the HTML equivalent
-	html := strings.Replace(ssh, "git@", "https://", 1)
-	html = strings.Replace(html, ".com:", ".com/", 1)
-	html = strings.Replace(html, ".git", "", 1)
+func SSHToHTTP(ssh string) string {
+	// Replace the SSH specific parts with the http equivalent
+	http := strings.Replace(ssh, "git@", "https://", 1)
+	http = strings.Replace(http, ".com:", ".com/", 1)
+	http = strings.Replace(http, ".git", "", 1)
 
-	return html
+	return http
 }
 
-func HTMLToSSH(html string) string {
-	// Replace the HTML specific parts with the SSH equivalent
-	ssh := strings.Replace(html, "https://", "git@", 1)
+func HTTPToSSH(http string) string {
+	// Replace the http specific parts with the SSH equivalent
+	ssh := strings.Replace(http, "https://", "git@", 1)
 	ssh = strings.Replace(ssh, ".com/", ".com:", 1)
 	ssh += ".git"
 
@@ -134,7 +134,7 @@ func HTMLToSSH(html string) string {
 
 func DetectURLFormat(url string) URLFormat {
 	if strings.HasPrefix(url, "https://") {
-		return GIT_HTML
+		return GIT_HTTP
 	} else if strings.HasPrefix(url, "git@") {
 		return GIT_SSH
 	}

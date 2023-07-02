@@ -229,7 +229,7 @@ func prepareGitCloneOptions(user authModels.User, courseURL string) (*git.CloneO
 		urlFormat := models.DetectURLFormat(courseURL)
 
 		if urlFormat == models.GIT_SSH {
-			courseURL = models.SSHToHTML(courseURL)
+			courseURL = models.SSHToHTTP(courseURL)
 		}
 
 		gitCloneOption = &git.CloneOptions{
@@ -252,8 +252,8 @@ func prepareGitCloneOptions(user authModels.User, courseURL string) (*git.CloneO
 
 		urlFormat := models.DetectURLFormat(courseURL)
 
-		if urlFormat == models.GIT_HTML {
-			courseURL = models.HTMLToSSH(courseURL)
+		if urlFormat == models.GIT_HTTP {
+			courseURL = models.HTTPToSSH(courseURL)
 		}
 
 		gitCloneOption = &git.CloneOptions{
