@@ -19,10 +19,10 @@
             "introduction" : "Dans lequel nous aborderons les concepts de base de git",
             "sections" : [
                 {
-                    "filename" : "cicd/git_introduction_concepts"
+                    "filename" : "cicd/git_introduction_concepts.md"
                 },
                 {
-                    "filename" : "cicd/git_zones_etats"
+                    "filename" : "cicd/git_zones_etats.md"
                 }
             ]
         },
@@ -32,13 +32,13 @@
             "introduction" : "Dans lequel nous aborderons le concept important de branche",
             "sections" : [
                 {
-                    "filename" : "cicd/git_branch_model"
+                    "filename" : "cicd/git_branch_model.md"
                 },
                 {
-                    "filename" : "cicd/git_branch_pointers"
+                    "filename" : "cicd/git_branch_pointers.md"
                 },
                 {
-                    "filename" : "cicd/git_merge_rebase"
+                    "filename" : "cicd/git_merge_rebase.md"
                 }
             ]
         },
@@ -48,7 +48,7 @@
             "introduction" : "Dans lequel nous concluerons cette première partie",
             "sections" : [
                 {
-                    "filename" : "cicd/git_conclusion"
+                    "filename" : "cicd/git_conclusion.md"
                 }
             ]
         },
@@ -58,7 +58,7 @@
             "introduction" : "Où l'on met les mains dans le cambouis",
             "sections" : [
                 {
-                    "filename" : "cicd/git_TP_jeux"
+                    "filename" : "cicd/git_TP_jeux.md"
                 }
             ]
         },
@@ -68,10 +68,10 @@
             "introduction" : "Où l'on découvre les usines Github et Gitlab",
             "sections" : [
                 {
-                    "filename" : "cicd/devops_introduction"
+                    "filename" : "cicd/devops_introduction.md"
                 },
                 {
-                    "filename" : "cicd/git_hublab_intro"
+                    "filename" : "cicd/git_hublab_intro.md"
                 }
             ]
         },
@@ -81,19 +81,19 @@
             "introduction" : "Où l'on met encore les mains dans le cambouis",
             "sections" : [
                 {
-                    "filename" : "cicd/git_TP_fork_github"
+                    "filename" : "cicd/git_TP_fork_github.md"
                 },
                 {
-                    "filename" : "cicd/git_TP_github"
+                    "filename" : "cicd/git_TP_github.md"
                 },
                 {
-                    "filename" : "cicd/git_TP_rebase_i"
+                    "filename" : "cicd/git_TP_rebase_i.md"
                 },
                 {
-                    "filename" : "cicd/git_TP_bisect"
+                    "filename" : "cicd/git_TP_bisect.md"
                 },
                 {
-                    "filename" : "cicd/git_TP_gitlab_collab"
+                    "filename" : "cicd/git_TP_gitlab_collab.md"
                 }
             ]
         }

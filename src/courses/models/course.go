@@ -49,8 +49,9 @@ type Course struct {
 	Schedule           string
 	Prelude            string
 	Theme              string
+	URL                string
 	LearningObjectives string    `json:"learning_objectives"`
-	Chapters           []Chapter `gorm:"type:text[]"`
+	Chapters           []Chapter `gorm:"many2many:course_chapters;" json:"chapters"`
 }
 
 func (c *Course) BeforeCreate(tx *gorm.DB) (err error) {

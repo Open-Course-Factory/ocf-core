@@ -51,30 +51,42 @@ func (c courseService) GenerateCourse(courseName string, courseTheme string, for
 	jsonConfigurationFilePath := "src/configuration/conf.json"
 	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
 
-	jsonCourseFilePath := config.COURSES_ROOT + courseName + ".json"
-	course := models.ReadJsonCourseFile(jsonCourseFilePath)
+	user, err := c.userRepository.GetUserWithEmail(authorEmail)
+	if err != nil {
+		return nil, err
+	}
+
+	course, errCourse := c.GetSpecificCourseByUser(*user, courseName)
+	if errCourse != nil {
+		return nil, errCourse
+	}
+
+	if course == nil {
+		jsonCourseFilePath := config.COURSES_ROOT + courseName + ".json"
+		*course = models.ReadJsonCourseFile(jsonCourseFilePath)
+	}
 
 	if len(courseTheme) > 0 {
 		course.Theme = courseTheme
 	}
 
-	models.CreateCourse(&course)
+	models.CreateCourse(course)
 
 	createdFile, err := course.WriteMd(&configuration)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err.Error())
 	}
 	fmt.Println("Markdown file created: " + createdFile)
 
 	errc := course.CompileResources(&configuration)
 	if errc != nil {
-		log.Fatal(errc)
+		log.Println(errc.Error())
 	}
 
-	errr := marp.Run(&configuration, &course, &format)
+	errr := marp.Run(&configuration, course, &format)
 
 	if errc != nil {
-		log.Fatal(errr)
+		log.Println(errr.Error())
 	}
 
 	return &dto.GenerateCourseOutput{Result: true}, nil
@@ -144,19 +156,29 @@ func (c courseService) GetGitCourse(owner authModels.User, courseURL string) (*d
 
 	errUnmarshall := json.Unmarshal(fileContent, &course)
 
+	errCopy := copyCourseFileLocally(fs, course.Category, ".md")
+	if errCopy != nil {
+		return nil, errCopy
+	}
+
+	errCopy = copyCourseFileLocally(fs, course.Category+"/images", ".jpg")
+	if errCopy != nil {
+		return nil, errCopy
+	}
+
+	errCopy = copyCourseFileLocally(fs, course.Category+"/images", ".png")
+	if errCopy != nil {
+		return nil, errCopy
+	}
+
 	if errUnmarshall != nil {
 		log.Printf("unmarshaling json")
 		return nil, errUnmarshall
 	}
 
 	course.Description = "imported from " + courseURL
+	course.URL = courseURL
 	course.Owner = &owner
-
-	var chapterTitles []string
-
-	for _, chapter := range course.Chapters {
-		chapterTitles = append(chapterTitles, chapter.Title)
-	}
 
 	courseInput := dto.CreateCourseInput{
 		Name:               course.Name,
@@ -175,7 +197,7 @@ func (c courseService) GetGitCourse(owner authModels.User, courseURL string) (*d
 		Schedule:           course.Schedule,
 		Prelude:            course.Prelude,
 		LearningObjectives: course.LearningObjectives,
-		Chapters:           chapterTitles,
+		Chapters:           course.Chapters,
 	}
 
 	courseOutput, errCreate := c.CreateCourse(courseInput)
@@ -217,6 +239,50 @@ func getCourseJsonFileContent(fs billy.Filesystem) ([]byte, error) {
 		}
 	}
 	return fileContent, nil
+}
+
+func copyCourseFileLocally(fs billy.Filesystem, repoDirectory string, fileExtension string) error {
+	files, errReadDir := fs.ReadDir("/" + repoDirectory)
+	if errReadDir != nil {
+		log.Printf("reading directory")
+		return errReadDir
+	}
+
+	var fileContent []byte
+
+	for _, fileInfo := range files {
+		if strings.HasSuffix(fileInfo.Name(), fileExtension) {
+			file, errFileOpen := fs.Open("/" + repoDirectory + "/" + fileInfo.Name())
+			if errFileOpen != nil {
+				log.Printf("opening file")
+				return errFileOpen
+			}
+			var err error
+			fileContent, err = ioutil.ReadAll(file)
+			if err != nil {
+				log.Printf("reading file")
+				return err
+			}
+
+			if _, err := os.Stat(config.COURSES_ROOT + repoDirectory); os.IsNotExist(err) {
+				os.MkdirAll(config.COURSES_ROOT+repoDirectory, 0700) // Create your file
+			}
+
+			if err != nil {
+				log.Printf("writing file")
+				return err
+			}
+
+			//create file locally
+			err = ioutil.WriteFile(config.COURSES_ROOT+repoDirectory+"/"+fileInfo.Name(), fileContent, os.ModeAppend)
+
+			if err != nil {
+				log.Printf("writing file")
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func prepareGitCloneOptions(user authModels.User, courseURL string) (*git.CloneOptions, error) {

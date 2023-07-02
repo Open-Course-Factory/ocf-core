@@ -5,18 +5,33 @@ import (
 	"os"
 	config "soli/formations/src/configuration"
 	"strings"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // Part of a chapter
 type Section struct {
+	gorm.Model
+	ID                 uuid.UUID `gorm:"type:uuid;primarykey"`
 	FileName           string
 	Title              string
 	ParentChapterTitle string
 	Intro              string
 	Conclusion         string
 	Number             int
-	Pages              []Page
-	HiddenPages        []int
+	ChapterID          uuid.UUID
+	Chapter            Chapter `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"chapter"`
+	Pages              []Page  `gorm:"foreignKey:SectionID" json:"pages"`
+	HiddenPages        []int   `gorm:"serializer:json"`
+}
+
+func (s *Section) BeforeCreate(tx *gorm.DB) (err error) {
+	if s.ID == uuid.Nil {
+		s.ID = uuid.New()
+	}
+
+	return
 }
 
 func (s Section) String() string {

@@ -96,7 +96,7 @@ func Run(configuration *config.Configuration, course *models.Course, docType *st
 
 	if err != nil {
 		fmt.Println(err.Error())
-		log.Fatal(err)
+		//log.Fatal(err)
 	}
 
 	errByte := errb.String()

@@ -1,5 +1,7 @@
 package dto
 
+import "soli/formations/src/courses/models"
+
 type GenerateCourseOutput struct {
 	Result bool `json:"result"`
 }
@@ -27,11 +29,11 @@ type CreateCourseInput struct {
 	Footer             string `binding:"required"`
 	Logo               string
 	Description        string
-	CourseID_str       string `binding:"required"`
-	Schedule           string `binding:"required"`
-	Prelude            string `binding:"required"`
-	LearningObjectives string `json:"learning_objectives"`
-	Chapters           []string
+	CourseID_str       string           `binding:"required"`
+	Schedule           string           `binding:"required"`
+	Prelude            string           `binding:"required"`
+	LearningObjectives string           `json:"learning_objectives"`
+	Chapters           []models.Chapter `json:"chapters"`
 }
 
 type CourseOutput struct {
@@ -47,11 +49,11 @@ type CourseOutput struct {
 	Footer             string `binding:"required"`
 	Logo               string
 	Description        string
-	CourseID_str       string `binding:"required"`
-	Schedule           string `binding:"required"`
-	Prelude            string `binding:"required"`
-	LearningObjectives string `json:"learning_objectives"`
-	Chapters           []string
+	CourseID_str       string           `binding:"required"`
+	Schedule           string           `binding:"required"`
+	Prelude            string           `binding:"required"`
+	LearningObjectives string           `json:"learning_objectives"`
+	Chapters           []models.Chapter `json:"chapters"`
 }
 
 type CreateCourseFromGitOutput struct {

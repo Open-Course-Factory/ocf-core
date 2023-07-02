@@ -1,6 +1,8 @@
 package models
 
 import (
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -139,4 +141,21 @@ func DetectURLFormat(url string) URLFormat {
 		return GIT_SSH
 	}
 	return UNKNOWN
+}
+
+type StringArray []string
+
+func (o *StringArray) Scan(src any) error {
+	bytes, ok := src.([]byte)
+	if !ok {
+		return errors.New("src value cannot cast to []byte")
+	}
+	*o = strings.Split(string(bytes), ",")
+	return nil
+}
+func (o StringArray) Value() (driver.Value, error) {
+	if len(o) == 0 {
+		return nil, nil
+	}
+	return strings.Join(o, ","), nil
 }
