@@ -51,7 +51,7 @@ build test and push api image:
 
     - echo Running tests
     - docker container rm tester --force || true
-    - docker container run --rm -it --name tester $CONTAINER_TEST_IMAGE bash -c "cp .env tests/testsIntegration/; go test ./..."
+    - docker container run --rm --name tester $CONTAINER_TEST_IMAGE bash -c "cp .env tests/testsIntegration/; go test ./..."
 
     - Building slim image
     - docker image build . --target slim --tag $CONTAINER_RELEASE_SLIM_IMAGE
