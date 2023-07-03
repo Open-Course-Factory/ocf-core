@@ -7,10 +7,10 @@ stages:
   - test
   - push
 
-variables:
-  # Use TLS https://docs.gitlab.com/ee/ci/docker/using_docker_build.html#tls-enabled
-  DOCKER_HOST: tcp://docker:2376
-  DOCKER_TLS_CERTDIR: "/certs"
+# variables:
+#   # Use TLS https://docs.gitlab.com/ee/ci/docker/using_docker_build.html#tls-enabled
+#   DOCKER_HOST: tcp://docker:2376
+#   DOCKER_TLS_CERTDIR: "/certs"
 
 
 # run tests:
@@ -29,6 +29,8 @@ variables:
     - docker:20.10.18-dind
   stage: build
   variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: "/certs"
     IMAGE_TAG: 1.0.0
     IMAGE_NAME: $CI_REGISTRY_IMAGE
     CONTAINER_TEST_IMAGE: $IMAGE_NAME:commit.$CI_COMMIT_SHA
