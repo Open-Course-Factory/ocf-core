@@ -21,11 +21,11 @@ variables:
 #     - go test ./...
 
 build test and push api image:
-  image: docker:20.10.22-dind # TODO use a specifc version instead of latest, not using latest fixes issue - https://forum.gitlab.com/t/the-ci-cd-pipeline-suddenly-fails-without-any-changes-done-to-the-repository/81117/9
+  image: docker:20.10.18 # TODO use a specifc version instead of latest, not using latest fixes issue - https://forum.gitlab.com/t/the-ci-cd-pipeline-suddenly-fails-without-any-changes-done-to-the-repository/81117/9
   tags:
     - docker
   services:
-    - docker:20.10.22-dind
+    - docker:20.10.18-dind
   stage: build
   variables:
     IMAGE_TAG: 1.0.0
