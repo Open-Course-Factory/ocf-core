@@ -49,6 +49,7 @@ export PATH=$PATH:$GOPATH/bin
 You need to install it either using the go install mechanism or using the last release available in the [github repo](https://github.com/swaggo/swag/releases):
 
 ```shell
+go get github.com/swaggo/swag
 go install github.com/swaggo/swag/cmd/swag@latest
 ```
 
