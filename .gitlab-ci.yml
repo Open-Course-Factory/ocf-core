@@ -20,7 +20,8 @@ variables:
 #     - cp .env.dist tests/testsIntegration/.env
 #     - go test ./...
 
-build test and push api image:
+
+.dind: &dind_template
   image: docker:20.10.18 # TODO use a specifc version instead of latest, not using latest fixes issue - https://forum.gitlab.com/t/the-ci-cd-pipeline-suddenly-fails-without-any-changes-done-to-the-repository/81117/9
   tags:
     - docker
@@ -44,6 +45,10 @@ build test and push api image:
     #   when: manual
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+
+
+build test and push api image:
+  extends: .dind
   script:
     - echo Building fat image $CONTAINER_TEST_IMAGE
     - docker pull $CONTAINER_LATEST_IMAGE || true
