@@ -42,7 +42,7 @@ build test and push api image:
     - echo Running tests
     - docker container run --name api $CONTAINER_TEST_IMAGE go test ./...
     - docker container rm --force api
-    - echo Pusing built images
+    - echo Pushing built images
     - docker image push $CONTAINER_RELEASE_IMAGE
     - docker image tag $CONTAINER_RELEASE_IMAGE $CONTAINER_LATEST_IMAGE
     - docker image push $CONTAINER_LATEST_IMAGE
