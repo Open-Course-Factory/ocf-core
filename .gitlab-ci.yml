@@ -21,7 +21,7 @@ build api image:
   stage: build
   variables:
     IMAGE_TAG: 1.0.0
-    IMAGE_NAME: $CI_REGISTRY_IMAGE/ocf-core
+    IMAGE_NAME: $CI_REGISTRY_IMAGE
     CONTAINER_TEST_IMAGE: $IMAGE_NAME:commit.$CI_COMMIT_SHA
     CONTAINER_RELEASE_IMAGE: $IMAGE_NAME:$IMAGE_TAG
     CONTAINER_LATEST_IMAGE: $IMAGE_NAME:latest
@@ -35,6 +35,7 @@ build api image:
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
+    - echo $IMAGE_NAME
     - docker pull $CONTAINER_RELEASE_IMAGE || true
     - docker image build . --cache-from $CONTAINER_RELEASE_IMAGE --tag $CONTAINER_TEST_IMAGE --tag $CONTAINER_RELEASE_IMAGE
     - docker image push $CONTAINER_RELEASE_IMAGE
