@@ -47,7 +47,7 @@ build test and push api image:
   script:
     - echo Building fat image $CONTAINER_TEST_IMAGE
     - docker pull $CONTAINER_LATEST_IMAGE || true
-    - docker image build . --cache-from $CONTAINER_LATEST_IMAGE --target builder --tag $CONTAINER_TEST_IMAGE --tag $CONTAINER_RELEASE_IMAGE
+    - docker image build . --target builder --tag $CONTAINER_TEST_IMAGE --tag $CONTAINER_RELEASE_IMAGE
 
     - echo Running tests
     - docker container run --name api $CONTAINER_TEST_IMAGE sleep infinity
@@ -59,7 +59,7 @@ build test and push api image:
     - docker image build . --target slim --tag $CONTAINER_RELEASE_SLIM_IMAGE
 
     - echo Pushing images
-    - docker image tag $CONTAINER_TEST_IMAGE $CONTAINER_RELEASE_IMAGE
+    # - docker image tag $CONTAINER_TEST_IMAGE $CONTAINER_RELEASE_IMAGE
     - docker image tag $CONTAINER_TEST_IMAGE $CONTAINER_LATEST_IMAGE
     - docker image push $CONTAINER_RELEASE_IMAGE
     - docker image push $CONTAINER_RELEASE_SLIM_IMAGE
