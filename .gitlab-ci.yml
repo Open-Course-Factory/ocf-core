@@ -39,10 +39,10 @@ build test and push api image:
     - docker pull $CONTAINER_RELEASE_IMAGE || true
     - docker image build . --cache-from $CONTAINER_RELEASE_IMAGE --tag $CONTAINER_TEST_IMAGE --tag $CONTAINER_RELEASE_IMAGE
     - docker container run --name api $CONTAINER_TEST_IMAGE sleep infinity
-    - docker container exec -it api cp .env tests/testsIntegration/
     - echo Running tests
-    - docker container exec -it api go test ./...
-    - docker container rm --force api
+    - docker container rm tester --force || true
+    - docker container exec -it tester bash -c "cp .env tests/testsIntegration/; go test ./..."
+    - docker container rm --force tester
     - echo Pushing built images
     - docker image push $CONTAINER_RELEASE_IMAGE
     - docker image tag $CONTAINER_RELEASE_IMAGE $CONTAINER_LATEST_IMAGE
