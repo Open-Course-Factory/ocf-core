@@ -13,12 +13,12 @@ variables:
   DOCKER_TLS_CERTDIR: "/certs"
 
 
-run tests:
-  stage: unit-test
-  image: golang:1.19-bookworm
-  script:
-    - cp .env.dist tests/testsIntegration/.env
-    - go test ./...
+# run tests:
+#   stage: unit-test
+#   image: golang:1.19-bookworm
+#   script:
+#     - cp .env.dist tests/testsIntegration/.env
+#     - go test ./...
 
 build test and push api image:
   image: docker:latest # TODO use a specifc version instead of latest
@@ -33,8 +33,8 @@ build test and push api image:
     CONTAINER_TEST_IMAGE: $IMAGE_NAME:commit.$CI_COMMIT_SHA
     CONTAINER_RELEASE_IMAGE: $IMAGE_NAME:$IMAGE_TAG
     CONTAINER_LATEST_IMAGE: $IMAGE_NAME:latest
-    CONTAINER_RELEASE_SLIM_IMAGE: $IMAGE_NAME:$IMAGE_TAG-slim
-    CONTAINER_LATEST_SLIM_IMAGE: $IMAGE_NAME:latest
+    CONTAINER_RELEASE_SLIM_IMAGE: $IMAGE_NAME:${IMAGE_TAG}-slim
+    CONTAINER_LATEST_SLIM_IMAGE: $IMAGE_NAME:latest-slim
   # rules:
   #   - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   #     changes:
@@ -48,19 +48,23 @@ build test and push api image:
     - echo Building fat image $CONTAINER_TEST_IMAGE
     - docker pull $CONTAINER_LATEST_IMAGE || true
     - docker image build . --cache-from $CONTAINER_LATEST_IMAGE --target builder --tag $CONTAINER_TEST_IMAGE --tag $CONTAINER_RELEASE_IMAGE
-    # - docker container run --name api $CONTAINER_TEST_IMAGE sleep infinity
-    # - echo Running tests
-    # - docker container rm tester --force || true
-    # - docker container exec -it tester bash -c "cp .env tests/testsIntegration/; go test ./..."
-    # - docker container rm --force tester
+
+    - echo Running tests
+    - docker container run --name api $CONTAINER_TEST_IMAGE sleep infinity
+    - docker container rm tester --force || true
+    - docker container exec -it tester bash -c "cp .env tests/testsIntegration/; go test ./..."
+    - docker container rm --force tester
+
     - Building slim image
     - docker image build . --target slim --tag $CONTAINER_RELEASE_SLIM_IMAGE
-    - echo Pushing built images
+
+    - echo Pushing images
     - docker image tag $CONTAINER_TEST_IMAGE $CONTAINER_RELEASE_IMAGE
+    - docker image tag $CONTAINER_TEST_IMAGE $CONTAINER_LATEST_IMAGE
     - docker image push $CONTAINER_RELEASE_IMAGE
     - docker image push $CONTAINER_RELEASE_SLIM_IMAGE
-    - docker image tag $CONTAINER_TEST_IMAGE $CONTAINER_LATEST_IMAGE
     - docker image push $CONTAINER_LATEST_IMAGE
+    - docker image push $CONTAINER_LATEST_SLIM_IMAGE
 
     # - sh build.sh
     # - sh test.sh
