@@ -1,5 +1,5 @@
-workflow:
-  name: 'Build, test and push images'
+# workflow:
+#   name: 'Build, test and push images'
 
 stages:
   - build
@@ -25,17 +25,16 @@ build api image:
     CONTAINER_TEST_IMAGE: $IMAGE_NAME:commit.$CI_COMMIT_SHA
     CONTAINER_RELEASE_IMAGE: $IMAGE_NAME:$IMAGE_TAG
     CONTAINER_LATEST_IMAGE: $IMAGE_NAME:latest
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      changes:
-        - src/**/*
-        - Dockerfile
-        - main.go
+  # rules:
+  #   - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  #     changes:
+  #       - src/**/*
+  #       - Dockerfile
+  #       - main.go
     #   when: manual
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
-    - ls -lash
     - docker pull $CONTAINER_RELEASE_IMAGE || true
     - docker image build . --cache-from $CONTAINER_RELEASE_IMAGE --tag $CONTAINER_TEST_IMAGE --tag $CONTAINER_RELEASE_IMAGE
     - docker image push $CONTAINER_RELEASE_IMAGE
