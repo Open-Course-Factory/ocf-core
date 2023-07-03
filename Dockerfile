@@ -19,8 +19,9 @@ RUN go mod tidy && go mod download
 
 # downloading the swaggo/swag package to fix the issue: unknown field 'LeftDelim'
 # issue: https://github.com/swaggo/swag/issues/1568
-RUN go get golang.org/x/text/transform golang.org/x/text/unicode/norm github.com/swaggo/swag && \
+RUN go get golang.org/x/text/transform golang.org/x/text/unicode/norm && \
     go install github.com/swaggo/swag/cmd/swag@latest
+#    go get -u github.com/swaggo/swag && \
 
 COPY . .
 # Create .env aside main.go to prevent errors while running the code
