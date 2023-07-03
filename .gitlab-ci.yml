@@ -50,18 +50,18 @@ variables:
 build test and push api image:
   extends: .dind
   script:
-    - echo Building fat image $CONTAINER_TEST_IMAGE
+    - echo "Building fat image $CONTAINER_TEST_IMAGE"
     - docker pull $CONTAINER_LATEST_IMAGE || true
     - docker image build . --target builder --tag $CONTAINER_TEST_IMAGE --tag $CONTAINER_RELEASE_IMAGE
 
-    - echo Running tests
+    - echo "Running tests"
     - docker container rm tester --force || true
     - docker container run --rm --name tester $CONTAINER_TEST_IMAGE bash -c "cp .env tests/testsIntegration/; go test ./..."
 
-    - Building slim image
+    - echo "Building slim image"
     - docker image build . --target slim --tag $CONTAINER_RELEASE_SLIM_IMAGE
 
-    - echo Pushing images
+    - echo "Pushing images"
     # - docker image tag $CONTAINER_TEST_IMAGE $CONTAINER_RELEASE_IMAGE
     - docker image tag $CONTAINER_TEST_IMAGE $CONTAINER_LATEST_IMAGE
     - docker image push $CONTAINER_RELEASE_IMAGE
