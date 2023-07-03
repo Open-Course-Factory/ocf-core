@@ -1,4 +1,4 @@
-FROM golang:1.19-bullseye
+FROM golang:1.19-bullseye as builder
 
 RUN apt update && \
     apt install tini nano npm -y
@@ -25,10 +25,36 @@ RUN go get golang.org/x/text/transform golang.org/x/text/unicode/norm github.com
 COPY . .
 # Create .env aside main.go to prevent errors while running the code
 COPY .env.dist .env
-
 # generate the docs directory
 RUN swag init --parseDependency --parseInternal
 
+RUN go build -v -o /app/app-linux-amd64
+
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
-CMD ["go", "run", "main.go"]
+CMD [ "/app/app-linux-amd64" ]
+
+FROM debian:bookworm-slim as slim
+
+ENV TINI_VERSION v0.19.0
+
+ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
+
+RUN chmod +x /tini
+
+WORKDIR /app
+
+ARG UID=1000
+ARG GID=1000
+
+RUN groupadd -g "${GID}" app \
+  && useradd --create-home --no-log-init -u "${UID}" -g "${GID}" app
+
+COPY --from=builder /app /app
+# RUN rm -rf node_modules/ # unused as listed in .dockerignore
+RUN chown -R app:app /app
+
+USER app
+ENTRYPOINT ["/tini", "--"]
+
+CMD [ "/app/app-linux-amd64" ]
