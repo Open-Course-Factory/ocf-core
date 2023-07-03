@@ -50,10 +50,8 @@ build test and push api image:
     - docker image build . --target builder --tag $CONTAINER_TEST_IMAGE --tag $CONTAINER_RELEASE_IMAGE
 
     - echo Running tests
-    - docker container run --name api $CONTAINER_TEST_IMAGE sleep infinity
     - docker container rm tester --force || true
-    - docker container exec -it tester bash -c "cp .env tests/testsIntegration/; go test ./..."
-    - docker container rm --force tester
+    - docker container run --rm -it --name tester $CONTAINER_TEST_IMAGE bash -c "cp .env tests/testsIntegration/; go test ./..."
 
     - Building slim image
     - docker image build . --target slim --tag $CONTAINER_RELEASE_SLIM_IMAGE
