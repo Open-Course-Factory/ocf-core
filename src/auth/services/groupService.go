@@ -61,19 +61,19 @@ func (g groupService) GetGroup(id uuid.UUID) (*models.Group, error) {
 
 func (g groupService) GetGroups() ([]dto.GroupOutput, error) {
 
-	userModel, err := g.repository.GetAllGroups()
+	groupsModel, err := g.repository.GetAllGroups()
 
 	if err != nil {
 		return nil, err
 	}
 
-	var usersDto []dto.GroupOutput
+	var groupsDto []dto.GroupOutput
 
-	for _, s := range *userModel {
-		usersDto = append(usersDto, *dto.GroupModelToGroupOutput(s))
+	for _, s := range *groupsModel {
+		groupsDto = append(groupsDto, *dto.GroupModelToGroupOutput(s))
 	}
 
-	return usersDto, nil
+	return groupsDto, nil
 }
 
 func (g groupService) CreateGroup(groupCreateDTO dto.CreateGroupInput) (*dto.GroupOutput, error) {

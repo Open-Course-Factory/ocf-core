@@ -29,10 +29,19 @@ type GroupEditOutput struct {
 }
 
 func GroupModelToGroupOutput(groupModel models.Group) *GroupOutput {
-	return &GroupOutput{
-		ID:           groupModel.ID,
-		GroupName:    groupModel.GroupName,
-		ParentGroup:  groupModel.ParentGroup.ID,
-		Organisation: groupModel.Organisation.ID,
+
+	groupOutput := GroupOutput{
+		ID:        groupModel.ID,
+		GroupName: groupModel.GroupName,
 	}
+
+	if groupModel.ParentGroup != nil {
+		groupOutput.ParentGroup = groupModel.ParentGroup.ID
+	}
+
+	if groupModel.Organisation != nil {
+		groupOutput.Organisation = groupModel.Organisation.ID
+	}
+
+	return &groupOutput
 }
