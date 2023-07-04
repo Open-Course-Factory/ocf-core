@@ -27,7 +27,7 @@ spec:
   #   - ocf-core.kube.home.davidassigbi.com
   #   secretName: kube-home-davidassigbi-com-tls
   rules:
-  - host: ocf-core-lsd-sdv.duckdns.com
+  - host: ocf-core-lsd-sdv.duckdns.org
     http:
       paths:
         - path: /
