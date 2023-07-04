@@ -11,7 +11,7 @@ spec:
   - name: http
     port: 80
     targetPort: 8000
-    nodePort: 32800
+    nodePort: 30800
   selector:
     app: ocf-core
 ---
