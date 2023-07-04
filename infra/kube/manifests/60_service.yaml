@@ -6,11 +6,12 @@ metadata:
     app: ocf-core
   name: ocf-core
 spec:
-  type: ClusterIP
+  type: NodePort
   ports:
   - name: http
     port: 80
     targetPort: 8000
+    nodePort: 38800
   selector:
     app: ocf-core
 ---
