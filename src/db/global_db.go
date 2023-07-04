@@ -37,7 +37,6 @@ func ConnectDB() {
 
 		DB, err = gorm.Open(postgres.Open(connectionString), &gorm.Config{
 			NamingStrategy: schema.NamingStrategy{
-				TablePrefix:   "users" + ".",
 				SingularTable: false,
 			},
 		})
