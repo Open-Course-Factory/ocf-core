@@ -15,7 +15,7 @@ WORKDIR /app
 
 COPY go.sum go.mod ./
 
-RUN go mod tidy && go mod download
+RUN go mod download && go mod verify
 
 # downloading the swaggo/swag package to fix the issue: unknown field 'LeftDelim'
 # issue: https://github.com/swaggo/swag/issues/1568
@@ -26,12 +26,16 @@ RUN go get golang.org/x/text/transform golang.org/x/text/unicode/norm && \
 COPY src src
 COPY main.go .
 
+RUN ls -lash src && ls -lash && cat go.mod
+
 # track only the actual changed go code while creating the docs directory
 RUN swag init --parseDependency --parseInternal
 
 # copy remaining entire directory in case other directories are needed for the build
 COPY . .
+
 RUN go build -v -o /app/app-linux-amd64
+
 # Create .env aside main.go to prevent errors while running the code
 COPY .env.dist .env
 
