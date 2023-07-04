@@ -17,6 +17,7 @@ import (
 //	@Accept			json
 //	@Produce		json
 //	@Param			group	body		dto.CreateGroupInput	true	"group"
+//	@Param Authorization header string true "Insert your access token" default(bearer <Add access token here>)
 //	@Success		201		{object}	dto.GroupOutput
 //
 //	@Failure		400		{object}	errors.APIError	"Impossible de parser le json"
@@ -29,7 +30,7 @@ func (g groupController) AddGroup(ctx *gin.Context) {
 	if bindError != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de parser le json",
+			ErrorMessage: "Impossible de parser le json : " + bindError.Error(),
 		})
 		return
 	}
