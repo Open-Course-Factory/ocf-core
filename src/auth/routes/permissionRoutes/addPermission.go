@@ -17,6 +17,7 @@ import (
 //	@Accept			json
 //	@Produce		json
 //	@Param			permission	body		dto.CreatePermissionInput	true	"permission"
+//	@Param Authorization header string true "Insert your access token" default(bearer <Add access token here>)
 //	@Success		201		{object}	dto.PermissionOutput
 //
 //	@Failure		400		{object}	errors.APIError	"Impossible de parser le json"

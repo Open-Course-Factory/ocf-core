@@ -17,6 +17,7 @@ import (
 //	@Accept			json
 //	@Produce		json
 //	@Param			role	body		dto.CreateRoleInput	true	"role"
+//	@Param Authorization header string true "Insert your access token" default(bearer <Add access token here>)
 //	@Success		201		{object}	dto.RoleOutput
 //
 //	@Failure		400		{object}	errors.APIError	"Impossible de parser le json"
