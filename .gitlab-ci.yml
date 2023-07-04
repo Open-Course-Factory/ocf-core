@@ -91,7 +91,7 @@ test kubectl commands:
     entrypoint: ['']
   script:
     - kubectl config get-contexts
-    - kubectl config use-context lds1/ocf-core:ocf-core
+    # - kubectl config use-context lds1/ocf-core:ocf-core
     - kubectl get pods
     - ls -lash
   # tags:
