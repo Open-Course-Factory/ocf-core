@@ -1,0 +1,59 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: ocf-core
+  name: ocf-core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ocf-core
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: ocf-core
+    spec:
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: "OnRootMismatch"
+      containers:
+      - name: ocf-core
+        image: registry.gitlab.com/lds1/ocf-core:1.0.0-slim
+        ports:
+          - containerPort: 8000
+        # resources:
+        #   requests:
+        #     cpu: 100m
+        #     memory: 100Mi
+        #   limits:
+        #     cpu: 250m
+        #     memory: 250Mi
+        # volumeMounts:
+        # - name: srv
+        #   mountPath: /srv
+        # - name: filebrowser-db
+        #   mountPath: /filebrowser.db
+        # - name: filebrowser-config
+        #   subPath: .filebrowser.json
+        #   mountPath: /.filebrowser.json
+      # volumes:
+      # # Add volumes for all filesystems, hdd1-1to, nas-ssd1
+      # - name: srv
+      #   hostPath:
+      #     path: /data/kube-apps/
+      #     type: Directory
+      # - name: filebrowser-db
+      #   hostPath:
+      #     path: /data/kube-apps/filebrowser/filebrowser.db
+      #     type: FileOrCreate
+      # - name: filebrowser-config
+      #   configMap:
+      #     name: filebrowser-config
+      #     items:
+      #     - key: .filebrowser.json
+      #       path: .filebrowser.json

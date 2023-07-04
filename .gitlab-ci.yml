@@ -51,6 +51,14 @@ stages:
 
 build test and push api image:
   extends: .dind
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - go.*
+        - src/**/*
+        - Dockerfile
+        - main.go
+      when: manual
   script:
     - echo "Building fat image $CONTAINER_TEST_IMAGE"
     - docker pull $CONTAINER_LATEST_IMAGE || true
