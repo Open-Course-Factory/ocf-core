@@ -91,7 +91,7 @@ test kubectl commands:
     entrypoint: ['']
   script:
     - kubectl config get-contexts
-    - kubectl config use-context path/to/agent/repository:agent-name
+    - kubectl config use-context lds1/ocf-core:ocf-core
     - kubectl get pods
-  tags:
-    - kube
+  # tags:
+  #   - kube
