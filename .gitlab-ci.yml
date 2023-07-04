@@ -93,5 +93,6 @@ test kubectl commands:
     - kubectl config get-contexts
     - kubectl config use-context lds1/ocf-core:ocf-core
     - kubectl get pods
+    - ls -lash
   # tags:
   #   - kube
