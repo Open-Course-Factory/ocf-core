@@ -20,10 +20,10 @@ type Section struct {
 	Intro              string
 	Conclusion         string
 	Number             int
-	ChapterID          uuid.UUID
-	Chapter            Chapter `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"chapter"`
-	Pages              []Page  `gorm:"foreignKey:SectionID" json:"pages"`
-	HiddenPages        []int   `gorm:"serializer:json"`
+	ChapterID          uuid.UUID `gorm:"foreignKey:ID"`
+	Chapter            Chapter   `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"chapter"`
+	Pages              []Page    `gorm:"foreignKey:SectionID" json:"pages"`
+	HiddenPages        []int     `gorm:"serializer:json"`
 }
 
 func (s *Section) BeforeCreate(tx *gorm.DB) (err error) {
