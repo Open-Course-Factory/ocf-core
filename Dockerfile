@@ -23,13 +23,17 @@ RUN go get golang.org/x/text/transform golang.org/x/text/unicode/norm && \
     go install github.com/swaggo/swag/cmd/swag@latest
 #    go get -u github.com/swaggo/swag && \
 
-COPY . .
-# Create .env aside main.go to prevent errors while running the code
-COPY .env.dist .env
-# generate the docs directory
+COPY src src
+COPY main.go .
+
+# track only the actual changed go code while creating the docs directory
 RUN swag init --parseDependency --parseInternal
 
+# copy remaining entire directory in case other directories are needed for the build
+COPY . .
 RUN go build -v -o /app/app-linux-amd64
+# Create .env aside main.go to prevent errors while running the code
+COPY .env.dist .env
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
