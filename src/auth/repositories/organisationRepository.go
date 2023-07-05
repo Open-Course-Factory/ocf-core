@@ -41,7 +41,7 @@ func (r *organisationRepository) CreateOrganisation(organisationdto dto.CreateOr
 
 func (o *organisationRepository) GetOrganisation(id uuid.UUID) (*models.Organisation, error) {
 	var organisation models.Organisation
-	result := o.db.First(&organisation, id)
+	result := o.db.Preload("Groups").First(&organisation, id)
 
 	if result.Error != nil {
 		return nil, result.Error
@@ -52,7 +52,7 @@ func (o *organisationRepository) GetOrganisation(id uuid.UUID) (*models.Organisa
 
 func (o *organisationRepository) GetAllOrganisations() ([]*models.Organisation, error) {
 	var organisations []*models.Organisation
-	result := o.db.Find(&organisations)
+	result := o.db.Preload("Groups").Find(&organisations)
 	if result.Error != nil {
 		return nil, result.Error
 	}
