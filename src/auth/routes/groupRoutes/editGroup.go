@@ -17,7 +17,7 @@ import (
 //	@Tags			groups
 //	@Accept			json
 //	@Produce		json
-//	@Param			id	path		int	true	"ID group"
+//	@Param			id	path		string	true	"ID group"
 //	@Param 			group 	body	dto.GroupEditInput	true	"Group"
 //	@Param Authorization header string true "Insert your access token" default(bearer <Add access token here>)
 //	@Success		204	{object}	string
@@ -56,5 +56,6 @@ func (g groupController) EditGroup(ctx *gin.Context) {
 			ErrorMessage: editGroupError.Error()})
 		return
 	}
+	// No content for a successful PUT RFC 2616
 	ctx.JSON(http.StatusNoContent, edit)
 }

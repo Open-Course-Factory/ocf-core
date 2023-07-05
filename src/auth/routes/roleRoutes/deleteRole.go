@@ -16,7 +16,7 @@ import (
 //	@Tags			roles
 //	@Accept			json
 //	@Produce		json
-//	@Param			id	path		int	true	"ID role"
+//	@Param			id	path		string	true	"ID role"
 //	@Param Authorization header string true "Insert your access token" default(bearer <Add access token here>)
 //
 //	@Success		204	{object}	string
