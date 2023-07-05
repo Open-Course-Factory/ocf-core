@@ -17,6 +17,7 @@ import (
 //	@Accept			json
 //	@Produce		json
 //	@Param			organisation	body		dto.CreateOrganisationInput	true	"organisation"
+//	@Param Authorization header string true "Insert your access token" default(bearer <Add access token here>)
 //	@Success		201		{object}	dto.OrganisationOutput
 //
 //	@Failure		400		{object}	errors.APIError	"Impossible de parser le json"

@@ -17,7 +17,7 @@ type Chapter struct {
 	Footer       string
 	Introduction string
 	Courses      []Course  `gorm:"many2many:course_chapters;" json:"courses"`
-	Sections     []Section `gorm:"many2many:chapter_sections;" json:"sections"`
+	Sections     []Section `json:"sections"`
 }
 
 func (c *Chapter) BeforeCreate(tx *gorm.DB) (err error) {
