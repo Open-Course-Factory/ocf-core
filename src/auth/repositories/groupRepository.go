@@ -29,17 +29,29 @@ func NewGroupRepository(db *gorm.DB) GroupRepository {
 
 func (g groupRepository) CreateGroup(groupdto dto.CreateGroupInput) (*models.Group, error) {
 	var parentGroup *models.Group
-	var err error
+	var organisation *models.Organisation
+	var errGrp, errOrg error
+
+	o := NewOrganisationRepository(g.db)
+
 	if groupdto.ParentGroup != uuid.Nil {
-		parentGroup, err = g.GetGroup(groupdto.ParentGroup)
-		if err != nil {
-			return nil, err
+		parentGroup, errGrp = g.GetGroup(groupdto.ParentGroup)
+		if errGrp != nil {
+			return nil, errGrp
+		}
+	}
+
+	if groupdto.Organisation != uuid.Nil {
+		organisation, errOrg = o.GetOrganisation(groupdto.Organisation)
+		if errOrg != nil {
+			return nil, errOrg
 		}
 	}
 
 	group := models.Group{
-		GroupName:   groupdto.GroupName,
-		ParentGroup: parentGroup,
+		GroupName:    groupdto.GroupName,
+		ParentGroup:  parentGroup,
+		Organisation: organisation,
 	}
 
 	result := g.db.Create(&group)
@@ -81,14 +93,22 @@ func (g groupRepository) DeleteGroup(id uuid.UUID) error {
 
 func (g groupRepository) EditGroup(id uuid.UUID, groupinfos dto.GroupEditInput) (*dto.GroupEditOutput, error) {
 
+	o := NewOrganisationRepository(g.db)
+
 	parentGroup, err := g.GetGroup(groupinfos.ParentGroup)
 	if err != nil {
 		return nil, err
 	}
 
+	organisation, errOrg := o.GetOrganisation(groupinfos.Organisation)
+	if errOrg != nil {
+		return nil, errOrg
+	}
+
 	group := models.Group{
-		GroupName:   groupinfos.GroupName,
-		ParentGroup: parentGroup,
+		GroupName:    groupinfos.GroupName,
+		ParentGroup:  parentGroup,
+		Organisation: organisation,
 	}
 
 	result := g.db.Model(&models.Group{}).Where("id = ?", id).Updates(group)
@@ -97,7 +117,17 @@ func (g groupRepository) EditGroup(id uuid.UUID, groupinfos dto.GroupEditInput) 
 		return nil, result.Error
 	}
 
-	return &dto.GroupEditOutput{
+	groupEditOutput := dto.GroupEditOutput{
 		GroupName: group.GroupName,
-	}, nil
+	}
+
+	if group.ParentGroupID != nil {
+		groupEditOutput.ParentGroup = *group.ParentGroupID
+	}
+
+	if group.OrganisationID != nil {
+		groupEditOutput.Organisation = *group.OrganisationID
+	}
+
+	return &groupEditOutput, nil
 }
