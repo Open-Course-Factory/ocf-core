@@ -84,9 +84,19 @@ func (g groupService) CreateGroup(groupCreateDTO dto.CreateGroupInput) (*dto.Gro
 		return nil, createGroupError
 	}
 
-	return &dto.GroupOutput{
+	groupOutput := dto.GroupOutput{
 		ID:        group.ID,
 		GroupName: group.GroupName,
-	}, nil
+	}
+
+	if group.OrganisationID != nil {
+		groupOutput.Organisation = *group.OrganisationID
+	}
+
+	if group.ParentGroupID != nil {
+		groupOutput.ParentGroup = *group.ParentGroupID
+	}
+
+	return &groupOutput, nil
 
 }
