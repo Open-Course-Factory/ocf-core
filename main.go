@@ -17,7 +17,7 @@ import (
 	marp "soli/formations/src/marp_integration"
 	"soli/formations/src/middleware"
 
-	"soli/formations/src/auth/dto"
+	authDto "soli/formations/src/auth/dto"
 	authModels "soli/formations/src/auth/models"
 	groupController "soli/formations/src/auth/routes/groupRoutes"
 	loginController "soli/formations/src/auth/routes/loginRoutes"
@@ -102,7 +102,7 @@ func initDB() {
 		users, _ := userService.GetUsers()
 
 		if len(users) == 0 {
-			userInput := dto.CreateUserInput{Email: "test@test.com", Password: "test", FirstName: "Tom", LastName: "Baggins"}
+			userInput := authDto.CreateUserInput{Email: "test@test.com", Password: "test", FirstName: "Tom", LastName: "Baggins"}
 			userOutputDto, _ := userService.CreateUser(userInput, &config.Configuration{})
 
 			groupService := services.NewGroupService(sqldb.DB)
@@ -111,16 +111,24 @@ func initDB() {
 
 			permissionService := services.NewPermissionService(sqldb.DB)
 
-			organisationInput := dto.CreateOrganisationInput{Name: "organisationTest"}
+			organisationInput := authDto.CreateOrganisationInput{Name: "organisationTest"}
 			organisationOutputDto, _ := organisationService.CreateOrganisation(organisationInput, &config.Configuration{})
 
-			groupInput := dto.CreateGroupInput{GroupName: "groupTest"}
+			groupInput := authDto.CreateGroupInput{GroupName: "groupTest"}
 			groupOutputDto, _ := groupService.CreateGroup(groupInput)
 
-			roleInput := dto.CreateRoleInput{RoleName: "roleTest"}
+			roleInput := authDto.CreateRoleInput{RoleName: "roleTest"}
 			roleOutputDto, _ := roleService.CreateRole(roleInput, &config.Configuration{})
 
-			permissionInput := dto.CreatePermissionInput{User: userOutputDto.ID, Role: roleOutputDto.ID, Group: groupOutputDto.ID, Organisation: organisationOutputDto.ID}
+			permissionInput := authDto.CreatePermissionInput{
+				User:         userOutputDto.ID,
+				Role:         roleOutputDto.ID,
+				Group:        groupOutputDto.ID,
+				Organisation: organisationOutputDto.ID,
+				PermissionTypes: []authModels.PermissionType{
+					authModels.PermissionTypeAll,
+				},
+			}
 			permissionService.CreatePermission(permissionInput)
 
 		}

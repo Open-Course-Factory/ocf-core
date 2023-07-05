@@ -56,10 +56,10 @@ func (p permissionRepository) CreatePermission(permissiondto dto.CreatePermissio
 	}
 
 	permission := models.Permission{
-		User:         user,
-		Role:         role,
-		Group:        group,
-		Organisation: organisation,
+		User:            user,
+		Role:            role,
+		Group:           group,
+		Organisation:    organisation,
 		PermissionTypes: permissiondto.PermissionTypes,
 	}
 
@@ -145,11 +145,11 @@ func (p permissionRepository) EditPermission(id uuid.UUID, permissioninfos dto.P
 	}
 
 	return &dto.PermissionEditOutput{
-		User:         user.ID,
-		Role:         role.ID,
-		Group:        group.ID,
-		Organisation: organisation.ID,
-		PermissionTypes: permission.PermissionTypes
+		User:            user.ID,
+		Role:            role.ID,
+		Group:           group.ID,
+		Organisation:    organisation.ID,
+		PermissionTypes: permission.PermissionTypes,
 	}, nil
 }
 

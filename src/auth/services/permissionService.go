@@ -86,12 +86,12 @@ func (p permissionService) CreatePermission(permissionCreateDTO dto.CreatePermis
 	}
 
 	return &dto.PermissionOutput{
-		ID:           permission.ID,
-		User:         permission.User.ID,
-		Role:         permission.Role.ID,
-		Group:        permission.Group.ID,
-		Organisation: permission.Organisation.ID,
-		PermissionTypes: permission.PermissionTypes
+		ID:              permission.ID,
+		User:            permission.User.ID,
+		Role:            permission.Role.ID,
+		Group:           permission.Group.ID,
+		Organisation:    permission.Organisation.ID,
+		PermissionTypes: permission.PermissionTypes,
 	}, nil
 
 }
