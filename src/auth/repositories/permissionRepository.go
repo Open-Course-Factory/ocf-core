@@ -60,6 +60,7 @@ func (p permissionRepository) CreatePermission(permissiondto dto.CreatePermissio
 		Role:         role,
 		Group:        group,
 		Organisation: organisation,
+		PermissionTypes: permissiondto.PermissionTypes,
 	}
 
 	result := p.db.Create(&permission)
@@ -135,6 +136,7 @@ func (p permissionRepository) EditPermission(id uuid.UUID, permissioninfos dto.P
 	permission.Role = role
 	permission.Group = group
 	permission.Organisation = organisation
+	permission.PermissionTypes = permissioninfos.PermissionTypes
 
 	result := p.db.Model(&models.Permission{}).Where("id = ?", id).Updates(permission)
 
@@ -147,6 +149,7 @@ func (p permissionRepository) EditPermission(id uuid.UUID, permissioninfos dto.P
 		Role:         role.ID,
 		Group:        group.ID,
 		Organisation: organisation.ID,
+		PermissionTypes: permission.PermissionTypes
 	}, nil
 }
 

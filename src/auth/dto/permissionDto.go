@@ -12,6 +12,7 @@ type PermissionOutput struct {
 	Role         uuid.UUID `json:"roleId"`
 	Group        uuid.UUID `json:"groupId"`
 	Organisation uuid.UUID `json:"organisationId"`
+	PermissionTypes []PermissionType `json:"permissionTypes"`
 }
 
 type CreatePermissionInput struct {
@@ -19,6 +20,7 @@ type CreatePermissionInput struct {
 	Role         uuid.UUID `binding:"required"`
 	Group        uuid.UUID `binding:"required"`
 	Organisation uuid.UUID `binding:"required"`
+	PermissionTypes []PermissionType `binding:"required"`
 }
 
 type PermissionEditInput struct {
@@ -26,6 +28,7 @@ type PermissionEditInput struct {
 	Role         uuid.UUID `json:"roleId"`
 	Group        uuid.UUID `json:"groupId"`
 	Organisation uuid.UUID `json:"organisationId"`
+	PermissionTypes []PermissionType `json:"permissionTypes"`
 }
 
 type PermissionEditOutput struct {
@@ -33,6 +36,7 @@ type PermissionEditOutput struct {
 	Role         uuid.UUID `json:"roleId"`
 	Group        uuid.UUID `json:"groupId"`
 	Organisation uuid.UUID `json:"organisationId"`
+	PermissionTypes []PermissionType `json:"permissionTypes"`
 }
 
 func PermissionModelToPermissionOutput(permissionModel models.Permission) *PermissionOutput {
@@ -42,5 +46,6 @@ func PermissionModelToPermissionOutput(permissionModel models.Permission) *Permi
 		Role:         permissionModel.Role.ID,
 		Group:        permissionModel.Group.ID,
 		Organisation: permissionModel.Organisation.ID,
+		PermissionTypes: permissionModel.PermissionTypes,
 	}
 }

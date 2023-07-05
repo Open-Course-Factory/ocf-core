@@ -5,6 +5,15 @@ import (
 	"gorm.io/gorm"
 )
 
+type PermissionType string
+
+const (
+	PermissionTypeRead PermissionType = "read"
+	PermissionTypeWrite PermissionType = "write"
+	PermissionTypeDelete PermissionType = "delete"
+	PermissionTypeAll   PermissionType = "all"
+)
+
 type Permission struct {
 	gorm.Model
 	ID             uuid.UUID `gorm:"type:uuid;primarykey"`
@@ -16,6 +25,7 @@ type Permission struct {
 	Role           *Role `json:"role"`
 	OrganisationID *uuid.UUID
 	Organisation   *Organisation `json:"organisation"`
+	PermissionTypes []PermissionType `json:"permission_types"`
 }
 
 func (p *Permission) BeforeCreate(tx *gorm.DB) (err error) {

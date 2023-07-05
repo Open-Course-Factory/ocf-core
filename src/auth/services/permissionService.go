@@ -91,6 +91,7 @@ func (p permissionService) CreatePermission(permissionCreateDTO dto.CreatePermis
 		Role:         permission.Role.ID,
 		Group:        permission.Group.ID,
 		Organisation: permission.Organisation.ID,
+		PermissionTypes: permission.PermissionTypes
 	}, nil
 
 }
