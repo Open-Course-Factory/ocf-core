@@ -17,7 +17,7 @@ import (
 //	@Tags			groups
 //	@Accept			json
 //	@Produce		json
-//	@Param		 	id	path		int	true	"ID group"
+//	@Param		 	id	path		string	true	"ID group"
 //	@Param Authorization header string true "Insert your access token" default(bearer <Add access token here>)
 //	@Success		200	{object}	dto.GroupOutput
 //

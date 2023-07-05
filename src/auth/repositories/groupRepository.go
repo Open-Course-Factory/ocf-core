@@ -95,14 +95,17 @@ func (g groupRepository) EditGroup(id uuid.UUID, groupinfos dto.GroupEditInput) 
 
 	o := NewOrganisationRepository(g.db)
 
-	parentGroup, err := g.GetGroup(groupinfos.ParentGroup)
+	parentGroup, err := g.GetGroup(id)
 	if err != nil {
 		return nil, err
 	}
 
 	organisation, errOrg := o.GetOrganisation(groupinfos.Organisation)
 	if errOrg != nil {
-		return nil, errOrg
+		if errOrg.Error() != "record not found" {
+			return nil, errOrg
+		}
+
 	}
 
 	group := models.Group{
