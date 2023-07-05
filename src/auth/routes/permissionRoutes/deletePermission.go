@@ -16,7 +16,7 @@ import (
 //	@Tags			permissions
 //	@Accept			json
 //	@Produce		json
-//	@Param			id	path		int	true	"ID permission"
+//	@Param			id	path		string	true	"ID permission"
 //	@Param Authorization header string true "Insert your access token" default(bearer <Add access token here>)
 //
 //	@Success		204	{object}	string
