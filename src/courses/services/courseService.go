@@ -30,6 +30,7 @@ type CourseService interface {
 	GenerateCourse(courseName string, courseTheme string, format string, authorEmail string) (*dto.GenerateCourseOutput, error)
 	CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto.CreateCourseOutput, error)
 	DeleteCourse(id uuid.UUID) error
+	GetCourses() ([]dto.CourseOutput, error)
 	GetGitCourse(owner authModels.User, courseURL string) (*dto.CreateCourseOutput, error)
 	GetSpecificCourseByUser(owner authModels.User, courseName string) (*models.Course, error)
 }
@@ -126,6 +127,24 @@ func (c courseService) DeleteCourse(id uuid.UUID) error {
 		return errorDelete
 	}
 	return nil
+}
+
+
+func (c *courseService) GetCourses() ([]dto.CourseOutput, error) {
+
+	courseModel, err := c.repository.GetAllCourses()
+
+	if err != nil {
+		return nil, err
+	}
+
+	var courseDto []dto.CourseOutput
+
+	for _, s := range *courseModel {
+		courseDto = append(courseDto, *dto.CourseModelToCourseOutput(s))
+	}
+
+	return courseDto, nil
 }
 
 func (c courseService) GetGitCourse(owner authModels.User, courseURL string) (*dto.CreateCourseOutput, error) {

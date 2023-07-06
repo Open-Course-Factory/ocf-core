@@ -12,6 +12,7 @@ type CourseController interface {
 	GenerateCourse(ctx *gin.Context)
 	AddCourse(ctx *gin.Context)
 	DeleteCourse(ctx *gin.Context)
+	GetCourses(ctx *gin.Context)
 	CreateCourseFromGit(ctx *gin.Context)
 }
 
