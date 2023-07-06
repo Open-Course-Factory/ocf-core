@@ -1,0 +1,3 @@
+<properties>
+  <sonar.qualitygate.wait>true</sonar.qualitygate.wait>
+</properties>
