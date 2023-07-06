@@ -49,11 +49,11 @@ type CourseOutput struct {
 	Footer             string `binding:"required"`
 	Logo               string
 	Description        string
-	CourseID_str       string           `binding:"required"`
-	Schedule           string           `binding:"required"`
-	Prelude            string           `binding:"required"`
-	LearningObjectives string           `json:"learning_objectives"`
-	Chapters           []models.Chapter `json:"chapters"`
+	CourseID_str       string          `binding:"required"`
+	Schedule           string          `binding:"required"`
+	Prelude            string          `binding:"required"`
+	LearningObjectives string          `json:"learning_objectives"`
+	Chapters           []ChapterOutput `json:"chapters"`
 }
 
 type CreateCourseFromGitOutput struct {
@@ -64,21 +64,26 @@ type CreateCourseFromGitInput struct {
 }
 
 func CourseModelToCourseOutput(courseModel models.Course) *CourseOutput {
+
+	var chapterOutputs []ChapterOutput
+	for _, chapter := range courseModel.Chapters {
+		chapterOutputs = append(chapterOutputs, *ChapterModelToChapterOutput(chapter))
+	}
+
 	return &CourseOutput{
-		Name: 				courseModel.Name,
-		Theme: 				courseModel.Theme,
-		Version: 			courseModel.Version,
-		Title: 				courseModel.Title,
-		Subtitle: 			courseModel.Subtitle,
-		Header: 			courseModel.Header,
-		Footer: 			courseModel.Footer,
-		Logo: 				courseModel.Logo,
-		Description:		courseModel.Description,
-		CourseID_str:		courseModel.CourseID_str,
-		Schedule: 			courseModel.Schedule,
-		Prelude: 			courseModel.Prelude,
+		Name:               courseModel.Name,
+		Theme:              courseModel.Theme,
+		Version:            courseModel.Version,
+		Title:              courseModel.Title,
+		Subtitle:           courseModel.Subtitle,
+		Header:             courseModel.Header,
+		Footer:             courseModel.Footer,
+		Logo:               courseModel.Logo,
+		Description:        courseModel.Description,
+		CourseID_str:       courseModel.CourseID_str,
+		Schedule:           courseModel.Schedule,
+		Prelude:            courseModel.Prelude,
 		LearningObjectives: courseModel.LearningObjectives,
-		Chapters:			courseModel.Chapters,
+		Chapters:           chapterOutputs,
 	}
 }
-

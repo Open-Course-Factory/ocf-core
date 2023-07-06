@@ -65,11 +65,9 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 	return &course, nil
 }
 
-
-
 func (c courseRepository) GetAllCourses() (*[]models.Course, error) {
 	var course []models.Course
-	result := c.db.Find(&course)
+	result := c.db.Preload("Chapters").Preload("Chapters.Sections").Find(&course)
 	if result.Error != nil {
 		return nil, result.Error
 	}
