@@ -62,3 +62,23 @@ type CreateCourseFromGitOutput struct {
 type CreateCourseFromGitInput struct {
 	Url string `binding:"required"`
 }
+
+func CourseModelToCourseOutput(courseModel models.Course) *CourseOutput {
+	return &CourseOutput{
+		Name: 				courseModel.Name,
+		Theme: 				courseModel.Theme,
+		Version: 			courseModel.Version,
+		Title: 				courseModel.Title,
+		Subtitle: 			courseModel.Subtitle,
+		Header: 			courseModel.Header,
+		Footer: 			courseModel.Footer,
+		Logo: 				courseModel.Logo,
+		Description:		courseModel.Description,
+		CourseID_str:		courseModel.CourseID_str,
+		Schedule: 			courseModel.Schedule,
+		Prelude: 			courseModel.Prelude,
+		LearningObjectives: courseModel.LearningObjectives,
+		Chapters:			courseModel.Chapters,
+	}
+}
+
