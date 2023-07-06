@@ -12,7 +12,7 @@ import (
 // Add Permission godoc
 //
 //	@Summary		Création permission
-//	@Description	Ajoute une nouvellepermission dans la base de données
+//	@Description	Ajoute une nouvelle permission dans la base de données
 //	@Tags			permissions
 //	@Accept			json
 //	@Produce		json

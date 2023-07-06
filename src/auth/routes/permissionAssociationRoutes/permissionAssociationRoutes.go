@@ -24,5 +24,5 @@ func PermissionAssociationsRoutes(router *gin.RouterGroup, config *config.Config
 	routes.GET("/", middleware.CheckIsLogged(), permissionAssociationController.GetPermissionAssociations)
 	routes.GET("/:id", middleware.CheckIsLogged(), permissionAssociationController.GetPermissionAssociation)
 	routes.DELETE("/:id", middleware.CheckIsLogged(), permissionAssociationController.DeletePermissionAssociation)
-	routes.PUT("/:id", middleware.CheckIsLogged(), permissionAssociationController.EditPermissionAssociation)
+	// routes.PUT("/:id", middleware.CheckIsLogged(), permissionAssociationController.EditPermissionAssociation)
 }

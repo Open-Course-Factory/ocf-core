@@ -10,7 +10,7 @@ type PermissionAssociation struct {
 	ID                           uuid.UUID                     `json:"id" gorm:"primary_key"`
 	Permission                   Permission                    `json:"permission"`
 	PermissionID                 uuid.UUID                     `json:"permission_id"`
-	PermissionAssociationObjects []PermissionAssociationObject `json:"permission_association_objects"`
+	PermissionAssociationObjects []PermissionAssociationObject `gorm:"many2many:pa_pao;" json:"permission_association_objects"`
 }
 
 func (p *PermissionAssociation) BeforeCreate(tx *gorm.DB) (err error) {

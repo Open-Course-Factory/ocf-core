@@ -12,7 +12,7 @@ type PermissionAssociationController interface {
 	GetPermissionAssociation(ctx *gin.Context)
 	GetPermissionAssociations(ctx *gin.Context)
 	AddPermissionAssociation(ctx *gin.Context)
-	EditPermissionAssociation(ctx *gin.Context)
+	// EditPermissionAssociation(ctx *gin.Context)
 	DeletePermissionAssociation(ctx *gin.Context)
 }
 

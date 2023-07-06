@@ -14,6 +14,15 @@ const (
 	PermissionTypeAll    PermissionType = "all"
 )
 
+func ContainsPermissionType(enumArray []PermissionType, value PermissionType) bool {
+	for _, v := range enumArray {
+		if v == value {
+			return true
+		}
+	}
+	return false
+}
+
 type Permission struct {
 	gorm.Model
 	ID              uuid.UUID `gorm:"type:uuid;primarykey"`

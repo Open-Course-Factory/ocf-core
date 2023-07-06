@@ -42,10 +42,10 @@ type PermissionEditOutput struct {
 func PermissionModelToPermissionOutput(permissionModel models.Permission) *PermissionOutput {
 	return &PermissionOutput{
 		ID:              permissionModel.ID,
-		User:            permissionModel.User.ID,
-		Role:            permissionModel.Role.ID,
-		Group:           permissionModel.Group.ID,
-		Organisation:    permissionModel.Organisation.ID,
+		User:            *permissionModel.UserID,
+		Role:            *permissionModel.RoleID,
+		Group:           *permissionModel.GroupID,
+		Organisation:    *permissionModel.OrganisationID,
 		PermissionTypes: permissionModel.PermissionTypes,
 	}
 }

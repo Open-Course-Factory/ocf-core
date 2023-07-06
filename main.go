@@ -22,6 +22,8 @@ import (
 	groupController "soli/formations/src/auth/routes/groupRoutes"
 	loginController "soli/formations/src/auth/routes/loginRoutes"
 	organisationController "soli/formations/src/auth/routes/organisationRoutes"
+	permissionAssociationController "soli/formations/src/auth/routes/permissionAssociationRoutes"
+	permissionController "soli/formations/src/auth/routes/permissionRoutes"
 	roleController "soli/formations/src/auth/routes/roleRoutes"
 	userController "soli/formations/src/auth/routes/userRoutes"
 	"soli/formations/src/auth/services"
@@ -61,6 +63,8 @@ func main() {
 	sqldb.DB.AutoMigrate(&authModels.Group{})
 	sqldb.DB.AutoMigrate(&authModels.Organisation{})
 	sqldb.DB.AutoMigrate(&authModels.Permission{})
+	sqldb.DB.AutoMigrate(&authModels.PermissionAssociation{})
+	sqldb.DB.AutoMigrate(&authModels.PermissionAssociationObject{})
 
 	sqldb.DB.AutoMigrate(&courseModels.Page{})
 	sqldb.DB.AutoMigrate(&courseModels.Section{})
@@ -79,6 +83,8 @@ func main() {
 	organisationController.OrganisationsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	loginController.LoginRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	loginController.RefreshRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	permissionController.PermissionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	permissionAssociationController.PermissionAssociationsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
@@ -110,6 +116,7 @@ func initDB() {
 			organisationService := services.NewOrganisationService(sqldb.DB)
 
 			permissionService := services.NewPermissionService(sqldb.DB)
+			permissionAssociationService := services.NewPermissionAssociationService(sqldb.DB)
 
 			organisationInput := authDto.CreateOrganisationInput{Name: "organisationTest"}
 			organisationOutputDto, _ := organisationService.CreateOrganisation(organisationInput, &config.Configuration{})
@@ -129,10 +136,20 @@ func initDB() {
 					authModels.PermissionTypeAll,
 				},
 			}
-			permissionService.CreatePermission(permissionInput)
+			permissionOutput, _ := permissionService.CreatePermission(permissionInput)
+
+			permissionAssociationObject := authDto.PermissionAssociationObjectInput{
+				SubObjectID: organisationOutputDto.ID,
+				SubType:     "Organisation",
+			}
+			permissionAssociationInput := authDto.PermissionAssociationInput{
+				PermissionID:                 permissionOutput.ID.String(),
+				PermissionAssociationObjects: []authDto.PermissionAssociationObjectInput{permissionAssociationObject},
+			}
+
+			permissionAssociationService.CreatePermissionAssociation(permissionAssociationInput)
 
 		}
-
 	}
 }
 

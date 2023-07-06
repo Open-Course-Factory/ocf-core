@@ -16,14 +16,14 @@ import (
 //	@Tags			permissionAssociations
 //	@Accept			json
 //	@Produce		json
-//	@Param			permissionAssociation	body		dto.CreatePermissionAssociationInput	true	"permissionAssociation"
+//	@Param			permissionAssociation	body		dto.PermissionAssociationInput	true	"permissionAssociation"
 //	@Success		201		{object}	dto.PermissionAssociationOutput
 //
 //	@Failure		400		{object}	errors.APIError	"Impossible de parser le json"
 //	@Failure		400		{object}	errors.APIError	"Impossible de créer un permissionAssociation"
 //	@Router			/permissionAssociations [post]
 func (p permissionAssociationController) AddPermissionAssociation(ctx *gin.Context) {
-	permissionAssociationCreateDTO := dto.CreatePermissionAssociationInput{}
+	permissionAssociationCreateDTO := dto.PermissionAssociationInput{}
 
 	bindError := ctx.BindJSON(&permissionAssociationCreateDTO)
 	if bindError != nil {
