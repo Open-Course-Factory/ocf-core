@@ -49,14 +49,20 @@ func (opm OrganisationPermissionsMiddleware) IsAuthorized() gin.HandlerFunc {
 				return
 			}
 
-			for _, permission := range *permissionModels {
+			methodPermissionMap := make(map[string]models.PermissionType)
+			methodPermissionMap[http.MethodGet] = models.PermissionTypeRead
+			methodPermissionMap[http.MethodPost] = models.PermissionTypeWrite
+			methodPermissionMap[http.MethodPut] = models.PermissionTypeWrite
+			methodPermissionMap[http.MethodPatch] = models.PermissionTypeWrite
+			methodPermissionMap[http.MethodDelete] = models.PermissionTypeDelete
 
+			for _, permission := range *permissionModels {
 				if reflect.DeepEqual(permission.OrganisationID, &organisationUUID) {
-					if models.ContainsPermissionType(permission.PermissionTypes, models.PermissionTypeAll) || models.ContainsPermissionType(permission.PermissionTypes, models.PermissionTypeRead) {
+					if models.ContainsPermissionType(permission.PermissionTypes, models.PermissionTypeAll) ||
+						models.ContainsPermissionType(permission.PermissionTypes, methodPermissionMap[ctx.Request.Method]) {
 						proceed = true
 						break
 					}
-
 				}
 			}
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 
 	"github.com/gin-gonic/gin"
 
@@ -18,6 +19,7 @@ import (
 	"soli/formations/src/middleware"
 
 	authDto "soli/formations/src/auth/dto"
+	"soli/formations/src/auth/models"
 	authModels "soli/formations/src/auth/models"
 	groupController "soli/formations/src/auth/routes/groupRoutes"
 	loginController "soli/formations/src/auth/routes/loginRoutes"
@@ -140,7 +142,7 @@ func initDB() {
 
 			permissionAssociationObject := authDto.PermissionAssociationObjectInput{
 				SubObjectID: organisationOutputDto.ID,
-				SubType:     "Organisation",
+				SubType:     reflect.TypeOf(models.Organisation{}).Name(),
 			}
 			permissionAssociationInput := authDto.PermissionAssociationInput{
 				PermissionID:                 permissionOutput.ID.String(),
