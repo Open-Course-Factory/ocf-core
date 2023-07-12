@@ -20,12 +20,14 @@ type RoleService interface {
 }
 
 type roleService struct {
-	repository repositories.RoleRepository
+	repository        repositories.RoleRepository
+	genericRepository repositories.EntityRepository
 }
 
 func NewRoleService(db *gorm.DB) RoleService {
 	return &roleService{
-		repository: repositories.NewRoleRepository(db),
+		repository:        repositories.NewRoleRepository(db),
+		genericRepository: repositories.NewGenericRepository(db),
 	}
 }
 
@@ -62,20 +64,24 @@ func (r roleService) GetRole(id uuid.UUID) (*models.Role, error) {
 }
 
 func (r roleService) GetRoles() ([]dto.RoleOutput, error) {
+	var rolesDto []dto.RoleOutput
 
-	userModel, err := r.repository.GetAllRoles()
+	allPages, err := r.genericRepository.GetAllEntities(models.Role{}, 20)
 
 	if err != nil {
 		return nil, err
 	}
 
-	var usersDto []dto.RoleOutput
+	// Here we need to loop through the pages
+	for _, page := range allPages {
+		test := page.(*[]models.Role)
 
-	for _, s := range *userModel {
-		usersDto = append(usersDto, *dto.RoleModelToRoleOutput(s))
+		for _, s := range *test {
+			rolesDto = append(rolesDto, *dto.RoleModelToRoleOutput(s))
+		}
 	}
 
-	return usersDto, nil
+	return rolesDto, nil
 }
 
 func (r roleService) CreateRole(roleCreateDTO dto.CreateRoleInput, config *config.Configuration) (*dto.RoleOutput, error) {
