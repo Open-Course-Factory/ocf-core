@@ -2,9 +2,12 @@ package organisationController
 
 import (
 	"net/http"
+	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/auth/models"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // Get all organisations godoc
@@ -24,12 +27,26 @@ import (
 //	@Router			/organisations [get]
 func (u organisationController) GetOrganisations(ctx *gin.Context) {
 
-	organisations, err := u.service.GetOrganisations()
+	var organisations []dto.OrganisationOutput
+	var err error
+
+	userId := uuid.Nil
+
+	rawUser, ok := ctx.Get("user")
+
+	if ok {
+		userModel, isUser := rawUser.(*models.User)
+		if isUser {
+			userId = userModel.ID
+		}
+	}
+
+	organisations, err = u.service.GetOrganisations(userId)
 
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Organisation not found",
+			ErrorMessage: err.Error(),
 		})
 		return
 	}

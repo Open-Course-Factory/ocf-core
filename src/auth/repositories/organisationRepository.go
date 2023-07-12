@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"reflect"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/models"
 
@@ -12,6 +13,7 @@ type OrganisationRepository interface {
 	CreateOrganisation(organisationdto dto.CreateOrganisationInput) (*models.Organisation, error)
 	GetOrganisation(id uuid.UUID) (*models.Organisation, error)
 	GetAllOrganisations() ([]*models.Organisation, error)
+	GetAllOrganisationsByUser(userId uuid.UUID) ([]*models.Organisation, error)
 	DeleteOrganisation(id uuid.UUID) error
 	EditOrganisation(organisation *dto.OrganisationEditInput) (*dto.OrganisationEditOutput, error)
 }
@@ -58,6 +60,32 @@ func (o *organisationRepository) GetAllOrganisations() ([]*models.Organisation, 
 	}
 
 	return organisations, nil
+}
+
+func (o *organisationRepository) GetAllOrganisationsByUser(userId uuid.UUID) ([]*models.Organisation, error) {
+
+	// ToDo: add role management
+	var permissions []*models.Permission
+	entityType := reflect.TypeOf(models.Organisation{}).Name()
+	result := o.db.
+		Joins("left join organisations on permissions.organisation_id = organisations.id").
+		Preload(entityType).
+		Where("permissions.user_id = ?", userId).
+		Find(&permissions)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	var readableOrganisations []*models.Organisation
+	// Check permissions for each organisation
+	for _, permission := range permissions {
+		// Deserialize the permissions
+		if models.ContainsPermissionType(permission.PermissionTypes, models.PermissionTypeRead) || models.ContainsPermissionType(permission.PermissionTypes, models.PermissionTypeAll) {
+			readableOrganisations = append(readableOrganisations, permission.Organisation)
+		}
+	}
+
+	return readableOrganisations, nil
 }
 
 func (o *organisationRepository) DeleteOrganisation(id uuid.UUID) error {

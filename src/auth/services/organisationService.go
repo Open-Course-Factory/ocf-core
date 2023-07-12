@@ -14,7 +14,7 @@ import (
 type OrganisationService interface {
 	CreateOrganisation(organisationCreateDTO dto.CreateOrganisationInput, config *config.Configuration) (*dto.OrganisationOutput, error)
 	GetOrganisation(id uuid.UUID) (*models.Organisation, error)
-	GetOrganisations() ([]dto.OrganisationOutput, error)
+	GetOrganisations(userId uuid.UUID) ([]dto.OrganisationOutput, error)
 	EditOrganisation(editedOrganisationInput *dto.OrganisationEditInput, id uuid.UUID, isSelf bool) (*dto.OrganisationEditOutput, error)
 	DeleteOrganisation(id uuid.UUID) error
 }
@@ -61,9 +61,16 @@ func (o *organisationService) GetOrganisation(id uuid.UUID) (*models.Organisatio
 
 }
 
-func (o *organisationService) GetOrganisations() ([]dto.OrganisationOutput, error) {
+func (o *organisationService) GetOrganisations(userId uuid.UUID) ([]dto.OrganisationOutput, error) {
 
-	organisationModel, err := o.repository.GetAllOrganisations()
+	var organisationModel []*models.Organisation
+	var err error
+
+	if userId == uuid.Nil {
+		organisationModel, err = o.repository.GetAllOrganisations()
+	} else {
+		organisationModel, err = o.repository.GetAllOrganisationsByUser(userId)
+	}
 
 	if err != nil {
 		return nil, err
