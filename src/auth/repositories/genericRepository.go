@@ -3,11 +3,12 @@ package repositories
 import (
 	"reflect"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type EntityRepository interface {
-	//GetEntity(id uuid.UUID, data interface{}) (*interface{}, error)
+	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetAllEntities(data interface{}, pageSize int) ([]interface{}, error)
 	//GetAllEntitiesByUser(userId uuid.UUID, data interface{}) ([]*interface{}, error)
 	//DeleteEntity(id uuid.UUID, data interface{}) error
@@ -24,16 +25,15 @@ func NewGenericRepository(db *gorm.DB) EntityRepository {
 	return repository
 }
 
-// func (o *entityRepository) GetEntity(id uuid.UUID) (*models.Entity, error) {
-// 	var entity models.Entity
-// 	result := o.db.First(&entity, id)
+func (o *genericRepository) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {
+	result := o.db.First(&data, id)
 
-// 	if result.Error != nil {
-// 		return nil, result.Error
-// 	}
+	if result.Error != nil {
+		return nil, result.Error
+	}
 
-// 	return &entity, nil
-// }
+	return result, nil
+}
 
 func (o *genericRepository) GetAllEntities(data interface{}, pageSize int) ([]interface{}, error) {
 	dtype := reflect.TypeOf(data)

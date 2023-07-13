@@ -17,15 +17,17 @@ type RoleController interface {
 }
 
 type roleController struct {
-	service services.RoleService
-	config  *config.Configuration
+	service        services.RoleService
+	genericService services.GenericService
+	config         *config.Configuration
 }
 
 func NewRoleController(db *gorm.DB, config *config.Configuration) RoleController {
 
 	controller := &roleController{
-		service: services.NewRoleService(db),
-		config:  config,
+		service:        services.NewRoleService(db),
+		genericService: services.NewGenericService(db),
+		config:         config,
 	}
 	return controller
 }
