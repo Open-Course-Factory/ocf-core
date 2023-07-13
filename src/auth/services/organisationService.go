@@ -93,10 +93,15 @@ func (o *organisationService) CreateOrganisation(organisationCreateDTO dto.Creat
 		return nil, createOrganisationError
 	}
 
+	var groupOutputs []dto.GroupOutput
+	for _, group := range organisation.Groups {
+		groupOutputs = append(groupOutputs, *dto.GroupModelToGroupOutput(group))
+	}
+
 	return &dto.OrganisationOutput{
 		ID:     organisation.ID,
 		Name:   organisation.OrganisationName,
-		Groups: organisation.Groups,
+		Groups: groupOutputs,
 	}, nil
 
 }

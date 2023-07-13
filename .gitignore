@@ -5,6 +5,7 @@ conf.json
 docs
 src/*.md
 *.db
-__debug_bin
+__debug_bin*
 .env
 courses/*
+

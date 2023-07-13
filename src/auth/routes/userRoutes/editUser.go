@@ -18,7 +18,7 @@ import (
 //	@Tags			users
 //	@Accept			json
 //	@Produce		json
-//	@Param			id	path		int	true	"ID utilisateur"
+//	@Param			id	path		string	true	"ID utilisateur"
 //	@Param 			user 	body	dto.UserEditInput	true	"Utilisateur"
 //	@Param Authorization header string true "Insert your access token" default(bearer <Add access token here>)
 //	@Success		204	{object}	string

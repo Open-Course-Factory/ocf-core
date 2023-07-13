@@ -12,6 +12,7 @@ import (
 
 type CourseRepository interface {
 	CreateCourse(coursedto dto.CreateCourseInput) (*models.Course, error)
+	GetAllCourses() (*[]models.Course, error)
 	DeleteCourse(id uuid.UUID) error
 	GetSpecificCourseByUser(owner authModels.User, courseName string) (*models.Course, error)
 }
@@ -58,6 +59,15 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 	}
 
 	result := c.db.Create(&course)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &course, nil
+}
+
+func (c courseRepository) GetAllCourses() (*[]models.Course, error) {
+	var course []models.Course
+	result := c.db.Preload("Chapters").Preload("Chapters.Sections").Find(&course)
 	if result.Error != nil {
 		return nil, result.Error
 	}

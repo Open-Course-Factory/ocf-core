@@ -35,15 +35,15 @@ func (g groupController) AddGroup(ctx *gin.Context) {
 		return
 	}
 
-	user, userError := g.service.CreateGroup(groupCreateDTO)
+	group, groupError := g.service.CreateGroup(groupCreateDTO)
 
-	if userError != nil {
+	if groupError != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: userError.Error(),
+			ErrorMessage: groupError.Error(),
 		})
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, user)
+	ctx.JSON(http.StatusCreated, group)
 }

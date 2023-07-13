@@ -18,7 +18,7 @@ import (
 //	@Tags			organisations
 //	@Accept			json
 //	@Produce		json
-//	@Param			id	path		int	true	"ID organisation"
+//	@Param			id	path		string	true	"ID organisation"
 //	@Param 			organisation 	body	dto.OrganisationEditInput	true	"Utilisateur"
 //	@Param Authorization header string true "Insert your access token" default(bearer <Add access token here>)
 //	@Success		204	{object}	string
