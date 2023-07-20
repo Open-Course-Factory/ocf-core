@@ -11,7 +11,7 @@ type EntityRepository interface {
 	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetAllEntities(data interface{}, pageSize int) ([]interface{}, error)
 	//GetAllEntitiesByUser(userId uuid.UUID, data interface{}) ([]*interface{}, error)
-	//DeleteEntity(id uuid.UUID, data interface{}) error
+	DeleteEntity(id uuid.UUID, data interface{}) error
 }
 
 type genericRepository struct {
@@ -26,13 +26,16 @@ func NewGenericRepository(db *gorm.DB) EntityRepository {
 }
 
 func (o *genericRepository) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {
-	result := o.db.First(&data, id)
+	//dtype := reflect.TypeOf(data)
+	model := reflect.New(reflect.TypeOf(data)).Interface()
+
+	result := o.db.First(model, id)
 
 	if result.Error != nil {
 		return nil, result.Error
 	}
 
-	return result, nil
+	return model, nil
 }
 
 func (o *genericRepository) GetAllEntities(data interface{}, pageSize int) ([]interface{}, error) {
@@ -41,11 +44,11 @@ func (o *genericRepository) GetAllEntities(data interface{}, pageSize int) ([]in
 
 	page := 1
 	for {
-		pages := reflect.New(reflect.SliceOf(dtype)).Interface()
+		pages := reflect.New(reflect.SliceOf(dtype)).Elem().Interface()
 		offset := (page - 1) * pageSize
 
 		// Fetch a page of records
-		result := o.db.Model(data).Limit(pageSize).Offset(offset).Find(pages)
+		result := o.db.Model(data).Limit(pageSize).Offset(offset).Find(&pages)
 		if result.Error != nil {
 			return nil, result.Error
 		}
@@ -60,6 +63,16 @@ func (o *genericRepository) GetAllEntities(data interface{}, pageSize int) ([]in
 	}
 
 	return allPages, nil
+}
+
+func (o *genericRepository) DeleteEntity(id uuid.UUID, data interface{}) error {
+
+	model := reflect.New(reflect.TypeOf(data)).Interface()
+	result := o.db.Delete(&model, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	return nil
 }
 
 // func (o *entityRepository) GetAllEntitiesByUser(userId uuid.UUID) ([]*models.Entity, error) {

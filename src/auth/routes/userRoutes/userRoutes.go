@@ -12,7 +12,7 @@ import (
 
 func UsersRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
 	userService := services.NewUserService(db)
-	userController := NewUserController(userService, config)
+	userController := NewUserController(db, userService, config)
 
 	middleware := &middleware.AuthMiddleware{
 		DB:     db,

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/services"
 	config "soli/formations/src/configuration"
 
@@ -37,7 +38,7 @@ func (am AuthMiddleware) CheckIsLogged() gin.HandlerFunc {
 
 		token := splitAuthorization[1]
 		jwtService := &services.JwtService{}
-		userService := services.NewUserService(am.DB)
+		genericService := services.NewGenericService(am.DB)
 		id, err := jwtService.ParseJWT(token, am.Config.SecretJwt)
 
 		o := errors.APIError{ErrorCode: http.StatusUnauthorized, ErrorMessage: "Token is not valid"}
@@ -47,7 +48,7 @@ func (am AuthMiddleware) CheckIsLogged() gin.HandlerFunc {
 			return
 		}
 
-		user, userError := userService.GetUser(*id)
+		user, userError := genericService.GetEntity(*id, models.User{})
 
 		if userError != nil {
 			ctx.JSON(http.StatusUnauthorized, o)

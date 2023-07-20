@@ -1,13 +1,7 @@
 package userController
 
 import (
-	"net/http"
-
-	"soli/formations/src/auth/dto"
-	"soli/formations/src/auth/errors"
-
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 // Get user godoc
@@ -27,25 +21,5 @@ import (
 //	@Router			/users/{id} [get]
 func (u userController) GetUser(ctx *gin.Context) {
 
-	id, err := uuid.Parse(ctx.Param("id"))
-
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	user, userError := u.service.GetUser(id)
-
-	if userError != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotAcceptable,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, dto.UserModelToUserOutput(*user))
+	u.GenericController.GetEntity(ctx)
 }

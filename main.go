@@ -107,7 +107,8 @@ func initSwagger(r *gin.Engine) {
 func initDB() {
 	if sqldb.DBType == "sqlite" {
 		userService := services.NewUserService(sqldb.DB)
-		users, _ := userService.GetUsers()
+		genericService := services.NewGenericService(sqldb.DB)
+		users, _ := genericService.GetEntities(authModels.User{})
 
 		if len(users) == 0 {
 			userInput := authDto.CreateUserInput{Email: "test@test.com", Password: "test", FirstName: "Tom", LastName: "Baggins"}

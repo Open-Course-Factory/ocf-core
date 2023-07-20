@@ -30,17 +30,17 @@ func NewPermissionRepository(db *gorm.DB) PermissionRepository {
 
 func (p permissionRepository) CreatePermission(permissiondto dto.CreatePermissionInput) (*models.Permission, error) {
 
-	u := NewUserRepository(p.db)
-	r := NewRoleRepository(p.db)
 	g := NewGroupRepository(p.db)
 	o := NewOrganisationRepository(p.db)
 
-	user, err := u.GetUser(permissiondto.User)
+	genericRepository := NewGenericRepository(p.db)
+
+	user, err := genericRepository.GetEntity(permissiondto.User, models.User{})
 	if err != nil {
 		return nil, err
 	}
 
-	role, err := r.GetRole(permissiondto.Role)
+	role, err := genericRepository.GetEntity(permissiondto.Role, models.Role{})
 	if err != nil {
 		return nil, err
 	}
@@ -56,8 +56,8 @@ func (p permissionRepository) CreatePermission(permissiondto dto.CreatePermissio
 	}
 
 	permission := models.Permission{
-		User:            user,
-		Role:            role,
+		User:            user.(*models.User),
+		Role:            role.(*models.Role),
 		Group:           group,
 		Organisation:    organisation,
 		PermissionTypes: permissiondto.PermissionTypes,
@@ -102,17 +102,17 @@ func (p permissionRepository) DeletePermission(id uuid.UUID) error {
 
 func (p permissionRepository) EditPermission(id uuid.UUID, permissioninfos dto.PermissionEditInput) (*dto.PermissionEditOutput, error) {
 
-	u := NewUserRepository(p.db)
-	r := NewRoleRepository(p.db)
 	g := NewGroupRepository(p.db)
 	o := NewOrganisationRepository(p.db)
 
-	user, err := u.GetUser(permissioninfos.User)
+	genericRepository := NewGenericRepository(p.db)
+
+	user, err := genericRepository.GetEntity(permissioninfos.User, models.User{})
 	if err != nil {
 		return nil, err
 	}
 
-	role, err := r.GetRole(permissioninfos.Role)
+	role, err := genericRepository.GetEntity(permissioninfos.Role, models.Role{})
 	if err != nil {
 		return nil, err
 	}
@@ -132,8 +132,8 @@ func (p permissionRepository) EditPermission(id uuid.UUID, permissioninfos dto.P
 		return nil, err
 	}
 
-	permission.User = user
-	permission.Role = role
+	permission.User = user.(*models.User)
+	permission.Role = role.(*models.Role)
 	permission.Group = group
 	permission.Organisation = organisation
 	permission.PermissionTypes = permissioninfos.PermissionTypes
@@ -145,8 +145,8 @@ func (p permissionRepository) EditPermission(id uuid.UUID, permissioninfos dto.P
 	}
 
 	return &dto.PermissionEditOutput{
-		User:            user.ID,
-		Role:            role.ID,
+		User:            user.(*models.User).ID,
+		Role:            role.(*models.Role).ID,
 		Group:           group.ID,
 		Organisation:    organisation.ID,
 		PermissionTypes: permission.PermissionTypes,

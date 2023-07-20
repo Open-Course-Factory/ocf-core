@@ -15,7 +15,7 @@ import (
 )
 
 func AddUser(userService services.UserService, mockConfig *config.Configuration, router *gin.Engine, t *testing.T) {
-	controller := userController.NewUserController(userService, mockConfig)
+	controller := userController.NewUserController(nil, userService, mockConfig)
 
 	router.POST("/users", controller.AddUser)
 

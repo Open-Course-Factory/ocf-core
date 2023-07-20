@@ -1,12 +1,7 @@
 package roleController
 
 import (
-	"net/http"
-
-	"soli/formations/src/auth/errors"
-
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 // Delete role godoc
@@ -26,23 +21,5 @@ import (
 //
 //	@Router			/roles/{id} [delete]
 func (roleController roleController) DeleteRole(ctx *gin.Context) {
-
-	id, parseErr := uuid.Parse(ctx.Param("id"))
-	if parseErr != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: parseErr.Error(),
-		})
-		return
-	}
-
-	errorDelete := roleController.service.DeleteRole(id)
-	if errorDelete != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Role not found",
-		})
-		return
-	}
-	ctx.JSON(http.StatusNoContent, "Done")
+	roleController.GenericController.DeleteEntity(ctx)
 }

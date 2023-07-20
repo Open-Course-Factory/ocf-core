@@ -44,7 +44,7 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 		return
 	}
 
-	user, err := c.userService.GetUser(rawUser.(*authModels.User).ID)
+	user, err := c.GenericService.GetEntity(rawUser.(*authModels.User).ID, authModels.User{})
 
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
@@ -53,7 +53,7 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 		})
 	}
 
-	courseOutput, errGetCourse := c.service.GetGitCourse(*user, createCourseFromGitDTO.Url)
+	courseOutput, errGetCourse := c.service.GetGitCourse(*user.(*authModels.User), createCourseFromGitDTO.Url)
 
 	if errGetCourse != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{

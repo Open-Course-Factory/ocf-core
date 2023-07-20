@@ -1,17 +1,16 @@
 package services
 
 import (
-	"soli/formations/src/auth/dto"
-	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/repositories"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type GenericService interface {
-	//GetRole(id uuid.UUID) (*models.Role, error)
+	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetEntities(data interface{}) ([]interface{}, error)
-	//DeleteRole(id uuid.UUID) error
+	DeleteEntity(id uuid.UUID, data interface{}) error
 }
 
 type genericService struct {
@@ -24,10 +23,19 @@ func NewGenericService(db *gorm.DB) GenericService {
 	}
 }
 
+func (g genericService) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {
+	entity, err := g.genericRepository.GetEntity(id, data)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return entity, nil
+
+}
+
 // should return an array of dtoEntityOutput
 func (g genericService) GetEntities(data interface{}) ([]interface{}, error) {
-
-	var entitiesDto []interface{}
 
 	allPages, err := g.genericRepository.GetAllEntities(data, 20)
 
@@ -35,14 +43,13 @@ func (g genericService) GetEntities(data interface{}) ([]interface{}, error) {
 		return nil, err
 	}
 
-	// Here we need to loop through the pages
-	for _, page := range allPages {
-		test := page.(*[]models.Role)
+	return allPages, nil
+}
 
-		for _, s := range *test {
-			entitiesDto = append(entitiesDto, *dto.RoleModelToRoleOutput(s))
-		}
+func (g genericService) DeleteEntity(id uuid.UUID, data interface{}) error {
+	errorDelete := g.genericRepository.DeleteEntity(id, data)
+	if errorDelete != nil {
+		return errorDelete
 	}
-
-	return entitiesDto, nil
+	return nil
 }

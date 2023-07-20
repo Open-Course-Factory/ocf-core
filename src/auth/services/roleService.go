@@ -12,11 +12,8 @@ import (
 )
 
 type RoleService interface {
-	GetRole(id uuid.UUID) (*models.Role, error)
-	GetRoles() ([]dto.RoleOutput, error)
 	CreateRole(roleCreateDTO dto.CreateRoleInput, config *config.Configuration) (*dto.RoleOutput, error)
 	EditRole(editedRoleInput *dto.RoleEditInput, id uuid.UUID) (*dto.RoleEditOutput, error)
-	DeleteRole(id uuid.UUID) error
 }
 
 type roleService struct {
@@ -42,25 +39,6 @@ func (r roleService) EditRole(editedRoleInput *dto.RoleEditInput, id uuid.UUID) 
 	}
 
 	return editedRole, nil
-}
-
-func (r roleService) DeleteRole(id uuid.UUID) error {
-	errorDelete := r.repository.DeleteRole(id)
-	if errorDelete != nil {
-		return errorDelete
-	}
-	return nil
-}
-
-func (r roleService) GetRole(id uuid.UUID) (*models.Role, error) {
-	user, err := r.repository.GetRole(id)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return user, nil
-
 }
 
 func (r roleService) GetRoles() ([]dto.RoleOutput, error) {

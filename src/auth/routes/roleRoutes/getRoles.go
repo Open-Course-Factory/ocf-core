@@ -1,11 +1,6 @@
 package roleController
 
 import (
-	"fmt"
-	"net/http"
-	"soli/formations/src/auth/errors"
-	"soli/formations/src/auth/models"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -25,18 +20,5 @@ import (
 //
 //	@Router			/roles [get]
 func (roleController roleController) GetRoles(ctx *gin.Context) {
-
-	fmt.Println(ctx.FullPath())
-
-	roles, err := roleController.genericService.GetEntities(models.Role{})
-
-	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Role not found",
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, roles)
+	roleController.GenericController.GetEntities(ctx)
 }
