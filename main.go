@@ -127,6 +127,9 @@ func initDB() {
 			groupInput := authDto.CreateGroupInput{GroupName: "groupTest"}
 			groupOutputDto, _ := groupService.CreateGroup(groupInput)
 
+			groupInput2 := authDto.CreateGroupInput{GroupName: "groupTest2"}
+			groupService.CreateGroup(groupInput2)
+
 			roleInput := authDto.CreateRoleInput{RoleName: "roleTest"}
 			roleOutputDto, _ := roleService.CreateRole(roleInput, &config.Configuration{})
 

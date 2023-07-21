@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"reflect"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/auth/models"
 
 	"github.com/gin-gonic/gin"
 )
@@ -13,7 +14,12 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
-	entitiesDto, shouldReturn := genericController.getEntitiesFromName(entityName)
+	permissionsArray, _, shouldReturn := GetPermissionsFromContext(ctx)
+	if shouldReturn {
+		return
+	}
+
+	entitiesDto, shouldReturn := genericController.getEntitiesFromName(entityName, permissionsArray)
 	if shouldReturn {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
@@ -25,7 +31,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, entitiesDto)
 }
 
-func (genericController genericController) getEntitiesFromName(entityName string) ([]interface{}, bool) {
+func (genericController genericController) getEntitiesFromName(entityName string, permissions *[]models.Permission) ([]interface{}, bool) {
 	entityModelInterface := GetEntityModelInterface(entityName)
 
 	allEntitiesPages, err := genericController.genericService.GetEntities(entityModelInterface)
@@ -50,6 +56,16 @@ func (genericController genericController) getEntitiesFromName(entityName string
 			for i := 0; i < convertedPage.Len(); i++ {
 
 				item := convertedPage.Index(i).Interface()
+
+				// Here we check permissions for the logged in user, should be done within the request (to avoid this)
+				entityBaseModel, isOk := models.ExtractBaseFromAny(item)
+				var proceed bool
+				if isOk {
+					proceed = HasLoggedInUserPermissionForEntity(permissions, http.MethodGet, entityName, entityBaseModel.ID)
+				}
+				if !proceed {
+					continue
+				}
 
 				var shouldReturn bool
 				entitiesDto, shouldReturn = genericController.appendEntityFromResult(funcName, item, entitiesDto)

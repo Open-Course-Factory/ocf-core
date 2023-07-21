@@ -2,7 +2,6 @@ package models
 
 import (
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 type PermissionType string
@@ -24,8 +23,7 @@ func ContainsPermissionType(enumArray []PermissionType, value PermissionType) bo
 }
 
 type Permission struct {
-	gorm.Model
-	ID              uuid.UUID `gorm:"type:uuid;primarykey"`
+	BaseModel
 	UserID          *uuid.UUID
 	User            *User `json:"user"`
 	GroupID         *uuid.UUID
@@ -35,12 +33,4 @@ type Permission struct {
 	OrganisationID  *uuid.UUID
 	Organisation    *Organisation    `json:"organisation"`
 	PermissionTypes []PermissionType `gorm:"serializer:json" json:"permission_types"`
-}
-
-func (p *Permission) BeforeCreate(tx *gorm.DB) (err error) {
-	if p.ID == uuid.Nil {
-		p.ID = uuid.New()
-	}
-
-	return
 }
