@@ -20,8 +20,8 @@ func (genericController genericController) DeleteEntity(ctx *gin.Context) {
 		return
 	}
 
-	entityName := genericController.extractSingularResource(ctx.FullPath())
-	entityModelInterface := genericController.getEntityModelInterface(entityName)
+	entityName := GetEntityNameFromPath(ctx.FullPath())
+	entityModelInterface := GetEntityModelInterface(entityName)
 
 	errorDelete := genericController.genericService.DeleteEntity(id, entityModelInterface)
 	if errorDelete != nil {

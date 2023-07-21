@@ -12,16 +12,20 @@ import (
 func GroupsRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
 	groupController := NewGroupController(db, config)
 
-	middleware := &middleware.AuthMiddleware{
+	authMiddleware := &middleware.AuthMiddleware{
 		DB:     db,
 		Config: config,
 	}
 
+	permissionMiddleware := &middleware.PermissionsMiddleware{
+		DB: db,
+	}
+
 	routes := router.Group("/groups")
 
-	routes.POST("/", middleware.CheckIsLogged(), groupController.AddGroup)
-	routes.GET("/", middleware.CheckIsLogged(), groupController.GetGroups)
-	routes.GET("/:id", middleware.CheckIsLogged(), groupController.GetGroup)
-	routes.DELETE("/:id", middleware.CheckIsLogged(), groupController.DeleteGroup)
-	routes.PUT("/:id", middleware.CheckIsLogged(), groupController.EditGroup)
+	routes.POST("/", authMiddleware.CheckIsLogged(), groupController.AddGroup)
+	routes.GET("/", authMiddleware.CheckIsLogged(), groupController.GetGroups)
+	routes.GET("/:id", authMiddleware.CheckIsLogged(), permissionMiddleware.IsAuthorized(), groupController.GetGroup)
+	routes.DELETE("/:id", authMiddleware.CheckIsLogged(), permissionMiddleware.IsAuthorized(), groupController.DeleteGroup)
+	routes.PUT("/:id", authMiddleware.CheckIsLogged(), permissionMiddleware.IsAuthorized(), groupController.EditGroup)
 }

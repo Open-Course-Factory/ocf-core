@@ -17,7 +17,7 @@ func OrganisationsRoutes(router *gin.RouterGroup, config *config.Configuration, 
 		Config: config,
 	}
 
-	permissionMiddleware := &middleware.OrganisationPermissionsMiddleware{
+	permissionMiddleware := &middleware.PermissionsMiddleware{
 		DB: db,
 	}
 

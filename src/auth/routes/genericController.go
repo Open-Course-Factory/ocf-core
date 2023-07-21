@@ -1,14 +1,10 @@
 package controller
 
 import (
-	"fmt"
 	"reflect"
 	"soli/formations/src/auth/dto"
-	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/services"
-	"strings"
 
-	pluralize "github.com/gertd/go-pluralize"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -36,40 +32,6 @@ func NewGenericController(db *gorm.DB) GenericController {
 		genericService: services.NewGenericService(db),
 	}
 	return controller
-}
-
-func (genericController genericController) getEntityModelInterface(entityName string) interface{} {
-	var result interface{}
-	switch entityName {
-	case "Role":
-		result = models.Role{}
-	case "User":
-		result = models.User{}
-	case "Group":
-		result = models.Group{}
-	case "Organisation":
-		result = models.Organisation{}
-	case "Permission":
-		result = models.Permission{}
-	}
-	return result
-}
-
-func (genericController genericController) extractSingularResource(path string) string {
-	fmt.Println(path)
-
-	// Trim any trailing slashes
-	path = strings.TrimRight(path, "/")
-
-	// Split the path into segments
-	segments := strings.Split(path, "/")
-
-	// Take resource name segment
-	segment := segments[3]
-
-	client := pluralize.NewClient()
-	singular := client.Singular(segment)
-	return strings.ToUpper(string(singular[0])) + singular[1:]
 }
 
 func (genericController genericController) appendEntityFromResult(funcName string, item interface{}, entitiesDto []interface{}) ([]interface{}, bool) {

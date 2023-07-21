@@ -11,7 +11,7 @@ import (
 
 func (genericController genericController) GetEntities(ctx *gin.Context) {
 
-	entityName := genericController.extractSingularResource(ctx.FullPath())
+	entityName := GetEntityNameFromPath(ctx.FullPath())
 
 	entitiesDto, shouldReturn := genericController.getEntitiesFromName(entityName)
 	if shouldReturn {
@@ -26,7 +26,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 }
 
 func (genericController genericController) getEntitiesFromName(entityName string) ([]interface{}, bool) {
-	entityModelInterface := genericController.getEntityModelInterface(entityName)
+	entityModelInterface := GetEntityModelInterface(entityName)
 
 	allEntitiesPages, err := genericController.genericService.GetEntities(entityModelInterface)
 
