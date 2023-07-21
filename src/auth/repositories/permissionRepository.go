@@ -10,47 +10,41 @@ import (
 
 type PermissionRepository interface {
 	CreatePermission(groupdto dto.CreatePermissionInput) (*models.Permission, error)
-	GetPermission(id uuid.UUID) (*models.Permission, error)
-	GetAllPermissions() (*[]models.Permission, error)
-	DeletePermission(id uuid.UUID) error
 	EditPermission(id uuid.UUID, groupinfos dto.PermissionEditInput) (*dto.PermissionEditOutput, error)
 	GetPermissionsByUser(id uuid.UUID) (*[]models.Permission, error)
 }
 
 type permissionRepository struct {
+	GenericRepository
 	db *gorm.DB
 }
 
 func NewPermissionRepository(db *gorm.DB) PermissionRepository {
 	repository := &permissionRepository{
-		db: db,
+		GenericRepository: NewGenericRepository(db),
+		db:                db,
 	}
 	return repository
 }
 
 func (p permissionRepository) CreatePermission(permissiondto dto.CreatePermissionInput) (*models.Permission, error) {
 
-	g := NewGroupRepository(p.db)
-	o := NewOrganisationRepository(p.db)
-
-	genericRepository := NewGenericRepository(p.db)
-
-	user, err := genericRepository.GetEntity(permissiondto.User, models.User{})
+	user, err := p.GetEntity(permissiondto.User, models.User{})
 	if err != nil {
 		return nil, err
 	}
 
-	role, err := genericRepository.GetEntity(permissiondto.Role, models.Role{})
+	role, err := p.GetEntity(permissiondto.Role, models.Role{})
 	if err != nil {
 		return nil, err
 	}
 
-	group, err := g.GetGroup(permissiondto.Group)
+	group, err := p.GetEntity(permissiondto.Group, models.Group{})
 	if err != nil {
 		return nil, err
 	}
 
-	organisation, err := o.GetOrganisation(permissiondto.Organisation)
+	organisation, err := p.GetEntity(permissiondto.Organisation, models.Organisation{})
 	if err != nil {
 		return nil, err
 	}
@@ -58,8 +52,8 @@ func (p permissionRepository) CreatePermission(permissiondto dto.CreatePermissio
 	permission := models.Permission{
 		User:            user.(*models.User),
 		Role:            role.(*models.Role),
-		Group:           group,
-		Organisation:    organisation,
+		Group:           group.(*models.Group),
+		Organisation:    organisation.(*models.Organisation),
 		PermissionTypes: permissiondto.PermissionTypes,
 	}
 
@@ -70,73 +64,40 @@ func (p permissionRepository) CreatePermission(permissiondto dto.CreatePermissio
 	return &permission, nil
 }
 
-func (p permissionRepository) GetAllPermissions() (*[]models.Permission, error) {
-
-	var permission []models.Permission
-	result := p.db.Find(&permission)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	return &permission, nil
-}
-
-func (p permissionRepository) GetPermission(id uuid.UUID) (*models.Permission, error) {
-
-	var permission models.Permission
-	result := p.db.First(&permission, id)
-
-	if result.Error != nil {
-		return nil, result.Error
-	}
-
-	return &permission, nil
-}
-
-func (p permissionRepository) DeletePermission(id uuid.UUID) error {
-	result := p.db.Delete(&models.Permission{}, id)
-	if result.Error != nil {
-		return result.Error
-	}
-	return nil
-}
-
 func (p permissionRepository) EditPermission(id uuid.UUID, permissioninfos dto.PermissionEditInput) (*dto.PermissionEditOutput, error) {
 
-	g := NewGroupRepository(p.db)
-	o := NewOrganisationRepository(p.db)
-
-	genericRepository := NewGenericRepository(p.db)
-
-	user, err := genericRepository.GetEntity(permissioninfos.User, models.User{})
+	user, err := p.GetEntity(permissioninfos.User, models.User{})
 	if err != nil {
 		return nil, err
 	}
 
-	role, err := genericRepository.GetEntity(permissioninfos.Role, models.Role{})
+	role, err := p.GetEntity(permissioninfos.Role, models.Role{})
 	if err != nil {
 		return nil, err
 	}
 
-	group, err := g.GetGroup(permissioninfos.Group)
+	group, err := p.GetEntity(permissioninfos.Group, models.Group{})
 	if err != nil {
 		return nil, err
 	}
 
-	organisation, err := o.GetOrganisation(permissioninfos.Organisation)
+	organisation, err := p.GetEntity(permissioninfos.Organisation, models.Organisation{})
 	if err != nil {
 		return nil, err
 	}
 
-	permission, err := p.GetPermission(id)
+	permission, err := p.GetEntity(id, models.Permission{})
 	if err != nil {
 		return nil, err
 	}
 
-	permission.User = user.(*models.User)
-	permission.Role = role.(*models.Role)
-	permission.Group = group
-	permission.Organisation = organisation
-	permission.PermissionTypes = permissioninfos.PermissionTypes
+	permissionEntity := permission.(*models.Permission)
+
+	permissionEntity.User = user.(*models.User)
+	permissionEntity.Role = role.(*models.Role)
+	permissionEntity.Group = group.(*models.Group)
+	permissionEntity.Organisation = organisation.(*models.Organisation)
+	permissionEntity.PermissionTypes = permissioninfos.PermissionTypes
 
 	result := p.db.Model(&models.Permission{}).Where("id = ?", id).Updates(permission)
 
@@ -147,9 +108,9 @@ func (p permissionRepository) EditPermission(id uuid.UUID, permissioninfos dto.P
 	return &dto.PermissionEditOutput{
 		User:            user.(*models.User).ID,
 		Role:            role.(*models.Role).ID,
-		Group:           group.ID,
-		Organisation:    organisation.ID,
-		PermissionTypes: permission.PermissionTypes,
+		Group:           group.(*models.Group).ID,
+		Organisation:    organisation.(*models.Organisation).ID,
+		PermissionTypes: permissionEntity.PermissionTypes,
 	}, nil
 }
 

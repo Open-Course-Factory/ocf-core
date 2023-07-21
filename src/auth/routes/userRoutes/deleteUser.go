@@ -22,5 +22,5 @@ import (
 //	@Router			/users/{id} [delete]
 func (u userController) DeleteUser(ctx *gin.Context) {
 
-	u.GenericController.DeleteEntity(ctx)
+	u.DeleteEntity(ctx)
 }

@@ -14,7 +14,7 @@ type GenericService interface {
 }
 
 type genericService struct {
-	genericRepository repositories.EntityRepository
+	genericRepository repositories.GenericRepository
 }
 
 func NewGenericService(db *gorm.DB) GenericService {

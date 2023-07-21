@@ -18,7 +18,7 @@ type RoleService interface {
 
 type roleService struct {
 	repository        repositories.RoleRepository
-	genericRepository repositories.EntityRepository
+	genericRepository repositories.GenericRepository
 }
 
 func NewRoleService(db *gorm.DB) RoleService {

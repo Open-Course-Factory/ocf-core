@@ -28,6 +28,9 @@ type genericController struct {
 func NewGenericController(db *gorm.DB) GenericController {
 	funcMap["RoleModelToRoleOutput"] = dto.RoleModelToRoleOutput
 	funcMap["UserModelToUserOutput"] = dto.UserModelToUserOutput
+	funcMap["GroupModelToGroupOutput"] = dto.GroupModelToGroupOutput
+	funcMap["OrganisationModelToOrganisationOutput"] = dto.OrganisationModelToOrganisationOutput
+	funcMap["PermissionModelToPermissionOutput"] = dto.PermissionModelToPermissionOutput
 
 	controller := &genericController{
 		genericService: services.NewGenericService(db),
@@ -42,6 +45,12 @@ func (genericController genericController) getEntityModelInterface(entityName st
 		result = models.Role{}
 	case "User":
 		result = models.User{}
+	case "Group":
+		result = models.Group{}
+	case "Organisation":
+		result = models.Organisation{}
+	case "Permission":
+		result = models.Permission{}
 	}
 	return result
 }

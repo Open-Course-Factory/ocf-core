@@ -1,9 +1,6 @@
 package groupController
 
 import (
-	"net/http"
-	"soli/formations/src/auth/errors"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,15 +21,5 @@ import (
 //	@Router			/groups [get]
 func (g groupController) GetGroups(ctx *gin.Context) {
 
-	groups, err := g.service.GetGroups()
-
-	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Group not found",
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, groups)
+	g.GetEntities(ctx)
 }

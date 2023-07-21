@@ -1,6 +1,7 @@
 package permissionController
 
 import (
+	controller "soli/formations/src/auth/routes"
 	"soli/formations/src/auth/services"
 	config "soli/formations/src/configuration"
 
@@ -17,6 +18,7 @@ type PermissionController interface {
 }
 
 type permissionController struct {
+	controller.GenericController
 	service services.PermissionService
 	config  *config.Configuration
 }
@@ -24,8 +26,9 @@ type permissionController struct {
 func NewPermissionController(db *gorm.DB, config *config.Configuration) PermissionController {
 
 	controller := &permissionController{
-		service: services.NewPermissionService(db),
-		config:  config,
+		GenericController: controller.NewGenericController(db),
+		service:           services.NewPermissionService(db),
+		config:            config,
 	}
 	return controller
 }

@@ -17,19 +17,20 @@ type PermissionAssociationRepository interface {
 }
 
 type permissionAssociationRepository struct {
+	GenericRepository
 	db *gorm.DB
 }
 
 func NewPermissionAssociationRepository(db *gorm.DB) PermissionAssociationRepository {
 	repository := &permissionAssociationRepository{
-		db: db,
+		GenericRepository: NewGenericRepository(db),
+		db:                db,
 	}
 	return repository
 }
 
 func (p permissionAssociationRepository) CreatePermissionAssociation(permissionAssociationdto dto.PermissionAssociationInput) (*models.PermissionAssociation, error) {
 
-	permRepo := NewPermissionRepository(p.db)
 	permAssociationObjectRepo := NewPermissionAssociationObjectRepository(p.db)
 
 	id, errPAO := uuid.Parse(permissionAssociationdto.PermissionID)
@@ -38,7 +39,7 @@ func (p permissionAssociationRepository) CreatePermissionAssociation(permissionA
 		return nil, errPAO
 	}
 
-	perm, err := permRepo.GetPermission(id)
+	perm, err := p.GetEntity(id, models.Permission{})
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +72,7 @@ func (p permissionAssociationRepository) CreatePermissionAssociation(permissionA
 	}
 
 	permissionAssociation := models.PermissionAssociation{
-		Permission:                   *perm,
+		Permission:                   *perm.(*models.Permission),
 		PermissionAssociationObjects: permissionAssociationObjects,
 	}
 

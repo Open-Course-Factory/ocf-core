@@ -1,6 +1,7 @@
 package organisationController
 
 import (
+	controller "soli/formations/src/auth/routes"
 	"soli/formations/src/auth/services"
 	config "soli/formations/src/configuration"
 
@@ -17,6 +18,7 @@ type OrganisationController interface {
 }
 
 type organisationController struct {
+	controller.GenericController
 	service services.OrganisationService
 	config  *config.Configuration
 }
@@ -24,8 +26,9 @@ type organisationController struct {
 func NewOrganisationController(db *gorm.DB, config *config.Configuration) OrganisationController {
 
 	controller := &organisationController{
-		service: services.NewOrganisationService(db),
-		config:  config,
+		GenericController: controller.NewGenericController(db),
+		service:           services.NewOrganisationService(db),
+		config:            config,
 	}
 	return controller
 }

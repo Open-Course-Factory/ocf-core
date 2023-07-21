@@ -21,5 +21,5 @@ import (
 //
 //	@Router			/roles/{id} [delete]
 func (roleController roleController) DeleteRole(ctx *gin.Context) {
-	roleController.GenericController.DeleteEntity(ctx)
+	roleController.DeleteEntity(ctx)
 }

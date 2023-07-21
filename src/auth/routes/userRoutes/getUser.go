@@ -21,5 +21,5 @@ import (
 //	@Router			/users/{id} [get]
 func (u userController) GetUser(ctx *gin.Context) {
 
-	u.GenericController.GetEntity(ctx)
+	u.GetEntity(ctx)
 }

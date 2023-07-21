@@ -1,13 +1,7 @@
 package permissionController
 
 import (
-	"net/http"
-
-	"soli/formations/src/auth/dto"
-	"soli/formations/src/auth/errors"
-
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 // Get permission godoc
@@ -26,26 +20,5 @@ import (
 //
 //	@Router			/permissions/{id} [get]
 func (p permissionController) GetPermission(ctx *gin.Context) {
-
-	id, err := uuid.Parse(ctx.Param("id"))
-
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	permission, permissionError := p.service.GetPermission(id)
-
-	if permissionError != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotAcceptable,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, dto.PermissionModelToPermissionOutput(*permission))
+	p.GetEntity(ctx)
 }

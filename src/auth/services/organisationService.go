@@ -2,7 +2,6 @@ package services
 
 import (
 	"soli/formations/src/auth/dto"
-	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/repositories"
 
 	config "soli/formations/src/configuration"
@@ -13,10 +12,7 @@ import (
 
 type OrganisationService interface {
 	CreateOrganisation(organisationCreateDTO dto.CreateOrganisationInput, config *config.Configuration) (*dto.OrganisationOutput, error)
-	GetOrganisation(id uuid.UUID) (*models.Organisation, error)
-	GetOrganisations(userId uuid.UUID) ([]dto.OrganisationOutput, error)
 	EditOrganisation(editedOrganisationInput *dto.OrganisationEditInput, id uuid.UUID, isSelf bool) (*dto.OrganisationEditOutput, error)
-	DeleteOrganisation(id uuid.UUID) error
 }
 
 type organisationService struct {
@@ -40,49 +36,6 @@ func (o *organisationService) EditOrganisation(editedOrganisationInput *dto.Orga
 	}
 
 	return editedOrganisation, nil
-}
-
-func (o *organisationService) DeleteOrganisation(id uuid.UUID) error {
-	errorDelete := o.repository.DeleteOrganisation(id)
-	if errorDelete != nil {
-		return errorDelete
-	}
-	return nil
-}
-
-func (o *organisationService) GetOrganisation(id uuid.UUID) (*models.Organisation, error) {
-	organisation, err := o.repository.GetOrganisation(id)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return organisation, nil
-
-}
-
-func (o *organisationService) GetOrganisations(userId uuid.UUID) ([]dto.OrganisationOutput, error) {
-
-	var organisationModel []*models.Organisation
-	var err error
-
-	if userId == uuid.Nil {
-		organisationModel, err = o.repository.GetAllOrganisations()
-	} else {
-		organisationModel, err = o.repository.GetAllOrganisationsByUser(userId)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	var organisationsDto []dto.OrganisationOutput
-
-	for _, s := range organisationModel {
-		organisationsDto = append(organisationsDto, *dto.OrganisationModelToOrganisationOutput(*s))
-	}
-
-	return organisationsDto, nil
 }
 
 func (o *organisationService) CreateOrganisation(organisationCreateDTO dto.CreateOrganisationInput, config *config.Configuration) (*dto.OrganisationOutput, error) {

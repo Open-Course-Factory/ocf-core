@@ -20,5 +20,5 @@ import (
 //
 //	@Router			/roles/{id} [get]
 func (roleController roleController) GetRole(ctx *gin.Context) {
-	roleController.GenericController.GetEntity(ctx)
+	roleController.GetEntity(ctx)
 }

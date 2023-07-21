@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type EntityRepository interface {
+type GenericRepository interface {
 	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetAllEntities(data interface{}, pageSize int) ([]interface{}, error)
 	//GetAllEntitiesByUser(userId uuid.UUID, data interface{}) ([]*interface{}, error)
@@ -18,7 +18,7 @@ type genericRepository struct {
 	db *gorm.DB
 }
 
-func NewGenericRepository(db *gorm.DB) EntityRepository {
+func NewGenericRepository(db *gorm.DB) GenericRepository {
 	repository := &genericRepository{
 		db: db,
 	}
@@ -26,7 +26,6 @@ func NewGenericRepository(db *gorm.DB) EntityRepository {
 }
 
 func (o *genericRepository) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {
-	//dtype := reflect.TypeOf(data)
 	model := reflect.New(reflect.TypeOf(data)).Interface()
 
 	result := o.db.First(model, id)

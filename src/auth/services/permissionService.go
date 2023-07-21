@@ -10,11 +10,8 @@ import (
 )
 
 type PermissionService interface {
-	GetPermission(id uuid.UUID) (*models.Permission, error)
-	GetPermissions() ([]dto.PermissionOutput, error)
 	CreatePermission(permissionCreateDTO dto.CreatePermissionInput) (*dto.PermissionOutput, error)
 	EditPermission(editedPermissionInput *dto.PermissionEditInput, id uuid.UUID) (*dto.PermissionEditOutput, error)
-	DeletePermission(id uuid.UUID) error
 	GetPermissionsByUser(id uuid.UUID) (*[]models.Permission, error)
 }
 
@@ -39,42 +36,6 @@ func (p permissionService) EditPermission(editedPermissionInput *dto.PermissionE
 	}
 
 	return editedPermission, nil
-}
-
-func (p permissionService) DeletePermission(id uuid.UUID) error {
-	errorDelete := p.repository.DeletePermission(id)
-	if errorDelete != nil {
-		return errorDelete
-	}
-	return nil
-}
-
-func (p permissionService) GetPermission(id uuid.UUID) (*models.Permission, error) {
-	user, err := p.repository.GetPermission(id)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return user, nil
-
-}
-
-func (p permissionService) GetPermissions() ([]dto.PermissionOutput, error) {
-
-	permissions, err := p.repository.GetAllPermissions()
-
-	if err != nil {
-		return nil, err
-	}
-
-	var permissionsDto []dto.PermissionOutput
-
-	for _, s := range *permissions {
-		permissionsDto = append(permissionsDto, *dto.PermissionModelToPermissionOutput(s))
-	}
-
-	return permissionsDto, nil
 }
 
 func (p permissionService) CreatePermission(permissionCreateDTO dto.CreatePermissionInput) (*dto.PermissionOutput, error) {

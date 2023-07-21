@@ -1,9 +1,6 @@
 package permissionController
 
 import (
-	"net/http"
-	"soli/formations/src/auth/errors"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,16 +20,5 @@ import (
 //
 //	@Router			/permissions [get]
 func (p permissionController) GetPermissions(ctx *gin.Context) {
-
-	permissions, err := p.service.GetPermissions()
-
-	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Permission not found",
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, permissions)
+	p.GetEntities(ctx)
 }
