@@ -1,6 +1,7 @@
 package permissionAssociationController
 
 import (
+	controller "soli/formations/src/auth/routes"
 	"soli/formations/src/auth/services"
 	config "soli/formations/src/configuration"
 
@@ -17,6 +18,7 @@ type PermissionAssociationController interface {
 }
 
 type permissionAssociationController struct {
+	controller.GenericController
 	service services.PermissionAssociationService
 	config  *config.Configuration
 }
@@ -24,8 +26,9 @@ type permissionAssociationController struct {
 func NewPermissionAssociationController(db *gorm.DB, config *config.Configuration) PermissionAssociationController {
 
 	controller := &permissionAssociationController{
-		service: services.NewPermissionAssociationService(db),
-		config:  config,
+		GenericController: controller.NewGenericController(db),
+		service:           services.NewPermissionAssociationService(db),
+		config:            config,
 	}
 	return controller
 }

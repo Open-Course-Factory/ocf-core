@@ -1,9 +1,6 @@
 package permissionAssociationController
 
 import (
-	"net/http"
-	"soli/formations/src/auth/errors"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,15 +21,5 @@ import (
 //	@Router			/permissionAssociations [get]
 func (p permissionAssociationController) GetPermissionAssociations(ctx *gin.Context) {
 
-	permissionAssociations, err := p.service.GetPermissionAssociations()
-
-	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "PermissionAssociation not found",
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, permissionAssociations)
+	p.GetEntities(ctx)
 }

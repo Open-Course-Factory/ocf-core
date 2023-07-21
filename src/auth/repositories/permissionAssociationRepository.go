@@ -10,9 +10,6 @@ import (
 
 type PermissionAssociationRepository interface {
 	CreatePermissionAssociation(permissionAssociationDto dto.PermissionAssociationInput) (*models.PermissionAssociation, error)
-	GetPermissionAssociation(id uuid.UUID) (*models.PermissionAssociation, error)
-	GetAllPermissionAssociations() (*[]models.PermissionAssociation, error)
-	DeletePermissionAssociation(id uuid.UUID) error
 	//EditPermissionAssociation(id uuid.UUID, PermissionAssociationInfos dto.PermissionAssociationInput) (*dto.PermissionAssociationOutput, error)
 }
 
@@ -81,34 +78,4 @@ func (p permissionAssociationRepository) CreatePermissionAssociation(permissionA
 		return nil, result.Error
 	}
 	return &permissionAssociation, nil
-}
-
-func (p permissionAssociationRepository) GetAllPermissionAssociations() (*[]models.PermissionAssociation, error) {
-
-	var permissionAssociation []models.PermissionAssociation
-	result := p.db.Find(&permissionAssociation)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	return &permissionAssociation, nil
-}
-
-func (p permissionAssociationRepository) GetPermissionAssociation(id uuid.UUID) (*models.PermissionAssociation, error) {
-
-	var permissionAssociation models.PermissionAssociation
-	result := p.db.First(&permissionAssociation, id)
-
-	if result.Error != nil {
-		return nil, result.Error
-	}
-
-	return &permissionAssociation, nil
-}
-
-func (p permissionAssociationRepository) DeletePermissionAssociation(id uuid.UUID) error {
-	result := p.db.Delete(&models.PermissionAssociation{}, id)
-	if result.Error != nil {
-		return result.Error
-	}
-	return nil
 }

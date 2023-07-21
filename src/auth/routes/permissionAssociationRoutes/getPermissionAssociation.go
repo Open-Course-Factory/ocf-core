@@ -1,13 +1,7 @@
 package permissionAssociationController
 
 import (
-	"net/http"
-
-	"soli/formations/src/auth/dto"
-	"soli/formations/src/auth/errors"
-
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 // Get permissionAssociation godoc
@@ -27,25 +21,5 @@ import (
 //	@Router			/permissionAssociations/{id} [get]
 func (p permissionAssociationController) GetPermissionAssociation(ctx *gin.Context) {
 
-	id, err := uuid.Parse(ctx.Param("id"))
-
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	permissionAssociation, permissionAssociationError := p.service.GetPermissionAssociation(id)
-
-	if permissionAssociationError != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotAcceptable,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, dto.PermissionAssociationModelToPermissionAssociationOutput(*permissionAssociation))
+	p.GetEntity(ctx)
 }
