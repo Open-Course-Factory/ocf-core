@@ -75,7 +75,7 @@ func (c courseRepository) GetAllCourses() (*[]models.Course, error) {
 }
 
 func (c courseRepository) DeleteCourse(id uuid.UUID) error {
-	result := c.db.Delete(&models.Course{ID: id})
+	result := c.db.Delete(&models.Course{BaseModel: authModels.BaseModel{ID: id}})
 	if result.Error != nil {
 		return result.Error
 	}

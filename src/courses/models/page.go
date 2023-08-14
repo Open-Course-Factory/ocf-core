@@ -1,30 +1,21 @@
 package models
 
 import (
+	"soli/formations/src/auth/models"
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/jinzhu/gorm"
 )
 
 // Part of a Section
 type Page struct {
-	gorm.Model
-	ID        uuid.UUID `gorm:"type:uuid;primarykey"`
+	models.BaseModel
 	Number    int
 	Toc       []string `gorm:"serializer:json"`
 	Content   []string `gorm:"serializer:json"`
 	Hide      bool
 	SectionID uuid.UUID
 	Section   Section `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"section"`
-}
-
-func (p *Page) BeforeCreate(tx *gorm.DB) (err error) {
-	if p.ID == uuid.Nil {
-		p.ID = uuid.New()
-	}
-
-	return
 }
 
 func (p Page) String() string {

@@ -3,17 +3,16 @@ package models
 import (
 	"bufio"
 	"os"
+	"soli/formations/src/auth/models"
 	config "soli/formations/src/configuration"
 	"strings"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 // Part of a chapter
 type Section struct {
-	gorm.Model
-	ID                 uuid.UUID `gorm:"type:uuid;primarykey"`
+	models.BaseModel
 	FileName           string
 	Title              string
 	ParentChapterTitle string
@@ -24,14 +23,6 @@ type Section struct {
 	Chapter            Chapter   `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"chapter"`
 	Pages              []Page    `gorm:"foreignKey:SectionID" json:"pages"`
 	HiddenPages        []int     `gorm:"serializer:json"`
-}
-
-func (s *Section) BeforeCreate(tx *gorm.DB) (err error) {
-	if s.ID == uuid.Nil {
-		s.ID = uuid.New()
-	}
-
-	return
 }
 
 func (s Section) String() string {

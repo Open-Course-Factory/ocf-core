@@ -1,6 +1,16 @@
 package models
 
+type RoleType string
+
+const (
+	RoleTypeInstanceAdmin     RoleType = "instance_admin"
+	RoleTypeOrganisationAdmin RoleType = "organisation_admin"
+	RoleTypeObjectOwner       RoleType = "object_owner"
+	RoleTypeObjectEditor      RoleType = "object_editor"
+	RoleTypeObjectReader      RoleType = "object_reader"
+)
+
 type Role struct {
 	BaseModel
-	RoleName string `json:"roleName"`
+	RoleName RoleType `json:"roleName"`
 }

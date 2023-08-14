@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 type Format int
@@ -31,8 +30,7 @@ func (s Format) String() string {
 }
 
 type Course struct {
-	gorm.Model
-	ID                 uuid.UUID `gorm:"type:uuid;primarykey"`
+	models.BaseModel
 	Category           string
 	Name               string
 	Version            string
@@ -52,14 +50,6 @@ type Course struct {
 	URL                string
 	LearningObjectives string    `json:"learning_objectives"`
 	Chapters           []Chapter `gorm:"many2many:course_chapters;" json:"chapters"`
-}
-
-func (c *Course) BeforeCreate(tx *gorm.DB) (err error) {
-	if c.ID == uuid.Nil {
-		c.ID = uuid.New()
-	}
-
-	return
 }
 
 func (c Course) String() string {

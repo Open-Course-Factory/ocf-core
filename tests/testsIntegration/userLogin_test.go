@@ -6,7 +6,7 @@ import (
 	tests "soli/formations/tests"
 )
 
-func TestAddUser(t *testing.T) {
+func TestLogin(t *testing.T) {
 	teardownTest := tests.SetupTest(t)
 	defer teardownTest(t)
 
@@ -14,5 +14,5 @@ func TestAddUser(t *testing.T) {
 	// 2. Test case: Valid request body
 	// We expect a StatusCreated (201) status
 	// 3. Test case: Invalid request body
-	tests.AddUser(tests.UserService, tests.MockConfig, tests.Router, t)
+	tests.LoginUser(tests.UserService, tests.MockConfig, tests.Router, t)
 }

@@ -7,20 +7,20 @@ import (
 )
 
 type RoleOutput struct {
-	ID       uuid.UUID `json:"id"`
-	RoleName string    `json:"roleName"`
+	ID       uuid.UUID       `json:"id"`
+	RoleName models.RoleType `json:"roleName"`
 }
 
 type CreateRoleInput struct {
-	RoleName string `binding:"required"`
+	RoleName models.RoleType `binding:"required"`
 }
 
 type RoleEditInput struct {
-	RoleName string `json:"roleName"`
+	RoleName models.RoleType `json:"roleName"`
 }
 
 type RoleEditOutput struct {
-	RoleName string `json:"roleName"`
+	RoleName models.RoleType `json:"roleName"`
 }
 
 func RoleModelToRoleOutput(roleModel models.Role) *RoleOutput {
