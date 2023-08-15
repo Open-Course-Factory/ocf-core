@@ -19,9 +19,8 @@ type RoleController interface {
 
 type roleController struct {
 	controller.GenericController
-	service        services.RoleService
-	genericService services.GenericService
-	config         *config.Configuration
+	service services.RoleService
+	config  *config.Configuration
 }
 
 func NewRoleController(db *gorm.DB, config *config.Configuration) RoleController {
@@ -29,7 +28,6 @@ func NewRoleController(db *gorm.DB, config *config.Configuration) RoleController
 	controller := &roleController{
 		GenericController: controller.NewGenericController(db),
 		service:           services.NewRoleService(db),
-		genericService:    services.NewGenericService(db),
 		config:            config,
 	}
 	return controller

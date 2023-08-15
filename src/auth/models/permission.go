@@ -22,6 +22,7 @@ func ContainsPermissionType(enumArray []PermissionType, value PermissionType) bo
 	return false
 }
 
+// ToDo : maybe the group should not be in permission table
 type Permission struct {
 	BaseModel
 	UserID          *uuid.UUID

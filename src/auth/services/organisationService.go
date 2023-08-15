@@ -12,7 +12,7 @@ import (
 
 type OrganisationService interface {
 	CreateOrganisation(organisationCreateDTO dto.CreateOrganisationInput, config *config.Configuration) (*dto.OrganisationOutput, error)
-	EditOrganisation(editedOrganisationInput *dto.OrganisationEditInput, id uuid.UUID, isSelf bool) (*dto.OrganisationEditOutput, error)
+	EditOrganisation(editedOrganisationInput *dto.OrganisationEditInput, id uuid.UUID) (*dto.OrganisationEditOutput, error)
 }
 
 type organisationService struct {
@@ -25,7 +25,7 @@ func NewOrganisationService(db *gorm.DB) OrganisationService {
 	}
 }
 
-func (o *organisationService) EditOrganisation(editedOrganisationInput *dto.OrganisationEditInput, id uuid.UUID, isSelf bool) (*dto.OrganisationEditOutput, error) {
+func (o *organisationService) EditOrganisation(editedOrganisationInput *dto.OrganisationEditInput, id uuid.UUID) (*dto.OrganisationEditOutput, error) {
 
 	editOrganisation := editedOrganisationInput
 

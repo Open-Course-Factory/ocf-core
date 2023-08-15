@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"reflect"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -19,7 +19,6 @@ import (
 	"soli/formations/src/middleware"
 
 	authDto "soli/formations/src/auth/dto"
-	"soli/formations/src/auth/models"
 	authModels "soli/formations/src/auth/models"
 	groupController "soli/formations/src/auth/routes/groupRoutes"
 	loginController "soli/formations/src/auth/routes/loginRoutes"
@@ -106,57 +105,85 @@ func initSwagger(r *gin.Engine) {
 
 func initDB() {
 	if sqldb.DBType == "sqlite" {
-		userService := services.NewUserService(sqldb.DB)
 		genericService := services.NewGenericService(sqldb.DB)
+		roleService := services.NewRoleService(sqldb.DB)
+		permissionService := services.NewPermissionService(sqldb.DB)
+		//groupService := services.NewGroupService(sqldb.DB)
 		users, _ := genericService.GetEntities(authModels.User{})
 
 		if len(users) == 0 {
-			userInput := authDto.CreateUserInput{Email: "test@test.com", Password: "test", FirstName: "Tom", LastName: "Baggins"}
-			userOutputDto, _ := userService.CreateUser(userInput, &config.Configuration{})
+			// Roles should be pre-existant
+			roleInstanceAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeInstanceAdmin}
+			roleInstanceAdminOutput, _ := roleService.CreateRole(roleInstanceAdminInput, &config.Configuration{})
 
-			groupService := services.NewGroupService(sqldb.DB)
-			roleService := services.NewRoleService(sqldb.DB)
-			organisationService := services.NewOrganisationService(sqldb.DB)
+			roleOrganisationAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeOrganisationAdmin}
+			roleService.CreateRole(roleOrganisationAdminInput, &config.Configuration{})
 
-			permissionService := services.NewPermissionService(sqldb.DB)
-			permissionAssociationService := services.NewPermissionAssociationService(sqldb.DB)
+			//permissionAssociationService, organisationOutputDto, permissionOutput := createUserComplete("test@test.com", "test", "Tom", "Baggins")
+			createUserComplete("test@test.com", "test", "Tom", "Baggins")
 
-			organisationInput := authDto.CreateOrganisationInput{Name: "organisationTest"}
-			organisationOutputDto, _ := organisationService.CreateOrganisation(organisationInput, &config.Configuration{})
-
-			groupInput := authDto.CreateGroupInput{GroupName: "groupTest"}
-			groupOutputDto, _ := groupService.CreateGroup(groupInput)
-
-			groupInput2 := authDto.CreateGroupInput{GroupName: "groupTest2"}
-			groupService.CreateGroup(groupInput2)
-
-			roleInput := authDto.CreateRoleInput{RoleName: "roleTest"}
-			roleOutputDto, _ := roleService.CreateRole(roleInput, &config.Configuration{})
+			userTestAdminDto := createUserComplete("admin@test.com", "admin", "Gan", "Dalf")
 
 			permissionInput := authDto.CreatePermissionInput{
-				User:         userOutputDto.ID,
-				Role:         roleOutputDto.ID,
-				Group:        groupOutputDto.ID,
-				Organisation: organisationOutputDto.ID,
+				User:         userTestAdminDto.ID,
+				Role:         roleInstanceAdminOutput.ID,
+				Group:        uuid.Nil,
+				Organisation: uuid.Nil,
 				PermissionTypes: []authModels.PermissionType{
 					authModels.PermissionTypeAll,
 				},
 			}
-			permissionOutput, _ := permissionService.CreatePermission(permissionInput)
+			permissionService.CreatePermission(permissionInput)
 
-			permissionAssociationObject := authDto.PermissionAssociationObjectInput{
-				SubObjectID: organisationOutputDto.ID,
-				SubType:     reflect.TypeOf(models.Organisation{}).Name(),
-			}
-			permissionAssociationInput := authDto.PermissionAssociationInput{
-				PermissionID:                 permissionOutput.ID.String(),
-				PermissionAssociationObjects: []authDto.PermissionAssociationObjectInput{permissionAssociationObject},
-			}
+			// groupInput := authDto.CreateGroupInput{GroupName: "groupTest"}
+			// groupService.CreateGroup(groupInput)
 
-			permissionAssociationService.CreatePermissionAssociation(permissionAssociationInput)
+			// groupInput2 := authDto.CreateGroupInput{GroupName: "groupTest2"}
+			// groupService.CreateGroup(groupInput2)
+
+			// permissionAssociationObject := authDto.PermissionAssociationObjectInput{
+			// 	SubObjectID: organisationOutputDto.ID,
+			// 	SubType:     reflect.TypeOf(models.Organisation{}).Name(),
+			// }
+			// permissionAssociationInput := authDto.PermissionAssociationInput{
+			// 	PermissionID:                 permissionOutput.ID.String(),
+			// 	PermissionAssociationObjects: []authDto.PermissionAssociationObjectInput{permissionAssociationObject},
+			// }
+
+			// permissionAssociationService.CreatePermissionAssociation(permissionAssociationInput)
 
 		}
 	}
+}
+
+func createUserComplete(email string, password string, firstName string, lastName string) *authDto.UserOutput {
+
+	userService := services.NewUserService(sqldb.DB)
+
+	userInput := authDto.CreateUserInput{Email: email, Password: password, FirstName: firstName, LastName: lastName}
+	userOutputDto, _ := userService.CreateUser(userInput, &config.Configuration{})
+
+	organisationService := services.NewOrganisationService(sqldb.DB)
+
+	permissionService := services.NewPermissionService(sqldb.DB)
+
+	organisationInput := authDto.CreateOrganisationInput{Name: lastName + "_org"}
+	organisationOutputDto, _ := organisationService.CreateOrganisation(organisationInput, &config.Configuration{})
+
+	roleService := services.NewRoleService(sqldb.DB)
+	roleId, _ := roleService.GetRoleByType(authModels.RoleTypeOrganisationAdmin)
+
+	permissionInput := authDto.CreatePermissionInput{
+		User:         userOutputDto.ID,
+		Role:         roleId,
+		Group:        uuid.Nil,
+		Organisation: organisationOutputDto.ID,
+		PermissionTypes: []authModels.PermissionType{
+			authModels.PermissionTypeAll,
+		},
+	}
+	permissionService.CreatePermission(permissionInput)
+	return userOutputDto
 }
 
 func parseFlags() bool {

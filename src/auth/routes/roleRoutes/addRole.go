@@ -6,6 +6,8 @@ import (
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
 
+	controller "soli/formations/src/auth/routes"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,26 +26,41 @@ import (
 //	@Failure		400		{object}	errors.APIError	"Impossible de créer un role"
 //	@Router			/roles [post]
 func (roleController roleController) AddRole(ctx *gin.Context) {
-	roleCreateDTO := dto.CreateRoleInput{}
-
-	bindError := ctx.BindJSON(&roleCreateDTO)
-	if bindError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de parser le json",
-		})
+	permissionsArray, _, permissionsFound := controller.GetPermissionsFromContext(ctx)
+	if !permissionsFound {
 		return
 	}
 
-	role, roleError := roleController.service.CreateRole(roleCreateDTO, roleController.config)
+	isUserInstanceAdmin := (*roleController.GetPermissionService()).IsUserInstanceAdmin(permissionsArray)
+	if isUserInstanceAdmin {
+		roleCreateDTO := dto.CreateRoleInput{}
 
-	if roleError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: roleError.Error(),
-		})
+		bindError := ctx.BindJSON(&roleCreateDTO)
+		if bindError != nil {
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: "Impossible de parser le json",
+			})
+			return
+		}
+
+		role, roleError := roleController.service.CreateRole(roleCreateDTO, roleController.config)
+
+		if roleError != nil {
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: roleError.Error(),
+			})
+			return
+		}
+
+		ctx.JSON(http.StatusCreated, role)
 		return
+	} else {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Impossible de créer un role, seul l'administrateur de l'instance peut le faire",
+		})
 	}
 
-	ctx.JSON(http.StatusCreated, role)
 }

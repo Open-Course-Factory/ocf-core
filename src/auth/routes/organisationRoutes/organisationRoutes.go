@@ -4,13 +4,15 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"soli/formations/src/auth/middleware"
+	"soli/formations/src/auth/services"
 	config "soli/formations/src/configuration"
 
 	"gorm.io/gorm"
 )
 
 func OrganisationsRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
-	organisationController := NewOrganisationController(db, config)
+	organisationService := services.NewOrganisationService(db)
+	organisationController := NewOrganisationController(db, organisationService, config)
 
 	authMiddleware := &middleware.AuthMiddleware{
 		DB:     db,

@@ -14,6 +14,7 @@ import (
 type RoleService interface {
 	CreateRole(roleCreateDTO dto.CreateRoleInput, config *config.Configuration) (*dto.RoleOutput, error)
 	EditRole(editedRoleInput *dto.RoleEditInput, id uuid.UUID) (*dto.RoleEditOutput, error)
+	GetRoleByType(roleType models.RoleType) (uuid.UUID, error)
 }
 
 type roleService struct {
@@ -60,6 +61,30 @@ func (r roleService) GetRoles() ([]dto.RoleOutput, error) {
 	}
 
 	return rolesDto, nil
+}
+
+func (r roleService) GetRoleByType(roleType models.RoleType) (uuid.UUID, error) {
+	var result uuid.UUID
+
+	allPages, err := r.genericRepository.GetAllEntities(models.Role{}, 20)
+
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	// Here we need to loop through the pages
+	for _, page := range allPages {
+		test := page.([]models.Role)
+
+		for _, s := range test {
+			if s.RoleName == roleType {
+				result = s.ID
+				break
+			}
+		}
+	}
+
+	return result, nil
 }
 
 func (r roleService) CreateRole(roleCreateDTO dto.CreateRoleInput, config *config.Configuration) (*dto.RoleOutput, error) {

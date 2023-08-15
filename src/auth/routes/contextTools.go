@@ -59,18 +59,18 @@ func GetPermissionsFromContext(ctx *gin.Context) (*[]models.Permission, bool, bo
 	if !ok {
 		ctx.JSON(http.StatusOK, "[]")
 		ctx.Abort()
-		return nil, false, true
+		return nil, false, false
 	}
 
 	permissionModels, isPermission := rawPermissions.(*[]models.Permission)
-	return permissionModels, isPermission, false
+	return permissionModels, isPermission, true
 }
 
 func GetEntityIdFromContext(ctx *gin.Context) (uuid.UUID, bool) {
 	entityID := ctx.Param("id")
 
 	if entityID == "" {
-		log.Default().Fatal("Permission Middleware has been called on a method without organisation ID")
+		log.Default().Fatal("Permission Middleware has been called on a method without entity ID")
 		ctx.Next()
 	}
 
@@ -79,9 +79,9 @@ func GetEntityIdFromContext(ctx *gin.Context) (uuid.UUID, bool) {
 	if errUUID != nil {
 		ctx.JSON(http.StatusNotFound, "Entity Not Found")
 		ctx.Abort()
-		return uuid.Nil, true
+		return uuid.Nil, false
 	}
-	return entityUUID, false
+	return entityUUID, true
 }
 
 func HasLoggedInUserPermissionForEntity(permissionModels *[]models.Permission, method string, entityName string, entityUUID uuid.UUID) bool {

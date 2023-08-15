@@ -26,18 +26,18 @@ func TestAddOrganisation(t *testing.T) {
 }
 
 func AddOrganisation(organisationService services.OrganisationService, mockConfig *config.Configuration, token string, router *gin.Engine, t *testing.T) {
-	controller := organisationController.NewOrganisationController(sqldb.DB, mockConfig)
+	controller := organisationController.NewOrganisationController(sqldb.DB, organisationService, mockConfig)
 
 	authMiddleware := &middleware.AuthMiddleware{
 		DB:     sqldb.DB,
 		Config: mockConfig,
 	}
 
-	// permissionMiddleware := &middleware.PermissionsMiddleware{
-	// 	DB: sqldb.DB,
-	// }
+	permissionMiddleware := &middleware.PermissionsMiddleware{
+		DB: sqldb.DB,
+	}
 
-	router.POST("/organisations", authMiddleware.CheckIsLogged(), controller.AddOrganisation)
+	router.POST("/organisations", authMiddleware.CheckIsLogged(), permissionMiddleware.IsAuthorized(), controller.AddOrganisation)
 
 	validRequestBody := `{"name": "mon_orga_de_test"}`
 	//invalidRequestBody := `{"email": "not a valid email", "password": "123456", "firstName": "Test", "lastName": "User"}`

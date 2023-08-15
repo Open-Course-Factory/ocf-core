@@ -14,8 +14,8 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
-	permissionsArray, _, shouldReturn := GetPermissionsFromContext(ctx)
-	if shouldReturn {
+	permissionsArray, _, permissionFound := GetPermissionsFromContext(ctx)
+	if !permissionFound {
 		return
 	}
 

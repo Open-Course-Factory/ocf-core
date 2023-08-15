@@ -13,6 +13,7 @@ type PermissionService interface {
 	CreatePermission(permissionCreateDTO dto.CreatePermissionInput) (*dto.PermissionOutput, error)
 	EditPermission(editedPermissionInput *dto.PermissionEditInput, id uuid.UUID) (*dto.PermissionEditOutput, error)
 	GetPermissionsByUser(id uuid.UUID) (*[]models.Permission, error)
+	IsUserInstanceAdmin(permissions *[]models.Permission) bool
 }
 
 type permissionService struct {
@@ -46,14 +47,25 @@ func (p permissionService) CreatePermission(permissionCreateDTO dto.CreatePermis
 		return nil, createPermissionError
 	}
 
-	return &dto.PermissionOutput{
+	permissionOutput := &dto.PermissionOutput{
 		ID:              permission.ID,
 		User:            permission.User.ID,
-		Role:            permission.Role.ID,
-		Group:           permission.Group.ID,
-		Organisation:    permission.Organisation.ID,
 		PermissionTypes: permission.PermissionTypes,
-	}, nil
+	}
+
+	if permission.RoleID != nil {
+		permissionOutput.Role = *permission.RoleID
+	}
+
+	if permission.GroupID != nil {
+		permissionOutput.Group = *permission.GroupID
+	}
+
+	if permission.OrganisationID != nil {
+		permissionOutput.Organisation = *permission.OrganisationID
+	}
+
+	return permissionOutput, nil
 
 }
 
@@ -66,4 +78,13 @@ func (p permissionService) GetPermissionsByUser(userId uuid.UUID) (*[]models.Per
 	}
 
 	return permissions, nil
+}
+
+func (p permissionService) IsUserInstanceAdmin(permissions *[]models.Permission) bool {
+	for _, permission := range *permissions {
+		if permission.Role.RoleName == models.RoleTypeInstanceAdmin {
+			return true
+		}
+	}
+	return false
 }
