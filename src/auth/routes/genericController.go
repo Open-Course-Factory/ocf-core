@@ -35,6 +35,7 @@ func NewGenericController(db *gorm.DB) GenericController {
 		genericService:    services.NewGenericService(db),
 		permissionService: services.NewPermissionService(db),
 	}
+
 	return controller
 }
 

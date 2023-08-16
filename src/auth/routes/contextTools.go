@@ -53,8 +53,8 @@ func GetEntityNameFromPath(path string) string {
 	return strings.ToUpper(string(singular[0])) + singular[1:]
 }
 
-func GetPermissionsFromContext(ctx *gin.Context) (*[]models.Permission, bool, bool) {
-	rawPermissions, ok := ctx.Get("permissions")
+func GetRolesFromContext(ctx *gin.Context) (*[]models.UserRole, bool, bool) {
+	rawRoles, ok := ctx.Get("roles")
 
 	if !ok {
 		ctx.JSON(http.StatusOK, "[]")
@@ -62,8 +62,8 @@ func GetPermissionsFromContext(ctx *gin.Context) (*[]models.Permission, bool, bo
 		return nil, false, false
 	}
 
-	permissionModels, isPermission := rawPermissions.(*[]models.Permission)
-	return permissionModels, isPermission, true
+	userRoleObjectAssociationModels, isRole := rawRoles.(*[]models.UserRole)
+	return userRoleObjectAssociationModels, isRole, true
 }
 
 func GetEntityIdFromContext(ctx *gin.Context) (uuid.UUID, bool) {
@@ -84,32 +84,22 @@ func GetEntityIdFromContext(ctx *gin.Context) (uuid.UUID, bool) {
 	return entityUUID, true
 }
 
-func HasLoggedInUserPermissionForEntity(permissionModels *[]models.Permission, method string, entityName string, entityUUID uuid.UUID) bool {
+func HasLoggedInUserPermissionForEntity(userRoleObjectAssociations *[]models.UserRole, method string, entityName string, entityUUID uuid.UUID) bool {
 	var proceed bool
 
-	for _, permission := range *permissionModels {
-		permissionEntityUuid := GetEntityIdFromPermission(permission, entityName)
-		if reflect.DeepEqual(permissionEntityUuid, entityUUID) {
-			if models.ContainsPermissionType(permission.PermissionTypes, models.PermissionTypeAll) ||
-				models.ContainsPermissionType(permission.PermissionTypes, methodPermissionMap[method]) {
-				proceed = true
-				break
+	for _, userRoleObjectAssociation := range *userRoleObjectAssociations {
+		if userRoleObjectAssociation.SubType == entityName {
+			if reflect.DeepEqual(userRoleObjectAssociation.SubObjectID, entityUUID) {
+				for _, permission := range userRoleObjectAssociation.Role.Permissions {
+					if models.ContainsPermissionType(permission.PermissionTypes, models.PermissionTypeAll) ||
+						models.ContainsPermissionType(permission.PermissionTypes, methodPermissionMap[method]) {
+						proceed = true
+						break
+					}
+				}
 			}
 		}
+
 	}
 	return proceed
-}
-
-func GetEntityIdFromPermission(permission models.Permission, entityName string) uuid.UUID {
-	switch entityName {
-	case "Organisation":
-		return *permission.OrganisationID
-	case "Group":
-		return *permission.GroupID
-	case "Role":
-		return *permission.RoleID
-	case "User":
-		return *permission.UserID
-	}
-	return uuid.Nil
 }

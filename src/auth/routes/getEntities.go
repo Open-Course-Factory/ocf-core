@@ -14,12 +14,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
-	permissionsArray, _, permissionFound := GetPermissionsFromContext(ctx)
-	if !permissionFound {
-		return
-	}
-
-	entitiesDto, shouldReturn := genericController.getEntitiesFromName(entityName, permissionsArray)
+	entitiesDto, shouldReturn := genericController.getEntitiesFromName(entityName)
 	if shouldReturn {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
@@ -31,7 +26,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, entitiesDto)
 }
 
-func (genericController genericController) getEntitiesFromName(entityName string, permissions *[]models.Permission) ([]interface{}, bool) {
+func (genericController genericController) getEntitiesFromName(entityName string) ([]interface{}, bool) {
 	entityModelInterface := GetEntityModelInterface(entityName)
 
 	allEntitiesPages, err := genericController.genericService.GetEntities(entityModelInterface)
@@ -61,7 +56,10 @@ func (genericController genericController) getEntitiesFromName(entityName string
 				entityBaseModel, isOk := models.ExtractBaseFromAny(item)
 				var proceed bool
 				if isOk {
-					proceed = HasLoggedInUserPermissionForEntity(permissions, http.MethodGet, entityName, entityBaseModel.ID)
+					// ToDo rework permission system
+					//proceed = HasLoggedInUserPermissionForEntity(permissions, http.MethodGet, entityName, entityBaseModel.ID)
+					fmt.Println(entityBaseModel)
+					proceed = true
 				}
 				if !proceed {
 					continue

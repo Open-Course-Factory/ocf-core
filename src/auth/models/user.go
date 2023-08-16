@@ -9,4 +9,5 @@ type User struct {
 	Token        string `json:"token"`
 	RefreshToken string `json:"refreshToken"`
 	SshKeys      []SshKey
+	Roles        []Role `gorm:"many2many:user_roles;"`
 }

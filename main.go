@@ -23,7 +23,6 @@ import (
 	groupController "soli/formations/src/auth/routes/groupRoutes"
 	loginController "soli/formations/src/auth/routes/loginRoutes"
 	organisationController "soli/formations/src/auth/routes/organisationRoutes"
-	permissionAssociationController "soli/formations/src/auth/routes/permissionAssociationRoutes"
 	permissionController "soli/formations/src/auth/routes/permissionRoutes"
 	roleController "soli/formations/src/auth/routes/roleRoutes"
 	userController "soli/formations/src/auth/routes/userRoutes"
@@ -64,8 +63,9 @@ func main() {
 	sqldb.DB.AutoMigrate(&authModels.Group{})
 	sqldb.DB.AutoMigrate(&authModels.Organisation{})
 	sqldb.DB.AutoMigrate(&authModels.Permission{})
-	sqldb.DB.AutoMigrate(&authModels.PermissionAssociation{})
-	sqldb.DB.AutoMigrate(&authModels.PermissionAssociationObject{})
+
+	sqldb.DB.SetupJoinTable(&authModels.User{}, "Roles", &authModels.UserRole{})
+	sqldb.DB.AutoMigrate(&authModels.UserRole{})
 
 	sqldb.DB.AutoMigrate(&courseModels.Page{})
 	sqldb.DB.AutoMigrate(&courseModels.Section{})
@@ -85,7 +85,6 @@ func main() {
 	loginController.LoginRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	loginController.RefreshRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	permissionController.PermissionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	permissionAssociationController.PermissionAssociationsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
@@ -119,21 +118,19 @@ func initDB() {
 			roleOrganisationAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeOrganisationAdmin}
 			roleService.CreateRole(roleOrganisationAdminInput, &config.Configuration{})
 
+			// permissionInput := authDto.CreatePermissionInput{
+			// 	PermissionTypes: []authModels.PermissionType{
+			// 		authModels.PermissionTypeAll,
+			// 	},
+			// }
+			// permissionService.CreatePermission(permissionInput)
+
 			//permissionAssociationService, organisationOutputDto, permissionOutput := createUserComplete("test@test.com", "test", "Tom", "Baggins")
 			createUserComplete("test@test.com", "test", "Tom", "Baggins")
 
 			userTestAdminDto := createUserComplete("admin@test.com", "admin", "Gan", "Dalf")
 
-			permissionInput := authDto.CreatePermissionInput{
-				User:         userTestAdminDto.ID,
-				Role:         roleInstanceAdminOutput.ID,
-				Group:        uuid.Nil,
-				Organisation: uuid.Nil,
-				PermissionTypes: []authModels.PermissionType{
-					authModels.PermissionTypeAll,
-				},
-			}
-			permissionService.CreatePermission(permissionInput)
+			roleService.CreateUserRoleObjectAssociation(userTestAdminDto.ID, roleInstanceAdminOutput.ID, uuid.Nil, "")
 
 			// groupInput := authDto.CreateGroupInput{GroupName: "groupTest"}
 			// groupService.CreateGroup(groupInput)
@@ -165,24 +162,14 @@ func createUserComplete(email string, password string, firstName string, lastNam
 
 	organisationService := services.NewOrganisationService(sqldb.DB)
 
-	permissionService := services.NewPermissionService(sqldb.DB)
-
 	organisationInput := authDto.CreateOrganisationInput{Name: lastName + "_org"}
 	organisationOutputDto, _ := organisationService.CreateOrganisation(organisationInput, &config.Configuration{})
 
 	roleService := services.NewRoleService(sqldb.DB)
 	roleId, _ := roleService.GetRoleByType(authModels.RoleTypeOrganisationAdmin)
 
-	permissionInput := authDto.CreatePermissionInput{
-		User:         userOutputDto.ID,
-		Role:         roleId,
-		Group:        uuid.Nil,
-		Organisation: organisationOutputDto.ID,
-		PermissionTypes: []authModels.PermissionType{
-			authModels.PermissionTypeAll,
-		},
-	}
-	permissionService.CreatePermission(permissionInput)
+	roleService.CreateUserRoleObjectAssociation(userOutputDto.ID, roleId, organisationOutputDto.ID, "Organisation")
+
 	return userOutputDto
 }
 

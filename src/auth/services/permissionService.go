@@ -2,7 +2,6 @@ package services
 
 import (
 	"soli/formations/src/auth/dto"
-	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/repositories"
 
 	"github.com/google/uuid"
@@ -12,17 +11,16 @@ import (
 type PermissionService interface {
 	CreatePermission(permissionCreateDTO dto.CreatePermissionInput) (*dto.PermissionOutput, error)
 	EditPermission(editedPermissionInput *dto.PermissionEditInput, id uuid.UUID) (*dto.PermissionEditOutput, error)
-	GetPermissionsByUser(id uuid.UUID) (*[]models.Permission, error)
-	IsUserInstanceAdmin(permissions *[]models.Permission) bool
+	//IsUserInstanceAdmin(permissions *[]models.Permission) bool
 }
 
 type permissionService struct {
-	repository repositories.PermissionRepository
+	permissionRepository repositories.PermissionRepository
 }
 
 func NewPermissionService(db *gorm.DB) PermissionService {
 	return &permissionService{
-		repository: repositories.NewPermissionRepository(db),
+		permissionRepository: repositories.NewPermissionRepository(db),
 	}
 }
 
@@ -30,7 +28,7 @@ func (p permissionService) EditPermission(editedPermissionInput *dto.PermissionE
 
 	editPermission := editedPermissionInput
 
-	editedPermission, userError := p.repository.EditPermission(id, *editPermission)
+	editedPermission, userError := p.permissionRepository.EditPermission(id, *editPermission)
 
 	if userError != nil {
 		return nil, userError
@@ -41,7 +39,7 @@ func (p permissionService) EditPermission(editedPermissionInput *dto.PermissionE
 
 func (p permissionService) CreatePermission(permissionCreateDTO dto.CreatePermissionInput) (*dto.PermissionOutput, error) {
 
-	permission, createPermissionError := p.repository.CreatePermission(permissionCreateDTO)
+	permission, createPermissionError := p.permissionRepository.CreatePermission(permissionCreateDTO)
 
 	if createPermissionError != nil {
 		return nil, createPermissionError
@@ -49,42 +47,18 @@ func (p permissionService) CreatePermission(permissionCreateDTO dto.CreatePermis
 
 	permissionOutput := &dto.PermissionOutput{
 		ID:              permission.ID,
-		User:            permission.User.ID,
 		PermissionTypes: permission.PermissionTypes,
-	}
-
-	if permission.RoleID != nil {
-		permissionOutput.Role = *permission.RoleID
-	}
-
-	if permission.GroupID != nil {
-		permissionOutput.Group = *permission.GroupID
-	}
-
-	if permission.OrganisationID != nil {
-		permissionOutput.Organisation = *permission.OrganisationID
 	}
 
 	return permissionOutput, nil
 
 }
 
-func (p permissionService) GetPermissionsByUser(userId uuid.UUID) (*[]models.Permission, error) {
-
-	permissions, createPermissionError := p.repository.GetPermissionsByUser(userId)
-
-	if createPermissionError != nil {
-		return nil, createPermissionError
-	}
-
-	return permissions, nil
-}
-
-func (p permissionService) IsUserInstanceAdmin(permissions *[]models.Permission) bool {
-	for _, permission := range *permissions {
-		if permission.Role.RoleName == models.RoleTypeInstanceAdmin {
-			return true
-		}
-	}
-	return false
-}
+// func (p permissionService) IsUserInstanceAdmin(permissions *[]models.Permission) bool {
+// 	for _, permission := range *permissions {
+// 		if permission.Role.RoleName == models.RoleTypeInstanceAdmin {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }

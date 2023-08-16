@@ -56,16 +56,16 @@ func (am AuthMiddleware) CheckIsLogged() gin.HandlerFunc {
 			return
 		}
 
-		permissionService := services.NewPermissionService(am.DB)
-		permissions, permissionError := permissionService.GetPermissionsByUser(*id)
+		roleService := services.NewRoleService(am.DB)
+		userRoleObjectAssociations, roleError := roleService.GetRoleByUser(*id)
 
-		if permissionError != nil {
+		if roleError != nil {
 			ctx.JSON(http.StatusUnauthorized, o)
 			ctx.Abort()
 			return
 		}
 
-		ctx.Set("permissions", permissions)
+		ctx.Set("roles", userRoleObjectAssociations)
 		ctx.Set("user", user)
 		ctx.Next()
 	}

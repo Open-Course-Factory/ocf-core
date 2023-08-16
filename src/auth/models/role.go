@@ -12,5 +12,6 @@ const (
 
 type Role struct {
 	BaseModel
-	RoleName RoleType `json:"roleName"`
+	RoleName    RoleType     `json:"roleName"`
+	Permissions []Permission `gorm:"many2many:role_permissions;" json:"permissions"`
 }

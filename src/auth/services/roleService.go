@@ -15,6 +15,8 @@ type RoleService interface {
 	CreateRole(roleCreateDTO dto.CreateRoleInput, config *config.Configuration) (*dto.RoleOutput, error)
 	EditRole(editedRoleInput *dto.RoleEditInput, id uuid.UUID) (*dto.RoleEditOutput, error)
 	GetRoleByType(roleType models.RoleType) (uuid.UUID, error)
+	GetRoleByUser(userId uuid.UUID) (*[]models.UserRole, error)
+	CreateUserRoleObjectAssociation(userId uuid.UUID, roleId uuid.UUID, objectId uuid.UUID, objectType string) (*dto.UserRoleObjectAssociationOutput, error)
 }
 
 type roleService struct {
@@ -100,4 +102,32 @@ func (r roleService) CreateRole(roleCreateDTO dto.CreateRoleInput, config *confi
 		RoleName: role.RoleName,
 	}, nil
 
+}
+
+func (r roleService) GetRoleByUser(userId uuid.UUID) (*[]models.UserRole, error) {
+
+	roles, getRoleError := r.repository.GetRoleByUser(userId)
+
+	if getRoleError != nil {
+		return nil, getRoleError
+	}
+
+	return roles, nil
+}
+
+func (r roleService) CreateUserRoleObjectAssociation(userId uuid.UUID, roleId uuid.UUID, objectId uuid.UUID, objectType string) (*dto.UserRoleObjectAssociationOutput, error) {
+
+	userRoleObjectAssociation, createRoleError := r.repository.CreateUserRoleObjectAssociation(userId, roleId, objectId, objectType)
+
+	if createRoleError != nil {
+		return nil, createRoleError
+	}
+
+	return &dto.UserRoleObjectAssociationOutput{
+		ID:          userRoleObjectAssociation.ID,
+		UserID:      userRoleObjectAssociation.UserID,
+		RoleID:      userRoleObjectAssociation.RoleID,
+		SubObjectID: userRoleObjectAssociation.SubObjectID,
+		SubType:     userRoleObjectAssociation.SubType,
+	}, nil
 }

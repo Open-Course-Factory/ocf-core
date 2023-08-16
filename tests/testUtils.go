@@ -44,8 +44,7 @@ func SetupTest(tb testing.TB) func(tb testing.TB) {
 	sqldb.DB.AutoMigrate(&authModels.Group{})
 	sqldb.DB.AutoMigrate(&authModels.Organisation{})
 	sqldb.DB.AutoMigrate(&authModels.Permission{})
-	sqldb.DB.AutoMigrate(&authModels.PermissionAssociation{})
-	sqldb.DB.AutoMigrate(&authModels.PermissionAssociationObject{})
+	sqldb.DB.AutoMigrate(&authModels.UserRole{})
 
 	UserService = services.NewUserService(sqldb.DB)
 	OrganisationService = services.NewOrganisationService(sqldb.DB)

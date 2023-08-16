@@ -6,8 +6,6 @@ import (
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
 
-	controller "soli/formations/src/auth/routes"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,12 +24,13 @@ import (
 //	@Failure		400		{object}	errors.APIError	"Impossible de créer un role"
 //	@Router			/roles [post]
 func (roleController roleController) AddRole(ctx *gin.Context) {
-	permissionsArray, _, permissionsFound := controller.GetPermissionsFromContext(ctx)
-	if !permissionsFound {
-		return
-	}
+	// permissionsArray, _, permissionsFound := controller.GetPermissionsFromContext(ctx)
+	// if !permissionsFound {
+	// 	return
+	// }
 
-	isUserInstanceAdmin := (*roleController.GetPermissionService()).IsUserInstanceAdmin(permissionsArray)
+	// isUserInstanceAdmin := (*roleController.GetPermissionService()).IsUserInstanceAdmin(permissionsArray)
+	isUserInstanceAdmin := true
 	if isUserInstanceAdmin {
 		roleCreateDTO := dto.CreateRoleInput{}
 

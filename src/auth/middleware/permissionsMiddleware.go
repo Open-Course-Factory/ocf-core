@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"soli/formations/src/auth/models"
 	controller "soli/formations/src/auth/routes"
-	"soli/formations/src/auth/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -18,41 +17,41 @@ func (opm PermissionsMiddleware) IsAuthorized() gin.HandlerFunc {
 
 	return func(ctx *gin.Context) {
 
-		permissionsArray, isPermissionsArray, permissionFound := controller.GetPermissionsFromContext(ctx)
-		if !permissionFound {
+		userRoleObjectAssociationsArray, isRolesArray, roleFound := controller.GetRolesFromContext(ctx)
+		if !roleFound {
 			return
 		}
 
-		permissionService := services.NewPermissionService(opm.DB)
-		isUserInstanceAdmin := permissionService.IsUserInstanceAdmin(permissionsArray)
-		if isUserInstanceAdmin {
-			ctx.Next()
-		}
+		// permissionService := services.NewPermissionService(opm.DB)
+		// isUserInstanceAdmin := permissionService.IsUserInstanceAdmin(permissionsArray)
+		// if isUserInstanceAdmin {
+		// 	ctx.Next()
+		// }
 
-		if isPermissionsArray {
+		if isRolesArray {
 			switch ctx.Request.Method {
 			case http.MethodPost:
 				ctx.Next()
 			case http.MethodGet:
 				_, idFound := controller.GetEntityIdFromContext(ctx)
 				if idFound {
-					opm.callAboutSpecificEntityWithId(ctx, permissionsArray)
+					opm.callAboutSpecificEntityWithId(ctx, userRoleObjectAssociationsArray)
 				} else {
 					ctx.Next()
 				}
 			case http.MethodPut:
-				permissionFound = opm.callAboutSpecificEntityWithId(ctx, permissionsArray)
+				roleFound = opm.callAboutSpecificEntityWithId(ctx, userRoleObjectAssociationsArray)
 			case http.MethodPatch:
-				permissionFound = opm.callAboutSpecificEntityWithId(ctx, permissionsArray)
+				roleFound = opm.callAboutSpecificEntityWithId(ctx, userRoleObjectAssociationsArray)
 			case http.MethodDelete:
-				permissionFound = opm.callAboutSpecificEntityWithId(ctx, permissionsArray)
+				roleFound = opm.callAboutSpecificEntityWithId(ctx, userRoleObjectAssociationsArray)
 			default:
 				ctx.JSON(http.StatusForbidden, "Unknown HTTP Method fot this endpoint")
 				ctx.Abort()
 				return
 			}
 
-			if !permissionFound {
+			if !roleFound {
 				ctx.JSON(http.StatusForbidden, "You do not have permission to access this resource")
 				ctx.Abort()
 				return
@@ -68,7 +67,7 @@ func (opm PermissionsMiddleware) IsAuthorized() gin.HandlerFunc {
 
 }
 
-func (PermissionsMiddleware) callAboutSpecificEntityWithId(ctx *gin.Context, permissionsArray *[]models.Permission) bool {
+func (PermissionsMiddleware) callAboutSpecificEntityWithId(ctx *gin.Context, rolesArray *[]models.UserRole) bool {
 	entityUUID, idFound := controller.GetEntityIdFromContext(ctx)
 	if !idFound {
 		return false
@@ -76,7 +75,7 @@ func (PermissionsMiddleware) callAboutSpecificEntityWithId(ctx *gin.Context, per
 
 	entityName := controller.GetEntityNameFromPath(ctx.FullPath())
 
-	proceed := controller.HasLoggedInUserPermissionForEntity(permissionsArray, ctx.Request.Method, entityName, entityUUID)
+	proceed := controller.HasLoggedInUserPermissionForEntity(rolesArray, ctx.Request.Method, entityName, entityUUID)
 
 	if !proceed {
 		ctx.JSON(http.StatusForbidden, "You do not have permission to access this resource")

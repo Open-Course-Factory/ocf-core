@@ -16,7 +16,7 @@ type GroupOutput struct {
 type CreateGroupInput struct {
 	GroupName    string `binding:"required"`
 	ParentGroup  uuid.UUID
-	Organisation uuid.UUID
+	Organisation uuid.UUID `binding:"required"`
 }
 
 type GroupEditInput struct {

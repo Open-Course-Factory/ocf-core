@@ -1,9 +1,5 @@
 package models
 
-import (
-	"github.com/google/uuid"
-)
-
 type PermissionType string
 
 const (
@@ -22,16 +18,7 @@ func ContainsPermissionType(enumArray []PermissionType, value PermissionType) bo
 	return false
 }
 
-// ToDo : maybe the group should not be in permission table
 type Permission struct {
 	BaseModel
-	UserID          *uuid.UUID
-	User            *User `json:"user"`
-	GroupID         *uuid.UUID
-	Group           *Group `json:"group"`
-	RoleID          *uuid.UUID
-	Role            *Role `json:"role"`
-	OrganisationID  *uuid.UUID
-	Organisation    *Organisation    `json:"organisation"`
 	PermissionTypes []PermissionType `gorm:"serializer:json" json:"permission_types"`
 }

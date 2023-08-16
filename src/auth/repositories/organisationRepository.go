@@ -54,12 +54,12 @@ func (o *organisationRepository) GetAllOrganisationsByUser(userId uuid.UUID) ([]
 
 	var readableOrganisations []*models.Organisation
 	// Check permissions for each organisation
-	for _, permission := range permissions {
-		// Deserialize the permissions
-		if models.ContainsPermissionType(permission.PermissionTypes, models.PermissionTypeRead) || models.ContainsPermissionType(permission.PermissionTypes, models.PermissionTypeAll) {
-			readableOrganisations = append(readableOrganisations, permission.Organisation)
-		}
-	}
+	// for _, permission := range permissions {
+	// 	// Deserialize the permissions
+	// 	if models.ContainsPermissionType(permission.PermissionTypes, models.PermissionTypeRead) || models.ContainsPermissionType(permission.PermissionTypes, models.PermissionTypeAll) {
+	// 		readableOrganisations = append(readableOrganisations, permission.Organisation)
+	// 	}
+	// }
 
 	return readableOrganisations, nil
 }
