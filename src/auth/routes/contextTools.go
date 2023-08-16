@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"reflect"
 	"soli/formations/src/auth/models"
+	"soli/formations/src/auth/types"
 	"strings"
 
 	pluralize "github.com/gertd/go-pluralize"
@@ -12,12 +13,12 @@ import (
 	"github.com/google/uuid"
 )
 
-var methodPermissionMap = map[string]models.PermissionType{
-	http.MethodGet:    models.PermissionTypeRead,
-	http.MethodPost:   models.PermissionTypeWrite,
-	http.MethodPut:    models.PermissionTypeWrite,
-	http.MethodPatch:  models.PermissionTypeWrite,
-	http.MethodDelete: models.PermissionTypeDelete,
+var methodPermissionMap = map[string]types.Permission{
+	http.MethodGet:    types.PermissionTypeRead,
+	http.MethodPost:   types.PermissionTypeWrite,
+	http.MethodPut:    types.PermissionTypeWrite,
+	http.MethodPatch:  types.PermissionTypeWrite,
+	http.MethodDelete: types.PermissionTypeDelete,
 }
 
 func GetEntityModelInterface(entityName string) interface{} {
@@ -31,8 +32,6 @@ func GetEntityModelInterface(entityName string) interface{} {
 		result = models.Group{}
 	case "Organisation":
 		result = models.Organisation{}
-	case "Permission":
-		result = models.Permission{}
 	}
 	return result
 }
@@ -90,12 +89,10 @@ func HasLoggedInUserPermissionForEntity(userRoleObjectAssociations *[]models.Use
 	for _, userRoleObjectAssociation := range *userRoleObjectAssociations {
 		if userRoleObjectAssociation.SubType == entityName {
 			if reflect.DeepEqual(userRoleObjectAssociation.SubObjectID, entityUUID) {
-				for _, permission := range userRoleObjectAssociation.Role.Permissions {
-					if models.ContainsPermissionType(permission.PermissionTypes, models.PermissionTypeAll) ||
-						models.ContainsPermissionType(permission.PermissionTypes, methodPermissionMap[method]) {
-						proceed = true
-						break
-					}
+				if types.ContainsPermissionType(userRoleObjectAssociation.Role.Permissions, types.PermissionTypeAll) ||
+					types.ContainsPermissionType(userRoleObjectAssociation.Role.Permissions, methodPermissionMap[method]) {
+					proceed = true
+					break
 				}
 			}
 		}

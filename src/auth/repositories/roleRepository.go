@@ -31,7 +31,8 @@ func NewRoleRepository(db *gorm.DB) RoleRepository {
 func (r roleRepository) CreateRole(roledto dto.CreateRoleInput) (*models.Role, error) {
 
 	role := models.Role{
-		RoleName: roledto.RoleName,
+		RoleName:    roledto.RoleName,
+		Permissions: roledto.Permissions,
 	}
 
 	result := r.db.Create(&role)
@@ -44,7 +45,8 @@ func (r roleRepository) CreateRole(roledto dto.CreateRoleInput) (*models.Role, e
 func (r roleRepository) EditRole(id uuid.UUID, roleinfos dto.RoleEditInput) (*dto.RoleEditOutput, error) {
 
 	role := models.Role{
-		RoleName: roleinfos.RoleName,
+		RoleName:    roleinfos.RoleName,
+		Permissions: roleinfos.Permissions,
 	}
 
 	result := r.db.Model(&models.Role{}).Where("id = ?", id).Updates(role)

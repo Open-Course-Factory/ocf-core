@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/models"
+	"soli/formations/src/auth/types"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -41,7 +42,7 @@ func (r *organisationRepository) CreateOrganisation(organisationdto dto.CreateOr
 func (o *organisationRepository) GetAllOrganisationsByUser(userId uuid.UUID) ([]*models.Organisation, error) {
 
 	// ToDo: add role management
-	var permissions []*models.Permission
+	var permissions []*types.Permission
 	entityType := reflect.TypeOf(models.Organisation{}).Name()
 	result := o.db.
 		Joins("left join organisations on permissions.organisation_id = organisations.id").

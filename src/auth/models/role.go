@@ -1,5 +1,7 @@
 package models
 
+import "soli/formations/src/auth/types"
+
 type RoleType string
 
 const (
@@ -12,6 +14,6 @@ const (
 
 type Role struct {
 	BaseModel
-	RoleName    RoleType     `json:"roleName"`
-	Permissions []Permission `gorm:"many2many:role_permissions;" json:"permissions"`
+	RoleName    RoleType           `json:"roleName"`
+	Permissions []types.Permission `gorm:"serializer:json" json:"permissions"`
 }

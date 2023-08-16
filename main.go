@@ -23,10 +23,10 @@ import (
 	groupController "soli/formations/src/auth/routes/groupRoutes"
 	loginController "soli/formations/src/auth/routes/loginRoutes"
 	organisationController "soli/formations/src/auth/routes/organisationRoutes"
-	permissionController "soli/formations/src/auth/routes/permissionRoutes"
 	roleController "soli/formations/src/auth/routes/roleRoutes"
 	userController "soli/formations/src/auth/routes/userRoutes"
 	"soli/formations/src/auth/services"
+	"soli/formations/src/auth/types"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 
@@ -62,7 +62,6 @@ func main() {
 	sqldb.DB.AutoMigrate(&authModels.Role{})
 	sqldb.DB.AutoMigrate(&authModels.Group{})
 	sqldb.DB.AutoMigrate(&authModels.Organisation{})
-	sqldb.DB.AutoMigrate(&authModels.Permission{})
 
 	sqldb.DB.SetupJoinTable(&authModels.User{}, "Roles", &authModels.UserRole{})
 	sqldb.DB.AutoMigrate(&authModels.UserRole{})
@@ -84,7 +83,6 @@ func main() {
 	organisationController.OrganisationsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	loginController.LoginRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	loginController.RefreshRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	permissionController.PermissionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
@@ -106,16 +104,15 @@ func initDB() {
 	if sqldb.DBType == "sqlite" {
 		genericService := services.NewGenericService(sqldb.DB)
 		roleService := services.NewRoleService(sqldb.DB)
-		permissionService := services.NewPermissionService(sqldb.DB)
 		//groupService := services.NewGroupService(sqldb.DB)
 		users, _ := genericService.GetEntities(authModels.User{})
 
 		if len(users) == 0 {
 			// Roles should be pre-existant
-			roleInstanceAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeInstanceAdmin}
+			roleInstanceAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeInstanceAdmin, Permissions: []types.Permission{types.PermissionTypeAll}}
 			roleInstanceAdminOutput, _ := roleService.CreateRole(roleInstanceAdminInput, &config.Configuration{})
 
-			roleOrganisationAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeOrganisationAdmin}
+			roleOrganisationAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeOrganisationAdmin, Permissions: []types.Permission{types.PermissionTypeAll}}
 			roleService.CreateRole(roleOrganisationAdminInput, &config.Configuration{})
 
 			// permissionInput := authDto.CreatePermissionInput{

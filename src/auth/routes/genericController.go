@@ -15,13 +15,11 @@ type GenericController interface {
 	GetEntity(ctx *gin.Context)
 	GetEntities(ctx *gin.Context)
 	DeleteEntity(ctx *gin.Context)
-	GetPermissionService() *services.PermissionService
 	GetGenericService() *services.GenericService
 }
 
 type genericController struct {
-	genericService    services.GenericService
-	permissionService services.PermissionService
+	genericService services.GenericService
 }
 
 func NewGenericController(db *gorm.DB) GenericController {
@@ -29,11 +27,9 @@ func NewGenericController(db *gorm.DB) GenericController {
 	funcMap["UserModelToUserOutput"] = dto.UserModelToUserOutput
 	funcMap["GroupModelToGroupOutput"] = dto.GroupModelToGroupOutput
 	funcMap["OrganisationModelToOrganisationOutput"] = dto.OrganisationModelToOrganisationOutput
-	funcMap["PermissionModelToPermissionOutput"] = dto.PermissionModelToPermissionOutput
 
 	controller := &genericController{
-		genericService:    services.NewGenericService(db),
-		permissionService: services.NewPermissionService(db),
+		genericService: services.NewGenericService(db),
 	}
 
 	return controller
@@ -84,8 +80,4 @@ func (genericController genericController) getEntityFromResult(funcName string, 
 
 func (genericController genericController) GetGenericService() *services.GenericService {
 	return &genericController.genericService
-}
-
-func (genericController genericController) GetPermissionService() *services.PermissionService {
-	return &genericController.permissionService
 }
