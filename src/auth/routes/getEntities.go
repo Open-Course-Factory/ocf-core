@@ -10,26 +10,51 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func (genericController genericController) GetEntities(ctx *gin.Context) {
+func (genericController genericController) GetEntitiesWithPermissionCheck(ctx *gin.Context) {
 
-	entityName := GetEntityNameFromPath(ctx.FullPath())
-
-	entitiesDto, shouldReturn := genericController.getEntitiesFromName(entityName)
-	if shouldReturn {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Entities not found",
-		})
+	entitiesDto, shouldReturn1 := genericController.getEntities(ctx, true)
+	if shouldReturn1 {
 		return
 	}
 
 	ctx.JSON(http.StatusOK, entitiesDto)
 }
 
-func (genericController genericController) getEntitiesFromName(entityName string) ([]interface{}, bool) {
-	entityModelInterface := GetEntityModelInterface(entityName)
+func (genericController genericController) GetEntitiesWithoutPermissionCheck(ctx *gin.Context) {
+
+	entitiesDto, shouldReturn1 := genericController.getEntities(ctx, false)
+	if shouldReturn1 {
+		return
+	}
+
+	ctx.JSON(http.StatusOK, entitiesDto)
+}
+
+func (genericController genericController) getEntities(ctx *gin.Context, permCheck bool) ([]interface{}, bool) {
+	entityName := GetEntityNameFromPath(ctx.FullPath())
+
+	userRolesArray, _, shouldReturn := GetRolesFromContext(ctx)
+	if shouldReturn {
+		return nil, true
+	}
+
+	entitiesDto, shouldReturn := genericController.getEntitiesFromName(entityName, userRolesArray, permCheck)
+	if shouldReturn {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Entities not found",
+		})
+		return nil, true
+	}
+	return entitiesDto, false
+}
+
+func (genericController genericController) getEntitiesFromName(entityName string, userRoles *[]models.UserRole, permCheck bool) ([]interface{}, bool) {
+	entityModelInterface := genericController.genericService.GetEntityModelInterface(entityName)
 
 	allEntitiesPages, err := genericController.genericService.GetEntities(entityModelInterface)
+
+	isUserInstanceAdmin := genericController.genericService.IsUserInstanceAdmin(userRoles)
 
 	if err != nil {
 		return nil, true
@@ -52,17 +77,23 @@ func (genericController genericController) getEntitiesFromName(entityName string
 
 				item := convertedPage.Index(i).Interface()
 
-				// Here we check permissions for the logged in user, should be done within the request (to avoid this)
 				entityBaseModel, isOk := models.ExtractBaseFromAny(item)
-				var proceed bool
-				if isOk {
-					// ToDo rework permission system
-					//proceed = HasLoggedInUserPermissionForEntity(permissions, http.MethodGet, entityName, entityBaseModel.ID)
-					fmt.Println(entityBaseModel)
-					proceed = true
-				}
-				if !proceed {
+				if !isOk {
 					continue
+				}
+
+				if permCheck {
+					organisation := genericController.genericService.GetObjectOrganisation(entityName, item)
+					isUserOrganisationAdmin := genericController.genericService.IsUserOrganisationAdmin(userRoles, organisation)
+
+					if !isUserInstanceAdmin && !isUserOrganisationAdmin {
+						// Here we check permissions for the logged in user through userRoles added in context,
+						// maybe should be done within the request (to avoid this)
+						proceed := HasUserRolesPermissionForEntity(userRoles, http.MethodGet, entityName, entityBaseModel.ID)
+						if !proceed {
+							continue
+						}
+					}
 				}
 
 				var shouldReturn bool

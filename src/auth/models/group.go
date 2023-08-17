@@ -12,4 +12,3 @@ type Group struct {
 	OrganisationID *uuid.UUID
 	Organisation   *Organisation `json:"Organisation"`
 }
-

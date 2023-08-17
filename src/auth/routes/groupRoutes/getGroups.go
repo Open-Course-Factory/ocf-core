@@ -21,5 +21,5 @@ import (
 //	@Router			/groups [get]
 func (g groupController) GetGroups(ctx *gin.Context) {
 
-	g.GetEntities(ctx)
+	g.GetEntitiesWithPermissionCheck(ctx)
 }

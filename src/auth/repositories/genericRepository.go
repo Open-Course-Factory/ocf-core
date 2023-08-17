@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type GenericRepository interface {
@@ -46,8 +47,8 @@ func (o *genericRepository) GetAllEntities(data interface{}, pageSize int) ([]in
 		pages := reflect.New(reflect.SliceOf(dtype)).Elem().Interface()
 		offset := (page - 1) * pageSize
 
-		// Fetch a page of records
-		result := o.db.Model(data).Limit(pageSize).Offset(offset).Find(&pages)
+		// Fetch a page of records /!\ the massive preload coul be a problem with lots of data in time
+		result := o.db.Model(data).Preload(clause.Associations).Limit(pageSize).Offset(offset).Find(&pages)
 		if result.Error != nil {
 			return nil, result.Error
 		}

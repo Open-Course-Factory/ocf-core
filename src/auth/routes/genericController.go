@@ -13,7 +13,8 @@ var funcMap = make(map[string]interface{})
 
 type GenericController interface {
 	GetEntity(ctx *gin.Context)
-	GetEntities(ctx *gin.Context)
+	GetEntitiesWithPermissionCheck(ctx *gin.Context)
+	GetEntitiesWithoutPermissionCheck(ctx *gin.Context)
 	DeleteEntity(ctx *gin.Context)
 	GetGenericService() *services.GenericService
 }

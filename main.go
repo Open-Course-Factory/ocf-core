@@ -104,7 +104,6 @@ func initDB() {
 	if sqldb.DBType == "sqlite" {
 		genericService := services.NewGenericService(sqldb.DB)
 		roleService := services.NewRoleService(sqldb.DB)
-		//groupService := services.NewGroupService(sqldb.DB)
 		users, _ := genericService.GetEntities(authModels.User{})
 
 		if len(users) == 0 {
@@ -115,36 +114,15 @@ func initDB() {
 			roleOrganisationAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeOrganisationAdmin, Permissions: []types.Permission{types.PermissionTypeAll}}
 			roleService.CreateRole(roleOrganisationAdminInput, &config.Configuration{})
 
-			// permissionInput := authDto.CreatePermissionInput{
-			// 	PermissionTypes: []authModels.PermissionType{
-			// 		authModels.PermissionTypeAll,
-			// 	},
-			// }
-			// permissionService.CreatePermission(permissionInput)
+			roleObjectOwnerInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeObjectOwner, Permissions: []types.Permission{types.PermissionTypeAll}}
+			roleService.CreateRole(roleObjectOwnerInput, &config.Configuration{})
 
-			//permissionAssociationService, organisationOutputDto, permissionOutput := createUserComplete("test@test.com", "test", "Tom", "Baggins")
 			createUserComplete("test@test.com", "test", "Tom", "Baggins")
+			createUserComplete("test2@test.com", "test2", "Bilbo", "Baggins")
 
 			userTestAdminDto := createUserComplete("admin@test.com", "admin", "Gan", "Dalf")
 
 			roleService.CreateUserRoleObjectAssociation(userTestAdminDto.ID, roleInstanceAdminOutput.ID, uuid.Nil, "")
-
-			// groupInput := authDto.CreateGroupInput{GroupName: "groupTest"}
-			// groupService.CreateGroup(groupInput)
-
-			// groupInput2 := authDto.CreateGroupInput{GroupName: "groupTest2"}
-			// groupService.CreateGroup(groupInput2)
-
-			// permissionAssociationObject := authDto.PermissionAssociationObjectInput{
-			// 	SubObjectID: organisationOutputDto.ID,
-			// 	SubType:     reflect.TypeOf(models.Organisation{}).Name(),
-			// }
-			// permissionAssociationInput := authDto.PermissionAssociationInput{
-			// 	PermissionID:                 permissionOutput.ID.String(),
-			// 	PermissionAssociationObjects: []authDto.PermissionAssociationObjectInput{permissionAssociationObject},
-			// }
-
-			// permissionAssociationService.CreatePermissionAssociation(permissionAssociationInput)
 
 		}
 	}
@@ -163,9 +141,15 @@ func createUserComplete(email string, password string, firstName string, lastNam
 	organisationOutputDto, _ := organisationService.CreateOrganisation(organisationInput, &config.Configuration{})
 
 	roleService := services.NewRoleService(sqldb.DB)
-	roleId, _ := roleService.GetRoleByType(authModels.RoleTypeOrganisationAdmin)
+	roleOrganisationAdminId, _ := roleService.GetRoleByType(authModels.RoleTypeOrganisationAdmin)
+	roleObjectOwnerId, _ := roleService.GetRoleByType(authModels.RoleTypeObjectOwner)
 
-	roleService.CreateUserRoleObjectAssociation(userOutputDto.ID, roleId, organisationOutputDto.ID, "Organisation")
+	roleService.CreateUserRoleObjectAssociation(userOutputDto.ID, roleOrganisationAdminId, organisationOutputDto.ID, "Organisation")
+	roleService.CreateUserRoleObjectAssociation(userOutputDto.ID, roleObjectOwnerId, userOutputDto.ID, "User")
+
+	groupService := services.NewGroupService(sqldb.DB)
+	groupInput := authDto.CreateGroupInput{GroupName: lastName + "_grp", Organisation: organisationOutputDto.ID}
+	groupService.CreateGroup(groupInput)
 
 	return userOutputDto
 }

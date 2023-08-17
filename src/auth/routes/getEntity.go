@@ -23,7 +23,7 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 	}
 
 	entityName := GetEntityNameFromPath(ctx.FullPath())
-	entityModelInterface := GetEntityModelInterface(entityName)
+	entityModelInterface := genericController.genericService.GetEntityModelInterface(entityName)
 
 	entity, entityError := genericController.genericService.GetEntity(id, entityModelInterface)
 

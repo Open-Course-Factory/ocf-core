@@ -3,7 +3,6 @@ package controller
 import (
 	"log"
 	"net/http"
-	"reflect"
 	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/types"
 	"strings"
@@ -19,21 +18,6 @@ var methodPermissionMap = map[string]types.Permission{
 	http.MethodPut:    types.PermissionTypeWrite,
 	http.MethodPatch:  types.PermissionTypeWrite,
 	http.MethodDelete: types.PermissionTypeDelete,
-}
-
-func GetEntityModelInterface(entityName string) interface{} {
-	var result interface{}
-	switch entityName {
-	case "Role":
-		result = models.Role{}
-	case "User":
-		result = models.User{}
-	case "Group":
-		result = models.Group{}
-	case "Organisation":
-		result = models.Organisation{}
-	}
-	return result
 }
 
 func GetEntityNameFromPath(path string) string {
@@ -58,11 +42,11 @@ func GetRolesFromContext(ctx *gin.Context) (*[]models.UserRole, bool, bool) {
 	if !ok {
 		ctx.JSON(http.StatusOK, "[]")
 		ctx.Abort()
-		return nil, false, false
+		return nil, false, true
 	}
 
 	userRoleObjectAssociationModels, isRole := rawRoles.(*[]models.UserRole)
-	return userRoleObjectAssociationModels, isRole, true
+	return userRoleObjectAssociationModels, isRole, false
 }
 
 func GetEntityIdFromContext(ctx *gin.Context) (uuid.UUID, bool) {
@@ -83,12 +67,12 @@ func GetEntityIdFromContext(ctx *gin.Context) (uuid.UUID, bool) {
 	return entityUUID, true
 }
 
-func HasLoggedInUserPermissionForEntity(userRoleObjectAssociations *[]models.UserRole, method string, entityName string, entityUUID uuid.UUID) bool {
+func HasUserRolesPermissionForEntity(userRoleObjectAssociations *[]models.UserRole, method string, entityName string, entityUUID uuid.UUID) bool {
 	var proceed bool
 
 	for _, userRoleObjectAssociation := range *userRoleObjectAssociations {
 		if userRoleObjectAssociation.SubType == entityName {
-			if reflect.DeepEqual(userRoleObjectAssociation.SubObjectID, entityUUID) {
+			if userRoleObjectAssociation.SubObjectID.String() == entityUUID.String() {
 				if types.ContainsPermissionType(userRoleObjectAssociation.Role.Permissions, types.PermissionTypeAll) ||
 					types.ContainsPermissionType(userRoleObjectAssociation.Role.Permissions, methodPermissionMap[method]) {
 					proceed = true

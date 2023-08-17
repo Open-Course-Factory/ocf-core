@@ -75,7 +75,7 @@ func (PermissionsMiddleware) callAboutSpecificEntityWithId(ctx *gin.Context, rol
 
 	entityName := controller.GetEntityNameFromPath(ctx.FullPath())
 
-	proceed := controller.HasLoggedInUserPermissionForEntity(rolesArray, ctx.Request.Method, entityName, entityUUID)
+	proceed := controller.HasUserRolesPermissionForEntity(rolesArray, ctx.Request.Method, entityName, entityUUID)
 
 	if !proceed {
 		ctx.JSON(http.StatusForbidden, "You do not have permission to access this resource")

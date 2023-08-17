@@ -10,6 +10,6 @@ type UserRole struct {
 	RoleID      *uuid.UUID `gorm:"primaryKey"`
 	User        *User      `json:"user"`
 	UserID      *uuid.UUID `gorm:"primaryKey"`
-	SubObjectID *uuid.UUID `json:"sub_object_id"`
+	SubObjectID *uuid.UUID `gorm:"primaryKey" json:"sub_object_id"`
 	SubType     string     `json:"sub_type"`
 }

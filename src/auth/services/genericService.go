@@ -1,6 +1,7 @@
 package services
 
 import (
+	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/repositories"
 
 	"github.com/google/uuid"
@@ -11,6 +12,10 @@ type GenericService interface {
 	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetEntities(data interface{}) ([]interface{}, error)
 	DeleteEntity(id uuid.UUID, data interface{}) error
+	IsUserInstanceAdmin(userRoleObjectAssociations *[]models.UserRole) bool
+	IsUserOrganisationAdmin(userRoles *[]models.UserRole, organisation *models.Organisation) bool
+	GetEntityModelInterface(entityName string) interface{}
+	GetObjectOrganisation(entityModel string, object any) *models.Organisation
 }
 
 type genericService struct {
@@ -52,4 +57,64 @@ func (g genericService) DeleteEntity(id uuid.UUID, data interface{}) error {
 		return errorDelete
 	}
 	return nil
+}
+
+func (g genericService) IsUserInstanceAdmin(userRoles *[]models.UserRole) bool {
+	var proceed bool
+	for _, userRoleObjectAssociation := range *userRoles {
+		if userRoleObjectAssociation.Role.RoleName == "instance_admin" {
+			proceed = true
+			break
+		}
+	}
+	return proceed
+}
+
+func (g genericService) IsUserOrganisationAdmin(userRoles *[]models.UserRole, organisation *models.Organisation) bool {
+	var proceed bool
+
+	for _, userRoleObjectAssociation := range *userRoles {
+		if userRoleObjectAssociation.SubType == "Organisation" && userRoleObjectAssociation.SubObjectID.String() == organisation.ID.String() && userRoleObjectAssociation.Role.RoleName == "organisation_admin" {
+			proceed = true
+			break
+		}
+	}
+
+	return proceed
+}
+
+func (g genericService) GetEntityModelInterface(entityName string) interface{} {
+	var result interface{}
+	switch entityName {
+	case "Role":
+		result = models.Role{}
+	case "User":
+		result = models.User{}
+	case "Group":
+		result = models.Group{}
+	case "Organisation":
+		result = models.Organisation{}
+	}
+	return result
+}
+
+func (g genericService) GetObjectOrganisation(entityModel string, object any) *models.Organisation {
+	var organisation models.Organisation
+
+	switch g.GetEntityModelInterface(entityModel).(type) {
+	case models.Organisation:
+		org := object.(models.Organisation)
+		organisation = org
+	case models.Group:
+		group := object.(models.Group)
+
+		orgEntity, err := g.GetEntity(*group.OrganisationID, g.GetEntityModelInterface("Organisation"))
+		if err != nil {
+			return &organisation
+		}
+		orgPtr := orgEntity.(*models.Organisation)
+		organisation = *orgPtr
+	}
+
+	return &organisation
 }

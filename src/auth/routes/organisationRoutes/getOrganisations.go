@@ -21,5 +21,5 @@ import (
 //	@Router			/organisations [get]
 func (org organisationController) GetOrganisations(ctx *gin.Context) {
 
-	org.GetEntities(ctx)
+	org.GetEntitiesWithPermissionCheck(ctx)
 }
