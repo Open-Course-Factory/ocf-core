@@ -33,9 +33,8 @@ func AddOrganisation(organisationService services.OrganisationService, mockConfi
 		Config: mockConfig,
 	}
 
-	permissionMiddleware := &middleware.PermissionsMiddleware{
-		DB: sqldb.DB,
-	}
+	genericService := services.NewGenericService(sqldb.DB)
+	permissionMiddleware := middleware.NewPermissionsMiddleware(sqldb.DB, genericService)
 
 	router.POST("/organisations", authMiddleware.CheckIsLogged(), permissionMiddleware.IsAuthorized(), controller.AddOrganisation)
 

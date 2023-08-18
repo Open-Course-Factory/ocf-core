@@ -38,12 +38,10 @@ func SetupTest(tb testing.TB) func(tb testing.TB) {
 
 	sqldb.ConnectDB()
 
-	sqldb.DB.AutoMigrate(&authModels.User{})
+	sqldb.DB.AutoMigrate(&authModels.User{}, &authModels.Role{}, &authModels.UserRoles{})
 	sqldb.DB.AutoMigrate(&authModels.SshKey{})
-	sqldb.DB.AutoMigrate(&authModels.Role{})
 	sqldb.DB.AutoMigrate(&authModels.Group{})
 	sqldb.DB.AutoMigrate(&authModels.Organisation{})
-	sqldb.DB.AutoMigrate(&authModels.UserRole{})
 
 	UserService = services.NewUserService(sqldb.DB)
 	OrganisationService = services.NewOrganisationService(sqldb.DB)
