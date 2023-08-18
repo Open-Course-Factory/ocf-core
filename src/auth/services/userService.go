@@ -5,7 +5,10 @@ import (
 	"time"
 
 	"soli/formations/src/auth/dto"
+	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/repositories"
+
+	sqldb "soli/formations/src/db"
 
 	config "soli/formations/src/configuration"
 
@@ -19,6 +22,7 @@ type UserService interface {
 	EditUser(editedUserInput *dto.UserEditInput, id uuid.UUID, isSelf bool) (*dto.UserEditOutput, error)
 	UserLogin(userLogin *dto.UserLoginInput, config *config.Configuration) (*dto.UserTokens, error)
 	AddUserSshKey(sshKeyCreateDTO dto.CreateSshKeyInput) (*dto.SshKeyOutput, error)
+	CreateUserComplete(email string, password string, firstName string, lastName string) (*dto.UserOutput, error)
 }
 
 type userService struct {
@@ -161,4 +165,40 @@ func (u *userService) AddUserSshKey(sshKeyCreateDTO dto.CreateSshKeyInput) (*dto
 		PrivateKey: sshKey.PrivateKey,
 		CreatedAt:  sshKey.CreatedAt,
 	}, nil
+}
+
+func (u *userService) CreateUserComplete(email string, password string, firstName string, lastName string) (*dto.UserOutput, error) {
+
+	userInput := dto.CreateUserInput{Email: email, Password: password, FirstName: firstName, LastName: lastName}
+	userOutputDto, userCreateError := u.CreateUser(userInput, &config.Configuration{})
+
+	if userCreateError != nil {
+		return nil, userCreateError
+	}
+
+	organisationService := NewOrganisationService(sqldb.DB)
+	organisationOutputDto, organisationCreateError := organisationService.CreateOrganisationComplete(firstName+"_"+lastName+"_org", userOutputDto.ID)
+
+	if organisationCreateError != nil {
+		return nil, organisationCreateError
+	}
+
+	roleService := NewRoleService(sqldb.DB)
+
+	roleObjectOwnerId, getRoleError := roleService.GetRoleByType(models.RoleTypeObjectOwner)
+
+	if getRoleError != nil {
+		return nil, getRoleError
+	}
+
+	roleService.CreateUserRoleObjectAssociation(userOutputDto.ID, roleObjectOwnerId, userOutputDto.ID, "User")
+
+	groupService := NewGroupService(sqldb.DB)
+	_, groupCreateError := groupService.CreateGroupComplete(firstName+"_"+lastName+"_grp", organisationOutputDto.ID, uuid.Nil, userOutputDto.ID)
+
+	if groupCreateError != nil {
+		return nil, groupCreateError
+	}
+
+	return userOutputDto, nil
 }

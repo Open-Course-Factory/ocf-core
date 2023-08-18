@@ -12,8 +12,8 @@ type GenericService interface {
 	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetEntities(data interface{}) ([]interface{}, error)
 	DeleteEntity(id uuid.UUID, data interface{}) error
-	IsUserInstanceAdmin(userRoleObjectAssociations *[]models.UserRole) bool
-	IsUserOrganisationAdmin(userRoles *[]models.UserRole, organisation *models.Organisation) bool
+	IsUserInstanceAdmin(userRoleObjectAssociations *[]models.UserRoles) bool
+	IsUserOrganisationAdmin(userRoles *[]models.UserRoles, organisation *models.Organisation) bool
 	GetEntityModelInterface(entityName string) interface{}
 	GetObjectOrganisation(entityModel string, object any) *models.Organisation
 }
@@ -59,7 +59,7 @@ func (g genericService) DeleteEntity(id uuid.UUID, data interface{}) error {
 	return nil
 }
 
-func (g genericService) IsUserInstanceAdmin(userRoles *[]models.UserRole) bool {
+func (g genericService) IsUserInstanceAdmin(userRoles *[]models.UserRoles) bool {
 	var proceed bool
 	for _, userRoleObjectAssociation := range *userRoles {
 		if userRoleObjectAssociation.Role.RoleName == "instance_admin" {
@@ -70,7 +70,7 @@ func (g genericService) IsUserInstanceAdmin(userRoles *[]models.UserRole) bool {
 	return proceed
 }
 
-func (g genericService) IsUserOrganisationAdmin(userRoles *[]models.UserRole, organisation *models.Organisation) bool {
+func (g genericService) IsUserOrganisationAdmin(userRoles *[]models.UserRoles, organisation *models.Organisation) bool {
 	var proceed bool
 
 	for _, userRoleObjectAssociation := range *userRoles {

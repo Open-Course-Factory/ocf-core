@@ -124,7 +124,7 @@ func (opm PermissionsMiddleware) IsAuthorized() gin.HandlerFunc {
 
 }
 
-func (opm PermissionsMiddleware) callAboutSpecificEntityWithId(ctx *gin.Context, rolesArray *[]models.UserRole) bool {
+func (opm PermissionsMiddleware) callAboutSpecificEntityWithId(ctx *gin.Context, rolesArray *[]models.UserRoles) bool {
 	entityUUID, idFound := controller.GetEntityIdFromContext(ctx)
 	if !idFound {
 		return false

@@ -35,7 +35,7 @@ func (organisationController organisationController) AddOrganisation(ctx *gin.Co
 		return
 	}
 
-	organisation, organisationError := organisationController.service.CreateOrganisation(organisationCreateDTO, organisationController.config)
+	organisation, organisationError := organisationController.service.CreateOrganisation(organisationCreateDTO)
 
 	if organisationError != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{

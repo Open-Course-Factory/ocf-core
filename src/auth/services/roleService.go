@@ -13,7 +13,7 @@ type RoleService interface {
 	CreateRole(roleCreateDTO dto.CreateRoleInput) (*dto.RoleOutput, error)
 	EditRole(editedRoleInput *dto.RoleEditInput, id uuid.UUID) (*dto.RoleEditOutput, error)
 	GetRoleByType(roleType models.RoleType) (uuid.UUID, error)
-	GetRoleByUser(userId uuid.UUID) (*[]models.UserRole, error)
+	GetRoleByUser(userId uuid.UUID) (*[]models.UserRoles, error)
 	CreateUserRoleObjectAssociation(userId uuid.UUID, roleId uuid.UUID, objectId uuid.UUID, objectType string) (*dto.UserRoleObjectAssociationOutput, error)
 }
 
@@ -81,7 +81,7 @@ func (r roleService) CreateRole(roleCreateDTO dto.CreateRoleInput) (*dto.RoleOut
 
 }
 
-func (r roleService) GetRoleByUser(userId uuid.UUID) (*[]models.UserRole, error) {
+func (r roleService) GetRoleByUser(userId uuid.UUID) (*[]models.UserRoles, error) {
 
 	roles, getRoleError := r.repository.GetRoleByUser(userId)
 

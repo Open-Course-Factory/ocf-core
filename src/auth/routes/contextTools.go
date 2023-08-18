@@ -36,7 +36,7 @@ func GetEntityNameFromPath(path string) string {
 	return strings.ToUpper(string(singular[0])) + singular[1:]
 }
 
-func GetRolesFromContext(ctx *gin.Context) (*[]models.UserRole, bool, bool) {
+func GetRolesFromContext(ctx *gin.Context) (*[]models.UserRoles, bool, bool) {
 	rawRoles, ok := ctx.Get("roles")
 
 	if !ok {
@@ -45,7 +45,7 @@ func GetRolesFromContext(ctx *gin.Context) (*[]models.UserRole, bool, bool) {
 		return nil, false, false
 	}
 
-	userRoleObjectAssociationModels, isRole := rawRoles.(*[]models.UserRole)
+	userRoleObjectAssociationModels, isRole := rawRoles.(*[]models.UserRoles)
 	return userRoleObjectAssociationModels, isRole, true
 }
 
@@ -67,7 +67,7 @@ func GetEntityIdFromContext(ctx *gin.Context) (uuid.UUID, bool) {
 	return entityUUID, true
 }
 
-func HasUserRolesPermissionForEntity(userRoleObjectAssociations *[]models.UserRole, method string, entityName string, entityUUID uuid.UUID) bool {
+func HasUserRolesPermissionForEntity(userRoleObjectAssociations *[]models.UserRoles, method string, entityName string, entityUUID uuid.UUID) bool {
 	var proceed bool
 
 	for _, userRoleObjectAssociation := range *userRoleObjectAssociations {

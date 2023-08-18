@@ -9,8 +9,8 @@ import (
 )
 
 type UserRoleAssociationObjectRepository interface {
-	CreateUserRoleAssociationObject(rolePermissionAssociationObjectDto *dto.UserRoleObjectAssociationInput) (*models.UserRole, error)
-	GetUserRoleAssociationObject(subObjectId *uuid.UUID, subObjectType string) (*models.UserRole, error)
+	CreateUserRoleAssociationObject(rolePermissionAssociationObjectDto *dto.UserRoleObjectAssociationInput) (*models.UserRoles, error)
+	GetUserRoleAssociationObject(subObjectId *uuid.UUID, subObjectType string) (*models.UserRoles, error)
 }
 
 type permissionAssociationObjectRepository struct {
@@ -26,9 +26,9 @@ func NewRolePermissionAssociationObjectRepository(db *gorm.DB) UserRoleAssociati
 	return repository
 }
 
-func (p permissionAssociationObjectRepository) CreateUserRoleAssociationObject(permissionAssociationObject *dto.UserRoleObjectAssociationInput) (*models.UserRole, error) {
+func (p permissionAssociationObjectRepository) CreateUserRoleAssociationObject(permissionAssociationObject *dto.UserRoleObjectAssociationInput) (*models.UserRoles, error) {
 
-	rolePermissionAssociationObject := models.UserRole{
+	rolePermissionAssociationObject := models.UserRoles{
 		SubType:     permissionAssociationObject.SubType,
 		SubObjectID: &permissionAssociationObject.SubObjectID,
 	}
@@ -60,10 +60,10 @@ func (p permissionAssociationObjectRepository) CreateUserRoleAssociationObject(p
 	return &rolePermissionAssociationObject, nil
 }
 
-func (p permissionAssociationObjectRepository) GetUserRoleAssociationObject(subObjectId *uuid.UUID, subObjectType string) (*models.UserRole, error) {
+func (p permissionAssociationObjectRepository) GetUserRoleAssociationObject(subObjectId *uuid.UUID, subObjectType string) (*models.UserRoles, error) {
 
-	var permissionAssociationObject models.UserRole
-	result := p.db.Where(&models.UserRole{SubObjectID: subObjectId, SubType: subObjectType}).First(&permissionAssociationObject)
+	var permissionAssociationObject models.UserRoles
+	result := p.db.Where(&models.UserRoles{SubObjectID: subObjectId, SubType: subObjectType}).First(&permissionAssociationObject)
 
 	if result.Error != nil {
 		return nil, result.Error

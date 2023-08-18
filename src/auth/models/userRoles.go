@@ -6,16 +6,16 @@ import (
 	"github.com/google/uuid"
 )
 
-type UserRole struct {
+type UserRoles struct {
 	entityManagementModels.BaseModel
 	Role        *Role      `json:"role"`
-	RoleID      *uuid.UUID `gorm:"primaryKey"`
+	RoleID      *uuid.UUID `json:"role_id"`
 	User        *User      `json:"user"`
-	UserID      *uuid.UUID `gorm:"primaryKey"`
-	SubObjectID *uuid.UUID `gorm:"primaryKey" json:"sub_object_id"`
+	UserID      *uuid.UUID `json:"user_id"`
+	SubObjectID *uuid.UUID `json:"sub_object_id"`
 	SubType     string     `json:"sub_type"`
 }
 
-func (ur UserRole) GetBaseModel() entityManagementModels.BaseModel {
+func (ur UserRoles) GetBaseModel() entityManagementModels.BaseModel {
 	return ur.BaseModel
 }

@@ -21,7 +21,7 @@ type UserRoleObjectAssociationInput struct {
 	SubType     string
 }
 
-func RolePermissionAssociationObjectModelToRolePermissionAssociationObjectOutput(userRoleObjectAssociationModel models.UserRole) *UserRoleObjectAssociationOutput {
+func RolePermissionAssociationObjectModelToRolePermissionAssociationObjectOutput(userRoleObjectAssociationModel models.UserRoles) *UserRoleObjectAssociationOutput {
 	return &UserRoleObjectAssociationOutput{
 		ID:          userRoleObjectAssociationModel.ID,
 		RoleID:      userRoleObjectAssociationModel.Role.ID,

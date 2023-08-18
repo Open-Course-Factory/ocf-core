@@ -50,7 +50,7 @@ func (genericController genericController) getEntities(ctx *gin.Context, permChe
 	return entitiesDto, false
 }
 
-func (genericController genericController) getEntitiesFromName(entityName string, userRoles *[]models.UserRole, permCheck bool) ([]interface{}, bool) {
+func (genericController genericController) getEntitiesFromName(entityName string, userRoles *[]models.UserRoles, permCheck bool) ([]interface{}, bool) {
 	entityModelInterface := genericController.genericService.GetEntityModelInterface(entityName)
 	allEntitiesPages, err := genericController.genericService.GetEntities(entityModelInterface)
 	isUserInstanceAdmin := genericController.genericService.IsUserInstanceAdmin(userRoles)

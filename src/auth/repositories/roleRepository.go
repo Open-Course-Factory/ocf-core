@@ -11,7 +11,7 @@ import (
 type RoleRepository interface {
 	CreateRole(roledto dto.CreateRoleInput) (*models.Role, error)
 	EditRole(id uuid.UUID, roleinfos dto.RoleEditInput) (*dto.RoleEditOutput, error)
-	GetRoleByUser(user uuid.UUID) (*[]models.UserRole, error)
+	GetRoleByUser(user uuid.UUID) (*[]models.UserRoles, error)
 	CreateUserRoleObjectAssociation(userId uuid.UUID, roleId uuid.UUID, objectId uuid.UUID, objectType string) (*dto.UserRoleObjectAssociationOutput, error)
 }
 
@@ -60,9 +60,9 @@ func (r roleRepository) EditRole(id uuid.UUID, roleinfos dto.RoleEditInput) (*dt
 	}, nil
 }
 
-func (r roleRepository) GetRoleByUser(user uuid.UUID) (*[]models.UserRole, error) {
+func (r roleRepository) GetRoleByUser(user uuid.UUID) (*[]models.UserRoles, error) {
 
-	var userRoleObjectAssociation []models.UserRole
+	var userRoleObjectAssociation []models.UserRoles
 	result := r.db.Where("user_id = ?", user).Preload("Role").Preload("User").Find(&userRoleObjectAssociation)
 	if result.Error != nil {
 		return nil, result.Error
@@ -72,7 +72,7 @@ func (r roleRepository) GetRoleByUser(user uuid.UUID) (*[]models.UserRole, error
 
 func (r roleRepository) CreateUserRoleObjectAssociation(userId uuid.UUID, roleId uuid.UUID, objectId uuid.UUID, objectType string) (*dto.UserRoleObjectAssociationOutput, error) {
 
-	userRoleObjectAssociation := models.UserRole{
+	userRoleObjectAssociation := models.UserRoles{
 		UserID:      &userId,
 		RoleID:      &roleId,
 		SubObjectID: &objectId,

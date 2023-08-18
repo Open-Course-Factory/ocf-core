@@ -58,7 +58,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Register some entities
 	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.User{}).Name(), reflect.TypeOf(authModels.User{}))
 	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Group{}).Name(), reflect.TypeOf(authModels.Group{}))
 	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Role{}).Name(), reflect.TypeOf(authModels.Role{}))
@@ -67,14 +66,13 @@ func main() {
 
 	sqldb.ConnectDB()
 
-	sqldb.DB.AutoMigrate(&authModels.User{})
+	sqldb.DB.AutoMigrate(&authModels.User{}, &authModels.Role{}, &authModels.UserRoles{})
 	sqldb.DB.AutoMigrate(&authModels.SshKey{})
-	sqldb.DB.AutoMigrate(&authModels.Role{})
 	sqldb.DB.AutoMigrate(&authModels.Group{})
 	sqldb.DB.AutoMigrate(&authModels.Organisation{})
 
-	sqldb.DB.SetupJoinTable(&authModels.User{}, "Roles", &authModels.UserRole{})
-	sqldb.DB.AutoMigrate(&authModels.UserRole{})
+	//sqldb.DB.SetupJoinTable(&authModels.User{}, "Roles", &authModels.UserRole{})
+	sqldb.DB.AutoMigrate()
 
 	sqldb.DB.AutoMigrate(&courseModels.Page{})
 	sqldb.DB.AutoMigrate(&courseModels.Section{})
@@ -111,65 +109,47 @@ func initSwagger(r *gin.Engine) {
 }
 
 func initDB() {
+	genericService := services.NewGenericService(sqldb.DB)
+	roles, _ := genericService.GetEntities(authModels.Role{})
+
+	if len(roles) == 0 {
+		roleService := services.NewRoleService(sqldb.DB)
+		roleInstanceAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeInstanceAdmin, Permissions: []types.Permission{types.PermissionTypeAll}}
+		roleService.CreateRole(roleInstanceAdminInput)
+
+		roleOrganisationAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeOrganisationAdmin, Permissions: []types.Permission{types.PermissionTypeAll}}
+		roleService.CreateRole(roleOrganisationAdminInput)
+
+		roleObjectOwnerInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeObjectOwner, Permissions: []types.Permission{types.PermissionTypeAll}}
+		roleService.CreateRole(roleObjectOwnerInput)
+
+		roleObjectEditorInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeObjectEditor, Permissions: []types.Permission{types.PermissionTypeRead, types.PermissionTypeWrite}}
+		roleService.CreateRole(roleObjectEditorInput)
+
+		roleObjectReaderInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeObjectReader, Permissions: []types.Permission{types.PermissionTypeRead}}
+		roleService.CreateRole(roleObjectReaderInput)
+	}
+
 	if sqldb.DBType == "sqlite" {
 		sqldb.DB = sqldb.DB.Debug()
 
-		genericService := services.NewGenericService(sqldb.DB)
-		roleService := services.NewRoleService(sqldb.DB)
 		users, _ := genericService.GetEntities(authModels.User{})
 
 		if len(users) == 0 {
-			// Roles should be pre-existant
-			roleInstanceAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeInstanceAdmin, Permissions: []types.Permission{types.PermissionTypeAll}}
-			roleInstanceAdminOutput, _ := roleService.CreateRole(roleInstanceAdminInput)
 
-			roleOrganisationAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeOrganisationAdmin, Permissions: []types.Permission{types.PermissionTypeAll}}
-			roleService.CreateRole(roleOrganisationAdminInput)
+			userService := services.NewUserService(sqldb.DB)
+			userService.CreateUserComplete("test@test.com", "test", "Tom", "Baggins")
+			userService.CreateUserComplete("test2@test.com", "test2", "Bilbo", "Baggins")
 
-			roleObjectOwnerInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeObjectOwner, Permissions: []types.Permission{types.PermissionTypeAll}}
-			roleService.CreateRole(roleObjectOwnerInput)
+			userTestAdminDto, _ := userService.CreateUserComplete("admin@test.com", "admin", "Gan", "Dalf")
 
-			roleObjectEditorInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeObjectEditor, Permissions: []types.Permission{types.PermissionTypeRead, types.PermissionTypeWrite}}
-			roleService.CreateRole(roleObjectEditorInput)
+			roleService := services.NewRoleService(sqldb.DB)
+			roleInstanceAdminUuid, _ := roleService.GetRoleByType(authModels.RoleTypeInstanceAdmin)
 
-			roleObjectReaderInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeObjectReader, Permissions: []types.Permission{types.PermissionTypeRead}}
-			roleService.CreateRole(roleObjectReaderInput)
-
-			createUserComplete("test@test.com", "test", "Tom", "Baggins")
-			createUserComplete("test2@test.com", "test2", "Bilbo", "Baggins")
-
-			userTestAdminDto := createUserComplete("admin@test.com", "admin", "Gan", "Dalf")
-
-			roleService.CreateUserRoleObjectAssociation(userTestAdminDto.ID, roleInstanceAdminOutput.ID, uuid.Nil, "")
+			roleService.CreateUserRoleObjectAssociation(userTestAdminDto.ID, roleInstanceAdminUuid, uuid.Nil, "")
 
 		}
 	}
-}
-
-func createUserComplete(email string, password string, firstName string, lastName string) *authDto.UserOutput {
-
-	userService := services.NewUserService(sqldb.DB)
-
-	userInput := authDto.CreateUserInput{Email: email, Password: password, FirstName: firstName, LastName: lastName}
-	userOutputDto, _ := userService.CreateUser(userInput, &config.Configuration{})
-
-	organisationService := services.NewOrganisationService(sqldb.DB)
-
-	organisationInput := authDto.CreateOrganisationInput{Name: firstName + "_" + lastName + "_org"}
-	organisationOutputDto, _ := organisationService.CreateOrganisation(organisationInput, &config.Configuration{})
-
-	roleService := services.NewRoleService(sqldb.DB)
-	roleOrganisationAdminId, _ := roleService.GetRoleByType(authModels.RoleTypeOrganisationAdmin)
-	roleObjectOwnerId, _ := roleService.GetRoleByType(authModels.RoleTypeObjectOwner)
-
-	roleService.CreateUserRoleObjectAssociation(userOutputDto.ID, roleOrganisationAdminId, organisationOutputDto.ID, "Organisation")
-	roleService.CreateUserRoleObjectAssociation(userOutputDto.ID, roleObjectOwnerId, userOutputDto.ID, "User")
-
-	groupService := services.NewGroupService(sqldb.DB)
-	groupInput := authDto.CreateGroupInput{GroupName: firstName + "_" + lastName + "_grp", Organisation: organisationOutputDto.ID}
-	groupService.CreateGroup(groupInput)
-
-	return userOutputDto
 }
 
 func parseFlags() bool {
