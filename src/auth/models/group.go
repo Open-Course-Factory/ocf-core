@@ -1,6 +1,7 @@
 package models
 
 import (
+	"reflect"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
 	"github.com/google/uuid"
@@ -17,4 +18,8 @@ type Group struct {
 
 func (g Group) GetBaseModel() entityManagementModels.BaseModel {
 	return g.BaseModel
+}
+
+func (g Group) GetReferenceObject() string {
+	return reflect.TypeOf(Organisation{}).Name()
 }

@@ -5,14 +5,12 @@ import (
 	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/repositories"
 
-	config "soli/formations/src/configuration"
-
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type RoleService interface {
-	CreateRole(roleCreateDTO dto.CreateRoleInput, config *config.Configuration) (*dto.RoleOutput, error)
+	CreateRole(roleCreateDTO dto.CreateRoleInput) (*dto.RoleOutput, error)
 	EditRole(editedRoleInput *dto.RoleEditInput, id uuid.UUID) (*dto.RoleEditOutput, error)
 	GetRoleByType(roleType models.RoleType) (uuid.UUID, error)
 	GetRoleByUser(userId uuid.UUID) (*[]models.UserRole, error)
@@ -68,7 +66,7 @@ func (r roleService) GetRoleByType(roleType models.RoleType) (uuid.UUID, error) 
 	return result, nil
 }
 
-func (r roleService) CreateRole(roleCreateDTO dto.CreateRoleInput, config *config.Configuration) (*dto.RoleOutput, error) {
+func (r roleService) CreateRole(roleCreateDTO dto.CreateRoleInput) (*dto.RoleOutput, error) {
 
 	role, createRoleError := r.repository.CreateRole(roleCreateDTO)
 

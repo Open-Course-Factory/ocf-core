@@ -1,17 +1,33 @@
 package middleware
 
 import (
+	"bytes"
+	"io"
 	"net/http"
+	"reflect"
 	"soli/formations/src/auth/models"
 	controller "soli/formations/src/auth/routes"
 	"soli/formations/src/auth/services"
+	"strings"
+
+	entityManagementModels "soli/formations/src/entityManagement/models"
+	entityManagementServices "soli/formations/src/entityManagement/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type PermissionsMiddleware struct {
-	DB *gorm.DB
+	DB             *gorm.DB
+	genericService services.GenericService
+}
+
+func NewPermissionsMiddleware(DB *gorm.DB, genericService services.GenericService) *PermissionsMiddleware {
+	return &PermissionsMiddleware{
+		DB:             DB,
+		genericService: genericService,
+	}
 }
 
 func (opm PermissionsMiddleware) IsAuthorized() gin.HandlerFunc {
@@ -25,22 +41,60 @@ func (opm PermissionsMiddleware) IsAuthorized() gin.HandlerFunc {
 			return
 		}
 
-		// permissionService := services.NewPermissionService(opm.DB)
-		// isUserInstanceAdmin := permissionService.IsUserInstanceAdmin(permissionsArray)
-		// if isUserInstanceAdmin {
-		// 	ctx.Next()
-		// }
-
 		if isRolesArray {
+
+			isUserInstanceAdmin := opm.genericService.IsUserInstanceAdmin(userRoleObjectAssociationsArray)
+
+			if isUserInstanceAdmin {
+				ctx.Next()
+				return
+			}
+
 			switch ctx.Request.Method {
 			case http.MethodPost:
-				ctx.Next()
+				entityName := controller.GetEntityNameFromPath(ctx.FullPath())
+				resType, entityTypeOk := entityManagementServices.GlobalEntityRegistrationService.GetEntityType(entityName)
+				if entityTypeOk {
+					instance := reflect.New(resType).Elem()
+					baseModelInstance, isInterfaceWithBaseModel := instance.Interface().(entityManagementModels.InterfaceWithBaseModel)
+					if isInterfaceWithBaseModel {
+						refObject := baseModelInstance.GetReferenceObject()
+						var json map[string]interface{}
+						ByteBody, _ := io.ReadAll(ctx.Request.Body)
+						ctx.Request.Body = io.NopCloser(bytes.NewBuffer(ByteBody))
+						if err := ctx.ShouldBindJSON(&json); err != nil {
+							ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+							return
+						}
+						ctx.Request.Body = io.NopCloser(bytes.NewBuffer(ByteBody))
+						resObjectId, found := json[strings.ToLower(refObject)]
+						if found {
+							resObjectUuid, uuidError := uuid.Parse(resObjectId.(string))
+							if uuidError != nil {
+								ctx.JSON(http.StatusBadRequest, gin.H{"error": uuidError.Error()})
+								return
+							}
+
+							proceed := controller.HasUserRolesPermissionForEntity(userRoleObjectAssociationsArray, ctx.Request.Method, refObject, resObjectUuid)
+							if proceed {
+								ctx.Next()
+								return
+							}
+
+						}
+
+					}
+				}
+				ctx.JSON(http.StatusForbidden, "You do not have permission to create this resource")
+				ctx.Abort()
+				return
 			case http.MethodGet:
 				_, idFound := controller.GetEntityIdFromContext(ctx)
 				if idFound {
 					opm.callAboutSpecificEntityWithId(ctx, userRoleObjectAssociationsArray)
 				} else {
 					ctx.Next()
+					return
 				}
 			case http.MethodPut:
 				roleFound = opm.callAboutSpecificEntityWithId(ctx, userRoleObjectAssociationsArray)
@@ -75,24 +129,20 @@ func (opm PermissionsMiddleware) callAboutSpecificEntityWithId(ctx *gin.Context,
 	if !idFound {
 		return false
 	}
-	genericService := services.NewGenericService(opm.DB)
 
 	entityName := controller.GetEntityNameFromPath(ctx.FullPath())
-	entityModelInterface := genericService.GetEntityModelInterface(entityName)
-
-	entity, entityError := genericService.GetEntity(entityUUID, entityModelInterface)
-	if entityError != nil {
+	resEntity, found := opm.GetEntityFromTypeAndId(entityName, entityUUID)
+	if !found {
 		ctx.JSON(http.StatusForbidden, "You do not have permission to access this resource")
 		ctx.Abort()
 		return false
 	}
 
-	isUserInstanceAdmin := genericService.IsUserInstanceAdmin(rolesArray)
-	organisation := genericService.GetObjectOrganisation(entityName, entity)
-	isUserOrganisationAdmin := genericService.IsUserOrganisationAdmin(rolesArray, organisation)
+	organisation := opm.genericService.GetObjectOrganisation(entityName, resEntity)
+	isUserOrganisationAdmin := opm.genericService.IsUserOrganisationAdmin(rolesArray, organisation)
 
 	var proceed bool
-	if !isUserInstanceAdmin && !isUserOrganisationAdmin {
+	if !isUserOrganisationAdmin {
 		proceed = controller.HasUserRolesPermissionForEntity(rolesArray, ctx.Request.Method, entityName, entityUUID)
 	} else {
 		proceed = true
@@ -106,4 +156,14 @@ func (opm PermissionsMiddleware) callAboutSpecificEntityWithId(ctx *gin.Context,
 		ctx.Next()
 	}
 	return true
+}
+
+func (opm PermissionsMiddleware) GetEntityFromTypeAndId(entityName string, entityUUID uuid.UUID) (interface{}, bool) {
+	entityModelInterface := opm.genericService.GetEntityModelInterface(entityName)
+
+	entity, entityError := opm.genericService.GetEntity(entityUUID, entityModelInterface)
+	if entityError != nil {
+		return nil, false
+	}
+	return entity, true
 }

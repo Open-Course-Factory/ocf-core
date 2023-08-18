@@ -1,6 +1,8 @@
 package models
 
 import (
+	"reflect"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -12,6 +14,7 @@ type BaseModel struct {
 
 type InterfaceWithBaseModel interface {
 	GetBaseModel() BaseModel
+	GetReferenceObject() string
 }
 
 func (b *BaseModel) BeforeCreate(tx *gorm.DB) (err error) {
@@ -22,13 +25,16 @@ func (b *BaseModel) BeforeCreate(tx *gorm.DB) (err error) {
 	return
 }
 
-func getBaseModel(obj interface{}) (BaseModel, bool) {
+func GetBaseModel(obj interface{}) (BaseModel, bool) {
 	if v, ok := obj.(InterfaceWithBaseModel); ok {
 		return v.GetBaseModel(), true
 	}
 	return BaseModel{}, false
 }
 
-func ExtractBaseModelFromAny(obj interface{}) (BaseModel, bool) {
-	return getBaseModel(obj)
+func GetReferenceObject(obj interface{}) (string, bool) {
+	if v, ok := obj.(InterfaceWithBaseModel); ok {
+		return v.GetReferenceObject(), true
+	}
+	return reflect.TypeOf(obj).Name(), false
 }

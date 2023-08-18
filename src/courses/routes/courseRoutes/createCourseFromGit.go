@@ -4,8 +4,8 @@ import (
 	"net/http"
 
 	"soli/formations/src/courses/dto"
-	"soli/formations/src/courses/errors"
 
+	"soli/formations/src/auth/errors"
 	authModels "soli/formations/src/auth/models"
 
 	"github.com/gin-gonic/gin"

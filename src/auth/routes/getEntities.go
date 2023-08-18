@@ -75,7 +75,7 @@ func (genericController genericController) getEntitiesFromName(entityName string
 
 				item := convertedPage.Index(i).Interface()
 
-				entityBaseModel, isOk := entityManagementModels.ExtractBaseModelFromAny(item)
+				entityBaseModel, isOk := entityManagementModels.GetBaseModel(item)
 				if !isOk {
 					continue
 				}

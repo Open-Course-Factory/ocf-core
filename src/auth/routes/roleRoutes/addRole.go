@@ -43,7 +43,7 @@ func (roleController roleController) AddRole(ctx *gin.Context) {
 			return
 		}
 
-		role, roleError := roleController.service.CreateRole(roleCreateDTO, roleController.config)
+		role, roleError := roleController.service.CreateRole(roleCreateDTO)
 
 		if roleError != nil {
 			ctx.JSON(http.StatusBadRequest, &errors.APIError{

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"reflect"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
 	"github.com/google/uuid"
@@ -15,4 +16,8 @@ type SshKey struct {
 
 func (s SshKey) GetBaseModel() entityManagementModels.BaseModel {
 	return s.BaseModel
+}
+
+func (s SshKey) GetReferenceObject() string {
+	return reflect.TypeOf(User{}).Name()
 }

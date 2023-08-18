@@ -19,9 +19,8 @@ func UsersRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm
 		Config: config,
 	}
 
-	permissionMiddleware := &middleware.PermissionsMiddleware{
-		DB: db,
-	}
+	genericService := services.NewGenericService(db)
+	permissionMiddleware := middleware.NewPermissionsMiddleware(db, genericService)
 
 	routes := router.Group("/users")
 

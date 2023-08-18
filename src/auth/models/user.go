@@ -1,6 +1,7 @@
 package models
 
 import (
+	"reflect"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 )
 
@@ -18,4 +19,8 @@ type User struct {
 
 func (u User) GetBaseModel() entityManagementModels.BaseModel {
 	return u.BaseModel
+}
+
+func (u User) GetReferenceObject() string {
+	return reflect.TypeOf(User{}).Name()
 }

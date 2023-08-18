@@ -1,6 +1,7 @@
 package models
 
 import (
+	"reflect"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 )
 
@@ -12,4 +13,8 @@ type Organisation struct {
 
 func (o Organisation) GetBaseModel() entityManagementModels.BaseModel {
 	return o.BaseModel
+}
+
+func (o Organisation) GetReferenceObject() string {
+	return reflect.TypeOf(Organisation{}).Name()
 }

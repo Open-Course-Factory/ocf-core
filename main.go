@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -30,6 +31,8 @@ import (
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 
+	entityManagementServices "soli/formations/src/entityManagement/services"
+
 	sqldb "soli/formations/src/db"
 )
 
@@ -54,6 +57,13 @@ func main() {
 	if parseFlags() {
 		os.Exit(0)
 	}
+
+	// Register some entities
+	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.User{}).Name(), reflect.TypeOf(authModels.User{}))
+	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Group{}).Name(), reflect.TypeOf(authModels.Group{}))
+	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Role{}).Name(), reflect.TypeOf(authModels.Role{}))
+	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Organisation{}).Name(), reflect.TypeOf(authModels.Organisation{}))
+	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.SshKey{}).Name(), reflect.TypeOf(authModels.SshKey{}))
 
 	sqldb.ConnectDB()
 
@@ -111,13 +121,19 @@ func initDB() {
 		if len(users) == 0 {
 			// Roles should be pre-existant
 			roleInstanceAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeInstanceAdmin, Permissions: []types.Permission{types.PermissionTypeAll}}
-			roleInstanceAdminOutput, _ := roleService.CreateRole(roleInstanceAdminInput, &config.Configuration{})
+			roleInstanceAdminOutput, _ := roleService.CreateRole(roleInstanceAdminInput)
 
 			roleOrganisationAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeOrganisationAdmin, Permissions: []types.Permission{types.PermissionTypeAll}}
-			roleService.CreateRole(roleOrganisationAdminInput, &config.Configuration{})
+			roleService.CreateRole(roleOrganisationAdminInput)
 
 			roleObjectOwnerInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeObjectOwner, Permissions: []types.Permission{types.PermissionTypeAll}}
-			roleService.CreateRole(roleObjectOwnerInput, &config.Configuration{})
+			roleService.CreateRole(roleObjectOwnerInput)
+
+			roleObjectEditorInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeObjectEditor, Permissions: []types.Permission{types.PermissionTypeRead, types.PermissionTypeWrite}}
+			roleService.CreateRole(roleObjectEditorInput)
+
+			roleObjectReaderInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeObjectReader, Permissions: []types.Permission{types.PermissionTypeRead}}
+			roleService.CreateRole(roleObjectReaderInput)
 
 			createUserComplete("test@test.com", "test", "Tom", "Baggins")
 			createUserComplete("test2@test.com", "test2", "Bilbo", "Baggins")
