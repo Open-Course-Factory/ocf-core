@@ -6,6 +6,7 @@ import (
 	"os"
 	"soli/formations/src/auth/models"
 	config "soli/formations/src/configuration"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strconv"
 	"strings"
 
@@ -30,7 +31,7 @@ func (s Format) String() string {
 }
 
 type Course struct {
-	models.BaseModel
+	entityManagementModels.BaseModel
 	Category           string
 	Name               string
 	Version            string

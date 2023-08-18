@@ -102,6 +102,8 @@ func initSwagger(r *gin.Engine) {
 
 func initDB() {
 	if sqldb.DBType == "sqlite" {
+		sqldb.DB = sqldb.DB.Debug()
+
 		genericService := services.NewGenericService(sqldb.DB)
 		roleService := services.NewRoleService(sqldb.DB)
 		users, _ := genericService.GetEntities(authModels.User{})
@@ -137,7 +139,7 @@ func createUserComplete(email string, password string, firstName string, lastNam
 
 	organisationService := services.NewOrganisationService(sqldb.DB)
 
-	organisationInput := authDto.CreateOrganisationInput{Name: lastName + "_org"}
+	organisationInput := authDto.CreateOrganisationInput{Name: firstName + "_" + lastName + "_org"}
 	organisationOutputDto, _ := organisationService.CreateOrganisation(organisationInput, &config.Configuration{})
 
 	roleService := services.NewRoleService(sqldb.DB)
@@ -148,7 +150,7 @@ func createUserComplete(email string, password string, firstName string, lastNam
 	roleService.CreateUserRoleObjectAssociation(userOutputDto.ID, roleObjectOwnerId, userOutputDto.ID, "User")
 
 	groupService := services.NewGroupService(sqldb.DB)
-	groupInput := authDto.CreateGroupInput{GroupName: lastName + "_grp", Organisation: organisationOutputDto.ID}
+	groupInput := authDto.CreateGroupInput{GroupName: firstName + "_" + lastName + "_grp", Organisation: organisationOutputDto.ID}
 	groupService.CreateGroup(groupInput)
 
 	return userOutputDto

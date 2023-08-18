@@ -42,11 +42,11 @@ func GetRolesFromContext(ctx *gin.Context) (*[]models.UserRole, bool, bool) {
 	if !ok {
 		ctx.JSON(http.StatusOK, "[]")
 		ctx.Abort()
-		return nil, false, true
+		return nil, false, false
 	}
 
 	userRoleObjectAssociationModels, isRole := rawRoles.(*[]models.UserRole)
-	return userRoleObjectAssociationModels, isRole, false
+	return userRoleObjectAssociationModels, isRole, true
 }
 
 func GetEntityIdFromContext(ctx *gin.Context) (uuid.UUID, bool) {

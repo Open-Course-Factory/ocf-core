@@ -103,10 +103,16 @@ func (g genericService) GetObjectOrganisation(entityModel string, object any) *m
 
 	switch g.GetEntityModelInterface(entityModel).(type) {
 	case models.Organisation:
-		org := object.(models.Organisation)
-		organisation = org
+		if value, ok := object.(models.Organisation); ok {
+			object = &value
+		}
+		org := object.(*models.Organisation)
+		organisation = *org
 	case models.Group:
-		group := object.(models.Group)
+		if value, ok := object.(models.Group); ok {
+			object = &value
+		}
+		group := object.(*models.Group)
 
 		orgEntity, err := g.GetEntity(*group.OrganisationID, g.GetEntityModelInterface("Organisation"))
 		if err != nil {

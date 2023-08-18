@@ -44,27 +44,6 @@ func (r roleService) EditRole(editedRoleInput *dto.RoleEditInput, id uuid.UUID) 
 	return editedRole, nil
 }
 
-func (r roleService) GetRoles() ([]dto.RoleOutput, error) {
-	var rolesDto []dto.RoleOutput
-
-	allPages, err := r.genericRepository.GetAllEntities(models.Role{}, 20)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// Here we need to loop through the pages
-	for _, page := range allPages {
-		test := page.(*[]models.Role)
-
-		for _, s := range *test {
-			rolesDto = append(rolesDto, *dto.RoleModelToRoleOutput(s))
-		}
-	}
-
-	return rolesDto, nil
-}
-
 func (r roleService) GetRoleByType(roleType models.RoleType) (uuid.UUID, error) {
 	var result uuid.UUID
 

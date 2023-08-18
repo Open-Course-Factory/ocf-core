@@ -3,8 +3,8 @@ package models
 import (
 	"bufio"
 	"os"
-	"soli/formations/src/auth/models"
 	config "soli/formations/src/configuration"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
 
 	"github.com/google/uuid"
@@ -12,7 +12,7 @@ import (
 
 // Part of a chapter
 type Section struct {
-	models.BaseModel
+	entityManagementModels.BaseModel
 	FileName           string
 	Title              string
 	ParentChapterTitle string

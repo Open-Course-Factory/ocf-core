@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"soli/formations/src/auth/models"
 	controller "soli/formations/src/auth/routes"
+	"soli/formations/src/auth/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -19,6 +20,8 @@ func (opm PermissionsMiddleware) IsAuthorized() gin.HandlerFunc {
 
 		userRoleObjectAssociationsArray, isRolesArray, roleFound := controller.GetRolesFromContext(ctx)
 		if !roleFound {
+			ctx.JSON(http.StatusForbidden, "You do not have permission to access this resource")
+			ctx.Abort()
 			return
 		}
 
@@ -67,15 +70,33 @@ func (opm PermissionsMiddleware) IsAuthorized() gin.HandlerFunc {
 
 }
 
-func (PermissionsMiddleware) callAboutSpecificEntityWithId(ctx *gin.Context, rolesArray *[]models.UserRole) bool {
+func (opm PermissionsMiddleware) callAboutSpecificEntityWithId(ctx *gin.Context, rolesArray *[]models.UserRole) bool {
 	entityUUID, idFound := controller.GetEntityIdFromContext(ctx)
 	if !idFound {
 		return false
 	}
+	genericService := services.NewGenericService(opm.DB)
 
 	entityName := controller.GetEntityNameFromPath(ctx.FullPath())
+	entityModelInterface := genericService.GetEntityModelInterface(entityName)
 
-	proceed := controller.HasUserRolesPermissionForEntity(rolesArray, ctx.Request.Method, entityName, entityUUID)
+	entity, entityError := genericService.GetEntity(entityUUID, entityModelInterface)
+	if entityError != nil {
+		ctx.JSON(http.StatusForbidden, "You do not have permission to access this resource")
+		ctx.Abort()
+		return false
+	}
+
+	isUserInstanceAdmin := genericService.IsUserInstanceAdmin(rolesArray)
+	organisation := genericService.GetObjectOrganisation(entityName, entity)
+	isUserOrganisationAdmin := genericService.IsUserOrganisationAdmin(rolesArray, organisation)
+
+	var proceed bool
+	if !isUserInstanceAdmin && !isUserOrganisationAdmin {
+		proceed = controller.HasUserRolesPermissionForEntity(rolesArray, ctx.Request.Method, entityName, entityUUID)
+	} else {
+		proceed = true
+	}
 
 	if !proceed {
 		ctx.JSON(http.StatusForbidden, "You do not have permission to access this resource")

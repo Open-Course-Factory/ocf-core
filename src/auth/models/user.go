@@ -1,7 +1,11 @@
 package models
 
+import (
+	entityManagementModels "soli/formations/src/entityManagement/models"
+)
+
 type User struct {
-	BaseModel
+	entityManagementModels.BaseModel
 	FirstName    string `json:"firstName"`
 	LastName     string `json:"lastName"`
 	Email        string `json:"email"`
@@ -10,4 +14,8 @@ type User struct {
 	RefreshToken string `json:"refreshToken"`
 	SshKeys      []SshKey
 	Roles        []Role `gorm:"many2many:user_roles;"`
+}
+
+func (u User) GetBaseModel() entityManagementModels.BaseModel {
+	return u.BaseModel
 }

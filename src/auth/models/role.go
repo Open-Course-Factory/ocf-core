@@ -1,6 +1,9 @@
 package models
 
-import "soli/formations/src/auth/types"
+import (
+	"soli/formations/src/auth/types"
+	entityManagementModels "soli/formations/src/entityManagement/models"
+)
 
 type RoleType string
 
@@ -14,7 +17,11 @@ const (
 )
 
 type Role struct {
-	BaseModel
+	entityManagementModels.BaseModel
 	RoleName    RoleType           `json:"roleName"`
 	Permissions []types.Permission `gorm:"serializer:json" json:"permissions"`
+}
+
+func (r Role) GetBaseModel() entityManagementModels.BaseModel {
+	return r.BaseModel
 }

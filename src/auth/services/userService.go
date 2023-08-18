@@ -157,7 +157,7 @@ func (u *userService) AddUserSshKey(sshKeyCreateDTO dto.CreateSshKeyInput) (*dto
 
 	return &dto.SshKeyOutput{
 		Id:         sshKey.ID,
-		Name:       sshKey.Name,
+		KeyName:    sshKey.KeyName,
 		PrivateKey: sshKey.PrivateKey,
 		CreatedAt:  sshKey.CreatedAt,
 	}, nil

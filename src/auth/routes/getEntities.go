@@ -1,11 +1,12 @@
 package controller
 
 import (
-	"fmt"
 	"net/http"
 	"reflect"
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/auth/models"
+
+	entityManagementModels "soli/formations/src/entityManagement/models"
 
 	"github.com/gin-gonic/gin"
 )
@@ -33,8 +34,8 @@ func (genericController genericController) GetEntitiesWithoutPermissionCheck(ctx
 func (genericController genericController) getEntities(ctx *gin.Context, permCheck bool) ([]interface{}, bool) {
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
-	userRolesArray, _, shouldReturn := GetRolesFromContext(ctx)
-	if shouldReturn {
+	userRolesArray, _, userRoleFound := GetRolesFromContext(ctx)
+	if !userRoleFound {
 		return nil, true
 	}
 
@@ -51,9 +52,7 @@ func (genericController genericController) getEntities(ctx *gin.Context, permChe
 
 func (genericController genericController) getEntitiesFromName(entityName string, userRoles *[]models.UserRole, permCheck bool) ([]interface{}, bool) {
 	entityModelInterface := genericController.genericService.GetEntityModelInterface(entityName)
-
 	allEntitiesPages, err := genericController.genericService.GetEntities(entityModelInterface)
-
 	isUserInstanceAdmin := genericController.genericService.IsUserInstanceAdmin(userRoles)
 
 	if err != nil {
@@ -71,13 +70,12 @@ func (genericController genericController) getEntitiesFromName(entityName string
 
 		if pageValue.Type().ConvertibleTo(entityModel) {
 			convertedPage := pageValue.Convert(entityModel)
-			fmt.Println(convertedPage)
 
 			for i := 0; i < convertedPage.Len(); i++ {
 
 				item := convertedPage.Index(i).Interface()
 
-				entityBaseModel, isOk := models.ExtractBaseFromAny(item)
+				entityBaseModel, isOk := entityManagementModels.ExtractBaseModelFromAny(item)
 				if !isOk {
 					continue
 				}

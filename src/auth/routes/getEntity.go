@@ -36,9 +36,7 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 	}
 
 	funcName := entityName + "ModelTo" + entityName + "Output"
-
 	entityModel := reflect.TypeOf(entityModelInterface)
-
 	entityValue := reflect.ValueOf(entity)
 
 	var entityDto interface{}

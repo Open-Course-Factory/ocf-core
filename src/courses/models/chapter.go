@@ -1,14 +1,14 @@
 package models
 
 import (
-	"soli/formations/src/auth/models"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strconv"
 	"strings"
 )
 
 // Part of a course
 type Chapter struct {
-	models.BaseModel
+	entityManagementModels.BaseModel
 	Title        string
 	Number       int
 	Footer       string

@@ -1,7 +1,7 @@
 package models
 
 import (
-	"soli/formations/src/auth/models"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
 
 	"github.com/google/uuid"
@@ -9,7 +9,7 @@ import (
 
 // Part of a Section
 type Page struct {
-	models.BaseModel
+	entityManagementModels.BaseModel
 	Number    int
 	Toc       []string `gorm:"serializer:json"`
 	Content   []string `gorm:"serializer:json"`
