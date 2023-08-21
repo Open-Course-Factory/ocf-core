@@ -82,6 +82,10 @@ func (opm PermissionsMiddleware) IsAuthorized() gin.HandlerFunc {
 							}
 
 						}
+						if refObject == entityName {
+							ctx.Next()
+							return
+						}
 
 					}
 				}

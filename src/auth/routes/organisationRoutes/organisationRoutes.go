@@ -12,7 +12,7 @@ import (
 
 func OrganisationsRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
 	organisationService := services.NewOrganisationService(db)
-	organisationController := NewOrganisationController(db, organisationService, config)
+	organisationController := NewOrganisationController(db, organisationService)
 
 	authMiddleware := &middleware.AuthMiddleware{
 		DB:     db,
@@ -24,7 +24,7 @@ func OrganisationsRoutes(router *gin.RouterGroup, config *config.Configuration, 
 
 	routes := router.Group("/organisations")
 
-	routes.POST("/", authMiddleware.CheckIsLogged(), organisationController.AddOrganisation)
+	routes.POST("/", authMiddleware.CheckIsLogged(), permissionMiddleware.IsAuthorized(), organisationController.AddOrganisation)
 	routes.GET("/", authMiddleware.CheckIsLogged(), organisationController.GetOrganisations)
 	routes.GET("/:id", authMiddleware.CheckIsLogged(), permissionMiddleware.IsAuthorized(), organisationController.GetOrganisation)
 	routes.DELETE("/:id", authMiddleware.CheckIsLogged(), permissionMiddleware.IsAuthorized(), organisationController.DeleteOrganisation)

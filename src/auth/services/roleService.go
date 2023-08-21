@@ -4,6 +4,7 @@ import (
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/repositories"
+	"soli/formations/src/auth/types"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -15,21 +16,24 @@ type RoleService interface {
 	GetRoleByType(roleType models.RoleType) (uuid.UUID, error)
 	GetRoleByUser(userId uuid.UUID) (*[]models.UserRoles, error)
 	CreateUserRoleObjectAssociation(userId uuid.UUID, roleId uuid.UUID, objectId uuid.UUID, objectType string) (*dto.UserRoleObjectAssociationOutput, error)
+	SetupRoles()
 }
 
 type roleService struct {
 	repository        repositories.RoleRepository
 	genericRepository repositories.GenericRepository
+	genericService    GenericService
 }
 
 func NewRoleService(db *gorm.DB) RoleService {
 	return &roleService{
 		repository:        repositories.NewRoleRepository(db),
 		genericRepository: repositories.NewGenericRepository(db),
+		genericService:    NewGenericService(db),
 	}
 }
 
-func (r roleService) EditRole(editedRoleInput *dto.RoleEditInput, id uuid.UUID) (*dto.RoleEditOutput, error) {
+func (r *roleService) EditRole(editedRoleInput *dto.RoleEditInput, id uuid.UUID) (*dto.RoleEditOutput, error) {
 
 	editRole := editedRoleInput
 
@@ -42,7 +46,7 @@ func (r roleService) EditRole(editedRoleInput *dto.RoleEditInput, id uuid.UUID) 
 	return editedRole, nil
 }
 
-func (r roleService) GetRoleByType(roleType models.RoleType) (uuid.UUID, error) {
+func (r *roleService) GetRoleByType(roleType models.RoleType) (uuid.UUID, error) {
 	var result uuid.UUID
 
 	allPages, err := r.genericRepository.GetAllEntities(models.Role{}, 20)
@@ -66,7 +70,7 @@ func (r roleService) GetRoleByType(roleType models.RoleType) (uuid.UUID, error) 
 	return result, nil
 }
 
-func (r roleService) CreateRole(roleCreateDTO dto.CreateRoleInput) (*dto.RoleOutput, error) {
+func (r *roleService) CreateRole(roleCreateDTO dto.CreateRoleInput) (*dto.RoleOutput, error) {
 
 	role, createRoleError := r.repository.CreateRole(roleCreateDTO)
 
@@ -81,7 +85,7 @@ func (r roleService) CreateRole(roleCreateDTO dto.CreateRoleInput) (*dto.RoleOut
 
 }
 
-func (r roleService) GetRoleByUser(userId uuid.UUID) (*[]models.UserRoles, error) {
+func (r *roleService) GetRoleByUser(userId uuid.UUID) (*[]models.UserRoles, error) {
 
 	roles, getRoleError := r.repository.GetRoleByUser(userId)
 
@@ -92,7 +96,7 @@ func (r roleService) GetRoleByUser(userId uuid.UUID) (*[]models.UserRoles, error
 	return roles, nil
 }
 
-func (r roleService) CreateUserRoleObjectAssociation(userId uuid.UUID, roleId uuid.UUID, objectId uuid.UUID, objectType string) (*dto.UserRoleObjectAssociationOutput, error) {
+func (r *roleService) CreateUserRoleObjectAssociation(userId uuid.UUID, roleId uuid.UUID, objectId uuid.UUID, objectType string) (*dto.UserRoleObjectAssociationOutput, error) {
 
 	userRoleObjectAssociation, createRoleError := r.repository.CreateUserRoleObjectAssociation(userId, roleId, objectId, objectType)
 
@@ -107,4 +111,26 @@ func (r roleService) CreateUserRoleObjectAssociation(userId uuid.UUID, roleId uu
 		SubObjectID: userRoleObjectAssociation.SubObjectID,
 		SubType:     userRoleObjectAssociation.SubType,
 	}, nil
+}
+
+func (r *roleService) SetupRoles() {
+	roles, _ := r.genericService.GetEntities(models.Role{})
+
+	if len(roles) == 0 {
+
+		roleInstanceAdminInput := dto.CreateRoleInput{RoleName: models.RoleTypeInstanceAdmin, Permissions: []types.Permission{types.PermissionTypeAll}}
+		r.CreateRole(roleInstanceAdminInput)
+
+		roleOrganisationAdminInput := dto.CreateRoleInput{RoleName: models.RoleTypeOrganisationAdmin, Permissions: []types.Permission{types.PermissionTypeAll}}
+		r.CreateRole(roleOrganisationAdminInput)
+
+		roleObjectOwnerInput := dto.CreateRoleInput{RoleName: models.RoleTypeObjectOwner, Permissions: []types.Permission{types.PermissionTypeAll}}
+		r.CreateRole(roleObjectOwnerInput)
+
+		roleObjectEditorInput := dto.CreateRoleInput{RoleName: models.RoleTypeObjectEditor, Permissions: []types.Permission{types.PermissionTypeRead, types.PermissionTypeWrite}}
+		r.CreateRole(roleObjectEditorInput)
+
+		roleObjectReaderInput := dto.CreateRoleInput{RoleName: models.RoleTypeObjectReader, Permissions: []types.Permission{types.PermissionTypeRead}}
+		r.CreateRole(roleObjectReaderInput)
+	}
 }

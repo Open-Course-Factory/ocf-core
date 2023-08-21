@@ -33,12 +33,11 @@ func TestMockAddOrganisation(t *testing.T) {
 }
 
 func AddOrganisation(organisationService services.OrganisationService, mockConfig *config.Configuration, router *gin.Engine, t *testing.T) {
-	controller := organisationController.NewOrganisationController(nil, organisationService, mockConfig)
+	controller := organisationController.NewOrganisationController(nil, organisationService)
 
 	router.POST("/organisations", controller.AddOrganisation)
 
 	validRequestBody := `{"name": "mon_orga_de_test"}`
-	//invalidRequestBody := `{"email": "not a valid email", "password": "123456", "firstName": "Test", "lastName": "User"}`
 
 	request, _ := http.NewRequest(http.MethodPost, "/organisations", bytes.NewBufferString(validRequestBody))
 	response := httptest.NewRecorder()

@@ -7,7 +7,7 @@ import (
 )
 
 func TestAddUser(t *testing.T) {
-	teardownTest := tests.SetupTest(t)
+	teardownTest := tests.SetupFunctionnalTests(t)
 	defer teardownTest(t)
 
 	// pass nil as we are using a mock user service

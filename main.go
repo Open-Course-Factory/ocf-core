@@ -19,7 +19,6 @@ import (
 	marp "soli/formations/src/marp_integration"
 	"soli/formations/src/middleware"
 
-	authDto "soli/formations/src/auth/dto"
 	authModels "soli/formations/src/auth/models"
 	groupController "soli/formations/src/auth/routes/groupRoutes"
 	loginController "soli/formations/src/auth/routes/loginRoutes"
@@ -27,7 +26,6 @@ import (
 	roleController "soli/formations/src/auth/routes/roleRoutes"
 	userController "soli/formations/src/auth/routes/userRoutes"
 	"soli/formations/src/auth/services"
-	"soli/formations/src/auth/types"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 
@@ -110,25 +108,8 @@ func initSwagger(r *gin.Engine) {
 
 func initDB() {
 	genericService := services.NewGenericService(sqldb.DB)
-	roles, _ := genericService.GetEntities(authModels.Role{})
-
-	if len(roles) == 0 {
-		roleService := services.NewRoleService(sqldb.DB)
-		roleInstanceAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeInstanceAdmin, Permissions: []types.Permission{types.PermissionTypeAll}}
-		roleService.CreateRole(roleInstanceAdminInput)
-
-		roleOrganisationAdminInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeOrganisationAdmin, Permissions: []types.Permission{types.PermissionTypeAll}}
-		roleService.CreateRole(roleOrganisationAdminInput)
-
-		roleObjectOwnerInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeObjectOwner, Permissions: []types.Permission{types.PermissionTypeAll}}
-		roleService.CreateRole(roleObjectOwnerInput)
-
-		roleObjectEditorInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeObjectEditor, Permissions: []types.Permission{types.PermissionTypeRead, types.PermissionTypeWrite}}
-		roleService.CreateRole(roleObjectEditorInput)
-
-		roleObjectReaderInput := authDto.CreateRoleInput{RoleName: authModels.RoleTypeObjectReader, Permissions: []types.Permission{types.PermissionTypeRead}}
-		roleService.CreateRole(roleObjectReaderInput)
-	}
+	roleService := services.NewRoleService(sqldb.DB)
+	roleService.SetupRoles()
 
 	if sqldb.DBType == "sqlite" {
 		sqldb.DB = sqldb.DB.Debug()

@@ -27,9 +27,16 @@ func GetEntityNameFromPath(path string) string {
 
 	// Split the path into segments
 	segments := strings.Split(path, "/")
+	segment := ""
 
 	// Take resource name segment
-	segment := segments[3]
+	if len(segments) > 3 {
+		segment = segments[3]
+	} else {
+		segment = segments[1]
+	}
+
+	// Take resource name and resource type
 
 	client := pluralize.NewClient()
 	singular := client.Singular(segment)
@@ -53,8 +60,10 @@ func GetEntityIdFromContext(ctx *gin.Context) (uuid.UUID, bool) {
 	entityID := ctx.Param("id")
 
 	if entityID == "" {
+		ctx.JSON(http.StatusBadRequest, "Entities Not Found")
 		log.Default().Fatal("Permission Middleware has been called on a method without entity ID")
-		ctx.Next()
+		ctx.Abort()
+		return uuid.Nil, false
 	}
 
 	entityUUID, errUUID := uuid.Parse(entityID)
