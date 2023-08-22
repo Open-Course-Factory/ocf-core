@@ -3,10 +3,12 @@ package test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/services"
@@ -32,6 +34,7 @@ var MockConfig *config.Configuration
 var UserService services.UserService
 var RoleService services.RoleService
 var OrganisationService services.OrganisationService
+var GroupService services.GroupService
 
 func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 	log.Println("setup test")
@@ -60,6 +63,7 @@ func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 
 	UserService = services.NewUserService(sqldb.DB)
 	OrganisationService = services.NewOrganisationService(sqldb.DB)
+	GroupService = services.NewGroupService(sqldb.DB)
 
 	// 3 users
 	// 2 lambda users with 1 organisation and 1 group each
@@ -78,7 +82,23 @@ func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 	// Return a function to teardown the test
 	return func(tb testing.TB) {
 		log.Println("teardown test")
+		removeDBFile()
 	}
+}
+
+func removeDBFile() {
+	filePath := sqldb.DB_FILE
+
+	// Use os.Remove to delete the file
+	err := os.Remove(filePath)
+
+	// Check if there was an error
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("File deleted successfully!")
 }
 
 func AddUser(userService services.UserService, mockConfig *config.Configuration, router *gin.Engine, t *testing.T) {
@@ -127,34 +147,27 @@ func AddUser(userService services.UserService, mockConfig *config.Configuration,
 // 	assert.Equal(t, http.StatusBadRequest, response.Code)
 // }
 
-func LoginUser(email string, password string, mockConfig *config.Configuration, router *gin.Engine, t *testing.T) string {
+func LoginUser(email string, password string, mockConfig *config.Configuration, t *testing.T) string {
+	router := NewGin()
 	controller := loginController.NewLoginController(sqldb.DB, mockConfig)
 
-	router.POST("/login", controller.Login)
+	router.POST("/api/v1/login", controller.Login)
 
 	validRequestBody := `{"email": "` + email + `", "password": "` + password + `"}`
-	invalidRequestBody := `{"email": "test@test.com", "password": "` + password + `9"}`
-
-	request, _ := http.NewRequest(http.MethodPost, "/login", bytes.NewBufferString(validRequestBody))
-	responseOK := httptest.NewRecorder()
-
-	router.ServeHTTP(responseOK, request)
-
-	assert.Equal(t, http.StatusOK, responseOK.Code)
+	responseValidLoginUser := PerformRequest(router, http.MethodPost, "/api/v1/login", WithBody(validRequestBody))
+	assert.Equal(t, http.StatusOK, responseValidLoginUser.Code)
 
 	result := dto.UserTokens{}
-	errUnmarshall := json.Unmarshal(responseOK.Body.Bytes(), &result)
+	errUnmarshall := json.Unmarshal(responseValidLoginUser.Body.Bytes(), &result)
 
 	if errUnmarshall != nil {
 		t.Error(errUnmarshall)
 	}
 
-	request, _ = http.NewRequest(http.MethodPost, "/login", bytes.NewBufferString(invalidRequestBody))
-	responseNotFound := httptest.NewRecorder()
+	invalidRequestBody := `{"email": "test@test.com", "password": "` + password + `9"}`
+	responseInvalidLoginUser := PerformRequest(router, http.MethodPost, "/api/v1/login", WithBody(invalidRequestBody))
 
-	router.ServeHTTP(responseNotFound, request)
-
-	assert.Equal(t, http.StatusNotFound, responseNotFound.Code)
+	assert.Equal(t, http.StatusNotFound, responseInvalidLoginUser.Code)
 
 	return result.Token
 }
@@ -180,21 +193,18 @@ func WithHeader(name, value string) Option {
 	}
 }
 
-func PerformRequest(handler http.Handler, method, path string, token string, options ...Option) *httptest.ResponseRecorder {
+func PerformRequest(handler http.Handler, method, path string, options ...Option) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
-	return PerformRequestWithRecorder(recorder, handler, method, path, token, options...)
+	return PerformRequestWithRecorder(recorder, handler, method, path, options...)
 }
 
-func PerformRequestWithRecorder(recorder *httptest.ResponseRecorder, r http.Handler, method, path string, token string, options ...Option) *httptest.ResponseRecorder {
+func PerformRequestWithRecorder(recorder *httptest.ResponseRecorder, r http.Handler, method, path string, options ...Option) *httptest.ResponseRecorder {
 	request, err := http.NewRequest(method, path, nil)
 	if err != nil {
 		panic(err)
 	}
 	for _, opt := range options {
 		opt(request)
-	}
-	if token != "" {
-		request.Header.Set("Authorization", "bearer "+token)
 	}
 	r.ServeHTTP(recorder, request)
 	return recorder

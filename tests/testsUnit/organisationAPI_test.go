@@ -33,7 +33,7 @@ func TestMockAddOrganisation(t *testing.T) {
 }
 
 func AddOrganisation(organisationService services.OrganisationService, mockConfig *config.Configuration, router *gin.Engine, t *testing.T) {
-	controller := organisationController.NewOrganisationController(nil, organisationService)
+	controller := organisationController.NewOrganisationController(nil)
 
 	router.POST("/organisations", controller.AddOrganisation)
 

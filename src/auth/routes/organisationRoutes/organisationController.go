@@ -21,11 +21,11 @@ type organisationController struct {
 	service services.OrganisationService
 }
 
-func NewOrganisationController(db *gorm.DB, organisationService services.OrganisationService) OrganisationController {
+func NewOrganisationController(db *gorm.DB) OrganisationController {
 
 	controller := &organisationController{
 		GenericController: controller.NewGenericController(db),
-		service:           organisationService,
+		service:           services.NewOrganisationService(db),
 	}
 	return controller
 }

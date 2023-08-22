@@ -11,7 +11,7 @@ import (
 )
 
 func GroupsRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
-	groupController := NewGroupController(db, config)
+	groupController := NewGroupController(db)
 
 	authMiddleware := &middleware.AuthMiddleware{
 		DB:     db,

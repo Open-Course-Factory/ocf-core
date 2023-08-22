@@ -11,8 +11,7 @@ import (
 )
 
 func OrganisationsRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
-	organisationService := services.NewOrganisationService(db)
-	organisationController := NewOrganisationController(db, organisationService)
+	organisationController := NewOrganisationController(db)
 
 	authMiddleware := &middleware.AuthMiddleware{
 		DB:     db,

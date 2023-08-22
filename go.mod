@@ -88,5 +88,5 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/crypto v0.9.0
-	gorm.io/gorm v1.24.3
+	gorm.io/gorm v1.25.4
 )

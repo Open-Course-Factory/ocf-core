@@ -3,7 +3,6 @@ package groupController
 import (
 	controller "soli/formations/src/auth/routes"
 	"soli/formations/src/auth/services"
-	config "soli/formations/src/configuration"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -20,15 +19,13 @@ type GroupController interface {
 type groupController struct {
 	controller.GenericController
 	service services.GroupService
-	config  *config.Configuration
 }
 
-func NewGroupController(db *gorm.DB, config *config.Configuration) GroupController {
+func NewGroupController(db *gorm.DB) GroupController {
 
 	controller := &groupController{
 		GenericController: controller.NewGenericController(db),
 		service:           services.NewGroupService(db),
-		config:            config,
 	}
 	return controller
 }
