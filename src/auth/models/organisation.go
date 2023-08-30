@@ -1,21 +1,20 @@
 package models
 
 import (
-	"github.com/google/uuid"
-	"gorm.io/gorm"
+	"reflect"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 )
 
 type Organisation struct {
-	gorm.Model
-	ID               uuid.UUID `gorm:"type:uuid;primarykey"`
-	OrganisationName string    `json:"organisationName"`
-	Groups           []Group   `json:"groups"`
+	entityManagementModels.BaseModel
+	OrganisationName string  `json:"organisationName"`
+	Groups           []Group `gorm:"foreignKey:OrganisationID" json:"groups"`
 }
 
-func (o *Organisation) BeforeCreate(tx *gorm.DB) (err error) {
-	if o.ID == uuid.Nil {
-		o.ID = uuid.New()
-	}
+func (o Organisation) GetBaseModel() entityManagementModels.BaseModel {
+	return o.BaseModel
+}
 
-	return
+func (o Organisation) GetReferenceObject() string {
+	return reflect.TypeOf(Organisation{}).Name()
 }

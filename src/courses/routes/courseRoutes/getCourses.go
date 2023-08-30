@@ -2,7 +2,7 @@ package courseController
 
 import (
 	"net/http"
-	"soli/formations/src/courses/errors"
+	"soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,7 +24,7 @@ import (
 func (c courseController) GetCourses(ctx *gin.Context) {
 
 	courses, err := c.service.GetCourses()
-	
+
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,

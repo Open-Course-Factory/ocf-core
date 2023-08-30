@@ -9,13 +9,13 @@ import (
 
 type SshKeyOutput struct {
 	Id         uuid.UUID `json:"id"`
-	Name       string    `json:"name"`
+	KeyName    string    `json:"name"`
 	PrivateKey string    `json:"private_key"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
 type CreateSshKeyInput struct {
-	Name       string `binding:"required"`
+	KeyName    string `binding:"required"`
 	PrivateKey string `binding:"required"`
 	UserId     uuid.UUID
 }
@@ -27,7 +27,7 @@ type DeleteSshKeyInput struct {
 func SshKeyModelToSshKeyOutput(sshKeyModel models.SshKey) *SshKeyOutput {
 	return &SshKeyOutput{
 		Id:         sshKeyModel.ID,
-		Name:       sshKeyModel.Name,
+		KeyName:    sshKeyModel.KeyName,
 		PrivateKey: sshKeyModel.PrivateKey,
 		CreatedAt:  sshKeyModel.CreatedAt,
 	}
