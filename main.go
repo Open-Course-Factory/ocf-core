@@ -116,6 +116,7 @@ func initDB() {
 
 		users, _ := genericService.GetEntities(authModels.User{})
 
+		// for easy testing, sqlite database must not be used in production
 		if len(users) == 0 {
 
 			userService := services.NewUserService(sqldb.DB)
