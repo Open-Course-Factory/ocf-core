@@ -1,9 +1,6 @@
 package organisationController
 
 import (
-	"net/http"
-	"soli/formations/src/auth/errors"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -22,17 +19,7 @@ import (
 //	@Failure		404	{object}	errors.APIError	"Organisations inexistantes"
 //
 //	@Router			/organisations [get]
-func (u organisationController) GetOrganisations(ctx *gin.Context) {
+func (org organisationController) GetOrganisations(ctx *gin.Context) {
 
-	organisations, err := u.service.GetOrganisations()
-
-	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Organisation not found",
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, organisations)
+	org.GetEntitiesWithPermissionCheck(ctx)
 }

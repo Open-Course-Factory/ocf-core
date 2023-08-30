@@ -11,10 +11,7 @@ import (
 
 type UserRepository interface {
 	CreateUser(userdto dto.CreateUserInput) (*models.User, error)
-	GetUser(id uuid.UUID) (*models.User, error)
 	GetUserWithEmail(email string) (*models.User, error)
-	GetAllUsers() (*[]models.User, error)
-	DeleteUser(id uuid.UUID) error
 	EditUser(id uuid.UUID, userinfos dto.UserEditInput, isSelf bool) (*dto.UserEditOutput, error)
 	EditUserToken(id uuid.UUID, usertoken dto.UserTokens) (*models.User, error)
 }
@@ -52,25 +49,6 @@ func (u userRepository) CreateUser(userdto dto.CreateUserInput) (*models.User, e
 		return nil, result.Error
 	}
 	return &user, err
-}
-
-func (u userRepository) GetUser(id uuid.UUID) (*models.User, error) {
-
-	var user models.User
-	result := u.db.Preload("SshKeys").First(&user, id)
-
-	if result.Error != nil {
-		return nil, result.Error
-	}
-
-	return &user, nil
-}
-func (u userRepository) DeleteUser(id uuid.UUID) error {
-	result := u.db.Delete(&models.User{}, id)
-	if result.Error != nil {
-		return result.Error
-	}
-	return nil
 }
 
 func (u userRepository) EditUser(id uuid.UUID, userinfos dto.UserEditInput, isSelf bool) (*dto.UserEditOutput, error) {
@@ -119,15 +97,6 @@ func (u userRepository) EditUserToken(id uuid.UUID, usertoken dto.UserTokens) (*
 
 	return &user, nil
 
-}
-
-func (u userRepository) GetAllUsers() (*[]models.User, error) {
-	var user []models.User
-	result := u.db.Find(&user)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	return &user, nil
 }
 
 func (u userRepository) GetUserWithEmail(email string) (*models.User, error) {

@@ -1,12 +1,7 @@
 package organisationController
 
 import (
-	"net/http"
-
-	"soli/formations/src/auth/errors"
-
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 // Delete organisation godoc
@@ -25,24 +20,6 @@ import (
 //	@Failure		404	{object}	errors.APIError	"Organisation non trouvée - Impossible de la supprimer "
 //
 //	@Router			/organisations/{id} [delete]
-func (u organisationController) DeleteOrganisation(ctx *gin.Context) {
-
-	id, parseError := uuid.Parse(ctx.Param("id"))
-	if parseError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: parseError.Error(),
-		})
-		return
-	}
-
-	errorDelete := u.service.DeleteOrganisation(id)
-	if errorDelete != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Organisation not found",
-		})
-		return
-	}
-	ctx.JSON(http.StatusNoContent, "Done")
+func (org organisationController) DeleteOrganisation(ctx *gin.Context) {
+	org.DeleteEntity(ctx)
 }

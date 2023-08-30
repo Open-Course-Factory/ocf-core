@@ -1,6 +1,7 @@
 package roleController
 
 import (
+	controller "soli/formations/src/auth/routes"
 	"soli/formations/src/auth/services"
 	config "soli/formations/src/configuration"
 
@@ -17,6 +18,7 @@ type RoleController interface {
 }
 
 type roleController struct {
+	controller.GenericController
 	service services.RoleService
 	config  *config.Configuration
 }
@@ -24,8 +26,9 @@ type roleController struct {
 func NewRoleController(db *gorm.DB, config *config.Configuration) RoleController {
 
 	controller := &roleController{
-		service: services.NewRoleService(db),
-		config:  config,
+		GenericController: controller.NewGenericController(db),
+		service:           services.NewRoleService(db),
+		config:            config,
 	}
 	return controller
 }

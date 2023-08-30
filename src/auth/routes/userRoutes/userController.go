@@ -1,10 +1,12 @@
 package userController
 
 import (
+	controller "soli/formations/src/auth/routes"
 	"soli/formations/src/auth/services"
 	config "soli/formations/src/configuration"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type UserController interface {
@@ -18,15 +20,17 @@ type UserController interface {
 }
 
 type userController struct {
+	controller.GenericController
 	service services.UserService
 	config  *config.Configuration
 }
 
-func NewUserController(userService services.UserService, config *config.Configuration) UserController {
+func NewUserController(db *gorm.DB, userService services.UserService, config *config.Configuration) UserController {
 
 	controller := &userController{
-		service: userService,
-		config:  config,
+		GenericController: controller.NewGenericController(db),
+		service:           userService,
+		config:            config,
 	}
 	return controller
 }

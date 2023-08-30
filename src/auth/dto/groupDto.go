@@ -14,18 +14,21 @@ type GroupOutput struct {
 }
 
 type CreateGroupInput struct {
-	GroupName   string `binding:"required"`
-	ParentGroup uuid.UUID
+	GroupName    string `binding:"required"`
+	ParentGroup  uuid.UUID
+	Organisation uuid.UUID `binding:"required"`
 }
 
 type GroupEditInput struct {
-	GroupName   string    `json:"groupName"`
-	ParentGroup uuid.UUID `json:"parentGroupId"`
+	GroupName    string    `json:"groupName"`
+	ParentGroup  uuid.UUID `json:"parentGroupId"`
+	Organisation uuid.UUID `json:"organisation"`
 }
 
 type GroupEditOutput struct {
-	GroupName   string    `json:"groupName"`
-	ParentGroup uuid.UUID `json:"parentGroupId"`
+	GroupName    string    `json:"groupName"`
+	ParentGroup  uuid.UUID `json:"parentGroupId"`
+	Organisation uuid.UUID `json:"organisation"`
 }
 
 func GroupModelToGroupOutput(groupModel models.Group) *GroupOutput {
@@ -35,12 +38,12 @@ func GroupModelToGroupOutput(groupModel models.Group) *GroupOutput {
 		GroupName: groupModel.GroupName,
 	}
 
-	if groupModel.ParentGroup != nil {
-		groupOutput.ParentGroup = groupModel.ParentGroup.ID
+	if groupModel.ParentGroupID != nil {
+		groupOutput.ParentGroup = *groupModel.ParentGroupID
 	}
 
-	if groupModel.Organisation != nil {
-		groupOutput.Organisation = groupModel.Organisation.ID
+	if groupModel.OrganisationID != nil {
+		groupOutput.Organisation = *groupModel.OrganisationID
 	}
 
 	return &groupOutput

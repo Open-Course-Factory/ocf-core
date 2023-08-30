@@ -1,26 +1,26 @@
 package models
 
 import (
-	"github.com/google/uuid"
-	"gorm.io/gorm"
+	"reflect"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 )
 
 type User struct {
-	gorm.Model
-	ID           uuid.UUID `gorm:"type:uuid;primarykey"`
-	FirstName    string    `json:"firstName"`
-	LastName     string    `json:"lastName"`
-	Email        string    `json:"email"`
+	entityManagementModels.BaseModel
+	FirstName    string `json:"firstName"`
+	LastName     string `json:"lastName"`
+	Email        string `json:"email"`
 	Password     string
 	Token        string `json:"token"`
 	RefreshToken string `json:"refreshToken"`
 	SshKeys      []SshKey
+	Roles        []Role `gorm:"many2many:user_roles;"`
 }
 
-func (u *User) BeforeCreate(tx *gorm.DB) (err error) {
-	if u.ID == uuid.Nil {
-		u.ID = uuid.New()
-	}
+func (u User) GetBaseModel() entityManagementModels.BaseModel {
+	return u.BaseModel
+}
 
-	return
+func (u User) GetReferenceObject() string {
+	return reflect.TypeOf(User{}).Name()
 }

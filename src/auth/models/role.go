@@ -1,20 +1,27 @@
 package models
 
 import (
-	"github.com/google/uuid"
-	"gorm.io/gorm"
+	"soli/formations/src/auth/types"
+	entityManagementModels "soli/formations/src/entityManagement/models"
+)
+
+type RoleType string
+
+const (
+	RoleTypeInstanceAdmin      RoleType = "instance_admin"
+	RoleTypeOrganisationAdmin  RoleType = "organisation_admin"
+	RoleTypeOrganisationMember RoleType = "organisation_member"
+	RoleTypeObjectOwner        RoleType = "object_owner"
+	RoleTypeObjectEditor       RoleType = "object_editor"
+	RoleTypeObjectReader       RoleType = "object_reader"
 )
 
 type Role struct {
-	gorm.Model
-	ID       uuid.UUID `gorm:"type:uuid;primarykey"`
-	RoleName string    `json:"roleName"`
+	entityManagementModels.BaseModel
+	RoleName    RoleType           `json:"roleName"`
+	Permissions []types.Permission `gorm:"serializer:json" json:"permissions"`
 }
 
-func (r *Role) BeforeCreate(tx *gorm.DB) (err error) {
-	if r.ID == uuid.Nil {
-		r.ID = uuid.New()
-	}
-
-	return
+func (r Role) GetBaseModel() entityManagementModels.BaseModel {
+	return r.BaseModel
 }

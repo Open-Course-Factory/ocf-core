@@ -12,17 +12,20 @@ type CourseController interface {
 	GenerateCourse(ctx *gin.Context)
 	AddCourse(ctx *gin.Context)
 	DeleteCourse(ctx *gin.Context)
+	GetCourses(ctx *gin.Context)
 	CreateCourseFromGit(ctx *gin.Context)
 }
 
 type courseController struct {
+	authServices.GenericService
 	service     courseServices.CourseService
 	userService authServices.UserService
 }
 
 func NewCourseController(db *gorm.DB) CourseController {
 	return &courseController{
-		service:     courseServices.NewCourseService(db),
-		userService: authServices.NewUserService(db),
+		GenericService: authServices.NewGenericService(db),
+		service:        courseServices.NewCourseService(db),
+		userService:    authServices.NewUserService(db),
 	}
 }

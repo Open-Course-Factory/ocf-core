@@ -1,9 +1,6 @@
 package userController
 
 import (
-	"net/http"
-	"soli/formations/src/auth/errors"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,16 +20,5 @@ import (
 //
 //	@Router			/users [get]
 func (u userController) GetUsers(ctx *gin.Context) {
-
-	users, err := u.service.GetUsers()
-
-	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "User not found",
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, users)
+	u.GetEntitiesWithPermissionCheck(ctx)
 }
