@@ -4,17 +4,16 @@ import (
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/repositories"
+	sqldb "soli/formations/src/db"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type GroupService interface {
-	GetGroup(id uuid.UUID) (*models.Group, error)
-	GetGroups() ([]dto.GroupOutput, error)
 	CreateGroup(groupCreateDTO dto.CreateGroupInput) (*dto.GroupOutput, error)
 	EditGroup(editedGroupInput *dto.GroupEditInput, id uuid.UUID) (*dto.GroupEditOutput, error)
-	DeleteGroup(id uuid.UUID) error
+	CreateGroupComplete(name string, organisationID uuid.UUID, parentGroupID uuid.UUID, userID uuid.UUID) (*dto.GroupOutput, error)
 }
 
 type groupService struct {
@@ -27,7 +26,7 @@ func NewGroupService(db *gorm.DB) GroupService {
 	}
 }
 
-func (g groupService) EditGroup(editedGroupInput *dto.GroupEditInput, id uuid.UUID) (*dto.GroupEditOutput, error) {
+func (g *groupService) EditGroup(editedGroupInput *dto.GroupEditInput, id uuid.UUID) (*dto.GroupEditOutput, error) {
 
 	editGroup := editedGroupInput
 
@@ -40,43 +39,7 @@ func (g groupService) EditGroup(editedGroupInput *dto.GroupEditInput, id uuid.UU
 	return editedGroup, nil
 }
 
-func (g groupService) DeleteGroup(id uuid.UUID) error {
-	errorDelete := g.repository.DeleteGroup(id)
-	if errorDelete != nil {
-		return errorDelete
-	}
-	return nil
-}
-
-func (g groupService) GetGroup(id uuid.UUID) (*models.Group, error) {
-	user, err := g.repository.GetGroup(id)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return user, nil
-
-}
-
-func (g groupService) GetGroups() ([]dto.GroupOutput, error) {
-
-	groupsModel, err := g.repository.GetAllGroups()
-
-	if err != nil {
-		return nil, err
-	}
-
-	var groupsDto []dto.GroupOutput
-
-	for _, s := range *groupsModel {
-		groupsDto = append(groupsDto, *dto.GroupModelToGroupOutput(s))
-	}
-
-	return groupsDto, nil
-}
-
-func (g groupService) CreateGroup(groupCreateDTO dto.CreateGroupInput) (*dto.GroupOutput, error) {
+func (g *groupService) CreateGroup(groupCreateDTO dto.CreateGroupInput) (*dto.GroupOutput, error) {
 
 	group, createGroupError := g.repository.CreateGroup(groupCreateDTO)
 
@@ -99,4 +62,29 @@ func (g groupService) CreateGroup(groupCreateDTO dto.CreateGroupInput) (*dto.Gro
 
 	return &groupOutput, nil
 
+}
+
+func (g *groupService) CreateGroupComplete(name string, organisationID uuid.UUID, parentGroupID uuid.UUID, userID uuid.UUID) (*dto.GroupOutput, error) {
+
+	groupInput := dto.CreateGroupInput{
+		GroupName:    name,
+		Organisation: organisationID,
+		ParentGroup:  parentGroupID,
+	}
+
+	groupOutputDto, createGroupError := g.CreateGroup(groupInput)
+
+	if createGroupError != nil {
+		return nil, createGroupError
+	}
+
+	roleService := NewRoleService(sqldb.DB)
+	roleObjectOwner, getRoleError := roleService.GetRoleByType(models.RoleTypeObjectOwner)
+
+	if getRoleError != nil {
+		return nil, getRoleError
+	}
+
+	roleService.CreateUserRoleObjectAssociation(userID, roleObjectOwner, groupOutputDto.ID, "Group")
+	return groupOutputDto, nil
 }

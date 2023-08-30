@@ -17,13 +17,15 @@ type CourseController interface {
 }
 
 type courseController struct {
+	authServices.GenericService
 	service     courseServices.CourseService
 	userService authServices.UserService
 }
 
 func NewCourseController(db *gorm.DB) CourseController {
 	return &courseController{
-		service:     courseServices.NewCourseService(db),
-		userService: authServices.NewUserService(db),
+		GenericService: authServices.NewGenericService(db),
+		service:        courseServices.NewCourseService(db),
+		userService:    authServices.NewUserService(db),
 	}
 }

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -17,7 +19,6 @@ import (
 	marp "soli/formations/src/marp_integration"
 	"soli/formations/src/middleware"
 
-	"soli/formations/src/auth/dto"
 	authModels "soli/formations/src/auth/models"
 	groupController "soli/formations/src/auth/routes/groupRoutes"
 	loginController "soli/formations/src/auth/routes/loginRoutes"
@@ -27,6 +28,8 @@ import (
 	"soli/formations/src/auth/services"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
+
+	entityManagementServices "soli/formations/src/entityManagement/services"
 
 	sqldb "soli/formations/src/db"
 )
@@ -53,14 +56,21 @@ func main() {
 		os.Exit(0)
 	}
 
+	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.User{}).Name(), reflect.TypeOf(authModels.User{}))
+	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Group{}).Name(), reflect.TypeOf(authModels.Group{}))
+	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Role{}).Name(), reflect.TypeOf(authModels.Role{}))
+	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Organisation{}).Name(), reflect.TypeOf(authModels.Organisation{}))
+	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.SshKey{}).Name(), reflect.TypeOf(authModels.SshKey{}))
+
 	sqldb.ConnectDB()
 
-	sqldb.DB.AutoMigrate(&authModels.User{})
+	sqldb.DB.AutoMigrate(&authModels.User{}, &authModels.Role{}, &authModels.UserRoles{})
 	sqldb.DB.AutoMigrate(&authModels.SshKey{})
-	sqldb.DB.AutoMigrate(&authModels.Role{})
 	sqldb.DB.AutoMigrate(&authModels.Group{})
 	sqldb.DB.AutoMigrate(&authModels.Organisation{})
-	sqldb.DB.AutoMigrate(&authModels.Permission{})
+
+	//sqldb.DB.SetupJoinTable(&authModels.User{}, "Roles", &authModels.UserRole{})
+	sqldb.DB.AutoMigrate()
 
 	sqldb.DB.AutoMigrate(&courseModels.Page{})
 	sqldb.DB.AutoMigrate(&courseModels.Section{})
@@ -97,34 +107,30 @@ func initSwagger(r *gin.Engine) {
 }
 
 func initDB() {
+	genericService := services.NewGenericService(sqldb.DB)
+	roleService := services.NewRoleService(sqldb.DB)
+	roleService.SetupRoles()
+
 	if sqldb.DBType == "sqlite" {
-		userService := services.NewUserService(sqldb.DB)
-		users, _ := userService.GetUsers()
+		sqldb.DB = sqldb.DB.Debug()
 
+		users, _ := genericService.GetEntities(authModels.User{})
+
+		// for easy testing, sqlite database must not be used in production
 		if len(users) == 0 {
-			userInput := dto.CreateUserInput{Email: "test@test.com", Password: "test", FirstName: "Tom", LastName: "Baggins"}
-			userOutputDto, _ := userService.CreateUser(userInput, &config.Configuration{})
 
-			groupService := services.NewGroupService(sqldb.DB)
+			userService := services.NewUserService(sqldb.DB)
+			userService.CreateUserComplete("test@test.com", "test", "Tom", "Baggins")
+			userService.CreateUserComplete("test2@test.com", "test2", "Bilbo", "Baggins")
+
+			userTestAdminDto, _ := userService.CreateUserComplete("admin@test.com", "admin", "Gan", "Dalf")
+
 			roleService := services.NewRoleService(sqldb.DB)
-			organisationService := services.NewOrganisationService(sqldb.DB)
+			roleInstanceAdminUuid, _ := roleService.GetRoleByType(authModels.RoleTypeInstanceAdmin)
 
-			permissionService := services.NewPermissionService(sqldb.DB)
-
-			organisationInput := dto.CreateOrganisationInput{Name: "organisationTest"}
-			organisationOutputDto, _ := organisationService.CreateOrganisation(organisationInput, &config.Configuration{})
-
-			groupInput := dto.CreateGroupInput{GroupName: "groupTest"}
-			groupOutputDto, _ := groupService.CreateGroup(groupInput)
-
-			roleInput := dto.CreateRoleInput{RoleName: "roleTest"}
-			roleOutputDto, _ := roleService.CreateRole(roleInput, &config.Configuration{})
-
-			permissionInput := dto.CreatePermissionInput{User: userOutputDto.ID, Role: roleOutputDto.ID, Group: groupOutputDto.ID, Organisation: organisationOutputDto.ID}
-			permissionService.CreatePermission(permissionInput)
+			roleService.CreateUserRoleObjectAssociation(userTestAdminDto.ID, roleInstanceAdminUuid, uuid.Nil, "")
 
 		}
-
 	}
 }
 

@@ -10,48 +10,51 @@ import (
 
 type GroupRepository interface {
 	CreateGroup(groupdto dto.CreateGroupInput) (*models.Group, error)
-	GetGroup(id uuid.UUID) (*models.Group, error)
-	GetAllGroups() (*[]models.Group, error)
-	DeleteGroup(id uuid.UUID) error
 	EditGroup(id uuid.UUID, groupinfos dto.GroupEditInput) (*dto.GroupEditOutput, error)
 }
 
 type groupRepository struct {
+	GenericRepository
 	db *gorm.DB
 }
 
 func NewGroupRepository(db *gorm.DB) GroupRepository {
 	repository := &groupRepository{
-		db: db,
+		GenericRepository: NewGenericRepository(db),
+		db:                db,
 	}
 	return repository
 }
 
 func (g groupRepository) CreateGroup(groupdto dto.CreateGroupInput) (*models.Group, error) {
-	var parentGroup *models.Group
-	var organisation *models.Organisation
+	var parentGroup interface{}
+	var organisation interface{}
 	var errGrp, errOrg error
 
-	o := NewOrganisationRepository(g.db)
-
 	if groupdto.ParentGroup != uuid.Nil {
-		parentGroup, errGrp = g.GetGroup(groupdto.ParentGroup)
+		parentGroup, errGrp = g.GetEntity(groupdto.ParentGroup, models.Group{})
 		if errGrp != nil {
 			return nil, errGrp
 		}
 	}
 
 	if groupdto.Organisation != uuid.Nil {
-		organisation, errOrg = o.GetOrganisation(groupdto.Organisation)
+		organisation, errOrg = g.GetEntity(groupdto.Organisation, models.Organisation{})
 		if errOrg != nil {
 			return nil, errOrg
 		}
 	}
 
 	group := models.Group{
-		GroupName:    groupdto.GroupName,
-		ParentGroup:  parentGroup,
-		Organisation: organisation,
+		GroupName: groupdto.GroupName,
+	}
+
+	if parentGroup != nil {
+		group.ParentGroupID = &parentGroup.(*models.Group).ID
+	}
+
+	if organisation != nil {
+		group.OrganisationID = &organisation.(*models.Organisation).ID
 	}
 
 	result := g.db.Create(&group)
@@ -61,46 +64,14 @@ func (g groupRepository) CreateGroup(groupdto dto.CreateGroupInput) (*models.Gro
 	return &group, nil
 }
 
-func (g groupRepository) GetAllGroups() (*[]models.Group, error) {
-
-	var group []models.Group
-	result := g.db.Find(&group)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	return &group, nil
-}
-
-func (g groupRepository) GetGroup(id uuid.UUID) (*models.Group, error) {
-
-	var group models.Group
-	result := g.db.First(&group, id)
-
-	if result.Error != nil {
-		return nil, result.Error
-	}
-
-	return &group, nil
-}
-
-func (g groupRepository) DeleteGroup(id uuid.UUID) error {
-	result := g.db.Delete(&models.Group{}, id)
-	if result.Error != nil {
-		return result.Error
-	}
-	return nil
-}
-
 func (g groupRepository) EditGroup(id uuid.UUID, groupinfos dto.GroupEditInput) (*dto.GroupEditOutput, error) {
 
-	o := NewOrganisationRepository(g.db)
-
-	parentGroup, err := g.GetGroup(id)
+	parentGroup, err := g.GetEntity(id, models.Group{})
 	if err != nil {
 		return nil, err
 	}
 
-	organisation, errOrg := o.GetOrganisation(groupinfos.Organisation)
+	organisation, errOrg := g.GetEntity(groupinfos.Organisation, models.Organisation{})
 	if errOrg != nil {
 		if errOrg.Error() != "record not found" {
 			return nil, errOrg
@@ -110,8 +81,8 @@ func (g groupRepository) EditGroup(id uuid.UUID, groupinfos dto.GroupEditInput) 
 
 	group := models.Group{
 		GroupName:    groupinfos.GroupName,
-		ParentGroup:  parentGroup,
-		Organisation: organisation,
+		ParentGroup:  parentGroup.(*models.Group),
+		Organisation: organisation.(*models.Organisation),
 	}
 
 	result := g.db.Model(&models.Group{}).Where("id = ?", id).Updates(group)

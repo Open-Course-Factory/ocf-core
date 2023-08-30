@@ -1,22 +1,23 @@
 package models
 
 import (
+	"reflect"
+	entityManagementModels "soli/formations/src/entityManagement/models"
+
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 type SshKey struct {
-	gorm.Model
-	ID         uuid.UUID `gorm:"type:uuid;primarykey"`
-	Name       string    `gorm:"type:varchar(255)"`
+	entityManagementModels.BaseModel
+	KeyName    string    `gorm:"type:varchar(255)"`
 	PrivateKey string    `gorm:"type:text"`
 	UserID     uuid.UUID `gorm:"type:uuid;primarykey"`
 }
 
-func (s *SshKey) BeforeCreate(tx *gorm.DB) (err error) {
-	if s.ID == uuid.Nil {
-		s.ID = uuid.New()
-	}
+func (s SshKey) GetBaseModel() entityManagementModels.BaseModel {
+	return s.BaseModel
+}
 
-	return
+func (s SshKey) GetReferenceObject() string {
+	return reflect.TypeOf(User{}).Name()
 }
