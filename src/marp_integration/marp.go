@@ -34,6 +34,17 @@ func (o Option) GetTypeOpts() []string {
 	return res
 }
 
+func (o Option) GetDockerEnv() []string {
+	var res []string
+	switch o {
+	case HTML:
+	case PDF:
+		res = []string{"-e", "PUPPETEER_TIMEOUT=0"}
+	}
+
+	return res
+}
+
 var (
 	capabilitiesMap = map[string]Option{
 		"html": HTML,
@@ -70,7 +81,9 @@ func GetCmd(course *models.Course, docType *string) *exec.Cmd {
 	srcFile := outputDir + "/" + course.GetFilename("md")
 	destFile := outputDir + "/" + course.GetFilename(*docType)
 
-	baseCmd := []string{"run", "--rm", "--init", "-e", "MARP_USER=" + cUser.Uid + ":" + cUser.Gid, "-v", pwd + ":/home/marp/app", DOCKER_IMAGE}
+	baseCmd := []string{"run", "--rm", "--init", "-e", "MARP_USER=" + cUser.Uid + ":" + cUser.Gid, "-v", pwd + ":/home/marp/app"}
+	baseCmd = append(baseCmd, ParseDocType(*docType).GetDockerEnv()...)
+	baseCmd = append(baseCmd, DOCKER_IMAGE)
 	cmdOptions := []string{srcFile, "-o", destFile, "--no-config", "--theme", course.Theme}
 	cmdOptions = append(cmdOptions, GetThemesSetOpts(course)...)
 	cmdOptions = append(cmdOptions, []string{"--engine", ENGINE_CONFIGURATION}...)

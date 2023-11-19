@@ -172,7 +172,8 @@ func parseFlags() bool {
 		return false
 	}
 
-	jsonConfigurationFilePath := "./conf/conf.json"
+	// Kept for retro-compatibilty, should be removed once all the conf is in db
+	jsonConfigurationFilePath := "./src/configuration/conf.json"
 	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
 
 	jsonCourseFilePath := config.COURSES_ROOT + *courseName + ".json"
