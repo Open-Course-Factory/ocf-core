@@ -5,6 +5,7 @@ import (
 	"soli/formations/src/courses/models"
 
 	authModels "soli/formations/src/auth/models"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -12,6 +13,7 @@ import (
 
 type CourseRepository interface {
 	CreateCourse(coursedto dto.CreateCourseInput) (*models.Course, error)
+	GetAllCourses() (*[]models.Course, error)
 	DeleteCourse(id uuid.UUID) error
 	GetSpecificCourseByUser(owner authModels.User, courseName string) (*models.Course, error)
 }
@@ -64,8 +66,17 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 	return &course, nil
 }
 
+func (c courseRepository) GetAllCourses() (*[]models.Course, error) {
+	var course []models.Course
+	result := c.db.Preload("Chapters").Preload("Chapters.Sections").Find(&course)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &course, nil
+}
+
 func (c courseRepository) DeleteCourse(id uuid.UUID) error {
-	result := c.db.Delete(&models.Course{ID: id})
+	result := c.db.Delete(&models.Course{BaseModel: entityManagementModels.BaseModel{ID: id}})
 	if result.Error != nil {
 		return result.Error
 	}

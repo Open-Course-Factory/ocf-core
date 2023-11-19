@@ -16,6 +16,8 @@ import (
 var DB *gorm.DB
 var DBType string
 
+const DB_FILE = "./db-file.db"
+
 // ConnectDB opens a connection to the database
 func ConnectDB() {
 	var err error
@@ -41,7 +43,7 @@ func ConnectDB() {
 			},
 		})
 	} else if DBType == "sqlite" {
-		DB, err = gorm.Open(sqlite.Open("./db-file.db"))
+		DB, err = gorm.Open(sqlite.Open(DB_FILE))
 	}
 	if err != nil {
 		panic(err)

@@ -3,8 +3,8 @@ package test
 import (
 	"soli/formations/src/auth/dto"
 
-	"soli/formations/src/auth/services"
 	config "soli/formations/src/configuration"
+	services "soli/formations/tests/servicesMocks"
 	"testing"
 
 	"github.com/gin-gonic/gin"

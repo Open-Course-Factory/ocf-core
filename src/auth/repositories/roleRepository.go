@@ -10,19 +10,20 @@ import (
 
 type RoleRepository interface {
 	CreateRole(roledto dto.CreateRoleInput) (*models.Role, error)
-	GetAllRoles() (*[]models.Role, error)
-	GetRole(id uuid.UUID) (*models.Role, error)
-	DeleteRole(id uuid.UUID) error
 	EditRole(id uuid.UUID, roleinfos dto.RoleEditInput) (*dto.RoleEditOutput, error)
+	GetRoleByUser(user uuid.UUID) (*[]models.UserRoles, error)
+	CreateUserRoleObjectAssociation(userId uuid.UUID, roleId uuid.UUID, objectId uuid.UUID, objectType string) (*dto.UserRoleObjectAssociationOutput, error)
 }
 
 type roleRepository struct {
+	GenericRepository
 	db *gorm.DB
 }
 
 func NewRoleRepository(db *gorm.DB) RoleRepository {
 	repository := &roleRepository{
-		db: db,
+		GenericRepository: NewGenericRepository(db),
+		db:                db,
 	}
 	return repository
 }
@@ -30,7 +31,8 @@ func NewRoleRepository(db *gorm.DB) RoleRepository {
 func (r roleRepository) CreateRole(roledto dto.CreateRoleInput) (*models.Role, error) {
 
 	role := models.Role{
-		RoleName: roledto.RoleName,
+		RoleName:    roledto.RoleName,
+		Permissions: roledto.Permissions,
 	}
 
 	result := r.db.Create(&role)
@@ -40,40 +42,11 @@ func (r roleRepository) CreateRole(roledto dto.CreateRoleInput) (*models.Role, e
 	return &role, nil
 }
 
-func (r roleRepository) GetAllRoles() (*[]models.Role, error) {
-
-	var role []models.Role
-	result := r.db.Find(&role)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	return &role, nil
-}
-
-func (r roleRepository) GetRole(id uuid.UUID) (*models.Role, error) {
-
-	var role models.Role
-	result := r.db.First(&role, id)
-
-	if result.Error != nil {
-		return nil, result.Error
-	}
-
-	return &role, nil
-}
-
-func (r roleRepository) DeleteRole(id uuid.UUID) error {
-	result := r.db.Delete(&models.Role{}, id)
-	if result.Error != nil {
-		return result.Error
-	}
-	return nil
-}
-
 func (r roleRepository) EditRole(id uuid.UUID, roleinfos dto.RoleEditInput) (*dto.RoleEditOutput, error) {
 
 	role := models.Role{
-		RoleName: roleinfos.RoleName,
+		RoleName:    roleinfos.RoleName,
+		Permissions: roleinfos.Permissions,
 	}
 
 	result := r.db.Model(&models.Role{}).Where("id = ?", id).Updates(role)
@@ -84,5 +57,53 @@ func (r roleRepository) EditRole(id uuid.UUID, roleinfos dto.RoleEditInput) (*dt
 
 	return &dto.RoleEditOutput{
 		RoleName: role.RoleName,
+	}, nil
+}
+
+func (r roleRepository) GetRoleByUser(user uuid.UUID) (*[]models.UserRoles, error) {
+
+	var userRoleObjectAssociation []models.UserRoles
+	result := r.db.Where("user_id = ?", user).Preload("Role").Preload("User").Find(&userRoleObjectAssociation)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &userRoleObjectAssociation, nil
+}
+
+func (r roleRepository) CreateUserRoleObjectAssociation(userId uuid.UUID, roleId uuid.UUID, objectId uuid.UUID, objectType string) (*dto.UserRoleObjectAssociationOutput, error) {
+
+	userRoleObjectAssociation := models.UserRoles{
+		UserID:      &userId,
+		RoleID:      &roleId,
+		SubObjectID: &objectId,
+		SubType:     objectType,
+	}
+
+	if userId != uuid.Nil {
+		user, errUser := r.GetEntity(userId, models.User{})
+		if errUser != nil {
+			return nil, errUser
+		}
+		userRoleObjectAssociation.User = user.(*models.User)
+	}
+
+	if roleId != uuid.Nil {
+		role, errRole := r.GetEntity(roleId, models.Role{})
+		if errRole != nil {
+			return nil, errRole
+		}
+		userRoleObjectAssociation.Role = role.(*models.Role)
+	}
+
+	result := r.db.Create(&userRoleObjectAssociation)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return &dto.UserRoleObjectAssociationOutput{
+		UserID:      *userRoleObjectAssociation.UserID,
+		RoleID:      *userRoleObjectAssociation.RoleID,
+		SubObjectID: *userRoleObjectAssociation.SubObjectID,
+		SubType:     userRoleObjectAssociation.SubType,
 	}, nil
 }

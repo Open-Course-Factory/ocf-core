@@ -1,13 +1,7 @@
 package organisationController
 
 import (
-	"net/http"
-
-	"soli/formations/src/auth/dto"
-	"soli/formations/src/auth/errors"
-
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 // Get organisation godoc
@@ -25,27 +19,7 @@ import (
 //	@Failure		404	{object}	errors.APIError	"Organisation inexistante - Impossible de la récupérer"
 //
 //	@Router			/organisations/{id} [get]
-func (u organisationController) GetOrganisation(ctx *gin.Context) {
+func (org organisationController) GetOrganisation(ctx *gin.Context) {
 
-	id, err := uuid.Parse(ctx.Param("id"))
-
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	organisation, organisationError := u.service.GetOrganisation(id)
-
-	if organisationError != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotAcceptable,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, dto.OrganisationModelToOrganisationOutput(*organisation))
+	org.GetEntity(ctx)
 }

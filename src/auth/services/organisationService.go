@@ -4,19 +4,16 @@ import (
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/repositories"
-
-	config "soli/formations/src/configuration"
+	sqldb "soli/formations/src/db"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type OrganisationService interface {
-	CreateOrganisation(organisationCreateDTO dto.CreateOrganisationInput, config *config.Configuration) (*dto.OrganisationOutput, error)
-	GetOrganisation(id uuid.UUID) (*models.Organisation, error)
-	GetOrganisations(userId uuid.UUID) ([]dto.OrganisationOutput, error)
-	EditOrganisation(editedOrganisationInput *dto.OrganisationEditInput, id uuid.UUID, isSelf bool) (*dto.OrganisationEditOutput, error)
-	DeleteOrganisation(id uuid.UUID) error
+	CreateOrganisation(organisationCreateDTO dto.CreateOrganisationInput) (*dto.OrganisationOutput, error)
+	EditOrganisation(editedOrganisationInput *dto.OrganisationEditInput, id uuid.UUID) (*dto.OrganisationEditOutput, error)
+	CreateOrganisationComplete(name string, userID uuid.UUID) (*dto.OrganisationOutput, error)
 }
 
 type organisationService struct {
@@ -29,7 +26,7 @@ func NewOrganisationService(db *gorm.DB) OrganisationService {
 	}
 }
 
-func (o *organisationService) EditOrganisation(editedOrganisationInput *dto.OrganisationEditInput, id uuid.UUID, isSelf bool) (*dto.OrganisationEditOutput, error) {
+func (o *organisationService) EditOrganisation(editedOrganisationInput *dto.OrganisationEditInput, id uuid.UUID) (*dto.OrganisationEditOutput, error) {
 
 	editOrganisation := editedOrganisationInput
 
@@ -42,50 +39,7 @@ func (o *organisationService) EditOrganisation(editedOrganisationInput *dto.Orga
 	return editedOrganisation, nil
 }
 
-func (o *organisationService) DeleteOrganisation(id uuid.UUID) error {
-	errorDelete := o.repository.DeleteOrganisation(id)
-	if errorDelete != nil {
-		return errorDelete
-	}
-	return nil
-}
-
-func (o *organisationService) GetOrganisation(id uuid.UUID) (*models.Organisation, error) {
-	organisation, err := o.repository.GetOrganisation(id)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return organisation, nil
-
-}
-
-func (o *organisationService) GetOrganisations(userId uuid.UUID) ([]dto.OrganisationOutput, error) {
-
-	var organisationModel []*models.Organisation
-	var err error
-
-	if userId == uuid.Nil {
-		organisationModel, err = o.repository.GetAllOrganisations()
-	} else {
-		organisationModel, err = o.repository.GetAllOrganisationsByUser(userId)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	var organisationsDto []dto.OrganisationOutput
-
-	for _, s := range organisationModel {
-		organisationsDto = append(organisationsDto, *dto.OrganisationModelToOrganisationOutput(*s))
-	}
-
-	return organisationsDto, nil
-}
-
-func (o *organisationService) CreateOrganisation(organisationCreateDTO dto.CreateOrganisationInput, config *config.Configuration) (*dto.OrganisationOutput, error) {
+func (o *organisationService) CreateOrganisation(organisationCreateDTO dto.CreateOrganisationInput) (*dto.OrganisationOutput, error) {
 
 	organisation, createOrganisationError := o.repository.CreateOrganisation(organisationCreateDTO)
 
@@ -93,10 +47,35 @@ func (o *organisationService) CreateOrganisation(organisationCreateDTO dto.Creat
 		return nil, createOrganisationError
 	}
 
+	var groupOutputs []dto.GroupOutput
+	for _, group := range organisation.Groups {
+		groupOutputs = append(groupOutputs, *dto.GroupModelToGroupOutput(group))
+	}
+
 	return &dto.OrganisationOutput{
 		ID:     organisation.ID,
 		Name:   organisation.OrganisationName,
-		Groups: organisation.Groups,
+		Groups: groupOutputs,
 	}, nil
 
+}
+
+func (o *organisationService) CreateOrganisationComplete(name string, userID uuid.UUID) (*dto.OrganisationOutput, error) {
+
+	organisationInput := dto.CreateOrganisationInput{Name: name}
+	organisationOutputDto, createOrgError := o.CreateOrganisation(organisationInput)
+
+	if createOrgError != nil {
+		return nil, createOrgError
+	}
+
+	roleService := NewRoleService(sqldb.DB)
+	roleOrganisationAdminId, getRoleError := roleService.GetRoleByType(models.RoleTypeOrganisationAdmin)
+
+	if getRoleError != nil {
+		return nil, getRoleError
+	}
+
+	roleService.CreateUserRoleObjectAssociation(userID, roleOrganisationAdminId, organisationOutputDto.ID, "Organisation")
+	return organisationOutputDto, nil
 }

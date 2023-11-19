@@ -7,9 +7,9 @@ import (
 )
 
 type OrganisationOutput struct {
-	ID     uuid.UUID      `json:"id"`
-	Name   string         `json:"name"`
-	Groups []models.Group `json:"groups"`
+	ID     uuid.UUID     `json:"id"`
+	Name   string        `json:"name"`
+	Groups []GroupOutput `json:"groups"`
 }
 
 type CreateOrganisationInput struct {
@@ -22,14 +22,21 @@ type OrganisationEditInput struct {
 }
 
 type OrganisationEditOutput struct {
-	Name   string         `json:"name"`
-	Groups []models.Group `json:"groups"`
+	Name   string        `json:"name"`
+	Groups []GroupOutput `json:"groups"`
 }
 
 func OrganisationModelToOrganisationOutput(OrganisationModel models.Organisation) *OrganisationOutput {
+
+	var groupOutputs []GroupOutput
+
+	for _, group := range OrganisationModel.Groups {
+		groupOutputs = append(groupOutputs, *GroupModelToGroupOutput(group))
+	}
+
 	return &OrganisationOutput{
 		ID:     OrganisationModel.ID,
 		Name:   OrganisationModel.OrganisationName,
-		Groups: OrganisationModel.Groups,
+		Groups: groupOutputs,
 	}
 }

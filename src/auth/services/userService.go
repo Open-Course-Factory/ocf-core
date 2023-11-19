@@ -8,6 +8,8 @@ import (
 	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/repositories"
 
+	sqldb "soli/formations/src/db"
+
 	config "soli/formations/src/configuration"
 
 	"github.com/google/uuid"
@@ -17,12 +19,10 @@ import (
 
 type UserService interface {
 	CreateUser(userCreateDTO dto.CreateUserInput, config *config.Configuration) (*dto.UserOutput, error)
-	GetUser(id uuid.UUID) (*models.User, error)
-	GetUsers() ([]dto.UserOutput, error)
 	EditUser(editedUserInput *dto.UserEditInput, id uuid.UUID, isSelf bool) (*dto.UserEditOutput, error)
-	DeleteUser(id uuid.UUID) error
 	UserLogin(userLogin *dto.UserLoginInput, config *config.Configuration) (*dto.UserTokens, error)
 	AddUserSshKey(sshKeyCreateDTO dto.CreateSshKeyInput) (*dto.SshKeyOutput, error)
+	CreateUserComplete(email string, password string, firstName string, lastName string) (*dto.UserOutput, error)
 }
 
 type userService struct {
@@ -58,42 +58,6 @@ func (u *userService) EditUser(editedUserInput *dto.UserEditInput, id uuid.UUID,
 	}
 
 	return editedUser, nil
-}
-
-func (u *userService) DeleteUser(id uuid.UUID) error {
-	errorDelete := u.repository.DeleteUser(id)
-	if errorDelete != nil {
-		return errorDelete
-	}
-	return nil
-}
-
-func (u *userService) GetUser(id uuid.UUID) (*models.User, error) {
-	user, err := u.repository.GetUser(id)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return user, nil
-
-}
-
-func (u *userService) GetUsers() ([]dto.UserOutput, error) {
-
-	userModel, err := u.repository.GetAllUsers()
-
-	if err != nil {
-		return nil, err
-	}
-
-	var usersDto []dto.UserOutput
-
-	for _, s := range *userModel {
-		usersDto = append(usersDto, *dto.UserModelToUserOutput(s))
-	}
-
-	return usersDto, nil
 }
 
 func (u *userService) UserLogin(userLogin *dto.UserLoginInput, config *config.Configuration) (*dto.UserTokens, error) {
@@ -197,8 +161,44 @@ func (u *userService) AddUserSshKey(sshKeyCreateDTO dto.CreateSshKeyInput) (*dto
 
 	return &dto.SshKeyOutput{
 		Id:         sshKey.ID,
-		Name:       sshKey.Name,
+		KeyName:    sshKey.KeyName,
 		PrivateKey: sshKey.PrivateKey,
 		CreatedAt:  sshKey.CreatedAt,
 	}, nil
+}
+
+func (u *userService) CreateUserComplete(email string, password string, firstName string, lastName string) (*dto.UserOutput, error) {
+
+	userInput := dto.CreateUserInput{Email: email, Password: password, FirstName: firstName, LastName: lastName}
+	userOutputDto, userCreateError := u.CreateUser(userInput, &config.Configuration{})
+
+	if userCreateError != nil {
+		return nil, userCreateError
+	}
+
+	organisationService := NewOrganisationService(sqldb.DB)
+	organisationOutputDto, organisationCreateError := organisationService.CreateOrganisationComplete(firstName+"_"+lastName+"_org", userOutputDto.ID)
+
+	if organisationCreateError != nil {
+		return nil, organisationCreateError
+	}
+
+	roleService := NewRoleService(sqldb.DB)
+
+	roleObjectOwnerId, getRoleError := roleService.GetRoleByType(models.RoleTypeObjectOwner)
+
+	if getRoleError != nil {
+		return nil, getRoleError
+	}
+
+	roleService.CreateUserRoleObjectAssociation(userOutputDto.ID, roleObjectOwnerId, userOutputDto.ID, "User")
+
+	groupService := NewGroupService(sqldb.DB)
+	_, groupCreateError := groupService.CreateGroupComplete(firstName+"_"+lastName+"_grp", organisationOutputDto.ID, uuid.Nil, userOutputDto.ID)
+
+	if groupCreateError != nil {
+		return nil, groupCreateError
+	}
+
+	return userOutputDto, nil
 }

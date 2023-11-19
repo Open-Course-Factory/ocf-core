@@ -80,6 +80,7 @@ require (
 )
 
 require (
+	github.com/gertd/go-pluralize v0.2.1
 	github.com/gin-gonic/gin v1.9.1
 	github.com/go-git/go-git/v5 v5.6.1
 	github.com/golang-jwt/jwt/v4 v4.5.0
@@ -87,5 +88,5 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/crypto v0.9.0
-	gorm.io/gorm v1.24.3
+	gorm.io/gorm v1.25.4
 )
