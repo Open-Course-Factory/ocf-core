@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"reflect"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -19,17 +17,8 @@ import (
 	marp "soli/formations/src/marp_integration"
 	"soli/formations/src/middleware"
 
-	authModels "soli/formations/src/auth/models"
-	groupController "soli/formations/src/auth/routes/groupRoutes"
-	loginController "soli/formations/src/auth/routes/loginRoutes"
-	organisationController "soli/formations/src/auth/routes/organisationRoutes"
-	roleController "soli/formations/src/auth/routes/roleRoutes"
-	userController "soli/formations/src/auth/routes/userRoutes"
-	"soli/formations/src/auth/services"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
-
-	entityManagementServices "soli/formations/src/entityManagement/services"
 
 	sqldb "soli/formations/src/db"
 )
@@ -56,18 +45,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.User{}).Name(), reflect.TypeOf(authModels.User{}))
-	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Group{}).Name(), reflect.TypeOf(authModels.Group{}))
-	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Role{}).Name(), reflect.TypeOf(authModels.Role{}))
-	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Organisation{}).Name(), reflect.TypeOf(authModels.Organisation{}))
-	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.SshKey{}).Name(), reflect.TypeOf(authModels.SshKey{}))
-
 	sqldb.ConnectDB()
-
-	sqldb.DB.AutoMigrate(&authModels.User{}, &authModels.Role{}, &authModels.UserRoles{})
-	sqldb.DB.AutoMigrate(&authModels.SshKey{})
-	sqldb.DB.AutoMigrate(&authModels.Group{})
-	sqldb.DB.AutoMigrate(&authModels.Organisation{})
 
 	//sqldb.DB.SetupJoinTable(&authModels.User{}, "Roles", &authModels.UserRole{})
 	sqldb.DB.AutoMigrate()
@@ -83,13 +61,6 @@ func main() {
 	r.Use(middleware.CORS())
 
 	apiGroup := r.Group("/api/v1")
-	userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	roleController.RolesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	groupController.GroupsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	organisationController.OrganisationsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	loginController.LoginRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	loginController.RefreshRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
@@ -107,30 +78,10 @@ func initSwagger(r *gin.Engine) {
 }
 
 func initDB() {
-	genericService := services.NewGenericService(sqldb.DB)
-	roleService := services.NewRoleService(sqldb.DB)
-	roleService.SetupRoles()
-
 	if sqldb.DBType == "sqlite" {
 		sqldb.DB = sqldb.DB.Debug()
+		// setup casdoor test entities
 
-		users, _ := genericService.GetEntities(authModels.User{})
-
-		// for easy testing, sqlite database must not be used in production
-		if len(users) == 0 {
-
-			userService := services.NewUserService(sqldb.DB)
-			userService.CreateUserComplete("test@test.com", "test", "Tom", "Baggins")
-			userService.CreateUserComplete("test2@test.com", "test2", "Bilbo", "Baggins")
-
-			userTestAdminDto, _ := userService.CreateUserComplete("admin@test.com", "admin", "Gan", "Dalf")
-
-			roleService := services.NewRoleService(sqldb.DB)
-			roleInstanceAdminUuid, _ := roleService.GetRoleByType(authModels.RoleTypeInstanceAdmin)
-
-			roleService.CreateUserRoleObjectAssociation(userTestAdminDto.ID, roleInstanceAdminUuid, uuid.Nil, "")
-
-		}
 	}
 }
 

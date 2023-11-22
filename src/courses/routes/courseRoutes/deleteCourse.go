@@ -2,8 +2,7 @@ package courseController
 
 import (
 	"net/http"
-
-	"soli/formations/src/auth/errors"
+	"soli/formations/src/courses/errors"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

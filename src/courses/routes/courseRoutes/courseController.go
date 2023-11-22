@@ -1,7 +1,6 @@
 package courseController
 
 import (
-	authServices "soli/formations/src/auth/services"
 	courseServices "soli/formations/src/courses/services"
 
 	"github.com/gin-gonic/gin"
@@ -17,15 +16,11 @@ type CourseController interface {
 }
 
 type courseController struct {
-	authServices.GenericService
-	service     courseServices.CourseService
-	userService authServices.UserService
+	service courseServices.CourseService
 }
 
 func NewCourseController(db *gorm.DB) CourseController {
 	return &courseController{
-		GenericService: authServices.NewGenericService(db),
-		service:        courseServices.NewCourseService(db),
-		userService:    authServices.NewUserService(db),
+		service: courseServices.NewCourseService(db),
 	}
 }

@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-	"soli/formations/src/auth/models"
 	config "soli/formations/src/configuration"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strconv"
 	"strings"
 
-	"github.com/google/uuid"
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 type Format int
@@ -40,8 +39,8 @@ type Course struct {
 	Header             string
 	Footer             string
 	Logo               string
-	OwnerID            *uuid.UUID
-	Owner              *models.User `json:"owner"`
+	OwnerID            string
+	Owner              *casdoorsdk.User `json:"owner"`
 	Description        string
 	Format             Format
 	CourseID_str       string
