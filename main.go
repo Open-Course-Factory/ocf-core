@@ -21,6 +21,8 @@ import (
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 
 	sqldb "soli/formations/src/db"
+
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 // @title User API
@@ -45,6 +47,8 @@ func main() {
 		os.Exit(0)
 	}
 
+	casdoorsdk.InitConfig("http://casdoor:8000", "82b29aa895790d9fd23e", "81cdbfa7e7b02e0fd92ecb78cdc282e9fa25752c", "", "sdv", "ocf")
+
 	sqldb.ConnectDB()
 
 	//sqldb.DB.SetupJoinTable(&authModels.User{}, "Roles", &authModels.UserRole{})
@@ -65,22 +69,70 @@ func main() {
 
 	initSwagger(r)
 
-	r.Run(":8000")
+	r.Run(":8080")
 }
 
 func initSwagger(r *gin.Engine) {
 	docs.SwaggerInfo.Title = "User API"
 	docs.SwaggerInfo.Description = "This is a sample server for managing users"
 	docs.SwaggerInfo.Version = "1.0"
-	docs.SwaggerInfo.Host = "localhost:8000"
+	docs.SwaggerInfo.Host = "localhost:8080"
 	docs.SwaggerInfo.BasePath = "/api/v1"
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
 
 func initDB() {
+
 	if sqldb.DBType == "sqlite" {
 		sqldb.DB = sqldb.DB.Debug()
 		// setup casdoor test entities
+
+		permissions, _ := casdoorsdk.GetPermissions()
+		for _, permission := range permissions {
+			casdoorsdk.DeletePermission(permission)
+		}
+
+		users, _ := casdoorsdk.GetUsers()
+		for _, user := range users {
+			casdoorsdk.DeleteUser(user)
+		}
+
+		if len(users) <= 0 {
+			casdoorsdk.AddUser(&casdoorsdk.User{
+				Name:              "bagginst",
+				Email:             "test@test.com",
+				Password:          "test",
+				LastName:          "Baggins",
+				FirstName:         "Tom",
+				SignupApplication: "ocf",
+			})
+			casdoorsdk.AddUser(&casdoorsdk.User{
+				Name:              "bagginsb",
+				Email:             "test2@test.com",
+				Password:          "test2",
+				LastName:          "Baggins",
+				FirstName:         "Bilbo",
+				SignupApplication: "ocf",
+			})
+
+			_, err := casdoorsdk.AddPermission(&casdoorsdk.Permission{
+				Name:         "test",
+				Owner:        "ocf",
+				ResourceType: "Course",
+				Resources:    []string{"1", "2"},
+				Actions:      []string{"Read"},
+				Effect:       "Allow",
+				State:        "",
+				Domains:      []string{},
+				Users:        []string{"bagginst"},
+				Roles:        []string{},
+			})
+
+			if err != nil {
+				fmt.Println(err.Error())
+			}
+
+		}
 
 	}
 }
