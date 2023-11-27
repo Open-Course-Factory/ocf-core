@@ -4,9 +4,6 @@ FROM golang:latest
 # Setup working directory
 WORKDIR /usr/src/osf-core
 
-# Copy source code to
-COPY . /usr/src/osf-core
-
 # Install Git and NodeJS
 RUN curl -sL https://deb.nodesource.com/setup_16.x | bash -
 RUN apt-get install -y nodejs npm
@@ -22,8 +19,13 @@ RUN cd /usr/src/osf-core && go get golang.org/x/text/transform \
     && go get golang.org/x/text/unicode/norm \
     && go install github.com/swaggo/swag/cmd/swag@v1.8.12
 
+# Copy source code to
+COPY . /usr/src/osf-core
+
 # Init Swagger
 RUN cd /usr/src/osf-core && swag init --parseDependency --parseInternal
+
+RUN go mod tidy
 
 # Export ports
 EXPOSE 8000/tcp
