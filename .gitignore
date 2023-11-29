@@ -8,4 +8,4 @@ src/*.md
 __debug_bin*
 .env
 courses/*
-
+*~

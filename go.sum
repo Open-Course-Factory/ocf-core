@@ -15,8 +15,10 @@ github.com/bwesterb/go-ristretto v1.2.3/go.mod h1:fUIoIZaG73pV5biE2Blr2xEzDoMj7N
 github.com/bytedance/sonic v1.5.0/go.mod h1:ED5hyg4y6t3/9Ku1R6dU/4KyJ48DZ4jPhfY1O2AihPM=
 github.com/bytedance/sonic v1.9.1 h1:6iJ6NqdoxCDr6mbY8h18oSO+cShGSMRGCEo7F2h0x8s=
 github.com/bytedance/sonic v1.9.1/go.mod h1:i736AoUSYt75HyZLoJW9ERYxcy6eaN6h4BZXU064P/U=
-github.com/casdoor/casdoor-go-sdk v0.32.0 h1:EuPqOMpDBCDEbm8v4/JBNDTht1Obrj/vSq74qy3Djt0=
-github.com/casdoor/casdoor-go-sdk v0.32.0/go.mod h1:hVSgmSdwTCsBEJNt9r2K5aLVsoeMc37/N4Zzescy5SA=
+github.com/casdoor/casdoor-go-sdk v0.32.1 h1:SMMbicerANhceSiYdzFN2woZyf63aPemvZVT7fsJu+A=
+github.com/casdoor/casdoor-go-sdk v0.32.1/go.mod h1:hVSgmSdwTCsBEJNt9r2K5aLVsoeMc37/N4Zzescy5SA=
+github.com/casdoor/casdoor-go-sdk v0.33.0 h1:9thmi+Wm4nP75wZuBnW8IrAP97Rf9ayS7N0f7qNBY1Q=
+github.com/casdoor/casdoor-go-sdk v0.33.0/go.mod h1:hVSgmSdwTCsBEJNt9r2K5aLVsoeMc37/N4Zzescy5SA=
 github.com/chenzhuoyu/base64x v0.0.0-20211019084208-fb5309c8db06/go.mod h1:DH46F32mSOjUmXrMHnKwZdA8wcEefY7UVqBKYGjpdQY=
 github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 h1:qSGYFH7+jGhDF8vLC+iwCD4WpbV1EBDSzWkJODFLams=
 github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311/go.mod h1:b583jCggY9gE99b6G5LEC39OIiVsWj+R97kbl5odCEk=

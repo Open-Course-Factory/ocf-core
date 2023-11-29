@@ -65,7 +65,7 @@ require (
 )
 
 require (
-	github.com/casdoor/casdoor-go-sdk v0.32.0
+	github.com/casdoor/casdoor-go-sdk v0.33.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/go-git/go-billy/v5 v5.5.0
 	github.com/go-git/go-git/v5 v5.10.0

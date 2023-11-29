@@ -115,6 +115,11 @@ func initDB() {
 				SignupApplication: "ocf",
 			})
 
+			casdoorsdk.AddGroup(&casdoorsdk.Group{
+				ParentId: "sdv",
+				Name:     "groupe_de_test",
+			})
+
 			_, err := casdoorsdk.AddPermission(&casdoorsdk.Permission{
 				Name:         "test",
 				Owner:        "ocf",
@@ -126,6 +131,7 @@ func initDB() {
 				Domains:      []string{},
 				Users:        []string{"bagginst"},
 				Roles:        []string{},
+				Groups:       []string{"m1devA"},
 			})
 
 			if err != nil {
