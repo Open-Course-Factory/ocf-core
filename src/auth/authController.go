@@ -2,6 +2,7 @@ package authController
 
 import (
 	"encoding/json"
+	"net/http"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
@@ -36,4 +37,8 @@ func (ac *authController) Login(ctx *gin.Context) {
 
 	data, _ := json.Marshal(claims)
 	ctx.Set("user", data)
+
+	// Temporary redirect to Swagger, should be to the frontend !
+	ctx.Redirect(http.StatusFound, "/swagger/index.html")
+
 }
