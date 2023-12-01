@@ -1,4 +1,4 @@
-package auth
+package authController
 
 import (
 	"encoding/json"
@@ -19,8 +19,8 @@ func NewAuthController() AuthController {
 }
 
 func (ac *authController) Login(ctx *gin.Context) {
-	codeParam := ctx.Param("code")
-	stateParam := ctx.Param("state")
+	codeParam := ctx.Query("code")
+	stateParam := ctx.Query("state")
 
 	token, err := casdoorsdk.GetOAuthToken(codeParam, stateParam)
 	if err != nil {

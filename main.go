@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"flag"
 	"fmt"
 	"log"
@@ -17,6 +18,7 @@ import (
 	marp "soli/formations/src/marp_integration"
 	"soli/formations/src/middleware"
 
+	authController "soli/formations/src/auth"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 
@@ -24,6 +26,9 @@ import (
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
+
+//go:embed token_jwt_key.pem
+var JwtPublicKey string
 
 // @title User API
 // @version 1.0
@@ -47,7 +52,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	casdoorsdk.InitConfig("http://casdoor:8000", "82b29aa895790d9fd23e", "81cdbfa7e7b02e0fd92ecb78cdc282e9fa25752c", "", "sdv", "ocf")
+	casdoorsdk.InitConfig("http://casdoor:8000", "82b29aa895790d9fd23e", "81cdbfa7e7b02e0fd92ecb78cdc282e9fa25752c", JwtPublicKey, "sdv", "ocf")
 
 	sqldb.ConnectDB()
 
@@ -66,6 +71,7 @@ func main() {
 
 	apiGroup := r.Group("/api/v1")
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 
@@ -97,9 +103,12 @@ func initDB() {
 			casdoorsdk.DeleteUser(user)
 		}
 
+		users, _ = casdoorsdk.GetUsers()
+
 		if len(users) <= 0 {
 			casdoorsdk.AddUser(&casdoorsdk.User{
 				Name:              "bagginst",
+				DisplayName:       "Tom Baggins",
 				Email:             "test@test.com",
 				Password:          "test",
 				LastName:          "Baggins",
@@ -108,6 +117,7 @@ func initDB() {
 			})
 			casdoorsdk.AddUser(&casdoorsdk.User{
 				Name:              "bagginsb",
+				DisplayName:       "Bob Baggins",
 				Email:             "test2@test.com",
 				Password:          "test2",
 				LastName:          "Baggins",

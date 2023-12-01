@@ -1,4 +1,4 @@
-package auth
+package authController
 
 import (
 	"github.com/gin-gonic/gin"
