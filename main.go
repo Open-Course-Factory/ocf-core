@@ -30,6 +30,9 @@ import (
 //go:embed token_jwt_key.pem
 var JwtPublicKey string
 
+//go:embed model.conf
+var CasbinConf string
+
 // @title User API
 // @version 1.0
 // @description This is a server to generate slides.
@@ -103,6 +106,21 @@ func initDB() {
 			casdoorsdk.DeleteUser(user)
 		}
 
+		roles, _ := casdoorsdk.GetRoles()
+		for _, role := range roles {
+			casdoorsdk.DeleteRole(role)
+		}
+
+		groups, _ := casdoorsdk.GetGroups()
+		for _, group := range groups {
+			casdoorsdk.DeleteGroup(group)
+		}
+
+		models, _ := casdoorsdk.GetModels()
+		for _, model := range models {
+			casdoorsdk.DeleteModel(model)
+		}
+
 		users, _ = casdoorsdk.GetUsers()
 
 		if len(users) <= 0 {
@@ -125,24 +143,57 @@ func initDB() {
 				SignupApplication: "ocf",
 			})
 
+			casdoorsdk.AddRole(&casdoorsdk.Role{
+				Owner:       "sdv",
+				Name:        "student",
+				DisplayName: "Etudiants",
+				IsEnabled:   true,
+				Users:       []string{"bagginsb"},
+			})
+
 			casdoorsdk.AddGroup(&casdoorsdk.Group{
 				ParentId: "sdv",
 				Name:     "groupe_de_test",
 			})
 
-			_, err := casdoorsdk.AddPermission(&casdoorsdk.Permission{
-				Name:         "test",
+			casdoorsdk.AddPermission(&casdoorsdk.Permission{
+				Name:         "permission_test",
 				Owner:        "ocf",
 				ResourceType: "Course",
-				Resources:    []string{"1", "2"},
+				Resources:    []string{"courses/1", "courses/2"},
 				Actions:      []string{"Read"},
 				Effect:       "Allow",
 				State:        "",
 				Domains:      []string{},
-				Users:        []string{"bagginst"},
-				Roles:        []string{},
-				Groups:       []string{"m1devA"},
+				Users:        []string{},
+				Roles:        []string{"sdv/student"},
+				Groups:       []string{},
 			})
+
+			_, err := casdoorsdk.AddModel(&casdoorsdk.Model{
+				Owner:       "sdv",
+				Name:        "model_test",
+				DisplayName: "Test de model",
+				ModelText:   CasbinConf,
+			})
+
+			enforcer := &casdoorsdk.Enforcer{
+				Owner:       "sdv",
+				Name:        "enforcer",
+				Model:       CasbinConf,
+				DisplayName: "Test Tom",
+			}
+
+			casdoorsdk.AddEnforcer(enforcer)
+
+			//test := &casdoorsdk.CasbinRequest{}
+
+			//res, errPerm := casdoorsdk.Enforce("permission_test", "model_test", "courses/1", *test)
+
+			permissionsByRole, _ := casdoorsdk.GetPermissionsByRole("student")
+			for _, permission := range permissionsByRole {
+				fmt.Println(permission.Name)
+			}
 
 			if err != nil {
 				fmt.Println(err.Error())

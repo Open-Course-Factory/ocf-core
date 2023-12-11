@@ -15,6 +15,12 @@ func (am AuthMiddleware) AuthManagement() gin.HandlerFunc {
 
 		res, err := casdoorsdk.GetUsers()
 
+		// get user
+		// get user roles
+		// get permissions for each role
+		// check whether there is a permission about the ressource requested
+		// depending on type of request, get the allowed ressources list or the specific details about the ressource
+
 		fmt.Println(res)
 		fmt.Println(err)
 
