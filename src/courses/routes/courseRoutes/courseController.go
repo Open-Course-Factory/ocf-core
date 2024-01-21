@@ -1,7 +1,7 @@
 package courseController
 
 import (
-	courseServices "soli/formations/src/courses/services"
+	services "soli/formations/src/courses/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -16,11 +16,11 @@ type CourseController interface {
 }
 
 type courseController struct {
-	service courseServices.CourseService
+	service services.CourseService
 }
 
 func NewCourseController(db *gorm.DB) CourseController {
 	return &courseController{
-		service: courseServices.NewCourseService(db),
+		service: services.NewCourseService(db),
 	}
 }

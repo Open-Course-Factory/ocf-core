@@ -33,9 +33,9 @@ var JwtPublicKey string
 //go:embed model.conf
 var CasbinConf string
 
-// @title User API
-// @version 1.0
-// @description This is a server to generate slides.
+// @title OCF API
+// @version 0.0.1
+// @description This is a server to build and generate slides.
 // @termsOfService TODO
 
 // @securityDefinitions.apikey Bearer
