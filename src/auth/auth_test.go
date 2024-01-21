@@ -10,9 +10,6 @@ import (
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
-//go:embed token_jwt_key.pem
-var JwtPublicKey string
-
 var users []casdoorsdk.User
 var groups []casdoorsdk.Group
 var roles []casdoorsdk.Role
@@ -20,7 +17,7 @@ var permissions []casdoorsdk.Permission
 
 func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 	log.Println("setup test")
-	casdoorsdk.InitConfig("http://localhost:8000", "82b29aa895790d9fd23e", "81cdbfa7e7b02e0fd92ecb78cdc282e9fa25752c", JwtPublicKey, "sdv", "ocf")
+	InitCasdoorConnection()
 
 	deleteAllObjects()
 

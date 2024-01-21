@@ -2,6 +2,7 @@ package sessionController
 
 import (
 	"net/http"
+	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/errors"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +24,8 @@ import (
 // @Router /sessions [get]
 func (s sessionController) GetSessions(ctx *gin.Context) {
 
-	courses, err := s.service.GetSessions()
+	var sessions []dto.SessionOutput
+	sessions, err := s.service.GetSessions()
 
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
@@ -33,5 +35,5 @@ func (s sessionController) GetSessions(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, courses)
+	ctx.JSON(http.StatusOK, sessions)
 }

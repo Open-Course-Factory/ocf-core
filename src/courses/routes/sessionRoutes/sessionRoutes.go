@@ -13,7 +13,7 @@ import (
 func SessionsRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
 	sessionController := NewSessionController(db)
 
-	routes := router.Group("/courses")
+	routes := router.Group("/sessions")
 
 	middleware := &auth.AuthMiddleware{}
 

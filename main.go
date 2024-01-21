@@ -21,17 +21,12 @@ import (
 	authController "soli/formations/src/auth"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
+	sessionController "soli/formations/src/courses/routes/sessionRoutes"
 
 	sqldb "soli/formations/src/db"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
-
-//go:embed token_jwt_key.pem
-var JwtPublicKey string
-
-//go:embed model.conf
-var CasbinConf string
 
 // @title OCF API
 // @version 0.0.1
@@ -55,11 +50,10 @@ func main() {
 		os.Exit(0)
 	}
 
-	casdoorsdk.InitConfig("http://casdoor:8000", "82b29aa895790d9fd23e", "81cdbfa7e7b02e0fd92ecb78cdc282e9fa25752c", JwtPublicKey, "sdv", "ocf")
+	authController.InitCasdoorConnection()
 
-	sqldb.ConnectDB()
+	sqldb.InitDBConnection()
 
-	//sqldb.DB.SetupJoinTable(&authModels.User{}, "Roles", &authModels.UserRole{})
 	sqldb.DB.AutoMigrate()
 
 	sqldb.DB.AutoMigrate(&courseModels.Page{})
@@ -74,6 +68,7 @@ func main() {
 
 	apiGroup := r.Group("/api/v1")
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	sessionController.SessionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
@@ -170,21 +165,21 @@ func initDB() {
 				Groups:       []string{},
 			})
 
-			_, err := casdoorsdk.AddModel(&casdoorsdk.Model{
-				Owner:       "sdv",
-				Name:        "model_test",
-				DisplayName: "Test de model",
-				ModelText:   CasbinConf,
-			})
+			// _, err := casdoorsdk.AddModel(&casdoorsdk.Model{
+			// 	Owner:       "sdv",
+			// 	Name:        "model_test",
+			// 	DisplayName: "Test de model",
+			// 	ModelText:   CasbinConf,
+			// })
 
-			enforcer := &casdoorsdk.Enforcer{
-				Owner:       "sdv",
-				Name:        "enforcer",
-				Model:       CasbinConf,
-				DisplayName: "Test Tom",
-			}
+			// enforcer := &casdoorsdk.Enforcer{
+			// 	Owner:       "sdv",
+			// 	Name:        "enforcer",
+			// 	Model:       CasbinConf,
+			// 	DisplayName: "Test Tom",
+			// }
 
-			casdoorsdk.AddEnforcer(enforcer)
+			// casdoorsdk.AddEnforcer(enforcer)
 
 			//test := &casdoorsdk.CasbinRequest{}
 
@@ -193,10 +188,6 @@ func initDB() {
 			permissionsByRole, _ := casdoorsdk.GetPermissionsByRole("student")
 			for _, permission := range permissionsByRole {
 				fmt.Println(permission.Name)
-			}
-
-			if err != nil {
-				fmt.Println(err.Error())
 			}
 
 		}
