@@ -17,6 +17,7 @@ import (
 	config "soli/formations/src/configuration"
 	marp "soli/formations/src/marp_integration"
 	"soli/formations/src/middleware"
+	testtools "soli/formations/src/testTools"
 
 	authController "soli/formations/src/auth"
 	courseModels "soli/formations/src/courses/models"
@@ -32,18 +33,15 @@ import (
 // @version 0.0.1
 // @description This is a server to build and generate slides.
 // @termsOfService TODO
-
 // @securityDefinitions.apikey Bearer
 // @in header
 // @name Authorization
 // @description Type "Bearer" followed by a space and JWT token.
-
 // @contact.name Solution Libre
 // @contact.url https://www.solution-libre.fr
 // @contact.email contact@solution-libre.fr
-
-// @host localhost:8000
-// @BasePath /
+// @host localhost:8080
+// @BasePath /api/v1
 func main() {
 
 	if parseFlags() {
@@ -77,9 +75,9 @@ func main() {
 }
 
 func initSwagger(r *gin.Engine) {
-	docs.SwaggerInfo.Title = "User API"
-	docs.SwaggerInfo.Description = "This is a sample server for managing users"
-	docs.SwaggerInfo.Version = "1.0"
+	docs.SwaggerInfo.Title = "OCF API"
+	docs.SwaggerInfo.Description = "This is an API to build and generate courses"
+	docs.SwaggerInfo.Version = "0.0.1"
 	docs.SwaggerInfo.Host = "localhost:8080"
 	docs.SwaggerInfo.BasePath = "/api/v1"
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -91,105 +89,15 @@ func initDB() {
 		sqldb.DB = sqldb.DB.Debug()
 		// setup casdoor test entities
 
-		permissions, _ := casdoorsdk.GetPermissions()
-		for _, permission := range permissions {
-			casdoorsdk.DeletePermission(permission)
-		}
+		testtools.DeleteAllObjects()
+		testtools.SetupUsers()
+		testtools.SetupGroups()
+		testtools.SetupRoles()
+		testtools.SetupPermissions()
 
-		users, _ := casdoorsdk.GetUsers()
-		for _, user := range users {
-			casdoorsdk.DeleteUser(user)
-		}
-
-		roles, _ := casdoorsdk.GetRoles()
-		for _, role := range roles {
-			casdoorsdk.DeleteRole(role)
-		}
-
-		groups, _ := casdoorsdk.GetGroups()
-		for _, group := range groups {
-			casdoorsdk.DeleteGroup(group)
-		}
-
-		models, _ := casdoorsdk.GetModels()
-		for _, model := range models {
-			casdoorsdk.DeleteModel(model)
-		}
-
-		users, _ = casdoorsdk.GetUsers()
-
-		if len(users) <= 0 {
-			casdoorsdk.AddUser(&casdoorsdk.User{
-				Name:              "bagginst",
-				DisplayName:       "Tom Baggins",
-				Email:             "test@test.com",
-				Password:          "test",
-				LastName:          "Baggins",
-				FirstName:         "Tom",
-				SignupApplication: "ocf",
-			})
-			casdoorsdk.AddUser(&casdoorsdk.User{
-				Name:              "bagginsb",
-				DisplayName:       "Bob Baggins",
-				Email:             "test2@test.com",
-				Password:          "test2",
-				LastName:          "Baggins",
-				FirstName:         "Bilbo",
-				SignupApplication: "ocf",
-			})
-
-			casdoorsdk.AddRole(&casdoorsdk.Role{
-				Owner:       "sdv",
-				Name:        "student",
-				DisplayName: "Etudiants",
-				IsEnabled:   true,
-				Users:       []string{"bagginsb"},
-			})
-
-			casdoorsdk.AddGroup(&casdoorsdk.Group{
-				ParentId: "sdv",
-				Name:     "groupe_de_test",
-			})
-
-			casdoorsdk.AddPermission(&casdoorsdk.Permission{
-				Name:         "permission_test",
-				Owner:        "ocf",
-				ResourceType: "Course",
-				Resources:    []string{"courses/1", "courses/2"},
-				Actions:      []string{"Read"},
-				Effect:       "Allow",
-				State:        "",
-				Domains:      []string{},
-				Users:        []string{},
-				Roles:        []string{"sdv/student"},
-				Groups:       []string{},
-			})
-
-			// _, err := casdoorsdk.AddModel(&casdoorsdk.Model{
-			// 	Owner:       "sdv",
-			// 	Name:        "model_test",
-			// 	DisplayName: "Test de model",
-			// 	ModelText:   CasbinConf,
-			// })
-
-			// enforcer := &casdoorsdk.Enforcer{
-			// 	Owner:       "sdv",
-			// 	Name:        "enforcer",
-			// 	Model:       CasbinConf,
-			// 	DisplayName: "Test Tom",
-			// }
-
-			// casdoorsdk.AddEnforcer(enforcer)
-
-			//test := &casdoorsdk.CasbinRequest{}
-
-			//res, errPerm := casdoorsdk.Enforce("permission_test", "model_test", "courses/1", *test)
-
-			permissionsByRole, _ := casdoorsdk.GetPermissionsByRole("student")
-			for _, permission := range permissionsByRole {
-				fmt.Println(permission.Name)
-			}
-
+		permissionsByRole, _ := casdoorsdk.GetPermissionsByRole("student")
+		for _, permission := range permissionsByRole {
+			fmt.Println(permission.Name)
 		}
 
 	}

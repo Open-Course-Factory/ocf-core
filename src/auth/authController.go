@@ -19,6 +19,19 @@ func NewAuthController() AuthController {
 	return &authController{}
 }
 
+// Login godoc
+//
+// @Summary Login
+// @Description Login pour casdoor, pas censé être utilisé par un humain
+// @Tags login
+// @Accept json
+// @Produce json
+//
+// @Success 200
+//
+// @Failure 404 {object} errors.APIError "Utilisateur non trouvé"
+//
+// @Router /auth/login [get]
 func (ac *authController) Login(ctx *gin.Context) {
 	codeParam := ctx.Query("code")
 	stateParam := ctx.Query("state")

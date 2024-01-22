@@ -12,6 +12,13 @@ type AuthMiddleware struct {
 
 func (am AuthMiddleware) AuthManagement() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
+		user, userExists := ctx.Get("user")
+
+		if userExists {
+			fmt.Println(user)
+		} else {
+			fmt.Println("User not in context")
+		}
 
 		res, err := casdoorsdk.GetUsers()
 

@@ -1,8 +1,27 @@
 # Base Golang Image
-FROM golang:latest
+FROM golang:latest as builder
 
 # Setup working directory
 WORKDIR /usr/src/ocf-core
+
+# Copy source code to
+COPY . /usr/src/ocf-core
+
+# Install Go Library & Swagger
+RUN cd /usr/src/ocf-core && go get golang.org/x/text/transform \
+    && go get golang.org/x/text/unicode/norm \
+    && go install github.com/swaggo/swag/cmd/swag@v1.8.12
+
+RUN go mod tidy
+
+# Init Swagger
+RUN cd /usr/src/ocf-core && swag init --parseDependency --parseInternal
+
+RUN go mod tidy
+
+RUN go build -o ocf /usr/src/ocf-core/main.go
+
+FROM debian:latest
 
 RUN apt-get update
 
@@ -23,26 +42,16 @@ RUN npm install -g @marp-team/marp-core \
     && npm install -g markdown-it-container \
     && npm install -g markdown-it-attrs
 
-# Copy source code to
-COPY . /usr/src/ocf-core
+RUN useradd -ms /bin/bash ocf
 
-# Install Go Library & Swagger
-RUN cd /usr/src/ocf-core && go get golang.org/x/text/transform \
-    && go get golang.org/x/text/unicode/norm \
-    && go install github.com/swaggo/swag/cmd/swag@v1.8.12
+USER ocf
+WORKDIR /home/ocf
 
-RUN go mod tidy
-
-# Init Swagger
-RUN cd /usr/src/ocf-core && swag init --parseDependency --parseInternal
-
-RUN go mod tidy
+COPY --from=builder /usr/src/ocf-core/ocf ocf
 
 # Export ports
 EXPOSE 8000/tcp
 EXPOSE 443/tcp
 EXPOSE 80/tcp
 
-# Launch the API
-CMD ["go", "run", "/usr/src/ocf-core/main.go"]
-
+CMD ["./ocf"]
