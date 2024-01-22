@@ -18,8 +18,8 @@ var DBType string
 
 const DB_FILE = "./db-file.db"
 
-// ConnectDB opens a connection to the database
-func ConnectDB() {
+// InitDBConnection opens a connection to the database
+func InitDBConnection() {
 	var err error
 
 	// load
@@ -27,7 +27,7 @@ func ConnectDB() {
 	DBType = os.Getenv("DATABASE")
 
 	if err != nil {
-		log.Fatalf("err loading: %v", err)
+		log.Default().Printf("err loading: %v", err)
 	}
 
 	if DBType == "postgres" {

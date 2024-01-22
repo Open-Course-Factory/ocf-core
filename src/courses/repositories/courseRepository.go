@@ -4,9 +4,9 @@ import (
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
 
-	authModels "soli/formations/src/auth/models"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -15,7 +15,7 @@ type CourseRepository interface {
 	CreateCourse(coursedto dto.CreateCourseInput) (*models.Course, error)
 	GetAllCourses() (*[]models.Course, error)
 	DeleteCourse(id uuid.UUID) error
-	GetSpecificCourseByUser(owner authModels.User, courseName string) (*models.Course, error)
+	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
 }
 
 type courseRepository struct {
@@ -31,7 +31,7 @@ func NewCourseRepository(db *gorm.DB) CourseRepository {
 
 func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models.Course, error) {
 
-	var user *authModels.User
+	var user *casdoorsdk.User
 	errUser := c.db.First(&user, "email=?", coursedto.AuthorEmail)
 	if errUser.Error != nil {
 		return nil, errUser.Error
@@ -42,7 +42,7 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 		Name:               coursedto.Name,
 		Theme:              coursedto.Theme,
 		Owner:              user,
-		OwnerID:            &user.ID,
+		OwnerID:            user.Id,
 		Category:           coursedto.Category,
 		Version:            coursedto.Version,
 		Title:              coursedto.Title,
@@ -83,9 +83,9 @@ func (c courseRepository) DeleteCourse(id uuid.UUID) error {
 	return nil
 }
 
-func (c courseRepository) GetSpecificCourseByUser(owner authModels.User, courseName string) (*models.Course, error) {
+func (c courseRepository) GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error) {
 	var course *models.Course
-	err := c.db.Preload("Chapters").Preload("Chapters.Sections").First(&course, "owner_id=? AND name=?", owner.ID.String(), courseName).Error
+	err := c.db.Preload("Chapters").Preload("Chapters.Sections").First(&course, "owner_id=? AND name=?", owner.Id, courseName).Error
 	if err != nil {
 		return nil, err
 	}

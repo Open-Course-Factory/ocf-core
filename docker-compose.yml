@@ -4,6 +4,8 @@ services:
     build:
       context: ./
       dockerfile: Dockerfile
+    volumes:
+      - "./.env:/home/ocf/.env"
     ports:
       - 80:8000
     depends_on:
@@ -20,12 +22,12 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      - casdoor_db
     environment:
       RUNNING_IN_DOCKER: "true"
     volumes:
       - ./src/configuration/casdoor_app.conf:/conf/app.conf
-  db:
+  casdoor_db:
     restart: always
     image: mysql:8.0.25
     platform: linux/amd64
