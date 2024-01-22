@@ -1,14 +1,13 @@
 package main
 
 import (
+	_ "embed"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"reflect"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -18,58 +17,41 @@ import (
 	config "soli/formations/src/configuration"
 	marp "soli/formations/src/marp_integration"
 	"soli/formations/src/middleware"
+	testtools "soli/formations/src/testTools"
 
-	authModels "soli/formations/src/auth/models"
-	groupController "soli/formations/src/auth/routes/groupRoutes"
-	loginController "soli/formations/src/auth/routes/loginRoutes"
-	organisationController "soli/formations/src/auth/routes/organisationRoutes"
-	roleController "soli/formations/src/auth/routes/roleRoutes"
-	userController "soli/formations/src/auth/routes/userRoutes"
-	"soli/formations/src/auth/services"
+	authController "soli/formations/src/auth"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
-
-	entityManagementServices "soli/formations/src/entityManagement/services"
+	sessionController "soli/formations/src/courses/routes/sessionRoutes"
 
 	sqldb "soli/formations/src/db"
+
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
-// @title User API
-// @version 1.0
-// @description This is a server to generate slides.
+// @title OCF API
+// @version 0.0.1
+// @description This is a server to build and generate slides.
 // @termsOfService TODO
-
 // @securityDefinitions.apikey Bearer
 // @in header
 // @name Authorization
 // @description Type "Bearer" followed by a space and JWT token.
-
 // @contact.name Solution Libre
 // @contact.url https://www.solution-libre.fr
 // @contact.email contact@solution-libre.fr
-
-// @host localhost:8000
-// @BasePath /
+// @host localhost:8080
+// @BasePath /api/v1
 func main() {
 
 	if parseFlags() {
 		os.Exit(0)
 	}
 
-	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.User{}).Name(), reflect.TypeOf(authModels.User{}))
-	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Group{}).Name(), reflect.TypeOf(authModels.Group{}))
-	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Role{}).Name(), reflect.TypeOf(authModels.Role{}))
-	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.Organisation{}).Name(), reflect.TypeOf(authModels.Organisation{}))
-	entityManagementServices.GlobalEntityRegistrationService.RegisterEntityType(reflect.TypeOf(authModels.SshKey{}).Name(), reflect.TypeOf(authModels.SshKey{}))
+	authController.InitCasdoorConnection()
 
-	sqldb.ConnectDB()
+	sqldb.InitDBConnection()
 
-	sqldb.DB.AutoMigrate(&authModels.User{}, &authModels.Role{}, &authModels.UserRoles{})
-	sqldb.DB.AutoMigrate(&authModels.SshKey{})
-	sqldb.DB.AutoMigrate(&authModels.Group{})
-	sqldb.DB.AutoMigrate(&authModels.Organisation{})
-
-	//sqldb.DB.SetupJoinTable(&authModels.User{}, "Roles", &authModels.UserRole{})
 	sqldb.DB.AutoMigrate()
 
 	sqldb.DB.AutoMigrate(&courseModels.Page{})
@@ -83,54 +65,41 @@ func main() {
 	r.Use(middleware.CORS())
 
 	apiGroup := r.Group("/api/v1")
-	userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	roleController.RolesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	groupController.GroupsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	organisationController.OrganisationsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	loginController.LoginRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	loginController.RefreshRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	sessionController.SessionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 
-	r.Run(":8000")
+	r.Run(":8080")
 }
 
 func initSwagger(r *gin.Engine) {
-	docs.SwaggerInfo.Title = "User API"
-	docs.SwaggerInfo.Description = "This is a sample server for managing users"
-	docs.SwaggerInfo.Version = "1.0"
-	docs.SwaggerInfo.Host = "localhost:8000"
+	docs.SwaggerInfo.Title = "OCF API"
+	docs.SwaggerInfo.Description = "This is an API to build and generate courses"
+	docs.SwaggerInfo.Version = "0.0.1"
+	docs.SwaggerInfo.Host = "localhost:8080"
 	docs.SwaggerInfo.BasePath = "/api/v1"
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
 
 func initDB() {
-	genericService := services.NewGenericService(sqldb.DB)
-	roleService := services.NewRoleService(sqldb.DB)
-	roleService.SetupRoles()
 
 	if sqldb.DBType == "sqlite" {
 		sqldb.DB = sqldb.DB.Debug()
+		// setup casdoor test entities
 
-		users, _ := genericService.GetEntities(authModels.User{})
+		testtools.DeleteAllObjects()
+		testtools.SetupUsers()
+		testtools.SetupGroups()
+		testtools.SetupRoles()
+		testtools.SetupPermissions()
 
-		// for easy testing, sqlite database must not be used in production
-		if len(users) == 0 {
-
-			userService := services.NewUserService(sqldb.DB)
-			userService.CreateUserComplete("test@test.com", "test", "Tom", "Baggins")
-			userService.CreateUserComplete("test2@test.com", "test2", "Bilbo", "Baggins")
-
-			userTestAdminDto, _ := userService.CreateUserComplete("admin@test.com", "admin", "Gan", "Dalf")
-
-			roleService := services.NewRoleService(sqldb.DB)
-			roleInstanceAdminUuid, _ := roleService.GetRoleByType(authModels.RoleTypeInstanceAdmin)
-
-			roleService.CreateUserRoleObjectAssociation(userTestAdminDto.ID, roleInstanceAdminUuid, uuid.Nil, "")
-
+		permissionsByRole, _ := casdoorsdk.GetPermissionsByRole("student")
+		for _, permission := range permissionsByRole {
+			fmt.Println(permission.Name)
 		}
+
 	}
 }
 
