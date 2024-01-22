@@ -1,4 +1,4 @@
-package courseController
+package sessionController
 
 import (
 	"net/http"
@@ -8,23 +8,23 @@ import (
 	"github.com/google/uuid"
 )
 
-// Delete course godoc
+// Delete session godoc
 //
-//	@Summary		Suppression cours
-//	@Description	Suppression d'un cours dans la base de données
-//	@Tags			courses
+//	@Summary		Suppression session
+//	@Description	Suppression d'une session dans la base de données
+//	@Tags			sessions
 //	@Accept			json
 //	@Produce		json
-//	@Param			id	path		string	true	"ID cours"
+//	@Param			id	path		string	true	"ID session"
 //	@Param Authorization header string true "Insert your access token" default(bearer <Add access token here>)
 //
 //	@Success		204	{object}	string
 //
 //	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
-//	@Failure		404	{object}	errors.APIError	"Cours non trouvé - Impossible de le supprimer "
+//	@Failure		404	{object}	errors.APIError	"Session non trouvée - Impossible de le supprimer "
 //
-//	@Router			/courses/{id} [delete]
-func (c courseController) DeleteCourse(ctx *gin.Context) {
+//	@Router			/sessions/{id} [delete]
+func (s sessionController) DeleteSession(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 
 	id, parseError := uuid.Parse(idParam)
@@ -36,11 +36,11 @@ func (c courseController) DeleteCourse(ctx *gin.Context) {
 		return
 	}
 
-	errorDelete := c.service.DeleteCourse(id)
+	errorDelete := s.service.DeleteSession(id)
 	if errorDelete != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Course not found",
+			ErrorMessage: "Session not found",
 		})
 		return
 	}

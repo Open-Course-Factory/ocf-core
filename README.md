@@ -8,7 +8,66 @@ This product is developped within [Solution Libre](https://www.solution-libre.fr
 
 ⚠ Currently under development, many things can still change, expect bugs and problems.
 
-## How the slides work?
+## API Documentation - WIP
+
+This part is under active develoment and is expected to be operationnal in a first version first trimester 2024, fully operational (SaaS version) for september 2024.
+
+### Database
+
+The expected database is PostgreSQL. To help the development, a fallback database based on SQLite should allow to make it work without a proper database setup.
+
+The fallback database is populated with test data.
+
+### Authentication
+
+Casdoor is responsible for authentication. Casdoor allows an user to log in and it provides a JWT token used to authenticate the user through the API.
+
+#### Connecting Casdoor
+
+The connection between OCF and Casdoor relies on a certificate / public / private key system.
+The certificate must be generated with Casdoor and then added to the project in a file `token_jwt_key.pem`.
+It will be automatically loaded by the project.
+
+
+
+### Start the server
+
+Without arguments, the program starts a web server which is mainly an API.
+
+```shell
+go run main.go
+[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.
+
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:   export GIN_MODE=release
+ - using code:  gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /api/v1/courses/          --> soli/formations/src/courses/routes/courseRoutes.CourseController.GetCourses-fm (5 handlers)
+[GIN-debug] POST   /api/v1/courses/generate  --> soli/formations/src/courses/routes/courseRoutes.CourseController.GenerateCourse-fm (5 handlers)
+[GIN-debug] POST   /api/v1/courses/git       --> soli/formations/src/courses/routes/courseRoutes.CourseController.CreateCourseFromGit-fm (5 handlers)
+[GIN-debug] DELETE /api/v1/courses/:id       --> soli/formations/src/courses/routes/courseRoutes.CourseController.DeleteCourse-fm (5 handlers)
+[GIN-debug] GET    /api/v1/sessions/         --> soli/formations/src/courses/routes/sessionRoutes.SessionController.GetSessions-fm (5 handlers)
+[GIN-debug] DELETE /api/v1/sessions/:id      --> soli/formations/src/courses/routes/sessionRoutes.SessionController.DeleteSession-fm (5 handlers)
+[GIN-debug] GET    /api/v1/auth/login        --> soli/formations/src/auth.AuthController.Login-fm (4 handlers)
+[GIN-debug] GET    /swagger/*any             --> github.com/swaggo/gin-swagger.CustomWrapHandler.func1 (4 handlers)
+[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
+Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies for details.
+[GIN-debug] Listening and serving HTTP on :8000
+```
+
+### Swagger
+
+With the default debug configuration, a Swagger documentation is available at:
+
+```shell
+http://localhost:8000/swagger/index.html
+```
+
+### Permissions
+
+Permission system is something we currently work on with Casdoor. It is not finished yet. This is not ready for production.
+
+## I want to generate the slides manually
 
 ### Settings
 
@@ -76,7 +135,7 @@ To enter in the container:
 docker run -it --rm --entrypoint sh -v $PWD:/home/marp/app/ marpteam/marp-cli
 ```
 
-## How to build the slides?
+## How to build the slides? (the whole section is deprecated, being replaced step by step with the API)
 
 ### Main.go
 
@@ -136,61 +195,3 @@ A global schedule presentation is often needed for a course, the `.schedules/THE
 ⚠ There is at least one problem left, every image of every course must be copied in the output directory to be sure everything is present. This would be better to have only the needed ressources for a specific generation. An other advantage of doing so would open the possibility to take `.md` files from an URL witch is not possible for now since the inclusion mechanism is based on [markdown-it-include](https://github.com/camelaissani/markdown-it-include) which only works with local files.
 
 Beside, there are still many things to do to make it fully usable by everybody.
-
-## API Documentation - WIP
-
-This part is under active develoment and is expected to be fully operationnal for september (2023 !)
-
-### Database
-
-The expected database is PostgreSQL. To help the development, a fallback database based on SQLite should allow to make it work without a proper database setup.
-
-### Start the server
-
-Without arguments, the program starts a web server which is mainly an API.
-
-```shell
-go run main.go
-[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.
-
-[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
- - using env:   export GIN_MODE=release
- - using code:  gin.SetMode(gin.ReleaseMode)
-
-[GIN-debug] POST   /api/v1/users/            --> soli/formations/src/auth/routes/userRoutes.UserController.AddUser-fm (4 handlers)
-[GIN-debug] GET    /api/v1/users/            --> soli/formations/src/auth/routes/userRoutes.UserController.GetUsers-fm (5 handlers)
-[GIN-debug] GET    /api/v1/users/:id         --> soli/formations/src/auth/routes/userRoutes.UserController.GetUser-fm (5 handlers)
-[GIN-debug] DELETE /api/v1/users/:id         --> soli/formations/src/auth/routes/userRoutes.UserController.DeleteUser-fm (5 handlers)
-[GIN-debug] PATCH  /api/v1/users/            --> soli/formations/src/auth/routes/userRoutes.UserController.EditUserSelf-fm (5 handlers)
-[GIN-debug] PUT    /api/v1/users/:id         --> soli/formations/src/auth/routes/userRoutes.UserController.EditUser-fm (5 handlers)
-[GIN-debug] POST   /api/v1/roles/            --> soli/formations/src/auth/routes/roleRoutes.RoleController.AddRole-fm (5 handlers)
-[GIN-debug] GET    /api/v1/roles/            --> soli/formations/src/auth/routes/roleRoutes.RoleController.GetRoles-fm (5 handlers)
-[GIN-debug] GET    /api/v1/roles/:id         --> soli/formations/src/auth/routes/roleRoutes.RoleController.GetRole-fm (5 handlers)
-[GIN-debug] DELETE /api/v1/roles/:id         --> soli/formations/src/auth/routes/roleRoutes.RoleController.DeleteRole-fm (5 handlers)
-[GIN-debug] PUT    /api/v1/roles/:id         --> soli/formations/src/auth/routes/roleRoutes.RoleController.EditRole-fm (5 handlers)
-[GIN-debug] POST   /api/v1/groups/           --> soli/formations/src/auth/routes/groupRoutes.GroupController.AddGroup-fm (5 handlers)
-[GIN-debug] GET    /api/v1/groups/           --> soli/formations/src/auth/routes/groupRoutes.GroupController.GetGroups-fm (5 handlers)
-[GIN-debug] GET    /api/v1/groups/:id        --> soli/formations/src/auth/routes/groupRoutes.GroupController.GetGroup-fm (5 handlers)
-[GIN-debug] DELETE /api/v1/groups/:id        --> soli/formations/src/auth/routes/groupRoutes.GroupController.DeleteGroup-fm (5 handlers)
-[GIN-debug] PUT    /api/v1/groups/:id        --> soli/formations/src/auth/routes/groupRoutes.GroupController.EditGroup-fm (5 handlers)
-[GIN-debug] POST   /api/v1/login/            --> soli/formations/src/auth/routes/loginRoutes.LoginController.Login-fm (4 handlers)
-[GIN-debug] POST   /api/v1/refresh/          --> soli/formations/src/auth/routes/loginRoutes.LoginController.RefreshToken-fm (4 handlers)
-[GIN-debug] POST   /api/v1/courses/generate  --> soli/formations/src/courses/routes/courseRoutes.CourseController.GenerateCourse-fm (4 handlers)
-[GIN-debug] POST   /api/v1/courses/create    --> soli/formations/src/courses/routes/courseRoutes.CourseController.AddCourse-fm (4 handlers)
-[GIN-debug] GET    /swagger/*any             --> github.com/swaggo/gin-swagger.CustomWrapHandler.func1 (4 handlers)
-[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
-Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies for details.
-[GIN-debug] Listening and serving HTTP on :8000
-```
-
-### Swagger
-
-With the default debug configuration, a Swagger documentation is available at:
-
-```shell
-http://localhost:8000/swagger/index.html
-```
-
-### Permissions
-
-Permission system is something we currently work on. It is not finished yet. For now it is possible to do everything once a user a loggued, this is not ready for production.

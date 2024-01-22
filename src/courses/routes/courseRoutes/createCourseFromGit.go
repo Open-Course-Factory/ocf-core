@@ -5,10 +5,11 @@ import (
 
 	"soli/formations/src/courses/dto"
 
-	"soli/formations/src/auth/errors"
-	authModels "soli/formations/src/auth/models"
+	"soli/formations/src/courses/errors"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 // Create Course from Git godoc
@@ -44,7 +45,7 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 		return
 	}
 
-	user, err := c.GenericService.GetEntity(rawUser.(*authModels.User).ID, authModels.User{})
+	user, err := casdoorsdk.GetUserByUserId(rawUser.(*casdoorsdk.User).Id)
 
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
@@ -53,7 +54,7 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 		})
 	}
 
-	courseOutput, errGetCourse := c.service.GetGitCourse(*user.(*authModels.User), createCourseFromGitDTO.Url)
+	courseOutput, errGetCourse := c.service.GetGitCourse(*user, createCourseFromGitDTO.Url)
 
 	if errGetCourse != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{

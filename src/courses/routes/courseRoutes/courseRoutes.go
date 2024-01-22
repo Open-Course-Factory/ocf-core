@@ -3,26 +3,24 @@ package courseController
 import (
 	"github.com/gin-gonic/gin"
 
-	"soli/formations/src/auth/middleware"
 	config "soli/formations/src/configuration"
 
 	"gorm.io/gorm"
+
+	auth "soli/formations/src/auth"
 )
 
 func CoursesRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
 	courseController := NewCourseController(db)
 
-	middleware := &middleware.AuthMiddleware{
-		DB:     db,
-		Config: config,
-	}
-
 	routes := router.Group("/courses")
 
-	routes.GET("/", middleware.CheckIsLogged(), courseController.GetCourses)
+	middleware := &auth.AuthMiddleware{}
 
-	routes.POST("/generate", middleware.CheckIsLogged(), courseController.GenerateCourse)
-	routes.POST("/git", middleware.CheckIsLogged(), courseController.CreateCourseFromGit)
+	routes.GET("/", middleware.AuthManagement(), courseController.GetCourses)
 
-	routes.DELETE("/:id", middleware.CheckIsLogged(), courseController.DeleteCourse)
+	routes.POST("/generate", middleware.AuthManagement(), courseController.GenerateCourse)
+	routes.POST("/git", middleware.AuthManagement(), courseController.CreateCourseFromGit)
+
+	routes.DELETE("/:id", middleware.AuthManagement(), courseController.DeleteCourse)
 }

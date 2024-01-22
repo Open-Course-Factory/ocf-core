@@ -1,0 +1,5 @@
+__debug*
+node_modules/
+docs/
+dist/
+*.db
