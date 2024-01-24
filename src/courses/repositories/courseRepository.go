@@ -63,6 +63,57 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 	if result.Error != nil {
 		return nil, result.Error
 	}
+
+	courseOwnedRole := casdoorsdk.Role{
+		Owner:     user.Id,
+		Name:      "courses_owner",
+		IsEnabled: true,
+	}
+	casdoorsdk.AddRole(&courseOwnedRole)
+
+	resultRole := c.db.Create(&courseOwnedRole)
+	if resultRole.Error != nil {
+		return nil, resultRole.Error
+	}
+
+	rolePermissions, errPerm := casdoorsdk.GetPermissionsByRole(courseOwnedRole.Name)
+	if errPerm != nil {
+		return nil, errPerm
+	}
+
+	courseOwnerPermissionName := "courses_owned"
+
+	var courseOwnerPermission casdoorsdk.Permission
+
+	permissionFound := false
+	for _, rolePermission := range rolePermissions {
+		if rolePermission.Name == courseOwnerPermissionName {
+			rolePermission.Resources = append(rolePermission.Resources, course.ID.String())
+			courseOwnerPermission = *rolePermission
+			permissionFound = true
+			break
+		}
+	}
+	if !permissionFound {
+		courseOwnerPermission = casdoorsdk.Permission{
+			Owner:        user.Id,
+			Name:         courseOwnerPermissionName,
+			ResourceType: "Course",
+			Resources:    []string{course.ID.String()},
+			Roles:        []string{courseOwnedRole.Name},
+			IsEnabled:    true,
+			Actions:      []string{"Admin"},
+			Effect:       "Allow",
+			State:        "Approved",
+		}
+		casdoorsdk.AddPermission(&courseOwnerPermission)
+	}
+
+	resultPermission := c.db.FirstOrCreate(&courseOwnerPermission)
+	if resultPermission.Error != nil {
+		return nil, resultPermission.Error
+	}
+
 	return &course, nil
 }
 
