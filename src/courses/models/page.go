@@ -15,7 +15,7 @@ type Page struct {
 	Content   []string `gorm:"serializer:json"`
 	Hide      bool
 	SectionID uuid.UUID
-	Section   Section `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"section"`
+	Section   Section `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;serializer:json" json:"section"`
 }
 
 func (p Page) String() string {

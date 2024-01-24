@@ -25,4 +25,6 @@ func InitCasdoorConnection() {
 	}
 
 	casdoorsdk.InitConfig(casdoorEndPoint, casdoorClientId, casdoorClientsecret, JwtPublicKey, casdoorOrganizationName, casdoorApplicationName)
+	casdoorsdk.CasdoorApplication = casdoorApplicationName
+	casdoorsdk.CasdoorOrganization = casdoorOrganizationName
 }

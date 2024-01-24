@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"soli/formations/src/courses/models"
 
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
@@ -49,4 +50,13 @@ func InitDBConnection() {
 		panic(err)
 	}
 
+}
+
+func AutoMigrate() {
+	DB.AutoMigrate()
+
+	DB.AutoMigrate(&models.Page{})
+	DB.AutoMigrate(&models.Section{})
+	DB.AutoMigrate(&models.Chapter{})
+	DB.AutoMigrate(&models.Course{})
 }

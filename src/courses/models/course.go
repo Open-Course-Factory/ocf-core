@@ -40,7 +40,7 @@ type Course struct {
 	Footer             string
 	Logo               string
 	OwnerID            string
-	Owner              *casdoorsdk.User `json:"owner"`
+	Owner              *casdoorsdk.User `gorm:"serializer:json" json:"owner"`
 	Description        string
 	Format             Format
 	CourseID_str       string
@@ -49,7 +49,7 @@ type Course struct {
 	Theme              string
 	URL                string
 	LearningObjectives string    `json:"learning_objectives"`
-	Chapters           []Chapter `gorm:"many2many:course_chapters;" json:"chapters"`
+	Chapters           []Chapter `gorm:"many2many:course_chapters;serializer:json" json:"chapters"`
 }
 
 func (c Course) String() string {

@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"fmt"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
 
@@ -31,10 +32,10 @@ func NewCourseRepository(db *gorm.DB) CourseRepository {
 
 func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models.Course, error) {
 
-	var user *casdoorsdk.User
-	errUser := c.db.First(&user, "email=?", coursedto.AuthorEmail)
-	if errUser.Error != nil {
-		return nil, errUser.Error
+	user, errUser := casdoorsdk.GetUserByEmail(coursedto.AuthorEmail)
+
+	if errUser != nil {
+		return nil, errUser
 	}
 
 	//ToDo full course with dtoinput to model
@@ -67,13 +68,18 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 	courseOwnedRole := casdoorsdk.Role{
 		Owner:     user.Id,
 		Name:      "courses_owner",
+		Users:     []string{},
+		Roles:     []string{},
+		Domains:   []string{},
 		IsEnabled: true,
 	}
-	casdoorsdk.AddRole(&courseOwnedRole)
 
-	resultRole := c.db.Create(&courseOwnedRole)
-	if resultRole.Error != nil {
-		return nil, resultRole.Error
+	fmt.Println(casdoorsdk.CasdoorOrganization)
+
+	_, roleError := casdoorsdk.AddRole(&courseOwnedRole)
+
+	if roleError != nil {
+		return nil, roleError
 	}
 
 	rolePermissions, errPerm := casdoorsdk.GetPermissionsByRole(courseOwnedRole.Name)
@@ -96,22 +102,24 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 	}
 	if !permissionFound {
 		courseOwnerPermission = casdoorsdk.Permission{
-			Owner:        user.Id,
+			Owner:        casdoorsdk.CasdoorOrganization,
 			Name:         courseOwnerPermissionName,
 			ResourceType: "Course",
 			Resources:    []string{course.ID.String()},
-			Roles:        []string{courseOwnedRole.Name},
+			Roles:        []string{casdoorsdk.CasdoorOrganization + "/" + courseOwnedRole.Name},
 			IsEnabled:    true,
 			Actions:      []string{"Admin"},
 			Effect:       "Allow",
 			State:        "Approved",
+			Users:        []string{casdoorsdk.CasdoorOrganization + "/" + user.Name},
+			Groups:       []string{},
+			Domains:      []string{},
 		}
-		casdoorsdk.AddPermission(&courseOwnerPermission)
-	}
+		_, permError := casdoorsdk.AddPermission(&courseOwnerPermission)
 
-	resultPermission := c.db.FirstOrCreate(&courseOwnerPermission)
-	if resultPermission.Error != nil {
-		return nil, resultPermission.Error
+		if permError != nil {
+			return nil, permError
+		}
 	}
 
 	return &course, nil

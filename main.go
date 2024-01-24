@@ -51,13 +51,7 @@ func main() {
 	authController.InitCasdoorConnection()
 
 	sqldb.InitDBConnection()
-
-	sqldb.DB.AutoMigrate()
-
-	sqldb.DB.AutoMigrate(&courseModels.Page{})
-	sqldb.DB.AutoMigrate(&courseModels.Section{})
-	sqldb.DB.AutoMigrate(&courseModels.Chapter{})
-	sqldb.DB.AutoMigrate(&courseModels.Course{})
+	sqldb.AutoMigrate()
 
 	initDB()
 
