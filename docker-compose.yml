@@ -22,6 +22,7 @@ services:
       RUNNING_IN_DOCKER: "true"
     volumes:
       - ./src/configuration/casdoor_app.conf:/conf/app.conf
+      #- ./init_tests_data.json:/init_data.json
   casdoor_db:
     restart: always
     image: mysql:8.0.25
