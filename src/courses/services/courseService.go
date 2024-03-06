@@ -3,7 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	config "soli/formations/src/configuration"
@@ -243,7 +243,7 @@ func getCourseJsonFileContent(fs billy.Filesystem) ([]byte, error) {
 				return nil, errFileOpen
 			}
 			var err error
-			fileContent, err = ioutil.ReadAll(file)
+			fileContent, err = io.ReadAll(file)
 
 			if err != nil {
 				log.Printf("reading file")
@@ -273,7 +273,7 @@ func copyCourseFileLocally(fs billy.Filesystem, repoDirectory string, fileExtens
 				return errFileOpen
 			}
 			var err error
-			fileContent, err = ioutil.ReadAll(file)
+			fileContent, err = io.ReadAll(file)
 			if err != nil {
 				log.Printf("reading file")
 				return err
@@ -289,7 +289,7 @@ func copyCourseFileLocally(fs billy.Filesystem, repoDirectory string, fileExtens
 			}
 
 			//create file locally
-			err = ioutil.WriteFile(config.COURSES_ROOT+repoDirectory+"/"+fileInfo.Name(), fileContent, os.ModeAppend)
+			err = os.WriteFile(config.COURSES_ROOT+repoDirectory+"/"+fileInfo.Name(), fileContent, os.ModeAppend)
 
 			if err != nil {
 				log.Printf("writing file")

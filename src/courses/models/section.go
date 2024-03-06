@@ -10,6 +10,11 @@ import (
 	"github.com/google/uuid"
 )
 
+type SectionWriter interface {
+	OCFWriter
+	GetSection() string
+}
+
 // Part of a chapter
 type Section struct {
 	entityManagementModels.BaseModel
@@ -26,26 +31,10 @@ type Section struct {
 }
 
 func (s Section) String() string {
-	firstLine := "---\n\n"
-	localClass := "<!-- _class: lead -->\n\n"
-	title := "# " + strings.ToUpper(s.ParentChapterTitle) + "\n\n"
-	var toc string
-	for _, lineOfToc := range s.Pages[0].Toc {
-		toc += lineOfToc + "\n"
-	}
-	toc = toc + "\n"
-
-	var pages string
-	for _, page := range s.Pages {
-		pages += page.String() + "\n"
-	}
-
-	return firstLine + localClass + title + toc + pages
+	sw := MarpSectionWriter{s}
+	return sw.GetSection()
 }
 
-// Open the file.
-// Create a new Scanner for the file.
-// Loop over all lines in the file and print them.
 func fillSection(currentSection *Section) {
 	var pages []Page
 	filename := config.COURSES_ROOT + currentSection.FileName

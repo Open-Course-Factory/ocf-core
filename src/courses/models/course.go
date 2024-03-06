@@ -6,11 +6,26 @@ import (
 	"os"
 	config "soli/formations/src/configuration"
 	entityManagementModels "soli/formations/src/entityManagement/models"
-	"strconv"
 	"strings"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
+
+type OCFWriter interface {
+	SetFrontMatter() string
+	SetTitle() string
+	SetToc() string
+	SetContent() string
+}
+
+type CourseWriter interface {
+	OCFWriter
+	SetTitlePage() string
+	SetIntro() string
+	SetLearningObjectives() string
+	SetConclusionPage() string
+	GetCourse() string
+}
 
 type Format int
 
@@ -53,57 +68,8 @@ type Course struct {
 }
 
 func (c Course) String() string {
-	localClass := "<!-- _class: lead hide-header -->\n\n"
-	headfoot := createHeaderFooter(c.Header, c.Footer)
-	title := "# " + strings.ToUpper(c.Title) + "\n\n"
-	subtitle := "## " + c.Subtitle + "\n\n"
-	logo := "\n" + c.Logo + "\n"
-	// ToDo : take data from user
-	author := "\n---\n\n@include(./authors/author_tsa.md)\n"
-	schedule := "\n---\n\n@include(./schedules/" + c.Schedule + ")\n"
-	prelude := "\n---\n\n@include(./preludes/" + c.Prelude + ")\n"
-
-	learningObjectives := ""
-	if len(c.LearningObjectives) > 0 {
-		learningObjectivesPathFile := config.COURSES_ROOT + "/learning_objectives/" + c.LearningObjectives
-		_, error := os.Stat(learningObjectivesPathFile)
-		if !os.IsNotExist(error) {
-			learningObjectives = "\n---\n\n@include(" + learningObjectivesPathFile + ")\n"
-		}
-	}
-
-	var chapters string
-
-	chapters += "\n\n---\n\n<!-- _class: main-toc -->\n\n# Thèmes abordés dans le cours\n\n"
-
-	totalChapterNumber := len(c.Chapters)
-
-	for _, chapter := range c.Chapters {
-		chapters += "- Chapitre **" + strconv.Itoa(chapter.Number) + "** : " + chapter.Title + "\n"
-		chapters += "  - " + chapter.Introduction + "\n"
-		if !strings.Contains(c.Theme, "A4") {
-			if totalChapterNumber > 9 && chapter.Number == 6 {
-				chapters += "- **...**"
-				chapters += "\n\n---\n\n<!-- _class: main-toc -->\n\n# Thèmes abordés dans le cours - Suite\n\n"
-			}
-		}
-
-	}
-
-	chapters += "\n"
-
-	for _, chapter := range c.Chapters {
-		chapters += chapter.String() + "\n\n"
-	}
-
-	chapters += "\n---\n\n<!-- _class: lead hide-header -->\n\n# Fin\n"
-	chapters += createFooterAlone("@@author_fullname@@ - Fin")
-	chapters += "\nMerci pour votre attention !\n\n"
-
-	cover_slide := localClass + headfoot + title + subtitle + logo
-	preamble := author + schedule + learningObjectives + prelude
-
-	return cover_slide + preamble + chapters
+	cow := MarpCourseWriter{c}
+	return cow.GetCourse()
 }
 
 func (c Course) GetFilename(extensions ...string) string {

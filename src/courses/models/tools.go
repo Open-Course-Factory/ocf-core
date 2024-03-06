@@ -22,14 +22,6 @@ const (
 	GIT_SSH
 )
 
-func createFooterAlone(footer string) string {
-	return "<!--\n" + "footer: '" + footer + "'\n-->\n\n"
-}
-
-func createHeaderFooter(header string, footer string) string {
-	return "<!--\n" + "header: '" + header + "'\n" + "footer: '" + footer + "'\n-->\n\n"
-}
-
 func contains(intArray []int, intToFind int) bool {
 	for _, v := range intArray {
 		if v == intToFind {
