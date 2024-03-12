@@ -68,7 +68,7 @@ type Course struct {
 }
 
 func (c Course) String() string {
-	cow := MarpCourseWriter{c}
+	cow := SlidevCourseWriter{c}
 	return cow.GetCourse()
 }
 
@@ -121,9 +121,10 @@ func CreateCourse(course *Course) {
 	for indexChapter, chapter := range course.Chapters {
 		chapter.Number = indexChapter + 1
 		for indexSection, section := range chapter.Sections {
-			fillSection(&section)
 			section.Number = indexSection + 1
+			section.Chapter = chapter
 			section.ParentChapterTitle = chapter.getTitle()
+			fillSection(&section)
 			chapter.Sections[indexSection] = section
 		}
 		course.Chapters[indexChapter] = chapter

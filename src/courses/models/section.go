@@ -2,11 +2,13 @@ package models
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	config "soli/formations/src/configuration"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
 
+	"github.com/adrg/frontmatter"
 	"github.com/google/uuid"
 )
 
@@ -31,7 +33,7 @@ type Section struct {
 }
 
 func (s Section) String() string {
-	sw := MarpSectionWriter{s}
+	sw := SlidevSectionWriter{s}
 	return sw.GetSection()
 }
 
@@ -43,53 +45,79 @@ func fillSection(currentSection *Section) {
 	scanner := bufio.NewScanner(f)
 
 	pageCounter := 0
-	titleFound := false
-	introFound := false
-	concluFound := false
+
+	var sPages []string
 	var currentPageContent []string
 	var hide bool
 
 	currentSection.FileName = filename
+
+	bIgnoreFrontMatterEnd := false
 	for scanner.Scan() {
 		line := scanner.Text()
-		hide = false
 
-		// To refactor
-		if strings.HasPrefix(line, "title") && !titleFound {
-			titleFound = true
-			titleLine := strings.Split(line, ":")
-			currentSection.Title = titleLine[1]
-			continue
-		}
-		if strings.HasPrefix(line, "intro") && !introFound {
-			introFound = true
-			introLine := strings.Split(line, ":")
-			currentSection.Intro = introLine[1]
-			continue
-		}
-		if strings.HasPrefix(line, "conclusion") && !concluFound {
-			concluFound = true
-			conclusionLine := strings.Split(line, ":")
-			currentSection.Conclusion = conclusionLine[1]
-			continue
-		}
-
-		if line == "---" {
-			if pageCounter > 0 {
-				if contains(currentSection.HiddenPages, (pageCounter)) {
-					hide = true
-				}
-				pages = append(pages, createPage(pageCounter, currentPageContent, currentSection.Title, hide))
+		if !bIgnoreFrontMatterEnd {
+			if line == "---" {
+				bIgnoreFrontMatterEnd = true
+				sPages = append(sPages, strings.Join(currentPageContent[:], "\n"))
 				currentPageContent = nil
+				currentPageContent = append(currentPageContent, line)
+			} else {
+				currentPageContent = append(currentPageContent, line)
 			}
-			pageCounter++
+
 		} else {
+			if line == "---" {
+				bIgnoreFrontMatterEnd = false
+			}
 			currentPageContent = append(currentPageContent, line)
 		}
 	}
-	if contains(currentSection.HiddenPages, pageCounter) {
-		hide = true
+	sPages = append(sPages, strings.Join(currentPageContent[:], "\n"))
+
+	var sectionFrontMatter struct {
+		Title      string `yaml:"title"`
+		Intro      string `yaml:"intro"`
+		Conclusion string `yaml:"conclusion"`
 	}
-	pages = append(pages, createPage(pageCounter, currentPageContent, currentSection.Title, hide))
+
+	var pageFrontMatter struct {
+		Layout string `yaml:"layout"`
+	}
+
+	beginningIndex := 0
+	for index, sPage := range sPages {
+
+		sectionFrontMatter.Title = ""
+		sectionFrontMatter.Intro = ""
+		sectionFrontMatter.Conclusion = ""
+
+		pageFrontMatter.Layout = ""
+
+		sPageContent, err := frontmatter.Parse(strings.NewReader(sPage), &sectionFrontMatter)
+		if sectionFrontMatter.Title != "" {
+			currentSection.Title = sectionFrontMatter.Title
+			currentSection.Intro = sectionFrontMatter.Intro
+			currentSection.Conclusion = sectionFrontMatter.Conclusion
+			beginningIndex = index
+		} else {
+			if index > beginningIndex {
+				pageCounter++
+				sPageContent, err = frontmatter.Parse(strings.NewReader(sPage), &pageFrontMatter)
+				fmt.Printf("%+v\n", pageFrontMatter)
+
+				if contains(currentSection.HiddenPages, (pageCounter)) {
+					hide = true
+				}
+				pages = append(pages, createPage(pageCounter, strings.Split(string(sPageContent), "\n"), currentSection, hide))
+			}
+		}
+
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+
+	}
+
 	currentSection.Pages = pages
 }

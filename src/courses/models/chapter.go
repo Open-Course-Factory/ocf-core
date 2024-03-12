@@ -24,7 +24,7 @@ type Chapter struct {
 }
 
 func (c Chapter) String() string {
-	cw := MarpChapterWriter{c}
+	cw := SlidevChapterWriter{c}
 	return cw.GetChapter()
 }
 

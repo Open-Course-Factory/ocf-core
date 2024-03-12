@@ -5,6 +5,7 @@ import (
 
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/errors"
+	"soli/formations/src/courses/models"
 
 	"github.com/gin-gonic/gin"
 )
@@ -34,7 +35,9 @@ func (c courseController) GenerateCourse(ctx *gin.Context) {
 		return
 	}
 
-	course, courseError := c.service.GenerateCourse(courseGenerateDTO.Name, courseGenerateDTO.Theme, courseGenerateDTO.Format, courseGenerateDTO.AuthorEmail)
+	cow := models.SlidevCourseWriter{}
+
+	course, courseError := c.service.GenerateCourse(courseGenerateDTO.Name, courseGenerateDTO.Theme, courseGenerateDTO.Format, courseGenerateDTO.AuthorEmail, &cow)
 
 	if courseError != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{

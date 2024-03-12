@@ -23,14 +23,15 @@ type Page struct {
 }
 
 func (p Page) String() string {
-	pw := MarpPageWriter{p}
+	pw := SlidevPageWriter{p}
 	return pw.GetPage()
 }
 
-func createPage(number int, pageContent []string, parentSectionTitle string, hide bool) (p Page) {
+func createPage(number int, pageContent []string, parentSection *Section, hide bool) (p Page) {
 	p.Number = number
 	p.Content = pageContent
-	p.Section.Title = parentSectionTitle
+	p.Section = *parentSection
+	p.Section.Title = parentSection.Title
 	p.Hide = hide
 	return
 }
