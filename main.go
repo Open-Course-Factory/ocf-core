@@ -15,7 +15,6 @@ import (
 	"soli/formations/docs"
 
 	config "soli/formations/src/configuration"
-	marp "soli/formations/src/marp_integration"
 	"soli/formations/src/middleware"
 	testtools "soli/formations/src/testTools"
 
@@ -143,7 +142,8 @@ func parseFlags() bool {
 		log.Fatal(errc)
 	}
 
-	marp.Run(&configuration, &course, courseType)
+	//marp.Run(&configuration, &course, courseType)
+	fmt.Println(courseType)
 
 	return true
 }

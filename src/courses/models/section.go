@@ -38,42 +38,19 @@ func (s Section) String() string {
 }
 
 func fillSection(currentSection *Section) {
-	var pages []Page
 	filename := config.COURSES_ROOT + currentSection.FileName
-	f, _ := os.Open(filename)
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-
-	pageCounter := 0
-
-	var sPages []string
-	var currentPageContent []string
-	var hide bool
-
 	currentSection.FileName = filename
 
-	bIgnoreFrontMatterEnd := false
-	for scanner.Scan() {
-		line := scanner.Text()
+	sPages := extractPagesFromSectionsFiles(filename)
+	pages := convertRawPageIntoStruct(currentSection, &sPages)
 
-		if !bIgnoreFrontMatterEnd {
-			if line == "---" {
-				bIgnoreFrontMatterEnd = true
-				sPages = append(sPages, strings.Join(currentPageContent[:], "\n"))
-				currentPageContent = nil
-				currentPageContent = append(currentPageContent, line)
-			} else {
-				currentPageContent = append(currentPageContent, line)
-			}
+	currentSection.Pages = pages
+}
 
-		} else {
-			if line == "---" {
-				bIgnoreFrontMatterEnd = false
-			}
-			currentPageContent = append(currentPageContent, line)
-		}
-	}
-	sPages = append(sPages, strings.Join(currentPageContent[:], "\n"))
+func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []Page {
+	var pages []Page
+	pageCounter := 0
+	var hide bool
 
 	var sectionFrontMatter struct {
 		Title      string `yaml:"title"`
@@ -86,7 +63,7 @@ func fillSection(currentSection *Section) {
 	}
 
 	beginningIndex := 0
-	for index, sPage := range sPages {
+	for index, sPage := range *sPages {
 
 		sectionFrontMatter.Title = ""
 		sectionFrontMatter.Intro = ""
@@ -118,6 +95,37 @@ func fillSection(currentSection *Section) {
 		}
 
 	}
+	return pages
+}
 
-	currentSection.Pages = pages
+func extractPagesFromSectionsFiles(filename string) []string {
+	var sPages []string
+	f, _ := os.Open(filename)
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+
+	var currentPageContent []string
+	bIgnoreFrontMatterEnd := false
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if !bIgnoreFrontMatterEnd {
+			if line == "---" {
+				bIgnoreFrontMatterEnd = true
+				sPages = append(sPages, strings.Join(currentPageContent[:], "\n"))
+				currentPageContent = nil
+				currentPageContent = append(currentPageContent, line)
+			} else {
+				currentPageContent = append(currentPageContent, line)
+			}
+
+		} else {
+			if line == "---" {
+				bIgnoreFrontMatterEnd = false
+			}
+			currentPageContent = append(currentPageContent, line)
+		}
+	}
+	sPages = append(sPages, strings.Join(currentPageContent[:], "\n"))
+	return sPages
 }

@@ -12,22 +12,47 @@ type SlidevCourseWriter struct {
 }
 
 func (scow *SlidevCourseWriter) SetFrontMatter() string {
-	return "<!-- _class: lead hide-header -->\n\n"
+	// var globalCourseInfo string
+
+	layout := "layout: intro\n"
+	author := "author: @@author_fullname@@\n"
+
+	lineNumbers := "lineNumbers: false\n"
+	download := "download: true\n"
+	exportFilename := "exportFilename: slides-exported\n"
+	routerMode := "routerMode: hash\n"
+	highlighter := "highlighter: shiki\n"
+
+	globalCourseInfo := layout + author + lineNumbers + download + exportFilename + routerMode + highlighter
+
+	drawings := "drawings:\n"
+	drawingsPresenter := "  presenterOnly: true\n"
+	drawingPersistence := "  persist: true\n"
+	drawingsOptions := drawings + drawingsPresenter + drawingPersistence
+
+	theme := "theme: ./theme\nthemeConfig:\n"
+	themeTitle := "  title: " + scow.Course.Title + "\n"
+	themeFooterTitle := "  footerTitle: " + scow.Course.Title + "\n"
+	themeVersion := "  version: @@version@@\n"
+	themeAuthor := "  author: @@author_fullname@@\n"
+	themeAuthorEmail := "  email: @@author_email@@\n"
+	themeOptions := theme + themeTitle + themeFooterTitle + themeVersion + themeAuthor + themeAuthorEmail
+
+	return "---\n" + globalCourseInfo + drawingsOptions + themeOptions + "---\n\n"
 }
 
 func (scow *SlidevCourseWriter) SetCoverPage() string {
-	headfoot := createHeaderFooter(scow.Course.Header, scow.Course.Footer)
 	title := "# " + strings.ToUpper(scow.Course.Title) + "\n\n"
 	subtitle := "## " + scow.Course.Subtitle + "\n\n"
 	logo := "\n" + scow.Course.Logo + "\n"
-	return headfoot + title + subtitle + logo
+	return title + subtitle + logo
 }
 
 func (scow *SlidevCourseWriter) SetIntro() string {
 	// ToDo : take data from user
-	author := "\n---\n\n@include(./authors/author_tsa.md)\n"
-	schedule := "\n---\n\n@include(./schedules/" + scow.Course.Schedule + ")\n"
-	prelude := "\n---\n\n@include(./preludes/" + scow.Course.Prelude + ")\n"
+	author := "\n---\nlayout: twocols\nchapter: " + scow.Course.Title + "\nsrc: theme/authors/author_@@author@@.md\n---\n\n"
+	schedule := "\n---\nlayout: default\nchapter: " + scow.Course.Title + "\nsrc: theme/schedules/" + scow.Course.Schedule + "\n---\n\n"
+	prelude := "\n---\nlayout: cover\nchapter: " + scow.Course.Title + "\nsrc: theme/preludes/" + scow.Course.Prelude + "\n---\n\n"
 	return author + schedule + prelude
 }
 
@@ -44,11 +69,10 @@ func (scow *SlidevCourseWriter) SetLearningObjectives() string {
 }
 
 func (scow *SlidevCourseWriter) SetTitlePage() string {
-	headfoot := createHeaderFooter(scow.Course.Header, scow.Course.Footer)
 	title := "# " + strings.ToUpper(scow.Course.Title) + "\n\n"
 	subtitle := "## " + scow.Course.Subtitle + "\n\n"
 	logo := "\n" + scow.Course.Logo + "\n"
-	return headfoot + title + subtitle + logo
+	return title + subtitle + logo
 }
 
 func (scow *SlidevCourseWriter) SetTitle() string {
@@ -60,7 +84,7 @@ func (scow *SlidevCourseWriter) SetTitle() string {
 func (scow *SlidevCourseWriter) SetToc() string {
 	var toc string
 
-	frontMatter := "\n---\nlayout: maintoc\n---\n\n"
+	frontMatter := "\n---\nlayout: maintoc\nchapter: " + scow.Course.Title + "\n---\n\n"
 
 	toc += frontMatter + "# Thèmes abordés dans le cours\n\n"
 
@@ -96,7 +120,6 @@ func (scow *SlidevCourseWriter) SetConclusionPage() string {
 	var conclusion string
 	frontMatter := "\n---\nlayout: cover\nchapter: Conclusion\n---\n\n"
 	conclusion += frontMatter + "# Fin\n"
-	//conclusion += createFooterAlone("@@author_fullname@@ - Fin")
 	conclusion += "\nMerci pour votre attention !\n\n"
 	return conclusion
 }
