@@ -7,7 +7,7 @@ import (
 )
 
 type PageWriter interface {
-	OCFWriter
+	OCFMdWriter
 	GetPage() string
 }
 

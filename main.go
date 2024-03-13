@@ -16,6 +16,7 @@ import (
 
 	config "soli/formations/src/configuration"
 	"soli/formations/src/middleware"
+	slidev "soli/formations/src/slidev_integration"
 	testtools "soli/formations/src/testTools"
 
 	authController "soli/formations/src/auth"
@@ -143,6 +144,9 @@ func parseFlags() bool {
 	}
 
 	//marp.Run(&configuration, &course, courseType)
+
+	slidev.Run(&configuration, &course, courseType)
+
 	fmt.Println(courseType)
 
 	return true

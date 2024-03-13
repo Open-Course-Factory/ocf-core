@@ -6,7 +6,7 @@ import (
 )
 
 type ChapterWriter interface {
-	OCFWriter
+	OCFMdWriter
 	SetTitlePage() string
 	SetConclusionPage() string
 	GetChapter() string

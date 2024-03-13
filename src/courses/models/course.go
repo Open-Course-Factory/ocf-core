@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"os/exec"
 	config "soli/formations/src/configuration"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
@@ -11,20 +12,28 @@ import (
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
-type OCFWriter interface {
+type OCFMdWriter interface {
 	SetFrontMatter() string
 	SetTitle() string
 	SetToc() string
 	SetContent() string
 }
 
-type CourseWriter interface {
-	OCFWriter
+type CourseMdWriter interface {
+	OCFMdWriter
 	SetTitlePage() string
 	SetIntro() string
 	SetLearningObjectives() string
 	SetConclusionPage() string
 	GetCourse() string
+}
+
+type Option string
+
+type CourseGenerationEngine interface {
+	GetThemesSetOpts(course *Course) []string
+	GetCmd(course *Course, docType *string) *exec.Cmd
+	Run(configuration *config.Configuration, course *Course, docType *string) error
 }
 
 type Format int

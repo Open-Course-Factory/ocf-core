@@ -1,0 +1,13 @@
+FROM tangramor/slidev:playwright
+
+COPY . /slidev
+
+RUN npm install
+
+RUN npm i @slidev/cli
+
+RUN npx playwright install install-deps chromium
+
+COPY ./src/slidev_integration/entrypoint.sh /entrypoint.sh
+
+ENTRYPOINT [ "/entrypoint.sh" ]

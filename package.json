@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@marp-team/marp-core": "^3.7.0",
+    "@slidev/cli": "^0.48.2",
     "markdown-it": "^13.0.1",
     "markdown-it-attrs": "^4.1.6",
     "markdown-it-container": "^3.0.0",

@@ -13,7 +13,7 @@ import (
 )
 
 type SectionWriter interface {
-	OCFWriter
+	OCFMdWriter
 	GetSection() string
 }
 
@@ -81,7 +81,6 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []Page 
 			if index > beginningIndex {
 				pageCounter++
 				sPageContent, err = frontmatter.Parse(strings.NewReader(sPage), &pageFrontMatter)
-				fmt.Printf("%+v\n", pageFrontMatter)
 
 				if contains(currentSection.HiddenPages, (pageCounter)) {
 					hide = true

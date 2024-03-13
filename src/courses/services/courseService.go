@@ -26,7 +26,7 @@ import (
 )
 
 type CourseService interface {
-	GenerateCourse(courseName string, courseTheme string, format string, authorEmail string, cow models.CourseWriter) (*dto.GenerateCourseOutput, error)
+	GenerateCourse(courseName string, courseTheme string, format string, authorEmail string, cow models.CourseMdWriter) (*dto.GenerateCourseOutput, error)
 	CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto.CreateCourseOutput, error)
 	DeleteCourse(id uuid.UUID) error
 	GetCourses() ([]dto.CourseOutput, error)
@@ -44,7 +44,7 @@ func NewCourseService(db *gorm.DB) CourseService {
 	}
 }
 
-func (c courseService) GenerateCourse(courseName string, courseTheme string, format string, authorEmail string, cow models.CourseWriter) (*dto.GenerateCourseOutput, error) {
+func (c courseService) GenerateCourse(courseName string, courseTheme string, format string, authorEmail string, cow models.CourseMdWriter) (*dto.GenerateCourseOutput, error) {
 
 	jsonConfigurationFilePath := "src/configuration/conf.json"
 	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
