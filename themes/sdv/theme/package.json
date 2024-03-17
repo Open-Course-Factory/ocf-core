@@ -1,0 +1,58 @@
+{
+  "name": "slidev-theme-sdv",
+  "version": "0.0.1",
+  "description": "Slidev theme used for Sup De Vinci",
+  "homepage": "",
+  "license": "",
+  "author": "Thomas Saquet <thomas@solution-libre.fr>",
+  "repository": "",
+  "bugs": {
+    "url": "",
+    "email": "thomas@solution-libre.fr"
+  },
+  "scripts": {
+    "build": "slidev build example.md",
+    "dev": "slidev example.md --open",
+    "export": "slidev export example.md",
+    "screenshot": "slidev export example.md --format png",
+    "lint": "eslint --ext js --ext ts --ext vue .",
+    "release": "semantic-release"
+  },
+  "dependencies": {
+    "@iconify-json/mdi": "1.1.54",
+    "@slidev/types": "0.43.3",
+    "codemirror-theme-vars": "0.1.2",
+    "prism-theme-vars": "0.2.4",
+    "qrious": "4.0.2",
+    "vite-svg-loader": "4.0.0"
+  },
+  "devDependencies": {
+    "@semantic-release/changelog": "6.0.3",
+    "@semantic-release/commit-analyzer": "10.0.4",
+    "@semantic-release/git": "10.0.1",
+    "@semantic-release/github": "9.0.5",
+    "@semantic-release/npm": "10.0.5",
+    "@semantic-release/release-notes-generator": "11.0.7",
+    "@slidev/cli": "0.43.3",
+    "conventional-changelog-conventionalcommits": "6.1.0",
+    "eslint": "8.49.0",
+    "eslint-plugin-vue": "9.17.0",
+    "playwright-chromium": "1.38.0"
+  },
+  "keywords": [
+    "slidev-theme",
+    "slidev"
+  ],
+  "engines": {
+    "node": ">=14.0.0",
+    "slidev": ">=0.36.4"
+  },
+  "slidev": {
+    "colorSchema": "light",
+    "highlighter": "all",
+    "defaults": {
+      "aspectRatio": "16/9",
+      "highlighter": "shiki"
+    }
+  }
+}

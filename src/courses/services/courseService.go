@@ -77,7 +77,7 @@ func (c courseService) GenerateCourse(courseName string, courseTheme string, for
 	}
 	fmt.Println("Markdown file created: " + createdFile)
 
-	errc := course.CompileResources(&configuration)
+	errc := marp.CompileResources(course, &configuration)
 	if errc != nil {
 		log.Println(errc.Error())
 	}

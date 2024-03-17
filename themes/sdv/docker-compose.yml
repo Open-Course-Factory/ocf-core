@@ -1,0 +1,11 @@
+services:
+  slidev:
+    image: tangramor/slidev:latest
+    container_name: slidev
+    user: node
+    volumes: 
+      - .:/slidev
+    ports:
+      - 3030:3030
+    stdin_open: true 
+    tty: true

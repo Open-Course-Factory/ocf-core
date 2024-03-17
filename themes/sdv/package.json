@@ -1,0 +1,15 @@
+{
+  "dependencies": {
+    "@slidev/cli": "^0.48.2",
+    "@slidev/theme-default": "^0.25.0",
+    "@slidev/theme-seriph": "^0.25.0",
+    "qrious": "^4.0.2",
+    "slidev-theme-academic": "^1.2.0",
+    "slidev-theme-meetup": "^1.5.3",
+    "vite-svg-loader": "^5.1.0"
+  },
+  "devDependencies": {
+    "playwright-chromium": "^1.42.1",
+    "sass": "^1.71.1"
+  }
+}

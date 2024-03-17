@@ -108,3 +108,43 @@ func Run(configuration *config.Configuration, course *models.Course, docType *st
 
 	return nil
 }
+
+func CompileResources(c *models.Course, configuration *config.Configuration) error {
+	outputDir := config.COURSES_OUTPUT_DIR + c.Theme
+	outputFolders := [2]string{"images", "theme"}
+
+	for _, f := range outputFolders {
+		err := os.MkdirAll(outputDir+"/"+f, os.ModePerm)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// Copy Themes
+	for _, t := range c.GetThemes() {
+		themeSrc := config.THEMES_ROOT + t
+		cptErr := models.CopyDir(themeSrc, outputDir+"/theme")
+		if cptErr != nil {
+			log.Fatal(cptErr)
+		}
+	}
+
+	// Copy global images
+	if _, err := os.Stat(config.IMAGES_ROOT); !os.IsNotExist(err) {
+		cpiErr := models.CopyDir(config.IMAGES_ROOT, outputDir+"/images")
+		if cpiErr != nil {
+			log.Fatal(cpiErr)
+		}
+	}
+
+	// Copy course specifique images
+	courseImages := config.COURSES_ROOT + c.Category + "/images"
+	if _, ciiErr := os.Stat(courseImages); !os.IsNotExist(ciiErr) {
+		cpic_err := models.CopyDir(courseImages, outputDir+"/images")
+		if cpic_err != nil {
+			log.Fatal(cpic_err)
+		}
+	}
+
+	return nil
+}

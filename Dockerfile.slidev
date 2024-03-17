@@ -4,9 +4,7 @@ COPY . /slidev
 
 RUN npm install
 
-RUN npm i @slidev/cli
-
-RUN npx playwright install install-deps chromium
+RUN npx playwright install chromium
 
 COPY ./src/slidev_integration/entrypoint.sh /entrypoint.sh
 

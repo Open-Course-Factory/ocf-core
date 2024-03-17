@@ -138,7 +138,7 @@ func parseFlags() bool {
 	}
 	fmt.Println("Markdown file created: " + createdFile)
 
-	errc := course.CompileResources(&configuration)
+	errc := slidev.CompileResources(&course, &configuration)
 	if errc != nil {
 		log.Fatal(errc)
 	}

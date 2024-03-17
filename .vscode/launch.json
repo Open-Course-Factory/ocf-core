@@ -19,7 +19,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "main.go",
-            "args": ["-c", "git", "-t", "sdv", "-e", "html"],
+            "args": ["-c", "golang", "-t", "sdv", "-e", "html"],
             "env": {}
         }
     ]

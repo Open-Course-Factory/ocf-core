@@ -1,0 +1,84 @@
+{
+    "name" : "GOLANG",
+    "version" : "v3.0",
+    "category" : "prog",
+    "title" : "Golang, premiers pas",
+    "subtitle" : "Un langage simple et efficace",
+    "header" : "Golang, premiers pas",
+    "footer" : "2023 - Golang @@version@@ - @@author_fullname@@ - @@author_email@@",
+    "logo" : "",
+    "author" : "author_@@author@@.md",
+    "schedule" : "sdv_m.html",
+    "prelude" : "sdv.md",
+    "theme" : "sdv",
+    "chapters" : 
+    [
+        {
+            "title" : "Introduction",
+            "footer" : "@@author_fullname@@ - Golang - Introduction",
+            "introduction" : "Dans lequel nous aborderons les concepts de base de golang",
+            "sections" : [
+                {
+                    "filename" : "prog/golang_introduction.md"
+                },
+                {
+                    "filename" : "prog/golang_outils.md"
+                },
+                {
+                    "filename" : "prog/golang_memoire.md"
+                },
+                {
+                    "filename" : "prog/golang_architecture.md"
+                },
+                {
+                    "filename" : "prog/golang_maps.md"
+                },
+                {
+                    "filename" : "prog/golang_tp_bases.md"
+                }
+
+            ]
+        },
+        {
+            "title" : "Interfaces et JSON",
+            "footer" : "@@author_fullname@@ - Golang - Interfaces",
+            "introduction" : "Dans lequel nous verrons la puissance de deux outils importants, les interfaces et le json",
+            "sections" : [
+                {
+                    "filename" : "prog/golang_rappels_intro.md"
+                },
+                {
+                    "filename" : "prog/golang_interfaces.md"
+                },
+                {
+                    "filename" : "prog/golang_json.md"
+                },
+                {
+                    "filename" : "prog/golang_tp_interfaces.md"
+                },
+                {
+                    "filename" : "prog/golang_tp_json.md"
+                }
+            ]
+        },
+        {
+            "title" : "Concurrence",
+            "footer" : "@@author_fullname@@ - Golang - Concurrence",
+            "introduction" : "Dans nous lequel parlerons la concurrence de",
+            "sections" : [
+                {
+                    "filename" : "prog/golang_concurrence_threads.md"
+                },
+                {
+                    "filename" : "prog/golang_concurrence_channels.md"
+                },
+                {
+                    "filename" : "prog/golang_cross_compilation.md"
+                },
+                {
+                    "filename" : "prog/golang_tp_concurrence.md"
+                }
+            ]
+        }
+    ]
+}

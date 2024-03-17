@@ -67,7 +67,7 @@ func GetCmd(course *models.Course, docType *string) *exec.Cmd {
 
 	outputDir := config.COURSES_OUTPUT_DIR + course.Theme
 	srcFile := outputDir + "/" + course.GetFilename("md")
-	destFile := outputDir + "/" + course.GetFilename(*docType)
+	destFile := course.GetFilename(*docType)
 
 	// baseCmd := []string{"run", "--rm", "--init", "-e", "MARP_USER=" + cUser.Uid + ":" + cUser.Gid, "-v", pwd + ":/home/marp/app", DOCKER_IMAGE}
 	// cmdOptions := []string{srcFile, "-o", destFile, "--no-config", "--theme", course.Theme}
@@ -76,7 +76,7 @@ func GetCmd(course *models.Course, docType *string) *exec.Cmd {
 	// cmdOptions = append(cmdOptions, ParseDocType(*docType).GetTypeOpts()...)
 
 	//cmdFull := append(baseCmd, cmdOptions...)
-	baseCmd := []string{"run", "--rm", "-e", `NPM_MIRROR="https://registry.npmmirror.com"`, "--entrypoint", "/entrypoint.sh", "-v", pwd + ":/slidev", "-v", "./src/slidev_integration/entrypoint.sh:/entrypoint.sh", "tangramor/slidev:playwright", srcFile, "--output", destFile}
+	baseCmd := []string{"run", "--rm", "-e", `NPM_MIRROR="https://registry.npmmirror.com"`, "--entrypoint", "/entrypoint.sh", "-v", pwd + ":/slidev", "-v", "./src/slidev_integration/entrypoint.sh:/entrypoint.sh", "ocf_slidev", srcFile, "--output", destFile}
 	//cmdFull := append(cmdFull, "docker run --name slidev_export --entrypoint /entrypoint.sh  -dit -v ./entrypoint.sh:/entrypoint.sh -v ${PWD}:/slidev -e NPM_MIRROR=\"https://registry.npmmirror.com\" tangramor/slidev:playwright")
 
 	cmd := exec.Command("/usr/bin/docker", baseCmd...)
@@ -106,6 +106,46 @@ func Run(configuration *config.Configuration, course *models.Course, docType *st
 	}
 
 	fmt.Println(outb.String())
+
+	return nil
+}
+
+func CompileResources(c *models.Course, configuration *config.Configuration) error {
+	outputDir := config.COURSES_OUTPUT_DIR + c.Theme
+	outputFolders := [2]string{"images", "theme"}
+
+	for _, f := range outputFolders {
+		err := os.MkdirAll(outputDir+"/"+f, os.ModePerm)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// Copy Themes
+	for _, t := range c.GetThemes() {
+		themeSrc := config.THEMES_ROOT + t
+		cptErr := models.CopyDir(themeSrc, outputDir)
+		if cptErr != nil {
+			log.Fatal(cptErr)
+		}
+	}
+
+	// Copy global images
+	if _, err := os.Stat(config.IMAGES_ROOT); !os.IsNotExist(err) {
+		cpiErr := models.CopyDir(config.IMAGES_ROOT, outputDir+"/images")
+		if cpiErr != nil {
+			log.Fatal(cpiErr)
+		}
+	}
+
+	// Copy course specifique images
+	courseImages := config.COURSES_ROOT + c.Category + "/images"
+	if _, ciiErr := os.Stat(courseImages); !os.IsNotExist(ciiErr) {
+		cpic_err := models.CopyDir(courseImages, outputDir+"/images")
+		if cpic_err != nil {
+			log.Fatal(cpic_err)
+		}
+	}
 
 	return nil
 }
