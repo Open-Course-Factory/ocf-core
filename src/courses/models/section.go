@@ -27,8 +27,8 @@ type Section struct {
 	Conclusion         string
 	Number             int
 	ChapterID          uuid.UUID `gorm:"foreignKey:ID"`
-	Chapter            Chapter   `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"chapter"`
-	Pages              []Page    `gorm:"foreignKey:SectionID" json:"pages"`
+	Chapter            Chapter   `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;serializer:json" json:"chapter"`
+	Pages              []Page    `gorm:"foreignKey:SectionID;serializer:json" json:"pages"`
 	HiddenPages        []int     `gorm:"serializer:json"`
 }
 

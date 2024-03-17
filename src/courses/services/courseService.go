@@ -286,8 +286,8 @@ func copyCourseFileLocally(fs billy.Filesystem, courseName string, repoDirectory
 				return err
 			}
 
-			if _, err := os.Stat(config.COURSES_ROOT + courseName); os.IsNotExist(err) {
-				os.MkdirAll(config.COURSES_ROOT+courseName, 0700) // Create your file
+			if _, err := os.Stat(config.COURSES_ROOT + courseName + repoDirectory); os.IsNotExist(err) {
+				os.MkdirAll(config.COURSES_ROOT+courseName+repoDirectory, 0700) // Create your file
 			}
 
 			if err != nil {
@@ -296,7 +296,7 @@ func copyCourseFileLocally(fs billy.Filesystem, courseName string, repoDirectory
 			}
 
 			//create file locally
-			err = os.WriteFile(config.COURSES_ROOT+courseName+"/"+fileInfo.Name(), fileContent, os.ModeAppend)
+			err = os.WriteFile(config.COURSES_ROOT+courseName+repoDirectory+fileInfo.Name(), fileContent, os.ModeAppend)
 
 			if err != nil {
 				log.Printf("writing file")

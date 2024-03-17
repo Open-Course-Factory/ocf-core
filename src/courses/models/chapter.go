@@ -19,7 +19,7 @@ type Chapter struct {
 	Number       int
 	Footer       string
 	Introduction string
-	Courses      []Course  `gorm:"many2many:course_chapters;" json:"courses"`
+	Courses      []Course  `gorm:"many2many:course_chapters;serializer:json" json:"courses"`
 	Sections     []Section `json:"sections"`
 }
 
