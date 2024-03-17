@@ -93,6 +93,10 @@ func Run(configuration *config.Configuration, course *models.Course, docType *st
 
 	fmt.Println("Command ready to be executed: " + cmd.String())
 
+	if *config.DRY_RUN {
+		return nil
+	}
+
 	err := cmd.Run()
 
 	if err != nil {

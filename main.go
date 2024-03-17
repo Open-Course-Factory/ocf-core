@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -23,6 +24,10 @@ import (
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
+
+	courseService "soli/formations/src/courses/services"
+
+	dto "soli/formations/src/courses/dto"
 
 	sqldb "soli/formations/src/db"
 
@@ -44,10 +49,6 @@ import (
 // @BasePath /api/v1
 func main() {
 
-	if parseFlags() {
-		os.Exit(0)
-	}
-
 	authController.InitCasdoorConnection()
 
 	sqldb.InitDBConnection()
@@ -60,6 +61,10 @@ func main() {
 	sqldb.DB.AutoMigrate(&courseModels.Course{})
 
 	initDB()
+
+	if parseFlags() {
+		os.Exit(0)
+	}
 
 	r := gin.Default()
 	r.Use(middleware.CORS())
@@ -104,26 +109,39 @@ func initDB() {
 }
 
 func parseFlags() bool {
-	// c := courseService.NewCourseService(sqldb.DB)
-	// c.GetGitCourse("git@usine.solution-libre.fr:formations/formations_marp.git")
 
 	const COURSE_FLAG = "c"
 	const THEME_FLAG = "t"
 	const TYPE_FLAG = "e"
+	const DRY_RUN_FLAG = "dry-run"
 
 	courseName := flag.String(COURSE_FLAG, "git", "trigram of the course you need to generate")
 	courseTheme := flag.String(THEME_FLAG, "sdv", "theme used to generate the .md file in the right location")
 	courseType := flag.String(TYPE_FLAG, "html", "type generated : html (default) or pdf")
+	config.DRY_RUN = flag.Bool(DRY_RUN_FLAG, false, "if set true, the cli stops before calling slide generator")
 	flag.Parse()
 
 	if !isFlagPassed(COURSE_FLAG) || !isFlagPassed(THEME_FLAG) || !isFlagPassed(TYPE_FLAG) {
 		return false
 	}
 
-	jsonConfigurationFilePath := "./conf/conf.json"
+	jsonConfigurationFilePath := "./src/configuration/conf.json"
 	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
 
-	jsonCourseFilePath := config.COURSES_ROOT + *courseName + ".json"
+	isCourseGitRepository := strings.HasSuffix(*courseName, ".git")
+
+	var courseDtoOutput *dto.CreateCourseOutput
+	var errGetGitCourse error
+	if isCourseGitRepository {
+		c := courseService.NewCourseService(sqldb.DB)
+		courseDtoOutput, errGetGitCourse = c.GetGitCourse(casdoorsdk.User{Email: "1.supervisor@test.com", Name: "test"}, *courseName)
+	}
+
+	if errGetGitCourse != nil {
+		log.Fatal(errGetGitCourse)
+	}
+
+	jsonCourseFilePath := config.COURSES_ROOT + courseDtoOutput.Name + ".json"
 	course := courseModels.ReadJsonCourseFile(jsonCourseFilePath)
 
 	if len(*courseTheme) > 0 {

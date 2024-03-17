@@ -106,13 +106,13 @@ func (c courseService) CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto
 	}
 
 	if course == nil {
-		_, createCourseError := c.repository.CreateCourse(courseCreateDTO)
+		courseCreated, createCourseError := c.repository.CreateCourse(courseCreateDTO)
 
 		if createCourseError != nil {
 			return nil, createCourseError
 		}
 
-		return &dto.CreateCourseOutput{}, nil
+		return &dto.CreateCourseOutput{Name: courseCreated.Name}, nil
 	}
 
 	return nil, nil
@@ -172,17 +172,12 @@ func (c courseService) GetGitCourse(owner casdoorsdk.User, courseURL string) (*d
 
 	errUnmarshall := json.Unmarshal(fileContent, &course)
 
-	errCopy := copyCourseFileLocally(fs, course.Category, ".md")
+	errCopy := copyCourseFileLocally(fs, course.Name, "/", []string{".json", ".md"})
 	if errCopy != nil {
 		return nil, errCopy
 	}
 
-	errCopy = copyCourseFileLocally(fs, course.Category+"/images", ".jpg")
-	if errCopy != nil {
-		return nil, errCopy
-	}
-
-	errCopy = copyCourseFileLocally(fs, course.Category+"/images", ".png")
+	errCopy = copyCourseFileLocally(fs, course.Name, "/images/", []string{".jpg", ".png", ".svg"})
 	if errCopy != nil {
 		return nil, errCopy
 	}
@@ -257,8 +252,19 @@ func getCourseJsonFileContent(fs billy.Filesystem) ([]byte, error) {
 	return fileContent, nil
 }
 
-func copyCourseFileLocally(fs billy.Filesystem, repoDirectory string, fileExtension string) error {
-	files, errReadDir := fs.ReadDir("/" + repoDirectory)
+func hasOneOfSuffixes(s string, suffixes []string) bool {
+	res := false
+	for _, suffix := range suffixes {
+		res = res || strings.HasSuffix(s, suffix)
+		if res {
+			return res
+		}
+	}
+	return res
+}
+
+func copyCourseFileLocally(fs billy.Filesystem, courseName string, repoDirectory string, fileExtensions []string) error {
+	files, errReadDir := fs.ReadDir(repoDirectory)
 	if errReadDir != nil {
 		log.Printf("reading directory")
 		return errReadDir
@@ -267,8 +273,8 @@ func copyCourseFileLocally(fs billy.Filesystem, repoDirectory string, fileExtens
 	var fileContent []byte
 
 	for _, fileInfo := range files {
-		if strings.HasSuffix(fileInfo.Name(), fileExtension) {
-			file, errFileOpen := fs.Open("/" + repoDirectory + "/" + fileInfo.Name())
+		if hasOneOfSuffixes(fileInfo.Name(), fileExtensions) {
+			file, errFileOpen := fs.Open(repoDirectory + fileInfo.Name())
 			if errFileOpen != nil {
 				log.Printf("opening file")
 				return errFileOpen
@@ -280,8 +286,8 @@ func copyCourseFileLocally(fs billy.Filesystem, repoDirectory string, fileExtens
 				return err
 			}
 
-			if _, err := os.Stat(config.COURSES_ROOT + repoDirectory); os.IsNotExist(err) {
-				os.MkdirAll(config.COURSES_ROOT+repoDirectory, 0700) // Create your file
+			if _, err := os.Stat(config.COURSES_ROOT + courseName); os.IsNotExist(err) {
+				os.MkdirAll(config.COURSES_ROOT+courseName, 0700) // Create your file
 			}
 
 			if err != nil {
@@ -290,7 +296,7 @@ func copyCourseFileLocally(fs billy.Filesystem, repoDirectory string, fileExtens
 			}
 
 			//create file locally
-			err = os.WriteFile(config.COURSES_ROOT+repoDirectory+"/"+fileInfo.Name(), fileContent, os.ModeAppend)
+			err = os.WriteFile(config.COURSES_ROOT+courseName+"/"+fileInfo.Name(), fileContent, os.ModeAppend)
 
 			if err != nil {
 				log.Printf("writing file")
@@ -317,7 +323,7 @@ func prepareGitCloneOptions(user casdoorsdk.User, courseURL string) (*git.CloneO
 		gitCloneOption = &git.CloneOptions{
 			URL:           courseURL,
 			Progress:      os.Stdout,
-			ReferenceName: plumbing.ReferenceName("refs/heads/main"),
+			ReferenceName: plumbing.ReferenceName("refs/heads/slidev-migration"),
 			SingleBranch:  true,
 		}
 

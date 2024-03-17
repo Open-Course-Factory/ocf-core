@@ -12,6 +12,8 @@ const COURSES_OUTPUT_DIR = "./dist/"
 const THEMES_ROOT = "./themes/"
 const IMAGES_ROOT = "./images/"
 
+var DRY_RUN *bool
+
 // Part of a Section
 type Configuration struct {
 	AuthorTrigram    string `json:"author_trigram"`

@@ -202,6 +202,8 @@ func initTocs(course *Course) {
 func ReadJsonCourseFile(jsonCourseFilePath string) Course {
 	jsonFile, err := os.ReadFile(jsonCourseFilePath)
 
+	// should try to download it -> how to standardize the course format ?
+	// should we pass it as a param ? (if just a name, look for it locally, either dl ?)
 	if err != nil {
 		log.Fatal("Error during ReadFile(): ", err)
 	}

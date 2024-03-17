@@ -14,6 +14,7 @@ type GenerateCourseInput struct {
 }
 
 type CreateCourseOutput struct {
+	Name string `binding:"required"`
 }
 
 type CreateCourseInput struct {

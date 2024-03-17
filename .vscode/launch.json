@@ -4,6 +4,7 @@
     // Pour plus d'informations, visitez : https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
     
         {
             "name": "Launch API",
@@ -19,7 +20,16 @@
             "request": "launch",
             "mode": "auto",
             "program": "main.go",
-            "args": ["-c", "golang", "-t", "sdv", "-e", "html"],
+            "args": ["-c", "golang", "-t", "sdv", "-e", "html", "--dry-run"],
+            "env": {}
+        },
+        {
+            "name": "Launch Downloaded Course Gen",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "main.go",
+            "args": ["-c", "git@gitlab.com/open-course-factory/ocf-course-golang-beginner.git", "-t", "sdv", "-e", "html", "--dry-run"],
             "env": {}
         }
     ]
