@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-	"os/exec"
 	config "soli/formations/src/configuration"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
@@ -28,32 +27,6 @@ type CourseMdWriter interface {
 	GetCourse() string
 }
 
-type Option string
-
-type CourseGenerationEngine interface {
-	GetThemesSetOpts(course *Course) []string
-	GetCmd(course *Course, docType *string) *exec.Cmd
-	Run(configuration *config.Configuration, course *Course, docType *string) error
-	CompileResources(configuration *config.Configuration) error
-}
-
-type Format int
-
-const (
-	HTML Format = iota
-	PDF
-)
-
-func (s Format) String() string {
-	switch s {
-	case HTML:
-		return "html"
-	case PDF:
-		return "pdf"
-	}
-	return "unknown"
-}
-
 type Course struct {
 	entityManagementModels.BaseModel
 	Category           string
@@ -67,7 +40,7 @@ type Course struct {
 	OwnerID            string
 	Owner              *casdoorsdk.User `json:"owner" gorm:"serializer:json"`
 	Description        string
-	Format             Format
+	Format             config.Format
 	CourseID_str       string
 	Schedule           string
 	Prelude            string

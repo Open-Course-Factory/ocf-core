@@ -10,7 +10,7 @@ import (
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
 	repositories "soli/formations/src/courses/repositories"
-	marp "soli/formations/src/marp_integration"
+	generator "soli/formations/src/generationEngine"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
@@ -77,12 +77,12 @@ func (c courseService) GenerateCourse(courseName string, courseTheme string, for
 	}
 	fmt.Println("Markdown file created: " + createdFile)
 
-	errc := marp.CompileResources(course, &configuration)
+	errc := generator.SLIDE_ENGINE.CompileResources(course, &configuration)
 	if errc != nil {
 		log.Println(errc.Error())
 	}
 
-	errr := marp.Run(&configuration, course, &format)
+	errr := generator.SLIDE_ENGINE.Run(&configuration, course, &format)
 
 	if errc != nil {
 		log.Println(errr.Error())

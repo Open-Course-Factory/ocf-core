@@ -37,3 +37,20 @@ func ReadJsonConfigurationFile(jsonConfigurationFilePath string) Configuration {
 	}
 	return configuration
 }
+
+type Format int
+
+const (
+	HTML Format = iota
+	PDF
+)
+
+func (s Format) String() string {
+	switch s {
+	case HTML:
+		return "html"
+	case PDF:
+		return "pdf"
+	}
+	return "unknown"
+}

@@ -16,8 +16,10 @@ import (
 	"soli/formations/docs"
 
 	config "soli/formations/src/configuration"
+	generator "soli/formations/src/generationEngine"
+	marp "soli/formations/src/generationEngine/marp_integration"
+	slidev "soli/formations/src/generationEngine/slidev_integration"
 	"soli/formations/src/middleware"
-	slidev "soli/formations/src/slidev_integration"
 	testtools "soli/formations/src/testTools"
 
 	authController "soli/formations/src/auth"
@@ -92,7 +94,6 @@ func initDB() {
 
 	if sqldb.DBType == "sqlite" {
 		sqldb.DB = sqldb.DB.Debug()
-		// setup casdoor test entities
 
 		testtools.DeleteAllObjects()
 		testtools.SetupUsers()
@@ -114,20 +115,52 @@ func parseFlags() bool {
 	const THEME_FLAG = "t"
 	const TYPE_FLAG = "e"
 	const DRY_RUN_FLAG = "dry-run"
+	const SLIDE_ENGINE_FLAG = "slide-engine"
 
 	courseName := flag.String(COURSE_FLAG, "git", "trigram of the course you need to generate")
 	courseTheme := flag.String(THEME_FLAG, "sdv", "theme used to generate the .md file in the right location")
 	courseType := flag.String(TYPE_FLAG, "html", "type generated : html (default) or pdf")
 	config.DRY_RUN = flag.Bool(DRY_RUN_FLAG, false, "if set true, the cli stops before calling slide generator")
+	slideEngine := flag.String(SLIDE_ENGINE_FLAG, "slidev", "slide generator used, marp or slidev (default)")
 	flag.Parse()
 
 	if !isFlagPassed(COURSE_FLAG) || !isFlagPassed(THEME_FLAG) || !isFlagPassed(TYPE_FLAG) {
 		return false
 	}
 
+	switch *slideEngine {
+	case "marp":
+		generator.SLIDE_ENGINE = marp.MarpCourseGenerator{}
+	case "slidev":
+		generator.SLIDE_ENGINE = slidev.SlidevCourseGenerator{}
+	default:
+		generator.SLIDE_ENGINE = slidev.SlidevCourseGenerator{}
+	}
+
 	jsonConfigurationFilePath := "./src/configuration/conf.json"
 	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
 
+	course := getCourseFromProgramInputs(courseName, courseTheme)
+
+	courseModels.CreateCourse(&course)
+
+	createdFile, err := course.WriteMd(&configuration)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Markdown file created: " + createdFile)
+
+	errc := generator.SLIDE_ENGINE.CompileResources(&course, &configuration)
+	if errc != nil {
+		log.Fatal(errc)
+	}
+
+	fmt.Println(courseType)
+
+	return true
+}
+
+func getCourseFromProgramInputs(courseName *string, courseTheme *string) courseModels.Course {
 	isCourseGitRepository := strings.HasSuffix(*courseName, ".git")
 
 	var courseDtoOutput *dto.CreateCourseOutput
@@ -147,27 +180,7 @@ func parseFlags() bool {
 	if len(*courseTheme) > 0 {
 		course.Theme = *courseTheme
 	}
-
-	courseModels.CreateCourse(&course)
-
-	createdFile, err := course.WriteMd(&configuration)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Markdown file created: " + createdFile)
-
-	errc := slidev.CompileResources(&course, &configuration)
-	if errc != nil {
-		log.Fatal(errc)
-	}
-
-	//marp.Run(&configuration, &course, courseType)
-
-	slidev.Run(&configuration, &course, courseType)
-
-	fmt.Println(courseType)
-
-	return true
+	return course
 }
 
 func isFlagPassed(name string) bool {
