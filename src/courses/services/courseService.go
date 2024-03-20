@@ -296,7 +296,7 @@ func copyCourseFileLocally(fs billy.Filesystem, courseName string, repoDirectory
 			}
 
 			//create file locally
-			err = os.WriteFile(config.COURSES_ROOT+courseName+repoDirectory+fileInfo.Name(), fileContent, os.ModeAppend)
+			err = os.WriteFile(config.COURSES_ROOT+courseName+repoDirectory+fileInfo.Name(), fileContent, 0600)
 
 			if err != nil {
 				log.Printf("writing file")

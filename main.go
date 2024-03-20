@@ -23,13 +23,12 @@ import (
 	testtools "soli/formations/src/testTools"
 
 	authController "soli/formations/src/auth"
+	"soli/formations/src/courses/dto"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
 
 	courseService "soli/formations/src/courses/services"
-
-	dto "soli/formations/src/courses/dto"
 
 	sqldb "soli/formations/src/db"
 
@@ -174,7 +173,7 @@ func getCourseFromProgramInputs(courseName *string, courseTheme *string) courseM
 		log.Fatal(errGetGitCourse)
 	}
 
-	jsonCourseFilePath := config.COURSES_ROOT + courseDtoOutput.Name + ".json"
+	jsonCourseFilePath := config.COURSES_ROOT + courseDtoOutput.Name + "/course.json"
 	course := courseModels.ReadJsonCourseFile(jsonCourseFilePath)
 
 	if len(*courseTheme) > 0 {

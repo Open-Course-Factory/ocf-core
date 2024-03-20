@@ -32,10 +32,10 @@ func NewCourseRepository(db *gorm.DB) CourseRepository {
 
 func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models.Course, error) {
 
-	var user *casdoorsdk.User
-	errUser := c.db.First(&user, "email=?", coursedto.AuthorEmail)
-	if errUser.Error != nil {
-		return nil, errUser.Error
+	user, errUser := casdoorsdk.GetUserByEmail(coursedto.AuthorEmail)
+
+	if errUser != nil {
+		return nil, errUser
 	}
 
 	//ToDo full course with dtoinput to model
