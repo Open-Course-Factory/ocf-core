@@ -154,7 +154,9 @@ func parseFlags() bool {
 		log.Fatal(errc)
 	}
 
-	fmt.Println(courseType)
+	if !*config.DRY_RUN {
+		generator.SLIDE_ENGINE.Run(&configuration, &course, courseType)
+	}
 
 	return true
 }
