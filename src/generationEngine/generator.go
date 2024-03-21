@@ -13,6 +13,7 @@ type CourseGenerationEngine interface {
 	GetCmd(course *models.Course, docType *string) *exec.Cmd
 	Run(configuration *config.Configuration, course *models.Course, docType *string) error
 	CompileResources(c *models.Course, configuration *config.Configuration) error
+	GetPublicDir() string
 }
 
 var SLIDE_ENGINE CourseGenerationEngine

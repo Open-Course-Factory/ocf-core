@@ -2,3 +2,4 @@ __debug*
 docs/
 dist/
 *.db
+node_modules

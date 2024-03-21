@@ -1,7 +1,6 @@
 package services
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -30,7 +29,7 @@ type CourseService interface {
 	CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto.CreateCourseOutput, error)
 	DeleteCourse(id uuid.UUID) error
 	GetCourses() ([]dto.CourseOutput, error)
-	GetGitCourse(owner casdoorsdk.User, courseURL string) (*dto.CreateCourseOutput, error)
+	GetGitCourse(owner casdoorsdk.User, courseName string, courseURL string) error
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
 }
 
@@ -69,7 +68,7 @@ func (c courseService) GenerateCourse(courseName string, courseTheme string, for
 	}
 
 	// we should use cow here
-	models.CreateCourse(course)
+	models.CreateCourse(courseName, course)
 
 	createdFile, err := course.WriteMd(&configuration)
 	if err != nil {
@@ -144,14 +143,14 @@ func (c *courseService) GetCourses() ([]dto.CourseOutput, error) {
 	return courseDto, nil
 }
 
-func (c courseService) GetGitCourse(owner casdoorsdk.User, courseURL string) (*dto.CreateCourseOutput, error) {
+func (c courseService) GetGitCourse(owner casdoorsdk.User, courseName string, courseURL string) error {
 	// Clones the given repository in memory, creating the remote, the local
 	// branches and fetching the objects, exactly as:
 	log.Printf("git clone %s", courseURL)
 
 	gitCloneOption, err := prepareGitCloneOptions(owner, courseURL)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	fs := memfs.New()
@@ -160,96 +159,20 @@ func (c courseService) GetGitCourse(owner casdoorsdk.User, courseURL string) (*d
 
 	if errClone != nil {
 		log.Printf("cloning repository")
-		return nil, errClone
+		return errClone
 	}
 
-	fileContent, errFc := getCourseJsonFileContent(fs)
-	if errFc != nil {
-		return nil, errFc
-	}
-
-	var course models.Course
-
-	errUnmarshall := json.Unmarshal(fileContent, &course)
-
-	errCopy := copyCourseFileLocally(fs, course.Name, "/", []string{".json", ".md"})
+	errCopy := copyCourseFileLocally(fs, courseName, "/", []string{".json", ".md"})
 	if errCopy != nil {
-		return nil, errCopy
+		return errCopy
 	}
 
-	errCopy = copyCourseFileLocally(fs, course.Name, "/images/", []string{".jpg", ".png", ".svg"})
+	errCopy = copyCourseFileLocally(fs, courseName, "/"+generator.SLIDE_ENGINE.GetPublicDir()+"/", []string{".jpg", ".png", ".svg"})
 	if errCopy != nil {
-		return nil, errCopy
+		return errCopy
 	}
 
-	if errUnmarshall != nil {
-		log.Printf("unmarshaling json")
-		return nil, errUnmarshall
-	}
-
-	course.Description = "imported from " + courseURL
-	course.URL = courseURL
-	course.Owner = &owner
-
-	courseInput := dto.CreateCourseInput{
-		Name:               course.Name,
-		Theme:              course.Theme,
-		Format:             int(course.Format),
-		AuthorEmail:        owner.Email,
-		Category:           course.Category,
-		Version:            course.Version,
-		Title:              course.Title,
-		Subtitle:           course.Subtitle,
-		Header:             course.Header,
-		Footer:             course.Footer,
-		Logo:               course.Logo,
-		Description:        course.Description,
-		CourseID_str:       course.CourseID_str,
-		Schedule:           course.Schedule,
-		Prelude:            course.Prelude,
-		LearningObjectives: course.LearningObjectives,
-		Chapters:           course.Chapters,
-	}
-
-	courseOutput, errCreate := c.CreateCourse(courseInput)
-
-	if errCreate != nil {
-		log.Printf("creating course")
-		return nil, errCreate
-	}
-
-	return courseOutput, nil
-
-}
-
-func getCourseJsonFileContent(fs billy.Filesystem) ([]byte, error) {
-	files, errReadDir := fs.ReadDir("/")
-	if errReadDir != nil {
-		log.Printf("reading directory")
-		return nil, errReadDir
-	}
-
-	var fileContent []byte
-
-	for _, fileInfo := range files {
-		if strings.HasSuffix(fileInfo.Name(), ".json") {
-			file, errFileOpen := fs.Open(fileInfo.Name())
-			if errFileOpen != nil {
-				log.Printf("opening file")
-				return nil, errFileOpen
-			}
-			var err error
-			fileContent, err = io.ReadAll(file)
-
-			if err != nil {
-				log.Printf("reading file")
-				return nil, err
-			}
-
-			break
-		}
-	}
-	return fileContent, nil
+	return nil
 }
 
 func hasOneOfSuffixes(s string, suffixes []string) bool {

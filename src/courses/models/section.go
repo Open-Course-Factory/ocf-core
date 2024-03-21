@@ -37,8 +37,8 @@ func (s Section) String() string {
 	return sw.GetSection()
 }
 
-func fillSection(currentSection *Section) {
-	filename := config.COURSES_ROOT + currentSection.FileName
+func fillSection(courseName string, currentSection *Section) {
+	filename := config.COURSES_ROOT + courseName + "/" + currentSection.FileName
 	currentSection.FileName = filename
 
 	sPages := extractPagesFromSectionsFiles(filename)
@@ -86,6 +86,8 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []Page 
 					hide = true
 				}
 				pages = append(pages, createPage(pageCounter, strings.Split(string(sPageContent), "\n"), currentSection, hide))
+			} else {
+				fmt.Println("Front matter for section not found / not formatted as expected")
 			}
 		}
 

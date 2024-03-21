@@ -59,7 +59,7 @@ func (scow *SlidevCourseWriter) SetIntro() string {
 func (scow *SlidevCourseWriter) SetLearningObjectives() string {
 	learningObjectives := ""
 	if len(scow.Course.LearningObjectives) > 0 {
-		learningObjectivesPathFile := config.COURSES_ROOT + "/learning_objectives/" + scow.Course.LearningObjectives
+		learningObjectivesPathFile := config.COURSES_ROOT + "learning_objectives/" + scow.Course.LearningObjectives
 		_, error := os.Stat(learningObjectivesPathFile)
 		if !os.IsNotExist(error) {
 			learningObjectives = "\n---\n\n@include(" + learningObjectivesPathFile + ")\n"

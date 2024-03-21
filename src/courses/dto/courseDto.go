@@ -61,7 +61,8 @@ type CreateCourseFromGitOutput struct {
 }
 
 type CreateCourseFromGitInput struct {
-	Url string `binding:"required"`
+	Url  string `binding:"required"`
+	Name string `binding:"required"`
 }
 
 func CourseModelToCourseOutput(courseModel models.Course) *CourseOutput {

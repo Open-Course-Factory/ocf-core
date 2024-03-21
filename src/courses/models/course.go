@@ -100,14 +100,14 @@ func (c Course) GetThemes() []string {
 	return themes
 }
 
-func CreateCourse(course *Course) {
+func CreateCourse(courseName string, course *Course) {
 	for indexChapter, chapter := range course.Chapters {
 		chapter.Number = indexChapter + 1
 		for indexSection, section := range chapter.Sections {
 			section.Number = indexSection + 1
 			section.Chapter = chapter
 			section.ParentChapterTitle = chapter.getTitle()
-			fillSection(&section)
+			fillSection(courseName, &section)
 			chapter.Sections[indexSection] = section
 		}
 		course.Chapters[indexChapter] = chapter

@@ -54,7 +54,7 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 		})
 	}
 
-	courseOutput, errGetCourse := c.service.GetGitCourse(*user, createCourseFromGitDTO.Url)
+	errGetCourse := c.service.GetGitCourse(*user, createCourseFromGitDTO.Name, createCourseFromGitDTO.Url)
 
 	if errGetCourse != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
@@ -64,13 +64,7 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 		return
 	}
 
-	if courseOutput == nil {
-		ctx.JSON(http.StatusConflict, &errors.APIError{
-			ErrorCode:    http.StatusConflict,
-			ErrorMessage: "Le cours existe déjà pour cet utilisateur",
-		})
-		return
-	}
+	//ToDo: generate outputDto
 
-	ctx.JSON(http.StatusCreated, courseOutput)
+	ctx.JSON(http.StatusCreated, nil)
 }

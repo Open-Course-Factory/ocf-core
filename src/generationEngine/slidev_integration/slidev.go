@@ -18,18 +18,11 @@ const (
 	PDF  Option = "pdf"
 )
 
-const DOCKER_IMAGE = "marpteam/marp-cli"
-const ENGINE_CONFIGURATION = "./src/marp_integration/engine/engine.js"
+const DOCKER_IMAGE = "TO BE DEFINED"
+const PUBLIC_DIR = "public"
 
 func (o Option) GetTypeOpts() []string {
 	var res []string
-	switch o {
-	case HTML:
-		res = []string{"--bespoke.progress", "true", "--html"}
-	case PDF:
-		res = []string{"--pdf", "--allow-local-files", "--html", "--pdf-notes"}
-	}
-
 	return res
 }
 
@@ -68,7 +61,7 @@ func (scg SlidevCourseGenerator) GetCmd(course *models.Course, docType *string) 
 	srcFile := outputDir + "/" + course.GetFilename("md")
 	destFile := course.GetFilename(*docType)
 
-	baseCmd := []string{"run", "--rm", "-e", `NPM_MIRROR="https://registry.npmmirror.com"`, "--entrypoint", "/entrypoint.sh", "-v", pwd + ":/slidev", "-v", "./src/slidev_integration/entrypoint.sh:/entrypoint.sh", "ocf_slidev", srcFile, "--output", destFile}
+	baseCmd := []string{"run", "--rm", "-e", `NPM_MIRROR="https://registry.npmmirror.com"`, "-v", pwd + "/dist:/slidev/dist", "ocf_slidev", srcFile, "--output", destFile}
 
 	cmd := exec.Command("/usr/bin/docker", baseCmd...)
 
@@ -107,10 +100,10 @@ func (scg SlidevCourseGenerator) Run(configuration *config.Configuration, course
 
 func (scg SlidevCourseGenerator) CompileResources(c *models.Course, configuration *config.Configuration) error {
 	outputDir := config.COURSES_OUTPUT_DIR + c.Theme
-	outputFolders := [2]string{"images", "theme"}
+	outputFolders := [2]string{"/" + PUBLIC_DIR, "/theme"}
 
 	for _, f := range outputFolders {
-		err := os.MkdirAll(outputDir+"/"+f, os.ModePerm)
+		err := os.MkdirAll(outputDir+f, os.ModePerm)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -127,20 +120,24 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course, configuratio
 
 	// Copy global images
 	if _, err := os.Stat(config.IMAGES_ROOT); !os.IsNotExist(err) {
-		cpiErr := models.CopyDir(config.IMAGES_ROOT, outputDir+"/images")
+		cpiErr := models.CopyDir(config.IMAGES_ROOT, outputDir+"/"+PUBLIC_DIR)
 		if cpiErr != nil {
 			log.Fatal(cpiErr)
 		}
 	}
 
 	// Copy course specifique images
-	courseImages := config.COURSES_ROOT + c.Category + "/images"
+	courseImages := config.COURSES_ROOT + PUBLIC_DIR
 	if _, ciiErr := os.Stat(courseImages); !os.IsNotExist(ciiErr) {
-		cpic_err := models.CopyDir(courseImages, outputDir+"/images")
+		cpic_err := models.CopyDir(courseImages, outputDir+"/"+PUBLIC_DIR)
 		if cpic_err != nil {
 			log.Fatal(cpic_err)
 		}
 	}
 
 	return nil
+}
+
+func (scg SlidevCourseGenerator) GetPublicDir() string {
+	return PUBLIC_DIR
 }

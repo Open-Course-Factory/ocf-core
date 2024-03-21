@@ -29,7 +29,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "main.go",
-            "args": ["-c", "git@gitlab.com/open-course-factory/ocf-course-golang-beginner.git", "-t", "sdv", "-e", "html", "--dry-run"],
+            "args": ["-c", "golang", "-g", "git@gitlab.com/open-course-factory/ocf-course-golang-beginner.git", "-t", "sdv", "-e", "html"],
             "env": {}
         }
     ]

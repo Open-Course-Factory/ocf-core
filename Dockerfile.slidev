@@ -6,6 +6,6 @@ RUN npm install
 
 RUN npx playwright install chromium
 
-COPY ./src/slidev_integration/entrypoint.sh /entrypoint.sh
+COPY ./src/generationEngine/slidev_integration/entrypoint.sh /entrypoint.sh
 
 ENTRYPOINT [ "/entrypoint.sh" ]

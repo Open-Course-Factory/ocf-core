@@ -9,7 +9,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// /go:embed token_jwt_key.pem
+//go:embed token_jwt_key.pem
 var JwtPublicKey string
 
 func InitCasdoorConnection() {

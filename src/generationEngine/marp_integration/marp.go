@@ -19,6 +19,8 @@ const (
 	PDF  Option = "pdf"
 )
 
+const PUBLIC_DIR string = "images"
+
 type MarpCourseGenerator struct {
 }
 
@@ -150,4 +152,8 @@ func (mcg MarpCourseGenerator) CompileResources(c *models.Course, configuration 
 	}
 
 	return nil
+}
+
+func (mcg MarpCourseGenerator) GetPublicDir() string {
+	return PUBLIC_DIR
 }

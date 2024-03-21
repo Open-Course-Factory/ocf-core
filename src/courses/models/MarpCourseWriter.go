@@ -34,7 +34,7 @@ func (mcow *MarpCourseWriter) SetIntro() string {
 func (mcow *MarpCourseWriter) SetLearningObjectives() string {
 	learningObjectives := ""
 	if len(mcow.Course.LearningObjectives) > 0 {
-		learningObjectivesPathFile := config.COURSES_ROOT + "/learning_objectives/" + mcow.Course.LearningObjectives
+		learningObjectivesPathFile := config.COURSES_ROOT + "learning_objectives/" + mcow.Course.LearningObjectives
 		_, error := os.Stat(learningObjectivesPathFile)
 		if !os.IsNotExist(error) {
 			learningObjectives = "\n---\n\n@include(" + learningObjectivesPathFile + ")\n"

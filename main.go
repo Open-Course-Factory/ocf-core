@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -23,7 +22,6 @@ import (
 	testtools "soli/formations/src/testTools"
 
 	authController "soli/formations/src/auth"
-	"soli/formations/src/courses/dto"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
@@ -111,12 +109,14 @@ func initDB() {
 func parseFlags() bool {
 
 	const COURSE_FLAG = "c"
+	const GIT_REPO_FLAG = "g"
 	const THEME_FLAG = "t"
 	const TYPE_FLAG = "e"
 	const DRY_RUN_FLAG = "dry-run"
 	const SLIDE_ENGINE_FLAG = "slide-engine"
 
 	courseName := flag.String(COURSE_FLAG, "git", "trigram of the course you need to generate")
+	courseGitRepository := flag.String(GIT_REPO_FLAG, "", "ssh git repository")
 	courseTheme := flag.String(THEME_FLAG, "sdv", "theme used to generate the .md file in the right location")
 	courseType := flag.String(TYPE_FLAG, "html", "type generated : html (default) or pdf")
 	config.DRY_RUN = flag.Bool(DRY_RUN_FLAG, false, "if set true, the cli stops before calling slide generator")
@@ -139,9 +139,9 @@ func parseFlags() bool {
 	jsonConfigurationFilePath := "./src/configuration/conf.json"
 	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
 
-	course := getCourseFromProgramInputs(courseName, courseTheme)
+	course := getCourseFromProgramInputs(courseName, courseGitRepository, courseTheme)
 
-	courseModels.CreateCourse(&course)
+	courseModels.CreateCourse(*courseName, &course)
 
 	createdFile, err := course.WriteMd(&configuration)
 	if err != nil {
@@ -161,21 +161,20 @@ func parseFlags() bool {
 	return true
 }
 
-func getCourseFromProgramInputs(courseName *string, courseTheme *string) courseModels.Course {
-	isCourseGitRepository := strings.HasSuffix(*courseName, ".git")
+func getCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseTheme *string) courseModels.Course {
+	isCourseGitRepository := (*courseGitRepository != "")
 
-	var courseDtoOutput *dto.CreateCourseOutput
 	var errGetGitCourse error
 	if isCourseGitRepository {
 		c := courseService.NewCourseService(sqldb.DB)
-		courseDtoOutput, errGetGitCourse = c.GetGitCourse(casdoorsdk.User{Email: "1.supervisor@test.com", Name: "test"}, *courseName)
+		errGetGitCourse = c.GetGitCourse(casdoorsdk.User{Email: "1.supervisor@test.com", Name: "test"}, *courseName, *courseGitRepository)
 	}
 
 	if errGetGitCourse != nil {
 		log.Fatal(errGetGitCourse)
 	}
 
-	jsonCourseFilePath := config.COURSES_ROOT + courseDtoOutput.Name + "/course.json"
+	jsonCourseFilePath := config.COURSES_ROOT + *courseName + "/course.json"
 	course := courseModels.ReadJsonCourseFile(jsonCourseFilePath)
 
 	if len(*courseTheme) > 0 {
