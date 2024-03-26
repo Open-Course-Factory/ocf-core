@@ -31,6 +31,7 @@ type Course struct {
 	entityManagementModels.BaseModel
 	Category           string
 	Name               string
+	FolderName         string
 	Version            string
 	Title              string
 	Subtitle           string
@@ -46,8 +47,8 @@ type Course struct {
 	Prelude            string
 	Theme              string
 	URL                string
-	LearningObjectives string    `json:"learning_objectives"`
-	Chapters           []Chapter `gorm:"many2many:course_chapters;serializer:json" json:"chapters"`
+	LearningObjectives string     `json:"learning_objectives"`
+	Chapters           []*Chapter `gorm:"many2many:course_chapters;serializer:json" json:"chapters"`
 }
 
 func (c Course) String() string {
@@ -100,12 +101,12 @@ func (c Course) GetThemes() []string {
 	return themes
 }
 
-func CreateCourse(courseName string, course *Course) {
+func FillCourseModelFromFiles(courseName string, course *Course) {
 	for indexChapter, chapter := range course.Chapters {
 		chapter.Number = indexChapter + 1
 		for indexSection, section := range chapter.Sections {
 			section.Number = indexSection + 1
-			section.Chapter = chapter
+			section.Chapter = *chapter
 			section.ParentChapterTitle = chapter.getTitle()
 			fillSection(courseName, &section)
 			chapter.Sections[indexSection] = section

@@ -54,7 +54,7 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 		})
 	}
 
-	errGetCourse := c.service.GetGitCourse(*user, createCourseFromGitDTO.Name, createCourseFromGitDTO.Url)
+	errGetCourse := c.service.GetGitCourse(*user, createCourseFromGitDTO.Name, createCourseFromGitDTO.Url, createCourseFromGitDTO.BranchName)
 
 	if errGetCourse != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{

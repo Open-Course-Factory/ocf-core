@@ -5,13 +5,26 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path"
 	"strings"
 	"unicode"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-git/v5"
+
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/go-git/go-git/v5/storage/memory"
+
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
+
+	authServices "soli/formations/src/auth/services"
+	sqldb "soli/formations/src/db"
 )
 
 type URLFormat int
@@ -149,4 +162,81 @@ func (o StringArray) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return strings.Join(o, ","), nil
+}
+
+func GitClone(owner casdoorsdk.User, repositoryURL string, repositoryBranch string) (billy.Filesystem, error) {
+	gitCloneOption, err := prepareGitCloneOptions(owner, repositoryURL, repositoryBranch)
+	if err != nil {
+		return nil, err
+	}
+
+	fs := memfs.New()
+
+	_, errClone := git.Clone(memory.NewStorage(), fs, gitCloneOption)
+
+	if errClone != nil {
+		log.Printf("cloning repository")
+		return nil, errClone
+	}
+	return fs, nil
+}
+
+func prepareGitCloneOptions(user casdoorsdk.User, courseURL string, branchName ...string) (*git.CloneOptions, error) {
+	var key ssh.AuthMethod
+	var gitCloneOption *git.CloneOptions
+
+	if branchName[0] == "" {
+		branchName[0] = "main"
+	}
+
+	sks := authServices.NewSshKeyService(sqldb.DB)
+	sshKeys, errSsh := sks.GetKeysByUserId(user.Id)
+
+	if errSsh != nil {
+		return nil, errSsh
+	}
+
+	if len(*sshKeys) == 0 {
+		log.Printf("No SSH key found, trying without auth")
+
+		urlFormat := DetectURLFormat(courseURL)
+
+		if urlFormat == GIT_SSH {
+			courseURL = SSHToHTTP(courseURL)
+		}
+
+		gitCloneOption = &git.CloneOptions{
+			URL:           courseURL,
+			Progress:      os.Stdout,
+			ReferenceName: plumbing.ReferenceName("refs/heads/" + branchName[0]),
+			SingleBranch:  true,
+		}
+
+	} else {
+		array := *sshKeys
+		firstKey := array[0].PrivateKey
+
+		var err error
+		key, err = ssh.NewPublicKeys("git", []byte(firstKey), "")
+
+		if err != nil {
+			log.Printf(err.Error())
+			return nil, err
+		}
+
+		urlFormat := DetectURLFormat(courseURL)
+
+		if urlFormat == GIT_HTTP {
+			courseURL = HTTPToSSH(courseURL)
+		}
+
+		gitCloneOption = &git.CloneOptions{
+			Auth:          key,
+			URL:           courseURL,
+			Progress:      os.Stdout,
+			ReferenceName: plumbing.ReferenceName("refs/heads/" + branchName[0]),
+			SingleBranch:  true,
+		}
+	}
+	return gitCloneOption, nil
 }

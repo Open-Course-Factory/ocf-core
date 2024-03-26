@@ -110,6 +110,7 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course, configuratio
 	}
 
 	// Copy Themes
+	// ToDo: from git repository
 	for _, t := range c.GetThemes() {
 		themeSrc := config.THEMES_ROOT + t
 		cptErr := models.CopyDir(themeSrc, outputDir)
@@ -127,7 +128,7 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course, configuratio
 	}
 
 	// Copy course specifique images
-	courseImages := config.COURSES_ROOT + PUBLIC_DIR
+	courseImages := config.COURSES_ROOT + c.FolderName + "/" + PUBLIC_DIR
 	if _, ciiErr := os.Stat(courseImages); !os.IsNotExist(ciiErr) {
 		cpic_err := models.CopyDir(courseImages, outputDir+"/"+PUBLIC_DIR)
 		if cpic_err != nil {

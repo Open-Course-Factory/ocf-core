@@ -30,11 +30,11 @@ type CreateCourseInput struct {
 	Footer             string `binding:"required"`
 	Logo               string
 	Description        string
-	CourseID_str       string           `binding:"required"`
-	Schedule           string           `binding:"required"`
-	Prelude            string           `binding:"required"`
-	LearningObjectives string           `json:"learning_objectives"`
-	Chapters           []models.Chapter `json:"chapters"`
+	CourseID_str       string            `binding:"required"`
+	Schedule           string            `binding:"required"`
+	Prelude            string            `binding:"required"`
+	LearningObjectives string            `json:"learning_objectives"`
+	Chapters           []*models.Chapter `json:"chapters"`
 }
 
 type CourseOutput struct {
@@ -61,15 +61,16 @@ type CreateCourseFromGitOutput struct {
 }
 
 type CreateCourseFromGitInput struct {
-	Url  string `binding:"required"`
-	Name string `binding:"required"`
+	Url        string `binding:"required"`
+	BranchName string `json:"omitempty"`
+	Name       string `binding:"required"`
 }
 
 func CourseModelToCourseOutput(courseModel models.Course) *CourseOutput {
 
 	var chapterOutputs []ChapterOutput
 	for _, chapter := range courseModel.Chapters {
-		chapterOutputs = append(chapterOutputs, *ChapterModelToChapterOutput(chapter))
+		chapterOutputs = append(chapterOutputs, *ChapterModelToChapterOutput(*chapter))
 	}
 
 	return &CourseOutput{
@@ -82,7 +83,7 @@ func CourseModelToCourseOutput(courseModel models.Course) *CourseOutput {
 		Footer:             courseModel.Footer,
 		Logo:               courseModel.Logo,
 		Description:        courseModel.Description,
-		CourseID_str:       courseModel.CourseID_str,
+		CourseID_str:       courseModel.BaseModel.ID.String(),
 		Schedule:           courseModel.Schedule,
 		Prelude:            courseModel.Prelude,
 		LearningObjectives: courseModel.LearningObjectives,

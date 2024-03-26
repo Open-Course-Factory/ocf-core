@@ -13,11 +13,6 @@ import (
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/uuid"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -29,7 +24,7 @@ type CourseService interface {
 	CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto.CreateCourseOutput, error)
 	DeleteCourse(id uuid.UUID) error
 	GetCourses() ([]dto.CourseOutput, error)
-	GetGitCourse(owner casdoorsdk.User, courseName string, courseURL string) error
+	GetGitCourse(owner casdoorsdk.User, courseName string, courseURL string, courseBranch string) error
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
 }
 
@@ -68,7 +63,7 @@ func (c courseService) GenerateCourse(courseName string, courseTheme string, for
 	}
 
 	// we should use cow here
-	models.CreateCourse(courseName, course)
+	models.FillCourseModelFromFiles(courseName, course)
 
 	createdFile, err := course.WriteMd(&configuration)
 	if err != nil {
@@ -143,23 +138,14 @@ func (c *courseService) GetCourses() ([]dto.CourseOutput, error) {
 	return courseDto, nil
 }
 
-func (c courseService) GetGitCourse(owner casdoorsdk.User, courseName string, courseURL string) error {
+func (c courseService) GetGitCourse(owner casdoorsdk.User, courseName string, courseURL string, courseBranch string) error {
 	// Clones the given repository in memory, creating the remote, the local
 	// branches and fetching the objects, exactly as:
 	log.Printf("git clone %s", courseURL)
 
-	gitCloneOption, err := prepareGitCloneOptions(owner, courseURL)
-	if err != nil {
-		return err
-	}
-
-	fs := memfs.New()
-
-	_, errClone := git.Clone(memory.NewStorage(), fs, gitCloneOption)
-
-	if errClone != nil {
-		log.Printf("cloning repository")
-		return errClone
+	fs, cloneErr := models.GitClone(owner, courseURL, courseBranch)
+	if cloneErr != nil {
+		return cloneErr
 	}
 
 	errCopy := copyCourseFileLocally(fs, courseName, "/", []string{".json", ".md"})
@@ -228,55 +214,6 @@ func copyCourseFileLocally(fs billy.Filesystem, courseName string, repoDirectory
 		}
 	}
 	return nil
-}
-
-func prepareGitCloneOptions(user casdoorsdk.User, courseURL string) (*git.CloneOptions, error) {
-	var key ssh.AuthMethod
-	var gitCloneOption *git.CloneOptions
-
-	if len(user.Properties["SshKeys"]) == 0 {
-		log.Printf("No SSH key found, trying without auth")
-
-		urlFormat := models.DetectURLFormat(courseURL)
-
-		if urlFormat == models.GIT_SSH {
-			courseURL = models.SSHToHTTP(courseURL)
-		}
-
-		gitCloneOption = &git.CloneOptions{
-			URL:           courseURL,
-			Progress:      os.Stdout,
-			ReferenceName: plumbing.ReferenceName("refs/heads/slidev-migration"),
-			SingleBranch:  true,
-		}
-
-	} else {
-		// ToDo : rework with casdoor
-		firstKey := user.Properties["SshKeys"]
-
-		var err error
-		key, err = ssh.NewPublicKeys("git", []byte(firstKey), "")
-
-		if err != nil {
-			log.Printf("creating ssh auth method")
-			return nil, err
-		}
-
-		urlFormat := models.DetectURLFormat(courseURL)
-
-		if urlFormat == models.GIT_HTTP {
-			courseURL = models.HTTPToSSH(courseURL)
-		}
-
-		gitCloneOption = &git.CloneOptions{
-			Auth:          key,
-			URL:           courseURL,
-			Progress:      os.Stdout,
-			ReferenceName: plumbing.ReferenceName("refs/heads/main"),
-			SingleBranch:  true,
-		}
-	}
-	return gitCloneOption, nil
 }
 
 func (c courseService) GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error) {
