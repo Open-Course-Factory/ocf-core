@@ -14,6 +14,6 @@ func AuthRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.
 
 	routes := router.Group("/auth")
 
-	routes.GET("/login", authController.Login)
+	routes.GET("/callback", authController.Callback)
 
 }

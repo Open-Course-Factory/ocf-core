@@ -3,12 +3,14 @@ package authController
 import (
 	"encoding/json"
 	"net/http"
+	"soli/formations/src/auth/dto"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
 )
 
 type AuthController interface {
+	Callback(ctx *gin.Context)
 	Login(ctx *gin.Context)
 }
 
@@ -19,11 +21,11 @@ func NewAuthController() AuthController {
 	return &authController{}
 }
 
-// Login godoc
+// Callback godoc
 //
-// @Summary Login
-// @Description Login pour casdoor, pas censé être utilisé par un humain
-// @Tags login
+// @Summary Callback
+// @Description callback pour casdoor
+// @Tags callback
 // @Accept json
 // @Produce json
 //
@@ -31,8 +33,8 @@ func NewAuthController() AuthController {
 //
 // @Failure 404 {object} errors.APIError "Utilisateur non trouvé"
 //
-// @Router /auth/login [get]
-func (ac *authController) Login(ctx *gin.Context) {
+// @Router /auth/callback [get]
+func (ac *authController) Callback(ctx *gin.Context) {
 	codeParam := ctx.Query("code")
 	stateParam := ctx.Query("state")
 
@@ -54,4 +56,24 @@ func (ac *authController) Login(ctx *gin.Context) {
 	// Temporary redirect to Swagger, should be to the frontend !
 	ctx.Redirect(http.StatusFound, "/swagger/index.html")
 
+}
+
+// Login godoc
+//
+// @Summary Login
+// @Description Login utilisateur
+// @Tags login
+// @Accept json
+// @Produce json
+//
+// @Param		login	body		dto.LoginInput	true	"login"
+// @Success		201		{object}	dto.LoginOutput
+//
+// @Failure 404 {object} errors.APIError "Utilisateur non trouvé"
+//
+// @Router /auth/login [post]
+func (ac *authController) Login(ctx *gin.Context) {
+	var loginOutput *dto.LoginOutput
+
+	ctx.JSON(http.StatusCreated, loginOutput)
 }
