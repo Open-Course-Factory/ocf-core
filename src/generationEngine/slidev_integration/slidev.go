@@ -3,12 +3,17 @@ package slidev
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/models"
 	"strings"
+
+	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/util"
 )
 
 type Option string
@@ -98,7 +103,7 @@ func (scg SlidevCourseGenerator) Run(configuration *config.Configuration, course
 	return nil
 }
 
-func (scg SlidevCourseGenerator) CompileResources(c *models.Course, configuration *config.Configuration) error {
+func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
 	outputDir := config.COURSES_OUTPUT_DIR + c.Theme
 	outputFolders := [2]string{"/" + PUBLIC_DIR, "/theme"}
 
@@ -110,14 +115,31 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course, configuratio
 	}
 
 	// Copy Themes
-	// ToDo: from git repository
-	for _, t := range c.GetThemes() {
-		themeSrc := config.THEMES_ROOT + t
-		cptErr := models.CopyDir(themeSrc, outputDir)
-		if cptErr != nil {
-			log.Fatal(cptErr)
-		}
+	fs, errClone := models.GitClone(*c.Owner, c.ThemeGitRepository, c.ThemeGitRepositoryBranch)
+	if errClone != nil {
+		log.Fatal(errClone)
 	}
+
+	markFn := func(path string, entry os.FileInfo, err error) error {
+
+		if !entry.IsDir() {
+			// Create your file
+			//create file locally
+			err := scg.writeFileFromFsToDisk(fs, path, outputDir, entry)
+			if err != nil {
+				return err
+			}
+
+		} else {
+			if _, err := os.Stat(outputDir + path); os.IsNotExist(err) {
+				os.MkdirAll(outputDir+path, 0700) // Create your directory
+			}
+		}
+
+		return nil
+	}
+
+	util.Walk(fs, "/", markFn)
 
 	// Copy global images
 	if _, err := os.Stat(config.IMAGES_ROOT); !os.IsNotExist(err) {
@@ -136,6 +158,42 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course, configuratio
 		}
 	}
 
+	return nil
+}
+
+func (scg SlidevCourseGenerator) writeFileFromFsToDisk(fs billy.Filesystem, path string, outputDir string, entry fs.FileInfo) error {
+	file, errFileOpen := fs.Open(path)
+	if errFileOpen != nil {
+		log.Printf("opening file")
+		return errFileOpen
+	}
+
+	fileContent, errRead := io.ReadAll(file)
+	if errRead != nil {
+		log.Printf("reading file")
+		return errRead
+	}
+
+	var err error
+	if _, err := os.Stat(outputDir); os.IsNotExist(err) {
+		os.MkdirAll(outputDir, 0700)
+	}
+
+	if err != nil {
+		log.Printf("writing file")
+		return err
+	}
+
+	err = os.WriteFile(outputDir+path, fileContent, 0600)
+
+	if err != nil {
+		log.Printf("writing file")
+		return err
+	}
+
+	if strings.Contains(path, "/theme/public/") {
+		os.WriteFile(outputDir+"/"+scg.GetPublicDir()+"/"+entry.Name(), fileContent, 0600)
+	}
 	return nil
 }
 

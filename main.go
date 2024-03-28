@@ -145,17 +145,21 @@ func setupExternalUsersData() {
 func parseFlags() bool {
 
 	const COURSE_FLAG = "c"
-	const GIT_COURSE_REPO_FLAG = "g"
+	const GIT_COURSE_REPO_FLAG = "course-repo"
 	const GIT_COURSE_REPO_BRANCH_FLAG = "course-repo-branch"
 	const THEME_FLAG = "t"
+	const GIT_THEME_REPO_FLAG = "theme-repo"
+	const GIT_THEME_REPO_BRANCH_FLAG = "theme-repo-branch"
 	const TYPE_FLAG = "e"
 	const DRY_RUN_FLAG = "dry-run"
 	const SLIDE_ENGINE_FLAG = "slide-engine"
 
-	courseName := flag.String(COURSE_FLAG, "git", "trigram of the course you need to generate")
-	courseGitRepository := flag.String(GIT_COURSE_REPO_FLAG, "", "ssh git repository")
-	courseBranchGitRepository := flag.String(GIT_COURSE_REPO_BRANCH_FLAG, "main", "ssh git repository branch")
-	courseTheme := flag.String(THEME_FLAG, "sdv", "theme used to generate the .md file in the right location")
+	courseName := flag.String(COURSE_FLAG, "git", "name of the course you need to generate")
+	courseGitRepository := flag.String(GIT_COURSE_REPO_FLAG, "", "git repository")
+	courseBranchGitRepository := flag.String(GIT_COURSE_REPO_BRANCH_FLAG, "main", "ssh git repository branch for course")
+	courseThemeName := flag.String(THEME_FLAG, "sdv", "name of the theme used to generate the website")
+	courseThemeGitRepository := flag.String(GIT_THEME_REPO_FLAG, "", "theme git repository")
+	courseThemeBranchGitRepository := flag.String(GIT_THEME_REPO_BRANCH_FLAG, "main", "ssh git repository branch for theme")
 	courseType := flag.String(TYPE_FLAG, "html", "type generated : html (default) or pdf")
 	config.DRY_RUN = flag.Bool(DRY_RUN_FLAG, false, "if set true, the cli stops before calling slide generator")
 	slideEngine := flag.String(SLIDE_ENGINE_FLAG, "slidev", "slide generator used, marp or slidev (default)")
@@ -178,7 +182,9 @@ func parseFlags() bool {
 	jsonConfigurationFilePath := "./src/configuration/conf.json"
 	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
 
-	course := getCourseFromProgramInputs(courseName, courseGitRepository, courseBranchGitRepository, courseTheme)
+	course := getCourseFromProgramInputs(courseName, courseGitRepository, courseBranchGitRepository)
+
+	setCourseThemeFromProgramInputs(&course, courseThemeName, courseThemeGitRepository, courseThemeBranchGitRepository)
 
 	courseModels.FillCourseModelFromFiles(*courseName, &course)
 
@@ -188,7 +194,7 @@ func parseFlags() bool {
 	}
 	fmt.Println("Markdown file created: " + createdFile)
 
-	errc := generator.SLIDE_ENGINE.CompileResources(&course, &configuration)
+	errc := generator.SLIDE_ENGINE.CompileResources(&course)
 	if errc != nil {
 		log.Fatal(errc)
 	}
@@ -200,7 +206,13 @@ func parseFlags() bool {
 	return true
 }
 
-func getCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string, courseTheme *string) courseModels.Course {
+func setCourseThemeFromProgramInputs(course *courseModels.Course, themeName *string, themeGitRepository *string, themeGitRepositoryBranch *string) {
+	course.Theme = *themeName
+	course.ThemeGitRepository = *themeGitRepository
+	course.ThemeGitRepositoryBranch = *themeGitRepositoryBranch
+}
+
+func getCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) courseModels.Course {
 	isCourseGitRepository := (*courseGitRepository != "")
 
 	// ToDo: Get loggued in User
@@ -223,10 +235,11 @@ func getCourseFromProgramInputs(courseName *string, courseGitRepository *string,
 	jsonCourseFilePath := config.COURSES_ROOT + *courseName + "/course.json"
 	course := courseModels.ReadJsonCourseFile(jsonCourseFilePath)
 
-	if len(*courseTheme) > 0 {
-		course.Theme = *courseTheme
-	}
+	course.Owner = LogguedInUser
+	course.OwnerID = LogguedInUser.Id
 	course.FolderName = *courseName
+	course.GitRepository = *courseGitRepository
+	course.GitRepositoryBranch = *courseGitRepositoryBranchName
 	return course
 }
 

@@ -29,26 +29,30 @@ type CourseMdWriter interface {
 
 type Course struct {
 	entityManagementModels.BaseModel
-	Category           string
-	Name               string
-	FolderName         string
-	Version            string
-	Title              string
-	Subtitle           string
-	Header             string
-	Footer             string
-	Logo               string
-	OwnerID            string
-	Owner              *casdoorsdk.User `json:"owner" gorm:"serializer:json"`
-	Description        string
-	Format             config.Format
-	CourseID_str       string
-	Schedule           string
-	Prelude            string
-	Theme              string
-	URL                string
-	LearningObjectives string     `json:"learning_objectives"`
-	Chapters           []*Chapter `gorm:"many2many:course_chapters;serializer:json" json:"chapters"`
+	Category                 string
+	Name                     string
+	GitRepository            string
+	GitRepositoryBranch      string
+	FolderName               string
+	Version                  string
+	Title                    string
+	Subtitle                 string
+	Header                   string
+	Footer                   string
+	Logo                     string
+	OwnerID                  string
+	Owner                    *casdoorsdk.User `json:"owner" gorm:"serializer:json"`
+	Description              string
+	Format                   config.Format
+	CourseID_str             string
+	Schedule                 string
+	Prelude                  string
+	Theme                    string
+	ThemeGitRepository       string
+	ThemeGitRepositoryBranch string
+	URL                      string
+	LearningObjectives       string     `json:"learning_objectives"`
+	Chapters                 []*Chapter `gorm:"many2many:course_chapters;serializer:json" json:"chapters"`
 }
 
 func (c Course) String() string {

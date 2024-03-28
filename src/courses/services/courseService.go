@@ -71,7 +71,7 @@ func (c courseService) GenerateCourse(courseName string, courseTheme string, for
 	}
 	fmt.Println("Markdown file created: " + createdFile)
 
-	errc := generator.SLIDE_ENGINE.CompileResources(course, &configuration)
+	errc := generator.SLIDE_ENGINE.CompileResources(course)
 	if errc != nil {
 		log.Println(errc.Error())
 	}

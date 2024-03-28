@@ -114,7 +114,7 @@ func (mcg MarpCourseGenerator) Run(configuration *config.Configuration, course *
 	return nil
 }
 
-func (mcg MarpCourseGenerator) CompileResources(c *models.Course, configuration *config.Configuration) error {
+func (mcg MarpCourseGenerator) CompileResources(c *models.Course) error {
 	outputDir := config.COURSES_OUTPUT_DIR + c.Theme
 	outputFolders := [2]string{"images", "theme"}
 

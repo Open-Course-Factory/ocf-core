@@ -240,3 +240,18 @@ func prepareGitCloneOptions(user casdoorsdk.User, courseURL string, branchName .
 	}
 	return gitCloneOption, nil
 }
+
+func GetRepoNameFromURL(url string) string {
+	// Trim the suffix ".git" if present
+	cleanURL := strings.TrimSuffix(url, ".git")
+
+	// Find the last index of "/" which precedes the repository name
+	lastSlashIndex := strings.LastIndex(cleanURL, "/")
+	if lastSlashIndex == -1 {
+		return "" // Return an empty string if "/" is not found
+	}
+
+	// Extract the repository name using the last slash index
+	repoName := cleanURL[lastSlashIndex+1:]
+	return repoName
+}
