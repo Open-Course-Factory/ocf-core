@@ -25,6 +25,7 @@ import (
 	authController "soli/formations/src/auth"
 	authDto "soli/formations/src/auth/dto"
 	authModels "soli/formations/src/auth/models"
+	sshKeyController "soli/formations/src/auth/routes/sessionRoutes"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
@@ -41,10 +42,12 @@ import (
 // @version 0.0.1
 // @description This is a server to build and generate slides.
 // @termsOfService TODO
+
 // @securityDefinitions.apikey Bearer
 // @in header
 // @name Authorization
 // @description Type "Bearer" followed by a space and JWT token.
+
 // @contact.name Solution Libre
 // @contact.url https://www.solution-libre.fr
 // @contact.email contact@solution-libre.fr
@@ -78,6 +81,7 @@ func main() {
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sessionController.SessionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	sshKeyController.SshKeysRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 
