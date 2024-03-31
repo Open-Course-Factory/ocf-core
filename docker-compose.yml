@@ -10,6 +10,8 @@ services:
       - 80:8000
     depends_on:
       - casdoor
+    networks:
+      - devcontainer-network
       
   casdoor:
     restart: always
@@ -27,6 +29,8 @@ services:
       RUNNING_IN_DOCKER: "true"
     volumes:
       - ./src/configuration/casdoor_app.conf:/conf/app.conf
+    networks:
+      - devcontainer-network
   casdoor_db:
     restart: always
     image: mysql:8.0.25
@@ -37,3 +41,8 @@ services:
       MYSQL_ROOT_PASSWORD: 123456
     volumes:
       - /usr/local/docker/mysql:/var/lib/mysql
+    networks:
+      - devcontainer-network
+
+networks:
+  devcontainer-network:
