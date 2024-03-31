@@ -32,6 +32,7 @@
 
 	// Uncomment the next line to run commands after the container is created.
 	// "postCreateCommand": "cat /etc/os-release",
+	"postCreateCommand": "echo \"source /usr/share/bash-completion/completions/git\" >> ~/.bashrc",
 
 	"mounts": [
 	  "type=bind,source=/home/${localEnv:USER}/.ssh,target=/home/ocf/.ssh,readonly"
