@@ -10,6 +10,8 @@
 		"docker-compose.yml"
 	],
 
+	
+
 	// The 'service' property is the name of the service for the container that VS Code should
 	// use. Update this value and .devcontainer/docker-compose.yml to the real service name.
 	"service": "ocf-core",
@@ -37,7 +39,7 @@
 	"mounts": [
 	  "type=bind,source=/home/${localEnv:USER}/.ssh,target=/home/ocf/.ssh,readonly"
 	],
-
+	
 	// Configure tool-specific properties.
 	"customizations": {
 		// Configure properties specific to VS Code.
@@ -59,12 +61,11 @@
 	},
 	"features": {
 		"ghcr.io/devcontainers/features/git:1": {},
-		"ghcr.io/devcontainers/features/go:1": {},
 		"ghcr.io/warrenbuckley/codespace-features/sqlite:1": {},
 		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
 		"ghcr.io/devcontainers/features/sshd:1": {}
-	}
+	},
 
 	// Uncomment to connect as an existing user other than the container default. More info: https://aka.ms/dev-containers-non-root.
-	// "remoteUser": "devcontainer"
+	"remoteUser": "ocf"
 }

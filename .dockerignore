@@ -3,3 +3,4 @@ docs/
 dist/
 *.db
 node_modules
+courses/

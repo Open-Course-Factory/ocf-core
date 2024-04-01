@@ -1,30 +1,13 @@
-# Base Golang Image
-FROM golang:latest as builder
-
-# Setup working directory
-WORKDIR /usr/src/ocf-core
-
-# Copy source code to
-COPY . /usr/src/ocf-core
-
-# Install Go Library & Swagger
-RUN cd /usr/src/ocf-core && go get golang.org/x/text/transform \
-    && go get golang.org/x/text/unicode/norm \
-    && go install github.com/swaggo/swag/cmd/swag@v1.8.12
-
-RUN go mod tidy
-
-# Init Swagger
-RUN cd /usr/src/ocf-core && swag init --parseDependency --parseInternal
-
-FROM debian:latest
+FROM golang:latest
 
 RUN apt-get update
 
 # Install NodeJS
-RUN apt-get install -y ca-certificates curl gnupg \
+RUN apt-get install -y ca-certificates curl gnupg vim \
  && mkdir -p /etc/apt/keyrings \
  && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+
+RUN export EDITOR=vim
 
 RUN NODE_MAJOR=21 \
  && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
@@ -41,5 +24,13 @@ RUN npm install -g @marp-team/marp-core \
 RUN useradd -ms /bin/bash ocf
 
 USER ocf
-WORKDIR /home/ocf
+WORKDIR /workspaces/ocf-core
+
+RUN go install -v github.com/swaggo/swag/cmd/swag@v1.8.12
+RUN go install -v github.com/go-delve/delve/cmd/dlv@latest 
+RUN go install -v golang.org/x/tools/gopls@latest
+
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
 
