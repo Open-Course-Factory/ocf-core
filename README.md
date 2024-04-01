@@ -32,7 +32,7 @@ It will be automatically loaded by the project.
 
 ### Start the server
 
-Without arguments, the program starts a web server which is mainly an API.
+Without arguments, the program starts a web server which is an API.
 
 ```shell
 go run main.go
@@ -60,14 +60,115 @@ Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-
 With the default debug configuration, a Swagger documentation is available at:
 
 ```shell
-http://localhost:8000/swagger/index.html
+http://localhost:8080/swagger/index.html
 ```
 
 ### Permissions
 
 Permission system is something we currently work on with Casdoor. It is not finished yet. This is not ready for production.
 
-## I want to generate the slides manually
+## Slidev - Setup
+
+### Settings
+
+The underlying technology used to generate courses is [Slidev](https://github.com/slidevjs/slidev). It is not expected to use it directly, OCF will do it for you.
+
+### Themes
+
+Then the most important file is probably the theme. 
+
+It is possible to inherit from them by specifying an `extends.json` file in the theme folder that contains reference to the parent theme such as:
+
+```json
+{
+    "theme": "parent_theme"
+}
+```
+
+The theme should be in a separate git repository. [Example](https://usine.solution-libre.fr/open-course-factory/ocf-slidev-theme-sdv) ⚠ not public yet !
+
+## Global Pre-requisites
+
+If you work with docker and dev containers, you can skip this part and just use the dev container.
+
+The golang program needs external libraries to work, they can be installed with:
+
+```shell
+go get golang.org/x/text/transform
+go get golang.org/x/text/unicode/norm
+```
+
+The API uses Swagger for its documentation.
+
+To be sure everything works fine, be sure that your **GOPATH** variable is setted and exported. Then, be sure its **bin** directory is part of your **$PATH** For example, if you installed Goglang in your user home:
+
+```shell
+export GOPATH=$HOME/go
+export PATH=$PATH:$GOPATH/bin
+```
+
+You need to install it either using the go install mechanism or using the last release available in the [github repo](https://github.com/swaggo/swag/releases):
+
+```shell
+go get github.com/swaggo/swag
+go install github.com/swaggo/swag/cmd/swag@latest
+```
+
+and then:
+
+```shell
+swag init --parseDependency --parseInternal
+```
+
+## Generate (regenerate) API documentation
+
+To regenerate Swagger documentation if needed:
+
+```shell
+swag init --parseDependency --parseInternal
+```
+
+## Slidev handling
+
+### Slidev outside OCF
+
+You are not supposed to manipulate slidev directly. However, for debug pupose, it can be interesting to understand the underlying calls to slidev.
+
+When you lauch course generation either with API or CLI, it downloads the course files, downloads the theme files and then generate the website.
+
+The command that exports the course in PDF format is:
+
+```shell
+docker run --name slidev_export --rm -dit     -v ${PWD}:/slidev     -p 3031:3030     -e NPM_MIRROR="https://registry.npmmirror.com"     tangramor/slidev:playwright
+```
+
+To install playwright inside, you may need to do that: 
+
+```shell
+docker exec -i slidev_export npx playwright install
+```
+
+To build the SPA (made automatically by OCF) :
+
+```shell
+docker exec -i slidev_export npx slidev build
+```
+
+Run a container embedding the SPA : 
+
+```shell
+docker run -d --name myslides --rm -p 3030:80 -v ${PWD}/dist:/usr/share/nginx/html nginx:alpine
+```
+
+### Slidev inside OCF
+
+For generation purpose, we had to create a specific slidev image that embeds ocf source code after downloading course & theme. This image should be generated before installing and using OCF.
+
+```shell
+docker build -f Dockerfile.slidev -t ocf_slidev .
+```
+
+## (DEPRECATED - MARP) I want to generate the slides manually
 
 ### Settings
 
@@ -135,7 +236,7 @@ To enter in the container:
 docker run -it --rm --entrypoint sh -v $PWD:/home/marp/app/ marpteam/marp-cli
 ```
 
-## How to build the slides? (the whole section is deprecated, being replaced step by step with the API)
+## (DEPRECATED - MARP) How to build the slides?
 
 ### Main.go
 
