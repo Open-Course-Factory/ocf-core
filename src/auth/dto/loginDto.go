@@ -1,9 +1,9 @@
 package dto
 
 type LoginOutput struct {
-	Email            string
-	AccessToken      string
-	RenewAccessToken string
+	UserName         string `json:"user_name"`
+	AccessToken      string `json:"access_token"`
+	RenewAccessToken string `json:"renew_access_token"`
 }
 
 type LoginInput struct {

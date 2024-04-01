@@ -46,12 +46,13 @@ func SetupGroups() {
 }
 
 func SetupRoles() {
-	roles = append(roles, casdoorsdk.Role{Owner: "sdv", Name: "student", DisplayName: "Etudiants", IsEnabled: true,
-		Users: []string{"1_st, 2_st, 3_st, 4_st"}})
-	roles = append(roles, casdoorsdk.Role{Owner: "sdv", Name: "supervisor", DisplayName: "Responsables", IsEnabled: true,
-		Users: []string{"1_sup, 2_sup"}})
-	roles = append(roles, casdoorsdk.Role{Owner: "sdv", Name: "administrator", DisplayName: "Administrateurs", IsEnabled: true,
-		Users: []string{"1_sup"}})
+	orgName := "sdv"
+	roles = append(roles, casdoorsdk.Role{Owner: orgName, Name: "student", DisplayName: "Etudiants", IsEnabled: true,
+		Users: []string{orgName + "/1_st", orgName + "/2_st", orgName + "/3_st", orgName + "/4_st"}})
+	roles = append(roles, casdoorsdk.Role{Owner: orgName, Name: "supervisor", DisplayName: "Responsables", IsEnabled: true,
+		Users: []string{orgName + "/1_sup", orgName + "/2_sup"}})
+	roles = append(roles, casdoorsdk.Role{Owner: orgName, Name: "administrator", DisplayName: "Administrateurs", IsEnabled: true,
+		Users: []string{orgName + "/1_sup"}})
 
 	for _, role := range roles {
 		_, err := casdoorsdk.AddRole(&role)
