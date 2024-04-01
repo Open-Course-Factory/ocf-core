@@ -11,18 +11,21 @@ import (
 
 // Add SshKey godoc
 //
-//	@Summary		Création sshKey
-//	@Description	Ajoute une nouvelle sshKey dans la base de données
-//	@Tags			sshKeys
-//	@Accept			json
-//	@Produce		json
-//	@Param			sshKey	body		dto.CreateSshKeyInput	true	"sshKey"
-//	@Success		201		{object}	dto.CreateSshKeyOutput
+// @Summary		Création sshKey
+// @Description	Ajoute une nouvelle sshKey dans la base de données
+// @Tags		sshKeys
+// @Accept		json
+// @Produce		json
+// @Param		sshKey	body		dto.CreateSshKeyInput	true	"sshKey"
 //
-//	@Failure		400		{object}	errors.APIError	"Impossible de parser le json"
-//	@Failure		400		{object}	errors.APIError	"Impossible de créer une sshKey"
-//	@Failure		409		{object}	errors.APIError	"La sshKey existe déjà"
-//	@Router			/sshkeys [post]
+// @Security Bearer
+//
+// @Success		201		{object}	dto.CreateSshKeyOutput
+//
+// @Failure		400		{object}	errors.APIError	"Impossible de parser le json"
+// @Failure		400		{object}	errors.APIError	"Impossible de créer une sshKey"
+// @Failure		409		{object}	errors.APIError	"La sshKey existe déjà"
+// @Router			/sshkeys [post]
 func (s sshKeyController) AddSshKey(ctx *gin.Context) {
 	sshKeyCreateDTO := dto.CreateSshKeyInput{}
 

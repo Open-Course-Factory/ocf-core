@@ -11,18 +11,21 @@ import (
 
 // Add Session godoc
 //
-//	@Summary		Création session
-//	@Description	Ajoute une nouvelle session dans la base de données
-//	@Tags			sessions
-//	@Accept			json
-//	@Produce		json
-//	@Param			session	body		dto.CreateSessionInput	true	"session"
-//	@Success		201		{object}	dto.CreateSessionOutput
+// @Summary		Création session
+// @Description	Ajoute une nouvelle session dans la base de données
+// @Tags			sessions
+// @Accept			json
+// @Produce		json
+// @Param			session	body		dto.CreateSessionInput	true	"session"
 //
-//	@Failure		400		{object}	errors.APIError	"Impossible de parser le json"
-//	@Failure		400		{object}	errors.APIError	"Impossible de créer une session"
-//	@Failure		409		{object}	errors.APIError	"La session existe déjà"
-//	@Router			/sessions [post]
+// @Security Bearer
+//
+// @Success		201		{object}	dto.CreateSessionOutput
+//
+// @Failure		400		{object}	errors.APIError	"Impossible de parser le json"
+// @Failure		400		{object}	errors.APIError	"Impossible de créer une session"
+// @Failure		409		{object}	errors.APIError	"La session existe déjà"
+// @Router			/sessions [post]
 func (s sessionController) AddSession(ctx *gin.Context) {
 	sessionCreateDTO := dto.CreateSessionInput{}
 

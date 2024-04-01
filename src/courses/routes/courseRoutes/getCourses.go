@@ -16,7 +16,7 @@ import (
 // @Accept json
 // @Produce json
 //
-// @Param Authorization header string true "Insert your access token" default(bearer <Add access token here>)
+// @Security Bearer
 //
 // @Success 200 {object} []dto.CourseOutput
 //

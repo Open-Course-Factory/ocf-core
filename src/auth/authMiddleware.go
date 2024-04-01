@@ -15,30 +15,18 @@ type AuthMiddleware struct {
 
 func (am AuthMiddleware) AuthManagement() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		token := ctx.Request.Header.Get("Authorization")
-
-		fmt.Println(ctx.HandlerName())
-
-		claims, err := casdoorsdk.ParseJwtToken(token)
-
-		userName := fmt.Sprintf("%s/%s", claims.Owner, claims.Name)
+		userName, err := getUserNameFromToken(ctx)
 
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
 				ErrorMessage: err.Error(),
 			})
 			ctx.Abort()
-		}
-
-		if claims.Name != "" {
-			fmt.Println("Accessing as " + userName)
-		} else {
-			fmt.Println("User not found")
+			return
 		}
 
 		var userRoles []*casdoorsdk.Role
-
 		roles, err := casdoorsdk.GetRoles()
 
 		if err != nil {
@@ -47,6 +35,7 @@ func (am AuthMiddleware) AuthManagement() gin.HandlerFunc {
 				ErrorMessage: err.Error(),
 			})
 			ctx.Abort()
+			return
 		}
 
 		for _, role := range roles {
@@ -58,6 +47,7 @@ func (am AuthMiddleware) AuthManagement() gin.HandlerFunc {
 			}
 		}
 
+		// ToDo: refactoring
 		var isAdmin bool
 		var ocfRoles []*models.Role
 		for _, role := range userRoles {
@@ -87,7 +77,21 @@ func (am AuthMiddleware) AuthManagement() gin.HandlerFunc {
 				ErrorMessage: "Unauthorized",
 			})
 			ctx.Abort()
+			return
 		}
 
 	}
+}
+
+func getUserNameFromToken(ctx *gin.Context) (string, error) {
+	token := ctx.Request.Header.Get("Authorization")
+
+	claims, err := casdoorsdk.ParseJwtToken(token)
+
+	if err != nil {
+		return "", err
+	}
+
+	userName := fmt.Sprintf("%s/%s", claims.Owner, claims.Name)
+	return userName, nil
 }

@@ -10,20 +10,21 @@ import (
 
 // Delete course godoc
 //
-//	@Summary		Suppression cours
-//	@Description	Suppression d'un cours dans la base de données
-//	@Tags			courses
-//	@Accept			json
-//	@Produce		json
-//	@Param			id	path		string	true	"ID cours"
-//	@Param Authorization header string true "Insert your access token" default(bearer <Add access token here>)
+// @Summary		Suppression cours
+// @Description	Suppression d'un cours dans la base de données
+// @Tags			courses
+// @Accept			json
+// @Produce		json
+// @Param			id	path		string	true	"ID cours"
 //
-//	@Success		204	{object}	string
+// @Security Bearer
 //
-//	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
-//	@Failure		404	{object}	errors.APIError	"Cours non trouvé - Impossible de le supprimer "
+// @Success		204	{object}	string
 //
-//	@Router			/courses/{id} [delete]
+// @Failure		400	{object}	errors.APIError	"Impossible de parser le json"
+// @Failure		404	{object}	errors.APIError	"Cours non trouvé - Impossible de le supprimer "
+//
+// @Router			/courses/{id} [delete]
 func (c courseController) DeleteCourse(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 

@@ -18,6 +18,7 @@ func SshKeysRoutes(router *gin.RouterGroup, config *config.Configuration, db *go
 	middleware := &auth.AuthMiddleware{}
 
 	routes.GET("/", middleware.AuthManagement(), sshKeyController.GetSshKeys)
+	routes.POST("/", middleware.AuthManagement(), sshKeyController.AddSshKey)
 
 	routes.DELETE("/:id", middleware.AuthManagement(), sshKeyController.DeleteSshKey)
 }
