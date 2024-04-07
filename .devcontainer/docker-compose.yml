@@ -21,5 +21,6 @@ services:
     #   - seccomp:unconfined
 
     # Overrides default command so things don't shut down after the process ends.
+    entrypoint: /usr/local/share/docker-init.sh
     command: /bin/sh -c "while sleep 1000; do :; done"
  

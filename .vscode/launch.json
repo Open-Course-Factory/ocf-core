@@ -30,11 +30,12 @@
             "mode": "auto",
             "program": "main.go",
             "args": ["-c", "golang", 
-                     "-course-repo", "git@gitlab.com:open-course-factory/ocf-course-golang-beginner.git", 
+                     "--course-repo", "git@usine.solution-libre.fr:open-course-factory/ocf-course-golang-beginner.git", 
                      "-t", "sdv",
                      "--theme-repo", "git@usine.solution-libre.fr:open-course-factory/ocf-slidev-theme-sdv.git",
                      "-e", "html", 
-                     "--course-repo-branch", "slidev-migration"],
+                     "--course-repo-branch", "slidev-migration"
+                    ],
             "env": {}
         }
     ]

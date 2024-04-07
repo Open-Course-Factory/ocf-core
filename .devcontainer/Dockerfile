@@ -21,9 +21,16 @@ RUN npm install -g @marp-team/marp-core \
     && npm install -g markdown-it-container \
     && npm install -g markdown-it-attrs
 
+RUN apt-get install sudo -y
+
 RUN useradd -ms /bin/bash ocf
 
+RUN usermod -aG sudo ocf
+
+RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
 USER ocf
+
 WORKDIR /workspaces/ocf-core
 
 RUN go install -v github.com/swaggo/swag/cmd/swag@v1.8.12
