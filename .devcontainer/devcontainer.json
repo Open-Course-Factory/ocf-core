@@ -61,7 +61,7 @@
 	"features": {
 		"ghcr.io/devcontainers/features/git:1": {},
 		"ghcr.io/warrenbuckley/codespace-features/sqlite:1": {},
-		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+		"ghcr.io/devcontainers/features/docker-in-docker:1": {},
 		"ghcr.io/devcontainers/features/sshd:1": {},
 		"ghcr.io/devcontainers-contrib/features/vue-cli": {}
 	}
