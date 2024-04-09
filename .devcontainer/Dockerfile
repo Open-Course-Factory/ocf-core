@@ -29,6 +29,12 @@ RUN usermod -aG sudo ocf
 
 RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
+SHELL ["/bin/bash", "-c"] 
+
+RUN apt-get install bash-completion \
+    && curl https://raw.githubusercontent.com/docker/docker-ce/master/components/cli/contrib/completion/bash/docker -o /etc/bash_completion.d/docker.sh \
+    && source /etc/bash_completion
+
 USER ocf
 
 WORKDIR /workspaces/ocf-core
