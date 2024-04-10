@@ -4,8 +4,6 @@
     // Pour plus d'informations, visitez : https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
-    
         {
             "name": "Launch API",
             "type": "go",
@@ -20,7 +18,15 @@
             "request": "launch",
             "mode": "auto",
             "program": "main.go",
-            "args": ["-c", "golang", "-t", "sdv", "-e", "html", "--dry-run"],
+            "args": [
+                "-c",
+                "golang",
+                "-t",
+                "sdv",
+                "-e",
+                "html",
+                "--dry-run"
+            ],
             "env": {}
         },
         {
@@ -29,13 +35,20 @@
             "request": "launch",
             "mode": "auto",
             "program": "main.go",
-            "args": ["-c", "golang", 
-                     "--course-repo", "git@usine.solution-libre.fr:open-course-factory/ocf-course-golang-beginner.git", 
-                     "-t", "sdv",
-                     "--theme-repo", "git@usine.solution-libre.fr:open-course-factory/ocf-slidev-theme-sdv.git",
-                     "-e", "html", 
-                     "--course-repo-branch", "slidev-migration"
-                    ],
+            "args": [
+                "-c",
+                "golang",
+                "--course-repo",
+                "git@usine.solution-libre.fr:open-course-factory/ocf-course-golang-beginner.git",
+                "-t",
+                "sdv",
+                "--theme-repo",
+                "git@usine.solution-libre.fr:open-course-factory/ocf-slidev-theme-sdv.git",
+                "-e",
+                "html",
+                "--course-repo-branch",
+                "short-course"
+            ],
             "env": {}
         }
     ]
