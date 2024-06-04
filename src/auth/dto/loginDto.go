@@ -1,9 +1,10 @@
 package dto
 
 type LoginOutput struct {
-	UserName         string `json:"user_name"`
-	AccessToken      string `json:"access_token"`
-	RenewAccessToken string `json:"renew_access_token"`
+	UserName         string   `json:"user_name"`
+	AccessToken      string   `json:"access_token"`
+	RenewAccessToken string   `json:"renew_access_token"`
+	UserRoles        []string `json:"user_roles"`
 }
 
 type LoginInput struct {
