@@ -32,7 +32,7 @@ func (c courseController) AddCourse(ctx *gin.Context) {
 	if bindError != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de parser le json",
+			ErrorMessage: bindError.Error(),
 		})
 		return
 	}

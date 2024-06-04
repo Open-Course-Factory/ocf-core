@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/dto"
+	"soli/formations/src/courses/errors"
 	"soli/formations/src/courses/models"
 	repositories "soli/formations/src/courses/repositories"
 	generator "soli/formations/src/generationEngine"
@@ -89,6 +91,10 @@ func (c courseService) CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto
 	user, err := casdoorsdk.GetUserByEmail(courseCreateDTO.AuthorEmail)
 	if err != nil {
 		return nil, err
+	}
+
+	if user == nil {
+		return nil, &errors.APIError{ErrorCode: http.StatusNotFound, ErrorMessage: "user provided not found"}
 	}
 
 	course, errCourse := c.GetSpecificCourseByUser(*user, courseCreateDTO.Name)
