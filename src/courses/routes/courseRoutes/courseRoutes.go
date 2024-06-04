@@ -19,6 +19,7 @@ func CoursesRoutes(router *gin.RouterGroup, config *config.Configuration, db *go
 
 	routes.GET("/", middleware.AuthManagement(), courseController.GetCourses)
 
+	routes.POST("/", middleware.AuthManagement(), courseController.AddCourse)
 	routes.POST("/generate", middleware.AuthManagement(), courseController.GenerateCourse)
 	routes.POST("/git", middleware.AuthManagement(), courseController.CreateCourseFromGit)
 

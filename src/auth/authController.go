@@ -160,9 +160,20 @@ func (ac *authController) Login(ctx *gin.Context) {
 		return
 	}
 
-	loginOutputDto := &dto.LoginOutput{UserName: user.Name, AccessToken: response.AccessToken, RenewAccessToken: response.RefreshToken}
+	roles := getUserRoles(user)
+
+	loginOutputDto := &dto.LoginOutput{UserName: user.Name, AccessToken: response.AccessToken, RenewAccessToken: response.RefreshToken, UserRoles: roles}
 
 	fmt.Println("Login successful.\nYou are connected as: " + loginOutputDto.UserName)
 
 	ctx.JSON(http.StatusCreated, loginOutputDto)
+}
+
+func getUserRoles(user *casdoorsdk.User) []string {
+	var roles []string
+
+	for _, role := range user.Roles {
+		roles = append(roles, role.Name)
+	}
+	return roles
 }
