@@ -52,7 +52,7 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 		Footer:             coursedto.Footer,
 		Logo:               coursedto.Logo,
 		Description:        coursedto.Description,
-		Format:             config.Format(coursedto.Format),
+		Format:             config.Format(*coursedto.Format),
 		CourseID_str:       coursedto.CourseID_str,
 		Schedule:           coursedto.Schedule,
 		Prelude:            coursedto.Prelude,
