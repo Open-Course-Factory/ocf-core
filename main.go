@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	cors "github.com/rs/cors/wrapper/gin"
 
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -19,7 +20,6 @@ import (
 	generator "soli/formations/src/generationEngine"
 	marp "soli/formations/src/generationEngine/marp_integration"
 	slidev "soli/formations/src/generationEngine/slidev_integration"
-	"soli/formations/src/middleware"
 	testtools "soli/formations/src/testTools"
 
 	authController "soli/formations/src/auth"
@@ -73,7 +73,15 @@ func main() {
 	}
 
 	r := gin.Default()
-	r.Use(middleware.CORS())
+	// r.Use(middleware.CORS())
+	r.Use(cors.New(cors.Options{
+		AllowedOrigins:     []string{"*"},
+		AllowCredentials:   true,
+		Debug:              true,
+		AllowedMethods:     []string{"GET", "POST", "OPTIONS", "DELETE"},
+		AllowedHeaders:     []string{"*"},
+		OptionsPassthrough: true,
+	}))
 
 	apiGroup := r.Group("/api/v1")
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)

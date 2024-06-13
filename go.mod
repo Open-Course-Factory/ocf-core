@@ -49,6 +49,8 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.0 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/rs/cors v1.10.1 // indirect
+	github.com/rs/cors/wrapper/gin v0.0.0-20240228164225-8d33ca4794ea // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
 	github.com/skeema/knownhosts v1.2.2 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect

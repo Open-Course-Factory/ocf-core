@@ -162,7 +162,7 @@ func (ac *authController) Login(ctx *gin.Context) {
 
 	roles := getUserRoles(user)
 
-	loginOutputDto := &dto.LoginOutput{UserName: user.Name, AccessToken: response.AccessToken, RenewAccessToken: response.RefreshToken, UserRoles: roles}
+	loginOutputDto := &dto.LoginOutput{UserName: user.Name, UserId: user.Id, AccessToken: response.AccessToken, RenewAccessToken: response.RefreshToken, UserRoles: roles}
 
 	fmt.Println("Login successful.\nYou are connected as: " + loginOutputDto.UserName)
 
