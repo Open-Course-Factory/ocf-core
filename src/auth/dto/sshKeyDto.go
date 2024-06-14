@@ -20,6 +20,11 @@ type CreateSshKeyInput struct {
 	UserId     uuid.UUID `binding:"required"`
 }
 
+type PatchSshKeyName struct {
+	KeyName string    `binding:"required"`
+	Id      uuid.UUID `binding:"required"`
+}
+
 type CreateSshKeyOutput struct {
 	Id         uuid.UUID
 	KeyName    string
@@ -28,7 +33,7 @@ type CreateSshKeyOutput struct {
 }
 
 type DeleteSshKeyInput struct {
-	Id uuid.UUID
+	Id uuid.UUID `binding:"required"`
 }
 
 func SshKeyModelToSshKeyOutput(sshKeyModel models.SshKey) *SshKeyOutput {

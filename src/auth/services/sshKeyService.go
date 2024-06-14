@@ -11,6 +11,7 @@ import (
 type SshKeyService interface {
 	AddUserSshKey(sshKeyCreateDTO dto.CreateSshKeyInput) (*dto.SshKeyOutput, error)
 	GetKeysByUserId(id string) (*[]dto.SshKeyOutput, error)
+	PatchSshKeyName(id string, newName string) (*dto.SshKeyOutput, error)
 	GetAllKeys() (*[]dto.SshKeyOutput, error)
 	DeleteKey(id string) error
 }
@@ -58,6 +59,29 @@ func (sks *sshKeyService) GetKeysByUserId(id string) (*[]dto.SshKeyOutput, error
 	}
 
 	return &results, nil
+}
+
+func (sks *sshKeyService) PatchSshKeyName(id string, newName string) (*dto.SshKeyOutput, error) {
+	uuidID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := sks.repository.PatchSshKeyName(uuidID, newName); err != nil {
+		return nil, err
+	}
+
+	sshKey, err := sks.repository.GetSshKey(uuidID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dto.SshKeyOutput{
+		Id:         sshKey.ID,
+		KeyName:    sshKey.KeyName,
+		PrivateKey: sshKey.PrivateKey,
+		CreatedAt:  sshKey.CreatedAt,
+	}, nil
 }
 
 func (sks *sshKeyService) GetAllKeys() (*[]dto.SshKeyOutput, error) {

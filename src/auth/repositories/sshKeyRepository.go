@@ -13,6 +13,7 @@ type SshKeyRepository interface {
 	GetAllSshKeys() (*[]models.SshKey, error)
 	GetSshKey(id uuid.UUID) (*models.SshKey, error)
 	GetSshKeysByUserId(id uuid.UUID) (*[]models.SshKey, error)
+	PatchSshKeyName(id uuid.UUID, newName string) error
 	DeleteSshKey(id uuid.UUID) error
 }
 
@@ -72,6 +73,16 @@ func (r sshKeyRepository) GetSshKey(id uuid.UUID) (*models.SshKey, error) {
 	}
 
 	return &sshKey, nil
+}
+
+// ToDo: "KeyName" should not be hard coded
+
+func (r sshKeyRepository) PatchSshKeyName(id uuid.UUID, newName string) error {
+	result := r.db.Model(id).Update("KeyName", newName)
+	if result.Error != nil {
+		return result.Error
+	}
+	return nil
 }
 
 func (r sshKeyRepository) DeleteSshKey(id uuid.UUID) error {
