@@ -6,14 +6,30 @@ import (
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/auth/models"
 
+	gormadapter "github.com/casbin/gorm-adapter/v3"
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
-type AuthMiddleware struct {
+type AuthMiddleware interface {
+	AuthManagement() gin.HandlerFunc
 }
 
-func (am AuthMiddleware) AuthManagement() gin.HandlerFunc {
+type authMiddleware struct {
+	adapter *gormadapter.Adapter
+}
+
+func NewAuthMiddleware(db *gorm.DB) AuthMiddleware {
+	mAdapter, err := gormadapter.NewAdapterByDB(db)
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize casbin adapter: %v", err))
+	}
+
+	return &authMiddleware{adapter: mAdapter}
+}
+
+func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		userName, err := getUserNameFromToken(ctx)
 

@@ -15,10 +15,10 @@ func SshKeysRoutes(router *gin.RouterGroup, config *config.Configuration, db *go
 
 	routes := router.Group("/sshkeys")
 
-	middleware := &auth.AuthMiddleware{}
+	middleware := auth.NewAuthMiddleware(db)
 
 	routes.GET("", middleware.AuthManagement(), sshKeyController.GetSshKeys)
 	routes.POST("", middleware.AuthManagement(), sshKeyController.AddSshKey)
-	routes.PATCH("/:id", middleware.AuthManagement(), sshKeyController.PatchSshKeyName)
+	//routes.PATCH("/:id", middleware.AuthManagement(), sshKeyController.PatchSshKeyName)
 	routes.DELETE("/:id", middleware.AuthManagement(), sshKeyController.DeleteSshKey)
 }

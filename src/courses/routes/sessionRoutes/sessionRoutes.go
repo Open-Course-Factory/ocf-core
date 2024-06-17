@@ -15,7 +15,7 @@ func SessionsRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	routes := router.Group("/sessions")
 
-	middleware := &auth.AuthMiddleware{}
+	middleware := auth.NewAuthMiddleware(db)
 
 	routes.GET("/", middleware.AuthManagement(), sessionController.GetSessions)
 
