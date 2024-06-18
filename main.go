@@ -66,6 +66,8 @@ func main() {
 
 	sqldb.DB.AutoMigrate(&authModels.SshKey{})
 
+	authController.InitCasdoorEnforcer(sqldb.DB)
+
 	initDB()
 
 	if parseFlags() {
