@@ -23,6 +23,7 @@ import (
 	testtools "soli/formations/src/testTools"
 
 	authController "soli/formations/src/auth"
+	"soli/formations/src/auth/casdoor"
 	authModels "soli/formations/src/auth/models"
 	sshKeyController "soli/formations/src/auth/routes/sessionRoutes"
 	courseModels "soli/formations/src/courses/models"
@@ -53,7 +54,7 @@ import (
 // @BasePath /api/v1
 func main() {
 
-	authController.InitCasdoorConnection()
+	casdoor.InitCasdoorConnection()
 
 	sqldb.InitDBConnection()
 
@@ -66,7 +67,7 @@ func main() {
 
 	sqldb.DB.AutoMigrate(&authModels.SshKey{})
 
-	authController.InitCasdoorEnforcer(sqldb.DB)
+	casdoor.InitCasdoorEnforcer(sqldb.DB)
 
 	initDB()
 

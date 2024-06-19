@@ -2,6 +2,7 @@ package authController
 
 import (
 	_ "embed"
+	"soli/formations/src/auth/casdoor"
 	testtools "soli/formations/src/testTools"
 
 	"log"
@@ -10,7 +11,7 @@ import (
 
 func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 	log.Println("setup test")
-	InitCasdoorConnection()
+	casdoor.InitCasdoorConnection()
 
 	testtools.DeleteAllObjects()
 	testtools.SetupUsers()

@@ -2,7 +2,7 @@ package testtools
 
 import (
 	"fmt"
-	authController "soli/formations/src/auth"
+	"soli/formations/src/auth/casdoor"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
@@ -51,7 +51,7 @@ func SetupRoles() {
 	roleStudent := casdoorsdk.Role{Owner: orgName, Name: "student", DisplayName: "Etudiants", IsEnabled: true,
 		Users: []string{orgName + "/1_st", orgName + "/2_st", orgName + "/3_st", orgName + "/4_st"}}
 
-	authController.Enforcer.AddGroupingPolicy(roleStudent, "/courses/", "GET")
+	casdoor.Enforcer.AddGroupingPolicy(roleStudent, "/courses/", "GET")
 
 	roles = append(roles, roleStudent)
 	roles = append(roles, casdoorsdk.Role{Owner: orgName, Name: "supervisor", DisplayName: "Responsables", IsEnabled: true,
@@ -71,7 +71,7 @@ func SetupUsers() {
 	user1 := casdoorsdk.User{Name: "1_st", DisplayName: "1 Student", Email: "1.student@test.com", Password: "test",
 		LastName: "Student", FirstName: "1", SignupApplication: "ocf"}
 
-	authController.Enforcer.AddPolicy(user1, "/users/"+user1.Id, "(GET)|(POST)|(DELETE)")
+	casdoor.Enforcer.AddPolicy(user1, "/users/"+user1.Id, "(GET)|(POST)|(DELETE)")
 
 	users = append(users, user1)
 	users = append(users, casdoorsdk.User{Name: "2_st", DisplayName: "2 Student", Email: "2.student@test.com", Password: "test",

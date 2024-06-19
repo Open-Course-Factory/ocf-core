@@ -1,4 +1,4 @@
-package authController
+package casdoor
 
 import (
 	_ "embed"
