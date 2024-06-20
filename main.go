@@ -232,7 +232,7 @@ func getCourseFromProgramInputs(courseName *string, courseGitRepository *string,
 	course.FolderName = *courseName
 	course.GitRepository = *courseGitRepository
 	course.GitRepositoryBranch = *courseGitRepositoryBranchName
-	return course
+	return *course
 }
 
 func isFlagPassed(name string) bool {

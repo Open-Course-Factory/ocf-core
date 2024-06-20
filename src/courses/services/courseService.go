@@ -57,7 +57,7 @@ func (c courseService) GenerateCourse(courseName string, courseTheme string, for
 
 	if course == nil {
 		jsonCourseFilePath := config.COURSES_ROOT + courseName + ".json"
-		*course = models.ReadJsonCourseFile(jsonCourseFilePath)
+		course = models.ReadJsonCourseFile(jsonCourseFilePath)
 	}
 
 	if len(courseTheme) > 0 {
@@ -202,12 +202,11 @@ func copyCourseFileLocally(fs billy.Filesystem, courseName string, repoDirectory
 			}
 
 			if _, err := os.Stat(config.COURSES_ROOT + courseName + repoDirectory); os.IsNotExist(err) {
-				os.MkdirAll(config.COURSES_ROOT+courseName+repoDirectory, 0700) // Create your file
-			}
-
-			if err != nil {
-				log.Printf("writing file")
-				return err
+				err = os.MkdirAll(config.COURSES_ROOT+courseName+repoDirectory, 0700) // Create your file
+				if err != nil {
+					log.Printf("creating file")
+					return err
+				}
 			}
 
 			//create file locally

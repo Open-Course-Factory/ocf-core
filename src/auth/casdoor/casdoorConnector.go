@@ -41,7 +41,7 @@ func InitCasdoorEnforcer(db *gorm.DB) {
 	}
 
 	// Load model configuration file and policy store adapter
-	enforcer, err := casbin.NewEnforcer("config/rbac_model.conf", adapter)
+	enforcer, err := casbin.NewEnforcer("src/configuration/keymatch_model.conf", adapter)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create casbin enforcer: %v", err))
 	}

@@ -177,7 +177,7 @@ func initTocs(course *Course) {
 	}
 }
 
-func ReadJsonCourseFile(jsonCourseFilePath string) Course {
+func ReadJsonCourseFile(jsonCourseFilePath string) *Course {
 	jsonFile, err := os.ReadFile(jsonCourseFilePath)
 
 	// should try to download it -> how to standardize the course format ?
@@ -191,5 +191,5 @@ func ReadJsonCourseFile(jsonCourseFilePath string) Course {
 	if err != nil {
 		log.Fatal("Error during Unmarshal(): ", err)
 	}
-	return course
+	return &course
 }

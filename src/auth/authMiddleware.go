@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/auth/models"
 	"strings"
@@ -34,10 +35,8 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 			ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"msg": err.Error()})
 		}
 
-		obj := GetEntityNameFromPath(ctx.FullPath())
-
 		// Casbin enforces policy, subject = user currently logged in, obj = ressource URI obtained from request path, action (http verb))
-		ok, errEnforce := casdoor.Enforcer.Enforce(fmt.Sprint(userId), obj, ctx.Request.Method)
+		ok, errEnforce := casdoor.Enforcer.Enforce(fmt.Sprint(userId), ctx.FullPath(), ctx.Request.Method)
 
 		if errEnforce != nil {
 			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"msg": "Error occurred when authorizing user"})
