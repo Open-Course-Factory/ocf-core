@@ -7,7 +7,6 @@ import (
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
-var users []casdoorsdk.User
 var groups []casdoorsdk.Group
 var roles []casdoorsdk.Role
 var permissions []casdoorsdk.Permission
@@ -77,38 +76,30 @@ func SetupRoles() {
 }
 
 func SetupUsers() {
-	user1 := casdoorsdk.User{Name: "1_st", DisplayName: "1 Student", Email: "1.student@test.com", Password: "test",
-		LastName: "Student", FirstName: "1", SignupApplication: "ocf"}
-	//casdoor.Enforcer.AddPolicy(user1.Id, "/users/"+user1.Id, "(GET)|(POST)|(DELETE)")
-	_, errStudent := casdoor.Enforcer.AddGroupingPolicy("student", user1.Id)
+	createUser("1_st", "1 Student", "1.student@test.com", "test", "Student", "1", "student")
+	createUser("2_st", "2 Student", "2.student@test.com", "test", "Student", "2", "student")
+	createUser("3_st", "3 Student", "3.student@test.com", "test", "Student", "3", "student")
+	createUser("4_st", "4 Student", "4.student@test.com", "test", "Student", "4", "student")
+
+	createUser("1_sup", "1 Supervisor", "1.supervisor@test.com", "test", "Supervisor", "1", "administrator")
+	createUser("2_sup", "2 Supervisor", "2.supervisor@test.com", "test", "Supervisor", "2", "administrator")
+}
+
+// ToDo: Move in User Service
+func createUser(userName string, displayName string, email string, password string, lastName string, firstName string, defaultRole string) {
+	user1 := casdoorsdk.User{Name: userName, DisplayName: displayName, Email: email, Password: password,
+		LastName: lastName, FirstName: firstName, SignupApplication: "ocf"}
+
+	_, errCreate := casdoorsdk.AddUser(&user1)
+	if errCreate != nil {
+		fmt.Println(errCreate.Error())
+	}
+
+	createdUser, _ := casdoorsdk.GetUserByEmail(email)
+
+	_, errStudent := casdoor.Enforcer.AddGroupingPolicy(defaultRole, createdUser.Id)
 	if errStudent != nil {
 		fmt.Println(errStudent.Error())
-	}
-	users = append(users, user1)
-
-	users = append(users, casdoorsdk.User{Name: "2_st", DisplayName: "2 Student", Email: "2.student@test.com", Password: "test",
-		LastName: "Student", FirstName: "2", SignupApplication: "ocf"})
-	users = append(users, casdoorsdk.User{Name: "3_st", DisplayName: "3 Student", Email: "3.student@test.com", Password: "test",
-		LastName: "Student", FirstName: "3", SignupApplication: "ocf"})
-	users = append(users, casdoorsdk.User{Name: "4_st", DisplayName: "4 Student", Email: "4.student@test.com", Password: "test",
-		LastName: "Student", FirstName: "4", SignupApplication: "ocf"})
-
-	supervisor1 := casdoorsdk.User{Name: "1_sup", DisplayName: "1 Supervisor", Email: "1.supervisor@test.com", Password: "test",
-		LastName: "Supervisor", FirstName: "1", SignupApplication: "ocf"}
-	_, errSup := casdoor.Enforcer.AddGroupingPolicy("admin", supervisor1.Id)
-	if errSup != nil {
-		fmt.Println(errSup.Error())
-	}
-	users = append(users, supervisor1)
-	users = append(users, casdoorsdk.User{Name: "2_sup", DisplayName: "2 Supervisor", Email: "2.supervisor@test.com", Password: "test",
-		LastName: "Supervisor", FirstName: "2", SignupApplication: "ocf"})
-
-	for _, user := range users {
-		_, err := casdoorsdk.AddUser(&user)
-		fmt.Println(user.GetId())
-		if err != nil {
-			fmt.Println(err.Error())
-		}
 	}
 }
 
