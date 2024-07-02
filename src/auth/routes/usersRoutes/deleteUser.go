@@ -50,6 +50,7 @@ func (u userController) DeleteUser(ctx *gin.Context) {
 		return
 	}
 
+	//ToDo : handle error
 	casdoor.Enforcer.RemovePolicy(id.String())
 
 	ctx.JSON(http.StatusNoContent, "Done")

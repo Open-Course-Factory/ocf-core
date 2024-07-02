@@ -69,7 +69,7 @@ func SetupRoles() {
 
 	_, errPolicy1 := casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/courses/*", "GET")
 
-	_, errPolicy2 := casdoor.Enforcer.AddPolicy(roleAdministrator.Name, "/api/v1/courses/*", "(GET)|(POST)|(DELETE)")
+	_, errPolicy2 := casdoor.Enforcer.AddPolicy(roleAdministrator.Name, "/api/v1/*", "(GET|POST|DELETE)")
 
 	if errPolicy1 != nil {
 		fmt.Println(errPolicy1.Error())
@@ -103,7 +103,7 @@ func createUser(userName string, displayName string, email string, password stri
 
 	createdUser, _ := casdoorsdk.GetUserByEmail(email)
 
-	_, errStudent := casdoor.Enforcer.AddGroupingPolicy(defaultRole, createdUser.Id)
+	_, errStudent := casdoor.Enforcer.AddGroupingPolicy(createdUser.Id, defaultRole)
 	if errStudent != nil {
 		fmt.Println(errStudent.Error())
 	}
@@ -115,14 +115,15 @@ func DeleteAllObjects() {
 		casdoorsdk.DeletePermission(permission)
 	}
 
-	casdoor.Enforcer.RemoveGroupingPolicy("student")
-	casdoor.Enforcer.RemoveGroupingPolicy("administrator")
 	casdoor.Enforcer.RemovePolicy("administrator")
 	casdoor.Enforcer.RemovePolicy("student")
+	casdoor.Enforcer.RemoveGroupingPolicy("*")
 
 	users, _ := casdoorsdk.GetUsers()
 	for _, user := range users {
 		casdoorsdk.DeleteUser(user)
+		casdoor.Enforcer.RemoveGroupingPolicy(user.Id, "student")
+		casdoor.Enforcer.RemoveGroupingPolicy(user.Id, "administrator")
 	}
 
 	roles, _ := casdoorsdk.GetRoles()

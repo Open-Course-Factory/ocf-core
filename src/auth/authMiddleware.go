@@ -48,43 +48,24 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 			return
 		}
 
-		userName, err := getUserNameFromToken(ctx)
-
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: err.Error(),
-			})
-			ctx.Abort()
-			return
-		}
-
-		var userRoles []*casdoorsdk.Role
-		roles, err := casdoorsdk.GetRoles()
-
-		if err != nil {
+		var userRoles []string
+		userRoles, errRoles := casdoor.Enforcer.GetRolesForUser(userId)
+		if errRoles != nil {
 			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: err.Error(),
+				ErrorMessage: errRoles.Error(),
 			})
 			ctx.Abort()
 			return
 		}
 
-		for _, role := range roles {
-			for _, user := range role.Users {
-				fmt.Println(user)
-				if user == userName {
-					userRoles = append(userRoles, role)
-				}
-			}
-		}
+		fmt.Println(userRoles)
 
 		// ToDo: refactoring
 		var isAdmin bool
 		var ocfRoles []*models.Role
 		for _, role := range userRoles {
-			ocfRole, err := models.FromString(role.Name)
+			ocfRole, err := models.FromString(role)
 			if err != nil {
 				ctx.Abort()
 			}
@@ -101,9 +82,7 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 		if isAdmin {
 			ctx.Next()
 		} else {
-			// ToDo: get permissions for each role
-			// check whether there is a permission about the ressource requested
-			// depending on type of request, get the allowed ressources list or the specific details about the ressource
+			// ToDo: check that enforce prevent to come here if not authorized
 			fmt.Println(ocfRoles)
 			ctx.JSON(http.StatusUnauthorized, &errors.APIError{
 				ErrorCode:    http.StatusUnauthorized,
@@ -138,7 +117,7 @@ func getUserIdFromToken(ctx *gin.Context) (string, error) {
 		return "", err
 	}
 
-	userId := claims.ID
+	userId := claims.Id
 	return userId, nil
 }
 
