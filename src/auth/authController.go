@@ -78,24 +78,8 @@ func (ac *authController) Callback(ctx *gin.Context) {
 // @Router /auth/login [post]
 func (ac *authController) Login(ctx *gin.Context) {
 
-	loginInputDto := dto.LoginInput{}
-
-	bindError := ctx.BindJSON(&loginInputDto)
-	if bindError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de parser le json",
-		})
-		return
-	}
-
-	user, errUser := casdoorsdk.GetUserByEmail(loginInputDto.Email)
-
-	if errUser != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: errUser.Error(),
-		})
+	user, shouldReturn := getUserFromContext(ctx)
+	if shouldReturn {
 		return
 	}
 
@@ -104,7 +88,7 @@ func (ac *authController) Login(ctx *gin.Context) {
 		os.Getenv("CASDOOR_CLIENT_ID"),
 		os.Getenv("CASDOOR_CLIENT_SECRET"),
 		user.Name,
-		loginInputDto.Password,
+		user.Password,
 	)
 
 	resp, err := http.Post(url, "application/json", nil)
@@ -167,6 +151,32 @@ func (ac *authController) Login(ctx *gin.Context) {
 	fmt.Println("Login successful.\nYou are connected as: " + loginOutputDto.UserName)
 
 	ctx.JSON(http.StatusCreated, loginOutputDto)
+}
+
+func getUserFromContext(ctx *gin.Context) (*casdoorsdk.User, bool) {
+	loginInputDto := dto.LoginInput{}
+
+	bindError := ctx.BindJSON(&loginInputDto)
+	if bindError != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Impossible de parser le json",
+		})
+		return nil, true
+	}
+
+	user, errUser := casdoorsdk.GetUserByEmail(loginInputDto.Email)
+
+	if errUser != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: errUser.Error(),
+		})
+		return nil, true
+	}
+
+	user.Password = loginInputDto.Password
+	return user, false
 }
 
 func getUserRoles(user *casdoorsdk.User) []string {

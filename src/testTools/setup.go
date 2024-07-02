@@ -52,11 +52,6 @@ func SetupRoles() {
 		Users: []string{orgName + "/1_st", orgName + "/2_st", orgName + "/3_st", orgName + "/4_st"}}
 	roles = append(roles, roleStudent)
 
-	_, errPolicy1 := casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/courses/*", "GET")
-	if errPolicy1 != nil {
-		fmt.Println(errPolicy1.Error())
-	}
-
 	roleSupervisor := casdoorsdk.Role{Owner: orgName, Name: "supervisor", DisplayName: "Responsables", IsEnabled: true,
 		Users: []string{orgName + "/1_sup", orgName + "/2_sup"}}
 	roles = append(roles, roleSupervisor)
@@ -65,14 +60,25 @@ func SetupRoles() {
 		Users: []string{orgName + "/1_sup"}}
 	roles = append(roles, roleAdministrator)
 
-	casdoor.Enforcer.AddPolicy(roleAdministrator.Name, "/api/v1/courses/*", "(GET)|(POST)|(DELETE)")
-
 	for _, role := range roles {
 		_, err := casdoorsdk.AddRole(&role)
 		if err != nil {
 			fmt.Println(err.Error())
 		}
 	}
+
+	_, errPolicy1 := casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/courses/*", "GET")
+
+	_, errPolicy2 := casdoor.Enforcer.AddPolicy(roleAdministrator.Name, "/api/v1/courses/*", "(GET)|(POST)|(DELETE)")
+
+	if errPolicy1 != nil {
+		fmt.Println(errPolicy1.Error())
+	}
+
+	if errPolicy2 != nil {
+		fmt.Println(errPolicy1.Error())
+	}
+
 }
 
 func SetupUsers() {
@@ -108,6 +114,11 @@ func DeleteAllObjects() {
 	for _, permission := range permissions {
 		casdoorsdk.DeletePermission(permission)
 	}
+
+	casdoor.Enforcer.RemoveGroupingPolicy("student")
+	casdoor.Enforcer.RemoveGroupingPolicy("administrator")
+	casdoor.Enforcer.RemovePolicy("administrator")
+	casdoor.Enforcer.RemovePolicy("student")
 
 	users, _ := casdoorsdk.GetUsers()
 	for _, user := range users {

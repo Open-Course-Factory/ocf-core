@@ -25,7 +25,8 @@ import (
 	authController "soli/formations/src/auth"
 	"soli/formations/src/auth/casdoor"
 	authModels "soli/formations/src/auth/models"
-	sshKeyController "soli/formations/src/auth/routes/sessionRoutes"
+	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
+	userController "soli/formations/src/auth/routes/usersRoutes"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
@@ -91,6 +92,7 @@ func main() {
 	sessionController.SessionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sshKeyController.SshKeysRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 

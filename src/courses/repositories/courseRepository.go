@@ -93,6 +93,15 @@ func (c courseRepository) GetSpecificCourseByUser(owner casdoorsdk.User, courseN
 	return course, nil
 }
 
+func (c courseRepository) GetCoursesOwnedByUser(owner casdoorsdk.User) ([]*models.Course, error) {
+	var course []*models.Course
+	err := c.db.Preload("Chapters").Preload("Chapters.Sections").First(&course, "owner_id=?", owner.Id).Error
+	if err != nil {
+		return nil, err
+	}
+	return course, nil
+}
+
 func (c courseRepository) GenerateCourse(coursedto dto.GenerateCourseInput) error {
 
 	return nil
