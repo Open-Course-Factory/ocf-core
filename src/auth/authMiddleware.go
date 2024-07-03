@@ -7,10 +7,8 @@ import (
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/auth/models"
-	"strings"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
-	"github.com/gertd/go-pluralize"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -35,6 +33,11 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 			ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"msg": err.Error()})
 		}
 
+		errLoadingPolicy := casdoor.Enforcer.LoadPolicy()
+		if errLoadingPolicy != nil {
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"msg": "Error loading authorization policy"})
+			return
+		}
 		// Casbin enforces policy, subject = user currently logged in, obj = ressource URI obtained from request path, action (http verb))
 		ok, errEnforce := casdoor.Enforcer.Enforce(fmt.Sprint(userId), ctx.FullPath(), ctx.Request.Method)
 
@@ -121,28 +124,28 @@ func getUserIdFromToken(ctx *gin.Context) (string, error) {
 	return userId, nil
 }
 
-func GetEntityNameFromPath(path string) string {
+// func GetEntityNameFromPath(path string) string {
 
-	// Trim any trailing slashes
-	path = strings.TrimRight(path, "/")
+// 	// Trim any trailing slashes
+// 	path = strings.TrimRight(path, "/")
 
-	// Split the path into segments
-	segments := strings.Split(path, "/")
-	segment := ""
+// 	// Split the path into segments
+// 	segments := strings.Split(path, "/")
+// 	segment := ""
 
-	// Take resource name segment
-	if len(segments) > 3 {
-		segment = segments[3]
-	} else {
-		segment = segments[1]
-	}
+// 	// Take resource name segment
+// 	if len(segments) > 3 {
+// 		segment = segments[3]
+// 	} else {
+// 		segment = segments[1]
+// 	}
 
-	// Take resource name and resource type
+// 	// Take resource name and resource type
 
-	client := pluralize.NewClient()
-	singular := client.Singular(segment)
-	return strings.ToUpper(string(singular[0])) + singular[1:]
-}
+// 	client := pluralize.NewClient()
+// 	singular := client.Singular(segment)
+// 	return strings.ToUpper(string(singular[0])) + singular[1:]
+// }
 
 // func GetRolesFromContext(ctx *gin.Context) (*[]models.UserRoles, bool, bool) {
 // 	rawRoles, ok := ctx.Get("roles")

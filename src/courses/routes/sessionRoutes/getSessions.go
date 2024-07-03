@@ -1,10 +1,6 @@
 package sessionController
 
 import (
-	"net/http"
-	"soli/formations/src/courses/dto"
-	"soli/formations/src/courses/errors"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,16 +20,5 @@ import (
 // @Router /sessions [get]
 func (s sessionController) GetSessions(ctx *gin.Context) {
 
-	var sessions []dto.SessionOutput
-	sessions, err := s.service.GetSessions()
-
-	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Sessions not found",
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, sessions)
+	s.GetEntities(ctx)
 }

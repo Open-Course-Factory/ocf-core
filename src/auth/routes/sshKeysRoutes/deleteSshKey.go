@@ -1,11 +1,7 @@
 package sshKeyController
 
 import (
-	"net/http"
-	"soli/formations/src/courses/errors"
-
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 // Delete sshKey godoc
@@ -26,24 +22,5 @@ import (
 //
 // @Router			/sshkeys/{id} [delete]
 func (s sshKeyController) DeleteSshKey(ctx *gin.Context) {
-	idParam := ctx.Param("id")
-
-	id, parseError := uuid.Parse(idParam)
-	if parseError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: parseError.Error(),
-		})
-		return
-	}
-
-	errorDelete := s.service.DeleteKey(id.String())
-	if errorDelete != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "SshKey not found",
-		})
-		return
-	}
-	ctx.JSON(http.StatusNoContent, "Done")
+	s.DeleteEntity(ctx)
 }

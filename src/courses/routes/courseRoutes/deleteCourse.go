@@ -1,11 +1,7 @@
 package courseController
 
 import (
-	"net/http"
-	"soli/formations/src/courses/errors"
-
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 // Delete course godoc
@@ -26,24 +22,5 @@ import (
 //
 // @Router			/courses/{id} [delete]
 func (c courseController) DeleteCourse(ctx *gin.Context) {
-	idParam := ctx.Param("id")
-
-	id, parseError := uuid.Parse(idParam)
-	if parseError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: parseError.Error(),
-		})
-		return
-	}
-
-	errorDelete := c.service.DeleteCourse(id)
-	if errorDelete != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Course not found",
-		})
-		return
-	}
-	ctx.JSON(http.StatusNoContent, "Done")
+	c.DeleteEntity(ctx)
 }

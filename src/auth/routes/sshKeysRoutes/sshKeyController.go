@@ -2,6 +2,7 @@ package sshKeyController
 
 import (
 	services "soli/formations/src/auth/services"
+	controller "soli/formations/src/entityManagement/routes"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -15,11 +16,13 @@ type SshKeyController interface {
 }
 
 type sshKeyController struct {
+	controller.GenericController
 	service services.SshKeyService
 }
 
 func NewSshKeyController(db *gorm.DB) SshKeyController {
 	return &sshKeyController{
-		service: services.NewSshKeyService(db),
+		GenericController: controller.NewGenericController(db),
+		service:           services.NewSshKeyService(db),
 	}
 }

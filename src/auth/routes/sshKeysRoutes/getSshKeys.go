@@ -1,10 +1,6 @@
 package sshKeyController
 
 import (
-	"net/http"
-	"soli/formations/src/auth/dto"
-	"soli/formations/src/courses/errors"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,17 +19,5 @@ import (
 //
 // @Router /sshkeys [get]
 func (s sshKeyController) GetSshKeys(ctx *gin.Context) {
-
-	var sshKeys *[]dto.SshKeyOutput
-	sshKeys, err := s.service.GetAllKeys()
-
-	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "SshKeys not found",
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, sshKeys)
+	s.GetEntities(ctx)
 }

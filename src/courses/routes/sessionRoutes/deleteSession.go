@@ -1,11 +1,7 @@
 package sessionController
 
 import (
-	"net/http"
-	"soli/formations/src/courses/errors"
-
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 // Delete session godoc
@@ -25,24 +21,5 @@ import (
 //
 // @Router			/sessions/{id} [delete]
 func (s sessionController) DeleteSession(ctx *gin.Context) {
-	idParam := ctx.Param("id")
-
-	id, parseError := uuid.Parse(idParam)
-	if parseError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: parseError.Error(),
-		})
-		return
-	}
-
-	errorDelete := s.service.DeleteSession(id)
-	if errorDelete != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Session not found",
-		})
-		return
-	}
-	ctx.JSON(http.StatusNoContent, "Done")
+	s.DeleteEntity(ctx)
 }
