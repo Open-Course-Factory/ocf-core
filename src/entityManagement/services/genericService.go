@@ -1,8 +1,6 @@
 package services
 
 import (
-	authModels "soli/formations/src/auth/models"
-	courseModels "soli/formations/src/courses/models"
 	"soli/formations/src/entityManagement/repositories"
 
 	"github.com/google/uuid"
@@ -26,7 +24,7 @@ func NewGenericService(db *gorm.DB) GenericService {
 	}
 }
 
-func (g genericService) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {
+func (g *genericService) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {
 	entity, err := g.genericRepository.GetEntity(id, data)
 
 	if err != nil {
@@ -38,7 +36,7 @@ func (g genericService) GetEntity(id uuid.UUID, data interface{}) (interface{}, 
 }
 
 // should return an array of dtoEntityOutput
-func (g genericService) GetEntities(data interface{}) ([]interface{}, error) {
+func (g *genericService) GetEntities(data interface{}) ([]interface{}, error) {
 
 	allPages, err := g.genericRepository.GetAllEntities(data, 20)
 
@@ -49,7 +47,7 @@ func (g genericService) GetEntities(data interface{}) ([]interface{}, error) {
 	return allPages, nil
 }
 
-func (g genericService) DeleteEntity(id uuid.UUID, data interface{}) error {
+func (g *genericService) DeleteEntity(id uuid.UUID, data interface{}) error {
 	errorDelete := g.genericRepository.DeleteEntity(id, data)
 	if errorDelete != nil {
 		return errorDelete
@@ -57,15 +55,8 @@ func (g genericService) DeleteEntity(id uuid.UUID, data interface{}) error {
 	return nil
 }
 
-func (g genericService) GetEntityModelInterface(entityName string) interface{} {
+func (g *genericService) GetEntityModelInterface(entityName string) interface{} {
 	var result interface{}
-	switch entityName {
-	case "Sshkey":
-		result = authModels.SshKey{}
-	case "Session":
-		result = courseModels.Session{}
-	case "Course":
-		result = courseModels.Course{}
-	}
+	result, _ = GlobalEntityRegistrationService.GetEntityInterface(entityName)
 	return result
 }

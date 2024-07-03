@@ -36,7 +36,7 @@ type DeleteSshKeyInput struct {
 	Id uuid.UUID `binding:"required"`
 }
 
-func SshKeyModelToSshKeyOutput(sshKeyModel models.SshKey) *SshKeyOutput {
+func SshkeyModelToSshkeyOutput(sshKeyModel models.Sshkey) *SshKeyOutput {
 	return &SshKeyOutput{
 		Id:         sshKeyModel.ID,
 		KeyName:    sshKeyModel.KeyName,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -24,14 +25,18 @@ import (
 
 	authController "soli/formations/src/auth"
 	"soli/formations/src/auth/casdoor"
+	authDtos "soli/formations/src/auth/dto"
 	authModels "soli/formations/src/auth/models"
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
+	courseDtos "soli/formations/src/courses/dto"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
 
 	courseService "soli/formations/src/courses/services"
+
+	ems "soli/formations/src/entityManagement/services"
 
 	sqldb "soli/formations/src/db"
 
@@ -55,6 +60,13 @@ import (
 // @BasePath /api/v1
 func main() {
 
+	ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Course{}).Name(), courseModels.Course{})
+	ems.GlobalEntityRegistrationService.RegisterEntityToOutputOutFunctionputDto(reflect.TypeOf(courseModels.Course{}).Name(), courseDtos.CourseModelToCourseOutput)
+	ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Session{}).Name(), courseModels.Session{})
+	ems.GlobalEntityRegistrationService.RegisterEntityToOutputOutFunctionputDto(reflect.TypeOf(courseModels.Session{}).Name(), courseDtos.SessionModelToSessionOutput)
+	ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(authModels.Sshkey{}).Name(), authModels.Sshkey{})
+	ems.GlobalEntityRegistrationService.RegisterEntityToOutputOutFunctionputDto(reflect.TypeOf(authModels.Sshkey{}).Name(), authDtos.SshkeyModelToSshkeyOutput)
+
 	casdoor.InitCasdoorConnection()
 
 	sqldb.InitDBConnection()
@@ -66,7 +78,7 @@ func main() {
 	sqldb.DB.AutoMigrate(&courseModels.Chapter{})
 	sqldb.DB.AutoMigrate(&courseModels.Course{})
 
-	sqldb.DB.AutoMigrate(&authModels.SshKey{})
+	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
 
 	casdoor.InitCasdoorEnforcer(sqldb.DB)
 

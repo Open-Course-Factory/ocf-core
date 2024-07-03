@@ -2,8 +2,6 @@ package controller
 
 import (
 	"reflect"
-	authDto "soli/formations/src/auth/dto"
-	coursesDto "soli/formations/src/courses/dto"
 	"soli/formations/src/entityManagement/services"
 	"strings"
 
@@ -11,8 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
-
-var funcMap = make(map[string]interface{})
 
 type GenericController interface {
 	GetEntity(ctx *gin.Context)
@@ -22,23 +18,21 @@ type GenericController interface {
 }
 
 type genericController struct {
-	genericService services.GenericService
+	genericService            services.GenericService
+	entityRegistrationService *services.EntityRegistrationService
 }
 
 func NewGenericController(db *gorm.DB) GenericController {
-	funcMap["SshkeyModelToSshkeyOutput"] = authDto.SshKeyModelToSshKeyOutput
-	funcMap["SessionModelToSessionOutput"] = coursesDto.SessionModelToSessionOutput
-	funcMap["CourseModelToCourseOutput"] = coursesDto.CourseModelToCourseOutput
-
 	controller := &genericController{
-		genericService: services.NewGenericService(db),
+		genericService:            services.NewGenericService(db),
+		entityRegistrationService: services.GlobalEntityRegistrationService,
 	}
 
 	return controller
 }
 
 func (genericController genericController) appendEntityFromResult(funcName string, item interface{}, entitiesDto []interface{}) ([]interface{}, bool) {
-	if funcRef, ok := funcMap[funcName]; ok {
+	if funcRef, ok := genericController.entityRegistrationService.GetConversionFunction(funcName); ok {
 		val := reflect.ValueOf(funcRef)
 
 		if val.IsValid() && val.Kind() == reflect.Func {
@@ -61,7 +55,7 @@ func (genericController genericController) appendEntityFromResult(funcName strin
 
 func (genericController genericController) getEntityFromResult(funcName string, item interface{}) (interface{}, bool) {
 	var result interface{}
-	if funcRef, ok := funcMap[funcName]; ok {
+	if funcRef, ok := genericController.entityRegistrationService.GetConversionFunction(funcName); ok {
 		val := reflect.ValueOf(funcRef)
 
 		if val.IsValid() && val.Kind() == reflect.Func {
@@ -86,21 +80,17 @@ func (genericController genericController) GetGenericService() *services.Generic
 
 func GetEntityNameFromPath(path string) string {
 
-	// Trim any trailing slashes
 	path = strings.TrimRight(path, "/")
 
-	// Split the path into segments
 	segments := strings.Split(path, "/")
 	segment := ""
 
-	// Take resource name segment
 	if len(segments) > 3 {
 		segment = segments[3]
 	} else {
 		segment = segments[1]
 	}
 
-	// Take resource name and resource type
 	client := pluralize.NewClient()
 	singular := client.Singular(segment)
 	return strings.ToUpper(string(singular[0])) + singular[1:]
