@@ -33,6 +33,7 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 		SignupApplication: "ocf",
 	}
 
+	user1.CreatedTime = casdoorsdk.GetCurrentTime()
 	_, errCreate := casdoorsdk.AddUser(&user1)
 	if errCreate != nil {
 		fmt.Println(errCreate.Error())
@@ -45,7 +46,7 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 		return nil, errGet
 	}
 
-	_, errStudent := casdoor.Enforcer.AddGroupingPolicy(userCreateDTO.DefaultRole, createdUser.Id)
+	_, errStudent := casdoor.Enforcer.AddGroupingPolicy(createdUser.Id, userCreateDTO.DefaultRole)
 	if errStudent != nil {
 		fmt.Println(errStudent.Error())
 		return nil, errStudent
@@ -86,5 +87,8 @@ func (us *userService) DeleteUser(id string) error {
 		return errUser
 	}
 	casdoorsdk.DeleteUser(user)
+
+	casdoor.Enforcer.RemoveGroupingPolicy(user.Id)
+
 	return nil
 }

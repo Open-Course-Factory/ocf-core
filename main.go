@@ -128,7 +128,6 @@ func setupExternalUsersData() {
 	testtools.SetupUsers()
 	testtools.SetupGroups()
 	testtools.SetupRoles()
-	testtools.SetupPermissions()
 
 	permissionsByRole, _ := casdoorsdk.GetPermissionsByRole("student")
 	for _, permission := range permissionsByRole {

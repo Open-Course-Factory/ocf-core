@@ -22,7 +22,6 @@ func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 	testtools.SetupUsers()
 	testtools.SetupGroups()
 	testtools.SetupRoles()
-	testtools.SetupPermissions()
 
 	return func(tb testing.TB) {
 		log.Println("teardown test")

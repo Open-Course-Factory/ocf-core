@@ -3,30 +3,14 @@ package testtools
 import (
 	"fmt"
 	"soli/formations/src/auth/casdoor"
+	"soli/formations/src/auth/dto"
+	"soli/formations/src/auth/services"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 var groups []casdoorsdk.Group
 var roles []casdoorsdk.Role
-var permissions []casdoorsdk.Permission
-
-func SetupPermissions() {
-
-	permissions = append(permissions, casdoorsdk.Permission{Name: "permission_test", Owner: "ocf",
-		ResourceType: "Course", Resources: []string{"courses/1", "courses/2"}, Actions: []string{"Read"}, Effect: "Allow",
-		State: "", Domains: []string{}, Users: []string{}, Roles: []string{"sdv/student"}, Groups: []string{},
-		IsEnabled: true,
-	})
-
-	for _, permission := range permissions {
-		_, err := casdoorsdk.AddPermission(&permission)
-		if err != nil {
-			fmt.Println(err.Error())
-		}
-	}
-
-}
 
 func SetupGroups() {
 	groups = append(groups, casdoorsdk.Group{ParentId: "sdv", Name: "classes", DisplayName: "Toutes les classes"})
@@ -67,9 +51,15 @@ func SetupRoles() {
 		}
 	}
 
-	_, errPolicy1 := casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/courses/*", "GET")
+	//MANDATORY LOAD POLICY
+	ok0 := casdoor.Enforcer.LoadPolicy()
+	fmt.Println(ok0)
 
-	_, errPolicy2 := casdoor.Enforcer.AddPolicy(roleAdministrator.Name, "/api/v1/*", "(GET|POST|DELETE)")
+	ok1, errPolicy1 := casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/courses/*", "GET")
+	fmt.Println(ok1)
+
+	ok2, errPolicy2 := casdoor.Enforcer.AddPolicy(roleAdministrator.Name, "/api/v1/*", "(GET|POST|DELETE)")
+	fmt.Println(ok2)
 
 	if errPolicy1 != nil {
 		fmt.Println(errPolicy1.Error())
@@ -82,38 +72,18 @@ func SetupRoles() {
 }
 
 func SetupUsers() {
-	createUser("1_st", "1 Student", "1.student@test.com", "test", "Student", "1", "student")
-	createUser("2_st", "2 Student", "2.student@test.com", "test", "Student", "2", "student")
-	createUser("3_st", "3 Student", "3.student@test.com", "test", "Student", "3", "student")
-	createUser("4_st", "4 Student", "4.student@test.com", "test", "Student", "4", "student")
+	userService := services.NewUserService()
+	userService.AddUser(dto.CreateUserInput{UserName: "1_st", DisplayName: "1 Student", Email: "1.student@test.com", Password: "test", FirstName: "Student", LastName: "1", DefaultRole: "student"})
+	userService.AddUser(dto.CreateUserInput{UserName: "2_st", DisplayName: "2 Student", Email: "2.student@test.com", Password: "test", FirstName: "Student", LastName: "2", DefaultRole: "student"})
+	userService.AddUser(dto.CreateUserInput{UserName: "3_st", DisplayName: "3 Student", Email: "3.student@test.com", Password: "test", FirstName: "Student", LastName: "3", DefaultRole: "student"})
+	userService.AddUser(dto.CreateUserInput{UserName: "4_st", DisplayName: "4 Student", Email: "4.student@test.com", Password: "test", FirstName: "Student", LastName: "4", DefaultRole: "student"})
 
-	createUser("1_sup", "1 Supervisor", "1.supervisor@test.com", "test", "Supervisor", "1", "administrator")
-	createUser("2_sup", "2 Supervisor", "2.supervisor@test.com", "test", "Supervisor", "2", "administrator")
-}
-
-// ToDo: Move in User Service
-func createUser(userName string, displayName string, email string, password string, lastName string, firstName string, defaultRole string) {
-	user1 := casdoorsdk.User{Name: userName, DisplayName: displayName, Email: email, Password: password,
-		LastName: lastName, FirstName: firstName, SignupApplication: "ocf"}
-
-	_, errCreate := casdoorsdk.AddUser(&user1)
-	if errCreate != nil {
-		fmt.Println(errCreate.Error())
-	}
-
-	createdUser, _ := casdoorsdk.GetUserByEmail(email)
-
-	_, errStudent := casdoor.Enforcer.AddGroupingPolicy(createdUser.Id, defaultRole)
-	if errStudent != nil {
-		fmt.Println(errStudent.Error())
-	}
+	userService.AddUser(dto.CreateUserInput{UserName: "1_sup", DisplayName: "1 Supervisor", Email: "1.supervisor@test.com", Password: "test", FirstName: "Supervisor", LastName: "1", DefaultRole: "administrator"})
+	userService.AddUser(dto.CreateUserInput{UserName: "2_sup", DisplayName: "2 Supervisor", Email: "2.supervisor@test.com", Password: "test", FirstName: "Supervisor", LastName: "2", DefaultRole: "administrator"})
 }
 
 func DeleteAllObjects() {
-	permissions, _ := casdoorsdk.GetPermissions()
-	for _, permission := range permissions {
-		casdoorsdk.DeletePermission(permission)
-	}
+	userService := services.NewUserService()
 
 	casdoor.Enforcer.RemovePolicy("administrator")
 	casdoor.Enforcer.RemovePolicy("student")
@@ -121,9 +91,8 @@ func DeleteAllObjects() {
 
 	users, _ := casdoorsdk.GetUsers()
 	for _, user := range users {
-		casdoorsdk.DeleteUser(user)
-		casdoor.Enforcer.RemoveGroupingPolicy(user.Id, "student")
-		casdoor.Enforcer.RemoveGroupingPolicy(user.Id, "administrator")
+		userService.DeleteUser(user.Id)
+		casdoor.Enforcer.RemoveGroupingPolicy(user.Id)
 	}
 
 	roles, _ := casdoorsdk.GetRoles()
