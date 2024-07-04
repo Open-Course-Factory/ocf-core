@@ -8,6 +8,8 @@ import (
 	"github.com/google/uuid"
 )
 
+var _ = errors.APIError{}
+
 // Patch sshKey godoc
 //
 // @Summary		modification sshKey name

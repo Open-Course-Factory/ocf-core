@@ -1,8 +1,12 @@
 package sshKeyController
 
 import (
+	errors "soli/formations/src/auth/errors"
+
 	"github.com/gin-gonic/gin"
 )
+
+var _ = errors.APIError{}
 
 // Delete sshKey godoc
 //

@@ -1,8 +1,12 @@
 package courseController
 
 import (
+	errors "soli/formations/src/courses/errors"
+
 	"github.com/gin-gonic/gin"
 )
+
+var _ = errors.APIError{}
 
 // Delete course godoc
 //

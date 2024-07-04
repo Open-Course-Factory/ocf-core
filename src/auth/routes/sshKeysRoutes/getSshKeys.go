@@ -1,8 +1,14 @@
 package sshKeyController
 
 import (
+	dto "soli/formations/src/auth/dto"
+	errors "soli/formations/src/auth/errors"
+
 	"github.com/gin-gonic/gin"
 )
+
+var _ = errors.APIError{}
+var _ = dto.CreateSshkeyOutput{}
 
 // GetSshKeys godoc
 // @Summary Récupération des sshKeys
@@ -13,7 +19,7 @@ import (
 //
 // @Security Bearer
 //
-// @Success 200 {object} []dto.SshKeyOutput
+// @Success 200 {object} []dto.SshkeyOutput
 //
 // @Failure 404 {object} errors.APIError "SshKeys inexistantes"
 //

@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"reflect"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -9,6 +10,7 @@ import (
 )
 
 type GenericRepository interface {
+	CreateEntity(data interface{}, entityName string) (interface{}, error)
 	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetAllEntities(data interface{}, pageSize int) ([]interface{}, error)
 	DeleteEntity(id uuid.UUID, data interface{}) error
@@ -23,6 +25,37 @@ func NewGenericRepository(db *gorm.DB) GenericRepository {
 		db: db,
 	}
 	return repository
+}
+
+func (o *genericRepository) CreateEntity(entityInputDto interface{}, entityName string) (interface{}, error) {
+	conversionFunctionRef, _ := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.InputDtoToModel)
+	val := reflect.ValueOf(conversionFunctionRef)
+	if val.IsValid() && val.Kind() == reflect.Func {
+		args := []reflect.Value{reflect.ValueOf(entityInputDto)}
+		entityModel := val.Call(args)
+
+		// test, _ := ems.GlobalEntityRegistrationService.GetEntityInterface(entityName)
+		// testIface := reflect.TypeOf(test)
+
+		// entity := reflect.ValueOf(entityModel)
+		// iface := entity.Interface().(test)
+		// fmt.Println(iface)
+		// fmt.Println(reflect.TypeOf(entityModel[0].Interface()))
+
+		// err := mapstructure.Decode(entityModel[0], &test)
+		// if err != nil {
+		// 	fmt.Println(err.Error())
+		// }
+
+		result := o.db.Create(entityModel[0].Interface())
+		if result.Error != nil {
+			return nil, result.Error
+		}
+
+		return entityModel[0].Interface(), nil
+	}
+
+	return 1, nil
 }
 
 func (o *genericRepository) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {

@@ -36,7 +36,7 @@ import (
 
 	courseService "soli/formations/src/courses/services"
 
-	ems "soli/formations/src/entityManagement/services"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 
 	sqldb "soli/formations/src/db"
 
@@ -60,12 +60,27 @@ import (
 // @BasePath /api/v1
 func main() {
 
-	ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Course{}).Name(), courseModels.Course{})
-	ems.GlobalEntityRegistrationService.RegisterEntityToOutputOutFunctionputDto(reflect.TypeOf(courseModels.Course{}).Name(), courseDtos.CourseModelToCourseOutput)
+	// ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Course{}).Name(), courseModels.Course{})
+	// ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(courseModels.Course{}).Name(), courseDtos.CourseModelToCourseOutputDto)
+	// var coursesDtos []interface{}
+	// coursesDtos = append(coursesDtos, courseDtos.CreateCourseInput{}, courseDtos.CreateCourseOutput{})
+	// ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(courseModels.Course{}).Name(), coursesDtos)
+
 	ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Session{}).Name(), courseModels.Session{})
-	ems.GlobalEntityRegistrationService.RegisterEntityToOutputOutFunctionputDto(reflect.TypeOf(courseModels.Session{}).Name(), courseDtos.SessionModelToSessionOutput)
+	ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(courseModels.Session{}).Name(), courseDtos.SessionModelToSessionOutputDto, courseDtos.SessionInputDtoToSessionModel)
+
+	sessionsDtos := make(map[ems.DtoWay]interface{})
+	sessionsDtos[ems.InputDto] = courseDtos.CreateSessionInput{}
+	sessionsDtos[ems.OutputDto] = courseDtos.CreateSessionOutput{}
+
+	ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(courseModels.Session{}).Name(), sessionsDtos)
+
 	ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(authModels.Sshkey{}).Name(), authModels.Sshkey{})
-	ems.GlobalEntityRegistrationService.RegisterEntityToOutputOutFunctionputDto(reflect.TypeOf(authModels.Sshkey{}).Name(), authDtos.SshkeyModelToSshkeyOutput)
+	ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(authModels.Sshkey{}).Name(), authDtos.SshkeyModelToSshkeyOutput, authDtos.SshkeyInputDtoToSshkeyModel)
+	sshkeyDtos := make(map[ems.DtoWay]interface{})
+	sshkeyDtos[ems.InputDto] = authDtos.CreateSshkeyInput{}
+	sshkeyDtos[ems.OutputDto] = authDtos.CreateSshkeyOutput{}
+	ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(authModels.Sshkey{}).Name(), sshkeyDtos)
 
 	casdoor.InitCasdoorConnection()
 

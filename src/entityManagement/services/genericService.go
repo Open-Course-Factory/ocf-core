@@ -3,11 +3,14 @@ package services
 import (
 	"soli/formations/src/entityManagement/repositories"
 
+	ems "soli/formations/src/entityManagement/entityManagementService"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type GenericService interface {
+	CreateEntity(inputDto interface{}, entityName string) (interface{}, error)
 	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetEntities(data interface{}) ([]interface{}, error)
 	DeleteEntity(id uuid.UUID, data interface{}) error
@@ -22,6 +25,16 @@ func NewGenericService(db *gorm.DB) GenericService {
 	return &genericService{
 		genericRepository: repositories.NewGenericRepository(db),
 	}
+}
+
+func (g *genericService) CreateEntity(inputDto interface{}, entityName string) (interface{}, error) {
+
+	entity, creatEntityError := g.genericRepository.CreateEntity(inputDto, entityName)
+	if creatEntityError != nil {
+		return nil, creatEntityError
+	}
+
+	return entity, nil
 }
 
 func (g *genericService) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {
@@ -57,6 +70,6 @@ func (g *genericService) DeleteEntity(id uuid.UUID, data interface{}) error {
 
 func (g *genericService) GetEntityModelInterface(entityName string) interface{} {
 	var result interface{}
-	result, _ = GlobalEntityRegistrationService.GetEntityInterface(entityName)
+	result, _ = ems.GlobalEntityRegistrationService.GetEntityInterface(entityName)
 	return result
 }

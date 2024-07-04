@@ -35,7 +35,6 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 		return
 	}
 
-	funcName := entityName + "ModelTo" + entityName + "Output"
 	entityModel := reflect.TypeOf(entityModelInterface)
 	entityValue := reflect.ValueOf(entity)
 
@@ -47,7 +46,7 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 		item := convertedEntity.Interface()
 
 		var errEntityDto bool
-		entityDto, errEntityDto = genericController.getEntityFromResult(funcName, item)
+		entityDto, errEntityDto = genericController.getEntityFromResult(entityName, item)
 
 		if errEntityDto {
 			ctx.JSON(http.StatusBadRequest, &errors.APIError{

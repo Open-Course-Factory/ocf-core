@@ -1,8 +1,12 @@
 package sessionController
 
 import (
+	errors "soli/formations/src/courses/errors"
+
 	"github.com/gin-gonic/gin"
 )
+
+var _ = errors.APIError{}
 
 // GetSessions godoc
 // @Summary Récupération des sessions

@@ -138,7 +138,7 @@ func (c *courseService) GetCourses() ([]dto.CourseOutput, error) {
 	var courseDto []dto.CourseOutput
 
 	for _, s := range *courseModel {
-		courseDto = append(courseDto, *dto.CourseModelToCourseOutput(s))
+		courseDto = append(courseDto, *dto.CourseModelToCourseOutputDto(s))
 	}
 
 	return courseDto, nil

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"reflect"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/services"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 )
 
 type GenericController interface {
+	AddEntity(ctx *gin.Context)
 	GetEntity(ctx *gin.Context)
 	GetEntities(ctx *gin.Context)
 	DeleteEntity(ctx *gin.Context)
@@ -19,24 +21,25 @@ type GenericController interface {
 
 type genericController struct {
 	genericService            services.GenericService
-	entityRegistrationService *services.EntityRegistrationService
+	entityRegistrationService *ems.EntityRegistrationService
 }
 
 func NewGenericController(db *gorm.DB) GenericController {
 	controller := &genericController{
 		genericService:            services.NewGenericService(db),
-		entityRegistrationService: services.GlobalEntityRegistrationService,
+		entityRegistrationService: ems.GlobalEntityRegistrationService,
 	}
 
 	return controller
 }
 
-func (genericController genericController) appendEntityFromResult(funcName string, item interface{}, entitiesDto []interface{}) ([]interface{}, bool) {
-	if funcRef, ok := genericController.entityRegistrationService.GetConversionFunction(funcName); ok {
+func (genericController genericController) appendEntityFromResult(entityName string, item interface{}, entitiesDto []interface{}) ([]interface{}, bool) {
+	if funcRef, ok := genericController.entityRegistrationService.GetConversionFunction(entityName, ems.OutputModelToDto); ok {
 		val := reflect.ValueOf(funcRef)
 
 		if val.IsValid() && val.Kind() == reflect.Func {
-			args := []reflect.Value{reflect.ValueOf(item)}
+			reflectValue := reflect.ValueOf(item)
+			args := []reflect.Value{reflectValue}
 			entityDto := val.Call(args)
 			if len(entityDto) == 1 {
 				result := entityDto[0].Interface()
@@ -53,9 +56,9 @@ func (genericController genericController) appendEntityFromResult(funcName strin
 	return entitiesDto, false
 }
 
-func (genericController genericController) getEntityFromResult(funcName string, item interface{}) (interface{}, bool) {
+func (genericController genericController) getEntityFromResult(entityName string, item interface{}) (interface{}, bool) {
 	var result interface{}
-	if funcRef, ok := genericController.entityRegistrationService.GetConversionFunction(funcName); ok {
+	if funcRef, ok := genericController.entityRegistrationService.GetConversionFunction(entityName, ems.OutputModelToDto); ok {
 		val := reflect.ValueOf(funcRef)
 
 		if val.IsValid() && val.Kind() == reflect.Func {

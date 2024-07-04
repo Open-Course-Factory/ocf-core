@@ -7,40 +7,49 @@ import (
 	"github.com/google/uuid"
 )
 
-type SshKeyOutput struct {
+type SshkeyOutput struct {
 	Id         uuid.UUID `json:"id"`
 	KeyName    string    `json:"name"`
 	PrivateKey string    `json:"private_key"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-type CreateSshKeyInput struct {
-	KeyName    string    `binding:"required"`
-	PrivateKey string    `binding:"required"`
-	UserId     uuid.UUID `binding:"required"`
+type CreateSshkeyInput struct {
+	KeyName    string `binding:"required"`
+	PrivateKey string `binding:"required"`
+	UserId     string `binding:"required"`
 }
 
-type PatchSshKeyName struct {
+type PatchSshkeyName struct {
 	KeyName string    `binding:"required"`
 	Id      uuid.UUID `binding:"required"`
 }
 
-type CreateSshKeyOutput struct {
+type CreateSshkeyOutput struct {
 	Id         uuid.UUID
 	KeyName    string
 	PrivateKey string
 	UserId     uuid.UUID
 }
 
-type DeleteSshKeyInput struct {
+type DeleteSshkeyInput struct {
 	Id uuid.UUID `binding:"required"`
 }
 
-func SshkeyModelToSshkeyOutput(sshKeyModel models.Sshkey) *SshKeyOutput {
-	return &SshKeyOutput{
+func SshkeyModelToSshkeyOutput(sshKeyModel *models.Sshkey) *SshkeyOutput {
+	return &SshkeyOutput{
 		Id:         sshKeyModel.ID,
 		KeyName:    sshKeyModel.KeyName,
 		PrivateKey: sshKeyModel.PrivateKey,
 		CreatedAt:  sshKeyModel.CreatedAt,
+	}
+}
+
+func SshkeyInputDtoToSshkeyModel(sshKeyInputDto CreateSshkeyInput) *models.Sshkey {
+
+	return &models.Sshkey{
+		KeyName:    sshKeyInputDto.KeyName,
+		PrivateKey: sshKeyInputDto.PrivateKey,
+		OwnerID:    sshKeyInputDto.UserId,
 	}
 }

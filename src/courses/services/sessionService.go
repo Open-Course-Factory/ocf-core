@@ -75,7 +75,7 @@ func (s *sessionService) GetSessions() ([]dto.SessionOutput, error) {
 	var sessionDto []dto.SessionOutput
 
 	for _, s := range *sessionModel {
-		sessionDto = append(sessionDto, *dto.SessionModelToSessionOutput(s))
+		sessionDto = append(sessionDto, *dto.SessionModelToSessionOutputDto(s))
 	}
 
 	return sessionDto, nil

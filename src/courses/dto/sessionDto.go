@@ -8,6 +8,12 @@ import (
 )
 
 type CreateSessionOutput struct {
+	ID        string           `json:"id"`
+	Course    models.Course    `json:"course"`
+	Group     casdoorsdk.Group `json:"group"`
+	Title     string           `json:"title"`
+	StartTime time.Time        `json:"start"`
+	EndTime   time.Time        `json:"end"`
 }
 
 type CreateSessionInput struct {
@@ -27,7 +33,7 @@ type SessionOutput struct {
 	EndTime   time.Time        `json:"end"`
 }
 
-func SessionModelToSessionOutput(sessionModel models.Session) *SessionOutput {
+func SessionModelToSessionOutputDto(sessionModel models.Session) *SessionOutput {
 
 	return &SessionOutput{
 		ID:        sessionModel.ID.String(),
@@ -35,5 +41,16 @@ func SessionModelToSessionOutput(sessionModel models.Session) *SessionOutput {
 		Group:     sessionModel.Group,
 		StartTime: sessionModel.Beginning,
 		EndTime:   sessionModel.End,
+	}
+}
+
+func SessionInputDtoToSessionModel(sessionInputDto CreateSessionInput) *models.Session {
+
+	return &models.Session{
+		Course:    sessionInputDto.Course,
+		Title:     sessionInputDto.Title,
+		Group:     sessionInputDto.Group,
+		Beginning: sessionInputDto.StartTime,
+		End:       sessionInputDto.EndTime,
 	}
 }

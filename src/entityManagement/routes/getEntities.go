@@ -40,7 +40,6 @@ func (genericController genericController) getEntitiesFromName(entityName string
 		return nil, true
 	}
 
-	funcName := entityName + "ModelTo" + entityName + "Output"
 	var entitiesDto []interface{}
 
 	for _, page := range allEntitiesPages {
@@ -55,9 +54,10 @@ func (genericController genericController) getEntitiesFromName(entityName string
 			for i := 0; i < convertedPage.Len(); i++ {
 
 				item := convertedPage.Index(i).Interface()
+				itemPtr := reflect.ValueOf(item)
 
 				var shouldReturn bool
-				entitiesDto, shouldReturn = genericController.appendEntityFromResult(funcName, item, entitiesDto)
+				entitiesDto, shouldReturn = genericController.appendEntityFromResult(entityName, itemPtr, entitiesDto)
 				if shouldReturn {
 					return nil, true
 				}

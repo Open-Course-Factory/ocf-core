@@ -66,7 +66,7 @@ type CreateCourseFromGitInput struct {
 	Name       string `binding:"required"`
 }
 
-func CourseModelToCourseOutput(courseModel models.Course) *CourseOutput {
+func CourseModelToCourseOutputDto(courseModel models.Course) *CourseOutput {
 
 	var chapterOutputs []ChapterOutput
 	for _, chapter := range courseModel.Chapters {

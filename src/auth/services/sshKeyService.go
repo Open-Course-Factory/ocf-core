@@ -9,10 +9,10 @@ import (
 )
 
 type SshKeyService interface {
-	AddUserSshKey(sshKeyCreateDTO dto.CreateSshKeyInput) (*dto.SshKeyOutput, error)
-	GetKeysByUserId(id string) (*[]dto.SshKeyOutput, error)
-	PatchSshKeyName(id string, newName string) (*dto.SshKeyOutput, error)
-	GetAllKeys() (*[]dto.SshKeyOutput, error)
+	AddUserSshKey(sshKeyCreateDTO dto.CreateSshkeyInput) (*dto.SshkeyOutput, error)
+	GetKeysByUserId(id string) (*[]dto.SshkeyOutput, error)
+	PatchSshKeyName(id string, newName string) (*dto.SshkeyOutput, error)
+	GetAllKeys() (*[]dto.SshkeyOutput, error)
 	DeleteKey(id string) error
 }
 
@@ -26,14 +26,14 @@ func NewSshKeyService(db *gorm.DB) SshKeyService {
 	}
 }
 
-func (sks *sshKeyService) AddUserSshKey(sshKeyCreateDTO dto.CreateSshKeyInput) (*dto.SshKeyOutput, error) {
+func (sks *sshKeyService) AddUserSshKey(sshKeyCreateDTO dto.CreateSshkeyInput) (*dto.SshkeyOutput, error) {
 
 	sshKey, creatSshKeyError := sks.repository.CreateSshKey(sshKeyCreateDTO)
 	if creatSshKeyError != nil {
 		return nil, creatSshKeyError
 	}
 
-	return &dto.SshKeyOutput{
+	return &dto.SshkeyOutput{
 		Id:         sshKey.ID,
 		KeyName:    sshKey.KeyName,
 		PrivateKey: sshKey.PrivateKey,
@@ -41,8 +41,8 @@ func (sks *sshKeyService) AddUserSshKey(sshKeyCreateDTO dto.CreateSshKeyInput) (
 	}, nil
 }
 
-func (sks *sshKeyService) GetKeysByUserId(id string) (*[]dto.SshKeyOutput, error) {
-	var results []dto.SshKeyOutput
+func (sks *sshKeyService) GetKeysByUserId(id string) (*[]dto.SshkeyOutput, error) {
+	var results []dto.SshkeyOutput
 
 	sshKeys, creatSshKeyError := sks.repository.GetSshKeysByUserId(uuid.MustParse(id))
 	if creatSshKeyError != nil {
@@ -50,7 +50,7 @@ func (sks *sshKeyService) GetKeysByUserId(id string) (*[]dto.SshKeyOutput, error
 	}
 
 	for _, sshKey := range *sshKeys {
-		results = append(results, dto.SshKeyOutput{
+		results = append(results, dto.SshkeyOutput{
 			Id:         sshKey.ID,
 			KeyName:    sshKey.KeyName,
 			PrivateKey: sshKey.PrivateKey,
@@ -61,7 +61,7 @@ func (sks *sshKeyService) GetKeysByUserId(id string) (*[]dto.SshKeyOutput, error
 	return &results, nil
 }
 
-func (sks *sshKeyService) PatchSshKeyName(id string, newName string) (*dto.SshKeyOutput, error) {
+func (sks *sshKeyService) PatchSshKeyName(id string, newName string) (*dto.SshkeyOutput, error) {
 	uuidID, err := uuid.Parse(id)
 	if err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func (sks *sshKeyService) PatchSshKeyName(id string, newName string) (*dto.SshKe
 		return nil, err
 	}
 
-	return &dto.SshKeyOutput{
+	return &dto.SshkeyOutput{
 		Id:         sshKey.ID,
 		KeyName:    sshKey.KeyName,
 		PrivateKey: sshKey.PrivateKey,
@@ -84,8 +84,8 @@ func (sks *sshKeyService) PatchSshKeyName(id string, newName string) (*dto.SshKe
 	}, nil
 }
 
-func (sks *sshKeyService) GetAllKeys() (*[]dto.SshKeyOutput, error) {
-	var results []dto.SshKeyOutput
+func (sks *sshKeyService) GetAllKeys() (*[]dto.SshkeyOutput, error) {
+	var results []dto.SshkeyOutput
 
 	sshKeys, creatSshKeyError := sks.repository.GetAllSshKeys()
 	if creatSshKeyError != nil {
@@ -93,7 +93,7 @@ func (sks *sshKeyService) GetAllKeys() (*[]dto.SshKeyOutput, error) {
 	}
 
 	for _, sshKey := range *sshKeys {
-		results = append(results, dto.SshKeyOutput{
+		results = append(results, dto.SshkeyOutput{
 			Id:         sshKey.ID,
 			KeyName:    sshKey.KeyName,
 			PrivateKey: sshKey.PrivateKey,

@@ -72,12 +72,12 @@ func (us *userService) GetAllUsers() (*[]dto.UserOutput, error) {
 		return nil, errUser
 	}
 
-	var results *[]dto.UserOutput
+	var results []dto.UserOutput
 	for _, user := range users {
-		*results = append(*results, *dto.UserModelToUserOutput(user))
+		results = append(results, *dto.UserModelToUserOutput(user))
 	}
 
-	return results, nil
+	return &results, nil
 }
 
 func (us *userService) DeleteUser(id string) error {

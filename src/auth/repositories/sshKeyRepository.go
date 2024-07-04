@@ -9,7 +9,7 @@ import (
 )
 
 type SshKeyRepository interface {
-	CreateSshKey(sshKeydto dto.CreateSshKeyInput) (*models.Sshkey, error)
+	CreateSshKey(sshKeydto dto.CreateSshkeyInput) (*models.Sshkey, error)
 	GetAllSshKeys() (*[]models.Sshkey, error)
 	GetSshKey(id uuid.UUID) (*models.Sshkey, error)
 	GetSshKeysByUserId(id uuid.UUID) (*[]models.Sshkey, error)
@@ -28,12 +28,12 @@ func NewSshKeyRepository(db *gorm.DB) SshKeyRepository {
 	return repository
 }
 
-func (r sshKeyRepository) CreateSshKey(sshKeydto dto.CreateSshKeyInput) (*models.Sshkey, error) {
+func (r sshKeyRepository) CreateSshKey(sshKeydto dto.CreateSshkeyInput) (*models.Sshkey, error) {
 
 	sshKey := models.Sshkey{
 		KeyName:    sshKeydto.KeyName,
 		PrivateKey: sshKeydto.PrivateKey,
-		OwnerID:    sshKeydto.UserId.String(),
+		OwnerID:    sshKeydto.UserId,
 	}
 
 	result := r.db.Create(&sshKey)
