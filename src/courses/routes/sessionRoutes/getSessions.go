@@ -1,12 +1,14 @@
 package sessionController
 
 import (
+	"soli/formations/src/courses/dto"
 	errors "soli/formations/src/courses/errors"
 
 	"github.com/gin-gonic/gin"
 )
 
 var _ = errors.APIError{}
+var _ = dto.CreateSessionOutput{}
 
 // GetSessions godoc
 // @Summary Récupération des sessions
@@ -17,7 +19,7 @@ var _ = errors.APIError{}
 //
 // @Security Bearer
 //
-// @Success 200 {object} []dto.SessionOutput
+// @Success 200 {object} []dto.CreateSessionOutput
 //
 // @Failure 404 {object} errors.APIError "Sessions inexistantes"
 //

@@ -3,15 +3,13 @@ package models
 import (
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"time"
-
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 type Session struct {
 	entityManagementModels.BaseModel
-	Course    Course
+	CourseId  string
 	Title     string
-	Group     casdoorsdk.Group
+	GroupId   string
 	Beginning time.Time
 	End       time.Time
 }

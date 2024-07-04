@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 	"soli/formations/src/auth/errors"
@@ -37,6 +38,7 @@ func (genericController genericController) getEntitiesFromName(entityName string
 	allEntitiesPages, err := genericController.genericService.GetEntities(entityModelInterface)
 
 	if err != nil {
+		fmt.Println(err.Error())
 		return nil, true
 	}
 

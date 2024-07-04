@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"reflect"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -29,6 +28,7 @@ import (
 	authModels "soli/formations/src/auth/models"
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
+	courseDtos "soli/formations/src/courses/dto"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
@@ -74,13 +74,8 @@ func main() {
 
 	// ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(courseModels.Session{}).Name(), sessionsDtos)
 
-	ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(authModels.Sshkey{}).Name(), authModels.Sshkey{})
-	// ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(authModels.Sshkey{}).Name(), authDtos.SshkeyPtrModelToSshkeyOutput, authDtos.SshkeyModelToSshkeyOutput, authDtos.SshkeyInputDtoToSshkeyModel)
-	ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(authModels.Sshkey{}).Name(), authDtos.SshkeyModelToSshkeyOutput, authDtos.SshkeyInputDtoToSshkeyModel)
-	sshkeyDtos := make(map[ems.DtoWay]interface{})
-	sshkeyDtos[ems.InputDto] = authDtos.CreateSshkeyInput{}
-	sshkeyDtos[ems.OutputDto] = authDtos.CreateSshkeyOutput{}
-	ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(authModels.Sshkey{}).Name(), sshkeyDtos)
+	ems.GlobalEntityRegistrationService.RegisterEntity(authDtos.SshkeyEntity{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseDtos.SessionEntity{})
 
 	casdoor.InitCasdoorConnection()
 
@@ -92,6 +87,7 @@ func main() {
 	sqldb.DB.AutoMigrate(&courseModels.Section{})
 	sqldb.DB.AutoMigrate(&courseModels.Chapter{})
 	sqldb.DB.AutoMigrate(&courseModels.Course{})
+	sqldb.DB.AutoMigrate(&courseModels.Session{})
 
 	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
 

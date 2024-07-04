@@ -17,7 +17,8 @@ func SessionsRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	middleware := auth.NewAuthMiddleware(db)
 
-	routes.GET("/", middleware.AuthManagement(), sessionController.GetSessions)
+	routes.GET("", middleware.AuthManagement(), sessionController.GetSessions)
+	routes.POST("", middleware.AuthManagement(), sessionController.AddSession)
 
 	routes.DELETE("/:id", middleware.AuthManagement(), sessionController.DeleteSession)
 }

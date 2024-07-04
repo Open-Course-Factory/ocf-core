@@ -3,10 +3,14 @@ package dto
 import (
 	"reflect"
 	"soli/formations/src/auth/models"
+	emi "soli/formations/src/entityManagement/interfaces"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+type SshkeyEntity struct {
+}
 
 type SshkeyOutput struct {
 	Id         uuid.UUID `json:"id"`
@@ -37,7 +41,7 @@ type DeleteSshkeyInput struct {
 	Id uuid.UUID `binding:"required"`
 }
 
-func SshkeyModelToSshkeyOutput(input any) *SshkeyOutput {
+func (s SshkeyEntity) EntityModelToEntityOutput(input any) any {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return sshkeyPtrModelToSshkeyOutput(input.(*models.Sshkey))
 	} else {
@@ -63,11 +67,26 @@ func sshkeyValueModelToSshkeyOutput(sshKeyModel models.Sshkey) *SshkeyOutput {
 	}
 }
 
-func SshkeyInputDtoToSshkeyModel(sshKeyInputDto CreateSshkeyInput) *models.Sshkey {
+func (s SshkeyEntity) EntityInputDtoToEntityModel(input any) any {
 
+	sshKeyInputDto := input.(CreateSshkeyInput)
 	return &models.Sshkey{
 		KeyName:    sshKeyInputDto.KeyName,
 		PrivateKey: sshKeyInputDto.PrivateKey,
 		OwnerID:    sshKeyInputDto.UserId,
+	}
+}
+
+func (s SshkeyEntity) GetEntityRegistrationInput() emi.EntityRegistrationInput {
+	return emi.EntityRegistrationInput{
+		EntityInterface: models.Sshkey{},
+		EntityConverters: emi.EntityConverters{
+			ModelToDto: s.EntityModelToEntityOutput,
+			DtoToModel: s.EntityInputDtoToEntityModel,
+		},
+		EntityDtos: emi.EntityDtos{
+			InputDto:  CreateSshkeyInput{},
+			OutputDto: CreateSshkeyOutput{},
+		},
 	}
 }

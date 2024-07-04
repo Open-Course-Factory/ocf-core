@@ -14,7 +14,7 @@ import (
 type SessionService interface {
 	CreateSession(sessionCreateDTO dto.CreateSessionInput) (*dto.CreateSessionOutput, error)
 	DeleteSession(id uuid.UUID) error
-	GetSessions() ([]dto.SessionOutput, error)
+	GetSessions() ([]dto.CreateSessionOutput, error)
 	GetSessionByGroup(group casdoorsdk.Group, courseName string) (*models.Session, error)
 }
 
@@ -29,12 +29,12 @@ func NewSessionService(db *gorm.DB) SessionService {
 }
 
 func (s sessionService) CreateSession(sessionCreateDto dto.CreateSessionInput) (*dto.CreateSessionOutput, error) {
-	group, err := casdoorsdk.GetGroup(sessionCreateDto.Group.Name)
+	group, err := casdoorsdk.GetGroup(sessionCreateDto.GroupId)
 	if err != nil {
 		return nil, err
 	}
 
-	session, errSession := s.repository.GetSessionByGroup(*group, sessionCreateDto.Course.Name)
+	session, errSession := s.repository.GetSessionByGroup(*group, sessionCreateDto.CourseId)
 
 	if errSession != nil {
 		if errSession.Error() != "record not found" {
@@ -64,7 +64,7 @@ func (s sessionService) DeleteSession(id uuid.UUID) error {
 	return nil
 }
 
-func (s *sessionService) GetSessions() ([]dto.SessionOutput, error) {
+func (s *sessionService) GetSessions() ([]dto.CreateSessionOutput, error) {
 
 	sessionModel, err := s.repository.GetAllSessions()
 
@@ -72,10 +72,11 @@ func (s *sessionService) GetSessions() ([]dto.SessionOutput, error) {
 		return nil, err
 	}
 
-	var sessionDto []dto.SessionOutput
+	var sessionDto []dto.CreateSessionOutput
 
 	for _, s := range *sessionModel {
-		sessionDto = append(sessionDto, *dto.SessionModelToSessionOutputDto(s))
+		sessionEntity := dto.SessionEntity{}
+		sessionDto = append(sessionDto, sessionEntity.EntityModelToEntityOutput(s).(dto.CreateSessionOutput))
 	}
 
 	return sessionDto, nil
