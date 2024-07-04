@@ -33,29 +33,18 @@ func NewGenericController(db *gorm.DB) GenericController {
 	return controller
 }
 
+// used in get
 func (genericController genericController) appendEntityFromResult(entityName string, item interface{}, entitiesDto []interface{}) ([]interface{}, bool) {
-	if funcRef, ok := genericController.entityRegistrationService.GetConversionFunction(entityName, ems.OutputModelToDto); ok {
-		val := reflect.ValueOf(funcRef)
-
-		if val.IsValid() && val.Kind() == reflect.Func {
-			reflectValue := reflect.ValueOf(item)
-			args := []reflect.Value{reflectValue}
-			entityDto := val.Call(args)
-			if len(entityDto) == 1 {
-				result := entityDto[0].Interface()
-
-				entitiesDto = append(entitiesDto, result)
-			}
-
-		} else {
-			return nil, true
-		}
-	} else {
-		return nil, true
+	result, ko := genericController.getEntityFromResult(entityName, item)
+	if !ko {
+		entitiesDto = append(entitiesDto, result)
+		return entitiesDto, false
 	}
-	return entitiesDto, false
+
+	return nil, true
 }
 
+// used in post and get
 func (genericController genericController) getEntityFromResult(entityName string, item interface{}) (interface{}, bool) {
 	var result interface{}
 	if funcRef, ok := genericController.entityRegistrationService.GetConversionFunction(entityName, ems.OutputModelToDto); ok {

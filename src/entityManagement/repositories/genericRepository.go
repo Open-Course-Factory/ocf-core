@@ -34,25 +34,12 @@ func (o *genericRepository) CreateEntity(entityInputDto interface{}, entityName 
 		args := []reflect.Value{reflect.ValueOf(entityInputDto)}
 		entityModel := val.Call(args)
 
-		// test, _ := ems.GlobalEntityRegistrationService.GetEntityInterface(entityName)
-		// testIface := reflect.TypeOf(test)
-
-		// entity := reflect.ValueOf(entityModel)
-		// iface := entity.Interface().(test)
-		// fmt.Println(iface)
-		// fmt.Println(reflect.TypeOf(entityModel[0].Interface()))
-
-		// err := mapstructure.Decode(entityModel[0], &test)
-		// if err != nil {
-		// 	fmt.Println(err.Error())
-		// }
-
 		result := o.db.Create(entityModel[0].Interface())
 		if result.Error != nil {
 			return nil, result.Error
 		}
 
-		return entityModel[0].Interface(), nil
+		return result.Statement.Model, nil
 	}
 
 	return 1, nil

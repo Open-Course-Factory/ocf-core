@@ -50,11 +50,6 @@ func (s *EntityRegistrationService) GetEntityDtos(name string, way DtoWay) inter
 	return s.dtos[name][way]
 }
 
-// func (s *EntityRegistrationService) GetEntityToOutputDtoConversionFunction(name string) (interface{}, bool) {
-// 	funcName, exists := s.functions[name]
-// 	return funcName, exists
-// }
-
 func (s *EntityRegistrationService) GetConversionFunction(name string, way ConversionWay) (interface{}, bool) {
 	var function interface{}
 	var exists bool

@@ -29,7 +29,6 @@ import (
 	authModels "soli/formations/src/auth/models"
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
-	courseDtos "soli/formations/src/courses/dto"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
@@ -66,16 +65,17 @@ func main() {
 	// coursesDtos = append(coursesDtos, courseDtos.CreateCourseInput{}, courseDtos.CreateCourseOutput{})
 	// ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(courseModels.Course{}).Name(), coursesDtos)
 
-	ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Session{}).Name(), courseModels.Session{})
-	ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(courseModels.Session{}).Name(), courseDtos.SessionModelToSessionOutputDto, courseDtos.SessionInputDtoToSessionModel)
+	// ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Session{}).Name(), courseModels.Session{})
+	// ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(courseModels.Session{}).Name(), courseDtos.SessionModelToSessionOutputDto, courseDtos.SessionInputDtoToSessionModel)
 
-	sessionsDtos := make(map[ems.DtoWay]interface{})
-	sessionsDtos[ems.InputDto] = courseDtos.CreateSessionInput{}
-	sessionsDtos[ems.OutputDto] = courseDtos.CreateSessionOutput{}
+	// sessionsDtos := make(map[ems.DtoWay]interface{})
+	// sessionsDtos[ems.InputDto] = courseDtos.CreateSessionInput{}
+	// sessionsDtos[ems.OutputDto] = courseDtos.CreateSessionOutput{}
 
-	ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(courseModels.Session{}).Name(), sessionsDtos)
+	// ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(courseModels.Session{}).Name(), sessionsDtos)
 
 	ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(authModels.Sshkey{}).Name(), authModels.Sshkey{})
+	// ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(authModels.Sshkey{}).Name(), authDtos.SshkeyPtrModelToSshkeyOutput, authDtos.SshkeyModelToSshkeyOutput, authDtos.SshkeyInputDtoToSshkeyModel)
 	ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(authModels.Sshkey{}).Name(), authDtos.SshkeyModelToSshkeyOutput, authDtos.SshkeyInputDtoToSshkeyModel)
 	sshkeyDtos := make(map[ems.DtoWay]interface{})
 	sshkeyDtos[ems.InputDto] = authDtos.CreateSshkeyInput{}

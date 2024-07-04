@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"reflect"
 	"soli/formations/src/auth/models"
 	"time"
 
@@ -36,7 +37,24 @@ type DeleteSshkeyInput struct {
 	Id uuid.UUID `binding:"required"`
 }
 
-func SshkeyModelToSshkeyOutput(sshKeyModel *models.Sshkey) *SshkeyOutput {
+func SshkeyModelToSshkeyOutput(input any) *SshkeyOutput {
+	if reflect.ValueOf(input).Kind() == reflect.Ptr {
+		return sshkeyPtrModelToSshkeyOutput(input.(*models.Sshkey))
+	} else {
+		return sshkeyValueModelToSshkeyOutput(input.(models.Sshkey))
+	}
+}
+
+func sshkeyPtrModelToSshkeyOutput(sshKeyModel *models.Sshkey) *SshkeyOutput {
+	return &SshkeyOutput{
+		Id:         sshKeyModel.ID,
+		KeyName:    sshKeyModel.KeyName,
+		PrivateKey: sshKeyModel.PrivateKey,
+		CreatedAt:  sshKeyModel.CreatedAt,
+	}
+}
+
+func sshkeyValueModelToSshkeyOutput(sshKeyModel models.Sshkey) *SshkeyOutput {
 	return &SshkeyOutput{
 		Id:         sshKeyModel.ID,
 		KeyName:    sshKeyModel.KeyName,

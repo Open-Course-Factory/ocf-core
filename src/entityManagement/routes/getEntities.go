@@ -54,10 +54,9 @@ func (genericController genericController) getEntitiesFromName(entityName string
 			for i := 0; i < convertedPage.Len(); i++ {
 
 				item := convertedPage.Index(i).Interface()
-				itemPtr := reflect.ValueOf(item)
 
 				var shouldReturn bool
-				entitiesDto, shouldReturn = genericController.appendEntityFromResult(entityName, itemPtr, entitiesDto)
+				entitiesDto, shouldReturn = genericController.appendEntityFromResult(entityName, item, entitiesDto)
 				if shouldReturn {
 					return nil, true
 				}
