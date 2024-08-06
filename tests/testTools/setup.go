@@ -1,16 +1,50 @@
-package testtools
+package test_tools
 
 import (
 	"fmt"
+	"path/filepath"
+	"runtime"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/services"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	"github.com/google/uuid"
+
+	_ "embed"
+
+	sqldb "soli/formations/src/db"
+
+	authModels "soli/formations/src/auth/models"
+	courseModels "soli/formations/src/courses/models"
+
+	courseServices "soli/formations/src/courses/services"
 )
 
 var groups []casdoorsdk.Group
 var roles []casdoorsdk.Role
+
+func SetupDatabase() {
+
+	sqldb.InitDBConnection(".env.test")
+	sqldb.DB = sqldb.DB.Debug()
+	sqldb.DB.AutoMigrate()
+	sqldb.DB.AutoMigrate(&courseModels.Page{})
+	sqldb.DB.AutoMigrate(&courseModels.Section{})
+	sqldb.DB.AutoMigrate(&courseModels.Chapter{})
+	sqldb.DB.AutoMigrate(&courseModels.Course{})
+	sqldb.DB.AutoMigrate(&courseModels.Session{})
+
+	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
+
+}
+
+func SetupCasdoor() {
+	_, b, _, _ := runtime.Caller(0)
+	basePath := filepath.Dir(b) + "/../../"
+	casdoor.InitCasdoorConnection(basePath + ".env")
+	casdoor.InitCasdoorEnforcer(sqldb.DB, basePath)
+}
 
 func SetupGroups() {
 	groups = append(groups, casdoorsdk.Group{ParentId: "sdv", Name: "classes", DisplayName: "Toutes les classes"})
@@ -58,7 +92,7 @@ func SetupRoles() {
 	ok1, errPolicy1 := casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/courses/*", "GET")
 	fmt.Println(ok1)
 
-	ok2, errPolicy2 := casdoor.Enforcer.AddPolicy(roleAdministrator.Name, "/api/v1/*", "(GET|POST|DELETE)")
+	ok2, errPolicy2 := casdoor.Enforcer.AddPolicy(roleAdministrator.Name, "/api/v1/*", "(GET|PATCH|POST|DELETE)")
 	fmt.Println(ok2)
 
 	if errPolicy1 != nil {
@@ -112,5 +146,15 @@ func DeleteAllObjects() {
 	models, _ := casdoorsdk.GetModels()
 	for _, model := range models {
 		casdoorsdk.DeleteModel(model)
+	}
+
+	cs := courseServices.NewCourseService(sqldb.DB)
+	courses, _ := cs.GetCourses()
+	for _, cours := range courses {
+		uuid, err := uuid.Parse(cours.CourseID_str)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+		cs.DeleteCourse(uuid)
 	}
 }

@@ -67,6 +67,7 @@ require (
 	github.com/rs/cors/wrapper/gin v0.0.0-20240228164225-8d33ca4794ea // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
 	github.com/skeema/knownhosts v1.2.2 // indirect
+	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect

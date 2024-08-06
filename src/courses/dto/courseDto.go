@@ -20,7 +20,7 @@ type CreateCourseOutput struct {
 type CreateCourseInput struct {
 	Name               string `binding:"required"`
 	Theme              string `binding:"required"`
-	Format             *int   `binding:"required,gte=0,lte=1"`
+	Format             int    `binding:"required,gte=0,lte=1"`
 	AuthorEmail        string `binding:"required"`
 	Category           string `binding:"required"`
 	Version            string
@@ -30,7 +30,6 @@ type CreateCourseInput struct {
 	Footer             string `binding:"required"`
 	Logo               string
 	Description        string
-	CourseID_str       string            `binding:"required"`
 	Schedule           string            `binding:"required"`
 	Prelude            string            `binding:"required"`
 	LearningObjectives string            `json:"learning_objectives"`
@@ -83,7 +82,7 @@ func CourseModelToCourseOutputDto(courseModel models.Course) *CourseOutput {
 		Footer:             courseModel.Footer,
 		Logo:               courseModel.Logo,
 		Description:        courseModel.Description,
-		CourseID_str:       courseModel.BaseModel.ID.String(),
+		CourseID_str:       courseModel.ID.String(),
 		Schedule:           courseModel.Schedule,
 		Prelude:            courseModel.Prelude,
 		LearningObjectives: courseModel.LearningObjectives,

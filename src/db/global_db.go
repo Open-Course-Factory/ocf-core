@@ -16,14 +16,18 @@ import (
 var DB *gorm.DB
 var DBType string
 
-const DB_FILE = "./db-file.db"
+const TESTS_ROOT = "../"
+
+const DB_FILE = TESTS_ROOT + "db-file.db"
+
+//const ENV_FILE = TESTS_ROOT + ".env.test"
 
 // InitDBConnection opens a connection to the database
-func InitDBConnection() {
+func InitDBConnection(envFile string) {
 	var err error
 
 	// load
-	err = godotenv.Load()
+	err = godotenv.Load(envFile)
 	DBType = os.Getenv("DATABASE")
 
 	if err != nil {

@@ -7,8 +7,6 @@ import (
 	config "soli/formations/src/configuration"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
-
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 type OCFMdWriter interface {
@@ -40,8 +38,7 @@ type Course struct {
 	Header                   string
 	Footer                   string
 	Logo                     string
-	OwnerID                  string
-	Owner                    *casdoorsdk.User `json:"owner" gorm:"serializer:json"`
+	OwnerID                  []string `gorm:"serializer:json"`
 	Description              string
 	Format                   config.Format
 	CourseID_str             string

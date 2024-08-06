@@ -20,12 +20,13 @@ import (
 	generator "soli/formations/src/generationEngine"
 	marp "soli/formations/src/generationEngine/marp_integration"
 	slidev "soli/formations/src/generationEngine/slidev_integration"
-	testtools "soli/formations/src/testTools"
+	testtools "soli/formations/tests/testTools"
 
 	authController "soli/formations/src/auth"
 	"soli/formations/src/auth/casdoor"
 	authDtos "soli/formations/src/auth/dto"
 	authModels "soli/formations/src/auth/models"
+	groupController "soli/formations/src/auth/routes/groupsRoutes"
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
 	courseDtos "soli/formations/src/courses/dto"
@@ -77,9 +78,9 @@ func main() {
 	ems.GlobalEntityRegistrationService.RegisterEntity(authDtos.SshkeyEntity{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseDtos.SessionEntity{})
 
-	casdoor.InitCasdoorConnection()
+	casdoor.InitCasdoorConnection(".env")
 
-	sqldb.InitDBConnection()
+	sqldb.InitDBConnection(".env")
 
 	sqldb.DB.AutoMigrate()
 
@@ -91,7 +92,7 @@ func main() {
 
 	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
 
-	casdoor.InitCasdoorEnforcer(sqldb.DB)
+	casdoor.InitCasdoorEnforcer(sqldb.DB, "")
 
 	initDB()
 
@@ -105,7 +106,7 @@ func main() {
 		AllowedOrigins:     []string{"*"},
 		AllowCredentials:   true,
 		Debug:              true,
-		AllowedMethods:     []string{"GET", "POST", "OPTIONS", "DELETE"},
+		AllowedMethods:     []string{"GET", "POST", "PATCH", "OPTIONS", "DELETE"},
 		AllowedHeaders:     []string{"*"},
 		OptionsPassthrough: true,
 	}))
@@ -116,6 +117,7 @@ func main() {
 	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sshKeyController.SshKeysRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	groupController.GroupRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 
@@ -241,7 +243,7 @@ func getCourseFromProgramInputs(courseName *string, courseGitRepository *string,
 	var errGetGitCourse error
 	if isCourseGitRepository {
 		c := courseService.NewCourseService(sqldb.DB)
-		errGetGitCourse = c.GetGitCourse(*LogguedInUser, *courseName, *courseGitRepository, *courseGitRepositoryBranchName)
+		errGetGitCourse = c.GetGitCourse(LogguedInUser.Id, *courseName, *courseGitRepository, *courseGitRepositoryBranchName)
 	}
 
 	if errGetGitCourse != nil {
@@ -251,8 +253,7 @@ func getCourseFromProgramInputs(courseName *string, courseGitRepository *string,
 	jsonCourseFilePath := config.COURSES_ROOT + *courseName + "/course.json"
 	course := courseModels.ReadJsonCourseFile(jsonCourseFilePath)
 
-	course.Owner = LogguedInUser
-	course.OwnerID = LogguedInUser.Id
+	course.OwnerID = append(course.OwnerID, LogguedInUser.Id)
 	course.FolderName = *courseName
 	course.GitRepository = *courseGitRepository
 	course.GitRepositoryBranch = *courseGitRepositoryBranchName

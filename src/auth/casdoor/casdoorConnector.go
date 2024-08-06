@@ -18,8 +18,8 @@ var JwtPublicKey string
 
 var Enforcer *casbin.Enforcer
 
-func InitCasdoorConnection() {
-	err := godotenv.Load()
+func InitCasdoorConnection(basePath string) {
+	err := godotenv.Load(basePath)
 	casdoorEndPoint := os.Getenv("CASDOOR_ENDPOINT")
 	casdoorClientId := os.Getenv("CASDOOR_CLIENT_ID")
 	casdoorClientsecret := os.Getenv("CASDOOR_CLIENT_SECRET")
@@ -33,7 +33,7 @@ func InitCasdoorConnection() {
 	casdoorsdk.InitConfig(casdoorEndPoint, casdoorClientId, casdoorClientsecret, JwtPublicKey, casdoorOrganizationName, casdoorApplicationName)
 }
 
-func InitCasdoorEnforcer(db *gorm.DB) {
+func InitCasdoorEnforcer(db *gorm.DB, basePath string) {
 	// Initialize  casbin adapter
 	adapter, err := gormadapter.NewAdapterByDB(db)
 	if err != nil {
@@ -41,7 +41,7 @@ func InitCasdoorEnforcer(db *gorm.DB) {
 	}
 
 	// Load model configuration file and policy store adapter
-	enforcer, err := casbin.NewEnforcer("src/configuration/keymatch_model.conf", adapter)
+	enforcer, err := casbin.NewEnforcer(basePath+"src/configuration/keymatch_model.conf", adapter)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create casbin enforcer: %v", err))
 	}

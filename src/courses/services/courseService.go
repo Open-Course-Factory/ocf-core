@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"soli/formations/src/auth/casdoor"
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/errors"
@@ -26,7 +27,7 @@ type CourseService interface {
 	CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto.CreateCourseOutput, error)
 	DeleteCourse(id uuid.UUID) error
 	GetCourses() ([]dto.CourseOutput, error)
-	GetGitCourse(owner casdoorsdk.User, courseName string, courseURL string, courseBranch string) error
+	GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) error
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
 }
 
@@ -112,6 +113,16 @@ func (c courseService) CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto
 			return nil, createCourseError
 		}
 
+		errPolicyLoading := casdoor.Enforcer.LoadPolicy()
+		if errPolicyLoading != nil {
+			return nil, errPolicyLoading
+		}
+
+		_, errAddingPolicy := casdoor.Enforcer.AddPolicy(user.Id, "/api/v1/courses/"+courseCreated.ID.String(), "(GET|DELETE|PATCH|PUT)")
+		if errAddingPolicy != nil {
+			return nil, errAddingPolicy
+		}
+
 		return &dto.CreateCourseOutput{Name: courseCreated.Name}, nil
 	}
 
@@ -124,6 +135,17 @@ func (c courseService) DeleteCourse(id uuid.UUID) error {
 	if errorDelete != nil {
 		return errorDelete
 	}
+
+	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
+	if errPolicyLoading != nil {
+		return errPolicyLoading
+	}
+
+	_, errRemovingPolicy := casdoor.Enforcer.RemoveFilteredPolicy(1, "/api/v1/courses/"+id.String())
+	if errRemovingPolicy != nil {
+		return errRemovingPolicy
+	}
+
 	return nil
 }
 
@@ -144,12 +166,12 @@ func (c *courseService) GetCourses() ([]dto.CourseOutput, error) {
 	return courseDto, nil
 }
 
-func (c courseService) GetGitCourse(owner casdoorsdk.User, courseName string, courseURL string, courseBranch string) error {
+func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) error {
 	// Clones the given repository in memory, creating the remote, the local
 	// branches and fetching the objects, exactly as:
 	log.Printf("git clone %s", courseURL)
 
-	fs, cloneErr := models.GitClone(owner, courseURL, courseBranch)
+	fs, cloneErr := models.GitClone(ownerId, courseURL, courseBranch)
 	if cloneErr != nil {
 		return cloneErr
 	}
