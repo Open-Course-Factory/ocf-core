@@ -23,7 +23,7 @@ import (
 // @Failure		400	{object}	errors.APIError	"Impossible de parser le json"
 // @Failure		404	{object}	errors.APIError	"Group non trouvé - Impossible de le supprimer "
 //
-// @Router			/groups/{id} [delete]
+// @Router			/groups/{name} [delete]
 func (u groupController) DeleteGroup(ctx *gin.Context) {
 	nameParam := ctx.Param("name")
 

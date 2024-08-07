@@ -35,10 +35,12 @@ func TestCourseCreation(t *testing.T) {
 	teardownTest := SetupFunctionnalTests(t)
 	defer teardownTest(t)
 
+	formatInt := int(config.HTML)
+
 	courseInput := courseDto.CreateCourseInput{
 		Name:               "Cours de test",
 		Theme:              "TEST",
-		Format:             int(config.HTML),
+		Format:             &formatInt,
 		AuthorEmail:        "1.supervisor@test.com",
 		Category:           "prog",
 		Version:            "1",

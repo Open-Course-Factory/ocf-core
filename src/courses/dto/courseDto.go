@@ -20,7 +20,7 @@ type CreateCourseOutput struct {
 type CreateCourseInput struct {
 	Name               string `binding:"required"`
 	Theme              string `binding:"required"`
-	Format             int    `binding:"required,gte=0,lte=1"`
+	Format             *int   `binding:"required,gte=0,lte=1"`
 	AuthorEmail        string `binding:"required"`
 	Category           string `binding:"required"`
 	Version            string

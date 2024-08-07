@@ -17,6 +17,6 @@ func GroupRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm
 	middleware := auth.NewAuthMiddleware(db)
 
 	routes.POST("", middleware.AuthManagement(), groupController.AddGroup)
-	routes.PATCH("/:id", middleware.AuthManagement(), groupController.AddUserInGroup)
-	routes.DELETE("/:id", middleware.AuthManagement(), groupController.DeleteGroup)
+	routes.PATCH("/:name", middleware.AuthManagement(), groupController.ModifyUsersInGroup)
+	routes.DELETE("/:name", middleware.AuthManagement(), groupController.DeleteGroup)
 }

@@ -2,7 +2,7 @@ package services
 
 import (
 	"fmt"
-	"soli/formations/src/auth/casdoor"
+	"slices"
 	"soli/formations/src/auth/dto"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -10,7 +10,7 @@ import (
 
 type GroupService interface {
 	AddGroup(userCreateDTO dto.CreateGroupInput) (*dto.CreateGroupOutput, error)
-	AddUserInGroup(addUserInGroupDTO dto.AddUserInGroupInput) (string, error)
+	ModifyUsersInGroup(groupName string, addUserInGroupDTO dto.ModifyUsersInGroupInput) (string, error)
 	DeleteGroup(id string) error
 }
 
@@ -51,42 +51,75 @@ func (us *groupService) AddGroup(groupCreateDTO dto.CreateGroupInput) (*dto.Crea
 	return dto.GroupModelToGroupOutput(createdGroup), nil
 }
 
-func (us *groupService) AddUserInGroup(addUserInGroupDTO dto.AddUserInGroupInput) (string, error) {
-	group, errGroup := casdoorsdk.GetGroup(addUserInGroupDTO.GroupName)
+func (us *groupService) ModifyUsersInGroup(groupName string, modifyUsersInGroupDTO dto.ModifyUsersInGroupInput) (string, error) {
+	group, errGroup := casdoorsdk.GetGroup(groupName)
 	if errGroup != nil {
 		return "", errGroup
 	}
 
-	user, errUser := casdoorsdk.GetUserByUserId(addUserInGroupDTO.UserId)
-	if errUser != nil {
-		return "", errUser
+	for _, userId := range modifyUsersInGroupDTO.UserIds {
+		user, errUser := casdoorsdk.GetUserByUserId(userId)
+		if errUser != nil {
+			return "", errUser
+		}
+
+		switch dto.Action(*modifyUsersInGroupDTO.Action) {
+		case dto.ADD:
+			if !slices.Contains(user.Groups, group.Name) {
+				user.Groups = append(user.Groups, group.Name)
+			}
+
+			var userPosition int = -1
+			for positionInGroup, userFromGroup := range group.Users {
+				if userFromGroup.Id == user.Id {
+					userPosition = positionInGroup
+					break
+				}
+			}
+			if userPosition < 0 {
+				group.Users = append(group.Users, user)
+			}
+		case dto.REMOVE:
+
+			var userPosition int = -1
+			for positionInGroup, userFromGroup := range group.Users {
+				if userFromGroup.Id == user.Id {
+					userPosition = positionInGroup
+					break
+				}
+			}
+			if userPosition >= 0 {
+				group.Users = slices.Delete(group.Users, userPosition, userPosition+1)
+			}
+			groupPosition := slices.Index(user.Groups, group.Name)
+			if groupPosition >= 0 {
+				user.Groups = slices.Delete(user.Groups, groupPosition, groupPosition+1)
+			}
+		}
+
+		_, errUpdateGroup := casdoorsdk.UpdateGroup(group)
+		if errUpdateGroup != nil {
+			return "", errUpdateGroup
+		}
+
+		_, errUpdateUser := casdoorsdk.UpdateUser(user)
+		if errUpdateUser != nil {
+			return "", errUpdateUser
+		}
 	}
 
-	user.Groups = append(user.Groups, group.Name)
-	group.Users = append(group.Users, user)
-
-	_, errUpdateGroup := casdoorsdk.UpdateGroup(group)
-	if errUpdateGroup != nil {
-		return "", errUpdateGroup
-	}
-
-	_, errUpdateUser := casdoorsdk.UpdateUser(user)
-	if errUpdateUser != nil {
-		return "", errUpdateUser
-	}
-
-	return "User added in group", nil
+	return "Users modified in group", nil
 }
 
-func (us *groupService) DeleteGroup(id string) error {
-	user, errUser := casdoorsdk.GetUserByUserId(id)
-	if errUser != nil {
-		fmt.Println(errUser.Error())
-		return errUser
+func (us *groupService) DeleteGroup(name string) error {
+	group, errGroup := casdoorsdk.GetGroup(name)
+	if errGroup != nil {
+		fmt.Println(errGroup.Error())
+		return errGroup
 	}
-	casdoorsdk.DeleteUser(user)
+	casdoorsdk.DeleteGroup(group)
 
-	casdoor.Enforcer.RemoveGroupingPolicy(user.Id)
+	//casdoor.Enforcer.RemoveGroupingPolicy(user.Id)
 
 	return nil
 }

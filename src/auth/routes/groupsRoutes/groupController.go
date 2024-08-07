@@ -9,7 +9,7 @@ import (
 type GroupController interface {
 	AddGroup(ctx *gin.Context)
 	DeleteGroup(ctx *gin.Context)
-	AddUserInGroup(ctx *gin.Context)
+	ModifyUsersInGroup(ctx *gin.Context)
 }
 
 type groupController struct {

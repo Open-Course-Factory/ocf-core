@@ -5,6 +5,13 @@ import (
 	"github.com/google/uuid"
 )
 
+type Action int
+
+const (
+	ADD Action = iota
+	REMOVE
+)
+
 type CreateGroupInput struct {
 	Organization string `binding:"required"`
 	Name         string `binding:"required"`
@@ -17,9 +24,10 @@ type CreateGroupOutput struct {
 	CreatedAt string `json:"created_at"`
 }
 
-type AddUserInGroupInput struct {
-	UserId    string `binding:"required"`
-	GroupName string `json:"name"`
+// ptr mandatory https://github.com/go-openapi/validate/issues/105
+type ModifyUsersInGroupInput struct {
+	UserIds []string `binding:"required"`
+	Action  *Action  `binding:"required,gte=0,lte=1"`
 }
 
 type DeleteGroupInput struct {

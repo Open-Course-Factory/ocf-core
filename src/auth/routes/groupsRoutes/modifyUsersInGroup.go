@@ -8,14 +8,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Add User in Group godoc
+// Modify Users in Group godoc
 //
-// @Summary		Création user dans un groupe
-// @Description	Ajoute un nouvel user dans un groupe
+// @Summary		Modification d'utilisateurs dans un groupe
+// @Description	Modifie les utilisateurs dans un groupe
 // @Tags		groups
 // @Accept		json
 // @Produce		json
-// @Param		input	body		dto.AddUserInGroupInput	true	"UserId and Group Name"
+// @Param		name	path		string	true	"Group name"
+// @Param		data	body		dto.ModifyUsersInGroupInput	true	"UserId and Action"
 //
 // @Security Bearer
 //
@@ -24,20 +25,21 @@ import (
 // @Failure		400		{object}	errors.APIError	"Impossible de parser le json"
 // @Failure		400		{object}	errors.APIError	"Impossible d'ajouter un user"
 // @Failure		409		{object}	errors.APIError	"L'utilisateur n'a pas pu être ajouté"
-// @Router			/groups/{id} [patch]
-func (g groupController) AddUserInGroup(ctx *gin.Context) {
-	adduserInGroupDTO := dto.AddUserInGroupInput{}
+// @Router			/groups/{name} [patch]
+func (g groupController) ModifyUsersInGroup(ctx *gin.Context) {
+	nameParam := ctx.Param("name")
+	modifyUsersInGroupDTO := dto.ModifyUsersInGroupInput{}
 
-	bindError := ctx.BindJSON(&adduserInGroupDTO)
+	bindError := ctx.BindJSON(&modifyUsersInGroupDTO)
 	if bindError != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de parser le json",
+			ErrorMessage: bindError.Error(),
 		})
 		return
 	}
 
-	result, addUserError := g.service.AddUserInGroup(adduserInGroupDTO)
+	result, addUserError := g.service.ModifyUsersInGroup(nameParam, modifyUsersInGroupDTO)
 
 	if addUserError != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
