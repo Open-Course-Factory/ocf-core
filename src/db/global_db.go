@@ -16,9 +16,7 @@ import (
 var DB *gorm.DB
 var DBType string
 
-const TESTS_ROOT = "../"
-
-const DB_FILE = TESTS_ROOT + "db-file.db"
+var DBFile string
 
 //const ENV_FILE = TESTS_ROOT + ".env.test"
 
@@ -28,6 +26,17 @@ func InitDBConnection(envFile string) {
 
 	// load
 	err = godotenv.Load(envFile)
+
+	environment := os.Getenv("ENVIRONMENT")
+
+	switch environment {
+	case "test":
+		const TESTS_ROOT = "../"
+		DBFile = TESTS_ROOT + "db-file.db"
+	default:
+		DBFile = "db-file.db"
+	}
+
 	DBType = os.Getenv("DATABASE")
 
 	if err != nil {
@@ -47,7 +56,7 @@ func InitDBConnection(envFile string) {
 			},
 		})
 	} else if DBType == "sqlite" {
-		DB, err = gorm.Open(sqlite.Open(DB_FILE))
+		DB, err = gorm.Open(sqlite.Open(DBFile))
 	}
 	if err != nil {
 		panic(err)
