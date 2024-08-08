@@ -11,19 +11,19 @@ import (
 
 // Add User godoc
 //
-// @Summary		Création user
-// @Description	Ajoute un nouvel user dans la base de données
-// @Tags		users
-// @Accept		json
-// @Produce		json
-// @Param		user	body		dto.CreateUserInput	true	"user"
+//	@Summary		Création user
+//	@Description	Ajoute un nouvel user dans la base de données
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			user	body		dto.CreateUserInput	true	"user"
 //
-// @Success		201		{object}	dto.CreateUserOutput
+//	@Success		201		{object}	dto.CreateUserOutput
 //
-// @Failure		400		{object}	errors.APIError	"Impossible de parser le json"
-// @Failure		400		{object}	errors.APIError	"Impossible de créer un user"
-// @Failure		409		{object}	errors.APIError	"Le user existe déjà"
-// @Router			/users [post]
+//	@Failure		400		{object}	errors.APIError	"Impossible de parser le json"
+//	@Failure		400		{object}	errors.APIError	"Impossible de créer un user"
+//	@Failure		409		{object}	errors.APIError	"Le user existe déjà"
+//	@Router			/users [post]
 func (u userController) AddUser(ctx *gin.Context) {
 	userCreateDTO := dto.CreateUserInput{}
 

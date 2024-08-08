@@ -27,17 +27,17 @@ func NewAuthController() AuthController {
 
 // Callback godoc
 //
-// @Summary Callback
-// @Description callback pour casdoor
-// @Tags callback
-// @Accept json
-// @Produce json
+//	@Summary		Callback
+//	@Description	callback pour casdoor
+//	@Tags			callback
+//	@Accept			json
+//	@Produce		json
 //
-// @Success 200
+//	@Success		200
 //
-// @Failure 404 {object} errors.APIError "Utilisateur non trouvé"
+//	@Failure		404	{object}	errors.APIError	"Utilisateur non trouvé"
 //
-// @Router /auth/callback [get]
+//	@Router			/auth/callback [get]
 func (ac *authController) Callback(ctx *gin.Context) {
 	codeParam := ctx.Query("code")
 	stateParam := ctx.Query("state")
@@ -64,18 +64,18 @@ func (ac *authController) Callback(ctx *gin.Context) {
 
 // Login godoc
 //
-// @Summary Login
-// @Description Login utilisateur
-// @Tags login
-// @Accept json
-// @Produce json
+//	@Summary		Login
+//	@Description	Login utilisateur
+//	@Tags			login
+//	@Accept			json
+//	@Produce		json
 //
-// @Param		login	body		dto.LoginInput	true	"login"
-// @Success		201		{object}	dto.LoginOutput
+//	@Param			login	body		dto.LoginInput	true	"login"
+//	@Success		201		{object}	dto.LoginOutput
 //
-// @Failure 404 {object} errors.APIError "Utilisateur non trouvé"
+//	@Failure		404		{object}	errors.APIError	"Utilisateur non trouvé"
 //
-// @Router /auth/login [post]
+//	@Router			/auth/login [post]
 func (ac *authController) Login(ctx *gin.Context) {
 
 	user, shouldReturn := getUserFromContext(ctx)

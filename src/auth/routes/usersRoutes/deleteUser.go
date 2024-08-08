@@ -11,21 +11,21 @@ import (
 
 // Delete user godoc
 //
-// @Summary		Suppression user
-// @Description	Suppression d'un user dans la base de données
-// @Tags			users
-// @Accept			json
-// @Produce		json
-// @Param			id	path		string	true	"ID user"
+//	@Summary		Suppression user
+//	@Description	Suppression d'un user dans la base de données
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"ID user"
 //
-// @Security Bearer
+//	@Security		Bearer
 //
-// @Success		204	{object}	string
+//	@Success		204	{object}	string
 //
-// @Failure		400	{object}	errors.APIError	"Impossible de parser le json"
-// @Failure		404	{object}	errors.APIError	"User non trouvé - Impossible de le supprimer "
+//	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
+//	@Failure		404	{object}	errors.APIError	"User non trouvé - Impossible de le supprimer "
 //
-// @Router			/users/{id} [delete]
+//	@Router			/users/{id} [delete]
 func (u userController) DeleteUser(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 

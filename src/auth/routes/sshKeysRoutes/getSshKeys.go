@@ -11,19 +11,19 @@ var _ = errors.APIError{}
 var _ = dto.CreateSshkeyOutput{}
 
 // GetSshKeys godoc
-// @Summary Récupération des sshKeys
-// @Description Récupération de toutes les sshKeys disponibles
-// @Tags sshKeys
-// @Accept json
-// @Produce json
+//	@Summary		Récupération des sshKeys
+//	@Description	Récupération de toutes les sshKeys disponibles
+//	@Tags			sshKeys
+//	@Accept			json
+//	@Produce		json
 //
-// @Security Bearer
+//	@Security		Bearer
 //
-// @Success 200 {object} []dto.SshkeyOutput
+//	@Success		200	{object}	[]dto.SshkeyOutput
 //
-// @Failure 404 {object} errors.APIError "SshKeys inexistantes"
+//	@Failure		404	{object}	errors.APIError	"SshKeys inexistantes"
 //
-// @Router /sshkeys [get]
+//	@Router			/sshkeys [get]
 func (s sshKeyController) GetSshKeys(ctx *gin.Context) {
 	s.GetEntities(ctx)
 }

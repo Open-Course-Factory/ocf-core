@@ -12,22 +12,22 @@ var _ = errors.APIError{}
 
 // Patch sshKey godoc
 //
-// @Summary		modification sshKey name
-// @Description	Modification du nom d'une sshKey dans la base de données
-// @Tags			sshKeys
-// @Accept			json
-// @Produce		json
-// @Param			id	path		string	true	"ID sshKey"
-// @Param			newName	body		string	true	"Nouveau nom de la clé SSH"
+//	@Summary		modification sshKey name
+//	@Description	Modification du nom d'une sshKey dans la base de données
+//	@Tags			sshKeys
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path	string	true	"ID sshKey"
+//	@Param			newName	body	string	true	"Nouveau nom de la clé SSH"
 //
-// @Security Bearer
+//	@Security		Bearer
 //
-// @Success		201	{object}	string
+//	@Success		201	{object}	string
 //
-// @Failure		400	{object}	errors.APIError	"Impossible de parser le json"
-// @Failure		404	{object}	errors.APIError	"SshKey non trouvée - Impossible de le modifier "
+//	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
+//	@Failure		404	{object}	errors.APIError	"SshKey non trouvée - Impossible de le modifier "
 //
-// @Router			/sshkeys/{id} [patch]
+//	@Router			/sshkeys/{id} [patch]
 func (s sshKeyController) PatchSshKeyName(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 	var requestBody struct {

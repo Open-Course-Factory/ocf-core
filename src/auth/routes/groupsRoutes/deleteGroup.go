@@ -9,21 +9,21 @@ import (
 
 // Delete group godoc
 //
-// @Summary		Suppression groupe
-// @Description	Suppression d'un groupe dans la base de données
-// @Tags			groups
-// @Accept			json
-// @Produce		json
-// @Param			name	path		string	true	"Group name"
+//	@Summary		Suppression groupe
+//	@Description	Suppression d'un groupe dans la base de données
+//	@Tags			groups
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path	string	true	"Group name"
 //
-// @Security Bearer
+//	@Security		Bearer
 //
-// @Success		204	{object}	string
+//	@Success		204	{object}	string
 //
-// @Failure		400	{object}	errors.APIError	"Impossible de parser le json"
-// @Failure		404	{object}	errors.APIError	"Group non trouvé - Impossible de le supprimer "
+//	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
+//	@Failure		404	{object}	errors.APIError	"Group non trouvé - Impossible de le supprimer "
 //
-// @Router			/groups/{name} [delete]
+//	@Router			/groups/{name} [delete]
 func (u groupController) DeleteGroup(ctx *gin.Context) {
 	nameParam := ctx.Param("name")
 

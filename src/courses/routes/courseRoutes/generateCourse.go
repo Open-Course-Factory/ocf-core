@@ -12,19 +12,19 @@ import (
 
 // Generate Course godoc
 //
-// @Summary		Génération d'un cours
-// @Description	Génération d'un cours pour un format donné
-// @Tags			courses
-// @Accept			json
-// @Produce		json
-// @Param			course	body		dto.GenerateCourseInput	true	"cours"
+//	@Summary		Génération d'un cours
+//	@Description	Génération d'un cours pour un format donné
+//	@Tags			courses
+//	@Accept			json
+//	@Produce		json
+//	@Param			course	body	dto.GenerateCourseInput	true	"cours"
 //
-// @Security Bearer
+//	@Security		Bearer
 //
-// @Success		201		{object}	dto.GenerateCourseOutput
+//	@Success		201	{object}	dto.GenerateCourseOutput
 //
-// @Failure		400		{object}	errors.APIError	"Impossible de parser le json"
-// @Router			/courses/generate [post]
+//	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
+//	@Router			/courses/generate [post]
 func (c courseController) GenerateCourse(ctx *gin.Context) {
 	courseGenerateDTO := dto.GenerateCourseInput{}
 

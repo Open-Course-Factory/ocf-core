@@ -26,6 +26,7 @@ import (
 	"soli/formations/src/auth/casdoor"
 	authDtos "soli/formations/src/auth/dto"
 	authModels "soli/formations/src/auth/models"
+	accessController "soli/formations/src/auth/routes/accessesRoutes"
 	groupController "soli/formations/src/auth/routes/groupsRoutes"
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
@@ -43,21 +44,21 @@ import (
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
-// @title OCF API
-// @version 0.0.1
-// @description This is a server to build and generate slides.
-// @termsOfService TODO
+//	@title			OCF API
+//	@version		0.0.1
+//	@description	This is a server to build and generate slides.
+//	@termsOfService	TODO
 
-// @securityDefinitions.apikey Bearer
-// @in header
-// @name Authorization
-// @description Type "Bearer" followed by a space and JWT token.
+//	@securityDefinitions.apikey	Bearer
+//	@in							header
+//	@name						Authorization
+//	@description				Type "Bearer" followed by a space and JWT token.
 
-// @contact.name Solution Libre
-// @contact.url https://www.solution-libre.fr
-// @contact.email contact@solution-libre.fr
-// @host localhost:8080
-// @BasePath /api/v1
+//	@contact.name	Solution Libre
+//	@contact.url	https://www.solution-libre.fr
+//	@contact.email	contact@solution-libre.fr
+//	@host			localhost:8080
+//	@BasePath		/api/v1
 func main() {
 
 	// ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Course{}).Name(), courseModels.Course{})
@@ -118,6 +119,7 @@ func main() {
 	sshKeyController.SshKeysRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	groupController.GroupRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	accessController.AccessRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 

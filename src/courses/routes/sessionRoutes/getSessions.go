@@ -11,19 +11,19 @@ var _ = errors.APIError{}
 var _ = dto.CreateSessionOutput{}
 
 // GetSessions godoc
-// @Summary Récupération des sessions
-// @Description Récupération de toutes les sessions disponibles
-// @Tags sessions
-// @Accept json
-// @Produce json
+//	@Summary		Récupération des sessions
+//	@Description	Récupération de toutes les sessions disponibles
+//	@Tags			sessions
+//	@Accept			json
+//	@Produce		json
 //
-// @Security Bearer
+//	@Security		Bearer
 //
-// @Success 200 {object} []dto.CreateSessionOutput
+//	@Success		200	{object}	[]dto.CreateSessionOutput
 //
-// @Failure 404 {object} errors.APIError "Sessions inexistantes"
+//	@Failure		404	{object}	errors.APIError	"Sessions inexistantes"
 //
-// @Router /sessions [get]
+//	@Router			/sessions [get]
 func (s sessionController) GetSessions(ctx *gin.Context) {
 
 	s.GetEntities(ctx)
