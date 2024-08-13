@@ -34,6 +34,7 @@ import (
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
+	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
 
 	courseService "soli/formations/src/courses/services"
 
@@ -54,11 +55,11 @@ import (
 //	@name						Authorization
 //	@description				Type "Bearer" followed by a space and JWT token.
 
-//	@contact.name	Solution Libre
-//	@contact.url	https://www.solution-libre.fr
-//	@contact.email	contact@solution-libre.fr
-//	@host			localhost:8080
-//	@BasePath		/api/v1
+// @contact.name	Solution Libre
+// @contact.url	https://www.solution-libre.fr
+// @contact.email	contact@solution-libre.fr
+// @host			localhost:8080
+// @BasePath		/api/v1
 func main() {
 
 	// ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Course{}).Name(), courseModels.Course{})
@@ -120,6 +121,7 @@ func main() {
 	userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	groupController.GroupRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	accessController.AccessRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	sshClientController.SshClientRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 
