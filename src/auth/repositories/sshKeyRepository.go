@@ -9,10 +9,10 @@ import (
 )
 
 type SshKeyRepository interface {
-	CreateSshKey(sshKeydto dto.CreateSshKeyInput) (*models.SshKey, error)
-	GetAllSshKeys() (*[]models.SshKey, error)
-	GetSshKey(id uuid.UUID) (*models.SshKey, error)
-	GetSshKeysByUserId(id uuid.UUID) (*[]models.SshKey, error)
+	CreateSshKey(sshKeydto dto.CreateSshkeyInput) (*models.Sshkey, error)
+	GetAllSshKeys() (*[]models.Sshkey, error)
+	GetSshKey(id uuid.UUID) (*models.Sshkey, error)
+	GetSshKeysByUserId(id uuid.UUID) (*[]models.Sshkey, error)
 	PatchSshKeyName(id uuid.UUID, newName string) error
 	DeleteSshKey(id uuid.UUID) error
 }
@@ -28,12 +28,12 @@ func NewSshKeyRepository(db *gorm.DB) SshKeyRepository {
 	return repository
 }
 
-func (r sshKeyRepository) CreateSshKey(sshKeydto dto.CreateSshKeyInput) (*models.SshKey, error) {
+func (r sshKeyRepository) CreateSshKey(sshKeydto dto.CreateSshkeyInput) (*models.Sshkey, error) {
 
-	sshKey := models.SshKey{
+	sshKey := models.Sshkey{
 		KeyName:    sshKeydto.KeyName,
 		PrivateKey: sshKeydto.PrivateKey,
-		OwnerID:    sshKeydto.UserId.String(),
+		OwnerID:    sshKeydto.UserId,
 	}
 
 	result := r.db.Create(&sshKey)
@@ -43,9 +43,9 @@ func (r sshKeyRepository) CreateSshKey(sshKeydto dto.CreateSshKeyInput) (*models
 	return &sshKey, nil
 }
 
-func (r sshKeyRepository) GetAllSshKeys() (*[]models.SshKey, error) {
+func (r sshKeyRepository) GetAllSshKeys() (*[]models.Sshkey, error) {
 
-	var sshKey []models.SshKey
+	var sshKey []models.Sshkey
 	result := r.db.Find(&sshKey)
 	if result.Error != nil {
 		return nil, result.Error
@@ -53,9 +53,9 @@ func (r sshKeyRepository) GetAllSshKeys() (*[]models.SshKey, error) {
 	return &sshKey, nil
 }
 
-func (r sshKeyRepository) GetSshKeysByUserId(id uuid.UUID) (*[]models.SshKey, error) {
+func (r sshKeyRepository) GetSshKeysByUserId(id uuid.UUID) (*[]models.Sshkey, error) {
 
-	var sshKeys []models.SshKey
+	var sshKeys []models.Sshkey
 	result := r.db.Find(&sshKeys).Where("owner_id = ?", id)
 	if result.Error != nil {
 		return nil, result.Error
@@ -63,9 +63,9 @@ func (r sshKeyRepository) GetSshKeysByUserId(id uuid.UUID) (*[]models.SshKey, er
 	return &sshKeys, nil
 }
 
-func (r sshKeyRepository) GetSshKey(id uuid.UUID) (*models.SshKey, error) {
+func (r sshKeyRepository) GetSshKey(id uuid.UUID) (*models.Sshkey, error) {
 
-	var sshKey models.SshKey
+	var sshKey models.Sshkey
 	result := r.db.First(&sshKey, id)
 
 	if result.Error != nil {
@@ -86,7 +86,7 @@ func (r sshKeyRepository) PatchSshKeyName(id uuid.UUID, newName string) error {
 }
 
 func (r sshKeyRepository) DeleteSshKey(id uuid.UUID) error {
-	result := r.db.Delete(&models.SshKey{}, id)
+	result := r.db.Delete(&models.Sshkey{}, id)
 	if result.Error != nil {
 		return result.Error
 	}

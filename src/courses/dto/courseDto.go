@@ -30,7 +30,6 @@ type CreateCourseInput struct {
 	Footer             string `binding:"required"`
 	Logo               string
 	Description        string
-	CourseID_str       string            `binding:"required"`
 	Schedule           string            `binding:"required"`
 	Prelude            string            `binding:"required"`
 	LearningObjectives string            `json:"learning_objectives"`
@@ -66,7 +65,7 @@ type CreateCourseFromGitInput struct {
 	Name       string `binding:"required"`
 }
 
-func CourseModelToCourseOutput(courseModel models.Course) *CourseOutput {
+func CourseModelToCourseOutputDto(courseModel models.Course) *CourseOutput {
 
 	var chapterOutputs []ChapterOutput
 	for _, chapter := range courseModel.Chapters {
@@ -83,7 +82,7 @@ func CourseModelToCourseOutput(courseModel models.Course) *CourseOutput {
 		Footer:             courseModel.Footer,
 		Logo:               courseModel.Logo,
 		Description:        courseModel.Description,
-		CourseID_str:       courseModel.BaseModel.ID.String(),
+		CourseID_str:       courseModel.ID.String(),
 		Schedule:           courseModel.Schedule,
 		Prelude:            courseModel.Prelude,
 		LearningObjectives: courseModel.LearningObjectives,

@@ -15,7 +15,7 @@ func CoursesRoutes(router *gin.RouterGroup, config *config.Configuration, db *go
 
 	routes := router.Group("/courses")
 
-	middleware := &auth.AuthMiddleware{}
+	middleware := auth.NewAuthMiddleware(db)
 
 	routes.GET("/", middleware.AuthManagement(), courseController.GetCourses)
 

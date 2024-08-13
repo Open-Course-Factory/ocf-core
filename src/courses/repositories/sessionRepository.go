@@ -32,8 +32,8 @@ func NewSessionRepository(db *gorm.DB) SessionRepository {
 func (s sessionRepository) CreateSession(sessionDto dto.CreateSessionInput) (*models.Session, error) {
 
 	session := models.Session{
-		Course:    sessionDto.Course,
-		Group:     sessionDto.Group,
+		CourseId:  sessionDto.CourseId,
+		GroupId:   sessionDto.GroupId,
 		Beginning: sessionDto.StartTime,
 		End:       sessionDto.EndTime,
 		Title:     sessionDto.Title,

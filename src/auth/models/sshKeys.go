@@ -7,7 +7,7 @@ import (
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
-type SshKey struct {
+type Sshkey struct {
 	entityManagementModels.BaseModel
 	KeyName    string `gorm:"type:varchar(255)"`
 	PrivateKey string `gorm:"type:text"`
@@ -15,10 +15,10 @@ type SshKey struct {
 	Owner      *casdoorsdk.User `json:"owner" gorm:"serializer:json"`
 }
 
-func (s SshKey) GetBaseModel() entityManagementModels.BaseModel {
+func (s Sshkey) GetBaseModel() entityManagementModels.BaseModel {
 	return s.BaseModel
 }
 
-func (s SshKey) GetReferenceObject() string {
+func (s Sshkey) GetReferenceObject() string {
 	return reflect.TypeOf(casdoorsdk.User{}).Name()
 }

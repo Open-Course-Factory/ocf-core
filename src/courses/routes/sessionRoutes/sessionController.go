@@ -2,6 +2,7 @@ package sessionController
 
 import (
 	services "soli/formations/src/courses/services"
+	controller "soli/formations/src/entityManagement/routes"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -14,11 +15,13 @@ type SessionController interface {
 }
 
 type sessionController struct {
+	controller.GenericController
 	service services.SessionService
 }
 
 func NewSessionController(db *gorm.DB) SessionController {
 	return &sessionController{
-		service: services.NewSessionService(db),
+		GenericController: controller.NewGenericController(db),
+		service:           services.NewSessionService(db),
 	}
 }

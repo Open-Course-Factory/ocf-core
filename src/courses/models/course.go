@@ -7,8 +7,6 @@ import (
 	config "soli/formations/src/configuration"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
-
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 type OCFMdWriter interface {
@@ -40,8 +38,7 @@ type Course struct {
 	Header                   string
 	Footer                   string
 	Logo                     string
-	OwnerID                  string
-	Owner                    *casdoorsdk.User `json:"owner" gorm:"serializer:json"`
+	OwnerID                  []string `gorm:"serializer:json"`
 	Description              string
 	Format                   config.Format
 	CourseID_str             string
@@ -177,7 +174,7 @@ func initTocs(course *Course) {
 	}
 }
 
-func ReadJsonCourseFile(jsonCourseFilePath string) Course {
+func ReadJsonCourseFile(jsonCourseFilePath string) *Course {
 	jsonFile, err := os.ReadFile(jsonCourseFilePath)
 
 	// should try to download it -> how to standardize the course format ?
@@ -191,5 +188,5 @@ func ReadJsonCourseFile(jsonCourseFilePath string) Course {
 	if err != nil {
 		log.Fatal("Error during Unmarshal(): ", err)
 	}
-	return course
+	return &course
 }

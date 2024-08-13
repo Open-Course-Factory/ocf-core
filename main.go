@@ -20,42 +20,68 @@ import (
 	generator "soli/formations/src/generationEngine"
 	marp "soli/formations/src/generationEngine/marp_integration"
 	slidev "soli/formations/src/generationEngine/slidev_integration"
-	testtools "soli/formations/src/testTools"
+	testtools "soli/formations/tests/testTools"
 
 	authController "soli/formations/src/auth"
+	"soli/formations/src/auth/casdoor"
+	authDtos "soli/formations/src/auth/dto"
 	authModels "soli/formations/src/auth/models"
-	sshKeyController "soli/formations/src/auth/routes/sessionRoutes"
+	accessController "soli/formations/src/auth/routes/accessesRoutes"
+	groupController "soli/formations/src/auth/routes/groupsRoutes"
+	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
+	userController "soli/formations/src/auth/routes/usersRoutes"
+	courseDtos "soli/formations/src/courses/dto"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
 
 	courseService "soli/formations/src/courses/services"
 
+	ems "soli/formations/src/entityManagement/entityManagementService"
+
 	sqldb "soli/formations/src/db"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
-// @title OCF API
-// @version 0.0.1
-// @description This is a server to build and generate slides.
-// @termsOfService TODO
+//	@title			OCF API
+//	@version		0.0.1
+//	@description	This is a server to build and generate slides.
+//	@termsOfService	TODO
 
-// @securityDefinitions.apikey Bearer
-// @in header
-// @name Authorization
-// @description Type "Bearer" followed by a space and JWT token.
+//	@securityDefinitions.apikey	Bearer
+//	@in							header
+//	@name						Authorization
+//	@description				Type "Bearer" followed by a space and JWT token.
 
-// @contact.name Solution Libre
-// @contact.url https://www.solution-libre.fr
-// @contact.email contact@solution-libre.fr
-// @host localhost:8080
-// @BasePath /api/v1
+//	@contact.name	Solution Libre
+//	@contact.url	https://www.solution-libre.fr
+//	@contact.email	contact@solution-libre.fr
+//	@host			localhost:8080
+//	@BasePath		/api/v1
 func main() {
 
-	authController.InitCasdoorConnection()
+	// ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Course{}).Name(), courseModels.Course{})
+	// ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(courseModels.Course{}).Name(), courseDtos.CourseModelToCourseOutputDto)
+	// var coursesDtos []interface{}
+	// coursesDtos = append(coursesDtos, courseDtos.CreateCourseInput{}, courseDtos.CreateCourseOutput{})
+	// ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(courseModels.Course{}).Name(), coursesDtos)
 
-	sqldb.InitDBConnection()
+	// ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Session{}).Name(), courseModels.Session{})
+	// ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(courseModels.Session{}).Name(), courseDtos.SessionModelToSessionOutputDto, courseDtos.SessionInputDtoToSessionModel)
+
+	// sessionsDtos := make(map[ems.DtoWay]interface{})
+	// sessionsDtos[ems.InputDto] = courseDtos.CreateSessionInput{}
+	// sessionsDtos[ems.OutputDto] = courseDtos.CreateSessionOutput{}
+
+	// ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(courseModels.Session{}).Name(), sessionsDtos)
+
+	ems.GlobalEntityRegistrationService.RegisterEntity(authDtos.SshkeyEntity{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseDtos.SessionEntity{})
+
+	casdoor.InitCasdoorConnection(".env")
+
+	sqldb.InitDBConnection(".env")
 
 	sqldb.DB.AutoMigrate()
 
@@ -63,8 +89,11 @@ func main() {
 	sqldb.DB.AutoMigrate(&courseModels.Section{})
 	sqldb.DB.AutoMigrate(&courseModels.Chapter{})
 	sqldb.DB.AutoMigrate(&courseModels.Course{})
+	sqldb.DB.AutoMigrate(&courseModels.Session{})
 
-	sqldb.DB.AutoMigrate(&authModels.SshKey{})
+	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
+
+	casdoor.InitCasdoorEnforcer(sqldb.DB, "")
 
 	initDB()
 
@@ -78,7 +107,7 @@ func main() {
 		AllowedOrigins:     []string{"*"},
 		AllowCredentials:   true,
 		Debug:              true,
-		AllowedMethods:     []string{"GET", "POST", "OPTIONS", "DELETE"},
+		AllowedMethods:     []string{"GET", "POST", "PATCH", "OPTIONS", "DELETE"},
 		AllowedHeaders:     []string{"*"},
 		OptionsPassthrough: true,
 	}))
@@ -88,6 +117,9 @@ func main() {
 	sessionController.SessionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sshKeyController.SshKeysRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	groupController.GroupRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	accessController.AccessRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 
@@ -123,7 +155,6 @@ func setupExternalUsersData() {
 	testtools.SetupUsers()
 	testtools.SetupGroups()
 	testtools.SetupRoles()
-	testtools.SetupPermissions()
 
 	permissionsByRole, _ := casdoorsdk.GetPermissionsByRole("student")
 	for _, permission := range permissionsByRole {
@@ -214,7 +245,7 @@ func getCourseFromProgramInputs(courseName *string, courseGitRepository *string,
 	var errGetGitCourse error
 	if isCourseGitRepository {
 		c := courseService.NewCourseService(sqldb.DB)
-		errGetGitCourse = c.GetGitCourse(*LogguedInUser, *courseName, *courseGitRepository, *courseGitRepositoryBranchName)
+		errGetGitCourse = c.GetGitCourse(LogguedInUser.Id, *courseName, *courseGitRepository, *courseGitRepositoryBranchName)
 	}
 
 	if errGetGitCourse != nil {
@@ -224,12 +255,11 @@ func getCourseFromProgramInputs(courseName *string, courseGitRepository *string,
 	jsonCourseFilePath := config.COURSES_ROOT + *courseName + "/course.json"
 	course := courseModels.ReadJsonCourseFile(jsonCourseFilePath)
 
-	course.Owner = LogguedInUser
-	course.OwnerID = LogguedInUser.Id
+	course.OwnerID = append(course.OwnerID, LogguedInUser.Id)
 	course.FolderName = *courseName
 	course.GitRepository = *courseGitRepository
 	course.GitRepositoryBranch = *courseGitRepositoryBranchName
-	return course
+	return *course
 }
 
 func isFlagPassed(name string) bool {

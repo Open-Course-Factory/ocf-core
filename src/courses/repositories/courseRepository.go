@@ -42,8 +42,7 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 	course := models.Course{
 		Name:               coursedto.Name,
 		Theme:              coursedto.Theme,
-		Owner:              user,
-		OwnerID:            user.Id,
+		OwnerID:            []string{user.Id},
 		Category:           coursedto.Category,
 		Version:            coursedto.Version,
 		Title:              coursedto.Title,
@@ -53,7 +52,6 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 		Logo:               coursedto.Logo,
 		Description:        coursedto.Description,
 		Format:             config.Format(*coursedto.Format),
-		CourseID_str:       coursedto.CourseID_str,
 		Schedule:           coursedto.Schedule,
 		Prelude:            coursedto.Prelude,
 		LearningObjectives: coursedto.LearningObjectives,
@@ -86,7 +84,16 @@ func (c courseRepository) DeleteCourse(id uuid.UUID) error {
 
 func (c courseRepository) GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error) {
 	var course *models.Course
-	err := c.db.Preload("Chapters").Preload("Chapters.Sections").First(&course, "owner_id=? AND name=?", owner.Id, courseName).Error
+	err := c.db.First(&course, "owner_id IN (?) AND name=?", owner.Id, courseName).Error
+	if err != nil {
+		return nil, err
+	}
+	return course, nil
+}
+
+func (c courseRepository) GetCoursesOwnedByUser(owner casdoorsdk.User) ([]*models.Course, error) {
+	var course []*models.Course
+	err := c.db.Preload("Chapters").Preload("Chapters.Sections").First(&course, "owner_id=?", owner.Id).Error
 	if err != nil {
 		return nil, err
 	}

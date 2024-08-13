@@ -11,7 +11,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
@@ -164,8 +163,8 @@ func (o StringArray) Value() (driver.Value, error) {
 	return strings.Join(o, ","), nil
 }
 
-func GitClone(owner casdoorsdk.User, repositoryURL string, repositoryBranch string) (billy.Filesystem, error) {
-	gitCloneOption, err := prepareGitCloneOptions(owner, repositoryURL, repositoryBranch)
+func GitClone(ownerId string, repositoryURL string, repositoryBranch string) (billy.Filesystem, error) {
+	gitCloneOption, err := prepareGitCloneOptions(ownerId, repositoryURL, repositoryBranch)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +180,7 @@ func GitClone(owner casdoorsdk.User, repositoryURL string, repositoryBranch stri
 	return fs, nil
 }
 
-func prepareGitCloneOptions(user casdoorsdk.User, courseURL string, branchName ...string) (*git.CloneOptions, error) {
+func prepareGitCloneOptions(userId string, courseURL string, branchName ...string) (*git.CloneOptions, error) {
 	var key ssh.AuthMethod
 	var gitCloneOption *git.CloneOptions
 
@@ -190,7 +189,7 @@ func prepareGitCloneOptions(user casdoorsdk.User, courseURL string, branchName .
 	}
 
 	sks := authServices.NewSshKeyService(sqldb.DB)
-	sshKeys, errSsh := sks.GetKeysByUserId(user.Id)
+	sshKeys, errSsh := sks.GetKeysByUserId(userId)
 
 	if errSsh != nil {
 		return nil, errSsh
