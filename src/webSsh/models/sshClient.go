@@ -30,7 +30,7 @@ func NewSSHClient() SSHClient {
 	return client
 }
 
-func (this *SSHClient) GenerateClient(ip, name, password string, port int) error {
+func (sc *SSHClient) GenerateClient(ip, name, password string, port int) error {
 	var (
 		auth         []ssh.AuthMethod
 		addr         string
@@ -41,7 +41,7 @@ func (this *SSHClient) GenerateClient(ip, name, password string, port int) error
 	)
 
 	auth = make([]ssh.AuthMethod, 0)
-	key, err := os.ReadFile("/root/.ssh/id_rsa")
+	key, err := os.ReadFile("/workspaces/ocf-core/id_rsa")
 	if err != nil {
 		log.Printf("unable to read private key: %v", err)
 	} else {
@@ -70,21 +70,21 @@ func (this *SSHClient) GenerateClient(ip, name, password string, port int) error
 	if client, err = ssh.Dial("tcp", addr, clientConfig); err != nil {
 		return err
 	}
-	this.Client = client
+	sc.Client = client
 	return nil
 }
 
-func (this *SSHClient) RequestTerminal(terminal Terminal) *SSHClient {
-	session, err := this.Client.NewSession()
+func (sc *SSHClient) RequestTerminal(terminal Terminal) *SSHClient {
+	session, err := sc.Client.NewSession()
 	if err != nil {
 		return nil
 	}
-	this.Session = session
-	channel, inRequests, err := this.Client.OpenChannel("session", nil)
+	sc.Session = session
+	channel, inRequests, err := sc.Client.OpenChannel("session", nil)
 	if err != nil {
 		return nil
 	}
-	this.channel = channel
+	sc.channel = channel
 	go func() {
 		for req := range inRequests {
 			if req.WantReply {
@@ -122,17 +122,17 @@ func (this *SSHClient) RequestTerminal(terminal Terminal) *SSHClient {
 	if !ok || err != nil {
 		return nil
 	}
-	return this
+	return sc
 }
 
-func (this *SSHClient) Connect(ws *websocket.Conn) {
+func (sc *SSHClient) Connect(ws *websocket.Conn) {
 	go func() {
 		for {
 			_, p, err := ws.ReadMessage()
 			if err != nil {
 				return
 			}
-			_, err = this.channel.Write(p)
+			_, err = sc.channel.Write(p)
 			if err != nil {
 				return
 			}
@@ -140,15 +140,15 @@ func (this *SSHClient) Connect(ws *websocket.Conn) {
 	}()
 
 	go func() {
-		br := bufio.NewReader(this.channel)
+		br := bufio.NewReader(sc.channel)
 		buf := []byte{}
 		t := time.NewTimer(time.Microsecond * 100)
 		defer t.Stop()
 		r := make(chan rune)
 
 		go func() {
-			defer this.Client.Close()
-			defer this.Client.Close()
+			defer sc.Client.Close()
+			defer sc.Client.Close()
 
 			for {
 				x, size, err := br.ReadRune()
