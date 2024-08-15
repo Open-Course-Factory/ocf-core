@@ -27,7 +27,7 @@ func (genericController genericController) DeleteEntity(ctx *gin.Context) {
 	if errorDelete != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Role not found",
+			ErrorMessage: "Entity not found",
 		})
 		return
 	}

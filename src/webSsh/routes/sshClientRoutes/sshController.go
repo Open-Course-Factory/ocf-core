@@ -1,8 +1,8 @@
 package controller
 
 import (
-	"fmt"
 	"net/http"
+	"soli/formations/src/auth/errors"
 	"soli/formations/src/webSsh/models"
 	"soli/formations/src/webSsh/services"
 
@@ -37,7 +37,7 @@ var (
 
 // GetSShConnection godoc
 //
-//	@Summary		Accès SSH
+//	@Summary		Accès WebSocket SSH
 //	@Description	Récupération des accès SSH
 //	@Tags			ssh
 //	@Accept			json
@@ -45,30 +45,42 @@ var (
 //
 //	@Security		Bearer
 //
-//	@Success		200	{object}	string
+//	@Success		1000 {object}	string "ok"
 //
-//	@Failure		404	{object}	error	"SSH inexistant"
+//	@Failure		1002 {object}	errors.APIError	"Protocol Error"
+//	@Failure		1011 {object}	errors.APIError	"Internal Server Error"
+//	@Failure		1003 {object}	errors.APIError	"Unsupported Data"
 //
 //	@Router			/ssh [get]
-func (s sshClientController) ShellWeb(c *gin.Context) {
+func (s sshClientController) ShellWeb(ctx *gin.Context) {
 	var err error
 
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		fmt.Println(err)
-	}
-	_, readContent, err := conn.ReadMessage()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ readContent: %v\n", string(readContent))
-
-	sshClient, err := s.service.DecodeMsgToSSHClient(string(readContent))
-	if err != nil {
-		fmt.Println(err)
+	conn, upgradeErr := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
+	if upgradeErr != nil {
+		ctx.JSON(websocket.CloseProtocolError, &errors.APIError{
+			ErrorCode:    websocket.CloseProtocolError,
+			ErrorMessage: upgradeErr.Error(),
+		})
 		return
 	}
-	fmt.Printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ sshClient: %v\n", sshClient)
+
+	_, readContent, readErr := conn.ReadMessage()
+	if readErr != nil {
+		ctx.JSON(websocket.CloseInternalServerErr, &errors.APIError{
+			ErrorCode:    websocket.CloseInternalServerErr,
+			ErrorMessage: readErr.Error(),
+		})
+		return
+	}
+
+	sshClient, decodeError := s.service.DecodeMsgToSSHClient(string(readContent))
+	if decodeError != nil {
+		ctx.JSON(websocket.CloseUnsupportedData, &errors.APIError{
+			ErrorCode:    websocket.CloseUnsupportedData,
+			ErrorMessage: decodeError.Error(),
+		})
+		return
+	}
 
 	terminal := models.Terminal{
 		Columns: 150,
@@ -80,8 +92,13 @@ func (s sshClientController) ShellWeb(c *gin.Context) {
 	if err != nil {
 		conn.WriteMessage(1, []byte(err.Error()))
 		conn.Close()
+		ctx.JSON(websocket.CloseInternalServerErr, &errors.APIError{
+			ErrorCode:    websocket.CloseInternalServerErr,
+			ErrorMessage: err.Error(),
+		})
 		return
 	}
 	sshClient.RequestTerminal(terminal)
 	sshClient.Connect(conn)
+	ctx.JSON(websocket.CloseNormalClosure, "ok")
 }

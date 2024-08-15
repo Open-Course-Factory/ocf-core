@@ -1,7 +1,9 @@
 package repositories
 
 import (
+	"net/http"
 	"reflect"
+	errors "soli/formations/src/auth/errors"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
 	"github.com/google/uuid"
@@ -108,6 +110,12 @@ func (o *genericRepository) DeleteEntity(id uuid.UUID, data interface{}) error {
 	result := o.db.Delete(&model, id)
 	if result.Error != nil {
 		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Entity not found",
+		}
 	}
 	return nil
 }

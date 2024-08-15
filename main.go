@@ -29,11 +29,15 @@ import (
 	accessController "soli/formations/src/auth/routes/accessesRoutes"
 	groupController "soli/formations/src/auth/routes/groupsRoutes"
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
+	usernameController "soli/formations/src/auth/routes/usernameRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
 	courseDtos "soli/formations/src/courses/dto"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
+	labDtos "soli/formations/src/labs/dto"
+	labModels "soli/formations/src/labs/models"
+	machineController "soli/formations/src/labs/routes"
 	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
 
 	courseService "soli/formations/src/courses/services"
@@ -79,6 +83,8 @@ func main() {
 
 	ems.GlobalEntityRegistrationService.RegisterEntity(authDtos.SshkeyEntity{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseDtos.SessionEntity{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(labDtos.MachineEntity{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(authDtos.UsernameEntity{})
 
 	casdoor.InitCasdoorConnection(".env")
 
@@ -93,6 +99,9 @@ func main() {
 	sqldb.DB.AutoMigrate(&courseModels.Session{})
 
 	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
+	sqldb.DB.AutoMigrate(&authModels.Username{})
+
+	sqldb.DB.AutoMigrate(&labModels.Machine{})
 
 	casdoor.InitCasdoorEnforcer(sqldb.DB, "")
 
@@ -122,6 +131,8 @@ func main() {
 	groupController.GroupRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	accessController.AccessRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sshClientController.SshClientRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	machineController.MachinesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	usernameController.UsernamesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 
@@ -257,7 +268,7 @@ func getCourseFromProgramInputs(courseName *string, courseGitRepository *string,
 	jsonCourseFilePath := config.COURSES_ROOT + *courseName + "/course.json"
 	course := courseModels.ReadJsonCourseFile(jsonCourseFilePath)
 
-	course.OwnerID = append(course.OwnerID, LogguedInUser.Id)
+	course.OwnerIDs = append(course.OwnerIDs, LogguedInUser.Id)
 	course.FolderName = *courseName
 	course.GitRepository = *courseGitRepository
 	course.GitRepositoryBranch = *courseGitRepositoryBranchName

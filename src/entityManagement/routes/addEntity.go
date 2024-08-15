@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"reflect"
 
-	"soli/formations/src/courses/errors"
+	"soli/formations/src/auth/errors"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
 

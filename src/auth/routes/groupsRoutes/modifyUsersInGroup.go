@@ -3,7 +3,7 @@ package groupController
 import (
 	"net/http"
 	"soli/formations/src/auth/dto"
-	"soli/formations/src/courses/errors"
+	"soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
 )

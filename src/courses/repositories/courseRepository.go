@@ -42,7 +42,7 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 	course := models.Course{
 		Name:               coursedto.Name,
 		Theme:              coursedto.Theme,
-		OwnerID:            []string{user.Id},
+		OwnerIDs:           []string{user.Id},
 		Category:           coursedto.Category,
 		Version:            coursedto.Version,
 		Title:              coursedto.Title,

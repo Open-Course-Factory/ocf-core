@@ -1,7 +1,7 @@
 package courseController
 
 import (
-	errors "soli/formations/src/courses/errors"
+	errors "soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
 )

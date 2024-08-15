@@ -1,7 +1,7 @@
 package courseController
 
 import (
-	"soli/formations/src/courses/errors"
+	"soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
 )
@@ -9,6 +9,7 @@ import (
 var _ = errors.APIError{}
 
 // GetCourses godoc
+//
 //	@Summary		Récupération des cours
 //	@Description	Récupération de tous les cours disponibles
 //	@Tags			courses

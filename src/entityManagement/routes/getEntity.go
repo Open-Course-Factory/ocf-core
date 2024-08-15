@@ -29,7 +29,7 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 
 	if entityError != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotAcceptable,
+			ErrorCode:    http.StatusNotFound,
 			ErrorMessage: entityError.Error(),
 		})
 		return

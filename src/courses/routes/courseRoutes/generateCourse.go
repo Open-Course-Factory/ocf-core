@@ -3,8 +3,8 @@ package courseController
 import (
 	"net/http"
 
+	"soli/formations/src/auth/errors"
 	"soli/formations/src/courses/dto"
-	"soli/formations/src/courses/errors"
 	"soli/formations/src/courses/models"
 
 	"github.com/gin-gonic/gin"
