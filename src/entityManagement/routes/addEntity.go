@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
+	"reflect"
 
 	"soli/formations/src/auth/errors"
 
@@ -41,6 +43,16 @@ func (genericController genericController) AddEntity(ctx *gin.Context) {
 		return
 	}
 
+	userId := ctx.GetString("userId")
+	entity, entitySavingError := genericController.addOwnerIDs(entity, userId)
+	if entitySavingError != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: entitySavingError.Error(),
+		})
+		return
+	}
+
 	var errEntityDto bool
 
 	outputDto, errEntityDto := genericController.getEntityFromResult(entityName, entity)
@@ -54,4 +66,30 @@ func (genericController genericController) AddEntity(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, outputDto)
+}
+
+func (genericController genericController) addOwnerIDs(entity interface{}, userId string) (interface{}, error) {
+	entityReflectValue := reflect.ValueOf(entity).Elem()
+	ownerIdsField := entityReflectValue.FieldByName("OwnerIDs")
+	if ownerIdsField.IsValid() {
+
+		if ownerIdsField.CanSet() {
+
+			fmt.Println(ownerIdsField.Kind())
+			if ownerIdsField.Kind() == reflect.Slice {
+				ownerIdsField.Set(reflect.MakeSlice(ownerIdsField.Type(), 1, 1))
+				ownerIdsField.Index(0).Set(reflect.ValueOf(userId))
+
+				entityWithOwnerIds, entitySavingError := genericController.genericService.SaveEntity(entity)
+
+				if entitySavingError != nil {
+					return nil, entitySavingError
+				}
+
+				entity = entityWithOwnerIds
+			}
+		}
+
+	}
+	return entity, nil
 }

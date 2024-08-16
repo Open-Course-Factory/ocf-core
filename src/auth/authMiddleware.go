@@ -82,6 +82,8 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 			ocfRoles = append(ocfRoles, ocfRole)
 		}
 
+		ctx.Set("userId", userId)
+
 		if isAdmin {
 			ctx.Next()
 		} else {

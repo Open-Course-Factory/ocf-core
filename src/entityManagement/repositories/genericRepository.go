@@ -13,6 +13,7 @@ import (
 
 type GenericRepository interface {
 	CreateEntity(data interface{}, entityName string) (interface{}, error)
+	SaveEntity(entity interface{}) (interface{}, error)
 	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetAllEntities(data interface{}, pageSize int) ([]interface{}, error)
 	DeleteEntity(id uuid.UUID, data interface{}) error
@@ -53,6 +54,16 @@ func (o *genericRepository) CreateEntity(entityInputDto interface{}, entityName 
 	}
 
 	return 1, nil
+}
+
+func (o *genericRepository) SaveEntity(entity interface{}) (interface{}, error) {
+
+	result := o.db.Save(entity)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return result.Statement.Model, nil
+
 }
 
 func (o *genericRepository) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {
