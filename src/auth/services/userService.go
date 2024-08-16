@@ -42,7 +42,7 @@ begin:
 		Username: generatedUsername,
 	}
 
-	_, createError := genericService.CreateEntity(usernameInput, reflect.TypeOf(&models.Username{}).Name())
+	_, createError := genericService.CreateEntity(usernameInput, reflect.TypeOf(models.Username{}).Name())
 	if createError != nil {
 		if strings.Contains(createError.Error(), "UNIQUE") {
 			goto begin

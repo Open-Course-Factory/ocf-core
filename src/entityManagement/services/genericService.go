@@ -29,9 +29,9 @@ func NewGenericService(db *gorm.DB) GenericService {
 
 func (g *genericService) CreateEntity(inputDto interface{}, entityName string) (interface{}, error) {
 
-	entity, creatEntityError := g.genericRepository.CreateEntity(inputDto, entityName)
-	if creatEntityError != nil {
-		return nil, creatEntityError
+	entity, createEntityError := g.genericRepository.CreateEntity(inputDto, entityName)
+	if createEntityError != nil {
+		return nil, createEntityError
 	}
 
 	return entity, nil

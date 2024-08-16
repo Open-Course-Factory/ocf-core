@@ -9,12 +9,8 @@ import (
 
 type BaseModel struct {
 	gorm.Model
-	ID uuid.UUID `gorm:"type:uuid;primarykey"`
-}
-
-type InterfaceWithBaseModel interface {
-	GetBaseModel() BaseModel
-	GetReferenceObject() string
+	ID       uuid.UUID `gorm:"type:uuid;primarykey"`
+	OwnerIDs []string  `gorm:"serializer:json"`
 }
 
 func (b *BaseModel) BeforeCreate(tx *gorm.DB) (err error) {
@@ -23,6 +19,15 @@ func (b *BaseModel) BeforeCreate(tx *gorm.DB) (err error) {
 	}
 
 	return
+}
+
+func (b *BaseModel) SetOwnerIds(ownerIds []string) {
+	b.OwnerIDs = append(b.OwnerIDs, ownerIds...)
+}
+
+type InterfaceWithBaseModel interface {
+	GetBaseModel() BaseModel
+	GetReferenceObject() string
 }
 
 func GetBaseModel(obj interface{}) (BaseModel, bool) {

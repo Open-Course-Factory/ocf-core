@@ -7,5 +7,4 @@ import (
 type Username struct {
 	entityManagementModels.BaseModel
 	Username string `gorm:"unique"`
-	OwnerID  string
 }

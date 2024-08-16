@@ -2,7 +2,6 @@ package controller
 
 import (
 	"net/http"
-	"reflect"
 
 	"soli/formations/src/auth/errors"
 
@@ -34,7 +33,6 @@ func (genericController genericController) AddEntity(ctx *gin.Context) {
 	}
 
 	entity, entityCreationError := genericController.genericService.CreateEntity(decodedData, entityName)
-
 	if entityCreationError != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
@@ -56,11 +54,4 @@ func (genericController genericController) AddEntity(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, outputDto)
-}
-
-func to_struct_ptr(obj interface{}) interface{} {
-	val := reflect.ValueOf(obj)
-	vp := reflect.New(val.Type())
-	vp.Elem().Set(val)
-	return vp.Interface()
 }

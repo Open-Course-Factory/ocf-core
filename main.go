@@ -24,18 +24,18 @@ import (
 
 	authController "soli/formations/src/auth"
 	"soli/formations/src/auth/casdoor"
-	authDtos "soli/formations/src/auth/dto"
+	authRegistration "soli/formations/src/auth/entityRegistration"
 	authModels "soli/formations/src/auth/models"
 	accessController "soli/formations/src/auth/routes/accessesRoutes"
 	groupController "soli/formations/src/auth/routes/groupsRoutes"
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
 	usernameController "soli/formations/src/auth/routes/usernameRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
-	courseDtos "soli/formations/src/courses/dto"
+	courseRegistration "soli/formations/src/courses/entityRegistration"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
-	labDtos "soli/formations/src/labs/dto"
+	labRegistration "soli/formations/src/labs/entityRegistration"
 	labModels "soli/formations/src/labs/models"
 	machineController "soli/formations/src/labs/routes"
 	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
@@ -66,25 +66,10 @@ import (
 // @BasePath		/api/v1
 func main() {
 
-	// ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Course{}).Name(), courseModels.Course{})
-	// ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(courseModels.Course{}).Name(), courseDtos.CourseModelToCourseOutputDto)
-	// var coursesDtos []interface{}
-	// coursesDtos = append(coursesDtos, courseDtos.CreateCourseInput{}, courseDtos.CreateCourseOutput{})
-	// ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(courseModels.Course{}).Name(), coursesDtos)
-
-	// ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Session{}).Name(), courseModels.Session{})
-	// ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(courseModels.Session{}).Name(), courseDtos.SessionModelToSessionOutputDto, courseDtos.SessionInputDtoToSessionModel)
-
-	// sessionsDtos := make(map[ems.DtoWay]interface{})
-	// sessionsDtos[ems.InputDto] = courseDtos.CreateSessionInput{}
-	// sessionsDtos[ems.OutputDto] = courseDtos.CreateSessionOutput{}
-
-	// ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(courseModels.Session{}).Name(), sessionsDtos)
-
-	ems.GlobalEntityRegistrationService.RegisterEntity(authDtos.SshkeyEntity{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseDtos.SessionEntity{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(labDtos.MachineEntity{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(authDtos.UsernameEntity{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SessionRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.UsernameRegistration{})
 
 	casdoor.InitCasdoorConnection(".env")
 

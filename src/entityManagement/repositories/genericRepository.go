@@ -30,7 +30,15 @@ func NewGenericRepository(db *gorm.DB) GenericRepository {
 }
 
 func (o *genericRepository) CreateEntity(entityInputDto interface{}, entityName string) (interface{}, error) {
-	conversionFunctionRef, _ := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.InputDtoToModel)
+	conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.InputDtoToModel)
+
+	if !found {
+		return nil, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Entity convertion function does not exist",
+		}
+	}
+
 	val := reflect.ValueOf(conversionFunctionRef)
 	if val.IsValid() && val.Kind() == reflect.Func {
 		args := []reflect.Value{reflect.ValueOf(entityInputDto)}
