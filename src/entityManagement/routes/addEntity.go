@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"reflect"
 
+	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"github.com/mitchellh/mapstructure"
 )
@@ -65,7 +67,35 @@ func (genericController genericController) AddEntity(ctx *gin.Context) {
 		return
 	}
 
+	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
+	if errPolicyLoading != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Policy not Found",
+		})
+		return
+	}
+
+	resourceName := GetResourceNameFromPath(ctx.FullPath())
+	entityUuid := extractUuidFromReflectEntity(entity)
+
+	_, errAddingPolicy := casdoor.Enforcer.AddPolicy(userId, "/api/v1/"+resourceName+"/"+entityUuid.String(), "(GET|DELETE|PATCH|PUT)")
+	if errAddingPolicy != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Policy not added",
+		})
+		return
+	}
+
 	ctx.JSON(http.StatusCreated, outputDto)
+}
+
+func extractUuidFromReflectEntity(entity interface{}) uuid.UUID {
+	entityReflectValue := reflect.ValueOf(entity).Elem()
+	field := entityReflectValue.FieldByName("ID")
+	mon_uuid := uuid.UUID(field.Bytes())
+	return mon_uuid
 }
 
 func (genericController genericController) addOwnerIDs(entity interface{}, userId string) (interface{}, error) {

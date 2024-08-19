@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 
+	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
@@ -31,5 +32,25 @@ func (genericController genericController) DeleteEntity(ctx *gin.Context) {
 		})
 		return
 	}
+
+	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
+	if errPolicyLoading != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Policy not Found",
+		})
+		return
+	}
+
+	resourceName := GetResourceNameFromPath(ctx.FullPath())
+
+	_, errRemovingPolicy := casdoor.Enforcer.RemoveFilteredPolicy(1, "/api/v1/"+resourceName+"/"+id.String())
+	if errRemovingPolicy != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Policy not added",
+		})
+	}
+
 	ctx.JSON(http.StatusNoContent, "Done")
 }

@@ -72,6 +72,23 @@ func (genericController genericController) GetGenericService() *services.Generic
 
 func GetEntityNameFromPath(path string) string {
 
+	segment := prepareEntityName(path)
+
+	client := pluralize.NewClient()
+	singular := client.Singular(segment)
+	return strings.ToUpper(string(singular[0])) + singular[1:]
+}
+
+func GetResourceNameFromPath(path string) string {
+
+	segment := prepareEntityName(path)
+
+	client := pluralize.NewClient()
+	singular := client.Plural(segment)
+	return strings.ToLower(singular)
+}
+
+func prepareEntityName(path string) string {
 	path = strings.TrimRight(path, "/")
 
 	segments := strings.Split(path, "/")
@@ -82,8 +99,5 @@ func GetEntityNameFromPath(path string) string {
 	} else {
 		segment = segments[1]
 	}
-
-	client := pluralize.NewClient()
-	singular := client.Singular(segment)
-	return strings.ToUpper(string(singular[0])) + singular[1:]
+	return segment
 }
