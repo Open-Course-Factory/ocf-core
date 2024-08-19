@@ -16,7 +16,7 @@ type GenericRepository interface {
 	SaveEntity(entity interface{}) (interface{}, error)
 	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetAllEntities(data interface{}, pageSize int) ([]interface{}, error)
-	DeleteEntity(id uuid.UUID, data interface{}) error
+	DeleteEntity(id uuid.UUID, entity interface{}) error
 }
 
 type genericRepository struct {
@@ -123,10 +123,8 @@ func createEmptySliceOfCalledType(data interface{}) any {
 	return emptySlice.Interface()
 }
 
-func (o *genericRepository) DeleteEntity(id uuid.UUID, data interface{}) error {
-
-	model := reflect.New(reflect.TypeOf(data)).Interface()
-	result := o.db.Delete(&model, id)
+func (o *genericRepository) DeleteEntity(id uuid.UUID, entity interface{}) error {
+	result := o.db.Delete(&entity, id)
 	if result.Error != nil {
 		return result.Error
 	}

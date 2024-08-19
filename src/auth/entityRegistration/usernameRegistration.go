@@ -22,6 +22,7 @@ func usernamePtrModelToUsernameOutputDto(usernameModel *models.Username) *dto.Us
 
 	return &dto.UsernameOutput{
 		Username: usernameModel.Username,
+		ID:       usernameModel.ID.String(),
 	}
 }
 
@@ -29,6 +30,7 @@ func usernameValueModelToUsernameOutputDto(usernameModel models.Username) *dto.U
 
 	return &dto.UsernameOutput{
 		Username: usernameModel.Username,
+		ID:       usernameModel.ID.String(),
 	}
 }
 

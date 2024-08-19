@@ -6,4 +6,5 @@ type UsernameInput struct {
 
 type UsernameOutput struct {
 	Username string
+	ID       string
 }
