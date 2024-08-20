@@ -7,7 +7,10 @@ import (
 	"runtime"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/dto"
+	authDto "soli/formations/src/auth/dto"
 	"soli/formations/src/auth/services"
+	labsDto "soli/formations/src/labs/dto"
+	"testing"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
@@ -18,16 +21,19 @@ import (
 
 	authModels "soli/formations/src/auth/models"
 	courseModels "soli/formations/src/courses/models"
+	baseModels "soli/formations/src/entityManagement/models"
+	labsModels "soli/formations/src/labs/models"
 
 	courseServices "soli/formations/src/courses/services"
+	genericServices "soli/formations/src/entityManagement/services"
 )
 
 var groups []casdoorsdk.Group
 var roles []casdoorsdk.Role
 
-func SetupDatabase() {
+func SetupTestDatabase() {
 
-	sqldb.InitDBConnection(".env.test")
+	sqldb.InitDBConnection("../.env.test")
 	sqldb.DB = sqldb.DB.Debug()
 	sqldb.DB.AutoMigrate()
 	sqldb.DB.AutoMigrate(&courseModels.Page{})
@@ -37,6 +43,9 @@ func SetupDatabase() {
 	sqldb.DB.AutoMigrate(&courseModels.Session{})
 
 	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
+	sqldb.DB.AutoMigrate(&authModels.Username{})
+
+	sqldb.DB.AutoMigrate(&labsModels.Machine{})
 
 }
 
@@ -175,5 +184,59 @@ func DeleteAllObjects() {
 			fmt.Println(err.Error())
 		}
 		cs.DeleteCourse(uuid)
+	}
+
+	gs := genericServices.NewGenericService(sqldb.DB)
+	usernamesPages, _ := gs.GetEntities(authModels.Username{})
+	usernamesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(usernamesPages, authModels.Username{}, "Username")
+	for _, usernameDto := range usernamesDtoArray {
+		id := gs.ExtractUuidFromReflectEntity(usernameDto)
+		usernameDto := usernameDto.(*authDto.UsernameOutput)
+		usernameToDelete := &authModels.Username{
+			BaseModel: baseModels.BaseModel{
+				ID: id,
+			},
+			Username: usernameDto.Username,
+		}
+
+		gs.DeleteEntity(id, usernameToDelete)
+	}
+
+	machinesPages, _ := gs.GetEntities(labsModels.Machine{})
+	machinesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(machinesPages, labsModels.Machine{}, "Machine")
+	for _, machineDto := range machinesDtoArray {
+		id := gs.ExtractUuidFromReflectEntity(machineDto)
+		machineDto := machineDto.(*labsDto.MachineOutput)
+		machineToDelete := &labsModels.Machine{
+			BaseModel: baseModels.BaseModel{
+				ID: id,
+			},
+			Name: machineDto.Name,
+		}
+
+		gs.DeleteEntity(id, machineToDelete)
+	}
+
+	// machines, _ := gs.GetEntities(labsModels.Machine{})
+	// for _, machine := range machines {
+	// 	id := gs.ExtractUuidFromReflectEntity(machine)
+	// 	gs.DeleteEntity(id, machine)
+	// }
+}
+
+func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
+	log.Println("setup test")
+
+	SetupTestDatabase()
+	SetupCasdoor()
+
+	DeleteAllObjects()
+	SetupUsers()
+	SetupGroups()
+	SetupRoles()
+
+	return func(tb testing.TB) {
+		log.Println("teardown test")
+		DeleteAllObjects()
 	}
 }

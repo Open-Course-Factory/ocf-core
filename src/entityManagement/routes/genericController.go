@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"reflect"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/services"
 	"strings"
@@ -31,39 +30,6 @@ func NewGenericController(db *gorm.DB) GenericController {
 	}
 
 	return controller
-}
-
-// used in get
-func (genericController genericController) appendEntityFromResult(entityName string, item interface{}, entitiesDto []interface{}) ([]interface{}, bool) {
-	result, ko := genericController.getEntityFromResult(entityName, item)
-	if !ko {
-		entitiesDto = append(entitiesDto, result)
-		return entitiesDto, false
-	}
-
-	return nil, true
-}
-
-// used in post and get
-func (genericController genericController) getEntityFromResult(entityName string, item interface{}) (interface{}, bool) {
-	var result interface{}
-	if funcRef, ok := genericController.entityRegistrationService.GetConversionFunction(entityName, ems.OutputModelToDto); ok {
-		val := reflect.ValueOf(funcRef)
-
-		if val.IsValid() && val.Kind() == reflect.Func {
-			args := []reflect.Value{reflect.ValueOf(item)}
-			entityDto := val.Call(args)
-			if len(entityDto) == 1 {
-				result = entityDto[0].Interface()
-			}
-
-		} else {
-			return nil, true
-		}
-	} else {
-		return nil, true
-	}
-	return result, false
 }
 
 func (genericController genericController) GetGenericService() *services.GenericService {

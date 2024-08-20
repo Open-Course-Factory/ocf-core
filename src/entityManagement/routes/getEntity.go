@@ -13,31 +13,19 @@ import (
 func (genericController genericController) GetEntity(ctx *gin.Context) {
 
 	id, err := uuid.Parse(ctx.Param("id"))
-
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
+	if errors.HandleError(http.StatusBadRequest, err, ctx) {
 		return
 	}
 
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 	entityModelInterface := genericController.genericService.GetEntityModelInterface(entityName)
-
 	entity, entityError := genericController.genericService.GetEntity(id, entityModelInterface)
-
-	if entityError != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: entityError.Error(),
-		})
+	if errors.HandleError(http.StatusNotFound, entityError, ctx) {
 		return
 	}
 
 	entityModel := reflect.TypeOf(entityModelInterface)
 	entityValue := reflect.ValueOf(entity)
-
 	var entityDto interface{}
 
 	if entityValue.Elem().Type().ConvertibleTo(entityModel) {
@@ -46,13 +34,10 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 		item := convertedEntity.Interface()
 
 		var errEntityDto bool
-		entityDto, errEntityDto = genericController.getEntityFromResult(entityName, item)
+		entityDto, errEntityDto = genericController.genericService.GetEntityFromResult(entityName, item)
 
 		if errEntityDto {
-			ctx.JSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: "Not Found",
-			})
+			errors.HandleError(http.StatusNotFound, &errors.APIError{ErrorMessage: "Entity Not Found"}, ctx)
 			return
 		}
 	}

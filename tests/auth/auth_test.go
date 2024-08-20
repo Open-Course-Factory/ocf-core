@@ -16,7 +16,7 @@ import (
 func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 	log.Println("setup test")
 
-	test_tools.SetupDatabase()
+	test_tools.SetupTestDatabase()
 	test_tools.SetupCasdoor()
 
 	test_tools.DeleteAllObjects()
