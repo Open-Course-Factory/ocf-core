@@ -24,6 +24,10 @@ import (
 	baseModels "soli/formations/src/entityManagement/models"
 	labsModels "soli/formations/src/labs/models"
 
+	authRegistration "soli/formations/src/auth/entityRegistration"
+	ems "soli/formations/src/entityManagement/entityManagementService"
+	labRegistration "soli/formations/src/labs/entityRegistration"
+
 	courseServices "soli/formations/src/courses/services"
 	genericServices "soli/formations/src/entityManagement/services"
 )
@@ -215,7 +219,11 @@ func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 	SetupTestDatabase()
 	SetupCasdoor()
 
-	DeleteAllObjects()
+	//DeleteAllObjects()
+
+	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.UsernameRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
+
 	SetupUsers()
 	SetupGroups()
 	SetupRoles()

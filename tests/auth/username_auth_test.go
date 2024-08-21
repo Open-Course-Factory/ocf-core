@@ -10,11 +10,9 @@ import (
 
 	authController "soli/formations/src/auth"
 	authDto "soli/formations/src/auth/dto"
-	authRegistration "soli/formations/src/auth/entityRegistration"
 	usernameController "soli/formations/src/auth/routes/usernameRoutes"
 	sqldb "soli/formations/src/db"
-	ems "soli/formations/src/entityManagement/entityManagementService"
-	labRegistration "soli/formations/src/labs/entityRegistration"
+
 	test_tools "soli/formations/tests/testTools"
 
 	"github.com/gin-gonic/gin"
@@ -22,8 +20,6 @@ import (
 )
 
 func TestUsernameAuth(t *testing.T) {
-	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.UsernameRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
 	teardownTest := test_tools.SetupFunctionnalTests(t)
 	defer teardownTest(t)
 
@@ -35,17 +31,6 @@ func TestUsernameAuth(t *testing.T) {
 
 	recUser := createUsernameLoggedIn(loginUserOutput, t)
 	assert.Equal(t, http.StatusCreated, recUser.Code)
-
-	// body = []byte(`{
-	// 	"username": "tom"
-	// }`)
-	// req2, err2 := http.NewRequest("POST", "/api/v1/usernames/", bytes.NewBuffer(body))
-	// assert.NoError(t, err2)
-
-	// rec2 := httptest.NewRecorder()
-	// router.ServeHTTP(rec2, req2)
-
-	// assert.Equal(t, http.StatusBadRequest, rec2.Code)
 }
 
 func createUsernameLoggedIn(loginOutput authDto.LoginOutput, t *testing.T) *httptest.ResponseRecorder {
@@ -56,7 +41,7 @@ func createUsernameLoggedIn(loginOutput authDto.LoginOutput, t *testing.T) *http
 	router.POST("/api/v1/usernames/", middleware.AuthManagement(), usernameController.AddUsername)
 
 	body := []byte(`{
-		"username": "tom"
+		"username": "` + loginOutput.UserName + `"
 	}`)
 
 	req, err := http.NewRequest("POST", "/api/v1/usernames/", bytes.NewBuffer(body))

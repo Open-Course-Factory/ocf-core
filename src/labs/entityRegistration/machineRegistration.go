@@ -8,6 +8,7 @@ import (
 )
 
 type MachineRegistration struct {
+	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
 func (s MachineRegistration) EntityModelToEntityOutput(input any) any {

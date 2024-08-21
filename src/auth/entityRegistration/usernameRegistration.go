@@ -8,6 +8,7 @@ import (
 )
 
 type UsernameRegistration struct {
+	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
 func (s UsernameRegistration) EntityModelToEntityOutput(input any) any {

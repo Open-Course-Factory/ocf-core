@@ -65,11 +65,6 @@ import (
 // @BasePath		/api/v1
 func main() {
 
-	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SessionRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.UsernameRegistration{})
-
 	casdoor.InitCasdoorConnection(".env")
 
 	sqldb.InitDBConnection(".env")
@@ -88,6 +83,11 @@ func main() {
 	sqldb.DB.AutoMigrate(&labModels.Machine{})
 
 	casdoor.InitCasdoorEnforcer(sqldb.DB, "")
+
+	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SessionRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.UsernameRegistration{})
 
 	initDB()
 
@@ -143,14 +143,11 @@ func initDB() {
 }
 
 func setupExternalUsersData() {
-	testtools.DeleteAllObjects()
-	testtools.SetupUsers()
-	testtools.SetupGroups()
-	testtools.SetupRoles()
-
-	permissionsByRole, _ := casdoorsdk.GetPermissionsByRole("student")
-	for _, permission := range permissionsByRole {
-		fmt.Println(permission.Name)
+	users, _ := casdoorsdk.GetUsers()
+	if len(users) == 0 {
+		testtools.SetupUsers()
+		testtools.SetupGroups()
+		testtools.SetupRoles()
 	}
 }
 

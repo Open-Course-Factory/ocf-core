@@ -8,6 +8,7 @@ import (
 )
 
 type SessionRegistration struct {
+	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
 func (s SessionRegistration) SetOwnerIds(ownerIds []string, entity any) any {

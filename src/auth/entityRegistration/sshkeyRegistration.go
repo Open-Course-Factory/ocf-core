@@ -8,6 +8,7 @@ import (
 )
 
 type SshkeyRegistration struct {
+	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
 func (s SshkeyRegistration) EntityModelToEntityOutput(input any) any {

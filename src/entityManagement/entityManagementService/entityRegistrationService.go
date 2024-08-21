@@ -1,8 +1,13 @@
 package services
 
 import (
+	"log"
 	"reflect"
+	"soli/formations/src/auth/casdoor"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
+	"strings"
+
+	"github.com/gertd/go-pluralize"
 )
 
 type ConversionWay int
@@ -75,6 +80,30 @@ func (s *EntityRegistrationService) GetConversionFunction(name string, way Conve
 	return function, exists
 }
 
+func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, roles entityManagementInterfaces.EntityRoles) {
+	errLoadingPolicy := casdoor.Enforcer.LoadPolicy()
+	if errLoadingPolicy != nil {
+		log.Fatal(errLoadingPolicy.Error())
+	}
+	rolesMap := roles.Roles
+
+	client := pluralize.NewClient()
+	singular := client.Plural(entityName)
+	resourceName := strings.ToLower(singular)
+
+	for roleName, accessGiven := range rolesMap {
+		_, errPolicy := casdoor.Enforcer.AddPolicy(roleName, "/api/v1/"+resourceName+"/", accessGiven)
+		if errPolicy != nil {
+			if strings.Contains(errPolicy.Error(), "UNIQUE") {
+				log.Println(errPolicy.Error())
+			} else {
+				log.Fatal(errPolicy.Error())
+			}
+		}
+	}
+
+}
+
 func (s *EntityRegistrationService) RegisterEntity(input entityManagementInterfaces.RegistrableInterface) {
 	entityToRegister := input.GetEntityRegistrationInput()
 	GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(entityToRegister.EntityInterface).Name(), entityToRegister.EntityInterface)
@@ -83,6 +112,7 @@ func (s *EntityRegistrationService) RegisterEntity(input entityManagementInterfa
 	entityDtos[InputDto] = entityToRegister.EntityDtos.InputDto
 	entityDtos[OutputDto] = entityToRegister.EntityDtos.OutputDto
 	GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(entityToRegister.EntityInterface).Name(), entityDtos)
+	s.setDefaultEntityAccesses(reflect.TypeOf(entityToRegister.EntityInterface).Name(), input.GetEntityRoles())
 }
 
 var GlobalEntityRegistrationService = NewEntityRegistrationService()
