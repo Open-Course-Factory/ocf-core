@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	cors "github.com/rs/cors/wrapper/gin"
 
 	swaggerFiles "github.com/swaggo/files"
@@ -140,11 +139,6 @@ func initDB() {
 
 		setupExternalUsersData()
 
-		c := courseService.NewCourseService(sqldb.DB)
-		courseOutputArray, _ := c.GetCourses()
-		for _, courseOutput := range courseOutputArray {
-			c.DeleteCourse(uuid.MustParse(courseOutput.CourseID_str))
-		}
 	}
 }
 

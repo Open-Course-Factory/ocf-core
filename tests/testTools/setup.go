@@ -99,19 +99,9 @@ func SetupRoles() {
 	ok0 := casdoor.Enforcer.LoadPolicy()
 	fmt.Println(ok0)
 
-	ok1, errPolicy1 := casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/courses/*", "GET")
-	fmt.Println(ok1)
-
-	ok2, errPolicy2 := casdoor.Enforcer.AddPolicy(roleAdministrator.Name, "/api/v1/*", "(GET|PATCH|POST|DELETE)")
-	fmt.Println(ok2)
-
-	if errPolicy1 != nil {
-		fmt.Println(errPolicy1.Error())
-	}
-
-	if errPolicy2 != nil {
-		fmt.Println(errPolicy1.Error())
-	}
+	casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/courses/*", "GET")
+	casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/usernames/", "(GET|POST)")
+	casdoor.Enforcer.AddPolicy(roleAdministrator.Name, "/api/v1/*", "(GET|PATCH|POST|DELETE)")
 
 }
 
@@ -217,11 +207,6 @@ func DeleteAllObjects() {
 		gs.DeleteEntity(id, machineToDelete)
 	}
 
-	// machines, _ := gs.GetEntities(labsModels.Machine{})
-	// for _, machine := range machines {
-	// 	id := gs.ExtractUuidFromReflectEntity(machine)
-	// 	gs.DeleteEntity(id, machine)
-	// }
 }
 
 func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
