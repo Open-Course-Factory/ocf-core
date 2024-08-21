@@ -6,10 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	authRegistration "soli/formations/src/auth/entityRegistration"
 	usernameController "soli/formations/src/auth/routes/usernameRoutes"
 	sqldb "soli/formations/src/db"
-	ems "soli/formations/src/entityManagement/entityManagementService"
 	test_tools "soli/formations/tests/testTools"
 
 	"github.com/gin-gonic/gin"
@@ -17,7 +15,6 @@ import (
 )
 
 func TestUsernameCreate(t *testing.T) {
-	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.UsernameRegistration{})
 	teardownTest := test_tools.SetupFunctionnalTests(t)
 	defer teardownTest(t)
 
