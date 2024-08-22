@@ -11,11 +11,6 @@ type SessionRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
-func (s SessionRegistration) SetOwnerIds(ownerIds []string, entity any) any {
-
-	return entity
-}
-
 func (s SessionRegistration) EntityModelToEntityOutput(input any) any {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return sessionPtrModelToSessionOutputDto(input.(*models.Session))

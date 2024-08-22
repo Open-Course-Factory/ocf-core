@@ -21,10 +21,6 @@ func (b *BaseModel) BeforeCreate(tx *gorm.DB) (err error) {
 	return
 }
 
-func (b *BaseModel) SetOwnerIds(ownerIds []string) {
-	b.OwnerIDs = append(b.OwnerIDs, ownerIds...)
-}
-
 type InterfaceWithBaseModel interface {
 	GetBaseModel() BaseModel
 	GetReferenceObject() string

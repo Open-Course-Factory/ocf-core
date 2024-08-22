@@ -43,4 +43,7 @@ func TestCourseCreation(t *testing.T) {
 
 	assert.Equal(t, "Cours de test", courseOutput.Name)
 
+	_, err := courseService.CreateCourse(courseInput)
+	assert.NotEqual(t, nil, err)
+
 }

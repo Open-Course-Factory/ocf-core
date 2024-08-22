@@ -86,6 +86,7 @@ func main() {
 
 	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SessionRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.CourseRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.UsernameRegistration{})
 

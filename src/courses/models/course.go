@@ -38,7 +38,6 @@ type Course struct {
 	Header                   string
 	Footer                   string
 	Logo                     string
-	OwnerIDs                 []string `gorm:"serializer:json"`
 	Description              string
 	Format                   config.Format
 	CourseID_str             string

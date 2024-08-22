@@ -40,9 +40,11 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 
 	//ToDo full course with dtoinput to model
 	course := models.Course{
+		BaseModel: entityManagementModels.BaseModel{
+			OwnerIDs: []string{user.Id},
+		},
 		Name:               coursedto.Name,
 		Theme:              coursedto.Theme,
-		OwnerIDs:           []string{user.Id},
 		Category:           coursedto.Category,
 		Version:            coursedto.Version,
 		Title:              coursedto.Title,
@@ -84,7 +86,10 @@ func (c courseRepository) DeleteCourse(id uuid.UUID) error {
 
 func (c courseRepository) GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error) {
 	var course *models.Course
-	err := c.db.First(&course, "owner_id IN (?) AND name=?", owner.Id, courseName).Error
+	err := c.db.First(&course,
+		"substr(owner_ids,(INSTR(owner_ids,'"+owner.Id+"')), (LENGTH('"+owner.Id+"'))) = ? AND name=?",
+		owner.Id,
+		courseName).Error
 	if err != nil {
 		return nil, err
 	}

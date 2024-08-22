@@ -1,13 +1,12 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"soli/formations/src/auth/casdoor"
-	"soli/formations/src/auth/errors"
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
@@ -95,7 +94,7 @@ func (c courseService) CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto
 	}
 
 	if user == nil {
-		return nil, &errors.APIError{ErrorCode: http.StatusNotFound, ErrorMessage: "user provided not found"}
+		return nil, errors.New("user provided not found")
 	}
 
 	course, errCourse := c.GetSpecificCourseByUser(*user, courseCreateDTO.Name)
@@ -126,7 +125,7 @@ func (c courseService) CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto
 		return &dto.CreateCourseOutput{Name: courseCreated.Name}, nil
 	}
 
-	return nil, nil
+	return nil, errors.New("course already in database")
 
 }
 

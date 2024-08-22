@@ -35,12 +35,6 @@ func machineValueModelToMachineOutputDto(machineModel models.Machine) *dto.Machi
 	}
 }
 
-func (s MachineRegistration) SetOwnerIds(ownerIds []string, entity any) any {
-	machine := entity.(*models.Machine)
-	machine.OwnerIDs = append(machine.OwnerIDs, ownerIds...)
-	return machine
-}
-
 func (s MachineRegistration) EntityInputDtoToEntityModel(input any) any {
 
 	machineInputDto := input.(dto.MachineInput)
