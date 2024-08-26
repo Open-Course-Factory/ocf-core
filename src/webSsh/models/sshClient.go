@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"time"
 	"unicode/utf8"
 
@@ -30,7 +29,7 @@ func NewSSHClient() SSHClient {
 	return client
 }
 
-func (sc *SSHClient) GenerateClient(ip, name, password string, port int) error {
+func (sc *SSHClient) GenerateClient(ip, name string, sshkeys []string, port int) error {
 	var (
 		auth         []ssh.AuthMethod
 		addr         string
@@ -41,19 +40,17 @@ func (sc *SSHClient) GenerateClient(ip, name, password string, port int) error {
 	)
 
 	auth = make([]ssh.AuthMethod, 0)
-	key, err := os.ReadFile("/workspaces/ocf-core/id_rsa")
-	if err != nil {
-		log.Printf("unable to read private key: %v", err)
-	} else {
-		signer, err := ssh.ParsePrivateKey(key)
+
+	for _, sshkey := range sshkeys {
+		signer, err := ssh.ParsePrivateKey([]byte(sshkey))
 		if err != nil {
 			log.Fatalf("unable to parse private key: %v", err)
 		}
 		auth = append(auth, ssh.PublicKeys(signer))
-
 	}
+
 	// Create the Signer for this private key.
-	auth = append(auth, ssh.Password(password))
+	//auth = append(auth, ssh.Password(password))
 	config = ssh.Config{
 		Ciphers: []string{"aes128-ctr", "aes192-ctr", "aes256-ctr", "aes128-gcm@openssh.com", "arcfour256", "arcfour128", "aes128-cbc", "3des-cbc", "aes192-cbc", "aes256-cbc"},
 	}

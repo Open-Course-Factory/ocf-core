@@ -70,6 +70,11 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 func getUserIdFromToken(ctx *gin.Context) (string, error) {
 	token := ctx.Request.Header.Get("Authorization")
 
+	// WebSocket Hack
+	if token == "" {
+		token = ctx.Query("Authorization")
+	}
+
 	claims, err := casdoorsdk.ParseJwtToken(token)
 
 	if err != nil {

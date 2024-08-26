@@ -3,8 +3,11 @@ package controller
 import (
 	"net/http"
 	"soli/formations/src/auth/errors"
+	sqldb "soli/formations/src/db"
 	"soli/formations/src/webSsh/models"
 	"soli/formations/src/webSsh/services"
+
+	authServices "soli/formations/src/auth/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -82,13 +85,30 @@ func (s sshClientController) ShellWeb(ctx *gin.Context) {
 		return
 	}
 
+	userId := ctx.GetString("userId")
+	sshkeyService := authServices.NewSshKeyService(sqldb.DB)
+
+	keysDto, errorGettingSshKeys := sshkeyService.GetKeysByUserId(userId)
+	if errorGettingSshKeys != nil {
+		ctx.JSON(websocket.CloseInternalServerErr, &errors.APIError{
+			ErrorCode:    websocket.CloseInternalServerErr,
+			ErrorMessage: errorGettingSshKeys.Error(),
+		})
+	}
+
+	var keys []string
+
+	for _, sshkey := range *keysDto {
+		keys = append(keys, sshkey.PrivateKey)
+	}
+
 	terminal := models.Terminal{
 		Columns: 150,
 		Rows:    35,
 	}
 
 	var port = 22
-	err = sshClient.GenerateClient(sshClient.IpAddress, sshClient.Username, sshClient.Password, port)
+	err = sshClient.GenerateClient(sshClient.IpAddress, sshClient.Username, keys, port)
 	if err != nil {
 		conn.WriteMessage(1, []byte(err.Error()))
 		conn.Close()

@@ -3,6 +3,7 @@ package controller
 import (
 	"github.com/gin-gonic/gin"
 
+	auth "soli/formations/src/auth"
 	config "soli/formations/src/configuration"
 
 	"gorm.io/gorm"
@@ -13,9 +14,8 @@ func SshClientRoutes(router *gin.RouterGroup, config *config.Configuration, db *
 
 	routes := router.Group("/ssh")
 
-	//middleware := auth.NewAuthMiddleware(db)
+	middleware := auth.NewAuthMiddleware(db)
 
-	//routes.GET("", middleware.AuthManagement(), sshClientController.ShellWeb)
-	routes.GET("", sshClientController.ShellWeb)
+	routes.GET("", middleware.AuthManagement(), sshClientController.ShellWeb)
 
 }

@@ -53,9 +53,10 @@ func (r sshKeyRepository) GetAllSshKeys() (*[]models.Sshkey, error) {
 }
 
 func (r sshKeyRepository) GetSshKeysByUserId(id uuid.UUID) (*[]models.Sshkey, error) {
-
 	var sshKeys []models.Sshkey
-	result := r.db.Find(&sshKeys).Where("owner_id = ?", id)
+	result := r.db.Find(&sshKeys,
+		"substr(owner_ids,(INSTR(owner_ids,'"+id.String()+"')), (LENGTH('"+id.String()+"'))) = ?",
+		id)
 	if result.Error != nil {
 		return nil, result.Error
 	}
