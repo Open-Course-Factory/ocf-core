@@ -33,7 +33,6 @@ func (r sshKeyRepository) CreateSshKey(sshKeydto dto.CreateSshkeyInput) (*models
 	sshKey := models.Sshkey{
 		KeyName:    sshKeydto.KeyName,
 		PrivateKey: sshKeydto.PrivateKey,
-		OwnerIDs:   sshKeydto.UserId,
 	}
 
 	result := r.db.Create(&sshKey)

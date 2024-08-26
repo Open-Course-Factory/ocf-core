@@ -148,6 +148,7 @@ func (g *genericService) ExtractUuidFromReflectEntity(entity interface{}) uuid.U
 
 func (g *genericService) GetDtoArrayFromEntitiesPages(allEntitiesPages []interface{}, entityModelInterface interface{}, entityName string) ([]interface{}, bool) {
 	var entitiesDto []interface{}
+	entitiesDto = []interface{}{}
 
 	for _, page := range allEntitiesPages {
 

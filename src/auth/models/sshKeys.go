@@ -6,7 +6,6 @@ import (
 
 type Sshkey struct {
 	entityManagementModels.BaseModel
-	KeyName    string   `gorm:"type:varchar(255)"`
-	PrivateKey string   `gorm:"type:text"`
-	OwnerIDs   []string `gorm:"serializer:json"`
+	KeyName    string `gorm:"type:varchar(255)"`
+	PrivateKey string `gorm:"type:text"`
 }
