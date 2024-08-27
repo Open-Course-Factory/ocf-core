@@ -6,8 +6,8 @@ import (
 
 type Machine struct {
 	entityManagementModels.BaseModel
-	Name       string
-	IP         string
-	UsernameId string
-	OwnerIDs   []string `gorm:"serializer:json"`
+	Name      string
+	IP        string
+	Usernames []Username `gorm:"many2many:connections;"`
+	Port      int
 }

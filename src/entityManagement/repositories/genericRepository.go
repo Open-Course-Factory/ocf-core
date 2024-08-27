@@ -16,7 +16,7 @@ type GenericRepository interface {
 	SaveEntity(entity interface{}) (interface{}, error)
 	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetAllEntities(data interface{}, pageSize int) ([]interface{}, error)
-	DeleteEntity(id uuid.UUID, entity interface{}) error
+	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
 }
 
 type genericRepository struct {
@@ -123,8 +123,14 @@ func createEmptySliceOfCalledType(data interface{}) any {
 	return emptySlice.Interface()
 }
 
-func (o *genericRepository) DeleteEntity(id uuid.UUID, entity interface{}) error {
-	result := o.db.Delete(&entity, id)
+func (o *genericRepository) DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error {
+	var result *gorm.DB
+	if scoped {
+		result = o.db.Delete(&entity, id)
+	} else {
+		result = o.db.Unscoped().Delete(&entity, id)
+	}
+
 	if result.Error != nil {
 		return result.Error
 	}

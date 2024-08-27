@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func (genericController genericController) DeleteEntity(ctx *gin.Context) {
+func (genericController genericController) DeleteEntity(ctx *gin.Context, scoped bool) {
 
 	id, parseErr := uuid.Parse(ctx.Param("id"))
 	if errors.HandleError(http.StatusBadRequest, parseErr, ctx) {
@@ -24,7 +24,7 @@ func (genericController genericController) DeleteEntity(ctx *gin.Context) {
 		return
 	}
 
-	errorDelete := genericController.genericService.DeleteEntity(id, entity)
+	errorDelete := genericController.genericService.DeleteEntity(id, entity, scoped)
 	if errors.HandleError(http.StatusNotFound, errorDelete, ctx) {
 		return
 	}

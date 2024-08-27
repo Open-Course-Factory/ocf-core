@@ -26,5 +26,5 @@ var _ = errors.APIError{}
 //
 //	@Router			/sshkeys/{id} [delete]
 func (s sshKeyController) DeleteSshKey(ctx *gin.Context) {
-	s.DeleteEntity(ctx)
+	s.DeleteEntity(ctx, true)
 }

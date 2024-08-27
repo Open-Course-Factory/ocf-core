@@ -24,6 +24,8 @@ func machinePtrModelToMachineOutputDto(machineModel *models.Machine) *dto.Machin
 	return &dto.MachineOutput{
 		Name: machineModel.Name,
 		ID:   machineModel.ID.String(),
+		IP:   machineModel.IP,
+		Port: machineModel.Port,
 	}
 }
 
@@ -32,6 +34,8 @@ func machineValueModelToMachineOutputDto(machineModel models.Machine) *dto.Machi
 	return &dto.MachineOutput{
 		Name: machineModel.Name,
 		ID:   machineModel.ID.String(),
+		IP:   machineModel.IP,
+		Port: machineModel.Port,
 	}
 }
 
@@ -39,9 +43,9 @@ func (s MachineRegistration) EntityInputDtoToEntityModel(input any) any {
 
 	machineInputDto := input.(dto.MachineInput)
 	return &models.Machine{
-		Name:       machineInputDto.Name,
-		IP:         machineInputDto.IP,
-		UsernameId: machineInputDto.UsernameId,
+		Name: machineInputDto.Name,
+		IP:   machineInputDto.IP,
+		Port: machineInputDto.Port,
 	}
 }
 

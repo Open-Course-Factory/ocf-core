@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/dto"
-	authDto "soli/formations/src/auth/dto"
 	"soli/formations/src/auth/services"
 	labsDto "soli/formations/src/labs/dto"
 	"testing"
@@ -48,8 +47,8 @@ func SetupTestDatabase() {
 	sqldb.DB.AutoMigrate(&courseModels.Session{})
 
 	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
-	sqldb.DB.AutoMigrate(&authModels.Username{})
 
+	sqldb.DB.AutoMigrate(&labsModels.Username{})
 	sqldb.DB.AutoMigrate(&labsModels.Machine{})
 
 }
@@ -182,19 +181,19 @@ func DeleteAllObjects() {
 	}
 
 	gs := genericServices.NewGenericService(sqldb.DB)
-	usernamesPages, _ := gs.GetEntities(authModels.Username{})
-	usernamesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(usernamesPages, authModels.Username{}, "Username")
+	usernamesPages, _ := gs.GetEntities(labsModels.Username{})
+	usernamesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(usernamesPages, labsModels.Username{}, "Username")
 	for _, usernameDto := range usernamesDtoArray {
 		id := gs.ExtractUuidFromReflectEntity(usernameDto)
-		usernameDto := usernameDto.(*authDto.UsernameOutput)
-		usernameToDelete := &authModels.Username{
+		usernameDto := usernameDto.(*labsDto.UsernameOutput)
+		usernameToDelete := &labsModels.Username{
 			BaseModel: baseModels.BaseModel{
 				ID: id,
 			},
 			Username: usernameDto.Username,
 		}
 
-		gs.DeleteEntity(id, usernameToDelete)
+		gs.DeleteEntity(id, usernameToDelete, true)
 	}
 
 	machinesPages, _ := gs.GetEntities(labsModels.Machine{})
@@ -209,7 +208,7 @@ func DeleteAllObjects() {
 			Name: machineDto.Name,
 		}
 
-		gs.DeleteEntity(id, machineToDelete)
+		gs.DeleteEntity(id, machineToDelete, true)
 	}
 
 }
@@ -222,7 +221,7 @@ func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 
 	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.SessionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.UsernameRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
 
 	SetupUsers()

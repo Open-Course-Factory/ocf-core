@@ -5,7 +5,10 @@ import (
 	"reflect"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/dto"
-	"soli/formations/src/auth/models"
+
+	labsDto "soli/formations/src/labs/dto"
+	labsModels "soli/formations/src/labs/models"
+
 	sqldb "soli/formations/src/db"
 	"strings"
 
@@ -38,11 +41,11 @@ begin:
 
 	generatedUsername := namesgenerator.GetRandomName(1)
 
-	usernameInput := dto.UsernameInput{
+	usernameInput := labsDto.UsernameInput{
 		Username: generatedUsername,
 	}
 
-	userNameEntity, createError := genericService.CreateEntity(usernameInput, reflect.TypeOf(models.Username{}).Name())
+	userNameEntity, createError := genericService.CreateEntity(usernameInput, reflect.TypeOf(labsModels.Username{}).Name())
 	if createError != nil {
 		if strings.Contains(createError.Error(), "UNIQUE") {
 			goto begin

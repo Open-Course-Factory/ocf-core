@@ -26,5 +26,5 @@ var _ = errors.APIError{}
 //
 //	@Router			/courses/{id} [delete]
 func (c courseController) DeleteCourse(ctx *gin.Context) {
-	c.DeleteEntity(ctx)
+	c.DeleteEntity(ctx, true)
 }

@@ -14,7 +14,7 @@ type GenericController interface {
 	AddEntity(ctx *gin.Context)
 	GetEntity(ctx *gin.Context)
 	GetEntities(ctx *gin.Context)
-	DeleteEntity(ctx *gin.Context)
+	DeleteEntity(ctx *gin.Context, scoped bool)
 	GetGenericService() *services.GenericService
 }
 

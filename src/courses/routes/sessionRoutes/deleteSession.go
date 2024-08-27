@@ -25,5 +25,5 @@ var _ = errors.APIError{}
 //
 //	@Router			/sessions/{id} [delete]
 func (s sessionController) DeleteSession(ctx *gin.Context) {
-	s.DeleteEntity(ctx)
+	s.DeleteEntity(ctx, true)
 }

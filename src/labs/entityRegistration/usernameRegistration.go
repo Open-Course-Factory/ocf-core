@@ -2,9 +2,9 @@ package registration
 
 import (
 	"reflect"
-	"soli/formations/src/auth/dto"
-	"soli/formations/src/auth/models"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
+	"soli/formations/src/labs/dto"
+	"soli/formations/src/labs/models"
 )
 
 type UsernameRegistration struct {

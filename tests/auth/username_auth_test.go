@@ -10,8 +10,8 @@ import (
 
 	authController "soli/formations/src/auth"
 	authDto "soli/formations/src/auth/dto"
-	usernameController "soli/formations/src/auth/routes/usernameRoutes"
 	sqldb "soli/formations/src/db"
+	usernameController "soli/formations/src/labs/routes/usernameRoutes"
 
 	test_tools "soli/formations/tests/testTools"
 

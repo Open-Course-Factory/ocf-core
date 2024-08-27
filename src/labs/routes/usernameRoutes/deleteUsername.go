@@ -25,5 +25,5 @@ var _ = errors.APIError{}
 //
 //	@Router			/usernames/{id} [delete]
 func (s usernameController) DeleteUsername(ctx *gin.Context) {
-	s.DeleteEntity(ctx)
+	s.DeleteEntity(ctx, true)
 }

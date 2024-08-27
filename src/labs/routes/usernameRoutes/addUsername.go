@@ -1,8 +1,8 @@
 package usernameController
 
 import (
-	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/labs/dto"
 
 	"github.com/gin-gonic/gin"
 )

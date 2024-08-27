@@ -25,5 +25,5 @@ var _ = errors.APIError{}
 //
 //	@Router			/machines/{id} [delete]
 func (s machineController) DeleteMachine(ctx *gin.Context) {
-	s.DeleteEntity(ctx)
+	s.DeleteEntity(ctx, true)
 }

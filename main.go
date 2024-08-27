@@ -28,7 +28,6 @@ import (
 	accessController "soli/formations/src/auth/routes/accessesRoutes"
 	groupController "soli/formations/src/auth/routes/groupsRoutes"
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
-	usernameController "soli/formations/src/auth/routes/usernameRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
 	courseRegistration "soli/formations/src/courses/entityRegistration"
 	courseModels "soli/formations/src/courses/models"
@@ -36,7 +35,9 @@ import (
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
 	labRegistration "soli/formations/src/labs/entityRegistration"
 	labModels "soli/formations/src/labs/models"
-	machineController "soli/formations/src/labs/routes"
+	connectionController "soli/formations/src/labs/routes/connectionRoutes"
+	machineController "soli/formations/src/labs/routes/machineRoutes"
+	usernameController "soli/formations/src/labs/routes/usernameRoutes"
 	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
 
 	courseService "soli/formations/src/courses/services"
@@ -78,9 +79,10 @@ func main() {
 	sqldb.DB.AutoMigrate(&courseModels.Session{})
 
 	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
-	sqldb.DB.AutoMigrate(&authModels.Username{})
 
+	sqldb.DB.AutoMigrate(&labModels.Username{})
 	sqldb.DB.AutoMigrate(&labModels.Machine{})
+	sqldb.DB.AutoMigrate(&labModels.Connection{})
 
 	casdoor.InitCasdoorEnforcer(sqldb.DB, "")
 
@@ -88,7 +90,8 @@ func main() {
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SessionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.CourseRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.UsernameRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.ConnectionRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
 
 	initDB()
 
@@ -118,6 +121,7 @@ func main() {
 	sshClientController.SshClientRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	machineController.MachinesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	usernameController.UsernamesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	connectionController.ConnectionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 

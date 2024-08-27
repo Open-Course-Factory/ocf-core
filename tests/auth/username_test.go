@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	usernameController "soli/formations/src/auth/routes/usernameRoutes"
 	sqldb "soli/formations/src/db"
+	usernameController "soli/formations/src/labs/routes/usernameRoutes"
 	test_tools "soli/formations/tests/testTools"
 
 	"github.com/gin-gonic/gin"
