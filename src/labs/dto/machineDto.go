@@ -1,16 +1,14 @@
 package dto
 
 type MachineInput struct {
-	Name       string `binding:"required"`
-	IP         string `binding:"required"`
-	UsernameId string `binding:"required"`
-	Port       int    `binding:"required"`
+	Name string `binding:"required"`
+	IP   string `binding:"required"`
+	Port int    `binding:"required"`
 }
 
 type MachineOutput struct {
-	Name       string
-	ID         string
-	UsernameId string
-	IP         string
-	Port       int
+	Name string `json:"name"`
+	ID   string `json:"id"`
+	IP   string `json:"ip"`
+	Port int    `json:"port"`
 }

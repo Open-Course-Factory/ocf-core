@@ -26,7 +26,17 @@ func (genericController genericController) AddEntity(ctx *gin.Context) {
 		return
 	}
 
-	errDecode := mapstructure.Decode(entityCreateDtoInput, &decodedData)
+	config := &mapstructure.DecoderConfig{
+		WeaklyTypedInput: true,
+		Result:           &decodedData,
+	}
+
+	decoder, err := mapstructure.NewDecoder(config)
+	if err != nil {
+		panic(err)
+	}
+
+	errDecode := decoder.Decode(entityCreateDtoInput)
 	if errors.HandleError(http.StatusInternalServerError, errDecode, ctx) {
 		return
 	}
