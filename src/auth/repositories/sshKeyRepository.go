@@ -31,7 +31,7 @@ func NewSshKeyRepository(db *gorm.DB) SshKeyRepository {
 func (r sshKeyRepository) CreateSshKey(sshKeydto dto.CreateSshkeyInput) (*models.Sshkey, error) {
 
 	sshKey := models.Sshkey{
-		KeyName:    sshKeydto.KeyName,
+		KeyName:    sshKeydto.Name,
 		PrivateKey: sshKeydto.PrivateKey,
 	}
 

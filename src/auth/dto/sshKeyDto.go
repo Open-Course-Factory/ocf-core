@@ -14,8 +14,8 @@ type SshkeyOutput struct {
 }
 
 type CreateSshkeyInput struct {
-	KeyName    string   `binding:"required"`
-	PrivateKey string   `binding:"required"`
+	Name       string   `binding:"required" json:"name" mapstructure:"name"`
+	PrivateKey string   `binding:"required" json:"private_key" mapstructure:"private_key"`
 	UserId     []string `binding:"required"`
 }
 

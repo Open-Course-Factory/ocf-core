@@ -41,7 +41,7 @@ func (s SshkeyRegistration) EntityInputDtoToEntityModel(input any) any {
 
 	sshKeyInputDto := input.(dto.CreateSshkeyInput)
 	return &models.Sshkey{
-		KeyName:    sshKeyInputDto.KeyName,
+		KeyName:    sshKeyInputDto.Name,
 		PrivateKey: sshKeyInputDto.PrivateKey,
 	}
 }
