@@ -6,5 +6,5 @@ type UsernameInput struct {
 
 type UsernameOutput struct {
 	Username string
-	ID       string
+	Id       string `json:"id"`
 }

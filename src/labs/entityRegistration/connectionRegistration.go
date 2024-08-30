@@ -29,8 +29,8 @@ func connectionPtrModelToConnectionOutputDto(connectionModel *models.Connection)
 	username, _ := repo.GetEntity(connectionModel.UsernameID, models.Username{})
 
 	return &dto.ConnectionOutput{
-		Machine:  machine.(*models.Machine),
-		Username: username.(*models.Username),
+		MachineDtoOutput:  machinePtrModelToMachineOutputDto(machine.(*models.Machine)),
+		UsernameDtoOutput: usernamePtrModelToUsernameOutputDto(username.(*models.Username)),
 	}
 }
 
@@ -39,9 +39,10 @@ func connectionValueModelToConnectionOutputDto(connectionModel models.Connection
 	repo := entityManagementRepository.NewGenericRepository(sqldb.DB)
 	machine, _ := repo.GetEntity(connectionModel.MachineID, models.Machine{})
 	username, _ := repo.GetEntity(connectionModel.UsernameID, models.Username{})
+
 	return &dto.ConnectionOutput{
-		Machine:  machine.(*models.Machine),
-		Username: username.(*models.Username),
+		MachineDtoOutput:  machinePtrModelToMachineOutputDto(machine.(*models.Machine)),
+		UsernameDtoOutput: usernamePtrModelToUsernameOutputDto(username.(*models.Username)),
 	}
 }
 
