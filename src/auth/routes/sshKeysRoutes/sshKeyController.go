@@ -10,7 +10,7 @@ import (
 
 type SshKeyController interface {
 	AddSshKey(ctx *gin.Context)
-	//PatchSshKeyName(ctx *gin.Context)
+	PatchSshKeyName(ctx *gin.Context)
 	DeleteSshKey(ctx *gin.Context)
 	GetSshKeys(ctx *gin.Context)
 }

@@ -78,7 +78,8 @@ func (r sshKeyRepository) GetSshKey(id uuid.UUID) (*models.Sshkey, error) {
 // ToDo: "KeyName" should not be hard coded
 
 func (r sshKeyRepository) PatchSshKeyName(id uuid.UUID, newName string) error {
-	result := r.db.Model(id).Update("KeyName", newName)
+	var sshKey models.Sshkey
+	result := r.db.Model(&sshKey).Where("id = ?", id).Update("KeyName", newName)
 	if result.Error != nil {
 		return result.Error
 	}

@@ -30,11 +30,15 @@ var _ = errors.APIError{}
 //	@Router			/sshkeys/{id} [patch]
 func (s sshKeyController) PatchSshKeyName(ctx *gin.Context) {
 	idParam := ctx.Param("id")
+
+	type Data struct {
+		Name string `json:"name"`
+	}
 	var requestBody struct {
-		NewName string `json:"newName"`
+		Data Data `json:"data"`
 	}
 
-	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+	if err := ctx.BindJSON(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: "Invalid JSON format",
@@ -51,7 +55,7 @@ func (s sshKeyController) PatchSshKeyName(ctx *gin.Context) {
 		return
 	}
 
-	_, errorUpdate := s.service.PatchSshKeyName(id.String(), requestBody.NewName)
+	_, errorUpdate := s.service.PatchSshKeyName(id.String(), requestBody.Data.Name)
 	if errorUpdate != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
