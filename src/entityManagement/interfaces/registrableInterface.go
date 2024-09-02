@@ -21,8 +21,9 @@ type EntityConverters struct {
 }
 
 type EntityDtos struct {
-	InputDto  interface{}
-	OutputDto interface{}
+	InputCreateDto interface{}
+	InputEditDto   interface{}
+	OutputDto      interface{}
 }
 
 type EntityRoles struct {
@@ -47,7 +48,7 @@ func (a AbstractRegistrableInterface) GetEntityRoles() EntityRoles {
 	return res
 }
 
-func (a AbstractRegistrableInterface) EntityInputDtoToEntityMap(input interface{}) map[string]interface{} {
+func (a AbstractRegistrableInterface) EntityDtoToMap(input interface{}) map[string]interface{} {
 	resMap := make(map[string]interface{})
 
 	config := &mapstructure.DecoderConfig{

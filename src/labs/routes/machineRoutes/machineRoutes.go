@@ -20,6 +20,7 @@ func MachinesRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.GET("", middleware.AuthManagement(), machineController.GetMachines)
 	routes.GET("/:id", middleware.AuthManagement(), machineController.GetMachine)
 	routes.POST("", middleware.AuthManagement(), machineController.AddMachine)
+	routes.PATCH("/:id", middleware.AuthManagement(), machineController.EditMachine)
 
 	routes.DELETE("/:id", middleware.AuthManagement(), machineController.DeleteMachine)
 }

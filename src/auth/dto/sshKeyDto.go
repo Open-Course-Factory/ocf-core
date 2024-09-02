@@ -19,8 +19,8 @@ type CreateSshkeyInput struct {
 	UserId     []string `binding:"required"`
 }
 
-type PatchSshkey struct {
-	Name string `binding:"required" mapstructure:"key_name"`
+type EditSshkeyInput struct {
+	KeyName string `binding:"required" mapstructure:"name"`
 }
 
 type CreateSshkeyOutput struct {

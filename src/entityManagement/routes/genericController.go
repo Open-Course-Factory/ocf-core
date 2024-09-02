@@ -15,6 +15,7 @@ type GenericController interface {
 	GetEntity(ctx *gin.Context)
 	GetEntities(ctx *gin.Context)
 	DeleteEntity(ctx *gin.Context, scoped bool)
+	EditEntity(ctx *gin.Context)
 	GetGenericService() *services.GenericService
 }
 

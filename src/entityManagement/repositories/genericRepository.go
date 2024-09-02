@@ -16,7 +16,7 @@ type GenericRepository interface {
 	SaveEntity(entity interface{}) (interface{}, error)
 	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetAllEntities(data interface{}, pageSize int) ([]interface{}, error)
-	PatchEntity(id uuid.UUID, entity interface{}, data interface{}) error
+	EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error
 	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
 }
 
@@ -32,7 +32,7 @@ func NewGenericRepository(db *gorm.DB) GenericRepository {
 }
 
 func (o *genericRepository) CreateEntity(entityInputDto interface{}, entityName string) (interface{}, error) {
-	conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.InputDtoToModel)
+	conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.CreateInputDtoToModel)
 
 	if !found {
 		return nil, &errors.APIError{
@@ -67,26 +67,11 @@ func (o *genericRepository) SaveEntity(entity interface{}) (interface{}, error) 
 
 }
 
-func (r genericRepository) PatchEntity(id uuid.UUID, entity interface{}, data interface{}) error {
-	conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction("Sshkey", ems.InputDtoToMap)
+func (r genericRepository) EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error {
 
-	if !found {
-		return &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Entity convertion function does not exist",
-		}
-	}
-
-	val := reflect.ValueOf(conversionFunctionRef)
-	if val.IsValid() && val.Kind() == reflect.Func {
-		args := []reflect.Value{reflect.ValueOf(data)}
-		entityMap := val.Call(args)
-
-		result := r.db.Model(&entity).Where("id = ?", id).Updates(entityMap[0].Interface())
-		if result.Error != nil {
-			return result.Error
-		}
-		return nil
+	result := r.db.Model(&entity).Where("id = ?", id).Updates(data)
+	if result.Error != nil {
+		return result.Error
 	}
 	return nil
 }

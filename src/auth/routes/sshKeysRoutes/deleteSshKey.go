@@ -25,6 +25,6 @@ var _ = errors.APIError{}
 //	@Failure		404	{object}	errors.APIError	"SshKey non trouvée - Impossible de le supprimer "
 //
 //	@Router			/sshkeys/{id} [delete]
-func (s sshKeyController) DeleteSshKey(ctx *gin.Context) {
+func (s sshKeyController) DeleteSshkey(ctx *gin.Context) {
 	s.DeleteEntity(ctx, true)
 }

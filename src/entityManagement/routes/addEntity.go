@@ -18,8 +18,8 @@ import (
 func (genericController genericController) AddEntity(ctx *gin.Context) {
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
-	entityCreateDtoInput := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputDto)
-	decodedData := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputDto)
+	entityCreateDtoInput := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
+	decodedData := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
 
 	bindError := ctx.BindJSON(&entityCreateDtoInput)
 	if errors.HandleError(http.StatusBadRequest, bindError, ctx) {

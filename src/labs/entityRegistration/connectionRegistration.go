@@ -63,11 +63,11 @@ func (s ConnectionRegistration) GetEntityRegistrationInput() entityManagementInt
 		EntityConverters: entityManagementInterfaces.EntityConverters{
 			ModelToDto: s.EntityModelToEntityOutput,
 			DtoToModel: s.EntityInputDtoToEntityModel,
-			DtoToMap:   s.EntityInputDtoToEntityMap,
+			DtoToMap:   s.EntityDtoToMap,
 		},
 		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputDto:  dto.ConnectionInput{},
-			OutputDto: dto.ConnectionOutput{},
+			InputCreateDto: dto.ConnectionInput{},
+			OutputDto:      dto.ConnectionOutput{},
 		},
 	}
 }

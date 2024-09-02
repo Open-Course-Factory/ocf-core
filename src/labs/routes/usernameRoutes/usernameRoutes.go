@@ -20,6 +20,6 @@ func UsernamesRoutes(router *gin.RouterGroup, config *config.Configuration, db *
 	routes.GET("", middleware.AuthManagement(), usernameController.GetUsernames)
 	routes.GET("/:id", middleware.AuthManagement(), usernameController.GetUsername)
 	routes.POST("", middleware.AuthManagement(), usernameController.AddUsername)
-
+	routes.PATCH("/:id", middleware.AuthManagement(), usernameController.EditUsername)
 	routes.DELETE("/:id", middleware.AuthManagement(), usernameController.DeleteUsername)
 }

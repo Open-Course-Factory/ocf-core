@@ -13,6 +13,7 @@ type MachineController interface {
 	DeleteMachine(ctx *gin.Context)
 	GetMachines(ctx *gin.Context)
 	GetMachine(ctx *gin.Context)
+	EditMachine(ctx *gin.Context)
 }
 
 type machineController struct {

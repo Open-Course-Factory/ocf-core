@@ -52,11 +52,12 @@ func (s SshkeyRegistration) GetEntityRegistrationInput() entityManagementInterfa
 		EntityConverters: entityManagementInterfaces.EntityConverters{
 			ModelToDto: s.EntityModelToEntityOutput,
 			DtoToModel: s.EntityInputDtoToEntityModel,
-			DtoToMap:   s.EntityInputDtoToEntityMap,
+			DtoToMap:   s.EntityDtoToMap,
 		},
 		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputDto:  dto.CreateSshkeyInput{},
-			OutputDto: dto.CreateSshkeyOutput{},
+			InputCreateDto: dto.CreateSshkeyInput{},
+			OutputDto:      dto.CreateSshkeyOutput{},
+			InputEditDto:   dto.EditSshkeyInput{},
 		},
 	}
 }

@@ -49,11 +49,12 @@ func (s UsernameRegistration) GetEntityRegistrationInput() entityManagementInter
 		EntityConverters: entityManagementInterfaces.EntityConverters{
 			ModelToDto: s.EntityModelToEntityOutput,
 			DtoToModel: s.EntityInputDtoToEntityModel,
-			DtoToMap:   s.EntityInputDtoToEntityMap,
+			DtoToMap:   s.EntityDtoToMap,
 		},
 		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputDto:  dto.UsernameInput{},
-			OutputDto: dto.UsernameOutput{},
+			InputCreateDto: dto.UsernameInput{},
+			OutputDto:      dto.UsernameOutput{},
+			InputEditDto:   dto.EditUsernameInput{},
 		},
 	}
 }

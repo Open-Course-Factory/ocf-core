@@ -64,8 +64,8 @@ func (s CourseRegistration) GetEntityRegistrationInput() entityManagementInterfa
 			DtoToModel: s.EntityInputDtoToEntityModel,
 		},
 		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputDto:  dto.CreateCourseInput{},
-			OutputDto: dto.CreateCourseOutput{},
+			InputCreateDto: dto.CreateCourseInput{},
+			OutputDto:      dto.CreateCourseOutput{},
 		},
 	}
 }

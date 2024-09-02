@@ -12,3 +12,9 @@ type MachineOutput struct {
 	IP   string `json:"ip"`
 	Port int    `json:"port"`
 }
+
+type EditMachineInput struct {
+	Name string `binding:"required"`
+	IP   string `binding:"required"`
+	Port int    `binding:"required"`
+}

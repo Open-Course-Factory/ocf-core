@@ -13,6 +13,7 @@ type UsernameController interface {
 	DeleteUsername(ctx *gin.Context)
 	GetUsernames(ctx *gin.Context)
 	GetUsername(ctx *gin.Context)
+	EditUsername(ctx *gin.Context)
 }
 
 type usernameController struct {

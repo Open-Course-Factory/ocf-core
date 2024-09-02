@@ -61,8 +61,8 @@ func (s SessionRegistration) GetEntityRegistrationInput() entityManagementInterf
 			DtoToModel: s.EntityInputDtoToEntityModel,
 		},
 		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputDto:  dto.CreateSessionInput{},
-			OutputDto: dto.CreateSessionOutput{},
+			InputCreateDto: dto.CreateSessionInput{},
+			OutputDto:      dto.CreateSessionOutput{},
 		},
 	}
 }
