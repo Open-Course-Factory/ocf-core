@@ -17,6 +17,7 @@ type GenericService interface {
 	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetEntities(data interface{}) ([]interface{}, error)
 	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
+	PatchEntity(id uuid.UUID, entity interface{}, data interface{}) error
 	GetEntityModelInterface(entityName string) interface{}
 	AddOwnerIDs(entity interface{}, userId string) (interface{}, error)
 	ExtractUuidFromReflectEntity(entity interface{}) uuid.UUID
@@ -81,6 +82,14 @@ func (g *genericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped b
 	errorDelete := g.genericRepository.DeleteEntity(id, entity, scoped)
 	if errorDelete != nil {
 		return errorDelete
+	}
+	return nil
+}
+
+func (g *genericService) PatchEntity(id uuid.UUID, entity interface{}, data interface{}) error {
+	errorPatch := g.genericRepository.PatchEntity(id, entity, data)
+	if errorPatch != nil {
+		return errorPatch
 	}
 	return nil
 }

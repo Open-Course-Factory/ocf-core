@@ -3,6 +3,8 @@ package entityManagementInterfaces
 import (
 	"net/http"
 	"soli/formations/src/auth/models"
+
+	"github.com/mitchellh/mapstructure"
 )
 
 type EntityRegistrationInput struct {
@@ -15,6 +17,7 @@ type EntityRegistrationInput struct {
 type EntityConverters struct {
 	ModelToDto interface{}
 	DtoToModel interface{}
+	DtoToMap   interface{}
 }
 
 type EntityDtos struct {
@@ -42,4 +45,22 @@ func (a AbstractRegistrableInterface) GetEntityRoles() EntityRoles {
 		Roles: roleMap,
 	}
 	return res
+}
+
+func (a AbstractRegistrableInterface) EntityInputDtoToEntityMap(input interface{}) map[string]interface{} {
+	resMap := make(map[string]interface{})
+
+	config := &mapstructure.DecoderConfig{
+		WeaklyTypedInput: true,
+		Result:           &resMap,
+	}
+
+	decoder, err := mapstructure.NewDecoder(config)
+	if err != nil {
+		panic(err)
+	}
+
+	decoder.Decode(input)
+
+	return resMap
 }

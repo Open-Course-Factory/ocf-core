@@ -15,6 +15,7 @@ type ConversionWay int
 const (
 	InputDtoToModel ConversionWay = iota
 	OutputModelToDto
+	InputDtoToMap
 )
 
 type DtoWay int
@@ -47,6 +48,7 @@ func (s *EntityRegistrationService) RegisterEntityConversionFunctions(name strin
 
 	ways[OutputModelToDto] = converters.ModelToDto
 	ways[InputDtoToModel] = converters.DtoToModel
+	ways[InputDtoToMap] = converters.DtoToMap
 
 	s.functions[name] = ways
 }
@@ -72,6 +74,8 @@ func (s *EntityRegistrationService) GetConversionFunction(name string, way Conve
 		function, exists = s.functions[name][OutputModelToDto]
 	case InputDtoToModel:
 		function, exists = s.functions[name][InputDtoToModel]
+	case InputDtoToMap:
+		function, exists = s.functions[name][InputDtoToMap]
 	default:
 		function = nil
 		exists = false

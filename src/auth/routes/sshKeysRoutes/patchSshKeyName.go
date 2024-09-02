@@ -2,7 +2,11 @@ package sshKeyController
 
 import (
 	"net/http"
+	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/auth/models"
+	sqldb "soli/formations/src/db"
+	ems "soli/formations/src/entityManagement/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -31,14 +35,9 @@ var _ = errors.APIError{}
 func (s sshKeyController) PatchSshKeyName(ctx *gin.Context) {
 	idParam := ctx.Param("id")
 
-	type Data struct {
-		Name string `json:"name"`
-	}
-	var requestBody struct {
-		Data Data `json:"data"`
-	}
+	data := make(map[string]dto.PatchSshkey)
 
-	if err := ctx.BindJSON(&requestBody); err != nil {
+	if err := ctx.BindJSON(&data); err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: "Invalid JSON format",
@@ -55,7 +54,8 @@ func (s sshKeyController) PatchSshKeyName(ctx *gin.Context) {
 		return
 	}
 
-	_, errorUpdate := s.service.PatchSshKeyName(id.String(), requestBody.Data.Name)
+	genServ := ems.NewGenericService(sqldb.DB)
+	errorUpdate := genServ.PatchEntity(id, &models.Sshkey{}, data["data"])
 	if errorUpdate != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,

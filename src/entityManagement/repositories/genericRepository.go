@@ -16,6 +16,7 @@ type GenericRepository interface {
 	SaveEntity(entity interface{}) (interface{}, error)
 	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetAllEntities(data interface{}, pageSize int) ([]interface{}, error)
+	PatchEntity(id uuid.UUID, entity interface{}, data interface{}) error
 	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
 }
 
@@ -64,6 +65,30 @@ func (o *genericRepository) SaveEntity(entity interface{}) (interface{}, error) 
 	}
 	return result.Statement.Model, nil
 
+}
+
+func (r genericRepository) PatchEntity(id uuid.UUID, entity interface{}, data interface{}) error {
+	conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction("Sshkey", ems.InputDtoToMap)
+
+	if !found {
+		return &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Entity convertion function does not exist",
+		}
+	}
+
+	val := reflect.ValueOf(conversionFunctionRef)
+	if val.IsValid() && val.Kind() == reflect.Func {
+		args := []reflect.Value{reflect.ValueOf(data)}
+		entityMap := val.Call(args)
+
+		result := r.db.Model(&entity).Where("id = ?", id).Updates(entityMap[0].Interface())
+		if result.Error != nil {
+			return result.Error
+		}
+		return nil
+	}
+	return nil
 }
 
 func (o *genericRepository) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {

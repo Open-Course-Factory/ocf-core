@@ -55,6 +55,7 @@ func (s MachineRegistration) GetEntityRegistrationInput() entityManagementInterf
 		EntityConverters: entityManagementInterfaces.EntityConverters{
 			ModelToDto: s.EntityModelToEntityOutput,
 			DtoToModel: s.EntityInputDtoToEntityModel,
+			DtoToMap:   s.EntityInputDtoToEntityMap,
 		},
 		EntityDtos: entityManagementInterfaces.EntityDtos{
 			InputDto:  dto.MachineInput{},
