@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	cors "github.com/rs/cors/wrapper/gin"
 
 	swaggerFiles "github.com/swaggo/files"
@@ -67,9 +68,17 @@ import (
 // @BasePath		/api/v1
 func main() {
 
-	casdoor.InitCasdoorConnection(".env")
+	envFile := ".env"
 
-	sqldb.InitDBConnection(".env")
+	err := godotenv.Load(envFile)
+
+	if err != nil {
+		log.Default().Println(err)
+	}
+
+	casdoor.InitCasdoorConnection(envFile)
+
+	sqldb.InitDBConnection(envFile)
 
 	sqldb.DB.AutoMigrate()
 
@@ -142,7 +151,8 @@ func initSwagger(r *gin.Engine) {
 
 func initDB() {
 
-	if sqldb.DBType == "sqlite" {
+	env := os.Getenv("ENVIRONMENT")
+	if env == "development" || env == "test" {
 		sqldb.DB = sqldb.DB.Debug()
 
 		setupExternalUsersData()
