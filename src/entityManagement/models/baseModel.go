@@ -4,13 +4,14 @@ import (
 	"reflect"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
 type BaseModel struct {
 	gorm.Model
-	ID       uuid.UUID `gorm:"type:uuid;primarykey"`
-	OwnerIDs []string  `gorm:"serializer:json"`
+	ID       uuid.UUID      `gorm:"type:uuid;primarykey"`
+	OwnerIDs pq.StringArray `gorm:"type:text[]"`
 }
 
 func (b *BaseModel) BeforeCreate(tx *gorm.DB) (err error) {

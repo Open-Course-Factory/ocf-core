@@ -9,6 +9,7 @@ import (
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -86,12 +87,10 @@ func (c courseRepository) DeleteCourse(id uuid.UUID) error {
 
 func (c courseRepository) GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error) {
 	var course *models.Course
-	err := c.db.First(&course,
-		"substr(owner_ids,(INSTR(owner_ids,'"+owner.Id+"')), (LENGTH('"+owner.Id+"'))) = ? AND name=?",
-		owner.Id,
-		courseName).Error
+	err := c.db.First(&course, "owner_ids && ? AND name = ?", pq.StringArray{owner.Id}, courseName)
+
 	if err != nil {
-		return nil, err
+		return nil, err.Error
 	}
 	return course, nil
 }

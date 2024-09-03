@@ -4,6 +4,7 @@ import (
 	"soli/formations/src/auth/models"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -24,9 +25,9 @@ func NewSshKeyRepository(db *gorm.DB) SshKeyRepository {
 
 func (r sshKeyRepository) GetSshKeysByUserId(id uuid.UUID) (*[]models.Sshkey, error) {
 	var sshKeys []models.Sshkey
-	result := r.db.Find(&sshKeys,
-		"substr(owner_ids,(INSTR(owner_ids,'"+id.String()+"')), (LENGTH('"+id.String()+"'))) = ?",
-		id)
+
+	result := r.db.Find(&sshKeys, "owner_ids && ?", pq.StringArray{id.String()})
+
 	if result.Error != nil {
 		return nil, result.Error
 	}
