@@ -18,8 +18,8 @@ type Page struct {
 	Toc       []string `gorm:"serializer:json"`
 	Content   []string `gorm:"serializer:json"`
 	Hide      bool
-	SectionID uuid.UUID
-	Section   Section `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"section"`
+	SectionID *uuid.UUID
+	Section   *Section `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;default:null" json:"section"`
 }
 
 func (p Page) String() string {
@@ -30,7 +30,7 @@ func (p Page) String() string {
 func createPage(number int, pageContent []string, parentSection *Section, hide bool) (p Page) {
 	p.Number = number
 	p.Content = pageContent
-	p.Section = *parentSection
+	p.Section = parentSection
 	p.Section.Title = parentSection.Title
 	p.Hide = hide
 	return
