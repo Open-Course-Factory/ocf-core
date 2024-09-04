@@ -70,7 +70,6 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 
 		pageFrontMatter.Layout = ""
 
-		sPageContent, err := frontmatter.Parse(strings.NewReader(sPage), &sectionFrontMatter)
 		if sectionFrontMatter.Title != "" {
 			currentSection.Title = sectionFrontMatter.Title
 			currentSection.Intro = sectionFrontMatter.Intro
@@ -79,7 +78,11 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 		} else {
 			if index > beginningIndex {
 				pageCounter++
-				sPageContent, err = frontmatter.Parse(strings.NewReader(sPage), &pageFrontMatter)
+				sPageContent, err := frontmatter.Parse(strings.NewReader(sPage), &pageFrontMatter)
+
+				if err != nil {
+					fmt.Println(err.Error())
+				}
 
 				if contains(currentSection.HiddenPages, (pageCounter)) {
 					hide = true
@@ -88,10 +91,6 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 			} else {
 				fmt.Println("Front matter for section not found / not formatted as expected")
 			}
-		}
-
-		if err != nil {
-			fmt.Println(err.Error())
 		}
 
 	}

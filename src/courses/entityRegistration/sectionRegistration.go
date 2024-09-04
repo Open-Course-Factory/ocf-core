@@ -1,0 +1,70 @@
+package registration
+
+import (
+	"reflect"
+	"soli/formations/src/courses/dto"
+	"soli/formations/src/courses/models"
+	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
+)
+
+type SectionRegistration struct {
+	entityManagementInterfaces.AbstractRegistrableInterface
+}
+
+func (s SectionRegistration) EntityModelToEntityOutput(input any) any {
+	if reflect.ValueOf(input).Kind() == reflect.Ptr {
+		return sectionPtrModelToSectionOutputDto(input.(*models.Section))
+	} else {
+		return sectionValueModelToSectionOutputDto(input.(models.Section))
+	}
+}
+
+func sectionPtrModelToSectionOutputDto(sectionModel *models.Section) *dto.SectionOutput {
+
+	return &dto.SectionOutput{
+		ID:        sectionModel.ID.String(),
+		FileName:  sectionModel.FileName,
+		CreatedAt: sectionModel.CreatedAt.String(),
+		UpdatedAt: sectionModel.UpdatedAt.String(),
+	}
+}
+
+func sectionValueModelToSectionOutputDto(sectionModel models.Section) *dto.SectionOutput {
+
+	return &dto.SectionOutput{
+		ID:        sectionModel.ID.String(),
+		FileName:  sectionModel.FileName,
+		CreatedAt: sectionModel.CreatedAt.String(),
+		UpdatedAt: sectionModel.UpdatedAt.String(),
+	}
+}
+
+func (s SectionRegistration) EntityInputDtoToEntityModel(input any) any {
+
+	sectionInputDto := input.(dto.SectionInput)
+	return &models.Section{
+		FileName:    sectionInputDto.FileName,
+		Title:       sectionInputDto.Title,
+		Intro:       sectionInputDto.Intro,
+		Conclusion:  sectionInputDto.Conclusion,
+		Number:      sectionInputDto.Number,
+		Pages:       sectionInputDto.Pages,
+		HiddenPages: sectionInputDto.HiddenPages,
+	}
+}
+
+func (s SectionRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
+	return entityManagementInterfaces.EntityRegistrationInput{
+		EntityInterface: models.Section{},
+		EntityConverters: entityManagementInterfaces.EntityConverters{
+			ModelToDto: s.EntityModelToEntityOutput,
+			DtoToModel: s.EntityInputDtoToEntityModel,
+			DtoToMap:   s.EntityDtoToMap,
+		},
+		EntityDtos: entityManagementInterfaces.EntityDtos{
+			InputCreateDto: dto.SectionInput{},
+			OutputDto:      dto.SectionOutput{},
+			InputEditDto:   dto.EditSectionInput{},
+		},
+	}
+}

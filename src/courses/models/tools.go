@@ -219,7 +219,7 @@ func prepareGitCloneOptions(userId string, courseURL string, branchName ...strin
 		key, err = ssh.NewPublicKeys("git", []byte(firstKey), "")
 
 		if err != nil {
-			log.Printf(err.Error())
+			log.Default().Println(err.Error())
 			return nil, err
 		}
 

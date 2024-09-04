@@ -25,9 +25,10 @@ func (p Page) String(section Section, chapter Chapter) string {
 }
 
 func createPage(number int, pageContent []string, parentSection *Section, hide bool) (p *Page) {
-	p.Number = number
-	p.Content = pageContent
-	p.Sections = append(p.Sections, parentSection)
-	p.Hide = hide
-	return
+	return &Page{
+		Number:   number,
+		Content:  pageContent,
+		Sections: []*Section{parentSection},
+		Hide:     hide,
+	}
 }
