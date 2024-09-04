@@ -115,7 +115,7 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
 	}
 
 	// Copy Themes
-	fs, errClone := models.GitClone(c.OwnerID[0], c.ThemeGitRepository, c.ThemeGitRepositoryBranch)
+	fs, errClone := models.GitClone(c.OwnerIDs[0], c.ThemeGitRepository, c.ThemeGitRepositoryBranch)
 	if errClone != nil {
 		log.Fatal(errClone)
 	}

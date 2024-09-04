@@ -3,7 +3,7 @@ package userController
 import (
 	"net/http"
 	"soli/formations/src/auth/casdoor"
-	"soli/formations/src/courses/errors"
+	"soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

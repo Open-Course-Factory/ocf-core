@@ -4,17 +4,14 @@ import (
 	"reflect"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
 type BaseModel struct {
 	gorm.Model
-	ID uuid.UUID `gorm:"type:uuid;primarykey"`
-}
-
-type InterfaceWithBaseModel interface {
-	GetBaseModel() BaseModel
-	GetReferenceObject() string
+	ID       uuid.UUID      `gorm:"type:uuid;primarykey"`
+	OwnerIDs pq.StringArray `gorm:"type:text[]"`
 }
 
 func (b *BaseModel) BeforeCreate(tx *gorm.DB) (err error) {
@@ -23,6 +20,11 @@ func (b *BaseModel) BeforeCreate(tx *gorm.DB) (err error) {
 	}
 
 	return
+}
+
+type InterfaceWithBaseModel interface {
+	GetBaseModel() BaseModel
+	GetReferenceObject() string
 }
 
 func GetBaseModel(obj interface{}) (BaseModel, bool) {

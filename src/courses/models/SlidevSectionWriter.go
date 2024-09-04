@@ -6,15 +6,16 @@ import (
 
 type SlidevSectionWriter struct {
 	Section Section
+	Chapter Chapter
 }
 
 func (ssw *SlidevSectionWriter) SetFrontMatter() string {
-	frontMatter := "\n---\nlayout: cover\nchapter: " + ssw.Section.Chapter.Title + "\n---\n\n"
+	frontMatter := "\n---\nlayout: cover\nchapter: " + ssw.Chapter.Title + "\n---\n\n"
 	return frontMatter
 }
 
 func (ssw *SlidevSectionWriter) SetTitle() string {
-	return "# " + strings.ToUpper(ssw.Section.ParentChapterTitle) + "\n\n"
+	return "# " + strings.ToUpper(ssw.Chapter.Title) + "\n\n"
 }
 
 func (ssw *SlidevSectionWriter) SetToc() string {
@@ -29,7 +30,7 @@ func (ssw *SlidevSectionWriter) SetToc() string {
 func (ssw *SlidevSectionWriter) SetContent() string {
 	var pages string
 	for _, page := range ssw.Section.Pages {
-		pages += page.String() + "\n"
+		pages += page.String(ssw.Section, ssw.Chapter) + "\n"
 	}
 	return pages
 }

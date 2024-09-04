@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/adrg/frontmatter"
-	"github.com/google/uuid"
 )
 
 type SectionWriter interface {
@@ -26,14 +25,14 @@ type Section struct {
 	Intro              string
 	Conclusion         string
 	Number             int
-	ChapterID          uuid.UUID `gorm:"foreignKey:ID"`
-	Chapter            Chapter   `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;serializer:json" json:"chapter"`
-	Pages              []Page    `gorm:"foreignKey:SectionID;serializer:json" json:"pages"`
-	HiddenPages        []int     `gorm:"serializer:json"`
+
+	Chapter     []*Chapter `gorm:"many2many:chapter_sections;"`
+	Pages       []*Page    `gorm:"many2many:section_pages;"`
+	HiddenPages []int      `gorm:"serializer:json"`
 }
 
-func (s Section) String() string {
-	sw := SlidevSectionWriter{s}
+func (s Section) String(chapter Chapter) string {
+	sw := SlidevSectionWriter{s, chapter}
 	return sw.GetSection()
 }
 
@@ -47,8 +46,8 @@ func fillSection(courseName string, currentSection *Section) {
 	currentSection.Pages = pages
 }
 
-func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []Page {
-	var pages []Page
+func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page {
+	var pages []*Page
 	pageCounter := 0
 	var hide bool
 

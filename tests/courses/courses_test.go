@@ -1,7 +1,6 @@
 package courses_tests
 
 import (
-	"log"
 	test_tools "soli/formations/tests/testTools"
 	"testing"
 
@@ -14,25 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
-	log.Println("setup test")
-
-	test_tools.SetupDatabase()
-	test_tools.SetupCasdoor()
-
-	test_tools.DeleteAllObjects()
-	test_tools.SetupUsers()
-	test_tools.SetupGroups()
-	test_tools.SetupRoles()
-
-	return func(tb testing.TB) {
-		log.Println("teardown test")
-		test_tools.DeleteAllObjects()
-	}
-}
-
 func TestCourseCreation(t *testing.T) {
-	teardownTest := SetupFunctionnalTests(t)
+	teardownTest := test_tools.SetupFunctionnalTests(t)
 	defer teardownTest(t)
 
 	formatInt := int(config.HTML)
@@ -60,5 +42,8 @@ func TestCourseCreation(t *testing.T) {
 	courseOutput, _ := courseService.CreateCourse(courseInput)
 
 	assert.Equal(t, "Cours de test", courseOutput.Name)
+
+	_, err := courseService.CreateCourse(courseInput)
+	assert.NotEqual(t, nil, err)
 
 }

@@ -27,6 +27,6 @@ var _ = dto.CreateSshkeyInput{}
 //	@Failure		400	{object}	errors.APIError	"Impossible de créer une sshKey"
 //	@Failure		409	{object}	errors.APIError	"La sshKey existe déjà"
 //	@Router			/sshkeys [post]
-func (s sshKeyController) AddSshKey(ctx *gin.Context) {
+func (s sshKeyController) AddSshkey(ctx *gin.Context) {
 	s.AddEntity(ctx)
 }

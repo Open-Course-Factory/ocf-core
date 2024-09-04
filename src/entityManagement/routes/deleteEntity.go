@@ -3,33 +3,43 @@ package controller
 import (
 	"net/http"
 
+	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
-func (genericController genericController) DeleteEntity(ctx *gin.Context) {
+func (genericController genericController) DeleteEntity(ctx *gin.Context, scoped bool) {
 
 	id, parseErr := uuid.Parse(ctx.Param("id"))
-	if parseErr != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: parseErr.Error(),
-		})
+	if errors.HandleError(http.StatusBadRequest, parseErr, ctx) {
 		return
 	}
 
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 	entityModelInterface := genericController.genericService.GetEntityModelInterface(entityName)
-
-	errorDelete := genericController.genericService.DeleteEntity(id, entityModelInterface)
-	if errorDelete != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Role not found",
-		})
+	entity, getEntityError := genericController.genericService.GetEntity(id, entityModelInterface)
+	if errors.HandleError(http.StatusNotFound, getEntityError, ctx) {
 		return
 	}
+
+	errorDelete := genericController.genericService.DeleteEntity(id, entity, scoped)
+	if errors.HandleError(http.StatusNotFound, errorDelete, ctx) {
+		return
+	}
+
+	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
+	if errors.HandleError(http.StatusInternalServerError, errPolicyLoading, ctx) {
+		return
+	}
+
+	resourceName := GetResourceNameFromPath(ctx.FullPath())
+
+	_, errRemovingPolicy := casdoor.Enforcer.RemoveFilteredPolicy(1, "/api/v1/"+resourceName+"/"+id.String())
+	if errors.HandleError(http.StatusInternalServerError, errRemovingPolicy, ctx) {
+		return
+	}
+
 	ctx.JSON(http.StatusNoContent, "Done")
 }

@@ -5,7 +5,8 @@ import (
 )
 
 type MarpPageWriter struct {
-	Page Page
+	Page    Page
+	Section Section
 }
 
 func (mpw *MarpPageWriter) SetFrontMatter() string {
@@ -19,7 +20,7 @@ func (mpw *MarpPageWriter) SetFrontMatter() string {
 }
 
 func (mpw *MarpPageWriter) SetTitle() string {
-	title := "## " + strings.ToUpper(mpw.Page.Section.Title) + "\n\n"
+	title := "## " + strings.ToUpper(mpw.Section.Title) + "\n\n"
 	return title
 }
 

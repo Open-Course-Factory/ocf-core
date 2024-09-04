@@ -2,11 +2,14 @@ package test_tools
 
 import (
 	"fmt"
+	"log"
 	"path/filepath"
 	"runtime"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/services"
+	labsDto "soli/formations/src/labs/dto"
+	"testing"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
@@ -17,16 +20,24 @@ import (
 
 	authModels "soli/formations/src/auth/models"
 	courseModels "soli/formations/src/courses/models"
+	baseModels "soli/formations/src/entityManagement/models"
+	labsModels "soli/formations/src/labs/models"
+
+	authRegistration "soli/formations/src/auth/entityRegistration"
+	coursesRegistration "soli/formations/src/courses/entityRegistration"
+	ems "soli/formations/src/entityManagement/entityManagementService"
+	labRegistration "soli/formations/src/labs/entityRegistration"
 
 	courseServices "soli/formations/src/courses/services"
+	genericServices "soli/formations/src/entityManagement/services"
 )
 
 var groups []casdoorsdk.Group
 var roles []casdoorsdk.Role
 
-func SetupDatabase() {
+func SetupTestDatabase() {
 
-	sqldb.InitDBConnection(".env.test")
+	sqldb.InitDBConnection("../.env.test")
 	sqldb.DB = sqldb.DB.Debug()
 	sqldb.DB.AutoMigrate()
 	sqldb.DB.AutoMigrate(&courseModels.Page{})
@@ -36,6 +47,9 @@ func SetupDatabase() {
 	sqldb.DB.AutoMigrate(&courseModels.Session{})
 
 	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
+
+	sqldb.DB.AutoMigrate(&labsModels.Username{})
+	sqldb.DB.AutoMigrate(&labsModels.Machine{})
 
 }
 
@@ -89,31 +103,39 @@ func SetupRoles() {
 	ok0 := casdoor.Enforcer.LoadPolicy()
 	fmt.Println(ok0)
 
-	ok1, errPolicy1 := casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/courses/*", "GET")
-	fmt.Println(ok1)
-
-	ok2, errPolicy2 := casdoor.Enforcer.AddPolicy(roleAdministrator.Name, "/api/v1/*", "(GET|PATCH|POST|DELETE)")
-	fmt.Println(ok2)
-
-	if errPolicy1 != nil {
-		fmt.Println(errPolicy1.Error())
-	}
-
-	if errPolicy2 != nil {
-		fmt.Println(errPolicy1.Error())
-	}
+	casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/courses/*", "GET")
+	casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/usernames/", "(GET|POST)")
+	casdoor.Enforcer.AddPolicy(roleAdministrator.Name, "/api/v1/*", "(GET|PATCH|POST|DELETE)")
 
 }
 
 func SetupUsers() {
 	userService := services.NewUserService()
-	userService.AddUser(dto.CreateUserInput{UserName: "1_st", DisplayName: "1 Student", Email: "1.student@test.com", Password: "test", FirstName: "Student", LastName: "1", DefaultRole: "student"})
-	userService.AddUser(dto.CreateUserInput{UserName: "2_st", DisplayName: "2 Student", Email: "2.student@test.com", Password: "test", FirstName: "Student", LastName: "2", DefaultRole: "student"})
-	userService.AddUser(dto.CreateUserInput{UserName: "3_st", DisplayName: "3 Student", Email: "3.student@test.com", Password: "test", FirstName: "Student", LastName: "3", DefaultRole: "student"})
-	userService.AddUser(dto.CreateUserInput{UserName: "4_st", DisplayName: "4 Student", Email: "4.student@test.com", Password: "test", FirstName: "Student", LastName: "4", DefaultRole: "student"})
+	_, err := userService.AddUser(dto.CreateUserInput{UserName: "1_st", DisplayName: "1 Student", Email: "1.student@test.com", Password: "test", FirstName: "Student", LastName: "1", DefaultRole: "student"})
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	_, err = userService.AddUser(dto.CreateUserInput{UserName: "2_st", DisplayName: "2 Student", Email: "2.student@test.com", Password: "test", FirstName: "Student", LastName: "2", DefaultRole: "student"})
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	_, err = userService.AddUser(dto.CreateUserInput{UserName: "3_st", DisplayName: "3 Student", Email: "3.student@test.com", Password: "test", FirstName: "Student", LastName: "3", DefaultRole: "student"})
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	_, err = userService.AddUser(dto.CreateUserInput{UserName: "4_st", DisplayName: "4 Student", Email: "4.student@test.com", Password: "test", FirstName: "Student", LastName: "4", DefaultRole: "student"})
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 
-	userService.AddUser(dto.CreateUserInput{UserName: "1_sup", DisplayName: "1 Supervisor", Email: "1.supervisor@test.com", Password: "test", FirstName: "Supervisor", LastName: "1", DefaultRole: "administrator"})
-	userService.AddUser(dto.CreateUserInput{UserName: "2_sup", DisplayName: "2 Supervisor", Email: "2.supervisor@test.com", Password: "test", FirstName: "Supervisor", LastName: "2", DefaultRole: "administrator"})
+	_, err = userService.AddUser(dto.CreateUserInput{UserName: "1_sup", DisplayName: "1 Supervisor", Email: "1.supervisor@test.com", Password: "test", FirstName: "Supervisor", LastName: "1", DefaultRole: "administrator"})
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	_, err = userService.AddUser(dto.CreateUserInput{UserName: "2_sup", DisplayName: "2 Supervisor", Email: "2.supervisor@test.com", Password: "test", FirstName: "Supervisor", LastName: "2", DefaultRole: "administrator"})
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 }
 
 func DeleteAllObjects() {
@@ -156,5 +178,58 @@ func DeleteAllObjects() {
 			fmt.Println(err.Error())
 		}
 		cs.DeleteCourse(uuid)
+	}
+
+	gs := genericServices.NewGenericService(sqldb.DB)
+	usernamesPages, _ := gs.GetEntities(labsModels.Username{})
+	usernamesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(usernamesPages, labsModels.Username{}, "Username")
+	for _, usernameDto := range usernamesDtoArray {
+		id := gs.ExtractUuidFromReflectEntity(usernameDto)
+		usernameDto := usernameDto.(*labsDto.UsernameOutput)
+		usernameToDelete := &labsModels.Username{
+			BaseModel: baseModels.BaseModel{
+				ID: id,
+			},
+			Username: usernameDto.Username,
+		}
+
+		gs.DeleteEntity(id, usernameToDelete, true)
+	}
+
+	machinesPages, _ := gs.GetEntities(labsModels.Machine{})
+	machinesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(machinesPages, labsModels.Machine{}, "Machine")
+	for _, machineDto := range machinesDtoArray {
+		id := gs.ExtractUuidFromReflectEntity(machineDto)
+		machineDto := machineDto.(*labsDto.MachineOutput)
+		machineToDelete := &labsModels.Machine{
+			BaseModel: baseModels.BaseModel{
+				ID: id,
+			},
+			Name: machineDto.Name,
+		}
+
+		gs.DeleteEntity(id, machineToDelete, true)
+	}
+
+}
+
+func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
+	log.Println("setup test")
+
+	SetupTestDatabase()
+	SetupCasdoor()
+
+	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.SessionRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
+
+	SetupUsers()
+	SetupGroups()
+	SetupRoles()
+
+	return func(tb testing.TB) {
+		log.Println("teardown test")
+		DeleteAllObjects()
 	}
 }

@@ -1,7 +1,7 @@
 package sessionController
 
 import (
-	errors "soli/formations/src/courses/errors"
+	errors "soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,5 +25,5 @@ var _ = errors.APIError{}
 //
 //	@Router			/sessions/{id} [delete]
 func (s sessionController) DeleteSession(ctx *gin.Context) {
-	s.DeleteEntity(ctx)
+	s.DeleteEntity(ctx, true)
 }

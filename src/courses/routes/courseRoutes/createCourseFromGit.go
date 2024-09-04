@@ -5,7 +5,7 @@ import (
 
 	"soli/formations/src/courses/dto"
 
-	"soli/formations/src/courses/errors"
+	"soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
 

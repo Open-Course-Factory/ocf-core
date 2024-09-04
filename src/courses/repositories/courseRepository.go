@@ -9,6 +9,7 @@ import (
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -40,9 +41,11 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 
 	//ToDo full course with dtoinput to model
 	course := models.Course{
+		BaseModel: entityManagementModels.BaseModel{
+			OwnerIDs: []string{user.Id},
+		},
 		Name:               coursedto.Name,
 		Theme:              coursedto.Theme,
-		OwnerID:            []string{user.Id},
 		Category:           coursedto.Category,
 		Version:            coursedto.Version,
 		Title:              coursedto.Title,
@@ -84,9 +87,10 @@ func (c courseRepository) DeleteCourse(id uuid.UUID) error {
 
 func (c courseRepository) GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error) {
 	var course *models.Course
-	err := c.db.First(&course, "owner_id IN (?) AND name=?", owner.Id, courseName).Error
+	err := c.db.First(&course, "owner_ids && ? AND name = ?", pq.StringArray{owner.Id}, courseName)
+
 	if err != nil {
-		return nil, err
+		return nil, err.Error
 	}
 	return course, nil
 }

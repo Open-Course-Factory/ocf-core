@@ -39,7 +39,7 @@ func (mcw *MarpChapterWriter) SetContent() string {
 	// Then all the chapter sections are added
 	var sections string
 	for _, section := range mcw.Chapter.Sections {
-		sections += section.String() + "\n\n"
+		sections += section.String(mcw.Chapter) + "\n\n"
 	}
 	return sections
 }

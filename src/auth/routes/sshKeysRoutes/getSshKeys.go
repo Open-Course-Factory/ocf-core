@@ -10,7 +10,8 @@ import (
 var _ = errors.APIError{}
 var _ = dto.CreateSshkeyOutput{}
 
-// GetSshKeys godoc
+// GetSshkeys godoc
+//
 //	@Summary		Récupération des sshKeys
 //	@Description	Récupération de toutes les sshKeys disponibles
 //	@Tags			sshKeys
@@ -24,6 +25,6 @@ var _ = dto.CreateSshkeyOutput{}
 //	@Failure		404	{object}	errors.APIError	"SshKeys inexistantes"
 //
 //	@Router			/sshkeys [get]
-func (s sshKeyController) GetSshKeys(ctx *gin.Context) {
+func (s sshKeyController) GetSshkeys(ctx *gin.Context) {
 	s.GetEntities(ctx)
 }

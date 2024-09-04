@@ -2,8 +2,6 @@ package models
 
 import (
 	entityManagementModels "soli/formations/src/entityManagement/models"
-
-	"github.com/google/uuid"
 )
 
 type PageWriter interface {
@@ -14,24 +12,22 @@ type PageWriter interface {
 // Part of a Section
 type Page struct {
 	entityManagementModels.BaseModel
-	Number    int
-	Toc       []string `gorm:"serializer:json"`
-	Content   []string `gorm:"serializer:json"`
-	Hide      bool
-	SectionID uuid.UUID
-	Section   Section `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"section"`
+	Number   int
+	Toc      []string `gorm:"serializer:json"`
+	Content  []string `gorm:"serializer:json"`
+	Hide     bool
+	Sections []*Section `gorm:"many2many:section_pages;"`
 }
 
-func (p Page) String() string {
-	pw := SlidevPageWriter{p}
+func (p Page) String(section Section, chapter Chapter) string {
+	pw := SlidevPageWriter{p, section, chapter}
 	return pw.GetPage()
 }
 
-func createPage(number int, pageContent []string, parentSection *Section, hide bool) (p Page) {
+func createPage(number int, pageContent []string, parentSection *Section, hide bool) (p *Page) {
 	p.Number = number
 	p.Content = pageContent
-	p.Section = *parentSection
-	p.Section.Title = parentSection.Title
+	p.Sections = append(p.Sections, parentSection)
 	p.Hide = hide
 	return
 }

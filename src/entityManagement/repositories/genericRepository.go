@@ -1,7 +1,9 @@
 package repositories
 
 import (
+	"net/http"
 	"reflect"
+	errors "soli/formations/src/auth/errors"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
 	"github.com/google/uuid"
@@ -11,9 +13,11 @@ import (
 
 type GenericRepository interface {
 	CreateEntity(data interface{}, entityName string) (interface{}, error)
+	SaveEntity(entity interface{}) (interface{}, error)
 	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
 	GetAllEntities(data interface{}, pageSize int) ([]interface{}, error)
-	DeleteEntity(id uuid.UUID, data interface{}) error
+	EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error
+	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
 }
 
 type genericRepository struct {
@@ -28,7 +32,15 @@ func NewGenericRepository(db *gorm.DB) GenericRepository {
 }
 
 func (o *genericRepository) CreateEntity(entityInputDto interface{}, entityName string) (interface{}, error) {
-	conversionFunctionRef, _ := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.InputDtoToModel)
+	conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.CreateInputDtoToModel)
+
+	if !found {
+		return nil, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Entity convertion function does not exist",
+		}
+	}
+
 	val := reflect.ValueOf(conversionFunctionRef)
 	if val.IsValid() && val.Kind() == reflect.Func {
 		args := []reflect.Value{reflect.ValueOf(entityInputDto)}
@@ -43,6 +55,25 @@ func (o *genericRepository) CreateEntity(entityInputDto interface{}, entityName 
 	}
 
 	return 1, nil
+}
+
+func (o *genericRepository) SaveEntity(entity interface{}) (interface{}, error) {
+
+	result := o.db.Save(entity)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return result.Statement.Model, nil
+
+}
+
+func (r genericRepository) EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error {
+
+	result := r.db.Model(&entity).Where("id = ?", id).Updates(data)
+	if result.Error != nil {
+		return result.Error
+	}
+	return nil
 }
 
 func (o *genericRepository) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {
@@ -102,12 +133,22 @@ func createEmptySliceOfCalledType(data interface{}) any {
 	return emptySlice.Interface()
 }
 
-func (o *genericRepository) DeleteEntity(id uuid.UUID, data interface{}) error {
+func (o *genericRepository) DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error {
+	var result *gorm.DB
+	if scoped {
+		result = o.db.Delete(&entity, id)
+	} else {
+		result = o.db.Unscoped().Delete(&entity, id)
+	}
 
-	model := reflect.New(reflect.TypeOf(data)).Interface()
-	result := o.db.Delete(&model, id)
 	if result.Error != nil {
 		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Entity not found",
+		}
 	}
 	return nil
 }

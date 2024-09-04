@@ -1,7 +1,6 @@
 package auth_tests
 
 import (
-	"log"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,25 +12,8 @@ import (
 	"soli/formations/src/auth/casdoor"
 )
 
-func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
-	log.Println("setup test")
-
-	test_tools.SetupDatabase()
-	test_tools.SetupCasdoor()
-
-	test_tools.DeleteAllObjects()
-	test_tools.SetupUsers()
-	test_tools.SetupGroups()
-	test_tools.SetupRoles()
-
-	return func(tb testing.TB) {
-		log.Println("teardown test")
-		test_tools.DeleteAllObjects()
-	}
-}
-
 func TestUserCreation(t *testing.T) {
-	teardownTest := SetupFunctionnalTests(t)
+	teardownTest := test_tools.SetupFunctionnalTests(t)
 
 	userService := services.NewUserService()
 

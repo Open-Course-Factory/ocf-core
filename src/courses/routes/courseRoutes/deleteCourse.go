@@ -1,7 +1,7 @@
 package courseController
 
 import (
-	errors "soli/formations/src/courses/errors"
+	errors "soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,5 +26,5 @@ var _ = errors.APIError{}
 //
 //	@Router			/courses/{id} [delete]
 func (c courseController) DeleteCourse(ctx *gin.Context) {
-	c.DeleteEntity(ctx)
+	c.DeleteEntity(ctx, true)
 }

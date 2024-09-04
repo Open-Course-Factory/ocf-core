@@ -3,7 +3,6 @@ package controller
 import (
 	"fmt"
 	"net/http"
-	"reflect"
 	"soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
@@ -11,15 +10,15 @@ import (
 
 func (genericController genericController) GetEntities(ctx *gin.Context) {
 
-	entitiesDto, shouldReturn1 := genericController.getEntities(ctx)
-	if shouldReturn1 {
+	entitiesDto, getEntityError := genericController.getEntities(ctx)
+	if errors.HandleError(http.StatusNotFound, getEntityError, ctx) {
 		return
 	}
 
 	ctx.JSON(http.StatusOK, entitiesDto)
 }
 
-func (genericController genericController) getEntities(ctx *gin.Context) ([]interface{}, bool) {
+func (genericController genericController) getEntities(ctx *gin.Context) ([]interface{}, error) {
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
 	entitiesDto, shouldReturn := genericController.getEntitiesFromName(entityName)
@@ -28,9 +27,12 @@ func (genericController genericController) getEntities(ctx *gin.Context) ([]inte
 			ErrorCode:    http.StatusNotFound,
 			ErrorMessage: "Entities not found",
 		})
-		return nil, true
+		return nil, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Entities not found",
+		}
 	}
-	return entitiesDto, false
+	return entitiesDto, nil
 }
 
 func (genericController genericController) getEntitiesFromName(entityName string) ([]interface{}, bool) {
@@ -42,31 +44,9 @@ func (genericController genericController) getEntitiesFromName(entityName string
 		return nil, true
 	}
 
-	var entitiesDto []interface{}
-
-	for _, page := range allEntitiesPages {
-
-		entityModel := reflect.SliceOf(reflect.TypeOf(entityModelInterface))
-
-		pageValue := reflect.ValueOf(page)
-
-		if pageValue.Type().ConvertibleTo(entityModel) {
-			convertedPage := pageValue.Convert(entityModel)
-
-			for i := 0; i < convertedPage.Len(); i++ {
-
-				item := convertedPage.Index(i).Interface()
-
-				var shouldReturn bool
-				entitiesDto, shouldReturn = genericController.appendEntityFromResult(entityName, item, entitiesDto)
-				if shouldReturn {
-					return nil, true
-				}
-			}
-		} else {
-			return nil, true
-		}
-
+	entitiesDto, shouldReturn := genericController.genericService.GetDtoArrayFromEntitiesPages(allEntitiesPages, entityModelInterface, entityName)
+	if shouldReturn {
+		return nil, true
 	}
 	return entitiesDto, false
 }

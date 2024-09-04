@@ -42,7 +42,7 @@ func (scw *SlidevChapterWriter) SetContent() string {
 	// Then all the chapter sections are added
 	var sections string
 	for _, section := range scw.Chapter.Sections {
-		sections += section.String() + "\n\n"
+		sections += section.String(scw.Chapter) + "\n\n"
 	}
 	return sections
 }
