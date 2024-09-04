@@ -23,7 +23,7 @@ func ChapterModelToChapterOutput(chapterModel models.Chapter) *ChapterOutput {
 
 	var sectionsOutputs []SectionOutput
 	for _, section := range chapterModel.Sections {
-		sectionsOutputs = append(sectionsOutputs, *SectionModelToSectionOutput(section))
+		sectionsOutputs = append(sectionsOutputs, *SectionModelToSectionOutput(*section))
 	}
 
 	return &ChapterOutput{

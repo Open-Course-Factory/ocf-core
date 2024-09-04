@@ -21,15 +21,15 @@ func (s PageRegistration) EntityModelToEntityOutput(input any) any {
 
 func pagePtrModelToPageOutputDto(pageModel *models.Page) *dto.PageOutput {
 
-	var parentSectionTitle string
-	if pageModel.Section != nil {
-		parentSectionTitle = pageModel.Section.Title
-	}
+	// var parentSectionTitle string
+	// if pageModel.Section != nil {
+	// 	parentSectionTitle = pageModel.Section.Title
+	// }
 
 	return &dto.PageOutput{
 		ID:                 pageModel.ID.String(),
 		Number:             pageModel.Number,
-		ParentSectionTitle: parentSectionTitle,
+		ParentSectionTitle: "",
 		Toc:                pageModel.Toc,
 		Content:            pageModel.Content,
 		Hide:               pageModel.Hide,
@@ -40,15 +40,15 @@ func pagePtrModelToPageOutputDto(pageModel *models.Page) *dto.PageOutput {
 
 func pageValueModelToPageOutputDto(pageModel models.Page) *dto.PageOutput {
 
-	var parentSectionTitle string
-	if pageModel.Section != nil {
-		parentSectionTitle = pageModel.Section.Title
-	}
+	// var parentSectionTitle string
+	// if pageModel.Section != nil {
+	// 	parentSectionTitle = pageModel.Section.Title
+	// }
 
 	return &dto.PageOutput{
 		ID:                 pageModel.ID.String(),
 		Number:             pageModel.Number,
-		ParentSectionTitle: parentSectionTitle,
+		ParentSectionTitle: "",
 		Toc:                pageModel.Toc,
 		Content:            pageModel.Content,
 		Hide:               pageModel.Hide,

@@ -6,6 +6,7 @@ import (
 
 type MarpSectionWriter struct {
 	Section Section
+	Chapter Chapter
 }
 
 func (msw *MarpSectionWriter) SetFrontMatter() string {
@@ -30,7 +31,7 @@ func (msw *MarpSectionWriter) SetToc() string {
 func (msw *MarpSectionWriter) SetContent() string {
 	var pages string
 	for _, page := range msw.Section.Pages {
-		pages += page.String() + "\n"
+		pages += page.String(msw.Section, msw.Chapter) + "\n"
 	}
 	return pages
 }

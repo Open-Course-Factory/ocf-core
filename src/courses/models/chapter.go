@@ -19,8 +19,8 @@ type Chapter struct {
 	Number       int
 	Footer       string
 	Introduction string
-	Courses      []*Course `gorm:"many2many:course_chapters;serializer:json" json:"courses"`
-	Sections     []Section `json:"sections"`
+	Courses      []*Course  `gorm:"many2many:course_chapters"`
+	Sections     []*Section `gorm:"many2many:chapter_sections"`
 }
 
 func (c Chapter) String() string {

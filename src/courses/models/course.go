@@ -48,7 +48,7 @@ type Course struct {
 	ThemeGitRepositoryBranch string
 	URL                      string
 	LearningObjectives       string     `json:"learning_objectives"`
-	Chapters                 []*Chapter `gorm:"many2many:course_chapters;serializer:json" json:"chapters"`
+	Chapters                 []*Chapter `gorm:"many2many:course_chapters"`
 }
 
 func (c Course) String() string {
@@ -106,9 +106,9 @@ func FillCourseModelFromFiles(courseName string, course *Course) {
 		chapter.Number = indexChapter + 1
 		for indexSection, section := range chapter.Sections {
 			section.Number = indexSection + 1
-			section.Chapter = *chapter
+			section.Chapter = append(section.Chapter, chapter)
 			section.ParentChapterTitle = chapter.getTitle()
-			fillSection(courseName, &section)
+			fillSection(courseName, section)
 			chapter.Sections[indexSection] = section
 		}
 		course.Chapters[indexChapter] = chapter
