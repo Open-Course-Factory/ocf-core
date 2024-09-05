@@ -38,6 +38,19 @@ var roles []casdoorsdk.Role
 func SetupTestDatabase() {
 
 	sqldb.InitDBConnection("../.env.test")
+
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Page{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Section{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Chapter{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Course{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Session{})
+
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&authModels.Sshkey{})
+
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Connection{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Username{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Machine{})
+
 	sqldb.DB = sqldb.DB.Debug()
 	sqldb.DB.AutoMigrate()
 	sqldb.DB.AutoMigrate(&courseModels.Page{})
@@ -50,13 +63,14 @@ func SetupTestDatabase() {
 
 	sqldb.DB.AutoMigrate(&labsModels.Username{})
 	sqldb.DB.AutoMigrate(&labsModels.Machine{})
+	sqldb.DB.AutoMigrate(&labsModels.Connection{})
 
 }
 
 func SetupCasdoor() {
 	_, b, _, _ := runtime.Caller(0)
 	basePath := filepath.Dir(b) + "/../../"
-	casdoor.InitCasdoorConnection(basePath + ".env")
+	casdoor.InitCasdoorConnection("../.env.test")
 	casdoor.InitCasdoorEnforcer(sqldb.DB, basePath)
 }
 
@@ -219,7 +233,13 @@ func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 	SetupTestDatabase()
 	SetupCasdoor()
 
+	DeleteAllObjects()
+
 	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.SessionRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.PageRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.SectionRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.ChapterRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.CourseRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
@@ -230,6 +250,6 @@ func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 
 	return func(tb testing.TB) {
 		log.Println("teardown test")
-		DeleteAllObjects()
+		//DeleteAllObjects()
 	}
 }

@@ -7,36 +7,14 @@ import (
 
 	"soli/formations/src/auth/errors"
 
-	ems "soli/formations/src/entityManagement/entityManagementService"
-
 	"github.com/gin-gonic/gin"
-
-	"github.com/mitchellh/mapstructure"
 )
 
 func (genericController genericController) AddEntity(ctx *gin.Context) {
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
-	entityCreateDtoInput := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
-	decodedData := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
-
-	bindError := ctx.BindJSON(&entityCreateDtoInput)
-	if errors.HandleError(http.StatusBadRequest, bindError, ctx) {
-		return
-	}
-
-	config := &mapstructure.DecoderConfig{
-		WeaklyTypedInput: true,
-		Result:           &decodedData,
-	}
-
-	decoder, err := mapstructure.NewDecoder(config)
-	if err != nil {
-		panic(err)
-	}
-
-	errDecode := decoder.Decode(entityCreateDtoInput)
-	if errors.HandleError(http.StatusInternalServerError, errDecode, ctx) {
+	decodedData, decodeError := genericController.genericService.DecodeInputDtoForEntityCreation(entityName, ctx)
+	if errors.HandleError(http.StatusBadRequest, decodeError, ctx) {
 		return
 	}
 

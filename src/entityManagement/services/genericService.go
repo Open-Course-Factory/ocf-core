@@ -8,7 +8,9 @@ import (
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 	"gorm.io/gorm"
 )
 
@@ -25,6 +27,7 @@ type GenericService interface {
 	GetDtoArrayFromEntitiesPages(allEntitiesPages []interface{}, entityModelInterface interface{}, entityName string) ([]interface{}, bool)
 	GetEntityFromResult(entityName string, item interface{}) (interface{}, bool)
 	AddDefaultAccessesForEntity(resourceName string, entity interface{}, userId string) error
+	DecodeInputDtoForEntityCreation(entityName string, ctx *gin.Context) (interface{}, error)
 }
 
 type genericService struct {
@@ -222,4 +225,31 @@ func (g *genericService) AddDefaultAccessesForEntity(resourceName string, entity
 	}
 
 	return nil
+}
+
+func (g *genericService) DecodeInputDtoForEntityCreation(entityName string, ctx *gin.Context) (interface{}, error) {
+	entityCreateDtoInput := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
+	decodedData := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
+
+	bindError := ctx.BindJSON(&entityCreateDtoInput)
+	if bindError != nil {
+		return nil, bindError
+	}
+
+	config := &mapstructure.DecoderConfig{
+		WeaklyTypedInput: true,
+		Result:           &decodedData,
+	}
+
+	decoder, err := mapstructure.NewDecoder(config)
+	if err != nil {
+		panic(err)
+	}
+
+	errDecode := decoder.Decode(entityCreateDtoInput)
+	if errDecode != nil {
+		return nil, errDecode
+	}
+
+	return decodedData, nil
 }

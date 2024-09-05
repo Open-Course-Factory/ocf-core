@@ -1,7 +1,6 @@
 package services
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -9,7 +8,6 @@ import (
 	"soli/formations/src/auth/casdoor"
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/dto"
-	registration "soli/formations/src/courses/entityRegistration"
 	"soli/formations/src/courses/models"
 	repositories "soli/formations/src/courses/repositories"
 	genServices "soli/formations/src/entityManagement/services"
@@ -25,7 +23,6 @@ import (
 
 type CourseService interface {
 	GenerateCourse(courseName string, courseTheme string, format string, authorEmail string, cow models.CourseMdWriter) (*dto.GenerateCourseOutput, error)
-	CreateCourse(courseCreateDTO dto.CourseInput) (*dto.CourseOutput, error)
 	DeleteCourse(id uuid.UUID) error
 	GetCourses() ([]dto.CourseOutput, error)
 	GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) error
@@ -88,46 +85,6 @@ func (c courseService) GenerateCourse(courseName string, courseTheme string, for
 	}
 
 	return &dto.GenerateCourseOutput{Result: true}, nil
-}
-
-func (c courseService) CreateCourse(courseCreateDTO dto.CourseInput) (*dto.CourseOutput, error) {
-	// ToDo : TEST TEST TEST
-	user, err := casdoorsdk.GetUserByEmail(courseCreateDTO.AuthorEmail)
-	if err != nil {
-		return nil, err
-	}
-
-	if user == nil {
-		return nil, errors.New("user provided not found")
-	}
-
-	course, errCourse := c.GetSpecificCourseByUser(*user, courseCreateDTO.Name)
-
-	if errCourse != nil {
-		if errCourse.Error() != "record not found" {
-			return nil, errCourse
-		}
-	}
-
-	if course == nil {
-		courseCreated, createCourseError := c.genericService.CreateEntity(courseCreateDTO, "Course")
-
-		if createCourseError != nil {
-			return nil, createCourseError
-		}
-
-		accessSettingsError := c.genericService.AddDefaultAccessesForEntity("courses", courseCreated, user.Id)
-		if accessSettingsError != nil {
-			return nil, accessSettingsError
-		}
-
-		courseEntity := registration.CourseRegistration{}.EntityModelToEntityOutput(courseCreated)
-
-		return courseEntity.(*dto.CourseOutput), nil
-	}
-
-	return nil, errors.New("course already in database")
-
 }
 
 func (c courseService) DeleteCourse(id uuid.UUID) error {
