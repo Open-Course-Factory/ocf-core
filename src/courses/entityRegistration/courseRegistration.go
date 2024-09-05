@@ -20,23 +20,23 @@ func (s CourseRegistration) EntityModelToEntityOutput(input any) any {
 	}
 }
 
-func coursePtrModelToCourseOutputDto(courseModel *models.Course) *dto.CreateCourseOutput {
+func coursePtrModelToCourseOutputDto(courseModel *models.Course) *dto.CourseOutput {
 
-	return &dto.CreateCourseOutput{
+	return &dto.CourseOutput{
 		Name: courseModel.Name,
 	}
 }
 
-func courseValueModelToCourseOutputDto(courseModel models.Course) *dto.CreateCourseOutput {
+func courseValueModelToCourseOutputDto(courseModel models.Course) *dto.CourseOutput {
 
-	return &dto.CreateCourseOutput{
+	return &dto.CourseOutput{
 		Name: courseModel.Name,
 	}
 }
 
 func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
 
-	courseInputDto := input.(dto.CreateCourseInput)
+	courseInputDto := input.(dto.CourseInput)
 	return &models.Course{
 		Name:               courseInputDto.Name,
 		Theme:              courseInputDto.Theme,
@@ -64,8 +64,9 @@ func (s CourseRegistration) GetEntityRegistrationInput() entityManagementInterfa
 			DtoToModel: s.EntityInputDtoToEntityModel,
 		},
 		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputCreateDto: dto.CreateCourseInput{},
-			OutputDto:      dto.CreateCourseOutput{},
+			InputCreateDto: dto.CourseInput{},
+			OutputDto:      dto.CourseOutput{},
+			InputEditDto:   dto.EditCourseInput{},
 		},
 	}
 }

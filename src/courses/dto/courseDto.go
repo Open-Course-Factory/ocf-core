@@ -13,11 +13,7 @@ type GenerateCourseInput struct {
 	AuthorEmail string `binding:"required"`
 }
 
-type CreateCourseOutput struct {
-	Name string `binding:"required"`
-}
-
-type CreateCourseInput struct {
+type CourseInput struct {
 	Name               string `binding:"required"`
 	Theme              string `binding:"required"`
 	Format             *int   `binding:"required,gte=0,lte=1"`
@@ -54,6 +50,25 @@ type CourseOutput struct {
 	Prelude            string          `binding:"required"`
 	LearningObjectives string          `json:"learning_objectives"`
 	Chapters           []ChapterOutput `json:"chapters"`
+}
+
+type EditCourseInput struct {
+	Name               string `binding:"required"`
+	Theme              string `binding:"required"`
+	Format             *int   `binding:"required,gte=0,lte=1"`
+	AuthorEmail        string `binding:"required"`
+	Category           string `binding:"required"`
+	Version            string
+	Title              string `binding:"required"`
+	Subtitle           string
+	Header             string `binding:"required"`
+	Footer             string `binding:"required"`
+	Logo               string
+	Description        string
+	Schedule           string            `binding:"required"`
+	Prelude            string            `binding:"required"`
+	LearningObjectives string            `json:"learning_objectives"`
+	Chapters           []*models.Chapter `json:"chapters"`
 }
 
 type CreateCourseFromGitOutput struct {

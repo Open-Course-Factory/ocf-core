@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"reflect"
 
-	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -60,17 +59,13 @@ func (genericController genericController) AddEntity(ctx *gin.Context) {
 		}
 	}
 
-	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
-	if errors.HandleError(http.StatusInternalServerError, errPolicyLoading, ctx) {
-		return
-	}
-
 	resourceName := GetResourceNameFromPath(ctx.FullPath())
-	entityUuid := genericController.genericService.ExtractUuidFromReflectEntity(entity)
+	errorSettingDefaultAccesses := genericController.genericService.AddDefaultAccessesForEntity(resourceName, entity, userId)
 
-	_, errAddingPolicy := casdoor.Enforcer.AddPolicy(userId, "/api/v1/"+resourceName+"/"+entityUuid.String(), "(GET|DELETE|PATCH|PUT)")
-	if errors.HandleError(http.StatusInternalServerError, errAddingPolicy, ctx) {
-		return
+	if errorSettingDefaultAccesses != nil {
+		if errors.HandleError(http.StatusNotFound, errorSettingDefaultAccesses, ctx) {
+			return
+		}
 	}
 
 	ctx.JSON(http.StatusCreated, outputDto)

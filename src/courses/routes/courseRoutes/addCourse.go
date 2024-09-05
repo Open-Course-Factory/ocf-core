@@ -27,7 +27,7 @@ import (
 //	@Failure		409	{object}	errors.APIError	"Le cours existe déjà pour cet utilisateur"
 //	@Router			/courses [post]
 func (c courseController) AddCourse(ctx *gin.Context) {
-	courseCreateDTO := dto.CreateCourseInput{}
+	courseCreateDTO := dto.CourseInput{}
 
 	bindError := ctx.BindJSON(&courseCreateDTO)
 	if bindError != nil {

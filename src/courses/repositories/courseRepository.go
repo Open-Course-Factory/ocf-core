@@ -14,7 +14,7 @@ import (
 )
 
 type CourseRepository interface {
-	CreateCourse(coursedto dto.CreateCourseInput) (*models.Course, error)
+	CreateCourse(coursedto dto.CourseInput) (*models.Course, error)
 	GetAllCourses() (*[]models.Course, error)
 	DeleteCourse(id uuid.UUID) error
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
@@ -31,7 +31,7 @@ func NewCourseRepository(db *gorm.DB) CourseRepository {
 	return repository
 }
 
-func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models.Course, error) {
+func (c courseRepository) CreateCourse(coursedto dto.CourseInput) (*models.Course, error) {
 
 	user, errUser := casdoorsdk.GetUserByEmail(coursedto.AuthorEmail)
 

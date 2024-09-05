@@ -9,8 +9,10 @@ import (
 	"soli/formations/src/auth/casdoor"
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/dto"
+	registration "soli/formations/src/courses/entityRegistration"
 	"soli/formations/src/courses/models"
 	repositories "soli/formations/src/courses/repositories"
+	genServices "soli/formations/src/entityManagement/services"
 	generator "soli/formations/src/generationEngine"
 	"strings"
 
@@ -23,7 +25,7 @@ import (
 
 type CourseService interface {
 	GenerateCourse(courseName string, courseTheme string, format string, authorEmail string, cow models.CourseMdWriter) (*dto.GenerateCourseOutput, error)
-	CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto.CreateCourseOutput, error)
+	CreateCourse(courseCreateDTO dto.CourseInput) (*dto.CourseOutput, error)
 	DeleteCourse(id uuid.UUID) error
 	GetCourses() ([]dto.CourseOutput, error)
 	GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) error
@@ -31,7 +33,8 @@ type CourseService interface {
 }
 
 type courseService struct {
-	repository repositories.CourseRepository
+	repository     repositories.CourseRepository
+	genericService genServices.GenericService
 }
 
 func NewCourseService(db *gorm.DB) CourseService {
@@ -87,7 +90,8 @@ func (c courseService) GenerateCourse(courseName string, courseTheme string, for
 	return &dto.GenerateCourseOutput{Result: true}, nil
 }
 
-func (c courseService) CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto.CreateCourseOutput, error) {
+func (c courseService) CreateCourse(courseCreateDTO dto.CourseInput) (*dto.CourseOutput, error) {
+	// ToDo : TEST TEST TEST
 	user, err := casdoorsdk.GetUserByEmail(courseCreateDTO.AuthorEmail)
 	if err != nil {
 		return nil, err
@@ -106,23 +110,20 @@ func (c courseService) CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto
 	}
 
 	if course == nil {
-		courseCreated, createCourseError := c.repository.CreateCourse(courseCreateDTO)
+		courseCreated, createCourseError := c.genericService.CreateEntity(courseCreateDTO, "Course")
 
 		if createCourseError != nil {
 			return nil, createCourseError
 		}
 
-		errPolicyLoading := casdoor.Enforcer.LoadPolicy()
-		if errPolicyLoading != nil {
-			return nil, errPolicyLoading
+		accessSettingsError := c.genericService.AddDefaultAccessesForEntity("courses", courseCreated, user.Id)
+		if accessSettingsError != nil {
+			return nil, accessSettingsError
 		}
 
-		_, errAddingPolicy := casdoor.Enforcer.AddPolicy(user.Id, "/api/v1/courses/"+courseCreated.ID.String(), "(GET|DELETE|PATCH|PUT)")
-		if errAddingPolicy != nil {
-			return nil, errAddingPolicy
-		}
+		courseEntity := registration.CourseRegistration{}.EntityModelToEntityOutput(courseCreated)
 
-		return &dto.CreateCourseOutput{Name: courseCreated.Name}, nil
+		return courseEntity.(*dto.CourseOutput), nil
 	}
 
 	return nil, errors.New("course already in database")

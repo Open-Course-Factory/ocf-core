@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"reflect"
+	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/entityManagement/repositories"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -23,6 +24,7 @@ type GenericService interface {
 	ExtractUuidFromReflectEntity(entity interface{}) uuid.UUID
 	GetDtoArrayFromEntitiesPages(allEntitiesPages []interface{}, entityModelInterface interface{}, entityName string) ([]interface{}, bool)
 	GetEntityFromResult(entityName string, item interface{}) (interface{}, bool)
+	AddDefaultAccessesForEntity(resourceName string, entity interface{}, userId string) error
 }
 
 type genericService struct {
@@ -139,19 +141,6 @@ func (g *genericService) ExtractUuidFromReflectEntity(entity interface{}) uuid.U
 		mon_uuid = uuid.UUID(field.Bytes())
 	}
 
-	// fmt.Println(reflect.ValueOf(field).Kind())  // struct
-	// fmt.Println(reflect.TypeOf(field))          // reflect.Value
-	// fmt.Println(reflect.TypeOf(field).Kind())   //struct
-	// fmt.Println(reflect.String)                 // string
-	// fmt.Println(field)                          // l'id
-	// fmt.Println(reflect.TypeOf(reflect.String)) // reflect.Kind
-	// if typeOf == reflect.TypeOf(reflect.String) {
-	// 	//ToDo : handle error
-	// 	mon_uuid, _ = uuid.Parse(field.String())
-	// } else {
-
-	// }
-
 	return mon_uuid
 }
 
@@ -217,4 +206,20 @@ func (g *genericService) GetEntityFromResult(entityName string, item interface{}
 		return nil, true
 	}
 	return result, false
+}
+
+func (g *genericService) AddDefaultAccessesForEntity(resourceName string, entity interface{}, userId string) error {
+	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
+	if errPolicyLoading != nil {
+		return errPolicyLoading
+	}
+
+	entityUuid := g.ExtractUuidFromReflectEntity(entity)
+
+	_, errAddingPolicy := casdoor.Enforcer.AddPolicy(userId, "/api/v1/"+resourceName+"/"+entityUuid.String(), "(GET|DELETE|PATCH|PUT)")
+	if errAddingPolicy != nil {
+		return errAddingPolicy
+	}
+
+	return nil
 }

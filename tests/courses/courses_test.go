@@ -19,7 +19,7 @@ func TestCourseCreation(t *testing.T) {
 
 	formatInt := int(config.HTML)
 
-	courseInput := courseDto.CreateCourseInput{
+	courseInput := courseDto.CourseInput{
 		Name:               "Cours de test",
 		Theme:              "TEST",
 		Format:             &formatInt,
