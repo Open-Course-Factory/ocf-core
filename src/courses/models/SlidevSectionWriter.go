@@ -21,7 +21,7 @@ func (ssw *SlidevSectionWriter) SetTitle() string {
 func (ssw *SlidevSectionWriter) SetToc() string {
 	var toc string
 	for _, lineOfToc := range ssw.Section.Pages[0].Toc {
-		toc += lineOfToc + "\n"
+		toc += "- " + lineOfToc + "\n"
 	}
 	toc = toc + "\n"
 	return toc

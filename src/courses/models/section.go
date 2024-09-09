@@ -70,6 +70,13 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 
 		pageFrontMatter.Layout = ""
 
+		if index == 1 {
+			_, errSectionFrontMatter := frontmatter.Parse(strings.NewReader(sPage), &sectionFrontMatter)
+			if errSectionFrontMatter != nil {
+				fmt.Println(errSectionFrontMatter.Error())
+			}
+		}
+
 		if sectionFrontMatter.Title != "" {
 			currentSection.Title = sectionFrontMatter.Title
 			currentSection.Intro = sectionFrontMatter.Intro
