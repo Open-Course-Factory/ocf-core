@@ -13,7 +13,9 @@ type CourseController interface {
 	AddCourse(ctx *gin.Context)
 	DeleteCourse(ctx *gin.Context)
 	GetCourses(ctx *gin.Context)
+	GetCourse(ctx *gin.Context)
 	CreateCourseFromGit(ctx *gin.Context)
+	EditCourse(ctx *gin.Context)
 }
 
 type courseController struct {
