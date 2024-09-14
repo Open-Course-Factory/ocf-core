@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	cors "github.com/rs/cors/wrapper/gin"
 
@@ -44,7 +45,9 @@ import (
 	usernameController "soli/formations/src/labs/routes/usernameRoutes"
 	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
 
+	courseDto "soli/formations/src/courses/dto"
 	courseService "soli/formations/src/courses/services"
+	genericService "soli/formations/src/entityManagement/services"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
@@ -215,11 +218,28 @@ func parseFlags() bool {
 	jsonConfigurationFilePath := "./src/configuration/conf.json"
 	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
 
-	course := getCourseFromProgramInputs(courseName, courseGitRepository, courseBranchGitRepository)
+	courseService := courseService.NewCourseService(sqldb.DB)
+	course := courseService.GetCourseFromProgramInputs(courseName, courseGitRepository, courseBranchGitRepository)
 
 	setCourseThemeFromProgramInputs(&course, courseThemeName, courseThemeGitRepository, courseThemeBranchGitRepository)
 
 	courseModels.FillCourseModelFromFiles(*courseName, &course)
+
+	genericService := genericService.NewGenericService(sqldb.DB)
+
+	courseInputDto := courseDto.CourseModelToCourseInputDto(course)
+	courseResult, errorSaving := genericService.CreateEntity(courseInputDto, "Course")
+
+	if errorSaving != nil {
+		fmt.Println(errorSaving.Error())
+		return true
+	}
+
+	// return true
+	//  ##########################################################################
+
+	newCourse := courseResult.(courseDto.CourseOutput)
+	genericService.GetEntity(uuid.MustParse(newCourse.CourseID_str), &courseModels.Course{}, "Course")
 
 	createdFile, err := course.WriteMd(&configuration)
 	if err != nil {
@@ -243,36 +263,6 @@ func setCourseThemeFromProgramInputs(course *courseModels.Course, themeName *str
 	course.Theme = *themeName
 	course.ThemeGitRepository = *themeGitRepository
 	course.ThemeGitRepositoryBranch = *themeGitRepositoryBranch
-}
-
-func getCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) courseModels.Course {
-	isCourseGitRepository := (*courseGitRepository != "")
-
-	// ToDo: Get loggued in User
-	LogguedInUser, userErr := casdoorsdk.GetUserByEmail("1.supervisor@test.com")
-
-	if userErr != nil {
-		log.Fatal(userErr)
-	}
-
-	var errGetGitCourse error
-	if isCourseGitRepository {
-		c := courseService.NewCourseService(sqldb.DB)
-		errGetGitCourse = c.GetGitCourse(LogguedInUser.Id, *courseName, *courseGitRepository, *courseGitRepositoryBranchName)
-	}
-
-	if errGetGitCourse != nil {
-		log.Fatal(errGetGitCourse)
-	}
-
-	jsonCourseFilePath := config.COURSES_ROOT + *courseName + "/course.json"
-	course := courseModels.ReadJsonCourseFile(jsonCourseFilePath)
-
-	course.OwnerIDs = append(course.OwnerIDs, LogguedInUser.Id)
-	course.FolderName = *courseName
-	course.GitRepository = *courseGitRepository
-	course.GitRepositoryBranch = *courseGitRepositoryBranchName
-	return *course
 }
 
 func isFlagPassed(name string) bool {

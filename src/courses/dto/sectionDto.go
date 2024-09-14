@@ -3,13 +3,13 @@ package dto
 import "soli/formations/src/courses/models"
 
 type SectionInput struct {
-	FileName    string         `json:"fileName"`
-	Title       string         `json:"title"`
-	Intro       string         `json:"intro"`
-	Conclusion  string         `json:"conclusion"`
-	Number      int            `json:"number"`
-	Pages       []*models.Page `json:"pages"`
-	HiddenPages []int          `json:"hiddenPages"`
+	FileName    string       `json:"fileName"`
+	Title       string       `json:"title"`
+	Intro       string       `json:"intro"`
+	Conclusion  string       `json:"conclusion"`
+	Number      int          `json:"number"`
+	Pages       []*PageInput `json:"pages"`
+	HiddenPages []int        `json:"hiddenPages"`
 }
 
 type SectionOutput struct {
@@ -35,5 +35,24 @@ func SectionModelToSectionOutput(sectionModel models.Section) *SectionOutput {
 		FileName:  sectionModel.FileName,
 		CreatedAt: sectionModel.CreatedAt.String(),
 		UpdatedAt: sectionModel.UpdatedAt.String(),
+	}
+}
+
+func SectionModelToSectionInput(sectionModel models.Section) *SectionInput {
+	var pages []*PageInput
+
+	for _, page := range sectionModel.Pages {
+		pageInput := PageModelToPageInput(*page)
+		pages = append(pages, pageInput)
+	}
+
+	return &SectionInput{
+		FileName:    sectionModel.FileName,
+		Title:       sectionModel.Title,
+		Intro:       sectionModel.Intro,
+		Conclusion:  sectionModel.Conclusion,
+		Number:      sectionModel.Number,
+		Pages:       pages,
+		HiddenPages: sectionModel.HiddenPages,
 	}
 }

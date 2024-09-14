@@ -8,11 +8,11 @@ import (
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/services"
+	coursesDto "soli/formations/src/courses/dto"
 	labsDto "soli/formations/src/labs/dto"
 	"testing"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
-	"github.com/google/uuid"
 
 	_ "embed"
 
@@ -28,7 +28,6 @@ import (
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	labRegistration "soli/formations/src/labs/entityRegistration"
 
-	courseServices "soli/formations/src/courses/services"
 	genericServices "soli/formations/src/entityManagement/services"
 )
 
@@ -184,17 +183,24 @@ func DeleteAllObjects() {
 		casdoorsdk.DeleteModel(model)
 	}
 
-	cs := courseServices.NewCourseService(sqldb.DB)
-	courses, _ := cs.GetCourses()
-	for _, cours := range courses {
-		uuid, err := uuid.Parse(cours.CourseID_str)
-		if err != nil {
-			fmt.Println(err.Error())
+	gs := genericServices.NewGenericService(sqldb.DB)
+
+	coursesPages, _ := gs.GetEntities(courseModels.Course{})
+	coursesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(coursesPages, courseModels.Course{}, "Course")
+
+	for _, courseDto := range coursesDtoArray {
+		id := gs.ExtractUuidFromReflectEntity(courseDto)
+		courseDto := courseDto.(*coursesDto.CourseOutput)
+		courseToDelete := &courseModels.Course{
+			BaseModel: baseModels.BaseModel{
+				ID: id,
+			},
+			Name: courseDto.Name,
 		}
-		cs.DeleteCourse(uuid)
+
+		gs.DeleteEntity(id, courseToDelete, true)
 	}
 
-	gs := genericServices.NewGenericService(sqldb.DB)
 	usernamesPages, _ := gs.GetEntities(labsModels.Username{})
 	usernamesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(usernamesPages, labsModels.Username{}, "Username")
 	for _, usernameDto := range usernamesDtoArray {

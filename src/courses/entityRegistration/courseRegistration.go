@@ -36,7 +36,14 @@ func courseValueModelToCourseOutputDto(courseModel models.Course) *dto.CourseOut
 
 func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
 
-	courseInputDto := input.(dto.CourseInput)
+	var chapters []*models.Chapter
+	courseInputDto := input.(*dto.CourseInput)
+	for _, chapterInput := range courseInputDto.ChaptersInput {
+		chapterModel := ChapterRegistration{}.EntityInputDtoToEntityModel(chapterInput)
+		chapter := chapterModel.(*models.Chapter)
+		chapters = append(chapters, chapter)
+	}
+
 	return &models.Course{
 		Name:               courseInputDto.Name,
 		Theme:              courseInputDto.Theme,
@@ -52,7 +59,7 @@ func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
 		Schedule:           courseInputDto.Schedule,
 		Prelude:            courseInputDto.Prelude,
 		LearningObjectives: courseInputDto.LearningObjectives,
-		Chapters:           courseInputDto.Chapters,
+		Chapters:           chapters,
 	}
 }
 
@@ -67,6 +74,9 @@ func (s CourseRegistration) GetEntityRegistrationInput() entityManagementInterfa
 			InputCreateDto: dto.CourseInput{},
 			OutputDto:      dto.CourseOutput{},
 			InputEditDto:   dto.EditCourseInput{},
+		},
+		EntitySubEntities: []interface{}{
+			models.Chapter{},
 		},
 	}
 }

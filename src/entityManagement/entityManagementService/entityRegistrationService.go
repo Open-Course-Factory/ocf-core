@@ -27,21 +27,27 @@ const (
 )
 
 type EntityRegistrationService struct {
-	registry  map[string]interface{}
-	functions map[string]map[ConversionPurpose]interface{}
-	dtos      map[string]map[DtoPurpose]interface{}
+	registry    map[string]interface{}
+	functions   map[string]map[ConversionPurpose]interface{}
+	dtos        map[string]map[DtoPurpose]interface{}
+	subEntities map[string][]interface{}
 }
 
 func NewEntityRegistrationService() *EntityRegistrationService {
 	return &EntityRegistrationService{
-		registry:  make(map[string]interface{}),
-		functions: make(map[string]map[ConversionPurpose]interface{}),
-		dtos:      make(map[string]map[DtoPurpose]interface{}),
+		registry:    make(map[string]interface{}),
+		functions:   make(map[string]map[ConversionPurpose]interface{}),
+		dtos:        make(map[string]map[DtoPurpose]interface{}),
+		subEntities: make(map[string][]interface{}),
 	}
 }
 
 func (s *EntityRegistrationService) RegisterEntityInterface(name string, entityType interface{}) {
 	s.registry[name] = entityType
+}
+
+func (s *EntityRegistrationService) RegisterSubEntites(name string, subEntities []interface{}) {
+	s.subEntities[name] = subEntities
 }
 
 func (s *EntityRegistrationService) RegisterEntityConversionFunctions(name string, converters entityManagementInterfaces.EntityConverters) {
@@ -85,6 +91,10 @@ func (s *EntityRegistrationService) GetConversionFunction(name string, way Conve
 	return function, exists
 }
 
+func (s *EntityRegistrationService) GetSubEntites(entityName string) []interface{} {
+	return s.subEntities[entityName]
+}
+
 func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, roles entityManagementInterfaces.EntityRoles) {
 	errLoadingPolicy := casdoor.Enforcer.LoadPolicy()
 	if errLoadingPolicy != nil {
@@ -118,6 +128,7 @@ func (s *EntityRegistrationService) RegisterEntity(input entityManagementInterfa
 	entityDtos[OutputDto] = entityToRegister.EntityDtos.OutputDto
 	entityDtos[InputEditDto] = entityToRegister.EntityDtos.InputEditDto
 	GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(entityToRegister.EntityInterface).Name(), entityDtos)
+	GlobalEntityRegistrationService.RegisterSubEntites(reflect.TypeOf(entityToRegister.EntityInterface).Name(), entityToRegister.EntitySubEntities)
 	s.setDefaultEntityAccesses(reflect.TypeOf(entityToRegister.EntityInterface).Name(), input.GetEntityRoles())
 }
 

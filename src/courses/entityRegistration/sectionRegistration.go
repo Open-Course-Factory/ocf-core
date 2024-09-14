@@ -41,14 +41,21 @@ func sectionValueModelToSectionOutputDto(sectionModel models.Section) *dto.Secti
 
 func (s SectionRegistration) EntityInputDtoToEntityModel(input any) any {
 
-	sectionInputDto := input.(dto.SectionInput)
+	var pageModels []*models.Page
+	sectionInputDto := input.(*dto.SectionInput)
+	for _, pageInput := range sectionInputDto.Pages {
+		pageModel := PageRegistration{}.EntityInputDtoToEntityModel(pageInput)
+		res := pageModel.(*models.Page)
+		pageModels = append(pageModels, res)
+	}
+
 	return &models.Section{
 		FileName:    sectionInputDto.FileName,
 		Title:       sectionInputDto.Title,
 		Intro:       sectionInputDto.Intro,
 		Conclusion:  sectionInputDto.Conclusion,
 		Number:      sectionInputDto.Number,
-		Pages:       sectionInputDto.Pages,
+		Pages:       pageModels,
 		HiddenPages: sectionInputDto.HiddenPages,
 	}
 }
@@ -65,6 +72,9 @@ func (s SectionRegistration) GetEntityRegistrationInput() entityManagementInterf
 			InputCreateDto: dto.SectionInput{},
 			OutputDto:      dto.SectionOutput{},
 			InputEditDto:   dto.EditSectionInput{},
+		},
+		EntitySubEntities: []interface{}{
+			models.Page{},
 		},
 	}
 }

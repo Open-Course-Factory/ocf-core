@@ -17,7 +17,7 @@ import (
 type GenericService interface {
 	CreateEntity(inputDto interface{}, entityName string) (interface{}, error)
 	SaveEntity(entity interface{}) (interface{}, error)
-	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
+	GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error)
 	GetEntities(data interface{}) ([]interface{}, error)
 	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
 	EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error
@@ -60,8 +60,8 @@ func (g *genericService) SaveEntity(entity interface{}) (interface{}, error) {
 	return entity, nil
 }
 
-func (g *genericService) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {
-	entity, err := g.genericRepository.GetEntity(id, data)
+func (g *genericService) GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error) {
+	entity, err := g.genericRepository.GetEntity(id, data, entityName)
 
 	if err != nil {
 		return nil, err

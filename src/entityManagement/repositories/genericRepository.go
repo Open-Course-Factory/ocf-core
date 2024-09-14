@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 	errors "soli/formations/src/auth/errors"
@@ -14,7 +15,7 @@ import (
 type GenericRepository interface {
 	CreateEntity(data interface{}, entityName string) (interface{}, error)
 	SaveEntity(entity interface{}) (interface{}, error)
-	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
+	GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error)
 	GetAllEntities(data interface{}, pageSize int) ([]interface{}, error)
 	EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error
 	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
@@ -76,10 +77,21 @@ func (r genericRepository) EditEntity(id uuid.UUID, entityName string, entity in
 	return nil
 }
 
-func (o *genericRepository) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {
-	model := reflect.New(reflect.TypeOf(data)).Interface()
+func (o *genericRepository) GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error) {
 
-	result := o.db.First(model, id)
+	subEntities := ems.GlobalEntityRegistrationService.GetSubEntites(entityName)
+	model := reflect.New(reflect.TypeOf(data)).Interface()
+	query := o.db.Model(model)
+
+	if len(subEntities) > 0 {
+		for _, subEntity := range subEntities {
+			subEntityName := reflect.TypeOf(subEntity).Name()
+			fmt.Println(subEntityName)
+			query.Preload("Chapter")
+		}
+	}
+
+	result := o.db.Find(model, id)
 
 	if result.Error != nil {
 		return nil, result.Error

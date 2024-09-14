@@ -19,7 +19,7 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 	entityModelInterface := genericController.genericService.GetEntityModelInterface(entityName)
-	entity, entityError := genericController.genericService.GetEntity(id, entityModelInterface)
+	entity, entityError := genericController.genericService.GetEntity(id, entityModelInterface, entityName)
 	if errors.HandleError(http.StatusNotFound, entityError, ctx) {
 		return
 	}

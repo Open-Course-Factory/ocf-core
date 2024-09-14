@@ -3,6 +3,7 @@ package models
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	config "soli/formations/src/configuration"
 	entityManagementModels "soli/formations/src/entityManagement/models"
@@ -106,7 +107,10 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 
 func extractPagesFromSectionsFiles(filename string) []string {
 	var sPages []string
-	f, _ := os.Open(filename)
+	f, errFileOpening := os.Open(filename)
+	if errFileOpening != nil {
+		log.Default().Println(errFileOpening.Error())
+	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
 

@@ -25,8 +25,8 @@ func (s ConnectionRegistration) EntityModelToEntityOutput(input any) any {
 
 func connectionPtrModelToConnectionOutputDto(connectionModel *models.Connection) *dto.ConnectionOutput {
 	repo := entityManagementRepository.NewGenericRepository(sqldb.DB)
-	machine, _ := repo.GetEntity(connectionModel.MachineID, models.Machine{})
-	username, _ := repo.GetEntity(connectionModel.UsernameID, models.Username{})
+	machine, _ := repo.GetEntity(connectionModel.MachineID, models.Machine{}, "Machine")
+	username, _ := repo.GetEntity(connectionModel.UsernameID, models.Username{}, "Username")
 
 	return &dto.ConnectionOutput{
 		MachineDtoOutput:  machinePtrModelToMachineOutputDto(machine.(*models.Machine)),
@@ -37,8 +37,8 @@ func connectionPtrModelToConnectionOutputDto(connectionModel *models.Connection)
 func connectionValueModelToConnectionOutputDto(connectionModel models.Connection) *dto.ConnectionOutput {
 
 	repo := entityManagementRepository.NewGenericRepository(sqldb.DB)
-	machine, _ := repo.GetEntity(connectionModel.MachineID, models.Machine{})
-	username, _ := repo.GetEntity(connectionModel.UsernameID, models.Username{})
+	machine, _ := repo.GetEntity(connectionModel.MachineID, models.Machine{}, "Machine")
+	username, _ := repo.GetEntity(connectionModel.UsernameID, models.Username{}, "Username")
 
 	return &dto.ConnectionOutput{
 		MachineDtoOutput:  machinePtrModelToMachineOutputDto(machine.(*models.Machine)),

@@ -3,20 +3,18 @@ package repositories
 import (
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/dto"
+	registration "soli/formations/src/courses/entityRegistration"
 	"soli/formations/src/courses/models"
 
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
-	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
 type CourseRepository interface {
 	CreateCourse(coursedto dto.CourseInput) (*models.Course, error)
-	GetAllCourses() (*[]models.Course, error)
-	DeleteCourse(id uuid.UUID) error
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
 }
 
@@ -39,6 +37,13 @@ func (c courseRepository) CreateCourse(coursedto dto.CourseInput) (*models.Cours
 		return nil, errUser
 	}
 
+	var chapters []*models.Chapter
+	for _, chapterInput := range coursedto.ChaptersInput {
+		chapterModel := registration.ChapterRegistration{}.EntityInputDtoToEntityModel(chapterInput)
+		chapter := chapterModel.(*models.Chapter)
+		chapters = append(chapters, chapter)
+	}
+
 	//ToDo full course with dtoinput to model
 	course := models.Course{
 		BaseModel: entityManagementModels.BaseModel{
@@ -58,7 +63,7 @@ func (c courseRepository) CreateCourse(coursedto dto.CourseInput) (*models.Cours
 		Schedule:           coursedto.Schedule,
 		Prelude:            coursedto.Prelude,
 		LearningObjectives: coursedto.LearningObjectives,
-		Chapters:           coursedto.Chapters,
+		Chapters:           chapters,
 	}
 
 	result := c.db.Create(&course)
@@ -66,23 +71,6 @@ func (c courseRepository) CreateCourse(coursedto dto.CourseInput) (*models.Cours
 		return nil, result.Error
 	}
 	return &course, nil
-}
-
-func (c courseRepository) GetAllCourses() (*[]models.Course, error) {
-	var course []models.Course
-	result := c.db.Model(&models.Course{}).Find(&course)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	return &course, nil
-}
-
-func (c courseRepository) DeleteCourse(id uuid.UUID) error {
-	result := c.db.Delete(&models.Course{BaseModel: entityManagementModels.BaseModel{ID: id}})
-	if result.Error != nil {
-		return result.Error
-	}
-	return nil
 }
 
 func (c courseRepository) GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error) {

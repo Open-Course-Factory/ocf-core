@@ -1,13 +1,15 @@
 package dto
 
-import "soli/formations/src/courses/models"
+import (
+	"soli/formations/src/courses/models"
+)
 
 type GenerateCourseOutput struct {
 	Result bool `json:"result"`
 }
 
 type GenerateCourseInput struct {
-	Name        string `binding:"required"`
+	Id          string `binding:"required"`
 	Theme       string `binding:"required"`
 	Format      string `binding:"required"`
 	AuthorEmail string `binding:"required"`
@@ -26,10 +28,10 @@ type CourseInput struct {
 	Footer             string `binding:"required"`
 	Logo               string
 	Description        string
-	Schedule           string            `binding:"required"`
-	Prelude            string            `binding:"required"`
-	LearningObjectives string            `json:"learning_objectives"`
-	Chapters           []*models.Chapter `json:"chapters"`
+	Schedule           string          `binding:"required"`
+	Prelude            string          `binding:"required"`
+	LearningObjectives string          `json:"learning_objectives"`
+	ChaptersInput      []*ChapterInput `json:"chapters"`
 }
 
 type CourseOutput struct {
@@ -49,7 +51,7 @@ type CourseOutput struct {
 	Schedule           string          `binding:"required"`
 	Prelude            string          `binding:"required"`
 	LearningObjectives string          `json:"learning_objectives"`
-	Chapters           []ChapterOutput `json:"chapters"`
+	ChaptersOutput     []ChapterOutput `json:"chapters"`
 }
 
 type EditCourseInput struct {
@@ -101,6 +103,31 @@ func CourseModelToCourseOutputDto(courseModel models.Course) *CourseOutput {
 		Schedule:           courseModel.Schedule,
 		Prelude:            courseModel.Prelude,
 		LearningObjectives: courseModel.LearningObjectives,
-		Chapters:           chapterOutputs,
+		ChaptersOutput:     chapterOutputs,
+	}
+}
+
+func CourseModelToCourseInputDto(courseModel models.Course) *CourseInput {
+
+	var chapterInputs []*ChapterInput
+	for _, chapter := range courseModel.Chapters {
+		chapterInputs = append(chapterInputs, ChapterModelToChapterInput(*chapter))
+	}
+
+	return &CourseInput{
+		Name:               courseModel.Name,
+		Theme:              courseModel.Theme,
+		Version:            courseModel.Version,
+		Title:              courseModel.Title,
+		Format:             (*int)(&courseModel.Format),
+		Subtitle:           courseModel.Subtitle,
+		Header:             courseModel.Header,
+		Footer:             courseModel.Footer,
+		Logo:               courseModel.Logo,
+		Description:        courseModel.Description,
+		Schedule:           courseModel.Schedule,
+		Prelude:            courseModel.Prelude,
+		LearningObjectives: courseModel.LearningObjectives,
+		ChaptersInput:      chapterInputs,
 	}
 }

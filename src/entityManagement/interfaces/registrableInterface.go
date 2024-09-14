@@ -8,10 +8,11 @@ import (
 )
 
 type EntityRegistrationInput struct {
-	EntityInterface  interface{}
-	EntityConverters EntityConverters
-	EntityDtos       EntityDtos
-	EntityRoles      EntityRoles
+	EntityInterface   interface{}
+	EntityConverters  EntityConverters
+	EntityDtos        EntityDtos
+	EntityRoles       EntityRoles
+	EntitySubEntities []interface{}
 }
 
 type EntityConverters struct {

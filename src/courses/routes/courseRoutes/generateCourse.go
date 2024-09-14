@@ -39,7 +39,7 @@ func (c courseController) GenerateCourse(ctx *gin.Context) {
 
 	cow := models.SlidevCourseWriter{}
 
-	course, courseError := c.service.GenerateCourse(courseGenerateDTO.Name, courseGenerateDTO.Theme, courseGenerateDTO.Format, courseGenerateDTO.AuthorEmail, &cow)
+	course, courseError := c.service.GenerateCourse(courseGenerateDTO.Id, courseGenerateDTO.Theme, courseGenerateDTO.Format, courseGenerateDTO.AuthorEmail, &cow)
 
 	if courseError != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
