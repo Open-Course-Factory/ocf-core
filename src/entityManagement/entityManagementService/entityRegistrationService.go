@@ -102,9 +102,8 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 	}
 	rolesMap := roles.Roles
 
-	client := pluralize.NewClient()
-	singular := client.Plural(entityName)
-	resourceName := strings.ToLower(singular)
+	resourceName := Pluralize(entityName)
+	resourceName = strings.ToLower(resourceName)
 
 	for roleName, accessGiven := range rolesMap {
 		_, errPolicy := casdoor.Enforcer.AddPolicy(roleName, "/api/v1/"+resourceName+"/", accessGiven)
@@ -117,6 +116,12 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 		}
 	}
 
+}
+
+func Pluralize(entityName string) string {
+	client := pluralize.NewClient()
+	plural := client.Plural(entityName)
+	return plural
 }
 
 func (s *EntityRegistrationService) RegisterEntity(input entityManagementInterfaces.RegistrableInterface) {

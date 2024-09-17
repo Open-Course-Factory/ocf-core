@@ -35,21 +35,21 @@ type CourseInput struct {
 }
 
 type CourseOutput struct {
-	Name               string `binding:"required"`
-	Theme              string `binding:"required"`
-	Format             int    `binding:"required"`
-	AuthorEmail        string `binding:"required"`
-	Category           string `binding:"required"`
-	Version            string
-	Title              string `binding:"required"`
-	Subtitle           string
-	Header             string `binding:"required"`
-	Footer             string `binding:"required"`
-	Logo               string
-	Description        string
-	CourseID_str       string          `binding:"required"`
-	Schedule           string          `binding:"required"`
-	Prelude            string          `binding:"required"`
+	Name               string          `binding:"required" json:"name"`
+	Theme              string          `binding:"required" json:"theme"`
+	Format             int             `binding:"required" json:"format"`
+	AuthorEmail        string          `binding:"required" json:"author_email"`
+	Category           string          `binding:"required" json:"category"`
+	Version            string          `json:"version"`
+	Title              string          `binding:"required" json:"title"`
+	Subtitle           string          `json:"subtitles"`
+	Header             string          `binding:"required" json:"header"`
+	Footer             string          `binding:"required" json:"footer"`
+	Logo               string          `json:"logo"`
+	Description        string          `json:"description"`
+	CourseID_str       string          `binding:"required" json:"course_id_str"`
+	Schedule           string          `binding:"required" json:"schedule"`
+	Prelude            string          `binding:"required" json:"prelude"`
 	LearningObjectives string          `json:"learning_objectives"`
 	ChaptersOutput     []ChapterOutput `json:"chapters"`
 }

@@ -11,7 +11,7 @@ type SectionRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
-func (s SectionRegistration) EntityModelToEntityOutput(input any) any {
+func (s SectionRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return sectionPtrModelToSectionOutputDto(input.(*models.Section))
 	} else {
@@ -19,24 +19,24 @@ func (s SectionRegistration) EntityModelToEntityOutput(input any) any {
 	}
 }
 
-func sectionPtrModelToSectionOutputDto(sectionModel *models.Section) *dto.SectionOutput {
+func sectionPtrModelToSectionOutputDto(sectionModel *models.Section) (*dto.SectionOutput, error) {
 
 	return &dto.SectionOutput{
 		ID:        sectionModel.ID.String(),
 		FileName:  sectionModel.FileName,
 		CreatedAt: sectionModel.CreatedAt.String(),
 		UpdatedAt: sectionModel.UpdatedAt.String(),
-	}
+	}, nil
 }
 
-func sectionValueModelToSectionOutputDto(sectionModel models.Section) *dto.SectionOutput {
+func sectionValueModelToSectionOutputDto(sectionModel models.Section) (*dto.SectionOutput, error) {
 
 	return &dto.SectionOutput{
 		ID:        sectionModel.ID.String(),
 		FileName:  sectionModel.FileName,
 		CreatedAt: sectionModel.CreatedAt.String(),
 		UpdatedAt: sectionModel.UpdatedAt.String(),
-	}
+	}, nil
 }
 
 func (s SectionRegistration) EntityInputDtoToEntityModel(input any) any {

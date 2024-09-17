@@ -11,7 +11,7 @@ type SshkeyRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
-func (s SshkeyRegistration) EntityModelToEntityOutput(input any) any {
+func (s SshkeyRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return sshkeyPtrModelToSshkeyOutput(input.(*models.Sshkey))
 	} else {
@@ -19,22 +19,22 @@ func (s SshkeyRegistration) EntityModelToEntityOutput(input any) any {
 	}
 }
 
-func sshkeyPtrModelToSshkeyOutput(sshKeyModel *models.Sshkey) *dto.SshkeyOutput {
+func sshkeyPtrModelToSshkeyOutput(sshKeyModel *models.Sshkey) (*dto.SshkeyOutput, error) {
 	return &dto.SshkeyOutput{
 		Id:         sshKeyModel.ID,
 		KeyName:    sshKeyModel.KeyName,
 		PrivateKey: sshKeyModel.PrivateKey,
 		CreatedAt:  sshKeyModel.CreatedAt,
-	}
+	}, nil
 }
 
-func sshkeyValueModelToSshkeyOutput(sshKeyModel models.Sshkey) *dto.SshkeyOutput {
+func sshkeyValueModelToSshkeyOutput(sshKeyModel models.Sshkey) (*dto.SshkeyOutput, error) {
 	return &dto.SshkeyOutput{
 		Id:         sshKeyModel.ID,
 		KeyName:    sshKeyModel.KeyName,
 		PrivateKey: sshKeyModel.PrivateKey,
 		CreatedAt:  sshKeyModel.CreatedAt,
-	}
+	}, nil
 }
 
 func (s SshkeyRegistration) EntityInputDtoToEntityModel(input any) any {

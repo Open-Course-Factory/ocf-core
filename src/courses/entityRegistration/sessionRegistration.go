@@ -11,7 +11,7 @@ type SessionRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
-func (s SessionRegistration) EntityModelToEntityOutput(input any) any {
+func (s SessionRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return sessionPtrModelToSessionOutputDto(input.(*models.Session))
 	} else {
@@ -19,7 +19,7 @@ func (s SessionRegistration) EntityModelToEntityOutput(input any) any {
 	}
 }
 
-func sessionPtrModelToSessionOutputDto(sessionModel *models.Session) *dto.CreateSessionOutput {
+func sessionPtrModelToSessionOutputDto(sessionModel *models.Session) (*dto.CreateSessionOutput, error) {
 
 	return &dto.CreateSessionOutput{
 		ID:        sessionModel.ID.String(),
@@ -27,10 +27,10 @@ func sessionPtrModelToSessionOutputDto(sessionModel *models.Session) *dto.Create
 		GroupId:   sessionModel.GroupId,
 		StartTime: sessionModel.Beginning,
 		EndTime:   sessionModel.End,
-	}
+	}, nil
 }
 
-func sessionValueModelToSessionOutputDto(sessionModel models.Session) *dto.CreateSessionOutput {
+func sessionValueModelToSessionOutputDto(sessionModel models.Session) (*dto.CreateSessionOutput, error) {
 
 	return &dto.CreateSessionOutput{
 		ID:        sessionModel.ID.String(),
@@ -38,7 +38,7 @@ func sessionValueModelToSessionOutputDto(sessionModel models.Session) *dto.Creat
 		GroupId:   sessionModel.GroupId,
 		StartTime: sessionModel.Beginning,
 		EndTime:   sessionModel.End,
-	}
+	}, nil
 }
 
 func (s SessionRegistration) EntityInputDtoToEntityModel(input any) any {

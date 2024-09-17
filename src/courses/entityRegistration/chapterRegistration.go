@@ -11,7 +11,7 @@ type ChapterRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
-func (s ChapterRegistration) EntityModelToEntityOutput(input any) any {
+func (s ChapterRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return chapterPtrModelToChapterOutputDto(input.(*models.Chapter))
 	} else {
@@ -19,7 +19,7 @@ func (s ChapterRegistration) EntityModelToEntityOutput(input any) any {
 	}
 }
 
-func chapterPtrModelToChapterOutputDto(chapterModel *models.Chapter) *dto.ChapterOutput {
+func chapterPtrModelToChapterOutputDto(chapterModel *models.Chapter) (*dto.ChapterOutput, error) {
 
 	return &dto.ChapterOutput{
 		ID:           chapterModel.ID.String(),
@@ -29,10 +29,10 @@ func chapterPtrModelToChapterOutputDto(chapterModel *models.Chapter) *dto.Chapte
 		Introduction: chapterModel.Introduction,
 		CreatedAt:    chapterModel.CreatedAt.String(),
 		UpdatedAt:    chapterModel.UpdatedAt.String(),
-	}
+	}, nil
 }
 
-func chapterValueModelToChapterOutputDto(chapterModel models.Chapter) *dto.ChapterOutput {
+func chapterValueModelToChapterOutputDto(chapterModel models.Chapter) (*dto.ChapterOutput, error) {
 
 	return &dto.ChapterOutput{
 		ID:           chapterModel.ID.String(),
@@ -42,7 +42,7 @@ func chapterValueModelToChapterOutputDto(chapterModel models.Chapter) *dto.Chapt
 		Introduction: chapterModel.Introduction,
 		CreatedAt:    chapterModel.CreatedAt.String(),
 		UpdatedAt:    chapterModel.UpdatedAt.String(),
-	}
+	}, nil
 }
 
 func (s ChapterRegistration) EntityInputDtoToEntityModel(input any) any {

@@ -11,7 +11,7 @@ type PageRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
-func (s PageRegistration) EntityModelToEntityOutput(input any) any {
+func (s PageRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return pagePtrModelToPageOutputDto(input.(*models.Page))
 	} else {
@@ -19,12 +19,7 @@ func (s PageRegistration) EntityModelToEntityOutput(input any) any {
 	}
 }
 
-func pagePtrModelToPageOutputDto(pageModel *models.Page) *dto.PageOutput {
-
-	// var parentSectionTitle string
-	// if pageModel.Section != nil {
-	// 	parentSectionTitle = pageModel.Section.Title
-	// }
+func pagePtrModelToPageOutputDto(pageModel *models.Page) (*dto.PageOutput, error) {
 
 	return &dto.PageOutput{
 		ID:                 pageModel.ID.String(),
@@ -35,15 +30,10 @@ func pagePtrModelToPageOutputDto(pageModel *models.Page) *dto.PageOutput {
 		Hide:               pageModel.Hide,
 		CreatedAt:          pageModel.CreatedAt.String(),
 		UpdatedAt:          pageModel.UpdatedAt.String(),
-	}
+	}, nil
 }
 
-func pageValueModelToPageOutputDto(pageModel models.Page) *dto.PageOutput {
-
-	// var parentSectionTitle string
-	// if pageModel.Section != nil {
-	// 	parentSectionTitle = pageModel.Section.Title
-	// }
+func pageValueModelToPageOutputDto(pageModel models.Page) (*dto.PageOutput, error) {
 
 	return &dto.PageOutput{
 		ID:                 pageModel.ID.String(),
@@ -54,7 +44,7 @@ func pageValueModelToPageOutputDto(pageModel models.Page) *dto.PageOutput {
 		Hide:               pageModel.Hide,
 		CreatedAt:          pageModel.CreatedAt.String(),
 		UpdatedAt:          pageModel.UpdatedAt.String(),
-	}
+	}, nil
 }
 
 func (s PageRegistration) EntityInputDtoToEntityModel(input any) any {

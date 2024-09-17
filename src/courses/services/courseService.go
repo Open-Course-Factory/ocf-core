@@ -54,6 +54,8 @@ func (c courseService) GenerateCourse(courseId string, courseTheme string, forma
 
 	course := courseEntity.(*models.Course)
 
+	course.InitTocs()
+
 	createdFile, err := course.WriteMd(&configuration)
 	if err != nil {
 		log.Fatal(err)

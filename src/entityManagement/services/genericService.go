@@ -198,7 +198,12 @@ func (g *genericService) GetEntityFromResult(entityName string, item interface{}
 		if val.IsValid() && val.Kind() == reflect.Func {
 			args := []reflect.Value{reflect.ValueOf(item)}
 			entityDto := val.Call(args)
-			if len(entityDto) == 1 {
+
+			if !entityDto[1].IsNil() {
+				return nil, true
+			}
+
+			if len(entityDto) == 2 {
 				result = entityDto[0].Interface()
 			}
 

@@ -1,7 +1,6 @@
 package repositories
 
 import (
-	"fmt"
 	"net/http"
 	"reflect"
 	errors "soli/formations/src/auth/errors"
@@ -79,25 +78,40 @@ func (r genericRepository) EditEntity(id uuid.UUID, entityName string, entity in
 
 func (o *genericRepository) GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error) {
 
-	subEntities := ems.GlobalEntityRegistrationService.GetSubEntites(entityName)
 	model := reflect.New(reflect.TypeOf(data)).Interface()
 	query := o.db.Model(model)
 
-	if len(subEntities) > 0 {
-		for _, subEntity := range subEntities {
-			subEntityName := reflect.TypeOf(subEntity).Name()
-			fmt.Println(subEntityName)
-			query.Preload("Chapter")
-		}
+	queryPreloadString := ""
+	getPreloadString(entityName, &queryPreloadString, true)
+
+	if queryPreloadString != "" {
+		query.Preload(queryPreloadString)
 	}
 
-	result := o.db.Find(model, id)
+	result := query.Find(model, id)
 
 	if result.Error != nil {
 		return nil, result.Error
 	}
 
 	return model, nil
+}
+
+func getPreloadString(entityName string, queryPreloadsString *string, firstIteration bool) {
+	subEntities := ems.GlobalEntityRegistrationService.GetSubEntites(entityName)
+	if len(subEntities) > 0 {
+		for _, subEntity := range subEntities {
+			subEntityName := reflect.TypeOf(subEntity).Name()
+			resourceName := ems.Pluralize(subEntityName)
+			if firstIteration {
+				*queryPreloadsString = resourceName
+			} else {
+				*queryPreloadsString = *queryPreloadsString + "." + resourceName
+			}
+
+			getPreloadString(subEntityName, queryPreloadsString, false)
+		}
+	}
 }
 
 func (o *genericRepository) GetAllEntities(data interface{}, pageSize int) ([]interface{}, error) {

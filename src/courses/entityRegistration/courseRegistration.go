@@ -12,7 +12,7 @@ type CourseRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
-func (s CourseRegistration) EntityModelToEntityOutput(input any) any {
+func (s CourseRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return coursePtrModelToCourseOutputDto(input.(*models.Course))
 	} else {
@@ -20,18 +20,18 @@ func (s CourseRegistration) EntityModelToEntityOutput(input any) any {
 	}
 }
 
-func coursePtrModelToCourseOutputDto(courseModel *models.Course) *dto.CourseOutput {
+func coursePtrModelToCourseOutputDto(courseModel *models.Course) (*dto.CourseOutput, error) {
 
 	return &dto.CourseOutput{
 		Name: courseModel.Name,
-	}
+	}, nil
 }
 
-func courseValueModelToCourseOutputDto(courseModel models.Course) *dto.CourseOutput {
+func courseValueModelToCourseOutputDto(courseModel models.Course) (*dto.CourseOutput, error) {
 
 	return &dto.CourseOutput{
 		Name: courseModel.Name,
-	}
+	}, nil
 }
 
 func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {

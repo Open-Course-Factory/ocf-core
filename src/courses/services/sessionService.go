@@ -77,7 +77,11 @@ func (s *sessionService) GetSessions() ([]dto.CreateSessionOutput, error) {
 
 	for _, s := range *sessionModel {
 		sessionEntity := registration.SessionRegistration{}
-		sessionDto = append(sessionDto, sessionEntity.EntityModelToEntityOutput(s).(dto.CreateSessionOutput))
+		dtoToAppend, err := sessionEntity.EntityModelToEntityOutput(s)
+		if err != nil {
+			return nil, err
+		}
+		sessionDto = append(sessionDto, dtoToAppend.(dto.CreateSessionOutput))
 	}
 
 	return sessionDto, nil
