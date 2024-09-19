@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	cors "github.com/rs/cors/wrapper/gin"
 
@@ -201,6 +200,8 @@ func parseFlags() bool {
 	slideEngine := flag.String(SLIDE_ENGINE_FLAG, "slidev", "slide generator used, marp or slidev (default)")
 	flag.Parse()
 
+	fmt.Println(courseType)
+
 	// check mandatory flags
 	if !isFlagPassed(COURSE_FLAG) || !isFlagPassed(THEME_FLAG) || !isFlagPassed(TYPE_FLAG) {
 		return false
@@ -215,9 +216,6 @@ func parseFlags() bool {
 		generator.SLIDE_ENGINE = slidev.SlidevCourseGenerator{}
 	}
 
-	jsonConfigurationFilePath := "./src/configuration/conf.json"
-	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
-
 	courseService := courseService.NewCourseService(sqldb.DB)
 	course := courseService.GetCourseFromProgramInputs(courseName, courseGitRepository, courseBranchGitRepository)
 
@@ -228,32 +226,11 @@ func parseFlags() bool {
 	genericService := genericService.NewGenericService(sqldb.DB)
 
 	courseInputDto := courseDto.CourseModelToCourseInputDto(course)
-	courseResult, errorSaving := genericService.CreateEntity(courseInputDto, "Course")
+	_, errorSaving := genericService.CreateEntity(courseInputDto, "Course")
 
 	if errorSaving != nil {
 		fmt.Println(errorSaving.Error())
 		return true
-	}
-
-	// return true
-	//  ##########################################################################
-
-	newCourse := courseResult.(courseDto.CourseOutput)
-	genericService.GetEntity(uuid.MustParse(newCourse.CourseID_str), &courseModels.Course{}, "Course")
-
-	createdFile, err := course.WriteMd(&configuration)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Markdown file created: " + createdFile)
-
-	errc := generator.SLIDE_ENGINE.CompileResources(&course)
-	if errc != nil {
-		log.Fatal(errc)
-	}
-
-	if !*config.DRY_RUN {
-		generator.SLIDE_ENGINE.Run(&configuration, &course, courseType)
 	}
 
 	return true
