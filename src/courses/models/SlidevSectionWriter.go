@@ -2,6 +2,7 @@ package models
 
 import (
 	"log"
+	"sort"
 	"strings"
 )
 
@@ -34,6 +35,12 @@ func (ssw *SlidevSectionWriter) SetToc() string {
 
 func (ssw *SlidevSectionWriter) SetContent() string {
 	var pages string
+
+	// Sort the pages by page.Order
+	sort.Slice(ssw.Section.Pages, func(i, j int) bool {
+		return ssw.Section.Pages[i].Order < ssw.Section.Pages[j].Order
+	})
+
 	for _, page := range ssw.Section.Pages {
 		pages += page.String(ssw.Section, ssw.Chapter) + "\n"
 	}

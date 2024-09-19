@@ -3,12 +3,13 @@ package dto
 import "soli/formations/src/courses/models"
 
 type PageInput struct {
+	Order   int      `json:"order"`
 	Content []string `json:"content" gorm:"serializer:json"`
 }
 
 type PageOutput struct {
 	ID                 string   `json:"id"`
-	Number             int      `json:"number"`
+	Order              int      `json:"order"`
 	ParentSectionTitle string   `json:"parentSectionTitle"`
 	Toc                []string `json:"toc"`
 	Content            []string `json:"content"`
@@ -18,7 +19,7 @@ type PageOutput struct {
 }
 
 type EditPageInput struct {
-	Number             int      `json:"number"`
+	Order              int      `json:"order"`
 	ParentSectionTitle string   `json:"parentSectionTitle"`
 	Toc                []string `json:"toc" gorm:"serializer:json"`
 	Content            []string `json:"content" gorm:"serializer:json"`
@@ -27,6 +28,7 @@ type EditPageInput struct {
 
 func PageModelToPageInput(pageModel models.Page) *PageInput {
 	return &PageInput{
+		Order:   pageModel.Order,
 		Content: pageModel.Content,
 	}
 }
