@@ -11,7 +11,7 @@ type MachineRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
-func (s MachineRegistration) EntityModelToEntityOutput(input any) any {
+func (s MachineRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return machinePtrModelToMachineOutputDto(input.(*models.Machine))
 	} else {
@@ -19,24 +19,24 @@ func (s MachineRegistration) EntityModelToEntityOutput(input any) any {
 	}
 }
 
-func machinePtrModelToMachineOutputDto(machineModel *models.Machine) *dto.MachineOutput {
+func machinePtrModelToMachineOutputDto(machineModel *models.Machine) (*dto.MachineOutput, error) {
 
 	return &dto.MachineOutput{
 		Name: machineModel.Name,
 		ID:   machineModel.ID.String(),
 		IP:   machineModel.IP,
 		Port: machineModel.Port,
-	}
+	}, nil
 }
 
-func machineValueModelToMachineOutputDto(machineModel models.Machine) *dto.MachineOutput {
+func machineValueModelToMachineOutputDto(machineModel models.Machine) (*dto.MachineOutput, error) {
 
 	return &dto.MachineOutput{
 		Name: machineModel.Name,
 		ID:   machineModel.ID.String(),
 		IP:   machineModel.IP,
 		Port: machineModel.Port,
-	}
+	}, nil
 }
 
 func (s MachineRegistration) EntityInputDtoToEntityModel(input any) any {

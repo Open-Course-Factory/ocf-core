@@ -15,7 +15,7 @@ type ConnectionRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
-func (s ConnectionRegistration) EntityModelToEntityOutput(input any) any {
+func (s ConnectionRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return connectionPtrModelToConnectionOutputDto(input.(*models.Connection))
 	} else {
@@ -23,27 +23,60 @@ func (s ConnectionRegistration) EntityModelToEntityOutput(input any) any {
 	}
 }
 
-func connectionPtrModelToConnectionOutputDto(connectionModel *models.Connection) *dto.ConnectionOutput {
+func connectionPtrModelToConnectionOutputDto(connectionModel *models.Connection) (*dto.ConnectionOutput, error) {
 	repo := entityManagementRepository.NewGenericRepository(sqldb.DB)
-	machine, _ := repo.GetEntity(connectionModel.MachineID, models.Machine{})
-	username, _ := repo.GetEntity(connectionModel.UsernameID, models.Username{})
+	machine, errorGettingMachine := repo.GetEntity(connectionModel.MachineID, models.Machine{}, "Machine")
+	if errorGettingMachine != nil {
+		return nil, errorGettingMachine
+	}
+	username, errorGettingUsername := repo.GetEntity(connectionModel.UsernameID, models.Username{}, "Username")
+	if errorGettingUsername != nil {
+		return nil, errorGettingUsername
+	}
+	machineOutputDto, errMachineConvertingToDto := machinePtrModelToMachineOutputDto(machine.(*models.Machine))
+	if errMachineConvertingToDto != nil {
+		return nil, errMachineConvertingToDto
+	}
+
+	usernameOutputDto, errUsernameConvertingToDto := usernamePtrModelToUsernameOutputDto(username.(*models.Username))
+	if errUsernameConvertingToDto != nil {
+		return nil, errUsernameConvertingToDto
+	}
 
 	return &dto.ConnectionOutput{
-		MachineDtoOutput:  machinePtrModelToMachineOutputDto(machine.(*models.Machine)),
-		UsernameDtoOutput: usernamePtrModelToUsernameOutputDto(username.(*models.Username)),
-	}
+		MachineDtoOutput:  machineOutputDto,
+		UsernameDtoOutput: usernameOutputDto,
+		ID:                connectionModel.ID.String(),
+	}, nil
 }
 
-func connectionValueModelToConnectionOutputDto(connectionModel models.Connection) *dto.ConnectionOutput {
+func connectionValueModelToConnectionOutputDto(connectionModel models.Connection) (*dto.ConnectionOutput, error) {
 
 	repo := entityManagementRepository.NewGenericRepository(sqldb.DB)
-	machine, _ := repo.GetEntity(connectionModel.MachineID, models.Machine{})
-	username, _ := repo.GetEntity(connectionModel.UsernameID, models.Username{})
+	machine, errorGettingMachine := repo.GetEntity(connectionModel.MachineID, models.Machine{}, "Machine")
+	if errorGettingMachine != nil {
+		return nil, errorGettingMachine
+	}
+	username, errorGettingUsername := repo.GetEntity(connectionModel.UsernameID, models.Username{}, "Username")
+	if errorGettingUsername != nil {
+		return nil, errorGettingUsername
+	}
+
+	machineOutputDto, errMachineConvertingToDto := machinePtrModelToMachineOutputDto(machine.(*models.Machine))
+	if errMachineConvertingToDto != nil {
+		return nil, errMachineConvertingToDto
+	}
+
+	usernameOutputDto, errUsernameConvertingToDto := usernamePtrModelToUsernameOutputDto(username.(*models.Username))
+	if errUsernameConvertingToDto != nil {
+		return nil, errUsernameConvertingToDto
+	}
 
 	return &dto.ConnectionOutput{
-		MachineDtoOutput:  machinePtrModelToMachineOutputDto(machine.(*models.Machine)),
-		UsernameDtoOutput: usernamePtrModelToUsernameOutputDto(username.(*models.Username)),
-	}
+		MachineDtoOutput:  machineOutputDto,
+		UsernameDtoOutput: usernameOutputDto,
+		ID:                connectionModel.ID.String(),
+	}, nil
 }
 
 func (s ConnectionRegistration) EntityInputDtoToEntityModel(input any) any {

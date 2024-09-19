@@ -34,7 +34,8 @@
 	"postCreateCommand": "echo \"\nsource /usr/share/bash-completion/completions/git\" >> ~/.bashrc",
 
 	"mounts": [
-	  "type=bind,source=${localEnv:HOME}/.ssh,target=/home/ocf/.ssh,readonly"
+	  "type=bind,source=${localEnv:HOME}/.ssh,target=/home/ocf/.ssh,readonly",
+		"type=bind,source=.bash_history,target=/home/ocf/.bash_history,consistency=cached"
 	],
 	
 	// Configure tool-specific properties.

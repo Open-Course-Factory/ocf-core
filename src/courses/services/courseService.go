@@ -1,17 +1,19 @@
 package services
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"soli/formations/src/auth/casdoor"
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
 	repositories "soli/formations/src/courses/repositories"
+	sqldb "soli/formations/src/db"
 	generator "soli/formations/src/generationEngine"
+	slidev "soli/formations/src/generationEngine/slidev_integration"
+
+	genericService "soli/formations/src/entityManagement/services"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
@@ -23,11 +25,9 @@ import (
 
 type CourseService interface {
 	GenerateCourse(courseName string, courseTheme string, format string, authorEmail string, cow models.CourseMdWriter) (*dto.GenerateCourseOutput, error)
-	CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto.CreateCourseOutput, error)
-	DeleteCourse(id uuid.UUID) error
-	GetCourses() ([]dto.CourseOutput, error)
 	GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) error
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
+	GetCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) models.Course
 }
 
 type courseService struct {
@@ -40,129 +40,46 @@ func NewCourseService(db *gorm.DB) CourseService {
 	}
 }
 
-func (c courseService) GenerateCourse(courseName string, courseTheme string, format string, authorEmail string, cow models.CourseMdWriter) (*dto.GenerateCourseOutput, error) {
+func (c courseService) GenerateCourse(courseId string, courseTheme string, format string, authorEmail string, cow models.CourseMdWriter) (*dto.GenerateCourseOutput, error) {
 
 	jsonConfigurationFilePath := "src/configuration/conf.json"
 	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
 
-	user, err := casdoorsdk.GetUserByEmail(authorEmail)
+	genericService := genericService.NewGenericService(sqldb.DB)
+	courseEntity, errGettingEntity := genericService.GetEntity(uuid.MustParse(courseId), models.Course{}, "Course")
+
+	if errGettingEntity != nil {
+		return nil, errGettingEntity
+	}
+
+	course := courseEntity.(*models.Course)
+
+	course.InitTocs()
+
+	createdFile, err := course.WriteMd(&configuration)
 	if err != nil {
-		return nil, err
+		log.Fatal(err)
 	}
+	fmt.Println("Markdown file created: " + createdFile)
 
-	course, errCourse := c.GetSpecificCourseByUser(*user, courseName)
-	if errCourse != nil {
-		return nil, errCourse
-	}
+	engine := slidev.SlidevCourseGenerator{}
 
-	if course == nil {
-		jsonCourseFilePath := config.COURSES_ROOT + courseName + ".json"
-		course = models.ReadJsonCourseFile(jsonCourseFilePath)
+	errc := engine.CompileResources(course)
+	if errc != nil {
+		log.Fatal(errc)
 	}
 
 	if len(courseTheme) > 0 {
 		course.Theme = courseTheme
 	}
 
-	// we should use cow here
-	models.FillCourseModelFromFiles(courseName, course)
-
-	createdFile, err := course.WriteMd(&configuration)
-	if err != nil {
-		log.Println(err.Error())
-	}
-	fmt.Println("Markdown file created: " + createdFile)
-
-	errc := generator.SLIDE_ENGINE.CompileResources(course)
-	if errc != nil {
-		log.Println(errc.Error())
-	}
-
-	errr := generator.SLIDE_ENGINE.Run(&configuration, course, &format)
+	errr := engine.Run(&configuration, course, &format)
 
 	if errc != nil {
 		log.Println(errr.Error())
 	}
 
 	return &dto.GenerateCourseOutput{Result: true}, nil
-}
-
-func (c courseService) CreateCourse(courseCreateDTO dto.CreateCourseInput) (*dto.CreateCourseOutput, error) {
-	user, err := casdoorsdk.GetUserByEmail(courseCreateDTO.AuthorEmail)
-	if err != nil {
-		return nil, err
-	}
-
-	if user == nil {
-		return nil, errors.New("user provided not found")
-	}
-
-	course, errCourse := c.GetSpecificCourseByUser(*user, courseCreateDTO.Name)
-
-	if errCourse != nil {
-		if errCourse.Error() != "record not found" {
-			return nil, errCourse
-		}
-	}
-
-	if course == nil {
-		courseCreated, createCourseError := c.repository.CreateCourse(courseCreateDTO)
-
-		if createCourseError != nil {
-			return nil, createCourseError
-		}
-
-		errPolicyLoading := casdoor.Enforcer.LoadPolicy()
-		if errPolicyLoading != nil {
-			return nil, errPolicyLoading
-		}
-
-		_, errAddingPolicy := casdoor.Enforcer.AddPolicy(user.Id, "/api/v1/courses/"+courseCreated.ID.String(), "(GET|DELETE|PATCH|PUT)")
-		if errAddingPolicy != nil {
-			return nil, errAddingPolicy
-		}
-
-		return &dto.CreateCourseOutput{Name: courseCreated.Name}, nil
-	}
-
-	return nil, errors.New("course already in database")
-
-}
-
-func (c courseService) DeleteCourse(id uuid.UUID) error {
-	errorDelete := c.repository.DeleteCourse(id)
-	if errorDelete != nil {
-		return errorDelete
-	}
-
-	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
-	if errPolicyLoading != nil {
-		return errPolicyLoading
-	}
-
-	_, errRemovingPolicy := casdoor.Enforcer.RemoveFilteredPolicy(1, "/api/v1/courses/"+id.String())
-	if errRemovingPolicy != nil {
-		return errRemovingPolicy
-	}
-
-	return nil
-}
-
-func (c *courseService) GetCourses() ([]dto.CourseOutput, error) {
-
-	courseModel, err := c.repository.GetAllCourses()
-
-	if err != nil {
-		return nil, err
-	}
-
-	var courseDto []dto.CourseOutput
-
-	for _, s := range *courseModel {
-		courseDto = append(courseDto, *dto.CourseModelToCourseOutputDto(s))
-	}
-
-	return courseDto, nil
 }
 
 func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) error {
@@ -250,6 +167,39 @@ func (c courseService) GetSpecificCourseByUser(owner casdoorsdk.User, courseName
 	}
 
 	return course, nil
+}
+
+func (c courseService) ImportCourseFromGit() {
+
+}
+
+func (c courseService) GetCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) models.Course {
+	isCourseGitRepository := (*courseGitRepository != "")
+
+	// ToDo: Get loggued in User
+	LogguedInUser, userErr := casdoorsdk.GetUserByEmail("1.supervisor@test.com")
+
+	if userErr != nil {
+		log.Fatal(userErr)
+	}
+
+	var errGetGitCourse error
+	if isCourseGitRepository {
+		errGetGitCourse = c.GetGitCourse(LogguedInUser.Id, *courseName, *courseGitRepository, *courseGitRepositoryBranchName)
+	}
+
+	if errGetGitCourse != nil {
+		log.Fatal(errGetGitCourse)
+	}
+
+	jsonCourseFilePath := config.COURSES_ROOT + *courseName + "/course.json"
+	course := models.ReadJsonCourseFile(jsonCourseFilePath)
+
+	course.OwnerIDs = append(course.OwnerIDs, LogguedInUser.Id)
+	course.FolderName = *courseName
+	course.GitRepository = *courseGitRepository
+	course.GitRepositoryBranch = *courseGitRepositoryBranchName
+	return *course
 }
 
 func CheckIfError(err error) bool {

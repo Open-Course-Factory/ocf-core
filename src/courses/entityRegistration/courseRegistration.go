@@ -12,7 +12,7 @@ type CourseRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
-func (s CourseRegistration) EntityModelToEntityOutput(input any) any {
+func (s CourseRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return coursePtrModelToCourseOutputDto(input.(*models.Course))
 	} else {
@@ -20,23 +20,30 @@ func (s CourseRegistration) EntityModelToEntityOutput(input any) any {
 	}
 }
 
-func coursePtrModelToCourseOutputDto(courseModel *models.Course) *dto.CreateCourseOutput {
+func coursePtrModelToCourseOutputDto(courseModel *models.Course) (*dto.CourseOutput, error) {
 
-	return &dto.CreateCourseOutput{
+	return &dto.CourseOutput{
 		Name: courseModel.Name,
-	}
+	}, nil
 }
 
-func courseValueModelToCourseOutputDto(courseModel models.Course) *dto.CreateCourseOutput {
+func courseValueModelToCourseOutputDto(courseModel models.Course) (*dto.CourseOutput, error) {
 
-	return &dto.CreateCourseOutput{
+	return &dto.CourseOutput{
 		Name: courseModel.Name,
-	}
+	}, nil
 }
 
 func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
 
-	courseInputDto := input.(dto.CreateCourseInput)
+	var chapters []*models.Chapter
+	courseInputDto := input.(*dto.CourseInput)
+	for _, chapterInput := range courseInputDto.ChaptersInput {
+		chapterModel := ChapterRegistration{}.EntityInputDtoToEntityModel(chapterInput)
+		chapter := chapterModel.(*models.Chapter)
+		chapters = append(chapters, chapter)
+	}
+
 	return &models.Course{
 		Name:               courseInputDto.Name,
 		Theme:              courseInputDto.Theme,
@@ -52,7 +59,7 @@ func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
 		Schedule:           courseInputDto.Schedule,
 		Prelude:            courseInputDto.Prelude,
 		LearningObjectives: courseInputDto.LearningObjectives,
-		Chapters:           courseInputDto.Chapters,
+		Chapters:           chapters,
 	}
 }
 
@@ -64,8 +71,12 @@ func (s CourseRegistration) GetEntityRegistrationInput() entityManagementInterfa
 			DtoToModel: s.EntityInputDtoToEntityModel,
 		},
 		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputCreateDto: dto.CreateCourseInput{},
-			OutputDto:      dto.CreateCourseOutput{},
+			InputCreateDto: dto.CourseInput{},
+			OutputDto:      dto.CourseOutput{},
+			InputEditDto:   dto.EditCourseInput{},
+		},
+		EntitySubEntities: []interface{}{
+			models.Chapter{},
 		},
 	}
 }

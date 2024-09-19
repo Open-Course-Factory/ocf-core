@@ -1,5 +1,7 @@
 package dto
 
+import "soli/formations/src/courses/models"
+
 type PageInput struct {
 	Content []string `json:"content" gorm:"serializer:json"`
 }
@@ -21,4 +23,10 @@ type EditPageInput struct {
 	Toc                []string `json:"toc" gorm:"serializer:json"`
 	Content            []string `json:"content" gorm:"serializer:json"`
 	Hide               bool     `json:"hide"`
+}
+
+func PageModelToPageInput(pageModel models.Page) *PageInput {
+	return &PageInput{
+		Content: pageModel.Content,
+	}
 }

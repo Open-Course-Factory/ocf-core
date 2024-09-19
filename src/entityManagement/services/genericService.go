@@ -3,18 +3,21 @@ package services
 import (
 	"fmt"
 	"reflect"
+	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/entityManagement/repositories"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 	"gorm.io/gorm"
 )
 
 type GenericService interface {
 	CreateEntity(inputDto interface{}, entityName string) (interface{}, error)
 	SaveEntity(entity interface{}) (interface{}, error)
-	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
+	GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error)
 	GetEntities(data interface{}) ([]interface{}, error)
 	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
 	EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error
@@ -23,6 +26,8 @@ type GenericService interface {
 	ExtractUuidFromReflectEntity(entity interface{}) uuid.UUID
 	GetDtoArrayFromEntitiesPages(allEntitiesPages []interface{}, entityModelInterface interface{}, entityName string) ([]interface{}, bool)
 	GetEntityFromResult(entityName string, item interface{}) (interface{}, bool)
+	AddDefaultAccessesForEntity(resourceName string, entity interface{}, userId string) error
+	DecodeInputDtoForEntityCreation(entityName string, ctx *gin.Context) (interface{}, error)
 }
 
 type genericService struct {
@@ -55,8 +60,8 @@ func (g *genericService) SaveEntity(entity interface{}) (interface{}, error) {
 	return entity, nil
 }
 
-func (g *genericService) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {
-	entity, err := g.genericRepository.GetEntity(id, data)
+func (g *genericService) GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error) {
+	entity, err := g.genericRepository.GetEntity(id, data, entityName)
 
 	if err != nil {
 		return nil, err
@@ -139,19 +144,6 @@ func (g *genericService) ExtractUuidFromReflectEntity(entity interface{}) uuid.U
 		mon_uuid = uuid.UUID(field.Bytes())
 	}
 
-	// fmt.Println(reflect.ValueOf(field).Kind())  // struct
-	// fmt.Println(reflect.TypeOf(field))          // reflect.Value
-	// fmt.Println(reflect.TypeOf(field).Kind())   //struct
-	// fmt.Println(reflect.String)                 // string
-	// fmt.Println(field)                          // l'id
-	// fmt.Println(reflect.TypeOf(reflect.String)) // reflect.Kind
-	// if typeOf == reflect.TypeOf(reflect.String) {
-	// 	//ToDo : handle error
-	// 	mon_uuid, _ = uuid.Parse(field.String())
-	// } else {
-
-	// }
-
 	return mon_uuid
 }
 
@@ -206,7 +198,12 @@ func (g *genericService) GetEntityFromResult(entityName string, item interface{}
 		if val.IsValid() && val.Kind() == reflect.Func {
 			args := []reflect.Value{reflect.ValueOf(item)}
 			entityDto := val.Call(args)
-			if len(entityDto) == 1 {
+
+			if !entityDto[1].IsNil() {
+				return nil, true
+			}
+
+			if len(entityDto) == 2 {
 				result = entityDto[0].Interface()
 			}
 
@@ -217,4 +214,47 @@ func (g *genericService) GetEntityFromResult(entityName string, item interface{}
 		return nil, true
 	}
 	return result, false
+}
+
+func (g *genericService) AddDefaultAccessesForEntity(resourceName string, entity interface{}, userId string) error {
+	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
+	if errPolicyLoading != nil {
+		return errPolicyLoading
+	}
+
+	entityUuid := g.ExtractUuidFromReflectEntity(entity)
+
+	_, errAddingPolicy := casdoor.Enforcer.AddPolicy(userId, "/api/v1/"+resourceName+"/"+entityUuid.String(), "(GET|DELETE|PATCH|PUT)")
+	if errAddingPolicy != nil {
+		return errAddingPolicy
+	}
+
+	return nil
+}
+
+func (g *genericService) DecodeInputDtoForEntityCreation(entityName string, ctx *gin.Context) (interface{}, error) {
+	entityCreateDtoInput := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
+	decodedData := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
+
+	bindError := ctx.BindJSON(&entityCreateDtoInput)
+	if bindError != nil {
+		return nil, bindError
+	}
+
+	config := &mapstructure.DecoderConfig{
+		WeaklyTypedInput: true,
+		Result:           &decodedData,
+	}
+
+	decoder, err := mapstructure.NewDecoder(config)
+	if err != nil {
+		panic(err)
+	}
+
+	errDecode := decoder.Decode(entityCreateDtoInput)
+	if errDecode != nil {
+		return nil, errDecode
+	}
+
+	return decodedData, nil
 }

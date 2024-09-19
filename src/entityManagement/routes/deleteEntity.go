@@ -19,7 +19,7 @@ func (genericController genericController) DeleteEntity(ctx *gin.Context, scoped
 
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 	entityModelInterface := genericController.genericService.GetEntityModelInterface(entityName)
-	entity, getEntityError := genericController.genericService.GetEntity(id, entityModelInterface)
+	entity, getEntityError := genericController.genericService.GetEntity(id, entityModelInterface, entityName)
 	if errors.HandleError(http.StatusNotFound, getEntityError, ctx) {
 		return
 	}

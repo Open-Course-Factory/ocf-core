@@ -1,13 +1,13 @@
 package courseController
 
 import (
-	"net/http"
-
-	"soli/formations/src/auth/errors"
 	"soli/formations/src/courses/dto"
 
 	"github.com/gin-gonic/gin"
 )
+
+var _ = dto.CourseInput{}
+var _ = dto.CourseOutput{}
 
 // Add Course godoc
 //
@@ -16,37 +16,16 @@ import (
 //	@Tags			courses
 //	@Accept			json
 //	@Produce		json
-//	@Param			course	body	dto.CreateCourseInput	true	"cours"
+//	@Param			course	body	dto.CourseInput	true	"cours"
 //
 //	@Security		Bearer
 //
-//	@Success		201	{object}	dto.CreateCourseOutput
+//	@Success		201	{object}	dto.CourseOutput
 //
 //	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
 //	@Failure		400	{object}	errors.APIError	"Impossible de créer un cours"
 //	@Failure		409	{object}	errors.APIError	"Le cours existe déjà pour cet utilisateur"
 //	@Router			/courses [post]
 func (c courseController) AddCourse(ctx *gin.Context) {
-	courseCreateDTO := dto.CreateCourseInput{}
-
-	bindError := ctx.BindJSON(&courseCreateDTO)
-	if bindError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: bindError.Error(),
-		})
-		return
-	}
-
-	course, courseError := c.service.CreateCourse(courseCreateDTO)
-
-	if courseError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: courseError.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusCreated, course)
+	c.AddEntity(ctx)
 }

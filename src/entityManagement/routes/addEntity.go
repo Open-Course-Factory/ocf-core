@@ -5,39 +5,16 @@ import (
 	"net/http"
 	"reflect"
 
-	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 
-	ems "soli/formations/src/entityManagement/entityManagementService"
-
 	"github.com/gin-gonic/gin"
-
-	"github.com/mitchellh/mapstructure"
 )
 
 func (genericController genericController) AddEntity(ctx *gin.Context) {
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
-	entityCreateDtoInput := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
-	decodedData := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
-
-	bindError := ctx.BindJSON(&entityCreateDtoInput)
-	if errors.HandleError(http.StatusBadRequest, bindError, ctx) {
-		return
-	}
-
-	config := &mapstructure.DecoderConfig{
-		WeaklyTypedInput: true,
-		Result:           &decodedData,
-	}
-
-	decoder, err := mapstructure.NewDecoder(config)
-	if err != nil {
-		panic(err)
-	}
-
-	errDecode := decoder.Decode(entityCreateDtoInput)
-	if errors.HandleError(http.StatusInternalServerError, errDecode, ctx) {
+	decodedData, decodeError := genericController.genericService.DecodeInputDtoForEntityCreation(entityName, ctx)
+	if errors.HandleError(http.StatusBadRequest, decodeError, ctx) {
 		return
 	}
 
@@ -60,17 +37,13 @@ func (genericController genericController) AddEntity(ctx *gin.Context) {
 		}
 	}
 
-	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
-	if errors.HandleError(http.StatusInternalServerError, errPolicyLoading, ctx) {
-		return
-	}
-
 	resourceName := GetResourceNameFromPath(ctx.FullPath())
-	entityUuid := genericController.genericService.ExtractUuidFromReflectEntity(entity)
+	errorSettingDefaultAccesses := genericController.genericService.AddDefaultAccessesForEntity(resourceName, entity, userId)
 
-	_, errAddingPolicy := casdoor.Enforcer.AddPolicy(userId, "/api/v1/"+resourceName+"/"+entityUuid.String(), "(GET|DELETE|PATCH|PUT)")
-	if errors.HandleError(http.StatusInternalServerError, errAddingPolicy, ctx) {
-		return
+	if errorSettingDefaultAccesses != nil {
+		if errors.HandleError(http.StatusNotFound, errorSettingDefaultAccesses, ctx) {
+			return
+		}
 	}
 
 	ctx.JSON(http.StatusCreated, outputDto)

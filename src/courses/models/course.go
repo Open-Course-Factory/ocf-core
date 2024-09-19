@@ -114,7 +114,7 @@ func FillCourseModelFromFiles(courseName string, course *Course) {
 		course.Chapters[indexChapter] = chapter
 	}
 
-	initTocs(course)
+	course.InitTocs()
 }
 
 func (c *Course) WriteMd(configuration *config.Configuration) (string, error) {
@@ -148,7 +148,7 @@ func (c *Course) WriteMd(configuration *config.Configuration) (string, error) {
 	return fileToCreate, err
 }
 
-func initTocs(course *Course) {
+func (course *Course) InitTocs() {
 	tocsChapter := make(map[int][]string)
 	for _, chapter := range course.Chapters {
 		for _, section := range chapter.Sections {

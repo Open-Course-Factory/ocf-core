@@ -32,8 +32,10 @@ import (
 	userController "soli/formations/src/auth/routes/usersRoutes"
 	courseRegistration "soli/formations/src/courses/entityRegistration"
 	courseModels "soli/formations/src/courses/models"
+	chapterController "soli/formations/src/courses/routes/chapterRoutes"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	pageController "soli/formations/src/courses/routes/pageRoutes"
+	sectionController "soli/formations/src/courses/routes/sectionRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
 	labRegistration "soli/formations/src/labs/entityRegistration"
 	labModels "soli/formations/src/labs/models"
@@ -42,7 +44,9 @@ import (
 	usernameController "soli/formations/src/labs/routes/usernameRoutes"
 	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
 
+	courseDto "soli/formations/src/courses/dto"
 	courseService "soli/formations/src/courses/services"
+	genericService "soli/formations/src/entityManagement/services"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
@@ -100,6 +104,8 @@ func main() {
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SessionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.CourseRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.PageRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SectionRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ChapterRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.ConnectionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
@@ -124,6 +130,8 @@ func main() {
 	apiGroup := r.Group("/api/v1")
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	pageController.PagesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	sectionController.SectionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	chapterController.ChaptersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sessionController.SessionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sshKeyController.SshKeysRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
@@ -192,6 +200,8 @@ func parseFlags() bool {
 	slideEngine := flag.String(SLIDE_ENGINE_FLAG, "slidev", "slide generator used, marp or slidev (default)")
 	flag.Parse()
 
+	fmt.Println(courseType)
+
 	// check mandatory flags
 	if !isFlagPassed(COURSE_FLAG) || !isFlagPassed(THEME_FLAG) || !isFlagPassed(TYPE_FLAG) {
 		return false
@@ -206,28 +216,21 @@ func parseFlags() bool {
 		generator.SLIDE_ENGINE = slidev.SlidevCourseGenerator{}
 	}
 
-	jsonConfigurationFilePath := "./src/configuration/conf.json"
-	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
-
-	course := getCourseFromProgramInputs(courseName, courseGitRepository, courseBranchGitRepository)
+	courseService := courseService.NewCourseService(sqldb.DB)
+	course := courseService.GetCourseFromProgramInputs(courseName, courseGitRepository, courseBranchGitRepository)
 
 	setCourseThemeFromProgramInputs(&course, courseThemeName, courseThemeGitRepository, courseThemeBranchGitRepository)
 
 	courseModels.FillCourseModelFromFiles(*courseName, &course)
 
-	createdFile, err := course.WriteMd(&configuration)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Markdown file created: " + createdFile)
+	genericService := genericService.NewGenericService(sqldb.DB)
 
-	errc := generator.SLIDE_ENGINE.CompileResources(&course)
-	if errc != nil {
-		log.Fatal(errc)
-	}
+	courseInputDto := courseDto.CourseModelToCourseInputDto(course)
+	_, errorSaving := genericService.CreateEntity(courseInputDto, "Course")
 
-	if !*config.DRY_RUN {
-		generator.SLIDE_ENGINE.Run(&configuration, &course, courseType)
+	if errorSaving != nil {
+		fmt.Println(errorSaving.Error())
+		return true
 	}
 
 	return true
@@ -237,36 +240,6 @@ func setCourseThemeFromProgramInputs(course *courseModels.Course, themeName *str
 	course.Theme = *themeName
 	course.ThemeGitRepository = *themeGitRepository
 	course.ThemeGitRepositoryBranch = *themeGitRepositoryBranch
-}
-
-func getCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) courseModels.Course {
-	isCourseGitRepository := (*courseGitRepository != "")
-
-	// ToDo: Get loggued in User
-	LogguedInUser, userErr := casdoorsdk.GetUserByEmail("1.supervisor@test.com")
-
-	if userErr != nil {
-		log.Fatal(userErr)
-	}
-
-	var errGetGitCourse error
-	if isCourseGitRepository {
-		c := courseService.NewCourseService(sqldb.DB)
-		errGetGitCourse = c.GetGitCourse(LogguedInUser.Id, *courseName, *courseGitRepository, *courseGitRepositoryBranchName)
-	}
-
-	if errGetGitCourse != nil {
-		log.Fatal(errGetGitCourse)
-	}
-
-	jsonCourseFilePath := config.COURSES_ROOT + *courseName + "/course.json"
-	course := courseModels.ReadJsonCourseFile(jsonCourseFilePath)
-
-	course.OwnerIDs = append(course.OwnerIDs, LogguedInUser.Id)
-	course.FolderName = *courseName
-	course.GitRepository = *courseGitRepository
-	course.GitRepositoryBranch = *courseGitRepositoryBranchName
-	return *course
 }
 
 func isFlagPassed(name string) bool {

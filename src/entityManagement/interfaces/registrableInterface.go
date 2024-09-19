@@ -8,10 +8,11 @@ import (
 )
 
 type EntityRegistrationInput struct {
-	EntityInterface  interface{}
-	EntityConverters EntityConverters
-	EntityDtos       EntityDtos
-	EntityRoles      EntityRoles
+	EntityInterface   interface{}
+	EntityConverters  EntityConverters
+	EntityDtos        EntityDtos
+	EntityRoles       EntityRoles
+	EntitySubEntities []interface{}
 }
 
 type EntityConverters struct {
@@ -32,7 +33,7 @@ type EntityRoles struct {
 
 type RegistrableInterface interface {
 	GetEntityRegistrationInput() EntityRegistrationInput
-	EntityModelToEntityOutput(input any) any
+	EntityModelToEntityOutput(input any) (any, error)
 	EntityInputDtoToEntityModel(input any) any
 	GetEntityRoles() EntityRoles
 }

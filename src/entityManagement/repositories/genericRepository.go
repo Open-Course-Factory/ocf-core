@@ -14,7 +14,7 @@ import (
 type GenericRepository interface {
 	CreateEntity(data interface{}, entityName string) (interface{}, error)
 	SaveEntity(entity interface{}) (interface{}, error)
-	GetEntity(id uuid.UUID, data interface{}) (interface{}, error)
+	GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error)
 	GetAllEntities(data interface{}, pageSize int) ([]interface{}, error)
 	EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error
 	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
@@ -76,16 +76,42 @@ func (r genericRepository) EditEntity(id uuid.UUID, entityName string, entity in
 	return nil
 }
 
-func (o *genericRepository) GetEntity(id uuid.UUID, data interface{}) (interface{}, error) {
-	model := reflect.New(reflect.TypeOf(data)).Interface()
+func (o *genericRepository) GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error) {
 
-	result := o.db.First(model, id)
+	model := reflect.New(reflect.TypeOf(data)).Interface()
+	query := o.db.Model(model)
+
+	queryPreloadString := ""
+	getPreloadString(entityName, &queryPreloadString, true)
+
+	if queryPreloadString != "" {
+		query.Preload(queryPreloadString)
+	}
+
+	result := query.Find(model, id)
 
 	if result.Error != nil {
 		return nil, result.Error
 	}
 
 	return model, nil
+}
+
+func getPreloadString(entityName string, queryPreloadsString *string, firstIteration bool) {
+	subEntities := ems.GlobalEntityRegistrationService.GetSubEntites(entityName)
+	if len(subEntities) > 0 {
+		for _, subEntity := range subEntities {
+			subEntityName := reflect.TypeOf(subEntity).Name()
+			resourceName := ems.Pluralize(subEntityName)
+			if firstIteration {
+				*queryPreloadsString = resourceName
+			} else {
+				*queryPreloadsString = *queryPreloadsString + "." + resourceName
+			}
+
+			getPreloadString(subEntityName, queryPreloadsString, false)
+		}
+	}
 }
 
 func (o *genericRepository) GetAllEntities(data interface{}, pageSize int) ([]interface{}, error) {

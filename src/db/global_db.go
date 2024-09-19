@@ -24,8 +24,6 @@ func InitDBConnection(envFile string) {
 
 	err := godotenv.Load(envFile)
 
-	environment := os.Getenv("ENVIRONMENT")
-
 	DBType = os.Getenv("DATABASE")
 
 	if err != nil {
@@ -34,10 +32,6 @@ func InitDBConnection(envFile string) {
 
 	if DBType == "postgres" {
 		db := os.Getenv("POSTGRES_DB")
-		switch environment {
-		case "test":
-			db = "test_" + db
-		}
 
 		host := os.Getenv("POSTGRES_HOST")
 		user := os.Getenv("POSTGRES_USER")

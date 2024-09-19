@@ -11,7 +11,7 @@ type UsernameRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
-func (s UsernameRegistration) EntityModelToEntityOutput(input any) any {
+func (s UsernameRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return usernamePtrModelToUsernameOutputDto(input.(*models.Username))
 	} else {
@@ -19,20 +19,20 @@ func (s UsernameRegistration) EntityModelToEntityOutput(input any) any {
 	}
 }
 
-func usernamePtrModelToUsernameOutputDto(usernameModel *models.Username) *dto.UsernameOutput {
+func usernamePtrModelToUsernameOutputDto(usernameModel *models.Username) (*dto.UsernameOutput, error) {
 
 	return &dto.UsernameOutput{
 		Username: usernameModel.Username,
 		Id:       usernameModel.ID.String(),
-	}
+	}, nil
 }
 
-func usernameValueModelToUsernameOutputDto(usernameModel models.Username) *dto.UsernameOutput {
+func usernameValueModelToUsernameOutputDto(usernameModel models.Username) (*dto.UsernameOutput, error) {
 
 	return &dto.UsernameOutput{
 		Username: usernameModel.Username,
 		Id:       usernameModel.ID.String(),
-	}
+	}, nil
 }
 
 func (s UsernameRegistration) EntityInputDtoToEntityModel(input any) any {

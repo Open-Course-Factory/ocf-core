@@ -8,4 +8,5 @@ type ConnectionInput struct {
 type ConnectionOutput struct {
 	MachineDtoOutput  *MachineOutput  `json:"Machine"`
 	UsernameDtoOutput *UsernameOutput `json:"Username"`
+	ID                string          `json:"id"`
 }

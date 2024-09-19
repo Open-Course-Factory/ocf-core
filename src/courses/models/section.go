@@ -3,6 +3,7 @@ package models
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	config "soli/formations/src/configuration"
 	entityManagementModels "soli/formations/src/entityManagement/models"
@@ -70,7 +71,13 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 
 		pageFrontMatter.Layout = ""
 
-		sPageContent, err := frontmatter.Parse(strings.NewReader(sPage), &sectionFrontMatter)
+		if index == 1 {
+			_, errSectionFrontMatter := frontmatter.Parse(strings.NewReader(sPage), &sectionFrontMatter)
+			if errSectionFrontMatter != nil {
+				fmt.Println(errSectionFrontMatter.Error())
+			}
+		}
+
 		if sectionFrontMatter.Title != "" {
 			currentSection.Title = sectionFrontMatter.Title
 			currentSection.Intro = sectionFrontMatter.Intro
@@ -79,7 +86,11 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 		} else {
 			if index > beginningIndex {
 				pageCounter++
-				sPageContent, err = frontmatter.Parse(strings.NewReader(sPage), &pageFrontMatter)
+				sPageContent, err := frontmatter.Parse(strings.NewReader(sPage), &pageFrontMatter)
+
+				if err != nil {
+					fmt.Println(err.Error())
+				}
 
 				if contains(currentSection.HiddenPages, (pageCounter)) {
 					hide = true
@@ -90,17 +101,16 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 			}
 		}
 
-		if err != nil {
-			fmt.Println(err.Error())
-		}
-
 	}
 	return pages
 }
 
 func extractPagesFromSectionsFiles(filename string) []string {
 	var sPages []string
-	f, _ := os.Open(filename)
+	f, errFileOpening := os.Open(filename)
+	if errFileOpening != nil {
+		log.Default().Println(errFileOpening.Error())
+	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
 
