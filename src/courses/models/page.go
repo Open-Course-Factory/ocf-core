@@ -12,7 +12,7 @@ type PageWriter interface {
 // Part of a Section
 type Page struct {
 	entityManagementModels.BaseModel
-	Number   int
+	Order    int
 	Toc      []string `gorm:"serializer:json"`
 	Content  []string `gorm:"serializer:json"`
 	Hide     bool
@@ -24,9 +24,9 @@ func (p Page) String(section Section, chapter Chapter) string {
 	return pw.GetPage()
 }
 
-func createPage(number int, pageContent []string, parentSection *Section, hide bool) (p *Page) {
+func createPage(order int, pageContent []string, parentSection *Section, hide bool) (p *Page) {
 	return &Page{
-		Number:   number,
+		Order:    order,
 		Content:  pageContent,
 		Sections: []*Section{parentSection},
 		Hide:     hide,

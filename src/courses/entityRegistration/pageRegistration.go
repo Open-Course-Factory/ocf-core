@@ -23,7 +23,7 @@ func pagePtrModelToPageOutputDto(pageModel *models.Page) (*dto.PageOutput, error
 
 	return &dto.PageOutput{
 		ID:                 pageModel.ID.String(),
-		Number:             pageModel.Number,
+		Order:              pageModel.Order,
 		ParentSectionTitle: "",
 		Toc:                pageModel.Toc,
 		Content:            pageModel.Content,
@@ -37,7 +37,7 @@ func pageValueModelToPageOutputDto(pageModel models.Page) (*dto.PageOutput, erro
 
 	return &dto.PageOutput{
 		ID:                 pageModel.ID.String(),
-		Number:             pageModel.Number,
+		Order:              pageModel.Order,
 		ParentSectionTitle: "",
 		Toc:                pageModel.Toc,
 		Content:            pageModel.Content,
@@ -51,6 +51,7 @@ func (s PageRegistration) EntityInputDtoToEntityModel(input any) any {
 
 	pageInputDto := input.(*dto.PageInput)
 	return &models.Page{
+		Order:   pageInputDto.Order,
 		Content: pageInputDto.Content,
 	}
 }
