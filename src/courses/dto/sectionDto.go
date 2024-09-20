@@ -3,6 +3,7 @@ package dto
 import "soli/formations/src/courses/models"
 
 type SectionInput struct {
+	OwnerID     string
 	FileName    string       `json:"fileName"`
 	Title       string       `json:"title"`
 	Intro       string       `json:"intro"`
@@ -47,6 +48,7 @@ func SectionModelToSectionInput(sectionModel models.Section) *SectionInput {
 	}
 
 	return &SectionInput{
+		OwnerID:     sectionModel.OwnerIDs[0],
 		FileName:    sectionModel.FileName,
 		Title:       sectionModel.Title,
 		Intro:       sectionModel.Intro,

@@ -9,13 +9,16 @@ type GenerateCourseOutput struct {
 }
 
 type GenerateCourseInput struct {
-	Id          string `binding:"required"`
-	Theme       string `binding:"required"`
-	Format      string `binding:"required"`
-	AuthorEmail string `binding:"required"`
+	Id                       string `binding:"required"`
+	ThemeId                  string
+	ThemeGitRepository       string
+	ThemeGitRepositoryBranch string
+	Format                   string `binding:"required"`
+	AuthorEmail              string `binding:"required"`
 }
 
 type CourseInput struct {
+	OwnerID                  string
 	Name                     string `binding:"required"`
 	Theme                    string `binding:"required"`
 	Format                   *int   `binding:"required,gte=0,lte=1"`
@@ -82,7 +85,7 @@ type CreateCourseFromGitOutput struct {
 
 type CreateCourseFromGitInput struct {
 	Url        string `binding:"required"`
-	BranchName string `json:"omitempty"`
+	BranchName string `json:"branch_name,omitempty"`
 	Name       string `binding:"required"`
 }
 
@@ -119,6 +122,7 @@ func CourseModelToCourseInputDto(courseModel models.Course) *CourseInput {
 	}
 
 	return &CourseInput{
+		OwnerID:                  courseModel.OwnerIDs[0],
 		Name:                     courseModel.Name,
 		Theme:                    courseModel.Theme,
 		Version:                  courseModel.Version,

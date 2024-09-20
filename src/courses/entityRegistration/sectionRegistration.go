@@ -49,7 +49,7 @@ func (s SectionRegistration) EntityInputDtoToEntityModel(input any) any {
 		pageModels = append(pageModels, res)
 	}
 
-	return &models.Section{
+	sectionToReturn := &models.Section{
 		FileName:    sectionInputDto.FileName,
 		Title:       sectionInputDto.Title,
 		Intro:       sectionInputDto.Intro,
@@ -58,6 +58,10 @@ func (s SectionRegistration) EntityInputDtoToEntityModel(input any) any {
 		Pages:       pageModels,
 		HiddenPages: sectionInputDto.HiddenPages,
 	}
+
+	sectionToReturn.OwnerIDs = append(sectionToReturn.OwnerIDs, sectionInputDto.OwnerID)
+
+	return sectionToReturn
 }
 
 func (s SectionRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {

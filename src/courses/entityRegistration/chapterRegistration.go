@@ -56,13 +56,17 @@ func (s ChapterRegistration) EntityInputDtoToEntityModel(input any) any {
 		sectionModels = append(sectionModels, res)
 	}
 
-	return &models.Chapter{
+	chapterToReturn := &models.Chapter{
 		Footer:       chapterInputDto.Footer,
 		Introduction: chapterInputDto.Introduction,
 		Title:        chapterInputDto.Title,
 		Number:       chapterInputDto.Number,
 		Sections:     sectionModels,
 	}
+
+	chapterToReturn.OwnerIDs = append(chapterToReturn.OwnerIDs, chapterInputDto.OwnerID)
+
+	return chapterToReturn
 }
 
 func (s ChapterRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {

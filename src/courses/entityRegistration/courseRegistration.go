@@ -44,7 +44,7 @@ func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
 		chapters = append(chapters, chapter)
 	}
 
-	return &models.Course{
+	courseToReturn := &models.Course{
 		Name:                     courseInputDto.Name,
 		Theme:                    courseInputDto.Theme,
 		Format:                   config.Format(*courseInputDto.Format),
@@ -65,6 +65,10 @@ func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
 		ThemeGitRepository:       courseInputDto.ThemeGitRepository,
 		ThemeGitRepositoryBranch: courseInputDto.ThemeGitRepositoryBranch,
 	}
+
+	courseToReturn.OwnerIDs = append(courseToReturn.OwnerIDs, courseInputDto.OwnerID)
+
+	return courseToReturn
 }
 
 func (s CourseRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {

@@ -3,6 +3,7 @@ package dto
 import "soli/formations/src/courses/models"
 
 type PageInput struct {
+	OwnerID string
 	Order   int      `json:"order"`
 	Content []string `json:"content" gorm:"serializer:json"`
 }
@@ -28,6 +29,7 @@ type EditPageInput struct {
 
 func PageModelToPageInput(pageModel models.Page) *PageInput {
 	return &PageInput{
+		OwnerID: pageModel.OwnerIDs[0],
 		Order:   pageModel.Order,
 		Content: pageModel.Content,
 	}

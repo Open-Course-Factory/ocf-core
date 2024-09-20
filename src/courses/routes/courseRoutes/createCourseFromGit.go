@@ -8,8 +8,6 @@ import (
 	"soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 // Create Course from Git godoc
@@ -20,7 +18,6 @@ import (
 //	@Accept			json
 //	@Produce		json
 //	@Param			gitRepository	body	dto.CreateCourseFromGitInput	true	"cours"
-//	@Param			Authorization	header	string							true	"Insert your access token"	default(bearer <Add access token here>)
 //
 //	@Security		Bearer
 //
@@ -42,22 +39,9 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 		return
 	}
 
-	rawUser, ok := ctx.Get("user")
+	userId := ctx.GetString("userId")
 
-	if !ok {
-		return
-	}
-
-	user, err := casdoorsdk.GetUserByUserId(rawUser.(*casdoorsdk.User).Id)
-
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de récupérer l'utilisateur",
-		})
-	}
-
-	errGetCourse := c.service.GetGitCourse(user.Id, createCourseFromGitDTO.Name, createCourseFromGitDTO.Url, createCourseFromGitDTO.BranchName)
+	_, errGetCourse := c.service.GetGitCourse(userId, createCourseFromGitDTO.Name, createCourseFromGitDTO.Url, createCourseFromGitDTO.BranchName)
 
 	if errGetCourse != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{

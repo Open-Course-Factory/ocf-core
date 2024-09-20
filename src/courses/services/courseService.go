@@ -1,6 +1,8 @@
 package services
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -10,7 +12,6 @@ import (
 	"soli/formations/src/courses/models"
 	repositories "soli/formations/src/courses/repositories"
 	sqldb "soli/formations/src/db"
-	generator "soli/formations/src/generationEngine"
 	slidev "soli/formations/src/generationEngine/slidev_integration"
 
 	genericService "soli/formations/src/entityManagement/services"
@@ -24,8 +25,8 @@ import (
 )
 
 type CourseService interface {
-	GenerateCourse(courseName string, courseTheme string, format string, authorEmail string, cow models.CourseMdWriter) (*dto.GenerateCourseOutput, error)
-	GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) error
+	GenerateCourse(generateCourseInputDto dto.GenerateCourseInput, cow models.CourseMdWriter) (*dto.GenerateCourseOutput, error)
+	GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) (*models.Course, error)
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
 	GetCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) models.Course
 }
@@ -40,19 +41,21 @@ func NewCourseService(db *gorm.DB) CourseService {
 	}
 }
 
-func (c courseService) GenerateCourse(courseId string, courseTheme string, format string, authorEmail string, cow models.CourseMdWriter) (*dto.GenerateCourseOutput, error) {
+func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseInput, cow models.CourseMdWriter) (*dto.GenerateCourseOutput, error) {
 
 	jsonConfigurationFilePath := "src/configuration/conf.json"
 	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
 
 	genericService := genericService.NewGenericService(sqldb.DB)
-	courseEntity, errGettingEntity := genericService.GetEntity(uuid.MustParse(courseId), models.Course{}, "Course")
+	courseEntity, errGettingEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.Id), models.Course{}, "Course")
 
 	if errGettingEntity != nil {
 		return nil, errGettingEntity
 	}
 
 	course := courseEntity.(*models.Course)
+	course.ThemeGitRepository = generateCourseInputDto.ThemeGitRepository
+	course.ThemeGitRepositoryBranch = generateCourseInputDto.ThemeGitRepositoryBranch
 
 	course.InitTocs()
 
@@ -69,11 +72,11 @@ func (c courseService) GenerateCourse(courseId string, courseTheme string, forma
 		log.Fatal(errc)
 	}
 
-	if len(courseTheme) > 0 {
-		course.Theme = courseTheme
+	if len(generateCourseInputDto.ThemeId) > 0 {
+		course.Theme = generateCourseInputDto.ThemeId
 	}
 
-	errr := engine.Run(&configuration, course, &format)
+	errr := engine.Run(&configuration, course, &generateCourseInputDto.Format)
 
 	if errc != nil {
 		log.Println(errr.Error())
@@ -82,27 +85,75 @@ func (c courseService) GenerateCourse(courseId string, courseTheme string, forma
 	return &dto.GenerateCourseOutput{Result: true}, nil
 }
 
-func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) error {
+func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) (*models.Course, error) {
 	// Clones the given repository in memory, creating the remote, the local
 	// branches and fetching the objects, exactly as:
 	log.Printf("git clone %s", courseURL)
 
 	fs, cloneErr := models.GitClone(ownerId, courseURL, courseBranch)
 	if cloneErr != nil {
-		return cloneErr
+		return nil, cloneErr
 	}
 
-	errCopy := copyCourseFileLocally(fs, courseName, "/", []string{".json", ".md"})
-	if errCopy != nil {
-		return errCopy
+	jsonFile, err := fs.Open("course.json")
+
+	if err != nil {
+		log.Fatal("Error during ReadFile(): ", err)
 	}
 
-	errCopy = copyCourseFileLocally(fs, courseName, "/"+generator.SLIDE_ENGINE.GetPublicDir()+"/", []string{".jpg", ".png", ".svg"})
-	if errCopy != nil {
-		return errCopy
+	fileByteArray, errReadingFile := fileToBytesWithoutSeeking(jsonFile)
+	if errReadingFile != nil {
+		return nil, errReadingFile
 	}
 
-	return nil
+	var course models.Course
+	err = json.Unmarshal(fileByteArray, &course)
+	if err != nil {
+		log.Fatal("Error during Unmarshal(): ", err)
+	}
+
+	course.OwnerIDs = append(course.OwnerIDs, ownerId)
+	course.FolderName = courseName
+	course.GitRepository = courseURL
+	course.GitRepositoryBranch = courseBranch
+
+	models.FillCourseModelFromFiles(&fs, &course)
+
+	genericService := genericService.NewGenericService(sqldb.DB)
+
+	courseInputDto := dto.CourseModelToCourseInputDto(course)
+	_, errorSaving := genericService.CreateEntity(courseInputDto, "Course")
+
+	if errorSaving != nil {
+		fmt.Println(errorSaving.Error())
+		return nil, err
+	}
+
+	return &course, nil
+
+}
+
+func fileToBytesWithoutSeeking(file billy.File) ([]byte, error) {
+	// Get the current position
+	currentPos, err := file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a buffer to hold the data
+	var buf bytes.Buffer
+
+	// Read from the current position to the end
+	if _, err := io.Copy(&buf, file); err != nil {
+		return nil, err
+	}
+
+	// Restore the file's original position
+	if _, err := file.Seek(currentPos, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 func hasOneOfSuffixes(s string, suffixes []string) bool {
@@ -174,32 +225,33 @@ func (c courseService) ImportCourseFromGit() {
 }
 
 func (c courseService) GetCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) models.Course {
-	isCourseGitRepository := (*courseGitRepository != "")
+	// isCourseGitRepository := (*courseGitRepository != "")
 
-	// ToDo: Get loggued in User
-	LogguedInUser, userErr := casdoorsdk.GetUserByEmail("1.supervisor@test.com")
+	// // ToDo: Get loggued in User
+	// LogguedInUser, userErr := casdoorsdk.GetUserByEmail("1.supervisor@test.com")
 
-	if userErr != nil {
-		log.Fatal(userErr)
-	}
+	// if userErr != nil {
+	// 	log.Fatal(userErr)
+	// }
 
-	var errGetGitCourse error
-	if isCourseGitRepository {
-		errGetGitCourse = c.GetGitCourse(LogguedInUser.Id, *courseName, *courseGitRepository, *courseGitRepositoryBranchName)
-	}
+	// var errGetGitCourse error
+	// if isCourseGitRepository {
+	// 	errGetGitCourse = c.GetGitCourse(LogguedInUser.Id, *courseName, *courseGitRepository, *courseGitRepositoryBranchName)
+	// }
 
-	if errGetGitCourse != nil {
-		log.Fatal(errGetGitCourse)
-	}
+	// if errGetGitCourse != nil {
+	// 	log.Fatal(errGetGitCourse)
+	// }
 
-	jsonCourseFilePath := config.COURSES_ROOT + *courseName + "/course.json"
-	course := models.ReadJsonCourseFile(jsonCourseFilePath)
+	// jsonCourseFilePath := config.COURSES_ROOT + *courseName + "/course.json"
+	// course := models.ReadJsonCourseFile(jsonCourseFilePath)
 
-	course.OwnerIDs = append(course.OwnerIDs, LogguedInUser.Id)
-	course.FolderName = *courseName
-	course.GitRepository = *courseGitRepository
-	course.GitRepositoryBranch = *courseGitRepositoryBranchName
-	return *course
+	// course.OwnerIDs = append(course.OwnerIDs, LogguedInUser.Id)
+	// course.FolderName = *courseName
+	// course.GitRepository = *courseGitRepository
+	// course.GitRepositoryBranch = *courseGitRepositoryBranchName
+	// return *course
+	return models.Course{}
 }
 
 func CheckIfError(err error) bool {

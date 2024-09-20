@@ -3,6 +3,7 @@ package dto
 import "soli/formations/src/courses/models"
 
 type ChapterInput struct {
+	OwnerID      string
 	Title        string          `json:"title"`
 	Number       int             `json:"number"`
 	Footer       string          `json:"footer"`
@@ -54,6 +55,7 @@ func ChapterModelToChapterInput(chapterModel models.Chapter) *ChapterInput {
 	}
 
 	return &ChapterInput{
+		OwnerID:      chapterModel.OwnerIDs[0],
 		Title:        chapterModel.Title,
 		Number:       chapterModel.Number,
 		Footer:       chapterModel.Footer,

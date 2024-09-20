@@ -50,10 +50,15 @@ func pageValueModelToPageOutputDto(pageModel models.Page) (*dto.PageOutput, erro
 func (s PageRegistration) EntityInputDtoToEntityModel(input any) any {
 
 	pageInputDto := input.(*dto.PageInput)
-	return &models.Page{
+
+	pageToReturn := &models.Page{
 		Order:   pageInputDto.Order,
 		Content: pageInputDto.Content,
 	}
+
+	pageToReturn.OwnerIDs = append(pageToReturn.OwnerIDs, pageInputDto.OwnerID)
+
+	return pageToReturn
 }
 
 func (s PageRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {

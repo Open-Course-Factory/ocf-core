@@ -7,6 +7,8 @@ import (
 	config "soli/formations/src/configuration"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
+
+	"github.com/go-git/go-billy/v5"
 )
 
 type OCFMdWriter interface {
@@ -101,14 +103,16 @@ func (c Course) GetThemes() []string {
 	return themes
 }
 
-func FillCourseModelFromFiles(courseName string, course *Course) {
+func FillCourseModelFromFiles(courseFileSystem *billy.Filesystem, course *Course) {
 	for indexChapter, chapter := range course.Chapters {
 		chapter.Number = indexChapter + 1
+		chapter.OwnerIDs = append(chapter.OwnerIDs, course.OwnerIDs[0])
 		for indexSection, section := range chapter.Sections {
+			section.OwnerIDs = append(section.OwnerIDs, chapter.OwnerIDs[0])
 			section.Number = indexSection + 1
 			section.Chapter = append(section.Chapter, chapter)
 			section.ParentChapterTitle = chapter.getTitle()
-			fillSection(courseName, section)
+			fillSection(courseFileSystem, section)
 			chapter.Sections[indexSection] = section
 		}
 		course.Chapters[indexChapter] = chapter
