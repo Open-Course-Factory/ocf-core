@@ -51,9 +51,56 @@ func (scow *SlidevCourseWriter) SetCoverPage() string {
 func (scow *SlidevCourseWriter) SetIntro() string {
 	// ToDo : take data from user
 	author := "\n---\nlayout: twocols\nchapter: " + scow.Course.Title + "\nsrc: theme/authors/author_@@author@@.md\n---\n\n"
-	schedule := "\n---\nlayout: default\nchapter: " + scow.Course.Title + "\nsrc: theme/schedules/" + scow.Course.Schedule + "\n---\n\n"
+	schedule := scow.fillSchedule()
 	prelude := "\n---\nlayout: cover\nchapter: " + scow.Course.Title + "\nsrc: theme/preludes/" + scow.Course.Prelude + "\n---\n\n"
 	return author + schedule + prelude
+}
+
+func (scow *SlidevCourseWriter) fillSchedule() string {
+	// ---
+	// layout: schedule
+	// chapter: Golang, premiers pas
+	// morning:
+	//   - time: "9h00"
+	//     todo: "Début du cours"
+	//     description: "(Appel Pepal !)"
+	//   - time: "10h30"
+	//     todo: "Pause"
+	//     description: "(15 minutes)"
+	//   - time: "12h30"
+	//     todo: "Pause déjeuner"
+	//     description: "(1 heure)"
+	// afternoon:
+	//   - time: "15h15"
+	//     todo: "Pause"
+	//     description: "(15 minutes)"
+	//   - time: "17h00"
+	//     todo: "Fin du cours"
+	//     description: ""
+	// ---
+	schedule := "---\nlayout: schedule\n"
+	schedule = schedule + "chapter: " + scow.Course.Title + "\n"
+	schedule = schedule + `
+morning:
+  - time: "9h00"
+    todo: "Début du cours"
+    description: "(Appel Pepal !)"
+  - time: "10h30"
+    todo: "Pause"
+    description: "(15 minutes)"
+  - time: "12h30"
+    todo: "Pause déjeuner"
+    description: "(1 heure)"
+afternoon:
+  - time: "15h15"
+    todo: "Pause"
+    description: "(15 minutes)"
+  - time: "17h00"
+    todo: "Fin du cours"
+    description: ""
+`
+	schedule = schedule + "---"
+	return schedule
 }
 
 func (scow *SlidevCourseWriter) SetLearningObjectives() string {
