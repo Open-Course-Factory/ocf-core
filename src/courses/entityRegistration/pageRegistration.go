@@ -49,9 +49,10 @@ func pageValueModelToPageOutputDto(pageModel models.Page) (*dto.PageOutput, erro
 
 func (s PageRegistration) EntityInputDtoToEntityModel(input any) any {
 
-	pageInputDto := input.(*dto.PageInput)
+	pageInputDto := input.(dto.PageInput)
 
 	pageToReturn := &models.Page{
+
 		Order:   pageInputDto.Order,
 		Content: pageInputDto.Content,
 	}

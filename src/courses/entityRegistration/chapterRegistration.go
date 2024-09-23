@@ -48,7 +48,7 @@ func chapterValueModelToChapterOutputDto(chapterModel models.Chapter) (*dto.Chap
 func (s ChapterRegistration) EntityInputDtoToEntityModel(input any) any {
 
 	var sectionModels []*models.Section
-	chapterInputDto := input.(*dto.ChapterInput)
+	chapterInputDto := input.(dto.ChapterInput)
 
 	for _, sectionInput := range chapterInputDto.Sections {
 		sectionModel := SectionRegistration{}.EntityInputDtoToEntityModel(sectionInput)

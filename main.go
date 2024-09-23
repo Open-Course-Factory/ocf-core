@@ -35,6 +35,7 @@ import (
 	chapterController "soli/formations/src/courses/routes/chapterRoutes"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	pageController "soli/formations/src/courses/routes/pageRoutes"
+	scheduleController "soli/formations/src/courses/routes/scheduleRoutes"
 	sectionController "soli/formations/src/courses/routes/sectionRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
 	labRegistration "soli/formations/src/labs/entityRegistration"
@@ -105,6 +106,8 @@ func main() {
 		log.Default().Println(err3)
 	}
 
+	sqldb.DB.AutoMigrate(&courseModels.Schedule{})
+
 	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
 
 	sqldb.DB.AutoMigrate(&labModels.Username{})
@@ -119,6 +122,7 @@ func main() {
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.PageRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SectionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ChapterRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ScheduleRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.ConnectionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
@@ -142,6 +146,7 @@ func main() {
 
 	apiGroup := r.Group("/api/v1")
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	scheduleController.SchedulesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	pageController.PagesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sectionController.SectionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	chapterController.ChaptersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
