@@ -91,21 +91,21 @@ func (ac *authController) Login(ctx *gin.Context) {
 		user.Password,
 	)
 
-	resp, err := http.Post(url, "application/json", nil)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+	resp, errPostToCasdoor := http.Post(url, "application/json", nil)
+	if errPostToCasdoor != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
+			ErrorMessage: errPostToCasdoor.Error(),
 		})
 		return
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
+	body, errReadBody := io.ReadAll(resp.Body)
+	if errReadBody != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: errReadBody.Error(),
 		})
 		return
 	}
@@ -127,11 +127,11 @@ func (ac *authController) Login(ctx *gin.Context) {
 		TokenType    string `json:"token_type"`
 	}
 
-	err = json.Unmarshal(body, &response)
-	if err != nil {
+	errUnmarshall := json.Unmarshal(body, &response)
+	if errUnmarshall != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
+			ErrorMessage: errUnmarshall.Error(),
 		})
 		return
 	}
@@ -168,9 +168,17 @@ func getUserFromContext(ctx *gin.Context) (*casdoorsdk.User, bool) {
 	user, errUser := casdoorsdk.GetUserByEmail(loginInputDto.Email)
 
 	if errUser != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: errUser.Error(),
+		})
+		return nil, true
+	}
+
+	if user == nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: errUser.Error(),
+			ErrorMessage: "User not found",
 		})
 		return nil, true
 	}
