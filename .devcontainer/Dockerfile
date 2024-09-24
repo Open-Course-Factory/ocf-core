@@ -46,4 +46,4 @@ RUN go install -v golang.org/x/tools/gopls@latest
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 
-
+RUN touch .bash_history .env
