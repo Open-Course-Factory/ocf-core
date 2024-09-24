@@ -26,7 +26,9 @@ func (mcow *MarpCourseWriter) SetCoverPage() string {
 func (mcow *MarpCourseWriter) SetIntro() string {
 	// ToDo : take data from user
 	author := "\n---\n\n@include(./authors/author_tsa.md)\n"
-	schedule := "\n---\n\n@include(./schedules/" + mcow.Course.Schedule + ")\n"
+	// ToDo : take data from schedule db
+	//schedule := "\n---\n\n@include(./schedules/" + mcow.Course.Schedule + ")\n"
+	schedule := ""
 	prelude := "\n---\n\n@include(./preludes/" + mcow.Course.Prelude + ")\n"
 	return author + schedule + prelude
 }

@@ -25,7 +25,7 @@ import (
 )
 
 type CourseService interface {
-	GenerateCourse(generateCourseInputDto dto.GenerateCourseInput, cow models.CourseMdWriter) (*dto.GenerateCourseOutput, error)
+	GenerateCourse(generateCourseInputDto dto.GenerateCourseInput) (*dto.GenerateCourseOutput, error)
 	GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) (*models.Course, error)
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
 	GetCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) models.Course
@@ -41,7 +41,7 @@ func NewCourseService(db *gorm.DB) CourseService {
 	}
 }
 
-func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseInput, cow models.CourseMdWriter) (*dto.GenerateCourseOutput, error) {
+func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseInput) (*dto.GenerateCourseOutput, error) {
 
 	jsonConfigurationFilePath := "src/configuration/conf.json"
 	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
@@ -56,6 +56,16 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 	course := courseEntity.(*models.Course)
 	course.ThemeGitRepository = generateCourseInputDto.ThemeGitRepository
 	course.ThemeGitRepositoryBranch = generateCourseInputDto.ThemeGitRepositoryBranch
+
+	if generateCourseInputDto.ScheduleId != "" {
+		scheduleEntity, errGettingScheduleEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ScheduleId), models.Schedule{}, "Schedule")
+
+		if errGettingScheduleEntity != nil {
+			return nil, errGettingScheduleEntity
+		}
+
+		course.Schedule = scheduleEntity.(*models.Schedule)
+	}
 
 	course.InitTocs()
 

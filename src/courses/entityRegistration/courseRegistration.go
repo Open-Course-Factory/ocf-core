@@ -56,7 +56,6 @@ func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
 		Footer:                   courseInputDto.Footer,
 		Logo:                     courseInputDto.Logo,
 		Description:              courseInputDto.Description,
-		Schedule:                 courseInputDto.Schedule,
 		Prelude:                  courseInputDto.Prelude,
 		LearningObjectives:       courseInputDto.LearningObjectives,
 		Chapters:                 chapters,

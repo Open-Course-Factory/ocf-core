@@ -60,7 +60,6 @@ func (c courseRepository) CreateCourse(coursedto dto.CourseInput) (*models.Cours
 		Logo:               coursedto.Logo,
 		Description:        coursedto.Description,
 		Format:             config.Format(*coursedto.Format),
-		Schedule:           coursedto.Schedule,
 		Prelude:            coursedto.Prelude,
 		LearningObjectives: coursedto.LearningObjectives,
 		Chapters:           chapters,
