@@ -37,7 +37,7 @@ func courseValueModelToCourseOutputDto(courseModel models.Course) (*dto.CourseOu
 func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
 
 	var chapters []*models.Chapter
-	courseInputDto := input.(dto.CourseInput)
+	courseInputDto := input.(*dto.CourseInput)
 	for _, chapterInput := range courseInputDto.ChaptersInput {
 		chapterModel := ChapterRegistration{}.EntityInputDtoToEntityModel(chapterInput)
 		chapter := chapterModel.(*models.Chapter)

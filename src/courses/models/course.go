@@ -43,7 +43,7 @@ type Course struct {
 	Description              string
 	Format                   config.Format
 	CourseID_str             string
-	Schedule                 *Schedule `gorm:"-:all"`
+	Schedule                 *Schedule `gorm:"-:all" json:"-"`
 	Prelude                  string
 	Theme                    string
 	ThemeGitRepository       string

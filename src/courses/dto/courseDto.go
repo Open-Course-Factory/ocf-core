@@ -32,7 +32,6 @@ type CourseInput struct {
 	Footer                   string `binding:"required"`
 	Logo                     string
 	Description              string
-	ScheduleId               string          `binding:"required"`
 	Prelude                  string          `binding:"required"`
 	LearningObjectives       string          `json:"learning_objectives"`
 	ChaptersInput            []*ChapterInput `json:"chapters"`
@@ -134,7 +133,6 @@ func CourseModelToCourseInputDto(courseModel models.Course) *CourseInput {
 		Footer:                   courseModel.Footer,
 		Logo:                     courseModel.Logo,
 		Description:              courseModel.Description,
-		ScheduleId:               courseModel.Schedule.ID.String(),
 		Prelude:                  courseModel.Prelude,
 		LearningObjectives:       courseModel.LearningObjectives,
 		ChaptersInput:            chapterInputs,
