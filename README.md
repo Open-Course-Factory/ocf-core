@@ -2,21 +2,71 @@
 
 # OCF Core
 
-This is the core part of Open Course Factory. It is mainly an API which provides the ability to store courses and generate them in HTML or PDF.
+This is the core part of Open Course Factory. It is an API.
+
+## Features
+
+- Write courses and be able to reuse part of them at will
+- Templating system to adapt your courses to whoever you work with
+- Adding environments (VMs, Cloud, etc.) to the courses to be able to practice
 
 This product is developped within [Solution Libre](https://www.solution-libre.fr/).
 
 ⚠ Currently under development, many things can still change, expect bugs and problems.
 
+## How to start
+
+### Setup casdoor
+
+Casdoor has its own configuration file. It can be found in `/src/configuration/casdoor_app.conf`. Default value should work for test purpose, do not use as it is for production.  
+
+Casdoor can be initialized with a `init_data.json` file. [The documentation can be found here ](https://casdoor.org/docs/deployment/data-initialization/). Not provided (yet).
+
+You have to start Casdoor using the docker compose file provided.
+
+The default login/pwd for casdoor is admin/123.
+
+To make everything work, in casdoor you can use the default data created by casdoor, but we recommand to create specific entities for OCF :
+- A certificate
+  - Once generated, put the certificate in a file `src/auth/casdoor/token_jwt_key.pem`
+- An application
+  Non default parameters : 
+  - Signin session : true
+  - The certificate you created before
+  - Organization (the one below, can be set after creation)
+- A organization
+  - Default application (the one before, can be set after creation)
+
+Once it is done, you can retrieve the application secret and client id you need to put in the `.env` file
+
+### Generate documentation
+
+The API documentation id provided by Swagger. You have to generate it first : 
+
+```shell
+swag init --parseDependency --parseInternal
+```
+
+### Setup database
+
+Add a default user and password in pgadmin.
+Now you can use it to connect to postgres and setup the database.
+
+### Use docker compose to start all needed containers
+
+If you work with vscode and Dev Containers, it will create all the containers you need.
+
+Otherwise, you can start everything with the command:
+
+`docker compose up -d`
+
 ## API Documentation - WIP
 
-This part is under active develoment and is expected to be operationnal in a first version first trimester 2024, fully operational (SaaS version) for september 2024.
+This part is under active develoment, it is currently testable with help oh the core team, will be fully operational (first SaaS version) for january 2025.
 
 ### Database
 
-The expected database is PostgreSQL. To help the development, a fallback database based on SQLite should allow to make it work without a proper database setup.
-
-The fallback database is populated with test data.
+The database is PostgreSQL. 
 
 ### Authentication
 
@@ -27,8 +77,6 @@ Casdoor is responsible for authentication. Casdoor allows an user to log in and 
 The connection between OCF and Casdoor relies on a certificate / public / private key system.
 The certificate must be generated with Casdoor and then added to the project in a file `token_jwt_key.pem`.
 It will be automatically loaded by the project.
-
-
 
 ### Start the server
 
@@ -65,7 +113,11 @@ http://localhost:8080/swagger/index.html
 
 ### Permissions
 
-Permission system is something we currently work on with Casdoor. It is not finished yet. This is not ready for production.
+Permission system relies on Casbin which is provided by Casdoor.
+
+You can find the rules applied in the file `src/configuration/keymatch_model.conf`.
+
+[You can find the documentation here](https://casbin.org/docs/syntax-for-models/)
 
 ## Slidev - Setup
 
