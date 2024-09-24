@@ -7,7 +7,6 @@ import (
 
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
@@ -22,20 +21,8 @@ var DBFile string
 
 // InitDBConnection opens a connection to the database
 func InitDBConnection(envFile string) {
-	var err error
 
-	// load
-	err = godotenv.Load(envFile)
-
-	environment := os.Getenv("ENVIRONMENT")
-
-	switch environment {
-	case "test":
-		const TESTS_ROOT = "../"
-		DBFile = TESTS_ROOT + "db-file.db"
-	default:
-		DBFile = "db-file.db"
-	}
+	err := godotenv.Load(envFile)
 
 	DBType = os.Getenv("DATABASE")
 
@@ -44,22 +31,24 @@ func InitDBConnection(envFile string) {
 	}
 
 	if DBType == "postgres" {
-		connectionString := fmt.Sprintf("host=%s user=%s dbname=%s password=%s",
-			os.Getenv("POSTGRES_HOST"),
-			os.Getenv("POSTGRES_USER"),
-			os.Getenv("POSTGRES_DB"),
-			os.Getenv("POSTGRES_PASSWORD"))
+		db := os.Getenv("POSTGRES_DB")
 
-		DB, err = gorm.Open(postgres.Open(connectionString), &gorm.Config{
+		host := os.Getenv("POSTGRES_HOST")
+		user := os.Getenv("POSTGRES_USER")
+		passwd := os.Getenv("POSTGRES_PASSWORD")
+
+		connectionString := fmt.Sprintf(
+			"host=%s user=%s dbname=%s password=%s",
+			host, user, db, passwd,
+		)
+
+		DB, _ = gorm.Open(postgres.Open(connectionString), &gorm.Config{
 			NamingStrategy: schema.NamingStrategy{
 				SingularTable: false,
 			},
 		})
-	} else if DBType == "sqlite" {
-		DB, err = gorm.Open(sqlite.Open(DBFile))
-	}
-	if err != nil {
-		panic(err)
+	} else {
+		panic("Unsupported DB")
 	}
 
 }

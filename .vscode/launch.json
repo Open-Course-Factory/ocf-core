@@ -24,8 +24,7 @@
                 "-t",
                 "sdv",
                 "-e",
-                "html",
-                "--dry-run"
+                "html"
             ],
             "env": {}
         },
@@ -37,9 +36,9 @@
             "program": "main.go",
             "args": [
                 "-c",
-                "golang",
+                "git",
                 "--course-repo",
-                "git@usine.solution-libre.fr:open-course-factory/ocf-course-golang-beginner.git",
+                "git@usine.solution-libre.fr:open-course-factory/ocf-course-virtu-cloud-beginner.git",
                 "-t",
                 "sdv",
                 "--theme-repo",
@@ -47,7 +46,7 @@
                 "-e",
                 "html",
                 "--course-repo-branch",
-                "short-course"
+                "main"
             ],
             "env": {}
         }

@@ -5,11 +5,13 @@ import (
 )
 
 type SlidevPageWriter struct {
-	Page Page
+	Page    Page
+	Section Section
+	Chapter Chapter
 }
 
 func (spw *SlidevPageWriter) SetFrontMatter() string {
-	frontMatter := "---\nchapter: " + spw.Page.Section.Chapter.Title + "\n---\n\n"
+	frontMatter := "---\nchapter: " + spw.Chapter.Title + "\n---\n\n"
 
 	if spw.Page.Hide {
 		frontMatter += "<!-- _hide: true -->\n\n"
@@ -19,7 +21,7 @@ func (spw *SlidevPageWriter) SetFrontMatter() string {
 }
 
 func (spw *SlidevPageWriter) SetTitle() string {
-	title := "## " + strings.ToUpper(spw.Page.Section.Title) + "\n\n"
+	title := "## " + strings.ToUpper(spw.Section.Title) + "\n\n"
 	return title
 }
 

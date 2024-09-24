@@ -3,19 +3,18 @@ package repositories
 import (
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/dto"
+	registration "soli/formations/src/courses/entityRegistration"
 	"soli/formations/src/courses/models"
 
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
-	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
 type CourseRepository interface {
-	CreateCourse(coursedto dto.CreateCourseInput) (*models.Course, error)
-	GetAllCourses() (*[]models.Course, error)
-	DeleteCourse(id uuid.UUID) error
+	CreateCourse(coursedto dto.CourseInput) (*models.Course, error)
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
 }
 
@@ -30,7 +29,7 @@ func NewCourseRepository(db *gorm.DB) CourseRepository {
 	return repository
 }
 
-func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models.Course, error) {
+func (c courseRepository) CreateCourse(coursedto dto.CourseInput) (*models.Course, error) {
 
 	user, errUser := casdoorsdk.GetUserByEmail(coursedto.AuthorEmail)
 
@@ -38,11 +37,20 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 		return nil, errUser
 	}
 
+	var chapters []*models.Chapter
+	for _, chapterInput := range coursedto.ChaptersInput {
+		chapterModel := registration.ChapterRegistration{}.EntityInputDtoToEntityModel(chapterInput)
+		chapter := chapterModel.(*models.Chapter)
+		chapters = append(chapters, chapter)
+	}
+
 	//ToDo full course with dtoinput to model
 	course := models.Course{
+		BaseModel: entityManagementModels.BaseModel{
+			OwnerIDs: []string{user.Id},
+		},
 		Name:               coursedto.Name,
 		Theme:              coursedto.Theme,
-		OwnerID:            []string{user.Id},
 		Category:           coursedto.Category,
 		Version:            coursedto.Version,
 		Title:              coursedto.Title,
@@ -55,7 +63,7 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 		Schedule:           coursedto.Schedule,
 		Prelude:            coursedto.Prelude,
 		LearningObjectives: coursedto.LearningObjectives,
-		Chapters:           coursedto.Chapters,
+		Chapters:           chapters,
 	}
 
 	result := c.db.Create(&course)
@@ -65,28 +73,12 @@ func (c courseRepository) CreateCourse(coursedto dto.CreateCourseInput) (*models
 	return &course, nil
 }
 
-func (c courseRepository) GetAllCourses() (*[]models.Course, error) {
-	var course []models.Course
-	result := c.db.Model(&models.Course{}).Find(&course)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	return &course, nil
-}
-
-func (c courseRepository) DeleteCourse(id uuid.UUID) error {
-	result := c.db.Delete(&models.Course{BaseModel: entityManagementModels.BaseModel{ID: id}})
-	if result.Error != nil {
-		return result.Error
-	}
-	return nil
-}
-
 func (c courseRepository) GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error) {
 	var course *models.Course
-	err := c.db.First(&course, "owner_id IN (?) AND name=?", owner.Id, courseName).Error
+	err := c.db.First(&course, "owner_ids && ? AND name = ?", pq.StringArray{owner.Id}, courseName)
+
 	if err != nil {
-		return nil, err
+		return nil, err.Error
 	}
 	return course, nil
 }

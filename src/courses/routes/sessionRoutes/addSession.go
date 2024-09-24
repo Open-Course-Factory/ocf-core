@@ -1,8 +1,8 @@
 package sessionController
 
 import (
+	"soli/formations/src/auth/errors"
 	"soli/formations/src/courses/dto"
-	"soli/formations/src/courses/errors"
 
 	"github.com/gin-gonic/gin"
 )

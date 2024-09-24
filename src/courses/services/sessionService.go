@@ -2,6 +2,7 @@ package services
 
 import (
 	"soli/formations/src/courses/dto"
+	registration "soli/formations/src/courses/entityRegistration"
 	"soli/formations/src/courses/models"
 	repositories "soli/formations/src/courses/repositories"
 
@@ -75,8 +76,12 @@ func (s *sessionService) GetSessions() ([]dto.CreateSessionOutput, error) {
 	var sessionDto []dto.CreateSessionOutput
 
 	for _, s := range *sessionModel {
-		sessionEntity := dto.SessionEntity{}
-		sessionDto = append(sessionDto, sessionEntity.EntityModelToEntityOutput(s).(dto.CreateSessionOutput))
+		sessionEntity := registration.SessionRegistration{}
+		dtoToAppend, err := sessionEntity.EntityModelToEntityOutput(s)
+		if err != nil {
+			return nil, err
+		}
+		sessionDto = append(sessionDto, dtoToAppend.(dto.CreateSessionOutput))
 	}
 
 	return sessionDto, nil

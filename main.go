@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
+	"github.com/joho/godotenv"
 	cors "github.com/rs/cors/wrapper/gin"
 
 	swaggerFiles "github.com/swaggo/files"
@@ -24,18 +24,29 @@ import (
 
 	authController "soli/formations/src/auth"
 	"soli/formations/src/auth/casdoor"
-	authDtos "soli/formations/src/auth/dto"
+	authRegistration "soli/formations/src/auth/entityRegistration"
 	authModels "soli/formations/src/auth/models"
 	accessController "soli/formations/src/auth/routes/accessesRoutes"
 	groupController "soli/formations/src/auth/routes/groupsRoutes"
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
-	courseDtos "soli/formations/src/courses/dto"
+	courseRegistration "soli/formations/src/courses/entityRegistration"
 	courseModels "soli/formations/src/courses/models"
+	chapterController "soli/formations/src/courses/routes/chapterRoutes"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
+	pageController "soli/formations/src/courses/routes/pageRoutes"
+	sectionController "soli/formations/src/courses/routes/sectionRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
+	labRegistration "soli/formations/src/labs/entityRegistration"
+	labModels "soli/formations/src/labs/models"
+	connectionController "soli/formations/src/labs/routes/connectionRoutes"
+	machineController "soli/formations/src/labs/routes/machineRoutes"
+	usernameController "soli/formations/src/labs/routes/usernameRoutes"
+	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
 
+	courseDto "soli/formations/src/courses/dto"
 	courseService "soli/formations/src/courses/services"
+	genericService "soli/formations/src/entityManagement/services"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
@@ -54,34 +65,24 @@ import (
 //	@name						Authorization
 //	@description				Type "Bearer" followed by a space and JWT token.
 
-//	@contact.name	Solution Libre
-//	@contact.url	https://www.solution-libre.fr
-//	@contact.email	contact@solution-libre.fr
-//	@host			localhost:8080
-//	@BasePath		/api/v1
+// @contact.name	Solution Libre
+// @contact.url	https://www.solution-libre.fr
+// @contact.email	contact@solution-libre.fr
+// @host			localhost:8080
+// @BasePath		/api/v1
 func main() {
 
-	// ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Course{}).Name(), courseModels.Course{})
-	// ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(courseModels.Course{}).Name(), courseDtos.CourseModelToCourseOutputDto)
-	// var coursesDtos []interface{}
-	// coursesDtos = append(coursesDtos, courseDtos.CreateCourseInput{}, courseDtos.CreateCourseOutput{})
-	// ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(courseModels.Course{}).Name(), coursesDtos)
+	envFile := ".env"
 
-	// ems.GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(courseModels.Session{}).Name(), courseModels.Session{})
-	// ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(courseModels.Session{}).Name(), courseDtos.SessionModelToSessionOutputDto, courseDtos.SessionInputDtoToSessionModel)
+	err := godotenv.Load(envFile)
 
-	// sessionsDtos := make(map[ems.DtoWay]interface{})
-	// sessionsDtos[ems.InputDto] = courseDtos.CreateSessionInput{}
-	// sessionsDtos[ems.OutputDto] = courseDtos.CreateSessionOutput{}
+	if err != nil {
+		log.Default().Println(err)
+	}
 
-	// ems.GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(courseModels.Session{}).Name(), sessionsDtos)
+	casdoor.InitCasdoorConnection(envFile)
 
-	ems.GlobalEntityRegistrationService.RegisterEntity(authDtos.SshkeyEntity{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseDtos.SessionEntity{})
-
-	casdoor.InitCasdoorConnection(".env")
-
-	sqldb.InitDBConnection(".env")
+	sqldb.InitDBConnection(envFile)
 
 	sqldb.DB.AutoMigrate()
 
@@ -93,7 +94,21 @@ func main() {
 
 	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
 
+	sqldb.DB.AutoMigrate(&labModels.Username{})
+	sqldb.DB.AutoMigrate(&labModels.Machine{})
+	sqldb.DB.AutoMigrate(&labModels.Connection{})
+
 	casdoor.InitCasdoorEnforcer(sqldb.DB, "")
+
+	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SessionRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.CourseRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.PageRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SectionRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ChapterRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.ConnectionRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
 
 	initDB()
 
@@ -114,12 +129,19 @@ func main() {
 
 	apiGroup := r.Group("/api/v1")
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	pageController.PagesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	sectionController.SectionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	chapterController.ChaptersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sessionController.SessionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sshKeyController.SshKeysRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	groupController.GroupRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	accessController.AccessRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	sshClientController.SshClientRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	machineController.MachinesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	usernameController.UsernamesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	connectionController.ConnectionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 
@@ -137,28 +159,21 @@ func initSwagger(r *gin.Engine) {
 
 func initDB() {
 
-	if sqldb.DBType == "sqlite" {
+	env := os.Getenv("ENVIRONMENT")
+	if env == "development" || env == "test" {
 		sqldb.DB = sqldb.DB.Debug()
 
 		setupExternalUsersData()
 
-		c := courseService.NewCourseService(sqldb.DB)
-		courseOutputArray, _ := c.GetCourses()
-		for _, courseOutput := range courseOutputArray {
-			c.DeleteCourse(uuid.MustParse(courseOutput.CourseID_str))
-		}
 	}
 }
 
 func setupExternalUsersData() {
-	testtools.DeleteAllObjects()
-	testtools.SetupUsers()
-	testtools.SetupGroups()
-	testtools.SetupRoles()
-
-	permissionsByRole, _ := casdoorsdk.GetPermissionsByRole("student")
-	for _, permission := range permissionsByRole {
-		fmt.Println(permission.Name)
+	users, _ := casdoorsdk.GetUsers()
+	if len(users) == 0 {
+		testtools.SetupUsers()
+		testtools.SetupGroups()
+		testtools.SetupRoles()
 	}
 }
 
@@ -185,6 +200,8 @@ func parseFlags() bool {
 	slideEngine := flag.String(SLIDE_ENGINE_FLAG, "slidev", "slide generator used, marp or slidev (default)")
 	flag.Parse()
 
+	fmt.Println(courseType)
+
 	// check mandatory flags
 	if !isFlagPassed(COURSE_FLAG) || !isFlagPassed(THEME_FLAG) || !isFlagPassed(TYPE_FLAG) {
 		return false
@@ -199,28 +216,21 @@ func parseFlags() bool {
 		generator.SLIDE_ENGINE = slidev.SlidevCourseGenerator{}
 	}
 
-	jsonConfigurationFilePath := "./src/configuration/conf.json"
-	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
-
-	course := getCourseFromProgramInputs(courseName, courseGitRepository, courseBranchGitRepository)
+	courseService := courseService.NewCourseService(sqldb.DB)
+	course := courseService.GetCourseFromProgramInputs(courseName, courseGitRepository, courseBranchGitRepository)
 
 	setCourseThemeFromProgramInputs(&course, courseThemeName, courseThemeGitRepository, courseThemeBranchGitRepository)
 
 	courseModels.FillCourseModelFromFiles(*courseName, &course)
 
-	createdFile, err := course.WriteMd(&configuration)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Markdown file created: " + createdFile)
+	genericService := genericService.NewGenericService(sqldb.DB)
 
-	errc := generator.SLIDE_ENGINE.CompileResources(&course)
-	if errc != nil {
-		log.Fatal(errc)
-	}
+	courseInputDto := courseDto.CourseModelToCourseInputDto(course)
+	_, errorSaving := genericService.CreateEntity(courseInputDto, "Course")
 
-	if !*config.DRY_RUN {
-		generator.SLIDE_ENGINE.Run(&configuration, &course, courseType)
+	if errorSaving != nil {
+		fmt.Println(errorSaving.Error())
+		return true
 	}
 
 	return true
@@ -230,36 +240,6 @@ func setCourseThemeFromProgramInputs(course *courseModels.Course, themeName *str
 	course.Theme = *themeName
 	course.ThemeGitRepository = *themeGitRepository
 	course.ThemeGitRepositoryBranch = *themeGitRepositoryBranch
-}
-
-func getCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) courseModels.Course {
-	isCourseGitRepository := (*courseGitRepository != "")
-
-	// ToDo: Get loggued in User
-	LogguedInUser, userErr := casdoorsdk.GetUserByEmail("1.supervisor@test.com")
-
-	if userErr != nil {
-		log.Fatal(userErr)
-	}
-
-	var errGetGitCourse error
-	if isCourseGitRepository {
-		c := courseService.NewCourseService(sqldb.DB)
-		errGetGitCourse = c.GetGitCourse(LogguedInUser.Id, *courseName, *courseGitRepository, *courseGitRepositoryBranchName)
-	}
-
-	if errGetGitCourse != nil {
-		log.Fatal(errGetGitCourse)
-	}
-
-	jsonCourseFilePath := config.COURSES_ROOT + *courseName + "/course.json"
-	course := courseModels.ReadJsonCourseFile(jsonCourseFilePath)
-
-	course.OwnerID = append(course.OwnerID, LogguedInUser.Id)
-	course.FolderName = *courseName
-	course.GitRepository = *courseGitRepository
-	course.GitRepositoryBranch = *courseGitRepositoryBranchName
-	return *course
 }
 
 func isFlagPassed(name string) bool {

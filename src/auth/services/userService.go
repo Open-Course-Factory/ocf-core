@@ -2,10 +2,21 @@ package services
 
 import (
 	"fmt"
+	"reflect"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/dto"
 
+	labsDto "soli/formations/src/labs/dto"
+	labsModels "soli/formations/src/labs/models"
+
+	sqldb "soli/formations/src/db"
+	"strings"
+
+	"soli/formations/src/entityManagement/services"
+
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+
+	"github.com/docker/docker/pkg/namesgenerator"
 )
 
 type UserService interface {
@@ -23,6 +34,27 @@ func NewUserService() UserService {
 }
 
 func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutput, error) {
+begin:
+	genericService := services.NewGenericService(
+		sqldb.DB,
+	)
+
+	generatedUsername := namesgenerator.GetRandomName(1)
+
+	usernameInput := labsDto.UsernameInput{
+		Username: generatedUsername,
+	}
+
+	userNameEntity, createError := genericService.CreateEntity(usernameInput, reflect.TypeOf(labsModels.Username{}).Name())
+	if createError != nil {
+		if strings.Contains(createError.Error(), "UNIQUE") {
+			goto begin
+		}
+		return nil, createError
+	}
+
+	properties := make(map[string]string)
+	properties["username"] = generatedUsername
 	user1 := casdoorsdk.User{
 		Name:              userCreateDTO.UserName,
 		DisplayName:       userCreateDTO.DisplayName,
@@ -31,6 +63,7 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 		LastName:          userCreateDTO.LastName,
 		FirstName:         userCreateDTO.FirstName,
 		SignupApplication: "ocf",
+		Properties:        properties,
 	}
 
 	user1.CreatedTime = casdoorsdk.GetCurrentTime()
@@ -44,6 +77,12 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 	if errGet != nil {
 		fmt.Println(errGet.Error())
 		return nil, errGet
+	}
+
+	// Once the user is really created we can set the username ownerId !
+	_, errsavingUsername := genericService.AddOwnerIDs(userNameEntity, createdUser.Id)
+	if errsavingUsername != nil {
+		return nil, errsavingUsername
 	}
 
 	_, errStudent := casdoor.Enforcer.AddGroupingPolicy(createdUser.Id, userCreateDTO.DefaultRole)
