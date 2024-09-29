@@ -56,6 +56,7 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 	course := courseEntity.(*models.Course)
 	course.ThemeGitRepository = generateCourseInputDto.ThemeGitRepository
 	course.ThemeGitRepositoryBranch = generateCourseInputDto.ThemeGitRepositoryBranch
+	course.Theme = generateCourseInputDto.ThemeId
 
 	if generateCourseInputDto.ScheduleId != "" {
 		scheduleEntity, errGettingScheduleEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ScheduleId), models.Schedule{}, "Schedule")
