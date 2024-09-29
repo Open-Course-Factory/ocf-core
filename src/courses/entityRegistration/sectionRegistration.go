@@ -42,7 +42,14 @@ func sectionValueModelToSectionOutputDto(sectionModel models.Section) (*dto.Sect
 func (s SectionRegistration) EntityInputDtoToEntityModel(input any) any {
 
 	var pageModels []*models.Page
-	sectionInputDto := input.(*dto.SectionInput)
+
+	sectionInputDto, ok := input.(dto.SectionInput)
+
+	if !ok {
+		ptrSectionInputDto := input.(*dto.SectionInput)
+		sectionInputDto = *ptrSectionInputDto
+	}
+
 	for _, pageInput := range sectionInputDto.Pages {
 		pageModel := PageRegistration{}.EntityInputDtoToEntityModel(pageInput)
 		res := pageModel.(*models.Page)
