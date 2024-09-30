@@ -111,7 +111,7 @@ func FillCourseModelFromFiles(courseFileSystem *billy.Filesystem, course *Course
 			section.OwnerIDs = append(section.OwnerIDs, chapter.OwnerIDs[0])
 			section.Number = indexSection + 1
 			section.Chapter = append(section.Chapter, chapter)
-			section.ParentChapterTitle = chapter.getTitle()
+			section.ParentChapterTitle = chapter.getTitle(true)
 			fillSection(courseFileSystem, section)
 			chapter.Sections[indexSection] = section
 		}
