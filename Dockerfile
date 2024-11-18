@@ -1,5 +1,5 @@
 # Base Golang Image
-FROM golang:latest as builder
+FROM golang:latest AS builder
 
 # Setup working directory
 WORKDIR /usr/src/ocf-core
@@ -48,6 +48,7 @@ USER ocf
 WORKDIR /home/ocf
 
 COPY --from=builder /usr/src/ocf-core/ocf ocf
+COPY --from=builder /usr/src/ocf-core/src/configuration/keymatch_model.conf src/configuration/keymatch_model.conf
 
 # Export ports
 EXPOSE 8000/tcp
