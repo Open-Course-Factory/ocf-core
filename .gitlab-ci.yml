@@ -1,0 +1,6 @@
+default:
+  tags:
+    - ocf-core
+
+include:
+  - component: $CI_SERVER_FQDN/to-be-continuous/docker/gitlab-ci-docker@6.0.0
