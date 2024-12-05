@@ -4,6 +4,7 @@ default:
 
 variables:
   DOCKER_HADOLINT_DISABLED: true
+  DOCKER_BUILD_TOOL: "dind"
 
 include:
   - component: $CI_SERVER_FQDN/to-be-continuous/docker/gitlab-ci-docker@6.0.0
