@@ -6,5 +6,9 @@ variables:
   DOCKER_HADOLINT_DISABLED: true
   DOCKER_BUILD_TOOL: "dind"
 
+docker-dind-build:
+  before_script:
+    - touch ./src/auth/casdoor/token_jwt_key.pem
+
 include:
   - component: $CI_SERVER_FQDN/to-be-continuous/docker/gitlab-ci-docker@6.0.0
