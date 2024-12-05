@@ -2,15 +2,9 @@ default:
   tags:
     - ocf-core
 
-variables:
-  DOCKER_HADOLINT_DISABLED: true
-  DOCKER_BUILD_TOOL: "dind"
-  DOCKER_HOST: tcp://docker:2375
-  DOCKER_TLS_CERTDIR: ""
-
-docker-dind-build:
+build:
   before_script:
     - touch ./src/auth/casdoor/token_jwt_key.pem
 
 include:
-  - component: $CI_SERVER_FQDN/to-be-continuous/docker/gitlab-ci-docker@6.0.0
+  - template: Jobs/Build.gitlab-ci.yml
