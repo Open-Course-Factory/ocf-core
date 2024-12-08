@@ -25,7 +25,7 @@ func (us *groupService) AddGroup(groupCreateDTO dto.CreateGroupInput) (*dto.Crea
 	group1 := casdoorsdk.Group{
 		Name:        groupCreateDTO.Name,
 		DisplayName: groupCreateDTO.DisplayName,
-		Owner:       "sdv",
+		Owner:       groupCreateDTO.Organization,
 		ParentId:    groupCreateDTO.ParentGroup,
 	}
 
