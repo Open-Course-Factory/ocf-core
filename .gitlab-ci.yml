@@ -1,0 +1,10 @@
+default:
+  tags:
+    - ocf-core
+
+build:
+  before_script:
+    - touch ./src/auth/casdoor/token_jwt_key.pem
+
+include:
+  - template: Jobs/Build.gitlab-ci.yml
