@@ -1,0 +1,16 @@
+root@Deb:/home/tmlmanu/ocf-core# git branch -a
+* develop
+  main
+  remotes/origin/23-improve-permission-system
+  remotes/origin/29-add-interface-to-course-generation-to-add-slidev-compatibilty
+  remotes/origin/3-vm-creation-api
+  remotes/origin/6-use-model-adapter-enforcer-from-casbin
+  remotes/origin/HEAD -> origin/main
+  remotes/origin/develop
+  remotes/origin/improve-casdoor-integration
+  remotes/origin/main
+  remotes/origin/staging
+
+root@Deb:/home/tmlmanu/ocf-core# git tag
+before_casdoor
+v0.0.0

@@ -1,0 +1,26 @@
+Pour la partie 5 
+
+Afin de travailler à plusieurs, on clone le projet sur nos machines.
+On fait plusieurs branch afin de push et d'ajouter les dernière modifications validé sur la branch main
+on peut faire une branch prod / une branch test / ou meme develop
+
+mettre toujours des message de commit afin de savoir ce qu'a été fait (les modifications)
+on met des message afin de savoir ce qui a été fait 
+
+
+
+Donc 
+Gestion des branches 
+Création des Merge Request (fusion)
+Création des issues (explication des Bug)
+Création et automatsation des Pipeline CI/CD (Fichier .yaml)
+
+
+
+pour des révision de codes et les stratégies de fusion de code à adopter sont :
+
+Pour de la révision de code il faut utilser des outils styles GITHUB ou GITLAB 
+qui permmette de travailler de manière collaborative sur un projet. L'outil que l'on va utiliser prendra en charge WorkFlows
+
+pour la fusion de code il faut d'abord utilser une branch qui sert à du test puis une fois que les modifications apportés sont approuver on le fusion avec une autre branche MR 
+
