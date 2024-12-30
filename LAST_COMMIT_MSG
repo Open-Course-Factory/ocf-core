@@ -1,0 +1,13 @@
+commande dans le QUESTION_1
+
+Merge branch '6-use-model-adapter-enforcer-from-casbin' into 'main'
+
+Resolve "use model adapter / enforcer from casbin"
+
+Closes #6
+
+See merge request open-course-factory/ocf-core!1
+added group and user access management + swag fmt
+
+# J'ai fait un commit, c'est pour cela que je vous rajoute 2 commit avant le mien, veuillez m'excuser.
+
