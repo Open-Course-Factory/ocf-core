@@ -173,8 +173,16 @@ func initDB() {
 }
 
 func setupExternalUsersData() {
+	//testtools.DeleteAllObjects()
 	users, _ := casdoorsdk.GetUsers()
-	if len(users) == 0 {
+	var notDeletedUser []*casdoorsdk.User
+	for _, user := range users {
+		if !user.IsDeleted {
+			notDeletedUser = append(notDeletedUser, user)
+		}
+	}
+	if len(notDeletedUser) == 0 {
+
 		testtools.SetupUsers()
 		testtools.SetupGroups()
 		testtools.SetupRoles()

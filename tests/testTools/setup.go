@@ -74,7 +74,8 @@ func SetupCasdoor() {
 }
 
 func SetupGroups() {
-	groups = append(groups, casdoorsdk.Group{ParentId: "soli", Name: "classes", DisplayName: "Toutes les classes"})
+	orgName := "sdv"
+	groups = append(groups, casdoorsdk.Group{ParentId: orgName, Name: "classes", DisplayName: "Toutes les classes"})
 	groups = append(groups, casdoorsdk.Group{ParentId: "classes", Name: "do_m1", DisplayName: "Dev Ops M1"})
 	groups = append(groups, casdoorsdk.Group{ParentId: "classes", Name: "do_m2", DisplayName: "Dev Ops M2"})
 	groups = append(groups, casdoorsdk.Group{ParentId: "do_m1", Name: "do_m1-classeA", DisplayName: "Groupe A"})
@@ -92,7 +93,7 @@ func SetupGroups() {
 }
 
 func SetupRoles() {
-	orgName := "soli"
+	orgName := "sdv"
 	roleStudent := casdoorsdk.Role{Owner: orgName, Name: "student", DisplayName: "Etudiants", IsEnabled: true,
 		Users: []string{orgName + "/1_st", orgName + "/2_st", orgName + "/3_st", orgName + "/4_st"}}
 	roles = append(roles, roleStudent)
