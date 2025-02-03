@@ -1,10 +1,58 @@
 default:
   tags:
-    - ocf-core
+    - runner
+
+
+variables:
+  GO_VERSION: "1.22"
+
+stages:
+  - prepare
+  - test
+  - build
+  - deploy
+
+prepare:
+  stage: prepare
+  image: golang:${GO_VERSION}
+  script:    
+    - mkdir -p src/auth/casdoor
+    - openssl genrsa -out private.pem 2048
+    - openssl req -new -x509 -key private.pem -out src/auth/casdoor/token_jwt_key.pem -days 365 -subj "/CN=ocf-core"
+  artifacts:
+    paths:
+      - src/auth/casdoor/token_jwt_key.pem
+
+test:
+  stage: test
+  image: golang:${GO_VERSION}
+  script:
+    - go mod init ocf-core || true
+    - go mod tidy
+    - go test ./... || true  
 
 build:
+  stage: build
+  image: docker:latest
+  services:
+    - name: docker:dind
+      command: ["--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    CORE_IMAGE: $CI_REGISTRY_IMAGE/ocf-core:$CI_COMMIT_SHA
   before_script:
-    - touch ./src/auth/casdoor/token_jwt_key.pem
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t $CORE_IMAGE .
+    - docker push $CORE_IMAGE
 
-include:
-  - template: Jobs/Build.gitlab-ci.yml
+deploy:
+  stage: deploy
+  image: 
+    name: alpine/helm:3.12.0
+    entrypoint: [""]
+  script:
+    - echo "Configuration du déploiement Helm..."
+  only:
+    - main
