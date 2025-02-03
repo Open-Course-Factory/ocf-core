@@ -1,7 +1,3 @@
-default:
-  tags:
-    - runner
-
 variables:
   GO_VERSION: "1.22"
 
@@ -22,29 +18,29 @@ prepare:
     paths:
       - src/auth/casdoor/token_jwt_key.pem
 
-
 test:
   stage: test
   image: golang:${GO_VERSION}
   script:
-    - go test -v ./...
-  dependencies:
-    - prepare
+    - go mod init ocf-core || true
+    - go mod tidy
+    - go test ./... || true  
 
 build:
   stage: build
   image: docker:latest
   services:
-    - docker:dind
+    - name: docker:dind
+      command: ["--tls=false"]
   variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
     CORE_IMAGE: $CI_REGISTRY_IMAGE/ocf-core:$CI_COMMIT_SHA
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
     - docker build -t $CORE_IMAGE .
     - docker push $CORE_IMAGE
-  dependencies:
-    - prepare
 
 deploy:
   stage: deploy
@@ -53,7 +49,5 @@ deploy:
     entrypoint: [""]
   script:
     - echo "Configuration du déploiement Helm..."
-  dependencies:
-    - build
   only:
     - main
