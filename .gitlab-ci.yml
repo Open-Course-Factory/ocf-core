@@ -1,6 +1,6 @@
 default:
   tags:
-    - mon_runner
+    - runner
 
 variables:
   GO_VERSION: "1.22"
