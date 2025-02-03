@@ -1,3 +1,8 @@
+default:
+  tags:
+    - runner
+
+
 variables:
   GO_VERSION: "1.22"
 
