@@ -1,0 +1,36 @@
+{
+  "organizations": [
+    {
+      "owner": "admin",
+      "name": "sdv",
+      "displayName": "SDV Organization",
+      "passwordType": "plain",
+      "passwordOptions": ["AtLeast6"],
+      "defaultApplication": "ocf"
+    }
+  ],
+  "applications": [
+    {
+      "owner": "admin",
+      "name": "ocf",
+      "displayName": "OCF Application",
+      "organization": "sdv",
+      "enablePassword": true,
+      "enableSignUp": true,
+      "enableSigninSession": true,
+      "clientId": "${CASDOOR_CLIENT_ID}",
+      "clientSecret": "${CASDOOR_CLIENT_SECRET}"
+    }
+  ],
+  "users": [
+    {
+      "owner": "admin",
+      "name": "admin",
+      "displayName": "SuperAdmin User",
+      "password": "${ADMIN_PASSWORD}",
+      "email": "admin@example.com",
+      "phone": "",
+      "organization": "sdv"
+    }
+  ]
+}
