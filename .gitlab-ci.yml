@@ -19,9 +19,14 @@ prepare:
     - mkdir -p src/auth/casdoor
     - openssl genrsa -out private.pem 2048
     - openssl req -new -x509 -key private.pem -out src/auth/casdoor/token_jwt_key.pem -days 365 -subj "/CN=ocf-core"
+  
+    - apt-get update && apt-get install -y gettext-base
+    - envsubst < init_data.json > init_data.generated.json
+    - mv init_data.generated.json init_data.json
   artifacts:
     paths:
       - src/auth/casdoor/token_jwt_key.pem
+      - init_data.json
 
 test:
   stage: test
