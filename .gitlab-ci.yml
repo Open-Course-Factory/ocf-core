@@ -3,6 +3,7 @@ variables:
 stages:
   #- build
   - test
+  - deploy
 
 #include:
   #- template: Jobs/Build.gitlab-ci.yml
@@ -22,6 +23,30 @@ test-k8s:
     - kubectl config use-context $KUBE_CONTEXT:k3d-connection
     - kubectl get pods
     - kubectl get nodes
+
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "test-mame"'
+
+# Déploiement des services Kubernetes
+deploy-k8s:
+  stage: deploy
+  image:
+    name: bitnami/kubectl:latest
+    entrypoint: ['']
+  script:
+    # Configurer l'accès au cluster Kubernetes
+    - kubectl config use-context $KUBE_CONTEXT:k3d-connection
+    # Vérifier la connexion à Kubernetes
+    - kubectl get nodes
+    - kubectl get pods
+    # Ajouter Helm et mettre à jour les dépendances si nécessaire
+    - curl https://get.helm.sh/helm-v3.9.0-linux-amd64.tar.gz -o helm.tar.gz
+    - tar -zxvf helm.tar.gz
+    - mv linux-amd64/helm /usr/local/bin/helm
+    # Déployer l'application via Helm
+    - helm upgrade --install $HELM_RELEASE_NAME ./chart --namespace $HELM_NAMESPACE --values ./chart/values.yaml
+    # Vérifier que les pods sont déployés
+    - kubectl get pods --namespace $HELM_NAMESPACE
 
   rules:
     - if: '$CI_COMMIT_REF_NAME == "test-mame"'
