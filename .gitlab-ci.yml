@@ -17,7 +17,7 @@ test-k8s:
     name: bitnami/kubectl:latest
     entrypoint: ['']
   script:
-    - kubectl config use-context k3d-connection
+    - kubectl config use-context  k3d-mycluster
     - kubectl get pods
 
   rules:
