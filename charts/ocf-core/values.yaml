@@ -5,3 +5,12 @@ service:
 image:
   repository: registry.gitlab.com/ci-cd-chihi-mecheri-michel-gueye/ocf-core
   tag: latest
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: ocf.local
+      paths:
+        - path: /
+          pathType: Prefix
