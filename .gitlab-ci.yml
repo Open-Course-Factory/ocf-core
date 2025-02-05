@@ -1,12 +1,12 @@
-#default:
-  #tags:
-   # - ocf-core
+stages:
+  - build
 
 build:
   before_script:
     - touch ./src/auth/casdoor/token_jwt_key.pem
 
-include:
-  - template: Jobs/Build.gitlab-ci.yml
-only:
+  include:
+    - template: Jobs/Build.gitlab-ci.yml
+
+  only:
     - test-mame
