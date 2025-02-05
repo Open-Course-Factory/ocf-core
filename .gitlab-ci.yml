@@ -48,7 +48,7 @@ deploy-k8s:
     - helm version
     - kubectl config use-context $KUBE_CONTEXT:k3d-connection
     - kubectl get pods
-    - helm upgrade --install "$HELM_RELEASE_NAME" ./charts --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml
+    - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml
 
   rules:
     - if: '$CI_COMMIT_REF_NAME == "test-mame"'
