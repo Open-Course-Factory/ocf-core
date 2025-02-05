@@ -19,7 +19,7 @@
         #ports:
         #- containerPort: {{ .Values.service.port }}"
 
-
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,20 +36,28 @@ spec:
     spec:
       imagePullSecrets:
         - name: gitlab-registry 
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox
+          command: ['sh', '-c', "until nc -z postgres 5432; do sleep 2; done"]
       containers:
         - name: ocf-core
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          imagePullPolicy: "{{ .Values.image.pullPolicy }}"
           ports:
             - containerPort: {{ .Values.service.port }}
           volumeMounts:
-            - name: env-volume
+            - name: env-file
               mountPath: /home/ocf/.env
               subPath: .env
+          env:
+            - name: DATABASE_URL
+              value: "postgres://{{ .Values.postgres.env.POSTGRES_USER }}:{{ .Values.postgres.env.POSTGRES_PASSWORD }}@postgres:5432/{{ .Values.postgres.env.POSTGRES_DB }}"
       volumes:
-        - name: env-volume
+        - name: env-file
           configMap:
             name: ocf-core-config
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -68,22 +76,31 @@ spec:
       containers:
         - name: postgres
           image: "{{ .Values.postgres.image }}"
-          ports:
-            - containerPort: {{ .Values.postgres.port }}
           env:
-            - name: POSTGRES_USER
-              value: "{{ .Values.postgres.env.POSTGRES_USER }}"
             - name: POSTGRES_PASSWORD
               value: "{{ .Values.postgres.env.POSTGRES_PASSWORD }}"
+            - name: POSTGRES_USER
+              value: "{{ .Values.postgres.env.POSTGRES_USER }}"
             - name: POSTGRES_DB
               value: "{{ .Values.postgres.env.POSTGRES_DB }}"
+          ports:
+            - containerPort: {{ .Values.postgres.port }}
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command:
+                - "pg_isready"
+                - "-U"
+                - "{{ .Values.postgres.env.POSTGRES_USER }}"
+            initialDelaySeconds: 5
+            periodSeconds: 5
       volumes:
         - name: postgres-storage
           persistentVolumeClaim:
             claimName: postgres-pvc
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -99,6 +116,10 @@ spec:
       labels:
         app: casdoor
     spec:
+      initContainers:
+        - name: wait-for-casdoor-db
+          image: busybox
+          command: ['sh', '-c', "until nc -z casdoor-db 3306; do sleep 2; done"]
       containers:
         - name: casdoor
           image: "{{ .Values.casdoor.image }}"
@@ -112,3 +133,40 @@ spec:
         - name: casdoor-config
           configMap:
             name: casdoor-config
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: casdoor-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: casdoor-db
+  template:
+    metadata:
+      labels:
+        app: casdoor-db
+    spec:
+      containers:
+        - name: casdoor-db
+          image: "{{ .Values.casdoor_db.image }}"
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: "{{ .Values.casdoor_db.env.MYSQL_ROOT_PASSWORD }}"
+          ports:
+            - containerPort: {{ .Values.casdoor_db.port }}
+          volumeMounts:
+            - name: casdoor-db-storage
+              mountPath: /var/lib/mysql
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: casdoor-db-storage
+          persistentVolumeClaim:
+            claimName: casdoor-db-pvc
+
