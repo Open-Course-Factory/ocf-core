@@ -8,5 +8,5 @@ build:
   before_script:
     - touch ./src/auth/casdoor/token_jwt_key.pem
 
-  only:
-    - test-mame  
+  rules:
+  - if: '$CI_COMMIT_REF_NAME == "test-mame"'
