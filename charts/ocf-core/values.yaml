@@ -1,4 +1,7 @@
-apiVersion: v2
-name: ocf-core
-description: A Helm chart for OCF Core
-version: 0.1.0
+service:
+  type: ClusterIP
+  port: 8080
+
+image:
+  repository: registry.gitlab.com/ci-cd-chihi-mecheri-michel-gueye/ocf-core
+  tag: latest
