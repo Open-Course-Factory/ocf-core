@@ -34,9 +34,9 @@ deploy-k8s:
   before_script:
     - apt-get update && apt-get install -y curl apt-transport-https gnupg lsb-release
     # Installer Kubectl
-    - curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
-    - echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | tee /etc/apt/sources.list.d/kubernetes.list
-    - apt-get update && apt-get install -y kubectl
+    - echo "Installation de kubectl"
+    - curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
+    - chmod +x ./kubectl && mv ./kubectl /usr/local/bin/kubectl && kubectl version --client
     # Installer Helm
     - curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
     - chmod +x get_helm.sh
