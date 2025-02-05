@@ -40,6 +40,7 @@ deploy-k8s:
     - kubectl get nodes
     - kubectl get pods
     # installation de helm
+    - apt-get update && apt-get install -y curl
     - curl https://get.helm.sh/helm-v3.9.0-linux-amd64.tar.gz -o helm.tar.gz
     - tar -zxvf helm.tar.gz
     - mv linux-amd64/helm /usr/local/bin/helm
