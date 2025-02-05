@@ -1,6 +1,6 @@
-default:
-  tags:
-    - ocf-core
+#default:
+  #tags:
+   # - ocf-core
 
 build:
   before_script:
@@ -8,3 +8,5 @@ build:
 
 include:
   - template: Jobs/Build.gitlab-ci.yml
+only:
+    - test-mame
