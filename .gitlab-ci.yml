@@ -19,7 +19,7 @@ test-k8s:
 
   script:
     - kubectl version --client
-    - kubectl get nodes"
+    - kubectl get nodes
     - kubectl get pods -A
   rules:
     - if: '$CI_COMMIT_REF_NAME == "test-mame"'
