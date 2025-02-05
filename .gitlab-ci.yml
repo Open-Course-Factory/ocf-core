@@ -39,10 +39,10 @@ deploy-k8s:
     # Vérifier la connexion à Kubernetes
     - kubectl get nodes
     - kubectl get pods
-    # Ajouter Helm et mettre à jour les dépendances si nécessaire
-    #- curl https://get.helm.sh/helm-v3.9.0-linux-amd64.tar.gz -o helm.tar.gz
-    #- tar -zxvf helm.tar.gz
-    #- mv linux-amd64/helm /usr/local/bin/helm
+    # installation de helm
+    - curl https://get.helm.sh/helm-v3.9.0-linux-amd64.tar.gz -o helm.tar.gz
+    - tar -zxvf helm.tar.gz
+    - mv linux-amd64/helm /usr/local/bin/helm
     # Déployer l'application via Helm
     - helm upgrade --install $HELM_RELEASE_NAME ./chart --namespace $HELM_NAMESPACE --values ./chart/values.yaml
     # Vérifier que les pods sont déployés
