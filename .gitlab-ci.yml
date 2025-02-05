@@ -1,5 +1,6 @@
 stages:
   - build
+  - test
 
 include:
   - template: Jobs/Build.gitlab-ci.yml
@@ -7,6 +8,14 @@ include:
 build:
   before_script:
     - touch ./src/auth/casdoor/token_jwt_key.pem
-
   rules:
-  - if: '$CI_COMMIT_REF_NAME == "test-mame"'
+    - if: '$CI_COMMIT_REF_NAME == "test-mame"'
+
+test-k8s:
+  stage: test
+  image: bitnami/kubectl:latest
+  script:
+    - kubectl get nodes
+    - kubectl get pods -A
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "test-mame"'
