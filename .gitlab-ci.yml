@@ -1,3 +1,5 @@
+variables:
+  KUBE_CONTEXT: ci-cd-chihi-mecheri-michel-gueye/ocf-core
 stages:
   #- build
   - test
@@ -17,8 +19,9 @@ test-k8s:
     name: bitnami/kubectl:latest
     entrypoint: ['']
   script:
-    - kubectl config use-context  ci-cd-chihi-mecheri-michel-gueye/ocf-core:k3d-connection
+    - kubectl config use-context $KUBE_CONTEXT :k3d-connection
     - kubectl get pods
+    - kubectl get nodes
 
   rules:
     - if: '$CI_COMMIT_REF_NAME == "test-mame"'
