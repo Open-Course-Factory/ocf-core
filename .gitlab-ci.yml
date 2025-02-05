@@ -31,14 +31,13 @@ test-k8s:
 deploy-k8s:
   stage: deploy
   image:
-    name: alpine/helm:latest
+    name: lachlanevenson/k8s-helm:latest
     entrypoint: ['']
   script:
     # Configurer l'accès au cluster Kubernetes
     - kubectl config use-context $KUBE_CONTEXT:k3d-connection
     # Vérifier la connexion à Kubernetes
     - kubectl get nodes
-    - kubectl get pods
     # Déployer l'application via Helm
     - helm upgrade --install $HELM_RELEASE_NAME ./chart --namespace $HELM_NAMESPACE --values ./chart/values.yaml
     # Vérifier que les pods sont déployés
