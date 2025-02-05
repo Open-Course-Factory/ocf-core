@@ -15,11 +15,10 @@ test-k8s:
   stage: test
   image:
     name: bitnami/kubectl:latest
-    entrypoint: [""]
-
+    entrypoint: ['']
   script:
-    - kubectl version --client
-    - kubectl get nodes
-    - kubectl get pods -A
+    - kubectl config use-context https://gitlab.com/ci-cd-chihi-mecheri-michel-gueye/ocf-core/-/clusters:k3d-connection
+    - kubectl get pods
+
   rules:
     - if: '$CI_COMMIT_REF_NAME == "test-mame"'
