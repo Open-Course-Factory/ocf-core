@@ -2,9 +2,13 @@ service:
   type: ClusterIP
   port: 8080
 
+imagePullSecrets:
+  - name: gitlab-registry
+
 image:
   repository: registry.gitlab.com/ci-cd-chihi-mecheri-michel-gueye/ocf-core
   tag: v1
+  pullPolicy: Always
 
 ingress:
   enabled: true
