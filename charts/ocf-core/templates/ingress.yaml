@@ -1,7 +1,0 @@
-image:
-  repository: registry.gitlab.com/ci-cd-chihi-mecheri-michel-gueye/ocf-core
-  tag: latest
-
-service:
-  type: ClusterIP
-  port: 8080
