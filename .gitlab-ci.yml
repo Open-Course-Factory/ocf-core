@@ -30,18 +30,23 @@ test-k8s:
 # Déploiement des services Kubernetes
 deploy-k8s:
   stage: deploy
-  image:
-    name: lachlanevenson/k8s-helm:latest
-    entrypoint: ['']
+  image: ubuntu:20.04
+  before_script:
+    - apt-get update && apt-get install -y curl apt-transport-https gnupg lsb-release
+    # Installer Kubectl
+    - curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+    - echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | tee /etc/apt/sources.list.d/kubernetes.list
+    - apt-get update && apt-get install -y kubectl
+    # Installer Helm
+    - curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    - chmod +x get_helm.sh
+    - ./get_helm.sh
   script:
-    # Configurer l'accès au cluster Kubernetes
+    - kubectl version --client
+    - helm version
     - kubectl config use-context $KUBE_CONTEXT:k3d-connection
-    # Vérifier la connexion à Kubernetes
-    - kubectl get nodes
-    # Déployer l'application via Helm
+    - kubectl get pods
     - helm upgrade --install $HELM_RELEASE_NAME ./chart --namespace $HELM_NAMESPACE --values ./chart/values.yaml
-    # Vérifier que les pods sont déployés
-    - kubectl get pods --namespace $HELM_NAMESPACE
 
   rules:
     - if: '$CI_COMMIT_REF_NAME == "test-mame"'
