@@ -7,6 +7,5 @@ build:
 
   include:
     - template: Jobs/Build.gitlab-ci.yml
-
   only:
     - test-mame
