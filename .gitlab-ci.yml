@@ -1,5 +1,7 @@
 variables:
   KUBE_CONTEXT: ci-cd-chihi-mecheri-michel-gueye/ocf-core
+  HELM_RELEASE_NAME: "ocf-core"   
+  HELM_NAMESPACE: "default"       
 stages:
   #- build
   - test
@@ -46,7 +48,7 @@ deploy-k8s:
     - helm version
     - kubectl config use-context $KUBE_CONTEXT:k3d-connection
     - kubectl get pods
-    - helm upgrade --install $HELM_RELEASE_NAME ./charts --namespace $HELM_NAMESPACE --values ./charts/values.yaml
+    - helm upgrade --install "$HELM_RELEASE_NAME" ./charts --namespace "$HELM_NAMESPACE" --values ./charts/values.yaml
 
   rules:
     - if: '$CI_COMMIT_REF_NAME == "test-mame"'
