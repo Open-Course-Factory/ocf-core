@@ -14,9 +14,9 @@ stages:
 test-k8s:
   stage: test
   image: bitnami/kubectl:latest
-  entrypoint: [""]
   script:
-    - kubectl get nodes
-    - kubectl get pods -A
+    - /bin/sh -c "kubectl version --client"
+    - /bin/sh -c "kubectl get nodes"
+    - /bin/sh -c "kubectl get pods -A"
   rules:
     - if: '$CI_COMMIT_REF_NAME == "test-mame"'
