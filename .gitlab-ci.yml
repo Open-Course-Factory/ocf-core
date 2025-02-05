@@ -31,7 +31,7 @@ test-k8s:
 deploy-k8s:
   stage: deploy
   image:
-    name: bitnami/kubectl:latest
+    name: alpine/helm:latest
     entrypoint: ['']
   script:
     # Configurer l'accès au cluster Kubernetes
@@ -39,11 +39,6 @@ deploy-k8s:
     # Vérifier la connexion à Kubernetes
     - kubectl get nodes
     - kubectl get pods
-    # installation de helm
-    - apk update && apk add curl
-    - curl https://get.helm.sh/helm-v3.9.0-linux-amd64.tar.gz -o helm.tar.gz
-    - tar -zxvf helm.tar.gz
-    - mv linux-amd64/helm /usr/local/bin/helm
     # Déployer l'application via Helm
     - helm upgrade --install $HELM_RELEASE_NAME ./chart --namespace $HELM_NAMESPACE --values ./chart/values.yaml
     # Vérifier que les pods sont déployés
