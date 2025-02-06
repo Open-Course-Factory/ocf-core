@@ -24,9 +24,13 @@
 
 replicaCount: 1
 
-service:
-  type: ClusterIP
-  port: 8080
+#service:
+ # type: ClusterIP
+  #port: 8080
+
+services:
+  ocfCore:
+    port: 8080
 
 image:
   repository: registry.gitlab.com/ci-cd-chihi-mecheri-michel-gueye/ocf-core
