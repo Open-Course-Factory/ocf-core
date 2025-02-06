@@ -73,6 +73,7 @@ deploy-k8s:
     - kubectl delete configmap --all -n "$HELM_NAMESPACE" || true
     - kubectl delete secret --all -n "$HELM_NAMESPACE" || true
     - kubectl delete service --all -n "$HELM_NAMESPACE" || true
+    - kubectl delete deployment --all -n "$HELM_NAMESPACE" || true
     #- kubectl delete deployment ocf postgres casdoor casdoor-db -n "$HELM_NAMESPACE"
 
     - echo "📌 Suppression des CRDs bloquantes..."
@@ -96,7 +97,7 @@ deploy-k8s:
    # - helm uninstall "$HELM_RELEASE_NAME" --namespace $HELM_NAMESPACE || true
     # Déploiement avec Helm
     - echo "🚀 Déploiement avec Helm..."
-    - kubectl create namespace ocf
+    #- kubectl create namespace ocf
 
     - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
 
