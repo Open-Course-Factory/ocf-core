@@ -52,46 +52,49 @@ deploy-k8s:
     #- kubectl get pvc -A
     #- kubectl get pv
     #- kubectl get crds
-    # Logs des pods en erreur
-    - for pod in $(kubectl get pods -n "$HELM_NAMESPACE" --no-headers | awk '$3 != "Running" {print $1}'); do
-        echo " Logs du pod $pod...";
-        kubectl logs $pod -n "$HELM_NAMESPACE" || true;
-      done
 
-    # Description des pods en erreur
+    # Logs et description des pods en erreur
+    - echo "📜 Logs et description des pods en erreur..."
     - for pod in $(kubectl get pods -n "$HELM_NAMESPACE" --no-headers | awk '$3 != "Running" {print $1}'); do
-        echo " Description du pod $pod...";
+        echo "🔍 Logs du pod $pod...";
+        kubectl logs $pod -n "$HELM_NAMESPACE" || true;
+        echo "📝 Description du pod $pod...";
         kubectl describe pod $pod -n "$HELM_NAMESPACE" || true;
       done
 
-    # Suppression des anciennes installations Helm
-    - helm list -n "$HELM_NAMESPACE" | grep -q "$HELM_RELEASE_NAME" && helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE" --no-hooks || echo "Helm release not found, skipping uninstall"
-    - helm list -n "$HELM_NAMESPACE" | grep -q "casdoor" && helm uninstall casdoor -n "$HELM_NAMESPACE" --no-hooks || true
-    - helm list -n "$HELM_NAMESPACE" | grep -q "postgres" && helm uninstall postgres -n "$HELM_NAMESPACE" --no-hooks || true
+    # Suppression des anciennes releases Helm
+    - echo "🗑 Suppression des anciennes installations Helm..."
+    - helm list -n "$HELM_NAMESPACE" | grep -q "$HELM_RELEASE_NAME" && helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE" --no-hooks || echo "ℹ️ Helm release not found, skipping uninstall"
 
     # Suppression forcée des ressources bloquées
-    - echo " Suppression forcée des anciens déploiements..."
-    - kubectl delete deployment casdoor casdoor-db ocf-core postgres -n "$HELM_NAMESPACE" --ignore-not-found=true --force --grace-period=0 || true
-    - kubectl delete pod --all -n "$HELM_NAMESPACE" --ignore-not-found=true --force --grace-period=0 || true
-    - kubectl delete pvc --all -n "$HELM_NAMESPACE" --ignore-not-found=true --force --grace-period=0 || true
-    - kubectl get pv | awk '$3=="Released" {print $1}' | xargs -r kubectl delete pv --force --grace-period=0 || true
+    - echo "🗑 Suppression forcée des ressources bloquées..."
+    - kubectl delete all --all -n "$HELM_NAMESPACE" --force --grace-period=0 || true
+    - kubectl delete pvc --all -n "$HELM_NAMESPACE" --force --grace-period=0 || true
+    - kubectl delete configmap --all -n "$HELM_NAMESPACE" || true
+    - kubectl delete secret --all -n "$HELM_NAMESPACE" || true
+    - kubectl delete service --all -n "$HELM_NAMESPACE" || true
+    - echo "📌 Suppression des CRDs bloquantes..."
+    - for crd in $(kubectl get crds | grep -E "casdoor|ocf-core|postgres" | awk '{print $1}'); do
+        kubectl delete crd $crd --ignore-not-found=true || true;
+      done
 
     # Vérification après suppression
-    - echo "Vérification après nettoyage..."
+    - echo "✅ Vérification après nettoyage..."
     - kubectl get all -n "$HELM_NAMESPACE"
     - kubectl get pvc -n "$HELM_NAMESPACE"
     - kubectl get pv
 
-     # Vérification des ressources restantes
-    - echo " Vérification des ressources restantes..."
-    - kubectl api-resources --verbs=list -o name | xargs -n 1 kubectl get -n "$HELM_NAMESPACE" --ignore-not-found=true
-
-    # Vérification avant installation Helm
+    # Vérification des ressources restantes
+    - echo "🧐 Vérification des ressources restantes..."
     - REMAINING=$(kubectl api-resources --verbs=list -o name | xargs -n 1 kubectl get -n "$HELM_NAMESPACE" --ignore-not-found=true | wc -l)
     - if [ "$REMAINING" -gt 0 ]; then
-        echo "Certaines ressources existent encore, vérifie les logs !";
+        echo "⚠️ Certaines ressources existent encore, vérifie les logs !";
         exit 1;
       fi
+
+    # Déploiement avec Helm
+    - echo "🚀 Déploiement avec Helm..."
+
     - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
 
     # Vérification finale
