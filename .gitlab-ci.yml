@@ -1,20 +1,11 @@
 variables:
   KUBE_CONTEXT: ci-cd-chihi-mecheri-michel-gueye/ocf-core
-  HELM_RELEASE_NAME: "ocf-core"   
-  HELM_NAMESPACE: "ocf"       
+  HELM_RELEASE_NAME: "ocf-core"  
+  HELM_NAMESPACE: "ocf"      
+
 stages:
-  #- build
   - test
   - deploy
-
-#include:
-  #- template: Jobs/Build.gitlab-ci.yml
-
-#build:
-  #before_script:
-   # - touch ./src/auth/casdoor/token_jwt_key.pem
-  #rules:
-   # - if: '$CI_COMMIT_REF_NAME == "test-mame"'
 
 test-k8s:
   stage: test
@@ -25,87 +16,55 @@ test-k8s:
     - kubectl config use-context $KUBE_CONTEXT:k3d-connection
     - kubectl get pods
     - kubectl get nodes
-
   rules:
     - if: '$CI_COMMIT_REF_NAME == "test-mame"'
 
-# Déploiement des services Kubernetes
 deploy-k8s:
   stage: deploy
   image: ubuntu:20.04
   before_script:
     - apt-get update && apt-get install -y curl apt-transport-https gnupg lsb-release
-    # Installer Kubectl
     - echo "Installation de kubectl"
     - curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
     - chmod +x ./kubectl && mv ./kubectl /usr/local/bin/kubectl && kubectl version --client
-    # Installer Helm
     - curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-    - chmod +x get_helm.sh
-    - ./get_helm.sh
+    - chmod +x get_helm.sh && ./get_helm.sh
   script:
-   
     - kubectl config use-context $KUBE_CONTEXT:k3d-connection
     - kubectl get all -n "$HELM_NAMESPACE"
-    #- kubectl get deployments -A
-    #- kubectl get pods -A
-    #- kubectl get pvc -A
-    #- kubectl get pv
-    #- kubectl get crds
 
-    # Logs et description des pods en erreur
-    - echo "📜 Logs et description des pods en erreur..."
-    - for pod in $(kubectl get pods -n "$HELM_NAMESPACE" --no-headers | awk '$3 != "Running" {print $1}'); do
-        echo "🔍 Logs du pod $pod...";
-        kubectl logs $pod -n "$HELM_NAMESPACE" || true;
-        echo "📝 Description du pod $pod...";
-        kubectl describe pod $pod -n "$HELM_NAMESPACE" || true;
-      done
+    - echo "🗑 Vérification et suppression des anciennes releases Helm..."
+    - if helm list -n "$HELM_NAMESPACE" | grep -q "$HELM_RELEASE_NAME"; then
+        helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE" --no-hooks;
+      else
+        echo "ℹ️ Helm release not found, skipping uninstall";
+      fi
 
-    # Suppression des anciennes releases Helm
-    - echo "🗑 Suppression des anciennes installations Helm..."
-    - helm list -n "$HELM_NAMESPACE" | grep -q "$HELM_RELEASE_NAME" && helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE" --no-hooks || echo "ℹ️ Helm release not found, skipping uninstall"
-
-    # Suppression forcée des ressources bloquées
-    - echo "🗑 Suppression forcée des ressources bloquées..."
-    - kubectl delete all --all -n "$HELM_NAMESPACE" 
-    - kubectl delete pvc --all -n "$HELM_NAMESPACE"
-    - kubectl delete configmap --all -n "$HELM_NAMESPACE" || true
-    - kubectl delete secret --all -n "$HELM_NAMESPACE" || true
-    - kubectl delete service --all -n "$HELM_NAMESPACE" || true
-    - kubectl delete deployment --all -n "$HELM_NAMESPACE" || true
-    #- kubectl delete deployment ocf postgres casdoor casdoor-db -n "$HELM_NAMESPACE"
+    - echo "🗑 Suppression forcée des ressources existantes..."
+    - kubectl delete deployment ocf postgres casdoor casdoor-db -n "$HELM_NAMESPACE" --ignore-not-found=true || true
+    - kubectl delete all --all -n "$HELM_NAMESPACE" --ignore-not-found=true || true
+    - kubectl delete pvc --all -n "$HELM_NAMESPACE" --ignore-not-found=true || true
+    - kubectl delete configmap --all -n "$HELM_NAMESPACE" --ignore-not-found=true || true
+    - kubectl delete secret --all -n "$HELM_NAMESPACE" --ignore-not-found=true || true
+    - kubectl delete service --all -n "$HELM_NAMESPACE" --ignore-not-found=true || true
 
     - echo "📌 Suppression des CRDs bloquantes..."
     - for crd in $(kubectl get crds | grep -E "casdoor|ocf-core|postgres" | awk '{print $1}'); do
         kubectl delete crd $crd --ignore-not-found=true || true;
       done
 
-    # Vérification après suppression
     - echo "✅ Vérification après nettoyage..."
     - kubectl get all -n "$HELM_NAMESPACE"
     - kubectl get pvc -n "$HELM_NAMESPACE"
     - kubectl get pv
 
-    # Vérification des ressources restantes
-    #- echo "🧐 Vérification des ressources restantes..."
-    #- REMAINING=$(kubectl api-resources --verbs=list -o name | xargs -n 1 kubectl get -n "$HELM_NAMESPACE" --ignore-not-found=true | wc -l)
-    #- if [ "$REMAINING" -gt 0 ]; then
-     #   echo "⚠️ Certaines ressources existent encore, vérifie les logs !";
-      #  exit 1;
-       #fi
-   # - helm uninstall "$HELM_RELEASE_NAME" --namespace $HELM_NAMESPACE || true
-    # Déploiement avec Helm
     - echo "🚀 Déploiement avec Helm..."
-    #- kubectl create namespace ocf
-
     - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
 
-    # Vérification finale
-    - echo "Vérification finale après déploiement..."
+    - echo "✅ Vérification finale après déploiement..."
     - kubectl get pods -n "$HELM_NAMESPACE"
     - kubectl get pvc -n "$HELM_NAMESPACE"
     - kubectl get pv
-
   rules:
     - if: '$CI_COMMIT_REF_NAME == "test-mame"'
+ 
