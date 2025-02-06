@@ -82,15 +82,16 @@ deploy-k8s:
     - kubectl get pvc -n "$HELM_NAMESPACE"
     - kubectl get pv
 
-    # Vérification que tout est supprimé avant relance Helm
-    - REMAINING=$(kubectl get all -n "$HELM_NAMESPACE" --no-headers | wc -l)
+     # Vérification des ressources restantes
+    - echo " Vérification des ressources restantes..."
+    - kubectl api-resources --verbs=list -o name | xargs -n 1 kubectl get -n "$HELM_NAMESPACE" --ignore-not-found=true
+
+    # Vérification avant installation Helm
+    - REMAINING=$(kubectl api-resources --verbs=list -o name | xargs -n 1 kubectl get -n "$HELM_NAMESPACE" --ignore-not-found=true | wc -l)
     - if [ "$REMAINING" -gt 0 ]; then
-        echo " Certaines ressources existent encore, vérifie les logs !";
+        echo "Certaines ressources existent encore, vérifie les logs !";
         exit 1;
       fi
-# Vérification des ressources restantes
-    - echo "🔍 Vérification des ressources restantes..."
-    - kubectl api-resources --verbs=list -o name | xargs -n 1 kubectl get -n "$HELM_NAMESPACE" --ignore-not-found=true
     - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
 
     # Vérification finale
