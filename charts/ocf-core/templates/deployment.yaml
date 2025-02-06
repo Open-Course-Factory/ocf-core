@@ -23,7 +23,7 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: Always
           ports:
-            - containerPort: {{ .Values.service.port | default 8080 }}
+            - containerPort: default 8080 
           volumeMounts:
             - name: env-file
               mountPath: /home/ocf/.env
