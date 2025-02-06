@@ -99,8 +99,7 @@ spec:
             periodSeconds: 5
       volumes:
         - name: postgres-storage
-          persistentVolumeClaim:
-            claimName: postgres-pvc
+        
 
 ---
 apiVersion: apps/v1
@@ -168,6 +167,4 @@ spec:
             periodSeconds: 5
       volumes:
         - name: casdoor-db-storage
-          persistentVolumeClaim:
-            claimName: casdoor-db-pvc
 
