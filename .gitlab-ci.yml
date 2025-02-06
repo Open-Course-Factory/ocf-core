@@ -1,7 +1,7 @@
 variables:
   KUBE_CONTEXT: ci-cd-chihi-mecheri-michel-gueye/ocf-core
   HELM_RELEASE_NAME: "ocf-core"   
-  HELM_NAMESPACE: "ocf"       
+  HELM_NAMESPACE: "default"       
 stages:
   #- build
   - test
@@ -91,7 +91,7 @@ deploy-k8s:
      #   echo "⚠️ Certaines ressources existent encore, vérifie les logs !";
       #  exit 1;
        #fi
-
+    - helm uninstall "$HELM_RELEASE_NAME" --namespace $HELM_NAMESPACE || true
     # Déploiement avec Helm
     - echo "🚀 Déploiement avec Helm..."
 
