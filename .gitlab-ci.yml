@@ -56,7 +56,8 @@ deploy-k8s:
     - helm list -n "$HELM_NAMESPACE" | grep -q "$HELM_RELEASE_NAME" && helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE" || echo "Helm release not found, skipping uninstall"
 
     #  Étape 2 : Supprimer les Deployments
-    - kubectl delete deployment casdoor-db casdoor ocf-core postgres -n "$HELM_NAMESPACE" --ignore-not-found=true
+    - kubectl delete deployment ocf-core casdoor postgres casdoor-db -n "$HELM_NAMESPACE" --force --grace-period=0
+
     - sleep 5  # Attente pour éviter les erreurs
 
     #  Étape 3 : Supprimer les Pods restants s'ils existent encore
