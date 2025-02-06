@@ -52,7 +52,7 @@ deploy-k8s:
     - kubectl delete pvc --all -n "$HELM_NAMESPACE" --wait=false
     - kubectl patch pvc postgres-pvc -n "$HELM_NAMESPACE" -p '{"metadata":{"finalizers":null}}' --type=merge
     - kubectl patch pvc casdoor-db-pvc -n "$HELM_NAMESPACE" -p '{"metadata":{"finalizers":null}}' --type=merge
-
+    - helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE"
     - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
     - kubectl get pods -n "$HELM_NAMESPACE"
     - kubectl get pvc -n "$HELM_NAMESPACE"
