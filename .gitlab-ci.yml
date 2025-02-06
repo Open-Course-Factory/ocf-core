@@ -1,7 +1,7 @@
 variables:
   KUBE_CONTEXT: ci-cd-chihi-mecheri-michel-gueye/ocf-core
   HELM_RELEASE_NAME: "ocf-core"   
-  HELM_NAMESPACE: "default"       
+  HELM_NAMESPACE: "ocf"       
 stages:
   #- build
   - test
