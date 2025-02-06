@@ -31,9 +31,9 @@ services:
     port: 5432
     image: "postgres:16-alpine"
     env:
-      POSTGRES_USER: "postgres"
-      POSTGRES_PASSWORD: "password"
-      POSTGRES_DB: "ocf_db"
+      POSTGRES_USER: go_user
+      POSTGRES_PASSWORD: go_password
+      POSTGRES_DB: go_db
     storage: "1Gi"
     storageClassName: "local-path"
 
@@ -41,8 +41,8 @@ services:
     port: 80
     image: "dpage/pgadmin4"
     env:
-      PGADMIN_DEFAULT_EMAIL: "thomas@solution-libre.fr"
-      PGADMIN_DEFAULT_PASSWORD: "test"
+      PGADMIN_DEFAULT_EMAIL: thomas@solution-libre.fr
+      PGADMIN_DEFAULT_PASSWORD: test
 
   casdoor:
     port: 8000
@@ -53,7 +53,7 @@ services:
     port: 3306
     image: "mysql:8.0.25"
     env:
-      MYSQL_ROOT_PASSWORD: "123456"
+      MYSQL_ROOT_PASSWORD: 123456
     storage: "1Gi"  # Assurez-vous que cette valeur existe pour casdoorDb
     storageClassName: "local-path"
 
@@ -62,3 +62,8 @@ image:
   repository: registry.gitlab.com/ci-cd-chihi-mecheri-michel-gueye/ocf-core
   tag: latest
   pullPolicy: Always
+
+# Ingress configuration
+ingress:
+  enabled: false
+  host: ""
