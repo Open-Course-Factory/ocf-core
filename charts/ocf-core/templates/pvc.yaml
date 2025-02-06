@@ -8,7 +8,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: {{ .Values.postgres.storage | default "1Gi" }}  
+      storage: {{ $.Values.postgres.storage | default "1Gi" }}  
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -19,4 +19,4 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: {{ .Values.casdoor_db.storage | default "1Gi" }} 
+      storage: {{ $.Values.casdoor_db.storage | default "1Gi" }} 
