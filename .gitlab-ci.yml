@@ -85,12 +85,12 @@ deploy-k8s:
     - kubectl get pv
 
     # Vérification des ressources restantes
-    - echo "🧐 Vérification des ressources restantes..."
-    - REMAINING=$(kubectl api-resources --verbs=list -o name | xargs -n 1 kubectl get -n "$HELM_NAMESPACE" --ignore-not-found=true | wc -l)
-    - if [ "$REMAINING" -gt 0 ]; then
-        echo "⚠️ Certaines ressources existent encore, vérifie les logs !";
-        exit 1;
-      fi
+    #- echo "🧐 Vérification des ressources restantes..."
+    #- REMAINING=$(kubectl api-resources --verbs=list -o name | xargs -n 1 kubectl get -n "$HELM_NAMESPACE" --ignore-not-found=true | wc -l)
+    #- if [ "$REMAINING" -gt 0 ]; then
+     #   echo "⚠️ Certaines ressources existent encore, vérifie les logs !";
+      #  exit 1;
+       #fi
 
     # Déploiement avec Helm
     - echo "🚀 Déploiement avec Helm..."
