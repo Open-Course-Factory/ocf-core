@@ -48,8 +48,8 @@ deploy-k8s:
     - helm version
     - kubectl config use-context $KUBE_CONTEXT:k3d-connection
     - kubectl get pods
-    - kubectl delete pvc postgres-pvc casdoor-db-pvc -n "$HELM_NAMESPACE"
-
+    - kubectl get pvc -n "$HELM_NAMESPACE"
+    - kubectl delete pvc --all -n "$HELM_NAMESPACE" --wait=false
     - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
 
   rules:
