@@ -78,18 +78,15 @@ deploy-k8s:
  
     - echo "🗑 Suppression forcée des ressources existantes..."
 
-    - kubectl delete all --all -n "$HELM_NAMESPACE" --ignore-not-found=true || true
+    - kubectl delete deployment casdoor-db postgres ocf casdoor -n "$HELM_NAMESPACE" --ignore-not-found=true --grace-period=0 --force
 
-    - kubectl delete pvc --all -n "$HELM_NAMESPACE" --ignore-not-found=true || true
+    - kubectl delete pvc casdoor-db-pvc postgres-pvc -n "$HELM_NAMESPACE" --ignore-not-found=true --force
 
-    - kubectl delete pvc --all -n default --ignore-not-found=true || true
+    - kubectl delete configmap --all -n "$HELM_NAMESPACE" --ignore-not-found=true
+    - kubectl delete secret --all -n "$HELM_NAMESPACE" --ignore-not-found=true
+    - kubectl delete service --all -n "$HELM_NAMESPACE" --ignore-not-found=true
+    - kubectl delete crd --all -n "$HELM_NAMESPACE" --ignore-not-found=true
 
-    - kubectl delete configmap --all -n "$HELM_NAMESPACE" --ignore-not-found=true || true
-
-    - kubectl delete secret --all -n "$HELM_NAMESPACE" --ignore-not-found=true || true
-
-    - kubectl delete service --all -n "$HELM_NAMESPACE" --ignore-not-found=true || true
- 
     - echo "📌 Suppression des CRDs bloquantes..."
 
     - for crd in $(kubectl get crds | grep -E "casdoor|ocf-core|postgres" | awk '{print $1}'); do
