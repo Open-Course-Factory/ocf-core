@@ -21,7 +21,7 @@ spec:
           service:
             name: {{ include "ocf-app.fullname" $ }}
             port:
-              number: {{ $.Values.service.port }}  # Changé de frontend.service.port à service.port
+              number: {{ $.Values.service.port }}
       {{- end }}
   {{- end }}
 {{- end }}
