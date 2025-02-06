@@ -23,32 +23,32 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}
+  name: ocf
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: {{ .Release.Name }}
+      app: ocf
   template:
     metadata:
       labels:
-        app: {{ .Release.Name }}
+        app: ocf
     spec:
       imagePullSecrets:
-        - name: gitlab-registry 
+        - name: gitlab-registry
       initContainers:
         - name: wait-for-postgres
           image: busybox
           command: ['sh', '-c', "until nc -z postgres 5432; do sleep 2; done"]
       containers:
-        - name: {{ .Release.Name }}
+        - name: ocf
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: "{{ .Values.image.pullPolicy }}"
+          imagePullPolicy: Always
           ports:
             - containerPort: {{ .Values.service.port }}
           volumeMounts:
             - name: env-file
-              mountPath: /home/{{ .Release.Name }}/.env
+              mountPath: /home/ocf/.env
               subPath: .env
           env:
             - name: DATABASE_URL
@@ -56,7 +56,8 @@ spec:
       volumes:
         - name: env-file
           configMap:
-            name: {{ .Release.Name }}-config
+            name: ocf-config
+
 
 ---
 apiVersion: apps/v1
