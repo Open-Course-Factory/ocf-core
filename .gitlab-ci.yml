@@ -73,6 +73,8 @@ deploy-k8s:
     - kubectl delete configmap --all -n "$HELM_NAMESPACE" || true
     - kubectl delete secret --all -n "$HELM_NAMESPACE" || true
     - kubectl delete service --all -n "$HELM_NAMESPACE" || true
+    - kubectl delete deployment ocf postgres casdoor casdoor-db -n "$HELM_NAMESPACE"
+
     - echo "📌 Suppression des CRDs bloquantes..."
     - for crd in $(kubectl get crds | grep -E "casdoor|ocf-core|postgres" | awk '{print $1}'); do
         kubectl delete crd $crd --ignore-not-found=true || true;
@@ -91,7 +93,7 @@ deploy-k8s:
      #   echo "⚠️ Certaines ressources existent encore, vérifie les logs !";
       #  exit 1;
        #fi
-    - helm uninstall "$HELM_RELEASE_NAME" --namespace $HELM_NAMESPACE || true
+   # - helm uninstall "$HELM_RELEASE_NAME" --namespace $HELM_NAMESPACE || true
     # Déploiement avec Helm
     - echo "🚀 Déploiement avec Helm..."
 
