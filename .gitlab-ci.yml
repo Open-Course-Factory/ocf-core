@@ -52,28 +52,52 @@ deploy-k8s:
     #- kubectl get pvc -A
     #- kubectl get pv
     #- kubectl get crds
-
- # Désinstallation propre des releases Helm (si elles existent)
+# Désinstallation propre des releases Helm
+    - echo "Suppression des anciennes installations Helm..."
     - helm list -n "$HELM_NAMESPACE" | grep -q "$HELM_RELEASE_NAME" && helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE" --no-hooks || echo "Helm release not found, skipping uninstall"
     - helm list -n "$HELM_NAMESPACE" | grep -q "casdoor" && helm uninstall casdoor -n "$HELM_NAMESPACE" --no-hooks || true
     - helm list -n "$HELM_NAMESPACE" | grep -q "postgres" && helm uninstall postgres -n "$HELM_NAMESPACE" --no-hooks || true
 
-    # Suppression des ressources si elles existent
-    - kubectl get deployments -n "$HELM_NAMESPACE" | grep -qE "ocf-core|casdoor|postgres" && kubectl delete deployment ocf-core casdoor postgres -n "$HELM_NAMESPACE" --force --grace-period=0 || true
-    - kubectl get pods -n "$HELM_NAMESPACE" && kubectl delete pod -n "$HELM_NAMESPACE" --all --force --grace-period=0 || true
-    - kubectl get pvc -n "$HELM_NAMESPACE" && kubectl delete pvc --all -n "$HELM_NAMESPACE" --wait=false || true
-    - kubectl get pv | grep -q "Released" && kubectl delete pv --all --force --grace-period=0 || true
+    # Suppression des ressources Kubernetes
+    - echo "Suppression des Deployments, StatefulSets et Pods..."
+    - kubectl delete deployment ocf-core casdoor postgres -n "$HELM_NAMESPACE" --ignore-not-found=true --force --grace-period=0 || true
+    - kubectl delete statefulset -n "$HELM_NAMESPACE" --all --ignore-not-found=true --force --grace-period=0 || true
+    - kubectl delete pod -n "$HELM_NAMESPACE" --all --ignore-not-found=true --force --grace-period=0 || true
+
+    # Suppression des volumes persistants
+    - echo "Suppression des PVC et PV..."
+    - kubectl delete pvc --all -n "$HELM_NAMESPACE" --ignore-not-found=true --force --grace-period=0 || true
+    - kubectl get pv | awk '$3=="Released" {print $1}' | xargs -r kubectl delete pv --force --grace-period=0 || true
+
+    # Suppression des finalizers bloquants
+    - echo "Nettoyage des finalizers..."
+    - |
+      for resource in deployments.apps statefulsets.apps pvc; do
+        for item in $(kubectl get $resource -n "$HELM_NAMESPACE" -o jsonpath='{.items[*].metadata.name}'); do
+          kubectl patch $resource/$item -n "$HELM_NAMESPACE" -p '{"metadata":{"finalizers":null}}' --type=merge || true
+        done
+      done
 
     # Suppression des CRDs bloquantes
+    - echo "Suppression des CRDs inutilisées..."
     - |
       for crd in $(kubectl get crds | grep -E "casdoor|ocf-core|postgres" | awk '{print $1}'); do
         kubectl delete crd $crd || true
       done
- 
-      #deploiement
+
+    # Vérification après suppression
+    - echo "Vérification après nettoyage..."
+    - kubectl get all -n "$HELM_NAMESPACE"
+    - kubectl get pvc -n "$HELM_NAMESPACE"
+    - kubectl get pv
+    - kubectl get crds
+
+    # Installation propre avec Helm
+    - echo "Installation de Helm Chart..."
     - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
 
-    #Check
+    # Vérification finale
+    - echo "Vérification finale après déploiement..."
     - kubectl get pods -n "$HELM_NAMESPACE"
     - kubectl get pvc -n "$HELM_NAMESPACE"
     - kubectl get pv
