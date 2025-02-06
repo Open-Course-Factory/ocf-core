@@ -24,10 +24,6 @@
 
 replicaCount: 1
 
-#service:
- # type: ClusterIP
-  #port: 8080
-
 services:
   ocfCore:
     port: 8080
@@ -54,7 +50,7 @@ services:
     image: "casbin/casdoor"
     configPath: "/conf/app.conf"
 
-  casdoor_db:
+  casdoorDb:
     port: 3306
     image: "mysql:8.0.25"
     env:
@@ -66,3 +62,4 @@ image:
   repository: registry.gitlab.com/ci-cd-chihi-mecheri-michel-gueye/ocf-core
   tag: latest
   pullPolicy: Always
+
