@@ -1,8 +1,31 @@
+#apiVersion: apps/v1
+#kind: Deployment
+#metadata:
+ # name: {{ .Release.Name }}
+#spec:
+ # selector:
+  #  matchLabels:
+   #   app: {{ .Release.Name }}
+  #template:
+   # metadata:
+    #  labels:
+     #   app: {{ .Release.Name }}
+    #spec:
+     # imagePullSecrets:
+      #  - name: gitlab-registry    # Ajout de cette section
+      #containers:
+      #- name: {{ .Chart.Name }}
+       # image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        #ports:
+        #- containerPort: {{ .Values.service.port }}"
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ .Release.Name }}
 spec:
+  replicas: 1
   selector:
     matchLabels:
       app: {{ .Release.Name }}
@@ -12,10 +35,138 @@ spec:
         app: {{ .Release.Name }}
     spec:
       imagePullSecrets:
-        - name: gitlab-registry    # Ajout de cette section
+        - name: gitlab-registry 
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox
+          command: ['sh', '-c', "until nc -z postgres 5432; do sleep 2; done"]
       containers:
-      - name: {{ .Chart.Name }}
-        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-        ports:
-        - containerPort: {{ .Values.service.port }}"
+        - name: {{ .Release.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: "{{ .Values.image.pullPolicy }}"
+          ports:
+            - containerPort: {{ .Values.service.port }}
+          volumeMounts:
+            - name: env-file
+              mountPath: /home/{{ .Release.Name }}/.env
+              subPath: .env
+          env:
+            - name: DATABASE_URL
+              value: "postgres://{{ .Values.postgres.env.POSTGRES_USER }}:{{ .Values.postgres.env.POSTGRES_PASSWORD }}@postgres:5432/{{ .Values.postgres.env.POSTGRES_DB }}"
+      volumes:
+        - name: env-file
+          configMap:
+            name: {{ .Release.Name }}-config
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: "{{ .Values.postgres.image }}"
+          env:
+            - name: POSTGRES_PASSWORD
+              value: "{{ .Values.postgres.env.POSTGRES_PASSWORD }}"
+            - name: POSTGRES_USER
+              value: "{{ .Values.postgres.env.POSTGRES_USER }}"
+            - name: POSTGRES_DB
+              value: "{{ .Values.postgres.env.POSTGRES_DB }}"
+          ports:
+            - containerPort: {{ .Values.postgres.port }}
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command:
+                - "pg_isready"
+                - "-U"
+                - "{{ .Values.postgres.env.POSTGRES_USER }}"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: casdoor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: casdoor
+  template:
+    metadata:
+      labels:
+        app: casdoor
+    spec:
+      initContainers:
+        - name: wait-for-casdoor-db
+          image: busybox
+          command: ['sh', '-c', "until nc -z casdoor-db 3306; do sleep 2; done"]
+      containers:
+        - name: casdoor
+          image: "{{ .Values.casdoor.image }}"
+          ports:
+            - containerPort: {{ .Values.casdoor.port }}
+          volumeMounts:
+            - name: casdoor-config
+              mountPath: /conf/app.conf
+              subPath: app.conf
+      volumes:
+        - name: casdoor-config
+          configMap:
+            name: casdoor-config
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: casdoor-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: casdoor-db
+  template:
+    metadata:
+      labels:
+        app: casdoor-db
+    spec:
+      containers:
+        - name: casdoor-db
+          image: "{{ .Values.casdoor_db.image }}"
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: "{{ .Values.casdoor_db.env.MYSQL_ROOT_PASSWORD }}"
+          ports:
+            - containerPort: {{ .Values.casdoor_db.port }}
+          volumeMounts:
+            - name: casdoor-db-storage
+              mountPath: /var/lib/mysql
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: casdoor-db-storage
+          persistentVolumeClaim:
+            claimName: casdoor-db-pvc
 
