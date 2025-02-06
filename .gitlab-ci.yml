@@ -44,44 +44,41 @@ deploy-k8s:
     - chmod +x get_helm.sh
     - ./get_helm.sh
   script:
-    - kubectl version --client
-    - helm version
+   
     - kubectl config use-context $KUBE_CONTEXT:k3d-connection
+    - kubectl get all -n "$HELM_NAMESPACE"
+    - kubectl get deployments -A
+    - kubectl get pods -A
+    - kubectl get pvc -A
+    - kubectl get pv
+    - kubectl get crds
 
-    # Afficher l'état des ressources avant de modifier quoi que ce soit
-    - kubectl get pods -n "$HELM_NAMESPACE"
-    - kubectl get pvc -n "$HELM_NAMESPACE"
+    # Suppression des anciennes ressources
+    - helm list -A
+    - helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE" --no-hooks || true
+    - helm uninstall casdoor -n "$HELM_NAMESPACE" --no-hooks || true
+    - helm uninstall postgres -n "$HELM_NAMESPACE" --no-hooks || true
 
-    # Étape 1 : Désinstaller la release Helm si elle existe
-    - helm list -n "$HELM_NAMESPACE" | grep -q "$HELM_RELEASE_NAME" && helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE" || echo "Helm release not found, skipping uninstall"
+    # Vérification si Helm pense encore que la release existe
+    - helm delete --purge "$HELM_RELEASE_NAME" || true
 
-    #  Étape 2 : Supprimer les Deployments
-    - kubectl delete deployment ocf-core casdoor postgres casdoor-db -n "$HELM_NAMESPACE" --force --grace-period=0
+    # Suppression de toutes les ressources restantes
+    - kubectl delete all --all -n "$HELM_NAMESPACE" --force --grace-period=0 || true
+    - kubectl delete pvc --all -n "$HELM_NAMESPACE" --force --grace-period=0 || true
+    - kubectl delete pv --all --force --grace-period=0 || true
 
-    - sleep 5  # Attente pour éviter les erreurs
+    # Suppression du namespace et recréation propre
+    - kubectl delete namespace "$HELM_NAMESPACE" --force --grace-period=0 || true
+    - kubectl create namespace "$HELM_NAMESPACE"
 
-    #  Étape 3 : Supprimer les Pods restants s'ils existent encore
-    - kubectl delete pod -n "$HELM_NAMESPACE" --all --force --grace-period=0
-    - sleep 5  # Laisser Kubernetes nettoyer
-
-    #  Étape 4 : Supprimer les PVC (persistent volume claims)
-    - kubectl delete pvc --all -n "$HELM_NAMESPACE" --wait=false
-    - sleep 5
-
-    # Vérifier s'il reste des PVC en "Terminating" et forcer la suppression
-    - for pvc in $(kubectl get pvc -n "$HELM_NAMESPACE" --no-headers -o custom-columns=":metadata.name"); do
-        kubectl patch pvc $pvc -n "$HELM_NAMESPACE" -p '{"metadata":{"finalizers":null}}' --type=merge || true;
+    # Vérification et suppression des CRDs bloquantes
+    - |
+      for crd in $(kubectl get crds | grep casdoor | awk '{print $1}'); do
+        kubectl delete crds $crd || true
       done
 
-    #  Étape 5 : Supprimer les PV orphelins
-    - for pv in $(kubectl get pv --no-headers | awk '$3=="Released" {print $1}'); do
-        kubectl delete pv $pv;
-      done
-
-    # Vérifier que tout est bien supprimé
-    - kubectl get deployments -n "$HELM_NAMESPACE"
-    - kubectl get pods -n "$HELM_NAMESPACE"
-    - kubectl get pvc -n "$HELM_NAMESPACE"
+    # Vérification finale avant réinstallation
+    - kubectl get all -n "$HELM_NAMESPACE"
 
  
       #deploiement
