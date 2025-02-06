@@ -55,7 +55,8 @@ casdoor:
 casdoor_db:
   image: "mysql:8.0.25"
   port: 3306
-  password: "123456"
+  env:
+  MYSQL_ROOT_PASSWORD: "123456" 
   storage: "1Gi"
 
 
