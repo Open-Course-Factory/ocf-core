@@ -68,7 +68,11 @@ deploy-k8s:
     - for pv in $(kubectl get pv --no-headers | awk '$3=="Released" {print $1}'); do
         kubectl delete pv $pv;
       done
-      
+
+    # Étape 5 : Supprimer les déploiements existants pour éviter les conflits avec Helm
+    - kubectl delete deployment casdoor-db casdoor ocf-core postgres -n "$HELM_NAMESPACE" --ignore-not-found=true
+    
+    - sleep 5  # Laisser le temps aux pods de se supprimer proprement
       #deploiement
     - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
     - kubectl get pods -n "$HELM_NAMESPACE"
