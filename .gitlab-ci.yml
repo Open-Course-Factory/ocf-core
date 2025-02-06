@@ -68,7 +68,8 @@ deploy-k8s:
     - for pv in $(kubectl get pv --no-headers | awk '$3=="Released" {print $1}'); do
         kubectl delete pv $pv;
       done
-    - helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE"
+      
+      #deploiement
     - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
     - kubectl get pods -n "$HELM_NAMESPACE"
     - kubectl get pvc -n "$HELM_NAMESPACE"
