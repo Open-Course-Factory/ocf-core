@@ -109,7 +109,7 @@ deploy-k8s:
  
     - echo "🚀 Déploiement avec Helm..."
 
-    - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
+    - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --create-namespace
  
     - echo "✅ Vérification finale après déploiement..."
 
