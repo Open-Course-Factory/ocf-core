@@ -53,33 +53,22 @@ deploy-k8s:
     - kubectl get pv
     - kubectl get crds
 
-    # Suppression des anciennes ressources
-    - helm list -A
-    - helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE" --no-hooks || true
-    - helm uninstall casdoor -n "$HELM_NAMESPACE" --no-hooks || true
-    - helm uninstall postgres -n "$HELM_NAMESPACE" --no-hooks || true
+ # Désinstallation propre des releases Helm (si elles existent)
+    - helm list -n "$HELM_NAMESPACE" | grep -q "$HELM_RELEASE_NAME" && helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE" --no-hooks || echo "Helm release not found, skipping uninstall"
+    - helm list -n "$HELM_NAMESPACE" | grep -q "casdoor" && helm uninstall casdoor -n "$HELM_NAMESPACE" --no-hooks || true
+    - helm list -n "$HELM_NAMESPACE" | grep -q "postgres" && helm uninstall postgres -n "$HELM_NAMESPACE" --no-hooks || true
 
-    # Vérification si Helm pense encore que la release existe
-    - helm delete --purge "$HELM_RELEASE_NAME" || true
+    # Suppression des ressources si elles existent
+    - kubectl get deployments -n "$HELM_NAMESPACE" | grep -qE "ocf-core|casdoor|postgres" && kubectl delete deployment ocf-core casdoor postgres -n "$HELM_NAMESPACE" --force --grace-period=0 || true
+    - kubectl get pods -n "$HELM_NAMESPACE" && kubectl delete pod -n "$HELM_NAMESPACE" --all --force --grace-period=0 || true
+    - kubectl get pvc -n "$HELM_NAMESPACE" && kubectl delete pvc --all -n "$HELM_NAMESPACE" --wait=false || true
+    - kubectl get pv | grep -q "Released" && kubectl delete pv --all --force --grace-period=0 || true
 
-    # Suppression de toutes les ressources restantes
-    - kubectl delete all --all -n "$HELM_NAMESPACE" --force --grace-period=0 || true
-    - kubectl delete pvc --all -n "$HELM_NAMESPACE" --force --grace-period=0 || true
-    - kubectl delete pv --all --force --grace-period=0 || true
-
-    # Suppression du namespace et recréation propre
-    - kubectl delete namespace "$HELM_NAMESPACE" --force --grace-period=0 || true
-    - kubectl create namespace "$HELM_NAMESPACE"
-
-    # Vérification et suppression des CRDs bloquantes
+    # Suppression des CRDs bloquantes
     - |
-      for crd in $(kubectl get crds | grep casdoor | awk '{print $1}'); do
-        kubectl delete crds $crd || true
+      for crd in $(kubectl get crds | grep -E "casdoor|ocf-core|postgres" | awk '{print $1}'); do
+        kubectl delete crd $crd || true
       done
-
-    # Vérification finale avant réinstallation
-    - kubectl get all -n "$HELM_NAMESPACE"
-
  
       #deploiement
     - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
