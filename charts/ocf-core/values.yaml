@@ -30,12 +30,12 @@ services:
   postgres:
     port: 5432
     image: "postgres:16-alpine"
-    storage: "1Gi"  # Assurez-vous que cette valeur existe
-    storageClassName: "local-path"
     env:
       POSTGRES_USER: "postgres"
       POSTGRES_PASSWORD: "password"
       POSTGRES_DB: "ocf_db"
+    storage: "1Gi"
+    storageClassName: "local-path"
 
   pgadmin:
     port: 80
