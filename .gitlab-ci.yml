@@ -47,11 +47,11 @@ deploy-k8s:
    
     - kubectl config use-context $KUBE_CONTEXT:k3d-connection
     - kubectl get all -n "$HELM_NAMESPACE"
-    - kubectl get deployments -A
-    - kubectl get pods -A
-    - kubectl get pvc -A
-    - kubectl get pv
-    - kubectl get crds
+    #- kubectl get deployments -A
+    #- kubectl get pods -A
+    #- kubectl get pvc -A
+    #- kubectl get pv
+    #- kubectl get crds
 
  # Désinstallation propre des releases Helm (si elles existent)
     - helm list -n "$HELM_NAMESPACE" | grep -q "$HELM_RELEASE_NAME" && helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE" --no-hooks || echo "Helm release not found, skipping uninstall"
