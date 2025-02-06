@@ -68,8 +68,8 @@ deploy-k8s:
 
     # Suppression forcée des ressources bloquées
     - echo "🗑 Suppression forcée des ressources bloquées..."
-    - kubectl delete all --all -n "$HELM_NAMESPACE" --force --grace-period=0 || true
-    - kubectl delete pvc --all -n "$HELM_NAMESPACE" --force --grace-period=0 || true
+    - kubectl delete all --all -n "$HELM_NAMESPACE" 
+    - kubectl delete pvc --all -n "$HELM_NAMESPACE"
     - kubectl delete configmap --all -n "$HELM_NAMESPACE" || true
     - kubectl delete secret --all -n "$HELM_NAMESPACE" || true
     - kubectl delete service --all -n "$HELM_NAMESPACE" || true
