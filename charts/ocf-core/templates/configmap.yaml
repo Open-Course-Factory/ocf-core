@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ocf-core-config
+  name: ocf-config
 data:
   .env: |
     POSTGRES_HOST=postgresql

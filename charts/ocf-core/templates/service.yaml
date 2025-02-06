@@ -1,7 +1,7 @@
 #apiVersion: v1
 #kind: Service
 #metadata:
- # name: ocf-core
+ # name: ocf
 #spec:
  # type: ClusterIP
   #ports:
@@ -9,29 +9,29 @@
     #  targetPort: 8080
      # protocol: TCP
   #selector:
-   # app: ocf-core
+   # app: ocf
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ocf-core
+  name: ocf
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: ocf-core
+      app: ocf
   template:
     metadata:
       labels:
-        app: ocf-core
+        app: ocf
     spec:
       initContainers:
         - name: wait-for-postgres
           image: busybox
           command: ['sh', '-c', "until nc -z postgres 5432; do sleep 2; done"]
       containers:
-        - name: ocf-core
+        - name: ocf
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: "{{ .Values.image.pullPolicy }}"
           ports:
@@ -46,7 +46,7 @@ spec:
       volumes:
         - name: env-file
           configMap:
-            name: ocf-core-config
+            name: ocf-config
 
 ---
 apiVersion: apps/v1
