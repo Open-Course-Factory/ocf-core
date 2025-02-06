@@ -1,21 +1,21 @@
-#apiVersion: apps/v1
-#kind: Deployment
-#metadata:
- # name: {{ .Release.Name }}
-#spec:
- # selector:
-  #  matchLabels:
-   #   app: {{ .Release.Name }}
-  #template:
-   # metadata:
-    #  labels:
-     #   app: {{ .Release.Name }}
-    #spec:
-     # imagePullSecrets:
-      #  - name: gitlab-registry    # Ajout de cette section
-      #containers:
-      #- name: {{ .Chart.Name }}
-       # image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-        #ports:
-        #- containerPort: {{ .Values.service.port }}"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      imagePullSecrets:
+        - name: gitlab-registry    # Ajout de cette section
+      containers:
+      - name: {{ .Chart.Name }}
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        ports:
+        - containerPort: {{ .Values.service.port }}"
 
