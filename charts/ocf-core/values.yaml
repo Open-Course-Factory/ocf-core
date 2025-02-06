@@ -29,7 +29,7 @@ imagePullSecrets:
 
 image:
   repository: registry.gitlab.com/ci-cd-chihi-mecheri-michel-gueye/ocf-core
-  tag: V1
+  tag: v1
   pullPolicy: Always
 
 postgres:
