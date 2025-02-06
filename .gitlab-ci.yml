@@ -73,7 +73,7 @@ deploy-k8s:
     - kubectl delete configmap --all -n "$HELM_NAMESPACE" || true
     - kubectl delete secret --all -n "$HELM_NAMESPACE" || true
     - kubectl delete service --all -n "$HELM_NAMESPACE" || true
-    - kubectl delete deployment ocf postgres casdoor casdoor-db -n "$HELM_NAMESPACE"
+    #- kubectl delete deployment ocf postgres casdoor casdoor-db -n "$HELM_NAMESPACE"
 
     - echo "📌 Suppression des CRDs bloquantes..."
     - for crd in $(kubectl get crds | grep -E "casdoor|ocf-core|postgres" | awk '{print $1}'); do
