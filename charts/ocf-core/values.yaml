@@ -21,26 +21,22 @@
 
 #imagePullSecrets:
  # - name: gitlab-registry
-
 replicaCount: 1
 
 services:
-  # Service pour OCF Core
   ocfCore:
     port: 8080
 
-  # Service pour Postgres
   postgres:
     port: 5432
     image: "postgres:16-alpine"
-    storage: "1Gi"  # Ajout du storage pour Postgres
+    storage: "1Gi"  # Assurez-vous que cette valeur existe
     storageClassName: "local-path"
     env:
       POSTGRES_USER: "postgres"
       POSTGRES_PASSWORD: "password"
       POSTGRES_DB: "ocf_db"
 
-  # Service pour pgAdmin
   pgadmin:
     port: 80
     image: "dpage/pgadmin4"
@@ -48,19 +44,17 @@ services:
       PGADMIN_DEFAULT_EMAIL: "thomas@solution-libre.fr"
       PGADMIN_DEFAULT_PASSWORD: "test"
 
-  # Service pour Casdoor
   casdoor:
     port: 8000
     image: "casbin/casdoor"
     configPath: "/conf/app.conf"
 
-  # Service pour la base de données Casdoor
   casdoorDb:
     port: 3306
     image: "mysql:8.0.25"
     env:
       MYSQL_ROOT_PASSWORD: "123456"
-    storage: "1Gi"  # Ajout du storage pour CasdoorDb
+    storage: "1Gi"  # Assurez-vous que cette valeur existe pour casdoorDb
     storageClassName: "local-path"
 
 # Configuration de l'image pour OCF Core
