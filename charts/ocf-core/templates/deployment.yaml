@@ -23,16 +23,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ocf-core
+  name: ocf
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: ocf-core
+      app: ocf
   template:
     metadata:
       labels:
-        app: ocf-core
+        app: ocf
     spec:
       imagePullSecrets:
         - name: gitlab-registry 
@@ -41,7 +41,7 @@ spec:
           image: busybox
           command: ['sh', '-c', "until nc -z postgres 5432; do sleep 2; done"]
       containers:
-        - name: ocf-core
+        - name: ocf
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: "{{ .Values.image.pullPolicy }}"
           ports:
@@ -56,7 +56,7 @@ spec:
       volumes:
         - name: env-file
           configMap:
-            name: ocf-core-config
+            name: ocf-config
 
 ---
 apiVersion: apps/v1
