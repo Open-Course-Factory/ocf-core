@@ -18,19 +18,19 @@
     #  paths:
      #   - path: /
       #    pathType: Prefix
+
+imagePullSecrets:
+  - name: gitlab-registry
+
 replicaCount: 1
 
 service:
   type: ClusterIP
   port: 8080
 
-
-imagePullSecrets:
-  - name: gitlab-registry
-
 image:
   repository: registry.gitlab.com/ci-cd-chihi-mecheri-michel-gueye/ocf-core
-  tag: v1
+  tag: latest
   pullPolicy: Always
 
 postgres:
