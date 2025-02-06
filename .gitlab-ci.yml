@@ -52,8 +52,8 @@ deploy-k8s:
     - kubectl get pods -n "$HELM_NAMESPACE"
     - kubectl get pvc -n "$HELM_NAMESPACE"
 
-    # Étape 1 : Supprimer le Helm release avant de toucher aux PVC
-    - helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE"
+   # Étape 1 : Désinstaller Helm si la release existe
+    - helm list -n "$HELM_NAMESPACE" | grep -q "$HELM_RELEASE_NAME" && helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE" || echo "Helm release not found, skipping uninstall"
 
     # Étape 2 : Supprimer les PVC
     - kubectl delete pvc --all -n "$HELM_NAMESPACE" --wait=false
