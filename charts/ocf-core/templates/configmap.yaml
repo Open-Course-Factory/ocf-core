@@ -4,9 +4,12 @@ metadata:
   name: ocf-core-config
 data:
   .env: |
-    POSTGRES_USER={{ .Values.postgres.env.POSTGRES_USER }}
-    POSTGRES_PASSWORD={{ .Values.postgres.env.POSTGRES_PASSWORD }}
-    POSTGRES_DB={{ .Values.postgres.env.POSTGRES_DB }}
+    POSTGRES_HOST=postgresql
+    POSTGRES_USER=go_user
+    POSTGRES_PASSWORD=go_password
+    POSTGRES_DB=go_db
+    DATABASE=postgres
+    DB_NAME=ocf
     CASDOOR_ENDPOINT=http://casdoor:8000  
     CASDOOR_CLIENT_ID=f216cddd852be485457c
     CASDOOR_CLIENT_SECRET=7aaffdfe341aec96aa2d371ee949c71ff75b43df
