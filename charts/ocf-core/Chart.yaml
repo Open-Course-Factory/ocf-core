@@ -1,5 +1,5 @@
 apiVersion: v2
-name: ocf-core
+name: ocf
 description: A Helm chart for OCF Core
 type: application
 version: 0.1.0
