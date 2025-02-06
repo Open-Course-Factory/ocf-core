@@ -52,29 +52,41 @@ deploy-k8s:
     - kubectl get pods -n "$HELM_NAMESPACE"
     - kubectl get pvc -n "$HELM_NAMESPACE"
 
-   # Étape 1 : Désinstaller Helm si la release existe
+    # Étape 1 : Désinstaller la release Helm si elle existe
     - helm list -n "$HELM_NAMESPACE" | grep -q "$HELM_RELEASE_NAME" && helm uninstall "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE" || echo "Helm release not found, skipping uninstall"
 
-    # Étape 2 : Supprimer les PVC
-    - kubectl delete pvc --all -n "$HELM_NAMESPACE" --wait=false
-    - sleep 5  # Attendre un peu pour éviter les erreurs de timing
+    #  Étape 2 : Supprimer les Deployments
+    - kubectl delete deployment casdoor-db casdoor ocf-core postgres -n "$HELM_NAMESPACE" --ignore-not-found=true
+    - sleep 5  # Attente pour éviter les erreurs
 
-    # Étape 3 : Vérifier si les PVC sont toujours présents et les patcher pour forcer la suppression
+    #  Étape 3 : Supprimer les Pods restants s'ils existent encore
+    - kubectl delete pod -n "$HELM_NAMESPACE" --all --force --grace-period=0
+    - sleep 5  # Laisser Kubernetes nettoyer
+
+    #  Étape 4 : Supprimer les PVC (persistent volume claims)
+    - kubectl delete pvc --all -n "$HELM_NAMESPACE" --wait=false
+    - sleep 5
+
+    # Vérifier s'il reste des PVC en "Terminating" et forcer la suppression
     - for pvc in $(kubectl get pvc -n "$HELM_NAMESPACE" --no-headers -o custom-columns=":metadata.name"); do
         kubectl patch pvc $pvc -n "$HELM_NAMESPACE" -p '{"metadata":{"finalizers":null}}' --type=merge || true;
       done
 
-    # Étape 4 : Vérifier et supprimer les PV orphelins
+    #  Étape 5 : Supprimer les PV orphelins
     - for pv in $(kubectl get pv --no-headers | awk '$3=="Released" {print $1}'); do
         kubectl delete pv $pv;
       done
 
-    # Étape 5 : Supprimer les déploiements existants pour éviter les conflits avec Helm
-    - kubectl delete deployment casdoor-db casdoor ocf-core postgres -n "$HELM_NAMESPACE" --ignore-not-found=true
-    
-    - sleep 5  # Laisser le temps aux pods de se supprimer proprement
+    # Vérifier que tout est bien supprimé
+    - kubectl get deployments -n "$HELM_NAMESPACE"
+    - kubectl get pods -n "$HELM_NAMESPACE"
+    - kubectl get pvc -n "$HELM_NAMESPACE"
+
+ 
       #deploiement
     - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
+
+    #Check
     - kubectl get pods -n "$HELM_NAMESPACE"
     - kubectl get pvc -n "$HELM_NAMESPACE"
     - kubectl get pv
