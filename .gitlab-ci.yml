@@ -96,6 +96,7 @@ deploy-k8s:
    # - helm uninstall "$HELM_RELEASE_NAME" --namespace $HELM_NAMESPACE || true
     # Déploiement avec Helm
     - echo "🚀 Déploiement avec Helm..."
+    - kubectl create namespace ocf
 
     - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
 
