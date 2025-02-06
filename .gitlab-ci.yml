@@ -92,6 +92,8 @@ deploy-k8s:
     - kubectl get pv
     - kubectl get crds
 
+    #desinstallation du helm release
+    - helm uninstall "$HELM_RELEASE_NAME" --namespace $HELM_NAMESPACE || true
     # Installation propre avec Helm
     - echo "Installation de Helm Chart..."
     - helm upgrade --install "$HELM_RELEASE_NAME" ./charts/ocf-core --namespace "$HELM_NAMESPACE" --values ./charts/ocf-core/values.yaml --force
