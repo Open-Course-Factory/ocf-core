@@ -1,26 +1,3 @@
-#service:
- # type: ClusterIP
-  #port: 8080
-
-#imagePullSecrets:
- # - name: gitlab-registry
-
-#image:
- # repository: registry.gitlab.com/ci-cd-chihi-mecheri-michel-gueye/ocf-core
-  #tag: v1
-  #pullPolicy: Always
-
-#ingress:
- # enabled: true
-  #className: nginx
-  #hosts:
-   # - host: ocf.local
-    #  paths:
-     #   - path: /
-      #    pathType: Prefix
-
-#imagePullSecrets:
- # - name: gitlab-registry
 replicaCount: 1
 
 services:
@@ -48,22 +25,41 @@ services:
     port: 8000
     image: "casbin/casdoor"
     configPath: "/conf/app.conf"
+    env:
+      DB_DRIVER: "mysql"
+      DB_HOST: "casdoor-db"
+      DB_PORT: "3306"
+      DB_NAME: "casdoor"
+      DB_USER: "casdoor"
+      DB_PASSWORD: "casdoor123"
 
   casdoorDb:
     port: 3306
     image: "mysql:8.0.25"
     env:
-      MYSQL_ROOT_PASSWORD: 123456
-    storage: "1Gi"  # Assurez-vous que cette valeur existe pour casdoorDb
+      MYSQL_ROOT_PASSWORD: "123456"
+      MYSQL_DATABASE: "casdoor"
+      MYSQL_USER: "casdoor"
+      MYSQL_PASSWORD: "casdoor123"
+    storage: "1Gi"
     storageClassName: "local-path"
 
-# Configuration de l'image pour OCF Core
 image:
   repository: registry.gitlab.com/ci-cd-chihi-mecheri-michel-gueye/ocf-core
   tag: latest
   pullPolicy: Always
 
-# Ingress configuration
 ingress:
   enabled: false
   host: ""
+
+persistence:
+  postgres:
+    enabled: true
+    storageClass: "local-path"
+    size: "1Gi"
+  
+  casdoorDb:
+    enabled: true
+    storageClass: "local-path"
+    size: "1Gi"
