@@ -1,0 +1,65 @@
+replicaCount: 1
+
+services:
+  ocfCore:
+    port: 8080
+
+  postgres:
+    port: 5432
+    image: "postgres:16-alpine"
+    env:
+      POSTGRES_USER: go_user
+      POSTGRES_PASSWORD: go_password
+      POSTGRES_DB: go_db
+    storage: "1Gi"
+    storageClassName: "local-path"
+
+  pgadmin:
+    port: 80
+    image: "dpage/pgadmin4"
+    env:
+      PGADMIN_DEFAULT_EMAIL: thomas@solution-libre.fr
+      PGADMIN_DEFAULT_PASSWORD: test
+
+  casdoor:
+    port: 8000
+    image: "casbin/casdoor"
+    configPath: "/conf/app.conf"
+    env:
+      DB_DRIVER: "mysql"
+      DB_HOST: "casdoor-db"
+      DB_PORT: "3306"
+      DB_NAME: "casdoor"
+      DB_USER: "casdoor"
+      DB_PASSWORD: "casdoor123"
+
+  casdoorDb:
+    port: 3306
+    image: "mysql:8.0.25"
+    env:
+      MYSQL_ROOT_PASSWORD: "123456"
+      MYSQL_DATABASE: "casdoor"
+      MYSQL_USER: "casdoor"
+      MYSQL_PASSWORD: "casdoor123"
+    storage: "1Gi"
+    storageClassName: "local-path"
+
+image:
+  repository: registry.gitlab.com/ci-cd-chihi-mecheri-michel-gueye/ocf-core
+  tag: latest
+  pullPolicy: Always
+
+ingress:
+  enabled: false
+  host: ""
+
+persistence:
+  postgres:
+    enabled: true
+    storageClass: "local-path"
+    size: "1Gi"
+  
+  casdoorDb:
+    enabled: true
+    storageClass: "local-path"
+    size: "1Gi"

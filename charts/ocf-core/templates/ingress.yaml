@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ocf
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ocf.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ocf
+                port:
+                  number: 8080

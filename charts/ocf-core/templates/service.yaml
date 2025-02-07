@@ -1,0 +1,46 @@
+#apiVersion: v1
+#kind: Service
+#metadata:
+ # name: ocf
+#spec:
+ # type: ClusterIP
+  #ports:
+   # - port: 8080
+    #  targetPort: 8080
+     # protocol: TCP
+  #selector:
+   # app: ocf
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocf-services
+spec:
+  selector:
+    app: ocf-services
+  ports:
+    - name: ocf-core
+      protocol: TCP
+      port: {{ .Values.services.ocfCore.port }}
+      targetPort: {{ .Values.services.ocfCore.port }}
+
+    - name: postgres
+      protocol: TCP
+      port: {{ .Values.services.postgres.port }}
+      targetPort: {{ .Values.services.postgres.port }}
+
+    - name: pgadmin
+      protocol: TCP
+      port: {{ .Values.services.pgadmin.port }}
+      targetPort: {{ .Values.services.pgadmin.port }}
+
+    - name: casdoor
+      protocol: TCP
+      port: {{ .Values.services.casdoor.port }}
+      targetPort: {{ .Values.services.casdoor.port }}
+
+    - name: casdoor-db
+      protocol: TCP
+      port: {{ .Values.services.casdoorDb.port }}
+      targetPort: {{ .Values.services.casdoorDb.port }}
+
