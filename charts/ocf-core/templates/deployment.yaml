@@ -103,40 +103,14 @@ spec:
           image: "{{ .Values.services.casdoor.image }}"
           ports:
             - containerPort: {{ .Values.services.casdoor.port }}
-          env:
-            - name: DB_DRIVER
-              value: "{{ .Values.services.casdoor.env.DB_DRIVER }}"
-            - name: DB_HOST
-              value: "{{ .Values.services.casdoor.env.DB_HOST }}"
-            - name: DB_PORT
-              value: "{{ .Values.services.casdoor.env.DB_PORT }}"
-            - name: DB_NAME
-              value: "{{ .Values.services.casdoor.env.DB_NAME }}"
-            - name: DB_USER
-              value: "{{ .Values.services.casdoor.env.DB_USER }}"
-            - name: DB_PASSWORD
-              value: "{{ .Values.services.casdoor.env.DB_PASSWORD }}"
           volumeMounts:
             - name: casdoor-config
               mountPath: /conf/app.conf
               subPath: app.conf
-          readinessProbe:
-            httpGet:
-              path: /
-              port: {{ .Values.services.casdoor.port }}
-            initialDelaySeconds: 10
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /
-              port: {{ .Values.services.casdoor.port }}
-            initialDelaySeconds: 20
-            periodSeconds: 15
       volumes:
         - name: casdoor-config
           configMap:
             name: casdoor-config
-
 
 ---
 apiVersion: apps/v1
