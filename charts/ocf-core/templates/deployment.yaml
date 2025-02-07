@@ -17,20 +17,20 @@ spec:
       initContainers:
         - name: wait-for-postgres
           image: busybox
-          command: ['sh', '-c', "until nc -z postgres 5432; do sleep 2; done"]
+          command: ['sh', '-c', "until nc -z postgres {{ .Values.services.postgres.port }}; do sleep 2; done"]
       containers:
         - name: ocf
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: Always
           ports:
-            - containerPort: default 8080 
+            - containerPort: {{ .Values.services.ocfCore.port }}
           volumeMounts:
             - name: env-file
               mountPath: /home/ocf/.env
               subPath: .env
           env:
             - name: DATABASE_URL
-              value: "postgres://{{ .Values.postgres.env.POSTGRES_USER }}:{{ .Values.postgres.env.POSTGRES_PASSWORD }}@postgres:5432/{{ .Values.postgres.env.POSTGRES_DB }}"
+              value: "postgres://{{ .Values.services.postgres.env.POSTGRES_USER }}:{{ .Values.services.postgres.env.POSTGRES_PASSWORD }}@postgres:{{ .Values.services.postgres.port }}/{{ .Values.services.postgres.env.POSTGRES_DB }}"
       volumes:
         - name: env-file
           configMap:
@@ -54,16 +54,16 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: "{{ .Values.postgres.image }}"
+          image: "{{ .Values.services.postgres.image }}"
           env:
             - name: POSTGRES_PASSWORD
-              value: "{{ .Values.postgres.env.POSTGRES_PASSWORD }}"
+              value: "{{ .Values.services.postgres.env.POSTGRES_PASSWORD }}"
             - name: POSTGRES_USER
-              value: "{{ .Values.postgres.env.POSTGRES_USER }}"
+              value: "{{ .Values.services.postgres.env.POSTGRES_USER }}"
             - name: POSTGRES_DB
-              value: "{{ .Values.postgres.env.POSTGRES_DB }}"
+              value: "{{ .Values.services.postgres.env.POSTGRES_DB }}"
           ports:
-            - containerPort: {{ .Values.postgres.port }}
+            - containerPort: {{ .Values.services.postgres.port }}
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql/data
@@ -72,12 +72,12 @@ spec:
               command:
                 - "pg_isready"
                 - "-U"
-                - "{{ .Values.postgres.env.POSTGRES_USER }}"
+                - "{{ .Values.services.postgres.env.POSTGRES_USER }}"
             initialDelaySeconds: 5
             periodSeconds: 5
       volumes:
         - name: postgres-storage
-        
+
 
 ---
 apiVersion: apps/v1
@@ -97,12 +97,12 @@ spec:
       initContainers:
         - name: wait-for-casdoor-db
           image: busybox
-          command: ['sh', '-c', "until nc -z casdoor-db 3306; do sleep 2; done"]
+          command: ['sh', '-c', "until nc -z casdoor-db {{ .Values.services.casdoorDb.port }}; do sleep 2; done"]
       containers:
         - name: casdoor
-          image: "{{ .Values.casdoor.image }}"
+          image: "{{ .Values.services.casdoor.image }}"
           ports:
-            - containerPort: {{ .Values.casdoor.port }}
+            - containerPort: {{ .Values.services.casdoor.port }}
           volumeMounts:
             - name: casdoor-config
               mountPath: /conf/app.conf
@@ -129,12 +129,12 @@ spec:
     spec:
       containers:
         - name: casdoor-db
-          image: "{{ .Values.casdoor_db.image }}"
+          image: "{{ .Values.services.casdoorDb.image }}"
           env:
             - name: MYSQL_ROOT_PASSWORD
-              value: "{{ .Values.casdoor_db.env.MYSQL_ROOT_PASSWORD }}"
+              value: "{{ .Values.services.casdoorDb.env.MYSQL_ROOT_PASSWORD }}"
           ports:
-            - containerPort: {{ .Values.casdoor_db.port }}
+            - containerPort: {{ .Values.services.casdoorDb.port }}
           volumeMounts:
             - name: casdoor-db-storage
               mountPath: /var/lib/mysql
@@ -145,4 +145,3 @@ spec:
             periodSeconds: 5
       volumes:
         - name: casdoor-db-storage
-
