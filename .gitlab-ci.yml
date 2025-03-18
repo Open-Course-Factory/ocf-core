@@ -4,7 +4,7 @@ default:
 
 build:
   before_script:
-    - echo $token_jwt_key > ./src/auth/casdoor/token_jwt_key.pem
+    - echo $token_jwt_key > ./token_jwt_key.pem
 
 include:
   - template: Jobs/Build.gitlab-ci.yml
