@@ -58,7 +58,7 @@ import (
 
 //	@title			OCF API
 //	@version		0.0.1
-//	@description	This is a server to build and generate slides.
+//	@description	This is a server to build and generate courses and labs.
 //	@termsOfService	TODO
 
 //	@securityDefinitions.apikey	Bearer
@@ -69,7 +69,7 @@ import (
 // @contact.name	Solution Libre
 // @contact.url	https://www.solution-libre.fr
 // @contact.email	contact@solution-libre.fr
-// @host			localhost:8080
+// @host			api.solution-libre.fr
 // @BasePath		/api/v1
 func main() {
 
