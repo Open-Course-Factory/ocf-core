@@ -1,7 +1,6 @@
 package main
 
 import (
-	_ "embed"
 	"flag"
 	"fmt"
 	"log"
@@ -66,11 +65,6 @@ import (
 //	@name						Authorization
 //	@description				Type "Bearer" followed by a space and JWT token.
 
-// @contact.name	Solution Libre
-// @contact.url	https://www.solution-libre.fr
-// @contact.email	contact@solution-libre.fr
-// @host			api.solution-libre.fr
-// @BasePath		/api/v1
 func main() {
 
 	envFile := ".env"
@@ -154,9 +148,10 @@ func main() {
 
 func initSwagger(r *gin.Engine) {
 	docs.SwaggerInfo.Title = "OCF API"
-	docs.SwaggerInfo.Description = "This is an API to build and generate courses"
-	docs.SwaggerInfo.Version = "0.0.1"
-	docs.SwaggerInfo.Host = "localhost:8080"
+	docs.SwaggerInfo.Description = "This is an API to build and generate courses with labs"
+	docs.SwaggerInfo.Version = os.Getenv("OCF_VERSION")
+	docs.SwaggerInfo.Host = os.Getenv("OCF_API_URL")
+	docs.SwaggerInfo.Schemes = []string{"http", "https"}
 	docs.SwaggerInfo.BasePath = "/api/v1"
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }

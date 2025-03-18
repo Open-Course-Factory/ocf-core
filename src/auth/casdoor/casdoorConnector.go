@@ -1,7 +1,6 @@
 package casdoor
 
 import (
-	_ "embed"
 	"fmt"
 	"log"
 	"os"
@@ -13,7 +12,6 @@ import (
 	"gorm.io/gorm"
 )
 
-//go:embed token_jwt_key.pem
 var JwtPublicKey string
 
 var Enforcer *casbin.Enforcer
@@ -29,6 +27,13 @@ func InitCasdoorConnection(basePath string) {
 	if err != nil {
 		log.Default().Printf("err loading: %v", err)
 	}
+
+	b, err := os.ReadFile("./token_jwt_key.pem")
+	if err != nil {
+		panic(fmt.Sprintf("Certificate token_jwt_key.pem not readable: %v", err))
+	}
+
+	JwtPublicKey := string(b)
 
 	casdoorsdk.InitConfig(casdoorEndPoint, casdoorClientId, casdoorClientsecret, JwtPublicKey, casdoorOrganizationName, casdoorApplicationName)
 }
