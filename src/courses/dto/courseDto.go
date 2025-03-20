@@ -82,7 +82,7 @@ type CreateCourseFromGitOutput struct {
 
 type CreateCourseFromGitInput struct {
 	Url        string `binding:"required"`
-	BranchName string `json:"omitempty"`
+	BranchName string `json:"branch_name,omitempty"`
 	Name       string `binding:"required"`
 }
 

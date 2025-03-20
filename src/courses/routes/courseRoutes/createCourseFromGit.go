@@ -20,7 +20,6 @@ import (
 //	@Accept			json
 //	@Produce		json
 //	@Param			gitRepository	body	dto.CreateCourseFromGitInput	true	"cours"
-//	@Param			Authorization	header	string							true	"Insert your access token"	default(bearer <Add access token here>)
 //
 //	@Security		Bearer
 //
