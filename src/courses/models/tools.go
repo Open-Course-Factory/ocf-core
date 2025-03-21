@@ -18,6 +18,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/memory"
+	stdssh "golang.org/x/crypto/ssh"
 
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
@@ -219,6 +220,14 @@ func prepareGitCloneOptions(userId string, courseURL string, branchName ...strin
 		key, err = ssh.NewPublicKeys("git", []byte(firstKey), "")
 
 		if err != nil {
+			log.Default().Println(err.Error())
+			return nil, err
+		}
+
+		cc, errCC := key.ClientConfig()
+		cc.HostKeyCallback = stdssh.InsecureIgnoreHostKey()
+
+		if errCC != nil {
 			log.Default().Println(err.Error())
 			return nil, err
 		}

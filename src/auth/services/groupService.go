@@ -71,19 +71,19 @@ func (us *groupService) ModifyUsersInGroup(groupName string, modifyUsersInGroupD
 
 			var userPosition int = -1
 			for positionInGroup, userFromGroup := range group.Users {
-				if userFromGroup.Id == user.Id {
+				if userFromGroup == user.Id {
 					userPosition = positionInGroup
 					break
 				}
 			}
 			if userPosition < 0 {
-				group.Users = append(group.Users, user)
+				group.Users = append(group.Users, user.Id)
 			}
 		case dto.REMOVE:
 
 			var userPosition int = -1
 			for positionInGroup, userFromGroup := range group.Users {
-				if userFromGroup.Id == user.Id {
+				if userFromGroup == user.Id {
 					userPosition = positionInGroup
 					break
 				}
