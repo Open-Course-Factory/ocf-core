@@ -41,13 +41,8 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 		return
 	}
 
-	rawUser, ok := ctx.Get("user")
-
-	if !ok {
-		return
-	}
-
-	user, err := casdoorsdk.GetUserByUserId(rawUser.(*casdoorsdk.User).Id)
+	userId := ctx.GetString("userId")
+	user, err := casdoorsdk.GetUserByUserId(userId)
 
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
