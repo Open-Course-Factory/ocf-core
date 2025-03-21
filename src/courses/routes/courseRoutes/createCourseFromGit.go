@@ -36,7 +36,7 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 	if bindError != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de parser le json",
+			ErrorMessage: "Impossible de parser le json" + bindError.Error(),
 		})
 		return
 	}
@@ -47,7 +47,7 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de récupérer l'utilisateur",
+			ErrorMessage: "Impossible de récupérer l'utilisateur" + err.Error(),
 		})
 	}
 
@@ -56,7 +56,7 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 	if errGetCourse != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de récupérer le cours",
+			ErrorMessage: "Impossible de récupérer le cours : " + errGetCourse.Error(),
 		})
 		return
 	}
