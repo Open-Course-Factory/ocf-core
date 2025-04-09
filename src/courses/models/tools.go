@@ -224,13 +224,15 @@ func prepareGitCloneOptions(userId string, courseURL string, branchName ...strin
 			return nil, err
 		}
 
-		cc, errCC := key.ClientConfig()
-		cc.HostKeyCallback = stdssh.InsecureIgnoreHostKey()
+		key.(*ssh.PublicKeys).HostKeyCallback = stdssh.InsecureIgnoreHostKey()
 
-		if errCC != nil {
-			log.Default().Println(errCC.Error())
-			return nil, errCC
-		}
+		// cc, errCC := key.ClientConfig()
+		// cc.HostKeyCallback = stdssh.InsecureIgnoreHostKey()
+
+		// if errCC != nil {
+		// 	log.Default().Println(errCC.Error())
+		// 	return nil, errCC
+		// }
 
 		urlFormat := DetectURLFormat(courseURL)
 
