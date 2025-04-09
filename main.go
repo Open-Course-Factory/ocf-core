@@ -113,6 +113,9 @@ func main() {
 		os.Exit(0)
 	}
 
+	// should be with an option to choose between slidev and marp
+	generator.SLIDE_ENGINE = slidev.SlidevCourseGenerator{}
+
 	r := gin.Default()
 	// r.Use(middleware.CORS())
 	r.Use(cors.New(cors.Options{
