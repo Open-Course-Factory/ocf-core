@@ -147,6 +147,13 @@ func main() {
 }
 
 func initSwagger(r *gin.Engine) {
+	env := os.Getenv("ENVIRONMENT")
+	if env == "development" || env == "test" {
+		docs.SwaggerInfo.Schemes = []string{"http", "https"}
+	} else {
+		docs.SwaggerInfo.Schemes = []string{"https"}
+	}
+
 	docs.SwaggerInfo.Title = "OCF API"
 	docs.SwaggerInfo.Description = "This is an API to build and generate courses with labs"
 	docs.SwaggerInfo.Version = os.Getenv("OCF_VERSION")

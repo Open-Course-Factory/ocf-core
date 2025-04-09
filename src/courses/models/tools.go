@@ -228,8 +228,8 @@ func prepareGitCloneOptions(userId string, courseURL string, branchName ...strin
 		cc.HostKeyCallback = stdssh.InsecureIgnoreHostKey()
 
 		if errCC != nil {
-			log.Default().Println(err.Error())
-			return nil, err
+			log.Default().Println(errCC.Error())
+			return nil, errCC
 		}
 
 		urlFormat := DetectURLFormat(courseURL)
