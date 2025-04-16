@@ -8,8 +8,6 @@ import (
 	"soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 // Create Course from Git godoc
@@ -42,16 +40,8 @@ func (c courseController) CreateCourseFromGit(ctx *gin.Context) {
 	}
 
 	userId := ctx.GetString("userId")
-	user, err := casdoorsdk.GetUserByUserId(userId)
 
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de récupérer l'utilisateur" + err.Error(),
-		})
-	}
-
-	errGetCourse := c.service.GetGitCourse(user.Id, createCourseFromGitDTO.Name, createCourseFromGitDTO.Url, createCourseFromGitDTO.BranchName)
+	_, errGetCourse := c.service.GetGitCourse(userId, createCourseFromGitDTO.Name, createCourseFromGitDTO.Url, createCourseFromGitDTO.BranchName)
 
 	if errGetCourse != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{

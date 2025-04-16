@@ -49,11 +49,21 @@ func pageValueModelToPageOutputDto(pageModel models.Page) (*dto.PageOutput, erro
 
 func (s PageRegistration) EntityInputDtoToEntityModel(input any) any {
 
-	pageInputDto := input.(dto.PageInput)
-	return &models.Page{
+	pageInputDto, ok := input.(dto.PageInput)
+	if !ok {
+		ptrPageInputDto := input.(*dto.PageInput)
+		pageInputDto = *ptrPageInputDto
+	}
+
+	pageToReturn := &models.Page{
+
 		Order:   pageInputDto.Order,
 		Content: pageInputDto.Content,
 	}
+
+	pageToReturn.OwnerIDs = append(pageToReturn.OwnerIDs, pageInputDto.OwnerID)
+
+	return pageToReturn
 }
 
 func (s PageRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {

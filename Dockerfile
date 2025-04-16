@@ -51,6 +51,7 @@ COPY --from=builder /usr/src/ocf-core/ocf ocf
 COPY --from=builder /usr/src/ocf-core/src/configuration/keymatch_model.conf src/configuration/keymatch_model.conf
 COPY --from=builder /usr/src/ocf-core/token_jwt_key.pem token_jwt_key.pem
 
+
 # Export ports
 EXPOSE 8000/tcp
 EXPOSE 443/tcp

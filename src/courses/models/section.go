@@ -2,14 +2,15 @@ package models
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"log"
-	"os"
-	config "soli/formations/src/configuration"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
 
 	"github.com/adrg/frontmatter"
+	"github.com/go-git/go-billy/v5"
 )
 
 type SectionWriter interface {
@@ -37,19 +38,43 @@ func (s Section) String(chapter Chapter) string {
 	return sw.GetSection()
 }
 
-func fillSection(courseName string, currentSection *Section) {
-	filename := config.COURSES_ROOT + courseName + "/" + currentSection.FileName
-	currentSection.FileName = filename
+func fillSection(courseFileSystem *billy.Filesystem, currentSection *Section) error {
 
-	sPages := extractPagesFromSectionsFiles(filename)
+	if courseFileSystem == nil {
+		return errors.New("filesystem is nil")
+	}
+
+	f, errFileOpening := (*courseFileSystem).Open(currentSection.FileName)
+	if errFileOpening != nil {
+		log.Default().Println(errFileOpening.Error())
+	}
+	defer f.Close()
+	scanner, scannerError := getScannerFromFile(f)
+
+	if scannerError != nil {
+		return scannerError
+	}
+
+	sPages := extractPagesFromSectionsFileScanner(*scanner)
 	pages := convertRawPageIntoStruct(currentSection, &sPages)
 
 	currentSection.Pages = pages
+	return nil
+}
+
+func getScannerFromFile(file billy.File) (*bufio.Scanner, error) {
+	// Ensure the read pointer is at the beginning of the file
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	scanner := bufio.NewScanner(file)
+	return scanner, nil
 }
 
 func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page {
 	var pages []*Page
-	pageCounter := 0
+	pageOrder := 0
 	var hide bool
 
 	var sectionFrontMatter struct {
@@ -85,17 +110,17 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 			beginningIndex = index
 		} else {
 			if index > beginningIndex {
-				pageCounter++
+				pageOrder++
 				sPageContent, err := frontmatter.Parse(strings.NewReader(sPage), &pageFrontMatter)
 
 				if err != nil {
 					fmt.Println(err.Error())
 				}
 
-				if contains(currentSection.HiddenPages, (pageCounter)) {
+				if contains(currentSection.HiddenPages, (pageOrder)) {
 					hide = true
 				}
-				pages = append(pages, createPage(pageCounter, strings.Split(string(sPageContent), "\n"), currentSection, hide))
+				pages = append(pages, createPage(pageOrder, strings.Split(string(sPageContent), "\n"), currentSection, hide))
 			} else {
 				fmt.Println("Front matter for section not found / not formatted as expected")
 			}
@@ -105,14 +130,8 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 	return pages
 }
 
-func extractPagesFromSectionsFiles(filename string) []string {
+func extractPagesFromSectionsFileScanner(scanner bufio.Scanner) []string {
 	var sPages []string
-	f, errFileOpening := os.Open(filename)
-	if errFileOpening != nil {
-		log.Default().Println(errFileOpening.Error())
-	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
 
 	var currentPageContent []string
 	bIgnoreFrontMatterEnd := false

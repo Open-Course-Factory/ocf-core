@@ -37,14 +37,20 @@ func courseValueModelToCourseOutputDto(courseModel models.Course) (*dto.CourseOu
 func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
 
 	var chapters []*models.Chapter
-	courseInputDto := input.(dto.CourseInput)
+
+	courseInputDto, ok := input.(dto.CourseInput)
+	if !ok {
+		ptrCourseInputDto := input.(*dto.CourseInput)
+		courseInputDto = *ptrCourseInputDto
+	}
+
 	for _, chapterInput := range courseInputDto.ChaptersInput {
 		chapterModel := ChapterRegistration{}.EntityInputDtoToEntityModel(chapterInput)
 		chapter := chapterModel.(*models.Chapter)
 		chapters = append(chapters, chapter)
 	}
 
-	return &models.Course{
+	courseToReturn := &models.Course{
 		Name:                     courseInputDto.Name,
 		Theme:                    courseInputDto.Theme,
 		Format:                   config.Format(*courseInputDto.Format),
@@ -56,7 +62,6 @@ func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
 		Footer:                   courseInputDto.Footer,
 		Logo:                     courseInputDto.Logo,
 		Description:              courseInputDto.Description,
-		Schedule:                 courseInputDto.Schedule,
 		Prelude:                  courseInputDto.Prelude,
 		LearningObjectives:       courseInputDto.LearningObjectives,
 		Chapters:                 chapters,
@@ -65,6 +70,10 @@ func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
 		ThemeGitRepository:       courseInputDto.ThemeGitRepository,
 		ThemeGitRepositoryBranch: courseInputDto.ThemeGitRepositoryBranch,
 	}
+
+	courseToReturn.OwnerIDs = append(courseToReturn.OwnerIDs, courseInputDto.OwnerID)
+
+	return courseToReturn
 }
 
 func (s CourseRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {

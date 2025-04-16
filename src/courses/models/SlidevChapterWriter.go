@@ -18,14 +18,14 @@ func (scw *SlidevChapterWriter) SetFrontMatter() string {
 
 func (scw *SlidevChapterWriter) SetTitlePage() string {
 	// Before the chapter, we create a main title page with only the chapter number + title and the header/footer
-	titlePage := "**CHAPITRE " + strconv.Itoa(scw.Chapter.Number) + "**\n# " + scw.Chapter.getTitle() + "\n\n"
+	titlePage := "**CHAPITRE " + strconv.Itoa(scw.Chapter.Number) + "**\n# " + scw.Chapter.getTitle(true) + "\n\n"
 	return titlePage
 }
 
 func (scw *SlidevChapterWriter) SetTitle() string {
 	// Second title page with the Table Of Content of the chapter
-	frontMatter := "\n---\nlayout: maintoc\nchapter: " + scw.Chapter.Title + "\n---\n\n"
-	title := frontMatter + "# " + scw.Chapter.getTitle() + "\n\n"
+	frontMatter := "\n---\nlayout: maintoc\nchapter: " + scw.Chapter.getTitle(false) + "\n---\n\n"
+	title := frontMatter + "# " + scw.Chapter.getTitle(true) + "\n\n"
 	return title
 }
 

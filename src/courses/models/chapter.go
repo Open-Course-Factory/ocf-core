@@ -28,7 +28,10 @@ func (c Chapter) String() string {
 	return cw.GetChapter()
 }
 
-func (c Chapter) getTitle() string {
-
-	return removeAccents(strings.ToUpper(c.Title))
+func (c Chapter) getTitle(toUpper bool) string {
+	title := c.Title
+	if toUpper {
+		title = strings.ToUpper(title)
+	}
+	return removeAccents(title)
 }

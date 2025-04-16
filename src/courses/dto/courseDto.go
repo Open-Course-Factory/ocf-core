@@ -9,13 +9,17 @@ type GenerateCourseOutput struct {
 }
 
 type GenerateCourseInput struct {
-	Id          string `binding:"required"`
-	Theme       string `binding:"required"`
-	Format      string `binding:"required"`
-	AuthorEmail string `binding:"required"`
+	Id                       string `binding:"required"`
+	ThemeId                  string
+	ThemeGitRepository       string
+	ThemeGitRepositoryBranch string
+	Format                   string `binding:"required"`
+	AuthorEmail              string `binding:"required"`
+	ScheduleId               string
 }
 
 type CourseInput struct {
+	OwnerID                  string
 	Name                     string `binding:"required"`
 	Theme                    string `binding:"required"`
 	Format                   *int   `binding:"required,gte=0,lte=1"`
@@ -28,7 +32,6 @@ type CourseInput struct {
 	Footer                   string `binding:"required"`
 	Logo                     string
 	Description              string
-	Schedule                 string          `binding:"required"`
 	Prelude                  string          `binding:"required"`
 	LearningObjectives       string          `json:"learning_objectives"`
 	ChaptersInput            []*ChapterInput `json:"chapters"`
@@ -52,7 +55,7 @@ type CourseOutput struct {
 	Logo               string          `json:"logo"`
 	Description        string          `json:"description"`
 	CourseID_str       string          `binding:"required" json:"course_id_str"`
-	Schedule           string          `binding:"required" json:"schedule"`
+	ScheduleId         string          `binding:"required"`
 	Prelude            string          `binding:"required" json:"prelude"`
 	LearningObjectives string          `json:"learning_objectives"`
 	ChaptersOutput     []ChapterOutput `json:"chapters"`
@@ -71,7 +74,7 @@ type EditCourseInput struct {
 	Footer             string `binding:"required"`
 	Logo               string
 	Description        string
-	Schedule           string            `binding:"required"`
+	ScheduleId         string            `binding:"required"`
 	Prelude            string            `binding:"required"`
 	LearningObjectives string            `json:"learning_objectives"`
 	Chapters           []*models.Chapter `json:"chapters"`
@@ -104,7 +107,7 @@ func CourseModelToCourseOutputDto(courseModel models.Course) *CourseOutput {
 		Logo:               courseModel.Logo,
 		Description:        courseModel.Description,
 		CourseID_str:       courseModel.ID.String(),
-		Schedule:           courseModel.Schedule,
+		ScheduleId:         courseModel.Schedule.ID.String(),
 		Prelude:            courseModel.Prelude,
 		LearningObjectives: courseModel.LearningObjectives,
 		ChaptersOutput:     chapterOutputs,
@@ -119,6 +122,7 @@ func CourseModelToCourseInputDto(courseModel models.Course) *CourseInput {
 	}
 
 	return &CourseInput{
+		OwnerID:                  courseModel.OwnerIDs[0],
 		Name:                     courseModel.Name,
 		Theme:                    courseModel.Theme,
 		Version:                  courseModel.Version,
@@ -129,7 +133,6 @@ func CourseModelToCourseInputDto(courseModel models.Course) *CourseInput {
 		Footer:                   courseModel.Footer,
 		Logo:                     courseModel.Logo,
 		Description:              courseModel.Description,
-		Schedule:                 courseModel.Schedule,
 		Prelude:                  courseModel.Prelude,
 		LearningObjectives:       courseModel.LearningObjectives,
 		ChaptersInput:            chapterInputs,

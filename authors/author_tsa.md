@@ -24,14 +24,14 @@
 <font size="5">
 
 ::: columns
-**Formateur / Vulgarisateur**
-Formation DevOps depuis 2015
-Vidéos Youtube depuis 2017
-Streaming Twitch depuis 2020
+**Formateur / Vulgarisateur**<br />
+Formation DevOps depuis 2015<br />
+Vidéos Youtube depuis 2017<br />
+Streaming Twitch depuis 2020<br />
 
-**Expert Dev / DevOps / Linux**
-Professionnel depuis 2008
-Développement, conseil, accompagnement
+**Expert Dev / DevOps / Linux**<br />
+Professionnel depuis 2008<br />
+Développement, conseil, accompagnement<br />
 :::
 
 </font>

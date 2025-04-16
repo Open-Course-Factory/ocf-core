@@ -86,6 +86,21 @@ func main() {
 	sqldb.DB.AutoMigrate(&courseModels.Chapter{})
 	sqldb.DB.AutoMigrate(&courseModels.Course{})
 	sqldb.DB.AutoMigrate(&courseModels.Session{})
+
+	sqldb.DB.AutoMigrate(&courseModels.SectionPages{})
+
+	err2 := sqldb.DB.SetupJoinTable(&courseModels.Section{}, "Pages", &courseModels.SectionPages{})
+
+	if err2 != nil {
+		log.Default().Println(err2)
+	}
+
+	err3 := sqldb.DB.SetupJoinTable(&courseModels.Page{}, "Sections", &courseModels.SectionPages{})
+
+	if err3 != nil {
+		log.Default().Println(err3)
+	}
+
 	sqldb.DB.AutoMigrate(&courseModels.Schedule{})
 
 	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
@@ -238,7 +253,7 @@ func parseFlags() bool {
 
 	setCourseThemeFromProgramInputs(&course, courseThemeName, courseThemeGitRepository, courseThemeBranchGitRepository)
 
-	courseModels.FillCourseModelFromFiles(*courseName, &course)
+	//courseModels.FillCourseModelFromFiles(*courseName, &course)
 
 	genericService := genericService.NewGenericService(sqldb.DB)
 

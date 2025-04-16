@@ -16,13 +16,13 @@ func (mcw *MarpChapterWriter) SetFrontMatter() string {
 
 func (mcw *MarpChapterWriter) SetTitlePage() string {
 	// Before the chapter, we create a main title page with only the chapter number + title and the header/footer
-	titlePage := "<!-- _class: lead hide-header -->\n\n**CHAPITRE " + strconv.Itoa(mcw.Chapter.Number) + "**\n# " + mcw.Chapter.getTitle() + "\n\n"
+	titlePage := "<!-- _class: lead hide-header -->\n\n**CHAPITRE " + strconv.Itoa(mcw.Chapter.Number) + "**\n# " + mcw.Chapter.getTitle(true) + "\n\n"
 	return titlePage
 }
 
 func (mcw *MarpChapterWriter) SetTitle() string {
 	// Second title page with the Table Of Content of the chapter
-	title := "\n---\n\n<!-- _class: main-toc -->\n\n<p></p>\n\n# " + mcw.Chapter.getTitle() + "\n\n"
+	title := "\n---\n\n<!-- _class: main-toc -->\n\n<p></p>\n\n# " + mcw.Chapter.getTitle(true) + "\n\n"
 	return title
 }
 

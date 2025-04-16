@@ -48,7 +48,12 @@ func chapterValueModelToChapterOutputDto(chapterModel models.Chapter) (*dto.Chap
 func (s ChapterRegistration) EntityInputDtoToEntityModel(input any) any {
 
 	var sectionModels []*models.Section
-	chapterInputDto := input.(dto.ChapterInput)
+
+	chapterInputDto, ok := input.(dto.ChapterInput)
+	if !ok {
+		ptrChapterInputDto := input.(*dto.ChapterInput)
+		chapterInputDto = *ptrChapterInputDto
+	}
 
 	for _, sectionInput := range chapterInputDto.Sections {
 		sectionModel := SectionRegistration{}.EntityInputDtoToEntityModel(sectionInput)
@@ -56,13 +61,17 @@ func (s ChapterRegistration) EntityInputDtoToEntityModel(input any) any {
 		sectionModels = append(sectionModels, res)
 	}
 
-	return &models.Chapter{
+	chapterToReturn := &models.Chapter{
 		Footer:       chapterInputDto.Footer,
 		Introduction: chapterInputDto.Introduction,
 		Title:        chapterInputDto.Title,
 		Number:       chapterInputDto.Number,
 		Sections:     sectionModels,
 	}
+
+	chapterToReturn.OwnerIDs = append(chapterToReturn.OwnerIDs, chapterInputDto.OwnerID)
+
+	return chapterToReturn
 }
 
 func (s ChapterRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
