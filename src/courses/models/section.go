@@ -11,6 +11,7 @@ import (
 
 	"github.com/adrg/frontmatter"
 	"github.com/go-git/go-billy/v5"
+	"gorm.io/gorm"
 )
 
 type SectionWriter interface {
@@ -31,6 +32,21 @@ type Section struct {
 	Chapter     []*Chapter `gorm:"many2many:chapter_sections;"`
 	Pages       []*Page    `gorm:"many2many:section_pages;"`
 	HiddenPages []int      `gorm:"serializer:json"`
+}
+
+func (s *Section) AfterCreate(tx *gorm.DB) (err error) {
+	// Create SectionPages entries after the Section and its Pages have been saved
+	for _, page := range s.Pages {
+		sectionPage := &SectionPages{
+			SectionID: s.ID,
+			PageID:    page.ID,
+			Order:     page.Order, // Assuming order starts from 1
+		}
+		if err := tx.Save(sectionPage).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s Section) String(chapter Chapter) string {
@@ -120,7 +136,8 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 				if contains(currentSection.HiddenPages, (pageOrder)) {
 					hide = true
 				}
-				pages = append(pages, createPage(pageOrder, strings.Split(string(sPageContent), "\n"), currentSection, hide))
+				page := createPage(pageOrder, strings.Split(string(sPageContent), "\n"), currentSection, hide)
+				pages = append(pages, page)
 			} else {
 				fmt.Println("Front matter for section not found / not formatted as expected")
 			}

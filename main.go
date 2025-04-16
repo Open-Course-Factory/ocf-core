@@ -176,7 +176,6 @@ func initSwagger(r *gin.Engine) {
 	docs.SwaggerInfo.Description = "This is an API to build and generate courses with labs"
 	docs.SwaggerInfo.Version = os.Getenv("OCF_VERSION")
 	docs.SwaggerInfo.Host = os.Getenv("OCF_API_URL")
-	docs.SwaggerInfo.Schemes = []string{"http", "https"}
 	docs.SwaggerInfo.BasePath = "/api/v1"
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
