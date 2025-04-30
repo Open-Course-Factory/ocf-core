@@ -87,18 +87,34 @@ func main() {
 	sqldb.DB.AutoMigrate(&courseModels.Course{})
 	sqldb.DB.AutoMigrate(&courseModels.Session{})
 
-	sqldb.DB.AutoMigrate(&courseModels.SectionPages{})
-
-	err2 := sqldb.DB.SetupJoinTable(&courseModels.Section{}, "Pages", &courseModels.SectionPages{})
-
-	if err2 != nil {
-		log.Default().Println(err2)
+	sqldb.DB.AutoMigrate(&courseModels.CourseChapters{})
+	errJTChapterC := sqldb.DB.SetupJoinTable(&courseModels.Course{}, "Chapters", &courseModels.CourseChapters{})
+	if errJTChapterC != nil {
+		log.Default().Println(errJTChapterC)
+	}
+	errJTCoursesC := sqldb.DB.SetupJoinTable(&courseModels.Chapter{}, "Courses", &courseModels.CourseChapters{})
+	if errJTCoursesC != nil {
+		log.Default().Println(errJTCoursesC)
 	}
 
-	err3 := sqldb.DB.SetupJoinTable(&courseModels.Page{}, "Sections", &courseModels.SectionPages{})
+	sqldb.DB.AutoMigrate(&courseModels.ChapterSections{})
+	errJTSectionC := sqldb.DB.SetupJoinTable(&courseModels.Chapter{}, "Sections", &courseModels.ChapterSections{})
+	if errJTSectionC != nil {
+		log.Default().Println(errJTSectionC)
+	}
+	errJTChaptersS := sqldb.DB.SetupJoinTable(&courseModels.Section{}, "Chapters", &courseModels.ChapterSections{})
+	if errJTChaptersS != nil {
+		log.Default().Println(errJTChaptersS)
+	}
 
-	if err3 != nil {
-		log.Default().Println(err3)
+	sqldb.DB.AutoMigrate(&courseModels.SectionPages{})
+	errJTPage := sqldb.DB.SetupJoinTable(&courseModels.Section{}, "Pages", &courseModels.SectionPages{})
+	if errJTPage != nil {
+		log.Default().Println(errJTPage)
+	}
+	errJTSectionP := sqldb.DB.SetupJoinTable(&courseModels.Page{}, "Sections", &courseModels.SectionPages{})
+	if errJTSectionP != nil {
+		log.Default().Println(errJTSectionP)
 	}
 
 	sqldb.DB.AutoMigrate(&courseModels.Schedule{})

@@ -11,6 +11,7 @@ import (
 
 	"github.com/adrg/frontmatter"
 	"github.com/go-git/go-billy/v5"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -22,6 +23,7 @@ type SectionWriter interface {
 // Part of a chapter
 type Section struct {
 	entityManagementModels.BaseModel
+	Order              int
 	FileName           string
 	Title              string
 	ParentChapterTitle string
@@ -32,6 +34,12 @@ type Section struct {
 	Chapter     []*Chapter `gorm:"many2many:chapter_sections;"`
 	Pages       []*Page    `gorm:"many2many:section_pages;"`
 	HiddenPages []int      `gorm:"serializer:json"`
+}
+
+type ChapterSections struct {
+	ChapterID uuid.UUID `gorm:"primaryKey"`
+	SectionID uuid.UUID `gorm:"primaryKey"`
+	Order     int
 }
 
 func (s *Section) AfterCreate(tx *gorm.DB) (err error) {
