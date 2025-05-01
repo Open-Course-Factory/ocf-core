@@ -20,23 +20,12 @@ func (s SectionRegistration) EntityModelToEntityOutput(input any) (any, error) {
 }
 
 func sectionPtrModelToSectionOutputDto(sectionModel *models.Section) (*dto.SectionOutput, error) {
-
-	return &dto.SectionOutput{
-		ID:        sectionModel.ID.String(),
-		FileName:  sectionModel.FileName,
-		CreatedAt: sectionModel.CreatedAt.String(),
-		UpdatedAt: sectionModel.UpdatedAt.String(),
-	}, nil
+	return dto.SectionModelToSectionOutput(*sectionModel), nil
 }
 
 func sectionValueModelToSectionOutputDto(sectionModel models.Section) (*dto.SectionOutput, error) {
 
-	return &dto.SectionOutput{
-		ID:        sectionModel.ID.String(),
-		FileName:  sectionModel.FileName,
-		CreatedAt: sectionModel.CreatedAt.String(),
-		UpdatedAt: sectionModel.UpdatedAt.String(),
-	}, nil
+	return dto.SectionModelToSectionOutput(sectionModel), nil
 }
 
 func (s SectionRegistration) EntityInputDtoToEntityModel(input any) any {

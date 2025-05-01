@@ -42,6 +42,7 @@ type CourseInput struct {
 }
 
 type CourseOutput struct {
+	ID                 string          `json:"id"`
 	Name               string          `binding:"required" json:"name"`
 	Theme              string          `binding:"required" json:"theme"`
 	Format             int             `binding:"required" json:"format"`
@@ -96,7 +97,8 @@ func CourseModelToCourseOutputDto(courseModel models.Course) *CourseOutput {
 		chapterOutputs = append(chapterOutputs, *ChapterModelToChapterOutput(*chapter))
 	}
 
-	return &CourseOutput{
+	res := &CourseOutput{
+		ID:                 courseModel.ID.String(),
 		Name:               courseModel.Name,
 		Theme:              courseModel.Theme,
 		Version:            courseModel.Version,
@@ -107,11 +109,16 @@ func CourseModelToCourseOutputDto(courseModel models.Course) *CourseOutput {
 		Logo:               courseModel.Logo,
 		Description:        courseModel.Description,
 		CourseID_str:       courseModel.ID.String(),
-		ScheduleId:         courseModel.Schedule.ID.String(),
 		Prelude:            courseModel.Prelude,
 		LearningObjectives: courseModel.LearningObjectives,
 		ChaptersOutput:     chapterOutputs,
 	}
+
+	if courseModel.Schedule != nil {
+		res.ScheduleId = courseModel.Schedule.ID.String()
+	}
+
+	return res
 }
 
 func CourseModelToCourseInputDto(courseModel models.Course) *CourseInput {

@@ -20,29 +20,11 @@ func (s ChapterRegistration) EntityModelToEntityOutput(input any) (any, error) {
 }
 
 func chapterPtrModelToChapterOutputDto(chapterModel *models.Chapter) (*dto.ChapterOutput, error) {
-
-	return &dto.ChapterOutput{
-		ID:           chapterModel.ID.String(),
-		Title:        chapterModel.Title,
-		Number:       chapterModel.Number,
-		Footer:       chapterModel.Footer,
-		Introduction: chapterModel.Introduction,
-		CreatedAt:    chapterModel.CreatedAt.String(),
-		UpdatedAt:    chapterModel.UpdatedAt.String(),
-	}, nil
+	return dto.ChapterModelToChapterOutput(*chapterModel), nil
 }
 
 func chapterValueModelToChapterOutputDto(chapterModel models.Chapter) (*dto.ChapterOutput, error) {
-
-	return &dto.ChapterOutput{
-		ID:           chapterModel.ID.String(),
-		Title:        chapterModel.Title,
-		Number:       chapterModel.Number,
-		Footer:       chapterModel.Footer,
-		Introduction: chapterModel.Introduction,
-		CreatedAt:    chapterModel.CreatedAt.String(),
-		UpdatedAt:    chapterModel.UpdatedAt.String(),
-	}, nil
+	return dto.ChapterModelToChapterOutput(chapterModel), nil
 }
 
 func (s ChapterRegistration) EntityInputDtoToEntityModel(input any) any {

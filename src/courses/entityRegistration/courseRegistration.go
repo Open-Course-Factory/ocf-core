@@ -21,17 +21,11 @@ func (s CourseRegistration) EntityModelToEntityOutput(input any) (any, error) {
 }
 
 func coursePtrModelToCourseOutputDto(courseModel *models.Course) (*dto.CourseOutput, error) {
-
-	return &dto.CourseOutput{
-		Name: courseModel.Name,
-	}, nil
+	return dto.CourseModelToCourseOutputDto(*courseModel), nil
 }
 
 func courseValueModelToCourseOutputDto(courseModel models.Course) (*dto.CourseOutput, error) {
-
-	return &dto.CourseOutput{
-		Name: courseModel.Name,
-	}, nil
+	return dto.CourseModelToCourseOutputDto(courseModel), nil
 }
 
 func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
