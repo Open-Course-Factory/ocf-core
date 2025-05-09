@@ -8,4 +8,5 @@ type Schedule struct {
 	entityManagementModels.BaseModel
 	Name               string
 	FrontMatterContent []string `gorm:"serializer:json"`
+	Packages           []Package
 }

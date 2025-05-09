@@ -88,7 +88,7 @@ func (mcg MarpCourseGenerator) GetCmd(course *models.Course, docType *string) *e
 	return cmd
 }
 
-func (mcg MarpCourseGenerator) Run(configuration *config.Configuration, course *models.Course, docType *string) error {
+func (mcg MarpCourseGenerator) Run(course *models.Course, docType *string) error {
 	cmd := mcg.GetCmd(course, docType)
 
 	var outb, errb bytes.Buffer

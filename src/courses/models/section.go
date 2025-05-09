@@ -31,7 +31,7 @@ type Section struct {
 	Conclusion         string
 	Number             int
 
-	Chapter     []*Chapter `gorm:"many2many:chapter_sections;"`
+	Chapters    []*Chapter `gorm:"many2many:chapter_sections;"`
 	Pages       []*Page    `gorm:"many2many:section_pages;"`
 	HiddenPages []int      `gorm:"serializer:json"`
 }

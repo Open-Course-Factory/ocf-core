@@ -23,7 +23,7 @@ const (
 	PDF  Option = "pdf"
 )
 
-const DOCKER_IMAGE = "TO BE DEFINED"
+const DOCKER_IMAGE = "registry.gitlab.com/open-course-factory/ocf-core/ocf_slidev:latest"
 const PUBLIC_DIR = "public"
 
 func (o Option) GetTypeOpts() []string {
@@ -64,16 +64,16 @@ func (scg SlidevCourseGenerator) GetCmd(course *models.Course, docType *string) 
 
 	outputDir := config.COURSES_OUTPUT_DIR + course.Theme
 	srcFile := outputDir + "/" + course.GetFilename("md")
-	destFile := course.GetFilename(*docType)
+	//destFile := course.GetFilename(*docType)
 
-	baseCmd := []string{"run", "--rm", "-e", `NPM_MIRROR="https://registry.npmmirror.com"`, "-v", pwd + "/dist:/slidev/dist", "ocf_slidev", srcFile, "--output", destFile}
+	baseCmd := []string{"run", "--rm", "-e", `NPM_MIRROR="https://registry.npmmirror.com"`, "-v", pwd + "/dist:/slidev/dist", DOCKER_IMAGE, srcFile, "--download", "true"}
 
 	cmd := exec.Command("/usr/bin/docker", baseCmd...)
 
 	return cmd
 }
 
-func (scg SlidevCourseGenerator) Run(configuration *config.Configuration, course *models.Course, docType *string) error {
+func (scg SlidevCourseGenerator) Run(course *models.Course, docType *string) error {
 	cmd := scg.GetCmd(course, docType)
 
 	var outb, errb bytes.Buffer

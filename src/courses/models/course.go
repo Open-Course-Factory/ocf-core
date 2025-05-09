@@ -52,6 +52,7 @@ type Course struct {
 	URL                      string
 	LearningObjectives       string     `json:"learning_objectives"`
 	Chapters                 []*Chapter `gorm:"many2many:course_chapters"`
+	Packages                 []Package
 }
 
 func (c *Course) AfterCreate(tx *gorm.DB) (err error) {
@@ -126,7 +127,7 @@ func FillCourseModelFromFiles(courseFileSystem *billy.Filesystem, course *Course
 		for indexSection, section := range chapter.Sections {
 			section.OwnerIDs = append(section.OwnerIDs, chapter.OwnerIDs[0])
 			section.Number = indexSection + 1
-			section.Chapter = append(section.Chapter, chapter)
+			section.Chapters = append(section.Chapters, chapter)
 			section.ParentChapterTitle = chapter.getTitle(true)
 			fillSection(courseFileSystem, section)
 			chapter.Sections[indexSection] = section
@@ -135,37 +136,6 @@ func FillCourseModelFromFiles(courseFileSystem *billy.Filesystem, course *Course
 	}
 
 	course.InitTocs()
-}
-
-func (c *Course) WriteMd(configuration *config.Configuration) (string, error) {
-	outputDir := config.COURSES_OUTPUT_DIR + c.Theme
-
-	err := os.MkdirAll(outputDir, os.ModePerm)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fileToCreate := outputDir + "/" + c.GetFilename("md")
-	f, err := os.Create(fileToCreate)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	defer f.Close()
-
-	courseReplaceTrigram := strings.ReplaceAll(c.String(), "@@author@@", configuration.AuthorTrigram)
-	courseReplaceFullname := strings.ReplaceAll(courseReplaceTrigram, "@@author_fullname@@", configuration.AuthorFullname)
-	courseReplaceEmail := strings.ReplaceAll(courseReplaceFullname, "@@author_email@@", configuration.AuthorEmail)
-	courseReplaceVersion := strings.ReplaceAll(courseReplaceEmail, "@@version@@", c.Version)
-
-	_, err2 := f.WriteString(courseReplaceVersion)
-
-	if err2 != nil {
-		log.Fatal(err2)
-	}
-
-	return fileToCreate, err
 }
 
 func (course *Course) InitTocs() {

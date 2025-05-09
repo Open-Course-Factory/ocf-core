@@ -50,7 +50,8 @@ func (scow *SlidevCourseWriter) SetCoverPage() string {
 
 func (scow *SlidevCourseWriter) SetIntro() string {
 	// ToDo : take data from user
-	author := "\n---\nlayout: twocols\nchapter: " + scow.Course.Chapters[0].Title + "\nsrc: theme/authors/author_@@author@@.md\n---\n\n"
+	//author := "\n---\nlayout: twocols\nchapter: " + scow.Course.Chapters[0].Title + "\nsrc: theme/authors/author_@@author@@.md\n---\n\n"
+	author := ""
 	schedule := scow.fillSchedule()
 	prelude := "\n---\nlayout: cover\nchapter: " + scow.Course.Chapters[0].Title + "\nsrc: theme/preludes/" + scow.Course.Prelude + "\n---\n\n"
 	return author + schedule + prelude

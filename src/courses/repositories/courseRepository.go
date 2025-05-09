@@ -90,8 +90,3 @@ func (c courseRepository) GetCoursesOwnedByUser(owner casdoorsdk.User) ([]*model
 	}
 	return course, nil
 }
-
-func (c courseRepository) GenerateCourse(coursedto dto.GenerateCourseInput) error {
-
-	return nil
-}

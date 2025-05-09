@@ -17,10 +17,3 @@ type EditScheduleInput struct {
 	Name               string   `json:"name"`
 	FrontMatterContent []string `json:"front_matter_content" mapstructure:"front_matter_content" gorm:"serializer:json"`
 }
-
-// func PageModelToPageInput(pageModel models.Page) *PageInput {
-// 	return &PageInput{
-// 		Order:   pageModel.Order,
-// 		Content: pageModel.Content,
-// 	}
-// }

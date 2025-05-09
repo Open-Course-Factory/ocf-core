@@ -43,9 +43,6 @@ func NewCourseService(db *gorm.DB) CourseService {
 
 func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseInput) (*dto.GenerateCourseOutput, error) {
 
-	jsonConfigurationFilePath := "src/configuration/conf.json"
-	configuration := config.ReadJsonConfigurationFile(jsonConfigurationFilePath)
-
 	genericService := genericService.NewGenericService(sqldb.DB)
 	courseEntity, errGettingEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.Id), models.Course{}, "Course")
 
@@ -56,7 +53,6 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 	course := courseEntity.(*models.Course)
 	course.ThemeGitRepository = generateCourseInputDto.ThemeGitRepository
 	course.ThemeGitRepositoryBranch = generateCourseInputDto.ThemeGitRepositoryBranch
-	course.Theme = generateCourseInputDto.ThemeId
 
 	if generateCourseInputDto.ScheduleId != "" {
 		scheduleEntity, errGettingScheduleEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ScheduleId), models.Schedule{}, "Schedule")
@@ -70,7 +66,7 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 
 	course.InitTocs()
 
-	createdFile, err := course.WriteMd(&configuration)
+	createdFile, err := c.WriteMd(course, &generateCourseInputDto)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -87,7 +83,7 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 		course.Theme = generateCourseInputDto.ThemeId
 	}
 
-	errr := engine.Run(&configuration, course, &generateCourseInputDto.Format)
+	errr := engine.Run(course, &generateCourseInputDto.Format)
 
 	if errc != nil {
 		log.Println(errr.Error())
@@ -142,6 +138,43 @@ func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL
 
 	return &course, nil
 
+}
+
+func (cs courseService) WriteMd(c *models.Course, configuration *dto.GenerateCourseInput) (string, error) {
+	outputDir := config.COURSES_OUTPUT_DIR + c.Theme
+
+	err := os.MkdirAll(outputDir, os.ModePerm)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fileToCreate := outputDir + "/" + c.GetFilename("md")
+	f, err := os.Create(fileToCreate)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer f.Close()
+
+	user, errUser := casdoorsdk.GetUserByEmail(configuration.AuthorEmail)
+
+	if errUser != nil {
+		return "", errUser
+	}
+
+	courseReplaceTrigram := strings.ReplaceAll(c.String(), "@@author@@", user.Name)
+	courseReplaceFullname := strings.ReplaceAll(courseReplaceTrigram, "@@author_fullname@@", user.DisplayName)
+	courseReplaceEmail := strings.ReplaceAll(courseReplaceFullname, "@@author_email@@", configuration.AuthorEmail)
+	courseReplaceVersion := strings.ReplaceAll(courseReplaceEmail, "@@version@@", c.Version)
+
+	_, err2 := f.WriteString(courseReplaceVersion)
+
+	if err2 != nil {
+		log.Fatal(err2)
+	}
+
+	return fileToCreate, err
 }
 
 func fileToBytesWithoutSeeking(file billy.File) ([]byte, error) {
