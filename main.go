@@ -33,7 +33,7 @@ import (
 	courseModels "soli/formations/src/courses/models"
 	chapterController "soli/formations/src/courses/routes/chapterRoutes"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
-	packageController "soli/formations/src/courses/routes/packageRoutes"
+	generationController "soli/formations/src/courses/routes/generationRoutes"
 	pageController "soli/formations/src/courses/routes/pageRoutes"
 	scheduleController "soli/formations/src/courses/routes/scheduleRoutes"
 	sectionController "soli/formations/src/courses/routes/sectionRoutes"
@@ -122,7 +122,7 @@ func main() {
 	sqldb.DB.AutoMigrate(&courseModels.Schedule{})
 	sqldb.DB.AutoMigrate(&courseModels.Theme{})
 
-	sqldb.DB.AutoMigrate(&courseModels.Package{})
+	sqldb.DB.AutoMigrate(&courseModels.Generation{})
 
 	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
 
@@ -140,10 +140,10 @@ func main() {
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ChapterRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ScheduleRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ThemeRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.GenerationRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.ConnectionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.PackageRegistration{})
 
 	initDB()
 
@@ -182,7 +182,7 @@ func main() {
 	machineController.MachinesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	usernameController.UsernamesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	connectionController.ConnectionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	packageController.PackagesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	generationController.GenerationsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 
