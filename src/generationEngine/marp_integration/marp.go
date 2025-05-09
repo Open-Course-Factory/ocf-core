@@ -71,12 +71,12 @@ func (mcg MarpCourseGenerator) GetCmd(course *models.Course, docType *string) *e
 		log.Fatal(err)
 	}
 
-	outputDir := config.COURSES_OUTPUT_DIR + course.Theme
+	outputDir := config.COURSES_OUTPUT_DIR + course.Theme.Name
 	srcFile := outputDir + "/" + course.GetFilename("md")
 	destFile := outputDir + "/" + course.GetFilename(*docType)
 
 	baseCmd := []string{"run", "--rm", "--init", "-e", "MARP_USER=" + cUser.Uid + ":" + cUser.Gid, "-v", pwd + ":/home/marp/app", DOCKER_IMAGE}
-	cmdOptions := []string{srcFile, "-o", destFile, "--no-config", "--theme", course.Theme}
+	cmdOptions := []string{srcFile, "-o", destFile, "--no-config", "--theme", course.Theme.Name}
 	cmdOptions = append(cmdOptions, mcg.GetThemesSetOpts(course)...)
 	cmdOptions = append(cmdOptions, []string{"--engine", ENGINE_CONFIGURATION}...)
 	cmdOptions = append(cmdOptions, mcg.ParseDocType(*docType).GetTypeOpts()...)
@@ -115,7 +115,7 @@ func (mcg MarpCourseGenerator) Run(course *models.Course, docType *string) error
 }
 
 func (mcg MarpCourseGenerator) CompileResources(c *models.Course) error {
-	outputDir := config.COURSES_OUTPUT_DIR + c.Theme
+	outputDir := config.COURSES_OUTPUT_DIR + c.Theme.Name
 	outputFolders := [2]string{"images", "theme"}
 
 	for _, f := range outputFolders {

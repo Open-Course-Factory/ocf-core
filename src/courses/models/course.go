@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-	config "soli/formations/src/configuration"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"strings"
 
@@ -30,29 +29,26 @@ type CourseMdWriter interface {
 
 type Course struct {
 	entityManagementModels.BaseModel
-	Category                 string
-	Name                     string
-	GitRepository            string
-	GitRepositoryBranch      string
-	FolderName               string
-	Version                  string
-	Title                    string
-	Subtitle                 string
-	Header                   string
-	Footer                   string
-	Logo                     string
-	Description              string
-	Format                   config.Format
-	CourseID_str             string
-	Schedule                 *Schedule `gorm:"-:all" json:"-"`
-	Prelude                  string
-	Theme                    string
-	ThemeGitRepository       string
-	ThemeGitRepositoryBranch string
-	URL                      string
-	LearningObjectives       string     `json:"learning_objectives"`
-	Chapters                 []*Chapter `gorm:"many2many:course_chapters"`
-	Packages                 []Package
+	Category            string
+	Name                string
+	GitRepository       string
+	GitRepositoryBranch string
+	FolderName          string
+	Version             string
+	Title               string
+	Subtitle            string
+	Header              string
+	Footer              string
+	Logo                string
+	Description         string
+	CourseID_str        string
+	Schedule            *Schedule `gorm:"-:all" json:"-"`
+	Theme               *Theme    `gorm:"-:all" json:"-"`
+	Prelude             string
+	URL                 string
+	LearningObjectives  string     `json:"learning_objectives"`
+	Chapters            []*Chapter `gorm:"many2many:course_chapters"`
+	Packages            []Package
 }
 
 func (c *Course) AfterCreate(tx *gorm.DB) (err error) {
@@ -83,32 +79,13 @@ func (c Course) GetFilename(extensions ...string) string {
 	return strings.ToLower(c.Category) + "_" + strings.ToLower(c.Name) + "_" + c.Version + extension
 }
 
-func (c Course) IsThemeExtended(themes ...string) (bool, string) {
-	theme := c.Theme
-	res := false
-	from := ""
-
-	if len(themes) > 0 {
-		theme = themes[0]
-	}
-
-	extendsFilePath := config.THEMES_ROOT + "/" + theme + "/extends.json"
-	if fileExists(extendsFilePath) {
-		extends := LoadExtends(extendsFilePath)
-		from = extends.Theme
-		res = true
-	}
-
-	return res, from
-}
-
 func (c Course) GetThemes() []string {
 	themes := make([]string, 0)
 
-	themes = append(themes, c.Theme)
+	themes = append(themes, c.Theme.Name)
 
 	for {
-		ext, theme := c.IsThemeExtended(themes[len(themes)-1])
+		ext, theme := c.Theme.IsThemeExtended(themes[len(themes)-1])
 
 		if !ext {
 			break

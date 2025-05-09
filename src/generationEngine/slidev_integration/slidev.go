@@ -62,7 +62,7 @@ func (scg SlidevCourseGenerator) GetCmd(course *models.Course, docType *string) 
 		log.Fatal(err)
 	}
 
-	outputDir := config.COURSES_OUTPUT_DIR + course.Theme
+	outputDir := config.COURSES_OUTPUT_DIR + course.Theme.Name
 	srcFile := outputDir + "/" + course.GetFilename("md")
 	//destFile := course.GetFilename(*docType)
 
@@ -104,7 +104,7 @@ func (scg SlidevCourseGenerator) Run(course *models.Course, docType *string) err
 }
 
 func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
-	outputDir := config.COURSES_OUTPUT_DIR + c.Theme
+	outputDir := config.COURSES_OUTPUT_DIR + c.Theme.Name
 	outputFolders := [2]string{"/" + PUBLIC_DIR, "/theme"}
 
 	for _, f := range outputFolders {
@@ -115,7 +115,7 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
 	}
 
 	// Copy Themes
-	fs, errClone := models.GitClone(c.OwnerIDs[0], c.ThemeGitRepository, c.ThemeGitRepositoryBranch)
+	fs, errClone := models.GitClone(c.OwnerIDs[0], c.Theme.Repository, c.Theme.RepositoryBranch)
 	if errClone != nil {
 		log.Fatal(errClone)
 	}

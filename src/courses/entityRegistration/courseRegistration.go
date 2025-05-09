@@ -2,7 +2,6 @@ package registration
 
 import (
 	"reflect"
-	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
@@ -45,24 +44,20 @@ func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
 	}
 
 	courseToReturn := &models.Course{
-		Name:                     courseInputDto.Name,
-		Theme:                    courseInputDto.Theme,
-		Format:                   config.Format(*courseInputDto.Format),
-		Category:                 courseInputDto.Category,
-		Version:                  courseInputDto.Version,
-		Title:                    courseInputDto.Title,
-		Subtitle:                 courseInputDto.Subtitle,
-		Header:                   courseInputDto.Header,
-		Footer:                   courseInputDto.Footer,
-		Logo:                     courseInputDto.Logo,
-		Description:              courseInputDto.Description,
-		Prelude:                  courseInputDto.Prelude,
-		LearningObjectives:       courseInputDto.LearningObjectives,
-		Chapters:                 chapters,
-		GitRepository:            courseInputDto.GitRepository,
-		GitRepositoryBranch:      courseInputDto.GitRepositoryBranch,
-		ThemeGitRepository:       courseInputDto.ThemeGitRepository,
-		ThemeGitRepositoryBranch: courseInputDto.ThemeGitRepositoryBranch,
+		Name:                courseInputDto.Name,
+		Category:            courseInputDto.Category,
+		Version:             courseInputDto.Version,
+		Title:               courseInputDto.Title,
+		Subtitle:            courseInputDto.Subtitle,
+		Header:              courseInputDto.Header,
+		Footer:              courseInputDto.Footer,
+		Logo:                courseInputDto.Logo,
+		Description:         courseInputDto.Description,
+		Prelude:             courseInputDto.Prelude,
+		LearningObjectives:  courseInputDto.LearningObjectives,
+		Chapters:            chapters,
+		GitRepository:       courseInputDto.GitRepository,
+		GitRepositoryBranch: courseInputDto.GitRepositoryBranch,
 	}
 
 	courseToReturn.OwnerIDs = append(courseToReturn.OwnerIDs, courseInputDto.OwnerID)

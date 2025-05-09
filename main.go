@@ -38,6 +38,7 @@ import (
 	scheduleController "soli/formations/src/courses/routes/scheduleRoutes"
 	sectionController "soli/formations/src/courses/routes/sectionRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
+	themeController "soli/formations/src/courses/routes/themeRoutes"
 	labRegistration "soli/formations/src/labs/entityRegistration"
 	labModels "soli/formations/src/labs/models"
 	connectionController "soli/formations/src/labs/routes/connectionRoutes"
@@ -119,6 +120,7 @@ func main() {
 	}
 
 	sqldb.DB.AutoMigrate(&courseModels.Schedule{})
+	sqldb.DB.AutoMigrate(&courseModels.Theme{})
 
 	sqldb.DB.AutoMigrate(&courseModels.Package{})
 
@@ -137,6 +139,7 @@ func main() {
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SectionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ChapterRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ScheduleRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ThemeRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.ConnectionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
@@ -165,6 +168,7 @@ func main() {
 	apiGroup := r.Group("/api/v1")
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	scheduleController.SchedulesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	themeController.ThemesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	pageController.PagesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sectionController.SectionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	chapterController.ChaptersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
@@ -289,9 +293,9 @@ func parseFlags() bool {
 }
 
 func setCourseThemeFromProgramInputs(course *courseModels.Course, themeName *string, themeGitRepository *string, themeGitRepositoryBranch *string) {
-	course.Theme = *themeName
-	course.ThemeGitRepository = *themeGitRepository
-	course.ThemeGitRepositoryBranch = *themeGitRepositoryBranch
+	course.Theme.Name = *themeName
+	course.Theme.Repository = *themeGitRepository
+	course.Theme.RepositoryBranch = *themeGitRepositoryBranch
 }
 
 func isFlagPassed(name string) bool {

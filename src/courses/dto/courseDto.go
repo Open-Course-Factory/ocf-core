@@ -9,36 +9,32 @@ type GenerateCourseOutput struct {
 }
 
 type GenerateCourseInput struct {
-	Id                       string `binding:"required"`
-	ThemeId                  string
-	ThemeGitRepository       string
-	ThemeGitRepositoryBranch string
-	Format                   string `binding:"required"`
-	AuthorEmail              string `binding:"required"`
-	ScheduleId               string
+	Id          string `binding:"required"`
+	ThemeId     string
+	Format      string `binding:"required"`
+	AuthorEmail string `binding:"required"`
+	ScheduleId  string
 }
 
 type CourseInput struct {
-	OwnerID                  string
-	Name                     string `binding:"required"`
-	Theme                    string `binding:"required"`
-	Format                   *int   `binding:"required,gte=0,lte=1"`
-	AuthorEmail              string `binding:"required"`
-	Category                 string `binding:"required"`
-	Version                  string
-	Title                    string `binding:"required"`
-	Subtitle                 string
-	Header                   string `binding:"required"`
-	Footer                   string `binding:"required"`
-	Logo                     string
-	Description              string
-	Prelude                  string          `binding:"required"`
-	LearningObjectives       string          `json:"learning_objectives"`
-	ChaptersInput            []*ChapterInput `json:"chapters"`
-	GitRepository            string
-	GitRepositoryBranch      string
-	ThemeGitRepository       string
-	ThemeGitRepositoryBranch string
+	OwnerID             string
+	Name                string `binding:"required"`
+	Theme               string `binding:"required"`
+	Format              *int   `binding:"required,gte=0,lte=1"`
+	AuthorEmail         string `binding:"required"`
+	Category            string `binding:"required"`
+	Version             string
+	Title               string `binding:"required"`
+	Subtitle            string
+	Header              string `binding:"required"`
+	Footer              string `binding:"required"`
+	Logo                string
+	Description         string
+	Prelude             string          `binding:"required"`
+	LearningObjectives  string          `json:"learning_objectives"`
+	ChaptersInput       []*ChapterInput `json:"chapters"`
+	GitRepository       string
+	GitRepositoryBranch string
 }
 
 type CourseOutput struct {
@@ -100,7 +96,6 @@ func CourseModelToCourseOutputDto(courseModel models.Course) *CourseOutput {
 	res := &CourseOutput{
 		ID:                 courseModel.ID.String(),
 		Name:               courseModel.Name,
-		Theme:              courseModel.Theme,
 		Version:            courseModel.Version,
 		Title:              courseModel.Title,
 		Subtitle:           courseModel.Subtitle,
@@ -129,23 +124,19 @@ func CourseModelToCourseInputDto(courseModel models.Course) *CourseInput {
 	}
 
 	return &CourseInput{
-		OwnerID:                  courseModel.OwnerIDs[0],
-		Name:                     courseModel.Name,
-		Theme:                    courseModel.Theme,
-		Version:                  courseModel.Version,
-		Title:                    courseModel.Title,
-		Format:                   (*int)(&courseModel.Format),
-		Subtitle:                 courseModel.Subtitle,
-		Header:                   courseModel.Header,
-		Footer:                   courseModel.Footer,
-		Logo:                     courseModel.Logo,
-		Description:              courseModel.Description,
-		Prelude:                  courseModel.Prelude,
-		LearningObjectives:       courseModel.LearningObjectives,
-		ChaptersInput:            chapterInputs,
-		GitRepository:            courseModel.GitRepository,
-		GitRepositoryBranch:      courseModel.GitRepositoryBranch,
-		ThemeGitRepository:       courseModel.ThemeGitRepository,
-		ThemeGitRepositoryBranch: courseModel.ThemeGitRepositoryBranch,
+		OwnerID:             courseModel.OwnerIDs[0],
+		Name:                courseModel.Name,
+		Version:             courseModel.Version,
+		Title:               courseModel.Title,
+		Subtitle:            courseModel.Subtitle,
+		Header:              courseModel.Header,
+		Footer:              courseModel.Footer,
+		Logo:                courseModel.Logo,
+		Description:         courseModel.Description,
+		Prelude:             courseModel.Prelude,
+		LearningObjectives:  courseModel.LearningObjectives,
+		ChaptersInput:       chapterInputs,
+		GitRepository:       courseModel.GitRepository,
+		GitRepositoryBranch: courseModel.GitRepositoryBranch,
 	}
 }

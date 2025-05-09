@@ -69,7 +69,7 @@ func (mcow *MarpCourseWriter) SetToc() string {
 	for _, chapter := range mcow.Course.Chapters {
 		toc += "- Chapitre **" + strconv.Itoa(chapter.Number) + "** : " + chapter.Title + "\n"
 		toc += "  - " + chapter.Introduction + "\n"
-		if !strings.Contains(mcow.Course.Theme, "A4") {
+		if !strings.Contains(mcow.Course.Theme.Name, "A4") {
 			if totalChapterNumber > 9 && chapter.Number == 6 {
 				toc += "- **...**"
 				toc += "\n\n---\n\n<!-- _class: main-toc -->\n\n# Thèmes abordés dans le cours - Suite\n\n"

@@ -106,7 +106,7 @@ func (scow *SlidevCourseWriter) SetToc() string {
 	for _, chapter := range scow.Course.Chapters {
 		toc += "- Chapitre **" + strconv.Itoa(chapter.Number) + "** : " + chapter.Title + "\n"
 		toc += "  - " + chapter.Introduction + "\n"
-		if !strings.Contains(scow.Course.Theme, "A4") {
+		if !strings.Contains(scow.Course.Theme.Name, "A4") {
 			if totalChapterNumber > 9 && chapter.Number == 6 {
 				toc += "- **...**"
 				toc += frontMatter + "# Thèmes abordés dans le cours - Suite\n\n"

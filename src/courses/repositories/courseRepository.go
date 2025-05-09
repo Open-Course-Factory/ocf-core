@@ -1,7 +1,6 @@
 package repositories
 
 import (
-	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/dto"
 	registration "soli/formations/src/courses/entityRegistration"
 	"soli/formations/src/courses/models"
@@ -50,7 +49,6 @@ func (c courseRepository) CreateCourse(coursedto dto.CourseInput) (*models.Cours
 			OwnerIDs: []string{user.Id},
 		},
 		Name:               coursedto.Name,
-		Theme:              coursedto.Theme,
 		Category:           coursedto.Category,
 		Version:            coursedto.Version,
 		Title:              coursedto.Title,
@@ -59,7 +57,6 @@ func (c courseRepository) CreateCourse(coursedto dto.CourseInput) (*models.Cours
 		Footer:             coursedto.Footer,
 		Logo:               coursedto.Logo,
 		Description:        coursedto.Description,
-		Format:             config.Format(*coursedto.Format),
 		Prelude:            coursedto.Prelude,
 		LearningObjectives: coursedto.LearningObjectives,
 		Chapters:           chapters,

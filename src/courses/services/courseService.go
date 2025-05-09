@@ -51,8 +51,6 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 	}
 
 	course := courseEntity.(*models.Course)
-	course.ThemeGitRepository = generateCourseInputDto.ThemeGitRepository
-	course.ThemeGitRepositoryBranch = generateCourseInputDto.ThemeGitRepositoryBranch
 
 	if generateCourseInputDto.ScheduleId != "" {
 		scheduleEntity, errGettingScheduleEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ScheduleId), models.Schedule{}, "Schedule")
@@ -72,15 +70,21 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 	}
 	fmt.Println("Markdown file created: " + createdFile)
 
+	if generateCourseInputDto.ThemeId != "" {
+		themeEntity, errGettingThemeEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ThemeId), models.Theme{}, "Theme")
+
+		if errGettingThemeEntity != nil {
+			return nil, errGettingThemeEntity
+		}
+
+		course.Theme = themeEntity.(*models.Theme)
+	}
+
 	engine := slidev.SlidevCourseGenerator{}
 
 	errc := engine.CompileResources(course)
 	if errc != nil {
 		log.Fatal(errc)
-	}
-
-	if len(generateCourseInputDto.ThemeId) > 0 {
-		course.Theme = generateCourseInputDto.ThemeId
 	}
 
 	errr := engine.Run(course, &generateCourseInputDto.Format)
@@ -141,7 +145,7 @@ func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL
 }
 
 func (cs courseService) WriteMd(c *models.Course, configuration *dto.GenerateCourseInput) (string, error) {
-	outputDir := config.COURSES_OUTPUT_DIR + c.Theme
+	outputDir := config.COURSES_OUTPUT_DIR + configuration.ThemeId
 
 	err := os.MkdirAll(outputDir, os.ModePerm)
 	if err != nil {
