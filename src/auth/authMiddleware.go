@@ -29,7 +29,7 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 		userId, err := getUserIdFromToken(ctx)
 
 		if err != nil {
-			ctx.AbortWithStatusJSON(http.StatusNotFound, gin.H{"msg": err.Error()})
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"msg": err.Error()})
 		}
 
 		errLoadingPolicy := casdoor.Enforcer.LoadPolicy()

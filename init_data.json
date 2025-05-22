@@ -6,7 +6,11 @@
         "displayName": "Demo Organization",
         "passwordType": "plain",
         "passwordOptions": ["AtLeast6"],
-        "defaultApplication": "ocf"
+        "defaultApplication": "ocf",
+        "languages": [
+          "en",
+          "fr"
+        ]
       }
     ],
     "applications": [

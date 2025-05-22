@@ -3,6 +3,7 @@ package test_tools
 import (
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"runtime"
 	"soli/formations/src/auth/casdoor"
@@ -75,7 +76,7 @@ func SetupCasdoor() {
 
 func SetupGroups() {
 
-	groups = append(groups, casdoorsdk.Group{ParentId: casdoorsdk.CasdoorOrganization, Name: "classes", DisplayName: "Toutes les classes"})
+	groups = append(groups, casdoorsdk.Group{ParentId: os.Getenv("CASDOOR_ORGANIZATION_NAME"), Name: "classes", DisplayName: "Toutes les classes"})
 	groups = append(groups, casdoorsdk.Group{ParentId: "classes", Name: "do_m1", DisplayName: "Dev Ops M1"})
 	groups = append(groups, casdoorsdk.Group{ParentId: "classes", Name: "do_m2", DisplayName: "Dev Ops M2"})
 	groups = append(groups, casdoorsdk.Group{ParentId: "do_m1", Name: "do_m1-classeA", DisplayName: "Groupe A"})
@@ -93,7 +94,7 @@ func SetupGroups() {
 }
 
 func SetupRoles() {
-	orgName := casdoorsdk.CasdoorOrganization
+	orgName := os.Getenv("CASDOOR_ORGANIZATION_NAME")
 	roleStudent := casdoorsdk.Role{Owner: orgName, Name: "student", DisplayName: "Etudiants", IsEnabled: true,
 		Users: []string{orgName + "/1_st", orgName + "/2_st", orgName + "/3_st", orgName + "/4_st"}}
 	roles = append(roles, roleStudent)
