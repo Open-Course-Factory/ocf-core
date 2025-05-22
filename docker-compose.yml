@@ -1,6 +1,5 @@
 services:
   ocf-core:
-    restart: always
     build:
       context: ./
       dockerfile: Dockerfile
@@ -38,19 +37,18 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4
-    restart: always
     ports:
       - "8888:80"
     environment:
-      PGADMIN_DEFAULT_EMAIL: thomas@solution-libre.fr
-      PGADMIN_DEFAULT_PASSWORD: test
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+      PGADMIN_LISTEN_ADDRESS: "0.0.0.0"
     volumes:
       - pgadmin:/var/lib/pgadmin
     networks:
       - devcontainer-network
 
   casdoor:
-    restart: always
     image: casbin/casdoor
     entrypoint: /bin/sh -c './server --createDatabase=true'
     ports:
@@ -60,19 +58,17 @@ services:
     environment:
       RUNNING_IN_DOCKER: "true"
     volumes:
-      - ./src/configuration/casdoor_app.conf:/conf/app.conf
+      - "./src/configuration/casdoor_app.conf:/conf/app.conf"
+      - "./init_data.json:/init_data.json"
     networks:
       - devcontainer-network
   casdoor_db:
-    restart: always
     image: mysql:8.0.25
     platform: linux/amd64
-    ports:
-      - "3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: 123456
     volumes:
-      - /usr/local/docker/mysql:/var/lib/mysql
+      - mysql:/var/lib/mysql
     networks:
       - devcontainer-network
 
@@ -81,4 +77,5 @@ networks:
 
 volumes:
   postgres:
+  mysql:
   pgadmin:

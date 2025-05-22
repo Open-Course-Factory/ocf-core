@@ -55,7 +55,8 @@
 			"extensions": [
 				"golang.Go",
 				"Vue.volar",
-				"ms-vscode.vscode-typescript-next"
+				"ms-vscode.vscode-typescript-next",
+				"ms-azuretools.vscode-containers"
 			]
 		}
 	},
