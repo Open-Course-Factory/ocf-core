@@ -8,23 +8,23 @@ import (
 )
 
 type EntityRegistrationInput struct {
-	EntityInterface   interface{}
+	EntityInterface   any
 	EntityConverters  EntityConverters
 	EntityDtos        EntityDtos
 	EntityRoles       EntityRoles
-	EntitySubEntities []interface{}
+	EntitySubEntities []any
 }
 
 type EntityConverters struct {
-	ModelToDto interface{}
-	DtoToModel interface{}
-	DtoToMap   interface{}
+	ModelToDto any
+	DtoToModel any
+	DtoToMap   any
 }
 
 type EntityDtos struct {
-	InputCreateDto interface{}
-	InputEditDto   interface{}
-	OutputDto      interface{}
+	InputCreateDto any
+	InputEditDto   any
+	OutputDto      any
 }
 
 type EntityRoles struct {
@@ -49,8 +49,8 @@ func (a AbstractRegistrableInterface) GetEntityRoles() EntityRoles {
 	return res
 }
 
-func (a AbstractRegistrableInterface) EntityDtoToMap(input interface{}) map[string]interface{} {
-	resMap := make(map[string]interface{})
+func (a AbstractRegistrableInterface) EntityDtoToMap(input any) map[string]any {
+	resMap := make(map[string]any)
 
 	config := &mapstructure.DecoderConfig{
 		WeaklyTypedInput: true,

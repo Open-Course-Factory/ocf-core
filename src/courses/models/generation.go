@@ -8,6 +8,7 @@ import (
 
 type Generation struct {
 	entityManagementModels.BaseModel
+	Name       string
 	Format     *int
 	ThemeID    uuid.UUID
 	ScheduleID uuid.UUID

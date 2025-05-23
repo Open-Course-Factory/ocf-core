@@ -55,7 +55,7 @@ func (scg SlidevCourseGenerator) GetThemesSetOpts(course *models.Course) []strin
 	return options
 }
 
-func (scg SlidevCourseGenerator) GetCmd(course *models.Course, docType *string) *exec.Cmd {
+func (scg SlidevCourseGenerator) GetCmd(course *models.Course) *exec.Cmd {
 
 	pwd, err := os.Getwd()
 	if err != nil {
@@ -73,8 +73,8 @@ func (scg SlidevCourseGenerator) GetCmd(course *models.Course, docType *string) 
 	return cmd
 }
 
-func (scg SlidevCourseGenerator) Run(course *models.Course, docType *string) error {
-	cmd := scg.GetCmd(course, docType)
+func (scg SlidevCourseGenerator) Run(course *models.Course) error {
+	cmd := scg.GetCmd(course)
 
 	var outb, errb bytes.Buffer
 	cmd.Stdout = &outb

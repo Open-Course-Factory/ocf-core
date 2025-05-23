@@ -12,12 +12,12 @@ import (
 )
 
 type GenericRepository interface {
-	CreateEntity(data interface{}, entityName string) (interface{}, error)
-	SaveEntity(entity interface{}) (interface{}, error)
-	GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error)
-	GetAllEntities(data interface{}, pageSize int) ([]interface{}, error)
-	EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error
-	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
+	CreateEntity(data any, entityName string) (any, error)
+	SaveEntity(entity any) (any, error)
+	GetEntity(id uuid.UUID, data any, entityName string) (any, error)
+	GetAllEntities(data any, pageSize int) ([]any, error)
+	EditEntity(id uuid.UUID, entityName string, entity any, data any) error
+	DeleteEntity(id uuid.UUID, entity any, scoped bool) error
 }
 
 type genericRepository struct {
@@ -31,7 +31,7 @@ func NewGenericRepository(db *gorm.DB) GenericRepository {
 	return repository
 }
 
-func (o *genericRepository) CreateEntity(entityInputDto interface{}, entityName string) (interface{}, error) {
+func (o *genericRepository) CreateEntity(entityInputDto any, entityName string) (any, error) {
 	conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.CreateInputDtoToModel)
 
 	if !found {
@@ -57,7 +57,7 @@ func (o *genericRepository) CreateEntity(entityInputDto interface{}, entityName 
 	return 1, nil
 }
 
-func (o *genericRepository) SaveEntity(entity interface{}) (interface{}, error) {
+func (o *genericRepository) SaveEntity(entity any) (any, error) {
 
 	result := o.db.Save(entity)
 	if result.Error != nil {
@@ -67,7 +67,7 @@ func (o *genericRepository) SaveEntity(entity interface{}) (interface{}, error) 
 
 }
 
-func (r genericRepository) EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error {
+func (r genericRepository) EditEntity(id uuid.UUID, entityName string, entity any, data any) error {
 
 	result := r.db.Model(&entity).Where("id = ?", id).Updates(data)
 	if result.Error != nil {
@@ -76,7 +76,7 @@ func (r genericRepository) EditEntity(id uuid.UUID, entityName string, entity in
 	return nil
 }
 
-func (o *genericRepository) GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error) {
+func (o *genericRepository) GetEntity(id uuid.UUID, data any, entityName string) (any, error) {
 
 	model := reflect.New(reflect.TypeOf(data)).Interface()
 	query := o.db.Model(model)
@@ -114,8 +114,8 @@ func getPreloadString(entityName string, queryPreloadsString *string, firstItera
 	}
 }
 
-func (o *genericRepository) GetAllEntities(data interface{}, pageSize int) ([]interface{}, error) {
-	var allPages []interface{}
+func (o *genericRepository) GetAllEntities(data any, pageSize int) ([]any, error) {
+	var allPages []any
 
 	page := 1
 	for {
@@ -147,7 +147,7 @@ func (o *genericRepository) GetAllEntities(data interface{}, pageSize int) ([]in
 	return allPages, nil
 }
 
-func createEmptySliceOfCalledType(data interface{}) any {
+func createEmptySliceOfCalledType(data any) any {
 	t := reflect.TypeOf(data)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem().Elem()
@@ -159,7 +159,7 @@ func createEmptySliceOfCalledType(data interface{}) any {
 	return emptySlice.Interface()
 }
 
-func (o *genericRepository) DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error {
+func (o *genericRepository) DeleteEntity(id uuid.UUID, entity any, scoped bool) error {
 	var result *gorm.DB
 	if scoped {
 		result = o.db.Delete(&entity, id)

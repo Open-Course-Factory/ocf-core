@@ -9,8 +9,8 @@ type Option string
 
 type CourseGenerationEngine interface {
 	GetThemesSetOpts(course *models.Course) []string
-	GetCmd(course *models.Course, docType *string) *exec.Cmd
-	Run(course *models.Course, docType *string) error
+	GetCmd(course *models.Course) *exec.Cmd
+	Run(course *models.Course) error
 	CompileResources(c *models.Course) error
 	GetPublicDir() string
 }

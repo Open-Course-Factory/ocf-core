@@ -60,7 +60,7 @@ func (mcg MarpCourseGenerator) GetThemesSetOpts(course *models.Course) []string 
 	return options
 }
 
-func (mcg MarpCourseGenerator) GetCmd(course *models.Course, docType *string) *exec.Cmd {
+func (mcg MarpCourseGenerator) GetCmd(course *models.Course) *exec.Cmd {
 	cUser, errc := user.Current()
 	if errc != nil {
 		log.Fatal(errc)
@@ -73,13 +73,13 @@ func (mcg MarpCourseGenerator) GetCmd(course *models.Course, docType *string) *e
 
 	outputDir := config.COURSES_OUTPUT_DIR + course.Theme.Name
 	srcFile := outputDir + "/" + course.GetFilename("md")
-	destFile := outputDir + "/" + course.GetFilename(*docType)
+	destFile := outputDir + "/" + course.GetFilename()
 
 	baseCmd := []string{"run", "--rm", "--init", "-e", "MARP_USER=" + cUser.Uid + ":" + cUser.Gid, "-v", pwd + ":/home/marp/app", DOCKER_IMAGE}
 	cmdOptions := []string{srcFile, "-o", destFile, "--no-config", "--theme", course.Theme.Name}
 	cmdOptions = append(cmdOptions, mcg.GetThemesSetOpts(course)...)
 	cmdOptions = append(cmdOptions, []string{"--engine", ENGINE_CONFIGURATION}...)
-	cmdOptions = append(cmdOptions, mcg.ParseDocType(*docType).GetTypeOpts()...)
+	cmdOptions = append(cmdOptions, mcg.ParseDocType("html").GetTypeOpts()...)
 
 	cmdFull := append(baseCmd, cmdOptions...)
 
@@ -88,8 +88,8 @@ func (mcg MarpCourseGenerator) GetCmd(course *models.Course, docType *string) *e
 	return cmd
 }
 
-func (mcg MarpCourseGenerator) Run(course *models.Course, docType *string) error {
-	cmd := mcg.GetCmd(course, docType)
+func (mcg MarpCourseGenerator) Run(course *models.Course) error {
+	cmd := mcg.GetCmd(course)
 
 	var outb, errb bytes.Buffer
 	cmd.Stdout = &outb

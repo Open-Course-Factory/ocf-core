@@ -44,7 +44,7 @@ func NewCourseService(db *gorm.DB) CourseService {
 func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseInput) (*dto.GenerateCourseOutput, error) {
 
 	genericService := genericService.NewGenericService(sqldb.DB)
-	courseEntity, errGettingEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.Id), models.Course{}, "Course")
+	courseEntity, errGettingEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.CourseId), models.Course{}, "Course")
 
 	if errGettingEntity != nil {
 		return nil, errGettingEntity
@@ -60,6 +60,16 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 		}
 
 		course.Schedule = scheduleEntity.(*models.Schedule)
+	}
+
+	if generateCourseInputDto.ThemeId != "" {
+		themeEntity, errGettingThemeEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ThemeId), models.Theme{}, "Schedule")
+
+		if errGettingThemeEntity != nil {
+			return nil, errGettingThemeEntity
+		}
+
+		course.Theme = themeEntity.(*models.Theme)
 	}
 
 	course.InitTocs()
@@ -87,7 +97,7 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 		log.Fatal(errc)
 	}
 
-	errr := engine.Run(course, &generateCourseInputDto.Format)
+	errr := engine.Run(course)
 
 	if errc != nil {
 		log.Println(errr.Error())
@@ -204,59 +214,59 @@ func fileToBytesWithoutSeeking(file billy.File) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func hasOneOfSuffixes(s string, suffixes []string) bool {
-	res := false
-	for _, suffix := range suffixes {
-		res = res || strings.HasSuffix(s, suffix)
-		if res {
-			return res
-		}
-	}
-	return res
-}
+// func hasOneOfSuffixes(s string, suffixes []string) bool {
+// 	res := false
+// 	for _, suffix := range suffixes {
+// 		res = res || strings.HasSuffix(s, suffix)
+// 		if res {
+// 			return res
+// 		}
+// 	}
+// 	return res
+// }
 
-func copyCourseFileLocally(fs billy.Filesystem, courseName string, repoDirectory string, fileExtensions []string) error {
-	files, errReadDir := fs.ReadDir(repoDirectory)
-	if errReadDir != nil {
-		log.Printf("reading directory")
-		return errReadDir
-	}
+// func copyCourseFileLocally(fs billy.Filesystem, courseName string, repoDirectory string, fileExtensions []string) error {
+// 	files, errReadDir := fs.ReadDir(repoDirectory)
+// 	if errReadDir != nil {
+// 		log.Printf("reading directory")
+// 		return errReadDir
+// 	}
 
-	var fileContent []byte
+// 	var fileContent []byte
 
-	for _, fileInfo := range files {
-		if hasOneOfSuffixes(fileInfo.Name(), fileExtensions) {
-			file, errFileOpen := fs.Open(repoDirectory + fileInfo.Name())
-			if errFileOpen != nil {
-				log.Printf("opening file")
-				return errFileOpen
-			}
-			var err error
-			fileContent, err = io.ReadAll(file)
-			if err != nil {
-				log.Printf("reading file")
-				return err
-			}
+// 	for _, fileInfo := range files {
+// 		if hasOneOfSuffixes(fileInfo.Name(), fileExtensions) {
+// 			file, errFileOpen := fs.Open(repoDirectory + fileInfo.Name())
+// 			if errFileOpen != nil {
+// 				log.Printf("opening file")
+// 				return errFileOpen
+// 			}
+// 			var err error
+// 			fileContent, err = io.ReadAll(file)
+// 			if err != nil {
+// 				log.Printf("reading file")
+// 				return err
+// 			}
 
-			if _, err := os.Stat(config.COURSES_ROOT + courseName + repoDirectory); os.IsNotExist(err) {
-				err = os.MkdirAll(config.COURSES_ROOT+courseName+repoDirectory, 0700) // Create your file
-				if err != nil {
-					log.Printf("creating file")
-					return err
-				}
-			}
+// 			if _, err := os.Stat(config.COURSES_ROOT + courseName + repoDirectory); os.IsNotExist(err) {
+// 				err = os.MkdirAll(config.COURSES_ROOT+courseName+repoDirectory, 0700) // Create your file
+// 				if err != nil {
+// 					log.Printf("creating file")
+// 					return err
+// 				}
+// 			}
 
-			//create file locally
-			err = os.WriteFile(config.COURSES_ROOT+courseName+repoDirectory+fileInfo.Name(), fileContent, 0600)
+// 			//create file locally
+// 			err = os.WriteFile(config.COURSES_ROOT+courseName+repoDirectory+fileInfo.Name(), fileContent, 0600)
 
-			if err != nil {
-				log.Printf("writing file")
-				return err
-			}
-		}
-	}
-	return nil
-}
+// 			if err != nil {
+// 				log.Printf("writing file")
+// 				return err
+// 			}
+// 		}
+// 	}
+// 	return nil
+// }
 
 func (c courseService) GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error) {
 	course, err := c.repository.GetSpecificCourseByUser(owner, courseName)
