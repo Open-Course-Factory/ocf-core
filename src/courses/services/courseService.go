@@ -99,8 +99,9 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 
 	errr := engine.Run(course)
 
-	if errc != nil {
+	if errr != nil {
 		log.Println(errr.Error())
+		return nil, errr
 	}
 
 	return &dto.GenerateCourseOutput{Result: true}, nil

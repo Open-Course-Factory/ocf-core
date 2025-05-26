@@ -90,12 +90,11 @@ func (scg SlidevCourseGenerator) Run(course *models.Course) error {
 
 	if err != nil {
 		fmt.Println(err.Error())
-		//log.Fatal(err)
-	}
-
-	errByte := errb.String()
-	if len(errb.Bytes()) > 0 {
-		fmt.Println(errByte)
+		errByte := errb.String()
+		if len(errb.Bytes()) > 0 {
+			fmt.Println(errByte)
+		}
+		return err
 	}
 
 	fmt.Println(outb.String())
@@ -174,17 +173,11 @@ func (scg SlidevCourseGenerator) writeFileFromFsToDisk(fs billy.Filesystem, path
 		return errRead
 	}
 
-	var err error
 	if _, err := os.Stat(outputDir); os.IsNotExist(err) {
 		os.MkdirAll(outputDir, 0700)
 	}
 
-	if err != nil {
-		log.Printf("writing file")
-		return err
-	}
-
-	err = os.WriteFile(outputDir+path, fileContent, 0600)
+	err := os.WriteFile(outputDir+path, fileContent, 0600)
 
 	if err != nil {
 		log.Printf("writing file")
