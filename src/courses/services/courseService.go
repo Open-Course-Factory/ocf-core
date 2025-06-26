@@ -156,7 +156,7 @@ func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL
 }
 
 func (cs courseService) WriteMd(c *models.Course, configuration *dto.GenerateCourseInput) (string, error) {
-	outputDir := config.COURSES_OUTPUT_DIR + configuration.ThemeId
+	outputDir := config.COURSES_OUTPUT_DIR + c.Theme.Name
 
 	err := os.MkdirAll(outputDir, os.ModePerm)
 	if err != nil {

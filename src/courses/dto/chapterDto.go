@@ -12,14 +12,15 @@ type ChapterInput struct {
 }
 
 type ChapterOutput struct {
-	ID           string          `json:"id"`
-	Title        string          `json:"title"`
-	Number       int             `json:"number"`
-	Footer       string          `json:"footer"`
-	Introduction string          `json:"introduction"`
-	Sections     []SectionOutput `json:"sections"`
-	CreatedAt    string          `json:"createdAt"`
-	UpdatedAt    string          `json:"updatedAt"`
+	ID              string          `json:"id"`
+	ParentCourseIDs []string        `json:"courseIDs"`
+	Title           string          `json:"title"`
+	Number          int             `json:"number"`
+	Footer          string          `json:"footer"`
+	Introduction    string          `json:"introduction"`
+	Sections        []SectionOutput `json:"sections"`
+	CreatedAt       string          `json:"createdAt"`
+	UpdatedAt       string          `json:"updatedAt"`
 }
 
 type EditChapterInput struct {
@@ -37,13 +38,19 @@ func ChapterModelToChapterOutput(chapterModel models.Chapter) *ChapterOutput {
 		sectionsOutputs = append(sectionsOutputs, *SectionModelToSectionOutput(*section))
 	}
 
+	var parentCourseIDs []string
+	for _, course := range chapterModel.Courses {
+		parentCourseIDs = append(parentCourseIDs, course.ID.String())
+	}
+
 	return &ChapterOutput{
-		ID:           chapterModel.ID.String(),
-		Title:        chapterModel.Title,
-		Number:       chapterModel.Number,
-		Footer:       chapterModel.Footer,
-		Introduction: chapterModel.Introduction,
-		Sections:     sectionsOutputs,
+		ID:              chapterModel.ID.String(),
+		ParentCourseIDs: parentCourseIDs,
+		Title:           chapterModel.Title,
+		Number:          chapterModel.Number,
+		Footer:          chapterModel.Footer,
+		Introduction:    chapterModel.Introduction,
+		Sections:        sectionsOutputs,
 	}
 }
 
