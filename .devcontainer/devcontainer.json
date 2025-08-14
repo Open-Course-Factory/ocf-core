@@ -65,9 +65,9 @@
 	"features": {
 		"ghcr.io/devcontainers/features/git:1": {},
 		"ghcr.io/warrenbuckley/codespace-features/sqlite:1": {},
-		"ghcr.io/devcontainers/features/docker-in-docker:1": {},
+		"ghcr.io/devcontainers/features/docker-in-docker:2.12.2": {},
 		"ghcr.io/devcontainers/features/sshd:1": {},
-		"ghcr.io/devcontainers-contrib/features/vue-cli": {}
+		"ghcr.io/devcontainers-extra/features/vue-cli:2": {}
 	}
 
 	// Uncomment to connect as an existing user other than the container default. More info: https://aka.ms/dev-containers-non-root.
