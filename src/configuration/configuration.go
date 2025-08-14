@@ -21,6 +21,7 @@ type Configuration struct {
 	AuthorEmail      string `json:"author_email"`
 	SecretJwt        string `mapstructure:"SECRET_JWT"`
 	SecretRefreshJwt string `mapstructure:"SECRET_REFRESH_JWT"`
+	Worker           WorkerConfig
 }
 
 func ReadJsonConfigurationFile(jsonConfigurationFilePath string) Configuration {

@@ -1,4 +1,4 @@
-FROM golang:bookworm
+FROM golang:1.24-bookworm
 
 RUN apt-get update
 
@@ -39,7 +39,7 @@ USER ocf
 
 WORKDIR /workspaces/ocf-core
 
-RUN go install -v github.com/swaggo/swag/cmd/swag@v1.8.12
+RUN go install -v github.com/swaggo/swag/cmd/swag@latest
 RUN go install -v github.com/go-delve/delve/cmd/dlv@latest 
 RUN go install -v golang.org/x/tools/gopls@latest
 

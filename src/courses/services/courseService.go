@@ -1,115 +1,317 @@
+// src/courses/services/courseService.go
 package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"os"
+	"time"
+
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
 	repositories "soli/formations/src/courses/repositories"
 	sqldb "soli/formations/src/db"
-	slidev "soli/formations/src/generationEngine/slidev_integration"
-
 	genericService "soli/formations/src/entityManagement/services"
-	"strings"
-
-	"github.com/go-git/go-billy/v5"
-	"github.com/google/uuid"
+	workerServices "soli/formations/src/worker/services"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	"github.com/go-git/go-billy/v5"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type CourseService interface {
-	GenerateCourse(generateCourseInputDto dto.GenerateCourseInput) (*dto.GenerateCourseOutput, error)
+	// Méthodes existantes
 	GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) (*models.Course, error)
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
 	GetCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) models.Course
+
+	// Nouvelles méthodes pour le worker
+	GenerateCourseAsync(generateCourseInputDto dto.GenerateCourseInput) (*dto.AsyncGenerationOutput, error)
+	CheckGenerationStatus(generationID string) (*dto.GenerationStatusOutput, error)
+	DownloadGenerationResults(generationID string) ([]byte, error)
+	RetryGeneration(generationID string) (*dto.AsyncGenerationOutput, error)
+
+	// Méthode de compatibilité (deprecated)
+	GenerateCourse(generateCourseInputDto dto.GenerateCourseInput) (*dto.GenerateCourseOutput, error)
 }
 
 type courseService struct {
-	repository repositories.CourseRepository
+	repository     repositories.CourseRepository
+	workerService  workerServices.WorkerService
+	packageService workerServices.GenerationPackageService
+	workerConfig   *config.WorkerConfig
 }
 
 func NewCourseService(db *gorm.DB) CourseService {
+	workerConfig := config.LoadWorkerConfig()
 	return &courseService{
-		repository: repositories.NewCourseRepository(db),
+		repository:     repositories.NewCourseRepository(db),
+		workerService:  workerServices.NewWorkerService(workerConfig),
+		packageService: workerServices.NewGenerationPackageService(),
+		workerConfig:   workerConfig,
 	}
 }
 
-func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseInput) (*dto.GenerateCourseOutput, error) {
+// GenerateCourseAsync génère un cours de manière asynchrone via le worker
+func (c courseService) GenerateCourseAsync(generateCourseInputDto dto.GenerateCourseInput) (*dto.AsyncGenerationOutput, error) {
+	ctx := context.Background()
 
+	// 1. Récupérer le cours
 	genericService := genericService.NewGenericService(sqldb.DB)
-	courseEntity, errGettingEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.CourseId), models.Course{}, "Course")
-
-	if errGettingEntity != nil {
-		return nil, errGettingEntity
+	courseEntity, err := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.CourseId), models.Course{}, "Course")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get course: %w", err)
 	}
-
 	course := courseEntity.(*models.Course)
 
+	// 2. Récupérer le schedule si spécifié
 	if generateCourseInputDto.ScheduleId != "" {
-		scheduleEntity, errGettingScheduleEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ScheduleId), models.Schedule{}, "Schedule")
-
-		if errGettingScheduleEntity != nil {
-			return nil, errGettingScheduleEntity
+		scheduleEntity, err := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ScheduleId), models.Schedule{}, "Schedule")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get schedule: %w", err)
 		}
-
 		course.Schedule = scheduleEntity.(*models.Schedule)
 	}
 
+	// 3. Récupérer le thème si spécifié
 	if generateCourseInputDto.ThemeId != "" {
-		themeEntity, errGettingThemeEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ThemeId), models.Theme{}, "Schedule")
-
-		if errGettingThemeEntity != nil {
-			return nil, errGettingThemeEntity
+		themeEntity, err := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ThemeId), models.Theme{}, "Theme")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get theme: %w", err)
 		}
-
 		course.Theme = themeEntity.(*models.Theme)
 	}
 
-	course.InitTocs()
+	// 4. Créer l'entité Generation
+	generationInput := dto.GenerationInput{
+		OwnerID:    course.OwnerIDs[0],
+		Name:       fmt.Sprintf("Generation for %s", course.Name),
+		Format:     generateCourseInputDto.Format,
+		ThemeId:    generateCourseInputDto.ThemeId,
+		ScheduleId: generateCourseInputDto.ScheduleId,
+		CourseId:   generateCourseInputDto.CourseId,
+	}
 
-	createdFile, err := c.WriteMd(course, &generateCourseInputDto)
+	generationEntity, err := genericService.CreateEntity(generationInput, "Generation")
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to create generation: %w", err)
 	}
-	fmt.Println("Markdown file created: " + createdFile)
+	generation := generationEntity.(*models.Generation)
 
-	if generateCourseInputDto.ThemeId != "" {
-		themeEntity, errGettingThemeEntity := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ThemeId), models.Theme{}, "Theme")
+	// 5. Préparer le package de génération
+	pkg, err := c.packageService.PrepareGenerationPackage(course, generateCourseInputDto.AuthorEmail)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare generation package: %w", err)
+	}
 
-		if errGettingThemeEntity != nil {
-			return nil, errGettingThemeEntity
+	// 6. Soumettre au worker avec retry
+	var workerStatus *workerServices.WorkerJobStatus
+	var submitErr error
+
+	for attempt := 0; attempt < c.workerConfig.RetryCount; attempt++ {
+		workerStatus, submitErr = c.workerService.SubmitGeneration(ctx, generation, pkg)
+		if submitErr == nil {
+			break
 		}
 
-		course.Theme = themeEntity.(*models.Theme)
+		log.Printf("Worker submission attempt %d failed: %v", attempt+1, submitErr)
+		if attempt < c.workerConfig.RetryCount-1 {
+			time.Sleep(time.Duration(attempt+1) * time.Second) // Backoff progressif
+		}
 	}
 
-	engine := slidev.SlidevCourseGenerator{}
-
-	errc := engine.CompileResources(course)
-	if errc != nil {
-		log.Fatal(errc)
+	if submitErr != nil {
+		// Marquer la génération comme échouée
+		generation.SetFailed(fmt.Sprintf("Failed to submit to worker after %d attempts: %v", c.workerConfig.RetryCount, submitErr))
+		genericService.SaveEntity(generation)
+		return nil, fmt.Errorf("failed to submit generation to worker: %w", submitErr)
 	}
 
-	errr := engine.Run(course)
+	// 7. Mettre à jour la génération avec l'ID du job worker
+	generation.SetWorkerJobID(workerStatus.ID)
+	genericService.SaveEntity(generation)
 
-	if errr != nil {
-		log.Println(errr.Error())
-		return nil, errr
-	}
-
-	return &dto.GenerateCourseOutput{Result: true}, nil
+	return &dto.AsyncGenerationOutput{
+		GenerationID: generation.ID.String(),
+		Status:       generation.Status,
+		Message:      "Generation submitted successfully",
+	}, nil
 }
 
+// CheckGenerationStatus vérifie le statut d'une génération
+func (c courseService) CheckGenerationStatus(generationID string) (*dto.GenerationStatusOutput, error) {
+	ctx := context.Background()
+
+	// 1. Récupérer la génération
+	genericService := genericService.NewGenericService(sqldb.DB)
+	generationEntity, err := genericService.GetEntity(uuid.MustParse(generationID), models.Generation{}, "Generation")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get generation: %w", err)
+	}
+	generation := generationEntity.(*models.Generation)
+
+	// 2. Si la génération n'a pas de job worker, retourner le statut local
+	if generation.WorkerJobID == nil {
+		return dto.GenerationModelToStatusOutput(*generation), nil
+	}
+
+	// 3. Vérifier le statut auprès du worker
+	workerStatus, err := c.workerService.CheckStatus(ctx, *generation.WorkerJobID)
+	if err != nil {
+		log.Printf("Failed to check worker status: %v", err)
+		// Retourner le statut local en cas d'erreur de communication
+		return dto.GenerationModelToStatusOutput(*generation), nil
+	}
+
+	// 4. Mettre à jour le statut local si nécessaire
+	updated := false
+	if workerStatus.Progress != nil && generation.Progress != workerStatus.Progress {
+		generation.UpdateProgress(*workerStatus.Progress)
+		updated = true
+	}
+
+	if workerStatus.Status == "completed" && generation.Status != models.StatusCompleted {
+		// Récupérer les URLs des résultats
+		resultURLs, err := c.workerService.GetResultFiles(ctx, generation.CourseID.String())
+		if err != nil {
+			log.Printf("Failed to get result files: %v", err)
+			resultURLs = []string{} // Continuer avec une liste vide
+		}
+		generation.SetCompleted(resultURLs)
+		updated = true
+	} else if workerStatus.Status == "failed" && generation.Status != models.StatusFailed {
+		errorMsg := "Generation failed"
+		if workerStatus.Error != nil {
+			errorMsg = *workerStatus.Error
+		}
+		generation.SetFailed(errorMsg)
+		updated = true
+	}
+
+	// 5. Sauvegarder les changements si nécessaire
+	if updated {
+		genericService.SaveEntity(generation)
+	}
+
+	return dto.GenerationModelToStatusOutput(*generation), nil
+}
+
+// DownloadGenerationResults télécharge les résultats d'une génération
+func (c courseService) DownloadGenerationResults(generationID string) ([]byte, error) {
+	ctx := context.Background()
+
+	// 1. Récupérer la génération
+	genericService := genericService.NewGenericService(sqldb.DB)
+	generationEntity, err := genericService.GetEntity(uuid.MustParse(generationID), models.Generation{}, "Generation")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get generation: %w", err)
+	}
+	generation := generationEntity.(*models.Generation)
+
+	// 2. Vérifier que la génération est terminée avec succès
+	if !generation.IsSuccessful() {
+		return nil, fmt.Errorf("generation is not completed successfully (status: %s)", generation.Status)
+	}
+
+	// 3. Télécharger les résultats depuis le worker
+	return c.workerService.DownloadResults(ctx, generation.CourseID.String())
+}
+
+// RetryGeneration relance une génération échouée
+func (c courseService) RetryGeneration(generationID string) (*dto.AsyncGenerationOutput, error) {
+	// 1. Récupérer la génération
+	genericService := genericService.NewGenericService(sqldb.DB)
+	generationEntity, err := genericService.GetEntity(uuid.MustParse(generationID), models.Generation{}, "Generation")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get generation: %w", err)
+	}
+	generation := generationEntity.(*models.Generation)
+
+	// 2. Vérifier que la génération peut être relancée
+	if generation.Status == models.StatusProcessing {
+		return nil, fmt.Errorf("generation is already in progress")
+	}
+
+	// 3. Réinitialiser le statut
+	generation.Status = models.StatusPending
+	generation.ErrorMessage = nil
+	generation.WorkerJobID = nil
+	generation.Progress = nil
+	generation.StartedAt = nil
+	generation.CompletedAt = nil
+
+	genericService.SaveEntity(generation)
+
+	// 4. Récupérer les informations nécessaires pour relancer
+	// courseEntity, err := genericService.GetEntity(generation.CourseID, models.Course{}, "Course")
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to get course: %w", err)
+	// }
+	//course := courseEntity.(*models.Course)
+
+	// Simuler une requête de génération
+	generateInput := dto.GenerateCourseInput{
+		CourseId:    generation.CourseID.String(),
+		ThemeId:     generation.ThemeID.String(),
+		ScheduleId:  generation.ScheduleID.String(),
+		Format:      generation.Format,
+		AuthorEmail: "", // TODO: Récupérer l'email original
+	}
+
+	// 5. Relancer la génération
+	return c.GenerateCourseAsync(generateInput)
+}
+
+// GenerateCourse - Méthode de compatibilité (deprecated)
+// Cette méthode maintient la compatibilité avec l'ancien comportement
+// mais utilise maintenant le worker en mode synchrone
+func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseInput) (*dto.GenerateCourseOutput, error) {
+	// 1. Lancer la génération asynchrone
+	asyncResult, err := c.GenerateCourseAsync(generateCourseInputDto)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Attendre la completion (mode synchrone pour compatibilité)
+	//ctx := context.Background()
+	generationID := asyncResult.GenerationID
+
+	// Poll jusqu'à la completion avec un timeout
+	timeout := time.Duration(300) * time.Second // 5 minutes
+	start := time.Now()
+
+	for time.Since(start) < timeout {
+		status, err := c.CheckGenerationStatus(generationID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check generation status: %w", err)
+		}
+
+		if status.Status == models.StatusCompleted {
+			return &dto.GenerateCourseOutput{Result: true}, nil
+		} else if status.Status == models.StatusFailed {
+			errorMsg := "Generation failed"
+			if status.ErrorMessage != nil {
+				errorMsg = *status.ErrorMessage
+			}
+			return nil, fmt.Errorf("generation failed: %s", errorMsg)
+		}
+
+		// Attendre avant le prochain check
+		time.Sleep(c.workerConfig.PollInterval)
+	}
+
+	return nil, fmt.Errorf("generation timeout after %v", timeout)
+}
+
+// Méthodes existantes conservées pour compatibilité...
+
 func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) (*models.Course, error) {
-	// Clones the given repository in memory, creating the remote, the local
-	// branches and fetching the objects, exactly as:
+	// Implementation existante conservée
 	log.Printf("git clone %s", courseURL)
 
 	fs, cloneErr := models.GitClone(ownerId, courseURL, courseBranch)
@@ -118,7 +320,6 @@ func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL
 	}
 
 	jsonFile, err := fs.Open("course.json")
-
 	if err != nil {
 		log.Fatal("Error during ReadFile(): ", err)
 	}
@@ -142,7 +343,6 @@ func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL
 	models.FillCourseModelFromFiles(&fs, &course)
 
 	genericService := genericService.NewGenericService(sqldb.DB)
-
 	courseInputDto := dto.CourseModelToCourseInputDto(course)
 	_, errorSaving := genericService.CreateEntity(courseInputDto, "Course")
 
@@ -152,171 +352,36 @@ func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL
 	}
 
 	return &course, nil
-
 }
 
-func (cs courseService) WriteMd(c *models.Course, configuration *dto.GenerateCourseInput) (string, error) {
-	outputDir := config.COURSES_OUTPUT_DIR + c.Theme.Name
-
-	err := os.MkdirAll(outputDir, os.ModePerm)
+func (c courseService) GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error) {
+	course, err := c.repository.GetSpecificCourseByUser(owner, courseName)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-
-	fileToCreate := outputDir + "/" + c.GetFilename("md")
-	f, err := os.Create(fileToCreate)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	defer f.Close()
-
-	user, errUser := casdoorsdk.GetUserByEmail(configuration.AuthorEmail)
-
-	if errUser != nil {
-		return "", errUser
-	}
-
-	courseReplaceTrigram := strings.ReplaceAll(c.String(), "@@author@@", user.Name)
-	courseReplaceFullname := strings.ReplaceAll(courseReplaceTrigram, "@@author_fullname@@", user.DisplayName)
-	courseReplaceEmail := strings.ReplaceAll(courseReplaceFullname, "@@author_email@@", configuration.AuthorEmail)
-	courseReplaceVersion := strings.ReplaceAll(courseReplaceEmail, "@@version@@", c.Version)
-
-	_, err2 := f.WriteString(courseReplaceVersion)
-
-	if err2 != nil {
-		log.Fatal(err2)
-	}
-
-	return fileToCreate, err
+	return course, nil
 }
+
+func (c courseService) GetCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) models.Course {
+	return models.Course{}
+}
+
+// Fonctions utilitaires
 
 func fileToBytesWithoutSeeking(file billy.File) ([]byte, error) {
-	// Get the current position
 	currentPos, err := file.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create a buffer to hold the data
 	var buf bytes.Buffer
-
-	// Read from the current position to the end
 	if _, err := io.Copy(&buf, file); err != nil {
 		return nil, err
 	}
 
-	// Restore the file's original position
 	if _, err := file.Seek(currentPos, io.SeekStart); err != nil {
 		return nil, err
 	}
 
 	return buf.Bytes(), nil
-}
-
-// func hasOneOfSuffixes(s string, suffixes []string) bool {
-// 	res := false
-// 	for _, suffix := range suffixes {
-// 		res = res || strings.HasSuffix(s, suffix)
-// 		if res {
-// 			return res
-// 		}
-// 	}
-// 	return res
-// }
-
-// func copyCourseFileLocally(fs billy.Filesystem, courseName string, repoDirectory string, fileExtensions []string) error {
-// 	files, errReadDir := fs.ReadDir(repoDirectory)
-// 	if errReadDir != nil {
-// 		log.Printf("reading directory")
-// 		return errReadDir
-// 	}
-
-// 	var fileContent []byte
-
-// 	for _, fileInfo := range files {
-// 		if hasOneOfSuffixes(fileInfo.Name(), fileExtensions) {
-// 			file, errFileOpen := fs.Open(repoDirectory + fileInfo.Name())
-// 			if errFileOpen != nil {
-// 				log.Printf("opening file")
-// 				return errFileOpen
-// 			}
-// 			var err error
-// 			fileContent, err = io.ReadAll(file)
-// 			if err != nil {
-// 				log.Printf("reading file")
-// 				return err
-// 			}
-
-// 			if _, err := os.Stat(config.COURSES_ROOT + courseName + repoDirectory); os.IsNotExist(err) {
-// 				err = os.MkdirAll(config.COURSES_ROOT+courseName+repoDirectory, 0700) // Create your file
-// 				if err != nil {
-// 					log.Printf("creating file")
-// 					return err
-// 				}
-// 			}
-
-// 			//create file locally
-// 			err = os.WriteFile(config.COURSES_ROOT+courseName+repoDirectory+fileInfo.Name(), fileContent, 0600)
-
-// 			if err != nil {
-// 				log.Printf("writing file")
-// 				return err
-// 			}
-// 		}
-// 	}
-// 	return nil
-// }
-
-func (c courseService) GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error) {
-	course, err := c.repository.GetSpecificCourseByUser(owner, courseName)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return course, nil
-}
-
-func (c courseService) ImportCourseFromGit() {
-
-}
-
-func (c courseService) GetCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) models.Course {
-	// isCourseGitRepository := (*courseGitRepository != "")
-
-	// // ToDo: Get loggued in User
-	// LogguedInUser, userErr := casdoorsdk.GetUserByEmail("1.supervisor@test.com")
-
-	// if userErr != nil {
-	// 	log.Fatal(userErr)
-	// }
-
-	// var errGetGitCourse error
-	// if isCourseGitRepository {
-	// 	errGetGitCourse = c.GetGitCourse(LogguedInUser.Id, *courseName, *courseGitRepository, *courseGitRepositoryBranchName)
-	// }
-
-	// if errGetGitCourse != nil {
-	// 	log.Fatal(errGetGitCourse)
-	// }
-
-	// jsonCourseFilePath := config.COURSES_ROOT + *courseName + "/course.json"
-	// course := models.ReadJsonCourseFile(jsonCourseFilePath)
-
-	// course.OwnerIDs = append(course.OwnerIDs, LogguedInUser.Id)
-	// course.FolderName = *courseName
-	// course.GitRepository = *courseGitRepository
-	// course.GitRepositoryBranch = *courseGitRepositoryBranchName
-	// return *course
-	return models.Course{}
-}
-
-func CheckIfError(err error) bool {
-	res := false
-	if err != nil {
-		res = true
-	}
-	return res
 }

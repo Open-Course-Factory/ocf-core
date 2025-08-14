@@ -1,3 +1,4 @@
+// src/courses/routes/courseRoutes/generateCourse.go
 package courseController
 
 import (
@@ -11,8 +12,8 @@ import (
 
 // Generate Course godoc
 //
-//	@Summary		Génération d'un cours
-//	@Description	Génération d'un cours pour un format donné
+//	@Summary		Génération d'un cours (mode asynchrone)
+//	@Description	Génération d'un cours pour un format donné via le worker OCF
 //	@Tags			courses
 //	@Accept			json
 //	@Produce		json
@@ -20,9 +21,10 @@ import (
 //
 //	@Security		Bearer
 //
-//	@Success		201	{object}	dto.GenerateCourseOutput
+//	@Success		202	{object}	dto.AsyncGenerationOutput
 //
 //	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
+//	@Failure		500	{object}	errors.APIError	"Erreur lors de la génération"
 //	@Router			/courses/generate [post]
 func (c courseController) GenerateCourse(ctx *gin.Context) {
 	courseGenerateDTO := dto.GenerateCourseInput{}
@@ -31,20 +33,21 @@ func (c courseController) GenerateCourse(ctx *gin.Context) {
 	if bindError != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Impossible de parser le json",
+			ErrorMessage: "Impossible de parser le json: " + bindError.Error(),
 		})
 		return
 	}
 
-	course, courseError := c.service.GenerateCourse(courseGenerateDTO)
-
-	if courseError != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: courseError.Error(),
+	// Utiliser la nouvelle méthode asynchrone
+	result, err := c.service.GenerateCourseAsync(courseGenerateDTO)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Erreur lors de la génération: " + err.Error(),
 		})
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, course)
+	// Retourner un statut 202 (Accepted) pour indiquer le traitement asynchrone
+	ctx.JSON(http.StatusAccepted, result)
 }

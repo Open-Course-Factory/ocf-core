@@ -16,6 +16,10 @@ type CourseController interface {
 	GetCourse(ctx *gin.Context)
 	CreateCourseFromGit(ctx *gin.Context)
 	EditCourse(ctx *gin.Context)
+
+	GetGenerationStatus(ctx *gin.Context)
+	DownloadGenerationResults(ctx *gin.Context)
+	RetryGeneration(ctx *gin.Context)
 }
 
 type courseController struct {
