@@ -10,6 +10,7 @@ import (
 	"log"
 	"time"
 
+	authInterfaces "soli/formations/src/auth/interfaces"
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
@@ -45,6 +46,7 @@ type courseService struct {
 	workerService  workerServices.WorkerService
 	packageService workerServices.GenerationPackageService
 	workerConfig   *config.WorkerConfig
+	casdoorService authInterfaces.CasdoorService
 }
 
 func NewCourseService(db *gorm.DB) CourseService {
@@ -54,6 +56,24 @@ func NewCourseService(db *gorm.DB) CourseService {
 		workerService:  workerServices.NewWorkerService(workerConfig),
 		packageService: workerServices.NewGenerationPackageService(),
 		workerConfig:   workerConfig,
+		casdoorService: authInterfaces.NewCasdoorService(),
+	}
+}
+
+// NewCourseServiceWithDependencies permet d'injecter les dépendances (utile pour les tests)
+func NewCourseServiceWithDependencies(
+	db *gorm.DB,
+	workerService workerServices.WorkerService,
+	packageService workerServices.GenerationPackageService,
+	casdoorService authInterfaces.CasdoorService,
+) CourseService {
+	workerConfig := config.LoadWorkerConfig()
+	return &courseService{
+		repository:     repositories.NewCourseRepository(db),
+		workerService:  workerService,
+		packageService: packageService,
+		workerConfig:   workerConfig,
+		casdoorService: casdoorService,
 	}
 }
 
@@ -252,7 +272,7 @@ func (c courseService) RetryGeneration(generationID string) (*dto.AsyncGeneratio
 	// if err != nil {
 	// 	return nil, fmt.Errorf("failed to get course: %w", err)
 	// }
-	//course := courseEntity.(*models.Course)
+	// course := courseEntity.(*models.Course)
 
 	// Simuler une requête de génération
 	generateInput := dto.GenerateCourseInput{
@@ -260,7 +280,7 @@ func (c courseService) RetryGeneration(generationID string) (*dto.AsyncGeneratio
 		ThemeId:     generation.ThemeID.String(),
 		ScheduleId:  generation.ScheduleID.String(),
 		Format:      generation.Format,
-		AuthorEmail: "", // TODO: Récupérer l'email original
+		AuthorEmail: "retry@example.com", // TODO: Récupérer l'email original
 	}
 
 	// 5. Relancer la génération
@@ -278,7 +298,6 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 	}
 
 	// 2. Attendre la completion (mode synchrone pour compatibilité)
-	//ctx := context.Background()
 	generationID := asyncResult.GenerationID
 
 	// Poll jusqu'à la completion avec un timeout

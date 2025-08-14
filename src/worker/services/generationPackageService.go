@@ -9,10 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	authInterfaces "soli/formations/src/auth/interfaces"
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/models"
-
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 // GenerationPackageService prépare les packages pour la génération
@@ -23,10 +22,21 @@ type GenerationPackageService interface {
 	CollectThemeFiles(themeName string) (map[string][]byte, error)
 }
 
-type generationPackageService struct{}
+type generationPackageService struct {
+	casdoorService authInterfaces.CasdoorService
+}
 
 func NewGenerationPackageService() GenerationPackageService {
-	return &generationPackageService{}
+	return &generationPackageService{
+		casdoorService: authInterfaces.NewCasdoorService(),
+	}
+}
+
+// NewGenerationPackageServiceWithDependencies permet d'injecter les dépendances (utile pour les tests)
+func NewGenerationPackageServiceWithDependencies(casdoorService authInterfaces.CasdoorService) GenerationPackageService {
+	return &generationPackageService{
+		casdoorService: casdoorService,
+	}
 }
 
 // PrepareGenerationPackage prépare un package complet pour la génération
@@ -55,7 +65,7 @@ func (gps *generationPackageService) PrepareGenerationPackage(course *models.Cou
 	}
 
 	// Récupérer les informations de l'utilisateur
-	user, err := casdoorsdk.GetUserByEmail(authorEmail)
+	user, err := gps.casdoorService.GetUserByEmail(authorEmail)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user info: %w", err)
 	}
@@ -84,7 +94,7 @@ func (gps *generationPackageService) GenerateMDContent(course *models.Course, au
 	course.InitTocs()
 
 	// Récupérer les informations de l'utilisateur
-	user, err := casdoorsdk.GetUserByEmail(authorEmail)
+	user, err := gps.casdoorService.GetUserByEmail(authorEmail)
 	if err != nil {
 		return "", fmt.Errorf("failed to get user info: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	authInterfaces "soli/formations/src/auth/interfaces"
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
@@ -98,12 +99,15 @@ func TestCourseService_GenerateCourseAsync(t *testing.T) {
 	theme := createTestTheme(t, db)
 	schedule := createTestSchedule(t, db)
 
-	// Configurer le service avec un mock worker
+	// Configurer les services mockés
 	mockWorker := workerServices.NewMockWorkerService()
 	mockWorker.SetFailureRate(0.0) // Pas d'échec pour ce test
 	mockWorker.SetProcessingDelay(10 * time.Millisecond)
 
-	packageService := workerServices.NewGenerationPackageService()
+	mockCasdoor := authInterfaces.NewMockCasdoorService()
+
+	packageService := workerServices.NewGenerationPackageServiceWithDependencies(mockCasdoor)
+
 	workerConfig := &config.WorkerConfig{
 		URL:          "http://mock-worker:8081",
 		Timeout:      30 * time.Second,
@@ -116,6 +120,7 @@ func TestCourseService_GenerateCourseAsync(t *testing.T) {
 		workerService:  mockWorker,
 		packageService: packageService,
 		workerConfig:   workerConfig,
+		casdoorService: mockCasdoor,
 	}
 
 	// Préparer la requête de génération
@@ -123,21 +128,14 @@ func TestCourseService_GenerateCourseAsync(t *testing.T) {
 		CourseId:    course.ID.String(),
 		ThemeId:     theme.ID.String(),
 		ScheduleId:  schedule.ID.String(),
-		Format:      &[]int{1}[0], // Format Slidev
-		AuthorEmail: "test@example.com",
+		Format:      &[]int{1}[0],       // Format Slidev
+		AuthorEmail: "test@example.com", // Cet email existe dans le mock
 	}
 
 	// Tester la génération asynchrone
 	result, err := courseService.GenerateCourseAsync(generateInput)
 
-	// Note: Ce test échouera probablement sans les services Casdoor et database réels
-	// C'est normal dans un environnement de test unitaire
-	if err != nil {
-		t.Logf("Test skipped due to dependencies: %v", err)
-		t.Skip("Skipping integration test - requires full environment")
-		return
-	}
-
+	// Maintenant le test devrait passer car on utilise les mocks
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.NotEmpty(t, result.GenerationID)
@@ -166,20 +164,17 @@ func TestCourseService_CheckGenerationStatus(t *testing.T) {
 	err := db.Create(generation).Error
 	require.NoError(t, err)
 
-	// Configurer le service
+	// Configurer le service avec mocks
 	mockWorker := workerServices.NewMockWorkerService()
+	mockCasdoor := authInterfaces.NewMockCasdoorService()
+
 	courseService := &courseService{
-		workerService: mockWorker,
+		workerService:  mockWorker,
+		casdoorService: mockCasdoor,
 	}
 
 	// Tester la vérification de statut
 	status, err := courseService.CheckGenerationStatus(generation.ID.String())
-
-	if err != nil {
-		t.Logf("Test skipped due to dependencies: %v", err)
-		t.Skip("Skipping integration test - requires full environment")
-		return
-	}
 
 	require.NoError(t, err)
 	assert.NotNil(t, status)
