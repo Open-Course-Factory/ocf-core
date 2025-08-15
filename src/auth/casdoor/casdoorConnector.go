@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"soli/formations/src/auth/interfaces"
 
 	"github.com/casbin/casbin/v2"
 	gormadapter "github.com/casbin/gorm-adapter/v3"
@@ -14,7 +15,7 @@ import (
 
 var JwtPublicKey string
 
-var Enforcer *casbin.Enforcer
+var Enforcer interfaces.EnforcerInterface
 
 func InitCasdoorConnection(basePath string) {
 	err := godotenv.Load(basePath)
@@ -57,5 +58,11 @@ func InitCasdoorEnforcer(db *gorm.DB, basePath string) {
 		panic(fmt.Sprintf("Failed to load policy from DB: %v", errEnforcer))
 	}
 
+	// Utiliser le wrapper au lieu d'assigner directement
+	Enforcer = NewEnforcerWrapper(enforcer)
+}
+
+// SetEnforcer permet d'injecter un enforcer pour les tests
+func SetEnforcer(enforcer interfaces.EnforcerInterface) {
 	Enforcer = enforcer
 }

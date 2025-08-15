@@ -47,6 +47,7 @@ type courseService struct {
 	packageService workerServices.GenerationPackageService
 	workerConfig   *config.WorkerConfig
 	casdoorService authInterfaces.CasdoorService
+	genericService genericService.GenericService
 }
 
 func NewCourseService(db *gorm.DB) CourseService {
@@ -57,6 +58,7 @@ func NewCourseService(db *gorm.DB) CourseService {
 		packageService: workerServices.NewGenerationPackageService(),
 		workerConfig:   workerConfig,
 		casdoorService: authInterfaces.NewCasdoorService(),
+		genericService: genericService.NewGenericService(db),
 	}
 }
 
@@ -66,6 +68,7 @@ func NewCourseServiceWithDependencies(
 	workerService workerServices.WorkerService,
 	packageService workerServices.GenerationPackageService,
 	casdoorService authInterfaces.CasdoorService,
+	genericService genericService.GenericService,
 ) CourseService {
 	workerConfig := config.LoadWorkerConfig()
 	return &courseService{
@@ -74,6 +77,7 @@ func NewCourseServiceWithDependencies(
 		packageService: packageService,
 		workerConfig:   workerConfig,
 		casdoorService: casdoorService,
+		genericService: genericService,
 	}
 }
 
@@ -82,8 +86,7 @@ func (c courseService) GenerateCourseAsync(generateCourseInputDto dto.GenerateCo
 	ctx := context.Background()
 
 	// 1. Récupérer le cours
-	genericService := genericService.NewGenericService(sqldb.DB)
-	courseEntity, err := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.CourseId), models.Course{}, "Course")
+	courseEntity, err := c.genericService.GetEntity(uuid.MustParse(generateCourseInputDto.CourseId), models.Course{}, "Course")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get course: %w", err)
 	}
@@ -91,7 +94,7 @@ func (c courseService) GenerateCourseAsync(generateCourseInputDto dto.GenerateCo
 
 	// 2. Récupérer le schedule si spécifié
 	if generateCourseInputDto.ScheduleId != "" {
-		scheduleEntity, err := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ScheduleId), models.Schedule{}, "Schedule")
+		scheduleEntity, err := c.genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ScheduleId), models.Schedule{}, "Schedule")
 		if err != nil {
 			return nil, fmt.Errorf("failed to get schedule: %w", err)
 		}
@@ -100,7 +103,7 @@ func (c courseService) GenerateCourseAsync(generateCourseInputDto dto.GenerateCo
 
 	// 3. Récupérer le thème si spécifié
 	if generateCourseInputDto.ThemeId != "" {
-		themeEntity, err := genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ThemeId), models.Theme{}, "Theme")
+		themeEntity, err := c.genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ThemeId), models.Theme{}, "Theme")
 		if err != nil {
 			return nil, fmt.Errorf("failed to get theme: %w", err)
 		}
@@ -117,7 +120,7 @@ func (c courseService) GenerateCourseAsync(generateCourseInputDto dto.GenerateCo
 		CourseId:   generateCourseInputDto.CourseId,
 	}
 
-	generationEntity, err := genericService.CreateEntity(generationInput, "Generation")
+	generationEntity, err := c.genericService.CreateEntity(generationInput, "Generation")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generation: %w", err)
 	}
@@ -148,13 +151,13 @@ func (c courseService) GenerateCourseAsync(generateCourseInputDto dto.GenerateCo
 	if submitErr != nil {
 		// Marquer la génération comme échouée
 		generation.SetFailed(fmt.Sprintf("Failed to submit to worker after %d attempts: %v", c.workerConfig.RetryCount, submitErr))
-		genericService.SaveEntity(generation)
+		c.genericService.SaveEntity(generation)
 		return nil, fmt.Errorf("failed to submit generation to worker: %w", submitErr)
 	}
 
 	// 7. Mettre à jour la génération avec l'ID du job worker
 	generation.SetWorkerJobID(workerStatus.ID)
-	genericService.SaveEntity(generation)
+	c.genericService.SaveEntity(generation)
 
 	return &dto.AsyncGenerationOutput{
 		GenerationID: generation.ID.String(),
@@ -168,12 +171,15 @@ func (c courseService) CheckGenerationStatus(generationID string) (*dto.Generati
 	ctx := context.Background()
 
 	// 1. Récupérer la génération
-	genericService := genericService.NewGenericService(sqldb.DB)
-	generationEntity, err := genericService.GetEntity(uuid.MustParse(generationID), models.Generation{}, "Generation")
+	generationEntity, err := c.genericService.GetEntity(uuid.MustParse(generationID), models.Generation{}, "Generation")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get generation: %w", err)
 	}
 	generation := generationEntity.(*models.Generation)
+
+	if generation.ID != uuid.MustParse(generationID) {
+		return nil, fmt.Errorf("failed to get generation: id not found")
+	}
 
 	// 2. Si la génération n'a pas de job worker, retourner le statut local
 	if generation.WorkerJobID == nil {
@@ -215,7 +221,7 @@ func (c courseService) CheckGenerationStatus(generationID string) (*dto.Generati
 
 	// 5. Sauvegarder les changements si nécessaire
 	if updated {
-		genericService.SaveEntity(generation)
+		c.genericService.SaveEntity(generation)
 	}
 
 	return dto.GenerationModelToStatusOutput(*generation), nil
@@ -226,8 +232,7 @@ func (c courseService) DownloadGenerationResults(generationID string) ([]byte, e
 	ctx := context.Background()
 
 	// 1. Récupérer la génération
-	genericService := genericService.NewGenericService(sqldb.DB)
-	generationEntity, err := genericService.GetEntity(uuid.MustParse(generationID), models.Generation{}, "Generation")
+	generationEntity, err := c.genericService.GetEntity(uuid.MustParse(generationID), models.Generation{}, "Generation")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get generation: %w", err)
 	}
@@ -245,8 +250,7 @@ func (c courseService) DownloadGenerationResults(generationID string) ([]byte, e
 // RetryGeneration relance une génération échouée
 func (c courseService) RetryGeneration(generationID string) (*dto.AsyncGenerationOutput, error) {
 	// 1. Récupérer la génération
-	genericService := genericService.NewGenericService(sqldb.DB)
-	generationEntity, err := genericService.GetEntity(uuid.MustParse(generationID), models.Generation{}, "Generation")
+	generationEntity, err := c.genericService.GetEntity(uuid.MustParse(generationID), models.Generation{}, "Generation")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get generation: %w", err)
 	}
@@ -265,10 +269,10 @@ func (c courseService) RetryGeneration(generationID string) (*dto.AsyncGeneratio
 	generation.StartedAt = nil
 	generation.CompletedAt = nil
 
-	genericService.SaveEntity(generation)
+	c.genericService.SaveEntity(generation)
 
 	// 4. Récupérer les informations nécessaires pour relancer
-	// courseEntity, err := genericService.GetEntity(generation.CourseID, models.Course{}, "Course")
+	// courseEntity, err := c.genericService.GetEntity(generation.CourseID, models.Course{}, "Course")
 	// if err != nil {
 	// 	return nil, fmt.Errorf("failed to get course: %w", err)
 	// }
@@ -298,6 +302,7 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 	}
 
 	// 2. Attendre la completion (mode synchrone pour compatibilité)
+	//ctx := context.Background()
 	generationID := asyncResult.GenerationID
 
 	// Poll jusqu'à la completion avec un timeout

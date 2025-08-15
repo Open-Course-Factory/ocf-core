@@ -1,5 +1,4 @@
-// src/auth/interfaces/mockCasdoorService_test.go
-package interfaces
+package mocks
 
 import (
 	"fmt"

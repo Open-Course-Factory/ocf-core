@@ -1,3 +1,4 @@
+// src/courses/routes/courseRoutes/courseController.go
 package courseController
 
 import (

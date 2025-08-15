@@ -1,8 +1,8 @@
-// src/auth/interfaces/mockCasdoorService.go
-package interfaces
+package mocks
 
 import (
 	"fmt"
+	"soli/formations/src/auth/interfaces"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
@@ -167,4 +167,4 @@ func (m *MockCasdoorService) GetAllGroups() map[string]*casdoorsdk.Group {
 }
 
 // Vérification que MockCasdoorService implémente CasdoorService
-var _ CasdoorService = (*MockCasdoorService)(nil)
+var _ interfaces.CasdoorService = (*MockCasdoorService)(nil)

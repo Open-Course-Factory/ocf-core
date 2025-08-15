@@ -38,11 +38,19 @@ func (s GenerationRegistration) EntityInputDtoToEntityModel(input any) any {
 	}
 
 	generationToReturn := &models.Generation{
-		Format:     generationInputDto.Format,
-		Name:       generationInputDto.Name,
-		ThemeID:    uuid.MustParse(generationInputDto.ThemeId),
-		ScheduleID: uuid.MustParse(generationInputDto.ScheduleId),
-		CourseID:   uuid.MustParse(generationInputDto.CourseId),
+		Format:   generationInputDto.Format,
+		Name:     generationInputDto.Name,
+		CourseID: uuid.MustParse(generationInputDto.CourseId),
+	}
+
+	themeId, errTheme := uuid.Parse(generationInputDto.ThemeId)
+	if errTheme != nil {
+		generationToReturn.ThemeID = themeId
+	}
+
+	scheduleId, errSchedule := uuid.Parse(generationInputDto.ScheduleId)
+	if errSchedule != nil {
+		generationToReturn.ScheduleID = scheduleId
 	}
 
 	generationToReturn.OwnerIDs = append(generationToReturn.OwnerIDs, generationInputDto.OwnerID)

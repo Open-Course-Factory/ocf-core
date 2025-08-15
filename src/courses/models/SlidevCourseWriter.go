@@ -53,18 +53,35 @@ func (scow *SlidevCourseWriter) SetIntro() string {
 	//author := "\n---\nlayout: twocols\nchapter: " + scow.Course.Chapters[0].Title + "\nsrc: theme/authors/author_@@author@@.md\n---\n\n"
 	author := ""
 	schedule := scow.fillSchedule()
-	prelude := "\n---\nlayout: cover\nchapter: " + scow.Course.Chapters[0].Title + "\nsrc: theme/preludes/" + scow.Course.Prelude + "\n---\n\n"
+	chapterTitle := "default title"
+	chapterTitle = getChapterTitle(scow, chapterTitle)
+	prelude := "\n---\nlayout: cover\nchapter: " + chapterTitle + "\nsrc: theme/preludes/" + scow.Course.Prelude + "\n---\n\n"
 	return author + schedule + prelude
+}
+
+func getChapterTitle(scow *SlidevCourseWriter, chapterTitle string) string {
+	if scow.Course.Chapters != nil {
+		if len(scow.Course.Chapters) > 0 {
+			chapterTitle = scow.Course.Chapters[0].Title
+		}
+	}
+	return chapterTitle
 }
 
 func (scow *SlidevCourseWriter) fillSchedule() string {
 
 	schedule := "---\nlayout: schedule\n"
-	schedule = schedule + "chapter: " + scow.Course.Chapters[0].Title + "\n"
-	for _, line := range scow.Course.Schedule.FrontMatterContent {
-		schedule = schedule + line + "\n"
+	chapterTitle := "default title"
+	chapterTitle = getChapterTitle(scow, chapterTitle)
+	schedule = schedule + "chapter: " + chapterTitle + "\n"
+	if scow.Course.Schedule != nil {
+		for _, line := range scow.Course.Schedule.FrontMatterContent {
+			schedule = schedule + line + "\n"
+		}
+		schedule = schedule + "---\n"
+	} else {
+		schedule = ""
 	}
-	schedule = schedule + "---\n"
 
 	return schedule
 }

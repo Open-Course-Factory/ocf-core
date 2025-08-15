@@ -4,6 +4,7 @@ import (
 	"log"
 	"reflect"
 	"soli/formations/src/auth/casdoor"
+	"soli/formations/src/auth/interfaces"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"strings"
 
@@ -95,8 +96,18 @@ func (s *EntityRegistrationService) GetSubEntites(entityName string) []any {
 	return s.subEntities[entityName]
 }
 
-func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, roles entityManagementInterfaces.EntityRoles) {
-	errLoadingPolicy := casdoor.Enforcer.LoadPolicy()
+// SetDefaultEntityAccesses est une version publique pour les tests qui accepte un enforcer
+func (s *EntityRegistrationService) SetDefaultEntityAccesses(entityName string, roles entityManagementInterfaces.EntityRoles, enforcer interfaces.EnforcerInterface) {
+	s.setDefaultEntityAccesses(entityName, roles, enforcer)
+}
+
+func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, roles entityManagementInterfaces.EntityRoles, enforcer interfaces.EnforcerInterface) {
+	if enforcer == nil {
+		log.Println("Enforcer is nil, skipping access setup")
+		return
+	}
+
+	errLoadingPolicy := enforcer.LoadPolicy()
 	if errLoadingPolicy != nil {
 		log.Fatal(errLoadingPolicy.Error())
 	}
@@ -106,7 +117,7 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 	resourceName = strings.ToLower(resourceName)
 
 	for roleName, accessGiven := range rolesMap {
-		_, errPolicy := casdoor.Enforcer.AddPolicy(roleName, "/api/v1/"+resourceName+"/", accessGiven)
+		_, errPolicy := enforcer.AddPolicy(roleName, "/api/v1/"+resourceName+"/", accessGiven)
 		if errPolicy != nil {
 			if strings.Contains(errPolicy.Error(), "UNIQUE") {
 				log.Println(errPolicy.Error())
@@ -115,7 +126,6 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 			}
 		}
 	}
-
 }
 
 func Pluralize(entityName string) string {
@@ -134,7 +144,9 @@ func (s *EntityRegistrationService) RegisterEntity(input entityManagementInterfa
 	entityDtos[InputEditDto] = entityToRegister.EntityDtos.InputEditDto
 	GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(entityToRegister.EntityInterface).Name(), entityDtos)
 	GlobalEntityRegistrationService.RegisterSubEntites(reflect.TypeOf(entityToRegister.EntityInterface).Name(), entityToRegister.EntitySubEntities)
-	s.setDefaultEntityAccesses(reflect.TypeOf(entityToRegister.EntityInterface).Name(), input.GetEntityRoles())
+
+	// Utiliser la variable globale casdoor.Enforcer en production
+	s.setDefaultEntityAccesses(reflect.TypeOf(entityToRegister.EntityInterface).Name(), input.GetEntityRoles(), casdoor.Enforcer)
 }
 
 var GlobalEntityRegistrationService = NewEntityRegistrationService()
