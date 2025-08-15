@@ -44,12 +44,12 @@ func (s GenerationRegistration) EntityInputDtoToEntityModel(input any) any {
 	}
 
 	themeId, errTheme := uuid.Parse(generationInputDto.ThemeId)
-	if errTheme != nil {
+	if errTheme == nil {
 		generationToReturn.ThemeID = themeId
 	}
 
 	scheduleId, errSchedule := uuid.Parse(generationInputDto.ScheduleId)
-	if errSchedule != nil {
+	if errSchedule == nil {
 		generationToReturn.ScheduleID = scheduleId
 	}
 
