@@ -9,10 +9,20 @@ import (
 	"testing"
 
 	"soli/formations/src/courses/dto"
+	courseRegistration "soli/formations/src/courses/entityRegistration"
 	"soli/formations/src/courses/models"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
+	"time"
+
 	"github.com/gin-gonic/gin"
+
+	authMocks "soli/formations/src/auth/mocks"
+
+	genericService "soli/formations/src/entityManagement/services"
+	workerServices "soli/formations/src/worker/services"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,6 +50,9 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	)
 	require.NoError(t, err)
 
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.GenerationRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.CourseRegistration{})
+
 	// Routeur avec middlewares de test
 	router := gin.New()
 
@@ -49,8 +62,20 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 		c.Next()
 	})
 
+	// Configurer les services mockés
+	mockWorker := workerServices.NewMockWorkerService()
+	mockWorker.SetFailureRate(0.0) // Pas d'échec pour ce test
+	mockWorker.SetProcessingDelay(10 * time.Millisecond)
+
+	mockCasdoor := authMocks.NewMockCasdoorService()
+
+	packageService := workerServices.NewGenerationPackageServiceWithDependencies(mockCasdoor)
+
+	// Créer le genericService avec la DB de test
+	testGenericService := genericService.NewGenericService(db)
+
 	// Controller avec DB de test
-	controller := NewCourseController(db)
+	controller := NewCourseControllerWithDependencies(db, mockWorker, mockCasdoor, packageService, testGenericService)
 
 	// Routes de test
 	api := router.Group("/api/v1")
@@ -176,7 +201,7 @@ func TestCourseController_GenerateCourse_InvalidRequest(t *testing.T) {
 		{
 			name:           "Course ID invalide",
 			payload:        `{"CourseId": "invalid-uuid", "Format": 1, "AuthorEmail": "test@example.com"}`,
-			expectedStatus: http.StatusInternalServerError,
+			expectedStatus: http.StatusBadRequest,
 		},
 	}
 
@@ -331,12 +356,14 @@ func TestCourseController_DownloadGenerationResults_NotCompleted(t *testing.T) {
 	var errorResponse map[string]interface{}
 	err = json.Unmarshal(w.Body.Bytes(), &errorResponse)
 	require.NoError(t, err)
-	assert.Contains(t, errorResponse["ErrorMessage"], "n'est pas terminée")
+	assert.Contains(t, errorResponse["error_message"], "n'est pas terminée")
 }
 
 // TestCourseController_RetryGeneration teste le retry
 func TestCourseController_RetryGeneration(t *testing.T) {
 	router, db := setupTestRouter(t)
+
+	course, theme, schedule := createTestData(t, db)
 
 	// Créer une génération échouée
 	generation := &models.Generation{
@@ -346,9 +373,9 @@ func TestCourseController_RetryGeneration(t *testing.T) {
 		},
 		Name:         "Test Generation",
 		Status:       models.StatusFailed,
-		CourseID:     uuid.New(),
-		ThemeID:      uuid.New(),
-		ScheduleID:   uuid.New(),
+		CourseID:     course.ID,
+		ThemeID:      theme.ID,
+		ScheduleID:   schedule.ID,
 		Format:       &[]int{1}[0],
 		ErrorMessage: &[]string{"Previous error"}[0],
 	}
@@ -377,13 +404,15 @@ func TestCourseController_RetryGeneration(t *testing.T) {
 		var errorResponse map[string]interface{}
 		err = json.Unmarshal(w.Body.Bytes(), &errorResponse)
 		require.NoError(t, err)
-		assert.Contains(t, errorResponse, "ErrorMessage")
+		assert.Contains(t, errorResponse, "error_message")
 	}
 }
 
 // TestCourseController_RetryGeneration_InProgress teste le retry sur une génération en cours
 func TestCourseController_RetryGeneration_InProgress(t *testing.T) {
 	router, db := setupTestRouter(t)
+
+	course, theme, schedule := createTestData(t, db)
 
 	// Créer une génération en cours
 	generation := &models.Generation{
@@ -393,9 +422,9 @@ func TestCourseController_RetryGeneration_InProgress(t *testing.T) {
 		},
 		Name:       "Test Generation",
 		Status:     models.StatusProcessing,
-		CourseID:   uuid.New(),
-		ThemeID:    uuid.New(),
-		ScheduleID: uuid.New(),
+		CourseID:   course.ID,
+		ThemeID:    theme.ID,
+		ScheduleID: schedule.ID,
 		Format:     &[]int{1}[0],
 	}
 	require.NoError(t, db.Create(generation).Error)

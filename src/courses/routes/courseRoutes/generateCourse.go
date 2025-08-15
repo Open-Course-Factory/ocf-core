@@ -38,7 +38,6 @@ func (c courseController) GenerateCourse(ctx *gin.Context) {
 		return
 	}
 
-	// Utiliser la nouvelle méthode asynchrone
 	result, err := c.service.GenerateCourseAsync(courseGenerateDTO)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{

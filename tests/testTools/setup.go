@@ -38,6 +38,7 @@ var roles []casdoorsdk.Role
 func SetupTestDatabase() {
 
 	sqldb.InitDBConnection("../.env.test")
+	sqldb.DB = sqldb.DB.Debug()
 
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Page{})
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Section{})
@@ -51,12 +52,12 @@ func SetupTestDatabase() {
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Username{})
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Machine{})
 
-	sqldb.DB = sqldb.DB.Debug()
 	sqldb.DB.AutoMigrate()
 	sqldb.DB.AutoMigrate(&courseModels.Page{})
 	sqldb.DB.AutoMigrate(&courseModels.Section{})
 	sqldb.DB.AutoMigrate(&courseModels.Chapter{})
 	sqldb.DB.AutoMigrate(&courseModels.Course{})
+	sqldb.DB.AutoMigrate(&courseModels.Generation{})
 	sqldb.DB.AutoMigrate(&courseModels.Session{})
 
 	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
@@ -70,7 +71,7 @@ func SetupTestDatabase() {
 func SetupCasdoor() {
 	_, b, _, _ := runtime.Caller(0)
 	basePath := filepath.Dir(b) + "/../../"
-	casdoor.InitCasdoorConnection("../.env.test")
+	casdoor.InitCasdoorConnection(basePath+"src/auth/casdoor/", ".env.test")
 	casdoor.InitCasdoorEnforcer(sqldb.DB, basePath)
 }
 

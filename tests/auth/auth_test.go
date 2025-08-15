@@ -23,7 +23,7 @@ func TestUserCreation(t *testing.T) {
 
 	for _, user := range *users {
 		casdoor.Enforcer.LoadPolicy()
-		test, _ := casdoor.Enforcer.GetFilteredGroupingPolicy(0, user.Id.String())
+		test, _ := casdoor.Enforcer.GetRolesForUser(user.Id.String())
 
 		assert.GreaterOrEqual(t, 1, len(test))
 	}

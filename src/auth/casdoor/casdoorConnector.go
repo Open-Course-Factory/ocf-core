@@ -17,8 +17,8 @@ var JwtPublicKey string
 
 var Enforcer interfaces.EnforcerInterface
 
-func InitCasdoorConnection(basePath string) {
-	err := godotenv.Load(basePath)
+func InitCasdoorConnection(basePath string, fileName string) {
+	err := godotenv.Load(basePath + fileName)
 	casdoorEndPoint := os.Getenv("CASDOOR_ENDPOINT")
 	casdoorClientId := os.Getenv("CASDOOR_CLIENT_ID")
 	casdoorClientsecret := os.Getenv("CASDOOR_CLIENT_SECRET")
@@ -29,7 +29,7 @@ func InitCasdoorConnection(basePath string) {
 		log.Default().Printf("err loading: %v", err)
 	}
 
-	b, err := os.ReadFile("./token_jwt_key.pem")
+	b, err := os.ReadFile(basePath + "token_jwt_key.pem")
 	if err != nil {
 		panic(fmt.Sprintf("Certificate token_jwt_key.pem not readable: %v", err))
 	}

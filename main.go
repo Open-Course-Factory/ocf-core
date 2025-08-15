@@ -77,7 +77,7 @@ func main() {
 		log.Default().Println(err)
 	}
 
-	casdoor.InitCasdoorConnection(envFile)
+	casdoor.InitCasdoorConnection("", envFile)
 
 	sqldb.InitDBConnection(envFile)
 

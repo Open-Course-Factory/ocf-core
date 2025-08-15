@@ -6,9 +6,11 @@ import (
 	"testing"
 	"time"
 
+	authMocks "soli/formations/src/auth/mocks"
 	"soli/formations/src/courses/models"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -218,7 +220,15 @@ func TestMockWorkerService_FailureSimulation(t *testing.T) {
 
 // Test d'intégration pour le service de génération de packages
 func TestGenerationPackageService_PrepareGenerationPackage(t *testing.T) {
-	packageService := NewGenerationPackageService()
+	mockCasdoor := authMocks.NewMockCasdoorService()
+	customUser := &casdoorsdk.User{
+		Id:          "example-user-1",
+		Name:        "exampleuser",
+		DisplayName: "Example User",
+		Email:       "example@test.com",
+	}
+	mockCasdoor.AddUser(customUser.Email, customUser)
+	packageService := NewGenerationPackageServiceWithDependencies(mockCasdoor)
 
 	// Créer un cours test minimal
 	course := &models.Course{
@@ -229,12 +239,9 @@ func TestGenerationPackageService_PrepareGenerationPackage(t *testing.T) {
 		Chapters:  []*models.Chapter{},
 	}
 
-	// Mock user email (normalement récupéré via Casdoor)
-	authorEmail := "test@example.com"
-
 	// Cette fonction nécessiterait un mock de Casdoor ou un test d'intégration
 	// Pour le moment, on teste seulement la génération de MD
-	mdContent, err := packageService.GenerateMDContent(course, authorEmail)
+	mdContent, err := packageService.GenerateMDContent(course, customUser.Email)
 
 	// Le test pourrait échouer si Casdoor n'est pas disponible
 	// C'est normal dans un environnement de test unitaire
