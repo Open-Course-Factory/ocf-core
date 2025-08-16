@@ -145,15 +145,31 @@ func createTestSchedule(t *testing.T, db *gorm.DB) *models.Schedule {
 	return schedule
 }
 
+func createTestGeneration(t *testing.T, db *gorm.DB) *models.Generation {
+	course := createTestCourse(t, db)
+	theme := createTestTheme(t, db)
+	schedule := createTestSchedule(t, db)
+	generation := &models.Generation{
+		BaseModel:  entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:       "Generation Test",
+		CourseID:   course.ID,
+		ThemeID:    theme.ID,
+		ScheduleID: schedule.ID,
+	}
+
+	err := db.Create(generation).Error
+	require.NoError(t, err)
+
+	return generation
+}
+
 // TestCourseService_GenerateCourseAsync teste la génération asynchrone
 func TestCourseService_GenerateCourseAsync(t *testing.T) {
 	db := setupTestDB(t)
 	mockEnforcer, _ := setupTestEnforcer(t)
 
 	// Créer les données de test
-	course := createTestCourse(t, db)
-	theme := createTestTheme(t, db)
-	schedule := createTestSchedule(t, db)
+	generation := createTestGeneration(t, db)
 
 	// Configurer les services mockés
 	mockWorker := workerServices.NewMockWorkerService()
@@ -178,11 +194,9 @@ func TestCourseService_GenerateCourseAsync(t *testing.T) {
 
 	// Préparer la requête de génération
 	generateInput := dto.GenerateCourseInput{
-		CourseId:    course.ID.String(),
-		ThemeId:     theme.ID.String(),
-		ScheduleId:  schedule.ID.String(),
-		Format:      &[]int{1}[0],       // Format Slidev
-		AuthorEmail: "test@example.com", // Cet email existe dans le mock
+		GenerationId: generation.ID.String(),
+		Format:       &[]int{1}[0],       // Format Slidev
+		AuthorEmail:  "test@example.com", // Cet email existe dans le mock
 	}
 
 	ems.GlobalEntityRegistrationService.SetDefaultEntityAccesses("Generation", entityManagementInterfaces.EntityRoles{}, mockEnforcer)

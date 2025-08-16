@@ -85,46 +85,19 @@ func NewCourseServiceWithDependencies(
 func (c courseService) GenerateCourseAsync(generateCourseInputDto dto.GenerateCourseInput) (*dto.AsyncGenerationOutput, error) {
 	ctx := context.Background()
 
-	// 1. Récupérer le cours
-	courseEntity, err := c.genericService.GetEntity(uuid.MustParse(generateCourseInputDto.CourseId), models.Course{}, "Course")
+	// 1. Récupérer la génération
+	generationEntity, err := c.genericService.GetEntity(uuid.MustParse(generateCourseInputDto.GenerationId), models.Generation{}, "Generation")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get generation: %w", err)
+	}
+	generation := generationEntity.(*models.Generation)
+
+	// 2. Récupérer le cours
+	courseEntity, err := c.genericService.GetEntity(uuid.MustParse(generation.ID.String()), models.Course{}, "Course")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get course: %w", err)
 	}
 	course := courseEntity.(*models.Course)
-
-	// 2. Récupérer le schedule si spécifié
-	if generateCourseInputDto.ScheduleId != "" {
-		scheduleEntity, err := c.genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ScheduleId), models.Schedule{}, "Schedule")
-		if err != nil {
-			return nil, fmt.Errorf("failed to get schedule: %w", err)
-		}
-		course.Schedule = scheduleEntity.(*models.Schedule)
-	}
-
-	// 3. Récupérer le thème si spécifié
-	if generateCourseInputDto.ThemeId != "" {
-		themeEntity, err := c.genericService.GetEntity(uuid.MustParse(generateCourseInputDto.ThemeId), models.Theme{}, "Theme")
-		if err != nil {
-			return nil, fmt.Errorf("failed to get theme: %w", err)
-		}
-		course.Theme = themeEntity.(*models.Theme)
-	}
-
-	// 4. Créer l'entité Generation
-	generationInput := dto.GenerationInput{
-		OwnerID:    course.OwnerIDs[0],
-		Name:       fmt.Sprintf("Generation for %s", course.Name),
-		Format:     generateCourseInputDto.Format,
-		ThemeId:    generateCourseInputDto.ThemeId,
-		ScheduleId: generateCourseInputDto.ScheduleId,
-		CourseId:   generateCourseInputDto.CourseId,
-	}
-
-	generationEntity, err := c.genericService.CreateEntity(generationInput, "Generation")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create generation: %w", err)
-	}
-	generation := generationEntity.(*models.Generation)
 
 	// 5. Préparer le package de génération
 	pkg, err := c.packageService.PrepareGenerationPackage(course, generateCourseInputDto.AuthorEmail)
@@ -271,20 +244,22 @@ func (c courseService) RetryGeneration(generationID string) (*dto.AsyncGeneratio
 
 	c.genericService.SaveEntity(generation)
 
-	// 4. Récupérer les informations nécessaires pour relancer
-	// courseEntity, err := c.genericService.GetEntity(generation.CourseID, models.Course{}, "Course")
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to get course: %w", err)
-	// }
-	// course := courseEntity.(*models.Course)
+	courseEntity, err := c.genericService.GetEntity(generation.CourseID, models.Course{}, "Course")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get course: %w", err)
+	}
+	course := courseEntity.(*models.Course)
+
+	user, errUser := casdoorsdk.GetUserByUserId(course.OwnerIDs[0])
+	if errUser != nil {
+		return nil, fmt.Errorf("failed to get user: %w", errUser)
+	}
 
 	// Simuler une requête de génération
 	generateInput := dto.GenerateCourseInput{
-		CourseId:    generation.CourseID.String(),
-		ThemeId:     generation.ThemeID.String(),
-		ScheduleId:  generation.ScheduleID.String(),
-		Format:      generation.Format,
-		AuthorEmail: "retry@example.com", // TODO: Récupérer l'email original
+		GenerationId: generation.ID.String(),
+		Format:       generation.Format,
+		AuthorEmail:  user.Email, // TODO: Récupérer l'email original
 	}
 
 	// 5. Relancer la génération

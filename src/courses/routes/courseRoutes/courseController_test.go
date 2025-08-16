@@ -91,7 +91,7 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 }
 
 // createTestData crée les données nécessaires pour les tests
-func createTestData(t *testing.T, db *gorm.DB) (course *models.Course, theme *models.Theme, schedule *models.Schedule) {
+func createTestData(t *testing.T, db *gorm.DB) (course *models.Course, theme *models.Theme, schedule *models.Schedule, generation *models.Generation) {
 	// Créer un cours de test
 	course = &models.Course{
 		BaseModel: entityManagementModels.BaseModel{
@@ -124,21 +124,29 @@ func createTestData(t *testing.T, db *gorm.DB) (course *models.Course, theme *mo
 	}
 	require.NoError(t, db.Create(schedule).Error)
 
+	format := 0
+
+	generation = &models.Generation{
+		BaseModel:  entityManagementModels.BaseModel{ID: uuid.New()},
+		Format:     &format,
+		CourseID:   course.ID,
+		ThemeID:    theme.ID,
+		ScheduleID: schedule.ID,
+	}
+
 	return
 }
 
 // TestCourseController_GenerateCourse teste l'endpoint de génération
 func TestCourseController_GenerateCourse(t *testing.T) {
 	router, db := setupTestRouter(t)
-	course, theme, schedule := createTestData(t, db)
+	_, _, _, generation := createTestData(t, db)
 
 	// Préparer la requête
 	generateRequest := dto.GenerateCourseInput{
-		CourseId:    course.ID.String(),
-		ThemeId:     theme.ID.String(),
-		ScheduleId:  schedule.ID.String(),
-		Format:      &[]int{1}[0],
-		AuthorEmail: "test@example.com",
+		GenerationId: generation.ID.String(),
+		Format:       generation.Format,
+		AuthorEmail:  "test@example.com",
 	}
 
 	jsonData, err := json.Marshal(generateRequest)
@@ -363,7 +371,7 @@ func TestCourseController_DownloadGenerationResults_NotCompleted(t *testing.T) {
 func TestCourseController_RetryGeneration(t *testing.T) {
 	router, db := setupTestRouter(t)
 
-	course, theme, schedule := createTestData(t, db)
+	course, theme, schedule, _ := createTestData(t, db)
 
 	// Créer une génération échouée
 	generation := &models.Generation{
@@ -412,7 +420,7 @@ func TestCourseController_RetryGeneration(t *testing.T) {
 func TestCourseController_RetryGeneration_InProgress(t *testing.T) {
 	router, db := setupTestRouter(t)
 
-	course, theme, schedule := createTestData(t, db)
+	course, theme, schedule, _ := createTestData(t, db)
 
 	// Créer une génération en cours
 	generation := &models.Generation{

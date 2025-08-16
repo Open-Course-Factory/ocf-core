@@ -9,11 +9,12 @@ type GenerateCourseOutput struct {
 }
 
 type GenerateCourseInput struct {
-	CourseId    string `binding:"required" json:"courseId"`
-	ThemeId     string `binding:"required" json:"themeId"`
+	GenerationId string `binding:"required" json:"generationId"`
+	// CourseId     string `binding:"required" json:"courseId"`
+	// ThemeId      string `binding:"required" json:"themeId"`
 	Format      *int   `binding:"required" json:"format"`
 	AuthorEmail string `binding:"required" json:"authorEmail"`
-	ScheduleId  string `binding:"required" json:"scheduleId"`
+	// ScheduleId  string `binding:"required" json:"scheduleId"`
 }
 
 type CourseInput struct {

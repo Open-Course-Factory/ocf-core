@@ -76,50 +76,13 @@ func Test_CompleteWorkflowWithMocks(t *testing.T) {
 		testGenericService,
 	)
 
-	// 4. Créer des données de test
-	course := &models.Course{
-		BaseModel: entityManagementModels.BaseModel{
-			ID:       uuid.New(),
-			OwnerIDs: []string{customUser.Id},
-		},
-		Name:     "Example Course",
-		Title:    "Example Course for Testing",
-		Version:  "1.0.0",
-		Category: "example",
-		Header:   "Example Header",
-		Footer:   "Example Footer",
-		Prelude:  "example-prelude",
-		Chapters: []*models.Chapter{},
-	}
-
-	err = db.Create(course).Error
-	require.NoError(t, err)
-
-	theme := &models.Theme{
-		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:      "example-theme",
-		Size:      "1920x1080",
-	}
-
-	err = db.Create(theme).Error
-	require.NoError(t, err)
-
-	schedule := &models.Schedule{
-		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:               "Example Schedule",
-		FrontMatterContent: []string{"duration: 3h", "format: presentation"},
-	}
-
-	err = db.Create(schedule).Error
-	require.NoError(t, err)
+	generation := createTestGeneration(t, db)
 
 	// 5. Test du workflow complet de génération asynchrone
 	generateInput := dto.GenerateCourseInput{
-		CourseId:    course.ID.String(),
-		ThemeId:     theme.ID.String(),
-		ScheduleId:  schedule.ID.String(),
-		Format:      &[]int{1}[0],
-		AuthorEmail: customUser.Email,
+		GenerationId: generation.ID.String(),
+		Format:       &[]int{1}[0],
+		AuthorEmail:  customUser.Email,
 	}
 
 	// 5a. Lancer la génération
@@ -183,7 +146,7 @@ func Test_CompleteWorkflowWithMocks(t *testing.T) {
 	assert.Equal(t, customUser.DisplayName, userFromMock.DisplayName)
 
 	t.Logf("✅ Complete workflow test passed!")
-	t.Logf("   - Course: %s", course.Name)
+	t.Logf("   - Course: %s", generation.CourseID)
 	t.Logf("   - Generation ID: %s", generationID)
 	t.Logf("   - Final Status: %s", finalStatus.Status)
 	t.Logf("   - Result URLs: %d files", len(finalStatus.ResultURLs))
@@ -213,20 +176,13 @@ func Test_ErrorHandlingWithMocks(t *testing.T) {
 	courseService := NewCourseServiceWithDependencies(db, mockWorker, packageService, mockCasdoor, testGenericService)
 
 	// Créer un cours de test
-	course := &models.Course{
-		BaseModel: entityManagementModels.BaseModel{ID: uuid.New(), OwnerIDs: []string{"test-user"}},
-		Name:      "Error Test Course",
-		Title:     "Error Test",
-		Version:   "1.0.0",
-		Category:  "test",
-	}
-	db.Create(course)
+	generation := createTestGeneration(t, db)
 
 	// Test 1: Erreur Casdoor lors de la génération
 	generateInput := dto.GenerateCourseInput{
-		CourseId:    course.ID.String(),
-		Format:      &[]int{1}[0],
-		AuthorEmail: "error@test.com", // Cet email va déclencher une erreur
+		GenerationId: generation.ID.String(),
+		Format:       &[]int{1}[0],
+		AuthorEmail:  "error@test.com", // Cet email va déclencher une erreur
 	}
 
 	//ems.GlobalEntityRegistrationService.SetDefaultEntityAccesses("Generation", entityManagementInterfaces.EntityRoles{}, mockEnforcer)
