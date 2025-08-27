@@ -66,11 +66,25 @@ begin:
 		Properties:        properties,
 	}
 
+	role, errRole := casdoorsdk.GetRole(userCreateDTO.DefaultRole)
+	if errRole != nil {
+		fmt.Println(errRole.Error())
+		return nil, errRole
+	}
+
 	user1.CreatedTime = casdoorsdk.GetCurrentTime()
 	_, errCreate := casdoorsdk.AddUser(&user1)
 	if errCreate != nil {
 		fmt.Println(errCreate.Error())
 		return nil, errCreate
+	}
+
+	role.Users = append(role.Users, user1.GetId())
+
+	_, errUpdateRole := casdoorsdk.UpdateRole(role)
+	if errUpdateRole != nil {
+		fmt.Println(errUpdateRole.Error())
+		return nil, errUpdateRole
 	}
 
 	createdUser, errGet := casdoorsdk.GetUserByEmail(userCreateDTO.Email)
