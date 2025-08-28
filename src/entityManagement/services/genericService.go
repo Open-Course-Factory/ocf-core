@@ -67,6 +67,10 @@ func (g *genericService) GetEntity(id uuid.UUID, data interface{}, entityName st
 		return nil, err
 	}
 
+	if g.ExtractUuidFromReflectEntity(entity) == uuid.Nil {
+		return nil, fmt.Errorf("entity not found")
+	}
+
 	return entity, nil
 
 }

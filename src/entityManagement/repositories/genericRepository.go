@@ -123,7 +123,7 @@ func (o *genericRepository) GetAllEntities(data any, pageSize int) ([]any, error
 
 		offset := (page - 1) * pageSize
 		query := o.db.Limit(pageSize).Offset(offset)
-		// ToDo : update gorm when merged, works with the patch : https://github.com/go-gorm/gorm/pull/6417
+
 		query = query.Preload(clause.Associations)
 
 		result := query.Find(&pageSlice)

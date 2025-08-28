@@ -53,38 +53,14 @@ begin:
 		return nil, createError
 	}
 
-	properties := make(map[string]string)
-	properties["username"] = generatedUsername
-	user1 := casdoorsdk.User{
-		Name:              userCreateDTO.UserName,
-		DisplayName:       userCreateDTO.DisplayName,
-		Email:             userCreateDTO.Email,
-		Password:          userCreateDTO.Password,
-		LastName:          userCreateDTO.LastName,
-		FirstName:         userCreateDTO.FirstName,
-		SignupApplication: "ocf",
-		Properties:        properties,
+	user1, err := createUserIntoCasdoor(generatedUsername, userCreateDTO)
+	if err != nil {
+		return nil, err
 	}
 
-	role, errRole := casdoorsdk.GetRole(userCreateDTO.DefaultRole)
+	errRole := addDefaultRoleToUser(userCreateDTO, user1)
 	if errRole != nil {
-		fmt.Println(errRole.Error())
-		return nil, errRole
-	}
-
-	user1.CreatedTime = casdoorsdk.GetCurrentTime()
-	_, errCreate := casdoorsdk.AddUser(&user1)
-	if errCreate != nil {
-		fmt.Println(errCreate.Error())
-		return nil, errCreate
-	}
-
-	role.Users = append(role.Users, user1.GetId())
-
-	_, errUpdateRole := casdoorsdk.UpdateRole(role)
-	if errUpdateRole != nil {
-		fmt.Println(errUpdateRole.Error())
-		return nil, errUpdateRole
+		return nil, err
 	}
 
 	createdUser, errGet := casdoorsdk.GetUserByEmail(userCreateDTO.Email)
@@ -106,6 +82,46 @@ begin:
 	}
 
 	return dto.UserModelToUserOutput(createdUser), nil
+}
+
+func addDefaultRoleToUser(userCreateDTO dto.CreateUserInput, user1 casdoorsdk.User) error {
+	role, errRole := casdoorsdk.GetRole(userCreateDTO.DefaultRole)
+	if errRole != nil {
+		fmt.Println(errRole.Error())
+		return errRole
+	}
+
+	role.Users = append(role.Users, user1.GetId())
+
+	_, errUpdateRole := casdoorsdk.UpdateRole(role)
+	if errUpdateRole != nil {
+		fmt.Println(errUpdateRole.Error())
+		return errUpdateRole
+	}
+	return nil
+}
+
+func createUserIntoCasdoor(generatedUsername string, userCreateDTO dto.CreateUserInput) (casdoorsdk.User, error) {
+	properties := make(map[string]string)
+	properties["username"] = generatedUsername
+	user1 := casdoorsdk.User{
+		Name:              userCreateDTO.UserName,
+		DisplayName:       userCreateDTO.DisplayName,
+		Email:             userCreateDTO.Email,
+		Password:          userCreateDTO.Password,
+		LastName:          userCreateDTO.LastName,
+		FirstName:         userCreateDTO.FirstName,
+		SignupApplication: "ocf",
+		Properties:        properties,
+	}
+
+	user1.CreatedTime = casdoorsdk.GetCurrentTime()
+	_, errCreate := casdoorsdk.AddUser(&user1)
+	if errCreate != nil {
+		fmt.Println(errCreate.Error())
+		return casdoorsdk.User{}, errCreate
+	}
+	return user1, nil
 }
 
 func (us *userService) GetUserById(id string) (*dto.UserOutput, error) {
