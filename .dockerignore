@@ -4,3 +4,10 @@ dist/
 *.db
 node_modules
 courses/
+.git
+.gitignore
+README.md
+.env
+.vscode
+node_modules
+*.log
