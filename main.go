@@ -44,6 +44,9 @@ import (
 	connectionController "soli/formations/src/labs/routes/connectionRoutes"
 	machineController "soli/formations/src/labs/routes/machineRoutes"
 	usernameController "soli/formations/src/labs/routes/usernameRoutes"
+	terminalRegistration "soli/formations/src/terminalTrainer/entityRegistration"
+	terminalModels "soli/formations/src/terminalTrainer/models"
+	terminalController "soli/formations/src/terminalTrainer/routes"
 	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
 
 	courseDto "soli/formations/src/courses/dto"
@@ -130,6 +133,9 @@ func main() {
 	sqldb.DB.AutoMigrate(&labModels.Machine{})
 	sqldb.DB.AutoMigrate(&labModels.Connection{})
 
+	sqldb.DB.AutoMigrate(&terminalModels.Terminal{})
+	sqldb.DB.AutoMigrate(&terminalModels.UserTerminalKey{})
+
 	casdoor.InitCasdoorEnforcer(sqldb.DB, "")
 
 	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
@@ -144,6 +150,9 @@ func main() {
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.ConnectionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
+
+	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.TerminalRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.UserTerminalKeyRegistration{})
 
 	initDB()
 
@@ -183,6 +192,8 @@ func main() {
 	usernameController.UsernamesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	connectionController.ConnectionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	generationController.GenerationsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	terminalController.TerminalRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	terminalController.UserTerminalKeyRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 

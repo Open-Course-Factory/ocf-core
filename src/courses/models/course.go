@@ -48,7 +48,7 @@ type Course struct {
 	URL                 string
 	LearningObjectives  string     `json:"learning_objectives"`
 	Chapters            []*Chapter `gorm:"many2many:course_chapters"`
-	Packages            []Generation
+	Generations         []Generation
 }
 
 func (c *Course) AfterCreate(tx *gorm.DB) (err error) {

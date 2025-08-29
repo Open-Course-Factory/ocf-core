@@ -14,7 +14,10 @@ import (
 
 	"soli/formations/src/entityManagement/services"
 
+	ttServices "soli/formations/src/terminalTrainer/services"
+
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	"gorm.io/gorm"
 
 	"github.com/docker/docker/pkg/namesgenerator"
 )
@@ -81,7 +84,18 @@ begin:
 		return nil, errStudent
 	}
 
+	terminalService := ttServices.NewTerminalTrainerService(sqldb.DB)
+	errCreateUserKey := terminalService.CreateUserKey(createdUser.Id, createdUser.Name)
+	if errCreateUserKey != nil {
+		fmt.Printf("Warning: Could not create terminal trainer key for user %s: %v\n", createdUser.Id, errCreateUserKey)
+		// On ne fait pas échouer l'inscription pour ça, juste un warning
+	}
+
 	return dto.UserModelToUserOutput(createdUser), nil
+}
+
+func NewTerminalTrainerService(db *gorm.DB) ttServices.TerminalTrainerService {
+	return ttServices.NewTerminalTrainerService(db)
 }
 
 func addDefaultRoleToUser(userCreateDTO dto.CreateUserInput, user1 casdoorsdk.User) error {
