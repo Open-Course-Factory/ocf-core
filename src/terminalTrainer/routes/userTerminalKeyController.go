@@ -60,22 +60,16 @@ func (utc *userTerminalKeyController) RegenerateKey(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	// Vérifier si l'utilisateur a une clé existante
-	existingKey, err := utc.service.GetUserKey(userId)
-	if err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "No existing key found for user",
-		})
-		return
-	}
+	existingKey, _ := utc.service.GetUserKey(userId)
 
-	// Désactiver l'ancienne clé
-	if err := utc.service.DisableUserKey(userId); err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to disable old key: " + err.Error(),
-		})
-		return
+	if existingKey != nil {
+		if err := utc.service.DisableUserKey(userId); err != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to disable old key: " + err.Error(),
+			})
+			return
+		}
 	}
 
 	// Créer une nouvelle clé
@@ -90,8 +84,7 @@ func (utc *userTerminalKeyController) RegenerateKey(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"message":      "Key regenerated successfully",
-		"old_key_name": existingKey.KeyName,
+		"message": "Key regenerated successfully",
 	})
 }
 

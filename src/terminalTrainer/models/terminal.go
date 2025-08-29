@@ -15,12 +15,13 @@ type Terminal struct {
 	Status            string    `gorm:"type:varchar(50);default:'active'" json:"status"` // active, stopped, expired
 	ExpiresAt         time.Time `gorm:"not null" json:"expires_at"`
 	UserTerminalKeyID uuid.UUID `gorm:"not null;index" json:"user_terminal_key_id"`
+	UserTerminalKey   UserTerminalKey
 }
 
 // UserTerminalKey stocke la clé API Terminal Trainer pour chaque utilisateur
 type UserTerminalKey struct {
 	entityManagementModels.BaseModel
-	UserID      string `gorm:"type:varchar(255);uniqueIndex;not null" json:"user_id"`
+	UserID      string `gorm:"type:varchar(255);not null" json:"user_id"`
 	APIKey      string `gorm:"type:varchar(255);not null" json:"api_key"`
 	KeyName     string `gorm:"type:varchar(255);not null" json:"key_name"`
 	IsActive    bool   `gorm:"default:true" json:"is_active"`

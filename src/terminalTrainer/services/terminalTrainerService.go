@@ -46,16 +46,16 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 }
 
 // CreateUserKey crée une clé Terminal Trainer et la stocke en DB
-func (tts *terminalTrainerService) CreateUserKey(userID, userName string) error {
+func (tts *terminalTrainerService) CreateUserKey(userID, keyName string) error {
 	// Vérifier si l'utilisateur a déjà une clé
-	existingKey, err := tts.repository.GetUserTerminalKeyByUserID(userID)
-	if err == nil && existingKey != nil {
-		return fmt.Errorf("user already has a terminal trainer key")
+	existingKey, err := tts.repository.GetUserTerminalKeyByUserID(userID, true)
+	if err == nil && existingKey.IsActive {
+		return fmt.Errorf("user already has an active terminal trainer key")
 	}
 
 	// Appel à l'API Terminal Trainer
 	payload := map[string]any{
-		"name":                    fmt.Sprintf("user-%s", userName),
+		"name":                    keyName,
 		"is_admin":                false,
 		"max_concurrent_sessions": 5,
 	}
@@ -86,7 +86,7 @@ func (tts *terminalTrainerService) CreateUserKey(userID, userName string) error 
 	// Sauvegarder en base
 	userTerminalKey := &models.UserTerminalKey{
 		UserID:      userID,
-		APIKey:      apiResponse.Data.Key,
+		APIKey:      apiResponse.Data.KeyValue,
 		KeyName:     apiResponse.Data.Name,
 		IsActive:    true,
 		MaxSessions: apiResponse.Data.MaxConcurrentSessions,
@@ -97,12 +97,12 @@ func (tts *terminalTrainerService) CreateUserKey(userID, userName string) error 
 
 // GetUserKey récupère la clé Terminal Trainer d'un utilisateur
 func (tts *terminalTrainerService) GetUserKey(userID string) (*models.UserTerminalKey, error) {
-	return tts.repository.GetUserTerminalKeyByUserID(userID)
+	return tts.repository.GetUserTerminalKeyByUserID(userID, true)
 }
 
 // DisableUserKey désactive la clé d'un utilisateur
 func (tts *terminalTrainerService) DisableUserKey(userID string) error {
-	key, err := tts.repository.GetUserTerminalKeyByUserID(userID)
+	key, err := tts.repository.GetUserTerminalKeyByUserID(userID, true)
 	if err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 // StartSession démarre une nouvelle session
 func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.CreateTerminalSessionInput) (*dto.TerminalSessionResponse, error) {
 	// Récupérer la clé utilisateur
-	userKey, err := tts.repository.GetUserTerminalKeyByUserID(userID)
+	userKey, err := tts.repository.GetUserTerminalKeyByUserID(userID, true)
 	if err != nil {
 		return nil, fmt.Errorf("no terminal trainer key found for user: %v", err)
 	}

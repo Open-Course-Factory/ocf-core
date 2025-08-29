@@ -66,13 +66,15 @@ type TerminalSessionResponse struct {
 type TerminalTrainerAPIKeyResponse struct {
 	Success bool `json:"success"`
 	Data    struct {
-		ID                    int    `json:"id"`
+		ID                    int64  `json:"id"`
+		KeyValue              string `json:"key_value"`
 		Name                  string `json:"name"`
-		Key                   string `json:"key"`
 		IsAdmin               bool   `json:"is_admin"`
 		IsActive              bool   `json:"is_active"`
+		CreatedAt             int64  `json:"created_at"`
+		UpdatedAt             int64  `json:"updated_at"`
+		LastUsedAt            *int64 `json:"last_used_at"`
 		MaxConcurrentSessions int    `json:"max_concurrent_sessions"`
-		CreatedAt             string `json:"created_at"`
 	} `json:"data"`
 	Message string `json:"message"`
 }

@@ -9,7 +9,7 @@ import (
 type TerminalRepository interface {
 	// UserTerminalKey methods
 	CreateUserTerminalKey(key *models.UserTerminalKey) error
-	GetUserTerminalKeyByUserID(userID string) (*models.UserTerminalKey, error)
+	GetUserTerminalKeyByUserID(userID string, lookForActive bool) (*models.UserTerminalKey, error)
 	UpdateUserTerminalKey(key *models.UserTerminalKey) error
 	DeleteUserTerminalKey(userID string) error
 
@@ -39,9 +39,13 @@ func (r *terminalRepository) CreateUserTerminalKey(key *models.UserTerminalKey) 
 	return r.db.Create(key).Error
 }
 
-func (r *terminalRepository) GetUserTerminalKeyByUserID(userID string) (*models.UserTerminalKey, error) {
+func (r *terminalRepository) GetUserTerminalKeyByUserID(userID string, lookForActive bool) (*models.UserTerminalKey, error) {
 	var key models.UserTerminalKey
-	err := r.db.Where("user_id = ? AND is_active = ?", userID, true).First(&key).Error
+	query := r.db.Where("user_id = ?", userID)
+	if lookForActive {
+		query = query.Where("is_active = ?", lookForActive)
+	}
+	err := query.First(&key).Error
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +67,7 @@ func (r *terminalRepository) CreateTerminalSession(terminal *models.Terminal) er
 
 func (r *terminalRepository) GetTerminalSessionByID(sessionID string) (*models.Terminal, error) {
 	var terminal models.Terminal
-	err := r.db.Preload("TerminalTrainerKey").Where("session_id = ?", sessionID).First(&terminal).Error
+	err := r.db.Preload("UserTerminalKey").Where("session_id = ?", sessionID).First(&terminal).Error
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +76,7 @@ func (r *terminalRepository) GetTerminalSessionByID(sessionID string) (*models.T
 
 func (r *terminalRepository) GetActiveTerminalSessionsByUserID(userID string) (*[]models.Terminal, error) {
 	var terminals []models.Terminal
-	err := r.db.Preload("TerminalTrainerKey").
+	err := r.db.Preload("UserTerminalKey").
 		Where("user_id = ? AND status = ?", userID, "active").
 		Find(&terminals).Error
 	if err != nil {
