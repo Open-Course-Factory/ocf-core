@@ -179,6 +179,10 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 		return nil, fmt.Errorf("failed to parse session response: %v", err)
 	}
 
+	if sessionResp.Status != "0" {
+		return nil, fmt.Errorf("failed to start session response status: %s", sessionResp.Status)
+	}
+
 	// Créer l'enregistrement local
 	expiresAt := time.Unix(sessionResp.ExpiresAt, 0)
 	terminal := &models.Terminal{
