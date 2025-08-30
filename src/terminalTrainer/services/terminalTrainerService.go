@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -150,7 +151,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 
 	// Appel à l'API Terminal Trainer pour démarrer la session
 	req, _ := http.NewRequest("GET",
-		fmt.Sprintf("%s/1.0/start?terms=%s", tts.baseURL, sessionInput.Terms), nil)
+		fmt.Sprintf("%s/1.0/start?terms=%s", tts.baseURL, url.QueryEscape(sessionInput.Terms)), nil)
 
 	if sessionInput.Expiry > 0 {
 		req.URL.RawQuery += fmt.Sprintf("&expiry=%d", sessionInput.Expiry)
