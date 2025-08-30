@@ -2,10 +2,11 @@ package services
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"time"
 
@@ -150,8 +151,10 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	}
 
 	// Appel à l'API Terminal Trainer pour démarrer la session
+	hash := sha256.New()
+	io.WriteString(hash, sessionInput.Terms)
 	req, _ := http.NewRequest("GET",
-		fmt.Sprintf("%s/1.0/start?terms=%s", tts.baseURL, url.QueryEscape(sessionInput.Terms)), nil)
+		fmt.Sprintf("%s/1.0/start?terms=%s", tts.baseURL, fmt.Sprintf("%x", hash.Sum(nil))), nil)
 
 	if sessionInput.Expiry > 0 {
 		req.URL.RawQuery += fmt.Sprintf("&expiry=%d", sessionInput.Expiry)
@@ -184,6 +187,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 		Status:            "active",
 		ExpiresAt:         expiresAt,
 		UserTerminalKeyID: userKey.ID,
+		UserTerminalKey:   *userKey,
 	}
 
 	if err := tts.repository.CreateTerminalSession(terminal); err != nil {

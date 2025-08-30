@@ -80,8 +80,8 @@ type TerminalTrainerAPIKeyResponse struct {
 }
 
 type TerminalTrainerSessionResponse struct {
-	SessionID string `json:"id"`
+	SessionID string `json:"id,omitempty"`
 	Status    string `json:"status"`
-	ExpiresAt int64  `json:"expires_at"` // timestamp Unix
-	CreatedAt int64  `json:"created_at"`
+	ExpiresAt int64  `json:"expires_at,omitempty"` // timestamp Unix
+	CreatedAt int64  `json:"created_at,omitempty"`
 }
