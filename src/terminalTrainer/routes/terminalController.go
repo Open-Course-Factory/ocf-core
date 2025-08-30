@@ -1,9 +1,8 @@
 package terminalController
 
 import (
-	"fmt"
-	"io"
 	"net/http"
+	"net/url"
 	"os"
 
 	"soli/formations/src/auth/errors"
@@ -12,6 +11,7 @@ import (
 	"soli/formations/src/terminalTrainer/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
 
@@ -42,6 +42,14 @@ func NewTerminalController(db *gorm.DB) TerminalController {
 		terminalTrainerURL: os.Getenv("TERMINAL_TRAINER_URL"),
 		service:            services.NewTerminalTrainerService(db),
 	}
+}
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		// Permettre toutes les origines pour le développement
+		// En production, filtrer selon vos besoins
+		return true
+	},
 }
 
 // DeleteEntity override pour gérer les sessions de terminal avec hard delete
@@ -110,22 +118,19 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Router			/terminals/{id}/console [get]
 func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
-	terminalID := ctx.Param("id")
-	if terminalID == "" {
+	sessionID := ctx.Param("id")
+	if sessionID == "" {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Terminal ID is required",
+			ErrorMessage: "Session ID is required",
 		})
 		return
 	}
 
 	userId := ctx.GetString("userId")
 
-	// Récupérer la session via l'ID générique (UUID)
-	// TODO: Adapter pour récupérer par UUID via le système générique
-
 	// Pour l'instant, on utilise le service direct
-	terminal, err := tc.service.GetSessionInfo(terminalID) // Assume terminalID is sessionID for now
+	terminal, err := tc.service.GetSessionInfo(sessionID)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
@@ -165,72 +170,80 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	}
 
 	// Construire l'URL du Terminal Trainer avec tous les paramètres
-	proxyURL := fmt.Sprintf("%s/1.0/console", tc.terminalTrainerURL)
-
-	// Créer la requête proxy
-	req, err := http.NewRequest("GET", proxyURL, nil)
+	// Construire l'URL WebSocket du Terminal Trainer
+	terminalTrainerWSURL, err := url.Parse(tc.terminalTrainerURL)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to create proxy request",
+			ErrorMessage: "Invalid terminal trainer URL",
 		})
 		return
 	}
 
-	// Ajouter les headers nécessaires
-	req.Header.Set("X-API-Key", userKey.APIKey)
-	req.Header.Set("Upgrade", "websocket")
-	req.Header.Set("Connection", "Upgrade")
+	// Changer le schéma pour WebSocket
+	if terminalTrainerWSURL.Scheme == "https" {
+		terminalTrainerWSURL.Scheme = "wss"
+	} else {
+		terminalTrainerWSURL.Scheme = "ws"
+	}
+	terminalTrainerWSURL.Path = "/1.0/console"
 
-	// Copier les query parameters
-	q := req.URL.Query()
-	q.Set("id", terminal.SessionID) // Utiliser le SessionID du terminal
+	// Ajouter les query parameters
+	q := terminalTrainerWSURL.Query()
+	q.Set("id", terminal.SessionID)
 	if width := ctx.Query("width"); width != "" {
 		q.Set("width", width)
 	}
 	if height := ctx.Query("height"); height != "" {
 		q.Set("height", height)
 	}
-	req.URL.RawQuery = q.Encode()
+	terminalTrainerWSURL.RawQuery = q.Encode()
 
-	// Copier certains headers de la requête originale
-	for name, values := range ctx.Request.Header {
-		if name == "Upgrade" || name == "Connection" || name == "Sec-WebSocket-Key" ||
-			name == "Sec-WebSocket-Version" || name == "Sec-WebSocket-Extensions" {
-			for _, value := range values {
-				req.Header.Add(name, value)
-			}
-		}
-	}
-
-	// Faire la requête proxy
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// Upgrade la connexion cliente vers WebSocket
+	clientConn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Terminal trainer unavailable",
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "WebSocket upgrade failed",
 		})
 		return
 	}
-	defer resp.Body.Close()
+	defer clientConn.Close()
 
-	// Copier tous les headers de réponse
-	for name, values := range resp.Header {
-		for _, value := range values {
-			ctx.Header(name, value)
-		}
+	// Se connecter au Terminal Trainer
+	headers := make(http.Header)
+	headers.Set("X-API-Key", userKey.APIKey)
+
+	terminalConn, _, err := websocket.DefaultDialer.Dial(terminalTrainerWSURL.String(), headers)
+	if err != nil {
+		clientConn.WriteMessage(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseInternalServerErr,
+				"Failed to connect to terminal trainer"))
+		return
 	}
+	defer terminalConn.Close()
 
-	// Définir le status code
-	ctx.Status(resp.StatusCode)
+	// Proxy bidirectionnel
+	go func() {
+		for {
+			messageType, data, err := clientConn.ReadMessage()
+			if err != nil {
+				break
+			}
+			if err := terminalConn.WriteMessage(messageType, data); err != nil {
+				break
+			}
+		}
+	}()
 
-	// Copier le body de la réponse
-	if resp.StatusCode < 400 {
-		io.Copy(ctx.Writer, resp.Body)
-	} else {
-		body, _ := io.ReadAll(resp.Body)
-		ctx.Data(resp.StatusCode, resp.Header.Get("Content-Type"), body)
+	for {
+		messageType, data, err := terminalConn.ReadMessage()
+		if err != nil {
+			break
+		}
+		if err := clientConn.WriteMessage(messageType, data); err != nil {
+			break
+		}
 	}
 }
 

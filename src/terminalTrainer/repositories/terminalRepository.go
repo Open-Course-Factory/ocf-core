@@ -67,7 +67,7 @@ func (r *terminalRepository) CreateTerminalSession(terminal *models.Terminal) er
 
 func (r *terminalRepository) GetTerminalSessionByID(sessionID string) (*models.Terminal, error) {
 	var terminal models.Terminal
-	err := r.db.Preload("UserTerminalKey").Where("session_id = ?", sessionID).First(&terminal).Error
+	err := r.db.Preload("UserTerminalKey").Where("session_id = ?", sessionID).Where("status = ?", "active").First(&terminal).Error
 	if err != nil {
 		return nil, err
 	}
