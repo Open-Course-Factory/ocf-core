@@ -29,7 +29,14 @@ type TerminalTrainerService interface {
 	GetActiveUserSessions(userID string) (*[]models.Terminal, error)
 	StopSession(sessionID string) error
 
-	// Cleanup
+	// Synchronization methods (nouvelle approche avec API comme source de vérité)
+	GetAllSessionsFromAPI(userAPIKey string) (*dto.TerminalTrainerSessionsResponse, error)
+	SyncUserSessions(userID string) (*dto.SyncAllSessionsResponse, error)
+	SyncAllActiveSessions() error
+	GetSessionInfoFromAPI(sessionID string) (*dto.TerminalTrainerSessionInfo, error)
+
+	// Utilities
+	GetRepository() repositories.TerminalRepository
 	CleanupExpiredSessions() error
 }
 
@@ -68,7 +75,7 @@ func (tts *terminalTrainerService) CreateUserKey(userID, keyName string) error {
 		bytes.NewBuffer(jsonPayload))
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("terminal trainer API call failed: %v", err)
@@ -120,7 +127,7 @@ func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 		bytes.NewBuffer(jsonPayload))
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -145,7 +152,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	}
 
 	// Vérifier le nombre de sessions actives
-	activeSessions, err := tts.repository.GetActiveTerminalSessionsByUserID(userID)
+	activeSessions, err := tts.repository.GetTerminalSessionsByUserID(userID, true)
 	if err == nil && len(*activeSessions) >= userKey.MaxSessions {
 		return nil, fmt.Errorf("maximum number of concurrent sessions reached")
 	}
@@ -162,7 +169,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 
 	req.Header.Set("X-API-Key", userKey.APIKey)
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start terminal session: %v", err)
@@ -216,19 +223,306 @@ func (tts *terminalTrainerService) GetSessionInfo(sessionID string) (*models.Ter
 
 // GetActiveUserSessions récupère toutes les sessions actives d'un utilisateur
 func (tts *terminalTrainerService) GetActiveUserSessions(userID string) (*[]models.Terminal, error) {
-	return tts.repository.GetActiveTerminalSessionsByUserID(userID)
+	return tts.repository.GetTerminalSessionsByUserID(userID, true)
 }
 
-// StopSession arrête une session
+// StopSession arrête une session ET appelle l'API externe pour expirer
 func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
 	if err != nil {
-		return err
+		return fmt.Errorf("session not found: %v", err)
 	}
 
-	// Marquer comme arrêtée en base
+	// 1. Appeler l'API Terminal Trainer pour expirer la session
+	err = tts.expireSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey)
+	if err != nil {
+		// Log l'erreur mais ne pas bloquer la mise à jour locale
+		fmt.Printf("Warning: failed to expire session in Terminal Trainer API: %v\n", err)
+	}
+
+	// 2. Marquer comme arrêtée en base locale
 	terminal.Status = "stopped"
 	return tts.repository.UpdateTerminalSession(terminal)
+}
+
+// expireSessionInAPI appelle l'endpoint /1.0/expire de l'API Terminal Trainer
+func (tts *terminalTrainerService) expireSessionInAPI(sessionID, userAPIKey string) error {
+	req, err := http.NewRequest("PUT", fmt.Sprintf("%s/1.0/expire?id=%s", tts.baseURL, sessionID), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create expire request: %v", err)
+	}
+
+	req.Header.Set("X-API-Key", userAPIKey)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to call expire endpoint: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("expire API returned error %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// GetAllSessionsFromAPI récupère toutes les sessions depuis l'API Terminal Trainer
+func (tts *terminalTrainerService) GetAllSessionsFromAPI(userAPIKey string) (*dto.TerminalTrainerSessionsResponse, error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/1.0/sessions?include_expired=true&limit=1000", tts.baseURL), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sessions request: %v", err)
+	}
+
+	req.Header.Set("X-API-Key", userAPIKey)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call sessions endpoint: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("sessions API returned error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var sessionsResp dto.TerminalTrainerSessionsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&sessionsResp); err != nil {
+		return nil, fmt.Errorf("failed to parse sessions response: %v", err)
+	}
+
+	return &sessionsResp, nil
+}
+
+// GetSessionInfoFromAPI récupère les infos d'une session directement depuis l'API
+func (tts *terminalTrainerService) GetSessionInfoFromAPI(sessionID string) (*dto.TerminalTrainerSessionInfo, error) {
+	// Récupérer la session locale pour obtenir la clé API
+	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("session not found locally: %v", err)
+	}
+
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/1.0/info?id=%s", tts.baseURL, sessionID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create info request: %v", err)
+	}
+
+	req.Header.Set("X-API-Key", terminal.UserTerminalKey.APIKey)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call info endpoint: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		if resp.StatusCode == 404 {
+			return nil, fmt.Errorf("session not found on Terminal Trainer")
+		}
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("info API returned error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var sessionInfo dto.TerminalTrainerSessionInfo
+	if err := json.NewDecoder(resp.Body).Decode(&sessionInfo); err != nil {
+		return nil, fmt.Errorf("failed to parse session info response: %v", err)
+	}
+
+	return &sessionInfo, nil
+}
+
+// SyncUserSessions synchronise toutes les sessions d'un utilisateur avec l'API comme source de vérité
+func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAllSessionsResponse, error) {
+	// 1. Récupérer la clé utilisateur
+	userKey, err := tts.repository.GetUserTerminalKeyByUserID(userID, true)
+	if err != nil {
+		return nil, fmt.Errorf("no terminal trainer key found for user: %v", err)
+	}
+
+	if !userKey.IsActive {
+		return nil, fmt.Errorf("user terminal trainer key is disabled")
+	}
+
+	// 2. Récupérer TOUTES les sessions depuis l'API Terminal Trainer (source de vérité)
+	apiSessions, err := tts.GetAllSessionsFromAPI(userKey.APIKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sessions from Terminal Trainer API: %v", err)
+	}
+
+	// 3. Récupérer les sessions locales pour cet utilisateur
+	localSessions, err := tts.repository.GetTerminalSessionsByUserID(userID, false)
+	if err != nil {
+		localSessions = &[]models.Terminal{} // Traiter comme liste vide si erreur
+	}
+
+	// 4. Créer des maps pour faciliter la comparaison
+	localSessionsMap := make(map[string]*models.Terminal)
+	for i := range *localSessions {
+		session := &(*localSessions)[i]
+		localSessionsMap[session.SessionID] = session
+	}
+
+	apiSessionsMap := make(map[string]*dto.TerminalTrainerSession)
+	for i := range apiSessions.Sessions {
+		session := &apiSessions.Sessions[i]
+		apiSessionsMap[session.SessionID] = session
+	}
+
+	// 5. Synchronisation bidirectionnelle
+	var sessionResults []dto.SyncSessionResponse
+	var errors []string
+	syncedCount := 0
+	updatedCount := 0
+	createdCount := 0
+
+	// 5a. Traiter les sessions qui existent côté API (source de vérité)
+	for sessionID, apiSession := range apiSessionsMap {
+		localSession := localSessionsMap[sessionID]
+
+		if localSession == nil {
+			// Session existe côté API mais pas côté local -> la créer
+			err := tts.createMissingLocalSession(userID, userKey, apiSession)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("Failed to create missing session %s: %v", sessionID, err))
+			} else {
+				sessionResults = append(sessionResults, dto.SyncSessionResponse{
+					SessionID:      sessionID,
+					PreviousStatus: "missing",
+					CurrentStatus:  apiSession.Status,
+					Updated:        true,
+					LastSyncAt:     time.Now(),
+				})
+				syncedCount++
+				updatedCount++
+				createdCount++
+			}
+		} else {
+			// Session existe des deux côtés -> synchroniser le statut
+			previousStatus := localSession.Status
+			needsUpdate := false
+
+			// Vérifier si le statut a changé
+			if localSession.Status != apiSession.Status {
+				localSession.Status = apiSession.Status
+				needsUpdate = true
+			}
+
+			// Vérifier si la session a expiré selon la date
+			expiryTime := time.Unix(apiSession.ExpiresAt, 0)
+			if time.Now().After(expiryTime) && apiSession.Status == "active" {
+				localSession.Status = "expired"
+				needsUpdate = true
+			}
+
+			if needsUpdate {
+				err := tts.repository.UpdateTerminalSession(localSession)
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("Failed to update session %s: %v", sessionID, err))
+				} else {
+					updatedCount++
+				}
+			}
+
+			sessionResults = append(sessionResults, dto.SyncSessionResponse{
+				SessionID:      sessionID,
+				PreviousStatus: previousStatus,
+				CurrentStatus:  localSession.Status,
+				Updated:        needsUpdate,
+				LastSyncAt:     time.Now(),
+			})
+			syncedCount++
+		}
+	}
+
+	// 5b. Traiter les sessions qui existent côté local mais pas côté API
+	expiredCount := 0
+	for sessionID, localSession := range localSessionsMap {
+		if _, exists := apiSessionsMap[sessionID]; !exists {
+			// Session existe côté local mais pas côté API -> la marquer comme expirée
+			if localSession.Status != "expired" && localSession.Status != "stopped" {
+				previousStatus := localSession.Status
+				localSession.Status = "expired"
+
+				err := tts.repository.UpdateTerminalSession(localSession)
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("Failed to expire orphaned session %s: %v", sessionID, err))
+				} else {
+					sessionResults = append(sessionResults, dto.SyncSessionResponse{
+						SessionID:      sessionID,
+						PreviousStatus: previousStatus,
+						CurrentStatus:  "expired",
+						Updated:        true,
+						LastSyncAt:     time.Now(),
+					})
+					updatedCount++
+					expiredCount++
+				}
+			}
+			syncedCount++
+		}
+	}
+
+	// 6. Construire la réponse
+	response := &dto.SyncAllSessionsResponse{
+		TotalSessions:   len(apiSessions.Sessions),
+		SyncedSessions:  syncedCount,
+		UpdatedSessions: updatedCount,
+		ErrorCount:      len(errors),
+		Errors:          errors,
+		SessionResults:  sessionResults,
+		LastSyncAt:      time.Now(),
+	}
+
+	return response, nil
+}
+
+// createMissingLocalSession crée une session locale manquante basée sur les données de l'API
+func (tts *terminalTrainerService) createMissingLocalSession(userID string, userKey *models.UserTerminalKey, apiSession *dto.TerminalTrainerSession) error {
+	expiresAt := time.Unix(apiSession.ExpiresAt, 0)
+
+	terminal := &models.Terminal{
+		SessionID:         apiSession.SessionID,
+		UserID:            userID,
+		Status:            apiSession.Status,
+		ExpiresAt:         expiresAt,
+		UserTerminalKeyID: userKey.ID,
+		UserTerminalKey:   *userKey,
+	}
+
+	return tts.repository.CreateTerminalSession(terminal)
+}
+
+// SyncAllActiveSessions - version améliorée qui utilise la nouvelle logique
+func (tts *terminalTrainerService) SyncAllActiveSessions() error {
+	// Récupérer tous les utilisateurs ayant des clés actives
+	activeKeys, err := tts.repository.GetAllActiveUserKeys()
+	if err != nil {
+		return fmt.Errorf("failed to get active user keys: %v", err)
+	}
+
+	var globalErrors []string
+	for _, userKey := range *activeKeys {
+		_, err := tts.SyncUserSessions(userKey.UserID)
+		if err != nil {
+			globalErrors = append(globalErrors, fmt.Sprintf("User %s: %v", userKey.UserID, err))
+		}
+	}
+
+	if len(globalErrors) > 0 {
+		return fmt.Errorf("sync completed with errors: %v", globalErrors)
+	}
+
+	return nil
+}
+
+// GetRepository expose le repository pour les contrôleurs
+func (tts *terminalTrainerService) GetRepository() repositories.TerminalRepository {
+	return tts.repository
 }
 
 // CleanupExpiredSessions nettoie les sessions expirées

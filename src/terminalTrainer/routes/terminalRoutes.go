@@ -27,6 +27,10 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.GET("/:id/console", middleware.AuthManagement(), terminalController.ConnectConsole)
 	routes.POST("/:id/stop", middleware.AuthManagement(), terminalController.StopSession)
 	routes.GET("/user-sessions", middleware.AuthManagement(), terminalController.GetUserSessions)
+
+	routes.POST("/:id/sync", middleware.AuthManagement(), terminalController.SyncSession)       // Sync une session spécifique
+	routes.POST("/sync-all", middleware.AuthManagement(), terminalController.SyncAllSessions)   // Sync toutes les sessions
+	routes.GET("/:id/status", middleware.AuthManagement(), terminalController.GetSessionStatus) // Comparer statuts local/API
 }
 
 func UserTerminalKeyRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {

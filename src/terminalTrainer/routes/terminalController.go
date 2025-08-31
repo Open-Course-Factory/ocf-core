@@ -1,9 +1,11 @@
 package terminalController
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
@@ -28,6 +30,13 @@ type TerminalController interface {
 	ConnectConsole(ctx *gin.Context)
 	StopSession(ctx *gin.Context)
 	GetUserSessions(ctx *gin.Context)
+
+	// Méthodes de synchronisation
+	SyncSession(ctx *gin.Context)
+	SyncAllSessions(ctx *gin.Context)
+	SyncUserSessions(ctx *gin.Context)
+	GetSessionStatus(ctx *gin.Context)
+	GetSyncStatistics(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -46,15 +55,13 @@ func NewTerminalController(db *gorm.DB) TerminalController {
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		// Permettre toutes les origines pour le développement
-		// En production, filtrer selon vos besoins
 		return true
 	},
 }
 
 // DeleteEntity override pour gérer les sessions de terminal avec hard delete
 func (tc *terminalController) DeleteEntity(ctx *gin.Context) {
-	tc.GenericController.DeleteEntity(ctx, false) // hard delete pour les sessions
+	tc.GenericController.DeleteEntity(ctx, false)
 }
 
 // Start Terminal Session godoc
@@ -65,18 +72,15 @@ func (tc *terminalController) DeleteEntity(ctx *gin.Context) {
 //	@Accept			json
 //	@Produce		json
 //	@Param			session	body	dto.CreateTerminalSessionInput	true	"Terminal session input"
-//
 //	@Security		Bearer
-//
 //	@Success		200	{object}	dto.TerminalSessionResponse
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Failure		500	{object}	errors.APIError	"Terminal trainer error"
 //	@Router			/terminals/start-session [post]
 func (tc *terminalController) StartSession(ctx *gin.Context) {
-	userId := ctx.GetString("userId") // Fourni par le middleware auth
+	userId := ctx.GetString("userId")
 
-	// Valider les paramètres
 	sessionInput := dto.CreateTerminalSessionInput{}
 	if err := ctx.ShouldBindJSON(&sessionInput); err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
@@ -86,7 +90,6 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 		return
 	}
 
-	// Démarrer la session via le service
 	sessionResponse, err := tc.service.StartSession(userId, sessionInput)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -109,9 +112,7 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 //	@Param			id		path	string	true	"Terminal ID"
 //	@Param			width	query	string	false	"Console width"
 //	@Param			height	query	string	false	"Console height"
-//
 //	@Security		Bearer
-//
 //	@Success		101	{string}	string	"Switching Protocols (WebSocket)"
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		404	{object}	errors.APIError	"Session not found"
@@ -129,7 +130,6 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 
 	userId := ctx.GetString("userId")
 
-	// Pour l'instant, on utilise le service direct
 	terminal, err := tc.service.GetSessionInfo(sessionID)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
@@ -169,7 +169,6 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 		return
 	}
 
-	// Construire l'URL du Terminal Trainer avec tous les paramètres
 	// Construire l'URL WebSocket du Terminal Trainer
 	terminalTrainerWSURL, err := url.Parse(tc.terminalTrainerURL)
 	if err != nil {
@@ -180,7 +179,6 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 		return
 	}
 
-	// Changer le schéma pour WebSocket
 	if terminalTrainerWSURL.Scheme == "https" {
 		terminalTrainerWSURL.Scheme = "wss"
 	} else {
@@ -188,7 +186,6 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	}
 	terminalTrainerWSURL.Path = "/1.0/console"
 
-	// Ajouter les query parameters
 	q := terminalTrainerWSURL.Query()
 	q.Set("id", terminal.SessionID)
 	if width := ctx.Query("width"); width != "" {
@@ -250,14 +247,12 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 // Stop Session godoc
 //
 //	@Summary		Arrêter une session terminal
-//	@Description	Arrête une session de terminal active
+//	@Description	Arrête une session de terminal active et la termine côté Terminal Trainer
 //	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			id	path	string	true	"Terminal ID"
-//
 //	@Security		Bearer
-//
 //	@Success		200	{object}	string
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		404	{object}	errors.APIError	"Session not found"
@@ -267,8 +262,7 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 	terminalID := ctx.Param("id")
 	userId := ctx.GetString("userId")
 
-	// TODO: Récupérer via le système générique avec UUID
-	terminal, err := tc.service.GetSessionInfo(terminalID) // Assume terminalID is sessionID
+	terminal, err := tc.service.GetSessionInfo(terminalID)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
@@ -297,7 +291,7 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 		}
 	}
 
-	// Arrêter la session
+	// Arrêter la session (maintenant ça appelle aussi l'API externe)
 	if err := tc.service.StopSession(terminal.SessionID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -316,9 +310,7 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 //	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
-//
 //	@Security		Bearer
-//
 //	@Success		200	{array}		dto.TerminalOutput
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/terminals/user-sessions [get]
@@ -371,4 +363,365 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, terminalOutputs)
+}
+
+// Sync Session godoc
+//
+//	@Summary		Synchroniser une session
+//	@Description	Synchronise l'état d'une session avec l'API Terminal Trainer
+//	@Tags			terminals
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"Terminal ID ou Session ID"
+//	@Security		Bearer
+//	@Success		200	{object}	dto.SyncSessionResponse
+//	@Failure		400	{object}	errors.APIError	"Bad request"
+//	@Failure		404	{object}	errors.APIError	"Session not found"
+//	@Failure		500	{object}	errors.APIError	"Sync error"
+//	@Router			/terminals/{id}/sync [post]
+func (tc *terminalController) SyncSession(ctx *gin.Context) {
+	sessionID := ctx.Param("id")
+	userId := ctx.GetString("userId")
+
+	// Vérifier que la session appartient à l'utilisateur
+	terminal, err := tc.service.GetSessionInfo(sessionID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Session not found",
+		})
+		return
+	}
+
+	// Vérifier les droits d'accès
+	if terminal.UserID != userId {
+		userRoles := ctx.GetStringSlice("userRoles")
+		isAdmin := false
+		for _, role := range userRoles {
+			if role == "administrator" {
+				isAdmin = true
+				break
+			}
+		}
+
+		if !isAdmin {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Access denied to this session",
+			})
+			return
+		}
+	}
+
+	// Synchroniser via la méthode complète de synchronisation utilisateur
+	syncResponse, err := tc.service.SyncUserSessions(terminal.UserID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Sync failed: %v", err),
+		})
+		return
+	}
+
+	// Trouver le résultat pour cette session spécifique
+	var sessionResult *dto.SyncSessionResponse
+	for _, result := range syncResponse.SessionResults {
+		if result.SessionID == sessionID {
+			sessionResult = &result
+			break
+		}
+	}
+
+	if sessionResult == nil {
+		// Session non trouvée dans les résultats, créer une réponse par défaut
+		sessionResult = &dto.SyncSessionResponse{
+			SessionID:      sessionID,
+			PreviousStatus: terminal.Status,
+			CurrentStatus:  terminal.Status,
+			Updated:        false,
+			LastSyncAt:     time.Now(),
+		}
+	}
+
+	ctx.JSON(http.StatusOK, sessionResult)
+}
+
+// Sync All Sessions godoc
+//
+//	@Summary		Synchroniser toutes les sessions avec l'API comme source de vérité
+//	@Description	Synchronise l'état de toutes les sessions en utilisant l'API Terminal Trainer comme référence
+//	@Tags			terminals
+//	@Accept			json
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{object}	dto.SyncAllSessionsResponse
+//	@Failure		500	{object}	errors.APIError	"Sync error"
+//	@Router			/terminals/sync-all [post]
+func (tc *terminalController) SyncAllSessions(ctx *gin.Context) {
+	userId := ctx.GetString("userId")
+	userRoles := ctx.GetStringSlice("userRoles")
+	globalSync := ctx.Param("admin")
+
+	// Vérifier si l'utilisateur est admin
+	isAdmin := false
+	for _, role := range userRoles {
+		if role == "administrator" {
+			isAdmin = true
+			break
+		}
+	}
+
+	var response *dto.SyncAllSessionsResponse
+	var err error
+
+	if globalSync != "" && isAdmin {
+		// Admin peut synchroniser toutes les sessions de tous les utilisateurs
+		err = tc.service.SyncAllActiveSessions()
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: fmt.Sprintf("Global sync failed: %v", err),
+			})
+			return
+		}
+
+		// Pour les admins, créer une réponse générique
+		response = &dto.SyncAllSessionsResponse{
+			TotalSessions:   -1, // Non compté pour éviter la complexité
+			SyncedSessions:  -1,
+			UpdatedSessions: -1,
+			ErrorCount:      0,
+			Errors:          nil,
+			SessionResults:  nil,
+			LastSyncAt:      time.Now(),
+		}
+	} else {
+		// Utilisateur normal synchronise seulement ses sessions
+		response, err = tc.service.SyncUserSessions(userId)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: fmt.Sprintf("User sync failed: %v", err),
+			})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+// Sync User Sessions godoc
+//
+//	@Summary		Synchronisation complète d'un utilisateur
+//	@Description	Synchronise toutes les sessions d'un utilisateur en utilisant l'API comme source de vérité
+//	@Tags			terminals
+//	@Accept			json
+//	@Produce		json
+//	@Param			user_id	query	string	false	"User ID (admin only)"
+//	@Security		Bearer
+//	@Success		200	{object}	dto.SyncAllSessionsResponse
+//	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Failure		500	{object}	errors.APIError	"Sync error"
+//	@Router			/terminals/sync-user [post]
+func (tc *terminalController) SyncUserSessions(ctx *gin.Context) {
+	currentUserId := ctx.GetString("userId")
+	targetUserId := ctx.Query("user_id")
+
+	// Si pas de user_id spécifié, utiliser l'utilisateur actuel
+	if targetUserId == "" {
+		targetUserId = currentUserId
+	}
+
+	// Vérifier les permissions si ce n'est pas l'utilisateur lui-même
+	if targetUserId != currentUserId {
+		userRoles := ctx.GetStringSlice("userRoles")
+		isAdmin := false
+		for _, role := range userRoles {
+			if role == "administrator" {
+				isAdmin = true
+				break
+			}
+		}
+
+		if !isAdmin {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Only administrators can sync other users' sessions",
+			})
+			return
+		}
+	}
+
+	// Effectuer la synchronisation complète
+	response, err := tc.service.SyncUserSessions(targetUserId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("User sync failed: %v", err),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+// Get Session Status godoc
+//
+//	@Summary		Obtenir le statut détaillé d'une session
+//	@Description	Compare le statut local et celui de l'API Terminal Trainer avec informations étendues
+//	@Tags			terminals
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"Terminal ID ou Session ID"
+//	@Security		Bearer
+//	@Success		200	{object}	dto.ExtendedSessionStatusResponse
+//	@Failure		400	{object}	errors.APIError	"Bad request"
+//	@Failure		404	{object}	errors.APIError	"Session not found"
+//	@Failure		500	{object}	errors.APIError	"Status check error"
+//	@Router			/terminals/{id}/status [get]
+func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
+	sessionID := ctx.Param("id")
+	userId := ctx.GetString("userId")
+
+	// Récupérer la session locale
+	terminal, err := tc.service.GetSessionInfo(sessionID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Session not found",
+		})
+		return
+	}
+
+	// Vérifier les droits d'accès
+	if terminal.UserID != userId {
+		userRoles := ctx.GetStringSlice("userRoles")
+		isAdmin := false
+		for _, role := range userRoles {
+			if role == "administrator" {
+				isAdmin = true
+				break
+			}
+		}
+
+		if !isAdmin {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Access denied to this session",
+			})
+			return
+		}
+	}
+
+	// Récupérer TOUTES les sessions depuis l'API pour ce user
+	userKey, err := tc.service.GetUserKey(terminal.UserID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get user API key",
+		})
+		return
+	}
+
+	apiSessions, err := tc.service.GetAllSessionsFromAPI(userKey.APIKey)
+
+	response := dto.ExtendedSessionStatusResponse{
+		SessionID:       sessionID,
+		Status:          terminal.Status,
+		ExpiresAt:       terminal.ExpiresAt,
+		LastChecked:     time.Now(),
+		LocalStatus:     terminal.Status,
+		ExistsInAPI:     false,
+		ExistsLocally:   true,
+		SyncRecommended: false,
+	}
+
+	if err != nil {
+		response.APIStatus = "api_error"
+		response.APIError = err.Error()
+		response.SyncRecommended = true
+	} else {
+		// Chercher la session dans la réponse API
+		var foundInAPI *dto.TerminalTrainerSession
+		for _, apiSession := range apiSessions.Sessions {
+			if apiSession.SessionID == sessionID {
+				foundInAPI = &apiSession
+				break
+			}
+		}
+
+		if foundInAPI != nil {
+			response.ExistsInAPI = true
+			response.APIStatus = foundInAPI.Status
+			response.APIExpiresAt = time.Unix(foundInAPI.ExpiresAt, 0)
+			response.SyncRecommended = terminal.Status != foundInAPI.Status
+			response.StatusMatch = terminal.Status == foundInAPI.Status
+		} else {
+			response.APIStatus = "not_found"
+			response.SyncRecommended = true
+			response.StatusMatch = false
+		}
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+// Get Sync Statistics godoc
+//
+//	@Summary		Obtenir des statistiques de synchronisation
+//	@Description	Retourne des statistiques sur les sessions et la synchronisation
+//	@Tags			terminals
+//	@Accept			json
+//	@Produce		json
+//	@Param			user_id	query	string	false	"User ID (admin only)"
+//	@Security		Bearer
+//	@Success		200	{object}	map[string]interface{}
+//	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Failure		500	{object}	errors.APIError	"Error getting statistics"
+//	@Router			/terminals/sync-stats [get]
+func (tc *terminalController) GetSyncStatistics(ctx *gin.Context) {
+	currentUserId := ctx.GetString("userId")
+	targetUserId := ctx.Query("user_id")
+	userRoles := ctx.GetStringSlice("userRoles")
+
+	// Vérifier les permissions
+	isAdmin := false
+	for _, role := range userRoles {
+		if role == "administrator" {
+			isAdmin = true
+			break
+		}
+	}
+
+	// Si pas admin et demande stats d'un autre user, refuser
+	if targetUserId != "" && targetUserId != currentUserId && !isAdmin {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Access denied",
+		})
+		return
+	}
+
+	// Si pas admin, forcer à ses propres stats
+	if !isAdmin {
+		targetUserId = currentUserId
+	}
+
+	// Récupérer les statistiques
+	stats, err := tc.service.GetRepository().GetSyncStatistics(targetUserId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to get statistics: %v", err),
+		})
+		return
+	}
+
+	response := map[string]interface{}{
+		"user_id":      targetUserId,
+		"statistics":   stats,
+		"generated_at": time.Now(),
+	}
+
+	ctx.JSON(http.StatusOK, response)
 }
