@@ -475,8 +475,8 @@ func TestEntityRegistrationService_WithMockEnforcer(t *testing.T) {
 	entityName := "TestEntity"
 	roles := entityManagementInterfaces.EntityRoles{
 		Roles: map[string]string{
-			string(authModels.Student): "(" + http.MethodGet + "|" + http.MethodPost + ")",
-			string(authModels.Admin):   "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")",
+			string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
+			string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")",
 		},
 	}
 
@@ -489,7 +489,7 @@ func TestEntityRegistrationService_WithMockEnforcer(t *testing.T) {
 
 	// Vérifier les appels AddPolicy
 	expectedCalls := [][]interface{}{
-		{string(authModels.Student), "/api/v1/testentities/", "(" + http.MethodGet + "|" + http.MethodPost + ")"},
+		{string(authModels.Member), "/api/v1/testentities/", "(" + http.MethodGet + "|" + http.MethodPost + ")"},
 		{string(authModels.Admin), "/api/v1/testentities/", "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")"},
 	}
 

@@ -58,6 +58,11 @@ import (
 	sqldb "soli/formations/src/db"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+
+	paymentRegistration "soli/formations/src/payment/entityRegistration"
+	paymentMiddleware "soli/formations/src/payment/middleware"
+	paymentModels "soli/formations/src/payment/models"
+	paymentController "soli/formations/src/payment/routes"
 )
 
 //	@title			OCF API
@@ -136,6 +141,24 @@ func main() {
 	sqldb.DB.AutoMigrate(&terminalModels.Terminal{})
 	sqldb.DB.AutoMigrate(&terminalModels.UserTerminalKey{})
 
+	sqldb.DB.AutoMigrate(&paymentModels.SubscriptionPlan{})
+	sqldb.DB.AutoMigrate(&paymentModels.UserSubscription{})
+	sqldb.DB.AutoMigrate(&paymentModels.Invoice{})
+	sqldb.DB.AutoMigrate(&paymentModels.PaymentMethod{})
+	sqldb.DB.AutoMigrate(&paymentModels.UsageMetrics{})
+	sqldb.DB.AutoMigrate(&paymentModels.BillingAddress{})
+
+	errJTSubscription := sqldb.DB.SetupJoinTable(&paymentModels.UserSubscription{}, "SubscriptionPlan", &paymentModels.SubscriptionPlan{})
+	if errJTSubscription != nil {
+		log.Default().Println(errJTSubscription)
+	}
+
+	// Setup des relations pour Invoice -> UserSubscription
+	errJTInvoice := sqldb.DB.SetupJoinTable(&paymentModels.Invoice{}, "UserSubscription", &paymentModels.UserSubscription{})
+	if errJTInvoice != nil {
+		log.Default().Println(errJTInvoice)
+	}
+
 	casdoor.InitCasdoorEnforcer(sqldb.DB, "")
 
 	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
@@ -153,6 +176,13 @@ func main() {
 
 	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.TerminalRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.UserTerminalKeyRegistration{})
+
+	ems.GlobalEntityRegistrationService.RegisterEntity(paymentRegistration.SubscriptionPlanRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(paymentRegistration.UserSubscriptionRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(paymentRegistration.PaymentMethodRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(paymentRegistration.InvoiceRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(paymentRegistration.BillingAddressRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(paymentRegistration.UsageMetricsRegistration{})
 
 	initDB()
 
@@ -174,6 +204,13 @@ func main() {
 		OptionsPassthrough: true,
 	}))
 
+	// Middlewares globaux pour le système de paiement
+	usageLimitMiddleware := paymentMiddleware.NewUsageLimitMiddleware(sqldb.DB)
+	userRoleMiddleware := paymentMiddleware.NewUserRoleMiddleware(sqldb.DB)
+
+	// Appliquer le middleware de mise à jour des rôles globalement
+	r.Use(userRoleMiddleware.EnsureSubscriptionRole())
+
 	apiGroup := r.Group("/api/v1")
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	scheduleController.SchedulesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
@@ -194,6 +231,16 @@ func main() {
 	generationController.GenerationsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	terminalController.TerminalRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	terminalController.UserTerminalKeyRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+
+	apiGroupWithUsageCheck := apiGroup.Group("")
+	apiGroupWithUsageCheck.Use(usageLimitMiddleware.CheckUsageForPath())
+
+	paymentController.SubscriptionRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	paymentController.PaymentMethodRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	paymentController.InvoiceRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	paymentController.BillingAddressRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	paymentController.UsageMetricsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	paymentController.WebhookRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 
@@ -223,7 +270,7 @@ func initDB() {
 		sqldb.DB = sqldb.DB.Debug()
 
 		setupExternalUsersData()
-
+		setupDefaultSubscriptionPlans()
 	}
 }
 
@@ -317,4 +364,62 @@ func isFlagPassed(name string) bool {
 		}
 	})
 	return found
+}
+
+// Fonction utilitaire pour initialiser les plans d'abonnement par défaut
+func setupDefaultSubscriptionPlans() {
+	db := sqldb.DB
+
+	// Vérifier si les plans existent déjà
+	var count int64
+	db.Model(&paymentModels.SubscriptionPlan{}).Count(&count)
+	if count > 0 {
+		return // Plans déjà créés
+	}
+
+	// Plan Member Pro
+	memberProPlan := &paymentModels.SubscriptionPlan{
+		Name:               "Member Pro",
+		Description:        "Accès à un terminal",
+		PriceAmount:        490, // 9.90€
+		Currency:           "eur",
+		BillingInterval:    "month",
+		TrialDays:          14,
+		Features:           `{"unlimited_courses": false, "advanced_labs": false, "export": false, "custom_themes": false}`,
+		MaxConcurrentUsers: 1,
+		MaxCourses:         0,
+		MaxLabSessions:     1,
+		IsActive:           true,
+		RequiredRole:       "member_pro",
+	}
+
+	plans := []*paymentModels.SubscriptionPlan{memberProPlan}
+
+	for _, plan := range plans {
+		if err := db.Create(plan).Error; err != nil {
+			log.Printf("Warning: Failed to create subscription plan %s: %v\n", plan.Name, err)
+		} else {
+			log.Printf("Created subscription plan: %s\n", plan.Name)
+		}
+	}
+}
+
+func setupPaymentRolePermissions() {
+	casdoor.Enforcer.LoadPolicy()
+
+	// Permissions pour Student Premium
+	casdoor.Enforcer.AddPolicy("member_pro", "/api/v1/terminals/*", "(GET|POST)")
+	casdoor.Enforcer.AddPolicy("member_pro", "/api/v1/subscriptions/current", "GET")
+	casdoor.Enforcer.AddPolicy("member_pro", "/api/v1/subscriptions/portal", "POST")
+	casdoor.Enforcer.AddPolicy("member_pro", "/api/v1/invoices/user", "GET")
+	casdoor.Enforcer.AddPolicy("member_pro", "/api/v1/payment-methods/user", "GET")
+
+	// Permissions pour Organization (hérite de supervisor_pro)
+	casdoor.Enforcer.AddPolicy("organization", "/api/v1/*", "(GET|POST|PATCH|DELETE)")
+	casdoor.Enforcer.AddPolicy("organization", "/api/v1/users/*", "(GET|POST|PATCH)")
+	casdoor.Enforcer.AddPolicy("organization", "/api/v1/groups/*", "(GET|POST|PATCH|DELETE)")
+
+	// Groupements de rôles (hiérarchie)
+	casdoor.Enforcer.AddGroupingPolicy("member_pro", "member")
+	casdoor.Enforcer.AddGroupingPolicy("organization", "member_pro")
 }

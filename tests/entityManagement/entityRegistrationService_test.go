@@ -215,13 +215,13 @@ func TestEntityRegistrationService_SetDefaultEntityAccesses(t *testing.T) {
 	// Setup des expectations pour le mock
 	mockEnforcer.On("LoadPolicy").Return(nil)
 	mockEnforcer.On("AddPolicy",
-		string(models.Student),
+		string(models.Member),
 		"/api/v1/testentities/",
 		"("+http.MethodGet+"|"+http.MethodPost+")").Return(true, nil)
 
 	roles := entityManagementInterfaces.EntityRoles{
 		Roles: map[string]string{
-			string(models.Student): "(" + http.MethodGet + "|" + http.MethodPost + ")",
+			string(models.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
 		},
 	}
 
@@ -237,7 +237,7 @@ func TestEntityRegistrationService_SetDefaultEntityAccesses_WithNilEnforcer(t *t
 
 	roles := entityManagementInterfaces.EntityRoles{
 		Roles: map[string]string{
-			string(models.Student): "(" + http.MethodGet + "|" + http.MethodPost + ")",
+			string(models.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
 		},
 	}
 
@@ -296,7 +296,7 @@ func TestEntityRegistrationService_RegisterEntity(t *testing.T) {
 
 	roles := entityManagementInterfaces.EntityRoles{
 		Roles: map[string]string{
-			string(models.Student): "(" + http.MethodGet + "|" + http.MethodPost + ")",
+			string(models.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
 		},
 	}
 

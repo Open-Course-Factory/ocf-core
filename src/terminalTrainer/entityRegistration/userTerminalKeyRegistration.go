@@ -74,7 +74,7 @@ func (u UserTerminalKeyRegistration) GetEntityRoles() entityManagementInterfaces
 	roleMap := make(map[string]string)
 	// Seuls les admins peuvent gérer les clés directement
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")"
-	roleMap[string(authModels.Supervisor)] = "(" + http.MethodGet + ")"
+	roleMap[string(authModels.GroupManager)] = "(" + http.MethodGet + ")"
 
 	return entityManagementInterfaces.EntityRoles{
 		Roles: roleMap,

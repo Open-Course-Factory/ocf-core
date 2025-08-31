@@ -74,8 +74,8 @@ func (t TerminalRegistration) GetEntityRegistrationInput() entityManagementInter
 // Override pour des permissions spécifiques aux terminaux
 func (t TerminalRegistration) GetEntityRoles() entityManagementInterfaces.EntityRoles {
 	roleMap := make(map[string]string)
-	roleMap[string(authModels.Student)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
-	roleMap[string(authModels.Supervisor)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")"
+	roleMap[string(authModels.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
+	roleMap[string(authModels.GroupManager)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")"
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")"
 
 	return entityManagementInterfaces.EntityRoles{

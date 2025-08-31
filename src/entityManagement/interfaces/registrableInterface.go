@@ -42,7 +42,7 @@ type AbstractRegistrableInterface struct{ RegistrableInterface }
 
 func (a AbstractRegistrableInterface) GetEntityRoles() EntityRoles {
 	roleMap := make(map[string]string)
-	roleMap[string(models.Student)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
+	roleMap[string(models.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
 	res := EntityRoles{
 		Roles: roleMap,
 	}
