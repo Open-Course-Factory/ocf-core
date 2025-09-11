@@ -160,7 +160,7 @@ func NewDocumentationGenerator() *DocumentationGenerator {
 	return &DocumentationGenerator{}
 }
 
-// GenerateOpenAPISpec génère la spécification OpenAPI pour toutes les entités documentées
+// GenerateOpenAPISpec avec génération complète de schémas
 func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]interface{} {
 	swaggerConfigs := ems.GlobalEntityRegistrationService.GetAllSwaggerConfigs()
 
@@ -173,7 +173,7 @@ func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]interface{} {
 		},
 		"paths": make(map[string]interface{}),
 		"components": map[string]interface{}{
-			"schemas": make(map[string]interface{}),
+			"schemas": dg.generateSchemas(swaggerConfigs),
 			"securitySchemes": map[string]interface{}{
 				"Bearer": map[string]interface{}{
 					"type":         "http",
@@ -186,18 +186,19 @@ func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]interface{} {
 	}
 
 	paths := spec["paths"].(map[string]interface{})
-	schemas := spec["components"].(map[string]interface{})["schemas"].(map[string]interface{})
 
 	for entityName, config := range swaggerConfigs {
 		basePath := "/" + strings.ToLower(ems.Pluralize(entityName))
 
-		// Générer les schémas DTOs
-		dg.generateSchemasForEntity(schemas, entityName)
-
-		// Générer les paths pour cette entité
+		// GET /entities (Get All)
 		if config.GetAll != nil {
-			paths[basePath] = dg.generateGetAllPathSpec(config.GetAll, entityName)
+			if paths[basePath] == nil {
+				paths[basePath] = make(map[string]interface{})
+			}
+			paths[basePath].(map[string]interface{})["get"] = dg.generateGetAllOperationSpec(config.GetAll, entityName)
 		}
+
+		// POST /entities (Create) avec requestBody
 		if config.Create != nil {
 			if paths[basePath] == nil {
 				paths[basePath] = make(map[string]interface{})
@@ -205,17 +206,24 @@ func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]interface{} {
 			paths[basePath].(map[string]interface{})["post"] = dg.generateCreateOperationSpec(config.Create, entityName)
 		}
 
-		// Path avec ID
+		// GET /entities/{id} (Get One)
 		pathWithId := basePath + "/{id}"
 		if config.GetOne != nil {
-			paths[pathWithId] = dg.generateGetOnePathSpec(config.GetOne, entityName)
+			if paths[pathWithId] == nil {
+				paths[pathWithId] = make(map[string]interface{})
+			}
+			paths[pathWithId].(map[string]interface{})["get"] = dg.generateGetOneOperationSpec(config.GetOne, entityName)
 		}
+
+		// PATCH /entities/{id} (Update) avec requestBody
 		if config.Update != nil {
 			if paths[pathWithId] == nil {
 				paths[pathWithId] = make(map[string]interface{})
 			}
 			paths[pathWithId].(map[string]interface{})["patch"] = dg.generateUpdateOperationSpec(config.Update, entityName)
 		}
+
+		// DELETE /entities/{id} (Delete)
 		if config.Delete != nil {
 			if paths[pathWithId] == nil {
 				paths[pathWithId] = make(map[string]interface{})
@@ -227,78 +235,96 @@ func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]interface{} {
 	return spec
 }
 
-// Génération des schémas
-func (dg *DocumentationGenerator) generateSchemasForEntity(schemas map[string]interface{}, entityName string) {
-	// Récupérer les DTOs depuis le service d'enregistrement
-	inputCreateDto := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
-	outputDto := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.OutputDto)
-	inputEditDto := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputEditDto)
+// Générer les schémas à partir des DTOs enregistrés
+func (dg *DocumentationGenerator) generateSchemas(configs map[string]*entityManagementInterfaces.EntitySwaggerConfig) map[string]interface{} {
+	schemas := make(map[string]interface{})
 
-	// Générer le schéma pour le DTO de création
-	if inputCreateDto != nil {
-		schemaName := fmt.Sprintf("%sCreateInput", entityName)
-		schemas[schemaName] = dg.generateSchemaFromStruct(inputCreateDto)
+	for entityName := range configs {
+		log.Printf("🧩 Generating schemas for entity: %s", entityName)
+
+		// Récupérer les DTOs depuis le système d'enregistrement
+		inputCreateDto := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
+		outputDto := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.OutputDto)
+		inputEditDto := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputEditDto)
+
+		// Générer les schémas à partir des types Go
+		if inputCreateDto != nil {
+			schemaName := entityName + "CreateInput"
+			schemas[schemaName] = dg.generateSchemaFromStruct(inputCreateDto)
+			log.Printf("  📝 Generated schema: %s", schemaName)
+		}
+
+		if outputDto != nil {
+			schemaName := entityName + "Output"
+			schemas[schemaName] = dg.generateSchemaFromStruct(outputDto)
+			log.Printf("  📝 Generated schema: %s", schemaName)
+		}
+
+		if inputEditDto != nil {
+			schemaName := entityName + "UpdateInput"
+			schemas[schemaName] = dg.generateSchemaFromStruct(inputEditDto)
+			log.Printf("  📝 Generated schema: %s", schemaName)
+		}
 	}
 
-	// Générer le schéma pour le DTO de sortie
-	if outputDto != nil {
-		schemaName := fmt.Sprintf("%sOutput", entityName)
-		schemas[schemaName] = dg.generateSchemaFromStruct(outputDto)
-	}
-
-	// Générer le schéma pour le DTO d'édition
-	if inputEditDto != nil {
-		schemaName := fmt.Sprintf("%sEditInput", entityName)
-		schemas[schemaName] = dg.generateSchemaFromStruct(inputEditDto)
-	}
+	log.Printf("🧩 Total schemas generated: %d", len(schemas))
+	return schemas
 }
 
-// Génération de schéma à partir de struct
-func (dg *DocumentationGenerator) generateSchemaFromStruct(dto interface{}) map[string]interface{} {
-	schema := map[string]interface{}{
-		"type":       "object",
-		"properties": make(map[string]interface{}),
+// Générer un schéma OpenAPI à partir d'une structure Go via réflexion
+func (dg *DocumentationGenerator) generateSchemaFromStruct(structInstance interface{}) map[string]interface{} {
+	// Utiliser la réflexion pour analyser la structure
+	t := reflect.TypeOf(structInstance)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
 	}
 
-	dtoType := reflect.TypeOf(dto)
-	if dtoType.Kind() == reflect.Ptr {
-		dtoType = dtoType.Elem()
-	}
-
-	properties := schema["properties"].(map[string]interface{})
+	properties := make(map[string]interface{})
 	required := []string{}
 
-	for i := 0; i < dtoType.NumField(); i++ {
-		field := dtoType.Field(i)
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
 
 		// Ignorer les champs non exportés
 		if !field.IsExported() {
 			continue
 		}
 
-		// Récupérer le nom JSON
 		jsonTag := field.Tag.Get("json")
-		fieldName := field.Name
-		if jsonTag != "" && jsonTag != "-" {
-			if strings.Contains(jsonTag, ",") {
-				fieldName = strings.Split(jsonTag, ",")[0]
-			} else {
-				fieldName = jsonTag
-			}
-		} else {
-			// Convertir en snake_case
-			fieldName = strings.ToLower(fieldName)
+		bindingTag := field.Tag.Get("binding")
+
+		// Ignorer les champs avec json:"-"
+		if jsonTag == "-" {
+			continue
 		}
 
-		// Vérifier si le champ est requis
-		bindingTag := field.Tag.Get("binding")
+		fieldName := field.Name
+		if jsonTag != "" {
+			// Extraire le nom du tag json (avant la virgule)
+			if parts := strings.Split(jsonTag, ","); len(parts) > 0 && parts[0] != "" {
+				fieldName = parts[0]
+			}
+		}
+
+		// Déterminer le type OpenAPI
+		fieldType := dg.getOpenAPIType(field.Type)
+
+		// Ajouter une description si disponible via le tag
+		if description := field.Tag.Get("description"); description != "" {
+			fieldType["description"] = description
+		}
+
+		properties[fieldName] = fieldType
+
+		// Vérifier si le champ est requis via le tag binding
 		if strings.Contains(bindingTag, "required") {
 			required = append(required, fieldName)
 		}
+	}
 
-		// Déterminer le type du champ
-		fieldType := dg.getSwaggerTypeFromGoType(field.Type)
-		properties[fieldName] = fieldType
+	schema := map[string]interface{}{
+		"type":       "object",
+		"properties": properties,
 	}
 
 	if len(required) > 0 {
@@ -308,21 +334,10 @@ func (dg *DocumentationGenerator) generateSchemaFromStruct(dto interface{}) map[
 	return schema
 }
 
-// Conversion de types Go vers Swagger
-func (dg *DocumentationGenerator) getSwaggerTypeFromGoType(goType reflect.Type) map[string]interface{} {
-	// Gérer les pointeurs
-	if goType.Kind() == reflect.Ptr {
-		goType = goType.Elem()
-	}
-
-	switch goType.Kind() {
+// Convertir un type Go vers un type OpenAPI
+func (dg *DocumentationGenerator) getOpenAPIType(t reflect.Type) map[string]interface{} {
+	switch t.Kind() {
 	case reflect.String:
-		if goType.Name() == "UUID" || strings.Contains(goType.String(), "uuid.UUID") {
-			return map[string]interface{}{
-				"type":   "string",
-				"format": "uuid",
-			}
-		}
 		return map[string]interface{}{"type": "string"}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32:
 		return map[string]interface{}{"type": "integer", "format": "int32"}
@@ -335,194 +350,206 @@ func (dg *DocumentationGenerator) getSwaggerTypeFromGoType(goType reflect.Type) 
 	case reflect.Bool:
 		return map[string]interface{}{"type": "boolean"}
 	case reflect.Slice:
+		elemType := dg.getOpenAPIType(t.Elem())
 		return map[string]interface{}{
 			"type":  "array",
-			"items": dg.getSwaggerTypeFromGoType(goType.Elem()),
+			"items": elemType,
 		}
+	case reflect.Ptr:
+		// Pour les pointeurs, analyser le type sous-jacent
+		return dg.getOpenAPIType(t.Elem())
 	case reflect.Struct:
-		if goType.String() == "time.Time" {
+		// Pour les types comme time.Time, uuid.UUID, etc.
+		switch t.String() {
+		case "time.Time":
 			return map[string]interface{}{
 				"type":   "string",
 				"format": "date-time",
 			}
+		case "uuid.UUID":
+			return map[string]interface{}{
+				"type":   "string",
+				"format": "uuid",
+			}
+		default:
+			return map[string]interface{}{"type": "object"}
 		}
-		// Pour les structs complexes, retourner un objet générique
-		return map[string]interface{}{"type": "object"}
 	default:
 		return map[string]interface{}{"type": "string"}
 	}
 }
 
-// Génération des opérations avec requestBody
-
-func (dg *DocumentationGenerator) generateGetAllPathSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
-	return map[string]interface{}{
-		"get": dg.generateGetAllOperationSpec(operation, entityName),
-	}
-}
-
-func (dg *DocumentationGenerator) generateGetOnePathSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
-	return map[string]interface{}{
-		"get": dg.generateGetOneOperationSpec(operation, entityName),
-	}
-}
-
-func (dg *DocumentationGenerator) generateGetAllOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
-	spec := map[string]interface{}{
-		"summary":     operation.Summary,
-		"description": operation.Description,
-		"tags":        operation.Tags,
-		"responses": map[string]interface{}{
-			"200": map[string]interface{}{
-				"description": "Successful response",
-				"content": map[string]interface{}{
-					"application/json": map[string]interface{}{
-						"schema": map[string]interface{}{
-							"type": "array",
-							"items": map[string]interface{}{
-								"$ref": fmt.Sprintf("#/components/schemas/%sOutput", entityName),
-							},
-						},
-					},
-				},
-			},
-			"500": map[string]interface{}{
-				"description": "Internal server error",
-			},
-		},
-	}
-
-	if operation.Security {
-		spec["security"] = []map[string]interface{}{
-			{"Bearer": []string{}},
-		}
-	}
-
-	return spec
-}
-
-func (dg *DocumentationGenerator) generateGetOneOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
-	spec := map[string]interface{}{
-		"summary":     operation.Summary,
-		"description": operation.Description,
-		"tags":        operation.Tags,
-		"parameters": []map[string]interface{}{
-			{
-				"name":        "id",
-				"in":          "path",
-				"required":    true,
-				"description": fmt.Sprintf("ID of the %s", entityName),
-				"schema": map[string]interface{}{
-					"type":   "string",
-					"format": "uuid",
-				},
-			},
-		},
-		"responses": map[string]interface{}{
-			"200": map[string]interface{}{
-				"description": "Successful response",
-				"content": map[string]interface{}{
-					"application/json": map[string]interface{}{
-						"schema": map[string]interface{}{
-							"$ref": fmt.Sprintf("#/components/schemas/%sOutput", entityName),
-						},
-					},
-				},
-			},
-			"404": map[string]interface{}{
-				"description": "Entity not found",
-			},
-		},
-	}
-
-	if operation.Security {
-		spec["security"] = []map[string]interface{}{
-			{"Bearer": []string{}},
-		}
-	}
-
-	return spec
-}
+// Opérations spécialisées avec requestBody et réponses complètes
 
 func (dg *DocumentationGenerator) generateCreateOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
-	spec := map[string]interface{}{
-		"summary":     operation.Summary,
-		"description": operation.Description,
-		"tags":        operation.Tags,
-		"requestBody": map[string]interface{}{
-			"required": true,
+	spec := dg.generateBaseOperationSpec(operation)
+
+	// Ajouter le requestBody pour POST
+	spec["requestBody"] = map[string]interface{}{
+		"required": true,
+		"content": map[string]interface{}{
+			"application/json": map[string]interface{}{
+				"schema": map[string]interface{}{
+					"$ref": fmt.Sprintf("#/components/schemas/%sCreateInput", entityName),
+				},
+			},
+		},
+	}
+
+	// Ajouter les réponses détaillées
+	spec["responses"] = map[string]interface{}{
+		"201": map[string]interface{}{
+			"description": fmt.Sprintf("%s created successfully", entityName),
 			"content": map[string]interface{}{
 				"application/json": map[string]interface{}{
 					"schema": map[string]interface{}{
-						"$ref": fmt.Sprintf("#/components/schemas/%sCreateInput", entityName),
+						"$ref": fmt.Sprintf("#/components/schemas/%sOutput", entityName),
 					},
 				},
 			},
 		},
-		"responses": map[string]interface{}{
-			"201": map[string]interface{}{
-				"description": "Created successfully",
-				"content": map[string]interface{}{
-					"application/json": map[string]interface{}{
-						"schema": map[string]interface{}{
-							"$ref": fmt.Sprintf("#/components/schemas/%sOutput", entityName),
-						},
-					},
-				},
-			},
-			"400": map[string]interface{}{
-				"description": "Bad request",
-			},
-		},
-	}
-
-	if operation.Security {
-		spec["security"] = []map[string]interface{}{
-			{"Bearer": []string{}},
-		}
+		"400": dg.generateErrorResponse("Bad request"),
+		"401": dg.generateErrorResponse("Unauthorized"),
+		"403": dg.generateErrorResponse("Forbidden"),
 	}
 
 	return spec
 }
 
 func (dg *DocumentationGenerator) generateUpdateOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
-	spec := map[string]interface{}{
-		"summary":     operation.Summary,
-		"description": operation.Description,
-		"tags":        operation.Tags,
-		"parameters": []map[string]interface{}{
-			{
-				"name":        "id",
-				"in":          "path",
-				"required":    true,
-				"description": fmt.Sprintf("ID of the %s", entityName),
+	spec := dg.generateBaseOperationSpec(operation)
+
+	// Ajouter le paramètre id
+	spec["parameters"] = []map[string]interface{}{
+		{
+			"name":        "id",
+			"in":          "path",
+			"required":    true,
+			"description": fmt.Sprintf("%s ID", entityName),
+			"schema": map[string]interface{}{
+				"type":   "string",
+				"format": "uuid",
+			},
+		},
+	}
+
+	// Ajouter le requestBody pour PATCH
+	spec["requestBody"] = map[string]interface{}{
+		"required": true,
+		"content": map[string]interface{}{
+			"application/json": map[string]interface{}{
 				"schema": map[string]interface{}{
-					"type":   "string",
-					"format": "uuid",
+					"$ref": fmt.Sprintf("#/components/schemas/%sUpdateInput", entityName),
 				},
 			},
 		},
-		"requestBody": map[string]interface{}{
-			"required": true,
+	}
+
+	spec["responses"] = map[string]interface{}{
+		"204": map[string]interface{}{
+			"description": fmt.Sprintf("%s updated successfully", entityName),
+		},
+		"400": dg.generateErrorResponse("Bad request"),
+		"401": dg.generateErrorResponse("Unauthorized"),
+		"403": dg.generateErrorResponse("Forbidden"),
+		"404": dg.generateErrorResponse("Not found"),
+	}
+
+	return spec
+}
+
+func (dg *DocumentationGenerator) generateGetAllOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+	spec := dg.generateBaseOperationSpec(operation)
+
+	spec["responses"] = map[string]interface{}{
+		"200": map[string]interface{}{
+			"description": fmt.Sprintf("List of %s", strings.ToLower(ems.Pluralize(entityName))),
 			"content": map[string]interface{}{
 				"application/json": map[string]interface{}{
 					"schema": map[string]interface{}{
-						"$ref": fmt.Sprintf("#/components/schemas/%sEditInput", entityName),
+						"type": "array",
+						"items": map[string]interface{}{
+							"$ref": fmt.Sprintf("#/components/schemas/%sOutput", entityName),
+						},
 					},
 				},
 			},
 		},
-		"responses": map[string]interface{}{
-			"200": map[string]interface{}{
-				"description": "Updated successfully",
-			},
-			"400": map[string]interface{}{
-				"description": "Bad request",
-			},
-			"404": map[string]interface{}{
-				"description": "Entity not found",
+		"401": dg.generateErrorResponse("Unauthorized"),
+		"403": dg.generateErrorResponse("Forbidden"),
+	}
+
+	return spec
+}
+
+func (dg *DocumentationGenerator) generateGetOneOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+	spec := dg.generateBaseOperationSpec(operation)
+
+	spec["parameters"] = []map[string]interface{}{
+		{
+			"name":        "id",
+			"in":          "path",
+			"required":    true,
+			"description": fmt.Sprintf("%s ID", entityName),
+			"schema": map[string]interface{}{
+				"type":   "string",
+				"format": "uuid",
 			},
 		},
+	}
+
+	spec["responses"] = map[string]interface{}{
+		"200": map[string]interface{}{
+			"description": fmt.Sprintf("%s details", entityName),
+			"content": map[string]interface{}{
+				"application/json": map[string]interface{}{
+					"schema": map[string]interface{}{
+						"$ref": fmt.Sprintf("#/components/schemas/%sOutput", entityName),
+					},
+				},
+			},
+		},
+		"401": dg.generateErrorResponse("Unauthorized"),
+		"403": dg.generateErrorResponse("Forbidden"),
+		"404": dg.generateErrorResponse("Not found"),
+	}
+
+	return spec
+}
+
+func (dg *DocumentationGenerator) generateDeleteOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+	spec := dg.generateBaseOperationSpec(operation)
+
+	spec["parameters"] = []map[string]interface{}{
+		{
+			"name":        "id",
+			"in":          "path",
+			"required":    true,
+			"description": fmt.Sprintf("%s ID", entityName),
+			"schema": map[string]interface{}{
+				"type":   "string",
+				"format": "uuid",
+			},
+		},
+	}
+
+	spec["responses"] = map[string]interface{}{
+		"204": map[string]interface{}{
+			"description": fmt.Sprintf("%s deleted successfully", entityName),
+		},
+		"401": dg.generateErrorResponse("Unauthorized"),
+		"403": dg.generateErrorResponse("Forbidden"),
+		"404": dg.generateErrorResponse("Not found"),
+	}
+
+	return spec
+}
+
+func (dg *DocumentationGenerator) generateBaseOperationSpec(operation *entityManagementInterfaces.SwaggerOperation) map[string]interface{} {
+	spec := map[string]interface{}{
+		"summary":     operation.Summary,
+		"description": operation.Description,
+		"tags":        operation.Tags,
 	}
 
 	if operation.Security {
@@ -534,38 +561,24 @@ func (dg *DocumentationGenerator) generateUpdateOperationSpec(operation *entityM
 	return spec
 }
 
-func (dg *DocumentationGenerator) generateDeleteOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
-	spec := map[string]interface{}{
-		"summary":     operation.Summary,
-		"description": operation.Description,
-		"tags":        operation.Tags,
-		"parameters": []map[string]interface{}{
-			{
-				"name":        "id",
-				"in":          "path",
-				"required":    true,
-				"description": fmt.Sprintf("ID of the %s", entityName),
+// Génération standardisée des réponses d'erreur
+func (dg *DocumentationGenerator) generateErrorResponse(description string) map[string]interface{} {
+	return map[string]interface{}{
+		"description": description,
+		"content": map[string]interface{}{
+			"application/json": map[string]interface{}{
 				"schema": map[string]interface{}{
-					"type":   "string",
-					"format": "uuid",
+					"type": "object",
+					"properties": map[string]interface{}{
+						"error_code": map[string]interface{}{
+							"type": "integer",
+						},
+						"error_message": map[string]interface{}{
+							"type": "string",
+						},
+					},
 				},
 			},
 		},
-		"responses": map[string]interface{}{
-			"204": map[string]interface{}{
-				"description": "Deleted successfully",
-			},
-			"404": map[string]interface{}{
-				"description": "Entity not found",
-			},
-		},
 	}
-
-	if operation.Security {
-		spec["security"] = []map[string]interface{}{
-			{"Bearer": []string{}},
-		}
-	}
-
-	return spec
 }

@@ -70,10 +70,13 @@ func (ac *authController) Callback(ctx *gin.Context) {
 //	@Accept			json
 //	@Produce		json
 //
-//	@Param			login	body		dto.LoginInput	true	"login"
-//	@Success		201		{object}	dto.LoginOutput
+//	@Param			login	body		dto.LoginInput	true	"Données de connexion"
+//	@Success		201		{object}	dto.LoginOutput "Connexion réussie"
 //
+//	@Failure		400		{object}	errors.APIError	"Données invalides"
 //	@Failure		404		{object}	errors.APIError	"Utilisateur non trouvé"
+//	@Failure		401		{object}	errors.APIError	"Identifiants incorrects"
+//	@Failure		500		{object}	errors.APIError	"Erreur serveur"
 //
 //	@Router			/auth/login [post]
 func (ac *authController) Login(ctx *gin.Context) {
