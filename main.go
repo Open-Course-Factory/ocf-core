@@ -253,10 +253,8 @@ func initSwagger(r *gin.Engine) {
 	docs.SwaggerInfo.Title = "OCF API"
 	docs.SwaggerInfo.Description = "This is an API to build and generate courses with labs"
 	docs.SwaggerInfo.Version = os.Getenv("OCF_VERSION")
-	docs.SwaggerInfo.Host = os.Getenv("OCF_API_URL")
-	docs.SwaggerInfo.BasePath = "/api/v1"
 
-	// 🆕 Setup de la documentation complète (manual + auto-generated)
+	// Setup de la documentation complète (manual + auto-generated)
 	setupCompleteSwaggerSystem(r)
 }
 
@@ -595,6 +593,10 @@ func generateCustomSwaggerHTML() string {
                 onComplete: function() {
                     console.log('📚 OCF API Documentation chargée');
                     console.log('🔀 Documentation hybride : manuelle + auto-générée');
+
+										// 🔍 DEBUG : Vérifier les serveurs configurés
+                    const spec = ui.getSystem().specSelectors.spec().toJS();
+                    console.log('🔍 Servers in spec:', spec.servers);
                     
                     // Ajouter un indicateur de statut dans le header
                     setTimeout(() => {

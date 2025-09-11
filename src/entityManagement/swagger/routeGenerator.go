@@ -2,7 +2,9 @@
 package swagger
 
 import (
+	"fmt"
 	"log"
+	"reflect"
 	"strings"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -172,58 +174,391 @@ func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]interface{} {
 		"paths": make(map[string]interface{}),
 		"components": map[string]interface{}{
 			"schemas": make(map[string]interface{}),
+			"securitySchemes": map[string]interface{}{
+				"Bearer": map[string]interface{}{
+					"type":         "http",
+					"scheme":       "bearer",
+					"bearerFormat": "JWT",
+					"description":  "JWT token for authentication",
+				},
+			},
 		},
 	}
 
 	paths := spec["paths"].(map[string]interface{})
+	schemas := spec["components"].(map[string]interface{})["schemas"].(map[string]interface{})
 
 	for entityName, config := range swaggerConfigs {
 		basePath := "/" + strings.ToLower(ems.Pluralize(entityName))
 
+		// Générer les schémas DTOs
+		dg.generateSchemasForEntity(schemas, entityName)
+
 		// Générer les paths pour cette entité
 		if config.GetAll != nil {
-			paths[basePath] = dg.generatePathSpec(config.GetAll, "get")
+			paths[basePath] = dg.generateGetAllPathSpec(config.GetAll, entityName)
 		}
 		if config.Create != nil {
 			if paths[basePath] == nil {
 				paths[basePath] = make(map[string]interface{})
 			}
-			paths[basePath].(map[string]interface{})["post"] = dg.generateOperationSpec(config.Create)
+			paths[basePath].(map[string]interface{})["post"] = dg.generateCreateOperationSpec(config.Create, entityName)
 		}
 
 		// Path avec ID
 		pathWithId := basePath + "/{id}"
 		if config.GetOne != nil {
-			paths[pathWithId] = dg.generatePathSpec(config.GetOne, "get")
+			paths[pathWithId] = dg.generateGetOnePathSpec(config.GetOne, entityName)
 		}
 		if config.Update != nil {
 			if paths[pathWithId] == nil {
 				paths[pathWithId] = make(map[string]interface{})
 			}
-			paths[pathWithId].(map[string]interface{})["patch"] = dg.generateOperationSpec(config.Update)
+			paths[pathWithId].(map[string]interface{})["patch"] = dg.generateUpdateOperationSpec(config.Update, entityName)
 		}
 		if config.Delete != nil {
 			if paths[pathWithId] == nil {
 				paths[pathWithId] = make(map[string]interface{})
 			}
-			paths[pathWithId].(map[string]interface{})["delete"] = dg.generateOperationSpec(config.Delete)
+			paths[pathWithId].(map[string]interface{})["delete"] = dg.generateDeleteOperationSpec(config.Delete, entityName)
 		}
 	}
 
 	return spec
 }
 
-func (dg *DocumentationGenerator) generatePathSpec(operation *entityManagementInterfaces.SwaggerOperation, method string) map[string]interface{} {
-	return map[string]interface{}{
-		method: dg.generateOperationSpec(operation),
+// Génération des schémas
+func (dg *DocumentationGenerator) generateSchemasForEntity(schemas map[string]interface{}, entityName string) {
+	// Récupérer les DTOs depuis le service d'enregistrement
+	inputCreateDto := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
+	outputDto := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.OutputDto)
+	inputEditDto := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputEditDto)
+
+	// Générer le schéma pour le DTO de création
+	if inputCreateDto != nil {
+		schemaName := fmt.Sprintf("%sCreateInput", entityName)
+		schemas[schemaName] = dg.generateSchemaFromStruct(inputCreateDto)
+	}
+
+	// Générer le schéma pour le DTO de sortie
+	if outputDto != nil {
+		schemaName := fmt.Sprintf("%sOutput", entityName)
+		schemas[schemaName] = dg.generateSchemaFromStruct(outputDto)
+	}
+
+	// Générer le schéma pour le DTO d'édition
+	if inputEditDto != nil {
+		schemaName := fmt.Sprintf("%sEditInput", entityName)
+		schemas[schemaName] = dg.generateSchemaFromStruct(inputEditDto)
 	}
 }
 
-func (dg *DocumentationGenerator) generateOperationSpec(operation *entityManagementInterfaces.SwaggerOperation) map[string]interface{} {
+// Génération de schéma à partir de struct
+func (dg *DocumentationGenerator) generateSchemaFromStruct(dto interface{}) map[string]interface{} {
+	schema := map[string]interface{}{
+		"type":       "object",
+		"properties": make(map[string]interface{}),
+	}
+
+	dtoType := reflect.TypeOf(dto)
+	if dtoType.Kind() == reflect.Ptr {
+		dtoType = dtoType.Elem()
+	}
+
+	properties := schema["properties"].(map[string]interface{})
+	required := []string{}
+
+	for i := 0; i < dtoType.NumField(); i++ {
+		field := dtoType.Field(i)
+
+		// Ignorer les champs non exportés
+		if !field.IsExported() {
+			continue
+		}
+
+		// Récupérer le nom JSON
+		jsonTag := field.Tag.Get("json")
+		fieldName := field.Name
+		if jsonTag != "" && jsonTag != "-" {
+			if strings.Contains(jsonTag, ",") {
+				fieldName = strings.Split(jsonTag, ",")[0]
+			} else {
+				fieldName = jsonTag
+			}
+		} else {
+			// Convertir en snake_case
+			fieldName = strings.ToLower(fieldName)
+		}
+
+		// Vérifier si le champ est requis
+		bindingTag := field.Tag.Get("binding")
+		if strings.Contains(bindingTag, "required") {
+			required = append(required, fieldName)
+		}
+
+		// Déterminer le type du champ
+		fieldType := dg.getSwaggerTypeFromGoType(field.Type)
+		properties[fieldName] = fieldType
+	}
+
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+
+	return schema
+}
+
+// Conversion de types Go vers Swagger
+func (dg *DocumentationGenerator) getSwaggerTypeFromGoType(goType reflect.Type) map[string]interface{} {
+	// Gérer les pointeurs
+	if goType.Kind() == reflect.Ptr {
+		goType = goType.Elem()
+	}
+
+	switch goType.Kind() {
+	case reflect.String:
+		if goType.Name() == "UUID" || strings.Contains(goType.String(), "uuid.UUID") {
+			return map[string]interface{}{
+				"type":   "string",
+				"format": "uuid",
+			}
+		}
+		return map[string]interface{}{"type": "string"}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32:
+		return map[string]interface{}{"type": "integer", "format": "int32"}
+	case reflect.Int64:
+		return map[string]interface{}{"type": "integer", "format": "int64"}
+	case reflect.Float32:
+		return map[string]interface{}{"type": "number", "format": "float"}
+	case reflect.Float64:
+		return map[string]interface{}{"type": "number", "format": "double"}
+	case reflect.Bool:
+		return map[string]interface{}{"type": "boolean"}
+	case reflect.Slice:
+		return map[string]interface{}{
+			"type":  "array",
+			"items": dg.getSwaggerTypeFromGoType(goType.Elem()),
+		}
+	case reflect.Struct:
+		if goType.String() == "time.Time" {
+			return map[string]interface{}{
+				"type":   "string",
+				"format": "date-time",
+			}
+		}
+		// Pour les structs complexes, retourner un objet générique
+		return map[string]interface{}{"type": "object"}
+	default:
+		return map[string]interface{}{"type": "string"}
+	}
+}
+
+// Génération des opérations avec requestBody
+
+func (dg *DocumentationGenerator) generateGetAllPathSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+	return map[string]interface{}{
+		"get": dg.generateGetAllOperationSpec(operation, entityName),
+	}
+}
+
+func (dg *DocumentationGenerator) generateGetOnePathSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+	return map[string]interface{}{
+		"get": dg.generateGetOneOperationSpec(operation, entityName),
+	}
+}
+
+func (dg *DocumentationGenerator) generateGetAllOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
 	spec := map[string]interface{}{
 		"summary":     operation.Summary,
 		"description": operation.Description,
 		"tags":        operation.Tags,
+		"responses": map[string]interface{}{
+			"200": map[string]interface{}{
+				"description": "Successful response",
+				"content": map[string]interface{}{
+					"application/json": map[string]interface{}{
+						"schema": map[string]interface{}{
+							"type": "array",
+							"items": map[string]interface{}{
+								"$ref": fmt.Sprintf("#/components/schemas/%sOutput", entityName),
+							},
+						},
+					},
+				},
+			},
+			"500": map[string]interface{}{
+				"description": "Internal server error",
+			},
+		},
+	}
+
+	if operation.Security {
+		spec["security"] = []map[string]interface{}{
+			{"Bearer": []string{}},
+		}
+	}
+
+	return spec
+}
+
+func (dg *DocumentationGenerator) generateGetOneOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+	spec := map[string]interface{}{
+		"summary":     operation.Summary,
+		"description": operation.Description,
+		"tags":        operation.Tags,
+		"parameters": []map[string]interface{}{
+			{
+				"name":        "id",
+				"in":          "path",
+				"required":    true,
+				"description": fmt.Sprintf("ID of the %s", entityName),
+				"schema": map[string]interface{}{
+					"type":   "string",
+					"format": "uuid",
+				},
+			},
+		},
+		"responses": map[string]interface{}{
+			"200": map[string]interface{}{
+				"description": "Successful response",
+				"content": map[string]interface{}{
+					"application/json": map[string]interface{}{
+						"schema": map[string]interface{}{
+							"$ref": fmt.Sprintf("#/components/schemas/%sOutput", entityName),
+						},
+					},
+				},
+			},
+			"404": map[string]interface{}{
+				"description": "Entity not found",
+			},
+		},
+	}
+
+	if operation.Security {
+		spec["security"] = []map[string]interface{}{
+			{"Bearer": []string{}},
+		}
+	}
+
+	return spec
+}
+
+func (dg *DocumentationGenerator) generateCreateOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+	spec := map[string]interface{}{
+		"summary":     operation.Summary,
+		"description": operation.Description,
+		"tags":        operation.Tags,
+		"requestBody": map[string]interface{}{
+			"required": true,
+			"content": map[string]interface{}{
+				"application/json": map[string]interface{}{
+					"schema": map[string]interface{}{
+						"$ref": fmt.Sprintf("#/components/schemas/%sCreateInput", entityName),
+					},
+				},
+			},
+		},
+		"responses": map[string]interface{}{
+			"201": map[string]interface{}{
+				"description": "Created successfully",
+				"content": map[string]interface{}{
+					"application/json": map[string]interface{}{
+						"schema": map[string]interface{}{
+							"$ref": fmt.Sprintf("#/components/schemas/%sOutput", entityName),
+						},
+					},
+				},
+			},
+			"400": map[string]interface{}{
+				"description": "Bad request",
+			},
+		},
+	}
+
+	if operation.Security {
+		spec["security"] = []map[string]interface{}{
+			{"Bearer": []string{}},
+		}
+	}
+
+	return spec
+}
+
+func (dg *DocumentationGenerator) generateUpdateOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+	spec := map[string]interface{}{
+		"summary":     operation.Summary,
+		"description": operation.Description,
+		"tags":        operation.Tags,
+		"parameters": []map[string]interface{}{
+			{
+				"name":        "id",
+				"in":          "path",
+				"required":    true,
+				"description": fmt.Sprintf("ID of the %s", entityName),
+				"schema": map[string]interface{}{
+					"type":   "string",
+					"format": "uuid",
+				},
+			},
+		},
+		"requestBody": map[string]interface{}{
+			"required": true,
+			"content": map[string]interface{}{
+				"application/json": map[string]interface{}{
+					"schema": map[string]interface{}{
+						"$ref": fmt.Sprintf("#/components/schemas/%sEditInput", entityName),
+					},
+				},
+			},
+		},
+		"responses": map[string]interface{}{
+			"200": map[string]interface{}{
+				"description": "Updated successfully",
+			},
+			"400": map[string]interface{}{
+				"description": "Bad request",
+			},
+			"404": map[string]interface{}{
+				"description": "Entity not found",
+			},
+		},
+	}
+
+	if operation.Security {
+		spec["security"] = []map[string]interface{}{
+			{"Bearer": []string{}},
+		}
+	}
+
+	return spec
+}
+
+func (dg *DocumentationGenerator) generateDeleteOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+	spec := map[string]interface{}{
+		"summary":     operation.Summary,
+		"description": operation.Description,
+		"tags":        operation.Tags,
+		"parameters": []map[string]interface{}{
+			{
+				"name":        "id",
+				"in":          "path",
+				"required":    true,
+				"description": fmt.Sprintf("ID of the %s", entityName),
+				"schema": map[string]interface{}{
+					"type":   "string",
+					"format": "uuid",
+				},
+			},
+		},
+		"responses": map[string]interface{}{
+			"204": map[string]interface{}{
+				"description": "Deleted successfully",
+			},
+			"404": map[string]interface{}{
+				"description": "Entity not found",
+			},
+		},
 	}
 
 	if operation.Security {
