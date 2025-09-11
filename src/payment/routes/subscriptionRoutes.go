@@ -16,14 +16,14 @@ func SubscriptionRoutes(router *gin.RouterGroup, config *config.Configuration, d
 	authMiddleware := auth.NewAuthMiddleware(db)
 	//usageLimitMiddleware := middleware.NewUsageLimitMiddleware(db)
 
-	routes := router.Group("/subscriptions")
+	routes := router.Group("/subscriptionplans")
 
 	// Routes génériques pour les plans d'abonnement (admin seulement)
-	routes.GET("/plans", authMiddleware.AuthManagement(), subscriptionController.GetEntities)
-	routes.POST("/plans", authMiddleware.AuthManagement(), subscriptionController.AddEntity)
-	routes.GET("/plans/:id", authMiddleware.AuthManagement(), subscriptionController.GetEntity)
-	routes.PATCH("/plans/:id", authMiddleware.AuthManagement(), subscriptionController.EditEntity)
-	routes.DELETE("/plans/:id", authMiddleware.AuthManagement(), subscriptionController.DeleteEntity)
+	routes.GET("/", authMiddleware.AuthManagement(), subscriptionController.GetEntities)
+	routes.POST("/", authMiddleware.AuthManagement(), subscriptionController.AddEntity)
+	routes.GET("/:id", authMiddleware.AuthManagement(), subscriptionController.GetEntity)
+	routes.PATCH("/:id", authMiddleware.AuthManagement(), subscriptionController.EditEntity)
+	routes.DELETE("/:id", authMiddleware.AuthManagement(), subscriptionController.DeleteEntity)
 
 	// Routes spécialisées pour les abonnements utilisateur
 	routes.POST("/checkout", authMiddleware.AuthManagement(), subscriptionController.CreateCheckoutSession)

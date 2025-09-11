@@ -43,7 +43,7 @@ func (srg *SwaggerRouteGenerator) registerEntityRoutes(router *gin.RouterGroup, 
 
 	// Route GET /entities (Get All)
 	if config.GetAll != nil {
-		handler := srg.createGetAllHandler(entityName, config.GetAll)
+		handler := srg.createGetAllHandler(config.GetAll)
 		if config.GetAll.Security {
 			entityGroup.GET("", authMiddleware, handler)
 		} else {
@@ -54,7 +54,7 @@ func (srg *SwaggerRouteGenerator) registerEntityRoutes(router *gin.RouterGroup, 
 
 	// Route GET /entities/:id (Get One)
 	if config.GetOne != nil {
-		handler := srg.createGetOneHandler(entityName, config.GetOne)
+		handler := srg.createGetOneHandler(config.GetOne)
 		if config.GetOne.Security {
 			entityGroup.GET("/:id", authMiddleware, handler)
 		} else {
@@ -65,7 +65,7 @@ func (srg *SwaggerRouteGenerator) registerEntityRoutes(router *gin.RouterGroup, 
 
 	// Route POST /entities (Create)
 	if config.Create != nil {
-		handler := srg.createCreateHandler(entityName, config.Create)
+		handler := srg.createCreateHandler(config.Create)
 		if config.Create.Security {
 			entityGroup.POST("", authMiddleware, handler)
 		} else {
@@ -76,7 +76,7 @@ func (srg *SwaggerRouteGenerator) registerEntityRoutes(router *gin.RouterGroup, 
 
 	// Route PATCH /entities/:id (Update)
 	if config.Update != nil {
-		handler := srg.createUpdateHandler(entityName, config.Update)
+		handler := srg.createUpdateHandler(config.Update)
 		if config.Update.Security {
 			entityGroup.PATCH("/:id", authMiddleware, handler)
 		} else {
@@ -87,7 +87,7 @@ func (srg *SwaggerRouteGenerator) registerEntityRoutes(router *gin.RouterGroup, 
 
 	// Route DELETE /entities/:id (Delete)
 	if config.Delete != nil {
-		handler := srg.createDeleteHandler(entityName, config.Delete)
+		handler := srg.createDeleteHandler(config.Delete)
 		if config.Delete.Security {
 			entityGroup.DELETE("/:id", authMiddleware, handler)
 		} else {
@@ -99,7 +99,7 @@ func (srg *SwaggerRouteGenerator) registerEntityRoutes(router *gin.RouterGroup, 
 
 // Handlers avec documentation automatique
 
-func (srg *SwaggerRouteGenerator) createGetAllHandler(entityName string, operation *entityManagementInterfaces.SwaggerOperation) gin.HandlerFunc {
+func (srg *SwaggerRouteGenerator) createGetAllHandler(operation *entityManagementInterfaces.SwaggerOperation) gin.HandlerFunc {
 	return gin.HandlerFunc(func(ctx *gin.Context) {
 		// Ajouter des métadonnées Swagger dans les headers pour la documentation
 		ctx.Header("X-Swagger-Summary", operation.Summary)
@@ -111,7 +111,7 @@ func (srg *SwaggerRouteGenerator) createGetAllHandler(entityName string, operati
 	})
 }
 
-func (srg *SwaggerRouteGenerator) createGetOneHandler(entityName string, operation *entityManagementInterfaces.SwaggerOperation) gin.HandlerFunc {
+func (srg *SwaggerRouteGenerator) createGetOneHandler(operation *entityManagementInterfaces.SwaggerOperation) gin.HandlerFunc {
 	return gin.HandlerFunc(func(ctx *gin.Context) {
 		ctx.Header("X-Swagger-Summary", operation.Summary)
 		ctx.Header("X-Swagger-Description", operation.Description)
@@ -121,7 +121,7 @@ func (srg *SwaggerRouteGenerator) createGetOneHandler(entityName string, operati
 	})
 }
 
-func (srg *SwaggerRouteGenerator) createCreateHandler(entityName string, operation *entityManagementInterfaces.SwaggerOperation) gin.HandlerFunc {
+func (srg *SwaggerRouteGenerator) createCreateHandler(operation *entityManagementInterfaces.SwaggerOperation) gin.HandlerFunc {
 	return gin.HandlerFunc(func(ctx *gin.Context) {
 		ctx.Header("X-Swagger-Summary", operation.Summary)
 		ctx.Header("X-Swagger-Description", operation.Description)
@@ -131,7 +131,7 @@ func (srg *SwaggerRouteGenerator) createCreateHandler(entityName string, operati
 	})
 }
 
-func (srg *SwaggerRouteGenerator) createUpdateHandler(entityName string, operation *entityManagementInterfaces.SwaggerOperation) gin.HandlerFunc {
+func (srg *SwaggerRouteGenerator) createUpdateHandler(operation *entityManagementInterfaces.SwaggerOperation) gin.HandlerFunc {
 	return gin.HandlerFunc(func(ctx *gin.Context) {
 		ctx.Header("X-Swagger-Summary", operation.Summary)
 		ctx.Header("X-Swagger-Description", operation.Description)
@@ -141,7 +141,7 @@ func (srg *SwaggerRouteGenerator) createUpdateHandler(entityName string, operati
 	})
 }
 
-func (srg *SwaggerRouteGenerator) createDeleteHandler(entityName string, operation *entityManagementInterfaces.SwaggerOperation) gin.HandlerFunc {
+func (srg *SwaggerRouteGenerator) createDeleteHandler(operation *entityManagementInterfaces.SwaggerOperation) gin.HandlerFunc {
 	return gin.HandlerFunc(func(ctx *gin.Context) {
 		ctx.Header("X-Swagger-Summary", operation.Summary)
 		ctx.Header("X-Swagger-Description", operation.Description)

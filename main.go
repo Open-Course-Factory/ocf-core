@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	cors "github.com/rs/cors/wrapper/gin"
-	"gorm.io/gorm"
-
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
@@ -52,6 +51,7 @@ import (
 
 	courseDto "soli/formations/src/courses/dto"
 	courseService "soli/formations/src/courses/services"
+	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	genericService "soli/formations/src/entityManagement/services"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -178,6 +178,8 @@ func main() {
 
 	initDB()
 
+	setupPaymentRolePermissions()
+
 	if parseFlags() {
 		os.Exit(0)
 	}
@@ -204,10 +206,6 @@ func main() {
 	r.Use(userRoleMiddleware.EnsureSubscriptionRole())
 
 	apiGroup := r.Group("/api/v1")
-
-	middleware := authController.NewAuthMiddleware(sqldb.DB)
-
-	setupDocumentedRoutes(apiGroup, middleware.AuthManagement(), sqldb.DB)
 
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	scheduleController.SchedulesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
@@ -241,8 +239,6 @@ func main() {
 
 	initSwagger(r)
 
-	setupSwaggerDocumentation(r)
-
 	r.Run(":8080")
 }
 
@@ -259,7 +255,9 @@ func initSwagger(r *gin.Engine) {
 	docs.SwaggerInfo.Version = os.Getenv("OCF_VERSION")
 	docs.SwaggerInfo.Host = os.Getenv("OCF_API_URL")
 	docs.SwaggerInfo.BasePath = "/api/v1"
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// 🆕 Setup de la documentation complète (manual + auto-generated)
+	setupCompleteSwaggerSystem(r)
 }
 
 func initDB() {
@@ -423,56 +421,262 @@ func setupPaymentRolePermissions() {
 	casdoor.Enforcer.AddGroupingPolicy("organization", "member_pro")
 }
 
-// 🆕 NOUVELLE FONCTION : Configure les routes documentées automatiquement
-func setupDocumentedRoutes(apiGroup *gin.RouterGroup, authMiddleware gin.HandlerFunc, db *gorm.DB) {
-	log.Println("🚀 Setting up auto-documented routes...")
+func setupCompleteSwaggerSystem(r *gin.Engine) {
+	log.Println("🚀 Setting up complete Swagger documentation system...")
 
-	routeGenerator := swaggerGenerator.NewSwaggerRouteGenerator(db)
+	// Middleware d'authentification pour les routes documentées
+	authMiddleware := authController.NewAuthMiddleware(sqldb.DB)
 
-	// Créer un groupe spécial pour les routes auto-documentées
-	docGroup := apiGroup.Group("/documented")
-	routeGenerator.RegisterDocumentedRoutes(docGroup, authMiddleware)
+	// 📋 ÉTAPE 1: Setup des routes auto-documentées
+	log.Println("  📋 Setting up auto-documented routes...")
+	routeGenerator := swaggerGenerator.NewSwaggerRouteGenerator(sqldb.DB)
+	docGroup := r.Group("/api/v1/documented")
+	routeGenerator.RegisterDocumentedRoutes(docGroup, authMiddleware.AuthManagement())
 
-	log.Println("✅ Auto-documented routes registered at /api/v1/documented/*")
-	log.Println("📚 Example: GET /api/v1/documented/subscriptionplans")
+	// 🔀 ÉTAPE 2: Setup du merger Swagger
+	log.Println("  🔀 Setting up Swagger spec merger...")
+	merger := swaggerGenerator.NewSwaggerSpecMerger()
+
+	// 📄 ÉTAPE 3: Endpoints de documentation
+	setupSwaggerEndpoints(r, merger)
+
+	// 📊 ÉTAPE 4: Endpoints de debug et statistiques
+	setupDocumentationDebugEndpoints(r)
+
+	log.Println("✅ Complete Swagger system ready!")
+	log.Println("📚 Available endpoints:")
+	log.Println("  🎨 /swagger/ - Complete documentation (manual + auto)")
+	log.Println("  📋 /api/v1/swagger/spec - Merged OpenAPI spec")
+	log.Println("  🔍 /api/v1/swagger/debug - Debug merge process")
+	log.Println("  📊 /api/v1/swagger/stats - Documentation statistics")
+	log.Println("  📄 /swagger/index.html - Original swag documentation")
 }
 
-// 🆕 NOUVELLE FONCTION : Configure la documentation Swagger auto-générée
-func setupSwaggerDocumentation(r *gin.Engine) {
-	docGenerator := swaggerGenerator.NewDocumentationGenerator()
+func setupSwaggerEndpoints(r *gin.Engine, merger *swaggerGenerator.SwaggerSpecMerger) {
+	// Endpoint principal : spec mergée
+	r.GET("/api/v1/swagger/spec", func(ctx *gin.Context) {
+		mergedSpec := merger.MergeSpecs()
 
-	// Route pour récupérer la spec OpenAPI auto-générée
-	r.GET("/api/v1/swagger/auto-generated", func(ctx *gin.Context) {
-		spec := docGenerator.GenerateOpenAPISpec()
-		ctx.JSON(200, spec)
+		// Headers CORS pour Swagger UI
+		ctx.Header("Access-Control-Allow-Origin", "*")
+		ctx.Header("Access-Control-Allow-Methods", "GET")
+		ctx.Header("Access-Control-Allow-Headers", "Content-Type")
+
+		ctx.JSON(200, mergedSpec)
 	})
 
-	// Route pour voir quelles entités sont documentées
-	r.GET("/api/v1/swagger/entities", func(ctx *gin.Context) {
-		configs := ems.GlobalEntityRegistrationService.GetAllSwaggerConfigs()
+	// Interface Swagger UI personnalisée (documentation complète)
+	r.GET("/swagger/", func(ctx *gin.Context) {
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(200, generateCustomSwaggerHTML())
+	})
 
-		result := make(map[string]interface{})
-		for entityName, config := range configs {
-			result[entityName] = map[string]interface{}{
-				"tag":         config.Tag,
-				"entity_name": config.EntityName,
-				"operations": map[string]bool{
-					"get_all": config.GetAll != nil,
-					"get_one": config.GetOne != nil,
-					"create":  config.Create != nil,
-					"update":  config.Update != nil,
-					"delete":  config.Delete != nil,
-				},
-			}
+	// Garder l'endpoint original pour compatibilité
+	r.GET("/swagger/previous", ginSwagger.WrapHandler(swaggerFiles.Handler))
+}
+
+func setupDocumentationDebugEndpoints(r *gin.Engine) {
+	// Debug: comparer les sources de documentation
+	r.GET("/api/v1/swagger/debug", func(ctx *gin.Context) {
+		autoSpec := swaggerGenerator.NewDocumentationGenerator().GenerateOpenAPISpec()
+		swaggerConfigs := ems.GlobalEntityRegistrationService.GetAllSwaggerConfigs()
+
+		debugInfo := map[string]interface{}{
+			"auto_generated_spec":  autoSpec,
+			"documented_entities":  len(swaggerConfigs),
+			"entity_details":       swaggerConfigs,
+			"generation_timestamp": time.Now().Format(time.RFC3339),
+			"merge_strategy":       "manual_priority_over_auto",
 		}
 
-		ctx.JSON(200, map[string]interface{}{
-			"documented_entities": result,
-			"total_count":         len(configs),
-		})
+		ctx.JSON(200, debugInfo)
 	})
 
-	log.Println("📖 Swagger auto-documentation available at:")
-	log.Println("  📋 GET /api/v1/swagger/entities - List documented entities")
-	log.Println("  📄 GET /api/v1/swagger/auto-generated - OpenAPI spec")
+	// Statistiques de documentation
+	r.GET("/api/v1/swagger/stats", func(ctx *gin.Context) {
+		swaggerConfigs := ems.GlobalEntityRegistrationService.GetAllSwaggerConfigs()
+
+		stats := map[string]interface{}{
+			"total_documented_entities": len(swaggerConfigs),
+			"entities_with_swagger":     getEntitiesWithSwagger(swaggerConfigs),
+			"auto_generated_routes":     countAutoGeneratedRoutes(swaggerConfigs),
+			"documentation_coverage":    calculateDocumentationCoverage(swaggerConfigs),
+			"generation_time":           time.Now().Format(time.RFC3339),
+		}
+
+		ctx.JSON(200, stats)
+	})
+}
+
+// generateCustomSwaggerHTML génère une page HTML Swagger UI personnalisée
+func generateCustomSwaggerHTML() string {
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>OCF API Documentation - Complete</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui.css" />
+    <style>
+        html { box-sizing: border-box; overflow: -moz-scrollbars-vertical; overflow-y: scroll; }
+        *, *:before, *:after { box-sizing: inherit; }
+        body { margin:0; background: #fafafa; }
+        
+        .header-banner {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            text-align: center;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .header-banner h1 {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        
+        .header-banner p {
+            margin: 5px 0 0 0;
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        
+        /* Style pour les entités auto-générées */
+        .swagger-ui .opblock.opblock-get .opblock-summary-control,
+        .swagger-ui .opblock.opblock-post .opblock-summary-control,
+        .swagger-ui .opblock.opblock-patch .opblock-summary-control,
+        .swagger-ui .opblock.opblock-delete .opblock-summary-control {
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <div class="header-banner">
+        <h1>🚀 OCF API Documentation</h1>
+        <p>Documentation complète : Endpoints manuels + Entités auto-générées <span class="status-badge">🤖 Hybrid</span></p>
+    </div>
+    
+    <div id="swagger-ui"></div>
+    
+    <script src="https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            const ui = SwaggerUIBundle({
+                url: window.location.origin + '/api/v1/swagger/spec',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                defaultModelsExpandDepth: 1,
+                defaultModelExpandDepth: 1,
+                docExpansion: "list",
+                tagsSorter: "alpha",
+                operationsSorter: "alpha",
+                filter: true,
+                validatorUrl: null,
+                tryItOutEnabled: true,
+                onComplete: function() {
+                    console.log('📚 OCF API Documentation chargée');
+                    console.log('🔀 Documentation hybride : manuelle + auto-générée');
+                    
+                    // Ajouter un indicateur de statut dans le header
+                    setTimeout(() => {
+                        const infoSection = document.querySelector('.information-container');
+                        if (infoSection) {
+                            const statusDiv = document.createElement('div');
+                            statusDiv.style.cssText = 'background: #e8f5e8; padding: 10px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #28a745;';
+                            statusDiv.innerHTML = '<strong>🔄 Documentation dynamique :</strong> Cette documentation est générée automatiquement et reste toujours synchronisée avec le code.';
+                            infoSection.appendChild(statusDiv);
+                        }
+                    }, 1000);
+                }
+            });
+        };
+    </script>
+</body>
+</html>`
+}
+
+func getEntitiesWithSwagger(configs map[string]*entityManagementInterfaces.EntitySwaggerConfig) []string {
+	var entities []string
+	for entityName := range configs {
+		entities = append(entities, entityName)
+	}
+	return entities
+}
+
+func countAutoGeneratedRoutes(configs map[string]*entityManagementInterfaces.EntitySwaggerConfig) int {
+	count := 0
+	for _, config := range configs {
+		if config.GetAll != nil {
+			count++
+		}
+		if config.GetOne != nil {
+			count++
+		}
+		if config.Create != nil {
+			count++
+		}
+		if config.Update != nil {
+			count++
+		}
+		if config.Delete != nil {
+			count++
+		}
+	}
+	return count
+}
+
+func calculateDocumentationCoverage(configs map[string]*entityManagementInterfaces.EntitySwaggerConfig) map[string]interface{} {
+	totalConfigs := len(configs)
+
+	coverage := map[string]interface{}{
+		"total_entities":      totalConfigs,
+		"coverage_percentage": 100.0, // Toutes les entités enregistrées sont documentées
+		"breakdown": map[string]int{
+			"get_all_implemented": 0,
+			"get_one_implemented": 0,
+			"create_implemented":  0,
+			"update_implemented":  0,
+			"delete_implemented":  0,
+		},
+	}
+
+	breakdown := coverage["breakdown"].(map[string]int)
+	for _, config := range configs {
+		if config.GetAll != nil {
+			breakdown["get_all_implemented"]++
+		}
+		if config.GetOne != nil {
+			breakdown["get_one_implemented"]++
+		}
+		if config.Create != nil {
+			breakdown["create_implemented"]++
+		}
+		if config.Update != nil {
+			breakdown["update_implemented"]++
+		}
+		if config.Delete != nil {
+			breakdown["delete_implemented"]++
+		}
+	}
+
+	return coverage
 }
