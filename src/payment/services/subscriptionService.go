@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
 
@@ -14,36 +13,65 @@ import (
 )
 
 type SubscriptionService interface {
-	// Subscription management
+	// Subscription management - retourne des models
 	HasActiveSubscription(userID string) (bool, error)
-	GetActiveUserSubscription(userID string) (*dto.UserSubscriptionOutput, error)
-	GetUserSubscriptionByID(id uuid.UUID) (*dto.UserSubscriptionOutput, error)
-	CreateUserSubscription(userID string, planID uuid.UUID) (*dto.UserSubscriptionOutput, error)
+	GetActiveUserSubscription(userID string) (*models.UserSubscription, error)
+	GetUserSubscriptionByID(id uuid.UUID) (*models.UserSubscription, error)
+	CreateUserSubscription(userID string, planID uuid.UUID) (*models.UserSubscription, error)
 
-	// Usage limits and metrics
-	CheckUsageLimit(userID, metricType string, increment int64) (*dto.UsageLimitCheckOutput, error)
+	// Usage limits and metrics - types métiers
+	CheckUsageLimit(userID, metricType string, increment int64) (*UsageLimitCheck, error)
 	IncrementUsage(userID, metricType string, increment int64) error
-	GetUserUsageMetrics(userID string) (*[]dto.UsageMetricsOutput, error)
+	GetUserUsageMetrics(userID string) (*[]models.UsageMetrics, error)
 	ResetMonthlyUsage(userID string) error
 
-	// Payment methods
-	GetUserPaymentMethods(userID string) (*[]dto.PaymentMethodOutput, error)
+	// Payment methods - retourne des models
+	GetUserPaymentMethods(userID string) (*[]models.PaymentMethod, error)
 	SetDefaultPaymentMethod(userID string, paymentMethodID uuid.UUID) error
 
-	// Invoices
-	GetUserInvoices(userID string) (*[]dto.InvoiceOutput, error)
-	GetInvoiceByID(id uuid.UUID) (*dto.InvoiceOutput, error)
+	// Invoices - retourne des models
+	GetUserInvoices(userID string) (*[]models.Invoice, error)
+	GetInvoiceByID(id uuid.UUID) (*models.Invoice, error)
 
-	// Analytics (admin only)
-	GetSubscriptionAnalytics() (*dto.SubscriptionAnalyticsOutput, error)
+	// Analytics (admin only) - type métier
+	GetSubscriptionAnalytics() (*SubscriptionAnalytics, error)
 
 	// Role management integration
 	UpdateUserRoleBasedOnSubscription(userID string) error
 	GetRequiredRoleForPlan(planID uuid.UUID) (string, error)
 
-	// Billing addresses
-	GetUserBillingAddresses(userID string) (*[]dto.BillingAddressOutput, error)
+	// Billing addresses - retourne des models
+	GetUserBillingAddresses(userID string) (*[]models.BillingAddress, error)
 	SetDefaultBillingAddress(userID string, addressID uuid.UUID) error
+
+	// Plans
+	GetSubscriptionPlan(id uuid.UUID) (*models.SubscriptionPlan, error)
+	GetAllSubscriptionPlans(activeOnly bool) (*[]models.SubscriptionPlan, error)
+}
+
+// Types métiers pour les opérations complexes
+type UsageLimitCheck struct {
+	Allowed        bool
+	CurrentUsage   int64
+	Limit          int64
+	RemainingUsage int64
+	Message        string
+	UserID         string
+	MetricType     string
+}
+
+type SubscriptionAnalytics struct {
+	TotalSubscriptions      int64
+	ActiveSubscriptions     int64
+	CancelledSubscriptions  int64
+	TrialSubscriptions      int64
+	Revenue                 int64
+	MonthlyRecurringRevenue int64
+	ChurnRate               float64
+	ByPlan                  map[string]int
+	RecentSignups           []models.UserSubscription
+	RecentCancellations     []models.UserSubscription
+	GeneratedAt             time.Time
 }
 
 type subscriptionService struct {
@@ -71,38 +99,18 @@ func (ss *subscriptionService) HasActiveSubscription(userID string) (bool, error
 }
 
 // GetActiveUserSubscription récupère l'abonnement actif d'un utilisateur
-func (ss *subscriptionService) GetActiveUserSubscription(userID string) (*dto.UserSubscriptionOutput, error) {
-	subscription, err := ss.repository.GetActiveUserSubscription(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convertir vers DTO en utilisant la registration
-	output, err := userSubscriptionPtrModelToOutput(subscription)
-	if err != nil {
-		return nil, err
-	}
-
-	return output, nil
+func (ss *subscriptionService) GetActiveUserSubscription(userID string) (*models.UserSubscription, error) {
+	return ss.repository.GetActiveUserSubscription(userID)
 }
 
 // GetUserSubscriptionByID récupère un abonnement par son ID
-func (ss *subscriptionService) GetUserSubscriptionByID(id uuid.UUID) (*dto.UserSubscriptionOutput, error) {
-	subscription, err := ss.repository.GetUserSubscription(id)
-	if err != nil {
-		return nil, err
-	}
-
-	output, err := userSubscriptionPtrModelToOutput(subscription)
-	if err != nil {
-		return nil, err
-	}
-
-	return output, nil
+func (ss *subscriptionService) GetUserSubscriptionByID(id uuid.UUID) (*models.UserSubscription, error) {
+	return ss.repository.GetUserSubscription(id)
 }
 
-// CreateUserSubscription crée un nouvel abonnement (utilisé par les webhooks)
-func (ss *subscriptionService) CreateUserSubscription(userID string, planID uuid.UUID) (*dto.UserSubscriptionOutput, error) {
+// CreateUserSubscription crée un nouvel abonnement
+func (ss *subscriptionService) CreateUserSubscription(userID string, planID uuid.UUID) (*models.UserSubscription, error) {
+
 	subscription := &models.UserSubscription{
 		UserID:             userID,
 		SubscriptionPlanID: planID,
@@ -118,17 +126,32 @@ func (ss *subscriptionService) CreateUserSubscription(userID string, planID uuid
 }
 
 // CheckUsageLimit vérifie si une action est autorisée selon les limites d'abonnement
-func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increment int64) (*dto.UsageLimitCheckOutput, error) {
+func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increment int64) (*UsageLimitCheck, error) {
 	// Récupérer l'abonnement actif
 	subscription, err := ss.repository.GetActiveUserSubscription(userID)
 	if err != nil {
 		// Pas d'abonnement = utilisateur gratuit avec des limites très restrictives
-		return &dto.UsageLimitCheckOutput{
+		return &UsageLimitCheck{
 			Allowed:        false,
 			CurrentUsage:   0,
 			Limit:          0,
 			RemainingUsage: 0,
 			Message:        "No active subscription - upgrade required",
+			UserID:         userID,
+			MetricType:     metricType,
+		}, nil
+	}
+
+	sPlan, errSPlan := ss.GetSubscriptionPlan(subscription.SubscriptionPlanID)
+	if errSPlan != nil {
+		return &UsageLimitCheck{
+			Allowed:        false,
+			CurrentUsage:   0,
+			Limit:          0,
+			RemainingUsage: 0,
+			Message:        "No active subscription - upgrade required",
+			UserID:         userID,
+			MetricType:     metricType,
 		}, nil
 	}
 
@@ -140,21 +163,23 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 			var limit int64
 			switch metricType {
 			case "courses_created":
-				limit = int64(subscription.SubscriptionPlan.MaxCourses)
+				limit = int64(sPlan.MaxCourses)
 			case "lab_sessions":
-				limit = int64(subscription.SubscriptionPlan.MaxLabSessions)
+				limit = int64(sPlan.MaxLabSessions)
 			case "concurrent_users":
-				limit = int64(subscription.SubscriptionPlan.MaxConcurrentUsers)
+				limit = int64(sPlan.MaxConcurrentUsers)
 			default:
 				limit = -1 // Illimité
 			}
 
-			return &dto.UsageLimitCheckOutput{
+			return &UsageLimitCheck{
 				Allowed:        limit == -1 || increment <= limit,
 				CurrentUsage:   0,
 				Limit:          limit,
 				RemainingUsage: limit,
 				Message:        "",
+				UserID:         userID,
+				MetricType:     metricType,
 			}, nil
 		}
 		return nil, err
@@ -179,12 +204,14 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 		message = fmt.Sprintf("Usage limit exceeded. Current: %d, Limit: %d", metrics.CurrentValue, metrics.LimitValue)
 	}
 
-	return &dto.UsageLimitCheckOutput{
+	return &UsageLimitCheck{
 		Allowed:        allowed,
 		CurrentUsage:   metrics.CurrentValue,
 		Limit:          metrics.LimitValue,
 		RemainingUsage: remaining,
 		Message:        message,
+		UserID:         userID,
+		MetricType:     metricType,
 	}, nil
 }
 
@@ -194,22 +221,8 @@ func (ss *subscriptionService) IncrementUsage(userID, metricType string, increme
 }
 
 // GetUserUsageMetrics récupère toutes les métriques d'utilisation d'un utilisateur
-func (ss *subscriptionService) GetUserUsageMetrics(userID string) (*[]dto.UsageMetricsOutput, error) {
-	metrics, err := ss.repository.GetAllUserUsageMetrics(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	var outputs []dto.UsageMetricsOutput
-	for _, metric := range *metrics {
-		output, err := usageMetricsPtrModelToOutput(&metric)
-		if err != nil {
-			continue // Skip en cas d'erreur de conversion
-		}
-		outputs = append(outputs, *output)
-	}
-
-	return &outputs, nil
+func (ss *subscriptionService) GetUserUsageMetrics(userID string) (*[]models.UsageMetrics, error) {
+	return ss.repository.GetAllUserUsageMetrics(userID)
 }
 
 // ResetMonthlyUsage remet à zéro les métriques mensuelles
@@ -222,22 +235,8 @@ func (ss *subscriptionService) ResetMonthlyUsage(userID string) error {
 }
 
 // GetUserPaymentMethods récupère les moyens de paiement d'un utilisateur
-func (ss *subscriptionService) GetUserPaymentMethods(userID string) (*[]dto.PaymentMethodOutput, error) {
-	paymentMethods, err := ss.repository.GetUserPaymentMethods(userID, true)
-	if err != nil {
-		return nil, err
-	}
-
-	var outputs []dto.PaymentMethodOutput
-	for _, pm := range *paymentMethods {
-		output, err := paymentMethodPtrModelToOutput(&pm)
-		if err != nil {
-			continue
-		}
-		outputs = append(outputs, *output)
-	}
-
-	return &outputs, nil
+func (ss *subscriptionService) GetUserPaymentMethods(userID string) (*[]models.PaymentMethod, error) {
+	return ss.repository.GetUserPaymentMethods(userID, true)
 }
 
 // SetDefaultPaymentMethod définit le moyen de paiement par défaut
@@ -246,40 +245,21 @@ func (ss *subscriptionService) SetDefaultPaymentMethod(userID string, paymentMet
 }
 
 // GetUserInvoices récupère les factures d'un utilisateur
-func (ss *subscriptionService) GetUserInvoices(userID string) (*[]dto.InvoiceOutput, error) {
-	invoices, err := ss.repository.GetUserInvoices(userID, 50) // Limite à 50 factures
-	if err != nil {
-		return nil, err
-	}
-
-	var outputs []dto.InvoiceOutput
-	for _, invoice := range *invoices {
-		output, err := invoicePtrModelToOutput(&invoice)
-		if err != nil {
-			continue
-		}
-		outputs = append(outputs, *output)
-	}
-
-	return &outputs, nil
+func (ss *subscriptionService) GetUserInvoices(userID string) (*[]models.Invoice, error) {
+	return ss.repository.GetUserInvoices(userID, 50) // Limite à 50 factures
 }
 
 // GetInvoiceByID récupère une facture par son ID
-func (ss *subscriptionService) GetInvoiceByID(id uuid.UUID) (*dto.InvoiceOutput, error) {
-	invoice, err := ss.repository.GetInvoice(id)
-	if err != nil {
-		return nil, err
-	}
-
-	return invoicePtrModelToOutput(invoice)
+func (ss *subscriptionService) GetInvoiceByID(id uuid.UUID) (*models.Invoice, error) {
+	return ss.repository.GetInvoice(id)
 }
 
 // GetSubscriptionAnalytics récupère les analytics des abonnements (admin seulement)
-func (ss *subscriptionService) GetSubscriptionAnalytics() (*dto.SubscriptionAnalyticsOutput, error) {
+func (ss *subscriptionService) GetSubscriptionAnalytics() (*SubscriptionAnalytics, error) {
 	startDate := time.Now().AddDate(0, -12, 0) // 12 mois en arrière
 	endDate := time.Now()
 
-	analytics, err := ss.repository.GetSubscriptionAnalytics(startDate, endDate)
+	repoAnalytics, err := ss.repository.GetSubscriptionAnalytics(startDate, endDate)
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +270,7 @@ func (ss *subscriptionService) GetSubscriptionAnalytics() (*dto.SubscriptionAnal
 	if err == nil {
 		for _, plan := range *plans {
 			// Compter les abonnements actifs pour ce plan
-			if count, exists := analytics.ByPlan[plan.Name]; exists {
+			if count, exists := repoAnalytics.ByPlan[plan.Name]; exists {
 				monthlyAmount := plan.PriceAmount
 				if plan.BillingInterval == "year" {
 					monthlyAmount = monthlyAmount / 12
@@ -302,55 +282,27 @@ func (ss *subscriptionService) GetSubscriptionAnalytics() (*dto.SubscriptionAnal
 
 	// Calculer le taux de churn (approximation simple)
 	var churnRate float64
-	if analytics.TotalSubscriptions > 0 {
-		churnRate = float64(analytics.CancelledSubscriptions) / float64(analytics.TotalSubscriptions) * 100
+	if repoAnalytics.TotalSubscriptions > 0 {
+		churnRate = float64(repoAnalytics.CancelledSubscriptions) / float64(repoAnalytics.TotalSubscriptions) * 100
 	}
 
-	return &dto.SubscriptionAnalyticsOutput{
-		TotalSubscriptions:      int(analytics.TotalSubscriptions),
-		ActiveSubscriptions:     int(analytics.ActiveSubscriptions),
-		CancelledSubscriptions:  int(analytics.CancelledSubscriptions),
-		TrialSubscriptions:      int(analytics.TrialSubscriptions),
-		Revenue:                 analytics.Revenue,
+	// TODO: Récupérer les signups et cancellations récentes
+	var recentSignups []models.UserSubscription
+	var recentCancellations []models.UserSubscription
+
+	return &SubscriptionAnalytics{
+		TotalSubscriptions:      repoAnalytics.TotalSubscriptions,
+		ActiveSubscriptions:     repoAnalytics.ActiveSubscriptions,
+		CancelledSubscriptions:  repoAnalytics.CancelledSubscriptions,
+		TrialSubscriptions:      repoAnalytics.TrialSubscriptions,
+		Revenue:                 repoAnalytics.Revenue,
 		MonthlyRecurringRevenue: mrr,
 		ChurnRate:               churnRate,
-		ByPlan:                  analytics.ByPlan,
-		GeneratedAt:             analytics.GeneratedAt,
+		ByPlan:                  repoAnalytics.ByPlan,
+		RecentSignups:           recentSignups,
+		RecentCancellations:     recentCancellations,
+		GeneratedAt:             repoAnalytics.GeneratedAt,
 	}, nil
-}
-
-// UpdateUserRoleBasedOnSubscription met à jour le rôle de l'utilisateur selon son abonnement
-func (ss *subscriptionService) UpdateUserRoleBasedOnSubscription(userID string) error {
-	subscription, err := ss.repository.GetActiveUserSubscription(userID)
-	if err != nil {
-		// Pas d'abonnement actif, garder le rôle de base
-		return nil
-	}
-
-	requiredRole := subscription.SubscriptionPlan.RequiredRole
-	if requiredRole == "" {
-		return nil // Pas de rôle spécifique requis
-	}
-
-	// Ici vous devrez intégrer avec Casdoor pour mettre à jour le rôle
-	// Exemple d'implémentation :
-	/*
-		import "soli/formations/src/auth/casdoor"
-
-		// Supprimer les anciens rôles liés aux abonnements
-		casdoor.Enforcer.RemoveGroupingPolicy(userID, "student_premium")
-		casdoor.Enforcer.RemoveGroupingPolicy(userID, "supervisor_pro")
-		casdoor.Enforcer.RemoveGroupingPolicy(userID, "organization")
-
-		// Ajouter le nouveau rôle
-		_, err = casdoor.Enforcer.AddGroupingPolicy(userID, requiredRole)
-		if err != nil {
-			return fmt.Errorf("failed to update user role: %v", err)
-		}
-	*/
-
-	fmt.Printf("Should update user %s to role %s\n", userID, requiredRole)
-	return nil
 }
 
 // GetRequiredRoleForPlan récupère le rôle requis pour un plan
@@ -363,22 +315,8 @@ func (ss *subscriptionService) GetRequiredRoleForPlan(planID uuid.UUID) (string,
 }
 
 // GetUserBillingAddresses récupère les adresses de facturation
-func (ss *subscriptionService) GetUserBillingAddresses(userID string) (*[]dto.BillingAddressOutput, error) {
-	addresses, err := ss.repository.GetUserBillingAddresses(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	var outputs []dto.BillingAddressOutput
-	for _, address := range *addresses {
-		output, err := billingAddressPtrModelToOutput(&address)
-		if err != nil {
-			continue
-		}
-		outputs = append(outputs, *output)
-	}
-
-	return &outputs, nil
+func (ss *subscriptionService) GetUserBillingAddresses(userID string) (*[]models.BillingAddress, error) {
+	return ss.repository.GetUserBillingAddresses(userID)
 }
 
 // SetDefaultBillingAddress définit l'adresse de facturation par défaut
@@ -386,125 +324,12 @@ func (ss *subscriptionService) SetDefaultBillingAddress(userID string, addressID
 	return ss.repository.SetDefaultBillingAddress(userID, addressID)
 }
 
-// Fonctions utilitaires pour les conversions (réutilisées depuis les registrations)
-func userSubscriptionPtrModelToOutput(subscription *models.UserSubscription) (*dto.UserSubscriptionOutput, error) {
-	planOutput, err := subscriptionPlanPtrModelToOutput(&subscription.SubscriptionPlan)
-	if err != nil {
-		return nil, err
-	}
-
-	return &dto.UserSubscriptionOutput{
-		ID:                   subscription.ID,
-		UserID:               subscription.UserID,
-		SubscriptionPlan:     *planOutput,
-		StripeSubscriptionID: subscription.StripeSubscriptionID,
-		StripeCustomerID:     subscription.StripeCustomerID,
-		Status:               subscription.Status,
-		CurrentPeriodStart:   subscription.CurrentPeriodStart,
-		CurrentPeriodEnd:     subscription.CurrentPeriodEnd,
-		TrialEnd:             subscription.TrialEnd,
-		CancelAtPeriodEnd:    subscription.CancelAtPeriodEnd,
-		CancelledAt:          subscription.CancelledAt,
-		CreatedAt:            subscription.CreatedAt,
-		UpdatedAt:            subscription.UpdatedAt,
-	}, nil
+// GetSubscriptionPlan récupère un plan par son ID
+func (ss *subscriptionService) GetSubscriptionPlan(id uuid.UUID) (*models.SubscriptionPlan, error) {
+	return ss.repository.GetSubscriptionPlan(id)
 }
 
-func subscriptionPlanPtrModelToOutput(plan *models.SubscriptionPlan) (*dto.SubscriptionPlanOutput, error) {
-	return &dto.SubscriptionPlanOutput{
-		ID:                 plan.ID,
-		Name:               plan.Name,
-		Description:        plan.Description,
-		StripeProductID:    plan.StripeProductID,
-		StripePriceID:      plan.StripePriceID,
-		PriceAmount:        plan.PriceAmount,
-		Currency:           plan.Currency,
-		BillingInterval:    plan.BillingInterval,
-		TrialDays:          plan.TrialDays,
-		Features:           plan.Features,
-		MaxConcurrentUsers: plan.MaxConcurrentUsers,
-		MaxCourses:         plan.MaxCourses,
-		MaxLabSessions:     plan.MaxLabSessions,
-		IsActive:           plan.IsActive,
-		RequiredRole:       plan.RequiredRole,
-		CreatedAt:          plan.CreatedAt,
-		UpdatedAt:          plan.UpdatedAt,
-	}, nil
-}
-
-func paymentMethodPtrModelToOutput(pm *models.PaymentMethod) (*dto.PaymentMethodOutput, error) {
-	return &dto.PaymentMethodOutput{
-		ID:                    pm.ID,
-		UserID:                pm.UserID,
-		StripePaymentMethodID: pm.StripePaymentMethodID,
-		Type:                  pm.Type,
-		CardBrand:             pm.CardBrand,
-		CardLast4:             pm.CardLast4,
-		CardExpMonth:          pm.CardExpMonth,
-		CardExpYear:           pm.CardExpYear,
-		IsDefault:             pm.IsDefault,
-		IsActive:              pm.IsActive,
-		CreatedAt:             pm.CreatedAt,
-	}, nil
-}
-
-func invoicePtrModelToOutput(invoice *models.Invoice) (*dto.InvoiceOutput, error) {
-	subscriptionOutput, err := userSubscriptionPtrModelToOutput(&invoice.UserSubscription)
-	if err != nil {
-		return nil, err
-	}
-
-	return &dto.InvoiceOutput{
-		ID:               invoice.ID,
-		UserID:           invoice.UserID,
-		UserSubscription: *subscriptionOutput,
-		StripeInvoiceID:  invoice.StripeInvoiceID,
-		Amount:           invoice.Amount,
-		Currency:         invoice.Currency,
-		Status:           invoice.Status,
-		InvoiceNumber:    invoice.InvoiceNumber,
-		InvoiceDate:      invoice.InvoiceDate,
-		DueDate:          invoice.DueDate,
-		PaidAt:           invoice.PaidAt,
-		StripeHostedURL:  invoice.StripeHostedURL,
-		DownloadURL:      invoice.DownloadURL,
-		CreatedAt:        invoice.CreatedAt,
-	}, nil
-}
-
-func usageMetricsPtrModelToOutput(metrics *models.UsageMetrics) (*dto.UsageMetricsOutput, error) {
-	var usagePercent float64
-	if metrics.LimitValue > 0 {
-		usagePercent = (float64(metrics.CurrentValue) / float64(metrics.LimitValue)) * 100
-	} else {
-		usagePercent = 0 // Unlimited
-	}
-
-	return &dto.UsageMetricsOutput{
-		ID:           metrics.ID,
-		UserID:       metrics.UserID,
-		MetricType:   metrics.MetricType,
-		CurrentValue: metrics.CurrentValue,
-		LimitValue:   metrics.LimitValue,
-		PeriodStart:  metrics.PeriodStart,
-		PeriodEnd:    metrics.PeriodEnd,
-		LastUpdated:  metrics.LastUpdated,
-		UsagePercent: usagePercent,
-	}, nil
-}
-
-func billingAddressPtrModelToOutput(address *models.BillingAddress) (*dto.BillingAddressOutput, error) {
-	return &dto.BillingAddressOutput{
-		ID:         address.ID,
-		UserID:     address.UserID,
-		Line1:      address.Line1,
-		Line2:      address.Line2,
-		City:       address.City,
-		State:      address.State,
-		PostalCode: address.PostalCode,
-		Country:    address.Country,
-		IsDefault:  address.IsDefault,
-		CreatedAt:  address.CreatedAt,
-		UpdatedAt:  address.UpdatedAt,
-	}, nil
+// GetAllSubscriptionPlans récupère tous les plans
+func (ss *subscriptionService) GetAllSubscriptionPlans(activeOnly bool) (*[]models.SubscriptionPlan, error) {
+	return ss.repository.GetAllSubscriptionPlans(activeOnly)
 }

@@ -2,6 +2,7 @@ package paymentController
 
 import (
 	"net/http"
+	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
 	"soli/formations/src/payment/services"
 
@@ -10,7 +11,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// Contrôleur pour les adresses de facturation
+// ==========================================
+// Billing Address Controller
+// ==========================================
+
 type BillingAddressController interface {
 	AddEntity(ctx *gin.Context)
 	EditEntity(ctx *gin.Context)
@@ -25,25 +29,41 @@ type BillingAddressController interface {
 type billingAddressController struct {
 	controller.GenericController
 	subscriptionService services.SubscriptionService
+	conversionService   services.ConversionService
 }
 
 func NewBillingAddressController(db *gorm.DB) BillingAddressController {
 	return &billingAddressController{
 		GenericController:   controller.NewGenericController(db),
 		subscriptionService: services.NewSubscriptionService(db),
+		conversionService:   services.NewConversionService(),
 	}
 }
 
 func (bac *billingAddressController) GetUserBillingAddresses(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
+	// Récupérer depuis le service (retourne des models)
 	addresses, err := bac.subscriptionService.GetUserBillingAddresses(userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, addresses)
+	// Convertir vers DTO
+	addressesDTO, err := bac.conversionService.BillingAddressesToDTO(addresses)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to convert billing addresses",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, addressesDTO)
 }
 
 func (bac *billingAddressController) SetDefaultBillingAddress(ctx *gin.Context) {
@@ -52,7 +72,10 @@ func (bac *billingAddressController) SetDefaultBillingAddress(ctx *gin.Context) 
 
 	err := bac.subscriptionService.SetDefaultBillingAddress(userId, uuid.MustParse(addressID))
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
 		return
 	}
 

@@ -54,6 +54,7 @@ type SubscriptionPlanOutput struct {
 
 // UserSubscription DTOs
 type CreateUserSubscriptionInput struct {
+	UserID             string    `json:"user_id"`
 	SubscriptionPlanID uuid.UUID `binding:"required" json:"subscription_plan_id"`
 	PaymentMethodID    string    `json:"payment_method_id,omitempty"` // Stripe Payment Method ID
 	CouponCode         string    `json:"coupon_code,omitempty"`
@@ -65,19 +66,19 @@ type UpdateUserSubscriptionInput struct {
 }
 
 type UserSubscriptionOutput struct {
-	ID                   uuid.UUID              `json:"id"`
-	UserID               string                 `json:"user_id"`
-	SubscriptionPlan     SubscriptionPlanOutput `json:"subscription_plan"`
-	StripeSubscriptionID string                 `json:"stripe_subscription_id"`
-	StripeCustomerID     string                 `json:"stripe_customer_id"`
-	Status               string                 `json:"status"`
-	CurrentPeriodStart   time.Time              `json:"current_period_start"`
-	CurrentPeriodEnd     time.Time              `json:"current_period_end"`
-	TrialEnd             *time.Time             `json:"trial_end,omitempty"`
-	CancelAtPeriodEnd    bool                   `json:"cancel_at_period_end"`
-	CancelledAt          *time.Time             `json:"cancelled_at,omitempty"`
-	CreatedAt            time.Time              `json:"created_at"`
-	UpdatedAt            time.Time              `json:"updated_at"`
+	ID                   uuid.UUID  `json:"id"`
+	UserID               string     `json:"user_id"`
+	SubscriptionPlanID   uuid.UUID  `json:"subscription_plans"`
+	StripeSubscriptionID string     `json:"stripe_subscription_id"`
+	StripeCustomerID     string     `json:"stripe_customer_id"`
+	Status               string     `json:"status"`
+	CurrentPeriodStart   time.Time  `json:"current_period_start"`
+	CurrentPeriodEnd     time.Time  `json:"current_period_end"`
+	TrialEnd             *time.Time `json:"trial_end,omitempty"`
+	CancelAtPeriodEnd    bool       `json:"cancel_at_period_end"`
+	CancelledAt          *time.Time `json:"cancelled_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 // Invoice DTOs
@@ -202,10 +203,10 @@ type StripeWebhookEvent struct {
 
 // DTOs pour les rapports et analytics
 type SubscriptionAnalyticsOutput struct {
-	TotalSubscriptions      int                      `json:"total_subscriptions"`
-	ActiveSubscriptions     int                      `json:"active_subscriptions"`
-	CancelledSubscriptions  int                      `json:"cancelled_subscriptions"`
-	TrialSubscriptions      int                      `json:"trial_subscriptions"`
+	TotalSubscriptions      int64                    `json:"total_subscriptions"`
+	ActiveSubscriptions     int64                    `json:"active_subscriptions"`
+	CancelledSubscriptions  int64                    `json:"cancelled_subscriptions"`
+	TrialSubscriptions      int64                    `json:"trial_subscriptions"`
 	Revenue                 int64                    `json:"revenue"` // En centimes
 	MonthlyRecurringRevenue int64                    `json:"monthly_recurring_revenue"`
 	ChurnRate               float64                  `json:"churn_rate"`

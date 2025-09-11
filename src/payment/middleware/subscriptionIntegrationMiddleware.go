@@ -4,7 +4,6 @@ package middleware
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"soli/formations/src/auth/errors"
@@ -29,11 +28,13 @@ type SubscriptionIntegrationMiddleware interface {
 
 type subscriptionIntegrationMiddleware struct {
 	subscriptionService services.SubscriptionService
+	conversionService   services.ConversionService
 }
 
 func NewSubscriptionIntegrationMiddleware(db *gorm.DB) SubscriptionIntegrationMiddleware {
 	return &subscriptionIntegrationMiddleware{
 		subscriptionService: services.NewSubscriptionService(db),
+		conversionService:   services.NewConversionService(),
 	}
 }
 
@@ -111,8 +112,18 @@ func (sim *subscriptionIntegrationMiddleware) RequireSubscriptionForAdvancedLabs
 			return
 		}
 
+		sPlan, errSPlan := sim.subscriptionService.GetSubscriptionPlan(subscription.SubscriptionPlanID)
+		if errSPlan != nil {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Premium subscription required",
+			})
+			ctx.Abort()
+			return
+		}
+
 		// Vérifier les fonctionnalités du plan
-		features := subscription.SubscriptionPlan.Features
+		features := sPlan.Features
 		if !strings.Contains(features, "advanced_labs") {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
@@ -186,8 +197,18 @@ func (sim *subscriptionIntegrationMiddleware) RequireSubscriptionForAPI() gin.Ha
 			return
 		}
 
+		sPlan, errSPlan := sim.subscriptionService.GetSubscriptionPlan(subscription.SubscriptionPlanID)
+		if errSPlan != nil {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Premium subscription required",
+			})
+			ctx.Abort()
+			return
+		}
+
 		// Vérifier si le plan inclut l'accès API
-		features := subscription.SubscriptionPlan.Features
+		features := sPlan.Features
 		if !strings.Contains(features, "api_access") {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
@@ -262,9 +283,19 @@ func (sim *subscriptionIntegrationMiddleware) CheckSubscriptionRequirements() gi
 			return
 		}
 
+		sPlan, errSPlan := sim.subscriptionService.GetSubscriptionPlan(subscription.SubscriptionPlanID)
+		if errSPlan != nil {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Active subscription required",
+			})
+			ctx.Abort()
+			return
+		}
+
 		// Vérifier la fonctionnalité si nécessaire
 		if featureRequired != "" {
-			features := subscription.SubscriptionPlan.Features
+			features := sPlan.Features
 			if !strings.Contains(features, featureRequired) {
 				ctx.JSON(http.StatusForbidden, &errors.APIError{
 					ErrorCode:    http.StatusForbidden,
@@ -320,13 +351,24 @@ func (sim *subscriptionIntegrationMiddleware) InjectSubscriptionInfo() gin.Handl
 		if userId != "" {
 			// Récupérer l'abonnement et l'injecter dans le contexte
 			subscription, err := sim.subscriptionService.GetActiveUserSubscription(userId)
+
+			sPlan, errSPlan := sim.subscriptionService.GetSubscriptionPlan(subscription.SubscriptionPlanID)
+			if errSPlan != nil {
+				ctx.JSON(http.StatusForbidden, &errors.APIError{
+					ErrorCode:    http.StatusForbidden,
+					ErrorMessage: "Active subscription required",
+				})
+				ctx.Abort()
+				return
+			}
+
 			if err == nil {
 				ctx.Set("user_subscription", subscription)
-				ctx.Set("subscription_plan", subscription.SubscriptionPlan)
+				ctx.Set("subscription_plan", sPlan)
 				ctx.Set("has_active_subscription", true)
 
 				// Injecter les fonctionnalités disponibles
-				features := strings.Split(subscription.SubscriptionPlan.Features, ",")
+				features := strings.Split(sPlan.Features, ",")
 				ctx.Set("user_features", features)
 			} else {
 				ctx.Set("has_active_subscription", false)
@@ -365,286 +407,5 @@ func (sim *subscriptionIntegrationMiddleware) incrementUsageIfSuccessful(ctx *gi
 			// Log mais ne pas faire échouer la requête
 			fmt.Printf("Warning: Failed to increment usage %s for user %s: %v\n", metricType, userId, err)
 		}
-	}
-}
-
-// RateLimitMiddleware basé sur l'abonnement
-type SubscriptionBasedRateLimitMiddleware interface {
-	ApplyRateLimit() gin.HandlerFunc
-}
-
-type subscriptionBasedRateLimitMiddleware struct {
-	subscriptionService services.SubscriptionService
-}
-
-func NewSubscriptionBasedRateLimitMiddleware(db *gorm.DB) SubscriptionBasedRateLimitMiddleware {
-	return &subscriptionBasedRateLimitMiddleware{
-		subscriptionService: services.NewSubscriptionService(db),
-	}
-}
-
-// ApplyRateLimit applique un rate limit basé sur le plan d'abonnement
-func (srl *subscriptionBasedRateLimitMiddleware) ApplyRateLimit() gin.HandlerFunc {
-	return gin.HandlerFunc(func(ctx *gin.Context) {
-		userId := ctx.GetString("userId")
-
-		if userId == "" {
-			ctx.Next()
-			return
-		}
-
-		// Récupérer le plan d'abonnement
-		subscription, err := srl.subscriptionService.GetActiveUserSubscription(userId)
-
-		var requestsPerMinute int
-		if err != nil {
-			// Utilisateur sans abonnement = limite très restrictive
-			requestsPerMinute = 10
-		} else {
-			// Déterminer la limite selon le plan
-			switch {
-			case strings.Contains(subscription.SubscriptionPlan.RequiredRole, "enterprise"):
-				requestsPerMinute = 1000
-			case strings.Contains(subscription.SubscriptionPlan.RequiredRole, "organization"):
-				requestsPerMinute = 500
-			case strings.Contains(subscription.SubscriptionPlan.RequiredRole, "premium") ||
-				strings.Contains(subscription.SubscriptionPlan.RequiredRole, "pro"):
-				requestsPerMinute = 200
-			default:
-				requestsPerMinute = 60 // Plan de base
-			}
-		}
-
-		// Implémenter la logique de rate limiting
-		// (Vous pouvez utiliser Redis ou un système en mémoire)
-		ctx.Set("rate_limit", requestsPerMinute)
-
-		// Pour l'instant, on laisse passer toutes les requêtes
-		// Dans une implémentation réelle, vous voudrez :
-		// 1. Vérifier le compteur de requêtes pour cet utilisateur
-		// 2. Si dépassé, retourner HTTP 429 Too Many Requests
-		// 3. Sinon, incrémenter le compteur et continuer
-
-		ctx.Next()
-	})
-}
-
-// FeatureGateMiddleware pour bloquer l'accès aux fonctionnalités selon l'abonnement
-type FeatureGateMiddleware interface {
-	RequireFeature(featureName string) gin.HandlerFunc
-	RequireAnyFeature(features ...string) gin.HandlerFunc
-}
-
-type featureGateMiddleware struct {
-	subscriptionService services.SubscriptionService
-}
-
-func NewFeatureGateMiddleware(db *gorm.DB) FeatureGateMiddleware {
-	return &featureGateMiddleware{
-		subscriptionService: services.NewSubscriptionService(db),
-	}
-}
-
-// RequireFeature exige qu'une fonctionnalité soit incluse dans l'abonnement
-func (fgm *featureGateMiddleware) RequireFeature(featureName string) gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		userId := ctx.GetString("userId")
-
-		if userId == "" {
-			ctx.Next()
-			return
-		}
-
-		subscription, err := fgm.subscriptionService.GetActiveUserSubscription(userId)
-		if err != nil {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: fmt.Sprintf("Feature '%s' requires an active subscription", featureName),
-			})
-			ctx.Abort()
-			return
-		}
-
-		features := subscription.SubscriptionPlan.Features
-		if !strings.Contains(features, featureName) {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: fmt.Sprintf("Feature '%s' is not included in your current plan", featureName),
-			})
-			ctx.Abort()
-			return
-		}
-
-		ctx.Next()
-	}
-}
-
-// RequireAnyFeature exige qu'au moins une fonctionnalité soit présente
-func (fgm *featureGateMiddleware) RequireAnyFeature(featuresRequired ...string) gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		userId := ctx.GetString("userId")
-
-		if userId == "" {
-			ctx.Next()
-			return
-		}
-
-		subscription, err := fgm.subscriptionService.GetActiveUserSubscription(userId)
-		if err != nil {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "This feature requires an active subscription",
-			})
-			ctx.Abort()
-			return
-		}
-
-		features := subscription.SubscriptionPlan.Features
-		hasRequiredFeature := false
-
-		for _, requiredFeature := range featuresRequired {
-			if strings.Contains(features, requiredFeature) {
-				hasRequiredFeature = true
-				break
-			}
-		}
-
-		if !hasRequiredFeature {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "This feature is not included in your current plan",
-			})
-			ctx.Abort()
-			return
-		}
-
-		ctx.Next()
-	}
-}
-
-// ConcurrentUserLimitMiddleware pour limiter les utilisateurs concurrents
-type ConcurrentUserLimitMiddleware interface {
-	CheckConcurrentUsers() gin.HandlerFunc
-}
-
-type concurrentUserLimitMiddleware struct {
-	subscriptionService services.SubscriptionService
-}
-
-func NewConcurrentUserLimitMiddleware(db *gorm.DB) ConcurrentUserLimitMiddleware {
-	return &concurrentUserLimitMiddleware{
-		subscriptionService: services.NewSubscriptionService(db),
-	}
-}
-
-// CheckConcurrentUsers vérifie le nombre d'utilisateurs concurrents
-func (cum *concurrentUserLimitMiddleware) CheckConcurrentUsers() gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		userId := ctx.GetString("userId")
-
-		if userId == "" {
-			ctx.Next()
-			return
-		}
-
-		// Récupérer l'abonnement
-		subscription, err := cum.subscriptionService.GetActiveUserSubscription(userId)
-		if err != nil {
-			// Utilisateur sans abonnement = accès limité à 1 utilisateur concurrent
-			ctx.Set("max_concurrent_users", 1)
-			ctx.Next()
-			return
-		}
-
-		maxConcurrentUsers := subscription.SubscriptionPlan.MaxConcurrentUsers
-		ctx.Set("max_concurrent_users", maxConcurrentUsers)
-
-		// Vérifier le nombre d'utilisateurs actuellement connectés
-		// (Cette logique dépend de votre système de session)
-		// Pour l'instant, on stocke juste la limite dans le contexte
-
-		ctx.Next()
-	}
-}
-
-// StorageLimitMiddleware pour vérifier les limites de stockage
-type StorageLimitMiddleware interface {
-	CheckStorageLimit() gin.HandlerFunc
-}
-
-type storageLimitMiddleware struct {
-	subscriptionService services.SubscriptionService
-}
-
-func NewStorageLimitMiddleware(db *gorm.DB) StorageLimitMiddleware {
-	return &storageLimitMiddleware{
-		subscriptionService: services.NewSubscriptionService(db),
-	}
-}
-
-// CheckStorageLimit vérifie les limites de stockage pour les uploads
-func (slm *storageLimitMiddleware) CheckStorageLimit() gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		userId := ctx.GetString("userId")
-
-		if userId == "" || ctx.Request.Method != "POST" {
-			ctx.Next()
-			return
-		}
-
-		// Vérifier si c'est un upload de fichier
-		contentType := ctx.GetHeader("Content-Type")
-		if !strings.Contains(contentType, "multipart/form-data") &&
-			!strings.Contains(contentType, "application/octet-stream") {
-			ctx.Next()
-			return
-		}
-
-		// Récupérer la taille du contenu
-		contentLengthStr := ctx.GetHeader("Content-Length")
-		if contentLengthStr == "" {
-			ctx.Next()
-			return
-		}
-
-		contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
-		if err != nil {
-			ctx.Next()
-			return
-		}
-
-		// Convertir en MB
-		uploadSizeMB := contentLength / (1024 * 1024)
-
-		// Vérifier l'abonnement et les limites
-		subscription, err := slm.subscriptionService.GetActiveUserSubscription(userId)
-		var storageLimit int64 = 10 // 10 MB pour les utilisateurs sans abonnement
-
-		if err == nil {
-			// TODO: Récupérer la limite de stockage depuis le plan
-			// Pour l'instant, utiliser des valeurs par défaut selon le rôle
-			role := subscription.SubscriptionPlan.RequiredRole
-			switch {
-			case strings.Contains(role, "enterprise"):
-				storageLimit = -1 // Illimité
-			case strings.Contains(role, "organization"):
-				storageLimit = 20000 // 20 GB
-			case strings.Contains(role, "premium") || strings.Contains(role, "pro"):
-				storageLimit = 5000 // 5 GB
-			default:
-				storageLimit = 500 // 500 MB
-			}
-		}
-
-		if storageLimit != -1 && uploadSizeMB > storageLimit {
-			ctx.JSON(http.StatusPaymentRequired, &errors.APIError{
-				ErrorCode:    http.StatusPaymentRequired,
-				ErrorMessage: fmt.Sprintf("File too large. Your plan allows up to %d MB uploads", storageLimit),
-			})
-			ctx.Abort()
-			return
-		}
-
-		ctx.Next()
 	}
 }

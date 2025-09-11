@@ -1,3 +1,4 @@
+// src/payment/routes/paymentMethodsController.go
 package paymentController
 
 import (
@@ -24,6 +25,7 @@ type PaymentMethodController interface {
 type paymentMethodController struct {
 	controller.GenericController
 	subscriptionService services.SubscriptionService
+	conversionService   services.ConversionService
 	stripeService       services.StripeService
 }
 
@@ -31,6 +33,7 @@ func NewPaymentMethodController(db *gorm.DB) PaymentMethodController {
 	return &paymentMethodController{
 		GenericController:   controller.NewGenericController(db),
 		subscriptionService: services.NewSubscriptionService(db),
+		conversionService:   services.NewConversionService(),
 		stripeService:       services.NewStripeService(db),
 	}
 }
@@ -80,6 +83,7 @@ func (pmc *paymentMethodController) SetDefaultPaymentMethod(ctx *gin.Context) {
 func (pmc *paymentMethodController) GetUserPaymentMethods(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
+	// Récupérer depuis le service (retourne des models)
 	paymentMethods, err := pmc.subscriptionService.GetUserPaymentMethods(userId)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -89,26 +93,19 @@ func (pmc *paymentMethodController) GetUserPaymentMethods(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, paymentMethods)
+	// Convertir vers DTO
+	paymentMethodsDTO, err := pmc.conversionService.PaymentMethodsToDTO(paymentMethods)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to convert payment methods",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, paymentMethodsDTO)
 }
 
-// Delete payment method godoc
-//
-//	@Summary		Suppression moyen de paiement
-//	@Description	Suppression d'un moyen de paiement dans la base de données
-//	@Tags			payment-methods
-//	@Accept			json
-//	@Produce		json
-//	@Param			id	path	string	true	"ID Payment Method"
-//
-//	@Security		Bearer
-//
-//	@Success		204	{object}	string
-//
-//	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
-//	@Failure		404	{object}	errors.APIError	"Méthode de paiement non trouvée - Impossible de la supprimer "
-//
-//	@Router			/payment-methods/{id} [delete]
 func (pmc *paymentMethodController) DeleteEntity(ctx *gin.Context) {
 	pmc.GenericController.DeleteEntity(ctx, true)
 }

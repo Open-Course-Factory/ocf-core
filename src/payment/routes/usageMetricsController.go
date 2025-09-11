@@ -2,6 +2,7 @@ package paymentController
 
 import (
 	"net/http"
+	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
 	"soli/formations/src/payment/services"
 
@@ -9,7 +10,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// Contrôleur pour les métriques d'utilisation
+// ==========================================
+// Usage Metrics Controller
+// ==========================================
+
 type UsageMetricsController interface {
 	GetEntities(ctx *gin.Context)
 	GetEntity(ctx *gin.Context)
@@ -23,12 +27,14 @@ type UsageMetricsController interface {
 type usageMetricsController struct {
 	controller.GenericController
 	subscriptionService services.SubscriptionService
+	conversionService   services.ConversionService
 }
 
 func NewUsageMetricsController(db *gorm.DB) UsageMetricsController {
 	return &usageMetricsController{
 		GenericController:   controller.NewGenericController(db),
 		subscriptionService: services.NewSubscriptionService(db),
+		conversionService:   services.NewConversionService(),
 	}
 }
 
@@ -48,19 +54,36 @@ func (umc *usageMetricsController) GetUserUsageMetrics(ctx *gin.Context) {
 		}
 
 		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Access denied",
+			})
 			return
 		}
 		userId = targetUserID
 	}
 
+	// Récupérer depuis le service (retourne des models)
 	metrics, err := umc.subscriptionService.GetUserUsageMetrics(userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, metrics)
+	// Convertir vers DTO
+	metricsDTO, err := umc.conversionService.UsageMetricsListToDTO(metrics)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to convert usage metrics",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, metricsDTO)
 }
 
 func (umc *usageMetricsController) IncrementUsageMetric(ctx *gin.Context) {
@@ -72,7 +95,10 @@ func (umc *usageMetricsController) IncrementUsageMetric(ctx *gin.Context) {
 	}
 
 	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
 		return
 	}
 
@@ -82,7 +108,10 @@ func (umc *usageMetricsController) IncrementUsageMetric(ctx *gin.Context) {
 
 	err := umc.subscriptionService.IncrementUsage(userId, input.MetricType, input.Increment)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
 		return
 	}
 
@@ -105,7 +134,10 @@ func (umc *usageMetricsController) ResetUserUsage(ctx *gin.Context) {
 		}
 
 		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Access denied",
+			})
 			return
 		}
 		userId = targetUserID
@@ -113,7 +145,10 @@ func (umc *usageMetricsController) ResetUserUsage(ctx *gin.Context) {
 
 	err := umc.subscriptionService.ResetMonthlyUsage(userId)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
 		return
 	}
 

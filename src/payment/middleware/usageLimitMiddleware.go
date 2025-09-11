@@ -189,9 +189,19 @@ func (urm *userRoleMiddleware) RequirePremiumSubscription() gin.HandlerFunc {
 			return
 		}
 
+		sPlan, errSPlan := urm.subscriptionService.GetSubscriptionPlan(subscription.SubscriptionPlanID)
+		if errSPlan != nil {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Premium subscription required",
+			})
+			ctx.Abort()
+			return
+		}
+
 		// Vérifier que c'est un plan premium (exemple de logique)
-		isPremium := strings.Contains(strings.ToLower(subscription.SubscriptionPlan.RequiredRole), "premium") ||
-			subscription.SubscriptionPlan.PriceAmount > 1000 // Plus de 10€/mois = premium
+		isPremium := strings.Contains(strings.ToLower(sPlan.RequiredRole), "premium") ||
+			sPlan.PriceAmount > 1000 // Plus de 10€/mois = premium
 
 		if !isPremium {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{

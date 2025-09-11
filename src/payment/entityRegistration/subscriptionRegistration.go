@@ -109,15 +109,11 @@ func (u UserSubscriptionRegistration) EntityModelToEntityOutput(input any) (any,
 }
 
 func userSubscriptionPtrModelToOutput(subscription *models.UserSubscription) (*dto.UserSubscriptionOutput, error) {
-	planOutput, err := subscriptionPlanPtrModelToOutput(&subscription.SubscriptionPlan)
-	if err != nil {
-		return nil, err
-	}
 
 	return &dto.UserSubscriptionOutput{
 		ID:                   subscription.ID,
 		UserID:               subscription.UserID,
-		SubscriptionPlan:     *planOutput,
+		SubscriptionPlanID:   subscription.SubscriptionPlanID,
 		StripeSubscriptionID: subscription.StripeSubscriptionID,
 		StripeCustomerID:     subscription.StripeCustomerID,
 		Status:               subscription.Status,
@@ -137,7 +133,9 @@ func userSubscriptionValueModelToOutput(subscription models.UserSubscription) (*
 
 func (u UserSubscriptionRegistration) EntityInputDtoToEntityModel(input any) any {
 	subscriptionInput := input.(dto.CreateUserSubscriptionInput)
+
 	return &models.UserSubscription{
+		UserID:             subscriptionInput.UserID,
 		SubscriptionPlanID: subscriptionInput.SubscriptionPlanID,
 		Status:             "incomplete", // Sera mis à jour par les webhooks
 	}

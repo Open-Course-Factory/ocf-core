@@ -140,18 +140,19 @@ func (r *paymentRepository) GetUserSubscriptionByStripeID(stripeSubscriptionID s
 
 func (r *paymentRepository) GetActiveUserSubscription(userID string) (*models.UserSubscription, error) {
 	var subscription models.UserSubscription
-	err := r.db.Preload("SubscriptionPlan").
+	err := r.db.
 		Where("user_id = ? AND status IN (?)", userID, []string{"active", "trialing"}).
 		First(&subscription).Error
 	if err != nil {
 		return nil, err
 	}
+
 	return &subscription, nil
 }
 
 func (r *paymentRepository) GetUserSubscriptions(userID string, includeInactive bool) (*[]models.UserSubscription, error) {
 	var subscriptions []models.UserSubscription
-	query := r.db.Preload("SubscriptionPlan").Where("user_id = ?", userID)
+	query := r.db.Where("user_id = ?", userID)
 
 	if !includeInactive {
 		query = query.Where("status IN (?)", []string{"active", "trialing", "past_due"})
@@ -175,7 +176,7 @@ func (r *paymentRepository) CreateInvoice(invoice *models.Invoice) error {
 
 func (r *paymentRepository) GetInvoice(id uuid.UUID) (*models.Invoice, error) {
 	var invoice models.Invoice
-	err := r.db.Preload("UserSubscription.SubscriptionPlan").
+	err := r.db.Preload("UserSubscription").
 		Where("id = ?", id).First(&invoice).Error
 	if err != nil {
 		return nil, err
@@ -185,7 +186,7 @@ func (r *paymentRepository) GetInvoice(id uuid.UUID) (*models.Invoice, error) {
 
 func (r *paymentRepository) GetInvoiceByStripeID(stripeInvoiceID string) (*models.Invoice, error) {
 	var invoice models.Invoice
-	err := r.db.Preload("UserSubscription.SubscriptionPlan").
+	err := r.db.Preload("UserSubscription").
 		Where("stripe_invoice_id = ?", stripeInvoiceID).
 		First(&invoice).Error
 	if err != nil {
@@ -196,7 +197,7 @@ func (r *paymentRepository) GetInvoiceByStripeID(stripeInvoiceID string) (*model
 
 func (r *paymentRepository) GetUserInvoices(userID string, limit int) (*[]models.Invoice, error) {
 	var invoices []models.Invoice
-	query := r.db.Preload("UserSubscription.SubscriptionPlan").
+	query := r.db.Preload("UserSubscription").
 		Where("user_id = ?", userID).
 		Order("invoice_date DESC")
 
@@ -376,13 +377,18 @@ func (r *paymentRepository) IncrementUsageMetric(userID, metricType string, incr
 				return fmt.Errorf("no active subscription found: %v", err)
 			}
 
+			sPlan, errSPlan := r.GetSubscriptionPlan(subscription.SubscriptionPlanID)
+			if errSPlan != nil {
+				return errSPlan
+			}
+
 			// Définir la limite selon le type de métrique et le plan
 			var limit int64 = -1 // Par défaut illimité
 			switch metricType {
 			case "courses_created":
-				limit = int64(subscription.SubscriptionPlan.MaxCourses)
+				limit = int64(sPlan.MaxCourses)
 			case "lab_sessions":
-				limit = int64(subscription.SubscriptionPlan.MaxLabSessions)
+				limit = int64(sPlan.MaxLabSessions)
 			}
 
 			// Créer nouvelle métrique
@@ -464,8 +470,8 @@ func (r *paymentRepository) GetSubscriptionAnalytics(startDate, endDate time.Tim
 	}
 	r.db.Model(&models.UserSubscription{}).
 		Select("subscription_plans.name as plan_name, COUNT(*) as count").
-		Joins("JOIN subscription_plans ON user_subscriptions.subscription_plan_id = subscription_plans.id").
-		Where("user_subscriptions.status IN (?)", []string{"active", "trialing"}).
+		Joins("JOIN subscription_plans ON user_subscription.subscription_plan_id = subscription_plans.id").
+		Where("user_subscription.status IN (?)", []string{"active", "trialing"}).
 		Group("subscription_plans.name").
 		Scan(&planCounts)
 

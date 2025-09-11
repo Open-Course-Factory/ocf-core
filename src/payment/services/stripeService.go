@@ -294,15 +294,14 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 		return fmt.Errorf("invalid subscription_plan_id format: %v", err)
 	}
 
-	// Créer l'abonnement en base
 	userSubscription := &models.UserSubscription{
 		UserID:               userID,
 		SubscriptionPlanID:   planID,
 		StripeSubscriptionID: subscription.ID,
 		StripeCustomerID:     subscription.Customer.ID,
 		Status:               string(subscription.Status),
-		CurrentPeriodStart:   time.Unix(subscription.InvoiceSettings.Issuer.Account.Created, 0),
-		CurrentPeriodEnd:     time.Unix(subscription.InvoiceSettings.Issuer.Account.Requirements.CurrentDeadline, 0),
+		CurrentPeriodStart:   time.Unix(subscription.Items.Data[0].CurrentPeriodStart, 0),
+		CurrentPeriodEnd:     time.Unix(subscription.Items.Data[0].CurrentPeriodEnd, 0),
 	}
 
 	if subscription.TrialEnd > 0 {
@@ -313,27 +312,27 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 	return ss.repository.CreateUserSubscription(userSubscription)
 }
 
-// handleSubscriptionUpdated traite la mise à jour d'abonnement
+// ✅ CORRECTION SIMILAIRE pour handleSubscriptionUpdated
 func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
-	var userSubscription stripe.Subscription
-	if err := json.Unmarshal(event.Data.Raw, &userSubscription); err != nil {
+	var subscription stripe.Subscription
+	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
 		return err
 	}
 
 	// Récupérer l'abonnement existant
-	userSub, err := ss.repository.GetUserSubscriptionByStripeID(userSubscription.ID)
+	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
 	if err != nil {
 		return fmt.Errorf("subscription not found in database: %v", err)
 	}
 
-	// Mettre à jour les champs
-	userSub.Status = string(userSubscription.Status)
-	userSub.CurrentPeriodStart = time.Unix(userSubscription.InvoiceSettings.Issuer.Account.Created, 0)
-	userSub.CurrentPeriodEnd = time.Unix(userSubscription.InvoiceSettings.Issuer.Account.Requirements.CurrentDeadline, 0)
-	userSub.CancelAtPeriodEnd = userSubscription.CancelAtPeriodEnd
+	// ✅ CORRECTION : Utiliser les bons champs
+	userSub.Status = string(subscription.Status)
+	userSub.CurrentPeriodStart = time.Unix(subscription.Items.Data[0].CurrentPeriodStart, 0)
+	userSub.CurrentPeriodEnd = time.Unix(subscription.Items.Data[0].CurrentPeriodEnd, 0)
+	userSub.CancelAtPeriodEnd = subscription.CancelAtPeriodEnd
 
-	if userSubscription.CanceledAt > 0 {
-		cancelledAt := time.Unix(userSubscription.CanceledAt, 0)
+	if subscription.CanceledAt > 0 {
+		cancelledAt := time.Unix(subscription.CanceledAt, 0)
 		userSub.CancelledAt = &cancelledAt
 	}
 

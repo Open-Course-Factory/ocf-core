@@ -31,19 +31,18 @@ type SubscriptionPlan struct {
 // UserSubscription représente l'abonnement d'un utilisateur
 type UserSubscription struct {
 	entityManagementModels.BaseModel
-	UserID                  string           `gorm:"type:varchar(100);not null;index" json:"user_id"`
-	SubscriptionPlanID      uuid.UUID        `gorm:"not null" json:"subscription_plan_id"`
-	SubscriptionPlan        SubscriptionPlan `json:"subscription_plan"`
-	StripeSubscriptionID    string           `gorm:"type:varchar(100);uniqueIndex" json:"stripe_subscription_id"`
-	StripeCustomerID        string           `gorm:"type:varchar(100);not null;index" json:"stripe_customer_id"`
-	Status                  string           `gorm:"type:varchar(50);default:'active'" json:"status"` // active, cancelled, past_due, unpaid
-	CurrentPeriodStart      time.Time        `json:"current_period_start"`
-	CurrentPeriodEnd        time.Time        `json:"current_period_end"`
-	TrialEnd                *time.Time       `json:"trial_end,omitempty"`
-	CancelAtPeriodEnd       bool             `gorm:"default:false" json:"cancel_at_period_end"`
-	CancelledAt             *time.Time       `json:"cancelled_at,omitempty"`
-	RenewalNotificationSent bool             `gorm:"default:false" json:"renewal_notification_sent"`
-	LastInvoiceID           *string          `gorm:"type:varchar(100)" json:"last_invoice_id,omitempty"`
+	UserID                  string     `gorm:"type:varchar(100);not null;index" json:"user_id"`
+	SubscriptionPlanID      uuid.UUID  `json:"subscription_plan"`
+	StripeSubscriptionID    string     `gorm:"type:varchar(100);uniqueIndex" json:"stripe_subscription_id"`
+	StripeCustomerID        string     `gorm:"type:varchar(100);not null;index" json:"stripe_customer_id"`
+	Status                  string     `gorm:"type:varchar(50);default:'active'" json:"status"` // active, cancelled, past_due, unpaid
+	CurrentPeriodStart      time.Time  `json:"current_period_start"`
+	CurrentPeriodEnd        time.Time  `json:"current_period_end"`
+	TrialEnd                *time.Time `json:"trial_end,omitempty"`
+	CancelAtPeriodEnd       bool       `gorm:"default:false" json:"cancel_at_period_end"`
+	CancelledAt             *time.Time `json:"cancelled_at,omitempty"`
+	RenewalNotificationSent bool       `gorm:"default:false" json:"renewal_notification_sent"`
+	LastInvoiceID           *string    `gorm:"type:varchar(100)" json:"last_invoice_id,omitempty"`
 }
 
 // Invoice représente une facture
@@ -51,7 +50,7 @@ type Invoice struct {
 	entityManagementModels.BaseModel
 	UserID             string           `gorm:"type:varchar(100);not null;index" json:"user_id"`
 	UserSubscriptionID uuid.UUID        `gorm:"not null" json:"user_subscription_id"`
-	UserSubscription   UserSubscription `json:"user_subscription"`
+	UserSubscription   UserSubscription `json:"user_subscription" gorm:"many2many:user_subscription_plan;"`
 	StripeInvoiceID    string           `gorm:"type:varchar(100);uniqueIndex" json:"stripe_invoice_id"`
 	Amount             int64            `json:"amount"` // Montant en centimes
 	Currency           string           `gorm:"type:varchar(3)" json:"currency"`

@@ -36,6 +36,7 @@ type SubscriptionController interface {
 type subscriptionController struct {
 	controller.GenericController
 	subscriptionService services.SubscriptionService
+	conversionService   services.ConversionService
 	stripeService       services.StripeService
 }
 
@@ -43,6 +44,7 @@ func NewSubscriptionController(db *gorm.DB) SubscriptionController {
 	return &subscriptionController{
 		GenericController:   controller.NewGenericController(db),
 		subscriptionService: services.NewSubscriptionService(db),
+		conversionService:   services.NewConversionService(),
 		stripeService:       services.NewStripeService(db),
 	}
 }
@@ -156,6 +158,7 @@ func (sc *subscriptionController) CreatePortalSession(ctx *gin.Context) {
 func (sc *subscriptionController) GetUserSubscription(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
+	// Récupérer l'abonnement depuis le service (retourne un model)
 	subscription, err := sc.subscriptionService.GetActiveUserSubscription(userId)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
@@ -165,7 +168,17 @@ func (sc *subscriptionController) GetUserSubscription(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, subscription)
+	// Convertir vers DTO
+	subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to convert subscription data",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, subscriptionDTO)
 }
 
 // Cancel Subscription godoc
@@ -323,7 +336,7 @@ func (sc *subscriptionController) GetSubscriptionAnalytics(ctx *gin.Context) {
 		return
 	}
 
-	// TODO: Parse les dates depuis les query params
+	// Récupérer les analytics depuis le service (retourne un objet métier)
 	analytics, err := sc.subscriptionService.GetSubscriptionAnalytics()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -333,7 +346,10 @@ func (sc *subscriptionController) GetSubscriptionAnalytics(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, analytics)
+	// Convertir vers DTO
+	analyticsDTO := sc.conversionService.SubscriptionAnalyticsToDTO(analytics)
+
+	ctx.JSON(http.StatusOK, analyticsDTO)
 }
 
 // Check Usage Limit godoc
@@ -360,6 +376,7 @@ func (sc *subscriptionController) CheckUsageLimit(ctx *gin.Context) {
 		return
 	}
 
+	// Vérifier les limites via le service (retourne un objet métier)
 	result, err := sc.subscriptionService.CheckUsageLimit(userId, input.MetricType, input.Increment)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -369,7 +386,10 @@ func (sc *subscriptionController) CheckUsageLimit(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, result)
+	// Convertir vers DTO
+	resultDTO := sc.conversionService.UsageLimitCheckToDTO(result)
+
+	ctx.JSON(http.StatusOK, resultDTO)
 }
 
 // Get User Usage godoc
@@ -386,6 +406,7 @@ func (sc *subscriptionController) CheckUsageLimit(ctx *gin.Context) {
 func (sc *subscriptionController) GetUserUsage(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
+	// Récupérer les métriques depuis le service (retourne des models)
 	usageMetrics, err := sc.subscriptionService.GetUserUsageMetrics(userId)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -395,26 +416,20 @@ func (sc *subscriptionController) GetUserUsage(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, usageMetrics)
+	// Convertir vers DTO
+	usageMetricsDTO, err := sc.conversionService.UsageMetricsListToDTO(usageMetrics)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to convert usage metrics",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, usageMetricsDTO)
 }
 
-// Delete payment method godoc
-//
-//	@Summary		Suppression moyen de paiement
-//	@Description	Suppression d'un moyen de paiement dans la base de données
-//	@Tags			payment-methods
-//	@Accept			json
-//	@Produce		json
-//	@Param			id	path	string	true	"ID Payment Method"
-//
-//	@Security		Bearer
-//
-//	@Success		204	{object}	string
-//
-//	@Failure		400	{object}	errors.APIError	"Impossible de parser le json"
-//	@Failure		404	{object}	errors.APIError	"Méthode de paiement non trouvée - Impossible de la supprimer "
-//
-//	@Router			/payment-methods/{id} [delete]
+// Delete entity (subscription plan)
 func (sc *subscriptionController) DeleteEntity(ctx *gin.Context) {
 	sc.GenericController.DeleteEntity(ctx, true)
 }

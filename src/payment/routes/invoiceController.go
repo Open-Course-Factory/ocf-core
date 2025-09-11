@@ -11,7 +11,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// ==========================================
 // Invoice Controller
+// ==========================================
+
 type InvoiceController interface {
 	GetEntities(ctx *gin.Context)
 	GetEntity(ctx *gin.Context)
@@ -23,12 +26,14 @@ type InvoiceController interface {
 type invoiceController struct {
 	controller.GenericController
 	subscriptionService services.SubscriptionService
+	conversionService   services.ConversionService
 }
 
 func NewInvoiceController(db *gorm.DB) InvoiceController {
 	return &invoiceController{
 		GenericController:   controller.NewGenericController(db),
 		subscriptionService: services.NewSubscriptionService(db),
+		conversionService:   services.NewConversionService(),
 	}
 }
 
@@ -47,6 +52,7 @@ func NewInvoiceController(db *gorm.DB) InvoiceController {
 func (ic *invoiceController) GetUserInvoices(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
+	// Récupérer depuis le service (retourne des models)
 	invoices, err := ic.subscriptionService.GetUserInvoices(userId)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -56,7 +62,17 @@ func (ic *invoiceController) GetUserInvoices(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, invoices)
+	// Convertir vers DTO
+	invoicesDTO, err := ic.conversionService.InvoicesToDTO(invoices)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to convert invoices",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, invoicesDTO)
 }
 
 // Download Invoice godoc
@@ -76,6 +92,7 @@ func (ic *invoiceController) DownloadInvoice(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	invoiceID := ctx.Param("id")
 
+	// Récupérer la facture depuis le service (retourne un model)
 	invoice, err := ic.subscriptionService.GetInvoiceByID(uuid.MustParse(invoiceID))
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
@@ -85,6 +102,7 @@ func (ic *invoiceController) DownloadInvoice(ctx *gin.Context) {
 		return
 	}
 
+	// Vérifier l'accès
 	if invoice.UserID != userId {
 		userRoles := ctx.GetStringSlice("userRoles")
 		isAdmin := false
