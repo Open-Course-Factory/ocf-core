@@ -13,6 +13,7 @@ type EntityRegistrationInput struct {
 	EntityDtos        EntityDtos
 	EntityRoles       EntityRoles
 	EntitySubEntities []any
+	SwaggerConfig     *EntitySwaggerConfig `json:"swagger_config,omitempty"`
 }
 
 type EntityConverters struct {

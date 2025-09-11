@@ -28,18 +28,20 @@ const (
 )
 
 type EntityRegistrationService struct {
-	registry    map[string]any
-	functions   map[string]map[ConversionPurpose]any
-	dtos        map[string]map[DtoPurpose]any
-	subEntities map[string][]any
+	registry       map[string]any
+	functions      map[string]map[ConversionPurpose]any
+	dtos           map[string]map[DtoPurpose]any
+	subEntities    map[string][]any
+	swaggerConfigs map[string]*entityManagementInterfaces.EntitySwaggerConfig
 }
 
 func NewEntityRegistrationService() *EntityRegistrationService {
 	return &EntityRegistrationService{
-		registry:    make(map[string]any),
-		functions:   make(map[string]map[ConversionPurpose]any),
-		dtos:        make(map[string]map[DtoPurpose]any),
-		subEntities: make(map[string][]any),
+		registry:       make(map[string]any),
+		functions:      make(map[string]map[ConversionPurpose]any),
+		dtos:           make(map[string]map[DtoPurpose]any),
+		subEntities:    make(map[string][]any),
+		swaggerConfigs: make(map[string]*entityManagementInterfaces.EntitySwaggerConfig),
 	}
 }
 
@@ -63,6 +65,24 @@ func (s *EntityRegistrationService) RegisterEntityConversionFunctions(name strin
 
 func (s *EntityRegistrationService) RegisterEntityDtos(name string, dtos map[DtoPurpose]any) {
 	s.dtos[name] = dtos
+}
+
+func (s *EntityRegistrationService) RegisterSwaggerConfig(name string, config *entityManagementInterfaces.EntitySwaggerConfig) {
+	s.swaggerConfigs[name] = config
+	log.Printf("📚 Swagger config registered for entity: %s (tag: %s)", name, config.Tag)
+}
+
+func (s *EntityRegistrationService) GetSwaggerConfig(name string) *entityManagementInterfaces.EntitySwaggerConfig {
+	return s.swaggerConfigs[name]
+}
+
+func (s *EntityRegistrationService) GetAllSwaggerConfigs() map[string]*entityManagementInterfaces.EntitySwaggerConfig {
+	// Retourner une copie pour éviter les modifications externes
+	result := make(map[string]*entityManagementInterfaces.EntitySwaggerConfig)
+	for k, v := range s.swaggerConfigs {
+		result[k] = v
+	}
+	return result
 }
 
 func (s *EntityRegistrationService) GetEntityInterface(name string) (any, bool) {
@@ -136,17 +156,31 @@ func Pluralize(entityName string) string {
 
 func (s *EntityRegistrationService) RegisterEntity(input entityManagementInterfaces.RegistrableInterface) {
 	entityToRegister := input.GetEntityRegistrationInput()
-	GlobalEntityRegistrationService.RegisterEntityInterface(reflect.TypeOf(entityToRegister.EntityInterface).Name(), entityToRegister.EntityInterface)
-	GlobalEntityRegistrationService.RegisterEntityConversionFunctions(reflect.TypeOf(entityToRegister.EntityInterface).Name(), entityToRegister.EntityConverters)
+	entityName := reflect.TypeOf(entityToRegister.EntityInterface).Name()
+
+	GlobalEntityRegistrationService.RegisterEntityInterface(entityName, entityToRegister.EntityInterface)
+	GlobalEntityRegistrationService.RegisterEntityConversionFunctions(entityName, entityToRegister.EntityConverters)
 	entityDtos := make(map[DtoPurpose]any)
 	entityDtos[InputCreateDto] = entityToRegister.EntityDtos.InputCreateDto
 	entityDtos[OutputDto] = entityToRegister.EntityDtos.OutputDto
 	entityDtos[InputEditDto] = entityToRegister.EntityDtos.InputEditDto
-	GlobalEntityRegistrationService.RegisterEntityDtos(reflect.TypeOf(entityToRegister.EntityInterface).Name(), entityDtos)
-	GlobalEntityRegistrationService.RegisterSubEntites(reflect.TypeOf(entityToRegister.EntityInterface).Name(), entityToRegister.EntitySubEntities)
+	GlobalEntityRegistrationService.RegisterEntityDtos(entityName, entityDtos)
+	GlobalEntityRegistrationService.RegisterSubEntites(entityName, entityToRegister.EntitySubEntities)
+
+	// Gestion automatique de la configuration Swagger
+	if swaggerEntity, ok := input.(entityManagementInterfaces.SwaggerDocumentedEntity); ok {
+		swaggerConfig := swaggerEntity.GetSwaggerConfig()
+		// S'assurer que le nom de l'entité est défini
+		if swaggerConfig.EntityName == "" {
+			swaggerConfig.EntityName = entityName
+		}
+		GlobalEntityRegistrationService.RegisterSwaggerConfig(entityName, &swaggerConfig)
+	} else {
+		log.Printf("📝 Entity %s registered without Swagger documentation", entityName)
+	}
 
 	// Utiliser la variable globale casdoor.Enforcer en production
-	s.setDefaultEntityAccesses(reflect.TypeOf(entityToRegister.EntityInterface).Name(), input.GetEntityRoles(), casdoor.Enforcer)
+	s.setDefaultEntityAccesses(entityName, input.GetEntityRoles(), casdoor.Enforcer)
 }
 
 var GlobalEntityRegistrationService = NewEntityRegistrationService()

@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	cors "github.com/rs/cors/wrapper/gin"
+	"gorm.io/gorm"
 
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -58,6 +59,8 @@ import (
 	sqldb "soli/formations/src/db"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+
+	swaggerGenerator "soli/formations/src/entityManagement/swagger"
 
 	paymentRegistration "soli/formations/src/payment/entityRegistration"
 	paymentMiddleware "soli/formations/src/payment/middleware"
@@ -148,17 +151,6 @@ func main() {
 	sqldb.DB.AutoMigrate(&paymentModels.UsageMetrics{})
 	sqldb.DB.AutoMigrate(&paymentModels.BillingAddress{})
 
-	errJTSubscription := sqldb.DB.SetupJoinTable(&paymentModels.UserSubscription{}, "SubscriptionPlan", &paymentModels.SubscriptionPlan{})
-	if errJTSubscription != nil {
-		log.Default().Println(errJTSubscription)
-	}
-
-	// Setup des relations pour Invoice -> UserSubscription
-	errJTInvoice := sqldb.DB.SetupJoinTable(&paymentModels.Invoice{}, "UserSubscription", &paymentModels.UserSubscription{})
-	if errJTInvoice != nil {
-		log.Default().Println(errJTInvoice)
-	}
-
 	casdoor.InitCasdoorEnforcer(sqldb.DB, "")
 
 	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
@@ -212,6 +204,11 @@ func main() {
 	r.Use(userRoleMiddleware.EnsureSubscriptionRole())
 
 	apiGroup := r.Group("/api/v1")
+
+	middleware := authController.NewAuthMiddleware(sqldb.DB)
+
+	setupDocumentedRoutes(apiGroup, middleware.AuthManagement(), sqldb.DB)
+
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	scheduleController.SchedulesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	themeController.ThemesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
@@ -243,6 +240,8 @@ func main() {
 	paymentController.WebhookRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
+
+	setupSwaggerDocumentation(r)
 
 	r.Run(":8080")
 }
@@ -422,4 +421,58 @@ func setupPaymentRolePermissions() {
 	// Groupements de rôles (hiérarchie)
 	casdoor.Enforcer.AddGroupingPolicy("member_pro", "member")
 	casdoor.Enforcer.AddGroupingPolicy("organization", "member_pro")
+}
+
+// 🆕 NOUVELLE FONCTION : Configure les routes documentées automatiquement
+func setupDocumentedRoutes(apiGroup *gin.RouterGroup, authMiddleware gin.HandlerFunc, db *gorm.DB) {
+	log.Println("🚀 Setting up auto-documented routes...")
+
+	routeGenerator := swaggerGenerator.NewSwaggerRouteGenerator(db)
+
+	// Créer un groupe spécial pour les routes auto-documentées
+	docGroup := apiGroup.Group("/documented")
+	routeGenerator.RegisterDocumentedRoutes(docGroup, authMiddleware)
+
+	log.Println("✅ Auto-documented routes registered at /api/v1/documented/*")
+	log.Println("📚 Example: GET /api/v1/documented/subscriptionplans")
+}
+
+// 🆕 NOUVELLE FONCTION : Configure la documentation Swagger auto-générée
+func setupSwaggerDocumentation(r *gin.Engine) {
+	docGenerator := swaggerGenerator.NewDocumentationGenerator()
+
+	// Route pour récupérer la spec OpenAPI auto-générée
+	r.GET("/api/v1/swagger/auto-generated", func(ctx *gin.Context) {
+		spec := docGenerator.GenerateOpenAPISpec()
+		ctx.JSON(200, spec)
+	})
+
+	// Route pour voir quelles entités sont documentées
+	r.GET("/api/v1/swagger/entities", func(ctx *gin.Context) {
+		configs := ems.GlobalEntityRegistrationService.GetAllSwaggerConfigs()
+
+		result := make(map[string]interface{})
+		for entityName, config := range configs {
+			result[entityName] = map[string]interface{}{
+				"tag":         config.Tag,
+				"entity_name": config.EntityName,
+				"operations": map[string]bool{
+					"get_all": config.GetAll != nil,
+					"get_one": config.GetOne != nil,
+					"create":  config.Create != nil,
+					"update":  config.Update != nil,
+					"delete":  config.Delete != nil,
+				},
+			}
+		}
+
+		ctx.JSON(200, map[string]interface{}{
+			"documented_entities": result,
+			"total_count":         len(configs),
+		})
+	})
+
+	log.Println("📖 Swagger auto-documentation available at:")
+	log.Println("  📋 GET /api/v1/swagger/entities - List documented entities")
+	log.Println("  📄 GET /api/v1/swagger/auto-generated - OpenAPI spec")
 }
