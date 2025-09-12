@@ -14,6 +14,8 @@ import (
 	"gorm.io/gorm"
 )
 
+func ptrString(s string) *string { return &s }
+
 func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 	conversionService := services.NewConversionService()
 
@@ -32,8 +34,8 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 		},
 		Name:               "Pro Plan",
 		Description:        "Professional plan with advanced features",
-		StripeProductID:    "prod_123",
-		StripePriceID:      "price_123",
+		StripeProductID:    ptrString("prod_123"),
+		StripePriceID:      ptrString("price_123"),
 		PriceAmount:        2999, // 29.99 EUR
 		Currency:           "eur",
 		BillingInterval:    "month",
@@ -53,8 +55,8 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 	assert.Equal(t, planID, result.ID)
 	assert.Equal(t, "Pro Plan", result.Name)
 	assert.Equal(t, "Professional plan with advanced features", result.Description)
-	assert.Equal(t, "prod_123", result.StripeProductID)
-	assert.Equal(t, "price_123", result.StripePriceID)
+	assert.Equal(t, ptrString("prod_123"), result.StripeProductID)
+	assert.Equal(t, ptrString("price_123"), result.StripePriceID)
 	assert.Equal(t, int64(2999), result.PriceAmount)
 	assert.Equal(t, "eur", result.Currency)
 	assert.Equal(t, "month", result.BillingInterval)

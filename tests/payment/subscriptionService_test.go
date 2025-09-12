@@ -10,8 +10,6 @@ import (
 	"soli/formations/src/payment/repositories"
 	"soli/formations/src/payment/services"
 
-	emm "soli/formations/src/entityManagement/models"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -298,11 +296,6 @@ func (s *subscriptionServiceWithMock) CheckUsageLimit(userID, metricType string,
 		return nil, err
 	}
 
-	sPlan, errSPlan := s.repository.GetSubscriptionPlan(subscription.SubscriptionPlanID)
-	if errSPlan != nil {
-		return nil, err
-	}
-
 	metrics, err := s.repository.GetUserUsageMetrics(userID, metricType)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -310,11 +303,11 @@ func (s *subscriptionServiceWithMock) CheckUsageLimit(userID, metricType string,
 			var limit int64
 			switch metricType {
 			case "courses_created":
-				limit = int64(sPlan.MaxCourses)
+				limit = int64(subscription.SubscriptionPlan.MaxCourses)
 			case "lab_sessions":
-				limit = int64(sPlan.MaxLabSessions)
+				limit = int64(subscription.SubscriptionPlan.MaxLabSessions)
 			case "concurrent_users":
-				limit = int64(sPlan.MaxConcurrentUsers)
+				limit = int64(subscription.SubscriptionPlan.MaxConcurrentUsers)
 			default:
 				limit = -1
 			}
@@ -461,12 +454,6 @@ func TestSubscriptionService_CheckUsageLimit(t *testing.T) {
 				}
 				m.On("GetUserUsageMetrics", "user123", "courses_created").Return(metrics, nil)
 
-				subscriptionPlan := &models.SubscriptionPlan{
-					BaseModel: emm.BaseModel{
-						ID: uuid.New(),
-					},
-				}
-				m.On("GetSubscriptionPlan", subscription.SubscriptionPlanID).Return(subscriptionPlan, nil)
 			},
 			expectedAllowed:   true,
 			expectedRemaining: 5,
@@ -489,12 +476,6 @@ func TestSubscriptionService_CheckUsageLimit(t *testing.T) {
 				}
 				m.On("GetUserUsageMetrics", "user456", "courses_created").Return(metrics, nil)
 
-				subscriptionPlan := &models.SubscriptionPlan{
-					BaseModel: emm.BaseModel{
-						ID: uuid.New(),
-					},
-				}
-				m.On("GetSubscriptionPlan", subscription.SubscriptionPlanID).Return(subscriptionPlan, nil)
 			},
 			expectedAllowed:   false,
 			expectedRemaining: 0,

@@ -8,6 +8,8 @@ import (
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
 
+	genericService "soli/formations/src/entityManagement/services"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -75,14 +77,16 @@ type SubscriptionAnalytics struct {
 }
 
 type subscriptionService struct {
-	repository repositories.PaymentRepository
-	db         *gorm.DB
+	repository     repositories.PaymentRepository
+	db             *gorm.DB
+	genericService genericService.GenericService
 }
 
 func NewSubscriptionService(db *gorm.DB) SubscriptionService {
 	return &subscriptionService{
-		repository: repositories.NewPaymentRepository(db),
-		db:         db,
+		genericService: genericService.NewGenericService(db),
+		repository:     repositories.NewPaymentRepository(db),
+		db:             db,
 	}
 }
 
@@ -142,18 +146,7 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 		}, nil
 	}
 
-	sPlan, errSPlan := ss.GetSubscriptionPlan(subscription.SubscriptionPlanID)
-	if errSPlan != nil {
-		return &UsageLimitCheck{
-			Allowed:        false,
-			CurrentUsage:   0,
-			Limit:          0,
-			RemainingUsage: 0,
-			Message:        "No active subscription - upgrade required",
-			UserID:         userID,
-			MetricType:     metricType,
-		}, nil
-	}
+	sPlan := subscription.SubscriptionPlan
 
 	// Récupérer les métriques actuelles
 	metrics, err := ss.repository.GetUserUsageMetrics(userID, metricType)
@@ -307,10 +300,11 @@ func (ss *subscriptionService) GetSubscriptionAnalytics() (*SubscriptionAnalytic
 
 // GetRequiredRoleForPlan récupère le rôle requis pour un plan
 func (ss *subscriptionService) GetRequiredRoleForPlan(planID uuid.UUID) (string, error) {
-	plan, err := ss.repository.GetSubscriptionPlan(planID)
+	planEntity, err := ss.genericService.GetEntity(planID, models.SubscriptionPlan{}, "SubscriptionPlan")
 	if err != nil {
 		return "", err
 	}
+	plan := planEntity.(*models.SubscriptionPlan)
 	return plan.RequiredRole, nil
 }
 
@@ -326,7 +320,13 @@ func (ss *subscriptionService) SetDefaultBillingAddress(userID string, addressID
 
 // GetSubscriptionPlan récupère un plan par son ID
 func (ss *subscriptionService) GetSubscriptionPlan(id uuid.UUID) (*models.SubscriptionPlan, error) {
-	return ss.repository.GetSubscriptionPlan(id)
+	planEntity, err := ss.genericService.GetEntity(id, models.SubscriptionPlan{}, "SubscriptionPlan")
+	if err != nil {
+		return nil, err
+	}
+	plan := planEntity.(*models.SubscriptionPlan)
+
+	return plan, nil
 }
 
 // GetAllSubscriptionPlans récupère tous les plans

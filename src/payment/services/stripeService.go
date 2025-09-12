@@ -11,6 +11,8 @@ import (
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
 
+	genericService "soli/formations/src/entityManagement/services"
+
 	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v82"
 	billingPortalSession "github.com/stripe/stripe-go/v82/billingportal/session"
@@ -58,8 +60,10 @@ type StripeService interface {
 }
 
 type stripeService struct {
-	repository    repositories.PaymentRepository
-	webhookSecret string
+	subscriptionService SubscriptionService
+	genericService      genericService.GenericService
+	repository          repositories.PaymentRepository
+	webhookSecret       string
 }
 
 func NewStripeService(db *gorm.DB) StripeService {
@@ -67,15 +71,16 @@ func NewStripeService(db *gorm.DB) StripeService {
 	stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
 
 	return &stripeService{
-		repository:    repositories.NewPaymentRepository(db),
-		webhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
+		subscriptionService: NewSubscriptionService(db),
+		repository:          repositories.NewPaymentRepository(db),
+		webhookSecret:       os.Getenv("STRIPE_WEBHOOK_SECRET"),
 	}
 }
 
 // CreateOrGetCustomer crée ou récupère un client Stripe
 func (ss *stripeService) CreateOrGetCustomer(userID, email, name string) (string, error) {
 	// Vérifier si le client existe déjà en base
-	subscription, err := ss.repository.GetActiveUserSubscription(userID)
+	subscription, err := ss.subscriptionService.GetActiveUserSubscription(userID)
 	if err == nil && subscription.StripeCustomerID != "" {
 		return subscription.StripeCustomerID, nil
 	}
@@ -106,7 +111,7 @@ func (ss *stripeService) UpdateCustomer(customerID string, params *stripe.Custom
 // CreateCheckoutSession crée une session de checkout Stripe
 func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCheckoutSessionInput) (*dto.CheckoutSessionOutput, error) {
 	// Récupérer le plan d'abonnement
-	plan, err := ss.repository.GetSubscriptionPlan(input.SubscriptionPlanID)
+	plan, err := ss.subscriptionService.GetSubscriptionPlan(input.SubscriptionPlanID)
 	if err != nil {
 		return nil, fmt.Errorf("subscription plan not found: %v", err)
 	}
@@ -132,7 +137,7 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{
-				Price:    stripe.String(plan.StripePriceID),
+				Price:    stripe.String(*plan.StripePriceID),
 				Quantity: stripe.Int64(1),
 			},
 		},
@@ -169,7 +174,7 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 // CreatePortalSession crée une session pour le portail client Stripe
 func (ss *stripeService) CreatePortalSession(userID string, input dto.CreatePortalSessionInput) (*dto.PortalSessionOutput, error) {
 	// Récupérer l'abonnement actif pour obtenir le customer ID
-	subscription, err := ss.repository.GetActiveUserSubscription(userID)
+	subscription, err := ss.subscriptionService.GetActiveUserSubscription(userID)
 	if err != nil {
 		return nil, fmt.Errorf("no active subscription found: %v", err)
 	}
@@ -226,10 +231,10 @@ func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.Subscriptio
 	}
 
 	// 3. Mettre à jour le plan avec les IDs Stripe
-	plan.StripeProductID = stripeProduct.ID
-	plan.StripePriceID = stripePrice.ID
+	plan.StripeProductID = &stripeProduct.ID
+	plan.StripePriceID = &stripePrice.ID
 
-	return ss.repository.UpdateSubscriptionPlan(plan)
+	return ss.genericService.EditEntity(plan.ID, "SubscriptionPlan", models.SubscriptionPlan{}, plan)
 }
 
 // UpdateSubscriptionPlanInStripe met à jour un plan dans Stripe
@@ -241,7 +246,7 @@ func (ss *stripeService) UpdateSubscriptionPlanInStripe(plan *models.Subscriptio
 		Active:      stripe.Bool(plan.IsActive),
 	}
 
-	_, err := product.Update(plan.StripeProductID, productParams)
+	_, err := product.Update(*plan.StripeProductID, productParams)
 	return err
 }
 
@@ -312,7 +317,6 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 	return ss.repository.CreateUserSubscription(userSubscription)
 }
 
-// ✅ CORRECTION SIMILAIRE pour handleSubscriptionUpdated
 func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 	var subscription stripe.Subscription
 	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
@@ -325,7 +329,6 @@ func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 		return fmt.Errorf("subscription not found in database: %v", err)
 	}
 
-	// ✅ CORRECTION : Utiliser les bons champs
 	userSub.Status = string(subscription.Status)
 	userSub.CurrentPeriodStart = time.Unix(subscription.Items.Data[0].CurrentPeriodStart, 0)
 	userSub.CurrentPeriodEnd = time.Unix(subscription.Items.Data[0].CurrentPeriodEnd, 0)

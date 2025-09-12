@@ -13,11 +13,7 @@ import (
 
 type PaymentRepository interface {
 	// SubscriptionPlan operations
-	CreateSubscriptionPlan(plan *models.SubscriptionPlan) error
-	GetSubscriptionPlan(id uuid.UUID) (*models.SubscriptionPlan, error)
 	GetAllSubscriptionPlans(activeOnly bool) (*[]models.SubscriptionPlan, error)
-	UpdateSubscriptionPlan(plan *models.SubscriptionPlan) error
-	DeleteSubscriptionPlan(id uuid.UUID) error
 
 	// UserSubscription operations
 	CreateUserSubscription(subscription *models.UserSubscription) error
@@ -77,18 +73,18 @@ func NewPaymentRepository(db *gorm.DB) PaymentRepository {
 }
 
 // SubscriptionPlan operations
-func (r *paymentRepository) CreateSubscriptionPlan(plan *models.SubscriptionPlan) error {
-	return r.db.Create(plan).Error
-}
+// func (r *paymentRepository) CreateSubscriptionPlan(plan *models.SubscriptionPlan) error {
+// 	return r.db.Create(plan).Error
+// }
 
-func (r *paymentRepository) GetSubscriptionPlan(id uuid.UUID) (*models.SubscriptionPlan, error) {
-	var plan models.SubscriptionPlan
-	err := r.db.Where("id = ?", id).First(&plan).Error
-	if err != nil {
-		return nil, err
-	}
-	return &plan, nil
-}
+// func (r *paymentRepository) GetSubscriptionPlan(id uuid.UUID) (*models.SubscriptionPlan, error) {
+// 	var plan models.SubscriptionPlan
+// 	err := r.db.Where("id = ?", id).First(&plan).Error
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return &plan, nil
+// }
 
 func (r *paymentRepository) GetAllSubscriptionPlans(activeOnly bool) (*[]models.SubscriptionPlan, error) {
 	var plans []models.SubscriptionPlan
@@ -105,13 +101,13 @@ func (r *paymentRepository) GetAllSubscriptionPlans(activeOnly bool) (*[]models.
 	return &plans, nil
 }
 
-func (r *paymentRepository) UpdateSubscriptionPlan(plan *models.SubscriptionPlan) error {
-	return r.db.Save(plan).Error
-}
+// func (r *paymentRepository) UpdateSubscriptionPlan(plan *models.SubscriptionPlan) error {
+// 	return r.db.Save(plan).Error
+// }
 
-func (r *paymentRepository) DeleteSubscriptionPlan(id uuid.UUID) error {
-	return r.db.Delete(&models.SubscriptionPlan{}, id).Error
-}
+// func (r *paymentRepository) DeleteSubscriptionPlan(id uuid.UUID) error {
+// 	return r.db.Delete(&models.SubscriptionPlan{}, id).Error
+// }
 
 // UserSubscription operations
 func (r *paymentRepository) CreateUserSubscription(subscription *models.UserSubscription) error {
@@ -141,6 +137,7 @@ func (r *paymentRepository) GetUserSubscriptionByStripeID(stripeSubscriptionID s
 func (r *paymentRepository) GetActiveUserSubscription(userID string) (*models.UserSubscription, error) {
 	var subscription models.UserSubscription
 	err := r.db.
+		Preload("SubscriptionPlan").
 		Where("user_id = ? AND status IN (?)", userID, []string{"active", "trialing"}).
 		First(&subscription).Error
 	if err != nil {
@@ -377,18 +374,13 @@ func (r *paymentRepository) IncrementUsageMetric(userID, metricType string, incr
 				return fmt.Errorf("no active subscription found: %v", err)
 			}
 
-			sPlan, errSPlan := r.GetSubscriptionPlan(subscription.SubscriptionPlanID)
-			if errSPlan != nil {
-				return errSPlan
-			}
-
 			// Définir la limite selon le type de métrique et le plan
 			var limit int64 = -1 // Par défaut illimité
 			switch metricType {
 			case "courses_created":
-				limit = int64(sPlan.MaxCourses)
+				limit = int64(subscription.SubscriptionPlan.MaxCourses)
 			case "lab_sessions":
-				limit = int64(sPlan.MaxLabSessions)
+				limit = int64(subscription.SubscriptionPlan.MaxLabSessions)
 			}
 
 			// Créer nouvelle métrique

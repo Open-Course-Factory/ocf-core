@@ -93,7 +93,7 @@ func (c courseService) GenerateCourseAsync(generateCourseInputDto dto.GenerateCo
 	generation := generationEntity.(*models.Generation)
 
 	// 2. Récupérer le cours
-	courseEntity, err := c.genericService.GetEntity(uuid.MustParse(generation.ID.String()), models.Course{}, "Course")
+	courseEntity, err := c.genericService.GetEntity(uuid.MustParse(generation.CourseID.String()), models.Course{}, "Course")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get course: %w", err)
 	}

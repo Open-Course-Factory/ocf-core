@@ -36,8 +36,8 @@ type SubscriptionPlanOutput struct {
 	ID                 uuid.UUID `json:"id"`
 	Name               string    `json:"name"`
 	Description        string    `json:"description"`
-	StripeProductID    string    `json:"stripe_product_id"`
-	StripePriceID      string    `json:"stripe_price_id"`
+	StripeProductID    *string   `json:"stripe_product_id"`
+	StripePriceID      *string   `json:"stripe_price_id"`
 	PriceAmount        int64     `json:"price_amount"`
 	Currency           string    `json:"currency"`
 	BillingInterval    string    `json:"billing_interval"`

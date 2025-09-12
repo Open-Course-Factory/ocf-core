@@ -12,20 +12,22 @@ import (
 // SubscriptionPlan représente un plan d'abonnement
 type SubscriptionPlan struct {
 	entityManagementModels.BaseModel
-	Name               string `gorm:"type:varchar(100);not null" json:"name"`
-	Description        string `gorm:"type:text" json:"description"`
-	StripeProductID    string `gorm:"type:varchar(100);uniqueIndex" json:"stripe_product_id"`
-	StripePriceID      string `gorm:"type:varchar(100);uniqueIndex" json:"stripe_price_id"`
-	PriceAmount        int64  `json:"price_amount"` // Prix en centimes
-	Currency           string `gorm:"type:varchar(3);default:'eur'" json:"currency"`
-	BillingInterval    string `gorm:"type:varchar(20);default:'month'" json:"billing_interval"` // month, year
-	TrialDays          int    `gorm:"default:0" json:"trial_days"`
-	Features           string `gorm:"type:jsonb" json:"features"` // JSON des fonctionnalités
-	MaxConcurrentUsers int    `gorm:"default:1" json:"max_concurrent_users"`
-	MaxCourses         int    `gorm:"default:-1" json:"max_courses"` // -1 = illimité
-	MaxLabSessions     int    `gorm:"default:-1" json:"max_lab_sessions"`
-	IsActive           bool   `gorm:"default:true" json:"is_active"`
-	RequiredRole       string `gorm:"type:varchar(50)" json:"required_role"`
+	Name               string  `gorm:"type:varchar(100);not null" json:"name"`
+	Description        string  `gorm:"type:text" json:"description"`
+	StripeProductID    *string `gorm:"type:varchar(100);uniqueIndex:idx_stripe_product_not_null,where:stripe_product_id IS NOT NULL" json:"stripe_product_id"`
+	StripePriceID      *string `gorm:"type:varchar(100);uniqueIndex:idx_stripe_price_not_null,where:stripe_price_id IS NOT NULL" json:"stripe_price_id"`
+	PriceAmount        int64   `json:"price_amount"` // Prix en centimes
+	Currency           string  `gorm:"type:varchar(3);default:'eur'" json:"currency"`
+	BillingInterval    string  `gorm:"type:varchar(20);default:'month'" json:"billing_interval"` // month, year
+	TrialDays          int     `gorm:"default:0" json:"trial_days"`
+	Features           string  `gorm:"type:jsonb" json:"features"` // JSON des fonctionnalités
+	MaxConcurrentUsers int     `gorm:"default:1" json:"max_concurrent_users"`
+	MaxCourses         int     `gorm:"default:-1" json:"max_courses"` // -1 = illimité
+	MaxLabSessions     int     `gorm:"default:-1" json:"max_lab_sessions"`
+	IsActive           bool    `gorm:"default:true" json:"is_active"`
+	RequiredRole       string  `gorm:"type:varchar(50)" json:"required_role"`
+	StripeCreated      bool    `gorm:"default:false" json:"stripe_created"`
+	CreationError      *string `gorm:"type:text" json:"creation_error,omitempty"`
 }
 
 // UserSubscription représente l'abonnement d'un utilisateur

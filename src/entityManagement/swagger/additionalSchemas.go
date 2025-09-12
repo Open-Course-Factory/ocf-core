@@ -33,28 +33,6 @@ func (ass *AdditionalSchemasService) registerDefaultSchemas() {
 	// Schémas d'erreurs
 	ass.RegisterSchema("errors.APIError", errors.APIError{})
 
-	// Schémas de groupes
-	// ass.RegisterSchema("dto.CreateGroupInput", dto.CreateGroupInput{})
-	// ass.RegisterSchema("dto.CreateGroupOutput", dto.CreateGroupOutput{})
-	// ass.RegisterSchema("dto.ModifyUsersInGroupInput", dto.ModifyUsersInGroupInput{})
-
-	// // Schémas d'utilisateurs
-	// ass.RegisterSchema("dto.CreateUserInput", dto.CreateUserInput{})
-	// ass.RegisterSchema("dto.CreateUserOutput", dto.CreateUserOutput{})
-	// ass.RegisterSchema("dto.UserOutput", dto.UserOutput{})
-	// ass.RegisterSchema("dto.DeleteUserInput", dto.DeleteUserInput{})
-
-	// // Schémas d'accès
-	// ass.RegisterSchema("dto.CreateEntityAccessInput", dto.CreateEntityAccessInput{})
-	// ass.RegisterSchema("dto.DeleteEntityAccessInput", dto.DeleteEntityAccessInput{})
-
-	// Schémas SSH Keys
-	// ass.RegisterSchema("dto.SshkeyOutput", dto.SshkeyOutput{})
-	// ass.RegisterSchema("dto.CreateSshkeyInput", dto.CreateSshkeyInput{})
-	// ass.RegisterSchema("dto.CreateSshkeyOutput", dto.CreateSshkeyOutput{})
-	// ass.RegisterSchema("dto.EditSshkeyInput", dto.EditSshkeyInput{})
-	// ass.RegisterSchema("dto.DeleteSshkeyInput", dto.DeleteSshkeyInput{})
-
 	// Schémas génériques pour les réponses
 	ass.addGenericResponseSchemas()
 }
