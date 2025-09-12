@@ -17,36 +17,36 @@ type SubscriptionPlanRegistration struct {
 
 func (s SubscriptionPlanRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
 	return entityManagementInterfaces.EntitySwaggerConfig{
-		Tag:        "subscriptions-plans",
+		Tag:        "subscription-plans",
 		EntityName: "SubscriptionPlan",
 		GetAll: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "Récupérer tous les plans d'abonnement",
 			Description: "Retourne la liste de tous les plans d'abonnement disponibles avec leurs tarifs, fonctionnalités et limites d'usage",
-			Tags:        []string{"subscriptions-plans"},
+			Tags:        []string{"subscription-plans"},
 			Security:    false, // Accessible publiquement pour que les utilisateurs voient les plans
 		},
 		GetOne: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "Récupérer un plan d'abonnement",
 			Description: "Retourne les détails complets d'un plan d'abonnement spécifique, incluant les prix Stripe et les fonctionnalités",
-			Tags:        []string{"subscriptions-plans"},
+			Tags:        []string{"subscription-plans"},
 			Security:    false, // Accessible publiquement
 		},
 		Create: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "Créer un plan d'abonnement",
 			Description: "Crée un nouveau plan d'abonnement et génère automatiquement les produits et prix associés dans Stripe (Administrateurs seulement)",
-			Tags:        []string{"subscriptions-plans"},
+			Tags:        []string{"subscription-plans"},
 			Security:    true, // Accès admin uniquement
 		},
 		Update: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "Mettre à jour un plan d'abonnement",
 			Description: "Modifie un plan d'abonnement existant et synchronise les changements avec Stripe (Administrateurs seulement)",
-			Tags:        []string{"subscriptions-plans"},
+			Tags:        []string{"subscription-plans"},
 			Security:    true, // Accès admin uniquement
 		},
 		Delete: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "Désactiver un plan d'abonnement",
 			Description: "Désactive un plan d'abonnement (les abonnements existants continuent mais plus de nouveaux abonnements possibles)",
-			Tags:        []string{"subscriptions-plans"},
+			Tags:        []string{"subscription-plans"},
 			Security:    true, // Accès admin uniquement
 		},
 	}

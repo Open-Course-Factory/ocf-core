@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
+	"strings"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
@@ -75,8 +76,19 @@ func getUserIdFromToken(ctx *gin.Context) (string, error) {
 		token = ctx.Query("Authorization")
 	}
 
-	claims, err := casdoorsdk.ParseJwtToken(token)
+	// Enlever le préfixe "Bearer " s'il est présent
+	if strings.HasPrefix(token, "Bearer ") {
+		token = strings.TrimPrefix(token, "Bearer ")
+	} else if strings.HasPrefix(token, "bearer ") {
+		token = strings.TrimPrefix(token, "bearer ")
+	}
 
+	// Vérifier que le token n'est pas vide après nettoyage
+	if token == "" {
+		return "", fmt.Errorf("missing or invalid authorization token")
+	}
+
+	claims, err := casdoorsdk.ParseJwtToken(token)
 	if err != nil {
 		return "", err
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"regexp"
 	"strings"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -38,7 +39,8 @@ func (srg *SwaggerRouteGenerator) RegisterDocumentedRoutes(router *gin.RouterGro
 // registerEntityRoutes crée les routes pour une entité spécifique
 func (srg *SwaggerRouteGenerator) registerEntityRoutes(router *gin.RouterGroup, entityName string, config *entityManagementInterfaces.EntitySwaggerConfig, authMiddleware gin.HandlerFunc) {
 	// Déterminer le path de base (pluriel, en minuscules)
-	basePath := "/" + strings.ToLower(ems.Pluralize(entityName))
+	re := regexp.MustCompile("([a-z])([A-Z])")
+	basePath := "/" + strings.ToLower(ems.Pluralize(re.ReplaceAllString(entityName, "${1}-${2}")))
 	entityGroup := router.Group(basePath)
 
 	log.Printf("📚 Registering documented routes for %s at %s", entityName, basePath)
@@ -188,7 +190,9 @@ func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]interface{} {
 	paths := spec["paths"].(map[string]interface{})
 
 	for entityName, config := range swaggerConfigs {
-		basePath := "/" + strings.ToLower(ems.Pluralize(entityName))
+		re := regexp.MustCompile("([a-z])([A-Z])")
+		basePath := "/" + strings.ToLower(ems.Pluralize(re.ReplaceAllString(entityName, "${1}-${2}")))
+		//basePath := "/" + strings.ToLower(ems.Pluralize(entityName))
 
 		// GET /entities (Get All)
 		if config.GetAll != nil {

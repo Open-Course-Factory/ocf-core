@@ -43,7 +43,24 @@ func GetEntityNameFromPath(path string) string {
 
 	client := pluralize.NewClient()
 	singular := client.Singular(segment)
-	return strings.ToUpper(string(singular[0])) + singular[1:]
+	return kebabToPascal(singular)
+}
+
+func kebabToPascal(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+
+	parts := strings.Split(s, "-")
+	var result strings.Builder
+
+	for _, part := range parts {
+		if len(part) > 0 {
+			result.WriteString(strings.ToUpper(string(part[0])) + strings.ToLower(part[1:]))
+		}
+	}
+
+	return result.String()
 }
 
 func GetResourceNameFromPath(path string) string {

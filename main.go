@@ -428,7 +428,7 @@ func setupCompleteSwaggerSystem(r *gin.Engine) {
 	// 📋 ÉTAPE 1: Setup des routes auto-documentées
 	log.Println("  📋 Setting up auto-documented routes...")
 	routeGenerator := swaggerGenerator.NewSwaggerRouteGenerator(sqldb.DB)
-	docGroup := r.Group("/api/v1/documented")
+	docGroup := r.Group("/api/v1")
 	routeGenerator.RegisterDocumentedRoutes(docGroup, authMiddleware.AuthManagement())
 
 	// 🔀 ÉTAPE 2: Setup du merger Swagger
