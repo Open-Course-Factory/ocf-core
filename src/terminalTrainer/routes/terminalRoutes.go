@@ -15,13 +15,6 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	routes := router.Group("/terminals")
 
-	// Routes génériques (CRUD via le système générique)
-	// routes.GET("", middleware.AuthManagement(), terminalController.GetEntities)
-	// routes.POST("", middleware.AuthManagement(), terminalController.AddEntity)
-	// routes.GET("/:id", middleware.AuthManagement(), terminalController.GetEntity)
-	// routes.PATCH("/:id", middleware.AuthManagement(), terminalController.EditEntity)
-	// routes.DELETE("/:id", middleware.AuthManagement(), terminalController.DeleteEntity)
-
 	// Routes spécialisées pour les fonctionnalités Terminal Trainer
 	routes.POST("/start-session", middleware.AuthManagement(), terminalController.StartSession)
 	routes.GET("/:id/console", middleware.AuthManagement(), terminalController.ConnectConsole)
@@ -38,13 +31,6 @@ func UserTerminalKeyRoutes(router *gin.RouterGroup, config *config.Configuration
 	middleware := auth.NewAuthMiddleware(db)
 
 	routes := router.Group("/user-terminal-keys")
-
-	// Routes génériques (CRUD via le système générique) - principalement pour les admins
-	routes.GET("", middleware.AuthManagement(), userTerminalKeyController.GetEntities)
-	routes.POST("", middleware.AuthManagement(), userTerminalKeyController.AddEntity)
-	routes.GET("/:id", middleware.AuthManagement(), userTerminalKeyController.GetEntity)
-	routes.PATCH("/:id", middleware.AuthManagement(), userTerminalKeyController.EditEntity)
-	routes.DELETE("/:id", middleware.AuthManagement(), userTerminalKeyController.DeleteEntity)
 
 	// Routes spécialisées
 	routes.POST("/regenerate", middleware.AuthManagement(), userTerminalKeyController.RegenerateKey)

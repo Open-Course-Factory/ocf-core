@@ -13,6 +13,19 @@ type UserTerminalKeyRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
+func (u UserTerminalKeyRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+	return entityManagementInterfaces.EntitySwaggerConfig{
+		Tag:        "user-terminal-keys",
+		EntityName: "UserTerminalKey",
+		Delete: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Supprimer une clé",
+			Description: "Supprime une clé",
+			Tags:        []string{"user-terminal-keys"},
+			Security:    true,
+		},
+	}
+}
+
 func (u UserTerminalKeyRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return userTerminalKeyPtrModelToOutput(input.(*models.UserTerminalKey))
