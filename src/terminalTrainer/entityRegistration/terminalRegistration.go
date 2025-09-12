@@ -14,6 +14,25 @@ type TerminalRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
+func (t TerminalRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+	return entityManagementInterfaces.EntitySwaggerConfig{
+		Tag:        "terminals",
+		EntityName: "Terminal",
+		GetAll: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer tous les terminaux",
+			Description: "Retourne la liste de tous les terminaux disponibles",
+			Tags:        []string{"terminals"},
+			Security:    true,
+		},
+		GetOne: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer un terminal",
+			Description: "Retourne les détails complets d'un terminal spécifique",
+			Tags:        []string{"terminals"},
+			Security:    true,
+		},
+	}
+}
+
 func (t TerminalRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return terminalPtrModelToTerminalOutput(input.(*models.Terminal))

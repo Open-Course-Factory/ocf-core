@@ -11,6 +11,43 @@ type PageRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
+func (s PageRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+	return entityManagementInterfaces.EntitySwaggerConfig{
+		Tag:        "pages",
+		EntityName: "Page",
+		GetAll: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer toutes les pages",
+			Description: "Retourne la liste de toutes les pages disponibles",
+			Tags:        []string{"pages"},
+			Security:    true,
+		},
+		GetOne: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer une page",
+			Description: "Retourne les détails complets d'une page spécifique",
+			Tags:        []string{"pages"},
+			Security:    true,
+		},
+		Create: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Créer une page",
+			Description: "Crée une nouvelle page",
+			Tags:        []string{"pages"},
+			Security:    true,
+		},
+		Update: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Mettre à jour une page",
+			Description: "Modifie une page existante",
+			Tags:        []string{"pages"},
+			Security:    true,
+		},
+		Delete: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Supprimer une page",
+			Description: "Supprime une page",
+			Tags:        []string{"pages"},
+			Security:    true,
+		},
+	}
+}
+
 func (s PageRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return pagePtrModelToPageOutputDto(input.(*models.Page))

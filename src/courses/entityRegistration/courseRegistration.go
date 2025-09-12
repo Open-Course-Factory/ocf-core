@@ -11,6 +11,43 @@ type CourseRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
+func (s CourseRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+	return entityManagementInterfaces.EntitySwaggerConfig{
+		Tag:        "courses",
+		EntityName: "Course",
+		GetAll: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer tous les cours",
+			Description: "Retourne la liste de tous les cours disponibles",
+			Tags:        []string{"courses"},
+			Security:    true,
+		},
+		GetOne: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer un cours",
+			Description: "Retourne les détails complets d'un cours spécifique",
+			Tags:        []string{"courses"},
+			Security:    true,
+		},
+		Create: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Créer un cours",
+			Description: "Crée un nouveau cours",
+			Tags:        []string{"courses"},
+			Security:    true,
+		},
+		Update: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Mettre à jour un cours",
+			Description: "Modifie un cours existant",
+			Tags:        []string{"courses"},
+			Security:    true,
+		},
+		Delete: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Supprimer un cours",
+			Description: "Supprime un cours",
+			Tags:        []string{"courses"},
+			Security:    true,
+		},
+	}
+}
+
 func (s CourseRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return coursePtrModelToCourseOutputDto(input.(*models.Course))

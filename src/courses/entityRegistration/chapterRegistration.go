@@ -11,6 +11,43 @@ type ChapterRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
+func (s ChapterRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+	return entityManagementInterfaces.EntitySwaggerConfig{
+		Tag:        "chapters",
+		EntityName: "Chapter",
+		GetAll: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer tous les chapitres",
+			Description: "Retourne la liste de tous les chapitres disponibles",
+			Tags:        []string{"chapters"},
+			Security:    true,
+		},
+		GetOne: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer un chapitre",
+			Description: "Retourne les détails complets d'un chapitre spécifique",
+			Tags:        []string{"chapters"},
+			Security:    true,
+		},
+		Create: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Créer un chapitre",
+			Description: "Crée un nouveau chapitre",
+			Tags:        []string{"chapters"},
+			Security:    true,
+		},
+		Update: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Mettre à jour un chapitre",
+			Description: "Modifie un chapitre existant",
+			Tags:        []string{"chapters"},
+			Security:    true,
+		},
+		Delete: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Supprimer un chapitre",
+			Description: "Supprime un chapitre",
+			Tags:        []string{"chapters"},
+			Security:    true,
+		},
+	}
+}
+
 func (s ChapterRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return chapterPtrModelToChapterOutputDto(input.(*models.Chapter))

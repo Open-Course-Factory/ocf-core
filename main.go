@@ -31,12 +31,9 @@ import (
 	userController "soli/formations/src/auth/routes/usersRoutes"
 	courseRegistration "soli/formations/src/courses/entityRegistration"
 	courseModels "soli/formations/src/courses/models"
-	chapterController "soli/formations/src/courses/routes/chapterRoutes"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	generationController "soli/formations/src/courses/routes/generationRoutes"
-	pageController "soli/formations/src/courses/routes/pageRoutes"
 	scheduleController "soli/formations/src/courses/routes/scheduleRoutes"
-	sectionController "soli/formations/src/courses/routes/sectionRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
 	themeController "soli/formations/src/courses/routes/themeRoutes"
 	labRegistration "soli/formations/src/labs/entityRegistration"
@@ -210,9 +207,6 @@ func main() {
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	scheduleController.SchedulesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	themeController.ThemesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	pageController.PagesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	sectionController.SectionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	chapterController.ChaptersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sessionController.SessionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sshKeyController.SshKeysRoutes(apiGroup, &config.Configuration{}, sqldb.DB)

@@ -14,12 +14,7 @@ import (
 
 type CourseController interface {
 	GenerateCourse(ctx *gin.Context)
-	AddCourse(ctx *gin.Context)
-	DeleteCourse(ctx *gin.Context)
-	GetCourses(ctx *gin.Context)
-	GetCourse(ctx *gin.Context)
 	CreateCourseFromGit(ctx *gin.Context)
-	EditCourse(ctx *gin.Context)
 
 	GetGenerationStatus(ctx *gin.Context)
 	DownloadGenerationResults(ctx *gin.Context)

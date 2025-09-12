@@ -11,6 +11,43 @@ type SectionRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
+func (s SectionRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+	return entityManagementInterfaces.EntitySwaggerConfig{
+		Tag:        "sections",
+		EntityName: "Section",
+		GetAll: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer toutes les sections",
+			Description: "Retourne la liste de toutes les sections disponibles",
+			Tags:        []string{"sections"},
+			Security:    true,
+		},
+		GetOne: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer une section",
+			Description: "Retourne les détails complets d'une section spécifique",
+			Tags:        []string{"sections"},
+			Security:    true,
+		},
+		Create: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Créer une section",
+			Description: "Crée une nouvelle section",
+			Tags:        []string{"sections"},
+			Security:    true,
+		},
+		Update: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Mettre à jour une section",
+			Description: "Modifie une section existante",
+			Tags:        []string{"sections"},
+			Security:    true,
+		},
+		Delete: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Supprimer une section",
+			Description: "Supprime une section",
+			Tags:        []string{"sections"},
+			Security:    true,
+		},
+	}
+}
+
 func (s SectionRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return sectionPtrModelToSectionOutputDto(input.(*models.Section))

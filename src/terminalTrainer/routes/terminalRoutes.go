@@ -16,11 +16,11 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes := router.Group("/terminals")
 
 	// Routes génériques (CRUD via le système générique)
-	routes.GET("", middleware.AuthManagement(), terminalController.GetEntities)
-	routes.POST("", middleware.AuthManagement(), terminalController.AddEntity)
-	routes.GET("/:id", middleware.AuthManagement(), terminalController.GetEntity)
-	routes.PATCH("/:id", middleware.AuthManagement(), terminalController.EditEntity)
-	routes.DELETE("/:id", middleware.AuthManagement(), terminalController.DeleteEntity)
+	// routes.GET("", middleware.AuthManagement(), terminalController.GetEntities)
+	// routes.POST("", middleware.AuthManagement(), terminalController.AddEntity)
+	// routes.GET("/:id", middleware.AuthManagement(), terminalController.GetEntity)
+	// routes.PATCH("/:id", middleware.AuthManagement(), terminalController.EditEntity)
+	// routes.DELETE("/:id", middleware.AuthManagement(), terminalController.DeleteEntity)
 
 	// Routes spécialisées pour les fonctionnalités Terminal Trainer
 	routes.POST("/start-session", middleware.AuthManagement(), terminalController.StartSession)

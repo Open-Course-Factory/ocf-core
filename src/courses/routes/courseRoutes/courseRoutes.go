@@ -18,14 +18,7 @@ func CoursesRoutes(router *gin.RouterGroup, config *config.Configuration, db *go
 
 	middleware := auth.NewAuthMiddleware(db)
 
-	routes.GET("", middleware.AuthManagement(), courseController.GetCourses)
-	routes.GET("/:id", middleware.AuthManagement(), courseController.GetCourse)
-
-	routes.POST("", middleware.AuthManagement(), courseController.AddCourse)
 	routes.POST("/git", middleware.AuthManagement(), courseController.CreateCourseFromGit)
-	routes.PATCH("/:id", middleware.AuthManagement(), courseController.EditCourse)
-
-	routes.DELETE("/:id", middleware.AuthManagement(), courseController.DeleteCourse)
 
 	// Route de génération modifiée (maintenant asynchrone)
 	routes.POST("/generate", middleware.AuthManagement(), courseController.GenerateCourse)
