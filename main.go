@@ -33,7 +33,6 @@ import (
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	generationController "soli/formations/src/courses/routes/generationRoutes"
-	scheduleController "soli/formations/src/courses/routes/scheduleRoutes"
 	sessionController "soli/formations/src/courses/routes/sessionRoutes"
 	themeController "soli/formations/src/courses/routes/themeRoutes"
 	labRegistration "soli/formations/src/labs/entityRegistration"
@@ -205,7 +204,6 @@ func main() {
 	apiGroup := r.Group("/api/v1")
 
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	scheduleController.SchedulesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	themeController.ThemesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sessionController.SessionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)

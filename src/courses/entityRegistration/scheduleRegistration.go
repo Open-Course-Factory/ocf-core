@@ -11,6 +11,43 @@ type ScheduleRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
+func (s ScheduleRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+	return entityManagementInterfaces.EntitySwaggerConfig{
+		Tag:        "schedules",
+		EntityName: "Schedule",
+		GetAll: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer tous les emploi du temps",
+			Description: "Retourne la liste de tous les emploi du temps disponibles",
+			Tags:        []string{"schedules"},
+			Security:    true,
+		},
+		GetOne: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer un emploi du temps",
+			Description: "Retourne les détails complets d'un emploi du temps spécifique",
+			Tags:        []string{"schedules"},
+			Security:    true,
+		},
+		Create: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Créer un emploi du temps",
+			Description: "Crée un nouvel emploi du temps",
+			Tags:        []string{"schedules"},
+			Security:    true,
+		},
+		Update: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Mettre à jour un emploi du temps",
+			Description: "Modifie un emploi du temps existant",
+			Tags:        []string{"schedules"},
+			Security:    true,
+		},
+		Delete: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Supprimer un emploi du temps",
+			Description: "Supprime un emploi du temps",
+			Tags:        []string{"schedules"},
+			Security:    true,
+		},
+	}
+}
+
 func (s ScheduleRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return schedulePtrModelToScheduleOutputDto(input.(*models.Schedule))

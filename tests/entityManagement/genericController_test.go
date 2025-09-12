@@ -157,7 +157,7 @@ func TestGetEntityNameFromPath(t *testing.T) {
 		{"/api/v1/chapters/", "Chapter"},
 		{"/api/v1/sections/123", "Section"},
 		{"/api/v1/pages/123/edit", "Page"},
-		{"/controllerTestEntities/", "ControllerTestEntity"},
+		{"/controller-test-entities/", "ControllerTestEntity"},
 	}
 
 	for _, tc := range testCases {
@@ -280,12 +280,12 @@ func TestGenericController_GetEntity_Success(t *testing.T) {
 	genericController := controller.NewGenericController(db)
 	router := gin.New()
 
-	router.GET("/api/v1/controllerTestEntities/:id", func(c *gin.Context) {
+	router.GET("/api/v1/controller-test-entities/:id", func(c *gin.Context) {
 		genericController.GetEntity(c)
 	})
 
 	// Execute
-	req := httptest.NewRequest("GET", "/api/v1/controllerTestEntities/"+testEntity.ID.String(), nil)
+	req := httptest.NewRequest("GET", "/api/v1/controller-test-entities/"+testEntity.ID.String(), nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -309,12 +309,12 @@ func TestGenericController_GetEntity_InvalidID(t *testing.T) {
 	genericController := controller.NewGenericController(db)
 	router := gin.New()
 
-	router.GET("/api/v1/controllerTestEntities/:id", func(c *gin.Context) {
+	router.GET("/api/v1/controller-test-entities/:id", func(c *gin.Context) {
 		genericController.GetEntity(c)
 	})
 
 	// Execute avec un ID invalide
-	req := httptest.NewRequest("GET", "/api/v1/controllerTestEntities/invalid-uuid", nil)
+	req := httptest.NewRequest("GET", "/api/v1/controller-test-entities/invalid-uuid", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -332,13 +332,13 @@ func TestGenericController_GetEntity_NotFound(t *testing.T) {
 	genericController := controller.NewGenericController(db)
 	router := gin.New()
 
-	router.GET("/api/v1/controllerTestEntities/:id", func(c *gin.Context) {
+	router.GET("/api/v1/controller-test-entities/:id", func(c *gin.Context) {
 		genericController.GetEntity(c)
 	})
 
 	// Execute avec un UUID qui n'existe pas
 	nonExistentID := uuid.New()
-	req := httptest.NewRequest("GET", "/api/v1/controllerTestEntities/"+nonExistentID.String(), nil)
+	req := httptest.NewRequest("GET", "/api/v1/controller-test-entities/"+nonExistentID.String(), nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -369,12 +369,12 @@ func TestGenericController_GetEntities_Success(t *testing.T) {
 	genericController := controller.NewGenericController(db)
 	router := gin.New()
 
-	router.GET("/api/v1/controllerTestEntities/", func(c *gin.Context) {
+	router.GET("/api/v1/controller-test-entities/", func(c *gin.Context) {
 		genericController.GetEntities(c)
 	})
 
 	// Execute
-	req := httptest.NewRequest("GET", "/api/v1/controllerTestEntities/", nil)
+	req := httptest.NewRequest("GET", "/api/v1/controller-test-entities/", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -408,7 +408,7 @@ func TestGenericController_EditEntity_Success(t *testing.T) {
 	genericController := controller.NewGenericController(db)
 	router := gin.New()
 
-	router.PATCH("/api/v1/controllerTestEntities/:id", func(c *gin.Context) {
+	router.PATCH("/api/v1/controller-test-entities/:id", func(c *gin.Context) {
 		genericController.EditEntity(c)
 	})
 
@@ -421,7 +421,7 @@ func TestGenericController_EditEntity_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Execute
-	req := httptest.NewRequest("PATCH", "/api/v1/controllerTestEntities/"+testEntity.ID.String(), bytes.NewBuffer(jsonData))
+	req := httptest.NewRequest("PATCH", "/api/v1/controller-test-entities/"+testEntity.ID.String(), bytes.NewBuffer(jsonData))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
