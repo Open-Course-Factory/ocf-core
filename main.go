@@ -19,6 +19,7 @@ import (
 	generator "soli/formations/src/generationEngine"
 	marp "soli/formations/src/generationEngine/marp_integration"
 	slidev "soli/formations/src/generationEngine/slidev_integration"
+	"soli/formations/src/payment"
 	testtools "soli/formations/tests/testTools"
 
 	authController "soli/formations/src/auth"
@@ -33,6 +34,7 @@ import (
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	generationController "soli/formations/src/courses/routes/generationRoutes"
+	genericController "soli/formations/src/entityManagement/routes"
 	labRegistration "soli/formations/src/labs/entityRegistration"
 	labModels "soli/formations/src/labs/models"
 	connectionController "soli/formations/src/labs/routes/connectionRoutes"
@@ -47,7 +49,6 @@ import (
 	courseService "soli/formations/src/courses/services"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	genericService "soli/formations/src/entityManagement/services"
-	paymentHooks "soli/formations/src/payment/hooks"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
@@ -57,10 +58,8 @@ import (
 
 	swaggerGenerator "soli/formations/src/entityManagement/swagger"
 
-	paymentRegistration "soli/formations/src/payment/entityRegistration"
 	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentModels "soli/formations/src/payment/models"
-	paymentController "soli/formations/src/payment/routes"
 )
 
 //	@title			OCF API
@@ -164,17 +163,11 @@ func main() {
 	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.TerminalRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.UserTerminalKeyRegistration{})
 
-	ems.GlobalEntityRegistrationService.RegisterEntity(paymentRegistration.SubscriptionPlanRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(paymentRegistration.UserSubscriptionRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(paymentRegistration.PaymentMethodRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(paymentRegistration.InvoiceRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(paymentRegistration.BillingAddressRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(paymentRegistration.UsageMetricsRegistration{})
-
 	initDB()
 
 	setupPaymentRolePermissions()
-	paymentHooks.InitPaymentHooks(sqldb.DB)
+
+	payment.InitPaymentEntities(sqldb.DB)
 
 	if parseFlags() {
 		os.Exit(0)
@@ -205,6 +198,8 @@ func main() {
 
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	genericController.HooksRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+
 	sshKeyController.SshKeysRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	groupController.GroupRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
@@ -220,12 +215,7 @@ func main() {
 	apiGroupWithUsageCheck := apiGroup.Group("")
 	apiGroupWithUsageCheck.Use(usageLimitMiddleware.CheckUsageForPath())
 
-	paymentController.SubscriptionRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	paymentController.PaymentMethodRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	paymentController.InvoiceRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	paymentController.BillingAddressRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	paymentController.UsageMetricsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	paymentController.WebhookRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	payment.InitPaymentRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	initSwagger(r)
 
