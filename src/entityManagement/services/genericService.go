@@ -1,9 +1,12 @@
 package services
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"reflect"
 	"soli/formations/src/auth/casdoor"
+	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/entityManagement/repositories"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -42,10 +45,35 @@ func NewGenericService(db *gorm.DB) GenericService {
 
 func (g *genericService) CreateEntity(inputDto interface{}, entityName string) (interface{}, error) {
 
+	beforeCtx := &hooks.HookContext{
+		EntityName: entityName,
+		HookType:   hooks.BeforeCreate,
+		NewEntity:  inputDto,
+		Context:    context.Background(),
+	}
+
+	if err := hooks.GlobalHookRegistry.ExecuteHooks(beforeCtx); err != nil {
+		return nil, fmt.Errorf("before_create hooks failed: %v", err)
+	}
+
 	entity, createEntityError := g.genericRepository.CreateEntity(inputDto, entityName)
 	if createEntityError != nil {
 		return nil, createEntityError
 	}
+
+	afterCtx := &hooks.HookContext{
+		EntityName: entityName,
+		HookType:   hooks.AfterCreate,
+		NewEntity:  entity,
+		Context:    context.Background(),
+	}
+
+	// Exécuter les hooks après création (en arrière-plan si nécessaire)
+	go func() {
+		if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
+			log.Printf("❌ after_create hooks failed for %s: %v", entityName, err)
+		}
+	}()
 
 	return entity, nil
 }
@@ -88,18 +116,96 @@ func (g *genericService) GetEntities(data interface{}) ([]interface{}, error) {
 }
 
 func (g *genericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error {
+	entityName := reflect.TypeOf(entity).Name()
+
+	// Récupérer l'entité avant suppression
+	existingEntity, err := g.GetEntity(id, entity, entityName)
+	if err != nil {
+		return err
+	}
+
+	// 🎯 Hook BEFORE_DELETE
+	beforeCtx := &hooks.HookContext{
+		EntityName: entityName,
+		HookType:   hooks.BeforeDelete,
+		EntityID:   id,
+		NewEntity:  existingEntity,
+		Context:    context.Background(),
+	}
+
+	if err := hooks.GlobalHookRegistry.ExecuteHooks(beforeCtx); err != nil {
+		return fmt.Errorf("before_delete hooks failed: %v", err)
+	}
+
 	errorDelete := g.genericRepository.DeleteEntity(id, entity, scoped)
 	if errorDelete != nil {
 		return errorDelete
 	}
+
+	afterCtx := &hooks.HookContext{
+		EntityName: entityName,
+		HookType:   hooks.AfterDelete,
+		EntityID:   id,
+		NewEntity:  existingEntity,
+		Context:    context.Background(),
+	}
+
+	// Exécuter les hooks après suppression
+	go func() {
+		if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
+			log.Printf("❌ after_delete hooks failed for %s: %v", entityName, err)
+		}
+	}()
+
 	return nil
 }
 
 func (g *genericService) EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error {
+	// Récupérer l'entité existante pour les hooks
+	oldEntity, err := g.GetEntity(id, entity, entityName)
+	if err != nil {
+		return err
+	}
+
+	beforeCtx := &hooks.HookContext{
+		EntityName: entityName,
+		HookType:   hooks.BeforeUpdate,
+		EntityID:   id,
+		OldEntity:  oldEntity,
+		NewEntity:  data,
+		Context:    context.Background(),
+	}
+
+	if err := hooks.GlobalHookRegistry.ExecuteHooks(beforeCtx); err != nil {
+		return fmt.Errorf("before_update hooks failed: %v", err)
+	}
+
 	errorPatch := g.genericRepository.EditEntity(id, entityName, entity, data)
 	if errorPatch != nil {
 		return errorPatch
 	}
+
+	updatedEntity, err := g.GetEntity(id, entity, entityName)
+	if err != nil {
+		log.Printf("Warning: could not retrieve updated entity for hooks: %v", err)
+		updatedEntity = data // Fallback
+	}
+
+	afterCtx := &hooks.HookContext{
+		EntityName: entityName,
+		HookType:   hooks.AfterUpdate,
+		EntityID:   id,
+		OldEntity:  oldEntity,
+		NewEntity:  updatedEntity,
+		Context:    context.Background(),
+	}
+
+	// Exécuter les hooks après mise à jour
+	go func() {
+		if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
+			log.Printf("❌ after_update hooks failed for %s: %v", entityName, err)
+		}
+	}()
 	return nil
 }
 

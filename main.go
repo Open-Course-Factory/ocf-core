@@ -47,6 +47,7 @@ import (
 	courseService "soli/formations/src/courses/services"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	genericService "soli/formations/src/entityManagement/services"
+	paymentHooks "soli/formations/src/payment/hooks"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
@@ -173,6 +174,7 @@ func main() {
 	initDB()
 
 	setupPaymentRolePermissions()
+	paymentHooks.InitPaymentHooks(sqldb.DB)
 
 	if parseFlags() {
 		os.Exit(0)
