@@ -447,7 +447,7 @@ func TestGenericService_Integration_FullCRUD(t *testing.T) {
 
 	// UPDATE
 	updateData := map[string]any{"name": "Updated CRUD Test"}
-	err = service.EditEntity(entityID, "TestEntity", entityWithBaseModel, updateData)
+	err = service.EditEntity(entityID, "TestEntity", TestEntityWithBaseModel{}, updateData)
 	assert.NoError(t, err)
 
 	// Verify update
@@ -456,7 +456,7 @@ func TestGenericService_Integration_FullCRUD(t *testing.T) {
 	assert.Equal(t, "Updated CRUD Test", updatedEntity.(*TestEntityWithBaseModel).Name)
 
 	// DELETE
-	err = service.DeleteEntity(entityID, entityWithBaseModel, true)
+	err = service.DeleteEntity(entityID, TestEntityWithBaseModel{}, true)
 	assert.NoError(t, err)
 
 	// Verify deletion
