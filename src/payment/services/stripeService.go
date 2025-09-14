@@ -13,6 +13,7 @@ import (
 
 	genericService "soli/formations/src/entityManagement/services"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v82"
 	billingPortalSession "github.com/stripe/stripe-go/v82/billingportal/session"
@@ -23,6 +24,7 @@ import (
 	"github.com/stripe/stripe-go/v82/price"
 	"github.com/stripe/stripe-go/v82/product"
 	"github.com/stripe/stripe-go/v82/subscription"
+	"github.com/stripe/stripe-go/v82/webhook"
 	"gorm.io/gorm"
 )
 
@@ -72,6 +74,7 @@ func NewStripeService(db *gorm.DB) StripeService {
 
 	return &stripeService{
 		subscriptionService: NewSubscriptionService(db),
+		genericService:      genericService.NewGenericService(db),
 		repository:          repositories.NewPaymentRepository(db),
 		webhookSecret:       os.Getenv("STRIPE_WEBHOOK_SECRET"),
 	}
@@ -120,9 +123,15 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 		return nil, fmt.Errorf("subscription plan is not active")
 	}
 
-	// Récupérer les infos utilisateur (via Casdoor)
-	// Note: Vous devrez adapter cette partie selon votre système d'auth
-	customerID, err := ss.CreateOrGetCustomer(userID, "user@example.com", "User Name")
+	user, err := casdoorsdk.GetUserByUserId(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user from Casdoor: %v", err)
+	}
+
+	email := user.Email
+	name := user.Name
+
+	customerID, err := ss.CreateOrGetCustomer(userID, email, name)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +201,7 @@ func (ss *stripeService) CreatePortalSession(userID string, input dto.CreatePort
 	}
 
 	return &dto.PortalSessionOutput{
-		URL: portalSession.ReturnURL,
+		URL: portalSession.URL,
 	}, nil
 }
 
@@ -513,7 +522,7 @@ func (ss *stripeService) SendInvoice(invoiceID string) error {
 
 // ValidateWebhookSignature valide la signature d'un webhook Stripe
 func (ss *stripeService) ValidateWebhookSignature(payload []byte, signature string) (*stripe.Event, error) {
-	event, err := stripe.ConstructEvent(payload, signature, ss.webhookSecret)
+	event, err := webhook.ConstructEvent(payload, signature, ss.webhookSecret)
 	if err != nil {
 		return nil, fmt.Errorf("webhook signature verification failed: %v", err)
 	}

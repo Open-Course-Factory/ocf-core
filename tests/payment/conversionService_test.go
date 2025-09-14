@@ -40,7 +40,7 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 		Currency:           "eur",
 		BillingInterval:    "month",
 		TrialDays:          14,
-		Features:           "advanced_labs,api_access,custom_themes",
+		Features:           []string{"advanced_labs", "api_access", "custom_themes"},
 		MaxConcurrentUsers: 10,
 		MaxCourses:         -1, // Unlimited
 		MaxLabSessions:     100,
@@ -61,7 +61,7 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 	assert.Equal(t, "eur", result.Currency)
 	assert.Equal(t, "month", result.BillingInterval)
 	assert.Equal(t, 14, result.TrialDays)
-	assert.Equal(t, "advanced_labs,api_access,custom_themes", result.Features)
+	assert.Equal(t, []string{"advanced_labs", "api_access", "custom_themes"}, result.Features)
 	assert.Equal(t, 10, result.MaxConcurrentUsers)
 	assert.Equal(t, -1, result.MaxCourses)
 	assert.Equal(t, 100, result.MaxLabSessions)

@@ -124,7 +124,15 @@ func (sim *subscriptionIntegrationMiddleware) RequireSubscriptionForAdvancedLabs
 
 		// Vérifier les fonctionnalités du plan
 		features := sPlan.Features
-		if !strings.Contains(features, "advanced_labs") {
+		hasFeature := false
+		for _, feature := range features {
+			if feature == "advanced_labs" {
+				hasFeature = true
+				break
+			}
+		}
+
+		if !hasFeature {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
 				ErrorMessage: "Your current plan doesn't include advanced labs. Please upgrade.",
@@ -208,8 +216,7 @@ func (sim *subscriptionIntegrationMiddleware) RequireSubscriptionForAPI() gin.Ha
 		}
 
 		// Vérifier si le plan inclut l'accès API
-		features := sPlan.Features
-		if !strings.Contains(features, "api_access") {
+		if !containsFeature(sPlan.Features, "api_access") {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
 				ErrorMessage: "Your current plan doesn't include API access. Please upgrade.",
@@ -295,8 +302,7 @@ func (sim *subscriptionIntegrationMiddleware) CheckSubscriptionRequirements() gi
 
 		// Vérifier la fonctionnalité si nécessaire
 		if featureRequired != "" {
-			features := sPlan.Features
-			if !strings.Contains(features, featureRequired) {
+			if !containsFeature(sPlan.Features, featureRequired) {
 				ctx.JSON(http.StatusForbidden, &errors.APIError{
 					ErrorCode:    http.StatusForbidden,
 					ErrorMessage: errorMessage,
@@ -367,9 +373,7 @@ func (sim *subscriptionIntegrationMiddleware) InjectSubscriptionInfo() gin.Handl
 				ctx.Set("subscription_plan", sPlan)
 				ctx.Set("has_active_subscription", true)
 
-				// Injecter les fonctionnalités disponibles
-				features := strings.Split(sPlan.Features, ",")
-				ctx.Set("user_features", features)
+				ctx.Set("user_features", sPlan.Features)
 			} else {
 				ctx.Set("has_active_subscription", false)
 				ctx.Set("user_features", []string{}) // Aucune fonctionnalité premium
@@ -408,4 +412,13 @@ func (sim *subscriptionIntegrationMiddleware) incrementUsageIfSuccessful(ctx *gi
 			fmt.Printf("Warning: Failed to increment usage %s for user %s: %v\n", metricType, userId, err)
 		}
 	}
+}
+
+func containsFeature(features []string, targetFeature string) bool {
+	for _, feature := range features {
+		if feature == targetFeature {
+			return true
+		}
+	}
+	return false
 }

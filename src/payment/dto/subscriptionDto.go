@@ -9,27 +9,27 @@ import (
 
 // SubscriptionPlan DTOs
 type CreateSubscriptionPlanInput struct {
-	Name               string `binding:"required" json:"name" mapstructure:"name"`
-	Description        string `json:"description" mapstructure:"description"`
-	PriceAmount        int64  `binding:"required" json:"price_amount" mapstructure:"price_amount"`
-	Currency           string `json:"currency" mapstructure:"currency"`
-	BillingInterval    string `binding:"required" json:"billing_interval" mapstructure:"billing_interval"`
-	TrialDays          int    `json:"trial_days" mapstructure:"trial_days"`
-	Features           string `json:"features" mapstructure:"features"`
-	MaxConcurrentUsers int    `json:"max_concurrent_users" mapstructure:"max_concurrent_users"`
-	MaxCourses         int    `json:"max_courses" mapstructure:"max_courses"`
-	MaxLabSessions     int    `json:"max_lab_sessions" mapstructure:"max_lab_sessions"`
-	RequiredRole       string `json:"required_role" mapstructure:"required_role"`
+	Name               string   `binding:"required" json:"name" mapstructure:"name"`
+	Description        string   `json:"description" mapstructure:"description"`
+	PriceAmount        int64    `binding:"required" json:"price_amount" mapstructure:"price_amount"`
+	Currency           string   `json:"currency" mapstructure:"currency"`
+	BillingInterval    string   `binding:"required" json:"billing_interval" mapstructure:"billing_interval"`
+	TrialDays          int      `json:"trial_days" mapstructure:"trial_days"`
+	Features           []string `json:"features" mapstructure:"features"`
+	MaxConcurrentUsers int      `json:"max_concurrent_users" mapstructure:"max_concurrent_users"`
+	MaxCourses         int      `json:"max_courses" mapstructure:"max_courses"`
+	MaxLabSessions     int      `json:"max_lab_sessions" mapstructure:"max_lab_sessions"`
+	RequiredRole       string   `json:"required_role" mapstructure:"required_role"`
 }
 
 type UpdateSubscriptionPlanInput struct {
-	Name               string `json:"name,omitempty" mapstructure:"name"`
-	Description        string `json:"description,omitempty" mapstructure:"description"`
-	IsActive           *bool  `json:"is_active,omitempty" mapstructure:"is_active"`
-	Features           string `json:"features,omitempty" mapstructure:"features"`
-	MaxConcurrentUsers *int   `json:"max_concurrent_users,omitempty" mapstructure:"max_concurrent_users"`
-	MaxCourses         *int   `json:"max_courses,omitempty" mapstructure:"max_courses"`
-	MaxLabSessions     *int   `json:"max_lab_sessions,omitempty" mapstructure:"max_lab_sessions"`
+	Name               string   `json:"name,omitempty" mapstructure:"name"`
+	Description        string   `json:"description,omitempty" mapstructure:"description"`
+	IsActive           *bool    `json:"is_active,omitempty" mapstructure:"is_active"`
+	Features           []string `json:"features,omitempty" mapstructure:"features"`
+	MaxConcurrentUsers *int     `json:"max_concurrent_users,omitempty" mapstructure:"max_concurrent_users"`
+	MaxCourses         *int     `json:"max_courses,omitempty" mapstructure:"max_courses"`
+	MaxLabSessions     *int     `json:"max_lab_sessions,omitempty" mapstructure:"max_lab_sessions"`
 }
 
 type SubscriptionPlanOutput struct {
@@ -42,7 +42,7 @@ type SubscriptionPlanOutput struct {
 	Currency           string    `json:"currency"`
 	BillingInterval    string    `json:"billing_interval"`
 	TrialDays          int       `json:"trial_days"`
-	Features           string    `json:"features"`
+	Features           []string  `json:"features"`
 	MaxConcurrentUsers int       `json:"max_concurrent_users"`
 	MaxCourses         int       `json:"max_courses"`
 	MaxLabSessions     int       `json:"max_lab_sessions"`

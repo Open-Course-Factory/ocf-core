@@ -3,7 +3,6 @@ package middleware
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/payment/services"
@@ -59,7 +58,7 @@ func (fgm *featureGateMiddleware) RequireFeature(featureName string) gin.Handler
 		}
 
 		features := sPlan.Features
-		if !strings.Contains(features, featureName) {
+		if containsFeature(features, featureName) {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
 				ErrorMessage: fmt.Sprintf("Feature '%s' is not included in your current plan", featureName),
@@ -106,7 +105,7 @@ func (fgm *featureGateMiddleware) RequireAnyFeature(featuresRequired ...string) 
 		hasRequiredFeature := false
 
 		for _, requiredFeature := range featuresRequired {
-			if strings.Contains(features, requiredFeature) {
+			if containsFeature(features, requiredFeature) {
 				hasRequiredFeature = true
 				break
 			}

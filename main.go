@@ -364,11 +364,11 @@ func setupDefaultSubscriptionPlans() {
 	memberProPlan := &paymentModels.SubscriptionPlan{
 		Name:               "Member Pro",
 		Description:        "Accès à un terminal",
-		PriceAmount:        490, // 9.90€
+		PriceAmount:        490, // 4.90€
 		Currency:           "eur",
 		BillingInterval:    "month",
 		TrialDays:          14,
-		Features:           `{"unlimited_courses": false, "advanced_labs": false, "export": false, "custom_themes": false}`,
+		Features:           []string{"unlimited_courses", "advanced_labs", "export", "custom_themes"},
 		MaxConcurrentUsers: 1,
 		MaxCourses:         0,
 		MaxLabSessions:     1,
