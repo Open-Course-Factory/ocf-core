@@ -14,6 +14,25 @@ type InvoiceRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
+func (i InvoiceRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+	return entityManagementInterfaces.EntitySwaggerConfig{
+		Tag:        "invoices",
+		EntityName: "Invoice",
+		GetAll: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer toutes les factures",
+			Description: "Retourne la liste de toutes les factures disponibles",
+			Tags:        []string{"invoices"},
+			Security:    true,
+		},
+		GetOne: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer une facture",
+			Description: "Retourne les détails complets d'une facture spécifique",
+			Tags:        []string{"invoices"},
+			Security:    true,
+		},
+	}
+}
+
 func (i InvoiceRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return invoicePtrModelToOutput(input.(*models.Invoice))

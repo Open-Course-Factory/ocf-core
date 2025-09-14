@@ -11,6 +11,43 @@ type SessionRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
+func (s SessionRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+	return entityManagementInterfaces.EntitySwaggerConfig{
+		Tag:        "sessions",
+		EntityName: "Session",
+		GetAll: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer toutes les sessions",
+			Description: "Retourne la liste de toutes les sessions disponibles",
+			Tags:        []string{"sessions"},
+			Security:    true,
+		},
+		GetOne: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer une session",
+			Description: "Retourne les détails complets d'une session spécifique",
+			Tags:        []string{"sessions"},
+			Security:    true,
+		},
+		Create: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Créer une session",
+			Description: "Crée une nouvelle session",
+			Tags:        []string{"sessions"},
+			Security:    true,
+		},
+		Update: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Mettre à jour une session",
+			Description: "Modifie une session existante",
+			Tags:        []string{"sessions"},
+			Security:    true,
+		},
+		Delete: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Supprimer une session",
+			Description: "Supprime une session",
+			Tags:        []string{"sessions"},
+			Security:    true,
+		},
+	}
+}
+
 func (s SessionRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return sessionPtrModelToSessionOutputDto(input.(*models.Session))

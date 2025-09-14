@@ -15,6 +15,37 @@ type PaymentMethodRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
+func (p PaymentMethodRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+	return entityManagementInterfaces.EntitySwaggerConfig{
+		Tag:        "payment-methods",
+		EntityName: "PaymentMethod",
+		GetAll: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer tous les moyens de paiement",
+			Description: "Retourne la liste de tous les moyens de paiement disponibles",
+			Tags:        []string{"payment-methods"},
+			Security:    true,
+		},
+		GetOne: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer un moyen de paiement",
+			Description: "Retourne les détails complets d'un moyen de paiement spécifique",
+			Tags:        []string{"payment-methods"},
+			Security:    true,
+		},
+		Create: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Créer un moyen de paiement",
+			Description: "Crée un nouveau moyens de paiement",
+			Tags:        []string{"payment-methods"},
+			Security:    true,
+		},
+		Delete: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Supprimer un moyen de paiement",
+			Description: "Supprime un moyen de paiement",
+			Tags:        []string{"payment-methods"},
+			Security:    true,
+		},
+	}
+}
+
 func (p PaymentMethodRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return paymentMethodPtrModelToOutput(input.(*models.PaymentMethod))

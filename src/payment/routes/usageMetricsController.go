@@ -15,10 +15,6 @@ import (
 // ==========================================
 
 type UsageMetricsController interface {
-	GetEntities(ctx *gin.Context)
-	GetEntity(ctx *gin.Context)
-	EditEntity(ctx *gin.Context)
-
 	GetUserUsageMetrics(ctx *gin.Context)
 	IncrementUsageMetric(ctx *gin.Context)
 	ResetUserUsage(ctx *gin.Context)

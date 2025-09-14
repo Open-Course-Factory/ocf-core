@@ -149,7 +149,7 @@ func (r *paymentRepository) GetActiveUserSubscription(userID string) (*models.Us
 
 func (r *paymentRepository) GetUserSubscriptions(userID string, includeInactive bool) (*[]models.UserSubscription, error) {
 	var subscriptions []models.UserSubscription
-	query := r.db.Where("user_id = ?", userID)
+	query := r.db.Preload("SubscriptionPlan").Where("user_id = ?", userID)
 
 	if !includeInactive {
 		query = query.Where("status IN (?)", []string{"active", "trialing", "past_due"})

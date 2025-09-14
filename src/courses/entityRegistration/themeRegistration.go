@@ -11,6 +11,43 @@ type ThemeRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
+func (s ThemeRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+	return entityManagementInterfaces.EntitySwaggerConfig{
+		Tag:        "themes",
+		EntityName: "Theme",
+		GetAll: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer tous les themes",
+			Description: "Retourne la liste de tous les themes disponibles",
+			Tags:        []string{"themes"},
+			Security:    true,
+		},
+		GetOne: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer un theme",
+			Description: "Retourne les détails complets d'un theme spécifique",
+			Tags:        []string{"themes"},
+			Security:    true,
+		},
+		Create: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Créer un theme",
+			Description: "Crée un nouveau theme",
+			Tags:        []string{"themes"},
+			Security:    true,
+		},
+		Update: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Mettre à jour un theme",
+			Description: "Modifie un theme existant",
+			Tags:        []string{"themes"},
+			Security:    true,
+		},
+		Delete: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Supprimer un theme",
+			Description: "Supprime un theme",
+			Tags:        []string{"themes"},
+			Security:    true,
+		},
+	}
+}
+
 func (s ThemeRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return themePtrModelToThemeOutputDto(input.(*models.Theme))

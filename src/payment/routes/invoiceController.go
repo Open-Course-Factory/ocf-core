@@ -16,9 +16,6 @@ import (
 // ==========================================
 
 type InvoiceController interface {
-	GetEntities(ctx *gin.Context)
-	GetEntity(ctx *gin.Context)
-
 	GetUserInvoices(ctx *gin.Context)
 	DownloadInvoice(ctx *gin.Context)
 }

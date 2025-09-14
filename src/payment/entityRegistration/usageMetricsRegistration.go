@@ -14,6 +14,31 @@ type UsageMetricsRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
+func (u UsageMetricsRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+	return entityManagementInterfaces.EntitySwaggerConfig{
+		Tag:        "usage-metrics",
+		EntityName: "Session",
+		GetAll: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer toutes les métriques d'utilisation",
+			Description: "Retourne la liste de toutes les métriques d'utilisation disponibles",
+			Tags:        []string{"usage-metrics"},
+			Security:    true,
+		},
+		GetOne: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer une métrique d'utilisation",
+			Description: "Retourne les détails complets d'une métrique d'utilisation spécifique",
+			Tags:        []string{"usage-metrics"},
+			Security:    true,
+		},
+		Update: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Mettre à jour une métrique d'utilisation",
+			Description: "Modifie une métrique d'utilisation existante",
+			Tags:        []string{"usage-metrics"},
+			Security:    true,
+		},
+	}
+}
+
 func (u UsageMetricsRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return usageMetricsPtrModelToOutput(input.(*models.UsageMetrics))

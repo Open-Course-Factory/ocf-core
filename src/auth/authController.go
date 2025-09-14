@@ -186,6 +186,14 @@ func getUserFromContext(ctx *gin.Context) (*casdoorsdk.User, bool) {
 		return nil, true
 	}
 
+	if user.Name == "" {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Invalid user data",
+		})
+		return nil, true
+	}
+
 	user.Password = loginInputDto.Password
 	return user, false
 }

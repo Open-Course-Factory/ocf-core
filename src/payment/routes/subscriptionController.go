@@ -15,12 +15,6 @@ import (
 )
 
 type SubscriptionController interface {
-	// Méthodes génériques (héritées du système générique)
-	AddEntity(ctx *gin.Context)
-	EditEntity(ctx *gin.Context)
-	DeleteEntity(ctx *gin.Context)
-	GetEntities(ctx *gin.Context)
-	GetEntity(ctx *gin.Context)
 
 	// Méthodes spécialisées pour les abonnements
 	CreateCheckoutSession(ctx *gin.Context)

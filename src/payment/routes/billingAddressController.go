@@ -16,12 +16,6 @@ import (
 // ==========================================
 
 type BillingAddressController interface {
-	AddEntity(ctx *gin.Context)
-	EditEntity(ctx *gin.Context)
-	DeleteEntity(ctx *gin.Context)
-	GetEntities(ctx *gin.Context)
-	GetEntity(ctx *gin.Context)
-
 	GetUserBillingAddresses(ctx *gin.Context)
 	SetDefaultBillingAddress(ctx *gin.Context)
 }

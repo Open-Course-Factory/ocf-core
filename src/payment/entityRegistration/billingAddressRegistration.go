@@ -14,6 +14,43 @@ type BillingAddressRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
+func (s BillingAddressRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+	return entityManagementInterfaces.EntitySwaggerConfig{
+		Tag:        "billing-addresses",
+		EntityName: "BillingAddress",
+		GetAll: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer toutes les adresses de facturation",
+			Description: "Retourne la liste de toutes les adresses de facturation disponibles",
+			Tags:        []string{"billing-addresses"},
+			Security:    true,
+		},
+		GetOne: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Récupérer une adresse de facturation",
+			Description: "Retourne les détails complets d'une adresse de facturation spécifique",
+			Tags:        []string{"billing-addresses"},
+			Security:    true,
+		},
+		Create: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Créer une adresse de facturation",
+			Description: "Crée une nouvelle adresse de facturation",
+			Tags:        []string{"billing-addresses"},
+			Security:    true,
+		},
+		Update: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Mettre à jour une adresse de facturation",
+			Description: "Modifie une adresse de facturation existante",
+			Tags:        []string{"billing-addresses"},
+			Security:    true,
+		},
+		Delete: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Supprimer une adresse de facturation",
+			Description: "Supprime une adresse de facturation",
+			Tags:        []string{"billing-addresses"},
+			Security:    true,
+		},
+	}
+}
+
 func (b BillingAddressRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
 		return billingAddressPtrModelToOutput(input.(*models.BillingAddress))

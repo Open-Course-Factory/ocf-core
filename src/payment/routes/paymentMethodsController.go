@@ -14,10 +14,6 @@ import (
 
 // Payment Method Controller
 type PaymentMethodController interface {
-	AddEntity(ctx *gin.Context)
-	DeleteEntity(ctx *gin.Context)
-	GetEntities(ctx *gin.Context)
-
 	SetDefaultPaymentMethod(ctx *gin.Context)
 	GetUserPaymentMethods(ctx *gin.Context)
 }
@@ -104,8 +100,4 @@ func (pmc *paymentMethodController) GetUserPaymentMethods(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, paymentMethodsDTO)
-}
-
-func (pmc *paymentMethodController) DeleteEntity(ctx *gin.Context) {
-	pmc.GenericController.DeleteEntity(ctx, true)
 }
