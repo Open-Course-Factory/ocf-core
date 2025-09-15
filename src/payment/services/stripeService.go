@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"time"
 
 	"soli/formations/src/payment/dto"
@@ -157,9 +158,9 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 			"subscription_plan_id": input.SubscriptionPlanID.String(),
 		},
 		BillingAddressCollection: stripe.String("required"),
-		TaxIDCollection: &stripe.CheckoutSessionTaxIDCollectionParams{
-			Enabled: stripe.Bool(true),
-		},
+		// TaxIDCollection: &stripe.CheckoutSessionTaxIDCollectionParams{
+		// 	Enabled: stripe.Bool(true),
+		// },
 	}
 
 	// Ajouter un coupon si fourni
@@ -323,7 +324,9 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 		userSubscription.TrialEnd = &trialEnd
 	}
 
-	return ss.repository.CreateUserSubscription(userSubscription)
+	_, errCreate := ss.genericService.CreateEntity(userSubscription, reflect.TypeOf(models.UserSubscription{}).Name())
+
+	return errCreate
 }
 
 func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {

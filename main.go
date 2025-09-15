@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -31,6 +32,7 @@ import (
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
 	courseRegistration "soli/formations/src/courses/entityRegistration"
+	"soli/formations/src/courses/models"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	generationController "soli/formations/src/courses/routes/generationRoutes"
@@ -315,7 +317,7 @@ func parseFlags() bool {
 	genericService := genericService.NewGenericService(sqldb.DB)
 
 	courseInputDto := courseDto.CourseModelToCourseInputDto(course)
-	_, errorSaving := genericService.CreateEntity(courseInputDto, "Course")
+	_, errorSaving := genericService.CreateEntity(courseInputDto, reflect.TypeOf(models.Course{}).Name())
 
 	if errorSaving != nil {
 		fmt.Println(errorSaving.Error())

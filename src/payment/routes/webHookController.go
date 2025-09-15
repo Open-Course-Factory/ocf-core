@@ -128,7 +128,7 @@ func (wc *webhookController) basicSecurityChecks(ctx *gin.Context) bool {
 
 	// Vérification Content-Type
 	contentType := ctx.GetHeader("Content-Type")
-	if contentType != "application/json" {
+	if !contains(contentType, "application/json") {
 		fmt.Printf("🚨 Invalid Content-Type from IP %s: %s\n", ctx.ClientIP(), contentType)
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"reflect"
 	"time"
 
 	authInterfaces "soli/formations/src/auth/interfaces"
@@ -343,7 +344,7 @@ func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL
 
 	genericService := genericService.NewGenericService(sqldb.DB)
 	courseInputDto := dto.CourseModelToCourseInputDto(course)
-	_, errorSaving := genericService.CreateEntity(courseInputDto, "Course")
+	_, errorSaving := genericService.CreateEntity(courseInputDto, reflect.TypeOf(models.Course{}).Name())
 
 	if errorSaving != nil {
 		fmt.Println(errorSaving.Error())
