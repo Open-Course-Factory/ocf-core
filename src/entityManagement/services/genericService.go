@@ -116,10 +116,21 @@ func (g *genericService) GetEntities(data interface{}) ([]interface{}, error) {
 }
 
 func (g *genericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error {
-	entityName := reflect.TypeOf(entity).Name()
+	typeOfEntity := reflect.TypeOf(entity)
+	entityName := typeOfEntity.Name()
+
+	if entityName == "" {
+		entityName = typeOfEntity.Elem().Name()
+	}
+
+	entityModelInterface := g.GetEntityModelInterface(entityName)
+
+	if entityName == "" {
+		return fmt.Errorf("could not find entity type")
+	}
 
 	// Récupérer l'entité avant suppression
-	existingEntity, err := g.GetEntity(id, entity, entityName)
+	existingEntity, err := g.GetEntity(id, entityModelInterface, entityName)
 	if err != nil {
 		return err
 	}
