@@ -309,22 +309,23 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 		return fmt.Errorf("invalid subscription_plan_id format: %v", err)
 	}
 
-	userSubscription := &models.UserSubscription{
-		UserID:               userID,
-		SubscriptionPlanID:   planID,
-		StripeSubscriptionID: subscription.ID,
-		StripeCustomerID:     subscription.Customer.ID,
-		Status:               string(subscription.Status),
-		CurrentPeriodStart:   time.Unix(subscription.Items.Data[0].CurrentPeriodStart, 0),
-		CurrentPeriodEnd:     time.Unix(subscription.Items.Data[0].CurrentPeriodEnd, 0),
+	userSubscriptionInput := dto.CreateUserSubscriptionInput{
+		UserID:             userID,
+		SubscriptionPlanID: planID,
 	}
 
-	if subscription.TrialEnd > 0 {
-		trialEnd := time.Unix(subscription.TrialEnd, 0)
-		userSubscription.TrialEnd = &trialEnd
-	}
+	// StripeSubscriptionID: subscription.ID,
+	// StripeCustomerID:     subscription.Customer.ID,
+	// Status:               string(subscription.Status),
+	// CurrentPeriodStart:   time.Unix(subscription.Items.Data[0].CurrentPeriodStart, 0),
+	// CurrentPeriodEnd:     time.Unix(subscription.Items.Data[0].CurrentPeriodEnd, 0),
 
-	_, errCreate := ss.genericService.CreateEntity(userSubscription, reflect.TypeOf(models.UserSubscription{}).Name())
+	// if subscription.TrialEnd > 0 {
+	// 	trialEnd := time.Unix(subscription.TrialEnd, 0)
+	// 	userSubscription.TrialEnd = &trialEnd
+	// }
+
+	_, errCreate := ss.genericService.CreateEntity(userSubscriptionInput, reflect.TypeOf(models.UserSubscription{}).Name())
 
 	return errCreate
 }

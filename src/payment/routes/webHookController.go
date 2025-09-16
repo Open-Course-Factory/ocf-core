@@ -46,18 +46,18 @@ func NewWebhookController(db *gorm.DB) WebhookController {
 //	@Failure		400	{object}	errors.APIError	"Invalid webhook"
 //	@Router			/webhooks/stripe [post]
 func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
-	// 🔐 ÉTAPE 1 : Vérifications de sécurité de base
+	// 1 : Vérifications de sécurité de base
 	if !wc.basicSecurityChecks(ctx) {
 		return // La réponse d'erreur est déjà envoyée
 	}
 
-	// 🔐 ÉTAPE 2 : Récupérer et valider le payload
+	// 2 : Récupérer et valider le payload
 	payload, signature, valid := wc.validatePayloadAndSignature(ctx)
 	if !valid {
 		return // La réponse d'erreur est déjà envoyée
 	}
 
-	// 🔐 ÉTAPE 3 : Validation de la signature Stripe
+	// 3 : Validation de la signature Stripe
 	event, err := wc.stripeService.ValidateWebhookSignature(payload, signature)
 	if err != nil {
 		fmt.Printf("🚨 Webhook signature validation failed from IP %s: %v\n", ctx.ClientIP(), err)
@@ -68,14 +68,14 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 		return
 	}
 
-	// 🔐 ÉTAPE 4 : Prévention des attaques par rejeu
+	// 4 : Prévention des attaques par rejeu
 	if wc.isEventProcessed(event.ID) {
 		fmt.Printf("🔄 Duplicate event %s from IP %s\n", event.ID, ctx.ClientIP())
 		ctx.JSON(http.StatusOK, gin.H{"message": "Event already processed"})
 		return
 	}
 
-	// 🔐 ÉTAPE 5 : Vérifier l'âge de l'événement (anti-replay)
+	// 5 : Vérifier l'âge de l'événement (anti-replay)
 	eventTime := time.Unix(event.Created, 0)
 	if time.Since(eventTime) > 5*time.Minute {
 		fmt.Printf("🕐 Event %s too old (%v), rejecting\n", event.ID, time.Since(eventTime))
@@ -86,10 +86,10 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 		return
 	}
 
-	// ✅ ÉTAPE 6 : Marquer comme traité AVANT le traitement
+	// 6 : Marquer comme traité AVANT le traitement
 	wc.markEventProcessed(event.ID)
 
-	// ✅ ÉTAPE 7 : Traitement asynchrone pour éviter les timeouts Stripe
+	// 7 : Traitement asynchrone pour éviter les timeouts Stripe
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -99,13 +99,13 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 
 		if err := wc.stripeService.ProcessWebhook(payload, signature); err != nil {
 			fmt.Printf("❌ Webhook processing failed for event %s: %v\n", event.ID, err)
-			// TODO: Dans un vrai système, envoyer dans une queue pour retry
+			// TODO: Dans un futur système, envoyer dans une queue pour retry
 		} else {
 			fmt.Printf("✅ Successfully processed webhook event %s\n", event.ID)
 		}
 	}()
 
-	// ✅ ÉTAPE 8 : Réponse immédiate à Stripe (OBLIGATOIRE)
+	// 8 : Réponse immédiate à Stripe (OBLIGATOIRE)
 	ctx.JSON(http.StatusOK, gin.H{
 		"received":  true,
 		"event_id":  event.ID,
