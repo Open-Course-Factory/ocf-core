@@ -75,6 +75,50 @@ func SetupCasdoor() {
 	casdoor.InitCasdoorEnforcer(sqldb.DB, basePath)
 }
 
+// SetupBasicRoles crée les rôles de base nécessaires AVANT la création des utilisateurs
+func SetupBasicRoles() {
+	orgName := os.Getenv("CASDOOR_ORGANIZATION_NAME")
+
+	// Créer les rôles de base sans utilisateurs ni permissions
+	basicRoles := []casdoorsdk.Role{
+		{
+			Owner:       orgName,
+			Name:        "student",
+			DisplayName: "Etudiants",
+			IsEnabled:   true,
+			Users:       []string{}, // Vide pour l'instant
+		},
+		{
+			Owner:       orgName,
+			Name:        "supervisor",
+			DisplayName: "Responsables",
+			IsEnabled:   true,
+			Users:       []string{}, // Vide pour l'instant
+		},
+		{
+			Owner:       orgName,
+			Name:        "administrator",
+			DisplayName: "Administrateurs",
+			IsEnabled:   true,
+			Users:       []string{}, // Vide pour l'instant
+		},
+	}
+
+	for _, role := range basicRoles {
+		existingRole, err := casdoorsdk.GetRole(role.Name)
+		if err != nil || existingRole == nil {
+			_, err := casdoorsdk.AddRole(&role)
+			if err != nil {
+				log.Printf("Erreur lors de la création du rôle de base %s: %v", role.Name, err)
+			} else {
+				log.Printf("Rôle de base créé: %s", role.Name)
+			}
+		} else {
+			log.Printf("Rôle de base %s existe déjà", role.Name)
+		}
+	}
+}
+
 func SetupGroups() {
 
 	groups = append(groups, casdoorsdk.Group{ParentId: os.Getenv("CASDOOR_ORGANIZATION_NAME"), Name: "classes", DisplayName: "Toutes les classes"})
@@ -94,35 +138,60 @@ func SetupGroups() {
 
 }
 
+// SetupRoles maintenant met à jour les rôles existants avec les utilisateurs et permissions
 func SetupRoles() {
 	orgName := os.Getenv("CASDOOR_ORGANIZATION_NAME")
-	roleStudent := casdoorsdk.Role{Owner: orgName, Name: "student", DisplayName: "Etudiants", IsEnabled: true,
-		Users: []string{orgName + "/1_st", orgName + "/2_st", orgName + "/3_st", orgName + "/4_st"}}
-	roles = append(roles, roleStudent)
 
-	roleSupervisor := casdoorsdk.Role{Owner: orgName, Name: "supervisor", DisplayName: "Responsables", IsEnabled: true,
-		Users: []string{orgName + "/1_sup", orgName + "/2_sup"}}
-	roles = append(roles, roleSupervisor)
+	// Mettre à jour les rôles existants avec les utilisateurs
+	roleUpdates := []struct {
+		name  string
+		users []string
+	}{
+		{
+			name:  "student",
+			users: []string{orgName + "/1_st", orgName + "/2_st", orgName + "/3_st", orgName + "/4_st"},
+		},
+		{
+			name:  "supervisor",
+			users: []string{orgName + "/1_sup", orgName + "/2_sup"},
+		},
+		{
+			name:  "administrator",
+			users: []string{orgName + "/1_sup"},
+		},
+	}
 
-	roleAdministrator := casdoorsdk.Role{Owner: orgName, Name: "administrator", DisplayName: "Administrateurs", IsEnabled: true,
-		Users: []string{orgName + "/1_sup"}}
-	roles = append(roles, roleAdministrator)
+	// Charger la politique avant de configurer les permissions
+	errLoadPolicy := casdoor.Enforcer.LoadPolicy()
+	if errLoadPolicy != nil {
+		log.Printf("Attention: Échec du chargement de la politique")
+	}
 
-	for _, role := range roles {
-		_, err := casdoorsdk.AddRole(&role)
+	// Mettre à jour chaque rôle avec ses utilisateurs
+	for _, update := range roleUpdates {
+		existingRole, err := casdoorsdk.GetRole(update.name)
 		if err != nil {
-			fmt.Println(err.Error())
+			log.Printf("Erreur lors de la récupération du rôle %s: %v", update.name, err)
+			continue
+		}
+
+		if existingRole != nil {
+			existingRole.Users = update.users
+			_, err := casdoorsdk.UpdateRole(existingRole)
+			if err != nil {
+				log.Printf("Erreur lors de la mise à jour du rôle %s: %v", update.name, err)
+			} else {
+				log.Printf("Rôle mis à jour: %s avec %d utilisateurs", update.name, len(update.users))
+			}
 		}
 	}
 
-	//MANDATORY LOAD POLICY
-	ok0 := casdoor.Enforcer.LoadPolicy()
-	fmt.Println(ok0)
+	// Ajouter les permissions (politiques)
+	casdoor.Enforcer.AddPolicy("student", "/api/v1/courses/*", "GET")
+	casdoor.Enforcer.AddPolicy("student", "/api/v1/usernames/", "(GET|POST)")
+	casdoor.Enforcer.AddPolicy("administrator", "/api/v1/*", "(GET|PATCH|POST|DELETE)")
 
-	casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/courses/*", "GET")
-	casdoor.Enforcer.AddPolicy(roleStudent.Name, "/api/v1/usernames/", "(GET|POST)")
-	casdoor.Enforcer.AddPolicy(roleAdministrator.Name, "/api/v1/*", "(GET|PATCH|POST|DELETE)")
-
+	log.Println("Permissions configurées pour les rôles")
 }
 
 func SetupUsers() {
@@ -253,9 +322,10 @@ func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
 
-	SetupUsers()
-	SetupGroups()
-	SetupRoles()
+	SetupBasicRoles() // Créer les rôles de base d'abord
+	SetupUsers()      // Les utilisateurs peuvent maintenant être créés avec des rôles existants
+	SetupGroups()     // Puis les groupes
+	SetupRoles()      // Enfin configurer les permissions et assigner les utilisateurs aux rôles
 
 	return func(tb testing.TB) {
 		log.Println("teardown test")

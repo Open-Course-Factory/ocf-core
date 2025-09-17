@@ -261,7 +261,7 @@ func setupExternalUsersData() {
 		}
 	}
 	if len(notDeletedUser) == 0 {
-
+		testtools.SetupBasicRoles()
 		testtools.SetupUsers()
 		testtools.SetupGroups()
 		testtools.SetupRoles()
