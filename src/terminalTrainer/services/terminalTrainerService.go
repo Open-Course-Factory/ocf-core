@@ -380,8 +380,8 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 		return nil, fmt.Errorf("user terminal trainer key is disabled")
 	}
 
-	// 2. Récupérer TOUTES les sessions depuis l'API Terminal Trainer (source de vérité)
-	apiSessions, err := tts.GetAllSessionsFromAPI(userKey.APIKey)
+	// 2. Récupérer TOUTES les sessions depuis l'API Terminal Trainer pour tous les types d'instances
+	apiSessions, err := tts.getAllSessionsFromAllInstanceTypes(userKey.APIKey, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sessions from Terminal Trainer API: %v", err)
 	}
@@ -618,4 +618,76 @@ func (tts *terminalTrainerService) buildAPIPath(endpoint string, instanceType st
 
 	path += endpoint
 	return path
+}
+
+// getAllSessionsFromAllInstanceTypes récupère les sessions de tous les types d'instances utilisés par l'utilisateur
+func (tts *terminalTrainerService) getAllSessionsFromAllInstanceTypes(userAPIKey, userID string) (*dto.TerminalTrainerSessionsResponse, error) {
+	// 1. Récupérer toutes les sessions locales de l'utilisateur pour connaître les types d'instances utilisés
+	localSessions, err := tts.repository.GetTerminalSessionsByUserID(userID, false)
+	if err != nil {
+		localSessions = &[]models.Terminal{} // Traiter comme liste vide si erreur
+	}
+
+	// 2. Créer un set des types d'instances utilisés (incluant le type par défaut)
+	instanceTypesUsed := make(map[string]bool)
+	instanceTypesUsed[""] = true // Toujours inclure le type par défaut
+
+	for _, session := range *localSessions {
+		if session.InstanceType != "" {
+			instanceTypesUsed[session.InstanceType] = true
+		}
+	}
+
+	// 3. Récupérer les sessions depuis chaque type d'instance utilisé
+	var allSessions []dto.TerminalTrainerSession
+	totalCount := 0
+
+	for instanceType := range instanceTypesUsed {
+		apiResponse, err := tts.getSessionsFromInstanceType(userAPIKey, instanceType)
+		if err != nil {
+			// Log l'erreur mais continuer avec les autres types d'instances
+			fmt.Printf("Warning: failed to get sessions from instance type '%s': %v\n", instanceType, err)
+			continue
+		}
+		allSessions = append(allSessions, apiResponse.Sessions...)
+		totalCount += apiResponse.Count
+	}
+
+	// 4. Retourner une réponse combinée
+	return &dto.TerminalTrainerSessionsResponse{
+		Sessions:       allSessions,
+		Count:          totalCount,
+		APIKeyID:       0, // Valeur par défaut car on combine plusieurs réponses
+		IncludeExpired: true,
+		Limit:          1000,
+	}, nil
+}
+
+// getSessionsFromInstanceType récupère les sessions d'un type d'instance spécifique
+func (tts *terminalTrainerService) getSessionsFromInstanceType(userAPIKey, instanceType string) (*dto.TerminalTrainerSessionsResponse, error) {
+	path := tts.buildAPIPath("/sessions", instanceType)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s%s?include_expired=true&limit=1000", tts.baseURL, path), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sessions request: %v", err)
+	}
+
+	req.Header.Set("X-API-Key", userAPIKey)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call sessions endpoint: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("sessions API returned error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var sessionsResp dto.TerminalTrainerSessionsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&sessionsResp); err != nil {
+		return nil, fmt.Errorf("failed to parse sessions response: %v", err)
+	}
+
+	return &sessionsResp, nil
 }
