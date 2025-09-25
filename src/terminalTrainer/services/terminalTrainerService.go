@@ -38,19 +38,36 @@ type TerminalTrainerService interface {
 	// Utilities
 	GetRepository() repositories.TerminalRepository
 	CleanupExpiredSessions() error
+
+	// Configuration
+	GetInstanceTypes() ([]dto.InstanceType, error)
 }
 
 type terminalTrainerService struct {
-	adminKey   string
-	baseURL    string
-	repository repositories.TerminalRepository
+	adminKey     string
+	baseURL      string
+	apiVersion   string
+	terminalType string
+	repository   repositories.TerminalRepository
 }
 
 func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
+	apiVersion := os.Getenv("TERMINAL_TRAINER_API_VERSION")
+	if apiVersion == "" {
+		apiVersion = "1.0" // default version
+	}
+
+	terminalType := os.Getenv("TERMINAL_TRAINER_TYPE")
+	if terminalType == "" {
+		terminalType = "" // no prefix by default
+	}
+
 	return &terminalTrainerService{
-		adminKey:   os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
-		baseURL:    os.Getenv("TERMINAL_TRAINER_URL"), // http://localhost:8090
-		repository: repositories.NewTerminalRepository(db),
+		adminKey:     os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
+		baseURL:      os.Getenv("TERMINAL_TRAINER_URL"), // http://localhost:8090
+		apiVersion:   apiVersion,
+		terminalType: terminalType,
+		repository:   repositories.NewTerminalRepository(db),
 	}
 }
 
@@ -71,7 +88,7 @@ func (tts *terminalTrainerService) CreateUserKey(userID, keyName string) error {
 
 	jsonPayload, _ := json.Marshal(payload)
 
-	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/admin/api-keys?key=%s", tts.baseURL, tts.adminKey),
+	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/%s/admin/api-keys?key=%s", tts.baseURL, tts.apiVersion, tts.adminKey),
 		bytes.NewBuffer(jsonPayload))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -123,7 +140,7 @@ func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 	jsonPayload, _ := json.Marshal(payload)
 
 	req, _ := http.NewRequest("PUT",
-		fmt.Sprintf("%s/admin/api-keys/%s?key=%s", tts.baseURL, key.APIKey, tts.adminKey),
+		fmt.Sprintf("%s/%s/admin/api-keys/%s?key=%s", tts.baseURL, tts.apiVersion, key.APIKey, tts.adminKey),
 		bytes.NewBuffer(jsonPayload))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -160,8 +177,12 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	// Appel à l'API Terminal Trainer pour démarrer la session
 	hash := sha256.New()
 	io.WriteString(hash, sessionInput.Terms)
+
+	// Construire le chemin avec version et type d'instance dynamique
+	path := tts.buildAPIPath("/start", sessionInput.InstanceType)
+
 	req, _ := http.NewRequest("GET",
-		fmt.Sprintf("%s/1.0/start?terms=%s", tts.baseURL, fmt.Sprintf("%x", hash.Sum(nil))), nil)
+		fmt.Sprintf("%s%s?terms=%s", tts.baseURL, path, fmt.Sprintf("%x", hash.Sum(nil))), nil)
 
 	if sessionInput.Expiry > 0 {
 		req.URL.RawQuery += fmt.Sprintf("&expiry=%d", sessionInput.Expiry)
@@ -197,6 +218,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 		UserID:            userID,
 		Status:            "active",
 		ExpiresAt:         expiresAt,
+		InstanceType:      sessionInput.InstanceType,
 		UserTerminalKeyID: userKey.ID,
 		UserTerminalKey:   *userKey,
 	}
@@ -206,10 +228,11 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	}
 
 	// Construire la réponse
+	consolePath := tts.buildAPIPath("/console", sessionInput.InstanceType)
 	response := &dto.TerminalSessionResponse{
 		SessionID:  sessionResp.SessionID,
 		ExpiresAt:  expiresAt,
-		ConsoleURL: fmt.Sprintf("%s/1.0/console?id=%s", tts.baseURL, sessionResp.SessionID),
+		ConsoleURL: fmt.Sprintf("%s%s?id=%s", tts.baseURL, consolePath, sessionResp.SessionID),
 		Status:     "active",
 	}
 
@@ -234,7 +257,7 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	}
 
 	// 1. Appeler l'API Terminal Trainer pour expirer la session
-	err = tts.expireSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey)
+	err = tts.expireSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey, terminal.InstanceType)
 	if err != nil {
 		// Log l'erreur mais ne pas bloquer la mise à jour locale
 		fmt.Printf("Warning: failed to expire session in Terminal Trainer API: %v\n", err)
@@ -245,9 +268,12 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	return tts.repository.UpdateTerminalSession(terminal)
 }
 
-// expireSessionInAPI appelle l'endpoint /1.0/expire de l'API Terminal Trainer
-func (tts *terminalTrainerService) expireSessionInAPI(sessionID, userAPIKey string) error {
-	req, err := http.NewRequest("PUT", fmt.Sprintf("%s/1.0/expire?id=%s", tts.baseURL, sessionID), nil)
+// expireSessionInAPI appelle l'endpoint /expire de l'API Terminal Trainer
+func (tts *terminalTrainerService) expireSessionInAPI(sessionID, userAPIKey, instanceType string) error {
+	// Construire le chemin avec version et type d'instance dynamique
+	path := tts.buildAPIPath("/expire", instanceType)
+
+	req, err := http.NewRequest("PUT", fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, sessionID), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create expire request: %v", err)
 	}
@@ -271,7 +297,10 @@ func (tts *terminalTrainerService) expireSessionInAPI(sessionID, userAPIKey stri
 
 // GetAllSessionsFromAPI récupère toutes les sessions depuis l'API Terminal Trainer
 func (tts *terminalTrainerService) GetAllSessionsFromAPI(userAPIKey string) (*dto.TerminalTrainerSessionsResponse, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/1.0/sessions?include_expired=true&limit=1000", tts.baseURL), nil)
+	// Utiliser le type d'instance par défaut configuré pour récupérer toutes les sessions
+	path := tts.buildAPIPath("/sessions", "")
+
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s%s?include_expired=true&limit=1000", tts.baseURL, path), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sessions request: %v", err)
 	}
@@ -306,7 +335,10 @@ func (tts *terminalTrainerService) GetSessionInfoFromAPI(sessionID string) (*dto
 		return nil, fmt.Errorf("session not found locally: %v", err)
 	}
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/1.0/info?id=%s", tts.baseURL, sessionID), nil)
+	// Construire le chemin avec version et type d'instance dynamique
+	path := tts.buildAPIPath("/info", terminal.InstanceType)
+
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, sessionID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create info request: %v", err)
 	}
@@ -528,4 +560,62 @@ func (tts *terminalTrainerService) GetRepository() repositories.TerminalReposito
 // CleanupExpiredSessions nettoie les sessions expirées
 func (tts *terminalTrainerService) CleanupExpiredSessions() error {
 	return tts.repository.CleanupExpiredSessions()
+}
+
+// GetInstanceTypes récupère la liste des types d'instances disponibles depuis Terminal Trainer
+func (tts *terminalTrainerService) GetInstanceTypes() ([]dto.InstanceType, error) {
+	// Utiliser le type par défaut pour récupérer la liste des instances disponibles
+	path := tts.buildAPIPath("/instances", "")
+	url := fmt.Sprintf("%s%s", tts.baseURL, path)
+
+	// Créer la requête HTTP
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	// Ajouter l'en-tête d'autorisation admin
+	req.Header.Set("X-Admin-Key", tts.adminKey)
+
+	// Exécuter la requête
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("terminal trainer API call failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Vérifier le code de statut
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("terminal trainer API error: %d - %s", resp.StatusCode, string(body))
+	}
+
+	// Lire et décoder la réponse
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	var instanceTypes []dto.InstanceType
+	if err := json.Unmarshal(body, &instanceTypes); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	return instanceTypes, nil
+}
+
+// buildAPIPath construit le chemin API avec version et type d'instance optionnel
+func (tts *terminalTrainerService) buildAPIPath(endpoint string, instanceType string) string {
+	path := fmt.Sprintf("/%s", tts.apiVersion)
+
+	// Utiliser le type d'instance fourni, sinon celui par défaut du service
+	if instanceType != "" {
+		path += fmt.Sprintf("/%s", instanceType)
+	} else if tts.terminalType != "" {
+		path += fmt.Sprintf("/%s", tts.terminalType)
+	}
+
+	path += endpoint
+	return path
 }

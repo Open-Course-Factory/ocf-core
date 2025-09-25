@@ -24,6 +24,9 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.POST("/:id/sync", middleware.AuthManagement(), terminalController.SyncSession)       // Sync une session spécifique
 	routes.POST("/sync-all", middleware.AuthManagement(), terminalController.SyncAllSessions)   // Sync toutes les sessions
 	routes.GET("/:id/status", middleware.AuthManagement(), terminalController.GetSessionStatus) // Comparer statuts local/API
+
+	// Configuration
+	routes.GET("/instance-types", middleware.AuthManagement(), terminalController.GetInstanceTypes) // Liste des types d'instances disponibles
 }
 
 func UserTerminalKeyRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {

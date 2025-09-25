@@ -19,12 +19,13 @@ type UpdateTerminalInput struct {
 }
 
 type TerminalOutput struct {
-	ID        uuid.UUID `json:"id"`
-	SessionID string    `json:"session_id"`
-	UserID    string    `json:"user_id"`
-	Status    string    `json:"status"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           uuid.UUID `json:"id"`
+	SessionID    string    `json:"session_id"`
+	UserID       string    `json:"user_id"`
+	Status       string    `json:"status"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	InstanceType string    `json:"instance_type"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // UserTerminalKey DTOs for generic system
@@ -51,8 +52,9 @@ type UserTerminalKeyOutput struct {
 
 // Terminal Service DTOs (pour les appels au Terminal Trainer)
 type CreateTerminalSessionInput struct {
-	Terms  string `binding:"required" json:"terms" form:"terms"`
-	Expiry int    `json:"expiry,omitempty" form:"expiry"` // optionnel
+	Terms        string `binding:"required" json:"terms" form:"terms"`
+	Expiry       int    `json:"expiry,omitempty" form:"expiry"`        // optionnel
+	InstanceType string `json:"instance_type,omitempty" form:"instance_type"` // préfixe du type d'instance
 }
 
 type TerminalSessionResponse struct {
@@ -308,4 +310,16 @@ type FullSyncResponse struct {
 	StartedAt   time.Time     `json:"started_at"`
 	CompletedAt time.Time     `json:"completed_at"`
 	Duration    time.Duration `json:"duration"`
+}
+
+// InstanceType représente un type d'instance disponible pour les clients
+type InstanceType struct {
+	Name        string `json:"name"`
+	Prefix      string `json:"prefix"`
+	Description string `json:"description"`
+}
+
+// InstanceTypesResponse réponse contenant la liste des types d'instances
+type InstanceTypesResponse struct {
+	InstanceTypes []InstanceType `json:"instance_types"`
 }

@@ -37,18 +37,35 @@ type TerminalController interface {
 	SyncUserSessions(ctx *gin.Context)
 	GetSessionStatus(ctx *gin.Context)
 	GetSyncStatistics(ctx *gin.Context)
+
+	// Méthodes de configuration
+	GetInstanceTypes(ctx *gin.Context)
 }
 
 type terminalController struct {
 	controller.GenericController
 	terminalTrainerURL string
+	apiVersion         string
+	terminalType       string
 	service            services.TerminalTrainerService
 }
 
 func NewTerminalController(db *gorm.DB) TerminalController {
+	apiVersion := os.Getenv("TERMINAL_TRAINER_API_VERSION")
+	if apiVersion == "" {
+		apiVersion = "1.0" // default version
+	}
+
+	terminalType := os.Getenv("TERMINAL_TRAINER_TYPE")
+	if terminalType == "" {
+		terminalType = "" // no prefix by default
+	}
+
 	return &terminalController{
 		GenericController:  controller.NewGenericController(db),
 		terminalTrainerURL: os.Getenv("TERMINAL_TRAINER_URL"),
+		apiVersion:         apiVersion,
+		terminalType:       terminalType,
 		service:            services.NewTerminalTrainerService(db),
 	}
 }
@@ -184,7 +201,15 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	} else {
 		terminalTrainerWSURL.Scheme = "ws"
 	}
-	terminalTrainerWSURL.Path = "/1.0/console"
+	// Construire le chemin avec version et type d'instance dynamique
+	path := fmt.Sprintf("/%s", tc.apiVersion)
+	if terminal.InstanceType != "" {
+		path += fmt.Sprintf("/%s", terminal.InstanceType)
+	} else if tc.terminalType != "" {
+		path += fmt.Sprintf("/%s", tc.terminalType)
+	}
+	path += "/console"
+	terminalTrainerWSURL.Path = path
 
 	q := terminalTrainerWSURL.Query()
 	q.Set("id", terminal.SessionID)
@@ -353,12 +378,13 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 	var terminalOutputs []dto.TerminalOutput
 	for _, terminal := range *terminals {
 		terminalOutputs = append(terminalOutputs, dto.TerminalOutput{
-			ID:        terminal.ID,
-			SessionID: terminal.SessionID,
-			UserID:    terminal.UserID,
-			Status:    terminal.Status,
-			ExpiresAt: terminal.ExpiresAt,
-			CreatedAt: terminal.CreatedAt,
+			ID:           terminal.ID,
+			SessionID:    terminal.SessionID,
+			UserID:       terminal.UserID,
+			Status:       terminal.Status,
+			ExpiresAt:    terminal.ExpiresAt,
+			InstanceType: terminal.InstanceType,
+			CreatedAt:    terminal.CreatedAt,
 		})
 	}
 
@@ -724,4 +750,28 @@ func (tc *terminalController) GetSyncStatistics(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, response)
+}
+
+// Get Instance Types godoc
+//
+//	@Summary		Récupérer les types d'instances disponibles
+//	@Description	Récupère la liste des types d'instances/préfixes disponibles depuis Terminal Trainer
+//	@Tags			terminals
+//	@Security		Bearer
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{array}		dto.InstanceType
+//	@Failure		500	{object}	errors.APIError	"Erreur interne du serveur"
+//	@Router			/terminals/instance-types [get]
+func (tc *terminalController) GetInstanceTypes(ctx *gin.Context) {
+	instanceTypes, err := tc.service.GetInstanceTypes()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to get instance types: %v", err),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, instanceTypes)
 }

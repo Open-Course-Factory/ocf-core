@@ -14,6 +14,7 @@ type Terminal struct {
 	UserID            string    `gorm:"type:varchar(255);not null;index" json:"user_id"`
 	Status            string    `gorm:"type:varchar(50);default:'active'" json:"status"` // active, stopped, expired
 	ExpiresAt         time.Time `gorm:"not null" json:"expires_at"`
+	InstanceType      string    `gorm:"type:varchar(100)" json:"instance_type"`        // préfixe du type d'instance utilisé
 	UserTerminalKeyID uuid.UUID `gorm:"not null;index" json:"user_terminal_key_id"`
 	UserTerminalKey   UserTerminalKey
 }

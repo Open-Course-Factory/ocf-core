@@ -55,7 +55,8 @@
 			"extensions": [
 				"golang.Go",
 				"ms-vscode.vscode-typescript-next",
-				"ms-azuretools.vscode-containers"
+				"ms-azuretools.vscode-containers",
+				"Anthropic.claude-code"
 			]
 		}
 	},
