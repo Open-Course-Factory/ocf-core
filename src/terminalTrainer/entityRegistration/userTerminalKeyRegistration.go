@@ -85,9 +85,12 @@ func (u UserTerminalKeyRegistration) GetEntityRegistrationInput() entityManageme
 // Override pour des permissions spécifiques aux clés terminal
 func (u UserTerminalKeyRegistration) GetEntityRoles() entityManagementInterfaces.EntityRoles {
 	roleMap := make(map[string]string)
+
+	// Only use OCF roles - Casdoor mapping is handled automatically by the entity registration system
+	roleMap[string(authModels.Member)] = "(" + http.MethodGet + ")"
+	roleMap[string(authModels.GroupManager)] = "(" + http.MethodGet + ")"
 	// Seuls les admins peuvent gérer les clés directement
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")"
-	roleMap[string(authModels.GroupManager)] = "(" + http.MethodGet + ")"
 
 	return entityManagementInterfaces.EntityRoles{
 		Roles: roleMap,

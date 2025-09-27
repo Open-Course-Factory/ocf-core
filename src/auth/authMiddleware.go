@@ -38,19 +38,8 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"msg": "Error loading authorization policy"})
 			return
 		}
-		// Casbin enforces policy, subject = user currently logged in, obj = ressource URI obtained from request path, action (http verb))
-		ok, errEnforce := casdoor.Enforcer.Enforce(fmt.Sprint(userId), ctx.FullPath(), ctx.Request.Method)
 
-		if errEnforce != nil {
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"msg": "Error occurred when authorizing user"})
-			return
-		}
-
-		if !ok {
-			ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{"msg": "You are not authorized"})
-			return
-		}
-
+		// Get user roles first
 		var userRoles []string
 		userRoles, errRoles := casdoor.Enforcer.GetRolesForUser(userId)
 		if errRoles != nil {
@@ -59,6 +48,42 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 				ErrorMessage: errRoles.Error(),
 			})
 			ctx.Abort()
+			return
+		}
+
+		// Debug logging
+		log.Printf("DEBUG: User %s has roles: %v", userId, userRoles)
+		log.Printf("DEBUG: Checking access to %s %s", ctx.Request.Method, ctx.FullPath())
+
+		// Check authorization for each role - if any role has permission, allow access
+		authorized := false
+		for _, role := range userRoles {
+			log.Printf("DEBUG: Checking role '%s' for access to %s %s", role, ctx.Request.Method, ctx.FullPath())
+			ok, errEnforce := casdoor.Enforcer.Enforce(role, ctx.FullPath(), ctx.Request.Method)
+			if errEnforce != nil {
+				log.Printf("DEBUG: Enforce error for role '%s': %v", role, errEnforce)
+				ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"msg": "Error occurred when authorizing user"})
+				return
+			}
+			log.Printf("DEBUG: Role '%s' enforcement result: %v", role, ok)
+			if ok {
+				authorized = true
+				break
+			}
+		}
+
+		// Also check direct user permissions (fallback for specific user permissions)
+		if !authorized {
+			ok, errEnforce := casdoor.Enforcer.Enforce(fmt.Sprint(userId), ctx.FullPath(), ctx.Request.Method)
+			if errEnforce != nil {
+				ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"msg": "Error occurred when authorizing user"})
+				return
+			}
+			authorized = ok
+		}
+
+		if !authorized {
+			ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{"msg": "You are not authorized"})
 			return
 		}
 

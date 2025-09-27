@@ -93,6 +93,8 @@ func (t TerminalRegistration) GetEntityRegistrationInput() entityManagementInter
 // Override pour des permissions spécifiques aux terminaux
 func (t TerminalRegistration) GetEntityRoles() entityManagementInterfaces.EntityRoles {
 	roleMap := make(map[string]string)
+
+	// Only use OCF roles - Casdoor mapping is handled automatically by the entity registration system
 	roleMap[string(authModels.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
 	roleMap[string(authModels.GroupManager)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")"
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")"

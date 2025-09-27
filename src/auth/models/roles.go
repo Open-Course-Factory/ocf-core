@@ -217,3 +217,31 @@ func GetMaximumRole(roles []RoleName) RoleName {
 
 	return maxRole
 }
+
+// CasdoorToOCFRoleMap maps Casdoor roles to OCF Core roles
+var CasdoorToOCFRoleMap = map[string]RoleName{
+	"student":         Member,
+	"premium_student": MemberPro,
+	"teacher":         GroupManager,
+	"admin":           Admin,
+	"administrator":   Admin,
+}
+
+// GetOCFRoleFromCasdoor converts a Casdoor role to OCF role
+func GetOCFRoleFromCasdoor(casdoorRole string) RoleName {
+	if ocfRole, exists := CasdoorToOCFRoleMap[casdoorRole]; exists {
+		return ocfRole
+	}
+	return Guest // default fallback
+}
+
+// GetCasdoorRolesForOCFRole returns all Casdoor roles that map to an OCF role
+func GetCasdoorRolesForOCFRole(ocfRole RoleName) []string {
+	var casdoorRoles []string
+	for casdoorRole, mappedOCFRole := range CasdoorToOCFRoleMap {
+		if mappedOCFRole == ocfRole {
+			casdoorRoles = append(casdoorRoles, casdoorRole)
+		}
+	}
+	return casdoorRoles
+}

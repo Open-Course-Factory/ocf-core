@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/interfaces"
+	authModels "soli/formations/src/auth/models"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"strings"
 
@@ -135,17 +136,40 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 
 	resourceName := Pluralize(entityName)
 	resourceName = strings.ToLower(resourceName)
+	apiGroupPath := "/api/v1/" + resourceName + "/*" // Use wildcard for entire API group
 
-	for roleName, accessGiven := range rolesMap {
-		_, errPolicy := enforcer.AddPolicy(roleName, "/api/v1/"+resourceName+"/", accessGiven)
+	log.Printf("Setting up entity access for %s at %s", entityName, apiGroupPath)
+
+	for ocfRoleName, accessGiven := range rolesMap {
+		// Add permission for the OCF role
+		_, errPolicy := enforcer.AddPolicy(ocfRoleName, apiGroupPath, accessGiven)
 		if errPolicy != nil {
 			if strings.Contains(errPolicy.Error(), "UNIQUE") {
-				log.Println(errPolicy.Error())
+				log.Printf("OCF role permission already exists: %s %s %s", ocfRoleName, apiGroupPath, accessGiven)
 			} else {
-				log.Fatal(errPolicy.Error())
+				log.Printf("Error adding OCF role permission: %v", errPolicy)
+			}
+		} else {
+			log.Printf("Added OCF role permission: %s can %s %s", ocfRoleName, accessGiven, apiGroupPath)
+		}
+
+		// Automatically add permissions for corresponding Casdoor roles
+		casdoorRoles := authModels.GetCasdoorRolesForOCFRole(authModels.RoleName(ocfRoleName))
+		for _, casdoorRole := range casdoorRoles {
+			_, errCasdoorPolicy := enforcer.AddPolicy(casdoorRole, apiGroupPath, accessGiven)
+			if errCasdoorPolicy != nil {
+				if strings.Contains(errCasdoorPolicy.Error(), "UNIQUE") {
+					log.Printf("Casdoor role permission already exists: %s %s %s", casdoorRole, apiGroupPath, accessGiven)
+				} else {
+					log.Printf("Error adding Casdoor role permission: %v", errCasdoorPolicy)
+				}
+			} else {
+				log.Printf("Added Casdoor role permission: %s can %s %s", casdoorRole, accessGiven, apiGroupPath)
 			}
 		}
 	}
+
+	log.Printf("Completed entity access setup for %s", entityName)
 }
 
 func Pluralize(entityName string) string {
