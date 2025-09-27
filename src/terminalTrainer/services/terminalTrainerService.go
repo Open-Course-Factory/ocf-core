@@ -29,6 +29,14 @@ type TerminalTrainerService interface {
 	GetActiveUserSessions(userID string) (*[]models.Terminal, error)
 	StopSession(sessionID string) error
 
+	// Terminal sharing methods
+	ShareTerminal(sessionID, sharedByUserID, sharedWithUserID, accessLevel string, expiresAt *time.Time) error
+	RevokeTerminalAccess(sessionID, sharedWithUserID, requestingUserID string) error
+	GetTerminalShares(sessionID, requestingUserID string) (*[]models.TerminalShare, error)
+	GetSharedTerminals(userID string) (*[]models.Terminal, error)
+	HasTerminalAccess(sessionID, userID string, requiredLevel string) (bool, error)
+	GetSharedTerminalInfo(sessionID, userID string) (*dto.SharedTerminalInfo, error)
+
 	// Synchronization methods (nouvelle approche avec API comme source de vérité)
 	GetAllSessionsFromAPI(userAPIKey string) (*dto.TerminalTrainerSessionsResponse, error)
 	SyncUserSessions(userID string) (*dto.SyncAllSessionsResponse, error)
@@ -690,4 +698,210 @@ func (tts *terminalTrainerService) getSessionsFromInstanceType(userAPIKey, insta
 	}
 
 	return &sessionsResp, nil
+}
+
+// Terminal sharing methods implementation
+
+// ShareTerminal partage un terminal avec un autre utilisateur
+func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, sharedWithUserID, accessLevel string, expiresAt *time.Time) error {
+	// Vérifier que le terminal existe
+	terminal, err := tts.repository.GetTerminalSessionBySessionID(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get terminal: %v", err)
+	}
+	if terminal == nil {
+		return fmt.Errorf("terminal not found")
+	}
+
+	// Vérifier que l'utilisateur qui partage est le propriétaire du terminal
+	if terminal.UserID != sharedByUserID {
+		return fmt.Errorf("only terminal owner can share access")
+	}
+
+	// Vérifier que l'utilisateur ne partage pas avec lui-même
+	if sharedByUserID == sharedWithUserID {
+		return fmt.Errorf("cannot share terminal with yourself")
+	}
+
+	// Valider le niveau d'accès
+	validLevels := map[string]bool{"read": true, "write": true, "admin": true}
+	if !validLevels[accessLevel] {
+		return fmt.Errorf("invalid access level: %s", accessLevel)
+	}
+
+	// Vérifier si un partage existe déjà
+	existingShare, err := tts.repository.GetTerminalShare(terminal.ID.String(), sharedWithUserID)
+	if err != nil {
+		return fmt.Errorf("failed to check existing share: %v", err)
+	}
+
+	if existingShare != nil {
+		// Mettre à jour le partage existant
+		existingShare.AccessLevel = accessLevel
+		existingShare.ExpiresAt = expiresAt
+		existingShare.IsActive = true
+		return tts.repository.UpdateTerminalShare(existingShare)
+	}
+
+	// Créer un nouveau partage
+	share := &models.TerminalShare{
+		TerminalID:       terminal.ID,
+		SharedWithUserID: sharedWithUserID,
+		SharedByUserID:   sharedByUserID,
+		AccessLevel:      accessLevel,
+		ExpiresAt:        expiresAt,
+		IsActive:         true,
+	}
+
+	return tts.repository.CreateTerminalShare(share)
+}
+
+// RevokeTerminalAccess révoque l'accès d'un utilisateur à un terminal
+func (tts *terminalTrainerService) RevokeTerminalAccess(sessionID, sharedWithUserID, requestingUserID string) error {
+	// Vérifier que le terminal existe
+	terminal, err := tts.repository.GetTerminalSessionBySessionID(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get terminal: %v", err)
+	}
+	if terminal == nil {
+		return fmt.Errorf("terminal not found")
+	}
+
+	// Vérifier que l'utilisateur qui révoque est le propriétaire du terminal
+	if terminal.UserID != requestingUserID {
+		return fmt.Errorf("only terminal owner can revoke access")
+	}
+
+	// Récupérer le partage
+	share, err := tts.repository.GetTerminalShare(terminal.ID.String(), sharedWithUserID)
+	if err != nil {
+		return fmt.Errorf("failed to get share: %v", err)
+	}
+	if share == nil {
+		return fmt.Errorf("no active share found")
+	}
+
+	// Désactiver le partage
+	share.IsActive = false
+	return tts.repository.UpdateTerminalShare(share)
+}
+
+// GetTerminalShares récupère les partages d'un terminal
+func (tts *terminalTrainerService) GetTerminalShares(sessionID, requestingUserID string) (*[]models.TerminalShare, error) {
+	// Vérifier que le terminal existe
+	terminal, err := tts.repository.GetTerminalSessionBySessionID(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get terminal: %v", err)
+	}
+	if terminal == nil {
+		return nil, fmt.Errorf("terminal not found")
+	}
+
+	// Vérifier que l'utilisateur est le propriétaire du terminal
+	if terminal.UserID != requestingUserID {
+		return nil, fmt.Errorf("only terminal owner can view shares")
+	}
+
+	return tts.repository.GetTerminalSharesByTerminalID(terminal.ID.String())
+}
+
+// GetSharedTerminals récupère tous les terminaux partagés avec un utilisateur
+func (tts *terminalTrainerService) GetSharedTerminals(userID string) (*[]models.Terminal, error) {
+	return tts.repository.GetSharedTerminalsForUser(userID)
+}
+
+// HasTerminalAccess vérifie si un utilisateur a accès à un terminal avec le niveau requis
+func (tts *terminalTrainerService) HasTerminalAccess(sessionID, userID string, requiredLevel string) (bool, error) {
+	// D'abord vérifier si l'utilisateur est le propriétaire
+	terminal, err := tts.repository.GetTerminalSessionBySessionID(sessionID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get terminal: %v", err)
+	}
+	if terminal == nil {
+		return false, fmt.Errorf("terminal not found")
+	}
+
+	// Le propriétaire a toujours accès
+	if terminal.UserID == userID {
+		return true, nil
+	}
+
+	// Vérifier les partages
+	return tts.repository.HasTerminalAccess(terminal.ID.String(), userID, requiredLevel)
+}
+
+// GetSharedTerminalInfo récupère les informations détaillées d'un terminal partagé
+func (tts *terminalTrainerService) GetSharedTerminalInfo(sessionID, userID string) (*dto.SharedTerminalInfo, error) {
+	// Vérifier que le terminal existe
+	terminal, err := tts.repository.GetTerminalSessionBySessionID(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get terminal: %v", err)
+	}
+	if terminal == nil {
+		return nil, fmt.Errorf("terminal not found")
+	}
+
+	// Vérifier si l'utilisateur a accès
+	hasAccess, err := tts.HasTerminalAccess(sessionID, userID, "read")
+	if err != nil {
+		return nil, err
+	}
+	if !hasAccess {
+		return nil, fmt.Errorf("access denied")
+	}
+
+	// Construire les informations du terminal
+	terminalOutput := dto.TerminalOutput{
+		ID:           terminal.ID,
+		SessionID:    terminal.SessionID,
+		UserID:       terminal.UserID,
+		Status:       terminal.Status,
+		ExpiresAt:    terminal.ExpiresAt,
+		InstanceType: terminal.InstanceType,
+		CreatedAt:    terminal.CreatedAt,
+	}
+
+	// Si l'utilisateur est le propriétaire, récupérer tous les partages
+	var shares []dto.TerminalShareOutput
+	if terminal.UserID == userID {
+		terminalShares, err := tts.repository.GetTerminalSharesByTerminalID(terminal.ID.String())
+		if err == nil {
+			for _, share := range *terminalShares {
+				shares = append(shares, dto.TerminalShareOutput{
+					ID:               share.ID,
+					TerminalID:       share.TerminalID,
+					SharedWithUserID: share.SharedWithUserID,
+					SharedByUserID:   share.SharedByUserID,
+					AccessLevel:      share.AccessLevel,
+					ExpiresAt:        share.ExpiresAt,
+					IsActive:         share.IsActive,
+					CreatedAt:        share.CreatedAt,
+				})
+			}
+		}
+	}
+
+	// Déterminer le niveau d'accès de l'utilisateur
+	var accessLevel string
+	var sharedAt time.Time
+	if terminal.UserID == userID {
+		accessLevel = "owner"
+		sharedAt = terminal.CreatedAt
+	} else {
+		// Récupérer le partage pour cet utilisateur
+		share, err := tts.repository.GetTerminalShare(terminal.ID.String(), userID)
+		if err != nil || share == nil {
+			return nil, fmt.Errorf("access information not found")
+		}
+		accessLevel = share.AccessLevel
+		sharedAt = share.CreatedAt
+	}
+
+	return &dto.SharedTerminalInfo{
+		Terminal:    terminalOutput,
+		SharedBy:    terminal.UserID,
+		AccessLevel: accessLevel,
+		SharedAt:    sharedAt,
+		Shares:      shares,
+	}, nil
 }

@@ -2,9 +2,11 @@ package repositories
 
 import (
 	"errors"
+	"fmt"
 	"soli/formations/src/terminalTrainer/models"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -21,6 +23,16 @@ type TerminalRepository interface {
 	GetTerminalSessionsByUserID(userID string, isActive bool) (*[]models.Terminal, error)
 	UpdateTerminalSession(terminal *models.Terminal) error
 	DeleteTerminalSession(sessionID string) error
+
+	// TerminalShare methods
+	CreateTerminalShare(share *models.TerminalShare) error
+	GetTerminalSharesByTerminalID(terminalID string) (*[]models.TerminalShare, error)
+	GetTerminalSharesByUserID(userID string) (*[]models.TerminalShare, error)
+	GetTerminalShare(terminalID, userID string) (*models.TerminalShare, error)
+	UpdateTerminalShare(share *models.TerminalShare) error
+	DeleteTerminalShare(shareID string) error
+	GetSharedTerminalsForUser(userID string) (*[]models.Terminal, error)
+	HasTerminalAccess(terminalID, userID string, requiredLevel string) (bool, error)
 
 	// Synchronisation
 	GetAllActiveUserKeys() (*[]models.UserTerminalKey, error)
@@ -235,4 +247,114 @@ func (tr *terminalRepository) GetSyncStatistics(userID string) (map[string]int, 
 	stats["total"] = int(total)
 
 	return stats, nil
+}
+
+// TerminalShare methods
+func (r *terminalRepository) CreateTerminalShare(share *models.TerminalShare) error {
+	return r.db.Create(share).Error
+}
+
+func (r *terminalRepository) GetTerminalSharesByTerminalID(terminalID string) (*[]models.TerminalShare, error) {
+	var shares []models.TerminalShare
+	// Convert string to UUID for proper comparison
+	terminalUUID, err := uuid.Parse(terminalID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid terminal ID format: %v", err)
+	}
+	err = r.db.Preload("Terminal").Where("terminal_id = ? AND is_active = ?", terminalUUID, true).Find(&shares).Error
+	if err != nil {
+		return nil, err
+	}
+	return &shares, nil
+}
+
+func (r *terminalRepository) GetTerminalSharesByUserID(userID string) (*[]models.TerminalShare, error) {
+	var shares []models.TerminalShare
+	err := r.db.Preload("Terminal").Where("shared_with_user_id = ? AND is_active = ?", userID, true).Find(&shares).Error
+	if err != nil {
+		return nil, err
+	}
+	return &shares, nil
+}
+
+func (r *terminalRepository) GetTerminalShare(terminalID, userID string) (*models.TerminalShare, error) {
+	var share models.TerminalShare
+	// Convert string to UUID for proper comparison
+	terminalUUID, err := uuid.Parse(terminalID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid terminal ID format: %v", err)
+	}
+	err = r.db.Preload("Terminal").Where("terminal_id = ? AND shared_with_user_id = ? AND is_active = ?", terminalUUID, userID, true).First(&share).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &share, nil
+}
+
+func (r *terminalRepository) UpdateTerminalShare(share *models.TerminalShare) error {
+	return r.db.Save(share).Error
+}
+
+func (r *terminalRepository) DeleteTerminalShare(shareID string) error {
+	return r.db.Delete(&models.TerminalShare{}, shareID).Error
+}
+
+func (r *terminalRepository) GetSharedTerminalsForUser(userID string) (*[]models.Terminal, error) {
+	var terminals []models.Terminal
+
+	// Récupérer tous les terminaux partagés avec cet utilisateur
+	err := r.db.Joins("JOIN terminal_shares ON terminals.id = terminal_shares.terminal_id").
+		Preload("UserTerminalKey").
+		Where("terminal_shares.shared_with_user_id = ? AND terminal_shares.is_active = ? AND terminals.status = ?", userID, true, "active").
+		Find(&terminals).Error
+
+	if err != nil {
+		return nil, err
+	}
+	return &terminals, nil
+}
+
+func (r *terminalRepository) HasTerminalAccess(terminalID, userID string, requiredLevel string) (bool, error) {
+	var count int64
+
+	// Convert string to UUID for proper comparison
+	terminalUUID, err := uuid.Parse(terminalID)
+	if err != nil {
+		return false, fmt.Errorf("invalid terminal ID format: %v", err)
+	}
+
+	// Vérifier s'il y a un partage actif avec le niveau d'accès requis ou supérieur
+	accessLevels := map[string]int{
+		"read":  1,
+		"write": 2,
+		"admin": 3,
+	}
+
+	requiredLevelInt, exists := accessLevels[requiredLevel]
+	if !exists {
+		return false, errors.New("invalid access level")
+	}
+
+	// Construire la liste des niveaux d'accès suffisants
+	var allowedLevels []string
+	for level, value := range accessLevels {
+		if value >= requiredLevelInt {
+			allowedLevels = append(allowedLevels, level)
+		}
+	}
+
+	err = r.db.Model(&models.TerminalShare{}).
+		Where("terminal_id = ? AND shared_with_user_id = ? AND is_active = ? AND access_level IN ?",
+			terminalUUID, userID, true, allowedLevels).
+		Where("(expires_at IS NULL OR expires_at > ?)", time.Now()).
+		Count(&count).Error
+
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
 }

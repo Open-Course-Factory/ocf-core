@@ -9,8 +9,10 @@ import (
 type UserController interface {
 	AddUser(ctx *gin.Context)
 	DeleteUser(ctx *gin.Context)
-	// GetUsers(ctx *gin.Context)
-	// GetUser(ctx *gin.Context)
+	GetUsers(ctx *gin.Context)
+	GetUser(ctx *gin.Context)
+	GetUsersBatch(ctx *gin.Context)
+	SearchUsers(ctx *gin.Context)
 }
 
 type userController struct {

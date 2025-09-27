@@ -139,6 +139,7 @@ func main() {
 
 	sqldb.DB.AutoMigrate(&terminalModels.Terminal{})
 	sqldb.DB.AutoMigrate(&terminalModels.UserTerminalKey{})
+	sqldb.DB.AutoMigrate(&terminalModels.TerminalShare{})
 
 	sqldb.DB.AutoMigrate(&paymentModels.SubscriptionPlan{})
 	sqldb.DB.AutoMigrate(&paymentModels.UserSubscription{})
@@ -164,6 +165,7 @@ func main() {
 
 	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.TerminalRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.UserTerminalKeyRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.TerminalShareRegistration{})
 
 	initDB()
 

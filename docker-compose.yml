@@ -54,7 +54,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - casdoor_db
+      casdoor_db:
+        condition: service_healthy
     environment:
       RUNNING_IN_DOCKER: "true"
     volumes:
@@ -69,6 +70,11 @@ services:
       MYSQL_ROOT_PASSWORD: 123456
     volumes:
       - mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - devcontainer-network
 

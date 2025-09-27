@@ -16,8 +16,13 @@ func UsersRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm
 
 	middleware := auth.NewAuthMiddleware(db)
 
-	//routes.GET("", middleware.AuthManagement(), sshKeyController.GetSshKeys)
+	// User CRUD routes
+	routes.GET("", middleware.AuthManagement(), userController.GetUsers)
+	routes.GET("/:id", middleware.AuthManagement(), userController.GetUser)
 	routes.POST("", userController.AddUser)
-	//routes.PATCH("/:id", middleware.AuthManagement(), sshKeyController.PatchSshKeyName)
 	routes.DELETE("/:id", middleware.AuthManagement(), userController.DeleteUser)
+
+	// User lookup routes for sharing functionality
+	routes.POST("/batch", middleware.AuthManagement(), userController.GetUsersBatch)
+	routes.GET("/search", middleware.AuthManagement(), userController.SearchUsers)
 }

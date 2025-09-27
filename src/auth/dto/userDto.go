@@ -10,6 +10,7 @@ import (
 type UserOutput struct {
 	Id        uuid.UUID `json:"id"`
 	UserName  string    `json:"name"`
+	Email     string    `json:"email"`
 	CreatedAt string    `json:"created_at"`
 }
 
@@ -33,6 +34,10 @@ type DeleteUserInput struct {
 	Id uuid.UUID `binding:"required"`
 }
 
+type BatchUsersInput struct {
+	UserIds []string `json:"user_ids" binding:"required"`
+}
+
 func UserModelToUserOutput(userModel *casdoorsdk.User) *UserOutput {
 	uuid_parsed, err := uuid.Parse(userModel.Id)
 	if err != nil {
@@ -42,6 +47,7 @@ func UserModelToUserOutput(userModel *casdoorsdk.User) *UserOutput {
 	return &UserOutput{
 		Id:        uuid_parsed,
 		UserName:  userModel.Name,
+		Email:     userModel.Email,
 		CreatedAt: userModel.CreatedTime,
 	}
 }

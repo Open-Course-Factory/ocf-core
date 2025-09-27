@@ -13,13 +13,20 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	terminalController := NewTerminalController(db)
 	middleware := auth.NewAuthMiddleware(db)
 
-	routes := router.Group("/terminals")
+	routes := router.Group("/terminal-sessions")
 
 	// Routes spécialisées pour les fonctionnalités Terminal Trainer
 	routes.POST("/start-session", middleware.AuthManagement(), terminalController.StartSession)
 	routes.GET("/:id/console", middleware.AuthManagement(), terminalController.ConnectConsole)
 	routes.POST("/:id/stop", middleware.AuthManagement(), terminalController.StopSession)
 	routes.GET("/user-sessions", middleware.AuthManagement(), terminalController.GetUserSessions)
+
+	// Routes de partage de terminaux
+	routes.POST("/:id/share", middleware.AuthManagement(), terminalController.ShareTerminal)                  // Partager un terminal
+	routes.DELETE("/:id/share/:user_id", middleware.AuthManagement(), terminalController.RevokeTerminalAccess) // Révoquer l'accès
+	routes.GET("/:id/shares", middleware.AuthManagement(), terminalController.GetTerminalShares)              // Voir les partages d'un terminal
+	routes.GET("/shared-with-me", middleware.AuthManagement(), terminalController.GetSharedTerminals)         // Terminaux partagés avec moi
+	routes.GET("/:id/info", middleware.AuthManagement(), terminalController.GetSharedTerminalInfo)            // Info détaillée d'un terminal
 
 	routes.POST("/:id/sync", middleware.AuthManagement(), terminalController.SyncSession)       // Sync une session spécifique
 	routes.POST("/sync-all", middleware.AuthManagement(), terminalController.SyncAllSessions)   // Sync toutes les sessions

@@ -50,6 +50,47 @@ type UserTerminalKeyOutput struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+// TerminalShare DTOs for generic system
+type CreateTerminalShareInput struct {
+	TerminalID       uuid.UUID  `binding:"required" json:"terminal_id"`
+	SharedWithUserID string     `binding:"required" json:"shared_with_user_id"`
+	AccessLevel      string     `binding:"required" json:"access_level"` // read, write, admin
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+}
+
+type UpdateTerminalShareInput struct {
+	AccessLevel *string    `json:"access_level,omitempty"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	IsActive    *bool      `json:"is_active,omitempty"`
+}
+
+type TerminalShareOutput struct {
+	ID               uuid.UUID  `json:"id"`
+	TerminalID       uuid.UUID  `json:"terminal_id"`
+	SharedWithUserID string     `json:"shared_with_user_id"`
+	SharedByUserID   string     `json:"shared_by_user_id"`
+	AccessLevel      string     `json:"access_level"`
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	IsActive         bool       `json:"is_active"`
+	CreatedAt        time.Time  `json:"created_at"`
+}
+
+// Terminal sharing specific DTOs
+type ShareTerminalRequest struct {
+	SharedWithUserID string     `binding:"required" json:"shared_with_user_id"`
+	AccessLevel      string     `binding:"required" json:"access_level"` // read, write, admin
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+}
+
+type SharedTerminalInfo struct {
+	Terminal    TerminalOutput        `json:"terminal"`
+	SharedBy    string                `json:"shared_by"`
+	AccessLevel string                `json:"access_level"`
+	ExpiresAt   *time.Time            `json:"expires_at,omitempty"`
+	SharedAt    time.Time             `json:"shared_at"`
+	Shares      []TerminalShareOutput `json:"shares,omitempty"`
+}
+
 // Terminal Service DTOs (pour les appels au Terminal Trainer)
 type CreateTerminalSessionInput struct {
 	Terms        string `binding:"required" json:"terms" form:"terms"`

@@ -26,6 +26,8 @@ type UserService interface {
 	AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutput, error)
 	GetUserById(id string) (*dto.UserOutput, error)
 	GetAllUsers() (*[]dto.UserOutput, error)
+	GetUsersByIds(ids []string) (*[]dto.UserOutput, error)
+	SearchUsers(query string) (*[]dto.UserOutput, error)
 	DeleteUser(id string) error
 }
 
@@ -174,4 +176,52 @@ func (us *userService) DeleteUser(id string) error {
 	casdoor.Enforcer.RemoveGroupingPolicy(user.Id)
 
 	return nil
+}
+
+// GetUsersByIds retrieves multiple users by their IDs
+func (us *userService) GetUsersByIds(ids []string) (*[]dto.UserOutput, error) {
+	var results []dto.UserOutput
+
+	for _, id := range ids {
+		user, errUser := casdoorsdk.GetUserByUserId(id)
+		if errUser != nil {
+			// Skip users that don't exist or can't be accessed
+			continue
+		}
+		results = append(results, *dto.UserModelToUserOutput(user))
+	}
+
+	return &results, nil
+}
+
+// SearchUsers searches for users by name or email
+func (us *userService) SearchUsers(query string) (*[]dto.UserOutput, error) {
+	if len(strings.TrimSpace(query)) < 2 {
+		return &[]dto.UserOutput{}, fmt.Errorf("search query must be at least 2 characters")
+	}
+
+	// Get all users since Casdoor SDK doesn't have built-in search
+	users, errUser := casdoorsdk.GetUsers()
+	if errUser != nil {
+		fmt.Println(errUser.Error())
+		return nil, errUser
+	}
+
+	var results []dto.UserOutput
+	queryLower := strings.ToLower(strings.TrimSpace(query))
+
+	for _, user := range users {
+		// Case-insensitive search on name and email
+		if strings.Contains(strings.ToLower(user.Name), queryLower) ||
+		   strings.Contains(strings.ToLower(user.Email), queryLower) {
+			results = append(results, *dto.UserModelToUserOutput(user))
+		}
+
+		// Limit results to 20 users max for performance
+		if len(results) >= 20 {
+			break
+		}
+	}
+
+	return &results, nil
 }
