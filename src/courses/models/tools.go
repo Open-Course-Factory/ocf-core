@@ -1,19 +1,26 @@
 package models
 
 import (
+	"crypto/md5"
 	"database/sql/driver"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -256,4 +263,228 @@ func GetRepoNameFromURL(url string) string {
 	// Extract the repository name using the last slash index
 	repoName := cleanURL[lastSlashIndex+1:]
 	return repoName
+}
+
+// RepoCacheInfo stores repository cache metadata
+type RepoCacheInfo struct {
+	URL        string    `json:"url"`
+	Branch     string    `json:"branch"`
+	CommitHash string    `json:"commit_hash"`
+	CachedAt   time.Time `json:"cached_at"`
+}
+
+// GetRemoteCommitHash retrieves the latest commit hash from a remote repository without cloning
+func GetRemoteCommitHash(ownerId string, repositoryURL string, repositoryBranch string) (string, error) {
+	gitCloneOption, err := prepareGitCloneOptions(ownerId, repositoryURL, repositoryBranch)
+	if err != nil {
+		return "", err
+	}
+
+	// Create a remote reference to get the commit hash without cloning
+	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{gitCloneOption.URL},
+	})
+
+	// List references from the remote
+	refs, err := remote.List(&git.ListOptions{
+		Auth: gitCloneOption.Auth,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to list remote references: %w", err)
+	}
+
+	// Find the commit hash for the specified branch
+	branchRef := "refs/heads/" + repositoryBranch
+	for _, ref := range refs {
+		if ref.Name().String() == branchRef {
+			return ref.Hash().String(), nil
+		}
+	}
+
+	return "", fmt.Errorf("branch %s not found in remote repository", repositoryBranch)
+}
+
+// GetCacheKey generates a unique cache key for a repository
+func GetCacheKey(repositoryURL string, repositoryBranch string) string {
+	hasher := md5.New()
+	hasher.Write([]byte(repositoryURL + ":" + repositoryBranch))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+// GetCacheDir returns the cache directory path
+func GetCacheDir() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "~/.ocf-cache"
+	}
+	return filepath.Join(homeDir, ".ocf-cache", "repositories")
+}
+
+// GetCachedRepo checks if a repository is cached and up-to-date
+func GetCachedRepo(ownerId string, repositoryURL string, repositoryBranch string) (billy.Filesystem, bool, error) {
+	cacheKey := GetCacheKey(repositoryURL, repositoryBranch)
+	cacheDir := GetCacheDir()
+	repoCacheDir := filepath.Join(cacheDir, cacheKey)
+	cacheInfoFile := filepath.Join(repoCacheDir, ".cache_info.json")
+
+	// Check if cache directory exists
+	if _, err := os.Stat(repoCacheDir); os.IsNotExist(err) {
+		return nil, false, nil
+	}
+
+	// Check if cache info file exists
+	if _, err := os.Stat(cacheInfoFile); os.IsNotExist(err) {
+		return nil, false, nil
+	}
+
+	// Read cache info
+	cacheInfoBytes, err := os.ReadFile(cacheInfoFile)
+	if err != nil {
+		return nil, false, nil
+	}
+
+	var cacheInfo RepoCacheInfo
+	if err := json.Unmarshal(cacheInfoBytes, &cacheInfo); err != nil {
+		return nil, false, nil
+	}
+
+	// Get remote commit hash
+	remoteCommitHash, err := GetRemoteCommitHash(ownerId, repositoryURL, repositoryBranch)
+	if err != nil {
+		log.Printf("Warning: Failed to get remote commit hash, using cached version: %v", err)
+		// If we can't check remote, use cached version (might be offline)
+		fs := osfs.New(repoCacheDir)
+		return fs, true, nil
+	}
+
+	// Compare commit hashes
+	if cacheInfo.CommitHash == remoteCommitHash {
+		log.Printf("Repository cache is up-to-date (commit: %s)", remoteCommitHash[:8])
+		fs := osfs.New(repoCacheDir)
+		return fs, true, nil
+	}
+
+	log.Printf("Repository cache is outdated (cached: %s, remote: %s)", cacheInfo.CommitHash[:8], remoteCommitHash[:8])
+	return nil, false, nil
+}
+
+// CacheRepo saves a repository to the cache
+func CacheRepo(ownerId string, repositoryURL string, repositoryBranch string, fs billy.Filesystem) error {
+	cacheKey := GetCacheKey(repositoryURL, repositoryBranch)
+	cacheDir := GetCacheDir()
+	repoCacheDir := filepath.Join(cacheDir, cacheKey)
+
+	// Create cache directory
+	if err := os.MkdirAll(repoCacheDir, 0755); err != nil {
+		return fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	// Copy files from memory filesystem to cache directory
+	err := copyFilesFromBillyFS(fs, repoCacheDir)
+	if err != nil {
+		return fmt.Errorf("failed to copy files to cache: %w", err)
+	}
+
+	// Get the current commit hash
+	commitHash, err := GetRemoteCommitHash(ownerId, repositoryURL, repositoryBranch)
+	if err != nil {
+		log.Printf("Warning: Failed to get commit hash for caching: %v", err)
+		commitHash = "unknown"
+	}
+
+	// Save cache info
+	cacheInfo := RepoCacheInfo{
+		URL:        repositoryURL,
+		Branch:     repositoryBranch,
+		CommitHash: commitHash,
+		CachedAt:   time.Now(),
+	}
+
+	cacheInfoBytes, err := json.MarshalIndent(cacheInfo, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal cache info: %w", err)
+	}
+
+	cacheInfoFile := filepath.Join(repoCacheDir, ".cache_info.json")
+	if err := os.WriteFile(cacheInfoFile, cacheInfoBytes, 0644); err != nil {
+		return fmt.Errorf("failed to write cache info: %w", err)
+	}
+
+	log.Printf("Repository cached successfully at %s", repoCacheDir)
+	return nil
+}
+
+// copyFilesFromBillyFS copies files from a billy.Filesystem to a local directory
+func copyFilesFromBillyFS(fs billy.Filesystem, destDir string) error {
+	return copyBillyFSRecursive(fs, "/", destDir)
+}
+
+// copyBillyFSRecursive recursively copies files from billy.Filesystem
+func copyBillyFSRecursive(fs billy.Filesystem, srcPath string, destPath string) error {
+	files, err := fs.ReadDir(srcPath)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		srcFilePath := filepath.Join(srcPath, file.Name())
+		destFilePath := filepath.Join(destPath, file.Name())
+
+		if file.IsDir() {
+			// Create directory and recurse
+			if err := os.MkdirAll(destFilePath, file.Mode()); err != nil {
+				return err
+			}
+			if err := copyBillyFSRecursive(fs, srcFilePath, destFilePath); err != nil {
+				return err
+			}
+		} else {
+			// Copy file
+			srcFile, err := fs.Open(srcFilePath)
+			if err != nil {
+				return err
+			}
+			defer srcFile.Close()
+
+			destFile, err := os.Create(destFilePath)
+			if err != nil {
+				return err
+			}
+			defer destFile.Close()
+
+			if _, err := io.Copy(destFile, srcFile); err != nil {
+				return err
+			}
+
+			// Set file permissions
+			if err := os.Chmod(destFilePath, file.Mode()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// GitCloneWithCache clones a repository with caching support
+func GitCloneWithCache(ownerId string, repositoryURL string, repositoryBranch string) (billy.Filesystem, error) {
+	// First, try to get from cache
+	if cachedFS, isCached, err := GetCachedRepo(ownerId, repositoryURL, repositoryBranch); err == nil && isCached {
+		return cachedFS, nil
+	}
+
+	// If not cached or outdated, clone normally
+	log.Printf("Cloning repository: %s (branch: %s)", repositoryURL, repositoryBranch)
+	fs, err := GitClone(ownerId, repositoryURL, repositoryBranch)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the repository for future use
+	if err := CacheRepo(ownerId, repositoryURL, repositoryBranch, fs); err != nil {
+		log.Printf("Warning: Failed to cache repository: %v", err)
+		// Continue with the cloned repository even if caching fails
+	}
+
+	return fs, nil
 }

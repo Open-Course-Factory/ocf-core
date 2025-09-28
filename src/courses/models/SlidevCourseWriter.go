@@ -145,6 +145,12 @@ func (scow *SlidevCourseWriter) SetContent() string {
 	return chapters
 }
 
+func (scow *SlidevCourseWriter) SetAuthorPage() string {
+	// Include the author page content from the authors directory
+	// This will be substituted with actual author content during template processing
+	return "\n---\nlayout: default\n---\n\n@@author_page_content@@\n\n"
+}
+
 func (scow *SlidevCourseWriter) SetConclusionPage() string {
 	// We finish with a conclusion slide using each section conclusion
 	var conclusion string
@@ -155,5 +161,5 @@ func (scow *SlidevCourseWriter) SetConclusionPage() string {
 }
 
 func (scow *SlidevCourseWriter) GetCourse() string {
-	return scow.SetFrontMatter() + scow.SetTitlePage() + scow.SetIntro() + scow.SetLearningObjectives() + scow.SetTitle() + scow.SetToc() + scow.SetContent() + scow.SetConclusionPage()
+	return scow.SetFrontMatter() + scow.SetTitlePage() + scow.SetAuthorPage() + scow.SetIntro() + scow.SetLearningObjectives() + scow.SetTitle() + scow.SetToc() + scow.SetContent() + scow.SetConclusionPage()
 }

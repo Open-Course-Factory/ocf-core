@@ -5,12 +5,13 @@
 # Qui suis-je ?
 
 **Thomas Saquet**  
+
 <font size="1">(Non. Pas comme le hobbit.)</font>
 
 <div style="display:contents;" data-marpit-fragment>
 <font size="6">
 
-![width:20px](./images/presentation_email.png) example@email.example  
+![width:20px](./images/presentation_email.png) thomas.saquet.ext@eduservices.org  
 ![width:20px](./images/presentation_twitter.png) Twitter : @tsaquet / @qtgeekes  
 ![width:20px](./images/presentation_twitch.png) Twitch : qtgeekes  
 ![width:20px](./images/presentation_youtube.png) Youtube : Qu'est-ce que tu GEEKes ?
