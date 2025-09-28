@@ -368,3 +368,13 @@ type InstanceType struct {
 type InstanceTypesResponse struct {
 	InstanceTypes []InstanceType `json:"instance_types"`
 }
+
+// FixPermissionsResponse réponse de la correction des permissions de masquage
+type FixPermissionsResponse struct {
+	UserID             string   `json:"user_id"`
+	Success            bool     `json:"success"`
+	Message            string   `json:"message"`
+	ProcessedTerminals int      `json:"processed_terminals"`
+	ProcessedShares    int      `json:"processed_shares"`
+	Errors             []string `json:"errors,omitempty"`
+}

@@ -57,6 +57,9 @@ type TerminalTrainerService interface {
 
 	// Configuration
 	GetInstanceTypes() ([]dto.InstanceType, error)
+
+	// Correction des permissions
+	FixTerminalHidePermissions(userID string) (*dto.FixPermissionsResponse, error)
 }
 
 type terminalTrainerService struct {
@@ -243,8 +246,8 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 		return nil, fmt.Errorf("failed to save terminal session: %v", err)
 	}
 
-	// Ajouter les permissions Casbin pour que le propriétaire puisse masquer ce terminal
-	err = tts.addTerminalHidePermissions(terminal.ID.String(), userID)
+	// Ajouter les permissions Casbin pour que le propriétaire puisse masquer des terminaux
+	err = tts.addTerminalHidePermissions(userID)
 	if err != nil {
 		// Log l'erreur mais ne pas faire échouer la création du terminal
 		fmt.Printf("Warning: failed to add hide permissions for terminal %s: %v\n", terminal.ID.String(), err)
@@ -811,7 +814,7 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 		}
 
 		// Ajouter les permissions Casbin (au cas où elles n'existeraient pas déjà)
-		err = tts.addTerminalHidePermissions(terminal.ID.String(), sharedWithUserID)
+		err = tts.addTerminalHidePermissions(sharedWithUserID)
 		if err != nil {
 			fmt.Printf("Warning: failed to add hide permissions for updated shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
 		}
@@ -834,8 +837,8 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 		return err
 	}
 
-	// Ajouter les permissions Casbin pour que le destinataire puisse masquer ce terminal
-	err = tts.addTerminalHidePermissions(terminal.ID.String(), sharedWithUserID)
+	// Ajouter les permissions Casbin pour que le destinataire puisse masquer des terminaux
+	err = tts.addTerminalHidePermissions(sharedWithUserID)
 	if err != nil {
 		// Log l'erreur mais ne pas faire échouer le partage
 		fmt.Printf("Warning: failed to add hide permissions for shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
@@ -1055,16 +1058,17 @@ func (tts *terminalTrainerService) UnhideTerminal(terminalID, userID string) err
 	return tts.repository.UnhideTerminalForUser(terminalID, userID)
 }
 
-// addTerminalHidePermissions ajoute les permissions Casbin pour qu'un utilisateur puisse masquer un terminal spécifique
-func (tts *terminalTrainerService) addTerminalHidePermissions(terminalID, userID string) error {
+// addTerminalHidePermissions ajoute les permissions Casbin pour qu'un utilisateur puisse masquer des terminaux
+func (tts *terminalTrainerService) addTerminalHidePermissions(userID string) error {
 	// Charger les politiques
 	err := casdoor.Enforcer.LoadPolicy()
 	if err != nil {
 		return fmt.Errorf("failed to load policy: %v", err)
 	}
 
-	// Ajouter les permissions pour les routes de masquage pour ce terminal spécifique
-	hideRoute := fmt.Sprintf("/api/v1/terminal-sessions/%s/hide", terminalID)
+	// Ajouter les permissions pour les routes de masquage avec le pattern de route générique
+	// Cela permet au middleware d'authentification de faire correspondre ctx.FullPath() avec les permissions stockées
+	hideRoute := "/api/v1/terminal-sessions/:id/hide"
 
 	// Permission pour POST /terminal-sessions/{id}/hide (masquer)
 	_, err = casdoor.Enforcer.AddPolicy(userID, hideRoute, "POST")
@@ -1079,4 +1083,50 @@ func (tts *terminalTrainerService) addTerminalHidePermissions(terminalID, userID
 	}
 
 	return nil
+}
+
+// FixTerminalHidePermissions corrige les permissions de masquage pour tous les terminaux d'un utilisateur
+// et tous les terminaux partagés avec lui
+func (tts *terminalTrainerService) FixTerminalHidePermissions(userID string) (*dto.FixPermissionsResponse, error) {
+	response := &dto.FixPermissionsResponse{
+		UserID:             userID,
+		ProcessedTerminals: 0,
+		ProcessedShares:    0,
+		Errors:             []string{},
+	}
+
+	// 1. Ajouter les permissions générales de masquage pour cet utilisateur
+	err := tts.addTerminalHidePermissions(userID)
+	if err != nil {
+		response.Errors = append(response.Errors, fmt.Sprintf("Failed to add general hide permissions: %v", err))
+	}
+
+	// 2. Récupérer tous les terminaux appartenant à l'utilisateur
+	ownedTerminals, err := tts.repository.GetTerminalSessionsByUserID(userID, false)
+	if err != nil {
+		response.Errors = append(response.Errors, fmt.Sprintf("Failed to get owned terminals: %v", err))
+	} else {
+		response.ProcessedTerminals = len(*ownedTerminals)
+	}
+
+	// 3. Récupérer tous les partages où l'utilisateur est destinataire
+	sharedTerminals, err := tts.repository.GetSharedTerminalsForUser(userID)
+	if err != nil {
+		response.Errors = append(response.Errors, fmt.Sprintf("Failed to get shared terminals: %v", err))
+	} else {
+		response.ProcessedShares = len(*sharedTerminals)
+	}
+
+	// 4. Les permissions sont maintenant ajoutées de manière générique, donc pas besoin
+	// d'ajouter des permissions spécifiques pour chaque terminal
+
+	response.Success = len(response.Errors) == 0
+	response.Message = fmt.Sprintf("Processed %d owned terminals and %d shared terminals",
+		response.ProcessedTerminals, response.ProcessedShares)
+
+	if !response.Success {
+		response.Message += fmt.Sprintf(" with %d errors", len(response.Errors))
+	}
+
+	return response, nil
 }

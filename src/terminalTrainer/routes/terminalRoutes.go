@@ -38,6 +38,9 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	// Configuration
 	routes.GET("/instance-types", middleware.AuthManagement(), terminalController.GetInstanceTypes) // Liste des types d'instances disponibles
+
+	// Correction des permissions
+	routes.POST("/fix-hide-permissions", middleware.AuthManagement(), terminalController.FixTerminalHidePermissions) // Corriger les permissions de masquage
 }
 
 func UserTerminalKeyRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {

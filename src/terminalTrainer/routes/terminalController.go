@@ -52,6 +52,9 @@ type TerminalController interface {
 
 	// Méthodes de configuration
 	GetInstanceTypes(ctx *gin.Context)
+
+	// Méthodes de correction des permissions
+	FixTerminalHidePermissions(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -1152,4 +1155,59 @@ func (tc *terminalController) UnhideTerminal(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Terminal unhidden successfully"})
+}
+
+// Fix Terminal Hide Permissions godoc
+//
+//	@Summary		Corriger les permissions de masquage des terminaux
+//	@Description	Corrige les permissions Casbin pour permettre à l'utilisateur de masquer ses terminaux et ceux partagés avec lui
+//	@Tags			terminal-sessions
+//	@Accept			json
+//	@Produce		json
+//	@Param			user_id	query	string	false	"User ID (admin only, sinon utilise l'utilisateur courant)"
+//	@Security		Bearer
+//	@Success		200	{object}	dto.FixPermissionsResponse	"Permissions corrigées avec succès"
+//	@Failure		403	{object}	errors.APIError				"Accès refusé"
+//	@Failure		500	{object}	errors.APIError				"Erreur interne du serveur"
+//	@Router			/terminal-sessions/fix-hide-permissions [post]
+func (tc *terminalController) FixTerminalHidePermissions(ctx *gin.Context) {
+	currentUserID := ctx.GetString("userId")
+	targetUserID := ctx.Query("user_id")
+	userRoles := ctx.GetStringSlice("userRoles")
+
+	// Si pas de user_id spécifié, utiliser l'utilisateur actuel
+	if targetUserID == "" {
+		targetUserID = currentUserID
+	}
+
+	// Vérifier les permissions si ce n'est pas l'utilisateur lui-même
+	if targetUserID != currentUserID {
+		isAdmin := false
+		for _, role := range userRoles {
+			if role == "administrator" {
+				isAdmin = true
+				break
+			}
+		}
+
+		if !isAdmin {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Only administrators can fix permissions for other users",
+			})
+			return
+		}
+	}
+
+	// Appeler le service pour corriger les permissions
+	response, err := tc.service.FixTerminalHidePermissions(targetUserID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to fix permissions: %v", err),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, response)
 }
