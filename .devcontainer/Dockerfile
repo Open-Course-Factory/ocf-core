@@ -46,3 +46,5 @@ RUN go install -v github.com/swaggo/swag/cmd/swag@latest \
     
 RUN go mod download && go mod verify && go clean -cache
 RUN touch .bash_history .env
+
+RUN curl -fsSL https://claude.ai/install.sh | bash

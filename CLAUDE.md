@@ -45,6 +45,8 @@ OCF Core is the core API for Open Course Factory, a platform for building and ge
 
 **Terminal Trainer Integration**: External backend system for interactive terminal sessions. OCF Core acts as a proxy, managing user keys and session lifecycle while delegating actual terminal operations to Terminal Trainer backend.
 
+**Terminal Sharing and Hiding System**: Users can share terminals with different access levels (read/write/admin) and hide inactive terminals from their interface. Hidden status is managed per user and persisted in the database.
+
 ### Key Directories
 
 - `src/auth/` - Authentication, users, groups, SSH keys
@@ -53,6 +55,7 @@ OCF Core is the core API for Open Course Factory, a platform for building and ge
 - `src/entityManagement/` - Generic CRUD system
 - `src/payment/` - Stripe payment processing
 - `src/webSsh/` - SSH client integration
+- `src/terminalTrainer/` - Terminal session management, sharing, and hiding functionality
 - `tests/` - Comprehensive test suite
 
 ### Database
@@ -82,6 +85,38 @@ RESTful API with `/api/v1` prefix. Generic entity routes auto-generated through 
 3. Casbin enforces role-based permissions
 4. Payment middleware checks subscription limits
 
+## Permissions and Security System
+
+### Casbin/Casdoor Integration
+
+The system uses Casbin with Casdoor for authorization. Permissions are managed dynamically in code, NOT through static configuration files.
+
+**Permission Management Patterns:**
+1. **Generic Entity Permissions**: Defined in entity registration files via `GetEntityRoles()` method
+2. **Specific Route Permissions**: Added dynamically using `casdoor.Enforcer.AddPolicy()` in service methods
+3. **User-Specific Permissions**: Created when entities are created/shared to allow specific users access to specific resources
+
+### Role Mappings
+
+- `"student"` role maps to `"member"` role in the system
+- Role hierarchy: `Guest < Member < MemberPro < GroupManager < Trainer < Organization < Admin`
+
+### Terminal Permissions
+
+**Terminal hiding routes require specific permissions:**
+- Terminal creation automatically adds hide permissions for owner
+- Terminal sharing automatically adds hide permissions for recipient
+- Permissions format: `userID, "/api/v1/terminal-sessions/{terminalID}/hide", "POST|DELETE"`
+
+**Custom routes (like `/hide`) are NOT covered by generic entity permissions and require manual permission setup in service methods.**
+
+### Authentication Middleware
+
+`AuthManagement()` middleware checks Casbin permissions using:
+- `ctx.FullPath()` - The exact route path with parameters
+- `ctx.Request.Method` - HTTP method
+- User roles from JWT token
+
 ## Important Notes
 
 - Always run `swag init --parseDependency --parseInternal` after API changes
@@ -89,3 +124,5 @@ RESTful API with `/api/v1` prefix. Generic entity routes auto-generated through 
 - Use generic entity management system for new entities when possible
 - Casdoor requires separate certificate setup for JWT validation
 - Payment system enforces usage limits based on subscription tiers
+- **Custom routes require manual Casbin permission setup in service methods**
+- **Use `casdoor.Enforcer.AddPolicy(userID, route, method)` to grant specific permissions**

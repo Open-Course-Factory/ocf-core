@@ -28,6 +28,10 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.GET("/shared-with-me", middleware.AuthManagement(), terminalController.GetSharedTerminals)         // Terminaux partagés avec moi
 	routes.GET("/:id/info", middleware.AuthManagement(), terminalController.GetSharedTerminalInfo)            // Info détaillée d'un terminal
 
+	// Routes de masquage de terminaux
+	routes.POST("/:id/hide", middleware.AuthManagement(), terminalController.HideTerminal)     // Masquer un terminal
+	routes.DELETE("/:id/hide", middleware.AuthManagement(), terminalController.UnhideTerminal) // Afficher à nouveau un terminal
+
 	routes.POST("/:id/sync", middleware.AuthManagement(), terminalController.SyncSession)       // Sync une session spécifique
 	routes.POST("/sync-all", middleware.AuthManagement(), terminalController.SyncAllSessions)   // Sync toutes les sessions
 	routes.GET("/:id/status", middleware.AuthManagement(), terminalController.GetSessionStatus) // Comparer statuts local/API

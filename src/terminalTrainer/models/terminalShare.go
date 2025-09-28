@@ -10,12 +10,14 @@ import (
 // TerminalShare représente un partage de terminal entre utilisateurs
 type TerminalShare struct {
 	entityManagementModels.BaseModel
-	TerminalID       uuid.UUID  `gorm:"not null;index" json:"terminal_id"`
-	SharedWithUserID string     `gorm:"type:varchar(255);not null;index" json:"shared_with_user_id"`
-	SharedByUserID   string     `gorm:"type:varchar(255);not null;index" json:"shared_by_user_id"`
-	AccessLevel      string     `gorm:"type:varchar(50);default:'read'" json:"access_level"` // read, write, admin
-	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
-	IsActive         bool       `gorm:"default:true" json:"is_active"`
+	TerminalID           uuid.UUID  `gorm:"not null;index" json:"terminal_id"`
+	SharedWithUserID     string     `gorm:"type:varchar(255);not null;index" json:"shared_with_user_id"`
+	SharedByUserID       string     `gorm:"type:varchar(255);not null;index" json:"shared_by_user_id"`
+	AccessLevel          string     `gorm:"type:varchar(50);default:'read'" json:"access_level"` // read, write, admin
+	ExpiresAt            *time.Time `json:"expires_at,omitempty"`
+	IsActive             bool       `gorm:"default:true" json:"is_active"`
+	IsHiddenByRecipient  bool       `gorm:"default:false" json:"is_hidden_by_recipient"`
+	HiddenAt             *time.Time `json:"hidden_at,omitempty"`
 
 	// Relations
 	Terminal Terminal `gorm:"foreignKey:TerminalID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
@@ -62,4 +64,22 @@ func (ts *TerminalShare) HasAccess(requiredLevel string) bool {
 	}
 
 	return currentLevel >= requiredLevelInt
+}
+
+// IsHidden vérifie si le terminal est masqué par le destinataire
+func (ts *TerminalShare) IsHidden() bool {
+	return ts.IsHiddenByRecipient
+}
+
+// Hide masque le terminal pour le destinataire
+func (ts *TerminalShare) Hide() {
+	ts.IsHiddenByRecipient = true
+	now := time.Now()
+	ts.HiddenAt = &now
+}
+
+// Unhide affiche à nouveau le terminal pour le destinataire
+func (ts *TerminalShare) Unhide() {
+	ts.IsHiddenByRecipient = false
+	ts.HiddenAt = nil
 }

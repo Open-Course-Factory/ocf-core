@@ -10,6 +10,7 @@ import (
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
 	"soli/formations/src/terminalTrainer/dto"
+	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/services"
 
 	"github.com/gin-gonic/gin"
@@ -37,6 +38,10 @@ type TerminalController interface {
 	GetTerminalShares(ctx *gin.Context)
 	GetSharedTerminals(ctx *gin.Context)
 	GetSharedTerminalInfo(ctx *gin.Context)
+
+	// Méthodes de masquage de terminaux
+	HideTerminal(ctx *gin.Context)
+	UnhideTerminal(ctx *gin.Context)
 
 	// Méthodes de synchronisation
 	SyncSession(ctx *gin.Context)
@@ -178,8 +183,8 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	}
 
 	// Vérifier les droits d'accès (read level minimum pour la console)
-	hasAccess, err := tc.hasTerminalAccess(ctx, sessionID, userId, "read")
-	if err != nil {
+	hasAccess, accessErr := tc.hasTerminalAccess(ctx, sessionID, userId, "read")
+	if accessErr != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Failed to check access",
@@ -194,12 +199,22 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 		return
 	}
 
-	// Récupérer la clé API de l'utilisateur
-	userKey, err := tc.service.GetUserKey(terminal.UserID)
-	if err != nil {
+	// Récupérer la clé API appropriée pour la connexion
+	var userKey *models.UserTerminalKey
+	var keyErr error
+
+	if terminal.UserID == userId {
+		// L'utilisateur est le propriétaire, utiliser sa propre clé
+		userKey, keyErr = tc.service.GetUserKey(userId)
+	} else {
+		// L'utilisateur accède à un terminal partagé, utiliser la clé du propriétaire
+		userKey, keyErr = tc.service.GetUserKey(terminal.UserID)
+	}
+
+	if keyErr != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "User key not found",
+			ErrorMessage: "Terminal owner's API key not found",
 		})
 		return
 	}
@@ -350,12 +365,14 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 //	@Tags			terminal-sessions
 //	@Accept			json
 //	@Produce		json
+//	@Param			include_hidden	query	bool	false	"Include hidden terminals"
 //	@Security		Bearer
 //	@Success		200	{array}		dto.TerminalOutput
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/terminal-sessions/user-sessions [get]
 func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
+	includeHidden := ctx.Query("include_hidden") == "true"
 
 	// Pour les admins, permettre de voir les sessions d'autres utilisateurs
 	targetUserID := ctx.Query("user_id")
@@ -379,8 +396,8 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 		userId = targetUserID
 	}
 
-	// Récupérer les sessions actives de l'utilisateur
-	terminals, err := tc.service.GetActiveUserSessions(userId)
+	// Récupérer les sessions de l'utilisateur avec gestion des masquées (toutes les sessions, pas seulement les actives)
+	terminals, err := tc.service.GetRepository().GetTerminalSessionsByUserIDWithHidden(userId, false, includeHidden)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -393,13 +410,15 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 	var terminalOutputs []dto.TerminalOutput
 	for _, terminal := range *terminals {
 		terminalOutputs = append(terminalOutputs, dto.TerminalOutput{
-			ID:           terminal.ID,
-			SessionID:    terminal.SessionID,
-			UserID:       terminal.UserID,
-			Status:       terminal.Status,
-			ExpiresAt:    terminal.ExpiresAt,
-			InstanceType: terminal.InstanceType,
-			CreatedAt:    terminal.CreatedAt,
+			ID:                terminal.ID,
+			SessionID:         terminal.SessionID,
+			UserID:            terminal.UserID,
+			Status:            terminal.Status,
+			ExpiresAt:         terminal.ExpiresAt,
+			InstanceType:      terminal.InstanceType,
+			IsHiddenByOwner:   terminal.IsHiddenByOwner,
+			HiddenByOwnerAt:   terminal.HiddenByOwnerAt,
+			CreatedAt:         terminal.CreatedAt,
 		})
 	}
 
@@ -938,14 +957,16 @@ func (tc *terminalController) GetTerminalShares(ctx *gin.Context) {
 	var shareOutputs []dto.TerminalShareOutput
 	for _, share := range *shares {
 		shareOutputs = append(shareOutputs, dto.TerminalShareOutput{
-			ID:               share.ID,
-			TerminalID:       share.TerminalID,
-			SharedWithUserID: share.SharedWithUserID,
-			SharedByUserID:   share.SharedByUserID,
-			AccessLevel:      share.AccessLevel,
-			ExpiresAt:        share.ExpiresAt,
-			IsActive:         share.IsActive,
-			CreatedAt:        share.CreatedAt,
+			ID:                  share.ID,
+			TerminalID:          share.TerminalID,
+			SharedWithUserID:    share.SharedWithUserID,
+			SharedByUserID:      share.SharedByUserID,
+			AccessLevel:         share.AccessLevel,
+			ExpiresAt:           share.ExpiresAt,
+			IsActive:            share.IsActive,
+			IsHiddenByRecipient: share.IsHiddenByRecipient,
+			HiddenAt:            share.HiddenAt,
+			CreatedAt:           share.CreatedAt,
 		})
 	}
 
@@ -959,14 +980,16 @@ func (tc *terminalController) GetTerminalShares(ctx *gin.Context) {
 //	@Tags			terminal-sessions
 //	@Accept			json
 //	@Produce		json
+//	@Param			include_hidden	query	bool	false	"Include hidden terminals"
 //	@Security		Bearer
 //	@Success		200	{array}		dto.SharedTerminalInfo	"List of shared terminals"
 //	@Failure		500	{object}	errors.APIError			"Internal server error"
 //	@Router			/terminal-sessions/shared-with-me [get]
 func (tc *terminalController) GetSharedTerminals(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
+	includeHidden := ctx.Query("include_hidden") == "true"
 
-	terminals, err := tc.service.GetSharedTerminals(userId)
+	terminals, err := tc.service.GetSharedTerminalsWithHidden(userId, includeHidden)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -1032,4 +1055,101 @@ func (tc *terminalController) GetSharedTerminalInfo(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, info)
+}
+
+// Hide Terminal godoc
+//
+//	@Summary		Masquer une session terminal
+//	@Description	Masque une session terminal pour l'utilisateur courant (propriétaire ou destinataire d'un partage)
+//	@Tags			terminal-sessions
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"Terminal ID"
+//	@Security		Bearer
+//	@Success		200	{object}	map[string]string	"Terminal hidden successfully"
+//	@Failure		400	{object}	errors.APIError		"Cannot hide active terminal"
+//	@Failure		403	{object}	errors.APIError		"Access denied"
+//	@Failure		404	{object}	errors.APIError		"Terminal not found"
+//	@Failure		500	{object}	errors.APIError		"Internal server error"
+//	@Router			/terminal-sessions/{id}/hide [post]
+func (tc *terminalController) HideTerminal(ctx *gin.Context) {
+	terminalID := ctx.Param("id")
+	userID := ctx.GetString("userId")
+
+	err := tc.service.HideTerminal(terminalID, userID)
+	if err != nil {
+		switch err.Error() {
+		case "terminal not found":
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: err.Error(),
+			})
+			return
+		case "cannot hide active terminals":
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: err.Error(),
+			})
+			return
+		case "access denied":
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: err.Error(),
+			})
+			return
+		default:
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: err.Error(),
+			})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Terminal hidden successfully"})
+}
+
+// Unhide Terminal godoc
+//
+//	@Summary		Afficher à nouveau une session terminal
+//	@Description	Affiche à nouveau une session terminal masquée pour l'utilisateur courant
+//	@Tags			terminal-sessions
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"Terminal ID"
+//	@Security		Bearer
+//	@Success		200	{object}	map[string]string	"Terminal unhidden successfully"
+//	@Failure		403	{object}	errors.APIError		"Access denied"
+//	@Failure		404	{object}	errors.APIError		"Terminal not found"
+//	@Failure		500	{object}	errors.APIError		"Internal server error"
+//	@Router			/terminal-sessions/{id}/hide [delete]
+func (tc *terminalController) UnhideTerminal(ctx *gin.Context) {
+	terminalID := ctx.Param("id")
+	userID := ctx.GetString("userId")
+
+	err := tc.service.UnhideTerminal(terminalID, userID)
+	if err != nil {
+		switch err.Error() {
+		case "terminal not found":
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: err.Error(),
+			})
+			return
+		case "access denied":
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: err.Error(),
+			})
+			return
+		default:
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: err.Error(),
+			})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Terminal unhidden successfully"})
 }

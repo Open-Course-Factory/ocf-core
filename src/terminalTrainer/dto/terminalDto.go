@@ -19,13 +19,15 @@ type UpdateTerminalInput struct {
 }
 
 type TerminalOutput struct {
-	ID           uuid.UUID `json:"id"`
-	SessionID    string    `json:"session_id"`
-	UserID       string    `json:"user_id"`
-	Status       string    `json:"status"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	InstanceType string    `json:"instance_type"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID                uuid.UUID  `json:"id"`
+	SessionID         string     `json:"session_id"`
+	UserID            string     `json:"user_id"`
+	Status            string     `json:"status"`
+	ExpiresAt         time.Time  `json:"expires_at"`
+	InstanceType      string     `json:"instance_type"`
+	IsHiddenByOwner   bool       `json:"is_hidden_by_owner"`
+	HiddenByOwnerAt   *time.Time `json:"hidden_by_owner_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
 }
 
 // UserTerminalKey DTOs for generic system
@@ -65,14 +67,16 @@ type UpdateTerminalShareInput struct {
 }
 
 type TerminalShareOutput struct {
-	ID               uuid.UUID  `json:"id"`
-	TerminalID       uuid.UUID  `json:"terminal_id"`
-	SharedWithUserID string     `json:"shared_with_user_id"`
-	SharedByUserID   string     `json:"shared_by_user_id"`
-	AccessLevel      string     `json:"access_level"`
-	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
-	IsActive         bool       `json:"is_active"`
-	CreatedAt        time.Time  `json:"created_at"`
+	ID                  uuid.UUID  `json:"id"`
+	TerminalID          uuid.UUID  `json:"terminal_id"`
+	SharedWithUserID    string     `json:"shared_with_user_id"`
+	SharedByUserID      string     `json:"shared_by_user_id"`
+	AccessLevel         string     `json:"access_level"`
+	ExpiresAt           *time.Time `json:"expires_at,omitempty"`
+	IsActive            bool       `json:"is_active"`
+	IsHiddenByRecipient bool       `json:"is_hidden_by_recipient"`
+	HiddenAt            *time.Time `json:"hidden_at,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
 }
 
 // Terminal sharing specific DTOs

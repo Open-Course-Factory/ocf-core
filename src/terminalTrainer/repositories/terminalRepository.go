@@ -20,9 +20,13 @@ type TerminalRepository interface {
 	// Terminal session methods
 	CreateTerminalSession(terminal *models.Terminal) error
 	GetTerminalSessionByID(sessionID string) (*models.Terminal, error)
+	GetTerminalByUUID(terminalUUID string) (*models.Terminal, error)
 	GetTerminalSessionsByUserID(userID string, isActive bool) (*[]models.Terminal, error)
+	GetTerminalSessionsByUserIDWithHidden(userID string, isActive bool, includeHidden bool) (*[]models.Terminal, error)
 	UpdateTerminalSession(terminal *models.Terminal) error
 	DeleteTerminalSession(sessionID string) error
+	HideOwnedTerminal(terminalID, userID string) error
+	UnhideOwnedTerminal(terminalID, userID string) error
 
 	// TerminalShare methods
 	CreateTerminalShare(share *models.TerminalShare) error
@@ -32,7 +36,10 @@ type TerminalRepository interface {
 	UpdateTerminalShare(share *models.TerminalShare) error
 	DeleteTerminalShare(shareID string) error
 	GetSharedTerminalsForUser(userID string) (*[]models.Terminal, error)
+	GetSharedTerminalsForUserWithHidden(userID string, includeHidden bool) (*[]models.Terminal, error)
 	HasTerminalAccess(terminalID, userID string, requiredLevel string) (bool, error)
+	HideTerminalForUser(terminalID, userID string) error
+	UnhideTerminalForUser(terminalID, userID string) error
 
 	// Synchronisation
 	GetAllActiveUserKeys() (*[]models.UserTerminalKey, error)
@@ -88,7 +95,21 @@ func (r *terminalRepository) CreateTerminalSession(terminal *models.Terminal) er
 
 func (r *terminalRepository) GetTerminalSessionByID(sessionID string) (*models.Terminal, error) {
 	var terminal models.Terminal
-	err := r.db.Preload("UserTerminalKey").Where("session_id = ?", sessionID).Where("status = ?", "active").First(&terminal).Error
+	err := r.db.Preload("UserTerminalKey").Where("session_id = ?", sessionID).First(&terminal).Error
+	if err != nil {
+		return nil, err
+	}
+	return &terminal, nil
+}
+
+func (r *terminalRepository) GetTerminalByUUID(terminalUUID string) (*models.Terminal, error) {
+	var terminal models.Terminal
+	uuid, err := uuid.Parse(terminalUUID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid terminal UUID format: %v", err)
+	}
+
+	err = r.db.Preload("UserTerminalKey").Where("id = ?", uuid).First(&terminal).Error
 	if err != nil {
 		return nil, err
 	}
@@ -98,18 +119,30 @@ func (r *terminalRepository) GetTerminalSessionByID(sessionID string) (*models.T
 func (r *terminalRepository) GetTerminalSessionsByUserID(userID string, isActive bool) (*[]models.Terminal, error) {
 	var terminals []models.Terminal
 
-	query := r.db.Preload("UserTerminalKey").
+	query := r.db.Debug().Preload("UserTerminalKey").
 		Where("user_id = ?", userID)
 
 	if isActive {
 		query.Where("status = ?", "active")
 	}
 
+	fmt.Printf("[DEBUG] About to execute query for user %s (isActive=%v)\n", userID, isActive)
 	err := query.
 		Find(&terminals).Error
 	if err != nil {
 		return nil, err
 	}
+
+	// Debug logging pour voir ce qui est récupéré
+	fmt.Printf("[DEBUG] GetTerminalSessionsByUserID found %d sessions for user %s (isActive=%v)\n", len(terminals), userID, isActive)
+	for _, terminal := range terminals {
+		deletedAt := "nil"
+		if terminal.DeletedAt.Valid {
+			deletedAt = terminal.DeletedAt.Time.Format("2006-01-02 15:04:05")
+		}
+		fmt.Printf("[DEBUG] - Session %s: status=%s, deletedAt=%s\n", terminal.SessionID, terminal.Status, deletedAt)
+	}
+
 	return &terminals, nil
 }
 
@@ -118,7 +151,10 @@ func (r *terminalRepository) UpdateTerminalSession(terminal *models.Terminal) er
 }
 
 func (r *terminalRepository) DeleteTerminalSession(sessionID string) error {
-	return r.db.Where("session_id = ?", sessionID).Delete(&models.Terminal{}).Error
+	fmt.Printf("[DEBUG] DeleteTerminalSession called for session %s\n", sessionID)
+	result := r.db.Where("session_id = ?", sessionID).Delete(&models.Terminal{})
+	fmt.Printf("[DEBUG] DeleteTerminalSession - rows affected: %d, error: %v\n", result.RowsAffected, result.Error)
+	return result.Error
 }
 
 // Cleanup methods
@@ -357,4 +393,108 @@ func (r *terminalRepository) HasTerminalAccess(terminalID, userID string, requir
 	}
 
 	return count > 0, nil
+}
+
+func (r *terminalRepository) GetSharedTerminalsForUserWithHidden(userID string, includeHidden bool) (*[]models.Terminal, error) {
+	var terminals []models.Terminal
+
+	query := r.db.Joins("JOIN terminal_shares ON terminals.id = terminal_shares.terminal_id").
+		Preload("UserTerminalKey").
+		Where("terminal_shares.shared_with_user_id = ? AND terminal_shares.is_active = ?", userID, true)
+
+	if !includeHidden {
+		query = query.Where("terminal_shares.is_hidden_by_recipient = ?", false)
+	}
+
+	err := query.Find(&terminals).Error
+	if err != nil {
+		return nil, err
+	}
+	return &terminals, nil
+}
+
+func (r *terminalRepository) HideTerminalForUser(terminalID, userID string) error {
+	terminalUUID, err := uuid.Parse(terminalID)
+	if err != nil {
+		return fmt.Errorf("invalid terminal ID format: %v", err)
+	}
+
+	now := time.Now()
+	return r.db.Model(&models.TerminalShare{}).
+		Where("terminal_id = ? AND shared_with_user_id = ?", terminalUUID, userID).
+		Updates(map[string]interface{}{
+			"is_hidden_by_recipient": true,
+			"hidden_at": now,
+		}).Error
+}
+
+func (r *terminalRepository) UnhideTerminalForUser(terminalID, userID string) error {
+	terminalUUID, err := uuid.Parse(terminalID)
+	if err != nil {
+		return fmt.Errorf("invalid terminal ID format: %v", err)
+	}
+
+	// Create an empty share model to update with
+	share := models.TerminalShare{
+		IsHiddenByRecipient: false,
+		HiddenAt:            nil,
+	}
+
+	return r.db.Model(&models.TerminalShare{}).
+		Where("terminal_id = ? AND shared_with_user_id = ?", terminalUUID, userID).
+		Select("is_hidden_by_recipient", "hidden_at").
+		Updates(share).Error
+}
+
+func (r *terminalRepository) GetTerminalSessionsByUserIDWithHidden(userID string, isActive bool, includeHidden bool) (*[]models.Terminal, error) {
+	var terminals []models.Terminal
+
+	query := r.db.Preload("UserTerminalKey").Where("user_id = ?", userID)
+
+	if isActive {
+		query = query.Where("status = ?", "active")
+	}
+
+	if !includeHidden {
+		query = query.Where("is_hidden_by_owner = ?", false)
+	}
+
+	err := query.Find(&terminals).Error
+	if err != nil {
+		return nil, err
+	}
+	return &terminals, nil
+}
+
+func (r *terminalRepository) HideOwnedTerminal(terminalID, userID string) error {
+	terminalUUID, err := uuid.Parse(terminalID)
+	if err != nil {
+		return fmt.Errorf("invalid terminal ID format: %v", err)
+	}
+
+	now := time.Now()
+	return r.db.Model(&models.Terminal{}).
+		Where("id = ? AND user_id = ?", terminalUUID, userID).
+		Updates(map[string]interface{}{
+			"is_hidden_by_owner": true,
+			"hidden_by_owner_at": now,
+		}).Error
+}
+
+func (r *terminalRepository) UnhideOwnedTerminal(terminalID, userID string) error {
+	terminalUUID, err := uuid.Parse(terminalID)
+	if err != nil {
+		return fmt.Errorf("invalid terminal ID format: %v", err)
+	}
+
+	// Create an empty terminal model to update with
+	terminal := models.Terminal{
+		IsHiddenByOwner:   false,
+		HiddenByOwnerAt:   nil,
+	}
+
+	return r.db.Model(&models.Terminal{}).
+		Where("id = ? AND user_id = ?", terminalUUID, userID).
+		Select("is_hidden_by_owner", "hidden_by_owner_at").
+		Updates(terminal).Error
 }

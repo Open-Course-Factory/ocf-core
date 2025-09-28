@@ -52,20 +52,20 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 		}
 
 		// Debug logging
-		log.Printf("DEBUG: User %s has roles: %v", userId, userRoles)
-		log.Printf("DEBUG: Checking access to %s %s", ctx.Request.Method, ctx.FullPath())
+		log.Printf("[DEBUG] User %s has roles: %v", userId, userRoles)
+		log.Printf("[DEBUG] Checking access to %s %s", ctx.Request.Method, ctx.FullPath())
 
 		// Check authorization for each role - if any role has permission, allow access
 		authorized := false
 		for _, role := range userRoles {
-			log.Printf("DEBUG: Checking role '%s' for access to %s %s", role, ctx.Request.Method, ctx.FullPath())
+			log.Printf("[DEBUG] Checking role '%s' for access to %s %s", role, ctx.Request.Method, ctx.FullPath())
 			ok, errEnforce := casdoor.Enforcer.Enforce(role, ctx.FullPath(), ctx.Request.Method)
 			if errEnforce != nil {
-				log.Printf("DEBUG: Enforce error for role '%s': %v", role, errEnforce)
+				log.Printf("[DEBUG] Enforce error for role '%s': %v", role, errEnforce)
 				ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"msg": "Error occurred when authorizing user"})
 				return
 			}
-			log.Printf("DEBUG: Role '%s' enforcement result: %v", role, ok)
+			log.Printf("[DEBUG] Role '%s' enforcement result: %v", role, ok)
 			if ok {
 				authorized = true
 				break
