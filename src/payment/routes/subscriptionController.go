@@ -25,6 +25,16 @@ type SubscriptionController interface {
 	GetSubscriptionAnalytics(ctx *gin.Context)
 	CheckUsageLimit(ctx *gin.Context)
 	GetUserUsage(ctx *gin.Context)
+
+	// Méthodes pour la synchronisation Stripe des plans d'abonnement
+	SyncSubscriptionPlanWithStripe(ctx *gin.Context)
+	SyncAllSubscriptionPlansWithStripe(ctx *gin.Context)
+
+	// Méthodes pour la synchronisation des abonnements existants
+	SyncExistingSubscriptions(ctx *gin.Context)
+	SyncUserSubscriptions(ctx *gin.Context)
+	SyncSubscriptionsWithMissingMetadata(ctx *gin.Context)
+	LinkSubscriptionToUser(ctx *gin.Context)
 }
 
 type subscriptionController struct {
@@ -421,6 +431,280 @@ func (sc *subscriptionController) GetUserUsage(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, usageMetricsDTO)
+}
+
+// Sync Subscription Plan with Stripe godoc
+//
+//	@Summary		Synchroniser un plan d'abonnement avec Stripe
+//	@Description	Crée le produit et le prix Stripe pour un plan existant qui n'a pas de StripePriceID
+//	@Tags			subscriptions
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"Subscription Plan ID"
+//	@Security		Bearer
+//	@Success		200	{object}	dto.SubscriptionPlanOutput	"Plan synced successfully"
+//	@Failure		400	{object}	errors.APIError	"Bad request"
+//	@Failure		404	{object}	errors.APIError	"Plan not found"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/subscription-plans/{id}/sync-stripe [post]
+func (sc *subscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Context) {
+	planIDStr := ctx.Param("id")
+	planID, err := uuid.Parse(planIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid plan ID",
+		})
+		return
+	}
+
+	// Récupérer le plan
+	plan, err := sc.subscriptionService.GetSubscriptionPlan(planID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Subscription plan not found",
+		})
+		return
+	}
+
+	// Vérifier si le plan a déjà un prix Stripe
+	if plan.StripePriceID != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Plan already has a Stripe price configured",
+		})
+		return
+	}
+
+	// Créer le produit et prix dans Stripe
+	err = sc.stripeService.CreateSubscriptionPlanInStripe(plan)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to sync plan with Stripe: " + err.Error(),
+		})
+		return
+	}
+
+	// Récupérer le plan mis à jour
+	updatedPlan, err := sc.subscriptionService.GetSubscriptionPlan(planID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to retrieve updated plan",
+		})
+		return
+	}
+
+	// Convertir en DTO
+	planDTO, err := sc.conversionService.SubscriptionPlanToDTO(updatedPlan)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to convert plan to DTO",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, planDTO)
+}
+
+// Sync All Subscription Plans with Stripe godoc
+//
+//	@Summary		Synchroniser tous les plans d'abonnement avec Stripe
+//	@Description	Crée les produits et prix Stripe pour tous les plans qui n'ont pas de StripePriceID
+//	@Tags			subscriptions
+//	@Accept			json
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{object}	map[string]interface{}	"Sync results"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/subscription-plans/sync-stripe [post]
+func (sc *subscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gin.Context) {
+	// Récupérer tous les plans
+	plansPtr, err := sc.subscriptionService.GetAllSubscriptionPlans(false) // Récupérer tous les plans, même inactifs
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to retrieve subscription plans: " + err.Error(),
+		})
+		return
+	}
+
+	plans := *plansPtr
+	var syncedPlans []string
+	var skippedPlans []string
+	var failedPlans []map[string]interface{}
+
+	for _, plan := range plans {
+		if plan.StripePriceID != nil {
+			// Plan déjà synchronisé
+			skippedPlans = append(skippedPlans, plan.Name+" (already synced)")
+			continue
+		}
+
+		// Tenter de synchroniser le plan
+		err := sc.stripeService.CreateSubscriptionPlanInStripe(&plan)
+		if err != nil {
+			failedPlans = append(failedPlans, map[string]interface{}{
+				"name":  plan.Name,
+				"id":    plan.ID.String(),
+				"error": err.Error(),
+			})
+		} else {
+			syncedPlans = append(syncedPlans, plan.Name)
+		}
+	}
+
+	ctx.JSON(http.StatusOK, map[string]interface{}{
+		"synced_plans":  syncedPlans,
+		"skipped_plans": skippedPlans,
+		"failed_plans":  failedPlans,
+		"total_plans":   len(plans),
+	})
+}
+
+// Sync Existing Subscriptions godoc
+//
+//	@Summary		Synchroniser tous les abonnements Stripe existants
+//	@Description	Récupère tous les abonnements depuis Stripe et les synchronise avec la base de données locale
+//	@Tags			subscriptions
+//	@Accept			json
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{object}	services.SyncSubscriptionsResult	"Sync results"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/subscriptions/sync-existing [post]
+func (sc *subscriptionController) SyncExistingSubscriptions(ctx *gin.Context) {
+	// Synchroniser tous les abonnements depuis Stripe
+	result, err := sc.stripeService.SyncExistingSubscriptions()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to sync existing subscriptions: " + err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
+}
+
+// Sync User Subscriptions godoc
+//
+//	@Summary		Synchroniser les abonnements d'un utilisateur spécifique
+//	@Description	Récupère les abonnements d'un utilisateur depuis Stripe et les synchronise avec la base de données locale
+//	@Tags			subscriptions
+//	@Accept			json
+//	@Produce		json
+//	@Param			user_id	path	string	true	"User ID"
+//	@Security		Bearer
+//	@Success		200	{object}	services.SyncSubscriptionsResult	"Sync results"
+//	@Failure		400	{object}	errors.APIError	"Bad request"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/subscriptions/users/{user_id}/sync [post]
+func (sc *subscriptionController) SyncUserSubscriptions(ctx *gin.Context) {
+	userID := ctx.Param("user_id")
+	if userID == "" {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "User ID is required",
+		})
+		return
+	}
+
+	// Synchroniser les abonnements de l'utilisateur depuis Stripe
+	result, err := sc.stripeService.SyncUserSubscriptions(userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to sync user subscriptions: " + err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
+}
+
+// Sync Subscriptions With Missing Metadata godoc
+//
+//	@Summary		Synchroniser les abonnements avec métadonnées manquantes
+//	@Description	Tente de récupérer les métadonnées manquantes depuis les sessions de checkout et lie les abonnements aux utilisateurs
+//	@Tags			subscriptions
+//	@Accept			json
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{object}	services.SyncSubscriptionsResult	"Sync results"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/subscriptions/sync-missing-metadata [post]
+func (sc *subscriptionController) SyncSubscriptionsWithMissingMetadata(ctx *gin.Context) {
+	// Synchroniser les abonnements avec métadonnées manquantes
+	result, err := sc.stripeService.SyncSubscriptionsWithMissingMetadata()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to sync subscriptions with missing metadata: " + err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
+}
+
+// Link Subscription To User godoc
+//
+//	@Summary		Lier manuellement un abonnement à un utilisateur
+//	@Description	Lie manuellement un abonnement Stripe spécifique à un utilisateur et un plan d'abonnement
+//	@Tags			subscriptions
+//	@Accept			json
+//	@Produce		json
+//	@Param			subscription_id	path	string	true	"Stripe Subscription ID"
+//	@Param			user_id	body	string	true	"User ID to link subscription to"
+//	@Param			subscription_plan_id	body	string	true	"Subscription Plan ID"
+//	@Security		Bearer
+//	@Success		200	{object}	map[string]interface{}	"Success message"
+//	@Failure		400	{object}	errors.APIError	"Bad request"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/subscriptions/link/{subscription_id} [post]
+func (sc *subscriptionController) LinkSubscriptionToUser(ctx *gin.Context) {
+	subscriptionID := ctx.Param("subscription_id")
+	if subscriptionID == "" {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Subscription ID is required",
+		})
+		return
+	}
+
+	var request struct {
+		UserID             string    `json:"user_id" binding:"required"`
+		SubscriptionPlanID uuid.UUID `json:"subscription_plan_id" binding:"required"`
+	}
+
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	// Lier l'abonnement à l'utilisateur
+	err := sc.stripeService.LinkSubscriptionToUser(subscriptionID, request.UserID, request.SubscriptionPlanID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to link subscription: " + err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, map[string]interface{}{
+		"message":           "Subscription linked successfully",
+		"subscription_id":   subscriptionID,
+		"user_id":           request.UserID,
+		"subscription_plan": request.SubscriptionPlanID,
+	})
 }
 
 // Delete entity (subscription plan)

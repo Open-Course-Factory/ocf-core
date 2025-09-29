@@ -31,4 +31,10 @@ func SubscriptionRoutes(router *gin.RouterGroup, config *config.Configuration, d
 	// Usage monitoring
 	routes.POST("/usage/check", authMiddleware.AuthManagement(), subscriptionController.CheckUsageLimit)
 	routes.GET("/usage", authMiddleware.AuthManagement(), subscriptionController.GetUserUsage)
+
+	// Subscription synchronization (admin seulement)
+	routes.POST("/sync-existing", authMiddleware.AuthManagement(), subscriptionController.SyncExistingSubscriptions)
+	routes.POST("/users/:user_id/sync", authMiddleware.AuthManagement(), subscriptionController.SyncUserSubscriptions)
+	routes.POST("/sync-missing-metadata", authMiddleware.AuthManagement(), subscriptionController.SyncSubscriptionsWithMissingMetadata)
+	routes.POST("/link/:subscription_id", authMiddleware.AuthManagement(), subscriptionController.LinkSubscriptionToUser)
 }

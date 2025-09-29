@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"reflect"
 	"time"
 
 	"soli/formations/src/payment/dto"
@@ -29,6 +28,25 @@ import (
 	"gorm.io/gorm"
 )
 
+// SyncSubscriptionsResult contient les résultats de la synchronisation
+type SyncSubscriptionsResult struct {
+	ProcessedSubscriptions int                    `json:"processed_subscriptions"`
+	CreatedSubscriptions   int                    `json:"created_subscriptions"`
+	UpdatedSubscriptions   int                    `json:"updated_subscriptions"`
+	SkippedSubscriptions   int                    `json:"skipped_subscriptions"`
+	FailedSubscriptions    []FailedSubscription   `json:"failed_subscriptions"`
+	CreatedDetails         []string               `json:"created_details"`
+	UpdatedDetails         []string               `json:"updated_details"`
+	SkippedDetails         []string               `json:"skipped_details"`
+}
+
+// FailedSubscription contient les détails d'un échec de synchronisation
+type FailedSubscription struct {
+	StripeSubscriptionID string `json:"stripe_subscription_id"`
+	UserID               string `json:"user_id,omitempty"`
+	Error                string `json:"error"`
+}
+
 type StripeService interface {
 	// Customer management
 	CreateOrGetCustomer(userID, email, name string) (string, error)
@@ -44,10 +62,17 @@ type StripeService interface {
 
 	// Webhook handling
 	ProcessWebhook(payload []byte, signature string) error
+	ValidateWebhookSignature(payload []byte, signature string) (*stripe.Event, error)
 
 	// Subscription operations
 	CancelSubscription(subscriptionID string, cancelAtPeriodEnd bool) error
 	ReactivateSubscription(subscriptionID string) error
+
+	// Subscription synchronization
+	SyncExistingSubscriptions() (*SyncSubscriptionsResult, error)
+	SyncUserSubscriptions(userID string) (*SyncSubscriptionsResult, error)
+	SyncSubscriptionsWithMissingMetadata() (*SyncSubscriptionsResult, error)
+	LinkSubscriptionToUser(stripeSubscriptionID, userID string, subscriptionPlanID uuid.UUID) error
 
 	// Payment method operations
 	AttachPaymentMethod(paymentMethodID, customerID string) error
@@ -57,9 +82,6 @@ type StripeService interface {
 	// Invoice operations
 	GetInvoice(invoiceID string) (*stripe.Invoice, error)
 	SendInvoice(invoiceID string) error
-
-	// Utilities
-	ValidateWebhookSignature(payload []byte, signature string) (*stripe.Event, error)
 }
 
 type stripeService struct {
@@ -122,6 +144,11 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 
 	if !plan.IsActive {
 		return nil, fmt.Errorf("subscription plan is not active")
+	}
+
+	// Vérifier que le plan a un prix Stripe configuré
+	if plan.StripePriceID == nil {
+		return nil, fmt.Errorf("subscription plan does not have a Stripe price configured")
 	}
 
 	user, err := casdoorsdk.GetUserByUserId(userID)
@@ -309,25 +336,35 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 		return fmt.Errorf("invalid subscription_plan_id format: %v", err)
 	}
 
-	userSubscriptionInput := dto.CreateUserSubscriptionInput{
-		UserID:             userID,
-		SubscriptionPlanID: planID,
+	// Dans les nouvelles versions de Stripe, les périodes sont au niveau des items
+	var currentPeriodStart, currentPeriodEnd time.Time
+	if len(subscription.Items.Data) > 0 {
+		// Prendre la première item pour les dates de période
+		item := subscription.Items.Data[0]
+		currentPeriodStart = time.Unix(item.CurrentPeriodStart, 0)
+		currentPeriodEnd = time.Unix(item.CurrentPeriodEnd, 0)
 	}
 
-	// StripeSubscriptionID: subscription.ID,
-	// StripeCustomerID:     subscription.Customer.ID,
-	// Status:               string(subscription.Status),
-	// CurrentPeriodStart:   time.Unix(subscription.Items.Data[0].CurrentPeriodStart, 0),
-	// CurrentPeriodEnd:     time.Unix(subscription.Items.Data[0].CurrentPeriodEnd, 0),
+	// Créer directement le modèle UserSubscription avec toutes les données Stripe
+	userSubscription := &models.UserSubscription{
+		UserID:               userID,
+		SubscriptionPlanID:   planID,
+		StripeSubscriptionID: subscription.ID,
+		StripeCustomerID:     subscription.Customer.ID,
+		Status:               string(subscription.Status),
+		CurrentPeriodStart:   currentPeriodStart,
+		CurrentPeriodEnd:     currentPeriodEnd,
+		CancelAtPeriodEnd:    subscription.CancelAtPeriodEnd,
+	}
 
-	// if subscription.TrialEnd > 0 {
-	// 	trialEnd := time.Unix(subscription.TrialEnd, 0)
-	// 	userSubscription.TrialEnd = &trialEnd
-	// }
+	// Ajouter la date de fin d'essai si elle existe
+	if subscription.TrialEnd > 0 {
+		trialEnd := time.Unix(subscription.TrialEnd, 0)
+		userSubscription.TrialEnd = &trialEnd
+	}
 
-	_, errCreate := ss.genericService.CreateEntity(userSubscriptionInput, reflect.TypeOf(models.UserSubscription{}).Name())
-
-	return errCreate
+	// Créer directement dans la base via le repository
+	return ss.repository.CreateUserSubscription(userSubscription)
 }
 
 func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
@@ -531,4 +568,315 @@ func (ss *stripeService) ValidateWebhookSignature(payload []byte, signature stri
 		return nil, fmt.Errorf("webhook signature verification failed: %v", err)
 	}
 	return &event, nil
+}
+
+// SyncExistingSubscriptions synchronise tous les abonnements Stripe existants
+func (ss *stripeService) SyncExistingSubscriptions() (*SyncSubscriptionsResult, error) {
+	result := &SyncSubscriptionsResult{
+		FailedSubscriptions: []FailedSubscription{},
+		CreatedDetails:      []string{},
+		UpdatedDetails:      []string{},
+		SkippedDetails:      []string{},
+	}
+
+	// Récupérer tous les abonnements depuis Stripe
+	params := &stripe.SubscriptionListParams{
+		Status: stripe.String("all"), // Inclure tous les statuts
+	}
+	params.Filters.AddFilter("limit", "", "100") // Paginer par 100
+
+	iter := subscription.List(params)
+	for iter.Next() {
+		sub := iter.Subscription()
+		result.ProcessedSubscriptions++
+
+		// Traiter chaque abonnement
+		if err := ss.processSingleSubscription(sub, result); err != nil {
+			result.FailedSubscriptions = append(result.FailedSubscriptions, FailedSubscription{
+				StripeSubscriptionID: sub.ID,
+				Error:                err.Error(),
+			})
+		}
+	}
+
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate subscriptions: %v", err)
+	}
+
+	return result, nil
+}
+
+// SyncUserSubscriptions synchronise les abonnements d'un utilisateur spécifique
+func (ss *stripeService) SyncUserSubscriptions(userID string) (*SyncSubscriptionsResult, error) {
+	result := &SyncSubscriptionsResult{
+		FailedSubscriptions: []FailedSubscription{},
+		CreatedDetails:      []string{},
+		UpdatedDetails:      []string{},
+		SkippedDetails:      []string{},
+	}
+
+	// Récupérer tous les abonnements depuis Stripe avec le metadata user_id
+	params := &stripe.SubscriptionListParams{
+		Status: stripe.String("all"),
+	}
+	params.Filters.AddFilter("limit", "", "100")
+
+	iter := subscription.List(params)
+	for iter.Next() {
+		sub := iter.Subscription()
+
+		// Vérifier si l'abonnement appartient à cet utilisateur
+		if metaUserID, exists := sub.Metadata["user_id"]; exists && metaUserID == userID {
+			result.ProcessedSubscriptions++
+
+			if err := ss.processSingleSubscription(sub, result); err != nil {
+				result.FailedSubscriptions = append(result.FailedSubscriptions, FailedSubscription{
+					StripeSubscriptionID: sub.ID,
+					UserID:               userID,
+					Error:                err.Error(),
+				})
+			}
+		}
+	}
+
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate subscriptions: %v", err)
+	}
+
+	return result, nil
+}
+
+// processSingleSubscription traite un abonnement Stripe individuel
+func (ss *stripeService) processSingleSubscription(sub *stripe.Subscription, result *SyncSubscriptionsResult) error {
+	// Vérifier les métadonnées requises
+	userID, userExists := sub.Metadata["user_id"]
+	planIDStr, planExists := sub.Metadata["subscription_plan_id"]
+
+	if !userExists || !planExists {
+		err := "missing required metadata (user_id or subscription_plan_id)"
+		result.SkippedSubscriptions++
+		result.SkippedDetails = append(result.SkippedDetails,
+			fmt.Sprintf("Subscription %s: %s", sub.ID, err))
+		return fmt.Errorf(err)
+	}
+
+	planID, err := uuid.Parse(planIDStr)
+	if err != nil {
+		errMsg := fmt.Sprintf("invalid subscription_plan_id format: %v", err)
+		result.SkippedSubscriptions++
+		result.SkippedDetails = append(result.SkippedDetails,
+			fmt.Sprintf("Subscription %s: %s", sub.ID, errMsg))
+		return fmt.Errorf(errMsg)
+	}
+
+	// Vérifier si l'abonnement existe déjà dans notre base
+	existingSubscription, err := ss.repository.GetUserSubscriptionByStripeID(sub.ID)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return fmt.Errorf("database error checking existing subscription: %v", err)
+	}
+
+	// Construire les dates de période
+	var currentPeriodStart, currentPeriodEnd time.Time
+	if len(sub.Items.Data) > 0 {
+		item := sub.Items.Data[0]
+		currentPeriodStart = time.Unix(item.CurrentPeriodStart, 0)
+		currentPeriodEnd = time.Unix(item.CurrentPeriodEnd, 0)
+	}
+
+	if existingSubscription != nil {
+		// Abonnement existe - mettre à jour
+		existingSubscription.Status = string(sub.Status)
+		existingSubscription.CurrentPeriodStart = currentPeriodStart
+		existingSubscription.CurrentPeriodEnd = currentPeriodEnd
+		existingSubscription.CancelAtPeriodEnd = sub.CancelAtPeriodEnd
+
+		if sub.TrialEnd > 0 {
+			trialEnd := time.Unix(sub.TrialEnd, 0)
+			existingSubscription.TrialEnd = &trialEnd
+		}
+
+		if err := ss.repository.UpdateUserSubscription(existingSubscription); err != nil {
+			return fmt.Errorf("failed to update subscription: %v", err)
+		}
+
+		result.UpdatedSubscriptions++
+		result.UpdatedDetails = append(result.UpdatedDetails,
+			fmt.Sprintf("Updated subscription %s for user %s", sub.ID, userID))
+	} else {
+		// Abonnement n'existe pas - créer
+		userSubscription := &models.UserSubscription{
+			UserID:               userID,
+			SubscriptionPlanID:   planID,
+			StripeSubscriptionID: sub.ID,
+			StripeCustomerID:     sub.Customer.ID,
+			Status:               string(sub.Status),
+			CurrentPeriodStart:   currentPeriodStart,
+			CurrentPeriodEnd:     currentPeriodEnd,
+			CancelAtPeriodEnd:    sub.CancelAtPeriodEnd,
+		}
+
+		if sub.TrialEnd > 0 {
+			trialEnd := time.Unix(sub.TrialEnd, 0)
+			userSubscription.TrialEnd = &trialEnd
+		}
+
+		if err := ss.repository.CreateUserSubscription(userSubscription); err != nil {
+			return fmt.Errorf("failed to create subscription: %v", err)
+		}
+
+		result.CreatedSubscriptions++
+		result.CreatedDetails = append(result.CreatedDetails,
+			fmt.Sprintf("Created subscription %s for user %s", sub.ID, userID))
+	}
+
+	return nil
+}
+
+// SyncSubscriptionsWithMissingMetadata tente de récupérer les métadonnées manquantes
+func (ss *stripeService) SyncSubscriptionsWithMissingMetadata() (*SyncSubscriptionsResult, error) {
+	result := &SyncSubscriptionsResult{
+		FailedSubscriptions: []FailedSubscription{},
+		CreatedDetails:      []string{},
+		UpdatedDetails:      []string{},
+		SkippedDetails:      []string{},
+	}
+
+	// Récupérer tous les abonnements depuis Stripe
+	params := &stripe.SubscriptionListParams{
+		Status: stripe.String("all"),
+	}
+	params.Filters.AddFilter("limit", "", "100")
+
+	iter := subscription.List(params)
+	for iter.Next() {
+		sub := iter.Subscription()
+		result.ProcessedSubscriptions++
+
+		// Vérifier si les métadonnées sont manquantes
+		_, hasUserID := sub.Metadata["user_id"]
+		_, hasPlanID := sub.Metadata["subscription_plan_id"]
+
+		if hasUserID && hasPlanID {
+			// Métadonnées présentes, passer
+			result.SkippedSubscriptions++
+			result.SkippedDetails = append(result.SkippedDetails,
+				fmt.Sprintf("Subscription %s: already has metadata", sub.ID))
+			continue
+		}
+
+		// Essayer de récupérer les métadonnées depuis les sessions de checkout
+		recoveredUserID, recoveredPlanID, err := ss.recoverMetadataFromCheckoutSessions(sub)
+		if err != nil {
+			result.FailedSubscriptions = append(result.FailedSubscriptions, FailedSubscription{
+				StripeSubscriptionID: sub.ID,
+				Error:                fmt.Sprintf("failed to recover metadata: %v", err),
+			})
+			continue
+		}
+
+		if recoveredUserID == "" || recoveredPlanID == uuid.Nil {
+			result.SkippedSubscriptions++
+			result.SkippedDetails = append(result.SkippedDetails,
+				fmt.Sprintf("Subscription %s: could not recover metadata", sub.ID))
+			continue
+		}
+
+		// Créer l'abonnement avec les métadonnées récupérées
+		err = ss.LinkSubscriptionToUser(sub.ID, recoveredUserID, recoveredPlanID)
+		if err != nil {
+			result.FailedSubscriptions = append(result.FailedSubscriptions, FailedSubscription{
+				StripeSubscriptionID: sub.ID,
+				UserID:               recoveredUserID,
+				Error:                fmt.Sprintf("failed to link subscription: %v", err),
+			})
+		} else {
+			result.CreatedSubscriptions++
+			result.CreatedDetails = append(result.CreatedDetails,
+				fmt.Sprintf("Linked subscription %s to user %s", sub.ID, recoveredUserID))
+		}
+	}
+
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate subscriptions: %v", err)
+	}
+
+	return result, nil
+}
+
+// recoverMetadataFromCheckoutSessions essaie de récupérer les métadonnées depuis les sessions de checkout
+func (ss *stripeService) recoverMetadataFromCheckoutSessions(sub *stripe.Subscription) (string, uuid.UUID, error) {
+	// Récupérer les sessions de checkout pour ce client
+	params := &stripe.CheckoutSessionListParams{
+		Customer: stripe.String(sub.Customer.ID),
+	}
+	params.Filters.AddFilter("limit", "", "100")
+
+	iter := session.List(params)
+	for iter.Next() {
+		checkoutSession := iter.CheckoutSession()
+
+		// Vérifier si cette session a créé notre abonnement
+		if checkoutSession.Subscription != nil && checkoutSession.Subscription.ID == sub.ID {
+			// Récupérer les métadonnées de la session
+			userID, hasUserID := checkoutSession.Metadata["user_id"]
+			planIDStr, hasPlanID := checkoutSession.Metadata["subscription_plan_id"]
+
+			if hasUserID && hasPlanID {
+				planID, err := uuid.Parse(planIDStr)
+				if err != nil {
+					return "", uuid.Nil, fmt.Errorf("invalid plan ID in checkout session: %v", err)
+				}
+				return userID, planID, nil
+			}
+		}
+	}
+
+	return "", uuid.Nil, fmt.Errorf("no checkout session found with metadata")
+}
+
+// LinkSubscriptionToUser lie manuellement un abonnement Stripe à un utilisateur
+func (ss *stripeService) LinkSubscriptionToUser(stripeSubscriptionID, userID string, subscriptionPlanID uuid.UUID) error {
+	// Récupérer l'abonnement depuis Stripe
+	sub, err := subscription.Get(stripeSubscriptionID, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get subscription from Stripe: %v", err)
+	}
+
+	// Vérifier si l'abonnement existe déjà dans la base
+	existingSubscription, err := ss.repository.GetUserSubscriptionByStripeID(stripeSubscriptionID)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return fmt.Errorf("database error checking existing subscription: %v", err)
+	}
+
+	if existingSubscription != nil {
+		return fmt.Errorf("subscription already exists in database")
+	}
+
+	// Construire les dates de période
+	var currentPeriodStart, currentPeriodEnd time.Time
+	if len(sub.Items.Data) > 0 {
+		item := sub.Items.Data[0]
+		currentPeriodStart = time.Unix(item.CurrentPeriodStart, 0)
+		currentPeriodEnd = time.Unix(item.CurrentPeriodEnd, 0)
+	}
+
+	// Créer l'abonnement
+	userSubscription := &models.UserSubscription{
+		UserID:               userID,
+		SubscriptionPlanID:   subscriptionPlanID,
+		StripeSubscriptionID: stripeSubscriptionID,
+		StripeCustomerID:     sub.Customer.ID,
+		Status:               string(sub.Status),
+		CurrentPeriodStart:   currentPeriodStart,
+		CurrentPeriodEnd:     currentPeriodEnd,
+		CancelAtPeriodEnd:    sub.CancelAtPeriodEnd,
+	}
+
+	if sub.TrialEnd > 0 {
+		trialEnd := time.Unix(sub.TrialEnd, 0)
+		userSubscription.TrialEnd = &trialEnd
+	}
+
+	// Sauvegarder en base
+	return ss.repository.CreateUserSubscription(userSubscription)
 }
