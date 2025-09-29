@@ -193,3 +193,41 @@ func (scg SlidevCourseGenerator) writeFileFromFsToDisk(fs billy.Filesystem, path
 func (scg SlidevCourseGenerator) GetPublicDir() string {
 	return PUBLIC_DIR
 }
+
+func (scg SlidevCourseGenerator) ExportPDF(course *models.Course) error {
+	pwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	//outputDir := config.COURSES_OUTPUT_DIR + course.Theme.Name
+	srcFile := course.GetFilename("md") // Just the filename, not the full path
+
+	// Docker command for PDF export using Slidev
+	// The Docker image might have "export" as default entrypoint command
+	// Use -w to set working directory inside container
+	baseCmd := []string{"run", "--rm", "-i", "-e", `NPM_MIRROR="https://registry.npmmirror.com"`, "-v", pwd + "/dist:/slidev/dist", "-w", "/slidev/dist/" + course.Theme.Name, DOCKER_IMAGE, srcFile, "--format", "pdf", "--output", "slides-exported.pdf"}
+
+	cmd := exec.Command("/usr/bin/docker", baseCmd...)
+
+	var outb, errb bytes.Buffer
+	cmd.Stdout = &outb
+	cmd.Stderr = &errb
+
+	fmt.Println("PDF export command ready: " + cmd.String())
+
+	if *config.DRY_RUN {
+		return nil
+	}
+
+	err = cmd.Run()
+	if err != nil {
+		fmt.Printf("PDF export stdout: %s\n", outb.String())
+		fmt.Printf("PDF export stderr: %s\n", errb.String())
+		return err
+	}
+
+	fmt.Printf("PDF export completed successfully\n")
+	fmt.Printf("PDF export stdout: %s\n", outb.String())
+	return nil
+}

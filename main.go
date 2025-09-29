@@ -421,6 +421,14 @@ func parseFlags() bool {
 		return true
 	}
 
+	// Generate PDF export
+	fmt.Println("Generating PDF export...")
+	errorPDF := generator.SLIDE_ENGINE.ExportPDF(&course)
+	if errorPDF != nil {
+		fmt.Printf("Warning: PDF generation failed: %v\n", errorPDF)
+		// Continue without failing, PDF is optional
+	}
+
 	fmt.Println("Course generated successfully!")
 	return true
 }
@@ -501,10 +509,10 @@ func readAuthorInfo(authorTrigramme string) AuthorInfo {
 			}
 		}
 
-		// Look for email in the format "![...](images/presentation_email.png) email@domain.com"
-		if strings.Contains(line, "presentation_email.png") {
-			// Extract email after the image markdown
-			parts := strings.Split(line, "presentation_email.png)")
+		// Look for email in the format "📧 email@domain.com"
+		if strings.Contains(line, "📧") {
+			// Extract email after the emoji
+			parts := strings.Split(line, "📧")
 			if len(parts) > 1 {
 				emailPart := strings.TrimSpace(parts[1])
 				// Remove any trailing markdown or whitespace characters

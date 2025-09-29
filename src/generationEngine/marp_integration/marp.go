@@ -157,3 +157,9 @@ func (mcg MarpCourseGenerator) CompileResources(c *models.Course) error {
 func (mcg MarpCourseGenerator) GetPublicDir() string {
 	return PUBLIC_DIR
 }
+
+func (mcg MarpCourseGenerator) ExportPDF(course *models.Course) error {
+	// PDF export is not currently supported for Marp
+	// Marp has its own PDF generation mechanism
+	return fmt.Errorf("PDF export not implemented for Marp engine")
+}
