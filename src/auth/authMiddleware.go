@@ -31,6 +31,7 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 
 		if err != nil {
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"msg": err.Error()})
+			return
 		}
 
 		errLoadingPolicy := casdoor.Enforcer.LoadPolicy()
