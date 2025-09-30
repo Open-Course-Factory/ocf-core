@@ -16,6 +16,7 @@ import (
 type PaymentMethodController interface {
 	SetDefaultPaymentMethod(ctx *gin.Context)
 	GetUserPaymentMethods(ctx *gin.Context)
+	SyncUserPaymentMethods(ctx *gin.Context)
 }
 
 type paymentMethodController struct {
@@ -100,4 +101,30 @@ func (pmc *paymentMethodController) GetUserPaymentMethods(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, paymentMethodsDTO)
+}
+
+// Sync User Payment Methods godoc
+//
+//	@Summary		Synchroniser les moyens de paiement de l'utilisateur depuis Stripe
+//	@Description	Récupère tous les moyens de paiement de Stripe et les synchronise dans la base de données locale
+//	@Tags			payment-methods
+//	@Accept			json
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{object}	services.SyncPaymentMethodsResult
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/payment-methods/sync [post]
+func (pmc *paymentMethodController) SyncUserPaymentMethods(ctx *gin.Context) {
+	userId := ctx.GetString("userId")
+
+	result, err := pmc.stripeService.SyncUserPaymentMethods(userId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
 }

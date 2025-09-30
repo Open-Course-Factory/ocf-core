@@ -57,6 +57,23 @@ type FailedInvoice struct {
 	Error           string `json:"error"`
 }
 
+type SyncPaymentMethodsResult struct {
+	ProcessedPaymentMethods int                    `json:"processed_payment_methods"`
+	CreatedPaymentMethods   int                    `json:"created_payment_methods"`
+	UpdatedPaymentMethods   int                    `json:"updated_payment_methods"`
+	SkippedPaymentMethods   int                    `json:"skipped_payment_methods"`
+	FailedPaymentMethods    []FailedPaymentMethod  `json:"failed_payment_methods"`
+	CreatedDetails          []string               `json:"created_details"`
+	UpdatedDetails          []string               `json:"updated_details"`
+	SkippedDetails          []string               `json:"skipped_details"`
+}
+
+type FailedPaymentMethod struct {
+	StripePaymentMethodID string `json:"stripe_payment_method_id"`
+	CustomerID            string `json:"customer_id"`
+	Error                 string `json:"error"`
+}
+
 // FailedSubscription contient les détails d'un échec de synchronisation
 type FailedSubscription struct {
 	StripeSubscriptionID string `json:"stripe_subscription_id"`
@@ -94,6 +111,9 @@ type StripeService interface {
 
 	// Invoice synchronization
 	SyncUserInvoices(userID string) (*SyncInvoicesResult, error)
+
+	// Payment method synchronization
+	SyncUserPaymentMethods(userID string) (*SyncPaymentMethodsResult, error)
 
 	// Payment method operations
 	AttachPaymentMethod(paymentMethodID, customerID string) error
@@ -1066,6 +1086,126 @@ func (ss *stripeService) processSingleInvoice(inv *stripe.Invoice, userID string
 			fmt.Sprintf("Created invoice %s (%s) - %d %s",
 				inv.ID, inv.Number, inv.Total, inv.Currency))
 		fmt.Printf("✅ Created invoice %s for user %s\n", inv.ID, userID)
+	}
+
+	return nil
+}
+
+// SyncUserPaymentMethods synchronise les moyens de paiement d'un utilisateur depuis Stripe
+func (ss *stripeService) SyncUserPaymentMethods(userID string) (*SyncPaymentMethodsResult, error) {
+	result := &SyncPaymentMethodsResult{
+		FailedPaymentMethods: []FailedPaymentMethod{},
+		CreatedDetails:       []string{},
+		UpdatedDetails:       []string{},
+		SkippedDetails:       []string{},
+	}
+
+	// Récupérer la subscription active de l'utilisateur pour obtenir le customer ID
+	userSub, err := ss.repository.GetActiveUserSubscription(userID)
+	if err != nil {
+		return nil, fmt.Errorf("no active subscription found for user %s: %v", userID, err)
+	}
+
+	// Récupérer tous les moyens de paiement depuis Stripe pour ce customer
+	params := &stripe.PaymentMethodListParams{
+		Customer: stripe.String(userSub.StripeCustomerID),
+		Type:     stripe.String("card"), // Focus on cards for now
+	}
+	params.Filters.AddFilter("limit", "", "100")
+
+	iter := paymentmethod.List(params)
+	for iter.Next() {
+		pm := iter.PaymentMethod()
+		result.ProcessedPaymentMethods++
+
+		if err := ss.processSinglePaymentMethod(pm, userID, userSub.StripeCustomerID, result); err != nil {
+			result.FailedPaymentMethods = append(result.FailedPaymentMethods, FailedPaymentMethod{
+				StripePaymentMethodID: pm.ID,
+				CustomerID:            userSub.StripeCustomerID,
+				Error:                 err.Error(),
+			})
+		}
+	}
+
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate payment methods: %v", err)
+	}
+
+	fmt.Printf("✅ Payment method sync complete: %d processed, %d created, %d updated, %d skipped, %d failed\n",
+		result.ProcessedPaymentMethods, result.CreatedPaymentMethods, result.UpdatedPaymentMethods,
+		result.SkippedPaymentMethods, len(result.FailedPaymentMethods))
+
+	return result, nil
+}
+
+// processSinglePaymentMethod traite un moyen de paiement Stripe individuel
+func (ss *stripeService) processSinglePaymentMethod(pm *stripe.PaymentMethod, userID, customerID string, result *SyncPaymentMethodsResult) error {
+	// Vérifier si le moyen de paiement existe déjà dans notre base
+	existingPM, err := ss.repository.GetPaymentMethodByStripeID(pm.ID)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return fmt.Errorf("database error checking existing payment method: %v", err)
+	}
+
+	// Déterminer si c'est le moyen de paiement par défaut
+	// Récupérer le customer pour vérifier le default payment method
+	cust, err := customer.Get(customerID, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get customer: %v", err)
+	}
+
+	isDefault := false
+	if cust.InvoiceSettings != nil && cust.InvoiceSettings.DefaultPaymentMethod != nil {
+		isDefault = cust.InvoiceSettings.DefaultPaymentMethod.ID == pm.ID
+	}
+
+	if existingPM != nil {
+		// Moyen de paiement existe - mettre à jour les métadonnées minimales
+		existingPM.Type = string(pm.Type)
+		existingPM.IsDefault = isDefault
+		existingPM.IsActive = true
+
+		if pm.Card != nil {
+			existingPM.CardBrand = string(pm.Card.Brand)
+			existingPM.CardLast4 = pm.Card.Last4
+			existingPM.CardExpMonth = int(pm.Card.ExpMonth)
+			existingPM.CardExpYear = int(pm.Card.ExpYear)
+		}
+
+		if err := ss.repository.UpdatePaymentMethod(existingPM); err != nil {
+			return fmt.Errorf("failed to update payment method: %v", err)
+		}
+
+		result.UpdatedPaymentMethods++
+		result.UpdatedDetails = append(result.UpdatedDetails,
+			fmt.Sprintf("Updated payment method %s (%s ****%s)",
+				pm.ID, existingPM.CardBrand, existingPM.CardLast4))
+		fmt.Printf("✅ Updated payment method %s for user %s\n", pm.ID, userID)
+	} else {
+		// Créer nouveau moyen de paiement avec métadonnées minimales
+		newPM := &models.PaymentMethod{
+			UserID:                userID,
+			StripePaymentMethodID: pm.ID,
+			Type:                  string(pm.Type),
+			IsDefault:             isDefault,
+			IsActive:              true,
+		}
+
+		if pm.Card != nil {
+			newPM.CardBrand = string(pm.Card.Brand)
+			newPM.CardLast4 = pm.Card.Last4
+			newPM.CardExpMonth = int(pm.Card.ExpMonth)
+			newPM.CardExpYear = int(pm.Card.ExpYear)
+		}
+
+		if err := ss.repository.CreatePaymentMethod(newPM); err != nil {
+			return fmt.Errorf("failed to create payment method: %v", err)
+		}
+
+		result.CreatedPaymentMethods++
+		result.CreatedDetails = append(result.CreatedDetails,
+			fmt.Sprintf("Created payment method %s (%s ****%s)",
+				pm.ID, newPM.CardBrand, newPM.CardLast4))
+		fmt.Printf("✅ Created payment method %s for user %s\n", pm.ID, userID)
 	}
 
 	return nil

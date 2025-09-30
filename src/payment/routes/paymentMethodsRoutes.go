@@ -18,5 +18,6 @@ func PaymentMethodRoutes(router *gin.RouterGroup, config *config.Configuration, 
 
 	// Routes spécialisées
 	routes.GET("/user", authMiddleware.AuthManagement(), paymentMethodController.GetUserPaymentMethods)
+	routes.POST("/sync", authMiddleware.AuthManagement(), paymentMethodController.SyncUserPaymentMethods)
 	routes.POST("/:id/set-default", authMiddleware.AuthManagement(), paymentMethodController.SetDefaultPaymentMethod)
 }

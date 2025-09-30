@@ -34,6 +34,7 @@ type PaymentRepository interface {
 	// PaymentMethod operations
 	CreatePaymentMethod(pm *models.PaymentMethod) error
 	GetPaymentMethod(id uuid.UUID) (*models.PaymentMethod, error)
+	GetPaymentMethodByStripeID(stripePaymentMethodID string) (*models.PaymentMethod, error)
 	GetUserPaymentMethods(userID string, activeOnly bool) (*[]models.PaymentMethod, error)
 	UpdatePaymentMethod(pm *models.PaymentMethod) error
 	DeletePaymentMethod(id uuid.UUID) error
@@ -235,6 +236,15 @@ func (r *paymentRepository) CreatePaymentMethod(pm *models.PaymentMethod) error 
 func (r *paymentRepository) GetPaymentMethod(id uuid.UUID) (*models.PaymentMethod, error) {
 	var pm models.PaymentMethod
 	err := r.db.Where("id = ?", id).First(&pm).Error
+	if err != nil {
+		return nil, err
+	}
+	return &pm, nil
+}
+
+func (r *paymentRepository) GetPaymentMethodByStripeID(stripePaymentMethodID string) (*models.PaymentMethod, error) {
+	var pm models.PaymentMethod
+	err := r.db.Where("stripe_payment_method_id = ?", stripePaymentMethodID).First(&pm).Error
 	if err != nil {
 		return nil, err
 	}
