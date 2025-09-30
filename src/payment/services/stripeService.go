@@ -66,6 +66,7 @@ type StripeService interface {
 
 	// Subscription operations
 	CancelSubscription(subscriptionID string, cancelAtPeriodEnd bool) error
+	MarkSubscriptionAsCancelled(userSubscription *models.UserSubscription) error
 	ReactivateSubscription(subscriptionID string) error
 
 	// Subscription synchronization
@@ -183,6 +184,13 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 		Metadata: map[string]string{
 			"user_id":              userID,
 			"subscription_plan_id": input.SubscriptionPlanID.String(),
+		},
+		// CRITICAL FIX: Pass metadata to the subscription that will be created
+		SubscriptionData: &stripe.CheckoutSessionSubscriptionDataParams{
+			Metadata: map[string]string{
+				"user_id":              userID,
+				"subscription_plan_id": input.SubscriptionPlanID.String(),
+			},
 		},
 		BillingAddressCollection: stripe.String("required"),
 		// TaxIDCollection: &stripe.CheckoutSessionTaxIDCollectionParams{
@@ -496,18 +504,26 @@ func (ss *stripeService) handleCheckoutSessionCompleted(event *stripe.Event) err
 
 // CancelSubscription annule un abonnement
 func (ss *stripeService) CancelSubscription(subscriptionID string, cancelAtPeriodEnd bool) error {
-	params := &stripe.SubscriptionParams{
-		CancelAtPeriodEnd: stripe.Bool(cancelAtPeriodEnd),
-	}
-
-	if !cancelAtPeriodEnd {
-		params.CancellationDetails = &stripe.SubscriptionCancellationDetailsParams{
-			Comment: stripe.String("Cancelled by user"),
+	if cancelAtPeriodEnd {
+		// Annulation à la fin de la période de facturation
+		params := &stripe.SubscriptionParams{
+			CancelAtPeriodEnd: stripe.Bool(true),
 		}
+		_, err := subscription.Update(subscriptionID, params)
+		return err
+	} else {
+		// Annulation immédiate
+		_, err := subscription.Cancel(subscriptionID, nil)
+		return err
 	}
+}
 
-	_, err := subscription.Update(subscriptionID, params)
-	return err
+// MarkSubscriptionAsCancelled marque un abonnement comme annulé dans la base de données
+func (ss *stripeService) MarkSubscriptionAsCancelled(userSubscription *models.UserSubscription) error {
+	userSubscription.Status = "cancelled"
+	now := time.Now()
+	userSubscription.CancelledAt = &now
+	return ss.repository.UpdateUserSubscription(userSubscription)
 }
 
 // ReactivateSubscription réactive un abonnement annulé

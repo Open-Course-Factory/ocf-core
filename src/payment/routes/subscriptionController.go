@@ -3,6 +3,7 @@ package paymentController
 
 import (
 	"net/http"
+	"strings"
 
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
@@ -236,6 +237,24 @@ func (sc *subscriptionController) CancelSubscription(ctx *gin.Context) {
 	// Annuler via Stripe
 	err = sc.stripeService.CancelSubscription(subscription.StripeSubscriptionID, !cancelImmediately)
 	if err != nil {
+		// Vérifier si l'erreur indique que l'abonnement n'existe plus dans Stripe
+		if strings.Contains(err.Error(), "resource_missing") || strings.Contains(err.Error(), "No such subscription") {
+			// L'abonnement a déjà été supprimé dans Stripe, mettre à jour notre base de données
+			updateErr := sc.stripeService.MarkSubscriptionAsCancelled(subscription)
+			if updateErr != nil {
+				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+					ErrorCode:    http.StatusInternalServerError,
+					ErrorMessage: "Failed to update subscription status: " + updateErr.Error(),
+				})
+				return
+			}
+
+			ctx.JSON(http.StatusOK, gin.H{
+				"message": "Subscription was already cancelled and status updated",
+			})
+			return
+		}
+
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Failed to cancel subscription: " + err.Error(),
