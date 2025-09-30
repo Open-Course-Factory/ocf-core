@@ -2,6 +2,7 @@
 package paymentController
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -166,6 +167,25 @@ func (sc *subscriptionController) GetUserSubscription(ctx *gin.Context) {
 	// Récupérer l'abonnement depuis le service (retourne un model)
 	subscription, err := sc.subscriptionService.GetActiveUserSubscription(userId)
 	if err != nil {
+		// This handles the case where user returns from checkout before webhook fires
+		fmt.Printf("No subscription found in DB for user %s, attempting sync from Stripe...\n", userId)
+
+		syncResult, syncErr := sc.stripeService.SyncUserSubscriptions(userId)
+		if syncErr != nil {
+			fmt.Printf("Failed to sync subscriptions for user %s: %v\n", userId, syncErr)
+		} else if syncResult.CreatedSubscriptions > 0 || syncResult.UpdatedSubscriptions > 0 {
+			fmt.Printf("✅ Synced %d subscriptions for user %s\n",
+				syncResult.CreatedSubscriptions+syncResult.UpdatedSubscriptions, userId)
+
+			// Retry getting the subscription after sync
+			subscription, err = sc.subscriptionService.GetActiveUserSubscription(userId)
+			if err == nil {
+				// Success! Fall through to return subscription
+				goto returnSubscription
+			}
+		}
+
+		// Still no subscription found after sync attempt
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
 			ErrorMessage: "No active subscription found",
@@ -173,6 +193,7 @@ func (sc *subscriptionController) GetUserSubscription(ctx *gin.Context) {
 		return
 	}
 
+returnSubscription:
 	// Convertir vers DTO
 	subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
 	if err != nil {

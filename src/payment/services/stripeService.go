@@ -30,14 +30,14 @@ import (
 
 // SyncSubscriptionsResult contient les résultats de la synchronisation
 type SyncSubscriptionsResult struct {
-	ProcessedSubscriptions int                    `json:"processed_subscriptions"`
-	CreatedSubscriptions   int                    `json:"created_subscriptions"`
-	UpdatedSubscriptions   int                    `json:"updated_subscriptions"`
-	SkippedSubscriptions   int                    `json:"skipped_subscriptions"`
-	FailedSubscriptions    []FailedSubscription   `json:"failed_subscriptions"`
-	CreatedDetails         []string               `json:"created_details"`
-	UpdatedDetails         []string               `json:"updated_details"`
-	SkippedDetails         []string               `json:"skipped_details"`
+	ProcessedSubscriptions int                  `json:"processed_subscriptions"`
+	CreatedSubscriptions   int                  `json:"created_subscriptions"`
+	UpdatedSubscriptions   int                  `json:"updated_subscriptions"`
+	SkippedSubscriptions   int                  `json:"skipped_subscriptions"`
+	FailedSubscriptions    []FailedSubscription `json:"failed_subscriptions"`
+	CreatedDetails         []string             `json:"created_details"`
+	UpdatedDetails         []string             `json:"updated_details"`
+	SkippedDetails         []string             `json:"skipped_details"`
 }
 
 // FailedSubscription contient les détails d'un échec de synchronisation
@@ -493,6 +493,28 @@ func (ss *stripeService) handleCheckoutSessionCompleted(event *stripe.Event) err
 	userID, exists := session.Metadata["user_id"]
 	if !exists {
 		return fmt.Errorf("user_id not found in session metadata")
+	}
+
+	// This guarantees metadata is available when subscription.created webhook fires
+	if session.Subscription != nil && session.Subscription.ID != "" {
+		planID, hasPlanID := session.Metadata["subscription_plan_id"]
+
+		if hasPlanID {
+			// Update the subscription metadata in Stripe to ensure it's propagated
+			params := &stripe.SubscriptionParams{
+				Metadata: map[string]string{
+					"user_id":              userID,
+					"subscription_plan_id": planID,
+				},
+			}
+
+			_, err := subscription.Update(session.Subscription.ID, params)
+			if err != nil {
+				return fmt.Errorf("failed to update subscription metadata: %v", err)
+			}
+
+			fmt.Printf("✅ Updated subscription %s metadata for user %s\n", session.Subscription.ID, userID)
+		}
 	}
 
 	// Si c'est un abonnement, il sera créé via le webhook subscription.created
