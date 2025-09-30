@@ -40,6 +40,23 @@ type SyncSubscriptionsResult struct {
 	SkippedDetails         []string             `json:"skipped_details"`
 }
 
+type SyncInvoicesResult struct {
+	ProcessedInvoices int             `json:"processed_invoices"`
+	CreatedInvoices   int             `json:"created_invoices"`
+	UpdatedInvoices   int             `json:"updated_invoices"`
+	SkippedInvoices   int             `json:"skipped_invoices"`
+	FailedInvoices    []FailedInvoice `json:"failed_invoices"`
+	CreatedDetails    []string        `json:"created_details"`
+	UpdatedDetails    []string        `json:"updated_details"`
+	SkippedDetails    []string        `json:"skipped_details"`
+}
+
+type FailedInvoice struct {
+	StripeInvoiceID string `json:"stripe_invoice_id"`
+	CustomerID      string `json:"customer_id"`
+	Error           string `json:"error"`
+}
+
 // FailedSubscription contient les détails d'un échec de synchronisation
 type FailedSubscription struct {
 	StripeSubscriptionID string `json:"stripe_subscription_id"`
@@ -74,6 +91,9 @@ type StripeService interface {
 	SyncUserSubscriptions(userID string) (*SyncSubscriptionsResult, error)
 	SyncSubscriptionsWithMissingMetadata() (*SyncSubscriptionsResult, error)
 	LinkSubscriptionToUser(stripeSubscriptionID, userID string, subscriptionPlanID uuid.UUID) error
+
+	// Invoice synchronization
+	SyncUserInvoices(userID string) (*SyncInvoicesResult, error)
 
 	// Payment method operations
 	AttachPaymentMethod(paymentMethodID, customerID string) error
@@ -230,10 +250,10 @@ func (ss *stripeService) CreatePortalSession(userID string, input dto.CreatePort
 		ReturnURL: stripe.String(input.ReturnURL),
 	}
 
-	portalSession, errPortalSession := billingPortalSession.New(params)
+	portalSession, err := billingPortalSession.New(params)
 
-	if errPortalSession != nil {
-		return nil, err
+	if err != nil {
+		return nil, fmt.Errorf("failed to create portal session: %v", err)
 	}
 
 	return &dto.PortalSessionOutput{
@@ -426,10 +446,13 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 		return err
 	}
 
-	// Récupérer l'abonnement associé
-	userSub, err := ss.repository.GetUserSubscriptionByStripeID(stripeInvoice.ID)
+	// CRITICAL FIX: Find subscription by customer ID, not invoice ID
+	// Invoices created during checkout might not have subscription field populated yet
+	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
 	if err != nil {
-		return fmt.Errorf("subscription not found for invoice: %v", err)
+		// If no active subscription found, try to find by metadata in the invoice
+		fmt.Printf("⚠️ No active subscription found for customer %s, skipping invoice %s\n", stripeInvoice.Customer.ID, stripeInvoice.ID)
+		return fmt.Errorf("subscription not found for customer %s (invoice %s): %v", stripeInvoice.Customer.ID, stripeInvoice.ID, err)
 	}
 
 	// Créer ou mettre à jour la facture
@@ -456,12 +479,15 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 	existingInvoice, err := ss.repository.GetInvoiceByStripeID(stripeInvoice.ID)
 	if err != nil {
 		// Facture n'existe pas, la créer
+		fmt.Printf("✅ Creating invoice %s for user %s (amount: %d %s)\n",
+			stripeInvoice.Number, userSub.UserID, stripeInvoice.AmountPaid, stripeInvoice.Currency)
 		return ss.repository.CreateInvoice(invoiceRecord)
 	} else {
 		// Mettre à jour la facture existante
 		existingInvoice.Status = invoiceRecord.Status
 		existingInvoice.PaidAt = invoiceRecord.PaidAt
 		existingInvoice.DownloadURL = invoiceRecord.DownloadURL
+		fmt.Printf("✅ Updated invoice %s for user %s\n", stripeInvoice.Number, userSub.UserID)
 		return ss.repository.UpdateInvoice(existingInvoice)
 	}
 }
@@ -473,13 +499,14 @@ func (ss *stripeService) handleInvoicePaymentFailed(event *stripe.Event) error {
 		return err
 	}
 
-	// Mettre à jour le statut de l'abonnement
-	userSub, err := ss.repository.GetUserSubscriptionByStripeID(stripeInvoice.ID)
+	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
 	if err != nil {
-		return err
+		fmt.Printf("⚠️ No active subscription found for customer %s (invoice %s payment failed)\n", stripeInvoice.Customer.ID, stripeInvoice.ID)
+		return fmt.Errorf("subscription not found for customer %s: %v", stripeInvoice.Customer.ID, err)
 	}
 
 	userSub.Status = "past_due"
+	fmt.Printf("⚠️ Invoice %s payment failed for subscription %s - marking as past_due\n", stripeInvoice.ID, userSub.StripeSubscriptionID)
 	return ss.repository.UpdateUserSubscription(userSub)
 }
 
@@ -917,4 +944,129 @@ func (ss *stripeService) LinkSubscriptionToUser(stripeSubscriptionID, userID str
 
 	// Sauvegarder en base
 	return ss.repository.CreateUserSubscription(userSubscription)
+}
+
+// SyncUserInvoices synchronise toutes les factures d'un utilisateur depuis Stripe
+func (ss *stripeService) SyncUserInvoices(userID string) (*SyncInvoicesResult, error) {
+	result := &SyncInvoicesResult{
+		FailedInvoices: []FailedInvoice{},
+		CreatedDetails: []string{},
+		UpdatedDetails: []string{},
+		SkippedDetails: []string{},
+	}
+
+	// Récupérer la subscription active de l'utilisateur pour obtenir le customer ID
+	userSub, err := ss.repository.GetActiveUserSubscription(userID)
+	if err != nil {
+		return nil, fmt.Errorf("no active subscription found for user %s: %v", userID, err)
+	}
+
+	// Récupérer toutes les factures depuis Stripe pour ce customer
+	params := &stripe.InvoiceListParams{
+		Customer: stripe.String(userSub.StripeCustomerID),
+	}
+	params.Filters.AddFilter("limit", "", "100")
+
+	iter := invoice.List(params)
+	for iter.Next() {
+		inv := iter.Invoice()
+		result.ProcessedInvoices++
+
+		if err := ss.processSingleInvoice(inv, userID, result); err != nil {
+			result.FailedInvoices = append(result.FailedInvoices, FailedInvoice{
+				StripeInvoiceID: inv.ID,
+				CustomerID:      inv.Customer.ID,
+				Error:           err.Error(),
+			})
+		}
+	}
+
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate invoices: %v", err)
+	}
+
+	fmt.Printf("✅ Invoice sync complete: %d processed, %d created, %d updated, %d skipped, %d failed\n",
+		result.ProcessedInvoices, result.CreatedInvoices, result.UpdatedInvoices,
+		result.SkippedInvoices, len(result.FailedInvoices))
+
+	return result, nil
+}
+
+// processSingleInvoice traite une facture Stripe individuelle
+func (ss *stripeService) processSingleInvoice(inv *stripe.Invoice, userID string, result *SyncInvoicesResult) error {
+	// Trouver la subscription associée par customer ID
+	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(inv.Customer.ID)
+	if err != nil {
+		errMsg := fmt.Sprintf("no active subscription found for customer %s", inv.Customer.ID)
+		result.SkippedInvoices++
+		result.SkippedDetails = append(result.SkippedDetails,
+			fmt.Sprintf("Invoice %s: %s", inv.ID, errMsg))
+		return fmt.Errorf(errMsg)
+	}
+
+	// Vérifier si la facture existe déjà dans notre base
+	existingInvoice, err := ss.repository.GetInvoiceByStripeID(inv.ID)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return fmt.Errorf("database error checking existing invoice: %v", err)
+	}
+
+	// Convertir les timestamps
+	invoiceDate := time.Unix(inv.Created, 0)
+	dueDate := time.Unix(inv.DueDate, 0)
+	var paidAt *time.Time
+	if inv.StatusTransitions != nil && inv.StatusTransitions.PaidAt > 0 {
+		t := time.Unix(inv.StatusTransitions.PaidAt, 0)
+		paidAt = &t
+	}
+
+	if existingInvoice != nil {
+		// Facture existe - mettre à jour
+		existingInvoice.Status = string(inv.Status)
+		existingInvoice.Amount = inv.Total
+		existingInvoice.Currency = string(inv.Currency)
+		existingInvoice.InvoiceNumber = inv.Number
+		existingInvoice.InvoiceDate = invoiceDate
+		existingInvoice.DueDate = dueDate
+		existingInvoice.PaidAt = paidAt
+		existingInvoice.StripeHostedURL = inv.HostedInvoiceURL
+		existingInvoice.DownloadURL = inv.InvoicePDF
+
+		if err := ss.repository.UpdateInvoice(existingInvoice); err != nil {
+			return fmt.Errorf("failed to update invoice: %v", err)
+		}
+
+		result.UpdatedInvoices++
+		result.UpdatedDetails = append(result.UpdatedDetails,
+			fmt.Sprintf("Updated invoice %s (%s) - %d %s",
+				inv.ID, inv.Number, inv.Total, inv.Currency))
+		fmt.Printf("✅ Updated invoice %s for user %s\n", inv.ID, userID)
+	} else {
+		// Créer nouvelle facture
+		newInvoice := &models.Invoice{
+			UserID:             userID,
+			UserSubscriptionID: userSub.ID,
+			StripeInvoiceID:    inv.ID,
+			Amount:             inv.Total,
+			Currency:           string(inv.Currency),
+			Status:             string(inv.Status),
+			InvoiceNumber:      inv.Number,
+			InvoiceDate:        invoiceDate,
+			DueDate:            dueDate,
+			PaidAt:             paidAt,
+			StripeHostedURL:    inv.HostedInvoiceURL,
+			DownloadURL:        inv.InvoicePDF,
+		}
+
+		if err := ss.repository.CreateInvoice(newInvoice); err != nil {
+			return fmt.Errorf("failed to create invoice: %v", err)
+		}
+
+		result.CreatedInvoices++
+		result.CreatedDetails = append(result.CreatedDetails,
+			fmt.Sprintf("Created invoice %s (%s) - %d %s",
+				inv.ID, inv.Number, inv.Total, inv.Currency))
+		fmt.Printf("✅ Created invoice %s for user %s\n", inv.ID, userID)
+	}
+
+	return nil
 }

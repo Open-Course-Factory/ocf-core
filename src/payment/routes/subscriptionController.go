@@ -283,6 +283,26 @@ func (sc *subscriptionController) CancelSubscription(ctx *gin.Context) {
 		return
 	}
 
+	// CRITICAL FIX: Update database immediately after successful Stripe cancellation
+	// This prevents the need to wait for webhook delivery
+	if cancelImmediately {
+		// Immediate cancellation - mark as cancelled now
+		updateErr := sc.stripeService.MarkSubscriptionAsCancelled(subscription)
+		if updateErr != nil {
+			fmt.Printf("⚠️ Warning: Failed to update DB after cancellation: %v\n", updateErr)
+			// Don't fail the request - webhook will eventually update it
+		} else {
+			fmt.Printf("✅ Subscription %s marked as cancelled in DB\n", subscription.StripeSubscriptionID)
+		}
+	} else {
+		// Cancel at period end - sync from Stripe to get the updated status
+		_, syncErr := sc.stripeService.SyncUserSubscriptions(userId)
+		if syncErr != nil {
+			fmt.Printf("⚠️ Warning: Failed to sync after cancellation: %v\n", syncErr)
+			// Don't fail the request - webhook will eventually update it
+		}
+	}
+
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "Subscription cancelled successfully",
 	})

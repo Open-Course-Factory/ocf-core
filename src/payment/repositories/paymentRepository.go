@@ -20,6 +20,7 @@ type PaymentRepository interface {
 	GetUserSubscription(id uuid.UUID) (*models.UserSubscription, error)
 	GetUserSubscriptionByStripeID(stripeSubscriptionID string) (*models.UserSubscription, error)
 	GetActiveUserSubscription(userID string) (*models.UserSubscription, error)
+	GetActiveSubscriptionByCustomerID(customerID string) (*models.UserSubscription, error)
 	GetUserSubscriptions(userID string, includeInactive bool) (*[]models.UserSubscription, error)
 	UpdateUserSubscription(subscription *models.UserSubscription) error
 
@@ -139,6 +140,19 @@ func (r *paymentRepository) GetActiveUserSubscription(userID string) (*models.Us
 	err := r.db.
 		Preload("SubscriptionPlan").
 		Where("user_id = ? AND status IN (?)", userID, []string{"active", "trialing"}).
+		First(&subscription).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return &subscription, nil
+}
+
+func (r *paymentRepository) GetActiveSubscriptionByCustomerID(customerID string) (*models.UserSubscription, error) {
+	var subscription models.UserSubscription
+	err := r.db.
+		Preload("SubscriptionPlan").
+		Where("stripe_customer_id = ? AND status IN (?)", customerID, []string{"active", "trialing"}).
 		First(&subscription).Error
 	if err != nil {
 		return nil, err

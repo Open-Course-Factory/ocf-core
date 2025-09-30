@@ -18,5 +18,6 @@ func InvoiceRoutes(router *gin.RouterGroup, config *config.Configuration, db *go
 
 	// Routes spécialisées
 	routes.GET("/user", authMiddleware.AuthManagement(), invoiceController.GetUserInvoices)
+	routes.POST("/sync", authMiddleware.AuthManagement(), invoiceController.SyncUserInvoices)
 	routes.GET("/:id/download", authMiddleware.AuthManagement(), invoiceController.DownloadInvoice)
 }

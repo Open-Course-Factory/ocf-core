@@ -18,11 +18,13 @@ import (
 type InvoiceController interface {
 	GetUserInvoices(ctx *gin.Context)
 	DownloadInvoice(ctx *gin.Context)
+	SyncUserInvoices(ctx *gin.Context)
 }
 
 type invoiceController struct {
 	controller.GenericController
 	subscriptionService services.SubscriptionService
+	stripeService       services.StripeService
 	conversionService   services.ConversionService
 }
 
@@ -30,6 +32,7 @@ func NewInvoiceController(db *gorm.DB) InvoiceController {
 	return &invoiceController{
 		GenericController:   controller.NewGenericController(db),
 		subscriptionService: services.NewSubscriptionService(db),
+		stripeService:       services.NewStripeService(db),
 		conversionService:   services.NewConversionService(),
 	}
 }
@@ -129,4 +132,30 @@ func (ic *invoiceController) DownloadInvoice(ctx *gin.Context) {
 
 	// Rediriger vers l'URL de téléchargement Stripe
 	ctx.Redirect(http.StatusFound, invoice.DownloadURL)
+}
+
+// Sync User Invoices godoc
+//
+//	@Summary		Synchroniser les factures de l'utilisateur depuis Stripe
+//	@Description	Récupère toutes les factures de Stripe et les synchronise dans la base de données locale
+//	@Tags			invoices
+//	@Accept			json
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{object}	services.SyncInvoicesResult
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/invoices/sync [post]
+func (ic *invoiceController) SyncUserInvoices(ctx *gin.Context) {
+	userId := ctx.GetString("userId")
+
+	result, err := ic.stripeService.SyncUserInvoices(userId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
 }
