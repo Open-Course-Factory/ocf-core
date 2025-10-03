@@ -1,10 +1,12 @@
 package repositories
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
 	errors "soli/formations/src/auth/errors"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"strings"
 
 	"github.com/google/uuid"
@@ -118,11 +120,18 @@ func getPreloadString(entityName string, queryPreloadsString *string, firstItera
 func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, filters map[string]interface{}) ([]any, int64, error) {
 	pageSlice := createEmptySliceOfCalledType(data)
 
+	// Get entity name for relationship filters lookup
+	t := reflect.TypeOf(data)
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	entityName := t.Name()
+
 	// Start building the query
 	query := o.db.Model(pageSlice)
 
 	// Apply filters
-	query = applyFilters(o.db, query, filters, data)
+	query = applyFilters(o.db, query, filters, data, entityName)
 
 	// Get total count with filters applied
 	var total int64
@@ -146,13 +155,28 @@ func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, fil
 }
 
 // applyFilters applies query filters based on the filter map
-func applyFilters(db *gorm.DB, query *gorm.DB, filters map[string]interface{}, modelData any) *gorm.DB {
+func applyFilters(db *gorm.DB, query *gorm.DB, filters map[string]interface{}, modelData any, entityName string) *gorm.DB {
 	// Get model information for table name
 	stmt := &gorm.Statement{DB: db}
 	stmt.Parse(modelData)
 	currentTable := stmt.Table
 
+	// Get registered relationship filters for this entity
+	relationshipFilters := ems.GlobalEntityRegistrationService.GetRelationshipFilters(entityName)
+	relationshipFilterMap := make(map[string]entityManagementInterfaces.RelationshipFilter)
+	for _, rf := range relationshipFilters {
+		relationshipFilterMap[rf.FilterName] = rf
+	}
+
 	for key, value := range filters {
+		// Check if this filter has a registered relationship path
+		if relFilter, hasRelationship := relationshipFilterMap[key]; hasRelationship {
+			// Handle relationship filter
+			query = applyRelationshipFilter(query, relFilter, value, currentTable)
+			continue
+		}
+
+		// Handle regular filters (existing logic)
 		// Handle different value types
 		switch v := value.(type) {
 		case string:
@@ -231,6 +255,84 @@ func applyFilters(db *gorm.DB, query *gorm.DB, filters map[string]interface{}, m
 		}
 	}
 	return query
+}
+
+// applyRelationshipFilter applies filters through relationship paths
+func applyRelationshipFilter(query *gorm.DB, relFilter entityManagementInterfaces.RelationshipFilter, value interface{}, currentTable string) *gorm.DB {
+	// Convert value to string array
+	var ids []string
+	switch v := value.(type) {
+	case string:
+		if strings.Contains(v, ",") {
+			ids = strings.Split(v, ",")
+		} else {
+			ids = []string{v}
+		}
+	case []string:
+		ids = v
+	case []interface{}:
+		for _, val := range v {
+			ids = append(ids, fmt.Sprint(val))
+		}
+	default:
+		ids = []string{fmt.Sprint(v)}
+	}
+
+	if len(ids) == 0 {
+		return query
+	}
+
+	// Build the EXISTS clause with the relationship path
+	var existsClause strings.Builder
+	existsClause.WriteString("EXISTS (SELECT 1 FROM ")
+
+	// Start with the first join table
+	if len(relFilter.Path) == 0 {
+		return query
+	}
+
+	firstStep := relFilter.Path[0]
+	existsClause.WriteString(firstStep.JoinTable)
+	existsClause.WriteString(" WHERE ")
+	existsClause.WriteString(firstStep.JoinTable)
+	existsClause.WriteString(".")
+	existsClause.WriteString(firstStep.SourceColumn)
+	existsClause.WriteString(" = ")
+	existsClause.WriteString(currentTable)
+	existsClause.WriteString(".id")
+
+	// Add subsequent joins
+	for i := 1; i < len(relFilter.Path); i++ {
+		step := relFilter.Path[i]
+		prevStep := relFilter.Path[i-1]
+
+		existsClause.WriteString(" AND EXISTS (SELECT 1 FROM ")
+		existsClause.WriteString(step.JoinTable)
+		existsClause.WriteString(" WHERE ")
+		existsClause.WriteString(step.JoinTable)
+		existsClause.WriteString(".")
+		existsClause.WriteString(step.SourceColumn)
+		existsClause.WriteString(" = ")
+		existsClause.WriteString(prevStep.JoinTable)
+		existsClause.WriteString(".")
+		existsClause.WriteString(prevStep.TargetColumn)
+	}
+
+	// Add final condition
+	lastStep := relFilter.Path[len(relFilter.Path)-1]
+	existsClause.WriteString(" AND ")
+	existsClause.WriteString(lastStep.JoinTable)
+	existsClause.WriteString(".")
+	existsClause.WriteString(lastStep.TargetColumn)
+	existsClause.WriteString(" IN ?")
+
+	// Close all parentheses
+	for i := 1; i < len(relFilter.Path); i++ {
+		existsClause.WriteString(")")
+	}
+	existsClause.WriteString(")")
+
+	return query.Where(existsClause.String(), ids)
 }
 
 // pluralize converts singular to plural form (simple version)

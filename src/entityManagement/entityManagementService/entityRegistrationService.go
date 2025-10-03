@@ -29,20 +29,22 @@ const (
 )
 
 type EntityRegistrationService struct {
-	registry       map[string]any
-	functions      map[string]map[ConversionPurpose]any
-	dtos           map[string]map[DtoPurpose]any
-	subEntities    map[string][]any
-	swaggerConfigs map[string]*entityManagementInterfaces.EntitySwaggerConfig
+	registry            map[string]any
+	functions           map[string]map[ConversionPurpose]any
+	dtos                map[string]map[DtoPurpose]any
+	subEntities         map[string][]any
+	swaggerConfigs      map[string]*entityManagementInterfaces.EntitySwaggerConfig
+	relationshipFilters map[string][]entityManagementInterfaces.RelationshipFilter
 }
 
 func NewEntityRegistrationService() *EntityRegistrationService {
 	return &EntityRegistrationService{
-		registry:       make(map[string]any),
-		functions:      make(map[string]map[ConversionPurpose]any),
-		dtos:           make(map[string]map[DtoPurpose]any),
-		subEntities:    make(map[string][]any),
-		swaggerConfigs: make(map[string]*entityManagementInterfaces.EntitySwaggerConfig),
+		registry:            make(map[string]any),
+		functions:           make(map[string]map[ConversionPurpose]any),
+		dtos:                make(map[string]map[DtoPurpose]any),
+		subEntities:         make(map[string][]any),
+		swaggerConfigs:      make(map[string]*entityManagementInterfaces.EntitySwaggerConfig),
+		relationshipFilters: make(map[string][]entityManagementInterfaces.RelationshipFilter),
 	}
 }
 
@@ -115,6 +117,14 @@ func (s *EntityRegistrationService) GetConversionFunction(name string, way Conve
 
 func (s *EntityRegistrationService) GetSubEntites(entityName string) []any {
 	return s.subEntities[entityName]
+}
+
+func (s *EntityRegistrationService) RegisterRelationshipFilters(name string, filters []entityManagementInterfaces.RelationshipFilter) {
+	s.relationshipFilters[name] = filters
+}
+
+func (s *EntityRegistrationService) GetRelationshipFilters(name string) []entityManagementInterfaces.RelationshipFilter {
+	return s.relationshipFilters[name]
 }
 
 // SetDefaultEntityAccesses est une version publique pour les tests qui accepte un enforcer
@@ -190,6 +200,7 @@ func (s *EntityRegistrationService) RegisterEntity(input entityManagementInterfa
 	entityDtos[InputEditDto] = entityToRegister.EntityDtos.InputEditDto
 	GlobalEntityRegistrationService.RegisterEntityDtos(entityName, entityDtos)
 	GlobalEntityRegistrationService.RegisterSubEntites(entityName, entityToRegister.EntitySubEntities)
+	GlobalEntityRegistrationService.RegisterRelationshipFilters(entityName, entityToRegister.RelationshipFilters)
 
 	// Gestion automatique de la configuration Swagger
 	if swaggerEntity, ok := input.(entityManagementInterfaces.SwaggerDocumentedEntity); ok {

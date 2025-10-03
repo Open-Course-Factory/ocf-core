@@ -8,12 +8,13 @@ import (
 )
 
 type EntityRegistrationInput struct {
-	EntityInterface   any
-	EntityConverters  EntityConverters
-	EntityDtos        EntityDtos
-	EntityRoles       EntityRoles
-	EntitySubEntities []any
-	SwaggerConfig     *EntitySwaggerConfig `json:"swagger_config,omitempty"`
+	EntityInterface      any
+	EntityConverters     EntityConverters
+	EntityDtos           EntityDtos
+	EntityRoles          EntityRoles
+	EntitySubEntities    []any
+	SwaggerConfig        *EntitySwaggerConfig `json:"swagger_config,omitempty"`
+	RelationshipFilters  []RelationshipFilter
 }
 
 type EntityConverters struct {
@@ -30,6 +31,21 @@ type EntityDtos struct {
 
 type EntityRoles struct {
 	Roles map[string]string
+}
+
+// RelationshipFilter defines how to filter an entity through nested relationships
+type RelationshipFilter struct {
+	FilterName   string              // e.g., "courseId" - the query parameter name
+	Path         []RelationshipStep  // The path of joins to reach the target
+	TargetColumn string              // e.g., "id" - the column on the final table to compare
+}
+
+// RelationshipStep defines one step in a relationship path
+type RelationshipStep struct {
+	JoinTable    string // e.g., "chapter_sections"
+	SourceColumn string // e.g., "section_id" - column that references current entity
+	TargetColumn string // e.g., "chapter_id" - column that references next entity
+	NextTable    string // e.g., "chapters" - the next table in the chain
 }
 
 type RegistrableInterface interface {

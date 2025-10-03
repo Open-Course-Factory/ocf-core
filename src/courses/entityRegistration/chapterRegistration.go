@@ -109,5 +109,19 @@ func (s ChapterRegistration) GetEntityRegistrationInput() entityManagementInterf
 		EntitySubEntities: []interface{}{
 			models.Section{},
 		},
+		RelationshipFilters: []entityManagementInterfaces.RelationshipFilter{
+			{
+				FilterName:   "courseId",
+				TargetColumn: "id",
+				Path: []entityManagementInterfaces.RelationshipStep{
+					{
+						JoinTable:    "course_chapters",
+						SourceColumn: "chapter_id",
+						TargetColumn: "course_id",
+						NextTable:    "courses",
+					},
+				},
+			},
+		},
 	}
 }

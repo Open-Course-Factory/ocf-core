@@ -116,5 +116,61 @@ func (s PageRegistration) GetEntityRegistrationInput() entityManagementInterface
 			OutputDto:      dto.PageOutput{},
 			InputEditDto:   dto.EditPageInput{},
 		},
+		RelationshipFilters: []entityManagementInterfaces.RelationshipFilter{
+			{
+				FilterName:   "sectionId",
+				TargetColumn: "id",
+				Path: []entityManagementInterfaces.RelationshipStep{
+					{
+						JoinTable:    "section_pages",
+						SourceColumn: "page_id",
+						TargetColumn: "section_id",
+						NextTable:    "sections",
+					},
+				},
+			},
+			{
+				FilterName:   "chapterId",
+				TargetColumn: "id",
+				Path: []entityManagementInterfaces.RelationshipStep{
+					{
+						JoinTable:    "section_pages",
+						SourceColumn: "page_id",
+						TargetColumn: "section_id",
+						NextTable:    "sections",
+					},
+					{
+						JoinTable:    "chapter_sections",
+						SourceColumn: "section_id",
+						TargetColumn: "chapter_id",
+						NextTable:    "chapters",
+					},
+				},
+			},
+			{
+				FilterName:   "courseId",
+				TargetColumn: "id",
+				Path: []entityManagementInterfaces.RelationshipStep{
+					{
+						JoinTable:    "section_pages",
+						SourceColumn: "page_id",
+						TargetColumn: "section_id",
+						NextTable:    "sections",
+					},
+					{
+						JoinTable:    "chapter_sections",
+						SourceColumn: "section_id",
+						TargetColumn: "chapter_id",
+						NextTable:    "chapters",
+					},
+					{
+						JoinTable:    "course_chapters",
+						SourceColumn: "chapter_id",
+						TargetColumn: "course_id",
+						NextTable:    "courses",
+					},
+				},
+			},
+		},
 	}
 }
