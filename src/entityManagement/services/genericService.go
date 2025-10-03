@@ -21,7 +21,7 @@ type GenericService interface {
 	CreateEntity(inputDto interface{}, entityName string) (interface{}, error)
 	SaveEntity(entity interface{}) (interface{}, error)
 	GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error)
-	GetEntities(data interface{}, page int, pageSize int) ([]interface{}, int64, error)
+	GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}) ([]interface{}, int64, error)
 	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
 	EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error
 	GetEntityModelInterface(entityName string) interface{}
@@ -104,9 +104,9 @@ func (g *genericService) GetEntity(id uuid.UUID, data interface{}, entityName st
 }
 
 // should return an array of dtoEntityOutput
-func (g *genericService) GetEntities(data interface{}, page int, pageSize int) ([]interface{}, int64, error) {
+func (g *genericService) GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}) ([]interface{}, int64, error) {
 
-	allPages, total, err := g.genericRepository.GetAllEntities(data, page, pageSize)
+	allPages, total, err := g.genericRepository.GetAllEntities(data, page, pageSize, filters)
 
 	if err != nil {
 		return nil, 0, err

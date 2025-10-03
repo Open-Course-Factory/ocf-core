@@ -257,7 +257,7 @@ func DeleteAllObjects() {
 
 	gs := genericServices.NewGenericService(sqldb.DB)
 
-	coursesPages, _, _ := gs.GetEntities(courseModels.Course{}, 1, 100)
+	coursesPages, _, _ := gs.GetEntities(courseModels.Course{}, 1, 100, map[string]interface{}{})
 	coursesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(coursesPages, courseModels.Course{}, "Course")
 
 	for _, courseDto := range coursesDtoArray {
@@ -273,7 +273,7 @@ func DeleteAllObjects() {
 		gs.DeleteEntity(id, courseToDelete, true)
 	}
 
-	usernamesPages, _, _ := gs.GetEntities(labsModels.Username{}, 1, 100)
+	usernamesPages, _, _ := gs.GetEntities(labsModels.Username{}, 1, 100, map[string]interface{}{})
 	usernamesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(usernamesPages, labsModels.Username{}, "Username")
 	for _, usernameDto := range usernamesDtoArray {
 		id := gs.ExtractUuidFromReflectEntity(usernameDto)
@@ -288,7 +288,7 @@ func DeleteAllObjects() {
 		gs.DeleteEntity(id, usernameToDelete, true)
 	}
 
-	machinesPages, _, _ := gs.GetEntities(labsModels.Machine{}, 1, 100)
+	machinesPages, _, _ := gs.GetEntities(labsModels.Machine{}, 1, 100, map[string]interface{}{})
 	machinesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(machinesPages, labsModels.Machine{}, "Machine")
 	for _, machineDto := range machinesDtoArray {
 		id := gs.ExtractUuidFromReflectEntity(machineDto)

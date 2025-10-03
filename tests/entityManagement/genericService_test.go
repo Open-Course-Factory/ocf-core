@@ -61,9 +61,9 @@ func (m *MockGenericRepository) GetEntity(id uuid.UUID, data any, entityName str
 	return args.Get(0), args.Error(1)
 }
 
-func (m *MockGenericRepository) GetAllEntities(data any, pageSize int) ([]any, error) {
-	args := m.Called(data, pageSize)
-	return args.Get(0).([]any), args.Error(1)
+func (m *MockGenericRepository) GetAllEntities(data any, page int, pageSize int, filters map[string]interface{}) ([]any, int64, error) {
+	args := m.Called(data, page, pageSize, filters)
+	return args.Get(0).([]any), args.Get(1).(int64), args.Error(2)
 }
 
 func (m *MockGenericRepository) EditEntity(id uuid.UUID, entityName string, entity any, data any) error {
@@ -100,8 +100,8 @@ func (g *mockGenericService) GetEntity(id uuid.UUID, data interface{}, entityNam
 	return g.repository.GetEntity(id, data, entityName)
 }
 
-func (g *mockGenericService) GetEntities(data interface{}, page int, pageSize int) ([]interface{}, int64, error) {
-	return g.repository.GetAllEntities(data, page, pageSize)
+func (g *mockGenericService) GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}) ([]interface{}, int64, error) {
+	return g.repository.GetAllEntities(data, page, pageSize, filters)
 }
 
 func (g *mockGenericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error {

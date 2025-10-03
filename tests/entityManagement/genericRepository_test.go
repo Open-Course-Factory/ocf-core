@@ -281,7 +281,7 @@ func TestGenericRepository_GetAllEntities_Success(t *testing.T) {
 	}
 
 	// Execute
-	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10)
+	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, map[string]interface{}{})
 
 	// Assert
 	assert.NoError(t, err)
@@ -309,7 +309,7 @@ func TestGenericRepository_GetAllEntities_Pagination(t *testing.T) {
 	}
 
 	// Execute avec une petite taille de page - page 1
-	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10)
+	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, map[string]interface{}{})
 
 	// Assert
 	assert.NoError(t, err)
@@ -318,10 +318,39 @@ func TestGenericRepository_GetAllEntities_Pagination(t *testing.T) {
 	assert.Len(t, results, 1) // Returns one page
 
 	// Test page 2
-	results2, total2, err2 := repo.GetAllEntities(RepositoryTestEntity{}, 2, 10)
+	results2, total2, err2 := repo.GetAllEntities(RepositoryTestEntity{}, 2, 10, map[string]interface{}{})
 	assert.NoError(t, err2)
 	assert.Equal(t, int64(25), total2)
 	assert.Len(t, results2, 1)
+}
+
+func TestGenericRepository_GetAllEntities_WithFilters(t *testing.T) {
+	// Setup
+	db := setupRepositoryTestDB(t)
+	repo := repositories.NewGenericRepository(db)
+
+	// Create entities with different values
+	entities := []*RepositoryTestEntity{
+		{Name: "Entity A", Value: 10},
+		{Name: "Entity B", Value: 20},
+		{Name: "Entity C", Value: 10},
+		{Name: "Entity D", Value: 30},
+	}
+
+	for _, entity := range entities {
+		db.Create(entity)
+	}
+
+	// Test filtering by value
+	filters := map[string]interface{}{
+		"value": 10,
+	}
+	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, filters)
+
+	// Assert
+	assert.NoError(t, err)
+	assert.Equal(t, int64(2), total) // Should only return entities with value = 10
+	assert.Len(t, results, 1)
 }
 
 func TestGenericRepository_EditEntity_Success(t *testing.T) {
@@ -546,7 +575,7 @@ func TestGenericRepository_EdgeCases(t *testing.T) {
 		testEntity := RepositoryTestEntity{Name: "Test"}
 		db.Create(&testEntity)
 
-		results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 1)
+		results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 1, map[string]interface{}{})
 		assert.NoError(t, err)
 		assert.NotNil(t, results)
 		assert.Equal(t, int64(1), total)

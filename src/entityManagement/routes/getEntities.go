@@ -33,7 +33,20 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 		pageSize = 20
 	}
 
-	entitiesDto, total, getEntityError := genericController.getEntities(ctx, page, pageSize)
+	// Extract filter parameters (all query params except page and size)
+	filters := make(map[string]interface{})
+	for key, values := range ctx.Request.URL.Query() {
+		if key != "page" && key != "size" && len(values) > 0 {
+			// Handle comma-separated values for array filters
+			if len(values) == 1 && ctx.Query(key) != "" {
+				filters[key] = ctx.Query(key)
+			} else if len(values) > 1 {
+				filters[key] = values
+			}
+		}
+	}
+
+	entitiesDto, total, getEntityError := genericController.getEntities(ctx, page, pageSize, filters)
 	if errors.HandleError(http.StatusNotFound, getEntityError, ctx) {
 		return
 	}
@@ -54,10 +67,10 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, response)
 }
 
-func (genericController genericController) getEntities(ctx *gin.Context, page int, pageSize int) ([]interface{}, int64, error) {
+func (genericController genericController) getEntities(ctx *gin.Context, page int, pageSize int, filters map[string]interface{}) ([]interface{}, int64, error) {
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
-	entitiesDto, total, shouldReturn := genericController.getEntitiesFromName(entityName, page, pageSize)
+	entitiesDto, total, shouldReturn := genericController.getEntitiesFromName(entityName, page, pageSize, filters)
 	if shouldReturn {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
@@ -71,9 +84,9 @@ func (genericController genericController) getEntities(ctx *gin.Context, page in
 	return entitiesDto, total, nil
 }
 
-func (genericController genericController) getEntitiesFromName(entityName string, page int, pageSize int) ([]interface{}, int64, bool) {
+func (genericController genericController) getEntitiesFromName(entityName string, page int, pageSize int, filters map[string]interface{}) ([]interface{}, int64, bool) {
 	entityModelInterface := genericController.genericService.GetEntityModelInterface(entityName)
-	allEntitiesPages, total, err := genericController.genericService.GetEntities(entityModelInterface, page, pageSize)
+	allEntitiesPages, total, err := genericController.genericService.GetEntities(entityModelInterface, page, pageSize, filters)
 
 	if err != nil {
 		fmt.Println(err.Error())
