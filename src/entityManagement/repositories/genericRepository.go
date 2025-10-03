@@ -15,7 +15,7 @@ type GenericRepository interface {
 	CreateEntity(data any, entityName string) (any, error)
 	SaveEntity(entity any) (any, error)
 	GetEntity(id uuid.UUID, data any, entityName string) (any, error)
-	GetAllEntities(data any, pageSize int) ([]any, error)
+	GetAllEntities(data any, page int, pageSize int) ([]any, int64, error)
 	EditEntity(id uuid.UUID, entityName string, entity any, data any) error
 	DeleteEntity(id uuid.UUID, entity any, scoped bool) error
 }
@@ -114,37 +114,28 @@ func getPreloadString(entityName string, queryPreloadsString *string, firstItera
 	}
 }
 
-func (o *genericRepository) GetAllEntities(data any, pageSize int) ([]any, error) {
-	var allPages []any
+func (o *genericRepository) GetAllEntities(data any, page int, pageSize int) ([]any, int64, error) {
+	pageSlice := createEmptySliceOfCalledType(data)
 
-	page := 1
-	for {
-		pageSlice := createEmptySliceOfCalledType(data)
-
-		offset := (page - 1) * pageSize
-		query := o.db.Limit(pageSize).Offset(offset)
-
-		query = query.Preload(clause.Associations)
-
-		result := query.Find(&pageSlice)
-
-		// Fetch a page of records
-		if result.Error != nil {
-			return nil, result.Error
-		}
-
-		// If no more records found, break the loop
-		if result.RowsAffected == 0 {
-			break
-		}
-
-		// Append the entities from pagesToFill to the allEntities
-		allPages = append(allPages, pageSlice)
-
-		page++
+	// Get total count - use the slice type for proper model inference
+	var total int64
+	if err := o.db.Model(pageSlice).Count(&total).Error; err != nil {
+		return nil, 0, err
 	}
 
-	return allPages, nil
+	// Calculate offset
+	offset := (page - 1) * pageSize
+	query := o.db.Model(pageSlice).Limit(pageSize).Offset(offset)
+
+	query = query.Preload(clause.Associations)
+
+	result := query.Find(&pageSlice)
+
+	if result.Error != nil {
+		return nil, 0, result.Error
+	}
+
+	return []any{pageSlice}, total, nil
 }
 
 func createEmptySliceOfCalledType(data any) any {

@@ -100,8 +100,8 @@ func (g *mockGenericService) GetEntity(id uuid.UUID, data interface{}, entityNam
 	return g.repository.GetEntity(id, data, entityName)
 }
 
-func (g *mockGenericService) GetEntities(data interface{}) ([]interface{}, error) {
-	return g.repository.GetAllEntities(data, 20)
+func (g *mockGenericService) GetEntities(data interface{}, page int, pageSize int) ([]interface{}, int64, error) {
+	return g.repository.GetAllEntities(data, page, pageSize)
 }
 
 func (g *mockGenericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error {

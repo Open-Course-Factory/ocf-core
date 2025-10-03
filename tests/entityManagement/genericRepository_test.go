@@ -281,11 +281,12 @@ func TestGenericRepository_GetAllEntities_Success(t *testing.T) {
 	}
 
 	// Execute
-	results, err := repo.GetAllEntities(RepositoryTestEntity{}, 10)
+	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10)
 
 	// Assert
 	assert.NoError(t, err)
 	assert.NotNil(t, results)
+	assert.Equal(t, int64(3), total)
 	assert.Len(t, results, 1) // Une page contenant les 3 entités
 
 	// Vérifier le contenu de la première page
@@ -307,13 +308,20 @@ func TestGenericRepository_GetAllEntities_Pagination(t *testing.T) {
 		db.Create(entity)
 	}
 
-	// Execute avec une petite taille de page
-	results, err := repo.GetAllEntities(RepositoryTestEntity{}, 10)
+	// Execute avec une petite taille de page - page 1
+	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10)
 
 	// Assert
 	assert.NoError(t, err)
 	assert.NotNil(t, results)
-	assert.True(t, len(results) >= 2) // Au moins 2 pages pour 25 entités avec une taille de 10
+	assert.Equal(t, int64(25), total)
+	assert.Len(t, results, 1) // Returns one page
+
+	// Test page 2
+	results2, total2, err2 := repo.GetAllEntities(RepositoryTestEntity{}, 2, 10)
+	assert.NoError(t, err2)
+	assert.Equal(t, int64(25), total2)
+	assert.Len(t, results2, 1)
 }
 
 func TestGenericRepository_EditEntity_Success(t *testing.T) {
@@ -538,8 +546,9 @@ func TestGenericRepository_EdgeCases(t *testing.T) {
 		testEntity := RepositoryTestEntity{Name: "Test"}
 		db.Create(&testEntity)
 
-		results, err := repo.GetAllEntities(RepositoryTestEntity{}, 1)
+		results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 1)
 		assert.NoError(t, err)
 		assert.NotNil(t, results)
+		assert.Equal(t, int64(1), total)
 	})
 }

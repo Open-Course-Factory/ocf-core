@@ -73,30 +73,43 @@ func (ass *AdditionalSchemasService) addGenericResponseSchemas() {
 		"properties": map[string]interface{}{
 			"data": map[string]interface{}{
 				"type":        "array",
-				"description": "Liste des éléments",
+				"description": "List of items",
 				"items": map[string]interface{}{
 					"type": "object",
 				},
 			},
-			"pagination": map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"page": map[string]interface{}{
-						"type":    "integer",
-						"example": 1,
-					},
-					"limit": map[string]interface{}{
-						"type":    "integer",
-						"example": 20,
-					},
-					"total": map[string]interface{}{
-						"type":    "integer",
-						"example": 100,
-					},
-				},
+			"total": map[string]interface{}{
+				"type":        "integer",
+				"example":     156,
+				"description": "Total number of items across all pages",
+			},
+			"totalPages": map[string]interface{}{
+				"type":        "integer",
+				"example":     8,
+				"description": "Total number of pages",
+			},
+			"currentPage": map[string]interface{}{
+				"type":        "integer",
+				"example":     1,
+				"description": "Current page number (1-based)",
+			},
+			"pageSize": map[string]interface{}{
+				"type":        "integer",
+				"example":     20,
+				"description": "Number of items per page",
+			},
+			"hasNextPage": map[string]interface{}{
+				"type":        "boolean",
+				"example":     true,
+				"description": "Whether there's a next page available",
+			},
+			"hasPreviousPage": map[string]interface{}{
+				"type":        "boolean",
+				"example":     false,
+				"description": "Whether there's a previous page available",
 			},
 		},
-		"required": []string{"data"},
+		"required": []string{"data", "total", "totalPages", "currentPage", "pageSize", "hasNextPage", "hasPreviousPage"},
 	}
 
 	// Schéma pour les paramètres de pagination
@@ -107,14 +120,14 @@ func (ass *AdditionalSchemasService) addGenericResponseSchemas() {
 				"type":        "integer",
 				"minimum":     1,
 				"default":     1,
-				"description": "Numéro de page",
+				"description": "Page number (starts at 1)",
 			},
-			"limit": map[string]interface{}{
+			"size": map[string]interface{}{
 				"type":        "integer",
 				"minimum":     1,
 				"maximum":     100,
 				"default":     20,
-				"description": "Nombre d'éléments par page",
+				"description": "Number of items per page",
 			},
 		},
 	}
