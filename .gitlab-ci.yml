@@ -22,8 +22,7 @@ test:entity-management:
   image: golang:${GO_VERSION}
 
   services:
-    - name: postgres:15-alpine
-      alias: postgres
+    - name: postgres
 
   variables:
     POSTGRES_DB: $POSTGRES_DB
@@ -100,8 +99,7 @@ test:race:
   image: golang:${GO_VERSION}
 
   services:
-    - name: postgres:15-alpine
-      alias: postgres
+    - name: postgres
 
   variables:
     POSTGRES_DB: $POSTGRES_DB
