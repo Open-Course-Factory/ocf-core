@@ -190,19 +190,15 @@ func TestPostgres_ManyToManyJoinTable(t *testing.T) {
 	err = db.Model(&student2).Association("Courses").Append(&course1)
 	require.NoError(t, err)
 
-	// Query: Get all students in "Go Programming"
+	// Query: Get all students in "Go Programming" - use association
 	var studentsInGo []Student
-	err = db.Joins("JOIN student_courses ON students.id = student_courses.student_id").
-		Where("student_courses.course_id = ?", course1.ID).
-		Find(&studentsInGo).Error
+	err = db.Model(&course1).Association("Students").Find(&studentsInGo)
 	require.NoError(t, err)
 	assert.Equal(t, 2, len(studentsInGo), "Go Programming should have 2 students")
 
-	// Query: Get all courses for Alice
+	// Query: Get all courses for Alice - use association
 	var aliceCourses []PGCourse
-	err = db.Joins("JOIN student_courses ON pg_courses.id = student_courses.pg_course_id").
-		Where("student_courses.student_id = ?", student1.ID).
-		Find(&aliceCourses).Error
+	err = db.Model(&student1).Association("Courses").Find(&aliceCourses)
 	require.NoError(t, err)
 	assert.Equal(t, 2, len(aliceCourses), "Alice should have 2 courses")
 
