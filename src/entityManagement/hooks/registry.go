@@ -9,10 +9,12 @@ import (
 )
 
 type hookRegistry struct {
-	hooks    map[string]Hook   // hookName -> Hook
-	enabled  map[string]bool   // hookName -> enabled
-	byEntity map[string][]Hook // entityName -> []Hook
-	mutex    sync.RWMutex
+	hooks      map[string]Hook   // hookName -> Hook
+	enabled    map[string]bool   // hookName -> enabled
+	byEntity   map[string][]Hook // entityName -> []Hook
+	mutex      sync.RWMutex
+	testMode   bool              // Test mode disables async execution
+	globalDisable bool           // Globally disable all hooks (for tests)
 }
 
 func NewHookRegistry() HookRegistry {
@@ -85,6 +87,15 @@ func (hr *hookRegistry) UnregisterHook(hookName string) error {
 
 func (hr *hookRegistry) ExecuteHooks(ctx *HookContext) error {
 	hr.mutex.RLock()
+	disabled := hr.globalDisable
+	hr.mutex.RUnlock()
+
+	// Skip all hook execution if globally disabled (test mode)
+	if disabled {
+		return nil
+	}
+
+	hr.mutex.RLock()
 	defer hr.mutex.RUnlock()
 
 	hooks := hr.GetHooks(ctx.EntityName, ctx.HookType)
@@ -150,6 +161,50 @@ func (hr *hookRegistry) EnableHook(hookName string, enabled bool) error {
 	log.Printf("🔗 Hook '%s' %s", hookName, status)
 
 	return nil
+}
+
+// ClearAllHooks removes all registered hooks (useful for testing)
+func (hr *hookRegistry) ClearAllHooks() {
+	hr.mutex.Lock()
+	defer hr.mutex.Unlock()
+
+	hr.hooks = make(map[string]Hook)
+	hr.enabled = make(map[string]bool)
+	hr.byEntity = make(map[string][]Hook)
+	log.Println("🔗 All hooks cleared")
+}
+
+// SetTestMode enables or disables test mode (synchronous execution)
+func (hr *hookRegistry) SetTestMode(enabled bool) {
+	hr.mutex.Lock()
+	defer hr.mutex.Unlock()
+
+	hr.testMode = enabled
+	if enabled {
+		log.Println("🔗 Hook test mode enabled (synchronous execution)")
+	} else {
+		log.Println("🔗 Hook test mode disabled (async execution)")
+	}
+}
+
+// DisableAllHooks globally disables all hook execution (for tests)
+func (hr *hookRegistry) DisableAllHooks(disabled bool) {
+	hr.mutex.Lock()
+	defer hr.mutex.Unlock()
+
+	hr.globalDisable = disabled
+	if disabled {
+		log.Println("🔗 All hooks globally disabled")
+	} else {
+		log.Println("🔗 All hooks globally enabled")
+	}
+}
+
+// IsTestMode returns whether test mode is enabled
+func (hr *hookRegistry) IsTestMode() bool {
+	hr.mutex.RLock()
+	defer hr.mutex.RUnlock()
+	return hr.testMode
 }
 
 // Instance globale du registre de hooks

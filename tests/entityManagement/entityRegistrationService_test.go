@@ -214,9 +214,15 @@ func TestEntityRegistrationService_SetDefaultEntityAccesses(t *testing.T) {
 
 	// Setup des expectations pour le mock
 	mockEnforcer.On("LoadPolicy").Return(nil)
+	// OCF role
 	mockEnforcer.On("AddPolicy",
 		string(models.Member),
-		"/api/v1/testentities/",
+		"/api/v1/testentities/*",
+		"("+http.MethodGet+"|"+http.MethodPost+")").Return(true, nil)
+	// Casdoor role mapping (member -> student)
+	mockEnforcer.On("AddPolicy",
+		"student",
+		"/api/v1/testentities/*",
 		"("+http.MethodGet+"|"+http.MethodPost+")").Return(true, nil)
 
 	roles := entityManagementInterfaces.EntityRoles{

@@ -48,6 +48,28 @@ func NewEntityRegistrationService() *EntityRegistrationService {
 	}
 }
 
+// Reset clears all registered entities, functions, DTOs, and configurations
+// This is primarily used for testing to ensure clean state between test runs
+func (s *EntityRegistrationService) Reset() {
+	s.registry = make(map[string]any)
+	s.functions = make(map[string]map[ConversionPurpose]any)
+	s.dtos = make(map[string]map[DtoPurpose]any)
+	s.subEntities = make(map[string][]any)
+	s.swaggerConfigs = make(map[string]*entityManagementInterfaces.EntitySwaggerConfig)
+	s.relationshipFilters = make(map[string][]entityManagementInterfaces.RelationshipFilter)
+}
+
+// UnregisterEntity removes all registrations for a specific entity
+// This is primarily used for testing to clean up after individual tests
+func (s *EntityRegistrationService) UnregisterEntity(name string) {
+	delete(s.registry, name)
+	delete(s.functions, name)
+	delete(s.dtos, name)
+	delete(s.subEntities, name)
+	delete(s.swaggerConfigs, name)
+	delete(s.relationshipFilters, name)
+}
+
 func (s *EntityRegistrationService) RegisterEntityInterface(name string, entityType any) {
 	s.registry[name] = entityType
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	"soli/formations/src/entityManagement/hooks"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/entityManagement/repositories"
@@ -165,6 +166,12 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 // Setup du service de registration avec les entités de test
 func setupTestEntityRegistration() {
+	// Reset global service to ensure clean state
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+
+	// Disable hooks for tests to prevent async issues and timing problems
+	hooks.GlobalHookRegistry.DisableAllHooks(true)
+
 	// Mock conversion functions
 	modelToDto := func(input any) (any, error) {
 		if entity, ok := input.(TestEntityWithBaseModel); ok {
@@ -188,21 +195,27 @@ func setupTestEntityRegistration() {
 		return nil
 	}
 
-	// Enregistrer l'entité de test
-	ems.GlobalEntityRegistrationService.RegisterEntityInterface("TestEntity", TestEntityWithBaseModel{})
+	// Enregistrer l'entité de test using the struct name (to match the pattern in RegisterEntity)
+	entityName := "TestEntityWithBaseModel"
+	ems.GlobalEntityRegistrationService.RegisterEntityInterface(entityName, TestEntityWithBaseModel{})
 
 	converters := entityManagementInterfaces.EntityConverters{
 		ModelToDto: modelToDto,
 		DtoToModel: dtoToModel,
 	}
-	ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions("TestEntity", converters)
+	ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(entityName, converters)
 
 	dtos := map[ems.DtoPurpose]any{
 		ems.InputCreateDto: TestEntityInputDto{},
 		ems.OutputDto:      TestEntityOutputDto{},
 		ems.InputEditDto:   TestEntityInputDto{},
 	}
-	ems.GlobalEntityRegistrationService.RegisterEntityDtos("TestEntity", dtos)
+	ems.GlobalEntityRegistrationService.RegisterEntityDtos(entityName, dtos)
+}
+
+// cleanupTestEntityRegistration removes the test entity registration to prevent state pollution
+func cleanupTestEntityRegistration() {
+	ems.GlobalEntityRegistrationService.UnregisterEntity("TestEntityWithBaseModel")
 }
 
 func TestGenericService_CreateEntity_Success(t *testing.T) {
@@ -210,15 +223,16 @@ func TestGenericService_CreateEntity_Success(t *testing.T) {
 	mockRepo := &MockGenericRepository{}
 	service := newMockGenericService(mockRepo)
 	setupTestEntityRegistration()
+	defer cleanupTestEntityRegistration()
 
 	inputDto := TestEntityInputDto{Name: "Test Name", Description: "Test Description"}
 	expectedEntity := &TestEntityWithBaseModel{Name: "Test Name", Description: "Test Description"}
 
 	// Mock expectations
-	mockRepo.On("CreateEntity", inputDto, "TestEntity").Return(expectedEntity, nil)
+	mockRepo.On("CreateEntity", inputDto, "TestEntityWithBaseModel").Return(expectedEntity, nil)
 
 	// Execute
-	result, err := service.CreateEntity(inputDto, "TestEntity")
+	result, err := service.CreateEntity(inputDto, "TestEntityWithBaseModel")
 
 	// Assert
 	assert.NoError(t, err)
@@ -320,13 +334,14 @@ func TestGenericService_GetEntities_Success(t *testing.T) {
 	}
 
 	// Mock expectations
-	mockRepo.On("GetAllEntities", entityData, 20).Return(expectedEntities, nil)
+	mockRepo.On("GetAllEntities", entityData, 1, 20, map[string]interface{}{}).Return(expectedEntities, int64(2), nil)
 
 	// Execute
-	result, err := service.GetEntities(entityData)
+	result, total, err := service.GetEntities(entityData, 1, 20, map[string]interface{}{})
 
 	// Assert
 	assert.NoError(t, err)
+	assert.Equal(t, int64(2), total)
 	assert.Equal(t, expectedEntities, result)
 	mockRepo.AssertExpectations(t)
 }
@@ -375,9 +390,10 @@ func TestGenericService_GetEntityModelInterface(t *testing.T) {
 	// Setup
 	service := newMockGenericService(&MockGenericRepository{})
 	setupTestEntityRegistration()
+	defer cleanupTestEntityRegistration()
 
 	// Execute
-	result := service.GetEntityModelInterface("TestEntity")
+	result := service.GetEntityModelInterface("TestEntityWithBaseModel")
 
 	// Assert
 	assert.Equal(t, TestEntityWithBaseModel{}, result)
@@ -400,11 +416,12 @@ func TestGenericService_Integration_CreateAndRetrieve(t *testing.T) {
 	db := setupTestDB(t)
 	service := services.NewGenericService(db)
 	setupTestEntityRegistration()
+	defer cleanupTestEntityRegistration()
 
 	// Create
 	inputDto := TestEntityInputDto{Name: "Integration Test", Description: "Testing with real DB"}
 
-	createdEntity, err := service.CreateEntity(inputDto, "TestEntity")
+	createdEntity, err := service.CreateEntity(inputDto, "TestEntityWithBaseModel")
 	assert.NoError(t, err)
 	assert.NotNil(t, createdEntity)
 
@@ -414,7 +431,7 @@ func TestGenericService_Integration_CreateAndRetrieve(t *testing.T) {
 	assert.NotEqual(t, uuid.Nil, entityWithBaseModel.ID)
 
 	// Retrieve
-	retrievedEntity, err := service.GetEntity(entityWithBaseModel.ID, TestEntityWithBaseModel{}, "TestEntity")
+	retrievedEntity, err := service.GetEntity(entityWithBaseModel.ID, TestEntityWithBaseModel{}, "TestEntityWithBaseModel")
 	assert.NoError(t, err)
 	assert.NotNil(t, retrievedEntity)
 
@@ -431,36 +448,41 @@ func TestGenericService_Integration_FullCRUD(t *testing.T) {
 	db := setupTestDB(t)
 	service := services.NewGenericService(db)
 	setupTestEntityRegistration()
+	defer cleanupTestEntityRegistration()
 
 	// CREATE
 	inputDto := TestEntityInputDto{Name: "CRUD Test", Description: "Full CRUD workflow"}
-	createdEntity, err := service.CreateEntity(inputDto, "TestEntity")
+	createdEntity, err := service.CreateEntity(inputDto, "TestEntityWithBaseModel")
 	assert.NoError(t, err)
 
 	entityWithBaseModel := createdEntity.(*TestEntityWithBaseModel)
 	entityID := entityWithBaseModel.ID
 
 	// READ
-	retrievedEntity, err := service.GetEntity(entityID, TestEntityWithBaseModel{}, "TestEntity")
+	retrievedEntity, err := service.GetEntity(entityID, TestEntityWithBaseModel{}, "TestEntityWithBaseModel")
 	assert.NoError(t, err)
 	assert.Equal(t, "CRUD Test", retrievedEntity.(*TestEntityWithBaseModel).Name)
 
 	// UPDATE
 	updateData := map[string]any{"name": "Updated CRUD Test"}
-	err = service.EditEntity(entityID, "TestEntity", TestEntityWithBaseModel{}, updateData)
+	err = service.EditEntity(entityID, "TestEntityWithBaseModel", TestEntityWithBaseModel{}, updateData)
 	assert.NoError(t, err)
 
 	// Verify update
-	updatedEntity, err := service.GetEntity(entityID, TestEntityWithBaseModel{}, "TestEntity")
+	updatedEntity, err := service.GetEntity(entityID, TestEntityWithBaseModel{}, "TestEntityWithBaseModel")
 	assert.NoError(t, err)
 	assert.Equal(t, "Updated CRUD Test", updatedEntity.(*TestEntityWithBaseModel).Name)
 
 	// DELETE
-	err = service.DeleteEntity(entityID, TestEntityWithBaseModel{}, true)
-	assert.NoError(t, err)
+	entityInterface := service.GetEntityModelInterface("TestEntityWithBaseModel")
+	assert.NotNil(t, entityInterface, "Entity interface should not be nil - entity not registered?")
+	if entityInterface != nil {
+		err = service.DeleteEntity(entityID, entityInterface, true)
+		assert.NoError(t, err)
+	}
 
 	// Verify deletion
-	entity, err := service.GetEntity(entityID, TestEntityWithBaseModel{}, "TestEntity")
+	entity, err := service.GetEntity(entityID, TestEntityWithBaseModel{}, "TestEntityWithBaseModel")
 	assert.Error(t, err)
 
 	fmt.Println(entity)
@@ -471,12 +493,13 @@ func BenchmarkGenericService_CreateEntity(b *testing.B) {
 	db := setupTestDB(&testing.T{})
 	service := services.NewGenericService(db)
 	setupTestEntityRegistration()
+	defer cleanupTestEntityRegistration()
 
 	inputDto := TestEntityInputDto{Name: "Benchmark Test", Description: "Performance testing"}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		service.CreateEntity(inputDto, "TestEntity")
+		service.CreateEntity(inputDto, "TestEntityWithBaseModel")
 	}
 }
 
@@ -485,6 +508,7 @@ func TestGenericService_DecodeInputDtoForEntityCreation(t *testing.T) {
 	// Setup
 	service := services.NewGenericService(setupTestDB(t))
 	setupTestEntityRegistration()
+	defer cleanupTestEntityRegistration()
 
 	// Create test context with JSON body
 	gin.SetMode(gin.TestMode)

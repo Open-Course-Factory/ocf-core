@@ -7,6 +7,7 @@ import (
 
 	"soli/formations/src/auth/errors"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	"soli/formations/src/entityManagement/hooks"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/entityManagement/repositories"
@@ -76,6 +77,12 @@ func setupRepositoryTestDB(t *testing.T) *gorm.DB {
 
 // Setup des entities dans le service de registration
 func setupRepositoryTestEntityRegistration() {
+	// Reset global service to ensure clean state
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+
+	// Disable hooks for tests
+	hooks.GlobalHookRegistry.DisableAllHooks(true)
+
 	// Fonction de conversion modèle -> DTO
 	modelToDto := func(input any) (any, error) {
 		if entity, ok := input.(RepositoryTestEntity); ok {
@@ -554,16 +561,19 @@ func TestGenericRepository_CreateEntity_DatabaseError(t *testing.T) {
 
 // Test des cas limites
 func TestGenericRepository_EdgeCases(t *testing.T) {
-	db := setupRepositoryTestDB(t)
-	repo := repositories.NewGenericRepository(db)
-
 	t.Run("GetEntity with zero UUID", func(t *testing.T) {
+		db := setupRepositoryTestDB(t)
+		repo := repositories.NewGenericRepository(db)
+
 		result, err := repo.GetEntity(uuid.Nil, RepositoryTestEntity{}, "RepositoryTestEntity")
 		assert.NoError(t, err) // GORM handle this gracefully
 		assert.NotNil(t, result)
 	})
 
 	t.Run("EditEntity with empty update data", func(t *testing.T) {
+		db := setupRepositoryTestDB(t)
+		repo := repositories.NewGenericRepository(db)
+
 		testEntity := RepositoryTestEntity{Name: "Test"}
 		db.Create(&testEntity)
 
@@ -572,6 +582,9 @@ func TestGenericRepository_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("GetAllEntities with zero page size", func(t *testing.T) {
+		db := setupRepositoryTestDB(t)
+		repo := repositories.NewGenericRepository(db)
+
 		testEntity := RepositoryTestEntity{Name: "Test"}
 		db.Create(&testEntity)
 

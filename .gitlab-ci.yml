@@ -2,7 +2,118 @@ default:
   tags:
     - ocf-core
 
+variables:
+  # PostgreSQL configuration for tests
+  POSTGRES_DB: ocf_test
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres_test_password
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_SSLMODE: disable
+  GO_VERSION: "1.21"
+
+stages:
+  - test
+  - build
+
+# Entity Management Tests with PostgreSQL
+test:entity-management:
+  stage: test
+  image: golang:${GO_VERSION}
+
+  services:
+    - postgres:15-alpine
+
+  variables:
+    POSTGRES_DB: $POSTGRES_DB
+    POSTGRES_USER: $POSTGRES_USER
+    POSTGRES_PASSWORD: $POSTGRES_PASSWORD
+
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq postgresql-client
+    # Wait for PostgreSQL
+    - |
+      echo "Waiting for PostgreSQL..."
+      until PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c '\q' 2>/dev/null; do
+        sleep 1
+      done
+      echo "✅ PostgreSQL ready"
+    - go mod download
+
+  script:
+    # Run all tests (SQLite + PostgreSQL)
+    - echo "📦 Compiling tests..."
+    - go test -c -o entity_tests.exe ./tests/entityManagement
+
+    - echo "🧪 Running SQLite-based tests..."
+    - ./entity_tests.exe -test.v -test.timeout=60s -test.run "TestGeneric|TestEntityRegistration|TestSecurity|TestIntegration"
+
+    - echo "🐘 Running PostgreSQL-specific tests..."
+    - ./entity_tests.exe -test.v -test.timeout=60s -test.run "TestPostgres"
+
+    - echo "📊 Generating coverage..."
+    - go test -v -coverprofile=coverage.out ./tests/entityManagement -timeout=90s
+
+  coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
+
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.out
+    paths:
+      - coverage.out
+    expire_in: 1 week
+
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# Quick validation (no PostgreSQL)
+test:quick:
+  stage: test
+  image: golang:${GO_VERSION}
+
+  before_script:
+    - go mod download
+
+  script:
+    - echo "⚡ Running quick tests..."
+    - go test -c -o entity_tests.exe ./tests/entityManagement
+    - ./entity_tests.exe -test.v -test.short -test.timeout=30s
+
+  only:
+    - merge_requests
+
+# Race detector
+test:race:
+  stage: test
+  image: golang:${GO_VERSION}
+
+  services:
+    - postgres:15-alpine
+
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq postgresql-client
+    - |
+      until PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c '\q' 2>/dev/null; do
+        sleep 1
+      done
+    - go mod download
+
+  script:
+    - echo "🏁 Running race detector..."
+    - go test -c -race -o entity_tests_race.exe ./tests/entityManagement
+    - ./entity_tests_race.exe -test.v -test.timeout=120s
+
+  only:
+    - merge_requests
+    - main
+
 build:
+  stage: build
   before_script:
     - echo $token_jwt_key | base64 -d > ./token_jwt_key.pem
 

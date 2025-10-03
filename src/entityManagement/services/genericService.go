@@ -68,12 +68,18 @@ func (g *genericService) CreateEntity(inputDto interface{}, entityName string) (
 		Context:    context.Background(),
 	}
 
-	// Exécuter les hooks après création (en arrière-plan si nécessaire)
-	go func() {
+	// Exécuter les hooks après création (synchrone en test mode, async sinon)
+	if hooks.GlobalHookRegistry.IsTestMode() {
 		if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
 			log.Printf("❌ after_create hooks failed for %s: %v", entityName, err)
 		}
-	}()
+	} else {
+		go func() {
+			if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
+				log.Printf("❌ after_create hooks failed for %s: %v", entityName, err)
+			}
+		}()
+	}
 
 	return entity, nil
 }
@@ -129,6 +135,10 @@ func (g *genericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped b
 		return fmt.Errorf("could not find entity type")
 	}
 
+	if entityModelInterface == nil {
+		return fmt.Errorf("entity %s not registered", entityName)
+	}
+
 	// Récupérer l'entité avant suppression
 	existingEntity, err := g.GetEntity(id, entityModelInterface, entityName)
 	if err != nil {
@@ -161,12 +171,18 @@ func (g *genericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped b
 		Context:    context.Background(),
 	}
 
-	// Exécuter les hooks après suppression
-	go func() {
+	// Exécuter les hooks après suppression (synchrone en test mode, async sinon)
+	if hooks.GlobalHookRegistry.IsTestMode() {
 		if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
 			log.Printf("❌ after_delete hooks failed for %s: %v", entityName, err)
 		}
-	}()
+	} else {
+		go func() {
+			if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
+				log.Printf("❌ after_delete hooks failed for %s: %v", entityName, err)
+			}
+		}()
+	}
 
 	return nil
 }
@@ -211,12 +227,18 @@ func (g *genericService) EditEntity(id uuid.UUID, entityName string, entity inte
 		Context:    context.Background(),
 	}
 
-	// Exécuter les hooks après mise à jour
-	go func() {
+	// Exécuter les hooks après mise à jour (synchrone en test mode, async sinon)
+	if hooks.GlobalHookRegistry.IsTestMode() {
 		if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
 			log.Printf("❌ after_update hooks failed for %s: %v", entityName, err)
 		}
-	}()
+	} else {
+		go func() {
+			if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
+				log.Printf("❌ after_update hooks failed for %s: %v", entityName, err)
+			}
+		}()
+	}
 	return nil
 }
 
@@ -338,6 +360,11 @@ func (g *genericService) GetEntityFromResult(entityName string, item interface{}
 }
 
 func (g *genericService) AddDefaultAccessesForEntity(resourceName string, entity interface{}, userId string) error {
+	// Skip enforcer setup if not initialized (e.g., in tests)
+	if casdoor.Enforcer == nil {
+		return nil
+	}
+
 	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
 	if errPolicyLoading != nil {
 		return errPolicyLoading

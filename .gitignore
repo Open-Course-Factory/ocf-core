@@ -11,3 +11,14 @@ courses/*
 *~
 *.pem
 .bash_history
+
+# Test artifacts
+coverage.out
+coverage.html
+*.test
+*.exe
+*_test.exe
+entity_tests.exe
+entityManagement_tests.test
+benchmark_results.txt
+benchmarks_baseline.txt

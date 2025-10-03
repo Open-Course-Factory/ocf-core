@@ -66,6 +66,18 @@ type HookRegistry interface {
 
 	// EnableHook active/désactive un hook
 	EnableHook(hookName string, enabled bool) error
+
+	// ClearAllHooks removes all registered hooks (useful for testing)
+	ClearAllHooks()
+
+	// SetTestMode enables or disables test mode (synchronous execution)
+	SetTestMode(enabled bool)
+
+	// DisableAllHooks globally disables all hook execution (for tests)
+	DisableAllHooks(disabled bool)
+
+	// IsTestMode returns whether test mode is enabled
+	IsTestMode() bool
 }
 
 // AsyncHook pour les hooks qui peuvent être exécutés en arrière-plan
