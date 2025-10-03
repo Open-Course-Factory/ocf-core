@@ -10,7 +10,7 @@ variables:
   POSTGRES_HOST: postgres
   POSTGRES_PORT: "5432"
   POSTGRES_SSLMODE: disable
-  GO_VERSION: "1.21"
+  GO_VERSION: "1.24"
 
 stages:
   - test
@@ -22,7 +22,8 @@ test:entity-management:
   image: golang:${GO_VERSION}
 
   services:
-    - postgres:15-alpine
+    - name: postgres:15-alpine
+      alias: postgres
 
   variables:
     POSTGRES_DB: $POSTGRES_DB
@@ -30,15 +31,21 @@ test:entity-management:
     POSTGRES_PASSWORD: $POSTGRES_PASSWORD
 
   before_script:
-    - apt-get update -qq
-    - apt-get install -y -qq postgresql-client
-    # Wait for PostgreSQL
+    # Wait for PostgreSQL to be ready (service starts automatically)
+    - apt-get update -qq && apt-get install -y -qq postgresql-client
     - |
-      echo "Waiting for PostgreSQL..."
-      until PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c '\q' 2>/dev/null; do
+      echo "⏳ Waiting for PostgreSQL service to be ready..."
+      for i in $(seq 1 30); do
+        if PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c '\q' 2>/dev/null; then
+          echo "✅ PostgreSQL is ready!"
+          break
+        fi
+        if [ $i -eq 30 ]; then
+          echo "❌ PostgreSQL failed to start after 30 seconds"
+          exit 1
+        fi
         sleep 1
       done
-      echo "✅ PostgreSQL ready"
     - go mod download
 
   script:
@@ -93,12 +100,28 @@ test:race:
   image: golang:${GO_VERSION}
 
   services:
-    - postgres:15-alpine
+    - name: postgres:15-alpine
+      alias: postgres
+
+  variables:
+    POSTGRES_DB: $POSTGRES_DB
+    POSTGRES_USER: $POSTGRES_USER
+    POSTGRES_PASSWORD: $POSTGRES_PASSWORD
 
   before_script:
+    # Wait for PostgreSQL to be ready (service starts automatically)
     - apt-get update -qq && apt-get install -y -qq postgresql-client
     - |
-      until PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c '\q' 2>/dev/null; do
+      echo "⏳ Waiting for PostgreSQL service to be ready..."
+      for i in $(seq 1 30); do
+        if PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c '\q' 2>/dev/null; then
+          echo "✅ PostgreSQL is ready!"
+          break
+        fi
+        if [ $i -eq 30 ]; then
+          echo "❌ PostgreSQL failed to start after 30 seconds"
+          exit 1
+        fi
         sleep 1
       done
     - go mod download
