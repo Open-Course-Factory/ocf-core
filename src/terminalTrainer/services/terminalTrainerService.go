@@ -92,6 +92,11 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 
 // CreateUserKey crée une clé Terminal Trainer et la stocke en DB
 func (tts *terminalTrainerService) CreateUserKey(userID, keyName string) error {
+	// Skip if Terminal Trainer is not configured
+	if tts.baseURL == "" || tts.adminKey == "" {
+		return fmt.Errorf("terminal trainer not configured")
+	}
+
 	// Vérifier si l'utilisateur a déjà une clé
 	existingKey, err := tts.repository.GetUserTerminalKeyByUserID(userID, true)
 	if err == nil && existingKey.IsActive {

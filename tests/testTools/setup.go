@@ -23,6 +23,7 @@ import (
 	courseModels "soli/formations/src/courses/models"
 	baseModels "soli/formations/src/entityManagement/models"
 	labsModels "soli/formations/src/labs/models"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	authRegistration "soli/formations/src/auth/entityRegistration"
 	coursesRegistration "soli/formations/src/courses/entityRegistration"
@@ -57,6 +58,10 @@ func SetupTestDatabase() {
 	sqldb.DB.AutoMigrate(&labsModels.Machine{})
 	sqldb.DB.AutoMigrate(&labsModels.Connection{})
 
+	sqldb.DB.AutoMigrate(&terminalModels.UserTerminalKey{})
+	sqldb.DB.AutoMigrate(&terminalModels.Terminal{})
+	sqldb.DB.AutoMigrate(&terminalModels.TerminalShare{})
+
 	// Now clean up existing test data
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Page{})
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Section{})
@@ -69,6 +74,10 @@ func SetupTestDatabase() {
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Connection{})
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Username{})
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Machine{})
+
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&terminalModels.TerminalShare{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&terminalModels.Terminal{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&terminalModels.UserTerminalKey{})
 
 }
 
