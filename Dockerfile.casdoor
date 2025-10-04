@@ -13,4 +13,4 @@ COPY wait-for-mysql.sh /wait-for-mysql.sh
 RUN chmod +x /wait-for-mysql.sh
 
 # Use wait script before starting server
-ENTRYPOINT ["/wait-for-mysql.sh", "casdoor-db-test:3306", "./server", "--createDatabase=true"]
+ENTRYPOINT ["/wait-for-mysql.sh", "./server", "--createDatabase=true"]

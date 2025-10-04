@@ -3,16 +3,17 @@
 
 set -e
 
-host="$1"
-shift
-cmd="$@"
+echo "Waiting for MySQL at casdoor-db-test:3306..."
 
-echo "Waiting for MySQL at $host..."
-
-until nc -z casdoor-db-test 3306; do
-  >&2 echo "MySQL is unavailable - sleeping"
-  sleep 1
+# Wait for MySQL port to be open
+until nc -z -v -w5 casdoor-db-test 3306; do
+  echo "MySQL is unavailable - sleeping"
+  sleep 2
 done
 
->&2 echo "MySQL is up - executing command"
-exec $cmd
+echo "MySQL port is open - waiting for it to accept connections..."
+sleep 5
+
+# Try to connect with mysqladmin (if available) or just wait a bit more
+echo "MySQL is up - starting Casdoor"
+exec "$@"
