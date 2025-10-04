@@ -45,6 +45,7 @@ import (
 	terminalRegistration "soli/formations/src/terminalTrainer/entityRegistration"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	terminalController "soli/formations/src/terminalTrainer/routes"
+	versionController "soli/formations/src/version"
 	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
 
 	courseDto "soli/formations/src/courses/dto"
@@ -199,6 +200,10 @@ func main() {
 	r.Use(userRoleMiddleware.EnsureSubscriptionRole())
 
 	apiGroup := r.Group("/api/v1")
+
+	// Version endpoint (no auth required)
+	versionCtrl := versionController.NewVersionController()
+	apiGroup.GET("/version", versionCtrl.GetVersion)
 
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
