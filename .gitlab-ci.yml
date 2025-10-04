@@ -206,10 +206,16 @@ test:auth:
     CASDOOR_ENDPOINT: "http://localhost:8000"
 
   before_script:
-    # Install docker-compose and Go
-    - apk add --no-cache docker-compose go postgresql-client wget
+    # Install docker-compose, wget, and postgresql-client
+    - apk add --no-cache docker-compose postgresql-client wget bash
+
+    # Install Go 1.24 (Alpine's go package is too old)
+    - wget https://go.dev/dl/go1.24.1.linux-amd64.tar.gz
+    - tar -C /usr/local -xzf go1.24.1.linux-amd64.tar.gz
+    - export PATH=$PATH:/usr/local/go/bin
     - export GOPATH=/go
     - export PATH=$PATH:/go/bin
+    - go version
 
     # Start services with docker-compose
     - echo "🐳 Starting services with docker-compose..."
