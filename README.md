@@ -14,6 +14,12 @@ This product is developped within [Solution Libre](https://www.solution-libre.fr
 
 ⚠ Currently under development, many things can still change, expect bugs and problems.
 
+## Documentation
+
+- **[CI/CD Pipeline](CI_CD.md)** - Automated testing, versioning, and deployment
+- **[API Documentation](#api-documentation---wip)** - Swagger API reference (see below)
+- **[CHANGELOG](CHANGELOG.md)** - Version history and release notes
+
 ## How to start
 
 ### Setup casdoor
