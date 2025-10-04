@@ -13,28 +13,8 @@ variables:
   GO_VERSION: "1.24"
 
 stages:
-  - prepare
   - test
   - build
-
-# Build custom Casdoor image with configuration
-build:casdoor-image:
-  stage: prepare
-  image: docker:24-dind
-  services:
-    - docker:24-dind
-  variables:
-    DOCKER_DRIVER: overlay2
-    DOCKER_TLS_CERTDIR: "/certs"
-  before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-  script:
-    - docker build -f Dockerfile.casdoor --build-arg CONFIG_FILE=src/configuration/casdoor_app_ci.conf -t $CI_REGISTRY_IMAGE/casdoor-test:$CI_COMMIT_REF_SLUG .
-    - docker push $CI_REGISTRY_IMAGE/casdoor-test:$CI_COMMIT_REF_SLUG
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH == "main"
-    - if: $CI_COMMIT_BRANCH == "develop"
 
 # Entity Management Tests with PostgreSQL
 test:entity-management:
@@ -210,58 +190,62 @@ test:race:
 # Auth Tests with Casdoor
 test:auth:
   stage: test
-  image: golang:${GO_VERSION}
-  needs:
-    - build:casdoor-image
+  image: docker:24-dind
 
   services:
-    - name: postgres:15-alpine
-      alias: postgres
-    - name: mysql:8.0.25
-      alias: casdoor-db
-    - name: $CI_REGISTRY_IMAGE/casdoor-test:$CI_COMMIT_REF_SLUG
-      alias: casdoor
+    - docker:24-dind
 
   variables:
+    DOCKER_DRIVER: overlay2
+    DOCKER_TLS_CERTDIR: "/certs"
     POSTGRES_DB: ocf_test
     POSTGRES_USER: postgres
-    POSTGRES_PASSWORD: "postgrespass"
-    # Casdoor MySQL database
-    MYSQL_ROOT_PASSWORD: "123456"
-    MYSQL_DATABASE: casdoor
-    # Casdoor connection
-    CASDOOR_ENDPOINT: "http://casdoor:8000"
+    POSTGRES_PASSWORD: "postgres"
+    POSTGRES_HOST: localhost
+    POSTGRES_PORT: "5432"
+    CASDOOR_ENDPOINT: "http://localhost:8000"
 
   before_script:
-    # Wait for PostgreSQL
-    - apt-get update -qq && apt-get install -y -qq postgresql-client wget
+    # Install docker-compose and Go
+    - apk add --no-cache docker-compose go postgresql-client wget
+    - export GOPATH=/go
+    - export PATH=$PATH:/go/bin
+
+    # Start services with docker-compose
+    - echo "🐳 Starting services with docker-compose..."
+    - docker-compose -f docker-compose.test.yml up -d
+
+    # Wait for services
     - |
-      echo "⏳ Waiting for PostgreSQL service to be ready..."
+      echo "⏳ Waiting for PostgreSQL to be ready..."
       for i in $(seq 1 30); do
-        if PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c '\q' 2>/dev/null; then
+        if docker exec ocf-postgres-test pg_isready -U postgres 2>/dev/null; then
           echo "✅ PostgreSQL is ready!"
           break
         fi
         if [ $i -eq 30 ]; then
-          echo "❌ PostgreSQL failed to start after 30 seconds"
+          echo "❌ PostgreSQL failed to start"
+          docker-compose -f docker-compose.test.yml logs postgres-test
           exit 1
         fi
         sleep 1
       done
-    # Wait for Casdoor
     - |
-      echo "⏳ Waiting for Casdoor service to be ready..."
-      for i in $(seq 1 60); do
-        if wget --spider -q http://casdoor:8000/api/get-account 2>/dev/null; then
+      echo "⏳ Waiting for Casdoor to be ready..."
+      for i in $(seq 1 90); do
+        if docker exec ocf-casdoor-test wget --spider -q http://localhost:8000/api/get-account 2>/dev/null; then
           echo "✅ Casdoor is ready!"
           break
         fi
-        if [ $i -eq 60 ]; then
-          echo "❌ Casdoor failed to start after 60 seconds"
+        if [ $i -eq 90 ]; then
+          echo "❌ Casdoor failed to start"
+          docker-compose -f docker-compose.test.yml logs casdoor-test
           exit 1
         fi
         sleep 2
       done
+
+    # Install Go dependencies
     - go mod download
     - go install github.com/jstemmer/go-junit-report/v2@latest
 
@@ -269,6 +253,9 @@ test:auth:
     - echo "🔐 Running auth tests..."
     - go test -v -timeout=120s ./tests/auth/... 2>&1 | tee auth_tests.log
     - cat auth_tests.log | go-junit-report -set-exit-code > auth_report.xml
+
+  after_script:
+    - docker-compose -f docker-compose.test.yml down -v || true
 
   artifacts:
     reports:
