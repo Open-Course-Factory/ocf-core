@@ -40,7 +40,7 @@ func (o *genericRepository) CreateEntity(entityInputDto any, entityName string) 
 	if !found {
 		return nil, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Entity convertion function does not exist",
+			ErrorMessage: "Entity conversion function does not exist",
 		}
 	}
 
@@ -117,6 +117,33 @@ func getPreloadString(entityName string, queryPreloadsString *string, firstItera
 	}
 }
 
+// GetAllEntities retrieves a paginated list of entities with optional filtering.
+//
+// Parameters:
+//   - data: Empty instance of the entity type to query
+//   - page: Page number (1-indexed)
+//   - pageSize: Number of items per page
+//   - filters: Map of field names to filter values
+//
+// Supported filter types:
+//   - Direct fields: map[string]interface{}{"title": "Golang"}
+//   - Foreign keys: map[string]interface{}{"courseId": "uuid-string"}
+//   - Many-to-many: map[string]interface{}{"tagIDs": []string{"id1", "id2"}}
+//   - Registered relationship filters: Complex multi-level joins
+//
+// Returns:
+//   - Slice containing one element: a slice of entities for the requested page
+//   - Total count of entities matching filters
+//   - Error if database operation fails
+//
+// Example:
+//
+//	result, total, err := repo.GetAllEntities(
+//	    &Course{},
+//	    1,
+//	    20,
+//	    map[string]interface{}{"published": true},
+//	)
 func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, filters map[string]interface{}) ([]any, int64, error) {
 	pageSlice := createEmptySliceOfCalledType(data)
 

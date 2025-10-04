@@ -196,7 +196,7 @@ func TestGenericRepository_CreateEntity_ConversionFunctionNotFound(t *testing.T)
 	apiErr, ok := err.(*errors.APIError)
 	assert.True(t, ok)
 	assert.Equal(t, http.StatusInternalServerError, apiErr.ErrorCode)
-	assert.Contains(t, apiErr.ErrorMessage, "Entity convertion function does not exist")
+	assert.Contains(t, apiErr.ErrorMessage, "Entity conversion function does not exist")
 }
 
 func TestGenericRepository_SaveEntity_Success(t *testing.T) {

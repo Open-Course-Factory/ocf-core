@@ -224,11 +224,7 @@ func BenchmarkCreate_Small(b *testing.B) {
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
-		ctx, _ := gin.CreateTestContext(w)
-		ctx.Request = req
-		ctx.Set("userId", userID)
-
-		suite.controller.AddEntity(ctx)
+		suite.router.ServeHTTP(w, req)
 	}
 
 	b.StopTimer()
@@ -265,11 +261,7 @@ func BenchmarkCreate_Large(b *testing.B) {
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
-		ctx, _ := gin.CreateTestContext(w)
-		ctx.Request = req
-		ctx.Set("userId", userID)
-
-		suite.controller.AddEntity(ctx)
+		suite.router.ServeHTTP(w, req)
 	}
 
 	b.StopTimer()
@@ -290,10 +282,8 @@ func BenchmarkRead_Single(b *testing.B) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/benchmark-entities", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(w)
-	ctx.Request = req
-	ctx.Set("userId", userID)
-	suite.controller.AddEntity(ctx)
+
+	suite.router.ServeHTTP(w, req)
 
 	var created BenchmarkEntityOutput
 	json.Unmarshal(w.Body.Bytes(), &created)
@@ -304,11 +294,8 @@ func BenchmarkRead_Single(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/benchmark-entities/"+created.ID, nil)
 		w := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(w)
-		ctx.Request = req
-		ctx.Params = gin.Params{{Key: "id", Value: created.ID}}
 
-		suite.controller.GetEntity(ctx)
+		suite.router.ServeHTTP(w, req)
 	}
 }
 
@@ -337,10 +324,8 @@ func benchmarkReadList(b *testing.B, count int) {
 	for i := 0; i < b.N; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/benchmark-entities?page=1&size=20", nil)
 		w := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(w)
-		ctx.Request = req
 
-		suite.controller.GetEntities(ctx)
+		suite.router.ServeHTTP(w, req)
 	}
 
 	b.StopTimer()
@@ -370,11 +355,8 @@ func BenchmarkUpdate(b *testing.B) {
 		req := httptest.NewRequest(http.MethodPatch, "/api/v1/benchmark-entities/"+entity.ID.String(), bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(w)
-		ctx.Request = req
-		ctx.Params = gin.Params{{Key: "id", Value: entity.ID.String()}}
 
-		suite.controller.EditEntity(ctx)
+		suite.router.ServeHTTP(w, req)
 	}
 }
 
@@ -396,11 +378,8 @@ func BenchmarkDelete(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		req := httptest.NewRequest(http.MethodDelete, "/api/v1/benchmark-entities/"+entities[i].ID.String(), nil)
 		w := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(w)
-		ctx.Request = req
-		ctx.Params = gin.Params{{Key: "id", Value: entities[i].ID.String()}}
 
-		suite.controller.DeleteEntity(ctx, true)
+		suite.router.ServeHTTP(w, req)
 	}
 
 	b.StopTimer()
@@ -433,10 +412,8 @@ func BenchmarkFilter_ByName(b *testing.B) {
 		searchName := fmt.Sprintf("Entity %d", i%1000)
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/benchmark-entities?name="+searchName+"&page=1&size=20", nil)
 		w := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(w)
-		ctx.Request = req
 
-		suite.controller.GetEntities(ctx)
+		suite.router.ServeHTTP(w, req)
 	}
 }
 
@@ -460,10 +437,8 @@ func BenchmarkFilter_ByBoolean(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/benchmark-entities?isActive=true&page=1&size=20", nil)
 		w := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(w)
-		ctx.Request = req
 
-		suite.controller.GetEntities(ctx)
+		suite.router.ServeHTTP(w, req)
 	}
 }
 
@@ -492,10 +467,8 @@ func benchmarkPagination(b *testing.B, page int) {
 		url := fmt.Sprintf("/api/v1/benchmark-entities?page=%d&size=20", page)
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		w := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(w)
-		ctx.Request = req
 
-		suite.controller.GetEntities(ctx)
+		suite.router.ServeHTTP(w, req)
 	}
 }
 
@@ -527,11 +500,8 @@ func BenchmarkSecurity_LoadPolicy_OnCreate(b *testing.B) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/benchmark-entities", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(w)
-		ctx.Request = req
-		ctx.Set("userId", userID)
 
-		suite.controller.AddEntity(ctx)
+		suite.router.ServeHTTP(w, req)
 	}
 
 	b.StopTimer()
@@ -563,11 +533,8 @@ func BenchmarkSecurity_AddPolicy_OnCreate(b *testing.B) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/benchmark-entities", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(w)
-		ctx.Request = req
-		ctx.Set("userId", userID)
 
-		suite.controller.AddEntity(ctx)
+		suite.router.ServeHTTP(w, req)
 	}
 
 	b.StopTimer()
@@ -644,10 +611,7 @@ func BenchmarkMemory_CreateWithPreloading(b *testing.B) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/benchmark-entities", bytes.NewBuffer(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(w)
-		ctx.Request = req
-		ctx.Set("userId", userID)
 
-		suite.controller.AddEntity(ctx)
+		suite.router.ServeHTTP(w, req)
 	}
 }

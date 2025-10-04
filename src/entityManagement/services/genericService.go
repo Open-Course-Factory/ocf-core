@@ -8,6 +8,7 @@ import (
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/entityManagement/repositories"
+	"soli/formations/src/entityManagement/utils"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
@@ -249,45 +250,34 @@ func (g *genericService) GetEntityModelInterface(entityName string) interface{} 
 }
 
 func (g *genericService) AddOwnerIDs(entity interface{}, userId string) (interface{}, error) {
-	entityReflectValue := reflect.ValueOf(entity).Elem()
-	ownerIdsField := entityReflectValue.FieldByName("OwnerIDs")
-	if ownerIdsField.IsValid() {
-
-		if ownerIdsField.CanSet() {
-
-			fmt.Println(ownerIdsField.Kind())
-			if ownerIdsField.Kind() == reflect.Slice {
-				ownerIdsField.Set(reflect.MakeSlice(ownerIdsField.Type(), 1, 1))
-				ownerIdsField.Index(0).Set(reflect.ValueOf(userId))
-
-				entityWithOwnerIds, entitySavingError := g.SaveEntity(entity)
-
-				if entitySavingError != nil {
-					return nil, entitySavingError
-				}
-
-				entity = entityWithOwnerIds
-			}
-		}
-
+	// Add owner ID to entity (modifies in-place)
+	if err := utils.AddOwnerIDToEntity(entity, userId); err != nil {
+		return nil, err
 	}
-	return entity, nil
+
+	// Save entity with updated OwnerIDs
+	entityWithOwnerIds, entitySavingError := g.SaveEntity(entity)
+	if entitySavingError != nil {
+		return nil, entitySavingError
+	}
+
+	return entityWithOwnerIds, nil
 }
 
 func (g *genericService) ExtractUuidFromReflectEntity(entity interface{}) uuid.UUID {
 	entityReflectValue := reflect.ValueOf(entity).Elem()
 	field := entityReflectValue.FieldByName("ID")
 
-	var mon_uuid uuid.UUID
+	var entityUUID uuid.UUID
 
 	result, ok := field.Interface().(string)
 	if ok {
-		mon_uuid, _ = uuid.Parse(result)
+		entityUUID, _ = uuid.Parse(result)
 	} else {
-		mon_uuid = uuid.UUID(field.Bytes())
+		entityUUID = uuid.UUID(field.Bytes())
 	}
 
-	return mon_uuid
+	return entityUUID
 }
 
 func (g *genericService) GetDtoArrayFromEntitiesPages(allEntitiesPages []interface{}, entityModelInterface interface{}, entityName string) ([]interface{}, bool) {

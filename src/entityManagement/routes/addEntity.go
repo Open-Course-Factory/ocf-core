@@ -1,11 +1,10 @@
 package controller
 
 import (
-	"fmt"
 	"net/http"
-	"reflect"
 
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/entityManagement/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -50,27 +49,16 @@ func (genericController genericController) AddEntity(ctx *gin.Context) {
 }
 
 func (genericController genericController) addOwnerIDs(entity interface{}, userId string) (interface{}, error) {
-	entityReflectValue := reflect.ValueOf(entity).Elem()
-	ownerIdsField := entityReflectValue.FieldByName("OwnerIDs")
-	if ownerIdsField.IsValid() {
-
-		if ownerIdsField.CanSet() {
-
-			fmt.Println(ownerIdsField.Kind())
-			if ownerIdsField.Kind() == reflect.Slice {
-				ownerIdsField.Set(reflect.MakeSlice(ownerIdsField.Type(), 1, 1))
-				ownerIdsField.Index(0).Set(reflect.ValueOf(userId))
-
-				entityWithOwnerIds, entitySavingError := genericController.genericService.SaveEntity(entity)
-
-				if entitySavingError != nil {
-					return nil, entitySavingError
-				}
-
-				entity = entityWithOwnerIds
-			}
-		}
-
+	// Add owner ID to entity (modifies in-place)
+	if err := utils.AddOwnerIDToEntity(entity, userId); err != nil {
+		return nil, err
 	}
-	return entity, nil
+
+	// Save entity with updated OwnerIDs
+	entityWithOwnerIds, entitySavingError := genericController.genericService.SaveEntity(entity)
+	if entitySavingError != nil {
+		return nil, entitySavingError
+	}
+
+	return entityWithOwnerIds, nil
 }
