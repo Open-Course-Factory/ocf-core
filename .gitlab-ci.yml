@@ -198,12 +198,15 @@ test:auth:
   variables:
     DOCKER_DRIVER: overlay2
     DOCKER_TLS_CERTDIR: "/certs"
+    # PostgreSQL connection via docker network
     POSTGRES_DB: ocf_test
     POSTGRES_USER: postgres
     POSTGRES_PASSWORD: "postgres"
-    POSTGRES_HOST: localhost
+    POSTGRES_HOST: ocf-postgres-test
     POSTGRES_PORT: "5432"
-    CASDOOR_ENDPOINT: "http://localhost:8000"
+    POSTGRES_SSLMODE: disable
+    # Casdoor connection
+    CASDOOR_ENDPOINT: "http://ocf-casdoor-test:8000"
 
   before_script:
     # Install docker-compose, wget, and postgresql-client
@@ -274,7 +277,21 @@ test:auth:
 
   script:
     - echo "🔐 Running auth tests..."
-    - go test -v -timeout=120s ./tests/auth/... 2>&1 | tee auth_tests.log
+    # Run tests inside docker network to access services
+    - |
+      docker run --rm \
+        --network ocf-core_test-network \
+        -v $(pwd):/workspace \
+        -w /workspace \
+        -e POSTGRES_DB=$POSTGRES_DB \
+        -e POSTGRES_USER=$POSTGRES_USER \
+        -e POSTGRES_PASSWORD=$POSTGRES_PASSWORD \
+        -e POSTGRES_HOST=$POSTGRES_HOST \
+        -e POSTGRES_PORT=$POSTGRES_PORT \
+        -e POSTGRES_SSLMODE=$POSTGRES_SSLMODE \
+        -e CASDOOR_ENDPOINT=$CASDOOR_ENDPOINT \
+        golang:1.24.1 \
+        sh -c "go test -v -timeout=120s ./tests/auth/... 2>&1 | tee auth_tests.log"
     - cat auth_tests.log | go-junit-report -set-exit-code > auth_report.xml
 
   after_script:
