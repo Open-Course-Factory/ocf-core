@@ -1,11 +1,16 @@
 FROM casbin/casdoor:latest
 
+# Install netcat for waiting on MySQL
+RUN apk add --no-cache netcat-openbsd
+
 # Build argument to select config file (defaults to local)
 ARG CONFIG_FILE=src/configuration/casdoor_app.conf
 
 # Copy configuration files into the container
 COPY ${CONFIG_FILE} /conf/app.conf
 COPY init_data.json /init_data.json
+COPY wait-for-mysql.sh /wait-for-mysql.sh
+RUN chmod +x /wait-for-mysql.sh
 
-# Use the same entrypoint as the base image
-ENTRYPOINT ["/bin/sh", "-c", "./server --createDatabase=true"]
+# Use wait script before starting server
+ENTRYPOINT ["/wait-for-mysql.sh", "casdoor-db-test:3306", "./server", "--createDatabase=true"]
