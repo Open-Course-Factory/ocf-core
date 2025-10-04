@@ -220,6 +220,9 @@ test:auth:
     - export PATH=$PATH:/go/bin
     - go version
 
+    # Create JWT certificate from GitLab CI variable
+    - echo $token_jwt_key | base64 -d > ./src/auth/casdoor/token_jwt_key.pem
+
     # Start services in order (manually to respect dependencies)
     - echo "🐳 Starting database services first..."
     - docker-compose -f docker-compose.test.yml up -d postgres-test casdoor-db-test

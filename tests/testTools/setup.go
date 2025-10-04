@@ -40,18 +40,7 @@ func SetupTestDatabase() {
 	sqldb.InitDBConnection("../.env.test")
 	sqldb.DB = sqldb.DB.Debug()
 
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Page{})
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Section{})
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Chapter{})
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Course{})
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Session{})
-
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&authModels.Sshkey{})
-
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Connection{})
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Username{})
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Machine{})
-
+	// Run migrations FIRST before trying to delete
 	sqldb.DB.AutoMigrate()
 	sqldb.DB.AutoMigrate(&courseModels.Page{})
 	sqldb.DB.AutoMigrate(&courseModels.Section{})
@@ -65,6 +54,19 @@ func SetupTestDatabase() {
 	sqldb.DB.AutoMigrate(&labsModels.Username{})
 	sqldb.DB.AutoMigrate(&labsModels.Machine{})
 	sqldb.DB.AutoMigrate(&labsModels.Connection{})
+
+	// Now clean up existing test data
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Page{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Section{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Chapter{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Course{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Session{})
+
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&authModels.Sshkey{})
+
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Connection{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Username{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Machine{})
 
 }
 
