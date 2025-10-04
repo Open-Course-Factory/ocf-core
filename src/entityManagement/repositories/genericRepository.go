@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -19,6 +20,7 @@ type GenericRepository interface {
 	SaveEntity(entity any) (any, error)
 	GetEntity(id uuid.UUID, data any, entityName string) (any, error)
 	GetAllEntities(data any, page int, pageSize int, filters map[string]interface{}) ([]any, int64, error)
+	GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]interface{}) ([]any, string, bool, error)
 	EditEntity(id uuid.UUID, entityName string, entity any, data any) error
 	DeleteEntity(id uuid.UUID, entity any, scoped bool) error
 }
@@ -179,6 +181,106 @@ func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, fil
 	}
 
 	return []any{pageSlice}, total, nil
+}
+
+// GetAllEntitiesCursor retrieves entities using cursor-based pagination for efficient traversal.
+//
+// Unlike offset pagination which scans all skipped rows, cursor-based pagination uses
+// the last seen ID to fetch the next batch, providing O(1) performance regardless of page depth.
+//
+// Parameters:
+//   - data: Empty instance of the entity type to query
+//   - cursor: Base64-encoded UUID of the last entity from previous page (empty string for first page)
+//   - limit: Maximum number of items to return
+//   - filters: Map of field names to filter values (same as GetAllEntities)
+//
+// Returns:
+//   - Slice containing one element: a slice of entities for the requested cursor position
+//   - nextCursor: Base64-encoded UUID for fetching the next page (empty if no more results)
+//   - hasMore: Boolean indicating if more results exist
+//   - Error if database operation fails
+//
+// Example:
+//
+//	// First page
+//	results, nextCursor, hasMore, err := repo.GetAllEntitiesCursor(&Course{}, "", 20, filters)
+//	// Next page
+//	results, nextCursor, hasMore, err := repo.GetAllEntitiesCursor(&Course{}, nextCursor, 20, filters)
+func (o *genericRepository) GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]interface{}) ([]any, string, bool, error) {
+	pageSlice := createEmptySliceOfCalledType(data)
+
+	// Get entity name for relationship filters lookup
+	t := reflect.TypeOf(data)
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	entityName := t.Name()
+
+	// Start building the query
+	query := o.db.Model(pageSlice)
+
+	// Apply cursor if provided
+	if cursor != "" {
+		// Decode base64 cursor to UUID
+		decodedBytes, err := base64.StdEncoding.DecodeString(cursor)
+		if err != nil {
+			return nil, "", false, fmt.Errorf("invalid cursor: %w", err)
+		}
+
+		// Ensure we have exactly 16 bytes for UUID
+		if len(decodedBytes) != 16 {
+			return nil, "", false, fmt.Errorf("invalid cursor UUID: expected 16 bytes, got %d", len(decodedBytes))
+		}
+
+		// Convert bytes directly to UUID
+		var cursorID uuid.UUID
+		copy(cursorID[:], decodedBytes)
+
+		// Apply cursor filter: only get entities with ID > cursor
+		query = query.Where("id > ?", cursorID)
+	}
+
+	// Apply filters
+	query = applyFilters(o.db, query, filters, data, entityName)
+
+	// Fetch limit+1 to determine if there are more results
+	query = query.Limit(limit + 1).Order("id ASC").Preload(clause.Associations)
+
+	result := query.Find(&pageSlice)
+	if result.Error != nil {
+		return nil, "", false, result.Error
+	}
+
+	// Get the slice value to check length
+	// pageSlice is already a slice (from createEmptySliceOfCalledType), not a pointer
+	sliceValue := reflect.ValueOf(pageSlice)
+	actualCount := sliceValue.Len()
+
+	// Check if there are more results
+	hasMore := actualCount > limit
+
+	// Trim to limit if we fetched limit+1
+	if hasMore {
+		sliceValue = sliceValue.Slice(0, limit)
+		// Update pageSlice to the trimmed slice
+		pageSlice = sliceValue.Interface()
+		// Update sliceValue to point to trimmed slice for cursor generation
+		sliceValue = reflect.ValueOf(pageSlice)
+	}
+
+	// Generate next cursor if there are more results
+	var nextCursor string
+	if hasMore && sliceValue.Len() > 0 {
+		// Get the last entity's ID
+		lastEntity := sliceValue.Index(sliceValue.Len() - 1)
+		idField := lastEntity.FieldByName("ID")
+		if idField.IsValid() && idField.Type() == reflect.TypeOf(uuid.UUID{}) {
+			lastID := idField.Interface().(uuid.UUID)
+			nextCursor = base64.StdEncoding.EncodeToString(lastID[:])
+		}
+	}
+
+	return []any{pageSlice}, nextCursor, hasMore, nil
 }
 
 // applyFilters applies query filters based on the filter map

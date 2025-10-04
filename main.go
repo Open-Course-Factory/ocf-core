@@ -32,6 +32,7 @@ import (
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
 	courseRegistration "soli/formations/src/courses/entityRegistration"
+	courseHooks "soli/formations/src/courses/hooks"
 	"soli/formations/src/courses/models"
 	courseModels "soli/formations/src/courses/models"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
@@ -173,6 +174,7 @@ func main() {
 	setupPaymentRolePermissions()
 
 	payment.InitPaymentEntities(sqldb.DB)
+	courseHooks.InitCourseHooks(sqldb.DB)
 
 	if parseFlags() {
 		os.Exit(0)

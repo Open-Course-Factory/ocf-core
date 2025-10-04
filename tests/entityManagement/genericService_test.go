@@ -67,6 +67,11 @@ func (m *MockGenericRepository) GetAllEntities(data any, page int, pageSize int,
 	return args.Get(0).([]any), args.Get(1).(int64), args.Error(2)
 }
 
+func (m *MockGenericRepository) GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]interface{}) ([]any, string, bool, error) {
+	args := m.Called(data, cursor, limit, filters)
+	return args.Get(0).([]any), args.Get(1).(string), args.Get(2).(bool), args.Error(3)
+}
+
 func (m *MockGenericRepository) EditEntity(id uuid.UUID, entityName string, entity any, data any) error {
 	args := m.Called(id, entityName, entity, data)
 	return args.Error(0)
@@ -103,6 +108,10 @@ func (g *mockGenericService) GetEntity(id uuid.UUID, data interface{}, entityNam
 
 func (g *mockGenericService) GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}) ([]interface{}, int64, error) {
 	return g.repository.GetAllEntities(data, page, pageSize, filters)
+}
+
+func (g *mockGenericService) GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}) ([]interface{}, string, bool, error) {
+	return g.repository.GetAllEntitiesCursor(data, cursor, limit, filters)
 }
 
 func (g *mockGenericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error {

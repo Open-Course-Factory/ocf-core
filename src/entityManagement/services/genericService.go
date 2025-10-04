@@ -23,6 +23,7 @@ type GenericService interface {
 	SaveEntity(entity interface{}) (interface{}, error)
 	GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error)
 	GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}) ([]interface{}, int64, error)
+	GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}) ([]interface{}, string, bool, error)
 	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
 	EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error
 	GetEntityModelInterface(entityName string) interface{}
@@ -125,6 +126,19 @@ func (g *genericService) GetEntities(data interface{}, page int, pageSize int, f
 	}
 
 	return allPages, total, nil
+}
+
+// GetEntitiesCursor retrieves entities using cursor-based pagination.
+// This method delegates to the repository layer for efficient cursor-based traversal.
+func (g *genericService) GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}) ([]interface{}, string, bool, error) {
+
+	allPages, nextCursor, hasMore, err := g.genericRepository.GetAllEntitiesCursor(data, cursor, limit, filters)
+
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	return allPages, nextCursor, hasMore, nil
 }
 
 func (g *genericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error {
