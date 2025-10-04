@@ -50,6 +50,13 @@ func createUsernameLoggedIn(loginOutput authDto.LoginOutput, t *testing.T) *http
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
+
+	// Debug: print response body if not 201
+	if rec.Code != http.StatusCreated {
+		t.Logf("Auth failed with status %d. Response body: %s", rec.Code, rec.Body.String())
+		t.Logf("Access token used: %s", loginOutput.AccessToken[:50]+"...")
+	}
+
 	return rec
 }
 
