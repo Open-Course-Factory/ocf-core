@@ -205,7 +205,7 @@ test:auth:
     POSTGRES_HOST: ocf-postgres-test
     POSTGRES_PORT: "5432"
     POSTGRES_SSLMODE: disable
-    # Casdoor connection
+    # Casdoor connection (loaded from .env.test file in container)
     CASDOOR_ENDPOINT: "http://ocf-casdoor-test:8000"
 
   before_script:
@@ -287,6 +287,7 @@ test:auth:
   script:
     - echo "🔐 Running auth tests..."
     # Run tests inside docker network to access services
+    # Note: Casdoor config loaded from .env.test file inside container
     - |
       docker run --rm \
         --network ocf-core_test-network \

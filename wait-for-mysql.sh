@@ -3,10 +3,13 @@
 
 set -e
 
-echo "Waiting for MySQL at casdoor-db-test:3306..."
+# Default to casdoor-db-test if not set (for CI)
+MYSQL_HOST=${MYSQL_HOST:-casdoor-db-test}
+
+echo "Waiting for MySQL at ${MYSQL_HOST}:3306..."
 
 # Wait for MySQL port to be open
-until nc -z -v -w5 casdoor-db-test 3306; do
+until nc -z -v -w5 ${MYSQL_HOST} 3306; do
   echo "MySQL is unavailable - sleeping"
   sleep 2
 done
