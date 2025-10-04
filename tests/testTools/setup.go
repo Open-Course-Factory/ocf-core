@@ -36,8 +36,10 @@ var groups []casdoorsdk.Group
 var roles []casdoorsdk.Role
 
 func SetupTestDatabase() {
+	_, b, _, _ := runtime.Caller(0)
+	basePath := filepath.Dir(b) + "/../../"
 
-	sqldb.InitDBConnection("../.env.test")
+	sqldb.InitDBConnection(basePath + ".env.test")
 	sqldb.DB = sqldb.DB.Debug()
 
 	// Run migrations FIRST before trying to delete
