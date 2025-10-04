@@ -46,6 +46,7 @@ test:entity-management:
         sleep 1
       done
     - go mod download
+    - go install github.com/jstemmer/go-junit-report/v2@latest
 
   script:
     # Run all tests (SQLite + PostgreSQL)
@@ -53,23 +54,29 @@ test:entity-management:
     - go test -c -o entity_tests.exe ./tests/entityManagement
 
     - echo "🧪 Running SQLite-based tests..."
-    - ./entity_tests.exe -test.v -test.timeout=60s -test.run "TestGeneric|TestEntityRegistration|TestSecurity|TestIntegration"
+    - ./entity_tests.exe -test.v -test.timeout=60s -test.run "TestGeneric|TestEntityRegistration|TestSecurity|TestIntegration" 2>&1 | tee sqlite_tests.log
 
     - echo "🐘 Running PostgreSQL-specific tests..."
-    - ./entity_tests.exe -test.v -test.timeout=60s -test.run "TestPostgres"
+    - ./entity_tests.exe -test.v -test.timeout=60s -test.run "TestPostgres" 2>&1 | tee postgres_tests.log
 
-    - echo "📊 Generating coverage..."
-    - go test -v -coverprofile=coverage.out ./tests/entityManagement -timeout=90s
+    - echo "📊 Generating coverage and test reports..."
+    - go test -v -coverprofile=coverage.out ./tests/entityManagement -timeout=90s 2>&1 | tee full_tests.log
+    - cat full_tests.log | go-junit-report -set-exit-code > report.xml
 
   coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
 
   artifacts:
     reports:
+      junit: report.xml
       coverage_report:
         coverage_format: cobertura
         path: coverage.out
     paths:
       - coverage.out
+      - report.xml
+      - sqlite_tests.log
+      - postgres_tests.log
+      - full_tests.log
     expire_in: 1 week
 
   only:
@@ -84,11 +91,21 @@ test:quick:
 
   before_script:
     - go mod download
+    - go install github.com/jstemmer/go-junit-report/v2@latest
 
   script:
     - echo "⚡ Running quick tests..."
     - go test -c -o entity_tests.exe ./tests/entityManagement
-    - ./entity_tests.exe -test.v -test.short -test.timeout=30s
+    - ./entity_tests.exe -test.v -test.short -test.timeout=30s 2>&1 | tee quick_tests.log
+    - cat quick_tests.log | go-junit-report -set-exit-code > quick_report.xml
+
+  artifacts:
+    reports:
+      junit: quick_report.xml
+    paths:
+      - quick_report.xml
+      - quick_tests.log
+    expire_in: 1 week
 
   only:
     - merge_requests
@@ -123,11 +140,21 @@ test:race:
         sleep 1
       done
     - go mod download
+    - go install github.com/jstemmer/go-junit-report/v2@latest
 
   script:
     - echo "🏁 Running race detector..."
     - go test -c -race -o entity_tests_race.exe ./tests/entityManagement
-    - ./entity_tests_race.exe -test.v -test.timeout=120s
+    - ./entity_tests_race.exe -test.v -test.timeout=120s 2>&1 | tee race_tests.log
+    - cat race_tests.log | go-junit-report -set-exit-code > race_report.xml
+
+  artifacts:
+    reports:
+      junit: race_report.xml
+    paths:
+      - race_report.xml
+      - race_tests.log
+    expire_in: 1 week
 
   only:
     - merge_requests
