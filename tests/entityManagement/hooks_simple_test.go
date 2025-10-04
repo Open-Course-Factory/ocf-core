@@ -381,6 +381,7 @@ func setupHookServiceTestSimple(t *testing.T) (*gorm.DB, services.GenericService
 	// Replace global hook registry with test registry
 	originalRegistry := hooks.GlobalHookRegistry
 	testRegistry := hooks.NewHookRegistry()
+	testRegistry.SetTestMode(true) // Enable test mode for synchronous execution
 	hooks.GlobalHookRegistry = testRegistry
 	t.Cleanup(func() {
 		hooks.GlobalHookRegistry = originalRegistry
