@@ -22,17 +22,19 @@ check:version:
   stage: check
   image: alpine:latest
   before_script:
-    - apk add --no-cache git curl
+    - apk add --no-cache git curl jq
+    # Configure git
+    - git config --global user.email "ci@ocf.soli.fr"
+    - git config --global user.name "OCF CI"
   script:
     - |
       # Get current version from VERSION file
       CURRENT_VERSION=$(cat VERSION | tr -d '[:space:]')
       echo "Current version in code: $CURRENT_VERSION"
 
-      # Get latest git tag using GitLab API
-      LATEST_TAG=$(curl --silent --header "PRIVATE-TOKEN: ${CI_JOB_TOKEN}" \
-        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/tags?order_by=updated&sort=desc&per_page=1" \
-        | grep -o '"name":"v[^"]*"' | head -1 | cut -d'"' -f4 || echo "v0.0.0")
+      # Get latest git tag
+      git fetch --tags
+      LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
       echo "Latest git tag: $LATEST_TAG"
 
       # Remove 'v' prefix if present
@@ -41,20 +43,29 @@ check:version:
       # Check if version changed
       if [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
         echo "🎉 Version changed from $LATEST_VERSION to $CURRENT_VERSION"
-        echo "Creating tag v$CURRENT_VERSION..."
 
-        # Create tag using GitLab API
-        curl --request POST --header "PRIVATE-TOKEN: ${CI_JOB_TOKEN}" \
-          --data "tag_name=v${CURRENT_VERSION}&ref=${CI_COMMIT_SHA}&message=Release v${CURRENT_VERSION}" \
-          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/tags"
+        # Check if tag already exists
+        if git rev-parse "v${CURRENT_VERSION}" >/dev/null 2>&1; then
+          echo "⚠️  Tag v${CURRENT_VERSION} already exists, skipping"
+        else
+          echo "Creating and pushing tag v$CURRENT_VERSION..."
 
-        echo "✅ Tag v$CURRENT_VERSION created"
+          # Create annotated tag
+          git tag -a "v${CURRENT_VERSION}" -m "Release v${CURRENT_VERSION}"
+
+          # Push tag using token (try CI_PUSH_TOKEN first, fallback to CI_JOB_TOKEN)
+          TOKEN=${CI_PUSH_TOKEN:-$CI_JOB_TOKEN}
+          git remote set-url origin https://gitlab-ci-token:${TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git
+          git push origin "v${CURRENT_VERSION}"
+
+          echo "✅ Tag v$CURRENT_VERSION created and pushed"
+          echo "⏳ A new pipeline will start for the tag..."
+        fi
       else
         echo "ℹ️  Version unchanged ($CURRENT_VERSION)"
       fi
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
-    - if: $CI_COMMIT_BRANCH == "develop"
 
 # Entity Management Tests with PostgreSQL
 test:entity-management:
