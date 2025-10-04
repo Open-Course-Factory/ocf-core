@@ -2,6 +2,7 @@
 package services
 
 import (
+	"soli/formations/src/auth/casdoor"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -59,7 +60,7 @@ func NewCourseService(db *gorm.DB) CourseService {
 		packageService: workerServices.NewGenerationPackageService(),
 		workerConfig:   workerConfig,
 		casdoorService: authInterfaces.NewCasdoorService(),
-		genericService: genericService.NewGenericService(db),
+		genericService: genericService.NewGenericService(db, casdoor.Enforcer),
 	}
 }
 
@@ -342,7 +343,7 @@ func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL
 
 	models.FillCourseModelFromFiles(&fs, &course)
 
-	genericService := genericService.NewGenericService(sqldb.DB)
+	genericService := genericService.NewGenericService(sqldb.DB, casdoor.Enforcer)
 	courseInputDto := dto.CourseModelToCourseInputDto(course)
 	_, errorSaving := genericService.CreateEntity(courseInputDto, reflect.TypeOf(models.Course{}).Name())
 

@@ -1,6 +1,7 @@
 package paymentController
 
 import (
+	"soli/formations/src/auth/casdoor"
 	"net/http"
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
@@ -28,7 +29,7 @@ type usageMetricsController struct {
 
 func NewUsageMetricsController(db *gorm.DB) UsageMetricsController {
 	return &usageMetricsController{
-		GenericController:   controller.NewGenericController(db),
+		GenericController:   controller.NewGenericController(db, casdoor.Enforcer),
 		subscriptionService: services.NewSubscriptionService(db),
 		conversionService:   services.NewConversionService(),
 	}

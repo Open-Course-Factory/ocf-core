@@ -255,7 +255,7 @@ func DeleteAllObjects() {
 		casdoorsdk.DeleteModel(model)
 	}
 
-	gs := genericServices.NewGenericService(sqldb.DB)
+	gs := genericServices.NewGenericService(sqldb.DB, nil)
 
 	coursesPages, _, _ := gs.GetEntities(courseModels.Course{}, 1, 100, map[string]interface{}{})
 	coursesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(coursesPages, courseModels.Course{}, "Course")

@@ -2,6 +2,7 @@
 package courseController
 
 import (
+	"soli/formations/src/auth/casdoor"
 	authInterfaces "soli/formations/src/auth/interfaces"
 	services "soli/formations/src/courses/services"
 	controller "soli/formations/src/entityManagement/routes"
@@ -28,14 +29,14 @@ type courseController struct {
 
 func NewCourseController(db *gorm.DB) CourseController {
 	return &courseController{
-		GenericController: controller.NewGenericController(db),
+		GenericController: controller.NewGenericController(db, casdoor.Enforcer),
 		service:           services.NewCourseService(db),
 	}
 }
 
 func NewCourseControllerWithDependencies(db *gorm.DB, workerService workerServices.WorkerService, casdoorService authInterfaces.CasdoorService, packageService workerServices.GenerationPackageService, genericService emServices.GenericService) CourseController {
 	return &courseController{
-		GenericController: controller.NewGenericController(db),
+		GenericController: controller.NewGenericController(db, casdoor.Enforcer),
 		service:           services.NewCourseServiceWithDependencies(db, workerService, packageService, casdoorService, genericService),
 	}
 }

@@ -2,6 +2,7 @@
 package paymentController
 
 import (
+	"soli/formations/src/auth/casdoor"
 	"fmt"
 	"net/http"
 	"strings"
@@ -48,7 +49,7 @@ type subscriptionController struct {
 
 func NewSubscriptionController(db *gorm.DB) SubscriptionController {
 	return &subscriptionController{
-		GenericController:   controller.NewGenericController(db),
+		GenericController:   controller.NewGenericController(db, casdoor.Enforcer),
 		subscriptionService: services.NewSubscriptionService(db),
 		conversionService:   services.NewConversionService(),
 		stripeService:       services.NewStripeService(db),

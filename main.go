@@ -316,7 +316,7 @@ func parseFlags() bool {
 
 	//courseModels.FillCourseModelFromFiles(*courseName, &course)
 
-	genericService := genericService.NewGenericService(sqldb.DB)
+	genericService := genericService.NewGenericService(sqldb.DB, casdoor.Enforcer)
 
 	courseInputDto := courseDto.CourseModelToCourseInputDto(course)
 	_, errorSaving := genericService.CreateEntity(courseInputDto, reflect.TypeOf(models.Course{}).Name())

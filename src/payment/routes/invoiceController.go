@@ -1,6 +1,7 @@
 package paymentController
 
 import (
+	"soli/formations/src/auth/casdoor"
 	"net/http"
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
@@ -30,7 +31,7 @@ type invoiceController struct {
 
 func NewInvoiceController(db *gorm.DB) InvoiceController {
 	return &invoiceController{
-		GenericController:   controller.NewGenericController(db),
+		GenericController:   controller.NewGenericController(db, casdoor.Enforcer),
 		subscriptionService: services.NewSubscriptionService(db),
 		stripeService:       services.NewStripeService(db),
 		conversionService:   services.NewConversionService(),

@@ -1,21 +1,21 @@
-// src/courses/services/database_isolation_test.go
-package services
+package courses_test
 
 import (
 	"fmt"
 	"testing"
-
-	authMocks "soli/formations/src/auth/mocks"
-	"soli/formations/src/courses/models"
-	entityManagementModels "soli/formations/src/entityManagement/models"
-	genericService "soli/formations/src/entityManagement/services"
-	workerServices "soli/formations/src/worker/services"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+
+	authMocks "soli/formations/src/auth/mocks"
+	"soli/formations/src/courses/models"
+	courseServices "soli/formations/src/courses/services"
+	entityManagementModels "soli/formations/src/entityManagement/models"
+	genericService "soli/formations/src/entityManagement/services"
+	workerServices "soli/formations/src/worker/services"
 )
 
 // TestDatabaseIsolation vérifie que chaque test utilise sa propre base de données
@@ -45,9 +45,9 @@ func TestDatabaseIsolation(t *testing.T) {
 	// Service avec DB1
 	mockCasdoor1 := authMocks.NewMockCasdoorService()
 	mockWorker1 := workerServices.NewMockWorkerService()
-	genericService1 := genericService.NewGenericService(db1)
+	genericService1 := genericService.NewGenericService(db1, nil)
 
-	courseService1 := NewCourseServiceWithDependencies(
+	courseService1 := courseServices.NewCourseServiceWithDependencies(
 		db1, mockWorker1, nil, mockCasdoor1, genericService1)
 
 	// Vérifier que le cours existe dans DB1
@@ -66,9 +66,9 @@ func TestDatabaseIsolation(t *testing.T) {
 	// Service avec DB2
 	mockCasdoor2 := authMocks.NewMockCasdoorService()
 	mockWorker2 := workerServices.NewMockWorkerService()
-	genericService2 := genericService.NewGenericService(db2)
+	genericService2 := genericService.NewGenericService(db2, nil)
 
-	courseService2 := NewCourseServiceWithDependencies(
+	courseService2 := courseServices.NewCourseServiceWithDependencies(
 		db2, mockWorker2, nil, mockCasdoor2, genericService2)
 
 	// === Test 3: Vérifier l'isolation ===
@@ -144,8 +144,8 @@ func TestGenericServiceCorrectDatabase(t *testing.T) {
 	db2.AutoMigrate(&models.Course{})
 
 	// Créer des services génériques pour chaque DB
-	genericService1 := genericService.NewGenericService(db1)
-	genericService2 := genericService.NewGenericService(db2)
+	genericService1 := genericService.NewGenericService(db1, nil)
+	genericService2 := genericService.NewGenericService(db2, nil)
 
 	// Créer un cours via genericService1
 	// courseInput := map[string]interface{}{
@@ -212,7 +212,7 @@ func TestGenericServiceCorrectDatabase(t *testing.T) {
 func TestCourseServiceDatabaseSwitching(t *testing.T) {
 	// Préparer plusieurs DBs de test
 	databases := make([]*gorm.DB, 3)
-	courseServices := make([]CourseService, 3)
+	services := make([]courseServices.CourseService, 3)
 	courses := make([]*models.Course, 3)
 
 	for i := 0; i < 3; i++ {
@@ -240,18 +240,18 @@ func TestCourseServiceDatabaseSwitching(t *testing.T) {
 		// Créer un service pour cette DB
 		mockCasdoor := authMocks.NewMockCasdoorService()
 		mockWorker := workerServices.NewMockWorkerService()
-		genericService := genericService.NewGenericService(db)
+		genericService := genericService.NewGenericService(db, nil)
 
-		service := NewCourseServiceWithDependencies(
+		service := courseServices.NewCourseServiceWithDependencies(
 			db, mockWorker, nil, mockCasdoor, genericService)
-		courseServices[i] = service
+		services[i] = service
 	}
 
 	// Vérifier que chaque service ne voit que son propre cours
 	for i := 0; i < 3; i++ {
 		for j := 0; j < 3; j++ {
 			// Tenter de récupérer le cours j via le service i
-			_, err := courseServices[i].CheckGenerationStatus(courses[j].ID.String())
+			_, err := services[i].CheckGenerationStatus(courses[j].ID.String())
 
 			if i == j {
 				// Le service devrait "ne pas trouver de génération" mais pas "ne pas trouver de cours"

@@ -1,11 +1,6 @@
-# Docker Compose for Testing
-# Run with: docker compose -f docker-compose.test.yml up -d
-
-version: '3.8'
-
 services:
   postgres-test:
-    image: postgres:15-alpine
+    image: postgres
     container_name: ocf-postgres-test
     environment:
       POSTGRES_DB: ocf_test
@@ -24,8 +19,49 @@ services:
     networks:
       - test-network
 
+  casdoor-db-test:
+    image: mysql:8.0.25
+    platform: linux/amd64
+    container_name: ocf-casdoor-db-test
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: casdoor
+    volumes:
+      - casdoor-mysql-test-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - test-network
+
+  casdoor-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.casdoor
+      args:
+        CONFIG_FILE: src/configuration/casdoor_app_test.conf
+    container_name: ocf-casdoor-test
+    ports:
+      - "8000:8000"
+    depends_on:
+      casdoor-db-test:
+        condition: service_healthy
+    environment:
+      RUNNING_IN_DOCKER: "true"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/api/get-account"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - test-network
+
 volumes:
   postgres-test-data:
+    driver: local
+  casdoor-mysql-test-data:
     driver: local
 
 networks:

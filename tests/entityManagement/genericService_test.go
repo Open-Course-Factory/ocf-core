@@ -414,7 +414,7 @@ func TestGenericService_GetEntityModelInterface_NonExistent(t *testing.T) {
 func TestGenericService_Integration_CreateAndRetrieve(t *testing.T) {
 	// Setup
 	db := setupTestDB(t)
-	service := services.NewGenericService(db)
+	service := services.NewGenericService(db, nil)
 	setupTestEntityRegistration()
 	defer cleanupTestEntityRegistration()
 
@@ -446,7 +446,7 @@ func TestGenericService_Integration_CreateAndRetrieve(t *testing.T) {
 func TestGenericService_Integration_FullCRUD(t *testing.T) {
 	// Setup
 	db := setupTestDB(t)
-	service := services.NewGenericService(db)
+	service := services.NewGenericService(db, nil)
 	setupTestEntityRegistration()
 	defer cleanupTestEntityRegistration()
 
@@ -491,7 +491,7 @@ func TestGenericService_Integration_FullCRUD(t *testing.T) {
 // Test de performance pour identifier les goulots d'étranglement
 func BenchmarkGenericService_CreateEntity(b *testing.B) {
 	db := setupTestDB(&testing.T{})
-	service := services.NewGenericService(db)
+	service := services.NewGenericService(db, nil)
 	setupTestEntityRegistration()
 	defer cleanupTestEntityRegistration()
 
@@ -506,7 +506,7 @@ func BenchmarkGenericService_CreateEntity(b *testing.B) {
 // Test de validation des données d'entrée
 func TestGenericService_DecodeInputDtoForEntityCreation(t *testing.T) {
 	// Setup
-	service := services.NewGenericService(setupTestDB(t))
+	service := services.NewGenericService(setupTestDB(t), nil)
 	setupTestEntityRegistration()
 	defer cleanupTestEntityRegistration()
 
@@ -534,7 +534,7 @@ func TestGenericService_DecodeInputDtoForEntityCreation(t *testing.T) {
 // Test d'erreur pour DTO invalide
 func TestGenericService_DecodeInputDtoForEntityCreation_InvalidJSON(t *testing.T) {
 	// Setup
-	service := services.NewGenericService(setupTestDB(t))
+	service := services.NewGenericService(setupTestDB(t), nil)
 
 	// Create test context with invalid JSON
 	gin.SetMode(gin.TestMode)

@@ -153,7 +153,7 @@ func setupSecurityTest(t *testing.T) *SecurityTestSuite {
 		casdoor.Enforcer = suite.originalEnforcer
 	})
 
-	suite.controller = controller.NewGenericController(db)
+	suite.controller = controller.NewGenericController(db, mockEnforcer)
 
 	// Add test middleware to inject userId
 	router.Use(func(ctx *gin.Context) {

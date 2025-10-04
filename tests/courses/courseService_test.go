@@ -1,21 +1,10 @@
-// src/courses/services/courseService_test.go
-package services
+package courses_test
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
-
-	"soli/formations/src/auth/casdoor"
-	authMocks "soli/formations/src/auth/mocks"
-	"soli/formations/src/courses/dto"
-	courseRegistration "soli/formations/src/courses/entityRegistration"
-	"soli/formations/src/courses/models"
-	testHelpers "soli/formations/src/courses/testHelpers"
-	entityManagementModels "soli/formations/src/entityManagement/models"
-
-	genericService "soli/formations/src/entityManagement/services"
-	workerServices "soli/formations/src/worker/services"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -23,10 +12,19 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"net/http"
+	"soli/formations/src/auth/casdoor"
+	authMocks "soli/formations/src/auth/mocks"
 	authModels "soli/formations/src/auth/models"
+	"soli/formations/src/courses/dto"
+	courseRegistration "soli/formations/src/courses/entityRegistration"
+	"soli/formations/src/courses/models"
+	courseServices "soli/formations/src/courses/services"
+	testHelpers "soli/formations/src/courses/testHelpers"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
+	entityManagementModels "soli/formations/src/entityManagement/models"
+	genericService "soli/formations/src/entityManagement/services"
+	workerServices "soli/formations/src/worker/services"
 )
 
 // setupTestDB configure une base de données de test en mémoire
@@ -181,10 +179,10 @@ func TestCourseService_GenerateCourseAsync(t *testing.T) {
 	packageService := workerServices.NewGenerationPackageServiceWithDependencies(mockCasdoor)
 
 	// Créer le genericService avec la DB de test
-	testGenericService := genericService.NewGenericService(db)
+	testGenericService := genericService.NewGenericService(db, nil)
 
 	// Créer le service avec les mocks ET la DB de test
-	courseService := NewCourseServiceWithDependencies(
+	courseService := courseServices.NewCourseServiceWithDependencies(
 		db,
 		mockWorker,
 		packageService,
@@ -244,9 +242,9 @@ func TestCourseService_CheckGenerationStatus(t *testing.T) {
 	// Configurer le service avec mocks
 	mockWorker := workerServices.NewMockWorkerService()
 	mockCasdoor := authMocks.NewMockCasdoorService()
-	testGenericService := genericService.NewGenericService(db)
+	testGenericService := genericService.NewGenericService(db, nil)
 
-	courseService := NewCourseServiceWithDependencies(
+	courseService := courseServices.NewCourseServiceWithDependencies(
 		db,
 		mockWorker,
 		nil, // packageService pas nécessaire pour ce test
@@ -485,21 +483,37 @@ func TestEntityRegistrationService_WithMockEnforcer(t *testing.T) {
 
 	// Vérifications
 	assert.Equal(t, 1, mockEnforcer.GetLoadPolicyCallCount())
-	assert.Equal(t, 2, mockEnforcer.GetAddPolicyCallCount())
+	// Now creates 5 calls: member(OCF), student(Casdoor mapping), administrator(OCF), administrator(Casdoor), admin(Casdoor)
+	assert.Equal(t, 5, mockEnforcer.GetAddPolicyCallCount())
 
-	// Vérifier les appels AddPolicy
-	expectedCalls := [][]interface{}{
-		{string(authModels.Member), "/api/v1/testentities/", "(" + http.MethodGet + "|" + http.MethodPost + ")"},
-		{string(authModels.Admin), "/api/v1/testentities/", "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")"},
-	}
+	// Vérifier que les rôles member et admin sont bien ajoutés
+	// Note: The new system uses /* instead of / and adds Casdoor role mappings
+	calls := mockEnforcer.AddPolicyCalls
+	assert.GreaterOrEqual(t, len(calls), 2, "Should have at least member and admin roles")
 
-	for i, expectedCall := range expectedCalls {
-		actualCall := mockEnforcer.AddPolicyCalls[i]
-		assert.Equal(t, len(expectedCall), len(actualCall))
-		for j, expectedParam := range expectedCall {
-			assert.Equal(t, expectedParam, actualCall[j])
+	// Verify member role exists (OCF role)
+	foundMember := false
+	for _, call := range calls {
+		if len(call) >= 3 && call[0] == string(authModels.Member) {
+			foundMember = true
+			assert.Equal(t, "/api/v1/testentities/*", call[1])
+			assert.Equal(t, "("+http.MethodGet+"|"+http.MethodPost+")", call[2])
+			break
 		}
 	}
+	assert.True(t, foundMember, "Member role should be added")
+
+	// Verify admin role exists (OCF role)
+	foundAdmin := false
+	for _, call := range calls {
+		if len(call) >= 3 && call[0] == string(authModels.Admin) {
+			foundAdmin = true
+			assert.Equal(t, "/api/v1/testentities/*", call[1])
+			assert.Equal(t, "("+http.MethodGet+"|"+http.MethodPost+"|"+http.MethodDelete+")", call[2])
+			break
+		}
+	}
+	assert.True(t, foundAdmin, "Admin role should be added")
 }
 
 // Benchmark pour mesurer les performances du service avec le mock enforcer

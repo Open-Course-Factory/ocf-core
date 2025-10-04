@@ -86,6 +86,11 @@ func (m *MockControllerEnforcer) RemoveGroupingPolicy(params ...interface{}) (bo
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockControllerEnforcer) AddGroupingPolicy(params ...interface{}) (bool, error) {
+	args := m.Called(params...)
+	return args.Bool(0), args.Error(1)
+}
+
 // Setup pour les tests de contrôleur
 func setupControllerTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -121,6 +126,12 @@ func setupControllerTestEntityRegistration() {
 
 	dtoToModel := func(input any) any {
 		if dto, ok := input.(ControllerTestEntityInput); ok {
+			return &ControllerTestEntity{
+				Name:        dto.Name,
+				Description: dto.Description,
+			}
+		}
+		if dto, ok := input.(*ControllerTestEntityInput); ok {
 			return &ControllerTestEntity{
 				Name:        dto.Name,
 				Description: dto.Description,
@@ -176,7 +187,7 @@ func TestGetResourceNameFromPath(t *testing.T) {
 		{"/api/v1/courses/", "courses"},
 		{"/api/v1/chapters", "chapters"},
 		{"/api/v1/sections/123", "sections"},
-		{"/controllerTestEntities/", "controllertestentities"},
+		{"/controller-test-entities/", "controller-test-entities"},
 	}
 
 	for _, tc := range testCases {
@@ -188,59 +199,74 @@ func TestGetResourceNameFromPath(t *testing.T) {
 }
 
 // Test du contrôleur générique - AddEntity
-// Impossible pour le moment il faudrait mocker casdoor, trop de travail (peut être décorréler casdoor de l'ajout d'entités !)
-// func TestGenericController_AddEntity_Success(t *testing.T) {
-// 	// Setup
-// 	gin.SetMode(gin.TestMode)
-// 	db := setupControllerTestDB(t)
-// 	setupControllerTestEntityRegistration()
+func TestGenericController_AddEntity_Success(t *testing.T) {
+	// Setup
+	gin.SetMode(gin.TestMode)
+	db := setupControllerTestDB(t)
+	setupControllerTestEntityRegistration()
 
-// 	genericController := controller.NewGenericController(db)
-// 	router := gin.New()
+	t.Cleanup(func() {
+		ems.GlobalEntityRegistrationService.UnregisterEntity("ControllerTestEntity")
+	})
 
-// 	// Middleware pour simuler l'authentification
-// 	router.Use(func(c *gin.Context) {
-// 		c.Set("userId", "test-user-123")
-// 		c.Next()
-// 	})
+	// Setup mock enforcer
+	mockEnforcer := new(MockControllerEnforcer)
+	mockEnforcer.On("LoadPolicy").Return(nil)
+	mockEnforcer.On("AddPolicy", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
 
-// 	router.POST("/api/v1/controllerTestEntities/", func(c *gin.Context) {
-// 		genericController.AddEntity(c)
-// 	})
+	genericController := controller.NewGenericController(db, mockEnforcer)
+	router := gin.New()
 
-// 	// Préparer la requête
-// 	inputDto := ControllerTestEntityInput{
-// 		Name:        "Test Controller Entity",
-// 		Description: "Testing controller creation",
-// 	}
-// 	jsonData, err := json.Marshal(inputDto)
-// 	require.NoError(t, err)
+	// Middleware pour simuler l'authentification
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "test-user-123")
+		c.Next()
+	})
 
-// 	// Execute
-// 	req := httptest.NewRequest("POST", "/api/v1/controllerTestEntities/", bytes.NewBuffer(jsonData))
-// 	req.Header.Set("Content-Type", "application/json")
-// 	w := httptest.NewRecorder()
+	router.POST("/api/v1/controller-test-entities/", func(c *gin.Context) {
+		genericController.AddEntity(c)
+	})
 
-// 	router.ServeHTTP(w, req)
+	// Préparer la requête
+	inputDto := ControllerTestEntityInput{
+		Name:        "Test Controller Entity",
+		Description: "Testing controller creation",
+	}
+	jsonData, err := json.Marshal(inputDto)
+	require.NoError(t, err)
 
-// 	// Assert
-// 	assert.Equal(t, http.StatusCreated, w.Code)
+	// Execute
+	req := httptest.NewRequest("POST", "/api/v1/controller-test-entities/", bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
 
-// 	var responseDto ControllerTestEntityOutput
-// 	err = json.Unmarshal(w.Body.Bytes(), &responseDto)
-// 	assert.NoError(t, err)
-// 	assert.Equal(t, "Test Controller Entity", responseDto.Name)
-// 	assert.Equal(t, "Testing controller creation", responseDto.Description)
-// 	assert.NotEmpty(t, responseDto.ID)
-// 	assert.Contains(t, responseDto.OwnerIDs, "test-user-123")
-// }
+	router.ServeHTTP(w, req)
+
+	// Assert
+	if w.Code != http.StatusCreated {
+		t.Logf("❌ Unexpected status code: %d", w.Code)
+		t.Logf("Response body: %s", w.Body.String())
+	}
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var responseDto ControllerTestEntityOutput
+	err = json.Unmarshal(w.Body.Bytes(), &responseDto)
+	assert.NoError(t, err)
+	assert.Equal(t, "Test Controller Entity", responseDto.Name)
+	assert.Equal(t, "Testing controller creation", responseDto.Description)
+	assert.NotEmpty(t, responseDto.ID)
+	assert.Contains(t, responseDto.OwnerIDs, "test-user-123")
+
+	// Verify enforcer was called
+	mockEnforcer.AssertExpectations(t)
+}
 
 func TestGenericController_AddEntity_InvalidJSON(t *testing.T) {
 	// Setup
 	gin.SetMode(gin.TestMode)
 	db := setupControllerTestDB(t)
 
-	genericController := controller.NewGenericController(db)
+	genericController := controller.NewGenericController(db, nil)
 	router := gin.New()
 
 	router.Use(func(c *gin.Context) {
@@ -248,12 +274,12 @@ func TestGenericController_AddEntity_InvalidJSON(t *testing.T) {
 		c.Next()
 	})
 
-	router.POST("/api/v1/controllerTestEntities/", func(c *gin.Context) {
+	router.POST("/api/v1/controller-test-entities/", func(c *gin.Context) {
 		genericController.AddEntity(c)
 	})
 
 	// Execute avec un JSON invalide
-	req := httptest.NewRequest("POST", "/api/v1/controllerTestEntities/", bytes.NewBufferString(`{invalid json`))
+	req := httptest.NewRequest("POST", "/api/v1/controller-test-entities/", bytes.NewBufferString(`{invalid json`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -277,7 +303,7 @@ func TestGenericController_GetEntity_Success(t *testing.T) {
 	}
 	db.Create(&testEntity)
 
-	genericController := controller.NewGenericController(db)
+	genericController := controller.NewGenericController(db, nil)
 	router := gin.New()
 
 	router.GET("/api/v1/controller-test-entities/:id", func(c *gin.Context) {
@@ -306,7 +332,7 @@ func TestGenericController_GetEntity_InvalidID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupControllerTestDB(t)
 
-	genericController := controller.NewGenericController(db)
+	genericController := controller.NewGenericController(db, nil)
 	router := gin.New()
 
 	router.GET("/api/v1/controller-test-entities/:id", func(c *gin.Context) {
@@ -329,7 +355,7 @@ func TestGenericController_GetEntity_NotFound(t *testing.T) {
 	db := setupControllerTestDB(t)
 	setupControllerTestEntityRegistration()
 
-	genericController := controller.NewGenericController(db)
+	genericController := controller.NewGenericController(db, nil)
 	router := gin.New()
 
 	router.GET("/api/v1/controller-test-entities/:id", func(c *gin.Context) {
@@ -366,7 +392,7 @@ func TestGenericController_GetEntities_Success(t *testing.T) {
 		db.Create(&entity)
 	}
 
-	genericController := controller.NewGenericController(db)
+	genericController := controller.NewGenericController(db, nil)
 	router := gin.New()
 
 	router.GET("/api/v1/controller-test-entities/", func(c *gin.Context) {
@@ -405,7 +431,7 @@ func TestGenericController_EditEntity_Success(t *testing.T) {
 	}
 	db.Create(&testEntity)
 
-	genericController := controller.NewGenericController(db)
+	genericController := controller.NewGenericController(db, nil)
 	router := gin.New()
 
 	router.PATCH("/api/v1/controller-test-entities/:id", func(c *gin.Context) {
@@ -438,120 +464,146 @@ func TestGenericController_EditEntity_Success(t *testing.T) {
 }
 
 // Test du contrôleur générique - DeleteEntity
-// Impossible sans mock de casdoor
-// func TestGenericController_DeleteEntity_Success(t *testing.T) {
-// 	// Setup
-// 	gin.SetMode(gin.TestMode)
-// 	db := setupControllerTestDB(t)
-// 	setupControllerTestEntityRegistration()
+func TestGenericController_DeleteEntity_Success(t *testing.T) {
+	// Setup
+	gin.SetMode(gin.TestMode)
+	db := setupControllerTestDB(t)
+	setupControllerTestEntityRegistration()
 
-// 	// Créer une entité
-// 	testEntity := ControllerTestEntity{
-// 		Name:        "Entity to Delete",
-// 		Description: "Will be deleted",
-// 	}
-// 	db.Create(&testEntity)
+	t.Cleanup(func() {
+		ems.GlobalEntityRegistrationService.UnregisterEntity("ControllerTestEntity")
+	})
 
-// 	genericController := controller.NewGenericController(db)
-// 	router := gin.New()
+	// Créer une entité
+	testEntity := ControllerTestEntity{
+		Name:        "Entity to Delete",
+		Description: "Will be deleted",
+	}
+	db.Create(&testEntity)
 
-// 	router.DELETE("/api/v1/controllerTestEntities/:id", func(c *gin.Context) {
-// 		genericController.DeleteEntity(c, true) // soft delete
-// 	})
+	// Setup mock enforcer
+	mockEnforcer := new(MockControllerEnforcer)
+	mockEnforcer.On("LoadPolicy").Return(nil)
+	mockEnforcer.On("RemoveFilteredPolicy", mock.Anything, mock.Anything).Return(true, nil)
 
-// 	// Execute
-// 	req := httptest.NewRequest("DELETE", "/api/v1/controllerTestEntities/"+testEntity.ID.String(), nil)
-// 	w := httptest.NewRecorder()
+	genericController := controller.NewGenericController(db, mockEnforcer)
+	router := gin.New()
 
-// 	router.ServeHTTP(w, req)
+	router.DELETE("/api/v1/controller-test-entities/:id", func(c *gin.Context) {
+		genericController.DeleteEntity(c, true) // soft delete
+	})
 
-// 	// Assert
-// 	// Note: Le delete peut échouer à cause des dépendances avec l'enforcer
-// 	// Ce test vérifie principalement que l'endpoint existe et répond
-// 	assert.True(t, w.Code == http.StatusNoContent || w.Code == http.StatusInternalServerError)
-// }
+	// Execute
+	req := httptest.NewRequest("DELETE", "/api/v1/controller-test-entities/"+testEntity.ID.String(), nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	// Assert
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	// Verify entity was soft deleted
+	var deletedEntity ControllerTestEntity
+	err := db.Unscoped().First(&deletedEntity, testEntity.ID).Error
+	assert.NoError(t, err)
+	assert.NotNil(t, deletedEntity.DeletedAt)
+
+	// Verify enforcer was called
+	mockEnforcer.AssertExpectations(t)
+}
 
 // Tests d'intégration pour le workflow complet
-// Impossible à cause des dépendances à Casdoor
-// func TestGenericController_FullWorkflow_Integration(t *testing.T) {
-// 	// Setup
-// 	gin.SetMode(gin.TestMode)
-// 	db := setupControllerTestDB(t)
-// 	setupControllerTestEntityRegistration()
+func TestGenericController_FullWorkflow_Integration(t *testing.T) {
+	// Setup
+	gin.SetMode(gin.TestMode)
+	db := setupControllerTestDB(t)
+	setupControllerTestEntityRegistration()
 
-// 	genericController := controller.NewGenericController(db)
-// 	router := gin.New()
+	t.Cleanup(func() {
+		ems.GlobalEntityRegistrationService.UnregisterEntity("ControllerTestEntity")
+	})
 
-// 	// Middleware d'authentification
-// 	router.Use(func(c *gin.Context) {
-// 		c.Set("userId", "integration-test-user")
-// 		c.Next()
-// 	})
+	// Setup mock enforcer
+	mockEnforcer := new(MockControllerEnforcer)
+	mockEnforcer.On("LoadPolicy").Return(nil)
+	mockEnforcer.On("AddPolicy", mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
 
-// 	// Routes
-// 	router.POST("/api/v1/controllerTestEntities/", func(c *gin.Context) {
-// 		genericController.AddEntity(c)
-// 	})
-// 	router.GET("/api/v1/controllerTestEntities/:id", func(c *gin.Context) {
-// 		genericController.GetEntity(c)
-// 	})
-// 	router.GET("/api/v1/controllerTestEntities/", func(c *gin.Context) {
-// 		genericController.GetEntities(c)
-// 	})
-// 	router.PATCH("/api/v1/controllerTestEntities/:id", func(c *gin.Context) {
-// 		genericController.EditEntity(c)
-// 	})
+	genericController := controller.NewGenericController(db, mockEnforcer)
+	router := gin.New()
 
-// 	// 1. CREATE
-// 	createDto := ControllerTestEntityInput{
-// 		Name:        "Integration Test Entity",
-// 		Description: "Testing full workflow",
-// 	}
-// 	createData, _ := json.Marshal(createDto)
+	// Middleware d'authentification
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "integration-test-user")
+		c.Next()
+	})
 
-// 	createReq := httptest.NewRequest("POST", "/api/v1/controllerTestEntities/", bytes.NewBuffer(createData))
-// 	createReq.Header.Set("Content-Type", "application/json")
-// 	createResp := httptest.NewRecorder()
+	// Routes
+	router.POST("/api/v1/controller-test-entities/", func(c *gin.Context) {
+		genericController.AddEntity(c)
+	})
+	router.GET("/api/v1/controller-test-entities/:id", func(c *gin.Context) {
+		genericController.GetEntity(c)
+	})
+	router.GET("/api/v1/controller-test-entities/", func(c *gin.Context) {
+		genericController.GetEntities(c)
+	})
+	router.PATCH("/api/v1/controller-test-entities/:id", func(c *gin.Context) {
+		genericController.EditEntity(c)
+	})
 
-// 	router.ServeHTTP(createResp, createReq)
-// 	assert.Equal(t, http.StatusCreated, createResp.Code)
+	// 1. CREATE
+	createDto := ControllerTestEntityInput{
+		Name:        "Integration Test Entity",
+		Description: "Testing full workflow",
+	}
+	createData, _ := json.Marshal(createDto)
 
-// 	var createdEntity ControllerTestEntityOutput
-// 	json.Unmarshal(createResp.Body.Bytes(), &createdEntity)
-// 	entityID := createdEntity.ID
+	createReq := httptest.NewRequest("POST", "/api/v1/controller-test-entities/", bytes.NewBuffer(createData))
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp := httptest.NewRecorder()
 
-// 	// 2. READ
-// 	readReq := httptest.NewRequest("GET", "/api/v1/controllerTestEntities/"+entityID, nil)
-// 	readResp := httptest.NewRecorder()
+	router.ServeHTTP(createResp, createReq)
+	assert.Equal(t, http.StatusCreated, createResp.Code)
 
-// 	router.ServeHTTP(readResp, readReq)
-// 	assert.Equal(t, http.StatusOK, readResp.Code)
+	var createdEntity ControllerTestEntityOutput
+	json.Unmarshal(createResp.Body.Bytes(), &createdEntity)
+	entityID := createdEntity.ID
 
-// 	// 3. LIST
-// 	listReq := httptest.NewRequest("GET", "/api/v1/controllerTestEntities/", nil)
-// 	listResp := httptest.NewRecorder()
+	// 2. READ
+	readReq := httptest.NewRequest("GET", "/api/v1/controller-test-entities/"+entityID, nil)
+	readResp := httptest.NewRecorder()
 
-// 	router.ServeHTTP(listResp, listReq)
-// 	assert.True(t, listResp.Code == http.StatusOK || listResp.Code == http.StatusNotFound)
+	router.ServeHTTP(readResp, readReq)
+	assert.Equal(t, http.StatusOK, readResp.Code)
 
-// 	// 4. UPDATE
-// 	updateDto := ControllerTestEntityEdit{
-// 		Name:        "Updated Integration Entity",
-// 		Description: "Updated in integration test",
-// 	}
-// 	updateData, _ := json.Marshal(updateDto)
+	// 3. LIST
+	listReq := httptest.NewRequest("GET", "/api/v1/controller-test-entities/", nil)
+	listResp := httptest.NewRecorder()
 
-// 	updateReq := httptest.NewRequest("PATCH", "/api/v1/controllerTestEntities/"+entityID, bytes.NewBuffer(updateData))
-// 	updateReq.Header.Set("Content-Type", "application/json")
-// 	updateResp := httptest.NewRecorder()
+	router.ServeHTTP(listResp, listReq)
+	assert.True(t, listResp.Code == http.StatusOK || listResp.Code == http.StatusNotFound)
 
-// 	router.ServeHTTP(updateResp, updateReq)
-// 	assert.Equal(t, http.StatusNoContent, updateResp.Code)
+	// 4. UPDATE
+	updateDto := ControllerTestEntityEdit{
+		Name:        "Updated Integration Entity",
+		Description: "Updated in integration test",
+	}
+	updateData, _ := json.Marshal(updateDto)
 
-// 	t.Logf("✅ Integration test completed successfully")
-// 	t.Logf("   - Created entity: %s", entityID)
-// 	t.Logf("   - All CRUD operations working")
-// }
+	updateReq := httptest.NewRequest("PATCH", "/api/v1/controller-test-entities/"+entityID, bytes.NewBuffer(updateData))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateResp := httptest.NewRecorder()
+
+	router.ServeHTTP(updateResp, updateReq)
+	assert.Equal(t, http.StatusNoContent, updateResp.Code)
+
+	t.Logf("✅ Integration test completed successfully")
+	t.Logf("   - Created entity: %s", entityID)
+	t.Logf("   - All CRUD operations working")
+
+	// Verify enforcer was called
+	mockEnforcer.AssertExpectations(t)
+}
 
 // Benchmark pour les opérations du contrôleur
 func BenchmarkGenericController_AddEntity(b *testing.B) {
@@ -559,7 +611,7 @@ func BenchmarkGenericController_AddEntity(b *testing.B) {
 	db := setupControllerTestDB(&testing.T{})
 	setupControllerTestEntityRegistration()
 
-	genericController := controller.NewGenericController(db)
+	genericController := controller.NewGenericController(db, nil)
 	router := gin.New()
 
 	router.Use(func(c *gin.Context) {
@@ -567,7 +619,7 @@ func BenchmarkGenericController_AddEntity(b *testing.B) {
 		c.Next()
 	})
 
-	router.POST("/api/v1/controllerTestEntities/", func(c *gin.Context) {
+	router.POST("/api/v1/controller-test-entities/", func(c *gin.Context) {
 		genericController.AddEntity(c)
 	})
 
@@ -579,7 +631,7 @@ func BenchmarkGenericController_AddEntity(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		req := httptest.NewRequest("POST", "/api/v1/controllerTestEntities/", bytes.NewBuffer(jsonData))
+		req := httptest.NewRequest("POST", "/api/v1/controller-test-entities/", bytes.NewBuffer(jsonData))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 
@@ -592,7 +644,7 @@ func TestGenericController_ErrorCases(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupControllerTestDB(t)
 
-	genericController := controller.NewGenericController(db)
+	genericController := controller.NewGenericController(db, nil)
 	router := gin.New()
 
 	t.Run("Missing userId in context", func(t *testing.T) {

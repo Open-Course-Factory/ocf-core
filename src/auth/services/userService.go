@@ -42,6 +42,7 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 begin:
 	genericService := services.NewGenericService(
 		sqldb.DB,
+		casdoor.Enforcer,
 	)
 
 	generatedUsername := namesgenerator.GetRandomName(1)

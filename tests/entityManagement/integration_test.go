@@ -200,7 +200,7 @@ func setupIntegrationTest(t *testing.T) *IntegrationTestSuite {
 	ems.GlobalEntityRegistrationService.RegisterEntityInterface("IntegrationTestEntity", IntegrationTestEntity{})
 
 	// Setup controller
-	suite.controller = controller.NewGenericController(db)
+	suite.controller = controller.NewGenericController(db, nil)
 
 	// Add test middleware to inject userId
 	router.Use(func(ctx *gin.Context) {

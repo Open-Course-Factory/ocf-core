@@ -2,6 +2,7 @@
 package services
 
 import (
+	"soli/formations/src/auth/casdoor"
 	"fmt"
 	"time"
 
@@ -84,7 +85,7 @@ type subscriptionService struct {
 
 func NewSubscriptionService(db *gorm.DB) SubscriptionService {
 	return &subscriptionService{
-		genericService: genericService.NewGenericService(db),
+		genericService: genericService.NewGenericService(db, casdoor.Enforcer),
 		repository:     repositories.NewPaymentRepository(db),
 		db:             db,
 	}

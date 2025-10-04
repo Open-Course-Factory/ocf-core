@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"soli/formations/src/auth/casdoor"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	controller "soli/formations/src/entityManagement/routes"
@@ -23,7 +24,7 @@ type SwaggerRouteGenerator struct {
 
 func NewSwaggerRouteGenerator(db *gorm.DB) *SwaggerRouteGenerator {
 	return &SwaggerRouteGenerator{
-		genericController: controller.NewGenericController(db),
+		genericController: controller.NewGenericController(db, casdoor.Enforcer),
 	}
 }
 

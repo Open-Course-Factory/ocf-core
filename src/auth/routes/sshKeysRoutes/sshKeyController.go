@@ -1,6 +1,7 @@
 package sshKeyController
 
 import (
+	"soli/formations/src/auth/casdoor"
 	services "soli/formations/src/auth/services"
 	controller "soli/formations/src/entityManagement/routes"
 
@@ -22,7 +23,7 @@ type sshKeyController struct {
 
 func NewSshKeyController(db *gorm.DB) SshKeyController {
 	return &sshKeyController{
-		GenericController: controller.NewGenericController(db),
+		GenericController: controller.NewGenericController(db, casdoor.Enforcer),
 		service:           services.NewSshKeyService(db),
 	}
 }

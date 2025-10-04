@@ -364,8 +364,8 @@ func setupRelationshipTest(t *testing.T) *RelationshipTestSuite {
 		casdoor.Enforcer = suite.originalEnforcer
 	})
 
-	suite.pageController = controller.NewGenericController(db)
-	suite.sectionController = controller.NewGenericController(db)
+	suite.pageController = controller.NewGenericController(db, nil)
+	suite.sectionController = controller.NewGenericController(db, nil)
 
 	// Add test middleware to inject userId
 	router.Use(func(ctx *gin.Context) {

@@ -1,0 +1,11 @@
+FROM casbin/casdoor:latest
+
+# Build argument to select config file (defaults to local)
+ARG CONFIG_FILE=src/configuration/casdoor_app.conf
+
+# Copy configuration files into the container
+COPY ${CONFIG_FILE} /conf/app.conf
+COPY init_data.json /init_data.json
+
+# Use the same entrypoint as the base image
+ENTRYPOINT ["/bin/sh", "-c", "./server --createDatabase=true"]

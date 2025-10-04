@@ -182,7 +182,7 @@ func setupBenchmarkSuite(b *testing.B) *BenchmarkSuite {
 		casdoor.Enforcer = suite.originalEnforcer
 	})
 
-	suite.controller = controller.NewGenericController(db)
+	suite.controller = controller.NewGenericController(db, nil)
 
 	apiGroup := router.Group("/api/v1")
 	apiGroup.POST("/benchmark-entities", suite.controller.AddEntity)

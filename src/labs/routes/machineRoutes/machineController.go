@@ -1,6 +1,7 @@
 package machineController
 
 import (
+	"soli/formations/src/auth/casdoor"
 	controller "soli/formations/src/entityManagement/routes"
 	services "soli/formations/src/entityManagement/services"
 
@@ -23,7 +24,7 @@ type machineController struct {
 
 func NewMachineController(db *gorm.DB) MachineController {
 	return &machineController{
-		GenericController: controller.NewGenericController(db),
-		service:           services.NewGenericService(db),
+		GenericController: controller.NewGenericController(db, casdoor.Enforcer),
+		service:           services.NewGenericService(db, casdoor.Enforcer),
 	}
 }

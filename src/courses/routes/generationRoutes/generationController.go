@@ -1,6 +1,7 @@
 package generationController
 
 import (
+	"soli/formations/src/auth/casdoor"
 	controller "soli/formations/src/entityManagement/routes"
 	services "soli/formations/src/entityManagement/services"
 
@@ -21,7 +22,7 @@ type generationController struct {
 
 func NewGenerationController(db *gorm.DB) GenerationController {
 	return &generationController{
-		GenericController: controller.NewGenericController(db),
-		service:           services.NewGenericService(db),
+		GenericController: controller.NewGenericController(db, casdoor.Enforcer),
+		service:           services.NewGenericService(db, casdoor.Enforcer),
 	}
 }

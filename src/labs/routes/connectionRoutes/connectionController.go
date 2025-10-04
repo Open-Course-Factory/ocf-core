@@ -1,6 +1,7 @@
 package connectionController
 
 import (
+	"soli/formations/src/auth/casdoor"
 	controller "soli/formations/src/entityManagement/routes"
 	services "soli/formations/src/entityManagement/services"
 
@@ -22,7 +23,7 @@ type connectionController struct {
 
 func NewConnectionController(db *gorm.DB) ConnectionController {
 	return &connectionController{
-		GenericController: controller.NewGenericController(db),
-		service:           services.NewGenericService(db),
+		GenericController: controller.NewGenericController(db, casdoor.Enforcer),
+		service:           services.NewGenericService(db, casdoor.Enforcer),
 	}
 }

@@ -2,6 +2,7 @@
 package services
 
 import (
+	"soli/formations/src/auth/casdoor"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -138,7 +139,7 @@ func NewStripeService(db *gorm.DB) StripeService {
 
 	return &stripeService{
 		subscriptionService: NewSubscriptionService(db),
-		genericService:      genericService.NewGenericService(db),
+		genericService:      genericService.NewGenericService(db, casdoor.Enforcer),
 		repository:          repositories.NewPaymentRepository(db),
 		webhookSecret:       os.Getenv("STRIPE_WEBHOOK_SECRET"),
 	}

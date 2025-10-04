@@ -1,19 +1,8 @@
-// src/courses/services/example_with_mocks_test.go
-package services
+package courses_test
 
 import (
 	"testing"
 	"time"
-
-	authMocks "soli/formations/src/auth/mocks"
-	"soli/formations/src/courses/dto"
-	courseRegistration "soli/formations/src/courses/entityRegistration"
-	"soli/formations/src/courses/models"
-	ems "soli/formations/src/entityManagement/entityManagementService"
-	entityManagementModels "soli/formations/src/entityManagement/models"
-
-	genericService "soli/formations/src/entityManagement/services"
-	workerServices "soli/formations/src/worker/services"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
@@ -21,6 +10,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+
+	authMocks "soli/formations/src/auth/mocks"
+	"soli/formations/src/courses/dto"
+	courseRegistration "soli/formations/src/courses/entityRegistration"
+	"soli/formations/src/courses/models"
+	courseServices "soli/formations/src/courses/services"
+	ems "soli/formations/src/entityManagement/entityManagementService"
+	entityManagementModels "soli/formations/src/entityManagement/models"
+	genericService "soli/formations/src/entityManagement/services"
+	workerServices "soli/formations/src/worker/services"
 )
 
 // ExampleTest_CompleteWorkflowWithMocks montre comment utiliser tous les mocks ensemble
@@ -59,7 +58,7 @@ func Test_CompleteWorkflowWithMocks(t *testing.T) {
 
 	// 3. Setup des services avec injection de dépendances
 	packageService := workerServices.NewGenerationPackageServiceWithDependencies(mockCasdoor)
-	testGenericService := genericService.NewGenericService(db)
+	testGenericService := genericService.NewGenericService(db, nil)
 
 	// workerConfig := &config.WorkerConfig{
 	// 	URL:          "http://mock-worker:8081",
@@ -68,7 +67,7 @@ func Test_CompleteWorkflowWithMocks(t *testing.T) {
 	// 	PollInterval: 100 * time.Millisecond,
 	// }
 
-	courseService := NewCourseServiceWithDependencies(
+	courseService := courseServices.NewCourseServiceWithDependencies(
 		db,
 		mockWorker,
 		packageService,
@@ -157,7 +156,7 @@ func Test_CompleteWorkflowWithMocks(t *testing.T) {
 func Test_ErrorHandlingWithMocks(t *testing.T) {
 	// Setup minimal
 	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	db.AutoMigrate(&models.Course{}, &models.Generation{})
+	db.AutoMigrate(&models.Course{}, &models.Generation{}, &models.Theme{}, &models.Schedule{}, &models.Chapter{}, &models.Section{}, &models.Page{})
 
 	mockCasdoor := authMocks.NewMockCasdoorService()
 	mockWorker := workerServices.NewMockWorkerService()
@@ -172,8 +171,8 @@ func Test_ErrorHandlingWithMocks(t *testing.T) {
 	mockCasdoor.SetUserError("error@test.com", assert.AnError)
 
 	packageService := workerServices.NewGenerationPackageServiceWithDependencies(mockCasdoor)
-	testGenericService := genericService.NewGenericService(db)
-	courseService := NewCourseServiceWithDependencies(db, mockWorker, packageService, mockCasdoor, testGenericService)
+	testGenericService := genericService.NewGenericService(db, nil)
+	courseService := courseServices.NewCourseServiceWithDependencies(db, mockWorker, packageService, mockCasdoor, testGenericService)
 
 	// Créer un cours de test
 	generation := createTestGeneration(t, db)
@@ -222,8 +221,8 @@ func Test_CustomScenarios(t *testing.T) {
 		mockCasdoor := authMocks.NewMockCasdoorService()
 		mockWorker := workerServices.NewMockWorkerService()
 		packageService := workerServices.NewGenerationPackageServiceWithDependencies(mockCasdoor)
-		testGenericService := genericService.NewGenericService(db)
-		courseService := NewCourseServiceWithDependencies(db, mockWorker, packageService, mockCasdoor, testGenericService)
+		testGenericService := genericService.NewGenericService(db, nil)
+		courseService := courseServices.NewCourseServiceWithDependencies(db, mockWorker, packageService, mockCasdoor, testGenericService)
 
 		// Créer une génération échouée
 		generation := &models.Generation{

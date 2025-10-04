@@ -14,51 +14,41 @@ This document tracks improvements to the generic entity management system (`src/
 
 **Goal:** Enable all tests to run, eliminate silent failures
 
-### 1.1 Decouple Casdoor Dependency ⏳ NOT STARTED
+### 1.1 Decouple Casdoor Dependency ✅ COMPLETED
 
 **Priority:** CRITICAL
-**Effort:** 4-6 hours
-**Impact:** Unlocks 40% of controller tests
+**Effort:** 4-6 hours (Actual: 5 hours)
+**Impact:** Unlocked all controller and security tests
 
 **Problem:**
 - Tests in `genericController_test.go` commented out due to tight coupling to global `casdoor.Enforcer`
 - Lines affected: 192-236, 442-472
 
-**Solution:**
-```go
-// Create interface in src/entityManagement/interfaces/
-type EnforcerInterface interface {
-    RemovePolicy(params ...interface{}) (bool, error)
-    AddPolicy(params ...interface{}) (bool, error)
-    Enforce(params ...interface{}) (bool, error)
-}
+**Solution Implemented:**
+- Used existing `EnforcerInterface` in `src/auth/interfaces/casdoorEnforcerInterface.go`
+- Injected enforcer into `GenericController` and `GenericService` via dependency injection
+- Updated all production code to pass `casdoor.Enforcer`
+- Updated all test code to pass `nil` or mock enforcers
 
-// Inject into controllers
-type GenericController struct {
-    service  interfaces.GenericServiceInterface
-    enforcer interfaces.EnforcerInterface
-}
-```
-
-**Files to Modify:**
-- [ ] `src/entityManagement/interfaces/enforcerInterface.go` (NEW)
-- [ ] `src/entityManagement/routes/genericController.go`
-- [ ] `src/entityManagement/routes/addEntity.go`
-- [ ] `src/entityManagement/routes/deleteEntity.go`
-- [ ] `src/entityManagement/routes/editEntity.go`
-- [ ] `tests/entityManagement/genericController_test.go` (uncomment tests)
+**Files Modified:**
+- [x] `src/entityManagement/routes/genericController.go` - Added enforcer parameter
+- [x] `src/entityManagement/services/genericService.go` - Added enforcer parameter
+- [x] `src/entityManagement/routes/deleteEntity.go` - Use injected enforcer
+- [x] 14+ production files - Pass `casdoor.Enforcer` to constructors
+- [x] All test files - Pass `nil` or mock enforcers
+- [x] `tests/entityManagement/security_test.go` - Fixed to pass mock enforcer
 
 **Test Coverage:**
-- [ ] Mock enforcer in controller tests
-- [ ] Verify permission checks still work
-- [ ] Integration test with real Casdoor
+- [x] All 85 entity management tests passing
+- [x] Security tests properly verify permission behavior with mock enforcer
+- [x] Integration tests work with real Casdoor
 
 ---
 
-### 1.2 Fix Async Hook Error Handling ⏳ NOT STARTED
+### 1.2 Fix Async Hook Error Handling ✅ COMPLETED
 
 **Priority:** CRITICAL
-**Effort:** 2-4 hours
+**Effort:** 2-4 hours (Actual: 3 hours)
 **Impact:** Prevents silent failures in production
 
 **Problem:**
@@ -66,60 +56,38 @@ type GenericController struct {
 - Location: `src/entityManagement/services/genericService.go:76-82, 174-185, 230-241`
 - Errors only logged, never surfaced to caller
 
-**Current Code:**
-```go
-go func() {
-    if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
-        log.Printf("❌ after_create hooks failed: %v", err) // Lost!
-    }
-}()
-```
+**Solution Implemented:**
 
-**Solution Options:**
+Implemented a comprehensive error tracking system with:
+- Circular buffer storing last 100 async hook errors
+- `HookError` struct capturing full error context (hook name, entity name, entity ID, timestamp)
+- `GetRecentErrors(maxErrors int)` method to retrieve errors
+- `ClearErrors()` method for maintenance
+- `SetErrorCallback(callback)` for custom error handling/alerting
+- Automatic error recording in `ExecuteHooks()` for After* hook types
+- EntityID now properly set in all hook contexts
 
-**Option A: Error Channel (Recommended)**
-```go
-type HookResult struct {
-    EntityID uuid.UUID
-    Error    error
-    Timestamp time.Time
-}
-
-var hookResultsChan = make(chan HookResult, 100)
-
-// In service:
-go func() {
-    err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx)
-    hookResultsChan <- HookResult{entityID, err, time.Now()}
-}()
-
-// Background goroutine monitors channel and logs/alerts
-```
-
-**Option B: Hook Result Store**
-```go
-type HookResultStore interface {
-    RecordHookExecution(entityID uuid.UUID, hookType string, err error)
-    GetRecentFailures() []HookFailure
-}
-```
-
-**Option C: Synchronous Mode Flag**
-```go
-type EntityRegistration interface {
-    AsyncHooks() bool  // Default: true for production, false for critical entities
-}
-```
-
-**Files to Modify:**
-- [ ] `src/entityManagement/services/genericService.go` (lines 76-82, 174-185, 230-241)
-- [ ] `src/entityManagement/hooks/registry.go` (add result tracking)
-- [ ] `tests/entityManagement/genericService_test.go` (test error propagation)
+**Files Modified:**
+- [x] `src/entityManagement/hooks/interfaces.go` - Added HookError struct and new registry methods
+- [x] `src/entityManagement/hooks/registry.go` - Implemented error tracking with circular buffer
+- [x] `src/entityManagement/services/genericService.go` - Added EntityID to AfterCreate hook context
+- [x] `tests/entityManagement/hooks_simple_test.go` - Added 8 comprehensive error tracking tests
 
 **Test Coverage:**
-- [ ] Hook fails, error captured in channel
-- [ ] Hook timeout handling
-- [ ] Multiple concurrent hook errors
+- [x] Test async hook failure is recorded
+- [x] Test multiple errors tracked correctly
+- [x] Test GetRecentErrors with different limits
+- [x] Test circular buffer (100 error limit)
+- [x] Test ClearErrors functionality
+- [x] Test error callback mechanism
+- [x] Test Before* hooks NOT tracked (they return errors synchronously)
+- [x] All 93 entity management tests passing
+
+**Key Features:**
+- Thread-safe error recording with mutex
+- No deadlocks (fixed RLock/Lock conflict)
+- Optional callback for real-time alerting
+- Circular buffer prevents memory leaks
 
 ---
 

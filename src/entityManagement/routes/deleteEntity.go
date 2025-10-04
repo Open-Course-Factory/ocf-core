@@ -3,7 +3,6 @@ package controller
 import (
 	"net/http"
 
-	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 
 	"github.com/gin-gonic/gin"
@@ -29,16 +28,19 @@ func (genericController genericController) DeleteEntity(ctx *gin.Context, scoped
 		return
 	}
 
-	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
-	if errors.HandleError(http.StatusInternalServerError, errPolicyLoading, ctx) {
-		return
-	}
+	// Skip enforcer cleanup if not initialized (e.g., in tests)
+	if genericController.enforcer != nil {
+		errPolicyLoading := genericController.enforcer.LoadPolicy()
+		if errors.HandleError(http.StatusInternalServerError, errPolicyLoading, ctx) {
+			return
+		}
 
-	resourceName := GetResourceNameFromPath(ctx.FullPath())
+		resourceName := GetResourceNameFromPath(ctx.FullPath())
 
-	_, errRemovingPolicy := casdoor.Enforcer.RemoveFilteredPolicy(1, "/api/v1/"+resourceName+"/"+id.String())
-	if errors.HandleError(http.StatusInternalServerError, errRemovingPolicy, ctx) {
-		return
+		_, errRemovingPolicy := genericController.enforcer.RemoveFilteredPolicy(1, "/api/v1/"+resourceName+"/"+id.String())
+		if errors.HandleError(http.StatusInternalServerError, errRemovingPolicy, ctx) {
+			return
+		}
 	}
 
 	ctx.JSON(http.StatusNoContent, "Done")

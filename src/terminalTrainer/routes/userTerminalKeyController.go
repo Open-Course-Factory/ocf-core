@@ -1,6 +1,7 @@
 package terminalController
 
 import (
+	"soli/formations/src/auth/casdoor"
 	"net/http"
 
 	"soli/formations/src/auth/errors"
@@ -32,7 +33,7 @@ type userTerminalKeyController struct {
 
 func NewUserTerminalKeyController(db *gorm.DB) UserTerminalKeyController {
 	return &userTerminalKeyController{
-		GenericController: controller.NewGenericController(db),
+		GenericController: controller.NewGenericController(db, casdoor.Enforcer),
 		service:           services.NewTerminalTrainerService(db),
 	}
 }

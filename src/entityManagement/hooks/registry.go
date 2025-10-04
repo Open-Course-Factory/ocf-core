@@ -6,22 +6,28 @@ import (
 	"log"
 	"sort"
 	"sync"
+	"time"
 )
 
 type hookRegistry struct {
-	hooks      map[string]Hook   // hookName -> Hook
-	enabled    map[string]bool   // hookName -> enabled
-	byEntity   map[string][]Hook // entityName -> []Hook
-	mutex      sync.RWMutex
-	testMode   bool              // Test mode disables async execution
-	globalDisable bool           // Globally disable all hooks (for tests)
+	hooks         map[string]Hook   // hookName -> Hook
+	enabled       map[string]bool   // hookName -> enabled
+	byEntity      map[string][]Hook // entityName -> []Hook
+	mutex         sync.RWMutex
+	testMode      bool              // Test mode disables async execution
+	globalDisable bool              // Globally disable all hooks (for tests)
+	errors        []HookError       // Recent async hook errors (circular buffer)
+	errorCallback HookErrorCallback // Optional callback for async errors
+	maxErrors     int               // Maximum errors to keep (default 100)
 }
 
 func NewHookRegistry() HookRegistry {
 	return &hookRegistry{
-		hooks:    make(map[string]Hook),
-		enabled:  make(map[string]bool),
-		byEntity: make(map[string][]Hook),
+		hooks:     make(map[string]Hook),
+		enabled:   make(map[string]bool),
+		byEntity:  make(map[string][]Hook),
+		errors:    make([]HookError, 0, 100),
+		maxErrors: 100,
 	}
 }
 
@@ -96,12 +102,17 @@ func (hr *hookRegistry) ExecuteHooks(ctx *HookContext) error {
 	}
 
 	hr.mutex.RLock()
-	defer hr.mutex.RUnlock()
-
 	hooks := hr.GetHooks(ctx.EntityName, ctx.HookType)
 
+	// Create a copy of enabled status to avoid holding lock during execution
+	enabledStatus := make(map[string]bool)
 	for _, hook := range hooks {
-		if !hr.enabled[hook.GetName()] {
+		enabledStatus[hook.GetName()] = hr.enabled[hook.GetName()]
+	}
+	hr.mutex.RUnlock()
+
+	for _, hook := range hooks {
+		if !enabledStatus[hook.GetName()] {
 			continue
 		}
 
@@ -115,6 +126,12 @@ func (hr *hookRegistry) ExecuteHooks(ctx *HookContext) error {
 		// Exécuter le hook
 		if err := hook.Execute(ctx); err != nil {
 			log.Printf("❌ Hook '%s' failed: %v", hook.GetName(), err)
+
+			// Record error for async hooks (After* types)
+			if ctx.HookType == AfterCreate || ctx.HookType == AfterUpdate || ctx.HookType == AfterDelete {
+				hr.recordError(hook.GetName(), ctx.EntityName, ctx.HookType, ctx.EntityID, err)
+			}
+
 			// Selon la stratégie d'erreur, on peut continuer ou arrêter
 			// Pour l'instant, on continue avec les autres hooks
 			continue
@@ -205,6 +222,74 @@ func (hr *hookRegistry) IsTestMode() bool {
 	hr.mutex.RLock()
 	defer hr.mutex.RUnlock()
 	return hr.testMode
+}
+
+// GetRecentErrors returns recent async hook errors
+func (hr *hookRegistry) GetRecentErrors(maxErrors int) []HookError {
+	hr.mutex.RLock()
+	defer hr.mutex.RUnlock()
+
+	if maxErrors <= 0 || maxErrors > len(hr.errors) {
+		// Return all errors
+		result := make([]HookError, len(hr.errors))
+		copy(result, hr.errors)
+		return result
+	}
+
+	// Return last N errors
+	start := len(hr.errors) - maxErrors
+	result := make([]HookError, maxErrors)
+	copy(result, hr.errors[start:])
+	return result
+}
+
+// ClearErrors clears the error history
+func (hr *hookRegistry) ClearErrors() {
+	hr.mutex.Lock()
+	defer hr.mutex.Unlock()
+
+	hr.errors = make([]HookError, 0, hr.maxErrors)
+	log.Println("🔗 Hook errors cleared")
+}
+
+// SetErrorCallback sets a callback to be invoked when async hooks fail
+func (hr *hookRegistry) SetErrorCallback(callback HookErrorCallback) {
+	hr.mutex.Lock()
+	defer hr.mutex.Unlock()
+
+	hr.errorCallback = callback
+	if callback != nil {
+		log.Println("🔗 Hook error callback registered")
+	} else {
+		log.Println("🔗 Hook error callback removed")
+	}
+}
+
+// recordError records an async hook error (internal method)
+func (hr *hookRegistry) recordError(hookName, entityName string, hookType HookType, entityID interface{}, err error) {
+	hr.mutex.Lock()
+	defer hr.mutex.Unlock()
+
+	hookError := HookError{
+		HookName:   hookName,
+		EntityName: entityName,
+		HookType:   hookType,
+		Error:      err.Error(),
+		Timestamp:  time.Now().Unix(),
+		EntityID:   entityID,
+	}
+
+	// Circular buffer: if at max capacity, remove oldest
+	if len(hr.errors) >= hr.maxErrors {
+		hr.errors = hr.errors[1:]
+	}
+	hr.errors = append(hr.errors, hookError)
+
+	// Call error callback if set (outside mutex to avoid deadlock)
+	callback := hr.errorCallback
+	if callback != nil {
+		go callback(&hookError)
+	}
 }
 
 // Instance globale du registre de hooks

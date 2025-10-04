@@ -1,6 +1,7 @@
 package terminalController
 
 import (
+	"soli/formations/src/auth/casdoor"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -77,7 +78,7 @@ func NewTerminalController(db *gorm.DB) TerminalController {
 	}
 
 	return &terminalController{
-		GenericController:  controller.NewGenericController(db),
+		GenericController:  controller.NewGenericController(db, casdoor.Enforcer),
 		terminalTrainerURL: os.Getenv("TERMINAL_TRAINER_URL"),
 		apiVersion:         apiVersion,
 		terminalType:       terminalType,

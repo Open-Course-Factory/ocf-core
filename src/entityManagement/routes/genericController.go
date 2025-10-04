@@ -1,6 +1,7 @@
 package controller
 
 import (
+	authInterfaces "soli/formations/src/auth/interfaces"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/services"
 	"strings"
@@ -22,12 +23,16 @@ type GenericController interface {
 type genericController struct {
 	genericService            services.GenericService
 	entityRegistrationService *ems.EntityRegistrationService
+	enforcer                  authInterfaces.EnforcerInterface
 }
 
-func NewGenericController(db *gorm.DB) GenericController {
+// NewGenericController creates a new generic controller with the given database and enforcer.
+// The enforcer parameter can be nil for testing purposes.
+func NewGenericController(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) GenericController {
 	controller := &genericController{
-		genericService:            services.NewGenericService(db),
+		genericService:            services.NewGenericService(db, enforcer),
 		entityRegistrationService: ems.GlobalEntityRegistrationService,
+		enforcer:                  enforcer,
 	}
 
 	return controller

@@ -357,7 +357,7 @@ func setupHookServiceTestSimple(t *testing.T) (*gorm.DB, services.GenericService
 		casdoor.Enforcer = originalEnforcer
 	})
 
-	service := services.NewGenericService(db)
+	service := services.NewGenericService(db, nil)
 
 	// Register entity with conversion functions
 	ems.GlobalEntityRegistrationService.RegisterEntityInterface("HookTestEntity", HookTestEntitySimple{})
@@ -466,4 +466,225 @@ func TestHooksSimple_ConcurrentExecution(t *testing.T) {
 
 	assert.Equal(t, numGoroutines, hook.GetExecutedCount())
 	t.Logf("✅ Hook executed %d times concurrently", hook.GetExecutedCount())
+}
+
+// ============================================================================
+// Error Tracking Tests
+// ============================================================================
+
+func TestHooksSimple_ErrorTracking_AsyncHookFailure(t *testing.T) {
+	_, service, registry := setupHookServiceTestSimple(t)
+
+	// Disable test mode to allow async execution
+	registry.SetTestMode(false)
+
+	// Register a failing after-create hook
+	failingHook := NewSimpleFailingHook("failing-after-create", "HookTestEntity", []hooks.HookType{hooks.AfterCreate})
+	registry.RegisterHook(failingHook)
+
+	// Clear any previous errors
+	registry.ClearErrors()
+
+	// Create entity (should succeed even if after-hook fails)
+	entity := &HookTestEntitySimple{
+		Name:   "Test Entity",
+		Value:  42,
+		Status: "active",
+	}
+
+	createdEntity, err := service.CreateEntity(entity, "HookTestEntity")
+	require.NoError(t, err, "Entity creation should succeed even if after-hook fails")
+
+	// Wait for async hook to execute
+	time.Sleep(200 * time.Millisecond)
+
+	// Check that error was recorded
+	errors := registry.GetRecentErrors(0)
+	require.Len(t, errors, 1, "Should have 1 recorded error")
+
+	hookError := errors[0]
+	assert.Equal(t, "failing-after-create", hookError.HookName)
+	assert.Equal(t, "HookTestEntity", hookError.EntityName)
+	assert.Equal(t, hooks.AfterCreate, hookError.HookType)
+	assert.Contains(t, hookError.Error, "hook execution failed")
+	assert.NotNil(t, hookError.Timestamp)
+	assert.Equal(t, createdEntity.(*HookTestEntitySimple).ID, hookError.EntityID)
+
+	t.Logf("✅ Async hook error tracked: %+v", hookError)
+}
+
+func TestHooksSimple_ErrorTracking_MultipleErrors(t *testing.T) {
+	_, service, registry := setupHookServiceTestSimple(t)
+
+	registry.SetTestMode(false)
+	registry.ClearErrors()
+
+	// Register failing after-create hook
+	afterCreateHook := NewSimpleFailingHook("fail-create", "HookTestEntity", []hooks.HookType{hooks.AfterCreate})
+	registry.RegisterHook(afterCreateHook)
+
+	// Create multiple entities to generate multiple errors
+	for i := 0; i < 3; i++ {
+		entity := &HookTestEntitySimple{Name: fmt.Sprintf("Test %d", i), Value: i, Status: "active"}
+		service.CreateEntity(entity, "HookTestEntity")
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Check all errors recorded
+	errors := registry.GetRecentErrors(0)
+	assert.Len(t, errors, 3, "Should have 3 errors from 3 creates")
+
+	for _, err := range errors {
+		assert.Equal(t, "fail-create", err.HookName)
+		assert.Equal(t, hooks.AfterCreate, err.HookType)
+		assert.Contains(t, err.Error, "hook execution failed")
+	}
+
+	t.Logf("✅ Tracked %d errors from multiple operations", len(errors))
+}
+
+func TestHooksSimple_ErrorTracking_GetRecentErrors(t *testing.T) {
+	registry := hooks.NewHookRegistry()
+	registry.SetTestMode(false)
+
+	// Register ONE failing hook
+	failingHook := NewSimpleFailingHook("test-hook", "TestEntity", []hooks.HookType{hooks.AfterCreate})
+	registry.RegisterHook(failingHook)
+
+	// Execute it 10 times to generate 10 errors
+	for i := 0; i < 10; i++ {
+		ctx := &hooks.HookContext{
+			EntityName: "TestEntity",
+			HookType:   hooks.AfterCreate,
+			EntityID:   fmt.Sprintf("entity-%d", i),
+		}
+		registry.ExecuteHooks(ctx)
+	}
+
+	t.Run("Get All Errors", func(t *testing.T) {
+		errors := registry.GetRecentErrors(0)
+		assert.Len(t, errors, 10)
+		t.Logf("✅ Retrieved all %d errors", len(errors))
+	})
+
+	t.Run("Get Last 5 Errors", func(t *testing.T) {
+		errors := registry.GetRecentErrors(5)
+		assert.Len(t, errors, 5)
+		t.Logf("✅ Retrieved last 5 errors")
+	})
+
+	t.Run("Get More Than Available", func(t *testing.T) {
+		errors := registry.GetRecentErrors(20)
+		assert.Len(t, errors, 10, "Should return all available errors")
+		t.Logf("✅ Requested 20, got %d available errors", len(errors))
+	})
+}
+
+func TestHooksSimple_ErrorTracking_CircularBuffer(t *testing.T) {
+	registry := hooks.NewHookRegistry()
+	registry.SetTestMode(false)
+
+	// Register ONE failing hook
+	failingHook := NewSimpleFailingHook("test-hook", "TestEntity", []hooks.HookType{hooks.AfterCreate})
+	registry.RegisterHook(failingHook)
+
+	// Create more errors than the buffer can hold (default 100)
+	for i := 0; i < 150; i++ {
+		ctx := &hooks.HookContext{
+			EntityName: "TestEntity",
+			HookType:   hooks.AfterCreate,
+			EntityID:   fmt.Sprintf("entity-%d", i),
+		}
+		registry.ExecuteHooks(ctx)
+	}
+
+	errors := registry.GetRecentErrors(0)
+	assert.LessOrEqual(t, len(errors), 100, "Should not exceed max buffer size")
+	t.Logf("✅ Circular buffer maintained, storing %d errors (max 100)", len(errors))
+}
+
+func TestHooksSimple_ErrorTracking_ClearErrors(t *testing.T) {
+	registry := hooks.NewHookRegistry()
+	registry.SetTestMode(false)
+
+	// Register ONE failing hook
+	failingHook := NewSimpleFailingHook("test-hook", "TestEntity", []hooks.HookType{hooks.AfterCreate})
+	registry.RegisterHook(failingHook)
+
+	// Add some errors
+	for i := 0; i < 5; i++ {
+		ctx := &hooks.HookContext{
+			EntityName: "TestEntity",
+			HookType:   hooks.AfterCreate,
+			EntityID:   fmt.Sprintf("entity-%d", i),
+		}
+		registry.ExecuteHooks(ctx)
+	}
+
+	assert.Len(t, registry.GetRecentErrors(0), 5, "Should have 5 errors")
+
+	registry.ClearErrors()
+
+	assert.Len(t, registry.GetRecentErrors(0), 0, "Should have 0 errors after clear")
+	t.Logf("✅ Errors cleared successfully")
+}
+
+func TestHooksSimple_ErrorTracking_Callback(t *testing.T) {
+	registry := hooks.NewHookRegistry()
+	registry.SetTestMode(false)
+
+	// Track callback invocations
+	var callbackErrors []hooks.HookError
+	var mu sync.Mutex
+
+	registry.SetErrorCallback(func(err *hooks.HookError) {
+		mu.Lock()
+		defer mu.Unlock()
+		callbackErrors = append(callbackErrors, *err)
+	})
+
+	// Add error
+	ctx := &hooks.HookContext{
+		EntityName: "TestEntity",
+		HookType:   hooks.AfterCreate,
+		EntityID:   "test-123",
+	}
+
+	failingHook := NewSimpleFailingHook("callback-test-hook", "TestEntity", []hooks.HookType{hooks.AfterCreate})
+	registry.RegisterHook(failingHook)
+	registry.ExecuteHooks(ctx)
+
+	// Wait for async callback
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	assert.Len(t, callbackErrors, 1, "Callback should be invoked once")
+	assert.Equal(t, "callback-test-hook", callbackErrors[0].HookName)
+	assert.Equal(t, "test-123", callbackErrors[0].EntityID)
+
+	t.Logf("✅ Error callback invoked: %+v", callbackErrors[0])
+}
+
+func TestHooksSimple_ErrorTracking_BeforeHooksNotTracked(t *testing.T) {
+	registry := hooks.NewHookRegistry()
+	registry.ClearErrors()
+
+	// Before hooks should NOT be tracked (they're synchronous and return errors)
+	failingHook := NewSimpleFailingHook("failing-before-create", "TestEntity", []hooks.HookType{hooks.BeforeCreate})
+	registry.RegisterHook(failingHook)
+
+	ctx := &hooks.HookContext{
+		EntityName: "TestEntity",
+		HookType:   hooks.BeforeCreate,
+		EntityID:   "test-123",
+	}
+
+	registry.ExecuteHooks(ctx)
+
+	errors := registry.GetRecentErrors(0)
+	assert.Len(t, errors, 0, "Before hooks should not be tracked in error buffer")
+
+	t.Logf("✅ Before hooks correctly not tracked (they return errors synchronously)")
 }

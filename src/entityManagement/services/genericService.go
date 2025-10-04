@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 	"reflect"
-	"soli/formations/src/auth/casdoor"
+	authInterfaces "soli/formations/src/auth/interfaces"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/entityManagement/repositories"
 	"soli/formations/src/entityManagement/utils"
@@ -36,11 +36,15 @@ type GenericService interface {
 
 type genericService struct {
 	genericRepository repositories.GenericRepository
+	enforcer          authInterfaces.EnforcerInterface
 }
 
-func NewGenericService(db *gorm.DB) GenericService {
+// NewGenericService creates a new generic service with the given database and enforcer.
+// The enforcer parameter can be nil for testing purposes.
+func NewGenericService(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) GenericService {
 	return &genericService{
 		genericRepository: repositories.NewGenericRepository(db),
+		enforcer:          enforcer,
 	}
 }
 
@@ -66,6 +70,7 @@ func (g *genericService) CreateEntity(inputDto interface{}, entityName string) (
 		EntityName: entityName,
 		HookType:   hooks.AfterCreate,
 		NewEntity:  entity,
+		EntityID:   g.ExtractUuidFromReflectEntity(entity),
 		Context:    context.Background(),
 	}
 
@@ -351,18 +356,18 @@ func (g *genericService) GetEntityFromResult(entityName string, item interface{}
 
 func (g *genericService) AddDefaultAccessesForEntity(resourceName string, entity interface{}, userId string) error {
 	// Skip enforcer setup if not initialized (e.g., in tests)
-	if casdoor.Enforcer == nil {
+	if g.enforcer == nil {
 		return nil
 	}
 
-	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
+	errPolicyLoading := g.enforcer.LoadPolicy()
 	if errPolicyLoading != nil {
 		return errPolicyLoading
 	}
 
 	entityUuid := g.ExtractUuidFromReflectEntity(entity)
 
-	_, errAddingPolicy := casdoor.Enforcer.AddPolicy(userId, "/api/v1/"+resourceName+"/"+entityUuid.String(), "(GET|DELETE|PATCH|PUT)")
+	_, errAddingPolicy := g.enforcer.AddPolicy(userId, "/api/v1/"+resourceName+"/"+entityUuid.String(), "(GET|DELETE|PATCH|PUT)")
 	if errAddingPolicy != nil {
 		return errAddingPolicy
 	}

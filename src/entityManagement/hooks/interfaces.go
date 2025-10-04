@@ -107,6 +107,15 @@ type HookRegistry interface {
 
 	// IsTestMode returns whether test mode is enabled
 	IsTestMode() bool
+
+	// GetRecentErrors returns recent async hook errors (up to maxErrors, 0 = all)
+	GetRecentErrors(maxErrors int) []HookError
+
+	// ClearErrors clears the error history
+	ClearErrors()
+
+	// SetErrorCallback sets a callback to be invoked when async hooks fail
+	SetErrorCallback(callback HookErrorCallback)
 }
 
 // AsyncHook pour les hooks qui peuvent être exécutés en arrière-plan
@@ -120,3 +129,16 @@ type ConditionalHook interface {
 	Hook
 	ShouldExecute(ctx *HookContext) bool
 }
+
+// HookError represents an error that occurred during hook execution
+type HookError struct {
+	HookName   string      `json:"hook_name"`
+	EntityName string      `json:"entity_name"`
+	HookType   HookType    `json:"hook_type"`
+	Error      string      `json:"error"`
+	Timestamp  int64       `json:"timestamp"` // Unix timestamp
+	EntityID   interface{} `json:"entity_id,omitempty"`
+}
+
+// HookErrorCallback is called when an async hook fails
+type HookErrorCallback func(error *HookError)
