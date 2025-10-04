@@ -50,6 +50,7 @@ WORKDIR /home/ocf
 COPY --from=builder /usr/src/ocf-core/ocf ocf
 COPY --from=builder /usr/src/ocf-core/src/configuration/keymatch_model.conf src/configuration/keymatch_model.conf
 COPY --from=builder /usr/src/ocf-core/token_jwt_key.pem token_jwt_key.pem
+COPY --from=builder /usr/src/ocf-core/VERSION VERSION
 
 
 # Export ports

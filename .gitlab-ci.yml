@@ -25,8 +25,8 @@ check:version:
     - apk add --no-cache git curl
   script:
     - |
-      # Get current version from .env file
-      CURRENT_VERSION=$(grep "^OCF_VERSION=" .env | cut -d'=' -f2)
+      # Get current version from VERSION file
+      CURRENT_VERSION=$(cat VERSION | tr -d '[:space:]')
       echo "Current version in code: $CURRENT_VERSION"
 
       # Get latest git tag using GitLab API
