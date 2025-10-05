@@ -40,13 +40,17 @@
                 "--course-repo",
                 "git@usine.solution-libre.fr:open-course-factory/ocf-course-virtu-cloud-beginner.git",
                 "-t",
-                "sdv",
+                "mds",
                 "--theme-repo",
-                "git@usine.solution-libre.fr:open-course-factory/ocf-slidev-theme-sdv.git",
+                "git@usine.solution-libre.fr:open-course-factory/ocf-slidev-theme-mds.git",
                 "-e",
                 "html",
                 "--course-repo-branch",
-                "main"
+                "main",
+                "--user-id",
+                "153bf43c-8114-4f9a-a759-c8fbb283f137",
+                "--author",
+                "tsa"
             ],
             "env": {}
         }

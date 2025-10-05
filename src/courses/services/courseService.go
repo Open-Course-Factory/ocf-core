@@ -312,10 +312,10 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 // Méthodes existantes conservées pour compatibilité...
 
 func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) (*models.Course, error) {
-	// Implementation existante conservée
-	log.Printf("git clone %s", courseURL)
+	// Use cached clone for better performance
+	log.Printf("Loading course from repository: %s (branch: %s)", courseURL, courseBranch)
 
-	fs, cloneErr := models.GitClone(ownerId, courseURL, courseBranch)
+	fs, cloneErr := models.GitCloneWithCache(ownerId, courseURL, courseBranch)
 	if cloneErr != nil {
 		return nil, cloneErr
 	}

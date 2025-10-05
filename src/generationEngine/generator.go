@@ -13,6 +13,7 @@ type CourseGenerationEngine interface {
 	Run(course *models.Course) error
 	CompileResources(c *models.Course) error
 	GetPublicDir() string
+	ExportPDF(course *models.Course) error
 }
 
 var SLIDE_ENGINE CourseGenerationEngine
