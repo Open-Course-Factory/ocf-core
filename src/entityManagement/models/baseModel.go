@@ -16,7 +16,14 @@ type BaseModel struct {
 
 func (b *BaseModel) BeforeCreate(tx *gorm.DB) (err error) {
 	if b.ID == uuid.Nil {
-		b.ID = uuid.New()
+		// Use UUIDv7 for time-ordered, sortable IDs (required for cursor pagination)
+		// UUIDv7 contains a timestamp in the first 48 bits, making it naturally sortable
+		// This ensures "WHERE id > cursor ORDER BY id ASC" works correctly
+		b.ID, err = uuid.NewV7()
+		if err != nil {
+			// Fallback to random UUID if v7 generation fails (should never happen)
+			b.ID = uuid.New()
+		}
 	}
 
 	return
