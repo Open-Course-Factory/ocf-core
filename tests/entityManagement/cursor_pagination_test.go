@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/google/uuid"
@@ -51,7 +52,7 @@ func TestCursorPagination_FirstPage(t *testing.T) {
 	}
 
 	// Request first page with limit 5
-	results, nextCursor, hasMore, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]interface{}{}, nil)
+	results, nextCursor, hasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]interface{}{}, nil)
 
 	// Assertions
 	assert.NoError(t, err)
@@ -87,12 +88,12 @@ func TestCursorPagination_SecondPage(t *testing.T) {
 	}
 
 	// Get first page
-	_, firstCursor, firstHasMore, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]interface{}{}, nil)
+	_, firstCursor, firstHasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]interface{}{}, nil)
 	require.NoError(t, err)
 	require.True(t, firstHasMore)
 
 	// Get second page using cursor
-	results, secondCursor, secondHasMore, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, firstCursor, 5, map[string]interface{}{}, nil)
+	results, secondCursor, secondHasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, firstCursor, 5, map[string]interface{}{}, nil)
 
 	// Assertions
 	assert.NoError(t, err)
@@ -120,12 +121,12 @@ func TestCursorPagination_LastPageIncomplete(t *testing.T) {
 	}
 
 	// Get first page (5 items)
-	_, firstCursor, firstHasMore, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]interface{}{}, nil)
+	_, firstCursor, firstHasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]interface{}{}, nil)
 	require.NoError(t, err)
 	require.True(t, firstHasMore)
 
 	// Get second page (should have only 2 items)
-	results, nextCursor, hasMore, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, firstCursor, 5, map[string]interface{}{}, nil)
+	results, nextCursor, hasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, firstCursor, 5, map[string]interface{}{}, nil)
 
 	// Assertions
 	assert.NoError(t, err)
@@ -141,7 +142,7 @@ func TestCursorPagination_InvalidCursor(t *testing.T) {
 	repo := repositories.NewGenericRepository(db)
 
 	// Try with invalid cursor
-	_, _, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "invalid-cursor", 5, map[string]interface{}{}, nil)
+	_, _, _, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "invalid-cursor", 5, map[string]interface{}{}, nil)
 
 	// Should return error
 	assert.Error(t, err)
@@ -165,7 +166,7 @@ func TestCursorPagination_WithFilters(t *testing.T) {
 
 	// Filter by value = 0 (should return 5 entities)
 	filters := map[string]interface{}{"value": 0}
-	results, nextCursor, hasMore, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 3, filters, nil)
+	results, nextCursor, hasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 3, filters, nil)
 
 	// Assertions
 	assert.NoError(t, err)
@@ -179,7 +180,7 @@ func TestCursorPagination_WithFilters(t *testing.T) {
 	}
 
 	// Get next page
-	results2, _, hasMore2, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, nextCursor, 3, filters, nil)
+	results2, _, hasMore2, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, nextCursor, 3, filters, nil)
 	assert.NoError(t, err)
 	entitiesSlice2 := results2[0].([]CursorTestEntity)
 	assert.Len(t, entitiesSlice2, 2) // Remaining 2
@@ -192,7 +193,7 @@ func TestCursorPagination_EmptyResults(t *testing.T) {
 	repo := repositories.NewGenericRepository(db)
 
 	// No entities created
-	results, nextCursor, hasMore, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]interface{}{}, nil)
+	results, nextCursor, hasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]interface{}{}, nil)
 
 	// Assertions
 	assert.NoError(t, err)
@@ -258,8 +259,8 @@ func TestIntegration_CursorPagination_HTTP(t *testing.T) {
 		pageCount := 0
 
 		for {
-			url := "/api/v1/integration-test-entities?cursor=" + cursor + "&limit=4"
-			req := httptest.NewRequest(http.MethodGet, url, nil)
+			requestURL := "/api/v1/integration-test-entities?cursor=" + url.QueryEscape(cursor) + "&limit=4"
+			req := httptest.NewRequest(http.MethodGet, requestURL, nil)
 			w := httptest.NewRecorder()
 
 			suite.router.ServeHTTP(w, req)

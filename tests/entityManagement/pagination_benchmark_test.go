@@ -86,7 +86,7 @@ func BenchmarkCursorPagination_FirstPage(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, _, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, "", 20, map[string]interface{}{}, nil)
+		_, _, _, _, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, "", 20, map[string]interface{}{}, nil)
 		if err != nil {
 			b.Fatalf("Error: %v", err)
 		}
@@ -100,7 +100,7 @@ func BenchmarkCursorPagination_Page250(b *testing.B) {
 	// Navigate to page 250 to get the cursor
 	cursor := ""
 	for page := 0; page < 250; page++ {
-		_, nextCursor, _, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, cursor, 20, map[string]interface{}{}, nil)
+		_, nextCursor, _, _, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, cursor, 20, map[string]interface{}{}, nil)
 		if err != nil {
 			b.Fatalf("Setup error: %v", err)
 		}
@@ -110,7 +110,7 @@ func BenchmarkCursorPagination_Page250(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// Fetching with cursor only scans 20 rows, not 4,980!
-		_, _, _, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, cursor, 20, map[string]interface{}{}, nil)
+		_, _, _, _, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, cursor, 20, map[string]interface{}{}, nil)
 		if err != nil {
 			b.Fatalf("Error: %v", err)
 		}
@@ -124,7 +124,7 @@ func BenchmarkCursorPagination_Page500(b *testing.B) {
 	// Navigate to page 500 to get the cursor
 	cursor := ""
 	for page := 0; page < 500; page++ {
-		_, nextCursor, _, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, cursor, 20, map[string]interface{}{}, nil)
+		_, nextCursor, _, _, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, cursor, 20, map[string]interface{}{}, nil)
 		if err != nil {
 			b.Fatalf("Setup error: %v", err)
 		}
@@ -134,7 +134,7 @@ func BenchmarkCursorPagination_Page500(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// Fetching with cursor only scans 20 rows, not 9,980!
-		_, _, _, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, cursor, 20, map[string]interface{}{}, nil)
+		_, _, _, _, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, cursor, 20, map[string]interface{}{}, nil)
 		if err != nil {
 			b.Fatalf("Error: %v", err)
 		}
@@ -165,7 +165,7 @@ func BenchmarkSequentialTraversal_Cursor(b *testing.B) {
 		// Traverse all pages using cursor
 		cursor := ""
 		for {
-			_, nextCursor, hasMore, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, cursor, 20, map[string]interface{}{}, nil)
+			_, nextCursor, hasMore, _, err := repo.GetAllEntitiesCursor(BenchmarkEntity{}, cursor, 20, map[string]interface{}{}, nil)
 			if err != nil {
 				b.Fatalf("Error: %v", err)
 			}

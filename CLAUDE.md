@@ -2,6 +2,32 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Development Environment
+
+**IMPORTANT**: This project runs in a Docker Dev Container with Docker-in-Docker (DinD) enabled. All Docker commands execute within the dev container and can start/stop services via docker-compose.
+
+- Dev container has full docker and docker-compose access
+- Services (postgres, casdoor, etc.) run as sibling containers
+- Network: `devcontainer-network` for dev services, `test-network` for test services
+- Port mapping: Host -> Dev Container -> Service Container
+
+### Database Configuration
+
+**Development Database** (`.env`):
+- Host: `postgres` (sibling container via docker-compose.yml)
+- Port: 5432
+- Database: `ocf`
+
+**Test Database** (`.env.test`):
+- **Functional tests** (auth, integration): Use the same dev postgres sibling container
+  - Host: `postgres` (NOT `localhost`)
+  - Port: 5432
+  - Database: `ocf_test`
+- **Unit tests** (entity management): Use in-memory SQLite
+  - No external database required
+
+The dev postgres container is shared between development and functional tests, with separate databases (`ocf` vs `ocf_test`) for isolation.
+
 ## Project Overview
 
 OCF Core is the core API for Open Course Factory, a platform for building and generating courses with integrated labs and environments. The system supports both Marp and Slidev presentation engines, with a focus on reusable course content and templating systems.

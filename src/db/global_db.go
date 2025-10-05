@@ -34,12 +34,13 @@ func InitDBConnection(envFile string) {
 		db := os.Getenv("POSTGRES_DB")
 
 		host := os.Getenv("POSTGRES_HOST")
+		port := os.Getenv("POSTGRES_PORT")
 		user := os.Getenv("POSTGRES_USER")
 		passwd := os.Getenv("POSTGRES_PASSWORD")
 
 		connectionString := fmt.Sprintf(
-			"host=%s user=%s dbname=%s password=%s",
-			host, user, db, passwd,
+			"host=%s port=%s user=%s dbname=%s password=%s",
+			host, port, user, db, passwd,
 		)
 
 		DB, _ = gorm.Open(postgres.Open(connectionString), &gorm.Config{

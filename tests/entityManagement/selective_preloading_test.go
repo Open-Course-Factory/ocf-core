@@ -303,7 +303,7 @@ func TestSelectivePreloading_GetEntitiesCursor_WithIncludes(t *testing.T) {
 
 	// Get courses with cursor pagination and Chapters included
 	entityInterface := service.GetEntityModelInterface("Course")
-	results, _, hasMore, err := service.GetEntitiesCursor(entityInterface, "", 10, map[string]interface{}{}, []string{"Chapters"})
+	results, _, hasMore, _, err := service.GetEntitiesCursor(entityInterface, "", 10, map[string]interface{}{}, []string{"Chapters"})
 	require.NoError(t, err)
 
 	// Verify we got results

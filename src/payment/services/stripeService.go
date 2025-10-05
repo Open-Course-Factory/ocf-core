@@ -2,10 +2,10 @@
 package services
 
 import (
-	"soli/formations/src/auth/casdoor"
 	"encoding/json"
 	"fmt"
 	"os"
+	"soli/formations/src/auth/casdoor"
 	"time"
 
 	"soli/formations/src/payment/dto"
@@ -59,14 +59,14 @@ type FailedInvoice struct {
 }
 
 type SyncPaymentMethodsResult struct {
-	ProcessedPaymentMethods int                    `json:"processed_payment_methods"`
-	CreatedPaymentMethods   int                    `json:"created_payment_methods"`
-	UpdatedPaymentMethods   int                    `json:"updated_payment_methods"`
-	SkippedPaymentMethods   int                    `json:"skipped_payment_methods"`
-	FailedPaymentMethods    []FailedPaymentMethod  `json:"failed_payment_methods"`
-	CreatedDetails          []string               `json:"created_details"`
-	UpdatedDetails          []string               `json:"updated_details"`
-	SkippedDetails          []string               `json:"skipped_details"`
+	ProcessedPaymentMethods int                   `json:"processed_payment_methods"`
+	CreatedPaymentMethods   int                   `json:"created_payment_methods"`
+	UpdatedPaymentMethods   int                   `json:"updated_payment_methods"`
+	SkippedPaymentMethods   int                   `json:"skipped_payment_methods"`
+	FailedPaymentMethods    []FailedPaymentMethod `json:"failed_payment_methods"`
+	CreatedDetails          []string              `json:"created_details"`
+	UpdatedDetails          []string              `json:"updated_details"`
+	SkippedDetails          []string              `json:"skipped_details"`
 }
 
 type FailedPaymentMethod struct {
@@ -743,7 +743,7 @@ func (ss *stripeService) processSingleSubscription(sub *stripe.Subscription, res
 		result.SkippedSubscriptions++
 		result.SkippedDetails = append(result.SkippedDetails,
 			fmt.Sprintf("Subscription %s: %s", sub.ID, err))
-		return fmt.Errorf(err)
+		return fmt.Errorf("%s", err)
 	}
 
 	planID, err := uuid.Parse(planIDStr)
@@ -752,7 +752,7 @@ func (ss *stripeService) processSingleSubscription(sub *stripe.Subscription, res
 		result.SkippedSubscriptions++
 		result.SkippedDetails = append(result.SkippedDetails,
 			fmt.Sprintf("Subscription %s: %s", sub.ID, errMsg))
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	// Vérifier si l'abonnement existe déjà dans notre base
@@ -1022,7 +1022,7 @@ func (ss *stripeService) processSingleInvoice(inv *stripe.Invoice, userID string
 		result.SkippedInvoices++
 		result.SkippedDetails = append(result.SkippedDetails,
 			fmt.Sprintf("Invoice %s: %s", inv.ID, errMsg))
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	// Vérifier si la facture existe déjà dans notre base

@@ -67,9 +67,9 @@ func (m *MockGenericRepository) GetAllEntities(data any, page int, pageSize int,
 	return args.Get(0).([]any), args.Get(1).(int64), args.Error(2)
 }
 
-func (m *MockGenericRepository) GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]interface{}, includes []string) ([]any, string, bool, error) {
+func (m *MockGenericRepository) GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]interface{}, includes []string) ([]any, string, bool, int64, error) {
 	args := m.Called(data, cursor, limit, filters, includes)
-	return args.Get(0).([]any), args.Get(1).(string), args.Get(2).(bool), args.Error(3)
+	return args.Get(0).([]any), args.Get(1).(string), args.Get(2).(bool), args.Get(3).(int64), args.Error(4)
 }
 
 func (m *MockGenericRepository) EditEntity(id uuid.UUID, entityName string, entity any, data any) error {
@@ -110,7 +110,7 @@ func (g *mockGenericService) GetEntities(data interface{}, page int, pageSize in
 	return g.repository.GetAllEntities(data, page, pageSize, filters, includes)
 }
 
-func (g *mockGenericService) GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}, includes []string) ([]interface{}, string, bool, error) {
+func (g *mockGenericService) GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}, includes []string) ([]interface{}, string, bool, int64, error) {
 	return g.repository.GetAllEntitiesCursor(data, cursor, limit, filters, includes)
 }
 
