@@ -301,7 +301,7 @@ func (ss *subscriptionService) GetSubscriptionAnalytics() (*SubscriptionAnalytic
 
 // GetRequiredRoleForPlan récupère le rôle requis pour un plan
 func (ss *subscriptionService) GetRequiredRoleForPlan(planID uuid.UUID) (string, error) {
-	planEntity, err := ss.genericService.GetEntity(planID, models.SubscriptionPlan{}, "SubscriptionPlan")
+	planEntity, err := ss.genericService.GetEntity(planID, models.SubscriptionPlan{}, "SubscriptionPlan", nil)
 	if err != nil {
 		return "", err
 	}
@@ -321,7 +321,7 @@ func (ss *subscriptionService) SetDefaultBillingAddress(userID string, addressID
 
 // GetSubscriptionPlan récupère un plan par son ID
 func (ss *subscriptionService) GetSubscriptionPlan(id uuid.UUID) (*models.SubscriptionPlan, error) {
-	planEntity, err := ss.genericService.GetEntity(id, models.SubscriptionPlan{}, "SubscriptionPlan")
+	planEntity, err := ss.genericService.GetEntity(id, models.SubscriptionPlan{}, "SubscriptionPlan", nil)
 	if err != nil {
 		return nil, err
 	}

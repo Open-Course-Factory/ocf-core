@@ -57,18 +57,18 @@ func (m *MockGenericRepository) SaveEntity(entity any) (any, error) {
 	return args.Get(0), args.Error(1)
 }
 
-func (m *MockGenericRepository) GetEntity(id uuid.UUID, data any, entityName string) (any, error) {
-	args := m.Called(id, data, entityName)
+func (m *MockGenericRepository) GetEntity(id uuid.UUID, data any, entityName string, includes []string) (any, error) {
+	args := m.Called(id, data, entityName, includes)
 	return args.Get(0), args.Error(1)
 }
 
-func (m *MockGenericRepository) GetAllEntities(data any, page int, pageSize int, filters map[string]interface{}) ([]any, int64, error) {
-	args := m.Called(data, page, pageSize, filters)
+func (m *MockGenericRepository) GetAllEntities(data any, page int, pageSize int, filters map[string]interface{}, includes []string) ([]any, int64, error) {
+	args := m.Called(data, page, pageSize, filters, includes)
 	return args.Get(0).([]any), args.Get(1).(int64), args.Error(2)
 }
 
-func (m *MockGenericRepository) GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]interface{}) ([]any, string, bool, error) {
-	args := m.Called(data, cursor, limit, filters)
+func (m *MockGenericRepository) GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]interface{}, includes []string) ([]any, string, bool, error) {
+	args := m.Called(data, cursor, limit, filters, includes)
 	return args.Get(0).([]any), args.Get(1).(string), args.Get(2).(bool), args.Error(3)
 }
 
@@ -102,16 +102,16 @@ func (g *mockGenericService) SaveEntity(entity interface{}) (interface{}, error)
 	return g.repository.SaveEntity(entity)
 }
 
-func (g *mockGenericService) GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error) {
-	return g.repository.GetEntity(id, data, entityName)
+func (g *mockGenericService) GetEntity(id uuid.UUID, data interface{}, entityName string, includes []string) (interface{}, error) {
+	return g.repository.GetEntity(id, data, entityName, includes)
 }
 
-func (g *mockGenericService) GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}) ([]interface{}, int64, error) {
-	return g.repository.GetAllEntities(data, page, pageSize, filters)
+func (g *mockGenericService) GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}, includes []string) ([]interface{}, int64, error) {
+	return g.repository.GetAllEntities(data, page, pageSize, filters, includes)
 }
 
-func (g *mockGenericService) GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}) ([]interface{}, string, bool, error) {
-	return g.repository.GetAllEntitiesCursor(data, cursor, limit, filters)
+func (g *mockGenericService) GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}, includes []string) ([]interface{}, string, bool, error) {
+	return g.repository.GetAllEntitiesCursor(data, cursor, limit, filters, includes)
 }
 
 func (g *mockGenericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error {
@@ -299,10 +299,10 @@ func TestGenericService_GetEntity_Success(t *testing.T) {
 	expectedEntity := &TestEntityWithBaseModel{Name: "Retrieved Entity"}
 
 	// Mock expectations
-	mockRepo.On("GetEntity", entityID, entityData, "TestEntity").Return(expectedEntity, nil)
+	mockRepo.On("GetEntity", entityID, entityData, "TestEntity", mock.Anything).Return(expectedEntity, nil)
 
 	// Execute
-	result, err := service.GetEntity(entityID, entityData, "TestEntity")
+	result, err := service.GetEntity(entityID, entityData, "TestEntity", nil)
 
 	// Assert
 	assert.NoError(t, err)
@@ -319,10 +319,10 @@ func TestGenericService_GetEntity_NotFound(t *testing.T) {
 	entityData := TestEntityWithBaseModel{}
 
 	// Mock expectations
-	mockRepo.On("GetEntity", entityID, entityData, "TestEntity").Return(nil, gorm.ErrRecordNotFound)
+	mockRepo.On("GetEntity", entityID, entityData, "TestEntity", mock.Anything).Return(nil, gorm.ErrRecordNotFound)
 
 	// Execute
-	result, err := service.GetEntity(entityID, entityData, "TestEntity")
+	result, err := service.GetEntity(entityID, entityData, "TestEntity", nil)
 
 	// Assert
 	assert.Error(t, err)
@@ -343,10 +343,10 @@ func TestGenericService_GetEntities_Success(t *testing.T) {
 	}
 
 	// Mock expectations
-	mockRepo.On("GetAllEntities", entityData, 1, 20, map[string]interface{}{}).Return(expectedEntities, int64(2), nil)
+	mockRepo.On("GetAllEntities", entityData, 1, 20, map[string]interface{}{}, mock.Anything).Return(expectedEntities, int64(2), nil)
 
 	// Execute
-	result, total, err := service.GetEntities(entityData, 1, 20, map[string]interface{}{})
+	result, total, err := service.GetEntities(entityData, 1, 20, map[string]interface{}{}, nil)
 
 	// Assert
 	assert.NoError(t, err)
@@ -440,7 +440,7 @@ func TestGenericService_Integration_CreateAndRetrieve(t *testing.T) {
 	assert.NotEqual(t, uuid.Nil, entityWithBaseModel.ID)
 
 	// Retrieve
-	retrievedEntity, err := service.GetEntity(entityWithBaseModel.ID, TestEntityWithBaseModel{}, "TestEntityWithBaseModel")
+	retrievedEntity, err := service.GetEntity(entityWithBaseModel.ID, TestEntityWithBaseModel{}, "TestEntityWithBaseModel", nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, retrievedEntity)
 
@@ -468,7 +468,7 @@ func TestGenericService_Integration_FullCRUD(t *testing.T) {
 	entityID := entityWithBaseModel.ID
 
 	// READ
-	retrievedEntity, err := service.GetEntity(entityID, TestEntityWithBaseModel{}, "TestEntityWithBaseModel")
+	retrievedEntity, err := service.GetEntity(entityID, TestEntityWithBaseModel{}, "TestEntityWithBaseModel", nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "CRUD Test", retrievedEntity.(*TestEntityWithBaseModel).Name)
 
@@ -478,7 +478,7 @@ func TestGenericService_Integration_FullCRUD(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify update
-	updatedEntity, err := service.GetEntity(entityID, TestEntityWithBaseModel{}, "TestEntityWithBaseModel")
+	updatedEntity, err := service.GetEntity(entityID, TestEntityWithBaseModel{}, "TestEntityWithBaseModel", nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "Updated CRUD Test", updatedEntity.(*TestEntityWithBaseModel).Name)
 
@@ -491,7 +491,7 @@ func TestGenericService_Integration_FullCRUD(t *testing.T) {
 	}
 
 	// Verify deletion
-	entity, err := service.GetEntity(entityID, TestEntityWithBaseModel{}, "TestEntityWithBaseModel")
+	entity, err := service.GetEntity(entityID, TestEntityWithBaseModel{}, "TestEntityWithBaseModel", nil)
 	assert.Error(t, err)
 
 	fmt.Println(entity)

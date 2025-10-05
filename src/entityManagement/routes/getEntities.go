@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"soli/formations/src/auth/errors"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,15 +27,37 @@ type CursorPaginationResponse struct {
 	NextCursor string        `json:"nextCursor,omitempty"` // Base64-encoded cursor for next page
 	HasMore    bool          `json:"hasMore"`              // Indicates if more results exist
 	Limit      int           `json:"limit"`                // Number of items per page
+	Total      int64         `json:"total"`                // Total count of all items matching the query/filters
 }
 
+// GetEntities handles GET requests for entity lists with pagination and selective preloading
+//
+//	@Param	page	query	int		false	"Page number (offset pagination, default: 1)"
+//	@Param	size	query	int		false	"Page size (offset pagination, default: 20, max: 100)"
+//	@Param	cursor	query	string	false	"Cursor for cursor-based pagination (use empty string for first page)"
+//	@Param	limit	query	int		false	"Limit for cursor pagination (default: 20, max: 100)"
+//	@Param	include	query	string	false	"Comma-separated list of relations to preload (e.g., 'Chapters,Authors' or 'Chapters.Sections' for nested)"
 func (genericController genericController) GetEntities(ctx *gin.Context) {
 	// Check if cursor-based pagination is requested
 	cursor := ctx.Query("cursor")
 
-	// Extract filter parameters (all query params except pagination params)
+	// Parse include parameter for selective preloading
+	// Format: ?include=Chapters,Authors or ?include=Chapters.Sections
+	var includes []string
+	includeParam := ctx.Query("include")
+	if includeParam != "" {
+		// Split by comma and trim whitespace
+		for _, rel := range strings.Split(includeParam, ",") {
+			trimmed := strings.TrimSpace(rel)
+			if trimmed != "" {
+				includes = append(includes, trimmed)
+			}
+		}
+	}
+
+	// Extract filter parameters (all query params except pagination and include params)
 	filters := make(map[string]interface{})
-	excludedParams := map[string]bool{"page": true, "size": true, "cursor": true, "limit": true}
+	excludedParams := map[string]bool{"page": true, "size": true, "cursor": true, "limit": true, "include": true}
 	for key, values := range ctx.Request.URL.Query() {
 		if !excludedParams[key] && len(values) > 0 {
 			// Handle comma-separated values for array filters
@@ -55,7 +78,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 			limit = 20
 		}
 
-		entitiesDto, nextCursor, hasMore, err := genericController.getEntitiesCursor(ctx, cursor, limit, filters)
+		entitiesDto, nextCursor, hasMore, total, err := genericController.getEntitiesCursor(ctx, cursor, limit, filters, includes)
 		if errors.HandleError(http.StatusNotFound, err, ctx) {
 			return
 		}
@@ -65,6 +88,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 			NextCursor: nextCursor,
 			HasMore:    hasMore,
 			Limit:      limit,
+			Total:      total,
 		}
 
 		ctx.JSON(http.StatusOK, response)
@@ -83,7 +107,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 		pageSize = 20
 	}
 
-	entitiesDto, total, getEntityError := genericController.getEntities(ctx, page, pageSize, filters)
+	entitiesDto, total, getEntityError := genericController.getEntities(ctx, page, pageSize, filters, includes)
 
 	if errors.HandleError(http.StatusNotFound, getEntityError, ctx) {
 		return
@@ -105,10 +129,10 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, response)
 }
 
-func (genericController genericController) getEntities(ctx *gin.Context, page int, pageSize int, filters map[string]interface{}) ([]interface{}, int64, error) {
+func (genericController genericController) getEntities(ctx *gin.Context, page int, pageSize int, filters map[string]interface{}, includes []string) ([]interface{}, int64, error) {
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
-	entitiesDto, total, shouldReturn := genericController.getEntitiesFromName(entityName, page, pageSize, filters)
+	entitiesDto, total, shouldReturn := genericController.getEntitiesFromName(entityName, page, pageSize, filters, includes)
 	if shouldReturn {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
@@ -122,9 +146,9 @@ func (genericController genericController) getEntities(ctx *gin.Context, page in
 	return entitiesDto, total, nil
 }
 
-func (genericController genericController) getEntitiesFromName(entityName string, page int, pageSize int, filters map[string]interface{}) ([]interface{}, int64, bool) {
+func (genericController genericController) getEntitiesFromName(entityName string, page int, pageSize int, filters map[string]interface{}, includes []string) ([]interface{}, int64, bool) {
 	entityModelInterface := genericController.genericService.GetEntityModelInterface(entityName)
-	allEntitiesPages, total, err := genericController.genericService.GetEntities(entityModelInterface, page, pageSize, filters)
+	allEntitiesPages, total, err := genericController.genericService.GetEntities(entityModelInterface, page, pageSize, filters, includes)
 
 	if err != nil {
 		fmt.Println(err.Error())
@@ -139,36 +163,36 @@ func (genericController genericController) getEntitiesFromName(entityName string
 }
 
 // getEntitiesCursor retrieves entities using cursor-based pagination
-func (genericController genericController) getEntitiesCursor(ctx *gin.Context, cursor string, limit int, filters map[string]interface{}) ([]interface{}, string, bool, error) {
+func (genericController genericController) getEntitiesCursor(ctx *gin.Context, cursor string, limit int, filters map[string]interface{}, includes []string) ([]interface{}, string, bool, int64, error) {
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
-	entitiesDto, nextCursor, hasMore, shouldReturn := genericController.getEntitiesCursorFromName(entityName, cursor, limit, filters)
+	entitiesDto, nextCursor, hasMore, total, shouldReturn := genericController.getEntitiesCursorFromName(entityName, cursor, limit, filters, includes)
 	if shouldReturn {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
 			ErrorMessage: "Entities not found",
 		})
-		return nil, "", false, &errors.APIError{
+		return nil, "", false, 0, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
 			ErrorMessage: "Entities not found",
 		}
 	}
-	return entitiesDto, nextCursor, hasMore, nil
+	return entitiesDto, nextCursor, hasMore, total, nil
 }
 
 // getEntitiesCursorFromName retrieves entities by name using cursor-based pagination
-func (genericController genericController) getEntitiesCursorFromName(entityName string, cursor string, limit int, filters map[string]interface{}) ([]interface{}, string, bool, bool) {
+func (genericController genericController) getEntitiesCursorFromName(entityName string, cursor string, limit int, filters map[string]interface{}, includes []string) ([]interface{}, string, bool, int64, bool) {
 	entityModelInterface := genericController.genericService.GetEntityModelInterface(entityName)
-	allEntitiesPages, nextCursor, hasMore, err := genericController.genericService.GetEntitiesCursor(entityModelInterface, cursor, limit, filters)
+	allEntitiesPages, nextCursor, hasMore, total, err := genericController.genericService.GetEntitiesCursor(entityModelInterface, cursor, limit, filters, includes)
 
 	if err != nil {
 		fmt.Println(err.Error())
-		return nil, "", false, true
+		return nil, "", false, 0, true
 	}
 
 	entitiesDto, shouldReturn := genericController.genericService.GetDtoArrayFromEntitiesPages(allEntitiesPages, entityModelInterface, entityName)
 	if shouldReturn {
-		return nil, "", false, true
+		return nil, "", false, 0, true
 	}
-	return entitiesDto, nextCursor, hasMore, false
+	return entitiesDto, nextCursor, hasMore, total, false
 }

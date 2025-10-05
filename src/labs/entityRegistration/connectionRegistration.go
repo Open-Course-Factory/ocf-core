@@ -25,11 +25,11 @@ func (s ConnectionRegistration) EntityModelToEntityOutput(input any) (any, error
 
 func connectionPtrModelToConnectionOutputDto(connectionModel *models.Connection) (*dto.ConnectionOutput, error) {
 	repo := entityManagementRepository.NewGenericRepository(sqldb.DB)
-	machine, errorGettingMachine := repo.GetEntity(connectionModel.MachineID, models.Machine{}, "Machine")
+	machine, errorGettingMachine := repo.GetEntity(connectionModel.MachineID, models.Machine{}, "Machine", nil)
 	if errorGettingMachine != nil {
 		return nil, errorGettingMachine
 	}
-	username, errorGettingUsername := repo.GetEntity(connectionModel.UsernameID, models.Username{}, "Username")
+	username, errorGettingUsername := repo.GetEntity(connectionModel.UsernameID, models.Username{}, "Username", nil)
 	if errorGettingUsername != nil {
 		return nil, errorGettingUsername
 	}
@@ -53,11 +53,11 @@ func connectionPtrModelToConnectionOutputDto(connectionModel *models.Connection)
 func connectionValueModelToConnectionOutputDto(connectionModel models.Connection) (*dto.ConnectionOutput, error) {
 
 	repo := entityManagementRepository.NewGenericRepository(sqldb.DB)
-	machine, errorGettingMachine := repo.GetEntity(connectionModel.MachineID, models.Machine{}, "Machine")
+	machine, errorGettingMachine := repo.GetEntity(connectionModel.MachineID, models.Machine{}, "Machine", nil)
 	if errorGettingMachine != nil {
 		return nil, errorGettingMachine
 	}
-	username, errorGettingUsername := repo.GetEntity(connectionModel.UsernameID, models.Username{}, "Username")
+	username, errorGettingUsername := repo.GetEntity(connectionModel.UsernameID, models.Username{}, "Username", nil)
 	if errorGettingUsername != nil {
 		return nil, errorGettingUsername
 	}

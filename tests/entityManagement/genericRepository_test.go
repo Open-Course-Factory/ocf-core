@@ -239,7 +239,7 @@ func TestGenericRepository_GetEntity_Success(t *testing.T) {
 	db.Create(&testEntity)
 
 	// Execute
-	result, err := repo.GetEntity(testEntity.ID, RepositoryTestEntity{}, "RepositoryTestEntity")
+	result, err := repo.GetEntity(testEntity.ID, RepositoryTestEntity{}, "RepositoryTestEntity", nil)
 
 	// Assert
 	assert.NoError(t, err)
@@ -260,7 +260,7 @@ func TestGenericRepository_GetEntity_NotFound(t *testing.T) {
 	nonExistentID := uuid.New()
 
 	// Execute
-	result, err := repo.GetEntity(nonExistentID, RepositoryTestEntity{}, "RepositoryTestEntity")
+	result, err := repo.GetEntity(nonExistentID, RepositoryTestEntity{}, "RepositoryTestEntity", nil)
 
 	// Assert
 	assert.NoError(t, err) // GORM ne retourne pas d'erreur pour les entités non trouvées, juste un objet vide
@@ -288,7 +288,7 @@ func TestGenericRepository_GetAllEntities_Success(t *testing.T) {
 	}
 
 	// Execute
-	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, map[string]interface{}{})
+	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, map[string]interface{}{}, nil)
 
 	// Assert
 	assert.NoError(t, err)
@@ -316,7 +316,7 @@ func TestGenericRepository_GetAllEntities_Pagination(t *testing.T) {
 	}
 
 	// Execute avec une petite taille de page - page 1
-	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, map[string]interface{}{})
+	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, map[string]interface{}{}, nil)
 
 	// Assert
 	assert.NoError(t, err)
@@ -325,7 +325,7 @@ func TestGenericRepository_GetAllEntities_Pagination(t *testing.T) {
 	assert.Len(t, results, 1) // Returns one page
 
 	// Test page 2
-	results2, total2, err2 := repo.GetAllEntities(RepositoryTestEntity{}, 2, 10, map[string]interface{}{})
+	results2, total2, err2 := repo.GetAllEntities(RepositoryTestEntity{}, 2, 10, map[string]interface{}{}, nil)
 	assert.NoError(t, err2)
 	assert.Equal(t, int64(25), total2)
 	assert.Len(t, results2, 1)
@@ -352,7 +352,7 @@ func TestGenericRepository_GetAllEntities_WithFilters(t *testing.T) {
 	filters := map[string]interface{}{
 		"value": 10,
 	}
-	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, filters)
+	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, filters, nil)
 
 	// Assert
 	assert.NoError(t, err)
@@ -497,7 +497,7 @@ func BenchmarkGenericRepository_GetEntity(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		repo.GetEntity(testEntity.ID, RepositoryTestEntity{}, "RepositoryTestEntity")
+		repo.GetEntity(testEntity.ID, RepositoryTestEntity{}, "RepositoryTestEntity", nil)
 	}
 }
 
@@ -524,7 +524,7 @@ func TestGenericRepository_GetEntity_WithPreloading(t *testing.T) {
 	}
 
 	// Execute - le preloading devrait charger les enfants
-	result, err := repo.GetEntity(parent.ID, ParentTestEntity{}, "ParentTestEntity")
+	result, err := repo.GetEntity(parent.ID, ParentTestEntity{}, "ParentTestEntity", nil)
 
 	// Assert
 	assert.NoError(t, err)
@@ -565,7 +565,7 @@ func TestGenericRepository_EdgeCases(t *testing.T) {
 		db := setupRepositoryTestDB(t)
 		repo := repositories.NewGenericRepository(db)
 
-		result, err := repo.GetEntity(uuid.Nil, RepositoryTestEntity{}, "RepositoryTestEntity")
+		result, err := repo.GetEntity(uuid.Nil, RepositoryTestEntity{}, "RepositoryTestEntity", nil)
 		assert.NoError(t, err) // GORM handle this gracefully
 		assert.NotNil(t, result)
 	})
@@ -588,7 +588,7 @@ func TestGenericRepository_EdgeCases(t *testing.T) {
 		testEntity := RepositoryTestEntity{Name: "Test"}
 		db.Create(&testEntity)
 
-		results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 1, map[string]interface{}{})
+		results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 1, map[string]interface{}{}, nil)
 		assert.NoError(t, err)
 		assert.NotNil(t, results)
 		assert.Equal(t, int64(1), total)

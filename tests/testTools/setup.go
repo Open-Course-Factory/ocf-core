@@ -237,6 +237,14 @@ func SetupUsers() {
 }
 
 func DeleteAllObjects() {
+	// SAFETY CHECK: Verify we're using the test database before deleting anything
+	var dbName string
+	sqldb.DB.Raw("SELECT current_database()").Scan(&dbName)
+	if dbName != "ocf_test" && dbName != "" {
+		panic(fmt.Sprintf("❌ DANGER: Attempted to delete data from NON-TEST database '%s'! Tests must use 'ocf_test' database. Check your .env.test file.", dbName))
+	}
+	fmt.Printf("✅ Safety check passed: Using test database '%s'\n", dbName)
+
 	userService := services.NewUserService()
 
 	casdoor.Enforcer.RemovePolicy("administrator")
@@ -270,7 +278,7 @@ func DeleteAllObjects() {
 
 	gs := genericServices.NewGenericService(sqldb.DB, nil)
 
-	coursesPages, _, _ := gs.GetEntities(courseModels.Course{}, 1, 100, map[string]interface{}{})
+	coursesPages, _, _ := gs.GetEntities(courseModels.Course{}, 1, 100, map[string]interface{}{}, nil)
 	coursesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(coursesPages, courseModels.Course{}, "Course")
 
 	for _, courseDto := range coursesDtoArray {
@@ -286,7 +294,7 @@ func DeleteAllObjects() {
 		gs.DeleteEntity(id, courseToDelete, true)
 	}
 
-	usernamesPages, _, _ := gs.GetEntities(labsModels.Username{}, 1, 100, map[string]interface{}{})
+	usernamesPages, _, _ := gs.GetEntities(labsModels.Username{}, 1, 100, map[string]interface{}{}, nil)
 	usernamesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(usernamesPages, labsModels.Username{}, "Username")
 	for _, usernameDto := range usernamesDtoArray {
 		id := gs.ExtractUuidFromReflectEntity(usernameDto)
@@ -301,7 +309,7 @@ func DeleteAllObjects() {
 		gs.DeleteEntity(id, usernameToDelete, true)
 	}
 
-	machinesPages, _, _ := gs.GetEntities(labsModels.Machine{}, 1, 100, map[string]interface{}{})
+	machinesPages, _, _ := gs.GetEntities(labsModels.Machine{}, 1, 100, map[string]interface{}{}, nil)
 	machinesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(machinesPages, labsModels.Machine{}, "Machine")
 	for _, machineDto := range machinesDtoArray {
 		id := gs.ExtractUuidFromReflectEntity(machineDto)

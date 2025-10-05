@@ -21,9 +21,9 @@ import (
 type GenericService interface {
 	CreateEntity(inputDto interface{}, entityName string) (interface{}, error)
 	SaveEntity(entity interface{}) (interface{}, error)
-	GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error)
-	GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}) ([]interface{}, int64, error)
-	GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}) ([]interface{}, string, bool, error)
+	GetEntity(id uuid.UUID, data interface{}, entityName string, includes []string) (interface{}, error)
+	GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}, includes []string) ([]interface{}, int64, error)
+	GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}, includes []string) ([]interface{}, string, bool, int64, error)
 	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
 	EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error
 	GetEntityModelInterface(entityName string) interface{}
@@ -101,8 +101,8 @@ func (g *genericService) SaveEntity(entity interface{}) (interface{}, error) {
 	return entity, nil
 }
 
-func (g *genericService) GetEntity(id uuid.UUID, data interface{}, entityName string) (interface{}, error) {
-	entity, err := g.genericRepository.GetEntity(id, data, entityName)
+func (g *genericService) GetEntity(id uuid.UUID, data interface{}, entityName string, includes []string) (interface{}, error) {
+	entity, err := g.genericRepository.GetEntity(id, data, entityName, includes)
 
 	if err != nil {
 		return nil, err
@@ -117,9 +117,9 @@ func (g *genericService) GetEntity(id uuid.UUID, data interface{}, entityName st
 }
 
 // should return an array of dtoEntityOutput
-func (g *genericService) GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}) ([]interface{}, int64, error) {
+func (g *genericService) GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}, includes []string) ([]interface{}, int64, error) {
 
-	allPages, total, err := g.genericRepository.GetAllEntities(data, page, pageSize, filters)
+	allPages, total, err := g.genericRepository.GetAllEntities(data, page, pageSize, filters, includes)
 
 	if err != nil {
 		return nil, 0, err
@@ -130,15 +130,15 @@ func (g *genericService) GetEntities(data interface{}, page int, pageSize int, f
 
 // GetEntitiesCursor retrieves entities using cursor-based pagination.
 // This method delegates to the repository layer for efficient cursor-based traversal.
-func (g *genericService) GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}) ([]interface{}, string, bool, error) {
+func (g *genericService) GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}, includes []string) ([]interface{}, string, bool, int64, error) {
 
-	allPages, nextCursor, hasMore, err := g.genericRepository.GetAllEntitiesCursor(data, cursor, limit, filters)
+	allPages, nextCursor, hasMore, total, err := g.genericRepository.GetAllEntitiesCursor(data, cursor, limit, filters, includes)
 
 	if err != nil {
-		return nil, "", false, err
+		return nil, "", false, 0, err
 	}
 
-	return allPages, nextCursor, hasMore, nil
+	return allPages, nextCursor, hasMore, total, nil
 }
 
 func (g *genericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error {
@@ -160,7 +160,7 @@ func (g *genericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped b
 	}
 
 	// Récupérer l'entité avant suppression
-	existingEntity, err := g.GetEntity(id, entityModelInterface, entityName)
+	existingEntity, err := g.GetEntity(id, entityModelInterface, entityName, nil)
 	if err != nil {
 		return err
 	}
@@ -209,7 +209,7 @@ func (g *genericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped b
 
 func (g *genericService) EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error {
 	// Récupérer l'entité existante pour les hooks
-	oldEntity, err := g.GetEntity(id, entity, entityName)
+	oldEntity, err := g.GetEntity(id, entity, entityName, nil)
 	if err != nil {
 		return err
 	}
@@ -232,7 +232,7 @@ func (g *genericService) EditEntity(id uuid.UUID, entityName string, entity inte
 		return errorPatch
 	}
 
-	updatedEntity, err := g.GetEntity(id, entity, entityName)
+	updatedEntity, err := g.GetEntity(id, entity, entityName, nil)
 	if err != nil {
 		log.Printf("Warning: could not retrieve updated entity for hooks: %v", err)
 		updatedEntity = data // Fallback
