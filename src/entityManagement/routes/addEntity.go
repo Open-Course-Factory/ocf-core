@@ -3,7 +3,7 @@ package controller
 import (
 	"net/http"
 
-	"soli/formations/src/auth/errors"
+	authErrors "soli/formations/src/auth/errors"
 	"soli/formations/src/entityManagement/utils"
 
 	"github.com/gin-gonic/gin"
@@ -13,36 +13,37 @@ func (genericController genericController) AddEntity(ctx *gin.Context) {
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
 	decodedData, decodeError := genericController.genericService.DecodeInputDtoForEntityCreation(entityName, ctx)
-	if errors.HandleError(http.StatusBadRequest, decodeError, ctx) {
+	if decodeError != nil {
+		HandleEntityError(ctx, decodeError)
 		return
 	}
 
 	entity, entityCreationError := genericController.genericService.CreateEntity(decodedData, entityName)
-	if errors.HandleError(http.StatusBadRequest, entityCreationError, ctx) {
+	if entityCreationError != nil {
+		HandleEntityError(ctx, entityCreationError)
 		return
 	}
 
 	userId := ctx.GetString("userId")
 	entity, entitySavingError := genericController.addOwnerIDs(entity, userId)
-	if errors.HandleError(http.StatusBadRequest, entitySavingError, ctx) {
+	if entitySavingError != nil {
+		HandleEntityError(ctx, entitySavingError)
 		return
 	}
 
 	outputDto, errEntityDto := genericController.genericService.GetEntityFromResult(entityName, entity)
-
 	if errEntityDto {
-		if errors.HandleError(http.StatusNotFound, &errors.APIError{ErrorMessage: "Entity Not Found"}, ctx) {
+		// Legacy error handling for backward compatibility
+		if authErrors.HandleError(http.StatusNotFound, &authErrors.APIError{ErrorMessage: "Entity Not Found"}, ctx) {
 			return
 		}
 	}
 
 	resourceName := GetResourceNameFromPath(ctx.FullPath())
 	errorSettingDefaultAccesses := genericController.genericService.AddDefaultAccessesForEntity(resourceName, entity, userId)
-
 	if errorSettingDefaultAccesses != nil {
-		if errors.HandleError(http.StatusNotFound, errorSettingDefaultAccesses, ctx) {
-			return
-		}
+		HandleEntityError(ctx, errorSettingDefaultAccesses)
+		return
 	}
 
 	ctx.JSON(http.StatusCreated, outputDto)

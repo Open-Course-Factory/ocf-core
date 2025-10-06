@@ -2,10 +2,10 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"reflect"
 	authInterfaces "soli/formations/src/auth/interfaces"
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/entityManagement/repositories"
 	"soli/formations/src/entityManagement/utils"
@@ -59,7 +59,7 @@ func (g *genericService) CreateEntity(inputDto interface{}, entityName string) (
 	}
 
 	if err := hooks.GlobalHookRegistry.ExecuteHooks(beforeCtx); err != nil {
-		return nil, fmt.Errorf("before_create hooks failed: %v", err)
+		return nil, entityErrors.WrapHookError("BeforeCreate", entityName, err)
 	}
 
 	entity, createEntityError := g.genericRepository.CreateEntity(inputDto, entityName)
@@ -109,7 +109,7 @@ func (g *genericService) GetEntity(id uuid.UUID, data interface{}, entityName st
 	}
 
 	if g.ExtractUuidFromReflectEntity(entity) == uuid.Nil {
-		return nil, fmt.Errorf("entity not found")
+		return nil, entityErrors.NewEntityNotFound(entityName, id)
 	}
 
 	return entity, nil
@@ -152,11 +152,11 @@ func (g *genericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped b
 	entityModelInterface := g.GetEntityModelInterface(entityName)
 
 	if entityName == "" {
-		return fmt.Errorf("could not find entity type")
+		return entityErrors.NewInvalidInputError("entityName", "", "could not find entity type")
 	}
 
 	if entityModelInterface == nil {
-		return fmt.Errorf("entity %s not registered", entityName)
+		return entityErrors.NewEntityNotRegistered(entityName)
 	}
 
 	// Récupérer l'entité avant suppression
@@ -175,7 +175,7 @@ func (g *genericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped b
 	}
 
 	if err := hooks.GlobalHookRegistry.ExecuteHooks(beforeCtx); err != nil {
-		return fmt.Errorf("before_delete hooks failed: %v", err)
+		return entityErrors.WrapHookError("BeforeDelete", entityName, err)
 	}
 
 	errorDelete := g.genericRepository.DeleteEntity(id, entity, scoped)
@@ -224,7 +224,7 @@ func (g *genericService) EditEntity(id uuid.UUID, entityName string, entity inte
 	}
 
 	if err := hooks.GlobalHookRegistry.ExecuteHooks(beforeCtx); err != nil {
-		return fmt.Errorf("before_update hooks failed: %v", err)
+		return entityErrors.WrapHookError("BeforeUpdate", entityName, err)
 	}
 
 	errorPatch := g.genericRepository.EditEntity(id, entityName, entity, data)

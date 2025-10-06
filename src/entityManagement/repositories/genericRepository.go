@@ -3,9 +3,8 @@ package repositories
 import (
 	"encoding/base64"
 	"fmt"
-	"net/http"
 	"reflect"
-	errors "soli/formations/src/auth/errors"
+	entityErrors "soli/formations/src/entityManagement/errors"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/repositories/filters"
 	"strings"
@@ -55,10 +54,7 @@ func (o *genericRepository) CreateEntity(entityInputDto any, entityName string) 
 	conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.CreateInputDtoToModel)
 
 	if !found {
-		return nil, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Entity conversion function does not exist",
-		}
+		return nil, entityErrors.NewConversionError(entityName, "conversion function does not exist")
 	}
 
 	val := reflect.ValueOf(conversionFunctionRef)
@@ -68,7 +64,7 @@ func (o *genericRepository) CreateEntity(entityInputDto any, entityName string) 
 
 		result := o.db.Create(entityModel[0].Interface())
 		if result.Error != nil {
-			return nil, result.Error
+			return nil, entityErrors.WrapDatabaseError(result.Error, "create entity")
 		}
 
 		return result.Statement.Model, nil
@@ -78,20 +74,20 @@ func (o *genericRepository) CreateEntity(entityInputDto any, entityName string) 
 }
 
 func (o *genericRepository) SaveEntity(entity any) (any, error) {
-
 	result := o.db.Save(entity)
 	if result.Error != nil {
-		return nil, result.Error
+		return nil, entityErrors.WrapDatabaseError(result.Error, "save entity")
 	}
 	return result.Statement.Model, nil
-
 }
 
 func (r genericRepository) EditEntity(id uuid.UUID, entityName string, entity any, data any) error {
-
 	result := r.db.Model(&entity).Where("id = ?", id).Updates(data)
 	if result.Error != nil {
-		return result.Error
+		return entityErrors.WrapDatabaseError(result.Error, "update entity")
+	}
+	if result.RowsAffected == 0 {
+		return entityErrors.NewEntityNotFound(entityName, id)
 	}
 	return nil
 }
@@ -132,7 +128,10 @@ func (o *genericRepository) GetEntity(id uuid.UUID, data any, entityName string,
 	result := query.Find(model, id)
 
 	if result.Error != nil {
-		return nil, result.Error
+		if result.Error == gorm.ErrRecordNotFound {
+			return nil, entityErrors.NewEntityNotFound(entityName, id)
+		}
+		return nil, entityErrors.WrapDatabaseError(result.Error, "get entity")
 	}
 
 	return model, nil
@@ -228,7 +227,7 @@ func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, fil
 	result := query.Find(&pageSlice)
 
 	if result.Error != nil {
-		return nil, 0, result.Error
+		return nil, 0, entityErrors.WrapDatabaseError(result.Error, "get all entities")
 	}
 
 	return []any{pageSlice}, total, nil
@@ -289,14 +288,14 @@ func (o *genericRepository) GetAllEntitiesCursor(data any, cursor string, limit 
 		decodedBytes, err := base64.StdEncoding.DecodeString(cursor)
 		if err != nil {
 			fmt.Printf("❌ Cursor decode error for '%s': %v\n", cursor, err)
-			return nil, "", false, 0, fmt.Errorf("invalid cursor: %w", err)
+			return nil, "", false, 0, entityErrors.NewInvalidCursorError(cursor, "failed to decode base64")
 		}
 
 		// Ensure we have exactly 16 bytes for UUID
 		if len(decodedBytes) != 16 {
 			fmt.Printf("❌ Invalid cursor length for entity '%s': cursor='%s' decoded to %d bytes (expected 16)\n", entityName, cursor, len(decodedBytes))
 			fmt.Printf("   Decoded content: %v\n", string(decodedBytes))
-			return nil, "", false, 0, fmt.Errorf("invalid cursor UUID: expected 16 bytes, got %d. Cursor must be the nextCursor value from a previous response, not a manually constructed value", len(decodedBytes))
+			return nil, "", false, 0, entityErrors.NewInvalidCursorError(cursor, fmt.Sprintf("expected 16 bytes, got %d", len(decodedBytes)))
 		}
 
 		// Convert bytes directly to UUID
@@ -320,7 +319,7 @@ func (o *genericRepository) GetAllEntitiesCursor(data any, cursor string, limit 
 
 	result := query.Find(&pageSlice)
 	if result.Error != nil {
-		return nil, "", false, 0, result.Error
+		return nil, "", false, 0, entityErrors.WrapDatabaseError(result.Error, "get entities with cursor")
 	}
 
 	// Get the slice value to check length
@@ -378,13 +377,16 @@ func (o *genericRepository) DeleteEntity(id uuid.UUID, entity any, scoped bool) 
 	}
 
 	if result.Error != nil {
-		return result.Error
+		return entityErrors.WrapDatabaseError(result.Error, "delete entity")
 	}
 	if result.RowsAffected == 0 {
-		return &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Entity not found",
+		// Get entity name from type
+		entityType := reflect.TypeOf(entity)
+		if entityType.Kind() == reflect.Ptr {
+			entityType = entityType.Elem()
 		}
+		entityName := entityType.Name()
+		return entityErrors.NewEntityNotFound(entityName, id)
 	}
 	return nil
 }
