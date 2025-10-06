@@ -344,7 +344,7 @@ func parseFlags() bool {
 			return true
 		}
 		course = *coursePtr
-		fmt.Printf("Course loaded successfully: %s v%s\n", course.Name, course.Version)
+		fmt.Printf("Course loaded and saved successfully: %s v%s (ID: %s)\n", course.Name, course.Version, course.ID.String())
 	} else {
 		// Fallback to empty course for CLI-only usage
 		course = courseService.GetCourseFromProgramInputs(courseName, courseGitRepository, courseBranchGitRepository)
@@ -353,22 +353,23 @@ func parseFlags() bool {
 		// Set basic course info from CLI args
 		course.Name = *courseName
 		course.FolderName = *courseName
+
+		// Save the course to database
+		genericService := genericService.NewGenericService(sqldb.DB, casdoor.Enforcer)
+		courseInputDto := courseDto.CourseModelToCourseInputDto(course)
+		savedCourseEntity, errorSaving := genericService.CreateEntity(courseInputDto, reflect.TypeOf(models.Course{}).Name())
+
+		if errorSaving != nil {
+			fmt.Println(errorSaving.Error())
+			return true
+		}
+
+		savedCourse := savedCourseEntity.(*models.Course)
+		course.ID = savedCourse.ID
+		fmt.Printf("Course created successfully with ID: %s\n", course.ID.String())
 	}
 
 	setCourseThemeFromProgramInputs(&course, string(*courseThemeName), string(*courseThemeGitRepository), string(*courseThemeBranchGitRepository))
-
-	genericService := genericService.NewGenericService(sqldb.DB, casdoor.Enforcer)
-
-	courseInputDto := courseDto.CourseModelToCourseInputDto(course)
-	savedCourseEntity, errorSaving := genericService.CreateEntity(courseInputDto, reflect.TypeOf(models.Course{}).Name())
-
-	if errorSaving != nil {
-		fmt.Println(errorSaving.Error())
-		return true
-	}
-
-	savedCourse := savedCourseEntity.(*models.Course)
-	fmt.Printf("Course created successfully with ID: %s\n", savedCourse.ID.String())
 
 	// Check DRY_RUN flag before proceeding with generation
 	if *config.DRY_RUN {
@@ -378,10 +379,6 @@ func parseFlags() bool {
 
 	// Generate the course using the selected slide engine
 	fmt.Printf("Starting course generation using %T...\n", generator.SLIDE_ENGINE)
-
-	// Use the original course for generation (it has the theme set properly)
-	// The saved course loses the Theme because it's marked as gorm:"-:all"
-	course.ID = savedCourse.ID // Copy the generated ID to the original course
 
 	// First, compile the course resources (create directories, etc.)
 	fmt.Println("Compiling course resources...")

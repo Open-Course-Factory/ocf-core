@@ -111,6 +111,299 @@ RESTful API with `/api/v1` prefix. Generic entity routes auto-generated through 
 3. Casbin enforces role-based permissions
 4. Payment middleware checks subscription limits
 
+## Entity Management System (Framework Core)
+
+### Current Architecture
+
+The Entity Management System provides automatic CRUD operations for all entities through a registration pattern. This is the foundation for the planned evolution into a full framework.
+
+**Location**: `src/entityManagement/`
+
+### How It Works
+
+#### 1. Entity Registration Pattern
+
+Each entity (Course, Terminal, Machine, etc.) implements the `RegistrableInterface`:
+
+```go
+// Located in: src/entityManagement/interfaces/registrableInterface.go
+type RegistrableInterface interface {
+    GetEntityRegistrationInput() EntityRegistrationInput
+    EntityModelToEntityOutput(input any) (any, error)
+    EntityInputDtoToEntityModel(input any) any
+    GetEntityRoles() EntityRoles
+}
+```
+
+**Registration files** follow pattern: `src/{module}/entityRegistration/{entity}Registration.go`
+
+Example: `src/courses/entityRegistration/courseRegistration.go`
+
+#### 2. Entity Registration Components
+
+Each registration defines:
+
+- **EntityInterface**: The GORM model (e.g., `models.Course{}`)
+- **EntityConverters**: Conversion functions between DTOs and models
+  - `ModelToDto`: Convert model to output DTO
+  - `DtoToModel`: Convert input DTO to model
+  - `DtoToMap`: Convert DTO to map for partial updates
+- **EntityDtos**: Three DTO types
+  - `InputCreateDto`: For POST requests
+  - `InputEditDto`: For PATCH requests (partial updates)
+  - `OutputDto`: For GET responses
+- **EntityRoles**: Permission mapping (role → HTTP methods)
+- **EntitySubEntities**: Related entities for cascade operations
+- **SwaggerConfig**: Auto-generated API documentation config
+- **RelationshipFilters**: Define filter paths through relationships (e.g., filter sections by courseId)
+
+#### 3. Automatic Features
+
+When an entity is registered in `main.go`, the system automatically provides:
+
+1. **CRUD Routes**: GET, POST, PATCH, DELETE at `/api/v1/{entity-plural}/`
+2. **Swagger Documentation**: Auto-generated OpenAPI specs
+3. **Permission Setup**: Casbin policies based on `GetEntityRoles()`
+4. **Pagination**: Offset-based and cursor-based pagination
+5. **Filtering**: Query parameters mapped to database filters
+6. **Selective Preloading**: Load relationships on demand via `?includes=relation1,relation2`
+7. **Hook System**: BeforeCreate, AfterCreate, BeforeUpdate, etc.
+
+#### 4. Generic Service Layer
+
+**Location**: `src/entityManagement/services/genericService.go`
+
+Provides reusable operations:
+- `CreateEntity(inputDto, entityName)`: Create with hooks and validation
+- `GetEntity(id, entityName, includes)`: Fetch with selective preloading
+- `GetEntities(filters, page, pageSize, includes)`: List with pagination
+- `GetEntitiesCursor(cursor, limit, filters, includes)`: Cursor pagination
+- `EditEntity(id, entityName, updates)`: Partial updates
+- `DeleteEntity(id, entity, scoped)`: Soft/hard delete
+
+#### 5. How to Add a New Entity
+
+**Step 1**: Create the model in `src/{module}/models/{entity}.go`
+
+**Step 2**: Create DTOs in `src/{module}/dto/{entity}Dto.go`
+
+**Step 3**: Create registration in `src/{module}/entityRegistration/{entity}Registration.go`:
+
+```go
+type EntityRegistration struct {
+    entityManagementInterfaces.AbstractRegistrableInterface
+}
+
+func (s EntityRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
+    return entityManagementInterfaces.EntitySwaggerConfig{
+        Tag: "entities",
+        EntityName: "Entity",
+        GetAll: &entityManagementInterfaces.SwaggerOperation{...},
+        // ... other operations
+    }
+}
+
+func (s EntityRegistration) EntityModelToEntityOutput(input any) (any, error) {
+    // Convert model to output DTO
+}
+
+func (s EntityRegistration) EntityInputDtoToEntityModel(input any) any {
+    // Convert input DTO to model
+}
+
+func (s EntityRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
+    return entityManagementInterfaces.EntityRegistrationInput{
+        EntityInterface: models.Entity{},
+        EntityConverters: entityManagementInterfaces.EntityConverters{
+            ModelToDto: s.EntityModelToEntityOutput,
+            DtoToModel: s.EntityInputDtoToEntityModel,
+        },
+        EntityDtos: entityManagementInterfaces.EntityDtos{
+            InputCreateDto: dto.EntityInput{},
+            OutputDto:      dto.EntityOutput{},
+            InputEditDto:   dto.EditEntityInput{},
+        },
+    }
+}
+```
+
+**Step 4**: Register in `main.go`:
+
+```go
+sqldb.DB.AutoMigrate(&models.Entity{})
+ems.GlobalEntityRegistrationService.RegisterEntity(registration.EntityRegistration{})
+```
+
+**Step 5**: Run `swag init --parseDependency --parseInternal` to update API docs
+
+### Framework Evolution Roadmap
+
+**Vision**: Transform OCF Core into a reusable Go framework for building CRUD-heavy APIs with modules.
+
+#### Phase 1: Config-Driven Entities (3-4 weeks)
+
+**Goal**: Define entities via YAML instead of code
+
+```yaml
+# modules/courses/course.yaml
+entity:
+  name: Course
+  model: models.Course
+  permissions:
+    member: "GET|POST"
+    admin: "GET|POST|PATCH|DELETE"
+  fields:
+    name: string
+    version: string
+    title: string
+  relationships:
+    - type: hasMany
+      entity: Chapter
+      field: Chapters
+```
+
+**Deliverables**:
+- YAML parser for entity definitions
+- Code generator from YAML to registration structs
+- Backward compatibility with existing code-based registrations
+
+#### Phase 2: Module System (4-6 weeks)
+
+**Goal**: Loadable, pluggable modules
+
+```go
+type Module interface {
+    Name() string
+    Version() string
+    Init(container *DIContainer) error
+    RegisterEntities() []EntityRegistration
+    RegisterRoutes(router gin.IRouter)
+    RegisterHooks() []Hook
+    Migrate(db *gorm.DB) error
+    Shutdown() error
+}
+```
+
+**Target Directory Structure**:
+```
+framework/
+├── core/          # Framework core (entity system, DI, app bootstrap)
+├── entity/        # Current entityManagement code
+├── auth/          # Auth provider interface
+└── db/            # Database provider interface
+
+modules/
+├── courses/
+│   ├── module.yaml      # Module metadata and entity configs
+│   ├── module.go        # Module implementation
+│   ├── entities/        # Entity registrations
+│   ├── models/          # GORM models
+│   ├── services/        # Custom business logic
+│   └── migrations/      # SQL migrations
+├── terminals/
+└── labs/
+```
+
+**Deliverables**:
+- Module loader (scan directories for `module.yaml`)
+- Module lifecycle management
+- Migration system per module
+- Module dependency resolution
+
+#### Phase 3: Dependency Injection (2-3 weeks)
+
+**Goal**: Decouple services from direct instantiation
+
+**Options**:
+- `uber/dig` - Reflection-based DI
+- `google/wire` - Code generation DI
+- Custom DI container
+
+**Deliverables**:
+- DI container implementation
+- Service registration via DI
+- Module integration with DI
+
+#### Phase 4: Provider Abstractions (3-4 weeks)
+
+**Goal**: Support multiple databases, auth systems, etc.
+
+```go
+type DatabaseProvider interface {
+    Connect(config DatabaseConfig) error
+    GetDB() interface{}
+    Migrate(models ...interface{}) error
+}
+
+type AuthProvider interface {
+    Authenticate(credentials Credentials) (*User, error)
+    ValidateToken(token string) (*User, error)
+    Authorize(user *User, resource, action string) bool
+}
+```
+
+**Deliverables**:
+- Database provider interface (PostgreSQL, MySQL, SQLite, MongoDB)
+- Auth provider interface (Casdoor, JWT, OAuth2, Basic)
+- Payment provider interface (Stripe, PayPal, custom)
+
+### Known Challenges
+
+#### 1. Module Discovery (High Difficulty)
+
+**Problem**: Go doesn't support dynamic plugin loading well (platform-dependent, version-sensitive)
+
+**Solutions**:
+- Option A: Config files point to Go package paths, use code generation
+- Option B: Modules are compiled into the binary, toggled via config
+- Option C: Use Go 1.8+ plugin system (Linux/macOS only, fragile)
+
+**Recommended**: Option B for stability
+
+#### 2. Config-to-Code Generation
+
+**Problem**: YAML → Go code generation requires careful handling of types, relationships, validations
+
+**Solutions**:
+- Use Go templates for codegen
+- Validate YAML schema before generation
+- Support incremental generation (don't overwrite manual code)
+
+#### 3. Backward Compatibility
+
+**Problem**: Existing code must continue working during transition
+
+**Strategy**:
+- Keep `GlobalEntityRegistrationService` as-is
+- Add YAML loader as alternative registration method
+- Gradual migration, one module at a time
+
+#### 4. Testing Framework in Isolation
+
+**Problem**: Framework code shouldn't depend on business logic
+
+**Strategy**:
+- Create `tests/framework/` for framework-only tests
+- Use test fixtures and mocks for business entities
+- Separate unit tests (framework) from integration tests (full app)
+
+### Development Guidelines for Framework Work
+
+1. **Don't Break Existing Code**: All changes must maintain backward compatibility
+2. **Start Small**: Convert one module (e.g., `courses`) to config-driven first
+3. **Document Patterns**: Update this file as patterns emerge
+4. **Test Extensively**: Framework bugs impact all modules
+5. **Incremental Refactoring**: Small PRs, frequent merges
+
+### Key Files for Framework Development
+
+- `src/entityManagement/entityManagementService/entityRegistrationService.go` - Registration system
+- `src/entityManagement/services/genericService.go` - Generic CRUD operations
+- `src/entityManagement/repositories/genericRepository.go` - Database operations
+- `src/entityManagement/hooks/hookRegistry.go` - Hook system
+- `src/entityManagement/swagger/` - Auto-documentation system
+- `main.go:156-171` - Current entity registrations (hardcoded)
+
 ## Permissions and Security System
 
 ### Casbin/Casdoor Integration
