@@ -24,6 +24,7 @@ func SubscriptionRoutes(router *gin.RouterGroup, config *config.Configuration, d
 	routes.GET("/current", authMiddleware.AuthManagement(), subscriptionController.GetUserSubscription)
 	routes.POST("/:id/cancel", authMiddleware.AuthManagement(), subscriptionController.CancelSubscription)
 	routes.POST("/:id/reactivate", authMiddleware.AuthManagement(), subscriptionController.ReactivateSubscription)
+	routes.POST("/upgrade", authMiddleware.AuthManagement(), subscriptionController.UpgradeUserPlan)
 
 	// Analytics (admin seulement)
 	routes.GET("/analytics", authMiddleware.AuthManagement(), subscriptionController.GetSubscriptionAnalytics)

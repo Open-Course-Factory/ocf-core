@@ -5,6 +5,7 @@ import (
 
 	auth "soli/formations/src/auth"
 	config "soli/formations/src/configuration"
+	paymentMiddleware "soli/formations/src/payment/middleware"
 
 	"gorm.io/gorm"
 )
@@ -12,11 +13,13 @@ import (
 func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
 	terminalController := NewTerminalController(db)
 	middleware := auth.NewAuthMiddleware(db)
+	usageLimitMiddleware := paymentMiddleware.NewUsageLimitMiddleware(db)
 
 	routes := router.Group("/terminal-sessions")
 
 	// Routes spécialisées pour les fonctionnalités Terminal Trainer
-	routes.POST("/start-session", middleware.AuthManagement(), terminalController.StartSession)
+	// Apply terminal creation limit middleware to start-session route
+	routes.POST("/start-session", middleware.AuthManagement(), usageLimitMiddleware.CheckTerminalCreationLimit(), terminalController.StartSession)
 	routes.GET("/:id/console", middleware.AuthManagement(), terminalController.ConnectConsole)
 	routes.POST("/:id/stop", middleware.AuthManagement(), terminalController.StopSession)
 	routes.GET("/user-sessions", middleware.AuthManagement(), terminalController.GetUserSessions)

@@ -19,6 +19,10 @@ type UsageLimitMiddleware interface {
 	CheckConcurrentUserLimit() gin.HandlerFunc
 	CheckCustomLimit(metricType string, increment int64) gin.HandlerFunc
 	CheckUsageForPath() gin.HandlerFunc // Middleware automatique basé sur le path
+
+	// Terminal-specific middleware
+	CheckTerminalCreationLimit() gin.HandlerFunc
+	CheckConcurrentTerminalsLimit() gin.HandlerFunc
 }
 
 type usageLimitMiddleware struct {
@@ -279,4 +283,125 @@ func (ut *usageTracker) TrackUsageAfterSuccess(metricType string, increment int6
 			}
 		}
 	})
+}
+
+// CheckTerminalCreationLimit vérifie les limites avant de créer un terminal
+func (ulm *usageLimitMiddleware) CheckTerminalCreationLimit() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		userId := ctx.GetString("userId")
+
+		if userId == "" {
+			ctx.Next()
+			return
+		}
+
+		// Récupérer l'abonnement de l'utilisateur
+		subscription, err := ulm.subscriptionService.GetActiveUserSubscription(userId)
+		if err != nil {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Active subscription required to create terminals",
+			})
+			ctx.Abort()
+			return
+		}
+
+		// Récupérer le plan d'abonnement
+		plan, err := ulm.subscriptionService.GetSubscriptionPlan(subscription.SubscriptionPlanID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to retrieve subscription plan",
+			})
+			ctx.Abort()
+			return
+		}
+
+		// Vérifier le nombre de terminaux actifs concurrents via CheckUsageLimit
+		limitCheck, err := ulm.subscriptionService.CheckUsageLimit(userId, "concurrent_terminals", 1)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to check concurrent terminal limit",
+			})
+			ctx.Abort()
+			return
+		}
+
+		if !limitCheck.Allowed {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: fmt.Sprintf("Maximum concurrent terminals (%d) reached. Please stop a terminal or upgrade your plan.", plan.MaxConcurrentTerminals),
+			})
+			ctx.Abort()
+			return
+		}
+
+		// Stocker le plan dans le contexte pour usage ultérieur
+		ctx.Set("subscription_plan", plan)
+		ctx.Next()
+
+		// Si la requête a réussi (status 2xx), incrémenter concurrent_terminals
+		if ctx.Writer.Status() >= 200 && ctx.Writer.Status() < 300 {
+			err := ulm.subscriptionService.IncrementUsage(userId, "concurrent_terminals", 1)
+			if err != nil {
+				fmt.Printf("Warning: Failed to increment concurrent_terminals for user %s: %v\n", userId, err)
+			}
+		}
+	}
+}
+
+// CheckConcurrentTerminalsLimit vérifie uniquement la limite de terminaux concurrents
+func (ulm *usageLimitMiddleware) CheckConcurrentTerminalsLimit() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		userId := ctx.GetString("userId")
+
+		if userId == "" {
+			ctx.Next()
+			return
+		}
+
+		// Récupérer l'abonnement et le plan
+		subscription, err := ulm.subscriptionService.GetActiveUserSubscription(userId)
+		if err != nil {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Active subscription required",
+			})
+			ctx.Abort()
+			return
+		}
+
+		plan, err := ulm.subscriptionService.GetSubscriptionPlan(subscription.SubscriptionPlanID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to retrieve subscription plan",
+			})
+			ctx.Abort()
+			return
+		}
+
+		// Vérifier les terminaux concurrents via CheckUsageLimit
+		limitCheck, err := ulm.subscriptionService.CheckUsageLimit(userId, "concurrent_terminals", 1)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to check concurrent terminal limit",
+			})
+			ctx.Abort()
+			return
+		}
+
+		if !limitCheck.Allowed {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: fmt.Sprintf("Maximum concurrent terminals (%d) reached", plan.MaxConcurrentTerminals),
+			})
+			ctx.Abort()
+			return
+		}
+
+		ctx.Next()
+	}
 }

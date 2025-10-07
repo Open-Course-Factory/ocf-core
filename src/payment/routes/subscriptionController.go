@@ -25,6 +25,7 @@ type SubscriptionController interface {
 	GetUserSubscription(ctx *gin.Context)
 	CancelSubscription(ctx *gin.Context)
 	ReactivateSubscription(ctx *gin.Context)
+	UpgradeUserPlan(ctx *gin.Context)
 	GetSubscriptionAnalytics(ctx *gin.Context)
 	CheckUsageLimit(ctx *gin.Context)
 	GetUserUsage(ctx *gin.Context)
@@ -368,6 +369,79 @@ func (sc *subscriptionController) ReactivateSubscription(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "Subscription reactivated successfully",
 	})
+}
+
+// Upgrade User Plan godoc
+//
+//	@Summary		Upgrade or change user's subscription plan
+//	@Description	Upgrades or downgrades the user's subscription plan and updates all usage metric limits atomically
+//	@Tags			subscriptions
+//	@Accept			json
+//	@Produce		json
+//	@Param			upgrade	body	dto.UpgradePlanInput	true	"Upgrade plan input"
+//	@Security		Bearer
+//	@Success		200	{object}	dto.UserSubscriptionOutput	"Subscription upgraded successfully"
+//	@Failure		400	{object}	errors.APIError	"Bad request"
+//	@Failure		404	{object}	errors.APIError	"No active subscription or plan not found"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/subscriptions/upgrade [post]
+func (sc *subscriptionController) UpgradeUserPlan(ctx *gin.Context) {
+	userId := ctx.GetString("userId")
+
+	var input dto.UpgradePlanInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	// Parse the new plan ID
+	newPlanID, err := uuid.Parse(input.NewPlanID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid plan ID format",
+		})
+		return
+	}
+
+	// Upgrade the plan (this updates both subscription and usage metric limits atomically)
+	subscription, err := sc.subscriptionService.UpgradeUserPlan(userId, newPlanID)
+	if err != nil {
+		if strings.Contains(err.Error(), "no active subscription") {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "No active subscription found for user",
+			})
+			return
+		}
+		if strings.Contains(err.Error(), "invalid plan ID") {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Subscription plan not found",
+			})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to upgrade plan: " + err.Error(),
+		})
+		return
+	}
+
+	// Convert to DTO
+	subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to convert subscription data",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, subscriptionDTO)
 }
 
 // Get Subscription Analytics godoc

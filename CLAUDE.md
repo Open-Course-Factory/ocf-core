@@ -28,6 +28,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The dev postgres container is shared between development and functional tests, with separate databases (`ocf` vs `ocf_test`) for isolation.
 
+**IMPORTANT - SQLite Testing Best Practice**:
+When writing tests that use SQLite in-memory databases, **ALWAYS use shared cache mode**:
+
+```go
+// ❌ WRONG - Each connection gets its own database
+db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+
+// ✅ CORRECT - All connections share the same in-memory database
+db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+```
+
+**Why?** Services create their own repository instances with new DB connections. In `:memory:` mode, each connection gets a completely separate database. With `cache=shared`, multiple connections access the same shared in-memory instance, allowing services to see tables created in test setup.
+
 ## Project Overview
 
 OCF Core is the core API for Open Course Factory, a platform for building and generating courses with integrated labs and environments. The system supports both Marp and Slidev presentation engines, with a focus on reusable course content and templating systems.
@@ -54,6 +67,11 @@ OCF Core is the core API for Open Course Factory, a platform for building and ge
 ### Documentation
 - `swag init --parseDependency --parseInternal` - Generate Swagger API documentation
 - Visit `http://localhost:8080/swagger/` for complete API documentation
+
+**IMPORTANT:** The `docs/` folder is **RESERVED FOR SWAGGER ONLY**. It contains auto-generated API documentation.
+- ✅ Place project documentation in the root directory (e.g., `TERMINAL_PRICING_PLAN.md`)
+- ✅ Or create a separate folder like `documentation/` or `guides/`
+- ❌ **NEVER** manually create files in `docs/` - they will be overwritten by `swag init`
 
 ## Architecture Overview
 

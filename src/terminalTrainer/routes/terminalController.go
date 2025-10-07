@@ -137,7 +137,17 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 		return
 	}
 
-	sessionResponse, err := tc.service.StartSession(userId, sessionInput)
+	// Get subscription plan from middleware context
+	planInterface, exists := ctx.Get("subscription_plan")
+	if !exists {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Subscription plan not found in context",
+		})
+		return
+	}
+
+	sessionResponse, err := tc.service.StartSessionWithPlan(userId, sessionInput, planInterface)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,

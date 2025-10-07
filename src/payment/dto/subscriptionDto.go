@@ -65,6 +65,10 @@ type UpdateUserSubscriptionInput struct {
 	CancelAtPeriodEnd *bool  `json:"cancel_at_period_end,omitempty" mapstructure:"cancel_at_period_end"`
 }
 
+type UpgradePlanInput struct {
+	NewPlanID string `binding:"required" json:"new_plan_id"` // UUID as string
+}
+
 type UserSubscriptionOutput struct {
 	ID                   uuid.UUID  `json:"id"`
 	UserID               string     `json:"user_id"`

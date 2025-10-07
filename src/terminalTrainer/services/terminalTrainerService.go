@@ -9,9 +9,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"soli/formations/src/auth/casdoor"
+	paymentModels "soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/repositories"
@@ -27,6 +30,7 @@ type TerminalTrainerService interface {
 
 	// Session management
 	StartSession(userID string, sessionInput dto.CreateTerminalSessionInput) (*dto.TerminalSessionResponse, error)
+	StartSessionWithPlan(userID string, sessionInput dto.CreateTerminalSessionInput, planInterface interface{}) (*dto.TerminalSessionResponse, error)
 	GetSessionInfo(sessionID string) (*models.Terminal, error)
 	GetTerminalByUUID(terminalUUID string) (*models.Terminal, error)
 	GetActiveUserSessions(userID string) (*[]models.Terminal, error)
@@ -63,11 +67,13 @@ type TerminalTrainerService interface {
 }
 
 type terminalTrainerService struct {
-	adminKey     string
-	baseURL      string
-	apiVersion   string
-	terminalType string
-	repository   repositories.TerminalRepository
+	adminKey            string
+	baseURL             string
+	apiVersion          string
+	terminalType        string
+	repository          repositories.TerminalRepository
+	subscriptionService paymentServices.SubscriptionService
+	db                  *gorm.DB
 }
 
 func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
@@ -82,11 +88,13 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 	}
 
 	return &terminalTrainerService{
-		adminKey:     os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
-		baseURL:      os.Getenv("TERMINAL_TRAINER_URL"), // http://localhost:8090
-		apiVersion:   apiVersion,
-		terminalType: terminalType,
-		repository:   repositories.NewTerminalRepository(db),
+		adminKey:            os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
+		baseURL:             os.Getenv("TERMINAL_TRAINER_URL"), // http://localhost:8090
+		apiVersion:          apiVersion,
+		terminalType:        terminalType,
+		repository:          repositories.NewTerminalRepository(db),
+		subscriptionService: paymentServices.NewSubscriptionService(db),
+		db:                  db,
 	}
 }
 
@@ -192,11 +200,9 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 		return nil, fmt.Errorf("user terminal trainer key is disabled")
 	}
 
-	// Vérifier le nombre de sessions actives
-	activeSessions, err := tts.repository.GetTerminalSessionsByUserID(userID, true)
-	if err == nil && len(*activeSessions) >= userKey.MaxSessions {
-		return nil, fmt.Errorf("maximum number of concurrent sessions reached")
-	}
+	// NOTE: Concurrent terminal checks are now handled by middleware
+	// The subscription plan limits are enforced in CheckTerminalCreationLimit() middleware
+	// Machine size, template, and network validation should be added here based on subscription plan
 
 	// Appel à l'API Terminal Trainer pour démarrer la session
 	hash := sha256.New()
@@ -270,6 +276,67 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	return response, nil
 }
 
+// StartSessionWithPlan démarre une nouvelle session avec validation du plan d'abonnement
+func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionInput dto.CreateTerminalSessionInput, planInterface interface{}) (*dto.TerminalSessionResponse, error) {
+	// Convertir l'interface en SubscriptionPlan
+	plan, ok := planInterface.(*paymentModels.SubscriptionPlan)
+	if !ok {
+		return nil, fmt.Errorf("invalid subscription plan type")
+	}
+
+	// Valider la taille de la machine
+	if sessionInput.InstanceType != "" {
+		// Récupérer les types d'instances disponibles depuis l'API Terminal Trainer
+		instanceTypes, err := tts.GetInstanceTypes()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get instance types: %v", err)
+		}
+
+		// Trouver la taille correspondant au type d'instance demandé
+		var instanceSizes string
+		for _, it := range instanceTypes {
+			if it.Prefix == sessionInput.InstanceType || it.Name == sessionInput.InstanceType {
+				instanceSizes = it.Size
+				break
+			}
+		}
+
+		if instanceSizes == "" {
+			return nil, fmt.Errorf("instance type '%s' not found", sessionInput.InstanceType)
+		}
+
+		// Parse les tailles disponibles pour cette instance (format: "XS|S|M")
+		availableSizes := strings.Split(instanceSizes, "|")
+
+		// Vérifier qu'au moins une des tailles de l'instance est autorisée dans le plan
+		allowed := false
+		for _, instanceSize := range availableSizes {
+			for _, allowedSize := range plan.AllowedMachineSizes {
+				if allowedSize == strings.TrimSpace(instanceSize) || allowedSize == "all" {
+					allowed = true
+					break
+				}
+			}
+			if allowed {
+				break
+			}
+		}
+		if !allowed {
+			return nil, fmt.Errorf("instance '%s' with sizes [%s] not allowed in your plan. Allowed sizes: %v",
+				sessionInput.InstanceType, instanceSizes, plan.AllowedMachineSizes)
+		}
+	}
+
+	// Appliquer la durée maximale de session depuis le plan
+	maxDurationSeconds := plan.MaxSessionDurationMinutes * 60
+	if sessionInput.Expiry == 0 || sessionInput.Expiry > maxDurationSeconds {
+		sessionInput.Expiry = maxDurationSeconds
+	}
+
+	// Appeler la méthode StartSession originale avec les paramètres validés
+	return tts.StartSession(userID, sessionInput)
+}
+
 // GetSessionInfo récupère les informations d'une session
 func (tts *terminalTrainerService) GetSessionInfo(sessionID string) (*models.Terminal, error) {
 	return tts.repository.GetTerminalSessionByID(sessionID)
@@ -313,6 +380,14 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	if err != nil {
 		fmt.Printf("[ERROR] Failed to update session %s status: %v\n", sessionID, err)
 		return err
+	}
+
+	// 3. Décrémenter la métrique concurrent_terminals
+	log.Printf("[DEBUG] Decrementing concurrent_terminals for user %s\n", terminal.UserID)
+	decrementErr := tts.subscriptionService.IncrementUsage(terminal.UserID, "concurrent_terminals", -1)
+	if decrementErr != nil {
+		// Log l'erreur mais ne pas faire échouer l'arrêt du terminal
+		fmt.Printf("Warning: failed to decrement concurrent_terminals for user %s: %v\n", terminal.UserID, decrementErr)
 	}
 
 	log.Printf("[DEBUG] Successfully updated session %s status to 'stopped'\n", sessionID)

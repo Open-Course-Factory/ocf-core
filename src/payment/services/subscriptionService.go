@@ -21,12 +21,14 @@ type SubscriptionService interface {
 	GetActiveUserSubscription(userID string) (*models.UserSubscription, error)
 	GetUserSubscriptionByID(id uuid.UUID) (*models.UserSubscription, error)
 	CreateUserSubscription(userID string, planID uuid.UUID) (*models.UserSubscription, error)
+	UpgradeUserPlan(userID string, newPlanID uuid.UUID) (*models.UserSubscription, error)
 
 	// Usage limits and metrics - types métiers
 	CheckUsageLimit(userID, metricType string, increment int64) (*UsageLimitCheck, error)
 	IncrementUsage(userID, metricType string, increment int64) error
 	GetUserUsageMetrics(userID string) (*[]models.UsageMetrics, error)
 	ResetMonthlyUsage(userID string) error
+	UpdateUsageMetricLimits(userID string, newPlanID uuid.UUID) error
 
 	// Payment methods - retourne des models
 	GetUserPaymentMethods(userID string) (*[]models.PaymentMethod, error)
@@ -162,6 +164,8 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 				limit = int64(sPlan.MaxLabSessions)
 			case "concurrent_users":
 				limit = int64(sPlan.MaxConcurrentUsers)
+			case "concurrent_terminals":
+				limit = int64(sPlan.MaxConcurrentTerminals)
 			default:
 				limit = -1 // Illimité
 			}
@@ -333,4 +337,85 @@ func (ss *subscriptionService) GetSubscriptionPlan(id uuid.UUID) (*models.Subscr
 // GetAllSubscriptionPlans récupère tous les plans
 func (ss *subscriptionService) GetAllSubscriptionPlans(activeOnly bool) (*[]models.SubscriptionPlan, error) {
 	return ss.repository.GetAllSubscriptionPlans(activeOnly)
+}
+
+// UpgradeUserPlan upgrades a user's subscription plan and updates all usage metric limits
+func (ss *subscriptionService) UpgradeUserPlan(userID string, newPlanID uuid.UUID) (*models.UserSubscription, error) {
+	// Get the user's active subscription
+	subscription, err := ss.repository.GetActiveUserSubscription(userID)
+	if err != nil {
+		return nil, fmt.Errorf("no active subscription found for user: %v", err)
+	}
+
+	// Get the new plan to verify it exists
+	newPlan, err := ss.GetSubscriptionPlan(newPlanID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid plan ID: %v", err)
+	}
+
+	// Use transaction to ensure atomicity
+	err = ss.db.Transaction(func(tx *gorm.DB) error {
+		// Update subscription plan ID only (don't save associations)
+		if err := tx.Model(subscription).Update("subscription_plan_id", newPlanID).Error; err != nil {
+			return fmt.Errorf("failed to update subscription: %v", err)
+		}
+
+		// Update all usage metric limits for this user
+		err := tx.Model(&models.UsageMetrics{}).
+			Where("user_id = ? AND subscription_id = ?", userID, subscription.ID).
+			Updates(map[string]interface{}{
+				"limit_value": gorm.Expr("CASE "+
+					"WHEN metric_type = 'concurrent_terminals' THEN ? "+
+					"WHEN metric_type = 'courses_created' THEN ? "+
+					"WHEN metric_type = 'lab_sessions' THEN ? "+
+					"ELSE limit_value END",
+					newPlan.MaxConcurrentTerminals,
+					newPlan.MaxCourses,
+					newPlan.MaxLabSessions,
+				),
+			}).Error
+
+		if err != nil {
+			return fmt.Errorf("failed to update usage metrics: %v", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Reload to get the full subscription with updated plan
+	return ss.repository.GetUserSubscription(subscription.ID)
+}
+
+// UpdateUsageMetricLimits updates the limit values for all usage metrics based on a new plan
+func (ss *subscriptionService) UpdateUsageMetricLimits(userID string, newPlanID uuid.UUID) error {
+	// Get the new plan
+	newPlan, err := ss.GetSubscriptionPlan(newPlanID)
+	if err != nil {
+		return fmt.Errorf("invalid plan ID: %v", err)
+	}
+
+	// Get the user's subscription
+	subscription, err := ss.repository.GetActiveUserSubscription(userID)
+	if err != nil {
+		return fmt.Errorf("no active subscription found: %v", err)
+	}
+
+	// Update all metrics for this user with new limits
+	return ss.db.Model(&models.UsageMetrics{}).
+		Where("user_id = ? AND subscription_id = ?", userID, subscription.ID).
+		Updates(map[string]interface{}{
+			"limit_value": gorm.Expr("CASE "+
+				"WHEN metric_type = 'concurrent_terminals' THEN ? "+
+				"WHEN metric_type = 'courses_created' THEN ? "+
+				"WHEN metric_type = 'lab_sessions' THEN ? "+
+				"ELSE limit_value END",
+				newPlan.MaxConcurrentTerminals,
+				newPlan.MaxCourses,
+				newPlan.MaxLabSessions,
+			),
+		}).Error
 }
