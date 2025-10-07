@@ -170,11 +170,23 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 				limit = -1 // Illimité
 			}
 
+			// Pour concurrent_terminals, vérifier le compte réel depuis la DB
+			var currentUsage int64 = 0
+			if metricType == "concurrent_terminals" {
+				var activeCount int64
+				countErr := ss.db.Table("terminals").
+					Where("user_id = ? AND status = ? AND deleted_at IS NULL", userID, "active").
+					Count(&activeCount).Error
+				if countErr == nil {
+					currentUsage = activeCount
+				}
+			}
+
 			return &UsageLimitCheck{
-				Allowed:        limit == -1 || increment <= limit,
-				CurrentUsage:   0,
+				Allowed:        limit == -1 || (currentUsage+increment) <= limit,
+				CurrentUsage:   currentUsage,
 				Limit:          limit,
-				RemainingUsage: limit,
+				RemainingUsage: limit - currentUsage,
 				Message:        "",
 				UserID:         userID,
 				MetricType:     metricType,
@@ -183,15 +195,27 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 		return nil, err
 	}
 
+	// Pour concurrent_terminals, recalculer la valeur en temps réel
+	currentValue := metrics.CurrentValue
+	if metricType == "concurrent_terminals" {
+		var activeCount int64
+		err := ss.db.Table("terminals").
+			Where("user_id = ? AND status = ? AND deleted_at IS NULL", userID, "active").
+			Count(&activeCount).Error
+		if err == nil {
+			currentValue = activeCount
+		}
+	}
+
 	// Calculer si l'action est autorisée
-	newUsage := metrics.CurrentValue + increment
+	newUsage := currentValue + increment
 	allowed := metrics.LimitValue == -1 || newUsage <= metrics.LimitValue
 
 	var remaining int64
 	if metrics.LimitValue == -1 {
 		remaining = -1 // Illimité
 	} else {
-		remaining = metrics.LimitValue - metrics.CurrentValue
+		remaining = metrics.LimitValue - currentValue
 		if remaining < 0 {
 			remaining = 0
 		}
@@ -199,12 +223,12 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 
 	message := ""
 	if !allowed {
-		message = fmt.Sprintf("Usage limit exceeded. Current: %d, Limit: %d", metrics.CurrentValue, metrics.LimitValue)
+		message = fmt.Sprintf("Usage limit exceeded. Current: %d, Limit: %d", currentValue, metrics.LimitValue)
 	}
 
 	return &UsageLimitCheck{
 		Allowed:        allowed,
-		CurrentUsage:   metrics.CurrentValue,
+		CurrentUsage:   currentValue,
 		Limit:          metrics.LimitValue,
 		RemainingUsage: remaining,
 		Message:        message,
@@ -219,8 +243,31 @@ func (ss *subscriptionService) IncrementUsage(userID, metricType string, increme
 }
 
 // GetUserUsageMetrics récupère toutes les métriques d'utilisation d'un utilisateur
+// Pour concurrent_terminals, recalcule la valeur en temps réel depuis les terminaux actifs
 func (ss *subscriptionService) GetUserUsageMetrics(userID string) (*[]models.UsageMetrics, error) {
-	return ss.repository.GetAllUserUsageMetrics(userID)
+	metrics, err := ss.repository.GetAllUserUsageMetrics(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Recalculer concurrent_terminals en temps réel à partir des terminaux actifs
+	for i := range *metrics {
+		metric := &(*metrics)[i]
+		if metric.MetricType == "concurrent_terminals" {
+			// Compter uniquement les terminaux avec status 'active'
+			var activeCount int64
+			err := ss.db.Table("terminals").
+				Where("user_id = ? AND status = ? AND deleted_at IS NULL", userID, "active").
+				Count(&activeCount).Error
+
+			if err == nil {
+				// Mettre à jour la valeur avec le compte réel
+				metric.CurrentValue = activeCount
+			}
+		}
+	}
+
+	return metrics, nil
 }
 
 // ResetMonthlyUsage remet à zéro les métriques mensuelles
