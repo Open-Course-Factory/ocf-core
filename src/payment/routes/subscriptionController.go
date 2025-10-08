@@ -2,9 +2,9 @@
 package paymentController
 
 import (
-	"soli/formations/src/auth/casdoor"
-	"fmt"
 	"net/http"
+	"soli/formations/src/auth/casdoor"
+	"soli/formations/src/utils"
 	"strings"
 
 	"soli/formations/src/auth/errors"
@@ -173,13 +173,13 @@ func (sc *subscriptionController) GetUserSubscription(ctx *gin.Context) {
 	subscription, err := sc.subscriptionService.GetActiveUserSubscription(userId)
 	if err != nil {
 		// This handles the case where user returns from checkout before webhook fires
-		fmt.Printf("No subscription found in DB for user %s, attempting sync from Stripe...\n", userId)
+		utils.Debug("No subscription found in DB for user %s, attempting sync from Stripe...", userId)
 
 		syncResult, syncErr := sc.stripeService.SyncUserSubscriptions(userId)
 		if syncErr != nil {
-			fmt.Printf("Failed to sync subscriptions for user %s: %v\n", userId, syncErr)
+			utils.Debug("Failed to sync subscriptions for user %s: %v", userId, syncErr)
 		} else if syncResult.CreatedSubscriptions > 0 || syncResult.UpdatedSubscriptions > 0 {
-			fmt.Printf("✅ Synced %d subscriptions for user %s\n",
+			utils.Debug("✅ Synced %d subscriptions for user %s",
 				syncResult.CreatedSubscriptions+syncResult.UpdatedSubscriptions, userId)
 
 			// Retry getting the subscription after sync
@@ -294,16 +294,16 @@ func (sc *subscriptionController) CancelSubscription(ctx *gin.Context) {
 		// Immediate cancellation - mark as cancelled now
 		updateErr := sc.stripeService.MarkSubscriptionAsCancelled(subscription)
 		if updateErr != nil {
-			fmt.Printf("⚠️ Warning: Failed to update DB after cancellation: %v\n", updateErr)
+			utils.Debug("⚠️ Warning: Failed to update DB after cancellation: %v", updateErr)
 			// Don't fail the request - webhook will eventually update it
 		} else {
-			fmt.Printf("✅ Subscription %s marked as cancelled in DB\n", subscription.StripeSubscriptionID)
+			utils.Debug("✅ Subscription %s marked as cancelled in DB", subscription.StripeSubscriptionID)
 		}
 	} else {
 		// Cancel at period end - sync from Stripe to get the updated status
 		_, syncErr := sc.stripeService.SyncUserSubscriptions(userId)
 		if syncErr != nil {
-			fmt.Printf("⚠️ Warning: Failed to sync after cancellation: %v\n", syncErr)
+			utils.Debug("⚠️ Warning: Failed to sync after cancellation: %v", syncErr)
 			// Don't fail the request - webhook will eventually update it
 		}
 	}

@@ -121,7 +121,34 @@ OCF Core is the core API for Open Course Factory, a platform for building and ge
 - `src/payment/` - Stripe payment processing
 - `src/webSsh/` - SSH client integration
 - `src/terminalTrainer/` - Terminal session management, sharing, and hiding functionality
+- `src/utils/` - Shared utilities (logger, helpers)
 - `tests/` - Comprehensive test suite
+
+### Logging
+
+The project uses an environment-aware logging system located in `src/utils/logger.go`.
+
+**Debug Levels:**
+- `utils.Debug()` - Only shown in development (ENVIRONMENT=development)
+- `utils.Info()` - Always shown
+- `utils.Warn()` - Always shown
+- `utils.Error()` - Always shown
+
+**Usage:**
+```go
+import "soli/formations/src/utils"
+
+// Debug messages (only in development)
+utils.Debug("🔍 Processing webhook: %s", event.Type)
+
+// Production messages
+utils.Info("User %s subscribed to plan %s", userID, planID)
+utils.Warn("Failed to sync usage limits: %v", err)
+utils.Error("Critical error in payment processing: %v", err)
+```
+
+**Environment Control:**
+Set `ENVIRONMENT=development` in `.env` to enable debug logs. In production, set `ENVIRONMENT=production` to hide debug messages.
 
 ### Database
 

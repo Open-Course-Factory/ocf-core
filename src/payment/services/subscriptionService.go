@@ -2,8 +2,9 @@
 package services
 
 import (
-	"soli/formations/src/auth/casdoor"
 	"fmt"
+	"soli/formations/src/auth/casdoor"
+	"soli/formations/src/utils"
 	"time"
 
 	"soli/formations/src/payment/models"
@@ -465,7 +466,7 @@ func (ss *subscriptionService) UpdateUsageMetricLimits(userID string, newPlanID 
 		return fmt.Errorf("failed to delete old metrics: %v", err)
 	}
 
-	fmt.Printf("🗑️ Deleted old usage metrics for user %s (subscription %s)\n", userID, subscription.ID)
+	utils.Debug("🗑️ Deleted old usage metrics for user %s (subscription %s)", userID, subscription.ID)
 
 	// Initialize new metrics for the new plan
 	err = ss.InitializeUsageMetrics(userID, subscription.ID, newPlanID)
@@ -473,7 +474,7 @@ func (ss *subscriptionService) UpdateUsageMetricLimits(userID string, newPlanID 
 		return fmt.Errorf("failed to initialize new metrics: %v", err)
 	}
 
-	fmt.Printf("✅ Initialized new usage metrics for plan %s (%s)\n", newPlan.ID, newPlan.Name)
+	utils.Debug("✅ Initialized new usage metrics for plan %s (%s)", newPlan.ID, newPlan.Name)
 	return nil
 }
 
@@ -528,7 +529,7 @@ func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptio
 		}
 	}
 
-	fmt.Printf("✅ Initialized %d usage metrics for user %s (subscription: %s)\n",
+	utils.Debug("✅ Initialized %d usage metrics for user %s (subscription: %s)",
 		len(metrics), userID, subscriptionID)
 
 	return nil

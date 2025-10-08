@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"soli/formations/src/auth/casdoor"
+	"soli/formations/src/utils"
 	"time"
 
 	"soli/formations/src/payment/dto"
@@ -345,64 +346,64 @@ func (ss *stripeService) ProcessWebhook(payload []byte, signature string) error 
 	}
 
 	// Log every webhook event received for debugging
-	fmt.Printf("📥 Received webhook event: %s (ID: %s)\n", event.Type, event.ID)
+	utils.Debug("📥 Received webhook event: %s (ID: %s)", event.Type, event.ID)
 
 	switch event.Type {
 	// Subscription lifecycle events
 	case "customer.subscription.created":
-		fmt.Printf("🆕 Processing subscription created\n")
+		utils.Debug("🆕 Processing subscription created")
 		return ss.handleSubscriptionCreated(event)
 	case "customer.subscription.updated":
-		fmt.Printf("🔄 Processing subscription updated\n")
+		utils.Debug("🔄 Processing subscription updated")
 		return ss.handleSubscriptionUpdated(event)
 	case "customer.subscription.deleted":
-		fmt.Printf("❌ Processing subscription deleted\n")
+		utils.Debug("❌ Processing subscription deleted")
 		return ss.handleSubscriptionDeleted(event)
 	case "customer.subscription.paused":
-		fmt.Printf("⏸️ Processing subscription paused\n")
+		utils.Debug("⏸️ Processing subscription paused")
 		return ss.handleSubscriptionPaused(event)
 	case "customer.subscription.resumed":
-		fmt.Printf("▶️ Processing subscription resumed\n")
+		utils.Debug("▶️ Processing subscription resumed")
 		return ss.handleSubscriptionResumed(event)
 	case "customer.subscription.trial_will_end":
-		fmt.Printf("⏰ Processing trial will end\n")
+		utils.Debug("⏰ Processing trial will end")
 		return ss.handleTrialWillEnd(event)
 
 	// Invoice events
 	case "invoice.created":
-		fmt.Printf("📄 Processing invoice created\n")
+		utils.Debug("📄 Processing invoice created")
 		return ss.handleInvoiceCreated(event)
 	case "invoice.finalized":
-		fmt.Printf("📋 Processing invoice finalized\n")
+		utils.Debug("📋 Processing invoice finalized")
 		return ss.handleInvoiceFinalized(event)
 	case "invoice.payment_succeeded":
-		fmt.Printf("💰 Processing invoice payment succeeded\n")
+		utils.Debug("💰 Processing invoice payment succeeded")
 		return ss.handleInvoicePaymentSucceeded(event)
 	case "invoice.payment_failed":
-		fmt.Printf("⚠️ Processing invoice payment failed\n")
+		utils.Debug("⚠️ Processing invoice payment failed")
 		return ss.handleInvoicePaymentFailed(event)
 
 	// Payment method events
 	case "payment_method.attached":
-		fmt.Printf("💳 Processing payment method attached\n")
+		utils.Debug("💳 Processing payment method attached")
 		return ss.handlePaymentMethodAttached(event)
 	case "payment_method.detached":
-		fmt.Printf("🗑️ Processing payment method detached\n")
+		utils.Debug("🗑️ Processing payment method detached")
 		return ss.handlePaymentMethodDetached(event)
 
 	// Customer events
 	case "customer.updated":
-		fmt.Printf("👤 Processing customer updated\n")
+		utils.Debug("👤 Processing customer updated")
 		return ss.handleCustomerUpdated(event)
 
 	// Checkout events
 	case "checkout.session.completed":
-		fmt.Printf("✅ Processing checkout session completed\n")
+		utils.Debug("✅ Processing checkout session completed")
 		return ss.handleCheckoutSessionCompleted(event)
 
 	default:
 		// Événement non géré, mais pas une erreur
-		fmt.Printf("❓ Unhandled webhook event type: %s\n", event.Type)
+		utils.Debug("❓ Unhandled webhook event type: %s", event.Type)
 		return nil
 	}
 }
@@ -425,16 +426,16 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 
 	if len(subscription.Items.Data) > 0 {
 		stripePriceID := subscription.Items.Data[0].Price.ID
-		fmt.Printf("🔍 Subscription created with Stripe price ID: %s\n", stripePriceID)
+		utils.Debug("🔍 Subscription created with Stripe price ID: %s", stripePriceID)
 
 		// Try to find plan by Stripe price ID first (most reliable)
 		plan, err := ss.repository.GetSubscriptionPlanByStripePriceID(stripePriceID)
 		if err == nil {
 			planID = plan.ID
-			fmt.Printf("✅ Found plan by Stripe price: %s (%s)\n", plan.Name, plan.ID)
+			utils.Debug("✅ Found plan by Stripe price: %s (%s)", plan.Name, plan.ID)
 		} else {
 			// Fallback to metadata if price lookup fails
-			fmt.Printf("⚠️ Could not find plan by price ID %s, falling back to metadata\n", stripePriceID)
+			utils.Debug("⚠️ Could not find plan by price ID %s, falling back to metadata", stripePriceID)
 			planIDStr, exists := subscription.Metadata["subscription_plan_id"]
 			if !exists {
 				return fmt.Errorf("subscription_plan_id not found in metadata and price lookup failed")
@@ -443,7 +444,7 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 			if err != nil {
 				return fmt.Errorf("invalid subscription_plan_id in metadata: %v", err)
 			}
-			fmt.Printf("⚠️ Using plan from metadata: %s\n", planID)
+			utils.Debug("⚠️ Using plan from metadata: %s", planID)
 		}
 	} else {
 		return fmt.Errorf("subscription has no items/price")
@@ -483,13 +484,13 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 
 	// CRITICAL: Initialize usage metrics for the new subscription
 	// This ensures limits are set correctly from the start
-	fmt.Printf("🔧 Initializing usage metrics for subscription %s\n", userSubscription.ID)
+	utils.Debug("🔧 Initializing usage metrics for subscription %s", userSubscription.ID)
 	if err := ss.subscriptionService.InitializeUsageMetrics(userID, userSubscription.ID, planID); err != nil {
 		// Don't fail the subscription creation, but log the error
-		fmt.Printf("⚠️ Warning: Failed to initialize usage metrics for user %s: %v\n", userID, err)
+		utils.Debug("⚠️ Warning: Failed to initialize usage metrics for user %s: %v", userID, err)
 		// The user can call sync-usage-limits endpoint to fix this
 	} else {
-		fmt.Printf("✅ Usage metrics initialized for user %s with plan %s\n", userID, planID)
+		utils.Debug("✅ Usage metrics initialized for user %s with plan %s", userID, planID)
 	}
 
 	return nil
@@ -510,18 +511,18 @@ func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 	// Check if the plan changed by comparing Stripe price ID
 	if len(subscription.Items.Data) > 0 {
 		stripePriceID := subscription.Items.Data[0].Price.ID
-		fmt.Printf("🔍 Webhook subscription update: Stripe price ID = %s, Current plan ID = %s\n",
+		utils.Debug("🔍 Webhook subscription update: Stripe price ID = %s, Current plan ID = %s",
 			stripePriceID, userSub.SubscriptionPlanID)
 
 		// Find the plan that matches this Stripe price ID
 		newPlan, err := ss.repository.GetSubscriptionPlanByStripePriceID(stripePriceID)
 		if err != nil {
-			fmt.Printf("⚠️ Could not find plan with Stripe price ID %s: %v\n", stripePriceID, err)
-			fmt.Printf("💡 Tip: Make sure your subscription plan has stripe_price_id = '%s' in the database\n", stripePriceID)
+			utils.Debug("⚠️ Could not find plan with Stripe price ID %s: %v", stripePriceID, err)
+			utils.Debug("💡 Tip: Make sure your subscription plan has stripe_price_id = '%s' in the database", stripePriceID)
 		} else if newPlan.ID == userSub.SubscriptionPlanID {
-			fmt.Printf("ℹ️ Plan unchanged: %s (%s)\n", newPlan.Name, newPlan.ID)
+			utils.Debug("ℹ️ Plan unchanged: %s (%s)", newPlan.Name, newPlan.ID)
 		} else {
-			fmt.Printf("🔄 Plan change detected in webhook: %s -> %s (%s) (Stripe price: %s)\n",
+			utils.Debug("🔄 Plan change detected in webhook: %s -> %s (%s) (Stripe price: %s)",
 				userSub.SubscriptionPlanID, newPlan.ID, newPlan.Name, stripePriceID)
 
 			// Update the subscription plan ID
@@ -531,10 +532,10 @@ func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 			// Also update usage metric limits for the new plan
 			err = ss.subscriptionService.UpdateUsageMetricLimits(userSub.UserID, newPlan.ID)
 			if err != nil {
-				fmt.Printf("⚠️ Warning: Failed to update usage limits after plan change: %v\n", err)
+				utils.Debug("⚠️ Warning: Failed to update usage limits after plan change: %v", err)
 				// Don't fail the webhook, continue with subscription update
 			} else {
-				fmt.Printf("✅ Updated usage limits for user %s to plan %s (%s)\n",
+				utils.Debug("✅ Updated usage limits for user %s to plan %s (%s)",
 					userSub.UserID, newPlan.ID, newPlan.Name)
 			}
 		}
@@ -584,7 +585,7 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
 	if err != nil {
 		// If no active subscription found, try to find by metadata in the invoice
-		fmt.Printf("⚠️ No active subscription found for customer %s, skipping invoice %s\n", stripeInvoice.Customer.ID, stripeInvoice.ID)
+		utils.Debug("⚠️ No active subscription found for customer %s, skipping invoice %s", stripeInvoice.Customer.ID, stripeInvoice.ID)
 		return fmt.Errorf("subscription not found for customer %s (invoice %s): %v", stripeInvoice.Customer.ID, stripeInvoice.ID, err)
 	}
 
@@ -612,7 +613,7 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 	existingInvoice, err := ss.repository.GetInvoiceByStripeID(stripeInvoice.ID)
 	if err != nil {
 		// Facture n'existe pas, la créer
-		fmt.Printf("✅ Creating invoice %s for user %s (amount: %d %s)\n",
+		utils.Debug("✅ Creating invoice %s for user %s (amount: %d %s)",
 			stripeInvoice.Number, userSub.UserID, stripeInvoice.AmountPaid, stripeInvoice.Currency)
 		return ss.repository.CreateInvoice(invoiceRecord)
 	} else {
@@ -620,7 +621,7 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 		existingInvoice.Status = invoiceRecord.Status
 		existingInvoice.PaidAt = invoiceRecord.PaidAt
 		existingInvoice.DownloadURL = invoiceRecord.DownloadURL
-		fmt.Printf("✅ Updated invoice %s for user %s\n", stripeInvoice.Number, userSub.UserID)
+		utils.Debug("✅ Updated invoice %s for user %s", stripeInvoice.Number, userSub.UserID)
 		return ss.repository.UpdateInvoice(existingInvoice)
 	}
 }
@@ -634,12 +635,12 @@ func (ss *stripeService) handleInvoicePaymentFailed(event *stripe.Event) error {
 
 	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
 	if err != nil {
-		fmt.Printf("⚠️ No active subscription found for customer %s (invoice %s payment failed)\n", stripeInvoice.Customer.ID, stripeInvoice.ID)
+		utils.Debug("⚠️ No active subscription found for customer %s (invoice %s payment failed)", stripeInvoice.Customer.ID, stripeInvoice.ID)
 		return fmt.Errorf("subscription not found for customer %s: %v", stripeInvoice.Customer.ID, err)
 	}
 
 	userSub.Status = "past_due"
-	fmt.Printf("⚠️ Invoice %s payment failed for subscription %s - marking as past_due\n", stripeInvoice.ID, userSub.StripeSubscriptionID)
+	utils.Debug("⚠️ Invoice %s payment failed for subscription %s - marking as past_due", stripeInvoice.ID, userSub.StripeSubscriptionID)
 	return ss.repository.UpdateUserSubscription(userSub)
 }
 
@@ -673,13 +674,13 @@ func (ss *stripeService) handleCheckoutSessionCompleted(event *stripe.Event) err
 				return fmt.Errorf("failed to update subscription metadata: %v", err)
 			}
 
-			fmt.Printf("✅ Updated subscription %s metadata for user %s\n", session.Subscription.ID, userID)
+			utils.Debug("✅ Updated subscription %s metadata for user %s", session.Subscription.ID, userID)
 		}
 	}
 
 	// Si c'est un abonnement, il sera créé via le webhook subscription.created
 	// Ici on peut juste logger ou mettre à jour des métriques
-	fmt.Printf("Checkout completed for user %s, subscription: %s\n", userID, session.Subscription.ID)
+	utils.Debug("Checkout completed for user %s, subscription: %s", userID, session.Subscription.ID)
 
 	return nil
 }
@@ -697,7 +698,7 @@ func (ss *stripeService) handleSubscriptionPaused(event *stripe.Event) error {
 	}
 
 	userSub.Status = "paused"
-	fmt.Printf("⏸️ Subscription %s paused for user %s\n", subscription.ID, userSub.UserID)
+	utils.Debug("⏸️ Subscription %s paused for user %s", subscription.ID, userSub.UserID)
 
 	return ss.repository.UpdateUserSubscription(userSub)
 }
@@ -715,7 +716,7 @@ func (ss *stripeService) handleSubscriptionResumed(event *stripe.Event) error {
 	}
 
 	userSub.Status = string(subscription.Status) // Should be "active"
-	fmt.Printf("▶️ Subscription %s resumed for user %s (status: %s)\n", subscription.ID, userSub.UserID, subscription.Status)
+	utils.Debug("▶️ Subscription %s resumed for user %s (status: %s)", subscription.ID, userSub.UserID, subscription.Status)
 
 	return ss.repository.UpdateUserSubscription(userSub)
 }
@@ -733,7 +734,7 @@ func (ss *stripeService) handleTrialWillEnd(event *stripe.Event) error {
 	}
 
 	trialEndDate := time.Unix(subscription.TrialEnd, 0)
-	fmt.Printf("⏰ Trial will end for user %s on %s (subscription: %s)\n",
+	utils.Debug("⏰ Trial will end for user %s on %s (subscription: %s)",
 		userSub.UserID, trialEndDate.Format("2006-01-02"), subscription.ID)
 
 	// TODO: Send notification email/webhook to user about trial ending
@@ -750,7 +751,7 @@ func (ss *stripeService) handleInvoiceCreated(event *stripe.Event) error {
 
 	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
 	if err != nil {
-		fmt.Printf("⚠️ No active subscription found for customer %s (invoice %s created)\n",
+		utils.Debug("⚠️ No active subscription found for customer %s (invoice %s created)",
 			stripeInvoice.Customer.ID, stripeInvoice.ID)
 		return nil // Not an error - might be a one-time invoice
 	}
@@ -777,7 +778,7 @@ func (ss *stripeService) handleInvoiceCreated(event *stripe.Event) error {
 		DownloadURL:        stripeInvoice.InvoicePDF,
 	}
 
-	fmt.Printf("📄 Creating invoice %s for user %s (status: %s, amount: %d %s)\n",
+	utils.Debug("📄 Creating invoice %s for user %s (status: %s, amount: %d %s)",
 		stripeInvoice.Number, userSub.UserID, stripeInvoice.Status, stripeInvoice.AmountDue, stripeInvoice.Currency)
 
 	return ss.repository.CreateInvoice(invoiceRecord)
@@ -796,7 +797,7 @@ func (ss *stripeService) handleInvoiceFinalized(event *stripe.Event) error {
 		// Invoice doesn't exist yet, create it
 		userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
 		if err != nil {
-			fmt.Printf("⚠️ No subscription found for customer %s (invoice %s finalized)\n",
+			utils.Debug("⚠️ No subscription found for customer %s (invoice %s finalized)",
 				stripeInvoice.Customer.ID, stripeInvoice.ID)
 			return nil
 		}
@@ -815,7 +816,7 @@ func (ss *stripeService) handleInvoiceFinalized(event *stripe.Event) error {
 			DownloadURL:        stripeInvoice.InvoicePDF,
 		}
 
-		fmt.Printf("📋 Creating finalized invoice %s for user %s\n", stripeInvoice.Number, userSub.UserID)
+		utils.Debug("📋 Creating finalized invoice %s for user %s", stripeInvoice.Number, userSub.UserID)
 		return ss.repository.CreateInvoice(invoiceRecord)
 	}
 
@@ -825,7 +826,7 @@ func (ss *stripeService) handleInvoiceFinalized(event *stripe.Event) error {
 	existingInvoice.StripeHostedURL = stripeInvoice.HostedInvoiceURL
 	existingInvoice.DownloadURL = stripeInvoice.InvoicePDF
 
-	fmt.Printf("📋 Updated invoice %s to finalized (open) status\n", stripeInvoice.Number)
+	utils.Debug("📋 Updated invoice %s to finalized (open) status", stripeInvoice.Number)
 	return ss.repository.UpdateInvoice(existingInvoice)
 }
 
@@ -843,7 +844,7 @@ func (ss *stripeService) handlePaymentMethodAttached(event *stripe.Event) error 
 
 	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(pm.Customer.ID)
 	if err != nil {
-		fmt.Printf("⚠️ No subscription found for customer %s (payment method attached)\n", pm.Customer.ID)
+		utils.Debug("⚠️ No subscription found for customer %s (payment method attached)", pm.Customer.ID)
 		return nil // Not an error - customer might not have subscription yet
 	}
 
@@ -871,7 +872,7 @@ func (ss *stripeService) handlePaymentMethodAttached(event *stripe.Event) error 
 		pmRecord.CardExpYear = int(pm.Card.ExpYear)
 	}
 
-	fmt.Printf("💳 Creating payment method %s for user %s (type: %s, card: %s)\n",
+	utils.Debug("💳 Creating payment method %s for user %s (type: %s, card: %s)",
 		pm.ID, userSub.UserID, pm.Type, pmRecord.CardLast4)
 
 	return ss.repository.CreatePaymentMethod(pmRecord)
@@ -895,7 +896,7 @@ func (ss *stripeService) handlePaymentMethodDetached(event *stripe.Event) error 
 	pmRecord.IsActive = false
 	pmRecord.IsDefault = false
 
-	fmt.Printf("🗑️ Payment method %s detached for user %s\n", pm.ID, pmRecord.UserID)
+	utils.Debug("🗑️ Payment method %s detached for user %s", pm.ID, pmRecord.UserID)
 	return ss.repository.UpdatePaymentMethod(pmRecord)
 }
 
@@ -910,19 +911,19 @@ func (ss *stripeService) handleCustomerUpdated(event *stripe.Event) error {
 	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(customer.ID)
 	if err != nil {
 		// No subscription found, might be a new customer
-		fmt.Printf("👤 Customer %s updated but no subscription found\n", customer.ID)
+		utils.Debug("👤 Customer %s updated but no subscription found", customer.ID)
 		return nil
 	}
 
 	// Update customer ID in subscription if changed
 	if userSub.StripeCustomerID != customer.ID {
 		userSub.StripeCustomerID = customer.ID
-		fmt.Printf("👤 Updated customer ID for user %s to %s\n", userSub.UserID, customer.ID)
+		utils.Debug("👤 Updated customer ID for user %s to %s", userSub.UserID, customer.ID)
 		return ss.repository.UpdateUserSubscription(userSub)
 	}
 
 	// TODO: Sync customer email/name to Casdoor if needed
-	fmt.Printf("👤 Customer %s updated for user %s\n", customer.ID, userSub.UserID)
+	utils.Debug("👤 Customer %s updated for user %s", customer.ID, userSub.UserID)
 	return nil
 }
 
@@ -1408,7 +1409,7 @@ func (ss *stripeService) SyncUserInvoices(userID string) (*SyncInvoicesResult, e
 		return nil, fmt.Errorf("failed to iterate invoices: %v", err)
 	}
 
-	fmt.Printf("✅ Invoice sync complete: %d processed, %d created, %d updated, %d skipped, %d failed\n",
+	utils.Debug("✅ Invoice sync complete: %d processed, %d created, %d updated, %d skipped, %d failed",
 		result.ProcessedInvoices, result.CreatedInvoices, result.UpdatedInvoices,
 		result.SkippedInvoices, len(result.FailedInvoices))
 
@@ -1462,7 +1463,7 @@ func (ss *stripeService) processSingleInvoice(inv *stripe.Invoice, userID string
 		result.UpdatedDetails = append(result.UpdatedDetails,
 			fmt.Sprintf("Updated invoice %s (%s) - %d %s",
 				inv.ID, inv.Number, inv.Total, inv.Currency))
-		fmt.Printf("✅ Updated invoice %s for user %s\n", inv.ID, userID)
+		utils.Debug("✅ Updated invoice %s for user %s", inv.ID, userID)
 	} else {
 		// Créer nouvelle facture
 		newInvoice := &models.Invoice{
@@ -1488,7 +1489,7 @@ func (ss *stripeService) processSingleInvoice(inv *stripe.Invoice, userID string
 		result.CreatedDetails = append(result.CreatedDetails,
 			fmt.Sprintf("Created invoice %s (%s) - %d %s",
 				inv.ID, inv.Number, inv.Total, inv.Currency))
-		fmt.Printf("✅ Created invoice %s for user %s\n", inv.ID, userID)
+		utils.Debug("✅ Created invoice %s for user %s", inv.ID, userID)
 	}
 
 	return nil
@@ -1534,7 +1535,7 @@ func (ss *stripeService) SyncUserPaymentMethods(userID string) (*SyncPaymentMeth
 		return nil, fmt.Errorf("failed to iterate payment methods: %v", err)
 	}
 
-	fmt.Printf("✅ Payment method sync complete: %d processed, %d created, %d updated, %d skipped, %d failed\n",
+	utils.Debug("✅ Payment method sync complete: %d processed, %d created, %d updated, %d skipped, %d failed",
 		result.ProcessedPaymentMethods, result.CreatedPaymentMethods, result.UpdatedPaymentMethods,
 		result.SkippedPaymentMethods, len(result.FailedPaymentMethods))
 
@@ -1582,7 +1583,7 @@ func (ss *stripeService) processSinglePaymentMethod(pm *stripe.PaymentMethod, us
 		result.UpdatedDetails = append(result.UpdatedDetails,
 			fmt.Sprintf("Updated payment method %s (%s ****%s)",
 				pm.ID, existingPM.CardBrand, existingPM.CardLast4))
-		fmt.Printf("✅ Updated payment method %s for user %s\n", pm.ID, userID)
+		utils.Debug("✅ Updated payment method %s for user %s", pm.ID, userID)
 	} else {
 		// Créer nouveau moyen de paiement avec métadonnées minimales
 		newPM := &models.PaymentMethod{
@@ -1608,7 +1609,7 @@ func (ss *stripeService) processSinglePaymentMethod(pm *stripe.PaymentMethod, us
 		result.CreatedDetails = append(result.CreatedDetails,
 			fmt.Sprintf("Created payment method %s (%s ****%s)",
 				pm.ID, newPM.CardBrand, newPM.CardLast4))
-		fmt.Printf("✅ Created payment method %s for user %s\n", pm.ID, userID)
+		utils.Debug("✅ Created payment method %s for user %s", pm.ID, userID)
 	}
 
 	return nil
