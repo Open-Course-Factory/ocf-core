@@ -120,17 +120,48 @@ func (ss *subscriptionService) GetUserSubscriptionByID(id uuid.UUID) (*models.Us
 }
 
 // CreateUserSubscription crée un nouvel abonnement
+// For free plans (PriceAmount == 0), creates an active subscription with usage metrics
+// For paid plans, creates an incomplete subscription that will be activated by Stripe webhook
 func (ss *subscriptionService) CreateUserSubscription(userID string, planID uuid.UUID) (*models.UserSubscription, error) {
+	// Get the plan to check if it's free
+	plan, err := ss.GetSubscriptionPlan(planID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid plan ID: %v", err)
+	}
+
+	now := time.Now()
 
 	subscription := &models.UserSubscription{
 		UserID:             userID,
 		SubscriptionPlanID: planID,
-		Status:             "incomplete",
 	}
 
-	err := ss.repository.CreateUserSubscription(subscription)
+	// FREE PLAN: Activate immediately without Stripe
+	if plan.PriceAmount == 0 {
+		subscription.Status = "active"
+		subscription.CurrentPeriodStart = now
+		// Free plans are perpetual (1 year period for consistency)
+		subscription.CurrentPeriodEnd = now.AddDate(1, 0, 0)
+
+		utils.Info("Creating free subscription for user %s (plan: %s)", userID, plan.Name)
+	} else {
+		// PAID PLAN: Will be activated by Stripe webhook
+		subscription.Status = "incomplete"
+		utils.Debug("Creating incomplete subscription for user %s (will be activated by Stripe)", userID)
+	}
+
+	err = ss.repository.CreateUserSubscription(subscription)
 	if err != nil {
 		return nil, err
+	}
+
+	// Initialize usage metrics for free plans
+	if plan.PriceAmount == 0 {
+		err = ss.InitializeUsageMetrics(userID, subscription.ID, planID)
+		if err != nil {
+			utils.Warn("Failed to initialize usage metrics for free subscription: %v", err)
+			// Don't fail the subscription creation, just log the warning
+		}
 	}
 
 	return ss.GetUserSubscriptionByID(subscription.ID)

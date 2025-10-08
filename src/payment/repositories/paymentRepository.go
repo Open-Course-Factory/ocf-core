@@ -151,6 +151,7 @@ func (r *paymentRepository) GetActiveUserSubscription(userID string) (*models.Us
 	err := r.db.
 		Preload("SubscriptionPlan").
 		Where("user_id = ? AND status IN (?)", userID, []string{"active", "trialing"}).
+		Order("created_at DESC"). // Always return the newest subscription if multiple exist
 		First(&subscription).Error
 	if err != nil {
 		return nil, err

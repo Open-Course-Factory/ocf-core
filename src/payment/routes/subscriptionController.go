@@ -62,16 +62,18 @@ func NewSubscriptionController(db *gorm.DB) SubscriptionController {
 
 // Create Checkout Session godoc
 //
-//	@Summary		Créer une session de checkout Stripe
-//	@Description	Initie le processus de paiement pour un abonnement
+//	@Summary		Créer une session de checkout Stripe ou un abonnement gratuit
+//	@Description	Pour les plans payants, crée une session Stripe. Pour les plans gratuits (price=0), crée directement l'abonnement actif sans paiement. Le paramètre allow_replace=true permet de remplacer un abonnement gratuit existant par un abonnement payant.
 //	@Tags			subscriptions
 //	@Accept			json
 //	@Produce		json
-//	@Param			checkout	body	dto.CreateCheckoutSessionInput	true	"Checkout session input"
+//	@Param			checkout	body	dto.CreateCheckoutSessionInput	true	"Checkout session input (allow_replace: permet de remplacer un abonnement gratuit existant)"
 //	@Security		Bearer
-//	@Success		200	{object}	dto.CheckoutSessionOutput
-//	@Failure		400	{object}	errors.APIError	"Bad request"
+//	@Success		200	{object}	dto.CheckoutSessionOutput	"Paid plan: Stripe checkout URL"
+//	@Success		200	{object}	map[string]interface{}	"Free plan: {subscription: UserSubscriptionOutput, free_plan: true}"
+//	@Failure		400	{object}	errors.APIError	"Bad request or user already has active subscription (use allow_replace=true to upgrade from free)"
 //	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Failure		404	{object}	errors.APIError	"Plan not found"
 //	@Failure		500	{object}	errors.APIError	"Stripe error"
 //	@Router			/subscriptions/checkout [post]
 func (sc *subscriptionController) CreateCheckoutSession(ctx *gin.Context) {
@@ -86,26 +88,107 @@ func (sc *subscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 		return
 	}
 
-	// Vérifier si l'utilisateur n'a pas déjà un abonnement actif
-	hasActive, err := sc.subscriptionService.HasActiveSubscription(userId)
+	// Check if user already has an active subscription
+	existingSubscription, err := sc.subscriptionService.GetActiveUserSubscription(userId)
+	var replaceSubscriptionID *uuid.UUID = nil
+
+	if err == nil {
+		// User has an active subscription
+		if !input.AllowReplace {
+			// No allow_replace flag - reject as before
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: "User already has an active subscription",
+			})
+			return
+		}
+
+		// allow_replace is true - check if current subscription is free
+		currentPlan, err := sc.subscriptionService.GetSubscriptionPlan(existingSubscription.SubscriptionPlanID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to get current subscription plan: " + err.Error(),
+			})
+			return
+		}
+
+		if currentPlan.PriceAmount > 0 {
+			// Current plan is paid - don't allow replacement, require upgrade endpoint
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: "Cannot replace paid subscription. Please use the upgrade endpoint instead.",
+			})
+			return
+		}
+
+		// Current plan is free - allow replacement
+		utils.Info("User %s is upgrading from free plan (%s) to paid plan", userId, currentPlan.Name)
+		replaceSubscriptionID = &existingSubscription.ID
+	}
+
+	// Get the plan to check if it's free
+	plan, err := sc.subscriptionService.GetSubscriptionPlan(input.SubscriptionPlanID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to check existing subscription: " + err.Error(),
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Subscription plan not found",
 		})
 		return
 	}
 
-	if hasActive {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "User already has an active subscription",
+	// FREE PLAN: Create subscription directly without Stripe
+	if plan.PriceAmount == 0 {
+		// CRITICAL: If user has an existing PAID subscription, cancel it in Stripe first
+		if existingSubscription != nil && existingSubscription.StripeSubscriptionID != "" {
+			currentPlan, _ := sc.subscriptionService.GetSubscriptionPlan(existingSubscription.SubscriptionPlanID)
+			if currentPlan != nil && currentPlan.PriceAmount > 0 {
+				// User is downgrading from paid to free - cancel Stripe subscription
+				utils.Info("🔽 User %s downgrading from paid plan (%s) to free plan (%s) - canceling Stripe subscription",
+					userId, currentPlan.Name, plan.Name)
+
+				err := sc.stripeService.CancelSubscription(existingSubscription.StripeSubscriptionID, false) // false = cancel immediately
+				if err != nil {
+					utils.Error("❌ Failed to cancel Stripe subscription %s: %v", existingSubscription.StripeSubscriptionID, err)
+					ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+						ErrorCode:    http.StatusInternalServerError,
+						ErrorMessage: "Failed to cancel existing Stripe subscription: " + err.Error(),
+					})
+					return
+				}
+
+				utils.Info("✅ Canceled Stripe subscription %s (webhook will handle database cleanup)", existingSubscription.StripeSubscriptionID)
+			}
+		}
+
+		subscription, err := sc.subscriptionService.CreateUserSubscription(userId, input.SubscriptionPlanID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to create free subscription: " + err.Error(),
+			})
+			return
+		}
+
+		// Convert to DTO and return
+		subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to convert subscription data",
+			})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, gin.H{
+			"subscription": subscriptionDTO,
+			"free_plan":    true,
 		})
 		return
 	}
 
-	// Créer la session de checkout
-	checkoutSession, err := sc.stripeService.CreateCheckoutSession(userId, input)
+	// PAID PLAN: Create Stripe checkout session
+	checkoutSession, err := sc.stripeService.CreateCheckoutSession(userId, input, replaceSubscriptionID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,

@@ -191,6 +191,7 @@ type CreateCheckoutSessionInput struct {
 	SuccessURL         string    `binding:"required" json:"success_url"`
 	CancelURL          string    `binding:"required" json:"cancel_url"`
 	CouponCode         string    `json:"coupon_code,omitempty"`
+	AllowReplace       bool      `json:"allow_replace,omitempty"` // Allow replacing free subscription with paid one
 }
 
 type CheckoutSessionOutput struct {

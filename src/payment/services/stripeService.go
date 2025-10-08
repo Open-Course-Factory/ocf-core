@@ -89,7 +89,7 @@ type StripeService interface {
 	UpdateCustomer(customerID string, params *stripe.CustomerParams) error
 
 	// Subscription management
-	CreateCheckoutSession(userID string, input dto.CreateCheckoutSessionInput) (*dto.CheckoutSessionOutput, error)
+	CreateCheckoutSession(userID string, input dto.CreateCheckoutSessionInput, replaceSubscriptionID *uuid.UUID) (*dto.CheckoutSessionOutput, error)
 	CreatePortalSession(userID string, input dto.CreatePortalSessionInput) (*dto.PortalSessionOutput, error)
 
 	// Product & Price management
@@ -149,13 +149,21 @@ func NewStripeService(db *gorm.DB) StripeService {
 
 // CreateOrGetCustomer crée ou récupère un client Stripe
 func (ss *stripeService) CreateOrGetCustomer(userID, email, name string) (string, error) {
-	// Vérifier si le client existe déjà en base
-	subscription, err := ss.subscriptionService.GetActiveUserSubscription(userID)
-	if err == nil && subscription.StripeCustomerID != "" {
-		return subscription.StripeCustomerID, nil
+	// Check if the user already has a Stripe customer ID from ANY subscription (active or inactive)
+	// This ensures we reuse the same Stripe customer even when upgrading from free to paid
+	subscriptions, err := ss.repository.GetUserSubscriptions(userID, true) // true = include inactive
+	if err == nil && subscriptions != nil {
+		// Find the first subscription with a StripeCustomerID
+		for _, sub := range *subscriptions {
+			if sub.StripeCustomerID != "" {
+				utils.Debug("♻️ Reusing existing Stripe customer %s for user %s", sub.StripeCustomerID, userID)
+				return sub.StripeCustomerID, nil
+			}
+		}
 	}
 
-	// Créer un nouveau client Stripe
+	// No existing Stripe customer found - create a new one
+	utils.Info("🆕 Creating new Stripe customer for user %s (%s)", userID, email)
 	params := &stripe.CustomerParams{
 		Email: stripe.String(email),
 		Name:  stripe.String(name),
@@ -169,6 +177,7 @@ func (ss *stripeService) CreateOrGetCustomer(userID, email, name string) (string
 		return "", fmt.Errorf("failed to create Stripe customer: %v", err)
 	}
 
+	utils.Info("✅ Created Stripe customer %s for user %s", customer.ID, userID)
 	return customer.ID, nil
 }
 
@@ -179,7 +188,7 @@ func (ss *stripeService) UpdateCustomer(customerID string, params *stripe.Custom
 }
 
 // CreateCheckoutSession crée une session de checkout Stripe
-func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCheckoutSessionInput) (*dto.CheckoutSessionOutput, error) {
+func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCheckoutSessionInput, replaceSubscriptionID *uuid.UUID) (*dto.CheckoutSessionOutput, error) {
 	// Récupérer le plan d'abonnement
 	plan, err := ss.subscriptionService.GetSubscriptionPlan(input.SubscriptionPlanID)
 	if err != nil {
@@ -208,6 +217,45 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 		return nil, err
 	}
 
+	// Update Stripe customer with latest name and address (if available)
+	// This will pre-fill the checkout form
+	customerUpdateParams := &stripe.CustomerParams{
+		Name: stripe.String(name),
+	}
+
+	// Try to get user's default billing address
+	billingAddr, err := ss.repository.GetDefaultBillingAddress(userID)
+	if err == nil && billingAddr != nil {
+		// User has a billing address - include it in customer update
+		customerUpdateParams.Address = &stripe.AddressParams{
+			Line1:      stripe.String(billingAddr.Line1),
+			Line2:      stripe.String(billingAddr.Line2),
+			City:       stripe.String(billingAddr.City),
+			State:      stripe.String(billingAddr.State),
+			PostalCode: stripe.String(billingAddr.PostalCode),
+			Country:    stripe.String(billingAddr.Country),
+		}
+		utils.Debug("📍 Pre-filling checkout with saved address: %s, %s", billingAddr.City, billingAddr.Country)
+	}
+
+	// Update customer in Stripe to pre-fill checkout form
+	if err := ss.UpdateCustomer(customerID, customerUpdateParams); err != nil {
+		utils.Warn("⚠️ Failed to update Stripe customer with pre-fill data: %v", err)
+		// Don't fail checkout if this fails - just won't pre-fill
+	}
+
+	// Build metadata
+	metadata := map[string]string{
+		"user_id":              userID,
+		"subscription_plan_id": input.SubscriptionPlanID.String(),
+	}
+
+	// Add replace_subscription_id if upgrading from free plan
+	if replaceSubscriptionID != nil {
+		metadata["replace_subscription_id"] = replaceSubscriptionID.String()
+		utils.Info("Checkout session will replace free subscription %s", replaceSubscriptionID.String())
+	}
+
 	// Paramètres de la session de checkout
 	params := &stripe.CheckoutSessionParams{
 		Customer: stripe.String(customerID),
@@ -224,18 +272,18 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 		},
 		SuccessURL: stripe.String(input.SuccessURL),
 		CancelURL:  stripe.String(input.CancelURL),
-		Metadata: map[string]string{
-			"user_id":              userID,
-			"subscription_plan_id": input.SubscriptionPlanID.String(),
-		},
+		Metadata:   metadata,
 		// CRITICAL FIX: Pass metadata to the subscription that will be created
 		SubscriptionData: &stripe.CheckoutSessionSubscriptionDataParams{
-			Metadata: map[string]string{
-				"user_id":              userID,
-				"subscription_plan_id": input.SubscriptionPlanID.String(),
-			},
+			Metadata: metadata,
 		},
 		BillingAddressCollection: stripe.String("required"),
+		// Allow updating customer name and address during checkout
+		// This also enables pre-filling from the customer object
+		CustomerUpdate: &stripe.CheckoutSessionCustomerUpdateParams{
+			Name:    stripe.String("auto"),    // Allow name to be updated
+			Address: stripe.String("auto"),    // Allow address to be updated
+		},
 		// TaxIDCollection: &stripe.CheckoutSessionTaxIDCollectionParams{
 		// 	Enabled: stripe.Bool(true),
 		// },
@@ -423,13 +471,15 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 	// CRITICAL FIX: Determine plan ID from Stripe price, not metadata
 	// Metadata can be stale if plan was changed in Stripe Dashboard
 	var planID uuid.UUID
+	var plan *models.SubscriptionPlan
 
 	if len(subscription.Items.Data) > 0 {
 		stripePriceID := subscription.Items.Data[0].Price.ID
 		utils.Debug("🔍 Subscription created with Stripe price ID: %s", stripePriceID)
 
 		// Try to find plan by Stripe price ID first (most reliable)
-		plan, err := ss.repository.GetSubscriptionPlanByStripePriceID(stripePriceID)
+		var err error
+		plan, err = ss.repository.GetSubscriptionPlanByStripePriceID(stripePriceID)
 		if err == nil {
 			planID = plan.ID
 			utils.Debug("✅ Found plan by Stripe price: %s (%s)", plan.Name, plan.ID)
@@ -445,6 +495,12 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 				return fmt.Errorf("invalid subscription_plan_id in metadata: %v", err)
 			}
 			utils.Debug("⚠️ Using plan from metadata: %s", planID)
+
+			// Load the plan object for GORM relationship
+			plan, err = ss.subscriptionService.GetSubscriptionPlan(planID)
+			if err != nil {
+				return fmt.Errorf("failed to load plan %s: %v", planID, err)
+			}
 		}
 	} else {
 		return fmt.Errorf("subscription has no items/price")
@@ -460,9 +516,11 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 	}
 
 	// Créer directement le modèle UserSubscription avec toutes les données Stripe
+	// CRITICAL: Set BOTH the ID and the object for GORM to properly save the relationship
 	userSubscription := &models.UserSubscription{
 		UserID:               userID,
 		SubscriptionPlanID:   planID,
+		SubscriptionPlan:     *plan, // CRITICAL: Include the plan object
 		StripeSubscriptionID: subscription.ID,
 		StripeCustomerID:     subscription.Customer.ID,
 		Status:               string(subscription.Status),
@@ -475,6 +533,30 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 	if subscription.TrialEnd > 0 {
 		trialEnd := time.Unix(subscription.TrialEnd, 0)
 		userSubscription.TrialEnd = &trialEnd
+	}
+
+	// Check if this subscription is replacing a free subscription
+	// This metadata comes from the checkout session
+	if replaceIDStr, hasReplaceID := subscription.Metadata["replace_subscription_id"]; hasReplaceID {
+		if replaceID, err := uuid.Parse(replaceIDStr); err == nil {
+			// Get the old subscription
+			oldSub, err := ss.repository.GetUserSubscription(replaceID)
+			if err == nil {
+				// Verify it's actually a free plan before deleting
+				oldPlan, err := ss.subscriptionService.GetSubscriptionPlan(oldSub.SubscriptionPlanID)
+				if err == nil && oldPlan.PriceAmount == 0 {
+					utils.Info("🔄 Deleting old free subscription %s (being replaced by paid subscription %s)",
+						replaceID, subscription.ID)
+
+					// Hard delete the free subscription
+					if err := ss.genericService.DeleteEntity(replaceID, models.UserSubscription{}, false); err != nil {
+						utils.Warn("⚠️ Failed to delete old free subscription: %v", err)
+					} else {
+						utils.Info("✅ Deleted old free subscription %s", replaceID)
+					}
+				}
+			}
+		}
 	}
 
 	// Créer directement dans la base via le repository
@@ -656,26 +738,60 @@ func (ss *stripeService) handleCheckoutSessionCompleted(event *stripe.Event) err
 		return fmt.Errorf("user_id not found in session metadata")
 	}
 
+	// Check if this is replacing a free subscription
+	replaceSubscriptionIDStr, hasReplaceID := session.Metadata["replace_subscription_id"]
+	if hasReplaceID {
+		replaceSubscriptionID, err := uuid.Parse(replaceSubscriptionIDStr)
+		if err == nil {
+			// Get the subscription to verify it's actually free
+			oldSubscription, err := ss.repository.GetUserSubscription(replaceSubscriptionID)
+			if err == nil {
+				oldPlan, err := ss.subscriptionService.GetSubscriptionPlan(oldSubscription.SubscriptionPlanID)
+				if err == nil && oldPlan.PriceAmount == 0 {
+					// Delete the old free subscription (hard delete since it has no Stripe ID)
+					utils.Info("🔄 Deleting old free subscription %s for user %s (upgrading to paid)",
+						replaceSubscriptionID, userID)
+
+					err = ss.genericService.DeleteEntity(replaceSubscriptionID, models.UserSubscription{}, false)
+					if err != nil {
+						utils.Warn("⚠️ Failed to delete old free subscription: %v", err)
+						// Don't fail the webhook - new subscription will still be created
+					} else {
+						utils.Info("✅ Successfully deleted old free subscription %s", replaceSubscriptionID)
+					}
+				} else {
+					utils.Warn("⚠️ Subscription %s is not a free plan, skipping deletion", replaceSubscriptionID)
+				}
+			}
+		}
+	}
+
 	// This guarantees metadata is available when subscription.created webhook fires
 	if session.Subscription != nil && session.Subscription.ID != "" {
 		planID, hasPlanID := session.Metadata["subscription_plan_id"]
 
-		if hasPlanID {
-			// Update the subscription metadata in Stripe to ensure it's propagated
-			params := &stripe.SubscriptionParams{
-				Metadata: map[string]string{
-					"user_id":              userID,
-					"subscription_plan_id": planID,
-				},
-			}
-
-			_, err := subscription.Update(session.Subscription.ID, params)
-			if err != nil {
-				return fmt.Errorf("failed to update subscription metadata: %v", err)
-			}
-
-			utils.Debug("✅ Updated subscription %s metadata for user %s", session.Subscription.ID, userID)
+		// Build metadata to pass to subscription
+		subscriptionMetadata := map[string]string{
+			"user_id": userID,
 		}
+		if hasPlanID {
+			subscriptionMetadata["subscription_plan_id"] = planID
+		}
+		if hasReplaceID {
+			subscriptionMetadata["replace_subscription_id"] = replaceSubscriptionIDStr
+		}
+
+		// Update the subscription metadata in Stripe to ensure it's propagated
+		params := &stripe.SubscriptionParams{
+			Metadata: subscriptionMetadata,
+		}
+
+		_, err := subscription.Update(session.Subscription.ID, params)
+		if err != nil {
+			return fmt.Errorf("failed to update subscription metadata: %v", err)
+		}
+
+		utils.Debug("✅ Updated subscription %s metadata for user %s", session.Subscription.ID, userID)
 	}
 
 	// Si c'est un abonnement, il sera créé via le webhook subscription.created
@@ -1385,6 +1501,12 @@ func (ss *stripeService) SyncUserInvoices(userID string) (*SyncInvoicesResult, e
 		return nil, fmt.Errorf("no active subscription found for user %s: %v", userID, err)
 	}
 
+	// Check if user has a Stripe customer ID (free plans don't have one)
+	if userSub.StripeCustomerID == "" {
+		utils.Debug("⚠️ User %s has a free subscription with no Stripe customer ID, skipping invoice sync", userID)
+		return result, nil // Return empty result, no invoices to sync
+	}
+
 	// Récupérer toutes les factures depuis Stripe pour ce customer
 	params := &stripe.InvoiceListParams{
 		Customer: stripe.String(userSub.StripeCustomerID),
@@ -1508,6 +1630,12 @@ func (ss *stripeService) SyncUserPaymentMethods(userID string) (*SyncPaymentMeth
 	userSub, err := ss.repository.GetActiveUserSubscription(userID)
 	if err != nil {
 		return nil, fmt.Errorf("no active subscription found for user %s: %v", userID, err)
+	}
+
+	// Check if user has a Stripe customer ID (free plans don't have one)
+	if userSub.StripeCustomerID == "" {
+		utils.Debug("⚠️ User %s has a free subscription with no Stripe customer ID, skipping payment methods sync", userID)
+		return result, nil // Return empty result, no payment methods to sync
 	}
 
 	// Récupérer tous les moyens de paiement depuis Stripe pour ce customer
