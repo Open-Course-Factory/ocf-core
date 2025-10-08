@@ -14,6 +14,7 @@ import (
 type PaymentRepository interface {
 	// SubscriptionPlan operations
 	GetAllSubscriptionPlans(activeOnly bool) (*[]models.SubscriptionPlan, error)
+	GetSubscriptionPlanByStripePriceID(stripePriceID string) (*models.SubscriptionPlan, error)
 
 	// UserSubscription operations
 	CreateUserSubscription(subscription *models.UserSubscription) error
@@ -101,6 +102,15 @@ func (r *paymentRepository) GetAllSubscriptionPlans(activeOnly bool) (*[]models.
 		return nil, err
 	}
 	return &plans, nil
+}
+
+func (r *paymentRepository) GetSubscriptionPlanByStripePriceID(stripePriceID string) (*models.SubscriptionPlan, error) {
+	var plan models.SubscriptionPlan
+	err := r.db.Where("stripe_price_id = ?", stripePriceID).First(&plan).Error
+	if err != nil {
+		return nil, err
+	}
+	return &plan, nil
 }
 
 // func (r *paymentRepository) UpdateSubscriptionPlan(plan *models.SubscriptionPlan) error {

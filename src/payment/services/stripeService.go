@@ -103,6 +103,7 @@ type StripeService interface {
 	CancelSubscription(subscriptionID string, cancelAtPeriodEnd bool) error
 	MarkSubscriptionAsCancelled(userSubscription *models.UserSubscription) error
 	ReactivateSubscription(subscriptionID string) error
+	UpdateSubscription(subscriptionID, newPriceID, prorationBehavior string) (*stripe.Subscription, error)
 
 	// Subscription synchronization
 	SyncExistingSubscriptions() (*SyncSubscriptionsResult, error)
@@ -343,22 +344,65 @@ func (ss *stripeService) ProcessWebhook(payload []byte, signature string) error 
 		return err
 	}
 
+	// Log every webhook event received for debugging
+	fmt.Printf("📥 Received webhook event: %s (ID: %s)\n", event.Type, event.ID)
+
 	switch event.Type {
+	// Subscription lifecycle events
 	case "customer.subscription.created":
+		fmt.Printf("🆕 Processing subscription created\n")
 		return ss.handleSubscriptionCreated(event)
 	case "customer.subscription.updated":
+		fmt.Printf("🔄 Processing subscription updated\n")
 		return ss.handleSubscriptionUpdated(event)
 	case "customer.subscription.deleted":
+		fmt.Printf("❌ Processing subscription deleted\n")
 		return ss.handleSubscriptionDeleted(event)
+	case "customer.subscription.paused":
+		fmt.Printf("⏸️ Processing subscription paused\n")
+		return ss.handleSubscriptionPaused(event)
+	case "customer.subscription.resumed":
+		fmt.Printf("▶️ Processing subscription resumed\n")
+		return ss.handleSubscriptionResumed(event)
+	case "customer.subscription.trial_will_end":
+		fmt.Printf("⏰ Processing trial will end\n")
+		return ss.handleTrialWillEnd(event)
+
+	// Invoice events
+	case "invoice.created":
+		fmt.Printf("📄 Processing invoice created\n")
+		return ss.handleInvoiceCreated(event)
+	case "invoice.finalized":
+		fmt.Printf("📋 Processing invoice finalized\n")
+		return ss.handleInvoiceFinalized(event)
 	case "invoice.payment_succeeded":
+		fmt.Printf("💰 Processing invoice payment succeeded\n")
 		return ss.handleInvoicePaymentSucceeded(event)
 	case "invoice.payment_failed":
+		fmt.Printf("⚠️ Processing invoice payment failed\n")
 		return ss.handleInvoicePaymentFailed(event)
+
+	// Payment method events
+	case "payment_method.attached":
+		fmt.Printf("💳 Processing payment method attached\n")
+		return ss.handlePaymentMethodAttached(event)
+	case "payment_method.detached":
+		fmt.Printf("🗑️ Processing payment method detached\n")
+		return ss.handlePaymentMethodDetached(event)
+
+	// Customer events
+	case "customer.updated":
+		fmt.Printf("👤 Processing customer updated\n")
+		return ss.handleCustomerUpdated(event)
+
+	// Checkout events
 	case "checkout.session.completed":
+		fmt.Printf("✅ Processing checkout session completed\n")
 		return ss.handleCheckoutSessionCompleted(event)
+
 	default:
 		// Événement non géré, mais pas une erreur
-		fmt.Printf("Unhandled webhook event type: %s\n", event.Type)
+		fmt.Printf("❓ Unhandled webhook event type: %s\n", event.Type)
 		return nil
 	}
 }
@@ -375,14 +419,34 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 		return fmt.Errorf("user_id not found in subscription metadata")
 	}
 
-	planIDStr, exists := subscription.Metadata["subscription_plan_id"]
-	if !exists {
-		return fmt.Errorf("subscription_plan_id not found in metadata")
-	}
+	// CRITICAL FIX: Determine plan ID from Stripe price, not metadata
+	// Metadata can be stale if plan was changed in Stripe Dashboard
+	var planID uuid.UUID
 
-	planID, err := uuid.Parse(planIDStr)
-	if err != nil {
-		return fmt.Errorf("invalid subscription_plan_id format: %v", err)
+	if len(subscription.Items.Data) > 0 {
+		stripePriceID := subscription.Items.Data[0].Price.ID
+		fmt.Printf("🔍 Subscription created with Stripe price ID: %s\n", stripePriceID)
+
+		// Try to find plan by Stripe price ID first (most reliable)
+		plan, err := ss.repository.GetSubscriptionPlanByStripePriceID(stripePriceID)
+		if err == nil {
+			planID = plan.ID
+			fmt.Printf("✅ Found plan by Stripe price: %s (%s)\n", plan.Name, plan.ID)
+		} else {
+			// Fallback to metadata if price lookup fails
+			fmt.Printf("⚠️ Could not find plan by price ID %s, falling back to metadata\n", stripePriceID)
+			planIDStr, exists := subscription.Metadata["subscription_plan_id"]
+			if !exists {
+				return fmt.Errorf("subscription_plan_id not found in metadata and price lookup failed")
+			}
+			planID, err = uuid.Parse(planIDStr)
+			if err != nil {
+				return fmt.Errorf("invalid subscription_plan_id in metadata: %v", err)
+			}
+			fmt.Printf("⚠️ Using plan from metadata: %s\n", planID)
+		}
+	} else {
+		return fmt.Errorf("subscription has no items/price")
 	}
 
 	// Dans les nouvelles versions de Stripe, les périodes sont au niveau des items
@@ -413,7 +477,22 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 	}
 
 	// Créer directement dans la base via le repository
-	return ss.repository.CreateUserSubscription(userSubscription)
+	if err := ss.repository.CreateUserSubscription(userSubscription); err != nil {
+		return fmt.Errorf("failed to create subscription: %v", err)
+	}
+
+	// CRITICAL: Initialize usage metrics for the new subscription
+	// This ensures limits are set correctly from the start
+	fmt.Printf("🔧 Initializing usage metrics for subscription %s\n", userSubscription.ID)
+	if err := ss.subscriptionService.InitializeUsageMetrics(userID, userSubscription.ID, planID); err != nil {
+		// Don't fail the subscription creation, but log the error
+		fmt.Printf("⚠️ Warning: Failed to initialize usage metrics for user %s: %v\n", userID, err)
+		// The user can call sync-usage-limits endpoint to fix this
+	} else {
+		fmt.Printf("✅ Usage metrics initialized for user %s with plan %s\n", userID, planID)
+	}
+
+	return nil
 }
 
 func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
@@ -426,6 +505,39 @@ func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
 	if err != nil {
 		return fmt.Errorf("subscription not found in database: %v", err)
+	}
+
+	// Check if the plan changed by comparing Stripe price ID
+	if len(subscription.Items.Data) > 0 {
+		stripePriceID := subscription.Items.Data[0].Price.ID
+		fmt.Printf("🔍 Webhook subscription update: Stripe price ID = %s, Current plan ID = %s\n",
+			stripePriceID, userSub.SubscriptionPlanID)
+
+		// Find the plan that matches this Stripe price ID
+		newPlan, err := ss.repository.GetSubscriptionPlanByStripePriceID(stripePriceID)
+		if err != nil {
+			fmt.Printf("⚠️ Could not find plan with Stripe price ID %s: %v\n", stripePriceID, err)
+			fmt.Printf("💡 Tip: Make sure your subscription plan has stripe_price_id = '%s' in the database\n", stripePriceID)
+		} else if newPlan.ID == userSub.SubscriptionPlanID {
+			fmt.Printf("ℹ️ Plan unchanged: %s (%s)\n", newPlan.Name, newPlan.ID)
+		} else {
+			fmt.Printf("🔄 Plan change detected in webhook: %s -> %s (%s) (Stripe price: %s)\n",
+				userSub.SubscriptionPlanID, newPlan.ID, newPlan.Name, stripePriceID)
+
+			// Update the subscription plan ID
+			userSub.SubscriptionPlanID = newPlan.ID
+			userSub.SubscriptionPlan = *newPlan
+
+			// Also update usage metric limits for the new plan
+			err = ss.subscriptionService.UpdateUsageMetricLimits(userSub.UserID, newPlan.ID)
+			if err != nil {
+				fmt.Printf("⚠️ Warning: Failed to update usage limits after plan change: %v\n", err)
+				// Don't fail the webhook, continue with subscription update
+			} else {
+				fmt.Printf("✅ Updated usage limits for user %s to plan %s (%s)\n",
+					userSub.UserID, newPlan.ID, newPlan.Name)
+			}
+		}
 	}
 
 	userSub.Status = string(subscription.Status)
@@ -572,6 +684,248 @@ func (ss *stripeService) handleCheckoutSessionCompleted(event *stripe.Event) err
 	return nil
 }
 
+// handleSubscriptionPaused traite la mise en pause d'un abonnement
+func (ss *stripeService) handleSubscriptionPaused(event *stripe.Event) error {
+	var subscription stripe.Subscription
+	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
+		return fmt.Errorf("failed to unmarshal subscription: %v", err)
+	}
+
+	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
+	if err != nil {
+		return fmt.Errorf("subscription not found in database: %v", err)
+	}
+
+	userSub.Status = "paused"
+	fmt.Printf("⏸️ Subscription %s paused for user %s\n", subscription.ID, userSub.UserID)
+
+	return ss.repository.UpdateUserSubscription(userSub)
+}
+
+// handleSubscriptionResumed traite la reprise d'un abonnement
+func (ss *stripeService) handleSubscriptionResumed(event *stripe.Event) error {
+	var subscription stripe.Subscription
+	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
+		return fmt.Errorf("failed to unmarshal subscription: %v", err)
+	}
+
+	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
+	if err != nil {
+		return fmt.Errorf("subscription not found in database: %v", err)
+	}
+
+	userSub.Status = string(subscription.Status) // Should be "active"
+	fmt.Printf("▶️ Subscription %s resumed for user %s (status: %s)\n", subscription.ID, userSub.UserID, subscription.Status)
+
+	return ss.repository.UpdateUserSubscription(userSub)
+}
+
+// handleTrialWillEnd traite l'alerte de fin d'essai
+func (ss *stripeService) handleTrialWillEnd(event *stripe.Event) error {
+	var subscription stripe.Subscription
+	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
+		return fmt.Errorf("failed to unmarshal subscription: %v", err)
+	}
+
+	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
+	if err != nil {
+		return fmt.Errorf("subscription not found in database: %v", err)
+	}
+
+	trialEndDate := time.Unix(subscription.TrialEnd, 0)
+	fmt.Printf("⏰ Trial will end for user %s on %s (subscription: %s)\n",
+		userSub.UserID, trialEndDate.Format("2006-01-02"), subscription.ID)
+
+	// TODO: Send notification email/webhook to user about trial ending
+	// For now, just log it
+	return nil
+}
+
+// handleInvoiceCreated traite la création d'une facture
+func (ss *stripeService) handleInvoiceCreated(event *stripe.Event) error {
+	var stripeInvoice stripe.Invoice
+	if err := json.Unmarshal(event.Data.Raw, &stripeInvoice); err != nil {
+		return fmt.Errorf("failed to unmarshal invoice: %v", err)
+	}
+
+	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
+	if err != nil {
+		fmt.Printf("⚠️ No active subscription found for customer %s (invoice %s created)\n",
+			stripeInvoice.Customer.ID, stripeInvoice.ID)
+		return nil // Not an error - might be a one-time invoice
+	}
+
+	// Check if invoice already exists
+	_, err = ss.repository.GetInvoiceByStripeID(stripeInvoice.ID)
+	if err == nil {
+		// Invoice already exists, skip
+		return nil
+	}
+
+	// Create invoice record with "draft" or "open" status
+	invoiceRecord := &models.Invoice{
+		UserID:             userSub.UserID,
+		UserSubscriptionID: userSub.ID,
+		StripeInvoiceID:    stripeInvoice.ID,
+		Amount:             stripeInvoice.AmountDue,
+		Currency:           string(stripeInvoice.Currency),
+		Status:             string(stripeInvoice.Status),
+		InvoiceNumber:      stripeInvoice.Number,
+		InvoiceDate:        time.Unix(stripeInvoice.Created, 0),
+		DueDate:            time.Unix(stripeInvoice.DueDate, 0),
+		StripeHostedURL:    stripeInvoice.HostedInvoiceURL,
+		DownloadURL:        stripeInvoice.InvoicePDF,
+	}
+
+	fmt.Printf("📄 Creating invoice %s for user %s (status: %s, amount: %d %s)\n",
+		stripeInvoice.Number, userSub.UserID, stripeInvoice.Status, stripeInvoice.AmountDue, stripeInvoice.Currency)
+
+	return ss.repository.CreateInvoice(invoiceRecord)
+}
+
+// handleInvoiceFinalized traite la finalisation d'une facture
+func (ss *stripeService) handleInvoiceFinalized(event *stripe.Event) error {
+	var stripeInvoice stripe.Invoice
+	if err := json.Unmarshal(event.Data.Raw, &stripeInvoice); err != nil {
+		return fmt.Errorf("failed to unmarshal invoice: %v", err)
+	}
+
+	// Get existing invoice
+	existingInvoice, err := ss.repository.GetInvoiceByStripeID(stripeInvoice.ID)
+	if err != nil {
+		// Invoice doesn't exist yet, create it
+		userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
+		if err != nil {
+			fmt.Printf("⚠️ No subscription found for customer %s (invoice %s finalized)\n",
+				stripeInvoice.Customer.ID, stripeInvoice.ID)
+			return nil
+		}
+
+		invoiceRecord := &models.Invoice{
+			UserID:             userSub.UserID,
+			UserSubscriptionID: userSub.ID,
+			StripeInvoiceID:    stripeInvoice.ID,
+			Amount:             stripeInvoice.AmountDue,
+			Currency:           string(stripeInvoice.Currency),
+			Status:             "open",
+			InvoiceNumber:      stripeInvoice.Number,
+			InvoiceDate:        time.Unix(stripeInvoice.Created, 0),
+			DueDate:            time.Unix(stripeInvoice.DueDate, 0),
+			StripeHostedURL:    stripeInvoice.HostedInvoiceURL,
+			DownloadURL:        stripeInvoice.InvoicePDF,
+		}
+
+		fmt.Printf("📋 Creating finalized invoice %s for user %s\n", stripeInvoice.Number, userSub.UserID)
+		return ss.repository.CreateInvoice(invoiceRecord)
+	}
+
+	// Update existing invoice
+	existingInvoice.Status = "open"
+	existingInvoice.InvoiceNumber = stripeInvoice.Number
+	existingInvoice.StripeHostedURL = stripeInvoice.HostedInvoiceURL
+	existingInvoice.DownloadURL = stripeInvoice.InvoicePDF
+
+	fmt.Printf("📋 Updated invoice %s to finalized (open) status\n", stripeInvoice.Number)
+	return ss.repository.UpdateInvoice(existingInvoice)
+}
+
+// handlePaymentMethodAttached traite l'ajout d'un moyen de paiement
+func (ss *stripeService) handlePaymentMethodAttached(event *stripe.Event) error {
+	var pm stripe.PaymentMethod
+	if err := json.Unmarshal(event.Data.Raw, &pm); err != nil {
+		return fmt.Errorf("failed to unmarshal payment method: %v", err)
+	}
+
+	// Get customer to find user ID
+	if pm.Customer == nil {
+		return fmt.Errorf("payment method has no customer")
+	}
+
+	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(pm.Customer.ID)
+	if err != nil {
+		fmt.Printf("⚠️ No subscription found for customer %s (payment method attached)\n", pm.Customer.ID)
+		return nil // Not an error - customer might not have subscription yet
+	}
+
+	// Check if payment method already exists
+	_, err = ss.repository.GetPaymentMethodByStripeID(pm.ID)
+	if err == nil {
+		// Payment method already exists
+		return nil
+	}
+
+	// Create payment method record
+	pmRecord := &models.PaymentMethod{
+		UserID:                userSub.UserID,
+		StripePaymentMethodID: pm.ID,
+		Type:                  string(pm.Type),
+		IsActive:              true,
+		IsDefault:             false, // Will be updated by subscription update if default
+	}
+
+	// Add card details if applicable
+	if pm.Card != nil {
+		pmRecord.CardBrand = string(pm.Card.Brand)
+		pmRecord.CardLast4 = pm.Card.Last4
+		pmRecord.CardExpMonth = int(pm.Card.ExpMonth)
+		pmRecord.CardExpYear = int(pm.Card.ExpYear)
+	}
+
+	fmt.Printf("💳 Creating payment method %s for user %s (type: %s, card: %s)\n",
+		pm.ID, userSub.UserID, pm.Type, pmRecord.CardLast4)
+
+	return ss.repository.CreatePaymentMethod(pmRecord)
+}
+
+// handlePaymentMethodDetached traite la suppression d'un moyen de paiement
+func (ss *stripeService) handlePaymentMethodDetached(event *stripe.Event) error {
+	var pm stripe.PaymentMethod
+	if err := json.Unmarshal(event.Data.Raw, &pm); err != nil {
+		return fmt.Errorf("failed to unmarshal payment method: %v", err)
+	}
+
+	// Get payment method from database
+	pmRecord, err := ss.repository.GetPaymentMethodByStripeID(pm.ID)
+	if err != nil {
+		// Payment method not in database, nothing to do
+		return nil
+	}
+
+	// Mark as inactive instead of deleting (keep history)
+	pmRecord.IsActive = false
+	pmRecord.IsDefault = false
+
+	fmt.Printf("🗑️ Payment method %s detached for user %s\n", pm.ID, pmRecord.UserID)
+	return ss.repository.UpdatePaymentMethod(pmRecord)
+}
+
+// handleCustomerUpdated traite la mise à jour d'un client
+func (ss *stripeService) handleCustomerUpdated(event *stripe.Event) error {
+	var customer stripe.Customer
+	if err := json.Unmarshal(event.Data.Raw, &customer); err != nil {
+		return fmt.Errorf("failed to unmarshal customer: %v", err)
+	}
+
+	// Try to find subscription for this customer
+	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(customer.ID)
+	if err != nil {
+		// No subscription found, might be a new customer
+		fmt.Printf("👤 Customer %s updated but no subscription found\n", customer.ID)
+		return nil
+	}
+
+	// Update customer ID in subscription if changed
+	if userSub.StripeCustomerID != customer.ID {
+		userSub.StripeCustomerID = customer.ID
+		fmt.Printf("👤 Updated customer ID for user %s to %s\n", userSub.UserID, customer.ID)
+		return ss.repository.UpdateUserSubscription(userSub)
+	}
+
+	// TODO: Sync customer email/name to Casdoor if needed
+	fmt.Printf("👤 Customer %s updated for user %s\n", customer.ID, userSub.UserID)
+	return nil
+}
+
 // CancelSubscription annule un abonnement
 func (ss *stripeService) CancelSubscription(subscriptionID string, cancelAtPeriodEnd bool) error {
 	if cancelAtPeriodEnd {
@@ -605,6 +959,54 @@ func (ss *stripeService) ReactivateSubscription(subscriptionID string) error {
 
 	_, err := subscription.Update(subscriptionID, params)
 	return err
+}
+
+// UpdateSubscription updates a Stripe subscription to a new price with proration support
+func (ss *stripeService) UpdateSubscription(subscriptionID, newPriceID, prorationBehavior string) (*stripe.Subscription, error) {
+	// Get current subscription to find the subscription item ID
+	currentSub, err := subscription.Get(subscriptionID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current subscription: %v", err)
+	}
+
+	if len(currentSub.Items.Data) == 0 {
+		return nil, fmt.Errorf("subscription has no items")
+	}
+
+	// Default proration behavior
+	if prorationBehavior == "" {
+		prorationBehavior = "always_invoice"
+	}
+
+	// Validate proration behavior
+	validBehaviors := map[string]bool{
+		"always_invoice":    true,
+		"create_prorations": true,
+		"none":              true,
+	}
+	if !validBehaviors[prorationBehavior] {
+		prorationBehavior = "always_invoice"
+	}
+
+	// Update the subscription with the new price
+	params := &stripe.SubscriptionParams{
+		ProrationBehavior: stripe.String(prorationBehavior),
+		Items: []*stripe.SubscriptionItemsParams{
+			{
+				ID:    stripe.String(currentSub.Items.Data[0].ID),
+				Price: stripe.String(newPriceID),
+			},
+		},
+	}
+	params.AddExpand("latest_invoice")
+	params.AddExpand("customer")
+
+	updatedSub, err := subscription.Update(subscriptionID, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update subscription in Stripe: %v", err)
+	}
+
+	return updatedSub, nil
 }
 
 // AttachPaymentMethod attache un moyen de paiement à un client

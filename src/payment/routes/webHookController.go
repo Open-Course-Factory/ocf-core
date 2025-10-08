@@ -77,7 +77,7 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 
 	// 5 : Vérifier l'âge de l'événement (anti-replay)
 	eventTime := time.Unix(event.Created, 0)
-	if time.Since(eventTime) > 5*time.Minute {
+	if time.Since(eventTime) > 10*time.Minute {
 		fmt.Printf("🕐 Event %s too old (%v), rejecting\n", event.ID, time.Since(eventTime))
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,

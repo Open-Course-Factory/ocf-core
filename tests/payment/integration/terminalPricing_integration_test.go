@@ -423,7 +423,7 @@ func TestIntegration_PlanUpgrade(t *testing.T) {
 	assert.Equal(t, int64(1), check.Limit)
 
 	// Upgrade to Trainer plan
-	subscription, err := service.UpgradeUserPlan(userID, plans["Trainer"].ID)
+	subscription, err := service.UpgradeUserPlan(userID, plans["Trainer"].ID, "")
 	assert.NoError(t, err)
 	assert.NotNil(t, subscription)
 
@@ -443,7 +443,7 @@ func TestIntegration_PlanUpgrade(t *testing.T) {
 	assert.Equal(t, int64(3), check.Limit)
 
 	// Downgrade back to Trial (demonstrates limit updates work both ways)
-	_, err = service.UpgradeUserPlan(userID, plans["Trial"].ID)
+	_, err = service.UpgradeUserPlan(userID, plans["Trial"].ID, "")
 	assert.NoError(t, err)
 
 	// Now limit is 1, but usage is still 3 - should not allow more

@@ -21,7 +21,7 @@ type SubscriptionService interface {
 	GetActiveUserSubscription(userID string) (*models.UserSubscription, error)
 	GetUserSubscriptionByID(id uuid.UUID) (*models.UserSubscription, error)
 	CreateUserSubscription(userID string, planID uuid.UUID) (*models.UserSubscription, error)
-	UpgradeUserPlan(userID string, newPlanID uuid.UUID) (*models.UserSubscription, error)
+	UpgradeUserPlan(userID string, newPlanID uuid.UUID, prorationBehavior string) (*models.UserSubscription, error)
 
 	// Usage limits and metrics - types métiers
 	CheckUsageLimit(userID, metricType string, increment int64) (*UsageLimitCheck, error)
@@ -29,6 +29,7 @@ type SubscriptionService interface {
 	GetUserUsageMetrics(userID string) (*[]models.UsageMetrics, error)
 	ResetMonthlyUsage(userID string) error
 	UpdateUsageMetricLimits(userID string, newPlanID uuid.UUID) error
+	InitializeUsageMetrics(userID string, subscriptionID uuid.UUID, planID uuid.UUID) error
 
 	// Payment methods - retourne des models
 	GetUserPaymentMethods(userID string) (*[]models.PaymentMethod, error)
@@ -387,7 +388,7 @@ func (ss *subscriptionService) GetAllSubscriptionPlans(activeOnly bool) (*[]mode
 }
 
 // UpgradeUserPlan upgrades a user's subscription plan and updates all usage metric limits
-func (ss *subscriptionService) UpgradeUserPlan(userID string, newPlanID uuid.UUID) (*models.UserSubscription, error) {
+func (ss *subscriptionService) UpgradeUserPlan(userID string, newPlanID uuid.UUID, prorationBehavior string) (*models.UserSubscription, error) {
 	// Get the user's active subscription
 	subscription, err := ss.repository.GetActiveUserSubscription(userID)
 	if err != nil {
@@ -398,6 +399,11 @@ func (ss *subscriptionService) UpgradeUserPlan(userID string, newPlanID uuid.UUI
 	newPlan, err := ss.GetSubscriptionPlan(newPlanID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid plan ID: %v", err)
+	}
+
+	// Verify the new plan has a Stripe price ID
+	if newPlan.StripePriceID == nil {
+		return nil, fmt.Errorf("new plan does not have a Stripe price configured")
 	}
 
 	// Use transaction to ensure atomicity
@@ -451,18 +457,79 @@ func (ss *subscriptionService) UpdateUsageMetricLimits(userID string, newPlanID 
 		return fmt.Errorf("no active subscription found: %v", err)
 	}
 
-	// Update all metrics for this user with new limits
-	return ss.db.Model(&models.UsageMetrics{}).
-		Where("user_id = ? AND subscription_id = ?", userID, subscription.ID).
-		Updates(map[string]interface{}{
-			"limit_value": gorm.Expr("CASE "+
-				"WHEN metric_type = 'concurrent_terminals' THEN ? "+
-				"WHEN metric_type = 'courses_created' THEN ? "+
-				"WHEN metric_type = 'lab_sessions' THEN ? "+
-				"ELSE limit_value END",
-				newPlan.MaxConcurrentTerminals,
-				newPlan.MaxCourses,
-				newPlan.MaxLabSessions,
-			),
-		}).Error
+	// Delete all existing metrics for this subscription
+	// This ensures we remove metrics from the old plan and add only the new plan's metrics
+	err = ss.db.Where("user_id = ? AND subscription_id = ?", userID, subscription.ID).
+		Delete(&models.UsageMetrics{}).Error
+	if err != nil {
+		return fmt.Errorf("failed to delete old metrics: %v", err)
+	}
+
+	fmt.Printf("🗑️ Deleted old usage metrics for user %s (subscription %s)\n", userID, subscription.ID)
+
+	// Initialize new metrics for the new plan
+	err = ss.InitializeUsageMetrics(userID, subscription.ID, newPlanID)
+	if err != nil {
+		return fmt.Errorf("failed to initialize new metrics: %v", err)
+	}
+
+	fmt.Printf("✅ Initialized new usage metrics for plan %s (%s)\n", newPlan.ID, newPlan.Name)
+	return nil
+}
+
+// InitializeUsageMetrics creates usage metric records for a new subscription
+func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptionID uuid.UUID, planID uuid.UUID) error {
+	// Get the plan
+	plan, err := ss.GetSubscriptionPlan(planID)
+	if err != nil {
+		return fmt.Errorf("invalid plan ID: %v", err)
+	}
+
+	now := time.Now()
+	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := periodStart.AddDate(0, 1, 0)
+
+	// Define the metrics to create
+	metrics := []models.UsageMetrics{
+		{
+			UserID:         userID,
+			SubscriptionID: subscriptionID,
+			MetricType:     "concurrent_terminals",
+			CurrentValue:   0,
+			LimitValue:     int64(plan.MaxConcurrentTerminals),
+			PeriodStart:    periodStart,
+			PeriodEnd:      periodEnd,
+		},
+		{
+			UserID:         userID,
+			SubscriptionID: subscriptionID,
+			MetricType:     "courses_created",
+			CurrentValue:   0,
+			LimitValue:     int64(plan.MaxCourses),
+			PeriodStart:    periodStart,
+			PeriodEnd:      periodEnd,
+		},
+		{
+			UserID:         userID,
+			SubscriptionID: subscriptionID,
+			MetricType:     "lab_sessions",
+			CurrentValue:   0,
+			LimitValue:     int64(plan.MaxLabSessions),
+			PeriodStart:    periodStart,
+			PeriodEnd:      periodEnd,
+		},
+	}
+
+	// Create each metric, or update if it already exists
+	for _, metric := range metrics {
+		err := ss.repository.CreateOrUpdateUsageMetrics(&metric)
+		if err != nil {
+			return fmt.Errorf("failed to create metric %s: %v", metric.MetricType, err)
+		}
+	}
+
+	fmt.Printf("✅ Initialized %d usage metrics for user %s (subscription: %s)\n",
+		len(metrics), userID, subscriptionID)
+
+	return nil
 }

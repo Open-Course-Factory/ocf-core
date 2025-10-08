@@ -66,13 +66,14 @@ type UpdateUserSubscriptionInput struct {
 }
 
 type UpgradePlanInput struct {
-	NewPlanID string `binding:"required" json:"new_plan_id"` // UUID as string
+	NewPlanID         string `binding:"required" json:"new_plan_id"` // UUID as string
+	ProrationBehavior string `json:"proration_behavior,omitempty"`   // "always_invoice", "create_prorations", "none" (default: "always_invoice")
 }
 
 type UserSubscriptionOutput struct {
 	ID                   uuid.UUID  `json:"id"`
 	UserID               string     `json:"user_id"`
-	SubscriptionPlanID   uuid.UUID  `json:"subscription_plans"`
+	SubscriptionPlanID   uuid.UUID  `json:"subscription_plan_id"`
 	StripeSubscriptionID string     `json:"stripe_subscription_id"`
 	StripeCustomerID     string     `json:"stripe_customer_id"`
 	Status               string     `json:"status"`

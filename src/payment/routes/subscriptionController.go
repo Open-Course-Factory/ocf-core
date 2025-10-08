@@ -39,6 +39,9 @@ type SubscriptionController interface {
 	SyncUserSubscriptions(ctx *gin.Context)
 	SyncSubscriptionsWithMissingMetadata(ctx *gin.Context)
 	LinkSubscriptionToUser(ctx *gin.Context)
+
+	// Utility methods
+	SyncUsageLimits(ctx *gin.Context)
 }
 
 type subscriptionController struct {
@@ -374,16 +377,16 @@ func (sc *subscriptionController) ReactivateSubscription(ctx *gin.Context) {
 // Upgrade User Plan godoc
 //
 //	@Summary		Upgrade or change user's subscription plan
-//	@Description	Upgrades or downgrades the user's subscription plan and updates all usage metric limits atomically
+//	@Description	Upgrades or downgrades the user's subscription plan in Stripe with proration support and updates all usage metric limits atomically. Proration behavior options: "always_invoice" (default, immediate charge/credit), "create_prorations" (track but don't invoice immediately), "none" (no proration).
 //	@Tags			subscriptions
 //	@Accept			json
 //	@Produce		json
-//	@Param			upgrade	body	dto.UpgradePlanInput	true	"Upgrade plan input"
+//	@Param			upgrade	body	dto.UpgradePlanInput	true	"Upgrade plan input (proration_behavior optional: always_invoice, create_prorations, none)"
 //	@Security		Bearer
 //	@Success		200	{object}	dto.UserSubscriptionOutput	"Subscription upgraded successfully"
-//	@Failure		400	{object}	errors.APIError	"Bad request"
+//	@Failure		400	{object}	errors.APIError	"Bad request or new plan not configured in Stripe"
 //	@Failure		404	{object}	errors.APIError	"No active subscription or plan not found"
-//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Failure		500	{object}	errors.APIError	"Internal server error or Stripe update failed"
 //	@Router			/subscriptions/upgrade [post]
 func (sc *subscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
@@ -407,26 +410,54 @@ func (sc *subscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 		return
 	}
 
-	// Upgrade the plan (this updates both subscription and usage metric limits atomically)
-	subscription, err := sc.subscriptionService.UpgradeUserPlan(userId, newPlanID)
+	// Get the current subscription to retrieve Stripe subscription ID
+	currentSubscription, err := sc.subscriptionService.GetActiveUserSubscription(userId)
 	if err != nil {
-		if strings.Contains(err.Error(), "no active subscription") {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "No active subscription found for user",
-			})
-			return
-		}
-		if strings.Contains(err.Error(), "invalid plan ID") {
-			ctx.JSON(http.StatusNotFound, &errors.APIError{
-				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "Subscription plan not found",
-			})
-			return
-		}
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "No active subscription found for user",
+		})
+		return
+	}
+
+	// Get the new plan to retrieve Stripe price ID
+	newPlan, err := sc.subscriptionService.GetSubscriptionPlan(newPlanID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Subscription plan not found",
+		})
+		return
+	}
+
+	if newPlan.StripePriceID == nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "New plan does not have a Stripe price configured",
+		})
+		return
+	}
+
+	// Update the subscription in Stripe first
+	_, err = sc.stripeService.UpdateSubscription(
+		currentSubscription.StripeSubscriptionID,
+		*newPlan.StripePriceID,
+		input.ProrationBehavior,
+	)
+	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to upgrade plan: " + err.Error(),
+			ErrorMessage: "Failed to update subscription in Stripe: " + err.Error(),
+		})
+		return
+	}
+
+	// Update the plan in database (this updates both subscription and usage metric limits atomically)
+	subscription, err := sc.subscriptionService.UpgradeUserPlan(userId, newPlanID, input.ProrationBehavior)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to upgrade plan in database: " + err.Error(),
 		})
 		return
 	}
@@ -845,4 +876,64 @@ func (sc *subscriptionController) LinkSubscriptionToUser(ctx *gin.Context) {
 // Delete entity (subscription plan)
 func (sc *subscriptionController) DeleteEntity(ctx *gin.Context) {
 	sc.GenericController.DeleteEntity(ctx, true)
+}
+
+// Sync Usage Limits godoc
+//
+//	@Summary		Sync usage limits with current subscription plan
+//	@Description	Updates usage metric limits to match the user's current subscription plan (fixes desynchronization)
+//	@Tags			subscriptions
+//	@Accept			json
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{object}	map[string]interface{}	"Limits synced successfully"
+//	@Failure		404	{object}	errors.APIError	"No active subscription"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/subscriptions/sync-usage-limits [post]
+func (sc *subscriptionController) SyncUsageLimits(ctx *gin.Context) {
+	userId := ctx.GetString("userId")
+
+	// Get active subscription
+	subscription, err := sc.subscriptionService.GetActiveUserSubscription(userId)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "No active subscription found",
+		})
+		return
+	}
+
+	// Update usage limits to match current plan
+	err = sc.subscriptionService.UpdateUsageMetricLimits(userId, subscription.SubscriptionPlanID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to sync usage limits: " + err.Error(),
+		})
+		return
+	}
+
+	// Get updated metrics to return
+	metrics, err := sc.subscriptionService.GetUserUsageMetrics(userId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to retrieve updated metrics",
+		})
+		return
+	}
+
+	metricsDTO, err := sc.conversionService.UsageMetricsListToDTO(metrics)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to convert metrics",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "Usage limits synced successfully",
+		"metrics": metricsDTO,
+	})
 }

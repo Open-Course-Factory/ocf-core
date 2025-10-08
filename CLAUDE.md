@@ -41,6 +41,27 @@ db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 
 **Why?** Services create their own repository instances with new DB connections. In `:memory:` mode, each connection gets a completely separate database. With `cache=shared`, multiple connections access the same shared in-memory instance, allowing services to see tables created in test setup.
 
+**IMPORTANT - GORM Foreign Key Updates**:
+When updating a foreign key relationship in GORM, you **MUST update BOTH the ID field AND the associated entity**:
+
+```go
+// ❌ WRONG - Only updating the foreign key ID won't save the relationship
+userSub.SubscriptionPlanID = newPlan.ID
+ss.repository.UpdateUserSubscription(userSub)
+
+// ✅ CORRECT - Update both the ID and the associated entity
+userSub.SubscriptionPlanID = newPlan.ID
+userSub.SubscriptionPlan = *newPlan
+ss.repository.UpdateUserSubscription(userSub)
+```
+
+**Why?** GORM tracks associations through both the foreign key field and the associated entity. When you only update the ID, GORM doesn't recognize the relationship change and won't persist it. You must also update the associated entity so GORM can properly save the relationship.
+
+This applies to all GORM relationships:
+- `BelongsTo` (e.g., `UserSubscription.SubscriptionPlan`)
+- `HasOne` and `HasMany` associations
+- `Many2Many` relationships
+
 ## Project Overview
 
 OCF Core is the core API for Open Course Factory, a platform for building and generating courses with integrated labs and environments. The system supports both Marp and Slidev presentation engines, with a focus on reusable course content and templating systems.
