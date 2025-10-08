@@ -18,7 +18,13 @@ import (
 	"soli/formations/docs"
 
 	config "soli/formations/src/configuration"
+	configRegistration "soli/formations/src/configuration/entityRegistration"
+	configModels "soli/formations/src/configuration/models"
+	configServices "soli/formations/src/configuration/services"
+	"soli/formations/src/courses"
 	generator "soli/formations/src/generationEngine"
+	"soli/formations/src/labs"
+	"soli/formations/src/terminalTrainer"
 	marp "soli/formations/src/generationEngine/marp_integration"
 	slidev "soli/formations/src/generationEngine/slidev_integration"
 	"soli/formations/src/payment"
@@ -151,6 +157,15 @@ func main() {
 	sqldb.DB.AutoMigrate(&paymentModels.UsageMetrics{})
 	sqldb.DB.AutoMigrate(&paymentModels.BillingAddress{})
 
+	sqldb.DB.AutoMigrate(&configModels.Feature{})
+
+	// Initialize feature registry and register module features
+	configServices.InitFeatureRegistry(sqldb.DB)
+	registerModuleFeatures()
+
+	// Seed all registered features into database
+	configServices.GlobalFeatureRegistry.SeedRegisteredFeatures()
+
 	casdoor.InitCasdoorEnforcer(sqldb.DB, "")
 
 	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
@@ -169,6 +184,8 @@ func main() {
 	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.TerminalRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.UserTerminalKeyRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.TerminalShareRegistration{})
+
+	ems.GlobalEntityRegistrationService.RegisterEntity(configRegistration.FeatureRegistration{})
 
 	initDB()
 
@@ -579,6 +596,29 @@ func setupDefaultSubscriptionPlans() {
 			log.Printf("Created subscription plan: %s\n", plan.Name)
 		}
 	}
+}
+
+// registerModuleFeatures registers features from all modules
+// Each module declares its own features via the ModuleConfig interface
+func registerModuleFeatures() {
+	log.Println("🔧 Registering module features...")
+
+	// Register each module's features
+	modules := []interface {
+		GetModuleName() string
+		GetFeatures() []configModels.FeatureDefinition
+	}{
+		courses.NewCoursesModuleConfig(),
+		labs.NewLabsModuleConfig(),
+		terminalTrainer.NewTerminalTrainerModuleConfig(),
+	}
+
+	for _, module := range modules {
+		features := module.GetFeatures()
+		configServices.GlobalFeatureRegistry.RegisterFeatures(features)
+	}
+
+	log.Printf("✅ Registered features from %d modules", len(modules))
 }
 
 func setupPaymentRolePermissions() {

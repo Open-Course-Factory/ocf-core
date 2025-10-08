@@ -4,12 +4,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Environment
 
-**IMPORTANT**: This project runs in a Docker Dev Container with Docker-in-Docker (DinD) enabled. All Docker commands execute within the dev container and can start/stop services via docker-compose.
+**IMPORTANT**: This project runs in a Docker Dev Container with Docker-in-Docker (DinD) enabled.
 
-- Dev container has full docker and docker-compose access
-- Services (postgres, casdoor, etc.) run as sibling containers
-- Network: `devcontainer-network` for dev services, `test-network` for test services
-- Port mapping: Host -> Dev Container -> Service Container
+### Architecture
+
+The dev container and application services run as **sibling containers** (not parent-child):
+- Dev container: Your workspace where code runs
+- Service containers: postgres, casdoor, casdoor_db, pgadmin
+- All containers share the `devcontainer-network` Docker network
+
+### Accessing Services from Dev Container
+
+**Within the dev container** (where you run `go run main.go`, tests, etc.), access services using their **service names** as hostnames:
+
+- **PostgreSQL**: `postgres:5432`
+- **Casdoor**: `casdoor:8000`
+- **Casdoor MySQL**: `casdoor_db:3306`
+- **pgAdmin**: `pgadmin:80`
+
+**Do NOT use `localhost` or `127.0.0.1`** - these refer to the dev container itself, not the sibling containers.
+
+### Docker Commands from Dev Container
+
+- `docker compose ps` - Won't show services (runs in different context)
+- `docker ps` - Won't show services (sibling containers)
+- Services are already running and accessible via service names
+- No need to start/stop services manually - they persist across dev container sessions
+
+### Port Mapping
+
+Host machine can access services via localhost:
+- `localhost:8080` → ocf-core API
+- `localhost:5432` → postgres
+- `localhost:8000` → casdoor
+- `localhost:8888` → pgadmin
+
+**Network flow**: `Host :8080` → `Dev Container :8080` → `Service Container :8080`
 
 ### Database Configuration
 
@@ -104,7 +134,7 @@ OCF Core is the core API for Open Course Factory, a platform for building and ge
 
 **Course Generation**: Dual engine support for Marp and Slidev with Git repository integration for courses and themes.
 
-**Payment System**: Stripe integration with subscription plans, usage limits, and role management.
+**Payment System**: Stripe integration with subscription plans, feature-based usage limits, and role management. Usage metrics are conditionally created based on database feature flags AND the plan's `Features` array (see `MODULAR_FEATURES.md`).
 
 **Lab Environment**: SSH-based remote environments with machine and connection management.
 

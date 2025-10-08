@@ -586,6 +586,12 @@ func (sc *subscriptionController) GetUserUsage(ctx *gin.Context) {
 		return
 	}
 
+	// If no metrics found, return empty array instead of null
+	if usageMetrics == nil || len(*usageMetrics) == 0 {
+		ctx.JSON(http.StatusOK, []interface{}{})
+		return
+	}
+
 	// Convertir vers DTO
 	usageMetricsDTO, err := sc.conversionService.UsageMetricsListToDTO(usageMetrics)
 	if err != nil {

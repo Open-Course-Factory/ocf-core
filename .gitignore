@@ -2,7 +2,7 @@ node_modules
 dist
 .vscode/*.log
 conf.json
-docs
+/docs
 src/*.md
 *.db
 __debug_bin*

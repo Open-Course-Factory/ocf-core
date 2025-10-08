@@ -4,6 +4,8 @@ package services
 import (
 	"fmt"
 	"soli/formations/src/auth/casdoor"
+	config "soli/formations/src/configuration"
+	configRepo "soli/formations/src/configuration/repositories"
 	"soli/formations/src/utils"
 	"time"
 
@@ -479,6 +481,8 @@ func (ss *subscriptionService) UpdateUsageMetricLimits(userID string, newPlanID 
 }
 
 // InitializeUsageMetrics creates usage metric records for a new subscription
+// Only creates metrics for features enabled in global feature flags
+// Note: plan.Features array is for display purposes only (user-facing descriptions)
 func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptionID uuid.UUID, planID uuid.UUID) error {
 	// Get the plan
 	plan, err := ss.GetSubscriptionPlan(planID)
@@ -486,13 +490,26 @@ func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptio
 		return fmt.Errorf("invalid plan ID: %v", err)
 	}
 
+	// Get global feature flags from database (falls back to env vars if not found)
+	featureRepo := configRepo.NewFeatureRepository(ss.db)
+	featureFlags := config.GetFeatureFlagsFromDB(featureRepo)
+
+	utils.Debug("🔍 Feature flags - Terminals: %v, Courses: %v, Labs: %v",
+		featureFlags.TerminalsEnabled, featureFlags.CoursesEnabled, featureFlags.LabsEnabled)
+	utils.Debug("🔍 Plan '%s' (Features array is for display only, not used for toggling)", plan.Name)
+
 	now := time.Now()
 	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	periodEnd := periodStart.AddDate(0, 1, 0)
 
-	// Define the metrics to create
-	metrics := []models.UsageMetrics{
-		{
+	// Build metrics list based on ONLY global feature flags
+	// NOTE: plan.Features array contains user-facing descriptions ("Unlimited restarts", etc.)
+	//       and is NOT used for feature toggling - only for display purposes
+	metrics := []models.UsageMetrics{}
+
+	// Only add terminal metrics if enabled globally
+	if featureFlags.TerminalsEnabled {
+		metrics = append(metrics, models.UsageMetrics{
 			UserID:         userID,
 			SubscriptionID: subscriptionID,
 			MetricType:     "concurrent_terminals",
@@ -500,8 +517,15 @@ func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptio
 			LimitValue:     int64(plan.MaxConcurrentTerminals),
 			PeriodStart:    periodStart,
 			PeriodEnd:      periodEnd,
-		},
-		{
+		})
+		utils.Debug("📊 Adding terminal metrics (limit: %d)", plan.MaxConcurrentTerminals)
+	} else {
+		utils.Debug("⊗ Skipping terminal metrics (globally disabled)")
+	}
+
+	// Only add course metrics if enabled globally
+	if featureFlags.CoursesEnabled {
+		metrics = append(metrics, models.UsageMetrics{
 			UserID:         userID,
 			SubscriptionID: subscriptionID,
 			MetricType:     "courses_created",
@@ -509,8 +533,15 @@ func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptio
 			LimitValue:     int64(plan.MaxCourses),
 			PeriodStart:    periodStart,
 			PeriodEnd:      periodEnd,
-		},
-		{
+		})
+		utils.Debug("📊 Adding course metrics (limit: %d)", plan.MaxCourses)
+	} else {
+		utils.Debug("⊗ Skipping course metrics (globally disabled)")
+	}
+
+	// Only add lab metrics if enabled globally
+	if featureFlags.LabsEnabled {
+		metrics = append(metrics, models.UsageMetrics{
 			UserID:         userID,
 			SubscriptionID: subscriptionID,
 			MetricType:     "lab_sessions",
@@ -518,10 +549,13 @@ func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptio
 			LimitValue:     int64(plan.MaxLabSessions),
 			PeriodStart:    periodStart,
 			PeriodEnd:      periodEnd,
-		},
+		})
+		utils.Debug("📊 Adding lab metrics (limit: %d)", plan.MaxLabSessions)
+	} else {
+		utils.Debug("⊗ Skipping lab metrics (globally disabled)")
 	}
 
-	// Create each metric, or update if it already exists
+	// Create each metric
 	for _, metric := range metrics {
 		err := ss.repository.CreateOrUpdateUsageMetrics(&metric)
 		if err != nil {
