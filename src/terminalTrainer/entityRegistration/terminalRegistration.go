@@ -43,23 +43,31 @@ func (t TerminalRegistration) EntityModelToEntityOutput(input any) (any, error) 
 
 func terminalPtrModelToTerminalOutput(terminalModel *models.Terminal) (*dto.TerminalOutput, error) {
 	return &dto.TerminalOutput{
-		ID:        terminalModel.ID,
-		SessionID: terminalModel.SessionID,
-		UserID:    terminalModel.UserID,
-		Status:    terminalModel.Status,
-		ExpiresAt: terminalModel.ExpiresAt,
-		CreatedAt: terminalModel.CreatedAt,
+		ID:              terminalModel.ID,
+		SessionID:       terminalModel.SessionID,
+		UserID:          terminalModel.UserID,
+		Status:          terminalModel.Status,
+		ExpiresAt:       terminalModel.ExpiresAt,
+		InstanceType:    terminalModel.InstanceType,
+		MachineSize:     terminalModel.MachineSize,
+		IsHiddenByOwner: terminalModel.IsHiddenByOwner,
+		HiddenByOwnerAt: terminalModel.HiddenByOwnerAt,
+		CreatedAt:       terminalModel.CreatedAt,
 	}, nil
 }
 
 func terminalValueModelToTerminalOutput(terminalModel models.Terminal) (*dto.TerminalOutput, error) {
 	return &dto.TerminalOutput{
-		ID:        terminalModel.ID,
-		SessionID: terminalModel.SessionID,
-		UserID:    terminalModel.UserID,
-		Status:    terminalModel.Status,
-		ExpiresAt: terminalModel.ExpiresAt,
-		CreatedAt: terminalModel.CreatedAt,
+		ID:              terminalModel.ID,
+		SessionID:       terminalModel.SessionID,
+		UserID:          terminalModel.UserID,
+		Status:          terminalModel.Status,
+		ExpiresAt:       terminalModel.ExpiresAt,
+		InstanceType:    terminalModel.InstanceType,
+		MachineSize:     terminalModel.MachineSize,
+		IsHiddenByOwner: terminalModel.IsHiddenByOwner,
+		HiddenByOwnerAt: terminalModel.HiddenByOwnerAt,
+		CreatedAt:       terminalModel.CreatedAt,
 	}, nil
 }
 

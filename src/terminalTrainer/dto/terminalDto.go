@@ -25,6 +25,7 @@ type TerminalOutput struct {
 	Status            string     `json:"status"`
 	ExpiresAt         time.Time  `json:"expires_at"`
 	InstanceType      string     `json:"instance_type"`
+	MachineSize       string     `json:"machine_size"` // XS, S, M, L, XL
 	IsHiddenByOwner   bool       `json:"is_hidden_by_owner"`
 	HiddenByOwnerAt   *time.Time `json:"hidden_by_owner_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at"`
@@ -127,24 +128,26 @@ type TerminalTrainerAPIKeyResponse struct {
 }
 
 type TerminalTrainerSessionResponse struct {
-	SessionID string `json:"id,omitempty"`
-	Status    string `json:"status"`
-	ExpiresAt int64  `json:"expires_at,omitempty"` // timestamp Unix
-	CreatedAt int64  `json:"created_at,omitempty"`
+	SessionID   string `json:"id,omitempty"`
+	Status      string `json:"status"`
+	ExpiresAt   int64  `json:"expires_at,omitempty"` // timestamp Unix
+	CreatedAt   int64  `json:"created_at,omitempty"`
+	MachineSize string `json:"machine_size,omitempty"` // XS, S, M, L, XL
 }
 
 // TerminalTrainerSession représente une session retournée par l'endpoint /1.0/sessions
 type TerminalTrainerSession struct {
-	ID        string `json:"id"`
-	SessionID string `json:"session_id"`
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	ExpiresAt int64  `json:"expires_at"`
-	CreatedAt int64  `json:"created_at"`
-	IP        string `json:"ip"`
-	Username  string `json:"username,omitempty"`
-	Password  string `json:"password,omitempty"`
-	FQDN      string `json:"fqdn,omitempty"`
+	ID          string `json:"id"`
+	SessionID   string `json:"session_id"`
+	Name        string `json:"name"`
+	Status      string `json:"status"`
+	ExpiresAt   int64  `json:"expires_at"`
+	CreatedAt   int64  `json:"created_at"`
+	IP          string `json:"ip"`
+	Username    string `json:"username,omitempty"`
+	Password    string `json:"password,omitempty"`
+	FQDN        string `json:"fqdn,omitempty"`
+	MachineSize string `json:"machine_size,omitempty"` // XS, S, M, L, XL
 }
 
 // TerminalTrainerSessionsResponse réponse de l'endpoint /1.0/sessions
@@ -158,14 +161,15 @@ type TerminalTrainerSessionsResponse struct {
 
 // TerminalTrainerSessionInfo informations détaillées d'une session depuis /1.0/info
 type TerminalTrainerSessionInfo struct {
-	SessionID string `json:"id"`
-	Status    string `json:"status"`
-	ExpiresAt int64  `json:"expiry,omitempty"`
-	StartedAt int64  `json:"started_at,omitempty"`
-	IP        string `json:"ip,omitempty"`
-	Username  string `json:"username,omitempty"`
-	Password  string `json:"password,omitempty"`
-	FQDN      string `json:"fqdn,omitempty"`
+	SessionID   string `json:"id"`
+	Status      string `json:"status"`
+	ExpiresAt   int64  `json:"expiry,omitempty"`
+	StartedAt   int64  `json:"started_at,omitempty"`
+	IP          string `json:"ip,omitempty"`
+	Username    string `json:"username,omitempty"`
+	Password    string `json:"password,omitempty"`
+	FQDN        string `json:"fqdn,omitempty"`
+	MachineSize string `json:"machine_size,omitempty"` // XS, S, M, L, XL
 }
 
 // SyncSessionResponse représente le résultat de synchronisation d'une session

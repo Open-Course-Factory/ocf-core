@@ -30,147 +30,165 @@ func main() {
 	}
 	fmt.Println("✅ Migration completed")
 
-	// Define the 4 plans (updated with Terminal Trainer size naming: XS, S, M, L, XL)
+	// Define the MVP plans: Trial (XS - Free) + Solo (S - Paid)
+	// Other plans marked as coming soon (IsActive = false)
 	plans := []paymentModels.SubscriptionPlan{
-		// 1. Trial (Free)
+		// 1. Trial (XS - Free) - ACTIVE AT LAUNCH
 		{
-			Name:        "Trial",
-			Description: "Free plan for testing the platform. 1 hour sessions, no network or storage. Perfect for trying out terminals.",
-			PriceAmount: 0,
-			Currency:    "eur",
+			Name:            "Trial",
+			Description:     "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
+			PriceAmount:     0,
+			Currency:        "eur",
 			BillingInterval: "month",
-			TrialDays:   0,
+			TrialDays:       0,
 			Features: []string{
 				"Unlimited restarts",
 				"1 hour max session",
 				"1 concurrent terminal",
-				"XS machine only",
+				"XS machine (0.5 vCPU, 256MB RAM)",
 				"No network access",
-				"No data persistence",
+				"Ephemeral storage only",
 			},
 			MaxConcurrentUsers: 1,
 			MaxCourses:         0,
-			MaxLabSessions:     -1, // Legacy field - not used for terminals
-			IsActive:           true,
+			MaxLabSessions:     -1,   // Legacy field - not used for terminals
+			IsActive:           true, // ACTIVE
 			RequiredRole:       "member",
 			StripeCreated:      false,
 
 			// Terminal-specific limits
-			MaxSessionDurationMinutes: 60,  // 1 hour
-			MaxConcurrentTerminals:    1,   // Only 1 at a time
-			AllowedMachineSizes:       []string{"XS"}, // XS size only
-			NetworkAccessEnabled:      false,
-			DataPersistenceEnabled:    false,
+			MaxSessionDurationMinutes: 60,             // 1 hour
+			MaxConcurrentTerminals:    1,              // Only 1 at a time
+			AllowedMachineSizes:       []string{"XS"}, // XS size: 0.5 vCPU, 256MB RAM
+			NetworkAccessEnabled:      false,          // No network in free plan
+			DataPersistenceEnabled:    false,          // No persistence
 			DataPersistenceGB:         0,
 			AllowedTemplates:          []string{"ubuntu-basic", "alpine-basic"},
+			PlannedFeatures:           []string{}, // No planned features for free plan
 		},
 
-		// 2. Solo (€9/mo)
+		// 2. Solo (S - €9/mo) - ACTIVE AT LAUNCH
 		{
-			Name:        "Solo",
-			Description: "Perfect for individual learning. Full 8-hour sessions with network and storage for personal projects.",
-			PriceAmount: 900, // €9.00
-			Currency:    "eur",
+			Name:            "Solo",
+			Description:     "Perfect for individual learning. Full 8-hour sessions with outbound network and ephemeral storage for personal projects.",
+			PriceAmount:     900, // €9.00
+			Currency:        "eur",
 			BillingInterval: "month",
-			TrialDays:   0,
+			TrialDays:       0,
 			Features: []string{
 				"Unlimited restarts",
 				"8 hour max session",
 				"1 concurrent terminal",
-				"XS + S machines",
-				"Network access included",
-				"2GB data persistence",
+				"S machine (1 vCPU, 1GB RAM)",
+				"Outbound network access",
+				"Ephemeral storage",
 				"All standard templates",
 			},
 			MaxConcurrentUsers: 1,
 			MaxCourses:         0,
 			MaxLabSessions:     -1,
-			IsActive:           true,
+			IsActive:           true, // ACTIVE
 			RequiredRole:       "member",
 			StripeCreated:      false,
 
 			// Terminal-specific limits
 			MaxSessionDurationMinutes: 480, // 8 hours
 			MaxConcurrentTerminals:    1,
-			AllowedMachineSizes:       []string{"XS", "S"}, // XS + S sizes
-			NetworkAccessEnabled:      true,  // Key upgrade from Free
-			DataPersistenceEnabled:    true,  // Key upgrade from Free
-			DataPersistenceGB:         2,
+			AllowedMachineSizes:       []string{"XS", "S"}, // S size: 1 vCPU, 1GB RAM
+			NetworkAccessEnabled:      true,                // Outbound only
+			DataPersistenceEnabled:    false,               // No persistence yet
+			DataPersistenceGB:         0,
 			AllowedTemplates: []string{
 				"ubuntu-basic", "ubuntu-dev", "alpine-basic",
 				"debian-basic", "python", "nodejs", "docker",
 			},
+			PlannedFeatures: []string{
+				"🔜 200MB persistent storage",
+			},
 		},
 
-		// 3. Trainer (€19/mo)
+		// 3. Trainer (M - €19/mo) - COMING SOON
 		{
-			Name:        "Trainer",
-			Description: "For professional trainers. Run training sessions with up to 3 concurrent terminals and 5GB storage.",
-			PriceAmount: 1900, // €19.00
-			Currency:    "eur",
+			Name:            "Trainer",
+			Description:     "Coming soon: For professional trainers. Run training sessions with up to 3 concurrent terminals.",
+			PriceAmount:     1900, // €19.00
+			Currency:        "eur",
 			BillingInterval: "month",
-			TrialDays:   0,
+			TrialDays:       0,
 			Features: []string{
 				"Unlimited restarts",
 				"8 hour max session",
 				"3 concurrent terminals",
-				"XS, S, and M machines",
-				"Network access included",
-				"5GB data persistence",
+				"M machine (2 vCPU, 2GB RAM)",
+				"Outbound network access",
+				"Ephemeral storage",
 				"All standard templates",
 			},
 			MaxConcurrentUsers: 3,
 			MaxCourses:         0,
 			MaxLabSessions:     -1,
-			IsActive:           true,
+			IsActive:           false, // COMING SOON
 			RequiredRole:       "trainer",
 			StripeCreated:      false,
 
 			// Terminal-specific limits
 			MaxSessionDurationMinutes: 480, // 8 hours
-			MaxConcurrentTerminals:    3,   // Key upgrade from Solo
-			AllowedMachineSizes:       []string{"XS", "S", "M"}, // XS, S, M sizes
+			MaxConcurrentTerminals:    3,
+			AllowedMachineSizes:       []string{"XS", "S", "M"}, // M size: 2 vCPU, 2GB RAM
 			NetworkAccessEnabled:      true,
-			DataPersistenceEnabled:    true,
-			DataPersistenceGB:         5,
+			DataPersistenceEnabled:    false,
+			DataPersistenceGB:         0,
 			AllowedTemplates: []string{
 				"ubuntu-basic", "ubuntu-dev", "alpine-basic",
 				"debian-basic", "python", "nodejs", "docker",
 			},
+			PlannedFeatures: []string{
+				"🔜 1GB persistent storage",
+				"🔜 Web development with port forwarding",
+				"🔜 Custom images",
+				"🔜 Team collaboration features",
+			},
 		},
 
-		// 4. Organization (€49/mo)
+		// 4. Organization (L - €49/mo) - COMING SOON
 		{
-			Name:        "Organization",
-			Description: "For training companies and organizations. Unlimited sessions, 10 concurrent terminals, all machine sizes, and custom Docker support.",
-			PriceAmount: 4900, // €49.00
-			Currency:    "eur",
+			Name:            "Organization",
+			Description:     "Coming soon: For training companies and organizations. Multiple concurrent terminals and larger machine sizes.",
+			PriceAmount:     4900, // €49.00
+			Currency:        "eur",
 			BillingInterval: "month",
-			TrialDays:   0,
+			TrialDays:       0,
 			Features: []string{
 				"Unlimited restarts",
 				"8 hour max session",
 				"10 concurrent terminals",
-				"All machine sizes (XS/S/M/L/XL)",
-				"Network access included",
-				"20GB data persistence",
-				"All templates + custom Docker",
+				"L machine (4 vCPU, 4GB RAM)",
+				"Outbound network access",
+				"Ephemeral storage",
+				"All templates",
 			},
 			MaxConcurrentUsers: 10,
 			MaxCourses:         -1,
 			MaxLabSessions:     -1,
-			IsActive:           true,
+			IsActive:           false, // COMING SOON
 			RequiredRole:       "organization",
 			StripeCreated:      false,
 
 			// Terminal-specific limits
 			MaxSessionDurationMinutes: 480, // 8 hours
-			MaxConcurrentTerminals:    10,  // Key upgrade from Trainer
-			AllowedMachineSizes:       []string{"all"}, // All sizes: XS, S, M, L, XL
+			MaxConcurrentTerminals:    10,
+			AllowedMachineSizes:       []string{"XS", "S", "M", "L"}, // L size: 4 vCPU, 4GB RAM
 			NetworkAccessEnabled:      true,
-			DataPersistenceEnabled:    true,
-			DataPersistenceGB:         20,
-			AllowedTemplates:          []string{"all"}, // Special value meaning all templates + custom
+			DataPersistenceEnabled:    false,
+			DataPersistenceGB:         0,
+			AllowedTemplates:          []string{"all"},
+			PlannedFeatures: []string{
+				"🔜 5GB persistent storage",
+				"🔜 Web development with port forwarding",
+				"🔜 Custom images",
+				"🔜 Team collaboration features",
+				"🔜 Priority support",
+			},
 		},
 	}
 

@@ -79,6 +79,18 @@ func subscriptionPlanPtrModelToOutput(plan *models.SubscriptionPlan) (*dto.Subsc
 		RequiredRole:       plan.RequiredRole,
 		CreatedAt:          plan.CreatedAt,
 		UpdatedAt:          plan.UpdatedAt,
+
+		// Terminal-specific limits
+		MaxSessionDurationMinutes: plan.MaxSessionDurationMinutes,
+		MaxConcurrentTerminals:    plan.MaxConcurrentTerminals,
+		AllowedMachineSizes:       plan.AllowedMachineSizes,
+		NetworkAccessEnabled:      plan.NetworkAccessEnabled,
+		DataPersistenceEnabled:    plan.DataPersistenceEnabled,
+		DataPersistenceGB:         plan.DataPersistenceGB,
+		AllowedTemplates:          plan.AllowedTemplates,
+
+		// Planned features
+		PlannedFeatures: plan.PlannedFeatures,
 	}, nil
 }
 

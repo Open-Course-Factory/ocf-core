@@ -49,10 +49,17 @@ func (cs *conversionService) UserSubscriptionToDTO(subscription *models.UserSubs
 		return nil, nil
 	}
 
+	SubscriptionPlanDto, err := cs.SubscriptionPlanToDTO(&subscription.SubscriptionPlan)
+
+	if err != nil {
+		return nil, err
+	}
+
 	return &dto.UserSubscriptionOutput{
 		ID:                   subscription.ID,
 		UserID:               subscription.UserID,
 		SubscriptionPlanID:   subscription.SubscriptionPlanID,
+		SubscriptionPlan:     *SubscriptionPlanDto,
 		StripeSubscriptionID: subscription.StripeSubscriptionID,
 		StripeCustomerID:     subscription.StripeCustomerID,
 		Status:               subscription.Status,
@@ -110,6 +117,18 @@ func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan
 		RequiredRole:       plan.RequiredRole,
 		CreatedAt:          plan.CreatedAt,
 		UpdatedAt:          plan.UpdatedAt,
+
+		// Terminal-specific limits
+		MaxSessionDurationMinutes: plan.MaxSessionDurationMinutes,
+		MaxConcurrentTerminals:    plan.MaxConcurrentTerminals,
+		AllowedMachineSizes:       plan.AllowedMachineSizes,
+		NetworkAccessEnabled:      plan.NetworkAccessEnabled,
+		DataPersistenceEnabled:    plan.DataPersistenceEnabled,
+		DataPersistenceGB:         plan.DataPersistenceGB,
+		AllowedTemplates:          plan.AllowedTemplates,
+
+		// Planned features
+		PlannedFeatures: plan.PlannedFeatures,
 	}, nil
 }
 

@@ -14,7 +14,8 @@ type Terminal struct {
 	UserID            string     `gorm:"type:varchar(255);not null;index" json:"user_id"`
 	Status            string     `gorm:"type:varchar(50);default:'active'" json:"status"` // active, stopped, expired
 	ExpiresAt         time.Time  `gorm:"not null" json:"expires_at"`
-	InstanceType      string     `gorm:"type:varchar(100)" json:"instance_type"`        // préfixe du type d'instance utilisé
+	InstanceType      string     `gorm:"type:varchar(100)" json:"instance_type"` // préfixe du type d'instance utilisé
+	MachineSize       string     `gorm:"type:varchar(10)" json:"machine_size"`   // XS, S, M, L, XL (taille réelle utilisée)
 	UserTerminalKeyID uuid.UUID  `gorm:"not null;index" json:"user_terminal_key_id"`
 	IsHiddenByOwner   bool       `gorm:"default:false" json:"is_hidden_by_owner"`
 	HiddenByOwnerAt   *time.Time `json:"hidden_by_owner_at,omitempty"`

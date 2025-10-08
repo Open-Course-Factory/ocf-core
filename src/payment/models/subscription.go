@@ -43,6 +43,9 @@ type SubscriptionPlan struct {
 	AddonNetworkPriceID  *string `gorm:"type:varchar(100)" json:"addon_network_price_id,omitempty"`
 	AddonStoragePriceID  *string `gorm:"type:varchar(100)" json:"addon_storage_price_id,omitempty"`
 	AddonTerminalPriceID *string `gorm:"type:varchar(100)" json:"addon_terminal_price_id,omitempty"`
+
+	// Planned features (announced but not yet available)
+	PlannedFeatures []string `gorm:"serializer:json" json:"planned_features"` // Features coming soon
 }
 
 // UserSubscription représente l'abonnement d'un utilisateur

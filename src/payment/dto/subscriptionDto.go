@@ -50,6 +50,18 @@ type SubscriptionPlanOutput struct {
 	RequiredRole       string    `json:"required_role"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
+
+	// Terminal-specific limits (for Terminal Trainer feature)
+	MaxSessionDurationMinutes int      `json:"max_session_duration_minutes"`
+	MaxConcurrentTerminals    int      `json:"max_concurrent_terminals"`
+	AllowedMachineSizes       []string `json:"allowed_machine_sizes"`
+	NetworkAccessEnabled      bool     `json:"network_access_enabled"`
+	DataPersistenceEnabled    bool     `json:"data_persistence_enabled"`
+	DataPersistenceGB         int      `json:"data_persistence_gb"`
+	AllowedTemplates          []string `json:"allowed_templates"`
+
+	// Planned features (announced but not yet available)
+	PlannedFeatures []string `json:"planned_features"` // Features coming soon
 }
 
 // UserSubscription DTOs
@@ -71,19 +83,20 @@ type UpgradePlanInput struct {
 }
 
 type UserSubscriptionOutput struct {
-	ID                   uuid.UUID  `json:"id"`
-	UserID               string     `json:"user_id"`
-	SubscriptionPlanID   uuid.UUID  `json:"subscription_plan_id"`
-	StripeSubscriptionID string     `json:"stripe_subscription_id"`
-	StripeCustomerID     string     `json:"stripe_customer_id"`
-	Status               string     `json:"status"`
-	CurrentPeriodStart   time.Time  `json:"current_period_start"`
-	CurrentPeriodEnd     time.Time  `json:"current_period_end"`
-	TrialEnd             *time.Time `json:"trial_end,omitempty"`
-	CancelAtPeriodEnd    bool       `json:"cancel_at_period_end"`
-	CancelledAt          *time.Time `json:"cancelled_at,omitempty"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	ID                   uuid.UUID              `json:"id"`
+	UserID               string                 `json:"user_id"`
+	SubscriptionPlanID   uuid.UUID              `json:"subscription_plan_id"`
+	SubscriptionPlan     SubscriptionPlanOutput `json:"subscription_plan"`
+	StripeSubscriptionID string                 `json:"stripe_subscription_id"`
+	StripeCustomerID     string                 `json:"stripe_customer_id"`
+	Status               string                 `json:"status"`
+	CurrentPeriodStart   time.Time              `json:"current_period_start"`
+	CurrentPeriodEnd     time.Time              `json:"current_period_end"`
+	TrialEnd             *time.Time             `json:"trial_end,omitempty"`
+	CancelAtPeriodEnd    bool                   `json:"cancel_at_period_end"`
+	CancelledAt          *time.Time             `json:"cancelled_at,omitempty"`
+	CreatedAt            time.Time              `json:"created_at"`
+	UpdatedAt            time.Time              `json:"updated_at"`
 }
 
 // Invoice DTOs

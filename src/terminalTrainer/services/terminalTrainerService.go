@@ -249,6 +249,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 		Status:            "active",
 		ExpiresAt:         expiresAt,
 		InstanceType:      sessionInput.InstanceType,
+		MachineSize:       sessionResp.MachineSize, // Taille réelle retournée par Terminal Trainer
 		UserTerminalKeyID: userKey.ID,
 		UserTerminalKey:   *userKey,
 	}
@@ -678,6 +679,7 @@ func (tts *terminalTrainerService) createMissingLocalSession(userID string, user
 		UserID:            userID,
 		Status:            apiSession.Status,
 		ExpiresAt:         expiresAt,
+		MachineSize:       apiSession.MachineSize, // Taille réelle depuis l'API
 		UserTerminalKeyID: userKey.ID,
 		UserTerminalKey:   *userKey,
 	}
@@ -1023,13 +1025,16 @@ func (tts *terminalTrainerService) GetSharedTerminalInfo(sessionID, userID strin
 
 	// Construire les informations du terminal
 	terminalOutput := dto.TerminalOutput{
-		ID:           terminal.ID,
-		SessionID:    terminal.SessionID,
-		UserID:       terminal.UserID,
-		Status:       terminal.Status,
-		ExpiresAt:    terminal.ExpiresAt,
-		InstanceType: terminal.InstanceType,
-		CreatedAt:    terminal.CreatedAt,
+		ID:              terminal.ID,
+		SessionID:       terminal.SessionID,
+		UserID:          terminal.UserID,
+		Status:          terminal.Status,
+		ExpiresAt:       terminal.ExpiresAt,
+		InstanceType:    terminal.InstanceType,
+		MachineSize:     terminal.MachineSize,
+		IsHiddenByOwner: terminal.IsHiddenByOwner,
+		HiddenByOwnerAt: terminal.HiddenByOwnerAt,
+		CreatedAt:       terminal.CreatedAt,
 	}
 
 	// Si l'utilisateur est le propriétaire, récupérer tous les partages

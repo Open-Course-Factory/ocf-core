@@ -96,6 +96,52 @@ This applies to all GORM relationships:
 
 OCF Core is the core API for Open Course Factory, a platform for building and generating courses with integrated labs and environments. The system supports both Marp and Slidev presentation engines, with a focus on reusable course content and templating systems.
 
+### Test Credentials and API Authentication
+
+For API testing and development:
+- **Email**: `1.supervisor@test.com`
+- **Password**: `test`
+- **Login Endpoint**: `POST http://localhost:8080/api/v1/auth/login`
+
+**Authentication Flow:**
+
+1. **Login** (get JWT token):
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"1.supervisor@test.com","password":"test"}'
+```
+
+Response:
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIs...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "read write"
+}
+```
+
+2. **Use Token** for authenticated requests:
+```bash
+# Extract and save token
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"1.supervisor@test.com","password":"test"}' \
+  | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
+# Make authenticated request
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/api/v1/subscription-plans
+```
+
+**Common API Endpoints:**
+- `GET /api/v1/subscription-plans` - List all subscription plans
+- `POST /api/v1/subscription-plans/sync-stripe` - Sync plans with Stripe (requires auth)
+- `GET /api/v1/subscriptions/current` - Get current user's subscription (requires auth)
+- `GET /api/v1/terminal-sessions/user-sessions` - Get user's terminal sessions (requires auth)
+- `GET /swagger/` - Full API documentation
+
 ## Development Commands
 
 ### Testing
