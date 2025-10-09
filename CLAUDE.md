@@ -182,8 +182,6 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 **Payment System**: Stripe integration with subscription plans, feature-based usage limits, and role management. Usage metrics are conditionally created based on database feature flags AND the plan's `Features` array (see `MODULAR_FEATURES.md`).
 
-**Lab Environment**: SSH-based remote environments with machine and connection management.
-
 **Terminal Trainer Integration**: External backend system for interactive terminal sessions. OCF Core acts as a proxy, managing user keys and session lifecycle while delegating actual terminal operations to Terminal Trainer backend.
 
 **Terminal Sharing and Hiding System**: Users can share terminals with different access levels (read/write/admin) and hide inactive terminals from their interface. Hidden status is managed per user and persisted in the database.
@@ -192,7 +190,6 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 - `src/auth/` - Authentication, users, groups, SSH keys
 - `src/courses/` - Course models, generation, sessions
-- `src/labs/` - Lab machines, connections, usernames
 - `src/entityManagement/` - Generic CRUD system
 - `src/payment/` - Stripe payment processing
 - `src/webSsh/` - SSH client integration
@@ -442,8 +439,7 @@ modules/
 │   ├── models/          # GORM models
 │   ├── services/        # Custom business logic
 │   └── migrations/      # SQL migrations
-├── terminals/
-└── labs/
+└── terminals/
 ```
 
 **Deliverables**:

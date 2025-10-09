@@ -23,7 +23,6 @@ import (
 	configServices "soli/formations/src/configuration/services"
 	"soli/formations/src/courses"
 	generator "soli/formations/src/generationEngine"
-	"soli/formations/src/labs"
 	"soli/formations/src/terminalTrainer"
 	marp "soli/formations/src/generationEngine/marp_integration"
 	slidev "soli/formations/src/generationEngine/slidev_integration"
@@ -46,11 +45,6 @@ import (
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	generationController "soli/formations/src/courses/routes/generationRoutes"
 	genericController "soli/formations/src/entityManagement/routes"
-	labRegistration "soli/formations/src/labs/entityRegistration"
-	labModels "soli/formations/src/labs/models"
-	connectionController "soli/formations/src/labs/routes/connectionRoutes"
-	machineController "soli/formations/src/labs/routes/machineRoutes"
-	usernameController "soli/formations/src/labs/routes/usernameRoutes"
 	terminalRegistration "soli/formations/src/terminalTrainer/entityRegistration"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	terminalController "soli/formations/src/terminalTrainer/routes"
@@ -143,10 +137,6 @@ func main() {
 
 	sqldb.DB.AutoMigrate(&authModels.SshKey{})
 
-	sqldb.DB.AutoMigrate(&labModels.Username{})
-	sqldb.DB.AutoMigrate(&labModels.Machine{})
-	sqldb.DB.AutoMigrate(&labModels.Connection{})
-
 	sqldb.DB.AutoMigrate(&terminalModels.Terminal{})
 	sqldb.DB.AutoMigrate(&terminalModels.UserTerminalKey{})
 	sqldb.DB.AutoMigrate(&terminalModels.TerminalShare{})
@@ -180,9 +170,6 @@ func main() {
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ScheduleRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ThemeRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.GenerationRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.ConnectionRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
 
 	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.TerminalRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.UserTerminalKeyRegistration{})
@@ -238,9 +225,6 @@ func main() {
 	groupController.GroupRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	accessController.AccessRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sshClientController.SshClientRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	machineController.MachinesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	usernameController.UsernamesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	connectionController.ConnectionsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	generationController.GenerationsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	terminalController.TerminalRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	terminalController.UserTerminalKeyRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
@@ -613,7 +597,6 @@ func registerModuleFeatures() {
 		GetFeatures() []configModels.FeatureDefinition
 	}{
 		courses.NewCoursesModuleConfig(),
-		labs.NewLabsModuleConfig(),
 		terminalTrainer.NewTerminalTrainerModuleConfig(),
 	}
 

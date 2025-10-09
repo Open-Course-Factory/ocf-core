@@ -10,7 +10,6 @@ import (
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/services"
 	coursesDto "soli/formations/src/courses/dto"
-	labsDto "soli/formations/src/labs/dto"
 	"testing"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -22,13 +21,11 @@ import (
 	authModels "soli/formations/src/auth/models"
 	courseModels "soli/formations/src/courses/models"
 	baseModels "soli/formations/src/entityManagement/models"
-	labsModels "soli/formations/src/labs/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	authRegistration "soli/formations/src/auth/entityRegistration"
 	coursesRegistration "soli/formations/src/courses/entityRegistration"
 	ems "soli/formations/src/entityManagement/entityManagementService"
-	labRegistration "soli/formations/src/labs/entityRegistration"
 
 	genericServices "soli/formations/src/entityManagement/services"
 )
@@ -53,10 +50,6 @@ func SetupTestDatabase() {
 
 	sqldb.DB.AutoMigrate(&authModels.SshKey{})
 
-	sqldb.DB.AutoMigrate(&labsModels.Username{})
-	sqldb.DB.AutoMigrate(&labsModels.Machine{})
-	sqldb.DB.AutoMigrate(&labsModels.Connection{})
-
 	sqldb.DB.AutoMigrate(&terminalModels.UserTerminalKey{})
 	sqldb.DB.AutoMigrate(&terminalModels.Terminal{})
 	sqldb.DB.AutoMigrate(&terminalModels.TerminalShare{})
@@ -69,10 +62,6 @@ func SetupTestDatabase() {
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Session{})
 
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&authModels.SshKey{})
-
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Connection{})
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Username{})
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Machine{})
 
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&terminalModels.TerminalShare{})
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&terminalModels.Terminal{})
@@ -200,7 +189,6 @@ func SetupRoles() {
 
 	// Ajouter les permissions (politiques)
 	casdoor.Enforcer.AddPolicy("student", "/api/v1/courses/*", "GET")
-	casdoor.Enforcer.AddPolicy("student", "/api/v1/usernames/", "(GET|POST)")
 	casdoor.Enforcer.AddPolicy("administrator", "/api/v1/*", "(GET|PATCH|POST|DELETE)")
 
 	log.Println("Permissions configurées pour les rôles")
@@ -293,36 +281,6 @@ func DeleteAllObjects() {
 		gs.DeleteEntity(id, courseToDelete, true)
 	}
 
-	usernamesPages, _, _ := gs.GetEntities(labsModels.Username{}, 1, 100, map[string]interface{}{}, nil)
-	usernamesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(usernamesPages, labsModels.Username{}, "Username")
-	for _, usernameDto := range usernamesDtoArray {
-		id := gs.ExtractUuidFromReflectEntity(usernameDto)
-		usernameDto := usernameDto.(*labsDto.UsernameOutput)
-		usernameToDelete := &labsModels.Username{
-			BaseModel: baseModels.BaseModel{
-				ID: id,
-			},
-			Username: usernameDto.Username,
-		}
-
-		gs.DeleteEntity(id, usernameToDelete, true)
-	}
-
-	machinesPages, _, _ := gs.GetEntities(labsModels.Machine{}, 1, 100, map[string]interface{}{}, nil)
-	machinesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(machinesPages, labsModels.Machine{}, "Machine")
-	for _, machineDto := range machinesDtoArray {
-		id := gs.ExtractUuidFromReflectEntity(machineDto)
-		machineDto := machineDto.(*labsDto.MachineOutput)
-		machineToDelete := &labsModels.Machine{
-			BaseModel: baseModels.BaseModel{
-				ID: id,
-			},
-			Name: machineDto.Name,
-		}
-
-		gs.DeleteEntity(id, machineToDelete, true)
-	}
-
 }
 
 func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
@@ -339,8 +297,6 @@ func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.ChapterRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.CourseRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshKeyRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
 
 	SetupBasicRoles() // Créer les rôles de base d'abord
 	SetupUsers()      // Les utilisateurs peuvent maintenant être créés avec des rôles existants
