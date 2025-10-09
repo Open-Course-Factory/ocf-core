@@ -4,6 +4,7 @@ import (
 	authInterfaces "soli/formations/src/auth/interfaces"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/services"
+	"soli/formations/src/entityManagement/utils"
 	"strings"
 
 	"github.com/gertd/go-pluralize"
@@ -48,24 +49,7 @@ func GetEntityNameFromPath(path string) string {
 
 	client := pluralize.NewClient()
 	singular := client.Singular(segment)
-	return kebabToPascal(singular)
-}
-
-func kebabToPascal(s string) string {
-	if len(s) == 0 {
-		return s
-	}
-
-	parts := strings.Split(s, "-")
-	var result strings.Builder
-
-	for _, part := range parts {
-		if len(part) > 0 {
-			result.WriteString(strings.ToUpper(string(part[0])) + strings.ToLower(part[1:]))
-		}
-	}
-
-	return result.String()
+	return utils.KebabToPascal(singular)
 }
 
 func GetResourceNameFromPath(path string) string {
@@ -74,7 +58,8 @@ func GetResourceNameFromPath(path string) string {
 
 	client := pluralize.NewClient()
 	singular := client.Plural(segment)
-	return strings.ToLower(singular)
+	res := strings.ToLower(singular)
+	return res
 }
 
 func prepareEntityName(path string) string {

@@ -39,7 +39,7 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 		return nil, err
 	}
 
-	errRole := addDefaultRoleToUser(userCreateDTO, user1)
+	errRole := addDefaultRoleToUser(user1)
 	if errRole != nil {
 		return nil, err
 	}
@@ -50,10 +50,26 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 		return nil, errGet
 	}
 
-	_, errStudent := casdoor.Enforcer.AddGroupingPolicy(createdUser.Id, userCreateDTO.DefaultRole)
-	if errStudent != nil {
-		fmt.Println(errStudent.Error())
-		return nil, errStudent
+	// Add both the requested role AND ensure "student" role is added for basic permissions
+	// This ensures compatibility with both Casdoor role names and OCF role names
+	rolesToAdd := []string{}
+	if userCreateDTO.DefaultRole != "" {
+		rolesToAdd = append(rolesToAdd, userCreateDTO.DefaultRole)
+	}
+
+	// Add "member" and "student" for Casdoor compatibility
+	rolesToAdd = append(rolesToAdd, "student")
+	rolesToAdd = append(rolesToAdd, "member")
+
+	// Add all roles to the user
+	for _, role := range rolesToAdd {
+		_, errAddRole := casdoor.Enforcer.AddGroupingPolicy(createdUser.Id, role)
+		if errAddRole != nil {
+			fmt.Printf("Warning: Could not add role %s to user %s: %v\n", role, createdUser.Id, errAddRole)
+			// Continue adding other roles even if one fails
+		} else {
+			fmt.Printf("✅ Successfully added role '%s' to user %s\n", role, createdUser.Id)
+		}
 	}
 
 	terminalService := ttServices.NewTerminalTrainerService(sqldb.DB)
@@ -77,8 +93,8 @@ func NewTerminalTrainerService(db *gorm.DB) ttServices.TerminalTrainerService {
 	return ttServices.NewTerminalTrainerService(db)
 }
 
-func addDefaultRoleToUser(userCreateDTO dto.CreateUserInput, user1 casdoorsdk.User) error {
-	role, errRole := casdoorsdk.GetRole(userCreateDTO.DefaultRole)
+func addDefaultRoleToUser(user1 casdoorsdk.User) error {
+	role, errRole := casdoorsdk.GetRole("student")
 	if errRole != nil {
 		fmt.Println(errRole.Error())
 		return errRole
@@ -190,7 +206,7 @@ func (us *userService) SearchUsers(query string) (*[]dto.UserOutput, error) {
 	for _, user := range users {
 		// Case-insensitive search on name and email
 		if strings.Contains(strings.ToLower(user.Name), queryLower) ||
-		   strings.Contains(strings.ToLower(user.Email), queryLower) {
+			strings.Contains(strings.ToLower(user.Email), queryLower) {
 			results = append(results, *dto.UserModelToUserOutput(user))
 		}
 

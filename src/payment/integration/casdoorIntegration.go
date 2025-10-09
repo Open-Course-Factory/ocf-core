@@ -34,7 +34,7 @@ type CasdoorPaymentIntegration interface {
 }
 
 type casdoorPaymentIntegration struct {
-	subscriptionService services.SubscriptionService
+	subscriptionService services.UserSubscriptionService
 	db                  *gorm.DB
 }
 

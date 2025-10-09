@@ -7,6 +7,7 @@ import (
 	"soli/formations/src/auth/interfaces"
 	authModels "soli/formations/src/auth/models"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
+	"soli/formations/src/entityManagement/utils"
 	"strings"
 
 	"github.com/gertd/go-pluralize"
@@ -167,6 +168,7 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 	rolesMap := roles.Roles
 
 	resourceName := Pluralize(entityName)
+	resourceName = utils.PascalToKebab(resourceName)
 	resourceName = strings.ToLower(resourceName)
 	apiGroupPath := "/api/v1/" + resourceName + "/*" // Use wildcard for entire API group
 

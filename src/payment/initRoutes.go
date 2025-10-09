@@ -9,7 +9,7 @@ import (
 )
 
 func InitPaymentRoutes(routerGroup *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
-	paymentController.SubscriptionRoutes(routerGroup, config, db)
+	paymentController.UserSubscriptionRoutes(routerGroup, config, db)
 	paymentController.SubscriptionPlanRoutes(routerGroup, config, db)
 	paymentController.PaymentMethodRoutes(routerGroup, config, db)
 	paymentController.InvoiceRoutes(routerGroup, config, db)

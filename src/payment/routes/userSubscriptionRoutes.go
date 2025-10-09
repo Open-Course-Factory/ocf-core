@@ -10,13 +10,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// SubscriptionRoutes définit les routes pour les abonnements
-func SubscriptionRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
+// UserSubscriptionRoutes définit les routes pour les abonnements
+func UserSubscriptionRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
 	subscriptionController := NewSubscriptionController(db)
 	authMiddleware := auth.NewAuthMiddleware(db)
 	//usageLimitMiddleware := middleware.NewUsageLimitMiddleware(db)
 
-	routes := router.Group("/subscriptions")
+	routes := router.Group("/user-subscriptions")
 
 	// Routes spécialisées pour les abonnements utilisateur
 	routes.POST("/checkout", authMiddleware.AuthManagement(), subscriptionController.CreateCheckoutSession)

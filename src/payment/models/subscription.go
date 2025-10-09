@@ -1,4 +1,5 @@
 // src/payment/models/subscription.go
+// ToDo: SHOULD BE SPLITTED IN MULTIPLE FILES
 package models
 
 import (
@@ -31,13 +32,13 @@ type SubscriptionPlan struct {
 
 	// Terminal-specific limits (new fields for terminal pricing)
 	// Note: No limit on number of sessions - only concurrent and duration limits
-	MaxSessionDurationMinutes int      `gorm:"default:60" json:"max_session_duration_minutes"`   // Max time per session
-	MaxConcurrentTerminals    int      `gorm:"default:1" json:"max_concurrent_terminals"`        // Max terminals running at once
-	AllowedMachineSizes       []string `gorm:"serializer:json" json:"allowed_machine_sizes"`     // ["XS", "S", "M", "L", "XL"]
-	NetworkAccessEnabled      bool     `gorm:"default:false" json:"network_access_enabled"`      // Allow external network access
-	DataPersistenceEnabled    bool     `gorm:"default:false" json:"data_persistence_enabled"`    // Allow saving data between sessions
-	DataPersistenceGB         int      `gorm:"default:0" json:"data_persistence_gb"`             // Storage quota in GB
-	AllowedTemplates          []string `gorm:"serializer:json" json:"allowed_templates"`         // Template IDs allowed
+	MaxSessionDurationMinutes int      `gorm:"default:60" json:"max_session_duration_minutes"` // Max time per session
+	MaxConcurrentTerminals    int      `gorm:"default:1" json:"max_concurrent_terminals"`      // Max terminals running at once
+	AllowedMachineSizes       []string `gorm:"serializer:json" json:"allowed_machine_sizes"`   // ["XS", "S", "M", "L", "XL"]
+	NetworkAccessEnabled      bool     `gorm:"default:false" json:"network_access_enabled"`    // Allow external network access
+	DataPersistenceEnabled    bool     `gorm:"default:false" json:"data_persistence_enabled"`  // Allow saving data between sessions
+	DataPersistenceGB         int      `gorm:"default:0" json:"data_persistence_gb"`           // Storage quota in GB
+	AllowedTemplates          []string `gorm:"serializer:json" json:"allowed_templates"`       // Template IDs allowed
 
 	// Add-on pricing (Stripe Price IDs for metered/add-on billing)
 	AddonNetworkPriceID  *string `gorm:"type:varchar(100)" json:"addon_network_price_id,omitempty"`

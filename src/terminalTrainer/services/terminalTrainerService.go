@@ -72,7 +72,7 @@ type terminalTrainerService struct {
 	apiVersion          string
 	terminalType        string
 	repository          repositories.TerminalRepository
-	subscriptionService paymentServices.SubscriptionService
+	subscriptionService paymentServices.UserSubscriptionService
 	db                  *gorm.DB
 }
 

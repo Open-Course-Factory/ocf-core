@@ -84,9 +84,12 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 		}
 
 		if !authorized {
+			log.Printf("[DEBUG] ❌ AUTHORIZATION FAILED for user %s with roles %v trying to access %s %s", userId, userRoles, ctx.Request.Method, ctx.FullPath())
 			ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{"msg": "You are not authorized"})
 			return
 		}
+
+		log.Printf("[DEBUG] ✅ AUTHORIZATION SUCCESS for user %s with roles %v accessing %s %s", userId, userRoles, ctx.Request.Method, ctx.FullPath())
 
 		ctx.Set("userRoles", userRoles)
 		ctx.Set("userId", userId)

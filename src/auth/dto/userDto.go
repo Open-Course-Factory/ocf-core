@@ -21,7 +21,7 @@ type CreateUserInput struct {
 	Password    string `binding:"required"`
 	LastName    string `binding:"required"`
 	FirstName   string `binding:"required"`
-	DefaultRole string `binding:"required"`
+	DefaultRole string
 }
 
 type CreateUserOutput struct {

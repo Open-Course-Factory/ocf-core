@@ -1,8 +1,8 @@
 package paymentController
 
 import (
-	"soli/formations/src/auth/casdoor"
 	"net/http"
+	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
 	"soli/formations/src/payment/services"
@@ -24,7 +24,7 @@ type InvoiceController interface {
 
 type invoiceController struct {
 	controller.GenericController
-	subscriptionService services.SubscriptionService
+	subscriptionService services.UserSubscriptionService
 	stripeService       services.StripeService
 	conversionService   services.ConversionService
 }

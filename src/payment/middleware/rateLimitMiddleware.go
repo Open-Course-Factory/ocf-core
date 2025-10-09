@@ -17,7 +17,7 @@ type SubscriptionBasedRateLimitMiddleware interface {
 }
 
 type subscriptionBasedRateLimitMiddleware struct {
-	subscriptionService services.SubscriptionService
+	subscriptionService services.UserSubscriptionService
 }
 
 func NewSubscriptionBasedRateLimitMiddleware(db *gorm.DB) SubscriptionBasedRateLimitMiddleware {

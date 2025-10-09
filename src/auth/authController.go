@@ -86,15 +86,7 @@ func (ac *authController) Login(ctx *gin.Context) {
 		return
 	}
 
-	url := fmt.Sprintf("%s/api/login/oauth/access_token?grant_type=password&client_id=%s&client_secret=%s&username=%s&password=%s",
-		os.Getenv("CASDOOR_ENDPOINT"),
-		os.Getenv("CASDOOR_CLIENT_ID"),
-		os.Getenv("CASDOOR_CLIENT_SECRET"),
-		user.Name,
-		user.Password,
-	)
-
-	resp, errPostToCasdoor := http.Post(url, "application/json", nil)
+	resp, errPostToCasdoor := LoginToCasdoor(user, "")
 	if errPostToCasdoor != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -154,6 +146,26 @@ func (ac *authController) Login(ctx *gin.Context) {
 	fmt.Println("Login successful.\nYou are connected as: " + loginOutputDto.UserName)
 
 	ctx.JSON(http.StatusCreated, loginOutputDto)
+}
+
+func LoginToCasdoor(user *casdoorsdk.User, password string) (*http.Response, error) {
+	passwordToTest := user.Password
+	if password != "" {
+		passwordToTest = password
+	}
+	url := fmt.Sprintf("%s/api/login/oauth/access_token?grant_type=password&client_id=%s&client_secret=%s&username=%s&password=%s",
+		os.Getenv("CASDOOR_ENDPOINT"),
+		os.Getenv("CASDOOR_CLIENT_ID"),
+		os.Getenv("CASDOOR_CLIENT_SECRET"),
+		user.Name,
+		passwordToTest,
+	)
+
+	resp, errPostToCasdoor := http.Post(url, "application/json", nil)
+	if errPostToCasdoor != nil {
+		return nil, errPostToCasdoor
+	}
+	return resp, nil
 }
 
 func getUserFromContext(ctx *gin.Context) (*casdoorsdk.User, bool) {

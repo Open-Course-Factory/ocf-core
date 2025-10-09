@@ -3,6 +3,8 @@ package services
 import (
 	"errors"
 	"fmt"
+	"io"
+	authController "soli/formations/src/auth"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/models"
 	sqldb "soli/formations/src/db"
@@ -35,15 +37,28 @@ func (s *userSettingsService) ChangePassword(userID string, input dto.ChangePass
 	}
 
 	// Get user from Casdoor
-	user, err := casdoorsdk.GetUser(userID)
+	user, err := casdoorsdk.GetUserByUserId(userID)
 	if err != nil {
 		utils.Error("Failed to get user from Casdoor: %v", err)
 		return errors.New("failed to retrieve user information")
 	}
 
 	// Verify current password by attempting authentication
-	token, err := casdoorsdk.GetOAuthToken(user.Name, input.CurrentPassword)
-	if err != nil || token.AccessToken == "" {
+
+	resp, errLogin := authController.LoginToCasdoor(user, input.CurrentPassword)
+	if errLogin != nil {
+		utils.Warn("Invalid current password for user %s", userID)
+		return errors.New("current password is incorrect")
+	}
+	defer resp.Body.Close()
+
+	_, errReadBody := io.ReadAll(resp.Body)
+	if errReadBody != nil {
+		utils.Warn("Invalid current password for user %s", userID)
+		return errors.New("current password is incorrect")
+	}
+
+	if resp.StatusCode >= 400 {
 		utils.Warn("Invalid current password for user %s", userID)
 		return errors.New("current password is incorrect")
 	}

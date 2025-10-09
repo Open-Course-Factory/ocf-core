@@ -24,7 +24,7 @@ func setupSyncTestRouter() (*gin.Engine, *SharedMockStripeService) {
 	// Setup routes for testing
 	v1 := router.Group("/api/v1")
 	{
-		v1.POST("/subscriptions/sync-existing", func(c *gin.Context) {
+		v1.POST("/user-subscriptions/sync-existing", func(c *gin.Context) {
 			result, err := mockStripeService.SyncExistingSubscriptions()
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -33,7 +33,7 @@ func setupSyncTestRouter() (*gin.Engine, *SharedMockStripeService) {
 			c.JSON(http.StatusOK, result)
 		})
 
-		v1.POST("/subscriptions/users/:user_id/sync", func(c *gin.Context) {
+		v1.POST("/user-subscriptions/users/:user_id/sync", func(c *gin.Context) {
 			userID := c.Param("user_id")
 			result, err := mockStripeService.SyncUserSubscriptions(userID)
 			if err != nil {
@@ -43,7 +43,7 @@ func setupSyncTestRouter() (*gin.Engine, *SharedMockStripeService) {
 			c.JSON(http.StatusOK, result)
 		})
 
-		v1.POST("/subscriptions/sync-missing-metadata", func(c *gin.Context) {
+		v1.POST("/user-subscriptions/sync-missing-metadata", func(c *gin.Context) {
 			result, err := mockStripeService.SyncSubscriptionsWithMissingMetadata()
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -52,7 +52,7 @@ func setupSyncTestRouter() (*gin.Engine, *SharedMockStripeService) {
 			c.JSON(http.StatusOK, result)
 		})
 
-		v1.POST("/subscriptions/link/:subscription_id", func(c *gin.Context) {
+		v1.POST("/user-subscriptions/link/:subscription_id", func(c *gin.Context) {
 			subscriptionID := c.Param("subscription_id")
 			var request struct {
 				UserID             string    `json:"user_id" binding:"required"`
@@ -102,7 +102,7 @@ func TestSyncRoutes_SyncExistingSubscriptions(t *testing.T) {
 
 		mockStripeService.On("SyncExistingSubscriptions").Return(expectedResult, nil)
 
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/sync-existing", nil)
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/sync-existing", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -145,7 +145,7 @@ func TestSyncRoutes_SyncExistingSubscriptions(t *testing.T) {
 
 		mockStripeService.On("SyncExistingSubscriptions").Return(expectedResult, nil)
 
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/sync-existing", nil)
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/sync-existing", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -175,14 +175,14 @@ func TestSyncRoutes_SyncUserSubscriptions(t *testing.T) {
 			UpdatedSubscriptions:   1,
 			SkippedSubscriptions:   0,
 			FailedSubscriptions:    []services.FailedSubscription{},
-			CreatedDetails: []string{"Created subscription sub_new for user_123"},
-			UpdatedDetails: []string{"Updated subscription sub_existing for user_123"},
-			SkippedDetails: []string{},
+			CreatedDetails:         []string{"Created subscription sub_new for user_123"},
+			UpdatedDetails:         []string{"Updated subscription sub_existing for user_123"},
+			SkippedDetails:         []string{},
 		}
 
 		mockStripeService.On("SyncUserSubscriptions", userID).Return(expectedResult, nil)
 
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/users/user_123/sync", nil)
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/users/user_123/sync", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -216,7 +216,7 @@ func TestSyncRoutes_SyncUserSubscriptions(t *testing.T) {
 
 		mockStripeService.On("SyncUserSubscriptions", userID).Return(expectedResult, nil)
 
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/users/user_no_subs/sync", nil)
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/users/user_no_subs/sync", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -261,7 +261,7 @@ func TestSyncRoutes_SyncMissingMetadata(t *testing.T) {
 
 		mockStripeService.On("SyncSubscriptionsWithMissingMetadata").Return(expectedResult, nil)
 
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/sync-missing-metadata", nil)
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/sync-missing-metadata", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -298,7 +298,7 @@ func TestSyncRoutes_LinkSubscriptionToUser(t *testing.T) {
 		mockStripeService.On("LinkSubscriptionToUser", subscriptionID, userID, planID).Return(nil)
 
 		requestBody, _ := json.Marshal(linkRequest)
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/link/"+subscriptionID, bytes.NewBuffer(requestBody))
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/link/"+subscriptionID, bytes.NewBuffer(requestBody))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -322,7 +322,7 @@ func TestSyncRoutes_LinkSubscriptionToUser(t *testing.T) {
 		}
 
 		requestBody, _ := json.Marshal(invalidRequest)
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/link/"+subscriptionID, bytes.NewBuffer(requestBody))
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/link/"+subscriptionID, bytes.NewBuffer(requestBody))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -345,7 +345,7 @@ func TestSyncRoutes_LinkSubscriptionToUser(t *testing.T) {
 		}
 
 		requestBody, _ := json.Marshal(linkRequest)
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/link/"+subscriptionID, bytes.NewBuffer(requestBody))
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/link/"+subscriptionID, bytes.NewBuffer(requestBody))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -362,7 +362,7 @@ func TestSyncRoutes_LinkSubscriptionToUser(t *testing.T) {
 		}
 
 		requestBody, _ := json.Marshal(linkRequest)
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/link/"+subscriptionID, bytes.NewBuffer(requestBody))
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/link/"+subscriptionID, bytes.NewBuffer(requestBody))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -378,7 +378,7 @@ func TestSyncRoutes_ErrorHandling(t *testing.T) {
 		expectedError := assert.AnError
 		mockStripeService.On("SyncExistingSubscriptions").Return((*services.SyncSubscriptionsResult)(nil), expectedError)
 
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/sync-existing", nil)
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/sync-existing", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -397,7 +397,7 @@ func TestSyncRoutes_ErrorHandling(t *testing.T) {
 		expectedError := assert.AnError
 		mockStripeService.On("SyncUserSubscriptions", userID).Return((*services.SyncSubscriptionsResult)(nil), expectedError)
 
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/users/"+userID+"/sync", nil)
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/users/"+userID+"/sync", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -410,7 +410,7 @@ func TestSyncRoutes_ErrorHandling(t *testing.T) {
 		expectedError := assert.AnError
 		mockStripeService.On("SyncSubscriptionsWithMissingMetadata").Return((*services.SyncSubscriptionsResult)(nil), expectedError)
 
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/sync-missing-metadata", nil)
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/sync-missing-metadata", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -433,7 +433,7 @@ func TestSyncRoutes_ErrorHandling(t *testing.T) {
 		mockStripeService.On("LinkSubscriptionToUser", subscriptionID, userID, planID).Return(expectedError)
 
 		requestBody, _ := json.Marshal(linkRequest)
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/link/"+subscriptionID, bytes.NewBuffer(requestBody))
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/link/"+subscriptionID, bytes.NewBuffer(requestBody))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
@@ -479,7 +479,7 @@ func TestSyncRoutes_BatchOperations(t *testing.T) {
 
 		mockStripeService.On("SyncExistingSubscriptions").Return(expectedResult, nil)
 
-		req := httptest.NewRequest("POST", "/api/v1/subscriptions/sync-existing", nil)
+		req := httptest.NewRequest("POST", "/api/v1/user-subscriptions/sync-existing", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 

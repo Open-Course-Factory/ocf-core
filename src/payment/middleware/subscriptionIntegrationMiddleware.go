@@ -27,7 +27,7 @@ type SubscriptionIntegrationMiddleware interface {
 }
 
 type subscriptionIntegrationMiddleware struct {
-	subscriptionService services.SubscriptionService
+	subscriptionService services.UserSubscriptionService
 	conversionService   services.ConversionService
 }
 

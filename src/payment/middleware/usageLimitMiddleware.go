@@ -26,7 +26,7 @@ type UsageLimitMiddleware interface {
 }
 
 type usageLimitMiddleware struct {
-	subscriptionService services.SubscriptionService
+	subscriptionService services.UserSubscriptionService
 }
 
 func NewUsageLimitMiddleware(db *gorm.DB) UsageLimitMiddleware {
@@ -143,7 +143,7 @@ type UserRoleMiddleware interface {
 }
 
 type userRoleMiddleware struct {
-	subscriptionService services.SubscriptionService
+	subscriptionService services.UserSubscriptionService
 }
 
 func NewUserRoleMiddleware(db *gorm.DB) UserRoleMiddleware {
@@ -259,7 +259,7 @@ type UsageTracker interface {
 }
 
 type usageTracker struct {
-	subscriptionService services.SubscriptionService
+	subscriptionService services.UserSubscriptionService
 }
 
 func NewUsageTracker(db *gorm.DB) UsageTracker {

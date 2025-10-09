@@ -18,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type SubscriptionService interface {
+type UserSubscriptionService interface {
 	// Subscription management - retourne des models
 	HasActiveSubscription(userID string) (bool, error)
 	GetActiveUserSubscription(userID string) (*models.UserSubscription, error)
@@ -89,7 +89,7 @@ type subscriptionService struct {
 	genericService genericService.GenericService
 }
 
-func NewSubscriptionService(db *gorm.DB) SubscriptionService {
+func NewSubscriptionService(db *gorm.DB) UserSubscriptionService {
 	return &subscriptionService{
 		genericService: genericService.NewGenericService(db, casdoor.Enforcer),
 		repository:     repositories.NewPaymentRepository(db),

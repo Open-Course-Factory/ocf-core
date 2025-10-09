@@ -18,7 +18,7 @@ type FeatureGateMiddleware interface {
 }
 
 type featureGateMiddleware struct {
-	subscriptionService services.SubscriptionService
+	subscriptionService services.UserSubscriptionService
 }
 
 func NewFeatureGateMiddleware(db *gorm.DB) FeatureGateMiddleware {

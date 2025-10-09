@@ -129,7 +129,7 @@ type StripeService interface {
 }
 
 type stripeService struct {
-	subscriptionService SubscriptionService
+	subscriptionService UserSubscriptionService
 	genericService      genericService.GenericService
 	repository          repositories.PaymentRepository
 	webhookSecret       string
@@ -281,8 +281,8 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 		// Allow updating customer name and address during checkout
 		// This also enables pre-filling from the customer object
 		CustomerUpdate: &stripe.CheckoutSessionCustomerUpdateParams{
-			Name:    stripe.String("auto"),    // Allow name to be updated
-			Address: stripe.String("auto"),    // Allow address to be updated
+			Name:    stripe.String("auto"), // Allow name to be updated
+			Address: stripe.String("auto"), // Allow address to be updated
 		},
 		// TaxIDCollection: &stripe.CheckoutSessionTaxIDCollectionParams{
 		// 	Enabled: stripe.Bool(true),
