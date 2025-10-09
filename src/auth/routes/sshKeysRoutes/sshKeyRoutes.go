@@ -13,12 +13,12 @@ import (
 func SshKeysRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
 	sshKeyController := NewSshKeyController(db)
 
-	routes := router.Group("/sshkeys")
+	routes := router.Group("/ssh-keys")
 
 	middleware := auth.NewAuthMiddleware(db)
 
-	routes.GET("", middleware.AuthManagement(), sshKeyController.GetSshkeys)
-	routes.POST("", middleware.AuthManagement(), sshKeyController.AddSshkey)
-	routes.PATCH("/:id", middleware.AuthManagement(), sshKeyController.EditSshkey)
-	routes.DELETE("/:id", middleware.AuthManagement(), sshKeyController.DeleteSshkey)
+	routes.GET("", middleware.AuthManagement(), sshKeyController.GetSshKeys)
+	routes.POST("", middleware.AuthManagement(), sshKeyController.AddSshKey)
+	routes.PATCH("/:id", middleware.AuthManagement(), sshKeyController.EditSshKey)
+	routes.DELETE("/:id", middleware.AuthManagement(), sshKeyController.DeleteSshKey)
 }

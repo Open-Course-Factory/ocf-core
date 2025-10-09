@@ -9,7 +9,7 @@ import (
 )
 
 type SshKeyService interface {
-	GetKeysByUserId(id string) (*[]dto.SshkeyOutput, error)
+	GetKeysByUserId(id string) (*[]dto.SshKeyOutput, error)
 }
 
 type sshKeyService struct {
@@ -22,8 +22,8 @@ func NewSshKeyService(db *gorm.DB) SshKeyService {
 	}
 }
 
-func (sks *sshKeyService) GetKeysByUserId(id string) (*[]dto.SshkeyOutput, error) {
-	var results []dto.SshkeyOutput
+func (sks *sshKeyService) GetKeysByUserId(id string) (*[]dto.SshKeyOutput, error) {
+	var results []dto.SshKeyOutput
 
 	sshKeys, creatSshKeyError := sks.repository.GetSshKeysByUserId(uuid.MustParse(id))
 	if creatSshKeyError != nil {
@@ -31,7 +31,7 @@ func (sks *sshKeyService) GetKeysByUserId(id string) (*[]dto.SshkeyOutput, error
 	}
 
 	for _, sshKey := range *sshKeys {
-		results = append(results, dto.SshkeyOutput{
+		results = append(results, dto.SshKeyOutput{
 			Id:         sshKey.ID,
 			KeyName:    sshKey.KeyName,
 			PrivateKey: sshKey.PrivateKey,

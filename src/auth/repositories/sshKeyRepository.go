@@ -9,7 +9,7 @@ import (
 )
 
 type SshKeyRepository interface {
-	GetSshKeysByUserId(id uuid.UUID) (*[]models.Sshkey, error)
+	GetSshKeysByUserId(id uuid.UUID) (*[]models.SshKey, error)
 }
 
 type sshKeyRepository struct {
@@ -23,8 +23,8 @@ func NewSshKeyRepository(db *gorm.DB) SshKeyRepository {
 	return repository
 }
 
-func (r sshKeyRepository) GetSshKeysByUserId(id uuid.UUID) (*[]models.Sshkey, error) {
-	var sshKeys []models.Sshkey
+func (r sshKeyRepository) GetSshKeysByUserId(id uuid.UUID) (*[]models.SshKey, error) {
+	var sshKeys []models.SshKey
 
 	result := r.db.Find(&sshKeys, "owner_ids && ?", pq.StringArray{id.String()})
 

@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/dto"
+	"soli/formations/src/auth/models"
 
 	labsDto "soli/formations/src/labs/dto"
 	labsModels "soli/formations/src/labs/models"
@@ -92,6 +93,13 @@ begin:
 	if errCreateUserKey != nil {
 		fmt.Printf("Warning: Could not create terminal trainer key for user %s: %v\n", createdUser.Id, errCreateUserKey)
 		// On ne fait pas échouer l'inscription pour ça, juste un warning
+	}
+
+	// Create default user settings
+	errCreateSettings := createDefaultUserSettings(createdUser.Id)
+	if errCreateSettings != nil {
+		fmt.Printf("Warning: Could not create default settings for user %s: %v\n", createdUser.Id, errCreateSettings)
+		// Don't fail registration for this, just log warning
 	}
 
 	return dto.UserModelToUserOutput(createdUser), nil
@@ -225,4 +233,29 @@ func (us *userService) SearchUsers(query string) (*[]dto.UserOutput, error) {
 	}
 
 	return &results, nil
+}
+
+// createDefaultUserSettings creates default settings for a new user
+func createDefaultUserSettings(userID string) error {
+	// Check if settings already exist
+	var existingSettings models.UserSettings
+	result := sqldb.DB.Where("user_id = ?", userID).First(&existingSettings)
+	if result.Error == nil {
+		return nil // Settings already exist
+	}
+
+	// Create default settings
+	defaultSettings := models.UserSettings{
+		UserID:               userID,
+		DefaultLandingPage:   "/dashboard",
+		PreferredLanguage:    "en",
+		Timezone:             "UTC",
+		Theme:                "light",
+		CompactMode:          false,
+		EmailNotifications:   true,
+		DesktopNotifications: false,
+		TwoFactorEnabled:     false,
+	}
+
+	return sqldb.DB.Create(&defaultSettings).Error
 }

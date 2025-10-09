@@ -10,10 +10,10 @@ import (
 )
 
 type SshKeyController interface {
-	AddSshkey(ctx *gin.Context)
-	EditSshkey(ctx *gin.Context)
-	DeleteSshkey(ctx *gin.Context)
-	GetSshkeys(ctx *gin.Context)
+	AddSshKey(ctx *gin.Context)
+	EditSshKey(ctx *gin.Context)
+	DeleteSshKey(ctx *gin.Context)
+	GetSshKeys(ctx *gin.Context)
 }
 
 type sshKeyController struct {

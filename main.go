@@ -33,6 +33,7 @@ import (
 	authController "soli/formations/src/auth"
 	"soli/formations/src/auth/casdoor"
 	authRegistration "soli/formations/src/auth/entityRegistration"
+	authHooks "soli/formations/src/auth/hooks"
 	authModels "soli/formations/src/auth/models"
 	accessController "soli/formations/src/auth/routes/accessesRoutes"
 	groupController "soli/formations/src/auth/routes/groupsRoutes"
@@ -140,7 +141,7 @@ func main() {
 
 	sqldb.DB.AutoMigrate(&courseModels.Generation{})
 
-	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
+	sqldb.DB.AutoMigrate(&authModels.SshKey{})
 
 	sqldb.DB.AutoMigrate(&labModels.Username{})
 	sqldb.DB.AutoMigrate(&labModels.Machine{})
@@ -158,6 +159,7 @@ func main() {
 	sqldb.DB.AutoMigrate(&paymentModels.BillingAddress{})
 
 	sqldb.DB.AutoMigrate(&configModels.Feature{})
+	sqldb.DB.AutoMigrate(&authModels.UserSettings{})
 
 	// Initialize feature registry and register module features
 	configServices.InitFeatureRegistry(sqldb.DB)
@@ -168,7 +170,8 @@ func main() {
 
 	casdoor.InitCasdoorEnforcer(sqldb.DB, "")
 
-	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshKeyRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.UserSettingsRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SessionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.CourseRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.PageRegistration{})
@@ -193,6 +196,7 @@ func main() {
 
 	payment.InitPaymentEntities(sqldb.DB)
 	courseHooks.InitCourseHooks(sqldb.DB)
+	authHooks.InitAuthHooks(sqldb.DB)
 
 	if parseFlags() {
 		os.Exit(0)

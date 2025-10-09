@@ -25,4 +25,9 @@ func UsersRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm
 	// User lookup routes for sharing functionality
 	routes.POST("/batch", middleware.AuthManagement(), userController.GetUsersBatch)
 	routes.GET("/search", middleware.AuthManagement(), userController.SearchUsers)
+
+	// User settings convenience routes
+	routes.GET("/me/settings", middleware.AuthManagement(), userController.GetMySettings)
+	routes.PATCH("/me/settings", middleware.AuthManagement(), userController.UpdateMySettings)
+	routes.POST("/me/change-password", middleware.AuthManagement(), userController.ChangePassword)
 }

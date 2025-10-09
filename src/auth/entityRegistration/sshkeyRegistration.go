@@ -7,20 +7,20 @@ import (
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
-type SshkeyRegistration struct {
+type SshKeyRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
 
-func (s SshkeyRegistration) EntityModelToEntityOutput(input any) (any, error) {
+func (s SshKeyRegistration) EntityModelToEntityOutput(input any) (any, error) {
 	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return sshkeyPtrModelToSshkeyOutput(input.(*models.Sshkey))
+		return sshKeyPtrModelToSshKeyOutput(input.(*models.SshKey))
 	} else {
-		return sshkeyValueModelToSshkeyOutput(input.(models.Sshkey))
+		return sshKeyValueModelToSshKeyOutput(input.(models.SshKey))
 	}
 }
 
-func sshkeyPtrModelToSshkeyOutput(sshKeyModel *models.Sshkey) (*dto.SshkeyOutput, error) {
-	return &dto.SshkeyOutput{
+func sshKeyPtrModelToSshKeyOutput(sshKeyModel *models.SshKey) (*dto.SshKeyOutput, error) {
+	return &dto.SshKeyOutput{
 		Id:         sshKeyModel.ID,
 		KeyName:    sshKeyModel.KeyName,
 		PrivateKey: sshKeyModel.PrivateKey,
@@ -28,8 +28,8 @@ func sshkeyPtrModelToSshkeyOutput(sshKeyModel *models.Sshkey) (*dto.SshkeyOutput
 	}, nil
 }
 
-func sshkeyValueModelToSshkeyOutput(sshKeyModel models.Sshkey) (*dto.SshkeyOutput, error) {
-	return &dto.SshkeyOutput{
+func sshKeyValueModelToSshKeyOutput(sshKeyModel models.SshKey) (*dto.SshKeyOutput, error) {
+	return &dto.SshKeyOutput{
 		Id:         sshKeyModel.ID,
 		KeyName:    sshKeyModel.KeyName,
 		PrivateKey: sshKeyModel.PrivateKey,
@@ -37,27 +37,38 @@ func sshkeyValueModelToSshkeyOutput(sshKeyModel models.Sshkey) (*dto.SshkeyOutpu
 	}, nil
 }
 
-func (s SshkeyRegistration) EntityInputDtoToEntityModel(input any) any {
+func (s SshKeyRegistration) EntityInputDtoToEntityModel(input any) any {
 
-	sshKeyInputDto := input.(dto.CreateSshkeyInput)
-	return &models.Sshkey{
+	sshKeyInputDto := input.(dto.CreateSshKeyInput)
+	return &models.SshKey{
 		KeyName:    sshKeyInputDto.Name,
 		PrivateKey: sshKeyInputDto.PrivateKey,
 	}
 }
 
-func (s SshkeyRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
+func (s SshKeyRegistration) EntityDtoToMap(input any) map[string]any {
+	editInput := input.(dto.EditSshKeyInput)
+	updateMap := make(map[string]any)
+
+	if editInput.KeyName != "" {
+		updateMap["key_name"] = editInput.KeyName
+	}
+
+	return updateMap
+}
+
+func (s SshKeyRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
 	return entityManagementInterfaces.EntityRegistrationInput{
-		EntityInterface: models.Sshkey{},
+		EntityInterface: models.SshKey{},
 		EntityConverters: entityManagementInterfaces.EntityConverters{
 			ModelToDto: s.EntityModelToEntityOutput,
 			DtoToModel: s.EntityInputDtoToEntityModel,
 			DtoToMap:   s.EntityDtoToMap,
 		},
 		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputCreateDto: dto.CreateSshkeyInput{},
-			OutputDto:      dto.CreateSshkeyOutput{},
-			InputEditDto:   dto.EditSshkeyInput{},
+			InputCreateDto: dto.CreateSshKeyInput{},
+			OutputDto:      dto.CreateSshKeyOutput{},
+			InputEditDto:   dto.EditSshKeyInput{},
 		},
 	}
 }

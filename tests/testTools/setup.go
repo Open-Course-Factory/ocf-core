@@ -34,7 +34,6 @@ import (
 )
 
 var groups []casdoorsdk.Group
-var roles []casdoorsdk.Role
 
 func SetupTestDatabase() {
 	_, b, _, _ := runtime.Caller(0)
@@ -52,7 +51,7 @@ func SetupTestDatabase() {
 	sqldb.DB.AutoMigrate(&courseModels.Generation{})
 	sqldb.DB.AutoMigrate(&courseModels.Session{})
 
-	sqldb.DB.AutoMigrate(&authModels.Sshkey{})
+	sqldb.DB.AutoMigrate(&authModels.SshKey{})
 
 	sqldb.DB.AutoMigrate(&labsModels.Username{})
 	sqldb.DB.AutoMigrate(&labsModels.Machine{})
@@ -69,7 +68,7 @@ func SetupTestDatabase() {
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Course{})
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Session{})
 
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&authModels.Sshkey{})
+	sqldb.DB.Where("1 = 1").Unscoped().Delete(&authModels.SshKey{})
 
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Connection{})
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&labsModels.Username{})
@@ -339,7 +338,7 @@ func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.SectionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.ChapterRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.CourseRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshkeyRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshKeyRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.UsernameRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(labRegistration.MachineRegistration{})
 
