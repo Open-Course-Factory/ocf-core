@@ -308,7 +308,7 @@ async function toggleFeature(featureId, enabled) {
   })
 
   // Sync metrics after toggle
-  await fetch('/api/v1/subscriptions/sync-usage-limits', {
+  await fetch('/api/v1/user-subscriptions/sync-usage-limits', {
     method: 'POST'
   })
 }

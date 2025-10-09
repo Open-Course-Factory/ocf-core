@@ -2,7 +2,7 @@
 
 ## Summary
 
-The `/subscriptions/upgrade` endpoint has been enhanced to fully integrate with Stripe, enabling users to change their subscription plans with proper proration handling.
+The `/user-subscriptions/upgrade` endpoint has been enhanced to fully integrate with Stripe, enabling users to change their subscription plans with proper proration handling.
 
 ## What Was Changed
 
@@ -35,7 +35,7 @@ The `/subscriptions/upgrade` endpoint has been enhanced to fully integrate with 
 
 ### Endpoint
 
-**POST** `/api/v1/subscriptions/upgrade`
+**POST** `/api/v1/user-subscriptions/upgrade`
 
 ### Request Body
 
@@ -55,7 +55,7 @@ The `/subscriptions/upgrade` endpoint has been enhanced to fully integrate with 
 ### Example Request
 
 ```bash
-curl -X POST https://api.example.com/api/v1/subscriptions/upgrade \
+curl -X POST https://api.example.com/api/v1/user-subscriptions/upgrade \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -99,7 +99,7 @@ curl -X POST https://api.example.com/api/v1/subscriptions/upgrade \
 
 ## Important Notes
 
-- ⚠️ **Breaking Change**: The previous `/subscriptions/upgrade` route only updated the database. It now updates Stripe subscriptions.
+- ⚠️ **Breaking Change**: The previous `/user-subscriptions/upgrade` route only updated the database. It now updates Stripe subscriptions.
 - ✅ **Proration**: Upgrades/downgrades properly charge or credit users based on remaining time in billing period
 - ✅ **Atomic**: Database updates are transactional, ensuring consistency
 - ✅ **Usage Limits**: Automatically updates terminal, course, and lab session limits

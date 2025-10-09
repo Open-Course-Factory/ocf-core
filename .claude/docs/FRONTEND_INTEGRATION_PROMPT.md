@@ -69,7 +69,7 @@ Content-Type: application/json
 
 ### Sync User Metrics (After Toggling)
 ```http
-POST /api/v1/subscriptions/sync-usage-limits
+POST /api/v1/user-subscriptions/sync-usage-limits
 ```
 
 This removes/creates usage metrics based on new feature states.
@@ -88,7 +88,7 @@ This removes/creates usage metrics based on new feature states.
 // Example: Vue/React component
 async function loadSubscriptionLimits() {
   // 1. Fetch user's subscription
-  const subscription = await fetch('/api/v1/subscriptions/current')
+  const subscription = await fetch('/api/v1/user-subscriptions/current')
     .then(r => r.json())
 
   // 2. Fetch enabled features
@@ -398,7 +398,7 @@ function FeatureManagementPage() {
   async function syncMetrics() {
     setSyncing(true)
     try {
-      await fetch('/api/v1/subscriptions/sync-usage-limits', {
+      await fetch('/api/v1/user-subscriptions/sync-usage-limits', {
         method: 'POST'
       })
       showNotification('Metrics synced successfully')
@@ -655,4 +655,4 @@ input:checked + .slider:before {
 **Key API calls:**
 1. `GET /api/v1/features` - Get all features
 2. `PATCH /api/v1/features/{id}` - Toggle feature
-3. `POST /api/v1/subscriptions/sync-usage-limits` - Sync metrics after toggle
+3. `POST /api/v1/user-subscriptions/sync-usage-limits` - Sync metrics after toggle

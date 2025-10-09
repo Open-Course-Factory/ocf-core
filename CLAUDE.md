@@ -138,7 +138,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 **Common API Endpoints:**
 - `GET /api/v1/subscription-plans` - List all subscription plans
 - `POST /api/v1/subscription-plans/sync-stripe` - Sync plans with Stripe (requires auth)
-- `GET /api/v1/subscriptions/current` - Get current user's subscription (requires auth)
+- `GET /api/v1/user-subscriptions/current` - Get current user's subscription (requires auth)
 - `GET /api/v1/terminal-sessions/user-sessions` - Get user's terminal sessions (requires auth)
 - `GET /swagger/` - Full API documentation
 

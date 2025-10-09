@@ -145,7 +145,7 @@ To update existing users:
 2. Call the sync endpoint for each affected user:
 
 ```bash
-POST /api/v1/subscriptions/sync-usage-limits
+POST /api/v1/user-subscriptions/sync-usage-limits
 ```
 
 This will:
@@ -184,7 +184,7 @@ After updating plan features, sync user metrics:
 
 ```bash
 # Sync all users with a specific plan
-POST /api/v1/subscriptions/sync-usage-limits
+POST /api/v1/user-subscriptions/sync-usage-limits
 {
   "plan_id": "plan-uuid-here"
 }
@@ -300,7 +300,7 @@ go run main.go
 
 **Step 3:** Sync existing users (removes course metrics)
 ```bash
-POST /api/v1/subscriptions/sync-usage-limits
+POST /api/v1/user-subscriptions/sync-usage-limits
 ```
 
 **Result:**

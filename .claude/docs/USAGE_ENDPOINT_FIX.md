@@ -2,7 +2,7 @@
 
 ## Issue
 
-`GET /api/v1/subscriptions/usage` was returning `null` instead of usage metrics.
+`GET /api/v1/user-subscriptions/usage` was returning `null` instead of usage metrics.
 
 ## Root Cause
 
@@ -42,7 +42,7 @@ ctx.JSON(http.StatusOK, usageMetricsDTO)
 If a user has no metrics, they need to be initialized. Call the sync endpoint:
 
 ```bash
-POST /api/v1/subscriptions/sync-usage-limits
+POST /api/v1/user-subscriptions/sync-usage-limits
 Authorization: Bearer <user-token>
 ```
 
@@ -58,7 +58,7 @@ This will:
 ### Before Sync
 ```bash
 curl -H "Authorization: Bearer <token>" \
-  http://localhost:8080/api/v1/subscriptions/usage
+  http://localhost:8080/api/v1/user-subscriptions/usage
 ```
 
 **Response:**
@@ -70,11 +70,11 @@ curl -H "Authorization: Bearer <token>" \
 ```bash
 # 1. Sync metrics
 curl -X POST -H "Authorization: Bearer <token>" \
-  http://localhost:8080/api/v1/subscriptions/sync-usage-limits
+  http://localhost:8080/api/v1/user-subscriptions/sync-usage-limits
 
 # 2. Get usage
 curl -H "Authorization: Bearer <token>" \
-  http://localhost:8080/api/v1/subscriptions/usage
+  http://localhost:8080/api/v1/user-subscriptions/usage
 ```
 
 **Response:**
@@ -107,17 +107,17 @@ curl -H "Authorization: Bearer <token>" \
 
 ```javascript
 async function getUserUsage() {
-  let usage = await fetch('/api/v1/subscriptions/usage')
+  let usage = await fetch('/api/v1/user-subscriptions/usage')
     .then(r => r.json())
 
   // If empty, trigger sync and retry
   if (usage.length === 0) {
-    await fetch('/api/v1/subscriptions/sync-usage-limits', {
+    await fetch('/api/v1/user-subscriptions/sync-usage-limits', {
       method: 'POST'
     })
 
     // Retry
-    usage = await fetch('/api/v1/subscriptions/usage')
+    usage = await fetch('/api/v1/user-subscriptions/usage')
       .then(r => r.json())
   }
 
@@ -129,7 +129,7 @@ async function getUserUsage() {
 
 ```javascript
 async function getUserUsage() {
-  const usage = await fetch('/api/v1/subscriptions/usage')
+  const usage = await fetch('/api/v1/user-subscriptions/usage')
     .then(r => r.json())
 
   if (usage.length === 0) {
@@ -185,7 +185,7 @@ To avoid this in the future:
 
 2. **Health check endpoint** - Could add:
    ```
-   GET /api/v1/subscriptions/health
+   GET /api/v1/user-subscriptions/health
    ```
    Returns:
    ```json
@@ -201,5 +201,5 @@ To avoid this in the future:
 ## Summary
 
 ✅ **Fixed**: Returns `[]` instead of `null` when no metrics
-✅ **Solution**: Call `POST /api/v1/subscriptions/sync-usage-limits`
+✅ **Solution**: Call `POST /api/v1/user-subscriptions/sync-usage-limits`
 ✅ **Prevention**: Metrics auto-created on subscription webhooks

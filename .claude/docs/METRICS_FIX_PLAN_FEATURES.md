@@ -97,7 +97,7 @@ Same fix applied for courses and labs metrics.
    - labs (enabled)
    - terminals (enabled)
 
-2. ✅ Calling `POST /api/v1/subscriptions/sync-usage-limits` will now create metrics for all enabled features
+2. ✅ Calling `POST /api/v1/user-subscriptions/sync-usage-limits` will now create metrics for all enabled features
 
 3. ✅ Toggling a feature flag in the database will immediately affect metric creation on next sync
 
@@ -119,10 +119,10 @@ Same fix applied for courses and labs metrics.
 **To get metrics**:
 ```bash
 # Call sync endpoint (requires authentication)
-POST /api/v1/subscriptions/sync-usage-limits
+POST /api/v1/user-subscriptions/sync-usage-limits
 
 # Then check usage
-GET /api/v1/subscriptions/usage
+GET /api/v1/user-subscriptions/usage
 ```
 
 ## Future Considerations
