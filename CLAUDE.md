@@ -123,17 +123,40 @@ Response:
 ```
 
 2. **Use Token** for authenticated requests:
+
+**IMPORTANT**: Due to Bash tool limitations with command substitution, use the pre-approved TOKEN variable or provide the full token directly.
+
+**Method 1: Use the pre-approved TOKEN variable (recommended for testing)**
 ```bash
-# Extract and save token
-TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+# The $TOKEN variable is pre-configured in the approved tools list
+curl -X GET http://localhost:8080/api/v1/terminals \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json"
+```
+
+**Method 2: Provide the full token directly (most reliable)**
+```bash
+# Use the complete token directly in the Authorization header
+curl -X GET http://localhost:8080/api/v1/terminals \
+  -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImRlbW9fY2VydGlmaWNhdGUiLCJ0eXAiOiJKV1QifQ..." \
+  -H "Content-Type: application/json" | python3 -m json.tool
+```
+
+**Method 3: Two-step approach (fallback)**
+```bash
+# Step 1: Get token and save to file
+curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"1.supervisor@test.com","password":"test"}' \
-  | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+  | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])" > /tmp/token.txt
 
-# Make authenticated request
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/subscription-plans
+# Step 2: Use token from file
+curl -X GET http://localhost:8080/api/v1/terminals \
+  -H "Authorization: Bearer $(cat /tmp/token.txt)" \
+  -H "Content-Type: application/json"
 ```
+
+**Note**: Avoid using `$()` command substitution in complex Bash commands as it can cause parsing issues with the Bash tool. When in doubt, use Method 1 or Method 2.
 
 **Common API Endpoints:**
 - `GET /api/v1/subscription-plans` - List all subscription plans

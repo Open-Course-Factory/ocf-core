@@ -30,6 +30,12 @@ func (t TerminalRegistration) GetSwaggerConfig() entityManagementInterfaces.Enti
 			Tags:        []string{"terminals"},
 			Security:    true,
 		},
+		Update: &entityManagementInterfaces.SwaggerOperation{
+			Summary:     "Mettre à jour un terminal",
+			Description: "Met à jour les informations d'un terminal (nom, statut, etc.)",
+			Tags:        []string{"terminals"},
+			Security:    true,
+		},
 	}
 }
 
@@ -46,6 +52,7 @@ func terminalPtrModelToTerminalOutput(terminalModel *models.Terminal) (*dto.Term
 		ID:              terminalModel.ID,
 		SessionID:       terminalModel.SessionID,
 		UserID:          terminalModel.UserID,
+		Name:            terminalModel.Name,
 		Status:          terminalModel.Status,
 		ExpiresAt:       terminalModel.ExpiresAt,
 		InstanceType:    terminalModel.InstanceType,
@@ -61,6 +68,7 @@ func terminalValueModelToTerminalOutput(terminalModel models.Terminal) (*dto.Ter
 		ID:              terminalModel.ID,
 		SessionID:       terminalModel.SessionID,
 		UserID:          terminalModel.UserID,
+		Name:            terminalModel.Name,
 		Status:          terminalModel.Status,
 		ExpiresAt:       terminalModel.ExpiresAt,
 		InstanceType:    terminalModel.InstanceType,
@@ -76,6 +84,7 @@ func (t TerminalRegistration) EntityInputDtoToEntityModel(input any) any {
 	return &models.Terminal{
 		SessionID:         terminalInputDto.SessionID,
 		UserID:            terminalInputDto.UserID,
+		Name:              terminalInputDto.Name,
 		Status:            "active",
 		ExpiresAt:         terminalInputDto.ExpiresAt,
 		UserTerminalKeyID: terminalInputDto.TerminalTrainerKeyID,
@@ -96,6 +105,20 @@ func (t TerminalRegistration) GetEntityRegistrationInput() entityManagementInter
 			InputEditDto:   dto.UpdateTerminalInput{},
 		},
 	}
+}
+
+func (t TerminalRegistration) EntityDtoToMap(input any) map[string]any {
+	terminalUpdateDto := input.(dto.UpdateTerminalInput)
+	updates := make(map[string]any)
+
+	if terminalUpdateDto.Name != "" {
+		updates["name"] = terminalUpdateDto.Name
+	}
+	if terminalUpdateDto.Status != "" {
+		updates["status"] = terminalUpdateDto.Status
+	}
+
+	return updates
 }
 
 // Override pour des permissions spécifiques aux terminaux

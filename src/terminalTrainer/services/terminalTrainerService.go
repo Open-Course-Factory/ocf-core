@@ -246,6 +246,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	terminal := &models.Terminal{
 		SessionID:         sessionResp.SessionID,
 		UserID:            userID,
+		Name:              sessionInput.Name,
 		Status:            "active",
 		ExpiresAt:         expiresAt,
 		InstanceType:      sessionInput.InstanceType,

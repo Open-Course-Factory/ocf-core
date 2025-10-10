@@ -10,11 +10,13 @@ import (
 type CreateTerminalInput struct {
 	SessionID            string    `binding:"required" json:"session_id"`
 	UserID               string    `binding:"required" json:"user_id"`
+	Name                 string    `json:"name"` // User-friendly name for the terminal session
 	ExpiresAt            time.Time `binding:"required" json:"expires_at"`
 	TerminalTrainerKeyID uuid.UUID `binding:"required" json:"terminal_trainer_key_id"`
 }
 
 type UpdateTerminalInput struct {
+	Name   string `json:"name,omitempty"`
 	Status string `json:"status,omitempty"`
 }
 
@@ -22,6 +24,7 @@ type TerminalOutput struct {
 	ID                uuid.UUID  `json:"id"`
 	SessionID         string     `json:"session_id"`
 	UserID            string     `json:"user_id"`
+	Name              string     `json:"name"` // User-friendly name for the terminal session
 	Status            string     `json:"status"`
 	ExpiresAt         time.Time  `json:"expires_at"`
 	InstanceType      string     `json:"instance_type"`
@@ -99,6 +102,7 @@ type SharedTerminalInfo struct {
 // Terminal Service DTOs (pour les appels au Terminal Trainer)
 type CreateTerminalSessionInput struct {
 	Terms        string `binding:"required" json:"terms" form:"terms"`
+	Name         string `json:"name,omitempty" form:"name"` // User-friendly name for the terminal session
 	Expiry       int    `json:"expiry,omitempty" form:"expiry"`        // optionnel
 	InstanceType string `json:"instance_type,omitempty" form:"instance_type"` // préfixe du type d'instance
 }
