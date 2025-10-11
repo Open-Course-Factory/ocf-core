@@ -54,6 +54,9 @@ type TerminalController interface {
 	// Méthodes de configuration
 	GetInstanceTypes(ctx *gin.Context)
 
+	// Méthodes de métriques
+	GetServerMetrics(ctx *gin.Context)
+
 	// Méthodes de correction des permissions
 	FixTerminalHidePermissions(ctx *gin.Context)
 }
@@ -821,6 +824,33 @@ func (tc *terminalController) GetInstanceTypes(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, instanceTypes)
+}
+
+// Get Server Metrics godoc
+//
+//	@Summary		Récupérer les métriques du serveur Terminal Trainer
+//	@Description	Récupère les métriques de CPU, RAM et disponibilité du serveur Terminal Trainer
+//	@Tags			terminal-sessions
+//	@Security		Bearer
+//	@Accept			json
+//	@Produce		json
+//	@Param			nocache	query		bool	false	"Bypass cache for real-time data"
+//	@Success		200		{object}	dto.ServerMetricsResponse
+//	@Failure		500		{object}	errors.APIError	"Erreur interne du serveur"
+//	@Router			/terminal-sessions/metrics [get]
+func (tc *terminalController) GetServerMetrics(ctx *gin.Context) {
+	nocache := ctx.Query("nocache") == "true" || ctx.Query("nocache") == "1"
+
+	metrics, err := tc.service.GetServerMetrics(nocache)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to get server metrics: %v", err),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, metrics)
 }
 
 // Terminal sharing endpoints implementation

@@ -41,6 +41,7 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	// Configuration
 	routes.GET("/instance-types", middleware.AuthManagement(), terminalController.GetInstanceTypes) // Liste des types d'instances disponibles
+	routes.GET("/metrics", middleware.AuthManagement(), terminalController.GetServerMetrics)         // Métriques du serveur Terminal Trainer
 
 	// Correction des permissions
 	routes.POST("/fix-hide-permissions", middleware.AuthManagement(), terminalController.FixTerminalHidePermissions) // Corriger les permissions de masquage

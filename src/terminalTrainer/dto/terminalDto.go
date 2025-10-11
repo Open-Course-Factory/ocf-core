@@ -387,3 +387,11 @@ type FixPermissionsResponse struct {
 	ProcessedShares    int      `json:"processed_shares"`
 	Errors             []string `json:"errors,omitempty"`
 }
+
+// ServerMetricsResponse représente les métriques du serveur Terminal Trainer
+type ServerMetricsResponse struct {
+	CPUPercent      float64 `json:"cpu_percent"`
+	RAMPercent      float64 `json:"ram_percent"`
+	RAMAvailableGB  float64 `json:"ram_available_gb"`
+	Timestamp       int64   `json:"timestamp"`
+}

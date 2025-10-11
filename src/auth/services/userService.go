@@ -1,8 +1,10 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/dto"
@@ -31,7 +33,50 @@ func NewUserService() UserService {
 	return &userService{}
 }
 
+// validateTosAcceptance validates that Terms of Service have been properly accepted
+func validateTosAcceptance(userCreateDTO dto.CreateUserInput) error {
+	// Check if ToS fields are present
+	if strings.TrimSpace(userCreateDTO.TosAcceptedAt) == "" {
+		return errors.New("TOS_ACCEPTANCE_REQUIRED: Terms of Service acceptance timestamp is required for registration")
+	}
+
+	if strings.TrimSpace(userCreateDTO.TosVersion) == "" {
+		return errors.New("TOS_ACCEPTANCE_REQUIRED: Terms of Service version is required for registration")
+	}
+
+	// Validate timestamp format (ISO 8601)
+	tosTime, err := time.Parse(time.RFC3339, userCreateDTO.TosAcceptedAt)
+	if err != nil {
+		return errors.New("INVALID_TOS_TIMESTAMP: Terms of Service acceptance timestamp must be in ISO 8601 format (e.g., 2025-10-11T14:23:45.123Z)")
+	}
+
+	// Check that timestamp is not in the future
+	if tosTime.After(time.Now()) {
+		return errors.New("INVALID_TOS_TIMESTAMP: Terms of Service acceptance timestamp cannot be in the future")
+	}
+
+	// Optional: Check that timestamp is recent (within last 24 hours)
+	// This prevents replay attacks
+	twentyFourHoursAgo := time.Now().Add(-24 * time.Hour)
+	if tosTime.Before(twentyFourHoursAgo) {
+		return errors.New("INVALID_TOS_TIMESTAMP: Terms of Service acceptance timestamp must be within the last 24 hours")
+	}
+
+	// Validate version format (YYYY-MM-DD)
+	_, err = time.Parse("2006-01-02", userCreateDTO.TosVersion)
+	if err != nil {
+		return errors.New("INVALID_TOS_VERSION: Terms of Service version must be in YYYY-MM-DD format")
+	}
+
+	return nil
+}
+
 func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutput, error) {
+	// Validate ToS acceptance
+	if err := validateTosAcceptance(userCreateDTO); err != nil {
+		return nil, err
+	}
+
 	generatedUsername := namesgenerator.GetRandomName(1)
 
 	user1, err := createUserIntoCasdoor(generatedUsername, userCreateDTO)
@@ -113,6 +158,9 @@ func addDefaultRoleToUser(user1 casdoorsdk.User) error {
 func createUserIntoCasdoor(generatedUsername string, userCreateDTO dto.CreateUserInput) (casdoorsdk.User, error) {
 	properties := make(map[string]string)
 	properties["username"] = generatedUsername
+	properties["tos_accepted_at"] = userCreateDTO.TosAcceptedAt
+	properties["tos_version"] = userCreateDTO.TosVersion
+
 	user1 := casdoorsdk.User{
 		Name:              userCreateDTO.UserName,
 		DisplayName:       userCreateDTO.DisplayName,

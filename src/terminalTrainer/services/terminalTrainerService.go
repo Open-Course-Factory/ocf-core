@@ -62,6 +62,9 @@ type TerminalTrainerService interface {
 	// Configuration
 	GetInstanceTypes() ([]dto.InstanceType, error)
 
+	// Metrics
+	GetServerMetrics(nocache bool) (*dto.ServerMetricsResponse, error)
+
 	// Correction des permissions
 	FixTerminalHidePermissions(userID string) (*dto.FixPermissionsResponse, error)
 }
@@ -1169,6 +1172,51 @@ func (tts *terminalTrainerService) addTerminalHidePermissions(userID string) err
 	}
 
 	return nil
+}
+
+// GetServerMetrics récupère les métriques du serveur Terminal Trainer
+func (tts *terminalTrainerService) GetServerMetrics(nocache bool) (*dto.ServerMetricsResponse, error) {
+	// Skip if Terminal Trainer is not configured
+	if tts.baseURL == "" {
+		return nil, fmt.Errorf("terminal trainer not configured")
+	}
+
+	// Construire l'URL des métriques
+	path := fmt.Sprintf("/%s/metrics", tts.apiVersion)
+	url := fmt.Sprintf("%s%s", tts.baseURL, path)
+
+	// Ajouter le paramètre nocache si demandé
+	if nocache {
+		url += "?nocache=true"
+	}
+
+	// Créer la requête HTTP
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	// Exécuter la requête (pas besoin d'authentification selon les specs)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("terminal trainer API call failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Vérifier le code de statut
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("terminal trainer API error: %d - %s", resp.StatusCode, string(body))
+	}
+
+	// Lire et décoder la réponse
+	var metrics dto.ServerMetricsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&metrics); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	return &metrics, nil
 }
 
 // FixTerminalHidePermissions corrige les permissions de masquage pour tous les terminaux d'un utilisateur

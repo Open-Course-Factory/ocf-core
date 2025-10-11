@@ -8,6 +8,7 @@ import (
 
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/payment/services"
+	terminalServices "soli/formations/src/terminalTrainer/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -27,11 +28,13 @@ type UsageLimitMiddleware interface {
 
 type usageLimitMiddleware struct {
 	subscriptionService services.UserSubscriptionService
+	terminalService     terminalServices.TerminalTrainerService
 }
 
 func NewUsageLimitMiddleware(db *gorm.DB) UsageLimitMiddleware {
 	return &usageLimitMiddleware{
 		subscriptionService: services.NewSubscriptionService(db),
+		terminalService:     terminalServices.NewTerminalTrainerService(db),
 	}
 }
 
@@ -335,6 +338,70 @@ func (ulm *usageLimitMiddleware) CheckTerminalCreationLimit() gin.HandlerFunc {
 			})
 			ctx.Abort()
 			return
+		}
+
+		// Vérifier la RAM disponible sur le serveur Terminal Trainer
+		// Utiliser nocache=true pour obtenir les données en temps réel
+		metrics, err := ulm.terminalService.GetServerMetrics(true)
+		if err != nil {
+			// Log l'erreur mais ne pas bloquer la création si le service de métriques est indisponible
+			fmt.Printf("Warning: Failed to check server metrics for terminal creation: %v\n", err)
+		} else {
+			// Calculer la RAM requise basée sur le type d'instance demandé
+			// Map des tailles de machines vers RAM requise (GB)
+			machineSizeToRAM := map[string]float64{
+				"XS": 0.25,
+				"S":  0.5,
+				"M":  1.0,
+				"L":  2.0,
+				"XL": 4.0,
+			}
+
+			// Déterminer la taille de machine demandée depuis le corps de la requête
+			// Pour éviter de lire le corps deux fois, on utilise une estimation par défaut
+			// basée sur les tailles autorisées dans le plan
+			var estimatedRAM float64 = 0.5 // valeur par défaut pour S
+
+			// Utiliser la plus grande taille autorisée dans le plan comme estimation
+			if len(plan.AllowedMachineSizes) > 0 {
+				maxRAM := 0.0
+				for _, size := range plan.AllowedMachineSizes {
+					if size == "all" {
+						estimatedRAM = 1.0 // Utiliser M comme moyenne pour "all"
+						break
+					}
+					if ram, ok := machineSizeToRAM[size]; ok && ram > maxRAM {
+						maxRAM = ram
+					}
+				}
+				if maxRAM > 0 {
+					estimatedRAM = maxRAM
+				}
+			}
+
+			const minRAMReservePercent = 5.0
+
+			// Calculer la RAM totale approximative à partir de la RAM disponible et du pourcentage utilisé
+			// ram_available_gb = total_ram * (1 - ram_percent/100)
+			// donc: total_ram = ram_available_gb / (1 - ram_percent/100)
+			totalRAM := metrics.RAMAvailableGB / (1.0 - metrics.RAMPercent/100.0)
+			minReservedRAM := totalRAM * (minRAMReservePercent / 100.0)
+
+			// Vérifier qu'il reste assez de RAM après la création du terminal
+			ramAfterCreation := metrics.RAMAvailableGB - estimatedRAM
+
+			if ramAfterCreation < minReservedRAM {
+				ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
+					ErrorCode:    http.StatusServiceUnavailable,
+					ErrorMessage: fmt.Sprintf("Server at capacity: insufficient RAM available (%.2f GB available, %.2f GB required for terminal + %.2f GB reserve). Please try again later.",
+						metrics.RAMAvailableGB, estimatedRAM, minReservedRAM),
+				})
+				ctx.Abort()
+				return
+			}
+
+			// Stocker les métriques dans le contexte pour référence
+			ctx.Set("server_metrics", metrics)
 		}
 
 		// Stocker le plan dans le contexte pour usage ultérieur
