@@ -55,7 +55,7 @@ type UserSubscription struct {
 	UserID                  string           `gorm:"type:varchar(100);not null;index" json:"user_id"`
 	SubscriptionPlanID      uuid.UUID        `json:"subscription_plan_id"`
 	SubscriptionPlan        SubscriptionPlan `gorm:"foreignKey:SubscriptionPlanID" json:"subscription_plan"`
-	StripeSubscriptionID    string           `gorm:"type:varchar(100);uniqueIndex" json:"stripe_subscription_id"`
+	StripeSubscriptionID    string           `gorm:"type:varchar(100);" json:"stripe_subscription_id"`
 	StripeCustomerID        string           `gorm:"type:varchar(100);not null;index" json:"stripe_customer_id"`
 	Status                  string           `gorm:"type:varchar(50);default:'active'" json:"status"` // active, cancelled, past_due, unpaid
 	CurrentPeriodStart      time.Time        `json:"current_period_start"`
