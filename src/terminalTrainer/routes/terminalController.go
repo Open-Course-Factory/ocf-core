@@ -118,7 +118,7 @@ func (tc *terminalController) DeleteEntity(ctx *gin.Context) {
 //
 //	@Summary		Démarrer une session terminal
 //	@Description	Démarre une nouvelle session de terminal via Terminal Trainer
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			session	body	dto.CreateTerminalSessionInput	true	"Terminal session input"
@@ -127,7 +127,7 @@ func (tc *terminalController) DeleteEntity(ctx *gin.Context) {
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Failure		500	{object}	errors.APIError	"Terminal trainer error"
-//	@Router			/terminal-sessions/start-session [post]
+//	@Router			/terminals/start-session [post]
 func (tc *terminalController) StartSession(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
@@ -166,7 +166,7 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 //
 //	@Summary		Connexion console WebSocket
 //	@Description	Établit une connexion WebSocket vers la console du terminal
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			id		path	string	true	"Session ID"
@@ -177,7 +177,7 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		404	{object}	errors.APIError	"Session not found"
 //	@Failure		403	{object}	errors.APIError	"Access denied"
-//	@Router			/terminal-sessions/{id}/console [get]
+//	@Router			/terminals/{id}/console [get]
 func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
 	if sessionID == "" {
@@ -323,7 +323,7 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 //
 //	@Summary		Arrêter une session terminal
 //	@Description	Arrête une session de terminal active et la termine côté Terminal Trainer
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			id	path	string	true	"Terminal ID"
@@ -332,7 +332,7 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		404	{object}	errors.APIError	"Session not found"
 //	@Failure		403	{object}	errors.APIError	"Access denied"
-//	@Router			/terminal-sessions/{id}/stop [post]
+//	@Router			/terminals/{id}/stop [post]
 func (tc *terminalController) StopSession(ctx *gin.Context) {
 	terminalID := ctx.Param("id")
 	userId := ctx.GetString("userId")
@@ -379,14 +379,14 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 //
 //	@Summary		Sessions utilisateur
 //	@Description	Récupère toutes les sessions actives d'un utilisateur
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			include_hidden	query	bool	false	"Include hidden terminals"
 //	@Security		Bearer
 //	@Success		200	{array}		dto.TerminalOutput
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
-//	@Router			/terminal-sessions/user-sessions [get]
+//	@Router			/terminals/user-sessions [get]
 func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	includeHidden := ctx.Query("include_hidden") == "true"
@@ -448,7 +448,7 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 //
 //	@Summary		Synchroniser une session
 //	@Description	Synchronise l'état d'une session avec l'API Terminal Trainer
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			id	path	string	true	"Session ID"
@@ -457,7 +457,7 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		404	{object}	errors.APIError	"Session not found"
 //	@Failure		500	{object}	errors.APIError	"Sync error"
-//	@Router			/terminal-sessions/{id}/sync [post]
+//	@Router			/terminals/{id}/sync [post]
 func (tc *terminalController) SyncSession(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
 	userId := ctx.GetString("userId")
@@ -526,13 +526,13 @@ func (tc *terminalController) SyncSession(ctx *gin.Context) {
 //
 //	@Summary		Synchroniser toutes les sessions avec l'API comme source de vérité
 //	@Description	Synchronise l'état de toutes les sessions en utilisant l'API Terminal Trainer comme référence
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Security		Bearer
 //	@Success		200	{object}	dto.SyncAllSessionsResponse
 //	@Failure		500	{object}	errors.APIError	"Sync error"
-//	@Router			/terminal-sessions/sync-all [post]
+//	@Router			/terminals/sync-all [post]
 func (tc *terminalController) SyncAllSessions(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	userRoles := ctx.GetStringSlice("userRoles")
@@ -590,7 +590,7 @@ func (tc *terminalController) SyncAllSessions(ctx *gin.Context) {
 //
 //	@Summary		Synchronisation complète d'un utilisateur
 //	@Description	Synchronise toutes les sessions d'un utilisateur en utilisant l'API comme source de vérité
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			user_id	query	string	false	"User ID (admin only)"
@@ -598,7 +598,7 @@ func (tc *terminalController) SyncAllSessions(ctx *gin.Context) {
 //	@Success		200	{object}	dto.SyncAllSessionsResponse
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Failure		500	{object}	errors.APIError	"Sync error"
-//	@Router			/terminal-sessions/sync-user [post]
+//	@Router			/terminals/sync-user [post]
 func (tc *terminalController) SyncUserSessions(ctx *gin.Context) {
 	currentUserId := ctx.GetString("userId")
 	targetUserId := ctx.Query("user_id")
@@ -645,7 +645,7 @@ func (tc *terminalController) SyncUserSessions(ctx *gin.Context) {
 //
 //	@Summary		Obtenir le statut détaillé d'une session
 //	@Description	Compare le statut local et celui de l'API Terminal Trainer avec informations étendues
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			id	path	string	true	"Session ID"
@@ -654,7 +654,7 @@ func (tc *terminalController) SyncUserSessions(ctx *gin.Context) {
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		404	{object}	errors.APIError	"Session not found"
 //	@Failure		500	{object}	errors.APIError	"Status check error"
-//	@Router			/terminal-sessions/{id}/status [get]
+//	@Router			/terminals/{id}/status [get]
 func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
 	userId := ctx.GetString("userId")
@@ -746,7 +746,7 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 //
 //	@Summary		Obtenir des statistiques de synchronisation
 //	@Description	Retourne des statistiques sur les sessions et la synchronisation
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			user_id	query	string	false	"User ID (admin only)"
@@ -754,7 +754,7 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 //	@Success		200	{object}	map[string]interface{}
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Failure		500	{object}	errors.APIError	"Error getting statistics"
-//	@Router			/terminal-sessions/sync-stats [get]
+//	@Router			/terminals/sync-stats [get]
 func (tc *terminalController) GetSyncStatistics(ctx *gin.Context) {
 	currentUserId := ctx.GetString("userId")
 	targetUserId := ctx.Query("user_id")
@@ -806,13 +806,13 @@ func (tc *terminalController) GetSyncStatistics(ctx *gin.Context) {
 //
 //	@Summary		Récupérer les types d'instances disponibles
 //	@Description	Récupère la liste des types d'instances/préfixes disponibles depuis Terminal Trainer
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Security		Bearer
 //	@Accept			json
 //	@Produce		json
 //	@Success		200	{array}		dto.InstanceType
 //	@Failure		500	{object}	errors.APIError	"Erreur interne du serveur"
-//	@Router			/terminal-sessions/instance-types [get]
+//	@Router			/terminals/instance-types [get]
 func (tc *terminalController) GetInstanceTypes(ctx *gin.Context) {
 	instanceTypes, err := tc.service.GetInstanceTypes()
 	if err != nil {
@@ -830,14 +830,14 @@ func (tc *terminalController) GetInstanceTypes(ctx *gin.Context) {
 //
 //	@Summary		Récupérer les métriques du serveur Terminal Trainer
 //	@Description	Récupère les métriques de CPU, RAM et disponibilité du serveur Terminal Trainer
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Security		Bearer
 //	@Accept			json
 //	@Produce		json
 //	@Param			nocache	query		bool	false	"Bypass cache for real-time data"
 //	@Success		200		{object}	dto.ServerMetricsResponse
 //	@Failure		500		{object}	errors.APIError	"Erreur interne du serveur"
-//	@Router			/terminal-sessions/metrics [get]
+//	@Router			/terminals/metrics [get]
 func (tc *terminalController) GetServerMetrics(ctx *gin.Context) {
 	nocache := ctx.Query("nocache") == "true" || ctx.Query("nocache") == "1"
 
@@ -859,7 +859,7 @@ func (tc *terminalController) GetServerMetrics(ctx *gin.Context) {
 //
 //	@Summary		Partager une session terminal avec un autre utilisateur
 //	@Description	Partage l'accès d'une session terminal avec un autre utilisateur avec un niveau d'accès spécifique
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			id		path	string						true	"Session ID"
@@ -870,7 +870,7 @@ func (tc *terminalController) GetServerMetrics(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError		"Access denied"
 //	@Failure		404	{object}	errors.APIError		"Terminal not found"
 //	@Failure		500	{object}	errors.APIError		"Internal server error"
-//	@Router			/terminal-sessions/{id}/share [post]
+//	@Router			/terminals/{id}/share [post]
 func (tc *terminalController) ShareTerminal(ctx *gin.Context) {
 	terminalID := ctx.Param("id")
 	userId := ctx.GetString("userId")
@@ -914,7 +914,7 @@ func (tc *terminalController) ShareTerminal(ctx *gin.Context) {
 //
 //	@Summary		Révoquer l'accès d'un utilisateur à une session terminal
 //	@Description	Révoque l'accès d'un utilisateur spécifique à une session terminal
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			id		path	string	true	"Session ID"
@@ -925,7 +925,7 @@ func (tc *terminalController) ShareTerminal(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError		"Access denied"
 //	@Failure		404	{object}	errors.APIError		"Terminal or share not found"
 //	@Failure		500	{object}	errors.APIError		"Internal server error"
-//	@Router			/terminal-sessions/{id}/share/{user_id} [delete]
+//	@Router			/terminals/{id}/share/{user_id} [delete]
 func (tc *terminalController) RevokeTerminalAccess(ctx *gin.Context) {
 	terminalID := ctx.Param("id")
 	sharedWithUserID := ctx.Param("user_id")
@@ -961,7 +961,7 @@ func (tc *terminalController) RevokeTerminalAccess(ctx *gin.Context) {
 //
 //	@Summary		Obtenir les partages d'une session terminal
 //	@Description	Récupère la liste des utilisateurs ayant accès à une session terminal
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			id	path	string	true	"Terminal ID"
@@ -971,7 +971,7 @@ func (tc *terminalController) RevokeTerminalAccess(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError			"Access denied"
 //	@Failure		404	{object}	errors.APIError			"Terminal not found"
 //	@Failure		500	{object}	errors.APIError			"Internal server error"
-//	@Router			/terminal-sessions/{id}/shares [get]
+//	@Router			/terminals/{id}/shares [get]
 func (tc *terminalController) GetTerminalShares(ctx *gin.Context) {
 	terminalID := ctx.Param("id")
 	userId := ctx.GetString("userId")
@@ -1023,14 +1023,14 @@ func (tc *terminalController) GetTerminalShares(ctx *gin.Context) {
 //
 //	@Summary		Obtenir les sessions terminals partagées avec l'utilisateur
 //	@Description	Récupère toutes les sessions terminals auxquelles l'utilisateur a accès via des partages
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			include_hidden	query	bool	false	"Include hidden terminals"
 //	@Security		Bearer
 //	@Success		200	{array}		dto.SharedTerminalInfo	"List of shared terminals"
 //	@Failure		500	{object}	errors.APIError			"Internal server error"
-//	@Router			/terminal-sessions/shared-with-me [get]
+//	@Router			/terminals/shared-with-me [get]
 func (tc *terminalController) GetSharedTerminals(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	includeHidden := ctx.Query("include_hidden") == "true"
@@ -1062,7 +1062,7 @@ func (tc *terminalController) GetSharedTerminals(ctx *gin.Context) {
 //
 //	@Summary		Obtenir les informations détaillées d'une session terminal partagée
 //	@Description	Récupère les informations détaillées d'une session terminal avec les détails de partage
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			id	path	string	true	"Terminal ID"
@@ -1072,7 +1072,7 @@ func (tc *terminalController) GetSharedTerminals(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError			"Access denied"
 //	@Failure		404	{object}	errors.APIError			"Terminal not found"
 //	@Failure		500	{object}	errors.APIError			"Internal server error"
-//	@Router			/terminal-sessions/{id}/info [get]
+//	@Router			/terminals/{id}/info [get]
 func (tc *terminalController) GetSharedTerminalInfo(ctx *gin.Context) {
 	terminalID := ctx.Param("id")
 	userId := ctx.GetString("userId")
@@ -1107,7 +1107,7 @@ func (tc *terminalController) GetSharedTerminalInfo(ctx *gin.Context) {
 //
 //	@Summary		Masquer une session terminal
 //	@Description	Masque une session terminal pour l'utilisateur courant (propriétaire ou destinataire d'un partage)
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			id	path	string	true	"Terminal ID"
@@ -1117,7 +1117,7 @@ func (tc *terminalController) GetSharedTerminalInfo(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError		"Access denied"
 //	@Failure		404	{object}	errors.APIError		"Terminal not found"
 //	@Failure		500	{object}	errors.APIError		"Internal server error"
-//	@Router			/terminal-sessions/{id}/hide [post]
+//	@Router			/terminals/{id}/hide [post]
 func (tc *terminalController) HideTerminal(ctx *gin.Context) {
 	terminalID := ctx.Param("id")
 	userID := ctx.GetString("userId")
@@ -1159,7 +1159,7 @@ func (tc *terminalController) HideTerminal(ctx *gin.Context) {
 //
 //	@Summary		Afficher à nouveau une session terminal
 //	@Description	Affiche à nouveau une session terminal masquée pour l'utilisateur courant
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			id	path	string	true	"Terminal ID"
@@ -1168,7 +1168,7 @@ func (tc *terminalController) HideTerminal(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError		"Access denied"
 //	@Failure		404	{object}	errors.APIError		"Terminal not found"
 //	@Failure		500	{object}	errors.APIError		"Internal server error"
-//	@Router			/terminal-sessions/{id}/hide [delete]
+//	@Router			/terminals/{id}/hide [delete]
 func (tc *terminalController) UnhideTerminal(ctx *gin.Context) {
 	terminalID := ctx.Param("id")
 	userID := ctx.GetString("userId")
@@ -1204,7 +1204,7 @@ func (tc *terminalController) UnhideTerminal(ctx *gin.Context) {
 //
 //	@Summary		Corriger les permissions de masquage des terminaux
 //	@Description	Corrige les permissions Casbin pour permettre à l'utilisateur de masquer ses terminaux et ceux partagés avec lui
-//	@Tags			terminal-sessions
+//	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			user_id	query	string	false	"User ID (admin only, sinon utilise l'utilisateur courant)"
@@ -1212,7 +1212,7 @@ func (tc *terminalController) UnhideTerminal(ctx *gin.Context) {
 //	@Success		200	{object}	dto.FixPermissionsResponse	"Permissions corrigées avec succès"
 //	@Failure		403	{object}	errors.APIError				"Accès refusé"
 //	@Failure		500	{object}	errors.APIError				"Erreur interne du serveur"
-//	@Router			/terminal-sessions/fix-hide-permissions [post]
+//	@Router			/terminals/fix-hide-permissions [post]
 func (tc *terminalController) FixTerminalHidePermissions(ctx *gin.Context) {
 	currentUserID := ctx.GetString("userId")
 	targetUserID := ctx.Query("user_id")

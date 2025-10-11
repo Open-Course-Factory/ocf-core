@@ -1157,15 +1157,15 @@ func (tts *terminalTrainerService) addTerminalHidePermissions(userID string) err
 
 	// Ajouter les permissions pour les routes de masquage avec le pattern de route générique
 	// Cela permet au middleware d'authentification de faire correspondre ctx.FullPath() avec les permissions stockées
-	hideRoute := "/api/v1/terminal-sessions/:id/hide"
+	hideRoute := "/api/v1/terminals/:id/hide"
 
-	// Permission pour POST /terminal-sessions/{id}/hide (masquer)
+	// Permission pour POST /terminals/{id}/hide (masquer)
 	_, err = casdoor.Enforcer.AddPolicy(userID, hideRoute, "POST")
 	if err != nil {
 		return fmt.Errorf("failed to add POST hide permission: %v", err)
 	}
 
-	// Permission pour DELETE /terminal-sessions/{id}/hide (afficher)
+	// Permission pour DELETE /terminals/{id}/hide (afficher)
 	_, err = casdoor.Enforcer.AddPolicy(userID, hideRoute, "DELETE")
 	if err != nil {
 		return fmt.Errorf("failed to add DELETE hide permission: %v", err)

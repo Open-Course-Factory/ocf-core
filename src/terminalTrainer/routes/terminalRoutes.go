@@ -15,7 +15,7 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	middleware := auth.NewAuthMiddleware(db)
 	usageLimitMiddleware := paymentMiddleware.NewUsageLimitMiddleware(db)
 
-	routes := router.Group("/terminal-sessions")
+	routes := router.Group("/terminals")
 
 	// Routes spécialisées pour les fonctionnalités Terminal Trainer
 	// Apply terminal creation limit middleware to start-session route

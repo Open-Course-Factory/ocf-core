@@ -162,7 +162,7 @@ curl -X GET http://localhost:8080/api/v1/terminals \
 - `GET /api/v1/subscription-plans` - List all subscription plans
 - `POST /api/v1/subscription-plans/sync-stripe` - Sync plans with Stripe (requires auth)
 - `GET /api/v1/user-subscriptions/current` - Get current user's subscription (requires auth)
-- `GET /api/v1/terminal-sessions/user-sessions` - Get user's terminal sessions (requires auth)
+- `GET /api/v1/terminals/user-sessions` - Get user's terminal sessions (requires auth)
 - `GET /swagger/` - Full API documentation
 
 ## Development Commands
@@ -586,7 +586,7 @@ The system uses Casbin with Casdoor for authorization. Permissions are managed d
 **Terminal hiding routes require specific permissions:**
 - Terminal creation automatically adds hide permissions for owner
 - Terminal sharing automatically adds hide permissions for recipient
-- Permissions format: `userID, "/api/v1/terminal-sessions/{terminalID}/hide", "POST|DELETE"`
+- Permissions format: `userID, "/api/v1/terminals/{terminalID}/hide", "POST|DELETE"`
 
 **Custom routes (like `/hide`) are NOT covered by generic entity permissions and require manual permission setup in service methods.**
 
