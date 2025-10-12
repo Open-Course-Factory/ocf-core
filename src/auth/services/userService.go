@@ -279,8 +279,8 @@ func createDefaultUserSettings(userID string) error {
 	// Create default settings
 	defaultSettings := models.UserSettings{
 		UserID:               userID,
-		DefaultLandingPage:   "/dashboard",
-		PreferredLanguage:    "en",
+		DefaultLandingPage:   "/terminal-creation",
+		PreferredLanguage:    "fr",
 		Timezone:             "UTC",
 		Theme:                "light",
 		CompactMode:          false,
