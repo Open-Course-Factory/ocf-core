@@ -91,12 +91,13 @@ type ShareTerminalRequest struct {
 }
 
 type SharedTerminalInfo struct {
-	Terminal    TerminalOutput        `json:"terminal"`
-	SharedBy    string                `json:"shared_by"`
-	AccessLevel string                `json:"access_level"`
-	ExpiresAt   *time.Time            `json:"expires_at,omitempty"`
-	SharedAt    time.Time             `json:"shared_at"`
-	Shares      []TerminalShareOutput `json:"shares,omitempty"`
+	Terminal            TerminalOutput        `json:"terminal"`
+	SharedBy            string                `json:"shared_by"`
+	SharedByDisplayName string                `json:"shared_by_display_name"`
+	AccessLevel         string                `json:"access_level"`
+	ExpiresAt           *time.Time            `json:"expires_at,omitempty"`
+	SharedAt            time.Time             `json:"shared_at"`
+	Shares              []TerminalShareOutput `json:"shares,omitempty"`
 }
 
 // Terminal Service DTOs (pour les appels au Terminal Trainer)

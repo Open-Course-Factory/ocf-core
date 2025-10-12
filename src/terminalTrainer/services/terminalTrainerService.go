@@ -19,6 +19,7 @@ import (
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/repositories"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"gorm.io/gorm"
 )
 
@@ -1077,12 +1078,22 @@ func (tts *terminalTrainerService) GetSharedTerminalInfo(sessionID, userID strin
 		sharedAt = share.CreatedAt
 	}
 
+	// Récupérer le display name de l'utilisateur qui a partagé le terminal
+	var sharedByDisplayName string
+	if ownerUser, err := casdoorsdk.GetUserByUserId(terminal.UserID); err == nil && ownerUser != nil {
+		sharedByDisplayName = ownerUser.DisplayName
+	} else {
+		// Fallback au UserID si on ne peut pas récupérer le display name
+		sharedByDisplayName = terminal.UserID
+	}
+
 	return &dto.SharedTerminalInfo{
-		Terminal:    terminalOutput,
-		SharedBy:    terminal.UserID,
-		AccessLevel: accessLevel,
-		SharedAt:    sharedAt,
-		Shares:      shares,
+		Terminal:            terminalOutput,
+		SharedBy:            terminal.UserID,
+		SharedByDisplayName: sharedByDisplayName,
+		AccessLevel:         accessLevel,
+		SharedAt:            sharedAt,
+		Shares:              shares,
 	}, nil
 }
 
