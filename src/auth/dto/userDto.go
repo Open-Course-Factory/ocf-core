@@ -10,6 +10,7 @@ import (
 type UserOutput struct {
 	Id            uuid.UUID `json:"id"`
 	UserName      string    `json:"name"`
+	DisplayName   string    `json:"display_name"`
 	Email         string    `json:"email"`
 	CreatedAt     string    `json:"created_at"`
 	TosAcceptedAt string    `json:"tos_accepted_at,omitempty"`
@@ -60,6 +61,7 @@ func UserModelToUserOutput(userModel *casdoorsdk.User) *UserOutput {
 	return &UserOutput{
 		Id:            uuid_parsed,
 		UserName:      userModel.Name,
+		DisplayName:   userModel.DisplayName,
 		Email:         userModel.Email,
 		CreatedAt:     userModel.CreatedTime,
 		TosAcceptedAt: tosAcceptedAt,
