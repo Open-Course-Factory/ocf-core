@@ -58,10 +58,11 @@ type UserTerminalKeyOutput struct {
 
 // TerminalShare DTOs for generic system
 type CreateTerminalShareInput struct {
-	TerminalID       uuid.UUID  `binding:"required" json:"terminal_id"`
-	SharedWithUserID string     `binding:"required" json:"shared_with_user_id"`
-	AccessLevel      string     `binding:"required" json:"access_level"` // read, write, admin
-	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	TerminalID        uuid.UUID  `binding:"required" json:"terminal_id"`
+	SharedWithUserID  *string    `json:"shared_with_user_id,omitempty"`  // Share to specific user
+	SharedWithGroupID *uuid.UUID `json:"shared_with_group_id,omitempty"` // OR share to group
+	AccessLevel       string     `binding:"required" json:"access_level"` // read, write, admin
+	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
 }
 
 type UpdateTerminalShareInput struct {
@@ -73,9 +74,11 @@ type UpdateTerminalShareInput struct {
 type TerminalShareOutput struct {
 	ID                  uuid.UUID  `json:"id"`
 	TerminalID          uuid.UUID  `json:"terminal_id"`
-	SharedWithUserID    string     `json:"shared_with_user_id"`
+	SharedWithUserID    *string    `json:"shared_with_user_id,omitempty"`
+	SharedWithGroupID   *uuid.UUID `json:"shared_with_group_id,omitempty"`
 	SharedByUserID      string     `json:"shared_by_user_id"`
 	AccessLevel         string     `json:"access_level"`
+	ShareType           string     `json:"share_type"` // "user" or "group"
 	ExpiresAt           *time.Time `json:"expires_at,omitempty"`
 	IsActive            bool       `json:"is_active"`
 	IsHiddenByRecipient bool       `json:"is_hidden_by_recipient"`
@@ -85,9 +88,10 @@ type TerminalShareOutput struct {
 
 // Terminal sharing specific DTOs
 type ShareTerminalRequest struct {
-	SharedWithUserID string     `binding:"required" json:"shared_with_user_id"`
-	AccessLevel      string     `binding:"required" json:"access_level"` // read, write, admin
-	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	SharedWithUserID  *string    `json:"shared_with_user_id,omitempty"`
+	SharedWithGroupID *uuid.UUID `json:"shared_with_group_id,omitempty"`
+	AccessLevel       string     `binding:"required" json:"access_level"` // read, write, admin
+	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
 }
 
 type SharedTerminalInfo struct {

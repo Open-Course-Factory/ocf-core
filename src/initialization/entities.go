@@ -10,6 +10,8 @@ import (
 	"soli/formations/src/courses"
 	courseRegistration "soli/formations/src/courses/entityRegistration"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	"soli/formations/src/groups"
+	groupRegistration "soli/formations/src/groups/entityRegistration"
 	"soli/formations/src/terminalTrainer"
 	terminalRegistration "soli/formations/src/terminalTrainer/entityRegistration"
 
@@ -33,6 +35,9 @@ func RegisterEntities() {
 	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.UserTerminalKeyRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.TerminalShareRegistration{})
 
+	ems.GlobalEntityRegistrationService.RegisterEntity(groupRegistration.GroupRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(groupRegistration.GroupMemberRegistration{})
+
 	ems.GlobalEntityRegistrationService.RegisterEntity(configRegistration.FeatureRegistration{})
 }
 
@@ -51,6 +56,7 @@ func RegisterModuleFeatures(db *gorm.DB) {
 	}{
 		courses.NewCoursesModuleConfig(),
 		terminalTrainer.NewTerminalTrainerModuleConfig(),
+		groups.NewGroupsModuleConfig(),
 	}
 
 	for _, module := range modules {

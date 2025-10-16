@@ -17,13 +17,14 @@ import (
 	"soli/formations/src/auth/casdoor"
 	authHooks "soli/formations/src/auth/hooks"
 	accessController "soli/formations/src/auth/routes/accessesRoutes"
-	groupController "soli/formations/src/auth/routes/groupsRoutes"
+	// groupController "soli/formations/src/auth/routes/groupsRoutes" // Legacy Casdoor groups - replaced by class-groups
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
 	courseHooks "soli/formations/src/courses/hooks"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	generationController "soli/formations/src/courses/routes/generationRoutes"
 	genericController "soli/formations/src/entityManagement/routes"
+	groupHooks "soli/formations/src/groups/hooks"
 	terminalController "soli/formations/src/terminalTrainer/routes"
 	versionController "soli/formations/src/version"
 	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
@@ -80,6 +81,7 @@ func main() {
 	payment.InitPaymentEntities(sqldb.DB)
 	courseHooks.InitCourseHooks(sqldb.DB)
 	authHooks.InitAuthHooks(sqldb.DB)
+	groupHooks.InitGroupHooks(sqldb.DB)
 
 	// Register module features
 	initialization.RegisterModuleFeatures(sqldb.DB)
@@ -100,7 +102,7 @@ func main() {
 		AllowedOrigins:     []string{"*"},
 		AllowCredentials:   true,
 		Debug:              true,
-		AllowedMethods:     []string{"GET", "POST", "PATCH", "OPTIONS", "DELETE"},
+		AllowedMethods:     []string{"GET", "POST", "PUT", "PATCH", "OPTIONS", "DELETE"},
 		AllowedHeaders:     []string{"*"},
 		OptionsPassthrough: true,
 	}))
@@ -126,7 +128,8 @@ func main() {
 
 	sshKeyController.SshKeysRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	groupController.GroupRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	// NOTE: Commented out legacy Casdoor group routes - replaced by new class-groups system
+	// groupController.GroupRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	accessController.AccessRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	sshClientController.SshClientRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	generationController.GenerationsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)

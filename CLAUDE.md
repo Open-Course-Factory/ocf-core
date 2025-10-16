@@ -340,8 +340,42 @@ Provides reusable operations:
 - `GetEntity(id, entityName, includes)`: Fetch with selective preloading
 - `GetEntities(filters, page, pageSize, includes)`: List with pagination
 - `GetEntitiesCursor(cursor, limit, filters, includes)`: Cursor pagination
-- `EditEntity(id, entityName, updates)`: Partial updates
+- `EditEntity(id, entityName, updates)`: Partial updates (requires map[string]any)
 - `DeleteEntity(id, entity, scoped)`: Soft/hard delete
+
+**PATCH Implementation Details** (`src/entityManagement/routes/editEntity.go`):
+
+The PATCH endpoint uses a multi-step process to handle partial updates correctly:
+
+1. **Bind JSON** → Creates `map[string]interface{}` from request body
+2. **Filter Empty Strings** → Removes empty string values (treats as "no change")
+3. **mapstructure.Decode** → Converts map to typed DTO struct with pointer fields
+4. **EntityDtoToMap** → Converts DTO to `map[string]any` (only non-nil pointers)
+5. **GORM Updates** → Applies partial update to database
+
+```go
+// Example: Frontend sends
+{"display_name": "New Name", "description": "", "expires_at": ""}
+
+// Step 2: Empty strings removed
+{"display_name": "New Name"}
+
+// Step 3: Decoded to EditDto
+EditGroupInput{DisplayName: &"New Name", Description: nil, ExpiresAt: nil}
+
+// Step 4: Converted to map
+map[string]any{"display_name": "New Name"}
+
+// Step 5: GORM updates only display_name field
+```
+
+**Important Notes:**
+- Empty strings in request = field not updated (removed before decoding)
+- `nil` pointer fields = field not included in update map (if using custom EntityDtoToMap)
+- `time.Time` fields parsed from ISO8601 strings via decode hook
+- All EditDto fields should be pointers for proper partial updates
+- **Fallback behavior**: If no custom `EntityDtoToMap` is provided, uses default mapstructure conversion (all decoded fields included in map)
+- **Best practice**: Provide custom `EntityDtoToMap` when using pointer fields in EditDto for precise control over which fields are updated
 
 #### 5. How to Add a New Entity
 
@@ -349,7 +383,88 @@ Provides reusable operations:
 
 **Step 2**: Create DTOs in `src/{module}/dto/{entity}Dto.go`
 
-**Step 3**: Create registration in `src/{module}/entityRegistration/{entity}Registration.go`:
+**IMPORTANT - DTO Tag Requirements:**
+
+All DTOs **MUST** include both `json` and `mapstructure` tags for proper data binding and decoding:
+
+```go
+// ✅ CORRECT - Both json and mapstructure tags
+type CreateEntityInput struct {
+    Name        string     `json:"name" mapstructure:"name" binding:"required"`
+    DisplayName string     `json:"display_name" mapstructure:"display_name" binding:"required"`
+    ExpiresAt   *time.Time `json:"expires_at,omitempty" mapstructure:"expires_at"`
+}
+
+type EditEntityInput struct {
+    Name        *string     `json:"name,omitempty" mapstructure:"name"`
+    DisplayName *string     `json:"display_name,omitempty" mapstructure:"display_name"`
+    ExpiresAt   *time.Time  `json:"expires_at,omitempty" mapstructure:"expires_at"`
+}
+
+// ❌ WRONG - Missing mapstructure tags (will cause PATCH to fail)
+type EditEntityInput struct {
+    Name        *string `json:"name,omitempty"` // Missing mapstructure tag!
+    DisplayName *string `json:"display_name,omitempty"` // Missing mapstructure tag!
+}
+```
+
+**Why Both Tags Are Required:**
+
+1. **`json` tags**: Used by `gin.BindJSON()` to parse request body into a map
+2. **`mapstructure` tags**: Used by `mapstructure.Decode()` to convert the map into the DTO struct
+3. **Snake case mapping**: `mapstructure` doesn't automatically convert `display_name` → `DisplayName` without explicit tags
+
+**For EditDto (PATCH requests):**
+- Use pointer types (`*string`, `*int`, `*time.Time`) for optional fields
+- This enables partial updates (only non-nil fields are updated)
+- The `EntityDtoToMap` converter checks for non-nil pointers
+
+**Step 3**: Create registration in `src/{module}/entityRegistration/{entity}Registration.go`
+
+**EntityDtoToMap Converter (Optional):**
+
+For PATCH requests, you can optionally provide a custom `EntityDtoToMap` converter. If not provided, the system uses a default mapstructure-based conversion.
+
+```go
+// Option 1: Provide custom DtoToMap (recommended for pointer fields)
+EntityConverters: entityManagementInterfaces.EntityConverters{
+    ModelToDto: s.EntityModelToEntityOutput,
+    DtoToModel: s.EntityInputDtoToEntityModel,
+    DtoToMap:   s.EntityDtoToMap,  // Custom converter for PATCH
+}
+
+// Option 2: Omit DtoToMap (system uses default mapstructure conversion)
+EntityConverters: entityManagementInterfaces.EntityConverters{
+    ModelToDto: s.EntityModelToEntityOutput,
+    DtoToModel: s.EntityInputDtoToEntityModel,
+    // DtoToMap omitted - uses AbstractRegistrableInterface.EntityDtoToMap
+}
+```
+
+**When to provide custom EntityDtoToMap:**
+- EditDto has pointer fields (`*string`, `*int`, `*time.Time`)
+- You want to include only non-nil fields in the update
+- You need custom field filtering logic
+
+**Custom EntityDtoToMap example:**
+```go
+func (g GroupRegistration) EntityDtoToMap(input any) map[string]any {
+    dto := input.(dto.EditGroupInput)
+    updates := make(map[string]any)
+
+    // Only include non-nil pointer fields
+    if dto.DisplayName != nil {
+        updates["display_name"] = *dto.DisplayName
+    }
+    if dto.Description != nil {
+        updates["description"] = *dto.Description
+    }
+
+    return updates
+}
+```
+
+**Step 3 (continued)**: Registration example:
 
 ```go
 type EntityRegistration struct {

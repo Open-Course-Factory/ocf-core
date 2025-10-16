@@ -55,7 +55,7 @@ func createTestTerminal(db *gorm.DB, userID string, status string, userKeyID uui
 func createTestTerminalShare(db *gorm.DB, terminalID uuid.UUID, sharedByUserID, sharedWithUserID string) (*models.TerminalShare, error) {
 	share := &models.TerminalShare{
 		TerminalID:          terminalID,
-		SharedWithUserID:    sharedWithUserID,
+		SharedWithUserID:    &sharedWithUserID,
 		SharedByUserID:      sharedByUserID,
 		AccessLevel:         "read",
 		IsActive:            true,
@@ -327,7 +327,7 @@ func TestService_HideTerminal_SharedWithWriteAccess(t *testing.T) {
 	// Create a share with "write" access level
 	share := &models.TerminalShare{
 		TerminalID:          terminal.ID,
-		SharedWithUserID:    recipientUserID,
+		SharedWithUserID:    &recipientUserID,
 		SharedByUserID:      ownerUserID,
 		AccessLevel:         "write", // Important: user has write access
 		IsActive:            true,
@@ -375,7 +375,7 @@ func TestService_HideTerminal_ActiveTerminalError(t *testing.T) {
 	// Create a share
 	share := &models.TerminalShare{
 		TerminalID:       terminal.ID,
-		SharedWithUserID: recipientUserID,
+		SharedWithUserID: &recipientUserID,
 		SharedByUserID:   ownerUserID,
 		AccessLevel:      "write",
 		IsActive:         true,
@@ -408,7 +408,7 @@ func TestService_HideTerminal_NoAccessError(t *testing.T) {
 	// Create a share with recipient (but not unauthorized user)
 	share := &models.TerminalShare{
 		TerminalID:       terminal.ID,
-		SharedWithUserID: recipientUserID,
+		SharedWithUserID: &recipientUserID,
 		SharedByUserID:   ownerUserID,
 		AccessLevel:      "read",
 		IsActive:         true,

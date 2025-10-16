@@ -884,7 +884,13 @@ func (tc *terminalController) ShareTerminal(ctx *gin.Context) {
 		return
 	}
 
-	err := tc.service.ShareTerminal(terminalID, userId, request.SharedWithUserID, request.AccessLevel, request.ExpiresAt)
+	// Support both user and group sharing
+	var sharedWithUserID string
+	if request.SharedWithUserID != nil {
+		sharedWithUserID = *request.SharedWithUserID
+	}
+
+	err := tc.service.ShareTerminal(terminalID, userId, sharedWithUserID, request.AccessLevel, request.ExpiresAt)
 	if err != nil {
 		if err.Error() == "terminal not found" {
 			ctx.JSON(http.StatusNotFound, &errors.APIError{

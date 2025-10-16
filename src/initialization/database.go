@@ -10,6 +10,7 @@ import (
 	authModels "soli/formations/src/auth/models"
 	configModels "soli/formations/src/configuration/models"
 	courseModels "soli/formations/src/courses/models"
+	groupModels "soli/formations/src/groups/models"
 	paymentModels "soli/formations/src/payment/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	testtools "soli/formations/tests/testTools"
@@ -70,6 +71,10 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&terminalModels.Terminal{})
 	db.AutoMigrate(&terminalModels.UserTerminalKey{})
 	db.AutoMigrate(&terminalModels.TerminalShare{})
+
+	// Group entities
+	db.AutoMigrate(&groupModels.ClassGroup{})
+	db.AutoMigrate(&groupModels.GroupMember{})
 
 	// Payment entities
 	db.AutoMigrate(&paymentModels.SubscriptionPlan{})

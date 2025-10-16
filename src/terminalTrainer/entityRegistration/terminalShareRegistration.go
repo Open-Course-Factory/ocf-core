@@ -145,11 +145,11 @@ func (tsr TerminalShareRegistration) GetUpdateFieldsValidation() map[string]inte
 }
 
 func (tsr TerminalShareRegistration) GetQueryableFields() []string {
-	return []string{"terminal_id", "shared_with_user_id", "shared_by_user_id", "access_level", "is_active"}
+	return []string{"terminal_id", "shared_with_user_id", "shared_with_group_id", "shared_by_user_id", "access_level", "is_active"}
 }
 
 func (tsr TerminalShareRegistration) GetFilterableFields() []string {
-	return []string{"terminal_id", "shared_with_user_id", "shared_by_user_id", "access_level", "is_active"}
+	return []string{"terminal_id", "shared_with_user_id", "shared_with_group_id", "shared_by_user_id", "access_level", "is_active"}
 }
 
 func (tsr TerminalShareRegistration) GetUserOwnedFields() []string {
@@ -222,38 +222,43 @@ func (tsr TerminalShareRegistration) EntityModelToEntityOutput(input any) (any, 
 
 func terminalSharePtrModelToTerminalShareOutput(terminalShareModel *models.TerminalShare) (*dto.TerminalShareOutput, error) {
 	return &dto.TerminalShareOutput{
-		ID:               terminalShareModel.ID,
-		TerminalID:       terminalShareModel.TerminalID,
-		SharedWithUserID: terminalShareModel.SharedWithUserID,
-		SharedByUserID:   terminalShareModel.SharedByUserID,
-		AccessLevel:      terminalShareModel.AccessLevel,
-		ExpiresAt:        terminalShareModel.ExpiresAt,
-		IsActive:         terminalShareModel.IsActive,
-		CreatedAt:        terminalShareModel.CreatedAt,
+		ID:                terminalShareModel.ID,
+		TerminalID:        terminalShareModel.TerminalID,
+		SharedWithUserID:  terminalShareModel.SharedWithUserID,
+		SharedWithGroupID: terminalShareModel.SharedWithGroupID,
+		SharedByUserID:    terminalShareModel.SharedByUserID,
+		AccessLevel:       terminalShareModel.AccessLevel,
+		ShareType:         terminalShareModel.GetShareType(),
+		ExpiresAt:         terminalShareModel.ExpiresAt,
+		IsActive:          terminalShareModel.IsActive,
+		CreatedAt:         terminalShareModel.CreatedAt,
 	}, nil
 }
 
 func terminalShareValueModelToTerminalShareOutput(terminalShareModel models.TerminalShare) (dto.TerminalShareOutput, error) {
 	return dto.TerminalShareOutput{
-		ID:               terminalShareModel.ID,
-		TerminalID:       terminalShareModel.TerminalID,
-		SharedWithUserID: terminalShareModel.SharedWithUserID,
-		SharedByUserID:   terminalShareModel.SharedByUserID,
-		AccessLevel:      terminalShareModel.AccessLevel,
-		ExpiresAt:        terminalShareModel.ExpiresAt,
-		IsActive:         terminalShareModel.IsActive,
-		CreatedAt:        terminalShareModel.CreatedAt,
+		ID:                terminalShareModel.ID,
+		TerminalID:        terminalShareModel.TerminalID,
+		SharedWithUserID:  terminalShareModel.SharedWithUserID,
+		SharedWithGroupID: terminalShareModel.SharedWithGroupID,
+		SharedByUserID:    terminalShareModel.SharedByUserID,
+		AccessLevel:       terminalShareModel.AccessLevel,
+		ShareType:         terminalShareModel.GetShareType(),
+		ExpiresAt:         terminalShareModel.ExpiresAt,
+		IsActive:          terminalShareModel.IsActive,
+		CreatedAt:         terminalShareModel.CreatedAt,
 	}, nil
 }
 
 func (tsr TerminalShareRegistration) EntityInputDtoToEntityModel(input any) any {
 	terminalShareInputDto := input.(dto.CreateTerminalShareInput)
 	return &models.TerminalShare{
-		TerminalID:       terminalShareInputDto.TerminalID,
-		SharedWithUserID: terminalShareInputDto.SharedWithUserID,
-		AccessLevel:      terminalShareInputDto.AccessLevel,
-		ExpiresAt:        terminalShareInputDto.ExpiresAt,
-		IsActive:         true,
+		TerminalID:        terminalShareInputDto.TerminalID,
+		SharedWithUserID:  terminalShareInputDto.SharedWithUserID,
+		SharedWithGroupID: terminalShareInputDto.SharedWithGroupID,
+		AccessLevel:       terminalShareInputDto.AccessLevel,
+		ExpiresAt:         terminalShareInputDto.ExpiresAt,
+		IsActive:          true,
 	}
 }
 

@@ -7,17 +7,21 @@ import (
 	"github.com/google/uuid"
 )
 
-// TerminalShare représente un partage de terminal entre utilisateurs
+// TerminalShare représente un partage de terminal entre utilisateurs ou groupes
 type TerminalShare struct {
 	entityManagementModels.BaseModel
-	TerminalID           uuid.UUID  `gorm:"not null;index" json:"terminal_id"`
-	SharedWithUserID     string     `gorm:"type:varchar(255);not null;index" json:"shared_with_user_id"`
-	SharedByUserID       string     `gorm:"type:varchar(255);not null;index" json:"shared_by_user_id"`
-	AccessLevel          string     `gorm:"type:varchar(50);default:'read'" json:"access_level"` // read, write, admin
-	ExpiresAt            *time.Time `json:"expires_at,omitempty"`
-	IsActive             bool       `gorm:"default:true" json:"is_active"`
-	IsHiddenByRecipient  bool       `gorm:"default:false" json:"is_hidden_by_recipient"`
-	HiddenAt             *time.Time `json:"hidden_at,omitempty"`
+	TerminalID           uuid.UUID   `gorm:"not null;index" json:"terminal_id"`
+
+	// Share can be to a user OR a group (one must be set, the other must be NULL)
+	SharedWithUserID     *string     `gorm:"type:varchar(255);index" json:"shared_with_user_id,omitempty"`
+	SharedWithGroupID    *uuid.UUID  `gorm:"type:uuid;index" json:"shared_with_group_id,omitempty"`
+
+	SharedByUserID       string      `gorm:"type:varchar(255);not null;index" json:"shared_by_user_id"`
+	AccessLevel          string      `gorm:"type:varchar(50);default:'read'" json:"access_level"` // read, write, admin
+	ExpiresAt            *time.Time  `json:"expires_at,omitempty"`
+	IsActive             bool        `gorm:"default:true" json:"is_active"`
+	IsHiddenByRecipient  bool        `gorm:"default:false" json:"is_hidden_by_recipient"`
+	HiddenAt             *time.Time  `json:"hidden_at,omitempty"`
 
 	// Relations
 	Terminal Terminal `gorm:"foreignKey:TerminalID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
@@ -82,4 +86,36 @@ func (ts *TerminalShare) Hide() {
 func (ts *TerminalShare) Unhide() {
 	ts.IsHiddenByRecipient = false
 	ts.HiddenAt = nil
+}
+
+// IsUserShare checks if this share is for a specific user
+func (ts *TerminalShare) IsUserShare() bool {
+	return ts.SharedWithUserID != nil && *ts.SharedWithUserID != ""
+}
+
+// IsGroupShare checks if this share is for a group
+func (ts *TerminalShare) IsGroupShare() bool {
+	return ts.SharedWithGroupID != nil
+}
+
+// GetRecipientIdentifier returns the recipient ID (user ID or group ID as string)
+func (ts *TerminalShare) GetRecipientIdentifier() string {
+	if ts.IsUserShare() {
+		return *ts.SharedWithUserID
+	}
+	if ts.IsGroupShare() {
+		return ts.SharedWithGroupID.String()
+	}
+	return ""
+}
+
+// GetShareType returns "user" or "group"
+func (ts *TerminalShare) GetShareType() string {
+	if ts.IsUserShare() {
+		return "user"
+	}
+	if ts.IsGroupShare() {
+		return "group"
+	}
+	return "unknown"
 }

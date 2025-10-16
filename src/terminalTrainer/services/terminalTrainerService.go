@@ -891,6 +891,14 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 	}
 
 	if existingShare != nil {
+		// Si le niveau d'accès change, supprimer d'abord les anciennes permissions
+		if existingShare.AccessLevel != accessLevel {
+			err := tts.removeTerminalSharePermissions(terminal.ID.String(), sharedWithUserID, existingShare.AccessLevel)
+			if err != nil {
+				fmt.Printf("Warning: failed to remove old permissions for terminal %s from user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
+			}
+		}
+
 		// Mettre à jour le partage existant
 		existingShare.AccessLevel = accessLevel
 		existingShare.ExpiresAt = expiresAt
@@ -900,10 +908,16 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 			return err
 		}
 
-		// Ajouter les permissions Casbin (au cas où elles n'existeraient pas déjà)
+		// Ajouter les permissions Casbin pour le nouveau niveau d'accès
 		err = tts.addTerminalHidePermissions(sharedWithUserID)
 		if err != nil {
 			fmt.Printf("Warning: failed to add hide permissions for updated shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
+		}
+
+		// Ajouter les nouvelles permissions d'édition selon le niveau d'accès
+		err = tts.addTerminalSharePermissions(terminal.ID.String(), sharedWithUserID, accessLevel)
+		if err != nil {
+			fmt.Printf("Warning: failed to add share permissions for updated shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
 		}
 
 		return nil
@@ -912,7 +926,7 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 	// Créer un nouveau partage
 	share := &models.TerminalShare{
 		TerminalID:       terminal.ID,
-		SharedWithUserID: sharedWithUserID,
+		SharedWithUserID: &sharedWithUserID,
 		SharedByUserID:   sharedByUserID,
 		AccessLevel:      accessLevel,
 		ExpiresAt:        expiresAt,
@@ -929,6 +943,13 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 	if err != nil {
 		// Log l'erreur mais ne pas faire échouer le partage
 		fmt.Printf("Warning: failed to add hide permissions for shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
+	}
+
+	// Ajouter les permissions d'édition pour les utilisateurs avec accès "admin"
+	err = tts.addTerminalSharePermissions(terminal.ID.String(), sharedWithUserID, accessLevel)
+	if err != nil {
+		// Log l'erreur mais ne pas faire échouer le partage
+		fmt.Printf("Warning: failed to add share permissions for shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
 	}
 
 	return nil
@@ -957,6 +978,13 @@ func (tts *terminalTrainerService) RevokeTerminalAccess(sessionID, sharedWithUse
 	}
 	if share == nil {
 		return fmt.Errorf("no active share found")
+	}
+
+	// Révoquer les permissions Casbin avant de désactiver le partage
+	err = tts.removeTerminalSharePermissions(terminal.ID.String(), sharedWithUserID, share.AccessLevel)
+	if err != nil {
+		// Log l'erreur mais ne pas faire échouer la révocation
+		fmt.Printf("Warning: failed to remove permissions for terminal %s from user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
 	}
 
 	// Désactiver le partage
@@ -1033,6 +1061,7 @@ func (tts *terminalTrainerService) GetSharedTerminalInfo(sessionID, userID strin
 		ID:              terminal.ID,
 		SessionID:       terminal.SessionID,
 		UserID:          terminal.UserID,
+		Name:            terminal.Name,
 		Status:          terminal.Status,
 		ExpiresAt:       terminal.ExpiresAt,
 		InstanceType:    terminal.InstanceType,
@@ -1185,6 +1214,91 @@ func (tts *terminalTrainerService) addTerminalHidePermissions(userID string) err
 	return nil
 }
 
+// addTerminalSharePermissions ajoute les permissions Casbin pour qu'un utilisateur puisse accéder à un terminal partagé
+func (tts *terminalTrainerService) addTerminalSharePermissions(terminalID, userID, accessLevel string) error {
+	// Charger les politiques
+	err := casdoor.Enforcer.LoadPolicy()
+	if err != nil {
+		return fmt.Errorf("failed to load policy: %v", err)
+	}
+
+	// Route générique pour les terminaux
+	terminalRoute := "/api/v1/terminals/:id"
+
+	// Tous les niveaux d'accès ont la permission GET (lecture)
+	_, err = casdoor.Enforcer.AddPolicy(userID, terminalRoute, "GET")
+	if err != nil {
+		return fmt.Errorf("failed to add GET permission: %v", err)
+	}
+
+	// Les niveaux "write" et "admin" ont la permission PATCH (édition)
+	if accessLevel == "write" || accessLevel == "admin" {
+		_, err = casdoor.Enforcer.AddPolicy(userID, terminalRoute, "PATCH")
+		if err != nil {
+			return fmt.Errorf("failed to add PATCH permission: %v", err)
+		}
+	}
+
+	// Le niveau "admin" a également la permission DELETE
+	if accessLevel == "admin" {
+		_, err = casdoor.Enforcer.AddPolicy(userID, terminalRoute, "DELETE")
+		if err != nil {
+			return fmt.Errorf("failed to add DELETE permission: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// removeTerminalSharePermissions révoque les permissions Casbin d'un utilisateur pour un terminal partagé
+func (tts *terminalTrainerService) removeTerminalSharePermissions(terminalID, userID, accessLevel string) error {
+	// Charger les politiques
+	err := casdoor.Enforcer.LoadPolicy()
+	if err != nil {
+		return fmt.Errorf("failed to load policy: %v", err)
+	}
+
+	// Route générique pour les terminaux
+	terminalRoute := "/api/v1/terminals/:id"
+
+	// Supprimer la permission GET (lecture)
+	_, err = casdoor.Enforcer.RemovePolicy(userID, terminalRoute, "GET")
+	if err != nil {
+		fmt.Printf("Warning: failed to remove GET permission: %v\n", err)
+	}
+
+	// Supprimer la permission PATCH si elle existait (pour "write" et "admin")
+	if accessLevel == "write" || accessLevel == "admin" {
+		_, err = casdoor.Enforcer.RemovePolicy(userID, terminalRoute, "PATCH")
+		if err != nil {
+			fmt.Printf("Warning: failed to remove PATCH permission: %v\n", err)
+		}
+	}
+
+	// Supprimer la permission DELETE si elle existait (pour "admin" uniquement)
+	if accessLevel == "admin" {
+		_, err = casdoor.Enforcer.RemovePolicy(userID, terminalRoute, "DELETE")
+		if err != nil {
+			fmt.Printf("Warning: failed to remove DELETE permission: %v\n", err)
+		}
+	}
+
+	// Supprimer également les permissions de masquage
+	hideRoute := "/api/v1/terminals/:id/hide"
+
+	_, err = casdoor.Enforcer.RemovePolicy(userID, hideRoute, "POST")
+	if err != nil {
+		fmt.Printf("Warning: failed to remove POST hide permission: %v\n", err)
+	}
+
+	_, err = casdoor.Enforcer.RemovePolicy(userID, hideRoute, "DELETE")
+	if err != nil {
+		fmt.Printf("Warning: failed to remove DELETE hide permission: %v\n", err)
+	}
+
+	return nil
+}
+
 // GetServerMetrics récupère les métriques du serveur Terminal Trainer
 func (tts *terminalTrainerService) GetServerMetrics(nocache bool) (*dto.ServerMetricsResponse, error) {
 	// Skip if Terminal Trainer is not configured
@@ -1254,16 +1368,22 @@ func (tts *terminalTrainerService) FixTerminalHidePermissions(userID string) (*d
 		response.ProcessedTerminals = len(*ownedTerminals)
 	}
 
-	// 3. Récupérer tous les partages où l'utilisateur est destinataire
-	sharedTerminals, err := tts.repository.GetSharedTerminalsForUser(userID)
+	// 3. Récupérer tous les partages où l'utilisateur est destinataire et ajouter les permissions appropriées
+	shares, err := tts.repository.GetTerminalSharesByUserID(userID)
 	if err != nil {
 		response.Errors = append(response.Errors, fmt.Sprintf("Failed to get shared terminals: %v", err))
 	} else {
-		response.ProcessedShares = len(*sharedTerminals)
+		response.ProcessedShares = len(*shares)
+		// Ajouter les permissions pour chaque partage selon le niveau d'accès
+		for _, share := range *shares {
+			if share.IsActive {
+				err := tts.addTerminalSharePermissions(share.TerminalID.String(), userID, share.AccessLevel)
+				if err != nil {
+					response.Errors = append(response.Errors, fmt.Sprintf("Failed to add permissions for terminal %s: %v", share.TerminalID.String(), err))
+				}
+			}
+		}
 	}
-
-	// 4. Les permissions sont maintenant ajoutées de manière générique, donc pas besoin
-	// d'ajouter des permissions spécifiques pour chaque terminal
 
 	response.Success = len(response.Errors) == 0
 	response.Message = fmt.Sprintf("Processed %d owned terminals and %d shared terminals",
