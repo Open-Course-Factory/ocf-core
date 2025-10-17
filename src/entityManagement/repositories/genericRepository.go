@@ -16,6 +16,7 @@ import (
 
 type GenericRepository interface {
 	CreateEntity(data any, entityName string) (any, error)
+	CreateEntityFromModel(entityModel any) (any, error)
 	SaveEntity(entity any) (any, error)
 	GetEntity(id uuid.UUID, data any, entityName string, includes []string) (any, error)
 	GetAllEntities(data any, page int, pageSize int, filters map[string]interface{}, includes []string) ([]any, int64, error)
@@ -71,6 +72,15 @@ func (o *genericRepository) CreateEntity(entityInputDto any, entityName string) 
 	}
 
 	return 1, nil
+}
+
+func (o *genericRepository) CreateEntityFromModel(entityModel any) (any, error) {
+	result := o.db.Create(entityModel)
+	if result.Error != nil {
+		return nil, entityErrors.WrapDatabaseError(result.Error, "create entity from model")
+	}
+
+	return result.Statement.Model, nil
 }
 
 func (o *genericRepository) SaveEntity(entity any) (any, error) {

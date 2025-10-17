@@ -59,6 +59,9 @@ type TerminalController interface {
 
 	// Méthodes de correction des permissions
 	FixTerminalHidePermissions(ctx *gin.Context)
+
+	// Bulk operations
+	BulkCreateTerminalsForGroup(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -378,49 +381,68 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 // Get User Sessions godoc
 //
 //	@Summary		Sessions utilisateur
-//	@Description	Récupère toutes les sessions actives d'un utilisateur
+//	@Description	Récupère toutes les sessions actives d'un utilisateur ou les sessions partagées avec un groupe
 //	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
 //	@Param			include_hidden	query	bool	false	"Include hidden terminals"
+//	@Param			group_id		query	string	false	"Filter terminals shared with this group (UUID)"
 //	@Security		Bearer
 //	@Success		200	{array}		dto.TerminalOutput
+//	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/terminals/user-sessions [get]
 func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	includeHidden := ctx.Query("include_hidden") == "true"
+	groupID := ctx.Query("group_id")
 
-	// Pour les admins, permettre de voir les sessions d'autres utilisateurs
-	targetUserID := ctx.Query("user_id")
-	if targetUserID != "" {
-		userRoles := ctx.GetStringSlice("userRoles")
-		isAdmin := false
-		for _, role := range userRoles {
-			if role == "administrator" {
-				isAdmin = true
-				break
-			}
-		}
+	var terminals *[]models.Terminal
+	var err error
 
-		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Only administrators can view other users' sessions",
+	// If group_id is provided, return terminals shared with that group
+	if groupID != "" {
+		terminals, err = tc.service.GetRepository().GetTerminalSessionsSharedWithGroup(groupID, includeHidden)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: fmt.Sprintf("Invalid group_id: %v", err),
 			})
 			return
 		}
-		userId = targetUserID
-	}
+	} else {
+		// Default behavior: return user's own terminals
+		// Pour les admins, permettre de voir les sessions d'autres utilisateurs
+		targetUserID := ctx.Query("user_id")
+		if targetUserID != "" {
+			userRoles := ctx.GetStringSlice("userRoles")
+			isAdmin := false
+			for _, role := range userRoles {
+				if role == "administrator" {
+					isAdmin = true
+					break
+				}
+			}
 
-	// Récupérer les sessions de l'utilisateur avec gestion des masquées (toutes les sessions, pas seulement les actives)
-	terminals, err := tc.service.GetRepository().GetTerminalSessionsByUserIDWithHidden(userId, false, includeHidden)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
-		return
+			if !isAdmin {
+				ctx.JSON(http.StatusForbidden, &errors.APIError{
+					ErrorCode:    http.StatusForbidden,
+					ErrorMessage: "Only administrators can view other users' sessions",
+				})
+				return
+			}
+			userId = targetUserID
+		}
+
+		// Récupérer les sessions de l'utilisateur avec gestion des masquées (toutes les sessions, pas seulement les actives)
+		terminals, err = tc.service.GetRepository().GetTerminalSessionsByUserIDWithHidden(userId, false, includeHidden)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: err.Error(),
+			})
+			return
+		}
 	}
 
 	// Convertir vers DTOs
@@ -1254,6 +1276,68 @@ func (tc *terminalController) FixTerminalHidePermissions(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: fmt.Sprintf("Failed to fix permissions: %v", err),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+// Bulk Create Terminals For Group godoc
+//
+//	@Summary		Créer des terminaux pour tous les membres d'un groupe
+//	@Description	Crée des sessions de terminal pour tous les membres actifs d'un groupe en une seule requête
+//	@Tags			terminals
+//	@Accept			json
+//	@Produce		json
+//	@Param			groupId	path	string							true	"Group ID"
+//	@Param			request	body	dto.BulkCreateTerminalsRequest	true	"Bulk creation request"
+//	@Security		Bearer
+//	@Success		200	{object}	dto.BulkCreateTerminalsResponse	"Bulk creation results"
+//	@Failure		400	{object}	errors.APIError					"Bad request"
+//	@Failure		403	{object}	errors.APIError					"Access denied"
+//	@Failure		404	{object}	errors.APIError					"Group not found"
+//	@Failure		500	{object}	errors.APIError					"Internal server error"
+//	@Router			/class-groups/{groupId}/bulk-create-terminals [post]
+func (tc *terminalController) BulkCreateTerminalsForGroup(ctx *gin.Context) {
+	groupID := ctx.Param("groupId")
+	requestingUserID := ctx.GetString("userId")
+
+	var request dto.BulkCreateTerminalsRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: fmt.Sprintf("Invalid request: %v", err),
+		})
+		return
+	}
+
+	// Get subscription plan from middleware context
+	planInterface, exists := ctx.Get("subscription_plan")
+	if !exists {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Subscription plan not found in context",
+		})
+		return
+	}
+
+	// Call service to create terminals
+	response, err := tc.service.BulkCreateTerminalsForGroup(groupID, requestingUserID, request, planInterface)
+	if err != nil {
+		// Determine appropriate status code based on error
+		statusCode := http.StatusInternalServerError
+		if err.Error() == "group not found" {
+			statusCode = http.StatusNotFound
+		} else if err.Error() == "only group owner or admin can create bulk terminals" {
+			statusCode = http.StatusForbidden
+		} else if len(err.Error()) >= len("invalid group ID") && err.Error()[:len("invalid group ID")] == "invalid group ID" {
+			statusCode = http.StatusBadRequest
+		}
+
+		ctx.JSON(statusCode, &errors.APIError{
+			ErrorCode:    statusCode,
+			ErrorMessage: err.Error(),
 		})
 		return
 	}

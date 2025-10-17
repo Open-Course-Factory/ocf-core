@@ -400,3 +400,32 @@ type ServerMetricsResponse struct {
 	RAMAvailableGB  float64 `json:"ram_available_gb"`
 	Timestamp       int64   `json:"timestamp"`
 }
+
+// BulkCreateTerminalsRequest for creating multiple terminals for a group
+type BulkCreateTerminalsRequest struct {
+	Terms        string  `binding:"required" json:"terms"`
+	Expiry       int     `json:"expiry,omitempty"`
+	InstanceType string  `json:"instance_type,omitempty"`
+	NameTemplate string  `json:"name_template,omitempty"` // Template with placeholders: {group_name}, {user_email}, {user_id}
+}
+
+// BulkCreateTerminalsResponse response for bulk terminal creation
+type BulkCreateTerminalsResponse struct {
+	Success      bool                          `json:"success"`
+	CreatedCount int                           `json:"created_count"`
+	FailedCount  int                           `json:"failed_count"`
+	TotalMembers int                           `json:"total_members"`
+	Terminals    []BulkTerminalCreationResult  `json:"terminals"`
+	Errors       []string                      `json:"errors,omitempty"`
+}
+
+// BulkTerminalCreationResult individual result for each terminal created
+type BulkTerminalCreationResult struct {
+	UserID      string  `json:"user_id"`
+	UserEmail   string  `json:"user_email,omitempty"`
+	TerminalID  *string `json:"terminal_id,omitempty"`
+	SessionID   *string `json:"session_id,omitempty"`
+	Name        string  `json:"name"`
+	Success     bool    `json:"success"`
+	Error       string  `json:"error,omitempty"`
+}

@@ -52,6 +52,11 @@ func (m *MockGenericRepository) CreateEntity(data any, entityName string) (any, 
 	return args.Get(0), args.Error(1)
 }
 
+func (m *MockGenericRepository) CreateEntityFromModel(entityModel any) (any, error) {
+	args := m.Called(entityModel)
+	return args.Get(0), args.Error(1)
+}
+
 func (m *MockGenericRepository) SaveEntity(entity any) (any, error) {
 	args := m.Called(entity)
 	return args.Get(0), args.Error(1)
@@ -95,6 +100,10 @@ func newMockGenericService(repo repositories.GenericRepository) services.Generic
 
 // Implémentation des méthodes du GenericService
 func (g *mockGenericService) CreateEntity(inputDto interface{}, entityName string) (interface{}, error) {
+	return g.repository.CreateEntity(inputDto, entityName)
+}
+
+func (g *mockGenericService) CreateEntityWithUser(inputDto interface{}, entityName string, userID string) (interface{}, error) {
 	return g.repository.CreateEntity(inputDto, entityName)
 }
 

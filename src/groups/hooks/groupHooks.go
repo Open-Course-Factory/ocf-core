@@ -49,13 +49,14 @@ func (h *GroupOwnerSetupHook) GetPriority() int {
 }
 
 func (h *GroupOwnerSetupHook) Execute(ctx *hooks.HookContext) error {
-	group, ok := ctx.NewEntity.(*models.ClassGroup)
-	if !ok {
-		return fmt.Errorf("expected Group, got %T", ctx.NewEntity)
-	}
-
 	switch ctx.HookType {
 	case hooks.BeforeCreate:
+		// BeforeCreate receives the model (already converted from DTO)
+		group, ok := ctx.NewEntity.(*models.ClassGroup)
+		if !ok {
+			return fmt.Errorf("expected *models.ClassGroup, got %T", ctx.NewEntity)
+		}
+
 		// Set the owner from the authenticated user context
 		if ctx.UserID != "" {
 			group.OwnerUserID = ctx.UserID
@@ -63,6 +64,10 @@ func (h *GroupOwnerSetupHook) Execute(ctx *hooks.HookContext) error {
 		}
 
 	case hooks.AfterCreate:
+		group, ok := ctx.NewEntity.(*models.ClassGroup)
+		if !ok {
+			return fmt.Errorf("expected *models.ClassGroup, got %T", ctx.NewEntity)
+		}
 		// Add owner as member and grant permissions
 		userID := group.OwnerUserID
 

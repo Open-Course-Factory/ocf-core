@@ -20,6 +20,7 @@ import (
 
 type GenericService interface {
 	CreateEntity(inputDto interface{}, entityName string) (interface{}, error)
+	CreateEntityWithUser(inputDto interface{}, entityName string, userID string) (interface{}, error)
 	SaveEntity(entity interface{}) (interface{}, error)
 	GetEntity(id uuid.UUID, data interface{}, entityName string, includes []string) (interface{}, error)
 	GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}, includes []string) ([]interface{}, int64, error)
@@ -50,11 +51,32 @@ func NewGenericService(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) G
 }
 
 func (g *genericService) CreateEntity(inputDto interface{}, entityName string) (interface{}, error) {
+	return g.CreateEntityWithUser(inputDto, entityName, "")
+}
 
+func (g *genericService) CreateEntityWithUser(inputDto interface{}, entityName string, userID string) (interface{}, error) {
+	// Convert DTO to model entity before calling BeforeCreate hook
+	conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.CreateInputDtoToModel)
+	if !found {
+		return nil, entityErrors.NewConversionError(entityName, "conversion function does not exist")
+	}
+
+	val := reflect.ValueOf(conversionFunctionRef)
+	var entityModel interface{}
+	if val.IsValid() && val.Kind() == reflect.Func {
+		args := []reflect.Value{reflect.ValueOf(inputDto)}
+		result := val.Call(args)
+		entityModel = result[0].Interface()
+	} else {
+		return nil, entityErrors.NewConversionError(entityName, "invalid conversion function")
+	}
+
+	// Call BeforeCreate hook with the converted model
 	beforeCtx := &hooks.HookContext{
 		EntityName: entityName,
 		HookType:   hooks.BeforeCreate,
-		NewEntity:  inputDto,
+		NewEntity:  entityModel,
+		UserID:     userID,
 		Context:    context.Background(),
 	}
 
@@ -62,7 +84,8 @@ func (g *genericService) CreateEntity(inputDto interface{}, entityName string) (
 		return nil, entityErrors.WrapHookError("BeforeCreate", entityName, err)
 	}
 
-	entity, createEntityError := g.genericRepository.CreateEntity(inputDto, entityName)
+	// Create the entity in the database (the repository will use entityModel instead of inputDto)
+	entity, createEntityError := g.genericRepository.CreateEntityFromModel(entityModel)
 	if createEntityError != nil {
 		return nil, createEntityError
 	}
@@ -72,6 +95,7 @@ func (g *genericService) CreateEntity(inputDto interface{}, entityName string) (
 		HookType:   hooks.AfterCreate,
 		NewEntity:  entity,
 		EntityID:   g.ExtractUuidFromReflectEntity(entity),
+		UserID:     userID,
 		Context:    context.Background(),
 	}
 

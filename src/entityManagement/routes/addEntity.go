@@ -18,13 +18,13 @@ func (genericController genericController) AddEntity(ctx *gin.Context) {
 		return
 	}
 
-	entity, entityCreationError := genericController.genericService.CreateEntity(decodedData, entityName)
+	userId := ctx.GetString("userId")
+	entity, entityCreationError := genericController.genericService.CreateEntityWithUser(decodedData, entityName, userId)
 	if entityCreationError != nil {
 		HandleEntityError(ctx, entityCreationError)
 		return
 	}
 
-	userId := ctx.GetString("userId")
 	entity, entitySavingError := genericController.addOwnerIDs(entity, userId)
 	if entitySavingError != nil {
 		HandleEntityError(ctx, entitySavingError)

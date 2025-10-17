@@ -21,6 +21,13 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	// Apply terminal creation limit middleware to start-session route
 	routes.POST("/start-session", middleware.AuthManagement(), usageLimitMiddleware.CheckTerminalCreationLimit(), terminalController.StartSession)
 	routes.GET("/:id/console", middleware.AuthManagement(), terminalController.ConnectConsole)
+
+	// Bulk operations for groups
+	groupRoutes := router.Group("/class-groups")
+	// NOTE: We don't apply CheckTerminalCreationLimit() here because bulk creation has its own quota logic
+	// Instead, we use InjectSubscriptionInfo() to attach the plan to context for validation
+	subscriptionMiddleware := paymentMiddleware.NewSubscriptionIntegrationMiddleware(db)
+	groupRoutes.POST("/:groupId/bulk-create-terminals", middleware.AuthManagement(), subscriptionMiddleware.InjectSubscriptionInfo(), terminalController.BulkCreateTerminalsForGroup)
 	routes.POST("/:id/stop", middleware.AuthManagement(), terminalController.StopSession)
 	routes.GET("/user-sessions", middleware.AuthManagement(), terminalController.GetUserSessions)
 

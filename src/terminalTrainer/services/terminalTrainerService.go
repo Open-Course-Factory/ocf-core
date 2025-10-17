@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"soli/formations/src/auth/casdoor"
+	groupModels "soli/formations/src/groups/models"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/terminalTrainer/dto"
@@ -20,6 +21,7 @@ import (
 	"soli/formations/src/terminalTrainer/repositories"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -68,6 +70,9 @@ type TerminalTrainerService interface {
 
 	// Correction des permissions
 	FixTerminalHidePermissions(userID string) (*dto.FixPermissionsResponse, error)
+
+	// Bulk operations
+	BulkCreateTerminalsForGroup(groupID string, requestingUserID string, request dto.BulkCreateTerminalsRequest, planInterface interface{}) (*dto.BulkCreateTerminalsResponse, error)
 }
 
 type terminalTrainerService struct {
@@ -1391,6 +1396,138 @@ func (tts *terminalTrainerService) FixTerminalHidePermissions(userID string) (*d
 
 	if !response.Success {
 		response.Message += fmt.Sprintf(" with %d errors", len(response.Errors))
+	}
+
+	return response, nil
+}
+
+// applyNameTemplate applies template placeholders to generate terminal names
+func (tts *terminalTrainerService) applyNameTemplate(template, groupName, userEmail, userID string) string {
+	if template == "" {
+		template = "{group_name} - {user_email}"
+	}
+
+	result := template
+	result = strings.ReplaceAll(result, "{group_name}", groupName)
+	result = strings.ReplaceAll(result, "{user_email}", userEmail)
+	result = strings.ReplaceAll(result, "{user_id}", userID)
+
+	return result
+}
+
+// BulkCreateTerminalsForGroup creates terminals for all members of a group
+func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
+	groupID string,
+	requestingUserID string,
+	request dto.BulkCreateTerminalsRequest,
+	planInterface interface{},
+) (*dto.BulkCreateTerminalsResponse, error) {
+	// Parse groupID
+	groupUUID, err := uuid.Parse(groupID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid group ID: %v", err)
+	}
+
+	// Get group details
+	var group groupModels.ClassGroup
+	if err := tts.db.Preload("Members").Where("id = ?", groupUUID).First(&group).Error; err != nil {
+		return nil, fmt.Errorf("group not found: %v", err)
+	}
+
+	// Check permissions - only owner or admin can bulk create terminals
+	canManage := false
+	if group.OwnerUserID == requestingUserID {
+		canManage = true
+	} else {
+		// Check if user is an admin of the group
+		for _, member := range group.Members {
+			if member.UserID == requestingUserID && (member.Role == groupModels.GroupMemberRoleAdmin || member.Role == groupModels.GroupMemberRoleOwner) {
+				canManage = true
+				break
+			}
+		}
+	}
+
+	if !canManage {
+		return nil, fmt.Errorf("only group owner or admin can create bulk terminals")
+	}
+
+	// Filter active members only
+	var activeMembers []groupModels.GroupMember
+	for _, member := range group.Members {
+		if member.IsActive {
+			activeMembers = append(activeMembers, member)
+		}
+	}
+
+	// Initialize response
+	response := &dto.BulkCreateTerminalsResponse{
+		Success:      true,
+		CreatedCount: 0,
+		FailedCount:  0,
+		TotalMembers: len(activeMembers),
+		Terminals:    []dto.BulkTerminalCreationResult{},
+		Errors:       []string{},
+	}
+
+	// Get user details from Casdoor for email addresses
+	userEmails := make(map[string]string) // userID -> email
+	for _, member := range activeMembers {
+		user, err := casdoorsdk.GetUserByUserId(member.UserID)
+		if err != nil {
+			log.Printf("Warning: failed to get user details for %s: %v", member.UserID, err)
+			userEmails[member.UserID] = member.UserID // Fallback to userID
+		} else {
+			userEmails[member.UserID] = user.Email
+		}
+	}
+
+	// Create terminals for each member
+	for _, member := range activeMembers {
+		userEmail := userEmails[member.UserID]
+
+		// Generate terminal name using template
+		terminalName := tts.applyNameTemplate(request.NameTemplate, group.DisplayName, userEmail, member.UserID)
+
+		// Create session input for this user
+		sessionInput := dto.CreateTerminalSessionInput{
+			Terms:        request.Terms,
+			Name:         terminalName,
+			Expiry:       request.Expiry,
+			InstanceType: request.InstanceType,
+		}
+
+		// Try to create terminal
+		sessionResp, err := tts.StartSessionWithPlan(member.UserID, sessionInput, planInterface)
+
+		result := dto.BulkTerminalCreationResult{
+			UserID:    member.UserID,
+			UserEmail: userEmail,
+			Name:      terminalName,
+			Success:   err == nil,
+		}
+
+		if err != nil {
+			result.Error = err.Error()
+			response.FailedCount++
+			response.Errors = append(response.Errors, fmt.Sprintf("Failed for user %s (%s): %v", userEmail, member.UserID, err))
+		} else {
+			result.SessionID = &sessionResp.SessionID
+			// Get the terminal record to get the UUID
+			terminal, terr := tts.repository.GetTerminalSessionByID(sessionResp.SessionID)
+			if terr == nil {
+				terminalID := terminal.ID.String()
+				result.TerminalID = &terminalID
+			}
+			response.CreatedCount++
+		}
+
+		response.Terminals = append(response.Terminals, result)
+	}
+
+	// If all failed, mark as not successful
+	if response.FailedCount > 0 && response.CreatedCount == 0 {
+		response.Success = false
 	}
 
 	return response, nil
