@@ -18,7 +18,11 @@ func SubscriptionPlanRoutes(router *gin.RouterGroup, config *config.Configuratio
 
 	planRoutes := router.Group("/subscription-plans")
 
+	// Pricing preview (public route - no auth required)
+	planRoutes.GET("/pricing-preview", subscriptionController.GetPricingPreview)
+
 	// Routes de synchronisation Stripe (admin seulement)
 	planRoutes.POST("/:id/sync-stripe", authMiddleware.AuthManagement(), subscriptionController.SyncSubscriptionPlanWithStripe)
 	planRoutes.POST("/sync-stripe", authMiddleware.AuthManagement(), subscriptionController.SyncAllSubscriptionPlansWithStripe)
+	planRoutes.POST("/import-stripe", authMiddleware.AuthManagement(), subscriptionController.ImportPlansFromStripe)
 }

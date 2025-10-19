@@ -20,4 +20,7 @@ func InvoiceRoutes(router *gin.RouterGroup, config *config.Configuration, db *go
 	routes.GET("/user", authMiddleware.AuthManagement(), invoiceController.GetUserInvoices)
 	routes.POST("/sync", authMiddleware.AuthManagement(), invoiceController.SyncUserInvoices)
 	routes.GET("/:id/download", authMiddleware.AuthManagement(), invoiceController.DownloadInvoice)
+
+	// Admin routes
+	routes.POST("/admin/cleanup", authMiddleware.AuthManagement(), invoiceController.CleanupInvoices)
 }

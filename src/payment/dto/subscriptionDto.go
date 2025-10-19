@@ -62,6 +62,18 @@ type SubscriptionPlanOutput struct {
 
 	// Planned features (announced but not yet available)
 	PlannedFeatures []string `json:"planned_features"` // Features coming soon
+
+	// Tiered pricing for volume discounts
+	UseTieredPricing bool          `json:"use_tiered_pricing"`
+	PricingTiers     []PricingTier `json:"pricing_tiers,omitempty"`
+}
+
+// PricingTier represents a volume pricing tier
+type PricingTier struct {
+	MinQuantity int    `json:"min_quantity"`
+	MaxQuantity int    `json:"max_quantity"` // 0 = unlimited
+	UnitAmount  int64  `json:"unit_amount"`  // Price in cents
+	Description string `json:"description,omitempty"`
 }
 
 // UserSubscription DTOs
@@ -247,4 +259,106 @@ type UsageLimitCheckOutput struct {
 	Limit          int64  `json:"limit"`
 	RemainingUsage int64  `json:"remaining_usage"`
 	Message        string `json:"message,omitempty"`
+}
+
+// DTOs for bulk license purchases
+type BulkPurchaseInput struct {
+	SubscriptionPlanID uuid.UUID  `binding:"required" json:"subscription_plan_id" mapstructure:"subscription_plan_id"`
+	Quantity           int        `binding:"required,min=1" json:"quantity" mapstructure:"quantity"`
+	GroupID            *uuid.UUID `json:"group_id,omitempty" mapstructure:"group_id"` // Optional: link to group
+	PaymentMethodID    string     `json:"payment_method_id,omitempty" mapstructure:"payment_method_id"`
+	CouponCode         string     `json:"coupon_code,omitempty" mapstructure:"coupon_code"`
+}
+
+type SubscriptionBatchOutput struct {
+	ID                       uuid.UUID              `json:"id"`
+	PurchaserUserID          string                 `json:"purchaser_user_id"`
+	SubscriptionPlanID       uuid.UUID              `json:"subscription_plan_id"`
+	SubscriptionPlan         SubscriptionPlanOutput `json:"subscription_plan"`
+	GroupID                  *uuid.UUID             `json:"group_id,omitempty"`
+	StripeSubscriptionID     string                 `json:"stripe_subscription_id"`
+	StripeSubscriptionItemID string                 `json:"stripe_subscription_item_id"`
+	TotalQuantity            int                    `json:"total_quantity"`
+	AssignedQuantity         int                    `json:"assigned_quantity"`
+	AvailableQuantity        int                    `json:"available_quantity"` // Calculated: total - assigned
+	Status                   string                 `json:"status"`
+	CurrentPeriodStart       time.Time              `json:"current_period_start"`
+	CurrentPeriodEnd         time.Time              `json:"current_period_end"`
+	CancelledAt              *time.Time             `json:"cancelled_at,omitempty"`
+	CreatedAt                time.Time              `json:"created_at"`
+	UpdatedAt                time.Time              `json:"updated_at"`
+}
+
+type AssignLicenseInput struct {
+	UserID string `binding:"required" json:"user_id" mapstructure:"user_id"`
+}
+
+type UpdateBatchQuantityInput struct {
+	NewQuantity int `binding:"required,min=1" json:"new_quantity" mapstructure:"new_quantity"`
+}
+
+// DTOs for pricing preview
+type PricingPreviewInput struct {
+	SubscriptionPlanID uuid.UUID `binding:"required" json:"subscription_plan_id"`
+	Quantity           int       `binding:"required,min=1" json:"quantity"`
+}
+
+type PricingBreakdown struct {
+	PlanName         string     `json:"plan_name"`
+	TotalQuantity    int        `json:"total_quantity"`
+	TierBreakdown    []TierCost `json:"tier_breakdown"`
+	TotalMonthlyCost int64      `json:"total_monthly_cost"`       // In cents
+	AveragePerUnit   float64    `json:"average_per_license"`      // In currency (e.g., 8.33 for €8.33)
+	Savings          int64      `json:"savings_vs_individual"`    // In cents
+	Currency         string     `json:"currency"`
+}
+
+type TierCost struct {
+	Range     string `json:"range"`      // e.g., "1-10"
+	Quantity  int    `json:"quantity"`   // How many licenses in this tier
+	UnitPrice int64  `json:"unit_price"` // Price per license in cents
+	Subtotal  int64  `json:"subtotal"`   // Total for this tier in cents
+}
+
+// ==========================================
+// Invoice Cleanup DTOs
+// ==========================================
+
+type CleanupInvoicesInput struct {
+	Action        string   `binding:"required,oneof=void uncollectible" json:"action"`                   // "void" or "uncollectible"
+	OlderThanDays *int     `binding:"omitempty,min=0" json:"older_than_days,omitempty"`                 // Cleanup invoices older than N days (optional when invoice_ids provided)
+	DryRun        bool     `json:"dry_run"`                                                              // If true, only preview what would be cleaned up
+	Status        string   `json:"status,omitempty" binding:"omitempty,oneof=draft open uncollectible"` // Filter by status (optional, defaults to "open,draft")
+	InvoiceIDs    []string `json:"invoice_ids,omitempty"`                                                // Optional: specific invoice IDs to clean (if empty, cleans all matching)
+}
+
+type CleanupInvoicesResult struct {
+	DryRun            bool                      `json:"dry_run"`
+	Action            string                    `json:"action"`
+	ProcessedInvoices int                       `json:"processed_invoices"`
+	CleanedInvoices   int                       `json:"cleaned_invoices"`
+	SkippedInvoices   int                       `json:"skipped_invoices"`
+	FailedInvoices    int                       `json:"failed_invoices"`
+	CleanedDetails    []CleanedInvoiceDetail    `json:"cleaned_details"`
+	SkippedDetails    []string                  `json:"skipped_details"`
+	FailedDetails     []FailedInvoiceCleanup    `json:"failed_details"`
+	TotalAmountCleaned int64                    `json:"total_amount_cleaned"` // Total amount in cents
+	Currency          string                    `json:"currency"`
+}
+
+type CleanedInvoiceDetail struct {
+	InvoiceID     string `json:"invoice_id"`
+	InvoiceNumber string `json:"invoice_number"`
+	CustomerID    string `json:"customer_id"`
+	Amount        int64  `json:"amount"`
+	Currency      string `json:"currency"`
+	Status        string `json:"original_status"`
+	Action        string `json:"action_taken"`
+	CreatedAt     string `json:"created_at"`
+}
+
+type FailedInvoiceCleanup struct {
+	InvoiceID string `json:"invoice_id"`
+	CustomerID string `json:"customer_id"`
+	Error     string `json:"error"`
 }

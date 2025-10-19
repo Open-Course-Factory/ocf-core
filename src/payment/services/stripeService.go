@@ -115,6 +115,9 @@ type StripeService interface {
 	// Invoice synchronization
 	SyncUserInvoices(userID string) (*SyncInvoicesResult, error)
 
+	// Invoice cleanup
+	CleanupIncompleteInvoices(input dto.CleanupInvoicesInput) (*dto.CleanupInvoicesResult, error)
+
 	// Payment method synchronization
 	SyncUserPaymentMethods(userID string) (*SyncPaymentMethodsResult, error)
 
@@ -126,9 +129,35 @@ type StripeService interface {
 	// Invoice operations
 	GetInvoice(invoiceID string) (*stripe.Invoice, error)
 	SendInvoice(invoiceID string) error
+
+	// Bulk license operations
+	CreateSubscriptionWithQuantity(customerID string, plan *models.SubscriptionPlan, quantity int, paymentMethodID string) (*stripe.Subscription, error)
+	UpdateSubscriptionQuantity(subscriptionID string, subscriptionItemID string, newQuantity int) (*stripe.Subscription, error)
+
+	// Plan synchronization from Stripe
+	ImportPlansFromStripe() (*SyncPlansResult, error)
+}
+
+// SyncPlansResult contains the results of importing plans from Stripe
+type SyncPlansResult struct {
+	ProcessedPlans int           `json:"processed_plans"`
+	CreatedPlans   int           `json:"created_plans"`
+	UpdatedPlans   int           `json:"updated_plans"`
+	SkippedPlans   int           `json:"skipped_plans"`
+	FailedPlans    []FailedPlan  `json:"failed_plans"`
+	CreatedDetails []string      `json:"created_details"`
+	UpdatedDetails []string      `json:"updated_details"`
+	SkippedDetails []string      `json:"skipped_details"`
+}
+
+type FailedPlan struct {
+	StripeProductID string `json:"stripe_product_id"`
+	StripePriceID   string `json:"stripe_price_id"`
+	Error           string `json:"error"`
 }
 
 type stripeService struct {
+	db                  *gorm.DB
 	subscriptionService UserSubscriptionService
 	genericService      genericService.GenericService
 	repository          repositories.PaymentRepository
@@ -140,6 +169,7 @@ func NewStripeService(db *gorm.DB) StripeService {
 	stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
 
 	return &stripeService{
+		db:                  db,
 		subscriptionService: NewSubscriptionService(db),
 		genericService:      genericService.NewGenericService(db, casdoor.Enforcer),
 		repository:          repositories.NewPaymentRepository(db),
@@ -584,6 +614,12 @@ func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 		return err
 	}
 
+	// Check if this is a bulk subscription
+	if isBulkSubscription(&subscription) {
+		utils.Debug("📦 Detected bulk subscription update: %s", subscription.ID)
+		return ss.handleBulkSubscriptionUpdated(&subscription)
+	}
+
 	// Récupérer l'abonnement existant
 	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
 	if err != nil {
@@ -643,6 +679,12 @@ func (ss *stripeService) handleSubscriptionDeleted(event *stripe.Event) error {
 		return err
 	}
 
+	// Check if this is a bulk subscription
+	if isBulkSubscription(&subscription) {
+		utils.Debug("📦 Detected bulk subscription deletion: %s", subscription.ID)
+		return ss.handleBulkSubscriptionDeleted(&subscription)
+	}
+
 	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
 	if err != nil {
 		return err
@@ -662,9 +704,25 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 		return err
 	}
 
-	// CRITICAL FIX: Find subscription by customer ID, not invoice ID
-	// Invoices created during checkout might not have subscription field populated yet
+	// Try to find subscription by customer ID first
 	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
+
+	// Check if this is a bulk subscription by checking if there's a batch for this subscription
+	if err == nil && userSub.StripeSubscriptionID != "" {
+		batchRepo := repositories.NewSubscriptionBatchRepository(ss.db)
+		_, batchErr := batchRepo.GetByStripeSubscriptionID(userSub.StripeSubscriptionID)
+		if batchErr == nil {
+			// This is a bulk subscription - handle it separately
+			utils.Debug("📦 Detected bulk subscription invoice payment: %s", stripeInvoice.ID)
+			// Get full subscription details from Stripe
+			sub, subErr := subscription.Get(userSub.StripeSubscriptionID, nil)
+			if subErr != nil {
+				return fmt.Errorf("failed to retrieve subscription %s: %v", userSub.StripeSubscriptionID, subErr)
+			}
+			return ss.handleBulkInvoicePaymentSucceeded(&stripeInvoice, sub)
+		}
+		// Not a bulk subscription, continue with normal processing
+	}
 	if err != nil {
 		// If no active subscription found, try to find by metadata in the invoice
 		utils.Debug("⚠️ No active subscription found for customer %s, skipping invoice %s", stripeInvoice.Customer.ID, stripeInvoice.ID)
@@ -1040,6 +1098,130 @@ func (ss *stripeService) handleCustomerUpdated(event *stripe.Event) error {
 
 	// TODO: Sync customer email/name to Casdoor if needed
 	utils.Debug("👤 Customer %s updated for user %s", customer.ID, userSub.UserID)
+	return nil
+}
+
+// ============================================================================
+// BULK LICENSE WEBHOOK HANDLERS
+// ============================================================================
+
+// isBulkSubscription checks if a Stripe subscription is a bulk purchase
+func isBulkSubscription(subscription *stripe.Subscription) bool {
+	if metadata, exists := subscription.Metadata["bulk_purchase"]; exists && metadata == "true" {
+		return true
+	}
+	return false
+}
+
+// handleBulkSubscriptionUpdated handles quantity changes in bulk subscriptions
+func (ss *stripeService) handleBulkSubscriptionUpdated(subscription *stripe.Subscription) error {
+	// Get the subscription batch
+	batchRepo := repositories.NewSubscriptionBatchRepository(ss.db)
+	batch, err := batchRepo.GetByStripeSubscriptionID(subscription.ID)
+	if err != nil {
+		return fmt.Errorf("batch not found for subscription %s: %v", subscription.ID, err)
+	}
+
+	// Check if quantity changed
+	newQuantity := int(subscription.Items.Data[0].Quantity)
+	if newQuantity == batch.TotalQuantity {
+		utils.Debug("ℹ️ Batch quantity unchanged: %d", newQuantity)
+		return nil // No change
+	}
+
+	utils.Info("🔄 Batch %s quantity changed from %d to %d", batch.ID, batch.TotalQuantity, newQuantity)
+
+	difference := newQuantity - batch.TotalQuantity
+
+	if difference > 0 {
+		// Adding licenses
+		for i := 0; i < difference; i++ {
+			license := models.UserSubscription{
+				UserID:               "",
+				PurchaserUserID:      &batch.PurchaserUserID,
+				SubscriptionBatchID:  &batch.ID,
+				SubscriptionPlanID:   batch.SubscriptionPlanID,
+				StripeSubscriptionID: batch.StripeSubscriptionID,
+				StripeCustomerID:     batch.PurchaserUserID,
+				Status:               "unassigned",
+				CurrentPeriodStart:   batch.CurrentPeriodStart,
+				CurrentPeriodEnd:     batch.CurrentPeriodEnd,
+			}
+			if err := ss.repository.CreateUserSubscription(&license); err != nil {
+				utils.Error("Failed to create additional license: %v", err)
+			}
+		}
+		utils.Info("✅ Added %d licenses to batch %s", difference, batch.ID)
+	} else {
+		// Removing licenses (only unassigned ones)
+		toRemove := -difference
+		var unassignedLicenses []models.UserSubscription
+		ss.db.Where("subscription_batch_id = ? AND status = ?", batch.ID, "unassigned").
+			Limit(toRemove).
+			Find(&unassignedLicenses)
+
+		if len(unassignedLicenses) < toRemove {
+			return fmt.Errorf("cannot remove %d licenses, only %d unassigned available", toRemove, len(unassignedLicenses))
+		}
+
+		for _, license := range unassignedLicenses {
+			ss.db.Delete(&license)
+		}
+		utils.Info("✅ Removed %d licenses from batch %s", len(unassignedLicenses), batch.ID)
+	}
+
+	// Update batch total quantity
+	batch.TotalQuantity = newQuantity
+	batch.CurrentPeriodStart = time.Unix(subscription.Items.Data[0].CurrentPeriodStart, 0)
+	batch.CurrentPeriodEnd = time.Unix(subscription.Items.Data[0].CurrentPeriodEnd, 0)
+	return batchRepo.Update(batch)
+}
+
+// handleBulkSubscriptionDeleted handles cancellation of bulk subscriptions
+func (ss *stripeService) handleBulkSubscriptionDeleted(subscription *stripe.Subscription) error {
+	// Get the subscription batch
+	batchRepo := repositories.NewSubscriptionBatchRepository(ss.db)
+	batch, err := batchRepo.GetByStripeSubscriptionID(subscription.ID)
+	if err != nil {
+		return fmt.Errorf("batch not found for subscription %s: %v", subscription.ID, err)
+	}
+
+	utils.Info("❌ Cancelling batch %s and all associated licenses", batch.ID)
+
+	// Cancel all licenses in the batch
+	var licenses []models.UserSubscription
+	ss.db.Where("subscription_batch_id = ?", batch.ID).Find(&licenses)
+
+	now := time.Now()
+	for _, license := range licenses {
+		license.Status = "cancelled"
+		license.CancelledAt = &now
+		ss.repository.UpdateUserSubscription(&license)
+	}
+
+	// Cancel the batch
+	batch.Status = "cancelled"
+	batch.CancelledAt = &now
+	return batchRepo.Update(batch)
+}
+
+// handleBulkInvoicePaymentSucceeded activates bulk licenses on successful payment
+func (ss *stripeService) handleBulkInvoicePaymentSucceeded(invoice *stripe.Invoice, subscription *stripe.Subscription) error {
+	// Get the subscription batch
+	batchRepo := repositories.NewSubscriptionBatchRepository(ss.db)
+	batch, err := batchRepo.GetByStripeSubscriptionID(subscription.ID)
+	if err != nil {
+		return fmt.Errorf("batch not found for subscription %s: %v", subscription.ID, err)
+	}
+
+	utils.Info("💰 Payment succeeded for bulk subscription batch %s", batch.ID)
+
+	// Ensure batch is active
+	if batch.Status != "active" {
+		batch.Status = "active"
+		batchRepo.Update(batch)
+	}
+
 	return nil
 }
 
@@ -1617,6 +1799,184 @@ func (ss *stripeService) processSingleInvoice(inv *stripe.Invoice, userID string
 	return nil
 }
 
+// CleanupIncompleteInvoices voids or marks as uncollectible all incomplete invoices
+func (ss *stripeService) CleanupIncompleteInvoices(input dto.CleanupInvoicesInput) (*dto.CleanupInvoicesResult, error) {
+	// Validate input based on mode
+	if len(input.InvoiceIDs) == 0 && input.OlderThanDays == nil {
+		return nil, fmt.Errorf("older_than_days is required when invoice_ids is not provided")
+	}
+
+	result := &dto.CleanupInvoicesResult{
+		DryRun:         input.DryRun,
+		Action:         input.Action,
+		CleanedDetails: []dto.CleanedInvoiceDetail{},
+		SkippedDetails: []string{},
+		FailedDetails:  []dto.FailedInvoiceCleanup{},
+	}
+
+	// Calculate cutoff date (only needed for non-selective cleanup)
+	var olderThanDays int
+	var cutoffDate time.Time
+	if input.OlderThanDays != nil {
+		olderThanDays = *input.OlderThanDays
+		cutoffDate = time.Now().AddDate(0, 0, -olderThanDays)
+	}
+
+	// Build a map of allowed invoice IDs for quick lookup (if selective cleanup)
+	var allowedInvoices map[string]bool
+	if len(input.InvoiceIDs) > 0 {
+		allowedInvoices = make(map[string]bool, len(input.InvoiceIDs))
+		for _, id := range input.InvoiceIDs {
+			allowedInvoices[id] = true
+		}
+		utils.Info("🧹 Cleanup incomplete invoices: action=%s, selective=%d invoices, dry_run=%v",
+			input.Action, len(input.InvoiceIDs), input.DryRun)
+	} else {
+		utils.Info("🧹 Cleanup incomplete invoices: action=%s, older_than=%d days, cutoff=%s, dry_run=%v",
+			input.Action, olderThanDays, cutoffDate.Format("2006-01-02"), input.DryRun)
+	}
+
+	// Determine which statuses to query
+	statuses := []string{"open", "draft"}
+	if input.Status != "" {
+		statuses = []string{input.Status}
+	}
+
+	// Fetch invoices for each status
+	for _, status := range statuses {
+		params := &stripe.InvoiceListParams{}
+		params.Filters.AddFilter("limit", "", "100")
+		params.Filters.AddFilter("status", "", status)
+
+		iter := invoice.List(params)
+		for iter.Next() {
+			inv := iter.Invoice()
+			result.ProcessedInvoices++
+
+			// Calculate invoice date (needed for logging)
+			invoiceDate := time.Unix(inv.Created, 0)
+
+			// If selective cleanup, check if this invoice is in the allowed list
+			if allowedInvoices != nil && !allowedInvoices[inv.ID] {
+				result.SkippedInvoices++
+				result.SkippedDetails = append(result.SkippedDetails,
+					fmt.Sprintf("Invoice %s not in selection", inv.ID))
+				continue
+			}
+
+			// Check if invoice is older than cutoff (only if not selective)
+			if allowedInvoices == nil {
+				if invoiceDate.After(cutoffDate) {
+					result.SkippedInvoices++
+					result.SkippedDetails = append(result.SkippedDetails,
+						fmt.Sprintf("Invoice %s too recent (created %s)", inv.ID, invoiceDate.Format("2006-01-02")))
+					continue
+				}
+			}
+
+			// Skip if already uncollectible and we're trying to mark it as uncollectible again
+			if inv.Status == "uncollectible" && input.Action == "uncollectible" {
+				result.SkippedInvoices++
+				result.SkippedDetails = append(result.SkippedDetails,
+					fmt.Sprintf("Invoice %s already uncollectible", inv.ID))
+				continue
+			}
+
+			// Preview mode - just log what would be done
+			if input.DryRun {
+				result.CleanedInvoices++
+				result.TotalAmountCleaned += inv.Total
+				result.CleanedDetails = append(result.CleanedDetails, dto.CleanedInvoiceDetail{
+					InvoiceID:     inv.ID,
+					InvoiceNumber: inv.Number,
+					CustomerID:    inv.Customer.ID,
+					Amount:        inv.Total,
+					Currency:      string(inv.Currency),
+					Status:        string(inv.Status),
+					Action:        func() string {
+					if input.Action == "void" && inv.Status == "draft" {
+						return "would_delete"
+					}
+					return fmt.Sprintf("would_%s", input.Action)
+				}(),
+					CreatedAt:     invoiceDate.Format("2006-01-02 15:04:05"),
+				})
+				if result.Currency == "" {
+					result.Currency = string(inv.Currency)
+				}
+				continue
+			}
+
+			// Actually perform the action
+			var err error
+			var actionTaken string
+
+			switch input.Action {
+			case "void":
+				// Draft invoices must be deleted, open invoices can be voided
+				if inv.Status == "draft" {
+					// Delete draft invoices (they can't be voided)
+					_, err = invoice.Del(inv.ID, nil)
+					actionTaken = "deleted"
+				} else {
+					// Void open invoices (cancels them permanently)
+					_, err = invoice.VoidInvoice(inv.ID, nil)
+					actionTaken = "voided"
+				}
+
+			case "uncollectible":
+				// Mark as uncollectible (keeps record but stops collection)
+				updateParams := &stripe.InvoiceMarkUncollectibleParams{}
+				updateParams.AddMetadata("marked_uncollectible_at", time.Now().Format(time.RFC3339))
+				updateParams.AddMetadata("marked_uncollectible_reason", "admin_cleanup")
+				_, err = invoice.MarkUncollectible(inv.ID, updateParams)
+				actionTaken = "marked_uncollectible"
+			}
+
+			if err != nil {
+				result.FailedInvoices++
+				result.FailedDetails = append(result.FailedDetails, dto.FailedInvoiceCleanup{
+					InvoiceID:  inv.ID,
+					CustomerID: inv.Customer.ID,
+					Error:      err.Error(),
+				})
+				utils.Warn("❌ Failed to %s invoice %s: %v", input.Action, inv.ID, err)
+				continue
+			}
+
+			// Success
+			result.CleanedInvoices++
+			result.TotalAmountCleaned += inv.Total
+			result.CleanedDetails = append(result.CleanedDetails, dto.CleanedInvoiceDetail{
+				InvoiceID:     inv.ID,
+				InvoiceNumber: inv.Number,
+				CustomerID:    inv.Customer.ID,
+				Amount:        inv.Total,
+				Currency:      string(inv.Currency),
+				Status:        string(inv.Status),
+				Action:        actionTaken,
+				CreatedAt:     invoiceDate.Format("2006-01-02 15:04:05"),
+			})
+
+			if result.Currency == "" {
+				result.Currency = string(inv.Currency)
+			}
+
+			utils.Info("✅ %s invoice %s (%s) - %d %s",
+				actionTaken, inv.ID, inv.Number, inv.Total, inv.Currency)
+		}
+
+		if err := iter.Err(); err != nil {
+			return nil, fmt.Errorf("failed to iterate invoices: %v", err)
+		}
+	}
+
+	utils.Info("✅ Cleanup complete: %d processed, %d cleaned, %d skipped, %d failed (dry_run=%v)",
+		result.ProcessedInvoices, result.CleanedInvoices, result.SkippedInvoices, result.FailedInvoices, input.DryRun)
+
+	return result, nil
+}
+
 // SyncUserPaymentMethods synchronise les moyens de paiement d'un utilisateur depuis Stripe
 func (ss *stripeService) SyncUserPaymentMethods(userID string) (*SyncPaymentMethodsResult, error) {
 	result := &SyncPaymentMethodsResult{
@@ -1741,4 +2101,278 @@ func (ss *stripeService) processSinglePaymentMethod(pm *stripe.PaymentMethod, us
 	}
 
 	return nil
+}
+
+// CreateSubscriptionWithQuantity creates a Stripe subscription with a specified quantity for bulk purchases
+func (ss *stripeService) CreateSubscriptionWithQuantity(customerID string, plan *models.SubscriptionPlan, quantity int, paymentMethodID string) (*stripe.Subscription, error) {
+	if plan.StripePriceID == nil {
+		return nil, fmt.Errorf("plan does not have a Stripe price ID configured")
+	}
+
+	params := &stripe.SubscriptionParams{
+		Customer: stripe.String(customerID),
+		Items: []*stripe.SubscriptionItemsParams{
+			{
+				Price:    stripe.String(*plan.StripePriceID),
+				Quantity: stripe.Int64(int64(quantity)),
+			},
+		},
+		PaymentBehavior: stripe.String("default_incomplete"),
+		Metadata: map[string]string{
+			"plan_id":       plan.ID.String(),
+			"plan_name":     plan.Name,
+			"quantity":      fmt.Sprintf("%d", quantity),
+			"bulk_purchase": "true",
+		},
+	}
+
+	if paymentMethodID != "" {
+		params.DefaultPaymentMethod = stripe.String(paymentMethodID)
+	}
+
+	if plan.TrialDays > 0 {
+		params.TrialPeriodDays = stripe.Int64(int64(plan.TrialDays))
+	}
+
+	sub, err := subscription.New(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Stripe subscription: %v", err)
+	}
+
+	utils.Info("✅ Created bulk Stripe subscription %s for customer %s (quantity: %d)", sub.ID, customerID, quantity)
+	return sub, nil
+}
+
+// UpdateSubscriptionQuantity updates the quantity of an existing Stripe subscription
+func (ss *stripeService) UpdateSubscriptionQuantity(subscriptionID string, subscriptionItemID string, newQuantity int) (*stripe.Subscription, error) {
+	params := &stripe.SubscriptionParams{
+		Items: []*stripe.SubscriptionItemsParams{
+			{
+				ID:       stripe.String(subscriptionItemID),
+				Quantity: stripe.Int64(int64(newQuantity)),
+			},
+		},
+		ProrationBehavior: stripe.String("always_invoice"),
+	}
+
+	sub, err := subscription.Update(subscriptionID, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update Stripe subscription quantity: %v", err)
+	}
+
+	utils.Info("✅ Updated Stripe subscription %s quantity to %d", subscriptionID, newQuantity)
+	return sub, nil
+}
+
+// ImportPlansFromStripe imports subscription plans from Stripe into the database
+func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
+	result := &SyncPlansResult{
+		FailedPlans:    []FailedPlan{},
+		CreatedDetails: []string{},
+		UpdatedDetails: []string{},
+		SkippedDetails: []string{},
+	}
+
+	// Fetch all products from Stripe
+	productParams := &stripe.ProductListParams{}
+	productParams.Filters.AddFilter("limit", "", "100")
+	productParams.Filters.AddFilter("active", "", "true")
+
+	productIter := product.List(productParams)
+	for productIter.Next() {
+		prod := productIter.Product()
+		result.ProcessedPlans++
+
+		// Get all prices for this product
+		priceParams := &stripe.PriceListParams{
+			Product: stripe.String(prod.ID),
+		}
+		priceParams.Filters.AddFilter("active", "", "true")
+		priceParams.Filters.AddFilter("limit", "", "100")
+		// CRITICAL: Expand tiers to get volume pricing data
+		priceParams.AddExpand("data.tiers")
+
+		priceIter := price.List(priceParams)
+		for priceIter.Next() {
+			priceObj := priceIter.Price()
+
+			// Debug logging for the price structure
+			utils.Debug("🔍 Processing price %s for product %s", priceObj.ID, prod.Name)
+			utils.Debug("  - Tiers: %v (count: %d)", priceObj.Tiers != nil, len(priceObj.Tiers))
+			utils.Debug("  - TiersMode: %s", priceObj.TiersMode)
+			utils.Debug("  - BillingScheme: %s", priceObj.BillingScheme)
+			if priceObj.Tiers != nil {
+				for i, tier := range priceObj.Tiers {
+					utils.Debug("    Tier %d: UpTo=%d, UnitAmount=%d, FlatAmount=%d",
+						i, tier.UpTo, tier.UnitAmount, tier.FlatAmount)
+				}
+			}
+
+			// Only process recurring prices (subscriptions)
+			if priceObj.Recurring == nil {
+				result.SkippedPlans++
+				result.SkippedDetails = append(result.SkippedDetails,
+					fmt.Sprintf("Price %s (%s): not a recurring price", priceObj.ID, prod.Name))
+				continue
+			}
+
+			// Check if plan already exists by Stripe price ID
+			existingPlan, err := ss.repository.GetSubscriptionPlanByStripePriceID(priceObj.ID)
+			if err == nil && existingPlan != nil {
+				// Plan exists - update it
+				existingPlan.Name = prod.Name
+				existingPlan.Description = prod.Description
+				existingPlan.Currency = string(priceObj.Currency)
+				existingPlan.BillingInterval = string(priceObj.Recurring.Interval)
+				existingPlan.IsActive = prod.Active
+
+				// Handle tiered pricing for updates
+				if priceObj.Tiers != nil && len(priceObj.Tiers) > 0 {
+					existingPlan.UseTieredPricing = true
+					existingPlan.PricingTiers = make([]models.PricingTier, 0, len(priceObj.Tiers))
+
+					previousUpTo := int64(0)
+					for _, tier := range priceObj.Tiers {
+						pricingTier := models.PricingTier{
+							MinQuantity: int(previousUpTo + 1),
+							UnitAmount:  tier.UnitAmount,
+						}
+
+						if tier.UpTo == 0 {
+							pricingTier.MaxQuantity = 0 // unlimited
+						} else {
+							pricingTier.MaxQuantity = int(tier.UpTo)
+							previousUpTo = tier.UpTo
+						}
+
+						existingPlan.PricingTiers = append(existingPlan.PricingTiers, pricingTier)
+					}
+
+					// Use first tier price for display
+					if len(priceObj.Tiers) > 0 {
+						existingPlan.PriceAmount = priceObj.Tiers[0].UnitAmount
+					}
+				} else {
+					existingPlan.UseTieredPricing = false
+					existingPlan.PriceAmount = priceObj.UnitAmount
+					existingPlan.PricingTiers = []models.PricingTier{} // Clear any old tiers
+				}
+
+				// Update in database
+				if err := ss.db.Save(existingPlan).Error; err != nil {
+					result.FailedPlans = append(result.FailedPlans, FailedPlan{
+						StripeProductID: prod.ID,
+						StripePriceID:   priceObj.ID,
+						Error:           fmt.Sprintf("failed to update plan: %v", err),
+					})
+					continue
+				}
+
+				// Debug: verify what was saved
+				utils.Debug("✅ Saved to DB: UseTieredPricing=%v, TierCount=%d",
+					existingPlan.UseTieredPricing, len(existingPlan.PricingTiers))
+
+				result.UpdatedPlans++
+				priceDisplay := fmt.Sprintf("%d %s/%s", existingPlan.PriceAmount, priceObj.Currency, priceObj.Recurring.Interval)
+				if existingPlan.UseTieredPricing {
+					priceDisplay = fmt.Sprintf("tiered (%d tiers)", len(existingPlan.PricingTiers))
+				}
+				result.UpdatedDetails = append(result.UpdatedDetails,
+					fmt.Sprintf("Updated plan: %s (Stripe price: %s, pricing: %s)",
+						prod.Name, priceObj.ID, priceDisplay))
+				utils.Debug("✅ Updated plan %s from Stripe product %s", existingPlan.Name, prod.ID)
+				continue
+			}
+
+			// Plan doesn't exist - create it
+			newPlan := &models.SubscriptionPlan{
+				Name:               prod.Name,
+				Description:        prod.Description,
+				StripeProductID:    &prod.ID,
+				StripePriceID:      &priceObj.ID,
+				Currency:           string(priceObj.Currency),
+				BillingInterval:    string(priceObj.Recurring.Interval),
+				IsActive:           prod.Active,
+				StripeCreated:      true,
+				MaxConcurrentUsers: 1, // Default value
+				MaxCourses:         -1, // Default unlimited
+				MaxLabSessions:     -1, // Default unlimited
+			}
+
+			// Handle tiered pricing (volume/graduated pricing in Stripe)
+			if priceObj.Tiers != nil && len(priceObj.Tiers) > 0 {
+				newPlan.UseTieredPricing = true
+				newPlan.PricingTiers = make([]models.PricingTier, 0, len(priceObj.Tiers))
+
+				previousUpTo := int64(0)
+				for _, tier := range priceObj.Tiers {
+					pricingTier := models.PricingTier{
+						MinQuantity: int(previousUpTo + 1), // Start where previous tier ended
+						UnitAmount:  tier.UnitAmount,        // Price per unit in this tier
+					}
+
+					// Stripe uses 0 (or null) for "unlimited" in the last tier
+					if tier.UpTo == 0 {
+						pricingTier.MaxQuantity = 0 // 0 = unlimited
+					} else {
+						pricingTier.MaxQuantity = int(tier.UpTo)
+						previousUpTo = tier.UpTo
+					}
+
+					newPlan.PricingTiers = append(newPlan.PricingTiers, pricingTier)
+				}
+
+				// For display purposes, use the first tier's unit price
+				if len(priceObj.Tiers) > 0 {
+					newPlan.PriceAmount = priceObj.Tiers[0].UnitAmount
+				}
+
+				utils.Debug("📊 Imported tiered pricing: %d tiers for plan %s", len(priceObj.Tiers), prod.Name)
+			} else {
+				// Simple flat pricing
+				newPlan.UseTieredPricing = false
+				newPlan.PriceAmount = priceObj.UnitAmount
+			}
+
+			// Extract metadata if available
+			if trialDaysStr, ok := prod.Metadata["trial_days"]; ok {
+				var trialDays int
+				if _, err := fmt.Sscanf(trialDaysStr, "%d", &trialDays); err == nil {
+					newPlan.TrialDays = trialDays
+				}
+			}
+
+			// Create in database
+			if err := ss.db.Create(newPlan).Error; err != nil {
+				result.FailedPlans = append(result.FailedPlans, FailedPlan{
+					StripeProductID: prod.ID,
+					StripePriceID:   priceObj.ID,
+					Error:           fmt.Sprintf("failed to create plan: %v", err),
+				})
+				continue
+			}
+
+			result.CreatedPlans++
+			result.CreatedDetails = append(result.CreatedDetails,
+				fmt.Sprintf("Created plan: %s (Stripe price: %s, amount: %d %s/%s)",
+					prod.Name, priceObj.ID, priceObj.UnitAmount, priceObj.Currency, priceObj.Recurring.Interval))
+			utils.Info("✅ Imported new plan %s from Stripe product %s", newPlan.Name, prod.ID)
+		}
+
+		if err := priceIter.Err(); err != nil {
+			result.FailedPlans = append(result.FailedPlans, FailedPlan{
+				StripeProductID: prod.ID,
+				Error:           fmt.Sprintf("failed to iterate prices: %v", err),
+			})
+		}
+	}
+
+	if err := productIter.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate products: %v", err)
+	}
+
+	utils.Info("📥 Import from Stripe complete: %d processed, %d created, %d updated, %d skipped, %d failed",
+		result.ProcessedPlans, result.CreatedPlans, result.UpdatedPlans, result.SkippedPlans, len(result.FailedPlans))
+
+	return result, nil
 }

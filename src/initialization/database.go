@@ -78,6 +78,7 @@ func AutoMigrateAll(db *gorm.DB) {
 
 	// Payment entities
 	db.AutoMigrate(&paymentModels.SubscriptionPlan{})
+	db.AutoMigrate(&paymentModels.SubscriptionBatch{})
 	db.AutoMigrate(&paymentModels.UserSubscription{})
 	db.AutoMigrate(&paymentModels.Invoice{})
 	db.AutoMigrate(&paymentModels.PaymentMethod{})
@@ -124,23 +125,47 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		return // Plans déjà créés
 	}
 
-	// Plan Member Pro
+	// Plan Member Pro (Individual)
 	memberProPlan := &paymentModels.SubscriptionPlan{
 		Name:               "Member Pro",
-		Description:        "Accès à un terminal",
-		PriceAmount:        490, // 4.90€
+		Description:        "Accès à un terminal - Utilisateur individuel",
+		PriceAmount:        1200, // 12€ per license
 		Currency:           "eur",
 		BillingInterval:    "month",
 		TrialDays:          14,
 		Features:           []string{"unlimited_courses", "advanced_labs", "export", "custom_themes"},
 		MaxConcurrentUsers: 1,
-		MaxCourses:         0,
+		MaxCourses:         -1,
 		MaxLabSessions:     1,
 		IsActive:           true,
 		RequiredRole:       "member_pro",
+		UseTieredPricing:   false,
 	}
 
-	plans := []*paymentModels.SubscriptionPlan{memberProPlan}
+	// Plan Trainer (With Bulk Purchase & Tiered Pricing)
+	trainerPlan := &paymentModels.SubscriptionPlan{
+		Name:             "Trainer Plan",
+		Description:      "Pour formateurs - Achat en gros avec tarifs dégressifs",
+		PriceAmount:      1200, // 12€ base price per license
+		Currency:         "eur",
+		BillingInterval:  "month",
+		TrialDays:        0,
+		Features:         []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "bulk_purchase", "group_management"},
+		MaxConcurrentUsers: 1,
+		MaxCourses:       -1,
+		MaxLabSessions:   -1,
+		IsActive:         true,
+		RequiredRole:     "trainer",
+		UseTieredPricing: true,
+		PricingTiers: []paymentModels.PricingTier{
+			{MinQuantity: 1, MaxQuantity: 5, UnitAmount: 1200, Description: "1-5 licences: 12€/licence"},
+			{MinQuantity: 6, MaxQuantity: 15, UnitAmount: 1000, Description: "6-15 licences: 10€/licence"},
+			{MinQuantity: 16, MaxQuantity: 30, UnitAmount: 800, Description: "16-30 licences: 8€/licence"},
+			{MinQuantity: 31, MaxQuantity: 0, UnitAmount: 600, Description: "31+ licences: 6€/licence (illimité)"},
+		},
+	}
+
+	plans := []*paymentModels.SubscriptionPlan{memberProPlan, trainerPlan}
 
 	for _, plan := range plans {
 		if err := db.Create(plan).Error; err != nil {

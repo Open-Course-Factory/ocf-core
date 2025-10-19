@@ -1,10 +1,12 @@
 package paymentController
 
 import (
+	"fmt"
 	"net/http"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
+	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/services"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +22,7 @@ type InvoiceController interface {
 	GetUserInvoices(ctx *gin.Context)
 	DownloadInvoice(ctx *gin.Context)
 	SyncUserInvoices(ctx *gin.Context)
+	CleanupInvoices(ctx *gin.Context)
 }
 
 type invoiceController struct {
@@ -150,6 +153,62 @@ func (ic *invoiceController) SyncUserInvoices(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	result, err := ic.stripeService.SyncUserInvoices(userId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
+}
+
+// Cleanup Invoices godoc
+//
+//	@Summary		Nettoyer les factures incomplètes (Admin uniquement)
+//	@Description	Annule ou marque comme non-recouvrable les factures incomplètes anciennes. Supporte le mode dry-run pour prévisualiser les changements.
+//	@Tags			invoices
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		dto.CleanupInvoicesInput	true	"Cleanup configuration"
+//	@Security		Bearer
+//	@Success		200	{object}	dto.CleanupInvoicesResult	"Cleanup results"
+//	@Failure		400	{object}	errors.APIError				"Invalid request"
+//	@Failure		403	{object}	errors.APIError				"Access denied (admin only)"
+//	@Failure		500	{object}	errors.APIError				"Internal server error"
+//	@Router			/invoices/admin/cleanup [post]
+func (ic *invoiceController) CleanupInvoices(ctx *gin.Context) {
+	// Check if user has administrator role
+	userRoles := ctx.GetStringSlice("userRoles")
+	isAdmin := false
+	for _, role := range userRoles {
+		if role == "administrator" {
+			isAdmin = true
+			break
+		}
+	}
+
+	if !isAdmin {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Administrator role required to cleanup invoices",
+		})
+		return
+	}
+
+	// Parse request body
+	var input dto.CleanupInvoicesInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: fmt.Sprintf("Invalid request: %v", err),
+		})
+		return
+	}
+
+	// Call service to perform cleanup
+	result, err := ic.stripeService.CleanupIncompleteInvoices(input)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,

@@ -2,6 +2,7 @@
 package paymentController
 
 import (
+	"fmt"
 	"net/http"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/utils"
@@ -30,9 +31,13 @@ type SubscriptionController interface {
 	CheckUsageLimit(ctx *gin.Context)
 	GetUserUsage(ctx *gin.Context)
 
+	// Pricing preview
+	GetPricingPreview(ctx *gin.Context)
+
 	// Méthodes pour la synchronisation Stripe des plans d'abonnement
 	SyncSubscriptionPlanWithStripe(ctx *gin.Context)
 	SyncAllSubscriptionPlansWithStripe(ctx *gin.Context)
+	ImportPlansFromStripe(ctx *gin.Context)
 
 	// Méthodes pour la synchronisation des abonnements existants
 	SyncExistingSubscriptions(ctx *gin.Context)
@@ -46,6 +51,7 @@ type SubscriptionController interface {
 
 type userSubscriptionController struct {
 	controller.GenericController
+	db                  *gorm.DB
 	subscriptionService services.UserSubscriptionService
 	conversionService   services.ConversionService
 	stripeService       services.StripeService
@@ -54,6 +60,7 @@ type userSubscriptionController struct {
 func NewSubscriptionController(db *gorm.DB) SubscriptionController {
 	return &userSubscriptionController{
 		GenericController:   controller.NewGenericController(db, casdoor.Enforcer),
+		db:                  db,
 		subscriptionService: services.NewSubscriptionService(db),
 		conversionService:   services.NewConversionService(),
 		stripeService:       services.NewStripeService(db),
@@ -767,7 +774,7 @@ func (sc *userSubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Co
 
 // Sync All Subscription Plans with Stripe godoc
 //
-//	@Summary		Synchroniser tous les plans d'abonnement avec Stripe
+//	@Summary		Synchroniser tous les plans d'abonnement avec Stripe (DB → Stripe)
 //	@Description	Crée les produits et prix Stripe pour tous les plans qui n'ont pas de StripePriceID
 //	@Tags			subscriptions
 //	@Accept			json
@@ -818,6 +825,31 @@ func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gi
 		"failed_plans":  failedPlans,
 		"total_plans":   len(plans),
 	})
+}
+
+// Import Plans From Stripe godoc
+//
+//	@Summary		Import subscription plans from Stripe (Stripe → DB)
+//	@Description	Fetches all active products and prices from Stripe and creates/updates subscription plans in the database
+//	@Tags			subscriptions
+//	@Accept			json
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{object}	services.SyncPlansResult	"Import results"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/subscription-plans/import-stripe [post]
+func (sc *userSubscriptionController) ImportPlansFromStripe(ctx *gin.Context) {
+	// Import plans from Stripe
+	result, err := sc.stripeService.ImportPlansFromStripe()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to import plans from Stripe: " + err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
 }
 
 // Sync Existing Subscriptions godoc
@@ -1025,4 +1057,71 @@ func (sc *userSubscriptionController) SyncUsageLimits(ctx *gin.Context) {
 		"message": "Usage limits synced successfully",
 		"metrics": metricsDTO,
 	})
+}
+
+// GetPricingPreview godoc
+//
+//	@Summary		Get pricing preview for bulk purchase
+//	@Description	Calculate the detailed pricing breakdown for purchasing multiple licenses of a subscription plan, including volume discounts
+//	@Tags			subscription-plans
+//	@Accept			json
+//	@Produce		json
+//	@Param			subscription_plan_id	query		string	true	"Subscription Plan ID"
+//	@Param			quantity				query		int		true	"Number of licenses"	minimum(1)
+//	@Success		200						{object}	dto.PricingBreakdown
+//	@Failure		400						{object}	errors.APIError	"Invalid parameters"
+//	@Failure		404						{object}	errors.APIError	"Plan not found"
+//	@Failure		500						{object}	errors.APIError	"Internal server error"
+//	@Router			/subscription-plans/pricing-preview [get]
+func (sc *userSubscriptionController) GetPricingPreview(ctx *gin.Context) {
+	// Parse query parameters
+	planIDStr := ctx.Query("subscription_plan_id")
+	quantityStr := ctx.Query("quantity")
+
+	if planIDStr == "" || quantityStr == "" {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "subscription_plan_id and quantity are required",
+		})
+		return
+	}
+
+	planID, err := uuid.Parse(planIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid subscription_plan_id format",
+		})
+		return
+	}
+
+	var quantity int
+	if _, err := fmt.Sscanf(quantityStr, "%d", &quantity); err != nil || quantity < 1 {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid quantity (must be >= 1)",
+		})
+		return
+	}
+
+	// Create pricing service and calculate preview
+	pricingService := services.NewPricingService(sc.db)
+	preview, err := pricingService.CalculatePricingPreview(planID, quantity)
+	if err != nil {
+		utils.Error("Failed to calculate pricing preview: %v", err)
+		if strings.Contains(err.Error(), "not found") {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Subscription plan not found",
+			})
+		} else {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to calculate pricing preview",
+			})
+		}
+		return
+	}
+
+	ctx.JSON(http.StatusOK, preview)
 }

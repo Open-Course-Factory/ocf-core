@@ -47,17 +47,48 @@ type SubscriptionPlan struct {
 
 	// Planned features (announced but not yet available)
 	PlannedFeatures []string `gorm:"serializer:json" json:"planned_features"` // Features coming soon
+
+	// Tiered pricing for volume discounts
+	UseTieredPricing bool           `gorm:"default:false" json:"use_tiered_pricing"` // Enable volume pricing
+	PricingTiers     []PricingTier  `gorm:"serializer:json" json:"pricing_tiers"`    // Tier definitions
+}
+
+// PricingTier represents a volume pricing tier
+type PricingTier struct {
+	MinQuantity int    `json:"min_quantity"`           // Start of tier (e.g., 1, 6, 16)
+	MaxQuantity int    `json:"max_quantity"`           // End of tier (0 = unlimited)
+	UnitAmount  int64  `json:"unit_amount"`            // Price per license in cents
+	Description string `json:"description,omitempty"`  // e.g., "Great for small classes"
+}
+
+// SubscriptionBatch tracks bulk license purchases (one Stripe subscription with quantity > 1)
+type SubscriptionBatch struct {
+	entityManagementModels.BaseModel
+	PurchaserUserID          string           `gorm:"type:varchar(100);not null;index" json:"purchaser_user_id"` // Who purchased the batch
+	SubscriptionPlanID       uuid.UUID        `gorm:"type:uuid;not null" json:"subscription_plan_id"`
+	SubscriptionPlan         SubscriptionPlan `gorm:"foreignKey:SubscriptionPlanID" json:"subscription_plan"`
+	GroupID                  *uuid.UUID       `gorm:"type:uuid;index" json:"group_id,omitempty"`                   // Optional: link to a group
+	StripeSubscriptionID     string           `gorm:"type:varchar(100);uniqueIndex" json:"stripe_subscription_id"` // Stripe subscription with quantity
+	StripeSubscriptionItemID string           `gorm:"type:varchar(100)" json:"stripe_subscription_item_id"`        // For updating quantity
+	TotalQuantity            int              `gorm:"not null" json:"total_quantity"`                              // Total licenses purchased
+	AssignedQuantity         int              `gorm:"default:0" json:"assigned_quantity"`                          // How many are assigned
+	Status                   string           `gorm:"type:varchar(50);default:'active'" json:"status"`             // active, cancelled, expired
+	CurrentPeriodStart       time.Time        `json:"current_period_start"`
+	CurrentPeriodEnd         time.Time        `json:"current_period_end"`
+	CancelledAt              *time.Time       `json:"cancelled_at,omitempty"`
 }
 
 // UserSubscription représente l'abonnement d'un utilisateur
 type UserSubscription struct {
 	entityManagementModels.BaseModel
-	UserID                  string           `gorm:"type:varchar(100);not null;index" json:"user_id"`
+	UserID                  string           `gorm:"type:varchar(100);index" json:"user_id"`                               // Who uses it (nullable for unassigned)
+	PurchaserUserID         *string          `gorm:"type:varchar(100);index" json:"purchaser_user_id,omitempty"`           // Who purchased it (null = self-purchase)
+	SubscriptionBatchID     *uuid.UUID       `gorm:"type:uuid;index" json:"subscription_batch_id,omitempty"`               // Link to bulk purchase batch
 	SubscriptionPlanID      uuid.UUID        `json:"subscription_plan_id"`
 	SubscriptionPlan        SubscriptionPlan `gorm:"foreignKey:SubscriptionPlanID" json:"subscription_plan"`
 	StripeSubscriptionID    string           `gorm:"type:varchar(100);" json:"stripe_subscription_id"`
 	StripeCustomerID        string           `gorm:"type:varchar(100);not null;index" json:"stripe_customer_id"`
-	Status                  string           `gorm:"type:varchar(50);default:'active'" json:"status"` // active, cancelled, past_due, unpaid
+	Status                  string           `gorm:"type:varchar(50);default:'active'" json:"status"` // active, cancelled, past_due, unpaid, unassigned, assigned
 	CurrentPeriodStart      time.Time        `json:"current_period_start"`
 	CurrentPeriodEnd        time.Time        `json:"current_period_end"`
 	TrialEnd                *time.Time       `json:"trial_end,omitempty"`
@@ -133,6 +164,14 @@ func (s SubscriptionPlan) GetBaseModel() entityManagementModels.BaseModel {
 
 func (s SubscriptionPlan) GetReferenceObject() string {
 	return "SubscriptionPlan"
+}
+
+func (sb SubscriptionBatch) GetBaseModel() entityManagementModels.BaseModel {
+	return sb.BaseModel
+}
+
+func (sb SubscriptionBatch) GetReferenceObject() string {
+	return "SubscriptionBatch"
 }
 
 func (u UserSubscription) GetBaseModel() entityManagementModels.BaseModel {

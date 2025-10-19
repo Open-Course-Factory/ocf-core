@@ -61,6 +61,17 @@ func (s SubscriptionPlanRegistration) EntityModelToEntityOutput(input any) (any,
 }
 
 func subscriptionPlanPtrModelToOutput(plan *models.SubscriptionPlan) (*dto.SubscriptionPlanOutput, error) {
+	// Convert model PricingTiers to DTO PricingTiers
+	pricingTiers := make([]dto.PricingTier, len(plan.PricingTiers))
+	for i, tier := range plan.PricingTiers {
+		pricingTiers[i] = dto.PricingTier{
+			MinQuantity: tier.MinQuantity,
+			MaxQuantity: tier.MaxQuantity,
+			UnitAmount:  tier.UnitAmount,
+			Description: tier.Description,
+		}
+	}
+
 	return &dto.SubscriptionPlanOutput{
 		ID:                 plan.ID,
 		Name:               plan.Name,
@@ -91,6 +102,10 @@ func subscriptionPlanPtrModelToOutput(plan *models.SubscriptionPlan) (*dto.Subsc
 
 		// Planned features
 		PlannedFeatures: plan.PlannedFeatures,
+
+		// Tiered pricing
+		UseTieredPricing: plan.UseTieredPricing,
+		PricingTiers:     pricingTiers,
 	}, nil
 }
 
