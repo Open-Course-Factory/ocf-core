@@ -35,6 +35,7 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	const SLIDE_ENGINE_FLAG = "slide-engine"
 	const USER_ID_FLAG = "user-id"
 	const AUTHOR_FLAG = "author"
+	const COURSE_JSON_FILENAME_FLAG = "course-json"
 
 	courseName := flag.String(COURSE_FLAG, "git", "name of the course you need to generate")
 	courseGitRepository := flag.String(GIT_COURSE_REPO_FLAG, "", "git repository")
@@ -47,6 +48,7 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	slideEngine := flag.String(SLIDE_ENGINE_FLAG, "slidev", "slide generator used, marp or slidev (default)")
 	userID := flag.String(USER_ID_FLAG, "00000000-0000-0000-0000-000000000000", "user ID (UUID) for authentication and git operations")
 	author := flag.String(AUTHOR_FLAG, "cli", "author trigramme for loading author_XXX.md file")
+	courseJsonFilename := flag.String(COURSE_JSON_FILENAME_FLAG, "course.json", "filename of the course JSON file in the repository")
 	flag.Parse()
 
 	fmt.Println(courseType)
@@ -72,7 +74,7 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	// If we have a git repository, load the course from it
 	if *courseGitRepository != "" {
 		fmt.Printf("Loading course from git repository: %s\n", *courseGitRepository)
-		coursePtr, err := courseService.GetGitCourse(*userID, *courseName, *courseGitRepository, *courseBranchGitRepository)
+		coursePtr, err := courseService.GetGitCourse(*userID, *courseName, *courseGitRepository, *courseBranchGitRepository, *courseJsonFilename)
 		if err != nil {
 			fmt.Printf("Error loading course from git: %v\n", err)
 			return true

@@ -17,6 +17,10 @@ type CourseController interface {
 	GenerateCourse(ctx *gin.Context)
 	CreateCourseFromGit(ctx *gin.Context)
 
+	// Version management
+	GetCourseVersions(ctx *gin.Context)
+	GetCourseByVersion(ctx *gin.Context)
+
 	GetGenerationStatus(ctx *gin.Context)
 	DownloadGenerationResults(ctx *gin.Context)
 	RetryGeneration(ctx *gin.Context)

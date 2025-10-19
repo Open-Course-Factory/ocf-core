@@ -15,6 +15,9 @@ import (
 type CourseRepository interface {
 	CreateCourse(coursedto dto.CourseInput) (*models.Course, error)
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
+	FindCourseByOwnerNameVersion(ownerId string, name string, version string) (*models.Course, error)
+	GetAllVersionsOfCourse(ownerId string, name string) ([]*models.Course, error)
+	GetCourseByNameAndVersion(ownerId string, name string, version string) (*models.Course, error)
 }
 
 type courseRepository struct {
@@ -86,4 +89,41 @@ func (c courseRepository) GetCoursesOwnedByUser(owner casdoorsdk.User) ([]*model
 		return nil, err
 	}
 	return course, nil
+}
+
+// FindCourseByOwnerNameVersion finds a course by owner ID, name, and version
+// Returns nil if not found, error if database error
+func (c courseRepository) FindCourseByOwnerNameVersion(ownerId string, name string, version string) (*models.Course, error) {
+	var course models.Course
+	err := c.db.First(&course, "owner_ids && ? AND name = ? AND version = ?", pq.StringArray{ownerId}, name, version).Error
+
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil // Not an error, just not found
+		}
+		return nil, err
+	}
+
+	return &course, nil
+}
+
+// GetAllVersionsOfCourse retrieves all versions of a course by name for a specific owner
+// Returns courses ordered by version descending (newest first)
+func (c courseRepository) GetAllVersionsOfCourse(ownerId string, name string) ([]*models.Course, error) {
+	var courses []*models.Course
+	err := c.db.Where("owner_ids && ? AND name = ?", pq.StringArray{ownerId}, name).
+		Order("version DESC").
+		Find(&courses).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return courses, nil
+}
+
+// GetCourseByNameAndVersion retrieves a specific course version
+// This is an alias for FindCourseByOwnerNameVersion for consistency with service layer
+func (c courseRepository) GetCourseByNameAndVersion(ownerId string, name string, version string) (*models.Course, error) {
+	return c.FindCourseByOwnerNameVersion(ownerId, name, version)
 }

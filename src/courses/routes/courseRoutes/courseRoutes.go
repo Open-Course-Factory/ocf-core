@@ -23,6 +23,10 @@ func CoursesRoutes(router *gin.RouterGroup, config *config.Configuration, db *go
 	// Route de génération modifiée (maintenant asynchrone)
 	routes.POST("/generate", middleware.AuthManagement(), courseController.GenerateCourse)
 
+	// Version management routes
+	routes.GET("/versions", middleware.AuthManagement(), courseController.GetCourseVersions)
+	routes.GET("/by-version", middleware.AuthManagement(), courseController.GetCourseByVersion)
+
 	// Nouvelles routes pour la gestion des générations
 	generationRoutes.GET("/:id/status", middleware.AuthManagement(), courseController.GetGenerationStatus)
 	generationRoutes.GET("/:id/download", middleware.AuthManagement(), courseController.DownloadGenerationResults)

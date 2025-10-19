@@ -29,9 +29,13 @@ import (
 
 type CourseService interface {
 	// Méthodes existantes
-	GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) (*models.Course, error)
+	GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string, courseJsonFilename string) (*models.Course, error)
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
 	GetCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) models.Course
+
+	// Méthodes de gestion des versions
+	GetAllVersionsOfCourse(ownerId string, courseName string) ([]*models.Course, error)
+	GetCourseByVersion(ownerId string, courseName string, version string) (*models.Course, error)
 
 	// Nouvelles méthodes pour le worker
 	GenerateCourseAsync(generateCourseInputDto dto.GenerateCourseInput) (*dto.AsyncGenerationOutput, error)
@@ -311,7 +315,7 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 
 // Méthodes existantes conservées pour compatibilité...
 
-func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string) (*models.Course, error) {
+func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string, courseJsonFilename string) (*models.Course, error) {
 	// Use cached clone for better performance
 	log.Printf("Loading course from repository: %s (branch: %s)", courseURL, courseBranch)
 
@@ -320,7 +324,7 @@ func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL
 		return nil, cloneErr
 	}
 
-	jsonFile, err := fs.Open("course.json")
+	jsonFile, err := fs.Open(courseJsonFilename)
 	if err != nil {
 		log.Fatal("Error during ReadFile(): ", err)
 	}
@@ -344,15 +348,127 @@ func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL
 	models.FillCourseModelFromFiles(&fs, &course)
 
 	genericService := genericService.NewGenericService(sqldb.DB, casdoor.Enforcer)
-	courseInputDto := dto.CourseModelToCourseInputDto(course)
-	_, errorSaving := genericService.CreateEntity(courseInputDto, reflect.TypeOf(models.Course{}).Name())
 
-	if errorSaving != nil {
-		fmt.Println(errorSaving.Error())
-		return nil, err
+	// Check if course already exists by owner + name + version
+	existingCourse, errFinding := c.repository.FindCourseByOwnerNameVersion(ownerId, course.Name, course.Version)
+
+	var errorSaving error
+
+	if errFinding != nil {
+		return nil, fmt.Errorf("error checking for existing course: %w", errFinding)
+	}
+
+	if existingCourse != nil {
+		// Course exists - UPDATE it
+		log.Printf("Found existing course '%s' v%s (ID: %s) - updating...", course.Name, course.Version, existingCourse.ID.String())
+
+		// Preserve the existing ID
+		course.ID = existingCourse.ID
+
+		// Update the course using our helper method
+		errorSaving = c.updateCourseWithChapters(&course)
+
+		if errorSaving != nil {
+			fmt.Println(errorSaving.Error())
+			return nil, errorSaving
+		}
+
+		log.Printf("Successfully updated course '%s' v%s", course.Name, course.Version)
+	} else {
+		// Course doesn't exist - CREATE it
+		log.Printf("Creating new course '%s' v%s...", course.Name, course.Version)
+
+		courseInputDto := dto.CourseModelToCourseInputDto(course)
+		savedEntity, errorSaving := genericService.CreateEntity(courseInputDto, reflect.TypeOf(models.Course{}).Name())
+
+		if errorSaving != nil {
+			fmt.Println(errorSaving.Error())
+			return nil, errorSaving
+		}
+
+		savedCourse := savedEntity.(*models.Course)
+		course.ID = savedCourse.ID
+		log.Printf("Successfully created course '%s' v%s (ID: %s)", course.Name, course.Version, course.ID.String())
 	}
 
 	return &course, nil
+}
+
+// updateCourseWithChapters updates a course and all its chapters, sections, and associations
+func (c courseService) updateCourseWithChapters(course *models.Course) error {
+	// We need to use a transaction to ensure all updates succeed or fail together
+	return sqldb.DB.Transaction(func(tx *gorm.DB) error {
+		// Step 1: Save/update all chapters and their nested sections
+		// This ensures all chapter entities exist in the database before we create associations
+		for _, chapter := range course.Chapters {
+			// Set owner IDs for the chapter
+			if len(chapter.OwnerIDs) == 0 && len(course.OwnerIDs) > 0 {
+				chapter.OwnerIDs = course.OwnerIDs
+			}
+
+			// Save the chapter (creates if new, updates if ID exists)
+			if err := tx.Save(chapter).Error; err != nil {
+				return fmt.Errorf("failed to save chapter %s: %w", chapter.Title, err)
+			}
+
+			// Save all sections for this chapter
+			for _, section := range chapter.Sections {
+				// Set owner IDs for the section
+				if len(section.OwnerIDs) == 0 && len(chapter.OwnerIDs) > 0 {
+					section.OwnerIDs = chapter.OwnerIDs
+				}
+
+				if err := tx.Save(section).Error; err != nil {
+					return fmt.Errorf("failed to save section %s: %w", section.Title, err)
+				}
+			}
+		}
+
+		// Step 2: Update the course entity itself (excluding associations)
+		// We use Select to explicitly choose which fields to update
+		updateFields := map[string]interface{}{
+			"name":                   course.Name,
+			"category":               course.Category,
+			"version":                course.Version,
+			"title":                  course.Title,
+			"subtitle":               course.Subtitle,
+			"header":                 course.Header,
+			"footer":                 course.Footer,
+			"logo":                   course.Logo,
+			"description":            course.Description,
+			"prelude":                course.Prelude,
+			"learning_objectives":    course.LearningObjectives,
+			"git_repository":         course.GitRepository,
+			"git_repository_branch":  course.GitRepositoryBranch,
+			"folder_name":            course.FolderName,
+		}
+
+		if err := tx.Model(&models.Course{}).Where("id = ?", course.ID).Updates(updateFields).Error; err != nil {
+			return fmt.Errorf("failed to update course: %w", err)
+		}
+
+		// Step 3: Clear existing chapter associations and create new ones
+		// First, delete all existing associations in the course_chapters join table
+		if err := tx.Exec("DELETE FROM course_chapters WHERE course_id = ?", course.ID).Error; err != nil {
+			return fmt.Errorf("failed to clear old chapter associations: %w", err)
+		}
+
+		// Now create new associations with the correct order
+		for _, chapter := range course.Chapters {
+			courseChapter := &models.CourseChapters{
+				CourseID:  course.ID,
+				ChapterID: chapter.ID,
+				Order:     chapter.Order,
+			}
+
+			if err := tx.Create(courseChapter).Error; err != nil {
+				return fmt.Errorf("failed to create chapter association: %w", err)
+			}
+		}
+
+		log.Printf("Successfully updated course with %d chapters", len(course.Chapters))
+		return nil
+	})
 }
 
 func (c courseService) GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error) {
@@ -365,6 +481,27 @@ func (c courseService) GetSpecificCourseByUser(owner casdoorsdk.User, courseName
 
 func (c courseService) GetCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) models.Course {
 	return models.Course{}
+}
+
+// GetAllVersionsOfCourse retrieves all versions of a course by name for a specific owner
+func (c courseService) GetAllVersionsOfCourse(ownerId string, courseName string) ([]*models.Course, error) {
+	courses, err := c.repository.GetAllVersionsOfCourse(ownerId, courseName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get course versions: %w", err)
+	}
+	return courses, nil
+}
+
+// GetCourseByVersion retrieves a specific version of a course
+func (c courseService) GetCourseByVersion(ownerId string, courseName string, version string) (*models.Course, error) {
+	course, err := c.repository.GetCourseByNameAndVersion(ownerId, courseName, version)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get course version: %w", err)
+	}
+	if course == nil {
+		return nil, fmt.Errorf("course '%s' version '%s' not found", courseName, version)
+	}
+	return course, nil
 }
 
 // Fonctions utilitaires
