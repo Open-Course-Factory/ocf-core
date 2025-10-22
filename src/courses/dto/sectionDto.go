@@ -17,18 +17,27 @@ type SectionInput struct {
 	HiddenPages []int        `json:"hiddenPages"`
 }
 
+// ParentChapterOutput contains minimal chapter information for section's parent chapter
+type ParentChapterOutput struct {
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Number       int    `json:"number"`
+	Introduction string `json:"introduction"`
+}
+
 type SectionOutput struct {
-	ID          string         `json:"id"`
-	FileName    string         `json:"fileName"`
-	OwnerIDs    pq.StringArray `gorm:"type:text[]"`
-	Title       string         `json:"title"`
-	Intro       string         `json:"intro"`
-	Conclusion  string         `json:"conclusion"`
-	Number      int            `json:"number"`
-	Pages       []*PageInput   `json:"pages"`
-	HiddenPages []int          `json:"hiddenPages"`
-	CreatedAt   string         `json:"createdAt"`
-	UpdatedAt   string         `json:"updatedAt"`
+	ID          string                 `json:"id"`
+	FileName    string                 `json:"fileName"`
+	OwnerIDs    pq.StringArray         `gorm:"type:text[]"`
+	Chapters    []ParentChapterOutput  `json:"chapters,omitempty"` // Parent chapter information
+	Title       string                 `json:"title"`
+	Intro       string                 `json:"intro"`
+	Conclusion  string                 `json:"conclusion"`
+	Number      int                    `json:"number"`
+	Pages       []*PageInput           `json:"pages"`
+	HiddenPages []int                  `json:"hiddenPages"`
+	CreatedAt   string                 `json:"createdAt"`
+	UpdatedAt   string                 `json:"updatedAt"`
 }
 
 type EditSectionInput struct {
@@ -49,10 +58,22 @@ func SectionModelToSectionOutput(sectionModel models.Section) *SectionOutput {
 		pages = append(pages, pageInput)
 	}
 
+	var parentChapters []ParentChapterOutput
+	for _, chapter := range sectionModel.Chapters {
+		// Include parent chapter information
+		parentChapters = append(parentChapters, ParentChapterOutput{
+			ID:           chapter.ID.String(),
+			Title:        chapter.Title,
+			Number:       chapter.Number,
+			Introduction: chapter.Introduction,
+		})
+	}
+
 	return &SectionOutput{
 		ID:          sectionModel.ID.String(),
 		FileName:    sectionModel.FileName,
 		OwnerIDs:    sectionModel.OwnerIDs,
+		Chapters:    parentChapters,
 		Title:       sectionModel.Title,
 		Intro:       sectionModel.Intro,
 		Conclusion:  sectionModel.Conclusion,

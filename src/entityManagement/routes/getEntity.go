@@ -24,6 +24,7 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 
 	// Parse include parameter for selective preloading
 	// Format: ?include=Chapters,Authors or ?include=Chapters.Sections
+	// Also supports case-insensitive: ?include=chapters,authors or ?include=chapters.sections
 	var includes []string
 	includeParam := ctx.Query("include")
 	if includeParam != "" {
@@ -31,7 +32,10 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 		for _, rel := range strings.Split(includeParam, ",") {
 			trimmed := strings.TrimSpace(rel)
 			if trimmed != "" {
-				includes = append(includes, trimmed)
+				// Normalize to title case for case-insensitive support
+				// "chapters" -> "Chapters", "chapters.sections" -> "Chapters.Sections"
+				normalized := normalizeIncludePath(trimmed)
+				includes = append(includes, normalized)
 			}
 		}
 	}

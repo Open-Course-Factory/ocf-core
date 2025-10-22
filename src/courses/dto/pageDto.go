@@ -8,15 +8,24 @@ type PageInput struct {
 	Content []string `json:"content" gorm:"serializer:json"`
 }
 
+// ParentSectionOutput contains minimal section information for page's parent section
+type ParentSectionOutput struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Number int    `json:"number"`
+	Intro  string `json:"intro"`
+}
+
 type PageOutput struct {
-	ID                 string   `json:"id"`
-	Order              int      `json:"order"`
-	ParentSectionTitle string   `json:"parentSectionTitle"`
-	Toc                []string `json:"toc"`
-	Content            []string `json:"content"`
-	Hide               bool     `json:"hide"`
-	CreatedAt          string   `json:"createdAt"`
-	UpdatedAt          string   `json:"updatedAt"`
+	ID                 string                 `json:"id"`
+	Order              int                    `json:"order"`
+	ParentSectionTitle string                 `json:"parentSectionTitle"`
+	Sections           []ParentSectionOutput  `json:"sections,omitempty"` // Parent section information
+	Toc                []string               `json:"toc"`
+	Content            []string               `json:"content"`
+	Hide               bool                   `json:"hide"`
+	CreatedAt          string                 `json:"createdAt"`
+	UpdatedAt          string                 `json:"updatedAt"`
 }
 
 type EditPageInput struct {

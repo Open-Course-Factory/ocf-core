@@ -36,13 +36,14 @@ type CursorPaginationResponse struct {
 //	@Param	size	query	int		false	"Page size (offset pagination, default: 20, max: 100)"
 //	@Param	cursor	query	string	false	"Cursor for cursor-based pagination (use empty string for first page)"
 //	@Param	limit	query	int		false	"Limit for cursor pagination (default: 20, max: 100)"
-//	@Param	include	query	string	false	"Comma-separated list of relations to preload (e.g., 'Chapters,Authors' or 'Chapters.Sections' for nested)"
+//	@Param	include	query	string	false	"Comma-separated list of relations to preload (case-insensitive, e.g., 'chapters' or 'Chapters', nested: 'chapters.sections')"
 func (genericController genericController) GetEntities(ctx *gin.Context) {
 	// Check if cursor-based pagination is requested
 	cursor := ctx.Query("cursor")
 
 	// Parse include parameter for selective preloading
 	// Format: ?include=Chapters,Authors or ?include=Chapters.Sections
+	// Also supports case-insensitive: ?include=chapters,authors or ?include=chapters.sections
 	var includes []string
 	includeParam := ctx.Query("include")
 	if includeParam != "" {
@@ -50,7 +51,10 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 		for _, rel := range strings.Split(includeParam, ",") {
 			trimmed := strings.TrimSpace(rel)
 			if trimmed != "" {
-				includes = append(includes, trimmed)
+				// Normalize to title case for case-insensitive support
+				// "chapters" -> "Chapters", "chapters.sections" -> "Chapters.Sections"
+				normalized := normalizeIncludePath(trimmed)
+				includes = append(includes, normalized)
 			}
 		}
 	}
@@ -195,4 +199,30 @@ func (genericController genericController) getEntitiesCursorFromName(entityName 
 		return nil, "", false, 0, true
 	}
 	return entitiesDto, nextCursor, hasMore, total, false
+}
+
+// normalizeIncludePath normalizes an include path to proper case for GORM preloading.
+// It converts each segment to title case (first letter capitalized) to support case-insensitive includes.
+// Examples:
+//   - "chapters" -> "Chapters"
+//   - "chapters.sections" -> "Chapters.Sections"
+//   - "Chapters.Sections.Pages" -> "Chapters.Sections.Pages" (already correct, unchanged)
+func normalizeIncludePath(path string) string {
+	// Split by dot for nested relations (e.g., "chapters.sections.pages")
+	segments := strings.Split(path, ".")
+	normalized := make([]string, len(segments))
+
+	for i, segment := range segments {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			normalized[i] = segment
+			continue
+		}
+
+		// Convert to title case: first letter uppercase, rest lowercase
+		// This handles: "chapters" -> "Chapters", "CHAPTERS" -> "Chapters", "ChApTeRs" -> "Chapters"
+		normalized[i] = strings.ToUpper(segment[:1]) + strings.ToLower(segment[1:])
+	}
+
+	return strings.Join(normalized, ".")
 }

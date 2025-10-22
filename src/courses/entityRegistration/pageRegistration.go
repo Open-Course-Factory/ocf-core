@@ -58,10 +58,22 @@ func (s PageRegistration) EntityModelToEntityOutput(input any) (any, error) {
 
 func pagePtrModelToPageOutputDto(pageModel *models.Page) (*dto.PageOutput, error) {
 
+	var parentSections []dto.ParentSectionOutput
+	for _, section := range pageModel.Sections {
+		// Include parent section information
+		parentSections = append(parentSections, dto.ParentSectionOutput{
+			ID:     section.ID.String(),
+			Title:  section.Title,
+			Number: section.Number,
+			Intro:  section.Intro,
+		})
+	}
+
 	return &dto.PageOutput{
 		ID:                 pageModel.ID.String(),
 		Order:              pageModel.Order,
 		ParentSectionTitle: "",
+		Sections:           parentSections,
 		Toc:                pageModel.Toc,
 		Content:            pageModel.Content,
 		Hide:               pageModel.Hide,
@@ -72,10 +84,22 @@ func pagePtrModelToPageOutputDto(pageModel *models.Page) (*dto.PageOutput, error
 
 func pageValueModelToPageOutputDto(pageModel models.Page) (*dto.PageOutput, error) {
 
+	var parentSections []dto.ParentSectionOutput
+	for _, section := range pageModel.Sections {
+		// Include parent section information
+		parentSections = append(parentSections, dto.ParentSectionOutput{
+			ID:     section.ID.String(),
+			Title:  section.Title,
+			Number: section.Number,
+			Intro:  section.Intro,
+		})
+	}
+
 	return &dto.PageOutput{
 		ID:                 pageModel.ID.String(),
 		Order:              pageModel.Order,
 		ParentSectionTitle: "",
+		Sections:           parentSections,
 		Toc:                pageModel.Toc,
 		Content:            pageModel.Content,
 		Hide:               pageModel.Hide,
