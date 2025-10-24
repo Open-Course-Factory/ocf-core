@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/auth/models"
+	sqldb "soli/formations/src/db"
 	"strings"
+	"time"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
@@ -27,10 +30,16 @@ func NewAuthMiddleware(db *gorm.DB) AuthMiddleware {
 
 func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		userId, err := getUserIdFromToken(ctx)
+		userId, tokenJTI, err := getUserIdFromToken(ctx)
 
 		if err != nil {
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"msg": err.Error()})
+			return
+		}
+
+		// Check if token is blacklisted
+		if isTokenBlacklisted(tokenJTI) {
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"msg": "token has been invalidated"})
 			return
 		}
 
@@ -97,7 +106,7 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 	}
 }
 
-func getUserIdFromToken(ctx *gin.Context) (string, error) {
+func getUserIdFromToken(ctx *gin.Context) (string, string, error) {
 	token := ctx.Request.Header.Get("Authorization")
 
 	// WebSocket Hack
@@ -114,16 +123,31 @@ func getUserIdFromToken(ctx *gin.Context) (string, error) {
 
 	// Vérifier que le token n'est pas vide après nettoyage
 	if token == "" {
-		return "", fmt.Errorf("missing or invalid authorization token")
+		return "", "", fmt.Errorf("missing or invalid authorization token")
 	}
 
 	claims, err := casdoorsdk.ParseJwtToken(token)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	userId := claims.Id
-	return userId, nil
+	tokenJTI := claims.ID // JWT ID claim
+	return userId, tokenJTI, nil
+}
+
+// isTokenBlacklisted checks if a token JTI is in the blacklist
+func isTokenBlacklisted(tokenJTI string) bool {
+	if tokenJTI == "" {
+		return false
+	}
+
+	var count int64
+	sqldb.DB.Model(&models.TokenBlacklist{}).
+		Where("token_jti = ? AND expires_at > ?", tokenJTI, time.Now()).
+		Count(&count)
+
+	return count > 0
 }
 
 func GetEntityIdFromContext(ctx *gin.Context) (uuid.UUID, bool) {

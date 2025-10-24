@@ -178,7 +178,18 @@ func (uc *userController) ChangePassword(ctx *gin.Context) {
 		return
 	}
 
-	err := uc.settingsService.ChangePassword(userID, input)
+	// Extract the raw token from Authorization header
+	token := ctx.Request.Header.Get("Authorization")
+	if token != "" {
+		// Remove "Bearer " prefix if present
+		if len(token) > 7 && token[:7] == "Bearer " {
+			token = token[7:]
+		} else if len(token) > 7 && token[:7] == "bearer " {
+			token = token[7:]
+		}
+	}
+
+	err := uc.settingsService.ChangePassword(userID, input, token)
 	if err != nil {
 		// Determine the appropriate status code based on the error
 		if err.Error() == "current password is incorrect" {
