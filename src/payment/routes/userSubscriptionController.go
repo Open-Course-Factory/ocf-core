@@ -24,6 +24,7 @@ type SubscriptionController interface {
 	CreateCheckoutSession(ctx *gin.Context)
 	CreatePortalSession(ctx *gin.Context)
 	GetUserSubscription(ctx *gin.Context)
+	GetAllUserSubscriptions(ctx *gin.Context)
 	CancelSubscription(ctx *gin.Context)
 	ReactivateSubscription(ctx *gin.Context)
 	UpgradeUserPlan(ctx *gin.Context)
@@ -95,43 +96,54 @@ func (sc *userSubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 		return
 	}
 
-	// Check if user already has an active subscription
+	// Check if user already has an active personal (non-assigned) subscription
+	// For stacked subscriptions: assigned licenses don't block purchasing personal licenses
 	existingSubscription, err := sc.subscriptionService.GetActiveUserSubscription(userId)
 	var replaceSubscriptionID *uuid.UUID = nil
 
 	if err == nil {
-		// User has an active subscription
-		if !input.AllowReplace {
-			// No allow_replace flag - reject as before
-			ctx.JSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: "User already has an active subscription",
-			})
-			return
-		}
+		// User has an active subscription - check if it's assigned or personal
+		isAssigned := existingSubscription.SubscriptionBatchID != nil
 
-		// allow_replace is true - check if current subscription is free
-		currentPlan, err := sc.subscriptionService.GetSubscriptionPlan(existingSubscription.SubscriptionPlanID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to get current subscription plan: " + err.Error(),
-			})
-			return
-		}
+		if isAssigned {
+			// User has assigned license - allow purchasing personal license on top
+			// The personal license will become primary, assigned stays as fallback
+			utils.Info("User %s purchasing personal license while having assigned license", userId)
+			// Don't set replaceSubscriptionID - we're stacking, not replacing
+		} else {
+			// User has personal subscription already
+			if !input.AllowReplace {
+				// No allow_replace flag - reject
+				ctx.JSON(http.StatusBadRequest, &errors.APIError{
+					ErrorCode:    http.StatusBadRequest,
+					ErrorMessage: "User already has an active personal subscription",
+				})
+				return
+			}
 
-		if currentPlan.PriceAmount > 0 {
-			// Current plan is paid - don't allow replacement, require upgrade endpoint
-			ctx.JSON(http.StatusBadRequest, &errors.APIError{
-				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: "Cannot replace paid subscription. Please use the upgrade endpoint instead.",
-			})
-			return
-		}
+			// allow_replace is true - check if current subscription is free
+			currentPlan, err := sc.subscriptionService.GetSubscriptionPlan(existingSubscription.SubscriptionPlanID)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+					ErrorCode:    http.StatusInternalServerError,
+					ErrorMessage: "Failed to get current subscription plan: " + err.Error(),
+				})
+				return
+			}
 
-		// Current plan is free - allow replacement
-		utils.Info("User %s is upgrading from free plan (%s) to paid plan", userId, currentPlan.Name)
-		replaceSubscriptionID = &existingSubscription.ID
+			if currentPlan.PriceAmount > 0 {
+				// Current plan is paid - don't allow replacement, require upgrade endpoint
+				ctx.JSON(http.StatusBadRequest, &errors.APIError{
+					ErrorCode:    http.StatusBadRequest,
+					ErrorMessage: "Cannot replace paid personal subscription. Please use the upgrade endpoint instead.",
+				})
+				return
+			}
+
+			// Current plan is free - allow replacement
+			utils.Info("User %s is upgrading from free plan (%s) to paid plan", userId, currentPlan.Name)
+			replaceSubscriptionID = &existingSubscription.ID
+		}
 	}
 
 	// Get the plan to check if it's free
@@ -248,7 +260,7 @@ func (sc *userSubscriptionController) CreatePortalSession(ctx *gin.Context) {
 // Get User Subscription godoc
 //
 //	@Summary		Récupérer l'abonnement actif de l'utilisateur
-//	@Description	Retourne les détails de l'abonnement actif de l'utilisateur connecté
+//	@Description	Retourne les détails de l'abonnement actif (prioritaire) de l'utilisateur connecté
 //	@Tags			subscriptions
 //	@Accept			json
 //	@Produce		json
@@ -299,7 +311,64 @@ returnSubscription:
 		return
 	}
 
+	// Mark as primary (since this is the current/active endpoint)
+	subscriptionDTO.IsPrimary = true
+
 	ctx.JSON(http.StatusOK, subscriptionDTO)
+}
+
+// Get All User Subscriptions godoc
+//
+//	@Summary		Récupérer tous les abonnements actifs de l'utilisateur
+//	@Description	Retourne tous les abonnements actifs (personnel + assigné) avec indication de celui qui est actif
+//	@Tags			subscriptions
+//	@Accept			json
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{array}		dto.UserSubscriptionOutput
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/user-subscriptions/all [get]
+func (sc *userSubscriptionController) GetAllUserSubscriptions(ctx *gin.Context) {
+	userId := ctx.GetString("userId")
+
+	// Get ALL active subscriptions
+	subscriptions, err := sc.subscriptionService.GetAllActiveUserSubscriptions(userId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to retrieve subscriptions: " + err.Error(),
+		})
+		return
+	}
+
+	// If no subscriptions, return empty array
+	if len(subscriptions) == 0 {
+		ctx.JSON(http.StatusOK, []dto.UserSubscriptionOutput{})
+		return
+	}
+
+	// Get the primary subscription to mark it
+	primarySub, err := sc.subscriptionService.GetPrimaryUserSubscription(userId)
+	var primaryID uuid.UUID
+	if err == nil && primarySub != nil {
+		primaryID = primarySub.ID
+	}
+
+	// Convert to DTOs and mark the primary one
+	var subscriptionDTOs []dto.UserSubscriptionOutput
+	for _, sub := range subscriptions {
+		subDTO, err := sc.conversionService.UserSubscriptionToDTO(&sub)
+		if err != nil {
+			utils.Warn("Failed to convert subscription %s: %v", sub.ID, err)
+			continue
+		}
+
+		// Mark as primary if it's the highest priority subscription
+		subDTO.IsPrimary = (sub.ID == primaryID)
+		subscriptionDTOs = append(subscriptionDTOs, *subDTO)
+	}
+
+	ctx.JSON(http.StatusOK, subscriptionDTOs)
 }
 
 // Cancel Subscription godoc

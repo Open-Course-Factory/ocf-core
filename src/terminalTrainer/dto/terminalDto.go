@@ -138,7 +138,7 @@ type TerminalTrainerAPIKeyResponse struct {
 
 type TerminalTrainerSessionResponse struct {
 	SessionID   string `json:"id,omitempty"`
-	Status      string `json:"status"`
+	Status      int    `json:"status"` // 0 = success, non-zero = error
 	ExpiresAt   int64  `json:"expires_at,omitempty"` // timestamp Unix
 	CreatedAt   int64  `json:"created_at,omitempty"`
 	MachineSize string `json:"machine_size,omitempty"` // XS, S, M, L, XL

@@ -127,6 +127,35 @@ func (s PageRegistration) EntityInputDtoToEntityModel(input any) any {
 	return pageToReturn
 }
 
+func (s PageRegistration) EntityDtoToMap(input any) map[string]any {
+	editDto, ok := input.(dto.EditPageInput)
+	if !ok {
+		// Fallback to default behavior if not EditPageInput
+		return s.AbstractRegistrableInterface.EntityDtoToMap(input)
+	}
+
+	updates := make(map[string]any)
+
+	// Only include non-nil pointer fields in the update map
+	if editDto.Order != nil {
+		updates["order"] = *editDto.Order
+	}
+	if editDto.ParentSectionTitle != nil {
+		updates["parent_section_title"] = *editDto.ParentSectionTitle
+	}
+	if editDto.Toc != nil && len(editDto.Toc) > 0 {
+		updates["toc"] = editDto.Toc
+	}
+	if editDto.Content != nil && len(editDto.Content) > 0 {
+		updates["content"] = editDto.Content
+	}
+	if editDto.Hide != nil {
+		updates["hide"] = *editDto.Hide
+	}
+
+	return updates
+}
+
 func (s PageRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
 	return entityManagementInterfaces.EntityRegistrationInput{
 		EntityInterface: models.Page{},

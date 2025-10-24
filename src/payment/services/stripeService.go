@@ -12,6 +12,7 @@ import (
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
+	terminalRepo "soli/formations/src/terminalTrainer/repositories"
 
 	genericService "soli/formations/src/entityManagement/services"
 
@@ -90,6 +91,7 @@ type StripeService interface {
 
 	// Subscription management
 	CreateCheckoutSession(userID string, input dto.CreateCheckoutSessionInput, replaceSubscriptionID *uuid.UUID) (*dto.CheckoutSessionOutput, error)
+	CreateBulkCheckoutSession(userID string, input dto.CreateBulkCheckoutSessionInput) (*dto.CheckoutSessionOutput, error)
 	CreatePortalSession(userID string, input dto.CreatePortalSessionInput) (*dto.PortalSessionOutput, error)
 
 	// Product & Price management
@@ -337,6 +339,125 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 	}, nil
 }
 
+// CreateBulkCheckoutSession creates a Stripe checkout session for bulk license purchase
+func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.CreateBulkCheckoutSessionInput) (*dto.CheckoutSessionOutput, error) {
+	// Get subscription plan
+	plan, err := ss.subscriptionService.GetSubscriptionPlan(input.SubscriptionPlanID)
+	if err != nil {
+		return nil, fmt.Errorf("subscription plan not found: %v", err)
+	}
+
+	if !plan.IsActive {
+		return nil, fmt.Errorf("subscription plan is not active")
+	}
+
+	// Verify plan has Stripe price configured
+	if plan.StripePriceID == nil {
+		return nil, fmt.Errorf("subscription plan does not have a Stripe price configured")
+	}
+
+	// Get user from Casdoor
+	user, err := casdoorsdk.GetUserByUserId(userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user from Casdoor: %v", err)
+	}
+
+	email := user.Email
+	name := user.Name
+
+	// Get or create Stripe customer
+	customerID, err := ss.CreateOrGetCustomer(userID, email, name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update Stripe customer with latest information (pre-fill checkout form)
+	customerUpdateParams := &stripe.CustomerParams{
+		Name: stripe.String(name),
+	}
+
+	// Try to get user's default billing address
+	billingAddr, err := ss.repository.GetDefaultBillingAddress(userID)
+	if err == nil && billingAddr != nil {
+		customerUpdateParams.Address = &stripe.AddressParams{
+			Line1:      stripe.String(billingAddr.Line1),
+			Line2:      stripe.String(billingAddr.Line2),
+			City:       stripe.String(billingAddr.City),
+			State:      stripe.String(billingAddr.State),
+			PostalCode: stripe.String(billingAddr.PostalCode),
+			Country:    stripe.String(billingAddr.Country),
+		}
+		utils.Debug("📍 Pre-filling bulk checkout with saved address: %s, %s", billingAddr.City, billingAddr.Country)
+	}
+
+	// Update customer in Stripe
+	if err := ss.UpdateCustomer(customerID, customerUpdateParams); err != nil {
+		utils.Warn("⚠️ Failed to update Stripe customer with pre-fill data: %v", err)
+		// Don't fail checkout if this fails
+	}
+
+	// Build metadata for checkout session and subscription
+	metadata := map[string]string{
+		"user_id":              userID,
+		"subscription_plan_id": input.SubscriptionPlanID.String(),
+		"quantity":             fmt.Sprintf("%d", input.Quantity),
+		"bulk_purchase":        "true",
+	}
+
+	if input.GroupID != nil {
+		metadata["group_id"] = input.GroupID.String()
+	}
+
+	// Checkout session parameters
+	params := &stripe.CheckoutSessionParams{
+		Customer: stripe.String(customerID),
+		PaymentMethodTypes: stripe.StringSlice([]string{
+			"card",
+			"sepa_debit",
+		}),
+		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
+		LineItems: []*stripe.CheckoutSessionLineItemParams{
+			{
+				Price:    stripe.String(*plan.StripePriceID),
+				Quantity: stripe.Int64(int64(input.Quantity)),
+			},
+		},
+		SuccessURL: stripe.String(input.SuccessURL),
+		CancelURL:  stripe.String(input.CancelURL),
+		Metadata:   metadata,
+		// CRITICAL: Pass metadata to the subscription that will be created
+		SubscriptionData: &stripe.CheckoutSessionSubscriptionDataParams{
+			Metadata: metadata,
+		},
+		BillingAddressCollection: stripe.String("required"),
+		CustomerUpdate: &stripe.CheckoutSessionCustomerUpdateParams{
+			Name:    stripe.String("auto"),
+			Address: stripe.String("auto"),
+		},
+	}
+
+	// Add coupon if provided
+	if input.CouponCode != "" {
+		params.Discounts = []*stripe.CheckoutSessionDiscountParams{
+			{Coupon: stripe.String(input.CouponCode)},
+		}
+	}
+
+	// Create checkout session
+	checkoutSession, err := session.New(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create bulk checkout session: %v", err)
+	}
+
+	utils.Info("✅ Created bulk license checkout session for user %s (plan: %s, quantity: %d)",
+		userID, plan.Name, input.Quantity)
+
+	return &dto.CheckoutSessionOutput{
+		SessionID: checkoutSession.ID,
+		URL:       checkoutSession.URL,
+	}, nil
+}
+
 // CreatePortalSession crée une session pour le portail client Stripe
 func (ss *stripeService) CreatePortalSession(userID string, input dto.CreatePortalSessionInput) (*dto.PortalSessionOutput, error) {
 	// Récupérer l'abonnement actif pour obtenir le customer ID
@@ -491,6 +612,12 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 	var subscription stripe.Subscription
 	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
 		return fmt.Errorf("failed to unmarshal subscription: %v", err)
+	}
+
+	// CRITICAL: Check if this is a bulk purchase before creating individual subscription
+	if isBulkSubscription(&subscription) {
+		utils.Info("📦 Detected bulk subscription creation: %s", subscription.ID)
+		return ss.handleBulkSubscriptionCreated(&subscription)
 	}
 
 	userID, exists := subscription.Metadata["user_id"]
@@ -659,6 +786,33 @@ func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 		}
 	}
 
+	// Check if subscription is being cancelled by detecting canceled_at timestamp
+	// canceled_at is set when subscription is cancelled (either immediately or at period end)
+	isBeingCancelled := false
+	wasCancelled := userSub.CancelledAt != nil
+
+	if subscription.CanceledAt > 0 && !wasCancelled {
+		// This is a NEW cancellation (canceled_at just got set)
+		isBeingCancelled = true
+		utils.Info("🚫 Subscription %s is being cancelled (canceled_at: %d)", subscription.ID, subscription.CanceledAt)
+
+		// Also log if it's immediate or at period end
+		if subscription.CancelAtPeriodEnd {
+			utils.Info("📅 Subscription will be cancelled at period end")
+		} else {
+			utils.Info("⚡ Subscription cancelled immediately")
+		}
+	}
+
+	// CRITICAL: Terminate terminals if subscription is being cancelled
+	if isBeingCancelled {
+		utils.Info("🔌 Terminating all active terminals for user %s due to subscription cancellation", userSub.UserID)
+		if err := ss.terminateUserTerminals(userSub.UserID); err != nil {
+			utils.Error("Failed to terminate terminals for user %s: %v", userSub.UserID, err)
+			// Don't fail webhook processing if terminal termination fails
+		}
+	}
+
 	userSub.Status = string(subscription.Status)
 	userSub.CurrentPeriodStart = time.Unix(subscription.Items.Data[0].CurrentPeriodStart, 0)
 	userSub.CurrentPeriodEnd = time.Unix(subscription.Items.Data[0].CurrentPeriodEnd, 0)
@@ -688,6 +842,13 @@ func (ss *stripeService) handleSubscriptionDeleted(event *stripe.Event) error {
 	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
 	if err != nil {
 		return err
+	}
+
+	// CRITICAL: Terminate all active terminals for this user before cancelling subscription
+	utils.Info("🔌 Terminating all active terminals for user %s due to subscription cancellation", userSub.UserID)
+	if err := ss.terminateUserTerminals(userSub.UserID); err != nil {
+		utils.Error("Failed to terminate terminals for user %s: %v", userSub.UserID, err)
+		// Don't fail subscription cancellation if terminal termination fails
 	}
 
 	userSub.Status = "cancelled"
@@ -837,6 +998,20 @@ func (ss *stripeService) handleCheckoutSessionCompleted(event *stripe.Event) err
 		}
 		if hasReplaceID {
 			subscriptionMetadata["replace_subscription_id"] = replaceSubscriptionIDStr
+		}
+
+		// CRITICAL: Copy bulk purchase metadata from session to subscription
+		if bulkPurchase, hasBulkPurchase := session.Metadata["bulk_purchase"]; hasBulkPurchase {
+			subscriptionMetadata["bulk_purchase"] = bulkPurchase
+			utils.Debug("🔄 Copying bulk_purchase=%s to subscription", bulkPurchase)
+		}
+		if quantity, hasQuantity := session.Metadata["quantity"]; hasQuantity {
+			subscriptionMetadata["quantity"] = quantity
+			utils.Debug("🔄 Copying quantity=%s to subscription", quantity)
+		}
+		if groupID, hasGroupID := session.Metadata["group_id"]; hasGroupID {
+			subscriptionMetadata["group_id"] = groupID
+			utils.Debug("🔄 Copying group_id=%s to subscription", groupID)
 		}
 
 		// Update the subscription metadata in Stripe to ensure it's propagated
@@ -1113,6 +1288,120 @@ func isBulkSubscription(subscription *stripe.Subscription) bool {
 	return false
 }
 
+// handleBulkSubscriptionCreated handles creation of bulk subscriptions
+// This creates a SubscriptionBatch and individual UserSubscription records for each license
+func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subscription) error {
+	userID, exists := subscription.Metadata["user_id"]
+	if !exists {
+		return fmt.Errorf("user_id not found in subscription metadata")
+	}
+
+	planIDStr, exists := subscription.Metadata["subscription_plan_id"]
+	if !exists {
+		return fmt.Errorf("subscription_plan_id not found in bulk subscription metadata")
+	}
+
+	planID, err := uuid.Parse(planIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid subscription_plan_id: %v", err)
+	}
+
+	// Get quantity from metadata or subscription items
+	quantityStr, exists := subscription.Metadata["quantity"]
+	if !exists {
+		return fmt.Errorf("quantity not found in bulk subscription metadata")
+	}
+
+	quantity := 0
+	if _, err := fmt.Sscanf(quantityStr, "%d", &quantity); err != nil {
+		return fmt.Errorf("invalid quantity: %v", err)
+	}
+
+	// Get group_id if present
+	var groupID *uuid.UUID
+	if groupIDStr, exists := subscription.Metadata["group_id"]; exists {
+		if parsedGroupID, err := uuid.Parse(groupIDStr); err == nil {
+			groupID = &parsedGroupID
+		}
+	}
+
+	// Get subscription item ID and period info
+	if len(subscription.Items.Data) == 0 {
+		return fmt.Errorf("subscription has no items")
+	}
+
+	item := subscription.Items.Data[0]
+	stripeSubscriptionItemID := item.ID
+	currentPeriodStart := time.Unix(item.CurrentPeriodStart, 0)
+	currentPeriodEnd := time.Unix(item.CurrentPeriodEnd, 0)
+
+	// Get plan for validation
+	plan, err := ss.subscriptionService.GetSubscriptionPlan(planID)
+	if err != nil {
+		return fmt.Errorf("failed to get subscription plan: %v", err)
+	}
+
+	utils.Info("📦 Creating bulk subscription batch for user %s: %d licenses of plan %s", userID, quantity, plan.Name)
+
+	// CRITICAL: Check if payment already succeeded (race condition)
+	// If subscription status is "active", payment already succeeded before this webhook
+	batchStatus := "pending_payment"
+	licenseStatus := "pending_payment"
+	if subscription.Status == "active" {
+		batchStatus = "active"
+		licenseStatus = "unassigned"
+		utils.Info("💰 Payment already succeeded - creating batch as active")
+	}
+
+	// Create the batch record
+	batch := &models.SubscriptionBatch{
+		PurchaserUserID:          userID,
+		SubscriptionPlanID:       planID,
+		GroupID:                  groupID,
+		StripeSubscriptionID:     subscription.ID,
+		StripeSubscriptionItemID: stripeSubscriptionItemID,
+		TotalQuantity:            quantity,
+		AssignedQuantity:         0,
+		Status:                   batchStatus,
+		CurrentPeriodStart:       currentPeriodStart,
+		CurrentPeriodEnd:         currentPeriodEnd,
+	}
+
+	batchRepo := repositories.NewSubscriptionBatchRepository(ss.db)
+	if err := batchRepo.Create(batch); err != nil {
+		return fmt.Errorf("failed to create batch: %v", err)
+	}
+
+	utils.Info("✅ Created batch %s with %d licenses (status: %s)", batch.ID, quantity, batchStatus)
+
+	// Create individual license records
+	for i := 0; i < quantity; i++ {
+		license := models.UserSubscription{
+			UserID:               "",  // Unassigned
+			PurchaserUserID:      &userID,
+			SubscriptionBatchID:  &batch.ID,
+			SubscriptionPlanID:   planID,
+			StripeSubscriptionID: subscription.ID,
+			StripeCustomerID:     subscription.Customer.ID,
+			Status:               licenseStatus,
+			CurrentPeriodStart:   currentPeriodStart,
+			CurrentPeriodEnd:     currentPeriodEnd,
+		}
+
+		if err := ss.repository.CreateUserSubscription(&license); err != nil {
+			utils.Error("Failed to create license %d/%d: %v", i+1, quantity, err)
+		}
+	}
+
+	if batchStatus == "active" {
+		utils.Info("✅ Created %d active licenses for batch %s (ready to assign)", quantity, batch.ID)
+	} else {
+		utils.Info("✅ Created %d licenses for batch %s (awaiting payment confirmation)", quantity, batch.ID)
+	}
+
+	return nil
+}
+
 // handleBulkSubscriptionUpdated handles quantity changes in bulk subscriptions
 func (ss *stripeService) handleBulkSubscriptionUpdated(subscription *stripe.Subscription) error {
 	// Get the subscription batch
@@ -1120,6 +1409,47 @@ func (ss *stripeService) handleBulkSubscriptionUpdated(subscription *stripe.Subs
 	batch, err := batchRepo.GetByStripeSubscriptionID(subscription.ID)
 	if err != nil {
 		return fmt.Errorf("batch not found for subscription %s: %v", subscription.ID, err)
+	}
+
+	// CRITICAL: Check if subscription is being cancelled by detecting canceled_at timestamp
+	isBeingCancelled := false
+	wasCancelled := batch.CancelledAt != nil
+
+	if subscription.CanceledAt > 0 && !wasCancelled {
+		// This is a NEW cancellation (canceled_at just got set)
+		isBeingCancelled = true
+		utils.Info("🚫 Bulk subscription %s is being cancelled (canceled_at: %d)", subscription.ID, subscription.CanceledAt)
+	}
+
+	// If subscription is cancelled, terminate all terminals and cancel all licenses
+	if isBeingCancelled {
+		utils.Info("❌ Cancelling batch %s and all associated licenses due to subscription cancellation", batch.ID)
+
+		// Get all licenses in the batch
+		var licenses []models.UserSubscription
+		ss.db.Where("subscription_batch_id = ?", batch.ID).Find(&licenses)
+
+		now := time.Now()
+		for _, license := range licenses {
+			// Terminate terminals for assigned licenses
+			if license.UserID != "" {
+				utils.Info("🔌 Terminating all active terminals for user %s due to batch cancellation", license.UserID)
+				if err := ss.terminateUserTerminals(license.UserID); err != nil {
+					utils.Error("Failed to terminate terminals for user %s: %v", license.UserID, err)
+					// Continue with other licenses
+				}
+			}
+
+			// Mark license as cancelled
+			license.Status = "cancelled"
+			license.CancelledAt = &now
+			ss.repository.UpdateUserSubscription(&license)
+		}
+
+		// Mark batch as cancelled
+		batch.Status = "cancelled"
+		batch.CancelledAt = &now
+		return batchRepo.Update(batch)
 	}
 
 	// Check if quantity changed
@@ -1194,6 +1524,15 @@ func (ss *stripeService) handleBulkSubscriptionDeleted(subscription *stripe.Subs
 
 	now := time.Now()
 	for _, license := range licenses {
+		// CRITICAL: Terminate all active terminals for assigned licenses
+		if license.UserID != "" {
+			utils.Info("🔌 Terminating all active terminals for user %s due to batch license cancellation", license.UserID)
+			if err := ss.terminateUserTerminals(license.UserID); err != nil {
+				utils.Error("Failed to terminate terminals for user %s: %v", license.UserID, err)
+				// Don't fail batch cancellation if terminal termination fails
+			}
+		}
+
 		license.Status = "cancelled"
 		license.CancelledAt = &now
 		ss.repository.UpdateUserSubscription(&license)
@@ -1214,13 +1553,33 @@ func (ss *stripeService) handleBulkInvoicePaymentSucceeded(invoice *stripe.Invoi
 		return fmt.Errorf("batch not found for subscription %s: %v", subscription.ID, err)
 	}
 
-	utils.Info("💰 Payment succeeded for bulk subscription batch %s", batch.ID)
+	utils.Info("💰 Payment succeeded for bulk subscription batch %s - activating batch and licenses", batch.ID)
 
-	// Ensure batch is active
-	if batch.Status != "active" {
+	// Activate batch if it's pending payment
+	if batch.Status == "pending_payment" || batch.Status != "active" {
 		batch.Status = "active"
-		batchRepo.Update(batch)
+		if err := batchRepo.Update(batch); err != nil {
+			return fmt.Errorf("failed to activate batch: %v", err)
+		}
+		utils.Info("✅ Batch %s activated", batch.ID)
 	}
+
+	// Activate all pending_payment licenses in this batch
+	var licenses []models.UserSubscription
+	ss.db.Where("subscription_batch_id = ? AND status = ?", batch.ID, "pending_payment").Find(&licenses)
+
+	activatedCount := 0
+	for _, license := range licenses {
+		// Change status from pending_payment to unassigned (ready to be assigned)
+		license.Status = "unassigned"
+		if err := ss.repository.UpdateUserSubscription(&license); err != nil {
+			utils.Error("Failed to activate license %s: %v", license.ID, err)
+			continue
+		}
+		activatedCount++
+	}
+
+	utils.Info("✅ Activated %d/%d licenses in batch %s", activatedCount, len(licenses), batch.ID)
 
 	return nil
 }
@@ -1242,11 +1601,86 @@ func (ss *stripeService) CancelSubscription(subscriptionID string, cancelAtPerio
 }
 
 // MarkSubscriptionAsCancelled marque un abonnement comme annulé dans la base de données
+// Also terminates all active terminals for the user
 func (ss *stripeService) MarkSubscriptionAsCancelled(userSubscription *models.UserSubscription) error {
+	// CRITICAL: Terminate all active terminals before cancelling subscription
+	utils.Info("🔌 Terminating all active terminals for user %s due to manual subscription cancellation", userSubscription.UserID)
+	if err := ss.terminateUserTerminals(userSubscription.UserID); err != nil {
+		utils.Error("Failed to terminate terminals for user %s: %v", userSubscription.UserID, err)
+		// Don't fail subscription cancellation if terminal termination fails
+	}
+
 	userSubscription.Status = "cancelled"
 	now := time.Now()
 	userSubscription.CancelledAt = &now
 	return ss.repository.UpdateUserSubscription(userSubscription)
+}
+
+// terminateUserTerminals stops all active terminals for a user
+// This uses direct repository calls to avoid circular dependency with terminalTrainer/services
+func (ss *stripeService) terminateUserTerminals(userID string) error {
+	// Get terminal repository
+	termRepository := terminalRepo.NewTerminalRepository(ss.db)
+
+	// Get all active terminals for this user
+	terminals, err := termRepository.GetTerminalSessionsByUserID(userID, true)
+	if err != nil {
+		return fmt.Errorf("failed to get user terminals: %v", err)
+	}
+
+	if terminals == nil || len(*terminals) == 0 {
+		utils.Debug("No active terminals found for user %s", userID)
+		return nil
+	}
+
+	utils.Info("Found %d active terminals for user %s, terminating all", len(*terminals), userID)
+
+	// Stop each terminal directly using repository
+	terminatedCount := 0
+	for _, terminal := range *terminals {
+		if terminal.Status == "active" {
+			utils.Debug("Stopping terminal %s (session: %s) for user %s", terminal.ID, terminal.SessionID, userID)
+
+			// Update terminal status to stopped
+			terminal.Status = "stopped"
+			if err := termRepository.UpdateTerminalSession(&terminal); err != nil {
+				utils.Error("Failed to update terminal %s status for user %s: %v", terminal.SessionID, userID, err)
+				continue
+			}
+
+			// Decrement concurrent_terminals metric (call UpdateUsageMetricValue directly)
+			if err := ss.decrementConcurrentTerminals(userID); err != nil {
+				utils.Warn("Failed to decrement concurrent_terminals for user %s: %v", userID, err)
+			}
+
+			terminatedCount++
+			utils.Debug("Successfully stopped terminal %s for user %s", terminal.SessionID, userID)
+		}
+	}
+
+	utils.Info("Successfully terminated %d/%d terminals for user %s", terminatedCount, len(*terminals), userID)
+	return nil
+}
+
+// decrementConcurrentTerminals decrements the concurrent_terminals metric for a user
+func (ss *stripeService) decrementConcurrentTerminals(userID string) error {
+	// Get the user's current usage metric for concurrent_terminals
+	var usageMetric models.UsageMetrics
+	err := ss.db.Where("user_id = ? AND metric_type = ?", userID, "concurrent_terminals").First(&usageMetric).Error
+	if err != nil {
+		return fmt.Errorf("usage metric not found: %v", err)
+	}
+
+	// Decrement usage by 1 (ensure it doesn't go negative)
+	if usageMetric.CurrentValue > 0 {
+		usageMetric.CurrentValue -= 1
+		usageMetric.LastUpdated = time.Now()
+		if err := ss.db.Save(&usageMetric).Error; err != nil {
+			return fmt.Errorf("failed to update usage metric: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // ReactivateSubscription réactive un abonnement annulé

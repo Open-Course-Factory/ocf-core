@@ -36,6 +36,7 @@ type SubscriptionPlanOutput struct {
 	ID                 uuid.UUID `json:"id"`
 	Name               string    `json:"name"`
 	Description        string    `json:"description"`
+	Priority           int       `json:"priority"` // Higher = better tier (0=Free, 10=Basic, 20=Pro, 30=Premium)
 	StripeProductID    *string   `json:"stripe_product_id"`
 	StripePriceID      *string   `json:"stripe_price_id"`
 	PriceAmount        int64     `json:"price_amount"`
@@ -102,6 +103,8 @@ type UserSubscriptionOutput struct {
 	StripeSubscriptionID string                 `json:"stripe_subscription_id"`
 	StripeCustomerID     string                 `json:"stripe_customer_id"`
 	Status               string                 `json:"status"`
+	SubscriptionType     string                 `json:"subscription_type"` // "personal" or "assigned"
+	IsPrimary            bool                   `json:"is_primary"`        // True if this is the active subscription being used
 	CurrentPeriodStart   time.Time              `json:"current_period_start"`
 	CurrentPeriodEnd     time.Time              `json:"current_period_end"`
 	TrialEnd             *time.Time             `json:"trial_end,omitempty"`
@@ -109,6 +112,14 @@ type UserSubscriptionOutput struct {
 	CancelledAt          *time.Time             `json:"cancelled_at,omitempty"`
 	CreatedAt            time.Time              `json:"created_at"`
 	UpdatedAt            time.Time              `json:"updated_at"`
+
+	// Bulk license assignment information (only present if from bulk purchase)
+	SubscriptionBatchID *uuid.UUID `json:"subscription_batch_id,omitempty"`
+	BatchOwnerID        *string    `json:"batch_owner_id,omitempty"`   // ID of the user who purchased the batch
+	BatchOwnerName      *string    `json:"batch_owner_name,omitempty"` // Display name of batch owner
+	BatchOwnerEmail     *string    `json:"batch_owner_email,omitempty"`
+	AssignedAt          *time.Time `json:"assigned_at,omitempty"` // When the license was assigned
+	AssignedBy          *string    `json:"assigned_by,omitempty"` // ID of user who performed the assignment (if different from batch owner)
 }
 
 // Invoice DTOs
@@ -204,6 +215,15 @@ type CreateCheckoutSessionInput struct {
 	CancelURL          string    `binding:"required" json:"cancel_url"`
 	CouponCode         string    `json:"coupon_code,omitempty"`
 	AllowReplace       bool      `json:"allow_replace,omitempty"` // Allow replacing free subscription with paid one
+}
+
+type CreateBulkCheckoutSessionInput struct {
+	SubscriptionPlanID uuid.UUID  `binding:"required" json:"subscription_plan_id"`
+	Quantity           int        `binding:"required,min=1" json:"quantity"`
+	SuccessURL         string     `binding:"required" json:"success_url"`
+	CancelURL          string     `binding:"required" json:"cancel_url"`
+	GroupID            *uuid.UUID `json:"group_id,omitempty"`
+	CouponCode         string     `json:"coupon_code,omitempty"`
 }
 
 type CheckoutSessionOutput struct {

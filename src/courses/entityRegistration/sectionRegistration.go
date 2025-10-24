@@ -97,6 +97,41 @@ func (s SectionRegistration) EntityInputDtoToEntityModel(input any) any {
 	return sectionToReturn
 }
 
+func (s SectionRegistration) EntityDtoToMap(input any) map[string]any {
+	editDto, ok := input.(dto.EditSectionInput)
+	if !ok {
+		// Fallback to default behavior if not EditSectionInput
+		return s.AbstractRegistrableInterface.EntityDtoToMap(input)
+	}
+
+	updates := make(map[string]any)
+
+	// Only include non-nil pointer fields in the update map
+	if editDto.FileName != nil {
+		updates["file_name"] = *editDto.FileName
+	}
+	if editDto.Title != nil {
+		updates["title"] = *editDto.Title
+	}
+	if editDto.Intro != nil {
+		updates["intro"] = *editDto.Intro
+	}
+	if editDto.Conclusion != nil {
+		updates["conclusion"] = *editDto.Conclusion
+	}
+	if editDto.Number != nil {
+		updates["number"] = *editDto.Number
+	}
+	if editDto.Pages != nil && len(editDto.Pages) > 0 {
+		updates["pages"] = editDto.Pages
+	}
+	if editDto.HiddenPages != nil && len(editDto.HiddenPages) > 0 {
+		updates["hidden_pages"] = editDto.HiddenPages
+	}
+
+	return updates
+}
+
 func (s SectionRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
 	return entityManagementInterfaces.EntityRegistrationInput{
 		EntityInterface: models.Section{},

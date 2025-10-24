@@ -10,6 +10,8 @@ import (
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/models"
 	sqldb "soli/formations/src/db"
+	paymentModels "soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
 	ttServices "soli/formations/src/terminalTrainer/services"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -128,6 +130,13 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 	errCreateSettings := createDefaultUserSettings(createdUser.Id)
 	if errCreateSettings != nil {
 		fmt.Printf("Warning: Could not create default settings for user %s: %v\n", createdUser.Id, errCreateSettings)
+		// Don't fail registration for this, just log warning
+	}
+
+	// Assign free Trial plan to new user
+	errTrialSubscription := assignFreeTrialPlan(createdUser.Id)
+	if errTrialSubscription != nil {
+		fmt.Printf("Warning: Could not create Trial subscription for user %s: %v\n", createdUser.Id, errTrialSubscription)
 		// Don't fail registration for this, just log warning
 	}
 
@@ -290,4 +299,32 @@ func createDefaultUserSettings(userID string) error {
 	}
 
 	return sqldb.DB.Create(&defaultSettings).Error
+}
+
+// assignFreeTrialPlan assigns the free Trial plan to a new user
+func assignFreeTrialPlan(userID string) error {
+	// Find the free Trial plan (price_amount = 0, name = "Trial")
+	var trialPlan paymentModels.SubscriptionPlan
+	result := sqldb.DB.Where("name = ? AND price_amount = 0 AND is_active = true", "Trial").First(&trialPlan)
+	if result.Error != nil {
+		return fmt.Errorf("could not find active Trial plan: %v", result.Error)
+	}
+
+	// Check if user already has a subscription
+	var existingSub paymentModels.UserSubscription
+	existingResult := sqldb.DB.Where("user_id = ? AND status = ?", userID, "active").First(&existingSub)
+	if existingResult.Error == nil {
+		fmt.Printf("User %s already has an active subscription, skipping Trial assignment\n", userID)
+		return nil // User already has a subscription
+	}
+
+	// Create subscription using the subscription service
+	subscriptionService := paymentServices.NewSubscriptionService(sqldb.DB)
+	_, err := subscriptionService.CreateUserSubscription(userID, trialPlan.ID)
+	if err != nil {
+		return fmt.Errorf("failed to create Trial subscription: %v", err)
+	}
+
+	fmt.Printf("✅ Successfully assigned Trial plan to user %s\n", userID)
+	return nil
 }

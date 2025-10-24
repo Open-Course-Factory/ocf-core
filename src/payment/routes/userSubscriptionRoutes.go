@@ -22,6 +22,7 @@ func UserSubscriptionRoutes(router *gin.RouterGroup, config *config.Configuratio
 	routes.POST("/checkout", authMiddleware.AuthManagement(), subscriptionController.CreateCheckoutSession)
 	routes.POST("/portal", authMiddleware.AuthManagement(), subscriptionController.CreatePortalSession)
 	routes.GET("/current", authMiddleware.AuthManagement(), subscriptionController.GetUserSubscription)
+	routes.GET("/all", authMiddleware.AuthManagement(), subscriptionController.GetAllUserSubscriptions) // Get all active subscriptions
 	routes.POST("/:id/cancel", authMiddleware.AuthManagement(), subscriptionController.CancelSubscription)
 	routes.POST("/:id/reactivate", authMiddleware.AuthManagement(), subscriptionController.ReactivateSubscription)
 	routes.POST("/upgrade", authMiddleware.AuthManagement(), subscriptionController.UpgradeUserPlan)

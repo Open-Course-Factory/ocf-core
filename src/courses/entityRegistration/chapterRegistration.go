@@ -93,6 +93,35 @@ func (s ChapterRegistration) EntityInputDtoToEntityModel(input any) any {
 	return chapterToReturn
 }
 
+func (s ChapterRegistration) EntityDtoToMap(input any) map[string]any {
+	editDto, ok := input.(dto.EditChapterInput)
+	if !ok {
+		// Fallback to default behavior if not EditChapterInput
+		return s.AbstractRegistrableInterface.EntityDtoToMap(input)
+	}
+
+	updates := make(map[string]any)
+
+	// Only include non-nil pointer fields in the update map
+	if editDto.Title != nil {
+		updates["title"] = *editDto.Title
+	}
+	if editDto.Number != nil {
+		updates["number"] = *editDto.Number
+	}
+	if editDto.Footer != nil {
+		updates["footer"] = *editDto.Footer
+	}
+	if editDto.Introduction != nil {
+		updates["introduction"] = *editDto.Introduction
+	}
+	if editDto.Sections != nil && len(editDto.Sections) > 0 {
+		updates["sections"] = editDto.Sections
+	}
+
+	return updates
+}
+
 func (s ChapterRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
 	return entityManagementInterfaces.EntityRegistrationInput{
 		EntityInterface: models.Chapter{},

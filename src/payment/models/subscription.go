@@ -15,6 +15,7 @@ type SubscriptionPlan struct {
 	entityManagementModels.BaseModel
 	Name               string   `gorm:"type:varchar(100);not null" json:"name"`
 	Description        string   `gorm:"type:text" json:"description"`
+	Priority           int      `gorm:"default:0" json:"priority"` // Higher number = higher tier (0=Free, 10=Basic, 20=Pro, 30=Premium, etc.)
 	StripeProductID    *string  `gorm:"type:varchar(100);uniqueIndex:idx_stripe_product_not_null,where:stripe_product_id IS NOT NULL" json:"stripe_product_id"`
 	StripePriceID      *string  `gorm:"type:varchar(100);uniqueIndex:idx_stripe_price_not_null,where:stripe_price_id IS NOT NULL" json:"stripe_price_id"`
 	PriceAmount        int64    `json:"price_amount"` // Prix en centimes
@@ -84,6 +85,7 @@ type UserSubscription struct {
 	UserID                  string           `gorm:"type:varchar(100);index" json:"user_id"`                               // Who uses it (nullable for unassigned)
 	PurchaserUserID         *string          `gorm:"type:varchar(100);index" json:"purchaser_user_id,omitempty"`           // Who purchased it (null = self-purchase)
 	SubscriptionBatchID     *uuid.UUID       `gorm:"type:uuid;index" json:"subscription_batch_id,omitempty"`               // Link to bulk purchase batch
+	SubscriptionType        string           `gorm:"type:varchar(20);default:'personal'" json:"subscription_type"`        // "personal" (self-purchased) or "assigned" (from batch)
 	SubscriptionPlanID      uuid.UUID        `json:"subscription_plan_id"`
 	SubscriptionPlan        SubscriptionPlan `gorm:"foreignKey:SubscriptionPlanID" json:"subscription_plan"`
 	StripeSubscriptionID    string           `gorm:"type:varchar(100);" json:"stripe_subscription_id"`

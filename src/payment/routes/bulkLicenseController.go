@@ -15,6 +15,7 @@ import (
 )
 
 type BulkLicenseController interface {
+	CreateBulkCheckoutSession(ctx *gin.Context)
 	PurchaseBulkLicenses(ctx *gin.Context)
 	GetMyBatches(ctx *gin.Context)
 	GetBatchDetails(ctx *gin.Context)
@@ -22,18 +23,71 @@ type BulkLicenseController interface {
 	AssignLicense(ctx *gin.Context)
 	RevokeLicense(ctx *gin.Context)
 	UpdateBatchQuantity(ctx *gin.Context)
+	PermanentlyDeleteBatch(ctx *gin.Context)
 }
 
 type bulkLicenseController struct {
+	db                *gorm.DB
 	bulkService       services.BulkLicenseService
+	stripeService     services.StripeService
 	conversionService services.ConversionService
 }
 
 func NewBulkLicenseController(db *gorm.DB) BulkLicenseController {
 	return &bulkLicenseController{
+		db:                db,
 		bulkService:       services.NewBulkLicenseService(db),
+		stripeService:     services.NewStripeService(db),
 		conversionService: services.NewConversionService(),
 	}
+}
+
+// CreateBulkCheckoutSession godoc
+//
+//	@Summary		Create Stripe checkout session for bulk license purchase
+//	@Description	Creates a Stripe checkout session for purchasing multiple licenses. User will be redirected to Stripe to complete payment. Licenses are activated after successful payment via webhook.
+//	@Tags			bulk-licenses
+//	@Accept			json
+//	@Produce		json
+//	@Param			checkout	body		dto.CreateBulkCheckoutSessionInput	true	"Bulk checkout session parameters"
+//	@Security		Bearer
+//	@Success		200			{object}	dto.CheckoutSessionOutput	"Checkout session created - redirect user to the URL"
+//	@Failure		400			{object}	errors.APIError				"Invalid input"
+//	@Failure		404			{object}	errors.APIError				"Subscription plan not found"
+//	@Failure		500			{object}	errors.APIError				"Failed to create checkout session"
+//	@Router			/subscription-batches/create-checkout-session [post]
+func (bc *bulkLicenseController) CreateBulkCheckoutSession(ctx *gin.Context) {
+	userID := ctx.GetString("userId")
+
+	var input dto.CreateBulkCheckoutSessionInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: fmt.Sprintf("Invalid input: %v", err),
+		})
+		return
+	}
+
+	// Create Stripe checkout session
+	checkoutSession, err := bc.stripeService.CreateBulkCheckoutSession(userID, input)
+	if err != nil {
+		utils.Error("Failed to create bulk checkout session for user %s: %v", userID, err)
+
+		statusCode := http.StatusInternalServerError
+		if err.Error() == "subscription plan not found" || err.Error() == "Subscription plan not found" {
+			statusCode = http.StatusNotFound
+		} else if err.Error() == "subscription plan is not active" {
+			statusCode = http.StatusBadRequest
+		}
+
+		ctx.JSON(statusCode, &errors.APIError{
+			ErrorCode:    statusCode,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, checkoutSession)
 }
 
 // PurchaseBulkLicenses godoc
@@ -357,5 +411,55 @@ func (c *bulkLicenseController) UpdateBatchQuantity(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": fmt.Sprintf("Batch quantity updated to %d", input.NewQuantity),
+	})
+}
+
+// PermanentlyDeleteBatch godoc
+//
+//	@Summary		Permanently delete a bulk license batch
+//	@Description	Permanently deletes a batch and all its licenses. This will cancel the Stripe subscription, terminate all active terminals for assigned users, and remove all records from the database.
+//	@Tags			bulk-licenses
+//	@Produce		json
+//	@Param			id	path		string	true	"Batch ID"
+//	@Security		Bearer
+//	@Success		200	{object}	map[string]string
+//	@Failure		400	{object}	errors.APIError
+//	@Failure		403	{object}	errors.APIError	"Only the purchaser can delete the batch"
+//	@Failure		404	{object}	errors.APIError	"Batch not found"
+//	@Failure		500	{object}	errors.APIError
+//	@Router			/subscription-batches/{id}/permanent [delete]
+func (c *bulkLicenseController) PermanentlyDeleteBatch(ctx *gin.Context) {
+	userID := ctx.GetString("userId")
+	batchIDStr := ctx.Param("id")
+
+	batchID, err := uuid.Parse(batchIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid batch ID",
+		})
+		return
+	}
+
+	err = c.bulkService.PermanentlyDeleteBatch(batchID, userID)
+	if err != nil {
+		utils.Error("Failed to permanently delete batch: %v", err)
+
+		statusCode := http.StatusInternalServerError
+		if err.Error() == "batch not found" {
+			statusCode = http.StatusNotFound
+		} else if err.Error() == "only the purchaser can delete this batch" {
+			statusCode = http.StatusForbidden
+		}
+
+		ctx.JSON(statusCode, &errors.APIError{
+			ErrorCode:    statusCode,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "Batch and all licenses permanently deleted",
 	})
 }

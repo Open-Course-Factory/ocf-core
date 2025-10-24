@@ -33,11 +33,11 @@ type ChapterOutput struct {
 }
 
 type EditChapterInput struct {
-	Title        string          `json:"title"`
-	Number       int             `json:"number"`
-	Footer       string          `json:"footer"`
-	Introduction string          `json:"introduction"`
-	Sections     []*SectionInput `json:"sections"`
+	Title        *string         `json:"title,omitempty" mapstructure:"title"`
+	Number       *int            `json:"number,omitempty" mapstructure:"number"`
+	Footer       *string         `json:"footer,omitempty" mapstructure:"footer"`
+	Introduction *string         `json:"introduction,omitempty" mapstructure:"introduction"`
+	Sections     []*SectionInput `json:"sections,omitempty" mapstructure:"sections"`
 }
 
 func ChapterModelToChapterOutput(chapterModel models.Chapter) *ChapterOutput {

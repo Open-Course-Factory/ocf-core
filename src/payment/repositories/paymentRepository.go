@@ -21,6 +21,8 @@ type PaymentRepository interface {
 	GetUserSubscription(id uuid.UUID) (*models.UserSubscription, error)
 	GetUserSubscriptionByStripeID(stripeSubscriptionID string) (*models.UserSubscription, error)
 	GetActiveUserSubscription(userID string) (*models.UserSubscription, error)
+	GetAllActiveUserSubscriptions(userID string) ([]models.UserSubscription, error)
+	GetPrimaryUserSubscription(userID string) (*models.UserSubscription, error)
 	GetActiveSubscriptionByCustomerID(customerID string) (*models.UserSubscription, error)
 	GetUserSubscriptions(userID string, includeInactive bool) (*[]models.UserSubscription, error)
 	UpdateUserSubscription(subscription *models.UserSubscription) error
@@ -146,6 +148,8 @@ func (r *paymentRepository) GetUserSubscriptionByStripeID(stripeSubscriptionID s
 	return &subscription, nil
 }
 
+// GetActiveUserSubscription returns the newest active subscription (legacy method for backwards compatibility)
+// NOTE: For stacked subscriptions, use GetPrimaryUserSubscription instead
 func (r *paymentRepository) GetActiveUserSubscription(userID string) (*models.UserSubscription, error) {
 	var subscription models.UserSubscription
 	err := r.db.
@@ -158,6 +162,60 @@ func (r *paymentRepository) GetActiveUserSubscription(userID string) (*models.Us
 	}
 
 	return &subscription, nil
+}
+
+// GetAllActiveUserSubscriptions returns ALL active subscriptions for a user (personal + assigned)
+func (r *paymentRepository) GetAllActiveUserSubscriptions(userID string) ([]models.UserSubscription, error) {
+	var subscriptions []models.UserSubscription
+	err := r.db.
+		Preload("SubscriptionPlan").
+		Where("user_id = ? AND status IN (?)", userID, []string{"active", "trialing"}).
+		Order("created_at DESC").
+		Find(&subscriptions).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return subscriptions, nil
+}
+
+// GetPrimaryUserSubscription returns the highest-priority active subscription
+// Priority based on SubscriptionPlan.Priority field (higher number = higher tier)
+func (r *paymentRepository) GetPrimaryUserSubscription(userID string) (*models.UserSubscription, error) {
+	subscriptions, err := r.GetAllActiveUserSubscriptions(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(subscriptions) == 0 {
+		return nil, fmt.Errorf("no active subscription found")
+	}
+
+	// If only one subscription, return it
+	if len(subscriptions) == 1 {
+		return &subscriptions[0], nil
+	}
+
+	// Multiple subscriptions: return the one with highest plan priority
+	var primary *models.UserSubscription
+	highestPriority := -1
+
+	for i := range subscriptions {
+		sub := &subscriptions[i]
+		planPriority := sub.SubscriptionPlan.Priority
+
+		if planPriority > highestPriority {
+			highestPriority = planPriority
+			primary = sub
+		}
+	}
+
+	if primary != nil {
+		return primary, nil
+	}
+
+	// Fallback: return newest
+	return &subscriptions[0], nil
 }
 
 func (r *paymentRepository) GetActiveSubscriptionByCustomerID(customerID string) (*models.UserSubscription, error) {

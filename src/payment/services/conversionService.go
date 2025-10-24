@@ -4,6 +4,9 @@ package services
 import (
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
+	"soli/formations/src/utils"
+
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 // ConversionService gère les conversions entre models et DTOs
@@ -55,7 +58,7 @@ func (cs *conversionService) UserSubscriptionToDTO(subscription *models.UserSubs
 		return nil, err
 	}
 
-	return &dto.UserSubscriptionOutput{
+	output := &dto.UserSubscriptionOutput{
 		ID:                   subscription.ID,
 		UserID:               subscription.UserID,
 		SubscriptionPlanID:   subscription.SubscriptionPlanID,
@@ -63,6 +66,7 @@ func (cs *conversionService) UserSubscriptionToDTO(subscription *models.UserSubs
 		StripeSubscriptionID: subscription.StripeSubscriptionID,
 		StripeCustomerID:     subscription.StripeCustomerID,
 		Status:               subscription.Status,
+		SubscriptionType:     subscription.SubscriptionType,
 		CurrentPeriodStart:   subscription.CurrentPeriodStart,
 		CurrentPeriodEnd:     subscription.CurrentPeriodEnd,
 		TrialEnd:             subscription.TrialEnd,
@@ -70,7 +74,19 @@ func (cs *conversionService) UserSubscriptionToDTO(subscription *models.UserSubs
 		CancelledAt:          subscription.CancelledAt,
 		CreatedAt:            subscription.CreatedAt,
 		UpdatedAt:            subscription.UpdatedAt,
-	}, nil
+	}
+
+	// If this subscription is from a bulk purchase, fetch batch owner information
+	if subscription.SubscriptionBatchID != nil && subscription.PurchaserUserID != nil {
+		output.SubscriptionBatchID = subscription.SubscriptionBatchID
+		output.BatchOwnerID = subscription.PurchaserUserID
+		output.AssignedAt = &subscription.CreatedAt // License was assigned when subscription was created
+
+		// Fetch batch owner details from Casdoor
+		cs.populateBatchOwnerInfo(output, *subscription.PurchaserUserID)
+	}
+
+	return output, nil
 }
 
 // UserSubscriptionsToDTO convertit une liste de UserSubscription
@@ -103,6 +119,7 @@ func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan
 		ID:                 plan.ID,
 		Name:               plan.Name,
 		Description:        plan.Description,
+		Priority:           plan.Priority,
 		StripeProductID:    plan.StripeProductID,
 		StripePriceID:      plan.StripePriceID,
 		PriceAmount:        plan.PriceAmount,
@@ -380,4 +397,24 @@ func (cs *conversionService) SubscriptionAnalyticsToDTO(analytics *SubscriptionA
 		RecentCancellations:     recentCancellations,
 		GeneratedAt:             analytics.GeneratedAt,
 	}
+}
+
+// populateBatchOwnerInfo fetches batch owner details from Casdoor and populates the DTO
+func (cs *conversionService) populateBatchOwnerInfo(output *dto.UserSubscriptionOutput, purchaserUserID string) {
+	// Fetch user from Casdoor
+	user, err := casdoorsdk.GetUserByUserId(purchaserUserID)
+	if err != nil {
+		// Log error but don't fail the entire conversion
+		utils.Warn("Failed to fetch batch owner info from Casdoor for user %s: %v", purchaserUserID, err)
+		return
+	}
+
+	if user == nil {
+		utils.Warn("Batch owner user %s not found in Casdoor", purchaserUserID)
+		return
+	}
+
+	// Populate batch owner information
+	output.BatchOwnerName = &user.DisplayName
+	output.BatchOwnerEmail = &user.Email
 }

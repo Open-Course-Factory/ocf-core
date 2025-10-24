@@ -22,6 +22,8 @@ type UserSubscriptionService interface {
 	// Subscription management - retourne des models
 	HasActiveSubscription(userID string) (bool, error)
 	GetActiveUserSubscription(userID string) (*models.UserSubscription, error)
+	GetAllActiveUserSubscriptions(userID string) ([]models.UserSubscription, error)
+	GetPrimaryUserSubscription(userID string) (*models.UserSubscription, error)
 	GetUserSubscriptionByID(id uuid.UUID) (*models.UserSubscription, error)
 	CreateUserSubscription(userID string, planID uuid.UUID) (*models.UserSubscription, error)
 	UpgradeUserPlan(userID string, newPlanID uuid.UUID, prorationBehavior string) (*models.UserSubscription, error)
@@ -112,6 +114,16 @@ func (ss *subscriptionService) HasActiveSubscription(userID string) (bool, error
 // GetActiveUserSubscription récupère l'abonnement actif d'un utilisateur
 func (ss *subscriptionService) GetActiveUserSubscription(userID string) (*models.UserSubscription, error) {
 	return ss.repository.GetActiveUserSubscription(userID)
+}
+
+// GetAllActiveUserSubscriptions récupère TOUS les abonnements actifs d'un utilisateur (personnel + assigné)
+func (ss *subscriptionService) GetAllActiveUserSubscriptions(userID string) ([]models.UserSubscription, error) {
+	return ss.repository.GetAllActiveUserSubscriptions(userID)
+}
+
+// GetPrimaryUserSubscription récupère l'abonnement prioritaire actif d'un utilisateur
+func (ss *subscriptionService) GetPrimaryUserSubscription(userID string) (*models.UserSubscription, error) {
+	return ss.repository.GetPrimaryUserSubscription(userID)
 }
 
 // GetUserSubscriptionByID récupère un abonnement par son ID

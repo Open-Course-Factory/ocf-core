@@ -41,13 +41,13 @@ type SectionOutput struct {
 }
 
 type EditSectionInput struct {
-	FileName    string        `json:"fileName"`
-	Title       string        `json:"title"`
-	Intro       string        `json:"intro"`
-	Conclusion  string        `json:"conclusion"`
-	Number      int           `json:"number"`
-	Pages       []models.Page `json:"pages"`
-	HiddenPages []int         `json:"hiddenPages"`
+	FileName    *string        `json:"fileName,omitempty" mapstructure:"fileName"`
+	Title       *string        `json:"title,omitempty" mapstructure:"title"`
+	Intro       *string        `json:"intro,omitempty" mapstructure:"intro"`
+	Conclusion  *string        `json:"conclusion,omitempty" mapstructure:"conclusion"`
+	Number      *int           `json:"number,omitempty" mapstructure:"number"`
+	Pages       []models.Page  `json:"pages,omitempty" mapstructure:"pages"`
+	HiddenPages []int          `json:"hiddenPages,omitempty" mapstructure:"hiddenPages"`
 }
 
 func SectionModelToSectionOutput(sectionModel models.Section) *SectionOutput {
