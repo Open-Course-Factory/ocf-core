@@ -12,6 +12,7 @@ type CreateGroupInput struct {
 	Name               string                 `json:"name" mapstructure:"name" binding:"required,min=2,max=255"`
 	DisplayName        string                 `json:"display_name" mapstructure:"display_name" binding:"required,min=2,max=255"`
 	Description        string                 `json:"description,omitempty" mapstructure:"description"`
+	OrganizationID     *uuid.UUID             `json:"organization_id,omitempty" mapstructure:"organization_id"` // NEW: Link to organization
 	SubscriptionPlanID *uuid.UUID             `json:"subscription_plan_id,omitempty" mapstructure:"subscription_plan_id"`
 	MaxMembers         int                    `json:"max_members" mapstructure:"max_members" binding:"omitempty,gte=0"` // 0 = unlimited
 	ExpiresAt          *time.Time             `json:"expires_at,omitempty" mapstructure:"expires_at"`
@@ -22,6 +23,7 @@ type CreateGroupInput struct {
 type EditGroupInput struct {
 	DisplayName        *string                 `json:"display_name,omitempty" mapstructure:"display_name" binding:"omitempty,min=2,max=255"`
 	Description        *string                 `json:"description,omitempty" mapstructure:"description"`
+	OrganizationID     *uuid.UUID              `json:"organization_id,omitempty" mapstructure:"organization_id"` // NEW: Link to organization
 	SubscriptionPlanID *uuid.UUID              `json:"subscription_plan_id,omitempty" mapstructure:"subscription_plan_id"`
 	MaxMembers         *int                    `json:"max_members,omitempty" mapstructure:"max_members" binding:"omitempty,gte=0"`
 	ExpiresAt          *time.Time              `json:"expires_at,omitempty" mapstructure:"expires_at"`
@@ -36,6 +38,7 @@ type GroupOutput struct {
 	DisplayName        string                 `json:"display_name"`
 	Description        string                 `json:"description,omitempty"`
 	OwnerUserID        string                 `json:"owner_user_id"`
+	OrganizationID     *uuid.UUID             `json:"organization_id,omitempty"` // NEW: Link to organization
 	SubscriptionPlanID *uuid.UUID             `json:"subscription_plan_id,omitempty"`
 	MaxMembers         int                    `json:"max_members"`
 	MemberCount        int                    `json:"member_count"`
@@ -101,6 +104,7 @@ func GroupModelToGroupOutput(group *models.ClassGroup) *GroupOutput {
 		DisplayName:        group.DisplayName,
 		Description:        group.Description,
 		OwnerUserID:        group.OwnerUserID,
+		OrganizationID:     group.OrganizationID,
 		SubscriptionPlanID: group.SubscriptionPlanID,
 		MaxMembers:         group.MaxMembers,
 		MemberCount:        group.GetMemberCount(),

@@ -25,6 +25,7 @@ import (
 	generationController "soli/formations/src/courses/routes/generationRoutes"
 	genericController "soli/formations/src/entityManagement/routes"
 	groupHooks "soli/formations/src/groups/hooks"
+	organizationHooks "soli/formations/src/organizations/hooks"
 	terminalController "soli/formations/src/terminalTrainer/routes"
 	versionController "soli/formations/src/version"
 	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
@@ -82,6 +83,7 @@ func main() {
 	courseHooks.InitCourseHooks(sqldb.DB)
 	authHooks.InitAuthHooks(sqldb.DB)
 	groupHooks.InitGroupHooks(sqldb.DB)
+	organizationHooks.InitOrganizationHooks(sqldb.DB) // Phase 1: Organization hooks
 
 	// Register module features
 	initialization.RegisterModuleFeatures(sqldb.DB)

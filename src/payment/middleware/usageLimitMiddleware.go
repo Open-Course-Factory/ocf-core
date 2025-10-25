@@ -28,13 +28,17 @@ type UsageLimitMiddleware interface {
 
 type usageLimitMiddleware struct {
 	subscriptionService services.UserSubscriptionService
+	orgSubService       services.OrganizationSubscriptionService
 	terminalService     terminalServices.TerminalTrainerService
+	db                  *gorm.DB
 }
 
 func NewUsageLimitMiddleware(db *gorm.DB) UsageLimitMiddleware {
 	return &usageLimitMiddleware{
 		subscriptionService: services.NewSubscriptionService(db),
+		orgSubService:       services.NewOrganizationSubscriptionService(db),
 		terminalService:     terminalServices.NewTerminalTrainerService(db),
+		db:                  db,
 	}
 }
 
@@ -54,6 +58,7 @@ func (ulm *usageLimitMiddleware) CheckConcurrentUserLimit() gin.HandlerFunc {
 }
 
 // CheckCustomLimit middleware générique pour vérifier une limite spécifique
+// Phase 2: Checks organization subscriptions first, then falls back to user subscriptions
 func (ulm *usageLimitMiddleware) CheckCustomLimit(metricType string, increment int64) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		userId := ctx.GetString("userId")
@@ -64,15 +69,72 @@ func (ulm *usageLimitMiddleware) CheckCustomLimit(metricType string, increment i
 			return
 		}
 
-		// Vérifier la limite
-		limitCheck, err := ulm.subscriptionService.CheckUsageLimit(userId, metricType, increment)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: fmt.Sprintf("Failed to check usage limit: %v", err),
-			})
-			ctx.Abort()
-			return
+		// Phase 2: Try organization subscriptions first
+		features, err := ulm.orgSubService.GetUserEffectiveFeatures(userId)
+		var limitCheck *services.UsageLimitCheck
+
+		if err == nil && features != nil {
+			// User has organization subscriptions - use aggregated limits
+			var limit int64
+			switch metricType {
+			case "courses_created":
+				limit = int64(features.MaxCourses)
+			case "lab_sessions":
+				limit = int64(features.MaxLabSessions)
+			case "concurrent_terminals":
+				limit = int64(features.MaxConcurrentTerminals)
+			default:
+				limit = -1 // Unlimited
+			}
+
+			// For concurrent_terminals, check real count from DB
+			var currentUsage int64 = 0
+			if metricType == "concurrent_terminals" {
+				var activeCount int64
+				countErr := ulm.db.Table("terminals").
+					Where("user_id = ? AND status = ? AND deleted_at IS NULL", userId, "active").
+					Count(&activeCount).Error
+				if countErr == nil {
+					currentUsage = activeCount
+				}
+			}
+
+			allowed := limit == -1 || (currentUsage+increment) <= limit
+			var remaining int64
+			if limit == -1 {
+				remaining = -1
+			} else {
+				remaining = limit - currentUsage
+				if remaining < 0 {
+					remaining = 0
+				}
+			}
+
+			message := ""
+			if !allowed {
+				message = fmt.Sprintf("Usage limit exceeded. Current: %d, Limit: %d", currentUsage, limit)
+			}
+
+			limitCheck = &services.UsageLimitCheck{
+				Allowed:        allowed,
+				CurrentUsage:   currentUsage,
+				Limit:          limit,
+				RemainingUsage: remaining,
+				Message:        message,
+				UserID:         userId,
+				MetricType:     metricType,
+			}
+		} else {
+			// Backward compatibility: Fall back to user subscription
+			limitCheck, err = ulm.subscriptionService.CheckUsageLimit(userId, metricType, increment)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+					ErrorCode:    http.StatusInternalServerError,
+					ErrorMessage: fmt.Sprintf("Failed to check usage limit: %v", err),
+				})
+				ctx.Abort()
+				return
+			}
 		}
 
 		if !limitCheck.Allowed {

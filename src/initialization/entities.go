@@ -12,6 +12,7 @@ import (
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/groups"
 	groupRegistration "soli/formations/src/groups/entityRegistration"
+	organizationRegistration "soli/formations/src/organizations/entityRegistration"
 	"soli/formations/src/terminalTrainer"
 	terminalRegistration "soli/formations/src/terminalTrainer/entityRegistration"
 
@@ -37,6 +38,10 @@ func RegisterEntities() {
 
 	ems.GlobalEntityRegistrationService.RegisterEntity(groupRegistration.GroupRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(groupRegistration.GroupMemberRegistration{})
+
+	// Organization entities (Phase 1)
+	ems.GlobalEntityRegistrationService.RegisterEntity(organizationRegistration.OrganizationRegistration{})
+	ems.GlobalEntityRegistrationService.RegisterEntity(organizationRegistration.OrganizationMemberRegistration{})
 
 	ems.GlobalEntityRegistrationService.RegisterEntity(configRegistration.FeatureRegistration{})
 }

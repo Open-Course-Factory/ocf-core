@@ -11,6 +11,7 @@ import (
 func InitPaymentRoutes(routerGroup *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
 	paymentController.UserSubscriptionRoutes(routerGroup, config, db)
 	paymentController.SubscriptionPlanRoutes(routerGroup, config, db)
+	paymentController.OrganizationSubscriptionRoutes(routerGroup, config, db) // Phase 2: Organization subscriptions
 	paymentController.BulkLicenseRoutes(routerGroup, config, db)
 	paymentController.PaymentMethodRoutes(routerGroup, config, db)
 	paymentController.InvoiceRoutes(routerGroup, config, db)

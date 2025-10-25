@@ -12,6 +12,7 @@ import (
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
+	organizationModels "soli/formations/src/organizations/models"
 	terminalRepo "soli/formations/src/terminalTrainer/repositories"
 
 	genericService "soli/formations/src/entityManagement/services"
@@ -620,6 +621,12 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 		return ss.handleBulkSubscriptionCreated(&subscription)
 	}
 
+	// Phase 2: Check if this is an organization subscription
+	if orgID, exists := subscription.Metadata["organization_id"]; exists {
+		utils.Info("🏢 Detected organization subscription creation: %s for org %s", subscription.ID, orgID)
+		return ss.handleOrganizationSubscriptionCreated(&subscription)
+	}
+
 	userID, exists := subscription.Metadata["user_id"]
 	if !exists {
 		return fmt.Errorf("user_id not found in subscription metadata")
@@ -747,6 +754,12 @@ func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 		return ss.handleBulkSubscriptionUpdated(&subscription)
 	}
 
+	// Phase 2: Check if this is an organization subscription
+	if _, exists := subscription.Metadata["organization_id"]; exists {
+		utils.Debug("🏢 Detected organization subscription update: %s", subscription.ID)
+		return ss.handleOrganizationSubscriptionUpdated(&subscription)
+	}
+
 	// Récupérer l'abonnement existant
 	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
 	if err != nil {
@@ -839,6 +852,12 @@ func (ss *stripeService) handleSubscriptionDeleted(event *stripe.Event) error {
 		return ss.handleBulkSubscriptionDeleted(&subscription)
 	}
 
+	// Phase 2: Check if this is an organization subscription
+	if _, exists := subscription.Metadata["organization_id"]; exists {
+		utils.Debug("🏢 Detected organization subscription deletion: %s", subscription.ID)
+		return ss.handleOrganizationSubscriptionDeleted(&subscription)
+	}
+
 	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
 	if err != nil {
 		return err
@@ -857,6 +876,203 @@ func (ss *stripeService) handleSubscriptionDeleted(event *stripe.Event) error {
 
 	return ss.repository.UpdateUserSubscription(userSub)
 }
+
+// ============================================================================
+// Phase 2: Organization Subscription Webhook Handlers
+// ============================================================================
+
+// handleOrganizationSubscriptionCreated processes organization subscription creation from Stripe
+func (ss *stripeService) handleOrganizationSubscriptionCreated(subscription *stripe.Subscription) error {
+	orgIDStr, exists := subscription.Metadata["organization_id"]
+	if !exists {
+		return fmt.Errorf("organization_id not found in subscription metadata")
+	}
+
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid organization_id in metadata: %v", err)
+	}
+
+	// Determine plan ID from Stripe price (same logic as user subscriptions)
+	var planID uuid.UUID
+	var plan *models.SubscriptionPlan
+
+	if len(subscription.Items.Data) > 0 {
+		stripePriceID := subscription.Items.Data[0].Price.ID
+		utils.Debug("🔍 Organization subscription created with Stripe price ID: %s", stripePriceID)
+
+		// Try to find plan by Stripe price ID
+		plan, err = ss.repository.GetSubscriptionPlanByStripePriceID(stripePriceID)
+		if err == nil {
+			planID = plan.ID
+			utils.Debug("✅ Found plan by Stripe price: %s (%s)", plan.Name, plan.ID)
+		} else {
+			// Fallback to metadata
+			planIDStr, exists := subscription.Metadata["subscription_plan_id"]
+			if !exists {
+				return fmt.Errorf("subscription_plan_id not found in metadata and price lookup failed")
+			}
+			planID, err = uuid.Parse(planIDStr)
+			if err != nil {
+				return fmt.Errorf("invalid subscription_plan_id in metadata: %v", err)
+			}
+
+			// Load the plan object
+			plan, err = ss.subscriptionService.GetSubscriptionPlan(planID)
+			if err != nil {
+				return fmt.Errorf("failed to load plan %s: %v", planID, err)
+			}
+		}
+	} else {
+		return fmt.Errorf("subscription has no items/price")
+	}
+
+	// Get period dates from subscription items
+	var currentPeriodStart, currentPeriodEnd time.Time
+	if len(subscription.Items.Data) > 0 {
+		item := subscription.Items.Data[0]
+		currentPeriodStart = time.Unix(item.CurrentPeriodStart, 0)
+		currentPeriodEnd = time.Unix(item.CurrentPeriodEnd, 0)
+	}
+
+	// Create OrganizationSubscription record
+	orgSubscription := &models.OrganizationSubscription{
+		OrganizationID:       orgID,
+		SubscriptionPlanID:   planID,
+		SubscriptionPlan:     *plan,
+		StripeSubscriptionID: &subscription.ID,
+		StripeCustomerID:     subscription.Customer.ID,
+		Status:               string(subscription.Status),
+		CurrentPeriodStart:   currentPeriodStart,
+		CurrentPeriodEnd:     currentPeriodEnd,
+		CancelAtPeriodEnd:    subscription.CancelAtPeriodEnd,
+		Quantity:             int(subscription.Items.Data[0].Quantity),
+	}
+
+	// Add trial end if exists
+	if subscription.TrialEnd > 0 {
+		trialEnd := time.Unix(subscription.TrialEnd, 0)
+		orgSubscription.TrialEnd = &trialEnd
+	}
+
+	// Get organization subscription repository
+	orgSubRepo := repositories.NewOrganizationSubscriptionRepository(ss.db)
+
+	// Create the organization subscription
+	if err := orgSubRepo.CreateOrganizationSubscription(orgSubscription); err != nil {
+		return fmt.Errorf("failed to create organization subscription: %v", err)
+	}
+
+	// Update Organization.SubscriptionPlanID
+	err = ss.db.Model(&organizationModels.Organization{}).
+		Where("id = ?", orgID).
+		Update("subscription_plan_id", planID).Error
+	if err != nil {
+		utils.Warn("⚠️ Failed to update organization subscription_plan_id: %v", err)
+	}
+
+	utils.Info("✅ Created organization subscription %s for org %s with plan %s",
+		orgSubscription.ID, orgID, plan.Name)
+
+	return nil
+}
+
+// handleOrganizationSubscriptionUpdated processes organization subscription updates from Stripe
+func (ss *stripeService) handleOrganizationSubscriptionUpdated(subscription *stripe.Subscription) error {
+	// Get organization subscription repository
+	orgSubRepo := repositories.NewOrganizationSubscriptionRepository(ss.db)
+
+	// Find the existing subscription
+	orgSub, err := orgSubRepo.GetOrganizationSubscriptionByStripeID(*&subscription.ID)
+	if err != nil {
+		return fmt.Errorf("organization subscription not found in database: %v", err)
+	}
+
+	// Check if the plan changed
+	if len(subscription.Items.Data) > 0 {
+		stripePriceID := subscription.Items.Data[0].Price.ID
+		utils.Debug("🔍 Webhook org subscription update: Stripe price ID = %s", stripePriceID)
+
+		// Check if plan changed
+		currentPlan, err := ss.subscriptionService.GetSubscriptionPlan(orgSub.SubscriptionPlanID)
+		if err == nil && currentPlan.StripePriceID != nil && *currentPlan.StripePriceID != stripePriceID {
+			utils.Info("🔄 Organization subscription plan changed from %s to %s",
+				*currentPlan.StripePriceID, stripePriceID)
+
+			// Find the new plan
+			newPlan, err := ss.repository.GetSubscriptionPlanByStripePriceID(stripePriceID)
+			if err == nil {
+				orgSub.SubscriptionPlanID = newPlan.ID
+				orgSub.SubscriptionPlan = *newPlan
+
+				// Update Organization.SubscriptionPlanID
+				err = ss.db.Model(&organizationModels.Organization{}).
+					Where("id = ?", orgSub.OrganizationID).
+					Update("subscription_plan_id", newPlan.ID).Error
+				if err != nil {
+					utils.Warn("⚠️ Failed to update organization subscription_plan_id: %v", err)
+				}
+
+				utils.Info("✅ Updated organization %s to plan %s", orgSub.OrganizationID, newPlan.Name)
+			}
+		}
+
+		// Update period dates
+		item := subscription.Items.Data[0]
+		orgSub.CurrentPeriodStart = time.Unix(item.CurrentPeriodStart, 0)
+		orgSub.CurrentPeriodEnd = time.Unix(item.CurrentPeriodEnd, 0)
+		orgSub.Quantity = int(item.Quantity)
+	}
+
+	// Update status and other fields
+	orgSub.Status = string(subscription.Status)
+	orgSub.CancelAtPeriodEnd = subscription.CancelAtPeriodEnd
+
+	// Update trial end
+	if subscription.TrialEnd > 0 {
+		trialEnd := time.Unix(subscription.TrialEnd, 0)
+		orgSub.TrialEnd = &trialEnd
+	}
+
+	// Save updates
+	if err := orgSubRepo.UpdateOrganizationSubscription(orgSub); err != nil {
+		return fmt.Errorf("failed to update organization subscription: %v", err)
+	}
+
+	utils.Info("✅ Updated organization subscription %s (status: %s)", orgSub.ID, orgSub.Status)
+
+	return nil
+}
+
+// handleOrganizationSubscriptionDeleted processes organization subscription cancellation from Stripe
+func (ss *stripeService) handleOrganizationSubscriptionDeleted(subscription *stripe.Subscription) error {
+	// Get organization subscription repository
+	orgSubRepo := repositories.NewOrganizationSubscriptionRepository(ss.db)
+
+	// Find the existing subscription
+	orgSub, err := orgSubRepo.GetOrganizationSubscriptionByStripeID(subscription.ID)
+	if err != nil {
+		return fmt.Errorf("organization subscription not found in database: %v", err)
+	}
+
+	// Update status to cancelled
+	orgSub.Status = "cancelled"
+	now := time.Now()
+	orgSub.CancelledAt = &now
+
+	// Save updates
+	if err := orgSubRepo.UpdateOrganizationSubscription(orgSub); err != nil {
+		return fmt.Errorf("failed to cancel organization subscription: %v", err)
+	}
+
+	utils.Info("✅ Cancelled organization subscription %s for org %s", orgSub.ID, orgSub.OrganizationID)
+
+	return nil
+}
+
+// ============================================================================
+// End Phase 2: Organization Subscription Webhook Handlers
+// ============================================================================
 
 // handleInvoicePaymentSucceeded traite le paiement réussi d'une facture
 func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) error {

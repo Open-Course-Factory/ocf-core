@@ -217,8 +217,60 @@ func (c *bulkLicenseController) GetMyBatches(ctx *gin.Context) {
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/subscription-batches/{id} [get]
 func (c *bulkLicenseController) GetBatchDetails(ctx *gin.Context) {
-	// Implementation similar to GetMyBatches but for single batch
-	ctx.JSON(http.StatusOK, gin.H{"message": "Not yet implemented"})
+	userID := ctx.GetString("userId")
+	batchIDStr := ctx.Param("id")
+
+	batchID, err := uuid.Parse(batchIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid batch ID",
+		})
+		return
+	}
+
+	batches, err := c.bulkService.GetBatchesByPurchaser(userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to retrieve batch",
+		})
+		return
+	}
+
+	// Find the specific batch
+	for _, batch := range *batches {
+		if batch.ID == batchID {
+			batchOutput := dto.SubscriptionBatchOutput{
+				ID:                       batch.ID,
+				PurchaserUserID:          batch.PurchaserUserID,
+				SubscriptionPlanID:       batch.SubscriptionPlanID,
+				GroupID:                  batch.GroupID,
+				StripeSubscriptionID:     batch.StripeSubscriptionID,
+				StripeSubscriptionItemID: batch.StripeSubscriptionItemID,
+				TotalQuantity:            batch.TotalQuantity,
+				AssignedQuantity:         batch.AssignedQuantity,
+				AvailableQuantity:        batch.TotalQuantity - batch.AssignedQuantity,
+				Status:                   batch.Status,
+				CurrentPeriodStart:       batch.CurrentPeriodStart,
+				CurrentPeriodEnd:         batch.CurrentPeriodEnd,
+				CancelledAt:              batch.CancelledAt,
+				CreatedAt:                batch.CreatedAt,
+				UpdatedAt:                batch.UpdatedAt,
+			}
+
+			planOutput, _ := c.conversionService.SubscriptionPlanToDTO(&batch.SubscriptionPlan)
+			batchOutput.SubscriptionPlan = *planOutput
+
+			ctx.JSON(http.StatusOK, batchOutput)
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusNotFound, &errors.APIError{
+		ErrorCode:    http.StatusNotFound,
+		ErrorMessage: "Batch not found or access denied",
+	})
 }
 
 // GetBatchLicenses godoc

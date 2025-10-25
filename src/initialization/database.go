@@ -11,6 +11,7 @@ import (
 	configModels "soli/formations/src/configuration/models"
 	courseModels "soli/formations/src/courses/models"
 	groupModels "soli/formations/src/groups/models"
+	organizationModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	testtools "soli/formations/tests/testTools"
@@ -77,10 +78,15 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&groupModels.ClassGroup{})
 	db.AutoMigrate(&groupModels.GroupMember{})
 
+	// Organization entities (Phase 1)
+	db.AutoMigrate(&organizationModels.Organization{})
+	db.AutoMigrate(&organizationModels.OrganizationMember{})
+
 	// Payment entities
 	db.AutoMigrate(&paymentModels.SubscriptionPlan{})
 	db.AutoMigrate(&paymentModels.SubscriptionBatch{})
-	db.AutoMigrate(&paymentModels.UserSubscription{})
+	db.AutoMigrate(&paymentModels.UserSubscription{})                 // DEPRECATED in Phase 2 (kept for backward compat)
+	db.AutoMigrate(&paymentModels.OrganizationSubscription{})         // NEW: Phase 2 - Organization subscriptions
 	db.AutoMigrate(&paymentModels.Invoice{})
 	db.AutoMigrate(&paymentModels.PaymentMethod{})
 	db.AutoMigrate(&paymentModels.UsageMetrics{})

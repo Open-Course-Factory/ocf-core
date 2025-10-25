@@ -8,6 +8,7 @@ import (
 	"soli/formations/src/groups/dto"
 	"soli/formations/src/groups/models"
 	"soli/formations/src/groups/repositories"
+	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/utils"
 
 	"github.com/google/uuid"
@@ -33,6 +34,7 @@ type GroupService interface {
 
 	// Permissions
 	CanUserManageGroup(groupID uuid.UUID, userID string) (bool, error)
+	CanUserAccessGroupViaOrg(groupID uuid.UUID, userID string) (bool, error) // NEW: Check org-based access
 	GrantGroupPermissionsToUser(userID string, groupID uuid.UUID) error
 	RevokeGroupPermissionsFromUser(userID string, groupID uuid.UUID) error
 
@@ -60,12 +62,35 @@ func (gs *groupService) CreateGroup(userID string, input dto.CreateGroupInput) (
 		return nil, fmt.Errorf("you already have a group with this name")
 	}
 
+	// NEW: Validate organization access if OrganizationID is provided
+	if input.OrganizationID != nil {
+		// Check if user is a manager or owner in the organization
+		var orgMember organizationModels.OrganizationMember
+		result := gs.db.Where("organization_id = ? AND user_id = ?", input.OrganizationID, userID).First(&orgMember)
+		if result.Error != nil {
+			return nil, fmt.Errorf("you are not a member of this organization")
+		}
+		if !orgMember.IsManager() {
+			return nil, fmt.Errorf("only organization managers can create groups in this organization")
+		}
+
+		// Check if organization has reached its group limit
+		var org organizationModels.Organization
+		if err := gs.db.Where("id = ?", input.OrganizationID).Preload("Groups").First(&org).Error; err != nil {
+			return nil, fmt.Errorf("organization not found")
+		}
+		if org.HasReachedGroupLimit() {
+			return nil, fmt.Errorf("organization has reached its group limit (%d groups)", org.MaxGroups)
+		}
+	}
+
 	// Create group
 	group := &models.ClassGroup{
 		Name:               input.Name,
 		DisplayName:        input.DisplayName,
 		Description:        input.Description,
 		OwnerUserID:        userID,
+		OrganizationID:     input.OrganizationID, // NEW: Link to organization
 		SubscriptionPlanID: input.SubscriptionPlanID,
 		MaxMembers:         input.MaxMembers,
 		ExpiresAt:          input.ExpiresAt,
@@ -334,6 +359,14 @@ func (gs *groupService) CanUserManageGroup(groupID uuid.UUID, userID string) (bo
 		return true, nil
 	}
 
+	// NEW: Check organization-based management access
+	if group.OrganizationID != nil {
+		hasOrgAccess, _ := gs.CanUserAccessGroupViaOrg(groupID, userID)
+		if hasOrgAccess {
+			return true, nil
+		}
+	}
+
 	// Check if user is an admin member
 	member, err := gs.repository.GetGroupMember(groupID, userID)
 	if err != nil || member == nil {
@@ -341,6 +374,33 @@ func (gs *groupService) CanUserManageGroup(groupID uuid.UUID, userID string) (bo
 	}
 
 	return member.IsAdmin(), nil
+}
+
+// CanUserAccessGroupViaOrg checks if a user can access a group through organization membership
+// NEW: Phase 1 - Organization-based group access
+func (gs *groupService) CanUserAccessGroupViaOrg(groupID uuid.UUID, userID string) (bool, error) {
+	// Get the group to check its organization
+	group, err := gs.repository.GetGroupByID(groupID, false)
+	if err != nil {
+		return false, err
+	}
+
+	// If group doesn't belong to an organization, no org-based access
+	if group.OrganizationID == nil {
+		return false, nil
+	}
+
+	// Check if user is a manager or owner in the organization
+	var orgMember organizationModels.OrganizationMember
+	result := gs.db.Where("organization_id = ? AND user_id = ? AND is_active = ?",
+		group.OrganizationID, userID, true).First(&orgMember)
+
+	if result.Error != nil {
+		return false, nil
+	}
+
+	// Only managers and owners have cascading access to all org groups
+	return orgMember.IsManager(), nil
 }
 
 // GrantGroupPermissionsToUser grants group-related permissions to a user via Casbin

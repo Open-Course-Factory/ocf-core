@@ -14,7 +14,8 @@ type ClassGroup struct {
 	DisplayName        string     `gorm:"type:varchar(255);not null" json:"display_name"`
 	Description        string     `gorm:"type:text" json:"description,omitempty"`
 	OwnerUserID        string     `gorm:"type:varchar(255);not null;index" json:"owner_user_id"`        // Creator (teacher/trainer)
-	SubscriptionPlanID *uuid.UUID `gorm:"type:uuid;index" json:"subscription_plan_id,omitempty"`        // Optional group subscription
+	OrganizationID     *uuid.UUID `gorm:"type:uuid;index" json:"organization_id,omitempty"`             // Link to parent organization (Phase 1)
+	SubscriptionPlanID *uuid.UUID `gorm:"type:uuid;index" json:"subscription_plan_id,omitempty"`        // DEPRECATED Phase 2: Use Organization.SubscriptionPlanID instead
 	MaxMembers         int        `gorm:"default:50" json:"max_members"`                                // Group size limit
 	ExpiresAt          *time.Time `json:"expires_at,omitempty"`                                         // Optional expiration (for temporary classes)
 	CasdoorGroupName   *string    `gorm:"type:varchar(255);unique" json:"casdoor_group_name,omitempty"` // Sync reference to Casdoor group

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/payment/repositories"
+	"soli/formations/src/payment/services"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -12,15 +13,20 @@ import (
 
 type FeatureMiddleware struct {
 	paymentRepo repositories.PaymentRepository
+	orgSubService services.OrganizationSubscriptionService
+	db *gorm.DB
 }
 
 func NewFeatureMiddleware(db *gorm.DB) *FeatureMiddleware {
 	return &FeatureMiddleware{
 		paymentRepo: repositories.NewPaymentRepository(db),
+		orgSubService: services.NewOrganizationSubscriptionService(db),
+		db: db,
 	}
 }
 
-// RequireFeature checks if the user's active subscription includes the specified feature
+// RequireFeature checks if the user has access to a feature through organization or user subscription
+// Phase 2: Checks organization subscriptions first, then falls back to user subscriptions (backward compat)
 func (fm *FeatureMiddleware) RequireFeature(featureName string) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		userID := ctx.GetString("userId")
@@ -34,7 +40,15 @@ func (fm *FeatureMiddleware) RequireFeature(featureName string) gin.HandlerFunc 
 			return
 		}
 
-		// Get user's active subscription
+		// Phase 2: Check organization subscriptions first
+		hasFeature, err := fm.orgSubService.CanUserAccessFeature(userID, featureName)
+		if err == nil && hasFeature {
+			// User has access via organization subscription
+			ctx.Next()
+			return
+		}
+
+		// Backward compatibility: Fall back to user subscription (deprecated)
 		subscription, err := fm.paymentRepo.GetActiveUserSubscription(userID)
 		if err != nil {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
@@ -46,7 +60,7 @@ func (fm *FeatureMiddleware) RequireFeature(featureName string) gin.HandlerFunc 
 		}
 
 		// Check if the feature is in the plan's features list
-		hasFeature := false
+		hasFeature = false
 		for _, feature := range subscription.SubscriptionPlan.Features {
 			if feature == featureName {
 				hasFeature = true
