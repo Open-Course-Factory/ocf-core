@@ -41,7 +41,14 @@ func NewGenericRepository(db *gorm.DB) GenericRepository {
 // the manager with all standard filter strategies.
 func (o *genericRepository) getFilterManager(entityName string) *filters.FilterManager {
 	relationshipFilters := ems.GlobalEntityRegistrationService.GetRelationshipFilters(entityName)
-	return filters.NewFilterManager(relationshipFilters)
+	manager := filters.NewFilterManager(relationshipFilters)
+
+	// Add custom organization member filter for user-based access control
+	if entityName == "Organization" {
+		manager.AddStrategy(&filters.OrganizationMemberFilter{})
+	}
+
+	return manager
 }
 
 // getTableName extracts the table name from a model instance using GORM's parser.

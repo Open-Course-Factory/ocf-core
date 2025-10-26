@@ -7,6 +7,14 @@ import (
 	"github.com/google/uuid"
 )
 
+// UserSummary contains basic user information (avoids import cycle with auth/dto)
+type UserSummary struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	DisplayName string    `json:"display_name"`
+	Email       string    `json:"email"`
+}
+
 // CreateOrganizationMemberInput represents the input for adding a member to an organization
 type CreateOrganizationMemberInput struct {
 	UserID   string                         `json:"user_id" mapstructure:"user_id" binding:"required"`
@@ -41,6 +49,9 @@ type OrganizationMemberOutput struct {
 	CreatedAt      time.Time                      `json:"created_at"`
 	UpdatedAt      time.Time                      `json:"updated_at"`
 
-	// Optional organization details (loaded via ?includes=organization)
+	// Optional organization details (loaded via ?include=Organization)
 	Organization *OrganizationOutput `json:"organization,omitempty"`
+
+	// Optional user details (loaded via ?include=User - fetched from Casdoor)
+	User *UserSummary `json:"user,omitempty"`
 }

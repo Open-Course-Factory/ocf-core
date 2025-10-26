@@ -10,6 +10,7 @@ import (
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/models"
 	sqldb "soli/formations/src/db"
+	organizationServices "soli/formations/src/organizations/services"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	ttServices "soli/formations/src/terminalTrainer/services"
@@ -138,6 +139,16 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 	if errTrialSubscription != nil {
 		fmt.Printf("Warning: Could not create Trial subscription for user %s: %v\n", createdUser.Id, errTrialSubscription)
 		// Don't fail registration for this, just log warning
+	}
+
+	// Create personal organization for new user
+	orgService := organizationServices.NewOrganizationService(sqldb.DB)
+	_, errPersonalOrg := orgService.CreatePersonalOrganization(createdUser.Id)
+	if errPersonalOrg != nil {
+		fmt.Printf("Warning: Could not create personal organization for user %s: %v\n", createdUser.Id, errPersonalOrg)
+		// Don't fail registration for this, just log warning
+	} else {
+		fmt.Printf("✅ Successfully created personal organization for user %s\n", createdUser.Id)
 	}
 
 	return dto.UserModelToUserOutput(createdUser), nil

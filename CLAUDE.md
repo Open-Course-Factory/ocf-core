@@ -124,39 +124,25 @@ Response:
 
 2. **Use Token** for authenticated requests:
 
-**IMPORTANT**: Due to Bash tool limitations with command substitution, use the pre-approved TOKEN variable or provide the full token directly.
+**Method: Provide the full token directly in the Authorization header**
 
-**Method 1: Use the pre-approved TOKEN variable (recommended for testing)**
+First, get a fresh token and extract it:
 ```bash
-# The $TOKEN variable is pre-configured in the approved tools list
-curl -X GET http://localhost:8080/api/v1/terminals \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json"
-```
-
-**Method 2: Provide the full token directly (most reliable)**
-```bash
-# Use the complete token directly in the Authorization header
-curl -X GET http://localhost:8080/api/v1/terminals \
-  -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImRlbW9fY2VydGlmaWNhdGUiLCJ0eXAiOiJKV1QifQ..." \
-  -H "Content-Type: application/json" | python3 -m json.tool
-```
-
-**Method 3: Two-step approach (fallback)**
-```bash
-# Step 1: Get token and save to file
 curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"1.supervisor@test.com","password":"test"}' \
-  | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])" > /tmp/token.txt
-
-# Step 2: Use token from file
-curl -X GET http://localhost:8080/api/v1/terminals \
-  -H "Authorization: Bearer $(cat /tmp/token.txt)" \
-  -H "Content-Type: application/json"
+  -d '{"email":"1.supervisor@test.com","password":"test"}' | python3 -m json.tool
 ```
 
-**Note**: Avoid using `$()` command substitution in complex Bash commands as it can cause parsing issues with the Bash tool. When in doubt, use Method 1 or Method 2.
+Copy the `access_token` value from the response, then use it directly in your requests:
+```bash
+curl -s -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImRlbW9fY2VydGlmaWNhdGUiLCJ0eXAiOiJKV1QifQ..." \
+  "http://localhost:8080/api/v1/organizations" | python3 -m json.tool
+```
+
+**Important Notes:**
+- Always use the **complete token string** (starts with `eyJ...`, very long)
+- Tokens expire after ~7 days - if you get "invalid token", get a fresh one
+- Command substitution `$(...)` does NOT work reliably with the Bash tool
 
 **Common API Endpoints:**
 - `GET /api/v1/subscription-plans` - List all subscription plans

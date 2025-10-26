@@ -2,8 +2,17 @@ package userController
 
 import (
 	"net/http"
+	"strings"
 
+	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
+	sqldb "soli/formations/src/db"
+	groupDto "soli/formations/src/groups/dto"
+	groupModels "soli/formations/src/groups/models"
+	groupRegistration "soli/formations/src/groups/entityRegistration"
+	organizationDto "soli/formations/src/organizations/dto"
+	organizationModels "soli/formations/src/organizations/models"
+	organizationRegistration "soli/formations/src/organizations/entityRegistration"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,6 +40,18 @@ func (u userController) GetUser(ctx *gin.Context) {
 		return
 	}
 
+	// Handle special "me" ID - use authenticated user's ID from JWT token
+	if userID == "me" {
+		userID = ctx.GetString("userId")
+		if userID == "" {
+			ctx.JSON(http.StatusUnauthorized, &errors.APIError{
+				ErrorCode:    http.StatusUnauthorized,
+				ErrorMessage: "User not authenticated",
+			})
+			return
+		}
+	}
+
 	user, userError := u.service.GetUserById(userID)
 	if userError != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
@@ -40,5 +61,66 @@ func (u userController) GetUser(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, user)
+	// Check if includes parameter is provided
+	includesParam := ctx.Query("includes")
+	if includesParam == "" {
+		// No includes requested, return standard user output
+		ctx.JSON(http.StatusOK, user)
+		return
+	}
+
+	// Parse includes
+	includes := strings.Split(includesParam, ",")
+	extendedUser := dto.ExtendedUserOutput{
+		UserOutput: *user,
+	}
+
+	// Load organization memberships if requested
+	for _, include := range includes {
+		include = strings.TrimSpace(include)
+
+		if include == "organization_memberships" {
+			var orgMemberships []organizationModels.OrganizationMember
+			err := sqldb.DB.Where("user_id = ? AND is_active = ?", userID, true).
+				Preload("Organization").
+				Find(&orgMemberships).Error
+
+			if err == nil {
+				reg := organizationRegistration.OrganizationMemberRegistration{}
+				memberOutputs := make([]organizationDto.OrganizationMemberOutput, 0)
+
+				for _, membership := range orgMemberships {
+					output, convErr := reg.EntityModelToEntityOutput(membership)
+					if convErr == nil {
+						memberOutputs = append(memberOutputs, output.(organizationDto.OrganizationMemberOutput))
+					}
+				}
+
+				extendedUser.OrganizationMemberships = memberOutputs
+			}
+		}
+
+		if include == "group_memberships" {
+			var groupMemberships []groupModels.GroupMember
+			err := sqldb.DB.Where("user_id = ? AND is_active = ?", userID, true).
+				Preload("ClassGroup").
+				Find(&groupMemberships).Error
+
+			if err == nil {
+				reg := groupRegistration.GroupMemberRegistration{}
+				memberOutputs := make([]groupDto.GroupMemberOutput, 0)
+
+				for _, membership := range groupMemberships {
+					output, convErr := reg.EntityModelToEntityOutput(membership)
+					if convErr == nil {
+						memberOutputs = append(memberOutputs, output.(groupDto.GroupMemberOutput))
+					}
+				}
+
+				extendedUser.GroupMemberships = memberOutputs
+			}
+		}
+	}
+
+	ctx.JSON(http.StatusOK, extendedUser)
 }

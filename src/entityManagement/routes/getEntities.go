@@ -73,6 +73,33 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 		}
 	}
 
+	// Add automatic user-based filtering for organizations
+	entityName := GetEntityNameFromPath(ctx.FullPath())
+	if entityName == "Organization" {
+		userID := ctx.GetString("userId")
+		if userID != "" {
+			// Check if user is a system admin (non-admin users only see organizations they're members of)
+			roles, exists := ctx.Get("userRoles")
+			isAdmin := false
+			if exists {
+				roleList, ok := roles.([]string)
+				if ok {
+					for _, role := range roleList {
+						if role == "administrator" || role == "admin" {
+							isAdmin = true
+							break
+						}
+					}
+				}
+			}
+
+			// Non-admin users only see organizations they're members of
+			if !isAdmin {
+				filters["user_member_id"] = userID
+			}
+		}
+	}
+
 	// Use cursor pagination if cursor param is present (even if empty for first page)
 	if _, hasCursor := ctx.Request.URL.Query()["cursor"]; hasCursor {
 		limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "20"))

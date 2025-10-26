@@ -31,7 +31,7 @@ type OrganizationService interface {
 	AddMembersToOrganization(orgID uuid.UUID, requestingUserID string, userIDs []string, role models.OrganizationMemberRole) error
 	RemoveMemberFromOrganization(orgID uuid.UUID, requestingUserID string, userID string) error
 	UpdateMemberRole(orgID uuid.UUID, requestingUserID string, userID string, newRole models.OrganizationMemberRole) error
-	GetOrganizationMembers(orgID uuid.UUID) (*[]models.OrganizationMember, error)
+	GetOrganizationMembers(orgID uuid.UUID, includes []string) (*[]models.OrganizationMember, error)
 	IsUserInOrganization(orgID uuid.UUID, userID string) (bool, error)
 	GetUserOrganizationRole(orgID uuid.UUID, userID string) (models.OrganizationMemberRole, error)
 
@@ -231,7 +231,7 @@ func (os *organizationService) DeleteOrganization(orgID uuid.UUID, requestingUse
 	}
 
 	// Revoke all member permissions
-	members, err := os.repository.GetOrganizationMembers(orgID)
+	members, err := os.repository.GetOrganizationMembers(orgID, []string{})
 	if err == nil && members != nil {
 		for _, member := range *members {
 			os.RevokeOrganizationPermissions(member.UserID, orgID)
@@ -390,8 +390,8 @@ func (os *organizationService) UpdateMemberRole(orgID uuid.UUID, requestingUserI
 }
 
 // GetOrganizationMembers returns all members of an organization
-func (os *organizationService) GetOrganizationMembers(orgID uuid.UUID) (*[]models.OrganizationMember, error) {
-	return os.repository.GetOrganizationMembers(orgID)
+func (os *organizationService) GetOrganizationMembers(orgID uuid.UUID, includes []string) (*[]models.OrganizationMember, error) {
+	return os.repository.GetOrganizationMembers(orgID, includes)
 }
 
 // IsUserInOrganization checks if a user is a member of an organization

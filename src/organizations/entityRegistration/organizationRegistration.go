@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	authModels "soli/formations/src/auth/models"
+	sqldb "soli/formations/src/db"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
@@ -21,22 +22,27 @@ func (r OrganizationRegistration) GetSwaggerConfig() entityManagementInterfaces.
 		GetAll: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "List all organizations",
 			Description: "Retrieve all organizations (system admin only) or organizations the user is a member of",
+			Security:    true,
 		},
 		GetOne: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "Get organization details",
 			Description: "Retrieve a specific organization by ID",
+			Security:    true,
 		},
 		Create: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "Create a new organization",
 			Description: "Create a new organization. The creator becomes the organization owner.",
+			Security:    true,
 		},
 		Update: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "Update an organization",
 			Description: "Update organization details (owner or manager only)",
+			Security:    true,
 		},
 		Delete: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "Delete an organization",
 			Description: "Delete an organization (owner only, cannot delete personal organizations)",
+			Security:    true,
 		},
 	}
 }
@@ -106,11 +112,22 @@ func (r OrganizationRegistration) EntityModelToEntityOutput(input any) (any, err
 		output.Groups = &groups
 	}
 
-	// Add counts
-	groupCount := len(org.Groups)
-	memberCount := len(org.Members)
-	output.GroupCount = &groupCount
-	output.MemberCount = &memberCount
+	// Add actual database counts (not just loaded relationships)
+	// This ensures counts are accurate even when relationships aren't preloaded
+	var groupCount, memberCount int64
+
+	if sqldb.DB != nil {
+		// Count groups for this organization using direct SQL
+		sqldb.DB.Table("class_groups").Where("organization_id = ? AND deleted_at IS NULL", org.ID).Count(&groupCount)
+
+		// Count members for this organization using direct SQL
+		sqldb.DB.Table("organization_members").Where("organization_id = ? AND deleted_at IS NULL", org.ID).Count(&memberCount)
+	}
+
+	groupCountInt := int(groupCount)
+	memberCountInt := int(memberCount)
+	output.GroupCount = &groupCountInt
+	output.MemberCount = &memberCountInt
 
 	return output, nil
 }
@@ -185,6 +202,8 @@ func (r OrganizationRegistration) GetEntityRegistrationInput() entityManagementI
 			OutputDto:      dto.OrganizationOutput{},
 			InputEditDto:   dto.EditOrganizationInput{},
 		},
+		// EntitySubEntities removed - use ?include=Members,Groups query parameter instead
+		// The automatic preloading doesn't work correctly when field names don't match pluralized type names
 	}
 }
 

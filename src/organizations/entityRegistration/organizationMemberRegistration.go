@@ -22,22 +22,27 @@ func (r OrganizationMemberRegistration) GetSwaggerConfig() entityManagementInter
 		GetAll: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "List all organization members",
 			Description: "Retrieve all members of organizations (system admin only) or members of organizations the user belongs to",
+			Security:    true,
 		},
 		GetOne: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "Get organization member details",
 			Description: "Retrieve a specific organization member by ID",
+			Security:    true,
 		},
 		Create: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "Add a member to an organization",
 			Description: "Add a new member to an organization (owner or manager only)",
+			Security:    true,
 		},
 		Update: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "Update organization member",
 			Description: "Update a member's role or status in an organization (owner or manager only)",
+			Security:    true,
 		},
 		Delete: &entityManagementInterfaces.SwaggerOperation{
 			Summary:     "Remove a member from an organization",
 			Description: "Remove a member from an organization (owner or manager only, cannot remove owner)",
+			Security:    true,
 		},
 	}
 }

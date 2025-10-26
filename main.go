@@ -26,6 +26,7 @@ import (
 	genericController "soli/formations/src/entityManagement/routes"
 	groupHooks "soli/formations/src/groups/hooks"
 	organizationHooks "soli/formations/src/organizations/hooks"
+	organizationController "soli/formations/src/organizations/routes"
 	terminalController "soli/formations/src/terminalTrainer/routes"
 	versionController "soli/formations/src/version"
 	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
@@ -137,6 +138,8 @@ func main() {
 	generationController.GenerationsRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	terminalController.TerminalRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	terminalController.UserTerminalKeyRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	organizationController.OrganizationRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	organizationController.OrganizationMigrationRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	// Setup usage limit middleware for specific routes
 	apiGroupWithUsageCheck := apiGroup.Group("")

@@ -5,6 +5,9 @@ import (
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
+
+	groupDto "soli/formations/src/groups/dto"
+	organizationDto "soli/formations/src/organizations/dto"
 )
 
 type UserOutput struct {
@@ -15,6 +18,13 @@ type UserOutput struct {
 	CreatedAt     string    `json:"created_at"`
 	TosAcceptedAt string    `json:"tos_accepted_at,omitempty"`
 	TosVersion    string    `json:"tos_version,omitempty"`
+}
+
+// ExtendedUserOutput includes optional relationships
+type ExtendedUserOutput struct {
+	UserOutput
+	OrganizationMemberships []organizationDto.OrganizationMemberOutput `json:"organization_memberships,omitempty"`
+	GroupMemberships        []groupDto.GroupMemberOutput               `json:"group_memberships,omitempty"`
 }
 
 type CreateUserInput struct {
