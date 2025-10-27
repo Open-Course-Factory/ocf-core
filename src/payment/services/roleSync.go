@@ -4,6 +4,7 @@ package services
 import (
 	"fmt"
 	"soli/formations/src/auth/casdoor"
+	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
@@ -26,19 +27,20 @@ func (ss *subscriptionService) UpdateUserRoleBasedOnSubscription(userID string) 
 		return nil
 	}
 
-	// 2. Charger les politiques
-	if err := casdoor.Enforcer.LoadPolicy(); err != nil {
-		return fmt.Errorf("failed to load policy: %v", err)
-	}
+	// 2. Prepare permission options with LoadPolicyFirst
+	opts := utils.DefaultPermissionOptions()
+	opts.LoadPolicyFirst = true
+	opts.WarnOnError = true
 
 	// 3. Supprimer les anciens rôles d'abonnement
+
 	paymentRoles := []string{"member_pro", "trainer", "organization"}
 	for _, role := range paymentRoles {
-		casdoor.Enforcer.RemoveGroupingPolicy(userID, role)
+		utils.RemoveGroupingPolicy(casdoor.Enforcer, userID, role, opts)
 	}
 
 	// 4. Ajouter le nouveau rôle
-	_, err = casdoor.Enforcer.AddGroupingPolicy(userID, requiredRole)
+	err = utils.AddGroupingPolicy(casdoor.Enforcer, userID, requiredRole, opts)
 	if err != nil {
 		return fmt.Errorf("failed to update user role: %v", err)
 	}
@@ -69,8 +71,8 @@ func (ss *subscriptionService) UpdateUserRoleBasedOnSubscription(userID string) 
 
 func (ss *subscriptionService) assignDefaultRole(userID string) error {
 	// Assigner le rôle "member" par défaut
-	_, err := casdoor.Enforcer.AddGroupingPolicy(userID, "member")
-	return err
+	opts := utils.DefaultPermissionOptions()
+	return utils.AddGroupingPolicy(casdoor.Enforcer, userID, "member", opts)
 }
 
 func contains(slice []string, item string) bool {

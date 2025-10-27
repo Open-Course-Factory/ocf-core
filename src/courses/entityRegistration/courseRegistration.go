@@ -1,9 +1,9 @@
 package registration
 
 import (
-	"reflect"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
@@ -49,19 +49,9 @@ func (s CourseRegistration) GetSwaggerConfig() entityManagementInterfaces.Entity
 }
 
 func (s CourseRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return coursePtrModelToCourseOutputDto(input.(*models.Course))
-	} else {
-		return courseValueModelToCourseOutputDto(input.(models.Course))
-	}
-}
-
-func coursePtrModelToCourseOutputDto(courseModel *models.Course) (*dto.CourseOutput, error) {
-	return dto.CourseModelToCourseOutputDto(*courseModel), nil
-}
-
-func courseValueModelToCourseOutputDto(courseModel models.Course) (*dto.CourseOutput, error) {
-	return dto.CourseModelToCourseOutputDto(courseModel), nil
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		return dto.CourseModelToCourseOutputDto(*ptr.(*models.Course)), nil
+	})
 }
 
 func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {

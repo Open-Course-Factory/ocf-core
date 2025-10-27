@@ -16,8 +16,8 @@ type CreateTerminalInput struct {
 }
 
 type UpdateTerminalInput struct {
-	Name   string `json:"name,omitempty"`
-	Status string `json:"status,omitempty"`
+	Name   *string `json:"name,omitempty" mapstructure:"name"`
+	Status *string `json:"status,omitempty" mapstructure:"status"`
 }
 
 type TerminalOutput struct {
@@ -42,9 +42,9 @@ type CreateUserTerminalKeyInput struct {
 }
 
 type UpdateUserTerminalKeyInput struct {
-	KeyName     string `json:"key_name,omitempty"`
-	IsActive    *bool  `json:"is_active,omitempty"`
-	MaxSessions *int   `json:"max_sessions,omitempty"`
+	KeyName     *string `json:"key_name,omitempty" mapstructure:"key_name"`
+	IsActive    *bool   `json:"is_active,omitempty" mapstructure:"is_active"`
+	MaxSessions *int    `json:"max_sessions,omitempty" mapstructure:"max_sessions"`
 }
 
 type UserTerminalKeyOutput struct {
@@ -66,9 +66,9 @@ type CreateTerminalShareInput struct {
 }
 
 type UpdateTerminalShareInput struct {
-	AccessLevel *string    `json:"access_level,omitempty"`
-	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
-	IsActive    *bool      `json:"is_active,omitempty"`
+	AccessLevel *string    `json:"access_level,omitempty" mapstructure:"access_level"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty" mapstructure:"expires_at"`
+	IsActive    *bool      `json:"is_active,omitempty" mapstructure:"is_active"`
 }
 
 type TerminalShareOutput struct {

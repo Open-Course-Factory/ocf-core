@@ -1,11 +1,10 @@
 package entityRegistration
 
 import (
-	"fmt"
 	"net/http"
 
 	authModels "soli/formations/src/auth/models"
-	sqldb "soli/formations/src/db"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
@@ -48,88 +47,70 @@ func (r OrganizationRegistration) GetSwaggerConfig() entityManagementInterfaces.
 }
 
 func (r OrganizationRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	// Handle both pointer and value types
-	var org *models.Organization
-	switch v := input.(type) {
-	case *models.Organization:
-		org = v
-	case models.Organization:
-		org = &v
-	default:
-		return nil, fmt.Errorf("expected Organization or *Organization, got %T", input)
-	}
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		org := ptr.(*models.Organization)
 
-	output := dto.OrganizationOutput{
-		ID:                 org.ID,
-		Name:               org.Name,
-		DisplayName:        org.DisplayName,
-		Description:        org.Description,
-		OwnerUserID:        org.OwnerUserID,
-		SubscriptionPlanID: org.SubscriptionPlanID,
-		IsPersonal:         org.IsPersonal,
-		MaxGroups:          org.MaxGroups,
-		MaxMembers:         org.MaxMembers,
-		IsActive:           org.IsActive,
-		Metadata:           org.Metadata,
-		CreatedAt:          org.CreatedAt,
-		UpdatedAt:          org.UpdatedAt,
-	}
-
-	// Include members if loaded
-	if len(org.Members) > 0 {
-		members := make([]dto.OrganizationMemberOutput, 0, len(org.Members))
-		for _, member := range org.Members {
-			memberOutput := dto.OrganizationMemberOutput{
-				ID:             member.ID,
-				OrganizationID: member.OrganizationID,
-				UserID:         member.UserID,
-				Role:           member.Role,
-				InvitedBy:      member.InvitedBy,
-				JoinedAt:       member.JoinedAt,
-				IsActive:       member.IsActive,
-				Metadata:       member.Metadata,
-				CreatedAt:      member.CreatedAt,
-				UpdatedAt:      member.UpdatedAt,
-			}
-			members = append(members, memberOutput)
+		output := dto.OrganizationOutput{
+			ID:                 org.ID,
+			Name:               org.Name,
+			DisplayName:        org.DisplayName,
+			Description:        org.Description,
+			OwnerUserID:        org.OwnerUserID,
+			SubscriptionPlanID: org.SubscriptionPlanID,
+			IsPersonal:         org.IsPersonal,
+			MaxGroups:          org.MaxGroups,
+			MaxMembers:         org.MaxMembers,
+			IsActive:           org.IsActive,
+			Metadata:           org.Metadata,
+			CreatedAt:          org.CreatedAt,
+			UpdatedAt:          org.UpdatedAt,
 		}
-		output.Members = &members
-	}
 
-	// Include groups if loaded
-	if len(org.Groups) > 0 {
-		groups := make([]dto.GroupSummary, 0, len(org.Groups))
-		for _, group := range org.Groups {
-			groupSummary := dto.GroupSummary{
-				ID:          group.ID,
-				Name:        group.Name,
-				DisplayName: group.DisplayName,
-				MemberCount: group.GetMemberCount(),
-				IsActive:    group.IsActive,
+		// Include members if loaded
+		if len(org.Members) > 0 {
+			members := make([]dto.OrganizationMemberOutput, 0, len(org.Members))
+			for _, member := range org.Members {
+				memberOutput := dto.OrganizationMemberOutput{
+					ID:             member.ID,
+					OrganizationID: member.OrganizationID,
+					UserID:         member.UserID,
+					Role:           member.Role,
+					InvitedBy:      member.InvitedBy,
+					JoinedAt:       member.JoinedAt,
+					IsActive:       member.IsActive,
+					Metadata:       member.Metadata,
+					CreatedAt:      member.CreatedAt,
+					UpdatedAt:      member.UpdatedAt,
+				}
+				members = append(members, memberOutput)
 			}
-			groups = append(groups, groupSummary)
+			output.Members = &members
 		}
-		output.Groups = &groups
-	}
 
-	// Add actual database counts (not just loaded relationships)
-	// This ensures counts are accurate even when relationships aren't preloaded
-	var groupCount, memberCount int64
+		// Include groups if loaded
+		if len(org.Groups) > 0 {
+			groups := make([]dto.GroupSummary, 0, len(org.Groups))
+			for _, group := range org.Groups {
+				groupSummary := dto.GroupSummary{
+					ID:          group.ID,
+					Name:        group.Name,
+					DisplayName: group.DisplayName,
+					MemberCount: group.GetMemberCount(),
+					IsActive:    group.IsActive,
+				}
+				groups = append(groups, groupSummary)
+			}
+			output.Groups = &groups
+		}
 
-	if sqldb.DB != nil {
-		// Count groups for this organization using direct SQL
-		sqldb.DB.Table("class_groups").Where("organization_id = ? AND deleted_at IS NULL", org.ID).Count(&groupCount)
+		// Add counts
+		groupCount := len(org.Groups)
+		memberCount := len(org.Members)
+		output.GroupCount = &groupCount
+		output.MemberCount = &memberCount
 
-		// Count members for this organization using direct SQL
-		sqldb.DB.Table("organization_members").Where("organization_id = ? AND deleted_at IS NULL", org.ID).Count(&memberCount)
-	}
-
-	groupCountInt := int(groupCount)
-	memberCountInt := int(memberCount)
-	output.GroupCount = &groupCountInt
-	output.MemberCount = &memberCountInt
-
-	return output, nil
+		return output, nil
+	})
 }
 
 func (r OrganizationRegistration) EntityInputDtoToEntityModel(input any) any {

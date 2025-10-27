@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"reflect"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
+	"soli/formations/src/entityManagement/converters"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 
@@ -213,41 +214,21 @@ func (tsr TerminalShareRegistration) GetEntityRegistrationInput() entityManageme
 }
 
 func (tsr TerminalShareRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return terminalSharePtrModelToTerminalShareOutput(input.(*models.TerminalShare))
-	} else {
-		return terminalShareValueModelToTerminalShareOutput(input.(models.TerminalShare))
-	}
-}
-
-func terminalSharePtrModelToTerminalShareOutput(terminalShareModel *models.TerminalShare) (*dto.TerminalShareOutput, error) {
-	return &dto.TerminalShareOutput{
-		ID:                terminalShareModel.ID,
-		TerminalID:        terminalShareModel.TerminalID,
-		SharedWithUserID:  terminalShareModel.SharedWithUserID,
-		SharedWithGroupID: terminalShareModel.SharedWithGroupID,
-		SharedByUserID:    terminalShareModel.SharedByUserID,
-		AccessLevel:       terminalShareModel.AccessLevel,
-		ShareType:         terminalShareModel.GetShareType(),
-		ExpiresAt:         terminalShareModel.ExpiresAt,
-		IsActive:          terminalShareModel.IsActive,
-		CreatedAt:         terminalShareModel.CreatedAt,
-	}, nil
-}
-
-func terminalShareValueModelToTerminalShareOutput(terminalShareModel models.TerminalShare) (dto.TerminalShareOutput, error) {
-	return dto.TerminalShareOutput{
-		ID:                terminalShareModel.ID,
-		TerminalID:        terminalShareModel.TerminalID,
-		SharedWithUserID:  terminalShareModel.SharedWithUserID,
-		SharedWithGroupID: terminalShareModel.SharedWithGroupID,
-		SharedByUserID:    terminalShareModel.SharedByUserID,
-		AccessLevel:       terminalShareModel.AccessLevel,
-		ShareType:         terminalShareModel.GetShareType(),
-		ExpiresAt:         terminalShareModel.ExpiresAt,
-		IsActive:          terminalShareModel.IsActive,
-		CreatedAt:         terminalShareModel.CreatedAt,
-	}, nil
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		terminalShareModel := ptr.(*models.TerminalShare)
+		return &dto.TerminalShareOutput{
+			ID:                terminalShareModel.ID,
+			TerminalID:        terminalShareModel.TerminalID,
+			SharedWithUserID:  terminalShareModel.SharedWithUserID,
+			SharedWithGroupID: terminalShareModel.SharedWithGroupID,
+			SharedByUserID:    terminalShareModel.SharedByUserID,
+			AccessLevel:       terminalShareModel.AccessLevel,
+			ShareType:         terminalShareModel.GetShareType(),
+			ExpiresAt:         terminalShareModel.ExpiresAt,
+			IsActive:          terminalShareModel.IsActive,
+			CreatedAt:         terminalShareModel.CreatedAt,
+		}, nil
+	})
 }
 
 func (tsr TerminalShareRegistration) EntityInputDtoToEntityModel(input any) any {

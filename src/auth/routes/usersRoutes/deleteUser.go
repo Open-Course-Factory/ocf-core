@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -50,8 +51,10 @@ func (u userController) DeleteUser(ctx *gin.Context) {
 		return
 	}
 
-	//ToDo : handle error
-	casdoor.Enforcer.RemovePolicy(id.String())
+	// Remove all policies for this user
+	opts := utils.DefaultPermissionOptions()
+	opts.WarnOnError = true
+	utils.RemovePolicy(casdoor.Enforcer, id.String(), "", "", opts)
 
 	ctx.JSON(http.StatusNoContent, "Done")
 }

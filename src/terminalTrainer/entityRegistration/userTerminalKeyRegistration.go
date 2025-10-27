@@ -2,8 +2,8 @@ package terminalRegistration
 
 import (
 	"net/http"
-	"reflect"
 	authModels "soli/formations/src/auth/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
@@ -27,33 +27,17 @@ func (u UserTerminalKeyRegistration) GetSwaggerConfig() entityManagementInterfac
 }
 
 func (u UserTerminalKeyRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return userTerminalKeyPtrModelToOutput(input.(*models.UserTerminalKey))
-	} else {
-		return userTerminalKeyValueModelToOutput(input.(models.UserTerminalKey))
-	}
-}
-
-func userTerminalKeyPtrModelToOutput(keyModel *models.UserTerminalKey) (*dto.UserTerminalKeyOutput, error) {
-	return &dto.UserTerminalKeyOutput{
-		ID:          keyModel.ID,
-		UserID:      keyModel.UserID,
-		KeyName:     keyModel.KeyName,
-		IsActive:    keyModel.IsActive,
-		MaxSessions: keyModel.MaxSessions,
-		CreatedAt:   keyModel.CreatedAt,
-	}, nil
-}
-
-func userTerminalKeyValueModelToOutput(keyModel models.UserTerminalKey) (*dto.UserTerminalKeyOutput, error) {
-	return &dto.UserTerminalKeyOutput{
-		ID:          keyModel.ID,
-		UserID:      keyModel.UserID,
-		KeyName:     keyModel.KeyName,
-		IsActive:    keyModel.IsActive,
-		MaxSessions: keyModel.MaxSessions,
-		CreatedAt:   keyModel.CreatedAt,
-	}, nil
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		keyModel := ptr.(*models.UserTerminalKey)
+		return &dto.UserTerminalKeyOutput{
+			ID:          keyModel.ID,
+			UserID:      keyModel.UserID,
+			KeyName:     keyModel.KeyName,
+			IsActive:    keyModel.IsActive,
+			MaxSessions: keyModel.MaxSessions,
+			CreatedAt:   keyModel.CreatedAt,
+		}, nil
+	})
 }
 
 func (u UserTerminalKeyRegistration) EntityInputDtoToEntityModel(input any) any {

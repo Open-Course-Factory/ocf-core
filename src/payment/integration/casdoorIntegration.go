@@ -9,6 +9,7 @@ import (
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/models"
 	"soli/formations/src/payment/services"
+	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"gorm.io/gorm"
@@ -87,7 +88,8 @@ func (cpi *casdoorPaymentIntegration) SyncUserRoleWithSubscription(userID string
 	}
 
 	// Ajouter le nouveau rôle
-	_, err = casdoor.Enforcer.AddGroupingPolicy(userID, planRequiredRole)
+	opts := utils.DefaultPermissionOptions()
+	err = utils.AddGroupingPolicy(casdoor.Enforcer, userID, planRequiredRole, opts)
 	if err != nil {
 		return fmt.Errorf("failed to add subscription role %s to user %s: %v", planRequiredRole, userID, err)
 	}
@@ -108,25 +110,23 @@ func (cpi *casdoorPaymentIntegration) GrantSubscriptionPermissions(userID string
 	// Mapper les fonctionnalités vers des permissions spécifiques
 	permissions := cpi.mapFeaturesToPermissions(features)
 
+	opts := utils.DefaultPermissionOptions()
+	opts.LoadPolicyFirst = true
+	opts.WarnOnError = true
+
 	for resource, actions := range permissions {
 		// Supprimer les anciennes permissions pour cette ressource
-		_, err := casdoor.Enforcer.RemoveFilteredPolicy(0, userID, resource)
+		err := utils.RemoveFilteredPolicy(casdoor.Enforcer, 0, opts, userID, resource)
 		if err != nil {
-			log.Printf("Warning: failed to remove old permissions for %s on %s: %v", userID, resource, err)
+			utils.Warn("Failed to remove old permissions for %s on %s: %v", userID, resource, err)
 		}
 
 		// Ajouter les nouvelles permissions
-		_, err = casdoor.Enforcer.AddPolicy(userID, resource, actions)
+		err = utils.AddPolicy(casdoor.Enforcer, userID, resource, actions, opts)
 		if err != nil {
-			log.Printf("Warning: failed to add permission for %s on %s: %v", userID, resource, err)
+			utils.Warn("Failed to add permission for %s on %s: %v", userID, resource, err)
 			continue
 		}
-	}
-
-	// Sauvegarder les politiques
-	err := casdoor.Enforcer.LoadPolicy()
-	if err != nil {
-		return fmt.Errorf("failed to save policies: %v", err)
 	}
 
 	return nil
@@ -143,10 +143,13 @@ func (cpi *casdoorPaymentIntegration) RevokeSubscriptionPermissions(userID strin
 		"/api/v1/api-access/*",
 	}
 
+	opts := utils.DefaultPermissionOptions()
+	opts.WarnOnError = true
+
 	for _, resource := range premiumResources {
-		_, err := casdoor.Enforcer.RemoveFilteredPolicy(0, userID, resource)
+		err := utils.RemoveFilteredPolicy(casdoor.Enforcer, 0, opts, userID, resource)
 		if err != nil {
-			log.Printf("Warning: failed to revoke permission for %s on %s: %v", userID, resource, err)
+			utils.Warn("Failed to revoke permission for %s on %s: %v", userID, resource, err)
 		}
 	}
 
@@ -164,7 +167,8 @@ func (cpi *casdoorPaymentIntegration) AddUserToSubscriptionGroup(userID string, 
 	}
 
 	// Ajouter l'utilisateur au groupe
-	_, err = casdoor.Enforcer.AddGroupingPolicy(userID, groupName)
+	opts := utils.DefaultPermissionOptions()
+	err = utils.AddGroupingPolicy(casdoor.Enforcer, userID, groupName, opts)
 	if err != nil {
 		return fmt.Errorf("failed to add user to subscription group: %v", err)
 	}
@@ -180,12 +184,15 @@ func (cpi *casdoorPaymentIntegration) RemoveUserFromSubscriptionGroups(userID st
 		return fmt.Errorf("failed to get user groups: %v", err)
 	}
 
+	opts := utils.DefaultPermissionOptions()
+	opts.WarnOnError = true
+
 	// Supprimer uniquement les groupes d'abonnement
 	for _, group := range groups {
 		if strings.HasPrefix(group, "subscription_") {
-			_, err = casdoor.Enforcer.RemoveGroupingPolicy(userID, group)
+			err = utils.RemoveGroupingPolicy(casdoor.Enforcer, userID, group, opts)
 			if err != nil {
-				log.Printf("Warning: failed to remove user from group %s: %v", group, err)
+				utils.Warn("Failed to remove user from group %s: %v", group, err)
 			}
 		}
 	}
@@ -254,7 +261,8 @@ func (cpi *casdoorPaymentIntegration) setUserToDefaultRole(userID string) error 
 	}
 
 	// Ajouter le rôle de membre de base
-	_, err = casdoor.Enforcer.AddGroupingPolicy(userID, string(models.Member))
+	opts := utils.DefaultPermissionOptions()
+	err = utils.AddGroupingPolicy(casdoor.Enforcer, userID, string(models.Member), opts)
 	if err != nil {
 		return fmt.Errorf("failed to set default role: %v", err)
 	}
@@ -272,10 +280,13 @@ func (cpi *casdoorPaymentIntegration) removeSubscriptionRoles(userID string) err
 		// Ne pas supprimer Admin car il peut être accordé manuellement
 	}
 
+	opts := utils.DefaultPermissionOptions()
+	opts.WarnOnError = true
+
 	for _, role := range subscriptionRoles {
-		_, err := casdoor.Enforcer.RemoveGroupingPolicy(userID, role)
+		err := utils.RemoveGroupingPolicy(casdoor.Enforcer, userID, role, opts)
 		if err != nil {
-			log.Printf("Warning: failed to remove role %s from user %s: %v", role, userID, err)
+			utils.Warn("Failed to remove role %s from user %s: %v", role, userID, err)
 		}
 	}
 

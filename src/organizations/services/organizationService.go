@@ -464,31 +464,14 @@ func (os *organizationService) CanUserManageOrganization(orgID uuid.UUID, userID
 
 // GrantOrganizationPermissions grants basic organization-related permissions to a user via Casbin
 func (os *organizationService) GrantOrganizationPermissions(userID string, orgID uuid.UUID) error {
-	// Add user to organization group in Casbin (for permission checks)
-	// Format: org:{orgID} as a role
-	orgRoleID := fmt.Sprintf("org:%s", orgID.String())
+	opts := utils.DefaultPermissionOptions()
+	opts.WarnOnError = true // Non-critical permissions log warnings instead of failing
 
-	_, err := casdoor.Enforcer.AddGroupingPolicy(userID, orgRoleID)
+	// Grant basic organization access (GET permission) with sub-resources (members, groups)
+	err := utils.GrantCompleteEntityAccess(casdoor.Enforcer, userID, "organization", orgID.String(),
+		[]string{"members", "groups"}, opts)
 	if err != nil {
-		return fmt.Errorf("failed to add user to organization role: %v", err)
-	}
-
-	// Grant permissions to view the organization
-	_, err = casdoor.Enforcer.AddPolicy(orgRoleID, fmt.Sprintf("/api/v1/organizations/%s", orgID), "GET")
-	if err != nil {
-		utils.Warn("Failed to add GET permission for organization %s: %v", orgID, err)
-	}
-
-	// Grant permissions to view organization members
-	_, err = casdoor.Enforcer.AddPolicy(orgRoleID, fmt.Sprintf("/api/v1/organizations/%s/members", orgID), "GET")
-	if err != nil {
-		utils.Warn("Failed to add GET members permission for organization %s: %v", orgID, err)
-	}
-
-	// Grant permissions to view organization groups
-	_, err = casdoor.Enforcer.AddPolicy(orgRoleID, fmt.Sprintf("/api/v1/organizations/%s/groups", orgID), "GET")
-	if err != nil {
-		utils.Warn("Failed to add GET groups permission for organization %s: %v", orgID, err)
+		return err
 	}
 
 	utils.Debug("Granted organization permissions to user %s for organization %s", userID, orgID)
@@ -497,11 +480,12 @@ func (os *organizationService) GrantOrganizationPermissions(userID string, orgID
 
 // RevokeOrganizationPermissions revokes organization permissions from a user
 func (os *organizationService) RevokeOrganizationPermissions(userID string, orgID uuid.UUID) error {
-	orgRoleID := fmt.Sprintf("org:%s", orgID.String())
+	opts := utils.DefaultPermissionOptions()
 
-	_, err := casdoor.Enforcer.RemoveGroupingPolicy(userID, orgRoleID)
+	// Revoke entity access (removes user from organization role)
+	err := utils.RevokeEntityAccess(casdoor.Enforcer, userID, "organization", orgID.String(), opts)
 	if err != nil {
-		return fmt.Errorf("failed to remove user from organization role: %v", err)
+		return err
 	}
 
 	utils.Debug("Revoked organization permissions from user %s for organization %s", userID, orgID)
@@ -510,28 +494,14 @@ func (os *organizationService) RevokeOrganizationPermissions(userID string, orgI
 
 // GrantOrganizationManagerPermissions grants manager-level permissions (manage org, members, groups)
 func (os *organizationService) GrantOrganizationManagerPermissions(userID string, orgID uuid.UUID) error {
-	// Add user to organization manager group in Casbin
-	orgManagerRoleID := fmt.Sprintf("org_manager:%s", orgID.String())
+	opts := utils.DefaultPermissionOptions()
+	opts.WarnOnError = true // Non-critical permissions log warnings instead of failing
 
-	_, err := casdoor.Enforcer.AddGroupingPolicy(userID, orgManagerRoleID)
+	// Grant manager permissions with access to sub-resources (members, groups)
+	err := utils.GrantManagerPermissions(casdoor.Enforcer, userID, "organization", orgID.String(),
+		[]string{"members", "groups"}, opts)
 	if err != nil {
-		return fmt.Errorf("failed to add user to organization manager role: %v", err)
-	}
-
-	// Grant management permissions
-	_, err = casdoor.Enforcer.AddPolicy(orgManagerRoleID, fmt.Sprintf("/api/v1/organizations/%s", orgID), "GET|PATCH|DELETE")
-	if err != nil {
-		utils.Warn("Failed to add management permission for organization %s: %v", orgID, err)
-	}
-
-	_, err = casdoor.Enforcer.AddPolicy(orgManagerRoleID, fmt.Sprintf("/api/v1/organizations/%s/members", orgID), "GET|POST|PATCH|DELETE")
-	if err != nil {
-		utils.Warn("Failed to add member management permission for organization %s: %v", orgID, err)
-	}
-
-	_, err = casdoor.Enforcer.AddPolicy(orgManagerRoleID, fmt.Sprintf("/api/v1/organizations/%s/groups", orgID), "GET|POST")
-	if err != nil {
-		utils.Warn("Failed to add group management permission for organization %s: %v", orgID, err)
+		return err
 	}
 
 	utils.Debug("Granted organization manager permissions to user %s for organization %s", userID, orgID)
@@ -540,11 +510,12 @@ func (os *organizationService) GrantOrganizationManagerPermissions(userID string
 
 // RevokeOrganizationManagerPermissions revokes manager permissions from a user
 func (os *organizationService) RevokeOrganizationManagerPermissions(userID string, orgID uuid.UUID) error {
-	orgManagerRoleID := fmt.Sprintf("org_manager:%s", orgID.String())
+	opts := utils.DefaultPermissionOptions()
 
-	_, err := casdoor.Enforcer.RemoveGroupingPolicy(userID, orgManagerRoleID)
+	// Revoke manager permissions (removes user from organization_manager role)
+	err := utils.RevokeManagerPermissions(casdoor.Enforcer, userID, "organization", orgID.String(), opts)
 	if err != nil {
-		return fmt.Errorf("failed to remove user from organization manager role: %v", err)
+		return err
 	}
 
 	utils.Debug("Revoked organization manager permissions from user %s for organization %s", userID, orgID)

@@ -14,6 +14,7 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	ttServices "soli/formations/src/terminalTrainer/services"
+	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/docker/docker/pkg/namesgenerator"
@@ -110,13 +111,16 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 	rolesToAdd = append(rolesToAdd, "member")
 
 	// Add all roles to the user
+	opts := utils.DefaultPermissionOptions()
+	opts.WarnOnError = true
+
 	for _, role := range rolesToAdd {
-		_, errAddRole := casdoor.Enforcer.AddGroupingPolicy(createdUser.Id, role)
+		errAddRole := utils.AddGroupingPolicy(casdoor.Enforcer, createdUser.Id, role, opts)
 		if errAddRole != nil {
-			fmt.Printf("Warning: Could not add role %s to user %s: %v\n", role, createdUser.Id, errAddRole)
+			utils.Warn("Could not add role %s to user %s: %v", role, createdUser.Id, errAddRole)
 			// Continue adding other roles even if one fails
 		} else {
-			fmt.Printf("✅ Successfully added role '%s' to user %s\n", role, createdUser.Id)
+			utils.Info("Successfully added role '%s' to user %s", role, createdUser.Id)
 		}
 	}
 
@@ -234,7 +238,10 @@ func (us *userService) DeleteUser(id string) error {
 	}
 	casdoorsdk.DeleteUser(user)
 
-	casdoor.Enforcer.RemoveGroupingPolicy(user.Id)
+	// Remove all role associations for this user
+	opts := utils.DefaultPermissionOptions()
+	opts.WarnOnError = true
+	utils.RemoveGroupingPolicy(casdoor.Enforcer, user.Id, "", opts)
 
 	return nil
 }

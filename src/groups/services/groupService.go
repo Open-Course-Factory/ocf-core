@@ -405,26 +405,20 @@ func (gs *groupService) CanUserAccessGroupViaOrg(groupID uuid.UUID, userID strin
 
 // GrantGroupPermissionsToUser grants group-related permissions to a user via Casbin
 func (gs *groupService) GrantGroupPermissionsToUser(userID string, groupID uuid.UUID) error {
-	// Add user to group in Casbin (for permission checks)
-	// Format: group:{groupID} as a role
-	groupRoleID := fmt.Sprintf("group:%s", groupID.String())
+	opts := utils.DefaultPermissionOptions()
+	opts.WarnOnError = true // Non-critical permissions log warnings instead of failing
 
-	_, err := casdoor.Enforcer.AddGroupingPolicy(userID, groupRoleID)
+	// Grant basic group access (GET permission)
+	err := utils.GrantEntityAccess(casdoor.Enforcer, userID, "group", groupID.String(), "GET", opts)
 	if err != nil {
-		return fmt.Errorf("failed to add user to group role: %v", err)
+		return err
 	}
 
-	// Grant permissions to access group resources
-	// Group members can view the group
-	_, err = casdoor.Enforcer.AddPolicy(groupRoleID, fmt.Sprintf("/api/v1/groups/%s", groupID), "GET")
+	// Grant access to view group members
+	err = utils.GrantEntitySubResourceAccess(casdoor.Enforcer, fmt.Sprintf("group:%s", groupID.String()),
+		"group", groupID.String(), "members", "GET", opts)
 	if err != nil {
-		utils.Warn("Failed to add GET permission for group %s: %v", groupID, err)
-	}
-
-	// Group members can view group members
-	_, err = casdoor.Enforcer.AddPolicy(groupRoleID, fmt.Sprintf("/api/v1/groups/%s/members", groupID), "GET")
-	if err != nil {
-		utils.Warn("Failed to add GET members permission for group %s: %v", groupID, err)
+		utils.Warn("Failed to grant members access for group %s: %v", groupID, err)
 	}
 
 	utils.Debug("Granted group permissions to user %s for group %s", userID, groupID)
@@ -433,11 +427,12 @@ func (gs *groupService) GrantGroupPermissionsToUser(userID string, groupID uuid.
 
 // RevokeGroupPermissionsFromUser revokes group permissions from a user
 func (gs *groupService) RevokeGroupPermissionsFromUser(userID string, groupID uuid.UUID) error {
-	groupRoleID := fmt.Sprintf("group:%s", groupID.String())
+	opts := utils.DefaultPermissionOptions()
 
-	_, err := casdoor.Enforcer.RemoveGroupingPolicy(userID, groupRoleID)
+	// Revoke entity access (removes user from group role)
+	err := utils.RevokeEntityAccess(casdoor.Enforcer, userID, "group", groupID.String(), opts)
 	if err != nil {
-		return fmt.Errorf("failed to remove user from group role: %v", err)
+		return err
 	}
 
 	utils.Debug("Revoked group permissions from user %s for group %s", userID, groupID)

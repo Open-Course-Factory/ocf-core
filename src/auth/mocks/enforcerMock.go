@@ -129,3 +129,27 @@ func (m *MockEnforcer) GetAddPolicyCallCount() int {
 func (m *MockEnforcer) GetLoadPolicyCallCount() int {
 	return len(m.LoadPolicyCalls)
 }
+
+func (m *MockEnforcer) GetRemovePolicyCallCount() int {
+	return len(m.RemovePolicyCalls)
+}
+
+func (m *MockEnforcer) GetAddGroupingPolicyCallCount() int {
+	return len(m.AddGroupingPolicyCalls)
+}
+
+func (m *MockEnforcer) GetRemoveGroupingPolicyCallCount() int {
+	return len(m.RemoveGroupingPolicyCalls)
+}
+
+func (m *MockEnforcer) GetRemoveFilteredPolicyCallCount() int {
+	return len(m.RemoveFilteredPolicyCalls)
+}
+
+func (m *MockEnforcer) GetEnforceCallCount() int {
+	return len(m.EnforceCalls)
+}
+
+func (m *MockEnforcer) GetGetRolesForUserCallCount() int {
+	return len(m.GetRolesForUserCalls)
+}

@@ -1,9 +1,9 @@
 package registration
 
 import (
-	"reflect"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
@@ -49,19 +49,9 @@ func (s ChapterRegistration) GetSwaggerConfig() entityManagementInterfaces.Entit
 }
 
 func (s ChapterRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return chapterPtrModelToChapterOutputDto(input.(*models.Chapter))
-	} else {
-		return chapterValueModelToChapterOutputDto(input.(models.Chapter))
-	}
-}
-
-func chapterPtrModelToChapterOutputDto(chapterModel *models.Chapter) (*dto.ChapterOutput, error) {
-	return dto.ChapterModelToChapterOutput(*chapterModel), nil
-}
-
-func chapterValueModelToChapterOutputDto(chapterModel models.Chapter) (*dto.ChapterOutput, error) {
-	return dto.ChapterModelToChapterOutput(chapterModel), nil
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		return dto.ChapterModelToChapterOutput(*ptr.(*models.Chapter)), nil
+	})
 }
 
 func (s ChapterRegistration) EntityInputDtoToEntityModel(input any) any {
@@ -115,7 +105,7 @@ func (s ChapterRegistration) EntityDtoToMap(input any) map[string]any {
 	if editDto.Introduction != nil {
 		updates["introduction"] = *editDto.Introduction
 	}
-	if editDto.Sections != nil && len(editDto.Sections) > 0 {
+	if len(editDto.Sections) > 0 {
 		updates["sections"] = editDto.Sections
 	}
 

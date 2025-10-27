@@ -1,9 +1,9 @@
 package registration
 
 import (
-	"reflect"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
@@ -49,63 +49,32 @@ func (s PageRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySw
 }
 
 func (s PageRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return pagePtrModelToPageOutputDto(input.(*models.Page))
-	} else {
-		return pageValueModelToPageOutputDto(input.(models.Page))
-	}
-}
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		pageModel := ptr.(*models.Page)
 
-func pagePtrModelToPageOutputDto(pageModel *models.Page) (*dto.PageOutput, error) {
+		var parentSections []dto.ParentSectionOutput
+		for _, section := range pageModel.Sections {
+			// Include parent section information
+			parentSections = append(parentSections, dto.ParentSectionOutput{
+				ID:     section.ID.String(),
+				Title:  section.Title,
+				Number: section.Number,
+				Intro:  section.Intro,
+			})
+		}
 
-	var parentSections []dto.ParentSectionOutput
-	for _, section := range pageModel.Sections {
-		// Include parent section information
-		parentSections = append(parentSections, dto.ParentSectionOutput{
-			ID:     section.ID.String(),
-			Title:  section.Title,
-			Number: section.Number,
-			Intro:  section.Intro,
-		})
-	}
-
-	return &dto.PageOutput{
-		ID:                 pageModel.ID.String(),
-		Order:              pageModel.Order,
-		ParentSectionTitle: "",
-		Sections:           parentSections,
-		Toc:                pageModel.Toc,
-		Content:            pageModel.Content,
-		Hide:               pageModel.Hide,
-		CreatedAt:          pageModel.CreatedAt.String(),
-		UpdatedAt:          pageModel.UpdatedAt.String(),
-	}, nil
-}
-
-func pageValueModelToPageOutputDto(pageModel models.Page) (*dto.PageOutput, error) {
-
-	var parentSections []dto.ParentSectionOutput
-	for _, section := range pageModel.Sections {
-		// Include parent section information
-		parentSections = append(parentSections, dto.ParentSectionOutput{
-			ID:     section.ID.String(),
-			Title:  section.Title,
-			Number: section.Number,
-			Intro:  section.Intro,
-		})
-	}
-
-	return &dto.PageOutput{
-		ID:                 pageModel.ID.String(),
-		Order:              pageModel.Order,
-		ParentSectionTitle: "",
-		Sections:           parentSections,
-		Toc:                pageModel.Toc,
-		Content:            pageModel.Content,
-		Hide:               pageModel.Hide,
-		CreatedAt:          pageModel.CreatedAt.String(),
-		UpdatedAt:          pageModel.UpdatedAt.String(),
-	}, nil
+		return &dto.PageOutput{
+			ID:                 pageModel.ID.String(),
+			Order:              pageModel.Order,
+			ParentSectionTitle: "",
+			Sections:           parentSections,
+			Toc:                pageModel.Toc,
+			Content:            pageModel.Content,
+			Hide:               pageModel.Hide,
+			CreatedAt:          pageModel.CreatedAt.String(),
+			UpdatedAt:          pageModel.UpdatedAt.String(),
+		}, nil
+	})
 }
 
 func (s PageRegistration) EntityInputDtoToEntityModel(input any) any {
@@ -143,10 +112,10 @@ func (s PageRegistration) EntityDtoToMap(input any) map[string]any {
 	if editDto.ParentSectionTitle != nil {
 		updates["parent_section_title"] = *editDto.ParentSectionTitle
 	}
-	if editDto.Toc != nil && len(editDto.Toc) > 0 {
+	if len(editDto.Toc) > 0 {
 		updates["toc"] = editDto.Toc
 	}
-	if editDto.Content != nil && len(editDto.Content) > 0 {
+	if len(editDto.Content) > 0 {
 		updates["content"] = editDto.Content
 	}
 	if editDto.Hide != nil {

@@ -3,8 +3,8 @@ package registration
 
 import (
 	"net/http"
-	"reflect"
 	authModels "soli/formations/src/auth/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
@@ -53,64 +53,56 @@ func (s SubscriptionPlanRegistration) GetSwaggerConfig() entityManagementInterfa
 }
 
 func (s SubscriptionPlanRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return subscriptionPlanPtrModelToOutput(input.(*models.SubscriptionPlan))
-	} else {
-		return subscriptionPlanValueModelToOutput(input.(models.SubscriptionPlan))
-	}
-}
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		plan := ptr.(*models.SubscriptionPlan)
 
-func subscriptionPlanPtrModelToOutput(plan *models.SubscriptionPlan) (*dto.SubscriptionPlanOutput, error) {
-	// Convert model PricingTiers to DTO PricingTiers
-	pricingTiers := make([]dto.PricingTier, len(plan.PricingTiers))
-	for i, tier := range plan.PricingTiers {
-		pricingTiers[i] = dto.PricingTier{
-			MinQuantity: tier.MinQuantity,
-			MaxQuantity: tier.MaxQuantity,
-			UnitAmount:  tier.UnitAmount,
-			Description: tier.Description,
+		// Convert model PricingTiers to DTO PricingTiers
+		pricingTiers := make([]dto.PricingTier, len(plan.PricingTiers))
+		for i, tier := range plan.PricingTiers {
+			pricingTiers[i] = dto.PricingTier{
+				MinQuantity: tier.MinQuantity,
+				MaxQuantity: tier.MaxQuantity,
+				UnitAmount:  tier.UnitAmount,
+				Description: tier.Description,
+			}
 		}
-	}
 
-	return &dto.SubscriptionPlanOutput{
-		ID:                 plan.ID,
-		Name:               plan.Name,
-		Description:        plan.Description,
-		StripeProductID:    plan.StripeProductID,
-		StripePriceID:      plan.StripePriceID,
-		PriceAmount:        plan.PriceAmount,
-		Currency:           plan.Currency,
-		BillingInterval:    plan.BillingInterval,
-		TrialDays:          plan.TrialDays,
-		Features:           plan.Features,
-		MaxConcurrentUsers: plan.MaxConcurrentUsers,
-		MaxCourses:         plan.MaxCourses,
-		MaxLabSessions:     plan.MaxLabSessions,
-		IsActive:           plan.IsActive,
-		RequiredRole:       plan.RequiredRole,
-		CreatedAt:          plan.CreatedAt,
-		UpdatedAt:          plan.UpdatedAt,
+		return &dto.SubscriptionPlanOutput{
+			ID:                 plan.ID,
+			Name:               plan.Name,
+			Description:        plan.Description,
+			StripeProductID:    plan.StripeProductID,
+			StripePriceID:      plan.StripePriceID,
+			PriceAmount:        plan.PriceAmount,
+			Currency:           plan.Currency,
+			BillingInterval:    plan.BillingInterval,
+			TrialDays:          plan.TrialDays,
+			Features:           plan.Features,
+			MaxConcurrentUsers: plan.MaxConcurrentUsers,
+			MaxCourses:         plan.MaxCourses,
+			MaxLabSessions:     plan.MaxLabSessions,
+			IsActive:           plan.IsActive,
+			RequiredRole:       plan.RequiredRole,
+			CreatedAt:          plan.CreatedAt,
+			UpdatedAt:          plan.UpdatedAt,
 
-		// Terminal-specific limits
-		MaxSessionDurationMinutes: plan.MaxSessionDurationMinutes,
-		MaxConcurrentTerminals:    plan.MaxConcurrentTerminals,
-		AllowedMachineSizes:       plan.AllowedMachineSizes,
-		NetworkAccessEnabled:      plan.NetworkAccessEnabled,
-		DataPersistenceEnabled:    plan.DataPersistenceEnabled,
-		DataPersistenceGB:         plan.DataPersistenceGB,
-		AllowedTemplates:          plan.AllowedTemplates,
+			// Terminal-specific limits
+			MaxSessionDurationMinutes: plan.MaxSessionDurationMinutes,
+			MaxConcurrentTerminals:    plan.MaxConcurrentTerminals,
+			AllowedMachineSizes:       plan.AllowedMachineSizes,
+			NetworkAccessEnabled:      plan.NetworkAccessEnabled,
+			DataPersistenceEnabled:    plan.DataPersistenceEnabled,
+			DataPersistenceGB:         plan.DataPersistenceGB,
+			AllowedTemplates:          plan.AllowedTemplates,
 
-		// Planned features
-		PlannedFeatures: plan.PlannedFeatures,
+			// Planned features
+			PlannedFeatures: plan.PlannedFeatures,
 
-		// Tiered pricing
-		UseTieredPricing: plan.UseTieredPricing,
-		PricingTiers:     pricingTiers,
-	}, nil
-}
-
-func subscriptionPlanValueModelToOutput(plan models.SubscriptionPlan) (*dto.SubscriptionPlanOutput, error) {
-	return subscriptionPlanPtrModelToOutput(&plan)
+			// Tiered pricing
+			UseTieredPricing: plan.UseTieredPricing,
+			PricingTiers:     pricingTiers,
+		}, nil
+	})
 }
 
 func (s SubscriptionPlanRegistration) EntityInputDtoToEntityModel(input any) any {

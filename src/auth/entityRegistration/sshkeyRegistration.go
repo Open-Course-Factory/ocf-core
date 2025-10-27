@@ -1,9 +1,9 @@
 package registration
 
 import (
-	"reflect"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
@@ -12,29 +12,15 @@ type SshKeyRegistration struct {
 }
 
 func (s SshKeyRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return sshKeyPtrModelToSshKeyOutput(input.(*models.SshKey))
-	} else {
-		return sshKeyValueModelToSshKeyOutput(input.(models.SshKey))
-	}
-}
-
-func sshKeyPtrModelToSshKeyOutput(sshKeyModel *models.SshKey) (*dto.SshKeyOutput, error) {
-	return &dto.SshKeyOutput{
-		Id:         sshKeyModel.ID,
-		KeyName:    sshKeyModel.KeyName,
-		PrivateKey: sshKeyModel.PrivateKey,
-		CreatedAt:  sshKeyModel.CreatedAt,
-	}, nil
-}
-
-func sshKeyValueModelToSshKeyOutput(sshKeyModel models.SshKey) (*dto.SshKeyOutput, error) {
-	return &dto.SshKeyOutput{
-		Id:         sshKeyModel.ID,
-		KeyName:    sshKeyModel.KeyName,
-		PrivateKey: sshKeyModel.PrivateKey,
-		CreatedAt:  sshKeyModel.CreatedAt,
-	}, nil
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		sshKeyModel := ptr.(*models.SshKey)
+		return &dto.SshKeyOutput{
+			Id:         sshKeyModel.ID,
+			KeyName:    sshKeyModel.KeyName,
+			PrivateKey: sshKeyModel.PrivateKey,
+			CreatedAt:  sshKeyModel.CreatedAt,
+		}, nil
+	})
 }
 
 func (s SshKeyRegistration) EntityInputDtoToEntityModel(input any) any {

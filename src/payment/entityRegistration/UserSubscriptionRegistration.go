@@ -3,8 +3,8 @@ package registration
 
 import (
 	"net/http"
-	"reflect"
 	authModels "soli/formations/src/auth/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
@@ -16,34 +16,24 @@ type UserSubscriptionRegistration struct {
 }
 
 func (u UserSubscriptionRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return userSubscriptionPtrModelToOutput(input.(*models.UserSubscription))
-	} else {
-		return userSubscriptionValueModelToOutput(input.(models.UserSubscription))
-	}
-}
-
-func userSubscriptionPtrModelToOutput(subscription *models.UserSubscription) (*dto.UserSubscriptionOutput, error) {
-
-	return &dto.UserSubscriptionOutput{
-		ID:                   subscription.ID,
-		UserID:               subscription.UserID,
-		SubscriptionPlanID:   subscription.SubscriptionPlanID,
-		StripeSubscriptionID: subscription.StripeSubscriptionID,
-		StripeCustomerID:     subscription.StripeCustomerID,
-		Status:               subscription.Status,
-		CurrentPeriodStart:   subscription.CurrentPeriodStart,
-		CurrentPeriodEnd:     subscription.CurrentPeriodEnd,
-		TrialEnd:             subscription.TrialEnd,
-		CancelAtPeriodEnd:    subscription.CancelAtPeriodEnd,
-		CancelledAt:          subscription.CancelledAt,
-		CreatedAt:            subscription.CreatedAt,
-		UpdatedAt:            subscription.UpdatedAt,
-	}, nil
-}
-
-func userSubscriptionValueModelToOutput(subscription models.UserSubscription) (*dto.UserSubscriptionOutput, error) {
-	return userSubscriptionPtrModelToOutput(&subscription)
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		subscription := ptr.(*models.UserSubscription)
+		return &dto.UserSubscriptionOutput{
+			ID:                   subscription.ID,
+			UserID:               subscription.UserID,
+			SubscriptionPlanID:   subscription.SubscriptionPlanID,
+			StripeSubscriptionID: subscription.StripeSubscriptionID,
+			StripeCustomerID:     subscription.StripeCustomerID,
+			Status:               subscription.Status,
+			CurrentPeriodStart:   subscription.CurrentPeriodStart,
+			CurrentPeriodEnd:     subscription.CurrentPeriodEnd,
+			TrialEnd:             subscription.TrialEnd,
+			CancelAtPeriodEnd:    subscription.CancelAtPeriodEnd,
+			CancelledAt:          subscription.CancelledAt,
+			CreatedAt:            subscription.CreatedAt,
+			UpdatedAt:            subscription.UpdatedAt,
+		}, nil
+	})
 }
 
 func (u UserSubscriptionRegistration) EntityInputDtoToEntityModel(input any) any {

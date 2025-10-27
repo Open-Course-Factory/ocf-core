@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	authModels "soli/formations/src/auth/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
@@ -48,32 +49,34 @@ func (r OrganizationMemberRegistration) GetSwaggerConfig() entityManagementInter
 }
 
 func (r OrganizationMemberRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	member := input.(models.OrganizationMember)
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		member := ptr.(*models.OrganizationMember)
 
-	output := dto.OrganizationMemberOutput{
-		ID:             member.ID,
-		OrganizationID: member.OrganizationID,
-		UserID:         member.UserID,
-		Role:           member.Role,
-		InvitedBy:      member.InvitedBy,
-		JoinedAt:       member.JoinedAt,
-		IsActive:       member.IsActive,
-		Metadata:       member.Metadata,
-		CreatedAt:      member.CreatedAt,
-		UpdatedAt:      member.UpdatedAt,
-	}
-
-	// Include organization if loaded
-	if member.Organization.ID != uuid.Nil {
-		orgRegistration := OrganizationRegistration{}
-		orgOutput, err := orgRegistration.EntityModelToEntityOutput(member.Organization)
-		if err == nil {
-			orgOutputTyped := orgOutput.(dto.OrganizationOutput)
-			output.Organization = &orgOutputTyped
+		output := dto.OrganizationMemberOutput{
+			ID:             member.ID,
+			OrganizationID: member.OrganizationID,
+			UserID:         member.UserID,
+			Role:           member.Role,
+			InvitedBy:      member.InvitedBy,
+			JoinedAt:       member.JoinedAt,
+			IsActive:       member.IsActive,
+			Metadata:       member.Metadata,
+			CreatedAt:      member.CreatedAt,
+			UpdatedAt:      member.UpdatedAt,
 		}
-	}
 
-	return output, nil
+		// Include organization if loaded
+		if member.Organization.ID != uuid.Nil {
+			orgRegistration := OrganizationRegistration{}
+			orgOutput, err := orgRegistration.EntityModelToEntityOutput(member.Organization)
+			if err == nil {
+				orgOutputTyped := orgOutput.(dto.OrganizationOutput)
+				output.Organization = &orgOutputTyped
+			}
+		}
+
+		return output, nil
+	})
 }
 
 func (r OrganizationMemberRegistration) EntityInputDtoToEntityModel(input any) any {

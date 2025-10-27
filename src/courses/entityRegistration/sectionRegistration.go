@@ -1,9 +1,9 @@
 package registration
 
 import (
-	"reflect"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
@@ -49,20 +49,9 @@ func (s SectionRegistration) GetSwaggerConfig() entityManagementInterfaces.Entit
 }
 
 func (s SectionRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return sectionPtrModelToSectionOutputDto(input.(*models.Section))
-	} else {
-		return sectionValueModelToSectionOutputDto(input.(models.Section))
-	}
-}
-
-func sectionPtrModelToSectionOutputDto(sectionModel *models.Section) (*dto.SectionOutput, error) {
-	return dto.SectionModelToSectionOutput(*sectionModel), nil
-}
-
-func sectionValueModelToSectionOutputDto(sectionModel models.Section) (*dto.SectionOutput, error) {
-
-	return dto.SectionModelToSectionOutput(sectionModel), nil
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		return dto.SectionModelToSectionOutput(*ptr.(*models.Section)), nil
+	})
 }
 
 func (s SectionRegistration) EntityInputDtoToEntityModel(input any) any {
@@ -122,10 +111,10 @@ func (s SectionRegistration) EntityDtoToMap(input any) map[string]any {
 	if editDto.Number != nil {
 		updates["number"] = *editDto.Number
 	}
-	if editDto.Pages != nil && len(editDto.Pages) > 0 {
+	if len(editDto.Pages) > 0 {
 		updates["pages"] = editDto.Pages
 	}
-	if editDto.HiddenPages != nil && len(editDto.HiddenPages) > 0 {
+	if len(editDto.HiddenPages) > 0 {
 		updates["hidden_pages"] = editDto.HiddenPages
 	}
 

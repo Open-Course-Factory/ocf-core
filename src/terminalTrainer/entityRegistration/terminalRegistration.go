@@ -2,8 +2,8 @@ package terminalRegistration
 
 import (
 	"net/http"
-	"reflect"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
+	"soli/formations/src/entityManagement/converters"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 
@@ -40,43 +40,22 @@ func (t TerminalRegistration) GetSwaggerConfig() entityManagementInterfaces.Enti
 }
 
 func (t TerminalRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return terminalPtrModelToTerminalOutput(input.(*models.Terminal))
-	} else {
-		return terminalValueModelToTerminalOutput(input.(models.Terminal))
-	}
-}
-
-func terminalPtrModelToTerminalOutput(terminalModel *models.Terminal) (*dto.TerminalOutput, error) {
-	return &dto.TerminalOutput{
-		ID:              terminalModel.ID,
-		SessionID:       terminalModel.SessionID,
-		UserID:          terminalModel.UserID,
-		Name:            terminalModel.Name,
-		Status:          terminalModel.Status,
-		ExpiresAt:       terminalModel.ExpiresAt,
-		InstanceType:    terminalModel.InstanceType,
-		MachineSize:     terminalModel.MachineSize,
-		IsHiddenByOwner: terminalModel.IsHiddenByOwner,
-		HiddenByOwnerAt: terminalModel.HiddenByOwnerAt,
-		CreatedAt:       terminalModel.CreatedAt,
-	}, nil
-}
-
-func terminalValueModelToTerminalOutput(terminalModel models.Terminal) (*dto.TerminalOutput, error) {
-	return &dto.TerminalOutput{
-		ID:              terminalModel.ID,
-		SessionID:       terminalModel.SessionID,
-		UserID:          terminalModel.UserID,
-		Name:            terminalModel.Name,
-		Status:          terminalModel.Status,
-		ExpiresAt:       terminalModel.ExpiresAt,
-		InstanceType:    terminalModel.InstanceType,
-		MachineSize:     terminalModel.MachineSize,
-		IsHiddenByOwner: terminalModel.IsHiddenByOwner,
-		HiddenByOwnerAt: terminalModel.HiddenByOwnerAt,
-		CreatedAt:       terminalModel.CreatedAt,
-	}, nil
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		terminalModel := ptr.(*models.Terminal)
+		return &dto.TerminalOutput{
+			ID:              terminalModel.ID,
+			SessionID:       terminalModel.SessionID,
+			UserID:          terminalModel.UserID,
+			Name:            terminalModel.Name,
+			Status:          terminalModel.Status,
+			ExpiresAt:       terminalModel.ExpiresAt,
+			InstanceType:    terminalModel.InstanceType,
+			MachineSize:     terminalModel.MachineSize,
+			IsHiddenByOwner: terminalModel.IsHiddenByOwner,
+			HiddenByOwnerAt: terminalModel.HiddenByOwnerAt,
+			CreatedAt:       terminalModel.CreatedAt,
+		}, nil
+	})
 }
 
 func (t TerminalRegistration) EntityInputDtoToEntityModel(input any) any {
@@ -111,11 +90,11 @@ func (t TerminalRegistration) EntityDtoToMap(input any) map[string]any {
 	terminalUpdateDto := input.(dto.UpdateTerminalInput)
 	updates := make(map[string]any)
 
-	if terminalUpdateDto.Name != "" {
-		updates["name"] = terminalUpdateDto.Name
+	if terminalUpdateDto.Name != nil {
+		updates["name"] = *terminalUpdateDto.Name
 	}
-	if terminalUpdateDto.Status != "" {
-		updates["status"] = terminalUpdateDto.Status
+	if terminalUpdateDto.Status != nil {
+		updates["status"] = *terminalUpdateDto.Status
 	}
 
 	return updates

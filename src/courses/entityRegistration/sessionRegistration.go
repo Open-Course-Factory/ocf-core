@@ -1,9 +1,9 @@
 package registration
 
 import (
-	"reflect"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
@@ -49,33 +49,16 @@ func (s SessionRegistration) GetSwaggerConfig() entityManagementInterfaces.Entit
 }
 
 func (s SessionRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return sessionPtrModelToSessionOutputDto(input.(*models.Session))
-	} else {
-		return sessionValueModelToSessionOutputDto(input.(models.Session))
-	}
-}
-
-func sessionPtrModelToSessionOutputDto(sessionModel *models.Session) (*dto.CreateSessionOutput, error) {
-
-	return &dto.CreateSessionOutput{
-		ID:        sessionModel.ID.String(),
-		CourseId:  sessionModel.CourseId,
-		GroupId:   sessionModel.GroupId,
-		StartTime: sessionModel.Beginning,
-		EndTime:   sessionModel.End,
-	}, nil
-}
-
-func sessionValueModelToSessionOutputDto(sessionModel models.Session) (*dto.CreateSessionOutput, error) {
-
-	return &dto.CreateSessionOutput{
-		ID:        sessionModel.ID.String(),
-		CourseId:  sessionModel.CourseId,
-		GroupId:   sessionModel.GroupId,
-		StartTime: sessionModel.Beginning,
-		EndTime:   sessionModel.End,
-	}, nil
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		sessionModel := ptr.(*models.Session)
+		return &dto.CreateSessionOutput{
+			ID:        sessionModel.ID.String(),
+			CourseId:  sessionModel.CourseId,
+			GroupId:   sessionModel.GroupId,
+			StartTime: sessionModel.Beginning,
+			EndTime:   sessionModel.End,
+		}, nil
+	})
 }
 
 func (s SessionRegistration) EntityInputDtoToEntityModel(input any) any {

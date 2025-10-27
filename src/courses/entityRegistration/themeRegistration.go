@@ -1,9 +1,9 @@
 package registration
 
 import (
-	"reflect"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
@@ -49,37 +49,18 @@ func (s ThemeRegistration) GetSwaggerConfig() entityManagementInterfaces.EntityS
 }
 
 func (s ThemeRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return themePtrModelToThemeOutputDto(input.(*models.Theme))
-	} else {
-		return themeValueModelToThemeOutputDto(input.(models.Theme))
-	}
-}
-
-func themePtrModelToThemeOutputDto(themeModel *models.Theme) (*dto.ThemeOutput, error) {
-
-	return &dto.ThemeOutput{
-		ID:               themeModel.ID.String(),
-		Name:             themeModel.Name,
-		Repository:       themeModel.Repository,
-		RepositoryBranch: themeModel.RepositoryBranch,
-		Size:             themeModel.Size,
-		CreatedAt:        themeModel.CreatedAt.String(),
-		UpdatedAt:        themeModel.UpdatedAt.String(),
-	}, nil
-}
-
-func themeValueModelToThemeOutputDto(themeModel models.Theme) (*dto.ThemeOutput, error) {
-
-	return &dto.ThemeOutput{
-		ID:               themeModel.ID.String(),
-		Name:             themeModel.Name,
-		Repository:       themeModel.Repository,
-		RepositoryBranch: themeModel.RepositoryBranch,
-		Size:             themeModel.Size,
-		CreatedAt:        themeModel.CreatedAt.String(),
-		UpdatedAt:        themeModel.UpdatedAt.String(),
-	}, nil
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		themeModel := ptr.(*models.Theme)
+		return &dto.ThemeOutput{
+			ID:               themeModel.ID.String(),
+			Name:             themeModel.Name,
+			Repository:       themeModel.Repository,
+			RepositoryBranch: themeModel.RepositoryBranch,
+			Size:             themeModel.Size,
+			CreatedAt:        themeModel.CreatedAt.String(),
+			UpdatedAt:        themeModel.UpdatedAt.String(),
+		}, nil
+	})
 }
 
 func (s ThemeRegistration) EntityInputDtoToEntityModel(input any) any {

@@ -2,9 +2,9 @@ package registration
 
 import (
 	"net/http"
-	"reflect"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
@@ -50,33 +50,24 @@ func (s UserSettingsRegistration) GetSwaggerConfig() entityManagementInterfaces.
 }
 
 func (s UserSettingsRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return userSettingsPtrModelToOutput(input.(*models.UserSettings))
-	} else {
-		return userSettingsValueModelToOutput(input.(models.UserSettings))
-	}
-}
-
-func userSettingsPtrModelToOutput(settings *models.UserSettings) (*dto.UserSettingsOutput, error) {
-	return &dto.UserSettingsOutput{
-		ID:                   settings.ID,
-		UserID:               settings.UserID,
-		DefaultLandingPage:   settings.DefaultLandingPage,
-		PreferredLanguage:    settings.PreferredLanguage,
-		Timezone:             settings.Timezone,
-		Theme:                settings.Theme,
-		CompactMode:          settings.CompactMode,
-		EmailNotifications:   settings.EmailNotifications,
-		DesktopNotifications: settings.DesktopNotifications,
-		PasswordLastChanged:  settings.PasswordLastChanged,
-		TwoFactorEnabled:     settings.TwoFactorEnabled,
-		CreatedAt:            settings.CreatedAt,
-		UpdatedAt:            settings.UpdatedAt,
-	}, nil
-}
-
-func userSettingsValueModelToOutput(settings models.UserSettings) (*dto.UserSettingsOutput, error) {
-	return userSettingsPtrModelToOutput(&settings)
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		settings := ptr.(*models.UserSettings)
+		return &dto.UserSettingsOutput{
+			ID:                   settings.ID,
+			UserID:               settings.UserID,
+			DefaultLandingPage:   settings.DefaultLandingPage,
+			PreferredLanguage:    settings.PreferredLanguage,
+			Timezone:             settings.Timezone,
+			Theme:                settings.Theme,
+			CompactMode:          settings.CompactMode,
+			EmailNotifications:   settings.EmailNotifications,
+			DesktopNotifications: settings.DesktopNotifications,
+			PasswordLastChanged:  settings.PasswordLastChanged,
+			TwoFactorEnabled:     settings.TwoFactorEnabled,
+			CreatedAt:            settings.CreatedAt,
+			UpdatedAt:            settings.UpdatedAt,
+		}, nil
+	})
 }
 
 func (s UserSettingsRegistration) EntityInputDtoToEntityModel(input any) any {

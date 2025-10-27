@@ -2,8 +2,8 @@ package registration
 
 import (
 	"net/http"
-	"reflect"
 	authModels "soli/formations/src/auth/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
@@ -34,39 +34,33 @@ func (i InvoiceRegistration) GetSwaggerConfig() entityManagementInterfaces.Entit
 }
 
 func (i InvoiceRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return invoicePtrModelToOutput(input.(*models.Invoice))
-	} else {
-		return invoiceValueModelToOutput(input.(models.Invoice))
-	}
-}
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		invoice := ptr.(*models.Invoice)
 
-func invoicePtrModelToOutput(invoice *models.Invoice) (*dto.InvoiceOutput, error) {
-	subscriptionOutput, err := userSubscriptionPtrModelToOutput(&invoice.UserSubscription)
-	if err != nil {
-		return nil, err
-	}
+		// Convert the associated UserSubscription using its registration
+		userSubReg := UserSubscriptionRegistration{}
+		subscriptionOutput, err := userSubReg.EntityModelToEntityOutput(&invoice.UserSubscription)
+		if err != nil {
+			return nil, err
+		}
 
-	return &dto.InvoiceOutput{
-		ID:               invoice.ID,
-		UserID:           invoice.UserID,
-		UserSubscription: *subscriptionOutput,
-		StripeInvoiceID:  invoice.StripeInvoiceID,
-		Amount:           invoice.Amount,
-		Currency:         invoice.Currency,
-		Status:           invoice.Status,
-		InvoiceNumber:    invoice.InvoiceNumber,
-		InvoiceDate:      invoice.InvoiceDate,
-		DueDate:          invoice.DueDate,
-		PaidAt:           invoice.PaidAt,
-		StripeHostedURL:  invoice.StripeHostedURL,
-		DownloadURL:      invoice.DownloadURL,
-		CreatedAt:        invoice.CreatedAt,
-	}, nil
-}
-
-func invoiceValueModelToOutput(invoice models.Invoice) (*dto.InvoiceOutput, error) {
-	return invoicePtrModelToOutput(&invoice)
+		return &dto.InvoiceOutput{
+			ID:               invoice.ID,
+			UserID:           invoice.UserID,
+			UserSubscription: *subscriptionOutput.(*dto.UserSubscriptionOutput),
+			StripeInvoiceID:  invoice.StripeInvoiceID,
+			Amount:           invoice.Amount,
+			Currency:         invoice.Currency,
+			Status:           invoice.Status,
+			InvoiceNumber:    invoice.InvoiceNumber,
+			InvoiceDate:      invoice.InvoiceDate,
+			DueDate:          invoice.DueDate,
+			PaidAt:           invoice.PaidAt,
+			StripeHostedURL:  invoice.StripeHostedURL,
+			DownloadURL:      invoice.DownloadURL,
+			CreatedAt:        invoice.CreatedAt,
+		}, nil
+	})
 }
 
 func (i InvoiceRegistration) EntityInputDtoToEntityModel(input any) any {

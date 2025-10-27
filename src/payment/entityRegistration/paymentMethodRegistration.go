@@ -3,8 +3,8 @@ package registration
 
 import (
 	"net/http"
-	"reflect"
 	authModels "soli/formations/src/auth/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
@@ -47,31 +47,22 @@ func (p PaymentMethodRegistration) GetSwaggerConfig() entityManagementInterfaces
 }
 
 func (p PaymentMethodRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return paymentMethodPtrModelToOutput(input.(*models.PaymentMethod))
-	} else {
-		return paymentMethodValueModelToOutput(input.(models.PaymentMethod))
-	}
-}
-
-func paymentMethodPtrModelToOutput(pm *models.PaymentMethod) (*dto.PaymentMethodOutput, error) {
-	return &dto.PaymentMethodOutput{
-		ID:                    pm.ID,
-		UserID:                pm.UserID,
-		StripePaymentMethodID: pm.StripePaymentMethodID,
-		Type:                  pm.Type,
-		CardBrand:             pm.CardBrand,
-		CardLast4:             pm.CardLast4,
-		CardExpMonth:          pm.CardExpMonth,
-		CardExpYear:           pm.CardExpYear,
-		IsDefault:             pm.IsDefault,
-		IsActive:              pm.IsActive,
-		CreatedAt:             pm.CreatedAt,
-	}, nil
-}
-
-func paymentMethodValueModelToOutput(pm models.PaymentMethod) (*dto.PaymentMethodOutput, error) {
-	return paymentMethodPtrModelToOutput(&pm)
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		pm := ptr.(*models.PaymentMethod)
+		return &dto.PaymentMethodOutput{
+			ID:                    pm.ID,
+			UserID:                pm.UserID,
+			StripePaymentMethodID: pm.StripePaymentMethodID,
+			Type:                  pm.Type,
+			CardBrand:             pm.CardBrand,
+			CardLast4:             pm.CardLast4,
+			CardExpMonth:          pm.CardExpMonth,
+			CardExpYear:           pm.CardExpYear,
+			IsDefault:             pm.IsDefault,
+			IsActive:              pm.IsActive,
+			CreatedAt:             pm.CreatedAt,
+		}, nil
+	})
 }
 
 func (p PaymentMethodRegistration) EntityInputDtoToEntityModel(input any) any {

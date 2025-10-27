@@ -1,9 +1,9 @@
 package registration
 
 import (
-	"reflect"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
@@ -49,33 +49,16 @@ func (s ScheduleRegistration) GetSwaggerConfig() entityManagementInterfaces.Enti
 }
 
 func (s ScheduleRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return schedulePtrModelToScheduleOutputDto(input.(*models.Schedule))
-	} else {
-		return scheduleValueModelToScheduleOutputDto(input.(models.Schedule))
-	}
-}
-
-func schedulePtrModelToScheduleOutputDto(scheduleModel *models.Schedule) (*dto.ScheduleOutput, error) {
-
-	return &dto.ScheduleOutput{
-		ID:                 scheduleModel.ID.String(),
-		Name:               scheduleModel.Name,
-		FrontMatterContent: scheduleModel.FrontMatterContent,
-		CreatedAt:          scheduleModel.CreatedAt.String(),
-		UpdatedAt:          scheduleModel.UpdatedAt.String(),
-	}, nil
-}
-
-func scheduleValueModelToScheduleOutputDto(scheduleModel models.Schedule) (*dto.ScheduleOutput, error) {
-
-	return &dto.ScheduleOutput{
-		ID:                 scheduleModel.ID.String(),
-		Name:               scheduleModel.Name,
-		FrontMatterContent: scheduleModel.FrontMatterContent,
-		CreatedAt:          scheduleModel.CreatedAt.String(),
-		UpdatedAt:          scheduleModel.UpdatedAt.String(),
-	}, nil
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		scheduleModel := ptr.(*models.Schedule)
+		return &dto.ScheduleOutput{
+			ID:                 scheduleModel.ID.String(),
+			Name:               scheduleModel.Name,
+			FrontMatterContent: scheduleModel.FrontMatterContent,
+			CreatedAt:          scheduleModel.CreatedAt.String(),
+			UpdatedAt:          scheduleModel.UpdatedAt.String(),
+		}, nil
+	})
 }
 
 func (s ScheduleRegistration) EntityInputDtoToEntityModel(input any) any {

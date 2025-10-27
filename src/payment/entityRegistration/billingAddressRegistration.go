@@ -2,8 +2,8 @@ package registration
 
 import (
 	"net/http"
-	"reflect"
 	authModels "soli/formations/src/auth/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
@@ -52,31 +52,22 @@ func (s BillingAddressRegistration) GetSwaggerConfig() entityManagementInterface
 }
 
 func (b BillingAddressRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return billingAddressPtrModelToOutput(input.(*models.BillingAddress))
-	} else {
-		return billingAddressValueModelToOutput(input.(models.BillingAddress))
-	}
-}
-
-func billingAddressPtrModelToOutput(address *models.BillingAddress) (*dto.BillingAddressOutput, error) {
-	return &dto.BillingAddressOutput{
-		ID:         address.ID,
-		UserID:     address.UserID,
-		Line1:      address.Line1,
-		Line2:      address.Line2,
-		City:       address.City,
-		State:      address.State,
-		PostalCode: address.PostalCode,
-		Country:    address.Country,
-		IsDefault:  address.IsDefault,
-		CreatedAt:  address.CreatedAt,
-		UpdatedAt:  address.UpdatedAt,
-	}, nil
-}
-
-func billingAddressValueModelToOutput(address models.BillingAddress) (*dto.BillingAddressOutput, error) {
-	return billingAddressPtrModelToOutput(&address)
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		address := ptr.(*models.BillingAddress)
+		return &dto.BillingAddressOutput{
+			ID:         address.ID,
+			UserID:     address.UserID,
+			Line1:      address.Line1,
+			Line2:      address.Line2,
+			City:       address.City,
+			State:      address.State,
+			PostalCode: address.PostalCode,
+			Country:    address.Country,
+			IsDefault:  address.IsDefault,
+			CreatedAt:  address.CreatedAt,
+			UpdatedAt:  address.UpdatedAt,
+		}, nil
+	})
 }
 
 func (b BillingAddressRegistration) EntityInputDtoToEntityModel(input any) any {

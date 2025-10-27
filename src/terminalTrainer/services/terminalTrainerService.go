@@ -1,13 +1,10 @@
 package services
 
 import (
-	"bytes"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -19,6 +16,7 @@ import (
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/repositories"
+	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
@@ -127,27 +125,13 @@ func (tts *terminalTrainerService) CreateUserKey(userID, keyName string) error {
 		"max_concurrent_sessions": 5,
 	}
 
-	jsonPayload, _ := json.Marshal(payload)
-
-	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/%s/admin/api-keys?key=%s", tts.baseURL, tts.apiVersion, tts.adminKey),
-		bytes.NewBuffer(jsonPayload))
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("terminal trainer API call failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("terminal trainer API error: %d", resp.StatusCode)
-	}
-
-	// Parser la réponse
+	url := fmt.Sprintf("%s/%s/admin/api-keys?key=%s", tts.baseURL, tts.apiVersion, tts.adminKey)
 	var apiResponse dto.TerminalTrainerAPIKeyResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResponse); err != nil {
-		return fmt.Errorf("failed to parse terminal trainer response: %v", err)
+
+	opts := utils.DefaultHTTPClientOptions()
+	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, payload, &apiResponse, opts)
+	if err != nil {
+		return err
 	}
 
 	// Sauvegarder en base
@@ -178,19 +162,14 @@ func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 	payload := map[string]interface{}{
 		"is_active": false,
 	}
-	jsonPayload, _ := json.Marshal(payload)
 
-	req, _ := http.NewRequest("PUT",
-		fmt.Sprintf("%s/%s/admin/api-keys/%s?key=%s", tts.baseURL, tts.apiVersion, key.APIKey, tts.adminKey),
-		bytes.NewBuffer(jsonPayload))
-	req.Header.Set("Content-Type", "application/json")
+	url := fmt.Sprintf("%s/%s/admin/api-keys/%s?key=%s", tts.baseURL, tts.apiVersion, key.APIKey, tts.adminKey)
+	opts := utils.DefaultHTTPClientOptions()
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	_, err = utils.MakeExternalAPIRequest("Terminal Trainer", "PUT", url, payload, opts)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
 
 	// Désactiver en base locale
 	key.IsActive = false
@@ -220,30 +199,20 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	// Construire le chemin avec version et type d'instance dynamique
 	path := tts.buildAPIPath("/start", sessionInput.InstanceType)
 
-	req, _ := http.NewRequest("GET",
-		fmt.Sprintf("%s%s?terms=%s", tts.baseURL, path, fmt.Sprintf("%x", hash.Sum(nil))), nil)
-
+	// Construire l'URL avec les paramètres
+	url := fmt.Sprintf("%s%s?terms=%s", tts.baseURL, path, fmt.Sprintf("%x", hash.Sum(nil)))
 	if sessionInput.Expiry > 0 {
-		req.URL.RawQuery += fmt.Sprintf("&expiry=%d", sessionInput.Expiry)
-	}
-
-	req.Header.Set("X-API-Key", userKey.APIKey)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to start terminal session: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("terminal trainer session start error: %d", resp.StatusCode)
+		url += fmt.Sprintf("&expiry=%d", sessionInput.Expiry)
 	}
 
 	// Parser la réponse du Terminal Trainer
 	var sessionResp dto.TerminalTrainerSessionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&sessionResp); err != nil {
-		return nil, fmt.Errorf("failed to parse session response: %v", err)
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(userKey.APIKey))
+
+	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sessionResp, opts)
+	if err != nil {
+		return nil, err
 	}
 
 	if sessionResp.Status != 0 {
@@ -273,6 +242,13 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	if err != nil {
 		// Log l'erreur mais ne pas faire échouer la création du terminal
 		fmt.Printf("Warning: failed to add hide permissions for terminal %s: %v\n", terminal.ID.String(), err)
+	}
+
+	// Ajouter les permissions Casbin pour que le propriétaire puisse accéder à la console WebSocket
+	err = tts.addTerminalConsolePermissions(userID)
+	if err != nil {
+		// Log l'erreur mais ne pas faire échouer la création du terminal
+		fmt.Printf("Warning: failed to add console permissions for terminal %s: %v\n", terminal.ID.String(), err)
 	}
 
 	// Construire la réponse
@@ -411,27 +387,14 @@ func (tts *terminalTrainerService) expireSessionInAPI(sessionID, userAPIKey, ins
 	path := tts.buildAPIPath("/expire", instanceType)
 	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, sessionID)
 
-	log.Printf("[DEBUG] expireSessionInAPI - calling %s", url)
+	utils.Debug("expireSessionInAPI - calling %s", url)
 
-	req, err := http.NewRequest("PUT", url, nil)
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
+
+	_, err := utils.MakeExternalAPIRequest("Terminal Trainer", "PUT", url, nil, opts)
 	if err != nil {
-		return fmt.Errorf("failed to create expire request: %v", err)
-	}
-
-	req.Header.Set("X-API-Key", userAPIKey)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to call expire endpoint: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	log.Printf("[DEBUG] expireSessionInAPI - response status: %d, body: %s", resp.StatusCode, string(body))
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("expire API returned error %d: %s", resp.StatusCode, string(body))
+		return err
 	}
 
 	return nil
@@ -441,29 +404,15 @@ func (tts *terminalTrainerService) expireSessionInAPI(sessionID, userAPIKey, ins
 func (tts *terminalTrainerService) GetAllSessionsFromAPI(userAPIKey string) (*dto.TerminalTrainerSessionsResponse, error) {
 	// Utiliser le type d'instance par défaut configuré pour récupérer toutes les sessions
 	path := tts.buildAPIPath("/sessions", "")
-
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s%s?include_expired=true&limit=1000", tts.baseURL, path), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create sessions request: %v", err)
-	}
-
-	req.Header.Set("X-API-Key", userAPIKey)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call sessions endpoint: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("sessions API returned error %d: %s", resp.StatusCode, string(body))
-	}
+	url := fmt.Sprintf("%s%s?include_expired=true&limit=1000", tts.baseURL, path)
 
 	var sessionsResp dto.TerminalTrainerSessionsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&sessionsResp); err != nil {
-		return nil, fmt.Errorf("failed to parse sessions response: %v", err)
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
+
+	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sessionsResp, opts)
+	if err != nil {
+		return nil, err
 	}
 
 	return &sessionsResp, nil
@@ -479,32 +428,19 @@ func (tts *terminalTrainerService) GetSessionInfoFromAPI(sessionID string) (*dto
 
 	// Construire le chemin avec version et type d'instance dynamique
 	path := tts.buildAPIPath("/info", terminal.InstanceType)
-
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, sessionID), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create info request: %v", err)
-	}
-
-	req.Header.Set("X-API-Key", terminal.UserTerminalKey.APIKey)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call info endpoint: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		if resp.StatusCode == 404 {
-			return nil, fmt.Errorf("session not found on Terminal Trainer")
-		}
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("info API returned error %d: %s", resp.StatusCode, string(body))
-	}
+	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, sessionID)
 
 	var sessionInfo dto.TerminalTrainerSessionInfo
-	if err := json.NewDecoder(resp.Body).Decode(&sessionInfo); err != nil {
-		return nil, fmt.Errorf("failed to parse session info response: %v", err)
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(terminal.UserTerminalKey.APIKey))
+
+	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sessionInfo, opts)
+	if err != nil {
+		// Check for 404 specifically
+		if strings.Contains(err.Error(), "404") {
+			return nil, fmt.Errorf("session not found on Terminal Trainer")
+		}
+		return nil, err
 	}
 
 	return &sessionInfo, nil
@@ -736,38 +672,13 @@ func (tts *terminalTrainerService) GetInstanceTypes() ([]dto.InstanceType, error
 	path := tts.buildAPIPath("/instances", "")
 	url := fmt.Sprintf("%s%s", tts.baseURL, path)
 
-	// Créer la requête HTTP
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %v", err)
-	}
-
-	// Ajouter l'en-tête d'autorisation admin
-	req.Header.Set("X-Admin-Key", tts.adminKey)
-
-	// Exécuter la requête
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("terminal trainer API call failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// Vérifier le code de statut
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("terminal trainer API error: %d - %s", resp.StatusCode, string(body))
-	}
-
-	// Lire et décoder la réponse
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %v", err)
-	}
-
 	var instanceTypes []dto.InstanceType
-	if err := json.Unmarshal(body, &instanceTypes); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithHeader("X-Admin-Key", tts.adminKey))
+
+	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &instanceTypes, opts)
+	if err != nil {
+		return nil, err
 	}
 
 	return instanceTypes, nil
@@ -834,27 +745,15 @@ func (tts *terminalTrainerService) getAllSessionsFromAllInstanceTypes(userAPIKey
 // getSessionsFromInstanceType récupère les sessions d'un type d'instance spécifique
 func (tts *terminalTrainerService) getSessionsFromInstanceType(userAPIKey, instanceType string) (*dto.TerminalTrainerSessionsResponse, error) {
 	path := tts.buildAPIPath("/sessions", instanceType)
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s%s?include_expired=true&limit=1000", tts.baseURL, path), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create sessions request: %v", err)
-	}
-
-	req.Header.Set("X-API-Key", userAPIKey)
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call sessions endpoint: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("sessions API returned error %d: %s", resp.StatusCode, string(body))
-	}
+	url := fmt.Sprintf("%s%s?include_expired=true&limit=1000", tts.baseURL, path)
 
 	var sessionsResp dto.TerminalTrainerSessionsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&sessionsResp); err != nil {
-		return nil, fmt.Errorf("failed to parse sessions response: %v", err)
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
+
+	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sessionsResp, opts)
+	if err != nil {
+		return nil, err
 	}
 
 	return &sessionsResp, nil
@@ -898,7 +797,7 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 	if existingShare != nil {
 		// Si le niveau d'accès change, supprimer d'abord les anciennes permissions
 		if existingShare.AccessLevel != accessLevel {
-			err := tts.removeTerminalSharePermissions(terminal.ID.String(), sharedWithUserID, existingShare.AccessLevel)
+			err := tts.removeTerminalSharePermissions(sharedWithUserID, existingShare.AccessLevel)
 			if err != nil {
 				fmt.Printf("Warning: failed to remove old permissions for terminal %s from user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
 			}
@@ -919,8 +818,14 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 			fmt.Printf("Warning: failed to add hide permissions for updated shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
 		}
 
+		// Ajouter les permissions console WebSocket
+		err = tts.addTerminalConsolePermissions(sharedWithUserID)
+		if err != nil {
+			fmt.Printf("Warning: failed to add console permissions for updated shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
+		}
+
 		// Ajouter les nouvelles permissions d'édition selon le niveau d'accès
-		err = tts.addTerminalSharePermissions(terminal.ID.String(), sharedWithUserID, accessLevel)
+		err = tts.addTerminalSharePermissions(sharedWithUserID, accessLevel)
 		if err != nil {
 			fmt.Printf("Warning: failed to add share permissions for updated shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
 		}
@@ -950,8 +855,15 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 		fmt.Printf("Warning: failed to add hide permissions for shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
 	}
 
+	// Ajouter les permissions console WebSocket
+	err = tts.addTerminalConsolePermissions(sharedWithUserID)
+	if err != nil {
+		// Log l'erreur mais ne pas faire échouer le partage
+		fmt.Printf("Warning: failed to add console permissions for shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
+	}
+
 	// Ajouter les permissions d'édition pour les utilisateurs avec accès "admin"
-	err = tts.addTerminalSharePermissions(terminal.ID.String(), sharedWithUserID, accessLevel)
+	err = tts.addTerminalSharePermissions(sharedWithUserID, accessLevel)
 	if err != nil {
 		// Log l'erreur mais ne pas faire échouer le partage
 		fmt.Printf("Warning: failed to add share permissions for shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
@@ -986,7 +898,7 @@ func (tts *terminalTrainerService) RevokeTerminalAccess(sessionID, sharedWithUse
 	}
 
 	// Révoquer les permissions Casbin avant de désactiver le partage
-	err = tts.removeTerminalSharePermissions(terminal.ID.String(), sharedWithUserID, share.AccessLevel)
+	err = tts.removeTerminalSharePermissions(sharedWithUserID, share.AccessLevel)
 	if err != nil {
 		// Log l'erreur mais ne pas faire échouer la révocation
 		fmt.Printf("Warning: failed to remove permissions for terminal %s from user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
@@ -1194,111 +1106,114 @@ func (tts *terminalTrainerService) UnhideTerminal(terminalID, userID string) err
 
 // addTerminalHidePermissions ajoute les permissions Casbin pour qu'un utilisateur puisse masquer des terminaux
 func (tts *terminalTrainerService) addTerminalHidePermissions(userID string) error {
-	// Charger les politiques
-	err := casdoor.Enforcer.LoadPolicy()
-	if err != nil {
-		return fmt.Errorf("failed to load policy: %v", err)
-	}
+	opts := utils.DefaultPermissionOptions()
+	opts.LoadPolicyFirst = true
 
 	// Ajouter les permissions pour les routes de masquage avec le pattern de route générique
 	// Cela permet au middleware d'authentification de faire correspondre ctx.FullPath() avec les permissions stockées
 	hideRoute := "/api/v1/terminals/:id/hide"
 
-	// Permission pour POST /terminals/{id}/hide (masquer)
-	_, err = casdoor.Enforcer.AddPolicy(userID, hideRoute, "POST")
+	// Permissions pour POST et DELETE /terminals/{id}/hide
+	err := utils.AddPolicy(casdoor.Enforcer, userID, hideRoute, "POST|DELETE", opts)
 	if err != nil {
-		return fmt.Errorf("failed to add POST hide permission: %v", err)
+		return err
 	}
 
-	// Permission pour DELETE /terminals/{id}/hide (afficher)
-	_, err = casdoor.Enforcer.AddPolicy(userID, hideRoute, "DELETE")
+	return nil
+}
+
+// addTerminalConsolePermissions ajoute les permissions Casbin pour qu'un utilisateur puisse accéder à la console WebSocket
+func (tts *terminalTrainerService) addTerminalConsolePermissions(userID string) error {
+	opts := utils.DefaultPermissionOptions()
+	opts.LoadPolicyFirst = true
+
+	// Route de la console WebSocket
+	consoleRoute := "/api/v1/terminals/:id/console"
+
+	// Permission pour GET /terminals/{id}/console (connexion WebSocket)
+	err := utils.AddPolicy(casdoor.Enforcer, userID, consoleRoute, "GET", opts)
 	if err != nil {
-		return fmt.Errorf("failed to add DELETE hide permission: %v", err)
+		return err
 	}
 
 	return nil
 }
 
 // addTerminalSharePermissions ajoute les permissions Casbin pour qu'un utilisateur puisse accéder à un terminal partagé
-func (tts *terminalTrainerService) addTerminalSharePermissions(terminalID, userID, accessLevel string) error {
-	// Charger les politiques
-	err := casdoor.Enforcer.LoadPolicy()
-	if err != nil {
-		return fmt.Errorf("failed to load policy: %v", err)
-	}
+// Note: Uses generic route pattern (/api/v1/terminals/:id) as per two-layer security model.
+// Actual resource-level access is validated by HasTerminalAccess() checks in route handlers.
+func (tts *terminalTrainerService) addTerminalSharePermissions(userID, accessLevel string) error {
+	opts := utils.DefaultPermissionOptions()
+	opts.LoadPolicyFirst = true
 
-	// Route générique pour les terminaux
+	// Route générique pour les terminaux (matches all terminal IDs)
 	terminalRoute := "/api/v1/terminals/:id"
 
-	// Tous les niveaux d'accès ont la permission GET (lecture)
-	_, err = casdoor.Enforcer.AddPolicy(userID, terminalRoute, "GET")
+	// Build methods based on access level
+	var methods string
+	switch accessLevel {
+	case "read":
+		methods = "GET"
+	case "write":
+		methods = "GET|PATCH"
+	case "admin":
+		methods = "GET|PATCH|DELETE"
+	default:
+		methods = "GET" // Fallback to read-only
+	}
+
+	// Add permissions based on access level
+	err := utils.AddPolicy(casdoor.Enforcer, userID, terminalRoute, methods, opts)
 	if err != nil {
-		return fmt.Errorf("failed to add GET permission: %v", err)
-	}
-
-	// Les niveaux "write" et "admin" ont la permission PATCH (édition)
-	if accessLevel == "write" || accessLevel == "admin" {
-		_, err = casdoor.Enforcer.AddPolicy(userID, terminalRoute, "PATCH")
-		if err != nil {
-			return fmt.Errorf("failed to add PATCH permission: %v", err)
-		}
-	}
-
-	// Le niveau "admin" a également la permission DELETE
-	if accessLevel == "admin" {
-		_, err = casdoor.Enforcer.AddPolicy(userID, terminalRoute, "DELETE")
-		if err != nil {
-			return fmt.Errorf("failed to add DELETE permission: %v", err)
-		}
+		return err
 	}
 
 	return nil
 }
 
 // removeTerminalSharePermissions révoque les permissions Casbin d'un utilisateur pour un terminal partagé
-func (tts *terminalTrainerService) removeTerminalSharePermissions(terminalID, userID, accessLevel string) error {
-	// Charger les politiques
-	err := casdoor.Enforcer.LoadPolicy()
-	if err != nil {
-		return fmt.Errorf("failed to load policy: %v", err)
-	}
+// Note: Removes generic route permissions. The user will lose access to ALL shared terminals at the route level,
+// but actual access is still controlled by terminal_shares table entries checked by HasTerminalAccess().
+// This function should only be called when revoking the LAST share for a user.
+func (tts *terminalTrainerService) removeTerminalSharePermissions(userID, accessLevel string) error {
+	opts := utils.DefaultPermissionOptions()
+	opts.LoadPolicyFirst = true
+	opts.WarnOnError = true // Non-critical permission removals
 
-	// Route générique pour les terminaux
+	// Route générique pour les terminaux (matches all terminal IDs)
 	terminalRoute := "/api/v1/terminals/:id"
-
-	// Supprimer la permission GET (lecture)
-	_, err = casdoor.Enforcer.RemovePolicy(userID, terminalRoute, "GET")
-	if err != nil {
-		fmt.Printf("Warning: failed to remove GET permission: %v\n", err)
-	}
-
-	// Supprimer la permission PATCH si elle existait (pour "write" et "admin")
-	if accessLevel == "write" || accessLevel == "admin" {
-		_, err = casdoor.Enforcer.RemovePolicy(userID, terminalRoute, "PATCH")
-		if err != nil {
-			fmt.Printf("Warning: failed to remove PATCH permission: %v\n", err)
-		}
-	}
-
-	// Supprimer la permission DELETE si elle existait (pour "admin" uniquement)
-	if accessLevel == "admin" {
-		_, err = casdoor.Enforcer.RemovePolicy(userID, terminalRoute, "DELETE")
-		if err != nil {
-			fmt.Printf("Warning: failed to remove DELETE permission: %v\n", err)
-		}
-	}
-
-	// Supprimer également les permissions de masquage
 	hideRoute := "/api/v1/terminals/:id/hide"
+	consoleRoute := "/api/v1/terminals/:id/console"
 
-	_, err = casdoor.Enforcer.RemovePolicy(userID, hideRoute, "POST")
-	if err != nil {
-		fmt.Printf("Warning: failed to remove POST hide permission: %v\n", err)
+	// Build methods to remove based on access level
+	var methods string
+	switch accessLevel {
+	case "read":
+		methods = "GET"
+	case "write":
+		methods = "GET|PATCH"
+	case "admin":
+		methods = "GET|PATCH|DELETE"
+	default:
+		methods = "GET" // Fallback to read-only
 	}
 
-	_, err = casdoor.Enforcer.RemovePolicy(userID, hideRoute, "DELETE")
+	// Supprimer les permissions du terminal
+	err := utils.RemovePolicy(casdoor.Enforcer, userID, terminalRoute, methods, opts)
 	if err != nil {
-		fmt.Printf("Warning: failed to remove DELETE hide permission: %v\n", err)
+		utils.Warn("Failed to remove terminal permissions: %v", err)
+	}
+
+	// Supprimer les permissions de masquage (POST et DELETE)
+	err = utils.RemovePolicy(casdoor.Enforcer, userID, hideRoute, "POST|DELETE", opts)
+	if err != nil {
+		utils.Warn("Failed to remove hide permissions: %v", err)
+	}
+
+	// Supprimer les permissions console WebSocket (GET)
+	err = utils.RemovePolicy(casdoor.Enforcer, userID, consoleRoute, "GET", opts)
+	if err != nil {
+		utils.Warn("Failed to remove console permissions: %v", err)
 	}
 
 	return nil
@@ -1320,30 +1235,14 @@ func (tts *terminalTrainerService) GetServerMetrics(nocache bool) (*dto.ServerMe
 		url += "?nocache=true"
 	}
 
-	// Créer la requête HTTP
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %v", err)
-	}
-
 	// Exécuter la requête (pas besoin d'authentification selon les specs)
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("terminal trainer API call failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// Vérifier le code de statut
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("terminal trainer API error: %d - %s", resp.StatusCode, string(body))
-	}
-
-	// Lire et décoder la réponse
 	var metrics dto.ServerMetricsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&metrics); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithTimeout(10*time.Second))
+
+	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &metrics, opts)
+	if err != nil {
+		return nil, err
 	}
 
 	return &metrics, nil
@@ -1365,6 +1264,12 @@ func (tts *terminalTrainerService) FixTerminalHidePermissions(userID string) (*d
 		response.Errors = append(response.Errors, fmt.Sprintf("Failed to add general hide permissions: %v", err))
 	}
 
+	// Ajouter également les permissions console WebSocket
+	err = tts.addTerminalConsolePermissions(userID)
+	if err != nil {
+		response.Errors = append(response.Errors, fmt.Sprintf("Failed to add general console permissions: %v", err))
+	}
+
 	// 2. Récupérer tous les terminaux appartenant à l'utilisateur
 	ownedTerminals, err := tts.repository.GetTerminalSessionsByUserID(userID, false)
 	if err != nil {
@@ -1382,7 +1287,7 @@ func (tts *terminalTrainerService) FixTerminalHidePermissions(userID string) (*d
 		// Ajouter les permissions pour chaque partage selon le niveau d'accès
 		for _, share := range *shares {
 			if share.IsActive {
-				err := tts.addTerminalSharePermissions(share.TerminalID.String(), userID, share.AccessLevel)
+				err := tts.addTerminalSharePermissions(userID, share.AccessLevel)
 				if err != nil {
 					response.Errors = append(response.Errors, fmt.Sprintf("Failed to add permissions for terminal %s: %v", share.TerminalID.String(), err))
 				}

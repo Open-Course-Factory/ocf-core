@@ -6,6 +6,7 @@ import (
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -38,17 +39,12 @@ func (u accessController) AddEntityAccesses(ctx *gin.Context) {
 		return
 	}
 
-	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
-	if errPolicyLoading != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: errPolicyLoading.Error(),
-		})
-		return
-	}
+	// Prepare permission options with LoadPolicyFirst
+	opts := utils.DefaultPermissionOptions()
+	opts.LoadPolicyFirst = true
 
-	_, errPolicyDeleting := casdoor.Enforcer.RemovePolicy(groupAccessesCreateDTO.GroupName, groupAccessesCreateDTO.Route)
-
+	// Remove existing policy if present
+	errPolicyDeleting := utils.RemovePolicy(casdoor.Enforcer, groupAccessesCreateDTO.GroupName, groupAccessesCreateDTO.Route, "", opts)
 	if errPolicyDeleting != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -57,8 +53,8 @@ func (u accessController) AddEntityAccesses(ctx *gin.Context) {
 		return
 	}
 
-	_, errPolicyAdding := casdoor.Enforcer.AddPolicy(groupAccessesCreateDTO.GroupName, groupAccessesCreateDTO.Route, groupAccessesCreateDTO.AuthorizedMethods)
-
+	// Add new policy
+	errPolicyAdding := utils.AddPolicy(casdoor.Enforcer, groupAccessesCreateDTO.GroupName, groupAccessesCreateDTO.Route, groupAccessesCreateDTO.AuthorizedMethods, opts)
 	if errPolicyAdding != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,

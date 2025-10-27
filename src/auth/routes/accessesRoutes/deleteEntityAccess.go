@@ -5,6 +5,7 @@ import (
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -39,17 +40,12 @@ func (u accessController) DeleteEntityAccesses(ctx *gin.Context) {
 		return
 	}
 
-	errPolicyLoading := casdoor.Enforcer.LoadPolicy()
-	if errPolicyLoading != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: errPolicyLoading.Error(),
-		})
-		return
-	}
+	// Prepare permission options with LoadPolicyFirst
+	opts := utils.DefaultPermissionOptions()
+	opts.LoadPolicyFirst = true
 
-	_, errPolicyDeleting := casdoor.Enforcer.RemovePolicy(groupAccessesDeleteDTO.GroupName, groupAccessesDeleteDTO.Route)
-
+	// Remove policy
+	errPolicyDeleting := utils.RemovePolicy(casdoor.Enforcer, groupAccessesDeleteDTO.GroupName, groupAccessesDeleteDTO.Route, "", opts)
 	if errPolicyDeleting != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,

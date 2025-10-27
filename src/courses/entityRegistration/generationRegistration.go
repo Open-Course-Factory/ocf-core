@@ -1,9 +1,9 @@
 package registration
 
 import (
-	"reflect"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 
 	"github.com/google/uuid"
@@ -14,19 +14,9 @@ type GenerationRegistration struct {
 }
 
 func (s GenerationRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return generationPtrModelToGenerationOutputDto(input.(*models.Generation))
-	} else {
-		return generationValueModelToGenerationOutputDto(input.(models.Generation))
-	}
-}
-
-func generationPtrModelToGenerationOutputDto(packageModel *models.Generation) (*dto.GenerationOutput, error) {
-	return dto.GenerationModelToGenerationOutput(*packageModel), nil
-}
-
-func generationValueModelToGenerationOutputDto(packageModel models.Generation) (*dto.GenerationOutput, error) {
-	return dto.GenerationModelToGenerationOutput(packageModel), nil
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		return dto.GenerationModelToGenerationOutput(*ptr.(*models.Generation)), nil
+	})
 }
 
 func (s GenerationRegistration) EntityInputDtoToEntityModel(input any) any {

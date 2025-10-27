@@ -2,8 +2,8 @@ package groupRegistration
 
 import (
 	"net/http"
-	"reflect"
 	authModels "soli/formations/src/auth/models"
+	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/groups/dto"
 	"soli/formations/src/groups/models"
@@ -51,19 +51,9 @@ func (g GroupRegistration) GetSwaggerConfig() entityManagementInterfaces.EntityS
 }
 
 func (g GroupRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	if reflect.ValueOf(input).Kind() == reflect.Ptr {
-		return groupPtrModelToGroupOutput(input.(*models.ClassGroup))
-	} else {
-		return groupValueModelToGroupOutput(input.(models.ClassGroup))
-	}
-}
-
-func groupPtrModelToGroupOutput(groupModel *models.ClassGroup) (*dto.GroupOutput, error) {
-	return dto.GroupModelToGroupOutput(groupModel), nil
-}
-
-func groupValueModelToGroupOutput(groupModel models.ClassGroup) (*dto.GroupOutput, error) {
-	return dto.GroupModelToGroupOutput(&groupModel), nil
+	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
+		return dto.GroupModelToGroupOutput(ptr.(*models.ClassGroup)), nil
+	})
 }
 
 func (g GroupRegistration) EntityInputDtoToEntityModel(input any) any {
