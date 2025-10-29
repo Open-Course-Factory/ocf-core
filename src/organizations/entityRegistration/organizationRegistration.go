@@ -4,8 +4,10 @@ import (
 	"net/http"
 
 	authModels "soli/formations/src/auth/models"
+	sqldb "soli/formations/src/db"
 	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
+	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
 )
@@ -103,9 +105,30 @@ func (r OrganizationRegistration) EntityModelToEntityOutput(input any) (any, err
 			output.Groups = &groups
 		}
 
-		// Add counts
-		groupCount := len(org.Groups)
-		memberCount := len(org.Members)
+		// Add counts - query database if relationships not preloaded
+		groupCount := 0
+		memberCount := 0
+
+		// If Groups are preloaded (non-empty), use len(), otherwise query count
+		if len(org.Groups) > 0 {
+			groupCount = len(org.Groups)
+		} else {
+			// Query actual count from database
+			var count int64
+			sqldb.DB.Model(&groupModels.ClassGroup{}).Where("organization_id = ?", org.ID).Count(&count)
+			groupCount = int(count)
+		}
+
+		// If Members are preloaded (non-empty), use len(), otherwise query count
+		if len(org.Members) > 0 {
+			memberCount = len(org.Members)
+		} else {
+			// Query actual count from database - only count active members
+			var count int64
+			sqldb.DB.Model(&models.OrganizationMember{}).Where("organization_id = ? AND is_active = ?", org.ID, true).Count(&count)
+			memberCount = int(count)
+		}
+
 		output.GroupCount = &groupCount
 		output.MemberCount = &memberCount
 

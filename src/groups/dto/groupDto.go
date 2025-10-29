@@ -69,6 +69,14 @@ type GroupListOutput struct {
 	CreatedAt   time.Time  `json:"created_at"`
 }
 
+// CreateGroupMemberInput - DTO for creating a single group member (generic POST)
+type CreateGroupMemberInput struct {
+	GroupID   uuid.UUID              `json:"group_id" mapstructure:"group_id" binding:"required"`
+	UserID    string                 `json:"user_id" mapstructure:"user_id" binding:"required"`
+	Role      models.GroupMemberRole `json:"role" mapstructure:"role" binding:"omitempty,oneof=member admin assistant"`
+	InvitedBy string                 `json:"invited_by,omitempty" mapstructure:"invited_by"`
+}
+
 // AddGroupMembersInput - DTO for adding members to a group
 type AddGroupMembersInput struct {
 	UserIDs []string               `json:"user_ids" binding:"required,min=1"`
@@ -78,6 +86,15 @@ type AddGroupMembersInput struct {
 // UpdateGroupMemberRoleInput - DTO for updating a member's role
 type UpdateGroupMemberRoleInput struct {
 	Role models.GroupMemberRole `json:"role" binding:"required,oneof=member admin assistant owner"`
+}
+
+// UserSummary contains basic user information (avoids import cycle with auth/dto)
+type UserSummary struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	Username    string `json:"username,omitempty"`
 }
 
 // GroupMemberOutput - DTO for group member responses
@@ -92,6 +109,9 @@ type GroupMemberOutput struct {
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 	CreatedAt time.Time              `json:"created_at"`
 	UpdatedAt time.Time              `json:"updated_at"`
+
+	// Optional user details (fetched from Casdoor)
+	User *UserSummary `json:"user,omitempty"`
 }
 
 // Conversion functions

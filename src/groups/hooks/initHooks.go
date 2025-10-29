@@ -27,5 +27,29 @@ func InitGroupHooks(db *gorm.DB) {
 		log.Println("✅ Group cleanup hook registered")
 	}
 
+	// Hook for validating group member addition
+	memberValidationHook := NewGroupMemberValidationHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(memberValidationHook); err != nil {
+		log.Printf("❌ Failed to register group member validation hook: %v", err)
+	} else {
+		log.Println("✅ Group member validation hook registered")
+	}
+
+	// Hook for granting permissions when a member is added
+	memberPermissionHook := NewGroupMemberPermissionHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(memberPermissionHook); err != nil {
+		log.Printf("❌ Failed to register group member permission hook: %v", err)
+	} else {
+		log.Println("✅ Group member permission hook registered")
+	}
+
+	// Hook for revoking permissions when a member is removed
+	memberCleanupHook := NewGroupMemberCleanupHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(memberCleanupHook); err != nil {
+		log.Printf("❌ Failed to register group member cleanup hook: %v", err)
+	} else {
+		log.Println("✅ Group member cleanup hook registered")
+	}
+
 	log.Println("🔗 Group hooks initialization complete")
 }

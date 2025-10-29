@@ -21,6 +21,7 @@ type GroupService interface {
 	GetGroup(groupID uuid.UUID, includeMembers bool) (*models.ClassGroup, error)
 	GetUserGroups(userID string) (*[]models.ClassGroup, error)
 	GetGroupsByOwner(ownerUserID string) (*[]models.ClassGroup, error)
+	GetGroupsByOrganization(organizationID uuid.UUID, includes []string) (*[]models.ClassGroup, error)
 	UpdateGroup(groupID uuid.UUID, ownerUserID string, updates map[string]interface{}) (*models.ClassGroup, error)
 	DeleteGroup(groupID uuid.UUID, ownerUserID string) error
 
@@ -147,6 +148,11 @@ func (gs *groupService) GetUserGroups(userID string) (*[]models.ClassGroup, erro
 // GetGroupsByOwner returns all groups owned by a user
 func (gs *groupService) GetGroupsByOwner(ownerUserID string) (*[]models.ClassGroup, error) {
 	return gs.repository.GetGroupsByOwner(ownerUserID)
+}
+
+// GetGroupsByOrganization returns all groups belonging to an organization
+func (gs *groupService) GetGroupsByOrganization(organizationID uuid.UUID, includes []string) (*[]models.ClassGroup, error) {
+	return gs.repository.GetGroupsByOrganization(organizationID, includes)
 }
 
 // UpdateGroup updates a group (only owner or admin can update)

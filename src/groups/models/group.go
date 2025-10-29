@@ -15,6 +15,7 @@ type ClassGroup struct {
 	Description        string     `gorm:"type:text" json:"description,omitempty"`
 	OwnerUserID        string     `gorm:"type:varchar(255);not null;index" json:"owner_user_id"`        // Creator (teacher/trainer)
 	OrganizationID     *uuid.UUID `gorm:"type:uuid;index" json:"organization_id,omitempty"`             // Link to parent organization (Phase 1)
+	ParentGroupID      *uuid.UUID `gorm:"type:uuid;index" json:"parent_group_id,omitempty"`             // For nested groups (e.g., M1 DevOps > M1 DevOps A)
 	SubscriptionPlanID *uuid.UUID `gorm:"type:uuid;index" json:"subscription_plan_id,omitempty"`        // DEPRECATED Phase 2: Use Organization.SubscriptionPlanID instead
 	MaxMembers         int        `gorm:"default:50" json:"max_members"`                                // Group size limit
 	ExpiresAt          *time.Time `json:"expires_at,omitempty"`                                         // Optional expiration (for temporary classes)
@@ -25,7 +26,9 @@ type ClassGroup struct {
 	Metadata map[string]interface{} `gorm:"type:jsonb" json:"metadata,omitempty"`
 
 	// Relations
-	Members []GroupMember `gorm:"foreignKey:GroupID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"members,omitempty"`
+	Members    []GroupMember `gorm:"foreignKey:GroupID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"members,omitempty"`
+	SubGroups  []ClassGroup  `gorm:"foreignKey:ParentGroupID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"sub_groups,omitempty"`
+	ParentGroup *ClassGroup  `gorm:"foreignKey:ParentGroupID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"parent_group,omitempty"`
 }
 
 // Implement interfaces for entity management system

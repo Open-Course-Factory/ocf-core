@@ -1,0 +1,10 @@
+email,first_name,last_name,password,role,external_id,force_reset,update_existing
+john.doe@school.fr,John,Doe,TempPass123!,member,student_001,true,false
+jane.smith@school.fr,Jane,Smith,TempPass456!,member,student_002,true,false
+alice.martin@school.fr,Alice,Martin,TempPass789!,member,student_003,true,false
+bob.dupont@school.fr,Bob,Dupont,TempPass321!,member,student_004,true,false
+charlie.bernard@school.fr,Charlie,Bernard,TempPass654!,member,student_005,true,false
+marie.leclerc@school.fr,Marie,Leclerc,TempPass987!,member,student_006,true,false
+pierre.petit@school.fr,Pierre,Petit,TempPass147!,supervisor,teacher_001,true,false
+sophie.rousseau@school.fr,Sophie,Rousseau,TempPass258!,supervisor,teacher_002,true,false
+michel.fournier@school.fr,Michel,Fournier,TempPass369!,supervisor,teacher_003,true,false

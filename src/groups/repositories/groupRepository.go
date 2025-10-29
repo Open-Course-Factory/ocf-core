@@ -15,6 +15,7 @@ type GroupRepository interface {
 	GetGroupByNameAndOwner(name, ownerUserID string) (*models.ClassGroup, error)
 	GetGroupsByUserID(userID string) (*[]models.ClassGroup, error)
 	GetGroupsByOwner(ownerUserID string) (*[]models.ClassGroup, error)
+	GetGroupsByOrganization(organizationID uuid.UUID, includes []string) (*[]models.ClassGroup, error)
 	UpdateGroup(groupID uuid.UUID, updates map[string]interface{}) (*models.ClassGroup, error)
 	DeleteGroup(groupID uuid.UUID) error
 
@@ -90,6 +91,29 @@ func (gr *groupRepository) GetGroupsByUserID(userID string) (*[]models.ClassGrou
 func (gr *groupRepository) GetGroupsByOwner(ownerUserID string) (*[]models.ClassGroup, error) {
 	var groups []models.ClassGroup
 	err := gr.db.Where("owner_user_id = ?", ownerUserID).Preload("Members").Find(&groups).Error
+	if err != nil {
+		return nil, err
+	}
+	return &groups, nil
+}
+
+// GetGroupsByOrganization returns all groups belonging to an organization
+func (gr *groupRepository) GetGroupsByOrganization(organizationID uuid.UUID, includes []string) (*[]models.ClassGroup, error) {
+	var groups []models.ClassGroup
+	query := gr.db.Where("organization_id = ?", organizationID)
+
+	// Always preload Members for accurate member_count (but only active members)
+	query = query.Preload("Members", "is_active = ?", true)
+
+	// Handle additional selective preloading
+	for _, include := range includes {
+		// Skip Members since we already preloaded it above
+		if include != "Members" {
+			query = query.Preload(include)
+		}
+	}
+
+	err := query.Find(&groups).Error
 	if err != nil {
 		return nil, err
 	}

@@ -12,7 +12,26 @@ These files serve as:
 
 ## Documents
 
-### Feature System
+### 🏗️ Architecture & Refactoring
+
+- **`REFACTORING_COMPLETE_SUMMARY.md`** - ⭐ **Comprehensive 6-phase refactoring summary**
+  - 100% permission management refactoring completed
+  - 12 utility helpers created
+  - ~2,600 lines of code eliminated
+  - Zero breaking changes
+  - Framework readiness: 60% → 85%
+  - Complete guide to new patterns and utilities
+
+- **`ORGANIZATION_GROUPS_SYSTEM.md`** - ⭐ **GitLab-style multi-tenant architecture**
+  - Organizations & groups hierarchy
+  - Multi-tenancy support
+  - Cascading permissions (org → groups)
+  - Personal organizations
+  - Role-based access (owner/manager/member)
+  - Complete API documentation
+  - Integration guide with examples
+
+### 📊 Feature System
 
 - **`MODULAR_FEATURES.md`** - Complete guide to the modular feature flag system
   - How modules declare features
@@ -22,7 +41,7 @@ These files serve as:
   - Database-backed feature flags
   - API endpoints and integration
 
-### Subscription & Metrics
+### 💰 Subscription & Metrics
 
 - **`METRICS_FIX_PLAN_FEATURES.md`** - ⚠️ **CURRENT IMPLEMENTATION** - Fix for usage metrics not being created
   - Root cause analysis (plan.Features vs feature flags confusion)
@@ -33,7 +52,7 @@ These files serve as:
   - Changed to return empty array instead of null
   - Sync mechanism for initializing metrics
 
-### Terminal Pricing System (Historical Reference)
+### 💻 Terminal Pricing System (Historical Reference)
 
 These documents describe the initial terminal pricing implementation. Keep for reference on pricing strategy and business model.
 
@@ -50,7 +69,7 @@ These documents describe the initial terminal pricing implementation. Keep for r
   - Manual testing procedures
   - Known issues that were fixed
 
-### Frontend Integration
+### 🎨 Frontend Integration
 
 - **`FRONTEND_INTEGRATION_PROMPT.md`** - Complete guide for frontend team
   - API endpoints and usage
@@ -58,6 +77,32 @@ These documents describe the initial terminal pricing implementation. Keep for r
   - User dashboard implementation
   - Admin feature management UI
   - Caching strategies
+
+- **`BULK_LICENSE_FRONTEND_GUIDE.md`** - Bulk license purchase frontend
+  - Multi-user license purchase flow
+  - Payment and checkout integration
+
+- **`GROUPS_FRONTEND_INTEGRATION.md`** - Groups system frontend guide
+  - Group management UI
+  - Member management
+  - Role assignment
+
+- **`USER_SETTINGS_FRONTEND_GUIDE.md`** - User settings frontend
+  - Profile management
+  - Account settings
+  - Preferences
+
+- **`TERMINAL_HIDING_FRONTEND_GUIDE.md`** - Terminal hiding/showing UI
+  - Terminal visibility controls
+  - User experience patterns
+
+- **`TERMINAL_SHARING_ACCESS_SYSTEM.md`** - Terminal sharing frontend
+  - Share terminal with other users
+  - Access level management (read/write/admin)
+
+- **`COURSE_VERSION_MANAGEMENT_FRONTEND.md`** - Course versioning UI
+  - Version control for courses
+  - Publishing workflow
 
 ## Usage
 

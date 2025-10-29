@@ -157,3 +157,201 @@ func (h *GroupCleanupHook) Execute(ctx *hooks.HookContext) error {
 	log.Printf("Group deleted: %s (ID: %s)", group.Name, group.ID)
 	return nil
 }
+
+// GroupMemberValidationHook validates business rules when adding a member
+type GroupMemberValidationHook struct {
+	db           *gorm.DB
+	groupService services.GroupService
+	enabled      bool
+	priority     int
+}
+
+func NewGroupMemberValidationHook(db *gorm.DB) hooks.Hook {
+	return &GroupMemberValidationHook{
+		db:           db,
+		groupService: services.NewGroupService(db),
+		enabled:      true,
+		priority:     10, // Run before creation
+	}
+}
+
+func (h *GroupMemberValidationHook) GetName() string {
+	return "group_member_validation"
+}
+
+func (h *GroupMemberValidationHook) GetEntityName() string {
+	return "GroupMember"
+}
+
+func (h *GroupMemberValidationHook) GetHookTypes() []hooks.HookType {
+	return []hooks.HookType{hooks.BeforeCreate}
+}
+
+func (h *GroupMemberValidationHook) IsEnabled() bool {
+	return h.enabled
+}
+
+func (h *GroupMemberValidationHook) GetPriority() int {
+	return h.priority
+}
+
+func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
+	member, ok := ctx.NewEntity.(*models.GroupMember)
+	if !ok {
+		return fmt.Errorf("expected *models.GroupMember, got %T", ctx.NewEntity)
+	}
+
+	// 1. Check if group exists and load it
+	var group models.ClassGroup
+	err := h.db.Where("id = ?", member.GroupID).Preload("Members").First(&group).Error
+	if err != nil {
+		return fmt.Errorf("group not found")
+	}
+
+	// 2. Check if group is expired
+	if group.IsExpired() {
+		return fmt.Errorf("group has expired")
+	}
+
+	// 3. Check if group is full
+	if group.MaxMembers > 0 && len(group.Members) >= group.MaxMembers {
+		return fmt.Errorf("group is full (max %d members)", group.MaxMembers)
+	}
+
+	// 4. Check if user is already a member
+	isMember, _ := h.groupService.IsUserInGroup(member.GroupID, member.UserID)
+	if isMember {
+		return fmt.Errorf("user is already a member of this group")
+	}
+
+	// 5. Check if requesting user can manage this group
+	if ctx.UserID != "" {
+		canManage, err := h.groupService.CanUserManageGroup(member.GroupID, ctx.UserID)
+		if err != nil {
+			return fmt.Errorf("permission check failed: %v", err)
+		}
+		if !canManage {
+			return fmt.Errorf("you don't have permission to add members to this group")
+		}
+
+		// Set InvitedBy if not already set
+		if member.InvitedBy == "" {
+			member.InvitedBy = ctx.UserID
+		}
+	}
+
+	utils.Debug("Validated group member: user %s joining group %s", member.UserID, member.GroupID)
+	return nil
+}
+
+// GroupMemberPermissionHook grants permissions when a member is added
+type GroupMemberPermissionHook struct {
+	db           *gorm.DB
+	groupService services.GroupService
+	enabled      bool
+	priority     int
+}
+
+func NewGroupMemberPermissionHook(db *gorm.DB) hooks.Hook {
+	return &GroupMemberPermissionHook{
+		db:           db,
+		groupService: services.NewGroupService(db),
+		enabled:      true,
+		priority:     20, // Run after creation
+	}
+}
+
+func (h *GroupMemberPermissionHook) GetName() string {
+	return "group_member_permission"
+}
+
+func (h *GroupMemberPermissionHook) GetEntityName() string {
+	return "GroupMember"
+}
+
+func (h *GroupMemberPermissionHook) GetHookTypes() []hooks.HookType {
+	return []hooks.HookType{hooks.AfterCreate}
+}
+
+func (h *GroupMemberPermissionHook) IsEnabled() bool {
+	return h.enabled
+}
+
+func (h *GroupMemberPermissionHook) GetPriority() int {
+	return h.priority
+}
+
+func (h *GroupMemberPermissionHook) Execute(ctx *hooks.HookContext) error {
+	member, ok := ctx.NewEntity.(*models.GroupMember)
+	if !ok {
+		return fmt.Errorf("expected *models.GroupMember, got %T", ctx.NewEntity)
+	}
+
+	// Grant group permissions to the new member
+	err := h.groupService.GrantGroupPermissionsToUser(member.UserID, member.GroupID)
+	if err != nil {
+		utils.Warn("Failed to grant permissions to user %s: %v", member.UserID, err)
+		// Don't fail the creation if permission grant fails
+	}
+
+	utils.Info("User %s added to group %s with role %s", member.UserID, member.GroupID, member.Role)
+	return nil
+}
+
+// GroupMemberCleanupHook revokes permissions when a member is removed
+type GroupMemberCleanupHook struct {
+	db           *gorm.DB
+	groupService services.GroupService
+	enabled      bool
+	priority     int
+}
+
+func NewGroupMemberCleanupHook(db *gorm.DB) hooks.Hook {
+	return &GroupMemberCleanupHook{
+		db:           db,
+		groupService: services.NewGroupService(db),
+		enabled:      true,
+		priority:     10,
+	}
+}
+
+func (h *GroupMemberCleanupHook) GetName() string {
+	return "group_member_cleanup"
+}
+
+func (h *GroupMemberCleanupHook) GetEntityName() string {
+	return "GroupMember"
+}
+
+func (h *GroupMemberCleanupHook) GetHookTypes() []hooks.HookType {
+	return []hooks.HookType{hooks.BeforeDelete}
+}
+
+func (h *GroupMemberCleanupHook) IsEnabled() bool {
+	return h.enabled
+}
+
+func (h *GroupMemberCleanupHook) GetPriority() int {
+	return h.priority
+}
+
+func (h *GroupMemberCleanupHook) Execute(ctx *hooks.HookContext) error {
+	member, ok := ctx.NewEntity.(*models.GroupMember)
+	if !ok {
+		return fmt.Errorf("expected *models.GroupMember, got %T", ctx.NewEntity)
+	}
+
+	// Prevent removing the group owner
+	if member.Role == models.GroupMemberRoleOwner {
+		return fmt.Errorf("cannot remove the group owner")
+	}
+
+	// Revoke permissions from the member
+	err := h.groupService.RevokeGroupPermissionsFromUser(member.UserID, member.GroupID)
+	if err != nil {
+		utils.Warn("Failed to revoke permissions from user %s: %v", member.UserID, err)
+	}
+
+	utils.Info("User %s removed from group %s", member.UserID, member.GroupID)
+	return nil
+}

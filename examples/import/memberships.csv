@@ -1,0 +1,16 @@
+user_email,group_name,role
+john.doe@school.fr,m1_devops_a,member
+jane.smith@school.fr,m1_devops_a,member
+alice.martin@school.fr,m1_devops_b,member
+bob.dupont@school.fr,m1_devops_b,member
+charlie.bernard@school.fr,m1_devops_c,member
+marie.leclerc@school.fr,m1_devops_c,member
+pierre.petit@school.fr,m1_devops_a,admin
+pierre.petit@school.fr,m1_devops,admin
+pierre.petit@school.fr,teachers_devops,member
+sophie.rousseau@school.fr,m1_devops_b,admin
+sophie.rousseau@school.fr,m1_devops,admin
+sophie.rousseau@school.fr,teachers_devops,member
+michel.fournier@school.fr,m2_cloud_a,admin
+michel.fournier@school.fr,m2_cloud,admin
+michel.fournier@school.fr,teachers_cloud,member

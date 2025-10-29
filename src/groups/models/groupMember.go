@@ -40,7 +40,7 @@ func (gm GroupMember) GetBaseModel() entityManagementModels.BaseModel {
 }
 
 func (gm GroupMember) GetReferenceObject() string {
-	return "ClassGroupMember"
+	return "GroupMember"
 }
 
 // TableName specifies the table name

@@ -1,0 +1,10 @@
+group_name,display_name,description,parent_group,max_members,expires_at,external_id
+m1_devops,M1 DevOps,Master 1 DevOps - All classes,,150,,dept_devops
+m1_devops_a,M1 DevOps A,Master 1 DevOps - Class A,m1_devops,50,2026-06-30T23:59:59Z,class_devops_a
+m1_devops_b,M1 DevOps B,Master 1 DevOps - Class B,m1_devops,50,2026-06-30T23:59:59Z,class_devops_b
+m1_devops_c,M1 DevOps C,Master 1 DevOps - Class C,m1_devops,50,2026-06-30T23:59:59Z,class_devops_c
+m2_cloud,M2 Cloud Engineering,Master 2 Cloud Engineering - All classes,,100,,dept_cloud
+m2_cloud_a,M2 Cloud A,Master 2 Cloud Engineering - Class A,m2_cloud,50,2026-06-30T23:59:59Z,class_cloud_a
+m2_cloud_b,M2 Cloud B,Master 2 Cloud Engineering - Class B,m2_cloud,50,2026-06-30T23:59:59Z,class_cloud_b
+teachers_devops,DevOps Teachers,DevOps teaching staff,,20,,dept_teachers_devops
+teachers_cloud,Cloud Teachers,Cloud teaching staff,,20,,dept_teachers_cloud

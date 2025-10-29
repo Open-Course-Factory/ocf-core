@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"reflect"
+	"time"
 	authInterfaces "soli/formations/src/auth/interfaces"
 	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
@@ -17,6 +18,33 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"gorm.io/gorm"
 )
+
+// stringToUUIDHookFunc returns a decode hook that converts strings to uuid.UUID
+func stringToUUIDHookFunc() mapstructure.DecodeHookFunc {
+	return func(
+		f reflect.Type,
+		t reflect.Type,
+		data interface{},
+	) (interface{}, error) {
+		// Target must be uuid.UUID
+		if t != reflect.TypeOf(uuid.UUID{}) {
+			return data, nil
+		}
+
+		// If source is already uuid.UUID, pass it through
+		if f == reflect.TypeOf(uuid.UUID{}) {
+			return data, nil
+		}
+
+		// If source is string, parse it
+		if f.Kind() == reflect.String {
+			return uuid.Parse(data.(string))
+		}
+
+		// For any other type, return as-is (will fail later if incompatible)
+		return data, nil
+	}
+}
 
 type GenericService interface {
 	CreateEntity(inputDto interface{}, entityName string) (interface{}, error)
@@ -419,12 +447,19 @@ func (g *genericService) DecodeInputDtoForEntityCreation(entityName string, ctx 
 
 	bindError := ctx.BindJSON(&entityCreateDtoInput)
 	if bindError != nil {
+		log.Printf("❌ BindJSON error for %s: %v", entityName, bindError)
 		return nil, bindError
 	}
+	log.Printf("✅ BindJSON success for %s: %+v", entityName, entityCreateDtoInput)
 
 	config := &mapstructure.DecoderConfig{
 		WeaklyTypedInput: true,
 		Result:           &decodedData,
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			stringToUUIDHookFunc(),                           // Handle UUID strings
+			mapstructure.StringToTimeHookFunc(time.RFC3339),  // Handle ISO8601 time strings
+			mapstructure.StringToTimeDurationHookFunc(),      // Handle duration strings
+		),
 	}
 
 	decoder, err := mapstructure.NewDecoder(config)
@@ -432,10 +467,13 @@ func (g *genericService) DecodeInputDtoForEntityCreation(entityName string, ctx 
 		panic(err)
 	}
 
+	log.Printf("🔄 Decoding %s with mapstructure...", entityName)
 	errDecode := decoder.Decode(entityCreateDtoInput)
 	if errDecode != nil {
+		log.Printf("❌ Mapstructure decode error for %s: %v", entityName, errDecode)
 		return nil, errDecode
 	}
+	log.Printf("✅ Mapstructure decode success for %s", entityName)
 
 	return decodedData, nil
 }
