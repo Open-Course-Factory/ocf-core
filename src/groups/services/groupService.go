@@ -105,7 +105,7 @@ func (gs *groupService) CreateGroup(userID string, input dto.CreateGroupInput) (
 
 	createdGroup, err := gs.repository.CreateGroup(group)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create group: %v", err)
+		return nil, fmt.Errorf("failed to create group: %w", err)
 	}
 
 	// Automatically add creator as owner-member
@@ -122,7 +122,7 @@ func (gs *groupService) CreateGroup(userID string, input dto.CreateGroupInput) (
 	if err != nil {
 		// Rollback group creation if adding owner fails
 		gs.repository.DeleteGroup(createdGroup.ID)
-		return nil, fmt.Errorf("failed to add owner to group: %v", err)
+		return nil, fmt.Errorf("failed to add owner to group: %w", err)
 	}
 
 	// Grant permissions to the owner
@@ -168,7 +168,7 @@ func (gs *groupService) UpdateGroup(groupID uuid.UUID, requestingUserID string, 
 
 	updatedGroup, err := gs.repository.UpdateGroup(groupID, updates)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update group: %v", err)
+		return nil, fmt.Errorf("failed to update group: %w", err)
 	}
 
 	return updatedGroup, nil
@@ -285,7 +285,7 @@ func (gs *groupService) RemoveMemberFromGroup(groupID uuid.UUID, requestingUserI
 	// Remove member
 	err = gs.repository.RemoveGroupMember(groupID, userID)
 	if err != nil {
-		return fmt.Errorf("failed to remove member: %v", err)
+		return fmt.Errorf("failed to remove member: %w", err)
 	}
 
 	// Revoke permissions
@@ -325,7 +325,7 @@ func (gs *groupService) UpdateMemberRole(groupID uuid.UUID, requestingUserID str
 	// Update role
 	err = gs.repository.UpdateGroupMemberRole(groupID, userID, newRole)
 	if err != nil {
-		return fmt.Errorf("failed to update member role: %v", err)
+		return fmt.Errorf("failed to update member role: %w", err)
 	}
 
 	utils.Info("User %s role updated to %s in group %s", userID, newRole, groupID)

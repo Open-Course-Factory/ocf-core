@@ -184,7 +184,7 @@ func (mms *memberManagementService) RemoveMember(
 	// Remove member
 	err = mms.repository.RemoveMember(entityID, userID)
 	if err != nil {
-		return fmt.Errorf("failed to remove member: %v", err)
+		return fmt.Errorf("failed to remove member: %w", err)
 	}
 
 	// Revoke permissions
@@ -232,7 +232,7 @@ func (mms *memberManagementService) UpdateMemberRole(
 	// Update role
 	err = mms.repository.UpdateMemberRole(entityID, userID, newRole)
 	if err != nil {
-		return fmt.Errorf("failed to update member role: %v", err)
+		return fmt.Errorf("failed to update member role: %w", err)
 	}
 
 	// Update permissions based on new role

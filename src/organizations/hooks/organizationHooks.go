@@ -85,7 +85,7 @@ func (h *OrganizationOwnerSetupHook) Execute(ctx *hooks.HookContext) error {
 		err := h.db.Create(member).Error
 		if err != nil {
 			utils.Error("Failed to add owner as member: %v", err)
-			return fmt.Errorf("failed to add owner as member: %v", err)
+			return fmt.Errorf("failed to add owner as member: %w", err)
 		}
 
 		// Grant permissions to the owner (both member and manager permissions)

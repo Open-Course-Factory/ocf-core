@@ -31,7 +31,7 @@ func (ps *pricingService) CalculatePricingPreview(planID uuid.UUID, quantity int
 	// Get the subscription plan
 	plan, err := ps.planRepository.GetByID(planID)
 	if err != nil {
-		return nil, fmt.Errorf("plan not found: %v", err)
+		return nil, fmt.Errorf("plan not found: %w", err)
 	}
 
 	breakdown := &dto.PricingBreakdown{

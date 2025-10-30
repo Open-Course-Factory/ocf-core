@@ -93,7 +93,14 @@
       "Bash(go fmt:*)",
       "Bash(make coverage:*)",
       "Bash(git checkout:*)",
-      "Bash(gemini -p:*)"
+      "Bash(gemini -p:*)",
+      "Bash(src/auth/services/userService.go )",
+      "Bash(src/auth/services/userSettingsService.go )",
+      "Bash(src/entityManagement/services/memberManagementService.go )",
+      "Bash(src/groups/hooks/groupHooks.go )",
+      "Bash(src/organizations/hooks/organizationHooks.go )",
+      "Bash(src/organizations/services/organizationMigrationService.go )",
+      "Bash(src/payment/repositories/paymentRepository.go)"
     ],
     "deny": [],
     "ask": []

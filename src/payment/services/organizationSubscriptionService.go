@@ -91,13 +91,13 @@ func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID
 	// Verify the organization exists
 	var org organizationModels.Organization
 	if err := oss.db.Where("id = ?", orgID).First(&org).Error; err != nil {
-		return nil, fmt.Errorf("organization not found: %v", err)
+		return nil, fmt.Errorf("organization not found: %w", err)
 	}
 
 	// Get the plan to check if it's free
 	var plan models.SubscriptionPlan
 	if err := oss.db.Where("id = ?", planID).First(&plan).Error; err != nil {
-		return nil, fmt.Errorf("invalid plan ID: %v", err)
+		return nil, fmt.Errorf("invalid plan ID: %w", err)
 	}
 
 	now := time.Now()
@@ -141,13 +141,13 @@ func (oss *organizationSubscriptionService) UpdateOrganizationSubscription(orgID
 	// Get the organization's active subscription
 	subscription, err := oss.repository.GetActiveOrganizationSubscription(orgID)
 	if err != nil {
-		return nil, fmt.Errorf("no active subscription found for organization: %v", err)
+		return nil, fmt.Errorf("no active subscription found for organization: %w", err)
 	}
 
 	// Get the new plan to verify it exists
 	var newPlan models.SubscriptionPlan
 	if err := oss.db.Where("id = ?", planID).First(&newPlan).Error; err != nil {
-		return nil, fmt.Errorf("invalid plan ID: %v", err)
+		return nil, fmt.Errorf("invalid plan ID: %w", err)
 	}
 
 	// Update subscription plan ID
@@ -156,7 +156,7 @@ func (oss *organizationSubscriptionService) UpdateOrganizationSubscription(orgID
 
 	err = oss.repository.UpdateOrganizationSubscription(subscription)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update subscription: %v", err)
+		return nil, fmt.Errorf("failed to update subscription: %w", err)
 	}
 
 	// Update Organization.SubscriptionPlanID
@@ -174,7 +174,7 @@ func (oss *organizationSubscriptionService) UpdateOrganizationSubscription(orgID
 func (oss *organizationSubscriptionService) CancelOrganizationSubscription(orgID uuid.UUID, cancelAtPeriodEnd bool) error {
 	subscription, err := oss.repository.GetActiveOrganizationSubscription(orgID)
 	if err != nil {
-		return fmt.Errorf("no active subscription found for organization: %v", err)
+		return fmt.Errorf("no active subscription found for organization: %w", err)
 	}
 
 	if cancelAtPeriodEnd {
@@ -194,7 +194,7 @@ func (oss *organizationSubscriptionService) CancelOrganizationSubscription(orgID
 func (oss *organizationSubscriptionService) GetOrganizationFeatures(orgID uuid.UUID) (*models.SubscriptionPlan, error) {
 	subscription, err := oss.repository.GetActiveOrganizationSubscription(orgID)
 	if err != nil {
-		return nil, fmt.Errorf("no active subscription found for organization: %v", err)
+		return nil, fmt.Errorf("no active subscription found for organization: %w", err)
 	}
 
 	return &subscription.SubscriptionPlan, nil
@@ -221,7 +221,7 @@ func (oss *organizationSubscriptionService) CanOrganizationAccessFeature(orgID u
 func (oss *organizationSubscriptionService) GetOrganizationUsageLimits(orgID uuid.UUID) (*OrganizationLimits, error) {
 	subscription, err := oss.repository.GetActiveOrganizationSubscription(orgID)
 	if err != nil {
-		return nil, fmt.Errorf("no active subscription found for organization: %v", err)
+		return nil, fmt.Errorf("no active subscription found for organization: %w", err)
 	}
 
 	plan := subscription.SubscriptionPlan
@@ -259,7 +259,7 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 	// Get all organization subscriptions for the user
 	subscriptions, err := oss.repository.GetUserOrganizationSubscriptions(userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user organization subscriptions: %v", err)
+		return nil, fmt.Errorf("failed to get user organization subscriptions: %w", err)
 	}
 
 	if len(subscriptions) == 0 {
@@ -362,7 +362,7 @@ func (oss *organizationSubscriptionService) CanUserAccessFeature(userID string, 
 func (oss *organizationSubscriptionService) GetUserOrganizationWithFeature(userID string, feature string) (*organizationModels.Organization, error) {
 	subscriptions, err := oss.repository.GetUserOrganizationSubscriptions(userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user organization subscriptions: %v", err)
+		return nil, fmt.Errorf("failed to get user organization subscriptions: %w", err)
 	}
 
 	var bestOrg *organizationModels.Organization

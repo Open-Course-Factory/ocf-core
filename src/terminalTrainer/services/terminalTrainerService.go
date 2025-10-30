@@ -181,7 +181,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	// Récupérer la clé utilisateur
 	userKey, err := tts.repository.GetUserTerminalKeyByUserID(userID, true)
 	if err != nil {
-		return nil, fmt.Errorf("no terminal trainer key found for user: %v", err)
+		return nil, fmt.Errorf("no terminal trainer key found for user: %w", err)
 	}
 
 	if !userKey.IsActive {
@@ -234,7 +234,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	}
 
 	if err := tts.repository.CreateTerminalSession(terminal); err != nil {
-		return nil, fmt.Errorf("failed to save terminal session: %v", err)
+		return nil, fmt.Errorf("failed to save terminal session: %w", err)
 	}
 
 	// Ajouter les permissions Casbin pour que le propriétaire puisse masquer des terminaux
@@ -276,7 +276,7 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 		// Récupérer les types d'instances disponibles depuis l'API Terminal Trainer
 		instanceTypes, err := tts.GetInstanceTypes()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get instance types: %v", err)
+			return nil, fmt.Errorf("failed to get instance types: %w", err)
 		}
 
 		// Trouver la taille correspondant au type d'instance demandé
@@ -344,7 +344,7 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 
 	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
 	if err != nil {
-		return fmt.Errorf("session not found: %v", err)
+		return fmt.Errorf("session not found: %w", err)
 	}
 
 	log.Printf("[DEBUG] Session %s current status: %s\n", sessionID, terminal.Status)
@@ -423,7 +423,7 @@ func (tts *terminalTrainerService) GetSessionInfoFromAPI(sessionID string) (*dto
 	// Récupérer la session locale pour obtenir la clé API
 	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
 	if err != nil {
-		return nil, fmt.Errorf("session not found locally: %v", err)
+		return nil, fmt.Errorf("session not found locally: %w", err)
 	}
 
 	// Construire le chemin avec version et type d'instance dynamique
@@ -451,7 +451,7 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 	// 1. Récupérer la clé utilisateur
 	userKey, err := tts.repository.GetUserTerminalKeyByUserID(userID, true)
 	if err != nil {
-		return nil, fmt.Errorf("no terminal trainer key found for user: %v", err)
+		return nil, fmt.Errorf("no terminal trainer key found for user: %w", err)
 	}
 
 	if !userKey.IsActive {
@@ -461,7 +461,7 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 	// 2. Récupérer TOUTES les sessions depuis l'API Terminal Trainer pour tous les types d'instances
 	apiSessions, err := tts.getAllSessionsFromAllInstanceTypes(userKey.APIKey, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get sessions from Terminal Trainer API: %v", err)
+		return nil, fmt.Errorf("failed to get sessions from Terminal Trainer API: %w", err)
 	}
 
 	// 3. Récupérer les sessions locales pour cet utilisateur
@@ -638,7 +638,7 @@ func (tts *terminalTrainerService) SyncAllActiveSessions() error {
 	// Récupérer tous les utilisateurs ayant des clés actives
 	activeKeys, err := tts.repository.GetAllActiveUserKeys()
 	if err != nil {
-		return fmt.Errorf("failed to get active user keys: %v", err)
+		return fmt.Errorf("failed to get active user keys: %w", err)
 	}
 
 	var globalErrors []string
@@ -766,7 +766,7 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 	// Vérifier que le terminal existe
 	terminal, err := tts.repository.GetTerminalSessionBySessionID(sessionID)
 	if err != nil {
-		return fmt.Errorf("failed to get terminal: %v", err)
+		return fmt.Errorf("failed to get terminal: %w", err)
 	}
 	if terminal == nil {
 		return fmt.Errorf("terminal not found")
@@ -791,7 +791,7 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 	// Vérifier si un partage existe déjà
 	existingShare, err := tts.repository.GetTerminalShare(terminal.ID.String(), sharedWithUserID)
 	if err != nil {
-		return fmt.Errorf("failed to check existing share: %v", err)
+		return fmt.Errorf("failed to check existing share: %w", err)
 	}
 
 	if existingShare != nil {
@@ -877,7 +877,7 @@ func (tts *terminalTrainerService) RevokeTerminalAccess(sessionID, sharedWithUse
 	// Vérifier que le terminal existe
 	terminal, err := tts.repository.GetTerminalSessionBySessionID(sessionID)
 	if err != nil {
-		return fmt.Errorf("failed to get terminal: %v", err)
+		return fmt.Errorf("failed to get terminal: %w", err)
 	}
 	if terminal == nil {
 		return fmt.Errorf("terminal not found")
@@ -891,7 +891,7 @@ func (tts *terminalTrainerService) RevokeTerminalAccess(sessionID, sharedWithUse
 	// Récupérer le partage
 	share, err := tts.repository.GetTerminalShare(terminal.ID.String(), sharedWithUserID)
 	if err != nil {
-		return fmt.Errorf("failed to get share: %v", err)
+		return fmt.Errorf("failed to get share: %w", err)
 	}
 	if share == nil {
 		return fmt.Errorf("no active share found")
@@ -914,7 +914,7 @@ func (tts *terminalTrainerService) GetTerminalShares(sessionID, requestingUserID
 	// Vérifier que le terminal existe
 	terminal, err := tts.repository.GetTerminalSessionBySessionID(sessionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get terminal: %v", err)
+		return nil, fmt.Errorf("failed to get terminal: %w", err)
 	}
 	if terminal == nil {
 		return nil, fmt.Errorf("terminal not found")
@@ -938,7 +938,7 @@ func (tts *terminalTrainerService) HasTerminalAccess(sessionID, userID string, r
 	// D'abord vérifier si l'utilisateur est le propriétaire
 	terminal, err := tts.repository.GetTerminalSessionBySessionID(sessionID)
 	if err != nil {
-		return false, fmt.Errorf("failed to get terminal: %v", err)
+		return false, fmt.Errorf("failed to get terminal: %w", err)
 	}
 	if terminal == nil {
 		return false, fmt.Errorf("terminal not found")
@@ -958,7 +958,7 @@ func (tts *terminalTrainerService) GetSharedTerminalInfo(sessionID, userID strin
 	// Vérifier que le terminal existe
 	terminal, err := tts.repository.GetTerminalSessionBySessionID(sessionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get terminal: %v", err)
+		return nil, fmt.Errorf("failed to get terminal: %w", err)
 	}
 	if terminal == nil {
 		return nil, fmt.Errorf("terminal not found")
@@ -1068,7 +1068,7 @@ func (tts *terminalTrainerService) HideTerminal(terminalID, userID string) error
 	// Check if user has shared access to this terminal
 	hasAccess, err := tts.repository.HasTerminalAccess(terminalID, userID, "read")
 	if err != nil {
-		return fmt.Errorf("failed to check access: %v", err)
+		return fmt.Errorf("failed to check access: %w", err)
 	}
 	if !hasAccess {
 		return fmt.Errorf("access denied")
@@ -1094,7 +1094,7 @@ func (tts *terminalTrainerService) UnhideTerminal(terminalID, userID string) err
 	// Check if user has shared access to this terminal
 	hasAccess, err := tts.repository.HasTerminalAccess(terminalID, userID, "read")
 	if err != nil {
-		return fmt.Errorf("failed to check access: %v", err)
+		return fmt.Errorf("failed to check access: %w", err)
 	}
 	if !hasAccess {
 		return fmt.Errorf("access denied")
@@ -1330,13 +1330,13 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 	// Parse groupID
 	groupUUID, err := uuid.Parse(groupID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid group ID: %v", err)
+		return nil, fmt.Errorf("invalid group ID: %w", err)
 	}
 
 	// Get group details
 	var group groupModels.ClassGroup
 	if err := tts.db.Preload("Members").Where("id = ?", groupUUID).First(&group).Error; err != nil {
-		return nil, fmt.Errorf("group not found: %v", err)
+		return nil, fmt.Errorf("group not found: %w", err)
 	}
 
 	// Check permissions - only owner or admin can bulk create terminals

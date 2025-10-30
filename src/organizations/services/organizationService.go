@@ -90,7 +90,7 @@ func (os *organizationService) CreateOrganization(userID string, input dto.Creat
 
 	createdOrg, err := os.repository.CreateOrganization(org)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create organization: %v", err)
+		return nil, fmt.Errorf("failed to create organization: %w", err)
 	}
 
 	// Automatically add creator as owner-member
@@ -107,7 +107,7 @@ func (os *organizationService) CreateOrganization(userID string, input dto.Creat
 	if err != nil {
 		// Rollback organization creation if adding owner fails
 		os.repository.DeleteOrganization(createdOrg.ID)
-		return nil, fmt.Errorf("failed to add owner to organization: %v", err)
+		return nil, fmt.Errorf("failed to add owner to organization: %w", err)
 	}
 
 	// Grant permissions to the owner (both member and manager permissions)
@@ -147,7 +147,7 @@ func (os *organizationService) CreatePersonalOrganization(userID string) (*model
 
 	createdOrg, err := os.repository.CreateOrganization(org)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create personal organization: %v", err)
+		return nil, fmt.Errorf("failed to create personal organization: %w", err)
 	}
 
 	// Add user as owner
@@ -163,7 +163,7 @@ func (os *organizationService) CreatePersonalOrganization(userID string) (*model
 	err = os.repository.AddOrganizationMember(ownerMember)
 	if err != nil {
 		os.repository.DeleteOrganization(createdOrg.ID)
-		return nil, fmt.Errorf("failed to add owner to personal organization: %v", err)
+		return nil, fmt.Errorf("failed to add owner to personal organization: %w", err)
 	}
 
 	// Grant permissions
@@ -207,7 +207,7 @@ func (os *organizationService) UpdateOrganization(orgID uuid.UUID, requestingUse
 
 	updatedOrg, err := os.repository.UpdateOrganization(orgID, updates)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update organization: %v", err)
+		return nil, fmt.Errorf("failed to update organization: %w", err)
 	}
 
 	return updatedOrg, nil
@@ -337,7 +337,7 @@ func (os *organizationService) RemoveMemberFromOrganization(orgID uuid.UUID, req
 	// Remove member
 	err = os.repository.RemoveOrganizationMember(orgID, userID)
 	if err != nil {
-		return fmt.Errorf("failed to remove member: %v", err)
+		return fmt.Errorf("failed to remove member: %w", err)
 	}
 
 	// Revoke permissions
@@ -375,7 +375,7 @@ func (os *organizationService) UpdateMemberRole(orgID uuid.UUID, requestingUserI
 	// Update role
 	err = os.repository.UpdateOrganizationMemberRole(orgID, userID, newRole)
 	if err != nil {
-		return fmt.Errorf("failed to update member role: %v", err)
+		return fmt.Errorf("failed to update member role: %w", err)
 	}
 
 	// Update permissions based on new role

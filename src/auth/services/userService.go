@@ -340,7 +340,7 @@ func assignFreeTrialPlan(userID string) error {
 	subscriptionService := paymentServices.NewSubscriptionService(sqldb.DB)
 	_, err := subscriptionService.CreateUserSubscription(userID, trialPlan.ID)
 	if err != nil {
-		return fmt.Errorf("failed to create Trial subscription: %v", err)
+		return fmt.Errorf("failed to create Trial subscription: %w", err)
 	}
 
 	fmt.Printf("✅ Successfully assigned Trial plan to user %s\n", userID)

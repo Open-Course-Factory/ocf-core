@@ -84,7 +84,7 @@ func (h *GroupOwnerSetupHook) Execute(ctx *hooks.HookContext) error {
 		err := h.db.Create(member).Error
 		if err != nil {
 			utils.Error("Failed to add owner as member: %v", err)
-			return fmt.Errorf("failed to add owner as member: %v", err)
+			return fmt.Errorf("failed to add owner as member: %w", err)
 		}
 
 		// Grant permissions to the owner
@@ -228,7 +228,7 @@ func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
 	if ctx.UserID != "" {
 		canManage, err := h.groupService.CanUserManageGroup(member.GroupID, ctx.UserID)
 		if err != nil {
-			return fmt.Errorf("permission check failed: %v", err)
+			return fmt.Errorf("permission check failed: %w", err)
 		}
 		if !canManage {
 			return utils.PermissionDeniedError("add members to", "group")

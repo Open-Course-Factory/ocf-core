@@ -138,7 +138,7 @@ func (ss *subscriptionService) CreateUserSubscription(userID string, planID uuid
 	// Get the plan to check if it's free
 	plan, err := ss.GetSubscriptionPlan(planID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid plan ID: %v", err)
+		return nil, fmt.Errorf("invalid plan ID: %w", err)
 	}
 
 	now := time.Now()
@@ -438,13 +438,13 @@ func (ss *subscriptionService) UpgradeUserPlan(userID string, newPlanID uuid.UUI
 	// Get the user's active subscription
 	subscription, err := ss.repository.GetActiveUserSubscription(userID)
 	if err != nil {
-		return nil, fmt.Errorf("no active subscription found for user: %v", err)
+		return nil, fmt.Errorf("no active subscription found for user: %w", err)
 	}
 
 	// Get the new plan to verify it exists
 	newPlan, err := ss.GetSubscriptionPlan(newPlanID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid plan ID: %v", err)
+		return nil, fmt.Errorf("invalid plan ID: %w", err)
 	}
 
 	// Verify the new plan has a Stripe price ID
@@ -456,7 +456,7 @@ func (ss *subscriptionService) UpgradeUserPlan(userID string, newPlanID uuid.UUI
 	err = ss.db.Transaction(func(tx *gorm.DB) error {
 		// Update subscription plan ID only (don't save associations)
 		if err := tx.Model(subscription).Update("subscription_plan_id", newPlanID).Error; err != nil {
-			return fmt.Errorf("failed to update subscription: %v", err)
+			return fmt.Errorf("failed to update subscription: %w", err)
 		}
 
 		// Update all usage metric limits for this user
@@ -475,7 +475,7 @@ func (ss *subscriptionService) UpgradeUserPlan(userID string, newPlanID uuid.UUI
 			}).Error
 
 		if err != nil {
-			return fmt.Errorf("failed to update usage metrics: %v", err)
+			return fmt.Errorf("failed to update usage metrics: %w", err)
 		}
 
 		return nil
@@ -494,13 +494,13 @@ func (ss *subscriptionService) UpdateUsageMetricLimits(userID string, newPlanID 
 	// Get the new plan
 	newPlan, err := ss.GetSubscriptionPlan(newPlanID)
 	if err != nil {
-		return fmt.Errorf("invalid plan ID: %v", err)
+		return fmt.Errorf("invalid plan ID: %w", err)
 	}
 
 	// Get the user's subscription
 	subscription, err := ss.repository.GetActiveUserSubscription(userID)
 	if err != nil {
-		return fmt.Errorf("no active subscription found: %v", err)
+		return fmt.Errorf("no active subscription found: %w", err)
 	}
 
 	// Delete all existing metrics for this subscription
@@ -508,7 +508,7 @@ func (ss *subscriptionService) UpdateUsageMetricLimits(userID string, newPlanID 
 	err = ss.db.Where("user_id = ? AND subscription_id = ?", userID, subscription.ID).
 		Delete(&models.UsageMetrics{}).Error
 	if err != nil {
-		return fmt.Errorf("failed to delete old metrics: %v", err)
+		return fmt.Errorf("failed to delete old metrics: %w", err)
 	}
 
 	utils.Debug("🗑️ Deleted old usage metrics for user %s (subscription %s)", userID, subscription.ID)
@@ -516,7 +516,7 @@ func (ss *subscriptionService) UpdateUsageMetricLimits(userID string, newPlanID 
 	// Initialize new metrics for the new plan
 	err = ss.InitializeUsageMetrics(userID, subscription.ID, newPlanID)
 	if err != nil {
-		return fmt.Errorf("failed to initialize new metrics: %v", err)
+		return fmt.Errorf("failed to initialize new metrics: %w", err)
 	}
 
 	utils.Debug("✅ Initialized new usage metrics for plan %s (%s)", newPlan.ID, newPlan.Name)
@@ -530,7 +530,7 @@ func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptio
 	// Get the plan
 	plan, err := ss.GetSubscriptionPlan(planID)
 	if err != nil {
-		return fmt.Errorf("invalid plan ID: %v", err)
+		return fmt.Errorf("invalid plan ID: %w", err)
 	}
 
 	// Get global feature flags from database (falls back to env vars if not found)

@@ -74,7 +74,7 @@ func (cpi *casdoorPaymentIntegration) SyncUserRoleWithSubscription(userID string
 	// Récupérer l'utilisateur depuis Casdoor
 	user, err := casdoorsdk.GetUserByUserId(userID)
 	if err != nil {
-		return fmt.Errorf("failed to get user from Casdoor: %v", err)
+		return fmt.Errorf("failed to get user from Casdoor: %w", err)
 	}
 
 	if user == nil {
@@ -163,14 +163,14 @@ func (cpi *casdoorPaymentIntegration) AddUserToSubscriptionGroup(userID string, 
 	// Créer le groupe s'il n'existe pas
 	err := cpi.ensureSubscriptionGroupExists(groupName, planName)
 	if err != nil {
-		return fmt.Errorf("failed to ensure group exists: %v", err)
+		return fmt.Errorf("failed to ensure group exists: %w", err)
 	}
 
 	// Ajouter l'utilisateur au groupe
 	opts := utils.DefaultPermissionOptions()
 	err = utils.AddGroupingPolicy(casdoor.Enforcer, userID, groupName, opts)
 	if err != nil {
-		return fmt.Errorf("failed to add user to subscription group: %v", err)
+		return fmt.Errorf("failed to add user to subscription group: %w", err)
 	}
 
 	return nil
@@ -181,7 +181,7 @@ func (cpi *casdoorPaymentIntegration) RemoveUserFromSubscriptionGroups(userID st
 	// Récupérer tous les groupes de l'utilisateur
 	groups, err := casdoor.Enforcer.GetRolesForUser(userID)
 	if err != nil {
-		return fmt.Errorf("failed to get user groups: %v", err)
+		return fmt.Errorf("failed to get user groups: %w", err)
 	}
 
 	opts := utils.DefaultPermissionOptions()
@@ -264,7 +264,7 @@ func (cpi *casdoorPaymentIntegration) setUserToDefaultRole(userID string) error 
 	opts := utils.DefaultPermissionOptions()
 	err = utils.AddGroupingPolicy(casdoor.Enforcer, userID, string(models.Member), opts)
 	if err != nil {
-		return fmt.Errorf("failed to set default role: %v", err)
+		return fmt.Errorf("failed to set default role: %w", err)
 	}
 
 	return nil
@@ -316,7 +316,7 @@ func (cpi *casdoorPaymentIntegration) updateCasdoorUserRole(user *casdoorsdk.Use
 			role.Users = append(role.Users, user.GetId())
 			_, err = casdoorsdk.UpdateRole(role)
 			if err != nil {
-				return fmt.Errorf("failed to update role in Casdoor: %v", err)
+				return fmt.Errorf("failed to update role in Casdoor: %w", err)
 			}
 		}
 	}
@@ -361,7 +361,7 @@ func (cpi *casdoorPaymentIntegration) ensureSubscriptionGroupExists(groupName, p
 
 		_, err = casdoorsdk.AddGroup(newGroup)
 		if err != nil {
-			return fmt.Errorf("failed to create subscription group: %v", err)
+			return fmt.Errorf("failed to create subscription group: %w", err)
 		}
 	}
 
@@ -388,7 +388,7 @@ func NewSubscriptionWebhookHandler(db *gorm.DB) *SubscriptionWebhookHandler {
 func (swh *SubscriptionWebhookHandler) HandleSubscriptionCreated(userID string, planRequiredRole string) error {
 	err := swh.casdoorIntegration.UpdateUserRoleBasedOnSubscription(userID)
 	if err != nil {
-		return fmt.Errorf("failed to update user role after subscription creation: %v", err)
+		return fmt.Errorf("failed to update user role after subscription creation: %w", err)
 	}
 
 	log.Printf("Successfully handled subscription creation for user %s", userID)
@@ -399,7 +399,7 @@ func (swh *SubscriptionWebhookHandler) HandleSubscriptionCreated(userID string, 
 func (swh *SubscriptionWebhookHandler) HandleSubscriptionUpdated(userID string) error {
 	err := swh.casdoorIntegration.UpdateUserRoleBasedOnSubscription(userID)
 	if err != nil {
-		return fmt.Errorf("failed to update user role after subscription update: %v", err)
+		return fmt.Errorf("failed to update user role after subscription update: %w", err)
 	}
 
 	log.Printf("Successfully handled subscription update for user %s", userID)
@@ -423,7 +423,7 @@ func (swh *SubscriptionWebhookHandler) HandleSubscriptionCancelled(userID string
 	// Mettre à jour le rôle (remettre au rôle de base)
 	err = swh.casdoorIntegration.UpdateUserRoleBasedOnSubscription(userID)
 	if err != nil {
-		return fmt.Errorf("failed to update user role after subscription cancellation: %v", err)
+		return fmt.Errorf("failed to update user role after subscription cancellation: %w", err)
 	}
 
 	log.Printf("Successfully handled subscription cancellation for user %s", userID)

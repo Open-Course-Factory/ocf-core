@@ -42,19 +42,19 @@ func (ss *subscriptionService) UpdateUserRoleBasedOnSubscription(userID string) 
 	// 4. Ajouter le nouveau rôle
 	err = utils.AddGroupingPolicy(casdoor.Enforcer, userID, requiredRole, opts)
 	if err != nil {
-		return fmt.Errorf("failed to update user role: %v", err)
+		return fmt.Errorf("failed to update user role: %w", err)
 	}
 
 	// 5. Mettre à jour dans Casdoor également
 	user, err := casdoorsdk.GetUserByUserId(userID)
 	if err != nil {
-		return fmt.Errorf("failed to get user from Casdoor: %v", err)
+		return fmt.Errorf("failed to get user from Casdoor: %w", err)
 	}
 
 	// Ajouter le rôle dans Casdoor
 	role, err := casdoorsdk.GetRole(requiredRole)
 	if err != nil {
-		return fmt.Errorf("failed to get role from Casdoor: %v", err)
+		return fmt.Errorf("failed to get role from Casdoor: %w", err)
 	}
 
 	// Ajouter l'utilisateur au rôle s'il n'y est pas déjà
@@ -62,7 +62,7 @@ func (ss *subscriptionService) UpdateUserRoleBasedOnSubscription(userID string) 
 		role.Users = append(role.Users, user.GetId())
 		_, err = casdoorsdk.UpdateRole(role)
 		if err != nil {
-			return fmt.Errorf("failed to update role in Casdoor: %v", err)
+			return fmt.Errorf("failed to update role in Casdoor: %w", err)
 		}
 	}
 

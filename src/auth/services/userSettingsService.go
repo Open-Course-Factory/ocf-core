@@ -106,7 +106,7 @@ func (s *userSettingsService) invalidateToken(tokenString string) error {
 	// Parse the JWT token to extract claims
 	claims, err := casdoorsdk.ParseJwtToken(tokenString)
 	if err != nil {
-		return fmt.Errorf("failed to parse JWT token: %v", err)
+		return fmt.Errorf("failed to parse JWT token: %w", err)
 	}
 
 	// Extract the JWT ID (jti)

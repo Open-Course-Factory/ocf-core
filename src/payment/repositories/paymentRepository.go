@@ -464,7 +464,7 @@ func (r *paymentRepository) IncrementUsageMetric(userID, metricType string, incr
 			// Récupérer l'abonnement pour définir la limite
 			subscription, err := r.GetActiveUserSubscription(userID)
 			if err != nil {
-				return fmt.Errorf("no active subscription found: %v", err)
+				return fmt.Errorf("no active subscription found: %w", err)
 			}
 
 			// Définir la limite selon le type de métrique et le plan

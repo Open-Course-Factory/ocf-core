@@ -207,7 +207,7 @@ func (ss *stripeService) CreateOrGetCustomer(userID, email, name string) (string
 
 	customer, err := customer.New(params)
 	if err != nil {
-		return "", fmt.Errorf("failed to create Stripe customer: %v", err)
+		return "", fmt.Errorf("failed to create Stripe customer: %w", err)
 	}
 
 	utils.Info("✅ Created Stripe customer %s for user %s", customer.ID, userID)
@@ -225,7 +225,7 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 	// Récupérer le plan d'abonnement
 	plan, err := ss.subscriptionService.GetSubscriptionPlan(input.SubscriptionPlanID)
 	if err != nil {
-		return nil, fmt.Errorf("subscription plan not found: %v", err)
+		return nil, fmt.Errorf("subscription plan not found: %w", err)
 	}
 
 	if !plan.IsActive {
@@ -239,7 +239,7 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 
 	user, err := casdoorsdk.GetUserByUserId(userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user from Casdoor: %v", err)
+		return nil, fmt.Errorf("failed to get user from Casdoor: %w", err)
 	}
 
 	email := user.Email
@@ -331,7 +331,7 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 
 	session, err := session.New(params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create checkout session: %v", err)
+		return nil, fmt.Errorf("failed to create checkout session: %w", err)
 	}
 
 	return &dto.CheckoutSessionOutput{
@@ -345,7 +345,7 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 	// Get subscription plan
 	plan, err := ss.subscriptionService.GetSubscriptionPlan(input.SubscriptionPlanID)
 	if err != nil {
-		return nil, fmt.Errorf("subscription plan not found: %v", err)
+		return nil, fmt.Errorf("subscription plan not found: %w", err)
 	}
 
 	if !plan.IsActive {
@@ -360,7 +360,7 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 	// Get user from Casdoor
 	user, err := casdoorsdk.GetUserByUserId(userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user from Casdoor: %v", err)
+		return nil, fmt.Errorf("failed to get user from Casdoor: %w", err)
 	}
 
 	email := user.Email
@@ -447,7 +447,7 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 	// Create checkout session
 	checkoutSession, err := session.New(params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create bulk checkout session: %v", err)
+		return nil, fmt.Errorf("failed to create bulk checkout session: %w", err)
 	}
 
 	utils.Info("✅ Created bulk license checkout session for user %s (plan: %s, quantity: %d)",
@@ -464,7 +464,7 @@ func (ss *stripeService) CreatePortalSession(userID string, input dto.CreatePort
 	// Récupérer l'abonnement actif pour obtenir le customer ID
 	subscription, err := ss.subscriptionService.GetActiveUserSubscription(userID)
 	if err != nil {
-		return nil, fmt.Errorf("no active subscription found: %v", err)
+		return nil, fmt.Errorf("no active subscription found: %w", err)
 	}
 
 	// Créer la session du portail client
@@ -476,7 +476,7 @@ func (ss *stripeService) CreatePortalSession(userID string, input dto.CreatePort
 	portalSession, err := billingPortalSession.New(params)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to create portal session: %v", err)
+		return nil, fmt.Errorf("failed to create portal session: %w", err)
 	}
 
 	return &dto.PortalSessionOutput{
@@ -497,7 +497,7 @@ func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.Subscriptio
 
 	stripeProduct, err := product.New(productParams)
 	if err != nil {
-		return fmt.Errorf("failed to create Stripe product: %v", err)
+		return fmt.Errorf("failed to create Stripe product: %w", err)
 	}
 
 	// 2. Créer le prix Stripe
@@ -515,7 +515,7 @@ func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.Subscriptio
 
 	stripePrice, err := price.New(priceParams)
 	if err != nil {
-		return fmt.Errorf("failed to create Stripe price: %v", err)
+		return fmt.Errorf("failed to create Stripe price: %w", err)
 	}
 
 	// 3. Mettre à jour le plan avec les IDs Stripe
@@ -612,7 +612,7 @@ func (ss *stripeService) ProcessWebhook(payload []byte, signature string) error 
 func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 	var subscription stripe.Subscription
 	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
-		return fmt.Errorf("failed to unmarshal subscription: %v", err)
+		return fmt.Errorf("failed to unmarshal subscription: %w", err)
 	}
 
 	// CRITICAL: Check if this is a bulk purchase before creating individual subscription
@@ -656,7 +656,7 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 			}
 			planID, err = uuid.Parse(planIDStr)
 			if err != nil {
-				return fmt.Errorf("invalid subscription_plan_id in metadata: %v", err)
+				return fmt.Errorf("invalid subscription_plan_id in metadata: %w", err)
 			}
 			utils.Debug("⚠️ Using plan from metadata: %s", planID)
 
@@ -725,7 +725,7 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 
 	// Créer directement dans la base via le repository
 	if err := ss.repository.CreateUserSubscription(userSubscription); err != nil {
-		return fmt.Errorf("failed to create subscription: %v", err)
+		return fmt.Errorf("failed to create subscription: %w", err)
 	}
 
 	// CRITICAL: Initialize usage metrics for the new subscription
@@ -763,7 +763,7 @@ func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 	// Récupérer l'abonnement existant
 	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
 	if err != nil {
-		return fmt.Errorf("subscription not found in database: %v", err)
+		return fmt.Errorf("subscription not found in database: %w", err)
 	}
 
 	// Check if the plan changed by comparing Stripe price ID
@@ -890,7 +890,7 @@ func (ss *stripeService) handleOrganizationSubscriptionCreated(subscription *str
 
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
-		return fmt.Errorf("invalid organization_id in metadata: %v", err)
+		return fmt.Errorf("invalid organization_id in metadata: %w", err)
 	}
 
 	// Determine plan ID from Stripe price (same logic as user subscriptions)
@@ -914,7 +914,7 @@ func (ss *stripeService) handleOrganizationSubscriptionCreated(subscription *str
 			}
 			planID, err = uuid.Parse(planIDStr)
 			if err != nil {
-				return fmt.Errorf("invalid subscription_plan_id in metadata: %v", err)
+				return fmt.Errorf("invalid subscription_plan_id in metadata: %w", err)
 			}
 
 			// Load the plan object
@@ -960,7 +960,7 @@ func (ss *stripeService) handleOrganizationSubscriptionCreated(subscription *str
 
 	// Create the organization subscription
 	if err := orgSubRepo.CreateOrganizationSubscription(orgSubscription); err != nil {
-		return fmt.Errorf("failed to create organization subscription: %v", err)
+		return fmt.Errorf("failed to create organization subscription: %w", err)
 	}
 
 	// Update Organization.SubscriptionPlanID
@@ -985,7 +985,7 @@ func (ss *stripeService) handleOrganizationSubscriptionUpdated(subscription *str
 	// Find the existing subscription
 	orgSub, err := orgSubRepo.GetOrganizationSubscriptionByStripeID(*&subscription.ID)
 	if err != nil {
-		return fmt.Errorf("organization subscription not found in database: %v", err)
+		return fmt.Errorf("organization subscription not found in database: %w", err)
 	}
 
 	// Check if the plan changed
@@ -1036,7 +1036,7 @@ func (ss *stripeService) handleOrganizationSubscriptionUpdated(subscription *str
 
 	// Save updates
 	if err := orgSubRepo.UpdateOrganizationSubscription(orgSub); err != nil {
-		return fmt.Errorf("failed to update organization subscription: %v", err)
+		return fmt.Errorf("failed to update organization subscription: %w", err)
 	}
 
 	utils.Info("✅ Updated organization subscription %s (status: %s)", orgSub.ID, orgSub.Status)
@@ -1052,7 +1052,7 @@ func (ss *stripeService) handleOrganizationSubscriptionDeleted(subscription *str
 	// Find the existing subscription
 	orgSub, err := orgSubRepo.GetOrganizationSubscriptionByStripeID(subscription.ID)
 	if err != nil {
-		return fmt.Errorf("organization subscription not found in database: %v", err)
+		return fmt.Errorf("organization subscription not found in database: %w", err)
 	}
 
 	// Update status to cancelled
@@ -1062,7 +1062,7 @@ func (ss *stripeService) handleOrganizationSubscriptionDeleted(subscription *str
 
 	// Save updates
 	if err := orgSubRepo.UpdateOrganizationSubscription(orgSub); err != nil {
-		return fmt.Errorf("failed to cancel organization subscription: %v", err)
+		return fmt.Errorf("failed to cancel organization subscription: %w", err)
 	}
 
 	utils.Info("✅ Cancelled organization subscription %s for org %s", orgSub.ID, orgSub.OrganizationID)
@@ -1237,7 +1237,7 @@ func (ss *stripeService) handleCheckoutSessionCompleted(event *stripe.Event) err
 
 		_, err := subscription.Update(session.Subscription.ID, params)
 		if err != nil {
-			return fmt.Errorf("failed to update subscription metadata: %v", err)
+			return fmt.Errorf("failed to update subscription metadata: %w", err)
 		}
 
 		utils.Debug("✅ Updated subscription %s metadata for user %s", session.Subscription.ID, userID)
@@ -1254,12 +1254,12 @@ func (ss *stripeService) handleCheckoutSessionCompleted(event *stripe.Event) err
 func (ss *stripeService) handleSubscriptionPaused(event *stripe.Event) error {
 	var subscription stripe.Subscription
 	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
-		return fmt.Errorf("failed to unmarshal subscription: %v", err)
+		return fmt.Errorf("failed to unmarshal subscription: %w", err)
 	}
 
 	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
 	if err != nil {
-		return fmt.Errorf("subscription not found in database: %v", err)
+		return fmt.Errorf("subscription not found in database: %w", err)
 	}
 
 	userSub.Status = "paused"
@@ -1272,12 +1272,12 @@ func (ss *stripeService) handleSubscriptionPaused(event *stripe.Event) error {
 func (ss *stripeService) handleSubscriptionResumed(event *stripe.Event) error {
 	var subscription stripe.Subscription
 	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
-		return fmt.Errorf("failed to unmarshal subscription: %v", err)
+		return fmt.Errorf("failed to unmarshal subscription: %w", err)
 	}
 
 	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
 	if err != nil {
-		return fmt.Errorf("subscription not found in database: %v", err)
+		return fmt.Errorf("subscription not found in database: %w", err)
 	}
 
 	userSub.Status = string(subscription.Status) // Should be "active"
@@ -1290,12 +1290,12 @@ func (ss *stripeService) handleSubscriptionResumed(event *stripe.Event) error {
 func (ss *stripeService) handleTrialWillEnd(event *stripe.Event) error {
 	var subscription stripe.Subscription
 	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
-		return fmt.Errorf("failed to unmarshal subscription: %v", err)
+		return fmt.Errorf("failed to unmarshal subscription: %w", err)
 	}
 
 	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
 	if err != nil {
-		return fmt.Errorf("subscription not found in database: %v", err)
+		return fmt.Errorf("subscription not found in database: %w", err)
 	}
 
 	trialEndDate := time.Unix(subscription.TrialEnd, 0)
@@ -1311,7 +1311,7 @@ func (ss *stripeService) handleTrialWillEnd(event *stripe.Event) error {
 func (ss *stripeService) handleInvoiceCreated(event *stripe.Event) error {
 	var stripeInvoice stripe.Invoice
 	if err := json.Unmarshal(event.Data.Raw, &stripeInvoice); err != nil {
-		return fmt.Errorf("failed to unmarshal invoice: %v", err)
+		return fmt.Errorf("failed to unmarshal invoice: %w", err)
 	}
 
 	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
@@ -1353,7 +1353,7 @@ func (ss *stripeService) handleInvoiceCreated(event *stripe.Event) error {
 func (ss *stripeService) handleInvoiceFinalized(event *stripe.Event) error {
 	var stripeInvoice stripe.Invoice
 	if err := json.Unmarshal(event.Data.Raw, &stripeInvoice); err != nil {
-		return fmt.Errorf("failed to unmarshal invoice: %v", err)
+		return fmt.Errorf("failed to unmarshal invoice: %w", err)
 	}
 
 	// Get existing invoice
@@ -1399,7 +1399,7 @@ func (ss *stripeService) handleInvoiceFinalized(event *stripe.Event) error {
 func (ss *stripeService) handlePaymentMethodAttached(event *stripe.Event) error {
 	var pm stripe.PaymentMethod
 	if err := json.Unmarshal(event.Data.Raw, &pm); err != nil {
-		return fmt.Errorf("failed to unmarshal payment method: %v", err)
+		return fmt.Errorf("failed to unmarshal payment method: %w", err)
 	}
 
 	// Get customer to find user ID
@@ -1447,7 +1447,7 @@ func (ss *stripeService) handlePaymentMethodAttached(event *stripe.Event) error 
 func (ss *stripeService) handlePaymentMethodDetached(event *stripe.Event) error {
 	var pm stripe.PaymentMethod
 	if err := json.Unmarshal(event.Data.Raw, &pm); err != nil {
-		return fmt.Errorf("failed to unmarshal payment method: %v", err)
+		return fmt.Errorf("failed to unmarshal payment method: %w", err)
 	}
 
 	// Get payment method from database
@@ -1469,7 +1469,7 @@ func (ss *stripeService) handlePaymentMethodDetached(event *stripe.Event) error 
 func (ss *stripeService) handleCustomerUpdated(event *stripe.Event) error {
 	var customer stripe.Customer
 	if err := json.Unmarshal(event.Data.Raw, &customer); err != nil {
-		return fmt.Errorf("failed to unmarshal customer: %v", err)
+		return fmt.Errorf("failed to unmarshal customer: %w", err)
 	}
 
 	// Try to find subscription for this customer
@@ -1519,7 +1519,7 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 
 	planID, err := uuid.Parse(planIDStr)
 	if err != nil {
-		return fmt.Errorf("invalid subscription_plan_id: %v", err)
+		return fmt.Errorf("invalid subscription_plan_id: %w", err)
 	}
 
 	// Get quantity from metadata or subscription items
@@ -1530,7 +1530,7 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 
 	quantity := 0
 	if _, err := fmt.Sscanf(quantityStr, "%d", &quantity); err != nil {
-		return fmt.Errorf("invalid quantity: %v", err)
+		return fmt.Errorf("invalid quantity: %w", err)
 	}
 
 	// Get group_id if present
@@ -1554,7 +1554,7 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 	// Get plan for validation
 	plan, err := ss.subscriptionService.GetSubscriptionPlan(planID)
 	if err != nil {
-		return fmt.Errorf("failed to get subscription plan: %v", err)
+		return fmt.Errorf("failed to get subscription plan: %w", err)
 	}
 
 	utils.Info("📦 Creating bulk subscription batch for user %s: %d licenses of plan %s", userID, quantity, plan.Name)
@@ -1585,7 +1585,7 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 
 	batchRepo := repositories.NewSubscriptionBatchRepository(ss.db)
 	if err := batchRepo.Create(batch); err != nil {
-		return fmt.Errorf("failed to create batch: %v", err)
+		return fmt.Errorf("failed to create batch: %w", err)
 	}
 
 	utils.Info("✅ Created batch %s with %d licenses (status: %s)", batch.ID, quantity, batchStatus)
@@ -1775,7 +1775,7 @@ func (ss *stripeService) handleBulkInvoicePaymentSucceeded(invoice *stripe.Invoi
 	if batch.Status == "pending_payment" || batch.Status != "active" {
 		batch.Status = "active"
 		if err := batchRepo.Update(batch); err != nil {
-			return fmt.Errorf("failed to activate batch: %v", err)
+			return fmt.Errorf("failed to activate batch: %w", err)
 		}
 		utils.Info("✅ Batch %s activated", batch.ID)
 	}
@@ -1841,7 +1841,7 @@ func (ss *stripeService) terminateUserTerminals(userID string) error {
 	// Get all active terminals for this user
 	terminals, err := termRepository.GetTerminalSessionsByUserID(userID, true)
 	if err != nil {
-		return fmt.Errorf("failed to get user terminals: %v", err)
+		return fmt.Errorf("failed to get user terminals: %w", err)
 	}
 
 	if terminals == nil || len(*terminals) == 0 {
@@ -1884,7 +1884,7 @@ func (ss *stripeService) decrementConcurrentTerminals(userID string) error {
 	var usageMetric models.UsageMetrics
 	err := ss.db.Where("user_id = ? AND metric_type = ?", userID, "concurrent_terminals").First(&usageMetric).Error
 	if err != nil {
-		return fmt.Errorf("usage metric not found: %v", err)
+		return fmt.Errorf("usage metric not found: %w", err)
 	}
 
 	// Decrement usage by 1 (ensure it doesn't go negative)
@@ -1892,7 +1892,7 @@ func (ss *stripeService) decrementConcurrentTerminals(userID string) error {
 		usageMetric.CurrentValue -= 1
 		usageMetric.LastUpdated = time.Now()
 		if err := ss.db.Save(&usageMetric).Error; err != nil {
-			return fmt.Errorf("failed to update usage metric: %v", err)
+			return fmt.Errorf("failed to update usage metric: %w", err)
 		}
 	}
 
@@ -1915,7 +1915,7 @@ func (ss *stripeService) UpdateSubscription(subscriptionID, newPriceID, proratio
 	// Get current subscription to find the subscription item ID
 	currentSub, err := subscription.Get(subscriptionID, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current subscription: %v", err)
+		return nil, fmt.Errorf("failed to get current subscription: %w", err)
 	}
 
 	if len(currentSub.Items.Data) == 0 {
@@ -1952,7 +1952,7 @@ func (ss *stripeService) UpdateSubscription(subscriptionID, newPriceID, proratio
 
 	updatedSub, err := subscription.Update(subscriptionID, params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update subscription in Stripe: %v", err)
+		return nil, fmt.Errorf("failed to update subscription in Stripe: %w", err)
 	}
 
 	return updatedSub, nil
@@ -2002,7 +2002,7 @@ func (ss *stripeService) SendInvoice(invoiceID string) error {
 func (ss *stripeService) ValidateWebhookSignature(payload []byte, signature string) (*stripe.Event, error) {
 	event, err := webhook.ConstructEvent(payload, signature, ss.webhookSecret)
 	if err != nil {
-		return nil, fmt.Errorf("webhook signature verification failed: %v", err)
+		return nil, fmt.Errorf("webhook signature verification failed: %w", err)
 	}
 	return &event, nil
 }
@@ -2037,7 +2037,7 @@ func (ss *stripeService) SyncExistingSubscriptions() (*SyncSubscriptionsResult, 
 	}
 
 	if err := iter.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate subscriptions: %v", err)
+		return nil, fmt.Errorf("failed to iterate subscriptions: %w", err)
 	}
 
 	return result, nil
@@ -2077,7 +2077,7 @@ func (ss *stripeService) SyncUserSubscriptions(userID string) (*SyncSubscription
 	}
 
 	if err := iter.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate subscriptions: %v", err)
+		return nil, fmt.Errorf("failed to iterate subscriptions: %w", err)
 	}
 
 	return result, nil
@@ -2109,7 +2109,7 @@ func (ss *stripeService) processSingleSubscription(sub *stripe.Subscription, res
 	// Vérifier si l'abonnement existe déjà dans notre base
 	existingSubscription, err := ss.repository.GetUserSubscriptionByStripeID(sub.ID)
 	if err != nil && err != gorm.ErrRecordNotFound {
-		return fmt.Errorf("database error checking existing subscription: %v", err)
+		return fmt.Errorf("database error checking existing subscription: %w", err)
 	}
 
 	// Construire les dates de période
@@ -2133,7 +2133,7 @@ func (ss *stripeService) processSingleSubscription(sub *stripe.Subscription, res
 		}
 
 		if err := ss.repository.UpdateUserSubscription(existingSubscription); err != nil {
-			return fmt.Errorf("failed to update subscription: %v", err)
+			return fmt.Errorf("failed to update subscription: %w", err)
 		}
 
 		result.UpdatedSubscriptions++
@@ -2158,7 +2158,7 @@ func (ss *stripeService) processSingleSubscription(sub *stripe.Subscription, res
 		}
 
 		if err := ss.repository.CreateUserSubscription(userSubscription); err != nil {
-			return fmt.Errorf("failed to create subscription: %v", err)
+			return fmt.Errorf("failed to create subscription: %w", err)
 		}
 
 		result.CreatedSubscriptions++
@@ -2234,7 +2234,7 @@ func (ss *stripeService) SyncSubscriptionsWithMissingMetadata() (*SyncSubscripti
 	}
 
 	if err := iter.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate subscriptions: %v", err)
+		return nil, fmt.Errorf("failed to iterate subscriptions: %w", err)
 	}
 
 	return result, nil
@@ -2261,7 +2261,7 @@ func (ss *stripeService) recoverMetadataFromCheckoutSessions(sub *stripe.Subscri
 			if hasUserID && hasPlanID {
 				planID, err := uuid.Parse(planIDStr)
 				if err != nil {
-					return "", uuid.Nil, fmt.Errorf("invalid plan ID in checkout session: %v", err)
+					return "", uuid.Nil, fmt.Errorf("invalid plan ID in checkout session: %w", err)
 				}
 				return userID, planID, nil
 			}
@@ -2276,13 +2276,13 @@ func (ss *stripeService) LinkSubscriptionToUser(stripeSubscriptionID, userID str
 	// Récupérer l'abonnement depuis Stripe
 	sub, err := subscription.Get(stripeSubscriptionID, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get subscription from Stripe: %v", err)
+		return fmt.Errorf("failed to get subscription from Stripe: %w", err)
 	}
 
 	// Vérifier si l'abonnement existe déjà dans la base
 	existingSubscription, err := ss.repository.GetUserSubscriptionByStripeID(stripeSubscriptionID)
 	if err != nil && err != gorm.ErrRecordNotFound {
-		return fmt.Errorf("database error checking existing subscription: %v", err)
+		return fmt.Errorf("database error checking existing subscription: %w", err)
 	}
 
 	if existingSubscription != nil {
@@ -2360,7 +2360,7 @@ func (ss *stripeService) SyncUserInvoices(userID string) (*SyncInvoicesResult, e
 	}
 
 	if err := iter.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate invoices: %v", err)
+		return nil, fmt.Errorf("failed to iterate invoices: %w", err)
 	}
 
 	utils.Debug("✅ Invoice sync complete: %d processed, %d created, %d updated, %d skipped, %d failed",
@@ -2385,7 +2385,7 @@ func (ss *stripeService) processSingleInvoice(inv *stripe.Invoice, userID string
 	// Vérifier si la facture existe déjà dans notre base
 	existingInvoice, err := ss.repository.GetInvoiceByStripeID(inv.ID)
 	if err != nil && err != gorm.ErrRecordNotFound {
-		return fmt.Errorf("database error checking existing invoice: %v", err)
+		return fmt.Errorf("database error checking existing invoice: %w", err)
 	}
 
 	// Convertir les timestamps
@@ -2410,7 +2410,7 @@ func (ss *stripeService) processSingleInvoice(inv *stripe.Invoice, userID string
 		existingInvoice.DownloadURL = inv.InvoicePDF
 
 		if err := ss.repository.UpdateInvoice(existingInvoice); err != nil {
-			return fmt.Errorf("failed to update invoice: %v", err)
+			return fmt.Errorf("failed to update invoice: %w", err)
 		}
 
 		result.UpdatedInvoices++
@@ -2436,7 +2436,7 @@ func (ss *stripeService) processSingleInvoice(inv *stripe.Invoice, userID string
 		}
 
 		if err := ss.repository.CreateInvoice(newInvoice); err != nil {
-			return fmt.Errorf("failed to create invoice: %v", err)
+			return fmt.Errorf("failed to create invoice: %w", err)
 		}
 
 		result.CreatedInvoices++
@@ -2617,7 +2617,7 @@ func (ss *stripeService) CleanupIncompleteInvoices(input dto.CleanupInvoicesInpu
 		}
 
 		if err := iter.Err(); err != nil {
-			return nil, fmt.Errorf("failed to iterate invoices: %v", err)
+			return nil, fmt.Errorf("failed to iterate invoices: %w", err)
 		}
 	}
 
@@ -2670,7 +2670,7 @@ func (ss *stripeService) SyncUserPaymentMethods(userID string) (*SyncPaymentMeth
 	}
 
 	if err := iter.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate payment methods: %v", err)
+		return nil, fmt.Errorf("failed to iterate payment methods: %w", err)
 	}
 
 	utils.Debug("✅ Payment method sync complete: %d processed, %d created, %d updated, %d skipped, %d failed",
@@ -2685,14 +2685,14 @@ func (ss *stripeService) processSinglePaymentMethod(pm *stripe.PaymentMethod, us
 	// Vérifier si le moyen de paiement existe déjà dans notre base
 	existingPM, err := ss.repository.GetPaymentMethodByStripeID(pm.ID)
 	if err != nil && err != gorm.ErrRecordNotFound {
-		return fmt.Errorf("database error checking existing payment method: %v", err)
+		return fmt.Errorf("database error checking existing payment method: %w", err)
 	}
 
 	// Déterminer si c'est le moyen de paiement par défaut
 	// Récupérer le customer pour vérifier le default payment method
 	cust, err := customer.Get(customerID, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get customer: %v", err)
+		return fmt.Errorf("failed to get customer: %w", err)
 	}
 
 	isDefault := false
@@ -2714,7 +2714,7 @@ func (ss *stripeService) processSinglePaymentMethod(pm *stripe.PaymentMethod, us
 		}
 
 		if err := ss.repository.UpdatePaymentMethod(existingPM); err != nil {
-			return fmt.Errorf("failed to update payment method: %v", err)
+			return fmt.Errorf("failed to update payment method: %w", err)
 		}
 
 		result.UpdatedPaymentMethods++
@@ -2740,7 +2740,7 @@ func (ss *stripeService) processSinglePaymentMethod(pm *stripe.PaymentMethod, us
 		}
 
 		if err := ss.repository.CreatePaymentMethod(newPM); err != nil {
-			return fmt.Errorf("failed to create payment method: %v", err)
+			return fmt.Errorf("failed to create payment method: %w", err)
 		}
 
 		result.CreatedPaymentMethods++
@@ -2786,7 +2786,7 @@ func (ss *stripeService) CreateSubscriptionWithQuantity(customerID string, plan 
 
 	sub, err := subscription.New(params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Stripe subscription: %v", err)
+		return nil, fmt.Errorf("failed to create Stripe subscription: %w", err)
 	}
 
 	utils.Info("✅ Created bulk Stripe subscription %s for customer %s (quantity: %d)", sub.ID, customerID, quantity)
@@ -2807,7 +2807,7 @@ func (ss *stripeService) UpdateSubscriptionQuantity(subscriptionID string, subsc
 
 	sub, err := subscription.Update(subscriptionID, params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update Stripe subscription quantity: %v", err)
+		return nil, fmt.Errorf("failed to update Stripe subscription quantity: %w", err)
 	}
 
 	utils.Info("✅ Updated Stripe subscription %s quantity to %d", subscriptionID, newQuantity)
@@ -3018,7 +3018,7 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 	}
 
 	if err := productIter.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate products: %v", err)
+		return nil, fmt.Errorf("failed to iterate products: %w", err)
 	}
 
 	utils.Info("📥 Import from Stripe complete: %d processed, %d created, %d updated, %d skipped, %d failed",

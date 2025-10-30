@@ -70,7 +70,7 @@ func (s *importService) ImportOrganizationData(
 			Message: fmt.Sprintf("Organization not found: %v", err),
 			Code:    dto.ErrCodeNotFound,
 		})
-		return response, fmt.Errorf("organization not found: %v", err)
+		return response, fmt.Errorf("organization not found: %w", err)
 	}
 
 	// 2. Parse CSV files
@@ -326,13 +326,13 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 
 	_, err = casdoorsdk.AddUser(&newUser)
 	if err != nil {
-		return "", fmt.Errorf("failed to create user in Casdoor: %v", err)
+		return "", fmt.Errorf("failed to create user in Casdoor: %w", err)
 	}
 
 	// Get the created user to get the actual ID
 	createdUser, err := casdoorsdk.GetUserByEmail(user.Email)
 	if err != nil {
-		return "", fmt.Errorf("failed to retrieve created user: %v", err)
+		return "", fmt.Errorf("failed to retrieve created user: %w", err)
 	}
 
 	// Add default roles
@@ -405,7 +405,7 @@ func (s *importService) processGroup(group dto.GroupImportRow, orgID uuid.UUID, 
 	}
 
 	if err := s.db.Create(&newGroup).Error; err != nil {
-		return uuid.Nil, fmt.Errorf("failed to create group: %v", err)
+		return uuid.Nil, fmt.Errorf("failed to create group: %w", err)
 	}
 
 	utils.Debug("✅ Created group: %s (ID: %s)", group.GroupName, newGroup.ID)
@@ -455,7 +455,7 @@ func (s *importService) processMembership(
 	}
 
 	if err := s.db.Create(&newMember).Error; err != nil {
-		return fmt.Errorf("failed to create membership: %v", err)
+		return fmt.Errorf("failed to create membership: %w", err)
 	}
 
 	utils.Debug("✅ Added user %s to group %s", membership.UserEmail, membership.GroupName)
@@ -481,7 +481,7 @@ func (s *importService) addUserToOrganization(userID string, orgID uuid.UUID) er
 	}
 
 	if err := s.db.Create(&newMember).Error; err != nil {
-		return fmt.Errorf("failed to add user to organization: %v", err)
+		return fmt.Errorf("failed to add user to organization: %w", err)
 	}
 
 	// Add Casbin permission for organization

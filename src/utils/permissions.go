@@ -34,7 +34,7 @@ func DefaultPermissionOptions() PermissionOptions {
 func AddPolicy(enforcer interfaces.EnforcerInterface, subject, route, methods string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
-			return fmt.Errorf("failed to load policy: %v", err)
+			return fmt.Errorf("failed to load policy: %w", err)
 		}
 	}
 
@@ -44,7 +44,7 @@ func AddPolicy(enforcer interfaces.EnforcerInterface, subject, route, methods st
 			Warn("Failed to add policy [%s, %s, %s]: %v", subject, route, methods, err)
 			return nil
 		}
-		return fmt.Errorf("failed to add policy: %v", err)
+		return fmt.Errorf("failed to add policy: %w", err)
 	}
 
 	return nil
@@ -58,7 +58,7 @@ func AddPolicy(enforcer interfaces.EnforcerInterface, subject, route, methods st
 func RemovePolicy(enforcer interfaces.EnforcerInterface, subject, route, methods string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
-			return fmt.Errorf("failed to load policy: %v", err)
+			return fmt.Errorf("failed to load policy: %w", err)
 		}
 	}
 
@@ -68,7 +68,7 @@ func RemovePolicy(enforcer interfaces.EnforcerInterface, subject, route, methods
 			Warn("Failed to remove policy [%s, %s, %s]: %v", subject, route, methods, err)
 			return nil
 		}
-		return fmt.Errorf("failed to remove policy: %v", err)
+		return fmt.Errorf("failed to remove policy: %w", err)
 	}
 
 	return nil
@@ -96,7 +96,7 @@ func RemovePolicy(enforcer interfaces.EnforcerInterface, subject, route, methods
 func RemoveFilteredPolicy(enforcer interfaces.EnforcerInterface, fieldIndex int, opts PermissionOptions, fieldValues ...string) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
-			return fmt.Errorf("failed to load policy: %v", err)
+			return fmt.Errorf("failed to load policy: %w", err)
 		}
 	}
 
@@ -106,7 +106,7 @@ func RemoveFilteredPolicy(enforcer interfaces.EnforcerInterface, fieldIndex int,
 			Warn("Failed to remove filtered policy (index=%d, values=%v): %v", fieldIndex, fieldValues, err)
 			return nil
 		}
-		return fmt.Errorf("failed to remove filtered policy: %v", err)
+		return fmt.Errorf("failed to remove filtered policy: %w", err)
 	}
 
 	return nil
@@ -120,7 +120,7 @@ func RemoveFilteredPolicy(enforcer interfaces.EnforcerInterface, fieldIndex int,
 func AddGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
-			return fmt.Errorf("failed to load policy: %v", err)
+			return fmt.Errorf("failed to load policy: %w", err)
 		}
 	}
 
@@ -130,7 +130,7 @@ func AddGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID str
 			Warn("Failed to add user %s to role %s: %v", userID, roleID, err)
 			return nil
 		}
-		return fmt.Errorf("failed to add user to role group: %v", err)
+		return fmt.Errorf("failed to add user to role group: %w", err)
 	}
 
 	return nil
@@ -144,7 +144,7 @@ func AddGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID str
 func RemoveGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
-			return fmt.Errorf("failed to load policy: %v", err)
+			return fmt.Errorf("failed to load policy: %w", err)
 		}
 	}
 
@@ -154,7 +154,7 @@ func RemoveGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID 
 			Warn("Failed to remove user %s from role %s: %v", userID, roleID, err)
 			return nil
 		}
-		return fmt.Errorf("failed to remove user from role group: %v", err)
+		return fmt.Errorf("failed to remove user from role group: %w", err)
 	}
 
 	return nil
@@ -176,7 +176,7 @@ func RemoveGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID 
 func GrantEntityAccess(enforcer interfaces.EnforcerInterface, userID, entityType, entityID, methods string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
-			return fmt.Errorf("failed to load policy: %v", err)
+			return fmt.Errorf("failed to load policy: %w", err)
 		}
 	}
 
@@ -205,7 +205,7 @@ func GrantEntityAccess(enforcer interfaces.EnforcerInterface, userID, entityType
 func RevokeEntityAccess(enforcer interfaces.EnforcerInterface, userID, entityType, entityID string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
-			return fmt.Errorf("failed to load policy: %v", err)
+			return fmt.Errorf("failed to load policy: %w", err)
 		}
 	}
 
@@ -229,7 +229,7 @@ func RevokeEntityAccess(enforcer interfaces.EnforcerInterface, userID, entityTyp
 func GrantEntitySubResourceAccess(enforcer interfaces.EnforcerInterface, roleID, entityType, entityID, subResource, methods string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
-			return fmt.Errorf("failed to load policy: %v", err)
+			return fmt.Errorf("failed to load policy: %w", err)
 		}
 	}
 
@@ -253,7 +253,7 @@ func GrantEntitySubResourceAccess(enforcer interfaces.EnforcerInterface, roleID,
 func GrantCompleteEntityAccess(enforcer interfaces.EnforcerInterface, userID, entityType, entityID string, subResources []string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
-			return fmt.Errorf("failed to load policy: %v", err)
+			return fmt.Errorf("failed to load policy: %w", err)
 		}
 		// Don't reload again in sub-calls
 		opts.LoadPolicyFirst = false
@@ -294,7 +294,7 @@ func GrantCompleteEntityAccess(enforcer interfaces.EnforcerInterface, userID, en
 func GrantManagerPermissions(enforcer interfaces.EnforcerInterface, userID, entityType, entityID string, manageableSubResources []string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
-			return fmt.Errorf("failed to load policy: %v", err)
+			return fmt.Errorf("failed to load policy: %w", err)
 		}
 		opts.LoadPolicyFirst = false
 	}
@@ -330,7 +330,7 @@ func GrantManagerPermissions(enforcer interfaces.EnforcerInterface, userID, enti
 func RevokeManagerPermissions(enforcer interfaces.EnforcerInterface, userID, entityType, entityID string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
-			return fmt.Errorf("failed to load policy: %v", err)
+			return fmt.Errorf("failed to load policy: %w", err)
 		}
 	}
 

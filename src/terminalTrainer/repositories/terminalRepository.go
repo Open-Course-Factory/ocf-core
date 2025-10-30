@@ -107,7 +107,7 @@ func (r *terminalRepository) GetTerminalByUUID(terminalUUID string) (*models.Ter
 	var terminal models.Terminal
 	uuid, err := uuid.Parse(terminalUUID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid terminal UUID format: %v", err)
+		return nil, fmt.Errorf("invalid terminal UUID format: %w", err)
 	}
 
 	err = r.db.Preload("UserTerminalKey").Where("id = ?", uuid).First(&terminal).Error
@@ -296,7 +296,7 @@ func (r *terminalRepository) GetTerminalSharesByTerminalID(terminalID string) (*
 	// Convert string to UUID for proper comparison
 	terminalUUID, err := uuid.Parse(terminalID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid terminal ID format: %v", err)
+		return nil, fmt.Errorf("invalid terminal ID format: %w", err)
 	}
 	err = r.db.Preload("Terminal").Where("terminal_id = ? AND is_active = ?", terminalUUID, true).Find(&shares).Error
 	if err != nil {
@@ -319,7 +319,7 @@ func (r *terminalRepository) GetTerminalShare(terminalID, userID string) (*model
 	// Convert string to UUID for proper comparison
 	terminalUUID, err := uuid.Parse(terminalID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid terminal ID format: %v", err)
+		return nil, fmt.Errorf("invalid terminal ID format: %w", err)
 	}
 	err = r.db.Preload("Terminal").Where("terminal_id = ? AND shared_with_user_id = ? AND is_active = ?", terminalUUID, userID, true).First(&share).Error
 	if err != nil {
@@ -360,7 +360,7 @@ func (r *terminalRepository) HasTerminalAccess(terminalID, userID string, requir
 	// Convert string to UUID for proper comparison
 	terminalUUID, err := uuid.Parse(terminalID)
 	if err != nil {
-		return false, fmt.Errorf("invalid terminal ID format: %v", err)
+		return false, fmt.Errorf("invalid terminal ID format: %w", err)
 	}
 
 	// Vérifier s'il y a un partage actif avec le niveau d'accès requis ou supérieur
@@ -417,7 +417,7 @@ func (r *terminalRepository) GetSharedTerminalsForUserWithHidden(userID string, 
 func (r *terminalRepository) HideTerminalForUser(terminalID, userID string) error {
 	terminalUUID, err := uuid.Parse(terminalID)
 	if err != nil {
-		return fmt.Errorf("invalid terminal ID format: %v", err)
+		return fmt.Errorf("invalid terminal ID format: %w", err)
 	}
 
 	now := time.Now()
@@ -432,7 +432,7 @@ func (r *terminalRepository) HideTerminalForUser(terminalID, userID string) erro
 func (r *terminalRepository) UnhideTerminalForUser(terminalID, userID string) error {
 	terminalUUID, err := uuid.Parse(terminalID)
 	if err != nil {
-		return fmt.Errorf("invalid terminal ID format: %v", err)
+		return fmt.Errorf("invalid terminal ID format: %w", err)
 	}
 
 	// Create an empty share model to update with
@@ -470,7 +470,7 @@ func (r *terminalRepository) GetTerminalSessionsByUserIDWithHidden(userID string
 func (r *terminalRepository) HideOwnedTerminal(terminalID, userID string) error {
 	terminalUUID, err := uuid.Parse(terminalID)
 	if err != nil {
-		return fmt.Errorf("invalid terminal ID format: %v", err)
+		return fmt.Errorf("invalid terminal ID format: %w", err)
 	}
 
 	now := time.Now()
@@ -485,7 +485,7 @@ func (r *terminalRepository) HideOwnedTerminal(terminalID, userID string) error 
 func (r *terminalRepository) UnhideOwnedTerminal(terminalID, userID string) error {
 	terminalUUID, err := uuid.Parse(terminalID)
 	if err != nil {
-		return fmt.Errorf("invalid terminal ID format: %v", err)
+		return fmt.Errorf("invalid terminal ID format: %w", err)
 	}
 
 	// Create an empty terminal model to update with
@@ -506,7 +506,7 @@ func (r *terminalRepository) GetTerminalSessionsSharedWithGroup(groupID string, 
 	// Parse group ID as UUID
 	groupUUID, err := uuid.Parse(groupID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid group ID format: %v", err)
+		return nil, fmt.Errorf("invalid group ID format: %w", err)
 	}
 
 	// Query terminals that are shared with the specified group

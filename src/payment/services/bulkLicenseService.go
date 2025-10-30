@@ -49,7 +49,7 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 	// Get the subscription plan
 	plan, err := s.planRepository.GetByID(input.SubscriptionPlanID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("plan not found: %v", err)
+		return nil, nil, fmt.Errorf("plan not found: %w", err)
 	}
 
 	if !plan.IsActive {
@@ -59,13 +59,13 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 	// Get user from Casdoor to fetch/create Stripe customer
 	user, err := casdoorsdk.GetUserByUserId(purchaserUserID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get user from Casdoor: %v", err)
+		return nil, nil, fmt.Errorf("failed to get user from Casdoor: %w", err)
 	}
 
 	// Get or create Stripe customer for this user
 	customerID, err := s.stripeService.CreateOrGetCustomer(purchaserUserID, user.Email, user.Name)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get Stripe customer: %v", err)
+		return nil, nil, fmt.Errorf("failed to get Stripe customer: %w", err)
 	}
 
 	utils.Debug("Creating bulk purchase for user %s with Stripe customer %s", purchaserUserID, customerID)
@@ -78,7 +78,7 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 		input.PaymentMethodID,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create Stripe subscription: %v", err)
+		return nil, nil, fmt.Errorf("failed to create Stripe subscription: %w", err)
 	}
 
 	// Extract subscription IDs and period info from Stripe response
@@ -103,7 +103,7 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 	}
 
 	if err := s.batchRepository.Create(batch); err != nil {
-		return nil, nil, fmt.Errorf("failed to create batch: %v", err)
+		return nil, nil, fmt.Errorf("failed to create batch: %w", err)
 	}
 
 	// Create individual license records with pending_payment status
@@ -137,7 +137,7 @@ func (s *bulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID s
 	// Get the batch
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
-		return nil, fmt.Errorf("batch not found: %v", err)
+		return nil, fmt.Errorf("batch not found: %w", err)
 	}
 
 	// Verify requester is the purchaser
@@ -155,7 +155,7 @@ func (s *bulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID s
 	err = s.db.Where("subscription_batch_id = ? AND status = ?", batchID, "unassigned").
 		First(&license).Error
 	if err != nil {
-		return nil, fmt.Errorf("no unassigned licenses found: %v", err)
+		return nil, fmt.Errorf("no unassigned licenses found: %w", err)
 	}
 
 	// Assign the license
@@ -164,7 +164,7 @@ func (s *bulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID s
 	license.SubscriptionType = "assigned" // Mark as assigned license for stacked subscription priority
 
 	if err := s.subscriptionRepo.UpdateUserSubscription(&license); err != nil {
-		return nil, fmt.Errorf("failed to assign license: %v", err)
+		return nil, fmt.Errorf("failed to assign license: %w", err)
 	}
 
 	// Increment assigned quantity
@@ -182,7 +182,7 @@ func (s *bulkLicenseService) RevokeLicense(licenseID uuid.UUID, requestingUserID
 	// Get the license
 	license, err := s.subscriptionRepo.GetUserSubscription(licenseID)
 	if err != nil {
-		return fmt.Errorf("license not found: %v", err)
+		return fmt.Errorf("license not found: %w", err)
 	}
 
 	// Verify the license is part of a batch
@@ -193,7 +193,7 @@ func (s *bulkLicenseService) RevokeLicense(licenseID uuid.UUID, requestingUserID
 	// Get the batch
 	batch, err := s.batchRepository.GetByID(*license.SubscriptionBatchID)
 	if err != nil {
-		return fmt.Errorf("batch not found: %v", err)
+		return fmt.Errorf("batch not found: %w", err)
 	}
 
 	// Verify requester is the purchaser
@@ -216,7 +216,7 @@ func (s *bulkLicenseService) RevokeLicense(licenseID uuid.UUID, requestingUserID
 	license.Status = "unassigned"
 
 	if err := s.subscriptionRepo.UpdateUserSubscription(license); err != nil {
-		return fmt.Errorf("failed to revoke license: %v", err)
+		return fmt.Errorf("failed to revoke license: %w", err)
 	}
 
 	// Decrement assigned quantity
@@ -233,7 +233,7 @@ func (s *bulkLicenseService) RevokeLicense(licenseID uuid.UUID, requestingUserID
 func (s *bulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUserID string, newQuantity int) error {
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
-		return fmt.Errorf("batch not found: %v", err)
+		return fmt.Errorf("batch not found: %w", err)
 	}
 
 	if batch.PurchaserUserID != requestingUserID {
@@ -272,7 +272,7 @@ func (s *bulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUs
 			return fmt.Errorf("Stripe subscription was cancelled externally - batch and licenses have been cancelled locally")
 		}
 
-		return fmt.Errorf("failed to update Stripe subscription quantity: %v", err)
+		return fmt.Errorf("failed to update Stripe subscription quantity: %w", err)
 	}
 
 	if difference > 0 {
@@ -280,7 +280,7 @@ func (s *bulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUs
 		var existingLicense models.UserSubscription
 		err = s.db.Where("subscription_batch_id = ?", batchID).First(&existingLicense).Error
 		if err != nil {
-			return fmt.Errorf("failed to get existing license for customer ID: %v", err)
+			return fmt.Errorf("failed to get existing license for customer ID: %w", err)
 		}
 
 		// Adding licenses
@@ -322,7 +322,7 @@ func (s *bulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUs
 	// Update batch total quantity
 	batch.TotalQuantity = newQuantity
 	if err := s.batchRepository.Update(batch); err != nil {
-		return fmt.Errorf("failed to update batch: %v", err)
+		return fmt.Errorf("failed to update batch: %w", err)
 	}
 
 	return nil
@@ -337,7 +337,7 @@ func (s *bulkLicenseService) GetBatchesByPurchaser(purchaserUserID string) (*[]m
 func (s *bulkLicenseService) GetBatchLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error) {
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
-		return nil, fmt.Errorf("batch not found: %v", err)
+		return nil, fmt.Errorf("batch not found: %w", err)
 	}
 
 	if batch.PurchaserUserID != requestingUserID {
@@ -361,7 +361,7 @@ func (s *bulkLicenseService) GetBatchLicenses(batchID uuid.UUID, requestingUserI
 func (s *bulkLicenseService) GetAvailableLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error) {
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
-		return nil, fmt.Errorf("batch not found: %v", err)
+		return nil, fmt.Errorf("batch not found: %w", err)
 	}
 
 	if batch.PurchaserUserID != requestingUserID {
@@ -389,7 +389,7 @@ func (s *bulkLicenseService) terminateUserTerminals(userID string) error {
 	// Get all active terminals for this user
 	terminals, err := termRepository.GetTerminalSessionsByUserID(userID, true)
 	if err != nil {
-		return fmt.Errorf("failed to get user terminals: %v", err)
+		return fmt.Errorf("failed to get user terminals: %w", err)
 	}
 
 	if terminals == nil || len(*terminals) == 0 {
@@ -432,7 +432,7 @@ func (s *bulkLicenseService) decrementConcurrentTerminals(userID string) error {
 	var usageMetric models.UsageMetrics
 	err := s.db.Where("user_id = ? AND metric_type = ?", userID, "concurrent_terminals").First(&usageMetric).Error
 	if err != nil {
-		return fmt.Errorf("usage metric not found: %v", err)
+		return fmt.Errorf("usage metric not found: %w", err)
 	}
 
 	// Decrement usage by 1 (ensure it doesn't go negative)
@@ -440,7 +440,7 @@ func (s *bulkLicenseService) decrementConcurrentTerminals(userID string) error {
 		usageMetric.CurrentValue -= 1
 		usageMetric.LastUpdated = time.Now()
 		if err := s.db.Save(&usageMetric).Error; err != nil {
-			return fmt.Errorf("failed to update usage metric: %v", err)
+			return fmt.Errorf("failed to update usage metric: %w", err)
 		}
 	}
 
@@ -452,7 +452,7 @@ func (s *bulkLicenseService) decrementConcurrentTerminals(userID string) error {
 func (s *bulkLicenseService) autoCancelBatchFromStripeError(batchID uuid.UUID) error {
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
-		return fmt.Errorf("batch not found: %v", err)
+		return fmt.Errorf("batch not found: %w", err)
 	}
 
 	utils.Info("🔄 Auto-cancelling batch %s due to external Stripe cancellation", batchID)
@@ -461,7 +461,7 @@ func (s *bulkLicenseService) autoCancelBatchFromStripeError(batchID uuid.UUID) e
 	var licenses []models.UserSubscription
 	err = s.db.Where("subscription_batch_id = ?", batchID).Find(&licenses).Error
 	if err != nil {
-		return fmt.Errorf("failed to get batch licenses: %v", err)
+		return fmt.Errorf("failed to get batch licenses: %w", err)
 	}
 
 	// Terminate terminals for all users with active assigned licenses
@@ -488,7 +488,7 @@ func (s *bulkLicenseService) autoCancelBatchFromStripeError(batchID uuid.UUID) e
 	batch.Status = "cancelled"
 	batch.CancelledAt = &now
 	if err := s.batchRepository.Update(batch); err != nil {
-		return fmt.Errorf("failed to cancel batch: %v", err)
+		return fmt.Errorf("failed to cancel batch: %w", err)
 	}
 
 	utils.Info("✅ Auto-cancelled batch %s and %d licenses", batchID, len(licenses))
@@ -520,7 +520,7 @@ func (s *bulkLicenseService) PermanentlyDeleteBatch(batchID uuid.UUID, requestin
 	// Get the batch
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
-		return fmt.Errorf("batch not found: %v", err)
+		return fmt.Errorf("batch not found: %w", err)
 	}
 
 	// Verify requester is the purchaser
@@ -534,7 +534,7 @@ func (s *bulkLicenseService) PermanentlyDeleteBatch(batchID uuid.UUID, requestin
 	var licenses []models.UserSubscription
 	err = s.db.Where("subscription_batch_id = ?", batchID).Find(&licenses).Error
 	if err != nil {
-		return fmt.Errorf("failed to get batch licenses: %v", err)
+		return fmt.Errorf("failed to get batch licenses: %w", err)
 	}
 
 	// Step 2: Terminate terminals for all users with assigned licenses
@@ -574,7 +574,7 @@ func (s *bulkLicenseService) PermanentlyDeleteBatch(batchID uuid.UUID, requestin
 	// Step 5: Delete the batch itself
 	utils.Info("🗑️ Deleting batch record %s", batchID)
 	if err := s.db.Unscoped().Delete(&models.SubscriptionBatch{}, batchID).Error; err != nil {
-		return fmt.Errorf("failed to delete batch: %v", err)
+		return fmt.Errorf("failed to delete batch: %w", err)
 	}
 
 	utils.Info("✅ Successfully deleted batch %s and all %d licenses", batchID, len(licenses))

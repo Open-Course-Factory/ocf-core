@@ -1,0 +1,9 @@
+docs: Reorganize and consolidate documentation
+
+Reorganize and consolidate project documentation for improved clarity and navigation.
+
+- Moved general project documentation from root to a new `documentation/` directory.
+- Merged AI assistant-specific guides (`GEMINI.md`, `CLAUDE.md`) into `.claude/docs/AI_ASSISTANT_GUIDE.md`.
+- Consolidated CI/CD documentation (`CI_CD.md`, `ci-workflow.md`) into a single `documentation/CI_CD.md`.
+- Unified all frontend integration guides into a single `documentation/FRONTEND_GUIDE.md`.
+- Relocated various feature-specific documentation from `.claude/docs/` to `documentation/`.

@@ -42,7 +42,7 @@ func (oms *organizationMigrationService) MigrateExistingUsersToPersonalOrganizat
 	// Get all users from Casdoor
 	users, err := casdoorsdk.GetUsers()
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch users from Casdoor: %v", err)
+		return nil, fmt.Errorf("failed to fetch users from Casdoor: %w", err)
 	}
 
 	result.TotalUsers = len(users)
