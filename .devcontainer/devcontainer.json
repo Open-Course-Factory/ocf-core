@@ -29,9 +29,8 @@
 	// Uncomment the next line if you want to keep your containers running after VS Code shuts down.
 	// "shutdownAction": "none",
 
-	// Uncomment the next line to run commands after the container is created.
-	// "postCreateCommand": "cat /etc/os-release",
-	"postCreateCommand": "echo \"\nsource /usr/share/bash-completion/completions/git\" >> ~/.bashrc",
+	// Commands to run after container is created
+	"postCreateCommand": "bash -c 'echo \"\nsource /usr/share/bash-completion/completions/git\" >> ~/.bashrc && .devcontainer/setup-mcps.sh'",
 
 	"mounts": [
 	  "type=bind,source=${localEnv:HOME}/.ssh,target=/home/ocf/.ssh,readonly",
@@ -44,12 +43,58 @@
 		"vscode": {
 			// Set *default* container specific settings.json values on
 			// container create.
-			"settings": { 
+			"settings": {
 				"go.toolsManagement.checkForUpdates": "local",
 				"go.useLanguageServer": true,
-				"go.gopath": "/go"
+				"go.gopath": "/go",
+
+				// Claude Code MCP Configuration
+				"claude-code.mcpServers": {
+					"postgres": {
+						"command": "npx",
+						"args": [
+							"@modelcontextprotocol/server-postgres",
+							"postgresql://ocf:root@postgres:5432/ocf"
+						],
+						"env": {
+							"PGPASSWORD": "root"
+						}
+					},
+					"postgres-test": {
+						"command": "npx",
+						"args": [
+							"@modelcontextprotocol/server-postgres",
+							"postgresql://ocf:root@postgres:5432/ocf_test"
+						],
+						"env": {
+							"PGPASSWORD": "root"
+						}
+					},
+					"docker": {
+						"command": "npx",
+						"args": ["@modelcontextprotocol/server-docker"]
+					},
+					"git": {
+						"command": "npx",
+						"args": [
+							"@modelcontextprotocol/server-git",
+							"/workspaces/ocf-core"
+						]
+					},
+					"filesystem": {
+						"command": "npx",
+						"args": [
+							"@modelcontextprotocol/server-filesystem",
+							"/workspaces/ocf-core"
+						]
+					},
+					"fetch": {
+						"command": "npx",
+						"args": ["@modelcontextprotocol/server-fetch"]
+					}
+				}
 			},
-			
+
 			// Add the IDs of extensions you want installed when the container
 			// is created.
 			"extensions": [
