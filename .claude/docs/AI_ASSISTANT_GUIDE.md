@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AI Assistant Guide
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI assistants (like Gemini and Claude) when working with code in this repository.
 
 ## Development Environment
 
