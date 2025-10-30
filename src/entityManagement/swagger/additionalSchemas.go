@@ -10,12 +10,12 @@ import (
 
 // AdditionalSchemasService gère les schémas qui ne font pas partie du système d'entités
 type AdditionalSchemasService struct {
-	schemas map[string]interface{}
+	schemas map[string]any
 }
 
 func NewAdditionalSchemasService() *AdditionalSchemasService {
 	service := &AdditionalSchemasService{
-		schemas: make(map[string]interface{}),
+		schemas: make(map[string]any),
 	}
 
 	// Enregistrer les schémas par défaut
@@ -40,15 +40,15 @@ func (ass *AdditionalSchemasService) registerDefaultSchemas() {
 // addGenericResponseSchemas ajoute des schémas de réponse génériques
 func (ass *AdditionalSchemasService) addGenericResponseSchemas() {
 	// Schéma de réponse générique pour les succès
-	ass.schemas["GenericSuccessResponse"] = map[string]interface{}{
+	ass.schemas["GenericSuccessResponse"] = map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"message": map[string]interface{}{
+		"properties": map[string]any{
+			"message": map[string]any{
 				"type":        "string",
 				"description": "Message de succès",
 				"example":     "Operation completed successfully",
 			},
-			"data": map[string]interface{}{
+			"data": map[string]any{
 				"type":        "object",
 				"description": "Données de la réponse",
 			},
@@ -57,10 +57,10 @@ func (ass *AdditionalSchemasService) addGenericResponseSchemas() {
 	}
 
 	// Schéma pour les réponses de suppression
-	ass.schemas["DeleteResponse"] = map[string]interface{}{
+	ass.schemas["DeleteResponse"] = map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"message": map[string]interface{}{
+		"properties": map[string]any{
+			"message": map[string]any{
 				"type":    "string",
 				"example": "Entity deleted successfully",
 			},
@@ -68,42 +68,42 @@ func (ass *AdditionalSchemasService) addGenericResponseSchemas() {
 	}
 
 	// Schéma pour les listes paginées
-	ass.schemas["PaginatedResponse"] = map[string]interface{}{
+	ass.schemas["PaginatedResponse"] = map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"data": map[string]interface{}{
+		"properties": map[string]any{
+			"data": map[string]any{
 				"type":        "array",
 				"description": "List of items",
-				"items": map[string]interface{}{
+				"items": map[string]any{
 					"type": "object",
 				},
 			},
-			"total": map[string]interface{}{
+			"total": map[string]any{
 				"type":        "integer",
 				"example":     156,
 				"description": "Total number of items across all pages",
 			},
-			"totalPages": map[string]interface{}{
+			"totalPages": map[string]any{
 				"type":        "integer",
 				"example":     8,
 				"description": "Total number of pages",
 			},
-			"currentPage": map[string]interface{}{
+			"currentPage": map[string]any{
 				"type":        "integer",
 				"example":     1,
 				"description": "Current page number (1-based)",
 			},
-			"pageSize": map[string]interface{}{
+			"pageSize": map[string]any{
 				"type":        "integer",
 				"example":     20,
 				"description": "Number of items per page",
 			},
-			"hasNextPage": map[string]interface{}{
+			"hasNextPage": map[string]any{
 				"type":        "boolean",
 				"example":     true,
 				"description": "Whether there's a next page available",
 			},
-			"hasPreviousPage": map[string]interface{}{
+			"hasPreviousPage": map[string]any{
 				"type":        "boolean",
 				"example":     false,
 				"description": "Whether there's a previous page available",
@@ -113,16 +113,16 @@ func (ass *AdditionalSchemasService) addGenericResponseSchemas() {
 	}
 
 	// Schéma pour les paramètres de pagination
-	ass.schemas["PaginationParams"] = map[string]interface{}{
+	ass.schemas["PaginationParams"] = map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"page": map[string]interface{}{
+		"properties": map[string]any{
+			"page": map[string]any{
 				"type":        "integer",
 				"minimum":     1,
 				"default":     1,
 				"description": "Page number (starts at 1)",
 			},
-			"size": map[string]interface{}{
+			"size": map[string]any{
 				"type":        "integer",
 				"minimum":     1,
 				"maximum":     100,
@@ -134,19 +134,19 @@ func (ass *AdditionalSchemasService) addGenericResponseSchemas() {
 }
 
 // RegisterSchema enregistre un schéma à partir d'un struct Go
-func (ass *AdditionalSchemasService) RegisterSchema(name string, structInstance interface{}) {
+func (ass *AdditionalSchemasService) RegisterSchema(name string, structInstance any) {
 	schema := ass.generateSchemaFromStruct(structInstance)
 	ass.schemas[name] = schema
 }
 
 // RegisterCustomSchema enregistre un schéma personnalisé
-func (ass *AdditionalSchemasService) RegisterCustomSchema(name string, schema map[string]interface{}) {
+func (ass *AdditionalSchemasService) RegisterCustomSchema(name string, schema map[string]any) {
 	ass.schemas[name] = schema
 }
 
 // GetAllSchemas retourne tous les schémas enregistrés
-func (ass *AdditionalSchemasService) GetAllSchemas() map[string]interface{} {
-	result := make(map[string]interface{})
+func (ass *AdditionalSchemasService) GetAllSchemas() map[string]any {
+	result := make(map[string]any)
 	for name, schema := range ass.schemas {
 		result[name] = schema
 	}
@@ -154,13 +154,13 @@ func (ass *AdditionalSchemasService) GetAllSchemas() map[string]interface{} {
 }
 
 // GetSchema retourne un schéma spécifique
-func (ass *AdditionalSchemasService) GetSchema(name string) (map[string]interface{}, bool) {
+func (ass *AdditionalSchemasService) GetSchema(name string) (map[string]any, bool) {
 	schema, exists := ass.schemas[name]
 	if !exists {
 		return nil, false
 	}
 
-	if schemaMap, ok := schema.(map[string]interface{}); ok {
+	if schemaMap, ok := schema.(map[string]any); ok {
 		return schemaMap, true
 	}
 
@@ -168,10 +168,10 @@ func (ass *AdditionalSchemasService) GetSchema(name string) (map[string]interfac
 }
 
 // generateSchemaFromStruct génère un schéma OpenAPI à partir d'un struct Go
-func (ass *AdditionalSchemasService) generateSchemaFromStruct(structInstance interface{}) map[string]interface{} {
-	schema := map[string]interface{}{
+func (ass *AdditionalSchemasService) generateSchemaFromStruct(structInstance any) map[string]any {
+	schema := map[string]any{
 		"type":       "object",
-		"properties": make(map[string]interface{}),
+		"properties": make(map[string]any),
 	}
 
 	structType := reflect.TypeOf(structInstance)
@@ -179,7 +179,7 @@ func (ass *AdditionalSchemasService) generateSchemaFromStruct(structInstance int
 		structType = structType.Elem()
 	}
 
-	properties := schema["properties"].(map[string]interface{})
+	properties := schema["properties"].(map[string]any)
 	var required []string
 
 	for i := 0; i < structType.NumField(); i++ {
@@ -251,7 +251,7 @@ func (ass *AdditionalSchemasService) generateSchemaFromStruct(structInstance int
 }
 
 // addValidationFromBinding ajoute des validations basées sur le tag binding
-func (ass *AdditionalSchemasService) addValidationFromBinding(fieldSchema map[string]interface{}, bindingTag string) {
+func (ass *AdditionalSchemasService) addValidationFromBinding(fieldSchema map[string]any, bindingTag string) {
 	// Parser les validations du tag binding
 	validations := strings.Split(bindingTag, ",")
 
@@ -286,7 +286,7 @@ func (ass *AdditionalSchemasService) addValidationFromBinding(fieldSchema map[st
 }
 
 // getSwaggerTypeFromGoType convertit un type Go vers un type Swagger/OpenAPI
-func (ass *AdditionalSchemasService) getSwaggerTypeFromGoType(goType reflect.Type) map[string]interface{} {
+func (ass *AdditionalSchemasService) getSwaggerTypeFromGoType(goType reflect.Type) map[string]any {
 	// Gérer les pointeurs
 	if goType.Kind() == reflect.Ptr {
 		goType = goType.Elem()
@@ -294,7 +294,7 @@ func (ass *AdditionalSchemasService) getSwaggerTypeFromGoType(goType reflect.Typ
 
 	switch goType.Kind() {
 	case reflect.String:
-		schema := map[string]interface{}{
+		schema := map[string]any{
 			"type": "string",
 		}
 
@@ -308,47 +308,47 @@ func (ass *AdditionalSchemasService) getSwaggerTypeFromGoType(goType reflect.Typ
 		return schema
 
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32:
-		return map[string]interface{}{
+		return map[string]any{
 			"type":    "integer",
 			"format":  "int32",
 			"example": 42,
 		}
 
 	case reflect.Int64:
-		return map[string]interface{}{
+		return map[string]any{
 			"type":    "integer",
 			"format":  "int64",
 			"example": 1234567890,
 		}
 
 	case reflect.Float32:
-		return map[string]interface{}{
+		return map[string]any{
 			"type":    "number",
 			"format":  "float",
 			"example": 3.14,
 		}
 
 	case reflect.Float64:
-		return map[string]interface{}{
+		return map[string]any{
 			"type":    "number",
 			"format":  "double",
 			"example": 3.141592653589793,
 		}
 
 	case reflect.Bool:
-		return map[string]interface{}{
+		return map[string]any{
 			"type":    "boolean",
 			"example": true,
 		}
 
 	case reflect.Slice:
-		return map[string]interface{}{
+		return map[string]any{
 			"type":  "array",
 			"items": ass.getSwaggerTypeFromGoType(goType.Elem()),
 		}
 
 	case reflect.Map:
-		return map[string]interface{}{
+		return map[string]any{
 			"type":                 "object",
 			"additionalProperties": ass.getSwaggerTypeFromGoType(goType.Elem()),
 		}
@@ -357,7 +357,7 @@ func (ass *AdditionalSchemasService) getSwaggerTypeFromGoType(goType reflect.Typ
 		typeName := goType.String()
 
 		if typeName == "time.Time" {
-			return map[string]interface{}{
+			return map[string]any{
 				"type":    "string",
 				"format":  "date-time",
 				"example": "2023-12-07T10:30:00Z",
@@ -366,7 +366,7 @@ func (ass *AdditionalSchemasService) getSwaggerTypeFromGoType(goType reflect.Typ
 
 		// Pour les structs personnalisés, essayer de deviner le type
 		if strings.Contains(typeName, "Action") {
-			return map[string]interface{}{
+			return map[string]any{
 				"type":        "integer",
 				"enum":        []int{0, 1},
 				"example":     0,
@@ -375,19 +375,19 @@ func (ass *AdditionalSchemasService) getSwaggerTypeFromGoType(goType reflect.Typ
 		}
 
 		// Struct générique
-		return map[string]interface{}{
+		return map[string]any{
 			"type":        "object",
 			"description": "Complex object of type " + typeName,
 		}
 
 	case reflect.Interface:
-		return map[string]interface{}{
+		return map[string]any{
 			"type":        "object",
 			"description": "Generic interface type",
 		}
 
 	default:
-		return map[string]interface{}{
+		return map[string]any{
 			"type":        "string",
 			"description": "Unknown type: " + goType.String(),
 		}

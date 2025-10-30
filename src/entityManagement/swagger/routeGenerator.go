@@ -164,21 +164,21 @@ func NewDocumentationGenerator() *DocumentationGenerator {
 }
 
 // GenerateOpenAPISpec avec génération complète de schémas
-func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]interface{} {
+func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]any {
 	swaggerConfigs := ems.GlobalEntityRegistrationService.GetAllSwaggerConfigs()
 
-	spec := map[string]interface{}{
+	spec := map[string]any{
 		"openapi": "3.0.0",
-		"info": map[string]interface{}{
+		"info": map[string]any{
 			"title":       "OCF API - Auto-generated",
 			"version":     "1.0.0",
 			"description": "API documentation automatically generated from entity metadata",
 		},
-		"paths": make(map[string]interface{}),
-		"components": map[string]interface{}{
+		"paths": make(map[string]any),
+		"components": map[string]any{
 			"schemas": dg.generateSchemas(swaggerConfigs),
-			"securitySchemes": map[string]interface{}{
-				"Bearer": map[string]interface{}{
+			"securitySchemes": map[string]any{
+				"Bearer": map[string]any{
 					"type":         "http",
 					"scheme":       "bearer",
 					"bearerFormat": "JWT",
@@ -188,7 +188,7 @@ func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]interface{} {
 		},
 	}
 
-	paths := spec["paths"].(map[string]interface{})
+	paths := spec["paths"].(map[string]any)
 
 	for entityName, config := range swaggerConfigs {
 		re := regexp.MustCompile("([a-z])([A-Z])")
@@ -198,42 +198,42 @@ func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]interface{} {
 		// GET /entities (Get All)
 		if config.GetAll != nil {
 			if paths[basePath] == nil {
-				paths[basePath] = make(map[string]interface{})
+				paths[basePath] = make(map[string]any)
 			}
-			paths[basePath].(map[string]interface{})["get"] = dg.generateGetAllOperationSpec(config.GetAll, entityName)
+			paths[basePath].(map[string]any)["get"] = dg.generateGetAllOperationSpec(config.GetAll, entityName)
 		}
 
 		// POST /entities (Create) avec requestBody
 		if config.Create != nil {
 			if paths[basePath] == nil {
-				paths[basePath] = make(map[string]interface{})
+				paths[basePath] = make(map[string]any)
 			}
-			paths[basePath].(map[string]interface{})["post"] = dg.generateCreateOperationSpec(config.Create, entityName)
+			paths[basePath].(map[string]any)["post"] = dg.generateCreateOperationSpec(config.Create, entityName)
 		}
 
 		// GET /entities/{id} (Get One)
 		pathWithId := basePath + "/{id}"
 		if config.GetOne != nil {
 			if paths[pathWithId] == nil {
-				paths[pathWithId] = make(map[string]interface{})
+				paths[pathWithId] = make(map[string]any)
 			}
-			paths[pathWithId].(map[string]interface{})["get"] = dg.generateGetOneOperationSpec(config.GetOne, entityName)
+			paths[pathWithId].(map[string]any)["get"] = dg.generateGetOneOperationSpec(config.GetOne, entityName)
 		}
 
 		// PATCH /entities/{id} (Update) avec requestBody
 		if config.Update != nil {
 			if paths[pathWithId] == nil {
-				paths[pathWithId] = make(map[string]interface{})
+				paths[pathWithId] = make(map[string]any)
 			}
-			paths[pathWithId].(map[string]interface{})["patch"] = dg.generateUpdateOperationSpec(config.Update, entityName)
+			paths[pathWithId].(map[string]any)["patch"] = dg.generateUpdateOperationSpec(config.Update, entityName)
 		}
 
 		// DELETE /entities/{id} (Delete)
 		if config.Delete != nil {
 			if paths[pathWithId] == nil {
-				paths[pathWithId] = make(map[string]interface{})
+				paths[pathWithId] = make(map[string]any)
 			}
-			paths[pathWithId].(map[string]interface{})["delete"] = dg.generateDeleteOperationSpec(config.Delete, entityName)
+			paths[pathWithId].(map[string]any)["delete"] = dg.generateDeleteOperationSpec(config.Delete, entityName)
 		}
 	}
 
@@ -241,8 +241,8 @@ func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]interface{} {
 }
 
 // Générer les schémas à partir des DTOs enregistrés
-func (dg *DocumentationGenerator) generateSchemas(configs map[string]*entityManagementInterfaces.EntitySwaggerConfig) map[string]interface{} {
-	schemas := make(map[string]interface{})
+func (dg *DocumentationGenerator) generateSchemas(configs map[string]*entityManagementInterfaces.EntitySwaggerConfig) map[string]any {
+	schemas := make(map[string]any)
 
 	for entityName := range configs {
 		log.Printf("🧩 Generating schemas for entity: %s", entityName)
@@ -277,14 +277,14 @@ func (dg *DocumentationGenerator) generateSchemas(configs map[string]*entityMana
 }
 
 // Générer un schéma OpenAPI à partir d'une structure Go via réflexion
-func (dg *DocumentationGenerator) generateSchemaFromStruct(structInstance interface{}) map[string]interface{} {
+func (dg *DocumentationGenerator) generateSchemaFromStruct(structInstance any) map[string]any {
 	// Utiliser la réflexion pour analyser la structure
 	t := reflect.TypeOf(structInstance)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 
-	properties := make(map[string]interface{})
+	properties := make(map[string]any)
 	required := []string{}
 
 	for i := 0; i < t.NumField(); i++ {
@@ -327,7 +327,7 @@ func (dg *DocumentationGenerator) generateSchemaFromStruct(structInstance interf
 		}
 	}
 
-	schema := map[string]interface{}{
+	schema := map[string]any{
 		"type":       "object",
 		"properties": properties,
 	}
@@ -340,23 +340,23 @@ func (dg *DocumentationGenerator) generateSchemaFromStruct(structInstance interf
 }
 
 // Convertir un type Go vers un type OpenAPI
-func (dg *DocumentationGenerator) getOpenAPIType(t reflect.Type) map[string]interface{} {
+func (dg *DocumentationGenerator) getOpenAPIType(t reflect.Type) map[string]any {
 	switch t.Kind() {
 	case reflect.String:
-		return map[string]interface{}{"type": "string"}
+		return map[string]any{"type": "string"}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32:
-		return map[string]interface{}{"type": "integer", "format": "int32"}
+		return map[string]any{"type": "integer", "format": "int32"}
 	case reflect.Int64:
-		return map[string]interface{}{"type": "integer", "format": "int64"}
+		return map[string]any{"type": "integer", "format": "int64"}
 	case reflect.Float32:
-		return map[string]interface{}{"type": "number", "format": "float"}
+		return map[string]any{"type": "number", "format": "float"}
 	case reflect.Float64:
-		return map[string]interface{}{"type": "number", "format": "double"}
+		return map[string]any{"type": "number", "format": "double"}
 	case reflect.Bool:
-		return map[string]interface{}{"type": "boolean"}
+		return map[string]any{"type": "boolean"}
 	case reflect.Slice:
 		elemType := dg.getOpenAPIType(t.Elem())
-		return map[string]interface{}{
+		return map[string]any{
 			"type":  "array",
 			"items": elemType,
 		}
@@ -367,34 +367,34 @@ func (dg *DocumentationGenerator) getOpenAPIType(t reflect.Type) map[string]inte
 		// Pour les types comme time.Time, uuid.UUID, etc.
 		switch t.String() {
 		case "time.Time":
-			return map[string]interface{}{
+			return map[string]any{
 				"type":   "string",
 				"format": "date-time",
 			}
 		case "uuid.UUID":
-			return map[string]interface{}{
+			return map[string]any{
 				"type":   "string",
 				"format": "uuid",
 			}
 		default:
-			return map[string]interface{}{"type": "object"}
+			return map[string]any{"type": "object"}
 		}
 	default:
-		return map[string]interface{}{"type": "string"}
+		return map[string]any{"type": "string"}
 	}
 }
 
 // Opérations spécialisées avec requestBody et réponses complètes
 
-func (dg *DocumentationGenerator) generateCreateOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+func (dg *DocumentationGenerator) generateCreateOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]any {
 	spec := dg.generateBaseOperationSpec(operation)
 
 	// Ajouter le requestBody pour POST
-	spec["requestBody"] = map[string]interface{}{
+	spec["requestBody"] = map[string]any{
 		"required": true,
-		"content": map[string]interface{}{
-			"application/json": map[string]interface{}{
-				"schema": map[string]interface{}{
+		"content": map[string]any{
+			"application/json": map[string]any{
+				"schema": map[string]any{
 					"$ref": fmt.Sprintf("#/components/schemas/%sCreateInput", entityName),
 				},
 			},
@@ -402,12 +402,12 @@ func (dg *DocumentationGenerator) generateCreateOperationSpec(operation *entityM
 	}
 
 	// Ajouter les réponses détaillées
-	spec["responses"] = map[string]interface{}{
-		"201": map[string]interface{}{
+	spec["responses"] = map[string]any{
+		"201": map[string]any{
 			"description": fmt.Sprintf("%s created successfully", entityName),
-			"content": map[string]interface{}{
-				"application/json": map[string]interface{}{
-					"schema": map[string]interface{}{
+			"content": map[string]any{
+				"application/json": map[string]any{
+					"schema": map[string]any{
 						"$ref": fmt.Sprintf("#/components/schemas/%sOutput", entityName),
 					},
 				},
@@ -421,17 +421,17 @@ func (dg *DocumentationGenerator) generateCreateOperationSpec(operation *entityM
 	return spec
 }
 
-func (dg *DocumentationGenerator) generateUpdateOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+func (dg *DocumentationGenerator) generateUpdateOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]any {
 	spec := dg.generateBaseOperationSpec(operation)
 
 	// Ajouter le paramètre id
-	spec["parameters"] = []map[string]interface{}{
+	spec["parameters"] = []map[string]any{
 		{
 			"name":        "id",
 			"in":          "path",
 			"required":    true,
 			"description": fmt.Sprintf("%s ID", entityName),
-			"schema": map[string]interface{}{
+			"schema": map[string]any{
 				"type":   "string",
 				"format": "uuid",
 			},
@@ -439,19 +439,19 @@ func (dg *DocumentationGenerator) generateUpdateOperationSpec(operation *entityM
 	}
 
 	// Ajouter le requestBody pour PATCH
-	spec["requestBody"] = map[string]interface{}{
+	spec["requestBody"] = map[string]any{
 		"required": true,
-		"content": map[string]interface{}{
-			"application/json": map[string]interface{}{
-				"schema": map[string]interface{}{
+		"content": map[string]any{
+			"application/json": map[string]any{
+				"schema": map[string]any{
 					"$ref": fmt.Sprintf("#/components/schemas/%sUpdateInput", entityName),
 				},
 			},
 		},
 	}
 
-	spec["responses"] = map[string]interface{}{
-		"204": map[string]interface{}{
+	spec["responses"] = map[string]any{
+		"204": map[string]any{
 			"description": fmt.Sprintf("%s updated successfully", entityName),
 		},
 		"400": dg.generateErrorResponse("Bad request"),
@@ -463,17 +463,17 @@ func (dg *DocumentationGenerator) generateUpdateOperationSpec(operation *entityM
 	return spec
 }
 
-func (dg *DocumentationGenerator) generateGetAllOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+func (dg *DocumentationGenerator) generateGetAllOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]any {
 	spec := dg.generateBaseOperationSpec(operation)
 
-	spec["responses"] = map[string]interface{}{
-		"200": map[string]interface{}{
+	spec["responses"] = map[string]any{
+		"200": map[string]any{
 			"description": fmt.Sprintf("List of %s", strings.ToLower(ems.Pluralize(entityName))),
-			"content": map[string]interface{}{
-				"application/json": map[string]interface{}{
-					"schema": map[string]interface{}{
+			"content": map[string]any{
+				"application/json": map[string]any{
+					"schema": map[string]any{
 						"type": "array",
-						"items": map[string]interface{}{
+						"items": map[string]any{
 							"$ref": fmt.Sprintf("#/components/schemas/%sOutput", entityName),
 						},
 					},
@@ -487,28 +487,28 @@ func (dg *DocumentationGenerator) generateGetAllOperationSpec(operation *entityM
 	return spec
 }
 
-func (dg *DocumentationGenerator) generateGetOneOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+func (dg *DocumentationGenerator) generateGetOneOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]any {
 	spec := dg.generateBaseOperationSpec(operation)
 
-	spec["parameters"] = []map[string]interface{}{
+	spec["parameters"] = []map[string]any{
 		{
 			"name":        "id",
 			"in":          "path",
 			"required":    true,
 			"description": fmt.Sprintf("%s ID", entityName),
-			"schema": map[string]interface{}{
+			"schema": map[string]any{
 				"type":   "string",
 				"format": "uuid",
 			},
 		},
 	}
 
-	spec["responses"] = map[string]interface{}{
-		"200": map[string]interface{}{
+	spec["responses"] = map[string]any{
+		"200": map[string]any{
 			"description": fmt.Sprintf("%s details", entityName),
-			"content": map[string]interface{}{
-				"application/json": map[string]interface{}{
-					"schema": map[string]interface{}{
+			"content": map[string]any{
+				"application/json": map[string]any{
+					"schema": map[string]any{
 						"$ref": fmt.Sprintf("#/components/schemas/%sOutput", entityName),
 					},
 				},
@@ -522,24 +522,24 @@ func (dg *DocumentationGenerator) generateGetOneOperationSpec(operation *entityM
 	return spec
 }
 
-func (dg *DocumentationGenerator) generateDeleteOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]interface{} {
+func (dg *DocumentationGenerator) generateDeleteOperationSpec(operation *entityManagementInterfaces.SwaggerOperation, entityName string) map[string]any {
 	spec := dg.generateBaseOperationSpec(operation)
 
-	spec["parameters"] = []map[string]interface{}{
+	spec["parameters"] = []map[string]any{
 		{
 			"name":        "id",
 			"in":          "path",
 			"required":    true,
 			"description": fmt.Sprintf("%s ID", entityName),
-			"schema": map[string]interface{}{
+			"schema": map[string]any{
 				"type":   "string",
 				"format": "uuid",
 			},
 		},
 	}
 
-	spec["responses"] = map[string]interface{}{
-		"204": map[string]interface{}{
+	spec["responses"] = map[string]any{
+		"204": map[string]any{
 			"description": fmt.Sprintf("%s deleted successfully", entityName),
 		},
 		"401": dg.generateErrorResponse("Unauthorized"),
@@ -550,15 +550,15 @@ func (dg *DocumentationGenerator) generateDeleteOperationSpec(operation *entityM
 	return spec
 }
 
-func (dg *DocumentationGenerator) generateBaseOperationSpec(operation *entityManagementInterfaces.SwaggerOperation) map[string]interface{} {
-	spec := map[string]interface{}{
+func (dg *DocumentationGenerator) generateBaseOperationSpec(operation *entityManagementInterfaces.SwaggerOperation) map[string]any {
+	spec := map[string]any{
 		"summary":     operation.Summary,
 		"description": operation.Description,
 		"tags":        operation.Tags,
 	}
 
 	if operation.Security {
-		spec["security"] = []map[string]interface{}{
+		spec["security"] = []map[string]any{
 			{"Bearer": []string{}},
 		}
 	}
@@ -567,18 +567,18 @@ func (dg *DocumentationGenerator) generateBaseOperationSpec(operation *entityMan
 }
 
 // Génération standardisée des réponses d'erreur
-func (dg *DocumentationGenerator) generateErrorResponse(description string) map[string]interface{} {
-	return map[string]interface{}{
+func (dg *DocumentationGenerator) generateErrorResponse(description string) map[string]any {
+	return map[string]any{
 		"description": description,
-		"content": map[string]interface{}{
-			"application/json": map[string]interface{}{
-				"schema": map[string]interface{}{
+		"content": map[string]any{
+			"application/json": map[string]any{
+				"schema": map[string]any{
 					"type": "object",
-					"properties": map[string]interface{}{
-						"error_code": map[string]interface{}{
+					"properties": map[string]any{
+						"error_code": map[string]any{
 							"type": "integer",
 						},
-						"error_message": map[string]interface{}{
+						"error_message": map[string]any{
 							"type": "string",
 						},
 					},

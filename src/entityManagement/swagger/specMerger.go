@@ -25,7 +25,7 @@ func NewSwaggerSpecMerger() *SwaggerSpecMerger {
 }
 
 // MergeSpecs combine les deux sources de documentation
-func (sm *SwaggerSpecMerger) MergeSpecs() map[string]interface{} {
+func (sm *SwaggerSpecMerger) MergeSpecs() map[string]any {
 	// 1. Créer une spec de base valide
 	baseSpec := sm.createValidBaseSpec()
 
@@ -60,35 +60,35 @@ func (sm *SwaggerSpecMerger) MergeSpecs() map[string]interface{} {
 }
 
 // createValidBaseSpec crée une spécification OpenAPI de base valide
-func (sm *SwaggerSpecMerger) createValidBaseSpec() map[string]interface{} {
+func (sm *SwaggerSpecMerger) createValidBaseSpec() map[string]any {
 	serverURL := sm.getServerURL()
 
 	// 🚨 DEBUG : Log pour vérifier l'URL générée
 	log.Printf("🔍 Swagger server URL configured: %s", serverURL)
 
-	return map[string]interface{}{
+	return map[string]any{
 		"openapi": "3.0.3",
-		"info": map[string]interface{}{
+		"info": map[string]any{
 			"title":       "OCF API Documentation",
 			"version":     sm.getAPIVersion(),
 			"description": "API complète pour OCF - Documentation hybride (manuelle + auto-générée)",
-			"contact": map[string]interface{}{
+			"contact": map[string]any{
 				"name": "OCF Development Team",
 			},
 			"x-documentation-type": "hybrid",
 			"x-generated-at":       sm.getCurrentTimestamp(),
 		},
-		"servers": []map[string]interface{}{
+		"servers": []map[string]any{
 			{
 				"url":         serverURL,
 				"description": "OCF API Server",
 			},
 		},
-		"paths": make(map[string]interface{}),
-		"components": map[string]interface{}{
-			"schemas": make(map[string]interface{}),
-			"securitySchemes": map[string]interface{}{
-				"Bearer": map[string]interface{}{
+		"paths": make(map[string]any),
+		"components": map[string]any{
+			"schemas": make(map[string]any),
+			"securitySchemes": map[string]any{
+				"Bearer": map[string]any{
 					"type":         "http",
 					"scheme":       "bearer",
 					"bearerFormat": "JWT",
@@ -96,11 +96,11 @@ func (sm *SwaggerSpecMerger) createValidBaseSpec() map[string]interface{} {
 				},
 			},
 		},
-		"tags": []map[string]interface{}{},
+		"tags": []map[string]any{},
 	}
 }
 
-func (sm *SwaggerSpecMerger) getSwagSpecSafely() map[string]interface{} {
+func (sm *SwaggerSpecMerger) getSwagSpecSafely() map[string]any {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("⚠️  Failed to get swag spec (panic): %v", r)
@@ -125,7 +125,7 @@ func (sm *SwaggerSpecMerger) getSwagSpecSafely() map[string]interface{} {
 
 	log.Printf("📄 Raw swag JSON loaded successfully (%d characters)", len(swagJSON))
 
-	var swagSpec map[string]interface{}
+	var swagSpec map[string]any
 	if err := json.Unmarshal([]byte(swagJSON), &swagSpec); err != nil {
 		log.Printf("⚠️  Failed to unmarshal swag spec: %v", err)
 		return nil
@@ -134,7 +134,7 @@ func (sm *SwaggerSpecMerger) getSwagSpecSafely() map[string]interface{} {
 	return swagSpec
 }
 
-func (sm *SwaggerSpecMerger) addSwagContent(baseSpec map[string]interface{}) {
+func (sm *SwaggerSpecMerger) addSwagContent(baseSpec map[string]any) {
 	swagSpec := sm.getSwagSpecSafely()
 	if swagSpec == nil {
 		log.Println("⚠️  No swag documentation found, using auto-generated only")
@@ -169,10 +169,10 @@ func (sm *SwaggerSpecMerger) addSwagContent(baseSpec map[string]interface{}) {
 
 	// Merger les tags de swag
 	if swagTags := sm.getTags(swagSpec); swagTags != nil {
-		if swagTagsList, ok := swagTags.([]interface{}); ok {
-			baseTags := baseSpec["tags"].([]map[string]interface{})
+		if swagTagsList, ok := swagTags.([]any); ok {
+			baseTags := baseSpec["tags"].([]map[string]any)
 			for _, tag := range swagTagsList {
-				if tagMap, ok := tag.(map[string]interface{}); ok {
+				if tagMap, ok := tag.(map[string]any); ok {
 					baseTags = append(baseTags, tagMap)
 				}
 			}
@@ -183,10 +183,10 @@ func (sm *SwaggerSpecMerger) addSwagContent(baseSpec map[string]interface{}) {
 	// Merger les schémas de swag si disponibles
 	if swagComponents := sm.getComponents(swagSpec); swagComponents != nil {
 		if swagSchemas, exists := swagComponents["schemas"]; exists {
-			baseComponents := baseSpec["components"].(map[string]interface{})
-			baseSchemas := baseComponents["schemas"].(map[string]interface{})
+			baseComponents := baseSpec["components"].(map[string]any)
+			baseSchemas := baseComponents["schemas"].(map[string]any)
 
-			if swagSchemasMap, ok := swagSchemas.(map[string]interface{}); ok {
+			if swagSchemasMap, ok := swagSchemas.(map[string]any); ok {
 				for schemaName, schema := range swagSchemasMap {
 					baseSchemas[schemaName] = schema
 					log.Printf("  📝 Added swag schema: %s", schemaName)
@@ -200,25 +200,25 @@ func (sm *SwaggerSpecMerger) addSwagContent(baseSpec map[string]interface{}) {
 }
 
 // Récupérer les schémas depuis components
-func (sm *SwaggerSpecMerger) getSchemas(spec map[string]interface{}) map[string]interface{} {
+func (sm *SwaggerSpecMerger) getSchemas(spec map[string]any) map[string]any {
 	if components := sm.getComponents(spec); components != nil {
 		if schemas, exists := components["schemas"]; exists {
-			if schemasMap, ok := schemas.(map[string]interface{}); ok {
+			if schemasMap, ok := schemas.(map[string]any); ok {
 				return schemasMap
 			}
 		}
 	}
-	return make(map[string]interface{})
+	return make(map[string]any)
 }
 
-func (sm *SwaggerSpecMerger) convertSwagger2References(spec map[string]interface{}) {
+func (sm *SwaggerSpecMerger) convertSwagger2References(spec map[string]any) {
 	// Convertir récursivement toutes les références dans la spec
 	sm.convertReferencesInMap(spec)
 }
 
-func (sm *SwaggerSpecMerger) convertReferencesInMap(obj interface{}) {
+func (sm *SwaggerSpecMerger) convertReferencesInMap(obj any) {
 	switch v := obj.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		for key, value := range v {
 			if key == "$ref" {
 				if refStr, ok := value.(string); ok {
@@ -233,7 +233,7 @@ func (sm *SwaggerSpecMerger) convertReferencesInMap(obj interface{}) {
 				sm.convertReferencesInMap(value)
 			}
 		}
-	case []interface{}:
+	case []any:
 		for _, item := range v {
 			sm.convertReferencesInMap(item)
 		}
@@ -241,7 +241,7 @@ func (sm *SwaggerSpecMerger) convertReferencesInMap(obj interface{}) {
 }
 
 // Ajouter les schémas communs manquants
-func (sm *SwaggerSpecMerger) addCommonSchemas(spec map[string]interface{}) {
+func (sm *SwaggerSpecMerger) addCommonSchemas(spec map[string]any) {
 	schemas := sm.getSchemas(spec)
 
 	// Utiliser le service de schémas additionnels
@@ -258,7 +258,7 @@ func (sm *SwaggerSpecMerger) addCommonSchemas(spec map[string]interface{}) {
 }
 
 // addAutoGeneratedContent ajoute la documentation auto-générée
-func (sm *SwaggerSpecMerger) addAutoGeneratedContent(baseSpec, autoSpec map[string]interface{}) {
+func (sm *SwaggerSpecMerger) addAutoGeneratedContent(baseSpec, autoSpec map[string]any) {
 	log.Println("🤖 Generating auto-documentation for entities...")
 
 	if autoSpec == nil {
@@ -293,11 +293,11 @@ func (sm *SwaggerSpecMerger) addAutoGeneratedContent(baseSpec, autoSpec map[stri
 
 	// Merger les tags auto-générés
 	if autoTags := sm.getTags(autoSpec); autoTags != nil {
-		if autoTagsList, ok := autoTags.([]interface{}); ok {
-			baseTags := baseSpec["tags"].([]map[string]interface{})
+		if autoTagsList, ok := autoTags.([]any); ok {
+			baseTags := baseSpec["tags"].([]map[string]any)
 
 			for _, autoTag := range autoTagsList {
-				if autoTagMap, ok := autoTag.(map[string]interface{}); ok {
+				if autoTagMap, ok := autoTag.(map[string]any); ok {
 					// Vérifier si le tag existe déjà
 					exists := false
 					for _, existingTag := range baseTags {
@@ -320,16 +320,16 @@ func (sm *SwaggerSpecMerger) addAutoGeneratedContent(baseSpec, autoSpec map[stri
 	// Merger les schémas auto-générés
 	if autoComponents := sm.getComponents(autoSpec); autoComponents != nil {
 		if autoSchemas, exists := autoComponents["schemas"]; exists {
-			baseComponents := baseSpec["components"].(map[string]interface{})
-			baseSchemas := baseComponents["schemas"].(map[string]interface{})
+			baseComponents := baseSpec["components"].(map[string]any)
+			baseSchemas := baseComponents["schemas"].(map[string]any)
 
-			if autoSchemasMap, ok := autoSchemas.(map[string]interface{}); ok {
+			if autoSchemasMap, ok := autoSchemas.(map[string]any); ok {
 				addedSchemasCount := 0
 				skippedSchemasCount := 0
 
 				for schemaName, schema := range autoSchemasMap {
 					if _, exists := baseSchemas[schemaName]; !exists {
-						if schemaMap, ok := schema.(map[string]interface{}); ok {
+						if schemaMap, ok := schema.(map[string]any); ok {
 							schemaMap["x-auto-generated"] = true
 							baseSchemas[schemaName] = schemaMap
 							addedSchemasCount++
@@ -351,7 +351,7 @@ func (sm *SwaggerSpecMerger) addAutoGeneratedContent(baseSpec, autoSpec map[stri
 }
 
 // validateAndFixSpec valide et corrige la spec finale
-func (sm *SwaggerSpecMerger) validateAndFixSpec(spec map[string]interface{}) {
+func (sm *SwaggerSpecMerger) validateAndFixSpec(spec map[string]any) {
 	// S'assurer que les champs obligatoires existent
 	if _, exists := spec["openapi"]; !exists {
 		spec["openapi"] = "3.0.3"
@@ -359,7 +359,7 @@ func (sm *SwaggerSpecMerger) validateAndFixSpec(spec map[string]interface{}) {
 	}
 
 	if info, exists := spec["info"]; exists {
-		if infoMap, ok := info.(map[string]interface{}); ok {
+		if infoMap, ok := info.(map[string]any); ok {
 			if _, exists := infoMap["title"]; !exists {
 				infoMap["title"] = "OCF API"
 				log.Println("🔧 Added missing title field")
@@ -373,13 +373,13 @@ func (sm *SwaggerSpecMerger) validateAndFixSpec(spec map[string]interface{}) {
 
 	// S'assurer que paths existe
 	if _, exists := spec["paths"]; !exists {
-		spec["paths"] = make(map[string]interface{})
+		spec["paths"] = make(map[string]any)
 		log.Println("🔧 Added missing paths field")
 	}
 
 	// URL du serveur
 	if servers, exists := spec["servers"]; exists {
-		if serversList, ok := servers.([]map[string]interface{}); ok {
+		if serversList, ok := servers.([]map[string]any); ok {
 			for _, server := range serversList {
 				if url, exists := server["url"]; exists {
 					if urlStr, ok := url.(string); ok {
@@ -396,8 +396,8 @@ func (sm *SwaggerSpecMerger) validateAndFixSpec(spec map[string]interface{}) {
 
 	// Ajouter des métadonnées sur le processus de merge
 	if info, exists := spec["info"]; exists {
-		if infoMap, ok := info.(map[string]interface{}); ok {
-			infoMap["x-merge-info"] = map[string]interface{}{
+		if infoMap, ok := info.(map[string]any); ok {
+			infoMap["x-merge-info"] = map[string]any{
 				"auto-generated-entities": len(ems.GlobalEntityRegistrationService.GetAllSwaggerConfigs()),
 				"manual-paths":            sm.countManualPaths(spec),
 				"auto-paths":              sm.countAutoPaths(spec),
@@ -424,12 +424,12 @@ func (sm *SwaggerSpecMerger) isAutoGeneratedPath(path string) bool {
 	return false
 }
 
-func (sm *SwaggerSpecMerger) markAsAutoGenerated(pathSpec interface{}) {
-	if pathMap, ok := pathSpec.(map[string]interface{}); ok {
+func (sm *SwaggerSpecMerger) markAsAutoGenerated(pathSpec any) {
+	if pathMap, ok := pathSpec.(map[string]any); ok {
 		for _, methodSpec := range pathMap {
-			if methodMap, ok := methodSpec.(map[string]interface{}); ok {
+			if methodMap, ok := methodSpec.(map[string]any); ok {
 				if tags, exists := methodMap["tags"]; exists {
-					if tagsList, ok := tags.([]interface{}); ok {
+					if tagsList, ok := tags.([]any); ok {
 						// Convertir en []string et ajouter le tag auto-generated
 						stringTags := make([]string, 0, len(tagsList)+1)
 						for _, tag := range tagsList {
@@ -449,7 +449,7 @@ func (sm *SwaggerSpecMerger) markAsAutoGenerated(pathSpec interface{}) {
 	}
 }
 
-func (sm *SwaggerSpecMerger) countManualPaths(spec map[string]interface{}) int {
+func (sm *SwaggerSpecMerger) countManualPaths(spec map[string]any) int {
 	count := 0
 	if paths := sm.getPaths(spec); paths != nil {
 		for _, pathSpec := range paths {
@@ -461,7 +461,7 @@ func (sm *SwaggerSpecMerger) countManualPaths(spec map[string]interface{}) int {
 	return count
 }
 
-func (sm *SwaggerSpecMerger) countAutoPaths(spec map[string]interface{}) int {
+func (sm *SwaggerSpecMerger) countAutoPaths(spec map[string]any) int {
 	count := 0
 	if paths := sm.getPaths(spec); paths != nil {
 		for _, pathSpec := range paths {
@@ -473,10 +473,10 @@ func (sm *SwaggerSpecMerger) countAutoPaths(spec map[string]interface{}) int {
 	return count
 }
 
-func (sm *SwaggerSpecMerger) hasAutoGeneratedMarker(pathSpec interface{}) bool {
-	if pathMap, ok := pathSpec.(map[string]interface{}); ok {
+func (sm *SwaggerSpecMerger) hasAutoGeneratedMarker(pathSpec any) bool {
+	if pathMap, ok := pathSpec.(map[string]any); ok {
 		for _, methodSpec := range pathMap {
-			if methodMap, ok := methodSpec.(map[string]interface{}); ok {
+			if methodMap, ok := methodSpec.(map[string]any); ok {
 				if autoGen, exists := methodMap["x-auto-generated"]; exists {
 					if autoGenBool, ok := autoGen.(bool); ok && autoGenBool {
 						return true
@@ -507,25 +507,25 @@ func (sm *SwaggerSpecMerger) getCurrentTimestamp() string {
 }
 
 // Fonctions utilitaires héritées
-func (sm *SwaggerSpecMerger) getPaths(spec map[string]interface{}) map[string]interface{} {
+func (sm *SwaggerSpecMerger) getPaths(spec map[string]any) map[string]any {
 	if paths, exists := spec["paths"]; exists {
-		if pathsMap, ok := paths.(map[string]interface{}); ok {
+		if pathsMap, ok := paths.(map[string]any); ok {
 			return pathsMap
 		}
 	}
-	return make(map[string]interface{})
+	return make(map[string]any)
 }
 
-func (sm *SwaggerSpecMerger) getComponents(spec map[string]interface{}) map[string]interface{} {
+func (sm *SwaggerSpecMerger) getComponents(spec map[string]any) map[string]any {
 	if components, exists := spec["components"]; exists {
-		if componentsMap, ok := components.(map[string]interface{}); ok {
+		if componentsMap, ok := components.(map[string]any); ok {
 			return componentsMap
 		}
 	}
 	return nil
 }
 
-func (sm *SwaggerSpecMerger) getTags(spec map[string]interface{}) interface{} {
+func (sm *SwaggerSpecMerger) getTags(spec map[string]any) any {
 	if tags, exists := spec["tags"]; exists {
 		return tags
 	}
@@ -533,16 +533,16 @@ func (sm *SwaggerSpecMerger) getTags(spec map[string]interface{}) interface{} {
 }
 
 // SwaggerMergeMiddleware permet d'exposer la spec mergée
-func SwaggerMergeMiddleware() func() map[string]interface{} {
+func SwaggerMergeMiddleware() func() map[string]any {
 	merger := NewSwaggerSpecMerger()
 
-	return func() map[string]interface{} {
+	return func() map[string]any {
 		return merger.MergeSpecs()
 	}
 }
 
 // convertBodyParamsToRequestBody convertit les paramètres body Swagger 2.0 en requestBody OpenAPI 3.0
-func (sm *SwaggerSpecMerger) convertBodyParamsToRequestBody(spec map[string]interface{}) {
+func (sm *SwaggerSpecMerger) convertBodyParamsToRequestBody(spec map[string]any) {
 	paths := sm.getPaths(spec)
 	if paths == nil {
 		return
@@ -551,10 +551,10 @@ func (sm *SwaggerSpecMerger) convertBodyParamsToRequestBody(spec map[string]inte
 	log.Println("🔄 Converting Swagger 2.0 body parameters to OpenAPI 3.0 requestBody...")
 
 	for pathKey, pathValue := range paths {
-		if pathMap, ok := pathValue.(map[string]interface{}); ok {
+		if pathMap, ok := pathValue.(map[string]any); ok {
 			// Pour chaque méthode HTTP (get, post, put, patch, delete)
 			for method, methodValue := range pathMap {
-				if methodMap, ok := methodValue.(map[string]interface{}); ok {
+				if methodMap, ok := methodValue.(map[string]any); ok {
 					converted := sm.convertMethodBodyParams(methodMap)
 					if converted {
 						log.Printf("  ✅ Converted %s %s", method, pathKey)
@@ -566,24 +566,24 @@ func (sm *SwaggerSpecMerger) convertBodyParamsToRequestBody(spec map[string]inte
 }
 
 // convertMethodBodyParams convertit les body params d'une méthode spécifique
-func (sm *SwaggerSpecMerger) convertMethodBodyParams(methodMap map[string]interface{}) bool {
+func (sm *SwaggerSpecMerger) convertMethodBodyParams(methodMap map[string]any) bool {
 	parameters, hasParams := methodMap["parameters"]
 	if !hasParams {
 		return false
 	}
 
-	paramList, ok := parameters.([]interface{})
+	paramList, ok := parameters.([]any)
 	if !ok {
 		return false
 	}
 
-	var bodyParam map[string]interface{}
-	otherParams := make([]interface{}, 0, len(paramList))
+	var bodyParam map[string]any
+	otherParams := make([]any, 0, len(paramList))
 	var foundBodyParam = false
 
 	// Séparer les paramètres body des autres
 	for _, param := range paramList {
-		if paramMap, ok := param.(map[string]interface{}); ok {
+		if paramMap, ok := param.(map[string]any); ok {
 			if in, exists := paramMap["in"]; exists && in == "body" {
 				bodyParam = paramMap
 				foundBodyParam = true
@@ -596,17 +596,17 @@ func (sm *SwaggerSpecMerger) convertMethodBodyParams(methodMap map[string]interf
 	// Si on a trouvé un paramètre body, le convertir en requestBody
 	if foundBodyParam && bodyParam != nil {
 		// Créer le requestBody OpenAPI 3.0
-		requestBody := map[string]interface{}{
+		requestBody := map[string]any{
 			"required": true,
-			"content": map[string]interface{}{
-				"application/json": map[string]interface{}{},
+			"content": map[string]any{
+				"application/json": map[string]any{},
 			},
 		}
 
 		// Ajouter le schema
 		if schema, exists := bodyParam["schema"]; exists {
-			content := requestBody["content"].(map[string]interface{})
-			applicationJson := content["application/json"].(map[string]interface{})
+			content := requestBody["content"].(map[string]any)
+			applicationJson := content["application/json"].(map[string]any)
 			applicationJson["schema"] = schema
 		}
 
@@ -636,7 +636,7 @@ func (sm *SwaggerSpecMerger) convertMethodBodyParams(methodMap map[string]interf
 	return false
 }
 
-func (sm *SwaggerSpecMerger) diagnoseAndFixSchemaIssues(baseSpec map[string]interface{}) {
+func (sm *SwaggerSpecMerger) diagnoseAndFixSchemaIssues(baseSpec map[string]any) {
 	schemas := sm.getSchemas(baseSpec)
 
 	log.Printf("🔍 Current schemas in baseSpec: %d", len(schemas))
@@ -649,7 +649,7 @@ func (sm *SwaggerSpecMerger) diagnoseAndFixSchemaIssues(baseSpec map[string]inte
 	if swagSpec != nil {
 		if swagComponents := sm.getComponents(swagSpec); swagComponents != nil {
 			if swagSchemas, exists := swagComponents["schemas"]; exists {
-				if swagSchemasMap, ok := swagSchemas.(map[string]interface{}); ok {
+				if swagSchemasMap, ok := swagSchemas.(map[string]any); ok {
 					log.Printf("📋 Swag schemas found: %d", len(swagSchemasMap))
 					for name := range swagSchemasMap {
 						log.Printf("  📝 Swag schema: %s", name)
@@ -669,27 +669,27 @@ func (sm *SwaggerSpecMerger) diagnoseAndFixSchemaIssues(baseSpec map[string]inte
 }
 
 // convertSwagger2ToOpenAPI3 convertit les definitions en schemas
-func (sm *SwaggerSpecMerger) convertSwagger2ToOpenAPI3(spec map[string]interface{}) {
+func (sm *SwaggerSpecMerger) convertSwagger2ToOpenAPI3(spec map[string]any) {
 	log.Printf("🔄 Converting Swagger 2.0 definitions to OpenAPI 3.0 schemas...")
 
 	// Vérifier s'il y a des definitions à convertir
 	if definitions, exists := spec["definitions"]; exists {
-		if defsMap, ok := definitions.(map[string]interface{}); ok {
+		if defsMap, ok := definitions.(map[string]any); ok {
 			log.Printf("🔄 Converting %d definitions to schemas", len(defsMap))
 
 			// S'assurer que components existe
 			if _, exists := spec["components"]; !exists {
-				spec["components"] = make(map[string]interface{})
+				spec["components"] = make(map[string]any)
 			}
 
-			components := spec["components"].(map[string]interface{})
+			components := spec["components"].(map[string]any)
 
 			// S'assurer que schemas existe
 			if _, exists := components["schemas"]; !exists {
-				components["schemas"] = make(map[string]interface{})
+				components["schemas"] = make(map[string]any)
 			}
 
-			schemas := components["schemas"].(map[string]interface{})
+			schemas := components["schemas"].(map[string]any)
 
 			// Copier toutes les definitions vers schemas
 			for name, def := range defsMap {
