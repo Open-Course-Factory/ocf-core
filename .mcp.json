@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://ocf:root@postgres:5432/ocf"
+      ],
+      "env": {
+        "PGPASSWORD": "root"
+      }
+    },
+    "postgres-test": {
+      "command": "npx",
+      "args": [
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://ocf:root@postgres:5432/ocf_test"
+      ],
+      "env": {
+        "PGPASSWORD": "root"
+      }
+    }
+  }
+}
