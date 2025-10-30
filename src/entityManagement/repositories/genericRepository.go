@@ -156,18 +156,16 @@ func (o *genericRepository) GetEntity(id uuid.UUID, data any, entityName string,
 
 func getPreloadString(entityName string, queryPreloadsString *string, firstIteration bool) {
 	subEntities := ems.GlobalEntityRegistrationService.GetSubEntites(entityName)
-	if len(subEntities) > 0 {
-		for _, subEntity := range subEntities {
-			subEntityName := reflect.TypeOf(subEntity).Name()
-			resourceName := ems.Pluralize(subEntityName)
-			if firstIteration {
-				*queryPreloadsString = resourceName
-			} else {
-				*queryPreloadsString = *queryPreloadsString + "." + resourceName
-			}
-
-			getPreloadString(subEntityName, queryPreloadsString, false)
+	for _, subEntity := range subEntities {
+		subEntityName := reflect.TypeOf(subEntity).Name()
+		resourceName := ems.Pluralize(subEntityName)
+		if firstIteration {
+			*queryPreloadsString = resourceName
+		} else {
+			*queryPreloadsString = *queryPreloadsString + "." + resourceName
 		}
+
+		getPreloadString(subEntityName, queryPreloadsString, false)
 	}
 }
 
