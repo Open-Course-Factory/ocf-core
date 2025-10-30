@@ -484,8 +484,8 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 	}
 
 	// 5. Synchronisation bidirectionnelle
-	var sessionResults []dto.SyncSessionResponse
-	var errors []string
+	sessionResults := make([]dto.SyncSessionResponse, 0, len(apiSessionsMap)+len(localSessionsMap))
+	errors := make([]string, 0, 8)
 	syncedCount := 0
 	updatedCount := 0
 	createdCount := 0
@@ -718,7 +718,7 @@ func (tts *terminalTrainerService) getAllSessionsFromAllInstanceTypes(userAPIKey
 	}
 
 	// 3. Récupérer les sessions depuis chaque type d'instance utilisé
-	var allSessions []dto.TerminalTrainerSession
+	allSessions := make([]dto.TerminalTrainerSession, 0, len(instanceTypesUsed)*10)
 	totalCount := 0
 
 	for instanceType := range instanceTypesUsed {
@@ -989,7 +989,7 @@ func (tts *terminalTrainerService) GetSharedTerminalInfo(sessionID, userID strin
 	}
 
 	// Si l'utilisateur est le propriétaire, récupérer tous les partages
-	var shares []dto.TerminalShareOutput
+	shares := make([]dto.TerminalShareOutput, 0, 8)
 	if terminal.UserID == userID {
 		terminalShares, err := tts.repository.GetTerminalSharesByTerminalID(terminal.ID.String())
 		if err == nil {
@@ -1255,7 +1255,7 @@ func (tts *terminalTrainerService) FixTerminalHidePermissions(userID string) (*d
 		UserID:             userID,
 		ProcessedTerminals: 0,
 		ProcessedShares:    0,
-		Errors:             []string{},
+		Errors:             make([]string, 0, 4),
 	}
 
 	// 1. Ajouter les permissions générales de masquage pour cet utilisateur
@@ -1358,7 +1358,7 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 	}
 
 	// Filter active members only
-	var activeMembers []groupModels.GroupMember
+	activeMembers := make([]groupModels.GroupMember, 0, len(group.Members))
 	for _, member := range group.Members {
 		if member.IsActive {
 			activeMembers = append(activeMembers, member)
@@ -1371,8 +1371,8 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 		CreatedCount: 0,
 		FailedCount:  0,
 		TotalMembers: len(activeMembers),
-		Terminals:    []dto.BulkTerminalCreationResult{},
-		Errors:       []string{},
+		Terminals:    make([]dto.BulkTerminalCreationResult, 0, len(activeMembers)),
+		Errors:       make([]string, 0, len(activeMembers)/4),
 	}
 
 	// Get user details from Casdoor for email addresses

@@ -56,8 +56,8 @@ func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.Impor
 		}
 	}
 
-	var users []dto.UserImportRow
-	var errors []dto.ImportError
+	users := make([]dto.UserImportRow, 0, 100)
+	errors := make([]dto.ImportError, 0, 10)
 	rowNum := 1 // Header is row 0
 
 	for {
@@ -78,13 +78,13 @@ func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.Impor
 
 		// Parse row
 		user := dto.UserImportRow{
-			Email:     getColumnValue(record, headerMap, "email"),
-			FirstName: getColumnValue(record, headerMap, "first_name"),
-			LastName:  getColumnValue(record, headerMap, "last_name"),
-			Password:  getColumnValue(record, headerMap, "password"),
-			Role:      getColumnValue(record, headerMap, "role"),
-			ExternalID: getColumnValue(record, headerMap, "external_id"),
-			ForceReset: getColumnValue(record, headerMap, "force_reset"),
+			Email:          getColumnValue(record, headerMap, "email"),
+			FirstName:      getColumnValue(record, headerMap, "first_name"),
+			LastName:       getColumnValue(record, headerMap, "last_name"),
+			Password:       getColumnValue(record, headerMap, "password"),
+			Role:           getColumnValue(record, headerMap, "role"),
+			ExternalID:     getColumnValue(record, headerMap, "external_id"),
+			ForceReset:     getColumnValue(record, headerMap, "force_reset"),
 			UpdateIfExists: getColumnValue(record, headerMap, "update_existing"),
 		}
 
@@ -147,8 +147,8 @@ func ParseGroupsCSV(file *multipart.FileHeader) ([]dto.GroupImportRow, []dto.Imp
 		}
 	}
 
-	var groups []dto.GroupImportRow
-	var errors []dto.ImportError
+	groups := make([]dto.GroupImportRow, 0, 50)
+	errors := make([]dto.ImportError, 0, 10)
 	rowNum := 1
 
 	for {
@@ -236,8 +236,8 @@ func ParseMembershipsCSV(file *multipart.FileHeader) ([]dto.MembershipImportRow,
 		}
 	}
 
-	var memberships []dto.MembershipImportRow
-	var errors []dto.ImportError
+	memberships := make([]dto.MembershipImportRow, 0, 200)
+	errors := make([]dto.ImportError, 0, 20)
 	rowNum := 1
 
 	for {

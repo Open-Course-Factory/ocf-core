@@ -88,7 +88,7 @@ func (r *organizationRepository) GetOrganizationByNameAndOwner(name, ownerUserID
 
 // GetOrganizationsByOwner retrieves all organizations owned by a user
 func (r *organizationRepository) GetOrganizationsByOwner(ownerUserID string) (*[]models.Organization, error) {
-	var orgs []models.Organization
+	orgs := make([]models.Organization, 0, 10)
 	result := r.db.Where("owner_user_id = ?", ownerUserID).Find(&orgs)
 	if result.Error != nil {
 		return nil, result.Error
@@ -98,7 +98,7 @@ func (r *organizationRepository) GetOrganizationsByOwner(ownerUserID string) (*[
 
 // GetOrganizationsByUserID retrieves all organizations a user is a member of
 func (r *organizationRepository) GetOrganizationsByUserID(userID string) (*[]models.Organization, error) {
-	var orgs []models.Organization
+	orgs := make([]models.Organization, 0, 10)
 
 	// Get all organization IDs where user is a member
 	result := r.db.Table("organizations").

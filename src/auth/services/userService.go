@@ -222,7 +222,7 @@ func (us *userService) GetAllUsers() (*[]dto.UserOutput, error) {
 		return nil, errUser
 	}
 
-	var results []dto.UserOutput
+	results := make([]dto.UserOutput, 0, len(users))
 	for _, user := range users {
 		results = append(results, *dto.UserModelToUserOutput(user))
 	}
@@ -248,7 +248,7 @@ func (us *userService) DeleteUser(id string) error {
 
 // GetUsersByIds retrieves multiple users by their IDs
 func (us *userService) GetUsersByIds(ids []string) (*[]dto.UserOutput, error) {
-	var results []dto.UserOutput
+	results := make([]dto.UserOutput, 0, len(ids))
 
 	for _, id := range ids {
 		user, errUser := casdoorsdk.GetUserByUserId(id)
@@ -275,7 +275,7 @@ func (us *userService) SearchUsers(query string) (*[]dto.UserOutput, error) {
 		return nil, errUser
 	}
 
-	var results []dto.UserOutput
+	results := make([]dto.UserOutput, 0, len(users)/2)
 	queryLower := strings.ToLower(strings.TrimSpace(query))
 
 	for _, user := range users {

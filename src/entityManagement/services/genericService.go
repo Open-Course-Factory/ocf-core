@@ -4,12 +4,12 @@ import (
 	"context"
 	"log"
 	"reflect"
-	"time"
 	authInterfaces "soli/formations/src/auth/interfaces"
 	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/entityManagement/repositories"
 	"soli/formations/src/entityManagement/utils"
+	"time"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
@@ -352,8 +352,9 @@ func (g *genericService) ExtractUuidFromReflectEntity(entity interface{}) uuid.U
 }
 
 func (g *genericService) GetDtoArrayFromEntitiesPages(allEntitiesPages []interface{}, entityModelInterface interface{}, entityName string) ([]interface{}, bool) {
-	var entitiesDto []interface{}
-	entitiesDto = []interface{}{}
+	// Estimate capacity based on typical page sizes
+	estimatedCapacity := len(allEntitiesPages) * 10
+	entitiesDto := make([]interface{}, 0, estimatedCapacity)
 
 	for _, page := range allEntitiesPages {
 
@@ -456,9 +457,9 @@ func (g *genericService) DecodeInputDtoForEntityCreation(entityName string, ctx 
 		WeaklyTypedInput: true,
 		Result:           &decodedData,
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
-			stringToUUIDHookFunc(),                           // Handle UUID strings
-			mapstructure.StringToTimeHookFunc(time.RFC3339),  // Handle ISO8601 time strings
-			mapstructure.StringToTimeDurationHookFunc(),      // Handle duration strings
+			stringToUUIDHookFunc(),                          // Handle UUID strings
+			mapstructure.StringToTimeHookFunc(time.RFC3339), // Handle ISO8601 time strings
+			mapstructure.StringToTimeDurationHookFunc(),     // Handle duration strings
 		),
 	}
 

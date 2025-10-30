@@ -9,10 +9,10 @@ import (
 	"soli/formations/src/utils"
 	"time"
 
+	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
-	organizationModels "soli/formations/src/organizations/models"
 	terminalRepo "soli/formations/src/terminalTrainer/repositories"
 
 	genericService "soli/formations/src/entityManagement/services"
@@ -143,14 +143,14 @@ type StripeService interface {
 
 // SyncPlansResult contains the results of importing plans from Stripe
 type SyncPlansResult struct {
-	ProcessedPlans int           `json:"processed_plans"`
-	CreatedPlans   int           `json:"created_plans"`
-	UpdatedPlans   int           `json:"updated_plans"`
-	SkippedPlans   int           `json:"skipped_plans"`
-	FailedPlans    []FailedPlan  `json:"failed_plans"`
-	CreatedDetails []string      `json:"created_details"`
-	UpdatedDetails []string      `json:"updated_details"`
-	SkippedDetails []string      `json:"skipped_details"`
+	ProcessedPlans int          `json:"processed_plans"`
+	CreatedPlans   int          `json:"created_plans"`
+	UpdatedPlans   int          `json:"updated_plans"`
+	SkippedPlans   int          `json:"skipped_plans"`
+	FailedPlans    []FailedPlan `json:"failed_plans"`
+	CreatedDetails []string     `json:"created_details"`
+	UpdatedDetails []string     `json:"updated_details"`
+	SkippedDetails []string     `json:"skipped_details"`
 }
 
 type FailedPlan struct {
@@ -1593,7 +1593,7 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 	// Create individual license records
 	for i := 0; i < quantity; i++ {
 		license := models.UserSubscription{
-			UserID:               "",  // Unassigned
+			UserID:               "", // Unassigned
 			PurchaserUserID:      &userID,
 			SubscriptionBatchID:  &batch.ID,
 			SubscriptionPlanID:   planID,
@@ -1642,7 +1642,7 @@ func (ss *stripeService) handleBulkSubscriptionUpdated(subscription *stripe.Subs
 		utils.Info("❌ Cancelling batch %s and all associated licenses due to subscription cancellation", batch.ID)
 
 		// Get all licenses in the batch
-		var licenses []models.UserSubscription
+		licenses := make([]models.UserSubscription, 0, batch.TotalQuantity)
 		ss.db.Where("subscription_batch_id = ?", batch.ID).Find(&licenses)
 
 		now := time.Now()
@@ -1701,7 +1701,7 @@ func (ss *stripeService) handleBulkSubscriptionUpdated(subscription *stripe.Subs
 	} else {
 		// Removing licenses (only unassigned ones)
 		toRemove := -difference
-		var unassignedLicenses []models.UserSubscription
+		unassignedLicenses := make([]models.UserSubscription, 0, toRemove)
 		ss.db.Where("subscription_batch_id = ? AND status = ?", batch.ID, "unassigned").
 			Limit(toRemove).
 			Find(&unassignedLicenses)
@@ -1735,7 +1735,7 @@ func (ss *stripeService) handleBulkSubscriptionDeleted(subscription *stripe.Subs
 	utils.Info("❌ Cancelling batch %s and all associated licenses", batch.ID)
 
 	// Cancel all licenses in the batch
-	var licenses []models.UserSubscription
+	licenses := make([]models.UserSubscription, 0, batch.TotalQuantity)
 	ss.db.Where("subscription_batch_id = ?", batch.ID).Find(&licenses)
 
 	now := time.Now()
@@ -1781,7 +1781,7 @@ func (ss *stripeService) handleBulkInvoicePaymentSucceeded(invoice *stripe.Invoi
 	}
 
 	// Activate all pending_payment licenses in this batch
-	var licenses []models.UserSubscription
+	licenses := make([]models.UserSubscription, 0, 50)
 	ss.db.Where("subscription_batch_id = ? AND status = ?", batch.ID, "pending_payment").Find(&licenses)
 
 	activatedCount := 0
@@ -2543,13 +2543,13 @@ func (ss *stripeService) CleanupIncompleteInvoices(input dto.CleanupInvoicesInpu
 					Amount:        inv.Total,
 					Currency:      string(inv.Currency),
 					Status:        string(inv.Status),
-					Action:        func() string {
-					if input.Action == "void" && inv.Status == "draft" {
-						return "would_delete"
-					}
-					return fmt.Sprintf("would_%s", input.Action)
-				}(),
-					CreatedAt:     invoiceDate.Format("2006-01-02 15:04:05"),
+					Action: func() string {
+						if input.Action == "void" && inv.Status == "draft" {
+							return "would_delete"
+						}
+						return fmt.Sprintf("would_%s", input.Action)
+					}(),
+					CreatedAt: invoiceDate.Format("2006-01-02 15:04:05"),
 				})
 				if result.Currency == "" {
 					result.Currency = string(inv.Currency)
@@ -2944,7 +2944,7 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 				BillingInterval:    string(priceObj.Recurring.Interval),
 				IsActive:           prod.Active,
 				StripeCreated:      true,
-				MaxConcurrentUsers: 1, // Default value
+				MaxConcurrentUsers: 1,  // Default value
 				MaxCourses:         -1, // Default unlimited
 				MaxLabSessions:     -1, // Default unlimited
 			}
@@ -2958,7 +2958,7 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 				for _, tier := range priceObj.Tiers {
 					pricingTier := models.PricingTier{
 						MinQuantity: int(previousUpTo + 1), // Start where previous tier ended
-						UnitAmount:  tier.UnitAmount,        // Price per unit in this tier
+						UnitAmount:  tier.UnitAmount,       // Price per unit in this tier
 					}
 
 					// Stripe uses 0 (or null) for "unlimited" in the last tier
