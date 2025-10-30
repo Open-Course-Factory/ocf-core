@@ -2,6 +2,7 @@ package initialization
 
 import (
 	"log"
+	"net/http"
 	"os"
 	"time"
 
@@ -87,13 +88,13 @@ func setupSwaggerEndpoints(r *gin.Engine, merger *swaggerGenerator.SwaggerSpecMe
 		ctx.Header("Access-Control-Allow-Methods", "GET")
 		ctx.Header("Access-Control-Allow-Headers", "Content-Type")
 
-		ctx.JSON(200, mergedSpec)
+		ctx.JSON(http.StatusOK, mergedSpec)
 	})
 
 	// Interface Swagger UI personnalisée (documentation complète)
 	r.GET("/swagger/", func(ctx *gin.Context) {
 		ctx.Header("Content-Type", "text/html")
-		ctx.String(200, generateCustomSwaggerHTML())
+		ctx.String(http.StatusOK, generateCustomSwaggerHTML())
 	})
 
 	// Garder l'endpoint original pour compatibilité
@@ -114,7 +115,7 @@ func setupDocumentationDebugEndpoints(r *gin.Engine) {
 			"merge_strategy":       "manual_priority_over_auto",
 		}
 
-		ctx.JSON(200, debugInfo)
+		ctx.JSON(http.StatusOK, debugInfo)
 	})
 
 	// Statistiques de documentation
@@ -129,7 +130,7 @@ func setupDocumentationDebugEndpoints(r *gin.Engine) {
 			"generation_time":           time.Now().Format(time.RFC3339),
 		}
 
-		ctx.JSON(200, stats)
+		ctx.JSON(http.StatusOK, stats)
 	})
 }
 
