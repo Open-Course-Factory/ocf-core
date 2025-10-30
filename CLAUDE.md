@@ -58,6 +58,45 @@ Host machine can access services via localhost:
 
 The dev postgres container is shared between development and functional tests, with separate databases (`ocf` vs `ocf_test`) for isolation.
 
+### Database Access via MCP
+
+**Model Context Protocol (MCP) servers are configured for direct database access:**
+
+Available MCP tools (automatically loaded):
+- **`mcp__postgres__query`** - Query the main `ocf` database
+- **`mcp__postgres-test__query`** - Query the test `ocf_test` database
+
+**Use cases:**
+- Inspect database state during debugging
+- Verify data after operations
+- Check table schemas and relationships
+- Debug permission policies in database
+- Analyze test data
+
+**Example:**
+```
+"Show me all organizations in the database"
+→ Uses mcp__postgres__query
+
+"Check what's in the ocf_test database"
+→ Uses mcp__postgres-test__query
+```
+
+**Important:** MCP queries are read-only for safety. Use Go code or migrations for write operations.
+
+Configuration: See `.mcp.json` for MCP server setup (auto-configured in dev container).
+
+### Other MCP Tools Available
+
+Additional MCP servers are configured for enhanced development capabilities:
+
+- **Docker MCP** - Docker container management and inspection
+- **Git MCP** - Repository operations and history analysis
+- **Filesystem MCP** - File system operations (already available via built-in tools)
+- **Fetch MCP** - Web content fetching (already available via WebFetch tool)
+
+These MCPs provide additional context and capabilities when needed. They're automatically loaded and available without configuration.
+
 **IMPORTANT - SQLite Testing Best Practice**:
 When writing tests that use SQLite in-memory databases, **ALWAYS use shared cache mode**:
 
@@ -178,6 +217,77 @@ curl -s -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImRlbW9fY2VydGlmaW
 - ✅ Place project documentation in the root directory (e.g., `TERMINAL_PRICING_PLAN.md`)
 - ✅ Or create a separate folder like `documentation/` or `guides/`
 - ❌ **NEVER** manually create files in `docs/` - they will be overwritten by `swag init`
+
+## Using Agents and Commands
+
+### When to Use Agents (`.claude/agents/`)
+
+Agents are **specialized assistants with independent context windows** for complex analysis and investigation. Use agents when you need:
+
+**Code Review & Quality:**
+- **`review-pr`** - Comprehensive PR reviews with architecture validation, pattern compliance, security checks
+- **`review-entity`** - Audit entity implementations for completeness and best practices
+- **`security-scan`** - Scan for vulnerabilities (SQL injection, secrets exposure, auth issues)
+- **`architecture-review`** - Validate clean architecture, identify circular dependencies, assess scalability
+
+**Performance & Optimization:**
+- **`performance-audit`** - Detect N+1 queries, missing indexes, memory leaks, optimization opportunities
+
+**Debugging & Investigation:**
+- **`debug-test`** - Systematic test failure analysis with OCF-specific issue detection
+- **`check-permissions`** - Debug Casbin policies, trace permission flow, identify missing permissions
+
+**Learning & Understanding:**
+- **`explain`** - Deep explanations of how systems work (architecture, data flow, integration points)
+- **`find-pattern`** - Show implementation examples from codebase (validation patterns, service patterns, etc.)
+
+**How agents work:**
+- Independent context windows (won't clutter your main conversation)
+- Deep multi-step analysis and investigation
+- Comprehensive reports with actionable recommendations
+- Reference with file:line numbers for easy navigation
+
+### When to Use Commands (`.claude/commands/`)
+
+Commands are **immediate actions in your main conversation** for quick scaffolding and modifications. Use commands when you need:
+
+**Essential Commands:**
+- **`/pre-commit`** ⭐ - Comprehensive pre-commit validation (USE BEFORE EVERY COMMIT!)
+- **`/new-entity`** - Scaffold new entities with model, DTOs, registration, tests
+- **`/test`** - Smart test runner based on recent changes
+- **`/refactor`** - Systematic refactoring with pattern consistency
+
+**Quick Actions:**
+- **`/api-test`** - Quick API endpoint testing with auto-authentication
+- **`/migrate`** - Database migration handling
+- **`/update-docs`** - Regenerate Swagger documentation
+- **`/improve`** - Code improvement suggestions
+- **`/enforce-patterns`** - Pattern compliance scanning
+
+**Command characteristics:**
+- Execute immediately in main conversation
+- Direct code modifications and scaffolding
+- Quick validation and testing
+- Workflow automation
+
+### Best Practices
+
+1. **Use `/pre-commit` before every commit** - Your quality gate
+2. **Use agents for analysis** - PR reviews, debugging, learning
+3. **Use commands for actions** - Scaffolding, refactoring, quick tests
+4. **Combine them** - Use agent insights to guide command actions
+
+**Example workflow:**
+```
+1. Make code changes
+2. Use debug-test agent if tests fail
+3. Run /test command to verify fixes
+4. Use review-pr agent for quality check
+5. Run /pre-commit before committing
+6. Use review-entity agent for final audit
+```
+
+See `.claude/agents/README.md` and `.claude/commands/README.md` for complete documentation.
 
 ## Architecture Overview
 
@@ -674,41 +784,24 @@ type AuthProvider interface {
 
 ## Permissions and Security System
 
-### Casbin/Casdoor Integration
+### Overview
 
-The system uses Casbin with Casdoor for authorization. Permissions are managed dynamically in code, NOT through static configuration files.
+The system uses **Casbin with Casdoor** for authorization. Permissions are managed dynamically in code, NOT through static configuration files.
 
 **Permission Management Patterns:**
-1. **Generic Entity Permissions**: Defined in entity registration files via `GetEntityRoles()` method
-2. **Specific Route Permissions**: Added dynamically using `casdoor.Enforcer.AddPolicy()` in service methods
-3. **User-Specific Permissions**: Created when entities are created/shared to allow specific users access to specific resources
+1. **Generic Entity Permissions**: Defined in entity registration via `GetEntityRoles()` method
+2. **Specific Route Permissions**: Added dynamically in service methods
+3. **User-Specific Permissions**: Created when entities are created/shared
 
-### Role Mappings
-
+**Role Mappings:**
 - `"student"` role maps to `"member"` role in the system
 - Role hierarchy: `Guest < Member < MemberPro < GroupManager < Trainer < Organization < Admin`
 
-### Terminal Permissions
-
-**Terminal hiding routes require specific permissions:**
-- Terminal creation automatically adds hide permissions for owner
-- Terminal sharing automatically adds hide permissions for recipient
-- Permissions format: `userID, "/api/v1/terminals/{terminalID}/hide", "POST|DELETE"`
-
-**Custom routes (like `/hide`) are NOT covered by generic entity permissions and require manual permission setup in service methods.**
-
-### Authentication Middleware
-
-`AuthManagement()` middleware checks Casbin permissions using:
-- `ctx.FullPath()` - The exact route path with parameters
-- `ctx.Request.Method` - HTTP method
-- User roles from JWT token
-
-### Permission Helper Utilities (Recommended Pattern)
+### Permission Helper Utilities (ALWAYS USE THESE)
 
 **Location**: `src/utils/permissions.go`
 
-**All permission operations should use centralized utils helpers** instead of direct Casbin calls:
+**All permission operations MUST use centralized utils helpers** instead of direct Casbin calls:
 
 ```go
 // Standard permission pattern
@@ -721,13 +814,6 @@ utils.AddPolicy(casdoor.Enforcer, userID, route, methods, opts)
 
 // Revoke permissions
 utils.RemovePolicy(casdoor.Enforcer, userID, route, method, opts)
-
-// Filter-based removal
-utils.RemoveFilteredPolicy(casdoor.Enforcer, fieldIndex, opts, userID, route)
-
-// Role/group operations
-utils.AddGroupingPolicy(casdoor.Enforcer, userID, role, opts)
-utils.RemoveGroupingPolicy(casdoor.Enforcer, userID, role, opts)
 ```
 
 **Available Helpers** (12 functions):
@@ -743,6 +829,21 @@ utils.RemoveGroupingPolicy(casdoor.Enforcer, userID, role, opts)
 - Automatic policy loading
 - Logging and debugging
 - Single source of truth (100% refactored codebase)
+
+### Key Rules
+
+1. **Custom routes need explicit permissions** - Routes like `/hide`, `/share` are NOT covered by generic entity permissions
+2. **Always clean up permissions** - Remove permissions when entities are deleted
+3. **Use exact route paths** - Permissions must match `ctx.FullPath()` format
+4. **Load policy when needed** - Set `LoadPolicyFirst: true` when checking immediately after adding
+
+### Debugging Permissions
+
+**Use the `check-permissions` agent for:**
+- Understanding what permissions a user/role has
+- Debugging 403 Forbidden errors
+- Tracing permission flow
+- Identifying missing permissions
 
 See `.claude/docs/REFACTORING_COMPLETE_SUMMARY.md` for complete documentation.
 
@@ -829,16 +930,51 @@ See `.claude/docs/REFACTORING_COMPLETE_SUMMARY.md` for complete details.
 
 See `.claude/docs/ORGANIZATION_GROUPS_SYSTEM.md` for complete documentation.
 
-## Important Notes
+## Important Notes & Quick Reference
 
-- Always run `swag init --parseDependency --parseInternal` after API changes
+### Development Workflow
+- **Always run `/pre-commit` before every commit** - Your essential quality gate
+- Run `swag init --parseDependency --parseInternal` after API changes (or use `/update-docs`)
+- Use `/new-entity` for scaffolding new entities with full CRUD setup
+- Use `/test` for smart test running based on recent changes
+
+### Code Patterns (MUST FOLLOW)
+- **Permission Management**: Use `utils.AddPolicy()` / `utils.RemovePolicy()` helpers (NEVER direct Casbin calls)
+- **Error Handling**: Use `utils.ErrEntityNotFound()` and similar constructors (consistent error messages)
+- **Validation**: Use `utils.ChainValidators()` and validation helpers (chainable validation)
+- **DTOs**: Both `json` AND `mapstructure` tags required (PATCH will fail without both)
+- **Testing**: Use `file::memory:?cache=shared` for SQLite tests (shared cache mode)
+
+### Architecture Rules
 - Entity registrations in main.go enable automatic CRUD operations
 - Use generic entity management system for new entities when possible
-- Casdoor requires separate certificate setup for JWT validation
-- Payment system enforces usage limits based on subscription tiers
-- **Permission Management**: Use `utils.AddPolicy()` / `utils.RemovePolicy()` helpers instead of direct Casbin calls
-- **Error Handling**: Use `utils.ErrEntityNotFound()` and similar constructors for consistent error messages
-- **Validation**: Use `utils.ChainValidators()` and validation helpers for data validation
+- Handlers → Services → Repositories (clean architecture layers)
+- Models have no business logic (data structures only)
+
+### System Features
 - **Organizations**: All users get personal organizations auto-created on registration
 - **Groups**: Can be standalone or linked to organizations for cascading permissions
+- **Payment System**: Enforces usage limits based on subscription tiers
 - **Bulk Import**: CSV import available at `/api/v1/organizations/{id}/import` (owners/managers only)
+- **Casdoor**: Requires separate certificate setup for JWT validation
+
+### When You Need Help
+
+**Use Agents:**
+- **Testing issues?** Use `debug-test` agent
+- **Permission problems?** Use `check-permissions` agent
+- **Performance slow?** Use `performance-audit` agent
+- **Security concerns?** Use `security-scan` agent
+- **Need to understand a system?** Use `explain` agent
+- **Looking for code examples?** Use `find-pattern` agent
+- **Reviewing a PR?** Use `review-pr` agent
+- **Auditing an entity?** Use `review-entity` agent
+- **Architecture questions?** Use `architecture-review` agent
+
+**Use MCP Tools:**
+- **Database inspection?** Use `mcp__postgres__query` or `mcp__postgres-test__query`
+- **Check database state?** Query the database directly via MCP
+- **Verify permissions in DB?** Query Casbin policies table
+- **Analyze test data?** Use postgres-test MCP
+
+See `.claude/agents/README.md` for complete agent documentation and `.mcp.json` for MCP configuration.

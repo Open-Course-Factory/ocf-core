@@ -1,43 +1,111 @@
-# OCF Core Custom Commands
+# OCF Core Slash Commands
 
-Custom Claude Code commands for efficient development workflow.
+This directory contains custom slash commands for OCF Core development. These commands provide **immediate actions** in your main conversation for common workflows.
 
-## 📚 Command Categories
+**Looking for analysis/review tasks?** See `.claude/agents/` for specialized subagents that work independently for complex analysis, debugging, and code review.
 
-### 🏗️ Development & Scaffolding
+## Commands vs Agents
 
-- `/new-entity` - Create a complete entity (model, DTOs, registration, tests)
-- `/migrate` - Handle database migrations and schema changes
-- `/update-docs` - Regenerate Swagger API documentation
+### Use Slash Commands For:
+- **Immediate actions** in main conversation
+- **Quick scaffolding** (creating entities, migrations)
+- **Direct modifications** (refactoring, updating docs)
+- **Pre-commit validation** (before committing changes)
+- **Quick tests** (running specific test suites)
 
-### 🧪 Testing & Debugging
+### Use Agents For:
+- **Deep analysis** (PR reviews, architecture reviews)
+- **Complex debugging** (test failures, permission issues)
+- **Learning** (code patterns, system explanations)
+- **Audits** (security scans, performance analysis)
 
-- `/test` - Smart test runner based on recent changes
-- `/debug-test` - Debug a failing test systematically
-- `/api-test` - Quick API endpoint testing with auto-auth
+See `.claude/agents/README.md` for available agents.
 
-### 🔍 Analysis & Understanding
+## Available Commands
 
-- `/find-pattern` - Find implementation examples in the codebase
-- `/explain` - Deep explanation of systems and features
-- `/check-permissions` - Debug Casbin permission system
+### Scaffolding & Creation
 
-### 🤖 Code Review & Quality Agents
+**`/new-entity`** - Create new entity with full CRUD
+- Scaffolds model, DTOs, registration, tests
+- Sets up automatic CRUD endpoints
+- Generates Swagger documentation
+- **Use when:** Starting a new entity from scratch
 
-**[See full documentation: REVIEW_AGENTS_README.md](REVIEW_AGENTS_README.md)**
+### Testing & Validation
 
-- `/review-pr` - Comprehensive PR review (like a senior engineer)
-- `/enforce-patterns` - Scan and fix pattern violations (10+ patterns)
-- `/security-scan` - Security vulnerability audit
-- `/performance-audit` - Performance analysis and optimization
-- `/architecture-review` - Architecture validation and scalability
-- `/pre-commit` - Pre-commit quality gate (run before every commit!)
-- `/improve` - Continuous code improvement suggestions
+**`/test`** - Smart test runner
+- Runs appropriate tests based on recent changes
+- Detects which modules changed
+- Runs targeted test suites
+- **Use when:** Quick verification during development
 
-### 🔧 Code Maintenance
+**`/api-test`** - Quick API endpoint testing
+- Tests API endpoints with automatic authentication
+- Generates sample requests
+- Validates responses
+- **Use when:** Testing individual endpoints quickly
 
-- `/refactor` - Systematic refactoring with pattern consistency
-- `/review-entity` - Review entity implementation for best practices
+**`/pre-commit`** - Comprehensive pre-commit validation ⭐
+- Runs linting, tests, coverage checks
+- Validates patterns and best practices
+- Security scanning
+- **USE THIS BEFORE EVERY COMMIT**
+- **Essential command** - Acts as your quality gate
+
+### Code Quality & Refactoring
+
+**`/refactor`** - Systematic refactoring
+- Applies project patterns consistently
+- Updates to use utils helpers
+- Maintains backward compatibility
+- **Use when:** Cleaning up existing code
+
+**`/improve`** - Continuous code improvement
+- Suggests automated refactoring
+- Identifies pattern violations
+- Proposes optimizations
+- **Use when:** Seeking improvement opportunities
+
+**`/enforce-patterns`** - Pattern enforcement
+- Scans codebase for violations
+- Enforces coding standards
+- Ensures consistency
+- **Use when:** Auditing pattern compliance across codebase
+
+### Database & Infrastructure
+
+**`/migrate`** - Handle database migrations
+- Creates migration files
+- Applies schema changes
+- Handles data migrations safely
+- **Use when:** Making database schema changes
+
+**`/update-docs`** - Regenerate API documentation
+- Runs swag init with correct flags
+- Updates Swagger documentation
+- Validates API documentation completeness
+- **Use when:** API endpoints change
+
+## Related: Analysis & Review Agents
+
+For deep analysis, debugging, and review tasks, use specialized **agents** (not commands):
+
+**Available in `.claude/agents/`:**
+- `review-pr` - Comprehensive PR review with architecture validation
+- `review-entity` - Entity implementation completeness audit
+- `debug-test` - Systematic test failure debugging
+- `security-scan` - Security vulnerability scanning
+- `architecture-review` - Architecture and scalability assessment
+- `performance-audit` - Performance bottleneck analysis
+- `explain` - Deep system explanations with diagrams
+- `find-pattern` - Code pattern examples and guidance
+- `check-permissions` - Permission system debugging
+
+**Agents work differently:**
+- Agents have **independent context windows** for complex analysis
+- Commands execute **immediate actions** in your main conversation
+- Agents are better for **learning and investigation**
+- Commands are better for **doing and modifying**
 
 ## Usage Examples
 
@@ -54,28 +122,27 @@ Custom Claude Code commands for efficient development workflow.
 /api-test
 # Then: "Test GET /api/v1/organizations with authentication"
 
-# Find a pattern
-/find-pattern
-# Then: "How to implement a service with validation"
+# Pre-commit validation (run before every commit!)
+/pre-commit
 
-# Debug permissions
-/check-permissions
-# Then: "Check permissions for user 123e4567-..."
+# Refactor code to use project patterns
+/refactor
+# Then: "Update permission management to use utils helpers"
 
-# Review entity quality
-/review-entity
-# Then: "Review the Organization entity"
+# Systematic pattern enforcement
+/enforce-patterns
+# Then: "Check for direct Casbin calls"
 ```
 
 ## How Commands Work
 
-Each command is a specialized prompt that:
-1. Guides me through a specific workflow
-2. Enforces best practices
-3. Uses the right tools automatically
-4. Provides systematic, consistent results
+Each command is a markdown file with:
+1. YAML frontmatter with description and tags
+2. Detailed instructions that guide the workflow
+3. Best practices and patterns to follow
+4. Examples and common use cases
 
-Commands are just markdown files in `.claude/commands/` - you can edit them to customize behavior!
+Commands are loaded when you type `/command-name` and expand into the conversation.
 
 ## Creating Your Own Commands
 
@@ -89,7 +156,28 @@ tags: [tag1, tag2]
 
 # Command Name
 
-Detailed instructions for what I should do when this command runs...
+Detailed instructions for what to do when this command runs...
+
+## Steps
+
+1. First step...
+2. Second step...
+3. etc.
 ```
 
 Then use it: `/your-command-name`
+
+## Best Practices
+
+1. **Use `/pre-commit` before every commit** - Your quality gate
+2. **Use commands for actions** - Quick scaffolding, refactoring, testing
+3. **Use agents for analysis** - Reviews, debugging, learning
+4. **Customize commands** - Edit the `.md` files to fit your workflow
+5. **Chain commands** - Use multiple commands in sequence for complex workflows
+
+## Related Documentation
+
+- `.claude/agents/` - Analysis and review agents
+- `.claude/docs/` - Project-specific documentation
+- `CLAUDE.md` - Complete project guide for Claude Code
+- `REVIEW_AGENTS_README.md` - Detailed agent documentation (legacy)
