@@ -26,21 +26,24 @@ func (spw *SlidevPageWriter) SetTitle() string {
 }
 
 func (spw *SlidevPageWriter) SetToc() string {
-	var toc string
-	toc = toc + "<div class=\"toc\">\n\n"
+	var tocBuilder strings.Builder
+	tocBuilder.WriteString("<div class=\"toc\">\n\n")
 	for _, lineOfToc := range spw.Page.Toc {
-		toc += "- " + lineOfToc + "\n"
+		tocBuilder.WriteString("- ")
+		tocBuilder.WriteString(lineOfToc)
+		tocBuilder.WriteString("\n")
 	}
-	toc = toc + "\n</div>\n\n"
-	return toc
+	tocBuilder.WriteString("\n</div>\n\n")
+	return tocBuilder.String()
 }
 
 func (spw *SlidevPageWriter) SetContent() string {
-	var content string
+	var contentBuilder strings.Builder
 	for _, line := range spw.Page.Content {
-		content += line + "\n"
+		contentBuilder.WriteString(line)
+		contentBuilder.WriteString("\n")
 	}
-	return content
+	return contentBuilder.String()
 }
 
 func (spw *SlidevPageWriter) GetPage() string {

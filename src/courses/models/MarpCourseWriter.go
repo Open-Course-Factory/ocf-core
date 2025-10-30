@@ -60,26 +60,31 @@ func (mcow *MarpCourseWriter) SetTitle() string {
 }
 
 func (mcow *MarpCourseWriter) SetToc() string {
-	var toc string
+	var tocBuilder strings.Builder
 
-	toc += "\n\n---\n\n<!-- _class: main-toc -->\n\n# Thèmes abordés dans le cours\n\n"
+	tocBuilder.WriteString("\n\n---\n\n<!-- _class: main-toc -->\n\n# Thèmes abordés dans le cours\n\n")
 
 	totalChapterNumber := len(mcow.Course.Chapters)
 
 	for _, chapter := range mcow.Course.Chapters {
-		toc += "- Chapitre **" + strconv.Itoa(chapter.Number) + "** : " + chapter.Title + "\n"
-		toc += "  - " + chapter.Introduction + "\n"
+		tocBuilder.WriteString("- Chapitre **")
+		tocBuilder.WriteString(strconv.Itoa(chapter.Number))
+		tocBuilder.WriteString("** : ")
+		tocBuilder.WriteString(chapter.Title)
+		tocBuilder.WriteString("\n  - ")
+		tocBuilder.WriteString(chapter.Introduction)
+		tocBuilder.WriteString("\n")
 		if !strings.Contains(mcow.Course.Theme.Name, "A4") {
 			if totalChapterNumber > 9 && chapter.Number == 6 {
-				toc += "- **...**"
-				toc += "\n\n---\n\n<!-- _class: main-toc -->\n\n# Thèmes abordés dans le cours - Suite\n\n"
+				tocBuilder.WriteString("- **...**")
+				tocBuilder.WriteString("\n\n---\n\n<!-- _class: main-toc -->\n\n# Thèmes abordés dans le cours - Suite\n\n")
 			}
 		}
 
 	}
 
-	toc += "\n"
-	return toc
+	tocBuilder.WriteString("\n")
+	return tocBuilder.String()
 }
 
 func (mcow *MarpCourseWriter) SetContent() string {

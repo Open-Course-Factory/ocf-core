@@ -82,11 +82,22 @@ func (m *ManyToManyFilter) Apply(query *gorm.DB, key string, value interface{}, 
 
 	// Build EXISTS clause for the many-to-many relationship
 	// Example: EXISTS (SELECT 1 FROM tag_courses WHERE tag_courses.course_id = courses.id AND tag_courses.tag_id IN ?)
-	existsClause := "EXISTS (SELECT 1 FROM " + joinTable +
-		" WHERE " + joinTable + "." + currentFK + " = " + tableName + ".id" +
-		" AND " + joinTable + "." + relationFK + " IN ?)"
+	var clauseBuilder strings.Builder
+	clauseBuilder.WriteString("EXISTS (SELECT 1 FROM ")
+	clauseBuilder.WriteString(joinTable)
+	clauseBuilder.WriteString(" WHERE ")
+	clauseBuilder.WriteString(joinTable)
+	clauseBuilder.WriteString(".")
+	clauseBuilder.WriteString(currentFK)
+	clauseBuilder.WriteString(" = ")
+	clauseBuilder.WriteString(tableName)
+	clauseBuilder.WriteString(".id AND ")
+	clauseBuilder.WriteString(joinTable)
+	clauseBuilder.WriteString(".")
+	clauseBuilder.WriteString(relationFK)
+	clauseBuilder.WriteString(" IN ?)")
 
-	return query.Where(existsClause, ids)
+	return query.Where(clauseBuilder.String(), ids)
 }
 
 // Priority returns 30, giving many-to-many filters medium priority.

@@ -21,20 +21,22 @@ func (ssw *SlidevSectionWriter) SetTitle() string {
 }
 
 func (ssw *SlidevSectionWriter) SetToc() string {
-	var toc string
+	var tocBuilder strings.Builder
 	if len(ssw.Section.Pages) < 1 {
 		log.Default().Println("Page should not be empty")
 	} else {
 		for _, lineOfToc := range ssw.Section.Pages[0].Toc {
-			toc += "- " + lineOfToc + "\n"
+			tocBuilder.WriteString("- ")
+			tocBuilder.WriteString(lineOfToc)
+			tocBuilder.WriteString("\n")
 		}
 	}
-	toc = toc + "\n"
-	return toc
+	tocBuilder.WriteString("\n")
+	return tocBuilder.String()
 }
 
 func (ssw *SlidevSectionWriter) SetContent() string {
-	var pages string
+	var pagesBuilder strings.Builder
 
 	// Sort the pages by page.Order
 	sort.Slice(ssw.Section.Pages, func(i, j int) bool {
@@ -42,9 +44,10 @@ func (ssw *SlidevSectionWriter) SetContent() string {
 	})
 
 	for _, page := range ssw.Section.Pages {
-		pages += page.String(ssw.Section, ssw.Chapter) + "\n"
+		pagesBuilder.WriteString(page.String(ssw.Section, ssw.Chapter))
+		pagesBuilder.WriteString("\n")
 	}
-	return pages
+	return pagesBuilder.String()
 }
 
 func (ssw *SlidevSectionWriter) GetSection() string {

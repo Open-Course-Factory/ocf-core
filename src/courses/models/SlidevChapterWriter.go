@@ -2,6 +2,7 @@ package models
 
 import (
 	"strconv"
+	"strings"
 )
 
 type SlidevChapterWriter struct {
@@ -30,32 +31,40 @@ func (scw *SlidevChapterWriter) SetTitle() string {
 }
 
 func (scw *SlidevChapterWriter) SetToc() string {
-	var toc string
+	var tocBuilder strings.Builder
 	for _, section := range scw.Chapter.Sections {
-		toc += "- **" + section.Title + "** " + section.Intro + "\n"
+		tocBuilder.WriteString("- **")
+		tocBuilder.WriteString(section.Title)
+		tocBuilder.WriteString("** ")
+		tocBuilder.WriteString(section.Intro)
+		tocBuilder.WriteString("\n")
 	}
-	toc += "\n"
-	return toc
+	tocBuilder.WriteString("\n")
+	return tocBuilder.String()
 }
 
 func (scw *SlidevChapterWriter) SetContent() string {
 	// Then all the chapter sections are added
-	var sections string
+	var sectionsBuilder strings.Builder
 	for _, section := range scw.Chapter.Sections {
-		sections += section.String(scw.Chapter) + "\n\n"
+		sectionsBuilder.WriteString(section.String(scw.Chapter))
+		sectionsBuilder.WriteString("\n\n")
 	}
-	return sections
+	return sectionsBuilder.String()
 }
 
 func (scw *SlidevChapterWriter) SetConclusionPage() string {
 	// We finish with a conclusion slide using each section conclusion
-	var conclusion string
-	conclusion += scw.SetTitle() + "Dans ce chapitre nous avons :\n"
+	var conclusionBuilder strings.Builder
+	conclusionBuilder.WriteString(scw.SetTitle())
+	conclusionBuilder.WriteString("Dans ce chapitre nous avons :\n")
 	for _, section := range scw.Chapter.Sections {
-		conclusion += "- " + section.Conclusion + "\n"
+		conclusionBuilder.WriteString("- ")
+		conclusionBuilder.WriteString(section.Conclusion)
+		conclusionBuilder.WriteString("\n")
 	}
-	conclusion += "\n"
-	return conclusion
+	conclusionBuilder.WriteString("\n")
+	return conclusionBuilder.String()
 }
 
 func (scw *SlidevChapterWriter) GetChapter() string {

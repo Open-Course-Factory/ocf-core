@@ -70,20 +70,25 @@ func getChapterTitle(scow *SlidevCourseWriter, chapterTitle string) string {
 
 func (scow *SlidevCourseWriter) fillSchedule() string {
 
-	schedule := "---\nlayout: schedule\n"
 	chapterTitle := "default title"
 	chapterTitle = getChapterTitle(scow, chapterTitle)
-	schedule = schedule + "chapter: " + chapterTitle + "\n"
-	if scow.Course.Schedule != nil {
-		for _, line := range scow.Course.Schedule.FrontMatterContent {
-			schedule = schedule + line + "\n"
-		}
-		schedule = schedule + "---\n"
-	} else {
-		schedule = ""
+
+	if scow.Course.Schedule == nil {
+		return ""
 	}
 
-	return schedule
+	var scheduleBuilder strings.Builder
+	scheduleBuilder.WriteString("---\nlayout: schedule\n")
+	scheduleBuilder.WriteString("chapter: ")
+	scheduleBuilder.WriteString(chapterTitle)
+	scheduleBuilder.WriteString("\n")
+	for _, line := range scow.Course.Schedule.FrontMatterContent {
+		scheduleBuilder.WriteString(line)
+		scheduleBuilder.WriteString("\n")
+	}
+	scheduleBuilder.WriteString("---\n")
+
+	return scheduleBuilder.String()
 }
 
 func (scow *SlidevCourseWriter) SetLearningObjectives() string {
@@ -112,28 +117,35 @@ func (scow *SlidevCourseWriter) SetTitle() string {
 }
 
 func (scow *SlidevCourseWriter) SetToc() string {
-	var toc string
+	var tocBuilder strings.Builder
 
 	frontMatter := "\n---\nlayout: maintoc\nchapter: " + scow.Course.Title + "\n---\n\n"
 
-	toc += frontMatter + "# Thèmes abordés dans le cours\n\n"
+	tocBuilder.WriteString(frontMatter)
+	tocBuilder.WriteString("# Thèmes abordés dans le cours\n\n")
 
 	totalChapterNumber := len(scow.Course.Chapters)
 
 	for _, chapter := range scow.Course.Chapters {
-		toc += "- Chapitre **" + strconv.Itoa(chapter.Number) + "** : " + chapter.Title + "\n"
-		toc += "  - " + chapter.Introduction + "\n"
+		tocBuilder.WriteString("- Chapitre **")
+		tocBuilder.WriteString(strconv.Itoa(chapter.Number))
+		tocBuilder.WriteString("** : ")
+		tocBuilder.WriteString(chapter.Title)
+		tocBuilder.WriteString("\n  - ")
+		tocBuilder.WriteString(chapter.Introduction)
+		tocBuilder.WriteString("\n")
 		if !strings.Contains(scow.Course.Theme.Name, "A4") {
 			if totalChapterNumber > 9 && chapter.Number == 6 {
-				toc += "- **...**"
-				toc += frontMatter + "# Thèmes abordés dans le cours - Suite\n\n"
+				tocBuilder.WriteString("- **...**")
+				tocBuilder.WriteString(frontMatter)
+				tocBuilder.WriteString("# Thèmes abordés dans le cours - Suite\n\n")
 			}
 		}
 
 	}
 
-	toc += "\n"
-	return toc
+	tocBuilder.WriteString("\n")
+	return tocBuilder.String()
 }
 
 func (scow *SlidevCourseWriter) SetContent() string {

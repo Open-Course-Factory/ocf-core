@@ -20,20 +20,22 @@ func (msw *MarpSectionWriter) SetTitle() string {
 }
 
 func (msw *MarpSectionWriter) SetToc() string {
-	var toc string
+	var tocBuilder strings.Builder
 	for _, lineOfToc := range msw.Section.Pages[0].Toc {
-		toc += lineOfToc + "\n"
+		tocBuilder.WriteString(lineOfToc)
+		tocBuilder.WriteString("\n")
 	}
-	toc = toc + "\n"
-	return toc
+	tocBuilder.WriteString("\n")
+	return tocBuilder.String()
 }
 
 func (msw *MarpSectionWriter) SetContent() string {
-	var pages string
+	var pagesBuilder strings.Builder
 	for _, page := range msw.Section.Pages {
-		pages += page.String(msw.Section, msw.Chapter) + "\n"
+		pagesBuilder.WriteString(page.String(msw.Section, msw.Chapter))
+		pagesBuilder.WriteString("\n")
 	}
-	return pages
+	return pagesBuilder.String()
 }
 
 func (msw *MarpSectionWriter) GetSection() string {

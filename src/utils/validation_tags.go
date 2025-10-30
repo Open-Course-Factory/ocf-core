@@ -1,5 +1,7 @@
 package utils
 
+import "strings"
+
 // Validation tag constants for reusable validation patterns
 // These can be composed together in struct tags
 
@@ -131,38 +133,40 @@ const (
 
 // Compose validation tags into a single string
 func ComposeValidation(tags ...string) string {
-	result := ""
+	var builder strings.Builder
 	for i, tag := range tags {
 		if i > 0 {
-			result += ","
+			builder.WriteString(",")
 		}
-		result += tag
+		builder.WriteString(tag)
 	}
-	return result
+	return builder.String()
 }
 
 // RequiredEnum creates a validation tag for required enum fields
 func RequiredEnum(values ...string) string {
-	result := "required,oneof="
+	var builder strings.Builder
+	builder.WriteString("required,oneof=")
 	for i, v := range values {
 		if i > 0 {
-			result += " "
+			builder.WriteString(" ")
 		}
-		result += v
+		builder.WriteString(v)
 	}
-	return result
+	return builder.String()
 }
 
 // OptionalEnum creates a validation tag for optional enum fields
 func OptionalEnum(values ...string) string {
-	result := "omitempty,oneof="
+	var builder strings.Builder
+	builder.WriteString("omitempty,oneof=")
 	for i, v := range values {
 		if i > 0 {
-			result += " "
+			builder.WriteString(" ")
 		}
-		result += v
+		builder.WriteString(v)
 	}
-	return result
+	return builder.String()
 }
 
 // RequiredStringRange creates a validation tag for required string with length range

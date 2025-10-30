@@ -2,6 +2,7 @@ package models
 
 import (
 	"strconv"
+	"strings"
 )
 
 type MarpChapterWriter struct {
@@ -27,32 +28,40 @@ func (mcw *MarpChapterWriter) SetTitle() string {
 }
 
 func (mcw *MarpChapterWriter) SetToc() string {
-	var toc string
+	var tocBuilder strings.Builder
 	for _, section := range mcw.Chapter.Sections {
-		toc += "- **" + section.Title + "** " + section.Intro + "\n"
+		tocBuilder.WriteString("- **")
+		tocBuilder.WriteString(section.Title)
+		tocBuilder.WriteString("** ")
+		tocBuilder.WriteString(section.Intro)
+		tocBuilder.WriteString("\n")
 	}
-	toc += "\n"
-	return toc
+	tocBuilder.WriteString("\n")
+	return tocBuilder.String()
 }
 
 func (mcw *MarpChapterWriter) SetContent() string {
 	// Then all the chapter sections are added
-	var sections string
+	var sectionsBuilder strings.Builder
 	for _, section := range mcw.Chapter.Sections {
-		sections += section.String(mcw.Chapter) + "\n\n"
+		sectionsBuilder.WriteString(section.String(mcw.Chapter))
+		sectionsBuilder.WriteString("\n\n")
 	}
-	return sections
+	return sectionsBuilder.String()
 }
 
 func (mcw *MarpChapterWriter) SetConclusionPage() string {
 	// We finish with a conclusion slide using each section conclusion
-	var conclusion string
-	conclusion += mcw.SetTitle() + "Dans ce chapitre nous avons :\n"
+	var conclusionBuilder strings.Builder
+	conclusionBuilder.WriteString(mcw.SetTitle())
+	conclusionBuilder.WriteString("Dans ce chapitre nous avons :\n")
 	for _, section := range mcw.Chapter.Sections {
-		conclusion += "- " + section.Conclusion + "\n"
+		conclusionBuilder.WriteString("- ")
+		conclusionBuilder.WriteString(section.Conclusion)
+		conclusionBuilder.WriteString("\n")
 	}
-	conclusion += "\n"
-	return conclusion
+	conclusionBuilder.WriteString("\n")
+	return conclusionBuilder.String()
 }
 
 func (mcw *MarpChapterWriter) GetChapter() string {
