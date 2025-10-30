@@ -45,7 +45,7 @@ func (h *TestEnforcerHelper) WithMockEnforcer(testFunc func(*mocks.MockEnforcer)
 //
 //     helper.WithMockEnforcer(func(mockEnforcer *mocks.MockEnforcer) {
 //         // Configure le mock si nécessaire
-//         mockEnforcer.EnforceFunc = func(rvals ...interface{}) (bool, error) {
+//         mockEnforcer.EnforceFunc = func(rvals ...any) (bool, error) {
 //             return true, nil // Toujours autoriser
 //         }
 //

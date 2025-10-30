@@ -23,17 +23,17 @@ func (m *MockEnforcerForTests) LoadPolicy() error {
 	return args.Error(0)
 }
 
-func (m *MockEnforcerForTests) AddPolicy(params ...interface{}) (bool, error) {
+func (m *MockEnforcerForTests) AddPolicy(params ...any) (bool, error) {
 	args := m.Called(params...)
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockEnforcerForTests) Enforce(rvals ...interface{}) (bool, error) {
+func (m *MockEnforcerForTests) Enforce(rvals ...any) (bool, error) {
 	args := m.Called(rvals...)
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockEnforcerForTests) RemovePolicy(params ...interface{}) (bool, error) {
+func (m *MockEnforcerForTests) RemovePolicy(params ...any) (bool, error) {
 	args := m.Called(params...)
 	return args.Bool(0), args.Error(1)
 }
@@ -48,12 +48,12 @@ func (m *MockEnforcerForTests) GetRolesForUser(name string) ([]string, error) {
 	return args.Get(0).([]string), args.Error(1)
 }
 
-func (m *MockEnforcerForTests) AddGroupingPolicy(params ...interface{}) (bool, error) {
+func (m *MockEnforcerForTests) AddGroupingPolicy(params ...any) (bool, error) {
 	args := m.Called(params...)
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockEnforcerForTests) RemoveGroupingPolicy(params ...interface{}) (bool, error) {
+func (m *MockEnforcerForTests) RemoveGroupingPolicy(params ...any) (bool, error) {
 	args := m.Called(params...)
 	return args.Bool(0), args.Error(1)
 }

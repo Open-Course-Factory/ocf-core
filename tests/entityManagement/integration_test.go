@@ -178,8 +178,8 @@ func setupIntegrationTest(t *testing.T) *IntegrationTestSuite {
 	// Setup mock enforcer
 	mockEnforcer := authMocks.NewMockEnforcer()
 	mockEnforcer.LoadPolicyFunc = func() error { return nil }
-	mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) { return true, nil }
-	mockEnforcer.EnforceFunc = func(params ...interface{}) (bool, error) { return true, nil }
+	mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
+	mockEnforcer.EnforceFunc = func(params ...any) (bool, error) { return true, nil }
 
 	// Save original enforcer and replace with mock
 	suite := &IntegrationTestSuite{
@@ -570,7 +570,7 @@ func TestIntegration_ErrorHandling(t *testing.T) {
 
 	t.Run("Create With Missing Required Field", func(t *testing.T) {
 		t.Skip("Validation not enforced in generic entity controller - binding tags not checked")
-		input := map[string]interface{}{
+		input := map[string]any{
 			"description": "Missing name field",
 			"value":       42,
 		}

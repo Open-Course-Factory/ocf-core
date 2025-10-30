@@ -49,7 +49,7 @@ func (genericController genericController) AddEntity(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, outputDto)
 }
 
-func (genericController genericController) addOwnerIDs(entity interface{}, userId string) (interface{}, error) {
+func (genericController genericController) addOwnerIDs(entity any, userId string) (any, error) {
 	// Add owner ID to entity (modifies in-place)
 	if err := utils.AddOwnerIDToEntity(entity, userId); err != nil {
 		return nil, err

@@ -30,7 +30,7 @@ func NewGenericHooksController() GenericHooksController {
 //	@Accept			json
 //	@Produce		json
 //	@Security		Bearer
-//	@Success		200	{object}	map[string]interface{}
+//	@Success		200	{object}	map[string]any
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Router			/hooks [get]
 func (hc *genericHooksController) ListHooks(ctx *gin.Context) {
@@ -45,8 +45,8 @@ func (hc *genericHooksController) ListHooks(ctx *gin.Context) {
 
 	// Pour l'instant, retourner des infos basiques
 	// Dans une vraie implémentation, on ajouterait une méthode GetAllHooks au registre
-	hooksInfo := map[string]interface{}{
-		"registered_hooks": []map[string]interface{}{
+	hooksInfo := map[string]any{
+		"registered_hooks": []map[string]any{
 			{
 				"name":        "stripe_subscription_plan_sync",
 				"entity":      "SubscriptionPlan",

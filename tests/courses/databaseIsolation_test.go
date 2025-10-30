@@ -148,7 +148,7 @@ func TestGenericServiceCorrectDatabase(t *testing.T) {
 	genericService2 := genericService.NewGenericService(db2, nil)
 
 	// Créer un cours via genericService1
-	// courseInput := map[string]interface{}{
+	// courseInput := map[string]any{
 	// 	"name":     "Test Course via GenericService1",
 	// 	"title":    "Test Title",
 	// 	"version":  "1.0.0",

@@ -80,7 +80,7 @@ func SetupPostgresTestDB(t *testing.T) *gorm.DB {
 }
 
 // CleanupPostgresTestDB drops all test tables
-func CleanupPostgresTestDB(t *testing.T, db *gorm.DB, tables ...interface{}) {
+func CleanupPostgresTestDB(t *testing.T, db *gorm.DB, tables ...any) {
 	if db == nil {
 		return
 	}

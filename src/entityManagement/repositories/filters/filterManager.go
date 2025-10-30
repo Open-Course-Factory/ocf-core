@@ -24,7 +24,7 @@ import (
 //	manager := NewFilterManager(relationshipFilters)
 //
 //	// Apply all filters to query
-//	filters := map[string]interface{}{
+//	filters := map[string]any{
 //	    "title": "Golang",
 //	    "authorId": "123",
 //	    "tagIDs": "1,2,3",
@@ -85,7 +85,7 @@ func NewFilterManager(relationshipFilters []entityManagementInterfaces.Relations
 //
 // Example:
 //
-//	filters := map[string]interface{}{
+//	filters := map[string]any{
 //	    "title": "Golang",        // → DirectFieldFilter
 //	    "courseId": "123",        // → ForeignKeyFilter
 //	    "tagIDs": "1,2,3",        // → ManyToManyFilter
@@ -94,7 +94,7 @@ func NewFilterManager(relationshipFilters []entityManagementInterfaces.Relations
 //	query = manager.ApplyFilters(query, filters, "courses")
 func (fm *FilterManager) ApplyFilters(
 	query *gorm.DB,
-	filters map[string]interface{},
+	filters map[string]any,
 	tableName string,
 ) *gorm.DB {
 	// Process each filter

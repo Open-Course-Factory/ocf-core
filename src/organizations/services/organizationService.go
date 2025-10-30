@@ -23,7 +23,7 @@ type OrganizationService interface {
 	GetUserOrganizations(userID string) (*[]models.Organization, error)
 	GetUserPersonalOrganization(userID string) (*models.Organization, error)
 	GetOrganizationsByOwner(ownerUserID string) (*[]models.Organization, error)
-	UpdateOrganization(orgID uuid.UUID, requestingUserID string, updates map[string]interface{}) (*models.Organization, error)
+	UpdateOrganization(orgID uuid.UUID, requestingUserID string, updates map[string]any) (*models.Organization, error)
 	DeleteOrganization(orgID uuid.UUID, requestingUserID string) error
 
 	// Member management
@@ -195,7 +195,7 @@ func (os *organizationService) GetOrganizationsByOwner(ownerUserID string) (*[]m
 }
 
 // UpdateOrganization updates an organization (only owner or manager can update)
-func (os *organizationService) UpdateOrganization(orgID uuid.UUID, requestingUserID string, updates map[string]interface{}) (*models.Organization, error) {
+func (os *organizationService) UpdateOrganization(orgID uuid.UUID, requestingUserID string, updates map[string]any) (*models.Organization, error) {
 	// Check if user can manage this organization
 	canManage, err := os.CanUserManageOrganization(orgID, requestingUserID)
 	if err != nil {

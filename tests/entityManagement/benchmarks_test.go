@@ -126,7 +126,7 @@ func (r BenchmarkEntityRegistration) GetEntityRegistrationInput() entityManageme
 		EntityDtos: entityManagementInterfaces.EntityDtos{
 			InputCreateDto: BenchmarkEntityInput{},
 			OutputDto:      BenchmarkEntityOutput{},
-			InputEditDto:   map[string]interface{}{},
+			InputEditDto:   map[string]any{},
 		},
 	}
 }
@@ -158,7 +158,7 @@ func setupBenchmarkSuite(b *testing.B) *BenchmarkSuite {
 
 	mockEnforcer := authMocks.NewMockEnforcer()
 	mockEnforcer.LoadPolicyFunc = func() error { return nil }
-	mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) { return true, nil }
+	mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
 
 	suite := &BenchmarkSuite{
 		db:               db,
@@ -341,7 +341,7 @@ func BenchmarkUpdate(b *testing.B) {
 	entity.OwnerIDs = []string{userID}
 	suite.db.Create(&entity)
 
-	update := map[string]interface{}{
+	update := map[string]any{
 		"name":  "Updated",
 		"value": 999,
 	}
@@ -514,7 +514,7 @@ func BenchmarkSecurity_AddPolicy_OnCreate(b *testing.B) {
 	userID := "bench-user"
 
 	addPolicyCount := 0
-	suite.mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+	suite.mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 		addPolicyCount++
 		return true, nil
 	}

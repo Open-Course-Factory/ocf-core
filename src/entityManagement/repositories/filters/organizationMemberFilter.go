@@ -14,7 +14,7 @@ func (f *OrganizationMemberFilter) Priority() int {
 }
 
 // Matches checks if this strategy should handle the given filter
-func (f *OrganizationMemberFilter) Matches(key string, value interface{}) bool {
+func (f *OrganizationMemberFilter) Matches(key string, value any) bool {
 	return key == "user_member_id"
 }
 
@@ -23,7 +23,7 @@ func (f *OrganizationMemberFilter) Matches(key string, value interface{}) bool {
 func (f *OrganizationMemberFilter) Apply(
 	query *gorm.DB,
 	key string,
-	value interface{},
+	value any,
 	tableName string,
 ) *gorm.DB {
 	userID, ok := value.(string)

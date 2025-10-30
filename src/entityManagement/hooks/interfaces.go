@@ -47,11 +47,11 @@ const (
 type HookContext struct {
 	EntityName string                 `json:"entity_name"`          // Name of the entity being operated on
 	HookType   HookType               `json:"hook_type"`            // Type of lifecycle event
-	EntityID   interface{}            `json:"entity_id,omitempty"`  // ID of the entity (if available)
-	OldEntity  interface{}            `json:"old_entity,omitempty"` // Previous state (for updates)
-	NewEntity  interface{}            `json:"new_entity"`           // Current state
+	EntityID   any            `json:"entity_id,omitempty"`  // ID of the entity (if available)
+	OldEntity  any            `json:"old_entity,omitempty"` // Previous state (for updates)
+	NewEntity  any            `json:"new_entity"`           // Current state
 	UserID     string                 `json:"user_id,omitempty"`    // ID of user who triggered the operation
-	Metadata   map[string]interface{} `json:"metadata,omitempty"`   // Custom metadata shared between hooks
+	Metadata   map[string]any `json:"metadata,omitempty"`   // Custom metadata shared between hooks
 	Context    context.Context        `json:"-"`                    // Go context for cancellation
 }
 
@@ -137,7 +137,7 @@ type HookError struct {
 	HookType   HookType    `json:"hook_type"`
 	Error      string      `json:"error"`
 	Timestamp  int64       `json:"timestamp"` // Unix timestamp
-	EntityID   interface{} `json:"entity_id,omitempty"`
+	EntityID   any `json:"entity_id,omitempty"`
 }
 
 // HookErrorCallback is called when an async hook fails

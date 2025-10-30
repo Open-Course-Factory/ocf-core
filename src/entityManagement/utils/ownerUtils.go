@@ -11,7 +11,7 @@ import (
 //
 // Note: This function modifies the OwnerIDs field but does NOT save the entity to the database.
 // The caller is responsible for persisting the changes.
-func AddOwnerIDToEntity(entity interface{}, userId string) error {
+func AddOwnerIDToEntity(entity any, userId string) error {
 	entityReflectValue := reflect.ValueOf(entity).Elem()
 	ownerIdsField := entityReflectValue.FieldByName("OwnerIDs")
 

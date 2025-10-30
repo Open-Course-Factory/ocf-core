@@ -77,7 +77,7 @@ func (sim *subscriptionIntegrationMiddleware) RequireSubscriptionForCourseCreati
 		}
 
 		// Stocker pour incrémenter après succès
-		ctx.Set("increment_usage", map[string]interface{}{
+		ctx.Set("increment_usage", map[string]any{
 			"metric_type": "courses_created",
 			"increment":   int64(1),
 		})
@@ -161,7 +161,7 @@ func (sim *subscriptionIntegrationMiddleware) RequireSubscriptionForAdvancedLabs
 			return
 		}
 
-		ctx.Set("increment_usage", map[string]interface{}{
+		ctx.Set("increment_usage", map[string]any{
 			"metric_type": "lab_sessions",
 			"increment":   int64(1),
 		})
@@ -334,7 +334,7 @@ func (sim *subscriptionIntegrationMiddleware) CheckSubscriptionRequirements() gi
 			}
 
 			// Stocker pour incrémenter après succès
-			ctx.Set("increment_usage", map[string]interface{}{
+			ctx.Set("increment_usage", map[string]any{
 				"metric_type": metricType,
 				"increment":   int64(1),
 			})
@@ -397,7 +397,7 @@ func (sim *subscriptionIntegrationMiddleware) incrementUsageIfSuccessful(ctx *gi
 		return
 	}
 
-	usageMap, ok := usageInfo.(map[string]interface{})
+	usageMap, ok := usageInfo.(map[string]any)
 	if !ok {
 		return
 	}

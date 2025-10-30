@@ -19,7 +19,7 @@ func (genericController genericController) EditEntity(ctx *gin.Context) {
 	entityPatchDtoInput := genericController.entityRegistrationService.GetEntityDtos(entityName, ems.InputEditDto)
 	decodedData := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputEditDto)
 
-	// Bind JSON request body - this creates a map[string]interface{}
+	// Bind JSON request body - this creates a map[string]any
 	bindError := ctx.BindJSON(&entityPatchDtoInput)
 	if errors.HandleError(http.StatusBadRequest, bindError, ctx) {
 		return
@@ -27,7 +27,7 @@ func (genericController genericController) EditEntity(ctx *gin.Context) {
 
 	// Clean up the input map - remove empty strings to prevent decode issues
 	// Empty strings are treated as "no change" for the field
-	if inputMap, ok := entityPatchDtoInput.(map[string]interface{}); ok {
+	if inputMap, ok := entityPatchDtoInput.(map[string]any); ok {
 		for key, value := range inputMap {
 			if strValue, isString := value.(string); isString && strValue == "" {
 				delete(inputMap, key)

@@ -202,7 +202,7 @@ func TestHooksSimple_ExecutionOrder(t *testing.T) {
 	ctx := &hooks.HookContext{
 		EntityName: "TestEntity",
 		HookType:   hooks.BeforeCreate,
-		NewEntity:  map[string]interface{}{"test": "data"},
+		NewEntity:  map[string]any{"test": "data"},
 		Context:    context.Background(),
 	}
 
@@ -233,7 +233,7 @@ func TestHooksSimple_ConditionalExecution(t *testing.T) {
 		"TestEntity",
 		[]hooks.HookType{hooks.BeforeCreate},
 		func(ctx *hooks.HookContext) bool {
-			if data, ok := ctx.NewEntity.(map[string]interface{}); ok {
+			if data, ok := ctx.NewEntity.(map[string]any); ok {
 				if value, ok := data["value"].(int); ok {
 					return value > 10
 				}
@@ -248,7 +248,7 @@ func TestHooksSimple_ConditionalExecution(t *testing.T) {
 		ctx := &hooks.HookContext{
 			EntityName: "TestEntity",
 			HookType:   hooks.BeforeCreate,
-			NewEntity:  map[string]interface{}{"value": 5},
+			NewEntity:  map[string]any{"value": 5},
 			Context:    context.Background(),
 		}
 
@@ -264,7 +264,7 @@ func TestHooksSimple_ConditionalExecution(t *testing.T) {
 		ctx := &hooks.HookContext{
 			EntityName: "TestEntity",
 			HookType:   hooks.BeforeCreate,
-			NewEntity:  map[string]interface{}{"value": 15},
+			NewEntity:  map[string]any{"value": 15},
 			Context:    context.Background(),
 		}
 
@@ -290,7 +290,7 @@ func TestHooksSimple_FailureHandling(t *testing.T) {
 	ctx := &hooks.HookContext{
 		EntityName: "TestEntity",
 		HookType:   hooks.BeforeCreate,
-		NewEntity:  map[string]interface{}{"test": "data"},
+		NewEntity:  map[string]any{"test": "data"},
 		Context:    context.Background(),
 	}
 
@@ -315,7 +315,7 @@ func TestHooksSimple_EnableDisable(t *testing.T) {
 	ctx := &hooks.HookContext{
 		EntityName: "TestEntity",
 		HookType:   hooks.BeforeCreate,
-		NewEntity:  map[string]interface{}{"test": "data"},
+		NewEntity:  map[string]any{"test": "data"},
 		Context:    context.Background(),
 	}
 
@@ -349,7 +349,7 @@ func setupHookServiceTestSimple(t *testing.T) (*gorm.DB, services.GenericService
 
 	mockEnforcer := authMocks.NewMockEnforcer()
 	mockEnforcer.LoadPolicyFunc = func() error { return nil }
-	mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) { return true, nil }
+	mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
 
 	originalEnforcer := casdoor.Enforcer
 	casdoor.Enforcer = mockEnforcer

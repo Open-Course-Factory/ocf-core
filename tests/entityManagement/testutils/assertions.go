@@ -35,7 +35,7 @@ func AssertError(t *testing.T, err error) {
 // Usage:
 //
 //	AssertEqual(t, "expected", actual)
-func AssertEqual(t *testing.T, expected, actual interface{}) {
+func AssertEqual(t *testing.T, expected, actual any) {
 	t.Helper()
 	if !reflect.DeepEqual(expected, actual) {
 		t.Errorf("Expected %v (type %T), got %v (type %T)", expected, expected, actual, actual)
@@ -47,7 +47,7 @@ func AssertEqual(t *testing.T, expected, actual interface{}) {
 // Usage:
 //
 //	AssertNotEqual(t, "old", new)
-func AssertNotEqual(t *testing.T, expected, actual interface{}) {
+func AssertNotEqual(t *testing.T, expected, actual any) {
 	t.Helper()
 	if reflect.DeepEqual(expected, actual) {
 		t.Errorf("Expected values to be different, but both are %v", expected)
@@ -59,7 +59,7 @@ func AssertNotEqual(t *testing.T, expected, actual interface{}) {
 // Usage:
 //
 //	AssertNil(t, value)
-func AssertNil(t *testing.T, value interface{}) {
+func AssertNil(t *testing.T, value any) {
 	t.Helper()
 	if value != nil && !reflect.ValueOf(value).IsNil() {
 		t.Errorf("Expected nil, got %v", value)
@@ -71,7 +71,7 @@ func AssertNil(t *testing.T, value interface{}) {
 // Usage:
 //
 //	AssertNotNil(t, value)
-func AssertNotNil(t *testing.T, value interface{}) {
+func AssertNotNil(t *testing.T, value any) {
 	t.Helper()
 	if value == nil || reflect.ValueOf(value).IsNil() {
 		t.Error("Expected non-nil value, got nil")
@@ -122,7 +122,7 @@ func AssertContains[T comparable](t *testing.T, slice []T, item T) {
 // Usage:
 //
 //	AssertLen(t, items, 5)
-func AssertLen(t *testing.T, slice interface{}, expected int) {
+func AssertLen(t *testing.T, slice any, expected int) {
 	t.Helper()
 	v := reflect.ValueOf(slice)
 	if v.Kind() != reflect.Slice && v.Kind() != reflect.Array {
@@ -181,7 +181,7 @@ func contains(s, substr string) bool {
 // Usage:
 //
 //	AssertFieldEqual(t, entity, "Title", "Expected Title")
-func AssertFieldEqual(t *testing.T, obj interface{}, fieldName string, expected interface{}) {
+func AssertFieldEqual(t *testing.T, obj any, fieldName string, expected any) {
 	t.Helper()
 
 	v := reflect.ValueOf(obj)
@@ -246,7 +246,7 @@ func mapKeys[K comparable, V any](m map[K]V) []K {
 // Usage:
 //
 //	AssertJSONEqual(t, expected, actual)
-func AssertJSONEqual(t *testing.T, expected, actual interface{}) {
+func AssertJSONEqual(t *testing.T, expected, actual any) {
 	t.Helper()
 
 	// For simplicity, use reflect.DeepEqual
@@ -261,7 +261,7 @@ func AssertJSONEqual(t *testing.T, expected, actual interface{}) {
 // Usage:
 //
 //	Failf(t, "Expected %d items, got %d", 5, len(items))
-func Failf(t *testing.T, format string, args ...interface{}) {
+func Failf(t *testing.T, format string, args ...any) {
 	t.Helper()
 	t.Errorf(format, args...)
 }
@@ -271,7 +271,7 @@ func Failf(t *testing.T, format string, args ...interface{}) {
 // Usage:
 //
 //	FatalIf(t, err != nil, "Setup failed: %v", err)
-func FatalIf(t *testing.T, condition bool, format string, args ...interface{}) {
+func FatalIf(t *testing.T, condition bool, format string, args ...any) {
 	t.Helper()
 	if condition {
 		t.Fatalf(format, args...)
@@ -283,7 +283,7 @@ func FatalIf(t *testing.T, condition bool, format string, args ...interface{}) {
 // Usage:
 //
 //	LogIf(t, verbose, "Processing item %d", i)
-func LogIf(t *testing.T, condition bool, format string, args ...interface{}) {
+func LogIf(t *testing.T, condition bool, format string, args ...any) {
 	t.Helper()
 	if condition {
 		t.Logf(format, args...)

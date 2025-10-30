@@ -17,7 +17,7 @@ func TestDirectFieldFilter_Matches(t *testing.T) {
 	tests := []struct {
 		name     string
 		key      string
-		value    interface{}
+		value    any
 		expected bool
 	}{
 		{
@@ -109,7 +109,7 @@ func TestDirectFieldFilter_Apply(t *testing.T) {
 
 	t.Run("Interface array", func(t *testing.T) {
 		query := db.Model(&struct{}{}).Table("courses")
-		query = filter.Apply(query, "title", []interface{}{"Golang", "JavaScript"}, "courses")
+		query = filter.Apply(query, "title", []any{"Golang", "JavaScript"}, "courses")
 
 		var count int64
 		query.Count(&count)

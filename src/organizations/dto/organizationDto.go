@@ -14,7 +14,7 @@ type CreateOrganizationInput struct {
 	SubscriptionPlanID *uuid.UUID             `json:"subscription_plan_id,omitempty" mapstructure:"subscription_plan_id"`
 	MaxGroups          int                    `json:"max_groups,omitempty" mapstructure:"max_groups"`
 	MaxMembers         int                    `json:"max_members,omitempty" mapstructure:"max_members"`
-	Metadata           map[string]interface{} `json:"metadata,omitempty" mapstructure:"metadata"`
+	Metadata           map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
 // EditOrganizationInput represents the input for updating an organization
@@ -27,7 +27,7 @@ type EditOrganizationInput struct {
 	MaxGroups          *int                    `json:"max_groups,omitempty" mapstructure:"max_groups"`
 	MaxMembers         *int                    `json:"max_members,omitempty" mapstructure:"max_members"`
 	IsActive           *bool                   `json:"is_active,omitempty" mapstructure:"is_active"`
-	Metadata           *map[string]interface{} `json:"metadata,omitempty" mapstructure:"metadata"`
+	Metadata           *map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
 // OrganizationOutput represents the output for an organization
@@ -42,7 +42,7 @@ type OrganizationOutput struct {
 	MaxGroups          int                    `json:"max_groups"`
 	MaxMembers         int                    `json:"max_members"`
 	IsActive           bool                   `json:"is_active"`
-	Metadata           map[string]interface{} `json:"metadata,omitempty"`
+	Metadata           map[string]any `json:"metadata,omitempty"`
 	CreatedAt          time.Time              `json:"created_at"`
 	UpdatedAt          time.Time              `json:"updated_at"`
 

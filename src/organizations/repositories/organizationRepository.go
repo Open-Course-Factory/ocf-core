@@ -18,7 +18,7 @@ type OrganizationRepository interface {
 	GetOrganizationsByOwner(ownerUserID string) (*[]models.Organization, error)
 	GetOrganizationsByUserID(userID string) (*[]models.Organization, error)
 	GetPersonalOrganization(userID string) (*models.Organization, error)
-	UpdateOrganization(orgID uuid.UUID, updates map[string]interface{}) (*models.Organization, error)
+	UpdateOrganization(orgID uuid.UUID, updates map[string]any) (*models.Organization, error)
 	DeleteOrganization(orgID uuid.UUID) error
 
 	// Organization Member CRUD
@@ -124,7 +124,7 @@ func (r *organizationRepository) GetPersonalOrganization(userID string) (*models
 }
 
 // UpdateOrganization updates an organization
-func (r *organizationRepository) UpdateOrganization(orgID uuid.UUID, updates map[string]interface{}) (*models.Organization, error) {
+func (r *organizationRepository) UpdateOrganization(orgID uuid.UUID, updates map[string]any) (*models.Organization, error) {
 	var org models.Organization
 
 	// Find the organization first
@@ -159,7 +159,7 @@ func (r *organizationRepository) AddOrganizationMember(member *models.Organizati
 
 	if result.Error == nil {
 		// Member exists, update it
-		return r.db.Model(&existing).Updates(map[string]interface{}{
+		return r.db.Model(&existing).Updates(map[string]any{
 			"role":       member.Role,
 			"is_active":  member.IsActive,
 			"invited_by": member.InvitedBy,

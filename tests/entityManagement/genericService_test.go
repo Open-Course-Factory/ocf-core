@@ -67,12 +67,12 @@ func (m *MockGenericRepository) GetEntity(id uuid.UUID, data any, entityName str
 	return args.Get(0), args.Error(1)
 }
 
-func (m *MockGenericRepository) GetAllEntities(data any, page int, pageSize int, filters map[string]interface{}, includes []string) ([]any, int64, error) {
+func (m *MockGenericRepository) GetAllEntities(data any, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error) {
 	args := m.Called(data, page, pageSize, filters, includes)
 	return args.Get(0).([]any), args.Get(1).(int64), args.Error(2)
 }
 
-func (m *MockGenericRepository) GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]interface{}, includes []string) ([]any, string, bool, int64, error) {
+func (m *MockGenericRepository) GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]any, includes []string) ([]any, string, bool, int64, error) {
 	args := m.Called(data, cursor, limit, filters, includes)
 	return args.Get(0).([]any), args.Get(1).(string), args.Get(2).(bool), args.Get(3).(int64), args.Error(4)
 }
@@ -99,69 +99,69 @@ func newMockGenericService(repo repositories.GenericRepository) services.Generic
 }
 
 // Implémentation des méthodes du GenericService
-func (g *mockGenericService) CreateEntity(inputDto interface{}, entityName string) (interface{}, error) {
+func (g *mockGenericService) CreateEntity(inputDto any, entityName string) (any, error) {
 	return g.repository.CreateEntity(inputDto, entityName)
 }
 
-func (g *mockGenericService) CreateEntityWithUser(inputDto interface{}, entityName string, userID string) (interface{}, error) {
+func (g *mockGenericService) CreateEntityWithUser(inputDto any, entityName string, userID string) (any, error) {
 	return g.repository.CreateEntity(inputDto, entityName)
 }
 
-func (g *mockGenericService) SaveEntity(entity interface{}) (interface{}, error) {
+func (g *mockGenericService) SaveEntity(entity any) (any, error) {
 	return g.repository.SaveEntity(entity)
 }
 
-func (g *mockGenericService) GetEntity(id uuid.UUID, data interface{}, entityName string, includes []string) (interface{}, error) {
+func (g *mockGenericService) GetEntity(id uuid.UUID, data any, entityName string, includes []string) (any, error) {
 	return g.repository.GetEntity(id, data, entityName, includes)
 }
 
-func (g *mockGenericService) GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}, includes []string) ([]interface{}, int64, error) {
+func (g *mockGenericService) GetEntities(data any, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error) {
 	return g.repository.GetAllEntities(data, page, pageSize, filters, includes)
 }
 
-func (g *mockGenericService) GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}, includes []string) ([]interface{}, string, bool, int64, error) {
+func (g *mockGenericService) GetEntitiesCursor(data any, cursor string, limit int, filters map[string]any, includes []string) ([]any, string, bool, int64, error) {
 	return g.repository.GetAllEntitiesCursor(data, cursor, limit, filters, includes)
 }
 
-func (g *mockGenericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error {
+func (g *mockGenericService) DeleteEntity(id uuid.UUID, entity any, scoped bool) error {
 	return g.repository.DeleteEntity(id, entity, scoped)
 }
 
-func (g *mockGenericService) EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error {
+func (g *mockGenericService) EditEntity(id uuid.UUID, entityName string, entity any, data any) error {
 	return g.repository.EditEntity(id, entityName, entity, data)
 }
 
 // Implémentation des autres méthodes nécessaires (similaires à l'original mais testables)
-func (g *mockGenericService) GetEntityModelInterface(entityName string) interface{} {
+func (g *mockGenericService) GetEntityModelInterface(entityName string) any {
 	result, _ := ems.GlobalEntityRegistrationService.GetEntityInterface(entityName)
 	return result
 }
 
-func (g *mockGenericService) AddOwnerIDs(entity interface{}, userId string) (interface{}, error) {
+func (g *mockGenericService) AddOwnerIDs(entity any, userId string) (any, error) {
 	// Implémentation simplifiée pour les tests
 	return entity, nil
 }
 
-func (g *mockGenericService) ExtractUuidFromReflectEntity(entity interface{}) uuid.UUID {
+func (g *mockGenericService) ExtractUuidFromReflectEntity(entity any) uuid.UUID {
 	// Implémentation simplifiée pour les tests
 	return uuid.New()
 }
 
-func (g *mockGenericService) GetDtoArrayFromEntitiesPages(allEntitiesPages []interface{}, entityModelInterface interface{}, entityName string) ([]interface{}, bool) {
+func (g *mockGenericService) GetDtoArrayFromEntitiesPages(allEntitiesPages []any, entityModelInterface any, entityName string) ([]any, bool) {
 	// Implémentation simplifiée pour les tests
-	return []interface{}{}, false
+	return []any{}, false
 }
 
-func (g *mockGenericService) GetEntityFromResult(entityName string, item interface{}) (interface{}, bool) {
+func (g *mockGenericService) GetEntityFromResult(entityName string, item any) (any, bool) {
 	// Implémentation simplifiée pour les tests
 	return item, false
 }
 
-func (g *mockGenericService) AddDefaultAccessesForEntity(resourceName string, entity interface{}, userId string) error {
+func (g *mockGenericService) AddDefaultAccessesForEntity(resourceName string, entity any, userId string) error {
 	return nil
 }
 
-func (g *mockGenericService) DecodeInputDtoForEntityCreation(entityName string, ctx *gin.Context) (interface{}, error) {
+func (g *mockGenericService) DecodeInputDtoForEntityCreation(entityName string, ctx *gin.Context) (any, error) {
 	// Implémentation simplifiée pour les tests
 	return TestEntityInputDto{}, nil
 }
@@ -352,10 +352,10 @@ func TestGenericService_GetEntities_Success(t *testing.T) {
 	}
 
 	// Mock expectations
-	mockRepo.On("GetAllEntities", entityData, 1, 20, map[string]interface{}{}, mock.Anything).Return(expectedEntities, int64(2), nil)
+	mockRepo.On("GetAllEntities", entityData, 1, 20, map[string]any{}, mock.Anything).Return(expectedEntities, int64(2), nil)
 
 	// Execute
-	result, total, err := service.GetEntities(entityData, 1, 20, map[string]interface{}{}, nil)
+	result, total, err := service.GetEntities(entityData, 1, 20, map[string]any{}, nil)
 
 	// Assert
 	assert.NoError(t, err)

@@ -462,7 +462,7 @@ func (ss *subscriptionService) UpgradeUserPlan(userID string, newPlanID uuid.UUI
 		// Update all usage metric limits for this user
 		err := tx.Model(&models.UsageMetrics{}).
 			Where("user_id = ? AND subscription_id = ?", userID, subscription.ID).
-			Updates(map[string]interface{}{
+			Updates(map[string]any{
 				"limit_value": gorm.Expr("CASE "+
 					"WHEN metric_type = 'concurrent_terminals' THEN ? "+
 					"WHEN metric_type = 'courses_created' THEN ? "+

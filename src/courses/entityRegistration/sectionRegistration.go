@@ -134,7 +134,7 @@ func (s SectionRegistration) GetEntityRegistrationInput() entityManagementInterf
 			OutputDto:      dto.SectionOutput{},
 			InputEditDto:   dto.EditSectionInput{},
 		},
-		EntitySubEntities: []interface{}{
+		EntitySubEntities: []any{
 			models.Page{},
 		},
 		RelationshipFilters: []entityManagementInterfaces.RelationshipFilter{

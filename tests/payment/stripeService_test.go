@@ -22,27 +22,27 @@ type MockGenericService struct {
 	mock.Mock
 }
 
-func (m *MockGenericService) GetEntity(id uuid.UUID, entityName string, entity interface{}) (interface{}, error) {
+func (m *MockGenericService) GetEntity(id uuid.UUID, entityName string, entity any) (any, error) {
 	args := m.Called(id, entityName, entity)
 	return args.Get(0), args.Error(1)
 }
 
-func (m *MockGenericService) CreateEntity(input interface{}, entityName string) (interface{}, error) {
+func (m *MockGenericService) CreateEntity(input any, entityName string) (any, error) {
 	args := m.Called(input, entityName)
 	return args.Get(0), args.Error(1)
 }
 
-func (m *MockGenericService) EditEntity(id uuid.UUID, entityName string, entityType interface{}, updates interface{}) error {
+func (m *MockGenericService) EditEntity(id uuid.UUID, entityName string, entityType any, updates any) error {
 	args := m.Called(id, entityName, entityType, updates)
 	return args.Error(0)
 }
 
-func (m *MockGenericService) DeleteEntity(id uuid.UUID, entityName string, entity interface{}) error {
+func (m *MockGenericService) DeleteEntity(id uuid.UUID, entityName string, entity any) error {
 	args := m.Called(id, entityName, entity)
 	return args.Error(0)
 }
 
-func (m *MockGenericService) GetEntities(entityName string, entity interface{}, includeInactive bool) (interface{}, error) {
+func (m *MockGenericService) GetEntities(entityName string, entity any, includeInactive bool) (any, error) {
 	args := m.Called(entityName, entity, includeInactive)
 	return args.Get(0), args.Error(1)
 }

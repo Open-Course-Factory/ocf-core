@@ -47,22 +47,22 @@ func (m *MockStripeService) UpdateCustomer(customerID string, params *stripe.Cus
 	return args.Error(0)
 }
 
-func (m *MockStripeService) CreateCheckoutSession(userID string, input interface{}) (interface{}, error) {
+func (m *MockStripeService) CreateCheckoutSession(userID string, input any) (any, error) {
 	args := m.Called(userID, input)
 	return args.Get(0), args.Error(1)
 }
 
-func (m *MockStripeService) CreatePortalSession(userID string, input interface{}) (interface{}, error) {
+func (m *MockStripeService) CreatePortalSession(userID string, input any) (any, error) {
 	args := m.Called(userID, input)
 	return args.Get(0), args.Error(1)
 }
 
-func (m *MockStripeService) CreateSubscriptionPlanInStripe(plan interface{}) error {
+func (m *MockStripeService) CreateSubscriptionPlanInStripe(plan any) error {
 	args := m.Called(plan)
 	return args.Error(0)
 }
 
-func (m *MockStripeService) UpdateSubscriptionPlanInStripe(plan interface{}) error {
+func (m *MockStripeService) UpdateSubscriptionPlanInStripe(plan any) error {
 	args := m.Called(plan)
 	return args.Error(0)
 }
@@ -101,7 +101,7 @@ func (m *MockStripeService) SyncSubscriptionsWithMissingMetadata() (*services.Sy
 	return args.Get(0).(*services.SyncSubscriptionsResult), args.Error(1)
 }
 
-func (m *MockStripeService) LinkSubscriptionToUser(stripeSubscriptionID, userID string, subscriptionPlanID interface{}) error {
+func (m *MockStripeService) LinkSubscriptionToUser(stripeSubscriptionID, userID string, subscriptionPlanID any) error {
 	args := m.Called(stripeSubscriptionID, userID, subscriptionPlanID)
 	return args.Error(0)
 }
@@ -146,10 +146,10 @@ func TestWebhookController_HandleStripeWebhook(t *testing.T) {
 		db := setupWebhookTestDB()
 
 		// Créer un payload de webhook valide
-		webhookPayload := map[string]interface{}{
+		webhookPayload := map[string]any{
 			"type": "customer.subscription.created",
-			"data": map[string]interface{}{
-				"object": map[string]interface{}{
+			"data": map[string]any{
+				"object": map[string]any{
 					"id": "sub_test123",
 				},
 			},

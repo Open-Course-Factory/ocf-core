@@ -22,11 +22,11 @@ func (e *enforcerWrapper) LoadPolicy() error {
 	return e.enforcer.LoadPolicy()
 }
 
-func (e *enforcerWrapper) AddPolicy(params ...interface{}) (bool, error) {
+func (e *enforcerWrapper) AddPolicy(params ...any) (bool, error) {
 	return e.enforcer.AddPolicy(params...)
 }
 
-func (e *enforcerWrapper) RemovePolicy(params ...interface{}) (bool, error) {
+func (e *enforcerWrapper) RemovePolicy(params ...any) (bool, error) {
 	return e.enforcer.RemovePolicy(params...)
 }
 
@@ -34,7 +34,7 @@ func (e *enforcerWrapper) RemoveFilteredPolicy(fieldIndex int, fieldValues ...st
 	return e.enforcer.RemoveFilteredPolicy(fieldIndex, fieldValues...)
 }
 
-func (e *enforcerWrapper) Enforce(rvals ...interface{}) (bool, error) {
+func (e *enforcerWrapper) Enforce(rvals ...any) (bool, error) {
 	return e.enforcer.Enforce(rvals...)
 }
 
@@ -42,10 +42,10 @@ func (e *enforcerWrapper) GetRolesForUser(name string) ([]string, error) {
 	return e.enforcer.GetRolesForUser(name)
 }
 
-func (e *enforcerWrapper) AddGroupingPolicy(params ...interface{}) (bool, error) {
+func (e *enforcerWrapper) AddGroupingPolicy(params ...any) (bool, error) {
 	return e.enforcer.AddGroupingPolicy(params...)
 }
 
-func (e *enforcerWrapper) RemoveGroupingPolicy(params ...interface{}) (bool, error) {
+func (e *enforcerWrapper) RemoveGroupingPolicy(params ...any) (bool, error) {
 	return e.enforcer.RemoveGroupingPolicy(params...)
 }

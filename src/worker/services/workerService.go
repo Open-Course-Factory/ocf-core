@@ -146,11 +146,11 @@ func (w *workerService) addFileToMultipart(writer *multipart.Writer, filename st
 
 // createGenerationJob crée un job de génération dans le worker
 func (w *workerService) createGenerationJob(ctx context.Context, jobID string, generation *models.Generation, metadata GenerationMetadata) (*WorkerJobStatus, error) {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"job_id":      jobID,
 		"course_id":   generation.CourseID.String(),
 		"source_path": "slides.md",
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"course_name": metadata.CourseName,
 			"format":      metadata.Format,
 			"theme":       metadata.Theme,

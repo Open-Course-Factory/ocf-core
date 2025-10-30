@@ -9,8 +9,8 @@ import (
 // EntityRepository interface for validation operations
 // Implement this in your repository to use generic validators
 type EntityRepository interface {
-	GetByNameAndOwner(name, ownerID string) (interface{}, error)
-	GetByID(id uuid.UUID) (interface{}, error)
+	GetByNameAndOwner(name, ownerID string) (any, error)
+	GetByID(id uuid.UUID) (any, error)
 }
 
 // ValidateUniqueEntityName checks if an entity name is unique for a given owner
@@ -112,9 +112,9 @@ func ValidateActive(isActive bool, id uuid.UUID, entityType string) error {
 // Usage:
 //
 //	err := ValidateNotExpired(group.ExpiresAt, group.ID, "group")
-func ValidateNotExpired(expiresAt interface{}, id uuid.UUID, entityType string) error {
+func ValidateNotExpired(expiresAt any, id uuid.UUID, entityType string) error {
 	// Handle *time.Time
-	if expiry, ok := expiresAt.(*interface{}); ok && expiry != nil {
+	if expiry, ok := expiresAt.(*any); ok && expiry != nil {
 		// Check if expired
 		// Note: this is a simplified check, real implementation would use time.Now()
 		return ErrEntityExpired(entityType, id)

@@ -57,11 +57,11 @@ func setupTestEnforcer(t *testing.T) (*authMocks.MockEnforcer, *testHelpers.Test
 		return nil // Succès par défaut
 	}
 
-	mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+	mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 		return true, nil // Succès par défaut
 	}
 
-	mockEnforcer.EnforceFunc = func(rvals ...interface{}) (bool, error) {
+	mockEnforcer.EnforceFunc = func(rvals ...any) (bool, error) {
 		return true, nil // Autorisé par défaut
 	}
 
@@ -525,7 +525,7 @@ func BenchmarkCourseService_GenerationPackagePreparation(b *testing.B) {
 
 	// Configurer le mock pour être très rapide
 	mockEnforcer.LoadPolicyFunc = func() error { return nil }
-	mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) { return true, nil }
+	mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
 
 	packageService := workerServices.NewGenerationPackageService()
 

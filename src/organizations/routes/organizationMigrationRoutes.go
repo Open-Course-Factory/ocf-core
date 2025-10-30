@@ -27,7 +27,7 @@ func newMigrationController(db *gorm.DB) *migrationController {
 //	@Accept			json
 //	@Produce		json
 //	@Success		200	{object}	services.MigrationResult
-//	@Failure		500	{object}	map[string]interface{}
+//	@Failure		500	{object}	map[string]any
 //	@Router			/migrations/personal-organizations [post]
 //	@Security		Bearer
 func (mc *migrationController) MigratePersonalOrganizations(ctx *gin.Context) {

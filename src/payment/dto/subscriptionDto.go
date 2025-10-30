@@ -245,7 +245,7 @@ type StripeWebhookEvent struct {
 	Type    string `json:"type"`
 	Created int64  `json:"created"`
 	Data    struct {
-		Object map[string]interface{} `json:"object"`
+		Object map[string]any `json:"object"`
 	} `json:"data"`
 	LiveMode        bool   `json:"livemode"`
 	PendingWebhooks int    `json:"pending_webhooks"`

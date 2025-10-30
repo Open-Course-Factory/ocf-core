@@ -41,7 +41,7 @@ func NewRelationshipPathFilter(filters []entityManagementInterfaces.Relationship
 }
 
 // Matches returns true if the key matches a registered relationship filter.
-func (r *RelationshipPathFilter) Matches(key string, value interface{}) bool {
+func (r *RelationshipPathFilter) Matches(key string, value any) bool {
 	_, exists := r.registeredFilters[key]
 	return exists
 }
@@ -49,7 +49,7 @@ func (r *RelationshipPathFilter) Matches(key string, value interface{}) bool {
 // Apply applies the relationship path filter using nested EXISTS clauses.
 // This builds a complex SQL query that follows the relationship path defined
 // in the registered filter.
-func (r *RelationshipPathFilter) Apply(query *gorm.DB, key string, value interface{}, tableName string) *gorm.DB {
+func (r *RelationshipPathFilter) Apply(query *gorm.DB, key string, value any, tableName string) *gorm.DB {
 	relFilter, exists := r.registeredFilters[key]
 	if !exists {
 		return query
@@ -83,7 +83,7 @@ func (r *RelationshipPathFilter) Priority() int {
 //	    AND courses.id IN ?
 //	  )
 //	)
-func applyRelationshipFilter(query *gorm.DB, relFilter entityManagementInterfaces.RelationshipFilter, value interface{}, currentTable string) *gorm.DB {
+func applyRelationshipFilter(query *gorm.DB, relFilter entityManagementInterfaces.RelationshipFilter, value any, currentTable string) *gorm.DB {
 	// Convert value to string array
 	var ids []string
 	switch v := value.(type) {
@@ -99,7 +99,7 @@ func applyRelationshipFilter(query *gorm.DB, relFilter entityManagementInterface
 		}
 	case []string:
 		ids = v
-	case []interface{}:
+	case []any:
 		for _, val := range v {
 			ids = append(ids, fmt.Sprint(val))
 		}

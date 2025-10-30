@@ -52,27 +52,27 @@ func (tsr TerminalShareRegistration) GetSwaggerConfig() entityManagementInterfac
 	}
 }
 
-func (tsr TerminalShareRegistration) GetModel() interface{} {
+func (tsr TerminalShareRegistration) GetModel() any {
 	return models.TerminalShare{}
 }
 
-func (tsr TerminalShareRegistration) GetAllOutputDto() interface{} {
+func (tsr TerminalShareRegistration) GetAllOutputDto() any {
 	return dto.TerminalShareOutput{}
 }
 
-func (tsr TerminalShareRegistration) GetOutputDto() interface{} {
+func (tsr TerminalShareRegistration) GetOutputDto() any {
 	return dto.TerminalShareOutput{}
 }
 
-func (tsr TerminalShareRegistration) GetInputDto() interface{} {
+func (tsr TerminalShareRegistration) GetInputDto() any {
 	return dto.CreateTerminalShareInput{}
 }
 
-func (tsr TerminalShareRegistration) GetUpdateDto() interface{} {
+func (tsr TerminalShareRegistration) GetUpdateDto() any {
 	return dto.UpdateTerminalShareInput{}
 }
 
-func (tsr TerminalShareRegistration) ConvertModelToAllOutputDto(model interface{}) interface{} {
+func (tsr TerminalShareRegistration) ConvertModelToAllOutputDto(model any) any {
 	terminalShareModel := model.(models.TerminalShare)
 	return dto.TerminalShareOutput{
 		ID:               terminalShareModel.ID,
@@ -86,7 +86,7 @@ func (tsr TerminalShareRegistration) ConvertModelToAllOutputDto(model interface{
 	}
 }
 
-func (tsr TerminalShareRegistration) ConvertModelToOutputDto(model interface{}) interface{} {
+func (tsr TerminalShareRegistration) ConvertModelToOutputDto(model any) any {
 	terminalShareModel := model.(models.TerminalShare)
 	return dto.TerminalShareOutput{
 		ID:               terminalShareModel.ID,
@@ -100,7 +100,7 @@ func (tsr TerminalShareRegistration) ConvertModelToOutputDto(model interface{}) 
 	}
 }
 
-func (tsr TerminalShareRegistration) ConvertInputDtoToModel(inputDto interface{}) interface{} {
+func (tsr TerminalShareRegistration) ConvertInputDtoToModel(inputDto any) any {
 	terminalShareInputDto := inputDto.(dto.CreateTerminalShareInput)
 	return models.TerminalShare{
 		TerminalID:       terminalShareInputDto.TerminalID,
@@ -111,9 +111,9 @@ func (tsr TerminalShareRegistration) ConvertInputDtoToModel(inputDto interface{}
 	}
 }
 
-func (tsr TerminalShareRegistration) ConvertUpdateDtoToMap(updateDto interface{}) map[string]interface{} {
+func (tsr TerminalShareRegistration) ConvertUpdateDtoToMap(updateDto any) map[string]any {
 	terminalShareUpdateDto := updateDto.(dto.UpdateTerminalShareInput)
-	updates := make(map[string]interface{})
+	updates := make(map[string]any)
 
 	if terminalShareUpdateDto.AccessLevel != nil {
 		updates["access_level"] = *terminalShareUpdateDto.AccessLevel
@@ -128,8 +128,8 @@ func (tsr TerminalShareRegistration) ConvertUpdateDtoToMap(updateDto interface{}
 	return updates
 }
 
-func (tsr TerminalShareRegistration) GetCreateFieldsValidation() map[string]interface{} {
-	return map[string]interface{}{
+func (tsr TerminalShareRegistration) GetCreateFieldsValidation() map[string]any {
+	return map[string]any{
 		"terminal_id":         "required,uuid",
 		"shared_with_user_id": "required,min=1",
 		"access_level":        "required,oneof=read write admin",
@@ -137,8 +137,8 @@ func (tsr TerminalShareRegistration) GetCreateFieldsValidation() map[string]inte
 	}
 }
 
-func (tsr TerminalShareRegistration) GetUpdateFieldsValidation() map[string]interface{} {
-	return map[string]interface{}{
+func (tsr TerminalShareRegistration) GetUpdateFieldsValidation() map[string]any {
+	return map[string]any{
 		"access_level": "omitempty,oneof=read write admin",
 		"expires_at":   "omitempty",
 		"is_active":    "omitempty,boolean",
@@ -174,7 +174,7 @@ func (tsr TerminalShareRegistration) GetSearchableFields() []string {
 	return []string{"shared_with_user_id", "shared_by_user_id", "access_level"}
 }
 
-func (tsr TerminalShareRegistration) CanUserAccess(user interface{}, requestMethod string, entityID interface{}) (bool, error) {
+func (tsr TerminalShareRegistration) CanUserAccess(user any, requestMethod string, entityID any) (bool, error) {
 	// Only terminal owners and shared users can access terminal shares
 	return true, nil // Let the controller handle the detailed access control
 }

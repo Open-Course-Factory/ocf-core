@@ -17,7 +17,7 @@ func TestManyToManyFilter_Matches(t *testing.T) {
 	tests := []struct {
 		name     string
 		key      string
-		value    interface{}
+		value    any
 		expected bool
 	}{
 		{
@@ -35,7 +35,7 @@ func TestManyToManyFilter_Matches(t *testing.T) {
 		{
 			name:     "Many-to-many - categoryIDs",
 			key:      "categoryIDs",
-			value:    []interface{}{"1", "2"},
+			value:    []any{"1", "2"},
 			expected: true,
 		},
 		{

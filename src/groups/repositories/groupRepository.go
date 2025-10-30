@@ -16,7 +16,7 @@ type GroupRepository interface {
 	GetGroupsByUserID(userID string) (*[]models.ClassGroup, error)
 	GetGroupsByOwner(ownerUserID string) (*[]models.ClassGroup, error)
 	GetGroupsByOrganization(organizationID uuid.UUID, includes []string) (*[]models.ClassGroup, error)
-	UpdateGroup(groupID uuid.UUID, updates map[string]interface{}) (*models.ClassGroup, error)
+	UpdateGroup(groupID uuid.UUID, updates map[string]any) (*models.ClassGroup, error)
 	DeleteGroup(groupID uuid.UUID) error
 
 	// Group member operations
@@ -121,7 +121,7 @@ func (gr *groupRepository) GetGroupsByOrganization(organizationID uuid.UUID, inc
 }
 
 // UpdateGroup updates a group
-func (gr *groupRepository) UpdateGroup(groupID uuid.UUID, updates map[string]interface{}) (*models.ClassGroup, error) {
+func (gr *groupRepository) UpdateGroup(groupID uuid.UUID, updates map[string]any) (*models.ClassGroup, error) {
 	var group models.ClassGroup
 	err := gr.db.Model(&group).Where("id = ?", groupID).Updates(updates).Error
 	if err != nil {

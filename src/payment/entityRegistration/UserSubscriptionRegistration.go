@@ -59,7 +59,7 @@ func (u UserSubscriptionRegistration) GetEntityRegistrationInput() entityManagem
 			OutputDto:      dto.UserSubscriptionOutput{},
 			InputEditDto:   dto.UpdateUserSubscriptionInput{},
 		},
-		EntitySubEntities: []interface{}{
+		EntitySubEntities: []any{
 			models.SubscriptionPlan{},
 		},
 	}

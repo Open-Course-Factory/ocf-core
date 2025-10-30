@@ -35,7 +35,7 @@ type HTTPResponse struct {
 }
 
 // DecodeJSON decodes the response body into the provided interface
-func (r *HTTPResponse) DecodeJSON(v interface{}) error {
+func (r *HTTPResponse) DecodeJSON(v any) error {
 	if len(r.Body) == 0 {
 		return fmt.Errorf("empty response body")
 	}
@@ -51,7 +51,7 @@ func (r *HTTPResponse) DecodeJSON(v interface{}) error {
 // Example:
 //
 //	resp, err := MakeHTTPRequest("POST", "https://api.example.com/users", payload, opts)
-func MakeHTTPRequest(method, url string, body interface{}, opts HTTPClientOptions) (*HTTPResponse, error) {
+func MakeHTTPRequest(method, url string, body any, opts HTTPClientOptions) (*HTTPResponse, error) {
 	// Marshal body to JSON if provided
 	var bodyReader io.Reader
 	if body != nil {
@@ -108,7 +108,7 @@ func MakeHTTPRequest(method, url string, body interface{}, opts HTTPClientOption
 // Example:
 //
 //	resp, err := MakeHTTPRequestWithRetry("POST", url, payload, opts)
-func MakeHTTPRequestWithRetry(method, url string, body interface{}, opts HTTPClientOptions) (*HTTPResponse, error) {
+func MakeHTTPRequestWithRetry(method, url string, body any, opts HTTPClientOptions) (*HTTPResponse, error) {
 	var lastErr error
 
 	for attempt := 0; attempt <= opts.RetryCount; attempt++ {
@@ -147,7 +147,7 @@ func MakeHTTPRequestWithRetry(method, url string, body interface{}, opts HTTPCli
 //
 //	var result UserResponse
 //	err := MakeJSONRequest("POST", url, payload, &result, opts)
-func MakeJSONRequest(method, url string, body interface{}, result interface{}, opts HTTPClientOptions) error {
+func MakeJSONRequest(method, url string, body any, result any, opts HTTPClientOptions) error {
 	resp, err := MakeHTTPRequest(method, url, body, opts)
 	if err != nil {
 		return err
@@ -174,7 +174,7 @@ func MakeJSONRequest(method, url string, body interface{}, result interface{}, o
 //
 //	var result UserResponse
 //	err := MakeJSONRequestWithRetry("POST", url, payload, &result, opts)
-func MakeJSONRequestWithRetry(method, url string, body interface{}, result interface{}, opts HTTPClientOptions) error {
+func MakeJSONRequestWithRetry(method, url string, body any, result any, opts HTTPClientOptions) error {
 	resp, err := MakeHTTPRequestWithRetry(method, url, body, opts)
 	if err != nil {
 		return err
@@ -204,7 +204,7 @@ func MakeJSONRequestWithRetry(method, url string, body interface{}, result inter
 // Example:
 //
 //	resp, err := MakeExternalAPIRequest("Terminal Trainer", "POST", url, payload, opts)
-func MakeExternalAPIRequest(serviceName, method, url string, body interface{}, opts HTTPClientOptions) (*HTTPResponse, error) {
+func MakeExternalAPIRequest(serviceName, method, url string, body any, opts HTTPClientOptions) (*HTTPResponse, error) {
 	resp, err := MakeHTTPRequest(method, url, body, opts)
 	if err != nil {
 		return nil, ExternalAPIError(serviceName, fmt.Sprintf("%s %s", method, url), err)
@@ -224,7 +224,7 @@ func MakeExternalAPIRequest(serviceName, method, url string, body interface{}, o
 //
 //	var result SessionResponse
 //	err := MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, payload, &result, opts)
-func MakeExternalAPIJSONRequest(serviceName, method, url string, body interface{}, result interface{}, opts HTTPClientOptions) error {
+func MakeExternalAPIJSONRequest(serviceName, method, url string, body any, result any, opts HTTPClientOptions) error {
 	resp, err := MakeExternalAPIRequest(serviceName, method, url, body, opts)
 	if err != nil {
 		return err

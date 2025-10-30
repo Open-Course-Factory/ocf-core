@@ -15,7 +15,7 @@ import (
 // TestContext holds all necessary resources for entity tests
 type TestContext struct {
 	DB       *gorm.DB
-	Entity   interface{}
+	Entity   any
 	Cleanup  func()
 }
 
@@ -35,7 +35,7 @@ type TestContext struct {
 //
 //	    // Your test code here
 //	}
-func SetupEntityTest(t *testing.T, entity interface{}) *TestContext {
+func SetupEntityTest(t *testing.T, entity any) *TestContext {
 	t.Helper()
 
 	// Setup in-memory database
@@ -97,7 +97,7 @@ func RegisterTestEntity(t *testing.T, registration entityInterfaces.RegistrableI
 // Usage:
 //
 //	entity := CreateTestEntity(t, ctx.DB, &Course{Title: "Test Course"})
-func CreateTestEntity(t *testing.T, db *gorm.DB, entity interface{}) interface{} {
+func CreateTestEntity(t *testing.T, db *gorm.DB, entity any) any {
 	t.Helper()
 
 	result := db.Create(entity)
@@ -113,7 +113,7 @@ func CreateTestEntity(t *testing.T, db *gorm.DB, entity interface{}) interface{}
 // Usage:
 //
 //	MigrateTestEntity(t, ctx.DB, &Course{}, &Chapter{})
-func MigrateTestEntity(t *testing.T, db *gorm.DB, entities ...interface{}) {
+func MigrateTestEntity(t *testing.T, db *gorm.DB, entities ...any) {
 	t.Helper()
 
 	err := db.AutoMigrate(entities...)

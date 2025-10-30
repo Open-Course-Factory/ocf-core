@@ -28,7 +28,7 @@ type GroupMember struct {
 	IsActive  bool            `gorm:"default:true" json:"is_active"`
 
 	// Optional metadata (custom fields per member)
-	Metadata map[string]interface{} `gorm:"type:jsonb" json:"metadata,omitempty"`
+	Metadata map[string]any `gorm:"type:jsonb" json:"metadata,omitempty"`
 
 	// Relations
 	Group ClassGroup `gorm:"foreignKey:GroupID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"group,omitempty"`

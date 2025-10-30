@@ -23,7 +23,7 @@ type ForeignKeyFilter struct {
 
 // Matches returns true if the key represents a foreign key filter.
 // Foreign keys end with "Id" or "ID" but not "IDs" or "Ids".
-func (f *ForeignKeyFilter) Matches(key string, value interface{}) bool {
+func (f *ForeignKeyFilter) Matches(key string, value any) bool {
 	// Match keys ending with Id or ID, but exclude IDs/Ids (many-to-many)
 	return (strings.HasSuffix(key, "Id") || strings.HasSuffix(key, "ID")) &&
 		!strings.HasSuffix(key, "IDs") &&
@@ -32,7 +32,7 @@ func (f *ForeignKeyFilter) Matches(key string, value interface{}) bool {
 
 // Apply applies the foreign key filter to the query.
 // Supports both single IDs and comma-separated or array IDs for IN clauses.
-func (f *ForeignKeyFilter) Apply(query *gorm.DB, key string, value interface{}, tableName string) *gorm.DB {
+func (f *ForeignKeyFilter) Apply(query *gorm.DB, key string, value any, tableName string) *gorm.DB {
 	dbColumn := camelToSnake(key)
 
 	switch v := value.(type) {
@@ -53,7 +53,7 @@ func (f *ForeignKeyFilter) Apply(query *gorm.DB, key string, value interface{}, 
 		// Array of IDs - use IN clause
 		return query.Where(dbColumn+" IN ?", v)
 
-	case []interface{}:
+	case []any:
 		// Array of interfaces - use IN clause
 		return query.Where(dbColumn+" IN ?", v)
 

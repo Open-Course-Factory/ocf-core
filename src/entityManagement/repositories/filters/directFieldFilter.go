@@ -22,7 +22,7 @@ type DirectFieldFilter struct {
 
 // Matches returns true if the key represents a direct field filter.
 // Direct fields don't have special suffixes like Id, ID, IDs, or Ids.
-func (d *DirectFieldFilter) Matches(key string, value interface{}) bool {
+func (d *DirectFieldFilter) Matches(key string, value any) bool {
 	// Exclude foreign key patterns (Id, ID) and many-to-many patterns (IDs, Ids)
 	return !strings.HasSuffix(key, "Id") &&
 		!strings.HasSuffix(key, "ID") &&
@@ -32,7 +32,7 @@ func (d *DirectFieldFilter) Matches(key string, value interface{}) bool {
 
 // Apply applies the direct field filter to the query.
 // Supports both single values and comma-separated or array values for IN clauses.
-func (d *DirectFieldFilter) Apply(query *gorm.DB, key string, value interface{}, tableName string) *gorm.DB {
+func (d *DirectFieldFilter) Apply(query *gorm.DB, key string, value any, tableName string) *gorm.DB {
 	dbColumn := camelToSnake(key)
 
 	switch v := value.(type) {
@@ -53,7 +53,7 @@ func (d *DirectFieldFilter) Apply(query *gorm.DB, key string, value interface{},
 		// Array of strings - use IN clause
 		return query.Where(dbColumn+" IN ?", v)
 
-	case []interface{}:
+	case []any:
 		// Array of interfaces - use IN clause
 		return query.Where(dbColumn+" IN ?", v)
 

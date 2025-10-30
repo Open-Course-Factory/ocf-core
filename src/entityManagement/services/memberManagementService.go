@@ -22,7 +22,7 @@ type MemberManagementService interface {
 	AddMembers(entityID uuid.UUID, requestingUserID string, userIDs []string, role string) error
 	RemoveMember(entityID uuid.UUID, requestingUserID string, userID string) error
 	UpdateMemberRole(entityID uuid.UUID, requestingUserID string, userID string, newRole string) error
-	GetMembers(entityID uuid.UUID) ([]interface{}, error)
+	GetMembers(entityID uuid.UUID) ([]any, error)
 	IsUserMember(entityID uuid.UUID, userID string) (bool, error)
 	GetUserRole(entityID uuid.UUID, userID string) (string, error)
 }
@@ -246,14 +246,14 @@ func (mms *memberManagementService) UpdateMemberRole(
 }
 
 // GetMembers returns all members of an entity
-func (mms *memberManagementService) GetMembers(entityID uuid.UUID) ([]interface{}, error) {
+func (mms *memberManagementService) GetMembers(entityID uuid.UUID) ([]any, error) {
 	members, err := mms.repository.GetMembers(entityID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert to []interface{}
-	result := make([]interface{}, len(members))
+	// Convert to []any
+	result := make([]any, len(members))
 	for i, m := range members {
 		result[i] = m
 	}

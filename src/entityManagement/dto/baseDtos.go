@@ -18,7 +18,7 @@ import (
 //	}
 type BaseEditDto struct {
 	IsActive *bool                   `json:"is_active,omitempty" mapstructure:"is_active"`
-	Metadata *map[string]interface{} `json:"metadata,omitempty" mapstructure:"metadata"`
+	Metadata *map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
 // BaseOutputDto contains common fields for response DTOs
@@ -47,7 +47,7 @@ type BaseEntityDto struct {
 // BaseCreateDto can be used for common create fields
 // though most entities have unique create requirements
 type BaseCreateDto struct {
-	Metadata map[string]interface{} `json:"metadata,omitempty" mapstructure:"metadata"`
+	Metadata map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
 // OwnedEntityOutput extends BaseEntityDto with owner information
@@ -75,5 +75,5 @@ type FullEntityOutput struct {
 	Description string                 `json:"description,omitempty"`
 	OwnerUserID string                 `json:"owner_user_id"`
 	IsActive    bool                   `json:"is_active"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
 }

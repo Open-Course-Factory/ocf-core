@@ -24,8 +24,8 @@ func stringToUUIDHookFunc() mapstructure.DecodeHookFunc {
 	return func(
 		f reflect.Type,
 		t reflect.Type,
-		data interface{},
-	) (interface{}, error) {
+		data any,
+	) (any, error) {
 		// Target must be uuid.UUID
 		if t != reflect.TypeOf(uuid.UUID{}) {
 			return data, nil
@@ -47,21 +47,21 @@ func stringToUUIDHookFunc() mapstructure.DecodeHookFunc {
 }
 
 type GenericService interface {
-	CreateEntity(inputDto interface{}, entityName string) (interface{}, error)
-	CreateEntityWithUser(inputDto interface{}, entityName string, userID string) (interface{}, error)
-	SaveEntity(entity interface{}) (interface{}, error)
-	GetEntity(id uuid.UUID, data interface{}, entityName string, includes []string) (interface{}, error)
-	GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}, includes []string) ([]interface{}, int64, error)
-	GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}, includes []string) ([]interface{}, string, bool, int64, error)
-	DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error
-	EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error
-	GetEntityModelInterface(entityName string) interface{}
-	AddOwnerIDs(entity interface{}, userId string) (interface{}, error)
-	ExtractUuidFromReflectEntity(entity interface{}) uuid.UUID
-	GetDtoArrayFromEntitiesPages(allEntitiesPages []interface{}, entityModelInterface interface{}, entityName string) ([]interface{}, bool)
-	GetEntityFromResult(entityName string, item interface{}) (interface{}, bool)
-	AddDefaultAccessesForEntity(resourceName string, entity interface{}, userId string) error
-	DecodeInputDtoForEntityCreation(entityName string, ctx *gin.Context) (interface{}, error)
+	CreateEntity(inputDto any, entityName string) (any, error)
+	CreateEntityWithUser(inputDto any, entityName string, userID string) (any, error)
+	SaveEntity(entity any) (any, error)
+	GetEntity(id uuid.UUID, data any, entityName string, includes []string) (any, error)
+	GetEntities(data any, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error)
+	GetEntitiesCursor(data any, cursor string, limit int, filters map[string]any, includes []string) ([]any, string, bool, int64, error)
+	DeleteEntity(id uuid.UUID, entity any, scoped bool) error
+	EditEntity(id uuid.UUID, entityName string, entity any, data any) error
+	GetEntityModelInterface(entityName string) any
+	AddOwnerIDs(entity any, userId string) (any, error)
+	ExtractUuidFromReflectEntity(entity any) uuid.UUID
+	GetDtoArrayFromEntitiesPages(allEntitiesPages []any, entityModelInterface any, entityName string) ([]any, bool)
+	GetEntityFromResult(entityName string, item any) (any, bool)
+	AddDefaultAccessesForEntity(resourceName string, entity any, userId string) error
+	DecodeInputDtoForEntityCreation(entityName string, ctx *gin.Context) (any, error)
 }
 
 type genericService struct {
@@ -78,11 +78,11 @@ func NewGenericService(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) G
 	}
 }
 
-func (g *genericService) CreateEntity(inputDto interface{}, entityName string) (interface{}, error) {
+func (g *genericService) CreateEntity(inputDto any, entityName string) (any, error) {
 	return g.CreateEntityWithUser(inputDto, entityName, "")
 }
 
-func (g *genericService) CreateEntityWithUser(inputDto interface{}, entityName string, userID string) (interface{}, error) {
+func (g *genericService) CreateEntityWithUser(inputDto any, entityName string, userID string) (any, error) {
 	// Convert DTO to model entity before calling BeforeCreate hook
 	conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.CreateInputDtoToModel)
 	if !found {
@@ -90,7 +90,7 @@ func (g *genericService) CreateEntityWithUser(inputDto interface{}, entityName s
 	}
 
 	val := reflect.ValueOf(conversionFunctionRef)
-	var entityModel interface{}
+	var entityModel any
 	if val.IsValid() && val.Kind() == reflect.Func {
 		args := []reflect.Value{reflect.ValueOf(inputDto)}
 		result := val.Call(args)
@@ -143,7 +143,7 @@ func (g *genericService) CreateEntityWithUser(inputDto interface{}, entityName s
 	return entity, nil
 }
 
-func (g *genericService) SaveEntity(entity interface{}) (interface{}, error) {
+func (g *genericService) SaveEntity(entity any) (any, error) {
 
 	entity, saveEntityError := g.genericRepository.SaveEntity(entity)
 	if saveEntityError != nil {
@@ -153,7 +153,7 @@ func (g *genericService) SaveEntity(entity interface{}) (interface{}, error) {
 	return entity, nil
 }
 
-func (g *genericService) GetEntity(id uuid.UUID, data interface{}, entityName string, includes []string) (interface{}, error) {
+func (g *genericService) GetEntity(id uuid.UUID, data any, entityName string, includes []string) (any, error) {
 	entity, err := g.genericRepository.GetEntity(id, data, entityName, includes)
 
 	if err != nil {
@@ -169,7 +169,7 @@ func (g *genericService) GetEntity(id uuid.UUID, data interface{}, entityName st
 }
 
 // should return an array of dtoEntityOutput
-func (g *genericService) GetEntities(data interface{}, page int, pageSize int, filters map[string]interface{}, includes []string) ([]interface{}, int64, error) {
+func (g *genericService) GetEntities(data any, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error) {
 
 	allPages, total, err := g.genericRepository.GetAllEntities(data, page, pageSize, filters, includes)
 
@@ -182,7 +182,7 @@ func (g *genericService) GetEntities(data interface{}, page int, pageSize int, f
 
 // GetEntitiesCursor retrieves entities using cursor-based pagination.
 // This method delegates to the repository layer for efficient cursor-based traversal.
-func (g *genericService) GetEntitiesCursor(data interface{}, cursor string, limit int, filters map[string]interface{}, includes []string) ([]interface{}, string, bool, int64, error) {
+func (g *genericService) GetEntitiesCursor(data any, cursor string, limit int, filters map[string]any, includes []string) ([]any, string, bool, int64, error) {
 
 	allPages, nextCursor, hasMore, total, err := g.genericRepository.GetAllEntitiesCursor(data, cursor, limit, filters, includes)
 
@@ -193,7 +193,7 @@ func (g *genericService) GetEntitiesCursor(data interface{}, cursor string, limi
 	return allPages, nextCursor, hasMore, total, nil
 }
 
-func (g *genericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped bool) error {
+func (g *genericService) DeleteEntity(id uuid.UUID, entity any, scoped bool) error {
 	typeOfEntity := reflect.TypeOf(entity)
 	entityName := typeOfEntity.Name()
 
@@ -259,7 +259,7 @@ func (g *genericService) DeleteEntity(id uuid.UUID, entity interface{}, scoped b
 	return nil
 }
 
-func (g *genericService) EditEntity(id uuid.UUID, entityName string, entity interface{}, data interface{}) error {
+func (g *genericService) EditEntity(id uuid.UUID, entityName string, entity any, data any) error {
 	// Récupérer l'entité existante pour les hooks
 	oldEntity, err := g.GetEntity(id, entity, entityName, nil)
 	if err != nil {
@@ -314,13 +314,13 @@ func (g *genericService) EditEntity(id uuid.UUID, entityName string, entity inte
 	return nil
 }
 
-func (g *genericService) GetEntityModelInterface(entityName string) interface{} {
-	var result interface{}
+func (g *genericService) GetEntityModelInterface(entityName string) any {
+	var result any
 	result, _ = ems.GlobalEntityRegistrationService.GetEntityInterface(entityName)
 	return result
 }
 
-func (g *genericService) AddOwnerIDs(entity interface{}, userId string) (interface{}, error) {
+func (g *genericService) AddOwnerIDs(entity any, userId string) (any, error) {
 	// Add owner ID to entity (modifies in-place)
 	if err := utils.AddOwnerIDToEntity(entity, userId); err != nil {
 		return nil, err
@@ -335,7 +335,7 @@ func (g *genericService) AddOwnerIDs(entity interface{}, userId string) (interfa
 	return entityWithOwnerIds, nil
 }
 
-func (g *genericService) ExtractUuidFromReflectEntity(entity interface{}) uuid.UUID {
+func (g *genericService) ExtractUuidFromReflectEntity(entity any) uuid.UUID {
 	entityReflectValue := reflect.ValueOf(entity).Elem()
 	field := entityReflectValue.FieldByName("ID")
 
@@ -351,10 +351,10 @@ func (g *genericService) ExtractUuidFromReflectEntity(entity interface{}) uuid.U
 	return entityUUID
 }
 
-func (g *genericService) GetDtoArrayFromEntitiesPages(allEntitiesPages []interface{}, entityModelInterface interface{}, entityName string) ([]interface{}, bool) {
+func (g *genericService) GetDtoArrayFromEntitiesPages(allEntitiesPages []any, entityModelInterface any, entityName string) ([]any, bool) {
 	// Estimate capacity based on typical page sizes
 	estimatedCapacity := len(allEntitiesPages) * 10
-	entitiesDto := make([]interface{}, 0, estimatedCapacity)
+	entitiesDto := make([]any, 0, estimatedCapacity)
 
 	for _, page := range allEntitiesPages {
 
@@ -384,7 +384,7 @@ func (g *genericService) GetDtoArrayFromEntitiesPages(allEntitiesPages []interfa
 }
 
 // used in get
-func (g *genericService) appendEntityFromResult(entityName string, item interface{}, entitiesDto []interface{}) ([]interface{}, bool) {
+func (g *genericService) appendEntityFromResult(entityName string, item any, entitiesDto []any) ([]any, bool) {
 	result, ko := g.GetEntityFromResult(entityName, item)
 	if !ko {
 		entitiesDto = append(entitiesDto, result)
@@ -395,8 +395,8 @@ func (g *genericService) appendEntityFromResult(entityName string, item interfac
 }
 
 // used in post and get
-func (g *genericService) GetEntityFromResult(entityName string, item interface{}) (interface{}, bool) {
-	var result interface{}
+func (g *genericService) GetEntityFromResult(entityName string, item any) (any, bool) {
+	var result any
 	if funcRef, ok := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.OutputModelToDto); ok {
 		val := reflect.ValueOf(funcRef)
 
@@ -421,7 +421,7 @@ func (g *genericService) GetEntityFromResult(entityName string, item interface{}
 	return result, false
 }
 
-func (g *genericService) AddDefaultAccessesForEntity(resourceName string, entity interface{}, userId string) error {
+func (g *genericService) AddDefaultAccessesForEntity(resourceName string, entity any, userId string) error {
 	// Skip enforcer setup if not initialized (e.g., in tests)
 	if g.enforcer == nil {
 		return nil
@@ -442,7 +442,7 @@ func (g *genericService) AddDefaultAccessesForEntity(resourceName string, entity
 	return nil
 }
 
-func (g *genericService) DecodeInputDtoForEntityCreation(entityName string, ctx *gin.Context) (interface{}, error) {
+func (g *genericService) DecodeInputDtoForEntityCreation(entityName string, ctx *gin.Context) (any, error) {
 	entityCreateDtoInput := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
 	decodedData := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
 

@@ -29,7 +29,7 @@ type FilterStrategy interface {
 	// Returns:
 	//   - true if this strategy should handle this filter
 	//   - false otherwise
-	Matches(key string, value interface{}) bool
+	Matches(key string, value any) bool
 
 	// Apply applies the filter to the GORM query and returns the modified query.
 	//
@@ -41,7 +41,7 @@ type FilterStrategy interface {
 	//
 	// Returns:
 	//   - Modified GORM query with the filter applied
-	Apply(query *gorm.DB, key string, value interface{}, tableName string) *gorm.DB
+	Apply(query *gorm.DB, key string, value any, tableName string) *gorm.DB
 
 	// Priority returns the execution priority of this strategy.
 	// Lower numbers are checked first. This allows more specific strategies

@@ -288,7 +288,7 @@ func TestGenericRepository_GetAllEntities_Success(t *testing.T) {
 	}
 
 	// Execute
-	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, map[string]interface{}{}, nil)
+	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, map[string]any{}, nil)
 
 	// Assert
 	assert.NoError(t, err)
@@ -316,7 +316,7 @@ func TestGenericRepository_GetAllEntities_Pagination(t *testing.T) {
 	}
 
 	// Execute avec une petite taille de page - page 1
-	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, map[string]interface{}{}, nil)
+	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, map[string]any{}, nil)
 
 	// Assert
 	assert.NoError(t, err)
@@ -325,7 +325,7 @@ func TestGenericRepository_GetAllEntities_Pagination(t *testing.T) {
 	assert.Len(t, results, 1) // Returns one page
 
 	// Test page 2
-	results2, total2, err2 := repo.GetAllEntities(RepositoryTestEntity{}, 2, 10, map[string]interface{}{}, nil)
+	results2, total2, err2 := repo.GetAllEntities(RepositoryTestEntity{}, 2, 10, map[string]any{}, nil)
 	assert.NoError(t, err2)
 	assert.Equal(t, int64(25), total2)
 	assert.Len(t, results2, 1)
@@ -349,7 +349,7 @@ func TestGenericRepository_GetAllEntities_WithFilters(t *testing.T) {
 	}
 
 	// Test filtering by value
-	filters := map[string]interface{}{
+	filters := map[string]any{
 		"value": 10,
 	}
 	results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 10, filters, nil)
@@ -588,7 +588,7 @@ func TestGenericRepository_EdgeCases(t *testing.T) {
 		testEntity := RepositoryTestEntity{Name: "Test"}
 		db.Create(&testEntity)
 
-		results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 1, map[string]interface{}{}, nil)
+		results, total, err := repo.GetAllEntities(RepositoryTestEntity{}, 1, 1, map[string]any{}, nil)
 		assert.NoError(t, err)
 		assert.NotNil(t, results)
 		assert.Equal(t, int64(1), total)

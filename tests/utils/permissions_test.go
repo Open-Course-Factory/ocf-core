@@ -17,7 +17,7 @@ import (
 func TestAddPolicy(t *testing.T) {
 	t.Run("Success - Add policy", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 
@@ -30,7 +30,7 @@ func TestAddPolicy(t *testing.T) {
 
 	t.Run("Error - Add policy fails", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 			return false, fmt.Errorf("policy already exists")
 		}
 
@@ -43,7 +43,7 @@ func TestAddPolicy(t *testing.T) {
 
 	t.Run("Warn on error - Add policy fails but only warns", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 			return false, fmt.Errorf("policy already exists")
 		}
 
@@ -58,7 +58,7 @@ func TestAddPolicy(t *testing.T) {
 		mockEnforcer.LoadPolicyFunc = func() error {
 			return nil
 		}
-		mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 
@@ -73,7 +73,7 @@ func TestAddPolicy(t *testing.T) {
 func TestRemovePolicy(t *testing.T) {
 	t.Run("Success - Remove policy", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.RemovePolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.RemovePolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 
@@ -86,7 +86,7 @@ func TestRemovePolicy(t *testing.T) {
 
 	t.Run("Error - Remove policy fails", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.RemovePolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.RemovePolicyFunc = func(params ...any) (bool, error) {
 			return false, fmt.Errorf("policy not found")
 		}
 
@@ -101,7 +101,7 @@ func TestRemovePolicy(t *testing.T) {
 func TestAddGroupingPolicy(t *testing.T) {
 	t.Run("Success - Add user to role group", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.AddGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 
@@ -114,7 +114,7 @@ func TestAddGroupingPolicy(t *testing.T) {
 
 	t.Run("Error - Add grouping policy fails", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.AddGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return false, fmt.Errorf("user already in role")
 		}
 
@@ -129,7 +129,7 @@ func TestAddGroupingPolicy(t *testing.T) {
 func TestRemoveGroupingPolicy(t *testing.T) {
 	t.Run("Success - Remove user from role group", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.RemoveGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.RemoveGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 
@@ -142,7 +142,7 @@ func TestRemoveGroupingPolicy(t *testing.T) {
 
 	t.Run("Error - Remove grouping policy fails", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.RemoveGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.RemoveGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return false, fmt.Errorf("user not in role")
 		}
 
@@ -161,10 +161,10 @@ func TestRemoveGroupingPolicy(t *testing.T) {
 func TestGrantEntityAccess(t *testing.T) {
 	t.Run("Success - Grant entity access", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.AddGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
-		mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 
@@ -178,7 +178,7 @@ func TestGrantEntityAccess(t *testing.T) {
 
 	t.Run("Error - AddGroupingPolicy fails", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.AddGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return false, fmt.Errorf("user already in role")
 		}
 
@@ -193,7 +193,7 @@ func TestGrantEntityAccess(t *testing.T) {
 func TestRevokeEntityAccess(t *testing.T) {
 	t.Run("Success - Revoke entity access", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.RemoveGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.RemoveGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 
@@ -208,7 +208,7 @@ func TestRevokeEntityAccess(t *testing.T) {
 func TestGrantEntitySubResourceAccess(t *testing.T) {
 	t.Run("Success - Grant sub-resource access", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 
@@ -223,10 +223,10 @@ func TestGrantEntitySubResourceAccess(t *testing.T) {
 func TestGrantCompleteEntityAccess(t *testing.T) {
 	t.Run("Success - Grant complete entity access with sub-resources", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.AddGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
-		mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 
@@ -245,10 +245,10 @@ func TestGrantCompleteEntityAccess(t *testing.T) {
 		mockEnforcer.LoadPolicyFunc = func() error {
 			return nil
 		}
-		mockEnforcer.AddGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
-		mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 
@@ -269,10 +269,10 @@ func TestGrantCompleteEntityAccess(t *testing.T) {
 func TestGrantManagerPermissions(t *testing.T) {
 	t.Run("Success - Grant manager permissions", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.AddGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
-		mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 
@@ -288,7 +288,7 @@ func TestGrantManagerPermissions(t *testing.T) {
 
 	t.Run("Error - AddGroupingPolicy fails", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.AddGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return false, fmt.Errorf("user already manager")
 		}
 
@@ -303,7 +303,7 @@ func TestGrantManagerPermissions(t *testing.T) {
 func TestRevokeManagerPermissions(t *testing.T) {
 	t.Run("Success - Revoke manager permissions", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.RemoveGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.RemoveGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 
@@ -322,13 +322,13 @@ func TestRevokeManagerPermissions(t *testing.T) {
 func TestPermissionsIntegration(t *testing.T) {
 	t.Run("Complete workflow - Grant, use, and revoke permissions", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.AddGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
-		mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
-		mockEnforcer.RemoveGroupingPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.RemoveGroupingPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 
@@ -367,7 +367,7 @@ func TestPermissionOptions(t *testing.T) {
 
 	t.Run("Custom options - WarnOnError prevents error return", func(t *testing.T) {
 		mockEnforcer := mocks.NewMockEnforcer()
-		mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 			return false, fmt.Errorf("simulated error")
 		}
 
@@ -387,7 +387,7 @@ func TestPermissionOptions(t *testing.T) {
 		mockEnforcer.LoadPolicyFunc = func() error {
 			return nil
 		}
-		mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) {
+		mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) {
 			return true, nil
 		}
 

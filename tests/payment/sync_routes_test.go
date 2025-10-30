@@ -290,7 +290,7 @@ func TestSyncRoutes_LinkSubscriptionToUser(t *testing.T) {
 		userID := "user_123"
 		planID := uuid.New()
 
-		linkRequest := map[string]interface{}{
+		linkRequest := map[string]any{
 			"user_id":              userID,
 			"subscription_plan_id": planID,
 		}
@@ -305,7 +305,7 @@ func TestSyncRoutes_LinkSubscriptionToUser(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 
-		var response map[string]interface{}
+		var response map[string]any
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Equal(t, "Subscription linked successfully", response["message"])
@@ -316,7 +316,7 @@ func TestSyncRoutes_LinkSubscriptionToUser(t *testing.T) {
 	t.Run("Invalid request body", func(t *testing.T) {
 		subscriptionID := "sub_invalid_request"
 
-		invalidRequest := map[string]interface{}{
+		invalidRequest := map[string]any{
 			"user_id": "user_123",
 			// subscription_plan_id manquant
 		}
@@ -329,7 +329,7 @@ func TestSyncRoutes_LinkSubscriptionToUser(t *testing.T) {
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
-		var response map[string]interface{}
+		var response map[string]any
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Contains(t, response["error"], "SubscriptionPlanID")
@@ -339,7 +339,7 @@ func TestSyncRoutes_LinkSubscriptionToUser(t *testing.T) {
 		subscriptionID := "sub_empty_user"
 		planID := uuid.New()
 
-		linkRequest := map[string]interface{}{
+		linkRequest := map[string]any{
 			"user_id":              "",
 			"subscription_plan_id": planID,
 		}
@@ -356,7 +356,7 @@ func TestSyncRoutes_LinkSubscriptionToUser(t *testing.T) {
 	t.Run("Invalid UUID for subscription plan", func(t *testing.T) {
 		subscriptionID := "sub_invalid_uuid"
 
-		linkRequest := map[string]interface{}{
+		linkRequest := map[string]any{
 			"user_id":              "user_123",
 			"subscription_plan_id": "not-a-valid-uuid",
 		}
@@ -384,7 +384,7 @@ func TestSyncRoutes_ErrorHandling(t *testing.T) {
 
 		assert.Equal(t, http.StatusInternalServerError, w.Code)
 
-		var response map[string]interface{}
+		var response map[string]any
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Contains(t, response["error"], "assert.AnError")
@@ -424,7 +424,7 @@ func TestSyncRoutes_ErrorHandling(t *testing.T) {
 		userID := "user_123"
 		planID := uuid.New()
 
-		linkRequest := map[string]interface{}{
+		linkRequest := map[string]any{
 			"user_id":              userID,
 			"subscription_plan_id": planID,
 		}

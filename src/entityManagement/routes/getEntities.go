@@ -12,7 +12,7 @@ import (
 )
 
 type PaginationResponse struct {
-	Data            []interface{} `json:"data"`
+	Data            []any `json:"data"`
 	Total           int64         `json:"total"`
 	TotalPages      int           `json:"totalPages"`
 	CurrentPage     int           `json:"currentPage"`
@@ -23,7 +23,7 @@ type PaginationResponse struct {
 
 // CursorPaginationResponse is used for cursor-based pagination
 type CursorPaginationResponse struct {
-	Data       []interface{} `json:"data"`
+	Data       []any `json:"data"`
 	NextCursor string        `json:"nextCursor,omitempty"` // Base64-encoded cursor for next page
 	HasMore    bool          `json:"hasMore"`              // Indicates if more results exist
 	Limit      int           `json:"limit"`                // Number of items per page
@@ -68,7 +68,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 	}
 
 	// Extract filter parameters (all query params except pagination and include params)
-	filters := make(map[string]interface{})
+	filters := make(map[string]any)
 	excludedParams := map[string]bool{"page": true, "size": true, "cursor": true, "limit": true, "include": true}
 	for key, values := range ctx.Request.URL.Query() {
 		if !excludedParams[key] && len(values) > 0 {
@@ -168,7 +168,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, response)
 }
 
-func (genericController genericController) getEntities(ctx *gin.Context, page int, pageSize int, filters map[string]interface{}, includes []string) ([]interface{}, int64, error) {
+func (genericController genericController) getEntities(ctx *gin.Context, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error) {
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
 	entitiesDto, total, shouldReturn := genericController.getEntitiesFromName(entityName, page, pageSize, filters, includes)
@@ -185,7 +185,7 @@ func (genericController genericController) getEntities(ctx *gin.Context, page in
 	return entitiesDto, total, nil
 }
 
-func (genericController genericController) getEntitiesFromName(entityName string, page int, pageSize int, filters map[string]interface{}, includes []string) ([]interface{}, int64, bool) {
+func (genericController genericController) getEntitiesFromName(entityName string, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, bool) {
 	entityModelInterface := genericController.genericService.GetEntityModelInterface(entityName)
 	allEntitiesPages, total, err := genericController.genericService.GetEntities(entityModelInterface, page, pageSize, filters, includes)
 
@@ -202,7 +202,7 @@ func (genericController genericController) getEntitiesFromName(entityName string
 }
 
 // getEntitiesCursor retrieves entities using cursor-based pagination
-func (genericController genericController) getEntitiesCursor(ctx *gin.Context, cursor string, limit int, filters map[string]interface{}, includes []string) ([]interface{}, string, bool, int64, error) {
+func (genericController genericController) getEntitiesCursor(ctx *gin.Context, cursor string, limit int, filters map[string]any, includes []string) ([]any, string, bool, int64, error) {
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
 	entitiesDto, nextCursor, hasMore, total, shouldReturn := genericController.getEntitiesCursorFromName(entityName, cursor, limit, filters, includes)
@@ -220,7 +220,7 @@ func (genericController genericController) getEntitiesCursor(ctx *gin.Context, c
 }
 
 // getEntitiesCursorFromName retrieves entities by name using cursor-based pagination
-func (genericController genericController) getEntitiesCursorFromName(entityName string, cursor string, limit int, filters map[string]interface{}, includes []string) ([]interface{}, string, bool, int64, bool) {
+func (genericController genericController) getEntitiesCursorFromName(entityName string, cursor string, limit int, filters map[string]any, includes []string) ([]any, string, bool, int64, bool) {
 	entityModelInterface := genericController.genericService.GetEntityModelInterface(entityName)
 	allEntitiesPages, nextCursor, hasMore, total, err := genericController.genericService.GetEntitiesCursor(entityModelInterface, cursor, limit, filters, includes)
 

@@ -19,7 +19,7 @@ type UserSummary struct {
 type CreateOrganizationMemberInput struct {
 	UserID   string                        `json:"user_id" mapstructure:"user_id" binding:"required"`
 	Role     models.OrganizationMemberRole `json:"role" mapstructure:"role" binding:"required"`
-	Metadata map[string]interface{}        `json:"metadata,omitempty" mapstructure:"metadata"`
+	Metadata map[string]any        `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
 // BatchCreateOrganizationMembersInput represents the input for adding multiple members
@@ -33,7 +33,7 @@ type BatchCreateOrganizationMembersInput struct {
 type EditOrganizationMemberInput struct {
 	Role     *models.OrganizationMemberRole `json:"role,omitempty" mapstructure:"role"`
 	IsActive *bool                          `json:"is_active,omitempty" mapstructure:"is_active"`
-	Metadata *map[string]interface{}        `json:"metadata,omitempty" mapstructure:"metadata"`
+	Metadata *map[string]any        `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
 // OrganizationMemberOutput represents the output for an organization member
@@ -45,7 +45,7 @@ type OrganizationMemberOutput struct {
 	InvitedBy      string                        `json:"invited_by,omitempty"`
 	JoinedAt       time.Time                     `json:"joined_at"`
 	IsActive       bool                          `json:"is_active"`
-	Metadata       map[string]interface{}        `json:"metadata,omitempty"`
+	Metadata       map[string]any        `json:"metadata,omitempty"`
 	CreatedAt      time.Time                     `json:"created_at"`
 	UpdatedAt      time.Time                     `json:"updated_at"`
 

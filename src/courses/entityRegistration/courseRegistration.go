@@ -104,7 +104,7 @@ func (s CourseRegistration) GetEntityRegistrationInput() entityManagementInterfa
 			OutputDto:      dto.CourseOutput{},
 			InputEditDto:   dto.EditCourseInput{},
 		},
-		EntitySubEntities: []interface{}{
+		EntitySubEntities: []any{
 			models.Chapter{},
 		},
 	}

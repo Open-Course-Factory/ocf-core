@@ -34,14 +34,14 @@ type InterfaceWithBaseModel interface {
 	GetReferenceObject() string
 }
 
-func GetBaseModel(obj interface{}) (BaseModel, bool) {
+func GetBaseModel(obj any) (BaseModel, bool) {
 	if v, ok := obj.(InterfaceWithBaseModel); ok {
 		return v.GetBaseModel(), true
 	}
 	return BaseModel{}, false
 }
 
-func GetReferenceObject(obj interface{}) (string, bool) {
+func GetReferenceObject(obj any) (string, bool) {
 	if v, ok := obj.(InterfaceWithBaseModel); ok {
 		return v.GetReferenceObject(), true
 	}

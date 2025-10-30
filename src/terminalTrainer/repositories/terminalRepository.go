@@ -423,7 +423,7 @@ func (r *terminalRepository) HideTerminalForUser(terminalID, userID string) erro
 	now := time.Now()
 	return r.db.Model(&models.TerminalShare{}).
 		Where("terminal_id = ? AND shared_with_user_id = ?", terminalUUID, userID).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"is_hidden_by_recipient": true,
 			"hidden_at":              now,
 		}).Error
@@ -476,7 +476,7 @@ func (r *terminalRepository) HideOwnedTerminal(terminalID, userID string) error 
 	now := time.Now()
 	return r.db.Model(&models.Terminal{}).
 		Where("id = ? AND user_id = ?", terminalUUID, userID).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"is_hidden_by_owner": true,
 			"hidden_by_owner_at": now,
 		}).Error

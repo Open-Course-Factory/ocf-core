@@ -52,7 +52,7 @@ func TestCursorPagination_FirstPage(t *testing.T) {
 	}
 
 	// Request first page with limit 5
-	results, nextCursor, hasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]interface{}{}, nil)
+	results, nextCursor, hasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]any{}, nil)
 
 	// Assertions
 	assert.NoError(t, err)
@@ -88,12 +88,12 @@ func TestCursorPagination_SecondPage(t *testing.T) {
 	}
 
 	// Get first page
-	_, firstCursor, firstHasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]interface{}{}, nil)
+	_, firstCursor, firstHasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]any{}, nil)
 	require.NoError(t, err)
 	require.True(t, firstHasMore)
 
 	// Get second page using cursor
-	results, secondCursor, secondHasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, firstCursor, 5, map[string]interface{}{}, nil)
+	results, secondCursor, secondHasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, firstCursor, 5, map[string]any{}, nil)
 
 	// Assertions
 	assert.NoError(t, err)
@@ -121,12 +121,12 @@ func TestCursorPagination_LastPageIncomplete(t *testing.T) {
 	}
 
 	// Get first page (5 items)
-	_, firstCursor, firstHasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]interface{}{}, nil)
+	_, firstCursor, firstHasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]any{}, nil)
 	require.NoError(t, err)
 	require.True(t, firstHasMore)
 
 	// Get second page (should have only 2 items)
-	results, nextCursor, hasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, firstCursor, 5, map[string]interface{}{}, nil)
+	results, nextCursor, hasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, firstCursor, 5, map[string]any{}, nil)
 
 	// Assertions
 	assert.NoError(t, err)
@@ -142,7 +142,7 @@ func TestCursorPagination_InvalidCursor(t *testing.T) {
 	repo := repositories.NewGenericRepository(db)
 
 	// Try with invalid cursor
-	_, _, _, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "invalid-cursor", 5, map[string]interface{}{}, nil)
+	_, _, _, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "invalid-cursor", 5, map[string]any{}, nil)
 
 	// Should return error
 	assert.Error(t, err)
@@ -165,7 +165,7 @@ func TestCursorPagination_WithFilters(t *testing.T) {
 	}
 
 	// Filter by value = 0 (should return 5 entities)
-	filters := map[string]interface{}{"value": 0}
+	filters := map[string]any{"value": 0}
 	results, nextCursor, hasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 3, filters, nil)
 
 	// Assertions
@@ -193,7 +193,7 @@ func TestCursorPagination_EmptyResults(t *testing.T) {
 	repo := repositories.NewGenericRepository(db)
 
 	// No entities created
-	results, nextCursor, hasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]interface{}{}, nil)
+	results, nextCursor, hasMore, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "", 5, map[string]any{}, nil)
 
 	// Assertions
 	assert.NoError(t, err)

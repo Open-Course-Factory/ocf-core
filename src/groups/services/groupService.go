@@ -22,7 +22,7 @@ type GroupService interface {
 	GetUserGroups(userID string) (*[]models.ClassGroup, error)
 	GetGroupsByOwner(ownerUserID string) (*[]models.ClassGroup, error)
 	GetGroupsByOrganization(organizationID uuid.UUID, includes []string) (*[]models.ClassGroup, error)
-	UpdateGroup(groupID uuid.UUID, ownerUserID string, updates map[string]interface{}) (*models.ClassGroup, error)
+	UpdateGroup(groupID uuid.UUID, ownerUserID string, updates map[string]any) (*models.ClassGroup, error)
 	DeleteGroup(groupID uuid.UUID, ownerUserID string) error
 
 	// Member management
@@ -156,7 +156,7 @@ func (gs *groupService) GetGroupsByOrganization(organizationID uuid.UUID, includ
 }
 
 // UpdateGroup updates a group (only owner or admin can update)
-func (gs *groupService) UpdateGroup(groupID uuid.UUID, requestingUserID string, updates map[string]interface{}) (*models.ClassGroup, error) {
+func (gs *groupService) UpdateGroup(groupID uuid.UUID, requestingUserID string, updates map[string]any) (*models.ClassGroup, error) {
 	// Check if user can manage this group
 	canManage, err := gs.CanUserManageGroup(groupID, requestingUserID)
 	if err != nil {

@@ -83,13 +83,13 @@ func TestWebhookIntegration_SubscriptionCreated(t *testing.T) {
 
 	t.Run("Valid subscription created webhook", func(t *testing.T) {
 		// Créer un payload de webhook réaliste
-		webhookPayload := map[string]interface{}{
+		webhookPayload := map[string]any{
 			"id":      "evt_subscription_created_123",
 			"object":  "event",
 			"type":    "customer.subscription.created",
 			"created": time.Now().Unix(),
-			"data": map[string]interface{}{
-				"object": map[string]interface{}{
+			"data": map[string]any{
+				"object": map[string]any{
 					"id":         "sub_test_123",
 					"object":     "subscription",
 					"customer":   "cus_test_123",
@@ -97,17 +97,17 @@ func TestWebhookIntegration_SubscriptionCreated(t *testing.T) {
 					"start_date": time.Now().Unix(),
 					"current_period_start": time.Now().Unix(),
 					"current_period_end":   time.Now().Add(30 * 24 * time.Hour).Unix(),
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"user_id":              "user_123",
 						"subscription_plan_id": uuid.New().String(),
 					},
-					"items": map[string]interface{}{
+					"items": map[string]any{
 						"object": "list",
-						"data": []map[string]interface{}{
+						"data": []map[string]any{
 							{
 								"id":     "si_test_123",
 								"object": "subscription_item",
-								"price": map[string]interface{}{
+								"price": map[string]any{
 									"id":        "price_test_123",
 									"currency":  "usd",
 									"unit_amount": 1999,
@@ -145,7 +145,7 @@ func TestWebhookIntegration_SubscriptionCreated(t *testing.T) {
 		// Vérifications
 		assert.Equal(t, http.StatusOK, w.Code)
 
-		var response map[string]interface{}
+		var response map[string]any
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 
@@ -157,23 +157,23 @@ func TestWebhookIntegration_SubscriptionCreated(t *testing.T) {
 	})
 
 	t.Run("Subscription updated webhook", func(t *testing.T) {
-		webhookPayload := map[string]interface{}{
+		webhookPayload := map[string]any{
 			"id":      "evt_subscription_updated_456",
 			"object":  "event",
 			"type":    "customer.subscription.updated",
 			"created": time.Now().Unix(),
-			"data": map[string]interface{}{
-				"object": map[string]interface{}{
+			"data": map[string]any{
+				"object": map[string]any{
 					"id":       "sub_test_456",
 					"object":   "subscription",
 					"customer": "cus_test_456",
 					"status":   "active",
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"user_id":              "user_456",
 						"subscription_plan_id": uuid.New().String(),
 					},
 				},
-				"previous_attributes": map[string]interface{}{
+				"previous_attributes": map[string]any{
 					"status": "incomplete",
 				},
 			},
@@ -202,7 +202,7 @@ func TestWebhookIntegration_SubscriptionCreated(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 
-		var response map[string]interface{}
+		var response map[string]any
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 
@@ -213,18 +213,18 @@ func TestWebhookIntegration_SubscriptionCreated(t *testing.T) {
 	})
 
 	t.Run("Subscription deleted webhook", func(t *testing.T) {
-		webhookPayload := map[string]interface{}{
+		webhookPayload := map[string]any{
 			"id":      "evt_subscription_deleted_789",
 			"object":  "event",
 			"type":    "customer.subscription.deleted",
 			"created": time.Now().Unix(),
-			"data": map[string]interface{}{
-				"object": map[string]interface{}{
+			"data": map[string]any{
+				"object": map[string]any{
 					"id":       "sub_test_789",
 					"object":   "subscription",
 					"customer": "cus_test_789",
 					"status":   "canceled",
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"user_id":              "user_789",
 						"subscription_plan_id": uuid.New().String(),
 					},
@@ -263,13 +263,13 @@ func TestWebhookIntegration_PaymentEvents(t *testing.T) {
 	router, mockStripeService := setupWebhookIntegrationRouter()
 
 	t.Run("Invoice payment succeeded", func(t *testing.T) {
-		webhookPayload := map[string]interface{}{
+		webhookPayload := map[string]any{
 			"id":      "evt_payment_succeeded_123",
 			"object":  "event",
 			"type":    "invoice.payment_succeeded",
 			"created": time.Now().Unix(),
-			"data": map[string]interface{}{
-				"object": map[string]interface{}{
+			"data": map[string]any{
+				"object": map[string]any{
 					"id":           "in_test_123",
 					"object":       "invoice",
 					"customer":     "cus_test_123",
@@ -308,13 +308,13 @@ func TestWebhookIntegration_PaymentEvents(t *testing.T) {
 	})
 
 	t.Run("Invoice payment failed", func(t *testing.T) {
-		webhookPayload := map[string]interface{}{
+		webhookPayload := map[string]any{
 			"id":      "evt_payment_failed_456",
 			"object":  "event",
 			"type":    "invoice.payment_failed",
 			"created": time.Now().Unix(),
-			"data": map[string]interface{}{
-				"object": map[string]interface{}{
+			"data": map[string]any{
+				"object": map[string]any{
 					"id":           "in_test_456",
 					"object":       "invoice",
 					"customer":     "cus_test_456",
@@ -359,29 +359,29 @@ func TestWebhookIntegration_CheckoutSessionCompleted(t *testing.T) {
 
 	t.Run("Checkout session completed with subscription", func(t *testing.T) {
 		planID := uuid.New()
-		webhookPayload := map[string]interface{}{
+		webhookPayload := map[string]any{
 			"id":      "evt_checkout_completed_123",
 			"object":  "event",
 			"type":    "checkout.session.completed",
 			"created": time.Now().Unix(),
-			"data": map[string]interface{}{
-				"object": map[string]interface{}{
+			"data": map[string]any{
+				"object": map[string]any{
 					"id":           "cs_test_123",
 					"object":       "checkout.session",
 					"customer":     "cus_test_123",
 					"subscription": "sub_test_123",
 					"mode":         "subscription",
 					"status":       "complete",
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"user_id":              "user_123",
 						"subscription_plan_id": planID.String(),
 					},
-					"line_items": map[string]interface{}{
+					"line_items": map[string]any{
 						"object": "list",
-						"data": []map[string]interface{}{
+						"data": []map[string]any{
 							{
 								"id": "li_test_123",
-								"price": map[string]interface{}{
+								"price": map[string]any{
 									"id":        "price_test_123",
 									"currency":  "usd",
 									"unit_amount": 1999,
@@ -416,7 +416,7 @@ func TestWebhookIntegration_CheckoutSessionCompleted(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 
-		var response map[string]interface{}
+		var response map[string]any
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Equal(t, "checkout.session.completed", response["event_type"])
@@ -429,7 +429,7 @@ func TestWebhookIntegration_SecurityValidation(t *testing.T) {
 	router, mockStripeService := setupWebhookIntegrationRouter()
 
 	t.Run("Invalid signature should be rejected", func(t *testing.T) {
-		webhookPayload := map[string]interface{}{
+		webhookPayload := map[string]any{
 			"id":   "evt_invalid_signature",
 			"type": "customer.subscription.created",
 		}
@@ -449,7 +449,7 @@ func TestWebhookIntegration_SecurityValidation(t *testing.T) {
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 
-		var response map[string]interface{}
+		var response map[string]any
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 		assert.Equal(t, "Invalid signature", response["error"])
@@ -458,7 +458,7 @@ func TestWebhookIntegration_SecurityValidation(t *testing.T) {
 	})
 
 	t.Run("Processing error should return 500", func(t *testing.T) {
-		webhookPayload := map[string]interface{}{
+		webhookPayload := map[string]any{
 			"id":   "evt_processing_error",
 			"type": "customer.subscription.created",
 		}
@@ -504,13 +504,13 @@ func TestWebhookIntegration_ComplexScenarios(t *testing.T) {
 		}
 
 		for _, event := range events {
-			webhookPayload := map[string]interface{}{
+			webhookPayload := map[string]any{
 				"id":      event.id,
 				"object":  "event",
 				"type":    event.eventType,
 				"created": time.Now().Unix(),
-				"data": map[string]interface{}{
-					"object": map[string]interface{}{
+				"data": map[string]any{
+					"object": map[string]any{
 						"id": "obj_test_123",
 					},
 				},
@@ -544,18 +544,18 @@ func TestWebhookIntegration_ComplexScenarios(t *testing.T) {
 	})
 
 	t.Run("Event with missing metadata", func(t *testing.T) {
-		webhookPayload := map[string]interface{}{
+		webhookPayload := map[string]any{
 			"id":      "evt_missing_metadata",
 			"object":  "event",
 			"type":    "customer.subscription.created",
 			"created": time.Now().Unix(),
-			"data": map[string]interface{}{
-				"object": map[string]interface{}{
+			"data": map[string]any{
+				"object": map[string]any{
 					"id":       "sub_no_metadata",
 					"object":   "subscription",
 					"customer": "cus_test_123",
 					"status":   "active",
-					"metadata": map[string]interface{}{}, // Métadonnées vides
+					"metadata": map[string]any{}, // Métadonnées vides
 				},
 			},
 		}

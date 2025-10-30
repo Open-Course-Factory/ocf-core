@@ -16,7 +16,7 @@ type CreateGroupInput struct {
 	SubscriptionPlanID *uuid.UUID             `json:"subscription_plan_id,omitempty" mapstructure:"subscription_plan_id"`
 	MaxMembers         int                    `json:"max_members" mapstructure:"max_members" binding:"omitempty,gte=0"` // 0 = unlimited
 	ExpiresAt          *time.Time             `json:"expires_at,omitempty" mapstructure:"expires_at"`
-	Metadata           map[string]interface{} `json:"metadata,omitempty" mapstructure:"metadata"`
+	Metadata           map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
 // EditGroupInput - DTO for editing a group (partial updates)
@@ -28,7 +28,7 @@ type EditGroupInput struct {
 	MaxMembers         *int                    `json:"max_members,omitempty" mapstructure:"max_members" binding:"omitempty,gte=0"`
 	ExpiresAt          *time.Time              `json:"expires_at,omitempty" mapstructure:"expires_at"`
 	IsActive           *bool                   `json:"is_active,omitempty" mapstructure:"is_active"`
-	Metadata           *map[string]interface{} `json:"metadata,omitempty" mapstructure:"metadata"`
+	Metadata           *map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
 // GroupOutput - DTO for group responses
@@ -47,7 +47,7 @@ type GroupOutput struct {
 	IsActive           bool                   `json:"is_active"`
 	IsExpired          bool                   `json:"is_expired"`
 	IsFull             bool                   `json:"is_full"`
-	Metadata           map[string]interface{} `json:"metadata,omitempty"`
+	Metadata           map[string]any `json:"metadata,omitempty"`
 	CreatedAt          time.Time              `json:"created_at"`
 	UpdatedAt          time.Time              `json:"updated_at"`
 
@@ -106,7 +106,7 @@ type GroupMemberOutput struct {
 	InvitedBy string                 `json:"invited_by,omitempty"`
 	JoinedAt  time.Time              `json:"joined_at"`
 	IsActive  bool                   `json:"is_active"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
 	CreatedAt time.Time              `json:"created_at"`
 	UpdatedAt time.Time              `json:"updated_at"`
 

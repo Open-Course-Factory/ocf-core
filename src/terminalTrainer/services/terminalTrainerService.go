@@ -31,7 +31,7 @@ type TerminalTrainerService interface {
 
 	// Session management
 	StartSession(userID string, sessionInput dto.CreateTerminalSessionInput) (*dto.TerminalSessionResponse, error)
-	StartSessionWithPlan(userID string, sessionInput dto.CreateTerminalSessionInput, planInterface interface{}) (*dto.TerminalSessionResponse, error)
+	StartSessionWithPlan(userID string, sessionInput dto.CreateTerminalSessionInput, planInterface any) (*dto.TerminalSessionResponse, error)
 	GetSessionInfo(sessionID string) (*models.Terminal, error)
 	GetTerminalByUUID(terminalUUID string) (*models.Terminal, error)
 	GetActiveUserSessions(userID string) (*[]models.Terminal, error)
@@ -70,7 +70,7 @@ type TerminalTrainerService interface {
 	FixTerminalHidePermissions(userID string) (*dto.FixPermissionsResponse, error)
 
 	// Bulk operations
-	BulkCreateTerminalsForGroup(groupID string, requestingUserID string, request dto.BulkCreateTerminalsRequest, planInterface interface{}) (*dto.BulkCreateTerminalsResponse, error)
+	BulkCreateTerminalsForGroup(groupID string, requestingUserID string, request dto.BulkCreateTerminalsRequest, planInterface any) (*dto.BulkCreateTerminalsResponse, error)
 }
 
 type terminalTrainerService struct {
@@ -159,7 +159,7 @@ func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 	}
 
 	// Désactiver côté Terminal Trainer
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"is_active": false,
 	}
 
@@ -264,7 +264,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 }
 
 // StartSessionWithPlan démarre une nouvelle session avec validation du plan d'abonnement
-func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionInput dto.CreateTerminalSessionInput, planInterface interface{}) (*dto.TerminalSessionResponse, error) {
+func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionInput dto.CreateTerminalSessionInput, planInterface any) (*dto.TerminalSessionResponse, error) {
 	// Convertir l'interface en SubscriptionPlan
 	plan, ok := planInterface.(*paymentModels.SubscriptionPlan)
 	if !ok {
@@ -1325,7 +1325,7 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 	groupID string,
 	requestingUserID string,
 	request dto.BulkCreateTerminalsRequest,
-	planInterface interface{},
+	planInterface any,
 ) (*dto.BulkCreateTerminalsResponse, error) {
 	// Parse groupID
 	groupUUID, err := uuid.Parse(groupID)

@@ -265,7 +265,7 @@ func DeleteAllObjects() {
 
 	gs := genericServices.NewGenericService(sqldb.DB, nil)
 
-	coursesPages, _, _ := gs.GetEntities(courseModels.Course{}, 1, 100, map[string]interface{}{}, nil)
+	coursesPages, _, _ := gs.GetEntities(courseModels.Course{}, 1, 100, map[string]any{}, nil)
 	coursesDtoArray, _ := gs.GetDtoArrayFromEntitiesPages(coursesPages, courseModels.Course{}, "Course")
 
 	for _, courseDto := range coursesDtoArray {

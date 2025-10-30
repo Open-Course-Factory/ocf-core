@@ -64,7 +64,7 @@ type EntityError struct {
 	Code       string                 `json:"code"`              // Error code (e.g., "ENT001")
 	Message    string                 `json:"message"`           // Human-readable message
 	HTTPStatus int                    `json:"-"`                 // HTTP status code to return
-	Details    map[string]interface{} `json:"details,omitempty"` // Additional context
+	Details    map[string]any `json:"details,omitempty"` // Additional context
 	Err        error                  `json:"-"`                 // Wrapped error (if any)
 }
 
@@ -82,9 +82,9 @@ func (e *EntityError) Unwrap() error {
 }
 
 // WithDetails adds details to the error (chainable).
-func (e *EntityError) WithDetails(key string, value interface{}) *EntityError {
+func (e *EntityError) WithDetails(key string, value any) *EntityError {
 	if e.Details == nil {
-		e.Details = make(map[string]interface{})
+		e.Details = make(map[string]any)
 	}
 	e.Details[key] = value
 	return e
@@ -171,9 +171,9 @@ var (
 // Example:
 //
 //	return nil, errors.NewEntityNotFound("Course", courseID)
-func NewEntityNotFound(entityName string, id interface{}) *EntityError {
+func NewEntityNotFound(entityName string, id any) *EntityError {
 	err := *ErrEntityNotFound // Copy the base error
-	err.Details = map[string]interface{}{
+	err.Details = map[string]any{
 		"entityName": entityName,
 		"id":         fmt.Sprintf("%v", id),
 	}
@@ -183,7 +183,7 @@ func NewEntityNotFound(entityName string, id interface{}) *EntityError {
 // NewEntityNotRegistered creates an EntityNotRegistered error with entity name.
 func NewEntityNotRegistered(entityName string) *EntityError {
 	err := *ErrEntityNotRegistered
-	err.Details = map[string]interface{}{
+	err.Details = map[string]any{
 		"entityName": entityName,
 	}
 	return &err
@@ -192,7 +192,7 @@ func NewEntityNotRegistered(entityName string) *EntityError {
 // NewConversionError creates a ConversionFailed error with context.
 func NewConversionError(entityName string, reason string) *EntityError {
 	err := *ErrConversionFailed
-	err.Details = map[string]interface{}{
+	err.Details = map[string]any{
 		"entityName": entityName,
 		"reason":     reason,
 	}
@@ -202,7 +202,7 @@ func NewConversionError(entityName string, reason string) *EntityError {
 // NewValidationError creates a ValidationFailed error with field details.
 func NewValidationError(field string, reason string) *EntityError {
 	err := *ErrValidationFailed
-	err.Details = map[string]interface{}{
+	err.Details = map[string]any{
 		"field":  field,
 		"reason": reason,
 	}
@@ -223,7 +223,7 @@ func NewValidationError(field string, reason string) *EntityError {
 func WrapDatabaseError(dbErr error, operation string) *EntityError {
 	err := *ErrDatabaseError
 	err.Err = dbErr
-	err.Details = map[string]interface{}{
+	err.Details = map[string]any{
 		"operation": operation,
 		"original":  dbErr.Error(),
 	}
@@ -233,7 +233,7 @@ func WrapDatabaseError(dbErr error, operation string) *EntityError {
 // NewUnauthorizedError creates an Unauthorized error with user and resource context.
 func NewUnauthorizedError(userId string, resource string, action string) *EntityError {
 	err := *ErrUnauthorized
-	err.Details = map[string]interface{}{
+	err.Details = map[string]any{
 		"userId":   userId,
 		"resource": resource,
 		"action":   action,
@@ -245,7 +245,7 @@ func NewUnauthorizedError(userId string, resource string, action string) *Entity
 func WrapHookError(hookName string, entityName string, hookErr error) *EntityError {
 	err := *ErrHookExecutionFailed
 	err.Err = hookErr
-	err.Details = map[string]interface{}{
+	err.Details = map[string]any{
 		"hookName":   hookName,
 		"entityName": entityName,
 		"original":   hookErr.Error(),
@@ -254,9 +254,9 @@ func WrapHookError(hookName string, entityName string, hookErr error) *EntityErr
 }
 
 // NewInvalidInputError creates an InvalidInput error with field context.
-func NewInvalidInputError(field string, value interface{}, reason string) *EntityError {
+func NewInvalidInputError(field string, value any, reason string) *EntityError {
 	err := *ErrInvalidInput
-	err.Details = map[string]interface{}{
+	err.Details = map[string]any{
 		"field":  field,
 		"value":  fmt.Sprintf("%v", value),
 		"reason": reason,
@@ -265,9 +265,9 @@ func NewInvalidInputError(field string, value interface{}, reason string) *Entit
 }
 
 // NewInvalidPaginationError creates an InvalidPagination error with parameter details.
-func NewInvalidPaginationError(param string, value interface{}, reason string) *EntityError {
+func NewInvalidPaginationError(param string, value any, reason string) *EntityError {
 	err := *ErrInvalidPagination
-	err.Details = map[string]interface{}{
+	err.Details = map[string]any{
 		"parameter": param,
 		"value":     fmt.Sprintf("%v", value),
 		"reason":    reason,
@@ -278,7 +278,7 @@ func NewInvalidPaginationError(param string, value interface{}, reason string) *
 // NewInvalidCursorError creates an InvalidCursor error with cursor details.
 func NewInvalidCursorError(cursor string, reason string) *EntityError {
 	err := *ErrInvalidCursor
-	err.Details = map[string]interface{}{
+	err.Details = map[string]any{
 		"cursor": cursor,
 		"reason": reason,
 	}

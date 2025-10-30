@@ -131,27 +131,27 @@ type SharedMockGenericService struct {
 	mock.Mock
 }
 
-func (m *SharedMockGenericService) GetEntity(id uuid.UUID, entityName string, entity interface{}) (interface{}, error) {
+func (m *SharedMockGenericService) GetEntity(id uuid.UUID, entityName string, entity any) (any, error) {
 	args := m.Called(id, entityName, entity)
 	return args.Get(0), args.Error(1)
 }
 
-func (m *SharedMockGenericService) CreateEntity(input interface{}, entityName string) (interface{}, error) {
+func (m *SharedMockGenericService) CreateEntity(input any, entityName string) (any, error) {
 	args := m.Called(input, entityName)
 	return args.Get(0), args.Error(1)
 }
 
-func (m *SharedMockGenericService) EditEntity(id uuid.UUID, entityName string, entityType interface{}, updates interface{}) error {
+func (m *SharedMockGenericService) EditEntity(id uuid.UUID, entityName string, entityType any, updates any) error {
 	args := m.Called(id, entityName, entityType, updates)
 	return args.Error(0)
 }
 
-func (m *SharedMockGenericService) DeleteEntity(id uuid.UUID, entityName string, entity interface{}) error {
+func (m *SharedMockGenericService) DeleteEntity(id uuid.UUID, entityName string, entity any) error {
 	args := m.Called(id, entityName, entity)
 	return args.Error(0)
 }
 
-func (m *SharedMockGenericService) GetEntities(entityName string, entity interface{}, includeInactive bool) (interface{}, error) {
+func (m *SharedMockGenericService) GetEntities(entityName string, entity any, includeInactive bool) (any, error) {
 	args := m.Called(entityName, entity, includeInactive)
 	return args.Get(0), args.Error(1)
 }
@@ -239,22 +239,22 @@ func (m *SharedMockStripeService) UpdateCustomer(customerID string, params *stri
 	return args.Error(0)
 }
 
-func (m *SharedMockStripeService) CreateCheckoutSession(userID string, input interface{}) (interface{}, error) {
+func (m *SharedMockStripeService) CreateCheckoutSession(userID string, input any) (any, error) {
 	args := m.Called(userID, input)
 	return args.Get(0), args.Error(1)
 }
 
-func (m *SharedMockStripeService) CreatePortalSession(userID string, input interface{}) (interface{}, error) {
+func (m *SharedMockStripeService) CreatePortalSession(userID string, input any) (any, error) {
 	args := m.Called(userID, input)
 	return args.Get(0), args.Error(1)
 }
 
-func (m *SharedMockStripeService) CreateSubscriptionPlanInStripe(plan interface{}) error {
+func (m *SharedMockStripeService) CreateSubscriptionPlanInStripe(plan any) error {
 	args := m.Called(plan)
 	return args.Error(0)
 }
 
-func (m *SharedMockStripeService) UpdateSubscriptionPlanInStripe(plan interface{}) error {
+func (m *SharedMockStripeService) UpdateSubscriptionPlanInStripe(plan any) error {
 	args := m.Called(plan)
 	return args.Error(0)
 }
@@ -293,7 +293,7 @@ func (m *SharedMockStripeService) SyncSubscriptionsWithMissingMetadata() (*servi
 	return args.Get(0).(*services.SyncSubscriptionsResult), args.Error(1)
 }
 
-func (m *SharedMockStripeService) LinkSubscriptionToUser(stripeSubscriptionID, userID string, subscriptionPlanID interface{}) error {
+func (m *SharedMockStripeService) LinkSubscriptionToUser(stripeSubscriptionID, userID string, subscriptionPlanID any) error {
 	args := m.Called(stripeSubscriptionID, userID, subscriptionPlanID)
 	return args.Error(0)
 }

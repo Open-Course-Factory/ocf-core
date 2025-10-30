@@ -21,7 +21,7 @@ type Organization struct {
 	IsActive           bool       `gorm:"default:true" json:"is_active"`
 
 	// Metadata for custom fields (billing info, settings, etc.)
-	Metadata map[string]interface{} `gorm:"type:jsonb" json:"metadata,omitempty"`
+	Metadata map[string]any `gorm:"type:jsonb" json:"metadata,omitempty"`
 
 	// Relations
 	Groups  []groupModels.ClassGroup `gorm:"foreignKey:OrganizationID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"groups,omitempty"`

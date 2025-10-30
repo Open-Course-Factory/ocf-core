@@ -23,14 +23,14 @@ type ManyToManyFilter struct {
 
 // Matches returns true if the key represents a many-to-many filter.
 // Many-to-many filters end with "IDs" or "Ids" (plural form).
-func (m *ManyToManyFilter) Matches(key string, value interface{}) bool {
+func (m *ManyToManyFilter) Matches(key string, value any) bool {
 	return strings.HasSuffix(key, "IDs") || strings.HasSuffix(key, "Ids")
 }
 
 // Apply applies the many-to-many filter to the query using an EXISTS clause.
 // This method builds a subquery that checks for the existence of related records
 // in the join table.
-func (m *ManyToManyFilter) Apply(query *gorm.DB, key string, value interface{}, tableName string) *gorm.DB {
+func (m *ManyToManyFilter) Apply(query *gorm.DB, key string, value any, tableName string) *gorm.DB {
 	// Extract relation name: "tagIDs" → "tag", "authorIds" → "author"
 	relationName := strings.TrimSuffix(strings.TrimSuffix(key, "IDs"), "Ids")
 
@@ -64,7 +64,7 @@ func (m *ManyToManyFilter) Apply(query *gorm.DB, key string, value interface{}, 
 	case []string:
 		ids = v
 
-	case []interface{}:
+	case []any:
 		// Convert interface slice to string slice
 		for _, val := range v {
 			ids = append(ids, strings.TrimSpace(val.(string)))

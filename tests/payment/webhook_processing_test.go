@@ -88,11 +88,11 @@ func TestWebhookPayload_ProcessingLogic(t *testing.T) {
 		}
 
 		// Simuler les données d'abonnement
-		subscriptionData := map[string]interface{}{
+		subscriptionData := map[string]any{
 			"id":       "sub_test_123",
-			"customer": map[string]interface{}{"id": "cus_test_123"},
+			"customer": map[string]any{"id": "cus_test_123"},
 			"status":   "active",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"user_id":              "user_123",
 				"subscription_plan_id": "plan_123",
 			},
@@ -110,7 +110,7 @@ func TestWebhookPayload_ProcessingLogic(t *testing.T) {
 		status, ok := subscriptionData["status"].(string)
 		assert.True(t, ok, "subscriptionData['status'] should be a string")
 
-		metadata, ok := subscriptionData["metadata"].(map[string]interface{})
+		metadata, ok := subscriptionData["metadata"].(map[string]any)
 		assert.True(t, ok, "subscriptionData['metadata'] should be a map")
 
 		assert.Equal(t, "sub_test_123", subID)

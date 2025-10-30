@@ -49,7 +49,7 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 
 	entityModel := reflect.TypeOf(entityModelInterface)
 	entityValue := reflect.ValueOf(entity)
-	var entityDto interface{}
+	var entityDto any
 
 	if entityValue.Elem().Type().ConvertibleTo(entityModel) {
 		convertedEntity := entityValue.Elem().Convert(entityModel)

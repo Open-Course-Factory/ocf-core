@@ -17,7 +17,7 @@ func TestForeignKeyFilter_Matches(t *testing.T) {
 	tests := []struct {
 		name     string
 		key      string
-		value    interface{}
+		value    any
 		expected bool
 	}{
 		{
@@ -115,7 +115,7 @@ func TestForeignKeyFilter_Apply(t *testing.T) {
 
 	t.Run("Foreign key interface array", func(t *testing.T) {
 		query := db.Model(&struct{}{}).Table("chapters")
-		query = filter.Apply(query, "courseId", []interface{}{"course-1"}, "chapters")
+		query = filter.Apply(query, "courseId", []any{"course-1"}, "chapters")
 
 		var count int64
 		query.Count(&count)

@@ -5,23 +5,23 @@ import "soli/formations/src/auth/interfaces"
 // MockEnforcer is a mock implementation of EnforcerInterface for testing
 type MockEnforcer struct {
 	LoadPolicyFunc           func() error
-	AddPolicyFunc            func(params ...interface{}) (bool, error)
-	RemovePolicyFunc         func(params ...interface{}) (bool, error)
+	AddPolicyFunc            func(params ...any) (bool, error)
+	RemovePolicyFunc         func(params ...any) (bool, error)
 	RemoveFilteredPolicyFunc func(fieldIndex int, fieldValues ...string) (bool, error)
-	EnforceFunc              func(rvals ...interface{}) (bool, error)
+	EnforceFunc              func(rvals ...any) (bool, error)
 	GetRolesForUserFunc      func(name string) ([]string, error)
-	AddGroupingPolicyFunc    func(params ...interface{}) (bool, error)
-	RemoveGroupingPolicyFunc func(params ...interface{}) (bool, error)
+	AddGroupingPolicyFunc    func(params ...any) (bool, error)
+	RemoveGroupingPolicyFunc func(params ...any) (bool, error)
 
 	// Pour tracer les appels si nécessaire
-	LoadPolicyCalls           [][]interface{}
-	AddPolicyCalls            [][]interface{}
-	RemovePolicyCalls         [][]interface{}
-	RemoveFilteredPolicyCalls [][]interface{}
-	EnforceCalls              [][]interface{}
-	GetRolesForUserCalls      [][]interface{}
-	AddGroupingPolicyCalls    [][]interface{}
-	RemoveGroupingPolicyCalls [][]interface{}
+	LoadPolicyCalls           [][]any
+	AddPolicyCalls            [][]any
+	RemovePolicyCalls         [][]any
+	RemoveFilteredPolicyCalls [][]any
+	EnforceCalls              [][]any
+	GetRolesForUserCalls      [][]any
+	AddGroupingPolicyCalls    [][]any
+	RemoveGroupingPolicyCalls [][]any
 }
 
 // NewMockEnforcer creates a new mock enforcer with default implementations
@@ -30,35 +30,35 @@ func NewMockEnforcer() *MockEnforcer {
 		LoadPolicyFunc: func() error {
 			return nil // Success by default
 		},
-		AddPolicyFunc: func(params ...interface{}) (bool, error) {
+		AddPolicyFunc: func(params ...any) (bool, error) {
 			return true, nil // Success by default
 		},
-		RemovePolicyFunc: func(params ...interface{}) (bool, error) {
+		RemovePolicyFunc: func(params ...any) (bool, error) {
 			return true, nil // Success by default
 		},
 		RemoveFilteredPolicyFunc: func(fieldIndex int, fieldValues ...string) (bool, error) {
 			return true, nil // Success by default
 		},
-		EnforceFunc: func(rvals ...interface{}) (bool, error) {
+		EnforceFunc: func(rvals ...any) (bool, error) {
 			return true, nil // Authorized by default
 		},
 		GetRolesForUserFunc: func(name string) ([]string, error) {
 			return []string{"student"}, nil // Default role
 		},
-		AddGroupingPolicyFunc: func(params ...interface{}) (bool, error) {
+		AddGroupingPolicyFunc: func(params ...any) (bool, error) {
 			return true, nil // Success by default
 		},
-		RemoveGroupingPolicyFunc: func(params ...interface{}) (bool, error) {
+		RemoveGroupingPolicyFunc: func(params ...any) (bool, error) {
 			return true, nil // Success by default
 		},
-		LoadPolicyCalls:           make([][]interface{}, 0),
-		AddPolicyCalls:            make([][]interface{}, 0),
-		RemovePolicyCalls:         make([][]interface{}, 0),
-		RemoveFilteredPolicyCalls: make([][]interface{}, 0),
-		EnforceCalls:              make([][]interface{}, 0),
-		GetRolesForUserCalls:      make([][]interface{}, 0),
-		AddGroupingPolicyCalls:    make([][]interface{}, 0),
-		RemoveGroupingPolicyCalls: make([][]interface{}, 0),
+		LoadPolicyCalls:           make([][]any, 0),
+		AddPolicyCalls:            make([][]any, 0),
+		RemovePolicyCalls:         make([][]any, 0),
+		RemoveFilteredPolicyCalls: make([][]any, 0),
+		EnforceCalls:              make([][]any, 0),
+		GetRolesForUserCalls:      make([][]any, 0),
+		AddGroupingPolicyCalls:    make([][]any, 0),
+		RemoveGroupingPolicyCalls: make([][]any, 0),
 	}
 }
 
@@ -66,22 +66,22 @@ func NewMockEnforcer() *MockEnforcer {
 var _ interfaces.EnforcerInterface = (*MockEnforcer)(nil)
 
 func (m *MockEnforcer) LoadPolicy() error {
-	m.LoadPolicyCalls = append(m.LoadPolicyCalls, []interface{}{})
+	m.LoadPolicyCalls = append(m.LoadPolicyCalls, []any{})
 	return m.LoadPolicyFunc()
 }
 
-func (m *MockEnforcer) AddPolicy(params ...interface{}) (bool, error) {
+func (m *MockEnforcer) AddPolicy(params ...any) (bool, error) {
 	m.AddPolicyCalls = append(m.AddPolicyCalls, params)
 	return m.AddPolicyFunc(params...)
 }
 
-func (m *MockEnforcer) RemovePolicy(params ...interface{}) (bool, error) {
+func (m *MockEnforcer) RemovePolicy(params ...any) (bool, error) {
 	m.RemovePolicyCalls = append(m.RemovePolicyCalls, params)
 	return m.RemovePolicyFunc(params...)
 }
 
 func (m *MockEnforcer) RemoveFilteredPolicy(fieldIndex int, fieldValues ...string) (bool, error) {
-	params := make([]interface{}, len(fieldValues)+1)
+	params := make([]any, len(fieldValues)+1)
 	params[0] = fieldIndex
 	for i, v := range fieldValues {
 		params[i+1] = v
@@ -90,36 +90,36 @@ func (m *MockEnforcer) RemoveFilteredPolicy(fieldIndex int, fieldValues ...strin
 	return m.RemoveFilteredPolicyFunc(fieldIndex, fieldValues...)
 }
 
-func (m *MockEnforcer) Enforce(rvals ...interface{}) (bool, error) {
+func (m *MockEnforcer) Enforce(rvals ...any) (bool, error) {
 	m.EnforceCalls = append(m.EnforceCalls, rvals)
 	return m.EnforceFunc(rvals...)
 }
 
 func (m *MockEnforcer) GetRolesForUser(name string) ([]string, error) {
-	m.GetRolesForUserCalls = append(m.GetRolesForUserCalls, []interface{}{name})
+	m.GetRolesForUserCalls = append(m.GetRolesForUserCalls, []any{name})
 	return m.GetRolesForUserFunc(name)
 }
 
-func (m *MockEnforcer) AddGroupingPolicy(params ...interface{}) (bool, error) {
+func (m *MockEnforcer) AddGroupingPolicy(params ...any) (bool, error) {
 	m.AddGroupingPolicyCalls = append(m.AddGroupingPolicyCalls, params)
 	return m.AddGroupingPolicyFunc(params...)
 }
 
-func (m *MockEnforcer) RemoveGroupingPolicy(params ...interface{}) (bool, error) {
+func (m *MockEnforcer) RemoveGroupingPolicy(params ...any) (bool, error) {
 	m.RemoveGroupingPolicyCalls = append(m.RemoveGroupingPolicyCalls, params)
 	return m.RemoveGroupingPolicyFunc(params...)
 }
 
 // Helper methods for testing
 func (m *MockEnforcer) Reset() {
-	m.LoadPolicyCalls = make([][]interface{}, 0)
-	m.AddPolicyCalls = make([][]interface{}, 0)
-	m.RemovePolicyCalls = make([][]interface{}, 0)
-	m.RemoveFilteredPolicyCalls = make([][]interface{}, 0)
-	m.EnforceCalls = make([][]interface{}, 0)
-	m.GetRolesForUserCalls = make([][]interface{}, 0)
-	m.AddGroupingPolicyCalls = make([][]interface{}, 0)
-	m.RemoveGroupingPolicyCalls = make([][]interface{}, 0)
+	m.LoadPolicyCalls = make([][]any, 0)
+	m.AddPolicyCalls = make([][]any, 0)
+	m.RemovePolicyCalls = make([][]any, 0)
+	m.RemoveFilteredPolicyCalls = make([][]any, 0)
+	m.EnforceCalls = make([][]any, 0)
+	m.GetRolesForUserCalls = make([][]any, 0)
+	m.AddGroupingPolicyCalls = make([][]any, 0)
+	m.RemoveGroupingPolicyCalls = make([][]any, 0)
 }
 
 func (m *MockEnforcer) GetAddPolicyCallCount() int {

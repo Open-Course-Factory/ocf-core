@@ -176,7 +176,7 @@ func TestCourseController_GenerateCourse(t *testing.T) {
 			http.StatusInternalServerError,
 		}, w.Code)
 
-		var errorResponse map[string]interface{}
+		var errorResponse map[string]any
 		err = json.Unmarshal(w.Body.Bytes(), &errorResponse)
 		require.NoError(t, err)
 		assert.Contains(t, errorResponse, "error_message")
@@ -264,7 +264,7 @@ func TestCourseController_GetGenerationStatus(t *testing.T) {
 		assert.Equal(t, 100, *response.Progress)
 	} else {
 		// Vérifier que c'est une erreur structurée
-		var errorResponse map[string]interface{}
+		var errorResponse map[string]any
 		err = json.Unmarshal(w.Body.Bytes(), &errorResponse)
 		require.NoError(t, err)
 	}
@@ -357,7 +357,7 @@ func TestCourseController_DownloadGenerationResults_NotCompleted(t *testing.T) {
 
 	assert.Equal(t, http.StatusConflict, w.Code)
 
-	var errorResponse map[string]interface{}
+	var errorResponse map[string]any
 	err = json.Unmarshal(w.Body.Bytes(), &errorResponse)
 	require.NoError(t, err)
 	assert.Contains(t, errorResponse["error_message"], "n'est pas terminée")
@@ -407,7 +407,7 @@ func TestCourseController_RetryGeneration(t *testing.T) {
 		assert.NotEmpty(t, response.GenerationID)
 	} else {
 		// Erreur attendue - vérifier la structure
-		var errorResponse map[string]interface{}
+		var errorResponse map[string]any
 		err = json.Unmarshal(w.Body.Bytes(), &errorResponse)
 		require.NoError(t, err)
 		assert.Contains(t, errorResponse, "error_message")

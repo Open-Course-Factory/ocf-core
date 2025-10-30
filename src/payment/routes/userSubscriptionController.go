@@ -78,7 +78,7 @@ func NewSubscriptionController(db *gorm.DB) SubscriptionController {
 //	@Param			checkout	body	dto.CreateCheckoutSessionInput	true	"Checkout session input (allow_replace: permet de remplacer un abonnement gratuit existant)"
 //	@Security		Bearer
 //	@Success		200	{object}	dto.CheckoutSessionOutput	"Paid plan: Stripe checkout URL"
-//	@Success		200	{object}	map[string]interface{}	"Free plan: {subscription: UserSubscriptionOutput, free_plan: true}"
+//	@Success		200	{object}	map[string]any	"Free plan: {subscription: UserSubscriptionOutput, free_plan: true}"
 //	@Failure		400	{object}	errors.APIError	"Bad request or user already has active subscription (use allow_replace=true to upgrade from free)"
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Failure		404	{object}	errors.APIError	"Plan not found"
@@ -747,7 +747,7 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 
 	// If no metrics found, return empty array instead of null
 	if usageMetrics == nil || len(*usageMetrics) == 0 {
-		ctx.JSON(http.StatusOK, []interface{}{})
+		ctx.JSON(http.StatusOK, []any{})
 		return
 	}
 
@@ -849,7 +849,7 @@ func (sc *userSubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Co
 //	@Accept			json
 //	@Produce		json
 //	@Security		Bearer
-//	@Success		200	{object}	map[string]interface{}	"Sync results"
+//	@Success		200	{object}	map[string]any	"Sync results"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/subscription-plans/sync-stripe [post]
 func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gin.Context) {
@@ -866,7 +866,7 @@ func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gi
 	plans := *plansPtr
 	var syncedPlans []string
 	var skippedPlans []string
-	var failedPlans []map[string]interface{}
+	var failedPlans []map[string]any
 
 	for _, plan := range plans {
 		if plan.StripePriceID != nil {
@@ -878,7 +878,7 @@ func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gi
 		// Tenter de synchroniser le plan
 		err := sc.stripeService.CreateSubscriptionPlanInStripe(&plan)
 		if err != nil {
-			failedPlans = append(failedPlans, map[string]interface{}{
+			failedPlans = append(failedPlans, map[string]any{
 				"name":  plan.Name,
 				"id":    plan.ID.String(),
 				"error": err.Error(),
@@ -888,7 +888,7 @@ func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gi
 		}
 	}
 
-	ctx.JSON(http.StatusOK, map[string]interface{}{
+	ctx.JSON(http.StatusOK, map[string]any{
 		"synced_plans":  syncedPlans,
 		"skipped_plans": skippedPlans,
 		"failed_plans":  failedPlans,
@@ -1018,7 +1018,7 @@ func (sc *userSubscriptionController) SyncSubscriptionsWithMissingMetadata(ctx *
 //	@Param			user_id	body	string	true	"User ID to link subscription to"
 //	@Param			subscription_plan_id	body	string	true	"Subscription Plan ID"
 //	@Security		Bearer
-//	@Success		200	{object}	map[string]interface{}	"Success message"
+//	@Success		200	{object}	map[string]any	"Success message"
 //	@Failure		400	{object}	errors.APIError	"Bad request"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/link/{subscription_id} [post]
@@ -1055,7 +1055,7 @@ func (sc *userSubscriptionController) LinkSubscriptionToUser(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, map[string]interface{}{
+	ctx.JSON(http.StatusOK, map[string]any{
 		"message":           "Subscription linked successfully",
 		"subscription_id":   subscriptionID,
 		"user_id":           request.UserID,
@@ -1076,7 +1076,7 @@ func (sc *userSubscriptionController) DeleteEntity(ctx *gin.Context) {
 //	@Accept			json
 //	@Produce		json
 //	@Security		Bearer
-//	@Success		200	{object}	map[string]interface{}	"Limits synced successfully"
+//	@Success		200	{object}	map[string]any	"Limits synced successfully"
 //	@Failure		404	{object}	errors.APIError	"No active subscription"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/sync-usage-limits [post]

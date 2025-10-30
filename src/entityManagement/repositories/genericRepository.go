@@ -19,8 +19,8 @@ type GenericRepository interface {
 	CreateEntityFromModel(entityModel any) (any, error)
 	SaveEntity(entity any) (any, error)
 	GetEntity(id uuid.UUID, data any, entityName string, includes []string) (any, error)
-	GetAllEntities(data any, page int, pageSize int, filters map[string]interface{}, includes []string) ([]any, int64, error)
-	GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]interface{}, includes []string) ([]any, string, bool, int64, error)
+	GetAllEntities(data any, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error)
+	GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]any, includes []string) ([]any, string, bool, int64, error)
 	EditEntity(id uuid.UUID, entityName string, entity any, data any) error
 	DeleteEntity(id uuid.UUID, entity any, scoped bool) error
 }
@@ -178,9 +178,9 @@ func getPreloadString(entityName string, queryPreloadsString *string, firstItera
 //   - filters: Map of field names to filter values
 //
 // Supported filter types:
-//   - Direct fields: map[string]interface{}{"title": "Golang"}
-//   - Foreign keys: map[string]interface{}{"courseId": "uuid-string"}
-//   - Many-to-many: map[string]interface{}{"tagIDs": []string{"id1", "id2"}}
+//   - Direct fields: map[string]any{"title": "Golang"}
+//   - Foreign keys: map[string]any{"courseId": "uuid-string"}
+//   - Many-to-many: map[string]any{"tagIDs": []string{"id1", "id2"}}
 //   - Registered relationship filters: Complex multi-level joins
 //
 // Returns:
@@ -206,7 +206,7 @@ func getPreloadString(entityName string, queryPreloadsString *string, firstItera
 //
 //	// All associations (backward compatible)
 //	result, total, err := repo.GetAllEntities(&Course{}, 1, 20, filters, []string{"*"})
-func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, filters map[string]interface{}, includes []string) ([]any, int64, error) {
+func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error) {
 	pageSlice := createEmptySliceOfCalledType(data)
 
 	// Get entity name for relationship filters lookup
@@ -272,7 +272,7 @@ func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, fil
 //	results, nextCursor, hasMore, err := repo.GetAllEntitiesCursor(&Course{}, "", 20, filters, []string{"Chapters"})
 //	// Next page
 //	results, nextCursor, hasMore, err := repo.GetAllEntitiesCursor(&Course{}, nextCursor, 20, filters, []string{"Chapters"})
-func (o *genericRepository) GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]interface{}, includes []string) ([]any, string, bool, int64, error) {
+func (o *genericRepository) GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]any, includes []string) ([]any, string, bool, int64, error) {
 	pageSlice := createEmptySliceOfCalledType(data)
 
 	// Get entity name for relationship filters lookup

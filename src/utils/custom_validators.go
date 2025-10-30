@@ -198,7 +198,7 @@ func validateCasdoorOwner(fl validator.FieldLevel) bool {
 // ==========================================
 
 // ValidateStruct validates a struct and returns formatted error messages
-func ValidateStruct(v *validator.Validate, s interface{}) map[string]string {
+func ValidateStruct(v *validator.Validate, s any) map[string]string {
 	errors := make(map[string]string)
 
 	err := v.Struct(s)

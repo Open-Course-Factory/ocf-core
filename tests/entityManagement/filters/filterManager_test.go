@@ -60,7 +60,7 @@ func TestFilterManager_ApplyFilters_Integration(t *testing.T) {
 
 	t.Run("Single direct field filter", func(t *testing.T) {
 		query := db.Model(&struct{}{}).Table("courses")
-		filterMap := map[string]interface{}{
+		filterMap := map[string]any{
 			"status": "published",
 		}
 
@@ -73,7 +73,7 @@ func TestFilterManager_ApplyFilters_Integration(t *testing.T) {
 
 	t.Run("Single foreign key filter", func(t *testing.T) {
 		query := db.Model(&struct{}{}).Table("courses")
-		filterMap := map[string]interface{}{
+		filterMap := map[string]any{
 			"authorId": "author-1",
 		}
 
@@ -86,7 +86,7 @@ func TestFilterManager_ApplyFilters_Integration(t *testing.T) {
 
 	t.Run("Single many-to-many filter", func(t *testing.T) {
 		query := db.Model(&struct{}{}).Table("courses")
-		filterMap := map[string]interface{}{
+		filterMap := map[string]any{
 			"tagIDs": "tag-1",
 		}
 
@@ -99,7 +99,7 @@ func TestFilterManager_ApplyFilters_Integration(t *testing.T) {
 
 	t.Run("Multiple filters combined", func(t *testing.T) {
 		query := db.Model(&struct{}{}).Table("courses")
-		filterMap := map[string]interface{}{
+		filterMap := map[string]any{
 			"status":   "published",
 			"authorId": "author-1",
 		}
@@ -113,7 +113,7 @@ func TestFilterManager_ApplyFilters_Integration(t *testing.T) {
 
 	t.Run("All filter types combined", func(t *testing.T) {
 		query := db.Model(&struct{}{}).Table("courses")
-		filterMap := map[string]interface{}{
+		filterMap := map[string]any{
 			"status":   "published",
 			"authorId": "author-1",
 			"tagIDs":   "tag-1",
@@ -131,7 +131,7 @@ func TestFilterManager_ApplyFilters_Integration(t *testing.T) {
 		// The filter manager doesn't validate column existence - that's the database's job.
 		// This test verifies that valid filters work correctly.
 		query := db.Model(&struct{}{}).Table("courses")
-		filterMap := map[string]interface{}{
+		filterMap := map[string]any{
 			"status": "published",
 			"title":  "Golang",
 		}
@@ -145,7 +145,7 @@ func TestFilterManager_ApplyFilters_Integration(t *testing.T) {
 
 	t.Run("Empty filter map", func(t *testing.T) {
 		query := db.Model(&struct{}{}).Table("courses")
-		filterMap := map[string]interface{}{}
+		filterMap := map[string]any{}
 
 		query = manager.ApplyFilters(query, filterMap, "courses")
 
@@ -191,7 +191,7 @@ func TestFilterManager_StrategyPriority(t *testing.T) {
 
 	t.Run("Direct field takes precedence over foreign key pattern", func(t *testing.T) {
 		query := db.Model(&struct{}{}).Table("items")
-		filterMap := map[string]interface{}{
+		filterMap := map[string]any{
 			"status": "active",
 		}
 
@@ -205,7 +205,7 @@ func TestFilterManager_StrategyPriority(t *testing.T) {
 
 	t.Run("Foreign key pattern is correctly matched", func(t *testing.T) {
 		query := db.Model(&struct{}{}).Table("items")
-		filterMap := map[string]interface{}{
+		filterMap := map[string]any{
 			"statusId": "status-1",
 		}
 

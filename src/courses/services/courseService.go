@@ -426,7 +426,7 @@ func (c courseService) updateCourseWithChapters(course *models.Course) error {
 
 		// Step 2: Update the course entity itself (excluding associations)
 		// We use Select to explicitly choose which fields to update
-		updateFields := map[string]interface{}{
+		updateFields := map[string]any{
 			"name":                  course.Name,
 			"category":              course.Category,
 			"version":               course.Version,

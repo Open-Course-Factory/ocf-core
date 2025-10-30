@@ -266,7 +266,7 @@ func (hr *hookRegistry) SetErrorCallback(callback HookErrorCallback) {
 }
 
 // recordError records an async hook error (internal method)
-func (hr *hookRegistry) recordError(hookName, entityName string, hookType HookType, entityID interface{}, err error) {
+func (hr *hookRegistry) recordError(hookName, entityName string, hookType HookType, entityID any, err error) {
 	hr.mutex.Lock()
 	defer hr.mutex.Unlock()
 

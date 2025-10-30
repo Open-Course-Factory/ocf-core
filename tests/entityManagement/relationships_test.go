@@ -157,7 +157,7 @@ func (r RelTestPageRegistration) GetEntityRegistrationInput() entityManagementIn
 		EntityDtos: entityManagementInterfaces.EntityDtos{
 			InputCreateDto: RelTestPageInput{},
 			OutputDto:      RelTestPageOutput{},
-			InputEditDto:   map[string]interface{}{},
+			InputEditDto:   map[string]any{},
 		},
 		RelationshipFilters: []entityManagementInterfaces.RelationshipFilter{
 			{
@@ -275,7 +275,7 @@ func (r RelTestSectionRegistration) GetEntityRegistrationInput() entityManagemen
 		EntityDtos: entityManagementInterfaces.EntityDtos{
 			InputCreateDto: RelTestSectionInput{},
 			OutputDto:      RelTestSectionOutput{},
-			InputEditDto:   map[string]interface{}{},
+			InputEditDto:   map[string]any{},
 		},
 		RelationshipFilters: []entityManagementInterfaces.RelationshipFilter{
 			{
@@ -339,7 +339,7 @@ func setupRelationshipTest(t *testing.T) *RelationshipTestSuite {
 
 	mockEnforcer := authMocks.NewMockEnforcer()
 	mockEnforcer.LoadPolicyFunc = func() error { return nil }
-	mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) { return true, nil }
+	mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
 
 	suite := &RelationshipTestSuite{
 		db:               db,

@@ -99,7 +99,7 @@ func (r SecurityTestEntityRegistration) GetEntityRegistrationInput() entityManag
 		EntityDtos: entityManagementInterfaces.EntityDtos{
 			InputCreateDto: SecurityTestEntityInput{},
 			OutputDto:      SecurityTestEntityOutput{},
-			InputEditDto:   map[string]interface{}{},
+			InputEditDto:   map[string]any{},
 		},
 	}
 }
@@ -219,7 +219,7 @@ func TestSecurity_OwnershipAssignment(t *testing.T) {
 	suite := setupSecurityTest(t)
 
 	suite.mockEnforcer.LoadPolicyFunc = func() error { return nil }
-	suite.mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) { return true, nil }
+	suite.mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
 
 	userID := "owner-user-123"
 
@@ -280,7 +280,7 @@ func TestSecurity_RoleBasedAccess(t *testing.T) {
 	suite := setupSecurityTest(t)
 
 	suite.mockEnforcer.LoadPolicyFunc = func() error { return nil }
-	suite.mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) { return true, nil }
+	suite.mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
 
 	// Create an entity
 	input := SecurityTestEntityInput{
@@ -352,7 +352,7 @@ func TestSecurity_UserSpecificResourcePermissions(t *testing.T) {
 	suite := setupSecurityTest(t)
 
 	suite.mockEnforcer.LoadPolicyFunc = func() error { return nil }
-	suite.mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) { return true, nil }
+	suite.mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
 
 	// User 1 creates entity
 	input := SecurityTestEntityInput{
@@ -408,7 +408,7 @@ func TestSecurity_LoadPolicyPerformance(t *testing.T) {
 		loadPolicyCallCount++
 		return nil
 	}
-	suite.mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) { return true, nil }
+	suite.mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
 
 	// Create multiple entities
 	numEntities := 10
@@ -497,7 +497,7 @@ func TestSecurity_MultipleOwners(t *testing.T) {
 	suite := setupSecurityTest(t)
 
 	suite.mockEnforcer.LoadPolicyFunc = func() error { return nil }
-	suite.mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) { return true, nil }
+	suite.mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
 
 	// Create entity with first owner (uses middleware user: test-user-123)
 	input := SecurityTestEntityInput{
@@ -536,7 +536,7 @@ func TestSecurity_PermissionIsolation(t *testing.T) {
 	suite := setupSecurityTest(t)
 
 	suite.mockEnforcer.LoadPolicyFunc = func() error { return nil }
-	suite.mockEnforcer.AddPolicyFunc = func(params ...interface{}) (bool, error) { return true, nil }
+	suite.mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
 
 	users := []string{"user-a", "user-b", "user-c"}
 	entityIDs := make(map[string]string)

@@ -26,7 +26,7 @@
 //
 //	type CourseRegistration struct{}
 //
-//	func (cr CourseRegistration) GetEntity() interface{} {
+//	func (cr CourseRegistration) GetEntity() any {
 //	    return &Course{}
 //	}
 //

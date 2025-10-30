@@ -773,7 +773,7 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 //	@Produce		json
 //	@Param			user_id	query	string	false	"User ID (admin only)"
 //	@Security		Bearer
-//	@Success		200	{object}	map[string]interface{}
+//	@Success		200	{object}	map[string]any
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Failure		500	{object}	errors.APIError	"Error getting statistics"
 //	@Router			/terminals/sync-stats [get]
@@ -815,7 +815,7 @@ func (tc *terminalController) GetSyncStatistics(ctx *gin.Context) {
 		return
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"user_id":      targetUserId,
 		"statistics":   stats,
 		"generated_at": time.Now(),
