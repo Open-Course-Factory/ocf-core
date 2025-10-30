@@ -15,6 +15,7 @@ import (
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	swaggerGenerator "soli/formations/src/entityManagement/swagger"
+	"soli/formations/src/utils"
 )
 
 // InitSwagger initializes Swagger documentation
@@ -287,7 +288,13 @@ func calculateDocumentationCoverage(configs map[string]*entityManagementInterfac
 		},
 	}
 
-	breakdown := coverage["breakdown"].(map[string]int)
+	breakdown, ok := coverage["breakdown"].(map[string]int)
+	if !ok {
+		// This should never happen since we just created the map, but handle it safely
+		utils.Error("Failed to type assert breakdown map in coverage calculation")
+		return coverage
+	}
+
 	for _, config := range configs {
 		if config.GetAll != nil {
 			breakdown["get_all_implemented"]++

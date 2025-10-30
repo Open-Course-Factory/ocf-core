@@ -41,7 +41,13 @@ func (cc *courseController) GetCourseVersions(ctx *gin.Context) {
 		return
 	}
 
-	userIdStr := userId.(string)
+	userIdStr, ok := userId.(string)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Invalid user ID format",
+		})
+		return
+	}
 
 	// Retrieve all versions from service
 	courses, err := cc.service.GetAllVersionsOfCourse(userIdStr, courseName)

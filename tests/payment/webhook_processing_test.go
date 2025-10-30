@@ -104,9 +104,14 @@ func TestWebhookPayload_ProcessingLogic(t *testing.T) {
 		assert.NotZero(t, event.Created)
 
 		// Valider les données de l'abonnement
-		subID := subscriptionData["id"].(string)
-		status := subscriptionData["status"].(string)
-		metadata := subscriptionData["metadata"].(map[string]interface{})
+		subID, ok := subscriptionData["id"].(string)
+		assert.True(t, ok, "subscriptionData['id'] should be a string")
+
+		status, ok := subscriptionData["status"].(string)
+		assert.True(t, ok, "subscriptionData['status'] should be a string")
+
+		metadata, ok := subscriptionData["metadata"].(map[string]interface{})
+		assert.True(t, ok, "subscriptionData['metadata'] should be a map")
 
 		assert.Equal(t, "sub_test_123", subID)
 		assert.Equal(t, "active", status)
