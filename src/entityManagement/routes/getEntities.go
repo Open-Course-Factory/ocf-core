@@ -30,6 +30,14 @@ type CursorPaginationResponse struct {
 	Total      int64         `json:"total"`                // Total count of all items matching the query/filters
 }
 
+// Pagination constants
+const (
+	DefaultPageSize    = 20  // Default number of items per page
+	MaxPageSize        = 100 // Maximum allowed items per page
+	DefaultCursorLimit = 20  // Default limit for cursor-based pagination
+	MaxCursorLimit     = 100 // Maximum limit for cursor-based pagination
+)
+
 // GetEntities handles GET requests for entity lists with pagination and selective preloading
 //
 //	@Param	page	query	int		false	"Page number (offset pagination, default: 1)"
@@ -102,11 +110,11 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 
 	// Use cursor pagination if cursor param is present (even if empty for first page)
 	if _, hasCursor := ctx.Request.URL.Query()["cursor"]; hasCursor {
-		limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", "20"))
+		limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", strconv.Itoa(DefaultCursorLimit)))
 
 		// Validate limit
-		if limit < 1 || limit > 100 {
-			limit = 20
+		if limit < 1 || limit > MaxCursorLimit {
+			limit = DefaultCursorLimit
 		}
 
 		entitiesDto, nextCursor, hasMore, total, err := genericController.getEntitiesCursor(ctx, cursor, limit, filters, includes)
@@ -128,14 +136,14 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 
 	// Traditional offset pagination (backward compatible)
 	page, _ := strconv.Atoi(ctx.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(ctx.DefaultQuery("size", "20"))
+	pageSize, _ := strconv.Atoi(ctx.DefaultQuery("size", strconv.Itoa(DefaultPageSize)))
 
 	// Validate parameters
 	if page < 1 {
 		page = 1
 	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 20
+	if pageSize < 1 || pageSize > MaxPageSize {
+		pageSize = DefaultPageSize
 	}
 
 	entitiesDto, total, getEntityError := genericController.getEntities(ctx, page, pageSize, filters, includes)
