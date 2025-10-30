@@ -1,0 +1,46 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://ocf:root@postgres:5432/ocf"
+      ],
+      "env": {
+        "PGPASSWORD": "root"
+      }
+    },
+    "postgres-test": {
+      "command": "npx",
+      "args": [
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://ocf:root@postgres:5432/ocf_test"
+      ],
+      "env": {
+        "PGPASSWORD": "root"
+      }
+    },
+    "docker": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-docker"]
+    },
+    "git": {
+      "command": "npx",
+      "args": [
+        "@modelcontextprotocol/server-git",
+        "/workspaces/ocf-core"
+      ]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "@modelcontextprotocol/server-filesystem",
+        "/workspaces/ocf-core"
+      ]
+    },
+    "fetch": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-fetch"]
+    }
+  }
+}
