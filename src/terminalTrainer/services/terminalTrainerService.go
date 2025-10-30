@@ -774,7 +774,7 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 
 	// Vérifier que l'utilisateur qui partage est le propriétaire du terminal
 	if terminal.UserID != sharedByUserID {
-		return fmt.Errorf("only terminal owner can share access")
+		return utils.OwnerOnlyError("terminal", "share")
 	}
 
 	// Vérifier que l'utilisateur ne partage pas avec lui-même
@@ -885,7 +885,7 @@ func (tts *terminalTrainerService) RevokeTerminalAccess(sessionID, sharedWithUse
 
 	// Vérifier que l'utilisateur qui révoque est le propriétaire du terminal
 	if terminal.UserID != requestingUserID {
-		return fmt.Errorf("only terminal owner can revoke access")
+		return utils.OwnerOnlyError("terminal", "revoke")
 	}
 
 	// Récupérer le partage

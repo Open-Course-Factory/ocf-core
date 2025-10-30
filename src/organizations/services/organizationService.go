@@ -202,7 +202,7 @@ func (os *organizationService) UpdateOrganization(orgID uuid.UUID, requestingUse
 		return nil, err
 	}
 	if !canManage {
-		return nil, fmt.Errorf("you don't have permission to manage this organization")
+		return nil, utils.PermissionDeniedError("manage", "organization")
 	}
 
 	updatedOrg, err := os.repository.UpdateOrganization(orgID, updates)
@@ -222,7 +222,7 @@ func (os *organizationService) DeleteOrganization(orgID uuid.UUID, requestingUse
 
 	// Only owner can delete
 	if org.OwnerUserID != requestingUserID {
-		return fmt.Errorf("only the organization owner can delete the organization")
+		return utils.OwnerOnlyError("organization", "delete")
 	}
 
 	// Cannot delete personal organization
@@ -255,7 +255,7 @@ func (os *organizationService) AddMembersToOrganization(orgID uuid.UUID, request
 		return err
 	}
 	if !canManage {
-		return fmt.Errorf("you don't have permission to add members to this organization")
+		return utils.PermissionDeniedError("add members to", "organization")
 	}
 
 	// Get organization to check limits
@@ -320,7 +320,7 @@ func (os *organizationService) RemoveMemberFromOrganization(orgID uuid.UUID, req
 		return err
 	}
 	if !canManage {
-		return fmt.Errorf("you don't have permission to remove members from this organization")
+		return utils.PermissionDeniedError("remove members from", "organization")
 	}
 
 	// Get organization
@@ -356,7 +356,7 @@ func (os *organizationService) UpdateMemberRole(orgID uuid.UUID, requestingUserI
 		return err
 	}
 	if !canManage {
-		return fmt.Errorf("you don't have permission to update roles in this organization")
+		return utils.PermissionDeniedError("update roles in", "organization")
 	}
 
 	// Get organization

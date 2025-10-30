@@ -91,7 +91,9 @@
       "Bash(make test-unit:*)",
       "Bash(make benchmark:*)",
       "Bash(go fmt:*)",
-      "Bash(make coverage:*)"
+      "Bash(make coverage:*)",
+      "Bash(git checkout:*)",
+      "Bash(gemini -p:*)"
     ],
     "deny": [],
     "ask": []

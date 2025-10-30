@@ -921,7 +921,7 @@ func (tc *terminalController) ShareTerminal(ctx *gin.Context) {
 			})
 			return
 		}
-		if err.Error() == "only terminal owner can share access" {
+		if err.Error() == "only the terminal owner can share the terminal" {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
 				ErrorMessage: err.Error(),
@@ -968,7 +968,7 @@ func (tc *terminalController) RevokeTerminalAccess(ctx *gin.Context) {
 			})
 			return
 		}
-		if err.Error() == "only terminal owner can revoke access" {
+		if err.Error() == "only the terminal owner can revoke the terminal" {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
 				ErrorMessage: err.Error(),

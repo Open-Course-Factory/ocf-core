@@ -270,6 +270,34 @@ func WrapDatabaseError(context string, err error) error {
 	return fmt.Errorf("database error while %s: %w", context, err)
 }
 
+// OwnerOnlyError creates an error for operations restricted to owners
+//
+// Example:
+//
+//	OwnerOnlyError("group", "delete") -> "only the group owner can delete the group"
+//	OwnerOnlyError("organization", "transfer ownership") -> "only the organization owner can transfer ownership the organization"
+func OwnerOnlyError(entityType, action string) error {
+	return fmt.Errorf("only the %s owner can %s the %s", entityType, action, entityType)
+}
+
+// InvalidUUIDError creates an error for invalid UUID format
+//
+// Example:
+//
+//	InvalidUUIDError("group_id", "invalid-uuid") -> "validation error on field 'group_id': invalid UUID format: invalid-uuid"
+func InvalidUUIDError(field string, value string) error {
+	return NewValidationError(field, fmt.Sprintf("invalid UUID format: %s", value))
+}
+
+// MetadataFieldMissingError creates an error for missing metadata fields (primarily for Stripe objects)
+//
+// Example:
+//
+//	MetadataFieldMissingError("subscription", "user_id") -> "validation error on field 'subscription.metadata.user_id': required field missing"
+func MetadataFieldMissingError(entityType, field string) error {
+	return NewValidationError(fmt.Sprintf("%s.metadata.%s", entityType, field), "required field missing")
+}
+
 // ==========================================
 // Subscription/Payment Error Helpers
 // ==========================================

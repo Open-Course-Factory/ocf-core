@@ -163,7 +163,7 @@ func (gs *groupService) UpdateGroup(groupID uuid.UUID, requestingUserID string, 
 		return nil, err
 	}
 	if !canManage {
-		return nil, fmt.Errorf("you don't have permission to manage this group")
+		return nil, utils.PermissionDeniedError("manage", "group")
 	}
 
 	updatedGroup, err := gs.repository.UpdateGroup(groupID, updates)
@@ -183,7 +183,7 @@ func (gs *groupService) DeleteGroup(groupID uuid.UUID, requestingUserID string) 
 
 	// Only owner can delete
 	if group.OwnerUserID != requestingUserID {
-		return fmt.Errorf("only the group owner can delete the group")
+		return utils.OwnerOnlyError("group", "delete")
 	}
 
 	// Revoke all member permissions
@@ -205,7 +205,7 @@ func (gs *groupService) AddMembersToGroup(groupID uuid.UUID, requestingUserID st
 		return err
 	}
 	if !canManage {
-		return fmt.Errorf("you don't have permission to add members to this group")
+		return utils.PermissionDeniedError("add members to", "group")
 	}
 
 	// Get group to check limits
@@ -268,7 +268,7 @@ func (gs *groupService) RemoveMemberFromGroup(groupID uuid.UUID, requestingUserI
 		return err
 	}
 	if !canManage {
-		return fmt.Errorf("you don't have permission to remove members from this group")
+		return utils.PermissionDeniedError("remove members from", "group")
 	}
 
 	// Get group
@@ -306,7 +306,7 @@ func (gs *groupService) UpdateMemberRole(groupID uuid.UUID, requestingUserID str
 		return err
 	}
 	if !canManage {
-		return fmt.Errorf("you don't have permission to update roles in this group")
+		return utils.PermissionDeniedError("update roles in", "group")
 	}
 
 	// Get group

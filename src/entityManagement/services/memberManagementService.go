@@ -125,7 +125,7 @@ func (mms *memberManagementService) AddMembers(
 	maxMembers := entity.GetMaxMembers()
 	currentMembers := entity.GetCurrentMemberCount()
 	if maxMembers != -1 && currentMembers+len(userIDs) > maxMembers {
-		return utils.ErrLimitReached("members", maxMembers)
+		return utils.CapacityWillExceedError(mms.config.EntityType, currentMembers, len(userIDs), maxMembers)
 	}
 
 	// Add each user

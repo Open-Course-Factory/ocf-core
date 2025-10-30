@@ -215,7 +215,7 @@ func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
 
 	// 3. Check if group is full
 	if group.MaxMembers > 0 && len(group.Members) >= group.MaxMembers {
-		return fmt.Errorf("group is full (max %d members)", group.MaxMembers)
+		return utils.CapacityExceededError("group", len(group.Members), group.MaxMembers)
 	}
 
 	// 4. Check if user is already a member
@@ -231,7 +231,7 @@ func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
 			return fmt.Errorf("permission check failed: %v", err)
 		}
 		if !canManage {
-			return fmt.Errorf("you don't have permission to add members to this group")
+			return utils.PermissionDeniedError("add members to", "group")
 		}
 
 		// Set InvitedBy if not already set
@@ -343,7 +343,7 @@ func (h *GroupMemberCleanupHook) Execute(ctx *hooks.HookContext) error {
 
 	// Prevent removing the group owner
 	if member.Role == models.GroupMemberRoleOwner {
-		return fmt.Errorf("cannot remove the group owner")
+		return utils.ErrCannotRemoveOwner("group")
 	}
 
 	// Revoke permissions from the member
