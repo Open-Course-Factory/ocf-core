@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
 # Image finale plus légère
 FROM golang:1.24-bookworm
 
-# Installation minimale des outils système + Node.js
+# Installation minimale des outils système + Node.js + PostgreSQL client
 RUN apt-get update && apt-get install -y \
     vim \
     sudo \
@@ -25,6 +25,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     gnupg \
+    postgresql-client \
+    libpq-dev \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
     && NODE_MAJOR=21 \

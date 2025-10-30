@@ -7,6 +7,7 @@ This dev container comes pre-configured with everything you need for OCF Core de
 ### Development Tools
 - **Go 1.24** - Main language
 - **Node.js 21** - For MCPs and frontend tools
+- **PostgreSQL Client** - Database CLI and MCP prerequisites
 - **Docker-in-Docker** - Access to sibling containers
 - **Git** - With bash completion
 - **Swag** - API documentation generator

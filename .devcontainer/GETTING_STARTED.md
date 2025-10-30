@@ -180,6 +180,7 @@ Master:
 ### Development Tools
 ✅ Go 1.24
 ✅ Node.js 21
+✅ PostgreSQL Client
 ✅ Docker-in-Docker
 ✅ Git with bash completion
 ✅ Swag (API docs)
