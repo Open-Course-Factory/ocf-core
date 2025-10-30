@@ -4,10 +4,10 @@ package paymentController
 import (
 	"net/http"
 	"soli/formations/src/auth/errors"
+	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
-	organizationModels "soli/formations/src/organizations/models"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -27,8 +27,8 @@ type OrganizationSubscriptionController interface {
 }
 
 type organizationSubscriptionController struct {
-	db                  *gorm.DB
-	orgSubService       services.OrganizationSubscriptionService
+	db            *gorm.DB
+	orgSubService services.OrganizationSubscriptionService
 }
 
 func NewOrganizationSubscriptionController(db *gorm.DB) OrganizationSubscriptionController {

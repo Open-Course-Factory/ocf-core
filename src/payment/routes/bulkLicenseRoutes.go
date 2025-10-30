@@ -25,13 +25,13 @@ func BulkLicenseRoutes(router *gin.RouterGroup, configuration *config.Configurat
 	batchRoutes := router.Group("/subscription-batches")
 	batchRoutes.Use(authMiddleware.AuthManagement())
 	{
-		batchRoutes.POST("/create-checkout-session", bulkController.CreateBulkCheckoutSession)    // Create Stripe checkout session for bulk purchase
-		batchRoutes.GET("", bulkController.GetMyBatches)                                          // List my batches
-		batchRoutes.GET("/:id", bulkController.GetBatchDetails)                                   // Get batch details
-		batchRoutes.GET("/:id/licenses", bulkController.GetBatchLicenses)                         // List licenses in batch
-		batchRoutes.POST("/:id/assign", bulkController.AssignLicense)                             // Assign a license
-		batchRoutes.DELETE("/:id/licenses/:license_id/revoke", bulkController.RevokeLicense)      // Revoke a license
-		batchRoutes.PATCH("/:id/quantity", bulkController.UpdateBatchQuantity)                    // Update quantity
-		batchRoutes.DELETE("/:id/permanent", bulkController.PermanentlyDeleteBatch)               // Permanently delete batch
+		batchRoutes.POST("/create-checkout-session", bulkController.CreateBulkCheckoutSession) // Create Stripe checkout session for bulk purchase
+		batchRoutes.GET("", bulkController.GetMyBatches)                                       // List my batches
+		batchRoutes.GET("/:id", bulkController.GetBatchDetails)                                // Get batch details
+		batchRoutes.GET("/:id/licenses", bulkController.GetBatchLicenses)                      // List licenses in batch
+		batchRoutes.POST("/:id/assign", bulkController.AssignLicense)                          // Assign a license
+		batchRoutes.DELETE("/:id/licenses/:license_id/revoke", bulkController.RevokeLicense)   // Revoke a license
+		batchRoutes.PATCH("/:id/quantity", bulkController.UpdateBatchQuantity)                 // Update quantity
+		batchRoutes.DELETE("/:id/permanent", bulkController.PermanentlyDeleteBatch)            // Permanently delete batch
 	}
 }

@@ -12,17 +12,17 @@ import (
 // RegisterCustomValidators registers all custom validators with the validator instance
 func RegisterCustomValidators(v *validator.Validate) error {
 	validators := map[string]validator.Func{
-		"username":          validateUsername,
-		"plan_name":         validatePlanName,
-		"org_name":          validateOrgName,
-		"group_name":        validateGroupName,
-		"future_date":       validateFutureDate,
-		"past_date":         validatePastDate,
-		"uuid_or_empty":     validateUUIDOrEmpty,
-		"slug":              validateSlug,
-		"billing_interval":  validateBillingInterval,
-		"stripe_id":         validateStripeID,
-		"casdoor_owner":     validateCasdoorOwner,
+		"username":         validateUsername,
+		"plan_name":        validatePlanName,
+		"org_name":         validateOrgName,
+		"group_name":       validateGroupName,
+		"future_date":      validateFutureDate,
+		"past_date":        validatePastDate,
+		"uuid_or_empty":    validateUUIDOrEmpty,
+		"slug":             validateSlug,
+		"billing_interval": validateBillingInterval,
+		"stripe_id":        validateStripeID,
+		"casdoor_owner":    validateCasdoorOwner,
 	}
 
 	for tag, fn := range validators {

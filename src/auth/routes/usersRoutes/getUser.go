@@ -8,11 +8,11 @@ import (
 	"soli/formations/src/auth/errors"
 	sqldb "soli/formations/src/db"
 	groupDto "soli/formations/src/groups/dto"
-	groupModels "soli/formations/src/groups/models"
 	groupRegistration "soli/formations/src/groups/entityRegistration"
+	groupModels "soli/formations/src/groups/models"
 	organizationDto "soli/formations/src/organizations/dto"
-	organizationModels "soli/formations/src/organizations/models"
 	organizationRegistration "soli/formations/src/organizations/entityRegistration"
+	organizationModels "soli/formations/src/organizations/models"
 
 	"github.com/gin-gonic/gin"
 )

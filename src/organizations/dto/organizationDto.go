@@ -47,10 +47,10 @@ type OrganizationOutput struct {
 	UpdatedAt          time.Time              `json:"updated_at"`
 
 	// Optional relations (loaded via ?includes=members,groups)
-	Members    *[]OrganizationMemberOutput `json:"members,omitempty"`
-	Groups     *[]GroupSummary             `json:"groups,omitempty"`
-	GroupCount *int                        `json:"group_count,omitempty"`
-	MemberCount *int                       `json:"member_count,omitempty"`
+	Members     *[]OrganizationMemberOutput `json:"members,omitempty"`
+	Groups      *[]GroupSummary             `json:"groups,omitempty"`
+	GroupCount  *int                        `json:"group_count,omitempty"`
+	MemberCount *int                        `json:"member_count,omitempty"`
 }
 
 // GroupSummary represents a simplified group output for organization responses

@@ -14,21 +14,21 @@ type OrganizationMigrationService interface {
 }
 
 type organizationMigrationService struct {
-	db      *gorm.DB
+	db         *gorm.DB
 	orgService OrganizationService
 }
 
 type MigrationResult struct {
-	TotalUsers           int      `json:"total_users"`
-	AlreadyHadOrg        int      `json:"already_had_org"`
-	NewOrgsCreated       int      `json:"new_orgs_created"`
-	FailedCreations      int      `json:"failed_creations"`
-	FailedUserIDs        []string `json:"failed_user_ids,omitempty"`
+	TotalUsers      int      `json:"total_users"`
+	AlreadyHadOrg   int      `json:"already_had_org"`
+	NewOrgsCreated  int      `json:"new_orgs_created"`
+	FailedCreations int      `json:"failed_creations"`
+	FailedUserIDs   []string `json:"failed_user_ids,omitempty"`
 }
 
 func NewOrganizationMigrationService(db *gorm.DB) OrganizationMigrationService {
 	return &organizationMigrationService{
-		db:      db,
+		db:         db,
 		orgService: NewOrganizationService(db),
 	}
 }

@@ -1,11 +1,11 @@
 package terminalController
 
 import (
-	"soli/formations/src/auth/casdoor"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
+	"soli/formations/src/auth/casdoor"
 	"time"
 
 	"soli/formations/src/auth/errors"
@@ -449,17 +449,17 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 	var terminalOutputs []dto.TerminalOutput
 	for _, terminal := range *terminals {
 		terminalOutputs = append(terminalOutputs, dto.TerminalOutput{
-			ID:                terminal.ID,
-			SessionID:         terminal.SessionID,
-			UserID:            terminal.UserID,
-			Name:              terminal.Name,
-			Status:            terminal.Status,
-			ExpiresAt:         terminal.ExpiresAt,
-			InstanceType:      terminal.InstanceType,
-			MachineSize:       terminal.MachineSize,
-			IsHiddenByOwner:   terminal.IsHiddenByOwner,
-			HiddenByOwnerAt:   terminal.HiddenByOwnerAt,
-			CreatedAt:         terminal.CreatedAt,
+			ID:              terminal.ID,
+			SessionID:       terminal.SessionID,
+			UserID:          terminal.UserID,
+			Name:            terminal.Name,
+			Status:          terminal.Status,
+			ExpiresAt:       terminal.ExpiresAt,
+			InstanceType:    terminal.InstanceType,
+			MachineSize:     terminal.MachineSize,
+			IsHiddenByOwner: terminal.IsHiddenByOwner,
+			HiddenByOwnerAt: terminal.HiddenByOwnerAt,
+			CreatedAt:       terminal.CreatedAt,
 		})
 	}
 

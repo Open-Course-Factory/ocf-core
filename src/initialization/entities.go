@@ -4,8 +4,8 @@ import (
 	"log"
 
 	authRegistration "soli/formations/src/auth/entityRegistration"
-	configModels "soli/formations/src/configuration/models"
 	configRegistration "soli/formations/src/configuration/entityRegistration"
+	configModels "soli/formations/src/configuration/models"
 	configServices "soli/formations/src/configuration/services"
 	"soli/formations/src/courses"
 	courseRegistration "soli/formations/src/courses/entityRegistration"

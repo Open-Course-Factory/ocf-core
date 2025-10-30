@@ -26,28 +26,28 @@ type ParentChapterOutput struct {
 }
 
 type SectionOutput struct {
-	ID          string                 `json:"id"`
-	FileName    string                 `json:"fileName"`
-	OwnerIDs    pq.StringArray         `gorm:"type:text[]"`
-	Chapters    []ParentChapterOutput  `json:"chapters,omitempty"` // Parent chapter information
-	Title       string                 `json:"title"`
-	Intro       string                 `json:"intro"`
-	Conclusion  string                 `json:"conclusion"`
-	Number      int                    `json:"number"`
-	Pages       []*PageInput           `json:"pages"`
-	HiddenPages []int                  `json:"hiddenPages"`
-	CreatedAt   string                 `json:"createdAt"`
-	UpdatedAt   string                 `json:"updatedAt"`
+	ID          string                `json:"id"`
+	FileName    string                `json:"fileName"`
+	OwnerIDs    pq.StringArray        `gorm:"type:text[]"`
+	Chapters    []ParentChapterOutput `json:"chapters,omitempty"` // Parent chapter information
+	Title       string                `json:"title"`
+	Intro       string                `json:"intro"`
+	Conclusion  string                `json:"conclusion"`
+	Number      int                   `json:"number"`
+	Pages       []*PageInput          `json:"pages"`
+	HiddenPages []int                 `json:"hiddenPages"`
+	CreatedAt   string                `json:"createdAt"`
+	UpdatedAt   string                `json:"updatedAt"`
 }
 
 type EditSectionInput struct {
-	FileName    *string        `json:"fileName,omitempty" mapstructure:"fileName"`
-	Title       *string        `json:"title,omitempty" mapstructure:"title"`
-	Intro       *string        `json:"intro,omitempty" mapstructure:"intro"`
-	Conclusion  *string        `json:"conclusion,omitempty" mapstructure:"conclusion"`
-	Number      *int           `json:"number,omitempty" mapstructure:"number"`
-	Pages       []models.Page  `json:"pages,omitempty" mapstructure:"pages"`
-	HiddenPages []int          `json:"hiddenPages,omitempty" mapstructure:"hiddenPages"`
+	FileName    *string       `json:"fileName,omitempty" mapstructure:"fileName"`
+	Title       *string       `json:"title,omitempty" mapstructure:"title"`
+	Intro       *string       `json:"intro,omitempty" mapstructure:"intro"`
+	Conclusion  *string       `json:"conclusion,omitempty" mapstructure:"conclusion"`
+	Number      *int          `json:"number,omitempty" mapstructure:"number"`
+	Pages       []models.Page `json:"pages,omitempty" mapstructure:"pages"`
+	HiddenPages []int         `json:"hiddenPages,omitempty" mapstructure:"hiddenPages"`
 }
 
 func SectionModelToSectionOutput(sectionModel models.Section) *SectionOutput {

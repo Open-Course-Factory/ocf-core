@@ -42,7 +42,7 @@ func (genericController genericController) EditEntity(ctx *gin.Context) {
 		Result:           &decodedData,
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
 			mapstructure.StringToTimeHookFunc(time.RFC3339), // Handle ISO8601 time strings
-			mapstructure.StringToTimeDurationHookFunc(),      // Handle duration strings
+			mapstructure.StringToTimeDurationHookFunc(),     // Handle duration strings
 		),
 	}
 

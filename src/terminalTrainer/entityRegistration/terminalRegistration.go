@@ -2,8 +2,8 @@ package terminalRegistration
 
 import (
 	"net/http"
-	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/entityManagement/converters"
+	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 

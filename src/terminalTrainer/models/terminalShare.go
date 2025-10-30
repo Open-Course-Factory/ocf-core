@@ -10,18 +10,18 @@ import (
 // TerminalShare représente un partage de terminal entre utilisateurs ou groupes
 type TerminalShare struct {
 	entityManagementModels.BaseModel
-	TerminalID           uuid.UUID   `gorm:"not null;index" json:"terminal_id"`
+	TerminalID uuid.UUID `gorm:"not null;index" json:"terminal_id"`
 
 	// Share can be to a user OR a group (one must be set, the other must be NULL)
-	SharedWithUserID     *string     `gorm:"type:varchar(255);index" json:"shared_with_user_id,omitempty"`
-	SharedWithGroupID    *uuid.UUID  `gorm:"type:uuid;index" json:"shared_with_group_id,omitempty"`
+	SharedWithUserID  *string    `gorm:"type:varchar(255);index" json:"shared_with_user_id,omitempty"`
+	SharedWithGroupID *uuid.UUID `gorm:"type:uuid;index" json:"shared_with_group_id,omitempty"`
 
-	SharedByUserID       string      `gorm:"type:varchar(255);not null;index" json:"shared_by_user_id"`
-	AccessLevel          string      `gorm:"type:varchar(50);default:'read'" json:"access_level"` // read, write, admin
-	ExpiresAt            *time.Time  `json:"expires_at,omitempty"`
-	IsActive             bool        `gorm:"default:true" json:"is_active"`
-	IsHiddenByRecipient  bool        `gorm:"default:false" json:"is_hidden_by_recipient"`
-	HiddenAt             *time.Time  `json:"hidden_at,omitempty"`
+	SharedByUserID      string     `gorm:"type:varchar(255);not null;index" json:"shared_by_user_id"`
+	AccessLevel         string     `gorm:"type:varchar(50);default:'read'" json:"access_level"` // read, write, admin
+	ExpiresAt           *time.Time `json:"expires_at,omitempty"`
+	IsActive            bool       `gorm:"default:true" json:"is_active"`
+	IsHiddenByRecipient bool       `gorm:"default:false" json:"is_hidden_by_recipient"`
+	HiddenAt            *time.Time `json:"hidden_at,omitempty"`
 
 	// Relations
 	Terminal Terminal `gorm:"foreignKey:TerminalID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`

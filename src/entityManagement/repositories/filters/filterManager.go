@@ -70,10 +70,10 @@ func NewFilterManager(relationshipFilters []entityManagementInterfaces.Relations
 // Each filter is processed by the first strategy that matches it.
 //
 // The process:
-//   1. Iterate through each filter key-value pair
-//   2. Check strategies in priority order
-//   3. First matching strategy processes the filter
-//   4. Unknown filters are ignored (no strategy matches)
+//  1. Iterate through each filter key-value pair
+//  2. Check strategies in priority order
+//  3. First matching strategy processes the filter
+//  4. Unknown filters are ignored (no strategy matches)
 //
 // Parameters:
 //   - query: The GORM query to modify

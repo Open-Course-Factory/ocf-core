@@ -8,13 +8,13 @@ import (
 )
 
 type EntityRegistrationInput struct {
-	EntityInterface      any
-	EntityConverters     EntityConverters
-	EntityDtos           EntityDtos
-	EntityRoles          EntityRoles
-	EntitySubEntities    []any
-	SwaggerConfig        *EntitySwaggerConfig `json:"swagger_config,omitempty"`
-	RelationshipFilters  []RelationshipFilter
+	EntityInterface     any
+	EntityConverters    EntityConverters
+	EntityDtos          EntityDtos
+	EntityRoles         EntityRoles
+	EntitySubEntities   []any
+	SwaggerConfig       *EntitySwaggerConfig `json:"swagger_config,omitempty"`
+	RelationshipFilters []RelationshipFilter
 }
 
 type EntityConverters struct {
@@ -35,9 +35,9 @@ type EntityRoles struct {
 
 // RelationshipFilter defines how to filter an entity through nested relationships
 type RelationshipFilter struct {
-	FilterName   string              // e.g., "courseId" - the query parameter name
-	Path         []RelationshipStep  // The path of joins to reach the target
-	TargetColumn string              // e.g., "id" - the column on the final table to compare
+	FilterName   string             // e.g., "courseId" - the query parameter name
+	Path         []RelationshipStep // The path of joins to reach the target
+	TargetColumn string             // e.g., "id" - the column on the final table to compare
 }
 
 // RelationshipStep defines one step in a relationship path

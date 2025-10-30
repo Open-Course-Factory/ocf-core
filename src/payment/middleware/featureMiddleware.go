@@ -12,16 +12,16 @@ import (
 )
 
 type FeatureMiddleware struct {
-	paymentRepo repositories.PaymentRepository
+	paymentRepo   repositories.PaymentRepository
 	orgSubService services.OrganizationSubscriptionService
-	db *gorm.DB
+	db            *gorm.DB
 }
 
 func NewFeatureMiddleware(db *gorm.DB) *FeatureMiddleware {
 	return &FeatureMiddleware{
-		paymentRepo: repositories.NewPaymentRepository(db),
+		paymentRepo:   repositories.NewPaymentRepository(db),
 		orgSubService: services.NewOrganizationSubscriptionService(db),
-		db: db,
+		db:            db,
 	}
 }
 

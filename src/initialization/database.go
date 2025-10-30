@@ -85,8 +85,8 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Payment entities
 	db.AutoMigrate(&paymentModels.SubscriptionPlan{})
 	db.AutoMigrate(&paymentModels.SubscriptionBatch{})
-	db.AutoMigrate(&paymentModels.UserSubscription{})                 // DEPRECATED in Phase 2 (kept for backward compat)
-	db.AutoMigrate(&paymentModels.OrganizationSubscription{})         // NEW: Phase 2 - Organization subscriptions
+	db.AutoMigrate(&paymentModels.UserSubscription{})         // DEPRECATED in Phase 2 (kept for backward compat)
+	db.AutoMigrate(&paymentModels.OrganizationSubscription{}) // NEW: Phase 2 - Organization subscriptions
 	db.AutoMigrate(&paymentModels.Invoice{})
 	db.AutoMigrate(&paymentModels.PaymentMethod{})
 	db.AutoMigrate(&paymentModels.UsageMetrics{})
@@ -151,19 +151,19 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 
 	// Plan Trainer (With Bulk Purchase & Tiered Pricing)
 	trainerPlan := &paymentModels.SubscriptionPlan{
-		Name:             "Trainer Plan",
-		Description:      "Pour formateurs - Achat en gros avec tarifs dégressifs",
-		PriceAmount:      1200, // 12€ base price per license
-		Currency:         "eur",
-		BillingInterval:  "month",
-		TrialDays:        0,
-		Features:         []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "bulk_purchase", "group_management"},
+		Name:               "Trainer Plan",
+		Description:        "Pour formateurs - Achat en gros avec tarifs dégressifs",
+		PriceAmount:        1200, // 12€ base price per license
+		Currency:           "eur",
+		BillingInterval:    "month",
+		TrialDays:          0,
+		Features:           []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "bulk_purchase", "group_management"},
 		MaxConcurrentUsers: 1,
-		MaxCourses:       -1,
-		MaxLabSessions:   -1,
-		IsActive:         true,
-		RequiredRole:     "trainer",
-		UseTieredPricing: true,
+		MaxCourses:         -1,
+		MaxLabSessions:     -1,
+		IsActive:           true,
+		RequiredRole:       "trainer",
+		UseTieredPricing:   true,
 		PricingTiers: []paymentModels.PricingTier{
 			{MinQuantity: 1, MaxQuantity: 5, UnitAmount: 1200, Description: "1-5 licences: 12€/licence"},
 			{MinQuantity: 6, MaxQuantity: 15, UnitAmount: 1000, Description: "6-15 licences: 10€/licence"},

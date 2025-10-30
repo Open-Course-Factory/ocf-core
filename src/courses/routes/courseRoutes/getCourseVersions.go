@@ -47,7 +47,7 @@ func (cc *courseController) GetCourseVersions(ctx *gin.Context) {
 	courses, err := cc.service.GetAllVersionsOfCourse(userIdStr, courseName)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to retrieve course versions",
+			"error":   "Failed to retrieve course versions",
 			"details": err.Error(),
 		})
 		return

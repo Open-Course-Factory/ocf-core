@@ -425,7 +425,7 @@ func (r *terminalRepository) HideTerminalForUser(terminalID, userID string) erro
 		Where("terminal_id = ? AND shared_with_user_id = ?", terminalUUID, userID).
 		Updates(map[string]interface{}{
 			"is_hidden_by_recipient": true,
-			"hidden_at": now,
+			"hidden_at":              now,
 		}).Error
 }
 
@@ -490,8 +490,8 @@ func (r *terminalRepository) UnhideOwnedTerminal(terminalID, userID string) erro
 
 	// Create an empty terminal model to update with
 	terminal := models.Terminal{
-		IsHiddenByOwner:   false,
-		HiddenByOwnerAt:   nil,
+		IsHiddenByOwner: false,
+		HiddenByOwnerAt: nil,
 	}
 
 	return r.db.Model(&models.Terminal{}).

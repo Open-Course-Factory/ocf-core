@@ -32,7 +32,8 @@ func NewTerminalAccessMiddleware(db *gorm.DB) *TerminalAccessMiddleware {
 // The user ID is expected to be in the context (set by AuthManagement middleware).
 //
 // Usage:
-//   routes.GET("/:id", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("read"), handler)
+//
+//	routes.GET("/:id", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("read"), handler)
 func (tam *TerminalAccessMiddleware) RequireTerminalAccess(requiredLevel string) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		// Get terminal ID from route parameter

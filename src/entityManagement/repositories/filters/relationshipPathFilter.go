@@ -17,7 +17,7 @@ import (
 //   - Path: Pages → Chapters → Courses
 //   - Filter: ?courseId=123
 //   - SQL: EXISTS (SELECT 1 FROM chapters WHERE chapters.id = pages.chapter_id
-//                  AND chapters.course_id = '123')
+//     AND chapters.course_id = '123')
 //
 // Relationship filters are registered in entity definitions using the RelationshipFilter struct.
 // This allows entities to define custom filter paths that traverse multiple relationships.
@@ -73,15 +73,16 @@ func (r *RelationshipPathFilter) Priority() int {
 // defined in the RelationshipFilter. Each step in the path is joined to the previous step.
 //
 // Example for a two-step path (Pages → Chapters → Courses):
-//   EXISTS (
-//     SELECT 1 FROM chapters
-//     WHERE chapters.id = pages.chapter_id
-//     AND EXISTS (
-//       SELECT 1 FROM courses
-//       WHERE courses.id = chapters.course_id
-//       AND courses.id IN ?
-//     )
-//   )
+//
+//	EXISTS (
+//	  SELECT 1 FROM chapters
+//	  WHERE chapters.id = pages.chapter_id
+//	  AND EXISTS (
+//	    SELECT 1 FROM courses
+//	    WHERE courses.id = chapters.course_id
+//	    AND courses.id IN ?
+//	  )
+//	)
 func applyRelationshipFilter(query *gorm.DB, relFilter entityManagementInterfaces.RelationshipFilter, value interface{}, currentTable string) *gorm.DB {
 	// Convert value to string array
 	var ids []string

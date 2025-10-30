@@ -50,7 +50,7 @@ func (cc *courseController) GetCourseByVersion(ctx *gin.Context) {
 	course, err := cc.service.GetCourseByVersion(userIdStr, courseName, version)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, gin.H{
-			"error": "Course version not found",
+			"error":   "Course version not found",
 			"details": err.Error(),
 		})
 		return

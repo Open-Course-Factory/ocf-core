@@ -2,7 +2,6 @@
 package services
 
 import (
-	"soli/formations/src/auth/casdoor"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,6 +9,7 @@ import (
 	"io"
 	"log"
 	"reflect"
+	"soli/formations/src/auth/casdoor"
 	"time"
 
 	authInterfaces "soli/formations/src/auth/interfaces"
@@ -427,20 +427,20 @@ func (c courseService) updateCourseWithChapters(course *models.Course) error {
 		// Step 2: Update the course entity itself (excluding associations)
 		// We use Select to explicitly choose which fields to update
 		updateFields := map[string]interface{}{
-			"name":                   course.Name,
-			"category":               course.Category,
-			"version":                course.Version,
-			"title":                  course.Title,
-			"subtitle":               course.Subtitle,
-			"header":                 course.Header,
-			"footer":                 course.Footer,
-			"logo":                   course.Logo,
-			"description":            course.Description,
-			"prelude":                course.Prelude,
-			"learning_objectives":    course.LearningObjectives,
-			"git_repository":         course.GitRepository,
-			"git_repository_branch":  course.GitRepositoryBranch,
-			"folder_name":            course.FolderName,
+			"name":                  course.Name,
+			"category":              course.Category,
+			"version":               course.Version,
+			"title":                 course.Title,
+			"subtitle":              course.Subtitle,
+			"header":                course.Header,
+			"footer":                course.Footer,
+			"logo":                  course.Logo,
+			"description":           course.Description,
+			"prelude":               course.Prelude,
+			"learning_objectives":   course.LearningObjectives,
+			"git_repository":        course.GitRepository,
+			"git_repository_branch": course.GitRepositoryBranch,
+			"folder_name":           course.FolderName,
 		}
 
 		if err := tx.Model(&models.Course{}).Where("id = ?", course.ID).Updates(updateFields).Error; err != nil {

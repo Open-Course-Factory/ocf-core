@@ -9,7 +9,7 @@ import (
 
 // FeatureRegistryService manages module feature registration
 type FeatureRegistryService struct {
-	db               *gorm.DB
+	db                 *gorm.DB
 	registeredFeatures []models.FeatureDefinition
 }
 
@@ -18,7 +18,7 @@ var GlobalFeatureRegistry *FeatureRegistryService
 // InitFeatureRegistry initializes the global feature registry
 func InitFeatureRegistry(db *gorm.DB) {
 	GlobalFeatureRegistry = &FeatureRegistryService{
-		db:               db,
+		db:                 db,
 		registeredFeatures: []models.FeatureDefinition{},
 	}
 }

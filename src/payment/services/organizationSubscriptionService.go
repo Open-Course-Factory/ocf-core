@@ -3,9 +3,9 @@ package services
 
 import (
 	"fmt"
+	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
-	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/utils"
 	"time"
 
@@ -61,9 +61,9 @@ type OrganizationFeatureInfo struct {
 }
 
 type organizationSubscriptionService struct {
-	repository    repositories.OrganizationSubscriptionRepository
-	paymentRepo   repositories.PaymentRepository
-	db            *gorm.DB
+	repository  repositories.OrganizationSubscriptionRepository
+	paymentRepo repositories.PaymentRepository
+	db          *gorm.DB
 }
 
 func NewOrganizationSubscriptionService(db *gorm.DB) OrganizationSubscriptionService {

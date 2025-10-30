@@ -327,9 +327,9 @@ type PricingBreakdown struct {
 	PlanName         string     `json:"plan_name"`
 	TotalQuantity    int        `json:"total_quantity"`
 	TierBreakdown    []TierCost `json:"tier_breakdown"`
-	TotalMonthlyCost int64      `json:"total_monthly_cost"`       // In cents
-	AveragePerUnit   float64    `json:"average_per_license"`      // In currency (e.g., 8.33 for €8.33)
-	Savings          int64      `json:"savings_vs_individual"`    // In cents
+	TotalMonthlyCost int64      `json:"total_monthly_cost"`    // In cents
+	AveragePerUnit   float64    `json:"average_per_license"`   // In currency (e.g., 8.33 for €8.33)
+	Savings          int64      `json:"savings_vs_individual"` // In cents
 	Currency         string     `json:"currency"`
 }
 
@@ -345,25 +345,25 @@ type TierCost struct {
 // ==========================================
 
 type CleanupInvoicesInput struct {
-	Action        string   `binding:"required,oneof=void uncollectible" json:"action"`                   // "void" or "uncollectible"
+	Action        string   `binding:"required,oneof=void uncollectible" json:"action"`                  // "void" or "uncollectible"
 	OlderThanDays *int     `binding:"omitempty,min=0" json:"older_than_days,omitempty"`                 // Cleanup invoices older than N days (optional when invoice_ids provided)
-	DryRun        bool     `json:"dry_run"`                                                              // If true, only preview what would be cleaned up
+	DryRun        bool     `json:"dry_run"`                                                             // If true, only preview what would be cleaned up
 	Status        string   `json:"status,omitempty" binding:"omitempty,oneof=draft open uncollectible"` // Filter by status (optional, defaults to "open,draft")
-	InvoiceIDs    []string `json:"invoice_ids,omitempty"`                                                // Optional: specific invoice IDs to clean (if empty, cleans all matching)
+	InvoiceIDs    []string `json:"invoice_ids,omitempty"`                                               // Optional: specific invoice IDs to clean (if empty, cleans all matching)
 }
 
 type CleanupInvoicesResult struct {
-	DryRun            bool                      `json:"dry_run"`
-	Action            string                    `json:"action"`
-	ProcessedInvoices int                       `json:"processed_invoices"`
-	CleanedInvoices   int                       `json:"cleaned_invoices"`
-	SkippedInvoices   int                       `json:"skipped_invoices"`
-	FailedInvoices    int                       `json:"failed_invoices"`
-	CleanedDetails    []CleanedInvoiceDetail    `json:"cleaned_details"`
-	SkippedDetails    []string                  `json:"skipped_details"`
-	FailedDetails     []FailedInvoiceCleanup    `json:"failed_details"`
-	TotalAmountCleaned int64                    `json:"total_amount_cleaned"` // Total amount in cents
-	Currency          string                    `json:"currency"`
+	DryRun             bool                   `json:"dry_run"`
+	Action             string                 `json:"action"`
+	ProcessedInvoices  int                    `json:"processed_invoices"`
+	CleanedInvoices    int                    `json:"cleaned_invoices"`
+	SkippedInvoices    int                    `json:"skipped_invoices"`
+	FailedInvoices     int                    `json:"failed_invoices"`
+	CleanedDetails     []CleanedInvoiceDetail `json:"cleaned_details"`
+	SkippedDetails     []string               `json:"skipped_details"`
+	FailedDetails      []FailedInvoiceCleanup `json:"failed_details"`
+	TotalAmountCleaned int64                  `json:"total_amount_cleaned"` // Total amount in cents
+	Currency           string                 `json:"currency"`
 }
 
 type CleanedInvoiceDetail struct {
@@ -378,7 +378,7 @@ type CleanedInvoiceDetail struct {
 }
 
 type FailedInvoiceCleanup struct {
-	InvoiceID string `json:"invoice_id"`
+	InvoiceID  string `json:"invoice_id"`
 	CustomerID string `json:"customer_id"`
-	Error     string `json:"error"`
+	Error      string `json:"error"`
 }

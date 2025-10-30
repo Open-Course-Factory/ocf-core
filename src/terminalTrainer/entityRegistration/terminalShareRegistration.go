@@ -3,8 +3,8 @@ package terminalRegistration
 import (
 	"net/http"
 	"reflect"
-	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/entityManagement/converters"
+	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 
@@ -130,10 +130,10 @@ func (tsr TerminalShareRegistration) ConvertUpdateDtoToMap(updateDto interface{}
 
 func (tsr TerminalShareRegistration) GetCreateFieldsValidation() map[string]interface{} {
 	return map[string]interface{}{
-		"terminal_id":          "required,uuid",
-		"shared_with_user_id":  "required,min=1",
-		"access_level":         "required,oneof=read write admin",
-		"expires_at":           "omitempty",
+		"terminal_id":         "required,uuid",
+		"shared_with_user_id": "required,min=1",
+		"access_level":        "required,oneof=read write admin",
+		"expires_at":          "omitempty",
 	}
 }
 
@@ -165,7 +165,6 @@ func (tsr TerminalShareRegistration) GetRequiredPermissions() map[string][]strin
 		"DELETE": {"terminal_share:delete"},
 	}
 }
-
 
 func (tsr TerminalShareRegistration) GetOrderableFields() []string {
 	return []string{"created_at", "access_level", "expires_at"}

@@ -210,13 +210,13 @@ func SplitMethods(methodStr string) []string {
 
 // Standard method sets for common permission patterns
 var (
-	MethodsRead        = []string{"GET"}
-	MethodsWrite       = []string{"GET", "POST", "PATCH"}
-	MethodsFull        = []string{"GET", "POST", "PATCH", "DELETE"}
-	MethodsAdmin       = []string{"GET", "POST", "PATCH", "DELETE"}
-	MethodsReadWrite   = []string{"GET", "POST", "PATCH"}
-	MethodsOwner       = []string{"GET", "POST", "PATCH", "DELETE"}
-	MethodsMember      = []string{"GET", "POST"}
+	MethodsRead      = []string{"GET"}
+	MethodsWrite     = []string{"GET", "POST", "PATCH"}
+	MethodsFull      = []string{"GET", "POST", "PATCH", "DELETE"}
+	MethodsAdmin     = []string{"GET", "POST", "PATCH", "DELETE"}
+	MethodsReadWrite = []string{"GET", "POST", "PATCH"}
+	MethodsOwner     = []string{"GET", "POST", "PATCH", "DELETE"}
+	MethodsMember    = []string{"GET", "POST"}
 )
 
 // GetStandardMethods returns standard method set by name

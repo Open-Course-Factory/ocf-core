@@ -11,7 +11,7 @@ import (
 type CreateOrganizationSubscriptionInput struct {
 	SubscriptionPlanID uuid.UUID `binding:"required" json:"subscription_plan_id" mapstructure:"subscription_plan_id"`
 	PaymentMethodID    string    `json:"payment_method_id,omitempty" mapstructure:"payment_method_id"` // Stripe Payment Method ID
-	Quantity           int       `json:"quantity" mapstructure:"quantity"`                              // Number of seats/licenses
+	Quantity           int       `json:"quantity" mapstructure:"quantity"`                             // Number of seats/licenses
 	CouponCode         string    `json:"coupon_code,omitempty" mapstructure:"coupon_code"`
 }
 
@@ -42,12 +42,12 @@ type OrganizationSubscriptionOutput struct {
 
 // User effective features (aggregated from all organizations)
 type UserEffectiveFeaturesOutput struct {
-	HighestPlan          SubscriptionPlanOutput `json:"highest_plan"`
-	AllFeatures          []string               `json:"all_features"`           // Union of all features from all orgs
-	MaxConcurrentTerminals int                  `json:"max_concurrent_terminals"` // Maximum across all plans
-	MaxCourses           int                    `json:"max_courses"`            // Maximum across all plans
-	MaxLabSessions       int                    `json:"max_lab_sessions"`       // Maximum across all plans
-	Organizations        []OrganizationFeatureInfo `json:"organizations"`       // List of orgs providing features
+	HighestPlan            SubscriptionPlanOutput    `json:"highest_plan"`
+	AllFeatures            []string                  `json:"all_features"`             // Union of all features from all orgs
+	MaxConcurrentTerminals int                       `json:"max_concurrent_terminals"` // Maximum across all plans
+	MaxCourses             int                       `json:"max_courses"`              // Maximum across all plans
+	MaxLabSessions         int                       `json:"max_lab_sessions"`         // Maximum across all plans
+	Organizations          []OrganizationFeatureInfo `json:"organizations"`            // List of orgs providing features
 }
 
 type OrganizationFeatureInfo struct {

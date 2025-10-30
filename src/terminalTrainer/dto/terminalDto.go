@@ -21,17 +21,17 @@ type UpdateTerminalInput struct {
 }
 
 type TerminalOutput struct {
-	ID                uuid.UUID  `json:"id"`
-	SessionID         string     `json:"session_id"`
-	UserID            string     `json:"user_id"`
-	Name              string     `json:"name"` // User-friendly name for the terminal session
-	Status            string     `json:"status"`
-	ExpiresAt         time.Time  `json:"expires_at"`
-	InstanceType      string     `json:"instance_type"`
-	MachineSize       string     `json:"machine_size"` // XS, S, M, L, XL
-	IsHiddenByOwner   bool       `json:"is_hidden_by_owner"`
-	HiddenByOwnerAt   *time.Time `json:"hidden_by_owner_at,omitempty"`
-	CreatedAt         time.Time  `json:"created_at"`
+	ID              uuid.UUID  `json:"id"`
+	SessionID       string     `json:"session_id"`
+	UserID          string     `json:"user_id"`
+	Name            string     `json:"name"` // User-friendly name for the terminal session
+	Status          string     `json:"status"`
+	ExpiresAt       time.Time  `json:"expires_at"`
+	InstanceType    string     `json:"instance_type"`
+	MachineSize     string     `json:"machine_size"` // XS, S, M, L, XL
+	IsHiddenByOwner bool       `json:"is_hidden_by_owner"`
+	HiddenByOwnerAt *time.Time `json:"hidden_by_owner_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 // UserTerminalKey DTOs for generic system
@@ -59,8 +59,8 @@ type UserTerminalKeyOutput struct {
 // TerminalShare DTOs for generic system
 type CreateTerminalShareInput struct {
 	TerminalID        uuid.UUID  `binding:"required" json:"terminal_id"`
-	SharedWithUserID  *string    `json:"shared_with_user_id,omitempty"`  // Share to specific user
-	SharedWithGroupID *uuid.UUID `json:"shared_with_group_id,omitempty"` // OR share to group
+	SharedWithUserID  *string    `json:"shared_with_user_id,omitempty"`   // Share to specific user
+	SharedWithGroupID *uuid.UUID `json:"shared_with_group_id,omitempty"`  // OR share to group
 	AccessLevel       string     `binding:"required" json:"access_level"` // read, write, admin
 	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
 }
@@ -107,8 +107,8 @@ type SharedTerminalInfo struct {
 // Terminal Service DTOs (pour les appels au Terminal Trainer)
 type CreateTerminalSessionInput struct {
 	Terms        string `binding:"required" json:"terms" form:"terms"`
-	Name         string `json:"name,omitempty" form:"name"` // User-friendly name for the terminal session
-	Expiry       int    `json:"expiry,omitempty" form:"expiry"`        // optionnel
+	Name         string `json:"name,omitempty" form:"name"`                   // User-friendly name for the terminal session
+	Expiry       int    `json:"expiry,omitempty" form:"expiry"`               // optionnel
 	InstanceType string `json:"instance_type,omitempty" form:"instance_type"` // préfixe du type d'instance
 }
 
@@ -138,7 +138,7 @@ type TerminalTrainerAPIKeyResponse struct {
 
 type TerminalTrainerSessionResponse struct {
 	SessionID   string `json:"id,omitempty"`
-	Status      int    `json:"status"` // 0 = success, non-zero = error
+	Status      int    `json:"status"`               // 0 = success, non-zero = error
 	ExpiresAt   int64  `json:"expires_at,omitempty"` // timestamp Unix
 	CreatedAt   int64  `json:"created_at,omitempty"`
 	MachineSize string `json:"machine_size,omitempty"` // XS, S, M, L, XL
@@ -395,37 +395,37 @@ type FixPermissionsResponse struct {
 
 // ServerMetricsResponse représente les métriques du serveur Terminal Trainer
 type ServerMetricsResponse struct {
-	CPUPercent      float64 `json:"cpu_percent"`
-	RAMPercent      float64 `json:"ram_percent"`
-	RAMAvailableGB  float64 `json:"ram_available_gb"`
-	Timestamp       int64   `json:"timestamp"`
+	CPUPercent     float64 `json:"cpu_percent"`
+	RAMPercent     float64 `json:"ram_percent"`
+	RAMAvailableGB float64 `json:"ram_available_gb"`
+	Timestamp      int64   `json:"timestamp"`
 }
 
 // BulkCreateTerminalsRequest for creating multiple terminals for a group
 type BulkCreateTerminalsRequest struct {
-	Terms        string  `binding:"required" json:"terms"`
-	Expiry       int     `json:"expiry,omitempty"`
-	InstanceType string  `json:"instance_type,omitempty"`
-	NameTemplate string  `json:"name_template,omitempty"` // Template with placeholders: {group_name}, {user_email}, {user_id}
+	Terms        string `binding:"required" json:"terms"`
+	Expiry       int    `json:"expiry,omitempty"`
+	InstanceType string `json:"instance_type,omitempty"`
+	NameTemplate string `json:"name_template,omitempty"` // Template with placeholders: {group_name}, {user_email}, {user_id}
 }
 
 // BulkCreateTerminalsResponse response for bulk terminal creation
 type BulkCreateTerminalsResponse struct {
-	Success      bool                          `json:"success"`
-	CreatedCount int                           `json:"created_count"`
-	FailedCount  int                           `json:"failed_count"`
-	TotalMembers int                           `json:"total_members"`
-	Terminals    []BulkTerminalCreationResult  `json:"terminals"`
-	Errors       []string                      `json:"errors,omitempty"`
+	Success      bool                         `json:"success"`
+	CreatedCount int                          `json:"created_count"`
+	FailedCount  int                          `json:"failed_count"`
+	TotalMembers int                          `json:"total_members"`
+	Terminals    []BulkTerminalCreationResult `json:"terminals"`
+	Errors       []string                     `json:"errors,omitempty"`
 }
 
 // BulkTerminalCreationResult individual result for each terminal created
 type BulkTerminalCreationResult struct {
-	UserID      string  `json:"user_id"`
-	UserEmail   string  `json:"user_email,omitempty"`
-	TerminalID  *string `json:"terminal_id,omitempty"`
-	SessionID   *string `json:"session_id,omitempty"`
-	Name        string  `json:"name"`
-	Success     bool    `json:"success"`
-	Error       string  `json:"error,omitempty"`
+	UserID     string  `json:"user_id"`
+	UserEmail  string  `json:"user_email,omitempty"`
+	TerminalID *string `json:"terminal_id,omitempty"`
+	SessionID  *string `json:"session_id,omitempty"`
+	Name       string  `json:"name"`
+	Success    bool    `json:"success"`
+	Error      string  `json:"error,omitempty"`
 }

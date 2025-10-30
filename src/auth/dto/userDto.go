@@ -28,15 +28,15 @@ type ExtendedUserOutput struct {
 }
 
 type CreateUserInput struct {
-	UserName       string `binding:"required"`
-	DisplayName    string `binding:"required"`
-	Email          string `binding:"required"`
-	Password       string `binding:"required"`
-	LastName       string `binding:"required"`
-	FirstName      string `binding:"required"`
-	DefaultRole    string
-	TosAcceptedAt  string `json:"tosAcceptedAt" binding:"required"`
-	TosVersion     string `json:"tosVersion" binding:"required"`
+	UserName      string `binding:"required"`
+	DisplayName   string `binding:"required"`
+	Email         string `binding:"required"`
+	Password      string `binding:"required"`
+	LastName      string `binding:"required"`
+	FirstName     string `binding:"required"`
+	DefaultRole   string
+	TosAcceptedAt string `json:"tosAcceptedAt" binding:"required"`
+	TosVersion    string `json:"tosVersion" binding:"required"`
 }
 
 type CreateUserOutput struct {

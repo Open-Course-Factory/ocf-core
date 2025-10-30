@@ -55,16 +55,16 @@ const (
 
 // Common reason templates for consistency
 const (
-	ReasonNotFound          = "not found"
-	ReasonAlreadyExists     = "already exists"
-	ReasonPermissionDenied  = "permission denied"
-	ReasonInvalidInput      = "invalid input"
-	ReasonLimitReached      = "limit reached"
-	ReasonExpired           = "expired"
-	ReasonInactive          = "inactive"
-	ReasonOwnerRequired     = "owner access required"
-	ReasonDatabaseError     = "database error"
-	ReasonValidationFailed  = "validation failed"
+	ReasonNotFound         = "not found"
+	ReasonAlreadyExists    = "already exists"
+	ReasonPermissionDenied = "permission denied"
+	ReasonInvalidInput     = "invalid input"
+	ReasonLimitReached     = "limit reached"
+	ReasonExpired          = "expired"
+	ReasonInactive         = "inactive"
+	ReasonOwnerRequired    = "owner access required"
+	ReasonDatabaseError    = "database error"
+	ReasonValidationFailed = "validation failed"
 )
 
 // Pre-defined error constructors for common scenarios
@@ -185,7 +185,8 @@ func (m MultiError) ToError() error {
 // EntityNotFoundError creates a simple "not found" error (lowercase)
 //
 // Example:
-//   EntityNotFoundError("group") -> "group not found"
+//
+//	EntityNotFoundError("group") -> "group not found"
 func EntityNotFoundError(entityType string) error {
 	return fmt.Errorf("%s not found", entityType)
 }
@@ -193,7 +194,8 @@ func EntityNotFoundError(entityType string) error {
 // PermissionDeniedError creates a simple permission error
 //
 // Example:
-//   PermissionDeniedError("manage", "group") -> "you don't have permission to manage this group"
+//
+//	PermissionDeniedError("manage", "group") -> "you don't have permission to manage this group"
 func PermissionDeniedError(action, entityType string) error {
 	return fmt.Errorf("you don't have permission to %s this %s", action, entityType)
 }
@@ -201,7 +203,8 @@ func PermissionDeniedError(action, entityType string) error {
 // CapacityExceededError creates a capacity limit error
 //
 // Example:
-//   CapacityExceededError("group", 45, 50) -> "group is full (max 50 members)"
+//
+//	CapacityExceededError("group", 45, 50) -> "group is full (max 50 members)"
 func CapacityExceededError(entityType string, current, max int) error {
 	return fmt.Errorf("%s is full (max %d members)", entityType, max)
 }
@@ -209,7 +212,8 @@ func CapacityExceededError(entityType string, current, max int) error {
 // CapacityWillExceedError creates an error for operations that would exceed capacity
 //
 // Example:
-//   CapacityWillExceedError("group", 45, 10, 50) -> "adding 10 members would exceed group capacity (45+10 > 50)"
+//
+//	CapacityWillExceedError("group", 45, 10, 50) -> "adding 10 members would exceed group capacity (45+10 > 50)"
 func CapacityWillExceedError(entityType string, current, adding, max int) error {
 	return fmt.Errorf("adding %d members would exceed %s capacity (%d+%d > %d)",
 		adding, entityType, current, adding, max)
@@ -218,8 +222,9 @@ func CapacityWillExceedError(entityType string, current, adding, max int) error 
 // AlreadyExistsError creates an "already exists" error
 //
 // Example:
-//   AlreadyExistsError("group", "my-group") -> "you already have a group named my-group"
-//   AlreadyExistsError("organization", "acme") -> "you already have an organization named acme"
+//
+//	AlreadyExistsError("group", "my-group") -> "you already have a group named my-group"
+//	AlreadyExistsError("organization", "acme") -> "you already have an organization named acme"
 func AlreadyExistsError(entityType, identifier string) error {
 	article := "a"
 	// Use "an" for words starting with vowels
@@ -235,7 +240,8 @@ func AlreadyExistsError(entityType, identifier string) error {
 // AlreadyMemberError creates an "already a member" error
 //
 // Example:
-//   AlreadyMemberError("user123", "group") -> "user user123 is already a member of this group"
+//
+//	AlreadyMemberError("user123", "group") -> "user user123 is already a member of this group"
 func AlreadyMemberError(userID, entityType string) error {
 	return fmt.Errorf("user %s is already a member of this %s", userID, entityType)
 }
@@ -243,7 +249,8 @@ func AlreadyMemberError(userID, entityType string) error {
 // WrapRepositoryError wraps a repository error with context
 //
 // Example:
-//   WrapRepositoryError("create", "group", err) -> "failed to create group: <original error>"
+//
+//	WrapRepositoryError("create", "group", err) -> "failed to create group: <original error>"
 func WrapRepositoryError(operation, entityType string, err error) error {
 	if err == nil {
 		return nil
@@ -254,7 +261,8 @@ func WrapRepositoryError(operation, entityType string, err error) error {
 // WrapDatabaseError wraps a database error with context
 //
 // Example:
-//   WrapDatabaseError("saving group", err) -> "database error while saving group: <original error>"
+//
+//	WrapDatabaseError("saving group", err) -> "database error while saving group: <original error>"
 func WrapDatabaseError(context string, err error) error {
 	if err == nil {
 		return nil
@@ -269,7 +277,8 @@ func WrapDatabaseError(context string, err error) error {
 // SubscriptionRequiredError creates a subscription requirement error
 //
 // Example:
-//   SubscriptionRequiredError("create terminals") -> "active subscription required to create terminals"
+//
+//	SubscriptionRequiredError("create terminals") -> "active subscription required to create terminals"
 func SubscriptionRequiredError(action string) error {
 	return fmt.Errorf("active subscription required to %s", action)
 }
@@ -277,7 +286,8 @@ func SubscriptionRequiredError(action string) error {
 // UsageLimitExceededError creates a usage limit error
 //
 // Example:
-//   UsageLimitExceededError("terminals", 10, 10) -> "usage limit exceeded for terminals (10/10)"
+//
+//	UsageLimitExceededError("terminals", 10, 10) -> "usage limit exceeded for terminals (10/10)"
 func UsageLimitExceededError(resourceType string, current, limit int) error {
 	return fmt.Errorf("usage limit exceeded for %s (%d/%d)", resourceType, current, limit)
 }
@@ -289,7 +299,8 @@ func UsageLimitExceededError(resourceType string, current, limit int) error {
 // ExternalAPIError creates an external API error
 //
 // Example:
-//   ExternalAPIError("Terminal Trainer", "create session", err) -> "Terminal Trainer API error (create session): <original error>"
+//
+//	ExternalAPIError("Terminal Trainer", "create session", err) -> "Terminal Trainer API error (create session): <original error>"
 func ExternalAPIError(serviceName, operation string, err error) error {
 	if err == nil {
 		return nil
@@ -300,7 +311,8 @@ func ExternalAPIError(serviceName, operation string, err error) error {
 // ExternalAPIStatusError creates an external API HTTP status error
 //
 // Example:
-//   ExternalAPIStatusError("Stripe", "create customer", 400, "Invalid email") -> "Stripe API returned 400 (create customer): Invalid email"
+//
+//	ExternalAPIStatusError("Stripe", "create customer", 400, "Invalid email") -> "Stripe API returned 400 (create customer): Invalid email"
 func ExternalAPIStatusError(serviceName, operation string, statusCode int, body string) error {
 	return fmt.Errorf("%s API returned %d (%s): %s", serviceName, statusCode, operation, body)
 }

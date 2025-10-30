@@ -9,8 +9,8 @@ import (
 
 	"soli/formations/src/auth/casdoor"
 	groupModels "soli/formations/src/groups/models"
-	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/dto"
+	organizationModels "soli/formations/src/organizations/models"
 	orgUtils "soli/formations/src/organizations/utils"
 	"soli/formations/src/utils"
 

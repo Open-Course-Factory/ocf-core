@@ -1,5 +1,4 @@
 {
-  "enableAllProjectMcpServers": true,
   "permissions": {
     "allow": [
       "Bash(go test:*)",
@@ -85,9 +84,17 @@
       "WebFetch(domain:localhost)",
       "Bash(TOKEN=\"$TOKEN\" bash:*)",
       "Bash(xargs:*)",
-      "Bash(PGPASSWORD=root psql:*)"
+      "Bash(PGPASSWORD=root psql:*)",
+      "Bash(git commit:*)",
+      "Bash(git rm:*)",
+      "Bash(make test:*)",
+      "Bash(make test-unit:*)",
+      "Bash(make benchmark:*)",
+      "Bash(go fmt:*)",
+      "Bash(make coverage:*)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enableAllProjectMcpServers": true
 }

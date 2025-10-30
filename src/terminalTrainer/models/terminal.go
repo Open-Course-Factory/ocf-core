@@ -12,7 +12,7 @@ type Terminal struct {
 	entityManagementModels.BaseModel
 	SessionID         string     `gorm:"type:varchar(255);uniqueIndex" json:"session_id"`
 	UserID            string     `gorm:"type:varchar(255);not null;index" json:"user_id"`
-	Name              string     `gorm:"type:varchar(255)" json:"name"` // User-friendly name for the terminal session
+	Name              string     `gorm:"type:varchar(255)" json:"name"`                   // User-friendly name for the terminal session
 	Status            string     `gorm:"type:varchar(50);default:'active'" json:"status"` // active, stopped, expired
 	ExpiresAt         time.Time  `gorm:"not null" json:"expires_at"`
 	InstanceType      string     `gorm:"type:varchar(100)" json:"instance_type"` // préfixe du type d'instance utilisé

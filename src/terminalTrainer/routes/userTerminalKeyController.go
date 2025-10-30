@@ -1,8 +1,8 @@
 package terminalController
 
 import (
-	"soli/formations/src/auth/casdoor"
 	"net/http"
+	"soli/formations/src/auth/casdoor"
 
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"

@@ -2,9 +2,9 @@
 package utils
 
 import (
+	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
-	organizationModels "soli/formations/src/organizations/models"
 
 	"gorm.io/gorm"
 )

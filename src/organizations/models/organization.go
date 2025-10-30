@@ -15,9 +15,9 @@ type Organization struct {
 	Description        string     `gorm:"type:text" json:"description,omitempty"`
 	OwnerUserID        string     `gorm:"type:varchar(255);not null;index" json:"owner_user_id"` // Primary owner
 	SubscriptionPlanID *uuid.UUID `gorm:"type:uuid;index" json:"subscription_plan_id,omitempty"` // Organization subscription
-	IsPersonal         bool       `gorm:"default:false" json:"is_personal"`                       // Auto-created personal org
-	MaxGroups          int        `gorm:"default:10" json:"max_groups"`                           // Limit for groups in org
-	MaxMembers         int        `gorm:"default:50" json:"max_members"`                          // Limit for total org members
+	IsPersonal         bool       `gorm:"default:false" json:"is_personal"`                      // Auto-created personal org
+	MaxGroups          int        `gorm:"default:10" json:"max_groups"`                          // Limit for groups in org
+	MaxMembers         int        `gorm:"default:50" json:"max_members"`                         // Limit for total org members
 	IsActive           bool       `gorm:"default:true" json:"is_active"`
 
 	// Metadata for custom fields (billing info, settings, etc.)

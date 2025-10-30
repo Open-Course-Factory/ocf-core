@@ -454,7 +454,7 @@ func (ulm *usageLimitMiddleware) CheckTerminalCreationLimit() gin.HandlerFunc {
 
 			if ramAfterCreation < minReservedRAM {
 				ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
-					ErrorCode:    http.StatusServiceUnavailable,
+					ErrorCode: http.StatusServiceUnavailable,
 					ErrorMessage: fmt.Sprintf("Server at capacity: insufficient RAM available (%.2f GB available, %.2f GB required for terminal + %.2f GB reserve). Please try again later.",
 						metrics.RAMAvailableGB, estimatedRAM, minReservedRAM),
 				})

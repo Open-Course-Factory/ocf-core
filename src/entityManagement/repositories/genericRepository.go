@@ -4,8 +4,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"reflect"
-	entityErrors "soli/formations/src/entityManagement/errors"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/repositories/filters"
 	"strings"
 
@@ -116,7 +116,7 @@ func (r genericRepository) EditEntity(id uuid.UUID, entityName string, entity an
 //   - data: Empty instance of the entity type to query
 //   - entityName: Name of the entity (for legacy preload support)
 //   - includes: Slice of relation names to preload (same format as GetAllEntities)
-//              If nil or empty, uses legacy getPreloadString behavior for backward compatibility
+//     If nil or empty, uses legacy getPreloadString behavior for backward compatibility
 //
 // Example:
 //
@@ -192,8 +192,8 @@ func getPreloadString(entityName string, queryPreloadsString *string, firstItera
 //
 // Parameters:
 //   - includes: Slice of relation names to preload (e.g., ["Chapters", "Chapters.Sections"])
-//              If nil or empty, no preloading is performed.
-//              If contains "*", all associations are preloaded (Preload(clause.Associations))
+//     If nil or empty, no preloading is performed.
+//     If contains "*", all associations are preloaded (Preload(clause.Associations))
 //
 // Example:
 //

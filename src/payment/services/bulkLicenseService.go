@@ -27,11 +27,11 @@ type BulkLicenseService interface {
 }
 
 type bulkLicenseService struct {
-	db                  *gorm.DB
-	batchRepository     repositories.SubscriptionBatchRepository
-	subscriptionRepo    repositories.PaymentRepository
-	planRepository      repositories.SubscriptionPlanRepository
-	stripeService       StripeService
+	db               *gorm.DB
+	batchRepository  repositories.SubscriptionBatchRepository
+	subscriptionRepo repositories.PaymentRepository
+	planRepository   repositories.SubscriptionPlanRepository
+	stripeService    StripeService
 }
 
 func NewBulkLicenseService(db *gorm.DB) BulkLicenseService {
@@ -111,12 +111,12 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 	licenses := make([]models.UserSubscription, input.Quantity)
 	for i := 0; i < input.Quantity; i++ {
 		licenses[i] = models.UserSubscription{
-			UserID:               "",  // Unassigned
+			UserID:               "", // Unassigned
 			PurchaserUserID:      &purchaserUserID,
 			SubscriptionBatchID:  &batch.ID,
 			SubscriptionPlanID:   input.SubscriptionPlanID,
 			StripeSubscriptionID: stripeSubscriptionID,
-			StripeCustomerID:     customerID, // Use Stripe customer ID
+			StripeCustomerID:     customerID,        // Use Stripe customer ID
 			Status:               "pending_payment", // Wait for payment
 			CurrentPeriodStart:   now,
 			CurrentPeriodEnd:     periodEnd,
@@ -347,7 +347,7 @@ func (s *bulkLicenseService) GetBatchLicenses(batchID uuid.UUID, requestingUserI
 	var licenses []models.UserSubscription
 	err = s.db.Preload("SubscriptionPlan").
 		Where("subscription_batch_id = ?", batchID).
-		Order("status DESC, user_id").  // Assigned first
+		Order("status DESC, user_id"). // Assigned first
 		Find(&licenses).Error
 
 	if err != nil {

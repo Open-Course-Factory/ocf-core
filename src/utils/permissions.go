@@ -29,7 +29,8 @@ func DefaultPermissionOptions() PermissionOptions {
 // AddPolicy adds a permission policy (subject can perform methods on route)
 //
 // Example:
-//   AddPolicy(enforcer, "userId123", "/api/v1/groups/abc", "GET|POST", opts)
+//
+//	AddPolicy(enforcer, "userId123", "/api/v1/groups/abc", "GET|POST", opts)
 func AddPolicy(enforcer interfaces.EnforcerInterface, subject, route, methods string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
@@ -52,7 +53,8 @@ func AddPolicy(enforcer interfaces.EnforcerInterface, subject, route, methods st
 // RemovePolicy removes a permission policy
 //
 // Example:
-//   RemovePolicy(enforcer, "userId123", "/api/v1/groups/abc", "GET|POST", opts)
+//
+//	RemovePolicy(enforcer, "userId123", "/api/v1/groups/abc", "GET|POST", opts)
 func RemovePolicy(enforcer interfaces.EnforcerInterface, subject, route, methods string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
@@ -75,18 +77,22 @@ func RemovePolicy(enforcer interfaces.EnforcerInterface, subject, route, methods
 // RemoveFilteredPolicy removes policies matching a filter pattern
 //
 // fieldIndex specifies which field to filter on:
-//   0 = subject (user/role)
-//   1 = route/object
-//   2 = action/methods
+//
+//	0 = subject (user/role)
+//	1 = route/object
+//	2 = action/methods
 //
 // Example (remove all policies for a user):
-//   RemoveFilteredPolicy(enforcer, 0, opts, "userId123")
+//
+//	RemoveFilteredPolicy(enforcer, 0, opts, "userId123")
 //
 // Example (remove all policies for a specific route):
-//   RemoveFilteredPolicy(enforcer, 1, opts, "/api/v1/groups/abc")
+//
+//	RemoveFilteredPolicy(enforcer, 1, opts, "/api/v1/groups/abc")
 //
 // Example (remove all policies for a user on a specific route):
-//   RemoveFilteredPolicy(enforcer, 0, opts, "userId123", "/api/v1/groups/abc")
+//
+//	RemoveFilteredPolicy(enforcer, 0, opts, "userId123", "/api/v1/groups/abc")
 func RemoveFilteredPolicy(enforcer interfaces.EnforcerInterface, fieldIndex int, opts PermissionOptions, fieldValues ...string) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
@@ -109,7 +115,8 @@ func RemoveFilteredPolicy(enforcer interfaces.EnforcerInterface, fieldIndex int,
 // AddGroupingPolicy adds a user to a role group
 //
 // Example:
-//   AddGroupingPolicy(enforcer, "userId123", "group:abc", opts)
+//
+//	AddGroupingPolicy(enforcer, "userId123", "group:abc", opts)
 func AddGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
@@ -132,7 +139,8 @@ func AddGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID str
 // RemoveGroupingPolicy removes a user from a role group
 //
 // Example:
-//   RemoveGroupingPolicy(enforcer, "userId123", "group:abc", opts)
+//
+//	RemoveGroupingPolicy(enforcer, "userId123", "group:abc", opts)
 func RemoveGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
@@ -159,7 +167,8 @@ func RemoveGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID 
 // GrantEntityAccess grants a user access to an entity (adds to role group and grants route permissions)
 //
 // Example:
-//   GrantEntityAccess(enforcer, "userId123", "group", "abc-def-ghi", "GET|POST", opts)
+//
+//	GrantEntityAccess(enforcer, "userId123", "group", "abc-def-ghi", "GET|POST", opts)
 //
 // This will:
 // 1. Add user to role group "group:abc-def-ghi"
@@ -191,7 +200,8 @@ func GrantEntityAccess(enforcer interfaces.EnforcerInterface, userID, entityType
 // RevokeEntityAccess revokes a user's access to an entity
 //
 // Example:
-//   RevokeEntityAccess(enforcer, "userId123", "group", "abc-def-ghi", opts)
+//
+//	RevokeEntityAccess(enforcer, "userId123", "group", "abc-def-ghi", opts)
 func RevokeEntityAccess(enforcer interfaces.EnforcerInterface, userID, entityType, entityID string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
@@ -212,7 +222,8 @@ func RevokeEntityAccess(enforcer interfaces.EnforcerInterface, userID, entityTyp
 // GrantEntitySubResourceAccess grants access to a sub-resource of an entity
 //
 // Example:
-//   GrantEntitySubResourceAccess(enforcer, "group:abc", "group", "abc", "members", "GET|POST", opts)
+//
+//	GrantEntitySubResourceAccess(enforcer, "group:abc", "group", "abc", "members", "GET|POST", opts)
 //
 // This grants GET|POST on "/api/v1/groups/abc/members"
 func GrantEntitySubResourceAccess(enforcer interfaces.EnforcerInterface, roleID, entityType, entityID, subResource, methods string, opts PermissionOptions) error {
@@ -233,7 +244,8 @@ func GrantEntitySubResourceAccess(enforcer interfaces.EnforcerInterface, roleID,
 // GrantCompleteEntityAccess grants full access to an entity and common sub-resources
 //
 // Example:
-//   GrantCompleteEntityAccess(enforcer, "userId123", "group", "abc-def-ghi", opts)
+//
+//	GrantCompleteEntityAccess(enforcer, "userId123", "group", "abc-def-ghi", opts)
 //
 // This grants:
 // - GET on /api/v1/groups/abc-def-ghi
@@ -277,7 +289,8 @@ func GrantCompleteEntityAccess(enforcer interfaces.EnforcerInterface, userID, en
 // GrantManagerPermissions grants management permissions (GET|PATCH|DELETE on entity, full access to sub-resources)
 //
 // Example:
-//   GrantManagerPermissions(enforcer, "userId123", "organization", "abc-def", []string{"members", "groups"}, opts)
+//
+//	GrantManagerPermissions(enforcer, "userId123", "organization", "abc-def", []string{"members", "groups"}, opts)
 func GrantManagerPermissions(enforcer interfaces.EnforcerInterface, userID, entityType, entityID string, manageableSubResources []string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
@@ -312,7 +325,8 @@ func GrantManagerPermissions(enforcer interfaces.EnforcerInterface, userID, enti
 // RevokeManagerPermissions revokes management permissions
 //
 // Example:
-//   RevokeManagerPermissions(enforcer, "userId123", "organization", "abc-def", opts)
+//
+//	RevokeManagerPermissions(enforcer, "userId123", "organization", "abc-def", opts)
 func RevokeManagerPermissions(enforcer interfaces.EnforcerInterface, userID, entityType, entityID string, opts PermissionOptions) error {
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {

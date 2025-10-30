@@ -26,9 +26,9 @@ type ClassGroup struct {
 	Metadata map[string]interface{} `gorm:"type:jsonb" json:"metadata,omitempty"`
 
 	// Relations
-	Members    []GroupMember `gorm:"foreignKey:GroupID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"members,omitempty"`
-	SubGroups  []ClassGroup  `gorm:"foreignKey:ParentGroupID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"sub_groups,omitempty"`
-	ParentGroup *ClassGroup  `gorm:"foreignKey:ParentGroupID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"parent_group,omitempty"`
+	Members     []GroupMember `gorm:"foreignKey:GroupID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"members,omitempty"`
+	SubGroups   []ClassGroup  `gorm:"foreignKey:ParentGroupID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"sub_groups,omitempty"`
+	ParentGroup *ClassGroup   `gorm:"foreignKey:ParentGroupID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"parent_group,omitempty"`
 }
 
 // Implement interfaces for entity management system
