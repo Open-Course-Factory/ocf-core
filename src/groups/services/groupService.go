@@ -215,13 +215,13 @@ func (gs *groupService) AddMembersToGroup(groupID uuid.UUID, requestingUserID st
 	}
 
 	// Check if group is full
-	if group.MaxMembers > 0 && len(group.Members)+len(userIDs) > group.MaxMembers {
-		return fmt.Errorf("group is full (max %d members)", group.MaxMembers)
+	if err := utils.ValidateLimitNotReached(len(group.Members)+len(userIDs), group.MaxMembers, "members"); err != nil {
+		return err
 	}
 
 	// Check if group is expired
-	if group.IsExpired() {
-		return fmt.Errorf("group has expired")
+	if err := utils.ValidateNotExpired(group.ExpiresAt, groupID, "group"); err != nil {
+		return err
 	}
 
 	// Add each member
@@ -278,8 +278,8 @@ func (gs *groupService) RemoveMemberFromGroup(groupID uuid.UUID, requestingUserI
 	}
 
 	// Cannot remove the owner
-	if group.OwnerUserID == userID {
-		return fmt.Errorf("cannot remove the group owner")
+	if err := utils.ValidateNotOwner(userID, group.OwnerUserID, "Group"); err != nil {
+		return err
 	}
 
 	// Remove member
@@ -316,8 +316,10 @@ func (gs *groupService) UpdateMemberRole(groupID uuid.UUID, requestingUserID str
 	}
 
 	// Cannot change owner role
-	if group.OwnerUserID == userID && newRole != models.GroupMemberRoleOwner {
-		return fmt.Errorf("cannot change the owner's role")
+	if newRole != models.GroupMemberRoleOwner {
+		if err := utils.ValidateNotOwner(userID, group.OwnerUserID, "Group"); err != nil {
+			return fmt.Errorf("cannot change the owner's role")
+		}
 	}
 
 	// Update role

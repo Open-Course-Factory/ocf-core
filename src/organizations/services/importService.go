@@ -506,7 +506,7 @@ func (s *importService) validateOrganizationLimits(
 		newMembers := len(users)
 		totalMembers := currentMembers + newMembers
 
-		if totalMembers > org.MaxMembers {
+		if err := utils.ValidateLimitNotReached(totalMembers, org.MaxMembers, "members"); err != nil {
 			errors = append(errors, dto.ImportError{
 				Row:     0,
 				File:    "users",
@@ -522,7 +522,7 @@ func (s *importService) validateOrganizationLimits(
 		newGroups := len(groups)
 		totalGroups := currentGroups + newGroups
 
-		if totalGroups > org.MaxGroups {
+		if err := utils.ValidateLimitNotReached(totalGroups, org.MaxGroups, "groups"); err != nil {
 			errors = append(errors, dto.ImportError{
 				Row:     0,
 				File:    "groups",

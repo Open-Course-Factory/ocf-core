@@ -265,8 +265,8 @@ func (os *organizationService) AddMembersToOrganization(orgID uuid.UUID, request
 	}
 
 	// Check if organization is full
-	if org.MaxMembers > 0 && len(org.Members)+len(userIDs) > org.MaxMembers {
-		return fmt.Errorf("organization is full (max %d members)", org.MaxMembers)
+	if err := utils.ValidateLimitNotReached(len(org.Members)+len(userIDs), org.MaxMembers, "members"); err != nil {
+		return err
 	}
 
 	// Add each member
@@ -330,8 +330,8 @@ func (os *organizationService) RemoveMemberFromOrganization(orgID uuid.UUID, req
 	}
 
 	// Cannot remove the owner
-	if org.OwnerUserID == userID {
-		return fmt.Errorf("cannot remove the organization owner")
+	if err := utils.ValidateNotOwner(userID, org.OwnerUserID, "Organization"); err != nil {
+		return err
 	}
 
 	// Remove member
@@ -366,8 +366,10 @@ func (os *organizationService) UpdateMemberRole(orgID uuid.UUID, requestingUserI
 	}
 
 	// Cannot change owner role
-	if org.OwnerUserID == userID && newRole != models.OrgRoleOwner {
-		return fmt.Errorf("cannot change the owner's role")
+	if newRole != models.OrgRoleOwner {
+		if err := utils.ValidateNotOwner(userID, org.OwnerUserID, "Organization"); err != nil {
+			return fmt.Errorf("cannot change the owner's role")
+		}
 	}
 
 	// Update role
