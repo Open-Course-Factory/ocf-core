@@ -5394,6 +5394,8 @@ Content-Type: application/json
   "name": "python-bootcamp-2025",
   "displayName": "Python Bootcamp 2025",
   "description": "6-week intensive Python training program",
+  "organizationID": "uuid-or-null",
+  "parentGroupID": "uuid-or-null",
   "subscriptionPlanID": "uuid-or-null",
   "maxMembers": 30,
   "expiresAt": "2025-12-31T23:59:59Z",
@@ -5409,6 +5411,9 @@ Content-Type: application/json
 - `ownerUserID` is automatically set to the authenticated user (via hook)
 - The creator is automatically added as a member with `owner` role
 - Casbin permissions are automatically granted to the owner
+- `organizationID` (optional): Link group to an organization for cascading permissions
+- `parentGroupID` (optional): Create a nested subgroup under an existing parent group
+- For nested groups, see the "Nested Groups (Hierarchical)" section below
 
 **Response:**
 ```json
@@ -5435,6 +5440,8 @@ Content-Type: application/json
 {
   "displayName": "Updated Display Name",
   "description": "Updated description",
+  "organizationID": "uuid-or-null",
+  "parentGroupID": "uuid-or-null",
   "maxMembers": 40,
   "isActive": false
 }
@@ -5442,6 +5449,10 @@ Content-Type: application/json
 
 **Permissions Required:**
 - User must be the group owner or have admin role in the group
+
+**Notes:**
+- `parentGroupID` can be updated to move a group to a different parent or make it a top-level group (set to null)
+- Changing `parentGroupID` does not affect permissions; only organizational hierarchy
 
 #### 5. Delete a Group
 
@@ -5560,6 +5571,152 @@ DELETE /api/v1/class-group-members/{memberId}
 - Revokes Casbin group permissions
 - User loses access to group-shared terminals
 - Owner cannot be removed (must delete group instead)
+
+### Nested Groups (Hierarchical)
+
+Groups support parent-child hierarchical relationships, allowing you to create organizational structures like departments with classes or programs with cohorts.
+
+#### Creating a Nested Group
+
+To create a subgroup under a parent group, include `parent_group_id` in the create request:
+
+```http
+POST /api/v1/class-groups
+Content-Type: application/json
+```
+
+**Example: Create a class under a program**
+```json
+{
+  "name": "m1_devops_class_a",
+  "displayName": "M1 DevOps - Class A",
+  "description": "Morning class for M1 DevOps program",
+  "parentGroupID": "uuid-of-parent-program",
+  "organizationID": "uuid-of-organization",
+  "maxMembers": 30,
+  "expiresAt": "2025-06-30T23:59:59Z"
+}
+```
+
+#### Moving Groups in the Hierarchy
+
+You can change a group's parent by updating `parent_group_id`:
+
+```http
+PATCH /api/v1/class-groups/{groupId}
+Content-Type: application/json
+```
+
+```json
+{
+  "parentGroupID": "new-parent-uuid-or-null"
+}
+```
+
+**Notes:**
+- Set `parentGroupID` to `null` to make a group top-level (remove from parent)
+- The backend prevents circular references (e.g., making a group its own ancestor)
+- Moving a group does NOT change permissions, only organizational structure
+
+#### Fetching Nested Groups
+
+**Get a group with its subgroups:**
+```http
+GET /api/v1/class-groups/{groupId}?include=SubGroups
+```
+
+**Response:**
+```json
+{
+  "id": "parent-group-uuid",
+  "name": "m1_devops_program",
+  "displayName": "M1 DevOps Program",
+  "parentGroupID": null,
+  "subGroups": [
+    {
+      "id": "child-1-uuid",
+      "name": "m1_devops_class_a",
+      "displayName": "M1 DevOps - Class A",
+      "parentGroupID": "parent-group-uuid",
+      "memberCount": 25
+    },
+    {
+      "id": "child-2-uuid",
+      "name": "m1_devops_class_b",
+      "displayName": "M1 DevOps - Class B",
+      "parentGroupID": "parent-group-uuid",
+      "memberCount": 28
+    }
+  ]
+}
+```
+
+**Get a group with its parent:**
+```http
+GET /api/v1/class-groups/{groupId}?include=ParentGroup
+```
+
+**Response:**
+```json
+{
+  "id": "child-group-uuid",
+  "name": "m1_devops_class_a",
+  "displayName": "M1 DevOps - Class A",
+  "parentGroupID": "parent-group-uuid",
+  "parentGroup": {
+    "id": "parent-group-uuid",
+    "name": "m1_devops_program",
+    "displayName": "M1 DevOps Program",
+    "memberCount": 150
+  }
+}
+```
+
+#### Common Hierarchy Patterns
+
+**Pattern 1: School Organization**
+```
+Organization: "School of Paris"
+├── Group: "M1 DevOps Program" (parentGroupID: null)
+│   ├── Subgroup: "M1 DevOps - Class A" (parentGroupID: program-uuid)
+│   ├── Subgroup: "M1 DevOps - Class B" (parentGroupID: program-uuid)
+│   └── Subgroup: "M1 DevOps - Class C" (parentGroupID: program-uuid)
+└── Group: "M2 Cloud Program" (parentGroupID: null)
+    ├── Subgroup: "M2 Cloud - Class A" (parentGroupID: program-uuid)
+    └── Subgroup: "M2 Cloud - Class B" (parentGroupID: program-uuid)
+```
+
+**Pattern 2: Company Departments**
+```
+Organization: "ACME Corp"
+├── Group: "Engineering Department" (parentGroupID: null)
+│   ├── Subgroup: "Backend Team" (parentGroupID: dept-uuid)
+│   ├── Subgroup: "Frontend Team" (parentGroupID: dept-uuid)
+│   └── Subgroup: "DevOps Team" (parentGroupID: dept-uuid)
+└── Group: "Sales Department" (parentGroupID: null)
+    ├── Subgroup: "EMEA Sales" (parentGroupID: dept-uuid)
+    └── Subgroup: "Americas Sales" (parentGroupID: dept-uuid)
+```
+
+#### Important Notes
+
+**Permissions:**
+- Nested groups do NOT inherit permissions from parent groups
+- Each group has independent members and permissions
+- To access a subgroup, users must be:
+  1. Direct members of the subgroup, OR
+  2. Organization managers (if subgroup belongs to an organization)
+
+**Use Cases:**
+- Organizing classes within programs (education)
+- Structuring teams within departments (corporate)
+- Creating cohorts within courses (training)
+- Grouping projects within portfolios (consulting)
+
+**Bulk Import:**
+- Nested groups can be created via CSV import (see bulk import documentation)
+- Use the `parent_group` column to specify parent group name
+- Parent groups must exist before creating children in the CSV
 
 ### Terminal Sharing with Groups
 
@@ -6100,7 +6257,6 @@ Check logs for:
 Planned features (not yet implemented):
 - Email invitations with accept/reject workflow
 - Group analytics and activity tracking
-- Nested group hierarchies (subgroups)
 - Group-level subscriptions and billing
 - Casdoor synchronization for external auth providers
 - Bulk member import from CSV

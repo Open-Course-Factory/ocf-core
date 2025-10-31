@@ -2,6 +2,7 @@ package controller
 
 import (
 	"net/http"
+	"reflect"
 	"time"
 
 	"soli/formations/src/auth/errors"
@@ -11,6 +12,35 @@ import (
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 )
+
+// StringToUUIDHook converts string to uuid.UUID for mapstructure decoding
+func StringToUUIDHook() mapstructure.DecodeHookFunc {
+	return func(f reflect.Type, t reflect.Type, data any) (any, error) {
+		// Check if we're converting from string to uuid.UUID
+		if f.Kind() != reflect.String {
+			return data, nil
+		}
+
+		// Check if target type is uuid.UUID
+		uuidType := reflect.TypeOf(uuid.UUID{})
+		if t != uuidType {
+			return data, nil
+		}
+
+		// Convert string to UUID
+		str := data.(string)
+		if str == "" {
+			return uuid.Nil, nil
+		}
+
+		parsed, err := uuid.Parse(str)
+		if err != nil {
+			return nil, err
+		}
+
+		return parsed, nil
+	}
+}
 
 func (genericController genericController) EditEntity(ctx *gin.Context) {
 	entityName := GetEntityNameFromPath(ctx.FullPath())
@@ -36,11 +66,12 @@ func (genericController genericController) EditEntity(ctx *gin.Context) {
 	}
 
 	// Use mapstructure to decode the map into the proper DTO struct type
-	// Configure to handle time.Time and other complex types
+	// Configure to handle time.Time, UUID, and other complex types
 	config := &mapstructure.DecoderConfig{
 		WeaklyTypedInput: true,
 		Result:           &decodedData,
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			StringToUUIDHook(), // Handle UUID strings
 			mapstructure.StringToTimeHookFunc(time.RFC3339), // Handle ISO8601 time strings
 			mapstructure.StringToTimeDurationHookFunc(),     // Handle duration strings
 		),

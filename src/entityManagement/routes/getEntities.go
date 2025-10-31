@@ -13,21 +13,21 @@ import (
 
 type PaginationResponse struct {
 	Data            []any `json:"data"`
-	Total           int64         `json:"total"`
-	TotalPages      int           `json:"totalPages"`
-	CurrentPage     int           `json:"currentPage"`
-	PageSize        int           `json:"pageSize"`
-	HasNextPage     bool          `json:"hasNextPage"`
-	HasPreviousPage bool          `json:"hasPreviousPage"`
+	Total           int64 `json:"total"`
+	TotalPages      int   `json:"totalPages"`
+	CurrentPage     int   `json:"currentPage"`
+	PageSize        int   `json:"pageSize"`
+	HasNextPage     bool  `json:"hasNextPage"`
+	HasPreviousPage bool  `json:"hasPreviousPage"`
 }
 
 // CursorPaginationResponse is used for cursor-based pagination
 type CursorPaginationResponse struct {
-	Data       []any `json:"data"`
-	NextCursor string        `json:"nextCursor,omitempty"` // Base64-encoded cursor for next page
-	HasMore    bool          `json:"hasMore"`              // Indicates if more results exist
-	Limit      int           `json:"limit"`                // Number of items per page
-	Total      int64         `json:"total"`                // Total count of all items matching the query/filters
+	Data       []any  `json:"data"`
+	NextCursor string `json:"nextCursor,omitempty"` // Base64-encoded cursor for next page
+	HasMore    bool   `json:"hasMore"`              // Indicates if more results exist
+	Limit      int    `json:"limit"`                // Number of items per page
+	Total      int64  `json:"total"`                // Total count of all items matching the query/filters
 }
 
 // Pagination constants
@@ -250,6 +250,13 @@ func normalizeIncludePath(path string) string {
 	for i, segment := range segments {
 		segment = strings.TrimSpace(segment)
 		if segment == "" {
+			normalized[i] = segment
+			continue
+		}
+
+		// If already properly capitalized (first letter uppercase), preserve as-is
+		// This maintains camelCase like "ParentGroup", "SubGroups", etc.
+		if len(segment) > 0 && segment[0] >= 'A' && segment[0] <= 'Z' {
 			normalized[i] = segment
 			continue
 		}

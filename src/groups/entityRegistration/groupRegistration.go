@@ -68,7 +68,8 @@ func (g GroupRegistration) EntityInputDtoToEntityModel(input any) any {
 		Name:               groupInputDto.Name,
 		DisplayName:        groupInputDto.DisplayName,
 		Description:        groupInputDto.Description,
-		OrganizationID:     groupInputDto.OrganizationID, // NEW: Link to organization
+		OrganizationID:     groupInputDto.OrganizationID,
+		ParentGroupID:      groupInputDto.ParentGroupID,
 		SubscriptionPlanID: groupInputDto.SubscriptionPlanID,
 		MaxMembers:         maxMembers,
 		ExpiresAt:          groupInputDto.ExpiresAt,
@@ -105,7 +106,10 @@ func (g GroupRegistration) EntityDtoToMap(input any) map[string]any {
 		updates["description"] = *groupUpdateDto.Description
 	}
 	if groupUpdateDto.OrganizationID != nil {
-		updates["organization_id"] = *groupUpdateDto.OrganizationID // NEW: Link to organization
+		updates["organization_id"] = *groupUpdateDto.OrganizationID
+	}
+	if groupUpdateDto.ParentGroupID != nil {
+		updates["parent_group_id"] = *groupUpdateDto.ParentGroupID
 	}
 	if groupUpdateDto.SubscriptionPlanID != nil {
 		updates["subscription_plan_id"] = *groupUpdateDto.SubscriptionPlanID

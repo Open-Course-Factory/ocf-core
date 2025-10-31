@@ -9,50 +9,55 @@ import (
 
 // CreateGroupInput - DTO for creating a new group
 type CreateGroupInput struct {
-	Name               string                 `json:"name" mapstructure:"name" binding:"required,min=2,max=255"`
-	DisplayName        string                 `json:"display_name" mapstructure:"display_name" binding:"required,min=2,max=255"`
-	Description        string                 `json:"description,omitempty" mapstructure:"description"`
-	OrganizationID     *uuid.UUID             `json:"organization_id,omitempty" mapstructure:"organization_id"` // NEW: Link to organization
-	SubscriptionPlanID *uuid.UUID             `json:"subscription_plan_id,omitempty" mapstructure:"subscription_plan_id"`
-	MaxMembers         int                    `json:"max_members" mapstructure:"max_members" binding:"omitempty,gte=0"` // 0 = unlimited
-	ExpiresAt          *time.Time             `json:"expires_at,omitempty" mapstructure:"expires_at"`
+	Name               string         `json:"name" mapstructure:"name" binding:"required,min=2,max=255"`
+	DisplayName        string         `json:"display_name" mapstructure:"display_name" binding:"required,min=2,max=255"`
+	Description        string         `json:"description,omitempty" mapstructure:"description"`
+	OrganizationID     *uuid.UUID     `json:"organization_id,omitempty" mapstructure:"organization_id"` // Link to organization
+	ParentGroupID      *uuid.UUID     `json:"parent_group_id,omitempty" mapstructure:"parent_group_id"` // Link to parent group for nesting
+	SubscriptionPlanID *uuid.UUID     `json:"subscription_plan_id,omitempty" mapstructure:"subscription_plan_id"`
+	MaxMembers         int            `json:"max_members" mapstructure:"max_members" binding:"omitempty,gte=0"` // 0 = unlimited
+	ExpiresAt          *time.Time     `json:"expires_at,omitempty" mapstructure:"expires_at"`
 	Metadata           map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
 // EditGroupInput - DTO for editing a group (partial updates)
 type EditGroupInput struct {
-	DisplayName        *string                 `json:"display_name,omitempty" mapstructure:"display_name" binding:"omitempty,min=2,max=255"`
-	Description        *string                 `json:"description,omitempty" mapstructure:"description"`
-	OrganizationID     *uuid.UUID              `json:"organization_id,omitempty" mapstructure:"organization_id"` // NEW: Link to organization
-	SubscriptionPlanID *uuid.UUID              `json:"subscription_plan_id,omitempty" mapstructure:"subscription_plan_id"`
-	MaxMembers         *int                    `json:"max_members,omitempty" mapstructure:"max_members" binding:"omitempty,gte=0"`
-	ExpiresAt          *time.Time              `json:"expires_at,omitempty" mapstructure:"expires_at"`
-	IsActive           *bool                   `json:"is_active,omitempty" mapstructure:"is_active"`
+	DisplayName        *string         `json:"display_name,omitempty" mapstructure:"display_name" binding:"omitempty,min=2,max=255"`
+	Description        *string         `json:"description,omitempty" mapstructure:"description"`
+	OrganizationID     *uuid.UUID      `json:"organization_id,omitempty" mapstructure:"organization_id"` // Link to organization
+	ParentGroupID      *uuid.UUID      `json:"parent_group_id,omitempty" mapstructure:"parent_group_id"` // Link to parent group for nesting
+	SubscriptionPlanID *uuid.UUID      `json:"subscription_plan_id,omitempty" mapstructure:"subscription_plan_id"`
+	MaxMembers         *int            `json:"max_members,omitempty" mapstructure:"max_members" binding:"omitempty,gte=0"`
+	ExpiresAt          *time.Time      `json:"expires_at,omitempty" mapstructure:"expires_at"`
+	IsActive           *bool           `json:"is_active,omitempty" mapstructure:"is_active"`
 	Metadata           *map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
 // GroupOutput - DTO for group responses
 type GroupOutput struct {
-	ID                 uuid.UUID              `json:"id"`
-	Name               string                 `json:"name"`
-	DisplayName        string                 `json:"display_name"`
-	Description        string                 `json:"description,omitempty"`
-	OwnerUserID        string                 `json:"owner_user_id"`
-	OrganizationID     *uuid.UUID             `json:"organization_id,omitempty"` // NEW: Link to organization
-	SubscriptionPlanID *uuid.UUID             `json:"subscription_plan_id,omitempty"`
-	MaxMembers         int                    `json:"max_members"`
-	MemberCount        int                    `json:"member_count"`
-	ExpiresAt          *time.Time             `json:"expires_at,omitempty"`
-	CasdoorGroupName   *string                `json:"casdoor_group_name,omitempty"`
-	IsActive           bool                   `json:"is_active"`
-	IsExpired          bool                   `json:"is_expired"`
-	IsFull             bool                   `json:"is_full"`
+	ID                 uuid.UUID      `json:"id"`
+	Name               string         `json:"name"`
+	DisplayName        string         `json:"display_name"`
+	Description        string         `json:"description,omitempty"`
+	OwnerUserID        string         `json:"owner_user_id"`
+	OrganizationID     *uuid.UUID     `json:"organization_id,omitempty"` // Link to organization
+	ParentGroupID      *uuid.UUID     `json:"parent_group_id,omitempty"` // Link to parent group for nesting
+	SubscriptionPlanID *uuid.UUID     `json:"subscription_plan_id,omitempty"`
+	MaxMembers         int            `json:"max_members"`
+	MemberCount        int            `json:"member_count"`
+	ExpiresAt          *time.Time     `json:"expires_at,omitempty"`
+	CasdoorGroupName   *string        `json:"casdoor_group_name,omitempty"`
+	IsActive           bool           `json:"is_active"`
+	IsExpired          bool           `json:"is_expired"`
+	IsFull             bool           `json:"is_full"`
 	Metadata           map[string]any `json:"metadata,omitempty"`
-	CreatedAt          time.Time              `json:"created_at"`
-	UpdatedAt          time.Time              `json:"updated_at"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
 
-	// Optional relations (loaded with ?includes=members)
-	Members *[]GroupMemberOutput `json:"members,omitempty"`
+	// Optional relations (loaded with ?includes=members,SubGroups,ParentGroup)
+	Members     *[]GroupMemberOutput `json:"members,omitempty"`
+	SubGroups   *[]GroupOutput       `json:"sub_groups,omitempty"`   // Child groups (loaded with ?includes=SubGroups)
+	ParentGroup *GroupOutput         `json:"parent_group,omitempty"` // Parent group (loaded with ?includes=ParentGroup)
 }
 
 // GroupListOutput - Simplified output for list views
@@ -106,7 +111,7 @@ type GroupMemberOutput struct {
 	InvitedBy string                 `json:"invited_by,omitempty"`
 	JoinedAt  time.Time              `json:"joined_at"`
 	IsActive  bool                   `json:"is_active"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
+	Metadata  map[string]any         `json:"metadata,omitempty"`
 	CreatedAt time.Time              `json:"created_at"`
 	UpdatedAt time.Time              `json:"updated_at"`
 
@@ -125,6 +130,7 @@ func GroupModelToGroupOutput(group *models.ClassGroup) *GroupOutput {
 		Description:        group.Description,
 		OwnerUserID:        group.OwnerUserID,
 		OrganizationID:     group.OrganizationID,
+		ParentGroupID:      group.ParentGroupID,
 		SubscriptionPlanID: group.SubscriptionPlanID,
 		MaxMembers:         group.MaxMembers,
 		MemberCount:        group.GetMemberCount(),
@@ -145,6 +151,20 @@ func GroupModelToGroupOutput(group *models.ClassGroup) *GroupOutput {
 			members[i] = *GroupMemberModelToGroupMemberOutput(&member)
 		}
 		output.Members = &members
+	}
+
+	// Include sub-groups if loaded
+	if len(group.SubGroups) > 0 {
+		subGroups := make([]GroupOutput, len(group.SubGroups))
+		for i, subGroup := range group.SubGroups {
+			subGroups[i] = *GroupModelToGroupOutput(&subGroup)
+		}
+		output.SubGroups = &subGroups
+	}
+
+	// Include parent group if loaded
+	if group.ParentGroup != nil {
+		output.ParentGroup = GroupModelToGroupOutput(group.ParentGroup)
 	}
 
 	return output
