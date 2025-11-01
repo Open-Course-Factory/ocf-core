@@ -1,14 +1,45 @@
 package initialization
 
 import (
+	"log"
 	"soli/formations/src/auth/interfaces"
+	authModels "soli/formations/src/auth/models"
+	"strings"
 )
 
 // SetupPaymentRolePermissions sets up role-based permissions for payment system
 func SetupPaymentRolePermissions(enforcer interfaces.EnforcerInterface) {
 	enforcer.LoadPolicy()
 
-	enforcer.AddPolicy("member", "/api/v1/users/me/*", "(GET|POST|PATCH|DELETE)")
+	// Add permissions for /api/v1/users/:id (which includes /api/v1/users/me)
+	// Get all Casdoor roles that map to the "member" OCF role
+	casdoorRoles := authModels.GetCasdoorRolesForOCFRole(authModels.Member)
+
+	for _, role := range casdoorRoles {
+		// Add permission for /api/v1/users/:id (the actual route pattern)
+		_, err1 := enforcer.AddPolicy(role, "/api/v1/users/:id", "GET")
+		if err1 != nil {
+			if strings.Contains(err1.Error(), "UNIQUE") {
+				log.Printf("Permission already exists: %s /api/v1/users/:id", role)
+			} else {
+				log.Printf("Error adding permission for %s /api/v1/users/:id: %v", role, err1)
+			}
+		} else {
+			log.Printf("✅ Added %s permission for /api/v1/users/:id (includes /me)", role)
+		}
+
+		// Add permission for /api/v1/users/me/* sub-paths
+		_, err2 := enforcer.AddPolicy(role, "/api/v1/users/me/*", "(GET|POST|PATCH|DELETE)")
+		if err2 != nil {
+			if strings.Contains(err2.Error(), "UNIQUE") {
+				log.Printf("Permission already exists: %s /api/v1/users/me/*", role)
+			} else {
+				log.Printf("Error adding permission for %s /api/v1/users/me/*: %v", role, err2)
+			}
+		} else {
+			log.Printf("✅ Added %s permission for /api/v1/users/me/*", role)
+		}
+	}
 
 	// Permissions pour Student Premium
 	enforcer.AddPolicy("member_pro", "/api/v1/terminals/*", "(GET|POST)")

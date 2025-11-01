@@ -170,12 +170,25 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 	resourceName := Pluralize(entityName)
 	resourceName = utils.PascalToKebab(resourceName)
 	resourceName = strings.ToLower(resourceName)
-	apiGroupPath := "/api/v1/" + resourceName + "/*" // Use wildcard for entire API group
+	apiGroupPath := "/api/v1/" + resourceName + "/*" // Use wildcard for specific resource endpoints
+	apiListPath := "/api/v1/" + resourceName         // List endpoint without wildcard
 
-	log.Printf("Setting up entity access for %s at %s", entityName, apiGroupPath)
+	log.Printf("Setting up entity access for %s at %s and %s", entityName, apiListPath, apiGroupPath)
 
 	for ocfRoleName, accessGiven := range rolesMap {
-		// Add permission for the OCF role
+		// Add permission for the list endpoint (without wildcard)
+		_, errListPolicy := enforcer.AddPolicy(ocfRoleName, apiListPath, accessGiven)
+		if errListPolicy != nil {
+			if strings.Contains(errListPolicy.Error(), "UNIQUE") {
+				log.Printf("OCF role permission already exists: %s %s %s", ocfRoleName, apiListPath, accessGiven)
+			} else {
+				log.Printf("Error adding OCF role permission: %v", errListPolicy)
+			}
+		} else {
+			log.Printf("Added OCF role permission: %s can %s %s", ocfRoleName, accessGiven, apiListPath)
+		}
+
+		// Add permission for specific resource endpoints (with wildcard)
 		_, errPolicy := enforcer.AddPolicy(ocfRoleName, apiGroupPath, accessGiven)
 		if errPolicy != nil {
 			if strings.Contains(errPolicy.Error(), "UNIQUE") {
@@ -190,6 +203,19 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 		// Automatically add permissions for corresponding Casdoor roles
 		casdoorRoles := authModels.GetCasdoorRolesForOCFRole(authModels.RoleName(ocfRoleName))
 		for _, casdoorRole := range casdoorRoles {
+			// Add permission for list endpoint
+			_, errCasdoorListPolicy := enforcer.AddPolicy(casdoorRole, apiListPath, accessGiven)
+			if errCasdoorListPolicy != nil {
+				if strings.Contains(errCasdoorListPolicy.Error(), "UNIQUE") {
+					log.Printf("Casdoor role permission already exists: %s %s %s", casdoorRole, apiListPath, accessGiven)
+				} else {
+					log.Printf("Error adding Casdoor role permission: %v", errCasdoorListPolicy)
+				}
+			} else {
+				log.Printf("Added Casdoor role permission: %s can %s %s", casdoorRole, accessGiven, apiListPath)
+			}
+
+			// Add permission for specific resource endpoints
 			_, errCasdoorPolicy := enforcer.AddPolicy(casdoorRole, apiGroupPath, accessGiven)
 			if errCasdoorPolicy != nil {
 				if strings.Contains(errCasdoorPolicy.Error(), "UNIQUE") {
