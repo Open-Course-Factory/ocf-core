@@ -76,7 +76,7 @@ func (ps *permissionService) GrantEntityPermissionsWithPath(
 	methods []string,
 ) error {
 	if len(methods) == 0 {
-		return fmt.Errorf("no methods specified")
+		return utils.NewValidationError("methods", "no methods specified")
 	}
 
 	// Join methods with |

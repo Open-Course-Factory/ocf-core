@@ -38,7 +38,8 @@ type OrganizationOutput struct {
 	Description        string                 `json:"description,omitempty"`
 	OwnerUserID        string                 `json:"owner_user_id"`
 	SubscriptionPlanID *uuid.UUID             `json:"subscription_plan_id,omitempty"`
-	IsPersonal         bool                   `json:"is_personal"`
+	IsPersonal         bool                   `json:"is_personal"` // Deprecated: use OrganizationType instead
+	OrganizationType   string                 `json:"organization_type"` // 'personal' or 'team'
 	MaxGroups          int                    `json:"max_groups"`
 	MaxMembers         int                    `json:"max_members"`
 	IsActive           bool                   `json:"is_active"`
@@ -51,6 +52,11 @@ type OrganizationOutput struct {
 	Groups      *[]GroupSummary             `json:"groups,omitempty"`
 	GroupCount  *int                        `json:"group_count,omitempty"`
 	MemberCount *int                        `json:"member_count,omitempty"`
+}
+
+// ConvertToTeamInput represents the input for converting personal org to team
+type ConvertToTeamInput struct {
+	Name string `json:"name,omitempty" mapstructure:"name"` // Optional new name for the organization
 }
 
 // GroupSummary represents a simplified group output for organization responses

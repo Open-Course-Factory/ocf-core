@@ -483,7 +483,7 @@ func BenchmarkGenericRepository_CreateEntity(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		repo.CreateEntity(inputDto, "RepositoryTestEntity")
+		_, _ = repo.CreateEntity(inputDto, "RepositoryTestEntity")
 	}
 }
 
@@ -497,7 +497,7 @@ func BenchmarkGenericRepository_GetEntity(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		repo.GetEntity(testEntity.ID, RepositoryTestEntity{}, "RepositoryTestEntity", nil)
+		_, _ = repo.GetEntity(testEntity.ID, RepositoryTestEntity{}, "RepositoryTestEntity", nil)
 	}
 }
 

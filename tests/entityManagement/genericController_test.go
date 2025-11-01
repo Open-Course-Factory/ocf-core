@@ -566,7 +566,8 @@ func TestGenericController_FullWorkflow_Integration(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, createResp.Code)
 
 	var createdEntity ControllerTestEntityOutput
-	json.Unmarshal(createResp.Body.Bytes(), &createdEntity)
+	err := json.Unmarshal(createResp.Body.Bytes(), &createdEntity)
+	assert.NoError(t, err, "Failed to unmarshal created entity")
 	entityID := createdEntity.ID
 
 	// 2. READ

@@ -297,7 +297,8 @@ func TestSecurity_RoleBasedAccess(t *testing.T) {
 	require.Equal(t, http.StatusCreated, w.Code)
 
 	var created SecurityTestEntityOutput
-	json.Unmarshal(w.Body.Bytes(), &created)
+	err := json.Unmarshal(w.Body.Bytes(), &created)
+	require.NoError(t, err, "Failed to unmarshal created entity")
 
 	// Test scenarios with different role enforcement results
 	testCases := []struct {
@@ -370,7 +371,8 @@ func TestSecurity_UserSpecificResourcePermissions(t *testing.T) {
 	require.Equal(t, http.StatusCreated, w.Code)
 
 	var entity SecurityTestEntityOutput
-	json.Unmarshal(w.Body.Bytes(), &entity)
+	err := json.Unmarshal(w.Body.Bytes(), &entity)
+	require.NoError(t, err, "Failed to unmarshal entity")
 
 	// Verify user-specific permission was created
 	calls := suite.mockEnforcer.AddPolicyCalls
@@ -514,7 +516,8 @@ func TestSecurity_MultipleOwners(t *testing.T) {
 	require.Equal(t, http.StatusCreated, w.Code)
 
 	var entity SecurityTestEntityOutput
-	json.Unmarshal(w.Body.Bytes(), &entity)
+	err := json.Unmarshal(w.Body.Bytes(), &entity)
+	require.NoError(t, err, "Failed to unmarshal entity")
 
 	// Manually add second owner to database
 	secondUser := "test-user-456"
@@ -566,7 +569,8 @@ func TestSecurity_PermissionIsolation(t *testing.T) {
 		require.Equal(t, http.StatusCreated, w.Code)
 
 		var entity SecurityTestEntityOutput
-		json.Unmarshal(w.Body.Bytes(), &entity)
+		err := json.Unmarshal(w.Body.Bytes(), &entity)
+		require.NoError(t, err, "Failed to unmarshal entity")
 		entityIDs[userID] = entity.ID
 	}
 

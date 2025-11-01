@@ -60,6 +60,7 @@ func (r OrganizationRegistration) EntityModelToEntityOutput(input any) (any, err
 			OwnerUserID:        org.OwnerUserID,
 			SubscriptionPlanID: org.SubscriptionPlanID,
 			IsPersonal:         org.IsPersonal,
+			OrganizationType:   string(org.OrganizationType),
 			MaxGroups:          org.MaxGroups,
 			MaxMembers:         org.MaxMembers,
 			IsActive:           org.IsActive,

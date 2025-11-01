@@ -19,6 +19,7 @@ type OrganizationService interface {
 	// Organization management
 	CreateOrganization(userID string, input dto.CreateOrganizationInput) (*models.Organization, error)
 	CreatePersonalOrganization(userID string) (*models.Organization, error)
+	ConvertToTeam(orgID uuid.UUID, requestingUserID string, newName string) (*models.Organization, error)
 	GetOrganization(orgID uuid.UUID, includeRelations bool) (*models.Organization, error)
 	GetUserOrganizations(userID string) (*[]models.Organization, error)
 	GetUserPersonalOrganization(userID string) (*models.Organization, error)
@@ -74,7 +75,7 @@ func (os *organizationService) CreateOrganization(userID string, input dto.Creat
 		Description:        input.Description,
 		OwnerUserID:        userID,
 		SubscriptionPlanID: input.SubscriptionPlanID,
-		IsPersonal:         false,
+		OrganizationType:   models.OrgTypeTeam, // Regular organizations are teams
 		MaxGroups:          input.MaxGroups,
 		MaxMembers:         input.MaxMembers,
 		Metadata:           input.Metadata,
@@ -135,14 +136,14 @@ func (os *organizationService) CreatePersonalOrganization(userID string) (*model
 
 	// Create personal organization
 	org := &models.Organization{
-		Name:        fmt.Sprintf("personal_%s", userID),
-		DisplayName: "Personal Organization",
-		Description: "Your personal workspace",
-		OwnerUserID: userID,
-		IsPersonal:  true,
-		MaxGroups:   -1, // Unlimited for personal orgs
-		MaxMembers:  1,  // Only owner
-		IsActive:    true,
+		Name:             fmt.Sprintf("personal_%s", userID),
+		DisplayName:      "Personal Organization",
+		Description:      "Your personal workspace",
+		OwnerUserID:      userID,
+		OrganizationType: models.OrgTypePersonal, // Personal organization type
+		MaxGroups:        -1,                     // Unlimited for personal orgs
+		MaxMembers:       1,                      // Only owner
+		IsActive:         true,
 	}
 
 	createdOrg, err := os.repository.CreateOrganization(org)
@@ -172,6 +173,56 @@ func (os *organizationService) CreatePersonalOrganization(userID string) (*model
 
 	utils.Info("Personal organization created for user %s", userID)
 	return createdOrg, nil
+}
+
+// ConvertToTeam converts a personal organization to a team organization
+func (os *organizationService) ConvertToTeam(orgID uuid.UUID, requestingUserID string, newName string) (*models.Organization, error) {
+	// Get the organization
+	org, err := os.repository.GetOrganizationByID(orgID, false)
+	if err != nil {
+		return nil, fmt.Errorf("organization not found")
+	}
+
+	// Only the owner can convert
+	if org.OwnerUserID != requestingUserID {
+		return nil, utils.OwnerOnlyError("organization", "convert to team")
+	}
+
+	// Check if already a team organization
+	if org.IsTeamOrg() {
+		return nil, fmt.Errorf("organization is already a team organization")
+	}
+
+	// Prepare updates
+	updates := make(map[string]any)
+	updates["organization_type"] = models.OrgTypeTeam
+
+	// Update name if provided
+	if newName != "" && newName != org.Name {
+		// Check if new name is unique for this owner
+		existingOrg, _ := os.repository.GetOrganizationByNameAndOwner(newName, requestingUserID)
+		if existingOrg != nil && existingOrg.ID != orgID {
+			return nil, fmt.Errorf("you already have an organization with this name")
+		}
+		updates["name"] = newName
+		updates["display_name"] = newName
+	}
+
+	// Update limits to team defaults
+	updates["max_groups"] = 30  // Team default
+	updates["max_members"] = 100 // Team default
+
+	// Update is_personal for backward compatibility (since direct updates bypass BeforeSave hook)
+	updates["is_personal"] = false
+
+	// Perform the update
+	updatedOrg, err := os.repository.UpdateOrganization(orgID, updates)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert organization to team: %w", err)
+	}
+
+	utils.Info("Organization %s converted to team by user %s", orgID, requestingUserID)
+	return updatedOrg, nil
 }
 
 // GetOrganization retrieves an organization by ID
@@ -226,7 +277,7 @@ func (os *organizationService) DeleteOrganization(orgID uuid.UUID, requestingUse
 	}
 
 	// Cannot delete personal organization
-	if org.IsPersonal {
+	if org.IsPersonalOrg() {
 		return fmt.Errorf("cannot delete personal organization")
 	}
 

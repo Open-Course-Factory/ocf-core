@@ -330,12 +330,12 @@ func setupRelationshipTest(t *testing.T) *RelationshipTestSuite {
 	require.NoError(t, err)
 
 	// Setup join tables
-	db.SetupJoinTable(&RelTestCourse{}, "Chapters", &CourseChapters{})
-	db.SetupJoinTable(&RelTestChapter{}, "Courses", &CourseChapters{})
-	db.SetupJoinTable(&RelTestChapter{}, "Sections", &ChapterSections{})
-	db.SetupJoinTable(&RelTestSection{}, "Chapters", &ChapterSections{})
-	db.SetupJoinTable(&RelTestSection{}, "Pages", &SectionPages{})
-	db.SetupJoinTable(&RelTestPage{}, "Sections", &SectionPages{})
+	_ = db.SetupJoinTable(&RelTestCourse{}, "Chapters", &CourseChapters{})
+	_ = db.SetupJoinTable(&RelTestChapter{}, "Courses", &CourseChapters{})
+	_ = db.SetupJoinTable(&RelTestChapter{}, "Sections", &ChapterSections{})
+	_ = db.SetupJoinTable(&RelTestSection{}, "Chapters", &ChapterSections{})
+	_ = db.SetupJoinTable(&RelTestSection{}, "Pages", &SectionPages{})
+	_ = db.SetupJoinTable(&RelTestPage{}, "Sections", &SectionPages{})
 
 	mockEnforcer := authMocks.NewMockEnforcer()
 	mockEnforcer.LoadPolicyFunc = func() error { return nil }
@@ -476,7 +476,8 @@ func TestRelationships_FilterPagesByChapter(t *testing.T) {
 		Data  []RelTestPageOutput `json:"data"`
 		Total int64               `json:"total"`
 	}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err, "Failed to unmarshal response")
 
 	assert.Equal(t, int64(2), response.Total)
 	assert.Len(t, response.Data, 2)
@@ -515,7 +516,8 @@ func TestRelationships_FilterPagesBySection(t *testing.T) {
 		Data  []RelTestPageOutput `json:"data"`
 		Total int64               `json:"total"`
 	}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err, "Failed to unmarshal response")
 
 	assert.Equal(t, int64(3), response.Total)
 	assert.Len(t, response.Data, 3)
@@ -553,7 +555,8 @@ func TestRelationships_FilterSectionsByChapter(t *testing.T) {
 		Data  []RelTestSectionOutput `json:"data"`
 		Total int64                  `json:"total"`
 	}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err, "Failed to unmarshal response")
 
 	assert.Equal(t, int64(2), response.Total)
 	assert.Len(t, response.Data, 2)
@@ -597,7 +600,8 @@ func TestRelationships_MultipleCoursesSharedChapter(t *testing.T) {
 		Data  []RelTestPageOutput `json:"data"`
 		Total int64               `json:"total"`
 	}
-	json.Unmarshal(w1.Body.Bytes(), &response1)
+	err := json.Unmarshal(w1.Body.Bytes(), &response1)
+	assert.NoError(t, err, "Failed to unmarshal response1")
 	assert.Equal(t, int64(1), response1.Total)
 
 	// Test: Page should also be found when filtering by course2
@@ -609,7 +613,8 @@ func TestRelationships_MultipleCoursesSharedChapter(t *testing.T) {
 		Data  []RelTestPageOutput `json:"data"`
 		Total int64               `json:"total"`
 	}
-	json.Unmarshal(w2.Body.Bytes(), &response2)
+	err = json.Unmarshal(w2.Body.Bytes(), &response2)
+	assert.NoError(t, err, "Failed to unmarshal response2")
 	assert.Equal(t, int64(1), response2.Total)
 
 	t.Logf("✅ Shared chapter relationship works: page found in both courses")
@@ -657,7 +662,8 @@ func TestRelationships_FilterWithMultipleIDs(t *testing.T) {
 		Data  []RelTestPageOutput `json:"data"`
 		Total int64               `json:"total"`
 	}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err, "Failed to unmarshal response")
 
 	// Should find all 3 pages (page3 appears in both but should only be counted once)
 	assert.Equal(t, int64(3), response.Total)
@@ -690,7 +696,8 @@ func TestRelationships_NoResults(t *testing.T) {
 		Data  []RelTestPageOutput `json:"data"`
 		Total int64               `json:"total"`
 	}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err, "Failed to unmarshal response")
 
 	assert.Equal(t, int64(0), response.Total)
 	assert.Empty(t, response.Data)

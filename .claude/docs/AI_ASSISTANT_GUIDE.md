@@ -2,6 +2,18 @@
 
 This file provides guidance to AI assistants (like Gemini and Claude) when working with code in this repository.
 
+## Git Commit Guidelines
+
+**IMPORTANT**: When creating git commits, use clean, professional commit messages WITHOUT:
+- ❌ Generation attribution (e.g., "🤖 Generated with Claude Code")
+- ❌ Co-Authored-By: Claude lines
+- ❌ Tool attribution in commit messages
+
+**DO include:**
+- ✅ Conventional commit format: `<type>: <subject>`
+- ✅ Clear description of changes
+- ✅ Technical details in commit body
+
 ## Development Environment
 
 **IMPORTANT**: This project runs in a Docker Dev Container with Docker-in-Docker (DinD) enabled.

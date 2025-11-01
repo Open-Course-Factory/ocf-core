@@ -23,7 +23,7 @@ type TestEntityWithoutOwners struct {
 type TestEntityUnexportedOwners struct {
 	ID       string
 	Title    string
-	ownerIDs []string // lowercase - unexported
+	ownerIDs []string //nolint:unused // lowercase - unexported, intentionally unused for reflection test
 }
 
 func TestAddOwnerIDToEntity_Success(t *testing.T) {

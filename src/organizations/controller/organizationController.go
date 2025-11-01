@@ -354,3 +354,93 @@ func (oc *OrganizationController) ImportOrganizationData(ctx *gin.Context) {
 
 	ctx.JSON(statusCode, response)
 }
+
+// ConvertToTeam godoc
+// @Summary Convert personal organization to team organization
+// @Description Convert a personal organization to a team organization. Only the organization owner can perform this action.
+// @Tags organizations
+// @Accept json
+// @Produce json
+// @Param id path string true "Organization ID"
+// @Param body body dto.ConvertToTeamInput false "Optional new name for the organization"
+// @Success 200 {object} dto.OrganizationOutput "Successfully converted organization"
+// @Failure 400 {object} errors.APIError "Invalid request or organization already a team"
+// @Failure 403 {object} errors.APIError "Only organization owner can convert"
+// @Failure 404 {object} errors.APIError "Organization not found"
+// @Failure 500 {object} errors.APIError "Internal server error"
+// @Security BearerAuth
+// @Router /organizations/{id}/convert-to-team [post]
+func (oc *OrganizationController) ConvertToTeam(ctx *gin.Context) {
+	// Parse organization ID from URL parameter
+	orgIDStr := ctx.Param("id")
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	// Get requesting user ID from context
+	userID, exists := ctx.Get("userId")
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
+			ErrorCode:    http.StatusUnauthorized,
+			ErrorMessage: "User not authenticated",
+		})
+		return
+	}
+
+	// Parse optional request body
+	var input dto.ConvertToTeamInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		// Empty body is allowed, set input to empty struct
+		input = dto.ConvertToTeamInput{}
+	}
+
+	// Call service to convert organization
+	updatedOrg, err := oc.service.ConvertToTeam(orgID, userID.(string), input.Name)
+	if err != nil {
+		// Determine status code based on error message
+		statusCode := http.StatusInternalServerError
+		errorMessage := err.Error()
+
+		if strings.Contains(errorMessage, "not found") {
+			statusCode = http.StatusNotFound
+		} else if strings.Contains(errorMessage, "only") || strings.Contains(errorMessage, "owner") {
+			statusCode = http.StatusForbidden
+		} else if strings.Contains(errorMessage, "already") {
+			statusCode = http.StatusBadRequest
+		}
+
+		ctx.JSON(statusCode, &errors.APIError{
+			ErrorCode:    statusCode,
+			ErrorMessage: errorMessage,
+		})
+		return
+	}
+
+	// Convert to output DTO using entity registration converter
+	output := dto.OrganizationOutput{
+		ID:               updatedOrg.ID,
+		Name:             updatedOrg.Name,
+		DisplayName:      updatedOrg.DisplayName,
+		Description:      updatedOrg.Description,
+		OwnerUserID:      updatedOrg.OwnerUserID,
+		OrganizationType: string(updatedOrg.OrganizationType),
+		IsPersonal:       updatedOrg.IsPersonal,
+		MaxGroups:        updatedOrg.MaxGroups,
+		MaxMembers:       updatedOrg.MaxMembers,
+		IsActive:         updatedOrg.IsActive,
+		Metadata:         updatedOrg.Metadata,
+		CreatedAt:        updatedOrg.CreatedAt,
+		UpdatedAt:        updatedOrg.UpdatedAt,
+	}
+
+	// Add member count
+	memberCount := updatedOrg.GetMemberCount()
+	output.MemberCount = &memberCount
+
+	ctx.JSON(http.StatusOK, output)
+}

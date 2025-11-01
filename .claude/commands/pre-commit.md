@@ -7,9 +7,88 @@ tags: [commit, validation, quality, ci]
 
 Comprehensive validation before committing code. Acts as your automated quality gate.
 
+**IMPORTANT:** Pre-commit checks should ONLY analyze files that are about to be committed (modified/staged files), not the entire project.
+
+**ATOMIC COMMITS:** Each commit should focus on ONE subject/concern. If changes span multiple domains, split into separate commits.
+
 ## Pre-Commit Checklist
 
-### Phase 1: Code Quality (Fast Checks)
+### Phase 0: Commit Scope Analysis (Critical)
+
+#### 0.1 Identify Modified Files
+```bash
+# Get list of modified files
+git diff HEAD --name-only
+
+# Or for staged files only
+git diff --cached --name-only
+```
+
+#### 0.2 Detect Multiple Subjects
+**Check if changes span multiple domains/concerns:**
+
+```bash
+# Analyze file paths to detect different subjects
+MODIFIED_FILES=$(git diff HEAD --name-only)
+
+# Check for changes in different domains:
+# - Components (UI changes)
+# - Stores (state management)
+# - Services (business logic)
+# - Types (data models)
+# - Utils (utilities)
+# - Composables (Vue composables)
+# - Styles (CSS)
+```
+
+**Subject detection logic:**
+- Changes in `src/components/` = UI/Component subject
+- Changes in `src/stores/` = State management subject
+- Changes in `src/services/` = Business logic subject
+- Changes in `src/types/` = Type definitions subject
+- Changes in `src/composables/` = Composable subject
+- Changes in `src/views/Pages/` = Page/feature subject
+- Changes in `package.json` = Dependency subject
+
+**Examples of single-subject commits (GOOD):**
+- ✅ Only files in `src/components/Pages/GroupDetail.vue` + `src/composables/useGroupMembers.ts` = Group detail feature
+- ✅ Only files in `src/stores/users.ts` + `src/types/entities.ts` = User store enhancement
+- ✅ Only files in `src/services/domain/terminal/` = Terminal service refactoring
+
+**Examples of multi-subject commits (BAD - should split):**
+- ❌ Files in `src/components/Login.vue` + `src/stores/subscriptions.ts` + `src/services/domain/payments/` = 3 unrelated subjects
+- ❌ Files in `src/components/Terminal/` + `src/components/Settings/` = 2 different features
+- ❌ Refactoring in `src/utils/` + new feature in `src/views/Pages/Dashboard.vue` = maintenance + feature (split)
+
+**Fail if:** Changes span more than one unrelated subject/domain
+
+**Output if multiple subjects detected:**
+```
+❌ MULTIPLE SUBJECTS DETECTED
+
+You're trying to commit changes across different domains:
+  - Group management (3 files)
+  - User authentication (2 files)
+  - Terminal settings (1 file)
+
+📋 RECOMMENDATION: Split into atomic commits:
+
+Commit 1 (Group management):
+  - src/components/Pages/GroupDetail.vue
+  - src/composables/useGroupMembers.ts
+  - src/stores/classGroups.ts
+
+Commit 2 (User authentication):
+  - src/components/Auth/Login.vue
+  - src/stores/auth.ts
+
+Commit 3 (Terminal settings):
+  - src/components/Terminal/TerminalSettings.vue
+
+Use: git add <files> && git commit -m "message"
+```
+
+### Phase 1: Code Quality (Fast Checks - Modified Files Only)
 
 #### 1.1 Linting
 ```bash
@@ -39,7 +118,7 @@ go build ./...
 ### Phase 2: Pattern Compliance (Medium)
 
 #### 2.1 Critical Patterns
-**Fast pattern checks:**
+**Fast pattern checks in MODIFIED FILES ONLY:**
 
 ```bash
 # Check for direct Casbin calls (should use utils)
@@ -60,7 +139,7 @@ grep -A5 "type.*Dto struct" src/*/dto/*.go | grep "json:" | grep -v "mapstructur
 ### Phase 3: Testing (Slower)
 
 #### 3.1 Affected Tests
-**Intelligent test selection:**
+**Intelligent test selection in MODIFIED FILES ONLY:**
 
 ```bash
 # Get changed files
@@ -80,7 +159,7 @@ fi
 
 **Fail if:** Any tests fail
 
-#### 3.2 Test Coverage
+#### 3.2 Test Coverage (Changes Only)
 ```bash
 make coverage
 ```
@@ -112,7 +191,7 @@ fi
 
 ### Phase 5: Security (Fast)
 
-#### 5.1 Quick Security Scan
+#### 5.1 Quick Security Scan (Changes Only)
 ```bash
 # Check for exposed secrets
 git diff HEAD | grep -E "sk_live_|password|api_key|secret"
@@ -134,7 +213,7 @@ git diff HEAD | grep -E "ctx.JSON.*err.Error()"
 - Models don't import services
 - No circular dependencies added
 
-### Phase 7: Git Quality
+### Phase 7: Git Quality (Changes Only)
 
 #### 7.1 Commit Message
 **Validate format:**

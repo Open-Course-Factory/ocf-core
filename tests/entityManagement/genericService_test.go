@@ -517,7 +517,7 @@ func BenchmarkGenericService_CreateEntity(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		service.CreateEntity(inputDto, "TestEntityWithBaseModel")
+		_, _ = service.CreateEntity(inputDto, "TestEntityWithBaseModel")
 	}
 }
 

@@ -149,7 +149,7 @@ func (h *OrganizationCleanupHook) Execute(ctx *hooks.HookContext) error {
 	}
 
 	// Prevent deletion of personal organizations
-	if org.IsPersonal {
+	if org.IsPersonalOrg() {
 		return fmt.Errorf("cannot delete personal organization")
 	}
 

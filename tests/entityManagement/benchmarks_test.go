@@ -286,7 +286,9 @@ func BenchmarkRead_Single(b *testing.B) {
 	suite.router.ServeHTTP(w, req)
 
 	var created BenchmarkEntityOutput
-	json.Unmarshal(w.Body.Bytes(), &created)
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		b.Fatalf("Failed to unmarshal created entity: %v", err)
+	}
 
 	b.ResetTimer()
 	b.ReportAllocs()

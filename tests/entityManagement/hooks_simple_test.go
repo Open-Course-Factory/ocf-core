@@ -90,7 +90,7 @@ func NewSimpleFailingHook(name, entityName string, hookTypes []hooks.HookType) *
 }
 
 func (h *SimpleFailingHook) Execute(ctx *hooks.HookContext) error {
-	h.SimpleTrackingHook.Execute(ctx)
+	_ = h.SimpleTrackingHook.Execute(ctx)
 	if h.shouldFail {
 		return errors.New("hook execution failed")
 	}
@@ -196,7 +196,7 @@ func TestHooksSimple_ExecutionOrder(t *testing.T) {
 	for i, priority := range priorities {
 		hook := NewSimpleTrackingHook(fmt.Sprintf("hook-%d", i), "TestEntity", []hooks.HookType{hooks.BeforeCreate}, priority)
 		testHooks[i] = hook
-		registry.RegisterHook(hook)
+		_ = registry.RegisterHook(hook)
 	}
 
 	ctx := &hooks.HookContext{
@@ -242,7 +242,7 @@ func TestHooksSimple_ConditionalExecution(t *testing.T) {
 		},
 	)
 
-	registry.RegisterHook(conditionalHook)
+	_ = registry.RegisterHook(conditionalHook)
 
 	t.Run("Condition False - Should Not Execute", func(t *testing.T) {
 		ctx := &hooks.HookContext{
@@ -284,8 +284,8 @@ func TestHooksSimple_FailureHandling(t *testing.T) {
 	failingHook := NewSimpleFailingHook("failing-hook", "TestEntity", []hooks.HookType{hooks.BeforeCreate})
 	failingHook.priority = 20
 
-	registry.RegisterHook(successHook)
-	registry.RegisterHook(failingHook)
+	_ = registry.RegisterHook(successHook)
+	_ = registry.RegisterHook(failingHook)
 
 	ctx := &hooks.HookContext{
 		EntityName: "TestEntity",
@@ -310,7 +310,7 @@ func TestHooksSimple_EnableDisable(t *testing.T) {
 	registry := hooks.NewHookRegistry()
 
 	hook := NewSimpleTrackingHook("toggle-hook", "TestEntity", []hooks.HookType{hooks.BeforeCreate}, 10)
-	registry.RegisterHook(hook)
+	_ = registry.RegisterHook(hook)
 
 	ctx := &hooks.HookContext{
 		EntityName: "TestEntity",
@@ -320,17 +320,17 @@ func TestHooksSimple_EnableDisable(t *testing.T) {
 	}
 
 	// Execute while enabled
-	registry.ExecuteHooks(ctx)
+	_ = registry.ExecuteHooks(ctx)
 	assert.Equal(t, 1, hook.GetExecutedCount())
 
 	// Disable and execute
-	registry.EnableHook("toggle-hook", false)
-	registry.ExecuteHooks(ctx)
+	_ = registry.EnableHook("toggle-hook", false)
+	_ = registry.ExecuteHooks(ctx)
 	assert.Equal(t, 1, hook.GetExecutedCount(), "Should not execute when disabled")
 
 	// Re-enable and execute
-	registry.EnableHook("toggle-hook", true)
-	registry.ExecuteHooks(ctx)
+	_ = registry.EnableHook("toggle-hook", true)
+	_ = registry.ExecuteHooks(ctx)
 	assert.Equal(t, 2, hook.GetExecutedCount())
 
 	t.Logf("✅ Hook enable/disable works correctly")
@@ -394,7 +394,7 @@ func TestHooksSimple_ServiceIntegration_BeforeCreate(t *testing.T) {
 	_, service, registry := setupHookServiceTestSimple(t)
 
 	beforeCreateHook := NewSimpleTrackingHook("before-create", "HookTestEntity", []hooks.HookType{hooks.BeforeCreate}, 10)
-	registry.RegisterHook(beforeCreateHook)
+	_ = registry.RegisterHook(beforeCreateHook)
 
 	entity := &HookTestEntitySimple{
 		Name:   "Test Entity",
@@ -415,7 +415,7 @@ func TestHooksSimple_ServiceIntegration_AfterCreate(t *testing.T) {
 	_, service, registry := setupHookServiceTestSimple(t)
 
 	afterCreateHook := NewSimpleTrackingHook("after-create", "HookTestEntity", []hooks.HookType{hooks.AfterCreate}, 10)
-	registry.RegisterHook(afterCreateHook)
+	_ = registry.RegisterHook(afterCreateHook)
 
 	entity := &HookTestEntitySimple{
 		Name:   "Test Entity",
@@ -439,7 +439,7 @@ func TestHooksSimple_ConcurrentExecution(t *testing.T) {
 	_, service, registry := setupHookServiceTestSimple(t)
 
 	hook := NewSimpleTrackingHook("concurrent-hook", "HookTestEntity", []hooks.HookType{hooks.BeforeCreate}, 10)
-	registry.RegisterHook(hook)
+	_ = registry.RegisterHook(hook)
 
 	// Create multiple entities concurrently
 	numGoroutines := 10
@@ -480,7 +480,7 @@ func TestHooksSimple_ErrorTracking_AsyncHookFailure(t *testing.T) {
 
 	// Register a failing after-create hook
 	failingHook := NewSimpleFailingHook("failing-after-create", "HookTestEntity", []hooks.HookType{hooks.AfterCreate})
-	registry.RegisterHook(failingHook)
+	_ = registry.RegisterHook(failingHook)
 
 	// Clear any previous errors
 	registry.ClearErrors()
@@ -521,12 +521,12 @@ func TestHooksSimple_ErrorTracking_MultipleErrors(t *testing.T) {
 
 	// Register failing after-create hook
 	afterCreateHook := NewSimpleFailingHook("fail-create", "HookTestEntity", []hooks.HookType{hooks.AfterCreate})
-	registry.RegisterHook(afterCreateHook)
+	_ = registry.RegisterHook(afterCreateHook)
 
 	// Create multiple entities to generate multiple errors
 	for i := 0; i < 3; i++ {
 		entity := &HookTestEntitySimple{Name: fmt.Sprintf("Test %d", i), Value: i, Status: "active"}
-		service.CreateEntity(entity, "HookTestEntity")
+		_, _ = service.CreateEntity(entity, "HookTestEntity")
 		time.Sleep(50 * time.Millisecond)
 	}
 
@@ -549,7 +549,7 @@ func TestHooksSimple_ErrorTracking_GetRecentErrors(t *testing.T) {
 
 	// Register ONE failing hook
 	failingHook := NewSimpleFailingHook("test-hook", "TestEntity", []hooks.HookType{hooks.AfterCreate})
-	registry.RegisterHook(failingHook)
+	_ = registry.RegisterHook(failingHook)
 
 	// Execute it 10 times to generate 10 errors
 	for i := 0; i < 10; i++ {
@@ -558,7 +558,7 @@ func TestHooksSimple_ErrorTracking_GetRecentErrors(t *testing.T) {
 			HookType:   hooks.AfterCreate,
 			EntityID:   fmt.Sprintf("entity-%d", i),
 		}
-		registry.ExecuteHooks(ctx)
+		_ = registry.ExecuteHooks(ctx)
 	}
 
 	t.Run("Get All Errors", func(t *testing.T) {
@@ -586,7 +586,7 @@ func TestHooksSimple_ErrorTracking_CircularBuffer(t *testing.T) {
 
 	// Register ONE failing hook
 	failingHook := NewSimpleFailingHook("test-hook", "TestEntity", []hooks.HookType{hooks.AfterCreate})
-	registry.RegisterHook(failingHook)
+	_ = registry.RegisterHook(failingHook)
 
 	// Create more errors than the buffer can hold (default 100)
 	for i := 0; i < 150; i++ {
@@ -595,7 +595,7 @@ func TestHooksSimple_ErrorTracking_CircularBuffer(t *testing.T) {
 			HookType:   hooks.AfterCreate,
 			EntityID:   fmt.Sprintf("entity-%d", i),
 		}
-		registry.ExecuteHooks(ctx)
+		_ = registry.ExecuteHooks(ctx)
 	}
 
 	errors := registry.GetRecentErrors(0)
@@ -609,7 +609,7 @@ func TestHooksSimple_ErrorTracking_ClearErrors(t *testing.T) {
 
 	// Register ONE failing hook
 	failingHook := NewSimpleFailingHook("test-hook", "TestEntity", []hooks.HookType{hooks.AfterCreate})
-	registry.RegisterHook(failingHook)
+	_ = registry.RegisterHook(failingHook)
 
 	// Add some errors
 	for i := 0; i < 5; i++ {
@@ -618,7 +618,7 @@ func TestHooksSimple_ErrorTracking_ClearErrors(t *testing.T) {
 			HookType:   hooks.AfterCreate,
 			EntityID:   fmt.Sprintf("entity-%d", i),
 		}
-		registry.ExecuteHooks(ctx)
+		_ = registry.ExecuteHooks(ctx)
 	}
 
 	assert.Len(t, registry.GetRecentErrors(0), 5, "Should have 5 errors")
@@ -651,8 +651,8 @@ func TestHooksSimple_ErrorTracking_Callback(t *testing.T) {
 	}
 
 	failingHook := NewSimpleFailingHook("callback-test-hook", "TestEntity", []hooks.HookType{hooks.AfterCreate})
-	registry.RegisterHook(failingHook)
-	registry.ExecuteHooks(ctx)
+	_ = registry.RegisterHook(failingHook)
+	_ = registry.ExecuteHooks(ctx)
 
 	// Wait for async callback
 	time.Sleep(100 * time.Millisecond)
@@ -673,7 +673,7 @@ func TestHooksSimple_ErrorTracking_BeforeHooksNotTracked(t *testing.T) {
 
 	// Before hooks should NOT be tracked (they're synchronous and return errors)
 	failingHook := NewSimpleFailingHook("failing-before-create", "TestEntity", []hooks.HookType{hooks.BeforeCreate})
-	registry.RegisterHook(failingHook)
+	_ = registry.RegisterHook(failingHook)
 
 	ctx := &hooks.HookContext{
 		EntityName: "TestEntity",
@@ -681,7 +681,7 @@ func TestHooksSimple_ErrorTracking_BeforeHooksNotTracked(t *testing.T) {
 		EntityID:   "test-123",
 	}
 
-	registry.ExecuteHooks(ctx)
+	_ = registry.ExecuteHooks(ctx)
 
 	errors := registry.GetRecentErrors(0)
 	assert.Len(t, errors, 0, "Before hooks should not be tracked in error buffer")

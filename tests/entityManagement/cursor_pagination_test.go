@@ -225,7 +225,8 @@ func TestIntegration_CursorPagination_HTTP(t *testing.T) {
 		require.Equal(t, http.StatusCreated, w.Code)
 
 		var output IntegrationTestEntityOutput
-		json.Unmarshal(w.Body.Bytes(), &output)
+		err := json.Unmarshal(w.Body.Bytes(), &output)
+		require.NoError(t, err, "Failed to unmarshal created entity")
 		createdIDs[i] = output.ID
 	}
 
