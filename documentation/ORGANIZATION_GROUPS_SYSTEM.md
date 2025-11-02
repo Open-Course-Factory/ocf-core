@@ -266,18 +266,18 @@ func CanUserAccessGroup(groupID, userID) bool {
 "group:org_manager:{orgID}", "/api/v1/organizations/{orgID}/members", "GET|POST|PATCH|DELETE"
 
 // Cascading group access for org managers
-"group:org_manager:{orgID}", "/api/v1/groups/{groupID}", "GET|PATCH|DELETE"
+"group:org_manager:{orgID}", "/api/v1/class-groups/{groupID}", "GET|PATCH|DELETE"
 ```
 
 **Group Permissions**:
 
 ```go
 // Group members can view group
-"group:group_member:{groupID}", "/api/v1/groups/{groupID}", "GET"
+"group:group_member:{groupID}", "/api/v1/class-groups/{groupID}", "GET"
 
 // Group admins can manage group
-"group:group_admin:{groupID}", "/api/v1/groups/{groupID}", "GET|PATCH|DELETE"
-"group:group_admin:{groupID}", "/api/v1/groups/{groupID}/members", "GET|POST|PATCH|DELETE"
+"group:group_admin:{groupID}", "/api/v1/class-groups/{groupID}", "GET|PATCH|DELETE"
+"group:group_admin:{groupID}", "/api/v1/class-groups/{groupID}/members", "GET|POST|PATCH|DELETE"
 ```
 
 ---
@@ -305,18 +305,18 @@ POST   /api/v1/organizations/:id/import          - Bulk import (CSV)
 ### Groups
 
 ```
-POST   /api/v1/groups                - Create group
-GET    /api/v1/groups/:id            - Get group details
-GET    /api/v1/groups                - List groups (filtered by access)
-PATCH  /api/v1/groups/:id            - Update group
-DELETE /api/v1/groups/:id            - Delete group
+POST   /api/v1/class-groups                - Create group
+GET    /api/v1/class-groups/:id            - Get group details
+GET    /api/v1/class-groups                - List groups (filtered by access)
+PATCH  /api/v1/class-groups/:id            - Update group
+DELETE /api/v1/class-groups/:id            - Delete group
 
-POST   /api/v1/groups/:id/members    - Add member to group
-DELETE /api/v1/groups/:id/members/:userID - Remove member
-PATCH  /api/v1/groups/:id/members/:userID - Update member role
-GET    /api/v1/groups/:id/members    - List group members
+POST   /api/v1/class-groups/:id/members    - Add member to group
+DELETE /api/v1/class-groups/:id/members/:userID - Remove member
+PATCH  /api/v1/class-groups/:id/members/:userID - Update member role
+GET    /api/v1/class-groups/:id/members    - List group members
 
-GET    /api/v1/users/me/groups       - List user's groups
+GET    /api/v1/users/me/groups              - List user's groups
 ```
 
 ---

@@ -4746,7 +4746,7 @@ Previously, when creating a group, the `owner_user_id` field was empty in the re
 
 ### API Affected
 
-**Endpoint**: `POST /api/v1/groups`
+**Endpoint**: `POST /api/v1/class-groups`
 
 ### What Changed
 
@@ -4781,8 +4781,8 @@ Previously, when creating a group, the `owner_user_id` field was empty in the re
 - [ ] Create a new group and verify `owner_user_id` is populated in the response
 - [ ] Verify the authenticated user appears in the group members list as "owner"
 - [ ] Check that group owner has full permissions (edit, delete, manage members)
-- [ ] Test `GET /api/v1/groups/{id}` - verify `owner_user_id` is present
-- [ ] Test `GET /api/v1/groups` list - verify all groups show their owners
+- [ ] Test `GET /api/v1/class-groups/{id}` - verify `owner_user_id` is present
+- [ ] Test `GET /api/v1/class-groups` list - verify all groups show their owners
 
 ### Potential UI Considerations
 

@@ -71,7 +71,7 @@ interface GroupMembershipContext {
       "methods": ["GET", "POST"]
     },
     {
-      "resource": "/api/v1/groups",
+      "resource": "/api/v1/class-groups",
       "methods": ["GET", "POST", "PUT", "DELETE"]
     }
   ],

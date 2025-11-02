@@ -237,7 +237,7 @@ func (gs *groupService) CanUserAccessGroup(groupID, userID) (bool, error) {
 "group:org_manager:{orgID}", "/api/v1/organizations/{orgID}/members", "GET|POST|PATCH|DELETE"
 
 // Cascading group access for org managers
-"group:org_manager:{orgID}", "/api/v1/groups/{groupID}", "GET|PATCH|DELETE"
+"group:org_manager:{orgID}", "/api/v1/class-groups/{groupID}", "GET|PATCH|DELETE"
 ```
 
 ### 1.7 Automatic Personal Organization
