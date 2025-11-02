@@ -130,13 +130,15 @@ func (gm GroupMemberRegistration) GetEntityRegistrationInput() entityManagementI
 		// NEW: Generic membership configuration
 		// Users can only see group members from groups they belong to
 		MembershipConfig: &entityManagementInterfaces.MembershipConfig{
-			MemberTable:      "group_members",
-			EntityIDColumn:   "group_id", // Filter by group_id (the group the member belongs to)
-			UserIDColumn:     "user_id",
-			RoleColumn:       "role",
-			IsActiveColumn:   "is_active",
-			OrgAccessEnabled: true,                          // Enable organization-based access
-			ManagerRoles:     []string{"owner", "manager"}, // Org managers can see all group members
+			MemberTable:    "group_members",
+			EntityIDColumn: "group_id", // Filter by group_id (the group the member belongs to)
+			UserIDColumn:   "user_id",
+			RoleColumn:     "role",
+			IsActiveColumn: "is_active",
+			// OrgAccessEnabled: false - Cannot enable org-level access because group_members
+			// table doesn't have organization_id column (it's in class_groups table)
+			// Users see members only from groups they directly belong to
+			OrgAccessEnabled: false,
 		},
 	}
 }
