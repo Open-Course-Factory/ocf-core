@@ -36,6 +36,7 @@ type EntityRegistrationService struct {
 	subEntities         map[string][]any
 	swaggerConfigs      map[string]*entityManagementInterfaces.EntitySwaggerConfig
 	relationshipFilters map[string][]entityManagementInterfaces.RelationshipFilter
+	membershipConfigs   map[string]*entityManagementInterfaces.MembershipConfig // NEW: Generic membership configs
 }
 
 func NewEntityRegistrationService() *EntityRegistrationService {
@@ -46,6 +47,7 @@ func NewEntityRegistrationService() *EntityRegistrationService {
 		subEntities:         make(map[string][]any),
 		swaggerConfigs:      make(map[string]*entityManagementInterfaces.EntitySwaggerConfig),
 		relationshipFilters: make(map[string][]entityManagementInterfaces.RelationshipFilter),
+		membershipConfigs:   make(map[string]*entityManagementInterfaces.MembershipConfig),
 	}
 }
 
@@ -58,6 +60,7 @@ func (s *EntityRegistrationService) Reset() {
 	s.subEntities = make(map[string][]any)
 	s.swaggerConfigs = make(map[string]*entityManagementInterfaces.EntitySwaggerConfig)
 	s.relationshipFilters = make(map[string][]entityManagementInterfaces.RelationshipFilter)
+	s.membershipConfigs = make(map[string]*entityManagementInterfaces.MembershipConfig)
 }
 
 // UnregisterEntity removes all registrations for a specific entity
@@ -69,6 +72,7 @@ func (s *EntityRegistrationService) UnregisterEntity(name string) {
 	delete(s.subEntities, name)
 	delete(s.swaggerConfigs, name)
 	delete(s.relationshipFilters, name)
+	delete(s.membershipConfigs, name)
 }
 
 func (s *EntityRegistrationService) RegisterEntityInterface(name string, entityType any) {
@@ -148,6 +152,24 @@ func (s *EntityRegistrationService) RegisterRelationshipFilters(name string, fil
 
 func (s *EntityRegistrationService) GetRelationshipFilters(name string) []entityManagementInterfaces.RelationshipFilter {
 	return s.relationshipFilters[name]
+}
+
+// RegisterMembershipConfig registers a membership configuration for an entity
+func (s *EntityRegistrationService) RegisterMembershipConfig(name string, config *entityManagementInterfaces.MembershipConfig) {
+	if config != nil {
+		s.membershipConfigs[name] = config
+		log.Printf("🔐 Membership config registered for entity: %s (table: %s)", name, config.MemberTable)
+	}
+}
+
+// GetMembershipConfig retrieves the membership configuration for an entity
+func (s *EntityRegistrationService) GetMembershipConfig(name string) *entityManagementInterfaces.MembershipConfig {
+	return s.membershipConfigs[name]
+}
+
+// HasMembershipConfig checks if an entity has a membership configuration
+func (s *EntityRegistrationService) HasMembershipConfig(name string) bool {
+	return s.membershipConfigs[name] != nil
 }
 
 // SetDefaultEntityAccesses est une version publique pour les tests qui accepte un enforcer
@@ -251,6 +273,7 @@ func (s *EntityRegistrationService) RegisterEntity(input entityManagementInterfa
 	GlobalEntityRegistrationService.RegisterEntityDtos(entityName, entityDtos)
 	GlobalEntityRegistrationService.RegisterSubEntites(entityName, entityToRegister.EntitySubEntities)
 	GlobalEntityRegistrationService.RegisterRelationshipFilters(entityName, entityToRegister.RelationshipFilters)
+	GlobalEntityRegistrationService.RegisterMembershipConfig(entityName, entityToRegister.MembershipConfig)
 
 	// Gestion automatique de la configuration Swagger
 	if swaggerEntity, ok := input.(entityManagementInterfaces.SwaggerDocumentedEntity); ok {

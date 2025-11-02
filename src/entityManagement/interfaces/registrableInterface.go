@@ -15,6 +15,7 @@ type EntityRegistrationInput struct {
 	EntitySubEntities   []any
 	SwaggerConfig       *EntitySwaggerConfig `json:"swagger_config,omitempty"`
 	RelationshipFilters []RelationshipFilter
+	MembershipConfig    *MembershipConfig `json:"membership_config,omitempty"` // NEW: Generic membership filtering
 }
 
 type EntityConverters struct {
@@ -46,6 +47,18 @@ type RelationshipStep struct {
 	SourceColumn string // e.g., "section_id" - column that references current entity
 	TargetColumn string // e.g., "chapter_id" - column that references next entity
 	NextTable    string // e.g., "chapters" - the next table in the chain
+}
+
+// MembershipConfig defines how to filter entities based on user membership
+// This enables automatic access control for entities with membership relationships
+type MembershipConfig struct {
+	MemberTable      string   // e.g., "organization_members" or "group_members"
+	EntityIDColumn   string   // e.g., "organization_id" or "group_id" - column linking to entity
+	UserIDColumn     string   // e.g., "user_id" - column containing user ID
+	RoleColumn       string   // e.g., "role" - column containing user role (optional)
+	ManagerRoles     []string // e.g., ["owner", "manager"] - roles that grant access to all child resources (optional)
+	IsActiveColumn   string   // e.g., "is_active" - column for active status check (optional, defaults to "is_active")
+	OrgAccessEnabled bool     // If true, also grant access via organization membership (for nested entities like groups)
 }
 
 type RegistrableInterface interface {

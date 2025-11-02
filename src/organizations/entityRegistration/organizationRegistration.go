@@ -209,6 +209,17 @@ func (r OrganizationRegistration) GetEntityRegistrationInput() entityManagementI
 		},
 		// EntitySubEntities removed - use ?include=Members,Groups query parameter instead
 		// The automatic preloading doesn't work correctly when field names don't match pluralized type names
+
+		// NEW: Generic membership configuration
+		MembershipConfig: &entityManagementInterfaces.MembershipConfig{
+			MemberTable:    "organization_members",
+			EntityIDColumn: "organization_id",
+			UserIDColumn:   "user_id",
+			RoleColumn:     "role",
+			IsActiveColumn: "is_active",
+			// No org access for organizations themselves
+			OrgAccessEnabled: false,
+		},
 	}
 }
 

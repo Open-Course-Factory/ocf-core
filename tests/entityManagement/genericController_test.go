@@ -81,6 +81,30 @@ func (m *MockControllerEnforcer) GetRolesForUser(name string) ([]string, error) 
 	return args.Get(0).([]string), args.Error(1)
 }
 
+func (m *MockControllerEnforcer) GetImplicitPermissionsForUser(name string) ([][]string, error) {
+	args := m.Called(name)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([][]string), args.Error(1)
+}
+
+func (m *MockControllerEnforcer) GetFilteredPolicy(fieldIndex int, fieldValues ...string) ([][]string, error) {
+	args := m.Called(fieldIndex, fieldValues)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([][]string), args.Error(1)
+}
+
+func (m *MockControllerEnforcer) GetPolicy() ([][]string, error) {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([][]string), args.Error(1)
+}
+
 func (m *MockControllerEnforcer) RemoveGroupingPolicy(params ...any) (bool, error) {
 	args := m.Called(params...)
 	return args.Bool(0), args.Error(1)

@@ -51,7 +51,8 @@ type FilterManager struct {
 func NewFilterManager(relationshipFilters []entityManagementInterfaces.RelationshipFilter) *FilterManager {
 	fm := &FilterManager{
 		strategies: []FilterStrategy{
-			&OrganizationMemberFilter{}, // Priority 5 - Organization membership filter
+			// Generic membership filters are now added dynamically via AddStrategy
+			// based on entity MembershipConfig, not hardcoded here
 			&DirectFieldFilter{},
 			&ForeignKeyFilter{},
 			&ManyToManyFilter{},

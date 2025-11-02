@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"soli/formations/src/auth/errors"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 	"strconv"
 	"strings"
 
@@ -81,12 +82,13 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 		}
 	}
 
-	// Add automatic user-based filtering for organizations
+	// NEW: Generic membership-based filtering
+	// Apply automatic user-based filtering for any entity with membership configuration
 	entityName := GetEntityNameFromPath(ctx.FullPath())
-	if entityName == "Organization" {
+	if ems.GlobalEntityRegistrationService.HasMembershipConfig(entityName) {
 		userID := ctx.GetString("userId")
 		if userID != "" {
-			// Check if user is a system admin (non-admin users only see organizations they're members of)
+			// Check if user is a system admin
 			roles, exists := ctx.Get("userRoles")
 			isAdmin := false
 			if exists {
@@ -101,7 +103,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 				}
 			}
 
-			// Non-admin users only see organizations they're members of
+			// Non-admin users only see entities they have access to via membership
 			if !isAdmin {
 				filters["user_member_id"] = userID
 			}

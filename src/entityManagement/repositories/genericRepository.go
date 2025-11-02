@@ -43,9 +43,12 @@ func (o *genericRepository) getFilterManager(entityName string) *filters.FilterM
 	relationshipFilters := ems.GlobalEntityRegistrationService.GetRelationshipFilters(entityName)
 	manager := filters.NewFilterManager(relationshipFilters)
 
-	// Add custom organization member filter for user-based access control
-	if entityName == "Organization" {
-		manager.AddStrategy(&filters.OrganizationMemberFilter{})
+	// NEW: Generic membership filter system
+	// Check if entity has a registered membership configuration
+	membershipConfig := ems.GlobalEntityRegistrationService.GetMembershipConfig(entityName)
+	if membershipConfig != nil {
+		// Use generic membership filter instead of entity-specific filters
+		manager.AddStrategy(filters.NewGenericMembershipFilter(membershipConfig))
 	}
 
 	return manager
