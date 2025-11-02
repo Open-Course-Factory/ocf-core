@@ -126,6 +126,18 @@ func (gm GroupMemberRegistration) GetEntityRegistrationInput() entityManagementI
 			InputCreateDto: dto.CreateGroupMemberInput{},
 			OutputDto:      dto.GroupMemberOutput{},
 		},
+
+		// NEW: Generic membership configuration
+		// Users can only see group members from groups they belong to
+		MembershipConfig: &entityManagementInterfaces.MembershipConfig{
+			MemberTable:      "group_members",
+			EntityIDColumn:   "group_id", // Filter by group_id (the group the member belongs to)
+			UserIDColumn:     "user_id",
+			RoleColumn:       "role",
+			IsActiveColumn:   "is_active",
+			OrgAccessEnabled: true,                          // Enable organization-based access
+			ManagerRoles:     []string{"owner", "manager"}, // Org managers can see all group members
+		},
 	}
 }
 

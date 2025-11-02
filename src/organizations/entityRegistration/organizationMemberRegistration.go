@@ -122,6 +122,18 @@ func (r OrganizationMemberRegistration) GetEntityRegistrationInput() entityManag
 			OutputDto:      dto.OrganizationMemberOutput{},
 			InputEditDto:   dto.EditOrganizationMemberInput{},
 		},
+
+		// NEW: Generic membership configuration
+		// Users can only see organization members from organizations they belong to
+		MembershipConfig: &entityManagementInterfaces.MembershipConfig{
+			MemberTable:      "organization_members",
+			EntityIDColumn:   "organization_id", // Filter by organization_id (the org the member belongs to)
+			UserIDColumn:     "user_id",
+			RoleColumn:       "role",
+			IsActiveColumn:   "is_active",
+			OrgAccessEnabled: false, // No org-level cascade for org members themselves
+			ManagerRoles:     []string{"owner", "manager"},
+		},
 	}
 }
 
