@@ -63,26 +63,24 @@ func (gs *groupService) CreateGroup(userID string, input dto.CreateGroupInput) (
 		return nil, fmt.Errorf("you already have a group with this name")
 	}
 
-	// NEW: Validate organization access if OrganizationID is provided
-	if input.OrganizationID != nil {
-		// Check if user is a manager or owner in the organization
-		var orgMember organizationModels.OrganizationMember
-		result := gs.db.Where("organization_id = ? AND user_id = ?", input.OrganizationID, userID).First(&orgMember)
-		if result.Error != nil {
-			return nil, fmt.Errorf("you are not a member of this organization")
-		}
-		if !orgMember.IsManager() {
-			return nil, fmt.Errorf("only organization managers can create groups in this organization")
-		}
+	// NEW: Validate organization access (OrganizationID is now mandatory)
+	// Check if user is a manager or owner in the organization
+	var orgMember organizationModels.OrganizationMember
+	result := gs.db.Where("organization_id = ? AND user_id = ?", input.OrganizationID, userID).First(&orgMember)
+	if result.Error != nil {
+		return nil, fmt.Errorf("you are not a member of this organization")
+	}
+	if !orgMember.IsManager() {
+		return nil, fmt.Errorf("only organization managers can create groups in this organization")
+	}
 
-		// Check if organization has reached its group limit
-		var org organizationModels.Organization
-		if err := gs.db.Where("id = ?", input.OrganizationID).Preload("Groups").First(&org).Error; err != nil {
-			return nil, fmt.Errorf("organization not found")
-		}
-		if org.HasReachedGroupLimit() {
-			return nil, fmt.Errorf("organization has reached its group limit (%d groups)", org.MaxGroups)
-		}
+	// Check if organization has reached its group limit
+	var org organizationModels.Organization
+	if err := gs.db.Where("id = ?", input.OrganizationID).Preload("Groups").First(&org).Error; err != nil {
+		return nil, fmt.Errorf("organization not found")
+	}
+	if org.HasReachedGroupLimit() {
+		return nil, fmt.Errorf("organization has reached its group limit (%d groups)", org.MaxGroups)
 	}
 
 	// Create group
@@ -91,7 +89,7 @@ func (gs *groupService) CreateGroup(userID string, input dto.CreateGroupInput) (
 		DisplayName:        input.DisplayName,
 		Description:        input.Description,
 		OwnerUserID:        userID,
-		OrganizationID:     input.OrganizationID, // NEW: Link to organization
+		OrganizationID:     &input.OrganizationID, // Now required, convert to pointer for model
 		SubscriptionPlanID: input.SubscriptionPlanID,
 		MaxMembers:         input.MaxMembers,
 		ExpiresAt:          input.ExpiresAt,

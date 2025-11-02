@@ -68,7 +68,7 @@ func (g GroupRegistration) EntityInputDtoToEntityModel(input any) any {
 		Name:               groupInputDto.Name,
 		DisplayName:        groupInputDto.DisplayName,
 		Description:        groupInputDto.Description,
-		OrganizationID:     groupInputDto.OrganizationID,
+		OrganizationID:     &groupInputDto.OrganizationID, // Now required, convert to pointer for model
 		ParentGroupID:      groupInputDto.ParentGroupID,
 		SubscriptionPlanID: groupInputDto.SubscriptionPlanID,
 		MaxMembers:         maxMembers,

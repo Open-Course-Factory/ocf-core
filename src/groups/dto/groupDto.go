@@ -12,8 +12,8 @@ type CreateGroupInput struct {
 	Name               string         `json:"name" mapstructure:"name" binding:"required,min=2,max=255"`
 	DisplayName        string         `json:"display_name" mapstructure:"display_name" binding:"required,min=2,max=255"`
 	Description        string         `json:"description,omitempty" mapstructure:"description"`
-	OrganizationID     *uuid.UUID     `json:"organization_id,omitempty" mapstructure:"organization_id"` // Link to organization
-	ParentGroupID      *uuid.UUID     `json:"parent_group_id,omitempty" mapstructure:"parent_group_id"` // Link to parent group for nesting
+	OrganizationID     uuid.UUID      `json:"organization_id" mapstructure:"organization_id" binding:"required"` // Link to organization (MANDATORY)
+	ParentGroupID      *uuid.UUID     `json:"parent_group_id,omitempty" mapstructure:"parent_group_id"`          // Link to parent group for nesting
 	SubscriptionPlanID *uuid.UUID     `json:"subscription_plan_id,omitempty" mapstructure:"subscription_plan_id"`
 	MaxMembers         int            `json:"max_members" mapstructure:"max_members" binding:"omitempty,gte=0"` // 0 = unlimited
 	ExpiresAt          *time.Time     `json:"expires_at,omitempty" mapstructure:"expires_at"`
