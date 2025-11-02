@@ -53,19 +53,41 @@ func (f *GenericMembershipFilter) Apply(
 		isActiveColumn = "is_active"
 	}
 
-	// Build the direct membership condition
-	directMembershipCondition := fmt.Sprintf(`
-		EXISTS (
-			SELECT 1 FROM %s
-			WHERE %s.%s = %s.id
-			AND %s.%s = ?
-			AND %s.%s = true
-		)`,
-		f.config.MemberTable,
-		f.config.MemberTable, f.config.EntityIDColumn, tableName,
-		f.config.MemberTable, f.config.UserIDColumn,
-		f.config.MemberTable, isActiveColumn,
-	)
+	var directMembershipCondition string
+
+	// Special case: When the entity table IS the membership table
+	// (e.g., listing GroupMember or OrganizationMember entities)
+	if tableName == f.config.MemberTable {
+		// For membership entities, show records where the user is a member of the same group/org
+		// Example: Show GroupMember records where group_id matches groups the user belongs to
+		directMembershipCondition = fmt.Sprintf(`
+			EXISTS (
+				SELECT 1 FROM %s membership_check
+				WHERE membership_check.%s = %s.%s
+				AND membership_check.%s = ?
+				AND membership_check.%s = true
+			)`,
+			f.config.MemberTable,
+			f.config.EntityIDColumn, tableName, f.config.EntityIDColumn,
+			f.config.UserIDColumn,
+			isActiveColumn,
+		)
+	} else {
+		// Normal case: Entity table is different from membership table
+		// Example: Show ClassGroup records where the user is a member
+		directMembershipCondition = fmt.Sprintf(`
+			EXISTS (
+				SELECT 1 FROM %s
+				WHERE %s.%s = %s.id
+				AND %s.%s = ?
+				AND %s.%s = true
+			)`,
+			f.config.MemberTable,
+			f.config.MemberTable, f.config.EntityIDColumn, tableName,
+			f.config.MemberTable, f.config.UserIDColumn,
+			f.config.MemberTable, isActiveColumn,
+		)
+	}
 
 	args := []interface{}{userID}
 
