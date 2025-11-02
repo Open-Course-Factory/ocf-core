@@ -209,10 +209,10 @@ func (s *userPermissionsService) getGroupMemberships(userID string) ([]authDto.G
 			group_members.group_id,
 			group_members.user_id,
 			group_members.role,
-			groups.name as group_name,
-			groups.display_name as group_display_name
+			class_groups.name as group_name,
+			class_groups.display_name as group_display_name
 		`).
-		Joins("JOIN groups ON groups.id = group_members.group_id").
+		Joins("JOIN class_groups ON class_groups.id = group_members.group_id").
 		Where("group_members.user_id = ? AND group_members.is_active = ?", userID, true).
 		Scan(&results).Error
 

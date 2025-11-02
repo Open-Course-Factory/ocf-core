@@ -76,7 +76,7 @@ func (gr *groupRepository) GetGroupsByUserID(userID string) (*[]models.ClassGrou
 
 	// Join with group_members to get all groups the user is in
 	err := gr.db.
-		Joins("JOIN group_members ON group_members.group_id = groups.id").
+		Joins("JOIN group_members ON group_members.group_id = class_groups.id").
 		Where("group_members.user_id = ? AND group_members.is_active = ?", userID, true).
 		Preload("Members").
 		Find(&groups).Error

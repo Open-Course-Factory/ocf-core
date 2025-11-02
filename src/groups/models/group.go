@@ -42,7 +42,7 @@ func (g ClassGroup) GetReferenceObject() string {
 
 // TableName specifies the table name
 func (ClassGroup) TableName() string {
-	return "groups"
+	return "class_groups"
 }
 
 // IsExpired checks if the group has expired
