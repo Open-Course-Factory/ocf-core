@@ -414,15 +414,16 @@ func (gs *groupService) GrantGroupPermissionsToUser(userID string, groupID uuid.
 	opts := utils.DefaultPermissionOptions()
 	opts.WarnOnError = true // Non-critical permissions log warnings instead of failing
 
-	// Grant basic group access (GET permission)
-	err := utils.GrantEntityAccess(casdoor.Enforcer, userID, "group", groupID.String(), "GET", opts)
+	// Grant full access to the group (GET, PATCH, DELETE, PUT)
+	// Use "class-group" as entity type to match the API route /api/v1/class-groups/{id}
+	err := utils.GrantEntityAccess(casdoor.Enforcer, userID, "class-group", groupID.String(), "(GET|PATCH|DELETE|PUT)", opts)
 	if err != nil {
 		return err
 	}
 
 	// Grant access to view group members
-	err = utils.GrantEntitySubResourceAccess(casdoor.Enforcer, fmt.Sprintf("group:%s", groupID.String()),
-		"group", groupID.String(), "members", "GET", opts)
+	err = utils.GrantEntitySubResourceAccess(casdoor.Enforcer, fmt.Sprintf("class-group:%s", groupID.String()),
+		"class-group", groupID.String(), "members", "GET", opts)
 	if err != nil {
 		utils.Warn("Failed to grant members access for group %s: %v", groupID, err)
 	}
@@ -436,7 +437,8 @@ func (gs *groupService) RevokeGroupPermissionsFromUser(userID string, groupID uu
 	opts := utils.DefaultPermissionOptions()
 
 	// Revoke entity access (removes user from group role)
-	err := utils.RevokeEntityAccess(casdoor.Enforcer, userID, "group", groupID.String(), opts)
+	// Use "class-group" to match the API route /api/v1/class-groups/{id}
+	err := utils.RevokeEntityAccess(casdoor.Enforcer, userID, "class-group", groupID.String(), opts)
 	if err != nil {
 		return err
 	}
