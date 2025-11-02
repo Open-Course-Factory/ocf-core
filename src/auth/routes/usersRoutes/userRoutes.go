@@ -30,4 +30,8 @@ func UsersRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm
 	routes.GET("/me/settings", middleware.AuthManagement(), userController.GetMySettings)
 	routes.PATCH("/me/settings", middleware.AuthManagement(), userController.UpdateMySettings)
 	routes.POST("/me/change-password", middleware.AuthManagement(), userController.ChangePassword)
+
+	// Auth/permission routes
+	authRoutes := router.Group("/auth")
+	authRoutes.GET("/permissions", middleware.AuthManagement(), GetUserPermissions)
 }

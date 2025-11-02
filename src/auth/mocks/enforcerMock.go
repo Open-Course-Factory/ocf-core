@@ -4,24 +4,30 @@ import "soli/formations/src/auth/interfaces"
 
 // MockEnforcer is a mock implementation of EnforcerInterface for testing
 type MockEnforcer struct {
-	LoadPolicyFunc           func() error
-	AddPolicyFunc            func(params ...any) (bool, error)
-	RemovePolicyFunc         func(params ...any) (bool, error)
-	RemoveFilteredPolicyFunc func(fieldIndex int, fieldValues ...string) (bool, error)
-	EnforceFunc              func(rvals ...any) (bool, error)
-	GetRolesForUserFunc      func(name string) ([]string, error)
-	AddGroupingPolicyFunc    func(params ...any) (bool, error)
-	RemoveGroupingPolicyFunc func(params ...any) (bool, error)
+	LoadPolicyFunc                    func() error
+	AddPolicyFunc                     func(params ...any) (bool, error)
+	RemovePolicyFunc                  func(params ...any) (bool, error)
+	RemoveFilteredPolicyFunc          func(fieldIndex int, fieldValues ...string) (bool, error)
+	EnforceFunc                       func(rvals ...any) (bool, error)
+	GetRolesForUserFunc               func(name string) ([]string, error)
+	AddGroupingPolicyFunc             func(params ...any) (bool, error)
+	RemoveGroupingPolicyFunc          func(params ...any) (bool, error)
+	GetImplicitPermissionsForUserFunc func(name string) ([][]string, error)
+	GetFilteredPolicyFunc             func(fieldIndex int, fieldValues ...string) ([][]string, error)
+	GetPolicyFunc                     func() ([][]string, error)
 
 	// Pour tracer les appels si nécessaire
-	LoadPolicyCalls           [][]any
-	AddPolicyCalls            [][]any
-	RemovePolicyCalls         [][]any
-	RemoveFilteredPolicyCalls [][]any
-	EnforceCalls              [][]any
-	GetRolesForUserCalls      [][]any
-	AddGroupingPolicyCalls    [][]any
-	RemoveGroupingPolicyCalls [][]any
+	LoadPolicyCalls                    [][]any
+	AddPolicyCalls                     [][]any
+	RemovePolicyCalls                  [][]any
+	RemoveFilteredPolicyCalls          [][]any
+	EnforceCalls                       [][]any
+	GetRolesForUserCalls               [][]any
+	AddGroupingPolicyCalls             [][]any
+	RemoveGroupingPolicyCalls          [][]any
+	GetImplicitPermissionsForUserCalls [][]any
+	GetFilteredPolicyCalls             [][]any
+	GetPolicyCalls                     int
 }
 
 // NewMockEnforcer creates a new mock enforcer with default implementations
@@ -51,14 +57,26 @@ func NewMockEnforcer() *MockEnforcer {
 		RemoveGroupingPolicyFunc: func(params ...any) (bool, error) {
 			return true, nil // Success by default
 		},
-		LoadPolicyCalls:           make([][]any, 0),
-		AddPolicyCalls:            make([][]any, 0),
-		RemovePolicyCalls:         make([][]any, 0),
-		RemoveFilteredPolicyCalls: make([][]any, 0),
-		EnforceCalls:              make([][]any, 0),
-		GetRolesForUserCalls:      make([][]any, 0),
-		AddGroupingPolicyCalls:    make([][]any, 0),
-		RemoveGroupingPolicyCalls: make([][]any, 0),
+		GetImplicitPermissionsForUserFunc: func(name string) ([][]string, error) {
+			return [][]string{}, nil // Empty permissions by default
+		},
+		GetFilteredPolicyFunc: func(fieldIndex int, fieldValues ...string) ([][]string, error) {
+			return [][]string{}, nil // Empty by default
+		},
+		GetPolicyFunc: func() ([][]string, error) {
+			return [][]string{}, nil // Empty by default
+		},
+		LoadPolicyCalls:                    make([][]any, 0),
+		AddPolicyCalls:                     make([][]any, 0),
+		RemovePolicyCalls:                  make([][]any, 0),
+		RemoveFilteredPolicyCalls:          make([][]any, 0),
+		EnforceCalls:                       make([][]any, 0),
+		GetRolesForUserCalls:               make([][]any, 0),
+		AddGroupingPolicyCalls:             make([][]any, 0),
+		RemoveGroupingPolicyCalls:          make([][]any, 0),
+		GetImplicitPermissionsForUserCalls: make([][]any, 0),
+		GetFilteredPolicyCalls:             make([][]any, 0),
+		GetPolicyCalls:                     0,
 	}
 }
 
@@ -120,6 +138,9 @@ func (m *MockEnforcer) Reset() {
 	m.GetRolesForUserCalls = make([][]any, 0)
 	m.AddGroupingPolicyCalls = make([][]any, 0)
 	m.RemoveGroupingPolicyCalls = make([][]any, 0)
+	m.GetImplicitPermissionsForUserCalls = make([][]any, 0)
+	m.GetFilteredPolicyCalls = make([][]any, 0)
+	m.GetPolicyCalls = 0
 }
 
 func (m *MockEnforcer) GetAddPolicyCallCount() int {
@@ -152,4 +173,36 @@ func (m *MockEnforcer) GetEnforceCallCount() int {
 
 func (m *MockEnforcer) GetGetRolesForUserCallCount() int {
 	return len(m.GetRolesForUserCalls)
+}
+
+func (m *MockEnforcer) GetImplicitPermissionsForUser(name string) ([][]string, error) {
+	m.GetImplicitPermissionsForUserCalls = append(m.GetImplicitPermissionsForUserCalls, []any{name})
+	return m.GetImplicitPermissionsForUserFunc(name)
+}
+
+func (m *MockEnforcer) GetFilteredPolicy(fieldIndex int, fieldValues ...string) ([][]string, error) {
+	params := make([]any, len(fieldValues)+1)
+	params[0] = fieldIndex
+	for i, v := range fieldValues {
+		params[i+1] = v
+	}
+	m.GetFilteredPolicyCalls = append(m.GetFilteredPolicyCalls, params)
+	return m.GetFilteredPolicyFunc(fieldIndex, fieldValues...)
+}
+
+func (m *MockEnforcer) GetPolicy() ([][]string, error) {
+	m.GetPolicyCalls++
+	return m.GetPolicyFunc()
+}
+
+func (m *MockEnforcer) GetImplicitPermissionsForUserCallCount() int {
+	return len(m.GetImplicitPermissionsForUserCalls)
+}
+
+func (m *MockEnforcer) GetFilteredPolicyCallCount() int {
+	return len(m.GetFilteredPolicyCalls)
+}
+
+func (m *MockEnforcer) GetPolicyCallCount() int {
+	return m.GetPolicyCalls
 }

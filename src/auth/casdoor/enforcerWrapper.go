@@ -49,3 +49,15 @@ func (e *enforcerWrapper) AddGroupingPolicy(params ...any) (bool, error) {
 func (e *enforcerWrapper) RemoveGroupingPolicy(params ...any) (bool, error) {
 	return e.enforcer.RemoveGroupingPolicy(params...)
 }
+
+func (e *enforcerWrapper) GetImplicitPermissionsForUser(name string) ([][]string, error) {
+	return e.enforcer.GetImplicitPermissionsForUser(name)
+}
+
+func (e *enforcerWrapper) GetFilteredPolicy(fieldIndex int, fieldValues ...string) ([][]string, error) {
+	return e.enforcer.GetFilteredPolicy(fieldIndex, fieldValues...)
+}
+
+func (e *enforcerWrapper) GetPolicy() ([][]string, error) {
+	return e.enforcer.GetPolicy()
+}

@@ -39,6 +39,18 @@ func SetupPaymentRolePermissions(enforcer interfaces.EnforcerInterface) {
 		} else {
 			log.Printf("✅ Added %s permission for /api/v1/users/me/*", role)
 		}
+
+		// Add permission for /api/v1/auth/permissions (new permissions endpoint)
+		_, err3 := enforcer.AddPolicy(role, "/api/v1/auth/permissions", "GET")
+		if err3 != nil {
+			if strings.Contains(err3.Error(), "UNIQUE") {
+				log.Printf("Permission already exists: %s /api/v1/auth/permissions", role)
+			} else {
+				log.Printf("Error adding permission for %s /api/v1/auth/permissions: %v", role, err3)
+			}
+		} else {
+			log.Printf("✅ Added %s permission for /api/v1/auth/permissions", role)
+		}
 	}
 
 	// Permissions pour Student Premium

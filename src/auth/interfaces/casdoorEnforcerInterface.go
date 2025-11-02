@@ -10,4 +10,9 @@ type EnforcerInterface interface {
 	GetRolesForUser(name string) ([]string, error)
 	AddGroupingPolicy(params ...any) (bool, error)
 	RemoveGroupingPolicy(params ...any) (bool, error)
+
+	// Permission aggregation methods
+	GetImplicitPermissionsForUser(name string) ([][]string, error)
+	GetFilteredPolicy(fieldIndex int, fieldValues ...string) ([][]string, error)
+	GetPolicy() ([][]string, error)
 }
