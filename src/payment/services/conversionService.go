@@ -129,7 +129,6 @@ func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan
 		Features:           plan.Features,
 		MaxConcurrentUsers: plan.MaxConcurrentUsers,
 		MaxCourses:         plan.MaxCourses,
-		MaxLabSessions:     plan.MaxLabSessions,
 		IsActive:           plan.IsActive,
 		RequiredRole:       plan.RequiredRole,
 		CreatedAt:          plan.CreatedAt,

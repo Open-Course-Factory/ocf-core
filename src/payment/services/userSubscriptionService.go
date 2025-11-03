@@ -207,8 +207,6 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 			switch metricType {
 			case "courses_created":
 				limit = int64(sPlan.MaxCourses)
-			case "lab_sessions":
-				limit = int64(sPlan.MaxLabSessions)
 			case "concurrent_users":
 				limit = int64(sPlan.MaxConcurrentUsers)
 			case "concurrent_terminals":
@@ -466,11 +464,9 @@ func (ss *subscriptionService) UpgradeUserPlan(userID string, newPlanID uuid.UUI
 				"limit_value": gorm.Expr("CASE "+
 					"WHEN metric_type = 'concurrent_terminals' THEN ? "+
 					"WHEN metric_type = 'courses_created' THEN ? "+
-					"WHEN metric_type = 'lab_sessions' THEN ? "+
 					"ELSE limit_value END",
 					newPlan.MaxConcurrentTerminals,
 					newPlan.MaxCourses,
-					newPlan.MaxLabSessions,
 				),
 			}).Error
 
@@ -580,22 +576,6 @@ func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptio
 		utils.Debug("📊 Adding course metrics (limit: %d)", plan.MaxCourses)
 	} else {
 		utils.Debug("⊗ Skipping course metrics (globally disabled)")
-	}
-
-	// Only add lab metrics if enabled globally
-	if featureFlags.LabsEnabled {
-		metrics = append(metrics, models.UsageMetrics{
-			UserID:         userID,
-			SubscriptionID: subscriptionID,
-			MetricType:     "lab_sessions",
-			CurrentValue:   0,
-			LimitValue:     int64(plan.MaxLabSessions),
-			PeriodStart:    periodStart,
-			PeriodEnd:      periodEnd,
-		})
-		utils.Debug("📊 Adding lab metrics (limit: %d)", plan.MaxLabSessions)
-	} else {
-		utils.Debug("⊗ Skipping lab metrics (globally disabled)")
 	}
 
 	// Create each metric

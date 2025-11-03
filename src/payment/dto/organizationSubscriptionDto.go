@@ -46,7 +46,6 @@ type UserEffectiveFeaturesOutput struct {
 	AllFeatures            []string                  `json:"all_features"`             // Union of all features from all orgs
 	MaxConcurrentTerminals int                       `json:"max_concurrent_terminals"` // Maximum across all plans
 	MaxCourses             int                       `json:"max_courses"`              // Maximum across all plans
-	MaxLabSessions         int                       `json:"max_lab_sessions"`         // Maximum across all plans
 	Organizations          []OrganizationFeatureInfo `json:"organizations"`            // List of orgs providing features
 }
 
@@ -63,8 +62,6 @@ type OrganizationLimitsOutput struct {
 	OrganizationID         uuid.UUID `json:"organization_id"`
 	MaxConcurrentTerminals int       `json:"max_concurrent_terminals"`
 	MaxCourses             int       `json:"max_courses"`
-	MaxLabSessions         int       `json:"max_lab_sessions"`
 	CurrentTerminals       int       `json:"current_terminals"`
 	CurrentCourses         int       `json:"current_courses"`
-	CurrentLabSessions     int       `json:"current_lab_sessions"`
 }

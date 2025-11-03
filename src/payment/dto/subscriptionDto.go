@@ -18,7 +18,6 @@ type CreateSubscriptionPlanInput struct {
 	Features           []string `json:"features" mapstructure:"features"`
 	MaxConcurrentUsers int      `json:"max_concurrent_users" mapstructure:"max_concurrent_users"`
 	MaxCourses         int      `json:"max_courses" mapstructure:"max_courses"`
-	MaxLabSessions     int      `json:"max_lab_sessions" mapstructure:"max_lab_sessions"`
 	RequiredRole       string   `json:"required_role" mapstructure:"required_role"`
 }
 
@@ -29,7 +28,6 @@ type UpdateSubscriptionPlanInput struct {
 	Features           []string `json:"features,omitempty" mapstructure:"features"`
 	MaxConcurrentUsers *int     `json:"max_concurrent_users,omitempty" mapstructure:"max_concurrent_users"`
 	MaxCourses         *int     `json:"max_courses,omitempty" mapstructure:"max_courses"`
-	MaxLabSessions     *int     `json:"max_lab_sessions,omitempty" mapstructure:"max_lab_sessions"`
 }
 
 type SubscriptionPlanOutput struct {
@@ -46,7 +44,6 @@ type SubscriptionPlanOutput struct {
 	Features           []string  `json:"features"`
 	MaxConcurrentUsers int       `json:"max_concurrent_users"`
 	MaxCourses         int       `json:"max_courses"`
-	MaxLabSessions     int       `json:"max_lab_sessions"`
 	IsActive           bool      `json:"is_active"`
 	RequiredRole       string    `json:"required_role"`
 	CreatedAt          time.Time `json:"created_at"`

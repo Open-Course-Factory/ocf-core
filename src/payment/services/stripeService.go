@@ -2946,7 +2946,6 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 				StripeCreated:      true,
 				MaxConcurrentUsers: 1,  // Default value
 				MaxCourses:         -1, // Default unlimited
-				MaxLabSessions:     -1, // Default unlimited
 			}
 
 			// Handle tiered pricing (volume/graduated pricing in Stripe)

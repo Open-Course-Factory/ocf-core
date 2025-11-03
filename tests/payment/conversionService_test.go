@@ -43,7 +43,6 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 		Features:           []string{"advanced_labs", "api_access", "custom_themes"},
 		MaxConcurrentUsers: 10,
 		MaxCourses:         -1, // Unlimited
-		MaxLabSessions:     100,
 		IsActive:           true,
 		RequiredRole:       "member_pro",
 	}
@@ -64,7 +63,6 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 	assert.Equal(t, []string{"advanced_labs", "api_access", "custom_themes"}, result.Features)
 	assert.Equal(t, 10, result.MaxConcurrentUsers)
 	assert.Equal(t, -1, result.MaxCourses)
-	assert.Equal(t, 100, result.MaxLabSessions)
 	assert.True(t, result.IsActive)
 	assert.Equal(t, "member_pro", result.RequiredRole)
 	assert.Equal(t, createdAt, result.CreatedAt)
@@ -163,7 +161,7 @@ func TestConversionService_UsageMetricsToDTO_UnlimitedUsage(t *testing.T) {
 
 	metrics := &models.UsageMetrics{
 		UserID:       "user123",
-		MetricType:   "lab_sessions",
+		MetricType:   "courses_created",
 		CurrentValue: 50,
 		LimitValue:   -1, // Unlimited
 	}

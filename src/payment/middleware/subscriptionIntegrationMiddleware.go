@@ -141,37 +141,7 @@ func (sim *subscriptionIntegrationMiddleware) RequireSubscriptionForAdvancedLabs
 			return
 		}
 
-		// Vérifier les limites de sessions
-		limitCheck, err := sim.subscriptionService.CheckUsageLimit(userId, "lab_sessions", 1)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to check lab session limit: " + err.Error(),
-			})
-			ctx.Abort()
-			return
-		}
-
-		if !limitCheck.Allowed {
-			ctx.JSON(http.StatusPaymentRequired, &errors.APIError{
-				ErrorCode:    http.StatusPaymentRequired,
-				ErrorMessage: "Lab session limit exceeded. " + limitCheck.Message,
-			})
-			ctx.Abort()
-			return
-		}
-
-		ctx.Set("increment_usage", map[string]any{
-			"metric_type": "lab_sessions",
-			"increment":   int64(1),
-		})
-
 		ctx.Next()
-
-		// Incrémenter si la session a été créée avec succès
-		if ctx.Writer.Status() == http.StatusCreated || ctx.Writer.Status() == http.StatusOK {
-			sim.incrementUsageIfSuccessful(ctx, userId)
-		}
 	}
 }
 
@@ -255,9 +225,8 @@ func (sim *subscriptionIntegrationMiddleware) CheckSubscriptionRequirements() gi
 
 		case strings.Contains(path, "/terminals/start-session"):
 			required = true
-			metricType = "lab_sessions"
 			featureRequired = "advanced_labs"
-			errorMessage = "Lab session limit exceeded or advanced labs not included in your plan."
+			errorMessage = "Advanced labs not included in your plan."
 
 		case strings.Contains(path, "/generations") && method == "POST":
 			required = true

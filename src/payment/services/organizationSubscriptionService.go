@@ -37,10 +37,8 @@ type OrganizationLimits struct {
 	OrganizationID         uuid.UUID
 	MaxConcurrentTerminals int
 	MaxCourses             int
-	MaxLabSessions         int
 	CurrentTerminals       int
 	CurrentCourses         int
-	CurrentLabSessions     int
 }
 
 type UserEffectiveFeatures struct {
@@ -48,7 +46,6 @@ type UserEffectiveFeatures struct {
 	AllFeatures            []string
 	MaxConcurrentTerminals int
 	MaxCourses             int
-	MaxLabSessions         int
 	Organizations          []OrganizationFeatureInfo
 }
 
@@ -240,17 +237,12 @@ func (oss *organizationSubscriptionService) GetOrganizationUsageLimits(orgID uui
 		Where("organization_members.organization_id = ? AND courses.deleted_at IS NULL", orgID).
 		Count(&currentCourses)
 
-	// Lab sessions would require a sessions table - placeholder for now
-	var currentLabSessions int64 = 0
-
 	return &OrganizationLimits{
 		OrganizationID:         orgID,
 		MaxConcurrentTerminals: plan.MaxConcurrentTerminals,
 		MaxCourses:             plan.MaxCourses,
-		MaxLabSessions:         plan.MaxLabSessions,
 		CurrentTerminals:       int(currentTerminals),
 		CurrentCourses:         int(currentCourses),
-		CurrentLabSessions:     int(currentLabSessions),
 	}, nil
 }
 
@@ -271,7 +263,6 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 		AllFeatures:            make([]string, 0),
 		MaxConcurrentTerminals: 0,
 		MaxCourses:             0,
-		MaxLabSessions:         0,
 		Organizations:          make([]OrganizationFeatureInfo, 0),
 	}
 
@@ -315,11 +306,6 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 		if features.MaxCourses != -1 {
 			if plan.MaxCourses == -1 || plan.MaxCourses > features.MaxCourses {
 				features.MaxCourses = plan.MaxCourses
-			}
-		}
-		if features.MaxLabSessions != -1 {
-			if plan.MaxLabSessions == -1 || plan.MaxLabSessions > features.MaxLabSessions {
-				features.MaxLabSessions = plan.MaxLabSessions
 			}
 		}
 

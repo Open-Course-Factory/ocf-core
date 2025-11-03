@@ -143,7 +143,6 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		Features:           []string{"unlimited_courses", "advanced_labs", "export", "custom_themes"},
 		MaxConcurrentUsers: 1,
 		MaxCourses:         -1,
-		MaxLabSessions:     1,
 		IsActive:           true,
 		RequiredRole:       "member", // Changed from "member_pro" (deprecated) to "member"
 		UseTieredPricing:   false,
@@ -160,7 +159,6 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		Features:           []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "bulk_purchase", "group_management"},
 		MaxConcurrentUsers: 1,
 		MaxCourses:         -1,
-		MaxLabSessions:     -1,
 		IsActive:           true,
 		RequiredRole:       "trainer",
 		UseTieredPricing:   true,

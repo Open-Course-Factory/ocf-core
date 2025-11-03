@@ -49,7 +49,6 @@ func GetUserEffectiveLimits(db *gorm.DB, userID string) (*EffectiveLimits, error
 	return &EffectiveLimits{
 		MaxConcurrentTerminals: features.MaxConcurrentTerminals,
 		MaxCourses:             features.MaxCourses,
-		MaxLabSessions:         features.MaxLabSessions,
 	}, nil
 }
 
@@ -57,5 +56,4 @@ func GetUserEffectiveLimits(db *gorm.DB, userID string) (*EffectiveLimits, error
 type EffectiveLimits struct {
 	MaxConcurrentTerminals int
 	MaxCourses             int
-	MaxLabSessions         int
 }

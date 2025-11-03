@@ -472,8 +472,6 @@ func (r *paymentRepository) IncrementUsageMetric(userID, metricType string, incr
 			switch metricType {
 			case "courses_created":
 				limit = int64(subscription.SubscriptionPlan.MaxCourses)
-			case "lab_sessions":
-				limit = int64(subscription.SubscriptionPlan.MaxLabSessions)
 			case "concurrent_terminals":
 				limit = int64(subscription.SubscriptionPlan.MaxConcurrentTerminals)
 			}

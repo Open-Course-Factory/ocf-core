@@ -51,7 +51,6 @@ func main() {
 			},
 			MaxConcurrentUsers: 1,
 			MaxCourses:         0,
-			MaxLabSessions:     -1,   // Legacy field - not used for terminals
 			IsActive:           true, // ACTIVE
 			RequiredRole:       "member",
 			StripeCreated:      false,
@@ -86,7 +85,6 @@ func main() {
 			},
 			MaxConcurrentUsers: 1,
 			MaxCourses:         0,
-			MaxLabSessions:     -1,
 			IsActive:           true, // ACTIVE
 			RequiredRole:       "member",
 			StripeCreated:      false,
@@ -126,7 +124,6 @@ func main() {
 			},
 			MaxConcurrentUsers: 3,
 			MaxCourses:         0,
-			MaxLabSessions:     -1,
 			IsActive:           false, // COMING SOON
 			RequiredRole:       "trainer",
 			StripeCreated:      false,
@@ -169,7 +166,6 @@ func main() {
 			},
 			MaxConcurrentUsers: 10,
 			MaxCourses:         -1,
-			MaxLabSessions:     -1,
 			IsActive:           false, // COMING SOON
 			RequiredRole:       "organization",
 			StripeCreated:      false,

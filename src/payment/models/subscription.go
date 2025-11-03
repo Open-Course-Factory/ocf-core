@@ -25,7 +25,6 @@ type SubscriptionPlan struct {
 	Features           []string `mapstructure:"features" gorm:"serializer:json" json:"features"`
 	MaxConcurrentUsers int      `gorm:"default:1" json:"max_concurrent_users"`
 	MaxCourses         int      `gorm:"default:-1" json:"max_courses"` // -1 = illimité
-	MaxLabSessions     int      `gorm:"default:-1" json:"max_lab_sessions"`
 	IsActive           bool     `gorm:"default:true" json:"is_active"`
 	RequiredRole       string   `gorm:"type:varchar(50)" json:"required_role"`
 	StripeCreated      bool     `gorm:"default:false" json:"stripe_created"`
@@ -160,7 +159,7 @@ type UsageMetrics struct {
 	UserID         string           `gorm:"type:varchar(100);not null;index" json:"user_id"`
 	SubscriptionID uuid.UUID        `gorm:"not null" json:"subscription_id"`
 	Subscription   UserSubscription `gorm:"foreignKey:SubscriptionID" json:"subscription"`
-	MetricType     string           `gorm:"type:varchar(50);not null" json:"metric_type"` // courses_created, lab_sessions, storage_used
+	MetricType     string           `gorm:"type:varchar(50);not null" json:"metric_type"` // courses_created, storage_used
 	CurrentValue   int64            `json:"current_value"`
 	LimitValue     int64            `json:"limit_value"` // -1 = unlimited
 	PeriodStart    time.Time        `json:"period_start"`

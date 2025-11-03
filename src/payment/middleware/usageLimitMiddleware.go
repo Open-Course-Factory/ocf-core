@@ -16,7 +16,6 @@ import (
 
 type UsageLimitMiddleware interface {
 	CheckCourseCreationLimit() gin.HandlerFunc
-	CheckLabSessionLimit() gin.HandlerFunc
 	CheckConcurrentUserLimit() gin.HandlerFunc
 	CheckCustomLimit(metricType string, increment int64) gin.HandlerFunc
 	CheckUsageForPath() gin.HandlerFunc // Middleware automatique basé sur le path
@@ -47,11 +46,6 @@ func (ulm *usageLimitMiddleware) CheckCourseCreationLimit() gin.HandlerFunc {
 	return ulm.CheckCustomLimit("courses_created", 1)
 }
 
-// CheckLabSessionLimit vérifie la limite de sessions de lab
-func (ulm *usageLimitMiddleware) CheckLabSessionLimit() gin.HandlerFunc {
-	return ulm.CheckCustomLimit("lab_sessions", 1)
-}
-
 // CheckConcurrentUserLimit vérifie la limite d'utilisateurs concurrents
 func (ulm *usageLimitMiddleware) CheckConcurrentUserLimit() gin.HandlerFunc {
 	return ulm.CheckCustomLimit("concurrent_users", 1)
@@ -79,8 +73,6 @@ func (ulm *usageLimitMiddleware) CheckCustomLimit(metricType string, increment i
 			switch metricType {
 			case "courses_created":
 				limit = int64(features.MaxCourses)
-			case "lab_sessions":
-				limit = int64(features.MaxLabSessions)
 			case "concurrent_terminals":
 				limit = int64(features.MaxConcurrentTerminals)
 			default:
@@ -184,10 +176,6 @@ func (ulm *usageLimitMiddleware) CheckUsageForPath() gin.HandlerFunc {
 		switch {
 		case strings.Contains(path, "/courses") && strings.HasSuffix(path, "/"):
 			metricType = "courses_created"
-		case strings.Contains(path, "/terminals/start-session"):
-			metricType = "lab_sessions"
-		case strings.Contains(path, "/sessions") && strings.HasSuffix(path, "/"):
-			metricType = "lab_sessions"
 		default:
 			// Pas de limite pour ce path
 			ctx.Next()

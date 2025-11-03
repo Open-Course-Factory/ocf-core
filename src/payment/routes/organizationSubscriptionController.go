@@ -320,7 +320,6 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 		AllFeatures:            features.AllFeatures,
 		MaxConcurrentTerminals: features.MaxConcurrentTerminals,
 		MaxCourses:             features.MaxCourses,
-		MaxLabSessions:         features.MaxLabSessions,
 		Organizations:          make([]dto.OrganizationFeatureInfo, len(features.Organizations)),
 	}
 
@@ -439,10 +438,8 @@ func (osc *organizationSubscriptionController) GetOrganizationUsageLimits(ctx *g
 		OrganizationID:         limits.OrganizationID,
 		MaxConcurrentTerminals: limits.MaxConcurrentTerminals,
 		MaxCourses:             limits.MaxCourses,
-		MaxLabSessions:         limits.MaxLabSessions,
 		CurrentTerminals:       limits.CurrentTerminals,
 		CurrentCourses:         limits.CurrentCourses,
-		CurrentLabSessions:     limits.CurrentLabSessions,
 	}
 
 	ctx.JSON(http.StatusOK, output)
@@ -479,7 +476,6 @@ func convertSubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.Subscrip
 		Features:           plan.Features,
 		MaxConcurrentUsers: plan.MaxConcurrentUsers,
 		MaxCourses:         plan.MaxCourses,
-		MaxLabSessions:     plan.MaxLabSessions,
 		IsActive:           plan.IsActive,
 		RequiredRole:       plan.RequiredRole,
 		CreatedAt:          plan.CreatedAt,

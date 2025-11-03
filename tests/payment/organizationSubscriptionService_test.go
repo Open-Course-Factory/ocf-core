@@ -55,7 +55,6 @@ func seedTestData(t *testing.T, db *gorm.DB) (
 		Features: []string{"basic_features"},
 		MaxConcurrentTerminals: 1,
 		MaxCourses: 3,
-		MaxLabSessions: 5,
 		IsActive: true,
 	}
 	err := db.Create(freePlan).Error
@@ -72,7 +71,6 @@ func seedTestData(t *testing.T, db *gorm.DB) (
 		Features: []string{"basic_features", "advanced_labs", "custom_themes"},
 		MaxConcurrentTerminals: 10,
 		MaxCourses: -1,
-		MaxLabSessions: -1,
 		IsActive: true,
 	}
 	err = db.Create(proPlan).Error
@@ -343,7 +341,6 @@ func TestOrganizationSubscriptionService_FeatureAccess(t *testing.T) {
 		assert.NotNil(t, limits)
 		assert.Equal(t, freePlan.MaxConcurrentTerminals, limits.MaxConcurrentTerminals)
 		assert.Equal(t, freePlan.MaxCourses, limits.MaxCourses)
-		assert.Equal(t, freePlan.MaxLabSessions, limits.MaxLabSessions)
 	})
 }
 
@@ -363,7 +360,6 @@ func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
 		Features: []string{"basic_features", "advanced_labs", "custom_themes"},
 		MaxConcurrentTerminals: 10,
 		MaxCourses: -1, // Unlimited
-		MaxLabSessions: -1,
 		IsActive: true,
 	}
 	err := db.Create(premiumFreePlan).Error
@@ -449,7 +445,6 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		Features: []string{"feature_a", "feature_b"},
 		MaxConcurrentTerminals: 2,
 		MaxCourses: 10,
-		MaxLabSessions: 20,
 		IsActive: true,
 	}
 	db.Create(basicPlan)
@@ -462,7 +457,6 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		Features: []string{"feature_b", "feature_c"},
 		MaxConcurrentTerminals: 5,
 		MaxCourses: 50,
-		MaxLabSessions: 100,
 		IsActive: true,
 	}
 	db.Create(proPlan)
@@ -475,7 +469,6 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		Features: []string{"feature_c", "feature_d", "feature_e"},
 		MaxConcurrentTerminals: -1, // Unlimited
 		MaxCourses: -1,
-		MaxLabSessions: -1,
 		IsActive: true,
 	}
 	db.Create(enterprisePlan)
@@ -539,7 +532,6 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		// Should take maximum limits (Enterprise has unlimited)
 		assert.Equal(t, -1, features.MaxConcurrentTerminals)
 		assert.Equal(t, -1, features.MaxCourses)
-		assert.Equal(t, -1, features.MaxLabSessions)
 
 		// Should include all three organizations
 		assert.Equal(t, 3, len(features.Organizations))
