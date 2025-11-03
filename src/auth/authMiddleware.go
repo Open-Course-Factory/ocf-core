@@ -22,10 +22,13 @@ type AuthMiddleware interface {
 }
 
 type authMiddleware struct {
+	permissionService PermissionService
 }
 
 func NewAuthMiddleware(db *gorm.DB) AuthMiddleware {
-	return &authMiddleware{}
+	return &authMiddleware{
+		permissionService: NewPermissionService(),
+	}
 }
 
 func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
@@ -69,7 +72,7 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 		authorized := false
 		for _, role := range userRoles {
 			log.Printf("[DEBUG] Checking role '%s' for access to %s %s", role, ctx.Request.Method, ctx.Request.URL.Path)
-			ok, errEnforce := casdoor.Enforcer.Enforce(role, ctx.Request.URL.Path, ctx.Request.Method)
+			ok, errEnforce := am.permissionService.HasPermission(role, ctx.Request.URL.Path, ctx.Request.Method)
 			if errEnforce != nil {
 				log.Printf("[DEBUG] Enforce error for role '%s': %v", role, errEnforce)
 				ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"msg": "Error occurred when authorizing user"})
@@ -84,7 +87,7 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 
 		// Also check direct user permissions (fallback for specific user permissions)
 		if !authorized {
-			ok, errEnforce := casdoor.Enforcer.Enforce(fmt.Sprint(userId), ctx.Request.URL.Path, ctx.Request.Method)
+			ok, errEnforce := am.permissionService.HasPermission(fmt.Sprint(userId), ctx.Request.URL.Path, ctx.Request.Method)
 			if errEnforce != nil {
 				ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"msg": "Error occurred when authorizing user"})
 				return
