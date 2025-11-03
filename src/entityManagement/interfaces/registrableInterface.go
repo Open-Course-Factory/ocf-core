@@ -49,16 +49,23 @@ type RelationshipStep struct {
 	NextTable    string // e.g., "chapters" - the next table in the chain
 }
 
+// FeatureProvider defines an interface for fetching features associated with an entity
+// This enables generic feature retrieval for any entity type (organizations, subscriptions, etc.)
+type FeatureProvider interface {
+	GetFeatures(entityID string) ([]string, bool, error) // Returns (features, hasSubscription, error)
+}
+
 // MembershipConfig defines how to filter entities based on user membership
 // This enables automatic access control for entities with membership relationships
 type MembershipConfig struct {
-	MemberTable      string   // e.g., "organization_members" or "group_members"
-	EntityIDColumn   string   // e.g., "organization_id" or "group_id" - column linking to entity
-	UserIDColumn     string   // e.g., "user_id" - column containing user ID
-	RoleColumn       string   // e.g., "role" - column containing user role (optional)
-	ManagerRoles     []string // e.g., ["owner", "manager"] - roles that grant access to all child resources (optional)
-	IsActiveColumn   string   // e.g., "is_active" - column for active status check (optional, defaults to "is_active")
-	OrgAccessEnabled bool     // If true, also grant access via organization membership (for nested entities like groups)
+	MemberTable      string          // e.g., "organization_members" or "group_members"
+	EntityIDColumn   string          // e.g., "organization_id" or "group_id" - column linking to entity
+	UserIDColumn     string          // e.g., "user_id" - column containing user ID
+	RoleColumn       string          // e.g., "role" - column containing user role (optional)
+	ManagerRoles     []string        // e.g., ["owner", "manager"] - roles that grant access to all child resources (optional)
+	IsActiveColumn   string          // e.g., "is_active" - column for active status check (optional, defaults to "is_active")
+	OrgAccessEnabled bool            // If true, also grant access via organization membership (for nested entities like groups)
+	FeatureProvider  FeatureProvider // Optional: provider for fetching entity-specific features (e.g., subscription features)
 }
 
 type RegistrableInterface interface {

@@ -145,7 +145,7 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		MaxCourses:         -1,
 		MaxLabSessions:     1,
 		IsActive:           true,
-		RequiredRole:       "member_pro",
+		RequiredRole:       "member", // Changed from "member_pro" (deprecated) to "member"
 		UseTieredPricing:   false,
 	}
 

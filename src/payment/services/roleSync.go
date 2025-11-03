@@ -33,8 +33,8 @@ func (ss *subscriptionService) UpdateUserRoleBasedOnSubscription(userID string) 
 	opts.WarnOnError = true
 
 	// 3. Supprimer les anciens rôles d'abonnement
-
-	paymentRoles := []string{"member_pro", "trainer", "organization"}
+	// Note: "member_pro" removed as it's deprecated (replaced by "member")
+	paymentRoles := []string{"trainer", "organization"}
 	for _, role := range paymentRoles {
 		utils.RemoveGroupingPolicy(casdoor.Enforcer, userID, role, opts)
 	}

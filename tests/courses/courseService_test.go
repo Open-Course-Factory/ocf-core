@@ -66,7 +66,7 @@ func setupTestEnforcer(t *testing.T) (*authMocks.MockEnforcer, *testHelpers.Test
 	}
 
 	mockEnforcer.GetRolesForUserFunc = func(name string) ([]string, error) {
-		return []string{"student"}, nil // Rôle par défaut
+		return []string{"member"}, nil // Rôle par défaut
 	}
 
 	t.Cleanup(func() {

@@ -49,7 +49,7 @@ func NewMockEnforcer() *MockEnforcer {
 			return true, nil // Authorized by default
 		},
 		GetRolesForUserFunc: func(name string) ([]string, error) {
-			return []string{"student"}, nil // Default role
+			return []string{"member"}, nil // Default role
 		},
 		AddGroupingPolicyFunc: func(params ...any) (bool, error) {
 			return true, nil // Success by default

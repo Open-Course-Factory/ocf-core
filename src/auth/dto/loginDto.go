@@ -10,6 +10,6 @@ type LoginOutput struct {
 }
 
 type LoginInput struct {
-	Email    string `binding:"required"`
-	Password string `binding:"required"`
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
 }

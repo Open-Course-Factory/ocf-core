@@ -1,10 +1,12 @@
 package authController
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
@@ -139,6 +141,30 @@ func (ac *authController) Login(ctx *gin.Context) {
 		return
 	}
 
+	// SECURITY: Validate that the token's user ID matches the expected user
+	claims, errParse := casdoorsdk.ParseJwtToken(response.AccessToken)
+	if errParse != nil {
+		fmt.Printf("[SECURITY ERROR] Failed to parse JWT token during validation: %v\n", errParse)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to validate authentication token",
+		})
+		return
+	}
+
+	// Verify the token's user ID matches the expected user
+	if claims.Id != user.Id {
+		fmt.Printf("[SECURITY ALERT] Token user ID mismatch! Expected: %s, Got: %s (Expected user: %s, Token user: %s)\n",
+			user.Id, claims.Id, user.Name, claims.User.Name)
+		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
+			ErrorCode:    http.StatusUnauthorized,
+			ErrorMessage: "Authentication token validation failed - user mismatch",
+		})
+		return
+	}
+
+	fmt.Printf("[SECURITY] Token validation passed for user %s (ID: %s)\n", user.Name, user.Id)
+
 	roles := getUserRoles(user)
 
 	loginOutputDto := &dto.LoginOutput{
@@ -160,18 +186,32 @@ func LoginToCasdoor(user *casdoorsdk.User, password string) (*http.Response, err
 	if password != "" {
 		passwordToTest = password
 	}
-	url := fmt.Sprintf("%s/api/login/oauth/access_token?grant_type=password&client_id=%s&client_secret=%s&username=%s&password=%s",
+
+	// SECURITY FIX: Properly URL-encode all parameters to prevent injection and handle special characters
+	requestURL := fmt.Sprintf("%s/api/login/oauth/access_token?grant_type=password&client_id=%s&client_secret=%s&username=%s&password=%s",
 		os.Getenv("CASDOOR_ENDPOINT"),
-		os.Getenv("CASDOOR_CLIENT_ID"),
-		os.Getenv("CASDOOR_CLIENT_SECRET"),
-		user.Name,
-		passwordToTest,
+		url.QueryEscape(os.Getenv("CASDOOR_CLIENT_ID")),
+		url.QueryEscape(os.Getenv("CASDOOR_CLIENT_SECRET")),
+		url.QueryEscape(user.Name),
+		url.QueryEscape(passwordToTest),
 	)
 
-	resp, errPostToCasdoor := http.Post(url, "application/json", nil)
+	// DEBUG: Log the request details
+	fmt.Printf("[DEBUG LOGIN] User.Name=%s, User.Id=%s, User.Email=%s\n", user.Name, user.Id, user.Email)
+	fmt.Printf("[DEBUG LOGIN] Calling Casdoor OAuth URL (password hidden)\n")
+
+	resp, errPostToCasdoor := http.Post(requestURL, "application/json", nil)
 	if errPostToCasdoor != nil {
 		return nil, errPostToCasdoor
 	}
+
+	// DEBUG: Log response
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Printf("[DEBUG LOGIN] Casdoor response (truncated): %.200s...\n", string(body))
+
+	// Return a new response with the body we just read
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+
 	return resp, nil
 }
 

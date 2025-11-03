@@ -112,10 +112,8 @@ func main() {
 
 	// Setup payment middlewares
 	usageLimitMiddleware := paymentMiddleware.NewUsageLimitMiddleware(sqldb.DB)
-	userRoleMiddleware := paymentMiddleware.NewUserRoleMiddleware(sqldb.DB)
-
-	// Apply subscription role middleware globally
-	r.Use(userRoleMiddleware.EnsureSubscriptionRole())
+	// Note: userRoleMiddleware removed - subscription role updates should be done
+	// in specific route handlers AFTER authentication, not globally
 
 	// Setup API routes
 	apiGroup := r.Group("/api/v1")

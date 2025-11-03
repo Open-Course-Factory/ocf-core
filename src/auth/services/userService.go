@@ -99,15 +99,12 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 		return nil, errGet
 	}
 
-	// Add both the requested role AND ensure "student" role is added for basic permissions
 	// This ensures compatibility with both Casdoor role names and OCF role names
 	rolesToAdd := []string{}
 	if userCreateDTO.DefaultRole != "" {
 		rolesToAdd = append(rolesToAdd, userCreateDTO.DefaultRole)
 	}
 
-	// Add "member" and "student" for Casdoor compatibility
-	rolesToAdd = append(rolesToAdd, "student")
 	rolesToAdd = append(rolesToAdd, "member")
 
 	// Add all roles to the user
@@ -163,7 +160,7 @@ func NewTerminalTrainerService(db *gorm.DB) ttServices.TerminalTrainerService {
 }
 
 func addDefaultRoleToUser(user1 casdoorsdk.User) error {
-	role, errRole := casdoorsdk.GetRole("student")
+	role, errRole := casdoorsdk.GetRole("member")
 	if errRole != nil {
 		fmt.Println(errRole.Error())
 		return errRole

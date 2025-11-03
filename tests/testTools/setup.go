@@ -84,8 +84,8 @@ func SetupBasicRoles() {
 	basicRoles := []casdoorsdk.Role{
 		{
 			Owner:       orgName,
-			Name:        "student",
-			DisplayName: "Etudiants",
+			Name:        "member",
+			DisplayName: "Membre",
 			IsEnabled:   true,
 			Users:       []string{}, // Vide pour l'instant
 		},
@@ -235,7 +235,7 @@ func DeleteAllObjects() {
 	userService := services.NewUserService()
 
 	casdoor.Enforcer.RemovePolicy("administrator")
-	casdoor.Enforcer.RemovePolicy("student")
+	casdoor.Enforcer.RemovePolicy("member")
 	casdoor.Enforcer.RemoveGroupingPolicy("*")
 
 	users, _ := casdoorsdk.GetUsers()

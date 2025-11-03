@@ -431,7 +431,7 @@ func TestSecurity_CasdoorRoleMapping(t *testing.T) {
 		ocfRole      authModels.RoleName
 		casdoorRoles []string
 	}{
-		{authModels.Member, []string{"student"}},
+		{authModels.Member, []string{"member"}},
 		{authModels.Admin, []string{"admin", "administrator"}},
 	}
 

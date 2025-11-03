@@ -10,6 +10,7 @@ import (
 	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
+	"soli/formations/src/organizations/services"
 )
 
 type OrganizationRegistration struct {
@@ -219,6 +220,8 @@ func (r OrganizationRegistration) GetEntityRegistrationInput() entityManagementI
 			IsActiveColumn: "is_active",
 			// No org access for organizations themselves
 			OrgAccessEnabled: false,
+			// Feature provider for subscription features
+			FeatureProvider: services.NewOrganizationFeatureProvider(sqldb.DB),
 		},
 	}
 }

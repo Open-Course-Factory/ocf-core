@@ -53,19 +53,67 @@ func SetupPaymentRolePermissions(enforcer interfaces.EnforcerInterface) {
 		}
 	}
 
-	// Permissions pour Student Premium
-	enforcer.AddPolicy("member_pro", "/api/v1/terminals/*", "(GET|POST)")
-	enforcer.AddPolicy("member_pro", "/api/v1/user-subscriptions/current", "GET")
-	enforcer.AddPolicy("member_pro", "/api/v1/user-subscriptions/portal", "POST")
-	enforcer.AddPolicy("member_pro", "/api/v1/invoices/user", "GET")
-	enforcer.AddPolicy("member_pro", "/api/v1/payment-methods/user", "GET")
+	// Terminal and subscription permissions for all members
+	// These are now handled by entity registration (terminals) and subscription logic
+	// Keeping minimal overrides here for subscription-related endpoints
 
-	// Permissions pour Organization (hérite de supervisor_pro)
-	enforcer.AddPolicy("organization", "/api/v1/*", "(GET|POST|PATCH|DELETE)")
-	enforcer.AddPolicy("organization", "/api/v1/users/*", "(GET|POST|PATCH)")
-	enforcer.AddPolicy("organization", "/api/v1/groups/*", "(GET|POST|PATCH|DELETE)")
+	// Note: Standard terminal CRUD permissions are automatically set via TerminalRegistration entity
+	// But custom terminal routes need explicit permissions
 
-	// Groupements de rôles (hiérarchie)
-	enforcer.AddGroupingPolicy("member_pro", "member")
-	enforcer.AddGroupingPolicy("organization", "member_pro")
+	// User Terminal Key custom routes - available to all authenticated members
+	log.Println("Setting up user terminal key custom route permissions...")
+	_, err := enforcer.AddPolicy("member", "/api/v1/user-terminal-keys/regenerate", "POST")
+	if err != nil && !strings.Contains(err.Error(), "UNIQUE") {
+		log.Printf("Error adding regenerate permission: %v", err)
+	} else {
+		log.Printf("✅ Added member permission for /api/v1/user-terminal-keys/regenerate")
+	}
+
+	_, err = enforcer.AddPolicy("member", "/api/v1/user-terminal-keys/my-key", "GET")
+	if err != nil && !strings.Contains(err.Error(), "UNIQUE") {
+		log.Printf("Error adding my-key permission: %v", err)
+	} else {
+		log.Printf("✅ Added member permission for /api/v1/user-terminal-keys/my-key")
+	}
+
+	// Terminal custom routes - available to all authenticated members
+	log.Println("Setting up terminal custom route permissions...")
+	terminalRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/terminals/start-session", "POST"},
+		{"/api/v1/terminals/user-sessions", "GET"},
+		{"/api/v1/terminals/shared-with-me", "GET"},
+		{"/api/v1/terminals/sync-all", "POST"},
+		{"/api/v1/terminals/instance-types", "GET"},
+		{"/api/v1/terminals/metrics", "GET"},
+		{"/api/v1/terminals/:id/console", "GET"},
+		{"/api/v1/terminals/:id/stop", "POST"},
+		{"/api/v1/terminals/:id/share", "POST"},
+		{"/api/v1/terminals/:id/share/:user_id", "DELETE"},
+		{"/api/v1/terminals/:id/shares", "GET"},
+		{"/api/v1/terminals/:id/info", "GET"},
+		{"/api/v1/terminals/:id/hide", "POST"},
+		{"/api/v1/terminals/:id/hide", "DELETE"},
+		{"/api/v1/terminals/:id/sync", "POST"},
+		{"/api/v1/terminals/:id/status", "GET"},
+	}
+
+	for _, route := range terminalRoutes {
+		_, err := enforcer.AddPolicy("member", route.path, route.method)
+		if err != nil && !strings.Contains(err.Error(), "UNIQUE") {
+			log.Printf("Error adding terminal permission %s %s: %v", route.method, route.path, err)
+		} else {
+			log.Printf("✅ Added member permission for %s %s", route.method, route.path)
+		}
+	}
+
+	// User subscription endpoints - available to all authenticated members
+	enforcer.AddPolicy("member", "/api/v1/user-subscriptions/current", "GET")
+	enforcer.AddPolicy("member", "/api/v1/user-subscriptions/portal", "POST")
+	enforcer.AddPolicy("member", "/api/v1/invoices/user", "GET")
+	enforcer.AddPolicy("member", "/api/v1/payment-methods/user", "GET")
+
+	log.Printf("✅ Terminal permissions setup completed")
 }

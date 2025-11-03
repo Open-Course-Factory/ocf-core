@@ -30,6 +30,20 @@ type GroupMembershipContext struct {
 	IsOwner   bool      `json:"is_owner"`
 }
 
+// EntityMembershipContext is a generic membership context for any entity type
+// This replaces specific contexts (OrganizationMembershipContext, GroupMembershipContext)
+// with a unified approach that works for all entity types
+type EntityMembershipContext struct {
+	EntityID         uuid.UUID              `json:"entity_id"`
+	EntityType       string                 `json:"entity_type"`        // e.g., "Organization", "ClassGroup", "Team"
+	EntityName       string                 `json:"entity_name"`        // Display name of the entity
+	Role             string                 `json:"role"`               // User's role in this entity
+	IsOwner          bool                   `json:"is_owner"`           // Quick check if user owns the entity
+	Features         []string               `json:"features,omitempty"` // Features from entity subscription (if applicable)
+	HasSubscription  bool                   `json:"has_subscription"`   // Whether entity has active subscription (if applicable)
+	CustomAttributes map[string]interface{} `json:"custom_attributes,omitempty"` // Entity-specific additional data
+}
+
 // UserPermissionsOutput is the comprehensive permission response
 type UserPermissionsOutput struct {
 	// User identity
@@ -42,11 +56,15 @@ type UserPermissionsOutput struct {
 	Roles         []string `json:"roles"`           // Casdoor roles
 	IsSystemAdmin bool     `json:"is_system_admin"` // Quick check for system admin
 
+	// DEPRECATED: Use EntityMemberships instead (kept for backward compatibility)
 	// Organization context
-	OrganizationMemberships []OrganizationMembershipContext `json:"organization_memberships"`
-
+	OrganizationMemberships []OrganizationMembershipContext `json:"organization_memberships,omitempty"`
 	// Group context
-	GroupMemberships []GroupMembershipContext `json:"group_memberships"`
+	GroupMemberships []GroupMembershipContext `json:"group_memberships,omitempty"`
+
+	// NEW: Generic entity memberships (replaces specific membership contexts)
+	// Map of entity type to memberships: {"Organization": [...], "ClassGroup": [...]}
+	EntityMemberships map[string][]EntityMembershipContext `json:"entity_memberships,omitempty"`
 
 	// Aggregated features from all organizations
 	AggregatedFeatures []string `json:"aggregated_features"`

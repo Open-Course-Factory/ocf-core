@@ -6,6 +6,8 @@ import (
 	"soli/formations/src/auth/casdoor"
 	authDto "soli/formations/src/auth/dto"
 	"soli/formations/src/auth/mocks"
+	ems "soli/formations/src/entityManagement/entityManagementService"
+	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -88,9 +90,118 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+// mockFeatureProvider is a simple feature provider for testing
+type mockFeatureProvider struct {
+	db *gorm.DB
+}
+
+func (p *mockFeatureProvider) GetFeatures(entityID string) ([]string, bool, error) {
+	// Query subscription for this organization
+	type SubscriptionResult struct {
+		Features string `gorm:"column:features"`
+		Status   string `gorm:"column:status"`
+	}
+
+	var result SubscriptionResult
+	err := p.db.Raw(`
+		SELECT sp.features, os.status
+		FROM organization_subscriptions os
+		JOIN subscription_plans sp ON sp.id = os.subscription_plan_id
+		WHERE os.organization_id = ? AND os.deleted_at IS NULL
+		LIMIT 1
+	`, entityID).Scan(&result).Error
+
+	if err != nil || result.Status == "" {
+		return []string{}, false, nil
+	}
+
+	hasSubscription := result.Status == "active" || result.Status == "trialing"
+
+	// Parse JSON features (simple implementation for test)
+	features := []string{}
+	if result.Features != "" {
+		// Basic JSON array parsing for test
+		featuresStr := result.Features
+		featuresStr = featuresStr[1 : len(featuresStr)-1] // Remove [ ]
+		if featuresStr != "" {
+			features = splitJSON(featuresStr)
+		}
+	}
+
+	return features, hasSubscription, nil
+}
+
+func splitJSON(s string) []string {
+	result := []string{}
+	current := ""
+	inQuote := false
+
+	for _, ch := range s {
+		if ch == '"' {
+			inQuote = !inQuote
+			// Don't add quotes to current string
+		} else if ch == ',' && !inQuote {
+			// Trim whitespace and add if not empty
+			trimmed := current
+			// Trim spaces
+			for len(trimmed) > 0 && trimmed[0] == ' ' {
+				trimmed = trimmed[1:]
+			}
+			for len(trimmed) > 0 && trimmed[len(trimmed)-1] == ' ' {
+				trimmed = trimmed[:len(trimmed)-1]
+			}
+			if trimmed != "" {
+				result = append(result, trimmed)
+			}
+			current = ""
+		} else if ch != ' ' || inQuote {
+			current += string(ch)
+		}
+	}
+	// Add last element
+	trimmed := current
+	for len(trimmed) > 0 && trimmed[0] == ' ' {
+		trimmed = trimmed[1:]
+	}
+	for len(trimmed) > 0 && trimmed[len(trimmed)-1] == ' ' {
+		trimmed = trimmed[:len(trimmed)-1]
+	}
+	if trimmed != "" {
+		result = append(result, trimmed)
+	}
+	return result
+}
+
+func setupEntityRegistrations(db *gorm.DB) {
+	// Initialize global entity registration service if not already done
+	if ems.GlobalEntityRegistrationService == nil {
+		ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+	}
+
+	// Register Organization membership config with mock feature provider
+	ems.GlobalEntityRegistrationService.RegisterMembershipConfig("Organization", &entityManagementInterfaces.MembershipConfig{
+		MemberTable:     "organization_members",
+		EntityIDColumn:  "organization_id",
+		UserIDColumn:    "user_id",
+		RoleColumn:      "role",
+		IsActiveColumn:  "is_active",
+		FeatureProvider: &mockFeatureProvider{db: db}, // Use mock provider for testing
+	})
+
+	// Register ClassGroup membership config
+	ems.GlobalEntityRegistrationService.RegisterMembershipConfig("ClassGroup", &entityManagementInterfaces.MembershipConfig{
+		MemberTable:    "group_members",
+		EntityIDColumn: "group_id",
+		UserIDColumn:   "user_id",
+		RoleColumn:     "role",
+		IsActiveColumn: "is_active",
+	})
+}
+
 func TestUserPermissionsService_GetUserPermissions_BasicPermissions(t *testing.T) {
 	// Setup test database
 	db := setupTestDB(t)
+	setupEntityRegistrations(db)
 
 	// Setup mock enforcer
 	mockEnforcer := mocks.NewMockEnforcer()
@@ -104,7 +215,7 @@ func TestUserPermissionsService_GetUserPermissions_BasicPermissions(t *testing.T
 	}
 
 	mockEnforcer.GetRolesForUserFunc = func(name string) ([]string, error) {
-		return []string{"student", "member"}, nil
+		return []string{"member"}, nil
 	}
 
 	// Replace global enforcer with mock
@@ -123,7 +234,7 @@ func TestUserPermissionsService_GetUserPermissions_BasicPermissions(t *testing.T
 	assert.NotNil(t, result)
 	assert.Equal(t, "user123", result.UserID)
 	assert.Len(t, result.Permissions, 2)
-	assert.Len(t, result.Roles, 2)
+	assert.Len(t, result.Roles, 1) // Mock returns 1 role: "member"
 	assert.False(t, result.IsSystemAdmin)
 	assert.True(t, result.CanCreateOrganization) // All users can create orgs
 }
@@ -131,6 +242,7 @@ func TestUserPermissionsService_GetUserPermissions_BasicPermissions(t *testing.T
 func TestUserPermissionsService_GetUserPermissions_WithOrganizations(t *testing.T) {
 	// Setup test database
 	db := setupTestDB(t)
+	setupEntityRegistrations(db)
 
 	// Insert test data
 	orgID := uuid.New().String()
@@ -174,6 +286,7 @@ func TestUserPermissionsService_GetUserPermissions_WithOrganizations(t *testing.
 func TestUserPermissionsService_GetUserPermissions_WithGroups(t *testing.T) {
 	// Setup test database
 	db := setupTestDB(t)
+	setupEntityRegistrations(db)
 
 	// Insert test data
 	groupID := uuid.New().String()
@@ -245,6 +358,9 @@ func TestUserPermissionsService_GetUserPermissions_SystemAdmin(t *testing.T) {
 func TestUserPermissionsService_GetUserPermissions_WithSubscriptionFeatures(t *testing.T) {
 	// Setup test database
 	db := setupTestDB(t)
+
+	// Setup entity registrations with feature provider
+	setupEntityRegistrations(db)
 
 	// Insert test data
 	orgID := uuid.New().String()
