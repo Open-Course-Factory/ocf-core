@@ -39,7 +39,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	`)
 
 	db.Exec(`
-		CREATE TABLE groups (
+		CREATE TABLE class_groups (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
 			display_name TEXT NOT NULL
@@ -179,7 +179,7 @@ func TestUserPermissionsService_GetUserPermissions_WithGroups(t *testing.T) {
 	groupID := uuid.New().String()
 	memberID := uuid.New().String()
 
-	db.Exec("INSERT INTO groups (id, name, display_name) VALUES (?, ?, ?)",
+	db.Exec("INSERT INTO class_groups (id, name, display_name) VALUES (?, ?, ?)",
 		groupID, "test-group", "Test Group")
 
 	db.Exec("INSERT INTO group_members (id, group_id, user_id, role, is_active) VALUES (?, ?, ?, ?, ?)",

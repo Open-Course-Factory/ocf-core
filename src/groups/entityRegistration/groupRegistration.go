@@ -100,7 +100,7 @@ func (g GroupRegistration) GetEntityRegistrationInput() entityManagementInterfac
 			UserIDColumn:     "user_id",
 			RoleColumn:       "role",
 			IsActiveColumn:   "is_active",
-			OrgAccessEnabled: true,                  // Enable organization-based access
+			OrgAccessEnabled: true,                         // Enable organization-based access
 			ManagerRoles:     []string{"owner", "manager"}, // Org managers can see all groups in their org
 		},
 	}
@@ -148,12 +148,7 @@ func (g GroupRegistration) GetEntityRoles() entityManagementInterfaces.EntityRol
 	// Members can view and create groups
 	roleMap[string(authModels.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
 
-	// GroupManagers can manage groups
-	roleMap[string(authModels.GroupManager)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")"
-
 	// Trainers and above have full access
-	roleMap[string(authModels.Trainer)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")"
-	roleMap[string(authModels.Organization)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")"
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")"
 
 	return entityManagementInterfaces.EntityRoles{

@@ -794,20 +794,149 @@ type AuthProvider interface {
 - `src/entityManagement/swagger/` - Auto-documentation system
 - `main.go:156-171` - Current entity registrations (hardcoded)
 
-## Permissions and Security System
+## Roles, Organizations, and Subscription System
 
-### Overview
+### System Overview
+
+OCF Core uses a **simplified 2-role system** with **context-based permissions** through organizations and groups. This design separates platform access (system roles) from business capabilities (organization subscriptions).
+
+### System Roles (Platform Level)
+
+**Only 2 system roles exist** (`src/auth/models/roles.go`):
+
+1. **`member`** - All authenticated users (default)
+   - Basic platform access
+   - Permissions determined by organization/group membership
+   - All Casdoor roles (`student`, `teacher`, `trainer`, etc.) map to `member`
+
+2. **`administrator`** - System administrators only
+   - Full platform management access
+   - User management, system configuration
+   - Mapped from Casdoor `admin` and `administrator` roles
+
+**Key Principle**: System roles control platform access, NOT business features. Business capabilities come from organization subscriptions.
+
+### Business Roles (Context-Based)
+
+Business roles are **NOT system roles** - they're membership roles within organizations and groups:
+
+#### Organization Roles (`src/organizations/models/organizationMember.go:14-16`)
+
+- **`owner`** - Organization creator
+  - Full control of organization
+  - Manages billing and subscriptions
+  - Cannot be removed from organization
+  - Priority: 100
+
+- **`manager`** - Organization manager
+  - Full access to all organization groups
+  - Can manage members and groups
+  - Cascading permissions to all org groups
+  - Priority: 50
+
+- **`member`** - Basic organization member
+  - Limited access
+  - Access only to assigned groups
+  - Priority: 10
+
+#### Group Roles (`src/groups/models/groupMember.go:14-17`)
+
+- **`owner`** - Group creator (full control)
+- **`admin`** - Manages group settings and members
+- **`assistant`** - Helper role (e.g., teaching assistant)
+- **`member`** - Regular group member (e.g., student)
+
+### Organization Types
+
+#### Personal Organizations (`PERSONAL_TO_TEAM_ORGANIZATIONS.md`)
+
+- **Type**: `personal`
+- **Auto-created**: On user registration
+- **Name pattern**: `personal_{userId}`
+- **Member limit**: 1 (owner only)
+- **Group limit**: Unlimited (-1)
+- **Use case**: Individual workspace
+
+#### Team Organizations
+
+- **Type**: `team`
+- **Created**: Manually OR converted from personal
+- **Member limit**: Configurable (default: 100)
+- **Group limit**: Configurable (default: 30)
+- **Use case**: Collaborative workspace
+
+**Conversion**: Personal → Team via `POST /api/v1/organizations/{id}/convert-to-team`
+
+### Subscription System
+
+#### Organization-Based Subscriptions
+
+**Key Principle**: Subscriptions are attached to **organizations**, not individual users.
+
+**Model**: `OrganizationSubscription` (`src/payment/models/subscription.go:84-100`)
+
+```
+Organization → SubscriptionPlan → Features & Limits
+    ├─ Members inherit all subscription features
+    ├─ Usage limits enforced at org level
+    └─ Billing managed by organization owner
+```
+
+**Subscription Types**:
+- **Free Plans**: Activated immediately (no Stripe)
+- **Paid Plans**: Activated by Stripe webhook after payment
+- **Quantity**: Number of seats/licenses (for team plans)
+
+#### License Attribution System
+
+**Bulk License Purchases** (`SubscriptionBatch` model):
+- Purchase multiple licenses in one Stripe subscription
+- Track total vs assigned quantity
+- Optionally link to specific groups
+- Manage via Stripe subscription items
+
+**Example Flow**:
+1. Organization owner purchases 20 licenses
+2. `SubscriptionBatch` created: `TotalQuantity: 20`, `AssignedQuantity: 0`
+3. Admin assigns licenses to users (e.g., group members)
+4. `AssignedQuantity` increments as licenses are assigned
+
+#### User Feature Access
+
+**Feature Aggregation** (`src/payment/utils/featureAccess.go`):
+
+Users inherit features from **all their organizations**:
+```go
+// Get effective features across all user's organizations
+GetUserEffectiveFeatures(userID) → Highest tier plan features
+
+// Check if user can access a feature
+CanUserAccessFeature(userID, "advanced_labs") → bool
+```
+
+**Logic**:
+- User belongs to multiple organizations (personal + teams)
+- Each organization has a subscription plan
+- User gets the **maximum features** across all plans
+- Example: Personal (Free) + Team A (Pro) = Pro features
+
+### Permission System (Casbin)
 
 The system uses **Casbin with Casdoor** for authorization. Permissions are managed dynamically in code, NOT through static configuration files.
+
+**Permission Check Flow**:
+1. **System Role Check**: Is user `administrator`? → Allow all
+2. **Context Check**: Check organization/group membership role
+3. **Casbin Policy**: Enforce specific route permissions
 
 **Permission Management Patterns:**
 1. **Generic Entity Permissions**: Defined in entity registration via `GetEntityRoles()` method
 2. **Specific Route Permissions**: Added dynamically in service methods
 3. **User-Specific Permissions**: Created when entities are created/shared
 
-**Role Mappings:**
-- `"student"` role maps to `"member"` role in the system
-- Role hierarchy: `Guest < Member < MemberPro < GroupManager < Trainer < Organization < Admin`
+**Cascading Permissions**:
+- Organization `owner`/`manager` → Automatic access to all org groups
+- Group `owner`/`admin` → Full access to that specific group
 
 ### Permission Helper Utilities (ALWAYS USE THESE)
 
@@ -858,6 +987,129 @@ utils.RemovePolicy(casdoor.Enforcer, userID, route, method, opts)
 - Identifying missing permissions
 
 See `.claude/docs/REFACTORING_COMPLETE_SUMMARY.md` for complete documentation.
+
+### Frontend Integration Guide
+
+#### Key API Endpoints
+
+**Organizations**:
+- `GET /api/v1/organizations` - List user's organizations
+- `GET /api/v1/organizations/:id` - Get organization details (includes `organization_type`, `member_count`)
+- `POST /api/v1/organizations` - Create team organization
+- `POST /api/v1/organizations/:id/convert-to-team` - Convert personal → team
+- `GET /api/v1/organizations/:id/members` - List organization members
+
+**Organization Subscriptions**:
+- `GET /api/v1/organizations/:id/subscription` - Get organization's subscription
+- `POST /api/v1/organizations/:id/subscription` - Create organization subscription
+- `GET /api/v1/users/me/effective-features` - Get user's aggregated features across all orgs
+
+**Groups**:
+- `GET /api/v1/groups` - List user's groups
+- `GET /api/v1/organizations/:id/groups` - List organization's groups
+- `POST /api/v1/groups` - Create group (optionally link to organization)
+
+#### Frontend Capabilities Checklist
+
+**User Registration Flow**:
+- ✅ Personal organization auto-created
+- ✅ User assigned as owner with `member` system role
+- ✅ Free plan (if configured) assigned to personal org
+
+**Organization Management**:
+- ✅ Display organization type (`personal` vs `team`)
+- ✅ Show "Upgrade to Team" button for personal orgs
+- ✅ Handle organization conversion (name change optional)
+- ✅ Display member count and limits
+
+**Subscription Management**:
+- ✅ Organization owner manages billing
+- ✅ Free plans activate immediately
+- ✅ Paid plans require Stripe checkout → webhook activation
+- ✅ Quantity field for bulk license purchases
+- ✅ All members inherit org subscription features
+
+**Feature Access Display**:
+- ✅ Show user's effective features (highest across all orgs)
+- ✅ Indicate which organization provides each feature
+- ✅ Display usage limits (terminals, courses, lab sessions)
+- ✅ Show organization-level usage vs limits
+
+**Permission-Based UI**:
+```typescript
+// Example: Conditional rendering based on role
+interface OrganizationMember {
+  role: 'owner' | 'manager' | 'member';
+  organization_id: string;
+}
+
+// Show "Manage Billing" only to owners
+if (orgMember.role === 'owner') {
+  <ManageBillingButton />
+}
+
+// Show "Invite Members" to owners and managers
+if (orgMember.role === 'owner' || orgMember.role === 'manager') {
+  <InviteMembersButton />
+}
+```
+
+**Subscription Plan Selection**:
+```typescript
+interface SubscriptionPlan {
+  name: string;
+  price_amount: number;  // cents
+  billing_interval: 'month' | 'year';
+  max_concurrent_terminals: number;
+  max_courses: number;  // -1 = unlimited
+  features: string[];   // ['advanced_labs', 'network_access', ...]
+  allowed_machine_sizes: string[];  // ['XS', 'S', 'M', 'L', 'XL']
+}
+
+// Personal plan selection
+<PlanCard
+  plan={plan}
+  organizationType="personal"  // quantity = 1 (fixed)
+/>
+
+// Team plan selection
+<PlanCard
+  plan={plan}
+  organizationType="team"
+  quantitySelector={true}      // Allow choosing number of licenses
+/>
+```
+
+**Bulk License Management**:
+```typescript
+interface SubscriptionBatch {
+  total_quantity: number;
+  assigned_quantity: number;
+  group_id?: string;  // Optional: link to group
+}
+
+// Display license pool
+<LicensePool
+  total={batch.total_quantity}
+  assigned={batch.assigned_quantity}
+  available={batch.total_quantity - batch.assigned_quantity}
+/>
+
+// Assign licenses to users
+<AssignLicenseButton
+  userId={user.id}
+  batchId={batch.id}
+  disabled={batch.assigned_quantity >= batch.total_quantity}
+/>
+```
+
+#### Migration Status
+
+**Phase 1** ✅ Complete: Organizations & Groups
+**Phase 2** ✅ Complete: Organization Subscriptions
+**Phase 3** ✅ Complete: Role Simplification (2 roles only)
+
+**Current State**: Production-ready. All features fully implemented and tested.
 
 ## Utilities & Helper Functions
 
@@ -964,11 +1216,20 @@ See `.claude/docs/ORGANIZATION_GROUPS_SYSTEM.md` for complete documentation.
 - Models have no business logic (data structures only)
 
 ### System Features
-- **Organizations**: All users get personal organizations auto-created on registration
+- **Role System**: 2 system roles only (`member`, `administrator`) + context-based business roles (org/group membership)
+- **Organizations**:
+  - Personal orgs auto-created on registration (type: `personal`)
+  - Team orgs created manually or converted from personal (type: `team`)
+  - Organization roles: owner, manager, member
 - **Groups**: Can be standalone or linked to organizations for cascading permissions
-- **Payment System**: Enforces usage limits based on subscription tiers
+  - Group roles: owner, admin, assistant, member
+- **Subscription System**:
+  - Organization-based (NOT user-based)
+  - Members inherit features from all their organizations
+  - Effective features = highest tier across all user's organizations
+  - Bulk license purchases via `SubscriptionBatch` model
 - **Bulk Import**: CSV import available at `/api/v1/organizations/{id}/import` (owners/managers only)
-- **Casdoor**: Requires separate certificate setup for JWT validation
+- **Casdoor**: JWT authentication with certificate-based validation
 
 ### When You Need Help
 

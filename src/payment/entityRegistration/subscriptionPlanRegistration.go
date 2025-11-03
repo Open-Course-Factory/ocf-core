@@ -143,7 +143,6 @@ func (s SubscriptionPlanRegistration) GetEntityRoles() entityManagementInterface
 	roleMap := make(map[string]string)
 	// Seuls les admins peuvent gérer les plans d'abonnement
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")"
-	roleMap[string(authModels.GroupManager)] = "(" + http.MethodGet + ")"
 	roleMap[string(authModels.Member)] = "(" + http.MethodGet + ")" // Pour voir les plans disponibles
 
 	return entityManagementInterfaces.EntityRoles{

@@ -91,7 +91,7 @@ func (s *userPermissionsService) GetUserPermissions(userID string) (*authDto.Use
 	}
 
 	// 8. Build quick access flags
-	canCreateOrganization := isSystemAdmin || true // For now, all authenticated users can create orgs
+	canCreateOrganization := isSystemAdmin || true             // For now, all authenticated users can create orgs
 	canCreateGroup := isSystemAdmin || len(orgMemberships) > 0 // Can create groups if member of any org
 
 	result := &authDto.UserPermissionsOutput{
@@ -193,11 +193,11 @@ func (s *userPermissionsService) getOrganizationMemberships(userID string) ([]au
 func (s *userPermissionsService) getGroupMemberships(userID string) ([]authDto.GroupMembershipContext, error) {
 	// Query with explicit column selection
 	type MembershipResult struct {
-		MemberID       string `gorm:"column:member_id"`
-		GroupID        string `gorm:"column:group_id"`
-		UserID         string `gorm:"column:user_id"`
-		Role           string `gorm:"column:role"`
-		GroupName      string `gorm:"column:group_name"`
+		MemberID         string `gorm:"column:member_id"`
+		GroupID          string `gorm:"column:group_id"`
+		UserID           string `gorm:"column:user_id"`
+		Role             string `gorm:"column:role"`
+		GroupName        string `gorm:"column:group_name"`
 		GroupDisplayName string `gorm:"column:group_display_name"`
 	}
 

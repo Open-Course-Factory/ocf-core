@@ -31,20 +31,20 @@ import (
 
 type SecurityTestEntity struct {
 	entityManagementModels.BaseModel
-	Name        string `json:"name"`
+	Name          string `json:"name"`
 	SensitiveData string `json:"sensitive_data"`
 }
 
 type SecurityTestEntityInput struct {
-	Name        string `json:"name" binding:"required"`
+	Name          string `json:"name" binding:"required"`
 	SensitiveData string `json:"sensitive_data"`
 }
 
 type SecurityTestEntityOutput struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	SensitiveData string `json:"sensitive_data"`
-	OwnerIDs    []string `json:"owner_ids"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	SensitiveData string   `json:"sensitive_data"`
+	OwnerIDs      []string `json:"owner_ids"`
 }
 
 type SecurityTestEntityRegistration struct {
@@ -63,10 +63,10 @@ func (r SecurityTestEntityRegistration) EntityModelToEntityOutput(input any) (an
 	}
 
 	return &SecurityTestEntityOutput{
-		ID:          entity.ID.String(),
-		Name:        entity.Name,
+		ID:            entity.ID.String(),
+		Name:          entity.Name,
 		SensitiveData: entity.SensitiveData,
-		OwnerIDs:    entity.OwnerIDs,
+		OwnerIDs:      entity.OwnerIDs,
 	}, nil
 }
 
@@ -82,7 +82,7 @@ func (r SecurityTestEntityRegistration) EntityInputDtoToEntityModel(input any) a
 	}
 
 	entity := &SecurityTestEntity{
-		Name:        dto.Name,
+		Name:          dto.Name,
 		SensitiveData: dto.SensitiveData,
 	}
 
@@ -106,7 +106,6 @@ func (r SecurityTestEntityRegistration) GetEntityRegistrationInput() entityManag
 
 func (r SecurityTestEntityRegistration) GetEntityRoles() entityManagementInterfaces.EntityRoles {
 	roleMap := make(map[string]string)
-	roleMap[string(authModels.Guest)] = "(" + http.MethodGet + ")"
 	roleMap[string(authModels.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")"
 	return entityManagementInterfaces.EntityRoles{Roles: roleMap}
@@ -187,7 +186,6 @@ func TestSecurity_EntityRegistrationCreatesPermissions(t *testing.T) {
 	// Check that policies were added for each role
 	calls := suite.mockEnforcer.AddPolicyCalls
 
-	foundGuest := false
 	foundMember := false
 	foundAdmin := false
 
@@ -199,8 +197,6 @@ func TestSecurity_EntityRegistrationCreatesPermissions(t *testing.T) {
 			}
 
 			switch role {
-			case string(authModels.Guest):
-				foundGuest = true
 			case string(authModels.Member):
 				foundMember = true
 			case string(authModels.Admin):
@@ -209,7 +205,7 @@ func TestSecurity_EntityRegistrationCreatesPermissions(t *testing.T) {
 		}
 	}
 
-	assert.True(t, foundGuest || foundMember || foundAdmin,
+	assert.True(t, foundMember || foundAdmin,
 		"At least one role permission should be registered")
 
 	t.Logf("✅ Entity registration created %d policy entries", len(calls))
@@ -233,7 +229,7 @@ func TestSecurity_OwnershipAssignment(t *testing.T) {
 	apiGroup.POST("/security-test-entities", suite.controller.AddEntity)
 
 	input := SecurityTestEntityInput{
-		Name:        "Owned Entity",
+		Name:          "Owned Entity",
 		SensitiveData: "Secret",
 	}
 
@@ -284,7 +280,7 @@ func TestSecurity_RoleBasedAccess(t *testing.T) {
 
 	// Create an entity
 	input := SecurityTestEntityInput{
-		Name:        "Test Entity",
+		Name:          "Test Entity",
 		SensitiveData: "Confidential",
 	}
 
@@ -310,15 +306,6 @@ func TestSecurity_RoleBasedAccess(t *testing.T) {
 		enforceResult  bool
 		expectedStatus int
 	}{
-		{
-			name:           "Guest can GET",
-			userID:         "guest-user",
-			role:           string(authModels.Guest),
-			method:         http.MethodGet,
-			path:           "/api/v1/security-test-entities",
-			enforceResult:  true,
-			expectedStatus: http.StatusOK,
-		},
 		{
 			name:           "Member can POST",
 			userID:         "member-user",
@@ -357,7 +344,7 @@ func TestSecurity_UserSpecificResourcePermissions(t *testing.T) {
 
 	// User 1 creates entity
 	input := SecurityTestEntityInput{
-		Name:        "User 1 Entity",
+		Name:          "User 1 Entity",
 		SensitiveData: "User 1 Secret",
 	}
 
@@ -416,9 +403,9 @@ func TestSecurity_LoadPolicyPerformance(t *testing.T) {
 	numEntities := 10
 	for i := 0; i < numEntities; i++ {
 		input := SecurityTestEntityInput{
-			Name:        fmt.Sprintf("Entity %d", i),
+			Name:          fmt.Sprintf("Entity %d", i),
 			SensitiveData: "Data",
-			}
+		}
 
 		body, _ := json.Marshal(input)
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/security-test-entities", bytes.NewBuffer(body))
@@ -441,12 +428,10 @@ func TestSecurity_LoadPolicyPerformance(t *testing.T) {
 func TestSecurity_CasdoorRoleMapping(t *testing.T) {
 	// Test OCF role to Casdoor role mapping
 	testCases := []struct {
-		ocfRole       authModels.RoleName
-		casdoorRoles  []string
+		ocfRole      authModels.RoleName
+		casdoorRoles []string
 	}{
 		{authModels.Member, []string{"student"}},
-		{authModels.MemberPro, []string{"premium_student"}},
-		{authModels.GroupManager, []string{"teacher"}},
 		{authModels.Admin, []string{"admin", "administrator"}},
 	}
 
@@ -464,37 +449,6 @@ func TestSecurity_CasdoorRoleMapping(t *testing.T) {
 	}
 }
 
-func TestSecurity_RoleHierarchy(t *testing.T) {
-	testCases := []struct {
-		higherRole authModels.RoleName
-		lowerRole  authModels.RoleName
-		shouldHavePermission bool
-	}{
-		{authModels.Admin, authModels.Member, true},
-		{authModels.Admin, authModels.Guest, true},
-		{authModels.MemberPro, authModels.Member, true},
-		{authModels.MemberPro, authModels.Guest, true},
-		{authModels.Member, authModels.Guest, true},
-		{authModels.Guest, authModels.Member, false},
-		{authModels.Member, authModels.Admin, false},
-	}
-
-	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%s_vs_%s", tc.higherRole, tc.lowerRole), func(t *testing.T) {
-			hasPermission := authModels.HasPermission(tc.higherRole, tc.lowerRole)
-
-			assert.Equal(t, tc.shouldHavePermission, hasPermission,
-				"Role %s should%s have permissions of role %s",
-				tc.higherRole,
-				map[bool]string{true: "", false: " NOT"}[tc.shouldHavePermission],
-				tc.lowerRole)
-
-			t.Logf("✅ Hierarchy check: %s vs %s = %v",
-				tc.higherRole, tc.lowerRole, hasPermission)
-		})
-	}
-}
-
 func TestSecurity_MultipleOwners(t *testing.T) {
 	suite := setupSecurityTest(t)
 
@@ -503,7 +457,7 @@ func TestSecurity_MultipleOwners(t *testing.T) {
 
 	// Create entity with first owner (uses middleware user: test-user-123)
 	input := SecurityTestEntityInput{
-		Name:        "Shared Entity",
+		Name:          "Shared Entity",
 		SensitiveData: "Shared Secret",
 	}
 
@@ -556,9 +510,9 @@ func TestSecurity_PermissionIsolation(t *testing.T) {
 		apiGroup.POST("/security-test-entities", suite.controller.AddEntity)
 
 		input := SecurityTestEntityInput{
-			Name:        fmt.Sprintf("%s's Entity", userID),
+			Name:          fmt.Sprintf("%s's Entity", userID),
 			SensitiveData: fmt.Sprintf("%s's Secret", userID),
-			}
+		}
 
 		body, _ := json.Marshal(input)
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/security-test-entities", bytes.NewBuffer(body))

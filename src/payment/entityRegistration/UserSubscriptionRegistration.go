@@ -69,7 +69,6 @@ func (u UserSubscriptionRegistration) GetEntityRoles() entityManagementInterface
 	roleMap := make(map[string]string)
 	// Utilisateurs peuvent voir/gérer leurs propres abonnements
 	roleMap[string(authModels.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + ")"
-	roleMap[string(authModels.GroupManager)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + ")"
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")"
 
 	return entityManagementInterfaces.EntityRoles{

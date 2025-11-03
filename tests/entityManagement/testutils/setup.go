@@ -14,9 +14,9 @@ import (
 
 // TestContext holds all necessary resources for entity tests
 type TestContext struct {
-	DB       *gorm.DB
-	Entity   any
-	Cleanup  func()
+	DB      *gorm.DB
+	Entity  any
+	Cleanup func()
 }
 
 // SetupEntityTest creates a complete test environment for entity testing.

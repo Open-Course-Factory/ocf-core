@@ -153,10 +153,6 @@ func (s UserSettingsRegistration) GetEntityRoles() entityManagementInterfaces.En
 
 	// Members can only GET and PATCH their own settings (enforced by middleware)
 	roleMap[string(models.Member)] = "(" + http.MethodGet + "|" + http.MethodPatch + ")"
-	roleMap[string(models.MemberPro)] = "(" + http.MethodGet + "|" + http.MethodPatch + ")"
-	roleMap[string(models.GroupManager)] = "(" + http.MethodGet + "|" + http.MethodPatch + ")"
-	roleMap[string(models.Trainer)] = "(" + http.MethodGet + "|" + http.MethodPatch + ")"
-	roleMap[string(models.Organization)] = "(" + http.MethodGet + "|" + http.MethodPatch + ")"
 
 	// Admins have full access
 	roleMap[string(models.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")"

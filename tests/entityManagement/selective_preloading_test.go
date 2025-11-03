@@ -10,8 +10,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"soli/formations/src/courses/models"
 	courseRegistration "soli/formations/src/courses/entityRegistration"
+	"soli/formations/src/courses/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/entityManagement/services"

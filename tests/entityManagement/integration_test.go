@@ -34,11 +34,11 @@ import (
 
 type IntegrationTestEntity struct {
 	entityManagementModels.BaseModel
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Value       int       `json:"value"`
-	IsActive    bool      `json:"is_active"`
-	Tags        pq.StringArray `gorm:"type:text[]" json:"tags"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Value       int                    `json:"value"`
+	IsActive    bool                   `json:"is_active"`
+	Tags        pq.StringArray         `gorm:"type:text[]" json:"tags"`
 	Children    []IntegrationTestChild `gorm:"foreignKey:ParentID" json:"children"`
 }
 
@@ -58,24 +58,24 @@ type IntegrationTestEntityInput struct {
 }
 
 type IntegrationTestEntityEditInput struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Value       int      `json:"value"`
-	IsActive    bool     `json:"is_active"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Value       int    `json:"value"`
+	IsActive    bool   `json:"is_active"`
 	// Tags removed - pq.StringArray not supported in SQLite for updates
 }
 
 type IntegrationTestEntityOutput struct {
-	ID          string                  `json:"id"`
-	Name        string                  `json:"name"`
-	Description string                  `json:"description"`
-	Value       int                     `json:"value"`
-	IsActive    bool                    `json:"is_active"`
-	Tags        []string                `json:"tags"`
-	OwnerIDs    []string                `json:"owner_ids"`
-	CreatedAt   time.Time               `json:"created_at"`
-	UpdatedAt   time.Time               `json:"updated_at"`
-	Children    []IntegrationTestChild  `json:"children,omitempty"`
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Value       int                    `json:"value"`
+	IsActive    bool                   `json:"is_active"`
+	Tags        []string               `json:"tags"`
+	OwnerIDs    []string               `json:"owner_ids"`
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+	Children    []IntegrationTestChild `json:"children,omitempty"`
 }
 
 // Registration

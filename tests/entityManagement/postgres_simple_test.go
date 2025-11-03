@@ -25,9 +25,9 @@ type PGTestCourse struct {
 
 type PGTestChapter struct {
 	entityManagementModels.BaseModel
-	Name      string `json:"name"`
-	CourseID  uuid.UUID
-	Course    PGTestCourse `gorm:"foreignKey:CourseID"`
+	Name     string `json:"name"`
+	CourseID uuid.UUID
+	Course   PGTestCourse `gorm:"foreignKey:CourseID"`
 }
 
 type PGTestPage struct {

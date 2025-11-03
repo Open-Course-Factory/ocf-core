@@ -4,13 +4,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	authModels "soli/formations/src/auth/models"
 	"soli/formations/src/entityManagement/converters"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/groups/dto"
 	"soli/formations/src/groups/models"
 	"soli/formations/src/utils"
+
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
 type GroupMemberRegistration struct {
@@ -155,12 +156,7 @@ func (gm GroupMemberRegistration) GetEntityRoles() entityManagementInterfaces.En
 	// Members can view group members
 	roleMap[string(authModels.Member)] = "(" + http.MethodGet + ")"
 
-	// GroupManagers can view, add, and remove members
-	roleMap[string(authModels.GroupManager)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")"
-
 	// Trainers and above have full access
-	roleMap[string(authModels.Trainer)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")"
-	roleMap[string(authModels.Organization)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")"
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")"
 
 	return entityManagementInterfaces.EntityRoles{

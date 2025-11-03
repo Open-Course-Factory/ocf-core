@@ -112,7 +112,6 @@ func TestCascadeDelete_Course_DeletesOrphanedChapters(t *testing.T) {
 // Test: Deleting a course should NOT delete shared chapters
 func TestCascadeDelete_Course_PreservesSharedChapters(t *testing.T) {
 	db, service := setupCascadeDeleteTestWithHooks(t)
-	
 
 	// Create two courses
 	course1 := &models.Course{
@@ -179,7 +178,6 @@ func TestCascadeDelete_Course_PreservesSharedChapters(t *testing.T) {
 // Test: Deleting a chapter should delete orphaned sections
 func TestCascadeDelete_Chapter_DeletesOrphanedSections(t *testing.T) {
 	db, service := setupCascadeDeleteTestWithHooks(t)
-	
 
 	// Create a chapter with 2 sections
 	chapter := &models.Chapter{
@@ -224,7 +222,6 @@ func TestCascadeDelete_Chapter_DeletesOrphanedSections(t *testing.T) {
 // Test: Deleting a chapter should NOT delete shared sections
 func TestCascadeDelete_Chapter_PreservesSharedSections(t *testing.T) {
 	db, service := setupCascadeDeleteTestWithHooks(t)
-	
 
 	// Create two chapters
 	chapter1 := &models.Chapter{
@@ -270,7 +267,6 @@ func TestCascadeDelete_Chapter_PreservesSharedSections(t *testing.T) {
 // Test: Deleting a section should delete orphaned pages
 func TestCascadeDelete_Section_DeletesOrphanedPages(t *testing.T) {
 	db, service := setupCascadeDeleteTestWithHooks(t)
-	
 
 	// Create a section with 2 pages
 	section := &models.Section{
@@ -315,7 +311,6 @@ func TestCascadeDelete_Section_DeletesOrphanedPages(t *testing.T) {
 // Test: Deleting a section should NOT delete shared pages
 func TestCascadeDelete_Section_PreservesSharedPages(t *testing.T) {
 	db, service := setupCascadeDeleteTestWithHooks(t)
-	
 
 	// Create two sections
 	section1 := &models.Section{
@@ -361,7 +356,6 @@ func TestCascadeDelete_Section_PreservesSharedPages(t *testing.T) {
 // Test: Full cascade - deleting a course should cascade through all levels
 func TestCascadeDelete_Course_FullCascade(t *testing.T) {
 	db, service := setupCascadeDeleteTestWithHooks(t)
-	
 
 	// Create a course with chapter -> section -> page
 	course := &models.Course{

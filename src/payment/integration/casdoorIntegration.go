@@ -81,12 +81,6 @@ func (cpi *casdoorPaymentIntegration) SyncUserRoleWithSubscription(userID string
 		return fmt.Errorf("user not found in Casdoor: %s", userID)
 	}
 
-	// Supprimer tous les anciens rôles liés aux abonnements
-	err = cpi.removeSubscriptionRoles(userID)
-	if err != nil {
-		log.Printf("Warning: failed to remove old subscription roles for user %s: %v", userID, err)
-	}
-
 	// Ajouter le nouveau rôle
 	opts := utils.DefaultPermissionOptions()
 	err = utils.AddGroupingPolicy(casdoor.Enforcer, userID, planRequiredRole, opts)
@@ -212,10 +206,6 @@ func (cpi *casdoorPaymentIntegration) UserHasSubscriptionRole(userID string, req
 			return true, nil
 		}
 
-		// Vérifier la hiérarchie des rôles
-		if cpi.roleHasPermission(role, requiredRole) {
-			return true, nil
-		}
 	}
 
 	return false, nil
@@ -231,12 +221,7 @@ func (cpi *casdoorPaymentIntegration) GetUserSubscriptionRole(userID string) (st
 	// Trouver le rôle d'abonnement le plus élevé
 	subscriptionRoles := []models.RoleName{
 		models.Admin,
-		models.Organization,
-		models.Trainer,
-		models.GroupManager,
-		models.MemberPro,
 		models.Member,
-		models.Guest,
 	}
 
 	for _, subscriptionRole := range subscriptionRoles {
@@ -247,47 +232,19 @@ func (cpi *casdoorPaymentIntegration) GetUserSubscriptionRole(userID string) (st
 		}
 	}
 
-	return string(models.Guest), nil
+	return string(""), nil
 }
 
 // Méthodes privées
 
 // setUserToDefaultRole remet l'utilisateur au rôle par défaut (membre de base)
 func (cpi *casdoorPaymentIntegration) setUserToDefaultRole(userID string) error {
-	// Supprimer tous les rôles d'abonnement
-	err := cpi.removeSubscriptionRoles(userID)
-	if err != nil {
-		return err
-	}
 
 	// Ajouter le rôle de membre de base
 	opts := utils.DefaultPermissionOptions()
-	err = utils.AddGroupingPolicy(casdoor.Enforcer, userID, string(models.Member), opts)
+	err := utils.AddGroupingPolicy(casdoor.Enforcer, userID, string(models.Member), opts)
 	if err != nil {
 		return fmt.Errorf("failed to set default role: %w", err)
-	}
-
-	return nil
-}
-
-// removeSubscriptionRoles supprime tous les rôles liés aux abonnements
-func (cpi *casdoorPaymentIntegration) removeSubscriptionRoles(userID string) error {
-	subscriptionRoles := []string{
-		string(models.MemberPro),
-		string(models.Trainer),
-		string(models.GroupManager),
-		string(models.Organization),
-		// Ne pas supprimer Admin car il peut être accordé manuellement
-	}
-
-	opts := utils.DefaultPermissionOptions()
-	opts.WarnOnError = true
-
-	for _, role := range subscriptionRoles {
-		err := utils.RemoveGroupingPolicy(casdoor.Enforcer, userID, role, opts)
-		if err != nil {
-			utils.Warn("Failed to remove role %s from user %s: %v", role, userID, err)
-		}
 	}
 
 	return nil
@@ -368,10 +325,10 @@ func (cpi *casdoorPaymentIntegration) ensureSubscriptionGroupExists(groupName, p
 	return nil
 }
 
-// roleHasPermission vérifie si un rôle a les permissions d'un autre selon la hiérarchie
-func (cpi *casdoorPaymentIntegration) roleHasPermission(userRole, requiredRole string) bool {
-	return models.HasPermission(models.RoleName(userRole), models.RoleName(requiredRole))
-}
+// // roleHasPermission vérifie si un rôle a les permissions d'un autre selon la hiérarchie
+// func (cpi *casdoorPaymentIntegration) roleHasPermission(userRole, requiredRole string) bool {
+// 	return models.HasPermission(models.RoleName(userRole), models.RoleName(requiredRole))
+// }
 
 // WebhookHandler gère les événements webhook pour synchroniser les rôles
 type SubscriptionWebhookHandler struct {

@@ -16,10 +16,10 @@ type PermissionRule struct {
 type OrganizationMembershipContext struct {
 	OrganizationID   uuid.UUID `json:"organization_id"`
 	OrganizationName string    `json:"organization_name"`
-	Role             string    `json:"role"`              // e.g., "owner", "member"
-	IsOwner          bool      `json:"is_owner"`          // Quick check if user owns the organization
-	Features         []string  `json:"features"`          // Features from org subscription
-	HasSubscription  bool      `json:"has_subscription"`  // Whether org has active subscription
+	Role             string    `json:"role"`             // e.g., "owner", "member"
+	IsOwner          bool      `json:"is_owner"`         // Quick check if user owns the organization
+	Features         []string  `json:"features"`         // Features from org subscription
+	HasSubscription  bool      `json:"has_subscription"` // Whether org has active subscription
 }
 
 // GroupMembershipContext provides context about a user's group membership
@@ -39,7 +39,7 @@ type UserPermissionsOutput struct {
 	Permissions []PermissionRule `json:"permissions"`
 
 	// User context
-	Roles         []string `json:"roles"`          // Casdoor roles
+	Roles         []string `json:"roles"`           // Casdoor roles
 	IsSystemAdmin bool     `json:"is_system_admin"` // Quick check for system admin
 
 	// Organization context

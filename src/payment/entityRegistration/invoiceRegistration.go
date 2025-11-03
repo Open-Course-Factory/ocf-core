@@ -88,7 +88,6 @@ func (i InvoiceRegistration) GetEntityRoles() entityManagementInterfaces.EntityR
 	roleMap := make(map[string]string)
 	// Les utilisateurs peuvent seulement voir leurs factures
 	roleMap[string(authModels.Member)] = "(" + http.MethodGet + ")"
-	roleMap[string(authModels.GroupManager)] = "(" + http.MethodGet + ")"
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")"
 
 	return entityManagementInterfaces.EntityRoles{

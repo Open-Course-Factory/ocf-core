@@ -94,7 +94,6 @@ func (p PaymentMethodRegistration) GetEntityRoles() entityManagementInterfaces.E
 	roleMap := make(map[string]string)
 	// Utilisateurs peuvent gérer leurs propres moyens de paiement
 	roleMap[string(authModels.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")"
-	roleMap[string(authModels.GroupManager)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")"
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")"
 
 	return entityManagementInterfaces.EntityRoles{

@@ -89,7 +89,6 @@ func (u UsageMetricsRegistration) GetEntityRoles() entityManagementInterfaces.En
 	roleMap := make(map[string]string)
 	// Les utilisateurs peuvent voir leurs propres métriques
 	roleMap[string(authModels.Member)] = "(" + http.MethodGet + ")"
-	roleMap[string(authModels.GroupManager)] = "(" + http.MethodGet + ")"
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")"
 
 	return entityManagementInterfaces.EntityRoles{

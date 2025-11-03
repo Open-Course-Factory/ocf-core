@@ -63,13 +63,13 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 
 		// Debug logging
 		log.Printf("[DEBUG] User %s has roles: %v", userId, userRoles)
-		log.Printf("[DEBUG] Checking access to %s %s", ctx.Request.Method, ctx.FullPath())
+		log.Printf("[DEBUG] Checking access to %s %s", ctx.Request.Method, ctx.Request.URL.Path)
 
 		// Check authorization for each role - if any role has permission, allow access
 		authorized := false
 		for _, role := range userRoles {
-			log.Printf("[DEBUG] Checking role '%s' for access to %s %s", role, ctx.Request.Method, ctx.FullPath())
-			ok, errEnforce := casdoor.Enforcer.Enforce(role, ctx.FullPath(), ctx.Request.Method)
+			log.Printf("[DEBUG] Checking role '%s' for access to %s %s", role, ctx.Request.Method, ctx.Request.URL.Path)
+			ok, errEnforce := casdoor.Enforcer.Enforce(role, ctx.Request.URL.Path, ctx.Request.Method)
 			if errEnforce != nil {
 				log.Printf("[DEBUG] Enforce error for role '%s': %v", role, errEnforce)
 				ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"msg": "Error occurred when authorizing user"})
@@ -84,7 +84,7 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 
 		// Also check direct user permissions (fallback for specific user permissions)
 		if !authorized {
-			ok, errEnforce := casdoor.Enforcer.Enforce(fmt.Sprint(userId), ctx.FullPath(), ctx.Request.Method)
+			ok, errEnforce := casdoor.Enforcer.Enforce(fmt.Sprint(userId), ctx.Request.URL.Path, ctx.Request.Method)
 			if errEnforce != nil {
 				ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"msg": "Error occurred when authorizing user"})
 				return
@@ -93,12 +93,12 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 		}
 
 		if !authorized {
-			log.Printf("[DEBUG] ❌ AUTHORIZATION FAILED for user %s with roles %v trying to access %s %s", userId, userRoles, ctx.Request.Method, ctx.FullPath())
+			log.Printf("[DEBUG] ❌ AUTHORIZATION FAILED for user %s with roles %v trying to access %s %s", userId, userRoles, ctx.Request.Method, ctx.Request.URL.Path)
 			ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{"msg": "You are not authorized"})
 			return
 		}
 
-		log.Printf("[DEBUG] ✅ AUTHORIZATION SUCCESS for user %s with roles %v accessing %s %s", userId, userRoles, ctx.Request.Method, ctx.FullPath())
+		log.Printf("[DEBUG] ✅ AUTHORIZATION SUCCESS for user %s with roles %v accessing %s %s", userId, userRoles, ctx.Request.Method, ctx.Request.URL.Path)
 
 		ctx.Set("userRoles", userRoles)
 		ctx.Set("userId", userId)

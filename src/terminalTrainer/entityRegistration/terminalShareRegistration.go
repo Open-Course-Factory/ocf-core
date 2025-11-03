@@ -262,7 +262,6 @@ func (tsr TerminalShareRegistration) EntityDtoToMap(input any) map[string]any {
 func (tsr TerminalShareRegistration) GetEntityRoles() entityManagementInterfaces.EntityRoles {
 	roleMap := make(map[string]string)
 	roleMap[string(authModels.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
-	roleMap[string(authModels.GroupManager)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")"
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")"
 
 	return entityManagementInterfaces.EntityRoles{

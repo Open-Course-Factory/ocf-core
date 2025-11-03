@@ -31,16 +31,16 @@ import (
 
 type RelTestCourse struct {
 	entityManagementModels.BaseModel
-	Name     string            `json:"name"`
-	Chapters []RelTestChapter  `gorm:"many2many:course_chapters" json:"chapters"`
+	Name     string           `json:"name"`
+	Chapters []RelTestChapter `gorm:"many2many:course_chapters" json:"chapters"`
 }
 
 type RelTestChapter struct {
 	entityManagementModels.BaseModel
-	Name     string             `json:"name"`
-	Order    int                `json:"order"`
-	Courses  []RelTestCourse    `gorm:"many2many:course_chapters" json:"courses"`
-	Sections []RelTestSection   `gorm:"many2many:chapter_sections" json:"sections"`
+	Name     string           `json:"name"`
+	Order    int              `json:"order"`
+	Courses  []RelTestCourse  `gorm:"many2many:course_chapters" json:"courses"`
+	Sections []RelTestSection `gorm:"many2many:chapter_sections" json:"sections"`
 }
 
 type RelTestSection struct {
@@ -53,10 +53,10 @@ type RelTestSection struct {
 
 type RelTestPage struct {
 	entityManagementModels.BaseModel
-	Name     string            `json:"name"`
-	Content  string            `json:"content"`
-	Order    int               `json:"order"`
-	Sections []RelTestSection  `gorm:"many2many:section_pages" json:"sections"`
+	Name     string           `json:"name"`
+	Content  string           `json:"content"`
+	Order    int              `json:"order"`
+	Sections []RelTestSection `gorm:"many2many:section_pages" json:"sections"`
 }
 
 // Join tables
@@ -305,12 +305,12 @@ func (r RelTestSectionRegistration) GetEntityRoles() entityManagementInterfaces.
 // ============================================================================
 
 type RelationshipTestSuite struct {
-	db               *gorm.DB
-	router           *gin.Engine
-	mockEnforcer     *authMocks.MockEnforcer
-	pageController   controller.GenericController
+	db                *gorm.DB
+	router            *gin.Engine
+	mockEnforcer      *authMocks.MockEnforcer
+	pageController    controller.GenericController
 	sectionController controller.GenericController
-	originalEnforcer authInterfaces.EnforcerInterface
+	originalEnforcer  authInterfaces.EnforcerInterface
 }
 
 func setupRelationshipTest(t *testing.T) *RelationshipTestSuite {
