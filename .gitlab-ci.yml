@@ -2,28 +2,96 @@ default:
   tags:
     - ocf-core
 
+# ============================================================================
+# Variables
+# ============================================================================
+
 variables:
-  # PostgreSQL configuration for tests
+  # Build configuration
+  GO_VERSION: "1.24"
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+
+  # PostgreSQL configuration (shared across test jobs)
   POSTGRES_DB: ocf_test
   POSTGRES_USER: postgres
   POSTGRES_PASSWORD: "postgrespass"
   POSTGRES_HOST: postgres
   POSTGRES_PORT: "5432"
   POSTGRES_SSLMODE: disable
-  GO_VERSION: "1.24"
+
+# ============================================================================
+# Stages
+# ============================================================================
 
 stages:
-  - check
-  - test
-  - build
+  - check    # Version validation and auto-tagging
+  - test     # All test suites (unit, integration, race, auth)
+  - build    # Docker image creation on release tags
+
+# ============================================================================
+# Cache Configuration
+# ============================================================================
+
+.go_cache:
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-go-modules"
+    paths:
+      - .go/pkg/mod/
+
+# ============================================================================
+# Base Job Templates
+# ============================================================================
+
+.test_job_base:
+  stage: test
+  image: golang:${GO_VERSION}
+  extends: .go_cache
+  before_script:
+    - export GOPATH=$CI_PROJECT_DIR/.go
+    - go mod download
+    - go install github.com/jstemmer/go-junit-report/v2@latest
+  artifacts:
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "web"  # Manual trigger
+  needs: []  # Run in parallel with other test jobs
+
+.postgres_test_base:
+  extends: .test_job_base
+  services:
+    - postgres
+  variables:
+    POSTGRES_DB: ocf_test
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: "postgrespass"
+  before_script:
+    - export GOPATH=$CI_PROJECT_DIR/.go
+    # Install PostgreSQL client for health checks
+    - apt-get update -qq && apt-get install -y -qq postgresql-client
+    # Wait for PostgreSQL to be ready
+    - chmod +x scripts/ci/wait-for-postgres.sh
+    - ./scripts/ci/wait-for-postgres.sh
+    # Install Go dependencies
+    - go mod download
+    - go install github.com/jstemmer/go-junit-report/v2@latest
+
+# ============================================================================
+# Check Stage
+# ============================================================================
 
 # Check version and auto-tag if changed
+# When the VERSION file is updated on main branch, this job:
+# 1. Compares VERSION file content with latest git tag
+# 2. Creates and pushes a new tag if version changed
+# 3. Triggers the build pipeline via the new tag
 check:version:
   stage: check
   image: alpine:latest
   before_script:
     - apk add --no-cache git curl jq
-    # Configure git
+    # Configure git for tagging
     - git config --global user.email "ci@ocf.soli.fr"
     - git config --global user.name "OCF CI"
   script:
@@ -65,51 +133,31 @@ check:version:
         echo "ℹ️  Version unchanged ($CURRENT_VERSION)"
       fi
   rules:
+    # Only auto-tag on main branch to prevent accidental releases from feature branches
     - if: $CI_COMMIT_BRANCH == "main"
 
-# Entity Management Tests with PostgreSQL
+# ============================================================================
+# Test Stage
+# ============================================================================
+
+# Tests core entity management system with both SQLite and PostgreSQL
+# Includes: generic repository tests, entity registration, security, integration tests
 test:entity-management:
-  stage: test
-  image: golang:${GO_VERSION}
-
-  services:
-    - postgres
-
-  variables:
-    POSTGRES_DB: ocf_test
-    POSTGRES_USER: postgres
-    POSTGRES_PASSWORD: "postgrespass"
-
-  before_script:
-    # Wait for PostgreSQL to be ready (service starts automatically)
-    - apt-get update -qq && apt-get install -y -qq postgresql-client
-    - |
-      echo "⏳ Waiting for PostgreSQL service to be ready..."
-      for i in $(seq 1 30); do
-        if PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c '\q' 2>/dev/null; then
-          echo "✅ PostgreSQL is ready!"
-          break
-        fi
-        if [ $i -eq 30 ]; then
-          echo "❌ PostgreSQL failed to start after 30 seconds"
-          exit 1
-        fi
-        sleep 1
-      done
-    - go mod download
-    - go install github.com/jstemmer/go-junit-report/v2@latest
-
+  extends: .postgres_test_base
   script:
-    # Run all tests (SQLite + PostgreSQL)
+    # Compile tests once
     - echo "📦 Compiling tests..."
     - go test -c -o entity_tests.exe ./tests/entityManagement
 
+    # Run SQLite-based tests
     - echo "🧪 Running SQLite-based tests..."
     - ./entity_tests.exe -test.v -test.timeout=60s -test.run "TestGeneric|TestEntityRegistration|TestSecurity|TestIntegration" 2>&1 | tee sqlite_tests.log
 
+    # Run PostgreSQL-specific tests
     - echo "🐘 Running PostgreSQL-specific tests..."
     - ./entity_tests.exe -test.v -test.timeout=60s -test.run "TestPostgres" 2>&1 | tee postgres_tests.log
 
+    # Generate coverage and test reports
     - echo "📊 Generating coverage and test reports..."
     - go test -v -coverprofile=coverage.out ./tests/entityManagement -timeout=90s 2>&1 | tee full_tests.log
     - cat full_tests.log | go-junit-report -set-exit-code > report.xml
@@ -130,19 +178,9 @@ test:entity-management:
       - full_tests.log
     expire_in: 1 week
 
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_PIPELINE_SOURCE == "web"  # Manual trigger
-
-# Course Tests
+# Tests course generation and management functionality
 test:courses:
-  stage: test
-  image: golang:${GO_VERSION}
-
-  before_script:
-    - go mod download
-    - go install github.com/jstemmer/go-junit-report/v2@latest
-
+  extends: .test_job_base
   script:
     - echo "📚 Running course tests..."
     - go test -v -timeout=60s ./tests/courses/... 2>&1 | tee courses_tests.log
@@ -156,19 +194,10 @@ test:courses:
       - courses_tests.log
     expire_in: 1 week
 
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_PIPELINE_SOURCE == "web"  # Manual trigger
-
-# Quick validation (no PostgreSQL)
+# Quick validation tests (no PostgreSQL required)
+# Runs a subset of tests marked with -test.short flag for fast feedback
 test:quick:
-  stage: test
-  image: golang:${GO_VERSION}
-
-  before_script:
-    - go mod download
-    - go install github.com/jstemmer/go-junit-report/v2@latest
-
+  extends: .test_job_base
   script:
     - echo "⚡ Running quick tests..."
     - go test -c -o entity_tests.exe ./tests/entityManagement
@@ -183,41 +212,10 @@ test:quick:
       - quick_tests.log
     expire_in: 1 week
 
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-
-# Race detector
+# Race condition detector
+# Compiles and runs tests with Go's race detector to catch concurrency issues
 test:race:
-  stage: test
-  image: golang:${GO_VERSION}
-
-  services:
-    - postgres
-
-  variables:
-    POSTGRES_DB: ocf_test
-    POSTGRES_USER: postgres
-    POSTGRES_PASSWORD: "postgrespass"
-
-  before_script:
-    # Wait for PostgreSQL to be ready (service starts automatically)
-    - apt-get update -qq && apt-get install -y -qq postgresql-client
-    - |
-      echo "⏳ Waiting for PostgreSQL service to be ready..."
-      for i in $(seq 1 30); do
-        if PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c '\q' 2>/dev/null; then
-          echo "✅ PostgreSQL is ready!"
-          break
-        fi
-        if [ $i -eq 30 ]; then
-          echo "❌ PostgreSQL failed to start after 30 seconds"
-          exit 1
-        fi
-        sleep 1
-      done
-    - go mod download
-    - go install github.com/jstemmer/go-junit-report/v2@latest
-
+  extends: .postgres_test_base
   script:
     - echo "🏁 Running race detector..."
     - go test -c -race -o entity_tests_race.exe ./tests/entityManagement
@@ -232,14 +230,15 @@ test:race:
       - race_tests.log
     expire_in: 1 week
 
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_PIPELINE_SOURCE == "web"  # Manual trigger
-
-# Auth Tests with Casdoor
+# Integration tests for Casdoor authentication flow
+# Requires: PostgreSQL (app DB), MySQL (Casdoor DB), Casdoor service
+# Uses Docker-in-Docker to run all services in isolated network
 test:auth:
   stage: test
+  # Note: Using custom image would be more efficient, but using base for now
+  # To use custom image: registry.gitlab.com/your-project/auth-test:latest
   image: docker:24-dind
+  needs: []  # Run in parallel with other test jobs
 
   services:
     - docker:24-dind
@@ -258,7 +257,7 @@ test:auth:
     CASDOOR_ENDPOINT: "http://ocf-casdoor-test:8000"
 
   before_script:
-    # Install docker-compose, wget, and postgresql-client
+    # Install required tools
     - apk add --no-cache docker-compose postgresql-client wget bash
 
     # Install Go 1.24 (Alpine's go package is too old)
@@ -272,7 +271,7 @@ test:auth:
     # Create JWT certificate from GitLab CI variable (use test certificate for auth tests)
     - echo $token_jwt_key_test | base64 -d > ./src/auth/casdoor/token_jwt_key.pem
 
-    # Start services in order (manually to respect dependencies)
+    # Start services in order (manual orchestration required)
     - echo "🐳 Starting database services first..."
     - docker-compose -f docker-compose.test.yml up -d postgres-test casdoor-db-test
     - echo "⏳ Waiting for databases to initialize..."
@@ -284,50 +283,9 @@ test:auth:
     - echo "⏳ Waiting for Casdoor to start..."
     - sleep 10
 
-    # Wait for services
-    - |
-      echo "⏳ Waiting for PostgreSQL to be ready..."
-      for i in $(seq 1 30); do
-        if docker exec ocf-postgres-test pg_isready -U postgres 2>/dev/null; then
-          echo "✅ PostgreSQL is ready!"
-          break
-        fi
-        if [ $i -eq 30 ]; then
-          echo "❌ PostgreSQL failed to start"
-          docker-compose -f docker-compose.test.yml logs postgres-test
-          exit 1
-        fi
-        sleep 1
-      done
-    - |
-      echo "⏳ Waiting for MySQL (Casdoor DB) to be ready..."
-      for i in $(seq 1 30); do
-        if docker exec ocf-casdoor-db-test mysqladmin ping -h localhost --silent 2>/dev/null; then
-          echo "✅ MySQL is ready!"
-          break
-        fi
-        if [ $i -eq 30 ]; then
-          echo "❌ MySQL failed to start"
-          docker-compose -f docker-compose.test.yml logs casdoor-db-test
-          exit 1
-        fi
-        sleep 1
-      done
-    - |
-      echo "⏳ Waiting for Casdoor to be ready..."
-      for i in $(seq 1 90); do
-        if docker exec ocf-casdoor-test wget --spider -q http://localhost:8000/api/get-account 2>/dev/null; then
-          echo "✅ Casdoor is ready!"
-          break
-        fi
-        if [ $i -eq 90 ]; then
-          echo "❌ Casdoor failed to start"
-          docker-compose -f docker-compose.test.yml logs casdoor-test
-          docker-compose -f docker-compose.test.yml logs casdoor-db-test
-          exit 1
-        fi
-        sleep 2
-      done
+    # Wait for all services to be ready
+    - chmod +x scripts/ci/wait-for-services.sh
+    - ./scripts/ci/wait-for-services.sh
 
     # Install Go dependencies
     - go mod download
@@ -368,15 +326,23 @@ test:auth:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_PIPELINE_SOURCE == "web"  # Manual trigger
 
+# ============================================================================
+# Build Stage
+# ============================================================================
+
+# Build Docker image and push to registry
+# Only runs when version tags are pushed (triggered by check:version job)
+# Tags image with both the version number and 'latest'
 build:
   stage: build
   before_script:
     - echo $token_jwt_key | base64 -d > ./token_jwt_key.pem
   variables:
-    # Add multiple tags: latest + version tag
+    # Add multiple tags: version number + latest
     DOCKER_IMAGE_TAGS: "${CI_COMMIT_TAG#v} latest"
   rules:
-    - if: $CI_COMMIT_TAG =~ /^v/  # Only run on version tags (v0.1.0, v1.2.3, etc.)
+    # Only run on version tags (v0.1.0, v1.2.3, etc.)
+    - if: $CI_COMMIT_TAG =~ /^v/
 
 include:
   - template: Jobs/Build.gitlab-ci.yml
