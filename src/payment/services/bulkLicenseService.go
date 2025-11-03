@@ -21,6 +21,7 @@ type BulkLicenseService interface {
 	RevokeLicense(licenseID uuid.UUID, requestingUserID string) error
 	UpdateBatchQuantity(batchID uuid.UUID, requestingUserID string, newQuantity int) error
 	GetBatchesByPurchaser(purchaserUserID string) (*[]models.SubscriptionBatch, error)
+	GetAccessibleBatches(userID string) (*[]models.SubscriptionBatch, error)
 	GetBatchLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error)
 	GetAvailableLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error)
 	PermanentlyDeleteBatch(batchID uuid.UUID, requestingUserID string) error
@@ -140,9 +141,13 @@ func (s *bulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID s
 		return nil, fmt.Errorf("batch not found: %w", err)
 	}
 
-	// Verify requester is the purchaser
-	if batch.PurchaserUserID != requestingUserID {
-		return nil, fmt.Errorf("only the purchaser can assign licenses")
+	// Verify requester can access this batch (as purchaser or organization member)
+	canAccess, err := s.canUserAccessBatch(batch, requestingUserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify access: %w", err)
+	}
+	if !canAccess {
+		return nil, fmt.Errorf("access denied: you can only assign licenses from your own batches or your organization's batches")
 	}
 
 	// Check if batch has available licenses
@@ -196,9 +201,13 @@ func (s *bulkLicenseService) RevokeLicense(licenseID uuid.UUID, requestingUserID
 		return fmt.Errorf("batch not found: %w", err)
 	}
 
-	// Verify requester is the purchaser
-	if batch.PurchaserUserID != requestingUserID {
-		return fmt.Errorf("only the purchaser can revoke licenses")
+	// Verify requester can access this batch (as purchaser or organization member)
+	canAccess, err := s.canUserAccessBatch(batch, requestingUserID)
+	if err != nil {
+		return fmt.Errorf("failed to verify access: %w", err)
+	}
+	if !canAccess {
+		return fmt.Errorf("access denied: you can only revoke licenses from your own batches or your organization's batches")
 	}
 
 	// CRITICAL: Terminate all active terminals for this user before revoking license
@@ -236,8 +245,13 @@ func (s *bulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUs
 		return fmt.Errorf("batch not found: %w", err)
 	}
 
-	if batch.PurchaserUserID != requestingUserID {
-		return fmt.Errorf("only the purchaser can update quantity")
+	// Verify requester can access this batch (as purchaser or organization member)
+	canAccess, err := s.canUserAccessBatch(batch, requestingUserID)
+	if err != nil {
+		return fmt.Errorf("failed to verify access: %w", err)
+	}
+	if !canAccess {
+		return fmt.Errorf("access denied: you can only update batches you purchased or your organization's batches")
 	}
 
 	if newQuantity < batch.AssignedQuantity {
@@ -333,6 +347,13 @@ func (s *bulkLicenseService) GetBatchesByPurchaser(purchaserUserID string) (*[]m
 	return s.batchRepository.GetByPurchaser(purchaserUserID)
 }
 
+// GetAccessibleBatches returns all batches accessible to a user through:
+// 1. Direct purchase (user is the purchaser)
+// 2. Organization membership (batches purchased by other members of their team organizations)
+func (s *bulkLicenseService) GetAccessibleBatches(userID string) (*[]models.SubscriptionBatch, error) {
+	return s.batchRepository.GetAccessibleByUser(userID)
+}
+
 // GetBatchLicenses returns all licenses in a batch
 func (s *bulkLicenseService) GetBatchLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error) {
 	batch, err := s.batchRepository.GetByID(batchID)
@@ -340,8 +361,13 @@ func (s *bulkLicenseService) GetBatchLicenses(batchID uuid.UUID, requestingUserI
 		return nil, fmt.Errorf("batch not found: %w", err)
 	}
 
-	if batch.PurchaserUserID != requestingUserID {
-		return nil, fmt.Errorf("access denied")
+	// Verify requester can access this batch (as purchaser or organization member)
+	canAccess, err := s.canUserAccessBatch(batch, requestingUserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify access: %w", err)
+	}
+	if !canAccess {
+		return nil, fmt.Errorf("access denied: you can only view licenses from your own batches or your organization's batches")
 	}
 
 	var licenses []models.UserSubscription
@@ -364,8 +390,13 @@ func (s *bulkLicenseService) GetAvailableLicenses(batchID uuid.UUID, requestingU
 		return nil, fmt.Errorf("batch not found: %w", err)
 	}
 
-	if batch.PurchaserUserID != requestingUserID {
-		return nil, fmt.Errorf("access denied")
+	// Verify requester can access this batch (as purchaser or organization member)
+	canAccess, err := s.canUserAccessBatch(batch, requestingUserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify access: %w", err)
+	}
+	if !canAccess {
+		return nil, fmt.Errorf("access denied: you can only view available licenses from your own batches or your organization's batches")
 	}
 
 	var licenses []models.UserSubscription
@@ -523,9 +554,13 @@ func (s *bulkLicenseService) PermanentlyDeleteBatch(batchID uuid.UUID, requestin
 		return fmt.Errorf("batch not found: %w", err)
 	}
 
-	// Verify requester is the purchaser
-	if batch.PurchaserUserID != requestingUserID {
-		return fmt.Errorf("only the purchaser can delete this batch")
+	// Verify requester can access this batch (as purchaser or organization member)
+	canAccess, err := s.canUserAccessBatch(batch, requestingUserID)
+	if err != nil {
+		return fmt.Errorf("failed to verify access: %w", err)
+	}
+	if !canAccess {
+		return fmt.Errorf("access denied: you can only delete batches you purchased or your organization's batches")
 	}
 
 	utils.Info("🗑️ Permanently deleting batch %s with %d licenses", batchID, batch.TotalQuantity)
@@ -579,4 +614,29 @@ func (s *bulkLicenseService) PermanentlyDeleteBatch(batchID uuid.UUID, requestin
 
 	utils.Info("✅ Successfully deleted batch %s and all %d licenses", batchID, len(licenses))
 	return nil
+}
+
+// canUserAccessBatch checks if a user can access a batch through:
+// 1. Direct purchase (user is the purchaser)
+// 2. Organization membership (user is a member of a team organization that the purchaser belongs to)
+func (s *bulkLicenseService) canUserAccessBatch(batch *models.SubscriptionBatch, userID string) (bool, error) {
+	// Check if user is the direct purchaser
+	if batch.PurchaserUserID == userID {
+		return true, nil
+	}
+
+	// Check if user and purchaser share a team organization
+	var count int64
+	err := s.db.Table("organization_members om1").
+		Joins("JOIN organizations org ON om1.organization_id = org.id AND org.organization_type = 'team'").
+		Joins("JOIN organization_members om2 ON org.id = om2.organization_id").
+		Where("om1.user_id = ? AND om2.user_id = ? AND om1.is_active = true AND om2.is_active = true",
+			batch.PurchaserUserID, userID).
+		Count(&count).Error
+
+	if err != nil {
+		return false, fmt.Errorf("failed to check organization membership: %w", err)
+	}
+
+	return count > 0, nil
 }

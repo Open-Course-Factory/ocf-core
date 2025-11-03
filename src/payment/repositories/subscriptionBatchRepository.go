@@ -14,6 +14,7 @@ type SubscriptionBatchRepository interface {
 	GetByStripeSubscriptionID(stripeSubID string) (*models.SubscriptionBatch, error)
 	GetByPurchaser(purchaserUserID string) (*[]models.SubscriptionBatch, error)
 	GetByGroup(groupID uuid.UUID) (*[]models.SubscriptionBatch, error)
+	GetAccessibleByUser(userID string) (*[]models.SubscriptionBatch, error)
 	Update(batch *models.SubscriptionBatch) error
 	Delete(id uuid.UUID) error
 	IncrementAssignedQuantity(batchID uuid.UUID, increment int) error
@@ -98,4 +99,29 @@ func (r *subscriptionBatchRepository) DecrementAssignedQuantity(batchID uuid.UUI
 		Where("id = ?", batchID).
 		UpdateColumn("assigned_quantity", gorm.Expr("assigned_quantity - ?", decrement)).
 		Error
+}
+
+// GetAccessibleByUser returns all batches accessible to a user through:
+// 1. Direct purchase (user is the purchaser)
+// 2. Organization membership (batches purchased by other members of their team organizations)
+func (r *subscriptionBatchRepository) GetAccessibleByUser(userID string) (*[]models.SubscriptionBatch, error) {
+	var batches []models.SubscriptionBatch
+
+	// Build query to get batches:
+	// 1. Where user is the direct purchaser
+	// 2. OR where purchaser is a member of user's team organizations
+	query := r.db.Preload("SubscriptionPlan").
+		Distinct().
+		Joins("LEFT JOIN organization_members om1 ON subscription_batches.purchaser_user_id = om1.user_id").
+		Joins("LEFT JOIN organizations org ON om1.organization_id = org.id AND org.organization_type = 'team'").
+		Joins("LEFT JOIN organization_members om2 ON org.id = om2.organization_id AND om2.user_id = ?", userID).
+		Where("subscription_batches.purchaser_user_id = ? OR om2.user_id IS NOT NULL", userID).
+		Order("subscription_batches.created_at DESC")
+
+	err := query.Find(&batches).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return &batches, nil
 }

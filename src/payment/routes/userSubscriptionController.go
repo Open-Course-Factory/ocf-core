@@ -355,7 +355,8 @@ func (sc *userSubscriptionController) GetAllUserSubscriptions(ctx *gin.Context) 
 	}
 
 	// Convert to DTOs and mark the primary one
-	var subscriptionDTOs []dto.UserSubscriptionOutput
+	// Initialize as empty array instead of nil to ensure JSON returns [] instead of null
+	subscriptionDTOs := make([]dto.UserSubscriptionOutput, 0)
 	for _, sub := range subscriptions {
 		subDTO, err := sc.conversionService.UserSubscriptionToDTO(&sub)
 		if err != nil {

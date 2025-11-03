@@ -166,7 +166,7 @@ func (c *bulkLicenseController) PurchaseBulkLicenses(ctx *gin.Context) {
 func (c *bulkLicenseController) GetMyBatches(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 
-	batches, err := c.bulkService.GetBatchesByPurchaser(userID)
+	batches, err := c.bulkService.GetAccessibleBatches(userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -176,7 +176,8 @@ func (c *bulkLicenseController) GetMyBatches(ctx *gin.Context) {
 	}
 
 	// Convert to output DTOs
-	var output []dto.SubscriptionBatchOutput
+	// Initialize as empty array instead of nil to ensure JSON returns [] instead of null
+	output := make([]dto.SubscriptionBatchOutput, 0)
 	for _, batch := range *batches {
 		batchOutput := dto.SubscriptionBatchOutput{
 			ID:                       batch.ID,
@@ -315,7 +316,8 @@ func (c *bulkLicenseController) GetBatchLicenses(ctx *gin.Context) {
 	}
 
 	// Convert to output DTOs
-	var output []dto.UserSubscriptionOutput
+	// Initialize as empty array instead of nil to ensure JSON returns [] instead of null
+	output := make([]dto.UserSubscriptionOutput, 0)
 	for _, license := range *licenses {
 		licenseOutput, _ := c.conversionService.UserSubscriptionToDTO(&license)
 		output = append(output, *licenseOutput)

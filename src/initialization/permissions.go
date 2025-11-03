@@ -115,5 +115,30 @@ func SetupPaymentRolePermissions(enforcer interfaces.EnforcerInterface) {
 	enforcer.AddPolicy("member", "/api/v1/invoices/user", "GET")
 	enforcer.AddPolicy("member", "/api/v1/payment-methods/user", "GET")
 
-	log.Printf("✅ Terminal permissions setup completed")
+	// Subscription batch endpoints - available to all authenticated members
+	log.Println("Setting up subscription batch permissions...")
+	batchRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/subscription-batches", "GET"},                                    // List accessible batches
+		{"/api/v1/subscription-batches/:id", "GET"},                                // Get batch details
+		{"/api/v1/subscription-batches/:id/licenses", "GET"},                       // List licenses in batch
+		{"/api/v1/subscription-batches/:id/assign", "POST"},                        // Assign a license
+		{"/api/v1/subscription-batches/:id/licenses/:license_id/revoke", "DELETE"}, // Revoke a license
+		{"/api/v1/subscription-batches/:id/quantity", "PATCH"},                     // Update quantity
+		{"/api/v1/subscription-batches/:id/permanent", "DELETE"},                   // Permanently delete batch
+		{"/api/v1/subscription-batches/create-checkout-session", "POST"},           // Create checkout session
+	}
+
+	for _, route := range batchRoutes {
+		_, err := enforcer.AddPolicy("member", route.path, route.method)
+		if err != nil && !strings.Contains(err.Error(), "UNIQUE") {
+			log.Printf("Error adding batch permission %s %s: %v", route.method, route.path, err)
+		} else {
+			log.Printf("✅ Added member permission for %s %s", route.method, route.path)
+		}
+	}
+
+	log.Printf("✅ Terminal and subscription permissions setup completed")
 }
