@@ -49,6 +49,7 @@ stages:
   extends: .go_cache
   before_script:
     - export GOPATH=$CI_PROJECT_DIR/.go
+    - export PATH=$PATH:$GOPATH/bin
     - go mod download
     - go install github.com/jstemmer/go-junit-report/v2@latest
   artifacts:
@@ -68,6 +69,7 @@ stages:
     POSTGRES_PASSWORD: "postgrespass"
   before_script:
     - export GOPATH=$CI_PROJECT_DIR/.go
+    - export PATH=$PATH:$GOPATH/bin
     # Install PostgreSQL client for health checks
     - apt-get update -qq && apt-get install -y -qq postgresql-client
     # Wait for PostgreSQL to be ready

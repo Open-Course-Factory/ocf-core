@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"testing"
 
-	"soli/formations/src/auth/errors"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
@@ -465,10 +464,10 @@ func TestGenericRepository_DeleteEntity_NotFound(t *testing.T) {
 
 	// Assert
 	assert.Error(t, err)
-	apiErr, ok := err.(*errors.APIError)
-	assert.True(t, ok)
-	assert.Equal(t, http.StatusNotFound, apiErr.ErrorCode)
-	assert.Equal(t, "Entity not found", apiErr.ErrorMessage)
+	entityErr, ok := err.(*entityErrors.EntityError)
+	assert.True(t, ok, "Expected EntityError, got %T", err)
+	assert.Equal(t, http.StatusNotFound, entityErr.HTTPStatus)
+	assert.Equal(t, "Entity not found", entityErr.Message)
 }
 
 // Test de performance pour les opérations de base
