@@ -273,6 +273,10 @@ test:auth:
     # Create JWT certificate from GitLab CI variable (use test certificate for auth tests)
     - echo $token_jwt_key_test | base64 -d > ./src/auth/casdoor/token_jwt_key.pem
 
+    # Clean up previous run's resources to ensure a fresh start
+    - echo "🧹 Cleaning up old Docker resources..."
+    - docker-compose -f docker-compose.test.yml down -v --remove-orphans || true
+
     # Start services in order (manual orchestration required)
     - echo "🐳 Starting database services first..."
     - docker-compose -f docker-compose.test.yml up -d postgres-test casdoor-db-test

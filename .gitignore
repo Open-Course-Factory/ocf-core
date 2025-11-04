@@ -27,3 +27,4 @@ benchmarks_baseline.txt
 *_tests.log
 *_report.xml
 report.xml
+.claude/settings.local.json
