@@ -411,11 +411,12 @@ release:manual:
   stage: release
   image: alpine:latest
   variables:
-    GITLAB_HOST: "usine.solution-libre.fr"
+    GITLAB_HOST: $CI_SERVER_HOST
     TAG_NAME: ""
   before_script:
     - apk add --no-cache git
     - apk add --no-cache glab
+    - glab auth login --job-token $CI_JOB_TOKEN --hostname $CI_SERVER_HOST --api-protocol $CI_SERVER_PROTOCOL
   script:
     - |
       if [ -z "$TAG_NAME" ]; then
