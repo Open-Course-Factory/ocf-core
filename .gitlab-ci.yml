@@ -398,11 +398,16 @@ release:create:
   image: alpine:latest
   variables:
     GITLAB_HOST: "usine.solution-libre.fr"
+    GIT_DEPTH: 0  # Fetch full history for accurate release notes
   before_script:
     - apk add --no-cache git
     - apk add --no-cache glab
+    # Ensure all tags are fetched for finding previous release
+    - git fetch --tags --force
   script:
+    - chmod +x ./scripts/generate-release-notes.sh
     - export RELEASE_NOTES=$(./scripts/generate-release-notes.sh $CI_COMMIT_TAG)
+    - echo "$RELEASE_NOTES"  # Show release notes in CI log for debugging
     - glab release create $CI_COMMIT_TAG -N "$RELEASE_NOTES"
   rules:
     - if: $CI_COMMIT_TAG =~ /^v/
