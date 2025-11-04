@@ -396,6 +396,8 @@ build:
 release:create:
   stage: release
   image: alpine:latest
+  variables:
+    GITLAB_HOST: "usine.solution-libre.fr"
   before_script:
     - apk add --no-cache git
     - apk add --no-cache glab
@@ -408,11 +410,12 @@ release:create:
 release:manual:
   stage: release
   image: alpine:latest
+  variables:
+    GITLAB_HOST: "usine.solution-libre.fr"
+    TAG_NAME: ""
   before_script:
     - apk add --no-cache git
     - apk add --no-cache glab
-  variables:
-    TAG_NAME: ""
   script:
     - |
       if [ -z "$TAG_NAME" ]; then
