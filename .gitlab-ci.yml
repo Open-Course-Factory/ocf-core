@@ -28,6 +28,7 @@ stages:
   - check    # Version validation and auto-tagging
   - test     # All test suites (unit, integration, race, auth)
   - build    # Docker image creation on release tags
+  - release  # Release creation
 
 # ============================================================================
 # Cache Configuration
@@ -387,6 +388,40 @@ build:
   rules:
     # Only run on version tags (v0.1.0, v1.2.3, etc.)
     - if: $CI_COMMIT_TAG =~ /^v/
+
+# ============================================================================
+# Release Stage
+# ============================================================================
+
+release:create:
+  stage: release
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache git
+    - apk add --no-cache glab
+  script:
+    - export RELEASE_NOTES=$(./scripts/generate-release-notes.sh $CI_COMMIT_TAG)
+    - glab release create $CI_COMMIT_TAG -n "$RELEASE_NOTES"
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+
+release:manual:
+  stage: release
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache git
+    - apk add --no-cache glab
+  variables:
+    TAG_NAME: ""
+  script:
+    - |
+      if [ -z "$TAG_NAME" ]; then
+        echo "Please provide a tag name to the TAG_NAME variable."
+        exit 1
+      fi
+    - export RELEASE_NOTES=$(./scripts/generate-release-notes.sh $TAG_NAME)
+    - glab release create $TAG_NAME -n "$RELEASE_NOTES"
+  when: manual
 
 include:
   - template: Jobs/Build.gitlab-ci.yml
