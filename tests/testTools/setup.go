@@ -196,28 +196,31 @@ func SetupRoles() {
 
 func SetupUsers() {
 	userService := services.NewUserService()
-	_, err := userService.AddUser(dto.CreateUserInput{UserName: "1_st", DisplayName: "1 Student", Email: "1.student@test.com", Password: "test", FirstName: "Student", LastName: "1"})
+	tosTime := time.Now().UTC().Format(time.RFC3339)
+	tosVersion := "2025-01-01"
+
+	_, err := userService.AddUser(dto.CreateUserInput{UserName: "1_st", DisplayName: "1 Student", Email: "1.student@test.com", Password: "test", FirstName: "Student", LastName: "1", TosAcceptedAt: tosTime, TosVersion: tosVersion})
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	_, err = userService.AddUser(dto.CreateUserInput{UserName: "2_st", DisplayName: "2 Student", Email: "2.student@test.com", Password: "test", FirstName: "Student", LastName: "2"})
+	_, err = userService.AddUser(dto.CreateUserInput{UserName: "2_st", DisplayName: "2 Student", Email: "2.student@test.com", Password: "test", FirstName: "Student", LastName: "2", TosAcceptedAt: tosTime, TosVersion: tosVersion})
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	_, err = userService.AddUser(dto.CreateUserInput{UserName: "3_st", DisplayName: "3 Student", Email: "3.student@test.com", Password: "test", FirstName: "Student", LastName: "3"})
+	_, err = userService.AddUser(dto.CreateUserInput{UserName: "3_st", DisplayName: "3 Student", Email: "3.student@test.com", Password: "test", FirstName: "Student", LastName: "3", TosAcceptedAt: tosTime, TosVersion: tosVersion})
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	_, err = userService.AddUser(dto.CreateUserInput{UserName: "4_st", DisplayName: "4 Student", Email: "4.student@test.com", Password: "test", FirstName: "Student", LastName: "4"})
+	_, err = userService.AddUser(dto.CreateUserInput{UserName: "4_st", DisplayName: "4 Student", Email: "4.student@test.com", Password: "test", FirstName: "Student", LastName: "4", TosAcceptedAt: tosTime, TosVersion: tosVersion})
 	if err != nil {
 		log.Fatal(err.Error())
 	}
 
-	_, err = userService.AddUser(dto.CreateUserInput{UserName: "1_sup", DisplayName: "1 Supervisor", Email: "1.supervisor@test.com", Password: "test", FirstName: "Supervisor", LastName: "1", DefaultRole: "administrator"})
+	_, err = userService.AddUser(dto.CreateUserInput{UserName: "1_sup", DisplayName: "1 Supervisor", Email: "1.supervisor@test.com", Password: "test", FirstName: "Supervisor", LastName: "1", DefaultRole: "administrator", TosAcceptedAt: tosTime, TosVersion: tosVersion})
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	_, err = userService.AddUser(dto.CreateUserInput{UserName: "2_sup", DisplayName: "2 Supervisor", Email: "2.supervisor@test.com", Password: "test", FirstName: "Supervisor", LastName: "2", DefaultRole: "administrator"})
+	_, err = userService.AddUser(dto.CreateUserInput{UserName: "2_sup", DisplayName: "2 Supervisor", Email: "2.supervisor@test.com", Password: "test", FirstName: "Supervisor", LastName: "2", DefaultRole: "administrator", TosAcceptedAt: tosTime, TosVersion: tosVersion})
 	if err != nil {
 		log.Fatal(err.Error())
 	}
