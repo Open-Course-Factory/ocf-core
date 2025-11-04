@@ -125,11 +125,24 @@ check:version:
 
           # Push tag using token (try CI_PUSH_TOKEN first, fallback to CI_JOB_TOKEN)
           TOKEN=${CI_PUSH_TOKEN:-$CI_JOB_TOKEN}
-          git remote set-url origin https://gitlab-ci-token:${TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git
-          git push origin "v${CURRENT_VERSION}"
 
-          echo "✅ Tag v$CURRENT_VERSION created and pushed"
-          echo "⏳ A new pipeline will start for the tag..."
+          # Configure remote with authentication
+          git remote set-url origin https://gitlab-ci-token:${TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git
+
+          # Push tag with error handling
+          if git push origin "v${CURRENT_VERSION}" 2>&1; then
+            echo "✅ Tag v$CURRENT_VERSION created and pushed successfully"
+            echo "⏳ A new pipeline will start for the tag..."
+          else
+            echo "❌ Failed to push tag v$CURRENT_VERSION"
+            echo "⚠️  Possible causes:"
+            echo "   - CI_PUSH_TOKEN not configured (using CI_JOB_TOKEN which may lack permissions)"
+            echo "   - Protected tags not allowing CI to push"
+            echo "   - Insufficient token permissions"
+            echo ""
+            echo "💡 Solution: Configure CI_PUSH_TOKEN in CI/CD variables with write_repository scope"
+            exit 1
+          fi
         fi
       else
         echo "ℹ️  Version unchanged ($CURRENT_VERSION)"
