@@ -403,7 +403,7 @@ release:create:
     - apk add --no-cache glab
   script:
     - export RELEASE_NOTES=$(./scripts/generate-release-notes.sh $CI_COMMIT_TAG)
-    - glab release create $CI_COMMIT_TAG -n "$RELEASE_NOTES"
+    - glab release create $CI_COMMIT_TAG -N "$RELEASE_NOTES"
   rules:
     - if: $CI_COMMIT_TAG =~ /^v/
 
@@ -424,7 +424,7 @@ release:manual:
         exit 1
       fi
     - export RELEASE_NOTES=$(./scripts/generate-release-notes.sh $TAG_NAME)
-    - glab release create $TAG_NAME -n "$RELEASE_NOTES"
+    - glab release create $TAG_NAME -N "$RELEASE_NOTES"
   when: manual
 
 include:
