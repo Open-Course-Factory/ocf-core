@@ -102,10 +102,29 @@ check:version:
       CURRENT_VERSION=$(cat VERSION | tr -d '[:space:]')
       echo "Current version in code: $CURRENT_VERSION"
 
-      # Get latest git tag
-      git fetch --tags
-      LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-      echo "Latest git tag: $LATEST_TAG"
+      # Get latest tag from REMOTE (not local cache which may be stale)
+      echo "🔍 Checking remote tags..."
+      git fetch --tags --prune-tags  # Sync local tags with remote, remove stale local tags
+
+      # Query remote directly to avoid stale local tags
+      REMOTE_TAGS=$(git ls-remote --tags origin | grep -v '\^{}' | cut -d/ -f3 | sort -V)
+      LATEST_TAG=$(echo "$REMOTE_TAGS" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | tail -1)
+
+      if [ -z "$LATEST_TAG" ]; then
+        LATEST_TAG="v0.0.0"
+        echo "No version tags found on remote, using default: $LATEST_TAG"
+      else
+        echo "Latest tag on remote: $LATEST_TAG"
+      fi
+
+      # Also check local tags for comparison
+      LOCAL_LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
+      if [ "$LOCAL_LATEST" != "$LATEST_TAG" ]; then
+        echo "⚠️  Local tag cache mismatch:"
+        echo "    Local:  $LOCAL_LATEST"
+        echo "    Remote: $LATEST_TAG"
+        echo "    Using remote as source of truth"
+      fi
 
       # Remove 'v' prefix if present
       LATEST_VERSION=${LATEST_TAG#v}
@@ -114,9 +133,9 @@ check:version:
       if [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
         echo "🎉 Version changed from $LATEST_VERSION to $CURRENT_VERSION"
 
-        # Check if tag already exists
-        if git rev-parse "v${CURRENT_VERSION}" >/dev/null 2>&1; then
-          echo "⚠️  Tag v${CURRENT_VERSION} already exists, skipping"
+        # Check if tag already exists ON REMOTE (not just locally)
+        if git ls-remote --tags origin | grep -q "refs/tags/v${CURRENT_VERSION}$"; then
+          echo "⚠️  Tag v${CURRENT_VERSION} already exists on remote, skipping"
         else
           echo "Creating and pushing tag v$CURRENT_VERSION..."
 
