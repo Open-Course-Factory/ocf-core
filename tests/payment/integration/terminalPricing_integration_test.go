@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +43,12 @@ func setupIntegrationDB(t *testing.T) *gorm.DB {
 
 // seedTestPlans creates the 4 terminal pricing plans with updated size naming (XS, S, M, L, XL)
 func seedTestPlans(t *testing.T, db *gorm.DB) map[string]*models.SubscriptionPlan {
+	// Helper to create string pointer
+	strPtr := func(s string) *string { return &s }
+
+	// Use test name as suffix to make Stripe price IDs unique per test
+	testSuffix := "_" + strings.ReplaceAll(t.Name(), "/", "_")
+
 	plans := map[string]*models.SubscriptionPlan{
 		"Trial": {
 			Name:                      "Trial",
@@ -57,6 +64,7 @@ func seedTestPlans(t *testing.T, db *gorm.DB) map[string]*models.SubscriptionPla
 			AllowedTemplates:          []string{"ubuntu-basic", "alpine-basic"},
 			IsActive:                  true,
 			RequiredRole:              "member",
+			StripePriceID:             strPtr("price_test_trial" + testSuffix),
 		},
 		"Solo": {
 			Name:                      "Solo",
@@ -72,6 +80,7 @@ func seedTestPlans(t *testing.T, db *gorm.DB) map[string]*models.SubscriptionPla
 			AllowedTemplates:          []string{"ubuntu-basic", "ubuntu-dev", "alpine-basic", "debian-basic", "python", "nodejs", "docker"},
 			IsActive:                  true,
 			RequiredRole:              "member",
+			StripePriceID:             strPtr("price_test_solo" + testSuffix),
 		},
 		"Trainer": {
 			Name:                      "Trainer",
@@ -87,6 +96,7 @@ func seedTestPlans(t *testing.T, db *gorm.DB) map[string]*models.SubscriptionPla
 			AllowedTemplates:          []string{"ubuntu-basic", "ubuntu-dev", "alpine-basic", "debian-basic", "python", "nodejs", "docker"},
 			IsActive:                  true,
 			RequiredRole:              "trainer",
+			StripePriceID:             strPtr("price_test_trainer" + testSuffix),
 		},
 		"Organization": {
 			Name:                      "Organization",
@@ -102,6 +112,7 @@ func seedTestPlans(t *testing.T, db *gorm.DB) map[string]*models.SubscriptionPla
 			AllowedTemplates:          []string{"all"},
 			IsActive:                  true,
 			RequiredRole:              "organization",
+			StripePriceID:             strPtr("price_test_organization" + testSuffix),
 		},
 	}
 
@@ -116,12 +127,12 @@ func seedTestPlans(t *testing.T, db *gorm.DB) map[string]*models.SubscriptionPla
 // createUserSubscription creates an active subscription for a user
 func createUserSubscription(t *testing.T, db *gorm.DB, userID string, planID uuid.UUID) *models.UserSubscription {
 	subscription := &models.UserSubscription{
-		UserID:              userID,
-		SubscriptionPlanID:  planID,
-		Status:              "active",
-		CurrentPeriodStart:  time.Now(),
-		CurrentPeriodEnd:    time.Now().AddDate(0, 1, 0),
-		StripeCustomerID:    "cus_test_" + userID,
+		UserID:               userID,
+		SubscriptionPlanID:   planID,
+		Status:               "active",
+		CurrentPeriodStart:   time.Now(),
+		CurrentPeriodEnd:     time.Now().AddDate(0, 1, 0),
+		StripeCustomerID:     "cus_test_" + userID,
 		StripeSubscriptionID: "sub_test_" + userID,
 	}
 
@@ -300,13 +311,13 @@ func TestIntegration_PlanComparison(t *testing.T) {
 	service := services.NewSubscriptionService(db)
 
 	users := map[string]struct {
-		planName string
+		planName     string
 		maxTerminals int
 	}{
-		"user-trial":  {"Trial", 1},
-		"user-solo":   {"Solo", 1},
+		"user-trial":   {"Trial", 1},
+		"user-solo":    {"Solo", 1},
 		"user-trainer": {"Trainer", 3},
-		"user-org":    {"Organization", 10},
+		"user-org":     {"Organization", 10},
 	}
 
 	// Create subscriptions for each user

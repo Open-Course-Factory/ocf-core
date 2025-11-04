@@ -7,6 +7,7 @@ import (
 
 	"soli/formations/src/auth/errors"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	entityManagementModels "soli/formations/src/entityManagement/models"
@@ -193,10 +194,11 @@ func TestGenericRepository_CreateEntity_ConversionFunctionNotFound(t *testing.T)
 	assert.Error(t, err)
 	assert.Nil(t, result)
 
-	apiErr, ok := err.(*errors.APIError)
-	assert.True(t, ok)
-	assert.Equal(t, http.StatusInternalServerError, apiErr.ErrorCode)
-	assert.Contains(t, apiErr.ErrorMessage, "Entity conversion function does not exist")
+	entityErr, ok := err.(*entityErrors.EntityError)
+	assert.True(t, ok, "Error should be of type *EntityError")
+	assert.Equal(t, http.StatusInternalServerError, entityErr.HTTPStatus)
+	assert.Equal(t, "Entity conversion failed", entityErr.Message)
+	assert.Contains(t, entityErr.Details["reason"], "conversion function does not exist")
 }
 
 func TestGenericRepository_SaveEntity_Success(t *testing.T) {

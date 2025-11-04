@@ -104,10 +104,19 @@ func TestCheckUsageLimit_ConcurrentTerminals_RealTimeCount(t *testing.T) {
 
 	t.Run("Should allow after stopping terminals", func(t *testing.T) {
 		// Stop 2 terminals (leaving only 1 active)
-		db.Model(&terminalModels.Terminal{}).
-			Where("user_id = ? AND status = ?", userID, "active").
+		// First, get 2 terminals to stop
+		var terminalsToStop []terminalModels.Terminal
+		err := db.Where("user_id = ? AND status = ?", userID, "active").
 			Limit(2).
-			Update("status", "stopped")
+			Find(&terminalsToStop).Error
+		require.NoError(t, err)
+		require.Len(t, terminalsToStop, 2, "Should find 2 active terminals to stop")
+
+		// Stop them
+		for _, terminal := range terminalsToStop {
+			err := db.Model(&terminal).Update("status", "stopped").Error
+			require.NoError(t, err)
+		}
 
 		// Try to create another terminal
 		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)

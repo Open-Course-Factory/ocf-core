@@ -144,9 +144,9 @@ func TestCursorPagination_InvalidCursor(t *testing.T) {
 	// Try with invalid cursor
 	_, _, _, _, err := repo.GetAllEntitiesCursor(CursorTestEntity{}, "invalid-cursor", 5, map[string]any{}, nil)
 
-	// Should return error
+	// Should return error with ENT010 code
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid cursor")
+	assert.Contains(t, err.Error(), "Invalid cursor")
 }
 
 // Test: GetAllEntitiesCursor - With filters

@@ -483,32 +483,35 @@ func TestEntityRegistrationService_WithMockEnforcer(t *testing.T) {
 
 	// Vérifications
 	assert.Equal(t, 1, mockEnforcer.GetLoadPolicyCallCount())
-	// Now creates 5 calls: member(OCF), student(Casdoor mapping), administrator(OCF), administrator(Casdoor), admin(Casdoor)
-	assert.Equal(t, 5, mockEnforcer.GetAddPolicyCallCount())
+	// SetDefaultEntityAccesses creates permissions for both list and resource endpoints
+	// For member role: 2 OCF + (7 Casdoor roles * 2 endpoints) = 16 calls
+	// For admin role: 2 OCF + (2 Casdoor roles * 2 endpoints) = 6 calls
+	// Total: 22 calls
+	assert.Equal(t, 22, mockEnforcer.GetAddPolicyCallCount())
 
 	// Vérifier que les rôles member et admin sont bien ajoutés
 	// Note: The new system uses /* instead of / and adds Casdoor role mappings
 	calls := mockEnforcer.AddPolicyCalls
 	assert.GreaterOrEqual(t, len(calls), 2, "Should have at least member and admin roles")
 
-	// Verify member role exists (OCF role)
+	// Verify member role exists (OCF role) - specifically check for wildcard endpoint
 	foundMember := false
 	for _, call := range calls {
-		if len(call) >= 3 && call[0] == string(authModels.Member) {
+		if len(call) >= 3 && call[0] == string(authModels.Member) && call[1] == "/api/v1/test-entities/*" {
 			foundMember = true
-			assert.Equal(t, "/api/v1/testentities/*", call[1])
+			assert.Equal(t, "/api/v1/test-entities/*", call[1])
 			assert.Equal(t, "("+http.MethodGet+"|"+http.MethodPost+")", call[2])
 			break
 		}
 	}
 	assert.True(t, foundMember, "Member role should be added")
 
-	// Verify admin role exists (OCF role)
+	// Verify admin role exists (OCF role) - specifically check for wildcard endpoint
 	foundAdmin := false
 	for _, call := range calls {
-		if len(call) >= 3 && call[0] == string(authModels.Admin) {
+		if len(call) >= 3 && call[0] == string(authModels.Admin) && call[1] == "/api/v1/test-entities/*" {
 			foundAdmin = true
-			assert.Equal(t, "/api/v1/testentities/*", call[1])
+			assert.Equal(t, "/api/v1/test-entities/*", call[1])
 			assert.Equal(t, "("+http.MethodGet+"|"+http.MethodPost+"|"+http.MethodDelete+")", call[2])
 			break
 		}
