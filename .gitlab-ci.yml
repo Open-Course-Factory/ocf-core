@@ -139,6 +139,12 @@ check:version:
         else
           echo "Creating and pushing tag v$CURRENT_VERSION..."
 
+          # Delete stale local tag if it exists (from previous failed push)
+          if git rev-parse "v${CURRENT_VERSION}" >/dev/null 2>&1; then
+            echo "🧹 Removing stale local tag v${CURRENT_VERSION}..."
+            git tag -d "v${CURRENT_VERSION}"
+          fi
+
           # Create annotated tag
           git tag -a "v${CURRENT_VERSION}" -m "Release v${CURRENT_VERSION}"
 
