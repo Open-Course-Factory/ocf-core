@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Auth Test - Terminal Console</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 900px;
+            margin: 0 auto;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+        }
+        .input-group {
+            margin: 15px 0;
+        }
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 5px 10px 0;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #log {
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            min-height: 300px;
+            max-height: 500px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .instructions {
+            background: #fff;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+            border-left: 4px solid #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔒 WebSocket Authentication Test</h1>
+
+    <div class="instructions">
+        <h3>📋 Instructions</h3>
+        <ol>
+            <li>Make sure your backend server is running on localhost:8080</li>
+            <li>Get a valid JWT token from your application</li>
+            <li>Create a terminal session and get its ID</li>
+            <li>Paste the token and terminal ID below</li>
+            <li>Click "Test WebSocket Connection"</li>
+        </ol>
+    </div>
+
+    <div class="input-group">
+        <label for="backendUrl">Backend URL:</label>
+        <input type="text" id="backendUrl" value="ws://localhost:8080" placeholder="ws://localhost:8080">
+    </div>
+
+    <div class="input-group">
+        <label for="token">JWT Token:</label>
+        <input type="text" id="token" placeholder="Paste your JWT token here (without 'Bearer ' prefix)">
+    </div>
+
+    <div class="input-group">
+        <label for="terminalId">Terminal ID:</label>
+        <input type="text" id="terminalId" placeholder="9ab23678-1336-49ca-9d17-7c227645940f" value="9ab23678-1336-49ca-9d17-7c227645940f">
+    </div>
+
+    <button onclick="testWebSocket()" id="testBtn">🧪 Test WebSocket Connection</button>
+    <button onclick="testHttpRequest()">🔍 Test HTTP Request (Should Fail)</button>
+    <button onclick="clearLog()">🧹 Clear Log</button>
+
+    <h3>📊 Test Log:</h3>
+    <div id="log"></div>
+
+    <div class="instructions" style="margin-top: 20px;">
+        <h3>✅ Expected Behavior</h3>
+        <ul>
+            <li><strong>WebSocket with ?token=:</strong> ✅ Should connect successfully</li>
+            <li><strong>HTTP with ?token=:</strong> ❌ Should return 401 Unauthorized</li>
+            <li><strong>HTTP with Authorization header:</strong> ✅ Should work (not tested here)</li>
+        </ul>
+    </div>
+
+    <script>
+        let ws = null;
+
+        function log(msg, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEl = document.getElementById('log');
+
+            let prefix = 'ℹ️';
+            if (type === 'success') prefix = '✅';
+            if (type === 'error') prefix = '❌';
+            if (type === 'warning') prefix = '⚠️';
+
+            logEl.textContent += `[${timestamp}] ${prefix} ${msg}\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').textContent = '';
+            log('Log cleared', 'info');
+        }
+
+        function testWebSocket() {
+            const token = document.getElementById('token').value.trim();
+            const terminalId = document.getElementById('terminalId').value.trim();
+            const backendUrl = document.getElementById('backendUrl').value.trim();
+
+            if (!token) {
+                log('ERROR: JWT token is required', 'error');
+                return;
+            }
+
+            if (!terminalId) {
+                log('ERROR: Terminal ID is required', 'error');
+                return;
+            }
+
+            log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            log('🧪 Starting WebSocket authentication test...', 'info');
+            log(`Backend: ${backendUrl}`, 'info');
+            log(`Terminal ID: ${terminalId}`, 'info');
+            log(`Token: ${token.substring(0, 20)}...`, 'info');
+
+            const wsUrl = `${backendUrl}/api/v1/terminals/${terminalId}/console?token=${token}&width=80&height=24`;
+            log(`Connecting to: ${wsUrl.replace(token, 'TOKEN_HIDDEN')}`, 'info');
+
+            const testBtn = document.getElementById('testBtn');
+            testBtn.disabled = true;
+            testBtn.textContent = '⏳ Connecting...';
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                log('✅ SUCCESS: WebSocket connected!', 'success');
+                log('Query parameter authentication is working correctly', 'success');
+                log('The backend accepted ?token= parameter for WebSocket upgrade', 'success');
+
+                // Send a test message
+                log('Sending test input to terminal...', 'info');
+                ws.send('echo "Hello from WebSocket test!"\n');
+
+                setTimeout(() => {
+                    log('Closing connection...', 'info');
+                    ws.close();
+                }, 2000);
+            };
+
+            ws.onmessage = (event) => {
+                log(`📨 Received data: ${event.data.substring(0, 100)}...`, 'info');
+            };
+
+            ws.onerror = (error) => {
+                log('❌ WebSocket ERROR occurred', 'error');
+                log('This could mean:', 'warning');
+                log('  - Invalid token', 'warning');
+                log('  - Terminal ID not found', 'warning');
+                log('  - Backend not running', 'warning');
+                log('  - Network connectivity issue', 'warning');
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onclose = (event) => {
+                log(`🔌 Connection closed: Code ${event.code}`, 'info');
+                if (event.reason) {
+                    log(`Reason: ${event.reason}`, 'info');
+                }
+
+                testBtn.disabled = false;
+                testBtn.textContent = '🧪 Test WebSocket Connection';
+
+                if (event.code === 1000) {
+                    log('Clean closure - test completed successfully!', 'success');
+                } else if (event.code === 1006) {
+                    log('Abnormal closure - likely authentication failure', 'error');
+                } else {
+                    log(`Closure code ${event.code} - check server logs`, 'warning');
+                }
+            };
+        }
+
+        async function testHttpRequest() {
+            const token = document.getElementById('token').value.trim();
+            const backendUrl = document.getElementById('backendUrl').value.trim().replace('ws://', 'http://').replace('wss://', 'https://');
+
+            if (!token) {
+                log('ERROR: JWT token is required', 'error');
+                return;
+            }
+
+            log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            log('🔍 Testing HTTP request with query parameter (should FAIL)...', 'info');
+
+            const url = `${backendUrl}/api/v1/users/me?token=${token}`;
+            log(`Requesting: ${url.replace(token, 'TOKEN_HIDDEN')}`, 'info');
+
+            try {
+                const response = await fetch(url);
+
+                if (response.status === 401) {
+                    log('✅ CORRECT: HTTP request with ?token= was rejected (401)', 'success');
+                    log('This proves query param auth only works for WebSocket!', 'success');
+                    const body = await response.text();
+                    log(`Response: ${body}`, 'info');
+                } else if (response.status === 200) {
+                    log('⚠️ UNEXPECTED: HTTP request with ?token= succeeded', 'warning');
+                    log('This should not happen - query params should be blocked for HTTP!', 'error');
+                } else {
+                    log(`⚠️ Unexpected status: ${response.status}`, 'warning');
+                }
+            } catch (error) {
+                log(`❌ HTTP request failed: ${error.message}`, 'error');
+                log('This might be a CORS issue or network error', 'warning');
+            }
+        }
+
+        // Auto-log on page load
+        window.addEventListener('load', () => {
+            log('WebSocket Authentication Test Tool Loaded', 'success');
+            log('Follow the instructions above to test', 'info');
+        });
+    </script>
+</body>
+</html>

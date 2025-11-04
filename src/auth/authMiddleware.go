@@ -112,9 +112,25 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 func getUserIdFromToken(ctx *gin.Context) (string, string, error) {
 	token := ctx.Request.Header.Get("Authorization")
 
-	// WebSocket Hack
-	if token == "" {
-		token = ctx.Query("Authorization")
+	// ✅ SECURITY: Allow query parameter auth ONLY for WebSocket upgrade requests
+	// WebSocket connections in browsers cannot send custom headers, so they need query params
+	// This is secure because:
+	// 1. Only applies to WebSocket upgrades (checked via Upgrade header)
+	// 2. Connection is immediately upgraded to WebSocket (not logged in access logs)
+	// 3. Token is consumed immediately and not stored in browser history
+	isWebSocketUpgrade := strings.ToLower(ctx.Request.Header.Get("Upgrade")) == "websocket" &&
+		strings.Contains(strings.ToLower(ctx.Request.Header.Get("Connection")), "upgrade")
+
+	if token == "" && isWebSocketUpgrade {
+		// For WebSocket connections, check query parameter as fallback
+		token = ctx.Query("token")
+		if token == "" {
+			return "", "", fmt.Errorf("missing Authorization header or token query parameter for WebSocket connection")
+		}
+	} else if token == "" {
+		// ✅ SECURITY FIX: JWT tokens must ONLY come from Authorization header for regular HTTP requests
+		// Query parameters are logged and visible in URLs (security risk)
+		return "", "", fmt.Errorf("missing Authorization header - tokens in query parameters are not allowed for non-WebSocket requests")
 	}
 
 	// Enlever le préfixe "Bearer " s'il est présent

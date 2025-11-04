@@ -58,15 +58,17 @@ func (fgm *featureGateMiddleware) RequireFeature(featureName string) gin.Handler
 		}
 
 		features := sPlan.Features
-		if containsFeature(features, featureName) {
+		// ✅ FIXED: Correct logic - block when feature is NOT present
+		if !containsFeature(features, featureName) {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: fmt.Sprintf("Feature '%s' is not included in your current plan", featureName),
+				ErrorMessage: fmt.Sprintf("Feature '%s' is not included in your current plan. Upgrade to access this feature.", featureName),
 			})
 			ctx.Abort()
 			return
 		}
 
+		// Feature is included - allow access
 		ctx.Next()
 	}
 }

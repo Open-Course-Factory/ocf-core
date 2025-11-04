@@ -91,6 +91,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&paymentModels.PaymentMethod{})
 	db.AutoMigrate(&paymentModels.UsageMetrics{})
 	db.AutoMigrate(&paymentModels.BillingAddress{})
+	db.AutoMigrate(&paymentModels.WebhookEvent{}) // ✅ SECURITY: Track processed webhooks in database
 
 	// Configuration entities
 	db.AutoMigrate(&configModels.Feature{})

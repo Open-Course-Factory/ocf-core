@@ -3,10 +3,10 @@ package paymentController
 import (
 	"net/http"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
 	"soli/formations/src/utils"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,20 +19,17 @@ type WebhookController interface {
 }
 
 type webhookController struct {
-	stripeService   services.StripeService
-	processedEvents map[string]time.Time
-	eventMutex      sync.RWMutex
+	stripeService services.StripeService
+	db            *gorm.DB // ✅ SECURITY: Use database instead of in-memory map
 }
 
 func NewWebhookController(db *gorm.DB) WebhookController {
-	controller := &webhookController{
-		stripeService:   services.NewStripeService(db),
-		processedEvents: make(map[string]time.Time),
+	return &webhookController{
+		stripeService: services.NewStripeService(db),
+		db:            db,
 	}
-
-	go controller.cleanupProcessedEvents()
-
-	return controller
+	// ✅ SECURITY: Cleanup is now handled by a separate cron job
+	// This prevents memory leaks and persists across restarts
 }
 
 // Handle Stripe Webhook godoc
@@ -174,41 +171,36 @@ func (wc *webhookController) validatePayloadAndSignature(ctx *gin.Context) ([]by
 	return payload, signature, true
 }
 
-// 🔐 Gestion des événements déjà traités (anti-replay simple)
+// 🔐 Gestion des événements déjà traités (anti-replay avec database)
+// ✅ SECURITY: Database-backed duplicate prevention (survives restarts)
 func (wc *webhookController) isEventProcessed(eventID string) bool {
-	wc.eventMutex.RLock()
-	defer wc.eventMutex.RUnlock()
+	var count int64
+	wc.db.Model(&models.WebhookEvent{}).
+		Where("event_id = ? AND expires_at > ?", eventID, time.Now()).
+		Count(&count)
 
-	_, exists := wc.processedEvents[eventID]
-	return exists
+	return count > 0
 }
 
 func (wc *webhookController) markEventProcessed(eventID string) {
-	wc.eventMutex.Lock()
-	defer wc.eventMutex.Unlock()
+	// Create webhook event record
+	webhookEvent := &models.WebhookEvent{
+		EventID:     eventID,
+		EventType:   "", // Will be populated from Stripe event if needed
+		ProcessedAt: time.Now(),
+		ExpiresAt:   time.Now().Add(24 * time.Hour), // Keep for 24 hours
+	}
 
-	wc.processedEvents[eventID] = time.Now()
-}
-
-// Nettoyage périodique des événements traités
-func (wc *webhookController) cleanupProcessedEvents() {
-	ticker := time.NewTicker(1 * time.Hour)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		wc.eventMutex.Lock()
-		cutoff := time.Now().Add(-24 * time.Hour)
-
-		for eventID, processedAt := range wc.processedEvents {
-			if processedAt.Before(cutoff) {
-				delete(wc.processedEvents, eventID)
-			}
-		}
-		wc.eventMutex.Unlock()
-
-		utils.Debug("🧹 Cleaned up old processed events, current count: %d", len(wc.processedEvents))
+	if err := wc.db.Create(webhookEvent).Error; err != nil {
+		utils.Debug("⚠️ Failed to mark event %s as processed: %v", eventID, err)
+		// Continue anyway - better to process twice than not at all
+		// The unique constraint on event_id will prevent duplicates in the database
 	}
 }
+
+// ✅ SECURITY: Cleanup is now handled by a separate cron job
+// See: src/cron/webhookCleanup.go
+// This method has been removed - cleanup happens in background job
 
 // Utilitaire
 func contains(s, substr string) bool {

@@ -317,6 +317,17 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 			Name:    stripe.String("auto"), // Allow name to be updated
 			Address: stripe.String("auto"), // Allow address to be updated
 		},
+		// ✅ SECURITY: Enable 3D Secure / Strong Customer Authentication (SCA)
+		// Required for PSD2 compliance in EU
+		PaymentMethodOptions: &stripe.CheckoutSessionPaymentMethodOptionsParams{
+			Card: &stripe.CheckoutSessionPaymentMethodOptionsCardParams{
+				RequestThreeDSecure: stripe.String("automatic"), // Trigger 3DS when required
+			},
+		},
+		// Enable automatic tax calculation (recommended for EU compliance)
+		AutomaticTax: &stripe.CheckoutSessionAutomaticTaxParams{
+			Enabled: stripe.Bool(true),
+		},
 		// TaxIDCollection: &stripe.CheckoutSessionTaxIDCollectionParams{
 		// 	Enabled: stripe.Bool(true),
 		// },
@@ -434,6 +445,17 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 		CustomerUpdate: &stripe.CheckoutSessionCustomerUpdateParams{
 			Name:    stripe.String("auto"),
 			Address: stripe.String("auto"),
+		},
+		// ✅ SECURITY: Enable 3D Secure / Strong Customer Authentication (SCA)
+		// Required for PSD2 compliance in EU
+		PaymentMethodOptions: &stripe.CheckoutSessionPaymentMethodOptionsParams{
+			Card: &stripe.CheckoutSessionPaymentMethodOptionsCardParams{
+				RequestThreeDSecure: stripe.String("automatic"), // Trigger 3DS when required
+			},
+		},
+		// Enable automatic tax calculation (recommended for EU compliance)
+		AutomaticTax: &stripe.CheckoutSessionAutomaticTaxParams{
+			Enabled: stripe.Bool(true),
 		},
 	}
 

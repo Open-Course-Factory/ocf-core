@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CORS Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .success { color: green; }
+        .error { color: red; }
+        button { padding: 10px 20px; margin: 10px 0; font-size: 16px; cursor: pointer; }
+        #results { margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 5px; }
+        pre { background: #fff; padding: 10px; border: 1px solid #ddd; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔒 CORS Configuration Test</h1>
+
+    <p><strong>Frontend Origin:</strong> <span id="origin"></span></p>
+    <p><strong>Backend URL:</strong> <input type="text" id="backendUrl" value="http://localhost:8080/api/v1/version" style="width: 400px;"></p>
+
+    <button onclick="testCors()">🧪 Test CORS</button>
+    <button onclick="testWithAuth()">🔐 Test with Auth Token</button>
+
+    <div id="results"></div>
+
+    <h2>📋 Instructions</h2>
+    <ol>
+        <li>Make sure your backend server is running on port 8080</li>
+        <li>Open this file in your browser (via file:// or local server)</li>
+        <li>Click "Test CORS" to check if CORS is working</li>
+        <li>Check the console for detailed logs</li>
+    </ol>
+
+    <h2>✅ Expected Results</h2>
+    <ul>
+        <li><strong>Success:</strong> You should see a green "CORS Working!" message</li>
+        <li><strong>Failure:</strong> Red error with "CORS Missing Allow Origin"</li>
+    </ul>
+
+    <script>
+        document.getElementById('origin').textContent = window.location.origin;
+
+        function log(message, isError = false) {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = isError ? 'error' : 'success';
+            div.textContent = message;
+            results.appendChild(div);
+            console.log(message);
+        }
+
+        async function testCors() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h3>🧪 Testing CORS...</h3>';
+
+            const url = document.getElementById('backendUrl').value;
+
+            try {
+                console.log('Testing CORS from:', window.location.origin);
+                console.log('To:', url);
+
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                log('✅ CORS Working!');
+                log(`Status: ${response.status} ${response.statusText}`);
+
+                const data = await response.json();
+                log('Response data:');
+
+                const pre = document.createElement('pre');
+                pre.textContent = JSON.stringify(data, null, 2);
+                results.appendChild(pre);
+
+                // Show response headers
+                log('\n📋 Response Headers:');
+                const headerPre = document.createElement('pre');
+                const headers = {};
+                response.headers.forEach((value, key) => {
+                    headers[key] = value;
+                });
+                headerPre.textContent = JSON.stringify(headers, null, 2);
+                results.appendChild(headerPre);
+
+            } catch (error) {
+                log('❌ CORS Test Failed!', true);
+                log(`Error: ${error.message}`, true);
+
+                if (error.message.includes('CORS')) {
+                    log('\n🔧 Possible Solutions:', true);
+                    log('1. Restart your backend server', true);
+                    log('2. Check ENVIRONMENT=development in .env', true);
+                    log('3. Verify your frontend port is in the allowed list', true);
+                    log(`4. Your origin: ${window.location.origin}`, true);
+                }
+
+                console.error('Full error:', error);
+            }
+        }
+
+        async function testWithAuth() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h3>🔐 Testing with Auth Token...</h3>';
+
+            const token = prompt('Enter your JWT token (or leave empty for test):');
+            const url = 'http://localhost:8080/api/v1/users/me';
+
+            try {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token || 'test-token'}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                log(`✅ Request completed with status: ${response.status}`);
+
+                const data = await response.json();
+                const pre = document.createElement('pre');
+                pre.textContent = JSON.stringify(data, null, 2);
+                results.appendChild(pre);
+
+            } catch (error) {
+                log('❌ Auth Request Failed!', true);
+                log(`Error: ${error.message}`, true);
+                console.error('Full error:', error);
+            }
+        }
+
+        // Auto-test on load
+        window.addEventListener('load', () => {
+            log('Page loaded. Click "Test CORS" button to begin.');
+        });
+    </script>
+</body>
+</html>
