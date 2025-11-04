@@ -40,42 +40,42 @@ EOF
 
 if [ -n "$FEAT" ]; then
   echo "### Features"
-  echo "$FEAT"
+  echo -e "$FEAT"
   echo ""
 fi
 
 if [ -n "$FIX" ]; then
   echo "### Bug Fixes"
-  echo "$FIX"
+  echo -e "$FIX"
   echo ""
 fi
 
 if [ -n "$DOCS" ]; then
   echo "### Documentation"
-  echo "$DOCS"
+  echo -e "$DOCS"
   echo ""
 fi
 
 if [ -n "$CHORE" ]; then
   echo "### Chores"
-  echo "$CHORE"
+  echo -e "$CHORE"
   echo ""
 fi
 
 if [ -n "$REFACTOR" ]; then
   echo "### Refactoring"
-  echo "$REFACTOR"
+  echo -e "$REFACTOR"
   echo ""
 fi
 
 if [ -n "$TEST" ]; then
   echo "### Tests"
-  echo "$TEST"
+  echo -e "$TEST"
   echo ""
 fi
 
 if [ -n "$OTHER" ]; then
   echo "### Other"
-  echo "$OTHER"
+  echo -e "$OTHER"
   echo ""
 fi
