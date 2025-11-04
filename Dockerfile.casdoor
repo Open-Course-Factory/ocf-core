@@ -1,5 +1,8 @@
 FROM casbin/casdoor:latest
 
+# Switch to root to install packages
+USER root
+
 # Install netcat for waiting on MySQL
 RUN apk add --no-cache netcat-openbsd
 
@@ -11,6 +14,9 @@ COPY ${CONFIG_FILE} /conf/app.conf
 COPY init_data.json /init_data.json
 COPY wait-for-mysql.sh /wait-for-mysql.sh
 RUN chmod +x /wait-for-mysql.sh
+
+# Switch back to non-root user for security
+USER 1000
 
 # Use wait script before starting server
 ENTRYPOINT ["/wait-for-mysql.sh", "./server", "--createDatabase=true"]

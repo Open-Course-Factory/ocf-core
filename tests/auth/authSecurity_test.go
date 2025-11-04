@@ -44,14 +44,14 @@ func TestLoginJSONBinding(t *testing.T) {
 		{
 			name:           "capitalized_json_fields",
 			jsonPayload:    `{"Email":"test@example.com","Password":"Test123!"}`,
-			expectedStatus: http.StatusBadRequest, // Should fail to bind
-			description:    "Should reject capitalized JSON field names without proper tags",
+			expectedStatus: http.StatusNotFound, // Go's JSON unmarshaling is case-insensitive, so this works too
+			description:    "Should accept capitalized JSON field names (Go JSON is case-insensitive)",
 		},
 		{
 			name:           "mixed_case_json_fields",
 			jsonPayload:    `{"email":"test@example.com","Password":"Test123!"}`,
-			expectedStatus: http.StatusBadRequest, // Should fail to bind
-			description:    "Should reject mixed case JSON field names",
+			expectedStatus: http.StatusNotFound, // Go's JSON unmarshaling is case-insensitive
+			description:    "Should accept mixed case JSON field names (Go JSON is case-insensitive)",
 		},
 		{
 			name:           "missing_email_field",

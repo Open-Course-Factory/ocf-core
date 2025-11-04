@@ -25,7 +25,7 @@ func TestUserCreation(t *testing.T) {
 		casdoor.Enforcer.LoadPolicy()
 		test, _ := casdoor.Enforcer.GetRolesForUser(user.Id.String())
 
-		assert.GreaterOrEqual(t, 1, len(test))
+		assert.GreaterOrEqual(t, len(test), 1, "User %s should have at least one role", user.Id.String())
 	}
 
 	defer teardownTest(t)
