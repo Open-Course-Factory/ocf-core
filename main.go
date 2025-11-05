@@ -92,6 +92,7 @@ func main() {
 
 	// ✅ SECURITY: Start background jobs
 	cron.StartWebhookCleanupJob(sqldb.DB)
+	cron.StartAuditLogCleanupJob(sqldb.DB) // Start audit log cleanup (retention management)
 
 	// Parse CLI flags for course generation
 	if cli.ParseFlags(sqldb.DB, casdoor.Enforcer) {

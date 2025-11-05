@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	auditServices "soli/formations/src/audit/services"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/utils"
 	"time"
@@ -164,6 +165,7 @@ type stripeService struct {
 	subscriptionService UserSubscriptionService
 	genericService      genericService.GenericService
 	repository          repositories.PaymentRepository
+	auditService        auditServices.AuditService
 	webhookSecret       string
 }
 
@@ -176,6 +178,7 @@ func NewStripeService(db *gorm.DB) StripeService {
 		subscriptionService: NewSubscriptionService(db),
 		genericService:      genericService.NewGenericService(db, casdoor.Enforcer),
 		repository:          repositories.NewPaymentRepository(db),
+		auditService:        auditServices.NewAuditService(db),
 		webhookSecret:       os.Getenv("STRIPE_WEBHOOK_SECRET"),
 	}
 }

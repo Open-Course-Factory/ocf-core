@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"soli/formations/src/audit/models"
+	auditServices "soli/formations/src/audit/services"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/errors"
-	"soli/formations/src/auth/models"
+	authModels "soli/formations/src/auth/models"
 	sqldb "soli/formations/src/db"
 	"strings"
 	"time"
@@ -23,11 +25,13 @@ type AuthMiddleware interface {
 
 type authMiddleware struct {
 	permissionService PermissionService
+	auditService      auditServices.AuditService
 }
 
 func NewAuthMiddleware(db *gorm.DB) AuthMiddleware {
 	return &authMiddleware{
 		permissionService: NewPermissionService(),
+		auditService:      auditServices.NewAuditService(db),
 	}
 }
 
@@ -36,12 +40,17 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 		userId, tokenJTI, err := getUserIdFromToken(ctx)
 
 		if err != nil {
+			// 🔍 AUDIT LOG: Failed authentication attempt
+			am.auditService.LogAuthentication(ctx, models.AuditEventLoginFailed, nil, "", "failed", err.Error())
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"msg": err.Error()})
 			return
 		}
 
 		// Check if token is blacklisted
 		if isTokenBlacklisted(tokenJTI) {
+			// 🔍 AUDIT LOG: Attempted use of revoked token
+			userUUID, _ := uuid.Parse(userId)
+			am.auditService.LogSecurityEvent(ctx, models.AuditEventAccessDenied, &userUUID, nil, "Attempted use of revoked token", models.AuditSeverityWarning)
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"msg": "token has been invalidated"})
 			return
 		}
@@ -97,6 +106,13 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 
 		if !authorized {
 			log.Printf("[DEBUG] ❌ AUTHORIZATION FAILED for user %s with roles %v trying to access %s %s", userId, userRoles, ctx.Request.Method, ctx.Request.URL.Path)
+
+			// 🔍 AUDIT LOG: Authorization denied
+			userUUID, _ := uuid.Parse(userId)
+			am.auditService.LogSecurityEvent(ctx, models.AuditEventAccessDenied, &userUUID, nil,
+				fmt.Sprintf("Access denied to %s %s", ctx.Request.Method, ctx.Request.URL.Path),
+				models.AuditSeverityWarning)
+
 			ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{"msg": "You are not authorized"})
 			return
 		}
@@ -162,7 +178,7 @@ func isTokenBlacklisted(tokenJTI string) bool {
 	}
 
 	var count int64
-	sqldb.DB.Model(&models.TokenBlacklist{}).
+	sqldb.DB.Model(&authModels.TokenBlacklist{}).
 		Where("token_jti = ? AND expires_at > ?", tokenJTI, time.Now()).
 		Count(&count)
 

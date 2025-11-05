@@ -7,6 +7,7 @@ import (
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"gorm.io/gorm"
 
+	auditModels "soli/formations/src/audit/models"
 	authModels "soli/formations/src/auth/models"
 	configModels "soli/formations/src/configuration/models"
 	courseModels "soli/formations/src/courses/models"
@@ -95,6 +96,9 @@ func AutoMigrateAll(db *gorm.DB) {
 
 	// Configuration entities
 	db.AutoMigrate(&configModels.Feature{})
+
+	// Audit logging entities (compliance & security)
+	db.AutoMigrate(&auditModels.AuditLog{})
 }
 
 // InitDevelopmentData sets up development data in debug mode
