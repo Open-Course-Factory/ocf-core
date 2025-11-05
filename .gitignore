@@ -28,3 +28,7 @@ benchmarks_baseline.txt
 *_report.xml
 report.xml
 .claude/settings.local.json
+
+# Build artifacts
+/formations
+/ocf-server
