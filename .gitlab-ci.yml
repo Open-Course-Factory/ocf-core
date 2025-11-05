@@ -382,7 +382,7 @@ build:
 
 release:create:
   stage: release
-  image: alpine:latest
+  image: registry.gitlab.com/gitlab-org/cli:v1.58.0
   before_script:
     - apk add --no-cache git
     - git fetch --tags --force
