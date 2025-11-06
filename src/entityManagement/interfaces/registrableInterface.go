@@ -16,6 +16,7 @@ type EntityRegistrationInput struct {
 	SwaggerConfig       *EntitySwaggerConfig `json:"swagger_config,omitempty"`
 	RelationshipFilters []RelationshipFilter
 	MembershipConfig    *MembershipConfig `json:"membership_config,omitempty"` // NEW: Generic membership filtering
+	DefaultIncludes     []string          `json:"default_includes,omitempty"`  // Relations to always preload (e.g., ["Members"])
 }
 
 type EntityConverters struct {

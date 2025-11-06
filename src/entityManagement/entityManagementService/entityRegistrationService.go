@@ -37,6 +37,7 @@ type EntityRegistrationService struct {
 	swaggerConfigs      map[string]*entityManagementInterfaces.EntitySwaggerConfig
 	relationshipFilters map[string][]entityManagementInterfaces.RelationshipFilter
 	membershipConfigs   map[string]*entityManagementInterfaces.MembershipConfig // NEW: Generic membership configs
+	defaultIncludes     map[string][]string                                     // NEW: Default relations to preload per entity
 }
 
 func NewEntityRegistrationService() *EntityRegistrationService {
@@ -48,6 +49,7 @@ func NewEntityRegistrationService() *EntityRegistrationService {
 		swaggerConfigs:      make(map[string]*entityManagementInterfaces.EntitySwaggerConfig),
 		relationshipFilters: make(map[string][]entityManagementInterfaces.RelationshipFilter),
 		membershipConfigs:   make(map[string]*entityManagementInterfaces.MembershipConfig),
+		defaultIncludes:     make(map[string][]string),
 	}
 }
 
@@ -61,6 +63,7 @@ func (s *EntityRegistrationService) Reset() {
 	s.swaggerConfigs = make(map[string]*entityManagementInterfaces.EntitySwaggerConfig)
 	s.relationshipFilters = make(map[string][]entityManagementInterfaces.RelationshipFilter)
 	s.membershipConfigs = make(map[string]*entityManagementInterfaces.MembershipConfig)
+	s.defaultIncludes = make(map[string][]string)
 }
 
 // UnregisterEntity removes all registrations for a specific entity
@@ -73,6 +76,7 @@ func (s *EntityRegistrationService) UnregisterEntity(name string) {
 	delete(s.swaggerConfigs, name)
 	delete(s.relationshipFilters, name)
 	delete(s.membershipConfigs, name)
+	delete(s.defaultIncludes, name)
 }
 
 func (s *EntityRegistrationService) RegisterEntityInterface(name string, entityType any) {
@@ -165,6 +169,19 @@ func (s *EntityRegistrationService) RegisterMembershipConfig(name string, config
 // GetMembershipConfig retrieves the membership configuration for an entity
 func (s *EntityRegistrationService) GetMembershipConfig(name string) *entityManagementInterfaces.MembershipConfig {
 	return s.membershipConfigs[name]
+}
+
+// RegisterDefaultIncludes stores the default relations to preload for an entity
+func (s *EntityRegistrationService) RegisterDefaultIncludes(name string, includes []string) {
+	if includes != nil && len(includes) > 0 {
+		s.defaultIncludes[name] = includes
+		log.Printf("📦 Default includes registered for entity: %s -> %v", name, includes)
+	}
+}
+
+// GetDefaultIncludes retrieves the default relations to preload for an entity
+func (s *EntityRegistrationService) GetDefaultIncludes(name string) []string {
+	return s.defaultIncludes[name]
 }
 
 // HasMembershipConfig checks if an entity has a membership configuration
@@ -274,6 +291,7 @@ func (s *EntityRegistrationService) RegisterEntity(input entityManagementInterfa
 	GlobalEntityRegistrationService.RegisterSubEntites(entityName, entityToRegister.EntitySubEntities)
 	GlobalEntityRegistrationService.RegisterRelationshipFilters(entityName, entityToRegister.RelationshipFilters)
 	GlobalEntityRegistrationService.RegisterMembershipConfig(entityName, entityToRegister.MembershipConfig)
+	GlobalEntityRegistrationService.RegisterDefaultIncludes(entityName, entityToRegister.DefaultIncludes)
 
 	// Gestion automatique de la configuration Swagger
 	if swaggerEntity, ok := input.(entityManagementInterfaces.SwaggerDocumentedEntity); ok {

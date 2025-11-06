@@ -239,6 +239,9 @@ func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, fil
 	// Apply pagination
 	query = query.Limit(pageSize).Offset(offset)
 
+	// Merge default includes with requested includes
+	includes = o.mergeDefaultIncludes(entityName, includes)
+
 	// Apply selective preloading
 	query = applyIncludes(query, includes)
 
@@ -331,6 +334,9 @@ func (o *genericRepository) GetAllEntitiesCursor(data any, cursor string, limit 
 
 	// Fetch limit+1 to determine if there are more results
 	query = query.Limit(limit + 1).Order("id ASC")
+
+	// Merge default includes with requested includes
+	includes = o.mergeDefaultIncludes(entityName, includes)
 
 	// Apply selective preloading
 	query = applyIncludes(query, includes)
@@ -439,6 +445,46 @@ func (o *genericRepository) DeleteEntity(id uuid.UUID, entity any, scoped bool) 
 //	// Nested relations
 //	query = applyIncludes(query, []string{"Chapters.Sections", "Chapters.Sections.Pages"})
 //
+// mergeDefaultIncludes merges default includes with requested includes
+// Default includes are always added unless explicitly excluded or already requested
+func (o *genericRepository) mergeDefaultIncludes(entityName string, requestedIncludes []string) []string {
+	// Get default includes for this entity
+	defaultIncludes := ems.GlobalEntityRegistrationService.GetDefaultIncludes(entityName)
+
+	// If no defaults, return requested as-is
+	if len(defaultIncludes) == 0 {
+		return requestedIncludes
+	}
+
+	// If no requested includes, return defaults
+	if len(requestedIncludes) == 0 {
+		return defaultIncludes
+	}
+
+	// Create a map to track all includes (avoid duplicates)
+	includesMap := make(map[string]bool)
+
+	// Add requested includes first
+	for _, inc := range requestedIncludes {
+		includesMap[inc] = true
+	}
+
+	// Add default includes if not already present
+	for _, inc := range defaultIncludes {
+		if !includesMap[inc] {
+			includesMap[inc] = true
+		}
+	}
+
+	// Convert map back to slice
+	merged := make([]string, 0, len(includesMap))
+	for inc := range includesMap {
+		merged = append(merged, inc)
+	}
+
+	return merged
+}
+
 // Technical notes:
 //   - Relation names must match the struct field names exactly (case-sensitive)
 //   - GORM will automatically handle the join logic
