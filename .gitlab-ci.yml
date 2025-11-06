@@ -310,8 +310,7 @@ test:auth:
 # Build Docker image and push to registry
 # Only runs when version tags are pushed (triggered by check:version job)
 # Tags image with both the version number and 'latest'
-build:
-  stage: build
+build-docker:
   before_script:
     - echo $token_jwt_key | base64 -d > ./token_jwt_key.pem
 
