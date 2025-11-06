@@ -81,88 +81,33 @@ stages:
     - go install github.com/jstemmer/go-junit-report/v2@latest
 
 # ============================================================================
-# Check Stage
+# Release Component
 # ============================================================================
 
-# Check version and auto-tag if changed
-# When the VERSION file is updated on main branch, this job:
-# 1. Compares VERSION file content with latest git tag
-# 2. Creates and pushes a new tag if version changed
-# 3. Triggers the build pipeline via the new tag
-check:version:
-  stage: check
-  image: alpine:latest
-  before_script:
-    - apk add --no-cache git curl jq
-    # Configure git for tagging
-    - git config --global user.email "ci@ocf.soli.fr"
-    - git config --global user.name "OCF CI"
-  script:
-    - |
-      # Get current version from VERSION file
-      CURRENT_VERSION=$(cat VERSION | tr -d '[:space:]')
-      echo "Current version in code: $CURRENT_VERSION"
+include:
+  - component: usine.solution-libre.fr/gitlab/components/release/default@0.2.1
+    inputs:
+      # Enable all new features
+      enable_version_check: true
+      enable_docker_build: true
+      enable_enhanced_release_notes: true
 
-      # Query remote tags once and cache result (remote is source of truth)
-      echo "🔍 Checking remote tags..."
-      REMOTE_TAG_LIST=$(git ls-remote --tags origin)
+      # Configure stages to match our pipeline
+      check_stage: check
+      build_stage: build
+      stage: release
 
-      # Extract latest version tag (single awk pass)
-      LATEST_TAG=$(echo "$REMOTE_TAG_LIST" | awk -F'/' '/refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ {print $3}' | sort -V | tail -1)
+      # Version management
+      version_file: "VERSION"
+      main_branch: "main"
+      tag_prefix: "v"
 
-      if [ -z "$LATEST_TAG" ]; then
-        LATEST_TAG="v0.0.0"
-        echo "No version tags found on remote, using default: $LATEST_TAG"
-      else
-        echo "Latest tag on remote: $LATEST_TAG"
-      fi
+      # Docker build
+      dockerfile_path: "Dockerfile"
+      build_context: "."
 
-      # Remove 'v' prefix for comparison
-      LATEST_VERSION=${LATEST_TAG#v}
-
-      # Check if version changed
-      if [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
-        echo "🎉 Version changed from $LATEST_VERSION to $CURRENT_VERSION"
-
-        # Check if tag exists (reuse cached remote list)
-        if echo "$REMOTE_TAG_LIST" | grep -q "refs/tags/v${CURRENT_VERSION}$"; then
-          echo "⚠️  Tag v${CURRENT_VERSION} already exists on remote, skipping"
-        else
-          echo "Creating and pushing tag v$CURRENT_VERSION..."
-
-          # Delete stale local tag if exists
-          git tag -d "v${CURRENT_VERSION}" 2>/dev/null || true
-
-          # Create annotated tag
-          git tag -a "v${CURRENT_VERSION}" -m "Release v${CURRENT_VERSION}"
-
-          # Push tag using token (try CI_PUSH_TOKEN first, fallback to CI_JOB_TOKEN)
-          TOKEN=${CI_PUSH_TOKEN:-$CI_JOB_TOKEN}
-
-          # Configure remote with authentication
-          git remote set-url origin https://gitlab-ci-token:${TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git
-
-          # Push tag with error handling
-          if git push origin "v${CURRENT_VERSION}" 2>&1; then
-            echo "✅ Tag v$CURRENT_VERSION created and pushed successfully"
-            echo "⏳ A new pipeline will start for the tag..."
-          else
-            echo "❌ Failed to push tag v$CURRENT_VERSION"
-            echo "⚠️  Possible causes:"
-            echo "   - CI_PUSH_TOKEN not configured (using CI_JOB_TOKEN which may lack permissions)"
-            echo "   - Protected tags not allowing CI to push"
-            echo "   - Insufficient token permissions"
-            echo ""
-            echo "💡 Solution: Configure CI_PUSH_TOKEN in CI/CD variables with write_repository scope"
-            exit 1
-          fi
-        fi
-      else
-        echo "ℹ️  Version unchanged ($CURRENT_VERSION)"
-      fi
-  rules:
-    # Only auto-tag on main branch to prevent accidental releases from feature branches
-    - if: $CI_COMMIT_BRANCH == "main"
+      # Disable old changelog component (using enhanced notes instead)
+      disable_changelog: true
 
 # ============================================================================
 # Test Stage
@@ -369,59 +314,4 @@ build:
   stage: build
   before_script:
     - echo $token_jwt_key | base64 -d > ./token_jwt_key.pem
-  variables:
-    # Add multiple tags: version number + latest
-    DOCKER_IMAGE_TAGS: "${CI_COMMIT_TAG#v} latest"
-  rules:
-    # Only run on version tags (v0.1.0, v1.2.3, etc.)
-    - if: $CI_COMMIT_TAG =~ /^v/
 
-# ============================================================================
-# Release Stage
-# ============================================================================
-
-.release_job_template:
-  stage: release
-  image: registry.gitlab.com/gitlab-org/cli:v1.58.0
-  before_script:
-    - apk add --no-cache git
-    - git fetch --tags --force
-    - chmod +x ./scripts/generate-release-notes.sh
-  script:
-    - ./scripts/generate-release-notes.sh $RELEASE_TAG > release_notes.md
-  release:
-    tag_name: '$RELEASE_TAG'
-    description: './release_notes.md'
-    assets:
-      links:
-        - name: 'Container Image ($RELEASE_TAG)'
-          url: '${CI_PROJECT_URL}/-/container_registry'
-          link_type: 'image'
-
-release:create:
-  extends: .release_job_template
-  variables:
-    RELEASE_TAG: $CI_COMMIT_TAG
-  release:
-    name: 'Release $RELEASE_TAG'
-  rules:
-    - if: $CI_COMMIT_TAG =~ /^v/
-
-release:manual:
-  extends: .release_job_template
-  variables:
-    TAG_NAME: "" # User must provide this
-    RELEASE_TAG: $TAG_NAME
-  script:
-    - |
-      if [ -z "$TAG_NAME" ]; then
-        echo "Please provide a tag name to the TAG_NAME variable."
-        exit 1
-      fi
-    - ./scripts/generate-release-notes.sh $RELEASE_TAG > release_notes.md
-  release:
-    name: 'Manual Release $RELEASE_TAG'
-  when: manual
-
-include:
-  - template: Jobs/Build.gitlab-ci.yml
