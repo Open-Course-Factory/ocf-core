@@ -75,10 +75,12 @@ func (gr *groupRepository) GetGroupsByUserID(userID string) (*[]models.ClassGrou
 	var groups []models.ClassGroup
 
 	// Join with group_members to get all groups the user is in
+	// Preload Members to get accurate count
 	err := gr.db.
+		Select("class_groups.*, (SELECT COUNT(*) FROM group_members WHERE group_members.group_id = class_groups.id AND group_members.is_active = true) as cached_member_count").
 		Joins("JOIN group_members ON group_members.group_id = class_groups.id").
 		Where("group_members.user_id = ? AND group_members.is_active = ?", userID, true).
-		Preload("Members").
+		Preload("Members", "is_active = ?", true).
 		Find(&groups).Error
 
 	if err != nil {

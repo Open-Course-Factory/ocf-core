@@ -25,6 +25,9 @@ type ClassGroup struct {
 	// Metadata for custom fields (schedules, locations, etc.)
 	Metadata map[string]any `gorm:"type:jsonb" json:"metadata,omitempty"`
 
+	// Cached member count (computed via SQL subquery)
+	CachedMemberCount int `gorm:"-:all" json:"-"` // Not stored in DB, transient field
+
 	// Relations
 	Members     []GroupMember `gorm:"foreignKey:GroupID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"members,omitempty"`
 	SubGroups   []ClassGroup  `gorm:"foreignKey:ParentGroupID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"sub_groups,omitempty"`
@@ -45,6 +48,7 @@ func (ClassGroup) TableName() string {
 	return "class_groups"
 }
 
+
 // IsExpired checks if the group has expired
 func (g *ClassGroup) IsExpired() bool {
 	if g.ExpiresAt == nil {
@@ -62,8 +66,15 @@ func (g *ClassGroup) IsFull() bool {
 }
 
 // GetMemberCount returns the current number of members
+// If Members are preloaded, returns the count from the slice
+// Otherwise, returns the cached count (populated by DTO converter)
 func (g *ClassGroup) GetMemberCount() int {
-	return len(g.Members)
+	// If Members are loaded, use them
+	if len(g.Members) > 0 {
+		return len(g.Members)
+	}
+	// Otherwise use the cached count
+	return g.CachedMemberCount
 }
 
 // HasMember checks if a user is a member of this group

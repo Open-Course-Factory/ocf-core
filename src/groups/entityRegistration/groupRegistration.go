@@ -103,6 +103,9 @@ func (g GroupRegistration) GetEntityRegistrationInput() entityManagementInterfac
 			OrgAccessEnabled: true,                         // Enable organization-based access
 			ManagerRoles:     []string{"owner", "manager"}, // Org managers can see all groups in their org
 		},
+
+		// Always preload Members to get accurate member_count
+		DefaultIncludes: []string{"Members"},
 	}
 }
 

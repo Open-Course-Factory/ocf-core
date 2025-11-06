@@ -123,6 +123,8 @@ type GroupMemberOutput struct {
 
 // GroupModelToGroupOutput converts a Group model to GroupOutput
 func GroupModelToGroupOutput(group *models.ClassGroup) *GroupOutput {
+	// CachedMemberCount is automatically populated by the BeforeFind hook
+	// It contains the count from a SQL subquery when Members are not preloaded
 	output := &GroupOutput{
 		ID:                 group.ID,
 		Name:               group.Name,
