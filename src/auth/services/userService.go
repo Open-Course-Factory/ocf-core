@@ -91,7 +91,7 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 
 	errRole := addDefaultRoleToUser(user1)
 	if errRole != nil {
-		return nil, err
+		return nil, errRole
 	}
 
 	createdUser, errGet := casdoorsdk.GetUserByEmail(userCreateDTO.Email)
@@ -165,6 +165,16 @@ func addDefaultRoleToUser(user1 casdoorsdk.User) error {
 	if errRole != nil {
 		fmt.Println(errRole.Error())
 		return errRole
+	}
+
+	// Check if role exists (SDK may return nil without error)
+	if role == nil {
+		return fmt.Errorf("role 'member' not found in Casdoor - please ensure the role exists")
+	}
+
+	// Initialize Users slice if nil
+	if role.Users == nil {
+		role.Users = []string{}
 	}
 
 	role.Users = append(role.Users, user1.GetId())

@@ -53,6 +53,43 @@
         ]
       }
     ],
+    "roles": [
+      {
+        "owner": "soli",
+        "name": "member",
+        "displayName": "Membre",
+        "description": "Basic member role",
+        "isEnabled": true
+      },
+      {
+        "owner": "soli",
+        "name": "supervisor",
+        "displayName": "Responsables",
+        "description": "Supervisor role",
+        "isEnabled": true
+      },
+      {
+        "owner": "soli",
+        "name": "administrator",
+        "displayName": "Administrateurs",
+        "description": "Administrator role",
+        "isEnabled": true
+      },
+      {
+        "owner": "soli",
+        "name": "student",
+        "displayName": "Etudiants",
+        "description": "Student role",
+        "isEnabled": true
+      },
+      {
+        "owner": "soli",
+        "name": "trainer",
+        "displayName": "Formateurs",
+        "description": "Trainer role",
+        "isEnabled": true
+      }
+    ],
     "certs": [
         {
         "owner": "admin",
