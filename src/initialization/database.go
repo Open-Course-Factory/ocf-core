@@ -20,8 +20,6 @@ import (
 
 // AutoMigrateAll performs database migrations for all entities
 func AutoMigrateAll(db *gorm.DB) {
-	db.AutoMigrate()
-
 	// Course entities
 	db.AutoMigrate(&courseModels.Page{})
 	db.AutoMigrate(&courseModels.Section{})

@@ -43,11 +43,17 @@ func InitDBConnection(envFile string) {
 			host, port, user, db, passwd,
 		)
 
-		DB, _ = gorm.Open(postgres.Open(connectionString), &gorm.Config{
+		var err error
+		DB, err = gorm.Open(postgres.Open(connectionString), &gorm.Config{
 			NamingStrategy: schema.NamingStrategy{
 				SingularTable: false,
 			},
 		})
+		if err != nil {
+			log.Fatalf("❌ Failed to connect to PostgreSQL database: %v\nConnection string (without password): host=%s port=%s user=%s dbname=%s",
+				err, host, port, user, db)
+		}
+		log.Printf("✅ Successfully connected to PostgreSQL database: %s@%s:%s/%s", user, host, port, db)
 	} else {
 		panic("Unsupported DB")
 	}
