@@ -54,8 +54,9 @@ func validateTosAcceptance(userCreateDTO dto.CreateUserInput) error {
 		return errors.New("INVALID_TOS_TIMESTAMP: Terms of Service acceptance timestamp must be in ISO 8601 format (e.g., 2025-10-11T14:23:45.123Z)")
 	}
 
-	// Check that timestamp is not in the future
-	if tosTime.After(time.Now()) {
+	// Check that timestamp is not in the future (with 5-minute tolerance for clock skew)
+	fiveMinutesFromNow := time.Now().Add(5 * time.Minute)
+	if tosTime.After(fiveMinutesFromNow) {
 		return errors.New("INVALID_TOS_TIMESTAMP: Terms of Service acceptance timestamp cannot be in the future")
 	}
 
