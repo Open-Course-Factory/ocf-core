@@ -248,21 +248,63 @@ test:auth:
     - echo "🧹 Cleaning up old Docker resources..."
     - docker-compose -f docker-compose.test.yml down -v --remove-orphans || true
 
-    # Start services in order (manual orchestration required)
-    - echo "🐳 Starting database services first..."
+    # Start database services first (PostgreSQL and MySQL for Casdoor)
+    - echo "🐳 Starting database services..."
     - docker-compose -f docker-compose.test.yml up -d postgres-test casdoor-db-test
-    - echo "⏳ Waiting for databases to initialize..."
-    - sleep 15
 
-    # Now start Casdoor after MySQL is ready
-    - echo "🐳 Starting Casdoor..."
-    - docker-compose -f docker-compose.test.yml up -d casdoor-test
-    - echo "⏳ Waiting for Casdoor to start..."
-    - sleep 10
-
-    # Wait for all services to be ready
+    # Wait for databases to be FULLY ready before starting Casdoor
     - chmod +x scripts/ci/wait-for-services.sh
-    - ./scripts/ci/wait-for-services.sh
+    - echo "⏳ Waiting for PostgreSQL to be ready..."
+    - |
+      for i in $(seq 1 30); do
+        if docker exec ocf-postgres-test pg_isready -U postgres 2>/dev/null; then
+          echo "✅ PostgreSQL is ready!"
+          break
+        fi
+        if [ $i -eq 30 ]; then
+          echo "❌ PostgreSQL failed to start"
+          docker-compose -f docker-compose.test.yml logs postgres-test
+          exit 1
+        fi
+        sleep 1
+      done
+    - echo "⏳ Waiting for MySQL to be ready..."
+    - |
+      for i in $(seq 1 60); do
+        if docker exec ocf-casdoor-db-test mysqladmin ping -h localhost --silent 2>/dev/null; then
+          echo "✅ MySQL is ready!"
+          break
+        fi
+        if [ $i -eq 60 ]; then
+          echo "❌ MySQL failed to start"
+          docker-compose -f docker-compose.test.yml logs casdoor-db-test
+          exit 1
+        fi
+        sleep 1
+      done
+
+    # Now start Casdoor AFTER MySQL is confirmed ready
+    - echo "🐳 Starting Casdoor (MySQL is ready)..."
+    - docker-compose -f docker-compose.test.yml up -d casdoor-test
+
+    # Wait for Casdoor to be ready
+    - echo "⏳ Waiting for Casdoor to be ready..."
+    - |
+      for i in $(seq 1 90); do
+        if docker exec ocf-casdoor-test wget --spider -q http://localhost:8000/api/get-account 2>/dev/null; then
+          echo "✅ Casdoor is ready!"
+          break
+        fi
+        if [ $i -eq 90 ]; then
+          echo "❌ Casdoor failed to start"
+          docker-compose -f docker-compose.test.yml logs casdoor-test
+          docker-compose -f docker-compose.test.yml logs casdoor-db-test
+          exit 1
+        fi
+        sleep 2
+      done
+
+    - echo "🎉 All services are ready!"
 
     # Install Go dependencies
     - go mod download
