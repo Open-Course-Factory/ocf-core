@@ -159,14 +159,14 @@ func (sc *userSubscriptionController) CreateCheckoutSession(ctx *gin.Context) {
 	// FREE PLAN: Create subscription directly without Stripe
 	if plan.PriceAmount == 0 {
 		// CRITICAL: If user has an existing PAID subscription, cancel it in Stripe first
-		if existingSubscription != nil && existingSubscription.StripeSubscriptionID != "" {
+		if existingSubscription != nil && existingSubscription.StripeSubscriptionID != nil && *existingSubscription.StripeSubscriptionID != "" {
 			currentPlan, _ := sc.subscriptionService.GetSubscriptionPlan(existingSubscription.SubscriptionPlanID)
 			if currentPlan != nil && currentPlan.PriceAmount > 0 {
 				// User is downgrading from paid to free - cancel Stripe subscription
 				utils.Info("🔽 User %s downgrading from paid plan (%s) to free plan (%s) - canceling Stripe subscription",
 					userId, currentPlan.Name, plan.Name)
 
-				err := sc.stripeService.CancelSubscription(existingSubscription.StripeSubscriptionID, false) // false = cancel immediately
+				err := sc.stripeService.CancelSubscription(*existingSubscription.StripeSubscriptionID, false) // false = cancel immediately
 				if err != nil {
 					utils.Error("❌ Failed to cancel Stripe subscription %s: %v", existingSubscription.StripeSubscriptionID, err)
 					ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -420,8 +420,26 @@ func (sc *userSubscriptionController) CancelSubscription(ctx *gin.Context) {
 		}
 	}
 
-	// Annuler via Stripe
-	err = sc.stripeService.CancelSubscription(subscription.StripeSubscriptionID, !cancelImmediately)
+	// Check if this is a free subscription (no Stripe subscription ID)
+	if subscription.StripeSubscriptionID == nil || *subscription.StripeSubscriptionID == "" {
+		// Free subscription - cancel directly in our database
+		updateErr := sc.stripeService.MarkSubscriptionAsCancelled(subscription)
+		if updateErr != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to cancel free subscription: " + updateErr.Error(),
+			})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, gin.H{
+			"message": "Free subscription cancelled successfully",
+		})
+		return
+	}
+
+	// Paid subscription - cancel via Stripe
+	err = sc.stripeService.CancelSubscription(*subscription.StripeSubscriptionID, !cancelImmediately)
 	if err != nil {
 		// Vérifier si l'erreur indique que l'abonnement n'existe plus dans Stripe
 		if strings.Contains(err.Error(), "resource_missing") || strings.Contains(err.Error(), "No such subscription") {
@@ -457,7 +475,7 @@ func (sc *userSubscriptionController) CancelSubscription(ctx *gin.Context) {
 			utils.Debug("⚠️ Warning: Failed to update DB after cancellation: %v", updateErr)
 			// Don't fail the request - webhook will eventually update it
 		} else {
-			utils.Debug("✅ Subscription %s marked as cancelled in DB", subscription.StripeSubscriptionID)
+			utils.Debug("✅ Subscription %s marked as cancelled in DB", *subscription.StripeSubscriptionID)
 		}
 	} else {
 		// Cancel at period end - sync from Stripe to get the updated status
@@ -519,8 +537,17 @@ func (sc *userSubscriptionController) ReactivateSubscription(ctx *gin.Context) {
 		}
 	}
 
+	// Check if this is a free subscription
+	if subscription.StripeSubscriptionID == nil || *subscription.StripeSubscriptionID == "" {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Cannot reactivate free subscription via Stripe",
+		})
+		return
+	}
+
 	// Réactiver via Stripe
-	err = sc.stripeService.ReactivateSubscription(subscription.StripeSubscriptionID)
+	err = sc.stripeService.ReactivateSubscription(*subscription.StripeSubscriptionID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -598,9 +625,18 @@ func (sc *userSubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 		return
 	}
 
+	// Check if current subscription has a Stripe ID
+	if currentSubscription.StripeSubscriptionID == nil || *currentSubscription.StripeSubscriptionID == "" {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Cannot upgrade free subscription via Stripe - please create a new paid subscription",
+		})
+		return
+	}
+
 	// Update the subscription in Stripe first
 	_, err = sc.stripeService.UpdateSubscription(
-		currentSubscription.StripeSubscriptionID,
+		*currentSubscription.StripeSubscriptionID,
 		*newPlan.StripePriceID,
 		input.ProrationBehavior,
 	)

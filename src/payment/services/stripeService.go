@@ -191,9 +191,9 @@ func (ss *stripeService) CreateOrGetCustomer(userID, email, name string) (string
 	if err == nil && subscriptions != nil {
 		// Find the first subscription with a StripeCustomerID
 		for _, sub := range *subscriptions {
-			if sub.StripeCustomerID != "" {
-				utils.Debug("♻️ Reusing existing Stripe customer %s for user %s", sub.StripeCustomerID, userID)
-				return sub.StripeCustomerID, nil
+			if sub.StripeCustomerID != nil && *sub.StripeCustomerID != "" {
+				utils.Debug("♻️ Reusing existing Stripe customer %s for user %s", *sub.StripeCustomerID, userID)
+				return *sub.StripeCustomerID, nil
 			}
 		}
 	}
@@ -492,9 +492,14 @@ func (ss *stripeService) CreatePortalSession(userID string, input dto.CreatePort
 		return nil, fmt.Errorf("no active subscription found: %w", err)
 	}
 
+	// Check if this is a free subscription
+	if subscription.StripeCustomerID == nil || *subscription.StripeCustomerID == "" {
+		return nil, fmt.Errorf("portal session not available for free subscriptions")
+	}
+
 	// Créer la session du portail client
 	params := &stripe.BillingPortalSessionParams{
-		Customer:  stripe.String(subscription.StripeCustomerID),
+		Customer:  stripe.String(*subscription.StripeCustomerID),
 		ReturnURL: stripe.String(input.ReturnURL),
 	}
 
@@ -706,12 +711,14 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 
 	// Créer directement le modèle UserSubscription avec toutes les données Stripe
 	// CRITICAL: Set BOTH the ID and the object for GORM to properly save the relationship
+	stripeSubID := subscription.ID
+	stripeCustomerID := subscription.Customer.ID
 	userSubscription := &models.UserSubscription{
 		UserID:               userID,
 		SubscriptionPlanID:   planID,
 		SubscriptionPlan:     *plan, // CRITICAL: Include the plan object
-		StripeSubscriptionID: subscription.ID,
-		StripeCustomerID:     subscription.Customer.ID,
+		StripeSubscriptionID: &stripeSubID,
+		StripeCustomerID:     &stripeCustomerID,
 		Status:               string(subscription.Status),
 		CurrentPeriodStart:   currentPeriodStart,
 		CurrentPeriodEnd:     currentPeriodEnd,
@@ -1110,16 +1117,16 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
 
 	// Check if this is a bulk subscription by checking if there's a batch for this subscription
-	if err == nil && userSub.StripeSubscriptionID != "" {
+	if err == nil && userSub.StripeSubscriptionID != nil && *userSub.StripeSubscriptionID != "" {
 		batchRepo := repositories.NewSubscriptionBatchRepository(ss.db)
-		_, batchErr := batchRepo.GetByStripeSubscriptionID(userSub.StripeSubscriptionID)
+		_, batchErr := batchRepo.GetByStripeSubscriptionID(*userSub.StripeSubscriptionID)
 		if batchErr == nil {
 			// This is a bulk subscription - handle it separately
 			utils.Debug("📦 Detected bulk subscription invoice payment: %s", stripeInvoice.ID)
 			// Get full subscription details from Stripe
-			sub, subErr := subscription.Get(userSub.StripeSubscriptionID, nil)
+			sub, subErr := subscription.Get(*userSub.StripeSubscriptionID, nil)
 			if subErr != nil {
-				return fmt.Errorf("failed to retrieve subscription %s: %v", userSub.StripeSubscriptionID, subErr)
+				return fmt.Errorf("failed to retrieve subscription %s: %v", *userSub.StripeSubscriptionID, subErr)
 			}
 			return ss.handleBulkInvoicePaymentSucceeded(&stripeInvoice, sub)
 		}
@@ -1506,8 +1513,9 @@ func (ss *stripeService) handleCustomerUpdated(event *stripe.Event) error {
 	}
 
 	// Update customer ID in subscription if changed
-	if userSub.StripeCustomerID != customer.ID {
-		userSub.StripeCustomerID = customer.ID
+	if userSub.StripeCustomerID == nil || *userSub.StripeCustomerID != customer.ID {
+		customerID := customer.ID
+		userSub.StripeCustomerID = &customerID
 		utils.Debug("👤 Updated customer ID for user %s to %s", userSub.UserID, customer.ID)
 		return ss.repository.UpdateUserSubscription(userSub)
 	}
@@ -1616,14 +1624,16 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 	utils.Info("✅ Created batch %s with %d licenses (status: %s)", batch.ID, quantity, batchStatus)
 
 	// Create individual license records
+	stripeSubID := subscription.ID
+	stripeCustomerID := subscription.Customer.ID
 	for i := 0; i < quantity; i++ {
 		license := models.UserSubscription{
 			UserID:               "", // Unassigned
 			PurchaserUserID:      &userID,
 			SubscriptionBatchID:  &batch.ID,
 			SubscriptionPlanID:   planID,
-			StripeSubscriptionID: subscription.ID,
-			StripeCustomerID:     subscription.Customer.ID,
+			StripeSubscriptionID: &stripeSubID,
+			StripeCustomerID:     &stripeCustomerID,
 			Status:               licenseStatus,
 			CurrentPeriodStart:   currentPeriodStart,
 			CurrentPeriodEnd:     currentPeriodEnd,
@@ -1706,14 +1716,16 @@ func (ss *stripeService) handleBulkSubscriptionUpdated(subscription *stripe.Subs
 
 	if difference > 0 {
 		// Adding licenses
+		stripeSubID := batch.StripeSubscriptionID
+		purchaserID := batch.PurchaserUserID
 		for i := 0; i < difference; i++ {
 			license := models.UserSubscription{
 				UserID:               "",
-				PurchaserUserID:      &batch.PurchaserUserID,
+				PurchaserUserID:      &purchaserID,
 				SubscriptionBatchID:  &batch.ID,
 				SubscriptionPlanID:   batch.SubscriptionPlanID,
-				StripeSubscriptionID: batch.StripeSubscriptionID,
-				StripeCustomerID:     batch.PurchaserUserID,
+				StripeSubscriptionID: &stripeSubID,
+				StripeCustomerID:     &purchaserID,
 				Status:               "unassigned",
 				CurrentPeriodStart:   batch.CurrentPeriodStart,
 				CurrentPeriodEnd:     batch.CurrentPeriodEnd,
@@ -2166,11 +2178,13 @@ func (ss *stripeService) processSingleSubscription(sub *stripe.Subscription, res
 			fmt.Sprintf("Updated subscription %s for user %s", sub.ID, userID))
 	} else {
 		// Abonnement n'existe pas - créer
+		stripeSubID := sub.ID
+		stripeCustomerID := sub.Customer.ID
 		userSubscription := &models.UserSubscription{
 			UserID:               userID,
 			SubscriptionPlanID:   planID,
-			StripeSubscriptionID: sub.ID,
-			StripeCustomerID:     sub.Customer.ID,
+			StripeSubscriptionID: &stripeSubID,
+			StripeCustomerID:     &stripeCustomerID,
 			Status:               string(sub.Status),
 			CurrentPeriodStart:   currentPeriodStart,
 			CurrentPeriodEnd:     currentPeriodEnd,
@@ -2323,11 +2337,12 @@ func (ss *stripeService) LinkSubscriptionToUser(stripeSubscriptionID, userID str
 	}
 
 	// Créer l'abonnement
+	stripeCustomerID := sub.Customer.ID
 	userSubscription := &models.UserSubscription{
 		UserID:               userID,
 		SubscriptionPlanID:   subscriptionPlanID,
-		StripeSubscriptionID: stripeSubscriptionID,
-		StripeCustomerID:     sub.Customer.ID,
+		StripeSubscriptionID: &stripeSubscriptionID,
+		StripeCustomerID:     &stripeCustomerID,
 		Status:               string(sub.Status),
 		CurrentPeriodStart:   currentPeriodStart,
 		CurrentPeriodEnd:     currentPeriodEnd,
@@ -2359,14 +2374,14 @@ func (ss *stripeService) SyncUserInvoices(userID string) (*SyncInvoicesResult, e
 	}
 
 	// Check if user has a Stripe customer ID (free plans don't have one)
-	if userSub.StripeCustomerID == "" {
+	if userSub.StripeCustomerID == nil || *userSub.StripeCustomerID == "" {
 		utils.Debug("⚠️ User %s has a free subscription with no Stripe customer ID, skipping invoice sync", userID)
 		return result, nil // Return empty result, no invoices to sync
 	}
 
 	// Récupérer toutes les factures depuis Stripe pour ce customer
 	params := &stripe.InvoiceListParams{
-		Customer: stripe.String(userSub.StripeCustomerID),
+		Customer: stripe.String(*userSub.StripeCustomerID),
 	}
 	params.Filters.AddFilter("limit", "", "100")
 
@@ -2668,14 +2683,14 @@ func (ss *stripeService) SyncUserPaymentMethods(userID string) (*SyncPaymentMeth
 	}
 
 	// Check if user has a Stripe customer ID (free plans don't have one)
-	if userSub.StripeCustomerID == "" {
+	if userSub.StripeCustomerID == nil || *userSub.StripeCustomerID == "" {
 		utils.Debug("⚠️ User %s has a free subscription with no Stripe customer ID, skipping payment methods sync", userID)
 		return result, nil // Return empty result, no payment methods to sync
 	}
 
 	// Récupérer tous les moyens de paiement depuis Stripe pour ce customer
 	params := &stripe.PaymentMethodListParams{
-		Customer: stripe.String(userSub.StripeCustomerID),
+		Customer: stripe.String(*userSub.StripeCustomerID),
 		Type:     stripe.String("card"), // Focus on cards for now
 	}
 	params.Filters.AddFilter("limit", "", "100")
@@ -2685,10 +2700,10 @@ func (ss *stripeService) SyncUserPaymentMethods(userID string) (*SyncPaymentMeth
 		pm := iter.PaymentMethod()
 		result.ProcessedPaymentMethods++
 
-		if err := ss.processSinglePaymentMethod(pm, userID, userSub.StripeCustomerID, result); err != nil {
+		if err := ss.processSinglePaymentMethod(pm, userID, *userSub.StripeCustomerID, result); err != nil {
 			result.FailedPaymentMethods = append(result.FailedPaymentMethods, FailedPaymentMethod{
 				StripePaymentMethodID: pm.ID,
-				CustomerID:            userSub.StripeCustomerID,
+				CustomerID:            *userSub.StripeCustomerID,
 				Error:                 err.Error(),
 			})
 		}

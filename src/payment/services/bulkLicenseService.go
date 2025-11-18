@@ -116,8 +116,8 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 			PurchaserUserID:      &purchaserUserID,
 			SubscriptionBatchID:  &batch.ID,
 			SubscriptionPlanID:   input.SubscriptionPlanID,
-			StripeSubscriptionID: stripeSubscriptionID,
-			StripeCustomerID:     customerID,        // Use Stripe customer ID
+			StripeSubscriptionID: &stripeSubscriptionID,
+			StripeCustomerID:     &customerID,       // Use Stripe customer ID
 			Status:               "pending_payment", // Wait for payment
 			CurrentPeriodStart:   now,
 			CurrentPeriodEnd:     periodEnd,
@@ -298,13 +298,14 @@ func (s *bulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUs
 		}
 
 		// Adding licenses
+		stripeSubID := batch.StripeSubscriptionID
 		for i := 0; i < difference; i++ {
 			license := models.UserSubscription{
 				UserID:               "",
 				PurchaserUserID:      &batch.PurchaserUserID,
 				SubscriptionBatchID:  &batch.ID,
 				SubscriptionPlanID:   batch.SubscriptionPlanID,
-				StripeSubscriptionID: batch.StripeSubscriptionID,
+				StripeSubscriptionID: &stripeSubID,
 				StripeCustomerID:     existingLicense.StripeCustomerID, // Use same customer ID as existing licenses
 				Status:               "unassigned",
 				CurrentPeriodStart:   batch.CurrentPeriodStart,
