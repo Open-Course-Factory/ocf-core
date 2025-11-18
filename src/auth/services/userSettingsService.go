@@ -18,10 +18,14 @@ type UserSettingsService interface {
 	ChangePassword(userID string, input dto.ChangePasswordInput, token string) error
 }
 
-type userSettingsService struct{}
+type userSettingsService struct {
+	passwordService PasswordService
+}
 
 func NewUserSettingsService() UserSettingsService {
-	return &userSettingsService{}
+	return &userSettingsService{
+		passwordService: NewPasswordService(),
+	}
 }
 
 // ChangePassword handles password change requests and invalidates the current session
@@ -31,12 +35,7 @@ func (s *userSettingsService) ChangePassword(userID string, input dto.ChangePass
 		return errors.New("new password and confirmation do not match")
 	}
 
-	// Validate password strength (minimum 8 characters - additional rules can be added)
-	if len(input.NewPassword) < 8 {
-		return errors.New("password must be at least 8 characters long")
-	}
-
-	// Get user from Casdoor
+	// Get user from Casdoor (needed for current password verification)
 	user, err := casdoorsdk.GetUserByUserId(userID)
 	if err != nil {
 		utils.Error("Failed to get user from Casdoor: %v", err)
@@ -44,7 +43,6 @@ func (s *userSettingsService) ChangePassword(userID string, input dto.ChangePass
 	}
 
 	// Verify current password by attempting authentication
-
 	resp, errLogin := authController.LoginToCasdoor(user, input.CurrentPassword)
 	if errLogin != nil {
 		utils.Warn("Invalid current password for user %s", userID)
@@ -63,9 +61,9 @@ func (s *userSettingsService) ChangePassword(userID string, input dto.ChangePass
 		return errors.New("current password is incorrect")
 	}
 
-	// Update password in Casdoor using the dedicated SetPassword method
-	affected, err := casdoorsdk.SetPassword(user.Owner, user.Name, input.CurrentPassword, input.NewPassword)
-	if err != nil || !affected {
+	// Update password using shared password service
+	// Includes password strength validation and Casdoor update
+	if err := s.passwordService.SetUserPassword(userID, input.CurrentPassword, input.NewPassword); err != nil {
 		utils.Error("Failed to update password in Casdoor: %v", err)
 		return errors.New("failed to update password")
 	}
