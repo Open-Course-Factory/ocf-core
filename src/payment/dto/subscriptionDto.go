@@ -97,8 +97,8 @@ type UserSubscriptionOutput struct {
 	UserID               string                 `json:"user_id"`
 	SubscriptionPlanID   uuid.UUID              `json:"subscription_plan_id"`
 	SubscriptionPlan     SubscriptionPlanOutput `json:"subscription_plan"`
-	StripeSubscriptionID string                 `json:"stripe_subscription_id"`
-	StripeCustomerID     string                 `json:"stripe_customer_id"`
+	StripeSubscriptionID *string                `json:"stripe_subscription_id,omitempty"`
+	StripeCustomerID     *string                `json:"stripe_customer_id,omitempty"`
 	Status               string                 `json:"status"`
 	SubscriptionType     string                 `json:"subscription_type"` // "personal" or "assigned"
 	IsPrimary            bool                   `json:"is_primary"`        // True if this is the active subscription being used

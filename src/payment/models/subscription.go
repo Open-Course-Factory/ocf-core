@@ -109,8 +109,8 @@ type UserSubscription struct {
 	SubscriptionType        string           `gorm:"type:varchar(20);default:'personal'" json:"subscription_type"` // "personal" (self-purchased) or "assigned" (from batch)
 	SubscriptionPlanID      uuid.UUID        `json:"subscription_plan_id"`
 	SubscriptionPlan        SubscriptionPlan `gorm:"foreignKey:SubscriptionPlanID" json:"subscription_plan"`
-	StripeSubscriptionID    string           `gorm:"type:varchar(100);" json:"stripe_subscription_id"`
-	StripeCustomerID        string           `gorm:"type:varchar(100);not null;index" json:"stripe_customer_id"`
+	StripeSubscriptionID    *string          `gorm:"type:varchar(100);uniqueIndex:idx_user_stripe_sub_not_null,where:stripe_subscription_id IS NOT NULL" json:"stripe_subscription_id,omitempty"`
+	StripeCustomerID        *string          `gorm:"type:varchar(100);index" json:"stripe_customer_id,omitempty"`
 	Status                  string           `gorm:"type:varchar(50);default:'active'" json:"status"` // active, cancelled, past_due, unpaid, unassigned, assigned
 	CurrentPeriodStart      time.Time        `json:"current_period_start"`
 	CurrentPeriodEnd        time.Time        `json:"current_period_end"`
