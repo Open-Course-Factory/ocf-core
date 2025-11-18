@@ -50,6 +50,12 @@ type AuditLogFilter struct {
 
 // Log creates a new audit log entry with the provided details
 func (as *auditService) Log(entry models.AuditLogCreate) error {
+	// Ensure Metadata is valid JSON (empty string is invalid for jsonb)
+	metadata := entry.Metadata
+	if metadata == "" {
+		metadata = "{}" // Use empty JSON object instead of empty string
+	}
+
 	auditLog := &models.AuditLog{
 		EventType:      entry.EventType,
 		Severity:       entry.Severity,
@@ -64,7 +70,7 @@ func (as *auditService) Log(entry models.AuditLogCreate) error {
 		Action:         entry.Action,
 		Status:         entry.Status,
 		ErrorMessage:   entry.ErrorMessage,
-		Metadata:       entry.Metadata,
+		Metadata:       metadata,
 		Amount:         entry.Amount,
 		Currency:       entry.Currency,
 		RequestID:      entry.RequestID,
