@@ -122,13 +122,14 @@ func TestSubscriptionService_SubscriptionCreation(t *testing.T) {
 	mockRepo := new(SharedMockPaymentRepository)
 
 	t.Run("Create new subscription successfully", func(t *testing.T) {
+		stripeSubID := "sub_test_new"
 		newSubscription := &models.UserSubscription{
-			BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
-			UserID:    "user_new_sub",
-			StripeSubscriptionID: "sub_test_new",
-			Status:    "active",
-			CurrentPeriodStart: time.Now(),
-			CurrentPeriodEnd:   time.Now().Add(30 * 24 * time.Hour),
+			BaseModel:            entityManagementModels.BaseModel{ID: uuid.New()},
+			UserID:               "user_new_sub",
+			StripeSubscriptionID: &stripeSubID,
+			Status:               "active",
+			CurrentPeriodStart:   time.Now(),
+			CurrentPeriodEnd:     time.Now().Add(30 * 24 * time.Hour),
 		}
 
 		mockRepo.On("CreateUserSubscription", newSubscription).Return(nil)
@@ -140,11 +141,12 @@ func TestSubscriptionService_SubscriptionCreation(t *testing.T) {
 	})
 
 	t.Run("Update existing subscription", func(t *testing.T) {
+		stripeSubID := "sub_test_update"
 		existingSubscription := &models.UserSubscription{
-			BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
-			UserID:    "user_update_sub",
-			StripeSubscriptionID: "sub_test_update",
-			Status:    "active",
+			BaseModel:            entityManagementModels.BaseModel{ID: uuid.New()},
+			UserID:               "user_update_sub",
+			StripeSubscriptionID: &stripeSubID,
+			Status:               "active",
 		}
 
 		mockRepo.On("UpdateUserSubscription", existingSubscription).Return(nil)
@@ -158,10 +160,10 @@ func TestSubscriptionService_SubscriptionCreation(t *testing.T) {
 	t.Run("Get subscription by Stripe ID", func(t *testing.T) {
 		stripeSubscriptionID := "sub_test_get"
 		expectedSubscription := &models.UserSubscription{
-			BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
-			StripeSubscriptionID: stripeSubscriptionID,
-			UserID:    "user_test",
-			Status:    "active",
+			BaseModel:            entityManagementModels.BaseModel{ID: uuid.New()},
+			StripeSubscriptionID: &stripeSubscriptionID,
+			UserID:               "user_test",
+			Status:               "active",
 		}
 
 		mockRepo.On("GetUserSubscriptionByStripeID", stripeSubscriptionID).Return(expectedSubscription, nil)
@@ -169,7 +171,8 @@ func TestSubscriptionService_SubscriptionCreation(t *testing.T) {
 		result, err := mockRepo.GetUserSubscriptionByStripeID(stripeSubscriptionID)
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
-		assert.Equal(t, stripeSubscriptionID, result.StripeSubscriptionID)
+		assert.NotNil(t, result.StripeSubscriptionID)
+		assert.Equal(t, stripeSubscriptionID, *result.StripeSubscriptionID)
 		assert.Equal(t, "user_test", result.UserID)
 
 		mockRepo.AssertExpectations(t)

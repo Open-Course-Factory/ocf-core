@@ -97,7 +97,7 @@ func TestPaymentEdgeCases_DatabaseConstraints(t *testing.T) {
 
 		// Deuxième appel : l'abonnement existe déjà (création entre-temps)
 		existingSubscription := &models.UserSubscription{
-			StripeSubscriptionID: stripeSubscriptionID,
+			StripeSubscriptionID: &stripeSubscriptionID,
 			UserID:               "user_123",
 		}
 		mockRepo.On("GetUserSubscriptionByStripeID", stripeSubscriptionID).Return(existingSubscription, nil).Once()
@@ -111,7 +111,8 @@ func TestPaymentEdgeCases_DatabaseConstraints(t *testing.T) {
 		subscription2, err2 := mockRepo.GetUserSubscriptionByStripeID(stripeSubscriptionID)
 		assert.NotNil(t, subscription2)
 		assert.NoError(t, err2)
-		assert.Equal(t, stripeSubscriptionID, subscription2.StripeSubscriptionID)
+		assert.NotNil(t, subscription2.StripeSubscriptionID)
+		assert.Equal(t, stripeSubscriptionID, *subscription2.StripeSubscriptionID)
 
 		mockRepo.AssertExpectations(t)
 	})

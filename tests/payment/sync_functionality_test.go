@@ -642,11 +642,12 @@ func TestGetActiveSubscriptionByCustomerID(t *testing.T) {
 		userID := "user_123"
 		planID := uuid.New()
 
+		stripeSubID := "sub_test_123"
 		expectedSub := &models.UserSubscription{
 			UserID:               userID,
 			SubscriptionPlanID:   planID,
-			StripeSubscriptionID: "sub_test_123",
-			StripeCustomerID:     customerID,
+			StripeSubscriptionID: &stripeSubID,
+			StripeCustomerID:     &customerID,
 			Status:               "active",
 			CurrentPeriodStart:   time.Now(),
 			CurrentPeriodEnd:     time.Now().Add(30 * 24 * time.Hour),
@@ -658,7 +659,8 @@ func TestGetActiveSubscriptionByCustomerID(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
-		assert.Equal(t, customerID, result.StripeCustomerID)
+		assert.NotNil(t, result.StripeCustomerID)
+		assert.Equal(t, customerID, *result.StripeCustomerID)
 		assert.Equal(t, "active", result.Status)
 		assert.Equal(t, userID, result.UserID)
 		mockRepo.AssertExpectations(t)
@@ -683,7 +685,7 @@ func TestGetActiveSubscriptionByCustomerID(t *testing.T) {
 		customerID := "cus_trial_123"
 
 		expectedSub := &models.UserSubscription{
-			StripeCustomerID: customerID,
+			StripeCustomerID: &customerID,
 			Status:           "trialing",
 		}
 

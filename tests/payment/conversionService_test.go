@@ -94,11 +94,17 @@ func TestConversionService_UserSubscriptionToDTO(t *testing.T) {
 				UpdatedAt: now,
 			},
 		},
-		UserID:               "user123",
-		SubscriptionPlanID:   planID,
-		StripeSubscriptionID: "sub_123",
-		StripeCustomerID:     "cus_123",
-		Status:               "active",
+		UserID:             "user123",
+		SubscriptionPlanID: planID,
+		StripeSubscriptionID: func() *string {
+			s := "sub_123"
+			return &s
+		}(),
+		StripeCustomerID: func() *string {
+			s := "cus_123"
+			return &s
+		}(),
+		Status: "active",
 		CurrentPeriodStart:   now,
 		CurrentPeriodEnd:     now.AddDate(0, 1, 0),
 		TrialEnd:             &trialEnd,
@@ -111,8 +117,10 @@ func TestConversionService_UserSubscriptionToDTO(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Equal(t, subscriptionID, result.ID)
 	assert.Equal(t, "user123", result.UserID)
-	assert.Equal(t, "sub_123", result.StripeSubscriptionID)
-	assert.Equal(t, "cus_123", result.StripeCustomerID)
+	assert.NotNil(t, result.StripeSubscriptionID)
+	assert.Equal(t, "sub_123", *result.StripeSubscriptionID)
+	assert.NotNil(t, result.StripeCustomerID)
+	assert.Equal(t, "cus_123", *result.StripeCustomerID)
 	assert.Equal(t, "active", result.Status)
 	assert.Equal(t, &trialEnd, result.TrialEnd)
 	assert.False(t, result.CancelAtPeriodEnd)
@@ -362,11 +370,14 @@ func BenchmarkConversionService_UserSubscriptionToDTO(b *testing.B) {
 	conversionService := services.NewConversionService()
 
 	subscription := &models.UserSubscription{
-		BaseModel:            emm.BaseModel{ID: uuid.New()},
-		UserID:               "benchmark-user",
-		SubscriptionPlanID:   uuid.New(),
-		StripeSubscriptionID: "sub_benchmark",
-		Status:               "active",
+		BaseModel:          emm.BaseModel{ID: uuid.New()},
+		UserID:             "benchmark-user",
+		SubscriptionPlanID: uuid.New(),
+		StripeSubscriptionID: func() *string {
+			s := "sub_benchmark"
+			return &s
+		}(),
+		Status: "active",
 	}
 
 	b.ResetTimer()

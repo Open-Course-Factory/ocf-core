@@ -126,14 +126,17 @@ func seedTestPlans(t *testing.T, db *gorm.DB) map[string]*models.SubscriptionPla
 
 // createUserSubscription creates an active subscription for a user
 func createUserSubscription(t *testing.T, db *gorm.DB, userID string, planID uuid.UUID) *models.UserSubscription {
+	customerID := "cus_test_" + userID
+	subscriptionID := "sub_test_" + userID
+
 	subscription := &models.UserSubscription{
 		UserID:               userID,
 		SubscriptionPlanID:   planID,
 		Status:               "active",
 		CurrentPeriodStart:   time.Now(),
 		CurrentPeriodEnd:     time.Now().AddDate(0, 1, 0),
-		StripeCustomerID:     "cus_test_" + userID,
-		StripeSubscriptionID: "sub_test_" + userID,
+		StripeCustomerID:     &customerID,
+		StripeSubscriptionID: &subscriptionID,
 	}
 
 	err := db.Create(subscription).Error
