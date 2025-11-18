@@ -67,6 +67,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&authModels.SshKey{})
 	db.AutoMigrate(&authModels.UserSettings{})
 	db.AutoMigrate(&authModels.TokenBlacklist{})
+	db.AutoMigrate(&authModels.PasswordResetToken{})
 
 	// Terminal entities
 	db.AutoMigrate(&terminalModels.Terminal{})

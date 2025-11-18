@@ -18,6 +18,7 @@ import (
 	authHooks "soli/formations/src/auth/hooks"
 	accessController "soli/formations/src/auth/routes/accessesRoutes"
 	// groupController "soli/formations/src/auth/routes/groupsRoutes" // Legacy Casdoor groups - replaced by class-groups
+	passwordResetController "soli/formations/src/auth/routes/passwordResetRoutes"
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
 	courseHooks "soli/formations/src/courses/hooks"
@@ -177,6 +178,7 @@ func main() {
 	// Register module routes
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	passwordResetController.PasswordResetRoutes(apiGroup.Group("/auth"), sqldb.DB) // Public password reset routes
 	genericController.HooksRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	sshKeyController.SshKeysRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
