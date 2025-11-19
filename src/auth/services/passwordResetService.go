@@ -52,6 +52,12 @@ func (s *passwordResetService) RequestPasswordReset(email string, resetURL strin
 		return nil // Return success to avoid user enumeration
 	}
 
+	// Check if user exists (API may return nil user without error)
+	if user == nil {
+		fmt.Printf("Password reset requested for non-existent email: %s\n", email)
+		return nil // Return success to avoid user enumeration
+	}
+
 	// Generate secure token
 	token, err := generateSecureToken()
 	if err != nil {
