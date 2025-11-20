@@ -27,7 +27,7 @@ type passwordResetService struct {
 func NewPasswordResetService(db *gorm.DB) PasswordResetService {
 	return &passwordResetService{
 		db:              db,
-		emailService:    emailServices.NewEmailService(),
+		emailService:    emailServices.NewEmailServiceWithDB(db),
 		passwordService: NewPasswordService(),
 	}
 }

@@ -7,20 +7,25 @@ import (
 	"net/smtp"
 	"os"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type EmailService interface {
 	SendEmail(to, subject, body string) error
 	SendPasswordResetEmail(to, resetToken, resetURL string) error
+	SendTemplatedEmail(to, templateName string, variables map[string]interface{}) error
 }
 
 type emailService struct {
-	smtpHost     string
-	smtpPort     string
-	smtpUsername string
-	smtpPassword string
-	fromEmail    string
-	fromName     string
+	smtpHost        string
+	smtpPort        string
+	smtpUsername    string
+	smtpPassword    string
+	fromEmail       string
+	fromName        string
+	db              *gorm.DB
+	templateService TemplateService
 }
 
 func NewEmailService() EmailService {
@@ -31,6 +36,20 @@ func NewEmailService() EmailService {
 		smtpPassword: getEnv("SMTP_PASSWORD", ""),
 		fromEmail:    getEnv("SMTP_FROM_EMAIL", "noreply@yourdomain.com"),
 		fromName:     getEnv("SMTP_FROM_NAME", "OCF Platform"),
+		db:           nil, // Will be set when used with templates
+	}
+}
+
+func NewEmailServiceWithDB(db *gorm.DB) EmailService {
+	return &emailService{
+		smtpHost:        getEnv("SMTP_HOST", "smtp.gmail.com"),
+		smtpPort:        getEnv("SMTP_PORT", "587"),
+		smtpUsername:    getEnv("SMTP_USERNAME", ""),
+		smtpPassword:    getEnv("SMTP_PASSWORD", ""),
+		fromEmail:       getEnv("SMTP_FROM_EMAIL", "noreply@yourdomain.com"),
+		fromName:        getEnv("SMTP_FROM_NAME", "OCF Platform"),
+		db:              db,
+		templateService: NewTemplateService(db),
 	}
 }
 
@@ -145,9 +164,19 @@ func (s *emailService) sendMailTLS(addr, from, to string, msg []byte) error {
 }
 
 func (s *emailService) SendPasswordResetEmail(to, resetToken, resetURL string) error {
-	// Build reset link
-	resetLink := fmt.Sprintf("%s?token=%s", resetURL, resetToken)
+	// Try to use template if DB is available
+	if s.db != nil && s.templateService != nil {
+		resetLink := fmt.Sprintf("%s?token=%s", resetURL, resetToken)
+		variables := map[string]interface{}{
+			"ResetLink": resetLink,
+			"ResetURL":  resetURL,
+			"Token":     resetToken,
+		}
+		return s.SendTemplatedEmail(to, "password_reset", variables)
+	}
 
+	// Fallback to hardcoded email (backwards compatibility)
+	resetLink := fmt.Sprintf("%s?token=%s", resetURL, resetToken)
 	subject := "Password Reset Request"
 
 	body := fmt.Sprintf(`
@@ -196,6 +225,20 @@ func (s *emailService) SendPasswordResetEmail(to, resetToken, resetURL string) e
 </body>
 </html>
 `, resetLink, resetLink)
+
+	return s.SendEmail(to, subject, body)
+}
+
+// SendTemplatedEmail sends an email using a template from the database
+func (s *emailService) SendTemplatedEmail(to, templateName string, variables map[string]interface{}) error {
+	if s.templateService == nil {
+		return fmt.Errorf("template service not initialized - use NewEmailServiceWithDB")
+	}
+
+	subject, body, err := s.templateService.RenderTemplate(templateName, variables)
+	if err != nil {
+		return fmt.Errorf("failed to render template: %w", err)
+	}
 
 	return s.SendEmail(to, subject, body)
 }
