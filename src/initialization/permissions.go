@@ -7,74 +7,48 @@ import (
 	"strings"
 )
 
-// SetupPaymentRolePermissions sets up role-based permissions for payment system
-func SetupPaymentRolePermissions(enforcer interfaces.EnforcerInterface) {
-	enforcer.LoadPolicy()
+// addPolicyWithErrorHandling is a helper function to add policies with consistent error handling
+func addPolicyWithErrorHandling(enforcer interfaces.EnforcerInterface, role, path, method string) {
+	_, err := enforcer.AddPolicy(role, path, method)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			log.Printf("Permission already exists: %s %s %s", role, path, method)
+		} else {
+			log.Printf("Error adding permission for %s %s %s: %v", role, path, method, err)
+		}
+	} else {
+		log.Printf("✅ Added %s permission for %s %s", role, method, path)
+	}
+}
 
-	// Add permissions for /api/v1/users/:id (which includes /api/v1/users/me)
+// SetupAuthPermissions sets up authentication and user-related permissions
+func SetupAuthPermissions(enforcer interfaces.EnforcerInterface) {
+	log.Println("=== Setting up authentication and user permissions ===")
+
 	// Get all Casdoor roles that map to the "member" OCF role
 	casdoorRoles := authModels.GetCasdoorRolesForOCFRole(authModels.Member)
 
 	for _, role := range casdoorRoles {
-		// Add permission for /api/v1/users/:id (the actual route pattern)
-		_, err1 := enforcer.AddPolicy(role, "/api/v1/users/:id", "GET")
-		if err1 != nil {
-			if strings.Contains(err1.Error(), "UNIQUE") {
-				log.Printf("Permission already exists: %s /api/v1/users/:id", role)
-			} else {
-				log.Printf("Error adding permission for %s /api/v1/users/:id: %v", role, err1)
-			}
-		} else {
-			log.Printf("✅ Added %s permission for /api/v1/users/:id (includes /me)", role)
-		}
+		// User endpoints
+		addPolicyWithErrorHandling(enforcer, role, "/api/v1/users/:id", "GET")
+		addPolicyWithErrorHandling(enforcer, role, "/api/v1/users/me/*", "(GET|POST|PATCH|DELETE)")
 
-		// Add permission for /api/v1/users/me/* sub-paths
-		_, err2 := enforcer.AddPolicy(role, "/api/v1/users/me/*", "(GET|POST|PATCH|DELETE)")
-		if err2 != nil {
-			if strings.Contains(err2.Error(), "UNIQUE") {
-				log.Printf("Permission already exists: %s /api/v1/users/me/*", role)
-			} else {
-				log.Printf("Error adding permission for %s /api/v1/users/me/*: %v", role, err2)
-			}
-		} else {
-			log.Printf("✅ Added %s permission for /api/v1/users/me/*", role)
-		}
-
-		// Add permission for /api/v1/auth/permissions (new permissions endpoint)
-		_, err3 := enforcer.AddPolicy(role, "/api/v1/auth/permissions", "GET")
-		if err3 != nil {
-			if strings.Contains(err3.Error(), "UNIQUE") {
-				log.Printf("Permission already exists: %s /api/v1/auth/permissions", role)
-			} else {
-				log.Printf("Error adding permission for %s /api/v1/auth/permissions: %v", role, err3)
-			}
-		} else {
-			log.Printf("✅ Added %s permission for /api/v1/auth/permissions", role)
-		}
+		// Auth endpoints
+		addPolicyWithErrorHandling(enforcer, role, "/api/v1/auth/permissions", "GET")
+		addPolicyWithErrorHandling(enforcer, role, "/api/v1/auth/me", "GET")
 	}
 
-	// Terminal and subscription permissions for all members
-	// These are now handled by entity registration (terminals) and subscription logic
-	// Keeping minimal overrides here for subscription-related endpoints
+	log.Println("✅ Authentication and user permissions setup completed")
+}
 
-	// Note: Standard terminal CRUD permissions are automatically set via TerminalRegistration entity
-	// But custom terminal routes need explicit permissions
+// SetupTerminalPermissions sets up terminal-related permissions
+func SetupTerminalPermissions(enforcer interfaces.EnforcerInterface) {
+	log.Println("=== Setting up terminal permissions ===")
 
 	// User Terminal Key custom routes - available to all authenticated members
 	log.Println("Setting up user terminal key custom route permissions...")
-	_, err := enforcer.AddPolicy("member", "/api/v1/user-terminal-keys/regenerate", "POST")
-	if err != nil && !strings.Contains(err.Error(), "UNIQUE") {
-		log.Printf("Error adding regenerate permission: %v", err)
-	} else {
-		log.Printf("✅ Added member permission for /api/v1/user-terminal-keys/regenerate")
-	}
-
-	_, err = enforcer.AddPolicy("member", "/api/v1/user-terminal-keys/my-key", "GET")
-	if err != nil && !strings.Contains(err.Error(), "UNIQUE") {
-		log.Printf("Error adding my-key permission: %v", err)
-	} else {
-		log.Printf("✅ Added member permission for /api/v1/user-terminal-keys/my-key")
-	}
+	addPolicyWithErrorHandling(enforcer, "member", "/api/v1/user-terminal-keys/regenerate", "POST")
+	addPolicyWithErrorHandling(enforcer, "member", "/api/v1/user-terminal-keys/my-key", "GET")
 
 	// Terminal custom routes - available to all authenticated members
 	log.Println("Setting up terminal custom route permissions...")
@@ -101,19 +75,22 @@ func SetupPaymentRolePermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range terminalRoutes {
-		_, err := enforcer.AddPolicy("member", route.path, route.method)
-		if err != nil && !strings.Contains(err.Error(), "UNIQUE") {
-			log.Printf("Error adding terminal permission %s %s: %v", route.method, route.path, err)
-		} else {
-			log.Printf("✅ Added member permission for %s %s", route.method, route.path)
-		}
+		addPolicyWithErrorHandling(enforcer, "member", route.path, route.method)
 	}
 
+	log.Println("✅ Terminal permissions setup completed")
+}
+
+// SetupPaymentPermissions sets up payment and subscription-related permissions
+func SetupPaymentPermissions(enforcer interfaces.EnforcerInterface) {
+	log.Println("=== Setting up payment and subscription permissions ===")
+
 	// User subscription endpoints - available to all authenticated members
-	enforcer.AddPolicy("member", "/api/v1/user-subscriptions/current", "GET")
-	enforcer.AddPolicy("member", "/api/v1/user-subscriptions/portal", "POST")
-	enforcer.AddPolicy("member", "/api/v1/invoices/user", "GET")
-	enforcer.AddPolicy("member", "/api/v1/payment-methods/user", "GET")
+	log.Println("Setting up user subscription permissions...")
+	addPolicyWithErrorHandling(enforcer, "member", "/api/v1/user-subscriptions/current", "GET")
+	addPolicyWithErrorHandling(enforcer, "member", "/api/v1/user-subscriptions/portal", "POST")
+	addPolicyWithErrorHandling(enforcer, "member", "/api/v1/invoices/user", "GET")
+	addPolicyWithErrorHandling(enforcer, "member", "/api/v1/payment-methods/user", "GET")
 
 	// Subscription batch endpoints - available to all authenticated members
 	log.Println("Setting up subscription batch permissions...")
@@ -132,13 +109,8 @@ func SetupPaymentRolePermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range batchRoutes {
-		_, err := enforcer.AddPolicy("member", route.path, route.method)
-		if err != nil && !strings.Contains(err.Error(), "UNIQUE") {
-			log.Printf("Error adding batch permission %s %s: %v", route.method, route.path, err)
-		} else {
-			log.Printf("✅ Added member permission for %s %s", route.method, route.path)
-		}
+		addPolicyWithErrorHandling(enforcer, "member", route.path, route.method)
 	}
 
-	log.Printf("✅ Terminal and subscription permissions setup completed")
+	log.Println("✅ Payment and subscription permissions setup completed")
 }

@@ -83,8 +83,13 @@ func main() {
 	// Initialize email templates
 	emailServices.InitDefaultTemplates(sqldb.DB)
 
-	// Setup payment role permissions
-	initialization.SetupPaymentRolePermissions(casdoor.Enforcer)
+	// Setup role-based permissions
+	log.Println("Setting up role-based permissions...")
+	casdoor.Enforcer.LoadPolicy()
+	initialization.SetupAuthPermissions(casdoor.Enforcer)
+	initialization.SetupTerminalPermissions(casdoor.Enforcer)
+	initialization.SetupPaymentPermissions(casdoor.Enforcer)
+	log.Println("✅ All permissions setup completed")
 
 	// Initialize payment entities and hooks
 	payment.InitPaymentEntities(sqldb.DB)
