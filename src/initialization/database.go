@@ -11,6 +11,7 @@ import (
 	authModels "soli/formations/src/auth/models"
 	configModels "soli/formations/src/configuration/models"
 	courseModels "soli/formations/src/courses/models"
+	emailModels "soli/formations/src/email/models"
 	groupModels "soli/formations/src/groups/models"
 	organizationModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
@@ -68,6 +69,9 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&authModels.UserSettings{})
 	db.AutoMigrate(&authModels.TokenBlacklist{})
 	db.AutoMigrate(&authModels.PasswordResetToken{})
+
+	// Email entities
+	db.AutoMigrate(&emailModels.EmailTemplate{})
 
 	// Terminal entities
 	db.AutoMigrate(&terminalModels.Terminal{})

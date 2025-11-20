@@ -9,6 +9,7 @@ import (
 	configServices "soli/formations/src/configuration/services"
 	"soli/formations/src/courses"
 	courseRegistration "soli/formations/src/courses/entityRegistration"
+	emailRegistration "soli/formations/src/email/entityRegistration"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/groups"
 	groupRegistration "soli/formations/src/groups/entityRegistration"
@@ -44,6 +45,9 @@ func RegisterEntities() {
 	ems.GlobalEntityRegistrationService.RegisterEntity(organizationRegistration.OrganizationMemberRegistration{})
 
 	ems.GlobalEntityRegistrationService.RegisterEntity(configRegistration.FeatureRegistration{})
+
+	// Email entities
+	ems.GlobalEntityRegistrationService.RegisterEntity(emailRegistration.EmailTemplateRegistration{})
 }
 
 // RegisterModuleFeatures registers features from all modules
