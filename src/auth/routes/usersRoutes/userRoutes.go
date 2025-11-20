@@ -33,5 +33,6 @@ func UsersRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm
 
 	// Auth/permission routes
 	authRoutes := router.Group("/auth")
+	authRoutes.GET("/me", middleware.AuthManagement(), GetCurrentUser)
 	authRoutes.GET("/permissions", middleware.AuthManagement(), GetUserPermissions)
 }
