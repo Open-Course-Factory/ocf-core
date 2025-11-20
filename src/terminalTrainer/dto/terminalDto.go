@@ -1,6 +1,9 @@
 package dto
 
 import (
+	"encoding/json"
+	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -136,12 +139,40 @@ type TerminalTrainerAPIKeyResponse struct {
 	Message string `json:"message"`
 }
 
+// FlexibleInt is a custom type that can unmarshal both string and int JSON values
+type FlexibleInt int
+
+// UnmarshalJSON implements custom JSON unmarshaling to handle both string and int
+func (fi *FlexibleInt) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as int first
+	var i int
+	if err := json.Unmarshal(data, &i); err == nil {
+		*fi = FlexibleInt(i)
+		return nil
+	}
+
+	// If that fails, try as string and convert to int
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return fmt.Errorf("status must be either int or string: %v", err)
+	}
+
+	// Convert string to int
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		return fmt.Errorf("cannot convert status string to int: %v", err)
+	}
+
+	*fi = FlexibleInt(i)
+	return nil
+}
+
 type TerminalTrainerSessionResponse struct {
-	SessionID   string `json:"id,omitempty"`
-	Status      int    `json:"status"`               // 0 = success, non-zero = error
-	ExpiresAt   int64  `json:"expires_at,omitempty"` // timestamp Unix
-	CreatedAt   int64  `json:"created_at,omitempty"`
-	MachineSize string `json:"machine_size,omitempty"` // XS, S, M, L, XL
+	SessionID   string      `json:"id,omitempty"`
+	Status      FlexibleInt `json:"status"`               // 0 = success, non-zero = error (can be string or int)
+	ExpiresAt   int64       `json:"expires_at,omitempty"` // timestamp Unix
+	CreatedAt   int64       `json:"created_at,omitempty"`
+	MachineSize string      `json:"machine_size,omitempty"` // XS, S, M, L, XL
 }
 
 // TerminalTrainerSession représente une session retournée par l'endpoint /1.0/sessions
