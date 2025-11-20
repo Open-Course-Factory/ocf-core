@@ -21,6 +21,8 @@ import (
 	passwordResetController "soli/formations/src/auth/routes/passwordResetRoutes"
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
+	emailController "soli/formations/src/email/routes"
+	emailServices "soli/formations/src/email/services"
 	courseHooks "soli/formations/src/courses/hooks"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	generationController "soli/formations/src/courses/routes/generationRoutes"
@@ -77,6 +79,9 @@ func main() {
 
 	// Setup development data (test users, default subscription plans)
 	initialization.InitDevelopmentData(sqldb.DB)
+
+	// Initialize email templates
+	emailServices.InitDefaultTemplates(sqldb.DB)
 
 	// Setup payment role permissions
 	initialization.SetupPaymentRolePermissions(casdoor.Enforcer)
@@ -192,6 +197,7 @@ func main() {
 	terminalController.UserTerminalKeyRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	organizationController.OrganizationRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	organizationController.OrganizationMigrationRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	emailController.EmailTemplateRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	// Setup usage limit middleware for specific routes
 	apiGroupWithUsageCheck := apiGroup.Group("")
