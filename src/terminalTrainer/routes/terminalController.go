@@ -906,6 +906,18 @@ func (tc *terminalController) ShareTerminal(ctx *gin.Context) {
 		return
 	}
 
+	// Validate that at least one recipient is specified
+	hasUser := request.SharedWithUserID != nil && *request.SharedWithUserID != ""
+	hasGroup := request.SharedWithGroupID != nil
+
+	if !hasUser && !hasGroup {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Must specify either shared_with_user_id or shared_with_group_id",
+		})
+		return
+	}
+
 	// Support both user and group sharing
 	var sharedWithUserID string
 	if request.SharedWithUserID != nil {

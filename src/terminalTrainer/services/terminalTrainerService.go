@@ -763,6 +763,11 @@ func (tts *terminalTrainerService) getSessionsFromInstanceType(userAPIKey, insta
 
 // ShareTerminal partage un terminal avec un autre utilisateur
 func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, sharedWithUserID, accessLevel string, expiresAt *time.Time) error {
+	// Validate that sharedWithUserID is not empty
+	if sharedWithUserID == "" {
+		return fmt.Errorf("shared_with_user_id cannot be empty")
+	}
+
 	// Vérifier que le terminal existe
 	terminal, err := tts.repository.GetTerminalSessionBySessionID(sessionID)
 	if err != nil {
