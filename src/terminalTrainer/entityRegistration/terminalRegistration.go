@@ -105,6 +105,8 @@ func (t TerminalRegistration) GetEntityRoles() entityManagementInterfaces.Entity
 	roleMap := make(map[string]string)
 
 	// Only use OCF roles - Casdoor mapping is handled automatically by the entity registration system
+	// NOTE: Member role does NOT have PATCH at role-level - PATCH is granted via user-specific
+	// permissions through hooks (owner or shared with write/admin access)
 	roleMap[string(authModels.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
 	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")"
 

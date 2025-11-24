@@ -31,6 +31,7 @@ import (
 	organizationHooks "soli/formations/src/organizations/hooks"
 	organizationController "soli/formations/src/organizations/routes"
 	terminalController "soli/formations/src/terminalTrainer/routes"
+	terminalHooks "soli/formations/src/terminalTrainer/hooks"
 	versionController "soli/formations/src/version"
 	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
 
@@ -97,6 +98,7 @@ func main() {
 	authHooks.InitAuthHooks(sqldb.DB)
 	groupHooks.InitGroupHooks(sqldb.DB)
 	organizationHooks.InitOrganizationHooks(sqldb.DB) // Phase 1: Organization hooks
+	terminalHooks.InitTerminalHooks(sqldb.DB)         // Terminal permission hooks
 
 	// Register module features
 	initialization.RegisterModuleFeatures(sqldb.DB)
