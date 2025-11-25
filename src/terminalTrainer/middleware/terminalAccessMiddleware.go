@@ -69,6 +69,15 @@ func (tam *TerminalAccessMiddleware) RequireTerminalAccess(requiredLevel string)
 		// Check terminal-specific access (owner or shared)
 		hasAccess, err := tam.service.HasTerminalAccess(terminalID, userID, requiredLevel)
 		if err != nil {
+			// Check if it's a "terminal not found" error
+			if err.Error() == "terminal not found" {
+				ctx.AbortWithStatusJSON(http.StatusNotFound, &errors.APIError{
+					ErrorCode:    http.StatusNotFound,
+					ErrorMessage: "terminal not found",
+				})
+				return
+			}
+			// Other errors are internal server errors
 			ctx.AbortWithStatusJSON(http.StatusInternalServerError, &errors.APIError{
 				ErrorCode:    http.StatusInternalServerError,
 				ErrorMessage: fmt.Sprintf("failed to check terminal access: %v", err),
