@@ -71,6 +71,9 @@ type TerminalTrainerService interface {
 
 	// Bulk operations
 	BulkCreateTerminalsForGroup(groupID string, requestingUserID string, request dto.BulkCreateTerminalsRequest, planInterface any) (*dto.BulkCreateTerminalsResponse, error)
+
+	// Enum service access
+	GetEnumService() TerminalTrainerEnumService
 }
 
 type terminalTrainerService struct {
@@ -80,6 +83,7 @@ type terminalTrainerService struct {
 	terminalType        string
 	repository          repositories.TerminalRepository
 	subscriptionService paymentServices.UserSubscriptionService
+	enumService         TerminalTrainerEnumService
 	db                  *gorm.DB
 }
 
@@ -94,13 +98,16 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		terminalType = "" // no prefix by default
 	}
 
+	baseURL := os.Getenv("TERMINAL_TRAINER_URL") // http://localhost:8090
+
 	return &terminalTrainerService{
 		adminKey:            os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
-		baseURL:             os.Getenv("TERMINAL_TRAINER_URL"), // http://localhost:8090
+		baseURL:             baseURL,
 		apiVersion:          apiVersion,
 		terminalType:        terminalType,
 		repository:          repositories.NewTerminalRepository(db),
 		subscriptionService: paymentServices.NewSubscriptionService(db),
+		enumService:         NewTerminalTrainerEnumService(baseURL, apiVersion),
 		db:                  db,
 	}
 }
@@ -216,7 +223,9 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	}
 
 	if sessionResp.Status != 0 {
-		return nil, fmt.Errorf("failed to start session response status: %d", sessionResp.Status)
+		// Use enum service to provide detailed error message
+		errorMsg := tts.enumService.FormatError("session_status", int(sessionResp.Status), "Failed to start session")
+		return nil, fmt.Errorf("%s", errorMsg)
 	}
 
 	// Créer l'enregistrement local
@@ -494,11 +503,15 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 	for sessionID, apiSession := range apiSessionsMap {
 		localSession := localSessionsMap[sessionID]
 
+		// Convert numeric status to semantic name using enum service
+		apiStatusName := tts.enumService.GetEnumName("session_status", int(apiSession.Status))
+
 		if localSession == nil {
 			// Session existe côté API mais pas côté local
 			// Ne recréer que les sessions actives, pas les expirées/arrêtées
-			if apiSession.Status == "active" {
-				log.Printf("[DEBUG] SyncUserSessions - Creating missing active session %s\n", sessionID)
+			if apiStatusName == "active" {
+				log.Printf("[DEBUG] SyncUserSessions - Creating missing active session %s (status=%d, name=%s)\n",
+					sessionID, apiSession.Status, apiStatusName)
 				err := tts.createMissingLocalSession(userID, userKey, apiSession)
 				if err != nil {
 					errors = append(errors, fmt.Sprintf("Failed to create missing session %s: %v", sessionID, err))
@@ -506,7 +519,7 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 					sessionResults = append(sessionResults, dto.SyncSessionResponse{
 						SessionID:      sessionID,
 						PreviousStatus: "missing",
-						CurrentStatus:  apiSession.Status,
+						CurrentStatus:  apiStatusName,
 						Updated:        true,
 						LastSyncAt:     time.Now(),
 					})
@@ -515,12 +528,13 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 					createdCount++
 				}
 			} else {
-				log.Printf("[DEBUG] SyncUserSessions - Ignoring non-active session %s (status: %s) from API\n", sessionID, apiSession.Status)
+				log.Printf("[DEBUG] SyncUserSessions - Ignoring non-active session %s (status=%d, name=%s) from API\n",
+					sessionID, apiSession.Status, apiStatusName)
 				// Ajouter quand même aux résultats pour le suivi
 				sessionResults = append(sessionResults, dto.SyncSessionResponse{
 					SessionID:      sessionID,
 					PreviousStatus: "missing",
-					CurrentStatus:  fmt.Sprintf("ignored-%s", apiSession.Status),
+					CurrentStatus:  fmt.Sprintf("ignored-%s", apiStatusName),
 					Updated:        false,
 					LastSyncAt:     time.Now(),
 				})
@@ -531,13 +545,15 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 			previousStatus := localSession.Status
 			needsUpdate := false
 
-			log.Printf("[DEBUG] SyncUserSessions - Session %s: local='%s', api='%s'\n", sessionID, localSession.Status, apiSession.Status)
+			log.Printf("[DEBUG] SyncUserSessions - Session %s: local='%s', api='%d' (name='%s')\n",
+				sessionID, localSession.Status, apiSession.Status, apiStatusName)
 
 			// Vérifier si le statut a changé
 			// Ne pas écraser les sessions arrêtées manuellement (status "stopped")
-			if localSession.Status != apiSession.Status && localSession.Status != "stopped" {
-				log.Printf("[DEBUG] SyncUserSessions - Status mismatch for session %s: changing '%s' -> '%s'\n", sessionID, localSession.Status, apiSession.Status)
-				localSession.Status = apiSession.Status
+			if localSession.Status != apiStatusName && localSession.Status != "stopped" {
+				log.Printf("[DEBUG] SyncUserSessions - Status mismatch for session %s: changing '%s' -> '%s'\n",
+					sessionID, localSession.Status, apiStatusName)
+				localSession.Status = apiStatusName
 				needsUpdate = true
 			} else if localSession.Status == "stopped" {
 				log.Printf("[DEBUG] SyncUserSessions - Session %s is manually stopped, keeping local status\n", sessionID)
@@ -545,7 +561,7 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 
 			// Vérifier si la session a expiré selon la date
 			expiryTime := time.Unix(apiSession.ExpiresAt, 0)
-			if time.Now().After(expiryTime) && apiSession.Status == "active" {
+			if time.Now().After(expiryTime) && apiStatusName == "active" {
 				log.Printf("[DEBUG] SyncUserSessions - Session %s expired by date, marking as expired\n", sessionID)
 				localSession.Status = "expired"
 				needsUpdate = true
@@ -620,10 +636,13 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 func (tts *terminalTrainerService) createMissingLocalSession(userID string, userKey *models.UserTerminalKey, apiSession *dto.TerminalTrainerSession) error {
 	expiresAt := time.Unix(apiSession.ExpiresAt, 0)
 
+	// Convert numeric status to semantic name
+	statusName := tts.enumService.GetEnumName("session_status", int(apiSession.Status))
+
 	terminal := &models.Terminal{
 		SessionID:         apiSession.SessionID,
 		UserID:            userID,
-		Status:            apiSession.Status,
+		Status:            statusName, // Use semantic name (e.g., "active", "expired")
 		ExpiresAt:         expiresAt,
 		MachineSize:       apiSession.MachineSize, // Taille réelle depuis l'API
 		UserTerminalKeyID: userKey.ID,
@@ -1441,4 +1460,9 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 	}
 
 	return response, nil
+}
+
+// GetEnumService returns the enum service for external access
+func (tts *terminalTrainerService) GetEnumService() TerminalTrainerEnumService {
+	return tts.enumService
 }
