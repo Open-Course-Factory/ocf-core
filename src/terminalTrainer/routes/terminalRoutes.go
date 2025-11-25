@@ -57,6 +57,10 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.GET("/instance-types", middleware.AuthManagement(), terminalController.GetInstanceTypes)
 	routes.GET("/metrics", middleware.AuthManagement(), terminalController.GetServerMetrics)
 
+	// Enum service endpoints (admin only - for debugging and diagnostics)
+	routes.GET("/enums/status", middleware.AuthManagement(), terminalController.GetEnumStatus)
+	routes.POST("/enums/refresh", middleware.AuthManagement(), terminalController.RefreshEnums)
+
 	// Correction des permissions (no terminal-specific access needed)
 	routes.POST("/fix-hide-permissions", middleware.AuthManagement(), terminalController.FixTerminalHidePermissions)
 }

@@ -62,6 +62,10 @@ type TerminalController interface {
 
 	// Bulk operations
 	BulkCreateTerminalsForGroup(ctx *gin.Context)
+
+	// Enum service endpoints
+	GetEnumStatus(ctx *gin.Context)
+	RefreshEnums(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -749,11 +753,15 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 		}
 
 		if foundInAPI != nil {
+			// Convert numeric status to semantic name
+			enumService := tc.service.GetEnumService()
+			apiStatusName := enumService.GetEnumName("session_status", int(foundInAPI.Status))
+
 			response.ExistsInAPI = true
-			response.APIStatus = foundInAPI.Status
+			response.APIStatus = apiStatusName
 			response.APIExpiresAt = time.Unix(foundInAPI.ExpiresAt, 0)
-			response.SyncRecommended = terminal.Status != foundInAPI.Status
-			response.StatusMatch = terminal.Status == foundInAPI.Status
+			response.SyncRecommended = terminal.Status != apiStatusName
+			response.StatusMatch = terminal.Status == apiStatusName
 		} else {
 			response.APIStatus = "not_found"
 			response.SyncRecommended = true
@@ -1355,4 +1363,30 @@ func (tc *terminalController) BulkCreateTerminalsForGroup(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, response)
+}
+
+// GetEnumStatus returns the current status of the enum service (admin only)
+func (tc *terminalController) GetEnumStatus(ctx *gin.Context) {
+	enumService := tc.service.GetEnumService()
+	status := enumService.GetStatus()
+
+	ctx.JSON(http.StatusOK, status)
+}
+
+// RefreshEnums forces a refresh of enums from the Terminal Trainer API (admin only)
+func (tc *terminalController) RefreshEnums(ctx *gin.Context) {
+	enumService := tc.service.GetEnumService()
+
+	err := enumService.RefreshEnums()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to refresh enums: %v", err),
+		})
+		return
+	}
+
+	// Return updated status
+	status := enumService.GetStatus()
+	ctx.JSON(http.StatusOK, status)
 }
