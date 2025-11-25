@@ -177,17 +177,17 @@ type TerminalTrainerSessionResponse struct {
 
 // TerminalTrainerSession représente une session retournée par l'endpoint /1.0/sessions
 type TerminalTrainerSession struct {
-	ID          string `json:"id"`
-	SessionID   string `json:"session_id"`
-	Name        string `json:"name"`
-	Status      string `json:"status"`
-	ExpiresAt   int64  `json:"expires_at"`
-	CreatedAt   int64  `json:"created_at"`
-	IP          string `json:"ip"`
-	Username    string `json:"username,omitempty"`
-	Password    string `json:"password,omitempty"`
-	FQDN        string `json:"fqdn,omitempty"`
-	MachineSize string `json:"machine_size,omitempty"` // XS, S, M, L, XL
+	ID          string      `json:"id"`
+	SessionID   string      `json:"session_id"`
+	Name        string      `json:"name"`
+	Status      FlexibleInt `json:"status"` // Terminal Trainer returns integer status values
+	ExpiresAt   int64       `json:"expires_at"`
+	CreatedAt   int64       `json:"created_at"`
+	IP          string      `json:"ip"`
+	Username    string      `json:"username,omitempty"`
+	Password    string      `json:"password,omitempty"`
+	FQDN        string      `json:"fqdn,omitempty"`
+	MachineSize string      `json:"machine_size,omitempty"` // XS, S, M, L, XL
 }
 
 // TerminalTrainerSessionsResponse réponse de l'endpoint /1.0/sessions
@@ -201,15 +201,15 @@ type TerminalTrainerSessionsResponse struct {
 
 // TerminalTrainerSessionInfo informations détaillées d'une session depuis /1.0/info
 type TerminalTrainerSessionInfo struct {
-	SessionID   string `json:"id"`
-	Status      string `json:"status"`
-	ExpiresAt   int64  `json:"expiry,omitempty"`
-	StartedAt   int64  `json:"started_at,omitempty"`
-	IP          string `json:"ip,omitempty"`
-	Username    string `json:"username,omitempty"`
-	Password    string `json:"password,omitempty"`
-	FQDN        string `json:"fqdn,omitempty"`
-	MachineSize string `json:"machine_size,omitempty"` // XS, S, M, L, XL
+	SessionID   string      `json:"id"`
+	Status      FlexibleInt `json:"status"` // Terminal Trainer returns integer status values
+	ExpiresAt   int64       `json:"expiry,omitempty"`
+	StartedAt   int64       `json:"started_at,omitempty"`
+	IP          string      `json:"ip,omitempty"`
+	Username    string      `json:"username,omitempty"`
+	Password    string      `json:"password,omitempty"`
+	FQDN        string      `json:"fqdn,omitempty"`
+	MachineSize string      `json:"machine_size,omitempty"` // XS, S, M, L, XL
 }
 
 // SyncSessionResponse représente le résultat de synchronisation d'une session
@@ -459,4 +459,33 @@ type BulkTerminalCreationResult struct {
 	Name       string  `json:"name"`
 	Success    bool    `json:"success"`
 	Error      string  `json:"error,omitempty"`
+}
+
+// EnumValue represents a single enum value with its metadata
+type EnumValue struct {
+	Value       int    `json:"value"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// EnumDefinition represents a complete enum type
+type EnumDefinition struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Values      []EnumValue `json:"values"`
+}
+
+// TerminalTrainerEnumsResponse response from /1.0/enums endpoint
+type TerminalTrainerEnumsResponse struct {
+	Enums []EnumDefinition `json:"enums"`
+}
+
+// EnumServiceStatus represents the status of the enum service
+type EnumServiceStatus struct {
+	Initialized  bool      `json:"initialized"`
+	LastFetch    time.Time `json:"last_fetch,omitempty"`
+	Source       string    `json:"source"` // "local", "api", "mixed"
+	EnumCount    int       `json:"enum_count"`
+	HasMismatches bool     `json:"has_mismatches"`
+	Mismatches   []string  `json:"mismatches,omitempty"`
 }
