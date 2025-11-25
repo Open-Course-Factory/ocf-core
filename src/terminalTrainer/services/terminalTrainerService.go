@@ -958,14 +958,18 @@ func (tts *terminalTrainerService) GetSharedTerminals(userID string) (*[]models.
 }
 
 // HasTerminalAccess vérifie si un utilisateur a accès à un terminal avec le niveau requis
-func (tts *terminalTrainerService) HasTerminalAccess(sessionID, userID string, requiredLevel string) (bool, error) {
-	// D'abord vérifier si l'utilisateur est le propriétaire
-	terminal, err := tts.repository.GetTerminalSessionBySessionID(sessionID)
+func (tts *terminalTrainerService) HasTerminalAccess(terminalIDOrSessionID, userID string, requiredLevel string) (bool, error) {
+	// Try to get terminal by UUID first (most common case from API)
+	terminal, err := tts.repository.GetTerminalByUUID(terminalIDOrSessionID)
 	if err != nil {
-		return false, fmt.Errorf("failed to get terminal: %w", err)
-	}
-	if terminal == nil {
-		return false, fmt.Errorf("terminal not found")
+		// If UUID lookup fails, try SessionID lookup
+		terminal, err = tts.repository.GetTerminalSessionBySessionID(terminalIDOrSessionID)
+		if err != nil {
+			return false, fmt.Errorf("failed to get terminal: %w", err)
+		}
+		if terminal == nil {
+			return false, fmt.Errorf("terminal not found")
+		}
 	}
 
 	// Le propriétaire a toujours accès
