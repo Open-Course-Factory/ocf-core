@@ -30,6 +30,7 @@ import (
 type CourseService interface {
 	// Méthodes existantes
 	GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string, courseJsonFilename string) (*models.Course, error)
+	GetCourse(ownerId string, courseName string, sourceType string, source string, branch string, courseJsonFilename string) (*models.Course, error)
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
 	GetCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) models.Course
 
@@ -315,13 +316,24 @@ func (c courseService) GenerateCourse(generateCourseInputDto dto.GenerateCourseI
 
 // Méthodes existantes conservées pour compatibilité...
 
-func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string, courseJsonFilename string) (*models.Course, error) {
-	// Use cached clone for better performance
-	log.Printf("Loading course from repository: %s (branch: %s)", courseURL, courseBranch)
+// GetCourse loads a course from either a git repository or a local filesystem path
+func (c courseService) GetCourse(ownerId string, courseName string, sourceType string, source string, branch string, courseJsonFilename string) (*models.Course, error) {
+	var fs billy.Filesystem
+	var err error
 
-	fs, cloneErr := models.GitCloneWithCache(ownerId, courseURL, courseBranch)
-	if cloneErr != nil {
-		return nil, cloneErr
+	switch sourceType {
+	case "git":
+		log.Printf("Loading course from git repository: %s (branch: %s)", source, branch)
+		fs, err = models.GitCloneWithCache(ownerId, source, branch)
+	case "local":
+		log.Printf("Loading course from local path: %s", source)
+		fs, err = models.LoadLocalDirectory(source)
+	default:
+		return nil, fmt.Errorf("unknown source type: %s (must be 'git' or 'local')", sourceType)
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	jsonFile, err := fs.Open(courseJsonFilename)
@@ -342,8 +354,15 @@ func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL
 
 	course.OwnerIDs = append(course.OwnerIDs, ownerId)
 	course.FolderName = courseName
-	course.GitRepository = courseURL
-	course.GitRepositoryBranch = courseBranch
+	course.SourceType = sourceType
+
+	// Set the appropriate source fields based on type
+	if sourceType == "git" {
+		course.GitRepository = source
+		course.GitRepositoryBranch = branch
+	} else if sourceType == "local" {
+		course.SourcePath = source
+	}
 
 	models.FillCourseModelFromFiles(&fs, &course)
 
@@ -392,6 +411,11 @@ func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL
 	}
 
 	return &course, nil
+}
+
+// GetGitCourse loads a course from a git repository (backwards compatibility wrapper)
+func (c courseService) GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string, courseJsonFilename string) (*models.Course, error) {
+	return c.GetCourse(ownerId, courseName, "git", courseURL, courseBranch, courseJsonFilename)
 }
 
 // updateCourseWithChapters updates a course and all its chapters, sections, and associations

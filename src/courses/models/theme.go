@@ -10,6 +10,8 @@ type Theme struct {
 	Name             string
 	Repository       string
 	RepositoryBranch string
+	SourcePath       string
+	SourceType       string
 	Size             string
 }
 

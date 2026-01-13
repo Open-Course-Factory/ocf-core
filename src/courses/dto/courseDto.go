@@ -35,6 +35,8 @@ type CourseInput struct {
 	ChaptersInput       []*ChapterInput `json:"chapters"`
 	GitRepository       string
 	GitRepositoryBranch string
+	SourcePath          string
+	SourceType          string
 }
 
 type CourseOutput struct {
@@ -82,6 +84,16 @@ type CreateCourseFromGitInput struct {
 	Url        string `binding:"required"`
 	BranchName string `json:"branch_name,omitempty"`
 	Name       string `binding:"required"`
+}
+
+type CreateCourseFromSourceOutput struct {
+}
+
+type CreateCourseFromSourceInput struct {
+	SourceType string `binding:"required" json:"source_type"` // "git" or "local"
+	Source     string `binding:"required" json:"source"`      // Repository URL or local path
+	Branch     string `json:"branch,omitempty"`               // Only for git sources
+	Name       string `binding:"required" json:"name"`
 }
 
 func CourseModelToCourseOutputDto(courseModel models.Course) *CourseOutput {
@@ -136,5 +148,7 @@ func CourseModelToCourseInputDto(courseModel models.Course) *CourseInput {
 		ChaptersInput:       chapterInputs,
 		GitRepository:       courseModel.GitRepository,
 		GitRepositoryBranch: courseModel.GitRepositoryBranch,
+		SourcePath:          courseModel.SourcePath,
+		SourceType:          courseModel.SourceType,
 	}
 }

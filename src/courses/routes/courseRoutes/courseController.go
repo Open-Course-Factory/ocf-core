@@ -16,6 +16,7 @@ import (
 type CourseController interface {
 	GenerateCourse(ctx *gin.Context)
 	CreateCourseFromGit(ctx *gin.Context)
+	CreateCourseFromSource(ctx *gin.Context)
 
 	// Version management
 	GetCourseVersions(ctx *gin.Context)

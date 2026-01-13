@@ -25,9 +25,13 @@ import (
 // Returns true if CLI mode was used (and app should exit after completion)
 func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	const COURSE_FLAG = "c"
+	const COURSE_SOURCE_TYPE_FLAG = "source-type"
+	const COURSE_SOURCE_FLAG = "source"
 	const GIT_COURSE_REPO_FLAG = "course-repo"
 	const GIT_COURSE_REPO_BRANCH_FLAG = "course-repo-branch"
 	const THEME_FLAG = "t"
+	const THEME_SOURCE_TYPE_FLAG = "theme-source-type"
+	const THEME_SOURCE_FLAG = "theme-source"
 	const GIT_THEME_REPO_FLAG = "theme-repo"
 	const GIT_THEME_REPO_BRANCH_FLAG = "theme-repo-branch"
 	const TYPE_FLAG = "e"
@@ -38,11 +42,15 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	const COURSE_JSON_FILENAME_FLAG = "course-json"
 
 	courseName := flag.String(COURSE_FLAG, "git", "name of the course you need to generate")
-	courseGitRepository := flag.String(GIT_COURSE_REPO_FLAG, "", "git repository")
-	courseBranchGitRepository := flag.String(GIT_COURSE_REPO_BRANCH_FLAG, "main", "ssh git repository branch for course")
+	courseSourceType := flag.String(COURSE_SOURCE_TYPE_FLAG, "git", "source type: 'git' for git repository or 'local' for local filesystem path")
+	courseSource := flag.String(COURSE_SOURCE_FLAG, "", "git repository URL or local filesystem path")
+	courseGitRepository := flag.String(GIT_COURSE_REPO_FLAG, "", "git repository (deprecated, use --source)")
+	courseBranchGitRepository := flag.String(GIT_COURSE_REPO_BRANCH_FLAG, "main", "git repository branch for course (only for git source type)")
 	courseThemeName := flag.String(THEME_FLAG, "sdv", "name of the theme used to generate the website")
-	courseThemeGitRepository := flag.String(GIT_THEME_REPO_FLAG, "", "theme git repository")
-	courseThemeBranchGitRepository := flag.String(GIT_THEME_REPO_BRANCH_FLAG, "main", "ssh git repository branch for theme")
+	themeSourceType := flag.String(THEME_SOURCE_TYPE_FLAG, "git", "theme source type: 'git' for git repository or 'local' for local filesystem path")
+	themeSource := flag.String(THEME_SOURCE_FLAG, "", "theme git repository URL or local filesystem path")
+	courseThemeGitRepository := flag.String(GIT_THEME_REPO_FLAG, "", "theme git repository (deprecated, use --theme-source)")
+	courseThemeBranchGitRepository := flag.String(GIT_THEME_REPO_BRANCH_FLAG, "main", "git repository branch for theme (only for git source type)")
 	courseType := flag.String(TYPE_FLAG, "html", "type generated : html (default) or pdf")
 	config.DRY_RUN = flag.Bool(DRY_RUN_FLAG, false, "if set true, the cli stops before calling slide generator")
 	slideEngine := flag.String(SLIDE_ENGINE_FLAG, "slidev", "slide generator used, marp or slidev (default)")
@@ -71,12 +79,20 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 
 	var course courseModels.Course
 
-	// If we have a git repository, load the course from it
-	if *courseGitRepository != "" {
-		fmt.Printf("Loading course from git repository: %s\n", *courseGitRepository)
-		coursePtr, err := courseService.GetGitCourse(*userID, *courseName, *courseGitRepository, *courseBranchGitRepository, *courseJsonFilename)
+	// Determine the source to use (new flags take precedence over old flags)
+	source := *courseSource
+	if source == "" && *courseGitRepository != "" {
+		// Backwards compatibility: use old --course-repo flag if --source not provided
+		source = *courseGitRepository
+		*courseSourceType = "git"
+	}
+
+	// If we have a source, load the course from it
+	if source != "" {
+		fmt.Printf("Loading course from %s: %s\n", *courseSourceType, source)
+		coursePtr, err := courseService.GetCourse(*userID, *courseName, *courseSourceType, source, *courseBranchGitRepository, *courseJsonFilename)
 		if err != nil {
-			fmt.Printf("Error loading course from git: %v\n", err)
+			fmt.Printf("Error loading course from %s: %v\n", *courseSourceType, err)
 			return true
 		}
 		course = *coursePtr
@@ -105,7 +121,15 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 		fmt.Printf("Course created successfully with ID: %s\n", course.ID.String())
 	}
 
-	setCourseThemeFromProgramInputs(&course, string(*courseThemeName), string(*courseThemeGitRepository), string(*courseThemeBranchGitRepository))
+	// Determine theme source (new flags take precedence over old flags)
+	themeSourceToUse := *themeSource
+	if themeSourceToUse == "" && *courseThemeGitRepository != "" {
+		// Backwards compatibility: use old --theme-repo flag if --theme-source not provided
+		themeSourceToUse = *courseThemeGitRepository
+		*themeSourceType = "git"
+	}
+
+	setCourseThemeFromProgramInputs(&course, string(*courseThemeName), *themeSourceType, themeSourceToUse, string(*courseThemeBranchGitRepository))
 
 	// Check DRY_RUN flag before proceeding with generation
 	if *config.DRY_RUN {
@@ -183,13 +207,20 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	return true
 }
 
-func setCourseThemeFromProgramInputs(course *courseModels.Course, themeName string, themeGitRepository string, themeGitRepositoryBranch string) {
+func setCourseThemeFromProgramInputs(course *courseModels.Course, themeName string, sourceType string, source string, branch string) {
 	if course.Theme == nil {
 		course.Theme = &courseModels.Theme{}
 	}
 	course.Theme.Name = themeName
-	course.Theme.Repository = themeGitRepository
-	course.Theme.RepositoryBranch = themeGitRepositoryBranch
+	course.Theme.SourceType = sourceType
+	course.Theme.RepositoryBranch = branch
+
+	// Set the appropriate source field based on type
+	if sourceType == "git" {
+		course.Theme.Repository = source
+	} else if sourceType == "local" {
+		course.Theme.SourcePath = source
+	}
 }
 
 func isFlagPassed(name string) bool {

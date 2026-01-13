@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/models"
 	"strings"
@@ -114,7 +115,32 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
 	}
 
 	// Copy Themes
-	fs, errClone := models.GitClone(c.OwnerIDs[0], c.Theme.Repository, c.Theme.RepositoryBranch)
+	// Determine source type - default to git if not specified for backwards compatibility
+	sourceType := c.Theme.SourceType
+	source := ""
+	branch := c.Theme.RepositoryBranch
+
+	if sourceType == "" {
+		// Legacy behavior: if Repository is set, assume git
+		if c.Theme.Repository != "" {
+			sourceType = "git"
+			source = c.Theme.Repository
+		} else if c.Theme.SourcePath != "" {
+			sourceType = "local"
+			source = c.Theme.SourcePath
+		} else {
+			log.Fatal("No theme source specified (neither Repository nor SourcePath)")
+		}
+	} else {
+		// New behavior: use SourceType to determine which field to read
+		if sourceType == "git" {
+			source = c.Theme.Repository
+		} else if sourceType == "local" {
+			source = c.Theme.SourcePath
+		}
+	}
+
+	fs, errClone := models.LoadTheme(c.OwnerIDs[0], sourceType, source, branch)
 	if errClone != nil {
 		log.Fatal(errClone)
 	}
@@ -148,7 +174,84 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
 		}
 	}
 
-	// Copy course specifique images
+	// Copy course-specific images
+	// First, try to copy from the course source (local or git)
+	if c.SourceType != "" {
+		// Course was loaded from a source (local or git), load the filesystem and copy images
+		courseSourceType := c.SourceType
+		courseSource := ""
+		courseBranch := ""
+
+		if courseSourceType == "git" {
+			courseSource = c.GitRepository
+			courseBranch = c.GitRepositoryBranch
+		} else if courseSourceType == "local" {
+			courseSource = c.SourcePath
+		}
+
+		if courseSource != "" {
+			courseFS, errLoadCourse := models.LoadTheme(c.OwnerIDs[0], courseSourceType, courseSource, courseBranch)
+			if errLoadCourse == nil {
+				// Copy images directory if it exists
+				courseImagesFn := func(path string, entry os.FileInfo, err error) error {
+					// Only copy files from /images or /public directories
+					if strings.HasPrefix(path, "/images/") || strings.HasPrefix(path, "/public/") {
+						if !entry.IsDir() {
+							file, errFileOpen := courseFS.Open(path)
+							if errFileOpen != nil {
+								return errFileOpen
+							}
+
+							fileContent, errRead := io.ReadAll(file)
+							if errRead != nil {
+								return errRead
+							}
+
+							// Determine target paths
+							// For Slidev to work properly, images need to be in multiple locations:
+							// 1. outputDir/images/ for markdown build-time resolution (./images/foo.svg)
+							// 2. outputDir/public/images/ for Slidev runtime/PDF (/public/images/foo.svg)
+							// 3. outputDir/public/ for Slidev runtime/PDF (./images/ gets rewritten to /public/)
+							var targetPaths []string
+
+							if strings.HasPrefix(path, "/public/") {
+								// Files in /public/ go directly to outputDir/public/
+								targetPaths = append(targetPaths, outputDir+path)
+							} else if strings.HasPrefix(path, "/images/") {
+								// Files in /images/ go to THREE locations for maximum compatibility
+								targetPaths = append(targetPaths, outputDir+path)                          // dist/mds/images/
+								targetPaths = append(targetPaths, outputDir+"/"+PUBLIC_DIR+path)          // dist/mds/public/images/
+								// Also copy to public root with just the filename for ./images/ references
+								filename := filepath.Base(path)
+								targetPaths = append(targetPaths, outputDir+"/"+PUBLIC_DIR+"/"+filename)  // dist/mds/public/filename
+							}
+
+							// Copy to all target paths
+							for _, targetPath := range targetPaths {
+								// Create directory if needed
+								targetDir := filepath.Dir(targetPath)
+								os.MkdirAll(targetDir, 0755)
+
+								// Write file
+								err := os.WriteFile(targetPath, fileContent, 0644)
+								if err != nil {
+									return err
+								}
+								log.Printf("Copied course image: %s -> %s", path, targetPath)
+							}
+						}
+					}
+					return nil
+				}
+
+				util.Walk(courseFS, "/", courseImagesFn)
+			} else {
+				log.Printf("Warning: Could not load course filesystem for images: %v", errLoadCourse)
+			}
+		}
+	}
+
+	// Fallback: Copy course-specific images from COURSES_ROOT (for backwards compatibility)
 	courseImages := config.COURSES_ROOT + c.FolderName + "/" + PUBLIC_DIR
 	if _, ciiErr := os.Stat(courseImages); !os.IsNotExist(ciiErr) {
 		cpic_err := models.CopyDir(courseImages, outputDir+"/"+PUBLIC_DIR)

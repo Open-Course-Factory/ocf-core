@@ -488,3 +488,43 @@ func GitCloneWithCache(ownerId string, repositoryURL string, repositoryBranch st
 
 	return fs, nil
 }
+
+// LoadLocalDirectory loads a course from a local filesystem path
+func LoadLocalDirectory(localPath string) (billy.Filesystem, error) {
+	// Validate path exists
+	info, err := os.Stat(localPath)
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("local path not found: %s", localPath)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("error accessing path: %w", err)
+	}
+
+	// Ensure it's a directory
+	if !info.IsDir() {
+		return nil, fmt.Errorf("path is not a directory: %s", localPath)
+	}
+
+	// Return OS filesystem wrapper
+	log.Printf("Loading course from local path: %s", localPath)
+	return osfs.New(localPath), nil
+}
+
+// LoadTheme loads a theme from either a git repository or a local filesystem path
+func LoadTheme(ownerId string, sourceType string, source string, branch string) (billy.Filesystem, error) {
+	var fs billy.Filesystem
+	var err error
+
+	switch sourceType {
+	case "git":
+		log.Printf("Loading theme from git repository: %s (branch: %s)", source, branch)
+		fs, err = GitClone(ownerId, source, branch)
+	case "local":
+		log.Printf("Loading theme from local path: %s", source)
+		fs, err = LoadLocalDirectory(source)
+	default:
+		return nil, fmt.Errorf("unknown source type: %s (must be 'git' or 'local')", sourceType)
+	}
+
+	return fs, err
+}

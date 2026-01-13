@@ -19,6 +19,7 @@ func CoursesRoutes(router *gin.RouterGroup, config *config.Configuration, db *go
 	middleware := auth.NewAuthMiddleware(db)
 
 	routes.POST("/git", middleware.AuthManagement(), courseController.CreateCourseFromGit)
+	routes.POST("/source", middleware.AuthManagement(), courseController.CreateCourseFromSource)
 
 	// Route de génération modifiée (maintenant asynchrone)
 	routes.POST("/generate", middleware.AuthManagement(), courseController.GenerateCourse)

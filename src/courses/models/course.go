@@ -33,6 +33,8 @@ type Course struct {
 	Name                string
 	GitRepository       string
 	GitRepositoryBranch string
+	SourcePath          string
+	SourceType          string
 	FolderName          string
 	Version             string
 	Title               string
