@@ -28,6 +28,15 @@ benchmarks_baseline.txt
 *_report.xml
 report.xml
 .claude/settings.local.json
+.claude/commands/
+.claude/get-shit-done/
+
+# Local development files
+local_courses/
+local_themes/
+
+# VSCode local settings
+.vscode/launch.json
 
 # Build artifacts
 /formations
