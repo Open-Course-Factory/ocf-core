@@ -109,6 +109,7 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 
 	var pageFrontMatter struct {
 		Layout string `yaml:"layout"`
+		Class  string `yaml:"class"`
 	}
 
 	beginningIndex := 0
@@ -144,7 +145,7 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 				if contains(currentSection.HiddenPages, (pageOrder)) {
 					hide = true
 				}
-				page := createPage(pageOrder, strings.Split(string(sPageContent), "\n"), currentSection, hide)
+				page := createPage(pageOrder, strings.Split(string(sPageContent), "\n"), currentSection, hide, pageFrontMatter.Class)
 				pages = append(pages, page)
 			} else {
 				fmt.Println("Front matter for section not found / not formatted as expected")

@@ -11,7 +11,14 @@ type SlidevPageWriter struct {
 }
 
 func (spw *SlidevPageWriter) SetFrontMatter() string {
-	frontMatter := "---\nchapter: " + spw.Chapter.Title + "\n---\n\n"
+	frontMatter := "---\nchapter: " + spw.Chapter.Title + "\n"
+
+	// Add class field if present
+	if spw.Page.Class != "" {
+		frontMatter += "class: " + spw.Page.Class + "\n"
+	}
+
+	frontMatter += "---\n\n"
 
 	if spw.Page.Hide {
 		frontMatter += "<!-- _hide: true -->\n\n"

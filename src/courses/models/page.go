@@ -18,6 +18,7 @@ type Page struct {
 	Toc      []string `gorm:"serializer:json"`
 	Content  []string `gorm:"serializer:json"`
 	Hide     bool
+	Class    string
 	Sections []*Section `gorm:"many2many:section_pages;"`
 }
 
@@ -32,12 +33,13 @@ func (p Page) String(section Section, chapter Chapter) string {
 	return pw.GetPage()
 }
 
-func createPage(order int, pageContent []string, parentSection *Section, hide bool) (p *Page) {
+func createPage(order int, pageContent []string, parentSection *Section, hide bool, class string) (p *Page) {
 	pageToReturn := &Page{
 		Order:    order,
 		Content:  pageContent,
 		Sections: []*Section{parentSection},
 		Hide:     hide,
+		Class:    class,
 	}
 	pageToReturn.OwnerIDs = append(pageToReturn.OwnerIDs, parentSection.OwnerIDs[0])
 	return pageToReturn

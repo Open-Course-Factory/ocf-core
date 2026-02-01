@@ -309,7 +309,20 @@ func (scg SlidevCourseGenerator) ExportPDF(course *models.Course) error {
 	// Docker command for PDF export using Slidev
 	// The Docker image might have "export" as default entrypoint command
 	// Use -w to set working directory inside container
-	baseCmd := []string{"run", "--rm", "-i", "-e", `NPM_MIRROR="https://registry.npmmirror.com"`, "-v", pwd + "/dist:/slidev/dist", "-w", "/slidev/dist/" + course.Theme.Name, DOCKER_IMAGE, srcFile, "--format", "pdf", "--output", "slides-exported.pdf"}
+	// Add timing parameters to ensure CSS and images are fully loaded before export
+	baseCmd := []string{
+		"run", "--rm", "-i",
+		"-e", `NPM_MIRROR="https://registry.npmmirror.com"`,
+		"-v", pwd + "/dist:/slidev/dist",
+		"-w", "/slidev/dist/" + course.Theme.Name,
+		DOCKER_IMAGE,
+		srcFile,
+		"--format", "pdf",
+		"--output", "slides-exported.pdf",
+		"--wait-until", "networkidle", // Wait for all network requests (CSS, images) to complete
+		"--wait", "2000",              // Additional 2 second delay after networkidle
+		"--timeout", "60000",          // 60 second timeout for rendering
+	}
 
 	cmd := exec.Command("/usr/bin/docker", baseCmd...)
 
