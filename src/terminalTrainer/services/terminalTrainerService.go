@@ -74,6 +74,9 @@ type TerminalTrainerService interface {
 
 	// Enum service access
 	GetEnumService() TerminalTrainerEnumService
+
+	// Session validation
+	ValidateSessionAccess(sessionID string, checkAPI bool) (bool, string, error)
 }
 
 type terminalTrainerService struct {
@@ -1469,4 +1472,70 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 // GetEnumService returns the enum service for external access
 func (tts *terminalTrainerService) GetEnumService() TerminalTrainerEnumService {
 	return tts.enumService
+}
+
+// ValidateSessionAccess checks if a session is accessible for console operations
+// Returns: (isValid bool, reason string, error)
+// - isValid: true if session can be accessed, false otherwise
+// - reason: "active", "stopped", "expired", or other status
+// - error: any error encountered during validation
+func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, checkAPI bool) (bool, string, error) {
+	// 1. Get session from local database
+	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
+	if err != nil {
+		return false, "", fmt.Errorf("session not found: %w", err)
+	}
+
+	// 2. Check local state
+	if terminal.Status != "active" {
+		return false, terminal.Status, nil // "stopped" or "expired"
+	}
+
+	// 3. Check expiration time
+	if time.Now().After(terminal.ExpiresAt) {
+		terminal.Status = "expired"
+		err := tts.repository.UpdateTerminalSession(terminal)
+		if err != nil {
+			// Log error but continue - we know the session is expired
+			fmt.Printf("Warning: failed to update expired session %s status: %v\n", sessionID, err)
+		}
+		return false, "expired", nil
+	}
+
+	// 4. Optional API verification (for critical operations)
+	if checkAPI {
+		apiInfo, err := tts.GetSessionInfoFromAPI(sessionID)
+		if err != nil {
+			// Handle 404 = session doesn't exist in Terminal Trainer
+			if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
+				terminal.Status = "expired"
+				updateErr := tts.repository.UpdateTerminalSession(terminal)
+				if updateErr != nil {
+					fmt.Printf("Warning: failed to update session %s status after API 404: %v\n", sessionID, updateErr)
+				}
+				return false, "expired", nil
+			}
+			// For other API errors, return error but don't block access
+			// This allows fail-open behavior when API is unavailable
+			fmt.Printf("Warning: API validation failed for session %s: %v\n", sessionID, err)
+			return false, "", fmt.Errorf("failed to validate session with API: %w", err)
+		}
+
+		// Convert numeric status to semantic name
+		apiStatusName := tts.enumService.GetEnumName("session_status", int(apiInfo.Status))
+
+		// Sync status if mismatch detected
+		if apiStatusName != terminal.Status {
+			previousStatus := terminal.Status
+			terminal.Status = apiStatusName
+			err := tts.repository.UpdateTerminalSession(terminal)
+			if err != nil {
+				fmt.Printf("Warning: failed to sync session %s status from '%s' to '%s': %v\n",
+					sessionID, previousStatus, apiStatusName, err)
+			}
+			return terminal.Status == "active", terminal.Status, nil
+		}
+	}
+
+	return true, "active", nil
 }
