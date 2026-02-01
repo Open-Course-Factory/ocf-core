@@ -93,6 +93,37 @@ func (tam *TerminalAccessMiddleware) RequireTerminalAccess(requiredLevel string)
 			return
 		}
 
+		// NEW: Validate session state (use local state only for performance)
+		isValid, reason, err := tam.service.ValidateSessionAccess(terminalID, false)
+		if err != nil {
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: fmt.Sprintf("failed to validate session status: %v", err),
+			})
+			return
+		}
+
+		if !isValid {
+			// Return appropriate status based on reason
+			if reason == "expired" {
+				ctx.AbortWithStatusJSON(http.StatusGone, &errors.APIError{
+					ErrorCode:    http.StatusGone,
+					ErrorMessage: "Terminal session has expired and is no longer accessible",
+				})
+			} else if reason == "stopped" {
+				ctx.AbortWithStatusJSON(http.StatusForbidden, &errors.APIError{
+					ErrorCode:    http.StatusForbidden,
+					ErrorMessage: "Terminal session has been stopped and is no longer accessible",
+				})
+			} else {
+				ctx.AbortWithStatusJSON(http.StatusForbidden, &errors.APIError{
+					ErrorCode:    http.StatusForbidden,
+					ErrorMessage: fmt.Sprintf("Terminal session is not in an active state: %s", reason),
+				})
+			}
+			return
+		}
+
 		// Access granted, continue to handler
 		ctx.Next()
 	}
