@@ -78,6 +78,11 @@ func MakeHTTPRequest(method, url string, body any, opts HTTPClientOptions) (*HTT
 		req.Header.Set(key, value)
 	}
 
+	// Debug: Log headers being sent (especially for Terminal Trainer requests)
+	if len(opts.Headers) > 0 {
+		Debug("HTTP %s %s - Headers: %v", method, url, opts.Headers)
+	}
+
 	// Create HTTP client with timeout
 	client := &http.Client{
 		Timeout: opts.Timeout,

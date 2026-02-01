@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -38,7 +39,7 @@ func InitSwagger(r *gin.Engine, db *gorm.DB) {
 
 func getVersionFromFile() string {
 	if data, err := os.ReadFile("VERSION"); err == nil {
-		return string(data)
+		return strings.TrimSpace(string(data))
 	}
 	if version := os.Getenv("OCF_VERSION"); version != "" {
 		return version
