@@ -66,6 +66,9 @@ type TerminalController interface {
 	// Enum service endpoints
 	GetEnumStatus(ctx *gin.Context)
 	RefreshEnums(ctx *gin.Context)
+
+	// Session access validation
+	GetAccessStatus(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -220,6 +223,36 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 			ErrorCode:    http.StatusForbidden,
 			ErrorMessage: "Access denied to this session",
 		})
+		return
+	}
+
+	// NEW: Validate session state with API verification (critical operation)
+	isValid, reason, err := tc.service.ValidateSessionAccess(sessionID, true) // Force API check
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to validate session status: " + err.Error(),
+		})
+		return
+	}
+
+	if !isValid {
+		if reason == "expired" {
+			ctx.JSON(http.StatusGone, &errors.APIError{
+				ErrorCode:    http.StatusGone,
+				ErrorMessage: "Terminal session has expired and is no longer accessible",
+			})
+		} else if reason == "stopped" {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Terminal session has been stopped and is no longer accessible",
+			})
+		} else {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Terminal session is not in an active state: " + reason,
+			})
+		}
 		return
 	}
 
@@ -1389,4 +1422,73 @@ func (tc *terminalController) RefreshEnums(ctx *gin.Context) {
 	// Return updated status
 	status := enumService.GetStatus()
 	ctx.JSON(http.StatusOK, status)
+}
+
+// Get Access Status godoc
+//
+//	@Summary		Check console accessibility
+//	@Description	Check if a terminal session is accessible for console operations
+//	@Tags			terminals
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"Terminal ID"
+//	@Security		Bearer
+//	@Success		200	{object}	map[string]any	"Access status information"
+//	@Failure		400	{object}	errors.APIError	"Bad request"
+//	@Failure		404	{object}	errors.APIError	"Terminal not found"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/terminals/{id}/access-status [get]
+func (tc *terminalController) GetAccessStatus(ctx *gin.Context) {
+	sessionID := ctx.Param("id")
+	userId := ctx.GetString("userId")
+
+	// Check if user has access
+	hasAccess, err := tc.service.HasTerminalAccess(sessionID, userId, "read")
+	if err != nil {
+		if err.Error() == "terminal not found" {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Terminal not found",
+			})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to check access: %v", err),
+		})
+		return
+	}
+
+	// Validate session state with API verification
+	// If API call fails, fall back to local validation
+	isValid, reason, validationErr := tc.service.ValidateSessionAccess(sessionID, true)
+	if validationErr != nil {
+		// API unavailable, try local validation
+		isValid, reason, _ = tc.service.ValidateSessionAccess(sessionID, false)
+	}
+
+	// Determine denial reason
+	var denialReason string
+	if !hasAccess {
+		denialReason = "no_permission"
+	} else if !isValid {
+		denialReason = reason
+	}
+
+	response := gin.H{
+		"session_id":         sessionID,
+		"has_permission":     hasAccess,
+		"can_access_console": isValid && hasAccess,
+		"session_status":     reason,
+	}
+
+	if denialReason != "" {
+		response["denial_reason"] = denialReason
+	}
+
+	if validationErr != nil {
+		response["validation_warning"] = validationErr.Error()
+	}
+
+	ctx.JSON(http.StatusOK, response)
 }
