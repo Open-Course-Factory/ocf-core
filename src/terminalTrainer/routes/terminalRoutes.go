@@ -52,6 +52,7 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.POST("/:id/sync", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.SyncSession)
 	routes.POST("/sync-all", middleware.AuthManagement(), terminalController.SyncAllSessions) // No terminal ID, no Layer 2 check
 	routes.GET("/:id/status", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.GetSessionStatus)
+	routes.GET("/:id/access-status", middleware.AuthManagement(), terminalController.GetAccessStatus)
 
 	// Configuration (no terminal-specific access needed)
 	routes.GET("/instance-types", middleware.AuthManagement(), terminalController.GetInstanceTypes)
