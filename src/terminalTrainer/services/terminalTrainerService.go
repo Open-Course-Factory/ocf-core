@@ -159,6 +159,8 @@ func (tts *terminalTrainerService) GetUserKey(userID string) (*models.UserTermin
 }
 
 // DisableUserKey désactive la clé d'un utilisateur
+// FAULT-TOLERANT: If Terminal Trainer rejects the request (key doesn't exist in TT),
+// we still disable it locally to allow creating a new key (auto-repair)
 func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 	key, err := tts.repository.GetUserTerminalKeyByUserID(userID, true)
 	if err != nil {
@@ -175,10 +177,13 @@ func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 
 	_, err = utils.MakeExternalAPIRequest("Terminal Trainer", "PUT", url, payload, opts)
 	if err != nil {
-		return err
+		// FAULT TOLERANCE: If Terminal Trainer doesn't have this key (databases out of sync),
+		// log a warning but continue to disable locally (auto-repair)
+		utils.Warn("Failed to disable key in Terminal Trainer (possibly orphaned): %v", err)
+		utils.Debug("Continuing to disable key locally for auto-repair...")
 	}
 
-	// Désactiver en base locale
+	// Désactiver en base locale (always do this, even if Terminal Trainer failed)
 	key.IsActive = false
 	return tts.repository.UpdateUserTerminalKey(key)
 }
@@ -215,6 +220,14 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	// Parser la réponse du Terminal Trainer
 	var sessionResp dto.TerminalTrainerSessionResponse
 	opts := utils.DefaultHTTPClientOptions()
+
+	// Debug: Log API key before applying
+	if len(userKey.APIKey) > 0 {
+		utils.Debug("StartSession - Using API key for user %s: %s... (length: %d)", userID, userKey.APIKey[:10], len(userKey.APIKey))
+	} else {
+		utils.Debug("StartSession - WARNING: Empty API key for user %s!", userID)
+	}
+
 	utils.ApplyOptions(&opts, utils.WithAPIKey(userKey.APIKey))
 
 	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sessionResp, opts)

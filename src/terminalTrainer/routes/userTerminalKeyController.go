@@ -64,17 +64,21 @@ func (utc *userTerminalKeyController) RegenerateKey(ctx *gin.Context) {
 	existingKey, _ := utc.service.GetUserKey(userId)
 
 	if existingKey != nil {
+		// FAULT-TOLERANT: DisableUserKey now handles orphaned keys gracefully
+		// If Terminal Trainer rejects it, we still disable locally and continue
 		if err := utc.service.DisableUserKey(userId); err != nil {
+			// Only fail if the LOCAL database update failed
+			// (Terminal Trainer errors are logged as warnings)
 			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to disable old key: " + err.Error(),
+				ErrorMessage: "Failed to disable old key in local database: " + err.Error(),
 			})
 			return
 		}
 	}
 
 	// Créer une nouvelle clé
-	// TODO: Récupérer le nom d'utilisateur depuis Casdoor
+	// This will create the key in BOTH databases (Terminal Trainer + OCF Core)
 	userName := "user-" + userId // Placeholder, à améliorer
 	if err := utc.service.CreateUserKey(userId, userName); err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -85,7 +89,7 @@ func (utc *userTerminalKeyController) RegenerateKey(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"message": "Key regenerated successfully",
+		"message": "Key regenerated successfully (auto-repaired if databases were out of sync)",
 	})
 }
 
