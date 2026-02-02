@@ -153,6 +153,14 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 		fmt.Printf("✅ Successfully created personal organization for user %s\n", createdUser.Id)
 	}
 
+	// Send verification email
+	verificationService := NewEmailVerificationService(sqldb.DB)
+	err = verificationService.CreateVerificationToken(createdUser.Id, createdUser.Email)
+	if err != nil {
+		// Log but don't fail registration
+		fmt.Printf("Warning: Could not send verification email to %s: %v\n", createdUser.Email, err)
+	}
+
 	return dto.UserModelToUserOutput(createdUser), nil
 }
 
@@ -192,6 +200,7 @@ func createUserIntoCasdoor(generatedUsername string, userCreateDTO dto.CreateUse
 	properties["username"] = generatedUsername
 	properties["tos_accepted_at"] = userCreateDTO.TosAcceptedAt
 	properties["tos_version"] = userCreateDTO.TosVersion
+	properties["email_verified"] = "false"
 
 	user1 := casdoorsdk.User{
 		Name:              userCreateDTO.UserName,

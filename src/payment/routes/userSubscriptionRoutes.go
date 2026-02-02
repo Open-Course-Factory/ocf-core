@@ -5,6 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	auth "soli/formations/src/auth"
+	authMiddleware "soli/formations/src/auth/middleware"
 	config "soli/formations/src/configuration"
 
 	"gorm.io/gorm"
@@ -13,31 +14,34 @@ import (
 // UserSubscriptionRoutes définit les routes pour les abonnements
 func UserSubscriptionRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
 	subscriptionController := NewSubscriptionController(db)
-	authMiddleware := auth.NewAuthMiddleware(db)
+	authMw := auth.NewAuthMiddleware(db)
+	verificationMiddleware := authMiddleware.NewEmailVerificationMiddleware(db)
 	//usageLimitMiddleware := middleware.NewUsageLimitMiddleware(db)
 
 	routes := router.Group("/user-subscriptions")
+	// Require email verification for all subscription routes
+	routes.Use(verificationMiddleware.RequireVerifiedEmail())
 
 	// Routes spécialisées pour les abonnements utilisateur
-	routes.POST("/checkout", authMiddleware.AuthManagement(), subscriptionController.CreateCheckoutSession)
-	routes.POST("/portal", authMiddleware.AuthManagement(), subscriptionController.CreatePortalSession)
-	routes.GET("/current", authMiddleware.AuthManagement(), subscriptionController.GetUserSubscription)
-	routes.GET("/all", authMiddleware.AuthManagement(), subscriptionController.GetAllUserSubscriptions) // Get all active subscriptions
-	routes.POST("/:id/cancel", authMiddleware.AuthManagement(), subscriptionController.CancelSubscription)
-	routes.POST("/:id/reactivate", authMiddleware.AuthManagement(), subscriptionController.ReactivateSubscription)
-	routes.POST("/upgrade", authMiddleware.AuthManagement(), subscriptionController.UpgradeUserPlan)
+	routes.POST("/checkout", authMw.AuthManagement(), subscriptionController.CreateCheckoutSession)
+	routes.POST("/portal", authMw.AuthManagement(), subscriptionController.CreatePortalSession)
+	routes.GET("/current", authMw.AuthManagement(), subscriptionController.GetUserSubscription)
+	routes.GET("/all", authMw.AuthManagement(), subscriptionController.GetAllUserSubscriptions) // Get all active subscriptions
+	routes.POST("/:id/cancel", authMw.AuthManagement(), subscriptionController.CancelSubscription)
+	routes.POST("/:id/reactivate", authMw.AuthManagement(), subscriptionController.ReactivateSubscription)
+	routes.POST("/upgrade", authMw.AuthManagement(), subscriptionController.UpgradeUserPlan)
 
 	// Analytics (admin seulement)
-	routes.GET("/analytics", authMiddleware.AuthManagement(), subscriptionController.GetSubscriptionAnalytics)
+	routes.GET("/analytics", authMw.AuthManagement(), subscriptionController.GetSubscriptionAnalytics)
 
 	// Usage monitoring
-	routes.POST("/usage/check", authMiddleware.AuthManagement(), subscriptionController.CheckUsageLimit)
-	routes.GET("/usage", authMiddleware.AuthManagement(), subscriptionController.GetUserUsage)
-	routes.POST("/sync-usage-limits", authMiddleware.AuthManagement(), subscriptionController.SyncUsageLimits)
+	routes.POST("/usage/check", authMw.AuthManagement(), subscriptionController.CheckUsageLimit)
+	routes.GET("/usage", authMw.AuthManagement(), subscriptionController.GetUserUsage)
+	routes.POST("/sync-usage-limits", authMw.AuthManagement(), subscriptionController.SyncUsageLimits)
 
 	// Subscription synchronization (admin seulement)
-	routes.POST("/sync-existing", authMiddleware.AuthManagement(), subscriptionController.SyncExistingSubscriptions)
-	routes.POST("/users/:user_id/sync", authMiddleware.AuthManagement(), subscriptionController.SyncUserSubscriptions)
-	routes.POST("/sync-missing-metadata", authMiddleware.AuthManagement(), subscriptionController.SyncSubscriptionsWithMissingMetadata)
-	routes.POST("/link/:subscription_id", authMiddleware.AuthManagement(), subscriptionController.LinkSubscriptionToUser)
+	routes.POST("/sync-existing", authMw.AuthManagement(), subscriptionController.SyncExistingSubscriptions)
+	routes.POST("/users/:user_id/sync", authMw.AuthManagement(), subscriptionController.SyncUserSubscriptions)
+	routes.POST("/sync-missing-metadata", authMw.AuthManagement(), subscriptionController.SyncSubscriptionsWithMissingMetadata)
+	routes.POST("/link/:subscription_id", authMw.AuthManagement(), subscriptionController.LinkSubscriptionToUser)
 }

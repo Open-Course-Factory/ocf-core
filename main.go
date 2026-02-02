@@ -17,6 +17,7 @@ import (
 	"soli/formations/src/auth/casdoor"
 	authHooks "soli/formations/src/auth/hooks"
 	accessController "soli/formations/src/auth/routes/accessesRoutes"
+	emailVerificationController "soli/formations/src/auth/routes/emailVerificationRoutes"
 	// groupController "soli/formations/src/auth/routes/groupsRoutes" // Legacy Casdoor groups - replaced by class-groups
 	passwordResetController "soli/formations/src/auth/routes/passwordResetRoutes"
 	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
@@ -106,6 +107,7 @@ func main() {
 	// ✅ SECURITY: Start background jobs
 	cron.StartWebhookCleanupJob(sqldb.DB)
 	cron.StartAuditLogCleanupJob(sqldb.DB) // Start audit log cleanup (retention management)
+	cron.StartEmailVerificationCleanupJob(sqldb.DB) // Clean up expired email verification tokens
 
 	// Parse CLI flags for course generation
 	if cli.ParseFlags(sqldb.DB, casdoor.Enforcer) {
@@ -191,6 +193,7 @@ func main() {
 	courseController.CoursesRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	authController.AuthRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	passwordResetController.PasswordResetRoutes(apiGroup.Group("/auth"), sqldb.DB) // Public password reset routes
+	emailVerificationController.EmailVerificationRoutes(apiGroup.Group("/auth"), sqldb.DB) // Public email verification routes
 	genericController.HooksRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	sshKeyController.SshKeysRoutes(apiGroup, &config.Configuration{}, sqldb.DB)

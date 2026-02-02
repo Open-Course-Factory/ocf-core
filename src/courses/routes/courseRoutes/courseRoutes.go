@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	auth "soli/formations/src/auth"
+	authMiddleware "soli/formations/src/auth/middleware"
 )
 
 func CoursesRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
@@ -17,6 +18,11 @@ func CoursesRoutes(router *gin.RouterGroup, config *config.Configuration, db *go
 	generationRoutes := router.Group("/generations")
 
 	middleware := auth.NewAuthMiddleware(db)
+	verificationMiddleware := authMiddleware.NewEmailVerificationMiddleware(db)
+
+	// Require email verification for all course routes
+	routes.Use(verificationMiddleware.RequireVerifiedEmail())
+	generationRoutes.Use(verificationMiddleware.RequireVerifiedEmail())
 
 	routes.POST("/git", middleware.AuthManagement(), courseController.CreateCourseFromGit)
 	routes.POST("/source", middleware.AuthManagement(), courseController.CreateCourseFromSource)
