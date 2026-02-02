@@ -61,6 +61,7 @@ func InitDefaultTemplates(db *gorm.DB) {
 			Variables: func() string {
 				vars := []models.EmailTemplateVariable{
 					{Name: "VerificationLink", Description: "Full verification URL", Example: "https://example.com/verify-email?token=abc123"},
+					{Name: "Token", Description: "64-character verification token", Example: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2"},
 					{Name: "UserName", Description: "User's display name", Example: "John Doe"},
 					{Name: "PlatformName", Description: "Platform name", Example: "OCF Platform"},
 					{Name: "ExpiryHours", Description: "Hours until expiry", Example: "48"},
@@ -426,6 +427,24 @@ func getEmailVerificationTemplate() string {
             font-size: 14px;
             font-weight: 500;
         }
+        .token-box {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 2px dashed #d1d5db;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 13px;
+            color: #374151;
+            margin: 15px 0;
+            user-select: all;
+        }
+        .token-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 8px;
+        }
         .footer {
             background-color: #f8f9fa;
             padding: 25px 30px;
@@ -463,6 +482,12 @@ func getEmailVerificationTemplate() string {
 
             <p>Or copy and paste this link into your browser:</p>
             <div class="link-box">{{.VerificationLink}}</div>
+
+            <p style="margin-top: 20px; font-size: 14px; color: #6b7280;">
+                If the link doesn't work, you can copy this verification code:
+            </p>
+            <div class="token-label">Verification Code:</div>
+            <div class="token-box">{{.Token}}</div>
 
             <div class="info-box">
                 <span class="info-icon">ℹ️</span>
