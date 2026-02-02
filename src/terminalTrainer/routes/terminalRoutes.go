@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	auth "soli/formations/src/auth"
+	authMiddleware "soli/formations/src/auth/middleware"
 	config "soli/formations/src/configuration"
 	paymentMiddleware "soli/formations/src/payment/middleware"
 	terminalMiddleware "soli/formations/src/terminalTrainer/middleware"
@@ -14,10 +15,13 @@ import (
 func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
 	terminalController := NewTerminalController(db)
 	middleware := auth.NewAuthMiddleware(db)
+	verificationMiddleware := authMiddleware.NewEmailVerificationMiddleware(db)
 	usageLimitMiddleware := paymentMiddleware.NewUsageLimitMiddleware(db)
 	terminalAccessMiddleware := terminalMiddleware.NewTerminalAccessMiddleware(db)
 
 	routes := router.Group("/terminals")
+	// Require email verification for all terminal routes
+	routes.Use(verificationMiddleware.RequireVerifiedEmail())
 
 	// Routes spécialisées pour les fonctionnalités Terminal Trainer
 	// Apply terminal creation limit middleware to start-session route
