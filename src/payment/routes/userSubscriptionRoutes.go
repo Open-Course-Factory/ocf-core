@@ -19,29 +19,28 @@ func UserSubscriptionRoutes(router *gin.RouterGroup, config *config.Configuratio
 	//usageLimitMiddleware := middleware.NewUsageLimitMiddleware(db)
 
 	routes := router.Group("/user-subscriptions")
-	// Require email verification for all subscription routes
-	routes.Use(verificationMiddleware.RequireVerifiedEmail())
 
 	// Routes spécialisées pour les abonnements utilisateur
-	routes.POST("/checkout", authMw.AuthManagement(), subscriptionController.CreateCheckoutSession)
-	routes.POST("/portal", authMw.AuthManagement(), subscriptionController.CreatePortalSession)
-	routes.GET("/current", authMw.AuthManagement(), subscriptionController.GetUserSubscription)
-	routes.GET("/all", authMw.AuthManagement(), subscriptionController.GetAllUserSubscriptions) // Get all active subscriptions
-	routes.POST("/:id/cancel", authMw.AuthManagement(), subscriptionController.CancelSubscription)
-	routes.POST("/:id/reactivate", authMw.AuthManagement(), subscriptionController.ReactivateSubscription)
-	routes.POST("/upgrade", authMw.AuthManagement(), subscriptionController.UpgradeUserPlan)
+	// Email verification is checked AFTER auth middleware to ensure userId is in context
+	routes.POST("/checkout", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.CreateCheckoutSession)
+	routes.POST("/portal", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.CreatePortalSession)
+	routes.GET("/current", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.GetUserSubscription)
+	routes.GET("/all", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.GetAllUserSubscriptions) // Get all active subscriptions
+	routes.POST("/:id/cancel", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.CancelSubscription)
+	routes.POST("/:id/reactivate", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.ReactivateSubscription)
+	routes.POST("/upgrade", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.UpgradeUserPlan)
 
 	// Analytics (admin seulement)
-	routes.GET("/analytics", authMw.AuthManagement(), subscriptionController.GetSubscriptionAnalytics)
+	routes.GET("/analytics", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.GetSubscriptionAnalytics)
 
 	// Usage monitoring
-	routes.POST("/usage/check", authMw.AuthManagement(), subscriptionController.CheckUsageLimit)
-	routes.GET("/usage", authMw.AuthManagement(), subscriptionController.GetUserUsage)
-	routes.POST("/sync-usage-limits", authMw.AuthManagement(), subscriptionController.SyncUsageLimits)
+	routes.POST("/usage/check", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.CheckUsageLimit)
+	routes.GET("/usage", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.GetUserUsage)
+	routes.POST("/sync-usage-limits", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.SyncUsageLimits)
 
 	// Subscription synchronization (admin seulement)
-	routes.POST("/sync-existing", authMw.AuthManagement(), subscriptionController.SyncExistingSubscriptions)
-	routes.POST("/users/:user_id/sync", authMw.AuthManagement(), subscriptionController.SyncUserSubscriptions)
-	routes.POST("/sync-missing-metadata", authMw.AuthManagement(), subscriptionController.SyncSubscriptionsWithMissingMetadata)
-	routes.POST("/link/:subscription_id", authMw.AuthManagement(), subscriptionController.LinkSubscriptionToUser)
+	routes.POST("/sync-existing", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.SyncExistingSubscriptions)
+	routes.POST("/users/:user_id/sync", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.SyncUserSubscriptions)
+	routes.POST("/sync-missing-metadata", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.SyncSubscriptionsWithMissingMetadata)
+	routes.POST("/link/:subscription_id", authMw.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), subscriptionController.LinkSubscriptionToUser)
 }

@@ -20,15 +20,14 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	terminalAccessMiddleware := terminalMiddleware.NewTerminalAccessMiddleware(db)
 
 	routes := router.Group("/terminals")
-	// Require email verification for all terminal routes
-	routes.Use(verificationMiddleware.RequireVerifiedEmail())
 
 	// Routes spécialisées pour les fonctionnalités Terminal Trainer
 	// Apply terminal creation limit middleware to start-session route
-	routes.POST("/start-session", middleware.AuthManagement(), usageLimitMiddleware.CheckTerminalCreationLimit(), terminalController.StartSession)
+	// Email verification is checked AFTER auth middleware to ensure userId is in context
+	routes.POST("/start-session", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), usageLimitMiddleware.CheckTerminalCreationLimit(), terminalController.StartSession)
 
 	// Console access requires "read" level access (Layer 2 security check)
-	routes.GET("/:id/console", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.ConnectConsole)
+	routes.GET("/:id/console", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.ConnectConsole)
 
 	// Bulk operations for groups
 	groupRoutes := router.Group("/class-groups")
@@ -38,36 +37,36 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	groupRoutes.POST("/:groupId/bulk-create-terminals", middleware.AuthManagement(), subscriptionMiddleware.InjectSubscriptionInfo(), terminalController.BulkCreateTerminalsForGroup)
 
 	// Stop session requires owner or admin access (Layer 2 security check)
-	routes.POST("/:id/stop", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("admin"), terminalController.StopSession)
-	routes.GET("/user-sessions", middleware.AuthManagement(), terminalController.GetUserSessions)
+	routes.POST("/:id/stop", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalAccessMiddleware.RequireTerminalAccess("admin"), terminalController.StopSession)
+	routes.GET("/user-sessions", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalController.GetUserSessions)
 
 	// Routes de partage de terminaux (Layer 2 security checks for terminal owner)
-	routes.POST("/:id/share", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("admin"), terminalController.ShareTerminal)
-	routes.DELETE("/:id/share/:user_id", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("admin"), terminalController.RevokeTerminalAccess)
-	routes.GET("/:id/shares", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("admin"), terminalController.GetTerminalShares)
-	routes.GET("/shared-with-me", middleware.AuthManagement(), terminalController.GetSharedTerminals) // No terminal ID, no Layer 2 check
-	routes.GET("/:id/info", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.GetSharedTerminalInfo)
+	routes.POST("/:id/share", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalAccessMiddleware.RequireTerminalAccess("admin"), terminalController.ShareTerminal)
+	routes.DELETE("/:id/share/:user_id", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalAccessMiddleware.RequireTerminalAccess("admin"), terminalController.RevokeTerminalAccess)
+	routes.GET("/:id/shares", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalAccessMiddleware.RequireTerminalAccess("admin"), terminalController.GetTerminalShares)
+	routes.GET("/shared-with-me", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalController.GetSharedTerminals) // No terminal ID, no Layer 2 check
+	routes.GET("/:id/info", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.GetSharedTerminalInfo)
 
 	// Routes de masquage de terminaux (Layer 2 security checks)
-	routes.POST("/:id/hide", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.HideTerminal)
-	routes.DELETE("/:id/hide", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.UnhideTerminal)
+	routes.POST("/:id/hide", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.HideTerminal)
+	routes.DELETE("/:id/hide", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.UnhideTerminal)
 
 	// Sync routes (Layer 2 security checks)
-	routes.POST("/:id/sync", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.SyncSession)
-	routes.POST("/sync-all", middleware.AuthManagement(), terminalController.SyncAllSessions) // No terminal ID, no Layer 2 check
-	routes.GET("/:id/status", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.GetSessionStatus)
-	routes.GET("/:id/access-status", middleware.AuthManagement(), terminalController.GetAccessStatus)
+	routes.POST("/:id/sync", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.SyncSession)
+	routes.POST("/sync-all", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalController.SyncAllSessions) // No terminal ID, no Layer 2 check
+	routes.GET("/:id/status", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalAccessMiddleware.RequireTerminalAccess("read"), terminalController.GetSessionStatus)
+	routes.GET("/:id/access-status", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalController.GetAccessStatus)
 
 	// Configuration (no terminal-specific access needed)
-	routes.GET("/instance-types", middleware.AuthManagement(), terminalController.GetInstanceTypes)
-	routes.GET("/metrics", middleware.AuthManagement(), terminalController.GetServerMetrics)
+	routes.GET("/instance-types", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalController.GetInstanceTypes)
+	routes.GET("/metrics", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalController.GetServerMetrics)
 
 	// Enum service endpoints (admin only - for debugging and diagnostics)
-	routes.GET("/enums/status", middleware.AuthManagement(), terminalController.GetEnumStatus)
-	routes.POST("/enums/refresh", middleware.AuthManagement(), terminalController.RefreshEnums)
+	routes.GET("/enums/status", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalController.GetEnumStatus)
+	routes.POST("/enums/refresh", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalController.RefreshEnums)
 
 	// Correction des permissions (no terminal-specific access needed)
-	routes.POST("/fix-hide-permissions", middleware.AuthManagement(), terminalController.FixTerminalHidePermissions)
+	routes.POST("/fix-hide-permissions", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), terminalController.FixTerminalHidePermissions)
 }
 
 func UserTerminalKeyRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
