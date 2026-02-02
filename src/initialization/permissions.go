@@ -36,6 +36,7 @@ func SetupAuthPermissions(enforcer interfaces.EnforcerInterface) {
 		// Auth endpoints
 		addPolicyWithErrorHandling(enforcer, role, "/api/v1/auth/permissions", "GET")
 		addPolicyWithErrorHandling(enforcer, role, "/api/v1/auth/me", "GET")
+		addPolicyWithErrorHandling(enforcer, role, "/api/v1/auth/verify-status", "GET")
 	}
 
 	log.Println("✅ Authentication and user permissions setup completed")
