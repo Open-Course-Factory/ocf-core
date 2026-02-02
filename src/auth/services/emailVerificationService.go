@@ -113,6 +113,7 @@ func (s *emailVerificationService) sendVerificationEmail(email, token, userName 
 	// Use existing SendTemplatedEmail method
 	return s.emailService.SendTemplatedEmail(email, "email_verification", map[string]interface{}{
 		"VerificationLink": fmt.Sprintf("%s/verify-email?token=%s", frontendURL, token),
+		"Token":            token,
 		"UserName":         userName,
 		"PlatformName":     "OCF Platform",
 		"ExpiryHours":      fmt.Sprintf("%.0f", expiryHours),
