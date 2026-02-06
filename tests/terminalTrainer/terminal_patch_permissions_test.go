@@ -239,7 +239,7 @@ func TestSharedUserReadAccessCannotPatch(t *testing.T) {
 	terminal := createTerminal(t, genericService, ownerID, keyID)
 
 	// Share terminal with "read" access
-	createShare(t, genericService, terminal.ID, ownerID, sharedUserID, "read")
+	createShare(t, genericService, terminal.ID, ownerID, sharedUserID, terminalModels.AccessLevelRead)
 
 	// Check if shared user with "read" access has PATCH permission
 	hasPermission := checkPermission(t, sharedUserID, terminal.ID.String(), "PATCH")
@@ -259,7 +259,7 @@ func TestSharedUserWriteAccessCanPatch(t *testing.T) {
 	terminal := createTerminal(t, genericService, ownerID, keyID)
 
 	// Share terminal with "write" access
-	createShare(t, genericService, terminal.ID, ownerID, sharedUserID, "write")
+	createShare(t, genericService, terminal.ID, ownerID, sharedUserID, terminalModels.AccessLevelWrite)
 
 	// Check if shared user with "write" access has PATCH permission
 	hasPermission := checkPermission(t, sharedUserID, terminal.ID.String(), "PATCH")
@@ -267,7 +267,7 @@ func TestSharedUserWriteAccessCanPatch(t *testing.T) {
 	assert.True(t, hasPermission, "Shared user with 'write' access should have PATCH permission")
 }
 
-// Test 5: Shared user with "admin" access should have PATCH permission
+// Test 5: Shared user with "owner" access should have PATCH permission
 func TestSharedUserAdminAccessCanPatch(t *testing.T) {
 	db, genericService := setupTestEnvironment(t)
 
@@ -278,13 +278,13 @@ func TestSharedUserAdminAccessCanPatch(t *testing.T) {
 	// Create terminal
 	terminal := createTerminal(t, genericService, ownerID, keyID)
 
-	// Share terminal with "admin" access
-	createShare(t, genericService, terminal.ID, ownerID, sharedUserID, "admin")
+	// Share terminal with "owner" access
+	createShare(t, genericService, terminal.ID, ownerID, sharedUserID, terminalModels.AccessLevelOwner)
 
-	// Check if shared user with "admin" access has PATCH permission
+	// Check if shared user with "owner" access has PATCH permission
 	hasPermission := checkPermission(t, sharedUserID, terminal.ID.String(), "PATCH")
 
-	assert.True(t, hasPermission, "Shared user with 'admin' access should have PATCH permission")
+	assert.True(t, hasPermission, "Shared user with 'owner' access should have PATCH permission")
 }
 
 // Test 6: After share is revoked, shared user should lose PATCH permission
@@ -299,7 +299,7 @@ func TestRevokeShareRemovesPermission(t *testing.T) {
 	terminal := createTerminal(t, genericService, ownerID, keyID)
 
 	// Share terminal with "write" access
-	share := createShare(t, genericService, terminal.ID, ownerID, sharedUserID, "write")
+	share := createShare(t, genericService, terminal.ID, ownerID, sharedUserID, terminalModels.AccessLevelWrite)
 
 	// Verify shared user has PATCH permission
 	hasPermissionBefore := checkPermission(t, sharedUserID, terminal.ID.String(), "PATCH")
@@ -325,7 +325,7 @@ func TestDeleteTerminalRemovesAllPolicies(t *testing.T) {
 	terminal := createTerminal(t, genericService, ownerID, keyID)
 
 	// Share terminal with "write" access
-	createShare(t, genericService, terminal.ID, ownerID, sharedUserID, "write")
+	createShare(t, genericService, terminal.ID, ownerID, sharedUserID, terminalModels.AccessLevelWrite)
 
 	// Verify both users have PATCH permission
 	ownerHasPermission := checkPermission(t, ownerID, terminal.ID.String(), "PATCH")
@@ -380,13 +380,13 @@ func TestMultipleShares(t *testing.T) {
 	terminal := createTerminal(t, genericService, ownerID, keyID)
 
 	// Share with read access
-	createShare(t, genericService, terminal.ID, ownerID, readUserID, "read")
+	createShare(t, genericService, terminal.ID, ownerID, readUserID, terminalModels.AccessLevelRead)
 
 	// Share with write access
-	createShare(t, genericService, terminal.ID, ownerID, writeUserID, "write")
+	createShare(t, genericService, terminal.ID, ownerID, writeUserID, terminalModels.AccessLevelWrite)
 
-	// Share with admin access
-	createShare(t, genericService, terminal.ID, ownerID, adminUserID, "admin")
+	// Share with owner access
+	createShare(t, genericService, terminal.ID, ownerID, adminUserID, terminalModels.AccessLevelOwner)
 
 	// Check permissions
 	ownerHas := checkPermission(t, ownerID, terminal.ID.String(), "PATCH")

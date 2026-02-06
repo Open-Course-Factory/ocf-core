@@ -276,7 +276,7 @@ func TestService_HideTerminal_SharedWithWriteAccess(t *testing.T) {
 		TerminalID:          terminal.ID,
 		SharedWithUserID:    &recipientUserID,
 		SharedByUserID:      ownerUserID,
-		AccessLevel:         "write", // Important: user has write access
+		AccessLevel:         models.AccessLevelWrite, // Important: user has write access
 		IsActive:            true,
 		IsHiddenByRecipient: false,
 	}
@@ -324,7 +324,7 @@ func TestService_HideTerminal_ActiveTerminalError(t *testing.T) {
 		TerminalID:       terminal.ID,
 		SharedWithUserID: &recipientUserID,
 		SharedByUserID:   ownerUserID,
-		AccessLevel:      "write",
+		AccessLevel:      models.AccessLevelWrite,
 		IsActive:         true,
 	}
 	err = db.Create(share).Error
@@ -357,7 +357,7 @@ func TestService_HideTerminal_NoAccessError(t *testing.T) {
 		TerminalID:       terminal.ID,
 		SharedWithUserID: &recipientUserID,
 		SharedByUserID:   ownerUserID,
-		AccessLevel:      "read",
+		AccessLevel:      models.AccessLevelRead,
 		IsActive:         true,
 	}
 	err = db.Create(share).Error

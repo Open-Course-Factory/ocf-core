@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"soli/formations/src/terminalTrainer/dto"
+	"soli/formations/src/terminalTrainer/models"
 	terminalController "soli/formations/src/terminalTrainer/routes"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -41,7 +42,7 @@ func TestShareTerminal_EmptyRecipient(t *testing.T) {
 		// Create request with empty shared_with_user_id
 		requestBody := dto.ShareTerminalRequest{
 			SharedWithUserID: nil, // Not provided
-			AccessLevel:      "read",
+			AccessLevel:      models.AccessLevelRead,
 		}
 
 		bodyBytes, _ := json.Marshal(requestBody)
@@ -64,7 +65,7 @@ func TestShareTerminal_EmptyRecipient(t *testing.T) {
 		emptyString := ""
 		requestBody := dto.ShareTerminalRequest{
 			SharedWithUserID: &emptyString, // Empty string
-			AccessLevel:      "read",
+			AccessLevel:      models.AccessLevelRead,
 		}
 
 		bodyBytes, _ := json.Marshal(requestBody)
