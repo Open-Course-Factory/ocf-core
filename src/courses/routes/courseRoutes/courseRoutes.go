@@ -8,7 +8,6 @@ import (
 	"gorm.io/gorm"
 
 	auth "soli/formations/src/auth"
-	authMiddleware "soli/formations/src/auth/middleware"
 )
 
 func CoursesRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
@@ -18,21 +17,19 @@ func CoursesRoutes(router *gin.RouterGroup, config *config.Configuration, db *go
 	generationRoutes := router.Group("/generations")
 
 	middleware := auth.NewAuthMiddleware(db)
-	verificationMiddleware := authMiddleware.NewEmailVerificationMiddleware(db)
 
-	// Email verification is checked AFTER auth middleware to ensure userId is in context
-	routes.POST("/git", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), courseController.CreateCourseFromGit)
-	routes.POST("/source", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), courseController.CreateCourseFromSource)
+	routes.POST("/git", middleware.AuthManagement(), courseController.CreateCourseFromGit)
+	routes.POST("/source", middleware.AuthManagement(), courseController.CreateCourseFromSource)
 
 	// Route de génération modifiée (maintenant asynchrone)
-	routes.POST("/generate", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), courseController.GenerateCourse)
+	routes.POST("/generate", middleware.AuthManagement(), courseController.GenerateCourse)
 
 	// Version management routes
-	routes.GET("/versions", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), courseController.GetCourseVersions)
-	routes.GET("/by-version", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), courseController.GetCourseByVersion)
+	routes.GET("/versions", middleware.AuthManagement(), courseController.GetCourseVersions)
+	routes.GET("/by-version", middleware.AuthManagement(), courseController.GetCourseByVersion)
 
 	// Nouvelles routes pour la gestion des générations
-	generationRoutes.GET("/:id/status", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), courseController.GetGenerationStatus)
-	generationRoutes.GET("/:id/download", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), courseController.DownloadGenerationResults)
-	generationRoutes.POST("/:id/retry", middleware.AuthManagement(), verificationMiddleware.RequireVerifiedEmail(), courseController.RetryGeneration)
+	generationRoutes.GET("/:id/status", middleware.AuthManagement(), courseController.GetGenerationStatus)
+	generationRoutes.GET("/:id/download", middleware.AuthManagement(), courseController.DownloadGenerationResults)
+	generationRoutes.POST("/:id/retry", middleware.AuthManagement(), courseController.RetryGeneration)
 }
