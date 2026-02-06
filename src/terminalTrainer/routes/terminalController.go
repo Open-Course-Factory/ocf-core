@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"soli/formations/src/auth/casdoor"
+	config "soli/formations/src/configuration"
 	"time"
 
 	"soli/formations/src/auth/errors"
@@ -115,7 +116,11 @@ func (tc *terminalController) hasTerminalAccess(ctx *gin.Context, terminalID, us
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // No origin header (e.g. non-browser clients)
+		}
+		return config.IsOriginAllowed(origin)
 	},
 }
 

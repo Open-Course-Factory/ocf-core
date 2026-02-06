@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"soli/formations/src/auth/errors"
+	config "soli/formations/src/configuration"
 	sqldb "soli/formations/src/db"
 	"soli/formations/src/webSsh/models"
 	"soli/formations/src/webSsh/services"
@@ -33,7 +34,11 @@ var (
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 		CheckOrigin: func(r *http.Request) bool {
-			return true
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return true // No origin header (e.g. non-browser clients)
+			}
+			return config.IsOriginAllowed(origin)
 		},
 	}
 )
