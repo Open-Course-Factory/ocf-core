@@ -1,6 +1,7 @@
 package emailVerificationRoutes
 
 import (
+	"errors"
 	"net/http"
 
 	"soli/formations/src/auth/dto"
@@ -47,22 +48,20 @@ func (c *EmailVerificationController) VerifyEmail(ctx *gin.Context) {
 
 	// Verify the email
 	if err := c.service.VerifyEmail(input.Token); err != nil {
-		// Determine appropriate status code and error message
-		errMsg := err.Error()
 		statusCode := http.StatusBadRequest
 
 		switch {
-		case errMsg == "invalid verification token":
+		case errors.Is(err, services.ErrInvalidToken):
 			statusCode = http.StatusNotFound
-		case errMsg == "verification token expired":
+		case errors.Is(err, services.ErrTokenExpired):
 			statusCode = http.StatusGone
-		case errMsg == "verification token already used":
+		case errors.Is(err, services.ErrTokenUsed):
 			statusCode = http.StatusConflict
 		}
 
 		ctx.JSON(statusCode, gin.H{
 			"error":   "VERIFICATION_FAILED",
-			"message": errMsg,
+			"message": err.Error(),
 		})
 		return
 	}

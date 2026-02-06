@@ -136,7 +136,7 @@ func getPasswordResetTemplate() string {
         }
         .content p {
             margin-bottom: 20px;
-            color: #555;
+            color: #333333;
             font-size: 16px;
         }
         .button-container {
@@ -146,16 +146,13 @@ func getPasswordResetTemplate() string {
         .button {
             display: inline-block;
             padding: 14px 32px;
+            background-color: #667eea;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            color: #ffffff;
             text-decoration: none;
             border-radius: 6px;
             font-weight: 600;
             font-size: 16px;
-            transition: transform 0.2s;
-        }
-        .button:hover {
-            transform: translateY(-2px);
         }
         .link-box {
             background-color: #f8f9fa;
@@ -164,7 +161,7 @@ func getPasswordResetTemplate() string {
             border: 1px solid #e9ecef;
             word-break: break-all;
             font-size: 14px;
-            color: #6c757d;
+            color: #495057;
             margin: 20px 0;
         }
         .warning {
@@ -179,7 +176,7 @@ func getPasswordResetTemplate() string {
             margin-right: 8px;
         }
         .warning-text {
-            color: #856404;
+            color: #664d03;
             font-size: 14px;
             font-weight: 500;
         }
@@ -190,7 +187,7 @@ func getPasswordResetTemplate() string {
             border-top: 1px solid #e9ecef;
         }
         .footer p {
-            color: #6c757d;
+            color: #495057;
             font-size: 13px;
             margin-bottom: 8px;
         }
@@ -208,7 +205,7 @@ func getPasswordResetTemplate() string {
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔐 Password Reset Request</h1>
+            <h1>Password Reset Request</h1>
         </div>
         <div class="content">
             <p>Hello,</p>
@@ -226,12 +223,12 @@ func getPasswordResetTemplate() string {
                 <span class="warning-text">This link will expire in 1 hour for security reasons.</span>
             </div>
 
-            <p style="margin-top: 30px; color: #6c757d; font-size: 14px;">
+            <p style="margin-top: 30px; color: #495057; font-size: 14px;">
                 If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.
             </p>
         </div>
         <div class="footer">
-            <p>© 2025 {{.PlatformName}}. All rights reserved.</p>
+            <p>© 2026 {{.PlatformName}}. All rights reserved.</p>
             <p>This is an automated message, please do not reply to this email.</p>
         </div>
     </div>
@@ -283,7 +280,7 @@ func getWelcomeTemplate() string {
         }
         .content p {
             margin-bottom: 20px;
-            color: #555;
+            color: #333333;
             font-size: 16px;
         }
         .button-container {
@@ -293,8 +290,9 @@ func getWelcomeTemplate() string {
         .button {
             display: inline-block;
             padding: 14px 32px;
+            background-color: #667eea;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            color: #ffffff;
             text-decoration: none;
             border-radius: 6px;
             font-weight: 600;
@@ -307,7 +305,7 @@ func getWelcomeTemplate() string {
             border-top: 1px solid #e9ecef;
         }
         .footer p {
-            color: #6c757d;
+            color: #495057;
             font-size: 13px;
         }
     </style>
@@ -315,7 +313,7 @@ func getWelcomeTemplate() string {
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎉 Welcome!</h1>
+            <h1>Welcome!</h1>
         </div>
         <div class="content">
             <p>Hi {{.UserName}},</p>
@@ -329,7 +327,7 @@ func getWelcomeTemplate() string {
             <p>If you have any questions, feel free to reach out to our support team.</p>
         </div>
         <div class="footer">
-            <p>© 2025 {{.PlatformName}}. All rights reserved.</p>
+            <p>© 2026 {{.PlatformName}}. All rights reserved.</p>
         </div>
     </div>
 </body>
@@ -380,7 +378,7 @@ func getEmailVerificationTemplate() string {
         }
         .content p {
             margin-bottom: 20px;
-            color: #555;
+            color: #333333;
             font-size: 16px;
         }
         .button-container {
@@ -390,16 +388,13 @@ func getEmailVerificationTemplate() string {
         .button {
             display: inline-block;
             padding: 14px 32px;
+            background-color: #667eea;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            color: #ffffff;
             text-decoration: none;
             border-radius: 6px;
             font-weight: 600;
             font-size: 16px;
-            transition: transform 0.2s;
-        }
-        .button:hover {
-            transform: translateY(-2px);
         }
         .link-box {
             background-color: #f8f9fa;
@@ -408,7 +403,7 @@ func getEmailVerificationTemplate() string {
             border: 1px solid #e9ecef;
             word-break: break-all;
             font-size: 14px;
-            color: #6c757d;
+            color: #495057;
             margin: 20px 0;
         }
         .info-box {
@@ -435,14 +430,13 @@ func getEmailVerificationTemplate() string {
             word-break: break-all;
             font-family: monospace;
             font-size: 13px;
-            color: #374151;
+            color: #1f2937;
             margin: 15px 0;
-            user-select: all;
         }
         .token-label {
             font-size: 14px;
             font-weight: 600;
-            color: #374151;
+            color: #1f2937;
             margin-bottom: 8px;
         }
         .footer {
@@ -452,7 +446,7 @@ func getEmailVerificationTemplate() string {
             border-top: 1px solid #e9ecef;
         }
         .footer p {
-            color: #6c757d;
+            color: #495057;
             font-size: 13px;
             margin-bottom: 8px;
         }
@@ -470,7 +464,7 @@ func getEmailVerificationTemplate() string {
 <body>
     <div class="container">
         <div class="header">
-            <h1>✉️ Verify Your Email</h1>
+            <h1>Verify Your Email</h1>
         </div>
         <div class="content">
             <p>Hi {{.UserName}},</p>
@@ -483,7 +477,7 @@ func getEmailVerificationTemplate() string {
             <p>Or copy and paste this link into your browser:</p>
             <div class="link-box">{{.VerificationLink}}</div>
 
-            <p style="margin-top: 20px; font-size: 14px; color: #6b7280;">
+            <p style="margin-top: 20px; font-size: 14px; color: #495057;">
                 If the link doesn't work, you can copy this verification code:
             </p>
             <div class="token-label">Verification Code:</div>
@@ -494,12 +488,12 @@ func getEmailVerificationTemplate() string {
                 <span class="info-text">This link will expire in {{.ExpiryHours}} hours for security reasons.</span>
             </div>
 
-            <p style="margin-top: 30px; color: #6c757d; font-size: 14px;">
+            <p style="margin-top: 30px; color: #495057; font-size: 14px;">
                 If you didn't create an account with {{.PlatformName}}, you can safely ignore this email.
             </p>
         </div>
         <div class="footer">
-            <p>© 2025 {{.PlatformName}}. All rights reserved.</p>
+            <p>© 2026 {{.PlatformName}}. All rights reserved.</p>
             <p>This is an automated message, please do not reply to this email.</p>
         </div>
     </div>

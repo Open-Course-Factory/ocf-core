@@ -3,6 +3,7 @@ package services
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -13,6 +14,12 @@ import (
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"gorm.io/gorm"
+)
+
+var (
+	ErrInvalidToken = errors.New("invalid verification token")
+	ErrTokenExpired = errors.New("verification token expired")
+	ErrTokenUsed    = errors.New("verification token already used")
 )
 
 type VerificationStatus struct {
@@ -126,19 +133,19 @@ func (s *emailVerificationService) VerifyEmail(token string) error {
 	var verificationToken models.EmailVerificationToken
 	if err := s.db.Where("token = ?", token).First(&verificationToken).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return fmt.Errorf("invalid verification token")
+			return ErrInvalidToken
 		}
 		return fmt.Errorf("database error: %w", err)
 	}
 
 	// Check if token is already used
 	if verificationToken.IsUsed() {
-		return fmt.Errorf("verification token already used")
+		return ErrTokenUsed
 	}
 
 	// Check if token is expired
 	if verificationToken.IsExpired() {
-		return fmt.Errorf("verification token expired")
+		return ErrTokenExpired
 	}
 
 	// Mark token as used
