@@ -87,7 +87,7 @@ func createTestTerminalShare(db *gorm.DB, terminalID uuid.UUID, sharedByUserID, 
 		TerminalID:          terminalID,
 		SharedWithUserID:    &sharedWithUserID,
 		SharedByUserID:      sharedByUserID,
-		AccessLevel:         "read",
+		AccessLevel:         models.AccessLevelRead,
 		IsActive:            true,
 		IsHiddenByRecipient: false,
 	}
