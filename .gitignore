@@ -38,6 +38,11 @@ local_themes/
 # VSCode local settings
 .vscode/launch.json
 
+# SQLite in-memory DB artifacts
+:memory:*
+
 # Build artifacts
 /formations
 /ocf-server
+/mark_existing_users_verified
+/update_email_verification_template
