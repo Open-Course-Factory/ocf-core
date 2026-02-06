@@ -62,17 +62,27 @@ func GetCurrentUser(ctx *gin.Context) {
 	// Check if user is admin based on roles
 	isAdmin := slices.Contains(roles, "administrator")
 
+	// Extract email verification status from Casdoor properties
+	emailVerified := false
+	emailVerifiedAt := ""
+	if user.Properties != nil {
+		emailVerified = user.Properties["email_verified"] == "true"
+		emailVerifiedAt = user.Properties["email_verified_at"]
+	}
+
 	// Build response
 	response := &dto.CurrentUserOutput{
-		UserID:      user.Id,
-		UserName:    user.Name,
-		DisplayName: user.DisplayName,
-		Email:       user.Email,
-		FirstName:   user.FirstName,
-		LastName:    user.LastName,
-		Avatar:      user.Avatar,
-		Roles:       roles,
-		IsAdmin:     isAdmin,
+		UserID:          user.Id,
+		UserName:        user.Name,
+		DisplayName:     user.DisplayName,
+		Email:           user.Email,
+		FirstName:       user.FirstName,
+		LastName:        user.LastName,
+		Avatar:          user.Avatar,
+		Roles:           roles,
+		IsAdmin:         isAdmin,
+		EmailVerified:   emailVerified,
+		EmailVerifiedAt: emailVerifiedAt,
 	}
 
 	ctx.JSON(http.StatusOK, response)
