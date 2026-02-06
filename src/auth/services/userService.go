@@ -228,6 +228,9 @@ func (us *userService) GetUserById(id string) (*dto.UserOutput, error) {
 		fmt.Println(errUser.Error())
 		return nil, errUser
 	}
+	if user == nil {
+		return nil, errors.New("user not found")
+	}
 
 	return dto.UserModelToUserOutput(user), nil
 }
@@ -241,6 +244,9 @@ func (us *userService) GetAllUsers() (*[]dto.UserOutput, error) {
 
 	results := make([]dto.UserOutput, 0, len(users))
 	for _, user := range users {
+		if user == nil {
+			continue
+		}
 		results = append(results, *dto.UserModelToUserOutput(user))
 	}
 
@@ -252,6 +258,9 @@ func (us *userService) DeleteUser(id string) error {
 	if errUser != nil {
 		fmt.Println(errUser.Error())
 		return errUser
+	}
+	if user == nil {
+		return errors.New("user not found")
 	}
 	casdoorsdk.DeleteUser(user)
 
@@ -269,7 +278,7 @@ func (us *userService) GetUsersByIds(ids []string) (*[]dto.UserOutput, error) {
 
 	for _, id := range ids {
 		user, errUser := casdoorsdk.GetUserByUserId(id)
-		if errUser != nil {
+		if errUser != nil || user == nil {
 			// Skip users that don't exist or can't be accessed
 			continue
 		}
@@ -296,6 +305,9 @@ func (us *userService) SearchUsers(query string) (*[]dto.UserOutput, error) {
 	queryLower := strings.ToLower(strings.TrimSpace(query))
 
 	for _, user := range users {
+		if user == nil {
+			continue
+		}
 		// Case-insensitive search on name and email
 		if strings.Contains(strings.ToLower(user.Name), queryLower) ||
 			strings.Contains(strings.ToLower(user.Email), queryLower) {
