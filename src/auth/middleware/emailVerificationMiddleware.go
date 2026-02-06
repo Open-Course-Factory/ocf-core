@@ -34,7 +34,7 @@ func (m *emailVerificationMiddleware) RequireVerifiedEmail() gin.HandlerFunc {
 
 		// Get user from Casdoor
 		user, err := casdoorsdk.GetUserByUserId(userId)
-		if err != nil {
+		if err != nil || user == nil {
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":   "UNAUTHORIZED",
 				"message": "User not found",
