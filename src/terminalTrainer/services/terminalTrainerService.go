@@ -823,8 +823,7 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 	}
 
 	// Valider le niveau d'accès
-	validLevels := map[string]bool{"read": true, "write": true, "admin": true}
-	if !validLevels[accessLevel] {
+	if !models.IsValidAccessLevel(accessLevel) {
 		return fmt.Errorf("invalid access level: %s", accessLevel)
 	}
 
@@ -902,7 +901,7 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 		fmt.Printf("Warning: failed to add console permissions for shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
 	}
 
-	// Ajouter les permissions d'édition pour les utilisateurs avec accès "admin"
+	// Ajouter les permissions d'édition pour les utilisateurs avec accès "owner"
 	err = tts.addTerminalSharePermissions(sharedWithUserID, accessLevel)
 	if err != nil {
 		// Log l'erreur mais ne pas faire échouer le partage
@@ -1009,7 +1008,7 @@ func (tts *terminalTrainerService) GetSharedTerminalInfo(sessionID, userID strin
 	}
 
 	// Vérifier si l'utilisateur a accès
-	hasAccess, err := tts.HasTerminalAccess(sessionID, userID, "read")
+	hasAccess, err := tts.HasTerminalAccess(sessionID, userID, models.AccessLevelRead)
 	if err != nil {
 		return nil, err
 	}
@@ -1056,7 +1055,7 @@ func (tts *terminalTrainerService) GetSharedTerminalInfo(sessionID, userID strin
 	var accessLevel string
 	var sharedAt time.Time
 	if terminal.UserID == userID {
-		accessLevel = "owner"
+		accessLevel = models.AccessLevelOwner
 		sharedAt = terminal.CreatedAt
 	} else {
 		// Récupérer le partage pour cet utilisateur
@@ -1110,7 +1109,7 @@ func (tts *terminalTrainerService) HideTerminal(terminalID, userID string) error
 	}
 
 	// Check if user has shared access to this terminal
-	hasAccess, err := tts.repository.HasTerminalAccess(terminalID, userID, "read")
+	hasAccess, err := tts.repository.HasTerminalAccess(terminalID, userID, models.AccessLevelRead)
 	if err != nil {
 		return fmt.Errorf("failed to check access: %w", err)
 	}
@@ -1136,7 +1135,7 @@ func (tts *terminalTrainerService) UnhideTerminal(terminalID, userID string) err
 	}
 
 	// Check if user has shared access to this terminal
-	hasAccess, err := tts.repository.HasTerminalAccess(terminalID, userID, "read")
+	hasAccess, err := tts.repository.HasTerminalAccess(terminalID, userID, models.AccessLevelRead)
 	if err != nil {
 		return fmt.Errorf("failed to check access: %w", err)
 	}
@@ -1196,11 +1195,11 @@ func (tts *terminalTrainerService) addTerminalSharePermissions(userID, accessLev
 	// Build methods based on access level
 	var methods string
 	switch accessLevel {
-	case "read":
+	case models.AccessLevelRead:
 		methods = "GET"
-	case "write":
+	case models.AccessLevelWrite:
 		methods = "GET|PATCH"
-	case "admin":
+	case models.AccessLevelOwner:
 		methods = "GET|PATCH|DELETE"
 	default:
 		methods = "GET" // Fallback to read-only
@@ -1232,11 +1231,11 @@ func (tts *terminalTrainerService) removeTerminalSharePermissions(userID, access
 	// Build methods to remove based on access level
 	var methods string
 	switch accessLevel {
-	case "read":
+	case models.AccessLevelRead:
 		methods = "GET"
-	case "write":
+	case models.AccessLevelWrite:
 		methods = "GET|PATCH"
-	case "admin":
+	case models.AccessLevelOwner:
 		methods = "GET|PATCH|DELETE"
 	default:
 		methods = "GET" // Fallback to read-only

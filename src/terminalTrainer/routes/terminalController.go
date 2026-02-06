@@ -210,7 +210,7 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	}
 
 	// Vérifier les droits d'accès (read level minimum pour la console)
-	hasAccess, accessErr := tc.hasTerminalAccess(ctx, sessionID, userId, "read")
+	hasAccess, accessErr := tc.hasTerminalAccess(ctx, sessionID, userId, models.AccessLevelRead)
 	if accessErr != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -387,7 +387,7 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 	}
 
 	// Vérifier les droits d'accès (admin level requis pour arrêter)
-	hasAccess, err := tc.hasTerminalAccess(ctx, terminalID, userId, "admin")
+	hasAccess, err := tc.hasTerminalAccess(ctx, terminalID, userId, models.AccessLevelOwner)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -532,7 +532,7 @@ func (tc *terminalController) SyncSession(ctx *gin.Context) {
 	}
 
 	// Vérifier les droits d'accès (read level minimum pour sync)
-	hasAccess, err := tc.hasTerminalAccess(ctx, sessionID, userId, "read")
+	hasAccess, err := tc.hasTerminalAccess(ctx, sessionID, userId, models.AccessLevelRead)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -1443,7 +1443,7 @@ func (tc *terminalController) GetAccessStatus(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	// Check if user has access
-	hasAccess, err := tc.service.HasTerminalAccess(sessionID, userId, "read")
+	hasAccess, err := tc.service.HasTerminalAccess(sessionID, userId, models.AccessLevelRead)
 	if err != nil {
 		if err.Error() == "terminal not found" {
 			ctx.JSON(http.StatusNotFound, &errors.APIError{

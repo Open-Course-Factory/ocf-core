@@ -132,14 +132,14 @@ func (tsr TerminalShareRegistration) GetCreateFieldsValidation() map[string]any 
 	return map[string]any{
 		"terminal_id":         "required,uuid",
 		"shared_with_user_id": "required,min=1",
-		"access_level":        "required,oneof=read write admin",
+		"access_level":        "required,oneof=read write owner",
 		"expires_at":          "omitempty",
 	}
 }
 
 func (tsr TerminalShareRegistration) GetUpdateFieldsValidation() map[string]any {
 	return map[string]any{
-		"access_level": "omitempty,oneof=read write admin",
+		"access_level": "omitempty,oneof=read write owner",
 		"expires_at":   "omitempty",
 		"is_active":    "omitempty,boolean",
 	}

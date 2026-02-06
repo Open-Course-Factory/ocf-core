@@ -183,8 +183,8 @@ func (h *TerminalSharePermissionHook) Execute(ctx *hooks.HookContext) error {
 		return fmt.Errorf("expected *terminalModels.TerminalShare, got %T", ctx.NewEntity)
 	}
 
-	// Only grant PATCH for "write" and "admin" access levels
-	if share.AccessLevel != "write" && share.AccessLevel != "admin" {
+	// Only grant PATCH for "write" and "owner" access levels
+	if share.AccessLevel != terminalModels.AccessLevelWrite && share.AccessLevel != terminalModels.AccessLevelOwner {
 		utils.Debug("🔒 Not granting PATCH permission - access level '%s' doesn't allow editing", share.AccessLevel)
 		return nil
 	}
