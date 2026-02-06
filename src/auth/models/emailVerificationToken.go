@@ -1,6 +1,8 @@
 package models
 
 import (
+	"os"
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -40,11 +42,23 @@ func (t *EmailVerificationToken) IsValid() bool {
 }
 
 func (t *EmailVerificationToken) CanResend() bool {
-	if t.ResendCount >= 5 {
-		return false // Max 5 resends
+	maxResends := 5
+	if envMax := os.Getenv("EMAIL_VERIFICATION_MAX_RESENDS"); envMax != "" {
+		if parsed, err := strconv.Atoi(envMax); err == nil && parsed > 0 {
+			maxResends = parsed
+		}
+	}
+	if t.ResendCount >= maxResends {
+		return false
 	}
 	if t.LastResent == nil {
 		return true
 	}
-	return time.Since(*t.LastResent) > 2*time.Minute // 2 min cooldown
+	cooldown := 2 * time.Minute
+	if envCooldown := os.Getenv("EMAIL_VERIFICATION_RESEND_COOLDOWN_MINUTES"); envCooldown != "" {
+		if parsed, err := strconv.Atoi(envCooldown); err == nil && parsed > 0 {
+			cooldown = time.Duration(parsed) * time.Minute
+		}
+	}
+	return time.Since(*t.LastResent) > cooldown
 }
