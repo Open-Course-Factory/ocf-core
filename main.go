@@ -121,36 +121,10 @@ func main() {
 	r := gin.Default()
 
 	// Setup CORS middleware - SECURE CONFIGURATION
-	// Get allowed origins from environment variables
-	allowedOrigins := []string{}
+	allowedOrigins := config.InitAllowedOrigins()
 	environment := os.Getenv("ENVIRONMENT")
 
-	if frontendURL := os.Getenv("FRONTEND_URL"); frontendURL != "" {
-		allowedOrigins = append(allowedOrigins, frontendURL)
-	}
-	if adminURL := os.Getenv("ADMIN_FRONTEND_URL"); adminURL != "" {
-		allowedOrigins = append(allowedOrigins, adminURL)
-	}
-
-	// For local development, add common localhost ports
-	if environment == "development" || environment == "" || len(allowedOrigins) == 0 {
-		log.Println("🔓 Development mode: CORS allowing common localhost origins")
-		allowedOrigins = append(allowedOrigins,
-			"http://localhost:3000",   // React default
-			"http://localhost:3001",   // React alternative
-			"http://localhost:4000",   // Custom frontend port
-			"http://localhost:5173",   // Vite default
-			"http://localhost:5174",   // Vite alternative
-			"http://localhost:8080",   // Backend
-			"http://localhost:8081",   // Alternative backend
-			"http://127.0.0.1:3000",   // Explicit 127.0.0.1
-			"http://127.0.0.1:4000",
-			"http://127.0.0.1:5173",
-			"http://127.0.0.1:8080",
-		)
-	}
-
-	log.Printf("🔒 CORS allowed origins: %v", allowedOrigins)
+	log.Printf("CORS allowed origins: %v", allowedOrigins)
 
 	r.Use(cors.New(cors.Options{
 		AllowedOrigins:   allowedOrigins,
