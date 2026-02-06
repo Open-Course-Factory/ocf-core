@@ -30,7 +30,7 @@ func UserSubscriptionRoutes(router *gin.RouterGroup, config *config.Configuratio
 	routes.POST("/:id/cancel", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.CancelSubscription)
 	routes.POST("/:id/reactivate", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.ReactivateSubscription)
 	routes.POST("/upgrade", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.UpgradeUserPlan)
-	routes.POST("/usage/check", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.CheckUsageLimit)
+	routes.POST("/usage/check", authMw.AuthManagement(), subscriptionController.CheckUsageLimit)
 	routes.POST("/sync-usage-limits", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.SyncUsageLimits)
 
 	// Analytics (admin only)
