@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -373,6 +374,7 @@ func (ulm *usageLimitMiddleware) CheckTerminalCreationLimit() gin.HandlerFunc {
 		// Vérifier le nombre de terminaux actifs concurrents via CheckUsageLimit
 		limitCheck, err := ulm.subscriptionService.CheckUsageLimit(userId, "concurrent_terminals", 1)
 		if err != nil {
+			log.Printf("[ERROR] CheckUsageLimit failed for user %s: %v", userId, err)
 			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 				ErrorCode:    http.StatusInternalServerError,
 				ErrorMessage: "Failed to check concurrent terminal limit",
@@ -380,6 +382,9 @@ func (ulm *usageLimitMiddleware) CheckTerminalCreationLimit() gin.HandlerFunc {
 			ctx.Abort()
 			return
 		}
+
+		log.Printf("[DEBUG] Terminal limit check for user %s: allowed=%v, current=%d, limit=%d, remaining=%d, message=%s",
+			userId, limitCheck.Allowed, limitCheck.CurrentUsage, limitCheck.Limit, limitCheck.RemainingUsage, limitCheck.Message)
 
 		if !limitCheck.Allowed {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{

@@ -19,24 +19,24 @@ func UserSubscriptionRoutes(router *gin.RouterGroup, config *config.Configuratio
 
 	routes := router.Group("/user-subscriptions")
 
-	// Payment routes require verified email
+	// Read-only routes (no email verification required - needed for UI to display plan info)
+	routes.GET("/current", authMw.AuthManagement(), subscriptionController.GetUserSubscription)
+	routes.GET("/all", authMw.AuthManagement(), subscriptionController.GetAllUserSubscriptions)
+	routes.GET("/usage", authMw.AuthManagement(), subscriptionController.GetUserUsage)
+
+	// Payment actions require verified email
 	routes.POST("/checkout", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.CreateCheckoutSession)
 	routes.POST("/portal", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.CreatePortalSession)
-	routes.GET("/current", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.GetUserSubscription)
-	routes.GET("/all", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.GetAllUserSubscriptions)
 	routes.POST("/:id/cancel", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.CancelSubscription)
 	routes.POST("/:id/reactivate", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.ReactivateSubscription)
 	routes.POST("/upgrade", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.UpgradeUserPlan)
-
-	// Analytics (admin seulement)
-	routes.GET("/analytics", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.GetSubscriptionAnalytics)
-
-	// Usage monitoring
 	routes.POST("/usage/check", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.CheckUsageLimit)
-	routes.GET("/usage", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.GetUserUsage)
 	routes.POST("/sync-usage-limits", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.SyncUsageLimits)
 
-	// Subscription synchronization (admin seulement)
+	// Analytics (admin only)
+	routes.GET("/analytics", authMw.AuthManagement(), subscriptionController.GetSubscriptionAnalytics)
+
+	// Subscription synchronization (admin only)
 	routes.POST("/sync-existing", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.SyncExistingSubscriptions)
 	routes.POST("/users/:user_id/sync", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.SyncUserSubscriptions)
 	routes.POST("/sync-missing-metadata", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.SyncSubscriptionsWithMissingMetadata)
