@@ -64,7 +64,7 @@ type CreateTerminalShareInput struct {
 	TerminalID        uuid.UUID  `binding:"required" json:"terminal_id"`
 	SharedWithUserID  *string    `json:"shared_with_user_id,omitempty"`   // Share to specific user
 	SharedWithGroupID *uuid.UUID `json:"shared_with_group_id,omitempty"`  // OR share to group
-	AccessLevel       string     `binding:"required" json:"access_level"` // read, write, admin
+	AccessLevel       string     `binding:"required" json:"access_level"` // read, write, owner
 	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
 }
 
@@ -93,7 +93,7 @@ type TerminalShareOutput struct {
 type ShareTerminalRequest struct {
 	SharedWithUserID  *string    `json:"shared_with_user_id,omitempty"`
 	SharedWithGroupID *uuid.UUID `json:"shared_with_group_id,omitempty"`
-	AccessLevel       string     `binding:"required" json:"access_level"` // read, write, admin
+	AccessLevel       string     `binding:"required" json:"access_level"` // read, write, owner
 	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
 }
 

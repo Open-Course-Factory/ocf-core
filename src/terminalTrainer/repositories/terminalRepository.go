@@ -364,20 +364,14 @@ func (r *terminalRepository) HasTerminalAccess(terminalID, userID string, requir
 	}
 
 	// Vérifier s'il y a un partage actif avec le niveau d'accès requis ou supérieur
-	accessLevels := map[string]int{
-		"read":  1,
-		"write": 2,
-		"admin": 3,
-	}
-
-	requiredLevelInt, exists := accessLevels[requiredLevel]
+	requiredLevelInt, exists := models.AccessLevelHierarchy[requiredLevel]
 	if !exists {
 		return false, errors.New("invalid access level")
 	}
 
 	// Construire la liste des niveaux d'accès suffisants
 	var allowedLevels []string
-	for level, value := range accessLevels {
+	for level, value := range models.AccessLevelHierarchy {
 		if value >= requiredLevelInt {
 			allowedLevels = append(allowedLevels, level)
 		}

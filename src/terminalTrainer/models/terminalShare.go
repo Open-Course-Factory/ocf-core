@@ -7,6 +7,26 @@ import (
 	"github.com/google/uuid"
 )
 
+// Terminal access level constants
+const (
+	AccessLevelRead  = "read"
+	AccessLevelWrite = "write"
+	AccessLevelOwner = "owner"
+)
+
+// AccessLevelHierarchy maps access levels to their numeric rank for comparison
+var AccessLevelHierarchy = map[string]int{
+	AccessLevelRead:  1,
+	AccessLevelWrite: 2,
+	AccessLevelOwner: 3,
+}
+
+// IsValidAccessLevel checks if the given level is a known access level
+func IsValidAccessLevel(level string) bool {
+	_, ok := AccessLevelHierarchy[level]
+	return ok
+}
+
 // TerminalShare représente un partage de terminal entre utilisateurs ou groupes
 type TerminalShare struct {
 	entityManagementModels.BaseModel
@@ -17,7 +37,7 @@ type TerminalShare struct {
 	SharedWithGroupID *uuid.UUID `gorm:"type:uuid;index" json:"shared_with_group_id,omitempty"`
 
 	SharedByUserID      string     `gorm:"type:varchar(255);not null;index" json:"shared_by_user_id"`
-	AccessLevel         string     `gorm:"type:varchar(50);default:'read'" json:"access_level"` // read, write, admin
+	AccessLevel         string     `gorm:"type:varchar(50);default:'read'" json:"access_level"` // read, write, owner
 	ExpiresAt           *time.Time `json:"expires_at,omitempty"`
 	IsActive            bool       `gorm:"default:true" json:"is_active"`
 	IsHiddenByRecipient bool       `gorm:"default:false" json:"is_hidden_by_recipient"`
@@ -50,19 +70,12 @@ func (ts *TerminalShare) HasAccess(requiredLevel string) bool {
 		return false
 	}
 
-	// Hiérarchie des niveaux d'accès
-	accessLevels := map[string]int{
-		"read":  1,
-		"write": 2,
-		"admin": 3,
-	}
-
-	currentLevel, exists := accessLevels[ts.AccessLevel]
+	currentLevel, exists := AccessLevelHierarchy[ts.AccessLevel]
 	if !exists {
 		return false
 	}
 
-	requiredLevelInt, exists := accessLevels[requiredLevel]
+	requiredLevelInt, exists := AccessLevelHierarchy[requiredLevel]
 	if !exists {
 		return false
 	}
