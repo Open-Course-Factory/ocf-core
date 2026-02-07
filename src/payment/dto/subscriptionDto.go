@@ -19,6 +19,8 @@ type CreateSubscriptionPlanInput struct {
 	MaxConcurrentUsers int      `json:"max_concurrent_users" mapstructure:"max_concurrent_users"`
 	MaxCourses         int      `json:"max_courses" mapstructure:"max_courses"`
 	RequiredRole       string   `json:"required_role" mapstructure:"required_role"`
+	AllowedBackends    []string `json:"allowed_backends" mapstructure:"allowed_backends"`
+	DefaultBackend     string   `json:"default_backend" mapstructure:"default_backend"`
 }
 
 type UpdateSubscriptionPlanInput struct {
@@ -28,6 +30,8 @@ type UpdateSubscriptionPlanInput struct {
 	Features           []string `json:"features,omitempty" mapstructure:"features"`
 	MaxConcurrentUsers *int     `json:"max_concurrent_users,omitempty" mapstructure:"max_concurrent_users"`
 	MaxCourses         *int     `json:"max_courses,omitempty" mapstructure:"max_courses"`
+	AllowedBackends    []string `json:"allowed_backends,omitempty" mapstructure:"allowed_backends"`
+	DefaultBackend     *string  `json:"default_backend,omitempty" mapstructure:"default_backend"`
 }
 
 type SubscriptionPlanOutput struct {
@@ -57,6 +61,8 @@ type SubscriptionPlanOutput struct {
 	DataPersistenceEnabled    bool     `json:"data_persistence_enabled"`
 	DataPersistenceGB         int      `json:"data_persistence_gb"`
 	AllowedTemplates          []string `json:"allowed_templates"`
+	AllowedBackends           []string `json:"allowed_backends"`
+	DefaultBackend            string   `json:"default_backend"`
 
 	// Planned features (announced but not yet available)
 	PlannedFeatures []string `json:"planned_features"` // Features coming soon

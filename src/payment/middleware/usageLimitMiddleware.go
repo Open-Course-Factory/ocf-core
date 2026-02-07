@@ -397,7 +397,7 @@ func (ulm *usageLimitMiddleware) CheckTerminalCreationLimit() gin.HandlerFunc {
 
 		// Vérifier la RAM disponible sur le serveur Terminal Trainer
 		// Utiliser nocache=true pour obtenir les données en temps réel
-		metrics, err := ulm.terminalService.GetServerMetrics(true)
+		metrics, err := ulm.terminalService.GetServerMetrics(true, "")
 		if err != nil {
 			// Log l'erreur mais ne pas bloquer la création si le service de métriques est indisponible
 			fmt.Printf("Warning: Failed to check server metrics for terminal creation: %v\n", err)

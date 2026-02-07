@@ -39,6 +39,8 @@ type SubscriptionPlan struct {
 	DataPersistenceEnabled    bool     `gorm:"default:false" json:"data_persistence_enabled"`  // Allow saving data between sessions
 	DataPersistenceGB         int      `gorm:"default:0" json:"data_persistence_gb"`           // Storage quota in GB
 	AllowedTemplates          []string `gorm:"serializer:json" json:"allowed_templates"`       // Template IDs allowed
+	AllowedBackends           []string `gorm:"serializer:json" json:"allowed_backends"`        // Backend IDs allowed (empty = all)
+	DefaultBackend            string   `gorm:"type:varchar(255);default:''" json:"default_backend"` // Default backend for this plan
 
 	// Add-on pricing (Stripe Price IDs for metered/add-on billing)
 	AddonNetworkPriceID  *string `gorm:"type:varchar(100)" json:"addon_network_price_id,omitempty"`

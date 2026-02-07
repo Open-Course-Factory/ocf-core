@@ -58,6 +58,7 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	// Configuration (no terminal-specific access needed)
 	routes.GET("/instance-types", middleware.AuthManagement(), terminalController.GetInstanceTypes)
 	routes.GET("/metrics", middleware.AuthManagement(), terminalController.GetServerMetrics)
+	routes.GET("/backends", middleware.AuthManagement(), terminalController.GetBackends)
 
 	// Enum service endpoints (admin only - for debugging and diagnostics)
 	routes.GET("/enums/status", middleware.AuthManagement(), terminalController.GetEnumStatus)

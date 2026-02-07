@@ -51,6 +51,8 @@ func (t TerminalRegistration) EntityModelToEntityOutput(input any) (any, error) 
 			ExpiresAt:       terminalModel.ExpiresAt,
 			InstanceType:    terminalModel.InstanceType,
 			MachineSize:     terminalModel.MachineSize,
+			Backend:         terminalModel.Backend,
+			OrganizationID:  terminalModel.OrganizationID,
 			IsHiddenByOwner: terminalModel.IsHiddenByOwner,
 			HiddenByOwnerAt: terminalModel.HiddenByOwnerAt,
 			CreatedAt:       terminalModel.CreatedAt,

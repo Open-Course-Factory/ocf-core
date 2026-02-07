@@ -22,6 +22,7 @@ type TerminalRepository interface {
 	GetTerminalSessionByID(sessionID string) (*models.Terminal, error)
 	GetTerminalByUUID(terminalUUID string) (*models.Terminal, error)
 	GetTerminalSessionsByUserID(userID string, isActive bool) (*[]models.Terminal, error)
+	GetTerminalSessionsByUserIDAndOrg(userID string, organizationID *uuid.UUID, isActive bool) (*[]models.Terminal, error)
 	GetTerminalSessionsByUserIDWithHidden(userID string, isActive bool, includeHidden bool) (*[]models.Terminal, error)
 	GetTerminalSessionsSharedWithGroup(groupID string, includeHidden bool) (*[]models.Terminal, error)
 	UpdateTerminalSession(terminal *models.Terminal) error
@@ -144,6 +145,26 @@ func (r *terminalRepository) GetTerminalSessionsByUserID(userID string, isActive
 		fmt.Printf("[DEBUG] - Session %s: status=%s, deletedAt=%s\n", terminal.SessionID, terminal.Status, deletedAt)
 	}
 
+	return &terminals, nil
+}
+
+func (r *terminalRepository) GetTerminalSessionsByUserIDAndOrg(userID string, organizationID *uuid.UUID, isActive bool) (*[]models.Terminal, error) {
+	var terminals []models.Terminal
+
+	query := r.db.Preload("UserTerminalKey").Where("user_id = ?", userID)
+
+	if organizationID != nil {
+		query = query.Where("organization_id = ?", *organizationID)
+	}
+
+	if isActive {
+		query = query.Where("status = ?", "active")
+	}
+
+	err := query.Find(&terminals).Error
+	if err != nil {
+		return nil, err
+	}
 	return &terminals, nil
 }
 

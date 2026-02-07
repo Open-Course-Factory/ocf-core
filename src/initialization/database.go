@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	auditModels "soli/formations/src/audit/models"
+	"soli/formations/src/auth/casdoor"
 	authModels "soli/formations/src/auth/models"
 	configModels "soli/formations/src/configuration/models"
 	courseModels "soli/formations/src/courses/models"
@@ -111,6 +112,7 @@ func InitDevelopmentData(db *gorm.DB) {
 	if env == "development" || env == "test" {
 		db = db.Debug()
 		setupExternalUsersData()
+		syncCasdoorRolesToCasbin()
 		SetupDefaultSubscriptionPlans(db)
 	}
 }
@@ -130,6 +132,90 @@ func setupExternalUsersData() {
 		testtools.SetupGroups()
 		testtools.SetupRoles()
 	}
+}
+
+// syncCasdoorRolesToCasbin ensures all Casdoor role assignments are reflected
+// as Casbin grouping policies. This fixes cases where the casbin_rule table
+// was reset but users still exist in Casdoor, leaving them with no roles.
+func syncCasdoorRolesToCasbin() {
+	orgName := os.Getenv("CASDOOR_ORGANIZATION_NAME")
+
+	roles, err := casdoorsdk.GetRoles()
+	if err != nil {
+		log.Printf("[ROLE-SYNC] Could not get Casdoor roles: %v", err)
+		return
+	}
+
+	users, err := casdoorsdk.GetUsers()
+	if err != nil {
+		log.Printf("[ROLE-SYNC] Could not get Casdoor users: %v", err)
+		return
+	}
+
+	if err := casdoor.Enforcer.LoadPolicy(); err != nil {
+		log.Printf("[ROLE-SYNC] Could not load Casbin policy: %v", err)
+		return
+	}
+
+	// Build mapping: "orgName/username" -> userID
+	userIDMap := make(map[string]string)
+	for _, user := range users {
+		if user != nil && !user.IsDeleted {
+			userIDMap[orgName+"/"+user.Name] = user.Id
+		}
+	}
+
+	// Ensure every active user has at least the "member" role
+	for _, user := range users {
+		if user == nil || user.IsDeleted {
+			continue
+		}
+		existingRoles, _ := casdoor.Enforcer.GetRolesForUser(user.Id)
+		hasMember := false
+		for _, r := range existingRoles {
+			if r == "member" {
+				hasMember = true
+				break
+			}
+		}
+		if !hasMember {
+			if _, err := casdoor.Enforcer.AddGroupingPolicy(user.Id, "member"); err != nil {
+				log.Printf("[ROLE-SYNC] Failed to add 'member' role to user %s: %v", user.Id, err)
+			} else {
+				log.Printf("[ROLE-SYNC] Added missing 'member' role to user %s (%s)", user.Name, user.Id)
+			}
+		}
+	}
+
+	// Sync each Casdoor role to Casbin grouping policies
+	for _, role := range roles {
+		if role == nil {
+			continue
+		}
+		for _, userRef := range role.Users {
+			userID, ok := userIDMap[userRef]
+			if !ok {
+				continue
+			}
+			existingRoles, _ := casdoor.Enforcer.GetRolesForUser(userID)
+			hasRole := false
+			for _, r := range existingRoles {
+				if r == role.Name {
+					hasRole = true
+					break
+				}
+			}
+			if !hasRole {
+				if _, err := casdoor.Enforcer.AddGroupingPolicy(userID, role.Name); err != nil {
+					log.Printf("[ROLE-SYNC] Failed to add '%s' role to user %s: %v", role.Name, userID, err)
+				} else {
+					log.Printf("[ROLE-SYNC] Added missing '%s' role to user %s", role.Name, userID)
+				}
+			}
+		}
+	}
+
+	log.Println("[ROLE-SYNC] Casdoor-to-Casbin role sync complete")
 }
 
 // SetupDefaultSubscriptionPlans initializes default subscription plans
@@ -155,6 +241,8 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		IsActive:           true,
 		RequiredRole:       "member", // Changed from "member_pro" (deprecated) to "member"
 		UseTieredPricing:   false,
+		AllowedBackends:    []string{}, // empty = all backends allowed
+		DefaultBackend:     "",         // empty = TT default
 	}
 
 	// Plan Trainer (With Bulk Purchase & Tiered Pricing)
@@ -171,6 +259,8 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		IsActive:           true,
 		RequiredRole:       "trainer",
 		UseTieredPricing:   true,
+		AllowedBackends:    []string{}, // empty = all backends allowed
+		DefaultBackend:     "",         // empty = TT default
 		PricingTiers: []paymentModels.PricingTier{
 			{MinQuantity: 1, MaxQuantity: 5, UnitAmount: 1200, Description: "1-5 licences: 12€/licence"},
 			{MinQuantity: 6, MaxQuantity: 15, UnitAmount: 1000, Description: "6-15 licences: 10€/licence"},

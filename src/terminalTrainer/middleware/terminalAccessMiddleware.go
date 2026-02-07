@@ -105,7 +105,12 @@ func (tam *TerminalAccessMiddleware) RequireTerminalAccess(requiredLevel string)
 
 		if !isValid {
 			// Return appropriate status based on reason
-			if reason == "expired" {
+			if reason == "backend_offline" {
+				ctx.AbortWithStatusJSON(http.StatusServiceUnavailable, &errors.APIError{
+					ErrorCode:    http.StatusServiceUnavailable,
+					ErrorMessage: "Session's backend is currently unavailable",
+				})
+			} else if reason == "expired" {
 				ctx.AbortWithStatusJSON(http.StatusGone, &errors.APIError{
 					ErrorCode:    http.StatusGone,
 					ErrorMessage: "Terminal session has expired and is no longer accessible",

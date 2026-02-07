@@ -16,6 +16,7 @@ import (
 	"soli/formations/src/terminalTrainer/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
@@ -67,6 +68,9 @@ type TerminalController interface {
 	// Enum service endpoints
 	GetEnumStatus(ctx *gin.Context)
 	RefreshEnums(ctx *gin.Context)
+
+	// Backend management
+	GetBackends(ctx *gin.Context)
 
 	// Session access validation
 	GetAccessStatus(ctx *gin.Context)
@@ -242,7 +246,12 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	}
 
 	if !isValid {
-		if reason == "expired" {
+		if reason == "backend_offline" {
+			ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
+				ErrorCode:    http.StatusServiceUnavailable,
+				ErrorMessage: fmt.Sprintf("Session's backend '%s' is currently unavailable", terminal.Backend),
+			})
+		} else if reason == "expired" {
 			ctx.JSON(http.StatusGone, &errors.APIError{
 				ErrorCode:    http.StatusGone,
 				ErrorMessage: "Terminal session has expired and is no longer accessible",
@@ -438,6 +447,7 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	includeHidden := ctx.Query("include_hidden") == "true"
 	groupID := ctx.Query("group_id")
+	organizationID := ctx.Query("organization_id")
 
 	var terminals *[]models.Terminal
 	var err error
@@ -476,8 +486,21 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 			userId = targetUserID
 		}
 
-		// Récupérer les sessions de l'utilisateur avec gestion des masquées (toutes les sessions, pas seulement les actives)
-		terminals, err = tc.service.GetRepository().GetTerminalSessionsByUserIDWithHidden(userId, false, includeHidden)
+		// If organization_id provided, filter by org
+		if organizationID != "" {
+			orgUUID, parseErr := uuid.Parse(organizationID)
+			if parseErr != nil {
+				ctx.JSON(http.StatusBadRequest, &errors.APIError{
+					ErrorCode:    http.StatusBadRequest,
+					ErrorMessage: fmt.Sprintf("Invalid organization_id: %v", parseErr),
+				})
+				return
+			}
+			terminals, err = tc.service.GetRepository().GetTerminalSessionsByUserIDAndOrg(userId, &orgUUID, false)
+		} else {
+			// Récupérer les sessions de l'utilisateur avec gestion des masquées (toutes les sessions, pas seulement les actives)
+			terminals, err = tc.service.GetRepository().GetTerminalSessionsByUserIDWithHidden(userId, false, includeHidden)
+		}
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 				ErrorCode:    http.StatusInternalServerError,
@@ -499,6 +522,8 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 			ExpiresAt:       terminal.ExpiresAt,
 			InstanceType:    terminal.InstanceType,
 			MachineSize:     terminal.MachineSize,
+			Backend:         terminal.Backend,
+			OrganizationID:  terminal.OrganizationID,
 			IsHiddenByOwner: terminal.IsHiddenByOwner,
 			HiddenByOwnerAt: terminal.HiddenByOwnerAt,
 			CreatedAt:       terminal.CreatedAt,
@@ -908,8 +933,9 @@ func (tc *terminalController) GetInstanceTypes(ctx *gin.Context) {
 //	@Router			/terminals/metrics [get]
 func (tc *terminalController) GetServerMetrics(ctx *gin.Context) {
 	nocache := ctx.Query("nocache") == "true" || ctx.Query("nocache") == "1"
+	backend := ctx.Query("backend")
 
-	metrics, err := tc.service.GetServerMetrics(nocache)
+	metrics, err := tc.service.GetServerMetrics(nocache, backend)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -1427,6 +1453,50 @@ func (tc *terminalController) RefreshEnums(ctx *gin.Context) {
 	// Return updated status
 	status := enumService.GetStatus()
 	ctx.JSON(http.StatusOK, status)
+}
+
+// Get Backends godoc
+//
+//	@Summary		Get available backends
+//	@Description	Returns available Terminal Trainer backends, optionally filtered by organization
+//	@Tags			terminals
+//	@Security		Bearer
+//	@Accept			json
+//	@Produce		json
+//	@Param			organization_id	query		string	false	"Organization ID to filter backends"
+//	@Success		200				{array}		dto.BackendInfo
+//	@Failure		400				{object}	errors.APIError	"Bad request"
+//	@Failure		500				{object}	errors.APIError	"Internal server error"
+//	@Router			/terminals/backends [get]
+func (tc *terminalController) GetBackends(ctx *gin.Context) {
+	organizationID := ctx.Query("organization_id")
+
+	var backends []dto.BackendInfo
+	var err error
+
+	if organizationID != "" {
+		orgUUID, parseErr := uuid.Parse(organizationID)
+		if parseErr != nil {
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: fmt.Sprintf("Invalid organization_id: %v", parseErr),
+			})
+			return
+		}
+		backends, err = tc.service.GetBackendsForOrganization(orgUUID)
+	} else {
+		backends, err = tc.service.GetBackends()
+	}
+
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to get backends: %v", err),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, backends)
 }
 
 // Get Access Status godoc

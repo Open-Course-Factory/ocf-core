@@ -32,6 +32,8 @@ type TerminalOutput struct {
 	ExpiresAt       time.Time  `json:"expires_at"`
 	InstanceType    string     `json:"instance_type"`
 	MachineSize     string     `json:"machine_size"` // XS, S, M, L, XL
+	Backend         string     `json:"backend,omitempty"`
+	OrganizationID  *uuid.UUID `json:"organization_id,omitempty"`
 	IsHiddenByOwner bool       `json:"is_hidden_by_owner"`
 	HiddenByOwnerAt *time.Time `json:"hidden_by_owner_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
@@ -109,10 +111,12 @@ type SharedTerminalInfo struct {
 
 // Terminal Service DTOs (pour les appels au Terminal Trainer)
 type CreateTerminalSessionInput struct {
-	Terms        string `binding:"required" json:"terms" form:"terms"`
-	Name         string `json:"name,omitempty" form:"name"`                   // User-friendly name for the terminal session
-	Expiry       int    `json:"expiry,omitempty" form:"expiry"`               // optionnel
-	InstanceType string `json:"instance_type,omitempty" form:"instance_type"` // préfixe du type d'instance
+	Terms          string `binding:"required" json:"terms" form:"terms"`
+	Name           string `json:"name,omitempty" form:"name"`                   // User-friendly name for the terminal session
+	Expiry         int    `json:"expiry,omitempty" form:"expiry"`               // optionnel
+	InstanceType   string `json:"instance_type,omitempty" form:"instance_type"` // préfixe du type d'instance
+	Backend        string `json:"backend,omitempty" form:"backend"`             // Backend ID to use
+	OrganizationID string `json:"organization_id,omitempty" form:"organization_id"`
 }
 
 type TerminalSessionResponse struct {
@@ -120,6 +124,7 @@ type TerminalSessionResponse struct {
 	ExpiresAt  time.Time `json:"expires_at"`
 	ConsoleURL string    `json:"console_url"`
 	Status     string    `json:"status"`
+	Backend    string    `json:"backend,omitempty"`
 }
 
 // Response du Terminal Trainer API (pour mapping)
@@ -173,6 +178,7 @@ type TerminalTrainerSessionResponse struct {
 	ExpiresAt   int64       `json:"expires_at,omitempty"` // timestamp Unix
 	CreatedAt   int64       `json:"created_at,omitempty"`
 	MachineSize string      `json:"machine_size,omitempty"` // XS, S, M, L, XL
+	Backend     string      `json:"backend,omitempty"`
 }
 
 // TerminalTrainerSession représente une session retournée par l'endpoint /1.0/sessions
@@ -188,6 +194,7 @@ type TerminalTrainerSession struct {
 	Password    string      `json:"password,omitempty"`
 	FQDN        string      `json:"fqdn,omitempty"`
 	MachineSize string      `json:"machine_size,omitempty"` // XS, S, M, L, XL
+	Backend     string      `json:"backend,omitempty"`
 }
 
 // TerminalTrainerSessionsResponse réponse de l'endpoint /1.0/sessions
@@ -210,6 +217,7 @@ type TerminalTrainerSessionInfo struct {
 	Password    string      `json:"password,omitempty"`
 	FQDN        string      `json:"fqdn,omitempty"`
 	MachineSize string      `json:"machine_size,omitempty"` // XS, S, M, L, XL
+	Backend     string      `json:"backend,omitempty"`
 }
 
 // SyncSessionResponse représente le résultat de synchronisation d'une session
@@ -430,14 +438,17 @@ type ServerMetricsResponse struct {
 	RAMPercent     float64 `json:"ram_percent"`
 	RAMAvailableGB float64 `json:"ram_available_gb"`
 	Timestamp      int64   `json:"timestamp"`
+	Backend        string  `json:"backend,omitempty"`
 }
 
 // BulkCreateTerminalsRequest for creating multiple terminals for a group
 type BulkCreateTerminalsRequest struct {
-	Terms        string `binding:"required" json:"terms"`
-	Expiry       int    `json:"expiry,omitempty"`
-	InstanceType string `json:"instance_type,omitempty"`
-	NameTemplate string `json:"name_template,omitempty"` // Template with placeholders: {group_name}, {user_email}, {user_id}
+	Terms          string `binding:"required" json:"terms"`
+	Expiry         int    `json:"expiry,omitempty"`
+	InstanceType   string `json:"instance_type,omitempty"`
+	NameTemplate   string `json:"name_template,omitempty"` // Template with placeholders: {group_name}, {user_email}, {user_id}
+	Backend        string `json:"backend,omitempty"`
+	OrganizationID string `json:"organization_id,omitempty"`
 }
 
 // BulkCreateTerminalsResponse response for bulk terminal creation
@@ -478,6 +489,15 @@ type EnumDefinition struct {
 // TerminalTrainerEnumsResponse response from /1.0/enums endpoint
 type TerminalTrainerEnumsResponse struct {
 	Enums []EnumDefinition `json:"enums"`
+}
+
+// BackendInfo represents a Terminal Trainer backend
+type BackendInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Connected   bool   `json:"connected"`
+	IsDefault   bool   `json:"is_default"`
 }
 
 // EnumServiceStatus represents the status of the enum service

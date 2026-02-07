@@ -93,6 +93,8 @@ func (s SubscriptionPlanRegistration) EntityModelToEntityOutput(input any) (any,
 			DataPersistenceEnabled:    plan.DataPersistenceEnabled,
 			DataPersistenceGB:         plan.DataPersistenceGB,
 			AllowedTemplates:          plan.AllowedTemplates,
+			AllowedBackends:           plan.AllowedBackends,
+			DefaultBackend:            plan.DefaultBackend,
 
 			// Planned features
 			PlannedFeatures: plan.PlannedFeatures,
@@ -117,6 +119,8 @@ func (s SubscriptionPlanRegistration) EntityInputDtoToEntityModel(input any) any
 		MaxConcurrentUsers: planInput.MaxConcurrentUsers,
 		MaxCourses:         planInput.MaxCourses,
 		RequiredRole:       planInput.RequiredRole,
+		AllowedBackends:    planInput.AllowedBackends,
+		DefaultBackend:     planInput.DefaultBackend,
 		IsActive:           true,
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"soli/formations/src/auth/casdoor"
@@ -64,7 +65,12 @@ type TerminalTrainerService interface {
 	GetInstanceTypes() ([]dto.InstanceType, error)
 
 	// Metrics
-	GetServerMetrics(nocache bool) (*dto.ServerMetricsResponse, error)
+	GetServerMetrics(nocache bool, backend string) (*dto.ServerMetricsResponse, error)
+
+	// Backend management
+	GetBackends() ([]dto.BackendInfo, error)
+	GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error)
+	IsBackendOnline(backendName string) (bool, error)
 
 	// Correction des permissions
 	FixTerminalHidePermissions(userID string) (*dto.FixPermissionsResponse, error)
@@ -80,14 +86,18 @@ type TerminalTrainerService interface {
 }
 
 type terminalTrainerService struct {
-	adminKey            string
-	baseURL             string
-	apiVersion          string
-	terminalType        string
-	repository          repositories.TerminalRepository
-	subscriptionService paymentServices.UserSubscriptionService
-	enumService         TerminalTrainerEnumService
-	db                  *gorm.DB
+	adminKey                string
+	baseURL                 string
+	apiVersion              string
+	terminalType            string
+	repository              repositories.TerminalRepository
+	subscriptionService     paymentServices.UserSubscriptionService
+	orgSubscriptionService  paymentServices.OrganizationSubscriptionService
+	enumService             TerminalTrainerEnumService
+	db                      *gorm.DB
+	backendCache            []dto.BackendInfo
+	backendCacheTime        time.Time
+	backendCacheMu          sync.RWMutex
 }
 
 func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
@@ -104,14 +114,15 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 	baseURL := os.Getenv("TERMINAL_TRAINER_URL") // http://localhost:8090
 
 	return &terminalTrainerService{
-		adminKey:            os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
-		baseURL:             baseURL,
-		apiVersion:          apiVersion,
-		terminalType:        terminalType,
-		repository:          repositories.NewTerminalRepository(db),
-		subscriptionService: paymentServices.NewSubscriptionService(db),
-		enumService:         NewTerminalTrainerEnumService(baseURL, apiVersion),
-		db:                  db,
+		adminKey:               os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
+		baseURL:                baseURL,
+		apiVersion:             apiVersion,
+		terminalType:           terminalType,
+		repository:             repositories.NewTerminalRepository(db),
+		subscriptionService:    paymentServices.NewSubscriptionService(db),
+		orgSubscriptionService: paymentServices.NewOrganizationSubscriptionService(db),
+		enumService:            NewTerminalTrainerEnumService(baseURL, apiVersion),
+		db:                     db,
 	}
 }
 
@@ -219,6 +230,9 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	if sessionInput.Expiry > 0 {
 		url += fmt.Sprintf("&expiry=%d", sessionInput.Expiry)
 	}
+	if sessionInput.Backend != "" {
+		url += fmt.Sprintf("&backend=%s", sessionInput.Backend)
+	}
 
 	// Parser la réponse du Terminal Trainer
 	var sessionResp dto.TerminalTrainerSessionResponse
@@ -246,6 +260,16 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 
 	// Créer l'enregistrement local
 	expiresAt := time.Unix(sessionResp.ExpiresAt, 0)
+
+	// Parse organization ID if provided
+	var orgID *uuid.UUID
+	if sessionInput.OrganizationID != "" {
+		parsed, err := uuid.Parse(sessionInput.OrganizationID)
+		if err == nil {
+			orgID = &parsed
+		}
+	}
+
 	terminal := &models.Terminal{
 		SessionID:         sessionResp.SessionID,
 		UserID:            userID,
@@ -254,6 +278,8 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 		ExpiresAt:         expiresAt,
 		InstanceType:      sessionInput.InstanceType,
 		MachineSize:       sessionResp.MachineSize, // Taille réelle retournée par Terminal Trainer
+		Backend:           sessionResp.Backend,
+		OrganizationID:    orgID,
 		UserTerminalKeyID: userKey.ID,
 		UserTerminalKey:   *userKey,
 	}
@@ -283,6 +309,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 		ExpiresAt:  expiresAt,
 		ConsoleURL: fmt.Sprintf("%s%s?id=%s", tts.baseURL, consolePath, sessionResp.SessionID),
 		Status:     "active",
+		Backend:    sessionResp.Backend,
 	}
 
 	return response, nil
@@ -338,6 +365,22 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 				sessionInput.InstanceType, instanceSizes, plan.AllowedMachineSizes)
 		}
 	}
+
+	// Validate backend against organization's plan
+	var orgID *uuid.UUID
+	if sessionInput.OrganizationID != "" {
+		parsed, err := uuid.Parse(sessionInput.OrganizationID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid organization_id: %w", err)
+		}
+		orgID = &parsed
+	}
+
+	validatedBackend, err := tts.validateBackendForOrg(orgID, sessionInput.Backend)
+	if err != nil {
+		return nil, err
+	}
+	sessionInput.Backend = validatedBackend
 
 	// Appliquer la durée maximale de session depuis le plan
 	maxDurationSeconds := plan.MaxSessionDurationMinutes * 60
@@ -661,6 +704,7 @@ func (tts *terminalTrainerService) createMissingLocalSession(userID string, user
 		Status:            statusName, // Use semantic name (e.g., "active", "expired")
 		ExpiresAt:         expiresAt,
 		MachineSize:       apiSession.MachineSize, // Taille réelle depuis l'API
+		Backend:           apiSession.Backend,
 		UserTerminalKeyID: userKey.ID,
 		UserTerminalKey:   *userKey,
 	}
@@ -1026,6 +1070,8 @@ func (tts *terminalTrainerService) GetSharedTerminalInfo(sessionID, userID strin
 		ExpiresAt:       terminal.ExpiresAt,
 		InstanceType:    terminal.InstanceType,
 		MachineSize:     terminal.MachineSize,
+		Backend:         terminal.Backend,
+		OrganizationID:  terminal.OrganizationID,
 		IsHiddenByOwner: terminal.IsHiddenByOwner,
 		HiddenByOwnerAt: terminal.HiddenByOwnerAt,
 		CreatedAt:       terminal.CreatedAt,
@@ -1263,7 +1309,7 @@ func (tts *terminalTrainerService) removeTerminalSharePermissions(userID, access
 }
 
 // GetServerMetrics récupère les métriques du serveur Terminal Trainer
-func (tts *terminalTrainerService) GetServerMetrics(nocache bool) (*dto.ServerMetricsResponse, error) {
+func (tts *terminalTrainerService) GetServerMetrics(nocache bool, backend string) (*dto.ServerMetricsResponse, error) {
 	// Skip if Terminal Trainer is not configured
 	if tts.baseURL == "" {
 		return nil, fmt.Errorf("terminal trainer not configured")
@@ -1273,9 +1319,16 @@ func (tts *terminalTrainerService) GetServerMetrics(nocache bool) (*dto.ServerMe
 	path := fmt.Sprintf("/%s/metrics", tts.apiVersion)
 	url := fmt.Sprintf("%s%s", tts.baseURL, path)
 
-	// Ajouter le paramètre nocache si demandé
+	// Ajouter les paramètres
+	params := []string{}
 	if nocache {
-		url += "?nocache=true"
+		params = append(params, "nocache=true")
+	}
+	if backend != "" {
+		params = append(params, fmt.Sprintf("backend=%s", backend))
+	}
+	if len(params) > 0 {
+		url += "?" + strings.Join(params, "&")
 	}
 
 	// Exécuter la requête (pas besoin d'authentification selon les specs)
@@ -1288,7 +1341,147 @@ func (tts *terminalTrainerService) GetServerMetrics(nocache bool) (*dto.ServerMe
 		return nil, err
 	}
 
+	metrics.Backend = backend
 	return &metrics, nil
+}
+
+// GetBackends retrieves all available backends from Terminal Trainer
+func (tts *terminalTrainerService) GetBackends() ([]dto.BackendInfo, error) {
+	if tts.baseURL == "" {
+		return nil, fmt.Errorf("terminal trainer not configured")
+	}
+
+	url := fmt.Sprintf("%s/%s/backends", tts.baseURL, tts.apiVersion)
+
+	var backends []dto.BackendInfo
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithHeader("X-Admin-Key", tts.adminKey))
+
+	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &backends, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return backends, nil
+}
+
+// getBackendsCached returns cached backends or refreshes if older than 30s
+func (tts *terminalTrainerService) getBackendsCached() ([]dto.BackendInfo, error) {
+	tts.backendCacheMu.RLock()
+	if tts.backendCache != nil && time.Since(tts.backendCacheTime) < 30*time.Second {
+		cached := make([]dto.BackendInfo, len(tts.backendCache))
+		copy(cached, tts.backendCache)
+		tts.backendCacheMu.RUnlock()
+		return cached, nil
+	}
+	tts.backendCacheMu.RUnlock()
+
+	backends, err := tts.GetBackends()
+	if err != nil {
+		return nil, err
+	}
+
+	tts.backendCacheMu.Lock()
+	tts.backendCache = backends
+	tts.backendCacheTime = time.Now()
+	tts.backendCacheMu.Unlock()
+
+	return backends, nil
+}
+
+// GetBackendsForOrganization returns backends filtered by org's subscription plan
+func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error) {
+	plan, err := tts.orgSubscriptionService.GetOrganizationFeatures(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get organization features: %w", err)
+	}
+
+	allBackends, err := tts.getBackendsCached()
+	if err != nil {
+		return nil, err
+	}
+
+	// If AllowedBackends is empty, return all backends
+	if len(plan.AllowedBackends) == 0 {
+		// Mark the default backend
+		for i := range allBackends {
+			if plan.DefaultBackend != "" && allBackends[i].ID == plan.DefaultBackend {
+				allBackends[i].IsDefault = true
+			}
+		}
+		return allBackends, nil
+	}
+
+	// Filter by allowed backends
+	allowedSet := make(map[string]bool, len(plan.AllowedBackends))
+	for _, b := range plan.AllowedBackends {
+		allowedSet[b] = true
+	}
+
+	var filtered []dto.BackendInfo
+	for _, b := range allBackends {
+		if allowedSet[b.ID] {
+			if plan.DefaultBackend != "" && b.ID == plan.DefaultBackend {
+				b.IsDefault = true
+			}
+			filtered = append(filtered, b)
+		}
+	}
+
+	return filtered, nil
+}
+
+// IsBackendOnline checks if a specific backend is connected
+func (tts *terminalTrainerService) IsBackendOnline(backendName string) (bool, error) {
+	if backendName == "" {
+		return true, nil // Default backend always considered online
+	}
+
+	backends, err := tts.getBackendsCached()
+	if err != nil {
+		return false, err
+	}
+
+	for _, b := range backends {
+		if b.ID == backendName {
+			return b.Connected, nil
+		}
+	}
+
+	// Backend not found in list - assume offline
+	return false, nil
+}
+
+// validateBackendForOrg validates and resolves the backend for an organization
+func (tts *terminalTrainerService) validateBackendForOrg(orgID *uuid.UUID, requestedBackend string) (string, error) {
+	if orgID == nil {
+		return requestedBackend, nil // No org context, allow any backend
+	}
+
+	plan, err := tts.orgSubscriptionService.GetOrganizationFeatures(*orgID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get organization features: %w", err)
+	}
+
+	// If no backend requested, use plan's default
+	if requestedBackend == "" {
+		return plan.DefaultBackend, nil
+	}
+
+	// If AllowedBackends is empty, allow any backend
+	if len(plan.AllowedBackends) == 0 {
+		return requestedBackend, nil
+	}
+
+	// Check if requested backend is in allowed list
+	for _, allowed := range plan.AllowedBackends {
+		if allowed == requestedBackend {
+			return requestedBackend, nil
+		}
+	}
+
+	return "", fmt.Errorf("backend '%s' is not allowed in your organization's plan. Allowed backends: %v",
+		requestedBackend, plan.AllowedBackends)
 }
 
 // FixTerminalHidePermissions corrige les permissions de masquage pour tous les terminaux d'un utilisateur
@@ -1439,10 +1632,12 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 
 		// Create session input for this user
 		sessionInput := dto.CreateTerminalSessionInput{
-			Terms:        request.Terms,
-			Name:         terminalName,
-			Expiry:       request.Expiry,
-			InstanceType: request.InstanceType,
+			Terms:          request.Terms,
+			Name:           terminalName,
+			Expiry:         request.Expiry,
+			InstanceType:   request.InstanceType,
+			Backend:        request.Backend,
+			OrganizationID: request.OrganizationID,
 		}
 
 		// Try to create terminal
@@ -1503,7 +1698,17 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 		return false, terminal.Status, nil // "stopped" or "expired"
 	}
 
-	// 3. Check expiration time
+	// 3. Check backend online status
+	if terminal.Backend != "" {
+		online, err := tts.IsBackendOnline(terminal.Backend)
+		if err != nil {
+			fmt.Printf("Warning: failed to check backend status: %v\n", err)
+		} else if !online {
+			return false, "backend_offline", nil
+		}
+	}
+
+	// 4. Check expiration time
 	if time.Now().After(terminal.ExpiresAt) {
 		terminal.Status = "expired"
 		err := tts.repository.UpdateTerminalSession(terminal)
