@@ -1,6 +1,7 @@
 package controller
 
 import (
+	goerrors "errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -443,4 +444,167 @@ func (oc *OrganizationController) ConvertToTeam(ctx *gin.Context) {
 	output.MemberCount = &memberCount
 
 	ctx.JSON(http.StatusOK, output)
+}
+
+// GetOrganizationBackends godoc
+// @Summary Get organization backend assignments
+// @Description Get the allowed backends and default backend for an organization
+// @Tags organizations
+// @Produce json
+// @Param id path string true "Organization ID"
+// @Success 200 {object} dto.UpdateOrganizationBackendsInput
+// @Failure 400 {object} errors.APIError "Invalid organization ID"
+// @Failure 404 {object} errors.APIError "Organization not found"
+// @Security BearerAuth
+// @Router /organizations/{id}/backends [get]
+func (oc *OrganizationController) GetOrganizationBackends(ctx *gin.Context) {
+	orgIDStr := ctx.Param("id")
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	org, err := oc.service.GetOrganization(orgID, false)
+	if err != nil {
+		if goerrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Organization not found",
+			})
+			return
+		}
+		errors.HandleError(http.StatusInternalServerError, err, ctx)
+		return
+	}
+	if org == nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Organization not found",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"allowed_backends": org.AllowedBackends,
+		"default_backend":  org.DefaultBackend,
+	})
+}
+
+// UpdateOrganizationBackends godoc
+// @Summary Update organization backend assignments
+// @Description Update the allowed backends and default backend for an organization (admin only)
+// @Tags organizations
+// @Accept json
+// @Produce json
+// @Param id path string true "Organization ID"
+// @Param body body dto.UpdateOrganizationBackendsInput true "Backend configuration"
+// @Success 200 {object} dto.UpdateOrganizationBackendsInput
+// @Failure 400 {object} errors.APIError "Invalid request"
+// @Failure 403 {object} errors.APIError "Admin access required"
+// @Failure 404 {object} errors.APIError "Organization not found"
+// @Security BearerAuth
+// @Router /organizations/{id}/backends [put]
+func (oc *OrganizationController) UpdateOrganizationBackends(ctx *gin.Context) {
+	// Admin-only check
+	userRoles, _ := ctx.Get("userRoles")
+	roles, ok := userRoles.([]string)
+	if !ok {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Admin access required",
+		})
+		return
+	}
+	isAdmin := false
+	for _, role := range roles {
+		if role == "administrator" || role == "admin" {
+			isAdmin = true
+			break
+		}
+	}
+	if !isAdmin {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Admin access required",
+		})
+		return
+	}
+
+	orgIDStr := ctx.Param("id")
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	var input dto.UpdateOrganizationBackendsInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	// Validate: if DefaultBackend is set and AllowedBackends is non-empty, default must be in allowed list
+	if input.DefaultBackend != "" && len(input.AllowedBackends) > 0 {
+		found := false
+		for _, b := range input.AllowedBackends {
+			if b == input.DefaultBackend {
+				found = true
+				break
+			}
+		}
+		if !found {
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: "default_backend must be in allowed_backends list",
+			})
+			return
+		}
+	}
+
+	// Check org exists
+	org, err := oc.service.GetOrganization(orgID, false)
+	if err != nil {
+		if goerrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Organization not found",
+			})
+			return
+		}
+		errors.HandleError(http.StatusInternalServerError, err, ctx)
+		return
+	}
+	if org == nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Organization not found",
+		})
+		return
+	}
+
+	// Update only the backend fields
+	org.AllowedBackends = input.AllowedBackends
+	org.DefaultBackend = input.DefaultBackend
+	if err := oc.db.Model(org).Select("AllowedBackends", "DefaultBackend").Updates(org).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to update backends: " + err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"allowed_backends": org.AllowedBackends,
+		"default_backend":  org.DefaultBackend,
+	})
 }

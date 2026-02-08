@@ -28,6 +28,8 @@ type EditOrganizationInput struct {
 	MaxMembers         *int                    `json:"max_members,omitempty" mapstructure:"max_members"`
 	IsActive           *bool                   `json:"is_active,omitempty" mapstructure:"is_active"`
 	Metadata           *map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
+	AllowedBackends    *[]string               `json:"allowed_backends,omitempty" mapstructure:"allowed_backends"`
+	DefaultBackend     *string                 `json:"default_backend,omitempty" mapstructure:"default_backend"`
 }
 
 // OrganizationOutput represents the output for an organization
@@ -44,6 +46,8 @@ type OrganizationOutput struct {
 	MaxMembers         int                    `json:"max_members"`
 	IsActive           bool                   `json:"is_active"`
 	Metadata           map[string]any `json:"metadata,omitempty"`
+	AllowedBackends    []string               `json:"allowed_backends"`
+	DefaultBackend     string                 `json:"default_backend"`
 	CreatedAt          time.Time              `json:"created_at"`
 	UpdatedAt          time.Time              `json:"updated_at"`
 
@@ -57,6 +61,12 @@ type OrganizationOutput struct {
 // ConvertToTeamInput represents the input for converting personal org to team
 type ConvertToTeamInput struct {
 	Name string `json:"name,omitempty" mapstructure:"name"` // Optional new name for the organization
+}
+
+// UpdateOrganizationBackendsInput represents the input for updating organization backend assignments
+type UpdateOrganizationBackendsInput struct {
+	AllowedBackends []string `json:"allowed_backends" binding:"required"`
+	DefaultBackend  string   `json:"default_backend"`
 }
 
 // GroupSummary represents a simplified group output for organization responses

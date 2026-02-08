@@ -66,6 +66,8 @@ func (r OrganizationRegistration) EntityModelToEntityOutput(input any) (any, err
 			MaxMembers:         org.MaxMembers,
 			IsActive:           org.IsActive,
 			Metadata:           org.Metadata,
+			AllowedBackends:    org.AllowedBackends,
+			DefaultBackend:     org.DefaultBackend,
 			CreatedAt:          org.CreatedAt,
 			UpdatedAt:          org.UpdatedAt,
 		}
@@ -190,6 +192,12 @@ func (r OrganizationRegistration) EntityDtoToMap(input any) map[string]any {
 	}
 	if editDto.Metadata != nil {
 		updates["metadata"] = *editDto.Metadata
+	}
+	if editDto.AllowedBackends != nil {
+		updates["allowed_backends"] = *editDto.AllowedBackends
+	}
+	if editDto.DefaultBackend != nil {
+		updates["default_backend"] = *editDto.DefaultBackend
 	}
 
 	return updates

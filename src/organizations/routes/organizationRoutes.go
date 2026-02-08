@@ -43,6 +43,10 @@ func OrganizationRoutes(rg *gin.RouterGroup, conf *config.Configuration, db *gor
 
 		// Convert personal organization to team organization
 		organizations.POST("/:id/convert-to-team", middleware.AuthManagement(), orgController.ConvertToTeam)
+
+		// Backend assignment management
+		organizations.GET("/:id/backends", middleware.AuthManagement(), orgController.GetOrganizationBackends)
+		organizations.PUT("/:id/backends", middleware.AuthManagement(), orgController.UpdateOrganizationBackends)
 	}
 }
 
@@ -85,6 +89,19 @@ func setupOrganizationCustomRoutePermissions() {
 	for _, role := range roles {
 		if err := utils.AddPolicy(casdoor.Enforcer, role, "/api/v1/organizations/*/convert-to-team", "POST", opts); err != nil {
 			log.Printf("Failed to add policy for role %s on /convert-to-team: %v", role, err)
+		}
+	}
+
+	// Add permissions for /backends endpoint (read: all roles, write: admin only)
+	for _, role := range roles {
+		if err := utils.AddPolicy(casdoor.Enforcer, role, "/api/v1/organizations/*/backends", "GET", opts); err != nil {
+			log.Printf("Failed to add policy for role %s on /backends GET: %v", role, err)
+		}
+	}
+	adminBackendRoles := []string{"administrator", "admin"}
+	for _, role := range adminBackendRoles {
+		if err := utils.AddPolicy(casdoor.Enforcer, role, "/api/v1/organizations/*/backends", "PUT", opts); err != nil {
+			log.Printf("Failed to add policy for role %s on /backends PUT: %v", role, err)
 		}
 	}
 

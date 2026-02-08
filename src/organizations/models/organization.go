@@ -33,6 +33,10 @@ type Organization struct {
 	// Metadata for custom fields (billing info, settings, etc.)
 	Metadata map[string]any `gorm:"type:jsonb" json:"metadata,omitempty"`
 
+	// Terminal backend assignment (admin-managed, independent of subscription plan)
+	AllowedBackends []string `gorm:"serializer:json" json:"allowed_backends"`            // Backend IDs allowed (empty = all)
+	DefaultBackend  string   `gorm:"type:varchar(255);default:''" json:"default_backend"` // Default backend for this org
+
 	// Relations
 	Groups  []groupModels.ClassGroup `gorm:"foreignKey:OrganizationID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"groups,omitempty"`
 	Members []OrganizationMember     `gorm:"foreignKey:OrganizationID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"members,omitempty"`
