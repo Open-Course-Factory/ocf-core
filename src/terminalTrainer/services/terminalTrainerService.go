@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"soli/formations/src/auth/casdoor"
+	configRepositories "soli/formations/src/configuration/repositories"
 	groupModels "soli/formations/src/groups/models"
+	orgModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/terminalTrainer/dto"
@@ -71,6 +73,7 @@ type TerminalTrainerService interface {
 	GetBackends() ([]dto.BackendInfo, error)
 	GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error)
 	IsBackendOnline(backendName string) (bool, error)
+	SetSystemDefaultBackend(backendID string) (*dto.BackendInfo, error)
 
 	// Correction des permissions
 	FixTerminalHidePermissions(userID string) (*dto.FixPermissionsResponse, error)
@@ -94,10 +97,12 @@ type terminalTrainerService struct {
 	subscriptionService     paymentServices.UserSubscriptionService
 	orgSubscriptionService  paymentServices.OrganizationSubscriptionService
 	enumService             TerminalTrainerEnumService
+	featureRepo             configRepositories.FeatureRepository
 	db                      *gorm.DB
 	backendCache            []dto.BackendInfo
 	backendCacheTime        time.Time
 	backendCacheMu          sync.RWMutex
+	systemDefaultBackend    string
 }
 
 func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
@@ -113,6 +118,8 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 
 	baseURL := os.Getenv("TERMINAL_TRAINER_URL") // http://localhost:8090
 
+	featureRepo := configRepositories.NewFeatureRepository(db)
+
 	return &terminalTrainerService{
 		adminKey:               os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
 		baseURL:                baseURL,
@@ -122,7 +129,9 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		subscriptionService:    paymentServices.NewSubscriptionService(db),
 		orgSubscriptionService: paymentServices.NewOrganizationSubscriptionService(db),
 		enumService:            NewTerminalTrainerEnumService(baseURL, apiVersion),
+		featureRepo:            featureRepo,
 		db:                     db,
+		systemDefaultBackend:   loadSystemDefaultBackend(featureRepo),
 	}
 }
 
@@ -1362,6 +1371,17 @@ func (tts *terminalTrainerService) GetBackends() ([]dto.BackendInfo, error) {
 		return nil, err
 	}
 
+	for i := range backends {
+		// Default Name to ID if upstream doesn't provide one
+		if backends[i].Name == "" {
+			backends[i].Name = backends[i].ID
+		}
+		// Mark the system default backend
+		if tts.systemDefaultBackend != "" && backends[i].ID == tts.systemDefaultBackend {
+			backends[i].IsDefault = true
+		}
+	}
+
 	return backends, nil
 }
 
@@ -1389,11 +1409,11 @@ func (tts *terminalTrainerService) getBackendsCached() ([]dto.BackendInfo, error
 	return backends, nil
 }
 
-// GetBackendsForOrganization returns backends filtered by org's subscription plan
+// GetBackendsForOrganization returns backends filtered by org's AllowedBackends/DefaultBackend
 func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error) {
-	plan, err := tts.orgSubscriptionService.GetOrganizationFeatures(orgID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get organization features: %w", err)
+	var org orgModels.Organization
+	if err := tts.db.Select("allowed_backends", "default_backend").First(&org, "id = ?", orgID).Error; err != nil {
+		return nil, fmt.Errorf("organization not found: %w", err)
 	}
 
 	allBackends, err := tts.getBackendsCached()
@@ -1402,10 +1422,9 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 	}
 
 	// If AllowedBackends is empty, return all backends
-	if len(plan.AllowedBackends) == 0 {
-		// Mark the default backend
+	if len(org.AllowedBackends) == 0 {
 		for i := range allBackends {
-			if plan.DefaultBackend != "" && allBackends[i].ID == plan.DefaultBackend {
+			if org.DefaultBackend != "" && allBackends[i].ID == org.DefaultBackend {
 				allBackends[i].IsDefault = true
 			}
 		}
@@ -1413,15 +1432,15 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 	}
 
 	// Filter by allowed backends
-	allowedSet := make(map[string]bool, len(plan.AllowedBackends))
-	for _, b := range plan.AllowedBackends {
+	allowedSet := make(map[string]bool, len(org.AllowedBackends))
+	for _, b := range org.AllowedBackends {
 		allowedSet[b] = true
 	}
 
 	var filtered []dto.BackendInfo
 	for _, b := range allBackends {
 		if allowedSet[b.ID] {
-			if plan.DefaultBackend != "" && b.ID == plan.DefaultBackend {
+			if org.DefaultBackend != "" && b.ID == org.DefaultBackend {
 				b.IsDefault = true
 			}
 			filtered = append(filtered, b)
@@ -1458,30 +1477,30 @@ func (tts *terminalTrainerService) validateBackendForOrg(orgID *uuid.UUID, reque
 		return requestedBackend, nil // No org context, allow any backend
 	}
 
-	plan, err := tts.orgSubscriptionService.GetOrganizationFeatures(*orgID)
-	if err != nil {
-		return "", fmt.Errorf("failed to get organization features: %w", err)
+	var org orgModels.Organization
+	if err := tts.db.Select("allowed_backends", "default_backend").First(&org, "id = ?", *orgID).Error; err != nil {
+		return "", fmt.Errorf("failed to get organization: %w", err)
 	}
 
-	// If no backend requested, use plan's default
+	// If no backend requested, use org's default
 	if requestedBackend == "" {
-		return plan.DefaultBackend, nil
+		return org.DefaultBackend, nil
 	}
 
 	// If AllowedBackends is empty, allow any backend
-	if len(plan.AllowedBackends) == 0 {
+	if len(org.AllowedBackends) == 0 {
 		return requestedBackend, nil
 	}
 
 	// Check if requested backend is in allowed list
-	for _, allowed := range plan.AllowedBackends {
+	for _, allowed := range org.AllowedBackends {
 		if allowed == requestedBackend {
 			return requestedBackend, nil
 		}
 	}
 
-	return "", fmt.Errorf("backend '%s' is not allowed in your organization's plan. Allowed backends: %v",
-		requestedBackend, plan.AllowedBackends)
+	return "", fmt.Errorf("backend '%s' is not allowed for your organization. Allowed backends: %v",
+		requestedBackend, org.AllowedBackends)
 }
 
 // FixTerminalHidePermissions corrige les permissions de masquage pour tous les terminaux d'un utilisateur
@@ -1755,4 +1774,48 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 	}
 
 	return true, "active", nil
+}
+
+// loadSystemDefaultBackend reads the system default backend from the features table
+func loadSystemDefaultBackend(repo configRepositories.FeatureRepository) string {
+	feature, err := repo.GetFeatureByKey("terminal_default_backend")
+	if err != nil {
+		return ""
+	}
+	return feature.Value
+}
+
+// SetSystemDefaultBackend sets the system-wide default backend
+func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*dto.BackendInfo, error) {
+	backends, err := tts.getBackendsCached()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch backends: %w", err)
+	}
+
+	// Find the backend
+	var target *dto.BackendInfo
+	for i := range backends {
+		if backends[i].ID == backendID {
+			target = &backends[i]
+			break
+		}
+	}
+	if target == nil {
+		return nil, fmt.Errorf("backend not found: %s", backendID)
+	}
+
+	if !target.Connected {
+		return nil, fmt.Errorf("backend is offline: %s", backendID)
+	}
+
+	// Persist to features table
+	if err := tts.featureRepo.UpdateFeatureValue("terminal_default_backend", backendID); err != nil {
+		return nil, fmt.Errorf("failed to persist default backend: %w", err)
+	}
+
+	// Update in-memory cache
+	tts.systemDefaultBackend = backendID
+
+	target.IsDefault = true
+	return target, nil
 }
