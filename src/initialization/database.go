@@ -111,9 +111,9 @@ func InitDevelopmentData(db *gorm.DB) {
 	env := os.Getenv("ENVIRONMENT")
 	if env == "development" || env == "test" {
 		db = db.Debug()
+		SetupDefaultSubscriptionPlans(db)
 		setupExternalUsersData()
 		syncCasdoorRolesToCasbin()
-		SetupDefaultSubscriptionPlans(db)
 	}
 }
 
@@ -227,6 +227,31 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		return // Plans déjà créés
 	}
 
+	// Plan Trial (Free - always available, not in Stripe)
+	trialPlan := &paymentModels.SubscriptionPlan{
+		Name:                      "Trial",
+		Description:               "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
+		PriceAmount:               0,
+		Currency:                  "eur",
+		BillingInterval:           "month",
+		TrialDays:                 0,
+		Features:                  []string{"Unlimited restarts", "1 hour max session", "1 concurrent terminal", "XS machine (0.5 vCPU, 256MB RAM)", "No network access", "Ephemeral storage only"},
+		MaxConcurrentUsers:        1,
+		MaxCourses:                -1,
+		IsActive:                  true,
+		RequiredRole:              "member",
+		UseTieredPricing:          false,
+		MaxSessionDurationMinutes: 60,
+		MaxConcurrentTerminals:    1,
+		AllowedMachineSizes:       []string{"XS"},
+		NetworkAccessEnabled:      false,
+		DataPersistenceEnabled:    false,
+		DataPersistenceGB:         0,
+		AllowedTemplates:          []string{"ubuntu-basic", "alpine-basic"},
+		AllowedBackends:           []string{},
+		DefaultBackend:            "",
+	}
+
 	// Plan Member Pro (Individual)
 	memberProPlan := &paymentModels.SubscriptionPlan{
 		Name:               "Member Pro",
@@ -269,7 +294,7 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		},
 	}
 
-	plans := []*paymentModels.SubscriptionPlan{memberProPlan, trainerPlan}
+	plans := []*paymentModels.SubscriptionPlan{trialPlan, memberProPlan, trainerPlan}
 
 	for _, plan := range plans {
 		if err := db.Create(plan).Error; err != nil {

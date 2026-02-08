@@ -13,6 +13,7 @@ type Feature struct {
 	Enabled     bool   `gorm:"default:true" json:"enabled"`
 	Category    string `gorm:"type:varchar(50)" json:"category"` // e.g., "modules", "features"
 	Module      string `gorm:"type:varchar(100)" json:"module"`  // e.g., "courses", "labs", "terminals"
+	Value       string `gorm:"type:text" json:"value,omitempty"`
 }
 
 // FeatureDefinition defines a feature that a module wants to register
@@ -23,4 +24,5 @@ type FeatureDefinition struct {
 	Enabled     bool   // Default enabled state
 	Category    string // e.g., "modules", "features"
 	Module      string // Module name that owns this feature
+	Value       string
 }

@@ -60,6 +60,7 @@ func (frs *FeatureRegistryService) SeedRegisteredFeatures() {
 				Enabled:     featureDef.Enabled,
 				Category:    featureDef.Category,
 				Module:      featureDef.Module,
+				Value:       featureDef.Value,
 			}
 
 			if err := frs.db.Create(&feature).Error; err != nil {

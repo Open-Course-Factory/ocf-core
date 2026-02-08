@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"soli/formations/src/auth/casdoor"
 	config "soli/formations/src/configuration"
 	"time"
@@ -71,6 +72,7 @@ type TerminalController interface {
 
 	// Backend management
 	GetBackends(ctx *gin.Context)
+	SetDefaultBackend(ctx *gin.Context)
 
 	// Session access validation
 	GetAccessStatus(ctx *gin.Context)
@@ -1497,6 +1499,65 @@ func (tc *terminalController) GetBackends(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, backends)
+}
+
+// Set Default Backend godoc
+//
+//	@Summary		Set system default backend
+//	@Description	Sets the system-wide default backend (admin only)
+//	@Tags			terminals
+//	@Security		Bearer
+//	@Accept			json
+//	@Produce		json
+//	@Param			backendId	path		string	true	"Backend ID"
+//	@Success		200			{object}	dto.BackendInfo
+//	@Failure		400			{object}	errors.APIError	"Backend is offline"
+//	@Failure		403			{object}	errors.APIError	"Admin access required"
+//	@Failure		404			{object}	errors.APIError	"Backend not found"
+//	@Failure		500			{object}	errors.APIError	"Internal server error"
+//	@Router			/terminals/backends/{backendId}/set-default [patch]
+func (tc *terminalController) SetDefaultBackend(ctx *gin.Context) {
+	userRoles := ctx.GetStringSlice("userRoles")
+	isAdmin := false
+	for _, role := range userRoles {
+		if role == "administrator" {
+			isAdmin = true
+			break
+		}
+	}
+	if !isAdmin {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Admin access required",
+		})
+		return
+	}
+
+	backendID := ctx.Param("backendId")
+	backend, err := tc.service.SetSystemDefaultBackend(backendID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: err.Error(),
+			})
+			return
+		}
+		if strings.Contains(err.Error(), "offline") {
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: err.Error(),
+			})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, backend)
 }
 
 // Get Access Status godoc

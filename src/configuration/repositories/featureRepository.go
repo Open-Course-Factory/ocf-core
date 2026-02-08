@@ -10,6 +10,7 @@ type FeatureRepository interface {
 	GetFeatureByKey(key string) (*models.Feature, error)
 	GetAllFeatures() ([]models.Feature, error)
 	IsFeatureEnabled(key string) bool
+	UpdateFeatureValue(key string, value string) error
 }
 
 type featureRepository struct {
@@ -40,4 +41,24 @@ func (r *featureRepository) IsFeatureEnabled(key string) bool {
 		return true
 	}
 	return feature.Enabled
+}
+
+// UpdateFeatureValue upserts a feature's value by key
+func (r *featureRepository) UpdateFeatureValue(key string, value string) error {
+	var feature models.Feature
+	err := r.db.Where("key = ?", key).First(&feature).Error
+	if err == gorm.ErrRecordNotFound {
+		feature = models.Feature{
+			Key:     key,
+			Name:    key,
+			Value:   value,
+			Enabled: true,
+		}
+		return r.db.Create(&feature).Error
+	}
+	if err != nil {
+		return err
+	}
+	feature.Value = value
+	return r.db.Save(&feature).Error
 }

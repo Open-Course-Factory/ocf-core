@@ -57,6 +57,7 @@ func (s FeatureRegistration) EntityModelToEntityOutput(input any) (any, error) {
 		Enabled:     feature.Enabled,
 		Category:    feature.Category,
 		Module:      feature.Module,
+		Value:       feature.Value,
 		CreatedAt:   feature.CreatedAt,
 		UpdatedAt:   feature.UpdatedAt,
 	}, nil
@@ -71,6 +72,7 @@ func (s FeatureRegistration) EntityInputDtoToEntityModel(input any) any {
 		Enabled:     featureInput.Enabled,
 		Category:    featureInput.Category,
 		Module:      featureInput.Module,
+		Value:       featureInput.Value,
 	}
 }
 

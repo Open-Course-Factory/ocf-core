@@ -13,6 +13,7 @@ type CreateFeatureInput struct {
 	Enabled     bool   `json:"enabled" mapstructure:"enabled"`
 	Category    string `json:"category" mapstructure:"category"`
 	Module      string `json:"module" mapstructure:"module"`
+	Value       string `json:"value,omitempty" mapstructure:"value"`
 }
 
 type UpdateFeatureInput struct {
@@ -21,6 +22,7 @@ type UpdateFeatureInput struct {
 	Enabled     *bool  `json:"enabled,omitempty" mapstructure:"enabled"`
 	Category    string `json:"category,omitempty" mapstructure:"category"`
 	Module      string `json:"module,omitempty" mapstructure:"module"`
+	Value       string `json:"value,omitempty" mapstructure:"value"`
 }
 
 type FeatureOutput struct {
@@ -31,6 +33,7 @@ type FeatureOutput struct {
 	Enabled     bool      `json:"enabled"`
 	Category    string    `json:"category"`
 	Module      string    `json:"module"`
+	Value       string    `json:"value,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
