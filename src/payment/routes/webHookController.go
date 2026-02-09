@@ -114,7 +114,7 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 func (wc *webhookController) basicSecurityChecks(ctx *gin.Context) bool {
 	// Vérification User-Agent
 	userAgent := ctx.GetHeader("User-Agent")
-	if !contains(userAgent, "Stripe") {
+	if !strings.Contains(userAgent, "Stripe") {
 		utils.Debug("🚨 Invalid User-Agent from IP %s: %s", ctx.ClientIP(), userAgent)
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,
@@ -125,7 +125,7 @@ func (wc *webhookController) basicSecurityChecks(ctx *gin.Context) bool {
 
 	// Vérification Content-Type
 	contentType := ctx.GetHeader("Content-Type")
-	if !contains(contentType, "application/json") {
+	if !strings.Contains(contentType, "application/json") {
 		utils.Debug("🚨 Invalid Content-Type from IP %s: %s", ctx.ClientIP(), contentType)
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
@@ -202,11 +202,3 @@ func (wc *webhookController) markEventProcessed(eventID string) {
 // See: src/cron/webhookCleanup.go
 // This method has been removed - cleanup happens in background job
 
-// Utilitaire
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr ||
-		(len(s) > len(substr) &&
-			(s[:len(substr)] == substr ||
-				s[len(s)-len(substr):] == substr ||
-				strings.Contains(s, substr))))
-}

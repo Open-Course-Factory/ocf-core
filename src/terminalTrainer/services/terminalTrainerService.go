@@ -23,6 +23,7 @@ import (
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 )
 
@@ -102,6 +103,7 @@ type terminalTrainerService struct {
 	backendCache            []dto.BackendInfo
 	backendCacheTime        time.Time
 	backendCacheMu          sync.RWMutex
+	backendCacheSF          singleflight.Group
 	systemDefaultBackend    string
 }
 
@@ -155,10 +157,11 @@ func (tts *terminalTrainerService) CreateUserKey(userID, keyName string) error {
 		"max_concurrent_sessions": 5,
 	}
 
-	url := fmt.Sprintf("%s/%s/admin/api-keys?key=%s", tts.baseURL, tts.apiVersion, tts.adminKey)
+	url := fmt.Sprintf("%s/%s/admin/api-keys", tts.baseURL, tts.apiVersion)
 	var apiResponse dto.TerminalTrainerAPIKeyResponse
 
 	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
 	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, payload, &apiResponse, opts)
 	if err != nil {
 		return err
@@ -195,8 +198,9 @@ func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 		"is_active": false,
 	}
 
-	url := fmt.Sprintf("%s/%s/admin/api-keys/%s?key=%s", tts.baseURL, tts.apiVersion, key.APIKey, tts.adminKey)
+	url := fmt.Sprintf("%s/%s/admin/api-keys/%s", tts.baseURL, tts.apiVersion, key.APIKey)
 	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
 
 	_, err = utils.MakeExternalAPIRequest("Terminal Trainer", "PUT", url, payload, opts)
 	if err != nil {
@@ -247,9 +251,9 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	var sessionResp dto.TerminalTrainerSessionResponse
 	opts := utils.DefaultHTTPClientOptions()
 
-	// Debug: Log API key before applying
+	// Debug: Log API key usage (without exposing the key itself)
 	if len(userKey.APIKey) > 0 {
-		utils.Debug("StartSession - Using API key for user %s: %s... (length: %d)", userID, userKey.APIKey[:10], len(userKey.APIKey))
+		utils.Debug("StartSession - Using API key for user %s (length: %d)", userID, len(userKey.APIKey))
 	} else {
 		utils.Debug("StartSession - WARNING: Empty API key for user %s!", userID)
 	}
@@ -1385,7 +1389,8 @@ func (tts *terminalTrainerService) GetBackends() ([]dto.BackendInfo, error) {
 	return backends, nil
 }
 
-// getBackendsCached returns cached backends or refreshes if older than 30s
+// getBackendsCached returns cached backends or refreshes if older than 30s.
+// Uses singleflight to coalesce concurrent cache misses into a single upstream call.
 func (tts *terminalTrainerService) getBackendsCached() ([]dto.BackendInfo, error) {
 	tts.backendCacheMu.RLock()
 	if tts.backendCache != nil && time.Since(tts.backendCacheTime) < 30*time.Second {
@@ -1396,17 +1401,26 @@ func (tts *terminalTrainerService) getBackendsCached() ([]dto.BackendInfo, error
 	}
 	tts.backendCacheMu.RUnlock()
 
-	backends, err := tts.GetBackends()
+	// Use singleflight to prevent cache stampede: concurrent callers that find
+	// stale cache will share a single upstream GetBackends() call.
+	v, err, _ := tts.backendCacheSF.Do("backends", func() (interface{}, error) {
+		backends, err := tts.GetBackends()
+		if err != nil {
+			return nil, err
+		}
+
+		tts.backendCacheMu.Lock()
+		tts.backendCache = backends
+		tts.backendCacheTime = time.Now()
+		tts.backendCacheMu.Unlock()
+
+		return backends, nil
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	tts.backendCacheMu.Lock()
-	tts.backendCache = backends
-	tts.backendCacheTime = time.Now()
-	tts.backendCacheMu.Unlock()
-
-	return backends, nil
+	return v.([]dto.BackendInfo), nil
 }
 
 // GetBackendsForOrganization returns backends filtered by org's AllowedBackends/DefaultBackend
@@ -1450,10 +1464,12 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 	return filtered, nil
 }
 
-// IsBackendOnline checks if a specific backend is connected
+// IsBackendOnline checks if a specific backend is connected.
+// An empty backendName means "use system default", which is assumed online
+// since tt-backend routes empty backend to its own default.
 func (tts *terminalTrainerService) IsBackendOnline(backendName string) (bool, error) {
 	if backendName == "" {
-		return true, nil // Default backend always considered online
+		return true, nil
 	}
 
 	backends, err := tts.getBackendsCached()
@@ -1482,9 +1498,12 @@ func (tts *terminalTrainerService) validateBackendForOrg(orgID *uuid.UUID, reque
 		return "", fmt.Errorf("failed to get organization: %w", err)
 	}
 
-	// If no backend requested, use org's default
+	// If no backend requested, use org's default, falling back to system default
 	if requestedBackend == "" {
-		return org.DefaultBackend, nil
+		if org.DefaultBackend != "" {
+			return org.DefaultBackend, nil
+		}
+		return tts.systemDefaultBackend, nil
 	}
 
 	// If AllowedBackends is empty, allow any backend

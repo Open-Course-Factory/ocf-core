@@ -15,6 +15,7 @@ import (
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/services"
+	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -939,9 +940,10 @@ func (tc *terminalController) GetServerMetrics(ctx *gin.Context) {
 
 	metrics, err := tc.service.GetServerMetrics(nocache, backend)
 	if err != nil {
+		utils.Debug("GetServerMetrics failed: %v", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to get server metrics: %v", err),
+			ErrorMessage: "Failed to get server metrics",
 		})
 		return
 	}
@@ -1481,19 +1483,36 @@ func (tc *terminalController) GetBackends(ctx *gin.Context) {
 		if parseErr != nil {
 			ctx.JSON(http.StatusBadRequest, &errors.APIError{
 				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: fmt.Sprintf("Invalid organization_id: %v", parseErr),
+				ErrorMessage: "Invalid organization_id",
 			})
 			return
 		}
 		backends, err = tc.service.GetBackendsForOrganization(orgUUID)
 	} else {
+		// Unfiltered backend list requires admin role
+		userRoles := ctx.GetStringSlice("userRoles")
+		isAdmin := false
+		for _, role := range userRoles {
+			if role == "administrator" {
+				isAdmin = true
+				break
+			}
+		}
+		if !isAdmin {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Admin access required to list all backends. Use ?organization_id= to filter.",
+			})
+			return
+		}
 		backends, err = tc.service.GetBackends()
 	}
 
 	if err != nil {
+		utils.Debug("GetBackends failed: %v", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to get backends: %v", err),
+			ErrorMessage: "Failed to get backends",
 		})
 		return
 	}
