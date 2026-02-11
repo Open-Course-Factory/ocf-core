@@ -236,8 +236,11 @@ func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, fil
 	// Calculate offset
 	offset := (page - 1) * pageSize
 
-	// Apply pagination
-	query = query.Limit(pageSize).Offset(offset)
+	// Apply pagination with deterministic ordering.
+	// ORDER BY is required for correct offset pagination; without it PostgreSQL
+	// returns rows in heap order which changes after UPDATEs, causing entities
+	// to silently jump between pages.
+	query = query.Order("id ASC").Limit(pageSize).Offset(offset)
 
 	// Merge default includes with requested includes
 	includes = o.mergeDefaultIncludes(entityName, includes)
