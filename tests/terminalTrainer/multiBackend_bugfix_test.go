@@ -574,6 +574,16 @@ func TestGetBackendsForOrganization_Filtering(t *testing.T) {
 		ids := []string{backends[0].ID, backends[1].ID}
 		assert.Contains(t, ids, "default")
 		assert.Contains(t, ids, "oracle1")
+
+		// Verify only oracle1 is marked as default (org default), not both
+		defaultCount := 0
+		for _, b := range backends {
+			if b.IsDefault {
+				defaultCount++
+				assert.Equal(t, "oracle1", b.ID, "Only org default backend should be marked as default")
+			}
+		}
+		assert.Equal(t, 1, defaultCount, "Exactly one backend should be marked as default")
 	})
 
 	t.Run("org with only oracle1 gets only oracle1", func(t *testing.T) {

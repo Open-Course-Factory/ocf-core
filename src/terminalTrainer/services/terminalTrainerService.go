@@ -1473,9 +1473,8 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 	var filtered []dto.BackendInfo
 	for _, b := range allBackends {
 		if allowedSet[b.ID] {
-			if b.ID == defaultID {
-				b.IsDefault = true
-			}
+			// Reset IsDefault based on org's effective default, not system default
+			b.IsDefault = (b.ID == defaultID)
 			filtered = append(filtered, b)
 		}
 	}
