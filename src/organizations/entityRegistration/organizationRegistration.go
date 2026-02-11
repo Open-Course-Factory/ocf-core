@@ -1,6 +1,7 @@
 package entityRegistration
 
 import (
+	"encoding/json"
 	"net/http"
 
 	authModels "soli/formations/src/auth/models"
@@ -194,7 +195,12 @@ func (r OrganizationRegistration) EntityDtoToMap(input any) map[string]any {
 		updates["metadata"] = *editDto.Metadata
 	}
 	if editDto.AllowedBackends != nil {
-		updates["allowed_backends"] = *editDto.AllowedBackends
+		// Must JSON-marshal because this field uses gorm:"serializer:json" (text column).
+		// Map-based Updates bypass GORM's serializer, so we store the JSON string directly.
+		jsonBytes, err := json.Marshal(*editDto.AllowedBackends)
+		if err == nil {
+			updates["allowed_backends"] = string(jsonBytes)
+		}
 	}
 	if editDto.DefaultBackend != nil {
 		updates["default_backend"] = *editDto.DefaultBackend

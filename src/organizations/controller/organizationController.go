@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	goerrors "errors"
 	"net/http"
 	"strconv"
@@ -592,10 +593,22 @@ func (oc *OrganizationController) UpdateOrganizationBackends(ctx *gin.Context) {
 		return
 	}
 
-	// Update only the backend fields
-	org.AllowedBackends = input.AllowedBackends
-	org.DefaultBackend = input.DefaultBackend
-	if err := oc.db.Model(org).Select("AllowedBackends", "DefaultBackend").Updates(org).Error; err != nil {
+	// Update only the backend fields using a map with pre-serialized JSON.
+	// GORM's serializer:json tag is not applied during map-based or Select-based Updates,
+	// so we must JSON-marshal the slice ourselves for the text column.
+	backendsJSON, err := json.Marshal(input.AllowedBackends)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to encode backends",
+		})
+		return
+	}
+	updateMap := map[string]any{
+		"allowed_backends": string(backendsJSON),
+		"default_backend":  input.DefaultBackend,
+	}
+	if err := oc.db.Model(org).Updates(updateMap).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Failed to update backends: " + err.Error(),
@@ -603,6 +616,8 @@ func (oc *OrganizationController) UpdateOrganizationBackends(ctx *gin.Context) {
 		return
 	}
 
+	org.AllowedBackends = input.AllowedBackends
+	org.DefaultBackend = input.DefaultBackend
 	ctx.JSON(http.StatusOK, gin.H{
 		"allowed_backends": org.AllowedBackends,
 		"default_backend":  org.DefaultBackend,

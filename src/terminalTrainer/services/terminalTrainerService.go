@@ -1426,7 +1426,7 @@ func (tts *terminalTrainerService) getBackendsCached() ([]dto.BackendInfo, error
 // GetBackendsForOrganization returns backends filtered by org's AllowedBackends/DefaultBackend
 func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error) {
 	var org orgModels.Organization
-	if err := tts.db.Select("allowed_backends", "default_backend").First(&org, "id = ?", orgID).Error; err != nil {
+	if err := tts.db.First(&org, "id = ?", orgID).Error; err != nil {
 		return nil, fmt.Errorf("organization not found: %w", err)
 	}
 
@@ -1435,26 +1435,45 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 		return nil, err
 	}
 
-	// If AllowedBackends is empty, return all backends
+	// Determine which backends this org can access
 	if len(org.AllowedBackends) == 0 {
-		for i := range allBackends {
-			if org.DefaultBackend != "" && allBackends[i].ID == org.DefaultBackend {
-				allBackends[i].IsDefault = true
+		// No manual config: return only the default backend.
+		// Priority: org default → system default → first backend in list
+		defaultID := org.DefaultBackend
+		if defaultID == "" {
+			defaultID = tts.systemDefaultBackend
+		}
+		if defaultID == "" && len(allBackends) > 0 {
+			defaultID = allBackends[0].ID
+		}
+		var filtered []dto.BackendInfo
+		for _, b := range allBackends {
+			if b.ID == defaultID {
+				b.IsDefault = true
+				filtered = append(filtered, b)
 			}
 		}
-		return allBackends, nil
+		if len(filtered) == 0 {
+			return allBackends, nil
+		}
+		return filtered, nil
 	}
 
-	// Filter by allowed backends
+	// Explicit config: return only the allowed backends
 	allowedSet := make(map[string]bool, len(org.AllowedBackends))
 	for _, b := range org.AllowedBackends {
 		allowedSet[b] = true
 	}
 
+	defaultID := org.DefaultBackend
+	if defaultID == "" {
+		defaultID = tts.systemDefaultBackend
+	}
+
 	var filtered []dto.BackendInfo
 	for _, b := range allBackends {
 		if allowedSet[b.ID] {
-			if org.DefaultBackend != "" && b.ID == org.DefaultBackend {
+			if b.ID == defaultID {
 				b.IsDefault = true
 			}
 			filtered = append(filtered, b)
@@ -1494,21 +1513,28 @@ func (tts *terminalTrainerService) validateBackendForOrg(orgID *uuid.UUID, reque
 	}
 
 	var org orgModels.Organization
-	if err := tts.db.Select("allowed_backends", "default_backend").First(&org, "id = ?", *orgID).Error; err != nil {
+	if err := tts.db.First(&org, "id = ?", *orgID).Error; err != nil {
 		return "", fmt.Errorf("failed to get organization: %w", err)
 	}
 
-	// If no backend requested, use org's default, falling back to system default
-	if requestedBackend == "" {
-		if org.DefaultBackend != "" {
-			return org.DefaultBackend, nil
-		}
-		return tts.systemDefaultBackend, nil
+	// Resolve org's effective default: org default → system default → ""
+	effectiveDefault := org.DefaultBackend
+	if effectiveDefault == "" {
+		effectiveDefault = tts.systemDefaultBackend
 	}
 
-	// If AllowedBackends is empty, allow any backend
+	// If no backend requested, use the effective default
+	if requestedBackend == "" {
+		return effectiveDefault, nil
+	}
+
+	// If AllowedBackends is empty, only the default backend is allowed
 	if len(org.AllowedBackends) == 0 {
-		return requestedBackend, nil
+		if effectiveDefault != "" && requestedBackend == effectiveDefault {
+			return requestedBackend, nil
+		}
+		return "", fmt.Errorf("backend '%s' is not allowed for your organization (no backends configured, default only)",
+			requestedBackend)
 	}
 
 	// Check if requested backend is in allowed list
