@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"soli/formations/src/auth/casdoor"
+	authModels "soli/formations/src/auth/models"
 	configRepositories "soli/formations/src/configuration/repositories"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
@@ -80,7 +81,7 @@ type TerminalTrainerService interface {
 	FixTerminalHidePermissions(userID string) (*dto.FixPermissionsResponse, error)
 
 	// Bulk operations
-	BulkCreateTerminalsForGroup(groupID string, requestingUserID string, request dto.BulkCreateTerminalsRequest, planInterface any) (*dto.BulkCreateTerminalsResponse, error)
+	BulkCreateTerminalsForGroup(groupID string, requestingUserID string, userRoles []string, request dto.BulkCreateTerminalsRequest, planInterface any) (*dto.BulkCreateTerminalsResponse, error)
 
 	// Enum service access
 	GetEnumService() TerminalTrainerEnumService
@@ -1623,6 +1624,7 @@ func (tts *terminalTrainerService) applyNameTemplate(template, groupName, userEm
 func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 	groupID string,
 	requestingUserID string,
+	userRoles []string,
 	request dto.BulkCreateTerminalsRequest,
 	planInterface any,
 ) (*dto.BulkCreateTerminalsResponse, error) {
@@ -1638,16 +1640,25 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 		return nil, fmt.Errorf("group not found: %w", err)
 	}
 
-	// Check permissions - only owner or admin can bulk create terminals
+	// Check permissions - only group owner, group admin, or system administrator can bulk create terminals
 	canManage := false
 	if group.OwnerUserID == requestingUserID {
 		canManage = true
 	} else {
-		// Check if user is an admin of the group
-		for _, member := range group.Members {
-			if member.UserID == requestingUserID && (member.Role == groupModels.GroupMemberRoleAdmin || member.Role == groupModels.GroupMemberRoleOwner) {
+		// Check if user is a system administrator
+		for _, role := range userRoles {
+			if authModels.IsSystemAdmin(authModels.RoleName(role)) {
 				canManage = true
 				break
+			}
+		}
+		// Check if user is an admin of the group
+		if !canManage {
+			for _, member := range group.Members {
+				if member.UserID == requestingUserID && (member.Role == groupModels.GroupMemberRoleAdmin || member.Role == groupModels.GroupMemberRoleOwner) {
+					canManage = true
+					break
+				}
 			}
 		}
 	}
@@ -1678,11 +1689,22 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 	userEmails := make(map[string]string) // userID -> email
 	for _, member := range activeMembers {
 		user, err := casdoorsdk.GetUserByUserId(member.UserID)
-		if err != nil {
+		if err != nil || user == nil {
 			log.Printf("Warning: failed to get user details for %s: %v", member.UserID, err)
 			userEmails[member.UserID] = member.UserID // Fallback to userID
 		} else {
 			userEmails[member.UserID] = user.Email
+		}
+	}
+
+	// Auto-provision terminal keys for members who don't have one
+	for _, member := range activeMembers {
+		_, err := tts.repository.GetUserTerminalKeyByUserID(member.UserID, true)
+		if err != nil {
+			keyName := "auto-" + userEmails[member.UserID]
+			if createErr := tts.CreateUserKey(member.UserID, keyName); createErr != nil {
+				log.Printf("Warning: failed to auto-provision terminal key for user %s: %v", member.UserID, createErr)
+			}
 		}
 	}
 

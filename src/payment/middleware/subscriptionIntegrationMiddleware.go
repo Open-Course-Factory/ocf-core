@@ -38,6 +38,13 @@ func NewSubscriptionIntegrationMiddleware(db *gorm.DB) SubscriptionIntegrationMi
 	}
 }
 
+// NewSubscriptionIntegrationMiddlewareWithService creates a middleware with a custom subscription service (for testing)
+func NewSubscriptionIntegrationMiddlewareWithService(subscriptionService services.UserSubscriptionService) SubscriptionIntegrationMiddleware {
+	return &subscriptionIntegrationMiddleware{
+		subscriptionService: subscriptionService,
+	}
+}
+
 // RequireSubscriptionForCourseCreation vérifie si l'utilisateur peut créer des cours
 func (sim *subscriptionIntegrationMiddleware) RequireSubscriptionForCourseCreation() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
@@ -327,25 +334,24 @@ func (sim *subscriptionIntegrationMiddleware) InjectSubscriptionInfo() gin.Handl
 			// Récupérer l'abonnement et l'injecter dans le contexte
 			subscription, err := sim.subscriptionService.GetActiveUserSubscription(userId)
 
-			sPlan, errSPlan := sim.subscriptionService.GetSubscriptionPlan(subscription.SubscriptionPlanID)
-			if errSPlan != nil {
-				ctx.JSON(http.StatusForbidden, &errors.APIError{
-					ErrorCode:    http.StatusForbidden,
-					ErrorMessage: "Active subscription required",
-				})
-				ctx.Abort()
-				return
-			}
+			if err != nil || subscription == nil {
+				ctx.Set("has_active_subscription", false)
+				ctx.Set("user_features", []string{})
+			} else {
+				sPlan, errSPlan := sim.subscriptionService.GetSubscriptionPlan(subscription.SubscriptionPlanID)
+				if errSPlan != nil {
+					ctx.JSON(http.StatusForbidden, &errors.APIError{
+						ErrorCode:    http.StatusForbidden,
+						ErrorMessage: "Active subscription required",
+					})
+					ctx.Abort()
+					return
+				}
 
-			if err == nil {
 				ctx.Set("user_subscription", subscription)
 				ctx.Set("subscription_plan", sPlan)
 				ctx.Set("has_active_subscription", true)
-
 				ctx.Set("user_features", sPlan.Features)
-			} else {
-				ctx.Set("has_active_subscription", false)
-				ctx.Set("user_features", []string{}) // Aucune fonctionnalité premium
 			}
 
 			// Récupérer les métriques d'utilisation actuelles

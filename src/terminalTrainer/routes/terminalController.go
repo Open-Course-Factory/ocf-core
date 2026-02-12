@@ -1403,15 +1403,18 @@ func (tc *terminalController) BulkCreateTerminalsForGroup(ctx *gin.Context) {
 	// Get subscription plan from middleware context
 	planInterface, exists := ctx.Get("subscription_plan")
 	if !exists {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Subscription plan not found in context",
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Active subscription required to bulk create terminals",
 		})
 		return
 	}
 
+	// Get user roles for system admin check
+	userRoles := ctx.GetStringSlice("userRoles")
+
 	// Call service to create terminals
-	response, err := tc.service.BulkCreateTerminalsForGroup(groupID, requestingUserID, request, planInterface)
+	response, err := tc.service.BulkCreateTerminalsForGroup(groupID, requestingUserID, userRoles, request, planInterface)
 	if err != nil {
 		// Determine appropriate status code based on error
 		statusCode := http.StatusInternalServerError
