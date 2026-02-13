@@ -78,6 +78,11 @@ func main() {
 	// Register all entities in the entity management system
 	initialization.RegisterEntities()
 
+	// Initialize payment entities and hooks
+	// NOTE: Must be before InitDevelopmentData so that SubscriptionPlan entity
+	// is registered when assignFreeTrialPlan() runs during test user setup.
+	payment.InitPaymentEntities(sqldb.DB)
+
 	// Setup development data (test users, default subscription plans)
 	initialization.InitDevelopmentData(sqldb.DB)
 
@@ -92,8 +97,7 @@ func main() {
 	initialization.SetupPaymentPermissions(casdoor.Enforcer)
 	log.Println("✅ All permissions setup completed")
 
-	// Initialize payment entities and hooks
-	payment.InitPaymentEntities(sqldb.DB)
+	// Initialize remaining hooks
 	courseHooks.InitCourseHooks(sqldb.DB)
 	authHooks.InitAuthHooks(sqldb.DB)
 	groupHooks.InitGroupHooks(sqldb.DB)

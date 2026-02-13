@@ -3,6 +3,7 @@ package initialization
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"gorm.io/gorm"
@@ -114,6 +115,7 @@ func InitDevelopmentData(db *gorm.DB) {
 		SetupDefaultSubscriptionPlans(db)
 		setupExternalUsersData()
 		syncCasdoorRolesToCasbin()
+		ensureUsersHaveTrialPlan(db)
 	}
 }
 
@@ -302,5 +304,57 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		} else {
 			log.Printf("Created subscription plan: %s\n", plan.Name)
 		}
+	}
+}
+
+// ensureUsersHaveTrialPlan checks all Casdoor users and assigns the free Trial
+// plan to any user who doesn't have an active subscription. This heals cases
+// where the subscription assignment failed during user creation (e.g. due to
+// initialization order issues or Casdoor resets).
+func ensureUsersHaveTrialPlan(db *gorm.DB) {
+	var trialPlan paymentModels.SubscriptionPlan
+	result := db.Where("name = ? AND price_amount = 0 AND is_active = true", "Trial").First(&trialPlan)
+	if result.Error != nil {
+		log.Printf("[TRIAL-SYNC] Could not find active Trial plan: %v", result.Error)
+		return
+	}
+
+	users, err := casdoorsdk.GetUsers()
+	if err != nil {
+		log.Printf("[TRIAL-SYNC] Could not get Casdoor users: %v", err)
+		return
+	}
+
+	fixed := 0
+	for _, user := range users {
+		if user == nil || user.IsDeleted {
+			continue
+		}
+
+		var existingSub paymentModels.UserSubscription
+		subResult := db.Where("user_id = ? AND status = ?", user.Id, "active").First(&existingSub)
+		if subResult.Error == nil {
+			continue // User already has an active subscription
+		}
+
+		now := time.Now()
+		newSub := paymentModels.UserSubscription{
+			UserID:             user.Id,
+			SubscriptionPlanID: trialPlan.ID,
+			Status:             "active",
+			CurrentPeriodStart: now,
+			CurrentPeriodEnd:   now.AddDate(1, 0, 0),
+			SubscriptionType:   "personal",
+		}
+
+		if err := db.Create(&newSub).Error; err != nil {
+			log.Printf("[TRIAL-SYNC] Failed to assign Trial plan to user %s: %v", user.Id, err)
+		} else {
+			fixed++
+		}
+	}
+
+	if fixed > 0 {
+		log.Printf("[TRIAL-SYNC] Assigned Trial plan to %d users who were missing subscriptions", fixed)
 	}
 }
