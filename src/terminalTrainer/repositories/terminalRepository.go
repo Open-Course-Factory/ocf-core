@@ -36,7 +36,6 @@ type TerminalRepository interface {
 	GetTerminalSharesByUserID(userID string) (*[]models.TerminalShare, error)
 	GetTerminalShare(terminalID, userID string) (*models.TerminalShare, error)
 	UpdateTerminalShare(share *models.TerminalShare) error
-	DeleteTerminalShare(shareID string) error
 	GetSharedTerminalsForUser(userID string) (*[]models.Terminal, error)
 	GetSharedTerminalsForUserWithHidden(userID string, includeHidden bool) (*[]models.Terminal, error)
 	HasTerminalAccess(terminalID, userID string, requiredLevel string) (bool, error)
@@ -255,19 +254,6 @@ func (tr *terminalRepository) GetOrphanedLocalSessions(apiSessionIDs []string) (
 	return &orphanedSessions, nil
 }
 
-// Méthode utilitaire pour nettoyer les sessions expirées depuis longtemps
-func (tr *terminalRepository) CleanupOldExpiredSessions(daysOld int) error {
-	cutoffTime := time.Now().AddDate(0, 0, -daysOld)
-
-	result := tr.db.Where(
-		"status IN (?) AND expires_at < ?",
-		[]string{"expired", "stopped"},
-		cutoffTime,
-	).Delete(&models.Terminal{})
-
-	return result.Error
-}
-
 // Méthode pour obtenir des statistiques de synchronisation
 func (tr *terminalRepository) GetSyncStatistics(userID string) (map[string]int, error) {
 	stats := make(map[string]int)
@@ -354,10 +340,6 @@ func (r *terminalRepository) GetTerminalShare(terminalID, userID string) (*model
 
 func (r *terminalRepository) UpdateTerminalShare(share *models.TerminalShare) error {
 	return r.db.Save(share).Error
-}
-
-func (r *terminalRepository) DeleteTerminalShare(shareID string) error {
-	return r.db.Delete(&models.TerminalShare{}, shareID).Error
 }
 
 func (r *terminalRepository) GetSharedTerminalsForUser(userID string) (*[]models.Terminal, error) {

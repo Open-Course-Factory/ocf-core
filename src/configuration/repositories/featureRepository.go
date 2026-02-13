@@ -8,7 +8,6 @@ import (
 
 type FeatureRepository interface {
 	GetFeatureByKey(key string) (*models.Feature, error)
-	GetAllFeatures() ([]models.Feature, error)
 	IsFeatureEnabled(key string) bool
 	UpdateFeatureValue(key string, value string) error
 }
@@ -25,12 +24,6 @@ func (r *featureRepository) GetFeatureByKey(key string) (*models.Feature, error)
 	var feature models.Feature
 	err := r.db.Where("key = ?", key).First(&feature).Error
 	return &feature, err
-}
-
-func (r *featureRepository) GetAllFeatures() ([]models.Feature, error) {
-	var features []models.Feature
-	err := r.db.Find(&features).Error
-	return features, err
 }
 
 // IsFeatureEnabled checks if a feature is enabled (defaults to true if not found)

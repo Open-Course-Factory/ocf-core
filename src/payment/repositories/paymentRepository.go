@@ -36,11 +36,9 @@ type PaymentRepository interface {
 
 	// PaymentMethod operations
 	CreatePaymentMethod(pm *models.PaymentMethod) error
-	GetPaymentMethod(id uuid.UUID) (*models.PaymentMethod, error)
 	GetPaymentMethodByStripeID(stripePaymentMethodID string) (*models.PaymentMethod, error)
 	GetUserPaymentMethods(userID string, activeOnly bool) (*[]models.PaymentMethod, error)
 	UpdatePaymentMethod(pm *models.PaymentMethod) error
-	DeletePaymentMethod(id uuid.UUID) error
 	SetDefaultPaymentMethod(userID string, pmID uuid.UUID) error
 
 	// BillingAddress operations
@@ -48,7 +46,6 @@ type PaymentRepository interface {
 	GetUserBillingAddresses(userID string) (*[]models.BillingAddress, error)
 	GetDefaultBillingAddress(userID string) (*models.BillingAddress, error)
 	UpdateBillingAddress(address *models.BillingAddress) error
-	DeleteBillingAddress(id uuid.UUID) error
 	SetDefaultBillingAddress(userID string, addressID uuid.UUID) error
 
 	// UsageMetrics operations
@@ -62,9 +59,6 @@ type PaymentRepository interface {
 	GetSubscriptionAnalytics(startDate, endDate time.Time) (*SubscriptionAnalytics, error)
 	GetRevenueByPeriod(startDate, endDate time.Time, interval string) (*[]RevenueByPeriod, error)
 
-	// Cleanup operations
-	CleanupExpiredSubscriptions() error
-	ArchiveOldInvoices(daysOld int) error
 }
 
 type paymentRepository struct {
@@ -280,15 +274,6 @@ func (r *paymentRepository) CreatePaymentMethod(pm *models.PaymentMethod) error 
 	return r.db.Create(pm).Error
 }
 
-func (r *paymentRepository) GetPaymentMethod(id uuid.UUID) (*models.PaymentMethod, error) {
-	var pm models.PaymentMethod
-	err := r.db.Where("id = ?", id).First(&pm).Error
-	if err != nil {
-		return nil, err
-	}
-	return &pm, nil
-}
-
 func (r *paymentRepository) GetPaymentMethodByStripeID(stripePaymentMethodID string) (*models.PaymentMethod, error) {
 	var pm models.PaymentMethod
 	err := r.db.Where("stripe_payment_method_id = ?", stripePaymentMethodID).First(&pm).Error
@@ -315,10 +300,6 @@ func (r *paymentRepository) GetUserPaymentMethods(userID string, activeOnly bool
 
 func (r *paymentRepository) UpdatePaymentMethod(pm *models.PaymentMethod) error {
 	return r.db.Save(pm).Error
-}
-
-func (r *paymentRepository) DeletePaymentMethod(id uuid.UUID) error {
-	return r.db.Delete(&models.PaymentMethod{}, id).Error
 }
 
 func (r *paymentRepository) SetDefaultPaymentMethod(userID string, pmID uuid.UUID) error {
@@ -365,10 +346,6 @@ func (r *paymentRepository) GetDefaultBillingAddress(userID string) (*models.Bil
 
 func (r *paymentRepository) UpdateBillingAddress(address *models.BillingAddress) error {
 	return r.db.Save(address).Error
-}
-
-func (r *paymentRepository) DeleteBillingAddress(id uuid.UUID) error {
-	return r.db.Delete(&models.BillingAddress{}, id).Error
 }
 
 func (r *paymentRepository) SetDefaultBillingAddress(userID string, addressID uuid.UUID) error {
@@ -571,25 +548,6 @@ func (r *paymentRepository) GetRevenueByPeriod(startDate, endDate time.Time, int
 		return nil, err
 	}
 	return &revenues, nil
-}
-
-// Cleanup operations
-func (r *paymentRepository) CleanupExpiredSubscriptions() error {
-	cutoffTime := time.Now().AddDate(0, 0, -30) // 30 jours
-
-	return r.db.Model(&models.UserSubscription{}).
-		Where("status IN (?)", []string{"cancelled", "incomplete_expired"}).
-		Where("cancelled_at < ?", cutoffTime).
-		Update("deleted_at", time.Now()).Error
-}
-
-func (r *paymentRepository) ArchiveOldInvoices(daysOld int) error {
-	cutoffTime := time.Now().AddDate(0, 0, -daysOld)
-
-	// Marquer les anciennes factures payées comme archivées (ou les déplacer vers une table d'archive)
-	return r.db.Model(&models.Invoice{}).
-		Where("status = ? AND paid_at < ?", "paid", cutoffTime).
-		Update("updated_at", time.Now()).Error // Placeholder, implémenter l'archivage selon vos besoins
 }
 
 // Utility types for analytics
