@@ -36,8 +36,9 @@ type EntityRegistrationService struct {
 	subEntities         map[string][]any
 	swaggerConfigs      map[string]*entityManagementInterfaces.EntitySwaggerConfig
 	relationshipFilters map[string][]entityManagementInterfaces.RelationshipFilter
-	membershipConfigs   map[string]*entityManagementInterfaces.MembershipConfig // NEW: Generic membership configs
-	defaultIncludes     map[string][]string                                     // NEW: Default relations to preload per entity
+	membershipConfigs   map[string]*entityManagementInterfaces.MembershipConfig
+	defaultIncludes     map[string][]string
+	typedOps            map[string]entityManagementInterfaces.EntityOperations
 }
 
 func NewEntityRegistrationService() *EntityRegistrationService {
@@ -50,6 +51,7 @@ func NewEntityRegistrationService() *EntityRegistrationService {
 		relationshipFilters: make(map[string][]entityManagementInterfaces.RelationshipFilter),
 		membershipConfigs:   make(map[string]*entityManagementInterfaces.MembershipConfig),
 		defaultIncludes:     make(map[string][]string),
+		typedOps:            make(map[string]entityManagementInterfaces.EntityOperations),
 	}
 }
 
@@ -64,6 +66,7 @@ func (s *EntityRegistrationService) Reset() {
 	s.relationshipFilters = make(map[string][]entityManagementInterfaces.RelationshipFilter)
 	s.membershipConfigs = make(map[string]*entityManagementInterfaces.MembershipConfig)
 	s.defaultIncludes = make(map[string][]string)
+	s.typedOps = make(map[string]entityManagementInterfaces.EntityOperations)
 }
 
 // UnregisterEntity removes all registrations for a specific entity
@@ -77,6 +80,7 @@ func (s *EntityRegistrationService) UnregisterEntity(name string) {
 	delete(s.relationshipFilters, name)
 	delete(s.membershipConfigs, name)
 	delete(s.defaultIncludes, name)
+	delete(s.typedOps, name)
 }
 
 func (s *EntityRegistrationService) RegisterEntityInterface(name string, entityType any) {
@@ -307,6 +311,74 @@ func (s *EntityRegistrationService) RegisterEntity(input entityManagementInterfa
 
 	// Utiliser la variable globale casdoor.Enforcer en production
 	s.setDefaultEntityAccesses(entityName, input.GetEntityRoles(), casdoor.Enforcer)
+}
+
+// GetEntityOps returns the typed operations for the named entity, if registered.
+func (s *EntityRegistrationService) GetEntityOps(name string) (entityManagementInterfaces.EntityOperations, bool) {
+	ops, ok := s.typedOps[name]
+	return ops, ok
+}
+
+// RegisterTypedEntity registers an entity using type-safe generics.
+// It creates typed operations and also populates legacy maps for backward compatibility.
+func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any, O any](
+	service *EntityRegistrationService,
+	name string,
+	reg entityManagementInterfaces.TypedEntityRegistration[M, C, E, O],
+) {
+	// Create typed operations bridge
+	ops := entityManagementInterfaces.NewTypedEntityOps[M, C, E, O](reg.Converters)
+	service.typedOps[name] = ops
+
+	// Populate legacy registry with a zero-value model instance
+	service.registry[name] = *new(M)
+
+	// Populate legacy converter functions as any wrappers
+	ways := make(map[ConversionPurpose]any)
+	ways[OutputModelToDto] = func(input any) (any, error) {
+		return ops.ConvertModelToDto(input)
+	}
+	ways[CreateInputDtoToModel] = func(input any) any {
+		result, err := ops.ConvertDtoToModel(input)
+		if err != nil {
+			return nil
+		}
+		return result
+	}
+	ways[EditInputDtoToMap] = func(input any) map[string]any {
+		result, err := ops.ConvertEditDtoToMap(input)
+		if err != nil {
+			return nil
+		}
+		return result
+	}
+	service.functions[name] = ways
+
+	// Populate legacy DTOs
+	entityDtos := make(map[DtoPurpose]any)
+	entityDtos[InputCreateDto] = ops.NewCreateDto()
+	entityDtos[OutputDto] = *new(O)
+	entityDtos[InputEditDto] = ops.NewEditDto()
+	service.dtos[name] = entityDtos
+
+	// Register optional configs
+	service.RegisterSubEntites(name, reg.SubEntities)
+	service.RegisterRelationshipFilters(name, reg.RelationshipFilters)
+	service.RegisterMembershipConfig(name, reg.MembershipConfig)
+	service.RegisterDefaultIncludes(name, reg.DefaultIncludes)
+
+	// Swagger config
+	if reg.SwaggerConfig != nil {
+		if reg.SwaggerConfig.EntityName == "" {
+			reg.SwaggerConfig.EntityName = name
+		}
+		service.RegisterSwaggerConfig(name, reg.SwaggerConfig)
+	} else {
+		log.Printf("📝 Entity %s registered without Swagger documentation", name)
+	}
+
+	// Set up access policies
+	service.setDefaultEntityAccesses(name, reg.Roles, casdoor.Enforcer)
 }
 
 var GlobalEntityRegistrationService = NewEntityRegistrationService()

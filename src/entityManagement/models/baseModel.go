@@ -14,6 +14,8 @@ type BaseModel struct {
 	OwnerIDs pq.StringArray `gorm:"type:text[]"`
 }
 
+func (b BaseModel) GetID() uuid.UUID { return b.ID }
+
 func (b *BaseModel) BeforeCreate(tx *gorm.DB) (err error) {
 	if b.ID == uuid.Nil {
 		// Use UUIDv7 for time-ordered, sortable IDs (required for cursor pagination)
