@@ -4,6 +4,8 @@ package entityManagement_tests
 import (
 	"fmt"
 	"net/http/httptest"
+	"soli/formations/src/auth/casdoor"
+	authMocks "soli/formations/src/auth/mocks"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
@@ -45,11 +47,6 @@ type TestEntityOutputDto struct {
 // Mock Repository pour isoler les tests du GenericService
 type MockGenericRepository struct {
 	mock.Mock
-}
-
-func (m *MockGenericRepository) CreateEntity(data any, entityName string) (any, error) {
-	args := m.Called(data, entityName)
-	return args.Get(0), args.Error(1)
 }
 
 func (m *MockGenericRepository) CreateEntityFromModel(entityModel any) (any, error) {
@@ -100,11 +97,11 @@ func newMockGenericService(repo repositories.GenericRepository) services.Generic
 
 // Implémentation des méthodes du GenericService
 func (g *mockGenericService) CreateEntity(inputDto any, entityName string) (any, error) {
-	return g.repository.CreateEntity(inputDto, entityName)
+	return g.repository.CreateEntityFromModel(inputDto)
 }
 
 func (g *mockGenericService) CreateEntityWithUser(inputDto any, entityName string, userID string) (any, error) {
-	return g.repository.CreateEntity(inputDto, entityName)
+	return g.repository.CreateEntityFromModel(inputDto)
 }
 
 func (g *mockGenericService) SaveEntity(entity any) (any, error) {
@@ -166,6 +163,25 @@ func (g *mockGenericService) DecodeInputDtoForEntityCreation(entityName string, 
 	return TestEntityInputDto{}, nil
 }
 
+// erroringHookRegistry is a mock HookRegistry whose ExecuteHooks always returns an error.
+// This is needed because the real hookRegistry.ExecuteHooks swallows errors and returns nil.
+type erroringHookRegistry struct{}
+
+func (r *erroringHookRegistry) RegisterHook(hook hooks.Hook) error              { return nil }
+func (r *erroringHookRegistry) UnregisterHook(hookName string) error            { return nil }
+func (r *erroringHookRegistry) GetHooks(string, hooks.HookType) []hooks.Hook    { return nil }
+func (r *erroringHookRegistry) EnableHook(string, bool) error                   { return nil }
+func (r *erroringHookRegistry) ClearAllHooks()                                  {}
+func (r *erroringHookRegistry) SetTestMode(bool)                                {}
+func (r *erroringHookRegistry) DisableAllHooks(bool)                            {}
+func (r *erroringHookRegistry) IsTestMode() bool                                { return true }
+func (r *erroringHookRegistry) GetRecentErrors(int) []hooks.HookError           { return nil }
+func (r *erroringHookRegistry) ClearErrors()                                    {}
+func (r *erroringHookRegistry) SetErrorCallback(hooks.HookErrorCallback)        {}
+func (r *erroringHookRegistry) ExecuteHooks(ctx *hooks.HookContext) error {
+	return fmt.Errorf("hook execution failed")
+}
+
 // Setup de test avec une vraie base de données SQLite en mémoire
 func setupTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -190,45 +206,28 @@ func setupTestEntityRegistration() {
 	// Disable hooks for tests to prevent async issues and timing problems
 	hooks.GlobalHookRegistry.DisableAllHooks(true)
 
-	// Mock conversion functions
-	modelToDto := func(input any) (any, error) {
-		if entity, ok := input.(TestEntityWithBaseModel); ok {
-			return TestEntityOutputDto{
-				ID:          entity.ID.String(),
-				Name:        entity.Name,
-				Description: entity.Description,
-				OwnerIDs:    entity.OwnerIDs,
-			}, nil
-		}
-		return nil, assert.AnError
-	}
-
-	dtoToModel := func(input any) any {
-		if dto, ok := input.(TestEntityInputDto); ok {
-			return &TestEntityWithBaseModel{
-				Name:        dto.Name,
-				Description: dto.Description,
-			}
-		}
-		return nil
-	}
-
-	// Enregistrer l'entité de test using the struct name (to match the pattern in RegisterEntity)
-	entityName := "TestEntityWithBaseModel"
-	ems.GlobalEntityRegistrationService.RegisterEntityInterface(entityName, TestEntityWithBaseModel{})
-
-	converters := entityManagementInterfaces.EntityConverters{
-		ModelToDto: modelToDto,
-		DtoToModel: dtoToModel,
-	}
-	ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions(entityName, converters)
-
-	dtos := map[ems.DtoPurpose]any{
-		ems.InputCreateDto: TestEntityInputDto{},
-		ems.OutputDto:      TestEntityOutputDto{},
-		ems.InputEditDto:   TestEntityInputDto{},
-	}
-	ems.GlobalEntityRegistrationService.RegisterEntityDtos(entityName, dtos)
+	ems.RegisterTypedEntity[TestEntityWithBaseModel, TestEntityInputDto, TestEntityInputDto, TestEntityOutputDto](
+		ems.GlobalEntityRegistrationService,
+		"TestEntityWithBaseModel",
+		entityManagementInterfaces.TypedEntityRegistration[TestEntityWithBaseModel, TestEntityInputDto, TestEntityInputDto, TestEntityOutputDto]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[TestEntityWithBaseModel, TestEntityInputDto, TestEntityInputDto, TestEntityOutputDto]{
+				ModelToDto: func(entity *TestEntityWithBaseModel) (TestEntityOutputDto, error) {
+					return TestEntityOutputDto{
+						ID:          entity.ID.String(),
+						Name:        entity.Name,
+						Description: entity.Description,
+						OwnerIDs:    entity.OwnerIDs,
+					}, nil
+				},
+				DtoToModel: func(dto TestEntityInputDto) *TestEntityWithBaseModel {
+					return &TestEntityWithBaseModel{
+						Name:        dto.Name,
+						Description: dto.Description,
+					}
+				},
+			},
+		},
+	)
 }
 
 // cleanupTestEntityRegistration removes the test entity registration to prevent state pollution
@@ -246,8 +245,8 @@ func TestGenericService_CreateEntity_Success(t *testing.T) {
 	inputDto := TestEntityInputDto{Name: "Test Name", Description: "Test Description"}
 	expectedEntity := &TestEntityWithBaseModel{Name: "Test Name", Description: "Test Description"}
 
-	// Mock expectations
-	mockRepo.On("CreateEntity", inputDto, "TestEntityWithBaseModel").Return(expectedEntity, nil)
+	// Mock expectations - CreateEntity now delegates to CreateEntityFromModel
+	mockRepo.On("CreateEntityFromModel", inputDto).Return(expectedEntity, nil)
 
 	// Execute
 	result, err := service.CreateEntity(inputDto, "TestEntityWithBaseModel")
@@ -265,8 +264,8 @@ func TestGenericService_CreateEntity_RepositoryError(t *testing.T) {
 
 	inputDto := TestEntityInputDto{Name: "Test Name"}
 
-	// Mock expectations
-	mockRepo.On("CreateEntity", inputDto, "TestEntity").Return(nil, assert.AnError)
+	// Mock expectations - CreateEntity now delegates to CreateEntityFromModel
+	mockRepo.On("CreateEntityFromModel", inputDto).Return(nil, assert.AnError)
 
 	// Execute
 	result, err := service.CreateEntity(inputDto, "TestEntity")
@@ -539,7 +538,7 @@ func TestGenericService_DecodeInputDtoForEntityCreation(t *testing.T) {
 	ctx.Request = req
 
 	// Execute
-	result, err := service.DecodeInputDtoForEntityCreation("TestEntity", ctx)
+	result, err := service.DecodeInputDtoForEntityCreation("TestEntityWithBaseModel", ctx)
 
 	// Assert
 	assert.NoError(t, err)
@@ -569,4 +568,121 @@ func TestGenericService_DecodeInputDtoForEntityCreation_InvalidJSON(t *testing.T
 	// Assert
 	assert.Error(t, err)
 	assert.Nil(t, result)
+}
+
+// ============================================================================
+// CreateEntityWithUser — error branches
+// ============================================================================
+
+func TestGenericService_CreateEntityWithUser_NotRegistered(t *testing.T) {
+	db := setupTestDB(t)
+	service := services.NewGenericService(db, nil)
+
+	// Use a fresh service with no registrations
+	origService := ems.GlobalEntityRegistrationService
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+	defer func() { ems.GlobalEntityRegistrationService = origService }()
+
+	_, err := service.CreateEntityWithUser(TestEntityInputDto{Name: "test"}, "UnregisteredEntity", "user1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ENT003")
+}
+
+func TestGenericService_CreateEntityWithUser_DtoConversionError(t *testing.T) {
+	db := setupTestDB(t)
+	service := services.NewGenericService(db, nil)
+	setupTestEntityRegistration()
+	defer cleanupTestEntityRegistration()
+
+	// Pass wrong DTO type — ConvertDtoToModel will fail
+	_, err := service.CreateEntityWithUser("wrong type", "TestEntityWithBaseModel", "user1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ENT003")
+}
+
+func TestGenericService_CreateEntityWithUser_HookError(t *testing.T) {
+	db := setupTestDB(t)
+	service := services.NewGenericService(db, nil)
+
+	mockEnforcer := authMocks.NewMockEnforcer()
+	mockEnforcer.LoadPolicyFunc = func() error { return nil }
+	mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
+	origEnforcer := casdoor.Enforcer
+	casdoor.Enforcer = mockEnforcer
+	defer func() { casdoor.Enforcer = origEnforcer }()
+
+	// Register entity with fresh global service
+	origService := ems.GlobalEntityRegistrationService
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+	defer func() { ems.GlobalEntityRegistrationService = origService }()
+
+	ems.RegisterTypedEntity[TestEntityWithBaseModel, TestEntityInputDto, TestEntityInputDto, TestEntityOutputDto](
+		ems.GlobalEntityRegistrationService,
+		"HookFailEntity",
+		entityManagementInterfaces.TypedEntityRegistration[TestEntityWithBaseModel, TestEntityInputDto, TestEntityInputDto, TestEntityOutputDto]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[TestEntityWithBaseModel, TestEntityInputDto, TestEntityInputDto, TestEntityOutputDto]{
+				ModelToDto: func(entity *TestEntityWithBaseModel) (TestEntityOutputDto, error) {
+					return TestEntityOutputDto{ID: entity.ID.String(), Name: entity.Name}, nil
+				},
+				DtoToModel: func(dto TestEntityInputDto) *TestEntityWithBaseModel {
+					return &TestEntityWithBaseModel{Name: dto.Name}
+				},
+			},
+		},
+	)
+
+	// Replace hook registry with a mock that returns error from ExecuteHooks
+	origRegistry := hooks.GlobalHookRegistry
+	hooks.GlobalHookRegistry = &erroringHookRegistry{}
+	defer func() { hooks.GlobalHookRegistry = origRegistry }()
+
+	_, err := service.CreateEntityWithUser(TestEntityInputDto{Name: "test"}, "HookFailEntity", "user1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ENT007")
+}
+
+// ============================================================================
+// GetEntityFromResult — conversion error
+// ============================================================================
+
+func TestGenericService_GetEntityFromResult_ConversionError(t *testing.T) {
+	db := setupTestDB(t)
+	service := services.NewGenericService(db, nil)
+
+	mockEnforcer := authMocks.NewMockEnforcer()
+	mockEnforcer.LoadPolicyFunc = func() error { return nil }
+	mockEnforcer.AddPolicyFunc = func(params ...any) (bool, error) { return true, nil }
+	origEnforcer := casdoor.Enforcer
+	casdoor.Enforcer = mockEnforcer
+	defer func() { casdoor.Enforcer = origEnforcer }()
+
+	// Register entity with erroring converter
+	origService := ems.GlobalEntityRegistrationService
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+	defer func() { ems.GlobalEntityRegistrationService = origService }()
+
+	ems.RegisterTypedEntity[TestEntityWithBaseModel, TestEntityInputDto, TestEntityInputDto, TestEntityOutputDto](
+		ems.GlobalEntityRegistrationService,
+		"ErrorConvertEntity",
+		entityManagementInterfaces.TypedEntityRegistration[TestEntityWithBaseModel, TestEntityInputDto, TestEntityInputDto, TestEntityOutputDto]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[TestEntityWithBaseModel, TestEntityInputDto, TestEntityInputDto, TestEntityOutputDto]{
+				ModelToDto: func(entity *TestEntityWithBaseModel) (TestEntityOutputDto, error) {
+					return TestEntityOutputDto{}, fmt.Errorf("conversion error")
+				},
+				DtoToModel: func(dto TestEntityInputDto) *TestEntityWithBaseModel {
+					return &TestEntityWithBaseModel{Name: dto.Name}
+				},
+			},
+		},
+	)
+
+	// Disable hooks to avoid interference
+	hooks.GlobalHookRegistry.DisableAllHooks(true)
+	defer hooks.GlobalHookRegistry.DisableAllHooks(false)
+
+	// Call GetEntityFromResult with a valid model — ConvertModelToDto returns error
+	model := &TestEntityWithBaseModel{Name: "test"}
+	result, ko := service.GetEntityFromResult("ErrorConvertEntity", model)
+	assert.Nil(t, result)
+	assert.True(t, ko)
 }

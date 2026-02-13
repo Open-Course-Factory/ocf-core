@@ -124,7 +124,7 @@ test:entity-management:
 
     # Run SQLite-based tests
     - echo "🧪 Running SQLite-based tests..."
-    - ./entity_tests.exe -test.v -test.timeout=60s -test.run "TestGeneric|TestEntityRegistration|TestSecurity|TestIntegration" 2>&1 | tee sqlite_tests.log
+    - ./entity_tests.exe -test.v -test.timeout=60s -test.run "TestGeneric|TestEntityRegistration|TestTypedOps|TestRegisterTypedEntity|TestSecurity|TestIntegration" 2>&1 | tee sqlite_tests.log
 
     # Run PostgreSQL-specific tests
     - echo "🐘 Running PostgreSQL-specific tests..."
