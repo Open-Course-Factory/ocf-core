@@ -55,28 +55,23 @@ func (uc *userController) GetMySettings(ctx *gin.Context) {
 	}
 
 	var settings models.UserSettings
-	result := sqldb.DB.Where("user_id = ?", userID).First(&settings)
+	defaults := models.UserSettings{
+		UserID:               userID,
+		DefaultLandingPage:   "/dashboard",
+		PreferredLanguage:    "en",
+		Timezone:             "UTC",
+		Theme:                "light",
+		CompactMode:          false,
+		EmailNotifications:   true,
+		DesktopNotifications: false,
+		TwoFactorEnabled:     false,
+	}
 
-	// If settings don't exist, create them with defaults
+	result := sqldb.DB.Where("user_id = ?", userID).Attrs(defaults).FirstOrCreate(&settings)
 	if result.Error != nil {
-		utils.Info("Creating default settings for user %s", userID)
-		settings = models.UserSettings{
-			UserID:               userID,
-			DefaultLandingPage:   "/dashboard",
-			PreferredLanguage:    "en",
-			Timezone:             "UTC",
-			Theme:                "light",
-			CompactMode:          false,
-			EmailNotifications:   true,
-			DesktopNotifications: false,
-			TwoFactorEnabled:     false,
-		}
-
-		if err := sqldb.DB.Create(&settings).Error; err != nil {
-			utils.Error("Failed to create default settings for user %s: %v", userID, err)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create settings"})
-			return
-		}
+		utils.Error("Failed to get or create settings for user %s: %v", userID, result.Error)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create settings"})
+		return
 	}
 
 	// Convert to output DTO
