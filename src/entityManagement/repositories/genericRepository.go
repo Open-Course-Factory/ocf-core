@@ -130,7 +130,13 @@ func (r genericRepository) EditEntity(id uuid.UUID, entityName string, entity an
 //	entity, err := repo.GetEntity(id, &Course{}, "Course", []string{"Chapters", "Authors"})
 func (o *genericRepository) GetEntity(id uuid.UUID, data any, entityName string, includes []string) (any, error) {
 
-	model := reflect.New(reflect.TypeOf(data)).Interface()
+	// Fast path: use typed operations for instance creation (no reflect)
+	var model any
+	if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName); ok {
+		model = ops.NewModelInstance()
+	} else {
+		model = reflect.New(reflect.TypeOf(data)).Interface()
+	}
 	query := o.db.Model(model)
 
 	// Apply selective preloading
@@ -210,14 +216,20 @@ func getPreloadString(entityName string, queryPreloadsString *string, firstItera
 //	// All associations (backward compatible)
 //	result, total, err := repo.GetAllEntities(&Course{}, 1, 20, filters, []string{"*"})
 func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error) {
-	pageSlice := createEmptySliceOfCalledType(data)
-
 	// Get entity name for relationship filters lookup
 	t := reflect.TypeOf(data)
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 	entityName := t.Name()
+
+	// Fast path: use typed operations for slice creation (no reflect)
+	var pageSlice any
+	if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName); ok {
+		pageSlice = ops.NewModelSlice()
+	} else {
+		pageSlice = createEmptySliceOfCalledType(data)
+	}
 
 	// Start building the query
 	query := o.db.Model(pageSlice)
@@ -282,14 +294,20 @@ func (o *genericRepository) GetAllEntities(data any, page int, pageSize int, fil
 //	// Next page
 //	results, nextCursor, hasMore, err := repo.GetAllEntitiesCursor(&Course{}, nextCursor, 20, filters, []string{"Chapters"})
 func (o *genericRepository) GetAllEntitiesCursor(data any, cursor string, limit int, filters map[string]any, includes []string) ([]any, string, bool, int64, error) {
-	pageSlice := createEmptySliceOfCalledType(data)
-
 	// Get entity name for relationship filters lookup
 	t := reflect.TypeOf(data)
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 	entityName := t.Name()
+
+	// Fast path: use typed operations for slice creation (no reflect)
+	var pageSlice any
+	if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName); ok {
+		pageSlice = ops.NewModelSlice()
+	} else {
+		pageSlice = createEmptySliceOfCalledType(data)
+	}
 
 	// Build base query for count (without cursor, limit, or preloads)
 	countQuery := o.db.Model(pageSlice)

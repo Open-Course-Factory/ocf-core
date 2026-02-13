@@ -87,31 +87,47 @@ func (genericController genericController) EditEntity(ctx *gin.Context) {
 		return
 	}
 
-	// Get the registered DtoToMap converter function
-	converterFunc, exists := genericController.entityRegistrationService.GetConversionFunction(entityName, ems.EditInputDtoToMap)
-
 	var updateMap map[string]any
 
-	// Try to use custom converter if it exists
-	useCustomConverter := false
-	if exists && converterFunc != nil {
-		if dtoToMapFunc, ok := converterFunc.(func(any) map[string]any); ok {
-			updateMap = dtoToMapFunc(decodedData)
-			useCustomConverter = true
+	// Fast path: use typed operations for DtoToMap (no reflect)
+	if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName); ok {
+		result, opsErr := ops.ConvertEditDtoToMap(decodedData)
+		if opsErr == nil {
+			updateMap = result
+		} else {
+			// Fallback to mapstructure-based conversion
+			updateMap = make(map[string]any)
+			fallbackConfig := &mapstructure.DecoderConfig{
+				WeaklyTypedInput: true,
+				Result:           &updateMap,
+			}
+			fallbackDecoder, fallbackErr := mapstructure.NewDecoder(fallbackConfig)
+			if fallbackErr == nil {
+				fallbackDecoder.Decode(decodedData)
+			}
 		}
-	}
+	} else {
+		// Legacy path: use registered converter function
+		converterFunc, exists := genericController.entityRegistrationService.GetConversionFunction(entityName, ems.EditInputDtoToMap)
 
-	// Fallback to default mapstructure-based conversion if no custom converter
-	// This matches AbstractRegistrableInterface.EntityDtoToMap behavior
-	if !useCustomConverter {
-		updateMap = make(map[string]any)
-		config := &mapstructure.DecoderConfig{
-			WeaklyTypedInput: true,
-			Result:           &updateMap,
+		useCustomConverter := false
+		if exists && converterFunc != nil {
+			if dtoToMapFunc, ok := converterFunc.(func(any) map[string]any); ok {
+				updateMap = dtoToMapFunc(decodedData)
+				useCustomConverter = true
+			}
 		}
-		decoder, err := mapstructure.NewDecoder(config)
-		if err == nil {
-			decoder.Decode(decodedData)
+
+		if !useCustomConverter {
+			updateMap = make(map[string]any)
+			fallbackConfig := &mapstructure.DecoderConfig{
+				WeaklyTypedInput: true,
+				Result:           &updateMap,
+			}
+			fallbackDecoder, fallbackErr := mapstructure.NewDecoder(fallbackConfig)
+			if fallbackErr == nil {
+				fallbackDecoder.Decode(decodedData)
+			}
 		}
 	}
 

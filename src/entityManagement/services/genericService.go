@@ -84,19 +84,30 @@ func (g *genericService) CreateEntity(inputDto any, entityName string) (any, err
 
 func (g *genericService) CreateEntityWithUser(inputDto any, entityName string, userID string) (any, error) {
 	// Convert DTO to model entity before calling BeforeCreate hook
-	conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.CreateInputDtoToModel)
-	if !found {
-		return nil, entityErrors.NewConversionError(entityName, "conversion function does not exist")
-	}
-
-	val := reflect.ValueOf(conversionFunctionRef)
 	var entityModel any
-	if val.IsValid() && val.Kind() == reflect.Func {
-		args := []reflect.Value{reflect.ValueOf(inputDto)}
-		result := val.Call(args)
-		entityModel = result[0].Interface()
+
+	// Fast path: use typed operations (no reflect)
+	if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName); ok {
+		model, err := ops.ConvertDtoToModel(inputDto)
+		if err != nil {
+			return nil, entityErrors.NewConversionError(entityName, err.Error())
+		}
+		entityModel = model
 	} else {
-		return nil, entityErrors.NewConversionError(entityName, "invalid conversion function")
+		// Legacy reflect path
+		conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.CreateInputDtoToModel)
+		if !found {
+			return nil, entityErrors.NewConversionError(entityName, "conversion function does not exist")
+		}
+
+		val := reflect.ValueOf(conversionFunctionRef)
+		if val.IsValid() && val.Kind() == reflect.Func {
+			args := []reflect.Value{reflect.ValueOf(inputDto)}
+			result := val.Call(args)
+			entityModel = result[0].Interface()
+		} else {
+			return nil, entityErrors.NewConversionError(entityName, "invalid conversion function")
+		}
 	}
 
 	// Call BeforeCreate hook with the converted model
@@ -122,7 +133,7 @@ func (g *genericService) CreateEntityWithUser(inputDto any, entityName string, u
 		EntityName: entityName,
 		HookType:   hooks.AfterCreate,
 		NewEntity:  entity,
-		EntityID:   g.ExtractUuidFromReflectEntity(entity),
+		EntityID:   g.extractEntityID(entityName, entity),
 		UserID:     userID,
 		Context:    context.Background(),
 	}
@@ -160,7 +171,7 @@ func (g *genericService) GetEntity(id uuid.UUID, data any, entityName string, in
 		return nil, err
 	}
 
-	if g.ExtractUuidFromReflectEntity(entity) == uuid.Nil {
+	if g.extractEntityID(entityName, entity) == uuid.Nil {
 		return nil, entityErrors.NewEntityNotFound(entityName, id)
 	}
 
@@ -336,6 +347,7 @@ func (g *genericService) AddOwnerIDs(entity any, userId string) (any, error) {
 }
 
 func (g *genericService) ExtractUuidFromReflectEntity(entity any) uuid.UUID {
+	// Legacy reflect path (kept for backward compatibility)
 	entityReflectValue := reflect.ValueOf(entity).Elem()
 	field := entityReflectValue.FieldByName("ID")
 
@@ -351,8 +363,32 @@ func (g *genericService) ExtractUuidFromReflectEntity(entity any) uuid.UUID {
 	return entityUUID
 }
 
+// extractEntityID tries the typed EntityOperations first, falls back to reflect.
+func (g *genericService) extractEntityID(entityName string, entity any) uuid.UUID {
+	if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName); ok {
+		id, err := ops.ExtractID(entity)
+		if err == nil {
+			return id
+		}
+	}
+	return g.ExtractUuidFromReflectEntity(entity)
+}
+
 func (g *genericService) GetDtoArrayFromEntitiesPages(allEntitiesPages []any, entityModelInterface any, entityName string) ([]any, bool) {
-	// Estimate capacity based on typical page sizes
+	// Fast path: use typed operations (no reflect)
+	if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName); ok {
+		allDtos := make([]any, 0, len(allEntitiesPages)*10)
+		for _, page := range allEntitiesPages {
+			dtos, err := ops.ConvertSliceToDto(page)
+			if err != nil {
+				return nil, true
+			}
+			allDtos = append(allDtos, dtos...)
+		}
+		return allDtos, false
+	}
+
+	// Legacy reflect path
 	estimatedCapacity := len(allEntitiesPages) * 10
 	entitiesDto := make([]any, 0, estimatedCapacity)
 
@@ -396,6 +432,16 @@ func (g *genericService) appendEntityFromResult(entityName string, item any, ent
 
 // used in post and get
 func (g *genericService) GetEntityFromResult(entityName string, item any) (any, bool) {
+	// Fast path: use typed operations (no reflect)
+	if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName); ok {
+		result, err := ops.ConvertModelToDto(item)
+		if err != nil {
+			return nil, true
+		}
+		return result, false
+	}
+
+	// Legacy reflect path
 	var result any
 	if funcRef, ok := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.OutputModelToDto); ok {
 		val := reflect.ValueOf(funcRef)

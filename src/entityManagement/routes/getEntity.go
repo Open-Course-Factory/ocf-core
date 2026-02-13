@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"soli/formations/src/auth/errors"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -47,21 +48,33 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 		return
 	}
 
-	entityModel := reflect.TypeOf(entityModelInterface)
-	entityValue := reflect.ValueOf(entity)
 	var entityDto any
 
-	if entityValue.Elem().Type().ConvertibleTo(entityModel) {
-		convertedEntity := entityValue.Elem().Convert(entityModel)
-
-		item := convertedEntity.Interface()
-
-		var errEntityDto bool
-		entityDto, errEntityDto = genericController.genericService.GetEntityFromResult(entityName, item)
-
-		if errEntityDto {
+	// Fast path: use typed operations (no reflect)
+	if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName); ok {
+		dto, err := ops.ConvertModelToDto(entity)
+		if err != nil {
 			errors.HandleError(http.StatusNotFound, &errors.APIError{ErrorMessage: "Entity Not Found"}, ctx)
 			return
+		}
+		entityDto = dto
+	} else {
+		// Legacy reflect path
+		entityModel := reflect.TypeOf(entityModelInterface)
+		entityValue := reflect.ValueOf(entity)
+
+		if entityValue.Elem().Type().ConvertibleTo(entityModel) {
+			convertedEntity := entityValue.Elem().Convert(entityModel)
+
+			item := convertedEntity.Interface()
+
+			var errEntityDto bool
+			entityDto, errEntityDto = genericController.genericService.GetEntityFromResult(entityName, item)
+
+			if errEntityDto {
+				errors.HandleError(http.StatusNotFound, &errors.APIError{ErrorMessage: "Entity Not Found"}, ctx)
+				return
+			}
 		}
 	}
 
