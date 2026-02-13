@@ -24,30 +24,29 @@ import (
 func RegisterEntities() {
 	authRegistration.RegisterSshKey(ems.GlobalEntityRegistrationService)
 	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.UserSettingsRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SessionRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.CourseRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.PageRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SectionRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ChapterRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ScheduleRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ThemeRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.GenerationRegistration{})
 
-	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.TerminalRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.UserTerminalKeyRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(terminalRegistration.TerminalShareRegistration{})
+	courseRegistration.RegisterSession(ems.GlobalEntityRegistrationService)
+	courseRegistration.RegisterCourse(ems.GlobalEntityRegistrationService)
+	courseRegistration.RegisterPage(ems.GlobalEntityRegistrationService)
+	courseRegistration.RegisterSection(ems.GlobalEntityRegistrationService)
+	courseRegistration.RegisterChapter(ems.GlobalEntityRegistrationService)
+	courseRegistration.RegisterSchedule(ems.GlobalEntityRegistrationService)
+	courseRegistration.RegisterTheme(ems.GlobalEntityRegistrationService)
+	courseRegistration.RegisterGeneration(ems.GlobalEntityRegistrationService)
 
-	ems.GlobalEntityRegistrationService.RegisterEntity(groupRegistration.GroupRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(groupRegistration.GroupMemberRegistration{})
+	terminalRegistration.RegisterTerminal(ems.GlobalEntityRegistrationService)
+	terminalRegistration.RegisterUserTerminalKey(ems.GlobalEntityRegistrationService)
+	terminalRegistration.RegisterTerminalShare(ems.GlobalEntityRegistrationService)
 
-	// Organization entities (Phase 1)
-	ems.GlobalEntityRegistrationService.RegisterEntity(organizationRegistration.OrganizationRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(organizationRegistration.OrganizationMemberRegistration{})
+	groupRegistration.RegisterGroup(ems.GlobalEntityRegistrationService)
+	groupRegistration.RegisterGroupMember(ems.GlobalEntityRegistrationService)
 
-	ems.GlobalEntityRegistrationService.RegisterEntity(configRegistration.FeatureRegistration{})
+	organizationRegistration.RegisterOrganization(ems.GlobalEntityRegistrationService)
+	organizationRegistration.RegisterOrganizationMember(ems.GlobalEntityRegistrationService)
 
-	// Email entities
-	ems.GlobalEntityRegistrationService.RegisterEntity(emailRegistration.EmailTemplateRegistration{})
+	configRegistration.RegisterFeature(ems.GlobalEntityRegistrationService)
+
+	emailRegistration.RegisterEmailTemplate(ems.GlobalEntityRegistrationService)
 }
 
 // RegisterModuleFeatures registers features from all modules

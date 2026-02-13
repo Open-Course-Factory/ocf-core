@@ -49,6 +49,9 @@ func (ops *typedEntityOps[M, C, E, O]) ConvertModelToDto(model any) (any, error)
 }
 
 func (ops *typedEntityOps[M, C, E, O]) ConvertEditDtoToMap(dto any) (map[string]any, error) {
+	if ops.dtoToMap == nil {
+		return nil, fmt.Errorf("no DtoToMap converter registered")
+	}
 	typed, ok := dto.(E)
 	if !ok {
 		return nil, fmt.Errorf("expected %T, got %T", *new(E), dto)

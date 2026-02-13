@@ -39,7 +39,7 @@ func Test_CompleteWorkflowWithMocks(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.GenerationRegistration{})
+	courseRegistration.RegisterGeneration(ems.GlobalEntityRegistrationService)
 
 	// 2. Setup des mocks
 	mockCasdoor := authMocks.NewMockCasdoorService()
@@ -185,8 +185,8 @@ func Test_ErrorHandlingWithMocks(t *testing.T) {
 	}
 
 	//ems.GlobalEntityRegistrationService.SetDefaultEntityAccesses("Generation", entityManagementInterfaces.EntityRoles{}, mockEnforcer)
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.GenerationRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.CourseRegistration{})
+	courseRegistration.RegisterGeneration(ems.GlobalEntityRegistrationService)
+	courseRegistration.RegisterCourse(ems.GlobalEntityRegistrationService)
 
 	_, err := courseService.GenerateCourseAsync(generateInput)
 	assert.Error(t, err)

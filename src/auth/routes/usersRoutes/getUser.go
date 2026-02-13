@@ -7,11 +7,10 @@ import (
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
 	sqldb "soli/formations/src/db"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 	groupDto "soli/formations/src/groups/dto"
-	groupRegistration "soli/formations/src/groups/entityRegistration"
 	groupModels "soli/formations/src/groups/models"
 	organizationDto "soli/formations/src/organizations/dto"
-	organizationRegistration "soli/formations/src/organizations/entityRegistration"
 	organizationModels "soli/formations/src/organizations/models"
 
 	"github.com/gin-gonic/gin"
@@ -86,17 +85,18 @@ func (u userController) GetUser(ctx *gin.Context) {
 				Find(&orgMemberships).Error
 
 			if err == nil {
-				reg := organizationRegistration.OrganizationMemberRegistration{}
-				memberOutputs := make([]organizationDto.OrganizationMemberOutput, 0)
+				if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps("OrganizationMember"); ok {
+					memberOutputs := make([]organizationDto.OrganizationMemberOutput, 0)
 
-				for _, membership := range orgMemberships {
-					output, convErr := reg.EntityModelToEntityOutput(membership)
-					if convErr == nil {
-						memberOutputs = append(memberOutputs, output.(organizationDto.OrganizationMemberOutput))
+					for _, membership := range orgMemberships {
+						output, convErr := ops.ConvertModelToDto(membership)
+						if convErr == nil {
+							memberOutputs = append(memberOutputs, output.(organizationDto.OrganizationMemberOutput))
+						}
 					}
-				}
 
-				extendedUser.OrganizationMemberships = memberOutputs
+					extendedUser.OrganizationMemberships = memberOutputs
+				}
 			}
 		}
 
@@ -107,17 +107,18 @@ func (u userController) GetUser(ctx *gin.Context) {
 				Find(&groupMemberships).Error
 
 			if err == nil {
-				reg := groupRegistration.GroupMemberRegistration{}
-				memberOutputs := make([]groupDto.GroupMemberOutput, 0)
+				if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps("GroupMember"); ok {
+					memberOutputs := make([]groupDto.GroupMemberOutput, 0)
 
-				for _, membership := range groupMemberships {
-					output, convErr := reg.EntityModelToEntityOutput(membership)
-					if convErr == nil {
-						memberOutputs = append(memberOutputs, output.(groupDto.GroupMemberOutput))
+					for _, membership := range groupMemberships {
+						output, convErr := ops.ConvertModelToDto(membership)
+						if convErr == nil {
+							memberOutputs = append(memberOutputs, output.(groupDto.GroupMemberOutput))
+						}
 					}
-				}
 
-				extendedUser.GroupMemberships = memberOutputs
+					extendedUser.GroupMemberships = memberOutputs
+				}
 			}
 		}
 	}

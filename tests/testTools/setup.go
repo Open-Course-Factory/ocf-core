@@ -295,11 +295,11 @@ func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 
 	DeleteAllObjects()
 
-	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.SessionRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.PageRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.SectionRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.ChapterRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.CourseRegistration{})
+	coursesRegistration.RegisterSession(ems.GlobalEntityRegistrationService)
+	coursesRegistration.RegisterPage(ems.GlobalEntityRegistrationService)
+	coursesRegistration.RegisterSection(ems.GlobalEntityRegistrationService)
+	coursesRegistration.RegisterChapter(ems.GlobalEntityRegistrationService)
+	coursesRegistration.RegisterCourse(ems.GlobalEntityRegistrationService)
 	authRegistration.RegisterSshKey(ems.GlobalEntityRegistrationService)
 
 	SetupBasicRoles() // Créer les rôles de base d'abord

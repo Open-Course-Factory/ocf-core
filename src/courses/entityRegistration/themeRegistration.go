@@ -3,89 +3,44 @@ package registration
 import (
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
-	"soli/formations/src/entityManagement/converters"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
-type ThemeRegistration struct {
-	entityManagementInterfaces.AbstractRegistrableInterface
-}
-
-func (s ThemeRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
-	return entityManagementInterfaces.EntitySwaggerConfig{
-		Tag:        "themes",
-		EntityName: "Theme",
-		GetAll: &entityManagementInterfaces.SwaggerOperation{
-			Summary:     "Récupérer tous les themes",
-			Description: "Retourne la liste de tous les themes disponibles",
-			Tags:        []string{"themes"},
-			Security:    true,
+func RegisterTheme(service *ems.EntityRegistrationService) {
+	ems.RegisterTypedEntity[models.Theme, dto.ThemeInput, dto.EditThemeInput, dto.ThemeOutput](
+		service,
+		"Theme",
+		entityManagementInterfaces.TypedEntityRegistration[models.Theme, dto.ThemeInput, dto.EditThemeInput, dto.ThemeOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[models.Theme, dto.ThemeInput, dto.EditThemeInput, dto.ThemeOutput]{
+				ModelToDto: func(model *models.Theme) (dto.ThemeOutput, error) {
+					return dto.ThemeOutput{
+						ID:               model.ID.String(),
+						Name:             model.Name,
+						Repository:       model.Repository,
+						RepositoryBranch: model.RepositoryBranch,
+						Size:             model.Size,
+						CreatedAt:        model.CreatedAt.String(),
+						UpdatedAt:        model.UpdatedAt.String(),
+					}, nil
+				},
+				DtoToModel: func(input dto.ThemeInput) *models.Theme {
+					return &models.Theme{
+						Name:             input.Name,
+						Repository:       input.Repository,
+						RepositoryBranch: input.RepositoryBranch,
+						Size:             input.Size,
+					}
+				},
+			},
+			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{
+				Tag: "themes", EntityName: "Theme",
+				GetAll:  &entityManagementInterfaces.SwaggerOperation{Summary: "Récupérer tous les themes", Description: "Retourne la liste de tous les themes disponibles", Tags: []string{"themes"}, Security: true},
+				GetOne:  &entityManagementInterfaces.SwaggerOperation{Summary: "Récupérer un theme", Description: "Retourne les détails complets d'un theme spécifique", Tags: []string{"themes"}, Security: true},
+				Create:  &entityManagementInterfaces.SwaggerOperation{Summary: "Créer un theme", Description: "Crée un nouveau theme", Tags: []string{"themes"}, Security: true},
+				Update:  &entityManagementInterfaces.SwaggerOperation{Summary: "Mettre à jour un theme", Description: "Modifie un theme existant", Tags: []string{"themes"}, Security: true},
+				Delete:  &entityManagementInterfaces.SwaggerOperation{Summary: "Supprimer un theme", Description: "Supprime un theme", Tags: []string{"themes"}, Security: true},
+			},
 		},
-		GetOne: &entityManagementInterfaces.SwaggerOperation{
-			Summary:     "Récupérer un theme",
-			Description: "Retourne les détails complets d'un theme spécifique",
-			Tags:        []string{"themes"},
-			Security:    true,
-		},
-		Create: &entityManagementInterfaces.SwaggerOperation{
-			Summary:     "Créer un theme",
-			Description: "Crée un nouveau theme",
-			Tags:        []string{"themes"},
-			Security:    true,
-		},
-		Update: &entityManagementInterfaces.SwaggerOperation{
-			Summary:     "Mettre à jour un theme",
-			Description: "Modifie un theme existant",
-			Tags:        []string{"themes"},
-			Security:    true,
-		},
-		Delete: &entityManagementInterfaces.SwaggerOperation{
-			Summary:     "Supprimer un theme",
-			Description: "Supprime un theme",
-			Tags:        []string{"themes"},
-			Security:    true,
-		},
-	}
-}
-
-func (s ThemeRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
-		themeModel := ptr.(*models.Theme)
-		return &dto.ThemeOutput{
-			ID:               themeModel.ID.String(),
-			Name:             themeModel.Name,
-			Repository:       themeModel.Repository,
-			RepositoryBranch: themeModel.RepositoryBranch,
-			Size:             themeModel.Size,
-			CreatedAt:        themeModel.CreatedAt.String(),
-			UpdatedAt:        themeModel.UpdatedAt.String(),
-		}, nil
-	})
-}
-
-func (s ThemeRegistration) EntityInputDtoToEntityModel(input any) any {
-
-	themeInputDto := input.(dto.ThemeInput)
-	return &models.Theme{
-		Name:             themeInputDto.Name,
-		Repository:       themeInputDto.Repository,
-		RepositoryBranch: themeInputDto.RepositoryBranch,
-		Size:             themeInputDto.Size,
-	}
-}
-
-func (s ThemeRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
-	return entityManagementInterfaces.EntityRegistrationInput{
-		EntityInterface: models.Theme{},
-		EntityConverters: entityManagementInterfaces.EntityConverters{
-			ModelToDto: s.EntityModelToEntityOutput,
-			DtoToModel: s.EntityInputDtoToEntityModel,
-			DtoToMap:   s.EntityDtoToMap,
-		},
-		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputCreateDto: dto.ThemeInput{},
-			OutputDto:      dto.ThemeOutput{},
-			InputEditDto:   dto.EditThemeInput{},
-		},
-	}
+	)
 }

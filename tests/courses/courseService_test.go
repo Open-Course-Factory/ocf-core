@@ -198,7 +198,7 @@ func TestCourseService_GenerateCourseAsync(t *testing.T) {
 	}
 
 	ems.GlobalEntityRegistrationService.SetDefaultEntityAccesses("Generation", entityManagementInterfaces.EntityRoles{}, mockEnforcer)
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.GenerationRegistration{})
+	courseRegistration.RegisterGeneration(ems.GlobalEntityRegistrationService)
 
 	// Tester la génération asynchrone
 	result, err := courseService.GenerateCourseAsync(generateInput)
@@ -220,7 +220,7 @@ func TestCourseService_CheckGenerationStatus(t *testing.T) {
 	mockEnforcer, _ := setupTestEnforcer(t)
 
 	ems.GlobalEntityRegistrationService.SetDefaultEntityAccesses("Generation", entityManagementInterfaces.EntityRoles{}, mockEnforcer)
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.GenerationRegistration{})
+	courseRegistration.RegisterGeneration(ems.GlobalEntityRegistrationService)
 
 	// Créer une génération de test
 	generation := &models.Generation{

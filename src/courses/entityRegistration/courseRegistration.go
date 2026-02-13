@@ -3,109 +3,114 @@ package registration
 import (
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
-	"soli/formations/src/entityManagement/converters"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
-type CourseRegistration struct {
-	entityManagementInterfaces.AbstractRegistrableInterface
+func chapterInputToModel(input *dto.ChapterInput) *models.Chapter {
+	var sectionModels []*models.Section
+	for _, sectionInput := range input.Sections {
+		section := sectionInputToModel(sectionInput)
+		sectionModels = append(sectionModels, section)
+	}
+	chapter := &models.Chapter{
+		Footer:       input.Footer,
+		Introduction: input.Introduction,
+		Title:        input.Title,
+		Number:       input.Number,
+		Sections:     sectionModels,
+	}
+	chapter.OwnerIDs = append(chapter.OwnerIDs, input.OwnerID)
+	return chapter
 }
 
-func (s CourseRegistration) GetSwaggerConfig() entityManagementInterfaces.EntitySwaggerConfig {
-	return entityManagementInterfaces.EntitySwaggerConfig{
-		Tag:        "courses",
-		EntityName: "Course",
-		GetAll: &entityManagementInterfaces.SwaggerOperation{
-			Summary:     "Récupérer tous les cours",
-			Description: "Retourne la liste de tous les cours disponibles",
-			Tags:        []string{"courses"},
-			Security:    true,
-		},
-		GetOne: &entityManagementInterfaces.SwaggerOperation{
-			Summary:     "Récupérer un cours",
-			Description: "Retourne les détails complets d'un cours spécifique",
-			Tags:        []string{"courses"},
-			Security:    true,
-		},
-		Create: &entityManagementInterfaces.SwaggerOperation{
-			Summary:     "Créer un cours",
-			Description: "Crée un nouveau cours",
-			Tags:        []string{"courses"},
-			Security:    true,
-		},
-		Update: &entityManagementInterfaces.SwaggerOperation{
-			Summary:     "Mettre à jour un cours",
-			Description: "Modifie un cours existant",
-			Tags:        []string{"courses"},
-			Security:    true,
-		},
-		Delete: &entityManagementInterfaces.SwaggerOperation{
-			Summary:     "Supprimer un cours",
-			Description: "Supprime un cours",
-			Tags:        []string{"courses"},
-			Security:    true,
-		},
+func sectionInputToModel(input *dto.SectionInput) *models.Section {
+	var pageModels []*models.Page
+	for _, pageInput := range input.Pages {
+		page := pageInputToModel(pageInput)
+		pageModels = append(pageModels, page)
 	}
+	section := &models.Section{
+		FileName:    input.FileName,
+		Title:       input.Title,
+		Intro:       input.Intro,
+		Conclusion:  input.Conclusion,
+		Number:      input.Number,
+		Pages:       pageModels,
+		HiddenPages: input.HiddenPages,
+	}
+	section.OwnerIDs = append(section.OwnerIDs, input.OwnerID)
+	return section
 }
 
-func (s CourseRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	return converters.GenericModelToOutput(input, func(ptr any) (any, error) {
-		return dto.CourseModelToCourseOutputDto(*ptr.(*models.Course)), nil
-	})
+func pageInputToModel(input *dto.PageInput) *models.Page {
+	page := &models.Page{
+		Order:   input.Order,
+		Content: input.Content,
+	}
+	page.OwnerIDs = append(page.OwnerIDs, input.OwnerID)
+	return page
 }
 
-func (s CourseRegistration) EntityInputDtoToEntityModel(input any) any {
-
-	var chapters []*models.Chapter
-
-	courseInputDto, ok := input.(dto.CourseInput)
-	if !ok {
-		ptrCourseInputDto := input.(*dto.CourseInput)
-		courseInputDto = *ptrCourseInputDto
-	}
-
-	for _, chapterInput := range courseInputDto.ChaptersInput {
-		chapterModel := ChapterRegistration{}.EntityInputDtoToEntityModel(chapterInput)
-		chapter := chapterModel.(*models.Chapter)
-		chapters = append(chapters, chapter)
-	}
-
-	courseToReturn := &models.Course{
-		Name:                courseInputDto.Name,
-		Category:            courseInputDto.Category,
-		Version:             courseInputDto.Version,
-		Title:               courseInputDto.Title,
-		Subtitle:            courseInputDto.Subtitle,
-		Header:              courseInputDto.Header,
-		Footer:              courseInputDto.Footer,
-		Logo:                courseInputDto.Logo,
-		Description:         courseInputDto.Description,
-		Prelude:             courseInputDto.Prelude,
-		LearningObjectives:  courseInputDto.LearningObjectives,
-		Chapters:            chapters,
-		GitRepository:       courseInputDto.GitRepository,
-		GitRepositoryBranch: courseInputDto.GitRepositoryBranch,
-	}
-
-	courseToReturn.OwnerIDs = append(courseToReturn.OwnerIDs, courseInputDto.OwnerID)
-
-	return courseToReturn
-}
-
-func (s CourseRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
-	return entityManagementInterfaces.EntityRegistrationInput{
-		EntityInterface: models.Course{},
-		EntityConverters: entityManagementInterfaces.EntityConverters{
-			ModelToDto: s.EntityModelToEntityOutput,
-			DtoToModel: s.EntityInputDtoToEntityModel,
+func RegisterCourse(service *ems.EntityRegistrationService) {
+	ems.RegisterTypedEntity[models.Course, dto.CourseInput, dto.EditCourseInput, dto.CourseOutput](
+		service,
+		"Course",
+		entityManagementInterfaces.TypedEntityRegistration[models.Course, dto.CourseInput, dto.EditCourseInput, dto.CourseOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[models.Course, dto.CourseInput, dto.EditCourseInput, dto.CourseOutput]{
+				ModelToDto: func(model *models.Course) (dto.CourseOutput, error) {
+					return *dto.CourseModelToCourseOutputDto(*model), nil
+				},
+				DtoToModel: func(input dto.CourseInput) *models.Course {
+					var chapters []*models.Chapter
+					for _, chapterInput := range input.ChaptersInput {
+						chapters = append(chapters, chapterInputToModel(chapterInput))
+					}
+					course := &models.Course{
+						Name:                input.Name,
+						Category:            input.Category,
+						Version:             input.Version,
+						Title:               input.Title,
+						Subtitle:            input.Subtitle,
+						Header:              input.Header,
+						Footer:              input.Footer,
+						Logo:                input.Logo,
+						Description:         input.Description,
+						Prelude:             input.Prelude,
+						LearningObjectives:  input.LearningObjectives,
+						Chapters:            chapters,
+						GitRepository:       input.GitRepository,
+						GitRepositoryBranch: input.GitRepositoryBranch,
+					}
+					course.OwnerIDs = append(course.OwnerIDs, input.OwnerID)
+					return course
+				},
+			},
+			SubEntities: []any{models.Chapter{}},
+			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{
+				Tag:        "courses",
+				EntityName: "Course",
+				GetAll: &entityManagementInterfaces.SwaggerOperation{
+					Summary: "Récupérer tous les cours", Description: "Retourne la liste de tous les cours disponibles",
+					Tags: []string{"courses"}, Security: true,
+				},
+				GetOne: &entityManagementInterfaces.SwaggerOperation{
+					Summary: "Récupérer un cours", Description: "Retourne les détails complets d'un cours spécifique",
+					Tags: []string{"courses"}, Security: true,
+				},
+				Create: &entityManagementInterfaces.SwaggerOperation{
+					Summary: "Créer un cours", Description: "Crée un nouveau cours",
+					Tags: []string{"courses"}, Security: true,
+				},
+				Update: &entityManagementInterfaces.SwaggerOperation{
+					Summary: "Mettre à jour un cours", Description: "Modifie un cours existant",
+					Tags: []string{"courses"}, Security: true,
+				},
+				Delete: &entityManagementInterfaces.SwaggerOperation{
+					Summary: "Supprimer un cours", Description: "Supprime un cours",
+					Tags: []string{"courses"}, Security: true,
+				},
+			},
 		},
-		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputCreateDto: dto.CourseInput{},
-			OutputDto:      dto.CourseOutput{},
-			InputEditDto:   dto.EditCourseInput{},
-		},
-		EntitySubEntities: []any{
-			models.Chapter{},
-		},
-	}
+	)
 }

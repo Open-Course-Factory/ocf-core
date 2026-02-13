@@ -8,6 +8,9 @@ import (
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 )
 
+// UserSettingsRegistration uses the legacy RegistrableInterface pattern because
+// UserSettings embeds gorm.Model (uint ID) instead of BaseModel (uuid.UUID ID),
+// so it cannot satisfy the EntityModel constraint required by RegisterTypedEntity.
 type UserSettingsRegistration struct {
 	entityManagementInterfaces.AbstractRegistrableInterface
 }
@@ -77,7 +80,6 @@ func (s UserSettingsRegistration) EntityInputDtoToEntityModel(input any) any {
 		UserID: settingsInput.UserID,
 	}
 
-	// Apply optional fields if provided
 	if settingsInput.DefaultLandingPage != nil {
 		settings.DefaultLandingPage = *settingsInput.DefaultLandingPage
 	}
@@ -150,11 +152,7 @@ func (s UserSettingsRegistration) GetEntityRegistrationInput() entityManagementI
 
 func (s UserSettingsRegistration) GetEntityRoles() entityManagementInterfaces.EntityRoles {
 	roleMap := make(map[string]string)
-
-	// Members can only GET and PATCH their own settings (enforced by middleware)
 	roleMap[string(models.Member)] = "(" + http.MethodGet + "|" + http.MethodPatch + ")"
-
-	// Admins have full access
 	roleMap[string(models.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")"
 
 	return entityManagementInterfaces.EntityRoles{

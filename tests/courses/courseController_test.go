@@ -46,8 +46,8 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	)
 	require.NoError(t, err)
 
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.GenerationRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.CourseRegistration{})
+	courseRegistration.RegisterGeneration(ems.GlobalEntityRegistrationService)
+	courseRegistration.RegisterCourse(ems.GlobalEntityRegistrationService)
 
 	// Routeur avec middlewares de test
 	router := gin.New()

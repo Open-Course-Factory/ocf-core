@@ -51,10 +51,10 @@ func setupSelectivePreloadingTest(t *testing.T) (*gorm.DB, services.GenericServi
 	db := setupSelectivePreloadingTestDB(t)
 
 	// Register entities
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.CourseRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.ChapterRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SectionRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.PageRegistration{})
+	courseRegistration.RegisterCourse(ems.GlobalEntityRegistrationService)
+	courseRegistration.RegisterChapter(ems.GlobalEntityRegistrationService)
+	courseRegistration.RegisterSection(ems.GlobalEntityRegistrationService)
+	courseRegistration.RegisterPage(ems.GlobalEntityRegistrationService)
 
 	// Create service (with nil enforcer for tests)
 	service := services.NewGenericService(db, nil)
