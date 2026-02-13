@@ -77,20 +77,6 @@ func NewPaymentRepository(db *gorm.DB) PaymentRepository {
 	}
 }
 
-// SubscriptionPlan operations
-// func (r *paymentRepository) CreateSubscriptionPlan(plan *models.SubscriptionPlan) error {
-// 	return r.db.Create(plan).Error
-// }
-
-// func (r *paymentRepository) GetSubscriptionPlan(id uuid.UUID) (*models.SubscriptionPlan, error) {
-// 	var plan models.SubscriptionPlan
-// 	err := r.db.Where("id = ?", id).First(&plan).Error
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return &plan, nil
-// }
-
 func (r *paymentRepository) GetAllSubscriptionPlans(activeOnly bool) (*[]models.SubscriptionPlan, error) {
 	var plans []models.SubscriptionPlan
 	query := r.db.Model(&models.SubscriptionPlan{})
@@ -114,14 +100,6 @@ func (r *paymentRepository) GetSubscriptionPlanByStripePriceID(stripePriceID str
 	}
 	return &plan, nil
 }
-
-// func (r *paymentRepository) UpdateSubscriptionPlan(plan *models.SubscriptionPlan) error {
-// 	return r.db.Save(plan).Error
-// }
-
-// func (r *paymentRepository) DeleteSubscriptionPlan(id uuid.UUID) error {
-// 	return r.db.Delete(&models.SubscriptionPlan{}, id).Error
-// }
 
 // UserSubscription operations
 func (r *paymentRepository) CreateUserSubscription(subscription *models.UserSubscription) error {
