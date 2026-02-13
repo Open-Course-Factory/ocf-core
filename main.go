@@ -20,8 +20,7 @@ import (
 	emailVerificationController "soli/formations/src/auth/routes/emailVerificationRoutes"
 	// groupController "soli/formations/src/auth/routes/groupsRoutes" // Legacy Casdoor groups - replaced by class-groups
 	passwordResetController "soli/formations/src/auth/routes/passwordResetRoutes"
-	sshKeyController "soli/formations/src/auth/routes/sshKeysRoutes"
-	userController "soli/formations/src/auth/routes/usersRoutes"
+userController "soli/formations/src/auth/routes/usersRoutes"
 	emailController "soli/formations/src/email/routes"
 	emailServices "soli/formations/src/email/services"
 	courseHooks "soli/formations/src/courses/hooks"
@@ -170,8 +169,7 @@ func main() {
 	emailVerificationController.EmailVerificationRoutes(apiGroup.Group("/auth"), sqldb.DB) // Public email verification routes
 	genericController.HooksRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
-	sshKeyController.SshKeysRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	// NOTE: Commented out legacy Casdoor group routes - replaced by new class-groups system
 	// groupController.GroupRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	accessController.AccessRoutes(apiGroup, &config.Configuration{}, sqldb.DB)

@@ -17,7 +17,6 @@ type OrganizationSubscriptionRepository interface {
 	GetActiveOrganizationSubscription(orgID uuid.UUID) (*models.OrganizationSubscription, error)
 	GetUserOrganizationSubscriptions(userID string) ([]models.OrganizationSubscription, error)
 	UpdateOrganizationSubscription(subscription *models.OrganizationSubscription) error
-	DeleteOrganizationSubscription(id uuid.UUID) error
 }
 
 type organizationSubscriptionRepository struct {
@@ -103,7 +102,3 @@ func (r *organizationSubscriptionRepository) UpdateOrganizationSubscription(subs
 	return r.db.Save(subscription).Error
 }
 
-// DeleteOrganizationSubscription soft deletes an organization subscription
-func (r *organizationSubscriptionRepository) DeleteOrganizationSubscription(id uuid.UUID) error {
-	return r.db.Delete(&models.OrganizationSubscription{}, id).Error
-}

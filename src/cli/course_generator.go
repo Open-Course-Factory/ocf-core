@@ -99,7 +99,7 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 		fmt.Printf("Course loaded and saved successfully: %s v%s (ID: %s)\n", course.Name, course.Version, course.ID.String())
 	} else {
 		// Fallback to empty course for CLI-only usage
-		course = courseService.GetCourseFromProgramInputs(courseName, courseGitRepository, courseBranchGitRepository)
+		course = courseModels.Course{}
 		// Set the owner ID for CLI usage
 		course.OwnerIDs = append(course.OwnerIDs, *userID)
 		// Set basic course info from CLI args

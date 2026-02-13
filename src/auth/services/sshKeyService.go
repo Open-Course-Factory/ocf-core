@@ -2,9 +2,10 @@ package services
 
 import (
 	"soli/formations/src/auth/dto"
-	"soli/formations/src/auth/repositories"
+	"soli/formations/src/auth/models"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -13,24 +14,25 @@ type SshKeyService interface {
 }
 
 type sshKeyService struct {
-	repository repositories.SshKeyRepository
+	db *gorm.DB
 }
 
 func NewSshKeyService(db *gorm.DB) SshKeyService {
 	return &sshKeyService{
-		repository: repositories.NewSshKeyRepository(db),
+		db: db,
 	}
 }
 
 func (sks *sshKeyService) GetKeysByUserId(id string) (*[]dto.SshKeyOutput, error) {
-	var results []dto.SshKeyOutput
+	var sshKeys []models.SshKey
 
-	sshKeys, creatSshKeyError := sks.repository.GetSshKeysByUserId(uuid.MustParse(id))
-	if creatSshKeyError != nil {
-		return nil, creatSshKeyError
+	result := sks.db.Find(&sshKeys, "owner_ids && ?", pq.StringArray{uuid.MustParse(id).String()})
+	if result.Error != nil {
+		return nil, result.Error
 	}
 
-	for _, sshKey := range *sshKeys {
+	var results []dto.SshKeyOutput
+	for _, sshKey := range sshKeys {
 		results = append(results, dto.SshKeyOutput{
 			Id:         sshKey.ID,
 			KeyName:    sshKey.KeyName,
