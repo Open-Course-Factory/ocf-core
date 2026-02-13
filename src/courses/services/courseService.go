@@ -32,8 +32,6 @@ type CourseService interface {
 	GetGitCourse(ownerId string, courseName string, courseURL string, courseBranch string, courseJsonFilename string) (*models.Course, error)
 	GetCourse(ownerId string, courseName string, sourceType string, source string, branch string, courseJsonFilename string) (*models.Course, error)
 	GetSpecificCourseByUser(owner casdoorsdk.User, courseName string) (*models.Course, error)
-	GetCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) models.Course
-
 	// Méthodes de gestion des versions
 	GetAllVersionsOfCourse(ownerId string, courseName string) ([]*models.Course, error)
 	GetCourseByVersion(ownerId string, courseName string, version string) (*models.Course, error)
@@ -503,10 +501,6 @@ func (c courseService) GetSpecificCourseByUser(owner casdoorsdk.User, courseName
 	return course, nil
 }
 
-func (c courseService) GetCourseFromProgramInputs(courseName *string, courseGitRepository *string, courseGitRepositoryBranchName *string) models.Course {
-	return models.Course{}
-}
-
 // GetAllVersionsOfCourse retrieves all versions of a course by name for a specific owner
 func (c courseService) GetAllVersionsOfCourse(ownerId string, courseName string) ([]*models.Course, error) {
 	courses, err := c.repository.GetAllVersionsOfCourse(ownerId, courseName)
@@ -518,7 +512,7 @@ func (c courseService) GetAllVersionsOfCourse(ownerId string, courseName string)
 
 // GetCourseByVersion retrieves a specific version of a course
 func (c courseService) GetCourseByVersion(ownerId string, courseName string, version string) (*models.Course, error) {
-	course, err := c.repository.GetCourseByNameAndVersion(ownerId, courseName, version)
+	course, err := c.repository.FindCourseByOwnerNameVersion(ownerId, courseName, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get course version: %w", err)
 	}
