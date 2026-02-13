@@ -16,7 +16,6 @@ type SubscriptionBatchRepository interface {
 	GetByGroup(groupID uuid.UUID) (*[]models.SubscriptionBatch, error)
 	GetAccessibleByUser(userID string) (*[]models.SubscriptionBatch, error)
 	Update(batch *models.SubscriptionBatch) error
-	Delete(id uuid.UUID) error
 	IncrementAssignedQuantity(batchID uuid.UUID, increment int) error
 	DecrementAssignedQuantity(batchID uuid.UUID, decrement int) error
 }
@@ -81,10 +80,6 @@ func (r *subscriptionBatchRepository) GetByGroup(groupID uuid.UUID) (*[]models.S
 
 func (r *subscriptionBatchRepository) Update(batch *models.SubscriptionBatch) error {
 	return r.db.Save(batch).Error
-}
-
-func (r *subscriptionBatchRepository) Delete(id uuid.UUID) error {
-	return r.db.Delete(&models.SubscriptionBatch{}, id).Error
 }
 
 func (r *subscriptionBatchRepository) IncrementAssignedQuantity(batchID uuid.UUID, increment int) error {
