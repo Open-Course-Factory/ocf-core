@@ -83,87 +83,53 @@ func setupRepositoryTestEntityRegistration() {
 	// Disable hooks for tests
 	hooks.GlobalHookRegistry.DisableAllHooks(true)
 
-	// Fonction de conversion modèle -> DTO
-	modelToDto := func(input any) (any, error) {
-		if entity, ok := input.(RepositoryTestEntity); ok {
-			return RepositoryTestEntityOutput{
-				ID:          entity.ID.String(),
-				Name:        entity.Name,
-				Description: entity.Description,
-				Value:       entity.Value,
-				OwnerIDs:    entity.OwnerIDs,
-				CreatedAt:   entity.CreatedAt.String(),
-				UpdatedAt:   entity.UpdatedAt.String(),
-			}, nil
-		}
-		if entity, ok := input.(*RepositoryTestEntity); ok {
-			return RepositoryTestEntityOutput{
-				ID:          entity.ID.String(),
-				Name:        entity.Name,
-				Description: entity.Description,
-				Value:       entity.Value,
-				OwnerIDs:    entity.OwnerIDs,
-				CreatedAt:   entity.CreatedAt.String(),
-				UpdatedAt:   entity.UpdatedAt.String(),
-			}, nil
-		}
-		return nil, assert.AnError
-	}
-
-	// Fonction de conversion DTO -> modèle
-	dtoToModel := func(input any) any {
-		if dto, ok := input.(RepositoryTestEntityInput); ok {
-			return &RepositoryTestEntity{
-				Name:        dto.Name,
-				Description: dto.Description,
-				Value:       dto.Value,
-			}
-		}
-		if dto, ok := input.(*RepositoryTestEntityInput); ok {
-			return &RepositoryTestEntity{
-				Name:        dto.Name,
-				Description: dto.Description,
-				Value:       dto.Value,
-			}
-		}
-		return nil
-	}
-
-	// Enregistrer l'entité dans le service global
-	ems.GlobalEntityRegistrationService.RegisterEntityInterface("RepositoryTestEntity", RepositoryTestEntity{})
-
-	converters := entityManagementInterfaces.EntityConverters{
-		ModelToDto: modelToDto,
-		DtoToModel: dtoToModel,
-	}
-	ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions("RepositoryTestEntity", converters)
-
-	dtos := map[ems.DtoPurpose]any{
-		ems.InputCreateDto: RepositoryTestEntityInput{},
-		ems.OutputDto:      RepositoryTestEntityOutput{},
-		ems.InputEditDto:   RepositoryTestEntityInput{},
-	}
-	ems.GlobalEntityRegistrationService.RegisterEntityDtos("RepositoryTestEntity", dtos)
+	ems.RegisterTypedEntity[RepositoryTestEntity, RepositoryTestEntityInput, RepositoryTestEntityInput, RepositoryTestEntityOutput](
+		ems.GlobalEntityRegistrationService,
+		"RepositoryTestEntity",
+		entityManagementInterfaces.TypedEntityRegistration[RepositoryTestEntity, RepositoryTestEntityInput, RepositoryTestEntityInput, RepositoryTestEntityOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[RepositoryTestEntity, RepositoryTestEntityInput, RepositoryTestEntityInput, RepositoryTestEntityOutput]{
+				ModelToDto: func(entity *RepositoryTestEntity) (RepositoryTestEntityOutput, error) {
+					return RepositoryTestEntityOutput{
+						ID:          entity.ID.String(),
+						Name:        entity.Name,
+						Description: entity.Description,
+						Value:       entity.Value,
+						OwnerIDs:    entity.OwnerIDs,
+						CreatedAt:   entity.CreatedAt.String(),
+						UpdatedAt:   entity.UpdatedAt.String(),
+					}, nil
+				},
+				DtoToModel: func(dto RepositoryTestEntityInput) *RepositoryTestEntity {
+					return &RepositoryTestEntity{
+						Name:        dto.Name,
+						Description: dto.Description,
+						Value:       dto.Value,
+					}
+				},
+			},
+		},
+	)
 
 	// Enregistrer les entités parent/child pour les tests de preloading
 	ems.GlobalEntityRegistrationService.RegisterEntityInterface("ParentTestEntity", ParentTestEntity{})
 	ems.GlobalEntityRegistrationService.RegisterSubEntites("ParentTestEntity", []any{ChildTestEntity{}})
 }
 
-func TestGenericRepository_CreateEntity_Success(t *testing.T) {
+func TestGenericRepository_CreateEntityFromModel_Success(t *testing.T) {
 	// Setup
 	db := setupRepositoryTestDB(t)
 	repo := repositories.NewGenericRepository(db)
 	setupRepositoryTestEntityRegistration()
 
-	inputDto := RepositoryTestEntityInput{
+	// Pre-convert DTO to model (conversion is now the service's job)
+	entityModel := &RepositoryTestEntity{
 		Name:        "Test Repository Entity",
 		Description: "Testing repository creation",
 		Value:       42,
 	}
 
 	// Execute
-	result, err := repo.CreateEntity(inputDto, "RepositoryTestEntity")
+	result, err := repo.CreateEntityFromModel(entityModel)
 
 	// Assert
 	assert.NoError(t, err)
@@ -177,27 +143,6 @@ func TestGenericRepository_CreateEntity_Success(t *testing.T) {
 	assert.Equal(t, "Testing repository creation", savedEntity.Description)
 	assert.Equal(t, 42, savedEntity.Value)
 	assert.NotEqual(t, uuid.Nil, savedEntity.ID)
-}
-
-func TestGenericRepository_CreateEntity_ConversionFunctionNotFound(t *testing.T) {
-	// Setup
-	db := setupRepositoryTestDB(t)
-	repo := repositories.NewGenericRepository(db)
-
-	inputDto := RepositoryTestEntityInput{Name: "Test"}
-
-	// Execute (sans enregistrer l'entité)
-	result, err := repo.CreateEntity(inputDto, "NonExistentEntity")
-
-	// Assert
-	assert.Error(t, err)
-	assert.Nil(t, result)
-
-	entityErr, ok := err.(*entityErrors.EntityError)
-	assert.True(t, ok, "Error should be of type *EntityError")
-	assert.Equal(t, http.StatusInternalServerError, entityErr.HTTPStatus)
-	assert.Equal(t, "Entity conversion failed", entityErr.Message)
-	assert.Contains(t, entityErr.Details["reason"], "conversion function does not exist")
 }
 
 func TestGenericRepository_SaveEntity_Success(t *testing.T) {
@@ -471,20 +416,19 @@ func TestGenericRepository_DeleteEntity_NotFound(t *testing.T) {
 }
 
 // Test de performance pour les opérations de base
-func BenchmarkGenericRepository_CreateEntity(b *testing.B) {
+func BenchmarkGenericRepository_CreateEntityFromModel(b *testing.B) {
 	db := setupRepositoryTestDB(&testing.T{})
 	repo := repositories.NewGenericRepository(db)
 	setupRepositoryTestEntityRegistration()
 
-	inputDto := RepositoryTestEntityInput{
-		Name:        "Benchmark Entity",
-		Description: "Performance testing",
-		Value:       42,
-	}
-
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = repo.CreateEntity(inputDto, "RepositoryTestEntity")
+		entityModel := &RepositoryTestEntity{
+			Name:        "Benchmark Entity",
+			Description: "Performance testing",
+			Value:       42,
+		}
+		_, _ = repo.CreateEntityFromModel(entityModel)
 	}
 }
 
@@ -540,7 +484,7 @@ func TestGenericRepository_GetEntity_WithPreloading(t *testing.T) {
 }
 
 // Test d'erreur pour les opérations de base de données
-func TestGenericRepository_CreateEntity_DatabaseError(t *testing.T) {
+func TestGenericRepository_CreateEntityFromModel_DatabaseError(t *testing.T) {
 	// Setup avec une base de données fermée pour simuler une erreur
 	db := setupRepositoryTestDB(t)
 	setupRepositoryTestEntityRegistration()
@@ -550,10 +494,10 @@ func TestGenericRepository_CreateEntity_DatabaseError(t *testing.T) {
 	sqlDB.Close()
 
 	repo := repositories.NewGenericRepository(db)
-	inputDto := RepositoryTestEntityInput{Name: "Test"}
+	entityModel := &RepositoryTestEntity{Name: "Test"}
 
 	// Execute
-	result, err := repo.CreateEntity(inputDto, "RepositoryTestEntity")
+	result, err := repo.CreateEntityFromModel(entityModel)
 
 	// Assert
 	assert.Error(t, err)

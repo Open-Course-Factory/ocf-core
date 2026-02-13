@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"soli/formations/src/entityManagement/hooks"
-	entityInterfaces "soli/formations/src/entityManagement/interfaces"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
@@ -77,19 +76,6 @@ func CleanupTestDB(db *gorm.DB) {
 	if err == nil {
 		sqlDB.Close()
 	}
-}
-
-// RegisterTestEntity registers an entity with the global registry.
-//
-// This is a helper for tests that need to register entities.
-//
-// Usage:
-//
-//	RegisterTestEntity(t, MyEntityRegistration{})
-func RegisterTestEntity(t *testing.T, registration entityInterfaces.RegistrableInterface) {
-	t.Helper()
-
-	ems.GlobalEntityRegistrationService.RegisterEntity(registration)
 }
 
 // CreateTestEntity creates and saves a test entity to the database.

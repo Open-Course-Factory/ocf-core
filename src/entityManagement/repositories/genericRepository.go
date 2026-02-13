@@ -15,7 +15,6 @@ import (
 )
 
 type GenericRepository interface {
-	CreateEntity(data any, entityName string) (any, error)
 	CreateEntityFromModel(entityModel any) (any, error)
 	SaveEntity(entity any) (any, error)
 	GetEntity(id uuid.UUID, data any, entityName string, includes []string) (any, error)
@@ -59,29 +58,6 @@ func (o *genericRepository) getTableName(modelData any) string {
 	stmt := &gorm.Statement{DB: o.db}
 	stmt.Parse(modelData)
 	return stmt.Table
-}
-
-func (o *genericRepository) CreateEntity(entityInputDto any, entityName string) (any, error) {
-	conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.CreateInputDtoToModel)
-
-	if !found {
-		return nil, entityErrors.NewConversionError(entityName, "conversion function does not exist")
-	}
-
-	val := reflect.ValueOf(conversionFunctionRef)
-	if val.IsValid() && val.Kind() == reflect.Func {
-		args := []reflect.Value{reflect.ValueOf(entityInputDto)}
-		entityModel := val.Call(args)
-
-		result := o.db.Create(entityModel[0].Interface())
-		if result.Error != nil {
-			return nil, entityErrors.WrapDatabaseError(result.Error, "create entity")
-		}
-
-		return result.Statement.Model, nil
-	}
-
-	return 1, nil
 }
 
 func (o *genericRepository) CreateEntityFromModel(entityModel any) (any, error) {

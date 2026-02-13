@@ -84,30 +84,14 @@ func (g *genericService) CreateEntity(inputDto any, entityName string) (any, err
 
 func (g *genericService) CreateEntityWithUser(inputDto any, entityName string, userID string) (any, error) {
 	// Convert DTO to model entity before calling BeforeCreate hook
-	var entityModel any
+	ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName)
+	if !ok {
+		return nil, entityErrors.NewConversionError(entityName, "no typed operations registered")
+	}
 
-	// Fast path: use typed operations (no reflect)
-	if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName); ok {
-		model, err := ops.ConvertDtoToModel(inputDto)
-		if err != nil {
-			return nil, entityErrors.NewConversionError(entityName, err.Error())
-		}
-		entityModel = model
-	} else {
-		// Legacy reflect path
-		conversionFunctionRef, found := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.CreateInputDtoToModel)
-		if !found {
-			return nil, entityErrors.NewConversionError(entityName, "conversion function does not exist")
-		}
-
-		val := reflect.ValueOf(conversionFunctionRef)
-		if val.IsValid() && val.Kind() == reflect.Func {
-			args := []reflect.Value{reflect.ValueOf(inputDto)}
-			result := val.Call(args)
-			entityModel = result[0].Interface()
-		} else {
-			return nil, entityErrors.NewConversionError(entityName, "invalid conversion function")
-		}
+	entityModel, err := ops.ConvertDtoToModel(inputDto)
+	if err != nil {
+		return nil, entityErrors.NewConversionError(entityName, err.Error())
 	}
 
 	// Call BeforeCreate hook with the converted model
@@ -432,36 +416,12 @@ func (g *genericService) appendEntityFromResult(entityName string, item any, ent
 
 // used in post and get
 func (g *genericService) GetEntityFromResult(entityName string, item any) (any, bool) {
-	// Fast path: use typed operations (no reflect)
-	if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName); ok {
-		result, err := ops.ConvertModelToDto(item)
-		if err != nil {
-			return nil, true
-		}
-		return result, false
+	ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName)
+	if !ok {
+		return nil, true
 	}
-
-	// Legacy reflect path
-	var result any
-	if funcRef, ok := ems.GlobalEntityRegistrationService.GetConversionFunction(entityName, ems.OutputModelToDto); ok {
-		val := reflect.ValueOf(funcRef)
-
-		if val.IsValid() && val.Kind() == reflect.Func {
-			args := []reflect.Value{reflect.ValueOf(item)}
-			entityDto := val.Call(args)
-
-			if !entityDto[1].IsNil() {
-				return nil, true
-			}
-
-			if len(entityDto) == 2 {
-				result = entityDto[0].Interface()
-			}
-
-		} else {
-			return nil, true
-		}
-	} else {
+	result, err := ops.ConvertModelToDto(item)
+	if err != nil {
 		return nil, true
 	}
 	return result, false
@@ -489,8 +449,13 @@ func (g *genericService) AddDefaultAccessesForEntity(resourceName string, entity
 }
 
 func (g *genericService) DecodeInputDtoForEntityCreation(entityName string, ctx *gin.Context) (any, error) {
-	entityCreateDtoInput := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
-	decodedData := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
+	ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName)
+	if !ok {
+		return nil, entityErrors.NewEntityNotRegistered(entityName)
+	}
+
+	entityCreateDtoInput := ops.NewCreateDto()
+	decodedData := ops.NewCreateDto()
 
 	bindError := ctx.BindJSON(&entityCreateDtoInput)
 	if bindError != nil {

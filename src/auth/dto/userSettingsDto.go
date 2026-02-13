@@ -1,10 +1,14 @@
 package dto
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // UserSettingsOutput represents the full user settings response
 type UserSettingsOutput struct {
-	ID                   uint       `json:"id"`
+	ID                   uuid.UUID  `json:"id"`
 	UserID               string     `json:"user_id"`
 	DefaultLandingPage   string     `json:"default_landing_page"`
 	PreferredLanguage    string     `json:"preferred_language"`

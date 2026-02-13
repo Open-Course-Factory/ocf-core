@@ -103,201 +103,144 @@ type RelTestSectionOutput struct {
 	OwnerIDs []string `json:"owner_ids"`
 }
 
-// Registrations
-type RelTestPageRegistration struct {
-	entityManagementInterfaces.AbstractRegistrableInterface
-}
-
-func (r RelTestPageRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	var entity RelTestPage
-	switch v := input.(type) {
-	case *RelTestPage:
-		entity = *v
-	case RelTestPage:
-		entity = v
-	default:
-		return nil, fmt.Errorf("invalid input type")
-	}
-
-	return &RelTestPageOutput{
-		ID:       entity.ID.String(),
-		Name:     entity.Name,
-		Content:  entity.Content,
-		OwnerIDs: entity.OwnerIDs,
-	}, nil
-}
-
-func (r RelTestPageRegistration) EntityInputDtoToEntityModel(input any) any {
-	var dto RelTestPageInput
-	switch v := input.(type) {
-	case *RelTestPageInput:
-		dto = *v
-	case RelTestPageInput:
-		dto = v
-	default:
-		return nil
-	}
-
-	entity := &RelTestPage{
-		Name:    dto.Name,
-		Content: dto.Content,
-	}
-	entity.OwnerIDs = append(entity.OwnerIDs, dto.OwnerID)
-
-	return entity
-}
-
-func (r RelTestPageRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
-	return entityManagementInterfaces.EntityRegistrationInput{
-		EntityInterface: RelTestPage{},
-		EntityConverters: entityManagementInterfaces.EntityConverters{
-			ModelToDto: r.EntityModelToEntityOutput,
-			DtoToModel: r.EntityInputDtoToEntityModel,
-		},
-		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputCreateDto: RelTestPageInput{},
-			OutputDto:      RelTestPageOutput{},
-			InputEditDto:   map[string]any{},
-		},
-		RelationshipFilters: []entityManagementInterfaces.RelationshipFilter{
-			{
-				FilterName:   "courseId",
-				TargetColumn: "id",
-				Path: []entityManagementInterfaces.RelationshipStep{
-					{
-						JoinTable:    "section_pages",
-						SourceColumn: "page_id",
-						TargetColumn: "section_id",
-						NextTable:    "sections",
-					},
-					{
-						JoinTable:    "chapter_sections",
-						SourceColumn: "section_id",
-						TargetColumn: "chapter_id",
-						NextTable:    "chapters",
-					},
-					{
-						JoinTable:    "course_chapters",
-						SourceColumn: "chapter_id",
-						TargetColumn: "course_id",
-						NextTable:    "courses",
-					},
+// registerRelTestPage registers the RelTestPage entity using typed generics.
+func registerRelTestPage(service *ems.EntityRegistrationService) {
+	ems.RegisterTypedEntity[RelTestPage, RelTestPageInput, map[string]any, RelTestPageOutput](
+		service,
+		"RelTestPage",
+		entityManagementInterfaces.TypedEntityRegistration[RelTestPage, RelTestPageInput, map[string]any, RelTestPageOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[RelTestPage, RelTestPageInput, map[string]any, RelTestPageOutput]{
+				ModelToDto: func(entity *RelTestPage) (RelTestPageOutput, error) {
+					return RelTestPageOutput{
+						ID:       entity.ID.String(),
+						Name:     entity.Name,
+						Content:  entity.Content,
+						OwnerIDs: entity.OwnerIDs,
+					}, nil
+				},
+				DtoToModel: func(dto RelTestPageInput) *RelTestPage {
+					entity := &RelTestPage{
+						Name:    dto.Name,
+						Content: dto.Content,
+					}
+					entity.OwnerIDs = append(entity.OwnerIDs, dto.OwnerID)
+					return entity
+				},
+				DtoToMap: func(dto map[string]any) map[string]any {
+					return dto
 				},
 			},
-			{
-				FilterName:   "chapterId",
-				TargetColumn: "id",
-				Path: []entityManagementInterfaces.RelationshipStep{
-					{
-						JoinTable:    "section_pages",
-						SourceColumn: "page_id",
-						TargetColumn: "section_id",
-						NextTable:    "sections",
-					},
-					{
-						JoinTable:    "chapter_sections",
-						SourceColumn: "section_id",
-						TargetColumn: "chapter_id",
-						NextTable:    "chapters",
-					},
+			Roles: entityManagementInterfaces.EntityRoles{
+				Roles: map[string]string{
+					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
 				},
 			},
-			{
-				FilterName:   "sectionId",
-				TargetColumn: "id",
-				Path: []entityManagementInterfaces.RelationshipStep{
-					{
-						JoinTable:    "section_pages",
-						SourceColumn: "page_id",
-						TargetColumn: "section_id",
-						NextTable:    "sections",
+			RelationshipFilters: []entityManagementInterfaces.RelationshipFilter{
+				{
+					FilterName:   "courseId",
+					TargetColumn: "id",
+					Path: []entityManagementInterfaces.RelationshipStep{
+						{
+							JoinTable:    "section_pages",
+							SourceColumn: "page_id",
+							TargetColumn: "section_id",
+							NextTable:    "sections",
+						},
+						{
+							JoinTable:    "chapter_sections",
+							SourceColumn: "section_id",
+							TargetColumn: "chapter_id",
+							NextTable:    "chapters",
+						},
+						{
+							JoinTable:    "course_chapters",
+							SourceColumn: "chapter_id",
+							TargetColumn: "course_id",
+							NextTable:    "courses",
+						},
+					},
+				},
+				{
+					FilterName:   "chapterId",
+					TargetColumn: "id",
+					Path: []entityManagementInterfaces.RelationshipStep{
+						{
+							JoinTable:    "section_pages",
+							SourceColumn: "page_id",
+							TargetColumn: "section_id",
+							NextTable:    "sections",
+						},
+						{
+							JoinTable:    "chapter_sections",
+							SourceColumn: "section_id",
+							TargetColumn: "chapter_id",
+							NextTable:    "chapters",
+						},
+					},
+				},
+				{
+					FilterName:   "sectionId",
+					TargetColumn: "id",
+					Path: []entityManagementInterfaces.RelationshipStep{
+						{
+							JoinTable:    "section_pages",
+							SourceColumn: "page_id",
+							TargetColumn: "section_id",
+							NextTable:    "sections",
+						},
 					},
 				},
 			},
 		},
-	}
+	)
 }
 
-func (r RelTestPageRegistration) GetEntityRoles() entityManagementInterfaces.EntityRoles {
-	roleMap := make(map[string]string)
-	roleMap[string(authModels.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
-	return entityManagementInterfaces.EntityRoles{Roles: roleMap}
-}
-
-type RelTestSectionRegistration struct {
-	entityManagementInterfaces.AbstractRegistrableInterface
-}
-
-func (r RelTestSectionRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	var entity RelTestSection
-	switch v := input.(type) {
-	case *RelTestSection:
-		entity = *v
-	case RelTestSection:
-		entity = v
-	default:
-		return nil, fmt.Errorf("invalid input type")
-	}
-
-	return &RelTestSectionOutput{
-		ID:       entity.ID.String(),
-		Name:     entity.Name,
-		OwnerIDs: entity.OwnerIDs,
-	}, nil
-}
-
-func (r RelTestSectionRegistration) EntityInputDtoToEntityModel(input any) any {
-	var dto RelTestSectionInput
-	switch v := input.(type) {
-	case *RelTestSectionInput:
-		dto = *v
-	case RelTestSectionInput:
-		dto = v
-	default:
-		return nil
-	}
-
-	entity := &RelTestSection{
-		Name: dto.Name,
-	}
-	entity.OwnerIDs = append(entity.OwnerIDs, dto.OwnerID)
-
-	return entity
-}
-
-func (r RelTestSectionRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
-	return entityManagementInterfaces.EntityRegistrationInput{
-		EntityInterface: RelTestSection{},
-		EntityConverters: entityManagementInterfaces.EntityConverters{
-			ModelToDto: r.EntityModelToEntityOutput,
-			DtoToModel: r.EntityInputDtoToEntityModel,
-		},
-		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputCreateDto: RelTestSectionInput{},
-			OutputDto:      RelTestSectionOutput{},
-			InputEditDto:   map[string]any{},
-		},
-		RelationshipFilters: []entityManagementInterfaces.RelationshipFilter{
-			{
-				FilterName:   "chapterId",
-				TargetColumn: "id",
-				Path: []entityManagementInterfaces.RelationshipStep{
-					{
-						JoinTable:    "chapter_sections",
-						SourceColumn: "section_id",
-						TargetColumn: "chapter_id",
-						NextTable:    "chapters",
+// registerRelTestSection registers the RelTestSection entity using typed generics.
+func registerRelTestSection(service *ems.EntityRegistrationService) {
+	ems.RegisterTypedEntity[RelTestSection, RelTestSectionInput, map[string]any, RelTestSectionOutput](
+		service,
+		"RelTestSection",
+		entityManagementInterfaces.TypedEntityRegistration[RelTestSection, RelTestSectionInput, map[string]any, RelTestSectionOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[RelTestSection, RelTestSectionInput, map[string]any, RelTestSectionOutput]{
+				ModelToDto: func(entity *RelTestSection) (RelTestSectionOutput, error) {
+					return RelTestSectionOutput{
+						ID:       entity.ID.String(),
+						Name:     entity.Name,
+						OwnerIDs: entity.OwnerIDs,
+					}, nil
+				},
+				DtoToModel: func(dto RelTestSectionInput) *RelTestSection {
+					entity := &RelTestSection{
+						Name: dto.Name,
+					}
+					entity.OwnerIDs = append(entity.OwnerIDs, dto.OwnerID)
+					return entity
+				},
+				DtoToMap: func(dto map[string]any) map[string]any {
+					return dto
+				},
+			},
+			Roles: entityManagementInterfaces.EntityRoles{
+				Roles: map[string]string{
+					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
+				},
+			},
+			RelationshipFilters: []entityManagementInterfaces.RelationshipFilter{
+				{
+					FilterName:   "chapterId",
+					TargetColumn: "id",
+					Path: []entityManagementInterfaces.RelationshipStep{
+						{
+							JoinTable:    "chapter_sections",
+							SourceColumn: "section_id",
+							TargetColumn: "chapter_id",
+							NextTable:    "chapters",
+						},
 					},
 				},
 			},
 		},
-	}
-}
-
-func (r RelTestSectionRegistration) GetEntityRoles() entityManagementInterfaces.EntityRoles {
-	roleMap := make(map[string]string)
-	roleMap[string(authModels.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
-	return entityManagementInterfaces.EntityRoles{Roles: roleMap}
+	)
 }
 
 // ============================================================================
@@ -353,12 +296,8 @@ func setupRelationshipTest(t *testing.T) *RelationshipTestSuite {
 	suite.router = router
 
 	// Register entities with Global service
-	pageReg := RelTestPageRegistration{}
-	sectionReg := RelTestSectionRegistration{}
-	ems.GlobalEntityRegistrationService.RegisterEntity(pageReg)
-	ems.GlobalEntityRegistrationService.RegisterEntity(sectionReg)
-	ems.GlobalEntityRegistrationService.RegisterEntityInterface("RelTestPage", RelTestPage{})
-	ems.GlobalEntityRegistrationService.RegisterEntityInterface("RelTestSection", RelTestSection{})
+	registerRelTestPage(ems.GlobalEntityRegistrationService)
+	registerRelTestSection(ems.GlobalEntityRegistrationService)
 
 	t.Cleanup(func() {
 		casdoor.Enforcer = suite.originalEnforcer

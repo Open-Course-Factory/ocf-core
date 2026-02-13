@@ -359,20 +359,21 @@ func setupHookServiceTestSimple(t *testing.T) (*gorm.DB, services.GenericService
 
 	service := services.NewGenericService(db, nil)
 
-	// Register entity with conversion functions
-	ems.GlobalEntityRegistrationService.RegisterEntityInterface("HookTestEntity", HookTestEntitySimple{})
-
-	dtoToModel := func(input any) any {
-		if entity, ok := input.(*HookTestEntitySimple); ok {
-			return entity
-		}
-		return input
-	}
-
-	converters := entityManagementInterfaces.EntityConverters{
-		DtoToModel: dtoToModel,
-	}
-	ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions("HookTestEntity", converters)
+	// Register entity with typed registration
+	ems.RegisterTypedEntity[HookTestEntitySimple, HookTestEntitySimple, HookTestEntitySimple, HookTestEntitySimple](
+		ems.GlobalEntityRegistrationService,
+		"HookTestEntity",
+		entityManagementInterfaces.TypedEntityRegistration[HookTestEntitySimple, HookTestEntitySimple, HookTestEntitySimple, HookTestEntitySimple]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[HookTestEntitySimple, HookTestEntitySimple, HookTestEntitySimple, HookTestEntitySimple]{
+				ModelToDto: func(entity *HookTestEntitySimple) (HookTestEntitySimple, error) {
+					return *entity, nil
+				},
+				DtoToModel: func(dto HookTestEntitySimple) *HookTestEntitySimple {
+					return &dto
+				},
+			},
+		},
+	)
 
 	t.Cleanup(func() {
 		ems.GlobalEntityRegistrationService.UnregisterEntity("HookTestEntity")
@@ -396,7 +397,7 @@ func TestHooksSimple_ServiceIntegration_BeforeCreate(t *testing.T) {
 	beforeCreateHook := NewSimpleTrackingHook("before-create", "HookTestEntity", []hooks.HookType{hooks.BeforeCreate}, 10)
 	_ = registry.RegisterHook(beforeCreateHook)
 
-	entity := &HookTestEntitySimple{
+	entity := HookTestEntitySimple{
 		Name:   "Test Entity",
 		Value:  42,
 		Status: "pending",
@@ -417,7 +418,7 @@ func TestHooksSimple_ServiceIntegration_AfterCreate(t *testing.T) {
 	afterCreateHook := NewSimpleTrackingHook("after-create", "HookTestEntity", []hooks.HookType{hooks.AfterCreate}, 10)
 	_ = registry.RegisterHook(afterCreateHook)
 
-	entity := &HookTestEntitySimple{
+	entity := HookTestEntitySimple{
 		Name:   "Test Entity",
 		Value:  42,
 		Status: "pending",
@@ -450,7 +451,7 @@ func TestHooksSimple_ConcurrentExecution(t *testing.T) {
 		go func(index int) {
 			defer wg.Done()
 
-			entity := &HookTestEntitySimple{
+			entity := HookTestEntitySimple{
 				Name:   fmt.Sprintf("Entity %d", index),
 				Value:  index,
 				Status: "active",
@@ -486,7 +487,7 @@ func TestHooksSimple_ErrorTracking_AsyncHookFailure(t *testing.T) {
 	registry.ClearErrors()
 
 	// Create entity (should succeed even if after-hook fails)
-	entity := &HookTestEntitySimple{
+	entity := HookTestEntitySimple{
 		Name:   "Test Entity",
 		Value:  42,
 		Status: "active",
@@ -525,7 +526,7 @@ func TestHooksSimple_ErrorTracking_MultipleErrors(t *testing.T) {
 
 	// Create multiple entities to generate multiple errors
 	for i := 0; i < 3; i++ {
-		entity := &HookTestEntitySimple{Name: fmt.Sprintf("Test %d", i), Value: i, Status: "active"}
+		entity := HookTestEntitySimple{Name: fmt.Sprintf("Test %d", i), Value: i, Status: "active"}
 		_, _ = service.CreateEntity(entity, "HookTestEntity")
 		time.Sleep(50 * time.Millisecond)
 	}

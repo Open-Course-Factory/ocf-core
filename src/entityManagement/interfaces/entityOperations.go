@@ -32,4 +32,7 @@ type EntityOperations interface {
 
 	// NewEditDto returns a zero-value copy of the edit DTO type.
 	NewEditDto() any
+
+	// NewOutputDto returns a zero-value copy of the output DTO type.
+	NewOutputDto() any
 }

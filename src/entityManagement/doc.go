@@ -22,21 +22,20 @@
 //	    Code   string    `json:"code"`
 //	}
 //
-// 2. Implement RegistrableEntity interface:
+// 2. Define DTOs and converters, then register using RegisterTypedEntity:
 //
-//	type CourseRegistration struct{}
-//
-//	func (cr CourseRegistration) GetEntity() any {
-//	    return &Course{}
-//	}
-//
-//	func (cr CourseRegistration) GetEntityName() string {
-//	    return "Course"
-//	}
-//
-// 3. Register the entity in main.go:
-//
-//	ems.GlobalEntityRegistrationService.RegisterEntity(CourseRegistration{})
+//	ems.RegisterTypedEntity[models.Course, dto.CourseInput, dto.CourseEdit, dto.CourseOutput](
+//	    ems.GlobalEntityRegistrationService,
+//	    "Course",
+//	    entityManagementInterfaces.TypedEntityRegistration[models.Course, dto.CourseInput, dto.CourseEdit, dto.CourseOutput]{
+//	        Converters: entityManagementInterfaces.TypedEntityConverters[models.Course, dto.CourseInput, dto.CourseEdit, dto.CourseOutput]{
+//	            ModelToDto: dto.CourseModelToOutput,
+//	            DtoToModel: dto.CourseInputToModel,
+//	            DtoToMap:   dto.CourseEditToMap,
+//	        },
+//	        Roles: entityManagementInterfaces.EntityRoles{Roles: roleMap},
+//	    },
+//	)
 //
 // This automatically creates these routes:
 //   - GET    /api/v1/courses           - List all courses (paginated)

@@ -114,3 +114,7 @@ func (ops *typedEntityOps[M, C, E, O]) NewCreateDto() any {
 func (ops *typedEntityOps[M, C, E, O]) NewEditDto() any {
 	return *new(E)
 }
+
+func (ops *typedEntityOps[M, C, E, O]) NewOutputDto() any {
+	return *new(O)
+}

@@ -47,68 +47,39 @@ type SecurityTestEntityOutput struct {
 	OwnerIDs      []string `json:"owner_ids"`
 }
 
-type SecurityTestEntityRegistration struct {
-	entityManagementInterfaces.AbstractRegistrableInterface
-}
-
-func (r SecurityTestEntityRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	var entity SecurityTestEntity
-	switch v := input.(type) {
-	case *SecurityTestEntity:
-		entity = *v
-	case SecurityTestEntity:
-		entity = v
-	default:
-		return nil, fmt.Errorf("invalid input type")
-	}
-
-	return &SecurityTestEntityOutput{
-		ID:            entity.ID.String(),
-		Name:          entity.Name,
-		SensitiveData: entity.SensitiveData,
-		OwnerIDs:      entity.OwnerIDs,
-	}, nil
-}
-
-func (r SecurityTestEntityRegistration) EntityInputDtoToEntityModel(input any) any {
-	var dto SecurityTestEntityInput
-	switch v := input.(type) {
-	case *SecurityTestEntityInput:
-		dto = *v
-	case SecurityTestEntityInput:
-		dto = v
-	default:
-		return nil
-	}
-
-	entity := &SecurityTestEntity{
-		Name:          dto.Name,
-		SensitiveData: dto.SensitiveData,
-	}
-
-	return entity
-}
-
-func (r SecurityTestEntityRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
-	return entityManagementInterfaces.EntityRegistrationInput{
-		EntityInterface: SecurityTestEntity{},
-		EntityConverters: entityManagementInterfaces.EntityConverters{
-			ModelToDto: r.EntityModelToEntityOutput,
-			DtoToModel: r.EntityInputDtoToEntityModel,
+// registerSecurityTestEntity registers the SecurityTestEntity using typed generics.
+func registerSecurityTestEntity(service *ems.EntityRegistrationService) {
+	ems.RegisterTypedEntity[SecurityTestEntity, SecurityTestEntityInput, map[string]any, SecurityTestEntityOutput](
+		service,
+		"SecurityTestEntity",
+		entityManagementInterfaces.TypedEntityRegistration[SecurityTestEntity, SecurityTestEntityInput, map[string]any, SecurityTestEntityOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[SecurityTestEntity, SecurityTestEntityInput, map[string]any, SecurityTestEntityOutput]{
+				ModelToDto: func(entity *SecurityTestEntity) (SecurityTestEntityOutput, error) {
+					return SecurityTestEntityOutput{
+						ID:            entity.ID.String(),
+						Name:          entity.Name,
+						SensitiveData: entity.SensitiveData,
+						OwnerIDs:      entity.OwnerIDs,
+					}, nil
+				},
+				DtoToModel: func(dto SecurityTestEntityInput) *SecurityTestEntity {
+					return &SecurityTestEntity{
+						Name:          dto.Name,
+						SensitiveData: dto.SensitiveData,
+					}
+				},
+				DtoToMap: func(dto map[string]any) map[string]any {
+					return dto
+				},
+			},
+			Roles: entityManagementInterfaces.EntityRoles{
+				Roles: map[string]string{
+					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
+					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
+				},
+			},
 		},
-		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputCreateDto: SecurityTestEntityInput{},
-			OutputDto:      SecurityTestEntityOutput{},
-			InputEditDto:   map[string]any{},
-		},
-	}
-}
-
-func (r SecurityTestEntityRegistration) GetEntityRoles() entityManagementInterfaces.EntityRoles {
-	roleMap := make(map[string]string)
-	roleMap[string(authModels.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
-	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")"
-	return entityManagementInterfaces.EntityRoles{Roles: roleMap}
+	)
 }
 
 // ============================================================================
@@ -144,9 +115,7 @@ func setupSecurityTest(t *testing.T) *SecurityTestSuite {
 	suite.router = router
 
 	// Register entity with Global service
-	testRegistration := SecurityTestEntityRegistration{}
-	ems.GlobalEntityRegistrationService.RegisterEntity(testRegistration)
-	ems.GlobalEntityRegistrationService.RegisterEntityInterface("SecurityTestEntity", SecurityTestEntity{})
+	registerSecurityTestEntity(ems.GlobalEntityRegistrationService)
 
 	t.Cleanup(func() {
 		casdoor.Enforcer = suite.originalEnforcer

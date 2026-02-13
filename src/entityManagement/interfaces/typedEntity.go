@@ -15,7 +15,7 @@ type TypedEntityConverters[M any, C any, E any, O any] struct {
 	DtoToMap   func(E) map[string]any
 }
 
-// TypedEntityRegistration is the type-safe replacement for EntityRegistrationInput.
+// TypedEntityRegistration holds the full registration config for an entity.
 type TypedEntityRegistration[M any, C any, E any, O any] struct {
 	Converters          TypedEntityConverters[M, C, E, O]
 	Roles               EntityRoles

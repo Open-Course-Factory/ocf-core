@@ -11,6 +11,7 @@ import (
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	entityManagementModels "soli/formations/src/entityManagement/models"
+	"soli/formations/src/entityManagement/hooks"
 	controller "soli/formations/src/entityManagement/routes"
 
 	"github.com/gin-gonic/gin"
@@ -127,58 +128,34 @@ func setupControllerTestDB(t *testing.T) *gorm.DB {
 }
 
 func setupControllerTestEntityRegistration() {
-	// Fonctions de conversion
-	modelToDto := func(input any) (any, error) {
-		if entity, ok := input.(ControllerTestEntity); ok {
-			return ControllerTestEntityOutput{
-				ID:          entity.ID.String(),
-				Name:        entity.Name,
-				Description: entity.Description,
-				OwnerIDs:    entity.OwnerIDs,
-			}, nil
-		}
-		if entity, ok := input.(*ControllerTestEntity); ok {
-			return ControllerTestEntityOutput{
-				ID:          entity.ID.String(),
-				Name:        entity.Name,
-				Description: entity.Description,
-				OwnerIDs:    entity.OwnerIDs,
-			}, nil
-		}
-		return nil, assert.AnError
-	}
+	// Reset global service to ensure clean state
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
 
-	dtoToModel := func(input any) any {
-		if dto, ok := input.(ControllerTestEntityInput); ok {
-			return &ControllerTestEntity{
-				Name:        dto.Name,
-				Description: dto.Description,
-			}
-		}
-		if dto, ok := input.(*ControllerTestEntityInput); ok {
-			return &ControllerTestEntity{
-				Name:        dto.Name,
-				Description: dto.Description,
-			}
-		}
-		return nil
-	}
+	// Disable hooks for tests to prevent async issues
+	hooks.GlobalHookRegistry.DisableAllHooks(true)
 
-	// Enregistrement
-	ems.GlobalEntityRegistrationService.RegisterEntityInterface("ControllerTestEntity", ControllerTestEntity{})
-
-	converters := entityManagementInterfaces.EntityConverters{
-		ModelToDto: modelToDto,
-		DtoToModel: dtoToModel,
-	}
-	ems.GlobalEntityRegistrationService.RegisterEntityConversionFunctions("ControllerTestEntity", converters)
-
-	dtos := map[ems.DtoPurpose]any{
-		ems.InputCreateDto: ControllerTestEntityInput{},
-		ems.OutputDto:      ControllerTestEntityOutput{},
-		ems.InputEditDto:   ControllerTestEntityEdit{},
-	}
-	ems.GlobalEntityRegistrationService.RegisterEntityDtos("ControllerTestEntity", dtos)
+	ems.RegisterTypedEntity[ControllerTestEntity, ControllerTestEntityInput, ControllerTestEntityEdit, ControllerTestEntityOutput](
+		ems.GlobalEntityRegistrationService,
+		"ControllerTestEntity",
+		entityManagementInterfaces.TypedEntityRegistration[ControllerTestEntity, ControllerTestEntityInput, ControllerTestEntityEdit, ControllerTestEntityOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[ControllerTestEntity, ControllerTestEntityInput, ControllerTestEntityEdit, ControllerTestEntityOutput]{
+				ModelToDto: func(entity *ControllerTestEntity) (ControllerTestEntityOutput, error) {
+					return ControllerTestEntityOutput{
+						ID:          entity.ID.String(),
+						Name:        entity.Name,
+						Description: entity.Description,
+						OwnerIDs:    entity.OwnerIDs,
+					}, nil
+				},
+				DtoToModel: func(dto ControllerTestEntityInput) *ControllerTestEntity {
+					return &ControllerTestEntity{
+						Name:        dto.Name,
+						Description: dto.Description,
+					}
+				},
+			},
+		},
+	)
 }
 
 // Tests des fonctions utilitaires
@@ -289,6 +266,7 @@ func TestGenericController_AddEntity_InvalidJSON(t *testing.T) {
 	// Setup
 	gin.SetMode(gin.TestMode)
 	db := setupControllerTestDB(t)
+	setupControllerTestEntityRegistration()
 
 	genericController := controller.NewGenericController(db, nil)
 	router := gin.New()

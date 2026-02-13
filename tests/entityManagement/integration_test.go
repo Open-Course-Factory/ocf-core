@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/mitchellh/mapstructure"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
@@ -78,80 +79,52 @@ type IntegrationTestEntityOutput struct {
 	Children    []IntegrationTestChild `json:"children,omitempty"`
 }
 
-// Registration
-type IntegrationTestEntityRegistration struct {
-	entityManagementInterfaces.AbstractRegistrableInterface
-}
-
-func (r IntegrationTestEntityRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	var entity IntegrationTestEntity
-	switch v := input.(type) {
-	case *IntegrationTestEntity:
-		entity = *v
-	case IntegrationTestEntity:
-		entity = v
-	default:
-		return nil, fmt.Errorf("invalid input type")
-	}
-
-	return &IntegrationTestEntityOutput{
-		ID:          entity.ID.String(),
-		Name:        entity.Name,
-		Description: entity.Description,
-		Value:       entity.Value,
-		IsActive:    entity.IsActive,
-		Tags:        entity.Tags,
-		OwnerIDs:    entity.OwnerIDs,
-		CreatedAt:   entity.CreatedAt,
-		UpdatedAt:   entity.UpdatedAt,
-		Children:    entity.Children,
-	}, nil
-}
-
-func (r IntegrationTestEntityRegistration) EntityInputDtoToEntityModel(input any) any {
-	var dto IntegrationTestEntityInput
-	switch v := input.(type) {
-	case *IntegrationTestEntityInput:
-		dto = *v
-	case IntegrationTestEntityInput:
-		dto = v
-	default:
-		return nil
-	}
-
-	entity := &IntegrationTestEntity{
-		Name:        dto.Name,
-		Description: dto.Description,
-		Value:       dto.Value,
-		IsActive:    dto.IsActive,
-		Tags:        dto.Tags,
-	}
-
-	return entity
-}
-
-func (r IntegrationTestEntityRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
-	return entityManagementInterfaces.EntityRegistrationInput{
-		EntityInterface: IntegrationTestEntity{},
-		EntityConverters: entityManagementInterfaces.EntityConverters{
-			ModelToDto: r.EntityModelToEntityOutput,
-			DtoToModel: r.EntityInputDtoToEntityModel,
+// registerIntegrationTestEntity registers the IntegrationTestEntity using typed generics.
+func registerIntegrationTestEntity(service *ems.EntityRegistrationService) {
+	ems.RegisterTypedEntity[IntegrationTestEntity, IntegrationTestEntityInput, IntegrationTestEntityEditInput, IntegrationTestEntityOutput](
+		service,
+		"IntegrationTestEntity",
+		entityManagementInterfaces.TypedEntityRegistration[IntegrationTestEntity, IntegrationTestEntityInput, IntegrationTestEntityEditInput, IntegrationTestEntityOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[IntegrationTestEntity, IntegrationTestEntityInput, IntegrationTestEntityEditInput, IntegrationTestEntityOutput]{
+				ModelToDto: func(entity *IntegrationTestEntity) (IntegrationTestEntityOutput, error) {
+					return IntegrationTestEntityOutput{
+						ID:          entity.ID.String(),
+						Name:        entity.Name,
+						Description: entity.Description,
+						Value:       entity.Value,
+						IsActive:    entity.IsActive,
+						Tags:        entity.Tags,
+						OwnerIDs:    entity.OwnerIDs,
+						CreatedAt:   entity.CreatedAt,
+						UpdatedAt:   entity.UpdatedAt,
+						Children:    entity.Children,
+					}, nil
+				},
+				DtoToModel: func(dto IntegrationTestEntityInput) *IntegrationTestEntity {
+					return &IntegrationTestEntity{
+						Name:        dto.Name,
+						Description: dto.Description,
+						Value:       dto.Value,
+						IsActive:    dto.IsActive,
+						Tags:        dto.Tags,
+					}
+				},
+				DtoToMap: func(dto IntegrationTestEntityEditInput) map[string]any {
+					result := make(map[string]any)
+					_ = mapstructure.Decode(dto, &result)
+					return result
+				},
+			},
+			Roles: entityManagementInterfaces.EntityRoles{
+				Roles: map[string]string{
+					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
+					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
+				},
+			},
+			// EntitySubEntities temporarily removed - preloading logic has a bug with field name resolution
+			SubEntities: []any{},
 		},
-		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputCreateDto: IntegrationTestEntityInput{},
-			OutputDto:      IntegrationTestEntityOutput{},
-			InputEditDto:   IntegrationTestEntityEditInput{},
-		},
-		// EntitySubEntities temporarily removed - preloading logic has a bug with field name resolution
-		EntitySubEntities: []any{},
-	}
-}
-
-func (r IntegrationTestEntityRegistration) GetEntityRoles() entityManagementInterfaces.EntityRoles {
-	roleMap := make(map[string]string)
-	roleMap[string(authModels.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
-	roleMap[string(authModels.Admin)] = "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")"
-	return entityManagementInterfaces.EntityRoles{Roles: roleMap}
+	)
 }
 
 // ============================================================================
@@ -195,9 +168,7 @@ func setupIntegrationTest(t *testing.T) *IntegrationTestSuite {
 	suite.router = router
 
 	// Register test entity with GLOBAL service
-	testRegistration := IntegrationTestEntityRegistration{}
-	ems.GlobalEntityRegistrationService.RegisterEntity(testRegistration)
-	ems.GlobalEntityRegistrationService.RegisterEntityInterface("IntegrationTestEntity", IntegrationTestEntity{})
+	registerIntegrationTestEntity(ems.GlobalEntityRegistrationService)
 
 	// Setup controller
 	suite.controller = controller.NewGenericController(db, nil)

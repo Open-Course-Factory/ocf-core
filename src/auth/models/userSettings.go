@@ -3,11 +3,11 @@ package models
 import (
 	"time"
 
-	"gorm.io/gorm"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 )
 
 type UserSettings struct {
-	gorm.Model
+	entityManagementModels.BaseModel
 	UserID string `gorm:"uniqueIndex;not null" json:"user_id"`
 
 	// Navigation

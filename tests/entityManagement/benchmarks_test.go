@@ -63,78 +63,50 @@ type BenchmarkEntityOutput struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-type BenchmarkEntityRegistration struct {
-	entityManagementInterfaces.AbstractRegistrableInterface
-}
-
-func (r BenchmarkEntityRegistration) EntityModelToEntityOutput(input any) (any, error) {
-	var entity BenchmarkEntity
-	switch v := input.(type) {
-	case *BenchmarkEntity:
-		entity = *v
-	case BenchmarkEntity:
-		entity = v
-	default:
-		return nil, fmt.Errorf("invalid input type")
-	}
-
-	return &BenchmarkEntityOutput{
-		ID:          entity.ID.String(),
-		Name:        entity.Name,
-		Description: entity.Description,
-		Value:       entity.Value,
-		IsActive:    entity.IsActive,
-		Tags:        entity.Tags,
-		Data:        entity.Data,
-		OwnerIDs:    entity.OwnerIDs,
-		CreatedAt:   entity.CreatedAt,
-		UpdatedAt:   entity.UpdatedAt,
-	}, nil
-}
-
-func (r BenchmarkEntityRegistration) EntityInputDtoToEntityModel(input any) any {
-	var dto BenchmarkEntityInput
-	switch v := input.(type) {
-	case *BenchmarkEntityInput:
-		dto = *v
-	case BenchmarkEntityInput:
-		dto = v
-	default:
-		return nil
-	}
-
-	entity := &BenchmarkEntity{
-		Name:        dto.Name,
-		Description: dto.Description,
-		Value:       dto.Value,
-		IsActive:    dto.IsActive,
-		Tags:        dto.Tags,
-		Data:        dto.Data,
-	}
-	entity.OwnerIDs = append(entity.OwnerIDs, dto.OwnerID)
-
-	return entity
-}
-
-func (r BenchmarkEntityRegistration) GetEntityRegistrationInput() entityManagementInterfaces.EntityRegistrationInput {
-	return entityManagementInterfaces.EntityRegistrationInput{
-		EntityInterface: BenchmarkEntity{},
-		EntityConverters: entityManagementInterfaces.EntityConverters{
-			ModelToDto: r.EntityModelToEntityOutput,
-			DtoToModel: r.EntityInputDtoToEntityModel,
+// registerBenchmarkEntity registers the BenchmarkEntity using typed generics.
+func registerBenchmarkEntity(service *ems.EntityRegistrationService) {
+	ems.RegisterTypedEntity[BenchmarkEntity, BenchmarkEntityInput, map[string]any, BenchmarkEntityOutput](
+		service,
+		"BenchmarkEntity",
+		entityManagementInterfaces.TypedEntityRegistration[BenchmarkEntity, BenchmarkEntityInput, map[string]any, BenchmarkEntityOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[BenchmarkEntity, BenchmarkEntityInput, map[string]any, BenchmarkEntityOutput]{
+				ModelToDto: func(entity *BenchmarkEntity) (BenchmarkEntityOutput, error) {
+					return BenchmarkEntityOutput{
+						ID:          entity.ID.String(),
+						Name:        entity.Name,
+						Description: entity.Description,
+						Value:       entity.Value,
+						IsActive:    entity.IsActive,
+						Tags:        entity.Tags,
+						Data:        entity.Data,
+						OwnerIDs:    entity.OwnerIDs,
+						CreatedAt:   entity.CreatedAt,
+						UpdatedAt:   entity.UpdatedAt,
+					}, nil
+				},
+				DtoToModel: func(dto BenchmarkEntityInput) *BenchmarkEntity {
+					entity := &BenchmarkEntity{
+						Name:        dto.Name,
+						Description: dto.Description,
+						Value:       dto.Value,
+						IsActive:    dto.IsActive,
+						Tags:        dto.Tags,
+						Data:        dto.Data,
+					}
+					entity.OwnerIDs = append(entity.OwnerIDs, dto.OwnerID)
+					return entity
+				},
+				DtoToMap: func(dto map[string]any) map[string]any {
+					return dto
+				},
+			},
+			Roles: entityManagementInterfaces.EntityRoles{
+				Roles: map[string]string{
+					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
+				},
+			},
 		},
-		EntityDtos: entityManagementInterfaces.EntityDtos{
-			InputCreateDto: BenchmarkEntityInput{},
-			OutputDto:      BenchmarkEntityOutput{},
-			InputEditDto:   map[string]any{},
-		},
-	}
-}
-
-func (r BenchmarkEntityRegistration) GetEntityRoles() entityManagementInterfaces.EntityRoles {
-	roleMap := make(map[string]string)
-	roleMap[string(authModels.Member)] = "(" + http.MethodGet + "|" + http.MethodPost + ")"
-	return entityManagementInterfaces.EntityRoles{Roles: roleMap}
+	)
 }
 
 // ============================================================================
@@ -172,8 +144,7 @@ func setupBenchmarkSuite(b *testing.B) *BenchmarkSuite {
 	suite.router = router
 
 	registrationService := ems.NewEntityRegistrationService()
-	testRegistration := BenchmarkEntityRegistration{}
-	registrationService.RegisterEntity(testRegistration)
+	registerBenchmarkEntity(registrationService)
 
 	originalGlobal := ems.GlobalEntityRegistrationService
 	ems.GlobalEntityRegistrationService = registrationService
@@ -549,7 +520,18 @@ func BenchmarkSecurity_AddPolicy_OnCreate(b *testing.B) {
 // ============================================================================
 
 func BenchmarkConversion_DtoToModel(b *testing.B) {
-	registration := BenchmarkEntityRegistration{}
+	dtoToModel := func(dto BenchmarkEntityInput) *BenchmarkEntity {
+		entity := &BenchmarkEntity{
+			Name:        dto.Name,
+			Description: dto.Description,
+			Value:       dto.Value,
+			IsActive:    dto.IsActive,
+			Tags:        dto.Tags,
+			Data:        dto.Data,
+		}
+		entity.OwnerIDs = append(entity.OwnerIDs, dto.OwnerID)
+		return entity
+	}
 
 	input := BenchmarkEntityInput{
 		Name:        "Test Entity",
@@ -565,12 +547,25 @@ func BenchmarkConversion_DtoToModel(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_ = registration.EntityInputDtoToEntityModel(input)
+		_ = dtoToModel(input)
 	}
 }
 
 func BenchmarkConversion_ModelToDto(b *testing.B) {
-	registration := BenchmarkEntityRegistration{}
+	modelToDto := func(entity *BenchmarkEntity) (BenchmarkEntityOutput, error) {
+		return BenchmarkEntityOutput{
+			ID:          entity.ID.String(),
+			Name:        entity.Name,
+			Description: entity.Description,
+			Value:       entity.Value,
+			IsActive:    entity.IsActive,
+			Tags:        entity.Tags,
+			Data:        entity.Data,
+			OwnerIDs:    entity.OwnerIDs,
+			CreatedAt:   entity.CreatedAt,
+			UpdatedAt:   entity.UpdatedAt,
+		}, nil
+	}
 
 	entity := BenchmarkEntity{
 		Name:        "Test Entity",
@@ -585,7 +580,7 @@ func BenchmarkConversion_ModelToDto(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, _ = registration.EntityModelToEntityOutput(entity)
+		_, _ = modelToDto(&entity)
 	}
 }
 

@@ -3,10 +3,10 @@ package userController
 import (
 	"net/http"
 	"soli/formations/src/auth/dto"
-	registration "soli/formations/src/auth/entityRegistration"
 	"soli/formations/src/auth/models"
 	services "soli/formations/src/auth/services"
 	sqldb "soli/formations/src/db"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
@@ -80,8 +80,8 @@ func (uc *userController) GetMySettings(ctx *gin.Context) {
 	}
 
 	// Convert to output DTO
-	reg := registration.UserSettingsRegistration{}
-	output, err := reg.EntityModelToEntityOutput(&settings)
+	ops, _ := ems.GlobalEntityRegistrationService.GetEntityOps("UserSettings")
+	output, err := ops.ConvertModelToDto(&settings)
 	if err != nil {
 		utils.Error("Failed to convert settings to output: %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve settings"})
@@ -127,8 +127,8 @@ func (uc *userController) UpdateMySettings(ctx *gin.Context) {
 	}
 
 	// Convert DTO to update map
-	reg := registration.UserSettingsRegistration{}
-	updateMap := reg.EntityDtoToMap(editInput)
+	ops, _ := ems.GlobalEntityRegistrationService.GetEntityOps("UserSettings")
+	updateMap, _ := ops.ConvertEditDtoToMap(editInput)
 
 	// Update the settings
 	updateResult := sqldb.DB.Model(&settings).Updates(updateMap)
@@ -142,7 +142,7 @@ func (uc *userController) UpdateMySettings(ctx *gin.Context) {
 	sqldb.DB.First(&settings, settings.ID)
 
 	// Convert to output DTO
-	output, err := reg.EntityModelToEntityOutput(&settings)
+	output, err := ops.ConvertModelToDto(&settings)
 	if err != nil {
 		utils.Error("Failed to convert settings to output: %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update settings"})

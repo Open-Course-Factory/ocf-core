@@ -20,11 +20,6 @@ type EntitySwaggerConfig struct {
 	Delete     *SwaggerOperation `json:"delete,omitempty"`
 }
 
-// SwaggerDocumentedEntity - Interface optionnelle pour les entités qui veulent de la documentation
-type SwaggerDocumentedEntity interface {
-	GetSwaggerConfig() EntitySwaggerConfig
-}
-
 // Helper function pour créer rapidement une opération standard
 func NewSwaggerOperation(summary, description string, tags []string, requiresAuth bool) *SwaggerOperation {
 	return &SwaggerOperation{

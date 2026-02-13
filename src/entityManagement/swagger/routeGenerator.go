@@ -247,10 +247,14 @@ func (dg *DocumentationGenerator) generateSchemas(configs map[string]*entityMana
 	for entityName := range configs {
 		log.Printf("🧩 Generating schemas for entity: %s", entityName)
 
-		// Récupérer les DTOs depuis le système d'enregistrement
-		inputCreateDto := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputCreateDto)
-		outputDto := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.OutputDto)
-		inputEditDto := ems.GlobalEntityRegistrationService.GetEntityDtos(entityName, ems.InputEditDto)
+		// Retrieve DTOs from typed operations
+		ops, _ := ems.GlobalEntityRegistrationService.GetEntityOps(entityName)
+		var inputCreateDto, outputDto, inputEditDto any
+		if ops != nil {
+			inputCreateDto = ops.NewCreateDto()
+			outputDto = ops.NewOutputDto()
+			inputEditDto = ops.NewEditDto()
+		}
 
 		// Générer les schémas à partir des types Go
 		if inputCreateDto != nil {
