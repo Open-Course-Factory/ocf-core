@@ -300,7 +300,7 @@ func SetupFunctionnalTests(tb testing.TB) func(tb testing.TB) {
 	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.SectionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.ChapterRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(coursesRegistration.CourseRegistration{})
-	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshKeyRegistration{})
+	authRegistration.RegisterSshKey(ems.GlobalEntityRegistrationService)
 
 	SetupBasicRoles() // Créer les rôles de base d'abord
 	SetupUsers()      // Les utilisateurs peuvent maintenant être créés avec des rôles existants

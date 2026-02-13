@@ -22,7 +22,7 @@ import (
 
 // RegisterEntities registers all entities in the entity management system
 func RegisterEntities() {
-	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.SshKeyRegistration{})
+	authRegistration.RegisterSshKey(ems.GlobalEntityRegistrationService)
 	ems.GlobalEntityRegistrationService.RegisterEntity(authRegistration.UserSettingsRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.SessionRegistration{})
 	ems.GlobalEntityRegistrationService.RegisterEntity(courseRegistration.CourseRegistration{})
