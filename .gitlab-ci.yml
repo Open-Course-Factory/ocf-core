@@ -353,6 +353,9 @@ test:auth:
 # Only runs when version tags are pushed (triggered by check:version job)
 # Tags image with both the version number and 'latest'
 build-docker:
+  image: docker:27
+  services:
+    - docker:27-dind
   before_script:
     - echo $token_jwt_key | base64 -d > ./token_jwt_key.pem
 
