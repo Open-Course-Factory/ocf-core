@@ -210,11 +210,11 @@ test:auth:
   stage: test
   # Note: Using custom image would be more efficient, but using base for now
   # To use custom image: registry.gitlab.com/your-project/auth-test:latest
-  image: docker:24-dind
+  image: docker:27-dind
   needs: []  # Run in parallel with other test jobs
 
   services:
-    - docker:24-dind
+    - docker:27-dind
 
   variables:
     DOCKER_DRIVER: overlay2
@@ -256,13 +256,13 @@ test:auth:
     - chmod +x scripts/ci/wait-for-services.sh
     - echo "⏳ Waiting for PostgreSQL to be ready..."
     - |
-      for i in $(seq 1 30); do
+      for i in $(seq 1 60); do
         if docker exec ocf-postgres-test pg_isready -U postgres 2>/dev/null; then
           echo "✅ PostgreSQL is ready!"
           break
         fi
-        if [ $i -eq 30 ]; then
-          echo "❌ PostgreSQL failed to start"
+        if [ $i -eq 60 ]; then
+          echo "❌ PostgreSQL failed to start after 60s"
           docker-compose -f docker-compose.test.yml logs postgres-test
           exit 1
         fi
