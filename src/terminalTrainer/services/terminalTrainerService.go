@@ -66,7 +66,7 @@ type TerminalTrainerService interface {
 	CleanupExpiredSessions() error
 
 	// Configuration
-	GetInstanceTypes() ([]dto.InstanceType, error)
+	GetInstanceTypes(backend string) ([]dto.InstanceType, error)
 
 	// Metrics
 	GetServerMetrics(nocache bool, backend string) (*dto.ServerMetricsResponse, error)
@@ -340,7 +340,7 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 	// Valider la taille de la machine
 	if sessionInput.InstanceType != "" {
 		// Récupérer les types d'instances disponibles depuis l'API Terminal Trainer
-		instanceTypes, err := tts.GetInstanceTypes()
+		instanceTypes, err := tts.GetInstanceTypes(sessionInput.Backend)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get instance types: %w", err)
 		}
@@ -760,10 +760,14 @@ func (tts *terminalTrainerService) CleanupExpiredSessions() error {
 }
 
 // GetInstanceTypes récupère la liste des types d'instances disponibles depuis Terminal Trainer
-func (tts *terminalTrainerService) GetInstanceTypes() ([]dto.InstanceType, error) {
+// Si backend est non-vide, filtre par backend (retourne uniquement les instances disponibles sur ce backend)
+func (tts *terminalTrainerService) GetInstanceTypes(backend string) ([]dto.InstanceType, error) {
 	// Utiliser le type par défaut pour récupérer la liste des instances disponibles
 	path := tts.buildAPIPath("/instances", "")
 	url := fmt.Sprintf("%s%s", tts.baseURL, path)
+	if backend != "" {
+		url += fmt.Sprintf("?backend=%s", backend)
+	}
 
 	var instanceTypes []dto.InstanceType
 	opts := utils.DefaultHTTPClientOptions()

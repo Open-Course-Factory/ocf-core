@@ -901,16 +901,18 @@ func (tc *terminalController) GetSyncStatistics(ctx *gin.Context) {
 // Get Instance Types godoc
 //
 //	@Summary		Récupérer les types d'instances disponibles
-//	@Description	Récupère la liste des types d'instances/préfixes disponibles depuis Terminal Trainer
+//	@Description	Récupère la liste des types d'instances/préfixes disponibles depuis Terminal Trainer. Optionnellement filtré par backend.
 //	@Tags			terminals
 //	@Security		Bearer
 //	@Accept			json
 //	@Produce		json
+//	@Param			backend	query		string	false	"Backend ID to filter instance types for"
 //	@Success		200	{array}		dto.InstanceType
 //	@Failure		500	{object}	errors.APIError	"Erreur interne du serveur"
 //	@Router			/terminals/instance-types [get]
 func (tc *terminalController) GetInstanceTypes(ctx *gin.Context) {
-	instanceTypes, err := tc.service.GetInstanceTypes()
+	backend := ctx.Query("backend")
+	instanceTypes, err := tc.service.GetInstanceTypes(backend)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
