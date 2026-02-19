@@ -30,7 +30,9 @@
 	// "shutdownAction": "none",
 
 	// Commands to run after container is created
-	"postCreateCommand": "bash -c 'echo \"\nsource /usr/share/bash-completion/completions/git\" >> ~/.bashrc && .devcontainer/setup-mcps.sh'",
+	"postCreateCommand": "bash -c 'grep -q bash-completion/completions/git ~/.bashrc || echo \"\nsource /usr/share/bash-completion/completions/git\" >> ~/.bashrc'",
+
+	"postStartCommand": "sudo chown ocf:ocf ~/.claude 2>/dev/null; if [ ! -L ~/.claude.json ]; then if [ -f ~/.claude/.claude.json ]; then rm -f ~/.claude.json; elif [ -f ~/.claude.json ]; then mv ~/.claude.json ~/.claude/.claude.json; else touch ~/.claude/.claude.json && chmod 600 ~/.claude/.claude.json; fi; ln -sf ~/.claude/.claude.json ~/.claude.json; fi",
 
 	"mounts": [
 	  "type=bind,source=${localEnv:HOME}/.ssh,target=/home/ocf/.ssh,readonly",
@@ -73,24 +75,6 @@
 					"docker": {
 						"command": "npx",
 						"args": ["@modelcontextprotocol/server-docker"]
-					},
-					"git": {
-						"command": "npx",
-						"args": [
-							"@modelcontextprotocol/server-git",
-							"/workspaces/ocf-core"
-						]
-					},
-					"filesystem": {
-						"command": "npx",
-						"args": [
-							"@modelcontextprotocol/server-filesystem",
-							"/workspaces/ocf-core"
-						]
-					},
-					"fetch": {
-						"command": "npx",
-						"args": ["@modelcontextprotocol/server-fetch"]
 					}
 				}
 			},
@@ -111,7 +95,8 @@
 		"ghcr.io/devcontainers/features/git:1": {},
 		"ghcr.io/warrenbuckley/codespace-features/sqlite:1": {},
 		"ghcr.io/devcontainers/features/docker-in-docker:2.12.4": {},
-		"ghcr.io/devcontainers/features/sshd:1": {}
+		"ghcr.io/devcontainers/features/sshd:1": {},
+		"ghcr.io/stu-bell/devcontainer-features/claude-code:0": {}
 	}
 
 	// Uncomment to connect as an existing user other than the container default. More info: https://aka.ms/dev-containers-non-root.

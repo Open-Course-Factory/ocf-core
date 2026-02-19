@@ -46,5 +46,3 @@ RUN go mod download && go mod verify && go clean -cache
 RUN touch .bash_history .env
 
 RUN git config --global core.pager 'less -F'
-
-RUN curl -fsSL https://claude.ai/install.sh | bash

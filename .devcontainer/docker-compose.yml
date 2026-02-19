@@ -15,6 +15,7 @@ services:
     volumes:
       # Update this to wherever you want VS Code to mount the folder of your project
       - ..:/workspaces:cached
+      - claude-config:/home/ocf/.claude
 
     # Uncomment the next four lines if you will use a ptrace-based debugger like C++, Go, and Rust.
     # cap_add:
@@ -25,4 +26,7 @@ services:
     # Overrides default command so things don't shut down after the process ends.
     entrypoint: /usr/local/share/docker-init.sh
     command: /bin/sh -c "while sleep 1000; do :; done"
- 
+
+volumes:
+  claude-config:
+
