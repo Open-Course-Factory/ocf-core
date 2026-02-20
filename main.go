@@ -182,7 +182,6 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	terminalController.TerminalRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	terminalController.UserTerminalKeyRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	organizationController.OrganizationRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	organizationController.OrganizationMigrationRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	emailController.EmailTemplateRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	// Setup usage limit middleware for specific routes
