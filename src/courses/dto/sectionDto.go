@@ -28,7 +28,7 @@ type ParentChapterOutput struct {
 type SectionOutput struct {
 	ID          string                `json:"id"`
 	FileName    string                `json:"fileName"`
-	OwnerIDs    pq.StringArray        `gorm:"type:text[]"`
+	OwnerIDs    pq.StringArray        `gorm:"type:text[]" json:"ownerIDs" swaggertype:"array,string"`
 	Chapters    []ParentChapterOutput `json:"chapters,omitempty"` // Parent chapter information
 	Title       string                `json:"title"`
 	Intro       string                `json:"intro"`
