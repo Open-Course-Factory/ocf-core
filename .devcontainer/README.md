@@ -91,6 +91,22 @@ When you open the project in VS Code:
 
 ## 🎯 First-Time Setup
 
+### Prerequisites: Shared Docker Network
+
+OCF projects (ocf-core, ocf-front, tt-backend) use a shared Docker network for cross-project communication. Create it once on your host:
+
+```bash
+docker network create ocf-shared
+```
+
+Services exposed on this network:
+| Service | Address | Description |
+|---------|---------|-------------|
+| ocf-core | `ocf-core:8080` | Core API |
+| postgres | `postgres:5432` | PostgreSQL database |
+
+Internal services (casdoor, pgadmin, casdoor_db) remain on the internal `devcontainer-network` only.
+
 ### Open in Dev Container
 ```bash
 # Option 1: VS Code Command Palette

@@ -12,6 +12,7 @@ services:
       - postgres
     networks:
       - devcontainer-network
+      - ocf-shared
 
   postgres:
     image: postgres:16-alpine
@@ -34,6 +35,7 @@ services:
       retries: 10
     networks:
       - devcontainer-network
+      - ocf-shared
 
   pgadmin:
     image: dpage/pgadmin4
@@ -80,6 +82,8 @@ services:
 
 networks:
   devcontainer-network:
+  ocf-shared:
+    external: true
 
 volumes:
   postgres:

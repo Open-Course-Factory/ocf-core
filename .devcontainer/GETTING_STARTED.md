@@ -6,6 +6,16 @@ Welcome! This project uses a **pre-configured dev container** with AI-powered de
 
 ## ⚡ Quick Start (5 Minutes)
 
+### Prerequisites: Shared Docker Network
+
+OCF projects (ocf-core, ocf-front, tt-backend) communicate through a shared external Docker network. Create it once before opening any devcontainer:
+
+```bash
+docker network create ocf-shared
+```
+
+This network allows cross-project service discovery (e.g., ocf-front can reach ocf-core at `http://ocf-core:8080`).
+
 ### Step 1: Open in Dev Container
 
 **Option A: VS Code**
