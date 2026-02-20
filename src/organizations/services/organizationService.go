@@ -18,7 +18,7 @@ import (
 type OrganizationService interface {
 	// Organization management
 	CreateOrganization(userID string, input dto.CreateOrganizationInput) (*models.Organization, error)
-	CreatePersonalOrganization(userID string) (*models.Organization, error)
+	CreatePersonalOrganization(userID string, userDisplayName string) (*models.Organization, error)
 	ConvertToTeam(orgID uuid.UUID, requestingUserID string, newName string) (*models.Organization, error)
 	GetOrganization(orgID uuid.UUID, includeRelations bool) (*models.Organization, error)
 	GetUserOrganizations(userID string) (*[]models.Organization, error)
@@ -127,17 +127,23 @@ func (os *organizationService) CreateOrganization(userID string, input dto.Creat
 }
 
 // CreatePersonalOrganization creates a personal organization for a user
-func (os *organizationService) CreatePersonalOrganization(userID string) (*models.Organization, error) {
+func (os *organizationService) CreatePersonalOrganization(userID string, userDisplayName string) (*models.Organization, error) {
 	// Check if personal org already exists
 	existingOrg, err := os.repository.GetPersonalOrganization(userID)
 	if err == nil && existingOrg != nil {
 		return existingOrg, nil
 	}
 
+	// Build display name including the user's name
+	displayName := "Personal Organization"
+	if userDisplayName != "" {
+		displayName = fmt.Sprintf("%s - Personal Organization", userDisplayName)
+	}
+
 	// Create personal organization
 	org := &models.Organization{
 		Name:             fmt.Sprintf("personal_%s", userID),
-		DisplayName:      "Personal Organization",
+		DisplayName:      displayName,
 		Description:      "Your personal workspace",
 		OwnerUserID:      userID,
 		OrganizationType: models.OrgTypePersonal, // Personal organization type

@@ -145,7 +145,7 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 
 	// Create personal organization for new user
 	orgService := organizationServices.NewOrganizationService(sqldb.DB)
-	_, errPersonalOrg := orgService.CreatePersonalOrganization(createdUser.Id)
+	_, errPersonalOrg := orgService.CreatePersonalOrganization(createdUser.Id, createdUser.DisplayName)
 	if errPersonalOrg != nil {
 		fmt.Printf("Warning: Could not create personal organization for user %s: %v\n", createdUser.Id, errPersonalOrg)
 		// Don't fail registration for this, just log warning
