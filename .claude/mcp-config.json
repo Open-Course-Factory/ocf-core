@@ -23,24 +23,6 @@
     "docker": {
       "command": "npx",
       "args": ["@modelcontextprotocol/server-docker"]
-    },
-    "git": {
-      "command": "npx",
-      "args": [
-        "@modelcontextprotocol/server-git",
-        "/workspaces/ocf-core"
-      ]
-    },
-    "filesystem": {
-      "command": "npx",
-      "args": [
-        "@modelcontextprotocol/server-filesystem",
-        "/workspaces/ocf-core"
-      ]
-    },
-    "fetch": {
-      "command": "npx",
-      "args": ["@modelcontextprotocol/server-fetch"]
     }
   }
 }
