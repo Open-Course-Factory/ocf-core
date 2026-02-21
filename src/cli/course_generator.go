@@ -19,6 +19,7 @@ import (
 	generator "soli/formations/src/generationEngine"
 	marp "soli/formations/src/generationEngine/marp_integration"
 	slidev "soli/formations/src/generationEngine/slidev_integration"
+	"soli/formations/src/utils"
 )
 
 // ParseFlags processes CLI flags for course generation
@@ -59,7 +60,7 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	courseJsonFilename := flag.String(COURSE_JSON_FILENAME_FLAG, "course.json", "filename of the course JSON file in the repository")
 	flag.Parse()
 
-	fmt.Println(courseType)
+	utils.Info("%s", *courseType)
 
 	// check mandatory flags
 	if !isFlagPassed(COURSE_FLAG) || !isFlagPassed(THEME_FLAG) || !isFlagPassed(TYPE_FLAG) {
@@ -89,14 +90,14 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 
 	// If we have a source, load the course from it
 	if source != "" {
-		fmt.Printf("Loading course from %s: %s\n", *courseSourceType, source)
+		utils.Info("Loading course from %s: %s", *courseSourceType, source)
 		coursePtr, err := courseService.GetCourse(*userID, *courseName, *courseSourceType, source, *courseBranchGitRepository, *courseJsonFilename)
 		if err != nil {
-			fmt.Printf("Error loading course from %s: %v\n", *courseSourceType, err)
+			utils.Error("Error loading course from %s: %v", *courseSourceType, err)
 			return true
 		}
 		course = *coursePtr
-		fmt.Printf("Course loaded and saved successfully: %s v%s (ID: %s)\n", course.Name, course.Version, course.ID.String())
+		utils.Info("Course loaded and saved successfully: %s v%s (ID: %s)", course.Name, course.Version, course.ID.String())
 	} else {
 		// Fallback to empty course for CLI-only usage
 		course = courseModels.Course{}
@@ -112,13 +113,13 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 		savedCourseEntity, errorSaving := genericService.CreateEntity(courseInputDto, reflect.TypeOf(models.Course{}).Name())
 
 		if errorSaving != nil {
-			fmt.Println(errorSaving.Error())
+			utils.Error("%s", errorSaving.Error())
 			return true
 		}
 
 		savedCourse := savedCourseEntity.(*models.Course)
 		course.ID = savedCourse.ID
-		fmt.Printf("Course created successfully with ID: %s\n", course.ID.String())
+		utils.Info("Course created successfully with ID: %s", course.ID.String())
 	}
 
 	// Determine theme source (new flags take precedence over old flags)
@@ -133,23 +134,23 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 
 	// Check DRY_RUN flag before proceeding with generation
 	if *config.DRY_RUN {
-		fmt.Println("DRY RUN mode: Stopping before slide generation")
+		utils.Info("DRY RUN mode: Stopping before slide generation")
 		return true
 	}
 
 	// Generate the course using the selected slide engine
-	fmt.Printf("Starting course generation using %T...\n", generator.SLIDE_ENGINE)
+	utils.Info("Starting course generation using %T...", generator.SLIDE_ENGINE)
 
 	// First, compile the course resources (create directories, etc.)
-	fmt.Println("Compiling course resources...")
+	utils.Info("Compiling course resources...")
 	errorCompiling := generator.SLIDE_ENGINE.CompileResources(&course)
 	if errorCompiling != nil {
-		fmt.Printf("Error compiling course resources: %v\n", errorCompiling)
+		utils.Error("Error compiling course resources: %v", errorCompiling)
 		return true
 	}
 
 	// Create the course writer and generate markdown content
-	fmt.Println("Creating course markdown file...")
+	utils.Info("Creating course markdown file...")
 	var courseWriter courseModels.CourseMdWriter
 	switch generator.SLIDE_ENGINE.(type) {
 	case slidev.SlidevCourseGenerator:
@@ -164,7 +165,7 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	courseContent := courseWriter.GetCourse()
 
 	// Substitute template variables
-	fmt.Println("Substituting template variables...")
+	utils.Info("Substituting template variables...")
 
 	// Read author information from authors/author_XXX.md file
 	authorInfo := readAuthorInfo(*author)
@@ -180,30 +181,30 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	os.MkdirAll(outputDir, 0755)
 	courseFilePath := outputDir + course.GetFilename("md")
 
-	fmt.Printf("Writing course content to: %s\n", courseFilePath)
+	utils.Info("Writing course content to: %s", courseFilePath)
 	errorWriting := os.WriteFile(courseFilePath, []byte(courseContent), 0644)
 	if errorWriting != nil {
-		fmt.Printf("Error writing course file: %v\n", errorWriting)
+		utils.Error("Error writing course file: %v", errorWriting)
 		return true
 	}
 
 	// Then, run the slide engine
-	fmt.Println("Running slide engine...")
+	utils.Info("Running slide engine...")
 	errorGenerating := generator.SLIDE_ENGINE.Run(&course)
 	if errorGenerating != nil {
-		fmt.Printf("Error generating course: %v\n", errorGenerating)
+		utils.Error("Error generating course: %v", errorGenerating)
 		return true
 	}
 
 	// Generate PDF export
-	fmt.Println("Generating PDF export...")
+	utils.Info("Generating PDF export...")
 	errorPDF := generator.SLIDE_ENGINE.ExportPDF(&course)
 	if errorPDF != nil {
-		fmt.Printf("Warning: PDF generation failed: %v\n", errorPDF)
+		utils.Warn("PDF generation failed: %v", errorPDF)
 		// Continue without failing, PDF is optional
 	}
 
-	fmt.Println("Course generated successfully!")
+	utils.Info("Course generated successfully!")
 	return true
 }
 
@@ -258,7 +259,7 @@ func readAuthorInfo(authorTrigramme string) AuthorInfo {
 
 	content, err := os.ReadFile(authorFilePath)
 	if err != nil {
-		fmt.Printf("Warning: Could not read author file %s, using default values: %v\n", authorFilePath, err)
+		utils.Warn("Could not read author file %s, using default values: %v", authorFilePath, err)
 		return defaultAuthor
 	}
 
@@ -306,6 +307,6 @@ func readAuthorInfo(authorTrigramme string) AuthorInfo {
 		}
 	}
 
-	fmt.Printf("Author info loaded: %s <%s>\n", author.FullName, author.Email)
+	utils.Info("Author info loaded: %s <%s>", author.FullName, author.Email)
 	return author
 }

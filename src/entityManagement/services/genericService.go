@@ -2,13 +2,14 @@ package services
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"reflect"
 	authInterfaces "soli/formations/src/auth/interfaces"
 	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/entityManagement/repositories"
 	"soli/formations/src/entityManagement/utils"
+	appUtils "soli/formations/src/utils"
 	"time"
 
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -125,12 +126,12 @@ func (g *genericService) CreateEntityWithUser(inputDto any, entityName string, u
 	// Exécuter les hooks après création (synchrone en test mode, async sinon)
 	if hooks.GlobalHookRegistry.IsTestMode() {
 		if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
-			log.Printf("❌ after_create hooks failed for %s: %v", entityName, err)
+			appUtils.Warn("after_create hooks failed for %s: %v", entityName, err)
 		}
 	} else {
 		go func() {
 			if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
-				log.Printf("❌ after_create hooks failed for %s: %v", entityName, err)
+				appUtils.Warn("after_create hooks failed for %s: %v", entityName, err)
 			}
 		}()
 	}
@@ -241,12 +242,12 @@ func (g *genericService) DeleteEntity(id uuid.UUID, entity any, scoped bool) err
 	// Exécuter les hooks après suppression (synchrone en test mode, async sinon)
 	if hooks.GlobalHookRegistry.IsTestMode() {
 		if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
-			log.Printf("❌ after_delete hooks failed for %s: %v", entityName, err)
+			appUtils.Warn("after_delete hooks failed for %s: %v", entityName, err)
 		}
 	} else {
 		go func() {
 			if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
-				log.Printf("❌ after_delete hooks failed for %s: %v", entityName, err)
+				appUtils.Warn("after_delete hooks failed for %s: %v", entityName, err)
 			}
 		}()
 	}
@@ -281,7 +282,7 @@ func (g *genericService) EditEntity(id uuid.UUID, entityName string, entity any,
 
 	updatedEntity, err := g.GetEntity(id, entity, entityName, nil)
 	if err != nil {
-		log.Printf("Warning: could not retrieve updated entity for hooks: %v", err)
+		appUtils.Warn("could not retrieve updated entity for hooks: %v", err)
 		updatedEntity = data // Fallback
 	}
 
@@ -297,12 +298,12 @@ func (g *genericService) EditEntity(id uuid.UUID, entityName string, entity any,
 	// Exécuter les hooks après mise à jour (synchrone en test mode, async sinon)
 	if hooks.GlobalHookRegistry.IsTestMode() {
 		if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
-			log.Printf("❌ after_update hooks failed for %s: %v", entityName, err)
+			appUtils.Warn("after_update hooks failed for %s: %v", entityName, err)
 		}
 	} else {
 		go func() {
 			if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
-				log.Printf("❌ after_update hooks failed for %s: %v", entityName, err)
+				appUtils.Warn("after_update hooks failed for %s: %v", entityName, err)
 			}
 		}()
 	}
@@ -459,10 +460,10 @@ func (g *genericService) DecodeInputDtoForEntityCreation(entityName string, ctx 
 
 	bindError := ctx.BindJSON(&entityCreateDtoInput)
 	if bindError != nil {
-		log.Printf("❌ BindJSON error for %s: %v", entityName, bindError)
+		appUtils.Error("BindJSON error for %s: %v", entityName, bindError)
 		return nil, bindError
 	}
-	log.Printf("✅ BindJSON success for %s: %+v", entityName, entityCreateDtoInput)
+	appUtils.Debug("BindJSON success for %s: %+v", entityName, entityCreateDtoInput)
 
 	config := &mapstructure.DecoderConfig{
 		WeaklyTypedInput: true,
@@ -476,16 +477,16 @@ func (g *genericService) DecodeInputDtoForEntityCreation(entityName string, ctx 
 
 	decoder, err := mapstructure.NewDecoder(config)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to create decoder for %s: %w", entityName, err)
 	}
 
-	log.Printf("🔄 Decoding %s with mapstructure...", entityName)
+	appUtils.Debug("Decoding %s with mapstructure...", entityName)
 	errDecode := decoder.Decode(entityCreateDtoInput)
 	if errDecode != nil {
-		log.Printf("❌ Mapstructure decode error for %s: %v", entityName, errDecode)
+		appUtils.Error("Mapstructure decode error for %s: %v", entityName, errDecode)
 		return nil, errDecode
 	}
-	log.Printf("✅ Mapstructure decode success for %s", entityName)
+	appUtils.Debug("Mapstructure decode success for %s", entityName)
 
 	return decodedData, nil
 }

@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"reflect"
 	"soli/formations/src/auth/casdoor"
+	"soli/formations/src/utils"
 	"time"
 
 	authInterfaces "soli/formations/src/auth/interfaces"
@@ -120,7 +120,7 @@ func (c courseService) GenerateCourseAsync(generateCourseInputDto dto.GenerateCo
 			break
 		}
 
-		log.Printf("Worker submission attempt %d failed: %v", attempt+1, submitErr)
+		utils.Warn("Worker submission attempt %d failed: %v", attempt+1, submitErr)
 		if attempt < c.workerConfig.RetryCount-1 {
 			time.Sleep(time.Duration(attempt+1) * time.Second) // Backoff progressif
 		}
@@ -167,7 +167,7 @@ func (c courseService) CheckGenerationStatus(generationID string) (*dto.Generati
 	// 3. Vérifier le statut auprès du worker
 	workerStatus, err := c.workerService.CheckStatus(ctx, *generation.WorkerJobID)
 	if err != nil {
-		log.Printf("Failed to check worker status: %v", err)
+		utils.Warn("Failed to check worker status: %v", err)
 		// Retourner le statut local en cas d'erreur de communication
 		return dto.GenerationModelToStatusOutput(*generation), nil
 	}
@@ -183,7 +183,7 @@ func (c courseService) CheckGenerationStatus(generationID string) (*dto.Generati
 		// Récupérer les URLs des résultats
 		resultURLs, err := c.workerService.GetResultFiles(ctx, generation.CourseID.String())
 		if err != nil {
-			log.Printf("Failed to get result files: %v", err)
+			utils.Warn("Failed to get result files: %v", err)
 			resultURLs = []string{} // Continuer avec une liste vide
 		}
 		generation.SetCompleted(resultURLs)
@@ -321,10 +321,10 @@ func (c courseService) GetCourse(ownerId string, courseName string, sourceType s
 
 	switch sourceType {
 	case "git":
-		log.Printf("Loading course from git repository: %s (branch: %s)", source, branch)
+		utils.Info("Loading course from git repository: %s (branch: %s)", source, branch)
 		fs, err = models.GitCloneWithCache(ownerId, source, branch)
 	case "local":
-		log.Printf("Loading course from local path: %s", source)
+		utils.Info("Loading course from local path: %s", source)
 		fs, err = models.LoadLocalDirectory(source)
 	default:
 		return nil, fmt.Errorf("unknown source type: %s (must be 'git' or 'local')", sourceType)
@@ -336,7 +336,7 @@ func (c courseService) GetCourse(ownerId string, courseName string, sourceType s
 
 	jsonFile, err := fs.Open(courseJsonFilename)
 	if err != nil {
-		log.Fatal("Error during ReadFile(): ", err)
+		return nil, fmt.Errorf("error reading course file %s: %w", courseJsonFilename, err)
 	}
 
 	fileByteArray, errReadingFile := fileToBytesWithoutSeeking(jsonFile)
@@ -347,7 +347,7 @@ func (c courseService) GetCourse(ownerId string, courseName string, sourceType s
 	var course models.Course
 	err = json.Unmarshal(fileByteArray, &course)
 	if err != nil {
-		log.Fatal("Error during Unmarshal(): ", err)
+		return nil, fmt.Errorf("error unmarshaling course JSON: %w", err)
 	}
 
 	course.OwnerIDs = append(course.OwnerIDs, ownerId)
@@ -377,7 +377,7 @@ func (c courseService) GetCourse(ownerId string, courseName string, sourceType s
 
 	if existingCourse != nil {
 		// Course exists - UPDATE it
-		log.Printf("Found existing course '%s' v%s (ID: %s) - updating...", course.Name, course.Version, existingCourse.ID.String())
+		utils.Info("Found existing course '%s' v%s (ID: %s) - updating...", course.Name, course.Version, existingCourse.ID.String())
 
 		// Preserve the existing ID
 		course.ID = existingCourse.ID
@@ -386,26 +386,26 @@ func (c courseService) GetCourse(ownerId string, courseName string, sourceType s
 		errorSaving = c.updateCourseWithChapters(&course)
 
 		if errorSaving != nil {
-			fmt.Println(errorSaving.Error())
+			utils.Error("%s", errorSaving.Error())
 			return nil, errorSaving
 		}
 
-		log.Printf("Successfully updated course '%s' v%s", course.Name, course.Version)
+		utils.Info("Successfully updated course '%s' v%s", course.Name, course.Version)
 	} else {
 		// Course doesn't exist - CREATE it
-		log.Printf("Creating new course '%s' v%s...", course.Name, course.Version)
+		utils.Info("Creating new course '%s' v%s...", course.Name, course.Version)
 
 		courseInputDto := dto.CourseModelToCourseInputDto(course)
 		savedEntity, errorSaving := genericService.CreateEntity(courseInputDto, reflect.TypeOf(models.Course{}).Name())
 
 		if errorSaving != nil {
-			fmt.Println(errorSaving.Error())
+			utils.Error("%s", errorSaving.Error())
 			return nil, errorSaving
 		}
 
 		savedCourse := savedEntity.(*models.Course)
 		course.ID = savedCourse.ID
-		log.Printf("Successfully created course '%s' v%s (ID: %s)", course.Name, course.Version, course.ID.String())
+		utils.Info("Successfully created course '%s' v%s (ID: %s)", course.Name, course.Version, course.ID.String())
 	}
 
 	return &course, nil
@@ -488,7 +488,7 @@ func (c courseService) updateCourseWithChapters(course *models.Course) error {
 			}
 		}
 
-		log.Printf("Successfully updated course with %d chapters", len(course.Chapters))
+		utils.Info("Successfully updated course with %d chapters", len(course.Chapters))
 		return nil
 	})
 }

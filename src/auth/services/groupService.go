@@ -1,9 +1,9 @@
 package services
 
 import (
-	"fmt"
 	"slices"
 	"soli/formations/src/auth/dto"
+	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
@@ -32,13 +32,13 @@ func (us *groupService) AddGroup(groupCreateDTO dto.CreateGroupInput) (*dto.Crea
 	group1.CreatedTime = casdoorsdk.GetCurrentTime()
 	_, errCreate := casdoorsdk.AddGroup(&group1)
 	if errCreate != nil {
-		fmt.Println(errCreate.Error())
+		utils.Error("%s", errCreate.Error())
 		return nil, errCreate
 	}
 
 	createdGroup, errGet := casdoorsdk.GetGroup(group1.Name)
 	if errGet != nil {
-		fmt.Println(errGet.Error())
+		utils.Error("%s", errGet.Error())
 		return nil, errGet
 	}
 
@@ -114,7 +114,7 @@ func (us *groupService) ModifyUsersInGroup(groupName string, modifyUsersInGroupD
 func (us *groupService) DeleteGroup(name string) error {
 	group, errGroup := casdoorsdk.GetGroup(name)
 	if errGroup != nil {
-		fmt.Println(errGroup.Error())
+		utils.Error("%s", errGroup.Error())
 		return errGroup
 	}
 	casdoorsdk.DeleteGroup(group)

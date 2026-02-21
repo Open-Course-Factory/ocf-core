@@ -96,7 +96,7 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 
 	createdUser, errGet := casdoorsdk.GetUserByEmail(userCreateDTO.Email)
 	if errGet != nil {
-		fmt.Println(errGet.Error())
+		utils.Error("%s", errGet.Error())
 		return nil, errGet
 	}
 
@@ -125,21 +125,21 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 	terminalService := ttServices.NewTerminalTrainerService(sqldb.DB)
 	errCreateUserKey := terminalService.CreateUserKey(createdUser.Id, createdUser.Name)
 	if errCreateUserKey != nil {
-		fmt.Printf("Warning: Could not create terminal trainer key for user %s: %v\n", createdUser.Id, errCreateUserKey)
+		utils.Warn("Could not create terminal trainer key for user %s: %v", createdUser.Id, errCreateUserKey)
 		// On ne fait pas échouer l'inscription pour ça, juste un warning
 	}
 
 	// Create default user settings
 	errCreateSettings := createDefaultUserSettings(createdUser.Id)
 	if errCreateSettings != nil {
-		fmt.Printf("Warning: Could not create default settings for user %s: %v\n", createdUser.Id, errCreateSettings)
+		utils.Warn("Could not create default settings for user %s: %v", createdUser.Id, errCreateSettings)
 		// Don't fail registration for this, just log warning
 	}
 
 	// Assign free Trial plan to new user
 	errTrialSubscription := assignFreeTrialPlan(createdUser.Id)
 	if errTrialSubscription != nil {
-		fmt.Printf("Warning: Could not create Trial subscription for user %s: %v\n", createdUser.Id, errTrialSubscription)
+		utils.Warn("Could not create Trial subscription for user %s: %v", createdUser.Id, errTrialSubscription)
 		// Don't fail registration for this, just log warning
 	}
 
@@ -147,10 +147,10 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 	orgService := organizationServices.NewOrganizationService(sqldb.DB)
 	_, errPersonalOrg := orgService.CreatePersonalOrganization(createdUser.Id, createdUser.DisplayName)
 	if errPersonalOrg != nil {
-		fmt.Printf("Warning: Could not create personal organization for user %s: %v\n", createdUser.Id, errPersonalOrg)
+		utils.Warn("Could not create personal organization for user %s: %v", createdUser.Id, errPersonalOrg)
 		// Don't fail registration for this, just log warning
 	} else {
-		fmt.Printf("✅ Successfully created personal organization for user %s\n", createdUser.Id)
+		utils.Info("Successfully created personal organization for user %s", createdUser.Id)
 	}
 
 	// Send verification email
@@ -158,7 +158,7 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 	err = verificationService.CreateVerificationToken(createdUser.Id, createdUser.Email)
 	if err != nil {
 		// Log but don't fail registration
-		fmt.Printf("Warning: Could not send verification email to %s: %v\n", createdUser.Email, err)
+		utils.Warn("Could not send verification email to %s: %v", createdUser.Email, err)
 	}
 
 	return dto.UserModelToUserOutput(createdUser), nil
@@ -171,7 +171,7 @@ func NewTerminalTrainerService(db *gorm.DB) ttServices.TerminalTrainerService {
 func addDefaultRoleToUser(user1 casdoorsdk.User) error {
 	role, errRole := casdoorsdk.GetRole("member")
 	if errRole != nil {
-		fmt.Println(errRole.Error())
+		utils.Error("%s", errRole.Error())
 		return errRole
 	}
 
@@ -189,7 +189,7 @@ func addDefaultRoleToUser(user1 casdoorsdk.User) error {
 
 	_, errUpdateRole := casdoorsdk.UpdateRole(role)
 	if errUpdateRole != nil {
-		fmt.Println(errUpdateRole.Error())
+		utils.Error("%s", errUpdateRole.Error())
 		return errUpdateRole
 	}
 	return nil
@@ -216,7 +216,7 @@ func createUserIntoCasdoor(generatedUsername string, userCreateDTO dto.CreateUse
 	user1.CreatedTime = casdoorsdk.GetCurrentTime()
 	_, errCreate := casdoorsdk.AddUser(&user1)
 	if errCreate != nil {
-		fmt.Println(errCreate.Error())
+		utils.Error("%s", errCreate.Error())
 		return casdoorsdk.User{}, errCreate
 	}
 	return user1, nil
@@ -225,7 +225,7 @@ func createUserIntoCasdoor(generatedUsername string, userCreateDTO dto.CreateUse
 func (us *userService) GetUserById(id string) (*dto.UserOutput, error) {
 	user, errUser := casdoorsdk.GetUserByUserId(id)
 	if errUser != nil {
-		fmt.Println(errUser.Error())
+		utils.Error("%s", errUser.Error())
 		return nil, errUser
 	}
 	if user == nil {
@@ -238,7 +238,7 @@ func (us *userService) GetUserById(id string) (*dto.UserOutput, error) {
 func (us *userService) GetAllUsers() (*[]dto.UserOutput, error) {
 	users, errUser := casdoorsdk.GetUsers()
 	if errUser != nil {
-		fmt.Println(errUser.Error())
+		utils.Error("%s", errUser.Error())
 		return nil, errUser
 	}
 
@@ -256,7 +256,7 @@ func (us *userService) GetAllUsers() (*[]dto.UserOutput, error) {
 func (us *userService) DeleteUser(id string) error {
 	user, errUser := casdoorsdk.GetUserByUserId(id)
 	if errUser != nil {
-		fmt.Println(errUser.Error())
+		utils.Error("%s", errUser.Error())
 		return errUser
 	}
 	if user == nil {
@@ -297,7 +297,7 @@ func (us *userService) SearchUsers(query string) (*[]dto.UserOutput, error) {
 	// Get all users since Casdoor SDK doesn't have built-in search
 	users, errUser := casdoorsdk.GetUsers()
 	if errUser != nil {
-		fmt.Println(errUser.Error())
+		utils.Error("%s", errUser.Error())
 		return nil, errUser
 	}
 
@@ -361,7 +361,7 @@ func assignFreeTrialPlan(userID string) error {
 	var existingSub paymentModels.UserSubscription
 	existingResult := sqldb.DB.Where("user_id = ? AND status = ?", userID, "active").First(&existingSub)
 	if existingResult.Error == nil {
-		fmt.Printf("User %s already has an active subscription, skipping Trial assignment\n", userID)
+		utils.Info("User %s already has an active subscription, skipping Trial assignment", userID)
 		return nil // User already has a subscription
 	}
 
@@ -372,6 +372,6 @@ func assignFreeTrialPlan(userID string) error {
 		return fmt.Errorf("failed to create Trial subscription: %w", err)
 	}
 
-	fmt.Printf("✅ Successfully assigned Trial plan to user %s\n", userID)
+	utils.Info("Successfully assigned Trial plan to user %s", userID)
 	return nil
 }

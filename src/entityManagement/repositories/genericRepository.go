@@ -7,6 +7,7 @@ import (
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/repositories/filters"
+	"soli/formations/src/utils"
 	"strings"
 
 	"github.com/google/uuid"
@@ -305,14 +306,14 @@ func (o *genericRepository) GetAllEntitiesCursor(data any, cursor string, limit 
 		// Decode base64 cursor to UUID
 		decodedBytes, err := base64.StdEncoding.DecodeString(cursor)
 		if err != nil {
-			fmt.Printf("❌ Cursor decode error for '%s': %v\n", cursor, err)
+			utils.Error("Cursor decode error for '%s': %v", cursor, err)
 			return nil, "", false, 0, entityErrors.NewInvalidCursorError(cursor, "failed to decode base64")
 		}
 
 		// Ensure we have exactly 16 bytes for UUID
 		if len(decodedBytes) != 16 {
-			fmt.Printf("❌ Invalid cursor length for entity '%s': cursor='%s' decoded to %d bytes (expected 16)\n", entityName, cursor, len(decodedBytes))
-			fmt.Printf("   Decoded content: %v\n", string(decodedBytes))
+			utils.Error("Invalid cursor length for entity '%s': cursor='%s' decoded to %d bytes (expected 16)", entityName, cursor, len(decodedBytes))
+			utils.Debug("Decoded content: %v", string(decodedBytes))
 			return nil, "", false, 0, entityErrors.NewInvalidCursorError(cursor, fmt.Sprintf("expected 16 bytes, got %d", len(decodedBytes)))
 		}
 
@@ -320,7 +321,7 @@ func (o *genericRepository) GetAllEntitiesCursor(data any, cursor string, limit 
 		var cursorID uuid.UUID
 		copy(cursorID[:], decodedBytes)
 
-		fmt.Printf("✅ Cursor pagination for %s: cursor UUID = %s\n", entityName, cursorID.String())
+		utils.Debug("Cursor pagination for %s: cursor UUID = %s", entityName, cursorID.String())
 
 		// Apply cursor filter: only get entities with ID > cursor
 		query = query.Where("id > ?", cursorID)
@@ -369,11 +370,11 @@ func (o *genericRepository) GetAllEntitiesCursor(data any, cursor string, limit 
 		if idField.IsValid() && idField.Type() == reflect.TypeOf(uuid.UUID{}) {
 			lastID := idField.Interface().(uuid.UUID)
 			nextCursor = base64.StdEncoding.EncodeToString(lastID[:])
-			fmt.Printf("📄 Generated nextCursor for %s: UUID=%s, cursor=%s\n", entityName, lastID.String(), nextCursor)
+			utils.Debug("Generated nextCursor for %s: UUID=%s, cursor=%s", entityName, lastID.String(), nextCursor)
 		}
 	}
 
-	fmt.Printf("📊 Cursor pagination result for %s: returned %d items, hasMore=%v, total=%d, nextCursor=%s\n", entityName, sliceValue.Len(), hasMore, total, nextCursor)
+	utils.Debug("Cursor pagination result for %s: returned %d items, hasMore=%v, total=%d, nextCursor=%s", entityName, sliceValue.Len(), hasMore, total, nextCursor)
 	return []any{pageSlice}, nextCursor, hasMore, total, nil
 }
 

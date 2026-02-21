@@ -44,7 +44,7 @@ func (sc *SSHClient) GenerateClient(ip, name string, sshkeys []string, port int)
 	for _, sshkey := range sshkeys {
 		signer, err := ssh.ParsePrivateKey([]byte(sshkey))
 		if err != nil {
-			log.Fatalf("unable to parse private key: %v", err)
+			return fmt.Errorf("unable to parse private key: %w", err)
 		}
 		auth = append(auth, ssh.PublicKeys(signer))
 	}

@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
 	"sync"
@@ -311,14 +310,14 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	err = tts.addTerminalHidePermissions(userID)
 	if err != nil {
 		// Log l'erreur mais ne pas faire échouer la création du terminal
-		fmt.Printf("Warning: failed to add hide permissions for terminal %s: %v\n", terminal.ID.String(), err)
+		utils.Warn("failed to add hide permissions for terminal %s: %v", terminal.ID.String(), err)
 	}
 
 	// Ajouter les permissions Casbin pour que le propriétaire puisse accéder à la console WebSocket
 	err = tts.addTerminalConsolePermissions(userID)
 	if err != nil {
 		// Log l'erreur mais ne pas faire échouer la création du terminal
-		fmt.Printf("Warning: failed to add console permissions for terminal %s: %v\n", terminal.ID.String(), err)
+		utils.Warn("failed to add console permissions for terminal %s: %v", terminal.ID.String(), err)
 	}
 
 	// Construire la réponse
@@ -427,44 +426,44 @@ func (tts *terminalTrainerService) GetActiveUserSessions(userID string) (*[]mode
 
 // StopSession arrête une session ET appelle l'API externe pour expirer
 func (tts *terminalTrainerService) StopSession(sessionID string) error {
-	log.Printf("[DEBUG] StopSession called for session %s\n", sessionID)
+	utils.Debug("StopSession called for session %s", sessionID)
 
 	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
 	if err != nil {
 		return fmt.Errorf("session not found: %w", err)
 	}
 
-	log.Printf("[DEBUG] Session %s current status: %s\n", sessionID, terminal.Status)
+	utils.Debug("Session %s current status: %s", sessionID, terminal.Status)
 
 	// 1. Appeler l'API Terminal Trainer pour expirer la session
-	log.Printf("[DEBUG] Calling expireSessionInAPI for session %s\n", sessionID)
+	utils.Debug("Calling expireSessionInAPI for session %s", sessionID)
 	err = tts.expireSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey, terminal.InstanceType)
 	if err != nil {
 		// Log l'erreur complète pour debugging
-		fmt.Printf("Warning: failed to expire session in Terminal Trainer API: %v\n", err)
+		utils.Warn("failed to expire session in Terminal Trainer API: %v", err)
 	} else {
-		log.Printf("[DEBUG] Successfully called expireSessionInAPI for session %s\n", sessionID)
+		utils.Debug("Successfully called expireSessionInAPI for session %s", sessionID)
 	}
 
 	// 2. Marquer la session comme arrêtée localement
 	// L'utilisateur pourra la masquer s'il le souhaite
-	log.Printf("[DEBUG] Updating session %s status to 'stopped'\n", sessionID)
+	utils.Debug("Updating session %s status to 'stopped'", sessionID)
 	terminal.Status = "stopped"
 	err = tts.repository.UpdateTerminalSession(terminal)
 	if err != nil {
-		fmt.Printf("[ERROR] Failed to update session %s status: %v\n", sessionID, err)
+		utils.Error("Failed to update session %s status: %v", sessionID, err)
 		return err
 	}
 
 	// 3. Décrémenter la métrique concurrent_terminals
-	log.Printf("[DEBUG] Decrementing concurrent_terminals for user %s\n", terminal.UserID)
+	utils.Debug("Decrementing concurrent_terminals for user %s", terminal.UserID)
 	decrementErr := tts.subscriptionService.IncrementUsage(terminal.UserID, "concurrent_terminals", -1)
 	if decrementErr != nil {
 		// Log l'erreur mais ne pas faire échouer l'arrêt du terminal
-		fmt.Printf("Warning: failed to decrement concurrent_terminals for user %s: %v\n", terminal.UserID, decrementErr)
+		utils.Warn("failed to decrement concurrent_terminals for user %s: %v", terminal.UserID, decrementErr)
 	}
 
-	log.Printf("[DEBUG] Successfully updated session %s status to 'stopped'\n", sessionID)
+	utils.Debug("Successfully updated session %s status to 'stopped'", sessionID)
 	return nil
 }
 
@@ -588,7 +587,7 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 			// Session existe côté API mais pas côté local
 			// Ne recréer que les sessions actives, pas les expirées/arrêtées
 			if apiStatusName == "active" {
-				log.Printf("[DEBUG] SyncUserSessions - Creating missing active session %s (status=%d, name=%s)\n",
+				utils.Debug("SyncUserSessions - Creating missing active session %s (status=%d, name=%s)",
 					sessionID, apiSession.Status, apiStatusName)
 				err := tts.createMissingLocalSession(userID, userKey, apiSession)
 				if err != nil {
@@ -606,7 +605,7 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 					createdCount++
 				}
 			} else {
-				log.Printf("[DEBUG] SyncUserSessions - Ignoring non-active session %s (status=%d, name=%s) from API\n",
+				utils.Debug("SyncUserSessions - Ignoring non-active session %s (status=%d, name=%s) from API",
 					sessionID, apiSession.Status, apiStatusName)
 				// Ajouter quand même aux résultats pour le suivi
 				sessionResults = append(sessionResults, dto.SyncSessionResponse{
@@ -623,36 +622,36 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 			previousStatus := localSession.Status
 			needsUpdate := false
 
-			log.Printf("[DEBUG] SyncUserSessions - Session %s: local='%s', api='%d' (name='%s')\n",
+			utils.Debug("SyncUserSessions - Session %s: local='%s', api='%d' (name='%s')",
 				sessionID, localSession.Status, apiSession.Status, apiStatusName)
 
 			// Vérifier si le statut a changé
 			// Ne pas écraser les sessions arrêtées manuellement (status "stopped")
 			if localSession.Status != apiStatusName && localSession.Status != "stopped" {
-				log.Printf("[DEBUG] SyncUserSessions - Status mismatch for session %s: changing '%s' -> '%s'\n",
+				utils.Debug("SyncUserSessions - Status mismatch for session %s: changing '%s' -> '%s'",
 					sessionID, localSession.Status, apiStatusName)
 				localSession.Status = apiStatusName
 				needsUpdate = true
 			} else if localSession.Status == "stopped" {
-				log.Printf("[DEBUG] SyncUserSessions - Session %s is manually stopped, keeping local status\n", sessionID)
+				utils.Debug("SyncUserSessions - Session %s is manually stopped, keeping local status", sessionID)
 			}
 
 			// Vérifier si la session a expiré selon la date
 			expiryTime := time.Unix(apiSession.ExpiresAt, 0)
 			if time.Now().After(expiryTime) && apiStatusName == "active" {
-				log.Printf("[DEBUG] SyncUserSessions - Session %s expired by date, marking as expired\n", sessionID)
+				utils.Debug("SyncUserSessions - Session %s expired by date, marking as expired", sessionID)
 				localSession.Status = "expired"
 				needsUpdate = true
 			}
 
 			if needsUpdate {
-				log.Printf("[DEBUG] SyncUserSessions - Updating session %s status to '%s'\n", sessionID, localSession.Status)
+				utils.Debug("SyncUserSessions - Updating session %s status to '%s'", sessionID, localSession.Status)
 				err := tts.repository.UpdateTerminalSession(localSession)
 				if err != nil {
-					fmt.Printf("[ERROR] SyncUserSessions - Failed to update session %s: %v\n", sessionID, err)
+					utils.Error("SyncUserSessions - Failed to update session %s: %v", sessionID, err)
 					errors = append(errors, fmt.Sprintf("Failed to update session %s: %v", sessionID, err))
 				} else {
-					log.Printf("[DEBUG] SyncUserSessions - Successfully updated session %s\n", sessionID)
+					utils.Debug("SyncUserSessions - Successfully updated session %s", sessionID)
 					updatedCount++
 				}
 			}
@@ -827,7 +826,7 @@ func (tts *terminalTrainerService) getAllSessionsFromAllInstanceTypes(userAPIKey
 		apiResponse, err := tts.getSessionsFromInstanceType(userAPIKey, instanceType)
 		if err != nil {
 			// Log l'erreur mais continuer avec les autres types d'instances
-			fmt.Printf("Warning: failed to get sessions from instance type '%s': %v\n", instanceType, err)
+			utils.Warn("failed to get sessions from instance type '%s': %v", instanceType, err)
 			continue
 		}
 		allSessions = append(allSessions, apiResponse.Sessions...)
@@ -905,7 +904,7 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 		if existingShare.AccessLevel != accessLevel {
 			err := tts.removeTerminalSharePermissions(sharedWithUserID, existingShare.AccessLevel)
 			if err != nil {
-				fmt.Printf("Warning: failed to remove old permissions for terminal %s from user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
+				utils.Warn("failed to remove old permissions for terminal %s from user %s: %v", terminal.ID.String(), sharedWithUserID, err)
 			}
 		}
 
@@ -921,19 +920,19 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 		// Ajouter les permissions Casbin pour le nouveau niveau d'accès
 		err = tts.addTerminalHidePermissions(sharedWithUserID)
 		if err != nil {
-			fmt.Printf("Warning: failed to add hide permissions for updated shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
+			utils.Warn("failed to add hide permissions for updated shared terminal %s to user %s: %v", terminal.ID.String(), sharedWithUserID, err)
 		}
 
 		// Ajouter les permissions console WebSocket
 		err = tts.addTerminalConsolePermissions(sharedWithUserID)
 		if err != nil {
-			fmt.Printf("Warning: failed to add console permissions for updated shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
+			utils.Warn("failed to add console permissions for updated shared terminal %s to user %s: %v", terminal.ID.String(), sharedWithUserID, err)
 		}
 
 		// Ajouter les nouvelles permissions d'édition selon le niveau d'accès
 		err = tts.addTerminalSharePermissions(sharedWithUserID, accessLevel)
 		if err != nil {
-			fmt.Printf("Warning: failed to add share permissions for updated shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
+			utils.Warn("failed to add share permissions for updated shared terminal %s to user %s: %v", terminal.ID.String(), sharedWithUserID, err)
 		}
 
 		return nil
@@ -958,21 +957,21 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 	err = tts.addTerminalHidePermissions(sharedWithUserID)
 	if err != nil {
 		// Log l'erreur mais ne pas faire échouer le partage
-		fmt.Printf("Warning: failed to add hide permissions for shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
+		utils.Warn("failed to add hide permissions for shared terminal %s to user %s: %v", terminal.ID.String(), sharedWithUserID, err)
 	}
 
 	// Ajouter les permissions console WebSocket
 	err = tts.addTerminalConsolePermissions(sharedWithUserID)
 	if err != nil {
 		// Log l'erreur mais ne pas faire échouer le partage
-		fmt.Printf("Warning: failed to add console permissions for shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
+		utils.Warn("failed to add console permissions for shared terminal %s to user %s: %v", terminal.ID.String(), sharedWithUserID, err)
 	}
 
 	// Ajouter les permissions d'édition pour les utilisateurs avec accès "owner"
 	err = tts.addTerminalSharePermissions(sharedWithUserID, accessLevel)
 	if err != nil {
 		// Log l'erreur mais ne pas faire échouer le partage
-		fmt.Printf("Warning: failed to add share permissions for shared terminal %s to user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
+		utils.Warn("failed to add share permissions for shared terminal %s to user %s: %v", terminal.ID.String(), sharedWithUserID, err)
 	}
 
 	return nil
@@ -1007,7 +1006,7 @@ func (tts *terminalTrainerService) RevokeTerminalAccess(sessionID, sharedWithUse
 	err = tts.removeTerminalSharePermissions(sharedWithUserID, share.AccessLevel)
 	if err != nil {
 		// Log l'erreur mais ne pas faire échouer la révocation
-		fmt.Printf("Warning: failed to remove permissions for terminal %s from user %s: %v\n", terminal.ID.String(), sharedWithUserID, err)
+		utils.Warn("failed to remove permissions for terminal %s from user %s: %v", terminal.ID.String(), sharedWithUserID, err)
 	}
 
 	// Désactiver le partage
@@ -1699,7 +1698,7 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 	for _, member := range activeMembers {
 		user, err := casdoorsdk.GetUserByUserId(member.UserID)
 		if err != nil || user == nil {
-			log.Printf("Warning: failed to get user details for %s: %v", member.UserID, err)
+			utils.Warn("failed to get user details for %s: %v", member.UserID, err)
 			userEmails[member.UserID] = member.UserID // Fallback to userID
 		} else {
 			userEmails[member.UserID] = user.Email
@@ -1712,7 +1711,7 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 		if err != nil {
 			keyName := "auto-" + userEmails[member.UserID]
 			if createErr := tts.CreateUserKey(member.UserID, keyName); createErr != nil {
-				log.Printf("Warning: failed to auto-provision terminal key for user %s: %v", member.UserID, createErr)
+				utils.Warn("failed to auto-provision terminal key for user %s: %v", member.UserID, createErr)
 			}
 		}
 	}
@@ -1796,7 +1795,7 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 	if terminal.Backend != "" {
 		online, err := tts.IsBackendOnline(terminal.Backend)
 		if err != nil {
-			fmt.Printf("Warning: failed to check backend status: %v\n", err)
+			utils.Warn("failed to check backend status: %v", err)
 		} else if !online {
 			return false, "backend_offline", nil
 		}
@@ -1808,7 +1807,7 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 		err := tts.repository.UpdateTerminalSession(terminal)
 		if err != nil {
 			// Log error but continue - we know the session is expired
-			fmt.Printf("Warning: failed to update expired session %s status: %v\n", sessionID, err)
+			utils.Warn("failed to update expired session %s status: %v", sessionID, err)
 		}
 		return false, "expired", nil
 	}
@@ -1822,13 +1821,13 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 				terminal.Status = "expired"
 				updateErr := tts.repository.UpdateTerminalSession(terminal)
 				if updateErr != nil {
-					fmt.Printf("Warning: failed to update session %s status after API 404: %v\n", sessionID, updateErr)
+					utils.Warn("failed to update session %s status after API 404: %v", sessionID, updateErr)
 				}
 				return false, "expired", nil
 			}
 			// For other API errors, return error but don't block access
 			// This allows fail-open behavior when API is unavailable
-			fmt.Printf("Warning: API validation failed for session %s: %v\n", sessionID, err)
+			utils.Warn("API validation failed for session %s: %v", sessionID, err)
 			return false, "", fmt.Errorf("failed to validate session with API: %w", err)
 		}
 
@@ -1841,7 +1840,7 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 			terminal.Status = apiStatusName
 			err := tts.repository.UpdateTerminalSession(terminal)
 			if err != nil {
-				fmt.Printf("Warning: failed to sync session %s status from '%s' to '%s': %v\n",
+				utils.Warn("failed to sync session %s status from '%s' to '%s': %v",
 					sessionID, previousStatus, apiStatusName, err)
 			}
 			return terminal.Status == "active", terminal.Status, nil

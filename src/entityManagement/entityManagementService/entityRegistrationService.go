@@ -1,12 +1,12 @@
 package services
 
 import (
-	"log"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/interfaces"
 	authModels "soli/formations/src/auth/models"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/entityManagement/utils"
+	appUtils "soli/formations/src/utils"
 	"strings"
 
 	"github.com/gertd/go-pluralize"
@@ -68,7 +68,7 @@ func (s *EntityRegistrationService) RegisterSubEntites(name string, subEntities 
 
 func (s *EntityRegistrationService) RegisterSwaggerConfig(name string, config *entityManagementInterfaces.EntitySwaggerConfig) {
 	s.swaggerConfigs[name] = config
-	log.Printf("📚 Swagger config registered for entity: %s (tag: %s)", name, config.Tag)
+	appUtils.Debug("Swagger config registered for entity: %s (tag: %s)", name, config.Tag)
 }
 
 func (s *EntityRegistrationService) GetSwaggerConfig(name string) *entityManagementInterfaces.EntitySwaggerConfig {
@@ -105,7 +105,7 @@ func (s *EntityRegistrationService) GetRelationshipFilters(name string) []entity
 func (s *EntityRegistrationService) RegisterMembershipConfig(name string, config *entityManagementInterfaces.MembershipConfig) {
 	if config != nil {
 		s.membershipConfigs[name] = config
-		log.Printf("🔐 Membership config registered for entity: %s (table: %s)", name, config.MemberTable)
+		appUtils.Debug("Membership config registered for entity: %s (table: %s)", name, config.MemberTable)
 	}
 }
 
@@ -118,7 +118,7 @@ func (s *EntityRegistrationService) GetMembershipConfig(name string) *entityMana
 func (s *EntityRegistrationService) RegisterDefaultIncludes(name string, includes []string) {
 	if includes != nil && len(includes) > 0 {
 		s.defaultIncludes[name] = includes
-		log.Printf("📦 Default includes registered for entity: %s -> %v", name, includes)
+		appUtils.Debug("Default includes registered for entity: %s -> %v", name, includes)
 	}
 }
 
@@ -139,13 +139,14 @@ func (s *EntityRegistrationService) SetDefaultEntityAccesses(entityName string, 
 
 func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, roles entityManagementInterfaces.EntityRoles, enforcer interfaces.EnforcerInterface) {
 	if enforcer == nil {
-		log.Println("Enforcer is nil, skipping access setup")
+		appUtils.Warn("Enforcer is nil, skipping access setup")
 		return
 	}
 
 	errLoadingPolicy := enforcer.LoadPolicy()
 	if errLoadingPolicy != nil {
-		log.Fatal(errLoadingPolicy.Error())
+		appUtils.Error("Failed to load policy for entity %s: %v", entityName, errLoadingPolicy)
+		return
 	}
 	rolesMap := roles.Roles
 
@@ -155,31 +156,31 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 	apiGroupPath := "/api/v1/" + resourceName + "/*" // Use wildcard for specific resource endpoints
 	apiListPath := "/api/v1/" + resourceName         // List endpoint without wildcard
 
-	log.Printf("Setting up entity access for %s at %s and %s", entityName, apiListPath, apiGroupPath)
+	appUtils.Info("Setting up entity access for %s at %s and %s", entityName, apiListPath, apiGroupPath)
 
 	for ocfRoleName, accessGiven := range rolesMap {
 		// Add permission for the list endpoint (without wildcard)
 		_, errListPolicy := enforcer.AddPolicy(ocfRoleName, apiListPath, accessGiven)
 		if errListPolicy != nil {
 			if strings.Contains(errListPolicy.Error(), "UNIQUE") {
-				log.Printf("OCF role permission already exists: %s %s %s", ocfRoleName, apiListPath, accessGiven)
+				appUtils.Debug("OCF role permission already exists: %s %s %s", ocfRoleName, apiListPath, accessGiven)
 			} else {
-				log.Printf("Error adding OCF role permission: %v", errListPolicy)
+				appUtils.Error("Error adding OCF role permission: %v", errListPolicy)
 			}
 		} else {
-			log.Printf("Added OCF role permission: %s can %s %s", ocfRoleName, accessGiven, apiListPath)
+			appUtils.Debug("Added OCF role permission: %s can %s %s", ocfRoleName, accessGiven, apiListPath)
 		}
 
 		// Add permission for specific resource endpoints (with wildcard)
 		_, errPolicy := enforcer.AddPolicy(ocfRoleName, apiGroupPath, accessGiven)
 		if errPolicy != nil {
 			if strings.Contains(errPolicy.Error(), "UNIQUE") {
-				log.Printf("OCF role permission already exists: %s %s %s", ocfRoleName, apiGroupPath, accessGiven)
+				appUtils.Debug("OCF role permission already exists: %s %s %s", ocfRoleName, apiGroupPath, accessGiven)
 			} else {
-				log.Printf("Error adding OCF role permission: %v", errPolicy)
+				appUtils.Error("Error adding OCF role permission: %v", errPolicy)
 			}
 		} else {
-			log.Printf("Added OCF role permission: %s can %s %s", ocfRoleName, accessGiven, apiGroupPath)
+			appUtils.Debug("Added OCF role permission: %s can %s %s", ocfRoleName, accessGiven, apiGroupPath)
 		}
 
 		// Automatically add permissions for corresponding Casdoor roles
@@ -189,29 +190,29 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 			_, errCasdoorListPolicy := enforcer.AddPolicy(casdoorRole, apiListPath, accessGiven)
 			if errCasdoorListPolicy != nil {
 				if strings.Contains(errCasdoorListPolicy.Error(), "UNIQUE") {
-					log.Printf("Casdoor role permission already exists: %s %s %s", casdoorRole, apiListPath, accessGiven)
+					appUtils.Debug("Casdoor role permission already exists: %s %s %s", casdoorRole, apiListPath, accessGiven)
 				} else {
-					log.Printf("Error adding Casdoor role permission: %v", errCasdoorListPolicy)
+					appUtils.Error("Error adding Casdoor role permission: %v", errCasdoorListPolicy)
 				}
 			} else {
-				log.Printf("Added Casdoor role permission: %s can %s %s", casdoorRole, accessGiven, apiListPath)
+				appUtils.Debug("Added Casdoor role permission: %s can %s %s", casdoorRole, accessGiven, apiListPath)
 			}
 
 			// Add permission for specific resource endpoints
 			_, errCasdoorPolicy := enforcer.AddPolicy(casdoorRole, apiGroupPath, accessGiven)
 			if errCasdoorPolicy != nil {
 				if strings.Contains(errCasdoorPolicy.Error(), "UNIQUE") {
-					log.Printf("Casdoor role permission already exists: %s %s %s", casdoorRole, apiGroupPath, accessGiven)
+					appUtils.Debug("Casdoor role permission already exists: %s %s %s", casdoorRole, apiGroupPath, accessGiven)
 				} else {
-					log.Printf("Error adding Casdoor role permission: %v", errCasdoorPolicy)
+					appUtils.Error("Error adding Casdoor role permission: %v", errCasdoorPolicy)
 				}
 			} else {
-				log.Printf("Added Casdoor role permission: %s can %s %s", casdoorRole, accessGiven, apiGroupPath)
+				appUtils.Debug("Added Casdoor role permission: %s can %s %s", casdoorRole, accessGiven, apiGroupPath)
 			}
 		}
 	}
 
-	log.Printf("Completed entity access setup for %s", entityName)
+	appUtils.Info("Completed entity access setup for %s", entityName)
 }
 
 func Pluralize(entityName string) string {
@@ -252,7 +253,7 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 		}
 		service.RegisterSwaggerConfig(name, reg.SwaggerConfig)
 	} else {
-		log.Printf("📝 Entity %s registered without Swagger documentation", name)
+		appUtils.Debug("Entity %s registered without Swagger documentation", name)
 	}
 
 	// Set up access policies

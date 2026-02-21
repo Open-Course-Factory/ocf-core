@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"soli/formations/src/terminalTrainer/models"
+	"soli/formations/src/utils"
 	"time"
 
 	"github.com/google/uuid"
@@ -127,7 +128,7 @@ func (r *terminalRepository) GetTerminalSessionsByUserID(userID string, isActive
 		query.Where("status = ?", "active")
 	}
 
-	fmt.Printf("[DEBUG] About to execute query for user %s (isActive=%v)\n", userID, isActive)
+	utils.Debug("About to execute query for user %s (isActive=%v)", userID, isActive)
 	err := query.
 		Find(&terminals).Error
 	if err != nil {
@@ -135,13 +136,13 @@ func (r *terminalRepository) GetTerminalSessionsByUserID(userID string, isActive
 	}
 
 	// Debug logging pour voir ce qui est récupéré
-	fmt.Printf("[DEBUG] GetTerminalSessionsByUserID found %d sessions for user %s (isActive=%v)\n", len(terminals), userID, isActive)
+	utils.Debug("GetTerminalSessionsByUserID found %d sessions for user %s (isActive=%v)", len(terminals), userID, isActive)
 	for _, terminal := range terminals {
 		deletedAt := "nil"
 		if terminal.DeletedAt.Valid {
 			deletedAt = terminal.DeletedAt.Time.Format("2006-01-02 15:04:05")
 		}
-		fmt.Printf("[DEBUG] - Session %s: status=%s, deletedAt=%s\n", terminal.SessionID, terminal.Status, deletedAt)
+		utils.Debug("- Session %s: status=%s, deletedAt=%s", terminal.SessionID, terminal.Status, deletedAt)
 	}
 
 	return &terminals, nil
@@ -172,9 +173,9 @@ func (r *terminalRepository) UpdateTerminalSession(terminal *models.Terminal) er
 }
 
 func (r *terminalRepository) DeleteTerminalSession(sessionID string) error {
-	fmt.Printf("[DEBUG] DeleteTerminalSession called for session %s\n", sessionID)
+	utils.Debug("DeleteTerminalSession called for session %s", sessionID)
 	result := r.db.Where("session_id = ?", sessionID).Delete(&models.Terminal{})
-	fmt.Printf("[DEBUG] DeleteTerminalSession - rows affected: %d, error: %v\n", result.RowsAffected, result.Error)
+	utils.Debug("DeleteTerminalSession - rows affected: %d, error: %v", result.RowsAffected, result.Error)
 	return result.Error
 }
 

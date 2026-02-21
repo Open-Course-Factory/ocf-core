@@ -8,6 +8,8 @@ import (
 	"os"
 	"time"
 
+	"soli/formations/src/utils"
+
 	"gorm.io/gorm"
 )
 
@@ -159,7 +161,7 @@ func (s *emailService) sendMailTLS(addr, from, to string, msg []byte) error {
 		return fmt.Errorf("failed to close writer: %w", err)
 	}
 
-	fmt.Printf("✅ Email sent successfully via TLS (port 465) to: %s\n", to)
+	utils.Info("Email sent successfully via TLS (port 465) to: %s", to)
 	return nil
 }
 

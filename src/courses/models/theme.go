@@ -21,9 +21,11 @@ func (t Theme) IsThemeExtended(themes ...string) (bool, string) {
 
 	extendsFilePath := config.THEMES_ROOT + "/" + t.Name + "/extends.json"
 	if fileExists(extendsFilePath) {
-		extends := LoadExtends(extendsFilePath)
-		from = extends.Theme
-		res = true
+		extends, err := LoadExtends(extendsFilePath)
+		if err == nil {
+			from = extends.Theme
+			res = true
+		}
 	}
 
 	return res, from

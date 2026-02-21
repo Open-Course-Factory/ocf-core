@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"soli/formations/src/email/models"
+	"soli/formations/src/utils"
 
 	"gorm.io/gorm"
 )
@@ -178,6 +179,6 @@ func (s *templateService) TestTemplate(id uuid.UUID, testEmail string) error {
 	tmpl.LastTestedAt = &now
 	s.db.Save(&tmpl)
 
-	fmt.Printf("✅ Test email sent to: %s\n", testEmail)
+	utils.Info("Test email sent to: %s", testEmail)
 	return nil
 }
