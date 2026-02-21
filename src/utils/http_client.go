@@ -42,6 +42,34 @@ func (r *HTTPResponse) DecodeJSON(v any) error {
 	return json.Unmarshal(r.Body, v)
 }
 
+// DecodeLastJSON decodes the last JSON object from a response body that may
+// contain multiple newline-delimited JSON objects (NDJSON). This is needed for
+// streaming endpoints like tt-backend's /start which writes progress messages
+// as separate JSON objects before the final response.
+func (r *HTTPResponse) DecodeLastJSON(v any) error {
+	if len(r.Body) == 0 {
+		return fmt.Errorf("empty response body")
+	}
+	// Try standard unmarshal first (fast path for single JSON object)
+	if err := json.Unmarshal(r.Body, v); err == nil {
+		return nil
+	}
+	// Fall back to reading last JSON object from NDJSON stream
+	decoder := json.NewDecoder(bytes.NewReader(r.Body))
+	var lastRaw json.RawMessage
+	for decoder.More() {
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			return err
+		}
+		lastRaw = raw
+	}
+	if lastRaw == nil {
+		return fmt.Errorf("no JSON objects found in response body")
+	}
+	return json.Unmarshal(lastRaw, v)
+}
+
 // ==========================================
 // Low-Level HTTP Functions
 // ==========================================

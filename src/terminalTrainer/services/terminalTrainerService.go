@@ -261,9 +261,14 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 
 	utils.ApplyOptions(&opts, utils.WithAPIKey(userKey.APIKey))
 
-	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sessionResp, opts)
+	// Use MakeExternalAPIRequest + DecodeLastJSON because tt-backend's /start
+	// endpoint streams progress messages as NDJSON before the final session JSON.
+	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "GET", url, nil, opts)
 	if err != nil {
 		return nil, err
+	}
+	if err := resp.DecodeLastJSON(&sessionResp); err != nil {
+		return nil, utils.ExternalAPIError("Terminal Trainer", "decode response", err)
 	}
 
 	if sessionResp.Status != 0 {

@@ -158,6 +158,89 @@ func TestHTTPResponse_DecodeJSON(t *testing.T) {
 	})
 }
 
+func TestHTTPResponse_DecodeLastJSON(t *testing.T) {
+	// ProgressMessage represents a streaming progress line from tt-backend
+	type ProgressMessage struct {
+		Message string `json:"message"`
+	}
+
+	// SessionResponse represents the final session object from tt-backend
+	type SessionResponse struct {
+		ID     string `json:"id"`
+		Status int    `json:"status"`
+		IP     string `json:"ip"`
+	}
+
+	t.Run("Success - Single JSON object (fast path)", func(t *testing.T) {
+		body := []byte(`{"id": 123, "message": "Success"}`)
+		resp := &utils.HTTPResponse{
+			StatusCode: 200,
+			Body:       body,
+		}
+
+		var result TestResponse
+		err := resp.DecodeLastJSON(&result)
+		assert.NoError(t, err)
+		assert.Equal(t, 123, result.ID)
+		assert.Equal(t, "Success", result.Message)
+	})
+
+	t.Run("Success - NDJSON with progress messages", func(t *testing.T) {
+		// Simulates tt-backend /start streaming: progress lines then final session
+		body := []byte("{\"message\":\"Creating...\"}\n{\"message\":\"Starting...\"}\n{\"id\":\"abc\",\"status\":0,\"ip\":\"10.0.0.5\"}")
+		resp := &utils.HTTPResponse{
+			StatusCode: 200,
+			Body:       body,
+		}
+
+		var result SessionResponse
+		err := resp.DecodeLastJSON(&result)
+		assert.NoError(t, err)
+		assert.Equal(t, "abc", result.ID)
+		assert.Equal(t, 0, result.Status)
+		assert.Equal(t, "10.0.0.5", result.IP)
+	})
+
+	t.Run("Success - NDJSON with many progress messages", func(t *testing.T) {
+		// 4 progress objects before the final session object
+		body := []byte("{\"message\":\"Initializing container...\"}\n{\"message\":\"Configuring network...\"}\n{\"message\":\"Installing packages...\"}\n{\"message\":\"Starting services...\"}\n{\"id\":\"session-xyz\",\"status\":0,\"ip\":\"192.168.1.100\"}")
+		resp := &utils.HTTPResponse{
+			StatusCode: 200,
+			Body:       body,
+		}
+
+		var result SessionResponse
+		err := resp.DecodeLastJSON(&result)
+		assert.NoError(t, err)
+		assert.Equal(t, "session-xyz", result.ID)
+		assert.Equal(t, 0, result.Status)
+		assert.Equal(t, "192.168.1.100", result.IP)
+	})
+
+	t.Run("Error - Empty body", func(t *testing.T) {
+		resp := &utils.HTTPResponse{
+			StatusCode: 200,
+			Body:       []byte{},
+		}
+
+		var result TestResponse
+		err := resp.DecodeLastJSON(&result)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "empty response body")
+	})
+
+	t.Run("Error - Invalid JSON", func(t *testing.T) {
+		resp := &utils.HTTPResponse{
+			StatusCode: 200,
+			Body:       []byte(`{invalid json`),
+		}
+
+		var result TestResponse
+		err := resp.DecodeLastJSON(&result)
+		assert.Error(t, err)
+	})
+}
+
 // ==========================================
 // Retry Logic Tests
 // ==========================================
