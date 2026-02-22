@@ -7,6 +7,7 @@ import (
 
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/services"
+	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -55,7 +56,7 @@ func (c *PasswordResetController) RequestPasswordReset(ctx *gin.Context) {
 	err := c.passwordResetService.RequestPasswordReset(input.Email, resetURL)
 	if err != nil {
 		// Log the error but always return success to prevent user enumeration
-		fmt.Printf("Password reset error: %v\n", err)
+		utils.Error("Password reset error: %v", err)
 	}
 
 	// Always return success to prevent user enumeration attacks

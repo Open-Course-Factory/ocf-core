@@ -1,11 +1,11 @@
 package controller
 
 import (
-	"fmt"
 	"math"
 	"net/http"
 	"soli/formations/src/auth/errors"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	"soli/formations/src/utils"
 	"strconv"
 	"strings"
 
@@ -192,7 +192,7 @@ func (genericController genericController) getEntitiesFromName(entityName string
 	allEntitiesPages, total, err := genericController.genericService.GetEntities(entityModelInterface, page, pageSize, filters, includes)
 
 	if err != nil {
-		fmt.Println(err.Error())
+		utils.Error("%s", err.Error())
 		return nil, 0, true
 	}
 
@@ -227,7 +227,7 @@ func (genericController genericController) getEntitiesCursorFromName(entityName 
 	allEntitiesPages, nextCursor, hasMore, total, err := genericController.genericService.GetEntitiesCursor(entityModelInterface, cursor, limit, filters, includes)
 
 	if err != nil {
-		fmt.Println(err.Error())
+		utils.Error("%s", err.Error())
 		return nil, "", false, 0, true
 	}
 

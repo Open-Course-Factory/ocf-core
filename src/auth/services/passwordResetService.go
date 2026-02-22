@@ -8,6 +8,7 @@ import (
 
 	"soli/formations/src/auth/models"
 	emailServices "soli/formations/src/email/services"
+	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"gorm.io/gorm"
@@ -48,13 +49,13 @@ func (s *passwordResetService) RequestPasswordReset(email string, resetURL strin
 	if err != nil {
 		// Don't reveal if user exists or not (security best practice)
 		// Just log the error and return success
-		fmt.Printf("Password reset requested for non-existent email: %s\n", email)
+		utils.Debug("Password reset requested for non-existent email: %s", email)
 		return nil // Return success to avoid user enumeration
 	}
 
 	// Check if user exists (API may return nil user without error)
 	if user == nil {
-		fmt.Printf("Password reset requested for non-existent email: %s\n", email)
+		utils.Debug("Password reset requested for non-existent email: %s", email)
 		return nil // Return success to avoid user enumeration
 	}
 
@@ -84,7 +85,7 @@ func (s *passwordResetService) RequestPasswordReset(email string, resetURL strin
 		return fmt.Errorf("failed to send reset email: %w", err)
 	}
 
-	fmt.Printf("✅ Password reset email sent to: %s\n", email)
+	utils.Info("Password reset email sent to: %s", email)
 	return nil
 }
 
@@ -121,9 +122,9 @@ func (s *passwordResetService) ResetPassword(token string, newPassword string) e
 	resetToken.UsedAt = &now
 	if err := s.db.Save(&resetToken).Error; err != nil {
 		// Log but don't fail - password was already updated
-		fmt.Printf("Warning: failed to mark token as used: %v\n", err)
+		utils.Warn("failed to mark token as used: %v", err)
 	}
 
-	fmt.Printf("✅ Password reset successful for user: %s\n", resetToken.UserID)
+	utils.Info("Password reset successful for user: %s", resetToken.UserID)
 	return nil
 }

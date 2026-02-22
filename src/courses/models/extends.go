@@ -2,7 +2,7 @@ package models
 
 import (
 	"encoding/json"
-	"log"
+	"fmt"
 	"os"
 )
 
@@ -10,18 +10,18 @@ type Extends struct {
 	Theme string
 }
 
-func LoadExtends(extendsFilePath string) Extends {
+func LoadExtends(extendsFilePath string) (Extends, error) {
 	jsonFile, err := os.ReadFile(extendsFilePath)
 
 	if err != nil {
-		log.Fatal("Error during ReadFile(): ", err)
+		return Extends{}, fmt.Errorf("error reading extends file %s: %w", extendsFilePath, err)
 	}
 
 	var extends Extends
 	err = json.Unmarshal(jsonFile, &extends)
 	if err != nil {
-		log.Fatal("Error during Unmarshal(): ", err)
+		return Extends{}, fmt.Errorf("error unmarshaling extends file %s: %w", extendsFilePath, err)
 	}
 
-	return extends
+	return extends, nil
 }

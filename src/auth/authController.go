@@ -10,6 +10,7 @@ import (
 	"os"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
@@ -46,12 +47,14 @@ func (ac *authController) Callback(ctx *gin.Context) {
 
 	token, err := casdoorsdk.GetOAuthToken(codeParam, stateParam)
 	if err != nil {
-		panic(err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "authentication failed"})
+		return
 	}
 
 	claims, err := casdoorsdk.ParseJwtToken(token.AccessToken)
 	if err != nil {
-		panic(err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "authentication failed"})
+		return
 	}
 
 	claims.AccessToken = token.AccessToken
@@ -144,7 +147,7 @@ func (ac *authController) Login(ctx *gin.Context) {
 	// SECURITY: Validate that the token's user ID matches the expected user
 	claims, errParse := casdoorsdk.ParseJwtToken(response.AccessToken)
 	if errParse != nil {
-		fmt.Printf("[SECURITY ERROR] Failed to parse JWT token during validation: %v\n", errParse)
+		utils.Error("[SECURITY] Failed to parse JWT token during validation: %v", errParse)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Failed to validate authentication token",
@@ -154,7 +157,7 @@ func (ac *authController) Login(ctx *gin.Context) {
 
 	// Verify the token's user ID matches the expected user
 	if claims.Id != user.Id {
-		fmt.Printf("[SECURITY ALERT] Token user ID mismatch! Expected: %s, Got: %s (Expected user: %s, Token user: %s)\n",
+		utils.Error("[SECURITY] Token user ID mismatch! Expected: %s, Got: %s (Expected user: %s, Token user: %s)",
 			user.Id, claims.Id, user.Name, claims.User.Name)
 		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
 			ErrorCode:    http.StatusUnauthorized,
@@ -163,7 +166,7 @@ func (ac *authController) Login(ctx *gin.Context) {
 		return
 	}
 
-	fmt.Printf("[SECURITY] Token validation passed for user %s (ID: %s)\n", user.Name, user.Id)
+	utils.Debug("[SECURITY] Token validation passed for user %s (ID: %s)", user.Name, user.Id)
 
 	roles := getUserRoles(user)
 
@@ -176,7 +179,7 @@ func (ac *authController) Login(ctx *gin.Context) {
 		UserRoles:        roles,
 	}
 
-	fmt.Println("Login successful.\nYou are connected as: " + loginOutputDto.UserName)
+	utils.Info("Login successful. You are connected as: %s", loginOutputDto.UserName)
 
 	ctx.JSON(http.StatusCreated, loginOutputDto)
 }
@@ -197,8 +200,8 @@ func LoginToCasdoor(user *casdoorsdk.User, password string) (*http.Response, err
 	)
 
 	// DEBUG: Log the request details
-	fmt.Printf("[DEBUG LOGIN] User.Name=%s, User.Id=%s, User.Email=%s\n", user.Name, user.Id, user.Email)
-	fmt.Printf("[DEBUG LOGIN] Calling Casdoor OAuth URL (password hidden)\n")
+	utils.Debug("LOGIN User.Name=%s, User.Id=%s, User.Email=%s", user.Name, user.Id, user.Email)
+	utils.Debug("LOGIN Calling Casdoor OAuth URL (password hidden)")
 
 	resp, errPostToCasdoor := http.Post(requestURL, "application/json", nil)
 	if errPostToCasdoor != nil {
@@ -207,7 +210,7 @@ func LoginToCasdoor(user *casdoorsdk.User, password string) (*http.Response, err
 
 	// DEBUG: Log response
 	body, _ := io.ReadAll(resp.Body)
-	fmt.Printf("[DEBUG LOGIN] Casdoor response (truncated): %.200s...\n", string(body))
+	utils.Debug("LOGIN Casdoor response (truncated): %.200s...", string(body))
 
 	// Return a new response with the body we just read
 	resp.Body = io.NopCloser(bytes.NewReader(body))

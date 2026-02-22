@@ -3,10 +3,9 @@ package models
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
-	"log"
 	entityManagementModels "soli/formations/src/entityManagement/models"
+	"soli/formations/src/utils"
 	"strings"
 
 	"github.com/adrg/frontmatter"
@@ -70,7 +69,7 @@ func fillSection(courseFileSystem *billy.Filesystem, currentSection *Section) er
 
 	f, errFileOpening := (*courseFileSystem).Open(currentSection.FileName)
 	if errFileOpening != nil {
-		log.Default().Println(errFileOpening.Error())
+		utils.Error("%s", errFileOpening.Error())
 	}
 	defer f.Close()
 	scanner, scannerError := getScannerFromFile(f)
@@ -124,7 +123,7 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 		if index == 1 {
 			_, errSectionFrontMatter := frontmatter.Parse(strings.NewReader(sPage), &sectionFrontMatter)
 			if errSectionFrontMatter != nil {
-				fmt.Println(errSectionFrontMatter.Error())
+				utils.Error("%s", errSectionFrontMatter.Error())
 			}
 		}
 
@@ -139,7 +138,7 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 				sPageContent, err := frontmatter.Parse(strings.NewReader(sPage), &pageFrontMatter)
 
 				if err != nil {
-					fmt.Println(err.Error())
+					utils.Error("%s", err.Error())
 				}
 
 				if contains(currentSection.HiddenPages, (pageOrder)) {
@@ -148,7 +147,7 @@ func convertRawPageIntoStruct(currentSection *Section, sPages *[]string) []*Page
 				page := createPage(pageOrder, strings.Split(string(sPageContent), "\n"), currentSection, hide, pageFrontMatter.Class)
 				pages = append(pages, page)
 			} else {
-				fmt.Println("Front matter for section not found / not formatted as expected")
+				utils.Warn("Front matter for section not found / not formatted as expected")
 			}
 		}
 

@@ -3,12 +3,12 @@ package marp
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"os/user"
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/models"
+	"soli/formations/src/utils"
 	"strings"
 )
 
@@ -60,15 +60,17 @@ func (mcg MarpCourseGenerator) GetThemesSetOpts(course *models.Course) []string 
 	return options
 }
 
-func (mcg MarpCourseGenerator) GetCmd(course *models.Course) *exec.Cmd {
+func (mcg MarpCourseGenerator) GetCmd(course *models.Course) (*exec.Cmd, error) {
 	cUser, errc := user.Current()
 	if errc != nil {
-		log.Fatal(errc)
+		utils.Error("failed to get current user: %v", errc)
+		return nil, fmt.Errorf("failed to get current user: %w", errc)
 	}
 
 	pwd, err := os.Getwd()
 	if err != nil {
-		log.Fatal(err)
+		utils.Error("failed to get working directory: %v", err)
+		return nil, fmt.Errorf("failed to get working directory: %w", err)
 	}
 
 	outputDir := config.COURSES_OUTPUT_DIR + course.Theme.Name
@@ -85,31 +87,33 @@ func (mcg MarpCourseGenerator) GetCmd(course *models.Course) *exec.Cmd {
 
 	cmd := exec.Command("/usr/bin/docker", cmdFull...)
 
-	return cmd
+	return cmd, nil
 }
 
 func (mcg MarpCourseGenerator) Run(course *models.Course) error {
-	cmd := mcg.GetCmd(course)
+	cmd, err := mcg.GetCmd(course)
+	if err != nil {
+		return err
+	}
 
 	var outb, errb bytes.Buffer
 	cmd.Stdout = &outb
 	cmd.Stderr = &errb
 
-	fmt.Println("Command ready to be executed: " + cmd.String())
+	utils.Info("Command ready to be executed: %s", cmd.String())
 
-	err := cmd.Run()
+	err = cmd.Run()
 
 	if err != nil {
-		fmt.Println(err.Error())
-		//log.Fatal(err)
+		utils.Error("%s", err.Error())
 	}
 
 	errByte := errb.String()
 	if len(errb.Bytes()) > 0 {
-		fmt.Println(errByte)
+		utils.Error("%s", errByte)
 	}
 
-	fmt.Println(outb.String())
+	utils.Info("%s", outb.String())
 
 	return nil
 }
@@ -121,7 +125,8 @@ func (mcg MarpCourseGenerator) CompileResources(c *models.Course) error {
 	for _, f := range outputFolders {
 		err := os.MkdirAll(outputDir+"/"+f, os.ModePerm)
 		if err != nil {
-			log.Fatal(err)
+			utils.Error("failed to create output directory %s: %v", outputDir+"/"+f, err)
+			return fmt.Errorf("failed to create output directory %s: %w", outputDir+"/"+f, err)
 		}
 	}
 
@@ -130,7 +135,8 @@ func (mcg MarpCourseGenerator) CompileResources(c *models.Course) error {
 		themeSrc := config.THEMES_ROOT + t
 		cptErr := models.CopyDir(themeSrc, outputDir+"/theme")
 		if cptErr != nil {
-			log.Fatal(cptErr)
+			utils.Error("failed to copy theme %s: %v", t, cptErr)
+			return fmt.Errorf("failed to copy theme %s: %w", t, cptErr)
 		}
 	}
 
@@ -138,7 +144,8 @@ func (mcg MarpCourseGenerator) CompileResources(c *models.Course) error {
 	if _, err := os.Stat(config.IMAGES_ROOT); !os.IsNotExist(err) {
 		cpiErr := models.CopyDir(config.IMAGES_ROOT, outputDir+"/images")
 		if cpiErr != nil {
-			log.Fatal(cpiErr)
+			utils.Error("failed to copy global images: %v", cpiErr)
+			return fmt.Errorf("failed to copy global images: %w", cpiErr)
 		}
 	}
 
@@ -147,7 +154,8 @@ func (mcg MarpCourseGenerator) CompileResources(c *models.Course) error {
 	if _, ciiErr := os.Stat(courseImages); !os.IsNotExist(ciiErr) {
 		cpic_err := models.CopyDir(courseImages, outputDir+"/images")
 		if cpic_err != nil {
-			log.Fatal(cpic_err)
+			utils.Error("failed to copy course images: %v", cpic_err)
+			return fmt.Errorf("failed to copy course images: %w", cpic_err)
 		}
 	}
 

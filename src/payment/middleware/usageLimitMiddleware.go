@@ -3,13 +3,13 @@ package middleware
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/payment/services"
 	terminalServices "soli/formations/src/terminalTrainer/services"
+	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -152,7 +152,7 @@ func (ulm *usageLimitMiddleware) CheckCustomLimit(metricType string, increment i
 				err := ulm.subscriptionService.IncrementUsage(userId, metricType, increment)
 				if err != nil {
 					// Log l'erreur mais ne pas faire échouer la requête
-					fmt.Printf("Warning: Failed to increment usage metric %s for user %s: %v\n", metricType, userId, err)
+					utils.Warn("Failed to increment usage metric %s for user %s: %v", metricType, userId, err)
 				}
 			}
 		}
@@ -215,7 +215,7 @@ func (urm *userRoleMiddleware) EnsureSubscriptionRole() gin.HandlerFunc {
 			// Mettre à jour le rôle de l'utilisateur selon son abonnement
 			err := urm.subscriptionService.UpdateUserRoleBasedOnSubscription(userId)
 			if err != nil {
-				fmt.Printf("Warning: Failed to update user role: %v\n", err)
+				utils.Warn("Failed to update user role: %v", err)
 			}
 		}
 
@@ -333,7 +333,7 @@ func (ut *usageTracker) TrackUsageAfterSuccess(metricType string, increment int6
 		if ctx.Writer.Status() >= 200 && ctx.Writer.Status() < 300 && userId != "" {
 			err := ut.subscriptionService.IncrementUsage(userId, metricType, increment)
 			if err != nil {
-				fmt.Printf("Warning: Failed to track usage %s for user %s: %v\n", metricType, userId, err)
+				utils.Warn("Failed to track usage %s for user %s: %v", metricType, userId, err)
 			}
 		}
 	})
@@ -374,7 +374,7 @@ func (ulm *usageLimitMiddleware) CheckTerminalCreationLimit() gin.HandlerFunc {
 		// Vérifier le nombre de terminaux actifs concurrents via CheckUsageLimit
 		limitCheck, err := ulm.subscriptionService.CheckUsageLimit(userId, "concurrent_terminals", 1)
 		if err != nil {
-			log.Printf("[ERROR] CheckUsageLimit failed for user %s: %v", userId, err)
+			utils.Error("CheckUsageLimit failed for user %s: %v", userId, err)
 			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 				ErrorCode:    http.StatusInternalServerError,
 				ErrorMessage: "Failed to check concurrent terminal limit",
@@ -383,7 +383,7 @@ func (ulm *usageLimitMiddleware) CheckTerminalCreationLimit() gin.HandlerFunc {
 			return
 		}
 
-		log.Printf("[DEBUG] Terminal limit check for user %s: allowed=%v, current=%d, limit=%d, remaining=%d, message=%s",
+		utils.Debug("Terminal limit check for user %s: allowed=%v, current=%d, limit=%d, remaining=%d, message=%s",
 			userId, limitCheck.Allowed, limitCheck.CurrentUsage, limitCheck.Limit, limitCheck.RemainingUsage, limitCheck.Message)
 
 		if !limitCheck.Allowed {
@@ -400,7 +400,7 @@ func (ulm *usageLimitMiddleware) CheckTerminalCreationLimit() gin.HandlerFunc {
 		metrics, err := ulm.terminalService.GetServerMetrics(true, "")
 		if err != nil {
 			// Log l'erreur mais ne pas bloquer la création si le service de métriques est indisponible
-			fmt.Printf("Warning: Failed to check server metrics for terminal creation: %v\n", err)
+			utils.Warn("Failed to check server metrics for terminal creation: %v", err)
 		} else {
 			// Calculer la RAM requise basée sur le type d'instance demandé
 			// Map des tailles de machines vers RAM requise (GB)
@@ -467,7 +467,7 @@ func (ulm *usageLimitMiddleware) CheckTerminalCreationLimit() gin.HandlerFunc {
 		if ctx.Writer.Status() >= 200 && ctx.Writer.Status() < 300 {
 			err := ulm.subscriptionService.IncrementUsage(userId, "concurrent_terminals", 1)
 			if err != nil {
-				fmt.Printf("Warning: Failed to increment concurrent_terminals for user %s: %v\n", userId, err)
+				utils.Warn("Failed to increment concurrent_terminals for user %s: %v", userId, err)
 			}
 		}
 	}

@@ -3,6 +3,8 @@ package utils
 import (
 	"fmt"
 	"reflect"
+
+	"soli/formations/src/utils"
 )
 
 // AddOwnerIDToEntity adds a user ID to the entity's OwnerIDs slice field if it exists.
@@ -24,7 +26,7 @@ func AddOwnerIDToEntity(entity any, userId string) error {
 		return fmt.Errorf("OwnerIDs field exists but cannot be set (unexported field?)")
 	}
 
-	fmt.Println(ownerIdsField.Kind())
+	utils.Debug("%s", ownerIdsField.Kind())
 	if ownerIdsField.Kind() == reflect.Slice {
 		// Create a slice with the single owner ID
 		ownerIdsField.Set(reflect.MakeSlice(ownerIdsField.Type(), 1, 1))

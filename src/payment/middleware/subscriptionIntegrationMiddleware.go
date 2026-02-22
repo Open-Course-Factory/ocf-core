@@ -2,12 +2,12 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/payment/services"
+	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -384,7 +384,7 @@ func (sim *subscriptionIntegrationMiddleware) incrementUsageIfSuccessful(ctx *gi
 		err := sim.subscriptionService.IncrementUsage(userId, metricType, increment)
 		if err != nil {
 			// Log mais ne pas faire échouer la requête
-			fmt.Printf("Warning: Failed to increment usage %s for user %s: %v\n", metricType, userId, err)
+			utils.Warn("Failed to increment usage %s for user %s: %v", metricType, userId, err)
 		}
 	}
 }

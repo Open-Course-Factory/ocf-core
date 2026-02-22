@@ -85,8 +85,8 @@ func (genericController genericController) EditEntity(ctx *gin.Context) {
 	}
 
 	decoder, err := mapstructure.NewDecoder(config)
-	if err != nil {
-		panic(err)
+	if errors.HandleError(http.StatusInternalServerError, err, ctx) {
+		return
 	}
 
 	errDecode := decoder.Decode(entityPatchDtoInput)

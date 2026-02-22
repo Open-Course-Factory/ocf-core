@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -32,6 +31,7 @@ import (
 
 	authServices "soli/formations/src/auth/services"
 	sqldb "soli/formations/src/db"
+	"soli/formations/src/utils"
 )
 
 type URLFormat int
@@ -116,11 +116,11 @@ func CopyDir(src string, dst string) error {
 
 		if fd.IsDir() {
 			if err = CopyDir(srcfp, dstfp); err != nil {
-				fmt.Println(err)
+				utils.Error("%v", err)
 			}
 		} else {
 			if err = CopyFile(srcfp, dstfp); err != nil {
-				fmt.Println(err)
+				utils.Error("%v", err)
 			}
 		}
 	}
@@ -182,7 +182,7 @@ func GitClone(ownerId string, repositoryURL string, repositoryBranch string) (bi
 	_, errClone := git.Clone(memory.NewStorage(), fs, gitCloneOption)
 
 	if errClone != nil {
-		log.Printf("cloning repository")
+		utils.Error("cloning repository")
 		return nil, errClone
 	}
 	return fs, nil
@@ -204,7 +204,7 @@ func prepareGitCloneOptions(userId string, courseURL string, branchName ...strin
 	}
 
 	if len(*sshKeys) == 0 {
-		log.Printf("No SSH key found, trying without auth")
+		utils.Info("No SSH key found, trying without auth")
 
 		urlFormat := DetectURLFormat(courseURL)
 
@@ -227,7 +227,7 @@ func prepareGitCloneOptions(userId string, courseURL string, branchName ...strin
 		key, err = ssh.NewPublicKeys("git", []byte(firstKey), "")
 
 		if err != nil {
-			log.Default().Println(err.Error())
+			utils.Error("%s", err.Error())
 			return nil, err
 		}
 
@@ -352,7 +352,7 @@ func GetCachedRepo(ownerId string, repositoryURL string, repositoryBranch string
 	// Get remote commit hash
 	remoteCommitHash, err := GetRemoteCommitHash(ownerId, repositoryURL, repositoryBranch)
 	if err != nil {
-		log.Printf("Warning: Failed to get remote commit hash, using cached version: %v", err)
+		utils.Warn("Failed to get remote commit hash, using cached version: %v", err)
 		// If we can't check remote, use cached version (might be offline)
 		fs := osfs.New(repoCacheDir)
 		return fs, true, nil
@@ -360,12 +360,12 @@ func GetCachedRepo(ownerId string, repositoryURL string, repositoryBranch string
 
 	// Compare commit hashes
 	if cacheInfo.CommitHash == remoteCommitHash {
-		log.Printf("Repository cache is up-to-date (commit: %s)", remoteCommitHash[:8])
+		utils.Debug("Repository cache is up-to-date (commit: %s)", remoteCommitHash[:8])
 		fs := osfs.New(repoCacheDir)
 		return fs, true, nil
 	}
 
-	log.Printf("Repository cache is outdated (cached: %s, remote: %s)", cacheInfo.CommitHash[:8], remoteCommitHash[:8])
+	utils.Info("Repository cache is outdated (cached: %s, remote: %s)", cacheInfo.CommitHash[:8], remoteCommitHash[:8])
 	return nil, false, nil
 }
 
@@ -389,7 +389,7 @@ func CacheRepo(ownerId string, repositoryURL string, repositoryBranch string, fs
 	// Get the current commit hash
 	commitHash, err := GetRemoteCommitHash(ownerId, repositoryURL, repositoryBranch)
 	if err != nil {
-		log.Printf("Warning: Failed to get commit hash for caching: %v", err)
+		utils.Warn("Failed to get commit hash for caching: %v", err)
 		commitHash = "unknown"
 	}
 
@@ -411,7 +411,7 @@ func CacheRepo(ownerId string, repositoryURL string, repositoryBranch string, fs
 		return fmt.Errorf("failed to write cache info: %w", err)
 	}
 
-	log.Printf("Repository cached successfully at %s", repoCacheDir)
+	utils.Info("Repository cached successfully at %s", repoCacheDir)
 	return nil
 }
 
@@ -474,7 +474,7 @@ func GitCloneWithCache(ownerId string, repositoryURL string, repositoryBranch st
 	}
 
 	// If not cached or outdated, clone normally
-	log.Printf("Cloning repository: %s (branch: %s)", repositoryURL, repositoryBranch)
+	utils.Info("Cloning repository: %s (branch: %s)", repositoryURL, repositoryBranch)
 	fs, err := GitClone(ownerId, repositoryURL, repositoryBranch)
 	if err != nil {
 		return nil, err
@@ -482,7 +482,7 @@ func GitCloneWithCache(ownerId string, repositoryURL string, repositoryBranch st
 
 	// Cache the repository for future use
 	if err := CacheRepo(ownerId, repositoryURL, repositoryBranch, fs); err != nil {
-		log.Printf("Warning: Failed to cache repository: %v", err)
+		utils.Warn("Failed to cache repository: %v", err)
 		// Continue with the cloned repository even if caching fails
 	}
 
@@ -506,7 +506,7 @@ func LoadLocalDirectory(localPath string) (billy.Filesystem, error) {
 	}
 
 	// Return OS filesystem wrapper
-	log.Printf("Loading course from local path: %s", localPath)
+	utils.Info("Loading course from local path: %s", localPath)
 	return osfs.New(localPath), nil
 }
 
@@ -517,10 +517,10 @@ func LoadTheme(ownerId string, sourceType string, source string, branch string) 
 
 	switch sourceType {
 	case "git":
-		log.Printf("Loading theme from git repository: %s (branch: %s)", source, branch)
+		utils.Info("Loading theme from git repository: %s (branch: %s)", source, branch)
 		fs, err = GitClone(ownerId, source, branch)
 	case "local":
-		log.Printf("Loading theme from local path: %s", source)
+		utils.Info("Loading theme from local path: %s", source)
 		fs, err = LoadLocalDirectory(source)
 	default:
 		return nil, fmt.Errorf("unknown source type: %s (must be 'git' or 'local')", sourceType)

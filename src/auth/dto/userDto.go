@@ -1,13 +1,12 @@
 package dto
 
 import (
-	"fmt"
-
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
 
 	groupDto "soli/formations/src/groups/dto"
 	organizationDto "soli/formations/src/organizations/dto"
+	"soli/formations/src/utils"
 )
 
 type UserOutput struct {
@@ -58,7 +57,7 @@ type BatchUsersInput struct {
 func UserModelToUserOutput(userModel *casdoorsdk.User) *UserOutput {
 	uuid_parsed, err := uuid.Parse(userModel.Id)
 	if err != nil {
-		fmt.Println("Could not parse user id")
+		utils.Warn("Could not parse user id")
 		uuid_parsed = uuid.New()
 	}
 

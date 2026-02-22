@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	config "soli/formations/src/configuration"
 	"soli/formations/src/courses/models"
+	"soli/formations/src/utils"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
@@ -56,11 +56,12 @@ func (scg SlidevCourseGenerator) GetThemesSetOpts(course *models.Course) []strin
 	return options
 }
 
-func (scg SlidevCourseGenerator) GetCmd(course *models.Course) *exec.Cmd {
+func (scg SlidevCourseGenerator) GetCmd(course *models.Course) (*exec.Cmd, error) {
 
 	pwd, err := os.Getwd()
 	if err != nil {
-		log.Fatal(err)
+		utils.Error("failed to get working directory: %v", err)
+		return nil, fmt.Errorf("failed to get working directory: %w", err)
 	}
 
 	outputDir := config.COURSES_OUTPUT_DIR + course.Theme.Name
@@ -71,34 +72,37 @@ func (scg SlidevCourseGenerator) GetCmd(course *models.Course) *exec.Cmd {
 
 	cmd := exec.Command("/usr/bin/docker", baseCmd...)
 
-	return cmd
+	return cmd, nil
 }
 
 func (scg SlidevCourseGenerator) Run(course *models.Course) error {
-	cmd := scg.GetCmd(course)
+	cmd, err := scg.GetCmd(course)
+	if err != nil {
+		return err
+	}
 
 	var outb, errb bytes.Buffer
 	cmd.Stdout = &outb
 	cmd.Stderr = &errb
 
-	fmt.Println("Command ready to be executed: " + cmd.String())
+	utils.Info("Command ready to be executed: %s", cmd.String())
 
 	if *config.DRY_RUN {
 		return nil
 	}
 
-	err := cmd.Run()
+	err = cmd.Run()
 
 	if err != nil {
-		fmt.Println(err.Error())
+		utils.Error("%s", err.Error())
 		errByte := errb.String()
 		if len(errb.Bytes()) > 0 {
-			fmt.Println(errByte)
+			utils.Error("%s", errByte)
 		}
 		return err
 	}
 
-	fmt.Println(outb.String())
+	utils.Info("%s", outb.String())
 
 	return nil
 }
@@ -110,7 +114,8 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
 	for _, f := range outputFolders {
 		err := os.MkdirAll(outputDir+f, os.ModePerm)
 		if err != nil {
-			log.Fatal(err)
+			utils.Error("failed to create output directory %s: %v", outputDir+f, err)
+			return fmt.Errorf("failed to create output directory %s: %w", outputDir+f, err)
 		}
 	}
 
@@ -129,7 +134,8 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
 			sourceType = "local"
 			source = c.Theme.SourcePath
 		} else {
-			log.Fatal("No theme source specified (neither Repository nor SourcePath)")
+			utils.Error("No theme source specified (neither Repository nor SourcePath)")
+			return fmt.Errorf("no theme source specified (neither Repository nor SourcePath)")
 		}
 	} else {
 		// New behavior: use SourceType to determine which field to read
@@ -142,7 +148,8 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
 
 	fs, errClone := models.LoadTheme(c.OwnerIDs[0], sourceType, source, branch)
 	if errClone != nil {
-		log.Fatal(errClone)
+		utils.Error("failed to load theme: %v", errClone)
+		return fmt.Errorf("failed to load theme: %w", errClone)
 	}
 
 	markFn := func(path string, entry os.FileInfo, err error) error {
@@ -170,7 +177,8 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
 	if _, err := os.Stat(config.IMAGES_ROOT); !os.IsNotExist(err) {
 		cpiErr := models.CopyDir(config.IMAGES_ROOT, outputDir+"/"+PUBLIC_DIR)
 		if cpiErr != nil {
-			log.Fatal(cpiErr)
+			utils.Error("failed to copy global images: %v", cpiErr)
+			return fmt.Errorf("failed to copy global images: %w", cpiErr)
 		}
 	}
 
@@ -237,7 +245,7 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
 								if err != nil {
 									return err
 								}
-								log.Printf("Copied course image: %s -> %s", path, targetPath)
+								utils.Debug("Copied course image: %s -> %s", path, targetPath)
 							}
 						}
 					}
@@ -246,7 +254,7 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
 
 				util.Walk(courseFS, "/", courseImagesFn)
 			} else {
-				log.Printf("Warning: Could not load course filesystem for images: %v", errLoadCourse)
+				utils.Warn("Could not load course filesystem for images: %v", errLoadCourse)
 			}
 		}
 	}
@@ -256,7 +264,8 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
 	if _, ciiErr := os.Stat(courseImages); !os.IsNotExist(ciiErr) {
 		cpic_err := models.CopyDir(courseImages, outputDir+"/"+PUBLIC_DIR)
 		if cpic_err != nil {
-			log.Fatal(cpic_err)
+			utils.Error("failed to copy course images: %v", cpic_err)
+			return fmt.Errorf("failed to copy course images: %w", cpic_err)
 		}
 	}
 
@@ -266,13 +275,13 @@ func (scg SlidevCourseGenerator) CompileResources(c *models.Course) error {
 func (scg SlidevCourseGenerator) writeFileFromFsToDisk(fs billy.Filesystem, path string, outputDir string, entry fs.FileInfo) error {
 	file, errFileOpen := fs.Open(path)
 	if errFileOpen != nil {
-		log.Printf("opening file")
+		utils.Error("opening file")
 		return errFileOpen
 	}
 
 	fileContent, errRead := io.ReadAll(file)
 	if errRead != nil {
-		log.Printf("reading file")
+		utils.Error("reading file")
 		return errRead
 	}
 
@@ -283,7 +292,7 @@ func (scg SlidevCourseGenerator) writeFileFromFsToDisk(fs billy.Filesystem, path
 	err := os.WriteFile(outputDir+path, fileContent, 0600)
 
 	if err != nil {
-		log.Printf("writing file")
+		utils.Error("writing file")
 		return err
 	}
 
@@ -330,7 +339,7 @@ func (scg SlidevCourseGenerator) ExportPDF(course *models.Course) error {
 	cmd.Stdout = &outb
 	cmd.Stderr = &errb
 
-	fmt.Println("PDF export command ready: " + cmd.String())
+	utils.Info("PDF export command ready: %s", cmd.String())
 
 	if *config.DRY_RUN {
 		return nil
@@ -338,12 +347,12 @@ func (scg SlidevCourseGenerator) ExportPDF(course *models.Course) error {
 
 	err = cmd.Run()
 	if err != nil {
-		fmt.Printf("PDF export stdout: %s\n", outb.String())
-		fmt.Printf("PDF export stderr: %s\n", errb.String())
+		utils.Error("PDF export stdout: %s", outb.String())
+		utils.Error("PDF export stderr: %s", errb.String())
 		return err
 	}
 
-	fmt.Printf("PDF export completed successfully\n")
-	fmt.Printf("PDF export stdout: %s\n", outb.String())
+	utils.Info("PDF export completed successfully")
+	utils.Debug("PDF export stdout: %s", outb.String())
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 
 	"soli/formations/src/auth/models"
 	emailServices "soli/formations/src/email/services"
+	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"gorm.io/gorm"
@@ -104,7 +105,7 @@ func (s *emailVerificationService) CreateVerificationToken(userID, email string)
 		return fmt.Errorf("failed to send verification email: %w", err)
 	}
 
-	fmt.Printf("✅ Verification email sent to: %s\n", email)
+	utils.Info("Verification email sent to: %s", email)
 	return nil
 }
 
@@ -172,7 +173,7 @@ func (s *emailVerificationService) VerifyEmail(token string) error {
 		return fmt.Errorf("failed to update user verification status: %w", err)
 	}
 
-	fmt.Printf("✅ Email verified for user: %s\n", verificationToken.UserID)
+	utils.Info("Email verified for user: %s", verificationToken.UserID)
 	return nil
 }
 
@@ -182,14 +183,14 @@ func (s *emailVerificationService) ResendVerification(email string) error {
 	user, err := casdoorsdk.GetUserByEmail(email)
 	if err != nil || user == nil {
 		// Don't reveal if user exists or not (security best practice)
-		fmt.Printf("Verification resend requested for non-existent email: %s\n", email)
+		utils.Debug("Verification resend requested for non-existent email: %s", email)
 		return nil // Return success to avoid user enumeration
 	}
 
 	// Check if user is already verified
 	if user.Properties != nil && user.Properties["email_verified"] == "true" {
 		// Already verified, but don't reveal this to avoid user enumeration
-		fmt.Printf("Verification resend requested for already verified email: %s\n", email)
+		utils.Debug("Verification resend requested for already verified email: %s", email)
 		return nil
 	}
 
@@ -208,7 +209,7 @@ func (s *emailVerificationService) ResendVerification(email string) error {
 	// Check rate limiting
 	if !token.CanResend() {
 		// Rate limited, but don't reveal this to avoid user enumeration
-		fmt.Printf("Verification resend rate limited for email: %s\n", email)
+		utils.Debug("Verification resend rate limited for email: %s", email)
 		return nil // Return success to avoid user enumeration
 	}
 
@@ -226,7 +227,7 @@ func (s *emailVerificationService) ResendVerification(email string) error {
 		return fmt.Errorf("failed to send verification email: %w", err)
 	}
 
-	fmt.Printf("✅ Verification email resent to: %s (count: %d)\n", email, token.ResendCount)
+	utils.Info("Verification email resent to: %s (count: %d)", email, token.ResendCount)
 	return nil
 }
 
