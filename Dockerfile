@@ -1,5 +1,5 @@
 # Base Golang Image
-FROM golang:latest AS builder
+FROM golang:1.24-bookworm AS builder
 
 # Setup working directory
 WORKDIR /usr/src/ocf-core
@@ -21,7 +21,7 @@ RUN go mod tidy
 
 RUN go build -o ocf /usr/src/ocf-core/main.go
 
-FROM debian:latest
+FROM debian:12-slim
 
 RUN apt-get update
 
