@@ -13,7 +13,6 @@ import (
 
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
-	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/services"
@@ -95,7 +94,6 @@ type terminalController struct {
 	apiVersion         string
 	terminalType       string
 	service            services.TerminalTrainerService
-	db                 *gorm.DB
 }
 
 func NewTerminalController(db *gorm.DB) TerminalController {
@@ -115,7 +113,6 @@ func NewTerminalController(db *gorm.DB) TerminalController {
 		apiVersion:         apiVersion,
 		terminalType:       terminalType,
 		service:            services.NewTerminalTrainerService(db),
-		db:                 db,
 	}
 }
 
@@ -1669,11 +1666,6 @@ func (tc *terminalController) GetAccessStatus(ctx *gin.Context) {
 // or is an owner/manager of the organization associated with the terminal session.
 func (tc *terminalController) isSessionOwnerOrAdmin(ctx *gin.Context, terminal *models.Terminal) bool {
 	userId := ctx.GetString("userId")
-	// Session owner always has access
-	if terminal.UserID == userId {
-		return true
-	}
-	// Check roles for org-scoped access
 	userRoles := ctx.GetStringSlice("userRoles")
 	isAdmin := false
 	for _, role := range userRoles {
@@ -1682,28 +1674,7 @@ func (tc *terminalController) isSessionOwnerOrAdmin(ctx *gin.Context, terminal *
 			break
 		}
 	}
-	// Admin or org owner/manager can access sessions in their organization
-	if terminal.OrganizationID != nil && tc.db != nil {
-		// Check if user is org member with manager role (or admin in same org)
-		var orgMember orgModels.OrganizationMember
-		err := tc.db.Where(
-			"organization_id = ? AND user_id = ? AND is_active = ?",
-			*terminal.OrganizationID, userId, true,
-		).First(&orgMember).Error
-		if err == nil {
-			// Org managers/owners can access, and admins who are members of the org
-			if orgMember.IsManager() || isAdmin {
-				return true
-			}
-		}
-		// Also check if user is the organization owner directly
-		var org orgModels.Organization
-		err = tc.db.Where("id = ?", *terminal.OrganizationID).First(&org).Error
-		if err == nil && org.OwnerUserID == userId {
-			return true
-		}
-	}
-	return false
+	return tc.service.IsUserAuthorizedForSession(userId, terminal, isAdmin)
 }
 
 // GetSessionHistory returns command history for a terminal session
@@ -1901,30 +1872,22 @@ func (tc *terminalController) GetOrganizationTerminalSessions(ctx *gin.Context) 
 		return
 	}
 
-	// Check if user is org owner/manager
+	// Check if user is org owner/manager or admin
 	userId := ctx.GetString("userId")
-	var orgMember orgModels.OrganizationMember
-	err = tc.db.Where(
-		"organization_id = ? AND user_id = ? AND is_active = ?",
-		orgID, userId, true,
-	).First(&orgMember).Error
-	if err != nil || !orgMember.IsManager() {
-		// Also allow admins
-		isAdmin := false
-		userRoles := ctx.GetStringSlice("userRoles")
-		for _, role := range userRoles {
-			if role == "administrator" {
-				isAdmin = true
-				break
-			}
+	userRoles := ctx.GetStringSlice("userRoles")
+	isAdmin := false
+	for _, role := range userRoles {
+		if role == "administrator" {
+			isAdmin = true
+			break
 		}
-		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Only organization owners, managers, or admins can access this resource",
-			})
-			return
-		}
+	}
+	if !tc.service.IsUserOrgManagerOrAdmin(userId, orgID, isAdmin) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Only organization owners, managers, or admins can access this resource",
+		})
+		return
 	}
 
 	sessions, err := tc.service.GetOrganizationTerminalSessions(orgID)

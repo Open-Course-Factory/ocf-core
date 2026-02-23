@@ -96,6 +96,10 @@ type TerminalTrainerService interface {
 
 	// Organization session management
 	GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error)
+
+	// Authorization helpers
+	IsUserAuthorizedForSession(userID string, terminal *models.Terminal, isAdmin bool) bool
+	IsUserOrgManagerOrAdmin(userID string, orgID uuid.UUID, isAdmin bool) bool
 }
 
 type terminalTrainerService struct {
@@ -2031,4 +2035,50 @@ func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*d
 
 func (tts *terminalTrainerService) GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error) {
 	return tts.repository.GetTerminalSessionsByOrganizationID(orgID)
+}
+
+// IsUserAuthorizedForSession checks if a user is authorized to access a terminal session.
+// Returns true if the user is the session owner, an admin in the session's org,
+// or an org owner/manager of the session's org.
+func (tts *terminalTrainerService) IsUserAuthorizedForSession(userID string, terminal *models.Terminal, isAdmin bool) bool {
+	// Session owner always has access
+	if terminal.UserID == userID {
+		return true
+	}
+	// Check organization-scoped access (admin, org owner, or org manager)
+	if terminal.OrganizationID != nil {
+		var orgMember orgModels.OrganizationMember
+		err := tts.db.Where(
+			"organization_id = ? AND user_id = ? AND is_active = ?",
+			*terminal.OrganizationID, userID, true,
+		).First(&orgMember).Error
+		if err == nil {
+			if orgMember.IsManager() || isAdmin {
+				return true
+			}
+		}
+		// Also check if user is the organization owner directly
+		var org orgModels.Organization
+		err = tts.db.Where("id = ?", *terminal.OrganizationID).First(&org).Error
+		if err == nil && org.OwnerUserID == userID {
+			return true
+		}
+	}
+	return false
+}
+
+// IsUserOrgManagerOrAdmin checks if a user is an org owner/manager or a system admin
+// who is also a member of the given organization.
+func (tts *terminalTrainerService) IsUserOrgManagerOrAdmin(userID string, orgID uuid.UUID, isAdmin bool) bool {
+	var orgMember orgModels.OrganizationMember
+	err := tts.db.Where(
+		"organization_id = ? AND user_id = ? AND is_active = ?",
+		orgID, userID, true,
+	).First(&orgMember).Error
+	if err == nil {
+		if orgMember.IsManager() || isAdmin {
+			return true
+		}
+	}
+	return false
 }
