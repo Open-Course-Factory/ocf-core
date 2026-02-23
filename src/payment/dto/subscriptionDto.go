@@ -63,6 +63,7 @@ type SubscriptionPlanOutput struct {
 	AllowedTemplates          []string `json:"allowed_templates"`
 	AllowedBackends           []string `json:"allowed_backends"`
 	DefaultBackend            string   `json:"default_backend"`
+	CommandHistoryRetentionDays int      `json:"command_history_retention_days"`
 
 	// Planned features (announced but not yet available)
 	PlannedFeatures []string `json:"planned_features"` // Features coming soon

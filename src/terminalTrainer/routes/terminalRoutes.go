@@ -55,6 +55,10 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.GET("/:id/status", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelRead), terminalController.GetSessionStatus)
 	routes.GET("/:id/access-status", middleware.AuthManagement(), terminalController.GetAccessStatus)
 
+	// Command history routes
+	routes.GET("/:id/history", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelRead), terminalController.GetSessionHistory)
+	routes.DELETE("/:id/history", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelRead), terminalController.DeleteSessionHistory)
+
 	// Configuration (no terminal-specific access needed)
 	routes.GET("/instance-types", middleware.AuthManagement(), terminalController.GetInstanceTypes)
 	routes.GET("/metrics", middleware.AuthManagement(), terminalController.GetServerMetrics)

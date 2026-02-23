@@ -111,12 +111,15 @@ type SharedTerminalInfo struct {
 
 // Terminal Service DTOs (pour les appels au Terminal Trainer)
 type CreateTerminalSessionInput struct {
-	Terms          string `binding:"required" json:"terms" form:"terms"`
-	Name           string `json:"name,omitempty" form:"name"`                   // User-friendly name for the terminal session
-	Expiry         int    `json:"expiry,omitempty" form:"expiry"`               // optionnel
-	InstanceType   string `json:"instance_type,omitempty" form:"instance_type"` // préfixe du type d'instance
-	Backend        string `json:"backend,omitempty" form:"backend"`             // Backend ID to use
-	OrganizationID string `json:"organization_id,omitempty" form:"organization_id"`
+	Terms                string `binding:"required" json:"terms" form:"terms"`
+	Name                 string `json:"name,omitempty" form:"name"`                   // User-friendly name for the terminal session
+	Expiry               int    `json:"expiry,omitempty" form:"expiry"`               // optionnel
+	InstanceType         string `json:"instance_type,omitempty" form:"instance_type"` // préfixe du type d'instance
+	Backend              string `json:"backend,omitempty" form:"backend"`             // Backend ID to use
+	OrganizationID       string `json:"organization_id,omitempty" form:"organization_id"`
+	HistoryRetentionDays int    `json:"history_retention_days,omitempty" form:"history_retention_days"`
+	RecordingConsent     int    `json:"recording_consent,omitempty" form:"recording_consent"` // 1 = learner accepted recording
+	ExternalRef          string `json:"external_ref,omitempty" form:"external_ref"`           // Optional training session reference
 }
 
 type TerminalSessionResponse struct {
@@ -502,10 +505,24 @@ type BackendInfo struct {
 
 // EnumServiceStatus represents the status of the enum service
 type EnumServiceStatus struct {
-	Initialized  bool      `json:"initialized"`
-	LastFetch    time.Time `json:"last_fetch,omitempty"`
-	Source       string    `json:"source"` // "local", "api", "mixed"
-	EnumCount    int       `json:"enum_count"`
-	HasMismatches bool     `json:"has_mismatches"`
-	Mismatches   []string  `json:"mismatches,omitempty"`
+	Initialized   bool     `json:"initialized"`
+	LastFetch     time.Time `json:"last_fetch,omitempty"`
+	Source        string    `json:"source"` // "local", "api", "mixed"
+	EnumCount     int       `json:"enum_count"`
+	HasMismatches bool      `json:"has_mismatches"`
+	Mismatches    []string  `json:"mismatches,omitempty"`
+}
+
+// CommandHistoryEntry represents a single command from a terminal session
+type CommandHistoryEntry struct {
+	SequenceNum int    `json:"sequence_num"`
+	Command     string `json:"command"`
+	ExecutedAt  int64  `json:"executed_at"`
+}
+
+// CommandHistoryResponse wraps the history entries list
+type CommandHistoryResponse struct {
+	SessionID string                `json:"session_id"`
+	Commands  []CommandHistoryEntry `json:"commands"`
+	Count     int                   `json:"count"`
 }

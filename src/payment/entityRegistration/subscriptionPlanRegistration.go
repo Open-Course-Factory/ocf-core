@@ -57,6 +57,9 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						AllowedBackends:           plan.AllowedBackends,
 						DefaultBackend:            plan.DefaultBackend,
 
+						// Command history
+						CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
+
 						// Planned features
 						PlannedFeatures: plan.PlannedFeatures,
 

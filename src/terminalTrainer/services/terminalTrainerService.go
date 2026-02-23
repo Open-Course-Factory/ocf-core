@@ -87,6 +87,10 @@ type TerminalTrainerService interface {
 
 	// Session validation
 	ValidateSessionAccess(sessionID string, checkAPI bool) (bool, string, error)
+
+	// Command history
+	GetSessionCommandHistory(sessionID string, since *int64, format string) ([]byte, string, error)
+	DeleteSessionCommandHistory(sessionID string) error
 }
 
 type terminalTrainerService struct {
@@ -245,6 +249,15 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	}
 	if sessionInput.Backend != "" {
 		url += fmt.Sprintf("&backend=%s", sessionInput.Backend)
+	}
+	if sessionInput.HistoryRetentionDays > 0 {
+		url += fmt.Sprintf("&history_retention_days=%d", sessionInput.HistoryRetentionDays)
+	}
+	if sessionInput.RecordingConsent > 0 {
+		url += fmt.Sprintf("&recording_consent=%d", sessionInput.RecordingConsent)
+	}
+	if sessionInput.ExternalRef != "" {
+		url += fmt.Sprintf("&external_ref=%s", sessionInput.ExternalRef)
 	}
 
 	// Parser la réponse du Terminal Trainer
@@ -405,6 +418,9 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 	if sessionInput.Expiry == 0 || sessionInput.Expiry > maxDurationSeconds {
 		sessionInput.Expiry = maxDurationSeconds
 	}
+
+	// Pass command history retention days from subscription plan
+	sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
 
 	// Appeler la méthode StartSession originale avec les paramètres validés
 	return tts.StartSession(userID, sessionInput)
@@ -1857,6 +1873,55 @@ func loadSystemDefaultBackend(repo configRepositories.FeatureRepository) string 
 		return ""
 	}
 	return feature.Value
+}
+
+// GetSessionCommandHistory retrieves command history from tt-backend
+func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, since *int64, format string) ([]byte, string, error) {
+	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
+	if err != nil {
+		return nil, "", fmt.Errorf("session not found: %w", err)
+	}
+
+	path := tts.buildAPIPath("/history", terminal.InstanceType)
+	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, sessionID)
+	if since != nil {
+		url += fmt.Sprintf("&since=%d", *since)
+	}
+	if format != "" {
+		url += fmt.Sprintf("&format=%s", format)
+	}
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(terminal.UserTerminalKey.APIKey))
+
+	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "GET", url, nil, opts)
+	if err != nil {
+		return nil, "", err
+	}
+
+	contentType := "application/json"
+	if format == "csv" {
+		contentType = "text/csv"
+	}
+
+	return resp.Body, contentType, nil
+}
+
+// DeleteSessionCommandHistory deletes command history (RGPD right to erasure)
+func (tts *terminalTrainerService) DeleteSessionCommandHistory(sessionID string) error {
+	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+
+	path := tts.buildAPIPath("/history", terminal.InstanceType)
+	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, sessionID)
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(terminal.UserTerminalKey.APIKey))
+
+	_, err = utils.MakeExternalAPIRequest("Terminal Trainer", "DELETE", url, nil, opts)
+	return err
 }
 
 // SetSystemDefaultBackend sets the system-wide default backend

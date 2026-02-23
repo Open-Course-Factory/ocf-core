@@ -77,6 +77,10 @@ type TerminalController interface {
 
 	// Session access validation
 	GetAccessStatus(ctx *gin.Context)
+
+	// Command history
+	GetSessionHistory(ctx *gin.Context)
+	DeleteSessionHistory(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -1651,4 +1655,96 @@ func (tc *terminalController) GetAccessStatus(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, response)
+}
+
+// GetSessionHistory returns command history for a terminal session
+func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
+	sessionID := ctx.Param("id")
+	userId := ctx.GetString("userId")
+
+	hasAccess, err := tc.hasTerminalAccess(ctx, sessionID, userId, models.AccessLevelRead)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to check access",
+		})
+		return
+	}
+	if !hasAccess {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Access denied to this session",
+		})
+		return
+	}
+
+	var since *int64
+	if sinceStr := ctx.Query("since"); sinceStr != "" {
+		var sinceVal int64
+		if _, err := fmt.Sscanf(sinceStr, "%d", &sinceVal); err == nil {
+			since = &sinceVal
+		}
+	}
+	format := ctx.Query("format")
+
+	body, contentType, err := tc.service.GetSessionCommandHistory(sessionID, since, format)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Session not found",
+			})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to get command history: %v", err),
+		})
+		return
+	}
+
+	ctx.Data(http.StatusOK, contentType, body)
+}
+
+// DeleteSessionHistory deletes command history (RGPD right to erasure)
+func (tc *terminalController) DeleteSessionHistory(ctx *gin.Context) {
+	sessionID := ctx.Param("id")
+	userId := ctx.GetString("userId")
+
+	terminal, err := tc.service.GetSessionInfo(sessionID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Session not found",
+		})
+		return
+	}
+
+	if terminal.UserID != userId {
+		userRoles := ctx.GetStringSlice("userRoles")
+		isAdmin := false
+		for _, role := range userRoles {
+			if role == "administrator" {
+				isAdmin = true
+				break
+			}
+		}
+		if !isAdmin {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Only session owner or admin can delete command history",
+			})
+			return
+		}
+	}
+
+	if err := tc.service.DeleteSessionCommandHistory(sessionID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to delete command history: %v", err),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Command history deleted successfully"})
 }
