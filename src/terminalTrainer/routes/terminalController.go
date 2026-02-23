@@ -1714,8 +1714,7 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 
 	var since *int64
 	if sinceStr := ctx.Query("since"); sinceStr != "" {
-		var sinceVal int64
-		if _, err := fmt.Sscanf(sinceStr, "%d", &sinceVal); err == nil {
+		if sinceVal, err := strconv.ParseInt(sinceStr, 10, 64); err == nil {
 			if sinceVal < 0 {
 				sinceVal = 0
 			}
