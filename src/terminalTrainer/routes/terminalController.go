@@ -13,6 +13,7 @@ import (
 
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
+	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/services"
@@ -82,6 +83,9 @@ type TerminalController interface {
 	// Command history
 	GetSessionHistory(ctx *gin.Context)
 	DeleteSessionHistory(ctx *gin.Context)
+
+	// Organization session management
+	GetOrganizationTerminalSessions(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -90,6 +94,7 @@ type terminalController struct {
 	apiVersion         string
 	terminalType       string
 	service            services.TerminalTrainerService
+	db                 *gorm.DB
 }
 
 func NewTerminalController(db *gorm.DB) TerminalController {
@@ -109,6 +114,7 @@ func NewTerminalController(db *gorm.DB) TerminalController {
 		apiVersion:         apiVersion,
 		terminalType:       terminalType,
 		service:            services.NewTerminalTrainerService(db),
+		db:                 db,
 	}
 }
 
@@ -1658,15 +1664,36 @@ func (tc *terminalController) GetAccessStatus(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, response)
 }
 
-// isSessionOwnerOrAdmin checks whether the current user owns the session or is an admin.
+// isSessionOwnerOrAdmin checks whether the current user owns the session, is an admin,
+// or is an owner/manager of the organization associated with the terminal session.
 func (tc *terminalController) isSessionOwnerOrAdmin(ctx *gin.Context, terminal *models.Terminal) bool {
 	userId := ctx.GetString("userId")
+	// Session owner always has access
 	if terminal.UserID == userId {
 		return true
 	}
+	// Admin always has access
 	userRoles := ctx.GetStringSlice("userRoles")
 	for _, role := range userRoles {
 		if role == "administrator" {
+			return true
+		}
+	}
+	// Org owner/manager can access sessions in their organization
+	if terminal.OrganizationID != nil && tc.db != nil {
+		// Check if user is org member with manager role
+		var orgMember orgModels.OrganizationMember
+		err := tc.db.Where(
+			"organization_id = ? AND user_id = ? AND is_active = ?",
+			*terminal.OrganizationID, userId, true,
+		).First(&orgMember).Error
+		if err == nil && orgMember.IsManager() {
+			return true
+		}
+		// Also check if user is the organization owner directly
+		var org orgModels.Organization
+		err = tc.db.Where("id = ?", *terminal.OrganizationID).First(&org).Error
+		if err == nil && org.OwnerUserID == userId {
 			return true
 		}
 	}
@@ -1803,4 +1830,74 @@ func (tc *terminalController) DeleteSessionHistory(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Command history deleted successfully"})
+}
+
+// GetOrganizationTerminalSessions lists all terminal sessions for an organization
+//
+//	@Summary		Get terminal sessions for an organization
+//	@Description	Lists all terminal sessions belonging to an organization. Only accessible by organization owners and managers.
+//	@Tags			terminal
+//	@Accept			json
+//	@Produce		json
+//	@Param			orgId	path	string	true	"Organization ID"
+//	@Security		BearerAuth
+//	@Success		200	{object}	map[string]interface{}
+//	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/organizations/{orgId}/terminal-sessions [get]
+func (tc *terminalController) GetOrganizationTerminalSessions(ctx *gin.Context) {
+	orgIDStr := ctx.Param("orgId")
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	// Check if user is org owner/manager
+	userId := ctx.GetString("userId")
+	var orgMember orgModels.OrganizationMember
+	err = tc.db.Where(
+		"organization_id = ? AND user_id = ? AND is_active = ?",
+		orgID, userId, true,
+	).First(&orgMember).Error
+	if err != nil || !orgMember.IsManager() {
+		// Also allow admins
+		isAdmin := false
+		userRoles := ctx.GetStringSlice("userRoles")
+		for _, role := range userRoles {
+			if role == "administrator" {
+				isAdmin = true
+				break
+			}
+		}
+		if !isAdmin {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Only organization owners, managers, or admins can access this resource",
+			})
+			return
+		}
+	}
+
+	sessions, err := tc.service.GetOrganizationTerminalSessions(orgID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get organization sessions",
+		})
+		return
+	}
+
+	if sessions == nil {
+		empty := make([]models.Terminal, 0)
+		sessions = &empty
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"sessions": sessions,
+		"count":    len(*sessions),
+	})
 }
