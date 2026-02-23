@@ -373,6 +373,82 @@ func TestGetSessionCommandHistory_PaginationZeroValues(t *testing.T) {
 	assert.NotContains(t, capturedQuery, "offset=")
 }
 
+// =============================================================================
+// B3: Response body size limit on proxy passthrough
+// =============================================================================
+
+// TestGetHistory_LargeResponse_LimitedTo10MB verifies that GetSessionCommandHistory
+// returns an error when tt-backend returns a response larger than 10MB. This prevents
+// an OOM scenario where a massive history payload could exhaust ocf-core's memory.
+func TestGetHistory_LargeResponse_LimitedTo10MB(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
+	// Create a mock tt-backend that returns a response just over 10MB
+	oversizedBody := make([]byte, 10*1024*1024+1) // 10MB + 1 byte
+	for i := range oversizedBody {
+		oversizedBody[i] = 'x'
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(oversizedBody)
+	}))
+	defer server.Close()
+
+	db := setupTestDBForService(t)
+	_ = createTestTerminalForService(t, db, "user1", "session-large", "alp")
+
+	svc := &terminalTrainerService{
+		baseURL:    server.URL,
+		apiVersion: "1.0",
+		repository: repositories.NewTerminalRepository(db),
+	}
+
+	body, _, err := svc.GetSessionCommandHistory("session-large", nil, "json", 0, 0)
+
+	require.Error(t, err, "should return error for response exceeding 10MB")
+	assert.Nil(t, body, "body should be nil when response exceeds limit")
+	assert.Contains(t, err.Error(), "response body exceeds", "error should mention size limit")
+}
+
+// TestGetHistory_ExactlyAtLimit_Succeeds verifies that a response exactly at 10MB
+// is allowed through (the limit applies to responses strictly larger than 10MB).
+func TestGetHistory_ExactlyAtLimit_Succeeds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
+	// Create a response exactly at 10MB
+	exactBody := make([]byte, 10*1024*1024) // exactly 10MB
+	for i := range exactBody {
+		exactBody[i] = 'x'
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(exactBody)
+	}))
+	defer server.Close()
+
+	db := setupTestDBForService(t)
+	_ = createTestTerminalForService(t, db, "user1", "session-exact", "alp")
+
+	svc := &terminalTrainerService{
+		baseURL:    server.URL,
+		apiVersion: "1.0",
+		repository: repositories.NewTerminalRepository(db),
+	}
+
+	body, contentType, err := svc.GetSessionCommandHistory("session-exact", nil, "json", 0, 0)
+
+	require.NoError(t, err, "response exactly at 10MB should succeed")
+	assert.NotNil(t, body)
+	assert.Equal(t, "application/json", contentType)
+	assert.Len(t, body, 10*1024*1024)
+}
+
 // TestExternalRefURLEncoding verifies that url.QueryEscape properly encodes special characters
 // This tests the encoding logic used in StartSession for ExternalRef without calling the full
 // StartSession method (which requires Casbin enforcer setup).

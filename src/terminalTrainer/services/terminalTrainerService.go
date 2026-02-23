@@ -1935,6 +1935,12 @@ func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, si
 		return nil, "", err
 	}
 
+	// Enforce a 10MB cap on response body to prevent OOM from oversized payloads
+	const maxResponseSize = 10 * 1024 * 1024 // 10MB
+	if len(resp.Body) > maxResponseSize {
+		return nil, "", fmt.Errorf("response body exceeds maximum allowed size (%d bytes > %d bytes)", len(resp.Body), maxResponseSize)
+	}
+
 	// Read content-type from tt-backend response when available; fall back to
 	// format-based heuristic when the upstream does not provide a header.
 	contentType := resp.Headers.Get("Content-Type")
