@@ -117,8 +117,8 @@ type CreateTerminalSessionInput struct {
 	InstanceType         string `json:"instance_type,omitempty" form:"instance_type"` // préfixe du type d'instance
 	Backend              string `json:"backend,omitempty" form:"backend"`             // Backend ID to use
 	OrganizationID       string `json:"organization_id,omitempty" form:"organization_id"`
-	HistoryRetentionDays int    `json:"history_retention_days" form:"history_retention_days"`
-	RecordingConsent     int    `json:"recording_consent" form:"recording_consent"` // 1 = learner accepted recording
+	HistoryRetentionDays int    `json:"history_retention_days,omitempty" form:"history_retention_days"`
+	RecordingConsent     int    `json:"recording_consent,omitempty" form:"recording_consent"` // 1 = learner accepted recording
 	ExternalRef          string `json:"external_ref,omitempty" form:"external_ref"`           // Optional training session reference
 }
 
