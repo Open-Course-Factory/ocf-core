@@ -1658,6 +1658,21 @@ func (tc *terminalController) GetAccessStatus(ctx *gin.Context) {
 }
 
 // GetSessionHistory returns command history for a terminal session
+//
+//	@Summary		Get command history for a terminal session
+//	@Description	Retrieves the command history recorded during a terminal session. Works for active, stopped, and expired sessions.
+//	@Tags			terminal
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path	string	true	"Terminal session ID"
+//	@Param			since	query	integer	false	"Unix timestamp to filter commands since"
+//	@Param			format	query	string	false	"Response format: json or csv"
+//	@Security		BearerAuth
+//	@Success		200	{object}	dto.CommandHistoryResponse
+//	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Failure		404	{object}	errors.APIError	"Session not found"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/terminals/{id}/history [get]
 func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
 	userId := ctx.GetString("userId")
@@ -1696,9 +1711,10 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 			})
 			return
 		}
+		utils.Debug("GetSessionHistory failed for session %s: %v", sessionID, err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to get command history: %v", err),
+			ErrorMessage: "Failed to get command history",
 		})
 		return
 	}
@@ -1707,6 +1723,19 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 }
 
 // DeleteSessionHistory deletes command history (RGPD right to erasure)
+//
+//	@Summary		Delete command history for a terminal session
+//	@Description	Deletes the command history for a terminal session. Supports RGPD right to erasure. Only the session owner or an admin can delete history.
+//	@Tags			terminal
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"Terminal session ID"
+//	@Security		BearerAuth
+//	@Success		200	{object}	map[string]string	"Command history deleted successfully"
+//	@Failure		403	{object}	errors.APIError		"Access denied"
+//	@Failure		404	{object}	errors.APIError		"Session not found"
+//	@Failure		500	{object}	errors.APIError		"Internal server error"
+//	@Router			/terminals/{id}/history [delete]
 func (tc *terminalController) DeleteSessionHistory(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
 	userId := ctx.GetString("userId")

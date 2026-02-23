@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	neturl "net/url"
 	"os"
 	"strings"
 	"sync"
@@ -257,7 +258,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 		url += fmt.Sprintf("&recording_consent=%d", sessionInput.RecordingConsent)
 	}
 	if sessionInput.ExternalRef != "" {
-		url += fmt.Sprintf("&external_ref=%s", sessionInput.ExternalRef)
+		url += fmt.Sprintf("&external_ref=%s", neturl.QueryEscape(sessionInput.ExternalRef))
 	}
 
 	// Parser la réponse du Terminal Trainer
@@ -1877,6 +1878,11 @@ func loadSystemDefaultBackend(repo configRepositories.FeatureRepository) string 
 
 // GetSessionCommandHistory retrieves command history from tt-backend
 func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, since *int64, format string) ([]byte, string, error) {
+	// Validate format against whitelist to prevent URL parameter injection
+	if format != "" && format != "json" && format != "csv" {
+		format = "json" // default to json for unknown formats
+	}
+
 	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
 	if err != nil {
 		return nil, "", fmt.Errorf("session not found: %w", err)
