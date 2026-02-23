@@ -57,6 +57,7 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	// Command history routes (no terminal access middleware - handlers verify access internally,
 	// and history must remain accessible for expired/stopped sessions)
+	routes.DELETE("/my-history", middleware.AuthManagement(), terminalController.DeleteAllUserHistory)
 	routes.GET("/:id/history", middleware.AuthManagement(), terminalController.GetSessionHistory)
 	routes.DELETE("/:id/history", middleware.AuthManagement(), terminalController.DeleteSessionHistory)
 
@@ -72,6 +73,10 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	// Correction des permissions (no terminal-specific access needed)
 	routes.POST("/fix-hide-permissions", middleware.AuthManagement(), terminalController.FixTerminalHidePermissions)
+
+	// Organization terminal sessions (for trainers/managers)
+	orgRoutes := router.Group("/organizations")
+	orgRoutes.GET("/:orgId/terminal-sessions", middleware.AuthManagement(), terminalController.GetOrganizationTerminalSessions)
 }
 
 func UserTerminalKeyRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {

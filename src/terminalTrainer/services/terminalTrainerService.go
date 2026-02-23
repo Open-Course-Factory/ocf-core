@@ -92,6 +92,10 @@ type TerminalTrainerService interface {
 	// Command history
 	GetSessionCommandHistory(sessionID string, since *int64, format string, limit, offset int) ([]byte, string, error)
 	DeleteSessionCommandHistory(sessionID string) error
+	DeleteAllUserCommandHistory(apiKey string) (int64, error)
+
+	// Organization session management
+	GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error)
 }
 
 type terminalTrainerService struct {
@@ -249,10 +253,16 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 		url += fmt.Sprintf("&expiry=%d", sessionInput.Expiry)
 	}
 	if sessionInput.Backend != "" {
-		url += fmt.Sprintf("&backend=%s", sessionInput.Backend)
+		url += fmt.Sprintf("&backend=%s", neturl.QueryEscape(sessionInput.Backend))
 	}
 	if sessionInput.HistoryRetentionDays > 0 {
 		url += fmt.Sprintf("&history_retention_days=%d", sessionInput.HistoryRetentionDays)
+	}
+	if sessionInput.RecordingConsent > 1 {
+		sessionInput.RecordingConsent = 1
+	}
+	if sessionInput.RecordingConsent < 0 {
+		sessionInput.RecordingConsent = 0
 	}
 	if sessionInput.RecordingConsent > 0 {
 		url += fmt.Sprintf("&recording_consent=%d", sessionInput.RecordingConsent)
@@ -422,6 +432,9 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 
 	// Pass command history retention days from subscription plan
 	sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
+	if plan.CommandHistoryRetentionDays == 0 {
+		sessionInput.RecordingConsent = 0
+	}
 
 	// Appeler la méthode StartSession originale avec les paramètres validés
 	return tts.StartSession(userID, sessionInput)
@@ -1941,6 +1954,29 @@ func (tts *terminalTrainerService) DeleteSessionCommandHistory(sessionID string)
 	return err
 }
 
+// DeleteAllUserCommandHistory deletes all command history across all sessions for an API key (RGPD bulk erasure)
+func (tts *terminalTrainerService) DeleteAllUserCommandHistory(apiKey string) (int64, error) {
+	path := fmt.Sprintf("/%s/history/all", tts.apiVersion)
+	url := fmt.Sprintf("%s%s", tts.baseURL, path)
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(apiKey))
+
+	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "DELETE", url, nil, opts)
+	if err != nil {
+		return 0, err
+	}
+
+	var result struct {
+		SessionsCleared int64 `json:"sessions_cleared"`
+	}
+	if err := resp.DecodeJSON(&result); err != nil {
+		return 0, fmt.Errorf("failed to decode bulk delete response: %w", err)
+	}
+
+	return result.SessionsCleared, nil
+}
+
 // SetSystemDefaultBackend sets the system-wide default backend
 func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*dto.BackendInfo, error) {
 	backends, err := tts.getBackendsCached()
@@ -1974,4 +2010,8 @@ func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*d
 
 	target.IsDefault = true
 	return target, nil
+}
+
+func (tts *terminalTrainerService) GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error) {
+	return tts.repository.GetTerminalSessionsByOrganizationID(orgID)
 }

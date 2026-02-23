@@ -83,6 +83,7 @@ type TerminalController interface {
 	// Command history
 	GetSessionHistory(ctx *gin.Context)
 	DeleteSessionHistory(ctx *gin.Context)
+	DeleteAllUserHistory(ctx *gin.Context)
 
 	// Organization session management
 	GetOrganizationTerminalSessions(ctx *gin.Context)
@@ -1830,6 +1831,45 @@ func (tc *terminalController) DeleteSessionHistory(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Command history deleted successfully"})
+}
+
+// DeleteAllUserHistory deletes all command history for the current user
+//
+//	@Summary		Delete all user command history
+//	@Description	Deletes all recorded command history across all terminal sessions for the current user
+//	@Tags			terminal
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	map[string]interface{}
+//	@Failure		500	{object}	errors.APIError
+//	@Router			/terminals/my-history [delete]
+func (tc *terminalController) DeleteAllUserHistory(ctx *gin.Context) {
+	userId := ctx.GetString("userId")
+
+	userKey, err := tc.service.GetUserKey(userId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get user API key",
+		})
+		return
+	}
+
+	sessionsCleared, err := tc.service.DeleteAllUserCommandHistory(userKey.APIKey)
+	if err != nil {
+		utils.Debug("DeleteAllUserHistory failed for user %s: %v", userId, err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to delete command history",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message":          "All command history deleted successfully",
+		"sessions_cleared": sessionsCleared,
+	})
 }
 
 // GetOrganizationTerminalSessions lists all terminal sessions for an organization
