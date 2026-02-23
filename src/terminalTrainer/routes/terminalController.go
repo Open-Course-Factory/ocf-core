@@ -1658,6 +1658,21 @@ func (tc *terminalController) GetAccessStatus(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, response)
 }
 
+// isSessionOwnerOrAdmin checks whether the current user owns the session or is an admin.
+func (tc *terminalController) isSessionOwnerOrAdmin(ctx *gin.Context, terminal *models.Terminal) bool {
+	userId := ctx.GetString("userId")
+	if terminal.UserID == userId {
+		return true
+	}
+	userRoles := ctx.GetStringSlice("userRoles")
+	for _, role := range userRoles {
+		if role == "administrator" {
+			return true
+		}
+	}
+	return false
+}
+
 // GetSessionHistory returns command history for a terminal session
 //
 //	@Summary		Get command history for a terminal session
@@ -1678,7 +1693,6 @@ func (tc *terminalController) GetAccessStatus(ctx *gin.Context) {
 //	@Router			/terminals/{id}/history [get]
 func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
-	userId := ctx.GetString("userId")
 
 	// Command history is restricted to session owner or admin — shared users
 	// should not access it because the recording consent was given by the owner only.
@@ -1690,22 +1704,12 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 		})
 		return
 	}
-	if terminal.UserID != userId {
-		userRoles := ctx.GetStringSlice("userRoles")
-		isAdmin := false
-		for _, role := range userRoles {
-			if role == "administrator" {
-				isAdmin = true
-				break
-			}
-		}
-		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Only session owner or admin can access command history",
-			})
-			return
-		}
+	if !tc.isSessionOwnerOrAdmin(ctx, terminal) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Only session owner or admin can access command history",
+		})
+		return
 	}
 
 	var since *int64
@@ -1768,7 +1772,6 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 //	@Router			/terminals/{id}/history [delete]
 func (tc *terminalController) DeleteSessionHistory(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
-	userId := ctx.GetString("userId")
 
 	terminal, err := tc.service.GetSessionInfo(sessionID)
 	if err != nil {
@@ -1779,22 +1782,12 @@ func (tc *terminalController) DeleteSessionHistory(ctx *gin.Context) {
 		return
 	}
 
-	if terminal.UserID != userId {
-		userRoles := ctx.GetStringSlice("userRoles")
-		isAdmin := false
-		for _, role := range userRoles {
-			if role == "administrator" {
-				isAdmin = true
-				break
-			}
-		}
-		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Only session owner or admin can delete command history",
-			})
-			return
-		}
+	if !tc.isSessionOwnerOrAdmin(ctx, terminal) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Only session owner or admin can delete command history",
+		})
+		return
 	}
 
 	if err := tc.service.DeleteSessionCommandHistory(sessionID); err != nil {
