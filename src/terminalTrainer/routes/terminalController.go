@@ -1680,26 +1680,41 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
 	userId := ctx.GetString("userId")
 
-	hasAccess, err := tc.hasTerminalAccess(ctx, sessionID, userId, models.AccessLevelRead)
+	// Command history is restricted to session owner or admin — shared users
+	// should not access it because the recording consent was given by the owner only.
+	terminal, err := tc.service.GetSessionInfo(sessionID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to check access",
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Session not found",
 		})
 		return
 	}
-	if !hasAccess {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Access denied to this session",
-		})
-		return
+	if terminal.UserID != userId {
+		userRoles := ctx.GetStringSlice("userRoles")
+		isAdmin := false
+		for _, role := range userRoles {
+			if role == "administrator" {
+				isAdmin = true
+				break
+			}
+		}
+		if !isAdmin {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Only session owner or admin can access command history",
+			})
+			return
+		}
 	}
 
 	var since *int64
 	if sinceStr := ctx.Query("since"); sinceStr != "" {
 		var sinceVal int64
 		if _, err := fmt.Sscanf(sinceStr, "%d", &sinceVal); err == nil {
+			if sinceVal < 0 {
+				sinceVal = 0
+			}
 			since = &sinceVal
 		}
 	}
