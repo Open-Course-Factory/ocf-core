@@ -1673,23 +1673,28 @@ func (tc *terminalController) isSessionOwnerOrAdmin(ctx *gin.Context, terminal *
 	if terminal.UserID == userId {
 		return true
 	}
-	// Admin always has access
+	// Check roles for org-scoped access
 	userRoles := ctx.GetStringSlice("userRoles")
+	isAdmin := false
 	for _, role := range userRoles {
 		if role == "administrator" {
-			return true
+			isAdmin = true
+			break
 		}
 	}
-	// Org owner/manager can access sessions in their organization
+	// Admin or org owner/manager can access sessions in their organization
 	if terminal.OrganizationID != nil && tc.db != nil {
-		// Check if user is org member with manager role
+		// Check if user is org member with manager role (or admin in same org)
 		var orgMember orgModels.OrganizationMember
 		err := tc.db.Where(
 			"organization_id = ? AND user_id = ? AND is_active = ?",
 			*terminal.OrganizationID, userId, true,
 		).First(&orgMember).Error
-		if err == nil && orgMember.IsManager() {
-			return true
+		if err == nil {
+			// Org managers/owners can access, and admins who are members of the org
+			if orgMember.IsManager() || isAdmin {
+				return true
+			}
 		}
 		// Also check if user is the organization owner directly
 		var org orgModels.Organization

@@ -239,6 +239,73 @@ func TestIsSessionOwnerOrOrgManager_DifferentOrgManagerDenied(t *testing.T) {
 		"Manager of a different org should NOT be able to access the session's command history")
 }
 
+// TestHistoryAccess_AdminDifferentOrg_Denied verifies that an administrator from
+// Org A cannot access command history of a session belonging to Org B.
+// In a multi-tenant SaaS, admin access must be scoped to the admin's own organizations.
+func TestHistoryAccess_AdminDifferentOrg_Denied(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	// Create orgA with student1
+	orgA := createTestOrgForHistory(t, db, "orgA-creator")
+	createTestOrgMember(t, db, orgA.ID, "student1", orgModels.OrgRoleMember)
+
+	// Create orgB with admin1 as a member
+	orgB := createTestOrgForHistory(t, db, "orgB-creator")
+	createTestOrgMember(t, db, orgB.ID, "admin1", orgModels.OrgRoleOwner)
+
+	// Create a terminal session owned by student1, associated with orgA
+	terminal := createTestTerminalWithOrg(t, db, "student1", &orgA.ID)
+
+	// admin1 (administrator role, but belongs to orgB not orgA) requests student1's command history
+	w := makeHistoryRequest(t, db, terminal.SessionID, "admin1", []string{"administrator"})
+
+	// Admin from a different org should be DENIED access
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"Administrator from a different organization should NOT be able to access session history")
+}
+
+// TestHistoryAccess_AdminSameOrg_Allowed verifies that an administrator who belongs
+// to the same organization as the session can access command history.
+func TestHistoryAccess_AdminSameOrg_Allowed(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	// Create org with student1 and admin1
+	org := createTestOrgForHistory(t, db, "org-creator")
+	createTestOrgMember(t, db, org.ID, "student1", orgModels.OrgRoleMember)
+	createTestOrgMember(t, db, org.ID, "admin1", orgModels.OrgRoleOwner)
+
+	// Create a terminal session owned by student1, associated with org
+	terminal := createTestTerminalWithOrg(t, db, "student1", &org.ID)
+
+	// admin1 (administrator role, member of the same org) requests student1's command history
+	w := makeHistoryRequest(t, db, terminal.SessionID, "admin1", []string{"administrator"})
+
+	// Admin from the same org should be ALLOWED access (not 403).
+	// May get 500 due to no real TT backend, but must NOT be 403.
+	assert.NotEqual(t, http.StatusForbidden, w.Code,
+		"Administrator from the same organization should be able to access session history")
+}
+
+// TestHistoryAccess_AdminSessionWithoutOrg_Denied verifies that an administrator
+// cannot access history of a session that has no organization (personal session).
+func TestHistoryAccess_AdminSessionWithoutOrg_Denied(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	// Create org with admin1
+	org := createTestOrgForHistory(t, db, "org-creator")
+	createTestOrgMember(t, db, org.ID, "admin1", orgModels.OrgRoleOwner)
+
+	// Create a terminal session owned by student1 WITHOUT any organization
+	terminal := createTestTerminalWithOrg(t, db, "student1", nil)
+
+	// admin1 (administrator role) requests student1's personal session history
+	w := makeHistoryRequest(t, db, terminal.SessionID, "admin1", []string{"administrator"})
+
+	// Admin should be DENIED access to sessions without org association (only owner can access)
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"Administrator should NOT be able to access personal session history of another user")
+}
+
 // TestIsSessionOwnerOrOrgManager_SessionWithoutOrg verifies that when a terminal
 // session has no organization association (OrganizationID is nil), an org manager
 // cannot access its history (falls back to owner/admin only).
