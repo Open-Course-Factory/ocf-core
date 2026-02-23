@@ -1889,7 +1889,7 @@ func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, si
 	}
 
 	path := tts.buildAPIPath("/history", terminal.InstanceType)
-	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, sessionID)
+	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, neturl.QueryEscape(sessionID))
 	if since != nil {
 		url += fmt.Sprintf("&since=%d", *since)
 	}
@@ -1911,9 +1911,14 @@ func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, si
 		return nil, "", err
 	}
 
-	contentType := "application/json"
-	if format == "csv" {
-		contentType = "text/csv"
+	// Read content-type from tt-backend response when available; fall back to
+	// format-based heuristic when the upstream does not provide a header.
+	contentType := resp.Headers.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/json"
+		if format == "csv" {
+			contentType = "text/csv"
+		}
 	}
 
 	return resp.Body, contentType, nil
@@ -1927,7 +1932,7 @@ func (tts *terminalTrainerService) DeleteSessionCommandHistory(sessionID string)
 	}
 
 	path := tts.buildAPIPath("/history", terminal.InstanceType)
-	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, sessionID)
+	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, neturl.QueryEscape(sessionID))
 
 	opts := utils.DefaultHTTPClientOptions()
 	utils.ApplyOptions(&opts, utils.WithAPIKey(terminal.UserTerminalKey.APIKey))
