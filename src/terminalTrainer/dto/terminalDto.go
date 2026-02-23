@@ -525,4 +525,6 @@ type CommandHistoryResponse struct {
 	SessionID string                `json:"session_id"`
 	Commands  []CommandHistoryEntry `json:"commands"`
 	Count     int                   `json:"count"`
+	Limit     int                   `json:"limit,omitempty"`
+	Offset    int                   `json:"offset,omitempty"`
 }

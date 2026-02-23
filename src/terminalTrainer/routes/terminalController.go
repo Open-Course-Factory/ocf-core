@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"soli/formations/src/auth/casdoor"
 	config "soli/formations/src/configuration"
@@ -1667,6 +1668,8 @@ func (tc *terminalController) GetAccessStatus(ctx *gin.Context) {
 //	@Param			id		path	string	true	"Terminal session ID"
 //	@Param			since	query	integer	false	"Unix timestamp to filter commands since"
 //	@Param			format	query	string	false	"Response format: json or csv"
+//	@Param			limit	query	integer	false	"Maximum number of commands to return"
+//	@Param			offset	query	integer	false	"Number of commands to skip"
 //	@Security		BearerAuth
 //	@Success		200	{object}	dto.CommandHistoryResponse
 //	@Failure		403	{object}	errors.APIError	"Access denied"
@@ -1702,7 +1705,19 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 	}
 	format := ctx.Query("format")
 
-	body, contentType, err := tc.service.GetSessionCommandHistory(sessionID, since, format)
+	var limit, offset int
+	if limitStr := ctx.Query("limit"); limitStr != "" {
+		if v, err := strconv.Atoi(limitStr); err == nil && v > 0 {
+			limit = v
+		}
+	}
+	if offsetStr := ctx.Query("offset"); offsetStr != "" {
+		if v, err := strconv.Atoi(offsetStr); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+
+	body, contentType, err := tc.service.GetSessionCommandHistory(sessionID, since, format, limit, offset)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			ctx.JSON(http.StatusNotFound, &errors.APIError{

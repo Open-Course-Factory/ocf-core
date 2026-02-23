@@ -90,7 +90,7 @@ type TerminalTrainerService interface {
 	ValidateSessionAccess(sessionID string, checkAPI bool) (bool, string, error)
 
 	// Command history
-	GetSessionCommandHistory(sessionID string, since *int64, format string) ([]byte, string, error)
+	GetSessionCommandHistory(sessionID string, since *int64, format string, limit, offset int) ([]byte, string, error)
 	DeleteSessionCommandHistory(sessionID string) error
 }
 
@@ -1877,7 +1877,7 @@ func loadSystemDefaultBackend(repo configRepositories.FeatureRepository) string 
 }
 
 // GetSessionCommandHistory retrieves command history from tt-backend
-func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, since *int64, format string) ([]byte, string, error) {
+func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, since *int64, format string, limit, offset int) ([]byte, string, error) {
 	// Validate format against whitelist to prevent URL parameter injection
 	if format != "" && format != "json" && format != "csv" {
 		format = "json" // default to json for unknown formats
@@ -1895,6 +1895,12 @@ func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, si
 	}
 	if format != "" {
 		url += fmt.Sprintf("&format=%s", format)
+	}
+	if limit > 0 {
+		url += fmt.Sprintf("&limit=%d", limit)
+	}
+	if offset > 0 {
+		url += fmt.Sprintf("&offset=%d", offset)
 	}
 
 	opts := utils.DefaultHTTPClientOptions()

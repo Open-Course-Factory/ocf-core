@@ -89,7 +89,7 @@ func TestGetSessionCommandHistory_URLConstruction(t *testing.T) {
 	}
 
 	since := int64(1700000000)
-	body, contentType, err := svc.GetSessionCommandHistory("test-session-1", &since, "json")
+	body, contentType, err := svc.GetSessionCommandHistory("test-session-1", &since, "json", 0, 0)
 
 	require.NoError(t, err)
 	assert.NotNil(t, body)
@@ -125,7 +125,7 @@ func TestGetSessionCommandHistory_NoOptionalParams(t *testing.T) {
 		repository: repositories.NewTerminalRepository(db),
 	}
 
-	body, contentType, err := svc.GetSessionCommandHistory("session-no-params", nil, "")
+	body, contentType, err := svc.GetSessionCommandHistory("session-no-params", nil, "", 0, 0)
 
 	require.NoError(t, err)
 	assert.NotNil(t, body)
@@ -157,7 +157,7 @@ func TestGetSessionCommandHistory_CSVFormat(t *testing.T) {
 		repository: repositories.NewTerminalRepository(db),
 	}
 
-	body, contentType, err := svc.GetSessionCommandHistory("session-csv", nil, "csv")
+	body, contentType, err := svc.GetSessionCommandHistory("session-csv", nil, "csv", 0, 0)
 
 	require.NoError(t, err)
 	assert.NotNil(t, body)
@@ -189,7 +189,7 @@ func TestGetSessionCommandHistory_FormatWhitelist_InvalidFormat(t *testing.T) {
 		repository: repositories.NewTerminalRepository(db),
 	}
 
-	body, contentType, err := svc.GetSessionCommandHistory("session-bad-format", nil, "xml")
+	body, contentType, err := svc.GetSessionCommandHistory("session-bad-format", nil, "xml", 0, 0)
 
 	require.NoError(t, err)
 	assert.NotNil(t, body)
@@ -224,7 +224,7 @@ func TestGetSessionCommandHistory_FormatWhitelist_InjectionAttempt(t *testing.T)
 	}
 
 	// Attempt URL parameter injection via format
-	body, _, err := svc.GetSessionCommandHistory("session-inject", nil, "json&admin=true&delete=all")
+	body, _, err := svc.GetSessionCommandHistory("session-inject", nil, "json&admin=true&delete=all", 0, 0)
 
 	require.NoError(t, err)
 	assert.NotNil(t, body)
@@ -273,7 +273,7 @@ func TestGetSessionCommandHistory_FormatWhitelist_ValidFormats(t *testing.T) {
 				repository: repositories.NewTerminalRepository(db),
 			}
 
-			_, contentType, err := svc.GetSessionCommandHistory(sessionID, nil, tc.input)
+			_, contentType, err := svc.GetSessionCommandHistory(sessionID, nil, tc.input, 0, 0)
 			require.NoError(t, err)
 			assert.Equal(t, tc.contentType, contentType)
 
@@ -300,12 +300,77 @@ func TestGetSessionCommandHistory_SessionNotFound(t *testing.T) {
 		repository: repositories.NewTerminalRepository(db),
 	}
 
-	body, contentType, err := svc.GetSessionCommandHistory("nonexistent-session", nil, "json")
+	body, contentType, err := svc.GetSessionCommandHistory("nonexistent-session", nil, "json", 0, 0)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "session not found")
 	assert.Nil(t, body)
 	assert.Empty(t, contentType)
+}
+
+// TestGetSessionCommandHistory_Pagination tests that limit/offset are appended to the proxied URL
+func TestGetSessionCommandHistory_Pagination(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
+	var capturedQuery string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"session_id":"test","commands":[],"count":0}`))
+	}))
+	defer server.Close()
+
+	db := setupTestDBForService(t)
+	_ = createTestTerminalForService(t, db, "user1", "session-paginate", "alp")
+
+	svc := &terminalTrainerService{
+		baseURL:    server.URL,
+		apiVersion: "1.0",
+		repository: repositories.NewTerminalRepository(db),
+	}
+
+	body, contentType, err := svc.GetSessionCommandHistory("session-paginate", nil, "json", 50, 10)
+
+	require.NoError(t, err)
+	assert.NotNil(t, body)
+	assert.Equal(t, "application/json", contentType)
+	assert.Contains(t, capturedQuery, "limit=50")
+	assert.Contains(t, capturedQuery, "offset=10")
+	assert.Contains(t, capturedQuery, "format=json")
+}
+
+// TestGetSessionCommandHistory_PaginationZeroValues tests that zero limit/offset are not appended
+func TestGetSessionCommandHistory_PaginationZeroValues(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
+	var capturedQuery string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"session_id":"test","commands":[],"count":0}`))
+	}))
+	defer server.Close()
+
+	db := setupTestDBForService(t)
+	_ = createTestTerminalForService(t, db, "user1", "session-no-paginate", "alp")
+
+	svc := &terminalTrainerService{
+		baseURL:    server.URL,
+		apiVersion: "1.0",
+		repository: repositories.NewTerminalRepository(db),
+	}
+
+	_, _, err := svc.GetSessionCommandHistory("session-no-paginate", nil, "", 0, 0)
+
+	require.NoError(t, err)
+	assert.NotContains(t, capturedQuery, "limit=")
+	assert.NotContains(t, capturedQuery, "offset=")
 }
 
 // TestExternalRefURLEncoding verifies that url.QueryEscape properly encodes special characters
