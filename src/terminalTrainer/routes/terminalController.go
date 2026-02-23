@@ -1783,9 +1783,10 @@ func (tc *terminalController) DeleteSessionHistory(ctx *gin.Context) {
 	}
 
 	if err := tc.service.DeleteSessionCommandHistory(sessionID); err != nil {
+		utils.Debug("DeleteSessionHistory failed for session %s: %v", sessionID, err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to delete command history: %v", err),
+			ErrorMessage: "Failed to delete command history",
 		})
 		return
 	}

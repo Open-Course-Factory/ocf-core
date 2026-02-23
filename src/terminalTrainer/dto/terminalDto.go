@@ -516,7 +516,7 @@ type EnumServiceStatus struct {
 // CommandHistoryEntry represents a single command from a terminal session
 type CommandHistoryEntry struct {
 	SequenceNum int    `json:"sequence_num"`
-	Command     string `json:"command"`
+	CommandText string `json:"command_text"`
 	ExecutedAt  int64  `json:"executed_at"`
 }
 
