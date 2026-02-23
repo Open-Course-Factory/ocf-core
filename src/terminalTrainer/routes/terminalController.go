@@ -1724,11 +1724,15 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 	}
 	format := ctx.Query("format")
 
+	const maxHistoryLimit = 1000
 	var limit, offset int
 	if limitStr := ctx.Query("limit"); limitStr != "" {
 		if v, err := strconv.Atoi(limitStr); err == nil && v > 0 {
 			limit = v
 		}
+	}
+	if limit > maxHistoryLimit {
+		limit = maxHistoryLimit
 	}
 	if offsetStr := ctx.Query("offset"); offsetStr != "" {
 		if v, err := strconv.Atoi(offsetStr); err == nil && v >= 0 {
