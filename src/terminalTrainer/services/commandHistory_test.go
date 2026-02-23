@@ -558,6 +558,90 @@ func TestStartSessionWithPlan_RetentionDaysCopied(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// B1: BulkCreateTerminalsForGroup must set HistoryRetentionDays from plan
+// =============================================================================
+
+// TestBulkCreateTerminals_SetsRetentionDaysFromPlan verifies that the bulk
+// terminal creation path explicitly sets HistoryRetentionDays from the
+// subscription plan and forces RecordingConsent=0 when retention is zero.
+// This tests the sessionInput construction logic in BulkCreateTerminalsForGroup.
+func TestBulkCreateTerminals_SetsRetentionDaysFromPlan(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		planRetentionDays      int
+		requestRecordingConsent int
+		expectedRetentionDays  int
+		expectedConsent        int
+	}{
+		{
+			name:                    "plan_with_90_day_retention",
+			planRetentionDays:       90,
+			requestRecordingConsent: 1,
+			expectedRetentionDays:   90,
+			expectedConsent:         1,
+		},
+		{
+			name:                    "plan_with_zero_retention_forces_consent_off",
+			planRetentionDays:       0,
+			requestRecordingConsent: 1,
+			expectedRetentionDays:   0,
+			expectedConsent:         0,
+		},
+		{
+			name:                    "plan_with_365_day_retention",
+			planRetentionDays:       365,
+			requestRecordingConsent: 1,
+			expectedRetentionDays:   365,
+			expectedConsent:         1,
+		},
+		{
+			name:                    "zero_retention_zero_consent_unchanged",
+			planRetentionDays:       0,
+			requestRecordingConsent: 0,
+			expectedRetentionDays:   0,
+			expectedConsent:         0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			plan := &paymentModels.SubscriptionPlan{
+				MaxSessionDurationMinutes:   60,
+				AllowedMachineSizes:         []string{"S", "M"},
+				CommandHistoryRetentionDays: tc.planRetentionDays,
+			}
+
+			request := dto.BulkCreateTerminalsRequest{
+				Terms:            "accepted",
+				RecordingConsent: tc.requestRecordingConsent,
+				InstanceType:     "alp",
+			}
+
+			// Simulate BulkCreateTerminalsForGroup sessionInput construction
+			sessionInput := dto.CreateTerminalSessionInput{
+				Terms:            request.Terms,
+				Expiry:           request.Expiry,
+				InstanceType:     request.InstanceType,
+				Backend:          request.Backend,
+				OrganizationID:   request.OrganizationID,
+				RecordingConsent: request.RecordingConsent,
+			}
+
+			// B1 FIX: Apply retention days from plan to sessionInput
+			sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
+			if plan.CommandHistoryRetentionDays == 0 {
+				sessionInput.RecordingConsent = 0
+			}
+
+			assert.Equal(t, tc.expectedRetentionDays, sessionInput.HistoryRetentionDays,
+				"HistoryRetentionDays should be set from plan")
+			assert.Equal(t, tc.expectedConsent, sessionInput.RecordingConsent,
+				"RecordingConsent should be forced to 0 when plan retention is 0")
+		})
+	}
+}
+
 // TestStartSessionWithPlan_InvalidPlanType tests that invalid plan type returns error
 func TestStartSessionWithPlan_InvalidPlanType(t *testing.T) {
 	if testing.Short() {

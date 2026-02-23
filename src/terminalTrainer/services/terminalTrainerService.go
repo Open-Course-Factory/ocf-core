@@ -1764,6 +1764,16 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 			RecordingConsent: request.RecordingConsent,
 		}
 
+		// Apply retention days from plan (defense-in-depth: StartSessionWithPlan
+		// also sets this, but we set it here to make the intent explicit and
+		// protect against future refactoring that might bypass StartSessionWithPlan)
+		if plan, ok := planInterface.(*paymentModels.SubscriptionPlan); ok {
+			sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
+			if plan.CommandHistoryRetentionDays == 0 {
+				sessionInput.RecordingConsent = 0
+			}
+		}
+
 		// Try to create terminal
 		sessionResp, err := tts.StartSessionWithPlan(member.UserID, sessionInput, planInterface)
 
