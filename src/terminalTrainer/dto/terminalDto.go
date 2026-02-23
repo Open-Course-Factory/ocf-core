@@ -450,8 +450,9 @@ type BulkCreateTerminalsRequest struct {
 	Expiry         int    `json:"expiry,omitempty"`
 	InstanceType   string `json:"instance_type,omitempty"`
 	NameTemplate   string `json:"name_template,omitempty"` // Template with placeholders: {group_name}, {user_email}, {user_id}
-	Backend        string `json:"backend,omitempty"`
-	OrganizationID string `json:"organization_id,omitempty"`
+	Backend          string `json:"backend,omitempty"`
+	OrganizationID   string `json:"organization_id,omitempty"`
+	RecordingConsent int    `json:"recording_consent,omitempty"`
 }
 
 // BulkCreateTerminalsResponse response for bulk terminal creation

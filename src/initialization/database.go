@@ -271,7 +271,7 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		UseTieredPricing:   false,
 		AllowedBackends:             []string{}, // empty = all backends allowed
 		DefaultBackend:              "",         // empty = TT default
-		CommandHistoryRetentionDays: 30,
+		CommandHistoryRetentionDays: 90,
 	}
 
 	// Plan Trainer (With Bulk Purchase & Tiered Pricing)
@@ -290,7 +290,7 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		UseTieredPricing:   true,
 		AllowedBackends:             []string{}, // empty = all backends allowed
 		DefaultBackend:              "",         // empty = TT default
-		CommandHistoryRetentionDays: 90,
+		CommandHistoryRetentionDays: 365,
 		PricingTiers: []paymentModels.PricingTier{
 			{MinQuantity: 1, MaxQuantity: 5, UnitAmount: 1200, Description: "1-5 licences: 12€/licence"},
 			{MinQuantity: 6, MaxQuantity: 15, UnitAmount: 1000, Description: "6-15 licences: 10€/licence"},

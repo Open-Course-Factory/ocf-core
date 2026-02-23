@@ -1755,12 +1755,13 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 
 		// Create session input for this user
 		sessionInput := dto.CreateTerminalSessionInput{
-			Terms:          request.Terms,
-			Name:           terminalName,
-			Expiry:         request.Expiry,
-			InstanceType:   request.InstanceType,
-			Backend:        request.Backend,
-			OrganizationID: request.OrganizationID,
+			Terms:            request.Terms,
+			Name:             terminalName,
+			Expiry:           request.Expiry,
+			InstanceType:     request.InstanceType,
+			Backend:          request.Backend,
+			OrganizationID:   request.OrganizationID,
+			RecordingConsent: request.RecordingConsent,
 		}
 
 		// Try to create terminal
