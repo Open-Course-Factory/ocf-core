@@ -57,6 +57,9 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						AllowedBackends:           plan.AllowedBackends,
 						DefaultBackend:            plan.DefaultBackend,
 
+						// Command history
+						CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
+
 						// Planned features
 						PlannedFeatures: plan.PlannedFeatures,
 
@@ -78,8 +81,9 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						MaxCourses:         input.MaxCourses,
 						RequiredRole:       input.RequiredRole,
 						AllowedBackends:    input.AllowedBackends,
-						DefaultBackend:     input.DefaultBackend,
-						IsActive:           true,
+						DefaultBackend:             input.DefaultBackend,
+						CommandHistoryRetentionDays: input.CommandHistoryRetentionDays,
+						IsActive:                   true,
 					}
 				},
 				DtoToMap: nil,

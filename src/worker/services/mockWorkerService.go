@@ -77,10 +77,11 @@ func (m *MockWorkerService) SubmitGeneration(ctx context.Context, generation *mo
 	// Démarrer le traitement asynchrone
 	go m.processJob(jobID)
 
+	progress := job.Progress
 	return &WorkerJobStatus{
 		ID:        jobID,
 		Status:    job.Status,
-		Progress:  &job.Progress,
+		Progress:  &progress,
 		CreatedAt: job.CreatedAt,
 		UpdatedAt: job.UpdatedAt,
 	}, nil
@@ -144,10 +145,11 @@ func (m *MockWorkerService) CheckStatus(ctx context.Context, jobID string) (*Wor
 		return nil, fmt.Errorf("job not found: %s", jobID)
 	}
 
+	progress := job.Progress
 	return &WorkerJobStatus{
 		ID:          jobID,
 		Status:      job.Status,
-		Progress:    &job.Progress,
+		Progress:    &progress,
 		Error:       job.Error,
 		ResultPath:  job.ResultPath,
 		CreatedAt:   job.CreatedAt,

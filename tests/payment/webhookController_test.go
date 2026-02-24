@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stripe/stripe-go/v82"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -135,8 +134,7 @@ func (m *MockStripeService) SendInvoice(invoiceID string) error {
 }
 
 func setupWebhookTestDB() *gorm.DB {
-	db, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	return db
+	return sharedTestDB
 }
 
 func TestWebhookController_HandleStripeWebhook(t *testing.T) {

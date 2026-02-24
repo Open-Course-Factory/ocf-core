@@ -22,6 +22,10 @@ type ClassGroup struct {
 	CasdoorGroupName   *string    `gorm:"type:varchar(255);unique" json:"casdoor_group_name,omitempty"` // Sync reference to Casdoor group
 	IsActive           bool       `gorm:"default:true" json:"is_active"`
 
+	// Recording consent policy: overrides org-level setting when non-nil.
+	// nil = inherit from organization, true = consent handled by contract, false = require per-session consent.
+	RecordingConsentHandled *bool `gorm:"default:null" json:"recording_consent_handled,omitempty"`
+
 	// Metadata for custom fields (schedules, locations, etc.)
 	Metadata map[string]any `gorm:"type:jsonb" json:"metadata,omitempty"`
 

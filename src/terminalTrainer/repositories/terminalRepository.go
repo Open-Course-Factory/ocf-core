@@ -26,6 +26,7 @@ type TerminalRepository interface {
 	GetTerminalSessionsByUserIDAndOrg(userID string, organizationID *uuid.UUID, isActive bool) (*[]models.Terminal, error)
 	GetTerminalSessionsByUserIDWithHidden(userID string, isActive bool, includeHidden bool) (*[]models.Terminal, error)
 	GetTerminalSessionsSharedWithGroup(groupID string, includeHidden bool) (*[]models.Terminal, error)
+	GetTerminalSessionsByOrganizationID(orgID uuid.UUID) (*[]models.Terminal, error)
 	UpdateTerminalSession(terminal *models.Terminal) error
 	DeleteTerminalSession(sessionID string) error
 	HideOwnedTerminal(terminalID, userID string) error
@@ -162,6 +163,18 @@ func (r *terminalRepository) GetTerminalSessionsByUserIDAndOrg(userID string, or
 	}
 
 	err := query.Find(&terminals).Error
+	if err != nil {
+		return nil, err
+	}
+	return &terminals, nil
+}
+
+func (r *terminalRepository) GetTerminalSessionsByOrganizationID(orgID uuid.UUID) (*[]models.Terminal, error) {
+	var terminals []models.Terminal
+	err := r.db.Preload("UserTerminalKey").
+		Where("organization_id = ?", orgID).
+		Order("created_at DESC").
+		Find(&terminals).Error
 	if err != nil {
 		return nil, err
 	}

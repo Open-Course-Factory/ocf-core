@@ -196,7 +196,7 @@ func setupBulkCreateRouter(db *gorm.DB, userID string, userRoles []string, plan 
 		c.Next()
 	})
 
-	router.POST("/class-groups/:groupId/bulk-create-terminals", ctrl.BulkCreateTerminalsForGroup)
+	router.POST("/class-groups/:id/bulk-create-terminals", ctrl.BulkCreateTerminalsForGroup)
 
 	return router
 }

@@ -1,10 +1,15 @@
 package services
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
+	neturl "net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -87,6 +92,27 @@ type TerminalTrainerService interface {
 
 	// Session validation
 	ValidateSessionAccess(sessionID string, checkAPI bool) (bool, string, error)
+
+	// Command history
+	GetSessionCommandHistory(sessionID string, since *int64, format string, limit, offset int) ([]byte, string, error)
+	DeleteSessionCommandHistory(sessionID string) error
+	DeleteAllUserCommandHistory(apiKey string) (int64, error)
+
+	// Organization session management
+	GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error)
+
+	// Group command history
+	GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool, search string) ([]byte, string, error)
+
+	// Group command history stats
+	GetGroupCommandHistoryStats(groupID string, userID string, includeStopped bool) ([]byte, string, error)
+
+	// Consent status
+	GetUserConsentStatus(userID string) (consentHandled bool, source string, err error)
+
+	// Authorization helpers
+	IsUserAuthorizedForSession(userID string, terminal *models.Terminal, isAdmin bool) bool
+	IsUserOrgManagerOrAdmin(userID string, orgID uuid.UUID, isAdmin bool) bool
 }
 
 type terminalTrainerService struct {
@@ -244,8 +270,24 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 		url += fmt.Sprintf("&expiry=%d", sessionInput.Expiry)
 	}
 	if sessionInput.Backend != "" {
-		url += fmt.Sprintf("&backend=%s", sessionInput.Backend)
+		url += fmt.Sprintf("&backend=%s", neturl.QueryEscape(sessionInput.Backend))
 	}
+	if sessionInput.HistoryRetentionDays > 0 {
+		url += fmt.Sprintf("&history_retention_days=%d", sessionInput.HistoryRetentionDays)
+	}
+	if sessionInput.RecordingConsent > 1 {
+		sessionInput.RecordingConsent = 1
+	}
+	if sessionInput.RecordingConsent < 0 {
+		sessionInput.RecordingConsent = 0
+	}
+	if sessionInput.RecordingConsent > 0 {
+		url += fmt.Sprintf("&recording_consent=%d", sessionInput.RecordingConsent)
+	}
+	if sessionInput.ExternalRef != "" {
+		url += fmt.Sprintf("&external_ref=%s", neturl.QueryEscape(sessionInput.ExternalRef))
+	}
+	utils.Debug("StartSession - Full TT URL: %s", url)
 
 	// Parser la réponse du Terminal Trainer
 	var sessionResp dto.TerminalTrainerSessionResponse
@@ -340,6 +382,8 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 	if !ok {
 		return nil, fmt.Errorf("invalid subscription plan type")
 	}
+	utils.Debug("StartSessionWithPlan - Plan: %s (ID: %s), CommandHistoryRetentionDays: %d, RecordingConsent from input: %d",
+		plan.Name, plan.ID, plan.CommandHistoryRetentionDays, sessionInput.RecordingConsent)
 
 	// Valider la taille de la machine
 	if sessionInput.InstanceType != "" {
@@ -405,6 +449,14 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 	if sessionInput.Expiry == 0 || sessionInput.Expiry > maxDurationSeconds {
 		sessionInput.Expiry = maxDurationSeconds
 	}
+
+	// Pass command history retention days from subscription plan
+	sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
+	if plan.CommandHistoryRetentionDays == 0 {
+		sessionInput.RecordingConsent = 0
+	}
+	utils.Debug("StartSessionWithPlan - FINAL: HistoryRetentionDays=%d, RecordingConsent=%d",
+		sessionInput.HistoryRetentionDays, sessionInput.RecordingConsent)
 
 	// Appeler la méthode StartSession originale avec les paramètres validés
 	return tts.StartSession(userID, sessionInput)
@@ -1537,8 +1589,12 @@ func (tts *terminalTrainerService) validateBackendForOrg(orgID *uuid.UUID, reque
 	}
 
 	// If AllowedBackends is empty, only the default backend is allowed
+	// If no default is configured either, allow any backend (no restrictions)
 	if len(org.AllowedBackends) == 0 {
-		if effectiveDefault != "" && requestedBackend == effectiveDefault {
+		if effectiveDefault == "" {
+			return requestedBackend, nil
+		}
+		if requestedBackend == effectiveDefault {
 			return requestedBackend, nil
 		}
 		return "", fmt.Errorf("backend '%s' is not allowed for your organization (no backends configured, default only)",
@@ -1725,12 +1781,24 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 
 		// Create session input for this user
 		sessionInput := dto.CreateTerminalSessionInput{
-			Terms:          request.Terms,
-			Name:           terminalName,
-			Expiry:         request.Expiry,
-			InstanceType:   request.InstanceType,
-			Backend:        request.Backend,
-			OrganizationID: request.OrganizationID,
+			Terms:            request.Terms,
+			Name:             terminalName,
+			Expiry:           request.Expiry,
+			InstanceType:     request.InstanceType,
+			Backend:          request.Backend,
+			OrganizationID:   request.OrganizationID,
+			RecordingConsent: request.RecordingConsent,
+			ExternalRef:      request.ExternalRef,
+		}
+
+		// Apply retention days from plan (defense-in-depth: StartSessionWithPlan
+		// also sets this, but we set it here to make the intent explicit and
+		// protect against future refactoring that might bypass StartSessionWithPlan)
+		if plan, ok := planInterface.(*paymentModels.SubscriptionPlan); ok {
+			sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
+			if plan.CommandHistoryRetentionDays == 0 {
+				sessionInput.RecordingConsent = 0
+			}
 		}
 
 		// Try to create terminal
@@ -1859,6 +1927,100 @@ func loadSystemDefaultBackend(repo configRepositories.FeatureRepository) string 
 	return feature.Value
 }
 
+// GetSessionCommandHistory retrieves command history from tt-backend
+func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, since *int64, format string, limit, offset int) ([]byte, string, error) {
+	// Validate format against whitelist to prevent URL parameter injection
+	if format != "" && format != "json" && format != "csv" {
+		format = "json" // default to json for unknown formats
+	}
+
+	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
+	if err != nil {
+		return nil, "", fmt.Errorf("session not found: %w", err)
+	}
+
+	path := tts.buildAPIPath("/history", terminal.InstanceType)
+	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, neturl.QueryEscape(sessionID))
+	if since != nil {
+		url += fmt.Sprintf("&since=%d", *since)
+	}
+	if format != "" {
+		url += fmt.Sprintf("&format=%s", format)
+	}
+	if limit > 0 {
+		url += fmt.Sprintf("&limit=%d", limit)
+	}
+	if offset > 0 {
+		url += fmt.Sprintf("&offset=%d", offset)
+	}
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(terminal.UserTerminalKey.APIKey))
+
+	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "GET", url, nil, opts)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Enforce a 10MB cap on response body to prevent OOM from oversized payloads
+	const maxResponseSize = 10 * 1024 * 1024 // 10MB
+	if len(resp.Body) > maxResponseSize {
+		return nil, "", fmt.Errorf("response body exceeds maximum allowed size (%d bytes > %d bytes)", len(resp.Body), maxResponseSize)
+	}
+
+	// Read content-type from tt-backend response when available; fall back to
+	// format-based heuristic when the upstream does not provide a header.
+	contentType := resp.Headers.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/json"
+		if format == "csv" {
+			contentType = "text/csv"
+		}
+	}
+
+	return resp.Body, contentType, nil
+}
+
+// DeleteSessionCommandHistory deletes command history (RGPD right to erasure)
+func (tts *terminalTrainerService) DeleteSessionCommandHistory(sessionID string) error {
+	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+
+	path := tts.buildAPIPath("/history", terminal.InstanceType)
+	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, neturl.QueryEscape(sessionID))
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(terminal.UserTerminalKey.APIKey))
+
+	_, err = utils.MakeExternalAPIRequest("Terminal Trainer", "DELETE", url, nil, opts)
+	return err
+}
+
+// DeleteAllUserCommandHistory deletes all command history across all sessions for an API key (RGPD bulk erasure)
+func (tts *terminalTrainerService) DeleteAllUserCommandHistory(apiKey string) (int64, error) {
+	path := fmt.Sprintf("/%s/history/all", tts.apiVersion)
+	url := fmt.Sprintf("%s%s", tts.baseURL, path)
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(apiKey))
+
+	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "DELETE", url, nil, opts)
+	if err != nil {
+		return 0, err
+	}
+
+	var result struct {
+		SessionsCleared int64 `json:"sessions_cleared"`
+	}
+	if err := resp.DecodeJSON(&result); err != nil {
+		return 0, fmt.Errorf("failed to decode bulk delete response: %w", err)
+	}
+
+	return result.SessionsCleared, nil
+}
+
 // SetSystemDefaultBackend sets the system-wide default backend
 func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*dto.BackendInfo, error) {
 	backends, err := tts.getBackendsCached()
@@ -1892,4 +2054,504 @@ func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*d
 
 	target.IsDefault = true
 	return target, nil
+}
+
+func (tts *terminalTrainerService) GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error) {
+	return tts.repository.GetTerminalSessionsByOrganizationID(orgID)
+}
+
+// IsUserAuthorizedForSession checks if a user is authorized to access a terminal session.
+// Returns true if the user is the session owner, an admin in the session's org,
+// or an org owner/manager of the session's org.
+func (tts *terminalTrainerService) IsUserAuthorizedForSession(userID string, terminal *models.Terminal, isAdmin bool) bool {
+	// Session owner always has access
+	if terminal.UserID == userID {
+		return true
+	}
+	// Check organization-scoped access (admin, org owner, or org manager)
+	if terminal.OrganizationID != nil {
+		var orgMember orgModels.OrganizationMember
+		err := tts.db.Where(
+			"organization_id = ? AND user_id = ? AND is_active = ?",
+			*terminal.OrganizationID, userID, true,
+		).First(&orgMember).Error
+		if err == nil {
+			if orgMember.IsManager() || isAdmin {
+				return true
+			}
+		}
+		// Also check if user is the organization owner directly
+		var org orgModels.Organization
+		err = tts.db.Where("id = ?", *terminal.OrganizationID).First(&org).Error
+		if err == nil && org.OwnerUserID == userID {
+			return true
+		}
+	}
+	return false
+}
+
+// GetGroupCommandHistory aggregates command history for all active members of a group.
+// Only group owner, admin, or assistant can access this endpoint.
+func (tts *terminalTrainerService) GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool, search string) ([]byte, string, error) {
+	// Validate and default format
+	if format != "" && format != "json" && format != "csv" {
+		format = "json"
+	}
+	if format == "" {
+		format = "json"
+	}
+
+	// Default limit to 50, cap at 1000
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	// Parse groupID to UUID
+	groupUUID, err := uuid.Parse(groupID)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid group ID: %w", err)
+	}
+
+	// Fetch group with members from DB
+	var group groupModels.ClassGroup
+	if err := tts.db.Preload("Members").Where("id = ?", groupUUID).First(&group).Error; err != nil {
+		return nil, "", fmt.Errorf("group not found")
+	}
+
+	// Check authorization - user must be owner, admin, or assistant
+	var userMember *groupModels.GroupMember
+	for i := range group.Members {
+		if group.Members[i].UserID == userID && group.Members[i].IsActive {
+			userMember = &group.Members[i]
+			break
+		}
+	}
+	if userMember == nil || !(userMember.Role == groupModels.GroupMemberRoleOwner || userMember.Role == groupModels.GroupMemberRoleAdmin || userMember.Role == groupModels.GroupMemberRoleAssistant) {
+		return nil, "", fmt.Errorf("unauthorized: only group owner, admin, or assistant can view group command history")
+	}
+
+	// Collect active member user IDs
+	var memberUserIDs []string
+	for _, m := range group.Members {
+		if m.IsActive {
+			memberUserIDs = append(memberUserIDs, m.UserID)
+		}
+	}
+
+	// Fetch terminals for all members, scoped to group's organization
+	var terminals []models.Terminal
+	query := tts.db.Where("user_id IN ?", memberUserIDs)
+	if group.OrganizationID != nil {
+		query = query.Where("organization_id = ?", *group.OrganizationID)
+	}
+	if !includeStopped {
+		query = query.Where("status = ?", "active")
+	}
+	if err := query.Find(&terminals).Error; err != nil {
+		return nil, "", fmt.Errorf("failed to query terminals: %w", err)
+	}
+
+	// Collect session UUIDs and track unique user IDs
+	sessionUUIDs := make([]string, 0, len(terminals))
+	userIDSet := make(map[string]bool)
+	for _, t := range terminals {
+		if t.SessionID != "" {
+			sessionUUIDs = append(sessionUUIDs, t.SessionID)
+			userIDSet[t.UserID] = true
+		}
+	}
+
+	// If no sessions found, return empty result
+	if len(sessionUUIDs) == 0 {
+		if format == "csv" {
+			var buf bytes.Buffer
+			writer := csv.NewWriter(&buf)
+			_ = writer.Write([]string{"student_name", "student_email", "session_uuid", "sequence_num", "command", "executed_at"})
+			writer.Flush()
+			return buf.Bytes(), "text/csv", nil
+		}
+		result := map[string]interface{}{
+			"commands": []interface{}{},
+			"total":    0,
+			"limit":    limit,
+			"offset":   offset,
+		}
+		body, _ := json.Marshal(result)
+		return body, "application/json", nil
+	}
+
+	// Fetch user info for enrichment using Casdoor SDK
+	type userInfo struct {
+		DisplayName string
+		Email       string
+	}
+	userInfoMap := make(map[string]userInfo)
+	for uid := range userIDSet {
+		user, err := casdoorsdk.GetUserByUserId(uid)
+		if err == nil && user != nil {
+			userInfoMap[uid] = userInfo{
+				DisplayName: user.DisplayName,
+				Email:       user.Email,
+			}
+		}
+	}
+
+	// Build sessionUUID -> userInfo map
+	sessionUserMap := make(map[string]userInfo)
+	for _, t := range terminals {
+		if t.SessionID != "" {
+			sessionUserMap[t.SessionID] = userInfoMap[t.UserID]
+		}
+	}
+
+	// Call tt-backend bulk endpoint
+	url := fmt.Sprintf("%s/%s/admin/history/bulk", tts.baseURL, tts.apiVersion)
+
+	reqBody := map[string]interface{}{
+		"session_uuids": sessionUUIDs,
+		"limit":         limit,
+		"offset":        offset,
+		"format":        "json", // Always get JSON from tt-backend, we transform to CSV ourselves if needed
+	}
+	if since != nil {
+		reqBody["since"] = *since
+	}
+	if search != "" {
+		reqBody["search"] = search
+	}
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
+
+	var bulkResponse struct {
+		Commands []struct {
+			SessionUUID string `json:"session_uuid"`
+			SequenceNum int    `json:"sequence_num"`
+			CommandText string `json:"command_text"`
+			ExecutedAt  int64  `json:"executed_at"`
+		} `json:"commands"`
+		Total  int `json:"total"`
+		Limit  int `json:"limit"`
+		Offset int `json:"offset"`
+	}
+
+	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, reqBody, &bulkResponse, opts)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to fetch bulk history: %w", err)
+	}
+
+	// Enrich commands with student info
+	type enrichedCommand struct {
+		StudentName  string `json:"student_name"`
+		StudentEmail string `json:"student_email"`
+		SessionUUID  string `json:"session_uuid"`
+		SequenceNum  int    `json:"sequence_num"`
+		CommandText  string `json:"command_text"`
+		ExecutedAt   int64  `json:"executed_at"`
+	}
+
+	enriched := make([]enrichedCommand, 0, len(bulkResponse.Commands))
+	for _, cmd := range bulkResponse.Commands {
+		info := sessionUserMap[cmd.SessionUUID]
+		enriched = append(enriched, enrichedCommand{
+			StudentName:  info.DisplayName,
+			StudentEmail: info.Email,
+			SessionUUID:  cmd.SessionUUID,
+			SequenceNum:  cmd.SequenceNum,
+			CommandText:  cmd.CommandText,
+			ExecutedAt:   cmd.ExecutedAt,
+		})
+	}
+
+	// Return in requested format
+	if format == "csv" {
+		var buf bytes.Buffer
+		writer := csv.NewWriter(&buf)
+		_ = writer.Write([]string{"student_name", "student_email", "session_uuid", "sequence_num", "command", "executed_at"})
+		for _, cmd := range enriched {
+			_ = writer.Write([]string{
+				cmd.StudentName,
+				cmd.StudentEmail,
+				cmd.SessionUUID,
+				strconv.Itoa(cmd.SequenceNum),
+				cmd.CommandText,
+				time.Unix(cmd.ExecutedAt, 0).UTC().Format(time.RFC3339),
+			})
+		}
+		writer.Flush()
+		return buf.Bytes(), "text/csv", nil
+	}
+
+	// JSON format (default)
+	result := map[string]interface{}{
+		"commands": enriched,
+		"total":    bulkResponse.Total,
+		"limit":    bulkResponse.Limit,
+		"offset":   bulkResponse.Offset,
+	}
+	body, _ := json.Marshal(result)
+	return body, "application/json", nil
+}
+
+// GetGroupCommandHistoryStats returns aggregate command history statistics for all members of a group.
+// Only group owner, admin, or assistant can access this endpoint.
+func (tts *terminalTrainerService) GetGroupCommandHistoryStats(groupID string, userID string, includeStopped bool) ([]byte, string, error) {
+	// Parse groupID to UUID
+	groupUUID, err := uuid.Parse(groupID)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid group ID: %w", err)
+	}
+
+	// Fetch group with members from DB
+	var group groupModels.ClassGroup
+	if err := tts.db.Preload("Members").Where("id = ?", groupUUID).First(&group).Error; err != nil {
+		return nil, "", fmt.Errorf("group not found")
+	}
+
+	// Check authorization - user must be owner, admin, or assistant
+	var userMember *groupModels.GroupMember
+	for i := range group.Members {
+		if group.Members[i].UserID == userID && group.Members[i].IsActive {
+			userMember = &group.Members[i]
+			break
+		}
+	}
+	if userMember == nil || !(userMember.Role == groupModels.GroupMemberRoleOwner || userMember.Role == groupModels.GroupMemberRoleAdmin || userMember.Role == groupModels.GroupMemberRoleAssistant) {
+		return nil, "", fmt.Errorf("unauthorized: only group owner, admin, or assistant can view group command history stats")
+	}
+
+	// Collect active member user IDs
+	var memberUserIDs []string
+	for _, m := range group.Members {
+		if m.IsActive {
+			memberUserIDs = append(memberUserIDs, m.UserID)
+		}
+	}
+
+	// Fetch terminals for all members, scoped to group's organization
+	var terminals []models.Terminal
+	query := tts.db.Where("user_id IN ?", memberUserIDs)
+	if group.OrganizationID != nil {
+		query = query.Where("organization_id = ?", *group.OrganizationID)
+	}
+	if !includeStopped {
+		query = query.Where("status = ?", "active")
+	}
+	if err := query.Find(&terminals).Error; err != nil {
+		return nil, "", fmt.Errorf("failed to query terminals: %w", err)
+	}
+
+	// Collect session UUIDs and build terminal -> user mapping
+	sessionUUIDs := make([]string, 0, len(terminals))
+	userIDSet := make(map[string]bool)
+	sessionToUserID := make(map[string]string)
+	for _, t := range terminals {
+		if t.SessionID != "" {
+			sessionUUIDs = append(sessionUUIDs, t.SessionID)
+			userIDSet[t.UserID] = true
+			sessionToUserID[t.SessionID] = t.UserID
+		}
+	}
+
+	// If no sessions found, return empty stats
+	if len(sessionUUIDs) == 0 {
+		result := map[string]interface{}{
+			"summary": map[string]interface{}{
+				"total_commands":              0,
+				"total_sessions":              0,
+				"active_students":             0,
+				"avg_commands_per_student":     0.0,
+				"avg_time_per_student_seconds": 0,
+			},
+			"students": []interface{}{},
+		}
+		body, _ := json.Marshal(result)
+		return body, "application/json", nil
+	}
+
+	// Fetch user info for enrichment using Casdoor SDK
+	type userInfo struct {
+		DisplayName string
+		Email       string
+	}
+	userInfoMap := make(map[string]userInfo)
+	for uid := range userIDSet {
+		user, err := casdoorsdk.GetUserByUserId(uid)
+		if err == nil && user != nil {
+			userInfoMap[uid] = userInfo{
+				DisplayName: user.DisplayName,
+				Email:       user.Email,
+			}
+		}
+	}
+
+	// Call tt-backend bulk-stats endpoint
+	url := fmt.Sprintf("%s/%s/admin/history/bulk-stats", tts.baseURL, tts.apiVersion)
+
+	reqBody := map[string]interface{}{
+		"session_uuids": sessionUUIDs,
+	}
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
+
+	var bulkStatsResponse struct {
+		Sessions []struct {
+			SessionUUID    string `json:"session_uuid"`
+			CommandCount   int    `json:"command_count"`
+			FirstCommandAt int64  `json:"first_command_at"`
+			LastCommandAt  int64  `json:"last_command_at"`
+		} `json:"sessions"`
+		TotalCommands int `json:"total_commands"`
+		TotalSessions int `json:"total_sessions"`
+	}
+
+	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, reqBody, &bulkStatsResponse, opts)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to fetch bulk stats: %w", err)
+	}
+
+	// Build per-student stats
+	type studentStats struct {
+		StudentName      string `json:"student_name"`
+		StudentEmail     string `json:"student_email"`
+		TotalCommands    int    `json:"total_commands"`
+		SessionCount     int    `json:"session_count"`
+		TotalTimeSeconds int64  `json:"total_time_seconds"`
+		LastActiveAt     int64  `json:"last_active_at"`
+	}
+
+	studentMap := make(map[string]*studentStats)
+	for _, sess := range bulkStatsResponse.Sessions {
+		uid, ok := sessionToUserID[sess.SessionUUID]
+		if !ok {
+			continue
+		}
+		st, exists := studentMap[uid]
+		if !exists {
+			info := userInfoMap[uid]
+			st = &studentStats{
+				StudentName:  info.DisplayName,
+				StudentEmail: info.Email,
+			}
+			studentMap[uid] = st
+		}
+		st.TotalCommands += sess.CommandCount
+		st.SessionCount++
+		if sess.LastCommandAt > sess.FirstCommandAt {
+			st.TotalTimeSeconds += sess.LastCommandAt - sess.FirstCommandAt
+		}
+		if sess.LastCommandAt > st.LastActiveAt {
+			st.LastActiveAt = sess.LastCommandAt
+		}
+	}
+
+	// Convert to slice
+	students := make([]studentStats, 0, len(studentMap))
+	for _, st := range studentMap {
+		students = append(students, *st)
+	}
+
+	// Build summary
+	activeStudents := len(studentMap)
+	var avgCommandsPerStudent float64
+	var avgTimePerStudentSecs int64
+	if activeStudents > 0 {
+		avgCommandsPerStudent = float64(bulkStatsResponse.TotalCommands) / float64(activeStudents)
+		var totalTime int64
+		for _, st := range students {
+			totalTime += st.TotalTimeSeconds
+		}
+		avgTimePerStudentSecs = totalTime / int64(activeStudents)
+	}
+
+	type statsSummary struct {
+		TotalCommands         int     `json:"total_commands"`
+		TotalSessions         int     `json:"total_sessions"`
+		ActiveStudents        int     `json:"active_students"`
+		AvgCommandsPerStudent float64 `json:"avg_commands_per_student"`
+		AvgTimePerStudentSecs int64   `json:"avg_time_per_student_seconds"`
+	}
+
+	result := map[string]interface{}{
+		"summary": statsSummary{
+			TotalCommands:         bulkStatsResponse.TotalCommands,
+			TotalSessions:         bulkStatsResponse.TotalSessions,
+			ActiveStudents:        activeStudents,
+			AvgCommandsPerStudent: avgCommandsPerStudent,
+			AvgTimePerStudentSecs: avgTimePerStudentSecs,
+		},
+		"students": students,
+	}
+
+	body, _ := json.Marshal(result)
+	return body, "application/json", nil
+}
+
+// IsUserOrgManagerOrAdmin checks if a user is an org owner/manager or a system admin
+// who is also a member of the given organization.
+func (tts *terminalTrainerService) IsUserOrgManagerOrAdmin(userID string, orgID uuid.UUID, isAdmin bool) bool {
+	var orgMember orgModels.OrganizationMember
+	err := tts.db.Where(
+		"organization_id = ? AND user_id = ? AND is_active = ?",
+		orgID, userID, true,
+	).First(&orgMember).Error
+	if err == nil {
+		if orgMember.IsManager() || isAdmin {
+			return true
+		}
+	}
+	return false
+}
+
+// GetUserConsentStatus checks if recording consent is handled at the org or group level
+// for a given user. Returns consentHandled=true if any org or group the user belongs to
+// has recording_consent_handled set. The source indicates "organization" or "group".
+func (tts *terminalTrainerService) GetUserConsentStatus(userID string) (bool, string, error) {
+	// Check organizations: find orgs where user is an active member with consent handled
+	var orgMembers []orgModels.OrganizationMember
+	if err := tts.db.Where("user_id = ? AND is_active = ?", userID, true).Find(&orgMembers).Error; err != nil {
+		return false, "", fmt.Errorf("failed to check organization membership: %w", err)
+	}
+
+	for _, member := range orgMembers {
+		var org orgModels.Organization
+		if err := tts.db.Where("id = ? AND is_active = ?", member.OrganizationID, true).First(&org).Error; err != nil {
+			continue
+		}
+		if org.RecordingConsentHandled {
+			return true, "organization", nil
+		}
+	}
+
+	// Check groups: find groups where user is an active member
+	var groupMembers []groupModels.GroupMember
+	if err := tts.db.Where("user_id = ? AND is_active = ?", userID, true).Find(&groupMembers).Error; err != nil {
+		return false, "", fmt.Errorf("failed to check group membership: %w", err)
+	}
+
+	for _, member := range groupMembers {
+		var group groupModels.ClassGroup
+		if err := tts.db.Where("id = ? AND is_active = ?", member.GroupID, true).First(&group).Error; err != nil {
+			continue
+		}
+		// Group-level override: explicit true means consent handled
+		if group.RecordingConsentHandled != nil && *group.RecordingConsentHandled {
+			return true, "group", nil
+		}
+		// Group inherits from org if nil and org has consent handled
+		if group.RecordingConsentHandled == nil && group.OrganizationID != nil {
+			var org orgModels.Organization
+			if err := tts.db.Where("id = ? AND is_active = ?", *group.OrganizationID, true).First(&org).Error; err == nil {
+				if org.RecordingConsentHandled {
+					return true, "organization", nil
+				}
+			}
+		}
+	}
+
+	return false, "", nil
 }

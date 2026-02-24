@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"soli/formations/src/auth/casdoor"
 	config "soli/formations/src/configuration"
@@ -77,6 +78,23 @@ type TerminalController interface {
 
 	// Session access validation
 	GetAccessStatus(ctx *gin.Context)
+
+	// Command history
+	GetSessionHistory(ctx *gin.Context)
+	DeleteSessionHistory(ctx *gin.Context)
+	DeleteAllUserHistory(ctx *gin.Context)
+
+	// Organization session management
+	GetOrganizationTerminalSessions(ctx *gin.Context)
+
+	// Group command history
+	GetGroupCommandHistory(ctx *gin.Context)
+
+	// Group command history stats
+	GetGroupCommandHistoryStats(ctx *gin.Context)
+
+	// Consent status
+	GetConsentStatus(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -1380,7 +1398,7 @@ func (tc *terminalController) FixTerminalHidePermissions(ctx *gin.Context) {
 //	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
-//	@Param			groupId	path	string							true	"Group ID"
+//	@Param			id		path	string							true	"Group ID"
 //	@Param			request	body	dto.BulkCreateTerminalsRequest	true	"Bulk creation request"
 //	@Security		Bearer
 //	@Success		200	{object}	dto.BulkCreateTerminalsResponse	"Bulk creation results"
@@ -1388,9 +1406,9 @@ func (tc *terminalController) FixTerminalHidePermissions(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError					"Access denied"
 //	@Failure		404	{object}	errors.APIError					"Group not found"
 //	@Failure		500	{object}	errors.APIError					"Internal server error"
-//	@Router			/class-groups/{groupId}/bulk-create-terminals [post]
+//	@Router			/class-groups/{id}/bulk-create-terminals [post]
 func (tc *terminalController) BulkCreateTerminalsForGroup(ctx *gin.Context) {
-	groupID := ctx.Param("groupId")
+	groupID := ctx.Param("id")
 	requestingUserID := ctx.GetString("userId")
 
 	var request dto.BulkCreateTerminalsRequest
@@ -1651,4 +1669,378 @@ func (tc *terminalController) GetAccessStatus(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, response)
+}
+
+// isSessionOwnerOrAdmin checks whether the current user owns the session, is an admin,
+// or is an owner/manager of the organization associated with the terminal session.
+func (tc *terminalController) isSessionOwnerOrAdmin(ctx *gin.Context, terminal *models.Terminal) bool {
+	userId := ctx.GetString("userId")
+	userRoles := ctx.GetStringSlice("userRoles")
+	isAdmin := false
+	for _, role := range userRoles {
+		if role == "administrator" {
+			isAdmin = true
+			break
+		}
+	}
+	return tc.service.IsUserAuthorizedForSession(userId, terminal, isAdmin)
+}
+
+// GetSessionHistory returns command history for a terminal session
+//
+//	@Summary		Get command history for a terminal session
+//	@Description	Retrieves the command history recorded during a terminal session. Works for active, stopped, and expired sessions.
+//	@Tags			terminal
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path	string	true	"Terminal session ID"
+//	@Param			since	query	integer	false	"Unix timestamp to filter commands since"
+//	@Param			format	query	string	false	"Response format: json or csv"
+//	@Param			limit	query	integer	false	"Maximum number of commands to return"
+//	@Param			offset	query	integer	false	"Number of commands to skip"
+//	@Security		BearerAuth
+//	@Success		200	{object}	dto.CommandHistoryResponse
+//	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Failure		404	{object}	errors.APIError	"Session not found"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/terminals/{id}/history [get]
+func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
+	sessionID := ctx.Param("id")
+
+	// Command history is accessible to session owner, admin, or any user with shared access to the terminal.
+	terminal, err := tc.service.GetSessionInfo(sessionID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Session not found",
+		})
+		return
+	}
+	if !tc.isSessionOwnerOrAdmin(ctx, terminal) {
+		// Check if the user has shared access (any level, including read)
+		userId := ctx.GetString("userId")
+		hasSharedAccess, accessErr := tc.service.HasTerminalAccess(sessionID, userId, models.AccessLevelRead)
+		if accessErr != nil || !hasSharedAccess {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Only session owner, admin, or shared users can access command history",
+			})
+			return
+		}
+	}
+
+	var since *int64
+	if sinceStr := ctx.Query("since"); sinceStr != "" {
+		if sinceVal, err := strconv.ParseInt(sinceStr, 10, 64); err == nil {
+			if sinceVal < 0 {
+				sinceVal = 0
+			}
+			since = &sinceVal
+		}
+	}
+	format := ctx.Query("format")
+
+	const maxHistoryLimit = 1000
+	var limit, offset int
+	if limitStr := ctx.Query("limit"); limitStr != "" {
+		if v, err := strconv.Atoi(limitStr); err == nil && v > 0 {
+			limit = v
+		}
+	}
+	if limit > maxHistoryLimit {
+		limit = maxHistoryLimit
+	}
+	if offsetStr := ctx.Query("offset"); offsetStr != "" {
+		if v, err := strconv.Atoi(offsetStr); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+
+	body, contentType, err := tc.service.GetSessionCommandHistory(sessionID, since, format, limit, offset)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Session not found",
+			})
+			return
+		}
+		utils.Debug("GetSessionHistory failed for session %s: %v", sessionID, err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get command history",
+		})
+		return
+	}
+
+	ctx.Data(http.StatusOK, contentType, body)
+}
+
+// DeleteSessionHistory deletes command history (RGPD right to erasure)
+//
+//	@Summary		Delete command history for a terminal session
+//	@Description	Deletes the command history for a terminal session. Supports RGPD right to erasure. Only the session owner or an admin can delete history.
+//	@Tags			terminal
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"Terminal session ID"
+//	@Security		BearerAuth
+//	@Success		200	{object}	map[string]string	"Command history deleted successfully"
+//	@Failure		403	{object}	errors.APIError		"Access denied"
+//	@Failure		404	{object}	errors.APIError		"Session not found"
+//	@Failure		500	{object}	errors.APIError		"Internal server error"
+//	@Router			/terminals/{id}/history [delete]
+func (tc *terminalController) DeleteSessionHistory(ctx *gin.Context) {
+	sessionID := ctx.Param("id")
+
+	terminal, err := tc.service.GetSessionInfo(sessionID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Session not found",
+		})
+		return
+	}
+
+	if !tc.isSessionOwnerOrAdmin(ctx, terminal) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Only session owner or admin can delete command history",
+		})
+		return
+	}
+
+	if err := tc.service.DeleteSessionCommandHistory(sessionID); err != nil {
+		utils.Debug("DeleteSessionHistory failed for session %s: %v", sessionID, err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to delete command history",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Command history deleted successfully"})
+}
+
+// DeleteAllUserHistory deletes all command history for the current user
+//
+//	@Summary		Delete all user command history
+//	@Description	Deletes all recorded command history across all terminal sessions for the current user
+//	@Tags			terminal
+//	@Accept			json
+//	@Produce		json
+//	@Security		BearerAuth
+//	@Success		200	{object}	map[string]interface{}
+//	@Failure		500	{object}	errors.APIError
+//	@Router			/terminals/my-history [delete]
+func (tc *terminalController) DeleteAllUserHistory(ctx *gin.Context) {
+	userId := ctx.GetString("userId")
+
+	userKey, err := tc.service.GetUserKey(userId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get user API key",
+		})
+		return
+	}
+
+	sessionsCleared, err := tc.service.DeleteAllUserCommandHistory(userKey.APIKey)
+	if err != nil {
+		utils.Debug("DeleteAllUserHistory failed for user %s: %v", userId, err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to delete command history",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message":          "All command history deleted successfully",
+		"sessions_cleared": sessionsCleared,
+	})
+}
+
+// GetOrganizationTerminalSessions lists all terminal sessions for an organization
+//
+//	@Summary		Get terminal sessions for an organization
+//	@Description	Lists all terminal sessions belonging to an organization. Only accessible by organization owners and managers.
+//	@Tags			terminal
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"Organization ID"
+//	@Security		BearerAuth
+//	@Success		200	{object}	map[string]interface{}
+//	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/organizations/{id}/terminal-sessions [get]
+func (tc *terminalController) GetOrganizationTerminalSessions(ctx *gin.Context) {
+	orgIDStr := ctx.Param("id")
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	// Check if user is org owner/manager or admin
+	userId := ctx.GetString("userId")
+	userRoles := ctx.GetStringSlice("userRoles")
+	isAdmin := false
+	for _, role := range userRoles {
+		if role == "administrator" {
+			isAdmin = true
+			break
+		}
+	}
+	if !tc.service.IsUserOrgManagerOrAdmin(userId, orgID, isAdmin) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Only organization owners, managers, or admins can access this resource",
+		})
+		return
+	}
+
+	sessions, err := tc.service.GetOrganizationTerminalSessions(orgID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get organization sessions",
+		})
+		return
+	}
+
+	if sessions == nil {
+		empty := make([]models.Terminal, 0)
+		sessions = &empty
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"sessions": sessions,
+		"count":    len(*sessions),
+	})
+}
+
+// GetGroupCommandHistory returns aggregated command history for all members of a group
+func (tc *terminalController) GetGroupCommandHistory(ctx *gin.Context) {
+	groupID := ctx.Param("id")
+	userID := ctx.GetString("userId")
+
+	// Parse query params
+	var since *int64
+	if sinceStr := ctx.Query("since"); sinceStr != "" {
+		if sinceVal, err := strconv.ParseInt(sinceStr, 10, 64); err == nil {
+			if sinceVal < 0 {
+				sinceVal = 0
+			}
+			since = &sinceVal
+		}
+	}
+	format := ctx.Query("format")
+
+	const maxHistoryLimit = 1000
+	limit := 50 // default
+	if limitStr := ctx.Query("limit"); limitStr != "" {
+		if v, err := strconv.Atoi(limitStr); err == nil && v > 0 {
+			limit = v
+		}
+	}
+	if limit > maxHistoryLimit {
+		limit = maxHistoryLimit
+	}
+
+	offset := 0
+	if offsetStr := ctx.Query("offset"); offsetStr != "" {
+		if v, err := strconv.Atoi(offsetStr); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+
+	includeStopped := ctx.Query("include_stopped") == "true"
+	search := ctx.Query("search")
+
+	body, contentType, err := tc.service.GetGroupCommandHistory(groupID, userID, since, format, limit, offset, includeStopped, search)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Group not found",
+			})
+			return
+		}
+		if strings.Contains(err.Error(), "unauthorized") {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: err.Error(),
+			})
+			return
+		}
+		utils.Debug("GetGroupCommandHistory failed: %v", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get group command history",
+		})
+		return
+	}
+
+	// For CSV, add Content-Disposition header
+	if format == "csv" {
+		ctx.Header("Content-Disposition", `attachment; filename="group-history.csv"`)
+	}
+
+	ctx.Data(http.StatusOK, contentType, body)
+}
+
+// GetGroupCommandHistoryStats returns aggregate command history statistics for all members of a group
+func (tc *terminalController) GetGroupCommandHistoryStats(ctx *gin.Context) {
+	groupID := ctx.Param("id")
+	userID := ctx.GetString("userId")
+	includeStopped := ctx.Query("include_stopped") == "true"
+
+	body, contentType, err := tc.service.GetGroupCommandHistoryStats(groupID, userID, includeStopped)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Group not found",
+			})
+			return
+		}
+		if strings.Contains(err.Error(), "unauthorized") {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: err.Error(),
+			})
+			return
+		}
+		utils.Debug("GetGroupCommandHistoryStats failed: %v", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get group command history stats",
+		})
+		return
+	}
+
+	ctx.Data(http.StatusOK, contentType, body)
+}
+
+// GetConsentStatus returns whether the current user's recording consent is handled
+// at the organization or group level (i.e., enrollment contract covers it).
+func (tc *terminalController) GetConsentStatus(ctx *gin.Context) {
+	userID := ctx.GetString("userId")
+
+	consentHandled, source, err := tc.service.GetUserConsentStatus(userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check consent status",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"consent_handled": consentHandled,
+		"source":          source,
+	})
 }

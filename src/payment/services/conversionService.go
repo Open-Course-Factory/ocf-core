@@ -142,9 +142,13 @@ func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan
 		DataPersistenceEnabled:    plan.DataPersistenceEnabled,
 		DataPersistenceGB:         plan.DataPersistenceGB,
 		AllowedTemplates:          plan.AllowedTemplates,
+		AllowedBackends:           plan.AllowedBackends,
+		DefaultBackend:            plan.DefaultBackend,
+		CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
 
 		// Planned features
-		PlannedFeatures: plan.PlannedFeatures,
+		PlannedFeatures:  plan.PlannedFeatures,
+		UseTieredPricing: plan.UseTieredPricing,
 	}, nil
 }
 
