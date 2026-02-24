@@ -1959,8 +1959,9 @@ func (tc *terminalController) GetGroupCommandHistory(ctx *gin.Context) {
 	}
 
 	includeStopped := ctx.Query("include_stopped") == "true"
+	search := ctx.Query("search")
 
-	body, contentType, err := tc.service.GetGroupCommandHistory(groupID, userID, since, format, limit, offset, includeStopped)
+	body, contentType, err := tc.service.GetGroupCommandHistory(groupID, userID, since, format, limit, offset, includeStopped, search)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			ctx.JSON(http.StatusNotFound, &errors.APIError{

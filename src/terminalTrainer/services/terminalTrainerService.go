@@ -102,7 +102,7 @@ type TerminalTrainerService interface {
 	GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error)
 
 	// Group command history
-	GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool) ([]byte, string, error)
+	GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool, search string) ([]byte, string, error)
 
 	// Group command history stats
 	GetGroupCommandHistoryStats(groupID string, userID string, includeStopped bool) ([]byte, string, error)
@@ -2083,7 +2083,7 @@ func (tts *terminalTrainerService) IsUserAuthorizedForSession(userID string, ter
 
 // GetGroupCommandHistory aggregates command history for all active members of a group.
 // Only group owner, admin, or assistant can access this endpoint.
-func (tts *terminalTrainerService) GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool) ([]byte, string, error) {
+func (tts *terminalTrainerService) GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool, search string) ([]byte, string, error) {
 	// Validate and default format
 	if format != "" && format != "json" && format != "csv" {
 		format = "json"
@@ -2206,6 +2206,9 @@ func (tts *terminalTrainerService) GetGroupCommandHistory(groupID string, userID
 	}
 	if since != nil {
 		reqBody["since"] = *since
+	}
+	if search != "" {
+		reqBody["search"] = search
 	}
 
 	opts := utils.DefaultHTTPClientOptions()
