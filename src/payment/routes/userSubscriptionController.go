@@ -1249,6 +1249,23 @@ func (sc *userSubscriptionController) GetPricingPreview(ctx *gin.Context) {
 //	@Failure		500	{object}	errors.APIError
 //	@Router			/user-subscriptions/admin-assign [post]
 func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) {
+	// Check admin role
+	userRoles := ctx.GetStringSlice("userRoles")
+	isAdmin := false
+	for _, role := range userRoles {
+		if role == "administrator" {
+			isAdmin = true
+			break
+		}
+	}
+	if !isAdmin {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Access denied - admin role required",
+		})
+		return
+	}
+
 	var input dto.AdminAssignSubscriptionInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
@@ -1263,7 +1280,7 @@ func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) 
 		utils.Error("Failed to admin-assign subscription: %v", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to assign subscription: %v", err),
+			ErrorMessage: "Failed to assign subscription",
 		})
 		return
 	}

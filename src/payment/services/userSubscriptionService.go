@@ -597,14 +597,24 @@ func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptio
 
 // AdminAssignSubscription creates a subscription for a user without Stripe, assigned by an admin.
 func (ss *subscriptionService) AdminAssignSubscription(userID string, planID uuid.UUID, durationDays int) (*models.UserSubscription, error) {
-	// Get the plan to verify it exists
-	plan, err := ss.GetSubscriptionPlan(planID)
+	// Verify the plan exists
+	_, err := ss.GetSubscriptionPlan(planID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid plan ID: %w", err)
 	}
 
 	if durationDays <= 0 {
 		durationDays = 365
+	}
+
+	// Check for existing active subscription
+	existingSub, err := ss.GetActiveUserSubscription(userID)
+	if err == nil && existingSub != nil {
+		// Cancel the existing subscription before assigning the new one
+		existingSub.Status = "replaced"
+		now := time.Now()
+		existingSub.CancelledAt = &now
+		ss.db.Save(existingSub)
 	}
 
 	now := time.Now()
@@ -633,8 +643,6 @@ func (ss *subscriptionService) AdminAssignSubscription(userID string, planID uui
 	if err != nil {
 		utils.Warn("Failed to update user role for assigned subscription: %v", err)
 	}
-
-	_ = plan // used for validation above
 
 	return ss.GetUserSubscriptionByID(subscription.ID)
 }
