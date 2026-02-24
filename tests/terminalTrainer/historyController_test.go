@@ -92,7 +92,7 @@ func TestGetSessionHistory_Unauthorized_Returns403(t *testing.T) {
 	var response map[string]interface{}
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
-	assert.Contains(t, response["error_message"], "Only session owner or admin")
+	assert.Contains(t, response["error_message"], "Only session owner, admin, or shared users can access command history")
 }
 
 // TestGetSessionHistory_OwnerPassesAccessCheck verifies that the session owner
@@ -177,7 +177,7 @@ func TestDeleteSessionHistory_Unauthorized_Returns403(t *testing.T) {
 	var response map[string]interface{}
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
-	assert.Contains(t, response["error_message"], "Only session owner or admin")
+	assert.Contains(t, response["error_message"], "Only session owner or admin can delete command history")
 }
 
 // TestDeleteSessionHistory_OwnerPassesAccessCheck verifies that the session owner

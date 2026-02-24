@@ -255,8 +255,13 @@ func TestGetSessionCommandHistory_FormatWhitelist_ValidFormats(t *testing.T) {
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				capturedQuery = r.URL.RawQuery
-				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`{"session_id":"test","commands":[],"count":0}`))
+				if r.URL.Query().Get("format") == "csv" {
+					w.Header().Set("Content-Type", "text/csv")
+					w.Write([]byte("timestamp,command\n"))
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					w.Write([]byte(`{"session_id":"test","commands":[],"count":0}`))
+				}
 			}))
 			defer server.Close()
 
