@@ -1,11 +1,15 @@
 package services
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	neturl "net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -96,6 +100,9 @@ type TerminalTrainerService interface {
 
 	// Organization session management
 	GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error)
+
+	// Group command history
+	GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool) ([]byte, string, error)
 
 	// Authorization helpers
 	IsUserAuthorizedForSession(userID string, terminal *models.Terminal, isAdmin bool) bool
@@ -2065,6 +2072,206 @@ func (tts *terminalTrainerService) IsUserAuthorizedForSession(userID string, ter
 		}
 	}
 	return false
+}
+
+// GetGroupCommandHistory aggregates command history for all active members of a group.
+// Only group owner, admin, or assistant can access this endpoint.
+func (tts *terminalTrainerService) GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool) ([]byte, string, error) {
+	// Validate and default format
+	if format != "" && format != "json" && format != "csv" {
+		format = "json"
+	}
+	if format == "" {
+		format = "json"
+	}
+
+	// Default limit to 50, cap at 1000
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	// Parse groupID to UUID
+	groupUUID, err := uuid.Parse(groupID)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid group ID: %w", err)
+	}
+
+	// Fetch group with members from DB
+	var group groupModels.ClassGroup
+	if err := tts.db.Preload("Members").Where("id = ?", groupUUID).First(&group).Error; err != nil {
+		return nil, "", fmt.Errorf("group not found")
+	}
+
+	// Check authorization - user must be owner, admin, or assistant
+	var userMember *groupModels.GroupMember
+	for i := range group.Members {
+		if group.Members[i].UserID == userID && group.Members[i].IsActive {
+			userMember = &group.Members[i]
+			break
+		}
+	}
+	if userMember == nil || !(userMember.Role == groupModels.GroupMemberRoleOwner || userMember.Role == groupModels.GroupMemberRoleAdmin || userMember.Role == groupModels.GroupMemberRoleAssistant) {
+		return nil, "", fmt.Errorf("unauthorized: only group owner, admin, or assistant can view group command history")
+	}
+
+	// Collect active member user IDs
+	var memberUserIDs []string
+	for _, m := range group.Members {
+		if m.IsActive {
+			memberUserIDs = append(memberUserIDs, m.UserID)
+		}
+	}
+
+	// Fetch terminals for all members
+	var terminals []models.Terminal
+	query := tts.db.Where("user_id IN ?", memberUserIDs)
+	if !includeStopped {
+		query = query.Where("status = ?", "active")
+	}
+	if err := query.Find(&terminals).Error; err != nil {
+		return nil, "", fmt.Errorf("failed to query terminals: %w", err)
+	}
+
+	// Collect session UUIDs and track unique user IDs
+	sessionUUIDs := make([]string, 0, len(terminals))
+	userIDSet := make(map[string]bool)
+	for _, t := range terminals {
+		if t.SessionID != "" {
+			sessionUUIDs = append(sessionUUIDs, t.SessionID)
+			userIDSet[t.UserID] = true
+		}
+	}
+
+	// If no sessions found, return empty result
+	if len(sessionUUIDs) == 0 {
+		if format == "csv" {
+			var buf bytes.Buffer
+			writer := csv.NewWriter(&buf)
+			_ = writer.Write([]string{"student_name", "student_email", "session_uuid", "sequence_num", "command", "executed_at"})
+			writer.Flush()
+			return buf.Bytes(), "text/csv", nil
+		}
+		result := map[string]interface{}{
+			"commands": []interface{}{},
+			"total":    0,
+			"limit":    limit,
+			"offset":   offset,
+		}
+		body, _ := json.Marshal(result)
+		return body, "application/json", nil
+	}
+
+	// Fetch user info for enrichment using Casdoor SDK
+	type userInfo struct {
+		DisplayName string
+		Email       string
+	}
+	userInfoMap := make(map[string]userInfo)
+	for uid := range userIDSet {
+		user, err := casdoorsdk.GetUserByUserId(uid)
+		if err == nil && user != nil {
+			userInfoMap[uid] = userInfo{
+				DisplayName: user.DisplayName,
+				Email:       user.Email,
+			}
+		}
+	}
+
+	// Build sessionUUID -> userInfo map
+	sessionUserMap := make(map[string]userInfo)
+	for _, t := range terminals {
+		if t.SessionID != "" {
+			sessionUserMap[t.SessionID] = userInfoMap[t.UserID]
+		}
+	}
+
+	// Call tt-backend bulk endpoint
+	url := fmt.Sprintf("%s/%s/admin/history/bulk", tts.baseURL, tts.apiVersion)
+
+	reqBody := map[string]interface{}{
+		"session_uuids": sessionUUIDs,
+		"limit":         limit,
+		"offset":        offset,
+		"format":        "json", // Always get JSON from tt-backend, we transform to CSV ourselves if needed
+	}
+	if since != nil {
+		reqBody["since"] = *since
+	}
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
+
+	var bulkResponse struct {
+		Commands []struct {
+			SessionUUID string `json:"session_uuid"`
+			SequenceNum int    `json:"sequence_num"`
+			CommandText string `json:"command_text"`
+			ExecutedAt  int64  `json:"executed_at"`
+		} `json:"commands"`
+		Total  int `json:"total"`
+		Limit  int `json:"limit"`
+		Offset int `json:"offset"`
+	}
+
+	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, reqBody, &bulkResponse, opts)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to fetch bulk history: %w", err)
+	}
+
+	// Enrich commands with student info
+	type enrichedCommand struct {
+		StudentName  string `json:"student_name"`
+		StudentEmail string `json:"student_email"`
+		SessionUUID  string `json:"session_uuid"`
+		SequenceNum  int    `json:"sequence_num"`
+		CommandText  string `json:"command_text"`
+		ExecutedAt   int64  `json:"executed_at"`
+	}
+
+	enriched := make([]enrichedCommand, 0, len(bulkResponse.Commands))
+	for _, cmd := range bulkResponse.Commands {
+		info := sessionUserMap[cmd.SessionUUID]
+		enriched = append(enriched, enrichedCommand{
+			StudentName:  info.DisplayName,
+			StudentEmail: info.Email,
+			SessionUUID:  cmd.SessionUUID,
+			SequenceNum:  cmd.SequenceNum,
+			CommandText:  cmd.CommandText,
+			ExecutedAt:   cmd.ExecutedAt,
+		})
+	}
+
+	// Return in requested format
+	if format == "csv" {
+		var buf bytes.Buffer
+		writer := csv.NewWriter(&buf)
+		_ = writer.Write([]string{"student_name", "student_email", "session_uuid", "sequence_num", "command", "executed_at"})
+		for _, cmd := range enriched {
+			_ = writer.Write([]string{
+				cmd.StudentName,
+				cmd.StudentEmail,
+				cmd.SessionUUID,
+				strconv.Itoa(cmd.SequenceNum),
+				cmd.CommandText,
+				time.Unix(cmd.ExecutedAt, 0).UTC().Format(time.RFC3339),
+			})
+		}
+		writer.Flush()
+		return buf.Bytes(), "text/csv", nil
+	}
+
+	// JSON format (default)
+	result := map[string]interface{}{
+		"commands": enriched,
+		"total":    bulkResponse.Total,
+		"limit":    bulkResponse.Limit,
+		"offset":   bulkResponse.Offset,
+	}
+	body, _ := json.Marshal(result)
+	return body, "application/json", nil
 }
 
 // IsUserOrgManagerOrAdmin checks if a user is an org owner/manager or a system admin

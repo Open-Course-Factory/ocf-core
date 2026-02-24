@@ -86,6 +86,9 @@ type TerminalController interface {
 
 	// Organization session management
 	GetOrganizationTerminalSessions(ctx *gin.Context)
+
+	// Group command history
+	GetGroupCommandHistory(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -1908,4 +1911,73 @@ func (tc *terminalController) GetOrganizationTerminalSessions(ctx *gin.Context) 
 		"sessions": sessions,
 		"count":    len(*sessions),
 	})
+}
+
+// GetGroupCommandHistory returns aggregated command history for all members of a group
+func (tc *terminalController) GetGroupCommandHistory(ctx *gin.Context) {
+	groupID := ctx.Param("groupId")
+	userID := ctx.GetString("userId")
+
+	// Parse query params
+	var since *int64
+	if sinceStr := ctx.Query("since"); sinceStr != "" {
+		if sinceVal, err := strconv.ParseInt(sinceStr, 10, 64); err == nil {
+			if sinceVal < 0 {
+				sinceVal = 0
+			}
+			since = &sinceVal
+		}
+	}
+	format := ctx.Query("format")
+
+	const maxHistoryLimit = 1000
+	limit := 50 // default
+	if limitStr := ctx.Query("limit"); limitStr != "" {
+		if v, err := strconv.Atoi(limitStr); err == nil && v > 0 {
+			limit = v
+		}
+	}
+	if limit > maxHistoryLimit {
+		limit = maxHistoryLimit
+	}
+
+	offset := 0
+	if offsetStr := ctx.Query("offset"); offsetStr != "" {
+		if v, err := strconv.Atoi(offsetStr); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+
+	includeStopped := ctx.Query("include_stopped") == "true"
+
+	body, contentType, err := tc.service.GetGroupCommandHistory(groupID, userID, since, format, limit, offset, includeStopped)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Group not found",
+			})
+			return
+		}
+		if strings.Contains(err.Error(), "unauthorized") {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: err.Error(),
+			})
+			return
+		}
+		utils.Debug("GetGroupCommandHistory failed: %v", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get group command history",
+		})
+		return
+	}
+
+	// For CSV, add Content-Disposition header
+	if format == "csv" {
+		ctx.Header("Content-Disposition", `attachment; filename="group-history.csv"`)
+	}
+
+	ctx.Data(http.StatusOK, contentType, body)
 }

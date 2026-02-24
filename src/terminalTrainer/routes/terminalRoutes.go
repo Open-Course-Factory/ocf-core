@@ -33,6 +33,7 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	// Instead, we use InjectSubscriptionInfo() to attach the plan to context for validation
 	subscriptionMiddleware := paymentMiddleware.NewSubscriptionIntegrationMiddleware(db)
 	groupRoutes.POST("/:groupId/bulk-create-terminals", middleware.AuthManagement(), subscriptionMiddleware.InjectSubscriptionInfo(), terminalController.BulkCreateTerminalsForGroup)
+	groupRoutes.GET("/:groupId/command-history", middleware.AuthManagement(), terminalController.GetGroupCommandHistory)
 
 	// Stop session requires owner or admin access (Layer 2 security check)
 	routes.POST("/:id/stop", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelOwner), terminalController.StopSession)
