@@ -98,6 +98,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&paymentModels.PaymentMethod{})
 	db.AutoMigrate(&paymentModels.UsageMetrics{})
 	db.AutoMigrate(&paymentModels.BillingAddress{})
+	db.AutoMigrate(&paymentModels.PlanFeature{})
 	db.AutoMigrate(&paymentModels.WebhookEvent{}) // ✅ SECURITY: Track processed webhooks in database
 
 	// Configuration entities
@@ -113,6 +114,7 @@ func InitDevelopmentData(db *gorm.DB) {
 	if env == "development" || env == "test" {
 		db = db.Debug()
 		SetupDefaultSubscriptionPlans(db)
+		SeedPlanFeatures(db)
 		setupExternalUsersData()
 		syncCasdoorRolesToCasbin()
 		ensureUsersHaveTrialPlan(db)
@@ -237,7 +239,7 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		Currency:                  "eur",
 		BillingInterval:           "month",
 		TrialDays:                 0,
-		Features:                  []string{"Unlimited restarts", "1 hour max session", "1 concurrent terminal", "XS machine (0.5 vCPU, 256MB RAM)", "No network access", "Ephemeral storage only"},
+		Features:                  []string{"machine_size_xs"},
 		MaxConcurrentUsers:        1,
 		MaxCourses:                -1,
 		IsActive:                  true,
@@ -263,12 +265,18 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		Currency:           "eur",
 		BillingInterval:    "month",
 		TrialDays:          14,
-		Features:           []string{"unlimited_courses", "advanced_labs", "export", "custom_themes"},
+		Features:           []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "machine_size_xs", "machine_size_s", "machine_size_m", "network_access", "data_persistence", "command_history"},
 		MaxConcurrentUsers: 1,
 		MaxCourses:         -1,
 		IsActive:           true,
 		RequiredRole:       "member", // Changed from "member_pro" (deprecated) to "member"
 		UseTieredPricing:   false,
+		MaxSessionDurationMinutes: 180,
+		MaxConcurrentTerminals:    3,
+		AllowedMachineSizes:       []string{"XS", "S", "M"},
+		NetworkAccessEnabled:      true,
+		DataPersistenceEnabled:    true,
+		DataPersistenceGB:         5,
 		AllowedBackends:             []string{}, // empty = all backends allowed
 		DefaultBackend:              "",         // empty = TT default
 		CommandHistoryRetentionDays: 90,
@@ -282,12 +290,18 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		Currency:           "eur",
 		BillingInterval:    "month",
 		TrialDays:          0,
-		Features:           []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "bulk_purchase", "group_management"},
+		Features:           []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "bulk_purchase", "group_management", "machine_size_xs", "machine_size_s", "machine_size_m", "machine_size_l", "machine_size_xl", "network_access", "data_persistence", "command_history"},
 		MaxConcurrentUsers: 1,
 		MaxCourses:         -1,
 		IsActive:           true,
 		RequiredRole:       "trainer",
 		UseTieredPricing:   true,
+		MaxSessionDurationMinutes: 480,
+		MaxConcurrentTerminals:    10,
+		AllowedMachineSizes:       []string{"XS", "S", "M", "L", "XL"},
+		NetworkAccessEnabled:      true,
+		DataPersistenceEnabled:    true,
+		DataPersistenceGB:         20,
 		AllowedBackends:             []string{}, // empty = all backends allowed
 		DefaultBackend:              "",         // empty = TT default
 		CommandHistoryRetentionDays: 365,
@@ -360,4 +374,55 @@ func ensureUsersHaveTrialPlan(db *gorm.DB) {
 	if fixed > 0 {
 		log.Printf("[TRIAL-SYNC] Assigned Trial plan to %d users who were missing subscriptions", fixed)
 	}
+}
+
+// SeedPlanFeatures populates the plan_features catalog table with default features.
+// Only seeds if the table is empty.
+func SeedPlanFeatures(db *gorm.DB) {
+	var count int64
+	db.Model(&paymentModels.PlanFeature{}).Count(&count)
+	if count > 0 {
+		return
+	}
+
+	features := []paymentModels.PlanFeature{
+		// Capabilities (boolean)
+		{Key: "unlimited_courses", DisplayNameEn: "Unlimited Courses", DisplayNameFr: "Cours illimites", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "advanced_labs", DisplayNameEn: "Advanced Labs", DisplayNameFr: "Laboratoires avances", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "export", DisplayNameEn: "Course Export", DisplayNameFr: "Export de cours", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "custom_themes", DisplayNameEn: "Custom Themes", DisplayNameFr: "Themes personnalises", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "bulk_purchase", DisplayNameEn: "Bulk License Purchase", DisplayNameFr: "Achat de licences en gros", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "group_management", DisplayNameEn: "Group Management", DisplayNameFr: "Gestion des groupes", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "api_access", DisplayNameEn: "API Access", DisplayNameFr: "Acces API", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "analytics", DisplayNameEn: "Analytics Dashboard", DisplayNameFr: "Tableau de bord analytique", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "priority_support", DisplayNameEn: "Priority Support", DisplayNameFr: "Support prioritaire", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+
+		// Machine sizes (boolean)
+		{Key: "machine_size_xs", DisplayNameEn: "XS Machine (0.5 CPU, 256MB)", DisplayNameFr: "Machine XS (0.5 CPU, 256Mo)", Category: "machine_sizes", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "machine_size_s", DisplayNameEn: "S Machine (1 CPU, 512MB)", DisplayNameFr: "Machine S (1 CPU, 512Mo)", Category: "machine_sizes", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "machine_size_m", DisplayNameEn: "M Machine (2 CPU, 1GB)", DisplayNameFr: "Machine M (2 CPU, 1Go)", Category: "machine_sizes", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "machine_size_l", DisplayNameEn: "L Machine (4 CPU, 4GB)", DisplayNameFr: "Machine L (4 CPU, 4Go)", Category: "machine_sizes", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "machine_size_xl", DisplayNameEn: "XL Machine (8 CPU, 8GB)", DisplayNameFr: "Machine XL (8 CPU, 8Go)", Category: "machine_sizes", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+
+		// Terminal limits (mixed types)
+		{Key: "network_access", DisplayNameEn: "External Network Access", DisplayNameFr: "Acces reseau externe", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "data_persistence", DisplayNameEn: "Persistent Storage", DisplayNameFr: "Stockage persistant", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "data_persistence_gb", DisplayNameEn: "Storage Quota", DisplayNameFr: "Quota de stockage", Category: "terminal_limits", ValueType: "number", Unit: "GB", DefaultValue: "0", IsActive: true},
+		{Key: "command_history", DisplayNameEn: "Command History Recording", DisplayNameFr: "Enregistrement historique", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "command_history_retention_days", DisplayNameEn: "History Retention", DisplayNameFr: "Retention de l'historique", Category: "terminal_limits", ValueType: "number", Unit: "days", DefaultValue: "0", IsActive: true},
+		{Key: "max_session_duration_minutes", DisplayNameEn: "Max Session Duration", DisplayNameFr: "Duree max de session", Category: "terminal_limits", ValueType: "number", Unit: "minutes", DefaultValue: "60", IsActive: true},
+		{Key: "max_concurrent_terminals", DisplayNameEn: "Max Concurrent Terminals", DisplayNameFr: "Terminaux simultanes max", Category: "terminal_limits", ValueType: "number", Unit: "count", DefaultValue: "1", IsActive: true},
+
+		// Course limits (number)
+		{Key: "max_courses", DisplayNameEn: "Max Courses (-1 = unlimited)", DisplayNameFr: "Cours max (-1 = illimite)", Category: "course_limits", ValueType: "number", Unit: "count", DefaultValue: "-1", IsActive: true},
+		{Key: "max_concurrent_users", DisplayNameEn: "Max Concurrent Users", DisplayNameFr: "Utilisateurs simultanes max", Category: "course_limits", ValueType: "number", Unit: "count", DefaultValue: "1", IsActive: true},
+	}
+
+	for _, feature := range features {
+		if err := db.Create(&feature).Error; err != nil {
+			log.Printf("Warning: Failed to create plan feature %s: %v\n", feature.Key, err)
+		}
+	}
+
+	log.Printf("Seeded %d plan features\n", len(features))
 }
