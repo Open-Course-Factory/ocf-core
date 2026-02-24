@@ -53,6 +53,8 @@ stages:
     - export PATH=$PATH:$GOPATH/bin
     - go mod download
     - go install github.com/jstemmer/go-junit-report/v2@latest
+    - go install github.com/swaggo/swag/cmd/swag@latest
+    - swag init --parseDependency --parseInternal --quiet
   artifacts:
     expire_in: 1 week
   rules:
