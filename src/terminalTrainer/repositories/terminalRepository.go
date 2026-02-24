@@ -122,28 +122,17 @@ func (r *terminalRepository) GetTerminalByUUID(terminalUUID string) (*models.Ter
 func (r *terminalRepository) GetTerminalSessionsByUserID(userID string, isActive bool) (*[]models.Terminal, error) {
 	var terminals []models.Terminal
 
-	query := r.db.Debug().Preload("UserTerminalKey").
+	query := r.db.Preload("UserTerminalKey").
 		Where("user_id = ?", userID)
 
 	if isActive {
 		query = query.Where("status = ?", "active")
 	}
 
-	utils.Debug("About to execute query for user %s (isActive=%v)", userID, isActive)
 	err := query.
 		Find(&terminals).Error
 	if err != nil {
 		return nil, err
-	}
-
-	// Debug logging pour voir ce qui est récupéré
-	utils.Debug("GetTerminalSessionsByUserID found %d sessions for user %s (isActive=%v)", len(terminals), userID, isActive)
-	for _, terminal := range terminals {
-		deletedAt := "nil"
-		if terminal.DeletedAt.Valid {
-			deletedAt = terminal.DeletedAt.Time.Format("2006-01-02 15:04:05")
-		}
-		utils.Debug("- Session %s: status=%s, deletedAt=%s", terminal.SessionID, terminal.Status, deletedAt)
 	}
 
 	return &terminals, nil
