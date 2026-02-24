@@ -1868,14 +1868,14 @@ func (tc *terminalController) DeleteAllUserHistory(ctx *gin.Context) {
 //	@Tags			terminal
 //	@Accept			json
 //	@Produce		json
-//	@Param			orgId	path	string	true	"Organization ID"
+//	@Param			id	path	string	true	"Organization ID"
 //	@Security		BearerAuth
 //	@Success		200	{object}	map[string]interface{}
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
-//	@Router			/organizations/{orgId}/terminal-sessions [get]
+//	@Router			/organizations/{id}/terminal-sessions [get]
 func (tc *terminalController) GetOrganizationTerminalSessions(ctx *gin.Context) {
-	orgIDStr := ctx.Param("orgId")
+	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{

@@ -81,7 +81,7 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	// Organization terminal sessions (for trainers/managers)
 	orgRoutes := router.Group("/organizations")
-	orgRoutes.GET("/:orgId/terminal-sessions", middleware.AuthManagement(), terminalController.GetOrganizationTerminalSessions)
+	orgRoutes.GET("/:id/terminal-sessions", middleware.AuthManagement(), terminalController.GetOrganizationTerminalSessions)
 }
 
 func UserTerminalKeyRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
