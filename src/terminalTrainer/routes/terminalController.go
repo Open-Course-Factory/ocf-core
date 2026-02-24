@@ -1398,7 +1398,7 @@ func (tc *terminalController) FixTerminalHidePermissions(ctx *gin.Context) {
 //	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
-//	@Param			groupId	path	string							true	"Group ID"
+//	@Param			id		path	string							true	"Group ID"
 //	@Param			request	body	dto.BulkCreateTerminalsRequest	true	"Bulk creation request"
 //	@Security		Bearer
 //	@Success		200	{object}	dto.BulkCreateTerminalsResponse	"Bulk creation results"
@@ -1406,9 +1406,9 @@ func (tc *terminalController) FixTerminalHidePermissions(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError					"Access denied"
 //	@Failure		404	{object}	errors.APIError					"Group not found"
 //	@Failure		500	{object}	errors.APIError					"Internal server error"
-//	@Router			/class-groups/{groupId}/bulk-create-terminals [post]
+//	@Router			/class-groups/{id}/bulk-create-terminals [post]
 func (tc *terminalController) BulkCreateTerminalsForGroup(ctx *gin.Context) {
-	groupID := ctx.Param("groupId")
+	groupID := ctx.Param("id")
 	requestingUserID := ctx.GetString("userId")
 
 	var request dto.BulkCreateTerminalsRequest
@@ -1925,7 +1925,7 @@ func (tc *terminalController) GetOrganizationTerminalSessions(ctx *gin.Context) 
 
 // GetGroupCommandHistory returns aggregated command history for all members of a group
 func (tc *terminalController) GetGroupCommandHistory(ctx *gin.Context) {
-	groupID := ctx.Param("groupId")
+	groupID := ctx.Param("id")
 	userID := ctx.GetString("userId")
 
 	// Parse query params
@@ -1995,7 +1995,7 @@ func (tc *terminalController) GetGroupCommandHistory(ctx *gin.Context) {
 
 // GetGroupCommandHistoryStats returns aggregate command history statistics for all members of a group
 func (tc *terminalController) GetGroupCommandHistoryStats(ctx *gin.Context) {
-	groupID := ctx.Param("groupId")
+	groupID := ctx.Param("id")
 	userID := ctx.GetString("userId")
 	includeStopped := ctx.Query("include_stopped") == "true"
 
