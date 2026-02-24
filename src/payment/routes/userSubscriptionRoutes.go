@@ -36,6 +36,9 @@ func UserSubscriptionRoutes(router *gin.RouterGroup, config *config.Configuratio
 	// Analytics (admin only)
 	routes.GET("/analytics", authMw.AuthManagement(), subscriptionController.GetSubscriptionAnalytics)
 
+	// Admin subscription assignment (admin only)
+	routes.POST("/admin-assign", authMw.AuthManagement(), subscriptionController.AdminAssignSubscription)
+
 	// Subscription synchronization (admin only)
 	routes.POST("/sync-existing", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.SyncExistingSubscriptions)
 	routes.POST("/users/:user_id/sync", authMw.AuthManagement(), verificationMw.RequireVerifiedEmail(), subscriptionController.SyncUserSubscriptions)

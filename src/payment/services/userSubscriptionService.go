@@ -58,6 +58,9 @@ type UserSubscriptionService interface {
 	// Plans
 	GetSubscriptionPlan(id uuid.UUID) (*models.SubscriptionPlan, error)
 	GetAllSubscriptionPlans(activeOnly bool) (*[]models.SubscriptionPlan, error)
+
+	// Admin operations
+	AdminAssignSubscription(userID string, planID uuid.UUID, durationDays int) (*models.UserSubscription, error)
 }
 
 // Types métiers pour les opérations complexes
@@ -590,4 +593,48 @@ func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptio
 		len(metrics), userID, subscriptionID)
 
 	return nil
+}
+
+// AdminAssignSubscription creates a subscription for a user without Stripe, assigned by an admin.
+func (ss *subscriptionService) AdminAssignSubscription(userID string, planID uuid.UUID, durationDays int) (*models.UserSubscription, error) {
+	// Get the plan to verify it exists
+	plan, err := ss.GetSubscriptionPlan(planID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid plan ID: %w", err)
+	}
+
+	if durationDays <= 0 {
+		durationDays = 365
+	}
+
+	now := time.Now()
+	subscription := &models.UserSubscription{
+		UserID:             userID,
+		SubscriptionPlanID: planID,
+		SubscriptionType:   "assigned",
+		Status:             "active",
+		CurrentPeriodStart: now,
+		CurrentPeriodEnd:   now.AddDate(0, 0, durationDays),
+	}
+
+	err = ss.repository.CreateUserSubscription(subscription)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create assigned subscription: %w", err)
+	}
+
+	// Initialize usage metrics
+	err = ss.InitializeUsageMetrics(userID, subscription.ID, planID)
+	if err != nil {
+		utils.Warn("Failed to initialize usage metrics for assigned subscription: %v", err)
+	}
+
+	// Update user role based on the new plan
+	err = ss.UpdateUserRoleBasedOnSubscription(userID)
+	if err != nil {
+		utils.Warn("Failed to update user role for assigned subscription: %v", err)
+	}
+
+	_ = plan // used for validation above
+
+	return ss.GetUserSubscriptionByID(subscription.ID)
 }
