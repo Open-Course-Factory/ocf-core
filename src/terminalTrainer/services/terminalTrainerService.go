@@ -287,6 +287,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	if sessionInput.ExternalRef != "" {
 		url += fmt.Sprintf("&external_ref=%s", neturl.QueryEscape(sessionInput.ExternalRef))
 	}
+	utils.Debug("StartSession - Full TT URL: %s", url)
 
 	// Parser la réponse du Terminal Trainer
 	var sessionResp dto.TerminalTrainerSessionResponse
@@ -381,6 +382,8 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 	if !ok {
 		return nil, fmt.Errorf("invalid subscription plan type")
 	}
+	utils.Debug("StartSessionWithPlan - Plan: %s (ID: %s), CommandHistoryRetentionDays: %d, RecordingConsent from input: %d",
+		plan.Name, plan.ID, plan.CommandHistoryRetentionDays, sessionInput.RecordingConsent)
 
 	// Valider la taille de la machine
 	if sessionInput.InstanceType != "" {
@@ -452,6 +455,8 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 	if plan.CommandHistoryRetentionDays == 0 {
 		sessionInput.RecordingConsent = 0
 	}
+	utils.Debug("StartSessionWithPlan - FINAL: HistoryRetentionDays=%d, RecordingConsent=%d",
+		sessionInput.HistoryRetentionDays, sessionInput.RecordingConsent)
 
 	// Appeler la méthode StartSession originale avec les paramètres validés
 	return tts.StartSession(userID, sessionInput)
@@ -1584,8 +1589,12 @@ func (tts *terminalTrainerService) validateBackendForOrg(orgID *uuid.UUID, reque
 	}
 
 	// If AllowedBackends is empty, only the default backend is allowed
+	// If no default is configured either, allow any backend (no restrictions)
 	if len(org.AllowedBackends) == 0 {
-		if effectiveDefault != "" && requestedBackend == effectiveDefault {
+		if effectiveDefault == "" {
+			return requestedBackend, nil
+		}
+		if requestedBackend == effectiveDefault {
 			return requestedBackend, nil
 		}
 		return "", fmt.Errorf("backend '%s' is not allowed for your organization (no backends configured, default only)",
