@@ -122,6 +122,7 @@ type UserSubscription struct {
 	CancelledAt             *time.Time       `json:"cancelled_at,omitempty"`
 	RenewalNotificationSent bool             `gorm:"default:false" json:"renewal_notification_sent"`
 	LastInvoiceID           *string          `gorm:"type:varchar(100)" json:"last_invoice_id,omitempty"`
+	AssignedByUserID        *string          `gorm:"type:varchar(100)" json:"assigned_by_user_id,omitempty"` // Admin who assigned this subscription
 }
 
 // Invoice représente une facture

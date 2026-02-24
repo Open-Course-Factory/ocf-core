@@ -183,8 +183,8 @@ func (m *mockSubscriptionService) GetAllSubscriptionPlans(activeOnly bool) (*[]m
 	return args.Get(0).(*[]models.SubscriptionPlan), args.Error(1)
 }
 
-func (m *mockSubscriptionService) AdminAssignSubscription(userID string, planID uuid.UUID, durationDays int) (*models.UserSubscription, error) {
-	args := m.Called(userID, planID, durationDays)
+func (m *mockSubscriptionService) AdminAssignSubscription(userID string, planID uuid.UUID, durationDays int, assignedByUserID string) (*models.UserSubscription, error) {
+	args := m.Called(userID, planID, durationDays, assignedByUserID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

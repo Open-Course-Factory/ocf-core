@@ -8,6 +8,8 @@ import (
 	"soli/formations/src/utils"
 	"strings"
 
+	auditModels "soli/formations/src/audit/models"
+	auditServices "soli/formations/src/audit/services"
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
 	"soli/formations/src/payment/dto"
@@ -1275,7 +1277,9 @@ func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) 
 		return
 	}
 
-	subscription, err := sc.subscriptionService.AdminAssignSubscription(input.UserID, input.PlanID, input.DurationDays)
+	adminUserID := ctx.GetString("userId")
+
+	subscription, err := sc.subscriptionService.AdminAssignSubscription(input.UserID, input.PlanID, input.DurationDays, adminUserID)
 	if err != nil {
 		utils.Error("Failed to admin-assign subscription: %v", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -1284,6 +1288,17 @@ func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) 
 		})
 		return
 	}
+
+	// Audit log for admin subscription assignment
+	auditSvc := auditServices.NewAuditService(sc.db)
+	auditSvc.LogBilling(ctx, auditModels.AuditEventLicenseAssigned, nil, &subscription.ID, "subscription",
+		nil, "", map[string]interface{}{
+			"admin_user_id": adminUserID,
+			"target_user_id": input.UserID,
+			"plan_id":        input.PlanID.String(),
+			"duration_days":  input.DurationDays,
+			"action":         "admin_assign_subscription",
+		})
 
 	subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
 	if err != nil {

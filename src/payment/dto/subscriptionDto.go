@@ -143,13 +143,16 @@ type UserSubscriptionOutput struct {
 	BatchOwnerEmail     *string    `json:"batch_owner_email,omitempty"`
 	AssignedAt          *time.Time `json:"assigned_at,omitempty"` // When the license was assigned
 	AssignedBy          *string    `json:"assigned_by,omitempty"` // ID of user who performed the assignment (if different from batch owner)
+
+	// Admin assignment tracking
+	AssignedByUserID *string `json:"assigned_by_user_id,omitempty"` // Admin who assigned this subscription
 }
 
 // Admin subscription assignment
 type AdminAssignSubscriptionInput struct {
 	UserID       string    `binding:"required" json:"user_id"`
 	PlanID       uuid.UUID `binding:"required" json:"plan_id"`
-	DurationDays int       `json:"duration_days"` // 0 = 365 days default
+	DurationDays int       `json:"duration_days" binding:"min=0,max=3650"` // 0 = default 365, max 10 years
 }
 
 // Invoice DTOs
