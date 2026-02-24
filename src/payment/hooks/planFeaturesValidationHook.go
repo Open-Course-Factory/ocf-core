@@ -47,12 +47,30 @@ func (h *PlanFeaturesValidationHook) GetPriority() int {
 }
 
 func (h *PlanFeaturesValidationHook) Execute(ctx *hooks.HookContext) error {
-	plan, ok := ctx.NewEntity.(*models.SubscriptionPlan)
-	if !ok {
-		return fmt.Errorf("expected SubscriptionPlan, got %T", ctx.NewEntity)
+	var featuresToValidate []string
+
+	switch v := ctx.NewEntity.(type) {
+	case *models.SubscriptionPlan:
+		featuresToValidate = v.Features
+	case map[string]any:
+		if f, ok := v["features"]; ok {
+			if features, ok := f.([]string); ok {
+				featuresToValidate = features
+			}
+			// Also handle []interface{} case (JSON unmarshaling)
+			if features, ok := f.([]interface{}); ok {
+				for _, feat := range features {
+					if s, ok := feat.(string); ok {
+						featuresToValidate = append(featuresToValidate, s)
+					}
+				}
+			}
+		}
+	default:
+		return nil // Not a recognized type, skip validation
 	}
 
-	if len(plan.Features) == 0 {
+	if len(featuresToValidate) == 0 {
 		return nil
 	}
 
@@ -80,7 +98,7 @@ func (h *PlanFeaturesValidationHook) Execute(ctx *hooks.HookContext) error {
 
 	// Validate each feature key
 	var invalidKeys []string
-	for _, featureKey := range plan.Features {
+	for _, featureKey := range featuresToValidate {
 		if !validKeys[featureKey] {
 			invalidKeys = append(invalidKeys, featureKey)
 		}
