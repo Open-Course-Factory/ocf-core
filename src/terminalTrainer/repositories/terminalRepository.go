@@ -126,7 +126,7 @@ func (r *terminalRepository) GetTerminalSessionsByUserID(userID string, isActive
 		Where("user_id = ?", userID)
 
 	if isActive {
-		query.Where("status = ?", "active")
+		query = query.Where("status = ?", "active")
 	}
 
 	utils.Debug("About to execute query for user %s (isActive=%v)", userID, isActive)
