@@ -1,6 +1,9 @@
+//go:build integration
+
 // tests/entityManagement/postgres_simple_test.go
 // PostgreSQL-specific tests for relationship filtering
-// These tests require PostgreSQL and are skipped if not available
+// These tests require PostgreSQL and are opt-in via: go test -tags integration
+// They validate GORM driver behavior, not application logic.
 
 package entityManagement_tests
 

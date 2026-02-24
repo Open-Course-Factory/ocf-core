@@ -18,36 +18,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
-
-// setupFreeTrialTestDB creates an isolated in-memory SQLite database for testing
-// This ensures complete isolation from dev/prod databases
-func setupFreeTrialTestDB(t *testing.T) *gorm.DB {
-	// Use a random UUID for each test to ensure complete isolation
-	// This prevents any possibility of database reuse across test runs
-	dbName := "file::memory:" + uuid.New().String() + "?cache=shared"
-	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
-	require.NoError(t, err, "Failed to create in-memory test database")
-
-	return db
-}
 
 // TestMultipleFreeSubscriptions_NoUniqueConstraintViolation verifies that
 // multiple free subscriptions can be created without violating unique constraints
 // This is a regression test for the bug where empty StripeSubscriptionID caused duplicates
 func TestMultipleFreeSubscriptions_NoUniqueConstraintViolation(t *testing.T) {
-	// Setup test database
-	db := setupFreeTrialTestDB(t)
-
-	// Run migrations
-	err := db.AutoMigrate(
-		&models.SubscriptionPlan{},
-		&models.UserSubscription{},
-		&models.UsageMetrics{},
-	)
-	require.NoError(t, err, "Failed to migrate test database")
+	db := freshTestDB(t)
 
 	// Create a free trial plan
 	trialPlan := &models.SubscriptionPlan{
@@ -61,7 +38,7 @@ func TestMultipleFreeSubscriptions_NoUniqueConstraintViolation(t *testing.T) {
 		MaxConcurrentTerminals: 1,
 		IsActive:               true,
 	}
-	err = db.Create(trialPlan).Error
+	err := db.Create(trialPlan).Error
 	require.NoError(t, err, "Failed to create trial plan")
 
 	// Clean up
@@ -120,15 +97,7 @@ func TestMultipleFreeSubscriptions_NoUniqueConstraintViolation(t *testing.T) {
 // TestPaidSubscriptions_UniqueConstraintEnforced verifies that
 // paid subscriptions with the same StripeSubscriptionID cannot be created
 func TestPaidSubscriptions_UniqueConstraintEnforced(t *testing.T) {
-	// Setup test database
-	db := setupFreeTrialTestDB(t)
-
-	// Run migrations
-	err := db.AutoMigrate(
-		&models.SubscriptionPlan{},
-		&models.UserSubscription{},
-	)
-	require.NoError(t, err, "Failed to migrate test database")
+	db := freshTestDB(t)
 
 	// Create a paid plan
 	paidPlan := &models.SubscriptionPlan{
@@ -142,7 +111,7 @@ func TestPaidSubscriptions_UniqueConstraintEnforced(t *testing.T) {
 		MaxConcurrentTerminals: 5,
 		IsActive:               true,
 	}
-	err = db.Create(paidPlan).Error
+	err := db.Create(paidPlan).Error
 	require.NoError(t, err, "Failed to create paid plan")
 
 	// Clean up
@@ -253,16 +222,7 @@ func TestPaidSubscriptions_UniqueConstraintEnforced(t *testing.T) {
 // TestFreeTrialCreation_E2E is an end-to-end test that simulates
 // the complete user registration flow with free trial assignment
 func TestFreeTrialCreation_E2E(t *testing.T) {
-	// Setup test database
-	db := setupFreeTrialTestDB(t)
-
-	// Run migrations
-	err := db.AutoMigrate(
-		&models.SubscriptionPlan{},
-		&models.UserSubscription{},
-		&models.UsageMetrics{},
-	)
-	require.NoError(t, err, "Failed to migrate test database")
+	db := freshTestDB(t)
 
 	// Create a free trial plan (mimicking production setup)
 	trialPlan := &models.SubscriptionPlan{
@@ -278,7 +238,7 @@ func TestFreeTrialCreation_E2E(t *testing.T) {
 		MaxConcurrentUsers:     1,
 		IsActive:               true,
 	}
-	err = db.Create(trialPlan).Error
+	err := db.Create(trialPlan).Error
 	require.NoError(t, err, "Failed to create trial plan")
 
 	// Clean up
@@ -339,12 +299,7 @@ func TestFreeTrialCreation_E2E(t *testing.T) {
 
 // TestDatabaseConstraints_DirectQuery verifies the database-level constraints
 func TestDatabaseConstraints_DirectQuery(t *testing.T) {
-	// Setup test database
-	db := setupFreeTrialTestDB(t)
-
-	// Run migrations
-	err := db.AutoMigrate(&models.UserSubscription{})
-	require.NoError(t, err, "Failed to migrate test database")
+	db := freshTestDB(t)
 
 	t.Run("Verify conditional unique index exists", func(t *testing.T) {
 		// Query PostgreSQL to verify the index exists and is conditional

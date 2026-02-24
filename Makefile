@@ -23,12 +23,12 @@ help:
 # Tests complets
 test:
 	@echo "🧪 Lancement de tous les tests..."
-	go test -v ./tests/... -race -timeout=30s
+	go test -v ./tests/... ./src/... -race -timeout=120s
 
 # Tests unitaires uniquement
 test-unit:
-	@echo "🔬 Lancement des tests unitaires de l'Entity Manager..."
-	go test -v ./tests/entityManagement/... -race -timeout=30s -short
+	@echo "🔬 Lancement des tests unitaires..."
+	go test -v ./tests/... ./src/... -race -timeout=120s -short
 
 # Tests d'intégration
 test-integration:

@@ -60,25 +60,8 @@ stages:
     - if: $CI_PIPELINE_SOURCE == "web"  # Manual trigger
   needs: []  # Run in parallel with other test jobs
 
-.postgres_test_base:
-  extends: .test_job_base
-  services:
-    - postgres
-  variables:
-    POSTGRES_DB: ocf_test
-    POSTGRES_USER: postgres
-    POSTGRES_PASSWORD: "postgrespass"
-  before_script:
-    - export GOPATH=$CI_PROJECT_DIR/.go
-    - export PATH=$PATH:$GOPATH/bin
-    # Install PostgreSQL client for health checks
-    - apt-get update -qq && apt-get install -y -qq postgresql-client
-    # Wait for PostgreSQL to be ready
-    - chmod +x scripts/ci/wait-for-postgres.sh
-    - ./scripts/ci/wait-for-postgres.sh
-    # Install Go dependencies
-    - go mod download
-    - go install github.com/jstemmer/go-junit-report/v2@latest
+# NOTE: .postgres_test_base removed — unit tests use in-memory SQLite.
+# PostgreSQL is only needed for integration tests (test:auth job with Docker-in-Docker).
 
 # ============================================================================
 # Release Component
@@ -113,27 +96,15 @@ include:
 # Test Stage
 # ============================================================================
 
-# Tests core entity management system with both SQLite and PostgreSQL
-# Includes: generic repository tests, entity registration, security, integration tests
-test:entity-management:
-  extends: .postgres_test_base
+# All unit tests in a single job: race detection + coverage
+# Runs every test in tests/ and src/ except those behind //go:build integration
+# No external services required (uses in-memory SQLite)
+test:unit:
+  extends: .test_job_base
   script:
-    # Compile tests once
-    - echo "📦 Compiling tests..."
-    - go test -c -o entity_tests.exe ./tests/entityManagement
-
-    # Run SQLite-based tests
-    - echo "🧪 Running SQLite-based tests..."
-    - ./entity_tests.exe -test.v -test.timeout=60s -test.run "TestGeneric|TestEntityRegistration|TestTypedOps|TestRegisterTypedEntity|TestSecurity|TestIntegration" 2>&1 | tee sqlite_tests.log
-
-    # Run PostgreSQL-specific tests
-    - echo "🐘 Running PostgreSQL-specific tests..."
-    - ./entity_tests.exe -test.v -test.timeout=60s -test.run "TestPostgres" 2>&1 | tee postgres_tests.log
-
-    # Generate coverage and test reports
-    - echo "📊 Generating coverage and test reports..."
-    - go test -v -coverprofile=coverage.out ./tests/entityManagement -timeout=90s 2>&1 | tee full_tests.log
-    - cat full_tests.log | go-junit-report -set-exit-code > report.xml
+    - echo "🧪 Running all unit tests with race detection and coverage..."
+    - go test -v -race -coverprofile=coverage.out -timeout=120s ./tests/... ./src/... 2>&1 | tee tests.log
+    - cat tests.log | go-junit-report -set-exit-code > report.xml
 
   coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
 
@@ -146,66 +117,13 @@ test:entity-management:
     paths:
       - coverage.out
       - report.xml
-      - sqlite_tests.log
-      - postgres_tests.log
-      - full_tests.log
-    expire_in: 1 week
-
-# Tests course generation and management functionality
-test:courses:
-  extends: .test_job_base
-  script:
-    - echo "📚 Running course tests..."
-    - go test -v -timeout=60s ./tests/courses/... 2>&1 | tee courses_tests.log
-    - cat courses_tests.log | go-junit-report -set-exit-code > courses_report.xml
-
-  artifacts:
-    reports:
-      junit: courses_report.xml
-    paths:
-      - courses_report.xml
-      - courses_tests.log
-    expire_in: 1 week
-
-# Quick validation tests (no PostgreSQL required)
-# Runs a subset of tests marked with -test.short flag for fast feedback
-test:quick:
-  extends: .test_job_base
-  script:
-    - echo "⚡ Running quick tests..."
-    - go test -c -o entity_tests.exe ./tests/entityManagement
-    - ./entity_tests.exe -test.v -test.short -test.timeout=30s 2>&1 | tee quick_tests.log
-    - cat quick_tests.log | go-junit-report -set-exit-code > quick_report.xml
-
-  artifacts:
-    reports:
-      junit: quick_report.xml
-    paths:
-      - quick_report.xml
-      - quick_tests.log
-    expire_in: 1 week
-
-# Race condition detector
-# Compiles and runs tests with Go's race detector to catch concurrency issues
-test:race:
-  extends: .postgres_test_base
-  script:
-    - echo "🏁 Running race detector..."
-    - go test -c -race -o entity_tests_race.exe ./tests/entityManagement
-    - ./entity_tests_race.exe -test.v -test.timeout=120s 2>&1 | tee race_tests.log
-    - cat race_tests.log | go-junit-report -set-exit-code > race_report.xml
-
-  artifacts:
-    reports:
-      junit: race_report.xml
-    paths:
-      - race_report.xml
-      - race_tests.log
+      - tests.log
     expire_in: 1 week
 
 # Integration tests for Casdoor authentication flow
 # Requires: PostgreSQL (app DB), MySQL (Casdoor DB), Casdoor service
 # Uses Docker-in-Docker to run all services in isolated network
+# Only runs tests with //go:build integration tag
 test:auth:
   stage: test
   # Note: Using custom image would be more efficient, but using base for now
@@ -327,7 +245,7 @@ test:auth:
         -e POSTGRES_SSLMODE=$POSTGRES_SSLMODE \
         -e CASDOOR_ENDPOINT=$CASDOOR_ENDPOINT \
         golang:1.24.1 \
-        sh -c "go test -v -timeout=120s ./tests/auth/... 2>&1 | tee auth_tests.log"
+        sh -c "go test -v -tags integration -timeout=120s ./tests/auth/... 2>&1 | tee auth_tests.log"
     - cat auth_tests.log | go-junit-report -set-exit-code > auth_report.xml
 
   after_script:

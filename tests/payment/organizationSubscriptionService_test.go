@@ -12,29 +12,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
-
-// setupTestDB creates an in-memory SQLite database for testing
-func setupTestDB(t *testing.T) *gorm.DB {
-	// Use a random UUID for each test to ensure complete isolation
-	// This prevents any possibility of database reuse across test runs
-	dbName := "file::memory:" + uuid.New().String() + "?cache=shared"
-	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
-	assert.NoError(t, err)
-
-	// Auto-migrate all required tables
-	err = db.AutoMigrate(
-		&models.SubscriptionPlan{},
-		&models.OrganizationSubscription{},
-		&organizationModels.Organization{},
-		&organizationModels.OrganizationMember{},
-	)
-	assert.NoError(t, err)
-
-	return db
-}
 
 // seedTestData creates test data for organization subscription tests
 func seedTestData(t *testing.T, db *gorm.DB) (
@@ -127,7 +106,7 @@ func seedTestData(t *testing.T, db *gorm.DB) (
 
 func TestOrganizationSubscriptionService_CreateFreePlan(t *testing.T) {
 	t.Run("Create free organization subscription", func(t *testing.T) {
-		db := setupTestDB(t)
+		db := freshTestDB(t)
 		freePlan, _, org1, _, userID := seedTestData(t, db)
 		service := services.NewOrganizationSubscriptionService(db)
 
@@ -146,7 +125,7 @@ func TestOrganizationSubscriptionService_CreateFreePlan(t *testing.T) {
 	})
 
 	t.Run("Create paid organization subscription", func(t *testing.T) {
-		db := setupTestDB(t)
+		db := freshTestDB(t)
 		_, proPlan, org2, _, userID := seedTestData(t, db)
 		service := services.NewOrganizationSubscriptionService(db)
 
@@ -158,7 +137,7 @@ func TestOrganizationSubscriptionService_CreateFreePlan(t *testing.T) {
 	})
 
 	t.Run("Create subscription for non-existent organization", func(t *testing.T) {
-		db := setupTestDB(t)
+		db := freshTestDB(t)
 		freePlan, _, _, _, userID := seedTestData(t, db)
 		service := services.NewOrganizationSubscriptionService(db)
 
@@ -172,7 +151,7 @@ func TestOrganizationSubscriptionService_CreateFreePlan(t *testing.T) {
 	})
 
 	t.Run("Create subscription with invalid plan", func(t *testing.T) {
-		db := setupTestDB(t)
+		db := freshTestDB(t)
 		_, _, org1, _, userID := seedTestData(t, db)
 		service := services.NewOrganizationSubscriptionService(db)
 
@@ -187,7 +166,7 @@ func TestOrganizationSubscriptionService_CreateFreePlan(t *testing.T) {
 }
 
 func TestOrganizationSubscriptionService_GetSubscription(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	freePlan, _, org1, _, userID := seedTestData(t, db)
 	service := services.NewOrganizationSubscriptionService(db)
 
@@ -223,7 +202,7 @@ func TestOrganizationSubscriptionService_GetSubscription(t *testing.T) {
 }
 
 func TestOrganizationSubscriptionService_UpdateSubscription(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	freePlan, proPlan, org1, _, userID := seedTestData(t, db)
 	service := services.NewOrganizationSubscriptionService(db)
 
@@ -251,7 +230,7 @@ func TestOrganizationSubscriptionService_UpdateSubscription(t *testing.T) {
 }
 
 func TestOrganizationSubscriptionService_CancelSubscription(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	freePlan, _, org1, _, userID := seedTestData(t, db)
 	service := services.NewOrganizationSubscriptionService(db)
 
@@ -274,7 +253,7 @@ func TestOrganizationSubscriptionService_CancelSubscription(t *testing.T) {
 
 	t.Run("Cancel subscription immediately", func(t *testing.T) {
 		// Create new org and subscription for this test
-		db2 := setupTestDB(t)
+		db2 := freshTestDB(t)
 		_, _, org2, _, userID2 := seedTestData(t, db2)
 		service2 := services.NewOrganizationSubscriptionService(db2)
 
@@ -302,7 +281,7 @@ func TestOrganizationSubscriptionService_CancelSubscription(t *testing.T) {
 }
 
 func TestOrganizationSubscriptionService_FeatureAccess(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	freePlan, _, org1, _, userID := seedTestData(t, db)
 	service := services.NewOrganizationSubscriptionService(db)
 
@@ -345,7 +324,7 @@ func TestOrganizationSubscriptionService_FeatureAccess(t *testing.T) {
 }
 
 func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	freePlan, _, org1, org2, userID := seedTestData(t, db)
 	service := services.NewOrganizationSubscriptionService(db)
 
@@ -432,7 +411,7 @@ func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
 }
 
 func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	service := services.NewOrganizationSubscriptionService(db)
 	userID := "multi_org_user"
 
