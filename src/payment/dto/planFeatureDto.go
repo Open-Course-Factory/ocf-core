@@ -7,14 +7,14 @@ import (
 )
 
 type CreatePlanFeatureInput struct {
-	Key           string `binding:"required" json:"key" mapstructure:"key"`
+	Key           string `binding:"required,max=100" json:"key" mapstructure:"key"`
 	DisplayNameEn string `binding:"required" json:"display_name_en" mapstructure:"display_name_en"`
 	DisplayNameFr string `binding:"required" json:"display_name_fr" mapstructure:"display_name_fr"`
 	Description   string `json:"description" mapstructure:"description"`
-	Category      string `binding:"required" json:"category" mapstructure:"category"`
-	ValueType     string `json:"value_type" mapstructure:"value_type"`
+	Category      string `binding:"required,oneof=capabilities machine_sizes terminal_limits course_limits" json:"category" mapstructure:"category"`
+	ValueType     string `json:"value_type" binding:"omitempty,oneof=boolean number string" mapstructure:"value_type"`
 	Unit          string `json:"unit" mapstructure:"unit"`
-	DefaultValue  string `json:"default_value" mapstructure:"default_value"`
+	DefaultValue  string `json:"default_value" binding:"max=100" mapstructure:"default_value"`
 	IsActive      *bool  `json:"is_active" mapstructure:"is_active"`
 }
 
