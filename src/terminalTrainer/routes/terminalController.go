@@ -1014,13 +1014,14 @@ func (tc *terminalController) ShareTerminal(ctx *gin.Context) {
 		return
 	}
 
-	// Support both user and group sharing
-	var sharedWithUserID string
-	if request.SharedWithUserID != nil {
-		sharedWithUserID = *request.SharedWithUserID
+	// Route to the appropriate sharing method
+	var err error
+	if hasGroup && !hasUser {
+		err = tc.service.ShareTerminalWithGroup(terminalID, userId, *request.SharedWithGroupID, request.AccessLevel, request.ExpiresAt)
+	} else {
+		err = tc.service.ShareTerminal(terminalID, userId, *request.SharedWithUserID, request.AccessLevel, request.ExpiresAt)
 	}
 
-	err := tc.service.ShareTerminal(terminalID, userId, sharedWithUserID, request.AccessLevel, request.ExpiresAt)
 	if err != nil {
 		if err.Error() == "terminal not found" {
 			ctx.JSON(http.StatusNotFound, &errors.APIError{
