@@ -106,6 +106,9 @@ func AutoMigrateAll(db *gorm.DB) {
 
 	// Audit logging entities (compliance & security)
 	db.AutoMigrate(&auditModels.AuditLog{})
+
+	// Seed default data (idempotent - safe for all environments)
+	SeedPlanFeatures(db)
 }
 
 // InitDevelopmentData sets up development data in debug mode
