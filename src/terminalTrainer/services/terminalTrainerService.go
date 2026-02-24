@@ -2132,9 +2132,12 @@ func (tts *terminalTrainerService) GetGroupCommandHistory(groupID string, userID
 		}
 	}
 
-	// Fetch terminals for all members
+	// Fetch terminals for all members, scoped to group's organization
 	var terminals []models.Terminal
 	query := tts.db.Where("user_id IN ?", memberUserIDs)
+	if group.OrganizationID != nil {
+		query = query.Where("organization_id = ?", *group.OrganizationID)
+	}
 	if !includeStopped {
 		query = query.Where("status = ?", "active")
 	}
@@ -2319,9 +2322,12 @@ func (tts *terminalTrainerService) GetGroupCommandHistoryStats(groupID string, u
 		}
 	}
 
-	// Fetch terminals for all members
+	// Fetch terminals for all members, scoped to group's organization
 	var terminals []models.Terminal
 	query := tts.db.Where("user_id IN ?", memberUserIDs)
+	if group.OrganizationID != nil {
+		query = query.Where("organization_id = ?", *group.OrganizationID)
+	}
 	if !includeStopped {
 		query = query.Where("status = ?", "active")
 	}
