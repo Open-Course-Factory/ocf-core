@@ -63,6 +63,9 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.GET("/:id/history", middleware.AuthManagement(), terminalController.GetSessionHistory)
 	routes.DELETE("/:id/history", middleware.AuthManagement(), terminalController.DeleteSessionHistory)
 
+	// Consent status (checks org/group-level consent policy)
+	routes.GET("/consent-status", middleware.AuthManagement(), terminalController.GetConsentStatus)
+
 	// Configuration (no terminal-specific access needed)
 	routes.GET("/instance-types", middleware.AuthManagement(), terminalController.GetInstanceTypes)
 	routes.GET("/metrics", middleware.AuthManagement(), terminalController.GetServerMetrics)

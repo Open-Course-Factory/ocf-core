@@ -92,6 +92,9 @@ type TerminalController interface {
 
 	// Group command history stats
 	GetGroupCommandHistoryStats(ctx *gin.Context)
+
+	// Consent status
+	GetConsentStatus(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -1704,8 +1707,7 @@ func (tc *terminalController) isSessionOwnerOrAdmin(ctx *gin.Context, terminal *
 func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
 
-	// Command history is restricted to session owner or admin — shared users
-	// should not access it because the recording consent was given by the owner only.
+	// Command history is accessible to session owner, admin, or any user with shared access to the terminal.
 	terminal, err := tc.service.GetSessionInfo(sessionID)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
@@ -1715,11 +1717,16 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 		return
 	}
 	if !tc.isSessionOwnerOrAdmin(ctx, terminal) {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Only session owner or admin can access command history",
-		})
-		return
+		// Check if the user has shared access (any level, including read)
+		userId := ctx.GetString("userId")
+		hasSharedAccess, accessErr := tc.service.HasTerminalAccess(sessionID, userId, models.AccessLevelRead)
+		if accessErr != nil || !hasSharedAccess {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Only session owner, admin, or shared users can access command history",
+			})
+			return
+		}
 	}
 
 	var since *int64
@@ -2016,4 +2023,23 @@ func (tc *terminalController) GetGroupCommandHistoryStats(ctx *gin.Context) {
 	}
 
 	ctx.Data(http.StatusOK, contentType, body)
+}
+
+// GetConsentStatus returns whether the current user's recording consent is handled
+// at the organization or group level (i.e., enrollment contract covers it).
+func (tc *terminalController) GetConsentStatus(ctx *gin.Context) {
+	userID := ctx.GetString("userId")
+
+	consentHandled, source, err := tc.service.GetUserConsentStatus(userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check consent status",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"consent_handled": consentHandled,
+		"source":          source,
+	})
 }

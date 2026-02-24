@@ -33,6 +33,10 @@ type Organization struct {
 	// Metadata for custom fields (billing info, settings, etc.)
 	Metadata map[string]any `gorm:"type:jsonb" json:"metadata,omitempty"`
 
+	// Recording consent policy: when true, the enrollment contract covers recording consent
+	// so the per-session consent dialog is skipped for members of this organization.
+	RecordingConsentHandled bool `gorm:"default:false" json:"recording_consent_handled"`
+
 	// Terminal backend assignment (admin-managed, independent of subscription plan)
 	AllowedBackends []string `gorm:"serializer:json" json:"allowed_backends"`            // Backend IDs allowed (empty = all)
 	DefaultBackend  string   `gorm:"type:varchar(255);default:''" json:"default_backend"` // Default backend for this org

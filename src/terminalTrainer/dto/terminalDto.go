@@ -453,6 +453,7 @@ type BulkCreateTerminalsRequest struct {
 	Backend          string `json:"backend,omitempty"`
 	OrganizationID   string `json:"organization_id,omitempty"`
 	RecordingConsent int    `json:"recording_consent,omitempty"`
+	ExternalRef      string `json:"external_ref,omitempty"` // Optional exercise/training session reference
 }
 
 // BulkCreateTerminalsResponse response for bulk terminal creation

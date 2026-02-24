@@ -107,6 +107,9 @@ type TerminalTrainerService interface {
 	// Group command history stats
 	GetGroupCommandHistoryStats(groupID string, userID string, includeStopped bool) ([]byte, string, error)
 
+	// Consent status
+	GetUserConsentStatus(userID string) (consentHandled bool, source string, err error)
+
 	// Authorization helpers
 	IsUserAuthorizedForSession(userID string, terminal *models.Terminal, isAdmin bool) bool
 	IsUserOrgManagerOrAdmin(userID string, orgID uuid.UUID, isAdmin bool) bool
@@ -1776,6 +1779,7 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 			Backend:          request.Backend,
 			OrganizationID:   request.OrganizationID,
 			RecordingConsent: request.RecordingConsent,
+			ExternalRef:      request.ExternalRef,
 		}
 
 		// Apply retention days from plan (defense-in-depth: StartSessionWithPlan
@@ -2483,4 +2487,53 @@ func (tts *terminalTrainerService) IsUserOrgManagerOrAdmin(userID string, orgID 
 		}
 	}
 	return false
+}
+
+// GetUserConsentStatus checks if recording consent is handled at the org or group level
+// for a given user. Returns consentHandled=true if any org or group the user belongs to
+// has recording_consent_handled set. The source indicates "organization" or "group".
+func (tts *terminalTrainerService) GetUserConsentStatus(userID string) (bool, string, error) {
+	// Check organizations: find orgs where user is an active member with consent handled
+	var orgMembers []orgModels.OrganizationMember
+	if err := tts.db.Where("user_id = ? AND is_active = ?", userID, true).Find(&orgMembers).Error; err != nil {
+		return false, "", fmt.Errorf("failed to check organization membership: %w", err)
+	}
+
+	for _, member := range orgMembers {
+		var org orgModels.Organization
+		if err := tts.db.Where("id = ? AND is_active = ?", member.OrganizationID, true).First(&org).Error; err != nil {
+			continue
+		}
+		if org.RecordingConsentHandled {
+			return true, "organization", nil
+		}
+	}
+
+	// Check groups: find groups where user is an active member
+	var groupMembers []groupModels.GroupMember
+	if err := tts.db.Where("user_id = ? AND is_active = ?", userID, true).Find(&groupMembers).Error; err != nil {
+		return false, "", fmt.Errorf("failed to check group membership: %w", err)
+	}
+
+	for _, member := range groupMembers {
+		var group groupModels.ClassGroup
+		if err := tts.db.Where("id = ? AND is_active = ?", member.GroupID, true).First(&group).Error; err != nil {
+			continue
+		}
+		// Group-level override: explicit true means consent handled
+		if group.RecordingConsentHandled != nil && *group.RecordingConsentHandled {
+			return true, "group", nil
+		}
+		// Group inherits from org if nil and org has consent handled
+		if group.RecordingConsentHandled == nil && group.OrganizationID != nil {
+			var org orgModels.Organization
+			if err := tts.db.Where("id = ? AND is_active = ?", *group.OrganizationID, true).First(&org).Error; err == nil {
+				if org.RecordingConsentHandled {
+					return true, "organization", nil
+				}
+			}
+		}
+	}
+
+	return false, "", nil
 }
