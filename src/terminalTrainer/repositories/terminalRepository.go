@@ -348,10 +348,13 @@ func (r *terminalRepository) UpdateTerminalShare(share *models.TerminalShare) er
 func (r *terminalRepository) GetSharedTerminalsForUser(userID string) (*[]models.Terminal, error) {
 	var terminals []models.Terminal
 
-	// Récupérer tous les terminaux partagés avec cet utilisateur
+	// Include terminals shared directly with the user OR shared with a group the user belongs to
 	err := r.db.Joins("JOIN terminal_shares ON terminals.id = terminal_shares.terminal_id").
+		Joins("LEFT JOIN group_members ON terminal_shares.shared_with_group_id = group_members.group_id AND group_members.user_id = ? AND group_members.is_active = ?", userID, true).
 		Preload("UserTerminalKey").
-		Where("terminal_shares.shared_with_user_id = ? AND terminal_shares.is_active = ? AND terminals.status = ?", userID, true, "active").
+		Where("terminal_shares.is_active = ? AND terminals.status = ?", true, "active").
+		Where("(terminal_shares.shared_with_user_id = ? OR group_members.id IS NOT NULL)", userID).
+		Distinct().
 		Find(&terminals).Error
 
 	if err != nil {
@@ -383,10 +386,29 @@ func (r *terminalRepository) HasTerminalAccess(terminalID, userID string, requir
 		}
 	}
 
+	// Check direct user share
 	err = r.db.Model(&models.TerminalShare{}).
 		Where("terminal_id = ? AND shared_with_user_id = ? AND is_active = ? AND access_level IN ?",
 			terminalUUID, userID, true, allowedLevels).
 		Where("(expires_at IS NULL OR expires_at > ?)", time.Now()).
+		Count(&count).Error
+
+	if err != nil {
+		return false, err
+	}
+
+	if count > 0 {
+		return true, nil
+	}
+
+	// Check group-based share: user belongs to a group that has a share on this terminal
+	err = r.db.Model(&models.TerminalShare{}).
+		Joins("JOIN group_members ON terminal_shares.shared_with_group_id = group_members.group_id").
+		Where("terminal_shares.terminal_id = ? AND group_members.user_id = ? AND group_members.is_active = ?",
+			terminalUUID, userID, true).
+		Where("terminal_shares.is_active = ? AND terminal_shares.access_level IN ?",
+			true, allowedLevels).
+		Where("(terminal_shares.expires_at IS NULL OR terminal_shares.expires_at > ?)", time.Now()).
 		Count(&count).Error
 
 	if err != nil {
@@ -399,15 +421,18 @@ func (r *terminalRepository) HasTerminalAccess(terminalID, userID string, requir
 func (r *terminalRepository) GetSharedTerminalsForUserWithHidden(userID string, includeHidden bool) (*[]models.Terminal, error) {
 	var terminals []models.Terminal
 
+	// Include terminals shared directly with the user OR shared with a group the user belongs to
 	query := r.db.Joins("JOIN terminal_shares ON terminals.id = terminal_shares.terminal_id").
+		Joins("LEFT JOIN group_members ON terminal_shares.shared_with_group_id = group_members.group_id AND group_members.user_id = ? AND group_members.is_active = ?", userID, true).
 		Preload("UserTerminalKey").
-		Where("terminal_shares.shared_with_user_id = ? AND terminal_shares.is_active = ?", userID, true)
+		Where("terminal_shares.is_active = ?", true).
+		Where("(terminal_shares.shared_with_user_id = ? OR group_members.id IS NOT NULL)", userID)
 
 	if !includeHidden {
 		query = query.Where("terminal_shares.is_hidden_by_recipient = ?", false)
 	}
 
-	err := query.Find(&terminals).Error
+	err := query.Distinct().Find(&terminals).Error
 	if err != nil {
 		return nil, err
 	}

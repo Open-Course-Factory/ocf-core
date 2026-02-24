@@ -9,6 +9,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/terminalTrainer/models"
 )
 
@@ -17,8 +18,8 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	// Auto migrate the models
-	err = db.AutoMigrate(&models.UserTerminalKey{}, &models.Terminal{}, &models.TerminalShare{})
+	// Auto migrate the models (group_members is needed because HasTerminalAccess checks group membership)
+	err = db.AutoMigrate(&models.UserTerminalKey{}, &models.Terminal{}, &models.TerminalShare{}, &groupModels.GroupMember{})
 	require.NoError(t, err)
 
 	return db
@@ -94,3 +95,18 @@ func createTestTerminalShare(db *gorm.DB, terminalID uuid.UUID, sharedByUserID, 
 	err := db.Create(share).Error
 	return share, err
 }
+
+// createTestGroupShare creates a test terminal share with a group
+func createTestGroupShare(db *gorm.DB, terminalID uuid.UUID, sharedByUserID string, groupID uuid.UUID, accessLevel string) (*models.TerminalShare, error) {
+	share := &models.TerminalShare{
+		TerminalID:          terminalID,
+		SharedWithGroupID:   &groupID,
+		SharedByUserID:      sharedByUserID,
+		AccessLevel:         accessLevel,
+		IsActive:            true,
+		IsHiddenByRecipient: false,
+	}
+	err := db.Create(share).Error
+	return share, err
+}
+
