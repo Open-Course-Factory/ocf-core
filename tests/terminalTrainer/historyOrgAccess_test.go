@@ -13,9 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/terminalTrainer/models"
 	terminalController "soli/formations/src/terminalTrainer/routes"
+	terminalServices "soli/formations/src/terminalTrainer/services"
 )
 
 // setupTestDBWithOrgs creates an in-memory SQLite database with terminal and organization tables
@@ -326,4 +328,156 @@ func TestIsSessionOwnerOrOrgManager_SessionWithoutOrg(t *testing.T) {
 	// Should be DENIED - no org link means owner/admin only
 	assert.Equal(t, http.StatusForbidden, w.Code,
 		"Org manager should NOT be able to access a session that has no organization association")
+}
+
+// setupTestDBWithGroups creates an in-memory SQLite database with terminal,
+// organization, and group tables for group command history tests.
+func setupTestDBWithGroups(t *testing.T) *gorm.DB {
+	t.Helper()
+	db := setupTestDBWithOrgs(t)
+
+	// Also migrate group models needed for group command history tests
+	err := db.AutoMigrate(&groupModels.ClassGroup{}, &groupModels.GroupMember{})
+	require.NoError(t, err)
+
+	return db
+}
+
+// createTestGroupForHistory creates a test group under an organization for history access tests.
+func createTestGroupForHistory(t *testing.T, db *gorm.DB, ownerUserID string, orgID *uuid.UUID) *groupModels.ClassGroup {
+	t.Helper()
+	group := &groupModels.ClassGroup{
+		Name:           "test-group-" + uuid.New().String()[:8],
+		DisplayName:    "Test Group",
+		OwnerUserID:    ownerUserID,
+		OrganizationID: orgID,
+		MaxMembers:     50,
+		IsActive:       true,
+	}
+	err := db.Omit("Metadata").Create(group).Error
+	require.NoError(t, err)
+
+	return group
+}
+
+// createTestGroupMember creates a member within a group with a given role.
+func createTestGroupMember(t *testing.T, db *gorm.DB, groupID uuid.UUID, userID string, role groupModels.GroupMemberRole) *groupModels.GroupMember {
+	t.Helper()
+	member := &groupModels.GroupMember{
+		GroupID:  groupID,
+		UserID:   userID,
+		Role:     role,
+		JoinedAt: time.Now(),
+		IsActive: true,
+	}
+	err := db.Omit("Metadata").Create(member).Error
+	require.NoError(t, err)
+
+	return member
+}
+
+// TestGetGroupCommandHistory_ScopedToOrganization verifies that GetGroupCommandHistory
+// only returns terminals scoped to the group's organization. A student who has terminals
+// in a different organization (or with no org) should NOT have those terminals exposed
+// through the group command history.
+//
+// BUG C3: Without the fix, the terminal query fetches ALL terminals for member user IDs
+// without scoping to the group's organization, leaking personal terminal histories.
+func TestGetGroupCommandHistory_ScopedToOrganization(t *testing.T) {
+	db := setupTestDBWithGroups(t)
+
+	// Create two organizations
+	orgA := createTestOrgForHistory(t, db, "org-owner-a")
+	orgB := createTestOrgForHistory(t, db, "org-owner-b")
+
+	// Create a group under org A with trainer1 as owner and student1 as member
+	group := createTestGroupForHistory(t, db, "trainer1", &orgA.ID)
+	createTestGroupMember(t, db, group.ID, "trainer1", groupModels.GroupMemberRoleOwner)
+	createTestGroupMember(t, db, group.ID, "student1", groupModels.GroupMemberRoleMember)
+
+	// Create terminals for student1 that should NOT appear in group history:
+	// - one under org B (different org)
+	// - one with no org (personal terminal)
+	createTestTerminalWithOrg(t, db, "student1", &orgB.ID)
+	createTestTerminalWithOrg(t, db, "student1", nil)
+
+	// Call GetGroupCommandHistory as trainer1 (group owner)
+	// With the fix: query scoped to orgA finds 0 terminals -> returns empty result successfully
+	// Without the fix: query finds orgB + nil terminals -> tries HTTP call to TT backend -> fails
+	service := terminalServices.NewTerminalTrainerService(db)
+	body, contentType, err := service.GetGroupCommandHistory(
+		group.ID.String(), "trainer1", nil, "json", 50, 0, true, "",
+	)
+
+	// The method should return successfully with empty results (no orgA terminals exist)
+	require.NoError(t, err, "GetGroupCommandHistory should not fail when no matching terminals exist for the org")
+	assert.Equal(t, "application/json", contentType)
+
+	// Parse the JSON response and verify it returns 0 commands
+	var result map[string]interface{}
+	err = json.Unmarshal(body, &result)
+	require.NoError(t, err, "Response should be valid JSON")
+
+	commands, ok := result["commands"].([]interface{})
+	require.True(t, ok, "Response should contain 'commands' array")
+	assert.Equal(t, 0, len(commands),
+		"Group command history should return 0 commands when student only has terminals in other orgs")
+
+	total, ok := result["total"].(float64)
+	require.True(t, ok, "Response should contain 'total' field")
+	assert.Equal(t, float64(0), total,
+		"Total should be 0 when no terminals match the group's organization")
+}
+
+// TestGetGroupCommandHistoryStats_ScopedToOrganization verifies that GetGroupCommandHistoryStats
+// only returns statistics for terminals scoped to the group's organization.
+//
+// BUG C3: Without the fix, the terminal query fetches ALL terminals for member user IDs
+// without scoping to the group's organization, leaking personal terminal histories.
+func TestGetGroupCommandHistoryStats_ScopedToOrganization(t *testing.T) {
+	db := setupTestDBWithGroups(t)
+
+	// Create two organizations
+	orgA := createTestOrgForHistory(t, db, "org-owner-a")
+	orgB := createTestOrgForHistory(t, db, "org-owner-b")
+
+	// Create a group under org A with trainer1 as owner and student1 as member
+	group := createTestGroupForHistory(t, db, "trainer1", &orgA.ID)
+	createTestGroupMember(t, db, group.ID, "trainer1", groupModels.GroupMemberRoleOwner)
+	createTestGroupMember(t, db, group.ID, "student1", groupModels.GroupMemberRoleMember)
+
+	// Create terminals for student1 that should NOT appear in group history stats:
+	// - one under org B (different org)
+	// - one with no org (personal terminal)
+	createTestTerminalWithOrg(t, db, "student1", &orgB.ID)
+	createTestTerminalWithOrg(t, db, "student1", nil)
+
+	// Call GetGroupCommandHistoryStats as trainer1 (group owner)
+	// With the fix: query scoped to orgA finds 0 terminals -> returns empty stats successfully
+	// Without the fix: query finds orgB + nil terminals -> tries HTTP call to TT backend -> fails
+	service := terminalServices.NewTerminalTrainerService(db)
+	body, contentType, err := service.GetGroupCommandHistoryStats(
+		group.ID.String(), "trainer1", true,
+	)
+
+	// The method should return successfully with empty stats (no orgA terminals exist)
+	require.NoError(t, err, "GetGroupCommandHistoryStats should not fail when no matching terminals exist for the org")
+	assert.Equal(t, "application/json", contentType)
+
+	// Parse the JSON response and verify it returns empty statistics
+	var result map[string]interface{}
+	err = json.Unmarshal(body, &result)
+	require.NoError(t, err, "Response should be valid JSON")
+
+	summary, ok := result["summary"].(map[string]interface{})
+	require.True(t, ok, "Response should contain 'summary' object")
+	assert.Equal(t, float64(0), summary["total_sessions"],
+		"Stats should show 0 sessions when student only has terminals in other orgs")
+	assert.Equal(t, float64(0), summary["total_commands"],
+		"Stats should show 0 commands when student only has terminals in other orgs")
+
+	students, ok := result["students"].([]interface{})
+	require.True(t, ok, "Response should contain 'students' array")
+	assert.Equal(t, 0, len(students),
+		"Stats should show 0 students when no terminals match the group's organization")
 }
