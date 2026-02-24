@@ -104,6 +104,9 @@ type TerminalTrainerService interface {
 	// Group command history
 	GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool) ([]byte, string, error)
 
+	// Group command history stats
+	GetGroupCommandHistoryStats(groupID string, userID string, includeStopped bool) ([]byte, string, error)
+
 	// Authorization helpers
 	IsUserAuthorizedForSession(userID string, terminal *models.Terminal, isAdmin bool) bool
 	IsUserOrgManagerOrAdmin(userID string, orgID uuid.UUID, isAdmin bool) bool
@@ -2270,6 +2273,198 @@ func (tts *terminalTrainerService) GetGroupCommandHistory(groupID string, userID
 		"limit":    bulkResponse.Limit,
 		"offset":   bulkResponse.Offset,
 	}
+	body, _ := json.Marshal(result)
+	return body, "application/json", nil
+}
+
+// GetGroupCommandHistoryStats returns aggregate command history statistics for all members of a group.
+// Only group owner, admin, or assistant can access this endpoint.
+func (tts *terminalTrainerService) GetGroupCommandHistoryStats(groupID string, userID string, includeStopped bool) ([]byte, string, error) {
+	// Parse groupID to UUID
+	groupUUID, err := uuid.Parse(groupID)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid group ID: %w", err)
+	}
+
+	// Fetch group with members from DB
+	var group groupModels.ClassGroup
+	if err := tts.db.Preload("Members").Where("id = ?", groupUUID).First(&group).Error; err != nil {
+		return nil, "", fmt.Errorf("group not found")
+	}
+
+	// Check authorization - user must be owner, admin, or assistant
+	var userMember *groupModels.GroupMember
+	for i := range group.Members {
+		if group.Members[i].UserID == userID && group.Members[i].IsActive {
+			userMember = &group.Members[i]
+			break
+		}
+	}
+	if userMember == nil || !(userMember.Role == groupModels.GroupMemberRoleOwner || userMember.Role == groupModels.GroupMemberRoleAdmin || userMember.Role == groupModels.GroupMemberRoleAssistant) {
+		return nil, "", fmt.Errorf("unauthorized: only group owner, admin, or assistant can view group command history stats")
+	}
+
+	// Collect active member user IDs
+	var memberUserIDs []string
+	for _, m := range group.Members {
+		if m.IsActive {
+			memberUserIDs = append(memberUserIDs, m.UserID)
+		}
+	}
+
+	// Fetch terminals for all members
+	var terminals []models.Terminal
+	query := tts.db.Where("user_id IN ?", memberUserIDs)
+	if !includeStopped {
+		query = query.Where("status = ?", "active")
+	}
+	if err := query.Find(&terminals).Error; err != nil {
+		return nil, "", fmt.Errorf("failed to query terminals: %w", err)
+	}
+
+	// Collect session UUIDs and build terminal -> user mapping
+	sessionUUIDs := make([]string, 0, len(terminals))
+	userIDSet := make(map[string]bool)
+	sessionToUserID := make(map[string]string)
+	for _, t := range terminals {
+		if t.SessionID != "" {
+			sessionUUIDs = append(sessionUUIDs, t.SessionID)
+			userIDSet[t.UserID] = true
+			sessionToUserID[t.SessionID] = t.UserID
+		}
+	}
+
+	// If no sessions found, return empty stats
+	if len(sessionUUIDs) == 0 {
+		result := map[string]interface{}{
+			"summary": map[string]interface{}{
+				"total_commands":              0,
+				"total_sessions":              0,
+				"active_students":             0,
+				"avg_commands_per_student":     0.0,
+				"avg_time_per_student_seconds": 0,
+			},
+			"students": []interface{}{},
+		}
+		body, _ := json.Marshal(result)
+		return body, "application/json", nil
+	}
+
+	// Fetch user info for enrichment using Casdoor SDK
+	type userInfo struct {
+		DisplayName string
+		Email       string
+	}
+	userInfoMap := make(map[string]userInfo)
+	for uid := range userIDSet {
+		user, err := casdoorsdk.GetUserByUserId(uid)
+		if err == nil && user != nil {
+			userInfoMap[uid] = userInfo{
+				DisplayName: user.DisplayName,
+				Email:       user.Email,
+			}
+		}
+	}
+
+	// Call tt-backend bulk-stats endpoint
+	url := fmt.Sprintf("%s/%s/admin/history/bulk-stats", tts.baseURL, tts.apiVersion)
+
+	reqBody := map[string]interface{}{
+		"session_uuids": sessionUUIDs,
+	}
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
+
+	var bulkStatsResponse struct {
+		Sessions []struct {
+			SessionUUID    string `json:"session_uuid"`
+			CommandCount   int    `json:"command_count"`
+			FirstCommandAt int64  `json:"first_command_at"`
+			LastCommandAt  int64  `json:"last_command_at"`
+		} `json:"sessions"`
+		TotalCommands int `json:"total_commands"`
+		TotalSessions int `json:"total_sessions"`
+	}
+
+	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, reqBody, &bulkStatsResponse, opts)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to fetch bulk stats: %w", err)
+	}
+
+	// Build per-student stats
+	type studentStats struct {
+		StudentName      string `json:"student_name"`
+		StudentEmail     string `json:"student_email"`
+		TotalCommands    int    `json:"total_commands"`
+		SessionCount     int    `json:"session_count"`
+		TotalTimeSeconds int64  `json:"total_time_seconds"`
+		LastActiveAt     int64  `json:"last_active_at"`
+	}
+
+	studentMap := make(map[string]*studentStats)
+	for _, sess := range bulkStatsResponse.Sessions {
+		uid, ok := sessionToUserID[sess.SessionUUID]
+		if !ok {
+			continue
+		}
+		st, exists := studentMap[uid]
+		if !exists {
+			info := userInfoMap[uid]
+			st = &studentStats{
+				StudentName:  info.DisplayName,
+				StudentEmail: info.Email,
+			}
+			studentMap[uid] = st
+		}
+		st.TotalCommands += sess.CommandCount
+		st.SessionCount++
+		if sess.LastCommandAt > sess.FirstCommandAt {
+			st.TotalTimeSeconds += sess.LastCommandAt - sess.FirstCommandAt
+		}
+		if sess.LastCommandAt > st.LastActiveAt {
+			st.LastActiveAt = sess.LastCommandAt
+		}
+	}
+
+	// Convert to slice
+	students := make([]studentStats, 0, len(studentMap))
+	for _, st := range studentMap {
+		students = append(students, *st)
+	}
+
+	// Build summary
+	activeStudents := len(studentMap)
+	var avgCommandsPerStudent float64
+	var avgTimePerStudentSecs int64
+	if activeStudents > 0 {
+		avgCommandsPerStudent = float64(bulkStatsResponse.TotalCommands) / float64(activeStudents)
+		var totalTime int64
+		for _, st := range students {
+			totalTime += st.TotalTimeSeconds
+		}
+		avgTimePerStudentSecs = totalTime / int64(activeStudents)
+	}
+
+	type statsSummary struct {
+		TotalCommands         int     `json:"total_commands"`
+		TotalSessions         int     `json:"total_sessions"`
+		ActiveStudents        int     `json:"active_students"`
+		AvgCommandsPerStudent float64 `json:"avg_commands_per_student"`
+		AvgTimePerStudentSecs int64   `json:"avg_time_per_student_seconds"`
+	}
+
+	result := map[string]interface{}{
+		"summary": statsSummary{
+			TotalCommands:         bulkStatsResponse.TotalCommands,
+			TotalSessions:         bulkStatsResponse.TotalSessions,
+			ActiveStudents:        activeStudents,
+			AvgCommandsPerStudent: avgCommandsPerStudent,
+			AvgTimePerStudentSecs: avgTimePerStudentSecs,
+		},
+		"students": students,
+	}
+
 	body, _ := json.Marshal(result)
 	return body, "application/json", nil
 }

@@ -34,6 +34,7 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	subscriptionMiddleware := paymentMiddleware.NewSubscriptionIntegrationMiddleware(db)
 	groupRoutes.POST("/:groupId/bulk-create-terminals", middleware.AuthManagement(), subscriptionMiddleware.InjectSubscriptionInfo(), terminalController.BulkCreateTerminalsForGroup)
 	groupRoutes.GET("/:groupId/command-history", middleware.AuthManagement(), terminalController.GetGroupCommandHistory)
+	groupRoutes.GET("/:groupId/command-history-stats", middleware.AuthManagement(), terminalController.GetGroupCommandHistoryStats)
 
 	// Stop session requires owner or admin access (Layer 2 security check)
 	routes.POST("/:id/stop", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelOwner), terminalController.StopSession)

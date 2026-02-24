@@ -89,6 +89,9 @@ type TerminalController interface {
 
 	// Group command history
 	GetGroupCommandHistory(ctx *gin.Context)
+
+	// Group command history stats
+	GetGroupCommandHistoryStats(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -1977,6 +1980,39 @@ func (tc *terminalController) GetGroupCommandHistory(ctx *gin.Context) {
 	// For CSV, add Content-Disposition header
 	if format == "csv" {
 		ctx.Header("Content-Disposition", `attachment; filename="group-history.csv"`)
+	}
+
+	ctx.Data(http.StatusOK, contentType, body)
+}
+
+// GetGroupCommandHistoryStats returns aggregate command history statistics for all members of a group
+func (tc *terminalController) GetGroupCommandHistoryStats(ctx *gin.Context) {
+	groupID := ctx.Param("groupId")
+	userID := ctx.GetString("userId")
+	includeStopped := ctx.Query("include_stopped") == "true"
+
+	body, contentType, err := tc.service.GetGroupCommandHistoryStats(groupID, userID, includeStopped)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Group not found",
+			})
+			return
+		}
+		if strings.Contains(err.Error(), "unauthorized") {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: err.Error(),
+			})
+			return
+		}
+		utils.Debug("GetGroupCommandHistoryStats failed: %v", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get group command history stats",
+		})
+		return
 	}
 
 	ctx.Data(http.StatusOK, contentType, body)
