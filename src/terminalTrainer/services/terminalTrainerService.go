@@ -48,6 +48,7 @@ type TerminalTrainerService interface {
 
 	// Terminal sharing methods
 	ShareTerminal(sessionID, sharedByUserID, sharedWithUserID, accessLevel string, expiresAt *time.Time) error
+	ShareTerminalWithGroup(sessionID, sharedByUserID string, groupID uuid.UUID, accessLevel string, expiresAt *time.Time) error
 	RevokeTerminalAccess(sessionID, sharedWithUserID, requestingUserID string) error
 	GetTerminalShares(sessionID, requestingUserID string) (*[]models.TerminalShare, error)
 	GetSharedTerminals(userID string) (*[]models.Terminal, error)
@@ -1027,6 +1028,53 @@ func (tts *terminalTrainerService) ShareTerminal(sessionID, sharedByUserID, shar
 	}
 
 	return nil
+}
+
+// ShareTerminalWithGroup shares a terminal with a group
+func (tts *terminalTrainerService) ShareTerminalWithGroup(sessionID, sharedByUserID string, groupID uuid.UUID, accessLevel string, expiresAt *time.Time) error {
+	// Validate the terminal exists
+	terminal, err := tts.repository.GetTerminalSessionBySessionID(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get terminal: %w", err)
+	}
+	if terminal == nil {
+		return fmt.Errorf("terminal not found")
+	}
+
+	// Verify the caller is the terminal owner
+	if terminal.UserID != sharedByUserID {
+		return utils.OwnerOnlyError("terminal", "share")
+	}
+
+	// Validate access level
+	if !models.IsValidAccessLevel(accessLevel) {
+		return fmt.Errorf("invalid access level: %s", accessLevel)
+	}
+
+	// Check if a group share already exists for this terminal+group
+	var existingShare models.TerminalShare
+	err = tts.db.Where("terminal_id = ? AND shared_with_group_id = ? AND is_active = ?",
+		terminal.ID, groupID, true).First(&existingShare).Error
+
+	if err == nil {
+		// Share exists, update it
+		existingShare.AccessLevel = accessLevel
+		existingShare.ExpiresAt = expiresAt
+		existingShare.IsActive = true
+		return tts.repository.UpdateTerminalShare(&existingShare)
+	}
+
+	// Create a new group share
+	share := &models.TerminalShare{
+		TerminalID:        terminal.ID,
+		SharedWithGroupID: &groupID,
+		SharedByUserID:    sharedByUserID,
+		AccessLevel:       accessLevel,
+		ExpiresAt:         expiresAt,
+		IsActive:          true,
+	}
+
+	return tts.repository.CreateTerminalShare(share)
 }
 
 // RevokeTerminalAccess révoque l'accès d'un utilisateur à un terminal
