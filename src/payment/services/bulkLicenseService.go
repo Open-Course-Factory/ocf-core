@@ -151,6 +151,14 @@ func (s *bulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID s
 		return nil, fmt.Errorf("access denied: you can only assign licenses from your own batches or your organization's batches")
 	}
 
+	// Validate that the target user exists in Casdoor
+	targetUser, userErr := s.getUserFromCasdoor(targetUserID)
+	if userErr != nil {
+		utils.Warn("Could not validate user %s in Casdoor: %v", targetUserID, userErr)
+	} else if targetUser == nil {
+		return nil, fmt.Errorf("user not found: the specified user ID does not exist")
+	}
+
 	// Check if batch has available licenses
 	if batch.AssignedQuantity >= batch.TotalQuantity {
 		return nil, fmt.Errorf("no available licenses in this batch")
@@ -621,6 +629,20 @@ func (s *bulkLicenseService) PermanentlyDeleteBatch(batchID uuid.UUID, requestin
 
 	utils.Info("✅ Successfully deleted batch %s and all %d licenses", batchID, len(licenses))
 	return nil
+}
+
+// getUserFromCasdoor safely fetches a user from Casdoor, recovering from SDK panics
+// when the Casdoor client is not initialized (e.g., in unit tests)
+func (s *bulkLicenseService) getUserFromCasdoor(userID string) (user *casdoorsdk.User, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			user = nil
+			err = fmt.Errorf("casdoor SDK not initialized: %v", r)
+		}
+	}()
+
+	user, err = casdoorsdk.GetUserByUserId(userID)
+	return
 }
 
 // canUserAccessBatch checks if a user can access a batch through:

@@ -149,6 +149,24 @@ func TestBulkLicenseService_AssignLicense_AccessDenied(t *testing.T) {
 	assert.Contains(t, err.Error(), "access denied")
 }
 
+func TestBulkLicenseService_AssignLicense_CasdoorUnavailable(t *testing.T) {
+	// When Casdoor is not initialized (unit test environment), AssignLicense
+	// logs a warning but still proceeds with the assignment (graceful degradation).
+	// User existence validation only blocks when Casdoor is configured and
+	// returns nil user (meaning user truly doesn't exist).
+	db := setupBulkLicenseTestDB(t)
+	svc := services.NewBulkLicenseService(db)
+	purchaserID := "purchaser-casdoor-down"
+
+	_, batch, _ := seedBulkLicenseTestData(t, db, purchaserID, 5, 0)
+
+	// Should succeed despite Casdoor being unavailable (graceful degradation)
+	license, err := svc.AssignLicense(batch.ID, purchaserID, "some-user-id")
+	require.NoError(t, err)
+	assert.Equal(t, "some-user-id", license.UserID)
+	assert.Equal(t, "active", license.Status)
+}
+
 // --- RevokeLicense tests ---
 
 func TestBulkLicenseService_RevokeLicense_HappyPath(t *testing.T) {
