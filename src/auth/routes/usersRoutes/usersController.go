@@ -22,6 +22,7 @@ type UserController interface {
 	GetMySettings(ctx *gin.Context)
 	UpdateMySettings(ctx *gin.Context)
 	ChangePassword(ctx *gin.Context)
+	ForceChangePassword(ctx *gin.Context)
 }
 
 type userController struct {
@@ -189,6 +190,55 @@ func (uc *userController) ChangePassword(ctx *gin.Context) {
 		// Determine the appropriate status code based on the error
 		if err.Error() == "current password is incorrect" {
 			ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		} else {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
+}
+
+// ForceChangePassword changes the password for a user with force_password_reset flag
+// @Summary Force change password
+// @Description Changes the password for a user who has been flagged for forced password reset (no current password required)
+// @Tags user-settings
+// @Accept json
+// @Produce json
+// @Param password body dto.ForceChangePasswordInput true "Force password change request"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Router /users/me/force-change-password [post]
+// @Security Bearer
+func (uc *userController) ForceChangePassword(ctx *gin.Context) {
+	userID := ctx.GetString("userId")
+	if userID == "" {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	var input dto.ForceChangePasswordInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Extract the raw token from Authorization header
+	token := ctx.Request.Header.Get("Authorization")
+	if token != "" {
+		if len(token) > 7 && token[:7] == "Bearer " {
+			token = token[7:]
+		} else if len(token) > 7 && token[:7] == "bearer " {
+			token = token[7:]
+		}
+	}
+
+	err := uc.settingsService.ForceChangePassword(userID, input, token)
+	if err != nil {
+		if err.Error() == "password reset not required" {
+			ctx.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		} else {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		}

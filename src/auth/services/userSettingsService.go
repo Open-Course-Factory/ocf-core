@@ -16,6 +16,7 @@ import (
 
 type UserSettingsService interface {
 	ChangePassword(userID string, input dto.ChangePasswordInput, token string) error
+	ForceChangePassword(userID string, input dto.ForceChangePasswordInput, token string) error
 }
 
 type userSettingsService struct {
@@ -93,6 +94,62 @@ func (s *userSettingsService) ChangePassword(userID string, input dto.ChangePass
 
 	// TODO: Send email notification about password change
 	// This could be implemented later with an email service
+
+	return nil
+}
+
+// ForceChangePassword handles forced password reset for imported users (no current password required)
+func (s *userSettingsService) ForceChangePassword(userID string, input dto.ForceChangePasswordInput, token string) error {
+	// Validate that new password matches confirmation
+	if input.NewPassword != input.ConfirmPassword {
+		return errors.New("new password and confirmation do not match")
+	}
+
+	// Get user from Casdoor
+	user, err := casdoorsdk.GetUserByUserId(userID)
+	if err != nil {
+		utils.Error("Failed to get user from Casdoor: %v", err)
+		return errors.New("failed to retrieve user information")
+	}
+
+	// Verify that force_password_reset flag is set
+	if user.Properties == nil || user.Properties["force_password_reset"] != "true" {
+		return errors.New("password reset not required")
+	}
+
+	// Update password using shared password service (empty oldPassword for reset scenario)
+	if err := s.passwordService.SetUserPassword(userID, "", input.NewPassword); err != nil {
+		utils.Error("Failed to update password in Casdoor: %v", err)
+		return errors.New("failed to update password")
+	}
+
+	// Clear the force_password_reset flag
+	user.Properties["force_password_reset"] = ""
+	_, err = casdoorsdk.UpdateUser(user)
+	if err != nil {
+		utils.Warn("Failed to clear force_password_reset flag for user %s: %v", userID, err)
+	}
+
+	// Update password last changed timestamp in user settings
+	var userSettings models.UserSettings
+	result := sqldb.DB.Where("user_id = ?", userID).First(&userSettings)
+	if result.Error == nil {
+		now := time.Now()
+		userSettings.PasswordLastChanged = &now
+		sqldb.DB.Save(&userSettings)
+	}
+
+	utils.Info("Force password change completed for user %s", userID)
+
+	// Invalidate the current session
+	if token != "" {
+		err := s.invalidateToken(token)
+		if err != nil {
+			utils.Warn("Failed to invalidate token after force password change for user %s: %v", userID, err)
+		} else {
+			utils.Info("Successfully invalidated session token for user %s", userID)
+		}
+	}
 
 	return nil
 }

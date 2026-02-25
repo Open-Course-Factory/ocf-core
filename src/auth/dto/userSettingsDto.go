@@ -52,3 +52,9 @@ type ChangePasswordInput struct {
 	NewPassword     string `json:"new_password" binding:"required,min=8"`
 	ConfirmPassword string `json:"confirm_password" binding:"required"`
 }
+
+// ForceChangePasswordInput for forced password reset (no current password required)
+type ForceChangePasswordInput struct {
+	NewPassword     string `json:"new_password" binding:"required,min=8"`
+	ConfirmPassword string `json:"confirm_password" binding:"required"`
+}
