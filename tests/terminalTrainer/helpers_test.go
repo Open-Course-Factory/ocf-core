@@ -19,7 +19,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 
 	// Auto migrate the models (group_members is needed because HasTerminalAccess checks group membership)
-	err = db.AutoMigrate(&models.UserTerminalKey{}, &models.Terminal{}, &models.TerminalShare{}, &groupModels.GroupMember{})
+	err = db.AutoMigrate(&models.UserTerminalKey{}, &models.Terminal{}, &models.TerminalShare{}, &groupModels.ClassGroup{}, &groupModels.GroupMember{})
 	require.NoError(t, err)
 
 	return db

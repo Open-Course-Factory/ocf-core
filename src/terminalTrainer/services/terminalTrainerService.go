@@ -1158,6 +1158,12 @@ func (tts *terminalTrainerService) HasTerminalAccess(terminalIDOrSessionID, user
 		return true, nil
 	}
 
+	// Check if requesting user is a group owner with the terminal owner as member
+	isGroupOwner, err := tts.checkGroupOwnerAccess(terminal.UserID, userID)
+	if err == nil && isGroupOwner {
+		return true, nil
+	}
+
 	// Vérifier les partages
 	return tts.repository.HasTerminalAccess(terminal.ID.String(), userID, requiredLevel)
 }
@@ -2602,4 +2608,22 @@ func (tts *terminalTrainerService) GetUserConsentStatus(userID string) (bool, st
 	}
 
 	return false, "", nil
+}
+
+// checkGroupOwnerAccess checks if requestingUserID is the owner of any active group
+// where terminalOwnerUserID is an active member. This gives group owners implicit
+// access to their members' terminals.
+func (tts *terminalTrainerService) checkGroupOwnerAccess(terminalOwnerUserID, requestingUserID string) (bool, error) {
+	var count int64
+	err := tts.db.Table("class_groups").
+		Joins("JOIN group_members ON class_groups.id = group_members.group_id").
+		Where("class_groups.owner_user_id = ?", requestingUserID).
+		Where("group_members.user_id = ?", terminalOwnerUserID).
+		Where("group_members.is_active = ?", true).
+		Where("class_groups.is_active = ?", true).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
