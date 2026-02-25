@@ -23,6 +23,7 @@ func RegisterCustomValidators(v *validator.Validate) error {
 		"billing_interval": validateBillingInterval,
 		"stripe_id":        validateStripeID,
 		"casdoor_owner":    validateCasdoorOwner,
+		"snake_case_key":   validateSnakeCaseKey,
 	}
 
 	for tag, fn := range validators {
@@ -82,6 +83,13 @@ func validateGroupName(fl validator.FieldLevel) bool {
 
 	// Must not be only whitespace
 	return strings.TrimSpace(name) != ""
+}
+
+// validateSnakeCaseKey validates snake_case keys (lowercase letter followed by lowercase alphanumeric + underscores)
+func validateSnakeCaseKey(fl validator.FieldLevel) bool {
+	key := fl.Field().String()
+	matched, _ := regexp.MatchString(`^[a-z][a-z0-9_]*$`, key)
+	return matched
 }
 
 // validateSlug validates URL-safe slugs (lowercase alphanumeric + hyphens)
@@ -249,6 +257,8 @@ func FormatValidationError(field, tag, param string) string {
 		return field + " must be a past date"
 	case "slug":
 		return field + " must be a valid slug (lowercase alphanumeric + hyphens)"
+	case "snake_case_key":
+		return field + " must be a snake_case key (lowercase letter followed by lowercase alphanumeric + underscores)"
 	case "billing_interval":
 		return field + " must be a valid billing interval (month, year, week, day)"
 	case "stripe_id":
