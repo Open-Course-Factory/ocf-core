@@ -6,14 +6,16 @@ import "time"
 
 // UserImportRow represents a row in the users.csv file
 type UserImportRow struct {
-	Email          string `csv:"email"`
-	FirstName      string `csv:"first_name"`
-	LastName       string `csv:"last_name"`
-	Password       string `csv:"password"`
-	Role           string `csv:"role"`            // member, supervisor, admin
-	ExternalID     string `csv:"external_id"`     // Optional reference to external system ID
-	ForceReset     string `csv:"force_reset"`     // "true" or "false"
-	UpdateIfExists string `csv:"update_existing"` // "true" or "false"
+	Email             string `csv:"email"`
+	FirstName         string `csv:"first_name"`
+	LastName          string `csv:"last_name"`
+	Password          string `csv:"password"`
+	Role              string `csv:"role"`            // member, supervisor, admin
+	ExternalID        string `csv:"external_id"`     // Optional reference to external system ID
+	ForceReset        string `csv:"force_reset"`     // "true" or "false"
+	UpdateIfExists    string `csv:"update_existing"` // "true" or "false"
+	Name              string `csv:"name"`            // raw "name" column value
+	GeneratedPassword string `csv:"-"`               // populated by import service, not from CSV
 }
 
 // GroupImportRow represents a row in the groups.csv file
@@ -45,11 +47,19 @@ type ImportOrganizationDataRequest struct {
 
 // ImportOrganizationDataResponse represents the import operation result
 type ImportOrganizationDataResponse struct {
-	Success  bool            `json:"success"`
-	DryRun   bool            `json:"dry_run"`
-	Summary  ImportSummary   `json:"summary"`
-	Errors   []ImportError   `json:"errors"`
-	Warnings []ImportWarning `json:"warnings"`
+	Success     bool              `json:"success"`
+	DryRun      bool              `json:"dry_run"`
+	Summary     ImportSummary     `json:"summary"`
+	Errors      []ImportError     `json:"errors"`
+	Warnings    []ImportWarning   `json:"warnings"`
+	Credentials []UserCredential  `json:"credentials,omitempty"`
+}
+
+// UserCredential represents generated credentials for a newly created user
+type UserCredential struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Name     string `json:"name"`
 }
 
 // ImportSummary provides statistics about the import operation

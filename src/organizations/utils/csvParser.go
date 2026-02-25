@@ -10,6 +10,29 @@ import (
 	"soli/formations/src/organizations/dto"
 )
 
+// columnAliases maps alternative column names to their canonical names.
+// Keys must be lowercase (headerMap is already lowercased).
+var columnAliases = map[string]string{
+	"e-mail":          "email",
+	"mail":            "email",
+	"nom":             "name",
+	"prénom":          "first_name",
+	"prenom":          "first_name",
+	"nom de famille":  "last_name",
+}
+
+// resolveColumnAliases replaces alias column names with their canonical equivalents.
+func resolveColumnAliases(headerMap map[string]int) {
+	for alias, canonical := range columnAliases {
+		if idx, exists := headerMap[alias]; exists {
+			if _, alreadyHasCanonical := headerMap[canonical]; !alreadyHasCanonical {
+				headerMap[canonical] = idx
+			}
+			delete(headerMap, alias)
+		}
+	}
+}
+
 // ParseUsersCSV parses the users.csv file
 func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.ImportError) {
 	f, err := file.Open()
@@ -37,23 +60,36 @@ func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.Impor
 		}}
 	}
 
-	// Validate header
-	requiredColumns := []string{"email", "first_name", "last_name", "password", "role"}
+	// Build header map and resolve aliases
 	headerMap := make(map[string]int)
 	for i, col := range header {
 		headerMap[strings.TrimSpace(strings.ToLower(col))] = i
 	}
+	resolveColumnAliases(headerMap)
 
-	for _, required := range requiredColumns {
-		if _, exists := headerMap[required]; !exists {
-			return nil, []dto.ImportError{{
-				Row:     0,
-				File:    "users",
-				Field:   required,
-				Message: fmt.Sprintf("Missing required column: %s", required),
-				Code:    dto.ErrCodeValidation,
-			}}
-		}
+	// Validate required columns: email + (first_name AND last_name) OR name
+	if _, hasEmail := headerMap["email"]; !hasEmail {
+		return nil, []dto.ImportError{{
+			Row:     0,
+			File:    "users",
+			Field:   "email",
+			Message: "Missing required column: email",
+			Code:    dto.ErrCodeValidation,
+		}}
+	}
+
+	_, hasFirstName := headerMap["first_name"]
+	_, hasLastName := headerMap["last_name"]
+	_, hasName := headerMap["name"]
+
+	if !(hasFirstName && hasLastName) && !hasName {
+		return nil, []dto.ImportError{{
+			Row:     0,
+			File:    "users",
+			Field:   "name",
+			Message: "Missing required columns: need (first_name AND last_name) or name",
+			Code:    dto.ErrCodeValidation,
+		}}
 	}
 
 	users := make([]dto.UserImportRow, 0, 100)
@@ -86,10 +122,11 @@ func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.Impor
 			ExternalID:     getColumnValue(record, headerMap, "external_id"),
 			ForceReset:     getColumnValue(record, headerMap, "force_reset"),
 			UpdateIfExists: getColumnValue(record, headerMap, "update_existing"),
+			Name:           getColumnValue(record, headerMap, "name"),
 		}
 
-		// Validate required fields
-		rowErrors := validateUserRow(user, rowNum)
+		// Validate required fields (may mutate user for name splitting)
+		rowErrors, _ := validateUserRow(&user, rowNum)
 		if len(rowErrors) > 0 {
 			errors = append(errors, rowErrors...)
 			continue
@@ -283,9 +320,12 @@ func getColumnValue(record []string, headerMap map[string]int, columnName string
 	return ""
 }
 
-// validateUserRow validates a user row
-func validateUserRow(user dto.UserImportRow, rowNum int) []dto.ImportError {
+// validateUserRow validates a user row and performs name splitting if needed.
+// It accepts a pointer so it can set FirstName/LastName from the Name field.
+// Returns (errors, warnings).
+func validateUserRow(user *dto.UserImportRow, rowNum int) ([]dto.ImportError, []dto.ImportWarning) {
 	var errors []dto.ImportError
+	var warnings []dto.ImportWarning
 
 	if user.Email == "" {
 		errors = append(errors, dto.ImportError{
@@ -297,47 +337,36 @@ func validateUserRow(user dto.UserImportRow, rowNum int) []dto.ImportError {
 		})
 	}
 
-	if user.FirstName == "" {
+	// Name splitting: if Name is set but FirstName/LastName are empty
+	if user.Name != "" && user.FirstName == "" && user.LastName == "" {
+		lastSpace := strings.LastIndex(user.Name, " ")
+		if lastSpace == -1 {
+			// Single word: last name only
+			user.LastName = user.Name
+			warnings = append(warnings, dto.ImportWarning{
+				Row:     rowNum,
+				File:    "users",
+				Message: fmt.Sprintf("Name '%s' has no space; used as last name only (empty first name)", user.Name),
+			})
+		} else {
+			user.LastName = user.Name[:lastSpace]
+			user.FirstName = user.Name[lastSpace+1:]
+		}
+	}
+
+	if user.FirstName == "" && user.LastName == "" {
 		errors = append(errors, dto.ImportError{
 			Row:     rowNum,
 			File:    "users",
-			Field:   "first_name",
-			Message: "First name is required",
+			Field:   "name",
+			Message: "Name is required: provide first_name and last_name, or name",
 			Code:    dto.ErrCodeValidation,
 		})
 	}
 
-	if user.LastName == "" {
-		errors = append(errors, dto.ImportError{
-			Row:     rowNum,
-			File:    "users",
-			Field:   "last_name",
-			Message: "Last name is required",
-			Code:    dto.ErrCodeValidation,
-		})
-	}
-
-	if user.Password == "" {
-		errors = append(errors, dto.ImportError{
-			Row:     rowNum,
-			File:    "users",
-			Field:   "password",
-			Message: "Password is required",
-			Code:    dto.ErrCodeValidation,
-		})
-	}
-
-	// Validate role
+	// Validate role only when provided (non-empty)
 	validRoles := map[string]bool{"member": true, "supervisor": true, "admin": true, "trainer": true}
-	if user.Role == "" {
-		errors = append(errors, dto.ImportError{
-			Row:     rowNum,
-			File:    "users",
-			Field:   "role",
-			Message: "Role is required",
-			Code:    dto.ErrCodeValidation,
-		})
-	} else if !validRoles[strings.ToLower(user.Role)] {
+	if user.Role != "" && !validRoles[strings.ToLower(user.Role)] {
 		errors = append(errors, dto.ImportError{
 			Row:     rowNum,
 			File:    "users",
@@ -358,7 +387,7 @@ func validateUserRow(user dto.UserImportRow, rowNum int) []dto.ImportError {
 		})
 	}
 
-	return errors
+	return errors, warnings
 }
 
 // validateGroupRow validates a group row

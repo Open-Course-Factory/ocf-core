@@ -69,21 +69,22 @@ jane.smith@test.com,Jane,Smith,Pass456!,supervisor,tch_001,false`
 }
 
 func TestParseUsersCSV_MissingRequiredColumns(t *testing.T) {
-	content := `email,first_name,last_name
-john.doe@test.com,John,Doe`
+	// Missing email column entirely — should fail
+	content := `first_name,last_name
+John,Doe`
 
 	fileHeader := createMultipartFileHeader(t, "users.csv", content)
 	users, errors := orgUtils.ParseUsersCSV(fileHeader)
 
-	assert.NotEmpty(t, errors, "Should have errors for missing columns")
+	assert.NotEmpty(t, errors, "Should have errors for missing email column")
 	assert.Nil(t, users, "Should not return users when header is invalid")
-	assert.Contains(t, errors[0].Message, "Missing required column: password")
+	assert.Contains(t, errors[0].Message, "Missing required column: email")
 	assert.Equal(t, dto.ErrCodeValidation, errors[0].Code)
 }
 
 func TestParseUsersCSV_InvalidEmail(t *testing.T) {
-	content := `email,first_name,last_name,password,role
-not-an-email,John,Doe,Pass123!,member`
+	content := `email,first_name,last_name
+not-an-email,John,Doe`
 
 	fileHeader := createMultipartFileHeader(t, "users.csv", content)
 	users, errors := orgUtils.ParseUsersCSV(fileHeader)
@@ -96,8 +97,8 @@ not-an-email,John,Doe,Pass123!,member`
 }
 
 func TestParseUsersCSV_InvalidRole(t *testing.T) {
-	content := `email,first_name,last_name,password,role
-john@test.com,John,Doe,Pass123!,invalid_role`
+	content := `email,first_name,last_name,role
+john@test.com,John,Doe,invalid_role`
 
 	fileHeader := createMultipartFileHeader(t, "users.csv", content)
 	users, errors := orgUtils.ParseUsersCSV(fileHeader)
@@ -109,17 +110,20 @@ john@test.com,John,Doe,Pass123!,invalid_role`
 }
 
 func TestParseUsersCSV_MissingRequiredFields(t *testing.T) {
+	// Only email missing value should error (password and role are now optional)
 	content := `email,first_name,last_name,password,role
 ,John,Doe,Pass123!,member
 john@test.com,,Doe,Pass123!,member
-john2@test.com,John,,Pass123!,member
-john3@test.com,John,Doe,,member`
+john2@test.com,John,,Pass123!,member`
 
 	fileHeader := createMultipartFileHeader(t, "users.csv", content)
 	users, errors := orgUtils.ParseUsersCSV(fileHeader)
 
-	assert.Len(t, errors, 4, "Should have 4 validation errors")
-	assert.Empty(t, users, "Should not return any users")
+	// Row 1: empty email → error
+	// Row 2: empty first_name but last_name present → valid
+	// Row 3: empty last_name but first_name present → valid
+	assert.Len(t, errors, 1, "Should have 1 validation error (missing email)")
+	assert.Len(t, users, 2, "Should return 2 valid users")
 }
 
 func TestParseGroupsCSV_ValidFile(t *testing.T) {
@@ -205,7 +209,7 @@ john2@test.com,m1_devops_a,`
 }
 
 func TestParseUsersCSV_EmptyFile(t *testing.T) {
-	content := `email,first_name,last_name,password,role`
+	content := `email,first_name,last_name`
 
 	fileHeader := createMultipartFileHeader(t, "users.csv", content)
 	users, errors := orgUtils.ParseUsersCSV(fileHeader)
@@ -232,4 +236,122 @@ grandchild,Grand Child,Child of child1,child1`
 	assert.Equal(t, "root", groups[1].ParentGroup, "Child1 parent should be root")
 	assert.Equal(t, "root", groups[2].ParentGroup, "Child2 parent should be root")
 	assert.Equal(t, "child1", groups[3].ParentGroup, "Grandchild parent should be child1")
+}
+
+// --- New tests for simplified CSV import ---
+
+func TestParseUsersCSV_NameSplitting_TwoWords(t *testing.T) {
+	content := `email,name
+marie@test.com,DUPONT Marie`
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "Should have no errors")
+	require.Len(t, users, 1)
+	assert.Equal(t, "DUPONT", users[0].LastName, "Everything before last space should be last name")
+	assert.Equal(t, "Marie", users[0].FirstName, "Last word should be first name")
+}
+
+func TestParseUsersCSV_NameSplitting_ThreeWords(t *testing.T) {
+	content := `email,name
+jean@test.com,DE LA FONTAINE Jean`
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "Should have no errors")
+	require.Len(t, users, 1)
+	assert.Equal(t, "DE LA FONTAINE", users[0].LastName)
+	assert.Equal(t, "Jean", users[0].FirstName)
+}
+
+func TestParseUsersCSV_NameSplitting_SingleWord(t *testing.T) {
+	content := `email,name
+mono@test.com,DUPONT`
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "Should have no errors (warning only)")
+	require.Len(t, users, 1)
+	assert.Equal(t, "DUPONT", users[0].LastName, "Single word should be last name")
+	assert.Equal(t, "", users[0].FirstName, "First name should be empty for single word")
+}
+
+func TestParseUsersCSV_OptionalPassword(t *testing.T) {
+	content := `email,first_name,last_name
+john@test.com,John,Doe`
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "Password should be optional")
+	require.Len(t, users, 1)
+	assert.Equal(t, "", users[0].Password)
+}
+
+func TestParseUsersCSV_OptionalRole(t *testing.T) {
+	content := `email,first_name,last_name
+john@test.com,John,Doe`
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "Role should be optional")
+	require.Len(t, users, 1)
+	assert.Equal(t, "", users[0].Role)
+}
+
+func TestParseUsersCSV_FrenchSchoolCSV(t *testing.T) {
+	content := "Nom,E-mail,Sexe,Né(e) le\nDUPONT Marie,marie.dupont@ecole.fr,F,2000-01-15"
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "Should parse French school CSV without errors")
+	require.Len(t, users, 1)
+	assert.Equal(t, "marie.dupont@ecole.fr", users[0].Email)
+	assert.Equal(t, "DUPONT", users[0].LastName, "Name should be split: last name = DUPONT")
+	assert.Equal(t, "Marie", users[0].FirstName, "Name should be split: first name = Marie")
+}
+
+func TestParseUsersCSV_ColumnAliases(t *testing.T) {
+	content := `E-mail,Nom
+jean@test.com,MARTIN Jean`
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "E-mail and Nom should resolve as aliases")
+	require.Len(t, users, 1)
+	assert.Equal(t, "jean@test.com", users[0].Email)
+	assert.Equal(t, "MARTIN", users[0].LastName)
+	assert.Equal(t, "Jean", users[0].FirstName)
+}
+
+func TestParseUsersCSV_ColumnAliases_PreservesCanonical(t *testing.T) {
+	// When both alias and canonical column exist, canonical takes priority
+	content := `email,mail,first_name,last_name
+john@test.com,other@test.com,John,Doe`
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors)
+	require.Len(t, users, 1)
+	assert.Equal(t, "john@test.com", users[0].Email, "Canonical column should take priority over alias")
+}
+
+func TestParseUsersCSV_MissingNameColumns(t *testing.T) {
+	// CSV with only email — no name columns at all
+	content := `email
+john@test.com`
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.NotEmpty(t, errors, "Should error when no name columns present")
+	assert.Nil(t, users)
+	assert.Contains(t, errors[0].Message, "Missing required columns")
 }
