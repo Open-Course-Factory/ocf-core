@@ -121,7 +121,6 @@ func InitDevelopmentData(db *gorm.DB) {
 	if env == "development" || env == "test" {
 		db = db.Debug()
 		SetupDefaultSubscriptionPlans(db)
-		SeedPlanFeatures(db)
 		setupExternalUsersData()
 		syncCasdoorRolesToCasbin()
 		ensureUsersHaveTrialPlan(db)
@@ -407,11 +406,11 @@ func SeedPlanFeatures(db *gorm.DB) {
 
 	features := []paymentModels.PlanFeature{
 		// Capabilities (boolean)
-		{Key: "unlimited_courses", DisplayNameEn: "Unlimited Courses", DisplayNameFr: "Cours illimités", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "advanced_labs", DisplayNameEn: "Advanced Labs", DisplayNameFr: "Laboratoires avancés", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "unlimited_courses", DisplayNameEn: "Unlimited Courses", DisplayNameFr: "Formations illimitées", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "advanced_labs", DisplayNameEn: "Advanced Labs", DisplayNameFr: "TP avancés", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
 		{Key: "export", DisplayNameEn: "Course Export", DisplayNameFr: "Export de cours", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
 		{Key: "custom_themes", DisplayNameEn: "Custom Themes", DisplayNameFr: "Thèmes personnalisés", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "bulk_purchase", DisplayNameEn: "Bulk License Purchase", DisplayNameFr: "Achat de licences en gros", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "bulk_purchase", DisplayNameEn: "Bulk License Purchase", DisplayNameFr: "Achat de licences en volume", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
 		{Key: "group_management", DisplayNameEn: "Group Management", DisplayNameFr: "Gestion des groupes", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
 		{Key: "api_access", DisplayNameEn: "API Access", DisplayNameFr: "Accès API", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
 		{Key: "analytics", DisplayNameEn: "Analytics Dashboard", DisplayNameFr: "Tableau de bord analytique", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
@@ -428,13 +427,13 @@ func SeedPlanFeatures(db *gorm.DB) {
 		{Key: "network_access", DisplayNameEn: "External Network Access", DisplayNameFr: "Accès réseau externe", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
 		{Key: "data_persistence", DisplayNameEn: "Persistent Storage", DisplayNameFr: "Stockage persistant", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
 		{Key: "data_persistence_gb", DisplayNameEn: "Storage Quota", DisplayNameFr: "Quota de stockage", Category: "terminal_limits", ValueType: "number", Unit: "GB", DefaultValue: "0", IsActive: true},
-		{Key: "command_history", DisplayNameEn: "Command History Recording", DisplayNameFr: "Enregistrement historique", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "command_history_retention_days", DisplayNameEn: "History Retention", DisplayNameFr: "Rétention de l'historique", Category: "terminal_limits", ValueType: "number", Unit: "days", DefaultValue: "0", IsActive: true},
+		{Key: "command_history", DisplayNameEn: "Command History Recording", DisplayNameFr: "Historique des commandes", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "command_history_retention_days", DisplayNameEn: "History Retention", DisplayNameFr: "Conservation de l'historique", Category: "terminal_limits", ValueType: "number", Unit: "days", DefaultValue: "0", IsActive: true},
 		{Key: "max_session_duration_minutes", DisplayNameEn: "Max Session Duration", DisplayNameFr: "Durée max de session", Category: "terminal_limits", ValueType: "number", Unit: "minutes", DefaultValue: "60", IsActive: true},
 		{Key: "max_concurrent_terminals", DisplayNameEn: "Max Concurrent Terminals", DisplayNameFr: "Terminaux simultanés max", Category: "terminal_limits", ValueType: "number", Unit: "count", DefaultValue: "1", IsActive: true},
 
 		// Course limits (number)
-		{Key: "max_courses", DisplayNameEn: "Max Courses (-1 = unlimited)", DisplayNameFr: "Cours max (-1 = illimité)", Category: "course_limits", ValueType: "number", Unit: "count", DefaultValue: "-1", IsActive: true},
+		{Key: "max_courses", DisplayNameEn: "Max Courses", DisplayNameFr: "Nombre de cours max", Category: "course_limits", ValueType: "number", Unit: "count", DefaultValue: "-1", IsActive: true},
 		{Key: "max_concurrent_users", DisplayNameEn: "Max Concurrent Users", DisplayNameFr: "Utilisateurs simultanés max", Category: "course_limits", ValueType: "number", Unit: "count", DefaultValue: "1", IsActive: true},
 	}
 
