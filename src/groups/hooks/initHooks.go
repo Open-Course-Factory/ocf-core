@@ -51,5 +51,13 @@ func InitGroupHooks(db *gorm.DB) {
 		log.Println("✅ Group member cleanup hook registered")
 	}
 
+	// Hook for auto-assigning a license when a member is added to a group with a linked batch
+	autoLicenseHook := NewGroupMemberAutoLicenseHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(autoLicenseHook); err != nil {
+		log.Printf("❌ Failed to register group member auto-license hook: %v", err)
+	} else {
+		log.Println("✅ Group member auto-license hook registered")
+	}
+
 	log.Println("🔗 Group hooks initialization complete")
 }
