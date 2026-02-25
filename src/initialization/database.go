@@ -109,6 +109,9 @@ func AutoMigrateAll(db *gorm.DB) {
 
 	// Seed default data (idempotent - safe for all environments)
 	SeedPlanFeatures(db)
+
+	// Ensure the free Trial plan always exists (regardless of environment)
+	EnsureTrialPlanExists(db)
 }
 
 // InitDevelopmentData sets up development data in debug mode
@@ -225,17 +228,10 @@ func syncCasdoorRolesToCasbin() {
 	log.Println("[ROLE-SYNC] Casdoor-to-Casbin role sync complete")
 }
 
-// SetupDefaultSubscriptionPlans initializes default subscription plans
-func SetupDefaultSubscriptionPlans(db *gorm.DB) {
-	// Vérifier si les plans existent déjà
-	var count int64
-	db.Model(&paymentModels.SubscriptionPlan{}).Count(&count)
-	if count > 0 {
-		return // Plans déjà créés
-	}
-
-	// Plan Trial (Free - always available, not in Stripe)
-	trialPlan := &paymentModels.SubscriptionPlan{
+// EnsureTrialPlanExists ensures the free Trial plan always exists in the database.
+// Uses FirstOrCreate so it is idempotent and safe to call in any environment.
+func EnsureTrialPlanExists(db *gorm.DB) {
+	trialPlan := paymentModels.SubscriptionPlan{
 		Name:                      "Trial",
 		Description:               "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
 		PriceAmount:               0,
@@ -257,7 +253,27 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		AllowedTemplates:          []string{"ubuntu-basic", "alpine-basic"},
 		AllowedBackends:           []string{},
 		DefaultBackend:            "",
-		CommandHistoryRetentionDays: 0, // No recording for trial
+		CommandHistoryRetentionDays: 0,
+	}
+
+	result := db.Where("name = ? AND price_amount = 0", "Trial").FirstOrCreate(&trialPlan)
+	if result.Error != nil {
+		log.Printf("Warning: Failed to ensure Trial plan exists: %v\n", result.Error)
+	} else if result.RowsAffected > 0 {
+		log.Println("Created missing Trial plan")
+	}
+}
+
+// SetupDefaultSubscriptionPlans initializes default subscription plans
+func SetupDefaultSubscriptionPlans(db *gorm.DB) {
+	// Always ensure Trial plan exists first
+	EnsureTrialPlanExists(db)
+
+	// Vérifier si les other plans existent déjà
+	var count int64
+	db.Model(&paymentModels.SubscriptionPlan{}).Where("price_amount > 0").Count(&count)
+	if count > 0 {
+		return // Paid plans déjà créés
 	}
 
 	// Plan Member Pro (Individual)
@@ -316,7 +332,7 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		},
 	}
 
-	plans := []*paymentModels.SubscriptionPlan{trialPlan, memberProPlan, trainerPlan}
+	plans := []*paymentModels.SubscriptionPlan{memberProPlan, trainerPlan}
 
 	for _, plan := range plans {
 		if err := db.Create(plan).Error; err != nil {
