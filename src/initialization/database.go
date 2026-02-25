@@ -1,6 +1,7 @@
 package initialization
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -437,11 +438,17 @@ func SeedPlanFeatures(db *gorm.DB) {
 		{Key: "max_concurrent_users", DisplayNameEn: "Max Concurrent Users", DisplayNameFr: "Utilisateurs simultanés max", Category: "course_limits", ValueType: "number", Unit: "count", DefaultValue: "1", IsActive: true},
 	}
 
-	for _, feature := range features {
-		if err := db.Create(&feature).Error; err != nil {
-			log.Printf("Warning: Failed to create plan feature %s: %v\n", feature.Key, err)
+	err := db.Transaction(func(tx *gorm.DB) error {
+		for _, feature := range features {
+			if err := tx.Create(&feature).Error; err != nil {
+				return fmt.Errorf("failed to seed plan feature %s: %w", feature.Key, err)
+			}
 		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("Error seeding plan features: %v\n", err)
+		return
 	}
-
 	log.Printf("Seeded %d plan features\n", len(features))
 }
