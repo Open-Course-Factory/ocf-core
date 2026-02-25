@@ -346,6 +346,72 @@ func TestConversionService_SubscriptionAnalyticsToDTO_Nil(t *testing.T) {
 	assert.Nil(t, result)
 }
 
+func TestConversionService_SubscriptionPlanToDTO_PricingTiers(t *testing.T) {
+	conversionService := services.NewConversionService()
+
+	planID := uuid.New()
+
+	plan := &models.SubscriptionPlan{
+		BaseModel: emm.BaseModel{
+			ID: planID,
+		},
+		Name:             "Tiered Plan",
+		Description:      "Plan with volume pricing tiers",
+		PriceAmount:      1000,
+		Currency:         "eur",
+		BillingInterval:  "month",
+		IsActive:         true,
+		UseTieredPricing: true,
+		PricingTiers: []models.PricingTier{
+			{
+				MinQuantity: 1,
+				MaxQuantity: 5,
+				UnitAmount:  1000,
+				Description: "Small team",
+			},
+			{
+				MinQuantity: 6,
+				MaxQuantity: 15,
+				UnitAmount:  800,
+				Description: "Medium team",
+			},
+			{
+				MinQuantity: 16,
+				MaxQuantity: 0, // unlimited
+				UnitAmount:  600,
+				Description: "Large team",
+			},
+		},
+	}
+
+	result, err := conversionService.SubscriptionPlanToDTO(plan)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, planID, result.ID)
+	assert.True(t, result.UseTieredPricing)
+
+	// Bug: PricingTiers is not mapped in SubscriptionPlanToDTO — this assertion should FAIL
+	assert.NotNil(t, result.PricingTiers, "PricingTiers should not be nil when model has tiers")
+	assert.Len(t, result.PricingTiers, 3, "PricingTiers should have 3 tiers")
+
+	// Verify tier data is correctly mapped
+	if len(result.PricingTiers) == 3 {
+		assert.Equal(t, 1, result.PricingTiers[0].MinQuantity)
+		assert.Equal(t, 5, result.PricingTiers[0].MaxQuantity)
+		assert.Equal(t, int64(1000), result.PricingTiers[0].UnitAmount)
+		assert.Equal(t, "Small team", result.PricingTiers[0].Description)
+
+		assert.Equal(t, 6, result.PricingTiers[1].MinQuantity)
+		assert.Equal(t, 15, result.PricingTiers[1].MaxQuantity)
+		assert.Equal(t, int64(800), result.PricingTiers[1].UnitAmount)
+
+		assert.Equal(t, 16, result.PricingTiers[2].MinQuantity)
+		assert.Equal(t, 0, result.PricingTiers[2].MaxQuantity)
+		assert.Equal(t, int64(600), result.PricingTiers[2].UnitAmount)
+	}
+}
+
 // Test de performance pour vérifier que les conversions sont rapides
 func BenchmarkConversionService_SubscriptionPlanToDTO(b *testing.B) {
 	conversionService := services.NewConversionService()

@@ -154,6 +154,7 @@ func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan
 		// Planned features
 		PlannedFeatures:  plan.PlannedFeatures,
 		UseTieredPricing: plan.UseTieredPricing,
+		PricingTiers:     convertPricingTiersToDTO(plan.PricingTiers),
 	}, nil
 }
 
@@ -425,4 +426,21 @@ func (cs *conversionService) populateBatchOwnerInfo(output *dto.UserSubscription
 	// Populate batch owner information
 	output.BatchOwnerName = &user.DisplayName
 	output.BatchOwnerEmail = &user.Email
+}
+
+// convertPricingTiersToDTO converts model PricingTiers to DTO PricingTiers
+func convertPricingTiersToDTO(tiers []models.PricingTier) []dto.PricingTier {
+	if tiers == nil {
+		return nil
+	}
+	result := make([]dto.PricingTier, len(tiers))
+	for i, tier := range tiers {
+		result[i] = dto.PricingTier{
+			MinQuantity: tier.MinQuantity,
+			MaxQuantity: tier.MaxQuantity,
+			UnitAmount:  tier.UnitAmount,
+			Description: tier.Description,
+		}
+	}
+	return result
 }
