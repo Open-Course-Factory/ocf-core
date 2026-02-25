@@ -22,7 +22,8 @@ func RegisterPlanFeature(service *ems.EntityRegistrationService) {
 						Key:           feature.Key,
 						DisplayNameEn: feature.DisplayNameEn,
 						DisplayNameFr: feature.DisplayNameFr,
-						Description:   feature.Description,
+						DescriptionEn: feature.DescriptionEn,
+						DescriptionFr: feature.DescriptionFr,
 						Category:      feature.Category,
 						ValueType:     feature.ValueType,
 						Unit:          feature.Unit,
@@ -43,13 +44,21 @@ func RegisterPlanFeature(service *ems.EntityRegistrationService) {
 					}
 					defaultValue := input.DefaultValue
 					if defaultValue == "" {
-						defaultValue = "false"
+						switch valueType {
+						case "number":
+							defaultValue = "0"
+						case "boolean":
+							defaultValue = "false"
+						default:
+							defaultValue = ""
+						}
 					}
 					return &models.PlanFeature{
 						Key:           input.Key,
 						DisplayNameEn: input.DisplayNameEn,
 						DisplayNameFr: input.DisplayNameFr,
-						Description:   input.Description,
+						DescriptionEn: input.DescriptionEn,
+						DescriptionFr: input.DescriptionFr,
 						Category:      input.Category,
 						ValueType:     valueType,
 						Unit:          input.Unit,

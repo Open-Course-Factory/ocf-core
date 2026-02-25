@@ -11,7 +11,8 @@ type PlanFeature struct {
 	Key           string `gorm:"uniqueIndex;not null" json:"key" mapstructure:"key"`
 	DisplayNameEn string `gorm:"not null" json:"display_name_en" mapstructure:"display_name_en"`
 	DisplayNameFr string `gorm:"not null" json:"display_name_fr" mapstructure:"display_name_fr"`
-	Description   string `gorm:"type:text" json:"description" mapstructure:"description"`
+	DescriptionEn string `gorm:"type:text" json:"description_en" mapstructure:"description_en"`
+	DescriptionFr string `gorm:"type:text" json:"description_fr" mapstructure:"description_fr"`
 	Category      string `gorm:"type:varchar(50);not null" json:"category" mapstructure:"category"`
 	ValueType     string `gorm:"type:varchar(20);not null;default:'boolean'" json:"value_type" mapstructure:"value_type"`
 	Unit          string `gorm:"type:varchar(20)" json:"unit" mapstructure:"unit"`
