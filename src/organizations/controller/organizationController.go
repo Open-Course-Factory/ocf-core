@@ -318,6 +318,7 @@ func (oc *OrganizationController) ImportOrganizationData(ctx *gin.Context) {
 	// Parse form parameters
 	dryRunStr := ctx.DefaultPostForm("dry_run", "false")
 	updateExistingStr := ctx.DefaultPostForm("update_existing", "false")
+	targetGroup := ctx.DefaultPostForm("target_group", "")
 
 	// Convert string parameters to boolean
 	dryRun, _ := strconv.ParseBool(dryRunStr)
@@ -332,6 +333,7 @@ func (oc *OrganizationController) ImportOrganizationData(ctx *gin.Context) {
 		membershipsFile,
 		dryRun,
 		updateExisting,
+		targetGroup,
 	)
 
 	if err != nil {

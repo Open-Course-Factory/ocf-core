@@ -28,6 +28,7 @@ type ImportService interface {
 		membershipsFile *multipart.FileHeader,
 		dryRun bool,
 		updateExisting bool,
+		targetGroup string,
 	) (*dto.ImportOrganizationDataResponse, error)
 }
 
@@ -48,6 +49,7 @@ func (s *importService) ImportOrganizationData(
 	membershipsFile *multipart.FileHeader,
 	dryRun bool,
 	updateExisting bool,
+	targetGroup string,
 ) (*dto.ImportOrganizationDataResponse, error) {
 
 	startTime := time.Now()
@@ -57,8 +59,9 @@ func (s *importService) ImportOrganizationData(
 		Summary: dto.ImportSummary{
 			StartTime: startTime,
 		},
-		Errors:   []dto.ImportError{},
-		Warnings: []dto.ImportWarning{},
+		Errors:      []dto.ImportError{},
+		Warnings:    []dto.ImportWarning{},
+		Credentials: []dto.UserCredential{},
 	}
 
 	// 1. Load organization
@@ -129,8 +132,22 @@ func (s *importService) ImportOrganizationData(
 
 	// 5. Process users
 	emailToUserID := make(map[string]string)
-	for i, user := range users {
-		userID, err := s.processUser(user, orgID, updateExisting, dryRun)
+	for i := range users {
+		user := &users[i]
+
+		// Auto-generate password if not provided
+		if user.Password == "" {
+			user.Password = orgUtils.GenerateSecurePassword(16)
+			user.ForceReset = "true"
+			user.GeneratedPassword = user.Password
+		}
+
+		// Default role if not provided
+		if user.Role == "" {
+			user.Role = "member"
+		}
+
+		userID, err := s.processUser(*user, orgID, updateExisting, dryRun)
 		if err != nil {
 			response.Errors = append(response.Errors, dto.ImportError{
 				Row:     i + 2, // +2 for header and 0-index
@@ -147,6 +164,15 @@ func (s *importService) ImportOrganizationData(
 				response.Summary.UsersUpdated++
 			} else {
 				response.Summary.UsersCreated++
+			}
+
+			// Collect generated credentials
+			if user.GeneratedPassword != "" {
+				response.Credentials = append(response.Credentials, dto.UserCredential{
+					Email:    user.Email,
+					Password: user.GeneratedPassword,
+					Name:     fmt.Sprintf("%s %s", user.FirstName, user.LastName),
+				})
 			}
 		} else {
 			response.Summary.UsersSkipped++
@@ -205,6 +231,56 @@ func (s *importService) ImportOrganizationData(
 		}
 	}
 
+	// 6.5 Target group: assign all imported users to a specific group
+	if targetGroup != "" {
+		var group groupModels.ClassGroup
+		result := s.db.Where("(id::text = ? OR name = ?) AND organization_id = ?", targetGroup, targetGroup, orgID).First(&group)
+		if result.Error != nil {
+			response.Errors = append(response.Errors, dto.ImportError{
+				Row:     0,
+				File:    "users",
+				Field:   "target_group",
+				Message: fmt.Sprintf("Target group '%s' not found in organization", targetGroup),
+				Code:    dto.ErrCodeNotFound,
+			})
+		} else {
+			for email, userID := range emailToUserID {
+				if dryRun {
+					utils.Debug("[DRY-RUN] Would add user %s to target group %s", email, targetGroup)
+					response.Summary.MembershipsCreated++
+					continue
+				}
+
+				// Check if membership already exists
+				var existingMember groupModels.GroupMember
+				memberResult := s.db.Where("group_id = ? AND user_id = ?", group.ID, userID).First(&existingMember)
+				if memberResult.Error == nil {
+					continue // Already a member
+				}
+
+				newMember := groupModels.GroupMember{
+					GroupID:   group.ID,
+					UserID:    userID,
+					Role:      groupModels.GroupMemberRole("member"),
+					InvitedBy: ownerUserID,
+					JoinedAt:  time.Now(),
+					IsActive:  true,
+				}
+
+				if err := s.db.Create(&newMember).Error; err != nil {
+					response.Warnings = append(response.Warnings, dto.ImportWarning{
+						Row:     0,
+						File:    "users",
+						Message: fmt.Sprintf("Failed to add user %s to target group: %v", email, err),
+					})
+					continue
+				}
+
+				response.Summary.MembershipsCreated++
+			}
+		}
+	}
+
 	// 7. Process memberships
 	if membershipsFile != nil {
 		for i, membership := range memberships {
@@ -226,7 +302,7 @@ func (s *importService) ImportOrganizationData(
 	// 8. Commit or rollback
 	if dryRun {
 		tx.Rollback()
-		utils.Info("🧪 Dry-run mode: All changes rolled back")
+		utils.Info("Dry-run mode: All changes rolled back")
 	} else {
 		if err := tx.Commit().Error; err != nil {
 			tx.Rollback()
@@ -238,7 +314,7 @@ func (s *importService) ImportOrganizationData(
 			})
 			return response, err
 		}
-		utils.Info("✅ Import committed successfully")
+		utils.Info("Import committed successfully")
 	}
 
 	// 9. Calculate summary
@@ -253,7 +329,7 @@ func (s *importService) ImportOrganizationData(
 // processUser creates or updates a user in Casdoor
 func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, updateExisting bool, dryRun bool) (string, error) {
 	if dryRun {
-		utils.Debug("🧪 [DRY-RUN] Would create/update user: %s", user.Email)
+		utils.Debug("[DRY-RUN] Would create/update user: %s", user.Email)
 		return "dry-run-user-id", nil
 	}
 
@@ -262,12 +338,12 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 	if err == nil && existingUser != nil {
 		// User exists
 		if !updateExisting {
-			utils.Debug("⏭️  User %s already exists, skipping", user.Email)
+			utils.Debug("User %s already exists, skipping", user.Email)
 			return "", nil
 		}
 
 		// Update user
-		utils.Debug("🔄 Updating existing user: %s", user.Email)
+		utils.Debug("Updating existing user: %s", user.Email)
 		existingUser.FirstName = user.FirstName
 		existingUser.LastName = user.LastName
 		existingUser.DisplayName = fmt.Sprintf("%s %s", user.FirstName, user.LastName)
@@ -297,7 +373,7 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 	}
 
 	// Create new user
-	utils.Debug("➕ Creating new user: %s", user.Email)
+	utils.Debug("Creating new user: %s", user.Email)
 
 	// Generate ToS acceptance timestamp (current time for bulk import)
 	tosTime := time.Now().Format(time.RFC3339)
@@ -362,7 +438,7 @@ func (s *importService) addRolesToUser(userID string, primaryRole string) {
 		if err != nil {
 			utils.Warn("Could not add role %s to user %s: %v", role, userID, err)
 		} else {
-			utils.Debug("✅ Added role '%s' to user %s", role, userID)
+			utils.Debug("Added role '%s' to user %s", role, userID)
 		}
 	}
 }
@@ -370,7 +446,7 @@ func (s *importService) addRolesToUser(userID string, primaryRole string) {
 // processGroup creates a group
 func (s *importService) processGroup(group dto.GroupImportRow, orgID uuid.UUID, ownerUserID string, parentID *uuid.UUID, dryRun bool) (uuid.UUID, error) {
 	if dryRun {
-		utils.Debug("🧪 [DRY-RUN] Would create group: %s", group.GroupName)
+		utils.Debug("[DRY-RUN] Would create group: %s", group.GroupName)
 		return uuid.New(), nil
 	}
 
@@ -408,7 +484,7 @@ func (s *importService) processGroup(group dto.GroupImportRow, orgID uuid.UUID, 
 		return uuid.Nil, fmt.Errorf("failed to create group: %w", err)
 	}
 
-	utils.Debug("✅ Created group: %s (ID: %s)", group.GroupName, newGroup.ID)
+	utils.Debug("Created group: %s (ID: %s)", group.GroupName, newGroup.ID)
 	return newGroup.ID, nil
 }
 
@@ -432,7 +508,7 @@ func (s *importService) processMembership(
 	}
 
 	if dryRun {
-		utils.Debug("🧪 [DRY-RUN] Would add user %s to group %s", membership.UserEmail, membership.GroupName)
+		utils.Debug("[DRY-RUN] Would add user %s to group %s", membership.UserEmail, membership.GroupName)
 		return nil
 	}
 
@@ -440,7 +516,7 @@ func (s *importService) processMembership(
 	var existingMember groupModels.GroupMember
 	result := s.db.Where("group_id = ? AND user_id = ?", groupID, userID).First(&existingMember)
 	if result.Error == nil {
-		utils.Debug("⏭️  Membership already exists: %s -> %s", membership.UserEmail, membership.GroupName)
+		utils.Debug("Membership already exists: %s -> %s", membership.UserEmail, membership.GroupName)
 		return nil
 	}
 
@@ -458,7 +534,7 @@ func (s *importService) processMembership(
 		return fmt.Errorf("failed to create membership: %w", err)
 	}
 
-	utils.Debug("✅ Added user %s to group %s", membership.UserEmail, membership.GroupName)
+	utils.Debug("Added user %s to group %s", membership.UserEmail, membership.GroupName)
 	return nil
 }
 
