@@ -34,7 +34,7 @@ func resolveColumnAliases(headerMap map[string]int) {
 }
 
 // ParseUsersCSV parses the users.csv file
-func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.ImportError) {
+func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.ImportError, []dto.ImportWarning) {
 	f, err := file.Open()
 	if err != nil {
 		return nil, []dto.ImportError{{
@@ -42,7 +42,7 @@ func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.Impor
 			File:    "users",
 			Message: fmt.Sprintf("Could not open users file: %v", err),
 			Code:    dto.ErrCodeValidation,
-		}}
+		}}, nil
 	}
 	defer f.Close()
 
@@ -57,7 +57,7 @@ func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.Impor
 			File:    "users",
 			Message: fmt.Sprintf("Could not read CSV header: %v", err),
 			Code:    dto.ErrCodeValidation,
-		}}
+		}}, nil
 	}
 
 	// Build header map and resolve aliases
@@ -75,7 +75,7 @@ func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.Impor
 			Field:   "email",
 			Message: "Missing required column: email",
 			Code:    dto.ErrCodeValidation,
-		}}
+		}}, nil
 	}
 
 	_, hasFirstName := headerMap["first_name"]
@@ -89,11 +89,12 @@ func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.Impor
 			Field:   "name",
 			Message: "Missing required columns: need (first_name AND last_name) or name",
 			Code:    dto.ErrCodeValidation,
-		}}
+		}}, nil
 	}
 
 	users := make([]dto.UserImportRow, 0, 100)
 	errors := make([]dto.ImportError, 0, 10)
+	warnings := make([]dto.ImportWarning, 0, 10)
 	rowNum := 1 // Header is row 0
 
 	for {
@@ -126,7 +127,10 @@ func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.Impor
 		}
 
 		// Validate required fields (may mutate user for name splitting)
-		rowErrors, _ := validateUserRow(&user, rowNum)
+		rowErrors, rowWarnings := validateUserRow(&user, rowNum)
+		if len(rowWarnings) > 0 {
+			warnings = append(warnings, rowWarnings...)
+		}
 		if len(rowErrors) > 0 {
 			errors = append(errors, rowErrors...)
 			continue
@@ -135,7 +139,7 @@ func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.Impor
 		users = append(users, user)
 	}
 
-	return users, errors
+	return users, errors, warnings
 }
 
 // ParseGroupsCSV parses the groups.csv file

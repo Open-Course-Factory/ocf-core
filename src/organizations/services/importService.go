@@ -77,8 +77,9 @@ func (s *importService) ImportOrganizationData(
 	}
 
 	// 2. Parse CSV files
-	users, userErrors := orgUtils.ParseUsersCSV(usersFile)
+	users, userErrors, userWarnings := orgUtils.ParseUsersCSV(usersFile)
 	response.Errors = append(response.Errors, userErrors...)
+	response.Warnings = append(response.Warnings, userWarnings...)
 
 	var groups []dto.GroupImportRow
 	var groupErrors []dto.ImportError
@@ -166,8 +167,8 @@ func (s *importService) ImportOrganizationData(
 				response.Summary.UsersCreated++
 			}
 
-			// Collect generated credentials
-			if user.GeneratedPassword != "" {
+			// Collect generated credentials (skip during dry-run — passwords would differ on real import)
+			if !dryRun && user.GeneratedPassword != "" {
 				response.Credentials = append(response.Credentials, dto.UserCredential{
 					Email:    user.Email,
 					Password: user.GeneratedPassword,
