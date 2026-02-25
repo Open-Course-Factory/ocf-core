@@ -2,7 +2,6 @@ package paymentHooks
 
 import (
 	"fmt"
-	"log"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/payment/models"
 
@@ -80,9 +79,7 @@ func (h *PlanFeaturesValidationHook) Execute(ctx *hooks.HookContext) error {
 		Where("is_active = ?", true).
 		Pluck("key", &activeKeys).Error
 	if err != nil {
-		log.Printf("Warning: could not query plan features catalog: %v", err)
-		// Don't block creation if the catalog can't be queried
-		return nil
+		return fmt.Errorf("unable to validate plan features: catalog query failed: %w", err)
 	}
 
 	// If catalog is empty (not yet seeded), skip validation
