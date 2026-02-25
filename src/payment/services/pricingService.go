@@ -139,11 +139,3 @@ func (ps *pricingService) GetTotalCost(plan *models.SubscriptionPlan, quantity i
 
 	return totalCost
 }
-
-// Helper function for min
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
