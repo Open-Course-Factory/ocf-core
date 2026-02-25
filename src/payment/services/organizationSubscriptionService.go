@@ -17,7 +17,7 @@ type OrganizationSubscriptionService interface {
 	// Subscription management
 	GetOrganizationSubscription(orgID uuid.UUID) (*models.OrganizationSubscription, error)
 	GetOrganizationSubscriptionByID(id uuid.UUID) (*models.OrganizationSubscription, error)
-	CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string) (*models.OrganizationSubscription, error)
+	CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string, quantity int) (*models.OrganizationSubscription, error)
 	UpdateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID) (*models.OrganizationSubscription, error)
 	CancelOrganizationSubscription(orgID uuid.UUID, cancelAtPeriodEnd bool) error
 
@@ -84,7 +84,7 @@ func (oss *organizationSubscriptionService) GetOrganizationSubscriptionByID(id u
 // CreateOrganizationSubscription creates a new organization subscription
 // For free plans (PriceAmount == 0), creates an active subscription
 // For paid plans, creates an incomplete subscription that will be activated by Stripe webhook
-func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string) (*models.OrganizationSubscription, error) {
+func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string, quantity int) (*models.OrganizationSubscription, error) {
 	// Verify the organization exists
 	var org organizationModels.Organization
 	if err := oss.db.Where("id = ?", orgID).First(&org).Error; err != nil {
@@ -99,10 +99,15 @@ func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID
 
 	now := time.Now()
 
+	// Default to 1 seat if quantity is not provided or invalid
+	if quantity <= 0 {
+		quantity = 1
+	}
+
 	subscription := &models.OrganizationSubscription{
 		OrganizationID:     orgID,
 		SubscriptionPlanID: planID,
-		Quantity:           1, // Default to 1 seat
+		Quantity:           quantity,
 	}
 
 	// FREE PLAN: Activate immediately without Stripe

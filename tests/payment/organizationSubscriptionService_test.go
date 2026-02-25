@@ -110,7 +110,7 @@ func TestOrganizationSubscriptionService_CreateFreePlan(t *testing.T) {
 		freePlan, _, org1, _, userID := seedTestData(t, db)
 		service := services.NewOrganizationSubscriptionService(db)
 
-		sub, err := service.CreateOrganizationSubscription(org1.ID, freePlan.ID, userID)
+		sub, err := service.CreateOrganizationSubscription(org1.ID, freePlan.ID, userID, 1)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, sub)
@@ -129,7 +129,7 @@ func TestOrganizationSubscriptionService_CreateFreePlan(t *testing.T) {
 		_, proPlan, org2, _, userID := seedTestData(t, db)
 		service := services.NewOrganizationSubscriptionService(db)
 
-		sub, err := service.CreateOrganizationSubscription(org2.ID, proPlan.ID, userID)
+		sub, err := service.CreateOrganizationSubscription(org2.ID, proPlan.ID, userID, 1)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, sub)
@@ -143,7 +143,7 @@ func TestOrganizationSubscriptionService_CreateFreePlan(t *testing.T) {
 
 		fakeOrgID := uuid.New()
 
-		sub, err := service.CreateOrganizationSubscription(fakeOrgID, freePlan.ID, userID)
+		sub, err := service.CreateOrganizationSubscription(fakeOrgID, freePlan.ID, userID, 1)
 
 		assert.Error(t, err)
 		assert.Nil(t, sub)
@@ -157,7 +157,7 @@ func TestOrganizationSubscriptionService_CreateFreePlan(t *testing.T) {
 
 		fakePlanID := uuid.New()
 
-		sub, err := service.CreateOrganizationSubscription(org1.ID, fakePlanID, userID)
+		sub, err := service.CreateOrganizationSubscription(org1.ID, fakePlanID, userID, 1)
 
 		assert.Error(t, err)
 		assert.Nil(t, sub)
@@ -171,7 +171,7 @@ func TestOrganizationSubscriptionService_GetSubscription(t *testing.T) {
 	service := services.NewOrganizationSubscriptionService(db)
 
 	// Create a subscription first
-	createdSub, err := service.CreateOrganizationSubscription(org1.ID, freePlan.ID, userID)
+	createdSub, err := service.CreateOrganizationSubscription(org1.ID, freePlan.ID, userID, 1)
 	assert.NoError(t, err)
 
 	t.Run("Get subscription by organization ID", func(t *testing.T) {
@@ -207,7 +207,7 @@ func TestOrganizationSubscriptionService_UpdateSubscription(t *testing.T) {
 	service := services.NewOrganizationSubscriptionService(db)
 
 	// Create initial subscription
-	_, err := service.CreateOrganizationSubscription(org1.ID, freePlan.ID, userID)
+	_, err := service.CreateOrganizationSubscription(org1.ID, freePlan.ID, userID, 1)
 	assert.NoError(t, err)
 
 	t.Run("Upgrade subscription plan", func(t *testing.T) {
@@ -235,7 +235,7 @@ func TestOrganizationSubscriptionService_CancelSubscription(t *testing.T) {
 	service := services.NewOrganizationSubscriptionService(db)
 
 	// Create subscription
-	_, err := service.CreateOrganizationSubscription(org1.ID, freePlan.ID, userID)
+	_, err := service.CreateOrganizationSubscription(org1.ID, freePlan.ID, userID, 1)
 	assert.NoError(t, err)
 
 	t.Run("Cancel subscription at period end", func(t *testing.T) {
@@ -261,7 +261,7 @@ func TestOrganizationSubscriptionService_CancelSubscription(t *testing.T) {
 		var freePlan2 models.SubscriptionPlan
 		db2.Where("name = ?", "Free").First(&freePlan2)
 
-		_, err := service2.CreateOrganizationSubscription(org2.ID, freePlan2.ID, userID2)
+		_, err := service2.CreateOrganizationSubscription(org2.ID, freePlan2.ID, userID2, 1)
 		assert.NoError(t, err)
 
 		err = service2.CancelOrganizationSubscription(org2.ID, false)
@@ -286,7 +286,7 @@ func TestOrganizationSubscriptionService_FeatureAccess(t *testing.T) {
 	service := services.NewOrganizationSubscriptionService(db)
 
 	// Create subscription with free plan (will be active immediately)
-	_, err := service.CreateOrganizationSubscription(org1.ID, freePlan.ID, userID)
+	_, err := service.CreateOrganizationSubscription(org1.ID, freePlan.ID, userID, 1)
 	assert.NoError(t, err)
 
 	t.Run("Get organization features", func(t *testing.T) {
@@ -345,10 +345,10 @@ func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Create subscriptions for both organizations (both free so both will be active)
-	_, err = service.CreateOrganizationSubscription(org1.ID, premiumFreePlan.ID, userID)
+	_, err = service.CreateOrganizationSubscription(org1.ID, premiumFreePlan.ID, userID, 1)
 	assert.NoError(t, err)
 
-	_, err = service.CreateOrganizationSubscription(org2.ID, freePlan.ID, userID)
+	_, err = service.CreateOrganizationSubscription(org2.ID, freePlan.ID, userID, 1)
 	assert.NoError(t, err)
 
 	t.Run("Get user effective features from multiple orgs", func(t *testing.T) {
@@ -514,5 +514,27 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 
 		// Should include all three organizations
 		assert.Equal(t, 3, len(features.Organizations))
+	})
+}
+
+func TestOrganizationSubscription_Create_RespectsQuantity(t *testing.T) {
+	t.Run("Subscription quantity should match requested amount", func(t *testing.T) {
+		db := freshTestDB(t)
+		freePlan, _, org1, _, userID := seedTestData(t, db)
+		service := services.NewOrganizationSubscriptionService(db)
+
+		// Create subscription via the service.
+		// The DTO CreateOrganizationSubscriptionInput has a Quantity field (e.g., 10 seats),
+		// but the service method signature does not accept quantity as a parameter.
+		// It hardcodes Quantity: 1 on line 105 of organizationSubscriptionService.go.
+		requestedQuantity := 10
+
+		sub, err := service.CreateOrganizationSubscription(org1.ID, freePlan.ID, userID, requestedQuantity)
+		assert.NoError(t, err)
+		assert.NotNil(t, sub)
+
+		// Verify the service respects the requested quantity.
+		assert.Equal(t, requestedQuantity, sub.Quantity,
+			"Subscription quantity should be %d but service hardcodes it to 1", requestedQuantity)
 	})
 }

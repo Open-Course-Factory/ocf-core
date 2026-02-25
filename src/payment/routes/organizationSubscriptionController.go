@@ -110,6 +110,7 @@ func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ct
 		orgID,
 		input.SubscriptionPlanID,
 		userID,
+		input.Quantity,
 	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
