@@ -1,7 +1,7 @@
 // tests/payment/planFeatureDto_test.go
 // Tests for PlanFeature DTO validation.
-// Bug-exposing tests: the DTOs currently lack enum validation on Category and ValueType,
-// allowing arbitrary strings to be submitted.
+// Regression tests: verify that Category and ValueType fields have proper enum validation
+// to prevent arbitrary strings from being submitted.
 package payment_tests
 
 import (
@@ -24,14 +24,11 @@ func getBindingTag(structType reflect.Type, fieldName string) string {
 }
 
 // ==========================================
-// BUG-EXPOSING TESTS (should FAIL with current code -- item #12)
+// Regression tests — enum validation on Category and ValueType
 // ==========================================
 
 // TestCreatePlanFeatureInput_InvalidCategory_ReturnsError tests that submitting
-// a PlanFeature with an arbitrary category value is rejected.
-// BUG: Currently, the Category field in CreatePlanFeatureInput has no enum validation
-// (`binding:"required,oneof=capabilities machine_sizes terminal_limits course_limits"`),
-// so any string is accepted.
+// a PlanFeature with an arbitrary category value is rejected by the oneof validation.
 func TestCreatePlanFeatureInput_InvalidCategory_ReturnsError(t *testing.T) {
 	dtoType := reflect.TypeOf(dto.CreatePlanFeatureInput{})
 	bindingTag := getBindingTag(dtoType, "Category")
@@ -56,9 +53,7 @@ func TestCreatePlanFeatureInput_InvalidCategory_ReturnsError(t *testing.T) {
 }
 
 // TestCreatePlanFeatureInput_InvalidValueType_ReturnsError tests that submitting
-// a PlanFeature with an arbitrary value_type is rejected.
-// BUG: Currently, the ValueType field has no binding validation at all,
-// so any string including "script" or "exec" is accepted.
+// a PlanFeature with an arbitrary value_type is rejected by the oneof validation.
 func TestCreatePlanFeatureInput_InvalidValueType_ReturnsError(t *testing.T) {
 	dtoType := reflect.TypeOf(dto.CreatePlanFeatureInput{})
 	bindingTag := getBindingTag(dtoType, "ValueType")

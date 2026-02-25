@@ -176,15 +176,14 @@ func TestPlanFeaturesValidationHook_MixedValidInvalid_ReturnsError(t *testing.T)
 }
 
 // ==========================================
-// BUG-EXPOSING TEST (should FAIL with current code — item #1)
+// Regression test — map[string]any input handling
 // ==========================================
 
 // TestPlanFeaturesValidationHook_BeforeUpdate_MapInput_Succeeds tests that the hook
 // correctly handles map[string]any input during BeforeUpdate.
 // The generic entity management framework passes ctx.NewEntity as map[string]any
 // during PATCH updates (not as *models.SubscriptionPlan), so the hook must handle
-// both types. Currently it only handles *models.SubscriptionPlan and will fail
-// with map input.
+// both types.
 func TestPlanFeaturesValidationHook_BeforeUpdate_MapInput_Succeeds(t *testing.T) {
 	db := freshTestDB(t)
 	seedTestPlanFeatures(t)
@@ -202,9 +201,6 @@ func TestPlanFeaturesValidationHook_BeforeUpdate_MapInput_Succeeds(t *testing.T)
 	}
 
 	// This should validate the features from the map without panicking or erroring.
-	// BUG: Current code does `ctx.NewEntity.(*models.SubscriptionPlan)` which will
-	// fail the type assertion for map[string]any and return an error like:
-	// "expected SubscriptionPlan, got map[string]interface {}"
 	err := hook.Execute(ctx)
 	assert.NoError(t, err, "Hook should handle map[string]any input during BeforeUpdate without error")
 }
