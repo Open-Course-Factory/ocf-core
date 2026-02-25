@@ -359,3 +359,125 @@ john@test.com`
 	assert.Nil(t, users)
 	assert.Contains(t, errors[0].Message, "Missing required columns")
 }
+
+// --- Encoding detection tests ---
+
+// Helper to create a multipart.FileHeader from raw bytes (for non-UTF-8 encoded content)
+func createMultipartFileHeaderFromBytes(t *testing.T, filename string, content []byte) *multipart.FileHeader {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	part, err := writer.CreateFormFile("file", filename)
+	require.NoError(t, err)
+
+	_, err = part.Write(content)
+	require.NoError(t, err)
+
+	err = writer.Close()
+	require.NoError(t, err)
+
+	reader := multipart.NewReader(body, writer.Boundary())
+	form, err := reader.ReadForm(32 << 20)
+	require.NoError(t, err)
+
+	files := form.File["file"]
+	require.NotEmpty(t, files, "Expected at least one file in form")
+
+	return files[0]
+}
+
+func TestParseUsersCSV_Latin1Encoding(t *testing.T) {
+	// Latin-1 encoded CSV: "Jérôme" is encoded as 4A E9 72 F4 6D 65 in Latin-1
+	// \xe9 = é, \xf4 = ô in Latin-1/ISO-8859-1
+	latin1CSV := []byte("email,first_name,last_name\njerome@test.com,J\xe9r\xf4me,Dupont\n")
+
+	fileHeader := createMultipartFileHeaderFromBytes(t, "users.csv", latin1CSV)
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "Should have no parsing errors for Latin-1 CSV")
+	require.Len(t, users, 1)
+	assert.Equal(t, "jerome@test.com", users[0].Email)
+	assert.Equal(t, "Jérôme", users[0].FirstName, "Latin-1 encoded é (0xe9) and ô (0xf4) should be converted to UTF-8")
+	assert.Equal(t, "Dupont", users[0].LastName)
+}
+
+func TestParseUsersCSV_UTF8BOM(t *testing.T) {
+	// UTF-8 BOM (EF BB BF) prepended to a valid UTF-8 CSV
+	// The BOM should be stripped so that the first column header "email" is recognized correctly
+	bom := []byte{0xEF, 0xBB, 0xBF}
+	csvContent := []byte("email,first_name,last_name\npierre@test.com,Pierre,Martin\n")
+	bomCSV := append(bom, csvContent...)
+
+	fileHeader := createMultipartFileHeaderFromBytes(t, "users.csv", bomCSV)
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "Should have no parsing errors for UTF-8 BOM CSV")
+	require.Len(t, users, 1, "Should parse 1 user from BOM-prefixed CSV")
+	assert.Equal(t, "pierre@test.com", users[0].Email, "Email should be correctly parsed despite BOM prefix on header")
+	assert.Equal(t, "Pierre", users[0].FirstName)
+	assert.Equal(t, "Martin", users[0].LastName)
+}
+
+func TestParseUsersCSV_Windows1252Encoding(t *testing.T) {
+	// Windows-1252 specific characters:
+	// \x93 = left double quotation mark (U+201C)
+	// \x94 = right double quotation mark (U+201D)
+	// \x85 = horizontal ellipsis (U+2026)
+	// These bytes are NOT valid in Latin-1 or UTF-8, only in Windows-1252
+	// Use them in a last_name field to verify conversion
+	win1252CSV := []byte("email,first_name,last_name\ntest@test.com,Marie,L\x93Arch\x85\x94\n")
+
+	fileHeader := createMultipartFileHeaderFromBytes(t, "users.csv", win1252CSV)
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "Should have no parsing errors for Windows-1252 CSV")
+	require.Len(t, users, 1)
+	assert.Equal(t, "test@test.com", users[0].Email)
+	assert.Equal(t, "Marie", users[0].FirstName)
+	// Windows-1252: \x93 → U+201C ("), \x85 → U+2026 (…), \x94 → U+201D (")
+	assert.Equal(t, "L\u201cArch\u2026\u201d", users[0].LastName, "Windows-1252 smart quotes and ellipsis should be converted to UTF-8")
+}
+
+func TestParseUsersCSV_Latin1FrenchAliases(t *testing.T) {
+	// French headers with Latin-1 encoding:
+	// "prénom" in Latin-1: 70 72 E9 6E 6F 6D (the é is 0xE9)
+	// "e-mail" is pure ASCII so no encoding issue
+	// The alias "prénom" in the code is UTF-8 (70 72 C3 A9 6E 6F 6D) which won't match
+	// the Latin-1 bytes (70 72 E9 6E 6F 6D) unless encoding conversion happens first
+	header := []byte("e-mail,pr\xe9nom,nom de famille\n")
+	row := []byte("marie@test.com,Marie,Dupont\n")
+	latin1CSV := append(header, row...)
+
+	fileHeader := createMultipartFileHeaderFromBytes(t, "users.csv", latin1CSV)
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "Should have no parsing errors for Latin-1 French headers")
+	require.Len(t, users, 1, "Should parse 1 user when French aliases are Latin-1 encoded")
+	assert.Equal(t, "marie@test.com", users[0].Email, "e-mail alias should resolve to email")
+	assert.Equal(t, "Marie", users[0].FirstName, "Latin-1 prénom alias should resolve to first_name")
+	assert.Equal(t, "Dupont", users[0].LastName, "nom de famille alias should resolve to last_name")
+}
+
+func TestParseUsersCSV_UTF8AccentsPreserved(t *testing.T) {
+	// Valid UTF-8 accented characters should be preserved as-is
+	// This is a regression guard — should pass already
+	content := "email,first_name,last_name\n" +
+		"jerome@test.com,Jérôme,Müller\n" +
+		"jose@test.com,José,García\n" +
+		"francois@test.com,François,Lefèvre\n"
+
+	fileHeader := createMultipartFileHeader(t, "users.csv", content)
+	users, errors, _ := orgUtils.ParseUsersCSV(fileHeader)
+
+	assert.Empty(t, errors, "Should have no parsing errors for valid UTF-8")
+	require.Len(t, users, 3, "Should parse 3 users")
+
+	assert.Equal(t, "Jérôme", users[0].FirstName, "UTF-8 é and ô should be preserved")
+	assert.Equal(t, "Müller", users[0].LastName, "UTF-8 ü should be preserved")
+
+	assert.Equal(t, "José", users[1].FirstName, "UTF-8 é should be preserved")
+	assert.Equal(t, "García", users[1].LastName, "UTF-8 í should be preserved")
+
+	assert.Equal(t, "François", users[2].FirstName, "UTF-8 ç should be preserved")
+	assert.Equal(t, "Lefèvre", users[2].LastName, "UTF-8 è should be preserved")
+}
