@@ -1,13 +1,18 @@
 package utils
 
 import (
+	"bytes"
 	"encoding/csv"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"strings"
+	"unicode/utf8"
 
 	"soli/formations/src/organizations/dto"
+
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/transform"
 )
 
 // columnAliases maps alternative column names to their canonical names.
@@ -33,9 +38,41 @@ func resolveColumnAliases(headerMap map[string]int) {
 	}
 }
 
+// openAndDecodeCSV opens a multipart file, strips UTF-8 BOM if present,
+// and converts non-UTF-8 content (assumed Windows-1252) to UTF-8.
+func openAndDecodeCSV(file *multipart.FileHeader) (io.Reader, error) {
+	f, err := file.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, err
+	}
+
+	// Strip UTF-8 BOM (EF BB BF)
+	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+		data = data[3:]
+	}
+
+	// Check if valid UTF-8; if not, convert from Windows-1252
+	if !utf8.Valid(data) {
+		decoder := charmap.Windows1252.NewDecoder()
+		utf8Data, _, err := transform.Bytes(decoder, data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert encoding: %w", err)
+		}
+		data = utf8Data
+	}
+
+	return bytes.NewReader(data), nil
+}
+
 // ParseUsersCSV parses the users.csv file
 func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.ImportError, []dto.ImportWarning) {
-	f, err := file.Open()
+	r, err := openAndDecodeCSV(file)
 	if err != nil {
 		return nil, []dto.ImportError{{
 			Row:     0,
@@ -44,9 +81,8 @@ func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.Impor
 			Code:    dto.ErrCodeValidation,
 		}}, nil
 	}
-	defer f.Close()
 
-	reader := csv.NewReader(f)
+	reader := csv.NewReader(r)
 	reader.TrimLeadingSpace = true
 
 	// Read header
@@ -144,7 +180,7 @@ func ParseUsersCSV(file *multipart.FileHeader) ([]dto.UserImportRow, []dto.Impor
 
 // ParseGroupsCSV parses the groups.csv file
 func ParseGroupsCSV(file *multipart.FileHeader) ([]dto.GroupImportRow, []dto.ImportError) {
-	f, err := file.Open()
+	r, err := openAndDecodeCSV(file)
 	if err != nil {
 		return nil, []dto.ImportError{{
 			Row:     0,
@@ -153,9 +189,8 @@ func ParseGroupsCSV(file *multipart.FileHeader) ([]dto.GroupImportRow, []dto.Imp
 			Code:    dto.ErrCodeValidation,
 		}}
 	}
-	defer f.Close()
 
-	reader := csv.NewReader(f)
+	reader := csv.NewReader(r)
 	reader.TrimLeadingSpace = true
 
 	// Read header
@@ -233,7 +268,7 @@ func ParseGroupsCSV(file *multipart.FileHeader) ([]dto.GroupImportRow, []dto.Imp
 
 // ParseMembershipsCSV parses the memberships.csv file
 func ParseMembershipsCSV(file *multipart.FileHeader) ([]dto.MembershipImportRow, []dto.ImportError) {
-	f, err := file.Open()
+	r, err := openAndDecodeCSV(file)
 	if err != nil {
 		return nil, []dto.ImportError{{
 			Row:     0,
@@ -242,9 +277,8 @@ func ParseMembershipsCSV(file *multipart.FileHeader) ([]dto.MembershipImportRow,
 			Code:    dto.ErrCodeValidation,
 		}}
 	}
-	defer f.Close()
 
-	reader := csv.NewReader(f)
+	reader := csv.NewReader(r)
 	reader.TrimLeadingSpace = true
 
 	// Read header
