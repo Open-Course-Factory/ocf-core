@@ -141,7 +141,7 @@ func (gr *groupRepository) DeleteGroup(groupID uuid.UUID) error {
 
 // AddGroupMember adds a member to a group
 func (gr *groupRepository) AddGroupMember(member *models.GroupMember) error {
-	return gr.db.Create(member).Error
+	return gr.db.Omit("Metadata").Create(member).Error
 }
 
 // GetGroupMember retrieves a specific group member

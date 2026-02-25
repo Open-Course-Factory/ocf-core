@@ -3,6 +3,7 @@ package services
 
 import (
 	"fmt"
+	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
@@ -178,6 +179,11 @@ func (s *bulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID s
 	}
 
 	utils.Info("License %s assigned to user %s from batch %s", license.ID, targetUserID, batchID)
+
+	// Auto-add user to batch's linked group (non-blocking)
+	if batch.GroupID != nil {
+		s.autoAddUserToGroup(*batch.GroupID, batch.PurchaserUserID, targetUserID)
+	}
 
 	return &license, nil
 }
@@ -640,4 +646,32 @@ func (s *bulkLicenseService) canUserAccessBatch(batch *models.SubscriptionBatch,
 	}
 
 	return count > 0, nil
+}
+
+// autoAddUserToGroup adds a user to a group as a member via direct DB insert.
+// Checks for existing membership to avoid duplicates.
+// Failures are non-blocking: logged as warnings but never affect license assignment.
+func (s *bulkLicenseService) autoAddUserToGroup(groupID uuid.UUID, purchaserUserID string, targetUserID string) {
+	// Check if user is already an active member
+	var count int64
+	if err := s.db.Model(&groupModels.GroupMember{}).
+		Where("group_id = ? AND user_id = ? AND is_active = ?", groupID, targetUserID, true).
+		Count(&count).Error; err != nil {
+		utils.Warn("Auto-add to group: failed to check existing membership: %v", err)
+		return
+	}
+	if count > 0 {
+		return // already a member
+	}
+
+	member := &groupModels.GroupMember{
+		GroupID:  groupID,
+		UserID:   targetUserID,
+		Role:     groupModels.GroupMemberRoleMember,
+		JoinedAt: time.Now(),
+		IsActive: true,
+	}
+	if err := s.db.Omit("Metadata").Create(member).Error; err != nil {
+		utils.Warn("Auto-add user %s to group %s failed (non-blocking): %v", targetUserID, groupID, err)
+	}
 }
