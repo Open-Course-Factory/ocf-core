@@ -27,7 +27,7 @@ func setupPricingTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func createTestPlan(t *testing.T, db *gorm.DB, plan *models.SubscriptionPlan) *models.SubscriptionPlan {
+func createPricingTestPlan(t *testing.T, db *gorm.DB, plan *models.SubscriptionPlan) *models.SubscriptionPlan {
 	plan.BaseModel = entityManagementModels.BaseModel{ID: uuid.New()}
 	err := db.Create(plan).Error
 	require.NoError(t, err)
@@ -40,7 +40,7 @@ func TestPricingService_CalculatePricingPreview_FlatPricing(t *testing.T) {
 	db := setupPricingTestDB(t)
 	svc := services.NewPricingService(db)
 
-	plan := createTestPlan(t, db, &models.SubscriptionPlan{
+	plan := createPricingTestPlan(t, db, &models.SubscriptionPlan{
 		Name:             "Pro",
 		PriceAmount:      1000, // 10.00 EUR
 		Currency:         "eur",
@@ -67,7 +67,7 @@ func TestPricingService_CalculatePricingPreview_TieredPricing(t *testing.T) {
 	svc := services.NewPricingService(db)
 
 	// Tiers: 1-5 @ 1000, 6-15 @ 800, 16+ @ 600
-	plan := createTestPlan(t, db, &models.SubscriptionPlan{
+	plan := createPricingTestPlan(t, db, &models.SubscriptionPlan{
 		Name:             "Business",
 		PriceAmount:      1000, // base/flat price
 		Currency:         "eur",
@@ -115,7 +115,7 @@ func TestPricingService_CalculatePricingPreview_QuantityExceedingAllTiers(t *tes
 	db := setupPricingTestDB(t)
 	svc := services.NewPricingService(db)
 
-	plan := createTestPlan(t, db, &models.SubscriptionPlan{
+	plan := createPricingTestPlan(t, db, &models.SubscriptionPlan{
 		Name:             "Tiered",
 		PriceAmount:      1000,
 		Currency:         "eur",
@@ -140,7 +140,7 @@ func TestPricingService_CalculatePricingPreview_SingleTierOnly(t *testing.T) {
 	db := setupPricingTestDB(t)
 	svc := services.NewPricingService(db)
 
-	plan := createTestPlan(t, db, &models.SubscriptionPlan{
+	plan := createPricingTestPlan(t, db, &models.SubscriptionPlan{
 		Name:             "Flat Tiered",
 		PriceAmount:      500,
 		Currency:         "eur",
@@ -165,7 +165,7 @@ func TestPricingService_CalculatePricingPreview_BoundaryAtTierTransition(t *test
 	db := setupPricingTestDB(t)
 	svc := services.NewPricingService(db)
 
-	plan := createTestPlan(t, db, &models.SubscriptionPlan{
+	plan := createPricingTestPlan(t, db, &models.SubscriptionPlan{
 		Name:             "Boundary",
 		PriceAmount:      1000,
 		Currency:         "eur",
@@ -216,7 +216,7 @@ func TestPricingService_CalculatePricingPreview_EmptyTiersUsesFlatPricing(t *tes
 	svc := services.NewPricingService(db)
 
 	// UseTieredPricing is true but no tiers defined -> falls back to flat
-	plan := createTestPlan(t, db, &models.SubscriptionPlan{
+	plan := createPricingTestPlan(t, db, &models.SubscriptionPlan{
 		Name:             "Empty Tiers",
 		PriceAmount:      1500,
 		Currency:         "eur",
@@ -271,7 +271,7 @@ func TestPricingService_GetTotalCost_ConsistencyWithPreview(t *testing.T) {
 	svc := services.NewPricingService(db)
 
 	// Flat pricing consistency
-	flatPlan := createTestPlan(t, db, &models.SubscriptionPlan{
+	flatPlan := createPricingTestPlan(t, db, &models.SubscriptionPlan{
 		Name:             "Flat",
 		PriceAmount:      1200,
 		Currency:         "eur",
@@ -284,7 +284,7 @@ func TestPricingService_GetTotalCost_ConsistencyWithPreview(t *testing.T) {
 	assert.Equal(t, breakdown.TotalMonthlyCost, cost)
 
 	// Tiered pricing consistency
-	tieredPlan := createTestPlan(t, db, &models.SubscriptionPlan{
+	tieredPlan := createPricingTestPlan(t, db, &models.SubscriptionPlan{
 		Name:             "Tiered",
 		PriceAmount:      1000,
 		Currency:         "eur",
