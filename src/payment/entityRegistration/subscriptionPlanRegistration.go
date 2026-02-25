@@ -32,6 +32,7 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						ID:                 plan.ID,
 						Name:               plan.Name,
 						Description:        plan.Description,
+						Priority:           plan.Priority,
 						StripeProductID:    plan.StripeProductID,
 						StripePriceID:      plan.StripePriceID,
 						PriceAmount:        plan.PriceAmount,
@@ -69,21 +70,33 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 					}, nil
 				},
 				DtoToModel: func(input dto.CreateSubscriptionPlanInput) *models.SubscriptionPlan {
+					isActive := true
+					if input.IsActive != nil {
+						isActive = *input.IsActive
+					}
 					return &models.SubscriptionPlan{
-						Name:               input.Name,
-						Description:        input.Description,
-						PriceAmount:        input.PriceAmount,
-						Currency:           input.Currency,
-						BillingInterval:    input.BillingInterval,
-						TrialDays:          input.TrialDays,
-						Features:           input.Features,
-						MaxConcurrentUsers: input.MaxConcurrentUsers,
-						MaxCourses:         input.MaxCourses,
-						RequiredRole:       input.RequiredRole,
-						AllowedBackends:    input.AllowedBackends,
+						Name:                       input.Name,
+						Description:                input.Description,
+						PriceAmount:                input.PriceAmount,
+						Currency:                   input.Currency,
+						BillingInterval:            input.BillingInterval,
+						TrialDays:                  input.TrialDays,
+						Features:                   input.Features,
+						MaxConcurrentUsers:         input.MaxConcurrentUsers,
+						MaxCourses:                 input.MaxCourses,
+						RequiredRole:               input.RequiredRole,
+						MaxSessionDurationMinutes:  input.MaxSessionDurationMinutes,
+						MaxConcurrentTerminals:     input.MaxConcurrentTerminals,
+						AllowedMachineSizes:        input.AllowedMachineSizes,
+						NetworkAccessEnabled:       input.NetworkAccessEnabled,
+						DataPersistenceEnabled:     input.DataPersistenceEnabled,
+						DataPersistenceGB:          input.DataPersistenceGB,
+						AllowedTemplates:           input.AllowedTemplates,
+						AllowedBackends:            input.AllowedBackends,
 						DefaultBackend:             input.DefaultBackend,
 						CommandHistoryRetentionDays: input.CommandHistoryRetentionDays,
-						IsActive:                   true,
+						Priority:                   input.Priority,
+						IsActive:                   isActive,
 					}
 				},
 				DtoToMap: nil,

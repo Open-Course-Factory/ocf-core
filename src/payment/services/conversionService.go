@@ -86,6 +86,11 @@ func (cs *conversionService) UserSubscriptionToDTO(subscription *models.UserSubs
 		cs.populateBatchOwnerInfo(output, *subscription.PurchaserUserID)
 	}
 
+	// Admin assignment tracking
+	if subscription.AssignedByUserID != nil {
+		output.AssignedByUserID = subscription.AssignedByUserID
+	}
+
 	return output, nil
 }
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	configModels "soli/formations/src/configuration/models"
 	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
 
@@ -34,6 +35,8 @@ func TestMain(m *testing.M) {
 		&models.OrganizationSubscription{},
 		&organizationModels.Organization{},
 		&organizationModels.OrganizationMember{},
+		&models.PlanFeature{},
+		&configModels.Feature{},
 	)
 	if err != nil {
 		panic("failed to migrate shared test DB: " + err.Error())
@@ -54,5 +57,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM organization_members")
 	sharedTestDB.Exec("DELETE FROM organizations")
 	sharedTestDB.Exec("DELETE FROM subscription_plans")
+	sharedTestDB.Exec("DELETE FROM plan_features")
+	sharedTestDB.Exec("DELETE FROM features")
 	return sharedTestDB
 }

@@ -18,6 +18,7 @@ func InitPaymentEntities(db *gorm.DB) {
 	registration.RegisterInvoice(ems.GlobalEntityRegistrationService)
 	registration.RegisterBillingAddress(ems.GlobalEntityRegistrationService)
 	registration.RegisterUsageMetrics(ems.GlobalEntityRegistrationService)
+	registration.RegisterPlanFeature(ems.GlobalEntityRegistrationService)
 
 	log.Println("✅ Payment entities registered successfully")
 

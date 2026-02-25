@@ -642,6 +642,117 @@ func BenchmarkGenericController_AddEntity(b *testing.B) {
 	}
 }
 
+// --- FK constraint test entities for controller tests ---
+
+type CtrlDeleteParent struct {
+	entityManagementModels.BaseModel
+	Name     string            `json:"name"`
+	Children []CtrlDeleteChild `gorm:"foreignKey:ParentID;constraint:OnDelete:RESTRICT"`
+}
+
+type CtrlDeleteChild struct {
+	entityManagementModels.BaseModel
+	Name     string    `json:"name"`
+	ParentID uuid.UUID `gorm:"type:text"`
+}
+
+type CtrlDeleteParentInput struct {
+	Name string `json:"name"`
+}
+
+type CtrlDeleteParentOutput struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	OwnerIDs []string `json:"ownerIDs"`
+}
+
+// Test that DELETE returns HTTP 409 when a FK constraint violation occurs.
+// Currently FAILS because deleteEntity.go hardcodes http.StatusNotFound for all delete errors.
+func TestGenericController_DeleteEntity_ForeignKeyConstraint_Returns409(t *testing.T) {
+	// Setup
+	gin.SetMode(gin.TestMode)
+
+	// Create DB with FK enforcement
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	_, err = sqlDB.Exec("PRAGMA foreign_keys = ON;")
+	require.NoError(t, err)
+
+	err = db.AutoMigrate(&CtrlDeleteParent{}, &CtrlDeleteChild{})
+	require.NoError(t, err)
+
+	// Register entity
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+	hooks.GlobalHookRegistry.DisableAllHooks(true)
+
+	ems.RegisterTypedEntity[CtrlDeleteParent, CtrlDeleteParentInput, CtrlDeleteParentInput, CtrlDeleteParentOutput](
+		ems.GlobalEntityRegistrationService,
+		"CtrlDeleteParent",
+		entityManagementInterfaces.TypedEntityRegistration[CtrlDeleteParent, CtrlDeleteParentInput, CtrlDeleteParentInput, CtrlDeleteParentOutput]{
+			Converters: entityManagementInterfaces.TypedEntityConverters[CtrlDeleteParent, CtrlDeleteParentInput, CtrlDeleteParentInput, CtrlDeleteParentOutput]{
+				ModelToDto: func(entity *CtrlDeleteParent) (CtrlDeleteParentOutput, error) {
+					return CtrlDeleteParentOutput{
+						ID:       entity.ID.String(),
+						Name:     entity.Name,
+						OwnerIDs: entity.OwnerIDs,
+					}, nil
+				},
+				DtoToModel: func(dto CtrlDeleteParentInput) *CtrlDeleteParent {
+					return &CtrlDeleteParent{Name: dto.Name}
+				},
+			},
+		},
+	)
+
+	t.Cleanup(func() {
+		ems.GlobalEntityRegistrationService.UnregisterEntity("CtrlDeleteParent")
+	})
+
+	// Create parent and child in DB
+	parent := &CtrlDeleteParent{Name: "Parent for controller test"}
+	db.Create(parent)
+	child := &CtrlDeleteChild{Name: "Child blocking delete", ParentID: parent.ID}
+	db.Create(child)
+
+	// Setup mock enforcer (should not be reached due to error)
+	mockEnforcer := new(MockControllerEnforcer)
+
+	genericController := controller.NewGenericController(db, mockEnforcer)
+	router := gin.New()
+
+	router.DELETE("/api/v1/ctrl-delete-parents/:id", func(c *gin.Context) {
+		genericController.DeleteEntity(c, false)
+	})
+
+	// Execute DELETE request
+	req := httptest.NewRequest("DELETE", "/api/v1/ctrl-delete-parents/"+parent.ID.String(), nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	// Assert: HTTP status should be 409 Conflict, NOT 404
+	assert.Equal(t, http.StatusConflict, w.Code,
+		"DELETE with FK constraint violation should return HTTP 409 Conflict, got %d. Response: %s",
+		w.Code, w.Body.String())
+
+	// Assert: response body contains actionable error information
+	var errorResponse map[string]any
+	jsonErr := json.Unmarshal(w.Body.Bytes(), &errorResponse)
+	assert.NoError(t, jsonErr, "Response body should be valid JSON")
+	if jsonErr == nil {
+		errorMsg, _ := errorResponse["error_message"].(string)
+		assert.Contains(t, errorMsg, "constraint",
+			"Error message should explain WHY deletion failed (constraint violation)")
+	}
+
+	// Verify parent still exists
+	var existingParent CtrlDeleteParent
+	dbErr := db.First(&existingParent, parent.ID).Error
+	assert.NoError(t, dbErr, "Parent entity should still exist after failed delete")
+}
+
 // Test des cas d'erreur spécifiques au contrôleur
 func TestGenericController_ErrorCases(t *testing.T) {
 	gin.SetMode(gin.TestMode)

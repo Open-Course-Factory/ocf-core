@@ -399,6 +399,11 @@ func (o *genericRepository) DeleteEntity(id uuid.UUID, entity any, scoped bool) 
 	}
 
 	if result.Error != nil {
+		// Detect FK constraint violations
+		errMsg := result.Error.Error()
+		if isConstraintViolation(errMsg) {
+			return entityErrors.NewConstraintViolationError("delete entity", result.Error)
+		}
 		return entityErrors.WrapDatabaseError(result.Error, "delete entity")
 	}
 	if result.RowsAffected == 0 {
@@ -411,6 +416,16 @@ func (o *genericRepository) DeleteEntity(id uuid.UUID, entity any, scoped bool) 
 		return entityErrors.NewEntityNotFound(entityName, id)
 	}
 	return nil
+}
+
+// isConstraintViolation checks if a database error is a foreign key constraint violation.
+// Supports both SQLite and PostgreSQL error messages.
+func isConstraintViolation(errMsg string) bool {
+	// SQLite: "FOREIGN KEY constraint failed"
+	// PostgreSQL: "violates foreign key constraint" or error code 23503
+	return strings.Contains(errMsg, "FOREIGN KEY constraint failed") ||
+		strings.Contains(errMsg, "violates foreign key constraint") ||
+		strings.Contains(errMsg, "foreign key constraint")
 }
 
 // applyIncludes applies selective preloading to a GORM query based on the includes parameter.

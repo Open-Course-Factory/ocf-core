@@ -1,0 +1,113 @@
+package paymentHooks
+
+import (
+	"fmt"
+	"soli/formations/src/entityManagement/hooks"
+	"soli/formations/src/payment/models"
+
+	"gorm.io/gorm"
+)
+
+type PlanFeaturesValidationHook struct {
+	db       *gorm.DB
+	enabled  bool
+	priority int
+}
+
+func NewPlanFeaturesValidationHook(db *gorm.DB) hooks.Hook {
+	return &PlanFeaturesValidationHook{
+		db:       db,
+		enabled:  true,
+		priority: 5, // Runs before Stripe hook (priority 10)
+	}
+}
+
+func (h *PlanFeaturesValidationHook) GetName() string {
+	return "plan_features_validation"
+}
+
+func (h *PlanFeaturesValidationHook) GetEntityName() string {
+	return "SubscriptionPlan"
+}
+
+func (h *PlanFeaturesValidationHook) GetHookTypes() []hooks.HookType {
+	return []hooks.HookType{
+		hooks.BeforeCreate,
+		hooks.BeforeUpdate,
+	}
+}
+
+func (h *PlanFeaturesValidationHook) IsEnabled() bool {
+	return h.enabled
+}
+
+func (h *PlanFeaturesValidationHook) GetPriority() int {
+	return h.priority
+}
+
+func (h *PlanFeaturesValidationHook) Execute(ctx *hooks.HookContext) error {
+	var featuresToValidate []string
+
+	switch v := ctx.NewEntity.(type) {
+	case *models.SubscriptionPlan:
+		featuresToValidate = v.Features
+	case map[string]any:
+		if f, ok := v["features"]; ok {
+			if features, ok := f.([]string); ok {
+				featuresToValidate = features
+			}
+			// Also handle []interface{} case (JSON unmarshaling)
+			if features, ok := f.([]interface{}); ok {
+				for _, feat := range features {
+					if s, ok := feat.(string); ok {
+						featuresToValidate = append(featuresToValidate, s)
+					}
+				}
+			}
+		}
+	default:
+		return nil // Not a recognized type, skip validation
+	}
+
+	if len(featuresToValidate) == 0 {
+		return nil
+	}
+
+	// Get all active feature keys from the catalog
+	var activeKeys []string
+	err := h.db.Model(&models.PlanFeature{}).
+		Where("is_active = ?", true).
+		Pluck("key", &activeKeys).Error
+	if err != nil {
+		return fmt.Errorf("unable to validate plan features: catalog query failed: %w", err)
+	}
+
+	// If catalog is empty (not yet seeded), skip validation
+	if len(activeKeys) == 0 {
+		return nil
+	}
+
+	// Build a set for O(1) lookups
+	validKeys := make(map[string]bool, len(activeKeys))
+	for _, k := range activeKeys {
+		validKeys[k] = true
+	}
+
+	// Validate each feature key
+	var invalidKeys []string
+	for _, featureKey := range featuresToValidate {
+		if !validKeys[featureKey] {
+			invalidKeys = append(invalidKeys, featureKey)
+		}
+	}
+
+	if len(invalidKeys) > 0 {
+		return fmt.Errorf("invalid feature keys: %v (not found in plan features catalog)", invalidKeys)
+	}
+
+	return nil
+}
+
+func (h *PlanFeaturesValidationHook) ShouldExecute(ctx *hooks.HookContext) bool {
+	return h.enabled
+}

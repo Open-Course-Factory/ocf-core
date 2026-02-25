@@ -16,6 +16,7 @@
 //   - ENT008: Invalid input data (400)
 //   - ENT009: Invalid pagination parameters (400)
 //   - ENT010: Invalid cursor (400)
+//   - ENT011: Constraint violation / FK conflict (409)
 //
 // # Usage
 //
@@ -162,6 +163,13 @@ var (
 		Message:    "Invalid cursor",
 		HTTPStatus: http.StatusBadRequest,
 	}
+
+	// ErrConstraintViolation indicates a delete was blocked by FK constraints
+	ErrConstraintViolation = &EntityError{
+		Code:       "ENT011",
+		Message:    "Cannot delete: foreign key constraint violation, entity is referenced by other records",
+		HTTPStatus: http.StatusConflict,
+	}
 )
 
 // Helper constructors for common error scenarios
@@ -281,6 +289,18 @@ func NewInvalidCursorError(cursor string, reason string) *EntityError {
 	err.Details = map[string]any{
 		"cursor": cursor,
 		"reason": reason,
+	}
+	return &err
+}
+
+// NewConstraintViolationError creates a constraint violation error with details.
+func NewConstraintViolationError(operation string, dbErr error) *EntityError {
+	err := *ErrConstraintViolation
+	err.Err = dbErr
+	err.Details = map[string]any{
+		"operation": operation,
+		"original":  dbErr.Error(),
+		"fix":       "Delete or reassign the referencing records before retrying",
 	}
 	return &err
 }

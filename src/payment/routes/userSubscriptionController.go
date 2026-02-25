@@ -8,6 +8,8 @@ import (
 	"soli/formations/src/utils"
 	"strings"
 
+	auditModels "soli/formations/src/audit/models"
+	auditServices "soli/formations/src/audit/services"
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
 	"soli/formations/src/payment/dto"
@@ -48,6 +50,9 @@ type SubscriptionController interface {
 
 	// Utility methods
 	SyncUsageLimits(ctx *gin.Context)
+
+	// Admin operations
+	AdminAssignSubscription(ctx *gin.Context)
 }
 
 type userSubscriptionController struct {
@@ -1230,4 +1235,80 @@ func (sc *userSubscriptionController) GetPricingPreview(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, preview)
+}
+
+// AdminAssignSubscription godoc
+//
+//	@Summary		Admin assign subscription to user
+//	@Description	Creates a subscription for a user without Stripe payment, assigned by an administrator
+//	@Tags			subscriptions
+//	@Accept			json
+//	@Produce		json
+//	@Param			input	body	dto.AdminAssignSubscriptionInput	true	"Assignment input"
+//	@Security		Bearer
+//	@Success		200	{object}	dto.UserSubscriptionOutput
+//	@Failure		400	{object}	errors.APIError
+//	@Failure		500	{object}	errors.APIError
+//	@Router			/user-subscriptions/admin-assign [post]
+func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) {
+	// Check admin role
+	userRoles := ctx.GetStringSlice("userRoles")
+	isAdmin := false
+	for _, role := range userRoles {
+		if role == "administrator" {
+			isAdmin = true
+			break
+		}
+	}
+	if !isAdmin {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Access denied - admin role required",
+		})
+		return
+	}
+
+	var input dto.AdminAssignSubscriptionInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: fmt.Sprintf("Invalid input: %v", err),
+		})
+		return
+	}
+
+	adminUserID := ctx.GetString("userId")
+
+	subscription, err := sc.subscriptionService.AdminAssignSubscription(input.UserID, input.PlanID, input.DurationDays, adminUserID)
+	if err != nil {
+		utils.Error("Failed to admin-assign subscription: %v", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to assign subscription",
+		})
+		return
+	}
+
+	// Audit log for admin subscription assignment
+	auditSvc := auditServices.NewAuditService(sc.db)
+	auditSvc.LogBilling(ctx, auditModels.AuditEventLicenseAssigned, nil, &subscription.ID, "subscription",
+		nil, "", map[string]interface{}{
+			"admin_user_id": adminUserID,
+			"target_user_id": input.UserID,
+			"plan_id":        input.PlanID.String(),
+			"duration_days":  input.DurationDays,
+			"action":         "admin_assign_subscription",
+		})
+
+	subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
+	if err != nil {
+		utils.Error("Failed to convert subscription to DTO: %v", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to format subscription response",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, subscriptionDTO)
 }

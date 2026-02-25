@@ -58,6 +58,9 @@ type UserSubscriptionService interface {
 	// Plans
 	GetSubscriptionPlan(id uuid.UUID) (*models.SubscriptionPlan, error)
 	GetAllSubscriptionPlans(activeOnly bool) (*[]models.SubscriptionPlan, error)
+
+	// Admin operations
+	AdminAssignSubscription(userID string, planID uuid.UUID, durationDays int, assignedByUserID string) (*models.UserSubscription, error)
 }
 
 // Types métiers pour les opérations complexes
@@ -590,4 +593,82 @@ func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptio
 		len(metrics), userID, subscriptionID)
 
 	return nil
+}
+
+// AdminAssignSubscription creates a subscription for a user without Stripe, assigned by an admin.
+func (ss *subscriptionService) AdminAssignSubscription(userID string, planID uuid.UUID, durationDays int, assignedByUserID string) (*models.UserSubscription, error) {
+	// Verify the plan exists
+	_, err := ss.GetSubscriptionPlan(planID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid plan ID: %w", err)
+	}
+
+	if durationDays <= 0 {
+		durationDays = 365
+	}
+
+	if durationDays > 3650 {
+		return nil, fmt.Errorf("duration exceeds maximum of 3650 days (10 years)")
+	}
+
+	// Validate userID is not empty
+	if userID == "" {
+		return nil, fmt.Errorf("user ID is required")
+	}
+
+	var subscription *models.UserSubscription
+
+	err = ss.db.Transaction(func(tx *gorm.DB) error {
+		// Check for existing active subscription
+		var existingSub models.UserSubscription
+		findErr := tx.Where("user_id = ? AND status = ?", userID, "active").First(&existingSub).Error
+		if findErr == nil {
+			// Cancel the existing subscription before assigning the new one
+			existingSub.Status = "replaced"
+			now := time.Now()
+			existingSub.CancelledAt = &now
+			if err := tx.Save(&existingSub).Error; err != nil {
+				return fmt.Errorf("failed to cancel existing subscription: %w", err)
+			}
+		}
+
+		now := time.Now()
+		var assignedBy *string
+		if assignedByUserID != "" {
+			assignedBy = &assignedByUserID
+		}
+		subscription = &models.UserSubscription{
+			UserID:             userID,
+			SubscriptionPlanID: planID,
+			SubscriptionType:   "assigned",
+			Status:             "active",
+			CurrentPeriodStart: now,
+			CurrentPeriodEnd:   now.AddDate(0, 0, durationDays),
+			AssignedByUserID:   assignedBy,
+		}
+
+		if err := tx.Create(subscription).Error; err != nil {
+			return fmt.Errorf("failed to create assigned subscription: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize usage metrics (non-transactional, non-critical)
+	err = ss.InitializeUsageMetrics(userID, subscription.ID, planID)
+	if err != nil {
+		utils.Warn("Failed to initialize usage metrics for assigned subscription: %v", err)
+	}
+
+	// Update user role based on the new plan (non-transactional, non-critical)
+	err = ss.UpdateUserRoleBasedOnSubscription(userID)
+	if err != nil {
+		utils.Warn("Failed to update user role for assigned subscription: %v", err)
+	}
+
+	return ss.GetUserSubscriptionByID(subscription.ID)
 }

@@ -12,7 +12,15 @@ import (
 func InitPaymentHooks(db *gorm.DB) {
 	log.Println("🔗 Initializing payment hooks...")
 
-	// Hook pour synchroniser les SubscriptionPlan avec Stripe
+	// Hook pour valider les features des plans (priority 5 - runs before Stripe)
+	validationHook := NewPlanFeaturesValidationHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(validationHook); err != nil {
+		log.Printf("❌ Failed to register plan features validation hook: %v", err)
+	} else {
+		log.Println("✅ Plan features validation hook registered")
+	}
+
+	// Hook pour synchroniser les SubscriptionPlan avec Stripe (priority 10)
 	stripeHook := NewStripeSubscriptionPlanHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(stripeHook); err != nil {
 		log.Printf("❌ Failed to register Stripe hook: %v", err)

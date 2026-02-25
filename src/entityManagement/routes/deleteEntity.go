@@ -1,9 +1,11 @@
 package controller
 
 import (
+	stderrors "errors"
 	"net/http"
 
 	"soli/formations/src/auth/errors"
+	entityErrors "soli/formations/src/entityManagement/errors"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -24,8 +26,15 @@ func (genericController genericController) DeleteEntity(ctx *gin.Context, scoped
 	}
 
 	errorDelete := genericController.genericService.DeleteEntity(id, entity, scoped)
-	if errors.HandleError(http.StatusNotFound, errorDelete, ctx) {
-		return
+	if errorDelete != nil {
+		statusCode := http.StatusInternalServerError // default
+		var entityErr *entityErrors.EntityError
+		if stderrors.As(errorDelete, &entityErr) {
+			statusCode = entityErr.HTTPStatus
+		}
+		if errors.HandleError(statusCode, errorDelete, ctx) {
+			return
+		}
 	}
 
 	// Skip enforcer cleanup if not initialized (e.g., in tests)

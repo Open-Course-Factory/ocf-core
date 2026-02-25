@@ -19,9 +19,18 @@ type CreateSubscriptionPlanInput struct {
 	MaxConcurrentUsers int      `json:"max_concurrent_users" mapstructure:"max_concurrent_users"`
 	MaxCourses         int      `json:"max_courses" mapstructure:"max_courses"`
 	RequiredRole       string   `json:"required_role" mapstructure:"required_role"`
+	MaxSessionDurationMinutes      int      `json:"max_session_duration_minutes" mapstructure:"max_session_duration_minutes"`
+	MaxConcurrentTerminals         int      `json:"max_concurrent_terminals" mapstructure:"max_concurrent_terminals"`
+	AllowedMachineSizes            []string `json:"allowed_machine_sizes" mapstructure:"allowed_machine_sizes"`
+	NetworkAccessEnabled           bool     `json:"network_access_enabled" mapstructure:"network_access_enabled"`
+	DataPersistenceEnabled         bool     `json:"data_persistence_enabled" mapstructure:"data_persistence_enabled"`
+	DataPersistenceGB              int      `json:"data_persistence_gb" mapstructure:"data_persistence_gb"`
+	AllowedTemplates               []string `json:"allowed_templates" mapstructure:"allowed_templates"`
 	AllowedBackends                []string `json:"allowed_backends" mapstructure:"allowed_backends"`
 	DefaultBackend                 string   `json:"default_backend" mapstructure:"default_backend"`
 	CommandHistoryRetentionDays    int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
+	Priority                       int      `json:"priority" mapstructure:"priority"`
+	IsActive                       *bool    `json:"is_active" mapstructure:"is_active"`
 }
 
 type UpdateSubscriptionPlanInput struct {
@@ -31,9 +40,17 @@ type UpdateSubscriptionPlanInput struct {
 	Features           []string `json:"features,omitempty" mapstructure:"features"`
 	MaxConcurrentUsers *int     `json:"max_concurrent_users,omitempty" mapstructure:"max_concurrent_users"`
 	MaxCourses         *int     `json:"max_courses,omitempty" mapstructure:"max_courses"`
+	MaxSessionDurationMinutes      *int     `json:"max_session_duration_minutes,omitempty" mapstructure:"max_session_duration_minutes"`
+	MaxConcurrentTerminals         *int     `json:"max_concurrent_terminals,omitempty" mapstructure:"max_concurrent_terminals"`
+	AllowedMachineSizes            []string `json:"allowed_machine_sizes,omitempty" mapstructure:"allowed_machine_sizes"`
+	NetworkAccessEnabled           *bool    `json:"network_access_enabled,omitempty" mapstructure:"network_access_enabled"`
+	DataPersistenceEnabled         *bool    `json:"data_persistence_enabled,omitempty" mapstructure:"data_persistence_enabled"`
+	DataPersistenceGB              *int     `json:"data_persistence_gb,omitempty" mapstructure:"data_persistence_gb"`
+	AllowedTemplates               []string `json:"allowed_templates,omitempty" mapstructure:"allowed_templates"`
 	AllowedBackends                []string `json:"allowed_backends,omitempty" mapstructure:"allowed_backends"`
 	DefaultBackend                 *string  `json:"default_backend,omitempty" mapstructure:"default_backend"`
 	CommandHistoryRetentionDays    *int     `json:"command_history_retention_days,omitempty" mapstructure:"command_history_retention_days"`
+	Priority                       *int     `json:"priority,omitempty" mapstructure:"priority"`
 }
 
 type SubscriptionPlanOutput struct {
@@ -126,6 +143,16 @@ type UserSubscriptionOutput struct {
 	BatchOwnerEmail     *string    `json:"batch_owner_email,omitempty"`
 	AssignedAt          *time.Time `json:"assigned_at,omitempty"` // When the license was assigned
 	AssignedBy          *string    `json:"assigned_by,omitempty"` // ID of user who performed the assignment (if different from batch owner)
+
+	// Admin assignment tracking
+	AssignedByUserID *string `json:"assigned_by_user_id,omitempty"` // Admin who assigned this subscription
+}
+
+// Admin subscription assignment
+type AdminAssignSubscriptionInput struct {
+	UserID       string    `binding:"required" json:"user_id"`
+	PlanID       uuid.UUID `binding:"required" json:"plan_id"`
+	DurationDays int       `json:"duration_days" binding:"min=0,max=3650"` // 0 = default 365, max 10 years
 }
 
 // Invoice DTOs

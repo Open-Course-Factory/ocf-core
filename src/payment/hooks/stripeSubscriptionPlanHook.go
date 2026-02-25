@@ -68,6 +68,12 @@ func (h *StripeSubscriptionPlanHook) handleAfterCreate(ctx *hooks.HookContext) e
 		return fmt.Errorf("expected SubscriptionPlan, got %T", ctx.NewEntity)
 	}
 
+	// Skip Stripe sync for free plans (they shouldn't be created in Stripe)
+	if plan.PriceAmount == 0 {
+		log.Printf("Skipping Stripe sync for free plan: %s", plan.Name)
+		return nil
+	}
+
 	log.Printf("🎯 Creating Stripe product and price for plan: %s", plan.Name)
 
 	// Créer le produit et prix dans Stripe
@@ -87,6 +93,12 @@ func (h *StripeSubscriptionPlanHook) handleAfterUpdate(ctx *hooks.HookContext) e
 	plan, ok := ctx.NewEntity.(*models.SubscriptionPlan)
 	if !ok {
 		return fmt.Errorf("expected SubscriptionPlan, got %T", ctx.NewEntity)
+	}
+
+	// Skip Stripe sync for plans that have no Stripe product
+	if plan.StripeProductID == nil || *plan.StripeProductID == "" {
+		log.Printf("Skipping Stripe sync for non-Stripe plan: %s", plan.Name)
+		return nil
 	}
 
 	log.Printf("🎯 Updating Stripe product for plan: %s", plan.Name)
