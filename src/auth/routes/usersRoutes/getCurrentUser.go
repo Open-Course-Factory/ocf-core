@@ -65,9 +65,11 @@ func GetCurrentUser(ctx *gin.Context) {
 	// Extract email verification status from Casdoor properties
 	emailVerified := false
 	emailVerifiedAt := ""
+	forcePasswordReset := false
 	if user.Properties != nil {
 		emailVerified = user.Properties["email_verified"] == "true"
 		emailVerifiedAt = user.Properties["email_verified_at"]
+		forcePasswordReset = user.Properties["force_password_reset"] == "true"
 	}
 
 	// Build response
@@ -81,8 +83,9 @@ func GetCurrentUser(ctx *gin.Context) {
 		Avatar:          user.Avatar,
 		Roles:           roles,
 		IsAdmin:         isAdmin,
-		EmailVerified:   emailVerified,
-		EmailVerifiedAt: emailVerifiedAt,
+		EmailVerified:      emailVerified,
+		EmailVerifiedAt:    emailVerifiedAt,
+		ForcePasswordReset: forcePasswordReset,
 	}
 
 	ctx.JSON(http.StatusOK, response)

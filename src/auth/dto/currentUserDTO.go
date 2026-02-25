@@ -11,6 +11,7 @@ type CurrentUserOutput struct {
 	Avatar          string   `json:"avatar,omitempty"`
 	Roles           []string `json:"roles"`
 	IsAdmin         bool     `json:"is_admin"`
-	EmailVerified   bool     `json:"email_verified"`
-	EmailVerifiedAt string   `json:"email_verified_at,omitempty"`
+	EmailVerified      bool     `json:"email_verified"`
+	EmailVerifiedAt    string   `json:"email_verified_at,omitempty"`
+	ForcePasswordReset bool     `json:"force_password_reset"`
 }
