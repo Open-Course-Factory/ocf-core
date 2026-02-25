@@ -22,8 +22,8 @@ type UpdatePlanFeatureInput struct {
 	DisplayNameEn *string `json:"display_name_en,omitempty" mapstructure:"display_name_en"`
 	DisplayNameFr *string `json:"display_name_fr,omitempty" mapstructure:"display_name_fr"`
 	Description   *string `json:"description,omitempty" mapstructure:"description"`
-	Category      *string `json:"category,omitempty" mapstructure:"category"`
-	ValueType     *string `json:"value_type,omitempty" mapstructure:"value_type"`
+	Category      *string `json:"category,omitempty" binding:"omitempty,oneof=capabilities machine_sizes terminal_limits course_limits" mapstructure:"category"`
+	ValueType     *string `json:"value_type,omitempty" binding:"omitempty,oneof=boolean number string" mapstructure:"value_type"`
 	Unit          *string `json:"unit,omitempty" mapstructure:"unit"`
 	DefaultValue  *string `json:"default_value,omitempty" mapstructure:"default_value"`
 	IsActive      *bool   `json:"is_active,omitempty" mapstructure:"is_active"`
