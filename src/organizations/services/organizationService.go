@@ -528,6 +528,10 @@ func (os *organizationService) CanUserManageOrganization(orgID uuid.UUID, userID
 
 // RegenerateGroupMemberPasswords regenerates passwords for selected group members
 func (os *organizationService) RegenerateGroupMemberPasswords(orgID, groupID uuid.UUID, requestingUserID string, userIDs []string) (*dto.RegeneratePasswordsResponse, error) {
+	if len(userIDs) > 100 {
+		return nil, fmt.Errorf("cannot regenerate passwords for more than 100 users at once")
+	}
+
 	// Verify the requesting user can manage this organization
 	canManage, err := os.CanUserManageOrganization(orgID, requestingUserID)
 	if err != nil {
@@ -592,9 +596,8 @@ func (os *organizationService) RegenerateGroupMemberPasswords(orgID, groupID uui
 		// Generate new password
 		newPassword := orgUtils.GenerateSecurePassword(16)
 
-		// Update user password in Casdoor
-		casdoorUser.Password = newPassword
-		_, err = casdoorsdk.UpdateUser(casdoorUser)
+		// Update password using Casdoor's dedicated SetPassword API
+		_, err = casdoorsdk.SetPassword(casdoorUser.Owner, casdoorUser.Name, "", newPassword)
 		if err != nil {
 			response.Errors = append(response.Errors, dto.ImportError{
 				Row:     i + 1,
@@ -605,6 +608,17 @@ func (os *organizationService) RegenerateGroupMemberPasswords(orgID, groupID uui
 			})
 			response.Summary.Failed++
 			continue
+		}
+
+		// Set force password reset flag
+		if casdoorUser.Properties == nil {
+			casdoorUser.Properties = make(map[string]string)
+		}
+		casdoorUser.Properties["force_password_reset"] = "true"
+		_, err = casdoorsdk.UpdateUser(casdoorUser)
+		if err != nil {
+			// Log warning but don't fail - password was already changed
+			utils.Warn("Could not set force_password_reset for user %s: %v", userID, err)
 		}
 
 		// Collect credential
