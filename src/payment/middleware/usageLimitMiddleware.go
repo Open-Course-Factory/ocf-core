@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"soli/formations/src/auth/errors"
+	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
 	terminalServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
@@ -349,9 +350,26 @@ func (ulm *usageLimitMiddleware) CheckTerminalCreationLimit() gin.HandlerFunc {
 			return
 		}
 
-		// Récupérer l'abonnement de l'utilisateur
+		// Récupérer l'abonnement de l'utilisateur (personal or org, whichever is higher tier)
+		var plan *paymentModels.SubscriptionPlan
+
 		subscription, err := ulm.subscriptionService.GetActiveUserSubscription(userId)
-		if err != nil {
+		if err == nil {
+			plan, err = ulm.subscriptionService.GetSubscriptionPlan(subscription.SubscriptionPlanID)
+			if err != nil {
+				plan = nil
+			}
+		}
+
+		// Check org subscription — use it if no personal plan or if org plan is higher tier
+		orgFeatures, orgErr := ulm.orgSubService.GetUserEffectiveFeatures(userId)
+		if orgErr == nil && orgFeatures != nil && orgFeatures.HighestPlan != nil {
+			if plan == nil || orgFeatures.HighestPlan.Priority > plan.Priority {
+				plan = orgFeatures.HighestPlan
+			}
+		}
+
+		if plan == nil {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
 				ErrorMessage: "Active subscription required to create terminals",
@@ -360,39 +378,23 @@ func (ulm *usageLimitMiddleware) CheckTerminalCreationLimit() gin.HandlerFunc {
 			return
 		}
 
-		// Récupérer le plan d'abonnement
-		plan, err := ulm.subscriptionService.GetSubscriptionPlan(subscription.SubscriptionPlanID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to retrieve subscription plan",
-			})
-			ctx.Abort()
-			return
-		}
+		// Vérifier le nombre de terminaux actifs concurrents
+		if plan.MaxConcurrentTerminals != -1 {
+			var activeCount int64
+			ulm.db.Table("terminals").
+				Where("user_id = ? AND status = ? AND deleted_at IS NULL", userId, "active").
+				Count(&activeCount)
 
-		// Vérifier le nombre de terminaux actifs concurrents via CheckUsageLimit
-		limitCheck, err := ulm.subscriptionService.CheckUsageLimit(userId, "concurrent_terminals", 1)
-		if err != nil {
-			utils.Error("CheckUsageLimit failed for user %s: %v", userId, err)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to check concurrent terminal limit",
-			})
-			ctx.Abort()
-			return
-		}
+			if activeCount >= int64(plan.MaxConcurrentTerminals) {
+				ctx.JSON(http.StatusForbidden, &errors.APIError{
+					ErrorCode:    http.StatusForbidden,
+					ErrorMessage: fmt.Sprintf("Maximum concurrent terminals (%d) reached. Please stop a terminal or upgrade your plan.", plan.MaxConcurrentTerminals),
+				})
+				ctx.Abort()
+				return
+			}
 
-		utils.Debug("Terminal limit check for user %s: allowed=%v, current=%d, limit=%d, remaining=%d, message=%s",
-			userId, limitCheck.Allowed, limitCheck.CurrentUsage, limitCheck.Limit, limitCheck.RemainingUsage, limitCheck.Message)
-
-		if !limitCheck.Allowed {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: fmt.Sprintf("Maximum concurrent terminals (%d) reached. Please stop a terminal or upgrade your plan.", plan.MaxConcurrentTerminals),
-			})
-			ctx.Abort()
-			return
+			utils.Debug("Terminal limit check for user %s: current=%d, limit=%d", userId, activeCount, plan.MaxConcurrentTerminals)
 		}
 
 		// Vérifier la RAM disponible sur le serveur Terminal Trainer
