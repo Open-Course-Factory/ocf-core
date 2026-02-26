@@ -41,20 +41,19 @@ type OrganizationSubscriptionOutput struct {
 }
 
 // User effective features (aggregated from all organizations)
+// Matches frontend UserEffectiveFeatures type in types/user.ts
 type UserEffectiveFeaturesOutput struct {
-	HighestPlan            SubscriptionPlanOutput    `json:"highest_plan"`
-	AllFeatures            []string                  `json:"all_features"`             // Union of all features from all orgs
-	MaxConcurrentTerminals int                       `json:"max_concurrent_terminals"` // Maximum across all plans
-	MaxCourses             int                       `json:"max_courses"`              // Maximum across all plans
-	Organizations          []OrganizationFeatureInfo `json:"organizations"`            // List of orgs providing features
+	UserID                  string                          `json:"user_id"`
+	EffectiveFeatures       SubscriptionPlanOutput          `json:"effective_features"`       // Aggregated maximum features
+	SourceOrganizations     []OrganizationFeatureSourceInfo `json:"source_organizations"`     // Orgs contributing features
+	HasPersonalSubscription bool                            `json:"has_personal_subscription"` // Always false for now
 }
 
-type OrganizationFeatureInfo struct {
-	OrganizationID   uuid.UUID              `json:"organization_id"`
-	OrganizationName string                 `json:"organization_name"`
-	SubscriptionPlan SubscriptionPlanOutput `json:"subscription_plan"`
-	IsOwner          bool                   `json:"is_owner"`
-	IsManager        bool                   `json:"is_manager"`
+type OrganizationFeatureSourceInfo struct {
+	OrganizationID       uuid.UUID `json:"organization_id"`
+	OrganizationName     string    `json:"organization_name"`
+	Role                 string    `json:"role"` // "owner", "manager", "member"
+	ContributingFeatures []string  `json:"contributing_features"`
 }
 
 // Organization usage limits

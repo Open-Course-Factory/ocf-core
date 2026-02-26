@@ -125,6 +125,7 @@ func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ct
 		input.SubscriptionPlanID,
 		userID,
 		input.Quantity,
+		isAdmin(ctx),
 	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -335,23 +336,38 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 		return
 	}
 
-	// Convert to output DTO
-	output := dto.UserEffectiveFeaturesOutput{
-		HighestPlan:            convertSubscriptionPlanToOutput(features.HighestPlan),
-		AllFeatures:            features.AllFeatures,
-		MaxConcurrentTerminals: features.MaxConcurrentTerminals,
-		MaxCourses:             features.MaxCourses,
-		Organizations:          make([]dto.OrganizationFeatureInfo, len(features.Organizations)),
+	// Build effective_features: the highest plan with aggregated features/limits
+	effectivePlan := convertSubscriptionPlanToOutput(features.HighestPlan)
+	effectivePlan.Features = features.AllFeatures
+	if features.MaxConcurrentTerminals > effectivePlan.MaxConcurrentTerminals {
+		effectivePlan.MaxConcurrentTerminals = features.MaxConcurrentTerminals
+	}
+	if features.MaxCourses > effectivePlan.MaxCourses {
+		effectivePlan.MaxCourses = features.MaxCourses
 	}
 
+	// Build source_organizations
+	sourceOrgs := make([]dto.OrganizationFeatureSourceInfo, len(features.Organizations))
 	for i, org := range features.Organizations {
-		output.Organizations[i] = dto.OrganizationFeatureInfo{
-			OrganizationID:   org.OrganizationID,
-			OrganizationName: org.OrganizationName,
-			SubscriptionPlan: convertSubscriptionPlanToOutput(&org.SubscriptionPlan),
-			IsOwner:          org.IsOwner,
-			IsManager:        org.IsManager,
+		role := "member"
+		if org.IsOwner {
+			role = "owner"
+		} else if org.IsManager {
+			role = "manager"
 		}
+		sourceOrgs[i] = dto.OrganizationFeatureSourceInfo{
+			OrganizationID:       org.OrganizationID,
+			OrganizationName:     org.OrganizationName,
+			Role:                 role,
+			ContributingFeatures: org.SubscriptionPlan.Features,
+		}
+	}
+
+	output := dto.UserEffectiveFeaturesOutput{
+		UserID:                  userID,
+		EffectiveFeatures:       effectivePlan,
+		SourceOrganizations:     sourceOrgs,
+		HasPersonalSubscription: false,
 	}
 
 	ctx.JSON(http.StatusOK, output)
