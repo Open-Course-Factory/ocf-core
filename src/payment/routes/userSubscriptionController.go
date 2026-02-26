@@ -13,6 +13,7 @@ import (
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
 	"soli/formations/src/payment/dto"
+	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
 
 	"github.com/gin-gonic/gin"
@@ -297,7 +298,15 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 			}
 		}
 
-		// Still no subscription found after sync attempt
+		// No personal subscription found — try org subscription as fallback
+		orgSub, orgPlan := sc.getOrgSubscriptionForUser(userId)
+		if orgSub != nil && orgPlan != nil {
+			output := sc.orgSubscriptionToUserDTO(userId, orgSub, orgPlan)
+			ctx.JSON(http.StatusOK, output)
+			return
+		}
+
+		// No subscription found at all
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
 			ErrorMessage: "No active subscription found",
@@ -1311,4 +1320,49 @@ func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) 
 	}
 
 	ctx.JSON(http.StatusOK, subscriptionDTO)
+}
+
+// getOrgSubscriptionForUser finds the highest-priority active org subscription for a user
+func (sc *userSubscriptionController) getOrgSubscriptionForUser(userID string) (*paymentModels.OrganizationSubscription, *paymentModels.SubscriptionPlan) {
+	var subscriptions []paymentModels.OrganizationSubscription
+	err := sc.db.Preload("SubscriptionPlan").
+		Joins("JOIN organization_members ON organization_members.organization_id = organization_subscriptions.organization_id").
+		Where("organization_members.user_id = ? AND organization_members.is_active = ? AND organization_subscriptions.status IN (?)",
+			userID, true, []string{"active", "trialing"}).
+		Find(&subscriptions).Error
+	if err != nil || len(subscriptions) == 0 {
+		return nil, nil
+	}
+
+	// Find highest priority plan
+	best := &subscriptions[0]
+	for i := 1; i < len(subscriptions); i++ {
+		if subscriptions[i].SubscriptionPlan.Priority > best.SubscriptionPlan.Priority {
+			best = &subscriptions[i]
+		}
+	}
+	return best, &best.SubscriptionPlan
+}
+
+// orgSubscriptionToUserDTO converts an org subscription to UserSubscriptionOutput format
+// so the frontend can use it transparently via /user-subscriptions/current
+func (sc *userSubscriptionController) orgSubscriptionToUserDTO(userID string, sub *paymentModels.OrganizationSubscription, plan *paymentModels.SubscriptionPlan) dto.UserSubscriptionOutput {
+	planOutput := convertSubscriptionPlanToOutput(plan)
+
+	return dto.UserSubscriptionOutput{
+		ID:                 sub.ID,
+		UserID:             userID,
+		SubscriptionPlanID: sub.SubscriptionPlanID,
+		SubscriptionPlan:   planOutput,
+		Status:             sub.Status,
+		SubscriptionType:   "organization",
+		IsPrimary:          true,
+		CurrentPeriodStart: sub.CurrentPeriodStart,
+		CurrentPeriodEnd:   sub.CurrentPeriodEnd,
+		TrialEnd:           sub.TrialEnd,
+		CancelAtPeriodEnd:  sub.CancelAtPeriodEnd,
+		CancelledAt:        sub.CancelledAt,
+		CreatedAt:          sub.CreatedAt,
+		UpdatedAt:          sub.UpdatedAt,
+	}
 }
