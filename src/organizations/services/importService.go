@@ -12,6 +12,9 @@ import (
 	"soli/formations/src/organizations/dto"
 	organizationModels "soli/formations/src/organizations/models"
 	orgUtils "soli/formations/src/organizations/utils"
+	paymentModels "soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
+	ttServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -33,11 +36,15 @@ type ImportService interface {
 }
 
 type importService struct {
-	db *gorm.DB
+	db              *gorm.DB
+	terminalService ttServices.TerminalTrainerService
 }
 
 func NewImportService(db *gorm.DB) ImportService {
-	return &importService{db: db}
+	return &importService{
+		db:              db,
+		terminalService: ttServices.NewTerminalTrainerService(db),
+	}
 }
 
 // ImportOrganizationData handles the bulk import of users, groups, and memberships
@@ -418,6 +425,16 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 	// Add user to organization
 	s.addUserToOrganization(createdUser.Id, orgID)
 
+	// Assign free Trial plan (same as normal registration)
+	if err := s.assignFreeTrialPlan(createdUser.Id); err != nil {
+		utils.Warn("Could not assign Trial plan to imported user %s: %v", createdUser.Id, err)
+	}
+
+	// Create terminal trainer key (same as normal registration)
+	if err := s.terminalService.CreateUserKey(createdUser.Id, createdUser.Name); err != nil {
+		utils.Warn("Could not create terminal trainer key for imported user %s: %v", createdUser.Id, err)
+	}
+
 	return createdUser.Id, nil
 }
 
@@ -566,6 +583,31 @@ func (s *importService) addUserToOrganization(userID string, orgID uuid.UUID) er
 	opts.WarnOnError = true
 	utils.AddPolicy(casdoor.Enforcer, userID, fmt.Sprintf("/api/v1/organizations/%s", orgID), "GET|POST|PATCH", opts)
 
+	return nil
+}
+
+// assignFreeTrialPlan assigns the free Trial plan to a new user
+func (s *importService) assignFreeTrialPlan(userID string) error {
+	var trialPlan paymentModels.SubscriptionPlan
+	result := s.db.Where("name = ? AND price_amount = 0 AND is_active = true", "Trial").First(&trialPlan)
+	if result.Error != nil {
+		return fmt.Errorf("could not find active Trial plan: %v", result.Error)
+	}
+
+	var existingSub paymentModels.UserSubscription
+	existingResult := s.db.Where("user_id = ? AND status = ?", userID, "active").First(&existingSub)
+	if existingResult.Error == nil {
+		utils.Info("User %s already has an active subscription, skipping Trial assignment", userID)
+		return nil
+	}
+
+	subscriptionService := paymentServices.NewSubscriptionService(s.db)
+	_, err := subscriptionService.CreateUserSubscription(userID, trialPlan.ID)
+	if err != nil {
+		return fmt.Errorf("failed to create Trial subscription: %w", err)
+	}
+
+	utils.Info("Successfully assigned Trial plan to user %s", userID)
 	return nil
 }
 

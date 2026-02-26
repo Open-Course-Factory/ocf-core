@@ -137,7 +137,7 @@ func (us *userService) AddUser(userCreateDTO dto.CreateUserInput) (*dto.UserOutp
 	}
 
 	// Assign free Trial plan to new user
-	errTrialSubscription := assignFreeTrialPlan(createdUser.Id)
+	errTrialSubscription := AssignFreeTrialPlan(createdUser.Id)
 	if errTrialSubscription != nil {
 		utils.Warn("Could not create Trial subscription for user %s: %v", createdUser.Id, errTrialSubscription)
 		// Don't fail registration for this, just log warning
@@ -348,8 +348,8 @@ func createDefaultUserSettings(userID string) error {
 	return sqldb.DB.Create(&defaultSettings).Error
 }
 
-// assignFreeTrialPlan assigns the free Trial plan to a new user
-func assignFreeTrialPlan(userID string) error {
+// AssignFreeTrialPlan assigns the free Trial plan to a new user
+func AssignFreeTrialPlan(userID string) error {
 	// Find the free Trial plan (price_amount = 0, name = "Trial")
 	var trialPlan paymentModels.SubscriptionPlan
 	result := sqldb.DB.Where("name = ? AND price_amount = 0 AND is_active = true", "Trial").First(&trialPlan)
