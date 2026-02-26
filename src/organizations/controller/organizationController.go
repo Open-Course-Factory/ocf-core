@@ -625,3 +625,84 @@ func (oc *OrganizationController) UpdateOrganizationBackends(ctx *gin.Context) {
 		"default_backend":  org.DefaultBackend,
 	})
 }
+
+// RegenerateGroupMemberPasswords godoc
+// @Summary Regenerate passwords for group members
+// @Description Regenerate passwords for selected members of a group within an organization
+// @Tags organizations
+// @Accept json
+// @Produce json
+// @Param id path string true "Organization ID"
+// @Param groupId path string true "Group ID"
+// @Param body body dto.RegeneratePasswordsRequest true "User IDs to regenerate passwords for"
+// @Success 200 {object} dto.RegeneratePasswordsResponse
+// @Failure 400 {object} errors.APIError "Invalid request"
+// @Failure 403 {object} errors.APIError "Not authorized to manage this organization"
+// @Failure 404 {object} errors.APIError "Organization or group not found"
+// @Failure 500 {object} errors.APIError "Internal server error"
+// @Security BearerAuth
+// @Router /organizations/{id}/groups/{groupId}/regenerate-passwords [post]
+func (oc *OrganizationController) RegenerateGroupMemberPasswords(ctx *gin.Context) {
+	// Parse organization ID
+	orgIDStr := ctx.Param("id")
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	// Parse group ID
+	groupIDStr := ctx.Param("groupId")
+	groupID, err := uuid.Parse(groupIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid group ID",
+		})
+		return
+	}
+
+	// Get current user from context
+	userID, exists := ctx.Get("userId")
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
+			ErrorCode:    http.StatusUnauthorized,
+			ErrorMessage: "User not authenticated",
+		})
+		return
+	}
+
+	// Bind request body
+	var request dto.RegeneratePasswordsRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid request body: " + err.Error(),
+		})
+		return
+	}
+
+	// Call service
+	response, err := oc.service.RegenerateGroupMemberPasswords(orgID, groupID, userID.(string), request.UserIDs)
+	if err != nil {
+		statusCode := http.StatusInternalServerError
+		errorMessage := err.Error()
+
+		if strings.Contains(errorMessage, "not found") {
+			statusCode = http.StatusNotFound
+		} else if strings.Contains(errorMessage, "permission") || strings.Contains(errorMessage, "denied") {
+			statusCode = http.StatusForbidden
+		}
+
+		ctx.JSON(statusCode, &errors.APIError{
+			ErrorCode:    statusCode,
+			ErrorMessage: errorMessage,
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}

@@ -44,6 +44,9 @@ func OrganizationRoutes(rg *gin.RouterGroup, conf *config.Configuration, db *gor
 		// Convert personal organization to team organization
 		organizations.POST("/:id/convert-to-team", middleware.AuthManagement(), orgController.ConvertToTeam)
 
+		// Regenerate passwords for group members
+		organizations.POST("/:id/groups/:groupId/regenerate-passwords", middleware.AuthManagement(), orgController.RegenerateGroupMemberPasswords)
+
 		// Backend assignment management
 		organizations.GET("/:id/backends", middleware.AuthManagement(), orgController.GetOrganizationBackends)
 		organizations.PUT("/:id/backends", middleware.AuthManagement(), orgController.UpdateOrganizationBackends)
@@ -82,6 +85,13 @@ func setupOrganizationCustomRoutePermissions() {
 	for _, role := range adminRoles {
 		if err := utils.AddPolicy(casdoor.Enforcer, role, "/api/v1/organizations/*/import", "POST", opts); err != nil {
 			log.Printf("Failed to add policy for role %s on /import: %v", role, err)
+		}
+	}
+
+	// Add permissions for /regenerate-passwords endpoint (admin/supervisor/trainer only)
+	for _, role := range adminRoles {
+		if err := utils.AddPolicy(casdoor.Enforcer, role, "/api/v1/organizations/*/groups/*/regenerate-passwords", "POST", opts); err != nil {
+			log.Printf("Failed to add policy for role %s on /regenerate-passwords: %v", role, err)
 		}
 	}
 

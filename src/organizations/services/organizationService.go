@@ -9,8 +9,10 @@ import (
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/repositories"
+	orgUtils "soli/formations/src/organizations/utils"
 	"soli/formations/src/utils"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -39,6 +41,9 @@ type OrganizationService interface {
 	// Group access
 	GetOrganizationGroups(orgID uuid.UUID) (*[]groupModels.ClassGroup, error)
 	CanUserAccessGroupViaOrg(groupID uuid.UUID, userID string) (bool, error)
+
+	// Password management
+	RegenerateGroupMemberPasswords(orgID, groupID uuid.UUID, requestingUserID string, userIDs []string) (*dto.RegeneratePasswordsResponse, error)
 
 	// Permissions
 	CanUserManageOrganization(orgID uuid.UUID, userID string) (bool, error)
@@ -519,6 +524,104 @@ func (os *organizationService) CanUserManageOrganization(orgID uuid.UUID, userID
 	}
 
 	return member.IsManager(), nil
+}
+
+// RegenerateGroupMemberPasswords regenerates passwords for selected group members
+func (os *organizationService) RegenerateGroupMemberPasswords(orgID, groupID uuid.UUID, requestingUserID string, userIDs []string) (*dto.RegeneratePasswordsResponse, error) {
+	// Verify the requesting user can manage this organization
+	canManage, err := os.CanUserManageOrganization(orgID, requestingUserID)
+	if err != nil {
+		return nil, err
+	}
+	if !canManage {
+		return nil, utils.PermissionDeniedError("manage", "organization")
+	}
+
+	// Verify the group belongs to this organization
+	var group groupModels.ClassGroup
+	result := os.db.Where("id = ? AND organization_id = ?", groupID, orgID).First(&group)
+	if result.Error != nil {
+		return nil, fmt.Errorf("group not found in this organization")
+	}
+
+	// Get group members to verify the requested users are actually members
+	var groupMembers []groupModels.GroupMember
+	os.db.Where("group_id = ? AND is_active = ?", groupID, true).Find(&groupMembers)
+
+	memberSet := make(map[string]bool)
+	for _, m := range groupMembers {
+		memberSet[m.UserID] = true
+	}
+
+	response := &dto.RegeneratePasswordsResponse{
+		Credentials: []dto.UserCredential{},
+		Errors:      []dto.ImportError{},
+		Summary: dto.RegeneratePasswordsSummary{
+			Total: len(userIDs),
+		},
+	}
+
+	for i, userID := range userIDs {
+		// Verify user is a member of this group
+		if !memberSet[userID] {
+			response.Errors = append(response.Errors, dto.ImportError{
+				Row:     i + 1,
+				File:    "user_ids",
+				Field:   "user_id",
+				Message: fmt.Sprintf("user %s is not a member of this group", userID),
+				Code:    dto.ErrCodeNotFound,
+			})
+			response.Summary.Failed++
+			continue
+		}
+
+		// Get user from Casdoor
+		casdoorUser, err := casdoorsdk.GetUserByUserId(userID)
+		if err != nil || casdoorUser == nil {
+			response.Errors = append(response.Errors, dto.ImportError{
+				Row:     i + 1,
+				File:    "user_ids",
+				Field:   "user_id",
+				Message: fmt.Sprintf("user %s not found in identity provider", userID),
+				Code:    dto.ErrCodeNotFound,
+			})
+			response.Summary.Failed++
+			continue
+		}
+
+		// Generate new password
+		newPassword := orgUtils.GenerateSecurePassword(16)
+
+		// Update user password in Casdoor
+		casdoorUser.Password = newPassword
+		_, err = casdoorsdk.UpdateUser(casdoorUser)
+		if err != nil {
+			response.Errors = append(response.Errors, dto.ImportError{
+				Row:     i + 1,
+				File:    "user_ids",
+				Field:   "user_id",
+				Message: fmt.Sprintf("failed to update password for user %s: %v", userID, err),
+				Code:    dto.ErrCodeValidation,
+			})
+			response.Summary.Failed++
+			continue
+		}
+
+		// Collect credential
+		response.Credentials = append(response.Credentials, dto.UserCredential{
+			Email:    casdoorUser.Email,
+			Password: newPassword,
+			Name:     casdoorUser.DisplayName,
+		})
+		response.Summary.Succeeded++
+	}
+
+	response.Success = response.Summary.Failed == 0
+
+	utils.Info("Password regeneration for group %s: %d succeeded, %d failed out of %d",
+		groupID, response.Summary.Succeeded, response.Summary.Failed, response.Summary.Total)
+
+	return response, nil
 }
 
 // GrantOrganizationPermissions grants basic organization-related permissions to a user via Casbin

@@ -93,6 +93,26 @@ type ImportWarning struct {
 	Message string `json:"message"`
 }
 
+// RegeneratePasswordsRequest represents a request to regenerate passwords for group members
+type RegeneratePasswordsRequest struct {
+	UserIDs []string `json:"user_ids" binding:"required,min=1"`
+}
+
+// RegeneratePasswordsSummary provides statistics about the password regeneration operation
+type RegeneratePasswordsSummary struct {
+	Total     int `json:"total"`
+	Succeeded int `json:"succeeded"`
+	Failed    int `json:"failed"`
+}
+
+// RegeneratePasswordsResponse represents the password regeneration result
+type RegeneratePasswordsResponse struct {
+	Success     bool                       `json:"success"`
+	Credentials []UserCredential           `json:"credentials"`
+	Errors      []ImportError              `json:"errors,omitempty"`
+	Summary     RegeneratePasswordsSummary `json:"summary"`
+}
+
 // Error Codes
 const (
 	ErrCodeValidation    = "VALIDATION_ERROR"
