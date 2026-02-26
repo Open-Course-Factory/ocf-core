@@ -586,7 +586,10 @@ func (s *importService) addUserToOrganization(userID string, orgID uuid.UUID) er
 	return nil
 }
 
-// assignFreeTrialPlan assigns the free Trial plan to a new user
+// assignFreeTrialPlan assigns the free Trial plan to a new user.
+// NOTE: Duplicated from auth/services/userService.go:AssignFreeTrialPlan
+// because importing auth/services creates a circular dependency.
+// Keep in sync with the original.
 func (s *importService) assignFreeTrialPlan(userID string) error {
 	var trialPlan paymentModels.SubscriptionPlan
 	result := s.db.Where("name = ? AND price_amount = 0 AND is_active = true", "Trial").First(&trialPlan)
