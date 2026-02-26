@@ -17,7 +17,7 @@ type OrganizationSubscriptionService interface {
 	// Subscription management
 	GetOrganizationSubscription(orgID uuid.UUID) (*models.OrganizationSubscription, error)
 	GetOrganizationSubscriptionByID(id uuid.UUID) (*models.OrganizationSubscription, error)
-	CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string, quantity int) (*models.OrganizationSubscription, error)
+	CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string, quantity int, isAdminAssigned bool) (*models.OrganizationSubscription, error)
 	UpdateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID) (*models.OrganizationSubscription, error)
 	CancelOrganizationSubscription(orgID uuid.UUID, cancelAtPeriodEnd bool) error
 
@@ -84,7 +84,8 @@ func (oss *organizationSubscriptionService) GetOrganizationSubscriptionByID(id u
 // CreateOrganizationSubscription creates a new organization subscription
 // For free plans (PriceAmount == 0), creates an active subscription
 // For paid plans, creates an incomplete subscription that will be activated by Stripe webhook
-func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string, quantity int) (*models.OrganizationSubscription, error) {
+// When isAdminAssigned is true, paid plans are activated immediately (no Stripe flow)
+func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string, quantity int, isAdminAssigned bool) (*models.OrganizationSubscription, error) {
 	// Verify the organization exists
 	var org organizationModels.Organization
 	if err := oss.db.Where("id = ?", orgID).First(&org).Error; err != nil {
@@ -110,14 +111,17 @@ func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID
 		Quantity:           quantity,
 	}
 
-	// FREE PLAN: Activate immediately without Stripe
-	if plan.PriceAmount == 0 {
+	// FREE PLAN or ADMIN-ASSIGNED: Activate immediately without Stripe
+	if plan.PriceAmount == 0 || isAdminAssigned {
 		subscription.Status = "active"
 		subscription.CurrentPeriodStart = now
-		// Free plans are perpetual (1 year period for consistency)
 		subscription.CurrentPeriodEnd = now.AddDate(1, 0, 0)
 
-		utils.Info("Creating free organization subscription for org %s (plan: %s)", orgID, plan.Name)
+		if isAdminAssigned {
+			utils.Info("Creating admin-assigned organization subscription for org %s (plan: %s)", orgID, plan.Name)
+		} else {
+			utils.Info("Creating free organization subscription for org %s (plan: %s)", orgID, plan.Name)
+		}
 	} else {
 		// PAID PLAN: Will be activated by Stripe webhook
 		subscription.Status = "incomplete"
