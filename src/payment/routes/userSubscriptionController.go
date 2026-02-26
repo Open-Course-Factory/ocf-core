@@ -315,6 +315,17 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 	}
 
 returnSubscription:
+	// Check if org subscription has a higher-tier plan than personal
+	orgSub, orgPlan := sc.getOrgSubscriptionForUser(userId)
+	if orgSub != nil && orgPlan != nil {
+		personalPlan, planErr := sc.subscriptionService.GetSubscriptionPlan(subscription.SubscriptionPlanID)
+		if planErr == nil && orgPlan.Priority > personalPlan.Priority {
+			output := sc.orgSubscriptionToUserDTO(userId, orgSub, orgPlan)
+			ctx.JSON(http.StatusOK, output)
+			return
+		}
+	}
+
 	// Convertir vers DTO
 	subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
 	if err != nil {
