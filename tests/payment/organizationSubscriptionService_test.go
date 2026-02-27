@@ -8,6 +8,7 @@ import (
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
+	"soli/formations/src/payment/repositories"
 	"soli/formations/src/payment/services"
 
 	"github.com/google/uuid"
@@ -536,5 +537,160 @@ func TestOrganizationSubscription_Create_RespectsQuantity(t *testing.T) {
 		// Verify the service respects the requested quantity.
 		assert.Equal(t, requestedQuantity, sub.Quantity,
 			"Subscription quantity should be %d but service hardcodes it to 1", requestedQuantity)
+	})
+}
+
+func TestOrganizationSubscriptionRepository_GetAllActiveOrganizationSubscriptions(t *testing.T) {
+	t.Run("Returns active and trialing subscriptions with plan details preloaded", func(t *testing.T) {
+		db := freshTestDB(t)
+		freePlan, proPlan, org1, org2, _ := seedTestData(t, db)
+		repo := repositories.NewOrganizationSubscriptionRepository(db)
+
+		// Create an active subscription for org1
+		activeSub := &models.OrganizationSubscription{
+			BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+			OrganizationID:     org1.ID,
+			SubscriptionPlanID: freePlan.ID,
+			Status:             "active",
+			CurrentPeriodStart: time.Now(),
+			CurrentPeriodEnd:   time.Now().AddDate(0, 1, 0),
+			Quantity:           1,
+		}
+		err := db.Create(activeSub).Error
+		assert.NoError(t, err)
+
+		// Create a trialing subscription for org2
+		trialingSub := &models.OrganizationSubscription{
+			BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+			OrganizationID:     org2.ID,
+			SubscriptionPlanID: proPlan.ID,
+			Status:             "trialing",
+			CurrentPeriodStart: time.Now(),
+			CurrentPeriodEnd:   time.Now().AddDate(0, 1, 0),
+			Quantity:           5,
+		}
+		err = db.Create(trialingSub).Error
+		assert.NoError(t, err)
+
+		// Call the new method
+		subscriptions, err := repo.GetAllActiveOrganizationSubscriptions()
+
+		assert.NoError(t, err)
+		assert.Len(t, subscriptions, 2)
+
+		// Verify that SubscriptionPlan is preloaded for each subscription
+		for _, sub := range subscriptions {
+			assert.NotEqual(t, uuid.Nil, sub.SubscriptionPlan.ID,
+				"SubscriptionPlan should be preloaded")
+			assert.NotEmpty(t, sub.SubscriptionPlan.Name,
+				"SubscriptionPlan.Name should be loaded")
+		}
+
+		// Verify we got both active and trialing
+		statuses := make(map[string]bool)
+		for _, sub := range subscriptions {
+			statuses[sub.Status] = true
+		}
+		assert.True(t, statuses["active"], "Should include active subscriptions")
+		assert.True(t, statuses["trialing"], "Should include trialing subscriptions")
+	})
+
+	t.Run("Excludes cancelled and incomplete subscriptions", func(t *testing.T) {
+		db := freshTestDB(t)
+		freePlan, proPlan, org1, org2, _ := seedTestData(t, db)
+		repo := repositories.NewOrganizationSubscriptionRepository(db)
+
+		now := time.Now()
+		cancelledAt := now
+
+		// Create a cancelled subscription for org1
+		cancelledSub := &models.OrganizationSubscription{
+			BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+			OrganizationID:     org1.ID,
+			SubscriptionPlanID: freePlan.ID,
+			Status:             "cancelled",
+			CurrentPeriodStart: now,
+			CurrentPeriodEnd:   now.AddDate(0, 1, 0),
+			CancelledAt:        &cancelledAt,
+			Quantity:           1,
+		}
+		err := db.Create(cancelledSub).Error
+		assert.NoError(t, err)
+
+		// Create an incomplete subscription for org2
+		incompleteSub := &models.OrganizationSubscription{
+			BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+			OrganizationID:     org2.ID,
+			SubscriptionPlanID: proPlan.ID,
+			Status:             "incomplete",
+			Quantity:           1,
+		}
+		err = db.Create(incompleteSub).Error
+		assert.NoError(t, err)
+
+		// Call the new method — should return empty since only cancelled/incomplete exist
+		subscriptions, err := repo.GetAllActiveOrganizationSubscriptions()
+
+		assert.NoError(t, err)
+		assert.Empty(t, subscriptions, "Should not include cancelled or incomplete subscriptions")
+	})
+
+	t.Run("Returns empty slice when no active subscriptions exist", func(t *testing.T) {
+		db := freshTestDB(t)
+		// seedTestData creates orgs and plans but NO subscriptions
+		seedTestData(t, db)
+		repo := repositories.NewOrganizationSubscriptionRepository(db)
+
+		subscriptions, err := repo.GetAllActiveOrganizationSubscriptions()
+
+		assert.NoError(t, err)
+		assert.NotNil(t, subscriptions, "Should return empty slice, not nil")
+		assert.Empty(t, subscriptions, "Should return no subscriptions when none exist")
+	})
+}
+
+func TestOrganizationSubscriptionService_GetAllActiveOrganizationSubscriptions(t *testing.T) {
+	t.Run("Service delegates to repository and returns results", func(t *testing.T) {
+		db := freshTestDB(t)
+		freePlan, proPlan, org1, org2, _ := seedTestData(t, db)
+		service := services.NewOrganizationSubscriptionService(db)
+
+		// Create an active subscription for org1
+		activeSub := &models.OrganizationSubscription{
+			BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+			OrganizationID:     org1.ID,
+			SubscriptionPlanID: freePlan.ID,
+			Status:             "active",
+			CurrentPeriodStart: time.Now(),
+			CurrentPeriodEnd:   time.Now().AddDate(0, 1, 0),
+			Quantity:           1,
+		}
+		err := db.Create(activeSub).Error
+		assert.NoError(t, err)
+
+		// Create a trialing subscription for org2
+		trialingSub := &models.OrganizationSubscription{
+			BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+			OrganizationID:     org2.ID,
+			SubscriptionPlanID: proPlan.ID,
+			Status:             "trialing",
+			CurrentPeriodStart: time.Now(),
+			CurrentPeriodEnd:   time.Now().AddDate(0, 1, 0),
+			Quantity:           3,
+		}
+		err = db.Create(trialingSub).Error
+		assert.NoError(t, err)
+
+		// Call the new service method
+		subscriptions, err := service.GetAllActiveOrganizationSubscriptions()
+
+		assert.NoError(t, err)
+		assert.Len(t, subscriptions, 2)
+
+		// Verify plan details are preloaded
+		for _, sub := range subscriptions {
+			assert.NotEmpty(t, sub.SubscriptionPlan.Name,
+				"SubscriptionPlan should be preloaded via service")
+		}
 	})
 }

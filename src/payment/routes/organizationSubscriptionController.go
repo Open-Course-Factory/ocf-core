@@ -20,6 +20,9 @@ type OrganizationSubscriptionController interface {
 	GetOrganizationSubscription(ctx *gin.Context)
 	CancelOrganizationSubscription(ctx *gin.Context)
 
+	// Admin bulk access
+	GetAllOrganizationSubscriptions(ctx *gin.Context)
+
 	// User feature access
 	GetUserEffectiveFeatures(ctx *gin.Context)
 	GetOrganizationFeatures(ctx *gin.Context)
@@ -227,6 +230,58 @@ func (osc *organizationSubscriptionController) GetOrganizationSubscription(ctx *
 	}
 
 	ctx.JSON(http.StatusOK, output)
+}
+
+// GetAllOrganizationSubscriptions godoc
+//
+//	@Summary		Get all active organization subscriptions
+//	@Description	Admin endpoint to retrieve all active/trialing organization subscriptions
+//	@Tags			organization-subscriptions
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{object}	map[string][]dto.OrganizationSubscriptionOutput
+//	@Failure		403	{object}	errors.APIError
+//	@Router			/admin/organizations/subscriptions [get]
+func (osc *organizationSubscriptionController) GetAllOrganizationSubscriptions(ctx *gin.Context) {
+	if !isAdmin(ctx) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Admin access required",
+		})
+		return
+	}
+
+	subscriptions, err := osc.orgSubService.GetAllActiveOrganizationSubscriptions()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to retrieve subscriptions: " + err.Error(),
+		})
+		return
+	}
+
+	outputs := make([]dto.OrganizationSubscriptionOutput, len(subscriptions))
+	for i, sub := range subscriptions {
+		outputs[i] = dto.OrganizationSubscriptionOutput{
+			ID:                   sub.ID,
+			OrganizationID:       sub.OrganizationID,
+			SubscriptionPlanID:   sub.SubscriptionPlanID,
+			SubscriptionPlan:     convertSubscriptionPlanToOutput(&sub.SubscriptionPlan),
+			StripeSubscriptionID: sub.StripeSubscriptionID,
+			StripeCustomerID:     sub.StripeCustomerID,
+			Status:               sub.Status,
+			Quantity:             sub.Quantity,
+			CurrentPeriodStart:   sub.CurrentPeriodStart,
+			CurrentPeriodEnd:     sub.CurrentPeriodEnd,
+			TrialEnd:             sub.TrialEnd,
+			CancelAtPeriodEnd:    sub.CancelAtPeriodEnd,
+			CancelledAt:          sub.CancelledAt,
+			CreatedAt:            sub.CreatedAt,
+			UpdatedAt:            sub.UpdatedAt,
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"data": outputs})
 }
 
 // CancelOrganizationSubscription godoc

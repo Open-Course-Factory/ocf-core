@@ -15,6 +15,7 @@ type OrganizationSubscriptionRepository interface {
 	GetOrganizationSubscriptionByOrgID(orgID uuid.UUID) (*models.OrganizationSubscription, error)
 	GetOrganizationSubscriptionByStripeID(stripeSubscriptionID string) (*models.OrganizationSubscription, error)
 	GetActiveOrganizationSubscription(orgID uuid.UUID) (*models.OrganizationSubscription, error)
+	GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error)
 	GetUserOrganizationSubscriptions(userID string) ([]models.OrganizationSubscription, error)
 	UpdateOrganizationSubscription(subscription *models.OrganizationSubscription) error
 }
@@ -80,6 +81,19 @@ func (r *organizationSubscriptionRepository) GetActiveOrganizationSubscription(o
 		return nil, err
 	}
 	return &subscription, nil
+}
+
+// GetAllActiveOrganizationSubscriptions retrieves all active or trialing organization subscriptions
+func (r *organizationSubscriptionRepository) GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error) {
+	var subscriptions []models.OrganizationSubscription
+	err := r.db.Preload("SubscriptionPlan").
+		Where("status IN (?)", []string{"active", "trialing"}).
+		Order("created_at DESC").
+		Find(&subscriptions).Error
+	if err != nil {
+		return nil, err
+	}
+	return subscriptions, nil
 }
 
 // GetUserOrganizationSubscriptions retrieves all organization subscriptions for a user

@@ -21,6 +21,9 @@ type OrganizationSubscriptionService interface {
 	UpdateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID) (*models.OrganizationSubscription, error)
 	CancelOrganizationSubscription(orgID uuid.UUID, cancelAtPeriodEnd bool) error
 
+	// Admin bulk access
+	GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error)
+
 	// Feature access (for members)
 	GetOrganizationFeatures(orgID uuid.UUID) (*models.SubscriptionPlan, error)
 	CanOrganizationAccessFeature(orgID uuid.UUID, feature string) (bool, error)
@@ -79,6 +82,11 @@ func (oss *organizationSubscriptionService) GetOrganizationSubscription(orgID uu
 // GetOrganizationSubscriptionByID retrieves a subscription by its ID
 func (oss *organizationSubscriptionService) GetOrganizationSubscriptionByID(id uuid.UUID) (*models.OrganizationSubscription, error) {
 	return oss.repository.GetOrganizationSubscription(id)
+}
+
+// GetAllActiveOrganizationSubscriptions retrieves all active or trialing organization subscriptions
+func (oss *organizationSubscriptionService) GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error) {
+	return oss.repository.GetAllActiveOrganizationSubscriptions()
 }
 
 // CreateOrganizationSubscription creates a new organization subscription

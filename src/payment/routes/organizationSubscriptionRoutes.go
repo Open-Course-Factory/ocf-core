@@ -42,4 +42,11 @@ func OrganizationSubscriptionRoutes(router *gin.RouterGroup, config *config.Conf
 		// (GET /users/me/features)
 		userRoutes.GET("/features", orgSubController.GetUserEffectiveFeatures)
 	}
+
+	// Admin bulk routes
+	adminRoutes := router.Group("/admin/organizations")
+	adminRoutes.Use(authMiddleware.AuthManagement())
+	{
+		adminRoutes.GET("/subscriptions", orgSubController.GetAllOrganizationSubscriptions)
+	}
 }
