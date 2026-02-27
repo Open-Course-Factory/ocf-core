@@ -370,6 +370,30 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	}
 	defer terminalConn.Close()
 
+	// Keepalive: send pings to browser every 30s to prevent idle timeout
+	// from intermediate proxies (Traefik, load balancers)
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
+	done := make(chan struct{})
+	defer close(done)
+
+	go func() {
+		for {
+			select {
+			case <-pingTicker.C:
+				if err := clientConn.WriteControl(
+					websocket.PingMessage, nil,
+					time.Now().Add(5*time.Second),
+				); err != nil {
+					return
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+
 	// Proxy bidirectionnel
 	go func() {
 		for {
