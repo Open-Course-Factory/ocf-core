@@ -13,6 +13,7 @@ courses/*
 *~
 *.pem
 .bash_history
+go-cache
 
 # Test artifacts
 coverage.out
