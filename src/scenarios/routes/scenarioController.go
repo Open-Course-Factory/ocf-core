@@ -82,8 +82,18 @@ func (sc *scenarioController) getSessionIfOwned(ctx *gin.Context) (*models.Scena
 	return &session, nil
 }
 
-// ImportScenario handles POST /scenarios/import
-// Currently returns 501 Not Implemented as git cloning is not yet built.
+// ImportScenario godoc
+// @Summary Import a scenario from git
+// @Description Import a KillerCoda-compatible scenario from a git repository (not yet implemented)
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param body body dto.ImportScenarioInput true "Import request"
+// @Success 201 {object} models.Scenario
+// @Failure 400 {object} errors.APIError
+// @Failure 501 {object} errors.APIError
+// @Router /scenarios/import [post]
+// @Security BearerAuth
 func (sc *scenarioController) ImportScenario(ctx *gin.Context) {
 	var input dto.ImportScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
@@ -100,7 +110,18 @@ func (sc *scenarioController) ImportScenario(ctx *gin.Context) {
 	})
 }
 
-// StartScenario handles POST /scenario-sessions/start
+// StartScenario godoc
+// @Summary Start a scenario session
+// @Description Start a new scenario session on a terminal for the authenticated user
+// @Tags scenario-sessions
+// @Accept json
+// @Produce json
+// @Param body body dto.StartScenarioInput true "Start request"
+// @Success 201 {object} dto.ScenarioSessionOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenario-sessions/start [post]
+// @Security BearerAuth
 func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 	var input dto.StartScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
@@ -143,7 +164,18 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 	})
 }
 
-// GetCurrentStep handles GET /scenario-sessions/:id/current-step
+// GetCurrentStep godoc
+// @Summary Get current step
+// @Description Get the current step content for a scenario session
+// @Tags scenario-sessions
+// @Produce json
+// @Param id path string true "Session ID"
+// @Success 200 {object} dto.CurrentStepResponse
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Router /scenario-sessions/{id}/current-step [get]
+// @Security BearerAuth
 func (sc *scenarioController) GetCurrentStep(ctx *gin.Context) {
 	session, err := sc.getSessionIfOwned(ctx)
 	if err != nil {
@@ -163,7 +195,18 @@ func (sc *scenarioController) GetCurrentStep(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, step)
 }
 
-// VerifyStep handles POST /scenario-sessions/:id/verify
+// VerifyStep godoc
+// @Summary Verify current step
+// @Description Run the verification script for the current step
+// @Tags scenario-sessions
+// @Produce json
+// @Param id path string true "Session ID"
+// @Success 200 {object} dto.VerifyStepResponse
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenario-sessions/{id}/verify [post]
+// @Security BearerAuth
 func (sc *scenarioController) VerifyStep(ctx *gin.Context) {
 	session, err := sc.getSessionIfOwned(ctx)
 	if err != nil {
@@ -183,7 +226,20 @@ func (sc *scenarioController) VerifyStep(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, result)
 }
 
-// SubmitFlag handles POST /scenario-sessions/:id/submit-flag
+// SubmitFlag godoc
+// @Summary Submit a flag
+// @Description Submit a CTF flag answer for the current step
+// @Tags scenario-sessions
+// @Accept json
+// @Produce json
+// @Param id path string true "Session ID"
+// @Param body body dto.SubmitFlagInput true "Flag submission"
+// @Success 200 {object} dto.SubmitFlagResponse
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenario-sessions/{id}/submit-flag [post]
+// @Security BearerAuth
 func (sc *scenarioController) SubmitFlag(ctx *gin.Context) {
 	session, err := sc.getSessionIfOwned(ctx)
 	if err != nil {
@@ -212,7 +268,18 @@ func (sc *scenarioController) SubmitFlag(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, result)
 }
 
-// AbandonSession handles POST /scenario-sessions/:id/abandon
+// AbandonSession godoc
+// @Summary Abandon a session
+// @Description Abandon the scenario session and discard progress
+// @Tags scenario-sessions
+// @Produce json
+// @Param id path string true "Session ID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenario-sessions/{id}/abandon [post]
+// @Security BearerAuth
 func (sc *scenarioController) AbandonSession(ctx *gin.Context) {
 	session, err := sc.getSessionIfOwned(ctx)
 	if err != nil {
@@ -232,7 +299,17 @@ func (sc *scenarioController) AbandonSession(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "Session abandoned"})
 }
 
-// GetSessionByTerminal handles GET /scenario-sessions/by-terminal/:terminalId
+// GetSessionByTerminal godoc
+// @Summary Get scenario session by terminal
+// @Description Find the active scenario session linked to a terminal session
+// @Tags scenario-sessions
+// @Produce json
+// @Param terminalId path string true "Terminal session ID"
+// @Success 200 {object} dto.ScenarioSessionOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Router /scenario-sessions/by-terminal/{terminalId} [get]
+// @Security BearerAuth
 func (sc *scenarioController) GetSessionByTerminal(ctx *gin.Context) {
 	terminalID := ctx.Param("terminalId")
 	if terminalID == "" {
@@ -264,8 +341,18 @@ func (sc *scenarioController) GetSessionByTerminal(ctx *gin.Context) {
 	})
 }
 
-// SeedScenario handles POST /scenarios/seed
-// Creates a scenario with all its steps from a single JSON payload (admin/testing).
+// SeedScenario godoc
+// @Summary Seed a scenario with steps
+// @Description Create a scenario with all steps from a single JSON payload (admin/testing)
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param body body dto.SeedScenarioInput true "Seed request"
+// @Success 201 {object} models.Scenario
+// @Failure 400 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenarios/seed [post]
+// @Security BearerAuth
 func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 	var input dto.SeedScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
