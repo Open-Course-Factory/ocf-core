@@ -42,7 +42,7 @@ func NewScenarioSessionService(db *gorm.DB, flagService FlagServiceInterface, ve
 
 // StartScenario creates a new scenario session for a student.
 // It creates the session, step progress records, generates flags, and returns session info.
-func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UUID) (*models.ScenarioSession, error) {
+func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UUID, terminalSessionID string) (*models.ScenarioSession, error) {
 	// Load scenario with steps
 	var scenario models.Scenario
 	if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
@@ -57,11 +57,12 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 
 	now := time.Now()
 	session := &models.ScenarioSession{
-		ScenarioID:  scenarioID,
-		UserID:      userID,
-		CurrentStep: 0,
-		Status:      "active",
-		StartedAt:   now,
+		ScenarioID:        scenarioID,
+		UserID:            userID,
+		TerminalSessionID: &terminalSessionID,
+		CurrentStep:       0,
+		Status:            "active",
+		StartedAt:         now,
 	}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {

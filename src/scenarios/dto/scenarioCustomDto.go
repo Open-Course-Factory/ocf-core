@@ -9,8 +9,9 @@ type ImportScenarioInput struct {
 
 // StartScenarioInput - DTO for starting a scenario session
 type StartScenarioInput struct {
-	Backend      string `json:"backend,omitempty"`       // Backend ID to use
-	InstanceType string `json:"instance_type,omitempty"` // Override default instance type
+	TerminalSessionID string `json:"terminal_session_id" binding:"required"`
+	Backend           string `json:"backend,omitempty"`
+	InstanceType      string `json:"instance_type,omitempty"`
 }
 
 // VerifyStepResponse - DTO for verify step results

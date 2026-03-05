@@ -38,6 +38,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 
 	// Session routes
 	sessions := api.Group("/scenario-sessions")
+	sessions.GET("/by-terminal/:terminalId", controller.GetSessionByTerminal)
 	sessions.GET("/:id/current-step", controller.GetCurrentStep)
 	sessions.POST("/:id/verify", controller.VerifyStep)
 	sessions.POST("/:id/submit-flag", controller.SubmitFlag)
@@ -69,8 +70,9 @@ func TestStartScenario_Success(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&step).Error)
 
+	body, _ := json.Marshal(map[string]string{"terminal_session_id": "test-terminal-ctrl"})
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/scenarios/"+scenario.ID.String()+"/start", nil)
+	req, _ := http.NewRequest("POST", "/api/v1/scenarios/"+scenario.ID.String()+"/start", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(w, req)
 
@@ -81,6 +83,7 @@ func TestStartScenario_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, response["ID"])
 	assert.Equal(t, "active", response["status"])
+	assert.Equal(t, "test-terminal-ctrl", response["terminal_session_id"])
 }
 
 func TestStartScenario_InvalidID(t *testing.T) {
@@ -100,8 +103,9 @@ func TestStartScenario_NotFound(t *testing.T) {
 	router := setupTestRouter(db)
 
 	fakeID := uuid.New()
+	body, _ := json.Marshal(map[string]string{"terminal_session_id": "test-terminal-nf"})
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/scenarios/"+fakeID.String()+"/start", nil)
+	req, _ := http.NewRequest("POST", "/api/v1/scenarios/"+fakeID.String()+"/start", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(w, req)
 
@@ -354,4 +358,53 @@ func TestImportScenario_NotImplemented(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNotImplemented, w.Code)
+}
+
+// --- GetSessionByTerminal tests ---
+
+func TestGetSessionByTerminal_Success(t *testing.T) {
+	db := setupTestDB(t)
+	router := setupTestRouter(db)
+
+	scenario := models.Scenario{
+		Name:         "terminal-lookup",
+		Title:        "Terminal Lookup Test",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	terminalID := "terminal-lookup-abc"
+	session := models.ScenarioSession{
+		ScenarioID:        scenario.ID,
+		UserID:            "test-user-123",
+		TerminalSessionID: &terminalID,
+		CurrentStep:       0,
+		Status:            "active",
+		StartedAt:         time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/by-terminal/"+terminalID, nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, terminalID, response["terminal_session_id"])
+	assert.Equal(t, "active", response["status"])
+}
+
+func TestGetSessionByTerminal_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	router := setupTestRouter(db)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/by-terminal/unknown-terminal", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }

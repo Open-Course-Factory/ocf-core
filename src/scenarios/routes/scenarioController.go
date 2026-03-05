@@ -5,6 +5,7 @@ import (
 
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/scenarios/dto"
+	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 
 	"github.com/gin-gonic/gin"
@@ -20,9 +21,11 @@ type ScenarioController interface {
 	VerifyStep(ctx *gin.Context)
 	SubmitFlag(ctx *gin.Context)
 	AbandonSession(ctx *gin.Context)
+	GetSessionByTerminal(ctx *gin.Context)
 }
 
 type scenarioController struct {
+	db              *gorm.DB
 	sessionService  *services.ScenarioSessionService
 	importerService *services.ScenarioImporterService
 }
@@ -35,6 +38,7 @@ func NewScenarioController(db *gorm.DB) ScenarioController {
 	importerService := services.NewScenarioImporterService(db)
 
 	return &scenarioController{
+		db:              db,
 		sessionService:  sessionService,
 		importerService: importerService,
 	}
@@ -69,9 +73,18 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 		return
 	}
 
+	var input dto.StartScenarioInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
 	userID := ctx.GetString("userId")
 
-	session, err := sc.sessionService.StartScenario(userID, scenarioID)
+	session, err := sc.sessionService.StartScenario(userID, scenarioID, input.TerminalSessionID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -182,4 +195,28 @@ func (sc *scenarioController) AbandonSession(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Session abandoned"})
+}
+
+// GetSessionByTerminal handles GET /scenario-sessions/by-terminal/:terminalId
+func (sc *scenarioController) GetSessionByTerminal(ctx *gin.Context) {
+	terminalID := ctx.Param("terminalId")
+	if terminalID == "" {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Terminal session ID is required",
+		})
+		return
+	}
+
+	var session models.ScenarioSession
+	err := sc.db.Where("terminal_session_id = ? AND status = ?", terminalID, "active").First(&session).Error
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "No active scenario session for this terminal",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, session)
 }
