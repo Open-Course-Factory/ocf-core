@@ -166,8 +166,6 @@ func TestGetPolicyOverview_RoleSubjectGoesToRolePolicies(t *testing.T) {
 func TestGetPolicyOverview_SubjectNamePopulatedForUUID(t *testing.T) {
 	// This test verifies that when a policy subject is a UUID, the service
 	// resolves the user's display name and populates SubjectName.
-	// RED PHASE: PolicySubject does not yet have a SubjectName field.
-	// This test will fail to compile until the backend-dev adds the field.
 	mockEnforcer := mocks.NewMockEnforcer()
 
 	userUUID := "550e8400-e29b-41d4-a716-446655440000"
@@ -183,13 +181,9 @@ func TestGetPolicyOverview_SubjectNamePopulatedForUUID(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.UserPolicies, 1)
 
-	// RED: SubjectName field does not exist on PolicySubject yet.
-	// The backend-dev will add this field and the name resolution logic.
-	// COMPILE FAILURE EXPECTED: uncomment the lines below once SubjectName is added to PolicySubject.
 	assert.Equal(t, userUUID, result.UserPolicies[0].Subject)
-	// assert.NotEmpty(t, result.UserPolicies[0].SubjectName,
-	//     "SubjectName should be populated with the user's display name for UUID subjects")
-	t.Skip("BLOCKED: PolicySubject.SubjectName field does not exist yet — will be added by backend-dev")
+	assert.NotEmpty(t, result.UserPolicies[0].SubjectName,
+		"SubjectName should be populated with the user's display name for UUID subjects")
 }
 
 func TestGetPolicyOverview_EmptyPolicies_ReturnsEmptyArraysNotNil(t *testing.T) {
