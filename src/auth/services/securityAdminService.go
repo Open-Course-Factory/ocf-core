@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	authDto "soli/formations/src/auth/dto"
@@ -13,7 +14,50 @@ import (
 	"gorm.io/gorm"
 )
 
+// entityTableLookup defines how to resolve a display name from each entity table.
+// nameExpr is a SQL expression that produces the best display name for the entity.
+type entityTableLookup struct {
+	table    string
+	nameExpr string
+}
+
+// entityTableMap maps kebab-case entity route segments to their table lookup config.
+// Both singular and plural forms are included for flexible matching.
+var entityTableMap = map[string]entityTableLookup{
+	"organization":       {table: "organizations", nameExpr: "COALESCE(NULLIF(display_name, ''), name)"},
+	"organizations":      {table: "organizations", nameExpr: "COALESCE(NULLIF(display_name, ''), name)"},
+	"class-group":        {table: "class_groups", nameExpr: "COALESCE(NULLIF(display_name, ''), name)"},
+	"class-groups":       {table: "class_groups", nameExpr: "COALESCE(NULLIF(display_name, ''), name)"},
+	"course":             {table: "courses", nameExpr: "COALESCE(NULLIF(title, ''), name)"},
+	"courses":            {table: "courses", nameExpr: "COALESCE(NULLIF(title, ''), name)"},
+	"session":            {table: "sessions", nameExpr: "title"},
+	"sessions":           {table: "sessions", nameExpr: "title"},
+	"chapter":            {table: "chapters", nameExpr: "title"},
+	"chapters":           {table: "chapters", nameExpr: "title"},
+	"section":            {table: "sections", nameExpr: "title"},
+	"sections":           {table: "sections", nameExpr: "title"},
+	"theme":              {table: "themes", nameExpr: "name"},
+	"themes":             {table: "themes", nameExpr: "name"},
+	"generation":         {table: "generations", nameExpr: "id"},
+	"generations":        {table: "generations", nameExpr: "id"},
+	"terminal":           {table: "terminals", nameExpr: "name"},
+	"terminals":          {table: "terminals", nameExpr: "name"},
+	"terminal-share":     {table: "terminal_shares", nameExpr: "id"},
+	"terminal-shares":    {table: "terminal_shares", nameExpr: "id"},
+	"subscription-plan":  {table: "subscription_plans", nameExpr: "name"},
+	"subscription-plans": {table: "subscription_plans", nameExpr: "name"},
+	"feature":            {table: "features", nameExpr: "name"},
+	"features":           {table: "features", nameExpr: "name"},
+	"invoice":            {table: "invoices", nameExpr: "id"},
+	"invoices":           {table: "invoices", nameExpr: "id"},
+}
+
+// resourcePathRegex matches API paths containing entity UUIDs:
+// e.g., /api/v1/organizations/019c6d26-135f-7518-8a6d-12720a15bf4b
+var resourcePathRegex = regexp.MustCompile(`/api/v1/([\w-]+)/([\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12})`)
+
 type SecurityAdminService struct {
+	db                 *gorm.DB
 	enforcer           interfaces.EnforcerInterface
 	permissionsService UserPermissionsService
 	resolveNames       func(uuids []string) map[string]string
@@ -21,6 +65,7 @@ type SecurityAdminService struct {
 
 func NewSecurityAdminService(enforcer interfaces.EnforcerInterface, db *gorm.DB) *SecurityAdminService {
 	svc := &SecurityAdminService{
+		db:                 db,
 		enforcer:           enforcer,
 		permissionsService: NewUserPermissionsService(db),
 	}
@@ -59,6 +104,98 @@ func (s *SecurityAdminService) defaultResolveUserNames(uuids []string) map[strin
 	return result
 }
 
+// resolveEntityNames resolves entity-scoped identifiers (e.g., "organization:UUID")
+// and resource path UUIDs to display names by querying the database.
+// It accepts a list of "entityType:UUID" strings and returns a map from the full
+// key to the resolved display name.
+func (s *SecurityAdminService) resolveEntityNames(keys []string) map[string]string {
+	if s.db == nil || len(keys) == 0 {
+		return make(map[string]string)
+	}
+
+	// Group UUIDs by table+nameExpr key
+	type lookupEntry struct {
+		lookup entityTableLookup
+		uuid   string
+		key    string
+	}
+	// Use table name as grouping key (same table = same query)
+	byTable := make(map[string][]lookupEntry)
+	var lookupForTable = make(map[string]entityTableLookup)
+	for _, key := range keys {
+		entityType, uid := parseEntityKey(key)
+		if entityType == "" || uid == "" {
+			continue
+		}
+		lookup, ok := entityTableMap[entityType]
+		if !ok {
+			continue
+		}
+		byTable[lookup.table] = append(byTable[lookup.table], lookupEntry{lookup: lookup, uuid: uid, key: key})
+		lookupForTable[lookup.table] = lookup
+	}
+
+	result := make(map[string]string, len(keys))
+
+	// Batch query per table
+	for table, entries := range byTable {
+		uuids := make([]string, len(entries))
+		for i, e := range entries {
+			uuids[i] = e.uuid
+		}
+
+		lookup := lookupForTable[table]
+
+		type nameRow struct {
+			ID   string `gorm:"column:id"`
+			Name string `gorm:"column:name"`
+		}
+		var rows []nameRow
+		s.db.Raw(
+			fmt.Sprintf("SELECT id, %s AS name FROM %s WHERE id IN ?", lookup.nameExpr, table),
+			uuids,
+		).Scan(&rows)
+
+		nameByID := make(map[string]string, len(rows))
+		for _, row := range rows {
+			nameByID[row.ID] = row.Name
+		}
+
+		for _, entry := range entries {
+			if name, ok := nameByID[entry.uuid]; ok {
+				result[entry.key] = name
+			}
+		}
+	}
+
+	return result
+}
+
+// parseEntityKey splits an entity-scoped key like "organization:UUID" into its parts.
+// Returns empty strings if the key doesn't match the expected pattern.
+func parseEntityKey(key string) (entityType string, uid string) {
+	parts := strings.SplitN(key, ":", 2)
+	if len(parts) != 2 {
+		return "", ""
+	}
+	// Validate the UUID part
+	if _, err := uuid.Parse(parts[1]); err != nil {
+		return "", ""
+	}
+	return parts[0], parts[1]
+}
+
+// extractResourceEntityKey extracts an entity key from a resource path.
+// For "/api/v1/organizations/019c6d26-...", returns "organizations:019c6d26-...".
+// Returns empty string if no UUID is found in the path.
+func extractResourceEntityKey(resource string) string {
+	matches := resourcePathRegex.FindStringSubmatch(resource)
+	if len(matches) < 3 {
+		return ""
+	}
+	return matches[1] + ":" + matches[2]
+}
+
 // GetPolicyOverview returns all Casbin policies grouped by subject type (role vs user)
 func (s *SecurityAdminService) GetPolicyOverview() (*authDto.PolicyOverviewOutput, error) {
 	policies, err := s.enforcer.GetPolicy()
@@ -68,6 +205,9 @@ func (s *SecurityAdminService) GetPolicyOverview() (*authDto.PolicyOverviewOutpu
 
 	roleMap := make(map[string][]authDto.PolicyRule)
 	userMap := make(map[string][]authDto.PolicyRule)
+
+	// Collect entity keys for batch resolution (from both subjects and resources)
+	entityKeySet := make(map[string]bool)
 
 	for _, policy := range policies {
 		if len(policy) < 3 {
@@ -85,21 +225,43 @@ func (s *SecurityAdminService) GetPolicyOverview() (*authDto.PolicyOverviewOutpu
 			Methods:  methods,
 		}
 
+		// Collect entity key from resource path (e.g., /api/v1/organizations/UUID)
+		if rk := extractResourceEntityKey(resource); rk != "" {
+			entityKeySet[rk] = true
+		}
+
 		// Classify: if it parses as UUID, it's a user policy; otherwise it's a role
 		_, uuidErr := uuid.Parse(subject)
 		if uuidErr == nil {
 			userMap[subject] = append(userMap[subject], rule)
 		} else {
+			// Check if it's an entity-scoped subject (e.g., "organization:UUID")
+			if et, uid := parseEntityKey(subject); et != "" && uid != "" {
+				entityKeySet[subject] = true
+			}
 			roleMap[subject] = append(roleMap[subject], rule)
 		}
 	}
 
+	// Batch resolve entity names from DB
+	entityKeys := make([]string, 0, len(entityKeySet))
+	for k := range entityKeySet {
+		entityKeys = append(entityKeys, k)
+	}
+	entityNameMap := s.resolveEntityNames(entityKeys)
+
+	// Build role policies with entity name resolution
 	rolePolicies := make([]authDto.PolicySubject, 0, len(roleMap))
 	for subject, rules := range roleMap {
-		rolePolicies = append(rolePolicies, authDto.PolicySubject{
+		ps := authDto.PolicySubject{
 			Subject:  subject,
-			Policies: rules,
-		})
+			Policies: s.populateResourceNames(rules, entityNameMap),
+		}
+		// Resolve entity-scoped subject names (e.g., "organization:UUID" → "My Org")
+		if name, ok := entityNameMap[subject]; ok {
+			ps.SubjectName = name
+		}
+		rolePolicies = append(rolePolicies, ps)
 	}
 
 	// Resolve user UUID display names
@@ -114,7 +276,7 @@ func (s *SecurityAdminService) GetPolicyOverview() (*authDto.PolicyOverviewOutpu
 		userPolicies = append(userPolicies, authDto.PolicySubject{
 			Subject:     subject,
 			SubjectName: nameMap[subject],
-			Policies:    rules,
+			Policies:    s.populateResourceNames(rules, entityNameMap),
 		})
 	}
 
@@ -123,6 +285,20 @@ func (s *SecurityAdminService) GetPolicyOverview() (*authDto.PolicyOverviewOutpu
 		UserPolicies:  userPolicies,
 		TotalPolicies: len(policies),
 	}, nil
+}
+
+// populateResourceNames sets ResourceName on each PolicyRule whose resource path
+// contains an entity UUID that was resolved.
+func (s *SecurityAdminService) populateResourceNames(rules []authDto.PolicyRule, entityNameMap map[string]string) []authDto.PolicyRule {
+	for i := range rules {
+		rk := extractResourceEntityKey(rules[i].Resource)
+		if rk != "" {
+			if name, ok := entityNameMap[rk]; ok {
+				rules[i].ResourceName = name
+			}
+		}
+	}
+	return rules
 }
 
 // GetUserPermissionLookup returns the full permission set for a specific user

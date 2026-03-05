@@ -841,6 +841,270 @@ func TestController_HealthChecks_NonAdminGets403(t *testing.T) {
 }
 
 // ============================================================================
+// Entity Name Resolution Tests
+// ============================================================================
+
+// createTestServiceWithEntityDB creates a SecurityAdminService backed by an in-memory
+// SQLite DB that has an "organizations" table with test data for entity name resolution.
+func createTestServiceWithEntityDB(t *testing.T, mockEnforcer *mocks.MockEnforcer) *services.SecurityAdminService {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+
+	// Create a minimal organizations table with display_name and name columns
+	err = db.Exec(`CREATE TABLE organizations (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		display_name TEXT NOT NULL DEFAULT ''
+	)`).Error
+	require.NoError(t, err)
+
+	// Insert test data
+	err = db.Exec(`INSERT INTO organizations (id, name, display_name) VALUES
+		('019c6d26-135f-7518-8a6d-12720a15bf4b', 'acme-corp', 'Acme Corporation'),
+		('019c6d26-aaaa-bbbb-cccc-12720a15bf4b', 'no-display', '')`).Error
+	require.NoError(t, err)
+
+	// Create a minimal courses table (no display_name, uses title)
+	err = db.Exec(`CREATE TABLE courses (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		title TEXT NOT NULL DEFAULT ''
+	)`).Error
+	require.NoError(t, err)
+
+	err = db.Exec(`INSERT INTO courses (id, name, title) VALUES
+		('019c6d26-2222-3333-4444-12720a15bf4b', 'linux-101', 'Introduction to Linux')`).Error
+	require.NoError(t, err)
+
+	svc := services.NewSecurityAdminService(mockEnforcer, db)
+	// Override user name resolution with a mock (entity resolution uses the real DB)
+	svc.SetNameResolver(func(uuids []string) map[string]string {
+		result := make(map[string]string, len(uuids))
+		for _, uid := range uuids {
+			if len(uid) >= 8 {
+				result[uid] = "User-" + uid[:8]
+			} else {
+				result[uid] = uid
+			}
+		}
+		return result
+	})
+	return svc
+}
+
+func TestGetPolicyOverview_EntityScopedSubject_ResolvesName(t *testing.T) {
+	mockEnforcer := mocks.NewMockEnforcer()
+
+	orgUUID := "019c6d26-135f-7518-8a6d-12720a15bf4b"
+	subject := "organization:" + orgUUID
+
+	mockEnforcer.GetPolicyFunc = func() ([][]string, error) {
+		return [][]string{
+			{subject, "/api/v1/courses", "(GET)"},
+		}, nil
+	}
+
+	svc := createTestServiceWithEntityDB(t, mockEnforcer)
+	result, err := svc.GetPolicyOverview()
+
+	require.NoError(t, err)
+	require.Len(t, result.RolePolicies, 1, "Entity-scoped subject should go to role policies")
+	assert.Equal(t, subject, result.RolePolicies[0].Subject)
+	assert.Equal(t, "Acme Corporation", result.RolePolicies[0].SubjectName,
+		"Entity-scoped subject should resolve to the organization's display name")
+}
+
+func TestGetPolicyOverview_EntityScopedSubject_FallsBackToName(t *testing.T) {
+	mockEnforcer := mocks.NewMockEnforcer()
+
+	// This org has an empty display_name, so it should fall back to the name column
+	orgUUID := "019c6d26-aaaa-bbbb-cccc-12720a15bf4b"
+	subject := "organization:" + orgUUID
+
+	mockEnforcer.GetPolicyFunc = func() ([][]string, error) {
+		return [][]string{
+			{subject, "/api/v1/courses", "(GET)"},
+		}, nil
+	}
+
+	svc := createTestServiceWithEntityDB(t, mockEnforcer)
+	result, err := svc.GetPolicyOverview()
+
+	require.NoError(t, err)
+	require.Len(t, result.RolePolicies, 1)
+	assert.Equal(t, "no-display", result.RolePolicies[0].SubjectName,
+		"Should fall back to name column when display_name is empty")
+}
+
+func TestGetPolicyOverview_ResourcePath_ResolvesName(t *testing.T) {
+	mockEnforcer := mocks.NewMockEnforcer()
+
+	orgUUID := "019c6d26-135f-7518-8a6d-12720a15bf4b"
+	resource := "/api/v1/organizations/" + orgUUID
+
+	mockEnforcer.GetPolicyFunc = func() ([][]string, error) {
+		return [][]string{
+			{"member", resource, "(GET)"},
+		}, nil
+	}
+
+	svc := createTestServiceWithEntityDB(t, mockEnforcer)
+	result, err := svc.GetPolicyOverview()
+
+	require.NoError(t, err)
+	require.Len(t, result.RolePolicies, 1)
+	require.Len(t, result.RolePolicies[0].Policies, 1)
+
+	assert.Equal(t, resource, result.RolePolicies[0].Policies[0].Resource)
+	assert.Equal(t, "Acme Corporation", result.RolePolicies[0].Policies[0].ResourceName,
+		"Resource path with UUID should resolve to the entity's display name")
+}
+
+func TestGetPolicyOverview_ResourcePathCourse_ResolvesTitle(t *testing.T) {
+	mockEnforcer := mocks.NewMockEnforcer()
+
+	courseUUID := "019c6d26-2222-3333-4444-12720a15bf4b"
+	resource := "/api/v1/courses/" + courseUUID
+
+	mockEnforcer.GetPolicyFunc = func() ([][]string, error) {
+		return [][]string{
+			{"member", resource, "(GET)"},
+		}, nil
+	}
+
+	svc := createTestServiceWithEntityDB(t, mockEnforcer)
+	result, err := svc.GetPolicyOverview()
+
+	require.NoError(t, err)
+	require.Len(t, result.RolePolicies, 1)
+	require.Len(t, result.RolePolicies[0].Policies, 1)
+
+	assert.Equal(t, "Introduction to Linux", result.RolePolicies[0].Policies[0].ResourceName,
+		"Course resource path should resolve using the title column")
+}
+
+func TestGetPolicyOverview_UnknownEntityType_NoResolution(t *testing.T) {
+	mockEnforcer := mocks.NewMockEnforcer()
+
+	// "unknown-entity" is not in entityTableMap, so no resolution should happen
+	subject := "unknown-entity:019c6d26-135f-7518-8a6d-12720a15bf4b"
+
+	mockEnforcer.GetPolicyFunc = func() ([][]string, error) {
+		return [][]string{
+			{subject, "/api/v1/courses", "(GET)"},
+		}, nil
+	}
+
+	svc := createTestServiceWithEntityDB(t, mockEnforcer)
+	result, err := svc.GetPolicyOverview()
+
+	require.NoError(t, err)
+	require.Len(t, result.RolePolicies, 1)
+	assert.Equal(t, subject, result.RolePolicies[0].Subject)
+	assert.Empty(t, result.RolePolicies[0].SubjectName,
+		"Unknown entity type should not resolve — SubjectName should be empty")
+}
+
+func TestGetPolicyOverview_ResourceWithoutUUID_NoResourceName(t *testing.T) {
+	mockEnforcer := mocks.NewMockEnforcer()
+
+	mockEnforcer.GetPolicyFunc = func() ([][]string, error) {
+		return [][]string{
+			{"member", "/api/v1/courses", "(GET)"},
+			{"member", "/api/v1/courses/:id", "(GET)"},
+		}, nil
+	}
+
+	svc := createTestServiceWithEntityDB(t, mockEnforcer)
+	result, err := svc.GetPolicyOverview()
+
+	require.NoError(t, err)
+	require.Len(t, result.RolePolicies, 1)
+
+	for _, rule := range result.RolePolicies[0].Policies {
+		assert.Empty(t, rule.ResourceName,
+			"Resource without UUID (%s) should have no resource_name", rule.Resource)
+	}
+}
+
+func TestGetPolicyOverview_EntityNotFoundInDB_NoResolution(t *testing.T) {
+	mockEnforcer := mocks.NewMockEnforcer()
+
+	// UUID that doesn't exist in the DB
+	nonExistentUUID := "019c6d26-ffff-ffff-ffff-ffffffffffff"
+	subject := "organization:" + nonExistentUUID
+
+	mockEnforcer.GetPolicyFunc = func() ([][]string, error) {
+		return [][]string{
+			{subject, "/api/v1/courses", "(GET)"},
+		}, nil
+	}
+
+	svc := createTestServiceWithEntityDB(t, mockEnforcer)
+	result, err := svc.GetPolicyOverview()
+
+	require.NoError(t, err)
+	require.Len(t, result.RolePolicies, 1)
+	assert.Empty(t, result.RolePolicies[0].SubjectName,
+		"Entity not found in DB should not produce a SubjectName")
+}
+
+func TestGetPolicyOverview_MixedSubjectsAndResources_AllResolved(t *testing.T) {
+	mockEnforcer := mocks.NewMockEnforcer()
+
+	orgUUID := "019c6d26-135f-7518-8a6d-12720a15bf4b"
+	courseUUID := "019c6d26-2222-3333-4444-12720a15bf4b"
+	userUUID := "550e8400-e29b-41d4-a716-446655440000"
+
+	mockEnforcer.GetPolicyFunc = func() ([][]string, error) {
+		return [][]string{
+			// Entity-scoped subject with resource containing UUID
+			{"organization:" + orgUUID, "/api/v1/courses/" + courseUUID, "(GET)"},
+			// Plain role with resource containing UUID
+			{"member", "/api/v1/organizations/" + orgUUID, "(GET)"},
+			// User UUID subject
+			{userUUID, "/api/v1/courses", "(GET)"},
+			// Plain role, plain resource
+			{"administrator", "/api/v1/admin/*", "*"},
+		}, nil
+	}
+
+	svc := createTestServiceWithEntityDB(t, mockEnforcer)
+	result, err := svc.GetPolicyOverview()
+
+	require.NoError(t, err)
+	assert.Equal(t, 4, result.TotalPolicies)
+
+	// Verify user policy
+	require.Len(t, result.UserPolicies, 1)
+	assert.Equal(t, userUUID, result.UserPolicies[0].Subject)
+	assert.NotEmpty(t, result.UserPolicies[0].SubjectName)
+
+	// Find entity-scoped role policy
+	var orgPolicy *authDto.PolicySubject
+	var memberPolicy *authDto.PolicySubject
+	for i := range result.RolePolicies {
+		if result.RolePolicies[i].Subject == "organization:"+orgUUID {
+			orgPolicy = &result.RolePolicies[i]
+		}
+		if result.RolePolicies[i].Subject == "member" {
+			memberPolicy = &result.RolePolicies[i]
+		}
+	}
+
+	require.NotNil(t, orgPolicy, "Should have organization-scoped policy")
+	assert.Equal(t, "Acme Corporation", orgPolicy.SubjectName)
+	require.Len(t, orgPolicy.Policies, 1)
+	assert.Equal(t, "Introduction to Linux", orgPolicy.Policies[0].ResourceName,
+		"Resource /api/v1/courses/UUID should resolve to the course title")
+
+	require.NotNil(t, memberPolicy, "Should have member policy")
+	require.Len(t, memberPolicy.Policies, 1)
+	assert.Equal(t, "Acme Corporation", memberPolicy.Policies[0].ResourceName,
+		"Resource /api/v1/organizations/UUID should resolve to org display name")
+}
+
+// ============================================================================
 // Enforcer Interface Compliance
 // ============================================================================
 

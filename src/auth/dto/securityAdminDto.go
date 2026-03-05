@@ -9,8 +9,9 @@ type PolicySubject struct {
 }
 
 type PolicyRule struct {
-	Resource string   `json:"resource"`
-	Methods  []string `json:"methods"`
+	Resource     string   `json:"resource"`
+	ResourceName string   `json:"resource_name,omitempty"`
+	Methods      []string `json:"methods"`
 }
 
 type PolicyOverviewOutput struct {
