@@ -8,6 +8,7 @@ import (
 	"soli/formations/src/auth/interfaces"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -15,62 +16,46 @@ import (
 type SecurityAdminService struct {
 	enforcer           interfaces.EnforcerInterface
 	permissionsService UserPermissionsService
-	db                 *gorm.DB
+	resolveNames       func(uuids []string) map[string]string
 }
 
 func NewSecurityAdminService(enforcer interfaces.EnforcerInterface, db *gorm.DB) *SecurityAdminService {
-	return &SecurityAdminService{
+	svc := &SecurityAdminService{
 		enforcer:           enforcer,
 		permissionsService: NewUserPermissionsService(db),
-		db:                 db,
 	}
+	svc.resolveNames = svc.defaultResolveUserNames
+	return svc
 }
 
-// resolveUserNames resolves a list of user UUIDs to display names.
+// SetNameResolver allows overriding the name resolution function (for testing)
+func (s *SecurityAdminService) SetNameResolver(resolver func(uuids []string) map[string]string) {
+	s.resolveNames = resolver
+}
+
+// defaultResolveUserNames resolves a list of user UUIDs to display names via the Casdoor SDK.
 // Falls back to a truncated UUID (first 8 characters + "...") when resolution fails.
-func (s *SecurityAdminService) resolveUserNames(uuids []string) map[string]string {
+func (s *SecurityAdminService) defaultResolveUserNames(uuids []string) map[string]string {
 	result := make(map[string]string, len(uuids))
-
-	if len(uuids) == 0 {
-		return result
-	}
-
-	// Try to resolve names via the Casdoor user table in the DB
-	type userRow struct {
-		ID          string `gorm:"column:id"`
-		DisplayName string `gorm:"column:display_name"`
-		Name        string `gorm:"column:name"`
-	}
-
-	var users []userRow
-	if s.db != nil {
-		// Casdoor stores users in the "casdoor_user" or "user" table depending on setup.
-		// Try a simple query — if the table doesn't exist, the error is silently ignored.
-		s.db.Raw("SELECT id, name, COALESCE(display_name, name) as display_name FROM casdoor_user WHERE id IN ?", uuids).Scan(&users)
-	}
-
-	// Build a lookup from resolved users
-	for _, u := range users {
-		name := u.DisplayName
-		if name == "" {
-			name = u.Name
-		}
-		if name != "" {
-			result[u.ID] = name
-		}
-	}
-
-	// Fallback: truncated UUID for any unresolved users
 	for _, uid := range uuids {
-		if _, ok := result[uid]; !ok {
-			if len(uid) >= 8 {
-				result[uid] = uid[:8] + "..."
-			} else {
-				result[uid] = uid
+		user, err := casdoorsdk.GetUserByUserId(uid)
+		if err == nil && user != nil {
+			name := user.DisplayName
+			if name == "" {
+				name = user.Name
+			}
+			if name != "" {
+				result[uid] = name
+				continue
 			}
 		}
+		// Fallback: truncated UUID
+		if len(uid) >= 8 {
+			result[uid] = uid[:8] + "..."
+		} else {
+			result[uid] = uid
+		}
 	}
-
 	return result
 }
 
@@ -122,7 +107,7 @@ func (s *SecurityAdminService) GetPolicyOverview() (*authDto.PolicyOverviewOutpu
 	for uid := range userMap {
 		userUUIDs = append(userUUIDs, uid)
 	}
-	nameMap := s.resolveUserNames(userUUIDs)
+	nameMap := s.resolveNames(userUUIDs)
 
 	userPolicies := make([]authDto.PolicySubject, 0, len(userMap))
 	for subject, rules := range userMap {
@@ -210,7 +195,7 @@ func (s *SecurityAdminService) GetPolicyHealthChecks() (*authDto.PolicyHealthChe
 		}
 
 		// Resolve admin UUIDs to display names to avoid leaking raw UUIDs
-		adminNameMap := s.resolveUserNames(adminUsers)
+		adminNameMap := s.resolveNames(adminUsers)
 		adminNames := make([]string, 0, len(adminUsers))
 		for _, uid := range adminUsers {
 			adminNames = append(adminNames, adminNameMap[uid])

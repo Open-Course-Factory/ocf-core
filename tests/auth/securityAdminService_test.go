@@ -82,11 +82,26 @@ func registerTestEntity(t *testing.T, entityName string, roles map[string]string
 // ============================================================================
 
 // createTestSecurityAdminService creates a SecurityAdminService with a mock enforcer
-// and an in-memory SQLite DB for testing.
+// and an in-memory SQLite DB for testing. It injects a mock name resolver that returns
+// readable names (e.g., "User-550e8400") instead of calling the real Casdoor SDK.
 func createTestSecurityAdminService(t *testing.T, mockEnforcer *mocks.MockEnforcer) *services.SecurityAdminService {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	return services.NewSecurityAdminService(mockEnforcer, db)
+	svc := services.NewSecurityAdminService(mockEnforcer, db)
+	// Override name resolution with a mock that returns readable names
+	svc.SetNameResolver(func(uuids []string) map[string]string {
+		result := make(map[string]string, len(uuids))
+		for _, uid := range uuids {
+			// Map known test UUIDs to readable names
+			if len(uid) >= 8 {
+				result[uid] = "User-" + uid[:8]
+			} else {
+				result[uid] = uid
+			}
+		}
+		return result
+	})
+	return svc
 }
 
 // setupControllerTest creates a gin test router with the SecurityAdminController.
@@ -184,6 +199,8 @@ func TestGetPolicyOverview_SubjectNamePopulatedForUUID(t *testing.T) {
 	assert.Equal(t, userUUID, result.UserPolicies[0].Subject)
 	assert.NotEmpty(t, result.UserPolicies[0].SubjectName,
 		"SubjectName should be populated with the user's display name for UUID subjects")
+	assert.Contains(t, result.UserPolicies[0].SubjectName, "User-",
+		"SubjectName should contain a resolved name, not a truncated UUID")
 }
 
 func TestGetPolicyOverview_EmptyPolicies_ReturnsEmptyArraysNotNil(t *testing.T) {
@@ -459,8 +476,6 @@ func TestGetPolicyHealthChecks_AdminUserCount_MediumSeverity(t *testing.T) {
 }
 
 func TestGetPolicyHealthChecks_AdminUsersDetails_ShowsNamesNotUUIDs(t *testing.T) {
-	// RED PHASE: Currently the Details field shows raw UUIDs joined by commas.
-	// After implementation, it should show resolved display names instead.
 	mockEnforcer := mocks.NewMockEnforcer()
 
 	adminUUIDs := []string{
@@ -493,12 +508,13 @@ func TestGetPolicyHealthChecks_AdminUsersDetails_ShowsNamesNotUUIDs(t *testing.T
 
 	require.NotNil(t, found, "Should have admin_users finding")
 
-	// RED: Currently Details contains raw UUIDs. After implementation it should
-	// contain resolved names like "Alice, Bob" instead of UUIDs.
+	// Details should contain resolved names (e.g., "User-550e8400"), not raw UUIDs
 	assert.NotContains(t, found.Details, "550e8400-e29b-41d4-a716-446655440001",
 		"Details should show resolved display names, not raw UUIDs")
 	assert.NotContains(t, found.Details, "550e8400-e29b-41d4-a716-446655440002",
 		"Details should show resolved display names, not raw UUIDs")
+	assert.Contains(t, found.Details, "User-",
+		"Details should contain resolved user names from the mock resolver")
 }
 
 func TestGetPolicyHealthChecks_UserSpecificPolicies_InfoFinding(t *testing.T) {
