@@ -3,8 +3,9 @@ package dto
 // PolicyOverview
 
 type PolicySubject struct {
-	Subject  string       `json:"subject"`
-	Policies []PolicyRule `json:"policies"`
+	Subject     string       `json:"subject"`
+	SubjectName string       `json:"subject_name,omitempty"`
+	Policies    []PolicyRule `json:"policies"`
 }
 
 type PolicyRule struct {
