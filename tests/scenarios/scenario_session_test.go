@@ -88,12 +88,14 @@ func TestScenarioSessionService_StartScenario(t *testing.T) {
 
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID)
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal-123")
 
 	require.NoError(t, err)
 	assert.NotEqual(t, uuid.Nil, session.ID)
 	assert.Equal(t, scenario.ID, session.ScenarioID)
 	assert.Equal(t, "student-1", session.UserID)
+	require.NotNil(t, session.TerminalSessionID)
+	assert.Equal(t, "test-terminal-123", *session.TerminalSessionID)
 	assert.Equal(t, 0, session.CurrentStep)
 	assert.Equal(t, "active", session.Status)
 	assert.False(t, session.StartedAt.IsZero())
@@ -127,7 +129,7 @@ func TestScenarioSessionService_StartScenario_NoSteps(t *testing.T) {
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID)
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal-456")
 
 	assert.Error(t, err)
 	assert.Nil(t, session)

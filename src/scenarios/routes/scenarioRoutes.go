@@ -21,6 +21,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 
 	// Session routes (students)
 	sessionRoutes := router.Group("/scenario-sessions")
+	sessionRoutes.GET("/by-terminal/:terminalId", middleware.AuthManagement(), controller.GetSessionByTerminal)
 	sessionRoutes.GET("/:id/current-step", middleware.AuthManagement(), controller.GetCurrentStep)
 	sessionRoutes.POST("/:id/verify", middleware.AuthManagement(), controller.VerifyStep)
 	sessionRoutes.POST("/:id/submit-flag", middleware.AuthManagement(), controller.SubmitFlag)
