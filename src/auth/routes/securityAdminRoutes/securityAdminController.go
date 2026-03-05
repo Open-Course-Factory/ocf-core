@@ -21,6 +21,19 @@ func NewSecurityAdminController(enforcer interfaces.EnforcerInterface, db *gorm.
 	}
 }
 
+// requireAdmin checks that the request context contains the "administrator" role.
+// Returns true if the user is an admin, false otherwise (and sends a 403 response).
+func (c *SecurityAdminController) requireAdmin(ctx *gin.Context) bool {
+	userRoles := ctx.GetStringSlice("userRoles")
+	for _, role := range userRoles {
+		if role == "administrator" {
+			return true
+		}
+	}
+	ctx.JSON(http.StatusForbidden, gin.H{"error": "Access denied - admin role required"})
+	return false
+}
+
 // GetPolicyOverview godoc
 // @Summary Get all Casbin policies grouped by subject type
 // @Tags Security Admin
@@ -28,6 +41,9 @@ func NewSecurityAdminController(enforcer interfaces.EnforcerInterface, db *gorm.
 // @Success 200 {object} dto.PolicyOverviewOutput
 // @Router /api/v1/admin/security/policies [get]
 func (c *SecurityAdminController) GetPolicyOverview(ctx *gin.Context) {
+	if !c.requireAdmin(ctx) {
+		return
+	}
 	result, err := c.service.GetPolicyOverview()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -44,6 +60,9 @@ func (c *SecurityAdminController) GetPolicyOverview(ctx *gin.Context) {
 // @Success 200 {object} dto.UserPermissionsOutput
 // @Router /api/v1/admin/security/user-permissions [get]
 func (c *SecurityAdminController) GetUserPermissionLookup(ctx *gin.Context) {
+	if !c.requireAdmin(ctx) {
+		return
+	}
 	userID := ctx.Query("userId")
 	if userID == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "userId query parameter is required"})
@@ -64,6 +83,9 @@ func (c *SecurityAdminController) GetUserPermissionLookup(ctx *gin.Context) {
 // @Success 200 {object} dto.EntityRoleMatrixOutput
 // @Router /api/v1/admin/security/entity-roles [get]
 func (c *SecurityAdminController) GetEntityRoleMatrix(ctx *gin.Context) {
+	if !c.requireAdmin(ctx) {
+		return
+	}
 	result, err := c.service.GetEntityRoleMatrix()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -79,6 +101,9 @@ func (c *SecurityAdminController) GetEntityRoleMatrix(ctx *gin.Context) {
 // @Success 200 {object} dto.PolicyHealthCheckOutput
 // @Router /api/v1/admin/security/health-checks [get]
 func (c *SecurityAdminController) GetPolicyHealthChecks(ctx *gin.Context) {
+	if !c.requireAdmin(ctx) {
+		return
+	}
 	result, err := c.service.GetPolicyHealthChecks()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
