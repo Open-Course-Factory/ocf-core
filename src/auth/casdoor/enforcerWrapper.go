@@ -61,3 +61,15 @@ func (e *enforcerWrapper) GetFilteredPolicy(fieldIndex int, fieldValues ...strin
 func (e *enforcerWrapper) GetPolicy() ([][]string, error) {
 	return e.enforcer.GetPolicy()
 }
+
+func (e *enforcerWrapper) GetAllSubjects() ([]string, error) {
+	return e.enforcer.GetAllSubjects()
+}
+
+func (e *enforcerWrapper) GetAllRoles() ([]string, error) {
+	return e.enforcer.GetAllRoles()
+}
+
+func (e *enforcerWrapper) GetUsersForRole(name string) ([]string, error) {
+	return e.enforcer.GetUsersForRole(name)
+}

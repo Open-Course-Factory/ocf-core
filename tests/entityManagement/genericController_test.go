@@ -116,6 +116,21 @@ func (m *MockControllerEnforcer) AddGroupingPolicy(params ...any) (bool, error) 
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockControllerEnforcer) GetAllSubjects() ([]string, error) {
+	args := m.Called()
+	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *MockControllerEnforcer) GetAllRoles() ([]string, error) {
+	args := m.Called()
+	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *MockControllerEnforcer) GetUsersForRole(name string) ([]string, error) {
+	args := m.Called(name)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 // Setup pour les tests de contrôleur
 func setupControllerTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

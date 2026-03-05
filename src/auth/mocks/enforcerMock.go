@@ -15,6 +15,9 @@ type MockEnforcer struct {
 	GetImplicitPermissionsForUserFunc func(name string) ([][]string, error)
 	GetFilteredPolicyFunc             func(fieldIndex int, fieldValues ...string) ([][]string, error)
 	GetPolicyFunc                     func() ([][]string, error)
+	GetAllSubjectsFunc                func() ([]string, error)
+	GetAllRolesFunc                   func() ([]string, error)
+	GetUsersForRoleFunc               func(name string) ([]string, error)
 
 	// Pour tracer les appels si nécessaire
 	LoadPolicyCalls                    [][]any
@@ -28,6 +31,9 @@ type MockEnforcer struct {
 	GetImplicitPermissionsForUserCalls [][]any
 	GetFilteredPolicyCalls             [][]any
 	GetPolicyCalls                     int
+	GetAllSubjectsCalls                int
+	GetAllRolesCalls                   int
+	GetUsersForRoleCalls               [][]any
 }
 
 // NewMockEnforcer creates a new mock enforcer with default implementations
@@ -66,6 +72,15 @@ func NewMockEnforcer() *MockEnforcer {
 		GetPolicyFunc: func() ([][]string, error) {
 			return [][]string{}, nil // Empty by default
 		},
+		GetAllSubjectsFunc: func() ([]string, error) {
+			return []string{}, nil
+		},
+		GetAllRolesFunc: func() ([]string, error) {
+			return []string{}, nil
+		},
+		GetUsersForRoleFunc: func(name string) ([]string, error) {
+			return []string{}, nil
+		},
 		LoadPolicyCalls:                    make([][]any, 0),
 		AddPolicyCalls:                     make([][]any, 0),
 		RemovePolicyCalls:                  make([][]any, 0),
@@ -77,6 +92,9 @@ func NewMockEnforcer() *MockEnforcer {
 		GetImplicitPermissionsForUserCalls: make([][]any, 0),
 		GetFilteredPolicyCalls:             make([][]any, 0),
 		GetPolicyCalls:                     0,
+		GetAllSubjectsCalls:                0,
+		GetAllRolesCalls:                   0,
+		GetUsersForRoleCalls:               make([][]any, 0),
 	}
 }
 
@@ -141,6 +159,9 @@ func (m *MockEnforcer) Reset() {
 	m.GetImplicitPermissionsForUserCalls = make([][]any, 0)
 	m.GetFilteredPolicyCalls = make([][]any, 0)
 	m.GetPolicyCalls = 0
+	m.GetAllSubjectsCalls = 0
+	m.GetAllRolesCalls = 0
+	m.GetUsersForRoleCalls = make([][]any, 0)
 }
 
 func (m *MockEnforcer) GetAddPolicyCallCount() int {
@@ -205,4 +226,31 @@ func (m *MockEnforcer) GetFilteredPolicyCallCount() int {
 
 func (m *MockEnforcer) GetPolicyCallCount() int {
 	return m.GetPolicyCalls
+}
+
+func (m *MockEnforcer) GetAllSubjects() ([]string, error) {
+	m.GetAllSubjectsCalls++
+	return m.GetAllSubjectsFunc()
+}
+
+func (m *MockEnforcer) GetAllRoles() ([]string, error) {
+	m.GetAllRolesCalls++
+	return m.GetAllRolesFunc()
+}
+
+func (m *MockEnforcer) GetUsersForRole(name string) ([]string, error) {
+	m.GetUsersForRoleCalls = append(m.GetUsersForRoleCalls, []any{name})
+	return m.GetUsersForRoleFunc(name)
+}
+
+func (m *MockEnforcer) GetAllSubjectsCallCount() int {
+	return m.GetAllSubjectsCalls
+}
+
+func (m *MockEnforcer) GetAllRolesCallCount() int {
+	return m.GetAllRolesCalls
+}
+
+func (m *MockEnforcer) GetUsersForRoleCallCount() int {
+	return len(m.GetUsersForRoleCalls)
 }
