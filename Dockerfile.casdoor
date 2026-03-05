@@ -1,4 +1,4 @@
-FROM casbin/casdoor:v1.1000.0
+FROM casbin/casdoor:2.337.0
 
 # Switch to root to install packages
 USER root

@@ -93,7 +93,7 @@ require (
 	github.com/adrg/frontmatter v0.2.0
 	github.com/casbin/casbin/v2 v2.120.0
 	github.com/casbin/gorm-adapter/v3 v3.36.0
-	github.com/casdoor/casdoor-go-sdk v1.14.0
+	github.com/casdoor/casdoor-go-sdk v1.44.0
 	github.com/docker/docker v28.3.3+incompatible
 	github.com/gertd/go-pluralize v0.2.1
 	github.com/gin-gonic/gin v1.10.1
