@@ -34,6 +34,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	// Scenario management routes
 	scenarios := api.Group("/scenarios")
 	scenarios.POST("/import", controller.ImportScenario)
+	scenarios.POST("/seed", controller.SeedScenario)
 	scenarios.POST("/:id/start", controller.StartScenario)
 
 	// Session routes
@@ -407,4 +408,124 @@ func TestGetSessionByTerminal_NotFound(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+// --- SeedScenario tests ---
+
+func TestSeedScenario_Success(t *testing.T) {
+	db := setupTestDB(t)
+	router := setupTestRouter(db)
+
+	payload := map[string]any{
+		"title":          "My Seed Scenario",
+		"description":    "A test scenario created via seed",
+		"difficulty":     "beginner",
+		"estimated_time": "15m",
+		"instance_type":  "ubuntu:22.04",
+		"flags_enabled":  true,
+		"gsh_enabled":    false,
+		"crash_traps":    true,
+		"intro_text":     "# Welcome",
+		"finish_text":    "# Done",
+		"steps": []map[string]any{
+			{
+				"title":            "Step 1",
+				"text_content":     "Do something",
+				"hint_content":     "Try this",
+				"verify_script":    "#!/bin/bash\ntrue",
+				"background_script": "",
+				"foreground_script": "",
+				"has_flag":         true,
+			},
+			{
+				"title":        "Step 2",
+				"text_content": "Do another thing",
+				"verify_script": "#!/bin/bash\ntest -f /tmp/file",
+				"has_flag":     false,
+			},
+		},
+	}
+
+	body, _ := json.Marshal(payload)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/scenarios/seed", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var response map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, "My Seed Scenario", response["title"])
+	assert.Equal(t, "my-seed-scenario", response["name"])
+	assert.Equal(t, "seed", response["source_type"])
+	assert.Equal(t, "beginner", response["difficulty"])
+	assert.Equal(t, "ubuntu:22.04", response["instance_type"])
+	assert.Equal(t, true, response["flags_enabled"])
+	assert.Equal(t, true, response["crash_traps"])
+	assert.Equal(t, "# Welcome", response["intro_text"])
+	assert.Equal(t, "# Done", response["finish_text"])
+
+	// Verify steps
+	stepsRaw, ok := response["steps"].([]any)
+	require.True(t, ok)
+	assert.Len(t, stepsRaw, 2)
+
+	step0 := stepsRaw[0].(map[string]any)
+	assert.Equal(t, "Step 1", step0["title"])
+	assert.Equal(t, "Do something", step0["text_content"])
+	assert.Equal(t, float64(0), step0["order"])
+	assert.Equal(t, true, step0["has_flag"])
+
+	step1 := stepsRaw[1].(map[string]any)
+	assert.Equal(t, "Step 2", step1["title"])
+	assert.Equal(t, float64(1), step1["order"])
+	assert.Equal(t, false, step1["has_flag"])
+
+	// Verify persisted in DB
+	var count int64
+	db.Model(&models.Scenario{}).Count(&count)
+	assert.Equal(t, int64(1), count)
+
+	var stepCount int64
+	db.Model(&models.ScenarioStep{}).Count(&stepCount)
+	assert.Equal(t, int64(2), stepCount)
+}
+
+func TestSeedScenario_MissingTitle(t *testing.T) {
+	db := setupTestDB(t)
+	router := setupTestRouter(db)
+
+	payload := map[string]any{
+		"steps": []map[string]any{
+			{"title": "Step 1", "text_content": "Do something"},
+		},
+	}
+
+	body, _ := json.Marshal(payload)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/scenarios/seed", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestSeedScenario_NoSteps(t *testing.T) {
+	db := setupTestDB(t)
+	router := setupTestRouter(db)
+
+	payload := map[string]any{
+		"title": "Empty Steps Scenario",
+		"steps": []map[string]any{},
+	}
+
+	body, _ := json.Marshal(payload)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/scenarios/seed", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
