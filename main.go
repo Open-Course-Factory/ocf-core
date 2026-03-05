@@ -33,6 +33,7 @@ userController "soli/formations/src/auth/routes/usersRoutes"
 	organizationController "soli/formations/src/organizations/routes"
 	terminalController "soli/formations/src/terminalTrainer/routes"
 	terminalHooks "soli/formations/src/terminalTrainer/hooks"
+	scenarioController "soli/formations/src/scenarios/routes"
 	versionController "soli/formations/src/version"
 	sshClientController "soli/formations/src/webSsh/routes/sshClientRoutes"
 
@@ -186,6 +187,7 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	organizationController.OrganizationRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	emailController.EmailTemplateRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	securityAdminController.SecurityAdminRoutes(apiGroup, sqldb.DB)
+	scenarioController.ScenarioRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	// Setup usage limit middleware for specific routes
 	apiGroupWithUsageCheck := apiGroup.Group("")
