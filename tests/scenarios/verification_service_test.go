@@ -99,32 +99,25 @@ func TestVerificationService_VerifyStep_Pass(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
+		assert.Equal(t, "/1.0/exec", r.URL.Path)
+		assert.Equal(t, "POST", r.Method)
+
+		var body map[string]any
+		err := json.NewDecoder(r.Body).Decode(&body)
+		require.NoError(t, err)
+
+		// Verify the command passes the script inline via sh -c
+		commands := body["command"].([]any)
+		assert.Equal(t, "/bin/sh", commands[0])
+		assert.Equal(t, "-c", commands[1])
+		assert.Equal(t, "#!/bin/bash\nexit 0", commands[2])
+
 		w.Header().Set("Content-Type", "application/json")
-
-		switch r.URL.Path {
-		case "/1.0/file-push":
-			// First call: push verify script
-			var body map[string]any
-			err := json.NewDecoder(r.Body).Decode(&body)
-			require.NoError(t, err)
-			assert.Equal(t, "/tmp/verify_step.sh", body["target_path"])
-			assert.Equal(t, "0755", body["mode"])
-			json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
-
-		case "/1.0/exec":
-			// Second call: execute verify script
-			var body map[string]any
-			err := json.NewDecoder(r.Body).Decode(&body)
-			require.NoError(t, err)
-			commands := body["command"].([]any)
-			assert.Equal(t, "/bin/bash", commands[0])
-			assert.Equal(t, "/tmp/verify_step.sh", commands[1])
-			json.NewEncoder(w).Encode(map[string]any{
-				"exit_code": 0,
-				"stdout":    "verification passed",
-				"stderr":    "",
-			})
-		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"exit_code": 0,
+			"stdout":    "verification passed",
+			"stderr":    "",
+		})
 	}))
 	defer server.Close()
 
@@ -140,23 +133,30 @@ func TestVerificationService_VerifyStep_Pass(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, passed)
 	assert.Equal(t, "verification passed", output)
-	assert.Equal(t, 2, callCount, "should make exactly 2 calls: file-push + exec")
+	assert.Equal(t, 1, callCount, "should make exactly 1 call: exec only (no file-push)")
 }
 
 func TestVerificationService_VerifyStep_Fail(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+		assert.Equal(t, "/1.0/exec", r.URL.Path)
+		assert.Equal(t, "POST", r.Method)
 
-		switch r.URL.Path {
-		case "/1.0/file-push":
-			json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
-		case "/1.0/exec":
-			json.NewEncoder(w).Encode(map[string]any{
-				"exit_code": 1,
-				"stdout":    "expected file not found",
-				"stderr":    "",
-			})
-		}
+		var body map[string]any
+		err := json.NewDecoder(r.Body).Decode(&body)
+		require.NoError(t, err)
+
+		// Verify the command passes the script inline via sh -c
+		commands := body["command"].([]any)
+		assert.Equal(t, "/bin/sh", commands[0])
+		assert.Equal(t, "-c", commands[1])
+		assert.Equal(t, "#!/bin/bash\ntest -f /etc/config && exit 0 || exit 1", commands[2])
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"exit_code": 1,
+			"stdout":    "expected file not found",
+			"stderr":    "",
+		})
 	}))
 	defer server.Close()
 
