@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -204,12 +205,20 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 }
 
 // readFileContent reads a file relative to dirPath, returning empty string if the file
-// doesn't exist or the path is empty.
+// doesn't exist or the path is empty. It includes path traversal protection to ensure
+// the resolved path stays within dirPath.
 func readFileContent(dirPath string, relPath string) string {
 	if relPath == "" {
 		return ""
 	}
-	data, err := os.ReadFile(filepath.Join(dirPath, relPath))
+	// Sanitize: resolve the full path and ensure it stays within dirPath
+	fullPath := filepath.Join(dirPath, relPath)
+	cleanPath := filepath.Clean(fullPath)
+	cleanDir := filepath.Clean(dirPath)
+	if !strings.HasPrefix(cleanPath, cleanDir+string(filepath.Separator)) && cleanPath != cleanDir {
+		return ""
+	}
+	data, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return ""
 	}
