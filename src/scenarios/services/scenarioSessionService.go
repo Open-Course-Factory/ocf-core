@@ -196,13 +196,26 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	if passed {
 		now := time.Now()
 
-		// Mark current step as completed
-		s.db.Model(&models.ScenarioStepProgress{}).
-			Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
-			Updates(map[string]any{
-				"status":       "completed",
-				"completed_at": now,
-			})
+		// Calculate time spent on this step and mark as completed
+		var stepProgress models.ScenarioStepProgress
+		if err := s.db.Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).First(&stepProgress).Error; err == nil {
+			timeSpent := int(now.Sub(stepProgress.CreatedAt).Seconds())
+			s.db.Model(&models.ScenarioStepProgress{}).
+				Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
+				Updates(map[string]any{
+					"status":             "completed",
+					"completed_at":       now,
+					"time_spent_seconds": timeSpent,
+				})
+		} else {
+			// Fallback: update without time calculation
+			s.db.Model(&models.ScenarioStepProgress{}).
+				Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
+				Updates(map[string]any{
+					"status":       "completed",
+					"completed_at": now,
+				})
+		}
 
 		// Check if this was the last step
 		isLastStep := true
