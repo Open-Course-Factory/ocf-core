@@ -1,6 +1,8 @@
 package scenarioController
 
 import (
+	crypto_rand "crypto/rand"
+	"encoding/hex"
 	"net/http"
 
 	"soli/formations/src/auth/errors"
@@ -16,6 +18,7 @@ import (
 // ScenarioController defines the handler methods for scenario-related endpoints
 type ScenarioController interface {
 	ImportScenario(ctx *gin.Context)
+	SeedScenario(ctx *gin.Context)
 	StartScenario(ctx *gin.Context)
 	GetCurrentStep(ctx *gin.Context)
 	VerifyStep(ctx *gin.Context)
@@ -219,4 +222,104 @@ func (sc *scenarioController) GetSessionByTerminal(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, session)
+}
+
+// SeedScenario handles POST /scenarios/seed
+// Creates a scenario with all its steps from a single JSON payload (admin/testing).
+func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
+	var input dto.SeedScenarioInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	userID := ctx.GetString("userId")
+
+	name := generateSlug(input.Title)
+
+	var flagSecret string
+	if input.FlagsEnabled {
+		secretBytes := make([]byte, 32)
+		if _, err := crypto_rand.Read(secretBytes); err != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to generate flag secret",
+			})
+			return
+		}
+		flagSecret = hex.EncodeToString(secretBytes)
+	}
+
+	scenario := models.Scenario{
+		Name:          name,
+		Title:         input.Title,
+		Description:   input.Description,
+		Difficulty:    input.Difficulty,
+		EstimatedTime: input.EstimatedTime,
+		InstanceType:  input.InstanceType,
+		SourceType:    "seed",
+		FlagsEnabled:  input.FlagsEnabled,
+		FlagSecret:    flagSecret,
+		GshEnabled:    input.GshEnabled,
+		CrashTraps:    input.CrashTraps,
+		IntroText:     input.IntroText,
+		FinishText:    input.FinishText,
+		CreatedByID:   userID,
+	}
+
+	steps := make([]models.ScenarioStep, len(input.Steps))
+	for i, s := range input.Steps {
+		steps[i] = models.ScenarioStep{
+			Order:            i,
+			Title:            s.Title,
+			TextContent:      s.TextContent,
+			HintContent:      s.HintContent,
+			VerifyScript:     s.VerifyScript,
+			BackgroundScript: s.BackgroundScript,
+			ForegroundScript: s.ForegroundScript,
+			HasFlag:          s.HasFlag,
+		}
+	}
+	scenario.Steps = steps
+
+	if err := sc.db.Create(&scenario).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, scenario)
+}
+
+// generateSlug creates a URL-friendly name from a title
+func generateSlug(title string) string {
+	slug := ""
+	for _, c := range title {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
+			slug += string(c)
+		} else if c >= 'A' && c <= 'Z' {
+			slug += string(c - 'A' + 'a')
+		} else if c == ' ' || c == '_' {
+			slug += "-"
+		}
+	}
+	// Remove consecutive and trailing dashes
+	result := ""
+	prev := byte(0)
+	for i := 0; i < len(slug); i++ {
+		if slug[i] == '-' && prev == '-' {
+			continue
+		}
+		result += string(slug[i])
+		prev = slug[i]
+	}
+	for len(result) > 0 && result[len(result)-1] == '-' {
+		result = result[:len(result)-1]
+	}
+	return result
 }
