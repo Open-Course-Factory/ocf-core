@@ -14,6 +14,8 @@ import (
 	"soli/formations/src/groups"
 	groupRegistration "soli/formations/src/groups/entityRegistration"
 	organizationRegistration "soli/formations/src/organizations/entityRegistration"
+	"soli/formations/src/scenarios"
+	scenarioRegistration "soli/formations/src/scenarios/entityRegistration"
 	"soli/formations/src/terminalTrainer"
 	terminalRegistration "soli/formations/src/terminalTrainer/entityRegistration"
 
@@ -44,6 +46,12 @@ func RegisterEntities() {
 	organizationRegistration.RegisterOrganization(ems.GlobalEntityRegistrationService)
 	organizationRegistration.RegisterOrganizationMember(ems.GlobalEntityRegistrationService)
 
+	scenarioRegistration.RegisterScenario(ems.GlobalEntityRegistrationService)
+	scenarioRegistration.RegisterScenarioStep(ems.GlobalEntityRegistrationService)
+	scenarioRegistration.RegisterScenarioSession(ems.GlobalEntityRegistrationService)
+	scenarioRegistration.RegisterScenarioStepProgress(ems.GlobalEntityRegistrationService)
+	scenarioRegistration.RegisterScenarioFlag(ems.GlobalEntityRegistrationService)
+
 	configRegistration.RegisterFeature(ems.GlobalEntityRegistrationService)
 
 	emailRegistration.RegisterEmailTemplate(ems.GlobalEntityRegistrationService)
@@ -65,6 +73,7 @@ func RegisterModuleFeatures(db *gorm.DB) {
 		courses.NewCoursesModuleConfig(),
 		terminalTrainer.NewTerminalTrainerModuleConfig(),
 		groups.NewGroupsModuleConfig(),
+		scenarios.NewScenariosModuleConfig(),
 	}
 
 	for _, module := range modules {

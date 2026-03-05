@@ -18,6 +18,7 @@ import (
 	groupModels "soli/formations/src/groups/models"
 	organizationModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
+	scenarioModels "soli/formations/src/scenarios/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	testtools "soli/formations/tests/testTools"
 )
@@ -89,6 +90,13 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Organization entities (Phase 1)
 	db.AutoMigrate(&organizationModels.Organization{})
 	db.AutoMigrate(&organizationModels.OrganizationMember{})
+
+	// Scenario entities
+	db.AutoMigrate(&scenarioModels.Scenario{})
+	db.AutoMigrate(&scenarioModels.ScenarioStep{})
+	db.AutoMigrate(&scenarioModels.ScenarioSession{})
+	db.AutoMigrate(&scenarioModels.ScenarioStepProgress{})
+	db.AutoMigrate(&scenarioModels.ScenarioFlag{})
 
 	// Payment entities
 	db.AutoMigrate(&paymentModels.SubscriptionPlan{})
