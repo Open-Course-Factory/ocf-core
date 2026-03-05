@@ -22,7 +22,7 @@ type VerificationService struct {
 func NewVerificationService() *VerificationService {
 	return &VerificationService{
 		ttBackendURL: os.Getenv("TERMINAL_TRAINER_URL"),
-		ttAPIKey:     os.Getenv("TERMINAL_TRAINER_API_KEY"),
+		ttAPIKey:     os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
