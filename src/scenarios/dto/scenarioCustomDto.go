@@ -9,6 +9,7 @@ type ImportScenarioInput struct {
 
 // StartScenarioInput - DTO for starting a scenario session
 type StartScenarioInput struct {
+	ScenarioID        string `json:"scenario_id" binding:"required"`
 	TerminalSessionID string `json:"terminal_session_id" binding:"required"`
 	Backend           string `json:"backend,omitempty"`
 	InstanceType      string `json:"instance_type,omitempty"`

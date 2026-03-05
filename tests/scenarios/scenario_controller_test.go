@@ -35,10 +35,10 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	scenarios := api.Group("/scenarios")
 	scenarios.POST("/import", controller.ImportScenario)
 	scenarios.POST("/seed", controller.SeedScenario)
-	scenarios.POST("/:id/start", controller.StartScenario)
 
 	// Session routes
 	sessions := api.Group("/scenario-sessions")
+	sessions.POST("/start", controller.StartScenario)
 	sessions.GET("/by-terminal/:terminalId", controller.GetSessionByTerminal)
 	sessions.GET("/:id/current-step", controller.GetCurrentStep)
 	sessions.POST("/:id/verify", controller.VerifyStep)
@@ -71,9 +71,12 @@ func TestStartScenario_Success(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&step).Error)
 
-	body, _ := json.Marshal(map[string]string{"terminal_session_id": "test-terminal-ctrl"})
+	body, _ := json.Marshal(map[string]string{
+		"scenario_id":        scenario.ID.String(),
+		"terminal_session_id": "test-terminal-ctrl",
+	})
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/scenarios/"+scenario.ID.String()+"/start", bytes.NewBuffer(body))
+	req, _ := http.NewRequest("POST", "/api/v1/scenario-sessions/start", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(w, req)
 
@@ -82,7 +85,7 @@ func TestStartScenario_Success(t *testing.T) {
 	var response map[string]any
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
-	assert.NotEmpty(t, response["ID"])
+	assert.NotEmpty(t, response["id"])
 	assert.Equal(t, "active", response["status"])
 	assert.Equal(t, "test-terminal-ctrl", response["terminal_session_id"])
 }
@@ -91,8 +94,12 @@ func TestStartScenario_InvalidID(t *testing.T) {
 	db := setupTestDB(t)
 	router := setupTestRouter(db)
 
+	body, _ := json.Marshal(map[string]string{
+		"scenario_id":        "not-a-uuid",
+		"terminal_session_id": "test-terminal",
+	})
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/scenarios/not-a-uuid/start", nil)
+	req, _ := http.NewRequest("POST", "/api/v1/scenario-sessions/start", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(w, req)
 
@@ -104,9 +111,12 @@ func TestStartScenario_NotFound(t *testing.T) {
 	router := setupTestRouter(db)
 
 	fakeID := uuid.New()
-	body, _ := json.Marshal(map[string]string{"terminal_session_id": "test-terminal-nf"})
+	body, _ := json.Marshal(map[string]string{
+		"scenario_id":        fakeID.String(),
+		"terminal_session_id": "test-terminal-nf",
+	})
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/scenarios/"+fakeID.String()+"/start", bytes.NewBuffer(body))
+	req, _ := http.NewRequest("POST", "/api/v1/scenario-sessions/start", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(w, req)
 
@@ -395,6 +405,7 @@ func TestGetSessionByTerminal_Success(t *testing.T) {
 	var response map[string]any
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
+	assert.NotEmpty(t, response["id"])
 	assert.Equal(t, terminalID, response["terminal_session_id"])
 	assert.Equal(t, "active", response["status"])
 }

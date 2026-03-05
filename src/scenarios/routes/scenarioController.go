@@ -65,22 +65,22 @@ func (sc *scenarioController) ImportScenario(ctx *gin.Context) {
 	})
 }
 
-// StartScenario handles POST /scenarios/:id/start
+// StartScenario handles POST /scenario-sessions/start
 func (sc *scenarioController) StartScenario(ctx *gin.Context) {
-	scenarioID, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid scenario ID",
-		})
-		return
-	}
-
 	var input dto.StartScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	scenarioID, err := uuid.Parse(input.ScenarioID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid scenario ID",
 		})
 		return
 	}
@@ -96,7 +96,15 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, session)
+	ctx.JSON(http.StatusCreated, gin.H{
+		"id":                  session.ID,
+		"scenario_id":         session.ScenarioID,
+		"user_id":             session.UserID,
+		"terminal_session_id": session.TerminalSessionID,
+		"current_step":        session.CurrentStep,
+		"status":              session.Status,
+		"started_at":          session.StartedAt,
+	})
 }
 
 // GetCurrentStep handles GET /scenario-sessions/:id/current-step
@@ -221,7 +229,15 @@ func (sc *scenarioController) GetSessionByTerminal(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, session)
+	ctx.JSON(http.StatusOK, gin.H{
+		"id":                  session.ID,
+		"scenario_id":         session.ScenarioID,
+		"user_id":             session.UserID,
+		"terminal_session_id": session.TerminalSessionID,
+		"current_step":        session.CurrentStep,
+		"status":              session.Status,
+		"started_at":          session.StartedAt,
+	})
 }
 
 // SeedScenario handles POST /scenarios/seed
