@@ -1,6 +1,8 @@
 package dto
 
 import (
+	"strings"
+
 	"github.com/google/uuid"
 	groupDto "soli/formations/src/groups/dto"
 	organizationDto "soli/formations/src/organizations/dto"
@@ -98,37 +100,12 @@ func CasbinPermissionToRule(permission []string) *PermissionRule {
 // ParseMethods extracts individual methods from a Casbin methods string
 // e.g., "(GET|POST|DELETE)" -> ["GET", "POST", "DELETE"]
 func ParseMethods(methodStr string) []string {
-	// Remove parentheses
-	if len(methodStr) > 0 && methodStr[0] == '(' {
-		methodStr = methodStr[1:]
-	}
-	if len(methodStr) > 0 && methodStr[len(methodStr)-1] == ')' {
-		methodStr = methodStr[:len(methodStr)-1]
-	}
-
-	// Split by |
-	methods := []string{}
+	methodStr = strings.TrimPrefix(methodStr, "(")
+	methodStr = strings.TrimSuffix(methodStr, ")")
 	if methodStr == "" {
-		return methods
+		return []string{}
 	}
-
-	// Simple split by |
-	current := ""
-	for _, ch := range methodStr {
-		if ch == '|' {
-			if current != "" {
-				methods = append(methods, current)
-				current = ""
-			}
-		} else {
-			current += string(ch)
-		}
-	}
-	if current != "" {
-		methods = append(methods, current)
-	}
-
-	return methods
+	return strings.Split(methodStr, "|")
 }
 
 // OrganizationMemberToContext converts OrganizationMemberOutput to context
