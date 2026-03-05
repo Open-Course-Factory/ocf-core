@@ -4,6 +4,7 @@ import (
 	crypto_rand "crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"soli/formations/src/auth/errors"
@@ -123,9 +124,10 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 
 	session, err := sc.sessionService.StartScenario(userID, scenarioID, input.TerminalSessionID)
 	if err != nil {
+		slog.Error("failed to start scenario", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
+			ErrorMessage: "Failed to start scenario",
 		})
 		return
 	}
@@ -150,9 +152,10 @@ func (sc *scenarioController) GetCurrentStep(ctx *gin.Context) {
 
 	step, err := sc.sessionService.GetCurrentStep(session.ID)
 	if err != nil {
+		slog.Error("failed to get current step", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
+			ErrorMessage: "Failed to get current step",
 		})
 		return
 	}
@@ -169,9 +172,10 @@ func (sc *scenarioController) VerifyStep(ctx *gin.Context) {
 
 	result, err := sc.sessionService.VerifyCurrentStep(session.ID)
 	if err != nil {
+		slog.Error("failed to verify step", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
+			ErrorMessage: "Failed to verify step",
 		})
 		return
 	}
@@ -197,9 +201,10 @@ func (sc *scenarioController) SubmitFlag(ctx *gin.Context) {
 
 	result, err := sc.sessionService.SubmitFlag(session.ID, input.Flag)
 	if err != nil {
+		slog.Error("failed to submit flag", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
+			ErrorMessage: "Failed to submit flag",
 		})
 		return
 	}
@@ -216,9 +221,10 @@ func (sc *scenarioController) AbandonSession(ctx *gin.Context) {
 
 	err = sc.sessionService.AbandonSession(session.ID)
 	if err != nil {
+		slog.Error("failed to abandon session", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
+			ErrorMessage: "Failed to abandon session",
 		})
 		return
 	}
@@ -320,9 +326,10 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 	scenario.Steps = steps
 
 	if err := sc.db.Create(&scenario).Error; err != nil {
+		slog.Error("failed to create scenario", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
+			ErrorMessage: "Failed to create scenario",
 		})
 		return
 	}
