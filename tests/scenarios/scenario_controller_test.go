@@ -351,7 +351,7 @@ func TestAbandonSession_NotFound(t *testing.T) {
 	req, _ := http.NewRequest("POST", "/api/v1/scenario-sessions/"+fakeID.String()+"/abandon", nil)
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 // --- ImportScenario tests ---
