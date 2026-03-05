@@ -82,6 +82,27 @@ func SetupTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("✅ Terminal permissions setup completed")
 }
 
+// SetupSecurityAdminPermissions sets up security admin panel permissions (admin-only)
+func SetupSecurityAdminPermissions(enforcer interfaces.EnforcerInterface) {
+	log.Println("=== Setting up security admin permissions ===")
+
+	adminRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/admin/security/policies", "GET"},
+		{"/api/v1/admin/security/user-permissions", "GET"},
+		{"/api/v1/admin/security/entity-roles", "GET"},
+		{"/api/v1/admin/security/health-checks", "GET"},
+	}
+
+	for _, route := range adminRoutes {
+		addPolicyWithErrorHandling(enforcer, "administrator", route.path, route.method)
+	}
+
+	log.Println("✅ Security admin permissions setup completed")
+}
+
 // SetupPaymentPermissions sets up payment and subscription-related permissions
 func SetupPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Setting up payment and subscription permissions ===")

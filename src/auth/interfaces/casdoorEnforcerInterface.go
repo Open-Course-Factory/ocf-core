@@ -15,4 +15,9 @@ type EnforcerInterface interface {
 	GetImplicitPermissionsForUser(name string) ([][]string, error)
 	GetFilteredPolicy(fieldIndex int, fieldValues ...string) ([][]string, error)
 	GetPolicy() ([][]string, error)
+
+	// Security admin methods
+	GetAllSubjects() ([]string, error)
+	GetAllRoles() ([]string, error)
+	GetUsersForRole(name string) ([]string, error)
 }

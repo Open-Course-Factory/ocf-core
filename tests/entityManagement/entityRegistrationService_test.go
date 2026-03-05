@@ -86,6 +86,21 @@ func (m *MockEnforcerForTests) RemoveGroupingPolicy(params ...any) (bool, error)
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockEnforcerForTests) GetAllSubjects() ([]string, error) {
+	args := m.Called()
+	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *MockEnforcerForTests) GetAllRoles() ([]string, error) {
+	args := m.Called()
+	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *MockEnforcerForTests) GetUsersForRole(name string) ([]string, error) {
+	args := m.Called(name)
+	return args.Get(0).([]string), args.Error(1)
+}
+
 // TestEntity pour les tests
 type TestEntity struct {
 	ID   string

@@ -87,7 +87,7 @@ func CasbinPermissionToRule(permission []string) *PermissionRule {
 	methodStr := permission[2]
 
 	// Parse methods - remove parentheses and split by |
-	methods := parseMethods(methodStr)
+	methods := ParseMethods(methodStr)
 
 	return &PermissionRule{
 		Resource: resource,
@@ -95,9 +95,9 @@ func CasbinPermissionToRule(permission []string) *PermissionRule {
 	}
 }
 
-// parseMethods extracts individual methods from a Casbin methods string
+// ParseMethods extracts individual methods from a Casbin methods string
 // e.g., "(GET|POST|DELETE)" -> ["GET", "POST", "DELETE"]
-func parseMethods(methodStr string) []string {
+func ParseMethods(methodStr string) []string {
 	// Remove parentheses
 	if len(methodStr) > 0 && methodStr[0] == '(' {
 		methodStr = methodStr[1:]

@@ -21,6 +21,7 @@ import (
 	// groupController "soli/formations/src/auth/routes/groupsRoutes" // Legacy Casdoor groups - replaced by class-groups
 	passwordResetController "soli/formations/src/auth/routes/passwordResetRoutes"
 userController "soli/formations/src/auth/routes/usersRoutes"
+	securityAdminController "soli/formations/src/auth/routes/securityAdminRoutes"
 	emailController "soli/formations/src/email/routes"
 	emailServices "soli/formations/src/email/services"
 	courseHooks "soli/formations/src/courses/hooks"
@@ -95,6 +96,7 @@ func main() {
 	initialization.SetupAuthPermissions(casdoor.Enforcer)
 	initialization.SetupTerminalPermissions(casdoor.Enforcer)
 	initialization.SetupPaymentPermissions(casdoor.Enforcer)
+	initialization.SetupSecurityAdminPermissions(casdoor.Enforcer)
 	log.Println("✅ All permissions setup completed")
 
 	// Initialize remaining hooks
@@ -183,6 +185,7 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	terminalController.UserTerminalKeyRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	organizationController.OrganizationRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	emailController.EmailTemplateRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	securityAdminController.SecurityAdminRoutes(apiGroup, sqldb.DB)
 
 	// Setup usage limit middleware for specific routes
 	apiGroupWithUsageCheck := apiGroup.Group("")

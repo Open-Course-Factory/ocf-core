@@ -20,6 +20,7 @@ type EntityRegistrationService struct {
 	membershipConfigs   map[string]*entityManagementInterfaces.MembershipConfig
 	defaultIncludes     map[string][]string
 	typedOps            map[string]entityManagementInterfaces.EntityOperations
+	entityRoles         map[string]entityManagementInterfaces.EntityRoles
 }
 
 func NewEntityRegistrationService() *EntityRegistrationService {
@@ -31,6 +32,7 @@ func NewEntityRegistrationService() *EntityRegistrationService {
 		membershipConfigs:   make(map[string]*entityManagementInterfaces.MembershipConfig),
 		defaultIncludes:     make(map[string][]string),
 		typedOps:            make(map[string]entityManagementInterfaces.EntityOperations),
+		entityRoles:         make(map[string]entityManagementInterfaces.EntityRoles),
 	}
 }
 
@@ -44,6 +46,7 @@ func (s *EntityRegistrationService) Reset() {
 	s.membershipConfigs = make(map[string]*entityManagementInterfaces.MembershipConfig)
 	s.defaultIncludes = make(map[string][]string)
 	s.typedOps = make(map[string]entityManagementInterfaces.EntityOperations)
+	s.entityRoles = make(map[string]entityManagementInterfaces.EntityRoles)
 }
 
 // UnregisterEntity removes all registrations for a specific entity
@@ -56,6 +59,7 @@ func (s *EntityRegistrationService) UnregisterEntity(name string) {
 	delete(s.membershipConfigs, name)
 	delete(s.defaultIncludes, name)
 	delete(s.typedOps, name)
+	delete(s.entityRoles, name)
 }
 
 func (s *EntityRegistrationService) RegisterEntityInterface(name string, entityType any) {
@@ -221,6 +225,15 @@ func Pluralize(entityName string) string {
 	return plural
 }
 
+// GetAllEntityRoles returns the roles configuration for all registered entities
+func (s *EntityRegistrationService) GetAllEntityRoles() map[string]entityManagementInterfaces.EntityRoles {
+	result := make(map[string]entityManagementInterfaces.EntityRoles)
+	for k, v := range s.entityRoles {
+		result[k] = v
+	}
+	return result
+}
+
 // GetEntityOps returns the typed operations for the named entity, if registered.
 func (s *EntityRegistrationService) GetEntityOps(name string) (entityManagementInterfaces.EntityOperations, bool) {
 	ops, ok := s.typedOps[name]
@@ -255,6 +268,9 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 	} else {
 		appUtils.Debug("Entity %s registered without Swagger documentation", name)
 	}
+
+	// Store entity roles for security admin panel
+	service.entityRoles[name] = reg.Roles
 
 	// Set up access policies
 	service.setDefaultEntityAccesses(name, reg.Roles, casdoor.Enforcer)
