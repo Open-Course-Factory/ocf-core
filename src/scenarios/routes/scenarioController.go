@@ -3,6 +3,7 @@ package scenarioController
 import (
 	crypto_rand "crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 
 	"soli/formations/src/auth/errors"
@@ -45,6 +46,39 @@ func NewScenarioController(db *gorm.DB) ScenarioController {
 		sessionService:  sessionService,
 		importerService: importerService,
 	}
+}
+
+// getSessionIfOwned loads a session by ID and checks that the authenticated user owns it.
+func (sc *scenarioController) getSessionIfOwned(ctx *gin.Context) (*models.ScenarioSession, error) {
+	sessionID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid session ID",
+		})
+		return nil, err
+	}
+
+	userID := ctx.GetString("userId")
+
+	var session models.ScenarioSession
+	if err := sc.db.First(&session, "id = ?", sessionID).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Session not found",
+		})
+		return nil, err
+	}
+
+	if session.UserID != userID {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "You do not own this session",
+		})
+		return nil, fmt.Errorf("forbidden")
+	}
+
+	return &session, nil
 }
 
 // ImportScenario handles POST /scenarios/import
@@ -109,16 +143,12 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 
 // GetCurrentStep handles GET /scenario-sessions/:id/current-step
 func (sc *scenarioController) GetCurrentStep(ctx *gin.Context) {
-	sessionID, err := uuid.Parse(ctx.Param("id"))
+	session, err := sc.getSessionIfOwned(ctx)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid session ID",
-		})
 		return
 	}
 
-	step, err := sc.sessionService.GetCurrentStep(sessionID)
+	step, err := sc.sessionService.GetCurrentStep(session.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -132,16 +162,12 @@ func (sc *scenarioController) GetCurrentStep(ctx *gin.Context) {
 
 // VerifyStep handles POST /scenario-sessions/:id/verify
 func (sc *scenarioController) VerifyStep(ctx *gin.Context) {
-	sessionID, err := uuid.Parse(ctx.Param("id"))
+	session, err := sc.getSessionIfOwned(ctx)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid session ID",
-		})
 		return
 	}
 
-	result, err := sc.sessionService.VerifyCurrentStep(sessionID)
+	result, err := sc.sessionService.VerifyCurrentStep(session.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -155,12 +181,8 @@ func (sc *scenarioController) VerifyStep(ctx *gin.Context) {
 
 // SubmitFlag handles POST /scenario-sessions/:id/submit-flag
 func (sc *scenarioController) SubmitFlag(ctx *gin.Context) {
-	sessionID, err := uuid.Parse(ctx.Param("id"))
+	session, err := sc.getSessionIfOwned(ctx)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid session ID",
-		})
 		return
 	}
 
@@ -173,7 +195,7 @@ func (sc *scenarioController) SubmitFlag(ctx *gin.Context) {
 		return
 	}
 
-	result, err := sc.sessionService.SubmitFlag(sessionID, input.Flag)
+	result, err := sc.sessionService.SubmitFlag(session.ID, input.Flag)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -187,16 +209,12 @@ func (sc *scenarioController) SubmitFlag(ctx *gin.Context) {
 
 // AbandonSession handles POST /scenario-sessions/:id/abandon
 func (sc *scenarioController) AbandonSession(ctx *gin.Context) {
-	sessionID, err := uuid.Parse(ctx.Param("id"))
+	session, err := sc.getSessionIfOwned(ctx)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid session ID",
-		})
 		return
 	}
 
-	err = sc.sessionService.AbandonSession(sessionID)
+	err = sc.sessionService.AbandonSession(session.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
