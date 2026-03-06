@@ -183,69 +183,89 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 		return nil, fmt.Errorf("verification failed: %w", err)
 	}
 
-	// Update step progress verify attempts
-	s.db.Model(&models.ScenarioStepProgress{}).
-		Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
-		Update("verify_attempts", gorm.Expr("verify_attempts + 1"))
-
 	response := &dto.VerifyStepResponse{
 		Passed: passed,
 		Output: output,
 	}
 
-	if passed {
-		now := time.Now()
-
-		// Calculate time spent on this step and mark as completed
-		var stepProgress models.ScenarioStepProgress
-		if err := s.db.Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).First(&stepProgress).Error; err == nil {
-			timeSpent := int(now.Sub(stepProgress.CreatedAt).Seconds())
-			s.db.Model(&models.ScenarioStepProgress{}).
-				Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
-				Updates(map[string]any{
-					"status":             "completed",
-					"completed_at":       now,
-					"time_spent_seconds": timeSpent,
-				})
-		} else {
-			// Fallback: update without time calculation
-			s.db.Model(&models.ScenarioStepProgress{}).
-				Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
-				Updates(map[string]any{
-					"status":       "completed",
-					"completed_at": now,
-				})
+	// Wrap all DB updates in a transaction for consistency
+	txErr := s.db.Transaction(func(tx *gorm.DB) error {
+		// Update step progress verify attempts
+		if err := tx.Model(&models.ScenarioStepProgress{}).
+			Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
+			Update("verify_attempts", gorm.Expr("verify_attempts + 1")).Error; err != nil {
+			return fmt.Errorf("failed to update verify attempts: %w", err)
 		}
 
-		// Check if this was the last step
-		isLastStep := true
-		nextStepOrder := -1
-		for _, step := range session.Scenario.Steps {
-			if step.Order > session.CurrentStep {
-				isLastStep = false
-				if nextStepOrder == -1 || step.Order < nextStepOrder {
-					nextStepOrder = step.Order
+		if passed {
+			now := time.Now()
+
+			// Calculate time spent on this step and mark as completed
+			var stepProgress models.ScenarioStepProgress
+			if err := tx.Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).First(&stepProgress).Error; err == nil {
+				timeSpent := int(now.Sub(stepProgress.CreatedAt).Seconds())
+				if err := tx.Model(&models.ScenarioStepProgress{}).
+					Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
+					Updates(map[string]any{
+						"status":             "completed",
+						"completed_at":       now,
+						"time_spent_seconds": timeSpent,
+					}).Error; err != nil {
+					return fmt.Errorf("failed to mark step completed: %w", err)
 				}
+			} else {
+				// Fallback: update without time calculation
+				if err := tx.Model(&models.ScenarioStepProgress{}).
+					Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
+					Updates(map[string]any{
+						"status":       "completed",
+						"completed_at": now,
+					}).Error; err != nil {
+					return fmt.Errorf("failed to mark step completed: %w", err)
+				}
+			}
+
+			// Check if this was the last step
+			isLastStep := true
+			nextStepOrder := -1
+			for _, step := range session.Scenario.Steps {
+				if step.Order > session.CurrentStep {
+					isLastStep = false
+					if nextStepOrder == -1 || step.Order < nextStepOrder {
+						nextStepOrder = step.Order
+					}
+				}
+			}
+
+			if isLastStep {
+				// Mark session as completed
+				if err := tx.Model(&session).Updates(map[string]any{
+					"status":       "completed",
+					"completed_at": now,
+				}).Error; err != nil {
+					return fmt.Errorf("failed to mark session completed: %w", err)
+				}
+			} else {
+				// Advance to next step
+				if err := tx.Model(&session).Update("current_step", nextStepOrder).Error; err != nil {
+					return fmt.Errorf("failed to advance step: %w", err)
+				}
+
+				// Unlock next step
+				if err := tx.Model(&models.ScenarioStepProgress{}).
+					Where("session_id = ? AND step_order = ?", session.ID, nextStepOrder).
+					Update("status", "active").Error; err != nil {
+					return fmt.Errorf("failed to unlock next step: %w", err)
+				}
+
+				response.NextStep = &nextStepOrder
 			}
 		}
 
-		if isLastStep {
-			// Mark session as completed
-			s.db.Model(&session).Updates(map[string]any{
-				"status":       "completed",
-				"completed_at": now,
-			})
-		} else {
-			// Advance to next step
-			s.db.Model(&session).Update("current_step", nextStepOrder)
-
-			// Unlock next step
-			s.db.Model(&models.ScenarioStepProgress{}).
-				Where("session_id = ? AND step_order = ?", session.ID, nextStepOrder).
-				Update("status", "active")
-
-			response.NextStep = &nextStepOrder
-		}
+		return nil
+	})
+	if txErr != nil {
+		return nil, txErr
 	}
 
 	return response, nil
