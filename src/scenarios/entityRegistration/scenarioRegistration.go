@@ -25,6 +25,7 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						Difficulty:     model.Difficulty,
 						EstimatedTime:  model.EstimatedTime,
 						InstanceType:   model.InstanceType,
+						OsType:         model.OsType,
 						SourceType:     model.SourceType,
 						GitRepository:  model.GitRepository,
 						GitBranch:      model.GitBranch,
@@ -69,6 +70,7 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						Difficulty:     input.Difficulty,
 						EstimatedTime:  input.EstimatedTime,
 						InstanceType:   input.InstanceType,
+						OsType:         input.OsType,
 						SourceType:     input.SourceType,
 						GitRepository:  input.GitRepository,
 						GitBranch:      input.GitBranch,
@@ -101,6 +103,9 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 					}
 					if input.InstanceType != nil {
 						updates["instance_type"] = *input.InstanceType
+					}
+					if input.OsType != nil {
+						updates["os_type"] = *input.OsType
 					}
 					if input.SourceType != nil {
 						updates["source_type"] = *input.SourceType

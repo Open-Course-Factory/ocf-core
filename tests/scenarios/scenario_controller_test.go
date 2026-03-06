@@ -595,6 +595,38 @@ func TestGetSessionByTerminal_IDOR_Returns403(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
+func TestSeedScenario_WithOsType(t *testing.T) {
+	db := setupTestDB(t)
+	router := setupTestRouter(db)
+
+	payload := map[string]any{
+		"title":         "OsType Test Scenario",
+		"instance_type": "ubuntu:22.04",
+		"os_type":       "deb",
+		"steps": []map[string]any{
+			{"title": "Step 1", "text_content": "Do something"},
+		},
+	}
+
+	body, _ := json.Marshal(payload)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/scenarios/seed", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var response map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, "deb", response["os_type"])
+
+	// Verify persisted in DB
+	var scenario models.Scenario
+	db.First(&scenario, "name = ?", "ostype-test-scenario")
+	assert.Equal(t, "deb", scenario.OsType)
+}
+
 func TestSeedScenario_NoSteps(t *testing.T) {
 	db := setupTestDB(t)
 	router := setupTestRouter(db)
