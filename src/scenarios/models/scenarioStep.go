@@ -14,9 +14,9 @@ type ScenarioStep struct {
 	Title            string    `gorm:"type:varchar(500);not null" json:"title"`
 	TextContent      string    `gorm:"type:text" json:"text_content,omitempty"`      // markdown
 	HintContent      string    `gorm:"type:text" json:"hint_content,omitempty"`      // markdown
-	VerifyScript     string    `gorm:"type:text" json:"verify_script,omitempty"`     // script content
-	BackgroundScript string    `gorm:"type:text" json:"background_script,omitempty"` // script content
-	ForegroundScript string    `gorm:"type:text" json:"foreground_script,omitempty"` // script content
+	VerifyScript     string    `gorm:"type:text" json:"-"`
+	BackgroundScript string    `gorm:"type:text" json:"-"`
+	ForegroundScript string    `gorm:"type:text" json:"-"`
 	HasFlag          bool      `gorm:"default:false" json:"has_flag"`
 	FlagLevel        int       `gorm:"default:0" json:"flag_level"`
 }
