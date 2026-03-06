@@ -24,7 +24,11 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						Title:            model.Title,
 						TextContent:      model.TextContent,
 						HintContent:      model.HintContent,
+						VerifyScript:     model.VerifyScript,
+						BackgroundScript: model.BackgroundScript,
+						ForegroundScript: model.ForegroundScript,
 						HasFlag:          model.HasFlag,
+						FlagPath:         model.FlagPath,
 						FlagLevel:        model.FlagLevel,
 						CreatedAt:        model.CreatedAt,
 						UpdatedAt:        model.UpdatedAt,
@@ -41,6 +45,7 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						BackgroundScript: input.BackgroundScript,
 						ForegroundScript: input.ForegroundScript,
 						HasFlag:          input.HasFlag,
+						FlagPath:         input.FlagPath,
 						FlagLevel:        input.FlagLevel,
 					}
 				},
@@ -70,6 +75,9 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 					if input.HasFlag != nil {
 						updates["has_flag"] = *input.HasFlag
 					}
+					if input.FlagPath != nil {
+						updates["flag_path"] = *input.FlagPath
+					}
 					if input.FlagLevel != nil {
 						updates["flag_level"] = *input.FlagLevel
 					}
@@ -78,8 +86,7 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 			},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
-					string(authModels.Member): "(" + http.MethodGet + ")",
-					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
+					string(authModels.Admin): "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 				},
 			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{

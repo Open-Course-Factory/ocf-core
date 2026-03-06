@@ -52,6 +52,7 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 								TextContent:      step.TextContent,
 								HintContent:      step.HintContent,
 								HasFlag:          step.HasFlag,
+								FlagPath:         step.FlagPath,
 								FlagLevel:        step.FlagLevel,
 								CreatedAt:        step.CreatedAt,
 								UpdatedAt:        step.UpdatedAt,

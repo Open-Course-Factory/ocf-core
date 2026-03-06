@@ -72,6 +72,7 @@ type TerminalTrainerService interface {
 
 	// Configuration
 	GetInstanceTypes(backend string) ([]dto.InstanceType, error)
+	GetTerms() (string, error)
 
 	// Metrics
 	GetServerMetrics(nocache bool, backend string) (*dto.ServerMetricsResponse, error)
@@ -633,8 +634,13 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 	for sessionID, apiSession := range apiSessionsMap {
 		localSession := localSessionsMap[sessionID]
 
-		// Convert numeric status to semantic name using enum service
-		apiStatusName := tts.enumService.GetEnumName("session_status", int(apiSession.Status))
+		// Map SessionStatus from /sessions endpoint to terminal lifecycle status.
+		// /sessions returns SessionStatus: 0=active, 1=expired, 2=preallocated, 3+=deleted.
+		// This is different from InstanceCreationStatus (0=started, 1=invalid_terms) used by /start and /info.
+		apiStatusName := "expired"
+		if apiSession.Status == 0 {
+			apiStatusName = "active"
+		}
 
 		if localSession == nil {
 			// Session existe côté API mais pas côté local
@@ -766,13 +772,16 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 func (tts *terminalTrainerService) createMissingLocalSession(userID string, userKey *models.UserTerminalKey, apiSession *dto.TerminalTrainerSession) error {
 	expiresAt := time.Unix(apiSession.ExpiresAt, 0)
 
-	// Convert numeric status to semantic name
-	statusName := tts.enumService.GetEnumName("session_status", int(apiSession.Status))
+	// Map SessionStatus from /sessions endpoint to terminal lifecycle status
+	statusName := "expired"
+	if apiSession.Status == 0 {
+		statusName = "active"
+	}
 
 	terminal := &models.Terminal{
 		SessionID:         apiSession.SessionID,
 		UserID:            userID,
-		Status:            statusName, // Use semantic name (e.g., "active", "expired")
+		Status:            statusName, // Terminal lifecycle status: "active" or "expired"
 		ExpiresAt:         expiresAt,
 		MachineSize:       apiSession.MachineSize, // Taille réelle depuis l'API
 		Backend:           apiSession.Backend,
@@ -836,6 +845,24 @@ func (tts *terminalTrainerService) GetInstanceTypes(backend string) ([]dto.Insta
 	}
 
 	return instanceTypes, nil
+}
+
+// GetTerms fetches the terms of service text from Terminal Trainer
+func (tts *terminalTrainerService) GetTerms() (string, error) {
+	path := fmt.Sprintf("/%s/terms", tts.apiVersion)
+	url := fmt.Sprintf("%s%s", tts.baseURL, path)
+
+	var termsResp struct {
+		Terms string `json:"terms"`
+		Hash  string `json:"hash"`
+	}
+	opts := utils.DefaultHTTPClientOptions()
+	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &termsResp, opts)
+	if err != nil {
+		return "", err
+	}
+
+	return termsResp.Terms, nil
 }
 
 // buildAPIPath construit le chemin API avec version et type d'instance optionnel
@@ -1953,8 +1980,13 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 			return false, "", fmt.Errorf("failed to validate session with API: %w", err)
 		}
 
-		// Convert numeric status to semantic name
-		apiStatusName := tts.enumService.GetEnumName("session_status", int(apiInfo.Status))
+		// Map InstanceCreationStatus from /info endpoint to terminal lifecycle status.
+		// /info returns InstanceCreationStatus: 0=started (instance running), 6=expired (instance gone).
+		// These are different from SessionStatus (0=active, 1=expired) used by /sessions.
+		apiStatusName := "expired"
+		if apiInfo.Status == 0 {
+			apiStatusName = "active"
+		}
 
 		// Sync status if mismatch detected
 		if apiStatusName != terminal.Status {

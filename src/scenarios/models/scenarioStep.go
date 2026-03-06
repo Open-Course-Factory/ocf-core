@@ -18,6 +18,7 @@ type ScenarioStep struct {
 	BackgroundScript string    `gorm:"type:text" json:"-"`
 	ForegroundScript string    `gorm:"type:text" json:"-"`
 	HasFlag          bool      `gorm:"default:false" json:"has_flag"`
+	FlagPath         string    `gorm:"type:varchar(500)" json:"flag_path,omitempty"` // where to place the flag file in the container
 	FlagLevel        int       `gorm:"default:0" json:"flag_level"`
 }
 

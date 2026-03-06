@@ -1,6 +1,10 @@
 package dto
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // SessionResponse - DTO for scenario session information
 type SessionResponse struct {
@@ -48,18 +52,20 @@ type SubmitFlagInput struct {
 
 // SubmitFlagResponse - DTO for flag submission results
 type SubmitFlagResponse struct {
-	Correct bool   `json:"correct"`
-	Message string `json:"message,omitempty"`
+	Correct  bool   `json:"correct"`
+	Message  string `json:"message,omitempty"`
+	NextStep *int   `json:"next_step,omitempty"`
 }
 
 // CurrentStepResponse - DTO for current step information
 type CurrentStepResponse struct {
-	StepOrder int    `json:"step_order"`
-	Title     string `json:"title"`
-	Text      string `json:"text,omitempty"`
-	Hint      string `json:"hint,omitempty"`
-	Status    string `json:"status"`
-	HasFlag   bool   `json:"has_flag"`
+	StepOrder  int    `json:"step_order"`
+	TotalSteps int    `json:"total_steps"`
+	Title      string `json:"title"`
+	Text       string `json:"text,omitempty"`
+	Hint       string `json:"hint,omitempty"`
+	Status     string `json:"status"`
+	HasFlag    bool   `json:"has_flag"`
 }
 
 // SeedScenarioInput - DTO for seeding a scenario with inline content (admin/testing)
@@ -87,4 +93,20 @@ type SeedStepInput struct {
 	BackgroundScript string `json:"background_script"`
 	ForegroundScript string `json:"foreground_script"`
 	HasFlag          bool   `json:"has_flag"`
+	FlagPath         string `json:"flag_path"`
+}
+
+// MySessionResponse - DTO for a learner's own scenario session
+type MySessionResponse struct {
+	ID                uuid.UUID  `json:"id"`
+	ScenarioID        uuid.UUID  `json:"scenario_id"`
+	ScenarioTitle     string     `json:"scenario_title"`
+	Status            string     `json:"status"`
+	Grade             *float64   `json:"grade,omitempty"`
+	CurrentStep       int        `json:"current_step"`
+	TotalSteps        int        `json:"total_steps"`
+	CompletedSteps    int        `json:"completed_steps"`
+	StartedAt         time.Time  `json:"started_at"`
+	CompletedAt       *time.Time `json:"completed_at,omitempty"`
+	TerminalSessionID *string    `json:"terminal_session_id,omitempty"`
 }

@@ -98,6 +98,7 @@ func main() {
 	initialization.SetupTerminalPermissions(casdoor.Enforcer)
 	initialization.SetupPaymentPermissions(casdoor.Enforcer)
 	initialization.SetupSecurityAdminPermissions(casdoor.Enforcer)
+	initialization.SetupScenarioPermissions(casdoor.Enforcer)
 	log.Println("✅ All permissions setup completed")
 
 	// Initialize remaining hooks
