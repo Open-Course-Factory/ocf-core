@@ -68,6 +68,7 @@ type SeedScenarioInput struct {
 	Difficulty    string          `json:"difficulty"`
 	EstimatedTime string          `json:"estimated_time"`
 	InstanceType  string          `json:"instance_type"`
+	OsType        string          `json:"os_type"`
 	FlagsEnabled  bool            `json:"flags_enabled"`
 	GshEnabled    bool            `json:"gsh_enabled"`
 	CrashTraps    bool            `json:"crash_traps"`

@@ -14,6 +14,7 @@ type CreateScenarioInput struct {
 	Difficulty     string     `json:"difficulty,omitempty" mapstructure:"difficulty" binding:"omitempty,oneof=beginner intermediate advanced"`
 	EstimatedTime  string     `json:"estimated_time,omitempty" mapstructure:"estimated_time"`
 	InstanceType   string     `json:"instance_type" mapstructure:"instance_type" binding:"required"`
+	OsType         string     `json:"os_type,omitempty" mapstructure:"os_type" binding:"omitempty,oneof=deb rpm apk pacman"`
 	SourceType     string     `json:"source_type,omitempty" mapstructure:"source_type" binding:"omitempty,oneof=git upload builtin"`
 	GitRepository  string     `json:"git_repository,omitempty" mapstructure:"git_repository"`
 	GitBranch      string     `json:"git_branch,omitempty" mapstructure:"git_branch"`
@@ -35,6 +36,7 @@ type EditScenarioInput struct {
 	Difficulty     *string    `json:"difficulty,omitempty" mapstructure:"difficulty" binding:"omitempty,oneof=beginner intermediate advanced"`
 	EstimatedTime  *string    `json:"estimated_time,omitempty" mapstructure:"estimated_time"`
 	InstanceType   *string    `json:"instance_type,omitempty" mapstructure:"instance_type"`
+	OsType         *string    `json:"os_type,omitempty" mapstructure:"os_type" binding:"omitempty,oneof=deb rpm apk pacman"`
 	SourceType     *string    `json:"source_type,omitempty" mapstructure:"source_type" binding:"omitempty,oneof=git upload builtin"`
 	GitRepository  *string    `json:"git_repository,omitempty" mapstructure:"git_repository"`
 	GitBranch      *string    `json:"git_branch,omitempty" mapstructure:"git_branch"`
@@ -56,6 +58,7 @@ type ScenarioOutput struct {
 	Difficulty     string             `json:"difficulty"`
 	EstimatedTime  string             `json:"estimated_time"`
 	InstanceType   string             `json:"instance_type"`
+	OsType         string             `json:"os_type,omitempty"`
 	SourceType     string             `json:"source_type"`
 	GitRepository  string             `json:"git_repository,omitempty"`
 	GitBranch      string             `json:"git_branch"`
