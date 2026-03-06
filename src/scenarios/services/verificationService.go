@@ -91,23 +91,19 @@ func (s *VerificationService) PushFile(sessionID string, targetPath string, cont
 	return nil
 }
 
-// VerifyStep pushes a verify script to the container, executes it, and returns the result.
+// VerifyStep executes the verify script inside the container via sh -c.
+// The script is passed as a command argument — never written to the filesystem,
+// so the learner cannot inspect it.
 // Exit code 0 = passed, non-zero = failed. Returns stdout as output.
 func (s *VerificationService) VerifyStep(terminalSessionID string, step *models.ScenarioStep) (passed bool, output string, err error) {
 	if step.VerifyScript == "" {
 		return false, "", fmt.Errorf("step %d has no verify script", step.Order)
 	}
 
-	// Push the verify script to /tmp/verify_step.sh
-	err = s.PushFile(terminalSessionID, "/tmp/verify_step.sh", step.VerifyScript, "0755")
-	if err != nil {
-		return false, "", fmt.Errorf("failed to push verify script: %w", err)
-	}
-
-	// Execute the verify script with a 10s timeout
+	// Execute the verify script inline with a 10s timeout
 	exitCode, stdout, _, err := s.ExecInContainer(
 		terminalSessionID,
-		[]string{"/bin/bash", "/tmp/verify_step.sh"},
+		[]string{"/bin/sh", "-c", step.VerifyScript},
 		10,
 	)
 	if err != nil {
