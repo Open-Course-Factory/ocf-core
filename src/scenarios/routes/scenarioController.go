@@ -11,6 +11,7 @@ import (
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -142,6 +143,23 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 	}
 
 	userID := ctx.GetString("userId")
+
+	// Validate terminal session ownership
+	var terminal terminalModels.Terminal
+	if err := sc.db.Where("session_id = ?", input.TerminalSessionID).First(&terminal).Error; err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Terminal session not found",
+		})
+		return
+	}
+	if terminal.UserID != userID {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "You do not own this terminal session",
+		})
+		return
+	}
 
 	session, err := sc.sessionService.StartScenario(userID, scenarioID, input.TerminalSessionID)
 	if err != nil {

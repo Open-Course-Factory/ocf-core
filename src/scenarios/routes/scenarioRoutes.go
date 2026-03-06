@@ -5,6 +5,7 @@ import (
 
 	auth "soli/formations/src/auth"
 	config "soli/formations/src/configuration"
+	scenarioMiddleware "soli/formations/src/scenarios/middleware"
 
 	"gorm.io/gorm"
 )
@@ -20,11 +21,12 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	scenarioRoutes.POST("/seed", middleware.AuthManagement(), controller.SeedScenario)
 
 	// Session routes (students)
+	rateLimiter := scenarioMiddleware.PerUserRateLimit()
 	sessionRoutes := router.Group("/scenario-sessions")
 	sessionRoutes.POST("/start", middleware.AuthManagement(), controller.StartScenario)
 	sessionRoutes.GET("/by-terminal/:terminalId", middleware.AuthManagement(), controller.GetSessionByTerminal)
 	sessionRoutes.GET("/:id/current-step", middleware.AuthManagement(), controller.GetCurrentStep)
-	sessionRoutes.POST("/:id/verify", middleware.AuthManagement(), controller.VerifyStep)
-	sessionRoutes.POST("/:id/submit-flag", middleware.AuthManagement(), controller.SubmitFlag)
+	sessionRoutes.POST("/:id/verify", middleware.AuthManagement(), rateLimiter, controller.VerifyStep)
+	sessionRoutes.POST("/:id/submit-flag", middleware.AuthManagement(), rateLimiter, controller.SubmitFlag)
 	sessionRoutes.POST("/:id/abandon", middleware.AuthManagement(), controller.AbandonSession)
 }
