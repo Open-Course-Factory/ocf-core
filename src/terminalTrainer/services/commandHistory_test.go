@@ -914,6 +914,75 @@ func TestStartSessionURLConstruction_Backend(t *testing.T) {
 // M-4: recording_consent validation (values outside 0/1)
 // =============================================================================
 
+// =============================================================================
+// HTTP error status passthrough (403 Forbidden, 429 Rate Limit)
+// =============================================================================
+
+// TestGetSessionCommandHistory_403Forbidden_ReturnsError verifies that when tt-backend
+// returns 403 (e.g., recording not enabled for this session), the service returns an
+// error containing the status code so the controller can map it to a proper 403 instead
+// of a generic 500.
+func TestGetSessionCommandHistory_403Forbidden_ReturnsError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("Recording not enabled for this session"))
+	}))
+	defer server.Close()
+
+	db := setupTestDBForService(t)
+	_ = createTestTerminalForService(t, db, "user1", "session-403", "alp")
+
+	svc := &terminalTrainerService{
+		baseURL:    server.URL,
+		apiVersion: "1.0",
+		repository: repositories.NewTerminalRepository(db),
+	}
+
+	body, _, err := svc.GetSessionCommandHistory("session-403", nil, "json", 0, 0)
+
+	assert.Error(t, err, "should return error when tt-backend returns 403")
+	assert.Nil(t, body, "body should be nil on 403 error")
+	assert.Contains(t, err.Error(), "403", "error should contain status code 403")
+	assert.Contains(t, err.Error(), "Recording not enabled", "error should contain the upstream error message")
+}
+
+// TestGetSessionCommandHistory_429RateLimit_ReturnsError verifies that when tt-backend
+// returns 429 (rate limit exceeded), the service returns an error containing the status
+// code so the controller can map it appropriately instead of returning a generic 500.
+func TestGetSessionCommandHistory_429RateLimit_ReturnsError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte("Rate limit exceeded"))
+	}))
+	defer server.Close()
+
+	db := setupTestDBForService(t)
+	_ = createTestTerminalForService(t, db, "user1", "session-429", "alp")
+
+	svc := &terminalTrainerService{
+		baseURL:    server.URL,
+		apiVersion: "1.0",
+		repository: repositories.NewTerminalRepository(db),
+	}
+
+	body, _, err := svc.GetSessionCommandHistory("session-429", nil, "json", 0, 0)
+
+	assert.Error(t, err, "should return error when tt-backend returns 429")
+	assert.Nil(t, body, "body should be nil on 429 error")
+	assert.Contains(t, err.Error(), "429", "error should contain status code 429")
+	assert.Contains(t, err.Error(), "Rate limit exceeded", "error should contain the upstream error message")
+}
+
 // TestRecordingConsentValidation verifies that recording_consent values outside
 // the valid range (0 or 1) are rejected or normalized. The current code only
 // checks `> 0` and forwards any positive integer, but tt-backend silently

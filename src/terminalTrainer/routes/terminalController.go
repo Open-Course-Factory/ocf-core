@@ -1790,6 +1790,20 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 			})
 			return
 		}
+		if strings.Contains(err.Error(), "returned 403") || strings.Contains(err.Error(), "Recording not enabled") {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Recording not enabled for this session",
+			})
+			return
+		}
+		if strings.Contains(err.Error(), "returned 429") || strings.Contains(err.Error(), "Rate limit") {
+			ctx.JSON(http.StatusTooManyRequests, &errors.APIError{
+				ErrorCode:    http.StatusTooManyRequests,
+				ErrorMessage: "Too many requests, please try again later",
+			})
+			return
+		}
 		utils.Debug("GetSessionHistory failed for session %s: %v", sessionID, err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -1995,10 +2009,17 @@ func (tc *terminalController) GetGroupCommandHistory(ctx *gin.Context) {
 			})
 			return
 		}
-		if strings.Contains(err.Error(), "unauthorized") {
+		if strings.Contains(err.Error(), "unauthorized") || strings.Contains(err.Error(), "returned 403") || strings.Contains(err.Error(), "Recording not enabled") {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
 				ErrorMessage: err.Error(),
+			})
+			return
+		}
+		if strings.Contains(err.Error(), "returned 429") || strings.Contains(err.Error(), "Rate limit") {
+			ctx.JSON(http.StatusTooManyRequests, &errors.APIError{
+				ErrorCode:    http.StatusTooManyRequests,
+				ErrorMessage: "Too many requests, please try again later",
 			})
 			return
 		}
@@ -2033,10 +2054,17 @@ func (tc *terminalController) GetGroupCommandHistoryStats(ctx *gin.Context) {
 			})
 			return
 		}
-		if strings.Contains(err.Error(), "unauthorized") {
+		if strings.Contains(err.Error(), "unauthorized") || strings.Contains(err.Error(), "returned 403") || strings.Contains(err.Error(), "Recording not enabled") {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
 				ErrorMessage: err.Error(),
+			})
+			return
+		}
+		if strings.Contains(err.Error(), "returned 429") || strings.Contains(err.Error(), "Rate limit") {
+			ctx.JSON(http.StatusTooManyRequests, &errors.APIError{
+				ErrorCode:    http.StatusTooManyRequests,
+				ErrorMessage: "Too many requests, please try again later",
 			})
 			return
 		}
