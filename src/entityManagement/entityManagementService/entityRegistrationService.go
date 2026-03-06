@@ -163,60 +163,50 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 	appUtils.Info("Setting up entity access for %s at %s and %s", entityName, apiListPath, apiGroupPath)
 
 	for ocfRoleName, accessGiven := range rolesMap {
-		// Add permission for the list endpoint (without wildcard)
-		_, errListPolicy := enforcer.AddPolicy(ocfRoleName, apiListPath, accessGiven)
-		if errListPolicy != nil {
-			if strings.Contains(errListPolicy.Error(), "UNIQUE") {
-				appUtils.Debug("OCF role permission already exists: %s %s %s", ocfRoleName, apiListPath, accessGiven)
-			} else {
-				appUtils.Error("Error adding OCF role permission: %v", errListPolicy)
-			}
-		} else {
-			appUtils.Debug("Added OCF role permission: %s can %s %s", ocfRoleName, accessGiven, apiListPath)
-		}
+		// Reconcile OCF role policies: only update if DB differs from code
+		reconcileEntityPolicy(enforcer, ocfRoleName, apiListPath, accessGiven)
+		reconcileEntityPolicy(enforcer, ocfRoleName, apiGroupPath, accessGiven)
 
-		// Add permission for specific resource endpoints (with wildcard)
-		_, errPolicy := enforcer.AddPolicy(ocfRoleName, apiGroupPath, accessGiven)
-		if errPolicy != nil {
-			if strings.Contains(errPolicy.Error(), "UNIQUE") {
-				appUtils.Debug("OCF role permission already exists: %s %s %s", ocfRoleName, apiGroupPath, accessGiven)
-			} else {
-				appUtils.Error("Error adding OCF role permission: %v", errPolicy)
-			}
-		} else {
-			appUtils.Debug("Added OCF role permission: %s can %s %s", ocfRoleName, accessGiven, apiGroupPath)
-		}
-
-		// Automatically add permissions for corresponding Casdoor roles
+		// Reconcile corresponding Casdoor role policies
 		casdoorRoles := authModels.GetCasdoorRolesForOCFRole(authModels.RoleName(ocfRoleName))
 		for _, casdoorRole := range casdoorRoles {
-			// Add permission for list endpoint
-			_, errCasdoorListPolicy := enforcer.AddPolicy(casdoorRole, apiListPath, accessGiven)
-			if errCasdoorListPolicy != nil {
-				if strings.Contains(errCasdoorListPolicy.Error(), "UNIQUE") {
-					appUtils.Debug("Casdoor role permission already exists: %s %s %s", casdoorRole, apiListPath, accessGiven)
-				} else {
-					appUtils.Error("Error adding Casdoor role permission: %v", errCasdoorListPolicy)
-				}
-			} else {
-				appUtils.Debug("Added Casdoor role permission: %s can %s %s", casdoorRole, accessGiven, apiListPath)
-			}
-
-			// Add permission for specific resource endpoints
-			_, errCasdoorPolicy := enforcer.AddPolicy(casdoorRole, apiGroupPath, accessGiven)
-			if errCasdoorPolicy != nil {
-				if strings.Contains(errCasdoorPolicy.Error(), "UNIQUE") {
-					appUtils.Debug("Casdoor role permission already exists: %s %s %s", casdoorRole, apiGroupPath, accessGiven)
-				} else {
-					appUtils.Error("Error adding Casdoor role permission: %v", errCasdoorPolicy)
-				}
-			} else {
-				appUtils.Debug("Added Casdoor role permission: %s can %s %s", casdoorRole, accessGiven, apiGroupPath)
-			}
+			reconcileEntityPolicy(enforcer, casdoorRole, apiListPath, accessGiven)
+			reconcileEntityPolicy(enforcer, casdoorRole, apiGroupPath, accessGiven)
 		}
 	}
 
 	appUtils.Info("Completed entity access setup for %s", entityName)
+}
+
+// reconcileEntityPolicy compares the desired policy with the DB and only changes what differs.
+// Safe for production — never blindly removes policies.
+func reconcileEntityPolicy(enforcer interfaces.EnforcerInterface, role, path, method string) {
+	existing, err := enforcer.GetFilteredPolicy(0, role, path)
+	if err != nil {
+		appUtils.Error("Error reading policy for %s %s: %v", role, path, err)
+		enforcer.AddPolicy(role, path, method)
+		return
+	}
+
+	// Already correct — skip
+	for _, policy := range existing {
+		if len(policy) >= 3 && policy[2] == method {
+			return
+		}
+	}
+
+	// Stale policy with different method — update it
+	if len(existing) > 0 {
+		enforcer.RemoveFilteredPolicy(0, role, path)
+		appUtils.Info("Reconciled policy %s %s: %s → %s", role, path, existing[0][2], method)
+	}
+
+	_, err = enforcer.AddPolicy(role, path, method)
+	if err != nil {
+		appUtils.Error("Error adding policy %s %s %s: %v", role, path, method, err)
+	} else {
+		appUtils.Debug("Added policy: %s can %s %s", role, method, path)
+	}
 }
 
 func Pluralize(entityName string) string {

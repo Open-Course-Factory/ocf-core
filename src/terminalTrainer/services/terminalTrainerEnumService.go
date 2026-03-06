@@ -64,15 +64,15 @@ func (s *terminalTrainerEnumService) initializeLocalEnums() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Session status enum - based on Terminal Trainer's definitions
+	// Session status enum - must match tt-backend's InstanceCreationStatus in enums.go
 	s.enums["session_status"] = map[int]dto.EnumValue{
-		0: {Value: 0, Name: "active", Description: "Session is active and running"},
-		1: {Value: 1, Name: "expired", Description: "Session has expired and is no longer accessible"},
-		2: {Value: 2, Name: "failed", Description: "Session failed to start or encountered an error"},
-		3: {Value: 3, Name: "quota_limit", Description: "API key has reached its concurrent session quota limit"},
-		4: {Value: 4, Name: "system_limit", Description: "System has reached maximum concurrent sessions"},
-		5: {Value: 5, Name: "invalid_terms", Description: "Invalid terms hash provided"},
-		6: {Value: 6, Name: "terminated", Description: "Session was terminated by user or admin"},
+		0: {Value: 0, Name: "started", Description: "Session was successfully created and started"},
+		1: {Value: 1, Name: "invalid_terms", Description: "Terms of service were not accepted or invalid"},
+		2: {Value: 2, Name: "server_full", Description: "Server has reached maximum capacity"},
+		3: {Value: 3, Name: "quota_reached", Description: "API key has reached its concurrent session quota limit"},
+		4: {Value: 4, Name: "user_banned", Description: "User or IP is banned from the service"},
+		5: {Value: 5, Name: "unknown_error", Description: "An unknown error occurred during creation"},
+		6: {Value: 6, Name: "expired", Description: "Instance has expired or no longer exists"},
 	}
 
 	// API key status enum

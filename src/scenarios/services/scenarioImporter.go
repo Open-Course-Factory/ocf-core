@@ -51,6 +51,8 @@ type KillerCodaStep struct {
 	Background string `json:"background"` // path to background.sh
 	Foreground string `json:"foreground"` // path to foreground.sh
 	Hint       string `json:"hint"`       // OCF extension: path to hint.md
+	HasFlag    *bool  `json:"has_flag"`   // OCF extension: per-step flag override (nil = use scenario default)
+	FlagPath   string `json:"flag_path"`  // OCF extension: where to place flag in container
 }
 
 // KillerCodaBackend describes the backend image to use
@@ -111,7 +113,57 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 		return nil, fmt.Errorf("failed to build scenario: %w", err)
 	}
 
-	// Save in a transaction
+	// Upsert: check if scenario with same name already exists
+	var existing models.Scenario
+	if err := s.db.Where("name = ?", scenario.Name).First(&existing).Error; err == nil {
+		// Update existing scenario
+		if existing.FlagSecret != "" && scenario.FlagsEnabled {
+			scenario.FlagSecret = existing.FlagSecret // preserve flag secret
+		}
+
+		err = s.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&existing).Updates(map[string]any{
+				"title":          scenario.Title,
+				"description":    scenario.Description,
+				"difficulty":     scenario.Difficulty,
+				"estimated_time": scenario.EstimatedTime,
+				"instance_type":  scenario.InstanceType,
+				"flags_enabled":  scenario.FlagsEnabled,
+				"flag_secret":    scenario.FlagSecret,
+				"gsh_enabled":    scenario.GshEnabled,
+				"crash_traps":    scenario.CrashTraps,
+				"intro_text":     scenario.IntroText,
+				"finish_text":    scenario.FinishText,
+			}).Error; err != nil {
+				return fmt.Errorf("failed to update scenario: %w", err)
+			}
+
+			// Delete old steps, create new ones
+			if err := tx.Where("scenario_id = ?", existing.ID).Delete(&models.ScenarioStep{}).Error; err != nil {
+				return fmt.Errorf("failed to delete old steps: %w", err)
+			}
+			for i := range scenario.Steps {
+				scenario.Steps[i].ScenarioID = existing.ID
+				if err := tx.Create(&scenario.Steps[i]).Error; err != nil {
+					return fmt.Errorf("failed to create step: %w", err)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		// Reload
+		if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
+			return db.Order("\"order\" ASC")
+		}).First(&existing, "id = ?", existing.ID).Error; err != nil {
+			return nil, fmt.Errorf("failed to reload scenario: %w", err)
+		}
+		return &existing, nil
+	}
+
+	// Create new scenario
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(scenario).Error; err != nil {
 			return fmt.Errorf("failed to save scenario: %w", err)
@@ -182,6 +234,12 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	// Build steps
 	steps := make([]models.ScenarioStep, 0, len(index.Details.Steps))
 	for i, kcStep := range index.Details.Steps {
+		// Per-step has_flag override: if specified, use it; otherwise fall back to scenario-level flagsEnabled
+		stepHasFlag := flagsEnabled
+		if kcStep.HasFlag != nil {
+			stepHasFlag = *kcStep.HasFlag
+		}
+
 		step := models.ScenarioStep{
 			Order:            i,
 			Title:            kcStep.Title,
@@ -190,7 +248,8 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 			VerifyScript:     readFileContent(dirPath, kcStep.Verify),
 			BackgroundScript: readFileContent(dirPath, kcStep.Background),
 			ForegroundScript: readFileContent(dirPath, kcStep.Foreground),
-			HasFlag:          flagsEnabled,
+			HasFlag:          stepHasFlag,
+			FlagPath:         kcStep.FlagPath,
 		}
 		steps = append(steps, step)
 	}

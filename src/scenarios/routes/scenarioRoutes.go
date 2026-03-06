@@ -23,6 +23,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	// Session routes (students)
 	rateLimiter := scenarioMiddleware.PerUserRateLimit()
 	sessionRoutes := router.Group("/scenario-sessions")
+	sessionRoutes.GET("/my", middleware.AuthManagement(), controller.GetMySessions)
 	sessionRoutes.POST("/start", middleware.AuthManagement(), controller.StartScenario)
 	sessionRoutes.GET("/by-terminal/:terminalId", middleware.AuthManagement(), controller.GetSessionByTerminal)
 	sessionRoutes.GET("/:id/current-step", middleware.AuthManagement(), controller.GetCurrentStep)
@@ -36,5 +37,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	teacherRoutes.GET("/groups/:groupId/activity", middleware.AuthManagement(), teacherCtrl.GetGroupActivity)
 	teacherRoutes.GET("/groups/:groupId/scenarios/:scenarioId/results", middleware.AuthManagement(), teacherCtrl.GetScenarioResults)
 	teacherRoutes.GET("/groups/:groupId/scenarios/:scenarioId/analytics", middleware.AuthManagement(), teacherCtrl.GetScenarioAnalytics)
+	teacherRoutes.GET("/groups/:groupId/sessions/:sessionId/detail", middleware.AuthManagement(), teacherCtrl.GetSessionDetail)
 	teacherRoutes.POST("/groups/:groupId/scenarios/:scenarioId/bulk-start", middleware.AuthManagement(), teacherCtrl.BulkStartScenario)
+	teacherRoutes.POST("/groups/:groupId/scenarios/:scenarioId/reset-sessions", middleware.AuthManagement(), teacherCtrl.ResetGroupScenarioSessions)
 }

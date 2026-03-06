@@ -29,6 +29,7 @@ type ScenarioController interface {
 	SubmitFlag(ctx *gin.Context)
 	AbandonSession(ctx *gin.Context)
 	GetSessionByTerminal(ctx *gin.Context)
+	GetMySessions(ctx *gin.Context)
 }
 
 type scenarioController struct {
@@ -377,6 +378,39 @@ func (sc *scenarioController) GetSessionByTerminal(ctx *gin.Context) {
 	})
 }
 
+// GetMySessions godoc
+// @Summary Get my scenario sessions
+// @Description Get all scenario sessions for the authenticated user
+// @Tags scenario-sessions
+// @Produce json
+// @Success 200 {array} dto.MySessionResponse
+// @Failure 401 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenario-sessions/my [get]
+// @Security BearerAuth
+func (sc *scenarioController) GetMySessions(ctx *gin.Context) {
+	userID := ctx.GetString("userId")
+	if userID == "" {
+		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
+			ErrorCode:    http.StatusUnauthorized,
+			ErrorMessage: "Unauthorized",
+		})
+		return
+	}
+
+	sessions, err := sc.sessionService.GetMySessions(userID)
+	if err != nil {
+		slog.Error("failed to get my sessions", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get sessions",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, sessions)
+}
+
 // SeedScenario godoc
 // @Summary Seed a scenario with steps
 // @Description Create a scenario with all steps from a single JSON payload (admin/testing)
@@ -429,40 +463,35 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 
 	name := utils.GenerateSlug(input.Title)
 
+	// Check if a scenario with this name already exists (upsert)
+	var existing models.Scenario
+	isUpdate := false
+	if err := sc.db.Where("name = ?", name).First(&existing).Error; err == nil {
+		isUpdate = true
+	}
+
 	var flagSecret string
 	if input.FlagsEnabled {
-		secretBytes := make([]byte, 32)
-		if _, err := crypto_rand.Read(secretBytes); err != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to generate flag secret",
-			})
-			return
+		if isUpdate && existing.FlagSecret != "" {
+			// Keep existing flag secret on update so active sessions remain valid
+			flagSecret = existing.FlagSecret
+		} else {
+			secretBytes := make([]byte, 32)
+			if _, err := crypto_rand.Read(secretBytes); err != nil {
+				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+					ErrorCode:    http.StatusInternalServerError,
+					ErrorMessage: "Failed to generate flag secret",
+				})
+				return
+			}
+			flagSecret = hex.EncodeToString(secretBytes)
 		}
-		flagSecret = hex.EncodeToString(secretBytes)
 	}
 
-	scenario := models.Scenario{
-		Name:          name,
-		Title:         input.Title,
-		Description:   input.Description,
-		Difficulty:    input.Difficulty,
-		EstimatedTime: input.EstimatedTime,
-		InstanceType:  input.InstanceType,
-		OsType:        input.OsType,
-		SourceType:    "seed",
-		FlagsEnabled:  input.FlagsEnabled,
-		FlagSecret:    flagSecret,
-		GshEnabled:    input.GshEnabled,
-		CrashTraps:    input.CrashTraps,
-		IntroText:     input.IntroText,
-		FinishText:    input.FinishText,
-		CreatedByID:   userID,
-	}
-
-	steps := make([]models.ScenarioStep, len(input.Steps))
+	// Build new steps
+	newSteps := make([]models.ScenarioStep, len(input.Steps))
 	for i, s := range input.Steps {
-		steps[i] = models.ScenarioStep{
+		newSteps[i] = models.ScenarioStep{
 			Order:            i,
 			Title:            s.Title,
 			TextContent:      s.TextContent,
@@ -471,17 +500,100 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 			BackgroundScript: s.BackgroundScript,
 			ForegroundScript: s.ForegroundScript,
 			HasFlag:          s.HasFlag,
+			FlagPath:         s.FlagPath,
 		}
 	}
-	scenario.Steps = steps
 
-	if err := sc.db.Create(&scenario).Error; err != nil {
-		slog.Error("failed to create scenario", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to create scenario",
+	var scenario models.Scenario
+	if isUpdate {
+		// Update existing scenario in a transaction
+		err := sc.db.Transaction(func(tx *gorm.DB) error {
+			// Update scenario fields
+			if err := tx.Model(&existing).Updates(map[string]any{
+				"title":          input.Title,
+				"description":    input.Description,
+				"difficulty":     input.Difficulty,
+				"estimated_time": input.EstimatedTime,
+				"instance_type":  input.InstanceType,
+				"os_type":        input.OsType,
+				"flags_enabled":  input.FlagsEnabled,
+				"flag_secret":    flagSecret,
+				"gsh_enabled":    input.GshEnabled,
+				"crash_traps":    input.CrashTraps,
+				"intro_text":     input.IntroText,
+				"finish_text":    input.FinishText,
+			}).Error; err != nil {
+				return fmt.Errorf("failed to update scenario: %w", err)
+			}
+
+			// Delete old steps
+			if err := tx.Where("scenario_id = ?", existing.ID).Delete(&models.ScenarioStep{}).Error; err != nil {
+				return fmt.Errorf("failed to delete old steps: %w", err)
+			}
+
+			// Create new steps
+			for i := range newSteps {
+				newSteps[i].ScenarioID = existing.ID
+				if err := tx.Create(&newSteps[i]).Error; err != nil {
+					return fmt.Errorf("failed to create step: %w", err)
+				}
+			}
+
+			return nil
 		})
-		return
+		if err != nil {
+			slog.Error("failed to update scenario", "err", err)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to update scenario",
+			})
+			return
+		}
+
+		// Reload with steps
+		if err := sc.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
+			return db.Order("\"order\" ASC")
+		}).First(&scenario, "id = ?", existing.ID).Error; err != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to reload scenario",
+			})
+			return
+		}
+	} else {
+		// Create new scenario
+		scenario = models.Scenario{
+			Name:          name,
+			Title:         input.Title,
+			Description:   input.Description,
+			Difficulty:    input.Difficulty,
+			EstimatedTime: input.EstimatedTime,
+			InstanceType:  input.InstanceType,
+			OsType:        input.OsType,
+			SourceType:    "seed",
+			FlagsEnabled:  input.FlagsEnabled,
+			FlagSecret:    flagSecret,
+			GshEnabled:    input.GshEnabled,
+			CrashTraps:    input.CrashTraps,
+			IntroText:     input.IntroText,
+			FinishText:    input.FinishText,
+			CreatedByID:   userID,
+		}
+		scenario.Steps = newSteps
+
+		if err := sc.db.Create(&scenario).Error; err != nil {
+			slog.Error("failed to create scenario", "err", err)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to create scenario",
+			})
+			return
+		}
+	}
+
+	statusCode := http.StatusCreated
+	if isUpdate {
+		statusCode = http.StatusOK
 	}
 
 	output := dto.ScenarioOutput{
@@ -515,6 +627,7 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 				TextContent: step.TextContent,
 				HintContent: step.HintContent,
 				HasFlag:     step.HasFlag,
+				FlagPath:    step.FlagPath,
 				FlagLevel:   step.FlagLevel,
 				CreatedAt:   step.CreatedAt,
 				UpdatedAt:   step.UpdatedAt,
@@ -522,6 +635,6 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 		}
 		output.Steps = steps
 	}
-	ctx.JSON(http.StatusCreated, output)
+	ctx.JSON(statusCode, output)
 }
 
