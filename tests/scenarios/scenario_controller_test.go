@@ -15,6 +15,7 @@ import (
 
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	"gorm.io/gorm"
 )
@@ -23,9 +24,10 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	api := r.Group("/api/v1")
-	// Set userId directly to bypass auth middleware in tests
+	// Set userId and roles directly to bypass auth middleware in tests
 	api.Use(func(c *gin.Context) {
 		c.Set("userId", "test-user-123")
+		c.Set("userRoles", []string{"admin"})
 		c.Next()
 	})
 
@@ -71,6 +73,15 @@ func TestStartScenario_Success(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&step).Error)
 
+	// Create terminal owned by the test user (required for ownership check)
+	terminal := terminalModels.Terminal{
+		SessionID: "test-terminal-ctrl",
+		UserID:    "test-user-123",
+		Status:    "active",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	require.NoError(t, db.Create(&terminal).Error)
+
 	body, _ := json.Marshal(map[string]string{
 		"scenario_id":        scenario.ID.String(),
 		"terminal_session_id": "test-terminal-ctrl",
@@ -109,6 +120,15 @@ func TestStartScenario_InvalidID(t *testing.T) {
 func TestStartScenario_NotFound(t *testing.T) {
 	db := setupTestDB(t)
 	router := setupTestRouter(db)
+
+	// Create terminal owned by the test user (required for ownership check)
+	terminal := terminalModels.Terminal{
+		SessionID: "test-terminal-nf",
+		UserID:    "test-user-123",
+		Status:    "active",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	require.NoError(t, db.Create(&terminal).Error)
 
 	fakeID := uuid.New()
 	body, _ := json.Marshal(map[string]string{
@@ -521,6 +541,58 @@ func TestSeedScenario_MissingTitle(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// setupTestRouterWithUser creates a test router with a custom userId
+func setupTestRouterWithUser(db *gorm.DB, userID string) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	api := r.Group("/api/v1")
+	api.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Next()
+	})
+
+	controller := scenarioController.NewScenarioController(db)
+
+	sessions := api.Group("/scenario-sessions")
+	sessions.GET("/by-terminal/:terminalId", controller.GetSessionByTerminal)
+
+	return r
+}
+
+// --- IDOR tests ---
+
+func TestGetSessionByTerminal_IDOR_Returns403(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "idor-test",
+		Title:        "IDOR Test",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	terminalID := "term-123"
+	session := models.ScenarioSession{
+		ScenarioID:        scenario.ID,
+		UserID:            "user-A",
+		TerminalSessionID: &terminalID,
+		CurrentStep:       0,
+		Status:            "active",
+		StartedAt:         time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	// Create router with user-B (different from session owner user-A)
+	router := setupTestRouterWithUser(db, "user-B")
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/by-terminal/"+terminalID, nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
 func TestSeedScenario_NoSteps(t *testing.T) {

@@ -1,6 +1,8 @@
 package scenarios_test
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -491,6 +493,65 @@ func TestScenarioSessionService_AbandonSession_NotFound(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "session not found")
+}
+
+func TestScenarioSessionService_ConcurrentStartNoDuplicates(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "concurrent-test",
+		Title:        "Concurrent Test",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID: scenario.ID,
+		Order:      0,
+		Title:      "Step 1",
+		HasFlag:    false,
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	flagSvc := &mockFlagService{}
+	verifySvc := &mockVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
+
+	const goroutines = 2
+	results := make([]*models.ScenarioSession, goroutines)
+	errs := make([]error, goroutines)
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			session, err := sessionSvc.StartScenario("student-concurrent", scenario.ID, fmt.Sprintf("terminal-%d", idx))
+			results[idx] = session
+			errs[idx] = err
+		}(i)
+	}
+	wg.Wait()
+
+	// Exactly one should succeed and one should fail (duplicate prevention)
+	successCount := 0
+	failCount := 0
+	for i := 0; i < goroutines; i++ {
+		if errs[i] == nil && results[i] != nil {
+			successCount++
+		} else {
+			failCount++
+		}
+	}
+
+	assert.Equal(t, 1, successCount, "exactly one session should be created")
+	assert.Equal(t, 1, failCount, "exactly one attempt should fail")
+
+	// Verify only one session exists in DB
+	var count int64
+	db.Model(&models.ScenarioSession{}).Where("user_id = ? AND scenario_id = ?", "student-concurrent", scenario.ID).Count(&count)
+	assert.Equal(t, int64(1), count, "only one session should exist in DB")
 }
 
 // Verify that the DTO types match what the service returns

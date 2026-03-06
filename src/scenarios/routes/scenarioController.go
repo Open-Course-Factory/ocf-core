@@ -11,6 +11,7 @@ import (
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
+	"soli/formations/src/scenarios/utils"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	"github.com/gin-gonic/gin"
@@ -171,14 +172,18 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, gin.H{
-		"id":                  session.ID,
-		"scenario_id":         session.ScenarioID,
-		"user_id":             session.UserID,
-		"terminal_session_id": session.TerminalSessionID,
-		"current_step":        session.CurrentStep,
-		"status":              session.Status,
-		"started_at":          session.StartedAt,
+	terminalSessionID := ""
+	if session.TerminalSessionID != nil {
+		terminalSessionID = *session.TerminalSessionID
+	}
+	ctx.JSON(http.StatusCreated, dto.SessionResponse{
+		ID:                session.ID.String(),
+		ScenarioID:        session.ScenarioID.String(),
+		UserID:            session.UserID,
+		TerminalSessionID: terminalSessionID,
+		CurrentStep:       session.CurrentStep,
+		Status:            session.Status,
+		StartedAt:         session.StartedAt,
 	})
 }
 
@@ -314,7 +319,7 @@ func (sc *scenarioController) AbandonSession(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "Session abandoned"})
+	ctx.JSON(http.StatusOK, dto.MessageResponse{Message: "Session abandoned"})
 }
 
 // GetSessionByTerminal godoc
@@ -357,14 +362,18 @@ func (sc *scenarioController) GetSessionByTerminal(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
-		"id":                  session.ID,
-		"scenario_id":         session.ScenarioID,
-		"user_id":             session.UserID,
-		"terminal_session_id": session.TerminalSessionID,
-		"current_step":        session.CurrentStep,
-		"status":              session.Status,
-		"started_at":          session.StartedAt,
+	terminalSessionID := ""
+	if session.TerminalSessionID != nil {
+		terminalSessionID = *session.TerminalSessionID
+	}
+	ctx.JSON(http.StatusOK, dto.SessionResponse{
+		ID:                session.ID.String(),
+		ScenarioID:        session.ScenarioID.String(),
+		UserID:            session.UserID,
+		TerminalSessionID: terminalSessionID,
+		CurrentStep:       session.CurrentStep,
+		Status:            session.Status,
+		StartedAt:         session.StartedAt,
 	})
 }
 
@@ -418,7 +427,7 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 
 	userID := ctx.GetString("userId")
 
-	name := generateSlug(input.Title)
+	name := utils.GenerateSlug(input.Title)
 
 	var flagSecret string
 	if input.FlagsEnabled {
@@ -514,30 +523,3 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, output)
 }
 
-// generateSlug creates a URL-friendly name from a title
-func generateSlug(title string) string {
-	slug := ""
-	for _, c := range title {
-		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
-			slug += string(c)
-		} else if c >= 'A' && c <= 'Z' {
-			slug += string(c - 'A' + 'a')
-		} else if c == ' ' || c == '_' {
-			slug += "-"
-		}
-	}
-	// Remove consecutive and trailing dashes
-	result := ""
-	prev := byte(0)
-	for i := 0; i < len(slug); i++ {
-		if slug[i] == '-' && prev == '-' {
-			continue
-		}
-		result += string(slug[i])
-		prev = slug[i]
-	}
-	for len(result) > 0 && result[len(result)-1] == '-' {
-		result = result[:len(result)-1]
-	}
-	return result
-}

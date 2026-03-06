@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"soli/formations/src/scenarios/models"
+	"soli/formations/src/scenarios/utils"
 )
 
 // KillerCoda index.json structures
@@ -161,7 +162,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	finishText := readFileContent(dirPath, index.Details.Finish.Text)
 
 	scenario := &models.Scenario{
-		Name:           generateScenarioName(index.Title),
+		Name:           utils.GenerateSlug(index.Title),
 		Title:          index.Title,
 		Description:    index.Description,
 		Difficulty:     index.Difficulty,
@@ -225,34 +226,3 @@ func readFileContent(dirPath string, relPath string) string {
 	return string(data)
 }
 
-// generateScenarioName creates a URL-friendly name from a title
-func generateScenarioName(title string) string {
-	name := ""
-	for _, c := range title {
-		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
-			name += string(c)
-		} else if c >= 'A' && c <= 'Z' {
-			name += string(c - 'A' + 'a')
-		} else if c == ' ' || c == '_' {
-			name += "-"
-		}
-	}
-	// Remove consecutive dashes
-	result := ""
-	prev := byte(0)
-	for i := 0; i < len(name); i++ {
-		if name[i] == '-' && prev == '-' {
-			continue
-		}
-		result += string(name[i])
-		prev = name[i]
-	}
-	// Trim leading/trailing dashes
-	for len(result) > 0 && result[0] == '-' {
-		result = result[1:]
-	}
-	for len(result) > 0 && result[len(result)-1] == '-' {
-		result = result[:len(result)-1]
-	}
-	return result
-}
