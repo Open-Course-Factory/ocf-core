@@ -17,6 +17,7 @@ type ScenarioSession struct {
 	Status            string     `gorm:"type:varchar(50);default:'active'" json:"status"` // active, completed, abandoned
 	StartedAt         time.Time  `gorm:"not null" json:"started_at"`
 	CompletedAt       *time.Time `json:"completed_at,omitempty"`
+	Grade             *float64   `gorm:"type:decimal(5,2)" json:"grade,omitempty"`
 
 	// Relations
 	StepProgress []ScenarioStepProgress `gorm:"foreignKey:SessionID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"step_progress,omitempty"`
