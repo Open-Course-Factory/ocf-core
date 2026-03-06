@@ -1,20 +1,29 @@
 package services
 
 import (
+	"context"
 	"fmt"
+	"sync"
 	"time"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
 	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/scenarios/models"
+	ttDto "soli/formations/src/terminalTrainer/dto"
+	ttServices "soli/formations/src/terminalTrainer/services"
+	"soli/formations/src/utils"
 )
 
 // GroupActivityItem represents an active session for a group member
 type GroupActivityItem struct {
 	SessionID         uuid.UUID `json:"session_id"`
 	UserID            string    `json:"user_id"`
+	UserName          string    `json:"user_name,omitempty"`
+	UserEmail         string    `json:"user_email,omitempty"`
 	ScenarioID        uuid.UUID `json:"scenario_id"`
 	ScenarioTitle     string    `json:"scenario_title"`
 	CurrentStep       int       `json:"current_step"`
@@ -26,14 +35,17 @@ type GroupActivityItem struct {
 
 // ScenarioResultItem represents a single session result for a scenario
 type ScenarioResultItem struct {
-	SessionID   uuid.UUID  `json:"session_id"`
-	UserID      string     `json:"user_id"`
-	Status      string     `json:"status"`
-	Grade       *float64   `json:"grade,omitempty"`
-	CurrentStep int        `json:"current_step"`
-	TotalSteps  int64      `json:"total_steps"`
-	StartedAt   time.Time  `json:"started_at"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	SessionID      uuid.UUID  `json:"session_id"`
+	UserID         string     `json:"user_id"`
+	UserName       string     `json:"user_name,omitempty"`
+	UserEmail      string     `json:"user_email,omitempty"`
+	Status         string     `json:"status"`
+	Grade          *float64   `json:"grade,omitempty"`
+	CurrentStep    int        `json:"current_step"`
+	TotalSteps     int64      `json:"total_steps"`
+	CompletedSteps int64      `json:"completed_steps"`
+	StartedAt      time.Time  `json:"started_at"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 }
 
 // ScenarioAnalytics represents aggregated analytics for a scenario within a group
@@ -45,14 +57,102 @@ type ScenarioAnalytics struct {
 	AvgCompletionTimeSecs *float64 `json:"avg_completion_time_seconds,omitempty"`
 }
 
+// fetchUserMap loads display name and email for a set of user IDs from Casdoor.
+// Returns a map[userID] → {name, email}. Errors are logged, not propagated.
+type userInfo struct {
+	Name  string
+	Email string
+}
+
+// userCache caches Casdoor user info to avoid N+1 HTTP calls.
+// Each entry expires after 5 minutes.
+var userCache sync.Map
+
+type cachedUser struct {
+	info      userInfo
+	expiresAt time.Time
+}
+
+func fetchUserMap(userIDs []string) map[string]userInfo {
+	m := make(map[string]userInfo, len(userIDs))
+	var misses []string
+	now := time.Now()
+
+	// Check cache first
+	for _, id := range userIDs {
+		if cached, ok := userCache.Load(id); ok {
+			if cu, ok := cached.(cachedUser); ok && now.Before(cu.expiresAt) {
+				m[id] = cu.info
+				continue
+			}
+		}
+		misses = append(misses, id)
+	}
+
+	// Fetch cache misses individually
+	for _, id := range misses {
+		user, err := casdoorsdk.GetUserByUserId(id)
+		if err != nil || user == nil {
+			utils.Debug("Failed to fetch user %s from Casdoor: %v", id, err)
+			continue
+		}
+		name := user.DisplayName
+		if name == "" {
+			name = user.Name
+		}
+		info := userInfo{Name: name, Email: user.Email}
+		m[id] = info
+		userCache.Store(id, cachedUser{info: info, expiresAt: now.Add(5 * time.Minute)})
+	}
+	return m
+}
+
+func enrichActivityUsers(items []GroupActivityItem) {
+	ids := make([]string, 0, len(items))
+	seen := make(map[string]bool)
+	for _, item := range items {
+		if !seen[item.UserID] {
+			ids = append(ids, item.UserID)
+			seen[item.UserID] = true
+		}
+	}
+	userMap := fetchUserMap(ids)
+	for i := range items {
+		if info, ok := userMap[items[i].UserID]; ok {
+			items[i].UserName = info.Name
+			items[i].UserEmail = info.Email
+		}
+	}
+}
+
+func enrichResultUsers(items []ScenarioResultItem) {
+	ids := make([]string, 0, len(items))
+	seen := make(map[string]bool)
+	for _, item := range items {
+		if !seen[item.UserID] {
+			ids = append(ids, item.UserID)
+			seen[item.UserID] = true
+		}
+	}
+	userMap := fetchUserMap(ids)
+	for i := range items {
+		if info, ok := userMap[items[i].UserID]; ok {
+			items[i].UserName = info.Name
+			items[i].UserEmail = info.Email
+		}
+	}
+}
+
 // TeacherDashboardService provides teacher-facing queries for group activity and scenario results
 type TeacherDashboardService struct {
-	db *gorm.DB
+	db              *gorm.DB
+	terminalService ttServices.TerminalTrainerService
+	sessionService  *ScenarioSessionService
 }
 
 // NewTeacherDashboardService creates a new teacher dashboard service
-func NewTeacherDashboardService(db *gorm.DB) *TeacherDashboardService {
-	return &TeacherDashboardService{db: db}
+func NewTeacherDashboardService(db *gorm.DB, terminalService ttServices.TerminalTrainerService, sessionService *ScenarioSessionService) *TeacherDashboardService {
+	return &TeacherDashboardService{db: db, terminalService: terminalService, sessionService: sessionService}
 }
 
 // GetGroupActivity returns active sessions for all members of a group (single JOIN query, no N+1)
@@ -74,6 +174,7 @@ func (s *TeacherDashboardService) GetGroupActivity(groupID uuid.UUID) ([]GroupAc
 	if results == nil {
 		results = []GroupActivityItem{}
 	}
+	enrichActivityUsers(results)
 	return results, nil
 }
 
@@ -82,7 +183,8 @@ func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UU
 	var results []ScenarioResultItem
 	err := s.db.Raw(`
 		SELECT ss.id as session_id, ss.user_id, ss.status, ss.grade, ss.started_at, ss.completed_at, ss.current_step,
-		       (SELECT COUNT(*) FROM scenario_steps WHERE scenario_id = ss.scenario_id) as total_steps
+		       (SELECT COUNT(*) FROM scenario_steps WHERE scenario_id = ss.scenario_id) as total_steps,
+		       (SELECT COUNT(*) FROM scenario_step_progress WHERE session_id = ss.id AND status = 'completed') as completed_steps
 		FROM scenario_sessions ss
 		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
 		WHERE ss.scenario_id = ?
@@ -94,6 +196,7 @@ func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UU
 	if results == nil {
 		results = []ScenarioResultItem{}
 	}
+	enrichResultUsers(results)
 	return results, nil
 }
 
@@ -147,8 +250,24 @@ func (s *TeacherDashboardService) GetScenarioAnalytics(groupID, scenarioID uuid.
 
 // BulkStartResult represents the result of a bulk start operation
 type BulkStartResult struct {
-	Created int `json:"created"`
-	Skipped int `json:"skipped"`
+	Created    int              `json:"created"`
+	Skipped    int              `json:"skipped"`
+	NoKey      int              `json:"no_key"`
+	NoKeyUsers []UserKeyMissing `json:"no_key_users,omitempty"`
+	Errors     []BulkStartError `json:"errors,omitempty"`
+}
+
+// UserKeyMissing identifies a user who doesn't have a terminal key
+type UserKeyMissing struct {
+	UserID    string `json:"user_id"`
+	UserName  string `json:"user_name,omitempty"`
+	UserEmail string `json:"user_email,omitempty"`
+}
+
+// BulkStartError represents an error for a specific user during bulk start
+type BulkStartError struct {
+	UserID string `json:"user_id"`
+	Error  string `json:"error"`
 }
 
 // CalculateGrade computes the grade for a session as percentage of completed steps
@@ -170,8 +289,11 @@ func (s *TeacherDashboardService) CalculateGrade(sessionID uuid.UUID) float64 {
 	return (float64(completedSteps) / float64(totalSteps)) * 100
 }
 
-// BulkStartScenario creates sessions for group members who don't already have an active one
-func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioID uuid.UUID) (*BulkStartResult, error) {
+// BulkStartScenario creates terminal sessions and scenario sessions for group members.
+// Auto-provisions terminal keys for members who don't have one.
+// If instanceType is empty, only creates scenario sessions (no terminals).
+// sessionDurationMinutes controls terminal session lifetime (default: 240 = 4 hours).
+func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioID uuid.UUID, instanceType, backend string, sessionDurationMinutes int) (*BulkStartResult, error) {
 	var members []groupModels.GroupMember
 	if err := s.db.Where("group_id = ? AND is_active = ?", groupID, true).Find(&members).Error; err != nil {
 		return nil, fmt.Errorf("failed to load group members: %w", err)
@@ -183,47 +305,248 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 		return nil, fmt.Errorf("scenario not found: %w", err)
 	}
 
-	result := &BulkStartResult{}
-
-	for _, member := range members {
-		// Check for existing active session
-		var existing models.ScenarioSession
-		err := s.db.Where("user_id = ? AND scenario_id = ? AND status IN ?",
-			member.UserID, scenarioID, []string{"active", "in_progress"}).First(&existing).Error
-		if err == nil {
-			result.Skipped++
-			continue
-		}
-
-		now := time.Now()
-		session := models.ScenarioSession{
-			ScenarioID: scenarioID,
-			UserID:     member.UserID,
-			Status:     "active",
-			StartedAt:  now,
-		}
-		if err := s.db.Create(&session).Error; err != nil {
-			return nil, fmt.Errorf("failed to create session for user %s: %w", member.UserID, err)
-		}
-
-		// Create step progress records
-		for _, step := range scenario.Steps {
-			status := "locked"
-			if step.Order == 0 {
-				status = "active"
-			}
-			progress := models.ScenarioStepProgress{
-				SessionID: session.ID,
-				StepOrder: step.Order,
-				Status:    status,
-			}
-			if err := s.db.Create(&progress).Error; err != nil {
-				return nil, fmt.Errorf("failed to create step progress: %w", err)
-			}
-		}
-
-		result.Created++
+	result := &BulkStartResult{
+		NoKeyUsers: make([]UserKeyMissing, 0),
+		Errors:     make([]BulkStartError, 0),
 	}
 
+	// Default session duration: 4 hours
+	if sessionDurationMinutes <= 0 {
+		sessionDurationMinutes = 240
+	}
+	sessionExpirySecs := sessionDurationMinutes * 60
+
+	// Fetch terms from tt-backend for session creation
+	var terms string
+	if instanceType != "" {
+		var termsErr error
+		terms, termsErr = s.terminalService.GetTerms()
+		if termsErr != nil {
+			return nil, fmt.Errorf("failed to fetch terminal terms: %w", termsErr)
+		}
+	}
+
+	var mu sync.Mutex
+	g, _ := errgroup.WithContext(context.Background())
+	g.SetLimit(10)
+
+	for _, member := range members {
+		member := member // capture range variable
+		g.Go(func() error {
+			utils.Debug("BulkStartScenario - Processing member %s (role=%s)", member.UserID, member.Role)
+
+			// Check for existing active session
+			var existing models.ScenarioSession
+			err := s.db.Where("user_id = ? AND scenario_id = ? AND status IN ?",
+				member.UserID, scenarioID, []string{"active", "in_progress"}).First(&existing).Error
+			if err == nil {
+				utils.Debug("BulkStartScenario - Member %s already has active session %s, skipping", member.UserID, existing.ID)
+				mu.Lock()
+				result.Skipped++
+				mu.Unlock()
+				return nil
+			}
+
+			// Auto-provision terminal key if missing
+			_, keyErr := s.terminalService.GetUserKey(member.UserID)
+			if keyErr != nil {
+				user, userErr := casdoorsdk.GetUserByUserId(member.UserID)
+				keyName := "auto-" + member.UserID
+				if userErr == nil && user != nil && user.Email != "" {
+					keyName = "auto-" + user.Email
+				}
+				if createErr := s.terminalService.CreateUserKey(member.UserID, keyName); createErr != nil {
+					// Cannot create key — skip and report
+					missing := UserKeyMissing{UserID: member.UserID}
+					if userErr == nil && user != nil {
+						missing.UserName = user.DisplayName
+						if missing.UserName == "" {
+							missing.UserName = user.Name
+						}
+						missing.UserEmail = user.Email
+					}
+					mu.Lock()
+					result.NoKey++
+					result.NoKeyUsers = append(result.NoKeyUsers, missing)
+					mu.Unlock()
+					return nil
+				}
+			}
+
+			// Create terminal session if instance type is provided
+			var terminalSessionID *string
+			if instanceType != "" {
+				utils.Debug("BulkStartScenario - Creating terminal for member %s (instanceType=%s)", member.UserID, instanceType)
+				sessionInput := ttDto.CreateTerminalSessionInput{
+					Terms:            terms,
+					InstanceType:     instanceType,
+					Backend:          backend,
+					Name:             fmt.Sprintf("scenario-%s", scenario.Title),
+					Expiry:           sessionExpirySecs,
+					RecordingConsent: 1,
+				}
+
+				terminalResp, termErr := s.terminalService.StartSession(member.UserID, sessionInput)
+				if termErr != nil {
+					utils.Warn("BulkStartScenario - Failed to create terminal for user %s: %v", member.UserID, termErr)
+					mu.Lock()
+					result.Errors = append(result.Errors, BulkStartError{
+						UserID: member.UserID,
+						Error:  termErr.Error(),
+					})
+					mu.Unlock()
+					return nil
+				}
+				utils.Debug("BulkStartScenario - Terminal created for member %s: sessionID=%s", member.UserID, terminalResp.SessionID)
+				terminalSessionID = &terminalResp.SessionID
+			} else {
+				utils.Debug("BulkStartScenario - No instanceType provided, skipping terminal creation for member %s", member.UserID)
+			}
+
+			// Use ScenarioSessionService.StartScenario to create session, step progress,
+			// generate flags, and deploy them to the container
+			termSessionID := ""
+			if terminalSessionID != nil {
+				termSessionID = *terminalSessionID
+			}
+
+			session, startErr := s.sessionService.StartScenario(member.UserID, scenarioID, termSessionID)
+			if startErr != nil {
+				utils.Warn("BulkStartScenario - Failed to start scenario for user %s: %v", member.UserID, startErr)
+				mu.Lock()
+				result.Errors = append(result.Errors, BulkStartError{
+					UserID: member.UserID,
+					Error:  startErr.Error(),
+				})
+				mu.Unlock()
+				return nil
+			}
+			utils.Debug("BulkStartScenario - ScenarioSession created for member %s: sessionID=%s terminalSessionID=%v", member.UserID, session.ID, terminalSessionID)
+
+			mu.Lock()
+			result.Created++
+			mu.Unlock()
+			return nil
+		})
+	}
+	g.Wait()
+
+	utils.Debug("BulkStartScenario - Complete: created=%d skipped=%d noKey=%d errors=%d",
+		result.Created, result.Skipped, result.NoKey, len(result.Errors))
+
 	return result, nil
+}
+
+// ResetGroupScenarioSessions abandons all active sessions for a group+scenario combination.
+// Used to clean up orphaned sessions (e.g., created without terminal keys).
+func (s *TeacherDashboardService) ResetGroupScenarioSessions(groupID uuid.UUID, scenarioID uuid.UUID) (int64, error) {
+	// Get active group member user IDs
+	var memberUserIDs []string
+	if err := s.db.Model(&groupModels.GroupMember{}).
+		Where("group_id = ? AND is_active = ?", groupID, true).
+		Pluck("user_id", &memberUserIDs).Error; err != nil {
+		return 0, fmt.Errorf("failed to load group members: %w", err)
+	}
+
+	if len(memberUserIDs) == 0 {
+		return 0, nil
+	}
+
+	// Abandon all active/in_progress sessions for these users on this scenario
+	result := s.db.Model(&models.ScenarioSession{}).
+		Where("user_id IN ? AND scenario_id = ? AND status IN ?",
+			memberUserIDs, scenarioID, []string{"active", "in_progress"}).
+		Updates(map[string]any{"status": "abandoned"})
+
+	if result.Error != nil {
+		return 0, fmt.Errorf("failed to reset sessions: %w", result.Error)
+	}
+
+	return result.RowsAffected, nil
+}
+
+// SessionStepDetail represents a single step's progress with its metadata
+type SessionStepDetail struct {
+	StepOrder        int        `json:"step_order"`
+	StepTitle        string     `json:"step_title"`
+	Status           string     `json:"status"`
+	VerifyAttempts   int        `json:"verify_attempts"`
+	CompletedAt      *time.Time `json:"completed_at,omitempty"`
+	TimeSpentSeconds int        `json:"time_spent_seconds"`
+}
+
+// SessionDetailResponse contains full session info with step-by-step progress
+type SessionDetailResponse struct {
+	SessionID         uuid.UUID          `json:"session_id"`
+	UserID            string             `json:"user_id"`
+	UserName          string             `json:"user_name,omitempty"`
+	UserEmail         string             `json:"user_email,omitempty"`
+	ScenarioID        uuid.UUID          `json:"scenario_id"`
+	ScenarioTitle     string             `json:"scenario_title"`
+	Status            string             `json:"status"`
+	Grade             *float64           `json:"grade,omitempty"`
+	StartedAt         time.Time          `json:"started_at"`
+	CompletedAt       *time.Time         `json:"completed_at,omitempty"`
+	TerminalSessionID *string            `json:"terminal_session_id,omitempty"`
+	Steps             []SessionStepDetail `json:"steps"`
+}
+
+// GetSessionDetail returns full session details with step-by-step progress for a specific session.
+// It verifies the session's user belongs to the specified group to prevent IDOR.
+func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID) (*SessionDetailResponse, error) {
+	var session models.ScenarioSession
+	if err := s.db.First(&session, "id = ?", sessionID).Error; err != nil {
+		return nil, fmt.Errorf("session not found: %w", err)
+	}
+
+	// Verify the session's user is a member of this group
+	var memberCount int64
+	s.db.Model(&groupModels.GroupMember{}).Where("group_id = ? AND user_id = ? AND is_active = true", groupID, session.UserID).Count(&memberCount)
+	if memberCount == 0 {
+		return nil, fmt.Errorf("session does not belong to this group")
+	}
+
+	var scenario models.Scenario
+	if err := s.db.First(&scenario, "id = ?", session.ScenarioID).Error; err != nil {
+		return nil, fmt.Errorf("scenario not found: %w", err)
+	}
+
+	// Get step-level progress joined with step metadata
+	var steps []SessionStepDetail
+	err := s.db.Raw(`
+		SELECT sp.step_order, ss.title as step_title, sp.status,
+		       sp.verify_attempts, sp.completed_at, sp.time_spent_seconds
+		FROM scenario_step_progress sp
+		JOIN scenario_steps ss ON ss.scenario_id = ? AND ss.order = sp.step_order
+		WHERE sp.session_id = ?
+		ORDER BY sp.step_order ASC
+	`, session.ScenarioID, sessionID).Scan(&steps).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to load step progress: %w", err)
+	}
+	if steps == nil {
+		steps = []SessionStepDetail{}
+	}
+
+	resp := &SessionDetailResponse{
+		SessionID:         session.ID,
+		UserID:            session.UserID,
+		ScenarioID:        session.ScenarioID,
+		ScenarioTitle:     scenario.Title,
+		Status:            session.Status,
+		Grade:             session.Grade,
+		StartedAt:         session.StartedAt,
+		CompletedAt:       session.CompletedAt,
+		TerminalSessionID: session.TerminalSessionID,
+		Steps:             steps,
+	}
+
+	// Enrich with user info
+	userMap := fetchUserMap([]string{session.UserID})
+	if info, ok := userMap[session.UserID]; ok {
+		resp.UserName = info.Name
+		resp.UserEmail = info.Email
+	}
+
+	return resp, nil
 }

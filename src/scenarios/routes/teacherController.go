@@ -10,12 +10,14 @@ import (
 
 	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/scenarios/services"
+	ttServices "soli/formations/src/terminalTrainer/services"
 )
 
 // TeacherController handles teacher-facing dashboard endpoints
 type TeacherController struct {
 	dashboardService *services.TeacherDashboardService
 	sessionService   *services.ScenarioSessionService
+	terminalService  ttServices.TerminalTrainerService
 	db               *gorm.DB
 }
 
@@ -23,9 +25,12 @@ type TeacherController struct {
 func NewTeacherController(db *gorm.DB) *TeacherController {
 	flagService := services.NewFlagService()
 	verificationService := services.NewVerificationService()
+	terminalService := ttServices.NewTerminalTrainerService(db)
+	sessionService := services.NewScenarioSessionService(db, flagService, verificationService)
 	return &TeacherController{
-		dashboardService: services.NewTeacherDashboardService(db),
-		sessionService:   services.NewScenarioSessionService(db, flagService, verificationService),
+		dashboardService: services.NewTeacherDashboardService(db, terminalService, sessionService),
+		sessionService:   sessionService,
+		terminalService:  terminalService,
 		db:               db,
 	}
 }
@@ -133,7 +138,43 @@ func (tc *TeacherController) GetScenarioAnalytics(c *gin.Context) {
 	c.JSON(http.StatusOK, analytics)
 }
 
-// BulkStartScenario starts a scenario for all active group members who don't already have an active session
+// GetSessionDetail returns step-by-step progress for a specific session within a group
+func (tc *TeacherController) GetSessionDetail(c *gin.Context) {
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group ID"})
+		return
+	}
+
+	sessionID, err := uuid.Parse(c.Param("sessionId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session ID"})
+		return
+	}
+
+	if !tc.validateTeacherAccess(c, groupID) {
+		return
+	}
+
+	detail, err := tc.dashboardService.GetSessionDetail(groupID, sessionID)
+	if err != nil {
+		slog.Error("failed to get session detail", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session detail"})
+		return
+	}
+
+	c.JSON(http.StatusOK, detail)
+}
+
+// BulkStartRequest is the request body for bulk starting a scenario
+type BulkStartRequest struct {
+	InstanceType           string `json:"instance_type"`
+	Backend                string `json:"backend,omitempty"`
+	SessionDurationMinutes int    `json:"session_duration_minutes,omitempty"`
+}
+
+// BulkStartScenario starts a scenario for all active group members who don't already have an active session.
+// Also creates terminal sessions for each student, auto-provisioning keys if needed.
 func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 	groupID, err := uuid.Parse(c.Param("groupId"))
 	if err != nil {
@@ -151,36 +192,49 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 		return
 	}
 
-	// Load active group members
-	var members []groupModels.GroupMember
-	if err := tc.db.Where("group_id = ? AND is_active = true", groupID).Find(&members).Error; err != nil {
-		slog.Error("failed to load group members", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load group members"})
-		return
-	}
-
-	started := 0
-	skipped := 0
-	failed := 0
-
-	for _, member := range members {
-		_, err := tc.sessionService.StartScenario(member.UserID, scenarioID, "")
-		if err != nil {
-			// If active session already exists, count as skipped
-			if err.Error() == "active session already exists for this scenario" {
-				skipped++
-			} else {
-				failed++
-				slog.Error("failed to start scenario for member", "userID", member.UserID, "err", err)
-			}
-		} else {
-			started++
+	var req BulkStartRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+			return
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"started": started,
-		"skipped": skipped,
-		"failed":  failed,
-	})
+	result, err := tc.dashboardService.BulkStartScenario(groupID, scenarioID, req.InstanceType, req.Backend, req.SessionDurationMinutes)
+	if err != nil {
+		slog.Error("failed to bulk start scenario", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// ResetGroupScenarioSessions abandons all active sessions for a group+scenario.
+// Used to clean up orphaned sessions (e.g., created before students had terminal keys).
+func (tc *TeacherController) ResetGroupScenarioSessions(c *gin.Context) {
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group ID"})
+		return
+	}
+
+	scenarioID, err := uuid.Parse(c.Param("scenarioId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario ID"})
+		return
+	}
+
+	if !tc.validateTeacherAccess(c, groupID) {
+		return
+	}
+
+	count, err := tc.dashboardService.ResetGroupScenarioSessions(groupID, scenarioID)
+	if err != nil {
+		slog.Error("failed to reset sessions", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"abandoned": count})
 }

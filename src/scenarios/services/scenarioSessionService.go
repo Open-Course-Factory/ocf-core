@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -115,6 +116,11 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		return nil, fmt.Errorf("failed to reload session: %w", err)
 	}
 
+	// Deploy flags to the container if terminal session is available
+	if session.TerminalSessionID != nil && s.verificationService != nil && len(session.Flags) > 0 {
+		s.deployFlagsToContainer(*session.TerminalSessionID, &scenario, session.Flags)
+	}
+
 	return session, nil
 }
 
@@ -149,12 +155,13 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 	}
 
 	return &dto.CurrentStepResponse{
-		StepOrder: currentStep.Order,
-		Title:     currentStep.Title,
-		Text:      currentStep.TextContent,
-		Hint:      currentStep.HintContent,
-		Status:    stepStatus,
-		HasFlag:   currentStep.HasFlag,
+		StepOrder:  currentStep.Order,
+		TotalSteps: len(session.Scenario.Steps),
+		Title:      currentStep.Title,
+		Text:       currentStep.TextContent,
+		Hint:       currentStep.HintContent,
+		Status:     stepStatus,
+		HasFlag:    currentStep.HasFlag,
 	}, nil
 }
 
@@ -181,6 +188,10 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	}
 	if currentStep == nil {
 		return nil, fmt.Errorf("current step (order=%d) not found", session.CurrentStep)
+	}
+
+	if currentStep.HasFlag {
+		return nil, fmt.Errorf("this step requires a flag submission, not verification")
 	}
 
 	// Run verification
@@ -292,7 +303,9 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 // SubmitFlag validates a flag submission for the current step.
 func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag string) (*dto.SubmitFlagResponse, error) {
 	var session models.ScenarioSession
-	if err := s.db.Preload("Flags").First(&session, "id = ?", sessionID).Error; err != nil {
+	if err := s.db.Preload("Scenario.Steps", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).Preload("StepProgress").Preload("Flags").First(&session, "id = ?", sessionID).Error; err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
 
@@ -316,31 +329,190 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 		"submitted_flag": submittedFlag,
 		"submitted_at":   now,
 		"is_correct":     isCorrect,
+		"flag_attempts":  gorm.Expr("flag_attempts + 1"),
 	})
 
-	message := "Incorrect flag"
-	if isCorrect {
-		message = "Correct flag"
+	response := &dto.SubmitFlagResponse{
+		Correct: isCorrect,
+		Message: "Incorrect flag",
 	}
 
-	return &dto.SubmitFlagResponse{
-		Correct: isCorrect,
-		Message: message,
-	}, nil
+	if isCorrect {
+		response.Message = "Correct flag"
+
+		// Advance step — same logic as VerifyCurrentStep's "passed" branch
+		txErr := s.db.Transaction(func(tx *gorm.DB) error {
+			// Calculate time spent on this step and mark as completed
+			var stepProgress models.ScenarioStepProgress
+			if err := tx.Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).First(&stepProgress).Error; err == nil {
+				timeSpent := int(now.Sub(stepProgress.CreatedAt).Seconds())
+				if err := tx.Model(&models.ScenarioStepProgress{}).
+					Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
+					Updates(map[string]any{
+						"status":             "completed",
+						"completed_at":       now,
+						"time_spent_seconds": timeSpent,
+					}).Error; err != nil {
+					return fmt.Errorf("failed to mark step completed: %w", err)
+				}
+			} else {
+				if err := tx.Model(&models.ScenarioStepProgress{}).
+					Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
+					Updates(map[string]any{
+						"status":       "completed",
+						"completed_at": now,
+					}).Error; err != nil {
+					return fmt.Errorf("failed to mark step completed: %w", err)
+				}
+			}
+
+			// Check if this was the last step
+			isLastStep := true
+			nextStepOrder := -1
+			for _, step := range session.Scenario.Steps {
+				if step.Order > session.CurrentStep {
+					isLastStep = false
+					if nextStepOrder == -1 || step.Order < nextStepOrder {
+						nextStepOrder = step.Order
+					}
+				}
+			}
+
+			if isLastStep {
+				// Calculate grade
+				completedSteps := 0
+				for _, sp := range session.StepProgress {
+					if sp.Status == "completed" {
+						completedSteps++
+					}
+				}
+				completedSteps++ // current step being completed now
+				totalSteps := len(session.Scenario.Steps)
+				grade := float64(completedSteps) / float64(totalSteps) * 100.0
+
+				if err := tx.Model(&session).Updates(map[string]any{
+					"status":       "completed",
+					"completed_at": now,
+					"grade":        grade,
+				}).Error; err != nil {
+					return fmt.Errorf("failed to mark session completed: %w", err)
+				}
+			} else {
+				// Advance to next step
+				if err := tx.Model(&session).Update("current_step", nextStepOrder).Error; err != nil {
+					return fmt.Errorf("failed to advance step: %w", err)
+				}
+
+				// Unlock next step
+				if err := tx.Model(&models.ScenarioStepProgress{}).
+					Where("session_id = ? AND step_order = ?", session.ID, nextStepOrder).
+					Update("status", "active").Error; err != nil {
+					return fmt.Errorf("failed to unlock next step: %w", err)
+				}
+
+				response.NextStep = &nextStepOrder
+			}
+
+			return nil
+		})
+		if txErr != nil {
+			return nil, txErr
+		}
+	}
+
+	return response, nil
 }
 
-// AbandonSession marks a session as abandoned.
+// GetMySessions returns all scenario sessions for the authenticated user.
+func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionResponse, error) {
+	var sessions []models.ScenarioSession
+	if err := s.db.Preload("Scenario", func(db *gorm.DB) *gorm.DB {
+		return db.Select("id, title")
+	}).Preload("StepProgress").
+		Where("user_id = ?", userID).
+		Order("started_at DESC").
+		Find(&sessions).Error; err != nil {
+		return nil, fmt.Errorf("failed to fetch sessions: %w", err)
+	}
+
+	result := make([]dto.MySessionResponse, 0, len(sessions))
+	for _, session := range sessions {
+		totalSteps := len(session.StepProgress)
+		completedSteps := 0
+		for _, sp := range session.StepProgress {
+			if sp.Status == "completed" {
+				completedSteps++
+			}
+		}
+
+		resp := dto.MySessionResponse{
+			ID:                session.ID,
+			ScenarioID:        session.ScenarioID,
+			ScenarioTitle:     session.Scenario.Title,
+			Status:            session.Status,
+			Grade:             session.Grade,
+			CurrentStep:       session.CurrentStep,
+			TotalSteps:        totalSteps,
+			CompletedSteps:    completedSteps,
+			StartedAt:         session.StartedAt,
+			CompletedAt:       session.CompletedAt,
+			TerminalSessionID: session.TerminalSessionID,
+		}
+		result = append(result, resp)
+	}
+	return result, nil
+}
+
+// AbandonSession marks a session as abandoned. Only active sessions can be abandoned.
 func (s *ScenarioSessionService) AbandonSession(sessionID uuid.UUID) error {
 	result := s.db.Model(&models.ScenarioSession{}).
-		Where("id = ?", sessionID).
+		Where("id = ? AND status = ?", sessionID, "active").
 		Update("status", "abandoned")
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to abandon session: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("session not found")
+		return fmt.Errorf("session not found or not active")
 	}
 
 	return nil
+}
+
+// deployFlagsToContainer pushes generated flag files into the student's container.
+// Each flag is written to the step's FlagPath (or a default path if none is set).
+// Errors are logged but don't fail the session — the flag simply won't be findable.
+func (s *ScenarioSessionService) deployFlagsToContainer(terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag) {
+	// Build a map of step order → step for quick lookup
+	stepByOrder := make(map[int]*models.ScenarioStep)
+	for i := range scenario.Steps {
+		stepByOrder[scenario.Steps[i].Order] = &scenario.Steps[i]
+	}
+
+	for _, flag := range flags {
+		step, ok := stepByOrder[flag.StepOrder]
+		if !ok {
+			continue
+		}
+
+		// Determine the target path for the flag file
+		flagPath := step.FlagPath
+		if flagPath == "" {
+			flagPath = fmt.Sprintf("/tmp/.flag_step_%d", flag.StepOrder)
+		}
+
+		// Validate flag path - prevent path traversal
+		if strings.Contains(flagPath, "..") {
+			fmt.Printf("[WARN] Skipping flag for step %d: path contains '..': %s\n", flag.StepOrder, flagPath)
+			continue
+		}
+		if !strings.HasPrefix(flagPath, "/tmp/") && !strings.HasPrefix(flagPath, "/home/") {
+			flagPath = fmt.Sprintf("/tmp/.flag_step_%d", flag.StepOrder)
+		}
+
+		// Push the flag file to the container
+		if err := s.verificationService.PushFile(terminalSessionID, flagPath, flag.ExpectedFlag, "0644"); err != nil {
+			fmt.Printf("[WARN] Failed to deploy flag for step %d to %s: %v\n", flag.StepOrder, flagPath, err)
+		}
+	}
 }
