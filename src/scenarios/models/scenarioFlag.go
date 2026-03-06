@@ -16,6 +16,7 @@ type ScenarioFlag struct {
 	SubmittedFlag *string    `gorm:"type:varchar(500)" json:"submitted_flag,omitempty"`
 	SubmittedAt   *time.Time `json:"submitted_at,omitempty"`
 	IsCorrect     bool       `gorm:"default:false" json:"is_correct"`
+	FlagAttempts  int        `gorm:"default:0" json:"flag_attempts"`
 }
 
 // Implement interfaces for entity management system
