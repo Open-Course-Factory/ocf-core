@@ -330,6 +330,15 @@ func (sc *scenarioController) GetSessionByTerminal(ctx *gin.Context) {
 		return
 	}
 
+	userID := ctx.GetString("userId")
+	if session.UserID != userID {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "You do not own this session",
+		})
+		return
+	}
+
 	ctx.JSON(http.StatusOK, gin.H{
 		"id":                  session.ID,
 		"scenario_id":         session.ScenarioID,
@@ -359,6 +368,32 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	// Check admin role
+	userRoles, exists := ctx.Get("userRoles")
+	if !exists {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Access denied",
+		})
+		return
+	}
+	isAdmin := false
+	if roles, ok := userRoles.([]string); ok {
+		for _, role := range roles {
+			if role == "admin" || role == "administrator" {
+				isAdmin = true
+				break
+			}
+		}
+	}
+	if !isAdmin {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Admin access required",
 		})
 		return
 	}
@@ -421,7 +456,44 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, scenario)
+	output := dto.ScenarioOutput{
+		ID:             scenario.ID,
+		Name:           scenario.Name,
+		Title:          scenario.Title,
+		Description:    scenario.Description,
+		Difficulty:     scenario.Difficulty,
+		EstimatedTime:  scenario.EstimatedTime,
+		InstanceType:   scenario.InstanceType,
+		SourceType:     scenario.SourceType,
+		FlagsEnabled:   scenario.FlagsEnabled,
+		GshEnabled:     scenario.GshEnabled,
+		CrashTraps:     scenario.CrashTraps,
+		IntroText:      scenario.IntroText,
+		FinishText:     scenario.FinishText,
+		CreatedByID:    scenario.CreatedByID,
+		OrganizationID: scenario.OrganizationID,
+		CreatedAt:      scenario.CreatedAt,
+		UpdatedAt:      scenario.UpdatedAt,
+	}
+	if len(scenario.Steps) > 0 {
+		steps := make([]dto.ScenarioStepOutput, 0, len(scenario.Steps))
+		for _, step := range scenario.Steps {
+			steps = append(steps, dto.ScenarioStepOutput{
+				ID:          step.ID,
+				ScenarioID:  step.ScenarioID,
+				Order:       step.Order,
+				Title:       step.Title,
+				TextContent: step.TextContent,
+				HintContent: step.HintContent,
+				HasFlag:     step.HasFlag,
+				FlagLevel:   step.FlagLevel,
+				CreatedAt:   step.CreatedAt,
+				UpdatedAt:   step.UpdatedAt,
+			})
+		}
+		output.Steps = steps
+	}
+	ctx.JSON(http.StatusCreated, output)
 }
 
 // generateSlug creates a URL-friendly name from a title
