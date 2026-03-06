@@ -27,6 +27,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		&models.ScenarioSession{},
 		&models.ScenarioStepProgress{},
 		&models.ScenarioFlag{},
+		&models.ScenarioAssignment{},
 		&terminalModels.Terminal{},
 		&terminalModels.UserTerminalKey{},
 	)
