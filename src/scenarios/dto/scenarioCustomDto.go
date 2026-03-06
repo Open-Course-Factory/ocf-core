@@ -1,5 +1,23 @@
 package dto
 
+import "time"
+
+// SessionResponse - DTO for scenario session information
+type SessionResponse struct {
+	ID                string    `json:"id"`
+	ScenarioID        string    `json:"scenario_id"`
+	UserID            string    `json:"user_id"`
+	TerminalSessionID string    `json:"terminal_session_id"`
+	CurrentStep       int       `json:"current_step"`
+	Status            string    `json:"status"`
+	StartedAt         time.Time `json:"started_at"`
+}
+
+// MessageResponse - DTO for simple message responses
+type MessageResponse struct {
+	Message string `json:"message"`
+}
+
 // ImportScenarioInput - DTO for importing a scenario from a git repository
 type ImportScenarioInput struct {
 	GitRepository string `json:"git_repository" binding:"required"`

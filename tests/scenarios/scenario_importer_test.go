@@ -13,6 +13,7 @@ import (
 
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 )
 
 func setupTestDB(t *testing.T) *gorm.DB {
@@ -26,6 +27,8 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		&models.ScenarioSession{},
 		&models.ScenarioStepProgress{},
 		&models.ScenarioFlag{},
+		&terminalModels.Terminal{},
+		&terminalModels.UserTerminalKey{},
 	)
 	require.NoError(t, err)
 
