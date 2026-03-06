@@ -10,6 +10,7 @@ type SessionResponse struct {
 	TerminalSessionID string    `json:"terminal_session_id"`
 	CurrentStep       int       `json:"current_step"`
 	Status            string    `json:"status"`
+	Grade             *float64  `json:"grade,omitempty"`
 	StartedAt         time.Time `json:"started_at"`
 }
 

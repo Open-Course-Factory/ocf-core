@@ -244,10 +244,22 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 			}
 
 			if isLastStep {
-				// Mark session as completed
+				// Calculate grade: percentage of completed steps
+				completedSteps := 0
+				for _, sp := range session.StepProgress {
+					if sp.Status == "completed" {
+						completedSteps++
+					}
+				}
+				completedSteps++ // current step being completed now
+				totalSteps := len(session.Scenario.Steps)
+				grade := float64(completedSteps) / float64(totalSteps) * 100.0
+
+				// Mark session as completed with grade
 				if err := tx.Model(&session).Updates(map[string]any{
 					"status":       "completed",
 					"completed_at": now,
+					"grade":        grade,
 				}).Error; err != nil {
 					return fmt.Errorf("failed to mark session completed: %w", err)
 				}

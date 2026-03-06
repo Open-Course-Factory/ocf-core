@@ -11,6 +11,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
@@ -28,6 +29,8 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		&models.ScenarioStepProgress{},
 		&models.ScenarioFlag{},
 		&models.ScenarioAssignment{},
+		&groupModels.ClassGroup{},
+		&groupModels.GroupMember{},
 		&terminalModels.Terminal{},
 		&terminalModels.UserTerminalKey{},
 	)

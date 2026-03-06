@@ -29,4 +29,12 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	sessionRoutes.POST("/:id/verify", middleware.AuthManagement(), rateLimiter, controller.VerifyStep)
 	sessionRoutes.POST("/:id/submit-flag", middleware.AuthManagement(), rateLimiter, controller.SubmitFlag)
 	sessionRoutes.POST("/:id/abandon", middleware.AuthManagement(), controller.AbandonSession)
+
+	// Teacher dashboard routes
+	teacherCtrl := NewTeacherController(db)
+	teacherRoutes := router.Group("/teacher")
+	teacherRoutes.GET("/groups/:groupId/activity", middleware.AuthManagement(), teacherCtrl.GetGroupActivity)
+	teacherRoutes.GET("/groups/:groupId/scenarios/:scenarioId/results", middleware.AuthManagement(), teacherCtrl.GetScenarioResults)
+	teacherRoutes.GET("/groups/:groupId/scenarios/:scenarioId/analytics", middleware.AuthManagement(), teacherCtrl.GetScenarioAnalytics)
+	teacherRoutes.POST("/groups/:groupId/scenarios/:scenarioId/bulk-start", middleware.AuthManagement(), teacherCtrl.BulkStartScenario)
 }
