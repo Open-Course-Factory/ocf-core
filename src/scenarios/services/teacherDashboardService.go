@@ -518,7 +518,7 @@ func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID)
 		SELECT sp.step_order, ss.title as step_title, sp.status,
 		       sp.verify_attempts, sp.completed_at, sp.time_spent_seconds
 		FROM scenario_step_progress sp
-		JOIN scenario_steps ss ON ss.scenario_id = ? AND ss.order = sp.step_order AND ss.deleted_at IS NULL
+		JOIN scenario_steps ss ON ss.scenario_id = ? AND ss."order" = sp.step_order AND ss.deleted_at IS NULL
 		WHERE sp.session_id = ?
 		ORDER BY sp.step_order ASC
 	`, session.ScenarioID, sessionID).Scan(&steps).Error
