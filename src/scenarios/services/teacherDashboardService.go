@@ -161,7 +161,7 @@ func (s *TeacherDashboardService) GetGroupActivity(groupID uuid.UUID) ([]GroupAc
 	err := s.db.Raw(`
 		SELECT ss.id as session_id, ss.user_id, ss.current_step, ss.status, ss.started_at, ss.terminal_session_id,
 		       sc.title as scenario_title, sc.id as scenario_id,
-		       (SELECT COUNT(*) FROM scenario_steps WHERE scenario_id = sc.id) as total_steps
+		       (SELECT COUNT(*) FROM scenario_steps WHERE scenario_id = sc.id AND deleted_at IS NULL) as total_steps
 		FROM scenario_sessions ss
 		JOIN scenarios sc ON sc.id = ss.scenario_id
 		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
@@ -183,7 +183,7 @@ func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UU
 	var results []ScenarioResultItem
 	err := s.db.Raw(`
 		SELECT ss.id as session_id, ss.user_id, ss.status, ss.grade, ss.started_at, ss.completed_at, ss.current_step,
-		       (SELECT COUNT(*) FROM scenario_steps WHERE scenario_id = ss.scenario_id) as total_steps,
+		       (SELECT COUNT(*) FROM scenario_steps WHERE scenario_id = ss.scenario_id AND deleted_at IS NULL) as total_steps,
 		       (SELECT COUNT(*) FROM scenario_step_progress WHERE session_id = ss.id AND status = 'completed') as completed_steps
 		FROM scenario_sessions ss
 		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
@@ -383,7 +383,8 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 					Backend:          backend,
 					Name:             fmt.Sprintf("scenario-%s", scenario.Title),
 					Expiry:           sessionExpirySecs,
-					RecordingConsent: 1,
+					RecordingConsent:     1,
+					HistoryRetentionDays: 30,
 				}
 
 				terminalResp, termErr := s.terminalService.StartSession(member.UserID, sessionInput)
@@ -517,7 +518,7 @@ func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID)
 		SELECT sp.step_order, ss.title as step_title, sp.status,
 		       sp.verify_attempts, sp.completed_at, sp.time_spent_seconds
 		FROM scenario_step_progress sp
-		JOIN scenario_steps ss ON ss.scenario_id = ? AND ss.order = sp.step_order
+		JOIN scenario_steps ss ON ss.scenario_id = ? AND ss.order = sp.step_order AND ss.deleted_at IS NULL
 		WHERE sp.session_id = ?
 		ORDER BY sp.step_order ASC
 	`, session.ScenarioID, sessionID).Scan(&steps).Error
