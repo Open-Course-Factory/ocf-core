@@ -121,6 +121,11 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		s.deployFlagsToContainer(*session.TerminalSessionID, &scenario, session.Flags)
 	}
 
+	// Execute background script for the first step
+	if session.TerminalSessionID != nil && s.verificationService != nil && len(scenario.Steps) > 0 {
+		s.executeBackgroundScript(*session.TerminalSessionID, &scenario.Steps[0])
+	}
+
 	return session, nil
 }
 
@@ -297,6 +302,16 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 		return nil, txErr
 	}
 
+	// Execute background script for the next step (after successful DB transaction)
+	if response.Passed && response.NextStep != nil && session.TerminalSessionID != nil {
+		for i := range session.Scenario.Steps {
+			if session.Scenario.Steps[i].Order == *response.NextStep {
+				s.executeBackgroundScript(*session.TerminalSessionID, &session.Scenario.Steps[i])
+				break
+			}
+		}
+	}
+
 	return response, nil
 }
 
@@ -418,6 +433,16 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 		if txErr != nil {
 			return nil, txErr
 		}
+
+		// Execute background script for the next step
+		if response.NextStep != nil && session.TerminalSessionID != nil {
+			for i := range session.Scenario.Steps {
+				if session.Scenario.Steps[i].Order == *response.NextStep {
+					s.executeBackgroundScript(*session.TerminalSessionID, &session.Scenario.Steps[i])
+					break
+				}
+			}
+		}
 	}
 
 	return response, nil
@@ -514,5 +539,30 @@ func (s *ScenarioSessionService) deployFlagsToContainer(terminalSessionID string
 		if err := s.verificationService.PushFile(terminalSessionID, flagPath, flag.ExpectedFlag, "0644"); err != nil {
 			fmt.Printf("[WARN] Failed to deploy flag for step %d to %s: %v\n", flag.StepOrder, flagPath, err)
 		}
+	}
+}
+
+// executeBackgroundScript runs a step's background script in the student's container.
+// This is best-effort: errors are logged but don't fail the step transition,
+// following the same pattern as deployFlagsToContainer.
+func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID string, step *models.ScenarioStep) {
+	if step.BackgroundScript == "" {
+		return
+	}
+	if s.verificationService == nil {
+		return
+	}
+
+	exitCode, _, stderr, err := s.verificationService.ExecInContainer(
+		terminalSessionID,
+		[]string{"/bin/sh", "-c", step.BackgroundScript},
+		30,
+	)
+	if err != nil {
+		fmt.Printf("[WARN] Background script for step %d failed to execute: %v\n", step.Order, err)
+		return
+	}
+	if exitCode != 0 {
+		fmt.Printf("[WARN] Background script for step %d exited with code %d: %s\n", step.Order, exitCode, stderr)
 	}
 }

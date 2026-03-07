@@ -42,10 +42,18 @@ func (m *mockFlagService) ValidateFlag(expected string, submitted string) bool {
 	return m.validateRes
 }
 
+type execCall struct {
+	sessionID string
+	command   []string
+	timeout   int
+}
+
 type mockVerificationService struct {
-	passed bool
-	output string
-	err    error
+	passed    bool
+	output    string
+	err       error
+	execCalls []execCall
+	execErr   error
 }
 
 func (m *mockVerificationService) VerifyStep(terminalSessionID string, step *models.ScenarioStep) (bool, string, error) {
@@ -57,6 +65,10 @@ func (m *mockVerificationService) PushFile(sessionID string, targetPath string, 
 }
 
 func (m *mockVerificationService) ExecInContainer(sessionID string, command []string, timeout int) (int, string, string, error) {
+	m.execCalls = append(m.execCalls, execCall{sessionID, command, timeout})
+	if m.execErr != nil {
+		return -1, "", "", m.execErr
+	}
 	return 0, "", "", nil
 }
 
@@ -560,4 +572,262 @@ func TestScenarioSessionService_ResponseTypes(t *testing.T) {
 	var _ *dto.CurrentStepResponse
 	var _ *dto.VerifyStepResponse
 	var _ *dto.SubmitFlagResponse
+}
+
+func TestScenarioSessionService_StartScenario_ExecutesBackgroundScript(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "bg-script-start",
+		Title:        "BG Script Start",
+		InstanceType: "ubuntu:22.04",
+		FlagsEnabled: false,
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID:       scenario.ID,
+		Order:            0,
+		Title:            "Step 1",
+		BackgroundScript: "echo setup",
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	verifySvc := &mockVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal")
+
+	require.NoError(t, err)
+	require.NotNil(t, session)
+	require.Len(t, verifySvc.execCalls, 1)
+	assert.Equal(t, "test-terminal", verifySvc.execCalls[0].sessionID)
+	assert.Equal(t, []string{"/bin/sh", "-c", "echo setup"}, verifySvc.execCalls[0].command)
+	assert.Equal(t, 30, verifySvc.execCalls[0].timeout)
+}
+
+func TestScenarioSessionService_StartScenario_SkipsEmptyBackgroundScript(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "bg-script-empty",
+		Title:        "BG Script Empty",
+		InstanceType: "ubuntu:22.04",
+		FlagsEnabled: false,
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID:       scenario.ID,
+		Order:            0,
+		Title:            "Step 1",
+		BackgroundScript: "",
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	verifySvc := &mockVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal")
+
+	require.NoError(t, err)
+	require.NotNil(t, session)
+	assert.Len(t, verifySvc.execCalls, 0)
+}
+
+func TestScenarioSessionService_VerifyAndAdvance_ExecutesNextBackgroundScript(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "bg-script-advance",
+		Title:        "BG Script Advance",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step0 := models.ScenarioStep{
+		ScenarioID:   scenario.ID,
+		Order:        0,
+		Title:        "Step 1",
+		VerifyScript: "#!/bin/bash\ntrue",
+	}
+	step1 := models.ScenarioStep{
+		ScenarioID:       scenario.ID,
+		Order:            1,
+		Title:            "Step 2",
+		BackgroundScript: "echo step1-init",
+	}
+	require.NoError(t, db.Create(&step0).Error)
+	require.NoError(t, db.Create(&step1).Error)
+
+	terminalID := "terminal-bg-advance"
+	session := models.ScenarioSession{
+		ScenarioID:        scenario.ID,
+		UserID:            "student-1",
+		CurrentStep:       0,
+		Status:            "active",
+		StartedAt:         time.Now(),
+		TerminalSessionID: &terminalID,
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	sp0 := models.ScenarioStepProgress{SessionID: session.ID, StepOrder: 0, Status: "active"}
+	sp1 := models.ScenarioStepProgress{SessionID: session.ID, StepOrder: 1, Status: "locked"}
+	require.NoError(t, db.Create(&sp0).Error)
+	require.NoError(t, db.Create(&sp1).Error)
+
+	verifySvc := &mockVerificationService{passed: true, output: "OK"}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	result, err := sessionSvc.VerifyCurrentStep(session.ID)
+
+	require.NoError(t, err)
+	assert.True(t, result.Passed)
+	require.NotNil(t, result.NextStep)
+	assert.Equal(t, 1, *result.NextStep)
+	require.True(t, len(verifySvc.execCalls) >= 1)
+	assert.Equal(t, []string{"/bin/sh", "-c", "echo step1-init"}, verifySvc.execCalls[len(verifySvc.execCalls)-1].command)
+	assert.Equal(t, 30, verifySvc.execCalls[len(verifySvc.execCalls)-1].timeout)
+}
+
+func TestScenarioSessionService_VerifyLastStep_NoBackgroundExec(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "bg-script-last",
+		Title:        "BG Script Last",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID:   scenario.ID,
+		Order:        0,
+		Title:        "Only Step",
+		VerifyScript: "#!/bin/bash\ntrue",
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	terminalID := "terminal-bg-last"
+	session := models.ScenarioSession{
+		ScenarioID:        scenario.ID,
+		UserID:            "student-1",
+		CurrentStep:       0,
+		Status:            "active",
+		StartedAt:         time.Now(),
+		TerminalSessionID: &terminalID,
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	sp := models.ScenarioStepProgress{SessionID: session.ID, StepOrder: 0, Status: "active"}
+	require.NoError(t, db.Create(&sp).Error)
+
+	verifySvc := &mockVerificationService{passed: true, output: "Done"}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	result, err := sessionSvc.VerifyCurrentStep(session.ID)
+
+	require.NoError(t, err)
+	assert.True(t, result.Passed)
+	assert.Nil(t, result.NextStep)
+	assert.Len(t, verifySvc.execCalls, 0)
+}
+
+func TestScenarioSessionService_SubmitFlag_AdvanceExecutesBackgroundScript(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "bg-script-flag",
+		Title:        "BG Script Flag",
+		InstanceType: "ubuntu:22.04",
+		FlagsEnabled: true,
+		FlagSecret:   "secret",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step0 := models.ScenarioStep{
+		ScenarioID: scenario.ID,
+		Order:      0,
+		Title:      "Step 1",
+		HasFlag:    true,
+	}
+	step1 := models.ScenarioStep{
+		ScenarioID:       scenario.ID,
+		Order:            1,
+		Title:            "Step 2",
+		BackgroundScript: "echo flag-advance",
+	}
+	require.NoError(t, db.Create(&step0).Error)
+	require.NoError(t, db.Create(&step1).Error)
+
+	terminalID := "terminal-bg-flag"
+	session := models.ScenarioSession{
+		ScenarioID:        scenario.ID,
+		UserID:            "student-1",
+		CurrentStep:       0,
+		Status:            "active",
+		StartedAt:         time.Now(),
+		TerminalSessionID: &terminalID,
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	sp0 := models.ScenarioStepProgress{SessionID: session.ID, StepOrder: 0, Status: "active"}
+	sp1 := models.ScenarioStepProgress{SessionID: session.ID, StepOrder: 1, Status: "locked"}
+	require.NoError(t, db.Create(&sp0).Error)
+	require.NoError(t, db.Create(&sp1).Error)
+
+	flag := models.ScenarioFlag{
+		SessionID:    session.ID,
+		StepOrder:    0,
+		ExpectedFlag: "flag{correct}",
+	}
+	require.NoError(t, db.Create(&flag).Error)
+
+	flagSvc := &mockFlagService{validateRes: true}
+	verifySvc := &mockVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
+
+	result, err := sessionSvc.SubmitFlag(session.ID, "flag{test}")
+
+	require.NoError(t, err)
+	assert.True(t, result.Correct)
+	require.NotNil(t, result.NextStep)
+	assert.Equal(t, 1, *result.NextStep)
+	require.True(t, len(verifySvc.execCalls) >= 1)
+	assert.Equal(t, []string{"/bin/sh", "-c", "echo flag-advance"}, verifySvc.execCalls[len(verifySvc.execCalls)-1].command)
+}
+
+func TestScenarioSessionService_BackgroundScript_Error_DoesNotFailStart(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "bg-script-error",
+		Title:        "BG Script Error",
+		InstanceType: "ubuntu:22.04",
+		FlagsEnabled: false,
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID:       scenario.ID,
+		Order:            0,
+		Title:            "Step 1",
+		BackgroundScript: "echo fail",
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	verifySvc := &mockVerificationService{execErr: fmt.Errorf("container unavailable")}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal")
+
+	require.NoError(t, err)
+	require.NotNil(t, session)
+	assert.Equal(t, "active", session.Status)
 }
