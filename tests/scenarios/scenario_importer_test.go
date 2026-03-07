@@ -20,6 +20,8 @@ import (
 func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, err)
 
 	err = db.AutoMigrate(
