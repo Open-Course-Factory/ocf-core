@@ -221,79 +221,11 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 
 		if passed {
 			now := time.Now()
-
-			// Calculate time spent on this step and mark as completed
-			var stepProgress models.ScenarioStepProgress
-			if err := tx.Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).First(&stepProgress).Error; err == nil {
-				timeSpent := int(now.Sub(stepProgress.CreatedAt).Seconds())
-				if err := tx.Model(&models.ScenarioStepProgress{}).
-					Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
-					Updates(map[string]any{
-						"status":             "completed",
-						"completed_at":       now,
-						"time_spent_seconds": timeSpent,
-					}).Error; err != nil {
-					return fmt.Errorf("failed to mark step completed: %w", err)
-				}
-			} else {
-				// Fallback: update without time calculation
-				if err := tx.Model(&models.ScenarioStepProgress{}).
-					Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
-					Updates(map[string]any{
-						"status":       "completed",
-						"completed_at": now,
-					}).Error; err != nil {
-					return fmt.Errorf("failed to mark step completed: %w", err)
-				}
+			nextStep, err := s.advanceToNextStep(tx, &session, now)
+			if err != nil {
+				return err
 			}
-
-			// Check if this was the last step
-			isLastStep := true
-			nextStepOrder := -1
-			for _, step := range session.Scenario.Steps {
-				if step.Order > session.CurrentStep {
-					isLastStep = false
-					if nextStepOrder == -1 || step.Order < nextStepOrder {
-						nextStepOrder = step.Order
-					}
-				}
-			}
-
-			if isLastStep {
-				// Calculate grade: percentage of completed steps
-				completedSteps := 0
-				for _, sp := range session.StepProgress {
-					if sp.Status == "completed" {
-						completedSteps++
-					}
-				}
-				completedSteps++ // current step being completed now
-				totalSteps := len(session.Scenario.Steps)
-				grade := float64(completedSteps) / float64(totalSteps) * 100.0
-
-				// Mark session as completed with grade
-				if err := tx.Model(&session).Updates(map[string]any{
-					"status":       "completed",
-					"completed_at": now,
-					"grade":        grade,
-				}).Error; err != nil {
-					return fmt.Errorf("failed to mark session completed: %w", err)
-				}
-			} else {
-				// Advance to next step
-				if err := tx.Model(&session).Update("current_step", nextStepOrder).Error; err != nil {
-					return fmt.Errorf("failed to advance step: %w", err)
-				}
-
-				// Unlock next step
-				if err := tx.Model(&models.ScenarioStepProgress{}).
-					Where("session_id = ? AND step_order = ?", session.ID, nextStepOrder).
-					Update("status", "active").Error; err != nil {
-					return fmt.Errorf("failed to unlock next step: %w", err)
-				}
-
-				response.NextStep = &nextStepOrder
-			}
+			response.NextStep = nextStep
 		}
 
 		return nil
@@ -373,76 +305,11 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 			return fmt.Errorf("failed to update flag: %w", err)
 		}
 
-		// Calculate time spent on this step and mark as completed
-		var stepProgress models.ScenarioStepProgress
-		if err := tx.Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).First(&stepProgress).Error; err == nil {
-			timeSpent := int(now.Sub(stepProgress.CreatedAt).Seconds())
-			if err := tx.Model(&models.ScenarioStepProgress{}).
-				Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
-				Updates(map[string]any{
-					"status":             "completed",
-					"completed_at":       now,
-					"time_spent_seconds": timeSpent,
-				}).Error; err != nil {
-				return fmt.Errorf("failed to mark step completed: %w", err)
-			}
-		} else {
-			if err := tx.Model(&models.ScenarioStepProgress{}).
-				Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
-				Updates(map[string]any{
-					"status":       "completed",
-					"completed_at": now,
-				}).Error; err != nil {
-				return fmt.Errorf("failed to mark step completed: %w", err)
-			}
+		nextStep, err := s.advanceToNextStep(tx, &session, now)
+		if err != nil {
+			return err
 		}
-
-		// Check if this was the last step
-		isLastStep := true
-		nextStepOrder := -1
-		for _, step := range session.Scenario.Steps {
-			if step.Order > session.CurrentStep {
-				isLastStep = false
-				if nextStepOrder == -1 || step.Order < nextStepOrder {
-					nextStepOrder = step.Order
-				}
-			}
-		}
-
-		if isLastStep {
-			// Calculate grade
-			completedSteps := 0
-			for _, sp := range session.StepProgress {
-				if sp.Status == "completed" {
-					completedSteps++
-				}
-			}
-			completedSteps++ // current step being completed now
-			totalSteps := len(session.Scenario.Steps)
-			grade := float64(completedSteps) / float64(totalSteps) * 100.0
-
-			if err := tx.Model(&session).Updates(map[string]any{
-				"status":       "completed",
-				"completed_at": now,
-				"grade":        grade,
-			}).Error; err != nil {
-				return fmt.Errorf("failed to mark session completed: %w", err)
-			}
-		} else {
-			// Advance to next step
-			if err := tx.Model(&session).Update("current_step", nextStepOrder).Error; err != nil {
-				return fmt.Errorf("failed to advance step: %w", err)
-			}
-
-			// Unlock next step
-			if err := tx.Model(&models.ScenarioStepProgress{}).
-				Where("session_id = ? AND step_order = ?", session.ID, nextStepOrder).
-				Update("status", "active").Error; err != nil {
-				return fmt.Errorf("failed to unlock next step: %w", err)
-			}
-
-			response.NextStep = &nextStepOrder
-		}
+		response.NextStep = nextStep
 
 		return nil
 	})
@@ -517,6 +384,86 @@ func (s *ScenarioSessionService) AbandonSession(sessionID uuid.UUID) error {
 	}
 
 	return nil
+}
+
+// advanceToNextStep handles step completion and session advancement logic.
+// It marks the current step as completed, calculates time spent, and either
+// completes the session (if last step) or advances to the next step.
+// Returns the next step order (nil if session completed).
+func (s *ScenarioSessionService) advanceToNextStep(tx *gorm.DB, session *models.ScenarioSession, now time.Time) (*int, error) {
+	// Calculate time spent on this step and mark as completed
+	var stepProgress models.ScenarioStepProgress
+	if err := tx.Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).First(&stepProgress).Error; err == nil {
+		timeSpent := int(now.Sub(stepProgress.CreatedAt).Seconds())
+		if err := tx.Model(&models.ScenarioStepProgress{}).
+			Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
+			Updates(map[string]any{
+				"status":             "completed",
+				"completed_at":       now,
+				"time_spent_seconds": timeSpent,
+			}).Error; err != nil {
+			return nil, fmt.Errorf("failed to mark step completed: %w", err)
+		}
+	} else {
+		// Fallback: update without time calculation
+		if err := tx.Model(&models.ScenarioStepProgress{}).
+			Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
+			Updates(map[string]any{
+				"status":       "completed",
+				"completed_at": now,
+			}).Error; err != nil {
+			return nil, fmt.Errorf("failed to mark step completed: %w", err)
+		}
+	}
+
+	// Check if this was the last step
+	isLastStep := true
+	nextStepOrder := -1
+	for _, step := range session.Scenario.Steps {
+		if step.Order > session.CurrentStep {
+			isLastStep = false
+			if nextStepOrder == -1 || step.Order < nextStepOrder {
+				nextStepOrder = step.Order
+			}
+		}
+	}
+
+	if isLastStep {
+		// Calculate grade: percentage of completed steps
+		completedSteps := 0
+		for _, sp := range session.StepProgress {
+			if sp.Status == "completed" {
+				completedSteps++
+			}
+		}
+		completedSteps++ // current step being completed now
+		totalSteps := len(session.Scenario.Steps)
+		grade := float64(completedSteps) / float64(totalSteps) * 100.0
+
+		// Mark session as completed with grade
+		if err := tx.Model(session).Updates(map[string]any{
+			"status":       "completed",
+			"completed_at": now,
+			"grade":        grade,
+		}).Error; err != nil {
+			return nil, fmt.Errorf("failed to mark session completed: %w", err)
+		}
+		return nil, nil
+	}
+
+	// Advance to next step
+	if err := tx.Model(session).Update("current_step", nextStepOrder).Error; err != nil {
+		return nil, fmt.Errorf("failed to advance step: %w", err)
+	}
+
+	// Unlock next step
+	if err := tx.Model(&models.ScenarioStepProgress{}).
+		Where("session_id = ? AND step_order = ?", session.ID, nextStepOrder).
+		Update("status", "active").Error; err != nil {
+		return nil, fmt.Errorf("failed to unlock next step: %w", err)
+	}
+
+	return &nextStepOrder, nil
 }
 
 // deployFlagsToContainer pushes generated flag files into the student's container.
