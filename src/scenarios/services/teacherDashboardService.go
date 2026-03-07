@@ -378,12 +378,16 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 			if instanceType != "" {
 				utils.Debug("BulkStartScenario - Creating terminal for member %s (instanceType=%s)", member.UserID, instanceType)
 				sessionInput := ttDto.CreateTerminalSessionInput{
-					Terms:            terms,
-					InstanceType:     instanceType,
-					Backend:          backend,
-					Name:             fmt.Sprintf("scenario-%s", scenario.Title),
-					Expiry:           sessionExpirySecs,
-					RecordingConsent:     1,
+					Terms:        terms,
+					InstanceType: instanceType,
+					Backend:      backend,
+					Name:         fmt.Sprintf("scenario-%s", scenario.Title),
+					Expiry:       sessionExpirySecs,
+					// RecordingConsent is 0 (disabled) by default. RGPD requires explicit
+					// learner consent before recording terminal sessions. Teachers can
+					// enable recording through regular terminal session settings after
+					// obtaining consent from learners.
+					RecordingConsent:     0,
 					HistoryRetentionDays: 30,
 				}
 
