@@ -44,12 +44,6 @@ func NewScenarioSessionService(db *gorm.DB, flagService FlagServiceInterface, ve
 // StartScenario creates a new scenario session for a student.
 // It creates the session, step progress records, generates flags, and returns session info.
 func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UUID, terminalSessionID string) (*models.ScenarioSession, error) {
-	// Check for existing active session for same user + scenario
-	var existingSession models.ScenarioSession
-	if err := s.db.Where("user_id = ? AND scenario_id = ? AND status IN ?", userID, scenarioID, []string{"in_progress", "active"}).First(&existingSession).Error; err == nil {
-		return nil, fmt.Errorf("active session already exists for this scenario")
-	}
-
 	// Load scenario with steps
 	var scenario models.Scenario
 	if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
@@ -73,6 +67,12 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 	}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		// Check for existing active session inside the transaction to prevent race conditions
+		var existingSession models.ScenarioSession
+		if err := tx.Where("user_id = ? AND scenario_id = ? AND status IN ?", userID, scenarioID, []string{"in_progress", "active"}).First(&existingSession).Error; err == nil {
+			return fmt.Errorf("active session already exists for this scenario")
+		}
+
 		// Create session
 		if err := tx.Create(session).Error; err != nil {
 			return fmt.Errorf("failed to create session: %w", err)
