@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -490,7 +491,7 @@ func (s *ScenarioSessionService) deployFlagsToContainer(terminalSessionID string
 
 		// Validate flag path - prevent path traversal
 		if strings.Contains(flagPath, "..") {
-			fmt.Printf("[WARN] Skipping flag for step %d: path contains '..': %s\n", flag.StepOrder, flagPath)
+			slog.Warn("skipping flag deployment: path contains '..'", "step_order", flag.StepOrder, "path", flagPath)
 			continue
 		}
 		if !strings.HasPrefix(flagPath, "/tmp/") && !strings.HasPrefix(flagPath, "/home/") {
@@ -499,7 +500,7 @@ func (s *ScenarioSessionService) deployFlagsToContainer(terminalSessionID string
 
 		// Push the flag file to the container
 		if err := s.verificationService.PushFile(terminalSessionID, flagPath, flag.ExpectedFlag, "0644"); err != nil {
-			fmt.Printf("[WARN] Failed to deploy flag for step %d to %s: %v\n", flag.StepOrder, flagPath, err)
+			slog.Warn("failed to deploy flag to container", "step_order", flag.StepOrder, "path", flagPath, "err", err)
 		}
 	}
 }
@@ -521,10 +522,10 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 		30,
 	)
 	if err != nil {
-		fmt.Printf("[WARN] Background script for step %d failed to execute: %v\n", step.Order, err)
+		slog.Warn("background script failed to execute", "step_order", step.Order, "err", err)
 		return
 	}
 	if exitCode != 0 {
-		fmt.Printf("[WARN] Background script for step %d exited with code %d: %s\n", step.Order, exitCode, stderr)
+		slog.Warn("background script exited with non-zero code", "step_order", step.Order, "exit_code", exitCode, "stderr", stderr)
 	}
 }

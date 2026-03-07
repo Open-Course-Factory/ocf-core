@@ -2,7 +2,6 @@ package terminalController
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -495,8 +494,6 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 	groupID := ctx.Query("group_id")
 	organizationID := ctx.Query("organization_id")
 
-	log.Printf("[DEBUG] GetUserSessions - userId=%s includeHidden=%v groupID=%s orgID=%s", userId, includeHidden, groupID, organizationID)
-
 	var terminals *[]models.Terminal
 	var err error
 
@@ -576,12 +573,6 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 			HiddenByOwnerAt: terminal.HiddenByOwnerAt,
 			CreatedAt:       terminal.CreatedAt,
 		})
-	}
-
-	log.Printf("[DEBUG] GetUserSessions - userId=%s returning %d terminals", userId, len(terminalOutputs))
-	for i, t := range terminalOutputs {
-		log.Printf("[DEBUG] GetUserSessions - terminal[%d]: sessionID=%s status=%s userID=%s name=%s instanceType=%s hidden=%v",
-			i, t.SessionID, t.Status, t.UserID, t.Name, t.InstanceType, t.IsHiddenByOwner)
 	}
 
 	ctx.JSON(http.StatusOK, terminalOutputs)
