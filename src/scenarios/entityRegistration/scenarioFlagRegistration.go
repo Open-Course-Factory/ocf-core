@@ -51,8 +51,7 @@ func RegisterScenarioFlag(service *ems.EntityRegistrationService) {
 			},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
-					string(authModels.Member): "(" + http.MethodGet + ")",
-					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
+					string(authModels.Admin): "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 				},
 			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{
