@@ -167,6 +167,7 @@ func SetupScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/scenario-sessions/my", "GET"},
 		{"/api/v1/scenario-sessions/by-terminal/:terminalId", "GET"},
 		{"/api/v1/scenario-sessions/:id/current-step", "GET"},
+		{"/api/v1/scenario-sessions/:id/step/:stepOrder", "GET"},
 		{"/api/v1/scenario-sessions/:id/verify", "POST"},
 		{"/api/v1/scenario-sessions/:id/submit-flag", "POST"},
 		{"/api/v1/scenario-sessions/:id/abandon", "POST"},

@@ -171,6 +171,53 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 	}, nil
 }
 
+// GetStepByOrder returns the content of a specific step by its order for a session.
+// Only completed or active steps can be viewed — locked steps are forbidden.
+func (s *ScenarioSessionService) GetStepByOrder(sessionID uuid.UUID, stepOrder int) (*dto.CurrentStepResponse, error) {
+	var session models.ScenarioSession
+	if err := s.db.Preload("Scenario.Steps", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).Preload("StepProgress").First(&session, "id = ?", sessionID).Error; err != nil {
+		return nil, fmt.Errorf("session not found: %w", err)
+	}
+
+	// Find the step at the given order
+	var targetStep *models.ScenarioStep
+	for i := range session.Scenario.Steps {
+		if session.Scenario.Steps[i].Order == stepOrder {
+			targetStep = &session.Scenario.Steps[i]
+			break
+		}
+	}
+	if targetStep == nil {
+		return nil, fmt.Errorf("step (order=%d) not found in scenario", stepOrder)
+	}
+
+	// Find step progress status
+	stepStatus := "locked"
+	for _, sp := range session.StepProgress {
+		if sp.StepOrder == stepOrder {
+			stepStatus = sp.Status
+			break
+		}
+	}
+
+	// Only allow viewing completed or active steps
+	if stepStatus == "locked" {
+		return nil, fmt.Errorf("step is locked")
+	}
+
+	return &dto.CurrentStepResponse{
+		StepOrder:  targetStep.Order,
+		TotalSteps: len(session.Scenario.Steps),
+		Title:      targetStep.Title,
+		Text:       targetStep.TextContent,
+		Hint:       targetStep.HintContent,
+		Status:     stepStatus,
+		HasFlag:    targetStep.HasFlag,
+	}, nil
+}
+
 // VerifyCurrentStep runs the verify script for the current step.
 func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.VerifyStepResponse, error) {
 	var session models.ScenarioSession
