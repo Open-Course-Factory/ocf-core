@@ -31,6 +31,7 @@ type ScenarioController interface {
 	SubmitFlag(ctx *gin.Context)
 	AbandonSession(ctx *gin.Context)
 	GetSessionByTerminal(ctx *gin.Context)
+	GetSessionInfo(ctx *gin.Context)
 	GetMySessions(ctx *gin.Context)
 }
 
@@ -424,6 +425,40 @@ func (sc *scenarioController) GetSessionByTerminal(ctx *gin.Context) {
 		TerminalSessionID: terminalSessionID,
 		CurrentStep:       session.CurrentStep,
 		Status:            session.Status,
+		StartedAt:         session.StartedAt,
+	})
+}
+
+// GetSessionInfo godoc
+// @Summary Get session info
+// @Description Get session info for the authenticated user (ownership check)
+// @Tags scenario-sessions
+// @Produce json
+// @Param id path string true "Session ID"
+// @Success 200 {object} dto.SessionResponse
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Router /scenario-sessions/{id}/info [get]
+// @Security BearerAuth
+func (sc *scenarioController) GetSessionInfo(ctx *gin.Context) {
+	session, err := sc.getSessionIfOwned(ctx)
+	if err != nil {
+		return
+	}
+
+	terminalSessionID := ""
+	if session.TerminalSessionID != nil {
+		terminalSessionID = *session.TerminalSessionID
+	}
+	ctx.JSON(http.StatusOK, dto.SessionResponse{
+		ID:                session.ID.String(),
+		ScenarioID:        session.ScenarioID.String(),
+		UserID:            session.UserID,
+		TerminalSessionID: terminalSessionID,
+		CurrentStep:       session.CurrentStep,
+		Status:            session.Status,
+		Grade:             session.Grade,
 		StartedAt:         session.StartedAt,
 	})
 }

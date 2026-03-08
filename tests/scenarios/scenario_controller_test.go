@@ -42,6 +42,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	sessions := api.Group("/scenario-sessions")
 	sessions.POST("/start", controller.StartScenario)
 	sessions.GET("/by-terminal/:terminalId", controller.GetSessionByTerminal)
+	sessions.GET("/:id/info", controller.GetSessionInfo)
 	sessions.GET("/:id/current-step", controller.GetCurrentStep)
 	sessions.POST("/:id/verify", controller.VerifyStep)
 	sessions.POST("/:id/submit-flag", controller.SubmitFlag)
@@ -557,6 +558,7 @@ func setupTestRouterWithUser(db *gorm.DB, userID string) *gin.Engine {
 
 	sessions := api.Group("/scenario-sessions")
 	sessions.GET("/by-terminal/:terminalId", controller.GetSessionByTerminal)
+	sessions.GET("/:id/info", controller.GetSessionInfo)
 
 	return r
 }
@@ -643,4 +645,70 @@ func TestSeedScenario_NoSteps(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// --- GetSessionInfo tests ---
+
+func TestGetSessionInfo_OwnerCanAccess(t *testing.T) {
+	db := setupTestDB(t)
+	router := setupTestRouter(db)
+
+	scenario := models.Scenario{
+		Name: "info-test", Title: "Info Test", InstanceType: "ubuntu:22.04", CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	terminalID := "info-terminal-123"
+	session := models.ScenarioSession{
+		ScenarioID:        scenario.ID,
+		UserID:            "test-user-123", // matches setupTestRouter userId
+		TerminalSessionID: &terminalID,
+		CurrentStep:       1,
+		Status:            "active",
+		StartedAt:         time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/"+session.ID.String()+"/info", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, session.ID.String(), response["id"])
+	assert.Equal(t, scenario.ID.String(), response["scenario_id"])
+	assert.Equal(t, "test-user-123", response["user_id"])
+	assert.Equal(t, "info-terminal-123", response["terminal_session_id"])
+	assert.Equal(t, float64(1), response["current_step"])
+	assert.Equal(t, "active", response["status"])
+}
+
+func TestGetSessionInfo_NonOwnerGetsForbidden(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name: "info-idor", Title: "Info IDOR", InstanceType: "ubuntu:22.04", CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	session := models.ScenarioSession{
+		ScenarioID:  scenario.ID,
+		UserID:      "user-A", // different from the user making the request
+		CurrentStep: 0,
+		Status:      "active",
+		StartedAt:   time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	// Create router with user-B (different from session owner)
+	router := setupTestRouterWithUser(db, "user-B")
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/"+session.ID.String()+"/info", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }
