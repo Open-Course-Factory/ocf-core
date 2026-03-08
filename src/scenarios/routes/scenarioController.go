@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/scenarios/dto"
@@ -25,6 +26,7 @@ type ScenarioController interface {
 	SeedScenario(ctx *gin.Context)
 	StartScenario(ctx *gin.Context)
 	GetCurrentStep(ctx *gin.Context)
+	GetStepByOrder(ctx *gin.Context)
 	VerifyStep(ctx *gin.Context)
 	SubmitFlag(ctx *gin.Context)
 	AbandonSession(ctx *gin.Context)
@@ -212,6 +214,54 @@ func (sc *scenarioController) GetCurrentStep(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Failed to get current step",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, step)
+}
+
+// GetStepByOrder godoc
+// @Summary Get step by order
+// @Description Get the content of a specific step by its order for a scenario session. Only completed or active steps can be viewed.
+// @Tags scenario-sessions
+// @Produce json
+// @Param id path string true "Session ID"
+// @Param stepOrder path int true "Step order (0-based)"
+// @Success 200 {object} dto.CurrentStepResponse
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Router /scenario-sessions/{id}/step/{stepOrder} [get]
+// @Security BearerAuth
+func (sc *scenarioController) GetStepByOrder(ctx *gin.Context) {
+	session, err := sc.getSessionIfOwned(ctx)
+	if err != nil {
+		return
+	}
+
+	stepOrder, err := strconv.Atoi(ctx.Param("stepOrder"))
+	if err != nil || stepOrder < 0 {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid step order",
+		})
+		return
+	}
+
+	step, err := sc.sessionService.GetStepByOrder(session.ID, stepOrder)
+	if err != nil {
+		if err.Error() == "step is locked" {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Step is locked",
+			})
+			return
+		}
+		slog.Error("failed to get step by order", "err", err)
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Step not found",
 		})
 		return
 	}

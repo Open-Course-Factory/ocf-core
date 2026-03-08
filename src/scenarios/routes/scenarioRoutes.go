@@ -27,6 +27,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	sessionRoutes.POST("/start", middleware.AuthManagement(), controller.StartScenario)
 	sessionRoutes.GET("/by-terminal/:terminalId", middleware.AuthManagement(), controller.GetSessionByTerminal)
 	sessionRoutes.GET("/:id/current-step", middleware.AuthManagement(), controller.GetCurrentStep)
+	sessionRoutes.GET("/:id/step/:stepOrder", middleware.AuthManagement(), controller.GetStepByOrder)
 	sessionRoutes.POST("/:id/verify", middleware.AuthManagement(), rateLimiter, controller.VerifyStep)
 	sessionRoutes.POST("/:id/submit-flag", middleware.AuthManagement(), rateLimiter, controller.SubmitFlag)
 	sessionRoutes.POST("/:id/abandon", middleware.AuthManagement(), controller.AbandonSession)
