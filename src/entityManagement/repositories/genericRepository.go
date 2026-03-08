@@ -117,12 +117,17 @@ func (o *genericRepository) GetEntity(id uuid.UUID, data any, entityName string,
 	query := o.db.Model(model)
 
 	// Apply selective preloading
-	// If no includes specified, use legacy behavior for backward compatibility
+	// Use default includes when none specified, falling back to legacy behavior
 	if includes == nil || len(includes) == 0 {
-		queryPreloadString := ""
-		getPreloadString(entityName, &queryPreloadString, true)
-		if queryPreloadString != "" {
-			query = query.Preload(queryPreloadString)
+		defaultIncludes := ems.GlobalEntityRegistrationService.GetDefaultIncludes(entityName)
+		if len(defaultIncludes) > 0 {
+			query = applyIncludes(query, defaultIncludes)
+		} else {
+			queryPreloadString := ""
+			getPreloadString(entityName, &queryPreloadString, true)
+			if queryPreloadString != "" {
+				query = query.Preload(queryPreloadString)
+			}
 		}
 	} else {
 		query = applyIncludes(query, includes)
