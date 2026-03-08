@@ -231,8 +231,12 @@ func (genericController genericController) EditEntity(ctx *gin.Context) {
 	// JSON-encode values for fields with serializer:json to prevent GORM bypass
 	JsonEncodeSerializedFields(entityModelInterface, updateMap)
 
+	// Extract user context for hook authorization
+	userId := ctx.GetString("userId")
+	userRoles := ctx.GetStringSlice("userRoles")
+
 	// Perform the update with the map (GORM Updates requires map[string]any)
-	errorUpdate := genericController.genericService.EditEntity(id, entityName, entityModelInterface, updateMap)
+	errorUpdate := genericController.genericService.EditEntityWithUser(id, entityName, entityModelInterface, updateMap, userId, userRoles...)
 	if errors.HandleError(http.StatusNotFound, errorUpdate, ctx) {
 		return
 	}

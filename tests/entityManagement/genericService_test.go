@@ -132,6 +132,10 @@ func (g *mockGenericService) EditEntity(id uuid.UUID, entityName string, entity 
 	return g.repository.EditEntity(id, entityName, entity, data)
 }
 
+func (g *mockGenericService) EditEntityWithUser(id uuid.UUID, entityName string, entity any, data any, userID string, userRoles ...string) error {
+	return g.repository.EditEntity(id, entityName, entity, data)
+}
+
 // Implémentation des autres méthodes nécessaires (similaires à l'original mais testables)
 func (g *mockGenericService) GetEntityModelInterface(entityName string) any {
 	result, _ := ems.GlobalEntityRegistrationService.GetEntityInterface(entityName)

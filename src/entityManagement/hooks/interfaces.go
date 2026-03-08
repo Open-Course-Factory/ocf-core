@@ -51,8 +51,19 @@ type HookContext struct {
 	OldEntity  any            `json:"old_entity,omitempty"` // Previous state (for updates)
 	NewEntity  any            `json:"new_entity"`           // Current state
 	UserID     string                 `json:"user_id,omitempty"`    // ID of user who triggered the operation
+	UserRoles  []string               `json:"user_roles,omitempty"` // Roles of the user (e.g., "Member", "Administrator")
 	Metadata   map[string]any `json:"metadata,omitempty"`   // Custom metadata shared between hooks
 	Context    context.Context        `json:"-"`                    // Go context for cancellation
+}
+
+// IsAdmin checks if the user has the "Administrator" role.
+func (ctx *HookContext) IsAdmin() bool {
+	for _, role := range ctx.UserRoles {
+		if role == "Administrator" {
+			return true
+		}
+	}
+	return false
 }
 
 // Hook interface that all hooks must implement.

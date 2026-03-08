@@ -57,6 +57,7 @@ type GenericService interface {
 	DeleteEntity(id uuid.UUID, entity any, scoped bool) error
 	DeleteEntityWithUser(id uuid.UUID, entity any, scoped bool, userID string) error
 	EditEntity(id uuid.UUID, entityName string, entity any, data any) error
+	EditEntityWithUser(id uuid.UUID, entityName string, entity any, data any, userID string, userRoles ...string) error
 	GetEntityModelInterface(entityName string) any
 	AddOwnerIDs(entity any, userId string) (any, error)
 	ExtractUuidFromReflectEntity(entity any) uuid.UUID
@@ -263,6 +264,15 @@ func (g *genericService) DeleteEntityWithUser(id uuid.UUID, entity any, scoped b
 }
 
 func (g *genericService) EditEntity(id uuid.UUID, entityName string, entity any, data any) error {
+	return g.EditEntityWithUser(id, entityName, entity, data, "")
+}
+
+func (g *genericService) EditEntityWithUser(id uuid.UUID, entityName string, entity any, data any, userID string, userRoles ...string) error {
+	// Default to "Member" role for authenticated users when no roles are specified
+	if userID != "" && len(userRoles) == 0 {
+		userRoles = []string{"Member"}
+	}
+
 	// Récupérer l'entité existante pour les hooks
 	oldEntity, err := g.GetEntity(id, entity, entityName, nil)
 	if err != nil {
@@ -275,6 +285,8 @@ func (g *genericService) EditEntity(id uuid.UUID, entityName string, entity any,
 		EntityID:   id,
 		OldEntity:  oldEntity,
 		NewEntity:  data,
+		UserID:     userID,
+		UserRoles:  userRoles,
 		Context:    context.Background(),
 	}
 
@@ -299,6 +311,8 @@ func (g *genericService) EditEntity(id uuid.UUID, entityName string, entity any,
 		EntityID:   id,
 		OldEntity:  oldEntity,
 		NewEntity:  updatedEntity,
+		UserID:     userID,
+		UserRoles:  userRoles,
 		Context:    context.Background(),
 	}
 
