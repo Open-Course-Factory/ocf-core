@@ -156,10 +156,14 @@ func TestEntityRegistrationService_SetDefaultEntityAccesses(t *testing.T) {
 	// Setup des expectations pour le mock
 	mockEnforcer.On("LoadPolicy").Return(nil)
 
-	// All Casdoor roles that map to Member OCF role
-	casdoorRoles := []string{"user", "member", "student", "premium_student", "teacher", "trainer", "supervisor"}
+	// OCF role "member" + all Casdoor roles that map to Member OCF role
+	// reconcileEntityPolicy calls GetFilteredPolicy first, then AddPolicy if no match found
+	allRoles := []string{"member", "user", "student", "premium_student", "teacher", "trainer", "supervisor"}
 
-	for _, role := range casdoorRoles {
+	for _, role := range allRoles {
+		// GetFilteredPolicy returns empty (no existing policy) so AddPolicy will be called
+		mockEnforcer.On("GetFilteredPolicy", 0, []string{role, "/api/v1/test-entities"}).Return([][]string{}, nil)
+		mockEnforcer.On("GetFilteredPolicy", 0, []string{role, "/api/v1/test-entities/*"}).Return([][]string{}, nil)
 		// List endpoint (without wildcard) - note: "TestEntity" becomes "test-entities" via PascalToKebab
 		mockEnforcer.On("AddPolicy",
 			role,
