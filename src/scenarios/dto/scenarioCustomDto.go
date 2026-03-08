@@ -96,6 +96,42 @@ type SeedStepInput struct {
 	FlagPath         string `json:"flag_path"`
 }
 
+// ScenarioExportStepOutput — full step data including scripts (for export only)
+type ScenarioExportStepOutput struct {
+	Order            int    `json:"order"`
+	Title            string `json:"title"`
+	TextContent      string `json:"text_content,omitempty"`
+	HintContent      string `json:"hint_content,omitempty"`
+	VerifyScript     string `json:"verify_script,omitempty"`
+	BackgroundScript string `json:"background_script,omitempty"`
+	ForegroundScript string `json:"foreground_script,omitempty"`
+	HasFlag          bool   `json:"has_flag"`
+	FlagPath         string `json:"flag_path,omitempty"`
+	FlagLevel        int    `json:"flag_level,omitempty"`
+}
+
+// ScenarioExportOutput — full scenario data for JSON export/re-import
+// Designed to match SeedScenarioInput so the exported JSON can be re-imported directly
+type ScenarioExportOutput struct {
+	Title         string                     `json:"title"`
+	Description   string                     `json:"description,omitempty"`
+	Difficulty    string                     `json:"difficulty,omitempty"`
+	EstimatedTime string                     `json:"estimated_time,omitempty"`
+	InstanceType  string                     `json:"instance_type"`
+	OsType        string                     `json:"os_type,omitempty"`
+	FlagsEnabled  bool                       `json:"flags_enabled"`
+	GshEnabled    bool                       `json:"gsh_enabled"`
+	CrashTraps    bool                       `json:"crash_traps"`
+	IntroText     string                     `json:"intro_text,omitempty"`
+	FinishText    string                     `json:"finish_text,omitempty"`
+	Steps         []ScenarioExportStepOutput `json:"steps"`
+}
+
+// ExportScenariosInput — request body for bulk export
+type ExportScenariosInput struct {
+	IDs []uuid.UUID `json:"ids" binding:"required,min=1"`
+}
+
 // MySessionResponse - DTO for a learner's own scenario session
 type MySessionResponse struct {
 	ID                uuid.UUID  `json:"id"`
