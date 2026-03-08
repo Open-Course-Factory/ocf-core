@@ -1,0 +1,143 @@
+package services
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	"soli/formations/src/scenarios/dto"
+	"soli/formations/src/scenarios/models"
+	"soli/formations/src/scenarios/utils"
+)
+
+// ScenarioSeedService handles creating or updating scenarios from JSON input
+type ScenarioSeedService struct {
+	db *gorm.DB
+}
+
+// NewScenarioSeedService creates a new seed service
+func NewScenarioSeedService(db *gorm.DB) *ScenarioSeedService {
+	return &ScenarioSeedService{db: db}
+}
+
+// SeedScenario creates or updates a scenario with all its steps from a SeedScenarioInput.
+// orgID is optional — set for group-level imports. userID is the creating user.
+// Returns (scenario, isUpdate, error).
+func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID string, orgID *uuid.UUID) (*models.Scenario, bool, error) {
+	name := utils.GenerateSlug(input.Title)
+
+	// Check if a scenario with this name already exists (upsert)
+	var existing models.Scenario
+	isUpdate := false
+	if err := s.db.Where("name = ?", name).First(&existing).Error; err == nil {
+		isUpdate = true
+	}
+
+	var flagSecret string
+	if input.FlagsEnabled {
+		if isUpdate && existing.FlagSecret != "" {
+			// Keep existing flag secret on update so active sessions remain valid
+			flagSecret = existing.FlagSecret
+		} else {
+			secretBytes := make([]byte, 32)
+			if _, err := rand.Read(secretBytes); err != nil {
+				return nil, false, fmt.Errorf("failed to generate flag secret: %w", err)
+			}
+			flagSecret = hex.EncodeToString(secretBytes)
+		}
+	}
+
+	// Build new steps
+	newSteps := make([]models.ScenarioStep, len(input.Steps))
+	for i, st := range input.Steps {
+		newSteps[i] = models.ScenarioStep{
+			Order:            i,
+			Title:            st.Title,
+			TextContent:      st.TextContent,
+			HintContent:      st.HintContent,
+			VerifyScript:     st.VerifyScript,
+			BackgroundScript: st.BackgroundScript,
+			ForegroundScript: st.ForegroundScript,
+			HasFlag:          st.HasFlag,
+			FlagPath:         st.FlagPath,
+		}
+	}
+
+	var scenario models.Scenario
+	if isUpdate {
+		// Update existing scenario in a transaction
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&existing).Updates(map[string]any{
+				"title":          input.Title,
+				"description":    input.Description,
+				"difficulty":     input.Difficulty,
+				"estimated_time": input.EstimatedTime,
+				"instance_type":  input.InstanceType,
+				"os_type":        input.OsType,
+				"flags_enabled":  input.FlagsEnabled,
+				"flag_secret":    flagSecret,
+				"gsh_enabled":    input.GshEnabled,
+				"crash_traps":    input.CrashTraps,
+				"intro_text":     input.IntroText,
+				"finish_text":    input.FinishText,
+			}).Error; err != nil {
+				return fmt.Errorf("failed to update scenario: %w", err)
+			}
+
+			// Delete old steps
+			if err := tx.Where("scenario_id = ?", existing.ID).Delete(&models.ScenarioStep{}).Error; err != nil {
+				return fmt.Errorf("failed to delete old steps: %w", err)
+			}
+
+			// Create new steps
+			for i := range newSteps {
+				newSteps[i].ScenarioID = existing.ID
+				if err := tx.Create(&newSteps[i]).Error; err != nil {
+					return fmt.Errorf("failed to create step: %w", err)
+				}
+			}
+
+			return nil
+		})
+		if err != nil {
+			return nil, false, err
+		}
+
+		// Reload with steps
+		if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
+			return db.Order("\"order\" ASC")
+		}).First(&scenario, "id = ?", existing.ID).Error; err != nil {
+			return nil, false, fmt.Errorf("failed to reload scenario: %w", err)
+		}
+	} else {
+		// Create new scenario
+		scenario = models.Scenario{
+			Name:           name,
+			Title:          input.Title,
+			Description:    input.Description,
+			Difficulty:     input.Difficulty,
+			EstimatedTime:  input.EstimatedTime,
+			InstanceType:   input.InstanceType,
+			OsType:         input.OsType,
+			SourceType:     "seed",
+			FlagsEnabled:   input.FlagsEnabled,
+			FlagSecret:     flagSecret,
+			GshEnabled:     input.GshEnabled,
+			CrashTraps:     input.CrashTraps,
+			IntroText:      input.IntroText,
+			FinishText:     input.FinishText,
+			CreatedByID:    userID,
+			OrganizationID: orgID,
+		}
+		scenario.Steps = newSteps
+
+		if err := s.db.Create(&scenario).Error; err != nil {
+			return nil, false, fmt.Errorf("failed to create scenario: %w", err)
+		}
+	}
+
+	return &scenario, isUpdate, nil
+}
