@@ -18,17 +18,20 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.ScenarioStep, dto.CreateScenarioStepInput, dto.EditScenarioStepInput, dto.ScenarioStepOutput]{
 				ModelToDto: func(model *models.ScenarioStep) (dto.ScenarioStepOutput, error) {
 					return dto.ScenarioStepOutput{
-						ID:          model.ID,
-						ScenarioID:  model.ScenarioID,
-						Order:       model.Order,
-						Title:       model.Title,
-						TextContent: model.TextContent,
-						HintContent: model.HintContent,
-						HasFlag:     model.HasFlag,
-						FlagPath:    model.FlagPath,
-						FlagLevel:   model.FlagLevel,
-						CreatedAt:   model.CreatedAt,
-						UpdatedAt:   model.UpdatedAt,
+						ID:               model.ID,
+						ScenarioID:       model.ScenarioID,
+						Order:            model.Order,
+						Title:            model.Title,
+						TextContent:      model.TextContent,
+						HintContent:      model.HintContent,
+						VerifyScript:     model.VerifyScript,
+						BackgroundScript: model.BackgroundScript,
+						ForegroundScript: model.ForegroundScript,
+						HasFlag:          model.HasFlag,
+						FlagPath:         model.FlagPath,
+						FlagLevel:        model.FlagLevel,
+						CreatedAt:        model.CreatedAt,
+						UpdatedAt:        model.UpdatedAt,
 					}, nil
 				},
 				DtoToModel: func(input dto.CreateScenarioStepInput) *models.ScenarioStep {

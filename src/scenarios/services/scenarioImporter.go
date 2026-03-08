@@ -25,6 +25,8 @@ type KillerCodaIndex struct {
 	Description string                `json:"description"`
 	Difficulty  string                `json:"difficulty"`
 	Time        string                `json:"time"`
+	Intro       KillerCodaFile        `json:"intro"`
+	Finish      KillerCodaFile        `json:"finish"`
 	Details     KillerCodaDetails     `json:"details"`
 	Backend     KillerCodaBackend     `json:"backend"`
 	Extensions  *KillerCodaExtensions `json:"extensions,omitempty"`
@@ -221,9 +223,17 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		flagSecret = hex.EncodeToString(secretBytes)
 	}
 
-	// Read intro and finish markdown
-	introText := readFileContent(dirPath, index.Details.Intro.Text)
-	finishText := readFileContent(dirPath, index.Details.Finish.Text)
+	// Read intro and finish markdown (support both details-level and top-level locations)
+	introFile := index.Details.Intro.Text
+	if introFile == "" {
+		introFile = index.Intro.Text
+	}
+	finishFile := index.Details.Finish.Text
+	if finishFile == "" {
+		finishFile = index.Finish.Text
+	}
+	introText := readFileContent(dirPath, introFile)
+	finishText := readFileContent(dirPath, finishFile)
 
 	scenario := &models.Scenario{
 		Name:           utils.GenerateSlug(index.Title),
