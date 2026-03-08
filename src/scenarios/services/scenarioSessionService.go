@@ -117,14 +117,16 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		return nil, fmt.Errorf("failed to reload session: %w", err)
 	}
 
-	// Deploy flags to the container if terminal session is available
-	if session.TerminalSessionID != nil && s.verificationService != nil && len(session.Flags) > 0 {
-		s.deployFlagsToContainer(*session.TerminalSessionID, &scenario, session.Flags)
-	}
-
-	// Execute background script for the first step
+	// Execute background script for the first step BEFORE deploying its flag,
+	// because the script may create directories that the flag path depends on.
 	if session.TerminalSessionID != nil && s.verificationService != nil && len(scenario.Steps) > 0 {
 		s.executeBackgroundScript(*session.TerminalSessionID, &scenario.Steps[0])
+	}
+
+	// Deploy ONLY the flag for the first step (step 0) — not all flags at once.
+	// Later steps' flags are deployed on step transition, after their background scripts run.
+	if session.TerminalSessionID != nil && s.verificationService != nil && len(session.Flags) > 0 {
+		s.deploySingleFlagToContainer(*session.TerminalSessionID, &scenario, session.Flags, 0)
 	}
 
 	return session, nil
@@ -223,7 +225,7 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	var session models.ScenarioSession
 	if err := s.db.Preload("Scenario.Steps", func(db *gorm.DB) *gorm.DB {
 		return db.Order("\"order\" ASC")
-	}).Preload("StepProgress").First(&session, "id = ?", sessionID).Error; err != nil {
+	}).Preload("StepProgress").Preload("Flags").First(&session, "id = ?", sessionID).Error; err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
 
@@ -282,7 +284,8 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 		return nil, txErr
 	}
 
-	// Execute background script for the next step (after successful DB transaction)
+	// Execute background script for the next step (after successful DB transaction),
+	// then deploy the next step's flag (after the script created any needed directories).
 	if response.Passed && response.NextStep != nil && session.TerminalSessionID != nil {
 		for i := range session.Scenario.Steps {
 			if session.Scenario.Steps[i].Order == *response.NextStep {
@@ -290,6 +293,7 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 				break
 			}
 		}
+		s.deploySingleFlagToContainer(*session.TerminalSessionID, &session.Scenario, session.Flags, *response.NextStep)
 	}
 
 	return response, nil
@@ -374,7 +378,8 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 		return nil, txErr
 	}
 
-	// Execute background script for the next step
+	// Execute background script for the next step, then deploy its flag
+	// (after the script created any needed directories).
 	if response.NextStep != nil && session.TerminalSessionID != nil {
 		for i := range session.Scenario.Steps {
 			if session.Scenario.Steps[i].Order == *response.NextStep {
@@ -382,6 +387,7 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 				break
 			}
 		}
+		s.deploySingleFlagToContainer(*session.TerminalSessionID, &session.Scenario, session.Flags, *response.NextStep)
 	}
 
 	return response, nil
@@ -523,47 +529,62 @@ func (s *ScenarioSessionService) advanceToNextStep(tx *gorm.DB, session *models.
 	return &nextStepOrder, nil
 }
 
-// deployFlagsToContainer pushes generated flag files into the student's container.
-// Each flag is written to the step's FlagPath (or a default path if none is set).
-// Errors are logged but don't fail the session — the flag simply won't be findable.
-func (s *ScenarioSessionService) deployFlagsToContainer(terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag) {
-	// Build a map of step order → step for quick lookup
-	stepByOrder := make(map[int]*models.ScenarioStep)
-	for i := range scenario.Steps {
-		stepByOrder[scenario.Steps[i].Order] = &scenario.Steps[i]
+// deploySingleFlagToContainer pushes the flag for a specific step into the student's container.
+// This is called on step transitions so that each flag is deployed only after its step's
+// background script has run (which may create the directories the flag path depends on).
+func (s *ScenarioSessionService) deploySingleFlagToContainer(terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, stepOrder int) {
+	if s.verificationService == nil {
+		return
 	}
 
-	for _, flag := range flags {
-		step, ok := stepByOrder[flag.StepOrder]
-		if !ok {
-			continue
+	// Find the flag for this step
+	var flag *models.ScenarioFlag
+	for i := range flags {
+		if flags[i].StepOrder == stepOrder {
+			flag = &flags[i]
+			break
 		}
+	}
+	if flag == nil {
+		return // No flag for this step (step may not have HasFlag enabled)
+	}
 
-		// Determine the target path for the flag file
-		flagPath := step.FlagPath
-		if flagPath == "" {
-			flagPath = fmt.Sprintf("/tmp/.flag_step_%d", flag.StepOrder)
+	// Find the step definition for FlagPath
+	var step *models.ScenarioStep
+	for i := range scenario.Steps {
+		if scenario.Steps[i].Order == stepOrder {
+			step = &scenario.Steps[i]
+			break
 		}
+	}
+	if step == nil {
+		return
+	}
 
-		// Validate flag path - prevent path traversal
-		if strings.Contains(flagPath, "..") {
-			slog.Warn("skipping flag deployment: path contains '..'", "step_order", flag.StepOrder, "path", flagPath)
-			continue
-		}
-		if !strings.HasPrefix(flagPath, "/tmp/") && !strings.HasPrefix(flagPath, "/home/") && !strings.HasPrefix(flagPath, "/World/") {
-			flagPath = fmt.Sprintf("/tmp/.flag_step_%d", flag.StepOrder)
-		}
+	// Determine the target path for the flag file
+	flagPath := step.FlagPath
+	if flagPath == "" {
+		flagPath = fmt.Sprintf("/tmp/.flag_step_%d", flag.StepOrder)
+	}
 
-		// Push the flag file to the container
-		if err := s.verificationService.PushFile(terminalSessionID, flagPath, flag.ExpectedFlag, "0644"); err != nil {
-			slog.Warn("failed to deploy flag to container", "step_order", flag.StepOrder, "path", flagPath, "err", err)
-		}
+	// Validate flag path - prevent path traversal
+	if strings.Contains(flagPath, "..") {
+		slog.Warn("skipping flag deployment: path contains '..'", "step_order", flag.StepOrder, "path", flagPath)
+		return
+	}
+	if !strings.HasPrefix(flagPath, "/tmp/") && !strings.HasPrefix(flagPath, "/home/") && !strings.HasPrefix(flagPath, "/World/") {
+		flagPath = fmt.Sprintf("/tmp/.flag_step_%d", flag.StepOrder)
+	}
+
+	// Push the flag file to the container (with trailing newline for clean cat output)
+	if err := s.verificationService.PushFile(terminalSessionID, flagPath, flag.ExpectedFlag+"\n", "0644"); err != nil {
+		slog.Warn("failed to deploy flag to container", "step_order", flag.StepOrder, "path", flagPath, "err", err)
 	}
 }
 
 // executeBackgroundScript runs a step's background script in the student's container.
 // This is best-effort: errors are logged but don't fail the step transition,
-// following the same pattern as deployFlagsToContainer.
+// following the same pattern as deploySingleFlagToContainer.
 func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID string, step *models.ScenarioStep) {
 	if step.BackgroundScript == "" {
 		return
