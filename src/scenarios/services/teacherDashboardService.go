@@ -251,6 +251,7 @@ func (s *TeacherDashboardService) GetScenarioAnalytics(groupID, scenarioID uuid.
 // BulkStartResult represents the result of a bulk start operation
 type BulkStartResult struct {
 	Created    int              `json:"created"`
+	Replaced   int              `json:"replaced"`
 	Skipped    int              `json:"skipped"`
 	NoKey      int              `json:"no_key"`
 	NoKeyUsers []UserKeyMissing `json:"no_key_users,omitempty"`
@@ -335,16 +336,26 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 		g.Go(func() error {
 			utils.Debug("BulkStartScenario - Processing member %s (role=%s)", member.UserID, member.Role)
 
-			// Check for existing active session
+			// Check for existing active session — abandon it and create a new one
 			var existing models.ScenarioSession
 			err := s.db.Where("user_id = ? AND scenario_id = ? AND status IN ?",
 				member.UserID, scenarioID, []string{"active", "in_progress"}).First(&existing).Error
 			if err == nil {
-				utils.Debug("BulkStartScenario - Member %s already has active session %s, skipping", member.UserID, existing.ID)
+				utils.Debug("BulkStartScenario - Member %s has existing session %s (status=%s), abandoning it", member.UserID, existing.ID, existing.Status)
+				if abandonErr := s.db.Model(&existing).Update("status", "abandoned").Error; abandonErr != nil {
+					utils.Warn("BulkStartScenario - Failed to abandon existing session %s for user %s: %v", existing.ID, member.UserID, abandonErr)
+					mu.Lock()
+					result.Errors = append(result.Errors, BulkStartError{
+						UserID: member.UserID,
+						Error:  fmt.Sprintf("failed to abandon existing session: %v", abandonErr),
+					})
+					mu.Unlock()
+					return nil
+				}
 				mu.Lock()
-				result.Skipped++
+				result.Replaced++
 				mu.Unlock()
-				return nil
+				// Fall through to create a new session
 			}
 
 			// Auto-provision terminal key if missing
