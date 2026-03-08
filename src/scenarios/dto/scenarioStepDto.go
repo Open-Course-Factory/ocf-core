@@ -36,21 +36,18 @@ type EditScenarioStepInput struct {
 }
 
 // ScenarioStepOutput - DTO for scenario step responses
-// Note: Scripts are included because only admins have GET access to this entity.
-// Students access step data through the scenario session flow (server-side).
+// Scripts are intentionally excluded for defense-in-depth: even admin-only
+// endpoints should not expose verify/background/foreground scripts in API responses.
 type ScenarioStepOutput struct {
-	ID               uuid.UUID `json:"id"`
-	ScenarioID       uuid.UUID `json:"scenario_id"`
-	Order            int       `json:"order"`
-	Title            string    `json:"title"`
-	TextContent      string    `json:"text_content,omitempty"`
-	HintContent      string    `json:"hint_content,omitempty"`
-	VerifyScript     string    `json:"verify_script,omitempty"`
-	BackgroundScript string    `json:"background_script,omitempty"`
-	ForegroundScript string    `json:"foreground_script,omitempty"`
-	HasFlag          bool      `json:"has_flag"`
-	FlagPath         string    `json:"flag_path,omitempty"`
-	FlagLevel        int       `json:"flag_level"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID          uuid.UUID `json:"id"`
+	ScenarioID  uuid.UUID `json:"scenario_id"`
+	Order       int       `json:"order"`
+	Title       string    `json:"title"`
+	TextContent string    `json:"text_content,omitempty"`
+	HintContent string    `json:"hint_content,omitempty"`
+	HasFlag     bool      `json:"has_flag"`
+	FlagPath    string    `json:"flag_path,omitempty"`
+	FlagLevel   int       `json:"flag_level"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
