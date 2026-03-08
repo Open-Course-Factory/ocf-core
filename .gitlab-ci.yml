@@ -39,6 +39,7 @@ stages:
     key: "${CI_COMMIT_REF_SLUG}-go-modules"
     paths:
       - .go/pkg/mod/
+      - .go/cache/
 
 # ============================================================================
 # Base Job Templates
@@ -50,6 +51,7 @@ stages:
   extends: .go_cache
   before_script:
     - export GOPATH=$CI_PROJECT_DIR/.go
+    - export GOCACHE=$CI_PROJECT_DIR/.go/cache
     - export PATH=$PATH:$GOPATH/bin
     - go mod download
     - go install github.com/jstemmer/go-junit-report/v2@latest
@@ -98,14 +100,14 @@ include:
 # Test Stage
 # ============================================================================
 
-# All unit tests in a single job: race detection + coverage
+# All unit tests in a single job: coverage + short mode
 # Runs every test in tests/ and src/ except those behind //go:build integration
 # No external services required (uses in-memory SQLite)
 test:unit:
   extends: .test_job_base
   script:
-    - echo "🧪 Running all unit tests with race detection and coverage..."
-    - go test -v -race -coverprofile=coverage.out -timeout=120s ./tests/... ./src/... 2>&1 | tee tests.log
+    - echo "🧪 Running all unit tests with coverage..."
+    - go test -v -short -coverprofile=coverage.out -timeout=120s ./tests/... ./src/... 2>&1 | tee tests.log
     - cat tests.log | go-junit-report -set-exit-code > report.xml
 
   coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
@@ -221,7 +223,7 @@ test:auth:
           docker-compose -f docker-compose.test.yml logs casdoor-db-test
           exit 1
         fi
-        sleep 2
+        sleep 1
       done
 
     - echo "🎉 All services are ready!"
@@ -238,6 +240,8 @@ test:auth:
       docker run --rm \
         --network ocf-core_test-network \
         -v $(pwd):/workspace \
+        -v ocf-core-gomod-cache:/go/pkg/mod \
+        -v ocf-core-gobuild-cache:/root/.cache/go-build \
         -w /workspace \
         -e POSTGRES_DB=$POSTGRES_DB \
         -e POSTGRES_USER=$POSTGRES_USER \

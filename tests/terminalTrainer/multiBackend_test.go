@@ -27,18 +27,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// setupMultiBackendTestDB creates an in-memory SQLite database with all needed tables
+// setupMultiBackendTestDB creates a fresh test DB and returns repo + service.
+// All tables are migrated once in TestMain.
 func setupMultiBackendTestDB(t *testing.T) (*repositories.TerminalRepository, *services.TerminalTrainerService) {
-	db := setupTestDB(t)
-
-	// Also migrate payment and organization models for backend validation tests
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&paymentModels.OrganizationSubscription{},
-		&organizationModels.Organization{},
-		&organizationModels.OrganizationMember{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	repo := repositories.NewTerminalRepository(db)
 	svc := services.NewTerminalTrainerService(db)
@@ -50,14 +42,7 @@ func setupMultiBackendTestDB(t *testing.T) (*repositories.TerminalRepository, *s
 // ============================================
 
 func TestGetTerminalSessionsByUserIDAndOrg(t *testing.T) {
-	db := setupTestDB(t)
-
-	// Also migrate payment models for org ID support
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&organizationModels.Organization{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	repo := repositories.NewTerminalRepository(db)
 
@@ -163,7 +148,7 @@ func TestGetTerminalSessionsByUserIDAndOrg(t *testing.T) {
 }
 
 func TestTerminalBackendFieldPersistence(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	repo := repositories.NewTerminalRepository(db)
 
 	userKey, err := createTestUserKey(db, "user1")
@@ -199,7 +184,7 @@ func TestTerminalBackendFieldPersistence(t *testing.T) {
 // ============================================
 
 func TestValidateSessionAccess_BackendOffline(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	service := services.NewTerminalTrainerService(db)
 
 	// Create a terminal with a backend field
@@ -227,7 +212,7 @@ func TestValidateSessionAccess_BackendOffline(t *testing.T) {
 }
 
 func TestValidateSessionAccess_NoBackend_Passes(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	service := services.NewTerminalTrainerService(db)
 
 	// Create a terminal without a backend (backward compat)
@@ -245,15 +230,7 @@ func TestValidateBackendForOrg_NoOrg_AllowsAny(t *testing.T) {
 	// When no org context is provided, any backend should be allowed
 	// This is tested indirectly through StartSessionWithPlan without org ID
 
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&paymentModels.OrganizationSubscription{},
-		&organizationModels.Organization{},
-		&organizationModels.OrganizationMember{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	service := services.NewTerminalTrainerService(db)
 
@@ -277,13 +254,7 @@ func TestValidateBackendForOrg_NoOrg_AllowsAny(t *testing.T) {
 // ============================================
 
 func TestGetUserSessions_FilterByOrg(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&organizationModels.Organization{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	controller := terminalController.NewTerminalController(db)
 
@@ -386,7 +357,7 @@ func TestGetUserSessions_FilterByOrg(t *testing.T) {
 }
 
 func TestGetUserSessions_IncludesBackendAndOrgFields(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	controller := terminalController.NewTerminalController(db)
 
 	userKey, err := createTestUserKey(db, "test-user-fields")
@@ -437,10 +408,7 @@ func TestGetUserSessions_IncludesBackendAndOrgFields(t *testing.T) {
 // ============================================
 
 func TestSubscriptionPlan_BackendFields(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(&paymentModels.SubscriptionPlan{})
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	t.Run("AllowedBackends and DefaultBackend are persisted", func(t *testing.T) {
 		plan := &paymentModels.SubscriptionPlan{
@@ -492,14 +460,7 @@ func TestSubscriptionPlan_BackendFields(t *testing.T) {
 // ============================================
 
 func TestSetDefaultBackend_AdminOnly(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&configModels.Feature{},
-		&paymentModels.SubscriptionPlan{},
-		&organizationModels.Organization{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	ctrl := terminalController.NewTerminalController(db)
 	gin.SetMode(gin.TestMode)
@@ -545,10 +506,7 @@ func TestSetDefaultBackend_AdminOnly(t *testing.T) {
 }
 
 func TestFeatureValueFieldPersistence(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(&configModels.Feature{})
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	t.Run("Value field is persisted and retrieved", func(t *testing.T) {
 		feature := &configModels.Feature{
@@ -585,10 +543,7 @@ func TestFeatureValueFieldPersistence(t *testing.T) {
 }
 
 func TestGetBackends_MarksSystemDefault(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(&configModels.Feature{})
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	// Seed a system default backend feature
 	feature := &configModels.Feature{
@@ -597,7 +552,7 @@ func TestGetBackends_MarksSystemDefault(t *testing.T) {
 		Value:   "local",
 		Enabled: true,
 	}
-	err = db.Create(feature).Error
+	err := db.Create(feature).Error
 	require.NoError(t, err)
 
 	// Create a service instance — it should load the system default from DB
@@ -646,10 +601,7 @@ func TestGetBackends_MarksSystemDefault(t *testing.T) {
 // ============================================
 
 func TestOrganization_BackendFieldsPersistence(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(&organizationModels.Organization{})
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	t.Run("AllowedBackends and DefaultBackend are persisted on org", func(t *testing.T) {
 		org := &organizationModels.Organization{
@@ -699,13 +651,7 @@ func TestOrganization_BackendFieldsPersistence(t *testing.T) {
 }
 
 func TestUpdateOrganizationBackends_AdminOnly(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&organizationModels.Organization{},
-		&organizationModels.OrganizationMember{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	// Create a test organization
 	org := &organizationModels.Organization{
@@ -717,7 +663,7 @@ func TestUpdateOrganizationBackends_AdminOnly(t *testing.T) {
 		MaxGroups:        10,
 		MaxMembers:       50,
 	}
-	err = db.Omit("Metadata").Create(org).Error
+	err := db.Omit("Metadata").Create(org).Error
 	require.NoError(t, err)
 
 	orgService := orgServices.NewOrganizationService(db)
@@ -774,13 +720,7 @@ func TestUpdateOrganizationBackends_AdminOnly(t *testing.T) {
 }
 
 func TestUpdateOrganizationBackends_ValidatesDefaultInAllowed(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&organizationModels.Organization{},
-		&organizationModels.OrganizationMember{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	org := &organizationModels.Organization{
 		Name:             "test-org-validate",
@@ -791,7 +731,7 @@ func TestUpdateOrganizationBackends_ValidatesDefaultInAllowed(t *testing.T) {
 		MaxGroups:        10,
 		MaxMembers:       50,
 	}
-	err = db.Omit("Metadata").Create(org).Error
+	err := db.Omit("Metadata").Create(org).Error
 	require.NoError(t, err)
 
 	orgService := orgServices.NewOrganizationService(db)
@@ -848,13 +788,7 @@ func TestUpdateOrganizationBackends_ValidatesDefaultInAllowed(t *testing.T) {
 }
 
 func TestGetOrganizationBackends(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&organizationModels.Organization{},
-		&organizationModels.OrganizationMember{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	org := &organizationModels.Organization{
 		Name:             "test-org-get-backends",
@@ -867,7 +801,7 @@ func TestGetOrganizationBackends(t *testing.T) {
 		AllowedBackends:  []string{"local", "cloud-eu-1"},
 		DefaultBackend:   "local",
 	}
-	err = db.Omit("Metadata").Create(org).Error
+	err := db.Omit("Metadata").Create(org).Error
 	require.NoError(t, err)
 
 	orgService := orgServices.NewOrganizationService(db)

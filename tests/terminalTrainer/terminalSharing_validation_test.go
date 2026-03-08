@@ -13,15 +13,12 @@ import (
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 	terminalController "soli/formations/src/terminalTrainer/routes"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 // TestShareTerminal_EmptyRecipient tests that sharing without a recipient is rejected
 func TestShareTerminal_EmptyRecipient(t *testing.T) {
 	// Setup test database
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
-	assert.NoError(t, err)
+	db := freshTestDB(t)
 
 	// Create controller
 	controller := terminalController.NewTerminalController(db)

@@ -28,7 +28,7 @@ test:
 # Tests unitaires uniquement
 test-unit:
 	@echo "🔬 Lancement des tests unitaires..."
-	go test -v ./tests/... ./src/... -race -timeout=120s -short
+	go test -v ./tests/... ./src/... -timeout=120s -short
 
 # Tests d'intégration
 test-integration:

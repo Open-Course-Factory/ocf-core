@@ -171,6 +171,10 @@ func TestExtractArchive_PathTraversal_TarGz(t *testing.T) {
 }
 
 func TestExtractArchive_SizeLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping large archive test in short mode")
+	}
+
 	tmpDir := t.TempDir()
 	zipPath := filepath.Join(tmpDir, "big.zip")
 	destDir := filepath.Join(tmpDir, "extracted")

@@ -8,37 +8,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
-	terminalModels "soli/formations/src/terminalTrainer/models"
 )
 
 func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	sqlDB, _ := db.DB()
-	sqlDB.SetMaxOpenConns(1)
-	require.NoError(t, err)
-
-	err = db.AutoMigrate(
-		&models.Scenario{},
-		&models.ScenarioStep{},
-		&models.ScenarioSession{},
-		&models.ScenarioStepProgress{},
-		&models.ScenarioFlag{},
-		&models.ScenarioAssignment{},
-		&groupModels.ClassGroup{},
-		&groupModels.GroupMember{},
-		&terminalModels.Terminal{},
-		&terminalModels.UserTerminalKey{},
-	)
-	require.NoError(t, err)
-
-	return db
+	return freshTestDB(t)
 }
 
 func TestScenarioImporter_ParseIndexJSON_Valid(t *testing.T) {

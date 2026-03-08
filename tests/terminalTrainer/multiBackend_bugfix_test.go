@@ -10,7 +10,6 @@ import (
 
 	configModels "soli/formations/src/configuration/models"
 	organizationModels "soli/formations/src/organizations/models"
-	paymentModels "soli/formations/src/payment/models"
 	terminalDto "soli/formations/src/terminalTrainer/dto"
 	terminalController "soli/formations/src/terminalTrainer/routes"
 	"soli/formations/src/terminalTrainer/services"
@@ -27,13 +26,7 @@ import (
 // =============================================================================
 
 func TestGetBackends_NonAdminWithoutOrgID_Returns403(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&organizationModels.Organization{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	ctrl := terminalController.NewTerminalController(db)
 	gin.SetMode(gin.TestMode)
@@ -54,19 +47,13 @@ func TestGetBackends_NonAdminWithoutOrgID_Returns403(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 
 	var apiErr map[string]interface{}
-	err = json.Unmarshal(w.Body.Bytes(), &apiErr)
+	err := json.Unmarshal(w.Body.Bytes(), &apiErr)
 	require.NoError(t, err)
 	assert.Contains(t, apiErr["error_message"], "Admin access required")
 }
 
 func TestGetBackends_NonAdminWithOrgID_Allowed(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&organizationModels.Organization{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	// Create an organization
 	org := &organizationModels.Organization{
@@ -80,7 +67,7 @@ func TestGetBackends_NonAdminWithOrgID_Allowed(t *testing.T) {
 		AllowedBackends:  []string{"local"},
 		DefaultBackend:   "local",
 	}
-	err = db.Omit("Metadata").Create(org).Error
+	err := db.Omit("Metadata").Create(org).Error
 	require.NoError(t, err)
 
 	ctrl := terminalController.NewTerminalController(db)
@@ -104,13 +91,7 @@ func TestGetBackends_NonAdminWithOrgID_Allowed(t *testing.T) {
 }
 
 func TestGetBackends_AdminWithoutOrgID_Allowed(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&organizationModels.Organization{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	ctrl := terminalController.NewTerminalController(db)
 	gin.SetMode(gin.TestMode)
@@ -137,13 +118,7 @@ func TestGetBackends_AdminWithoutOrgID_Allowed(t *testing.T) {
 // =============================================================================
 
 func TestGetBackends_ErrorDoesNotLeakInternalDetails(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&organizationModels.Organization{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	ctrl := terminalController.NewTerminalController(db)
 	gin.SetMode(gin.TestMode)
@@ -163,7 +138,7 @@ func TestGetBackends_ErrorDoesNotLeakInternalDetails(t *testing.T) {
 
 	if w.Code == http.StatusInternalServerError {
 		var apiErr map[string]interface{}
-		err = json.Unmarshal(w.Body.Bytes(), &apiErr)
+		err := json.Unmarshal(w.Body.Bytes(), &apiErr)
 		require.NoError(t, err)
 
 		errMsg := apiErr["error_message"].(string)
@@ -176,7 +151,7 @@ func TestGetBackends_ErrorDoesNotLeakInternalDetails(t *testing.T) {
 }
 
 func TestGetServerMetrics_ErrorDoesNotLeakInternalDetails(t *testing.T) {
-	db := setupTestDB(t)
+	db := freshTestDB(t)
 	ctrl := terminalController.NewTerminalController(db)
 	gin.SetMode(gin.TestMode)
 
@@ -207,15 +182,7 @@ func TestGetServerMetrics_ErrorDoesNotLeakInternalDetails(t *testing.T) {
 // =============================================================================
 
 func TestValidateBackendForOrg_EmptyOrgDefault_FallsToSystemDefault(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&paymentModels.OrganizationSubscription{},
-		&organizationModels.Organization{},
-		&organizationModels.OrganizationMember{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	// Create org with NO default backend
 	org := &organizationModels.Organization{
@@ -229,7 +196,7 @@ func TestValidateBackendForOrg_EmptyOrgDefault_FallsToSystemDefault(t *testing.T
 		AllowedBackends:  []string{},
 		DefaultBackend:   "", // No default set
 	}
-	err = db.Omit("Metadata").Create(org).Error
+	err := db.Omit("Metadata").Create(org).Error
 	require.NoError(t, err)
 
 	// The validateBackendForOrg function is private, so we test the behavior
@@ -249,13 +216,7 @@ func TestValidateBackendForOrg_EmptyOrgDefault_FallsToSystemDefault(t *testing.T
 // =============================================================================
 
 func TestGetBackends_InvalidOrgID_Returns400WithoutLeak(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&organizationModels.Organization{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	ctrl := terminalController.NewTerminalController(db)
 	gin.SetMode(gin.TestMode)
@@ -275,7 +236,7 @@ func TestGetBackends_InvalidOrgID_Returns400WithoutLeak(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var apiErr map[string]interface{}
-	err = json.Unmarshal(w.Body.Bytes(), &apiErr)
+	err := json.Unmarshal(w.Body.Bytes(), &apiErr)
 	require.NoError(t, err)
 	// Should say "Invalid organization_id" without leaking the parse error details
 	assert.Equal(t, "Invalid organization_id", apiErr["error_message"])
@@ -286,13 +247,7 @@ func TestGetBackends_InvalidOrgID_Returns400WithoutLeak(t *testing.T) {
 // =============================================================================
 
 func TestGetBackends_NonExistentOrg_ReturnsError(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&organizationModels.Organization{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	ctrl := terminalController.NewTerminalController(db)
 	gin.SetMode(gin.TestMode)
@@ -321,13 +276,7 @@ func TestGetBackends_NonExistentOrg_ReturnsError(t *testing.T) {
 // =============================================================================
 
 func TestSelectAllowedBackends_JSONSerializerWorks(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&organizationModels.Organization{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	// Create org with specific allowed backends
 	org := &organizationModels.Organization{
@@ -341,7 +290,7 @@ func TestSelectAllowedBackends_JSONSerializerWorks(t *testing.T) {
 		AllowedBackends:  []string{"backend-a", "backend-b"},
 		DefaultBackend:   "backend-a",
 	}
-	err = db.Omit("Metadata").Create(org).Error
+	err := db.Omit("Metadata").Create(org).Error
 	require.NoError(t, err)
 
 	// Read back using the same Select pattern as GetBackendsForOrganization
@@ -358,13 +307,7 @@ func TestSelectAllowedBackends_JSONSerializerWorks(t *testing.T) {
 
 // Regression: Verify that the UpdateOrganizationBackends pattern actually persists data
 func TestUpdateOrganizationBackends_PersistsWithSelect(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&organizationModels.Organization{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	// Create org with NO backends
 	org := &organizationModels.Organization{
@@ -376,7 +319,7 @@ func TestUpdateOrganizationBackends_PersistsWithSelect(t *testing.T) {
 		MaxGroups:        10,
 		MaxMembers:       50,
 	}
-	err = db.Omit("Metadata").Create(org).Error
+	err := db.Omit("Metadata").Create(org).Error
 	require.NoError(t, err)
 
 	// Verify initially null
@@ -411,13 +354,7 @@ func TestUpdateOrganizationBackends_PersistsWithSelect(t *testing.T) {
 
 // Regression: Map-based Updates (entity management PATCH) must JSON-marshal serializer:json fields
 func TestMapBasedUpdate_AllowedBackends_MustBeJSONMarshaled(t *testing.T) {
-	db := setupTestDB(t)
-
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&organizationModels.Organization{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	// Create org with no backends
 	org := &organizationModels.Organization{
@@ -429,7 +366,7 @@ func TestMapBasedUpdate_AllowedBackends_MustBeJSONMarshaled(t *testing.T) {
 		MaxGroups:        10,
 		MaxMembers:       50,
 	}
-	err = db.Omit("Metadata").Create(org).Error
+	err := db.Omit("Metadata").Create(org).Error
 	require.NoError(t, err)
 
 	// Simulate the entity management PATCH path: update via map with JSON-marshaled value
@@ -469,13 +406,7 @@ func setupServiceWithMockBackends(t *testing.T, backends []terminalDto.BackendIn
 	}))
 	t.Cleanup(func() { ttServer.Close() })
 
-	db := setupTestDB(t)
-	err := db.AutoMigrate(
-		&paymentModels.SubscriptionPlan{},
-		&organizationModels.Organization{},
-		&configModels.Feature{},
-	)
-	require.NoError(t, err)
+	db := freshTestDB(t)
 
 	// Seed system default backend feature
 	if systemDefault != "" {

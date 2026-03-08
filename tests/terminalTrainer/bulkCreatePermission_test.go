@@ -20,105 +20,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// setupBulkCreateTestDB creates an in-memory SQLite database with tables needed for bulk-create tests
+// setupBulkCreateTestDB returns a fresh shared DB with all rows cleaned.
+// All tables (including subscription plans) are now migrated once in TestMain.
 func setupBulkCreateTestDB(t *testing.T) *gorm.DB {
-	db := setupTestDB(t)
-
-	// Create tables manually to avoid JSONB type issues with SQLite
-	err := db.Exec(`CREATE TABLE IF NOT EXISTS class_groups (
-		id TEXT PRIMARY KEY,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME,
-		owner_ids TEXT,
-		name TEXT NOT NULL,
-		display_name TEXT NOT NULL,
-		description TEXT,
-		owner_user_id TEXT NOT NULL,
-		organization_id TEXT,
-		parent_group_id TEXT,
-		subscription_plan_id TEXT,
-		max_members INTEGER DEFAULT 50,
-		expires_at DATETIME,
-		casdoor_group_name TEXT,
-		is_active BOOLEAN DEFAULT TRUE,
-		metadata TEXT
-	)`).Error
-	require.NoError(t, err)
-
-	err = db.Exec(`CREATE TABLE IF NOT EXISTS group_members (
-		id TEXT PRIMARY KEY,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME,
-		owner_ids TEXT,
-		group_id TEXT NOT NULL,
-		user_id TEXT NOT NULL,
-		role TEXT DEFAULT 'member',
-		invited_by TEXT,
-		joined_at DATETIME NOT NULL,
-		is_active BOOLEAN DEFAULT TRUE,
-		metadata TEXT
-	)`).Error
-	require.NoError(t, err)
-
-	err = db.Exec(`CREATE TABLE IF NOT EXISTS subscription_plans (
-		id TEXT PRIMARY KEY,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME,
-		owner_ids TEXT,
-		name TEXT,
-		description TEXT,
-		is_active BOOLEAN DEFAULT TRUE,
-		max_concurrent_terminals INTEGER DEFAULT 1,
-		max_session_duration_minutes INTEGER DEFAULT 60,
-		price_amount INTEGER DEFAULT 0,
-		currency TEXT DEFAULT 'eur',
-		billing_interval TEXT DEFAULT 'month',
-		max_concurrent_users INTEGER DEFAULT 1,
-		max_courses INTEGER DEFAULT -1,
-		priority INTEGER DEFAULT 0,
-		trial_days INTEGER DEFAULT 0,
-		network_access_enabled BOOLEAN DEFAULT FALSE,
-		data_persistence_enabled BOOLEAN DEFAULT FALSE,
-		data_persistence_gb INTEGER DEFAULT 0,
-		use_tiered_pricing BOOLEAN DEFAULT FALSE,
-		stripe_product_id TEXT,
-		stripe_price_id TEXT,
-		required_role TEXT,
-		default_backend TEXT,
-		features TEXT,
-		allowed_machine_sizes TEXT,
-		allowed_templates TEXT,
-		allowed_backends TEXT,
-		planned_features TEXT,
-		pricing_tiers TEXT
-	)`).Error
-	require.NoError(t, err)
-
-	err = db.Exec(`CREATE TABLE IF NOT EXISTS user_subscriptions (
-		id TEXT PRIMARY KEY,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME,
-		owner_ids TEXT,
-		user_id TEXT,
-		subscription_plan_id TEXT,
-		status TEXT DEFAULT 'active',
-		stripe_subscription_id TEXT,
-		stripe_customer_id TEXT,
-		current_period_start DATETIME,
-		current_period_end DATETIME,
-		cancel_at_period_end BOOLEAN DEFAULT FALSE,
-		canceled_at DATETIME,
-		source TEXT DEFAULT 'manual',
-		assigned_by TEXT,
-		batch_id TEXT
-	)`).Error
-	require.NoError(t, err)
-
-	return db
+	return freshTestDB(t)
 }
 
 // createTestGroup creates a test class group using raw SQL to avoid JSONB issues with SQLite

@@ -163,7 +163,7 @@ func (m *MockWorkerService) PollUntilComplete(ctx context.Context, jobID string,
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	ticker := time.NewTicker(50 * time.Millisecond) // Poll rapide pour les tests
+	ticker := time.NewTicker(5 * time.Millisecond) // Poll rapide pour les tests
 	defer ticker.Stop()
 
 	for {

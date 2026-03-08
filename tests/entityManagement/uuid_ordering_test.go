@@ -43,7 +43,6 @@ func TestUUIDv4_NotTimeOrdered(t *testing.T) {
 	uuids := make([]uuid.UUID, 100)
 	for i := range 100 {
 		uuids[i] = uuid.New() // Uses v4 (random)
-		time.Sleep(1 * time.Millisecond)
 	}
 
 	// Count how many times UUID[i] > UUID[i-1]

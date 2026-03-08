@@ -17,14 +17,10 @@ import (
 
 	authController "soli/formations/src/auth"
 	"soli/formations/src/auth/dto"
-	test_tools "soli/formations/tests/testTools"
 )
 
 // TestLoginJSONBinding tests that the login endpoint properly binds lowercase JSON fields
 func TestLoginJSONBinding(t *testing.T) {
-	teardownTest := test_tools.SetupFunctionnalTests(t)
-	defer teardownTest(t)
-
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
@@ -84,9 +80,6 @@ func TestLoginJSONBinding(t *testing.T) {
 
 // TestLoginURLEncoding tests that special characters in passwords are properly URL-encoded
 func TestLoginURLEncoding(t *testing.T) {
-	teardownTest := test_tools.SetupFunctionnalTests(t)
-	defer teardownTest(t)
-
 	// Create a test user with special characters in password
 	testUser := &casdoorsdk.User{
 		Owner:       "soli",
@@ -156,9 +149,6 @@ func TestLoginURLEncoding(t *testing.T) {
 
 // TestLoginTokenValidation tests that the login endpoint validates token user ID matches expected user
 func TestLoginTokenValidation(t *testing.T) {
-	teardownTest := test_tools.SetupFunctionnalTests(t)
-	defer teardownTest(t)
-
 	// Create two test users
 	user1 := &casdoorsdk.User{
 		Owner:       "soli",
@@ -256,9 +246,6 @@ func TestLoginTokenValidation(t *testing.T) {
 
 // TestLoginToCasdoorURLEncoding tests the LoginToCasdoor function directly for URL encoding
 func TestLoginToCasdoorURLEncoding(t *testing.T) {
-	teardownTest := test_tools.SetupFunctionnalTests(t)
-	defer teardownTest(t)
-
 	testCases := []struct {
 		name         string
 		username     string
@@ -341,9 +328,6 @@ func TestLoginToCasdoorURLEncoding(t *testing.T) {
 
 // TestLoginWithWrongCredentials tests that wrong credentials are properly rejected
 func TestLoginWithWrongCredentials(t *testing.T) {
-	teardownTest := test_tools.SetupFunctionnalTests(t)
-	defer teardownTest(t)
-
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 

@@ -10,9 +10,9 @@ services:
       - postgres-test-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      interval: 2s
+      timeout: 2s
+      retries: 15
     networks:
       - test-network
 
@@ -27,9 +27,9 @@ services:
       - casdoor-mysql-test-data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      interval: 2s
+      timeout: 2s
+      retries: 30
     networks:
       - test-network
 
@@ -48,10 +48,10 @@ services:
       RUNNING_IN_DOCKER: "true"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/api/get-account"]
-      interval: 5s
-      timeout: 5s
+      interval: 2s
+      timeout: 2s
       retries: 30
-      start_period: 30s
+      start_period: 15s
     networks:
       - test-network
 

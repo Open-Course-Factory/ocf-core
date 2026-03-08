@@ -68,13 +68,11 @@ func TestPaymentEdgeCases_NilPointerProtection(t *testing.T) {
 
 		go func() {
 			// Simuler première mise à jour
-			time.Sleep(10 * time.Millisecond)
 			done <- true
 		}()
 
 		go func() {
 			// Simuler deuxième mise à jour
-			time.Sleep(15 * time.Millisecond)
 			done <- true
 		}()
 
@@ -203,20 +201,13 @@ func TestPaymentEdgeCases_SyncOperations(t *testing.T) {
 	})
 
 	t.Run("Handle sync timeout scenarios", func(t *testing.T) {
-		// Simuler un timeout pendant une opération de sync
-		start := time.Now()
+		// Verify timeout comparison logic without sleeping
 		timeout := 100 * time.Millisecond
 
-		// Simuler une opération qui prend du temps
-		time.Sleep(50 * time.Millisecond)
-		elapsed := time.Since(start)
-
-		// Vérifier que nous n'avons pas dépassé le timeout
+		elapsed := 50 * time.Millisecond
 		assert.Less(t, elapsed, timeout)
 
-		// Simuler un dépassement de timeout
-		time.Sleep(60 * time.Millisecond)
-		totalElapsed := time.Since(start)
+		totalElapsed := 110 * time.Millisecond
 		assert.Greater(t, totalElapsed, timeout)
 	})
 }

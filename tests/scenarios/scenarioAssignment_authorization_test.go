@@ -22,8 +22,6 @@ import (
 
 func TestScenarioAssignmentAuth_BeforeUpdate_GroupManagerCanUpdate(t *testing.T) {
 	db := setupTestDB(t)
-	require.NoError(t, db.AutoMigrate(&orgModels.Organization{}, &orgModels.OrganizationMember{}))
-
 	hook := scenarioHooks.NewScenarioAssignmentAuthorizationHook(db)
 
 	ownerID := "group-owner-update-001"
@@ -83,8 +81,6 @@ func TestScenarioAssignmentAuth_BeforeUpdate_GroupManagerCanUpdate(t *testing.T)
 
 func TestScenarioAssignmentAuth_BeforeUpdate_NonManagerBlocked(t *testing.T) {
 	db := setupTestDB(t)
-	require.NoError(t, db.AutoMigrate(&orgModels.Organization{}, &orgModels.OrganizationMember{}))
-
 	hook := scenarioHooks.NewScenarioAssignmentAuthorizationHook(db)
 
 	ownerID := "group-owner-update-002"
@@ -144,8 +140,6 @@ func TestScenarioAssignmentAuth_BeforeUpdate_NonManagerBlocked(t *testing.T) {
 
 func TestScenarioAssignmentAuth_BeforeUpdate_AdminCanUpdate(t *testing.T) {
 	db := setupTestDB(t)
-	require.NoError(t, db.AutoMigrate(&orgModels.Organization{}, &orgModels.OrganizationMember{}))
-
 	hook := scenarioHooks.NewScenarioAssignmentAuthorizationHook(db)
 
 	ownerID := "group-owner-update-003"
@@ -198,8 +192,6 @@ func TestScenarioAssignmentAuth_BeforeUpdate_AdminCanUpdate(t *testing.T) {
 
 func TestScenarioAssignmentAuth_BeforeCreate_OrgManagerCanCreate(t *testing.T) {
 	db := setupTestDB(t)
-	require.NoError(t, db.AutoMigrate(&orgModels.Organization{}, &orgModels.OrganizationMember{}))
-
 	hook := scenarioHooks.NewScenarioAssignmentAuthorizationHook(db)
 
 	orgOwnerID := "org-owner-create-001"
@@ -250,8 +242,6 @@ func TestScenarioAssignmentAuth_BeforeCreate_OrgManagerCanCreate(t *testing.T) {
 
 func TestScenarioAssignmentAuth_BeforeCreate_NonOrgManagerBlocked(t *testing.T) {
 	db := setupTestDB(t)
-	require.NoError(t, db.AutoMigrate(&orgModels.Organization{}, &orgModels.OrganizationMember{}))
-
 	hook := scenarioHooks.NewScenarioAssignmentAuthorizationHook(db)
 
 	orgOwnerID := "org-owner-create-002"
@@ -312,8 +302,6 @@ func TestScenarioAssignmentAuth_BeforeCreate_NonOrgManagerBlocked(t *testing.T) 
 
 func TestScenarioAssignmentAuth_BeforeDelete_OrgManagerCanDelete(t *testing.T) {
 	db := setupTestDB(t)
-	require.NoError(t, db.AutoMigrate(&orgModels.Organization{}, &orgModels.OrganizationMember{}))
-
 	hook := scenarioHooks.NewScenarioAssignmentAuthorizationHook(db)
 
 	orgOwnerID := "org-owner-delete-001"
@@ -367,8 +355,6 @@ func TestScenarioAssignmentAuth_BeforeDelete_OrgManagerCanDelete(t *testing.T) {
 
 func TestScenarioAssignmentAuth_BeforeDelete_NonOrgManagerBlocked(t *testing.T) {
 	db := setupTestDB(t)
-	require.NoError(t, db.AutoMigrate(&orgModels.Organization{}, &orgModels.OrganizationMember{}))
-
 	hook := scenarioHooks.NewScenarioAssignmentAuthorizationHook(db)
 
 	orgOwnerID := "org-owner-delete-002"
@@ -432,8 +418,6 @@ func TestScenarioAssignmentAuth_BeforeDelete_NonOrgManagerBlocked(t *testing.T) 
 
 func TestScenarioAssignmentAuth_BeforeUpdate_OrgManagerCanUpdate(t *testing.T) {
 	db := setupTestDB(t)
-	require.NoError(t, db.AutoMigrate(&orgModels.Organization{}, &orgModels.OrganizationMember{}))
-
 	hook := scenarioHooks.NewScenarioAssignmentAuthorizationHook(db)
 
 	orgManagerID := "org-manager-update-001"
@@ -487,8 +471,6 @@ func TestScenarioAssignmentAuth_BeforeUpdate_OrgManagerCanUpdate(t *testing.T) {
 
 func TestScenarioAssignmentAuth_BeforeUpdate_NonOrgManagerBlocked(t *testing.T) {
 	db := setupTestDB(t)
-	require.NoError(t, db.AutoMigrate(&orgModels.Organization{}, &orgModels.OrganizationMember{}))
-
 	hook := scenarioHooks.NewScenarioAssignmentAuthorizationHook(db)
 
 	orgOwnerID := "org-owner-update-002"
@@ -553,8 +535,6 @@ func TestScenarioAssignmentAuth_BeforeUpdate_NonOrgManagerBlocked(t *testing.T) 
 
 func TestScenarioAssignmentAuth_BeforeCreate_AdminBypassesOrgCheck(t *testing.T) {
 	db := setupTestDB(t)
-	require.NoError(t, db.AutoMigrate(&orgModels.Organization{}, &orgModels.OrganizationMember{}))
-
 	hook := scenarioHooks.NewScenarioAssignmentAuthorizationHook(db)
 
 	adminID := "platform-admin-org-001"
@@ -588,8 +568,6 @@ func TestScenarioAssignmentAuth_BeforeCreate_AdminBypassesOrgCheck(t *testing.T)
 
 func TestScenarioAssignmentAuth_BeforeDelete_AdminBypassesOrgCheck(t *testing.T) {
 	db := setupTestDB(t)
-	require.NoError(t, db.AutoMigrate(&orgModels.Organization{}, &orgModels.OrganizationMember{}))
-
 	hook := scenarioHooks.NewScenarioAssignmentAuthorizationHook(db)
 
 	adminID := "platform-admin-org-002"

@@ -5,24 +5,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/terminalTrainer/models"
 )
 
-// setupTestDB creates an in-memory SQLite database for testing
+// setupTestDB returns a fresh shared DB with all rows cleaned.
+// Kept as a thin wrapper for backward compatibility.
 func setupTestDB(t *testing.T) *gorm.DB {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-
-	// Auto migrate the models (group_members is needed because HasTerminalAccess checks group membership)
-	err = db.AutoMigrate(&models.UserTerminalKey{}, &models.Terminal{}, &models.TerminalShare{}, &groupModels.ClassGroup{}, &groupModels.GroupMember{})
-	require.NoError(t, err)
-
-	return db
+	return freshTestDB(t)
 }
 
 // createTestUserKey creates a test user key

@@ -20,15 +20,10 @@ import (
 	terminalServices "soli/formations/src/terminalTrainer/services"
 )
 
-// setupTestDBWithOrgs creates an in-memory SQLite database with terminal and organization tables
+// setupTestDBWithOrgs returns a fresh shared DB with all rows cleaned.
+// All tables (including organization models) are now migrated once in TestMain.
 func setupTestDBWithOrgs(t *testing.T) *gorm.DB {
-	db := setupTestDB(t)
-
-	// Also migrate organization models needed for org-based access checks
-	err := db.AutoMigrate(&orgModels.Organization{}, &orgModels.OrganizationMember{})
-	require.NoError(t, err)
-
-	return db
+	return freshTestDB(t)
 }
 
 // createTestTerminalWithOrg creates a test terminal associated with an organization
@@ -330,17 +325,11 @@ func TestIsSessionOwnerOrOrgManager_SessionWithoutOrg(t *testing.T) {
 		"Org manager should NOT be able to access a session that has no organization association")
 }
 
-// setupTestDBWithGroups creates an in-memory SQLite database with terminal,
-// organization, and group tables for group command history tests.
+// setupTestDBWithGroups returns a fresh shared DB with all rows cleaned.
+// All tables (including group models) are now migrated once in TestMain.
 func setupTestDBWithGroups(t *testing.T) *gorm.DB {
 	t.Helper()
-	db := setupTestDBWithOrgs(t)
-
-	// Also migrate group models needed for group command history tests
-	err := db.AutoMigrate(&groupModels.ClassGroup{}, &groupModels.GroupMember{})
-	require.NoError(t, err)
-
-	return db
+	return freshTestDB(t)
 }
 
 // createTestGroupForHistory creates a test group under an organization for history access tests.
