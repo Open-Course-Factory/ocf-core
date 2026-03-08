@@ -550,7 +550,7 @@ func (s *ScenarioSessionService) deployFlagsToContainer(terminalSessionID string
 			slog.Warn("skipping flag deployment: path contains '..'", "step_order", flag.StepOrder, "path", flagPath)
 			continue
 		}
-		if !strings.HasPrefix(flagPath, "/tmp/") && !strings.HasPrefix(flagPath, "/home/") {
+		if !strings.HasPrefix(flagPath, "/tmp/") && !strings.HasPrefix(flagPath, "/home/") && !strings.HasPrefix(flagPath, "/World/") {
 			flagPath = fmt.Sprintf("/tmp/.flag_step_%d", flag.StepOrder)
 		}
 
