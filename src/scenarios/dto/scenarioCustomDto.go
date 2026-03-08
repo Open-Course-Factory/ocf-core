@@ -70,8 +70,8 @@ type CurrentStepResponse struct {
 
 // SeedScenarioInput - DTO for seeding a scenario with inline content (admin/testing)
 type SeedScenarioInput struct {
-	Title         string          `json:"title" binding:"required"`
-	Description   string          `json:"description"`
+	Title         string          `json:"title" binding:"required,max=1000"`
+	Description   string          `json:"description" binding:"max=1000"`
 	Difficulty    string          `json:"difficulty"`
 	EstimatedTime string          `json:"estimated_time"`
 	InstanceType  string          `json:"instance_type"`
@@ -79,19 +79,19 @@ type SeedScenarioInput struct {
 	FlagsEnabled  bool            `json:"flags_enabled"`
 	GshEnabled    bool            `json:"gsh_enabled"`
 	CrashTraps    bool            `json:"crash_traps"`
-	IntroText     string          `json:"intro_text"`
-	FinishText    string          `json:"finish_text"`
+	IntroText     string          `json:"intro_text" binding:"max=65536"`
+	FinishText    string          `json:"finish_text" binding:"max=65536"`
 	Steps         []SeedStepInput `json:"steps" binding:"required,min=1"`
 }
 
 // SeedStepInput - DTO for a single step in a seed scenario
 type SeedStepInput struct {
-	Title            string `json:"title" binding:"required"`
-	TextContent      string `json:"text_content"`
-	HintContent      string `json:"hint_content"`
-	VerifyScript     string `json:"verify_script"`
-	BackgroundScript string `json:"background_script"`
-	ForegroundScript string `json:"foreground_script"`
+	Title            string `json:"title" binding:"required,max=1000"`
+	TextContent      string `json:"text_content" binding:"max=65536"`
+	HintContent      string `json:"hint_content" binding:"max=65536"`
+	VerifyScript     string `json:"verify_script" binding:"max=4096"`
+	BackgroundScript string `json:"background_script" binding:"max=4096"`
+	ForegroundScript string `json:"foreground_script" binding:"max=4096"`
 	HasFlag          bool   `json:"has_flag"`
 	FlagPath         string `json:"flag_path"`
 }
