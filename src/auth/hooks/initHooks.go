@@ -19,11 +19,13 @@ func InitAuthHooks(db *gorm.DB) {
 		log.Println("✅ UserSettings auto-create hook registered")
 	}
 
-	// Future hooks can be added here:
-	// - Welcome email hook
-	// - Initial permissions setup hook
-	// - User analytics tracking hook
-	// etc.
+	// Ownership hook to enforce that only the owner (or admin) can update UserSettings
+	userSettingsOwnershipHook := NewUserSettingsOwnershipHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(userSettingsOwnershipHook); err != nil {
+		log.Printf("❌ Failed to register UserSettings ownership hook: %v", err)
+	} else {
+		log.Println("✅ UserSettings ownership hook registered")
+	}
 
 	log.Println("🔗 Auth hooks initialization complete")
 }

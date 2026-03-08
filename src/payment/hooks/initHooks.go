@@ -28,11 +28,27 @@ func InitPaymentHooks(db *gorm.DB) {
 		log.Println("✅ Stripe SubscriptionPlan hook registered")
 	}
 
-	// Ici on peut ajouter d'autres hooks :
-	// - Hook pour les métriques d'utilisation
-	// - Hook pour les notifications email
-	// - Hook pour les analytics
-	// - etc.
+	// Ownership hooks to enforce that only the owner (or admin) can modify payment entities
+	billingAddressHook := NewBillingAddressOwnershipHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(billingAddressHook); err != nil {
+		log.Printf("❌ Failed to register BillingAddress ownership hook: %v", err)
+	} else {
+		log.Println("✅ BillingAddress ownership hook registered")
+	}
+
+	paymentMethodHook := NewPaymentMethodOwnershipHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(paymentMethodHook); err != nil {
+		log.Printf("❌ Failed to register PaymentMethod ownership hook: %v", err)
+	} else {
+		log.Println("✅ PaymentMethod ownership hook registered")
+	}
+
+	userSubscriptionHook := NewUserSubscriptionOwnershipHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(userSubscriptionHook); err != nil {
+		log.Printf("❌ Failed to register UserSubscription ownership hook: %v", err)
+	} else {
+		log.Println("✅ UserSubscription ownership hook registered")
+	}
 
 	log.Println("🔗 Payment hooks initialization complete")
 }

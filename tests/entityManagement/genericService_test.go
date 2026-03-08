@@ -100,7 +100,7 @@ func (g *mockGenericService) CreateEntity(inputDto any, entityName string) (any,
 	return g.repository.CreateEntityFromModel(inputDto)
 }
 
-func (g *mockGenericService) CreateEntityWithUser(inputDto any, entityName string, userID string) (any, error) {
+func (g *mockGenericService) CreateEntityWithUser(inputDto any, entityName string, userID string, userRoles ...string) (any, error) {
 	return g.repository.CreateEntityFromModel(inputDto)
 }
 
@@ -124,7 +124,7 @@ func (g *mockGenericService) DeleteEntity(id uuid.UUID, entity any, scoped bool)
 	return g.repository.DeleteEntity(id, entity, scoped)
 }
 
-func (g *mockGenericService) DeleteEntityWithUser(id uuid.UUID, entity any, scoped bool, userID string) error {
+func (g *mockGenericService) DeleteEntityWithUser(id uuid.UUID, entity any, scoped bool, userID string, userRoles ...string) error {
 	return g.repository.DeleteEntity(id, entity, scoped)
 }
 

@@ -19,7 +19,8 @@ func (genericController genericController) AddEntity(ctx *gin.Context) {
 	}
 
 	userId := ctx.GetString("userId")
-	entity, entityCreationError := genericController.genericService.CreateEntityWithUser(decodedData, entityName, userId)
+	userRoles := ctx.GetStringSlice("userRoles")
+	entity, entityCreationError := genericController.genericService.CreateEntityWithUser(decodedData, entityName, userId, userRoles...)
 	if entityCreationError != nil {
 		HandleEntityError(ctx, entityCreationError)
 		return

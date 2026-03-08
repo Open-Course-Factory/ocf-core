@@ -49,13 +49,13 @@ func stringToUUIDHookFunc() mapstructure.DecodeHookFunc {
 
 type GenericService interface {
 	CreateEntity(inputDto any, entityName string) (any, error)
-	CreateEntityWithUser(inputDto any, entityName string, userID string) (any, error)
+	CreateEntityWithUser(inputDto any, entityName string, userID string, userRoles ...string) (any, error)
 	SaveEntity(entity any) (any, error)
 	GetEntity(id uuid.UUID, data any, entityName string, includes []string) (any, error)
 	GetEntities(data any, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error)
 	GetEntitiesCursor(data any, cursor string, limit int, filters map[string]any, includes []string) ([]any, string, bool, int64, error)
 	DeleteEntity(id uuid.UUID, entity any, scoped bool) error
-	DeleteEntityWithUser(id uuid.UUID, entity any, scoped bool, userID string) error
+	DeleteEntityWithUser(id uuid.UUID, entity any, scoped bool, userID string, userRoles ...string) error
 	EditEntity(id uuid.UUID, entityName string, entity any, data any) error
 	EditEntityWithUser(id uuid.UUID, entityName string, entity any, data any, userID string, userRoles ...string) error
 	GetEntityModelInterface(entityName string) any
@@ -85,7 +85,12 @@ func (g *genericService) CreateEntity(inputDto any, entityName string) (any, err
 	return g.CreateEntityWithUser(inputDto, entityName, "")
 }
 
-func (g *genericService) CreateEntityWithUser(inputDto any, entityName string, userID string) (any, error) {
+func (g *genericService) CreateEntityWithUser(inputDto any, entityName string, userID string, userRoles ...string) (any, error) {
+	// Default to "Member" role for authenticated users when no roles are specified
+	if userID != "" && len(userRoles) == 0 {
+		userRoles = []string{"Member"}
+	}
+
 	// Convert DTO to model entity before calling BeforeCreate hook
 	ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps(entityName)
 	if !ok {
@@ -103,6 +108,7 @@ func (g *genericService) CreateEntityWithUser(inputDto any, entityName string, u
 		HookType:   hooks.BeforeCreate,
 		NewEntity:  entityModel,
 		UserID:     userID,
+		UserRoles:  userRoles,
 		Context:    context.Background(),
 	}
 
@@ -122,6 +128,7 @@ func (g *genericService) CreateEntityWithUser(inputDto any, entityName string, u
 		NewEntity:  entity,
 		EntityID:   g.extractEntityID(entityName, entity),
 		UserID:     userID,
+		UserRoles:  userRoles,
 		Context:    context.Background(),
 	}
 
@@ -195,7 +202,12 @@ func (g *genericService) DeleteEntity(id uuid.UUID, entity any, scoped bool) err
 	return g.DeleteEntityWithUser(id, entity, scoped, "")
 }
 
-func (g *genericService) DeleteEntityWithUser(id uuid.UUID, entity any, scoped bool, userID string) error {
+func (g *genericService) DeleteEntityWithUser(id uuid.UUID, entity any, scoped bool, userID string, userRoles ...string) error {
+	// Default to "Member" role for authenticated users when no roles are specified
+	if userID != "" && len(userRoles) == 0 {
+		userRoles = []string{"Member"}
+	}
+
 	typeOfEntity := reflect.TypeOf(entity)
 	entityName := typeOfEntity.Name()
 
@@ -226,6 +238,7 @@ func (g *genericService) DeleteEntityWithUser(id uuid.UUID, entity any, scoped b
 		EntityID:   id,
 		NewEntity:  existingEntity,
 		UserID:     userID,
+		UserRoles:  userRoles,
 		Context:    context.Background(),
 	}
 
@@ -244,6 +257,7 @@ func (g *genericService) DeleteEntityWithUser(id uuid.UUID, entity any, scoped b
 		EntityID:   id,
 		NewEntity:  existingEntity,
 		UserID:     userID,
+		UserRoles:  userRoles,
 		Context:    context.Background(),
 	}
 

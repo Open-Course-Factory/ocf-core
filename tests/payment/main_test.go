@@ -41,6 +41,8 @@ func TestMain(m *testing.M) {
 		&models.SubscriptionBatch{},
 		&groupModels.ClassGroup{},
 		&groupModels.GroupMember{},
+		&models.BillingAddress{},
+		&models.PaymentMethod{},
 	)
 	if err != nil {
 		panic("failed to migrate shared test DB: " + err.Error())
@@ -66,5 +68,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM subscription_plans")
 	sharedTestDB.Exec("DELETE FROM plan_features")
 	sharedTestDB.Exec("DELETE FROM features")
+	sharedTestDB.Exec("DELETE FROM billing_addresses")
+	sharedTestDB.Exec("DELETE FROM payment_methods")
 	return sharedTestDB
 }
