@@ -2,6 +2,7 @@ package scenarioHooks
 
 import (
 	"fmt"
+	"log/slog"
 
 	"soli/formations/src/entityManagement/hooks"
 	groupServices "soli/formations/src/groups/services"
@@ -40,7 +41,7 @@ func (h *ScenarioAssignmentAuthorizationHook) GetEntityName() string {
 }
 
 func (h *ScenarioAssignmentAuthorizationHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete}
+	return []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate, hooks.BeforeDelete, hooks.AfterDelete}
 }
 
 func (h *ScenarioAssignmentAuthorizationHook) IsEnabled() bool {
@@ -59,6 +60,8 @@ func (h *ScenarioAssignmentAuthorizationHook) Execute(ctx *hooks.HookContext) er
 		return h.handleBeforeUpdate(ctx)
 	case hooks.BeforeDelete:
 		return h.handleBeforeDelete(ctx)
+	case hooks.AfterDelete:
+		return h.handleAfterDelete(ctx)
 	}
 	return nil
 }
@@ -175,6 +178,56 @@ func (h *ScenarioAssignmentAuthorizationHook) handleBeforeDelete(ctx *hooks.Hook
 		if !canManage {
 			return utils.PermissionDeniedError("manage scenario assignments for", "organization")
 		}
+	}
+
+	return nil
+}
+
+func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookContext) error {
+	assignment, ok := ctx.NewEntity.(*models.ScenarioAssignment)
+	if !ok {
+		slog.Warn("AfterDelete: expected *models.ScenarioAssignment", "got", fmt.Sprintf("%T", ctx.NewEntity))
+		return nil
+	}
+
+	if assignment.GroupID == nil {
+		return nil
+	}
+
+	// Get active group member user IDs
+	var memberUserIDs []string
+	if err := h.db.Table("group_members").
+		Where("group_id = ? AND is_active = ?", *assignment.GroupID, true).
+		Pluck("user_id", &memberUserIDs).Error; err != nil {
+		slog.Warn("AfterDelete: failed to load group members",
+			"group_id", assignment.GroupID,
+			"error", err)
+		return nil
+	}
+
+	if len(memberUserIDs) == 0 {
+		return nil
+	}
+
+	// Abandon all active/in_progress sessions for these users on this scenario
+	result := h.db.Model(&models.ScenarioSession{}).
+		Where("user_id IN ? AND scenario_id = ? AND status IN ?",
+			memberUserIDs, assignment.ScenarioID, []string{"active", "in_progress"}).
+		Updates(map[string]any{"status": "abandoned"})
+
+	if result.Error != nil {
+		slog.Warn("AfterDelete: failed to abandon sessions",
+			"group_id", assignment.GroupID,
+			"scenario_id", assignment.ScenarioID,
+			"error", result.Error)
+		return nil
+	}
+
+	if result.RowsAffected > 0 {
+		slog.Info("AfterDelete: abandoned active sessions after assignment removal",
+			"group_id", assignment.GroupID,
+			"scenario_id", assignment.ScenarioID,
+			"sessions_abandoned", result.RowsAffected)
 	}
 
 	return nil
