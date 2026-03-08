@@ -290,7 +290,15 @@ func (h *TerminalShareRevokeHook) Execute(ctx *hooks.HookContext) error {
 func InitTerminalHooks(db *gorm.DB) {
 	utils.Info("🔗 Initializing terminal hooks...")
 
-	// Register Terminal owner permission hook
+	// Register Terminal ownership hook (BeforeCreate - prevents impersonation)
+	terminalOwnershipHook := NewTerminalOwnershipHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(terminalOwnershipHook); err != nil {
+		utils.Error("❌ Failed to register Terminal ownership hook: %v", err)
+	} else {
+		utils.Info("✅ Terminal ownership hook registered")
+	}
+
+	// Register Terminal owner permission hook (AfterCreate - grants PATCH)
 	ownerHook := NewTerminalOwnerPermissionHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(ownerHook); err != nil {
 		utils.Error("❌ Failed to register Terminal owner permission hook: %v", err)
@@ -306,7 +314,15 @@ func InitTerminalHooks(db *gorm.DB) {
 		utils.Info("✅ Terminal cleanup hook registered")
 	}
 
-	// Register TerminalShare permission hook
+	// Register TerminalShare ownership hook (BeforeCreate - verifies terminal ownership)
+	shareOwnershipHook := NewTerminalShareOwnershipHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(shareOwnershipHook); err != nil {
+		utils.Error("❌ Failed to register TerminalShare ownership hook: %v", err)
+	} else {
+		utils.Info("✅ TerminalShare ownership hook registered")
+	}
+
+	// Register TerminalShare permission hook (AfterCreate - grants PATCH)
 	shareHook := NewTerminalSharePermissionHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(shareHook); err != nil {
 		utils.Error("❌ Failed to register TerminalShare permission hook: %v", err)
