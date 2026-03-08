@@ -3,6 +3,7 @@ package entityRegistration
 import (
 	"net/http"
 
+	authModels "soli/formations/src/auth/models"
 	"soli/formations/src/configuration/dto"
 	"soli/formations/src/configuration/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -43,7 +44,8 @@ func RegisterFeature(service *ems.EntityRegistrationService) {
 			},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
-					"member": "(" + http.MethodGet + "|" + http.MethodPost + ")",
+					string(authModels.Member): "(" + http.MethodGet + ")",
+					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 				},
 			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{

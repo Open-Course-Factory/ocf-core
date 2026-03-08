@@ -92,7 +92,8 @@ func allEntityRoles() []entityRoleDefinition {
 			entityName: "Feature",
 			routeName:  "features",
 			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				"member": "(" + http.MethodGet + "|" + http.MethodPost + ")",
+				memberRole: "(" + http.MethodGet + ")",
+				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 			}},
 		},
 
