@@ -17,12 +17,16 @@ type userBucket struct {
 }
 
 var (
-	buckets sync.Map // map[string]*userBucket
+	buckets     sync.Map // map[string]*userBucket
+	lastCleanup time.Time
+	cleanupMu   sync.Mutex
 )
 
 const (
-	maxRequests = 10
-	windowSize  = time.Minute
+	maxRequests     = 10
+	windowSize      = time.Minute
+	cleanupInterval = 5 * time.Minute
+	staleThreshold  = 2 * time.Minute
 )
 
 // PerUserRateLimit returns a Gin middleware that limits requests to
@@ -65,5 +69,23 @@ func PerUserRateLimit() gin.HandlerFunc {
 		bucket.timestamps = append(pruned, now)
 		bucket.mu.Unlock()
 		ctx.Next()
+
+		// Periodically evict stale entries to prevent memory leak
+		if time.Since(lastCleanup) > cleanupInterval {
+			cleanupMu.Lock()
+			if time.Since(lastCleanup) > cleanupInterval { // double-check after lock
+				lastCleanup = time.Now()
+				buckets.Range(func(key, value interface{}) bool {
+					b := value.(*userBucket)
+					b.mu.Lock()
+					if len(b.timestamps) == 0 || time.Since(b.timestamps[len(b.timestamps)-1]) > staleThreshold {
+						buckets.Delete(key)
+					}
+					b.mu.Unlock()
+					return true
+				})
+			}
+			cleanupMu.Unlock()
+		}
 	}
 }
