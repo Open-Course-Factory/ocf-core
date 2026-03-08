@@ -316,6 +316,15 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 		return nil, fmt.Errorf("no flag found for current step %d", session.CurrentStep)
 	}
 
+	// Check brute-force lockout
+	const maxFlagAttempts = 20
+	if flag.FlagAttempts >= maxFlagAttempts {
+		return &dto.SubmitFlagResponse{
+			Correct: false,
+			Message: "Too many attempts. Flag submission locked for this step.",
+		}, nil
+	}
+
 	// Validate the flag
 	isCorrect := s.flagService.ValidateFlag(flag.ExpectedFlag, submittedFlag)
 
