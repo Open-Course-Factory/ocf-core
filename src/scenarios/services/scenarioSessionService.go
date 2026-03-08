@@ -582,9 +582,18 @@ func (s *ScenarioSessionService) deploySingleFlagToContainer(terminalSessionID s
 	}
 }
 
+// maxInlineScriptSize is the max script size that can be passed as a command argument.
+// tt-backend limits each exec argument to 4KB; scripts larger than this
+// are pushed as temp files and executed from disk.
+const maxInlineScriptSize = 4000
+
 // executeBackgroundScript runs a step's background script in the student's container.
 // This is best-effort: errors are logged but don't fail the step transition,
 // following the same pattern as deploySingleFlagToContainer.
+//
+// Small scripts (<=4000 bytes) are passed inline via /bin/sh -c.
+// Large scripts are pushed as temp files via PushFile, then executed from disk
+// and cleaned up afterward, to avoid tt-backend's 4KB exec argument limit.
 func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID string, step *models.ScenarioStep) {
 	if step.BackgroundScript == "" {
 		return
@@ -593,11 +602,37 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 		return
 	}
 
-	exitCode, _, stderr, err := s.verificationService.ExecInContainer(
-		terminalSessionID,
-		[]string{"/bin/sh", "-c", step.BackgroundScript},
-		30,
-	)
+	var exitCode int
+	var stderr string
+	var err error
+
+	if len(step.BackgroundScript) <= maxInlineScriptSize {
+		// Small scripts: pass inline (fast, single API call)
+		exitCode, _, stderr, err = s.verificationService.ExecInContainer(
+			terminalSessionID,
+			[]string{"/bin/sh", "-c", step.BackgroundScript},
+			30,
+		)
+	} else {
+		// Large scripts: push as temp file then execute
+		tmpPath := fmt.Sprintf("/tmp/.ocf_bg_%d.sh", step.Order)
+		if pushErr := s.verificationService.PushFile(terminalSessionID, tmpPath, step.BackgroundScript, "0700"); pushErr != nil {
+			slog.Warn("failed to push background script to container", "step_order", step.Order, "err", pushErr)
+			return
+		}
+		exitCode, _, stderr, err = s.verificationService.ExecInContainer(
+			terminalSessionID,
+			[]string{"/bin/sh", tmpPath},
+			30,
+		)
+		// Best-effort cleanup
+		_, _, _, _ = s.verificationService.ExecInContainer(
+			terminalSessionID,
+			[]string{"rm", "-f", tmpPath},
+			5,
+		)
+	}
+
 	if err != nil {
 		slog.Warn("background script failed to execute", "step_order", step.Order, "err", err)
 		return
