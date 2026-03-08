@@ -25,30 +25,30 @@ func TestEnumServiceWithoutAPI(t *testing.T) {
 
 	// Test that we can get enum descriptions (using local fallbacks)
 	desc0 := service.GetEnumDescription("session_status", 0)
-	assert.Equal(t, "Session is active and running", desc0)
+	assert.Equal(t, "Session was successfully created and started", desc0)
 
 	desc1 := service.GetEnumDescription("session_status", 1)
-	assert.Equal(t, "Session has expired and is no longer accessible", desc1)
+	assert.Equal(t, "Terms of service were not accepted or invalid", desc1)
 
 	desc3 := service.GetEnumDescription("session_status", 3)
 	assert.Equal(t, "API key has reached its concurrent session quota limit", desc3)
 
 	// Test that we can get enum names
 	name0 := service.GetEnumName("session_status", 0)
-	assert.Equal(t, "active", name0)
+	assert.Equal(t, "started", name0)
 
 	name1 := service.GetEnumName("session_status", 1)
-	assert.Equal(t, "expired", name1)
+	assert.Equal(t, "invalid_terms", name1)
 
 	name6 := service.GetEnumName("session_status", 6)
-	assert.Equal(t, "terminated", name6)
+	assert.Equal(t, "expired", name6)
 
 	// Test format error functionality
 	errorMsg := service.FormatError("session_status", 3, "Failed to start session")
 	assert.Contains(t, errorMsg, "Failed to start session")
 	assert.Contains(t, errorMsg, "quota limit")
 	assert.Contains(t, errorMsg, "status=3")
-	assert.Contains(t, errorMsg, "name=quota_limit")
+	assert.Contains(t, errorMsg, "name=quota_reached")
 }
 
 // TestEnumServiceUnknownValue tests handling of unknown enum values
