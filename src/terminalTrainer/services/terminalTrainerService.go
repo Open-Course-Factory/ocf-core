@@ -780,7 +780,7 @@ func (tts *terminalTrainerService) createMissingLocalSession(userID string, user
 		UserTerminalKey:   *userKey,
 	}
 
-	return tts.repository.CreateTerminalSession(terminal)
+	return tts.repository.CreateTerminalSessionFromAPI(terminal)
 }
 
 // SyncAllActiveSessions - version améliorée qui utilise la nouvelle logique

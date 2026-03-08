@@ -93,6 +93,24 @@ func (r *terminalRepository) DeleteUserTerminalKey(userID string) error {
 
 // Terminal session methods
 func (r *terminalRepository) CreateTerminalSession(terminal *models.Terminal) error {
+	// Check if a soft-deleted record exists with the same session_id
+	var existing models.Terminal
+	err := r.db.Unscoped().Where("session_id = ?", terminal.SessionID).First(&existing).Error
+	if err == nil && existing.DeletedAt.Valid {
+		// Soft-deleted record found: restore it with updated fields
+		return r.db.Unscoped().Model(&existing).Updates(map[string]any{
+			"deleted_at":            nil,
+			"status":               terminal.Status,
+			"user_id":              terminal.UserID,
+			"name":                 terminal.Name,
+			"expires_at":           terminal.ExpiresAt,
+			"instance_type":        terminal.InstanceType,
+			"machine_size":         terminal.MachineSize,
+			"backend":              terminal.Backend,
+			"user_terminal_key_id": terminal.UserTerminalKeyID,
+		}).Error
+	}
+	// No soft-deleted record: create normally (will error on true duplicates)
 	return r.db.Create(terminal).Error
 }
 
@@ -214,18 +232,28 @@ func (tr *terminalRepository) GetTerminalSessionBySessionID(sessionID string) (*
 }
 
 func (tr *terminalRepository) CreateTerminalSessionFromAPI(terminal *models.Terminal) error {
-	// Vérifier d'abord si la session existe déjà
-	existing, err := tr.GetTerminalSessionBySessionID(terminal.SessionID)
-	if err != nil {
-		return err
-	}
-	if existing != nil {
-		// Session existe déjà, ne pas la créer
+	// Check with Unscoped to find soft-deleted records too
+	var existing models.Terminal
+	err := tr.db.Unscoped().Where("session_id = ?", terminal.SessionID).First(&existing).Error
+	if err == nil {
+		// Record exists
+		if existing.DeletedAt.Valid {
+			// Soft-deleted: restore it with updated fields
+			return tr.db.Unscoped().Model(&existing).Updates(map[string]any{
+				"deleted_at":            nil,
+				"status":               terminal.Status,
+				"user_id":              terminal.UserID,
+				"expires_at":           terminal.ExpiresAt,
+				"machine_size":         terminal.MachineSize,
+				"backend":              terminal.Backend,
+				"user_terminal_key_id": terminal.UserTerminalKeyID,
+			}).Error
+		}
+		// Not soft-deleted: already exists, idempotent
 		return nil
 	}
-
-	result := tr.db.Create(terminal)
-	return result.Error
+	// Doesn't exist at all: create
+	return tr.db.Create(terminal).Error
 }
 
 func (tr *terminalRepository) GetOrphanedLocalSessions(apiSessionIDs []string) (*[]models.Terminal, error) {
