@@ -93,13 +93,26 @@ func (r *terminalRepository) DeleteUserTerminalKey(userID string) error {
 
 // Terminal session methods
 func (r *terminalRepository) CreateTerminalSession(terminal *models.Terminal) error {
-	// Check if a soft-deleted record exists with the same session_id
+	// Check if a record (active or soft-deleted) exists with the same session_id
 	var existing models.Terminal
 	err := r.db.Unscoped().Where("session_id = ?", terminal.SessionID).First(&existing).Error
-	if err == nil && existing.DeletedAt.Valid {
-		// Soft-deleted record found: restore it with updated fields
-		return r.db.Unscoped().Model(&existing).Updates(map[string]any{
-			"deleted_at":            nil,
+	if err == nil {
+		if existing.DeletedAt.Valid {
+			// Soft-deleted record found: restore it with updated fields
+			return r.db.Unscoped().Model(&existing).Updates(map[string]any{
+				"deleted_at":            nil,
+				"status":               terminal.Status,
+				"user_id":              terminal.UserID,
+				"name":                 terminal.Name,
+				"expires_at":           terminal.ExpiresAt,
+				"instance_type":        terminal.InstanceType,
+				"machine_size":         terminal.MachineSize,
+				"backend":              terminal.Backend,
+				"user_terminal_key_id": terminal.UserTerminalKeyID,
+			}).Error
+		}
+		// Active record found (reinit case): update it with new fields
+		return r.db.Model(&existing).Updates(map[string]any{
 			"status":               terminal.Status,
 			"user_id":              terminal.UserID,
 			"name":                 terminal.Name,
@@ -110,7 +123,7 @@ func (r *terminalRepository) CreateTerminalSession(terminal *models.Terminal) er
 			"user_terminal_key_id": terminal.UserTerminalKeyID,
 		}).Error
 	}
-	// No soft-deleted record: create normally (will error on true duplicates)
+	// No existing record: create normally
 	return r.db.Create(terminal).Error
 }
 
