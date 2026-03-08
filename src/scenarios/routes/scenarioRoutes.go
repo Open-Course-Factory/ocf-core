@@ -19,6 +19,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	scenarioRoutes := router.Group("/scenarios")
 	scenarioRoutes.POST("/import", middleware.AuthManagement(), controller.ImportScenario)
 	scenarioRoutes.POST("/seed", middleware.AuthManagement(), controller.SeedScenario)
+	scenarioRoutes.POST("/upload", middleware.AuthManagement(), controller.UploadScenario)
 
 	// Session routes (students)
 	rateLimiter := scenarioMiddleware.PerUserRateLimit()
