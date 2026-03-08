@@ -120,6 +120,7 @@ type CreateTerminalSessionInput struct {
 	HistoryRetentionDays int    `json:"history_retention_days,omitempty" form:"history_retention_days"`
 	RecordingConsent     int    `json:"recording_consent,omitempty" form:"recording_consent"` // 1 = learner accepted recording
 	ExternalRef          string `json:"external_ref,omitempty" form:"external_ref"`           // Optional training session reference
+	Hostname             string `json:"hostname,omitempty" form:"hostname"`
 }
 
 type TerminalSessionResponse struct {
@@ -454,6 +455,7 @@ type BulkCreateTerminalsRequest struct {
 	OrganizationID   string `json:"organization_id,omitempty"`
 	RecordingConsent int    `json:"recording_consent,omitempty"`
 	ExternalRef      string `json:"external_ref,omitempty"` // Optional exercise/training session reference
+	Hostname         string `json:"hostname,omitempty"`
 }
 
 // BulkCreateTerminalsResponse response for bulk terminal creation

@@ -14,6 +14,7 @@ type CreateScenarioInput struct {
 	Difficulty     string     `json:"difficulty,omitempty" mapstructure:"difficulty" binding:"omitempty,oneof=beginner intermediate advanced"`
 	EstimatedTime  string     `json:"estimated_time,omitempty" mapstructure:"estimated_time"`
 	InstanceType   string     `json:"instance_type" mapstructure:"instance_type" binding:"required"`
+	Hostname       string     `json:"hostname,omitempty" mapstructure:"hostname" binding:"omitempty,max=63"`
 	OsType         string     `json:"os_type,omitempty" mapstructure:"os_type" binding:"omitempty,oneof=deb rpm apk pacman"`
 	SourceType     string     `json:"source_type,omitempty" mapstructure:"source_type" binding:"omitempty,oneof=git upload builtin"`
 	GitRepository  string     `json:"git_repository,omitempty" mapstructure:"git_repository"`
@@ -36,6 +37,7 @@ type EditScenarioInput struct {
 	Difficulty     *string    `json:"difficulty,omitempty" mapstructure:"difficulty" binding:"omitempty,oneof=beginner intermediate advanced"`
 	EstimatedTime  *string    `json:"estimated_time,omitempty" mapstructure:"estimated_time"`
 	InstanceType   *string    `json:"instance_type,omitempty" mapstructure:"instance_type"`
+	Hostname       *string    `json:"hostname,omitempty" mapstructure:"hostname" binding:"omitempty,max=63"`
 	OsType         *string    `json:"os_type,omitempty" mapstructure:"os_type" binding:"omitempty,oneof=deb rpm apk pacman"`
 	SourceType     *string    `json:"source_type,omitempty" mapstructure:"source_type" binding:"omitempty,oneof=git upload builtin"`
 	GitRepository  *string    `json:"git_repository,omitempty" mapstructure:"git_repository"`
@@ -58,6 +60,7 @@ type ScenarioOutput struct {
 	Difficulty     string             `json:"difficulty"`
 	EstimatedTime  string             `json:"estimated_time"`
 	InstanceType   string             `json:"instance_type"`
+	Hostname       string             `json:"hostname,omitempty"`
 	OsType         string             `json:"os_type,omitempty"`
 	SourceType     string             `json:"source_type"`
 	GitRepository  string             `json:"git_repository,omitempty"`

@@ -289,6 +289,9 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	if sessionInput.ExternalRef != "" {
 		url += fmt.Sprintf("&external_ref=%s", neturl.QueryEscape(sessionInput.ExternalRef))
 	}
+	if sessionInput.Hostname != "" {
+		url += fmt.Sprintf("&hostname=%s", neturl.QueryEscape(sessionInput.Hostname))
+	}
 	utils.Debug("StartSession - Full TT URL: %s", url)
 
 	// Parser la réponse du Terminal Trainer

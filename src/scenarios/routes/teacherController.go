@@ -217,6 +217,7 @@ func (tc *TeacherController) GetSessionDetail(c *gin.Context) {
 type BulkStartRequest struct {
 	InstanceType           string `json:"instance_type"`
 	Backend                string `json:"backend,omitempty"`
+	Hostname               string `json:"hostname,omitempty"`
 	SessionDurationMinutes int    `json:"session_duration_minutes,omitempty"`
 }
 
