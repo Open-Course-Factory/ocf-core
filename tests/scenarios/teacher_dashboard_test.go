@@ -663,6 +663,11 @@ func TestGetSessionDetail_ExcludesSoftDeletedSteps(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
+	// Create scenario assignment so the validation passes
+	require.NoError(t, db.Create(&models.ScenarioAssignment{
+		ScenarioID: scenario.ID, GroupID: &groupID, Scope: "group", CreatedByID: "c1", IsActive: true,
+	}).Error)
+
 	// Create 3 steps
 	for i := 0; i < 3; i++ {
 		require.NoError(t, db.Create(&models.ScenarioStep{
@@ -695,6 +700,73 @@ func TestGetSessionDetail_ExcludesSoftDeletedSteps(t *testing.T) {
 	assert.Len(t, detail.Steps, 2)
 	assert.Equal(t, 0, detail.Steps[0].StepOrder)
 	assert.Equal(t, 2, detail.Steps[1].StepOrder)
+}
+
+// --- Scenario assignment validation in GetSessionDetail ---
+
+func TestGetSessionDetail_AssignedScenario_Success(t *testing.T) {
+	db := setupTestDB(t)
+
+	groupID := uuid.New()
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: "assign-s1", Role: "member", JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+
+	scenario := models.Scenario{
+		Name: "assign-test", Title: "Assign Test", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	// Assign the scenario to the group
+	require.NoError(t, db.Create(&models.ScenarioAssignment{
+		ScenarioID: scenario.ID, GroupID: &groupID, Scope: "group", CreatedByID: "c1", IsActive: true,
+	}).Error)
+
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "Step 1",
+	}).Error)
+
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "assign-s1", Status: "active", StartedAt: time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 0, Status: "active",
+	}).Error)
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	detail, err := svc.GetSessionDetail(groupID, session.ID)
+	require.NoError(t, err)
+	assert.Equal(t, session.ID, detail.SessionID)
+	assert.Equal(t, scenario.ID, detail.ScenarioID)
+}
+
+func TestGetSessionDetail_UnassignedScenario_Error(t *testing.T) {
+	db := setupTestDB(t)
+
+	groupID := uuid.New()
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: "unassign-s1", Role: "member", JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+
+	scenario := models.Scenario{
+		Name: "unassign-test", Title: "Unassign Test", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	// No ScenarioAssignment created — scenario is NOT assigned to the group
+
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "unassign-s1", Status: "active", StartedAt: time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	detail, err := svc.GetSessionDetail(groupID, session.ID)
+	assert.Error(t, err)
+	assert.Nil(t, detail)
+	assert.Contains(t, err.Error(), "scenario is not assigned to this group")
 }
 
 // --- ResetGroupScenarioSessions controller tests ---
