@@ -20,6 +20,9 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	scenarioRoutes.POST("/import", middleware.AuthManagement(), controller.ImportScenario)
 	scenarioRoutes.POST("/seed", middleware.AuthManagement(), controller.SeedScenario)
 	scenarioRoutes.POST("/upload", middleware.AuthManagement(), controller.UploadScenario)
+	scenarioRoutes.GET("/:id/export", middleware.AuthManagement(), controller.ExportScenario)
+	scenarioRoutes.POST("/export", middleware.AuthManagement(), controller.ExportScenarios)
+	scenarioRoutes.POST("/import-json", middleware.AuthManagement(), controller.ImportJSON)
 
 	// Session routes (students)
 	rateLimiter := scenarioMiddleware.PerUserRateLimit()
@@ -33,6 +36,12 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	sessionRoutes.POST("/:id/verify", middleware.AuthManagement(), rateLimiter, controller.VerifyStep)
 	sessionRoutes.POST("/:id/submit-flag", middleware.AuthManagement(), rateLimiter, controller.SubmitFlag)
 	sessionRoutes.POST("/:id/abandon", middleware.AuthManagement(), controller.AbandonSession)
+
+	// Group-level scenario import/export routes (teachers/group admins)
+	groupScenarioRoutes := router.Group("/groups/:groupId/scenarios")
+	groupScenarioRoutes.GET("/:scenarioId/export", middleware.AuthManagement(), controller.GroupExportScenario)
+	groupScenarioRoutes.POST("/import-json", middleware.AuthManagement(), controller.GroupImportJSON)
+	groupScenarioRoutes.POST("/upload", middleware.AuthManagement(), controller.GroupUploadScenario)
 
 	// Teacher dashboard routes
 	teacherCtrl := NewTeacherController(db)
