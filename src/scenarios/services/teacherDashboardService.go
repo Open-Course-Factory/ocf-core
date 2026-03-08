@@ -511,6 +511,15 @@ func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID)
 		return nil, fmt.Errorf("session does not belong to this group")
 	}
 
+	// Verify the session's scenario is assigned to this group
+	var assignmentCount int64
+	s.db.Table("scenario_assignments").
+		Where("group_id = ? AND scenario_id = ? AND deleted_at IS NULL", groupID, session.ScenarioID).
+		Count(&assignmentCount)
+	if assignmentCount == 0 {
+		return nil, fmt.Errorf("scenario is not assigned to this group")
+	}
+
 	var scenario models.Scenario
 	if err := s.db.First(&scenario, "id = ?", session.ScenarioID).Error; err != nil {
 		return nil, fmt.Errorf("scenario not found: %w", err)
