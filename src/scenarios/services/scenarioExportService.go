@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -241,13 +240,6 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 				GshEnabled: scenario.GshEnabled,
 			},
 		}
-	}
-
-	// Add os_type to backend ImageID suffix if present (for roundtrip)
-	// The importer reads from backend.imageid, so we keep them together
-	if scenario.OsType != "" && !strings.Contains(scenario.InstanceType, scenario.OsType) {
-		// Store os_type info — the importer doesn't read it from index.json,
-		// but it's included in JSON export, so we just leave ImageID as-is
 	}
 
 	return index

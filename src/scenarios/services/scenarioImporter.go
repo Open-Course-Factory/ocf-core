@@ -119,8 +119,14 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 	}
 
 	// Upsert: check if scenario with same name already exists
+	// When orgID is set (group-level import), scope lookup to the same organization
+	// to prevent cross-tenant overwrites.
 	var existing models.Scenario
-	if err := s.db.Where("name = ?", scenario.Name).First(&existing).Error; err == nil {
+	upsertQuery := s.db.Where("name = ?", scenario.Name)
+	if orgID != nil {
+		upsertQuery = upsertQuery.Where("organization_id = ?", *orgID)
+	}
+	if err := upsertQuery.First(&existing).Error; err == nil {
 		// Update existing scenario
 		if existing.FlagSecret != "" && scenario.FlagsEnabled {
 			scenario.FlagSecret = existing.FlagSecret // preserve flag secret

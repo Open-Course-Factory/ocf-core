@@ -30,9 +30,15 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 	name := utils.GenerateSlug(input.Title)
 
 	// Check if a scenario with this name already exists (upsert)
+	// When orgID is set (group-level import), scope lookup to the same organization
+	// to prevent cross-tenant overwrites. Admin imports (orgID == nil) match globally.
 	var existing models.Scenario
 	isUpdate := false
-	if err := s.db.Where("name = ?", name).First(&existing).Error; err == nil {
+	query := s.db.Where("name = ?", name)
+	if orgID != nil {
+		query = query.Where("organization_id = ?", *orgID)
+	}
+	if err := query.First(&existing).Error; err == nil {
 		isUpdate = true
 	}
 
