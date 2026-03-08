@@ -106,9 +106,9 @@ func TestVerificationService_VerifyStep_Pass(t *testing.T) {
 		err := json.NewDecoder(r.Body).Decode(&body)
 		require.NoError(t, err)
 
-		// Verify the command passes the script inline via sh -c
+		// Verify the command passes the script inline via the shebang interpreter
 		commands := body["command"].([]any)
-		assert.Equal(t, "/bin/sh", commands[0])
+		assert.Equal(t, "/bin/bash", commands[0])
 		assert.Equal(t, "-c", commands[1])
 		assert.Equal(t, "#!/bin/bash\nexit 0", commands[2])
 
@@ -145,9 +145,9 @@ func TestVerificationService_VerifyStep_Fail(t *testing.T) {
 		err := json.NewDecoder(r.Body).Decode(&body)
 		require.NoError(t, err)
 
-		// Verify the command passes the script inline via sh -c
+		// Verify the command passes the script inline via the shebang interpreter
 		commands := body["command"].([]any)
-		assert.Equal(t, "/bin/sh", commands[0])
+		assert.Equal(t, "/bin/bash", commands[0])
 		assert.Equal(t, "-c", commands[1])
 		assert.Equal(t, "#!/bin/bash\ntest -f /etc/config && exit 0 || exit 1", commands[2])
 

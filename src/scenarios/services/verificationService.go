@@ -100,10 +100,11 @@ func (s *VerificationService) VerifyStep(terminalSessionID string, step *models.
 		return false, "", fmt.Errorf("step %d has no verify script", step.Order)
 	}
 
-	// Execute the verify script inline with a 10s timeout
+	// Execute the verify script inline with a 10s timeout.
+	// Parse the shebang to use the correct interpreter (e.g., bash vs sh).
 	exitCode, stdout, _, err := s.ExecInContainer(
 		terminalSessionID,
-		[]string{"/bin/sh", "-c", step.VerifyScript},
+		[]string{parseShebang(step.VerifyScript), "-c", step.VerifyScript},
 		10,
 	)
 	if err != nil {

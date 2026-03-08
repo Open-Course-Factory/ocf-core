@@ -606,11 +606,13 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 	var stderr string
 	var err error
 
+	interpreter := parseShebang(step.BackgroundScript)
+
 	if len(step.BackgroundScript) <= maxInlineScriptSize {
 		// Small scripts: pass inline (fast, single API call)
 		exitCode, _, stderr, err = s.verificationService.ExecInContainer(
 			terminalSessionID,
-			[]string{"/bin/sh", "-c", step.BackgroundScript},
+			[]string{interpreter, "-c", step.BackgroundScript},
 			30,
 		)
 	} else {
@@ -622,7 +624,7 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 		}
 		exitCode, _, stderr, err = s.verificationService.ExecInContainer(
 			terminalSessionID,
-			[]string{"/bin/sh", tmpPath},
+			[]string{interpreter, tmpPath},
 			30,
 		)
 		// Best-effort cleanup

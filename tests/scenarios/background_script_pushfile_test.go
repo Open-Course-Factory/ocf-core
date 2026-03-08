@@ -118,8 +118,8 @@ func TestExecuteBackgroundScript_LargeScript_UsesPushFile(t *testing.T) {
 	// Should have 2 exec calls: run script + cleanup rm
 	require.Len(t, verifySvc.execCalls, 2, "ExecInContainer should be called twice (run + cleanup)")
 
-	// First exec: run the script from temp file
-	assert.Equal(t, []string{"/bin/sh", "/tmp/.ocf_bg_0.sh"}, verifySvc.execCalls[0].command)
+	// First exec: run the script from temp file (uses /bin/bash from shebang)
+	assert.Equal(t, []string{"/bin/bash", "/tmp/.ocf_bg_0.sh"}, verifySvc.execCalls[0].command)
 	assert.Equal(t, 30, verifySvc.execCalls[0].timeout)
 
 	// Second exec: cleanup rm -f
