@@ -60,7 +60,18 @@ func (tc *TeacherController) validateTeacherAccess(c *gin.Context, groupID uuid.
 	return true
 }
 
-// GetGroupActivity returns active sessions for all members of a group
+// GetGroupActivity godoc
+// @Summary Get group activity
+// @Description Returns all active scenario sessions for members of a group
+// @Tags scenario-teacher
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Success 200 {array} services.GroupActivityItem
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /teacher/groups/{groupId}/activity [get]
+// @Security BearerAuth
 func (tc *TeacherController) GetGroupActivity(c *gin.Context) {
 	groupID, err := uuid.Parse(c.Param("groupId"))
 	if err != nil {
@@ -82,7 +93,19 @@ func (tc *TeacherController) GetGroupActivity(c *gin.Context) {
 	c.JSON(http.StatusOK, results)
 }
 
-// GetScenarioResults returns all sessions for a specific scenario within a group
+// GetScenarioResults godoc
+// @Summary Get scenario results
+// @Description Returns all sessions for a specific scenario within a group
+// @Tags scenario-teacher
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param scenarioId path string true "Scenario ID (UUID)"
+// @Success 200 {array} services.ScenarioResultItem
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /teacher/groups/{groupId}/scenarios/{scenarioId}/results [get]
+// @Security BearerAuth
 func (tc *TeacherController) GetScenarioResults(c *gin.Context) {
 	groupID, err := uuid.Parse(c.Param("groupId"))
 	if err != nil {
@@ -110,7 +133,19 @@ func (tc *TeacherController) GetScenarioResults(c *gin.Context) {
 	c.JSON(http.StatusOK, results)
 }
 
-// GetScenarioAnalytics returns aggregate analytics for a scenario within a group
+// GetScenarioAnalytics godoc
+// @Summary Get scenario analytics
+// @Description Returns aggregate analytics (completion rate, avg grade, avg time) for a scenario within a group
+// @Tags scenario-teacher
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param scenarioId path string true "Scenario ID (UUID)"
+// @Success 200 {object} services.ScenarioAnalytics
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /teacher/groups/{groupId}/scenarios/{scenarioId}/analytics [get]
+// @Security BearerAuth
 func (tc *TeacherController) GetScenarioAnalytics(c *gin.Context) {
 	groupID, err := uuid.Parse(c.Param("groupId"))
 	if err != nil {
@@ -138,7 +173,19 @@ func (tc *TeacherController) GetScenarioAnalytics(c *gin.Context) {
 	c.JSON(http.StatusOK, analytics)
 }
 
-// GetSessionDetail returns step-by-step progress for a specific session within a group
+// GetSessionDetail godoc
+// @Summary Get session detail
+// @Description Returns step-by-step progress for a specific session within a group
+// @Tags scenario-teacher
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param sessionId path string true "Session ID (UUID)"
+// @Success 200 {object} services.SessionDetailResponse
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /teacher/groups/{groupId}/sessions/{sessionId}/detail [get]
+// @Security BearerAuth
 func (tc *TeacherController) GetSessionDetail(c *gin.Context) {
 	groupID, err := uuid.Parse(c.Param("groupId"))
 	if err != nil {
@@ -173,8 +220,21 @@ type BulkStartRequest struct {
 	SessionDurationMinutes int    `json:"session_duration_minutes,omitempty"`
 }
 
-// BulkStartScenario starts a scenario for all active group members who don't already have an active session.
-// Also creates terminal sessions for each student, auto-provisioning keys if needed.
+// BulkStartScenario godoc
+// @Summary Bulk start a scenario for a group
+// @Description Starts a scenario for all active group members who don't already have an active session, creating terminal sessions and auto-provisioning keys if needed
+// @Tags scenario-teacher
+// @Accept json
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param scenarioId path string true "Scenario ID (UUID)"
+// @Param body body BulkStartRequest false "Optional start parameters"
+// @Success 200 {object} services.BulkStartResult
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /teacher/groups/{groupId}/scenarios/{scenarioId}/bulk-start [post]
+// @Security BearerAuth
 func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 	groupID, err := uuid.Parse(c.Param("groupId"))
 	if err != nil {
@@ -210,8 +270,19 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ResetGroupScenarioSessions abandons all active sessions for a group+scenario.
-// Used to clean up orphaned sessions (e.g., created before students had terminal keys).
+// ResetGroupScenarioSessions godoc
+// @Summary Reset group scenario sessions
+// @Description Abandons all active sessions for a group+scenario combination, used to clean up orphaned sessions
+// @Tags scenario-teacher
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param scenarioId path string true "Scenario ID (UUID)"
+// @Success 200 {object} map[string]int "abandoned count"
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /teacher/groups/{groupId}/scenarios/{scenarioId}/reset-sessions [post]
+// @Security BearerAuth
 func (tc *TeacherController) ResetGroupScenarioSessions(c *gin.Context) {
 	groupID, err := uuid.Parse(c.Param("groupId"))
 	if err != nil {
