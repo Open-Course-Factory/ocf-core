@@ -75,7 +75,8 @@ func allEntityRoles() []entityRoleDefinition {
 			entityName: "SshKey",
 			routeName:  "ssh-keys",
 			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
+				memberRole: "(" + http.MethodGet + ")",
+				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 			}},
 		},
 		{
