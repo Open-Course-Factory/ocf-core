@@ -802,6 +802,95 @@ func TestScenarioSessionService_SubmitFlag_AdvanceExecutesBackgroundScript(t *te
 	assert.Equal(t, []string{"/bin/sh", "-c", "echo flag-advance"}, verifySvc.execCalls[len(verifySvc.execCalls)-1].command)
 }
 
+func TestScenarioSessionService_SubmitFlag_LockedAfterMaxAttempts(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "flag-lockout",
+		Title:        "Flag Lockout Test",
+		InstanceType: "ubuntu:22.04",
+		FlagsEnabled: true,
+		FlagSecret:   "secret",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Step 1", HasFlag: true}
+	require.NoError(t, db.Create(&step).Error)
+
+	session := models.ScenarioSession{
+		ScenarioID:  scenario.ID,
+		UserID:      "student-1",
+		CurrentStep: 0,
+		Status:      "active",
+		StartedAt:   time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	flag := models.ScenarioFlag{
+		SessionID:    session.ID,
+		StepOrder:    0,
+		ExpectedFlag: "flag{correct-answer}",
+		FlagAttempts: 20, // At the limit
+	}
+	require.NoError(t, db.Create(&flag).Error)
+
+	flagSvc := &mockFlagService{validateRes: true}
+	sessionSvc := services.NewScenarioSessionService(db, flagSvc, &mockVerificationService{})
+
+	result, err := sessionSvc.SubmitFlag(session.ID, "flag{correct-answer}")
+
+	require.NoError(t, err)
+	assert.False(t, result.Correct)
+	assert.Contains(t, result.Message, "Too many attempts")
+}
+
+func TestScenarioSessionService_SubmitFlag_StillWorksAt19Attempts(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "flag-under-limit",
+		Title:        "Flag Under Limit Test",
+		InstanceType: "ubuntu:22.04",
+		FlagsEnabled: true,
+		FlagSecret:   "secret",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Step 1", HasFlag: true}
+	require.NoError(t, db.Create(&step).Error)
+
+	session := models.ScenarioSession{
+		ScenarioID:  scenario.ID,
+		UserID:      "student-1",
+		CurrentStep: 0,
+		Status:      "active",
+		StartedAt:   time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	sp := models.ScenarioStepProgress{SessionID: session.ID, StepOrder: 0, Status: "active"}
+	require.NoError(t, db.Create(&sp).Error)
+
+	flag := models.ScenarioFlag{
+		SessionID:    session.ID,
+		StepOrder:    0,
+		ExpectedFlag: "flag{correct-answer}",
+		FlagAttempts: 19, // One below the limit
+	}
+	require.NoError(t, db.Create(&flag).Error)
+
+	flagSvc := &mockFlagService{validateRes: true}
+	sessionSvc := services.NewScenarioSessionService(db, flagSvc, &mockVerificationService{})
+
+	result, err := sessionSvc.SubmitFlag(session.ID, "flag{correct-answer}")
+
+	require.NoError(t, err)
+	assert.True(t, result.Correct)
+	assert.Equal(t, "Correct flag", result.Message)
+}
+
 func TestScenarioSessionService_BackgroundScript_Error_DoesNotFailStart(t *testing.T) {
 	db := setupTestDB(t)
 
