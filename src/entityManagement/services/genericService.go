@@ -55,6 +55,7 @@ type GenericService interface {
 	GetEntities(data any, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error)
 	GetEntitiesCursor(data any, cursor string, limit int, filters map[string]any, includes []string) ([]any, string, bool, int64, error)
 	DeleteEntity(id uuid.UUID, entity any, scoped bool) error
+	DeleteEntityWithUser(id uuid.UUID, entity any, scoped bool, userID string) error
 	EditEntity(id uuid.UUID, entityName string, entity any, data any) error
 	GetEntityModelInterface(entityName string) any
 	AddOwnerIDs(entity any, userId string) (any, error)
@@ -190,6 +191,10 @@ func (g *genericService) GetEntitiesCursor(data any, cursor string, limit int, f
 }
 
 func (g *genericService) DeleteEntity(id uuid.UUID, entity any, scoped bool) error {
+	return g.DeleteEntityWithUser(id, entity, scoped, "")
+}
+
+func (g *genericService) DeleteEntityWithUser(id uuid.UUID, entity any, scoped bool, userID string) error {
 	typeOfEntity := reflect.TypeOf(entity)
 	entityName := typeOfEntity.Name()
 
@@ -219,6 +224,7 @@ func (g *genericService) DeleteEntity(id uuid.UUID, entity any, scoped bool) err
 		HookType:   hooks.BeforeDelete,
 		EntityID:   id,
 		NewEntity:  existingEntity,
+		UserID:     userID,
 		Context:    context.Background(),
 	}
 
@@ -236,6 +242,7 @@ func (g *genericService) DeleteEntity(id uuid.UUID, entity any, scoped bool) err
 		HookType:   hooks.AfterDelete,
 		EntityID:   id,
 		NewEntity:  existingEntity,
+		UserID:     userID,
 		Context:    context.Background(),
 	}
 

@@ -124,6 +124,10 @@ func (g *mockGenericService) DeleteEntity(id uuid.UUID, entity any, scoped bool)
 	return g.repository.DeleteEntity(id, entity, scoped)
 }
 
+func (g *mockGenericService) DeleteEntityWithUser(id uuid.UUID, entity any, scoped bool, userID string) error {
+	return g.repository.DeleteEntity(id, entity, scoped)
+}
+
 func (g *mockGenericService) EditEntity(id uuid.UUID, entityName string, entity any, data any) error {
 	return g.repository.EditEntity(id, entityName, entity, data)
 }

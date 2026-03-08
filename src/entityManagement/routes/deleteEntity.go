@@ -25,7 +25,8 @@ func (genericController genericController) DeleteEntity(ctx *gin.Context, scoped
 		return
 	}
 
-	errorDelete := genericController.genericService.DeleteEntity(id, entity, scoped)
+	userId := ctx.GetString("userId")
+	errorDelete := genericController.genericService.DeleteEntityWithUser(id, entity, scoped, userId)
 	if errorDelete != nil {
 		statusCode := http.StatusInternalServerError // default
 		var entityErr *entityErrors.EntityError
