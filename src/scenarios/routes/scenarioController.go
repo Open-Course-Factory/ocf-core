@@ -4,9 +4,12 @@ import (
 	crypto_rand "crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/scenarios/dto"
@@ -24,6 +27,7 @@ import (
 type ScenarioController interface {
 	ImportScenario(ctx *gin.Context)
 	SeedScenario(ctx *gin.Context)
+	UploadScenario(ctx *gin.Context)
 	StartScenario(ctx *gin.Context)
 	GetCurrentStep(ctx *gin.Context)
 	GetStepByOrder(ctx *gin.Context)
@@ -721,5 +725,216 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 		output.Steps = steps
 	}
 	ctx.JSON(statusCode, output)
+}
+
+// UploadScenario godoc
+// @Summary Upload a scenario archive
+// @Description Upload a .zip or .tar.gz archive containing a KillerCoda-compatible scenario directory and import it
+// @Tags scenarios
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "Scenario archive (.zip, .tar.gz, or .tgz)"
+// @Success 200 {object} dto.ScenarioOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenarios/upload [post]
+// @Security BearerAuth
+func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
+	// Check admin role (same pattern as SeedScenario)
+	userRoles, exists := ctx.Get("userRoles")
+	if !exists {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Access denied",
+		})
+		return
+	}
+	isAdmin := false
+	if roles, ok := userRoles.([]string); ok {
+		for _, role := range roles {
+			if role == "admin" || role == "administrator" {
+				isAdmin = true
+				break
+			}
+		}
+	}
+	if !isAdmin {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Admin access required",
+		})
+		return
+	}
+
+	userID := ctx.GetString("userId")
+
+	// Get file from multipart form
+	file, err := ctx.FormFile("file")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "File is required",
+		})
+		return
+	}
+
+	// Validate file size (10MB max)
+	if file.Size > 10*1024*1024 {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "File size exceeds 10MB limit",
+		})
+		return
+	}
+
+	// Validate extension
+	filename := strings.ToLower(file.Filename)
+	var ext string
+	switch {
+	case strings.HasSuffix(filename, ".tar.gz"):
+		ext = ".tar.gz"
+	case strings.HasSuffix(filename, ".tgz"):
+		ext = ".tgz"
+	case strings.HasSuffix(filename, ".zip"):
+		ext = ".zip"
+	default:
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "File must be .zip, .tar.gz, or .tgz",
+		})
+		return
+	}
+
+	// Save to temp file
+	tmpFile, err := os.CreateTemp("", "scenario-upload-*"+ext)
+	if err != nil {
+		slog.Error("failed to create temp file", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to process upload",
+		})
+		return
+	}
+	defer os.Remove(tmpFile.Name())
+
+	src, err := file.Open()
+	if err != nil {
+		tmpFile.Close()
+		slog.Error("failed to open uploaded file", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to read uploaded file",
+		})
+		return
+	}
+
+	_, err = io.Copy(tmpFile, src)
+	src.Close()
+	tmpFile.Close()
+	if err != nil {
+		slog.Error("failed to save uploaded file", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to save uploaded file",
+		})
+		return
+	}
+
+	// Extract archive
+	tmpDir, err := os.MkdirTemp("", "scenario-extract-*")
+	if err != nil {
+		slog.Error("failed to create temp dir", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to process upload",
+		})
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := utils.ExtractArchive(tmpFile.Name(), tmpDir); err != nil {
+		slog.Error("failed to extract archive", "err", err)
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: fmt.Sprintf("Failed to extract archive: %s", err.Error()),
+		})
+		return
+	}
+
+	// Find index.json
+	scenarioDir, err := utils.FindIndexJSON(tmpDir)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Archive must contain an index.json file",
+		})
+		return
+	}
+
+	// Import scenario
+	scenario, err := sc.importerService.ImportFromDirectory(scenarioDir, userID, nil, "upload")
+	if err != nil {
+		slog.Error("failed to import scenario from upload", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to import scenario: %s", err.Error()),
+		})
+		return
+	}
+
+	// Reload with steps
+	var loaded models.Scenario
+	if err := sc.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).First(&loaded, "id = ?", scenario.ID).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to reload scenario",
+		})
+		return
+	}
+
+	// Build output (same pattern as SeedScenario)
+	output := dto.ScenarioOutput{
+		ID:             loaded.ID,
+		Name:           loaded.Name,
+		Title:          loaded.Title,
+		Description:    loaded.Description,
+		Difficulty:     loaded.Difficulty,
+		EstimatedTime:  loaded.EstimatedTime,
+		InstanceType:   loaded.InstanceType,
+		OsType:         loaded.OsType,
+		SourceType:     loaded.SourceType,
+		FlagsEnabled:   loaded.FlagsEnabled,
+		GshEnabled:     loaded.GshEnabled,
+		CrashTraps:     loaded.CrashTraps,
+		IntroText:      loaded.IntroText,
+		FinishText:     loaded.FinishText,
+		CreatedByID:    loaded.CreatedByID,
+		OrganizationID: loaded.OrganizationID,
+		CreatedAt:      loaded.CreatedAt,
+		UpdatedAt:      loaded.UpdatedAt,
+	}
+	if len(loaded.Steps) > 0 {
+		steps := make([]dto.ScenarioStepOutput, 0, len(loaded.Steps))
+		for _, step := range loaded.Steps {
+			steps = append(steps, dto.ScenarioStepOutput{
+				ID:          step.ID,
+				ScenarioID:  step.ScenarioID,
+				Order:       step.Order,
+				Title:       step.Title,
+				TextContent: step.TextContent,
+				HintContent: step.HintContent,
+				HasFlag:     step.HasFlag,
+				FlagPath:    step.FlagPath,
+				FlagLevel:   step.FlagLevel,
+				CreatedAt:   step.CreatedAt,
+				UpdatedAt:   step.UpdatedAt,
+			})
+		}
+		output.Steps = steps
+	}
+	ctx.JSON(http.StatusOK, output)
 }
 

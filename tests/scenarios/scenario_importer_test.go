@@ -217,7 +217,7 @@ func TestScenarioImporter_BuildScenarioFromIndex(t *testing.T) {
 	createdByID := "user-123"
 	orgID := uuid.New()
 
-	scenario, err := importer.BuildScenarioFromIndex(index, tmpDir, createdByID, &orgID)
+	scenario, err := importer.BuildScenarioFromIndex(index, tmpDir, createdByID, &orgID, "builtin")
 
 	require.NoError(t, err)
 	assert.Equal(t, "linux-basics-lab", scenario.Name)
@@ -276,7 +276,7 @@ func TestScenarioImporter_BuildScenarioFromIndex_NoFlags(t *testing.T) {
 		Backend: services.KillerCodaBackend{ImageID: "alpine"},
 	}
 
-	scenario, err := importer.BuildScenarioFromIndex(index, tmpDir, "user-1", nil)
+	scenario, err := importer.BuildScenarioFromIndex(index, tmpDir, "user-1", nil, "builtin")
 
 	require.NoError(t, err)
 	assert.False(t, scenario.FlagsEnabled)
@@ -312,7 +312,7 @@ func TestScenarioImporter_ImportFromDirectory(t *testing.T) {
 	writeTestFile(t, tmpDir, "step1.md", "Do step one")
 	writeTestFile(t, tmpDir, "verify1.sh", "#!/bin/bash\ntrue")
 
-	scenario, err := importer.ImportFromDirectory(tmpDir, "user-456", nil)
+	scenario, err := importer.ImportFromDirectory(tmpDir, "user-456", nil, "builtin")
 
 	require.NoError(t, err)
 	assert.NotEqual(t, uuid.Nil, scenario.ID)

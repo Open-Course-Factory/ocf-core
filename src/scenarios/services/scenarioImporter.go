@@ -96,7 +96,12 @@ func NewScenarioImporterService(db *gorm.DB) *ScenarioImporterService {
 
 // ImportFromDirectory parses a local directory containing a KillerCoda-format scenario.
 // It reads index.json and all referenced files, creating a Scenario with Steps in the database.
-func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByID string, orgID *uuid.UUID) (*models.Scenario, error) {
+// sourceType indicates the origin of the scenario (e.g. "builtin", "upload", "seed").
+// If empty, it defaults to "builtin".
+func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByID string, orgID *uuid.UUID, sourceType string) (*models.Scenario, error) {
+	if sourceType == "" {
+		sourceType = "builtin"
+	}
 	indexPath := filepath.Join(dirPath, "index.json")
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
@@ -108,7 +113,7 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 		return nil, fmt.Errorf("failed to parse index.json: %w", err)
 	}
 
-	scenario, err := s.BuildScenarioFromIndex(index, dirPath, createdByID, orgID)
+	scenario, err := s.BuildScenarioFromIndex(index, dirPath, createdByID, orgID, sourceType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build scenario: %w", err)
 	}
@@ -188,7 +193,8 @@ func (s *ScenarioImporterService) ParseIndexJSON(data []byte) (*KillerCodaIndex,
 
 // BuildScenarioFromIndex creates a Scenario model from parsed KillerCoda data.
 // dirPath is used to read the referenced markdown and script files.
-func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex, dirPath string, createdByID string, orgID *uuid.UUID) (*models.Scenario, error) {
+// sourceType indicates the origin of the scenario (e.g. "builtin", "upload", "seed").
+func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex, dirPath string, createdByID string, orgID *uuid.UUID, sourceType string) (*models.Scenario, error) {
 	// Determine OCF extensions
 	flagsEnabled := false
 	crashTraps := false
@@ -220,7 +226,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		Difficulty:     index.Difficulty,
 		EstimatedTime:  index.Time,
 		InstanceType:   index.Backend.ImageID,
-		SourceType:     "builtin",
+		SourceType:     sourceType,
 		FlagsEnabled:   flagsEnabled,
 		FlagSecret:     flagSecret,
 		GshEnabled:     gshEnabled,
