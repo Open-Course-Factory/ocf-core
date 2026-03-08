@@ -195,6 +195,21 @@ func SetupScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		reconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
+	// Group-level scenario import/export routes - available to all authenticated members
+	// (fine-grained group ownership checks happen in the controller via validateTeacherAccess)
+	groupScenarioRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/groups/:groupId/scenarios/upload", "POST"},
+		{"/api/v1/groups/:groupId/scenarios/import-json", "POST"},
+		{"/api/v1/groups/:groupId/scenarios/:scenarioId/export", "GET"},
+	}
+
+	for _, route := range groupScenarioRoutes {
+		reconcilePolicy(enforcer, "member", route.path, route.method)
+	}
+
 	// Admin-only scenario management routes
 	reconcilePolicy(enforcer, "administrator", "/api/v1/scenarios/import", "POST")
 	reconcilePolicy(enforcer, "administrator", "/api/v1/scenarios/seed", "POST")
