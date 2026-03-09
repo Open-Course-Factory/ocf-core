@@ -19,6 +19,36 @@ import (
 	"gorm.io/gorm"
 )
 
+// incusCookieAuth is a middleware that extracts a JWT from the "incus_token"
+// cookie and sets it as the Authorization header. This allows the iframe
+// (which cannot send custom headers) to authenticate via a cookie that the
+// /incus-ui/auth endpoint sets on the API domain.
+func incusCookieAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.GetHeader("Authorization") == "" {
+			if token, err := c.Cookie("incus_token"); err == nil && token != "" {
+				c.Request.Header.Set("Authorization", "Bearer "+token)
+			}
+		}
+		c.Next()
+	}
+}
+
+// SetIncusAuthCookie is called with a valid JWT (already authenticated by
+// AuthManagement). It sets an HttpOnly cookie on the API domain so that
+// subsequent iframe requests can authenticate without custom headers.
+func SetIncusAuthCookie(ctx *gin.Context) {
+	token := strings.TrimPrefix(ctx.GetHeader("Authorization"), "Bearer ")
+	if token == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "missing token"})
+		return
+	}
+
+	ctx.SetSameSite(http.SameSiteStrictMode)
+	ctx.SetCookie("incus_token", token, 3600, "/api/v1/incus-ui", "", false, true)
+	ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 // sensitiveHeaders lists headers that must NOT be forwarded to tt-backend.
 // The proxy sets its own X-API-Key; the user's Authorization and Cookie
 // headers are stripped to prevent credential leakage.
@@ -66,11 +96,20 @@ func NewIncusUIController(db *gorm.DB, proxyBaseURL string, adminKey ...string) 
 // It checks authorization, sanitizes the path, then reverse-proxies the
 // request (including WebSocket upgrades) via httputil.ReverseProxy.
 func (c *IncusUIController) ProxyIncusUI(ctx *gin.Context) {
+	backendID := ctx.Param("backendId")
+
+	// Reserved backendId: set auth cookie and return.
+	// The frontend calls this via axios (which sends the JWT header),
+	// and the response sets an HttpOnly cookie on the API domain so
+	// subsequent iframe requests can authenticate.
+	if backendID == "_auth" {
+		SetIncusAuthCookie(ctx)
+		return
+	}
+
 	userID := ctx.GetString("userId")
 	userRolesRaw, _ := ctx.Get("userRoles")
 	userRoles, _ := userRolesRaw.([]string)
-
-	backendID := ctx.Param("backendId")
 
 	if !c.IsUserAuthorizedForBackend(userID, userRoles, backendID) {
 		ctx.JSON(http.StatusForbidden, gin.H{
@@ -246,5 +285,5 @@ func (c *IncusUIController) IsUserAuthorizedForBackend(userID string, userRoles 
 // through the given proxy prefix. This ensures the Incus UI SPA's API
 // calls and WebSocket connections are routed through the reverse proxy.
 func generateMonkeyPatchScript(proxyPrefix string) string {
-	return fmt.Sprintf(`<script>(function(){var p=%s;function r(u){if(typeof u!=="string")return u;if(u.startsWith("/1.0/"))return p+u;if(u.startsWith("/ui/"))return p+u;return u}var of=window.fetch;window.fetch=function(i,n){if(typeof i==="string"){i=r(i)}else if(i instanceof Request){i=new Request(r(i.url),i)}return of.call(this,i,n)};var ox=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){arguments[1]=r(u);return ox.apply(this,arguments)};var OWS=window.WebSocket;window.WebSocket=function(u,pr){if(typeof u==="string"){try{var o=new URL(u,location.origin);if(o.host===location.host&&(o.pathname.startsWith("/1.0/")||o.pathname.startsWith("/ui/"))){o.pathname=p+o.pathname;u=o.toString()}}catch(e){u=r(u)}}return pr!==undefined?new OWS(u,pr):new OWS(u)};window.WebSocket.prototype=OWS.prototype;window.WebSocket.CONNECTING=OWS.CONNECTING;window.WebSocket.OPEN=OWS.OPEN;window.WebSocket.CLOSING=OWS.CLOSING;window.WebSocket.CLOSED=OWS.CLOSED})()</script>`, fmt.Sprintf("%q", proxyPrefix))
+	return fmt.Sprintf(`<script>(function(){var p=%s;function m(u,b){return u===b||u.startsWith(b+"/")||u.startsWith(b+"?")}function r(u){if(typeof u!=="string")return u;if(m(u,"/1.0"))return p+u;if(m(u,"/ui"))return p+u;return u}var of=window.fetch;window.fetch=function(i,n){if(typeof i==="string"){i=r(i)}else if(i instanceof Request){i=new Request(r(i.url),i)}return of.call(this,i,n)};var ox=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){arguments[1]=r(u);return ox.apply(this,arguments)};var OWS=window.WebSocket;window.WebSocket=function(u,pr){if(typeof u==="string"){try{var o=new URL(u,location.origin);var pn=o.pathname;if(o.host===location.host&&(pn==="/1.0"||pn.startsWith("/1.0/")||pn==="/ui"||pn.startsWith("/ui/"))){o.pathname=p+o.pathname;u=o.toString()}}catch(e){u=r(u)}}return pr!==undefined?new OWS(u,pr):new OWS(u)};window.WebSocket.prototype=OWS.prototype;window.WebSocket.CONNECTING=OWS.CONNECTING;window.WebSocket.OPEN=OWS.OPEN;window.WebSocket.CLOSING=OWS.CLOSING;window.WebSocket.CLOSED=OWS.CLOSED})()</script>`, fmt.Sprintf("%q", proxyPrefix))
 }
