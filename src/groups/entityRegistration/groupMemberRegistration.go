@@ -2,6 +2,7 @@ package groupRegistration
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	authModels "soli/formations/src/auth/models"
@@ -14,12 +15,57 @@ import (
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 )
 
+// casdoorUserCacheTTL is the duration cached user entries remain valid.
+const casdoorUserCacheTTL = 30 * time.Second
+
+// userCache caches Casdoor users to prevent redundant HTTP calls during
+// group member DTO conversion. The entity management framework calls
+// ModelToDto per item, so without a cache every list request triggers
+// N sequential HTTP calls (one per member). On the first cache miss the
+// cache bulk-loads ALL users with a single GetUsers() call, turning the
+// N+1 problem into a single HTTP round-trip.
+var userCache = &casdoorUserCache{}
+
+type casdoorUserCache struct {
+	mu        sync.Mutex
+	users     map[string]*casdoorsdk.User // keyed by Casdoor user ID (e.g. "abc123/username")
+	fetchedAt time.Time
+}
+
+// get returns a Casdoor user from cache, bulk-loading all users on the
+// first miss or when the cache has expired.
+func (c *casdoorUserCache) get(userID string) (*casdoorsdk.User, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Return from cache if still fresh
+	if c.users != nil && time.Since(c.fetchedAt) < casdoorUserCacheTTL {
+		return c.users[userID], nil
+	}
+
+	// Bulk-load all users with a single HTTP call
+	allUsers, err := casdoorsdk.GetUsers()
+	if err != nil {
+		// Fallback: fetch just this one user
+		user, err := casdoorsdk.GetUserByUserId(userID)
+		return user, err
+	}
+
+	c.users = make(map[string]*casdoorsdk.User, len(allUsers))
+	for _, u := range allUsers {
+		c.users[u.Id] = u
+	}
+	c.fetchedAt = time.Now()
+
+	return c.users[userID], nil
+}
+
 func enrichGroupMemberWithUser(output *dto.GroupMemberOutput) *dto.GroupMemberOutput {
 	if output.UserID == "" {
 		return output
 	}
 
-	user, err := casdoorsdk.GetUserByUserId(output.UserID)
+	user, err := userCache.get(output.UserID)
 	if err != nil {
 		utils.Debug("Failed to fetch user %s from Casdoor: %v", output.UserID, err)
 		return output
