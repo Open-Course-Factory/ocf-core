@@ -37,6 +37,9 @@ type Organization struct {
 	// so the per-session consent dialog is skipped for members of this organization.
 	RecordingConsentHandled bool `gorm:"default:false" json:"recording_consent_handled"`
 
+	// Whether org owners/managers can access the Incus infrastructure UI
+	IncusUIEnabled bool `gorm:"default:false" json:"incus_ui_enabled"`
+
 	// Terminal backend assignment (admin-managed, independent of subscription plan)
 	AllowedBackends []string `gorm:"serializer:json" json:"allowed_backends"`            // Backend IDs allowed (empty = all)
 	DefaultBackend  string   `gorm:"type:varchar(255);default:''" json:"default_backend"` // Default backend for this org

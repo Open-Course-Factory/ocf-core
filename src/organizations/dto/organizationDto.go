@@ -27,6 +27,7 @@ type EditOrganizationInput struct {
 	MaxGroups          *int                    `json:"max_groups,omitempty" mapstructure:"max_groups"`
 	MaxMembers         *int                    `json:"max_members,omitempty" mapstructure:"max_members"`
 	IsActive           *bool                   `json:"is_active,omitempty" mapstructure:"is_active"`
+	IncusUIEnabled     *bool                   `json:"incus_ui_enabled,omitempty" mapstructure:"incus_ui_enabled"`
 	Metadata           *map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
 	AllowedBackends    *[]string               `json:"allowed_backends,omitempty" mapstructure:"allowed_backends"`
 	DefaultBackend     *string                 `json:"default_backend,omitempty" mapstructure:"default_backend"`
@@ -45,6 +46,7 @@ type OrganizationOutput struct {
 	MaxGroups          int                    `json:"max_groups"`
 	MaxMembers         int                    `json:"max_members"`
 	IsActive           bool                   `json:"is_active"`
+	IncusUIEnabled     bool                   `json:"incus_ui_enabled"`
 	Metadata           map[string]any `json:"metadata,omitempty"`
 	AllowedBackends    []string               `json:"allowed_backends"`
 	DefaultBackend     string                 `json:"default_backend"`
