@@ -24,12 +24,18 @@ const casdoorUserCacheTTL = 30 * time.Second
 // N sequential HTTP calls (one per member). On the first cache miss the
 // cache bulk-loads ALL users with a single GetUsers() call, turning the
 // N+1 problem into a single HTTP round-trip.
-var userCache = &casdoorUserCache{}
+var userCache = &casdoorUserCache{
+	fetchAllUsers: casdoorsdk.GetUsers,
+	fetchUserByID: casdoorsdk.GetUserByUserId,
+}
 
 type casdoorUserCache struct {
 	mu        sync.Mutex
 	users     map[string]*casdoorsdk.User // keyed by Casdoor user ID (e.g. "abc123/username")
 	fetchedAt time.Time
+	// Injected fetchers for testability — default to Casdoor SDK functions
+	fetchAllUsers func() ([]*casdoorsdk.User, error)
+	fetchUserByID func(string) (*casdoorsdk.User, error)
 }
 
 // get returns a Casdoor user from cache, bulk-loading all users on the
@@ -44,10 +50,10 @@ func (c *casdoorUserCache) get(userID string) (*casdoorsdk.User, error) {
 	}
 
 	// Bulk-load all users with a single HTTP call
-	allUsers, err := casdoorsdk.GetUsers()
+	allUsers, err := c.fetchAllUsers()
 	if err != nil {
 		// Fallback: fetch just this one user
-		user, err := casdoorsdk.GetUserByUserId(userID)
+		user, err := c.fetchUserByID(userID)
 		return user, err
 	}
 
