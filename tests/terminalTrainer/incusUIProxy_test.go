@@ -363,12 +363,40 @@ func TestIncusUIProxy_HTMLRewriting_RewritesAssetPaths(t *testing.T) {
 	assert.NotContains(t, body, `"/manifest.json"`)
 }
 
-// TestIncusUIProxy_NonHTMLPassthrough verifies that non-HTML responses
-// (JS, CSS, images) are passed through without modification.
-func TestIncusUIProxy_NonHTMLPassthrough(t *testing.T) {
+// TestIncusUIProxy_CSSPassthrough verifies that CSS responses
+// are passed through without modification.
+func TestIncusUIProxy_CSSPassthrough(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
-	jsContent := `fetch("/1.0/instances").then(r => r.json())`
+	cssContent := `.app { background: #fff; }`
+
+	mockTTBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(cssContent))
+	}))
+	defer mockTTBackend.Close()
+
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
+	w := makeIncusUIRequest(router, "test-backend", "ui/assets/index.css")
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+
+	assert.Equal(t, cssContent, body,
+		"CSS responses should not be modified")
+	assert.NotContains(t, body, "<script>",
+		"Monkey-patch script should not be injected in non-HTML responses")
+}
+
+// TestIncusUIProxy_JSRewriting verifies that JavaScript responses have
+// their /ui/assets/ paths rewritten through the proxy prefix (for Vite's
+// __vite__mapDeps dynamic import preload paths).
+func TestIncusUIProxy_JSRewriting(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	jsContent := `const deps=["/ui/assets/Foo-abc123.js","/ui/assets/Bar-def456.css"];fetch("/1.0/instances")`
 
 	mockTTBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
@@ -384,11 +412,17 @@ func TestIncusUIProxy_NonHTMLPassthrough(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	body := w.Body.String()
 
-	// JS content should pass through unmodified
-	assert.Equal(t, jsContent, body,
-		"Non-HTML responses should not be modified")
+	// /ui/assets/ paths should be rewritten through the proxy
+	assert.Contains(t, body, `"/api/v1/incus-ui/test-backend/ui/assets/Foo-abc123.js"`,
+		"JS /ui/assets/ paths should be rewritten")
+	assert.Contains(t, body, `"/api/v1/incus-ui/test-backend/ui/assets/Bar-def456.css"`,
+		"JS /ui/assets/ CSS dep paths should be rewritten")
+	// Non-asset paths should NOT be rewritten (monkey-patch handles those at runtime)
+	assert.Contains(t, body, `fetch("/1.0/instances")`,
+		"Non-asset paths in JS should remain unchanged")
+	// No monkey-patch script injection in JS
 	assert.NotContains(t, body, "<script>",
-		"Monkey-patch script should not be injected in non-HTML responses")
+		"Monkey-patch script should not be injected in JS responses")
 }
 
 // TestIncusUIProxy_AcceptEncodingIdentity verifies that the proxy sets

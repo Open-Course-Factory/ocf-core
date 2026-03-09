@@ -191,10 +191,12 @@ func (c *IncusUIController) ProxyIncusUI(ctx *gin.Context) {
 				}
 			}
 
-			// For HTML responses, rewrite asset paths and inject a
-			// monkey-patching script so the Incus UI SPA routes all
-			// API calls and WebSocket connections through our proxy.
-			if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+			ct := resp.Header.Get("Content-Type")
+			isHTML := strings.Contains(ct, "text/html")
+			isJS := strings.Contains(ct, "javascript")
+
+			// Only rewrite HTML and JavaScript responses.
+			if !isHTML && !isJS {
 				return nil
 			}
 
@@ -206,18 +208,23 @@ func (c *IncusUIController) ProxyIncusUI(ctx *gin.Context) {
 				return nil
 			}
 
-			html := string(body)
+			content := string(body)
 
-			// Rewrite absolute asset paths in the HTML markup
-			html = strings.ReplaceAll(html, `"/ui/assets/`, `"`+proxyPrefix+`/ui/assets/`)
-			html = strings.ReplaceAll(html, `'/ui/assets/`, `'`+proxyPrefix+`/ui/assets/`)
-			html = strings.ReplaceAll(html, `"/manifest.json"`, `"`+proxyPrefix+`/manifest.json"`)
+			// Rewrite absolute /ui/assets/ paths in both HTML and JS.
+			// In HTML: asset references in src/href attributes.
+			// In JS: Vite's __vite__mapDeps array and other hardcoded paths.
+			content = strings.ReplaceAll(content, `"/ui/assets/`, `"`+proxyPrefix+`/ui/assets/`)
+			content = strings.ReplaceAll(content, `'/ui/assets/`, `'`+proxyPrefix+`/ui/assets/`)
 
-			// Inject monkey-patching script before any other scripts
-			script := generateMonkeyPatchScript(proxyPrefix)
-			html = strings.Replace(html, "<head>", "<head>"+script, 1)
+			if isHTML {
+				content = strings.ReplaceAll(content, `"/manifest.json"`, `"`+proxyPrefix+`/manifest.json"`)
 
-			modified := []byte(html)
+				// Inject monkey-patching script before any other scripts
+				script := generateMonkeyPatchScript(proxyPrefix)
+				content = strings.Replace(content, "<head>", "<head>"+script, 1)
+			}
+
+			modified := []byte(content)
 			resp.Body = io.NopCloser(bytes.NewReader(modified))
 			resp.ContentLength = int64(len(modified))
 			resp.Header.Set("Content-Length", strconv.Itoa(len(modified)))
@@ -285,5 +292,5 @@ func (c *IncusUIController) IsUserAuthorizedForBackend(userID string, userRoles 
 // through the given proxy prefix. This ensures the Incus UI SPA's API
 // calls and WebSocket connections are routed through the reverse proxy.
 func generateMonkeyPatchScript(proxyPrefix string) string {
-	return fmt.Sprintf(`<script>(function(){var p=%s;function m(u,b){return u===b||u.startsWith(b+"/")||u.startsWith(b+"?")}function r(u){if(typeof u!=="string")return u;if(m(u,"/1.0"))return p+u;if(m(u,"/ui"))return p+u;return u}var of=window.fetch;window.fetch=function(i,n){if(typeof i==="string"){i=r(i)}else if(i instanceof Request){i=new Request(r(i.url),i)}return of.call(this,i,n)};var ox=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){arguments[1]=r(u);return ox.apply(this,arguments)};var OWS=window.WebSocket;window.WebSocket=function(u,pr){if(typeof u==="string"){try{var o=new URL(u,location.origin);var pn=o.pathname;if(o.host===location.host&&(pn==="/1.0"||pn.startsWith("/1.0/")||pn==="/ui"||pn.startsWith("/ui/"))){o.pathname=p+o.pathname;u=o.toString()}}catch(e){u=r(u)}}return pr!==undefined?new OWS(u,pr):new OWS(u)};window.WebSocket.prototype=OWS.prototype;window.WebSocket.CONNECTING=OWS.CONNECTING;window.WebSocket.OPEN=OWS.OPEN;window.WebSocket.CLOSING=OWS.CLOSING;window.WebSocket.CLOSED=OWS.CLOSED})()</script>`, fmt.Sprintf("%q", proxyPrefix))
+	return fmt.Sprintf(`<script>(function(){var p=%s;var O=location.origin;function nm(u,b){return u===b||u.startsWith(b+"/")||u.startsWith(b+"?")}function r(u){if(typeof u!=="string")return u;if(nm(u,"/1.0"))return p+u;if(nm(u,"/ui"))return p+u;return u}function rFull(u){if(typeof u!=="string")return u;try{var o=new URL(u);if(o.origin===O){var pn=o.pathname;if(nm(pn,"/1.0")||nm(pn,"/ui")){o.pathname=p+pn;return o.toString()}}}catch(e){}return r(u)}var of=window.fetch;window.fetch=function(i,n){if(typeof i==="string"){i=rFull(i)}else if(i instanceof Request){i=new Request(rFull(i.url),i)}return of.call(this,i,n)};var ox=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){arguments[1]=rFull(u);return ox.apply(this,arguments)};var OWS=window.WebSocket;window.WebSocket=function(u,pr){if(typeof u==="string"){try{var o=new URL(u,O);var pn=o.pathname;if(o.host===location.host&&(nm(pn,"/1.0")||nm(pn,"/ui"))){o.pathname=p+o.pathname;u=o.toString()}}catch(e){u=r(u)}}return pr!==undefined?new OWS(u,pr):new OWS(u)};window.WebSocket.prototype=OWS.prototype;window.WebSocket.CONNECTING=OWS.CONNECTING;window.WebSocket.OPEN=OWS.OPEN;window.WebSocket.CLOSING=OWS.CLOSING;window.WebSocket.CLOSED=OWS.CLOSED;var lD=Object.getOwnPropertyDescriptor(HTMLLinkElement.prototype,"href");if(lD&&lD.set){Object.defineProperty(HTMLLinkElement.prototype,"href",{set:function(v){return lD.set.call(this,rFull(v))},get:lD.get,enumerable:lD.enumerable,configurable:true})}var sD=Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype,"src");if(sD&&sD.set){Object.defineProperty(HTMLScriptElement.prototype,"src",{set:function(v){return sD.set.call(this,rFull(v))},get:sD.get,enumerable:sD.enumerable,configurable:true})}if(location.pathname.startsWith(p+"/")){history.replaceState(null,"",location.pathname.substring(p.length)+location.search+location.hash)}})()</script>`, fmt.Sprintf("%q", proxyPrefix))
 }
