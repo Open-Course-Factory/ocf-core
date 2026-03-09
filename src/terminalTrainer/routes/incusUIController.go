@@ -62,22 +62,26 @@ var sensitiveHeaders = map[string]struct{}{
 // Access is restricted to system admins (any backend) and org owners/managers
 // (only their org's AllowedBackends).
 type IncusUIController struct {
-	db           *gorm.DB
-	proxyBaseURL string
-	adminKey     string
-	transport    http.RoundTripper
+	db                *gorm.DB
+	proxyBaseURL      string
+	adminKey          string
+	protectedBackends map[string]bool
+	transport         http.RoundTripper
 }
 
 // NewIncusUIController creates a new IncusUIController.
-func NewIncusUIController(db *gorm.DB, proxyBaseURL string, adminKey ...string) *IncusUIController {
+// protectedBackends is the set of backend IDs that only admins can access
+// via the Incus UI proxy (e.g. the system default backend).
+func NewIncusUIController(db *gorm.DB, proxyBaseURL string, protectedBackends map[string]bool, adminKey ...string) *IncusUIController {
 	key := ""
 	if len(adminKey) > 0 {
 		key = adminKey[0]
 	}
 	return &IncusUIController{
-		db:           db,
-		proxyBaseURL: proxyBaseURL,
-		adminKey:     key,
+		db:                db,
+		proxyBaseURL:      proxyBaseURL,
+		adminKey:          key,
+		protectedBackends: protectedBackends,
 		transport: &http.Transport{
 			DialContext: (&net.Dialer{
 				Timeout:   10 * time.Second,
@@ -260,6 +264,11 @@ func (c *IncusUIController) IsUserAuthorizedForBackend(userID string, userRoles 
 		}
 	}
 
+	// Non-admins are blocked from protected backends (e.g. system default)
+	if c.protectedBackends[backendID] {
+		return false
+	}
+
 	// Query organization memberships where user is an owner or manager
 	var members []orgModels.OrganizationMember
 	err := c.db.
@@ -274,6 +283,10 @@ func (c *IncusUIController) IsUserAuthorizedForBackend(userID string, userRoles 
 		var org orgModels.Organization
 		err := c.db.First(&org, "id = ?", member.OrganizationID).Error
 		if err != nil {
+			continue
+		}
+
+		if !org.IncusUIEnabled {
 			continue
 		}
 

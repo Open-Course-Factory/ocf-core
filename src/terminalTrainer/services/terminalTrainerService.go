@@ -1575,6 +1575,10 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 		return nil, fmt.Errorf("organization not found: %w", err)
 	}
 
+	if !org.IncusUIEnabled {
+		return []dto.BackendInfo{}, nil
+	}
+
 	allBackends, err := tts.getBackendsCached()
 	if err != nil {
 		return nil, err
@@ -1582,26 +1586,7 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 
 	// Determine which backends this org can access
 	if len(org.AllowedBackends) == 0 {
-		// No manual config: return only the default backend.
-		// Priority: org default → system default → first backend in list
-		defaultID := org.DefaultBackend
-		if defaultID == "" {
-			defaultID = tts.systemDefaultBackend
-		}
-		if defaultID == "" && len(allBackends) > 0 {
-			defaultID = allBackends[0].ID
-		}
-		var filtered []dto.BackendInfo
-		for _, b := range allBackends {
-			if b.ID == defaultID {
-				b.IsDefault = true
-				filtered = append(filtered, b)
-			}
-		}
-		if len(filtered) == 0 {
-			return allBackends, nil
-		}
-		return filtered, nil
+		return []dto.BackendInfo{}, nil
 	}
 
 	// Explicit config: return only the allowed backends
@@ -1611,9 +1596,6 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 	}
 
 	defaultID := org.DefaultBackend
-	if defaultID == "" {
-		defaultID = tts.systemDefaultBackend
-	}
 
 	var filtered []dto.BackendInfo
 	for _, b := range allBackends {

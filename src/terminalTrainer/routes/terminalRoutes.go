@@ -2,11 +2,13 @@ package terminalController
 
 import (
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	auth "soli/formations/src/auth"
 	config "soli/formations/src/configuration"
+	configRepositories "soli/formations/src/configuration/repositories"
 	paymentMiddleware "soli/formations/src/payment/middleware"
 	terminalMiddleware "soli/formations/src/terminalTrainer/middleware"
 	"soli/formations/src/terminalTrainer/models"
@@ -89,7 +91,21 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	// The cookie-to-header middleware extracts the JWT from the incus_token
 	// cookie (set by the frontend iframe loader) and injects it as an
 	// Authorization header so the standard auth middleware can validate it.
-	incusUIController := NewIncusUIController(db, os.Getenv("TERMINAL_TRAINER_URL"), os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"))
+	// Build set of protected backends (admin-only for Incus UI proxy).
+	// Includes the system default backend + any listed in incus_ui_protected_backends.
+	protectedBackends := make(map[string]bool)
+	featureRepo := configRepositories.NewFeatureRepository(db)
+	if f, err := featureRepo.GetFeatureByKey("terminal_default_backend"); err == nil && f.Value != "" {
+		protectedBackends[f.Value] = true
+	}
+	if f, err := featureRepo.GetFeatureByKey("incus_ui_protected_backends"); err == nil && f.Value != "" {
+		for _, id := range strings.Split(f.Value, ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				protectedBackends[id] = true
+			}
+		}
+	}
+	incusUIController := NewIncusUIController(db, os.Getenv("TERMINAL_TRAINER_URL"), protectedBackends, os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"))
 	incusUIRoutes := router.Group("/incus-ui")
 	incusUIRoutes.Any("/:backendId/*path", incusCookieAuth(), middleware.AuthManagement(), incusUIController.ProxyIncusUI)
 }

@@ -57,7 +57,7 @@ func TestIncusUIProxy_AdminCanAccessAnyBackend(t *testing.T) {
 	}))
 	defer mockTTBackend.Close()
 
-	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
 
 	// System admin with "administrator" role
 	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
@@ -78,9 +78,10 @@ func TestIncusUIProxy_OrgOwnerCanAccessAllowedBackend(t *testing.T) {
 
 	// Create an org with AllowedBackends containing "backend1"
 	org := createTestOrgForHistory(t, db, "org-owner1")
-	// Set AllowedBackends on the organization
+	// Set AllowedBackends and IncusUIEnabled on the organization
 	err := db.Model(org).Update("allowed_backends", `["backend1"]`).Error
 	require.NoError(t, err)
+	db.Model(org).Update("incus_ui_enabled", true)
 
 	// Make org-owner1 an owner member of the org
 	createTestOrgMember(t, db, org.ID, "org-owner1", orgModels.OrgRoleOwner)
@@ -92,7 +93,7 @@ func TestIncusUIProxy_OrgOwnerCanAccessAllowedBackend(t *testing.T) {
 	}))
 	defer mockTTBackend.Close()
 
-	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
 
 	// Org owner with non-admin system role
 	router := newIncusUIRouter("org-owner1", []string{"member"}, controller)
@@ -110,10 +111,11 @@ func TestIncusUIProxy_OrgOwnerCanAccessAllowedBackend(t *testing.T) {
 func TestIncusUIProxy_OrgManagerCanAccessAllowedBackend(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
-	// Create an org with AllowedBackends containing "backend1"
+	// Create an org with AllowedBackends containing "backend1" and IncusUIEnabled
 	org := createTestOrgForHistory(t, db, "some-creator")
 	err := db.Model(org).Update("allowed_backends", `["backend1"]`).Error
 	require.NoError(t, err)
+	db.Model(org).Update("incus_ui_enabled", true)
 
 	// Make manager1 a manager member of the org
 	createTestOrgMember(t, db, org.ID, "manager1", orgModels.OrgRoleManager)
@@ -125,7 +127,7 @@ func TestIncusUIProxy_OrgManagerCanAccessAllowedBackend(t *testing.T) {
 	}))
 	defer mockTTBackend.Close()
 
-	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
 
 	// Org manager with non-admin system role
 	router := newIncusUIRouter("manager1", []string{"member"}, controller)
@@ -158,7 +160,7 @@ func TestIncusUIProxy_OrgOwnerDeniedUnallowedBackend(t *testing.T) {
 	}))
 	defer mockTTBackend.Close()
 
-	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
 
 	// Org owner with non-admin system role tries to access "backend2" (not allowed)
 	router := newIncusUIRouter("org-owner1", []string{"member"}, controller)
@@ -196,7 +198,7 @@ func TestIncusUIProxy_OrgMemberDenied(t *testing.T) {
 	}))
 	defer mockTTBackend.Close()
 
-	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
 
 	// Regular member with non-admin system role
 	router := newIncusUIRouter("regular-member", []string{"member"}, controller)
@@ -221,7 +223,7 @@ func TestIncusUIProxy_NonOrgUserDenied(t *testing.T) {
 	}))
 	defer mockTTBackend.Close()
 
-	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
 
 	// User with no org membership and non-admin role
 	router := newIncusUIRouter("lone-user", []string{"member"}, controller)
@@ -237,7 +239,7 @@ func TestIncusUIProxy_NonOrgUserDenied(t *testing.T) {
 func TestIncusUIProxy_IsUserAuthorizedForBackend_AdminAlwaysTrue(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
-	controller := terminalController.NewIncusUIController(db, "http://unused")
+	controller := terminalController.NewIncusUIController(db, "http://unused", nil)
 
 	authorized := controller.IsUserAuthorizedForBackend(
 		"admin-user",
@@ -254,13 +256,14 @@ func TestIncusUIProxy_IsUserAuthorizedForBackend_AdminAlwaysTrue(t *testing.T) {
 func TestIncusUIProxy_IsUserAuthorizedForBackend_OrgOwnerAllowed(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
-	// Create an org with AllowedBackends
+	// Create an org with AllowedBackends and IncusUIEnabled
 	org := createTestOrgForHistory(t, db, "owner1")
 	err := db.Model(org).Update("allowed_backends", `["backend1","backend2"]`).Error
 	require.NoError(t, err)
+	db.Model(org).Update("incus_ui_enabled", true)
 	createTestOrgMember(t, db, org.ID, "owner1", orgModels.OrgRoleOwner)
 
-	controller := terminalController.NewIncusUIController(db, "http://unused")
+	controller := terminalController.NewIncusUIController(db, "http://unused", nil)
 
 	authorized := controller.IsUserAuthorizedForBackend(
 		"owner1",
@@ -277,7 +280,7 @@ func TestIncusUIProxy_IsUserAuthorizedForBackend_OrgOwnerAllowed(t *testing.T) {
 func TestIncusUIProxy_IsUserAuthorizedForBackend_NonMemberDenied(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
-	controller := terminalController.NewIncusUIController(db, "http://unused")
+	controller := terminalController.NewIncusUIController(db, "http://unused", nil)
 
 	authorized := controller.IsUserAuthorizedForBackend(
 		"nobody",
@@ -307,7 +310,7 @@ func TestIncusUIProxy_HTMLRewriting_InjectsMonkeyPatch(t *testing.T) {
 	}))
 	defer mockTTBackend.Close()
 
-	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
 	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
 	w := makeIncusUIRequest(router, "test-backend", "ui/")
 
@@ -344,7 +347,7 @@ func TestIncusUIProxy_HTMLRewriting_RewritesAssetPaths(t *testing.T) {
 	}))
 	defer mockTTBackend.Close()
 
-	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
 	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
 	w := makeIncusUIRequest(router, "my-backend", "ui/")
 
@@ -377,7 +380,7 @@ func TestIncusUIProxy_CSSPassthrough(t *testing.T) {
 	}))
 	defer mockTTBackend.Close()
 
-	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
 	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
 	w := makeIncusUIRequest(router, "test-backend", "ui/assets/index.css")
 
@@ -405,7 +408,7 @@ func TestIncusUIProxy_JSRewriting(t *testing.T) {
 	}))
 	defer mockTTBackend.Close()
 
-	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
 	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
 	w := makeIncusUIRequest(router, "test-backend", "ui/assets/index.js")
 
@@ -438,7 +441,7 @@ func TestIncusUIProxy_AcceptEncodingIdentity(t *testing.T) {
 	}))
 	defer mockTTBackend.Close()
 
-	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
 	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
 	makeIncusUIRequest(router, "test-backend", "ui/")
 
@@ -459,7 +462,7 @@ func TestIncusUIProxy_MonkeyPatchScript_PatchesFetchXHRWebSocket(t *testing.T) {
 	}))
 	defer mockTTBackend.Close()
 
-	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
 	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
 	w := makeIncusUIRequest(router, "default", "ui/")
 
@@ -476,4 +479,176 @@ func TestIncusUIProxy_MonkeyPatchScript_PatchesFetchXHRWebSocket(t *testing.T) {
 	// Verify the proxy prefix is embedded correctly
 	assert.Contains(t, body, `"/api/v1/incus-ui/default"`,
 		"Script should contain the correct proxy prefix")
+}
+
+// --------------------------------------------------------------------------
+// incus_ui_enabled and protectedBackends tests
+// --------------------------------------------------------------------------
+
+// TestIncusUIProxy_IncusUIDisabled_OrgOwnerDenied verifies that an org owner
+// is denied access when the org has AllowedBackends but IncusUIEnabled is false.
+func TestIncusUIProxy_IncusUIDisabled_OrgOwnerDenied(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	// Create an org with AllowedBackends but IncusUIEnabled=false (default)
+	org := createTestOrgForHistory(t, db, "org-owner1")
+	err := db.Model(org).Update("allowed_backends", `["backend1"]`).Error
+	require.NoError(t, err)
+
+	// Make org-owner1 an owner member of the org
+	createTestOrgMember(t, db, org.ID, "org-owner1", orgModels.OrgRoleOwner)
+
+	// Start a mock tt-backend (should NOT be reached)
+	mockTTBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer mockTTBackend.Close()
+
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
+
+	// Org owner with non-admin system role
+	router := newIncusUIRouter("org-owner1", []string{"member"}, controller)
+	w := makeIncusUIRequest(router, "backend1", "some/path")
+
+	// Should be denied because incus_ui_enabled is false
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"Org owner should be denied when incus_ui_enabled is false")
+}
+
+// TestIncusUIProxy_IncusUIEnabled_OrgOwnerGranted verifies that an org owner
+// is granted access when the org has AllowedBackends AND IncusUIEnabled is true.
+func TestIncusUIProxy_IncusUIEnabled_OrgOwnerGranted(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	// Create an org with AllowedBackends AND IncusUIEnabled=true
+	org := createTestOrgForHistory(t, db, "org-owner1")
+	err := db.Model(org).Update("allowed_backends", `["backend1"]`).Error
+	require.NoError(t, err)
+	db.Model(org).Update("incus_ui_enabled", true)
+
+	// Make org-owner1 an owner member of the org
+	createTestOrgMember(t, db, org.ID, "org-owner1", orgModels.OrgRoleOwner)
+
+	// Start a mock tt-backend returning 200
+	mockTTBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer mockTTBackend.Close()
+
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, nil)
+
+	// Org owner with non-admin system role
+	router := newIncusUIRouter("org-owner1", []string{"member"}, controller)
+	w := makeIncusUIRequest(router, "backend1", "some/path")
+
+	// Should be granted access (proxied, not 403)
+	assert.NotEqual(t, http.StatusForbidden, w.Code,
+		"Org owner should be granted access when incus_ui_enabled is true")
+}
+
+// TestIncusUIProxy_ProtectedBackend_NonAdminDenied verifies that a non-admin
+// user is denied access to a protected backend even if their org's AllowedBackends
+// includes it and IncusUIEnabled is true.
+func TestIncusUIProxy_ProtectedBackend_NonAdminDenied(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	// Create an org with AllowedBackends containing the protected backend and IncusUIEnabled=true
+	org := createTestOrgForHistory(t, db, "org-owner1")
+	err := db.Model(org).Update("allowed_backends", `["protected-backend"]`).Error
+	require.NoError(t, err)
+	db.Model(org).Update("incus_ui_enabled", true)
+
+	// Make org-owner1 an owner member of the org
+	createTestOrgMember(t, db, org.ID, "org-owner1", orgModels.OrgRoleOwner)
+
+	// Start a mock tt-backend (should NOT be reached)
+	mockTTBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer mockTTBackend.Close()
+
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, map[string]bool{"protected-backend": true})
+
+	// Org owner with non-admin system role
+	router := newIncusUIRouter("org-owner1", []string{"member"}, controller)
+	w := makeIncusUIRequest(router, "protected-backend", "some/path")
+
+	// Should be denied — protected backend blocks non-admins
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"Non-admin should be denied access to protected backends even if in org's AllowedBackends")
+}
+
+// TestIncusUIProxy_ProtectedBackend_AdminGranted verifies that a system admin
+// can access a protected backend.
+func TestIncusUIProxy_ProtectedBackend_AdminGranted(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	// Start a mock tt-backend returning 200
+	mockTTBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer mockTTBackend.Close()
+
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL, map[string]bool{"protected-backend": true})
+
+	// System admin with "administrator" role
+	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
+	w := makeIncusUIRequest(router, "protected-backend", "some/path")
+
+	// Admin should access protected backends
+	assert.NotEqual(t, http.StatusForbidden, w.Code,
+		"Admin should access protected backends")
+}
+
+// TestIncusUIProxy_IsUserAuthorizedForBackend_IncusUIDisabled verifies that
+// IsUserAuthorizedForBackend returns false when IncusUIEnabled is false,
+// even if the backend is in AllowedBackends.
+func TestIncusUIProxy_IsUserAuthorizedForBackend_IncusUIDisabled(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	// Create org with AllowedBackends but IncusUIEnabled=false (default)
+	org := createTestOrgForHistory(t, db, "owner1")
+	err := db.Model(org).Update("allowed_backends", `["backend1"]`).Error
+	require.NoError(t, err)
+	createTestOrgMember(t, db, org.ID, "owner1", orgModels.OrgRoleOwner)
+
+	controller := terminalController.NewIncusUIController(db, "http://unused", nil)
+
+	authorized := controller.IsUserAuthorizedForBackend(
+		"owner1",
+		[]string{"member"},
+		"backend1",
+	)
+
+	assert.False(t, authorized,
+		"IsUserAuthorizedForBackend should return false when incus_ui_enabled is false")
+}
+
+// TestIncusUIProxy_IsUserAuthorizedForBackend_ProtectedBackend verifies that
+// IsUserAuthorizedForBackend returns false for a non-admin user requesting a
+// protected backend, even if their org has it in AllowedBackends with IncusUIEnabled.
+func TestIncusUIProxy_IsUserAuthorizedForBackend_ProtectedBackend(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	// Create org with AllowedBackends containing the protected backend and IncusUIEnabled=true
+	org := createTestOrgForHistory(t, db, "owner1")
+	err := db.Model(org).Update("allowed_backends", `["sys-default"]`).Error
+	require.NoError(t, err)
+	db.Model(org).Update("incus_ui_enabled", true)
+	createTestOrgMember(t, db, org.ID, "owner1", orgModels.OrgRoleOwner)
+
+	controller := terminalController.NewIncusUIController(db, "http://unused", map[string]bool{"sys-default": true})
+
+	authorized := controller.IsUserAuthorizedForBackend(
+		"owner1",
+		[]string{"member"},
+		"sys-default",
+	)
+
+	assert.False(t, authorized,
+		"IsUserAuthorizedForBackend should deny non-admin access to protected backends")
 }

@@ -33,6 +33,7 @@ func RegisterOrganization(service *ems.EntityRegistrationService) {
 						MaxGroups:          org.MaxGroups,
 						MaxMembers:         org.MaxMembers,
 						IsActive:           org.IsActive,
+						IncusUIEnabled:     org.IncusUIEnabled,
 						Metadata:           org.Metadata,
 						AllowedBackends:    org.AllowedBackends,
 						DefaultBackend:     org.DefaultBackend,
@@ -141,6 +142,9 @@ func RegisterOrganization(service *ems.EntityRegistrationService) {
 					}
 					if input.IsActive != nil {
 						updates["is_active"] = *input.IsActive
+					}
+					if input.IncusUIEnabled != nil {
+						updates["incus_ui_enabled"] = *input.IncusUIEnabled
 					}
 					if input.Metadata != nil {
 						updates["metadata"] = *input.Metadata
