@@ -99,7 +99,7 @@ func SetupTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 	// Incus UI proxy routes - available to all authenticated members
 	// (fine-grained backend access checks happen in IsUserAuthorizedForBackend)
 	log.Println("Setting up Incus UI proxy permissions...")
-	reconcilePolicy(enforcer, "member", "/api/v1/incus-ui/:backendId/*path", "(GET|POST|PUT|DELETE)")
+	reconcilePolicy(enforcer, "member", "/api/v1/incus-ui/:backendId/*", "(GET|POST|PUT|PATCH|DELETE)")
 
 	log.Println("✅ Terminal permissions setup completed")
 }
