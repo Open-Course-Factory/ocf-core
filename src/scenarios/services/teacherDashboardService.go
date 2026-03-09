@@ -395,6 +395,12 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 					Name:         fmt.Sprintf("scenario-%s", scenario.Title),
 					Expiry:       sessionExpirySecs,
 					Hostname:     scenario.Hostname,
+					OrganizationID: func() string {
+						if scenario.OrganizationID != nil {
+							return scenario.OrganizationID.String()
+						}
+						return ""
+					}(),
 					// RecordingConsent is 0 (disabled) by default. RGPD requires explicit
 					// learner consent before recording terminal sessions. Teachers can
 					// enable recording through regular terminal session settings after
