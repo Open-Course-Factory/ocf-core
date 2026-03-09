@@ -1,11 +1,15 @@
 package terminalController
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -131,6 +135,10 @@ func (c *IncusUIController) ProxyIncusUI(ctx *gin.Context) {
 			if adminKey != "" {
 				req.Header.Set("X-API-Key", adminKey)
 			}
+
+			// Prevent upstream from sending compressed responses so we
+			// can modify HTML bodies in ModifyResponse without decompressing.
+			req.Header.Set("Accept-Encoding", "identity")
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			// Add Content-Security-Policy to prevent clickjacking
@@ -143,6 +151,38 @@ func (c *IncusUIController) ProxyIncusUI(ctx *gin.Context) {
 					resp.Header.Set("Location", proxyPrefix+loc)
 				}
 			}
+
+			// For HTML responses, rewrite asset paths and inject a
+			// monkey-patching script so the Incus UI SPA routes all
+			// API calls and WebSocket connections through our proxy.
+			if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+				return nil
+			}
+
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				resp.Body = io.NopCloser(bytes.NewReader(nil))
+				resp.ContentLength = 0
+				return nil
+			}
+
+			html := string(body)
+
+			// Rewrite absolute asset paths in the HTML markup
+			html = strings.ReplaceAll(html, `"/ui/assets/`, `"`+proxyPrefix+`/ui/assets/`)
+			html = strings.ReplaceAll(html, `'/ui/assets/`, `'`+proxyPrefix+`/ui/assets/`)
+			html = strings.ReplaceAll(html, `"/manifest.json"`, `"`+proxyPrefix+`/manifest.json"`)
+
+			// Inject monkey-patching script before any other scripts
+			script := generateMonkeyPatchScript(proxyPrefix)
+			html = strings.Replace(html, "<head>", "<head>"+script, 1)
+
+			modified := []byte(html)
+			resp.Body = io.NopCloser(bytes.NewReader(modified))
+			resp.ContentLength = int64(len(modified))
+			resp.Header.Set("Content-Length", strconv.Itoa(len(modified)))
+
 			return nil
 		},
 	}
@@ -199,4 +239,12 @@ func (c *IncusUIController) IsUserAuthorizedForBackend(userID string, userRoles 
 	}
 
 	return false
+}
+
+// generateMonkeyPatchScript returns a <script> tag that monkey-patches
+// fetch, XMLHttpRequest.open, and WebSocket to rewrite absolute URLs
+// through the given proxy prefix. This ensures the Incus UI SPA's API
+// calls and WebSocket connections are routed through the reverse proxy.
+func generateMonkeyPatchScript(proxyPrefix string) string {
+	return fmt.Sprintf(`<script>(function(){var p=%s;function r(u){if(typeof u!=="string")return u;if(u.startsWith("/1.0/"))return p+u;if(u.startsWith("/ui/"))return p+u;return u}var of=window.fetch;window.fetch=function(i,n){if(typeof i==="string"){i=r(i)}else if(i instanceof Request){i=new Request(r(i.url),i)}return of.call(this,i,n)};var ox=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){arguments[1]=r(u);return ox.apply(this,arguments)};var OWS=window.WebSocket;window.WebSocket=function(u,pr){if(typeof u==="string"){try{var o=new URL(u,location.origin);if(o.host===location.host&&(o.pathname.startsWith("/1.0/")||o.pathname.startsWith("/ui/"))){o.pathname=p+o.pathname;u=o.toString()}}catch(e){u=r(u)}}return pr!==undefined?new OWS(u,pr):new OWS(u)};window.WebSocket.prototype=OWS.prototype;window.WebSocket.CONNECTING=OWS.CONNECTING;window.WebSocket.OPEN=OWS.OPEN;window.WebSocket.CLOSING=OWS.CLOSING;window.WebSocket.CLOSED=OWS.CLOSED})()</script>`, fmt.Sprintf("%q", proxyPrefix))
 }

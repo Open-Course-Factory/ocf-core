@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -286,4 +287,159 @@ func TestIncusUIProxy_IsUserAuthorizedForBackend_NonMemberDenied(t *testing.T) {
 
 	assert.False(t, authorized,
 		"IsUserAuthorizedForBackend should return false for users with no org membership")
+}
+
+// --------------------------------------------------------------------------
+// HTML rewriting / monkey-patching tests
+// --------------------------------------------------------------------------
+
+// TestIncusUIProxy_HTMLRewriting_InjectsMonkeyPatch verifies that HTML responses
+// have the monkey-patching script injected in <head>.
+func TestIncusUIProxy_HTMLRewriting_InjectsMonkeyPatch(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	mockHTML := `<!doctype html><html><head><title>Incus UI</title></head><body><div id="app"></div></body></html>`
+
+	mockTTBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(mockHTML))
+	}))
+	defer mockTTBackend.Close()
+
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
+	w := makeIncusUIRequest(router, "test-backend", "ui/")
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+
+	// Should contain the monkey-patching script with the correct proxy prefix
+	assert.Contains(t, body, `<script>(function()`)
+	assert.Contains(t, body, `/api/v1/incus-ui/test-backend`)
+
+	// Script should be inside <head>, before the original content
+	headIdx := strings.Index(body, "<head>")
+	scriptIdx := strings.Index(body, "<script>(function()")
+	titleIdx := strings.Index(body, "<title>")
+	assert.Greater(t, scriptIdx, headIdx, "script should be after <head>")
+	assert.Less(t, scriptIdx, titleIdx, "script should be before <title>")
+}
+
+// TestIncusUIProxy_HTMLRewriting_RewritesAssetPaths verifies that absolute
+// asset paths in HTML are rewritten to go through the proxy prefix.
+func TestIncusUIProxy_HTMLRewriting_RewritesAssetPaths(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	mockHTML := `<!doctype html><html><head>` +
+		`<script src="/ui/assets/index-abc123.js"></script>` +
+		`<link rel="stylesheet" href="/ui/assets/index-xyz789.css">` +
+		`<link rel="manifest" href="/manifest.json">` +
+		`</head><body></body></html>`
+
+	mockTTBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(mockHTML))
+	}))
+	defer mockTTBackend.Close()
+
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
+	w := makeIncusUIRequest(router, "my-backend", "ui/")
+
+	body := w.Body.String()
+	prefix := "/api/v1/incus-ui/my-backend"
+
+	assert.Contains(t, body, `"`+prefix+`/ui/assets/index-abc123.js"`,
+		"JS asset path should be rewritten with proxy prefix")
+	assert.Contains(t, body, `"`+prefix+`/ui/assets/index-xyz789.css"`,
+		"CSS asset path should be rewritten with proxy prefix")
+	assert.Contains(t, body, `"`+prefix+`/manifest.json"`,
+		"manifest.json path should be rewritten with proxy prefix")
+
+	// Should NOT contain the original absolute paths
+	assert.NotContains(t, body, `"/ui/assets/index-abc123.js"`)
+	assert.NotContains(t, body, `"/manifest.json"`)
+}
+
+// TestIncusUIProxy_NonHTMLPassthrough verifies that non-HTML responses
+// (JS, CSS, images) are passed through without modification.
+func TestIncusUIProxy_NonHTMLPassthrough(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	jsContent := `fetch("/1.0/instances").then(r => r.json())`
+
+	mockTTBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(jsContent))
+	}))
+	defer mockTTBackend.Close()
+
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
+	w := makeIncusUIRequest(router, "test-backend", "ui/assets/index.js")
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+
+	// JS content should pass through unmodified
+	assert.Equal(t, jsContent, body,
+		"Non-HTML responses should not be modified")
+	assert.NotContains(t, body, "<script>",
+		"Monkey-patch script should not be injected in non-HTML responses")
+}
+
+// TestIncusUIProxy_AcceptEncodingIdentity verifies that the proxy sets
+// Accept-Encoding: identity to prevent compressed upstream responses.
+func TestIncusUIProxy_AcceptEncodingIdentity(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	var capturedAcceptEncoding string
+	mockTTBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAcceptEncoding = r.Header.Get("Accept-Encoding")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer mockTTBackend.Close()
+
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
+	makeIncusUIRequest(router, "test-backend", "ui/")
+
+	assert.Equal(t, "identity", capturedAcceptEncoding,
+		"Proxy should set Accept-Encoding: identity to prevent compressed responses")
+}
+
+// TestIncusUIProxy_MonkeyPatchScript_PatchesFetchXHRWebSocket verifies that the
+// generated monkey-patching script contains patches for all three request types.
+func TestIncusUIProxy_MonkeyPatchScript_PatchesFetchXHRWebSocket(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	mockHTML := `<!doctype html><html><head></head><body></body></html>`
+	mockTTBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(mockHTML))
+	}))
+	defer mockTTBackend.Close()
+
+	controller := terminalController.NewIncusUIController(db, mockTTBackend.URL)
+	router := newIncusUIRouter("admin-user", []string{"administrator"}, controller)
+	w := makeIncusUIRequest(router, "default", "ui/")
+
+	body := w.Body.String()
+
+	// Verify all three request types are patched
+	assert.Contains(t, body, "window.fetch=function",
+		"Script should patch window.fetch")
+	assert.Contains(t, body, "XMLHttpRequest.prototype.open=function",
+		"Script should patch XMLHttpRequest.prototype.open")
+	assert.Contains(t, body, "window.WebSocket=function",
+		"Script should patch WebSocket constructor")
+
+	// Verify the proxy prefix is embedded correctly
+	assert.Contains(t, body, `"/api/v1/incus-ui/default"`,
+		"Script should contain the correct proxy prefix")
 }
