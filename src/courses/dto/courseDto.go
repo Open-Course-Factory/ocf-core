@@ -133,9 +133,24 @@ func CourseModelToCourseInputDto(courseModel models.Course) *CourseInput {
 		chapterInputs = append(chapterInputs, ChapterModelToChapterInput(*chapter))
 	}
 
+	// Default format to 0 (html) when not set (e.g. CLI mode)
+	defaultFormat := 0
+
+	// Default author email for CLI usage
+	authorEmail := "cli@ocf.local"
+
+	// Default category if not set
+	category := courseModel.Category
+	if category == "" {
+		category = "other"
+	}
+
 	return &CourseInput{
 		OwnerID:             courseModel.OwnerIDs[0],
 		Name:                courseModel.Name,
+		Format:              &defaultFormat,
+		AuthorEmail:         authorEmail,
+		Category:            category,
 		Version:             courseModel.Version,
 		Title:               courseModel.Title,
 		Subtitle:            courseModel.Subtitle,

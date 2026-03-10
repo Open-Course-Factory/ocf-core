@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"strings"
 
+	"github.com/go-git/go-billy/v5"
 	"gorm.io/gorm"
 
 	authInterfaces "soli/formations/src/auth/interfaces"
@@ -41,6 +44,7 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	const USER_ID_FLAG = "user-id"
 	const AUTHOR_FLAG = "author"
 	const COURSE_JSON_FILENAME_FLAG = "course-json"
+	const SKIP_DB_FLAG = "skip-db"
 
 	courseName := flag.String(COURSE_FLAG, "git", "name of the course you need to generate")
 	courseSourceType := flag.String(COURSE_SOURCE_TYPE_FLAG, "git", "source type: 'git' for git repository or 'local' for local filesystem path")
@@ -58,6 +62,7 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 	userID := flag.String(USER_ID_FLAG, "00000000-0000-0000-0000-000000000000", "user ID (UUID) for authentication and git operations")
 	author := flag.String(AUTHOR_FLAG, "cli", "author trigramme for loading author_XXX.md file")
 	courseJsonFilename := flag.String(COURSE_JSON_FILENAME_FLAG, "course.json", "filename of the course JSON file in the repository")
+	skipDB := flag.Bool(SKIP_DB_FLAG, false, "skip database operations (load and generate course without saving to DB)")
 	flag.Parse()
 
 	utils.Info("%s", *courseType)
@@ -76,8 +81,6 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 		generator.SLIDE_ENGINE = slidev.SlidevCourseGenerator{}
 	}
 
-	courseService := courseService.NewCourseService(db)
-
 	var course courseModels.Course
 
 	// Determine the source to use (new flags take precedence over old flags)
@@ -90,14 +93,27 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 
 	// If we have a source, load the course from it
 	if source != "" {
-		utils.Info("Loading course from %s: %s", *courseSourceType, source)
-		coursePtr, err := courseService.GetCourse(*userID, *courseName, *courseSourceType, source, *courseBranchGitRepository, *courseJsonFilename)
-		if err != nil {
-			utils.Error("Error loading course from %s: %v", *courseSourceType, err)
-			return true
+		if *skipDB {
+			// Load course directly without database
+			utils.Info("Loading course from %s: %s (skip-db mode)", *courseSourceType, source)
+			coursePtr, err := loadCourseWithoutDB(*userID, *courseName, *courseSourceType, source, *courseBranchGitRepository, *courseJsonFilename)
+			if err != nil {
+				utils.Error("Error loading course from %s: %v", *courseSourceType, err)
+				return true
+			}
+			course = *coursePtr
+			utils.Info("Course loaded successfully (no DB): %s v%s", course.Name, course.Version)
+		} else {
+			svc := courseService.NewCourseService(db)
+			utils.Info("Loading course from %s: %s", *courseSourceType, source)
+			coursePtr, err := svc.GetCourse(*userID, *courseName, *courseSourceType, source, *courseBranchGitRepository, *courseJsonFilename)
+			if err != nil {
+				utils.Error("Error loading course from %s: %v", *courseSourceType, err)
+				return true
+			}
+			course = *coursePtr
+			utils.Info("Course loaded and saved successfully: %s v%s (ID: %s)", course.Name, course.Version, course.ID.String())
 		}
-		course = *coursePtr
-		utils.Info("Course loaded and saved successfully: %s v%s (ID: %s)", course.Name, course.Version, course.ID.String())
 	} else {
 		// Fallback to empty course for CLI-only usage
 		course = courseModels.Course{}
@@ -107,19 +123,23 @@ func ParseFlags(db *gorm.DB, enforcer authInterfaces.EnforcerInterface) bool {
 		course.Name = *courseName
 		course.FolderName = *courseName
 
-		// Save the course to database
-		genericService := genericService.NewGenericService(db, enforcer)
-		courseInputDto := courseDto.CourseModelToCourseInputDto(course)
-		savedCourseEntity, errorSaving := genericService.CreateEntity(courseInputDto, reflect.TypeOf(models.Course{}).Name())
+		if *skipDB {
+			utils.Info("Course initialized (no DB): %s", course.Name)
+		} else {
+			// Save the course to database
+			genericService := genericService.NewGenericService(db, enforcer)
+			courseInputDto := courseDto.CourseModelToCourseInputDto(course)
+			savedCourseEntity, errorSaving := genericService.CreateEntity(*courseInputDto, reflect.TypeOf(models.Course{}).Name())
 
-		if errorSaving != nil {
-			utils.Error("%s", errorSaving.Error())
-			return true
+			if errorSaving != nil {
+				utils.Error("%s", errorSaving.Error())
+				return true
+			}
+
+			savedCourse := savedCourseEntity.(*models.Course)
+			course.ID = savedCourse.ID
+			utils.Info("Course created successfully with ID: %s", course.ID.String())
 		}
-
-		savedCourse := savedCourseEntity.(*models.Course)
-		course.ID = savedCourse.ID
-		utils.Info("Course created successfully with ID: %s", course.ID.String())
 	}
 
 	// Determine theme source (new flags take precedence over old flags)
@@ -222,6 +242,55 @@ func setCourseThemeFromProgramInputs(course *courseModels.Course, themeName stri
 	} else if sourceType == "local" {
 		course.Theme.SourcePath = source
 	}
+}
+
+// loadCourseWithoutDB loads a course from source (git or local) without any database operations.
+// This replicates the loading logic from courseService.GetCourse but skips the DB save/update.
+func loadCourseWithoutDB(ownerID, courseName, sourceType, source, branch, courseJsonFilename string) (*courseModels.Course, error) {
+	var fs billy.Filesystem
+	var err error
+
+	switch sourceType {
+	case "git":
+		fs, err = courseModels.GitCloneWithCache(ownerID, source, branch)
+	case "local":
+		fs, err = courseModels.LoadLocalDirectory(source)
+	default:
+		return nil, fmt.Errorf("unknown source type: %s (must be 'git' or 'local')", sourceType)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	jsonFile, err := fs.Open(courseJsonFilename)
+	if err != nil {
+		return nil, fmt.Errorf("error reading course file %s: %w", courseJsonFilename, err)
+	}
+
+	fileBytes, err := io.ReadAll(jsonFile)
+	if err != nil {
+		return nil, fmt.Errorf("error reading course file bytes: %w", err)
+	}
+
+	var course courseModels.Course
+	if err := json.Unmarshal(fileBytes, &course); err != nil {
+		return nil, fmt.Errorf("error unmarshaling course JSON: %w", err)
+	}
+
+	course.OwnerIDs = append(course.OwnerIDs, ownerID)
+	course.FolderName = courseName
+	course.SourceType = sourceType
+
+	if sourceType == "git" {
+		course.GitRepository = source
+		course.GitRepositoryBranch = branch
+	} else if sourceType == "local" {
+		course.SourcePath = source
+	}
+
+	courseModels.FillCourseModelFromFiles(&fs, &course)
+
+	return &course, nil
 }
 
 func isFlagPassed(name string) bool {
