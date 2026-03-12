@@ -136,7 +136,7 @@ func main() {
 	log.Printf("CORS allowed origins: %v", allowedOrigins)
 
 	r.Use(cors.New(cors.Options{
-		AllowedOrigins:   allowedOrigins,
+		AllowOriginFunc:  func(origin string) bool { return config.IsOriginAllowed(origin) },
 		AllowCredentials: true,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders: []string{
