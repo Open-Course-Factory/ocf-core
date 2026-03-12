@@ -49,7 +49,7 @@ func IsOriginAllowed(origin string) bool {
 	// In development mode, allow any localhost/127.0.0.1 origin regardless of port
 	if allowLocalhost {
 		hostname := originURL.Hostname()
-		if hostname == "localhost" || hostname == "127.0.0.1" {
+		if hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1" {
 			return true
 		}
 	}
