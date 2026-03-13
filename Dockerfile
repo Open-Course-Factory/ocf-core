@@ -7,10 +7,8 @@ WORKDIR /usr/src/ocf-core
 # Copy source code to
 COPY . /usr/src/ocf-core
 
-# Install Go Library & Swagger
-RUN cd /usr/src/ocf-core && go get golang.org/x/text/transform \
-    && go get golang.org/x/text/unicode/norm \
-    && go install github.com/swaggo/swag/cmd/swag@v1.8.12
+# Install Swagger
+RUN go install github.com/swaggo/swag/cmd/swag@v1.8.12
 
 RUN go mod tidy
 
