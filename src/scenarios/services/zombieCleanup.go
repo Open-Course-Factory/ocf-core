@@ -16,7 +16,7 @@ func CleanupZombieScenarioSessions(db *gorm.DB) (int64, error) {
 	result := db.Exec(`
 		UPDATE scenario_sessions
 		SET status = 'abandoned', updated_at = ?
-		WHERE status = 'active'
+		WHERE status IN ('active', 'in_progress')
 		  AND terminal_session_id IS NOT NULL
 		  AND (
 		    terminal_session_id IN (

@@ -320,3 +320,71 @@ func TestStartScenario_ActiveTerminal_StillBlocks(t *testing.T) {
 	require.NoError(t, db.First(&originalSession, "id = ?", session1.ID).Error)
 	assert.Equal(t, "active", originalSession.Status, "original session should remain active")
 }
+
+func TestStartScenario_ZombieSession_NilTerminalID_AutoAbandons(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "zombie-nil-terminal",
+		Title:        "Zombie Nil Terminal",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID: scenario.ID,
+		Order:      0,
+		Title:      "Step 1",
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	// Directly create a zombie session with nil TerminalSessionID
+	zombieSession := models.ScenarioSession{
+		ScenarioID:        scenario.ID,
+		UserID:            "student-zombie-nil",
+		TerminalSessionID: nil,
+		CurrentStep:       0,
+		Status:            "active",
+		StartedAt:         time.Now().Add(-2 * time.Hour),
+	}
+	require.NoError(t, db.Create(&zombieSession).Error)
+
+	sp := models.ScenarioStepProgress{
+		SessionID: zombieSession.ID,
+		StepOrder: 0,
+		Status:    "active",
+	}
+	require.NoError(t, db.Create(&sp).Error)
+
+	// Create a terminal for the new session
+	utk := terminalModels.UserTerminalKey{
+		UserID:   "student-zombie-nil",
+		APIKey:   "key-nil",
+		KeyName:  "test-key",
+		IsActive: true,
+	}
+	require.NoError(t, db.Create(&utk).Error)
+
+	newTerminal := terminalModels.Terminal{
+		SessionID:         "terminal-nil-test",
+		UserID:            "student-zombie-nil",
+		Status:            "active",
+		ExpiresAt:         time.Now().Add(1 * time.Hour),
+		InstanceType:      "ubuntu:22.04",
+		UserTerminalKeyID: utk.ID,
+	}
+	require.NoError(t, db.Create(&newTerminal).Error)
+
+	flagSvc := &mockFlagService{}
+	verifySvc := &mockVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
+
+	session2, err := sessionSvc.StartScenario("student-zombie-nil", scenario.ID, "terminal-nil-test")
+	require.NoError(t, err, "should auto-abandon zombie session with nil terminal ID")
+	require.NotNil(t, session2)
+
+	var oldSession models.ScenarioSession
+	require.NoError(t, db.First(&oldSession, "id = ?", zombieSession.ID).Error)
+	assert.Equal(t, "abandoned", oldSession.Status)
+}

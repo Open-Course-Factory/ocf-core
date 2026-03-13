@@ -13,9 +13,6 @@ import (
 )
 
 // --- Fix 2: Cron cleanup job ---
-//
-// These tests are behind a build tag because CleanupZombieScenarioSessions
-// does not exist yet. Remove the build tag once the function is implemented.
 
 func TestCleanupZombieScenarioSessions_AbandonsStaleSessions(t *testing.T) {
 	db := setupTestDB(t)
@@ -117,6 +114,53 @@ func TestCleanupZombieScenarioSessions_AbandonsStaleSessions(t *testing.T) {
 	var s3 models.ScenarioSession
 	require.NoError(t, db.First(&s3, "id = ?", sessionActive.ID).Error)
 	assert.Equal(t, "active", s3.Status)
+}
+
+func TestCleanupZombieScenarioSessions_HandlesInProgressStatus(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "cleanup-inprogress",
+		Title:        "Cleanup In Progress Test",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID: scenario.ID,
+		Order:      0,
+		Title:      "Step 1",
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	utk := terminalModels.UserTerminalKey{
+		UserID: "student-cleanup-ip", APIKey: "key-ip", KeyName: "k-ip", IsActive: true,
+	}
+	require.NoError(t, db.Create(&utk).Error)
+
+	expiredTerminal := terminalModels.Terminal{
+		SessionID: "terminal-ip-expired", UserID: "student-cleanup-ip",
+		Status: "expired", ExpiresAt: time.Now().Add(-2 * time.Hour),
+		InstanceType: "ubuntu:22.04", UserTerminalKeyID: utk.ID,
+	}
+	require.NoError(t, db.Create(&expiredTerminal).Error)
+
+	termID := "terminal-ip-expired"
+	sessionIP := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "student-cleanup-ip",
+		TerminalSessionID: &termID,
+		CurrentStep: 0, Status: "in_progress", StartedAt: time.Now().Add(-1 * time.Hour),
+	}
+	require.NoError(t, db.Create(&sessionIP).Error)
+
+	count, err := services.CleanupZombieScenarioSessions(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count, "should abandon in_progress session with expired terminal")
+
+	var s models.ScenarioSession
+	require.NoError(t, db.First(&s, "id = ?", sessionIP.ID).Error)
+	assert.Equal(t, "abandoned", s.Status)
 }
 
 func TestCleanupZombieScenarioSessions_IgnoresCompletedSessions(t *testing.T) {
