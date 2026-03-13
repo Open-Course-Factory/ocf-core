@@ -270,6 +270,11 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		log.Printf("Warning: Failed to ensure Trial plan exists: %v\n", result.Error)
 	} else if result.RowsAffected > 0 {
 		log.Println("Created missing Trial plan")
+	} else {
+		// Fix existing Trial plans that have retention=0 (recording won't work without retention)
+		db.Model(&paymentModels.SubscriptionPlan{}).
+			Where("name = ? AND price_amount = 0 AND command_history_retention_days = 0", "Trial").
+			Update("command_history_retention_days", 7)
 	}
 }
 
