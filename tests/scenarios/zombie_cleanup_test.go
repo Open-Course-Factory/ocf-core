@@ -1,5 +1,3 @@
-//go:build zombie_cleanup
-
 package scenarios_test
 
 import (

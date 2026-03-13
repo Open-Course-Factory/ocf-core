@@ -11,6 +11,7 @@ import (
 
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 )
 
 // FlagServiceInterface defines what ScenarioSessionService needs from FlagService
@@ -71,7 +72,36 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		// Check for existing active session inside the transaction to prevent race conditions
 		var existingSession models.ScenarioSession
 		if err := tx.Where("user_id = ? AND scenario_id = ? AND status IN ?", userID, scenarioID, []string{"in_progress", "active"}).First(&existingSession).Error; err == nil {
-			return fmt.Errorf("active session already exists for this scenario")
+			// Found an active session — check if its terminal is still alive
+			shouldAbandon := false
+
+			if existingSession.TerminalSessionID == nil {
+				// Orphan session with no terminal — auto-abandon
+				shouldAbandon = true
+			} else {
+				// Look up the terminal record
+				var terminal terminalModels.Terminal
+				if err := tx.Where("session_id = ?", *existingSession.TerminalSessionID).First(&terminal).Error; err != nil {
+					// Terminal not found (deleted or soft-deleted) — auto-abandon
+					shouldAbandon = true
+				} else if terminal.Status != "active" {
+					// Terminal exists but is expired/stopped — auto-abandon
+					shouldAbandon = true
+				}
+			}
+
+			if shouldAbandon {
+				slog.Info("auto-abandoning zombie scenario session",
+					"session_id", existingSession.ID,
+					"terminal_session_id", existingSession.TerminalSessionID,
+					"user_id", userID,
+				)
+				if err := tx.Model(&existingSession).Update("status", "abandoned").Error; err != nil {
+					return fmt.Errorf("failed to abandon zombie session: %w", err)
+				}
+			} else {
+				return fmt.Errorf("active session already exists for this scenario")
+			}
 		}
 
 		// Create session

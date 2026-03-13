@@ -13,6 +13,7 @@ import (
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 )
 
 // Mock implementations
@@ -525,6 +526,27 @@ func TestScenarioSessionService_ConcurrentStartNoDuplicates(t *testing.T) {
 		HasFlag:    false,
 	}
 	require.NoError(t, db.Create(&step).Error)
+
+	// Create active terminals so the zombie-detection logic doesn't auto-abandon
+	for i := 0; i < 2; i++ {
+		utk := terminalModels.UserTerminalKey{
+			UserID:   "student-concurrent",
+			APIKey:   fmt.Sprintf("key-concurrent-%d", i),
+			KeyName:  fmt.Sprintf("key-%d", i),
+			IsActive: true,
+		}
+		require.NoError(t, db.Create(&utk).Error)
+
+		terminal := terminalModels.Terminal{
+			SessionID:         fmt.Sprintf("terminal-%d", i),
+			UserID:            "student-concurrent",
+			Status:            "active",
+			ExpiresAt:         time.Now().Add(1 * time.Hour),
+			InstanceType:      "ubuntu:22.04",
+			UserTerminalKeyID: utk.ID,
+		}
+		require.NoError(t, db.Create(&terminal).Error)
+	}
 
 	flagSvc := &mockFlagService{}
 	verifySvc := &mockVerificationService{}
