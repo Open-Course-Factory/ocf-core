@@ -118,7 +118,7 @@ type CreateTerminalSessionInput struct {
 	Backend              string `json:"backend,omitempty" form:"backend"`             // Backend ID to use
 	OrganizationID       string `json:"organization_id,omitempty" form:"organization_id"`
 	HistoryRetentionDays int    `json:"history_retention_days,omitempty" form:"history_retention_days"`
-	RecordingConsent     int    `json:"recording_consent,omitempty" form:"recording_consent"` // 1 = learner accepted recording
+	RecordingEnabled     int    `json:"recording_enabled,omitempty" form:"recording_enabled"` // 1 = recording enabled (always on)
 	ExternalRef          string `json:"external_ref,omitempty" form:"external_ref"`           // Optional training session reference
 	Hostname             string `json:"hostname,omitempty" form:"hostname"`
 }
@@ -453,7 +453,7 @@ type BulkCreateTerminalsRequest struct {
 	NameTemplate   string `json:"name_template,omitempty"` // Template with placeholders: {group_name}, {user_email}, {user_id}
 	Backend          string `json:"backend,omitempty"`
 	OrganizationID   string `json:"organization_id,omitempty"`
-	RecordingConsent int    `json:"recording_consent,omitempty"`
+	RecordingEnabled int    `json:"recording_enabled,omitempty"`
 	ExternalRef      string `json:"external_ref,omitempty"` // Optional exercise/training session reference
 	Hostname         string `json:"hostname,omitempty"`
 }

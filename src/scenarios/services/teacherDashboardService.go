@@ -401,11 +401,8 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 						}
 						return ""
 					}(),
-					// RecordingConsent is 0 (disabled) by default. RGPD requires explicit
-					// learner consent before recording terminal sessions. Teachers can
-					// enable recording through regular terminal session settings after
-					// obtaining consent from learners.
-					RecordingConsent:     0,
+					// RecordingEnabled: recording is always on (RGPD Art. 6.1.f — legitimate interest)
+					RecordingEnabled:     1,
 					HistoryRetentionDays: 30,
 				}
 

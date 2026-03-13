@@ -277,14 +277,14 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 	if sessionInput.HistoryRetentionDays > 0 {
 		url += fmt.Sprintf("&history_retention_days=%d", sessionInput.HistoryRetentionDays)
 	}
-	if sessionInput.RecordingConsent > 1 {
-		sessionInput.RecordingConsent = 1
+	if sessionInput.RecordingEnabled > 1 {
+		sessionInput.RecordingEnabled = 1
 	}
-	if sessionInput.RecordingConsent < 0 {
-		sessionInput.RecordingConsent = 0
+	if sessionInput.RecordingEnabled < 0 {
+		sessionInput.RecordingEnabled = 0
 	}
-	if sessionInput.RecordingConsent > 0 {
-		url += fmt.Sprintf("&recording_consent=%d", sessionInput.RecordingConsent)
+	if sessionInput.RecordingEnabled > 0 {
+		url += fmt.Sprintf("&recording_enabled=%d", sessionInput.RecordingEnabled)
 	}
 	if sessionInput.ExternalRef != "" {
 		url += fmt.Sprintf("&external_ref=%s", neturl.QueryEscape(sessionInput.ExternalRef))
@@ -387,8 +387,8 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 	if !ok {
 		return nil, fmt.Errorf("invalid subscription plan type")
 	}
-	utils.Debug("StartSessionWithPlan - Plan: %s (ID: %s), CommandHistoryRetentionDays: %d, RecordingConsent from input: %d",
-		plan.Name, plan.ID, plan.CommandHistoryRetentionDays, sessionInput.RecordingConsent)
+	utils.Debug("StartSessionWithPlan - Plan: %s (ID: %s), CommandHistoryRetentionDays: %d, RecordingEnabled from input: %d",
+		plan.Name, plan.ID, plan.CommandHistoryRetentionDays, sessionInput.RecordingEnabled)
 
 	// Valider la taille de la machine
 	if sessionInput.InstanceType != "" {
@@ -457,11 +457,8 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 
 	// Pass command history retention days from subscription plan
 	sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
-	if plan.CommandHistoryRetentionDays == 0 {
-		sessionInput.RecordingConsent = 0
-	}
-	utils.Debug("StartSessionWithPlan - FINAL: HistoryRetentionDays=%d, RecordingConsent=%d",
-		sessionInput.HistoryRetentionDays, sessionInput.RecordingConsent)
+	utils.Debug("StartSessionWithPlan - FINAL: HistoryRetentionDays=%d, RecordingEnabled=%d",
+		sessionInput.HistoryRetentionDays, sessionInput.RecordingEnabled)
 
 	// Appeler la méthode StartSession originale avec les paramètres validés
 	return tts.StartSession(userID, sessionInput)
@@ -1871,7 +1868,7 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 			InstanceType:     request.InstanceType,
 			Backend:          request.Backend,
 			OrganizationID:   request.OrganizationID,
-			RecordingConsent: request.RecordingConsent,
+			RecordingEnabled: request.RecordingEnabled,
 			ExternalRef:      request.ExternalRef,
 		}
 
@@ -1880,9 +1877,6 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 		// protect against future refactoring that might bypass StartSessionWithPlan)
 		if plan, ok := planInterface.(*paymentModels.SubscriptionPlan); ok {
 			sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
-			if plan.CommandHistoryRetentionDays == 0 {
-				sessionInput.RecordingConsent = 0
-			}
 		}
 
 		// Try to create terminal
@@ -2596,9 +2590,10 @@ func (tts *terminalTrainerService) IsUserOrgManagerOrAdmin(userID string, orgID 
 	return false
 }
 
-// GetUserConsentStatus checks if recording consent is handled at the org or group level
+// GetUserConsentStatus checks if recording consent policy is handled at the org or group level
 // for a given user. Returns consentHandled=true if any org or group the user belongs to
 // has recording_consent_handled set. The source indicates "organization" or "group".
+// Note: recording is always enabled (RGPD Art. 6.1.f), this checks org/group policy status.
 func (tts *terminalTrainerService) GetUserConsentStatus(userID string) (bool, string, error) {
 	// Check organizations: find orgs where user is an active member with consent handled
 	var orgMembers []orgModels.OrganizationMember

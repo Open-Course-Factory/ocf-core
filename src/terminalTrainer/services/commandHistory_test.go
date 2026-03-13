@@ -645,43 +645,43 @@ func TestStartSessionWithPlan_RetentionDaysCopied(t *testing.T) {
 
 // TestBulkCreateTerminals_SetsRetentionDaysFromPlan verifies that the bulk
 // terminal creation path explicitly sets HistoryRetentionDays from the
-// subscription plan and forces RecordingConsent=0 when retention is zero.
+// subscription plan. Recording stays enabled regardless of retention days.
 // This tests the sessionInput construction logic in BulkCreateTerminalsForGroup.
 func TestBulkCreateTerminals_SetsRetentionDaysFromPlan(t *testing.T) {
 	testCases := []struct {
 		name                   string
 		planRetentionDays      int
-		requestRecordingConsent int
+		requestRecordingEnabled int
 		expectedRetentionDays  int
-		expectedConsent        int
+		expectedEnabled        int
 	}{
 		{
 			name:                    "plan_with_90_day_retention",
 			planRetentionDays:       90,
-			requestRecordingConsent: 1,
+			requestRecordingEnabled: 1,
 			expectedRetentionDays:   90,
-			expectedConsent:         1,
+			expectedEnabled:         1,
 		},
 		{
-			name:                    "plan_with_zero_retention_forces_consent_off",
+			name:                    "plan_with_zero_retention_recording_stays_enabled",
 			planRetentionDays:       0,
-			requestRecordingConsent: 1,
+			requestRecordingEnabled: 1,
 			expectedRetentionDays:   0,
-			expectedConsent:         0,
+			expectedEnabled:         1,
 		},
 		{
 			name:                    "plan_with_365_day_retention",
 			planRetentionDays:       365,
-			requestRecordingConsent: 1,
+			requestRecordingEnabled: 1,
 			expectedRetentionDays:   365,
-			expectedConsent:         1,
+			expectedEnabled:         1,
 		},
 		{
-			name:                    "zero_retention_zero_consent_unchanged",
+			name:                    "zero_retention_recording_enabled_stays",
 			planRetentionDays:       0,
-			requestRecordingConsent: 0,
+			requestRecordingEnabled: 1,
 			expectedRetentionDays:   0,
-			expectedConsent:         0,
+			expectedEnabled:         1,
 		},
 	}
 
@@ -695,7 +695,7 @@ func TestBulkCreateTerminals_SetsRetentionDaysFromPlan(t *testing.T) {
 
 			request := dto.BulkCreateTerminalsRequest{
 				Terms:            "accepted",
-				RecordingConsent: tc.requestRecordingConsent,
+				RecordingEnabled: tc.requestRecordingEnabled,
 				InstanceType:     "alp",
 			}
 
@@ -706,19 +706,16 @@ func TestBulkCreateTerminals_SetsRetentionDaysFromPlan(t *testing.T) {
 				InstanceType:     request.InstanceType,
 				Backend:          request.Backend,
 				OrganizationID:   request.OrganizationID,
-				RecordingConsent: request.RecordingConsent,
+				RecordingEnabled: request.RecordingEnabled,
 			}
 
 			// B1 FIX: Apply retention days from plan to sessionInput
 			sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
-			if plan.CommandHistoryRetentionDays == 0 {
-				sessionInput.RecordingConsent = 0
-			}
 
 			assert.Equal(t, tc.expectedRetentionDays, sessionInput.HistoryRetentionDays,
 				"HistoryRetentionDays should be set from plan")
-			assert.Equal(t, tc.expectedConsent, sessionInput.RecordingConsent,
-				"RecordingConsent should be forced to 0 when plan retention is 0")
+			assert.Equal(t, tc.expectedEnabled, sessionInput.RecordingEnabled,
+				"RecordingEnabled should stay enabled regardless of retention days")
 		})
 	}
 }
@@ -748,14 +745,13 @@ func TestStartSessionWithPlan_InvalidPlanType(t *testing.T) {
 }
 
 // =============================================================================
-// C-1: Force RecordingConsent=0 when plan has CommandHistoryRetentionDays=0
+// C-1: Recording stays enabled regardless of retention days
 // =============================================================================
 
-// TestStartSessionWithPlan_ZeroRetention_ForcesConsentToZero verifies that when a
-// plan has CommandHistoryRetentionDays=0, the RecordingConsent is forced to 0 even
-// if the user sent RecordingConsent=1. This prevents recording data that cannot be
-// retained.
-func TestStartSessionWithPlan_ZeroRetention_ForcesConsentToZero(t *testing.T) {
+// TestStartSessionWithPlan_ZeroRetention_RecordingStaysEnabled verifies that
+// recording stays enabled regardless of plan retention days. Recording is always
+// on (RGPD Art. 6.1.f — legitimate interest).
+func TestStartSessionWithPlan_ZeroRetention_RecordingStaysEnabled(t *testing.T) {
 	plan := &paymentModels.SubscriptionPlan{
 		MaxSessionDurationMinutes:   60,
 		AllowedMachineSizes:         []string{"S", "M"},
@@ -764,34 +760,28 @@ func TestStartSessionWithPlan_ZeroRetention_ForcesConsentToZero(t *testing.T) {
 
 	sessionInput := dto.CreateTerminalSessionInput{
 		Terms:            "accepted",
-		RecordingConsent: 1, // User says "yes, record me"
+		RecordingEnabled: 1, // Recording is always on
 	}
 
-	// Simulate the StartSessionWithPlan logic (line 424 in service):
-	// sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
+	// Simulate the StartSessionWithPlan logic:
 	sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
-
-	// FIX C-1: Force RecordingConsent to 0 when plan has zero retention days
-	if plan.CommandHistoryRetentionDays == 0 {
-		sessionInput.RecordingConsent = 0
-	}
 
 	assert.Equal(t, 0, sessionInput.HistoryRetentionDays,
 		"HistoryRetentionDays should be 0 from plan")
 
-	// With the fix, RecordingConsent is now forced to 0 when retention is 0.
-	assert.Equal(t, 0, sessionInput.RecordingConsent,
-		"RecordingConsent must be forced to 0 when plan has CommandHistoryRetentionDays=0")
+	// Recording stays enabled — no override based on retention days
+	assert.Equal(t, 1, sessionInput.RecordingEnabled,
+		"RecordingEnabled must stay 1 regardless of plan retention days")
 
-	// Also verify the URL would not include recording_consent
+	// Verify the URL includes recording_enabled
 	urlStr := "http://example.com/start?terms=abc"
-	if sessionInput.RecordingConsent > 0 {
-		urlStr += fmt.Sprintf("&recording_consent=%d", sessionInput.RecordingConsent)
+	if sessionInput.RecordingEnabled > 0 {
+		urlStr += fmt.Sprintf("&recording_enabled=%d", sessionInput.RecordingEnabled)
 	}
 	parsed, err := url.Parse(urlStr)
 	require.NoError(t, err)
-	assert.Empty(t, parsed.Query().Get("recording_consent"),
-		"recording_consent should not appear in URL when retention days is 0")
+	assert.Equal(t, "1", parsed.Query().Get("recording_enabled"),
+		"recording_enabled should appear in URL even when retention days is 0")
 }
 
 // =============================================================================
@@ -983,46 +973,45 @@ func TestGetSessionCommandHistory_429RateLimit_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "Rate limit exceeded", "error should contain the upstream error message")
 }
 
-// TestRecordingConsentValidation verifies that recording_consent values outside
-// the valid range (0 or 1) are rejected or normalized. The current code only
-// checks `> 0` and forwards any positive integer, but tt-backend silently
-// rejects values other than 0 or 1.
-func TestRecordingConsentValidation(t *testing.T) {
+// TestRecordingEnabledValidation verifies that recording_enabled values outside
+// the valid range (0 or 1) are normalized. Values > 1 are clamped to 1,
+// values < 0 are clamped to 0.
+func TestRecordingEnabledValidation(t *testing.T) {
 	testCases := []struct {
 		name            string
-		consentValue    int
+		enabledValue    int
 		shouldBeInURL   bool
 		expectedURLVal  string // expected value if present in URL
 		expectError     bool
 	}{
 		{
-			name:           "valid_consent_1",
-			consentValue:   1,
+			name:           "valid_enabled_1",
+			enabledValue:   1,
 			shouldBeInURL:  true,
 			expectedURLVal: "1",
 			expectError:    false,
 		},
 		{
-			name:          "valid_consent_0",
-			consentValue:  0,
+			name:          "valid_enabled_0",
+			enabledValue:  0,
 			shouldBeInURL: false,
 			expectError:   false,
 		},
 		{
-			name:          "invalid_consent_2_should_be_rejected_or_normalized",
-			consentValue:  2,
+			name:          "invalid_enabled_2_should_be_normalized",
+			enabledValue:  2,
 			shouldBeInURL: false, // Should NOT be forwarded as-is (2 is invalid)
-			expectError:   false, // or true if we want an error
+			expectError:   false,
 		},
 		{
-			name:          "invalid_consent_negative_should_be_rejected",
-			consentValue:  -1,
+			name:          "invalid_enabled_negative_should_be_normalized",
+			enabledValue:  -1,
 			shouldBeInURL: false, // Negative values should not appear in URL
 			expectError:   false,
 		},
 		{
-			name:          "invalid_consent_large_number",
-			consentValue:  999,
+			name:          "invalid_enabled_large_number",
+			enabledValue:  999,
 			shouldBeInURL: false, // Should NOT be forwarded as-is
 			expectError:   false,
 		},
@@ -1032,42 +1021,41 @@ func TestRecordingConsentValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			sessionInput := dto.CreateTerminalSessionInput{
 				Terms:            "accepted",
-				RecordingConsent: tc.consentValue,
+				RecordingEnabled: tc.enabledValue,
 			}
 
-			// Simulate the URL construction logic from StartSession (lines 257-259),
-			// including the M-4 normalization fix:
-			if sessionInput.RecordingConsent > 1 {
-				sessionInput.RecordingConsent = 1
+			// Simulate the URL construction logic from StartSession,
+			// including normalization:
+			if sessionInput.RecordingEnabled > 1 {
+				sessionInput.RecordingEnabled = 1
 			}
-			if sessionInput.RecordingConsent < 0 {
-				sessionInput.RecordingConsent = 0
+			if sessionInput.RecordingEnabled < 0 {
+				sessionInput.RecordingEnabled = 0
 			}
 
 			urlStr := "http://example.com/start?terms=abc"
-			if sessionInput.RecordingConsent > 0 {
-				urlStr += fmt.Sprintf("&recording_consent=%d", sessionInput.RecordingConsent)
+			if sessionInput.RecordingEnabled > 0 {
+				urlStr += fmt.Sprintf("&recording_enabled=%d", sessionInput.RecordingEnabled)
 			}
 
 			parsed, err := url.Parse(urlStr)
 			require.NoError(t, err)
 
-			consentParam := parsed.Query().Get("recording_consent")
+			enabledParam := parsed.Query().Get("recording_enabled")
 
 			if tc.shouldBeInURL {
-				assert.Equal(t, tc.expectedURLVal, consentParam,
-					"recording_consent=%d should appear in URL as '%s'", tc.consentValue, tc.expectedURLVal)
+				assert.Equal(t, tc.expectedURLVal, enabledParam,
+					"recording_enabled=%d should appear in URL as '%s'", tc.enabledValue, tc.expectedURLVal)
 			} else {
 				// For invalid values (2, -1, 999), the parameter should NOT be in the URL
 				// or should be normalized to a valid value.
-				// Current buggy behavior: value 2 passes the `> 0` check and gets forwarded.
-				if consentParam != "" {
+				if enabledParam != "" {
 					// If present, it must be "1" (normalized) - not the raw invalid value
-					assert.Equal(t, "1", consentParam,
-						"recording_consent=%d is invalid; if present in URL it must be normalized to 1, got '%s'",
-						tc.consentValue, consentParam)
+					assert.Equal(t, "1", enabledParam,
+						"recording_enabled=%d is invalid; if present in URL it must be normalized to 1, got '%s'",
+						tc.enabledValue, enabledParam)
 				}
-				// If not present, that's also acceptable (consent=0 means no recording)
+				// If not present, that's also acceptable (enabled=0 means recording off)
 			}
 		})
 	}

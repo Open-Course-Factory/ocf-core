@@ -262,7 +262,7 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		AllowedTemplates:          []string{"ubuntu-basic", "alpine-basic"},
 		AllowedBackends:           []string{},
 		DefaultBackend:            "",
-		CommandHistoryRetentionDays: 0,
+		CommandHistoryRetentionDays: 7,
 	}
 
 	result := db.Where("name = ? AND price_amount = 0", "Trial").FirstOrCreate(&trialPlan)
