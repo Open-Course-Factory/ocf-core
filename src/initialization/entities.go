@@ -11,6 +11,7 @@ import (
 	courseRegistration "soli/formations/src/courses/entityRegistration"
 	emailRegistration "soli/formations/src/email/entityRegistration"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	"soli/formations/src/feedback"
 	"soli/formations/src/groups"
 	groupRegistration "soli/formations/src/groups/entityRegistration"
 	organizationRegistration "soli/formations/src/organizations/entityRegistration"
@@ -75,6 +76,7 @@ func RegisterModuleFeatures(db *gorm.DB) {
 		terminalTrainer.NewTerminalTrainerModuleConfig(),
 		groups.NewGroupsModuleConfig(),
 		scenarios.NewScenariosModuleConfig(),
+		feedback.NewFeedbackModuleConfig(),
 	}
 
 	for _, module := range modules {

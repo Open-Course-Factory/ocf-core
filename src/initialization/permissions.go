@@ -159,6 +159,15 @@ func SetupPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("✅ Payment and subscription permissions setup completed")
 }
 
+// SetupFeedbackPermissions sets up feedback-related permissions
+func SetupFeedbackPermissions(enforcer interfaces.EnforcerInterface) {
+	log.Println("=== Setting up feedback permissions ===")
+
+	reconcilePolicy(enforcer, "member", "/api/v1/feedback/*", "POST")
+
+	log.Println("✅ Feedback permissions setup completed")
+}
+
 // SetupScenarioPermissions sets up scenario session and teacher dashboard permissions
 func SetupScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Setting up scenario and teacher dashboard permissions ===")

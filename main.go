@@ -24,6 +24,7 @@ userController "soli/formations/src/auth/routes/usersRoutes"
 	securityAdminController "soli/formations/src/auth/routes/securityAdminRoutes"
 	emailController "soli/formations/src/email/routes"
 	emailServices "soli/formations/src/email/services"
+	"soli/formations/src/feedback"
 	courseHooks "soli/formations/src/courses/hooks"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	generationController "soli/formations/src/courses/routes/generationRoutes"
@@ -100,6 +101,7 @@ func main() {
 	initialization.SetupPaymentPermissions(casdoor.Enforcer)
 	initialization.SetupSecurityAdminPermissions(casdoor.Enforcer)
 	initialization.SetupScenarioPermissions(casdoor.Enforcer)
+	initialization.SetupFeedbackPermissions(casdoor.Enforcer)
 	log.Println("✅ All permissions setup completed")
 
 	// Initialize remaining hooks
@@ -192,6 +194,7 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	emailController.EmailTemplateRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	securityAdminController.SecurityAdminRoutes(apiGroup, sqldb.DB)
 	scenarioController.ScenarioRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	feedback.FeedbackRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	// Setup usage limit middleware for specific routes
 	apiGroupWithUsageCheck := apiGroup.Group("")
