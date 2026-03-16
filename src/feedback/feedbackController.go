@@ -2,6 +2,7 @@ package feedback
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -71,9 +72,10 @@ func (fc *feedbackController) SendFeedback(ctx *gin.Context) {
 	}
 
 	if err := fc.service.SendFeedback(input, userID, userEmail); err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to send feedback: %v", err),
+		log.Printf("Feedback send error for user %s: %v", userID, err)
+		ctx.JSON(http.StatusInternalServerError, dto.SendFeedbackResponse{
+			Success: false,
+			Message: "Failed to send feedback",
 		})
 		return
 	}

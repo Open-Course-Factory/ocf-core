@@ -3,6 +3,8 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"html"
+	"strings"
 	"time"
 
 	configModels "soli/formations/src/configuration/models"
@@ -63,7 +65,15 @@ func (s *feedbackService) SendFeedback(input dto.SendFeedbackInput, userID, user
 	}
 	subject := fmt.Sprintf("[OCF Feedback] %s: %s", input.Type, truncatedMessage)
 
-	// 4. Build HTML email body
+	// 4. HTML-escape all user-provided values to prevent XSS
+	safeType := html.EscapeString(input.Type)
+	safeMessage := html.EscapeString(input.Message)
+	safePageURL := html.EscapeString(input.PageURL)
+	safeUserAgent := html.EscapeString(input.UserAgent)
+	safeUserEmail := html.EscapeString(userEmail)
+	safeUserID := html.EscapeString(userID)
+
+	// 5. Build HTML email body with escaped values
 	body := fmt.Sprintf(`<h2>OCF Feedback — %s</h2>
 <p><strong>Type:</strong> %s</p>
 <p><strong>Message:</strong> %s</p>
@@ -72,13 +82,13 @@ func (s *feedbackService) SendFeedback(input dto.SendFeedbackInput, userID, user
 <p><strong>User Email:</strong> %s</p>
 <p><strong>User ID:</strong> %s</p>
 <p><strong>Timestamp:</strong> %s</p>`,
-		input.Type,
-		input.Type,
-		input.Message,
-		input.PageURL,
-		input.UserAgent,
-		userEmail,
-		userID,
+		safeType,
+		safeType,
+		safeMessage,
+		safePageURL,
+		safeUserAgent,
+		safeUserEmail,
+		safeUserID,
 		time.Now().UTC().Format(time.RFC3339),
 	)
 
@@ -87,11 +97,15 @@ func (s *feedbackService) SendFeedback(input dto.SendFeedbackInput, userID, user
 		body += fmt.Sprintf(`<p><strong>Screenshot:</strong></p><img src="data:image/png;base64,%s" />`, input.Screenshot)
 	}
 
-	// 5. Send email to each recipient
+	// 6. Send email to each recipient, collecting errors
+	var sendErrors []string
 	for _, recipient := range recipients {
 		if err := s.emailSender.SendEmail(recipient, subject, body); err != nil {
-			return fmt.Errorf("failed to send feedback email to %s: %w", recipient, err)
+			sendErrors = append(sendErrors, fmt.Sprintf("%s: %v", recipient, err))
 		}
+	}
+	if len(sendErrors) > 0 {
+		return fmt.Errorf("failed to send feedback email to: %s", strings.Join(sendErrors, "; "))
 	}
 
 	return nil
