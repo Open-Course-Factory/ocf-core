@@ -14,6 +14,7 @@ import (
 // EmailSender is the interface for sending emails
 type EmailSender interface {
 	SendEmail(to, subject, body string) error
+	SendEmailWithAttachment(to, subject, body, attachmentName, attachmentBase64 string) error
 }
 
 // FeatureGetter is the interface for retrieving feature configuration
@@ -92,15 +93,22 @@ func (s *feedbackService) SendFeedback(input dto.SendFeedbackInput, userID, user
 		time.Now().UTC().Format(time.RFC3339),
 	)
 
-	// If screenshot is provided, embed it as an inline image
-	if input.Screenshot != "" {
-		body += fmt.Sprintf(`<p><strong>Screenshot:</strong></p><img src="data:image/png;base64,%s" />`, input.Screenshot)
+	// If screenshot is provided, add a note and send as attachment
+	hasScreenshot := input.Screenshot != ""
+	if hasScreenshot {
+		body += `<p><strong>Screenshot:</strong> see attached image</p>`
 	}
 
 	// 6. Send email to each recipient, collecting errors
 	var sendErrors []string
 	for _, recipient := range recipients {
-		if err := s.emailSender.SendEmail(recipient, subject, body); err != nil {
+		var err error
+		if hasScreenshot {
+			err = s.emailSender.SendEmailWithAttachment(recipient, subject, body, "screenshot.png", input.Screenshot)
+		} else {
+			err = s.emailSender.SendEmail(recipient, subject, body)
+		}
+		if err != nil {
 			sendErrors = append(sendErrors, fmt.Sprintf("%s: %v", recipient, err))
 		}
 	}

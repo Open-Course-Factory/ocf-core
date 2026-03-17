@@ -15,6 +15,7 @@ import (
 
 type EmailService interface {
 	SendEmail(to, subject, body string) error
+	SendEmailWithAttachment(to, subject, body, attachmentName, attachmentBase64 string) error
 	SendPasswordResetEmail(to, resetToken, resetURL string) error
 	SendTemplatedEmail(to, templateName string, variables map[string]interface{}) error
 }
@@ -90,6 +91,60 @@ func (s *emailService) SendEmail(to, subject, body string) error {
 	} else {
 		return s.sendMailSTARTTLS(addr, from, to, msg)
 	}
+}
+
+// SendEmailWithAttachment sends an HTML email with a single file attachment.
+// The attachment content must be base64-encoded. This method builds a MIME multipart
+// message to keep the attachment separate from the HTML body, avoiding SMTP line
+// length limits when embedding large data (e.g., screenshots).
+func (s *emailService) SendEmailWithAttachment(to, subject, body, attachmentName, attachmentBase64 string) error {
+	if s.smtpUsername == "" || s.smtpPassword == "" {
+		return fmt.Errorf("SMTP credentials not configured")
+	}
+
+	from := fmt.Sprintf("%s <%s>", s.fromName, s.fromEmail)
+	boundary := "----=_OCF_Boundary_" + fmt.Sprintf("%d", time.Now().UnixNano())
+
+	// Wrap base64 at 76 chars per line (RFC 2045)
+	var wrappedAttachment string
+	for i := 0; i < len(attachmentBase64); i += 76 {
+		end := i + 76
+		if end > len(attachmentBase64) {
+			end = len(attachmentBase64)
+		}
+		wrappedAttachment += attachmentBase64[i:end] + "\r\n"
+	}
+
+	msg := fmt.Sprintf(
+		"From: %s\r\n"+
+			"To: %s\r\n"+
+			"Subject: %s\r\n"+
+			"MIME-Version: 1.0\r\n"+
+			"Content-Type: multipart/mixed; boundary=\"%s\"\r\n"+
+			"\r\n"+
+			"--%s\r\n"+
+			"Content-Type: text/html; charset=UTF-8\r\n"+
+			"\r\n"+
+			"%s\r\n"+
+			"\r\n"+
+			"--%s\r\n"+
+			"Content-Type: image/png\r\n"+
+			"Content-Disposition: attachment; filename=\"%s\"\r\n"+
+			"Content-Transfer-Encoding: base64\r\n"+
+			"\r\n"+
+			"%s"+
+			"--%s--\r\n",
+		from, to, subject, boundary,
+		boundary, body,
+		boundary, attachmentName, wrappedAttachment, boundary,
+	)
+
+	addr := fmt.Sprintf("%s:%s", s.smtpHost, s.smtpPort)
+
+	if s.smtpPort == "465" {
+		return s.sendMailTLS(addr, from, to, []byte(msg))
+	}
+	return s.sendMailSTARTTLS(addr, from, to, []byte(msg))
 }
 
 // sendMailSTARTTLS sends email using port 587 (STARTTLS)

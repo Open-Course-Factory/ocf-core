@@ -38,6 +38,14 @@ func (m *mockEmailSender) SendEmail(to, subject, body string) error {
 	return nil
 }
 
+func (m *mockEmailSender) SendEmailWithAttachment(to, subject, body, attachmentName, attachmentBase64 string) error {
+	m.calls = append(m.calls, emailCall{To: to, Subject: subject, Body: body + attachmentBase64})
+	if m.sendEmailFunc != nil {
+		return m.sendEmailFunc(to, subject, body)
+	}
+	return nil
+}
+
 // mockFeatureGetter implements services.FeatureGetter for testing
 type mockFeatureGetter struct {
 	getFeatureByKeyFunc func(key string) (*configModels.Feature, error)
