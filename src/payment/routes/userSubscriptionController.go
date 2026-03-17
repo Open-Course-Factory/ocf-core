@@ -813,6 +813,27 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 		return
 	}
 
+	// Override limits with org subscription if it has higher values
+	_, orgPlan := sc.getOrgSubscriptionForUser(userId)
+	if orgPlan != nil {
+		for i := range *usageMetrics {
+			metric := &(*usageMetrics)[i]
+			var orgLimit int64
+			switch metric.MetricType {
+			case "concurrent_terminals":
+				orgLimit = int64(orgPlan.MaxConcurrentTerminals)
+			case "courses_created":
+				orgLimit = int64(orgPlan.MaxCourses)
+			default:
+				continue
+			}
+			// Use org limit if it's unlimited (-1) or higher than personal
+			if orgLimit == -1 || (metric.LimitValue != -1 && orgLimit > metric.LimitValue) {
+				metric.LimitValue = orgLimit
+			}
+		}
+	}
+
 	// Convertir vers DTO
 	usageMetricsDTO, err := sc.conversionService.UsageMetricsListToDTO(usageMetrics)
 	if err != nil {
