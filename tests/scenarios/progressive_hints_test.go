@@ -364,6 +364,15 @@ func TestSplitHintContent_ColonVariant(t *testing.T) {
 	require.Len(t, result, 2)
 }
 
+func TestSplitHintContent_TrailingText(t *testing.T) {
+	input := "### Indice 1 : Direction\nFirst hint\n### Indice 2 : Details\nSecond hint"
+	result := services.SplitHintContent(input)
+
+	require.Len(t, result, 2)
+	assert.Equal(t, "First hint", result[0])
+	assert.Equal(t, "Second hint", result[1])
+}
+
 // --- SessionStepDetail includes HintsRevealed ---
 
 func TestSessionStepDetail_IncludesHintsRevealed(t *testing.T) {

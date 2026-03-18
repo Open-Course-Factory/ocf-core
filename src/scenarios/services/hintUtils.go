@@ -9,7 +9,7 @@ import (
 // by detecting `### Indice N` or `### Hint N` headers (case-insensitive, optional colon).
 // If fewer than 2 headers are found, the entire content is returned as a single hint.
 func SplitHintContent(content string) []string {
-	re := regexp.MustCompile(`(?mi)^###\s+(?:indice|hint)\s+\d+\s*:?\s*$`)
+	re := regexp.MustCompile(`(?mi)^###[ \t]+(?:indice|hint)[ \t]+\d+[ \t]*:?[^\n]*$`)
 	locs := re.FindAllStringIndex(content, -1)
 
 	if len(locs) < 2 {
