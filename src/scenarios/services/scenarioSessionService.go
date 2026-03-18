@@ -647,11 +647,8 @@ func (s *ScenarioSessionService) deployChallengeConfig(terminalSessionID string,
 		return
 	}
 
-	// Create the directory first
-	_, _, _, _ = s.verificationService.ExecInContainer(terminalSessionID, []string{"mkdir", "-p", "/etc/challenge"}, 5)
-
-	// Push the config file
-	if err := s.verificationService.PushFile(terminalSessionID, "/etc/challenge/config.json", string(configJSON), "0600"); err != nil {
+	// Push to /tmp/ (tt-backend restricts paths), setup.sh will move it
+	if err := s.verificationService.PushFile(terminalSessionID, "/tmp/challenge_config.json", string(configJSON), "0600"); err != nil {
 		slog.Warn("failed to push challenge config to container", "err", err)
 		return
 	}
