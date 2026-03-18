@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"soli/formations/src/auth/errors"
 	groupModels "soli/formations/src/groups/models"
@@ -35,6 +36,7 @@ type ScenarioController interface {
 	AbandonSession(ctx *gin.Context)
 	GetSessionByTerminal(ctx *gin.Context)
 	GetSessionInfo(ctx *gin.Context)
+	GetSessionFlags(ctx *gin.Context)
 	GetMySessions(ctx *gin.Context)
 	ExportScenario(ctx *gin.Context)
 	ExportScenarios(ctx *gin.Context)
@@ -476,6 +478,37 @@ func (sc *scenarioController) GetSessionInfo(ctx *gin.Context) {
 		Grade:             session.Grade,
 		StartedAt:         session.StartedAt,
 	})
+}
+
+// GetSessionFlags returns all validated (correct) flags for a session.
+func (sc *scenarioController) GetSessionFlags(ctx *gin.Context) {
+	session, err := sc.getSessionIfOwned(ctx)
+	if err != nil {
+		return
+	}
+
+	var flags []models.ScenarioFlag
+	sc.db.Where("session_id = ? AND is_correct = ?", session.ID, true).
+		Order("step_order asc").Find(&flags)
+
+	type flagResponse struct {
+		StepOrder   int        `json:"step_order"`
+		Flag        string     `json:"flag"`
+		SubmittedAt *time.Time `json:"submitted_at,omitempty"`
+	}
+
+	result := make([]flagResponse, 0, len(flags))
+	for _, f := range flags {
+		if f.SubmittedFlag != nil {
+			result = append(result, flagResponse{
+				StepOrder:   f.StepOrder,
+				Flag:        *f.SubmittedFlag,
+				SubmittedAt: f.SubmittedAt,
+			})
+		}
+	}
+
+	ctx.JSON(http.StatusOK, result)
 }
 
 // GetMySessions godoc
