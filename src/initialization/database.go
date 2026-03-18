@@ -418,6 +418,13 @@ func ensureUsersHaveTrialPlan(db *gorm.DB) {
 // into ScenarioStepHint records. Idempotent: only creates hints for steps that
 // don't already have any.
 func migrateHintContentToHints(db *gorm.DB) {
+	// Skip if hints already exist (migration already ran)
+	var hintCount int64
+	db.Model(&scenarioModels.ScenarioStepHint{}).Count(&hintCount)
+	if hintCount > 0 {
+		return
+	}
+
 	var steps []scenarioModels.ScenarioStep
 	db.Where("hint_content != '' AND hint_content IS NOT NULL").Find(&steps)
 	for _, step := range steps {
