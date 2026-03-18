@@ -199,6 +199,15 @@ func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UU
 		results = []ScenarioResultItem{}
 	}
 	enrichResultUsers(results)
+
+	// Calculate partial grade for active sessions (completed_steps / total_steps * 100)
+	for i := range results {
+		if results[i].Grade == nil && results[i].TotalSteps > 0 {
+			partialGrade := float64(results[i].CompletedSteps) / float64(results[i].TotalSteps) * 100.0
+			results[i].Grade = &partialGrade
+		}
+	}
+
 	return results, nil
 }
 
