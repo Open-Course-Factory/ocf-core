@@ -151,6 +151,12 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 				return fmt.Errorf("failed to update scenario: %w", err)
 			}
 
+			// Delete old hints before steps (soft-delete won't cascade)
+			if err := tx.Where("step_id IN (?)",
+				tx.Model(&models.ScenarioStep{}).Select("id").Where("scenario_id = ?", existing.ID),
+			).Delete(&models.ScenarioStepHint{}).Error; err != nil {
+				return fmt.Errorf("failed to delete old hints: %w", err)
+			}
 			// Delete old steps, create new ones
 			if err := tx.Where("scenario_id = ?", existing.ID).Delete(&models.ScenarioStep{}).Error; err != nil {
 				return fmt.Errorf("failed to delete old steps: %w", err)
@@ -170,6 +176,8 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 		// Reload
 		if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
 			return db.Order("\"order\" ASC")
+		}).Preload("Steps.Hints", func(db *gorm.DB) *gorm.DB {
+			return db.Order("level ASC")
 		}).First(&existing, "id = ?", existing.ID).Error; err != nil {
 			return nil, fmt.Errorf("failed to reload scenario: %w", err)
 		}
@@ -273,6 +281,20 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 			HasFlag:          stepHasFlag,
 			FlagPath:         kcStep.FlagPath,
 		}
+
+		// Build progressive hints from hint content
+		if step.HintContent != "" {
+			parts := SplitHintContent(step.HintContent)
+			hints := make([]models.ScenarioStepHint, len(parts))
+			for j, part := range parts {
+				hints[j] = models.ScenarioStepHint{
+					Level:   j + 1,
+					Content: part,
+				}
+			}
+			step.Hints = hints
+		}
+
 		steps = append(steps, step)
 	}
 

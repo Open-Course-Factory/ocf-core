@@ -12,6 +12,7 @@ import (
 	auditModels "soli/formations/src/audit/models"
 	"soli/formations/src/auth/casdoor"
 	authModels "soli/formations/src/auth/models"
+	scenarioServices "soli/formations/src/scenarios/services"
 	configModels "soli/formations/src/configuration/models"
 	courseModels "soli/formations/src/courses/models"
 	emailModels "soli/formations/src/email/models"
@@ -117,6 +118,9 @@ func AutoMigrateAll(db *gorm.DB) {
 
 	// Audit logging entities (compliance & security)
 	db.AutoMigrate(&auditModels.AuditLog{})
+
+	// Migrate existing hint_content to progressive hint records
+	migrateHintContentToHints(db)
 
 	// Seed default data (idempotent - safe for all environments)
 	SeedPlanFeatures(db)
@@ -407,6 +411,29 @@ func ensureUsersHaveTrialPlan(db *gorm.DB) {
 
 	if fixed > 0 {
 		log.Printf("[TRIAL-SYNC] Assigned Trial plan to %d users who were missing subscriptions", fixed)
+	}
+}
+
+// migrateHintContentToHints converts existing HintContent on ScenarioStep records
+// into ScenarioStepHint records. Idempotent: only creates hints for steps that
+// don't already have any.
+func migrateHintContentToHints(db *gorm.DB) {
+	var steps []scenarioModels.ScenarioStep
+	db.Where("hint_content != '' AND hint_content IS NOT NULL").Find(&steps)
+	for _, step := range steps {
+		var count int64
+		db.Model(&scenarioModels.ScenarioStepHint{}).Where("step_id = ?", step.ID).Count(&count)
+		if count > 0 {
+			continue
+		}
+		parts := scenarioServices.SplitHintContent(step.HintContent)
+		for i, part := range parts {
+			db.Create(&scenarioModels.ScenarioStepHint{
+				StepID:  step.ID,
+				Level:   i + 1,
+				Content: part,
+			})
+		}
 	}
 }
 

@@ -70,6 +70,19 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			HasFlag:          st.HasFlag,
 			FlagPath:         st.FlagPath,
 		}
+
+		// Build progressive hints from hint content
+		if st.HintContent != "" {
+			parts := SplitHintContent(st.HintContent)
+			hints := make([]models.ScenarioStepHint, len(parts))
+			for j, part := range parts {
+				hints[j] = models.ScenarioStepHint{
+					Level:   j + 1,
+					Content: part,
+				}
+			}
+			newSteps[i].Hints = hints
+		}
 	}
 
 	var scenario models.Scenario
@@ -93,6 +106,12 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 				return fmt.Errorf("failed to update scenario: %w", err)
 			}
 
+			// Delete old hints before steps (soft-delete won't cascade)
+			if err := tx.Where("step_id IN (?)",
+				tx.Model(&models.ScenarioStep{}).Select("id").Where("scenario_id = ?", existing.ID),
+			).Delete(&models.ScenarioStepHint{}).Error; err != nil {
+				return fmt.Errorf("failed to delete old hints: %w", err)
+			}
 			// Delete old steps
 			if err := tx.Where("scenario_id = ?", existing.ID).Delete(&models.ScenarioStep{}).Error; err != nil {
 				return fmt.Errorf("failed to delete old steps: %w", err)
@@ -112,9 +131,11 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			return nil, false, err
 		}
 
-		// Reload with steps
+		// Reload with steps and hints
 		if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
 			return db.Order("\"order\" ASC")
+		}).Preload("Steps.Hints", func(db *gorm.DB) *gorm.DB {
+			return db.Order("level ASC")
 		}).First(&scenario, "id = ?", existing.ID).Error; err != nil {
 			return nil, false, fmt.Errorf("failed to reload scenario: %w", err)
 		}
