@@ -90,9 +90,9 @@ type SeedStepInput struct {
 	Title            string `json:"title" binding:"required,max=1000"`
 	TextContent      string `json:"text_content" binding:"max=65536"`
 	HintContent      string `json:"hint_content" binding:"max=65536"`
-	VerifyScript     string `json:"verify_script" binding:"max=4096"`
-	BackgroundScript string `json:"background_script" binding:"max=4096"`
-	ForegroundScript string `json:"foreground_script" binding:"max=4096"`
+	VerifyScript     string `json:"verify_script"`
+	BackgroundScript string `json:"background_script"`
+	ForegroundScript string `json:"foreground_script"`
 	HasFlag          bool   `json:"has_flag"`
 	FlagPath         string `json:"flag_path"`
 }
