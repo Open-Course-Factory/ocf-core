@@ -14,6 +14,7 @@ type ScenarioStepProgress struct {
 	StepOrder        int        `gorm:"not null" json:"step_order"`
 	Status           string     `gorm:"type:varchar(50);default:'locked'" json:"status"` // locked, active, completed, skipped
 	VerifyAttempts   int        `gorm:"default:0" json:"verify_attempts"`
+	HintsRevealed    int        `gorm:"default:0" json:"hints_revealed"`
 	CompletedAt      *time.Time `json:"completed_at,omitempty"`
 	TimeSpentSeconds int        `gorm:"default:0" json:"time_spent_seconds"`
 }

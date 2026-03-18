@@ -59,13 +59,22 @@ type SubmitFlagResponse struct {
 
 // CurrentStepResponse - DTO for current step information
 type CurrentStepResponse struct {
-	StepOrder  int    `json:"step_order"`
-	TotalSteps int    `json:"total_steps"`
-	Title      string `json:"title"`
-	Text       string `json:"text,omitempty"`
-	Hint       string `json:"hint,omitempty"`
-	Status     string `json:"status"`
-	HasFlag    bool   `json:"has_flag"`
+	StepOrder       int    `json:"step_order"`
+	TotalSteps      int    `json:"total_steps"`
+	Title           string `json:"title"`
+	Text            string `json:"text,omitempty"`
+	Hint            string `json:"hint,omitempty"`
+	HintsTotalCount int    `json:"hints_total_count"`
+	HintsRevealed   int    `json:"hints_revealed"`
+	Status          string `json:"status"`
+	HasFlag         bool   `json:"has_flag"`
+}
+
+// RevealHintResponse - DTO for revealing a progressive hint
+type RevealHintResponse struct {
+	Level   int    `json:"level"`
+	Content string `json:"content"`
+	Total   int    `json:"total"`
 }
 
 // SeedScenarioInput - DTO for seeding a scenario with inline content (admin/testing)

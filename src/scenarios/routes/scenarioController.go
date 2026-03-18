@@ -33,6 +33,7 @@ type ScenarioController interface {
 	GetStepByOrder(ctx *gin.Context)
 	VerifyStep(ctx *gin.Context)
 	SubmitFlag(ctx *gin.Context)
+	RevealHint(ctx *gin.Context)
 	AbandonSession(ctx *gin.Context)
 	GetSessionByTerminal(ctx *gin.Context)
 	GetSessionInfo(ctx *gin.Context)
@@ -353,6 +354,57 @@ func (sc *scenarioController) SubmitFlag(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Failed to submit flag",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
+}
+
+// RevealHint godoc
+// @Summary Reveal a progressive hint
+// @Description Reveal a progressive hint for a specific step in a scenario session. Hints must be revealed sequentially.
+// @Tags scenario-sessions
+// @Produce json
+// @Param id path string true "Session ID"
+// @Param stepOrder path int true "Step order (0-based)"
+// @Param level path int true "Hint level (1-based)"
+// @Success 200 {object} dto.RevealHintResponse
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenario-sessions/{id}/steps/{stepOrder}/hints/{level}/reveal [post]
+// @Security BearerAuth
+func (sc *scenarioController) RevealHint(ctx *gin.Context) {
+	session, err := sc.getSessionIfOwned(ctx)
+	if err != nil {
+		return
+	}
+
+	stepOrder, err := strconv.Atoi(ctx.Param("stepOrder"))
+	if err != nil || stepOrder < 0 {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid step order",
+		})
+		return
+	}
+
+	level, err := strconv.Atoi(ctx.Param("level"))
+	if err != nil || level < 1 {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid hint level",
+		})
+		return
+	}
+
+	result, err := sc.sessionService.RevealHint(session.ID, stepOrder, level)
+	if err != nil {
+		slog.Error("failed to reveal hint", "err", err)
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
 		})
 		return
 	}

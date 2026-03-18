@@ -94,6 +94,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Scenario entities
 	db.AutoMigrate(&scenarioModels.Scenario{})
 	db.AutoMigrate(&scenarioModels.ScenarioStep{})
+	db.AutoMigrate(&scenarioModels.ScenarioStepHint{})
 	db.AutoMigrate(&scenarioModels.ScenarioSession{})
 	db.AutoMigrate(&scenarioModels.ScenarioStepProgress{})
 	db.AutoMigrate(&scenarioModels.ScenarioFlag{})

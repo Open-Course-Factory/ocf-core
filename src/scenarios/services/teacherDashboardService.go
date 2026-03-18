@@ -491,6 +491,7 @@ type SessionStepDetail struct {
 	StepTitle        string     `json:"step_title"`
 	Status           string     `json:"status"`
 	VerifyAttempts   int        `json:"verify_attempts"`
+	HintsRevealed    int        `json:"hints_revealed"`
 	CompletedAt      *time.Time `json:"completed_at,omitempty"`
 	TimeSpentSeconds int        `json:"time_spent_seconds"`
 }
@@ -544,7 +545,7 @@ func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID)
 	var steps []SessionStepDetail
 	err := s.db.Raw(`
 		SELECT sp.step_order, ss.title as step_title, sp.status,
-		       sp.verify_attempts, sp.completed_at, sp.time_spent_seconds
+		       sp.verify_attempts, sp.hints_revealed, sp.completed_at, sp.time_spent_seconds
 		FROM scenario_step_progress sp
 		JOIN scenario_steps ss ON ss.scenario_id = ? AND ss."order" = sp.step_order AND ss.deleted_at IS NULL
 		WHERE sp.session_id = ?
