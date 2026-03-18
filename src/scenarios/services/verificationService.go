@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -24,7 +25,7 @@ func NewVerificationService() *VerificationService {
 		ttBackendURL: os.Getenv("TERMINAL_TRAINER_URL"),
 		ttAPIKey:     os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 150 * time.Second,
 		},
 	}
 }
@@ -35,7 +36,7 @@ func NewVerificationServiceWithConfig(ttBackendURL, ttAPIKey string) *Verificati
 		ttBackendURL: ttBackendURL,
 		ttAPIKey:     ttAPIKey,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 150 * time.Second,
 		},
 	}
 }
@@ -73,6 +74,8 @@ func (s *VerificationService) ExecInContainer(sessionID string, command []string
 func (s *VerificationService) PushFile(sessionID string, targetPath string, content string, mode string) error {
 	url := fmt.Sprintf("%s/1.0/file-push", s.ttBackendURL)
 
+	slog.Info("PushFile called", "url", url, "session_id", sessionID, "target_path", targetPath, "content_size", len(content))
+
 	payload := map[string]any{
 		"session_id":  sessionID,
 		"target_path": targetPath,
@@ -85,9 +88,11 @@ func (s *VerificationService) PushFile(sessionID string, targetPath string, cont
 
 	_, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, payload, opts)
 	if err != nil {
+		slog.Error("PushFile failed", "url", url, "session_id", sessionID, "target_path", targetPath, "err", err)
 		return fmt.Errorf("push file to container failed: %w", err)
 	}
 
+	slog.Info("PushFile success", "session_id", sessionID, "target_path", targetPath)
 	return nil
 }
 

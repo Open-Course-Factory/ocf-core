@@ -147,15 +147,38 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		return nil, fmt.Errorf("failed to reload session: %w", err)
 	}
 
+	// For challenge-style scenarios (crash_traps enabled), push a config.json with
+	// all flags BEFORE running the background script. The setup script (typically in
+	// step0's background_script) reads this config to provision user accounts with
+	// flag-based passwords.
+	slog.Info("StartScenario post-create",
+		"session_id", session.ID,
+		"crash_traps", scenario.CrashTraps,
+		"flags_count", len(session.Flags),
+		"terminal_session_id", session.TerminalSessionID,
+		"verification_service_nil", s.verificationService == nil,
+		"tt_url", s.verificationService != nil,
+	)
+	if scenario.CrashTraps && session.TerminalSessionID != nil && s.verificationService != nil && len(session.Flags) > 0 {
+		slog.Info("deploying challenge config for crash_traps scenario", "session_id", session.ID)
+		s.deployChallengeConfig(*session.TerminalSessionID, &scenario, session)
+	}
+
 	// Execute background script for the first step BEFORE deploying its flag,
 	// because the script may create directories that the flag path depends on.
 	if session.TerminalSessionID != nil && s.verificationService != nil && len(scenario.Steps) > 0 {
 		s.executeBackgroundScript(*session.TerminalSessionID, &scenario.Steps[0])
+
+		// Note: for challenge-style scenarios, setup.sh adds an auto-switch
+		// to /root/.bashrc (exec su - student). The frontend reconnects the
+		// terminal after this API returns, so the new bash session picks up
+		// the .bashrc change and auto-switches to the student user.
 	}
 
 	// Deploy ONLY the flag for the first step (step 0) — not all flags at once.
 	// Later steps' flags are deployed on step transition, after their background scripts run.
-	if session.TerminalSessionID != nil && s.verificationService != nil && len(session.Flags) > 0 {
+	// Skip if crash_traps is enabled — the setup script already placed all flags.
+	if !scenario.CrashTraps && session.TerminalSessionID != nil && s.verificationService != nil && len(session.Flags) > 0 {
 		s.deploySingleFlagToContainer(*session.TerminalSessionID, &scenario, session.Flags, 0)
 	}
 
@@ -559,6 +582,63 @@ func (s *ScenarioSessionService) advanceToNextStep(tx *gorm.DB, session *models.
 	return &nextStepOrder, nil
 }
 
+// deployChallengeConfig builds and pushes /etc/challenge/config.json into the student's container.
+// This is used by challenge-style scenarios (crash_traps=true) where a setup script needs
+// all flags upfront to provision user accounts with flag-based passwords.
+func (s *ScenarioSessionService) deployChallengeConfig(terminalSessionID string, scenario *models.Scenario, session *models.ScenarioSession) {
+	if s.verificationService == nil {
+		return
+	}
+
+	// Build the flags map: step_order (as string) → expected flag
+	flagsMap := make(map[string]string)
+	for _, flag := range session.Flags {
+		key := fmt.Sprintf("%d", flag.StepOrder)
+		flagsMap[key] = flag.ExpectedFlag
+	}
+
+	// Build config.json manually (simple enough to avoid importing encoding/json)
+	flagEntries := ""
+	for i := 0; i < len(flagsMap); i++ {
+		key := fmt.Sprintf("%d", i)
+		if val, ok := flagsMap[key]; ok {
+			if flagEntries != "" {
+				flagEntries += ",\n"
+			}
+			flagEntries += fmt.Sprintf("        \"%s\": \"%s\"", key, val)
+		}
+	}
+
+	config := fmt.Sprintf(`{
+    "student_id": "%s",
+    "challenge": "%s",
+    "flags": {
+%s
+    },
+    "initial_password": "challenge2026"
+}`, session.UserID, scenario.Name, flagEntries)
+
+	// Push config to /tmp/ (tt-backend restricts file-push to safe paths),
+	// then move it to /etc/challenge/ via exec.
+	slog.Info("deploying challenge config", "session_id", session.ID, "terminal_session_id", terminalSessionID, "config_size", len(config), "flags_count", len(flagsMap))
+
+	if err := s.verificationService.PushFile(terminalSessionID, "/tmp/.challenge_config.json", config, "0600"); err != nil {
+		slog.Error("failed to push challenge config", "session_id", session.ID, "terminal_session_id", terminalSessionID, "err", err)
+		return
+	}
+
+	// Move from /tmp/ to /etc/challenge/ where setup.sh expects it
+	_, _, stderr, mvErr := s.verificationService.ExecInContainer(terminalSessionID,
+		[]string{"sh", "-c", "mkdir -p /etc/challenge && mv /tmp/.challenge_config.json /etc/challenge/config.json"},
+		5,
+	)
+	if mvErr != nil {
+		slog.Error("failed to move challenge config", "session_id", session.ID, "err", mvErr, "stderr", stderr)
+	} else {
+		slog.Info("challenge config deployed successfully", "session_id", session.ID)
+	}
+}
+
 // deploySingleFlagToContainer pushes the flag for a specific step into the student's container.
 // This is called on step transitions so that each flag is deployed only after its step's
 // background script has run (which may create the directories the flag path depends on).
@@ -638,12 +718,16 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 
 	interpreter := parseShebang(step.BackgroundScript)
 
+	// Background scripts for challenge scenarios (setup.sh) can take 60-120s
+	// due to package installation. Use a generous timeout.
+	bgTimeout := 120
+
 	if len(step.BackgroundScript) <= maxInlineScriptSize {
 		// Small scripts: pass inline (fast, single API call)
 		exitCode, _, stderr, err = s.verificationService.ExecInContainer(
 			terminalSessionID,
 			[]string{interpreter, "-c", step.BackgroundScript},
-			30,
+			bgTimeout,
 		)
 	} else {
 		// Large scripts: push as temp file then execute
@@ -655,7 +739,7 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 		exitCode, _, stderr, err = s.verificationService.ExecInContainer(
 			terminalSessionID,
 			[]string{interpreter, tmpPath},
-			30,
+			bgTimeout,
 		)
 		// Best-effort cleanup
 		_, _, _, _ = s.verificationService.ExecInContainer(
