@@ -44,6 +44,7 @@ type ScenarioResultItem struct {
 	CurrentStep    int        `json:"current_step"`
 	TotalSteps     int64      `json:"total_steps"`
 	CompletedSteps int64      `json:"completed_steps"`
+	TotalHintsUsed int64      `json:"total_hints_used"`
 	StartedAt      time.Time  `json:"started_at"`
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 }
@@ -184,7 +185,8 @@ func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UU
 	err := s.db.Raw(`
 		SELECT ss.id as session_id, ss.user_id, ss.status, ss.grade, ss.started_at, ss.completed_at, ss.current_step,
 		       (SELECT COUNT(*) FROM scenario_steps WHERE scenario_id = ss.scenario_id AND deleted_at IS NULL) as total_steps,
-		       (SELECT COUNT(*) FROM scenario_step_progress WHERE session_id = ss.id AND status = 'completed') as completed_steps
+		       (SELECT COUNT(*) FROM scenario_step_progress WHERE session_id = ss.id AND status = 'completed') as completed_steps,
+		       (SELECT COALESCE(SUM(hints_revealed), 0) FROM scenario_step_progress WHERE session_id = ss.id) as total_hints_used
 		FROM scenario_sessions ss
 		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
 		WHERE ss.scenario_id = ?
