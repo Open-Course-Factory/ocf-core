@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"soli/formations/src/auth/errors"
 	groupModels "soli/formations/src/groups/models"
@@ -36,6 +37,7 @@ type ScenarioController interface {
 	GetSessionByTerminal(ctx *gin.Context)
 	GetSessionInfo(ctx *gin.Context)
 	GetMySessions(ctx *gin.Context)
+	GetSessionFlags(ctx *gin.Context)
 	ExportScenario(ctx *gin.Context)
 	ExportScenarios(ctx *gin.Context)
 	ImportJSON(ctx *gin.Context)
@@ -476,6 +478,58 @@ func (sc *scenarioController) GetSessionInfo(ctx *gin.Context) {
 		Grade:             session.Grade,
 		StartedAt:         session.StartedAt,
 	})
+}
+
+// GetSessionFlags godoc
+// @Summary Get validated flags for a session
+// @Description Get all correct flag submissions for a scenario session (ownership check)
+// @Tags scenario-sessions
+// @Produce json
+// @Param id path string true "Session ID"
+// @Success 200 {array} object
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenario-sessions/{id}/flags [get]
+// @Security BearerAuth
+func (sc *scenarioController) GetSessionFlags(ctx *gin.Context) {
+	session, err := sc.getSessionIfOwned(ctx)
+	if err != nil {
+		return
+	}
+
+	var flags []models.ScenarioFlag
+	if err := sc.db.Where("session_id = ? AND is_correct = ?", session.ID, true).
+		Order("step_order asc").Find(&flags).Error; err != nil {
+		slog.Error("failed to get session flags", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get session flags",
+		})
+		return
+	}
+
+	type flagResponse struct {
+		StepOrder   int        `json:"step_order"`
+		Flag        string     `json:"flag"`
+		SubmittedAt *time.Time `json:"submitted_at"`
+	}
+
+	result := make([]flagResponse, 0, len(flags))
+	for _, f := range flags {
+		flag := ""
+		if f.SubmittedFlag != nil {
+			flag = *f.SubmittedFlag
+		}
+		result = append(result, flagResponse{
+			StepOrder:   f.StepOrder,
+			Flag:        flag,
+			SubmittedAt: f.SubmittedAt,
+		})
+	}
+
+	ctx.JSON(http.StatusOK, result)
 }
 
 // GetMySessions godoc
