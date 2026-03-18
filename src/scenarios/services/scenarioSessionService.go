@@ -588,10 +588,21 @@ func (s *ScenarioSessionService) RevealHint(sessionID uuid.UUID, stepOrder int, 
 // completes the session (if last step) or advances to the next step.
 // Returns the next step order (nil if session completed).
 func (s *ScenarioSessionService) advanceToNextStep(tx *gorm.DB, session *models.ScenarioSession, now time.Time) (*int, error) {
-	// Calculate time spent on this step and mark as completed
+	// Calculate time spent on this step and mark as completed.
+	// Time is measured from when the student started this step:
+	// - Step 0: from session start
+	// - Other steps: from when the previous step was completed
 	var stepProgress models.ScenarioStepProgress
 	if err := tx.Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).First(&stepProgress).Error; err == nil {
-		timeSpent := int(now.Sub(stepProgress.CreatedAt).Seconds())
+		stepStartTime := session.StartedAt
+		// Find the previous step's completion time
+		var prevStep models.ScenarioStepProgress
+		if err := tx.Where("session_id = ? AND step_order < ? AND status = ?",
+			session.ID, session.CurrentStep, "completed").
+			Order("step_order DESC").First(&prevStep).Error; err == nil && prevStep.CompletedAt != nil {
+			stepStartTime = *prevStep.CompletedAt
+		}
+		timeSpent := int(now.Sub(stepStartTime).Seconds())
 		if err := tx.Model(&models.ScenarioStepProgress{}).
 			Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
 			Updates(map[string]any{
