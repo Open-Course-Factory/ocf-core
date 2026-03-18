@@ -30,6 +30,7 @@ func TestMain(m *testing.M) {
 	err = db.AutoMigrate(
 		&models.Scenario{},
 		&models.ScenarioStep{},
+		&models.ScenarioStepHint{},
 		&models.ScenarioSession{},
 		&models.ScenarioStepProgress{},
 		&models.ScenarioFlag{},
@@ -56,6 +57,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM scenario_flags")
 	sharedTestDB.Exec("DELETE FROM scenario_sessions")
 	sharedTestDB.Exec("DELETE FROM scenario_assignments")
+	sharedTestDB.Exec("DELETE FROM scenario_step_hints")
 	sharedTestDB.Exec("DELETE FROM scenario_steps")
 	sharedTestDB.Exec("DELETE FROM scenarios")
 	sharedTestDB.Exec("DELETE FROM group_members")
