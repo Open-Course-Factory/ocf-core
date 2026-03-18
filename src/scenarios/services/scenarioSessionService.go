@@ -530,6 +530,9 @@ func (s *ScenarioSessionService) RevealHint(sessionID uuid.UUID, stepOrder int, 
 	if err := s.db.First(&session, "id = ?", sessionID).Error; err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
+	if session.Status != "active" {
+		return nil, fmt.Errorf("session is not active")
+	}
 
 	// 2. Load step progress, verify step is not locked
 	var progress models.ScenarioStepProgress
