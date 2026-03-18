@@ -267,6 +267,7 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	}
 
 	if !isValid {
+		ctx.Header("Cache-Control", "no-store")
 		if reason == "backend_offline" {
 			ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
 				ErrorCode:    http.StatusServiceUnavailable,

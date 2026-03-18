@@ -455,8 +455,11 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 		sessionInput.Expiry = maxDurationSeconds
 	}
 
-	// Pass command history retention days from subscription plan
+	// Pass command history retention days from subscription plan (minimum 1 day when recording)
 	sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
+	if sessionInput.HistoryRetentionDays < 1 {
+		sessionInput.HistoryRetentionDays = 1
+	}
 	utils.Debug("StartSessionWithPlan - FINAL: HistoryRetentionDays=%d, RecordingEnabled=%d",
 		sessionInput.HistoryRetentionDays, sessionInput.RecordingEnabled)
 
@@ -1958,7 +1961,7 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 		return false, "expired", nil
 	}
 
-	// 4. Optional API verification (for critical operations)
+	// 5. Optional API verification (for critical operations)
 	if checkAPI {
 		apiInfo, err := tts.GetSessionInfoFromAPI(sessionID)
 		if err != nil {

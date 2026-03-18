@@ -104,6 +104,9 @@ func (tam *TerminalAccessMiddleware) RequireTerminalAccess(requiredLevel string)
 		}
 
 		if !isValid {
+			// Prevent browser caching of session state errors (410 Gone is cacheable by default)
+			ctx.Header("Cache-Control", "no-store")
+
 			// Return appropriate status based on reason
 			if reason == "backend_offline" {
 				ctx.AbortWithStatusJSON(http.StatusServiceUnavailable, &errors.APIError{
