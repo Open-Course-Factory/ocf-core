@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -147,16 +148,23 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		return nil, fmt.Errorf("failed to reload session: %w", err)
 	}
 
-	// Execute background script for the first step BEFORE deploying its flag,
-	// because the script may create directories that the flag path depends on.
-	if session.TerminalSessionID != nil && s.verificationService != nil && len(scenario.Steps) > 0 {
-		s.executeBackgroundScript(*session.TerminalSessionID, &scenario.Steps[0])
-	}
+	if session.TerminalSessionID != nil && s.verificationService != nil {
+		// For crash_traps scenarios: push /etc/challenge/config.json with all flags
+		// BEFORE running the background script (setup.sh reads this file)
+		if scenario.CrashTraps && len(session.Flags) > 0 {
+			s.deployChallengeConfig(*session.TerminalSessionID, &scenario, session, userID)
+		}
 
-	// Deploy ONLY the flag for the first step (step 0) — not all flags at once.
-	// Later steps' flags are deployed on step transition, after their background scripts run.
-	if session.TerminalSessionID != nil && s.verificationService != nil && len(session.Flags) > 0 {
-		s.deploySingleFlagToContainer(*session.TerminalSessionID, &scenario, session.Flags, 0)
+		// Execute background script for the first step
+		if len(scenario.Steps) > 0 {
+			s.executeBackgroundScript(*session.TerminalSessionID, &scenario.Steps[0])
+		}
+
+		// Deploy ONLY the flag for the first step (step 0) — not all flags at once.
+		// For crash_traps scenarios, flags are already in config.json; this also puts them as files.
+		if len(session.Flags) > 0 {
+			s.deploySingleFlagToContainer(*session.TerminalSessionID, &scenario, session.Flags, 0)
+		}
 	}
 
 	return session, nil
@@ -610,6 +618,45 @@ func (s *ScenarioSessionService) deploySingleFlagToContainer(terminalSessionID s
 	if err := s.verificationService.PushFile(terminalSessionID, flagPath, flag.ExpectedFlag+"\n", "0644"); err != nil {
 		slog.Warn("failed to deploy flag to container", "step_order", flag.StepOrder, "path", flagPath, "err", err)
 	}
+}
+
+// deployChallengeConfig pushes /etc/challenge/config.json to the container.
+// This is required for crash_traps scenarios where setup.sh reads flags from this file.
+// The config contains the student ID, all flags (keyed by step order), and the initial password.
+func (s *ScenarioSessionService) deployChallengeConfig(terminalSessionID string, scenario *models.Scenario, session *models.ScenarioSession, userID string) {
+	if s.verificationService == nil {
+		return
+	}
+
+	// Build the flags map: {"0": "FLAG{...}", "1": "FLAG{...}", ...}
+	flagsMap := make(map[string]string)
+	for _, flag := range session.Flags {
+		flagsMap[fmt.Sprintf("%d", flag.StepOrder)] = flag.ExpectedFlag
+	}
+
+	config := map[string]any{
+		"student_id":       userID,
+		"challenge":        scenario.Name,
+		"initial_password": "challenge2026",
+		"flags":            flagsMap,
+	}
+
+	configJSON, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		slog.Warn("failed to marshal challenge config", "err", err)
+		return
+	}
+
+	// Create the directory first
+	_, _, _, _ = s.verificationService.ExecInContainer(terminalSessionID, []string{"mkdir", "-p", "/etc/challenge"}, 5)
+
+	// Push the config file
+	if err := s.verificationService.PushFile(terminalSessionID, "/etc/challenge/config.json", string(configJSON), "0600"); err != nil {
+		slog.Warn("failed to push challenge config to container", "err", err)
+		return
+	}
+
+	slog.Info("deployed challenge config", "session_id", session.ID, "flags_count", len(flagsMap))
 }
 
 // maxInlineScriptSize is the max script size that can be passed as a command argument.
