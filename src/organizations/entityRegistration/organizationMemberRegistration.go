@@ -2,6 +2,7 @@ package entityRegistration
 
 import (
 	"net/http"
+	"time"
 
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -45,11 +46,17 @@ func RegisterOrganizationMember(service *ems.EntityRegistrationService) {
 					return output, nil
 				},
 				DtoToModel: func(input dto.CreateOrganizationMemberInput) *models.OrganizationMember {
+					role := input.Role
+					if role == "" {
+						role = models.OrgRoleMember
+					}
 					return &models.OrganizationMember{
-						UserID:   input.UserID,
-						Role:     input.Role,
-						Metadata: input.Metadata,
-						IsActive: true,
+						OrganizationID: input.OrganizationID,
+						UserID:         input.UserID,
+						Role:           role,
+						Metadata:       input.Metadata,
+						JoinedAt:       time.Now(),
+						IsActive:       true,
 					}
 				},
 				DtoToMap: func(input dto.EditOrganizationMemberInput) map[string]any {
@@ -68,7 +75,7 @@ func RegisterOrganizationMember(service *ems.EntityRegistrationService) {
 			},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
-					string(authModels.Member): "(" + http.MethodGet + ")",
+					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")",
 					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 				},
 			},

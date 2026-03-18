@@ -27,5 +27,21 @@ func InitOrganizationHooks(db *gorm.DB) {
 		log.Println("✅ Organization cleanup hook registered")
 	}
 
+	// Hook for validating organization member addition
+	memberValidationHook := NewOrganizationMemberValidationHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(memberValidationHook); err != nil {
+		log.Printf("❌ Failed to register organization member validation hook: %v", err)
+	} else {
+		log.Println("✅ Organization member validation hook registered")
+	}
+
+	// Hook for validating organization member deletion
+	memberDeletionHook := NewOrganizationMemberDeletionHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(memberDeletionHook); err != nil {
+		log.Printf("❌ Failed to register organization member deletion hook: %v", err)
+	} else {
+		log.Println("✅ Organization member deletion hook registered")
+	}
+
 	log.Println("🔗 Organization hooks initialization complete")
 }

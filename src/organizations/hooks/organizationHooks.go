@@ -6,6 +6,7 @@ import (
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/services"
 	"soli/formations/src/utils"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -171,5 +172,171 @@ func (h *OrganizationCleanupHook) Execute(ctx *hooks.HookContext) error {
 	}
 
 	utils.Info("Organization deleted: %s (ID: %s)", org.Name, org.ID)
+	return nil
+}
+
+// OrganizationMemberValidationHook validates business rules when adding a member to an organization
+type OrganizationMemberValidationHook struct {
+	db                  *gorm.DB
+	organizationService services.OrganizationService
+	enabled             bool
+	priority            int
+}
+
+func NewOrganizationMemberValidationHook(db *gorm.DB) hooks.Hook {
+	return &OrganizationMemberValidationHook{
+		db:                  db,
+		organizationService: services.NewOrganizationService(db),
+		enabled:             true,
+		priority:            10, // Run before creation
+	}
+}
+
+func (h *OrganizationMemberValidationHook) GetName() string {
+	return "organization_member_validation"
+}
+
+func (h *OrganizationMemberValidationHook) GetEntityName() string {
+	return "OrganizationMember"
+}
+
+func (h *OrganizationMemberValidationHook) GetHookTypes() []hooks.HookType {
+	return []hooks.HookType{hooks.BeforeCreate}
+}
+
+func (h *OrganizationMemberValidationHook) IsEnabled() bool {
+	return h.enabled
+}
+
+func (h *OrganizationMemberValidationHook) GetPriority() int {
+	return h.priority
+}
+
+func (h *OrganizationMemberValidationHook) Execute(ctx *hooks.HookContext) error {
+	member, ok := ctx.NewEntity.(*models.OrganizationMember)
+	if !ok {
+		return fmt.Errorf("expected *models.OrganizationMember, got %T", ctx.NewEntity)
+	}
+
+	// 1. Check if organization exists
+	var org models.Organization
+	err := h.db.Where("id = ?", member.OrganizationID).Preload("Members").First(&org).Error
+	if err != nil {
+		return fmt.Errorf("organization not found")
+	}
+
+	// 2. Check if organization is full
+	if org.MaxMembers > 0 && len(org.Members) >= org.MaxMembers {
+		return utils.CapacityExceededError("organization", len(org.Members), org.MaxMembers)
+	}
+
+	// 3. Check if user is already a member
+	isMember, _ := h.organizationService.IsUserInOrganization(org.ID, member.UserID)
+	if isMember {
+		return fmt.Errorf("user is already a member of this organization")
+	}
+
+	// 4. Check if requesting user can manage this organization
+	if ctx.UserID != "" {
+		canManage, err := h.organizationService.CanUserManageOrganization(org.ID, ctx.UserID)
+		if err != nil {
+			return fmt.Errorf("permission check failed: %w", err)
+		}
+		if !canManage {
+			return utils.PermissionDeniedError("add members to", "organization")
+		}
+
+		// Set InvitedBy if not already set
+		if member.InvitedBy == "" {
+			member.InvitedBy = ctx.UserID
+		}
+	}
+
+	// 5. Default role to "member" if not set
+	if member.Role == "" {
+		member.Role = models.OrgRoleMember
+	}
+
+	// 6. Set JoinedAt and IsActive
+	if member.JoinedAt.IsZero() {
+		member.JoinedAt = time.Now()
+	}
+	member.IsActive = true
+
+	utils.Debug("Validated organization member: user %s joining organization %s", member.UserID, member.OrganizationID)
+	return nil
+}
+
+// OrganizationMemberDeletionHook validates business rules when removing a member from an organization
+type OrganizationMemberDeletionHook struct {
+	db                  *gorm.DB
+	organizationService services.OrganizationService
+	enabled             bool
+	priority            int
+}
+
+func NewOrganizationMemberDeletionHook(db *gorm.DB) hooks.Hook {
+	return &OrganizationMemberDeletionHook{
+		db:                  db,
+		organizationService: services.NewOrganizationService(db),
+		enabled:             true,
+		priority:            10,
+	}
+}
+
+func (h *OrganizationMemberDeletionHook) GetName() string {
+	return "organization_member_deletion"
+}
+
+func (h *OrganizationMemberDeletionHook) GetEntityName() string {
+	return "OrganizationMember"
+}
+
+func (h *OrganizationMemberDeletionHook) GetHookTypes() []hooks.HookType {
+	return []hooks.HookType{hooks.BeforeDelete}
+}
+
+func (h *OrganizationMemberDeletionHook) IsEnabled() bool {
+	return h.enabled
+}
+
+func (h *OrganizationMemberDeletionHook) GetPriority() int {
+	return h.priority
+}
+
+func (h *OrganizationMemberDeletionHook) Execute(ctx *hooks.HookContext) error {
+	member, ok := ctx.NewEntity.(*models.OrganizationMember)
+	if !ok {
+		return fmt.Errorf("expected *models.OrganizationMember, got %T", ctx.NewEntity)
+	}
+
+	// 1. Prevent removing the organization owner
+	if member.Role == models.OrgRoleOwner {
+		return utils.ErrCannotRemoveOwner("organization")
+	}
+
+	// 2. Check if requesting user can manage this organization
+	if ctx.UserID != "" {
+		canManage, err := h.organizationService.CanUserManageOrganization(member.OrganizationID, ctx.UserID)
+		if err != nil {
+			return fmt.Errorf("permission check failed: %w", err)
+		}
+		if !canManage {
+			return utils.PermissionDeniedError("remove members from", "organization")
+		}
+	}
+
+	// 3. Revoke permissions from the member
+	err := h.organizationService.RevokeOrganizationPermissions(member.UserID, member.OrganizationID)
+	if err != nil {
+		utils.Warn("Failed to revoke member permissions from user %s: %v", member.UserID, err)
+	}
+
+	err = h.organizationService.RevokeOrganizationManagerPermissions(member.UserID, member.OrganizationID)
+	if err != nil {
+		utils.Warn("Failed to revoke manager permissions from user %s: %v", member.UserID, err)
+	}
+
+	utils.Info("User %s removed from organization %s", member.UserID, member.OrganizationID)
 	return nil
 }

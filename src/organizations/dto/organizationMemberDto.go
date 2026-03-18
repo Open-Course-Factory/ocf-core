@@ -17,9 +17,10 @@ type UserSummary struct {
 
 // CreateOrganizationMemberInput represents the input for adding a member to an organization
 type CreateOrganizationMemberInput struct {
-	UserID   string                        `json:"user_id" mapstructure:"user_id" binding:"required"`
-	Role     models.OrganizationMemberRole `json:"role" mapstructure:"role" binding:"required"`
-	Metadata map[string]any        `json:"metadata,omitempty" mapstructure:"metadata"`
+	OrganizationID uuid.UUID                     `json:"organization_id" mapstructure:"organization_id" binding:"required"`
+	UserID         string                        `json:"user_id" mapstructure:"user_id" binding:"required"`
+	Role           models.OrganizationMemberRole `json:"role" mapstructure:"role" binding:"omitempty,oneof=member manager"`
+	Metadata       map[string]any                `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
 // BatchCreateOrganizationMembersInput represents the input for adding multiple members
