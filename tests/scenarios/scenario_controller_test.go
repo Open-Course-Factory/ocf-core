@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
 	terminalModels "soli/formations/src/terminalTrainer/models"
@@ -711,4 +712,349 @@ func TestGetSessionInfo_NonOwnerGetsForbidden(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+// --- Group-based access control tests for StartScenario ---
+
+// setupTestRouterWithRoles creates a test router with a custom userId and role list.
+func setupTestRouterWithRoles(db *gorm.DB, userID string, roles []string) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	api := r.Group("/api/v1")
+	api.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Set("userRoles", roles)
+		c.Next()
+	})
+
+	controller := scenarioController.NewScenarioController(db)
+
+	sessions := api.Group("/scenario-sessions")
+	sessions.POST("/start", controller.StartScenario)
+
+	return r
+}
+
+// TestStartScenario_NoAssignment_Returns403 verifies that a regular (non-admin) user
+// cannot start a scenario that is NOT assigned to any of their groups.
+func TestStartScenario_NoAssignment_Returns403(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create a scenario with at least one step
+	scenario := models.Scenario{
+		Name:         "no-assignment-test",
+		Title:        "No Assignment Test",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID:  scenario.ID,
+		Order:       0,
+		Title:       "Step 1",
+		TextContent: "Do something",
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	// Create a terminal owned by our test user
+	terminal := terminalModels.Terminal{
+		SessionID: "terminal-no-assign",
+		UserID:    "regular-user-1",
+		Status:    "active",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	require.NoError(t, db.Create(&terminal).Error)
+
+	// No group, no group member, no assignment — user is just a regular member
+	router := setupTestRouterWithRoles(db, "regular-user-1", []string{"member"})
+
+	body, _ := json.Marshal(map[string]string{
+		"scenario_id":         scenario.ID.String(),
+		"terminal_session_id": "terminal-no-assign",
+	})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/scenario-sessions/start", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	// Should be 403 because the user has no group assignment for this scenario
+	assert.Equal(t, http.StatusForbidden, w.Code, "expected 403 when user has no assignment for the scenario")
+}
+
+// TestStartScenario_WithGroupAssignment_Succeeds verifies that a regular user whose
+// group HAS an active assignment for the scenario can start it successfully.
+func TestStartScenario_WithGroupAssignment_Succeeds(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create a scenario with a step
+	scenario := models.Scenario{
+		Name:         "with-assignment-test",
+		Title:        "With Assignment Test",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID:  scenario.ID,
+		Order:       0,
+		Title:       "Step 1",
+		TextContent: "Do something",
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	// Create group, member, and active assignment
+	group := groupModels.ClassGroup{
+		Name:        "test-group-assigned",
+		DisplayName: "Test Group Assigned",
+		OwnerUserID: "creator-1",
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
+
+	member := groupModels.GroupMember{
+		GroupID:  group.ID,
+		UserID:   "assigned-user-1",
+		Role:     groupModels.GroupMemberRoleMember,
+		IsActive: true,
+		JoinedAt: time.Now(),
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&member).Error)
+
+	assignment := models.ScenarioAssignment{
+		ScenarioID:  scenario.ID,
+		GroupID:     &group.ID,
+		Scope:       "group",
+		IsActive:    true,
+		CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&assignment).Error)
+
+	// Create terminal owned by the user
+	terminal := terminalModels.Terminal{
+		SessionID: "terminal-assigned",
+		UserID:    "assigned-user-1",
+		Status:    "active",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	require.NoError(t, db.Create(&terminal).Error)
+
+	router := setupTestRouterWithRoles(db, "assigned-user-1", []string{"member"})
+
+	body, _ := json.Marshal(map[string]string{
+		"scenario_id":         scenario.ID.String(),
+		"terminal_session_id": "terminal-assigned",
+	})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/scenario-sessions/start", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code, "expected 201 when user's group has an active assignment")
+
+	var response map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.NotEmpty(t, response["id"])
+	assert.Equal(t, "active", response["status"])
+}
+
+// TestStartScenario_AdminBypassesAssignmentCheck verifies that a platform admin
+// can start any scenario without needing a group assignment.
+func TestStartScenario_AdminBypassesAssignmentCheck(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create a scenario with a step
+	scenario := models.Scenario{
+		Name:         "admin-bypass-test",
+		Title:        "Admin Bypass Test",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID:  scenario.ID,
+		Order:       0,
+		Title:       "Step 1",
+		TextContent: "Do something",
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	// Create terminal owned by the admin user
+	terminal := terminalModels.Terminal{
+		SessionID: "terminal-admin-bypass",
+		UserID:    "admin-user-1",
+		Status:    "active",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	require.NoError(t, db.Create(&terminal).Error)
+
+	// No group, no assignment — admin should bypass the check
+	router := setupTestRouterWithRoles(db, "admin-user-1", []string{"admin"})
+
+	body, _ := json.Marshal(map[string]string{
+		"scenario_id":         scenario.ID.String(),
+		"terminal_session_id": "terminal-admin-bypass",
+	})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/scenario-sessions/start", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code, "expected 201 for admin even without assignment")
+
+	var response map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.NotEmpty(t, response["id"])
+	assert.Equal(t, "active", response["status"])
+}
+
+// TestStartScenario_ExpiredDeadline_Returns403 verifies that a user whose group
+// assignment has a past deadline cannot start the scenario.
+func TestStartScenario_ExpiredDeadline_Returns403(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create scenario with a step
+	scenario := models.Scenario{
+		Name:         "expired-deadline-test",
+		Title:        "Expired Deadline Test",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID:  scenario.ID,
+		Order:       0,
+		Title:       "Step 1",
+		TextContent: "Do something",
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	// Create group and member
+	group := groupModels.ClassGroup{
+		Name:        "test-group-expired",
+		DisplayName: "Test Group Expired",
+		OwnerUserID: "creator-1",
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
+
+	member := groupModels.GroupMember{
+		GroupID:  group.ID,
+		UserID:   "expired-user-1",
+		Role:     groupModels.GroupMemberRoleMember,
+		IsActive: true,
+		JoinedAt: time.Now(),
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&member).Error)
+
+	// Create assignment with a past deadline
+	pastDeadline := time.Now().Add(-24 * time.Hour)
+	assignment := models.ScenarioAssignment{
+		ScenarioID:  scenario.ID,
+		GroupID:     &group.ID,
+		Scope:       "group",
+		IsActive:    true,
+		Deadline:    &pastDeadline,
+		CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&assignment).Error)
+
+	// Create terminal
+	terminal := terminalModels.Terminal{
+		SessionID: "terminal-expired",
+		UserID:    "expired-user-1",
+		Status:    "active",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	require.NoError(t, db.Create(&terminal).Error)
+
+	router := setupTestRouterWithRoles(db, "expired-user-1", []string{"member"})
+
+	body, _ := json.Marshal(map[string]string{
+		"scenario_id":         scenario.ID.String(),
+		"terminal_session_id": "terminal-expired",
+	})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/scenario-sessions/start", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code, "expected 403 when assignment deadline has passed")
+}
+
+// TestStartScenario_InactiveAssignment_Returns403 verifies that a user whose group
+// assignment has is_active=false cannot start the scenario.
+func TestStartScenario_InactiveAssignment_Returns403(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create scenario with a step
+	scenario := models.Scenario{
+		Name:         "inactive-assignment-test",
+		Title:        "Inactive Assignment Test",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID:  scenario.ID,
+		Order:       0,
+		Title:       "Step 1",
+		TextContent: "Do something",
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	// Create group and member
+	group := groupModels.ClassGroup{
+		Name:        "test-group-inactive",
+		DisplayName: "Test Group Inactive",
+		OwnerUserID: "creator-1",
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
+
+	member := groupModels.GroupMember{
+		GroupID:  group.ID,
+		UserID:   "inactive-user-1",
+		Role:     groupModels.GroupMemberRoleMember,
+		IsActive: true,
+		JoinedAt: time.Now(),
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&member).Error)
+
+	// Create assignment then set is_active=false
+	// (GORM default:true treats false as zero value and overrides it)
+	assignment := models.ScenarioAssignment{
+		ScenarioID:  scenario.ID,
+		GroupID:     &group.ID,
+		Scope:       "group",
+		IsActive:    true,
+		CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&assignment).Error)
+	require.NoError(t, db.Model(&assignment).Update("is_active", false).Error)
+
+	// Create terminal
+	terminal := terminalModels.Terminal{
+		SessionID: "terminal-inactive",
+		UserID:    "inactive-user-1",
+		Status:    "active",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	require.NoError(t, db.Create(&terminal).Error)
+
+	router := setupTestRouterWithRoles(db, "inactive-user-1", []string{"member"})
+
+	body, _ := json.Marshal(map[string]string{
+		"scenario_id":         scenario.ID.String(),
+		"terminal_session_id": "terminal-inactive",
+	})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/scenario-sessions/start", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code, "expected 403 when assignment is inactive")
 }

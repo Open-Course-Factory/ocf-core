@@ -184,6 +184,46 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 		return
 	}
 
+	// Check group-based scenario assignment access
+	userRoles, _ := ctx.Get("userRoles")
+	isAdmin := false
+	if roles, ok := userRoles.([]string); ok {
+		for _, role := range roles {
+			if role == "admin" || role == "administrator" {
+				isAdmin = true
+				break
+			}
+		}
+	}
+	if !isAdmin {
+		var groupIDs []uuid.UUID
+		sc.db.Model(&groupModels.GroupMember{}).
+			Where("user_id = ? AND is_active = true", userID).
+			Pluck("group_id", &groupIDs)
+
+		if len(groupIDs) == 0 {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Scenario is not assigned to your group",
+			})
+			return
+		}
+
+		var count int64
+		sc.db.Model(&models.ScenarioAssignment{}).
+			Where("scenario_id = ? AND group_id IN ? AND scope = ? AND is_active = true AND (deadline IS NULL OR deadline > ?)",
+				scenarioID, groupIDs, "group", time.Now()).
+			Count(&count)
+
+		if count == 0 {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Scenario is not assigned to your group",
+			})
+			return
+		}
+	}
+
 	session, err := sc.sessionService.StartScenario(userID, scenarioID, input.TerminalSessionID)
 	if err != nil {
 		slog.Error("failed to start scenario", "err", err)
