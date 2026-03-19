@@ -27,6 +27,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	// Session routes (students)
 	rateLimiter := scenarioMiddleware.PerUserRateLimit()
 	sessionRoutes := router.Group("/scenario-sessions")
+	sessionRoutes.GET("/available", middleware.AuthManagement(), controller.GetAvailableScenarios)
 	sessionRoutes.GET("/my", middleware.AuthManagement(), controller.GetMySessions)
 	sessionRoutes.POST("/start", middleware.AuthManagement(), controller.StartScenario)
 	sessionRoutes.GET("/by-terminal/:terminalId", middleware.AuthManagement(), controller.GetSessionByTerminal)

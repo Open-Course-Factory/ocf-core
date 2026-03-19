@@ -46,6 +46,7 @@ type ScenarioController interface {
 	GroupExportScenario(ctx *gin.Context)
 	GroupImportJSON(ctx *gin.Context)
 	GroupUploadScenario(ctx *gin.Context)
+	GetAvailableScenarios(ctx *gin.Context)
 }
 
 type scenarioController struct {
@@ -1461,5 +1462,108 @@ func (sc *scenarioController) GroupUploadScenario(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, sc.buildScenarioOutput(&loaded))
+}
+
+// GetAvailableScenarios godoc
+// @Summary Get available scenarios
+// @Description Get scenarios assigned to the current user's groups or organizations. Admins see all scenarios.
+// @Tags scenarios
+// @Produce json
+// @Success 200 {array} map[string]any
+// @Failure 500 {object} errors.APIError
+// @Router /scenario-sessions/available [get]
+// @Security BearerAuth
+func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
+	userID := ctx.GetString("userId")
+
+	var scenarios []models.Scenario
+
+	if sc.hasAdminRole(ctx) {
+		if err := sc.db.Find(&scenarios).Error; err != nil {
+			slog.Error("failed to fetch all scenarios", "err", err)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to fetch scenarios",
+			})
+			return
+		}
+	} else {
+		// Get user's group IDs
+		var groupIDs []uuid.UUID
+		if err := sc.db.Model(&groupModels.GroupMember{}).
+			Where("user_id = ? AND is_active = true", userID).
+			Pluck("group_id", &groupIDs).Error; err != nil {
+			slog.Error("failed to get user group memberships", "err", err)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to fetch scenarios",
+			})
+			return
+		}
+
+		// Get user's org IDs
+		var orgIDs []uuid.UUID
+		if err := sc.db.Model(&orgModels.OrganizationMember{}).
+			Where("user_id = ? AND is_active = true", userID).
+			Pluck("organization_id", &orgIDs).Error; err != nil {
+			slog.Error("failed to get user org memberships", "err", err)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to fetch scenarios",
+			})
+			return
+		}
+
+		// Build OR conditions for group and org scopes
+		var conditions []string
+		var args []interface{}
+
+		if len(groupIDs) > 0 {
+			conditions = append(conditions, "(sa.scope = 'group' AND sa.group_id IN ?)")
+			args = append(args, groupIDs)
+		}
+		if len(orgIDs) > 0 {
+			conditions = append(conditions, "(sa.scope = 'org' AND sa.organization_id IN ?)")
+			args = append(args, orgIDs)
+		}
+
+		if len(conditions) == 0 {
+			// No groups or orgs — return empty
+			ctx.JSON(http.StatusOK, []any{})
+			return
+		}
+
+		now := time.Now()
+		combined := strings.Join(conditions, " OR ")
+		query := sc.db.Distinct().
+			Joins("JOIN scenario_assignments sa ON sa.scenario_id = scenarios.id").
+			Where("sa.is_active = true AND (sa.deadline IS NULL OR sa.deadline > ?)", now).
+			Where(combined, args...)
+
+		if err := query.Find(&scenarios).Error; err != nil {
+			slog.Error("failed to fetch available scenarios", "err", err)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to fetch scenarios",
+			})
+			return
+		}
+	}
+
+	// Convert to lightweight output (no steps)
+	output := make([]gin.H, 0, len(scenarios))
+	for _, s := range scenarios {
+		output = append(output, gin.H{
+			"id":             s.ID,
+			"name":           s.Name,
+			"title":          s.Title,
+			"description":    s.Description,
+			"difficulty":     s.Difficulty,
+			"estimated_time": s.EstimatedTime,
+			"instance_type":  s.InstanceType,
+			"os_type":        s.OsType,
+		})
+	}
+	ctx.JSON(http.StatusOK, output)
 }
 

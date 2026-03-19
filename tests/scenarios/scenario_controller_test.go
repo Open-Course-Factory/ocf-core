@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	groupModels "soli/formations/src/groups/models"
+	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
 	terminalModels "soli/formations/src/terminalTrainer/models"
@@ -1057,4 +1058,257 @@ func TestStartScenario_InactiveAssignment_Returns403(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code, "expected 403 when assignment is inactive")
+}
+
+// --- Available Scenarios endpoint tests ---
+
+// setupAvailableRouter creates a test router with the /scenario-sessions/available route
+func setupAvailableRouter(db *gorm.DB, userID string, roles []string) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	api := r.Group("/api/v1")
+	api.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Set("userRoles", roles)
+		c.Next()
+	})
+	controller := scenarioController.NewScenarioController(db)
+	sessions := api.Group("/scenario-sessions")
+	sessions.GET("/available", controller.GetAvailableScenarios)
+	return r
+}
+
+// TestGetAvailableScenarios_ReturnsOnlyAssigned verifies that a regular user
+// only sees scenarios assigned to their group.
+func TestGetAvailableScenarios_ReturnsOnlyAssigned(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create 3 scenarios
+	scenario1 := models.Scenario{Name: "avail-assigned", Title: "Assigned Scenario", InstanceType: "debian", CreatedByID: "creator-1"}
+	require.NoError(t, db.Create(&scenario1).Error)
+	scenario2 := models.Scenario{Name: "avail-other1", Title: "Other Scenario 1", InstanceType: "debian", CreatedByID: "creator-1"}
+	require.NoError(t, db.Create(&scenario2).Error)
+	scenario3 := models.Scenario{Name: "avail-other2", Title: "Other Scenario 2", InstanceType: "debian", CreatedByID: "creator-1"}
+	require.NoError(t, db.Create(&scenario3).Error)
+
+	// Create group and add user as member
+	group := groupModels.ClassGroup{Name: "avail-group", DisplayName: "Available Group", OwnerUserID: "creator-1"}
+	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
+
+	member := groupModels.GroupMember{
+		GroupID:  group.ID,
+		UserID:   "user-avail-1",
+		Role:     groupModels.GroupMemberRoleMember,
+		IsActive: true,
+		JoinedAt: time.Now(),
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&member).Error)
+
+	// Assign only scenario1 to the group
+	assignment := models.ScenarioAssignment{
+		ScenarioID:  scenario1.ID,
+		GroupID:     &group.ID,
+		Scope:       "group",
+		IsActive:    true,
+		CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&assignment).Error)
+
+	router := setupAvailableRouter(db, "user-avail-1", []string{"member"})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/available", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var scenarios []map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &scenarios)
+	require.NoError(t, err)
+	assert.Len(t, scenarios, 1, "should return only the 1 assigned scenario")
+	assert.Equal(t, scenario1.ID.String(), scenarios[0]["id"])
+}
+
+// TestGetAvailableScenarios_AdminSeesAll verifies that an admin user
+// sees all scenarios regardless of assignments.
+func TestGetAvailableScenarios_AdminSeesAll(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create 3 scenarios with no assignments
+	scenario1 := models.Scenario{Name: "admin-all-1", Title: "Admin All 1", InstanceType: "debian", CreatedByID: "creator-1"}
+	require.NoError(t, db.Create(&scenario1).Error)
+	scenario2 := models.Scenario{Name: "admin-all-2", Title: "Admin All 2", InstanceType: "debian", CreatedByID: "creator-1"}
+	require.NoError(t, db.Create(&scenario2).Error)
+	scenario3 := models.Scenario{Name: "admin-all-3", Title: "Admin All 3", InstanceType: "debian", CreatedByID: "creator-1"}
+	require.NoError(t, db.Create(&scenario3).Error)
+
+	router := setupAvailableRouter(db, "admin-user-all", []string{"admin"})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/available", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var scenarios []map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &scenarios)
+	require.NoError(t, err)
+	assert.Len(t, scenarios, 3, "admin should see all 3 scenarios")
+}
+
+// TestGetAvailableScenarios_EmptyWhenNoAssignments verifies that a user
+// in a group with no scenario assignments gets an empty array.
+func TestGetAvailableScenarios_EmptyWhenNoAssignments(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create a scenario (but don't assign it)
+	scenario := models.Scenario{Name: "empty-test", Title: "Empty Test", InstanceType: "debian", CreatedByID: "creator-1"}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	// Create group and add user as member
+	group := groupModels.ClassGroup{Name: "empty-group", DisplayName: "Empty Group", OwnerUserID: "creator-1"}
+	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
+
+	member := groupModels.GroupMember{
+		GroupID:  group.ID,
+		UserID:   "user-empty-1",
+		Role:     groupModels.GroupMemberRoleMember,
+		IsActive: true,
+		JoinedAt: time.Now(),
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&member).Error)
+
+	router := setupAvailableRouter(db, "user-empty-1", []string{"member"})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/available", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var scenarios []map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &scenarios)
+	require.NoError(t, err)
+	assert.Len(t, scenarios, 0, "should return empty array when no assignments exist")
+}
+
+// TestGetAvailableScenarios_ExcludesExpiredAndInactive verifies that only active
+// assignments with no past deadline are returned.
+func TestGetAvailableScenarios_ExcludesExpiredAndInactive(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create 3 scenarios
+	activeScenario := models.Scenario{Name: "filter-active", Title: "Active Scenario", InstanceType: "debian", CreatedByID: "creator-1"}
+	require.NoError(t, db.Create(&activeScenario).Error)
+	expiredScenario := models.Scenario{Name: "filter-expired", Title: "Expired Scenario", InstanceType: "debian", CreatedByID: "creator-1"}
+	require.NoError(t, db.Create(&expiredScenario).Error)
+	inactiveScenario := models.Scenario{Name: "filter-inactive", Title: "Inactive Scenario", InstanceType: "debian", CreatedByID: "creator-1"}
+	require.NoError(t, db.Create(&inactiveScenario).Error)
+
+	// Create group and add user as member
+	group := groupModels.ClassGroup{Name: "filter-group", DisplayName: "Filter Group", OwnerUserID: "creator-1"}
+	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
+
+	member := groupModels.GroupMember{
+		GroupID:  group.ID,
+		UserID:   "user-filter-1",
+		Role:     groupModels.GroupMemberRoleMember,
+		IsActive: true,
+		JoinedAt: time.Now(),
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&member).Error)
+
+	// Active assignment (no deadline, is_active=true)
+	activeAssignment := models.ScenarioAssignment{
+		ScenarioID:  activeScenario.ID,
+		GroupID:     &group.ID,
+		Scope:       "group",
+		IsActive:    true,
+		CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&activeAssignment).Error)
+
+	// Expired assignment (past deadline)
+	pastDeadline := time.Now().Add(-24 * time.Hour)
+	expiredAssignment := models.ScenarioAssignment{
+		ScenarioID:  expiredScenario.ID,
+		GroupID:     &group.ID,
+		Scope:       "group",
+		IsActive:    true,
+		Deadline:    &pastDeadline,
+		CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&expiredAssignment).Error)
+
+	// Inactive assignment (is_active=false)
+	inactiveAssignment := models.ScenarioAssignment{
+		ScenarioID:  inactiveScenario.ID,
+		GroupID:     &group.ID,
+		Scope:       "group",
+		IsActive:    true,
+		CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&inactiveAssignment).Error)
+	require.NoError(t, db.Model(&inactiveAssignment).Update("is_active", false).Error)
+
+	router := setupAvailableRouter(db, "user-filter-1", []string{"member"})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/available", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var scenarios []map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &scenarios)
+	require.NoError(t, err)
+	assert.Len(t, scenarios, 1, "should return only the active, non-expired scenario")
+	assert.Equal(t, activeScenario.ID.String(), scenarios[0]["id"])
+}
+
+// TestGetAvailableScenarios_IncludesOrgAssignment verifies that a user
+// sees scenarios assigned to their organization even if not assigned to their group.
+func TestGetAvailableScenarios_IncludesOrgAssignment(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create a scenario
+	scenario := models.Scenario{Name: "org-avail", Title: "Org Available", InstanceType: "debian", CreatedByID: "creator-1"}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	// Create organization and add user as org member
+	org := orgModels.Organization{Name: "test-org-avail", DisplayName: "Test Org Avail", OwnerUserID: "creator-1"}
+	require.NoError(t, db.Omit("Metadata").Create(&org).Error)
+
+	orgMember := orgModels.OrganizationMember{
+		OrganizationID: org.ID,
+		UserID:         "user-org-1",
+		Role:           orgModels.OrgRoleMember,
+		IsActive:       true,
+		JoinedAt:       time.Now(),
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&orgMember).Error)
+
+	// Assign scenario to the org (scope="org"), NOT to any group
+	assignment := models.ScenarioAssignment{
+		ScenarioID:     scenario.ID,
+		OrganizationID: &org.ID,
+		Scope:          "org",
+		IsActive:       true,
+		CreatedByID:    "creator-1",
+	}
+	require.NoError(t, db.Create(&assignment).Error)
+
+	router := setupAvailableRouter(db, "user-org-1", []string{"member"})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/available", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var scenarios []map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &scenarios)
+	require.NoError(t, err)
+	assert.Len(t, scenarios, 1, "should return the org-assigned scenario")
+	assert.Equal(t, scenario.ID.String(), scenarios[0]["id"])
 }
