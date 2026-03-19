@@ -12,6 +12,7 @@ import (
 
 	"soli/formations/src/auth/errors"
 	groupModels "soli/formations/src/groups/models"
+	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
@@ -143,6 +144,7 @@ func (sc *scenarioController) ImportScenario(ctx *gin.Context) {
 // @Param body body dto.StartScenarioInput true "Start request"
 // @Success 201 {object} dto.ScenarioSessionOutput
 // @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
 // @Failure 500 {object} errors.APIError
 // @Router /scenario-sessions/start [post]
 // @Security BearerAuth
@@ -184,41 +186,73 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Check group-based scenario assignment access
-	userRoles, _ := ctx.Get("userRoles")
-	isAdmin := false
-	if roles, ok := userRoles.([]string); ok {
-		for _, role := range roles {
-			if role == "admin" || role == "administrator" {
-				isAdmin = true
-				break
-			}
-		}
-	}
-	if !isAdmin {
+	// Check group-based scenario assignment access (admins bypass)
+	if !sc.hasAdminRole(ctx) {
 		var groupIDs []uuid.UUID
-		sc.db.Model(&groupModels.GroupMember{}).
+		if err := sc.db.Model(&groupModels.GroupMember{}).
 			Where("user_id = ? AND is_active = true", userID).
-			Pluck("group_id", &groupIDs)
+			Pluck("group_id", &groupIDs).Error; err != nil {
+			slog.Error("failed to check group membership", "err", err)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to verify scenario access",
+			})
+			return
+		}
 
 		if len(groupIDs) == 0 {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Scenario is not assigned to your group",
+				ErrorMessage: "You must be a member of a group to start this scenario",
 			})
 			return
 		}
 
 		var count int64
-		sc.db.Model(&models.ScenarioAssignment{}).
+		if err := sc.db.Model(&models.ScenarioAssignment{}).
 			Where("scenario_id = ? AND group_id IN ? AND scope = ? AND is_active = true AND (deadline IS NULL OR deadline > ?)",
 				scenarioID, groupIDs, "group", time.Now()).
-			Count(&count)
+			Count(&count).Error; err != nil {
+			slog.Error("failed to check group scenario assignment", "err", err)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to verify scenario access",
+			})
+			return
+		}
+
+		if count == 0 {
+			// Also check organization-scoped assignments
+			var orgIDs []uuid.UUID
+			if err := sc.db.Model(&orgModels.OrganizationMember{}).
+				Where("user_id = ? AND is_active = true", userID).
+				Pluck("organization_id", &orgIDs).Error; err != nil {
+				slog.Error("failed to check org membership", "err", err)
+				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+					ErrorCode:    http.StatusInternalServerError,
+					ErrorMessage: "Failed to verify scenario access",
+				})
+				return
+			}
+			if len(orgIDs) > 0 {
+				if err := sc.db.Model(&models.ScenarioAssignment{}).
+					Where("scenario_id = ? AND organization_id IN ? AND scope = ? AND is_active = true AND (deadline IS NULL OR deadline > ?)",
+						scenarioID, orgIDs, "org", time.Now()).
+					Count(&count).Error; err != nil {
+					slog.Error("failed to check org scenario assignment", "err", err)
+					ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+						ErrorCode:    http.StatusInternalServerError,
+						ErrorMessage: "Failed to verify scenario access",
+					})
+					return
+				}
+			}
+		}
 
 		if count == 0 {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Scenario is not assigned to your group",
+				ErrorMessage: "Scenario is not assigned to your group or organization",
 			})
 			return
 		}
@@ -831,23 +865,24 @@ func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, sc.buildScenarioOutput(&loaded))
 }
 
-// isAdmin checks if the current user has admin/administrator role.
-// Returns false and writes a 403 response if not admin.
-func (sc *scenarioController) isAdmin(ctx *gin.Context) bool {
-	userRoles, exists := ctx.Get("userRoles")
-	if !exists {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Access denied",
-		})
-		return false
-	}
+// hasAdminRole checks if the context has admin/administrator role without writing a response.
+func (sc *scenarioController) hasAdminRole(ctx *gin.Context) bool {
+	userRoles, _ := ctx.Get("userRoles")
 	if roles, ok := userRoles.([]string); ok {
 		for _, role := range roles {
 			if role == "admin" || role == "administrator" {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+// isAdmin checks if the current user has admin/administrator role.
+// Returns false and writes a 403 response if not admin.
+func (sc *scenarioController) isAdmin(ctx *gin.Context) bool {
+	if sc.hasAdminRole(ctx) {
+		return true
 	}
 	ctx.JSON(http.StatusForbidden, &errors.APIError{
 		ErrorCode:    http.StatusForbidden,
