@@ -196,10 +196,8 @@ func TestDeployFlags_DisallowedPathRewrittenToDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
-	// Disallowed path should be rewritten to the default /tmp/.flag_step_N
-	require.Len(t, verifySvc.pushCalls, 1)
-	assert.Equal(t, "/tmp/.flag_step_0", verifySvc.pushCalls[0].targetPath,
-		"disallowed path should be rewritten to default /tmp/.flag_step_<order>")
+	// Disallowed path should be rejected — no PushFile call
+	assert.Empty(t, verifySvc.pushCalls, "disallowed path should be rejected, no PushFile call expected")
 }
 
 func TestDeployFlags_EmptyPathUsesDefault(t *testing.T) {
@@ -234,4 +232,89 @@ func TestDeployFlags_EmptyPathUsesDefault(t *testing.T) {
 	require.Len(t, verifySvc.pushCalls, 1)
 	assert.Equal(t, "/tmp/.flag_step_0", verifySvc.pushCalls[0].targetPath,
 		"empty FlagPath should default to /tmp/.flag_step_<order>")
+}
+
+func TestDeployFlags_CrashTraps_EmptyPathSkipped(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "crash-traps-empty-path",
+		Title:        "Crash Traps Empty Path",
+		InstanceType: "debian",
+		FlagsEnabled: true,
+		FlagSecret:   "test-secret",
+		CrashTraps:   true,
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	steps := []models.ScenarioStep{
+		{ScenarioID: scenario.ID, Order: 0, Title: "Step 0", TextContent: "Warmup", HasFlag: true, FlagPath: "/home/student/.the_key"},
+		{ScenarioID: scenario.ID, Order: 1, Title: "Step 1", TextContent: "Env vars", HasFlag: true, FlagPath: ""},
+	}
+	for i := range steps {
+		require.NoError(t, db.Create(&steps[i]).Error)
+	}
+
+	verifySvc := &capturingVerificationService{}
+	flagSvc := services.NewFlagService()
+	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
+
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	require.NoError(t, err)
+	require.NotNil(t, session)
+
+	// For crash_traps: step 0 has a custom path → deployed as file.
+	// The challenge config is also pushed (for setup.sh).
+	// Step 1 has empty path → NOT deployed as file (setup.sh handles it).
+	var flagPushes []pushFileCall
+	for _, call := range verifySvc.pushCalls {
+		if call.targetPath != "/tmp/challenge_config.json" {
+			flagPushes = append(flagPushes, call)
+		}
+	}
+	require.Len(t, flagPushes, 1, "only step 0 flag should be deployed as file")
+	assert.Equal(t, "/home/student/.the_key", flagPushes[0].targetPath)
+}
+
+func TestDeployFlags_CrashTraps_CustomPathStillDeployed(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "crash-traps-custom-path",
+		Title:        "Crash Traps Custom Path",
+		InstanceType: "debian",
+		FlagsEnabled: true,
+		FlagSecret:   "test-secret",
+		CrashTraps:   true,
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	steps := []models.ScenarioStep{
+		{ScenarioID: scenario.ID, Order: 0, Title: "Step 0", TextContent: "Warmup", HasFlag: true, FlagPath: "/home/student/.the_key"},
+		{ScenarioID: scenario.ID, Order: 1, Title: "Step 1", TextContent: "Secret", HasFlag: true, FlagPath: "/var/secret/level2_key.txt"},
+	}
+	for i := range steps {
+		require.NoError(t, db.Create(&steps[i]).Error)
+	}
+
+	verifySvc := &capturingVerificationService{}
+	flagSvc := services.NewFlagService()
+	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
+
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	require.NoError(t, err)
+	require.NotNil(t, session)
+
+	// Both steps have custom paths — both should be deployed even in crash_traps mode
+	var flagPushes []pushFileCall
+	for _, call := range verifySvc.pushCalls {
+		if call.targetPath != "/tmp/challenge_config.json" {
+			flagPushes = append(flagPushes, call)
+		}
+	}
+	// Only step 0 is deployed at start (step 1 deploys on transition)
+	require.Len(t, flagPushes, 1)
+	assert.Equal(t, "/home/student/.the_key", flagPushes[0].targetPath)
 }

@@ -712,6 +712,11 @@ func (s *ScenarioSessionService) deploySingleFlagToContainer(terminalSessionID s
 	// Determine the target path for the flag file
 	flagPath := step.FlagPath
 	if flagPath == "" {
+		// For crash_traps scenarios, setup.sh handles flag placement via config.json.
+		// Do NOT write a fallback file — it would leak all flags as world-readable files in /tmp/.
+		if scenario.CrashTraps {
+			return
+		}
 		flagPath = fmt.Sprintf("/tmp/.flag_step_%d", flag.StepOrder)
 	}
 
@@ -720,8 +725,9 @@ func (s *ScenarioSessionService) deploySingleFlagToContainer(terminalSessionID s
 		slog.Warn("skipping flag deployment: path contains '..'", "step_order", flag.StepOrder, "path", flagPath)
 		return
 	}
-	if !strings.HasPrefix(flagPath, "/tmp/") && !strings.HasPrefix(flagPath, "/home/") && !strings.HasPrefix(flagPath, "/World/") {
-		flagPath = fmt.Sprintf("/tmp/.flag_step_%d", flag.StepOrder)
+	if !strings.HasPrefix(flagPath, "/tmp/") && !strings.HasPrefix(flagPath, "/home/") && !strings.HasPrefix(flagPath, "/var/") && !strings.HasPrefix(flagPath, "/opt/") && !strings.HasPrefix(flagPath, "/World/") {
+		slog.Warn("skipping flag deployment: path not in allowed prefix", "step_order", flag.StepOrder, "path", flagPath)
+		return
 	}
 
 	// Push the flag file to the container (with trailing newline for clean cat output)
