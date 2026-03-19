@@ -201,25 +201,19 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 			return
 		}
 
-		if len(groupIDs) == 0 {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "You must be a member of a group to start this scenario",
-			})
-			return
-		}
-
 		var count int64
-		if err := sc.db.Model(&models.ScenarioAssignment{}).
-			Where("scenario_id = ? AND group_id IN ? AND scope = ? AND is_active = true AND (deadline IS NULL OR deadline > ?)",
-				scenarioID, groupIDs, "group", time.Now()).
-			Count(&count).Error; err != nil {
-			slog.Error("failed to check group scenario assignment", "err", err)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to verify scenario access",
-			})
-			return
+		if len(groupIDs) > 0 {
+			if err := sc.db.Model(&models.ScenarioAssignment{}).
+				Where("scenario_id = ? AND group_id IN ? AND scope = ? AND is_active = true AND (deadline IS NULL OR deadline > ?)",
+					scenarioID, groupIDs, "group", time.Now()).
+				Count(&count).Error; err != nil {
+				slog.Error("failed to check group scenario assignment", "err", err)
+				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+					ErrorCode:    http.StatusInternalServerError,
+					ErrorMessage: "Failed to verify scenario access",
+				})
+				return
+			}
 		}
 
 		if count == 0 {
