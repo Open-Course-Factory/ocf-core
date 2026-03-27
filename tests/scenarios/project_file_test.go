@@ -3,16 +3,20 @@ package scenarios_test
 import (
 	"archive/zip"
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"soli/formations/src/scenarios/models"
+	scenarioController "soli/formations/src/scenarios/routes"
 	"soli/formations/src/scenarios/services"
 )
 
@@ -683,7 +687,98 @@ func TestExportArchive_ResolvesFromProjectFile(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 9. Migration test — SKIPPED
+// 9. GET /project-files/:id/content endpoint
+// ---------------------------------------------------------------------------
+
+func TestProjectFileController_GetContent_Script(t *testing.T) {
+	db := setupTestDB(t)
+
+	file := models.ProjectFile{
+		Filename:    "verify.sh",
+		ContentType: "script",
+		Content:     "#!/bin/bash\necho hello",
+		StorageType: "database",
+	}
+	require.NoError(t, db.Create(&file).Error)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	api := r.Group("/api/v1")
+	api.Use(func(c *gin.Context) {
+		c.Set("userId", "test-user")
+		c.Set("userRoles", []string{"admin"})
+		c.Next()
+	})
+	ctrl := scenarioController.NewProjectFileController(db)
+	api.GET("/project-files/:id/content", ctrl.GetContent)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/project-files/"+file.ID.String()+"/content", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "#!/bin/bash\necho hello", w.Body.String())
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/x-shellscript")
+}
+
+func TestProjectFileController_GetContent_Markdown(t *testing.T) {
+	db := setupTestDB(t)
+
+	file := models.ProjectFile{
+		Filename:    "intro.md",
+		ContentType: "markdown",
+		Content:     "# Welcome\n\nThis is the intro.",
+		StorageType: "database",
+	}
+	require.NoError(t, db.Create(&file).Error)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	api := r.Group("/api/v1")
+	ctrl := scenarioController.NewProjectFileController(db)
+	api.GET("/project-files/:id/content", ctrl.GetContent)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/project-files/"+file.ID.String()+"/content", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "# Welcome\n\nThis is the intro.", w.Body.String())
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/markdown")
+}
+
+func TestProjectFileController_GetContent_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	ctrl := scenarioController.NewProjectFileController(db)
+	r.GET("/api/v1/project-files/:id/content", ctrl.GetContent)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/project-files/"+uuid.New().String()+"/content", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestProjectFileController_GetContent_InvalidID(t *testing.T) {
+	db := setupTestDB(t)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	ctrl := scenarioController.NewProjectFileController(db)
+	r.GET("/api/v1/project-files/:id/content", ctrl.GetContent)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/project-files/not-a-uuid/content", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// ---------------------------------------------------------------------------
+// 10. Migration test — SKIPPED
 // ---------------------------------------------------------------------------
 //
 // NOTE: migrateInlineContentToProjectFiles is unexported (in src/initialization/database.go),

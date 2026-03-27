@@ -46,6 +46,11 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	groupScenarioRoutes.POST("/import-json", middleware.AuthManagement(), controller.GroupImportJSON)
 	groupScenarioRoutes.POST("/upload", middleware.AuthManagement(), controller.GroupUploadScenario)
 
+	// ProjectFile custom routes
+	projectFileCtrl := NewProjectFileController(db)
+	projectFileRoutes := router.Group("/project-files")
+	projectFileRoutes.GET("/:id/content", middleware.AuthManagement(), projectFileCtrl.GetContent)
+
 	// Teacher dashboard routes
 	teacherCtrl := NewTeacherController(db)
 	teacherRoutes := router.Group("/teacher")
