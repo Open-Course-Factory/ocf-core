@@ -3,6 +3,7 @@ package scenarios_test
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -778,14 +779,205 @@ func TestProjectFileController_GetContent_InvalidID(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 10. Migration test — SKIPPED
+// 10. GET /project-files/by-scenario/:scenarioId endpoint
 // ---------------------------------------------------------------------------
-//
-// NOTE: migrateInlineContentToProjectFiles is unexported (in src/initialization/database.go),
-// so it cannot be called directly from this test package. The migration's behavior is
-// indirectly verified by the import tests above (which exercise dual-write via
-// createProjectFilesForScenario). A dedicated migration test would require either:
-//   - Exporting the function (e.g., MigrateInlineContentToProjectFiles)
-//   - Moving the test into the initialization package
-//   - Using a test helper that calls the function via reflection
-//
+
+func TestProjectFileController_GetByScenario_Success(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create ProjectFiles
+	introFile := models.ProjectFile{Filename: "intro.md", ContentType: "markdown", Content: "# Intro", StorageType: "database", SizeBytes: 7}
+	verifyFile := models.ProjectFile{Filename: "verify.sh", ContentType: "script", Content: "#!/bin/bash\ntrue", StorageType: "database", SizeBytes: 16}
+	textFile := models.ProjectFile{Filename: "text.md", ContentType: "markdown", Content: "Step text", StorageType: "database", SizeBytes: 9}
+	require.NoError(t, db.Create(&introFile).Error)
+	require.NoError(t, db.Create(&verifyFile).Error)
+	require.NoError(t, db.Create(&textFile).Error)
+
+	// Create scenario referencing these files
+	scenario := models.Scenario{
+		Name:        "by-scenario-test",
+		Title:       "By Scenario Test",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID: "user-1",
+		IntroFileID: &introFile.ID,
+		Steps: []models.ScenarioStep{
+			{
+				Order:          0,
+				Title:          "Step 1",
+				VerifyScriptID: &verifyFile.ID,
+				TextFileID:     &textFile.ID,
+			},
+		},
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	api := r.Group("/api/v1")
+	api.Use(func(c *gin.Context) {
+		c.Set("userId", "test-user")
+		c.Set("userRoles", []string{"admin"})
+		c.Next()
+	})
+	ctrl := scenarioController.NewProjectFileController(db)
+	api.GET("/project-files/by-scenario/:scenarioId", ctrl.GetByScenario)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/project-files/by-scenario/"+scenario.ID.String(), nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var result []map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+	assert.Len(t, result, 3) // intro + verify + text
+
+	// Verify each item has used_as and no content
+	usedAsValues := make(map[string]bool)
+	for _, item := range result {
+		usedAs, ok := item["used_as"].(string)
+		require.True(t, ok)
+		usedAsValues[usedAs] = true
+		_, hasContent := item["content"]
+		assert.False(t, hasContent, "by-scenario response should not include content")
+	}
+	assert.True(t, usedAsValues["intro"])
+	assert.True(t, usedAsValues["Step 1 — verify_script"])
+	assert.True(t, usedAsValues["Step 1 — text"])
+}
+
+func TestProjectFileController_GetByScenario_Empty(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Scenario with no ProjectFile FKs
+	scenario := models.Scenario{
+		Name:        "no-files-test",
+		Title:       "No Files",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID: "user-1",
+		Steps: []models.ScenarioStep{
+			{Order: 0, Title: "Step 1"},
+		},
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	ctrl := scenarioController.NewProjectFileController(db)
+	r.GET("/api/v1/project-files/by-scenario/:scenarioId", ctrl.GetByScenario)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/project-files/by-scenario/"+scenario.ID.String(), nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var result []map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+	assert.Len(t, result, 0)
+}
+
+func TestProjectFileController_GetByScenario_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	ctrl := scenarioController.NewProjectFileController(db)
+	r.GET("/api/v1/project-files/by-scenario/:scenarioId", ctrl.GetByScenario)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/project-files/by-scenario/"+uuid.New().String(), nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+// ---------------------------------------------------------------------------
+// 11. GET /project-files/:id/usage endpoint
+// ---------------------------------------------------------------------------
+
+func TestProjectFileController_GetUsage_Success(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create a ProjectFile
+	file := models.ProjectFile{Filename: "shared.sh", ContentType: "script", Content: "#!/bin/bash\ntrue", StorageType: "database"}
+	require.NoError(t, db.Create(&file).Error)
+
+	// Reference it from a scenario (intro) and a step (verify)
+	scenario := models.Scenario{
+		Name:        "usage-test",
+		Title:       "Usage Test",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID: "user-1",
+		IntroFileID: &file.ID,
+		Steps: []models.ScenarioStep{
+			{
+				Order:          0,
+				Title:          "Verify Step",
+				VerifyScriptID: &file.ID,
+			},
+		},
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	api := r.Group("/api/v1")
+	ctrl := scenarioController.NewProjectFileController(db)
+	api.GET("/project-files/:id/usage", ctrl.GetUsage)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/project-files/"+file.ID.String()+"/usage", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var result []map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+	assert.Len(t, result, 2) // scenario intro + step verify
+
+	fields := make(map[string]bool)
+	for _, ref := range result {
+		fields[ref["field"].(string)] = true
+		assert.Equal(t, "usage-test", ref["scenario_name"])
+	}
+	assert.True(t, fields["intro"])
+	assert.True(t, fields["verify_script"])
+}
+
+func TestProjectFileController_GetUsage_Unused(t *testing.T) {
+	db := setupTestDB(t)
+
+	file := models.ProjectFile{Filename: "unused.sh", ContentType: "script", Content: "echo unused", StorageType: "database"}
+	require.NoError(t, db.Create(&file).Error)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	ctrl := scenarioController.NewProjectFileController(db)
+	r.GET("/api/v1/project-files/:id/usage", ctrl.GetUsage)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/project-files/"+file.ID.String()+"/usage", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var result []map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result))
+	assert.Len(t, result, 0)
+}
+
+func TestProjectFileController_GetUsage_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	ctrl := scenarioController.NewProjectFileController(db)
+	r.GET("/api/v1/project-files/:id/usage", ctrl.GetUsage)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/project-files/"+uuid.New().String()+"/usage", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}

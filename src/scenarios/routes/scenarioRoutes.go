@@ -49,7 +49,9 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	// ProjectFile custom routes
 	projectFileCtrl := NewProjectFileController(db)
 	projectFileRoutes := router.Group("/project-files")
+	projectFileRoutes.GET("/by-scenario/:scenarioId", middleware.AuthManagement(), projectFileCtrl.GetByScenario)
 	projectFileRoutes.GET("/:id/content", middleware.AuthManagement(), projectFileCtrl.GetContent)
+	projectFileRoutes.GET("/:id/usage", middleware.AuthManagement(), projectFileCtrl.GetUsage)
 
 	// Teacher dashboard routes
 	teacherCtrl := NewTeacherController(db)
