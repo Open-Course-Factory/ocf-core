@@ -477,7 +477,7 @@ func migrateInlineContentToProjectFiles(db *gorm.DB) {
 
 					if step.VerifyScript != "" && step.VerifyScriptID == nil {
 						file := scenarioModels.ProjectFile{
-							Filename:    "verify.sh",
+							Name:        "verify.sh",
 							RelPath:     stepDir + "/verify.sh",
 							ContentType: "script",
 							Content:     step.VerifyScript,
@@ -494,7 +494,7 @@ func migrateInlineContentToProjectFiles(db *gorm.DB) {
 
 					if step.BackgroundScript != "" && step.BackgroundScriptID == nil {
 						file := scenarioModels.ProjectFile{
-							Filename:    "background.sh",
+							Name:        "background.sh",
 							RelPath:     stepDir + "/background.sh",
 							ContentType: "script",
 							Content:     step.BackgroundScript,
@@ -511,7 +511,7 @@ func migrateInlineContentToProjectFiles(db *gorm.DB) {
 
 					if step.ForegroundScript != "" && step.ForegroundScriptID == nil {
 						file := scenarioModels.ProjectFile{
-							Filename:    "foreground.sh",
+							Name:        "foreground.sh",
 							RelPath:     stepDir + "/foreground.sh",
 							ContentType: "script",
 							Content:     step.ForegroundScript,
@@ -528,7 +528,7 @@ func migrateInlineContentToProjectFiles(db *gorm.DB) {
 
 					if step.TextContent != "" && step.TextFileID == nil {
 						file := scenarioModels.ProjectFile{
-							Filename:    "text.md",
+							Name:        "text.md",
 							RelPath:     stepDir + "/text.md",
 							ContentType: "markdown",
 							Content:     step.TextContent,
@@ -545,7 +545,7 @@ func migrateInlineContentToProjectFiles(db *gorm.DB) {
 
 					if step.HintContent != "" && step.HintFileID == nil {
 						file := scenarioModels.ProjectFile{
-							Filename:    "hint.md",
+							Name:        "hint.md",
 							RelPath:     stepDir + "/hint.md",
 							ContentType: "markdown",
 							Content:     step.HintContent,
@@ -579,7 +579,7 @@ func migrateInlineContentToProjectFiles(db *gorm.DB) {
 		err := db.Transaction(func(tx *gorm.DB) error {
 			if scenario.IntroText != "" && scenario.IntroFileID == nil {
 				file := scenarioModels.ProjectFile{
-					Filename:    "intro.md",
+					Name:        "intro.md",
 					RelPath:     "intro.md",
 					ContentType: "markdown",
 					Content:     scenario.IntroText,
@@ -596,7 +596,7 @@ func migrateInlineContentToProjectFiles(db *gorm.DB) {
 
 			if scenario.FinishText != "" && scenario.FinishFileID == nil {
 				file := scenarioModels.ProjectFile{
-					Filename:    "finish.md",
+					Name:        "finish.md",
 					RelPath:     "finish.md",
 					ContentType: "markdown",
 					Content:     scenario.FinishText,

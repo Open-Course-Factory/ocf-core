@@ -63,7 +63,7 @@ func (c *projectFileController) GetContent(ctx *gin.Context) {
 // projectFileListItem is a DTO for the by-scenario list (metadata only, no content).
 type projectFileListItem struct {
 	ID          uuid.UUID `json:"id"`
-	Filename    string    `json:"filename"`
+	Name        string    `json:"name"`
 	RelPath     string    `json:"rel_path,omitempty"`
 	ContentType string    `json:"content_type"`
 	StorageType string    `json:"storage_type"`
@@ -173,7 +173,7 @@ func (c *projectFileController) GetByScenario(ctx *gin.Context) {
 		}
 		result = append(result, projectFileListItem{
 			ID:          f.ID,
-			Filename:    f.Filename,
+			Name:        f.Name,
 			RelPath:     f.RelPath,
 			ContentType: f.ContentType,
 			StorageType: f.StorageType,

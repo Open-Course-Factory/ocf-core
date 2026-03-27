@@ -422,7 +422,7 @@ func createProjectFilesForScenario(tx *gorm.DB, dbScenario *models.Scenario, src
 	// Scenario-level files
 	if srcScenario.IntroText != "" {
 		file := models.ProjectFile{
-			Filename:    "intro.md",
+			Name:        "intro.md",
 			RelPath:     "intro.md",
 			ContentType: "markdown",
 			Content:     srcScenario.IntroText,
@@ -439,7 +439,7 @@ func createProjectFilesForScenario(tx *gorm.DB, dbScenario *models.Scenario, src
 
 	if srcScenario.FinishText != "" {
 		file := models.ProjectFile{
-			Filename:    "finish.md",
+			Name:        "finish.md",
 			RelPath:     "finish.md",
 			ContentType: "markdown",
 			Content:     srcScenario.FinishText,
@@ -488,7 +488,7 @@ func createProjectFilesForScenario(tx *gorm.DB, dbScenario *models.Scenario, src
 
 		if srcStep.VerifyScript != "" {
 			file := models.ProjectFile{
-				Filename:    "verify.sh",
+				Name:        "verify.sh",
 				RelPath:     relPaths.Verify,
 				ContentType: "script",
 				Content:     srcStep.VerifyScript,
@@ -505,7 +505,7 @@ func createProjectFilesForScenario(tx *gorm.DB, dbScenario *models.Scenario, src
 
 		if srcStep.BackgroundScript != "" {
 			file := models.ProjectFile{
-				Filename:    "background.sh",
+				Name:        "background.sh",
 				RelPath:     relPaths.Background,
 				ContentType: "script",
 				Content:     srcStep.BackgroundScript,
@@ -522,7 +522,7 @@ func createProjectFilesForScenario(tx *gorm.DB, dbScenario *models.Scenario, src
 
 		if srcStep.ForegroundScript != "" {
 			file := models.ProjectFile{
-				Filename:    "foreground.sh",
+				Name:        "foreground.sh",
 				RelPath:     relPaths.Foreground,
 				ContentType: "script",
 				Content:     srcStep.ForegroundScript,
@@ -539,7 +539,7 @@ func createProjectFilesForScenario(tx *gorm.DB, dbScenario *models.Scenario, src
 
 		if srcStep.TextContent != "" {
 			file := models.ProjectFile{
-				Filename:    "text.md",
+				Name:        "text.md",
 				RelPath:     relPaths.Text,
 				ContentType: "markdown",
 				Content:     srcStep.TextContent,
@@ -556,7 +556,7 @@ func createProjectFilesForScenario(tx *gorm.DB, dbScenario *models.Scenario, src
 
 		if srcStep.HintContent != "" {
 			file := models.ProjectFile{
-				Filename:    "hint.md",
+				Name:        "hint.md",
 				RelPath:     relPaths.Hint,
 				ContentType: "markdown",
 				Content:     srcStep.HintContent,

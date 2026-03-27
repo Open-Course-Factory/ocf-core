@@ -29,7 +29,7 @@ func TestProjectFile_Create_Success(t *testing.T) {
 	db := setupTestDB(t)
 
 	file := models.ProjectFile{
-		Filename:    "verify.sh",
+		Name:        "verify.sh",
 		ContentType: "script",
 		Content:     "#!/bin/bash\nexit 0",
 		RelPath:     "step1/verify.sh",
@@ -41,7 +41,7 @@ func TestProjectFile_Create_Success(t *testing.T) {
 	err := db.First(&found, "id = ?", file.ID).Error
 	require.NoError(t, err)
 
-	assert.Equal(t, "verify.sh", found.Filename)
+	assert.Equal(t, "verify.sh", found.Name)
 	assert.Equal(t, "script", found.ContentType)
 	assert.Equal(t, "#!/bin/bash\nexit 0", found.Content)
 	assert.Equal(t, "step1/verify.sh", found.RelPath)
@@ -54,15 +54,15 @@ func TestProjectFile_Update_Success(t *testing.T) {
 	db := setupTestDB(t)
 
 	file := models.ProjectFile{
-		Filename:    "original.sh",
+		Name:        "original.sh",
 		ContentType: "script",
 		Content:     "echo hello",
 	}
 	require.NoError(t, db.Create(&file).Error)
 
-	// Update filename and content
+	// Update name and content
 	err := db.Model(&file).Updates(map[string]interface{}{
-		"filename": "updated.sh",
+		"name": "updated.sh",
 		"content":  "echo updated",
 	}).Error
 	require.NoError(t, err)
@@ -71,7 +71,7 @@ func TestProjectFile_Update_Success(t *testing.T) {
 	var found models.ProjectFile
 	require.NoError(t, db.First(&found, "id = ?", file.ID).Error)
 
-	assert.Equal(t, "updated.sh", found.Filename)
+	assert.Equal(t, "updated.sh", found.Name)
 	assert.Equal(t, "echo updated", found.Content)
 	assert.Equal(t, "script", found.ContentType) // unchanged
 }
@@ -80,7 +80,7 @@ func TestProjectFile_Delete_Success(t *testing.T) {
 	db := setupTestDB(t)
 
 	file := models.ProjectFile{
-		Filename:    "to-delete.sh",
+		Name:        "to-delete.sh",
 		ContentType: "script",
 		Content:     "rm -rf /tmp/test",
 	}
@@ -104,7 +104,7 @@ func TestProjectFile_Create_AllContentTypes(t *testing.T) {
 	db := setupTestDB(t)
 
 	types := []struct {
-		filename    string
+		name        string
 		contentType string
 		content     string
 	}{
@@ -115,7 +115,7 @@ func TestProjectFile_Create_AllContentTypes(t *testing.T) {
 
 	for _, tt := range types {
 		file := models.ProjectFile{
-			Filename:    tt.filename,
+			Name:        tt.name,
 			ContentType: tt.contentType,
 			Content:     tt.content,
 		}
@@ -146,7 +146,7 @@ func TestScenarioStep_WithProjectFileFK(t *testing.T) {
 
 	// Create a ProjectFile for the verify script
 	verifyFile := models.ProjectFile{
-		Filename:    "verify.sh",
+		Name:        "verify.sh",
 		ContentType: "script",
 		Content:     "#!/bin/bash\ntest -f /tmp/done",
 	}
@@ -187,21 +187,21 @@ func TestScenario_WithProjectFileFKs(t *testing.T) {
 
 	// Create 3 ProjectFiles
 	setupFile := models.ProjectFile{
-		Filename:    "setup.sh",
+		Name:        "setup.sh",
 		ContentType: "script",
 		Content:     "#!/bin/bash\napt-get update",
 	}
 	require.NoError(t, db.Create(&setupFile).Error)
 
 	introFile := models.ProjectFile{
-		Filename:    "intro.md",
+		Name:        "intro.md",
 		ContentType: "markdown",
 		Content:     "# Welcome to the lab",
 	}
 	require.NoError(t, db.Create(&introFile).Error)
 
 	finishFile := models.ProjectFile{
-		Filename:    "finish.md",
+		Name:        "finish.md",
 		ContentType: "markdown",
 		Content:     "# Congratulations!",
 	}
@@ -240,7 +240,7 @@ func TestResolveScriptContent_WithFileID_ReturnsFileContent(t *testing.T) {
 	db := setupTestDB(t)
 
 	file := models.ProjectFile{
-		Filename:    "resolve-test.sh",
+		Name:        "resolve-test.sh",
 		ContentType: "script",
 		Content:     "#!/bin/bash\necho resolved",
 	}
@@ -324,7 +324,7 @@ func TestImport_CreatesProjectFiles(t *testing.T) {
 	require.NotNil(t, reloaded.IntroFileID, "IntroFileID should be set after import")
 	var introFile models.ProjectFile
 	require.NoError(t, db.First(&introFile, "id = ?", *reloaded.IntroFileID).Error)
-	assert.Equal(t, "intro.md", introFile.Filename)
+	assert.Equal(t, "intro.md", introFile.Name)
 	assert.Equal(t, "markdown", introFile.ContentType)
 	assert.Equal(t, "# Welcome to the lab", introFile.Content)
 	assert.Equal(t, "intro.md", introFile.RelPath)
@@ -333,7 +333,7 @@ func TestImport_CreatesProjectFiles(t *testing.T) {
 	require.NotNil(t, reloaded.FinishFileID, "FinishFileID should be set after import")
 	var finishFile models.ProjectFile
 	require.NoError(t, db.First(&finishFile, "id = ?", *reloaded.FinishFileID).Error)
-	assert.Equal(t, "finish.md", finishFile.Filename)
+	assert.Equal(t, "finish.md", finishFile.Name)
 	assert.Equal(t, "markdown", finishFile.ContentType)
 	assert.Equal(t, "# Congratulations!", finishFile.Content)
 	assert.Equal(t, "finish.md", finishFile.RelPath)
@@ -346,7 +346,7 @@ func TestImport_CreatesProjectFiles(t *testing.T) {
 	require.NotNil(t, step.VerifyScriptID, "VerifyScriptID should be set after import")
 	var verifyFile models.ProjectFile
 	require.NoError(t, db.First(&verifyFile, "id = ?", *step.VerifyScriptID).Error)
-	assert.Equal(t, "verify.sh", verifyFile.Filename)
+	assert.Equal(t, "verify.sh", verifyFile.Name)
 	assert.Equal(t, "script", verifyFile.ContentType)
 	assert.Equal(t, "#!/bin/bash\ntest -d /tmp", verifyFile.Content)
 	assert.Equal(t, "step1/verify.sh", verifyFile.RelPath)
@@ -355,7 +355,7 @@ func TestImport_CreatesProjectFiles(t *testing.T) {
 	require.NotNil(t, step.TextFileID, "TextFileID should be set after import")
 	var textFile models.ProjectFile
 	require.NoError(t, db.First(&textFile, "id = ?", *step.TextFileID).Error)
-	assert.Equal(t, "text.md", textFile.Filename)
+	assert.Equal(t, "text.md", textFile.Name)
 	assert.Equal(t, "markdown", textFile.ContentType)
 	assert.Equal(t, "Navigate to /tmp", textFile.Content)
 	assert.Equal(t, "step1/text.md", textFile.RelPath)
@@ -364,7 +364,7 @@ func TestImport_CreatesProjectFiles(t *testing.T) {
 	require.NotNil(t, step.HintFileID, "HintFileID should be set after import")
 	var hintFile models.ProjectFile
 	require.NoError(t, db.First(&hintFile, "id = ?", *step.HintFileID).Error)
-	assert.Equal(t, "hint.md", hintFile.Filename)
+	assert.Equal(t, "hint.md", hintFile.Name)
 	assert.Equal(t, "markdown", hintFile.ContentType)
 	assert.Equal(t, "Try using cd", hintFile.Content)
 	assert.Equal(t, "step1/hint.md", hintFile.RelPath)
@@ -373,7 +373,7 @@ func TestImport_CreatesProjectFiles(t *testing.T) {
 	require.NotNil(t, step.BackgroundScriptID, "BackgroundScriptID should be set after import")
 	var bgFile models.ProjectFile
 	require.NoError(t, db.First(&bgFile, "id = ?", *step.BackgroundScriptID).Error)
-	assert.Equal(t, "background.sh", bgFile.Filename)
+	assert.Equal(t, "background.sh", bgFile.Name)
 	assert.Equal(t, "script", bgFile.ContentType)
 	assert.Equal(t, "#!/bin/bash\nmkdir -p /tmp/test", bgFile.Content)
 	assert.Equal(t, "step1/background.sh", bgFile.RelPath)
@@ -506,7 +506,7 @@ func TestExport_ResolvesFromProjectFile(t *testing.T) {
 
 	// Create ProjectFiles with content DIFFERENT from inline fields
 	introFile := models.ProjectFile{
-		Filename:    "intro.md",
+		Name:        "intro.md",
 		ContentType: "markdown",
 		Content:     "# ProjectFile intro content",
 		StorageType: "database",
@@ -514,7 +514,7 @@ func TestExport_ResolvesFromProjectFile(t *testing.T) {
 	require.NoError(t, db.Create(&introFile).Error)
 
 	finishFile := models.ProjectFile{
-		Filename:    "finish.md",
+		Name:        "finish.md",
 		ContentType: "markdown",
 		Content:     "# ProjectFile finish content",
 		StorageType: "database",
@@ -522,7 +522,7 @@ func TestExport_ResolvesFromProjectFile(t *testing.T) {
 	require.NoError(t, db.Create(&finishFile).Error)
 
 	verifyFile := models.ProjectFile{
-		Filename:    "verify.sh",
+		Name:        "verify.sh",
 		ContentType: "script",
 		Content:     "#!/bin/bash\necho projectfile-verify",
 		StorageType: "database",
@@ -530,7 +530,7 @@ func TestExport_ResolvesFromProjectFile(t *testing.T) {
 	require.NoError(t, db.Create(&verifyFile).Error)
 
 	textFile := models.ProjectFile{
-		Filename:    "text.md",
+		Name:        "text.md",
 		ContentType: "markdown",
 		Content:     "ProjectFile step text content",
 		StorageType: "database",
@@ -538,7 +538,7 @@ func TestExport_ResolvesFromProjectFile(t *testing.T) {
 	require.NoError(t, db.Create(&textFile).Error)
 
 	hintFile := models.ProjectFile{
-		Filename:    "hint.md",
+		Name:        "hint.md",
 		ContentType: "markdown",
 		Content:     "ProjectFile hint content",
 		StorageType: "database",
@@ -546,7 +546,7 @@ func TestExport_ResolvesFromProjectFile(t *testing.T) {
 	require.NoError(t, db.Create(&hintFile).Error)
 
 	bgFile := models.ProjectFile{
-		Filename:    "background.sh",
+		Name:        "background.sh",
 		ContentType: "script",
 		Content:     "#!/bin/bash\necho projectfile-bg",
 		StorageType: "database",
@@ -605,7 +605,7 @@ func TestExportArchive_ResolvesFromProjectFile(t *testing.T) {
 
 	// Create ProjectFiles with content DIFFERENT from inline fields
 	introFile := models.ProjectFile{
-		Filename:    "intro.md",
+		Name:        "intro.md",
 		ContentType: "markdown",
 		Content:     "# Archive PF intro",
 		StorageType: "database",
@@ -613,7 +613,7 @@ func TestExportArchive_ResolvesFromProjectFile(t *testing.T) {
 	require.NoError(t, db.Create(&introFile).Error)
 
 	finishFile := models.ProjectFile{
-		Filename:    "finish.md",
+		Name:        "finish.md",
 		ContentType: "markdown",
 		Content:     "# Archive PF finish",
 		StorageType: "database",
@@ -621,7 +621,7 @@ func TestExportArchive_ResolvesFromProjectFile(t *testing.T) {
 	require.NoError(t, db.Create(&finishFile).Error)
 
 	verifyFile := models.ProjectFile{
-		Filename:    "verify.sh",
+		Name:        "verify.sh",
 		ContentType: "script",
 		Content:     "#!/bin/bash\necho archive-pf-verify",
 		StorageType: "database",
@@ -629,7 +629,7 @@ func TestExportArchive_ResolvesFromProjectFile(t *testing.T) {
 	require.NoError(t, db.Create(&verifyFile).Error)
 
 	textFile := models.ProjectFile{
-		Filename:    "text.md",
+		Name:        "text.md",
 		ContentType: "markdown",
 		Content:     "Archive PF step text",
 		StorageType: "database",
@@ -695,7 +695,7 @@ func TestProjectFileController_GetContent_Script(t *testing.T) {
 	db := setupTestDB(t)
 
 	file := models.ProjectFile{
-		Filename:    "verify.sh",
+		Name:        "verify.sh",
 		ContentType: "script",
 		Content:     "#!/bin/bash\necho hello",
 		StorageType: "database",
@@ -726,7 +726,7 @@ func TestProjectFileController_GetContent_Markdown(t *testing.T) {
 	db := setupTestDB(t)
 
 	file := models.ProjectFile{
-		Filename:    "intro.md",
+		Name:        "intro.md",
 		ContentType: "markdown",
 		Content:     "# Welcome\n\nThis is the intro.",
 		StorageType: "database",
@@ -786,9 +786,9 @@ func TestProjectFileController_GetByScenario_Success(t *testing.T) {
 	db := setupTestDB(t)
 
 	// Create ProjectFiles
-	introFile := models.ProjectFile{Filename: "intro.md", ContentType: "markdown", Content: "# Intro", StorageType: "database", SizeBytes: 7}
-	verifyFile := models.ProjectFile{Filename: "verify.sh", ContentType: "script", Content: "#!/bin/bash\ntrue", StorageType: "database", SizeBytes: 16}
-	textFile := models.ProjectFile{Filename: "text.md", ContentType: "markdown", Content: "Step text", StorageType: "database", SizeBytes: 9}
+	introFile := models.ProjectFile{Name: "intro.md", ContentType: "markdown", Content: "# Intro", StorageType: "database", SizeBytes: 7}
+	verifyFile := models.ProjectFile{Name: "verify.sh", ContentType: "script", Content: "#!/bin/bash\ntrue", StorageType: "database", SizeBytes: 16}
+	textFile := models.ProjectFile{Name: "text.md", ContentType: "markdown", Content: "Step text", StorageType: "database", SizeBytes: 9}
 	require.NoError(t, db.Create(&introFile).Error)
 	require.NoError(t, db.Create(&verifyFile).Error)
 	require.NoError(t, db.Create(&textFile).Error)
@@ -900,7 +900,7 @@ func TestProjectFileController_GetUsage_Success(t *testing.T) {
 	db := setupTestDB(t)
 
 	// Create a ProjectFile
-	file := models.ProjectFile{Filename: "shared.sh", ContentType: "script", Content: "#!/bin/bash\ntrue", StorageType: "database"}
+	file := models.ProjectFile{Name: "shared.sh", ContentType: "script", Content: "#!/bin/bash\ntrue", StorageType: "database"}
 	require.NoError(t, db.Create(&file).Error)
 
 	// Reference it from a scenario (intro) and a step (verify)
@@ -948,7 +948,7 @@ func TestProjectFileController_GetUsage_Success(t *testing.T) {
 func TestProjectFileController_GetUsage_Unused(t *testing.T) {
 	db := setupTestDB(t)
 
-	file := models.ProjectFile{Filename: "unused.sh", ContentType: "script", Content: "echo unused", StorageType: "database"}
+	file := models.ProjectFile{Name: "unused.sh", ContentType: "script", Content: "echo unused", StorageType: "database"}
 	require.NoError(t, db.Create(&file).Error)
 
 	gin.SetMode(gin.TestMode)

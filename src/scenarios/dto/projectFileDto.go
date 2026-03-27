@@ -8,7 +8,7 @@ import (
 
 // CreateProjectFileInput - DTO for creating a new project file
 type CreateProjectFileInput struct {
-	Filename    string `json:"filename" mapstructure:"filename" binding:"required"`
+	Name        string `json:"name" mapstructure:"name" binding:"required"`
 	RelPath     string `json:"rel_path,omitempty" mapstructure:"rel_path"`
 	ContentType string `json:"content_type" mapstructure:"content_type" binding:"required,oneof=script markdown text"`
 	Content     string `json:"content" mapstructure:"content" binding:"required"`
@@ -19,7 +19,7 @@ type CreateProjectFileInput struct {
 
 // EditProjectFileInput - DTO for editing a project file (partial updates)
 type EditProjectFileInput struct {
-	Filename    *string `json:"filename,omitempty" mapstructure:"filename"`
+	Name        *string `json:"name,omitempty" mapstructure:"name"`
 	RelPath     *string `json:"rel_path,omitempty" mapstructure:"rel_path"`
 	ContentType *string `json:"content_type,omitempty" mapstructure:"content_type" binding:"omitempty,oneof=script markdown text"`
 	Content     *string `json:"content,omitempty" mapstructure:"content"`
@@ -31,7 +31,7 @@ type EditProjectFileInput struct {
 // ProjectFileOutput - DTO for project file responses
 type ProjectFileOutput struct {
 	ID          uuid.UUID `json:"id"`
-	Filename    string    `json:"filename"`
+	Name        string    `json:"name"`
 	RelPath     string    `json:"rel_path,omitempty"`
 	ContentType string    `json:"content_type"`
 	Content     string    `json:"content,omitempty"`

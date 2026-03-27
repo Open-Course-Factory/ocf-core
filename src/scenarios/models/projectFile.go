@@ -7,7 +7,7 @@ import (
 // ProjectFile represents a reusable file (script, markdown, text) stored in the database
 type ProjectFile struct {
 	entityManagementModels.BaseModel
-	Filename    string `gorm:"type:varchar(255);not null" json:"filename" mapstructure:"filename"`
+	Name        string `gorm:"type:varchar(255);not null" json:"name" mapstructure:"name"`
 	RelPath     string `gorm:"type:varchar(1000)" json:"rel_path,omitempty" mapstructure:"rel_path"`
 	ContentType string `gorm:"type:varchar(50);not null" json:"content_type" mapstructure:"content_type"` // script, markdown, text
 	Content     string `gorm:"type:text" json:"-" mapstructure:"content"`                                 // hidden from JSON by default

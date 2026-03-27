@@ -19,7 +19,7 @@ func RegisterProjectFile(service *ems.EntityRegistrationService) {
 				ModelToDto: func(model *models.ProjectFile) (dto.ProjectFileOutput, error) {
 					return dto.ProjectFileOutput{
 						ID:          model.ID,
-						Filename:    model.Filename,
+						Name:        model.Name,
 						RelPath:     model.RelPath,
 						ContentType: model.ContentType,
 						Content:     model.Content,
@@ -32,7 +32,7 @@ func RegisterProjectFile(service *ems.EntityRegistrationService) {
 				},
 				DtoToModel: func(input dto.CreateProjectFileInput) *models.ProjectFile {
 					return &models.ProjectFile{
-						Filename:    input.Filename,
+						Name:        input.Name,
 						RelPath:     input.RelPath,
 						ContentType: input.ContentType,
 						Content:     input.Content,
@@ -43,8 +43,8 @@ func RegisterProjectFile(service *ems.EntityRegistrationService) {
 				},
 				DtoToMap: func(input dto.EditProjectFileInput) map[string]any {
 					updates := make(map[string]any)
-					if input.Filename != nil {
-						updates["filename"] = *input.Filename
+					if input.Name != nil {
+						updates["name"] = *input.Name
 					}
 					if input.RelPath != nil {
 						updates["rel_path"] = *input.RelPath
