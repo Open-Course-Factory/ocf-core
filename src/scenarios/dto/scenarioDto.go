@@ -26,6 +26,9 @@ type CreateScenarioInput struct {
 	IntroText      string     `json:"intro_text,omitempty" mapstructure:"intro_text"`
 	FinishText     string     `json:"finish_text,omitempty" mapstructure:"finish_text"`
 	OrganizationID *uuid.UUID `json:"organization_id,omitempty" mapstructure:"organization_id"`
+	SetupScriptID  *uuid.UUID `json:"setup_script_id,omitempty" mapstructure:"setup_script_id"`
+	IntroFileID    *uuid.UUID `json:"intro_file_id,omitempty" mapstructure:"intro_file_id"`
+	FinishFileID   *uuid.UUID `json:"finish_file_id,omitempty" mapstructure:"finish_file_id"`
 }
 
 // EditScenarioInput - DTO for editing a scenario (partial updates)
@@ -49,6 +52,9 @@ type EditScenarioInput struct {
 	IntroText      *string    `json:"intro_text,omitempty" mapstructure:"intro_text"`
 	FinishText     *string    `json:"finish_text,omitempty" mapstructure:"finish_text"`
 	OrganizationID *uuid.UUID `json:"organization_id,omitempty" mapstructure:"organization_id"`
+	SetupScriptID  *uuid.UUID `json:"setup_script_id,omitempty" mapstructure:"setup_script_id"`
+	IntroFileID    *uuid.UUID `json:"intro_file_id,omitempty" mapstructure:"intro_file_id"`
+	FinishFileID   *uuid.UUID `json:"finish_file_id,omitempty" mapstructure:"finish_file_id"`
 }
 
 // ScenarioOutput - DTO for scenario responses
@@ -73,6 +79,9 @@ type ScenarioOutput struct {
 	FinishText     string             `json:"finish_text,omitempty"`
 	CreatedByID    string             `json:"created_by_id"`
 	OrganizationID *uuid.UUID         `json:"organization_id,omitempty"`
+	SetupScriptID  *uuid.UUID         `json:"setup_script_id,omitempty"`
+	IntroFileID    *uuid.UUID         `json:"intro_file_id,omitempty"`
+	FinishFileID   *uuid.UUID         `json:"finish_file_id,omitempty"`
 	CreatedAt      time.Time          `json:"created_at"`
 	UpdatedAt      time.Time          `json:"updated_at"`
 	Steps          []ScenarioStepOutput `json:"steps,omitempty"`

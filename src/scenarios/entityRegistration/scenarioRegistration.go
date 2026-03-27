@@ -38,6 +38,9 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						FinishText:     model.FinishText,
 						CreatedByID:    model.CreatedByID,
 						OrganizationID: model.OrganizationID,
+						SetupScriptID:  model.SetupScriptID,
+						IntroFileID:    model.IntroFileID,
+						FinishFileID:   model.FinishFileID,
 						CreatedAt:      model.CreatedAt,
 						UpdatedAt:      model.UpdatedAt,
 					}
@@ -46,17 +49,22 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						steps := make([]dto.ScenarioStepOutput, 0, len(model.Steps))
 						for _, step := range model.Steps {
 							steps = append(steps, dto.ScenarioStepOutput{
-								ID:               step.ID,
-								ScenarioID:       step.ScenarioID,
-								Order:            step.Order,
-								Title:            step.Title,
-								TextContent:      step.TextContent,
-								HintContent:      step.HintContent,
-								HasFlag:          step.HasFlag,
-								FlagPath:         step.FlagPath,
-								FlagLevel:        step.FlagLevel,
-								CreatedAt:        step.CreatedAt,
-								UpdatedAt:        step.UpdatedAt,
+								ID:                 step.ID,
+								ScenarioID:         step.ScenarioID,
+								Order:              step.Order,
+								Title:              step.Title,
+								TextContent:        step.TextContent,
+								HintContent:        step.HintContent,
+								HasFlag:            step.HasFlag,
+								FlagPath:           step.FlagPath,
+								FlagLevel:          step.FlagLevel,
+								VerifyScriptID:     step.VerifyScriptID,
+								BackgroundScriptID: step.BackgroundScriptID,
+								ForegroundScriptID: step.ForegroundScriptID,
+								TextFileID:         step.TextFileID,
+								HintFileID:         step.HintFileID,
+								CreatedAt:          step.CreatedAt,
+								UpdatedAt:          step.UpdatedAt,
 							})
 						}
 						output.Steps = steps
@@ -84,6 +92,9 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						IntroText:      input.IntroText,
 						FinishText:     input.FinishText,
 						OrganizationID: input.OrganizationID,
+						SetupScriptID:  input.SetupScriptID,
+						IntroFileID:    input.IntroFileID,
+						FinishFileID:   input.FinishFileID,
 					}
 					return scenario
 				},
@@ -142,6 +153,15 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 					}
 					if input.OrganizationID != nil {
 						updates["organization_id"] = *input.OrganizationID
+					}
+					if input.SetupScriptID != nil {
+						updates["setup_script_id"] = *input.SetupScriptID
+					}
+					if input.IntroFileID != nil {
+						updates["intro_file_id"] = *input.IntroFileID
+					}
+					if input.FinishFileID != nil {
+						updates["finish_file_id"] = *input.FinishFileID
 					}
 					return updates
 				},

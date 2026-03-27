@@ -200,12 +200,16 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 		}
 	}
 
+	// Resolve text/hint content from ProjectFile if available
+	textContent := ResolveScriptContent(s.db, currentStep.TextFileID, currentStep.TextContent)
+	hintContent := ResolveScriptContent(s.db, currentStep.HintFileID, currentStep.HintContent)
+
 	response := &dto.CurrentStepResponse{
 		StepOrder:  currentStep.Order,
 		TotalSteps: len(session.Scenario.Steps),
 		Title:      currentStep.Title,
-		Text:       currentStep.TextContent,
-		Hint:       currentStep.HintContent,
+		Text:       textContent,
+		Hint:       hintContent,
 		Status:     stepStatus,
 		HasFlag:    currentStep.HasFlag,
 	}
@@ -265,12 +269,16 @@ func (s *ScenarioSessionService) GetStepByOrder(sessionID uuid.UUID, stepOrder i
 		return nil, fmt.Errorf("step is locked")
 	}
 
+	// Resolve text/hint content from ProjectFile if available
+	textContent := ResolveScriptContent(s.db, targetStep.TextFileID, targetStep.TextContent)
+	hintContent := ResolveScriptContent(s.db, targetStep.HintFileID, targetStep.HintContent)
+
 	response := &dto.CurrentStepResponse{
 		StepOrder:  targetStep.Order,
 		TotalSteps: len(session.Scenario.Steps),
 		Title:      targetStep.Title,
-		Text:       targetStep.TextContent,
-		Hint:       targetStep.HintContent,
+		Text:       textContent,
+		Hint:       hintContent,
 		Status:     stepStatus,
 		HasFlag:    targetStep.HasFlag,
 	}
@@ -320,6 +328,9 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	if currentStep.HasFlag {
 		return nil, fmt.Errorf("this step requires a flag submission, not verification")
 	}
+
+	// Pre-populate VerifyScript from ProjectFile (VerificationService doesn't have DB access)
+	currentStep.VerifyScript = ResolveScriptContent(s.db, currentStep.VerifyScriptID, currentStep.VerifyScript)
 
 	// Run verification
 	passed, output, err := s.verificationService.VerifyStep(*session.TerminalSessionID, currentStep)
@@ -785,7 +796,9 @@ const maxInlineScriptSize = 4000
 // Large scripts are pushed as temp files via PushFile, then executed from disk
 // and cleaned up afterward, to avoid tt-backend's 4KB exec argument limit.
 func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID string, step *models.ScenarioStep) {
-	if step.BackgroundScript == "" {
+	// Resolve background script from ProjectFile if available
+	bgScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript)
+	if bgScript == "" {
 		return
 	}
 	if s.verificationService == nil {
@@ -796,19 +809,19 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 	var stderr string
 	var err error
 
-	interpreter := parseShebang(step.BackgroundScript)
+	interpreter := parseShebang(bgScript)
 
-	if len(step.BackgroundScript) <= maxInlineScriptSize {
+	if len(bgScript) <= maxInlineScriptSize {
 		// Small scripts: pass inline (fast, single API call)
 		exitCode, _, stderr, err = s.verificationService.ExecInContainer(
 			terminalSessionID,
-			[]string{interpreter, "-c", step.BackgroundScript},
+			[]string{interpreter, "-c", bgScript},
 			30,
 		)
 	} else {
 		// Large scripts: push as temp file then execute
 		tmpPath := fmt.Sprintf("/tmp/.ocf_bg_%d.sh", step.Order)
-		if pushErr := s.verificationService.PushFile(terminalSessionID, tmpPath, step.BackgroundScript, "0700"); pushErr != nil {
+		if pushErr := s.verificationService.PushFile(terminalSessionID, tmpPath, bgScript, "0700"); pushErr != nil {
 			slog.Warn("failed to push background script to container", "step_order", step.Order, "err", pushErr)
 			return
 		}

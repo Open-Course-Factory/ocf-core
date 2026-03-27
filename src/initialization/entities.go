@@ -47,6 +47,7 @@ func RegisterEntities() {
 	organizationRegistration.RegisterOrganization(ems.GlobalEntityRegistrationService)
 	organizationRegistration.RegisterOrganizationMember(ems.GlobalEntityRegistrationService)
 
+	scenarioRegistration.RegisterProjectFile(ems.GlobalEntityRegistrationService)
 	scenarioRegistration.RegisterScenario(ems.GlobalEntityRegistrationService)
 	scenarioRegistration.RegisterScenarioStep(ems.GlobalEntityRegistrationService)
 	scenarioRegistration.RegisterScenarioStepHint(ems.GlobalEntityRegistrationService)

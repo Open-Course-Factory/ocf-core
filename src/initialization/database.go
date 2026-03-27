@@ -93,6 +93,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&organizationModels.OrganizationMember{})
 
 	// Scenario entities
+	db.AutoMigrate(&scenarioModels.ProjectFile{})
 	db.AutoMigrate(&scenarioModels.Scenario{})
 	db.AutoMigrate(&scenarioModels.ScenarioStep{})
 	db.AutoMigrate(&scenarioModels.ScenarioStepHint{})
@@ -121,6 +122,9 @@ func AutoMigrateAll(db *gorm.DB) {
 
 	// Migrate existing hint_content to progressive hint records
 	migrateHintContentToHints(db)
+
+	// Migrate inline scripts/markdown to ProjectFile records
+	migrateInlineContentToProjectFiles(db)
 
 	// Seed default data (idempotent - safe for all environments)
 	SeedPlanFeatures(db)
@@ -440,6 +444,177 @@ func migrateHintContentToHints(db *gorm.DB) {
 				Level:   i + 1,
 				Content: part,
 			})
+		}
+	}
+}
+
+// migrateInlineContentToProjectFiles converts inline scripts and markdown content
+// on ScenarioStep and Scenario records into ProjectFile records. Idempotent: only
+// migrates fields where the corresponding FK is still NULL.
+func migrateInlineContentToProjectFiles(db *gorm.DB) {
+	// --- Step-level migration ---
+	var steps []scenarioModels.ScenarioStep
+	db.Where(
+		"(verify_script != '' AND verify_script IS NOT NULL AND verify_script_id IS NULL) OR "+
+			"(background_script != '' AND background_script IS NOT NULL AND background_script_id IS NULL) OR "+
+			"(foreground_script != '' AND foreground_script IS NOT NULL AND foreground_script_id IS NULL) OR "+
+			"(text_content != '' AND text_content IS NOT NULL AND text_file_id IS NULL) OR "+
+			"(hint_content != '' AND hint_content IS NOT NULL AND hint_file_id IS NULL)",
+	).Find(&steps)
+
+	if len(steps) > 0 {
+		// Group steps by scenario for per-scenario transactions
+		scenarioSteps := make(map[string][]scenarioModels.ScenarioStep)
+		for _, step := range steps {
+			key := step.ScenarioID.String()
+			scenarioSteps[key] = append(scenarioSteps[key], step)
+		}
+
+		for _, stepsForScenario := range scenarioSteps {
+			err := db.Transaction(func(tx *gorm.DB) error {
+				for _, step := range stepsForScenario {
+					stepDir := fmt.Sprintf("step%d", step.Order+1)
+
+					if step.VerifyScript != "" && step.VerifyScriptID == nil {
+						file := scenarioModels.ProjectFile{
+							Filename:    "verify.sh",
+							RelPath:     stepDir + "/verify.sh",
+							ContentType: "script",
+							Content:     step.VerifyScript,
+							StorageType: "database",
+							SizeBytes:   int64(len(step.VerifyScript)),
+						}
+						if err := tx.Create(&file).Error; err != nil {
+							return fmt.Errorf("failed to create verify ProjectFile for step %s: %w", step.ID, err)
+						}
+						if err := tx.Model(&step).Update("verify_script_id", file.ID).Error; err != nil {
+							return fmt.Errorf("failed to update verify_script_id for step %s: %w", step.ID, err)
+						}
+					}
+
+					if step.BackgroundScript != "" && step.BackgroundScriptID == nil {
+						file := scenarioModels.ProjectFile{
+							Filename:    "background.sh",
+							RelPath:     stepDir + "/background.sh",
+							ContentType: "script",
+							Content:     step.BackgroundScript,
+							StorageType: "database",
+							SizeBytes:   int64(len(step.BackgroundScript)),
+						}
+						if err := tx.Create(&file).Error; err != nil {
+							return fmt.Errorf("failed to create background ProjectFile for step %s: %w", step.ID, err)
+						}
+						if err := tx.Model(&step).Update("background_script_id", file.ID).Error; err != nil {
+							return fmt.Errorf("failed to update background_script_id for step %s: %w", step.ID, err)
+						}
+					}
+
+					if step.ForegroundScript != "" && step.ForegroundScriptID == nil {
+						file := scenarioModels.ProjectFile{
+							Filename:    "foreground.sh",
+							RelPath:     stepDir + "/foreground.sh",
+							ContentType: "script",
+							Content:     step.ForegroundScript,
+							StorageType: "database",
+							SizeBytes:   int64(len(step.ForegroundScript)),
+						}
+						if err := tx.Create(&file).Error; err != nil {
+							return fmt.Errorf("failed to create foreground ProjectFile for step %s: %w", step.ID, err)
+						}
+						if err := tx.Model(&step).Update("foreground_script_id", file.ID).Error; err != nil {
+							return fmt.Errorf("failed to update foreground_script_id for step %s: %w", step.ID, err)
+						}
+					}
+
+					if step.TextContent != "" && step.TextFileID == nil {
+						file := scenarioModels.ProjectFile{
+							Filename:    "text.md",
+							RelPath:     stepDir + "/text.md",
+							ContentType: "markdown",
+							Content:     step.TextContent,
+							StorageType: "database",
+							SizeBytes:   int64(len(step.TextContent)),
+						}
+						if err := tx.Create(&file).Error; err != nil {
+							return fmt.Errorf("failed to create text ProjectFile for step %s: %w", step.ID, err)
+						}
+						if err := tx.Model(&step).Update("text_file_id", file.ID).Error; err != nil {
+							return fmt.Errorf("failed to update text_file_id for step %s: %w", step.ID, err)
+						}
+					}
+
+					if step.HintContent != "" && step.HintFileID == nil {
+						file := scenarioModels.ProjectFile{
+							Filename:    "hint.md",
+							RelPath:     stepDir + "/hint.md",
+							ContentType: "markdown",
+							Content:     step.HintContent,
+							StorageType: "database",
+							SizeBytes:   int64(len(step.HintContent)),
+						}
+						if err := tx.Create(&file).Error; err != nil {
+							return fmt.Errorf("failed to create hint ProjectFile for step %s: %w", step.ID, err)
+						}
+						if err := tx.Model(&step).Update("hint_file_id", file.ID).Error; err != nil {
+							return fmt.Errorf("failed to update hint_file_id for step %s: %w", step.ID, err)
+						}
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				log.Printf("[MIGRATION] Failed to migrate inline content for scenario steps: %v", err)
+			}
+		}
+	}
+
+	// --- Scenario-level migration (intro_text, finish_text) ---
+	var scenarios []scenarioModels.Scenario
+	db.Where(
+		"(intro_text != '' AND intro_text IS NOT NULL AND intro_file_id IS NULL) OR "+
+			"(finish_text != '' AND finish_text IS NOT NULL AND finish_file_id IS NULL)",
+	).Find(&scenarios)
+
+	for _, scenario := range scenarios {
+		err := db.Transaction(func(tx *gorm.DB) error {
+			if scenario.IntroText != "" && scenario.IntroFileID == nil {
+				file := scenarioModels.ProjectFile{
+					Filename:    "intro.md",
+					RelPath:     "intro.md",
+					ContentType: "markdown",
+					Content:     scenario.IntroText,
+					StorageType: "database",
+					SizeBytes:   int64(len(scenario.IntroText)),
+				}
+				if err := tx.Create(&file).Error; err != nil {
+					return fmt.Errorf("failed to create intro ProjectFile for scenario %s: %w", scenario.ID, err)
+				}
+				if err := tx.Model(&scenario).Update("intro_file_id", file.ID).Error; err != nil {
+					return fmt.Errorf("failed to update intro_file_id for scenario %s: %w", scenario.ID, err)
+				}
+			}
+
+			if scenario.FinishText != "" && scenario.FinishFileID == nil {
+				file := scenarioModels.ProjectFile{
+					Filename:    "finish.md",
+					RelPath:     "finish.md",
+					ContentType: "markdown",
+					Content:     scenario.FinishText,
+					StorageType: "database",
+					SizeBytes:   int64(len(scenario.FinishText)),
+				}
+				if err := tx.Create(&file).Error; err != nil {
+					return fmt.Errorf("failed to create finish ProjectFile for scenario %s: %w", scenario.ID, err)
+				}
+				if err := tx.Model(&scenario).Update("finish_file_id", file.ID).Error; err != nil {
+					return fmt.Errorf("failed to update finish_file_id for scenario %s: %w", scenario.ID, err)
+				}
+			}
+
+			return nil
+		})
+		if err != nil {
+			log.Printf("[MIGRATION] Failed to migrate inline content for scenario %s: %v", scenario.ID, err)
 		}
 	}
 }

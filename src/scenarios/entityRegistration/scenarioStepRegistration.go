@@ -18,35 +18,45 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.ScenarioStep, dto.CreateScenarioStepInput, dto.EditScenarioStepInput, dto.ScenarioStepOutput]{
 				ModelToDto: func(model *models.ScenarioStep) (dto.ScenarioStepOutput, error) {
 					return dto.ScenarioStepOutput{
-						ID:               model.ID,
-						ScenarioID:       model.ScenarioID,
-						Order:            model.Order,
-						Title:            model.Title,
-						TextContent:      model.TextContent,
-						HintContent:      model.HintContent,
-						VerifyScript:     model.VerifyScript,
-						BackgroundScript: model.BackgroundScript,
-						ForegroundScript: model.ForegroundScript,
-						HasFlag:          model.HasFlag,
-						FlagPath:         model.FlagPath,
-						FlagLevel:        model.FlagLevel,
-						CreatedAt:        model.CreatedAt,
-						UpdatedAt:        model.UpdatedAt,
+						ID:                 model.ID,
+						ScenarioID:         model.ScenarioID,
+						Order:              model.Order,
+						Title:              model.Title,
+						TextContent:        model.TextContent,
+						HintContent:        model.HintContent,
+						VerifyScript:       model.VerifyScript,
+						BackgroundScript:   model.BackgroundScript,
+						ForegroundScript:   model.ForegroundScript,
+						HasFlag:            model.HasFlag,
+						FlagPath:           model.FlagPath,
+						FlagLevel:          model.FlagLevel,
+						VerifyScriptID:     model.VerifyScriptID,
+						BackgroundScriptID: model.BackgroundScriptID,
+						ForegroundScriptID: model.ForegroundScriptID,
+						TextFileID:         model.TextFileID,
+						HintFileID:         model.HintFileID,
+						CreatedAt:          model.CreatedAt,
+						UpdatedAt:          model.UpdatedAt,
 					}, nil
 				},
 				DtoToModel: func(input dto.CreateScenarioStepInput) *models.ScenarioStep {
 					return &models.ScenarioStep{
-						ScenarioID:       input.ScenarioID,
-						Order:            input.Order,
-						Title:            input.Title,
-						TextContent:      input.TextContent,
-						HintContent:      input.HintContent,
-						VerifyScript:     input.VerifyScript,
-						BackgroundScript: input.BackgroundScript,
-						ForegroundScript: input.ForegroundScript,
-						HasFlag:          input.HasFlag,
-						FlagPath:         input.FlagPath,
-						FlagLevel:        input.FlagLevel,
+						ScenarioID:         input.ScenarioID,
+						Order:              input.Order,
+						Title:              input.Title,
+						TextContent:        input.TextContent,
+						HintContent:        input.HintContent,
+						VerifyScript:       input.VerifyScript,
+						BackgroundScript:   input.BackgroundScript,
+						ForegroundScript:   input.ForegroundScript,
+						HasFlag:            input.HasFlag,
+						FlagPath:           input.FlagPath,
+						FlagLevel:          input.FlagLevel,
+						VerifyScriptID:     input.VerifyScriptID,
+						BackgroundScriptID: input.BackgroundScriptID,
+						ForegroundScriptID: input.ForegroundScriptID,
+						TextFileID:         input.TextFileID,
+						HintFileID:         input.HintFileID,
 					}
 				},
 				DtoToMap: func(input dto.EditScenarioStepInput) map[string]any {
@@ -80,6 +90,21 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 					}
 					if input.FlagLevel != nil {
 						updates["flag_level"] = *input.FlagLevel
+					}
+					if input.VerifyScriptID != nil {
+						updates["verify_script_id"] = *input.VerifyScriptID
+					}
+					if input.BackgroundScriptID != nil {
+						updates["background_script_id"] = *input.BackgroundScriptID
+					}
+					if input.ForegroundScriptID != nil {
+						updates["foreground_script_id"] = *input.ForegroundScriptID
+					}
+					if input.TextFileID != nil {
+						updates["text_file_id"] = *input.TextFileID
+					}
+					if input.HintFileID != nil {
+						updates["hint_file_id"] = *input.HintFileID
 					}
 					return updates
 				},

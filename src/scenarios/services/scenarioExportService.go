@@ -75,18 +75,22 @@ func (s *ScenarioExportService) ExportMultipleAsJSON(scenarioIDs []uuid.UUID) ([
 	return outputs, nil
 }
 
-// buildExportOutput converts a Scenario model to a ScenarioExportOutput DTO
+// buildExportOutput converts a Scenario model to a ScenarioExportOutput DTO.
+// Resolves content from ProjectFile when available, falling back to inline fields.
 func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dto.ScenarioExportOutput {
+	introText := ResolveScriptContent(s.db, scenario.IntroFileID, scenario.IntroText)
+	finishText := ResolveScriptContent(s.db, scenario.FinishFileID, scenario.FinishText)
+
 	steps := make([]dto.ScenarioExportStepOutput, 0, len(scenario.Steps))
 	for _, step := range scenario.Steps {
 		steps = append(steps, dto.ScenarioExportStepOutput{
 			Order:            step.Order,
 			Title:            step.Title,
-			TextContent:      step.TextContent,
-			HintContent:      step.HintContent,
-			VerifyScript:     step.VerifyScript,
-			BackgroundScript: step.BackgroundScript,
-			ForegroundScript: step.ForegroundScript,
+			TextContent:      ResolveScriptContent(s.db, step.TextFileID, step.TextContent),
+			HintContent:      ResolveScriptContent(s.db, step.HintFileID, step.HintContent),
+			VerifyScript:     ResolveScriptContent(s.db, step.VerifyScriptID, step.VerifyScript),
+			BackgroundScript: ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript),
+			ForegroundScript: ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript),
 			HasFlag:          step.HasFlag,
 			FlagPath:         step.FlagPath,
 			FlagLevel:        step.FlagLevel,
@@ -103,8 +107,8 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dt
 		FlagsEnabled:  scenario.FlagsEnabled,
 		GshEnabled:    scenario.GshEnabled,
 		CrashTraps:    scenario.CrashTraps,
-		IntroText:     scenario.IntroText,
-		FinishText:    scenario.FinishText,
+		IntroText:     introText,
+		FinishText:    finishText,
 		Steps:         steps,
 	}
 }
@@ -125,46 +129,53 @@ func (s *ScenarioExportService) buildArchive(scenario *models.Scenario) ([]byte,
 		return nil, err
 	}
 
-	// Write intro.md
-	if scenario.IntroText != "" {
-		if err := addFileToZip(w, "intro.md", []byte(scenario.IntroText)); err != nil {
+	// Write intro.md (resolve from ProjectFile if available)
+	introText := ResolveScriptContent(s.db, scenario.IntroFileID, scenario.IntroText)
+	if introText != "" {
+		if err := addFileToZip(w, "intro.md", []byte(introText)); err != nil {
 			return nil, err
 		}
 	}
 
-	// Write finish.md
-	if scenario.FinishText != "" {
-		if err := addFileToZip(w, "finish.md", []byte(scenario.FinishText)); err != nil {
+	// Write finish.md (resolve from ProjectFile if available)
+	finishText := ResolveScriptContent(s.db, scenario.FinishFileID, scenario.FinishText)
+	if finishText != "" {
+		if err := addFileToZip(w, "finish.md", []byte(finishText)); err != nil {
 			return nil, err
 		}
 	}
 
-	// Write step files
+	// Write step files (resolve from ProjectFile if available)
 	for i, step := range scenario.Steps {
 		stepDir := fmt.Sprintf("step%d", i+1)
 
-		if step.TextContent != "" {
-			if err := addFileToZip(w, stepDir+"/text.md", []byte(step.TextContent)); err != nil {
+		textContent := ResolveScriptContent(s.db, step.TextFileID, step.TextContent)
+		if textContent != "" {
+			if err := addFileToZip(w, stepDir+"/text.md", []byte(textContent)); err != nil {
 				return nil, err
 			}
 		}
-		if step.HintContent != "" {
-			if err := addFileToZip(w, stepDir+"/hint.md", []byte(step.HintContent)); err != nil {
+		hintContent := ResolveScriptContent(s.db, step.HintFileID, step.HintContent)
+		if hintContent != "" {
+			if err := addFileToZip(w, stepDir+"/hint.md", []byte(hintContent)); err != nil {
 				return nil, err
 			}
 		}
-		if step.VerifyScript != "" {
-			if err := addFileToZip(w, stepDir+"/verify.sh", []byte(step.VerifyScript)); err != nil {
+		verifyScript := ResolveScriptContent(s.db, step.VerifyScriptID, step.VerifyScript)
+		if verifyScript != "" {
+			if err := addFileToZip(w, stepDir+"/verify.sh", []byte(verifyScript)); err != nil {
 				return nil, err
 			}
 		}
-		if step.BackgroundScript != "" {
-			if err := addFileToZip(w, stepDir+"/background.sh", []byte(step.BackgroundScript)); err != nil {
+		bgScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript)
+		if bgScript != "" {
+			if err := addFileToZip(w, stepDir+"/background.sh", []byte(bgScript)); err != nil {
 				return nil, err
 			}
 		}
-		if step.ForegroundScript != "" {
-			if err := addFileToZip(w, stepDir+"/foreground.sh", []byte(step.ForegroundScript)); err != nil {
+		fgScript := ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript)
+		if fgScript != "" {
+			if err := addFileToZip(w, stepDir+"/foreground.sh", []byte(fgScript)); err != nil {
 				return nil, err
 			}
 		}
@@ -177,16 +188,19 @@ func (s *ScenarioExportService) buildArchive(scenario *models.Scenario) ([]byte,
 	return buf.Bytes(), nil
 }
 
-// buildKillerCodaIndex constructs the KillerCoda index.json structure from a scenario
+// buildKillerCodaIndex constructs the KillerCoda index.json structure from a scenario.
+// When ProjectFile records exist with RelPath, those paths are used for round-trip fidelity.
 func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) *KillerCodaIndex {
 	details := KillerCodaDetails{
 		Steps: make([]KillerCodaStep, 0, len(scenario.Steps)),
 	}
 
-	if scenario.IntroText != "" {
+	introText := ResolveScriptContent(s.db, scenario.IntroFileID, scenario.IntroText)
+	if introText != "" {
 		details.Intro = KillerCodaFile{Text: "intro.md"}
 	}
-	if scenario.FinishText != "" {
+	finishText := ResolveScriptContent(s.db, scenario.FinishFileID, scenario.FinishText)
+	if finishText != "" {
 		details.Finish = KillerCodaFile{Text: "finish.md"}
 	}
 
@@ -196,20 +210,25 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 			Title: step.Title,
 		}
 
-		if step.TextContent != "" {
-			kcStep.Text = stepDir + "/text.md"
+		textContent := ResolveScriptContent(s.db, step.TextFileID, step.TextContent)
+		if textContent != "" {
+			kcStep.Text = resolveRelPath(s.db, step.TextFileID, stepDir+"/text.md")
 		}
-		if step.HintContent != "" {
-			kcStep.Hint = stepDir + "/hint.md"
+		hintContent := ResolveScriptContent(s.db, step.HintFileID, step.HintContent)
+		if hintContent != "" {
+			kcStep.Hint = resolveRelPath(s.db, step.HintFileID, stepDir+"/hint.md")
 		}
-		if step.VerifyScript != "" {
-			kcStep.Verify = stepDir + "/verify.sh"
+		verifyScript := ResolveScriptContent(s.db, step.VerifyScriptID, step.VerifyScript)
+		if verifyScript != "" {
+			kcStep.Verify = resolveRelPath(s.db, step.VerifyScriptID, stepDir+"/verify.sh")
 		}
-		if step.BackgroundScript != "" {
-			kcStep.Background = stepDir + "/background.sh"
+		bgScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript)
+		if bgScript != "" {
+			kcStep.Background = resolveRelPath(s.db, step.BackgroundScriptID, stepDir+"/background.sh")
 		}
-		if step.ForegroundScript != "" {
-			kcStep.Foreground = stepDir + "/foreground.sh"
+		fgScript := ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript)
+		if fgScript != "" {
+			kcStep.Foreground = resolveRelPath(s.db, step.ForegroundScriptID, stepDir+"/foreground.sh")
 		}
 
 		// Set per-step flag override if different from scenario default
@@ -243,6 +262,22 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 	}
 
 	return index
+}
+
+// resolveRelPath returns the RelPath from a ProjectFile if fileID is non-nil and the file
+// has a non-empty RelPath, otherwise returns the fallback path.
+func resolveRelPath(db *gorm.DB, fileID *uuid.UUID, fallback string) string {
+	if fileID == nil {
+		return fallback
+	}
+	var file models.ProjectFile
+	if err := db.Select("rel_path").First(&file, "id = ?", *fileID).Error; err != nil {
+		return fallback
+	}
+	if file.RelPath != "" {
+		return file.RelPath
+	}
+	return fallback
 }
 
 // addFileToZip adds a file with the given content to the zip writer

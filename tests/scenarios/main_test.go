@@ -28,6 +28,7 @@ func TestMain(m *testing.M) {
 	sqlDB.SetMaxOpenConns(1)
 
 	err = db.AutoMigrate(
+		&models.ProjectFile{},
 		&models.Scenario{},
 		&models.ScenarioStep{},
 		&models.ScenarioStepHint{},
@@ -60,6 +61,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM scenario_step_hints")
 	sharedTestDB.Exec("DELETE FROM scenario_steps")
 	sharedTestDB.Exec("DELETE FROM scenarios")
+	sharedTestDB.Exec("DELETE FROM project_files")
 	sharedTestDB.Exec("DELETE FROM group_members")
 	sharedTestDB.Exec("DELETE FROM class_groups")
 	sharedTestDB.Exec("DELETE FROM organization_members")

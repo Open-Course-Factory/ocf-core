@@ -120,6 +120,9 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 		return nil, fmt.Errorf("failed to build scenario: %w", err)
 	}
 
+	// Build step path metadata from the KillerCoda index for ProjectFile RelPaths
+	stepRelPaths := buildStepRelPaths(index)
+
 	// Upsert: check if scenario with same name already exists
 	// When orgID is set (group-level import), scope lookup to the same organization
 	// to prevent cross-tenant overwrites.
@@ -135,18 +138,25 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 		}
 
 		err = s.db.Transaction(func(tx *gorm.DB) error {
+			// Collect old ProjectFile IDs from scenario and steps
+			oldFileIDs := collectProjectFileIDs(tx, existing.ID)
+
+			// Null out scenario-level FKs before deleting files
 			if err := tx.Model(&existing).Updates(map[string]any{
-				"title":          scenario.Title,
-				"description":    scenario.Description,
-				"difficulty":     scenario.Difficulty,
-				"estimated_time": scenario.EstimatedTime,
-				"instance_type":  scenario.InstanceType,
-				"flags_enabled":  scenario.FlagsEnabled,
-				"flag_secret":    scenario.FlagSecret,
-				"gsh_enabled":    scenario.GshEnabled,
-				"crash_traps":    scenario.CrashTraps,
-				"intro_text":     scenario.IntroText,
-				"finish_text":    scenario.FinishText,
+				"title":           scenario.Title,
+				"description":     scenario.Description,
+				"difficulty":      scenario.Difficulty,
+				"estimated_time":  scenario.EstimatedTime,
+				"instance_type":   scenario.InstanceType,
+				"flags_enabled":   scenario.FlagsEnabled,
+				"flag_secret":     scenario.FlagSecret,
+				"gsh_enabled":     scenario.GshEnabled,
+				"crash_traps":     scenario.CrashTraps,
+				"intro_text":      scenario.IntroText,
+				"finish_text":     scenario.FinishText,
+				"setup_script_id": nil,
+				"intro_file_id":   nil,
+				"finish_file_id":  nil,
 			}).Error; err != nil {
 				return fmt.Errorf("failed to update scenario: %w", err)
 			}
@@ -157,16 +167,30 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 			).Delete(&models.ScenarioStepHint{}).Error; err != nil {
 				return fmt.Errorf("failed to delete old hints: %w", err)
 			}
-			// Delete old steps, create new ones
+			// Delete old steps
 			if err := tx.Where("scenario_id = ?", existing.ID).Delete(&models.ScenarioStep{}).Error; err != nil {
 				return fmt.Errorf("failed to delete old steps: %w", err)
 			}
+			// Delete old ProjectFiles
+			if len(oldFileIDs) > 0 {
+				if err := tx.Where("id IN ?", oldFileIDs).Delete(&models.ProjectFile{}).Error; err != nil {
+					return fmt.Errorf("failed to delete old project files: %w", err)
+				}
+			}
+
+			// Create new steps
 			for i := range scenario.Steps {
 				scenario.Steps[i].ScenarioID = existing.ID
 				if err := tx.Create(&scenario.Steps[i]).Error; err != nil {
 					return fmt.Errorf("failed to create step: %w", err)
 				}
 			}
+
+			// Create ProjectFiles for scenario and steps (dual-write)
+			if err := createProjectFilesForScenario(tx, &existing, scenario, stepRelPaths); err != nil {
+				return err
+			}
+
 			return nil
 		})
 		if err != nil {
@@ -189,6 +213,12 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 		if err := tx.Create(scenario).Error; err != nil {
 			return fmt.Errorf("failed to save scenario: %w", err)
 		}
+
+		// Create ProjectFiles for scenario and steps (dual-write)
+		if err := createProjectFilesForScenario(tx, scenario, scenario, stepRelPaths); err != nil {
+			return err
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -306,6 +336,243 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	scenario.Steps = steps
 
 	return scenario, nil
+}
+
+// stepRelPathInfo holds KillerCoda original relative paths for a step's files.
+type stepRelPathInfo struct {
+	Verify     string
+	Background string
+	Foreground string
+	Text       string
+	Hint       string
+}
+
+// buildStepRelPaths extracts the original KillerCoda relative paths from the index
+// so they can be preserved in ProjectFile records for round-trip fidelity.
+func buildStepRelPaths(index *KillerCodaIndex) []stepRelPathInfo {
+	result := make([]stepRelPathInfo, len(index.Details.Steps))
+	for i, kcStep := range index.Details.Steps {
+		stepDir := fmt.Sprintf("step%d", i+1)
+		result[i] = stepRelPathInfo{
+			Verify:     defaultRelPath(kcStep.Verify, stepDir+"/verify.sh"),
+			Background: defaultRelPath(kcStep.Background, stepDir+"/background.sh"),
+			Foreground: defaultRelPath(kcStep.Foreground, stepDir+"/foreground.sh"),
+			Text:       defaultRelPath(kcStep.Text, stepDir+"/text.md"),
+			Hint:       defaultRelPath(kcStep.Hint, stepDir+"/hint.md"),
+		}
+	}
+	return result
+}
+
+// defaultRelPath returns kcPath if non-empty, otherwise fallback.
+func defaultRelPath(kcPath, fallback string) string {
+	if kcPath != "" {
+		return kcPath
+	}
+	return fallback
+}
+
+// collectProjectFileIDs gathers all ProjectFile IDs referenced by a scenario and its steps.
+func collectProjectFileIDs(tx *gorm.DB, scenarioID uuid.UUID) []uuid.UUID {
+	var ids []uuid.UUID
+
+	// Scenario-level FKs
+	var scenario models.Scenario
+	if err := tx.Select("setup_script_id, intro_file_id, finish_file_id").First(&scenario, "id = ?", scenarioID).Error; err == nil {
+		if scenario.SetupScriptID != nil {
+			ids = append(ids, *scenario.SetupScriptID)
+		}
+		if scenario.IntroFileID != nil {
+			ids = append(ids, *scenario.IntroFileID)
+		}
+		if scenario.FinishFileID != nil {
+			ids = append(ids, *scenario.FinishFileID)
+		}
+	}
+
+	// Step-level FKs
+	var steps []models.ScenarioStep
+	tx.Select("verify_script_id, background_script_id, foreground_script_id, text_file_id, hint_file_id").
+		Where("scenario_id = ?", scenarioID).Find(&steps)
+	for _, step := range steps {
+		if step.VerifyScriptID != nil {
+			ids = append(ids, *step.VerifyScriptID)
+		}
+		if step.BackgroundScriptID != nil {
+			ids = append(ids, *step.BackgroundScriptID)
+		}
+		if step.ForegroundScriptID != nil {
+			ids = append(ids, *step.ForegroundScriptID)
+		}
+		if step.TextFileID != nil {
+			ids = append(ids, *step.TextFileID)
+		}
+		if step.HintFileID != nil {
+			ids = append(ids, *step.HintFileID)
+		}
+	}
+
+	return ids
+}
+
+// createProjectFilesForScenario creates ProjectFile records for a scenario and its steps,
+// and updates the FKs accordingly. dbScenario is the persisted scenario (with valid ID),
+// srcScenario provides the inline content, and stepRelPaths provides original KillerCoda paths.
+func createProjectFilesForScenario(tx *gorm.DB, dbScenario *models.Scenario, srcScenario *models.Scenario, stepRelPaths []stepRelPathInfo) error {
+	// Scenario-level files
+	if srcScenario.IntroText != "" {
+		file := models.ProjectFile{
+			Filename:    "intro.md",
+			RelPath:     "intro.md",
+			ContentType: "markdown",
+			Content:     srcScenario.IntroText,
+			StorageType: "database",
+			SizeBytes:   int64(len(srcScenario.IntroText)),
+		}
+		if err := tx.Create(&file).Error; err != nil {
+			return fmt.Errorf("failed to create intro ProjectFile: %w", err)
+		}
+		if err := tx.Model(dbScenario).Update("intro_file_id", file.ID).Error; err != nil {
+			return fmt.Errorf("failed to update intro_file_id: %w", err)
+		}
+	}
+
+	if srcScenario.FinishText != "" {
+		file := models.ProjectFile{
+			Filename:    "finish.md",
+			RelPath:     "finish.md",
+			ContentType: "markdown",
+			Content:     srcScenario.FinishText,
+			StorageType: "database",
+			SizeBytes:   int64(len(srcScenario.FinishText)),
+		}
+		if err := tx.Create(&file).Error; err != nil {
+			return fmt.Errorf("failed to create finish ProjectFile: %w", err)
+		}
+		if err := tx.Model(dbScenario).Update("finish_file_id", file.ID).Error; err != nil {
+			return fmt.Errorf("failed to update finish_file_id: %w", err)
+		}
+	}
+
+	// Step-level files — reload steps from DB to get their persisted IDs
+	var dbSteps []models.ScenarioStep
+	tx.Where("scenario_id = ?", dbScenario.ID).Order("\"order\" ASC").Find(&dbSteps)
+
+	for _, dbStep := range dbSteps {
+		// Find matching source step by order
+		var srcStep *models.ScenarioStep
+		for j := range srcScenario.Steps {
+			if srcScenario.Steps[j].Order == dbStep.Order {
+				srcStep = &srcScenario.Steps[j]
+				break
+			}
+		}
+		if srcStep == nil {
+			continue
+		}
+
+		// Get rel path info for this step (by order index)
+		var relPaths stepRelPathInfo
+		if dbStep.Order < len(stepRelPaths) {
+			relPaths = stepRelPaths[dbStep.Order]
+		} else {
+			stepDir := fmt.Sprintf("step%d", dbStep.Order+1)
+			relPaths = stepRelPathInfo{
+				Verify:     stepDir + "/verify.sh",
+				Background: stepDir + "/background.sh",
+				Foreground: stepDir + "/foreground.sh",
+				Text:       stepDir + "/text.md",
+				Hint:       stepDir + "/hint.md",
+			}
+		}
+
+		if srcStep.VerifyScript != "" {
+			file := models.ProjectFile{
+				Filename:    "verify.sh",
+				RelPath:     relPaths.Verify,
+				ContentType: "script",
+				Content:     srcStep.VerifyScript,
+				StorageType: "database",
+				SizeBytes:   int64(len(srcStep.VerifyScript)),
+			}
+			if err := tx.Create(&file).Error; err != nil {
+				return fmt.Errorf("failed to create verify ProjectFile: %w", err)
+			}
+			if err := tx.Model(&dbStep).Update("verify_script_id", file.ID).Error; err != nil {
+				return fmt.Errorf("failed to update verify_script_id: %w", err)
+			}
+		}
+
+		if srcStep.BackgroundScript != "" {
+			file := models.ProjectFile{
+				Filename:    "background.sh",
+				RelPath:     relPaths.Background,
+				ContentType: "script",
+				Content:     srcStep.BackgroundScript,
+				StorageType: "database",
+				SizeBytes:   int64(len(srcStep.BackgroundScript)),
+			}
+			if err := tx.Create(&file).Error; err != nil {
+				return fmt.Errorf("failed to create background ProjectFile: %w", err)
+			}
+			if err := tx.Model(&dbStep).Update("background_script_id", file.ID).Error; err != nil {
+				return fmt.Errorf("failed to update background_script_id: %w", err)
+			}
+		}
+
+		if srcStep.ForegroundScript != "" {
+			file := models.ProjectFile{
+				Filename:    "foreground.sh",
+				RelPath:     relPaths.Foreground,
+				ContentType: "script",
+				Content:     srcStep.ForegroundScript,
+				StorageType: "database",
+				SizeBytes:   int64(len(srcStep.ForegroundScript)),
+			}
+			if err := tx.Create(&file).Error; err != nil {
+				return fmt.Errorf("failed to create foreground ProjectFile: %w", err)
+			}
+			if err := tx.Model(&dbStep).Update("foreground_script_id", file.ID).Error; err != nil {
+				return fmt.Errorf("failed to update foreground_script_id: %w", err)
+			}
+		}
+
+		if srcStep.TextContent != "" {
+			file := models.ProjectFile{
+				Filename:    "text.md",
+				RelPath:     relPaths.Text,
+				ContentType: "markdown",
+				Content:     srcStep.TextContent,
+				StorageType: "database",
+				SizeBytes:   int64(len(srcStep.TextContent)),
+			}
+			if err := tx.Create(&file).Error; err != nil {
+				return fmt.Errorf("failed to create text ProjectFile: %w", err)
+			}
+			if err := tx.Model(&dbStep).Update("text_file_id", file.ID).Error; err != nil {
+				return fmt.Errorf("failed to update text_file_id: %w", err)
+			}
+		}
+
+		if srcStep.HintContent != "" {
+			file := models.ProjectFile{
+				Filename:    "hint.md",
+				RelPath:     relPaths.Hint,
+				ContentType: "markdown",
+				Content:     srcStep.HintContent,
+				StorageType: "database",
+				SizeBytes:   int64(len(srcStep.HintContent)),
+			}
+			if err := tx.Create(&file).Error; err != nil {
+				return fmt.Errorf("failed to create hint ProjectFile: %w", err)
+			}
+			if err := tx.Model(&dbStep).Update("hint_file_id", file.ID).Error; err != nil {
+				return fmt.Errorf("failed to update hint_file_id: %w", err)
+			}
+		}
+	}
+
+	return nil
 }
 
 // readFileContent reads a file relative to dirPath, returning empty string if the file
