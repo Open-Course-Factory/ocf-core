@@ -2,7 +2,6 @@ package services
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 type VerificationService struct {
 	ttBackendURL string
 	ttAPIKey     string
-	httpClient   *http.Client
 }
 
 // NewVerificationService creates a new VerificationService reading config from env vars
@@ -23,9 +21,6 @@ func NewVerificationService() *VerificationService {
 	return &VerificationService{
 		ttBackendURL: os.Getenv("TERMINAL_TRAINER_URL"),
 		ttAPIKey:     os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
-		httpClient: &http.Client{
-			Timeout: 6 * time.Minute, // Must exceed the longest exec timeout (5min for step 0 setup)
-		},
 	}
 }
 
@@ -34,9 +29,6 @@ func NewVerificationServiceWithConfig(ttBackendURL, ttAPIKey string) *Verificati
 	return &VerificationService{
 		ttBackendURL: ttBackendURL,
 		ttAPIKey:     ttAPIKey,
-		httpClient: &http.Client{
-			Timeout: 6 * time.Minute,
-		},
 	}
 }
 
@@ -58,8 +50,10 @@ func (s *VerificationService) ExecInContainer(sessionID string, command []string
 	}
 
 	var result execResponse
+	// HTTP timeout must exceed the exec timeout to avoid killing the connection early
+	httpTimeout := time.Duration(timeout+30) * time.Second
 	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(s.ttAPIKey))
+	utils.ApplyOptions(&opts, utils.WithAPIKey(s.ttAPIKey), utils.WithTimeout(httpTimeout))
 
 	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, payload, &result, opts)
 	if err != nil {
