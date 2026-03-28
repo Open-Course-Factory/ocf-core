@@ -788,6 +788,14 @@ func (s *ScenarioSessionService) deployChallengeConfig(terminalSessionID string,
 // are pushed as temp files and executed from disk.
 const maxInlineScriptSize = 4000
 
+// Background script execution timeouts.
+// Step 0 gets a longer timeout because it typically runs the full environment
+// setup (user creation, service provisioning, package installs, etc.).
+const (
+	bgScriptTimeoutStep0   = 300 // 5 minutes for initial setup
+	bgScriptTimeoutDefault = 30  // 30 seconds for subsequent steps
+)
+
 // executeBackgroundScript runs a step's background script in the student's container.
 // This is best-effort: errors are logged but don't fail the step transition,
 // following the same pattern as deploySingleFlagToContainer.
@@ -805,6 +813,11 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 		return
 	}
 
+	timeout := bgScriptTimeoutDefault
+	if step.Order == 0 {
+		timeout = bgScriptTimeoutStep0
+	}
+
 	var exitCode int
 	var stderr string
 	var err error
@@ -816,7 +829,7 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 		exitCode, _, stderr, err = s.verificationService.ExecInContainer(
 			terminalSessionID,
 			[]string{interpreter, "-c", bgScript},
-			30,
+			timeout,
 		)
 	} else {
 		// Large scripts: push as temp file then execute
@@ -828,7 +841,7 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 		exitCode, _, stderr, err = s.verificationService.ExecInContainer(
 			terminalSessionID,
 			[]string{interpreter, tmpPath},
-			30,
+			timeout,
 		)
 		// Best-effort cleanup
 		_, _, _, _ = s.verificationService.ExecInContainer(
