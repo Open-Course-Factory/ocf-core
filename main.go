@@ -41,8 +41,6 @@ userController "soli/formations/src/auth/routes/usersRoutes"
 
 	sqldb "soli/formations/src/db"
 
-	paymentMiddleware "soli/formations/src/payment/middleware"
-
 	// Import new initialization package
 	"soli/formations/src/cli"
 	"soli/formations/src/cron"
@@ -163,11 +161,6 @@ func main() {
 		OptionsPassthrough: false, // Handle OPTIONS here, don't pass through
 	}))
 
-	// Setup payment middlewares
-	usageLimitMiddleware := paymentMiddleware.NewUsageLimitMiddleware(sqldb.DB)
-	// Note: userRoleMiddleware removed - subscription role updates should be done
-	// in specific route handlers AFTER authentication, not globally
-
 	// Setup API routes
 	apiGroup := r.Group("/api/v1")
 
@@ -195,10 +188,6 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	securityAdminController.SecurityAdminRoutes(apiGroup, sqldb.DB)
 	scenarioController.ScenarioRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	feedback.FeedbackRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-
-	// Setup usage limit middleware for specific routes
-	apiGroupWithUsageCheck := apiGroup.Group("")
-	apiGroupWithUsageCheck.Use(usageLimitMiddleware.CheckUsageForPath())
 
 	// Initialize payment routes
 	payment.InitPaymentRoutes(apiGroup, &config.Configuration{}, sqldb.DB)

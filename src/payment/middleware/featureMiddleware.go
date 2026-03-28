@@ -4,7 +4,6 @@ package middleware
 import (
 	"net/http"
 	"soli/formations/src/auth/errors"
-	"soli/formations/src/payment/repositories"
 	"soli/formations/src/payment/services"
 
 	"github.com/gin-gonic/gin"
@@ -12,21 +11,17 @@ import (
 )
 
 type FeatureMiddleware struct {
-	paymentRepo   repositories.PaymentRepository
-	orgSubService services.OrganizationSubscriptionService
-	db            *gorm.DB
+	effectivePlanService services.EffectivePlanService
 }
 
 func NewFeatureMiddleware(db *gorm.DB) *FeatureMiddleware {
 	return &FeatureMiddleware{
-		paymentRepo:   repositories.NewPaymentRepository(db),
-		orgSubService: services.NewOrganizationSubscriptionService(db),
-		db:            db,
+		effectivePlanService: services.NewEffectivePlanService(db),
 	}
 }
 
-// RequireFeature checks if the user has access to a feature through organization or user subscription
-// Phase 2: Checks organization subscriptions first, then falls back to user subscriptions (backward compat)
+// RequireFeature checks if the user has access to a feature via their effective plan
+// (unified resolution: org subscription with personal fallback).
 func (fm *FeatureMiddleware) RequireFeature(featureName string) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		userID := ctx.GetString("userId")
@@ -40,16 +35,7 @@ func (fm *FeatureMiddleware) RequireFeature(featureName string) gin.HandlerFunc 
 			return
 		}
 
-		// Phase 2: Check organization subscriptions first
-		hasFeature, err := fm.orgSubService.CanUserAccessFeature(userID, featureName)
-		if err == nil && hasFeature {
-			// User has access via organization subscription
-			ctx.Next()
-			return
-		}
-
-		// Backward compatibility: Fall back to user subscription (deprecated)
-		subscription, err := fm.paymentRepo.GetActiveUserSubscription(userID)
+		result, err := fm.effectivePlanService.GetUserEffectivePlan(userID)
 		if err != nil {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
@@ -59,9 +45,9 @@ func (fm *FeatureMiddleware) RequireFeature(featureName string) gin.HandlerFunc 
 			return
 		}
 
-		// Check if the feature is in the plan's features list
-		hasFeature = false
-		for _, feature := range subscription.SubscriptionPlan.Features {
+		// Check if the feature is in the effective plan's features list
+		hasFeature := false
+		for _, feature := range result.Plan.Features {
 			if feature == featureName {
 				hasFeature = true
 				break

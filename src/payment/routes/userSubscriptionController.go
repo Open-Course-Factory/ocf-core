@@ -58,19 +58,21 @@ type SubscriptionController interface {
 
 type userSubscriptionController struct {
 	controller.GenericController
-	db                  *gorm.DB
-	subscriptionService services.UserSubscriptionService
-	conversionService   services.ConversionService
-	stripeService       services.StripeService
+	db                   *gorm.DB
+	subscriptionService  services.UserSubscriptionService
+	conversionService    services.ConversionService
+	stripeService        services.StripeService
+	effectivePlanService services.EffectivePlanService
 }
 
 func NewSubscriptionController(db *gorm.DB) SubscriptionController {
 	return &userSubscriptionController{
-		GenericController:   controller.NewGenericController(db, casdoor.Enforcer),
-		db:                  db,
-		subscriptionService: services.NewSubscriptionService(db),
-		conversionService:   services.NewConversionService(),
-		stripeService:       services.NewStripeService(db),
+		GenericController:    controller.NewGenericController(db, casdoor.Enforcer),
+		db:                   db,
+		subscriptionService:  services.NewSubscriptionService(db),
+		conversionService:    services.NewConversionService(),
+		stripeService:        services.NewStripeService(db),
+		effectivePlanService: services.NewEffectivePlanService(db),
 	}
 }
 
@@ -277,36 +279,25 @@ func (sc *userSubscriptionController) CreatePortalSession(ctx *gin.Context) {
 func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
-	// Récupérer l'abonnement depuis le service (retourne un model)
-	subscription, err := sc.subscriptionService.GetActiveUserSubscription(userId)
+	// Use unified effective plan resolution
+	result, err := sc.effectivePlanService.GetUserEffectivePlan(userId)
 	if err != nil {
 		// This handles the case where user returns from checkout before webhook fires
-		utils.Debug("No subscription found in DB for user %s, attempting sync from Stripe...", userId)
+		utils.Debug("No effective plan found for user %s, attempting sync from Stripe...", userId)
 
 		syncResult, syncErr := sc.stripeService.SyncUserSubscriptions(userId)
 		if syncErr != nil {
 			utils.Debug("Failed to sync subscriptions for user %s: %v", userId, syncErr)
 		} else if syncResult.CreatedSubscriptions > 0 || syncResult.UpdatedSubscriptions > 0 {
-			utils.Debug("✅ Synced %d subscriptions for user %s",
+			utils.Debug("Synced %d subscriptions for user %s",
 				syncResult.CreatedSubscriptions+syncResult.UpdatedSubscriptions, userId)
 
-			// Retry getting the subscription after sync
-			subscription, err = sc.subscriptionService.GetActiveUserSubscription(userId)
-			if err == nil {
-				// Success! Fall through to return subscription
-				goto returnSubscription
-			}
+			// Retry after sync
+			result, err = sc.effectivePlanService.GetUserEffectivePlan(userId)
 		}
+	}
 
-		// No personal subscription found — try org subscription as fallback
-		orgSub, orgPlan := sc.getOrgSubscriptionForUser(userId)
-		if orgSub != nil && orgPlan != nil {
-			output := sc.orgSubscriptionToUserDTO(userId, orgSub, orgPlan)
-			ctx.JSON(http.StatusOK, output)
-			return
-		}
-
-		// No subscription found at all
+	if err != nil || result == nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
 			ErrorMessage: "No active subscription found",
@@ -314,32 +305,23 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 		return
 	}
 
-returnSubscription:
-	// Check if org subscription has a higher-tier plan than personal
-	orgSub, orgPlan := sc.getOrgSubscriptionForUser(userId)
-	if orgSub != nil && orgPlan != nil {
-		personalPlan, planErr := sc.subscriptionService.GetSubscriptionPlan(subscription.SubscriptionPlanID)
-		if planErr == nil && orgPlan.Priority > personalPlan.Priority {
-			output := sc.orgSubscriptionToUserDTO(userId, orgSub, orgPlan)
-			ctx.JSON(http.StatusOK, output)
+	switch result.Source {
+	case services.PlanSourcePersonal:
+		subscriptionDTO, convErr := sc.conversionService.UserSubscriptionToDTO(result.UserSubscription)
+		if convErr != nil {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to convert subscription data",
+			})
 			return
 		}
+		subscriptionDTO.IsPrimary = true
+		ctx.JSON(http.StatusOK, subscriptionDTO)
+
+	case services.PlanSourceOrganization:
+		output := sc.orgSubscriptionToUserDTO(userId, result.OrganizationSubscription, result.Plan)
+		ctx.JSON(http.StatusOK, output)
 	}
-
-	// Convertir vers DTO
-	subscriptionDTO, err := sc.conversionService.UserSubscriptionToDTO(subscription)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to convert subscription data",
-		})
-		return
-	}
-
-	// Mark as primary (since this is the current/active endpoint)
-	subscriptionDTO.IsPrimary = true
-
-	ctx.JSON(http.StatusOK, subscriptionDTO)
 }
 
 // Get All User Subscriptions godoc
@@ -767,8 +749,8 @@ func (sc *userSubscriptionController) CheckUsageLimit(ctx *gin.Context) {
 		return
 	}
 
-	// Vérifier les limites via le service (retourne un objet métier)
-	result, err := sc.subscriptionService.CheckUsageLimit(userId, input.MetricType, input.Increment)
+	// Vérifier les limites via le service effectif (prend en compte personal + org)
+	result, err := sc.effectivePlanService.CheckEffectiveUsageLimit(userId, input.MetricType, input.Increment)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -797,7 +779,10 @@ func (sc *userSubscriptionController) CheckUsageLimit(ctx *gin.Context) {
 func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
-	// Récupérer les métriques depuis le service (retourne des models)
+	// Get effective plan for limit values
+	effectiveResult, _ := sc.effectivePlanService.GetUserEffectivePlan(userId)
+
+	// Get personal usage metrics (these track actual usage counts)
 	usageMetrics, err := sc.subscriptionService.GetUserUsageMetrics(userId)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -813,23 +798,23 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 		return
 	}
 
-	// Override limits with org subscription if it has higher values
-	_, orgPlan := sc.getOrgSubscriptionForUser(userId)
-	if orgPlan != nil {
+	// Override limits with effective plan limits
+	if effectiveResult != nil && effectiveResult.Plan != nil {
+		plan := effectiveResult.Plan
 		for i := range *usageMetrics {
 			metric := &(*usageMetrics)[i]
-			var orgLimit int64
+			var effectiveLimit int64
 			switch metric.MetricType {
 			case "concurrent_terminals":
-				orgLimit = int64(orgPlan.MaxConcurrentTerminals)
+				effectiveLimit = int64(plan.MaxConcurrentTerminals)
 			case "courses_created":
-				orgLimit = int64(orgPlan.MaxCourses)
+				effectiveLimit = int64(plan.MaxCourses)
 			default:
 				continue
 			}
-			// Use org limit if it's unlimited (-1) or higher than personal
-			if orgLimit == -1 || (metric.LimitValue != -1 && orgLimit > metric.LimitValue) {
-				metric.LimitValue = orgLimit
+			// Use effective plan limit if it's unlimited (-1) or higher than personal
+			if effectiveLimit == -1 || (metric.LimitValue != -1 && effectiveLimit > metric.LimitValue) {
+				metric.LimitValue = effectiveLimit
 			}
 		}
 	}
@@ -1352,28 +1337,6 @@ func (sc *userSubscriptionController) AdminAssignSubscription(ctx *gin.Context) 
 	}
 
 	ctx.JSON(http.StatusOK, subscriptionDTO)
-}
-
-// getOrgSubscriptionForUser finds the highest-priority active org subscription for a user
-func (sc *userSubscriptionController) getOrgSubscriptionForUser(userID string) (*paymentModels.OrganizationSubscription, *paymentModels.SubscriptionPlan) {
-	var subscriptions []paymentModels.OrganizationSubscription
-	err := sc.db.Preload("SubscriptionPlan").
-		Joins("JOIN organization_members ON organization_members.organization_id = organization_subscriptions.organization_id").
-		Where("organization_members.user_id = ? AND organization_members.is_active = ? AND organization_subscriptions.status IN (?)",
-			userID, true, []string{"active", "trialing"}).
-		Find(&subscriptions).Error
-	if err != nil || len(subscriptions) == 0 {
-		return nil, nil
-	}
-
-	// Find highest priority plan
-	best := &subscriptions[0]
-	for i := 1; i < len(subscriptions); i++ {
-		if subscriptions[i].SubscriptionPlan.Priority > best.SubscriptionPlan.Priority {
-			best = &subscriptions[i]
-		}
-	}
-	return best, &best.SubscriptionPlan
 }
 
 // orgSubscriptionToUserDTO converts an org subscription to UserSubscriptionOutput format
