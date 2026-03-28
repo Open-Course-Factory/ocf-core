@@ -321,6 +321,12 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 	case services.PlanSourceOrganization:
 		output := sc.orgSubscriptionToUserDTO(userId, result.OrganizationSubscription, result.Plan)
 		ctx.JSON(http.StatusOK, output)
+
+	default:
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Unexpected subscription source",
+		})
 	}
 }
 

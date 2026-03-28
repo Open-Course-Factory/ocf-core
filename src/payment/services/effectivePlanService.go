@@ -17,7 +17,6 @@ type EffectivePlanSource string
 const (
 	PlanSourcePersonal     EffectivePlanSource = "personal"
 	PlanSourceOrganization EffectivePlanSource = "organization"
-	PlanSourceNone         EffectivePlanSource = "none"
 )
 
 // EffectivePlanResult holds the resolved plan for a user, along with its source.
@@ -154,8 +153,7 @@ func (s *effectivePlanService) CheckEffectiveUsageLimit(userID string, metricTyp
 			Where("user_id = ? AND status = ? AND deleted_at IS NULL", userID, "active").
 			Count(&currentUsage).Error
 		if countErr != nil {
-			utils.Warn("Failed to count active terminals for user %s: %v", userID, countErr)
-			currentUsage = 0
+			return nil, fmt.Errorf("failed to count active terminals: %w", countErr)
 		}
 	} else {
 		// Check from usage_metrics table for the current period

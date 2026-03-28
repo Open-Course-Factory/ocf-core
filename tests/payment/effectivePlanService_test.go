@@ -226,6 +226,29 @@ func TestGetUserEffectivePlan_MultipleOrgs(t *testing.T) {
 	assert.Equal(t, 10, result.Plan.Priority)
 }
 
+func TestGetUserEffectivePlan_EqualPriority_PersonalWins(t *testing.T) {
+	db := freshTestDB(t)
+	// Create terminals table for this test
+	db.Exec("CREATE TABLE IF NOT EXISTS terminals (id TEXT PRIMARY KEY, user_id TEXT, status TEXT, deleted_at DATETIME)")
+
+	userID := "user_equal_priority"
+
+	// Create two plans with the same priority
+	personalPlan := createPlan(t, db, "Personal Plan", 10, 2) // priority 10
+	orgPlan := createPlan(t, db, "Org Plan", 10, 5)           // same priority 10
+
+	createUserSubscription(t, db, userID, personalPlan)
+	createOrgWithSubscription(t, db, "equal-org", userID, orgPlan)
+
+	svc := services.NewEffectivePlanService(db)
+	result, err := svc.GetUserEffectivePlan(userID)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, services.PlanSourcePersonal, result.Source)
+	assert.Equal(t, "Personal Plan", result.Plan.Name)
+}
+
 // --- CheckEffectiveUsageLimit tests ---
 
 func TestCheckEffectiveUsageLimit_ConcurrentTerminals_UnderLimit(t *testing.T) {

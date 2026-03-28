@@ -71,6 +71,15 @@ func CheckRAMAvailability(terminalService terminalServices.TerminalTrainerServic
 
 		const minRAMReservePercent = 5.0
 
+		if metrics.RAMPercent >= 99.0 {
+			ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
+				ErrorCode:    http.StatusServiceUnavailable,
+				ErrorMessage: "Server at capacity: RAM fully utilized. Please try again later.",
+			})
+			ctx.Abort()
+			return
+		}
+
 		// Calculate approximate total RAM from available RAM and usage percentage
 		// ram_available_gb = total_ram * (1 - ram_percent/100)
 		// therefore: total_ram = ram_available_gb / (1 - ram_percent/100)

@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
 
 	"soli/formations/src/auth/errors"
@@ -83,9 +82,10 @@ func CheckLimit(effectivePlanService services.EffectivePlanService, db *gorm.DB,
 
 		limitCheck, err := effectivePlanService.CheckEffectiveUsageLimit(userID, metricType, 1)
 		if err != nil {
+			utils.Warn("Failed to check usage limit for user %s: %v", userID, err)
 			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: fmt.Sprintf("Failed to check usage limit: %v", err),
+				ErrorMessage: "Failed to check usage limit",
 			})
 			ctx.Abort()
 			return
