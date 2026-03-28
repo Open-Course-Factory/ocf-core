@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
 
 	"soli/formations/src/auth/errors"
@@ -90,10 +89,11 @@ func CheckRAMAvailability(terminalService terminalServices.TerminalTrainerServic
 		ramAfterCreation := metrics.RAMAvailableGB - estimatedRAM
 
 		if ramAfterCreation < minReservedRAM {
+			utils.Warn("Terminal creation blocked: insufficient RAM (%.2f GB available, %.2f GB required + %.2f GB reserve)",
+				metrics.RAMAvailableGB, estimatedRAM, minReservedRAM)
 			ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
-				ErrorCode: http.StatusServiceUnavailable,
-				ErrorMessage: fmt.Sprintf("Server at capacity: insufficient RAM available (%.2f GB available, %.2f GB required for terminal + %.2f GB reserve). Please try again later.",
-					metrics.RAMAvailableGB, estimatedRAM, minReservedRAM),
+				ErrorCode:    http.StatusServiceUnavailable,
+				ErrorMessage: "Server at capacity. Please try again later.",
 			})
 			ctx.Abort()
 			return
