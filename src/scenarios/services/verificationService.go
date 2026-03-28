@@ -24,7 +24,7 @@ func NewVerificationService() *VerificationService {
 		ttBackendURL: os.Getenv("TERMINAL_TRAINER_URL"),
 		ttAPIKey:     os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 6 * time.Minute, // Must exceed the longest exec timeout (5min for step 0 setup)
 		},
 	}
 }
@@ -35,7 +35,7 @@ func NewVerificationServiceWithConfig(ttBackendURL, ttAPIKey string) *Verificati
 		ttBackendURL: ttBackendURL,
 		ttAPIKey:     ttAPIKey,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 6 * time.Minute,
 		},
 	}
 }
