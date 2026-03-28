@@ -72,7 +72,7 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		// Check for existing active session inside the transaction to prevent race conditions
 		var existingSession models.ScenarioSession
-		if err := tx.Where("user_id = ? AND scenario_id = ? AND status IN ?", userID, scenarioID, []string{"in_progress", "active"}).First(&existingSession).Error; err == nil {
+		if err := tx.Where("user_id = ? AND scenario_id = ? AND status IN ?", userID, scenarioID, []string{"in_progress", "active", "provisioning"}).First(&existingSession).Error; err == nil {
 			// Found an active session — check if its terminal is still alive
 			shouldAbandon := false
 
@@ -155,28 +155,70 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 			s.deployChallengeConfig(*session.TerminalSessionID, &scenario, session, userID)
 		}
 
-		// Execute background script for the first step
+		// Execute background script for the first step.
+		// If Step 0 has a background script, run it asynchronously and set status
+		// to "provisioning". A goroutine handles execution, flag deployment, and
+		// status transition to "active" once setup completes.
 		if len(scenario.Steps) > 0 {
-			s.executeBackgroundScript(*session.TerminalSessionID, &scenario.Steps[0])
-		}
+			bgScript := ResolveScriptContent(s.db, scenario.Steps[0].BackgroundScriptID, scenario.Steps[0].BackgroundScript)
+			if bgScript != "" {
+				// Set session to provisioning — frontend will poll until active
+				s.db.Model(session).Update("status", "provisioning")
+				session.Status = "provisioning"
 
-		// Deploy ONLY the flag for the first step (step 0) — not all flags at once.
-		// For crash_traps scenarios, flags are already in config.json; this also puts them as files.
-		if len(session.Flags) > 0 {
-			s.deploySingleFlagToContainer(*session.TerminalSessionID, &scenario, session.Flags, 0)
+				go s.runStep0Setup(session.ID, *session.TerminalSessionID, &scenario, session.Flags)
+			} else {
+				// No background script — deploy flag and stay active
+				if len(session.Flags) > 0 {
+					s.deploySingleFlagToContainer(*session.TerminalSessionID, &scenario, session.Flags, 0)
+				}
+			}
 		}
 	}
 
 	return session, nil
 }
 
+// runStep0Setup runs the step 0 background script asynchronously and transitions
+// the session from "provisioning" to "active" once setup completes.
+func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag) {
+	step := &scenario.Steps[0]
+
+	// Execute the background script (uses the 5-minute timeout for step 0)
+	s.executeBackgroundScript(terminalSessionID, step)
+
+	// Deploy the flag for step 0
+	if len(flags) > 0 {
+		s.deploySingleFlagToContainer(terminalSessionID, scenario, flags, 0)
+	}
+
+	// Transition to active — only if still provisioning (not abandoned meanwhile)
+	result := s.db.Model(&models.ScenarioSession{}).
+		Where("id = ? AND status = ?", sessionID, "provisioning").
+		Update("status", "active")
+	if result.RowsAffected > 0 {
+		slog.Info("scenario session setup complete", "session_id", sessionID)
+	}
+}
+
 // GetCurrentStep returns the current step content for a session.
+// If the session is still provisioning (step 0 setup running), returns a
+// response with status "provisioning" so the frontend can show a loading state.
 func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.CurrentStepResponse, error) {
 	var session models.ScenarioSession
 	if err := s.db.Preload("Scenario.Steps", func(db *gorm.DB) *gorm.DB {
 		return db.Order("\"order\" ASC")
 	}).Preload("StepProgress").First(&session, "id = ?", sessionID).Error; err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
+	}
+
+	if session.Status == "provisioning" {
+		return &dto.CurrentStepResponse{
+			StepOrder:  0,
+			TotalSteps: len(session.Scenario.Steps),
+			Title:      "Setting up environment...",
+			Status:     "provisioning",
+		}, nil
 	}
 
 	// Find the current step

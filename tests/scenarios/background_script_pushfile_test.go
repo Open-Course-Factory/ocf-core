@@ -4,13 +4,29 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 )
+
+// waitForProvisioning waits until the session transitions from "provisioning" to "active".
+func waitForProvisioning(t *testing.T, db *gorm.DB, sessionID any) {
+	t.Helper()
+	for i := 0; i < 50; i++ { // max 500ms
+		var s models.ScenarioSession
+		db.First(&s, "id = ?", sessionID)
+		if s.Status == "active" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("session did not transition from provisioning to active within timeout")
+}
 
 // bgTrackingVerificationService is a mock that tracks both ExecInContainer and PushFile calls,
 // allowing tests to inspect the exact sequence and arguments of background script execution.
@@ -68,12 +84,16 @@ func TestExecuteBackgroundScript_SmallScript_UsesInline(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, session)
+	assert.Equal(t, "provisioning", session.Status)
+
+	// Wait for async setup to complete
+	waitForProvisioning(t, db, session.ID)
 
 	// Small script: should use inline ExecInContainer with /bin/sh -c
 	assert.Len(t, verifySvc.pushFileCalls, 0, "PushFile should NOT be called for small scripts")
 	require.Len(t, verifySvc.execCalls, 1, "ExecInContainer should be called once")
 	assert.Equal(t, []string{"/bin/sh", "-c", smallScript}, verifySvc.execCalls[0].command)
-	assert.Equal(t, 30, verifySvc.execCalls[0].timeout)
+	assert.Equal(t, 300, verifySvc.execCalls[0].timeout) // step 0 gets 5-minute timeout
 }
 
 func TestExecuteBackgroundScript_LargeScript_UsesPushFile(t *testing.T) {
@@ -107,6 +127,10 @@ func TestExecuteBackgroundScript_LargeScript_UsesPushFile(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, session)
+	assert.Equal(t, "provisioning", session.Status)
+
+	// Wait for async setup to complete
+	waitForProvisioning(t, db, session.ID)
 
 	// Large script: should use PushFile then ExecInContainer with temp path, then cleanup
 	require.Len(t, verifySvc.pushFileCalls, 1, "PushFile should be called once")
@@ -120,7 +144,7 @@ func TestExecuteBackgroundScript_LargeScript_UsesPushFile(t *testing.T) {
 
 	// First exec: run the script from temp file (uses /bin/bash from shebang)
 	assert.Equal(t, []string{"/bin/bash", "/tmp/.ocf_bg_0.sh"}, verifySvc.execCalls[0].command)
-	assert.Equal(t, 30, verifySvc.execCalls[0].timeout)
+	assert.Equal(t, 300, verifySvc.execCalls[0].timeout) // step 0 gets 5-minute timeout
 
 	// Second exec: cleanup rm -f
 	assert.Equal(t, []string{"rm", "-f", "/tmp/.ocf_bg_0.sh"}, verifySvc.execCalls[1].command)
@@ -194,7 +218,10 @@ func TestExecuteBackgroundScript_PushFileFails_LogsAndReturns(t *testing.T) {
 	// Session should still succeed (background script failure is best-effort)
 	require.NoError(t, err)
 	require.NotNil(t, session)
-	assert.Equal(t, "active", session.Status)
+	assert.Equal(t, "provisioning", session.Status)
+
+	// Wait for async setup to complete (goroutine transitions to active even on failure)
+	waitForProvisioning(t, db, session.ID)
 
 	// PushFile was called and failed
 	require.Len(t, verifySvc.pushFileCalls, 1, "PushFile should be called once")

@@ -623,10 +623,22 @@ func TestScenarioSessionService_StartScenario_ExecutesBackgroundScript(t *testin
 
 	require.NoError(t, err)
 	require.NotNil(t, session)
+	assert.Equal(t, "provisioning", session.Status)
+
+	// Wait for async setup goroutine to complete
+	for i := 0; i < 50; i++ {
+		var s models.ScenarioSession
+		db.First(&s, "id = ?", session.ID)
+		if s.Status == "active" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	require.Len(t, verifySvc.execCalls, 1)
 	assert.Equal(t, "test-terminal", verifySvc.execCalls[0].sessionID)
 	assert.Equal(t, []string{"/bin/sh", "-c", "echo setup"}, verifySvc.execCalls[0].command)
-	assert.Equal(t, 30, verifySvc.execCalls[0].timeout)
+	assert.Equal(t, 300, verifySvc.execCalls[0].timeout) // step 0 gets 5-minute timeout
 }
 
 func TestScenarioSessionService_StartScenario_SkipsEmptyBackgroundScript(t *testing.T) {
@@ -940,5 +952,19 @@ func TestScenarioSessionService_BackgroundScript_Error_DoesNotFailStart(t *testi
 
 	require.NoError(t, err)
 	require.NotNil(t, session)
-	assert.Equal(t, "active", session.Status)
+	assert.Equal(t, "provisioning", session.Status)
+
+	// Wait for async setup to complete (error is best-effort, session still transitions to active)
+	for i := 0; i < 50; i++ {
+		var s models.ScenarioSession
+		db.First(&s, "id = ?", session.ID)
+		if s.Status == "active" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	var final models.ScenarioSession
+	db.First(&final, "id = ?", session.ID)
+	assert.Equal(t, "active", final.Status)
 }
