@@ -90,6 +90,9 @@ func SetupTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/terminals/:id/hide", "DELETE"},
 		{"/api/v1/terminals/:id/sync", "POST"},
 		{"/api/v1/terminals/:id/status", "GET"},
+		{"/api/v1/terminals/:id/history", "GET"},
+		{"/api/v1/terminals/:id/history", "DELETE"},
+		{"/api/v1/terminals/my-history", "DELETE"},
 	}
 
 	for _, route := range terminalRoutes {
