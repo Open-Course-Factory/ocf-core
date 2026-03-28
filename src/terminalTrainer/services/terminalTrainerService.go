@@ -255,8 +255,7 @@ func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.
 		return nil, fmt.Errorf("user terminal trainer key is disabled")
 	}
 
-	// NOTE: Concurrent terminal checks are now handled by middleware
-	// The subscription plan limits are enforced in CheckTerminalCreationLimit() middleware
+	// NOTE: Concurrent terminal checks are now handled by the EffectivePlanMiddleware
 	// Machine size, template, and network validation should be added here based on subscription plan
 
 	// Appel à l'API Terminal Trainer pour démarrer la session

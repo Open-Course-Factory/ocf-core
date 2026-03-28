@@ -10,8 +10,10 @@ import (
 	config "soli/formations/src/configuration"
 	configRepositories "soli/formations/src/configuration/repositories"
 	paymentMiddleware "soli/formations/src/payment/middleware"
+	paymentServices "soli/formations/src/payment/services"
 	terminalMiddleware "soli/formations/src/terminalTrainer/middleware"
 	"soli/formations/src/terminalTrainer/models"
+	terminalServices "soli/formations/src/terminalTrainer/services"
 
 	"gorm.io/gorm"
 )
@@ -19,24 +21,23 @@ import (
 func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
 	terminalController := NewTerminalController(db)
 	middleware := auth.NewAuthMiddleware(db)
-	usageLimitMiddleware := paymentMiddleware.NewUsageLimitMiddleware(db)
+	effectivePlanService := paymentServices.NewEffectivePlanService(db)
+	terminalService := terminalServices.NewTerminalTrainerService(db)
 	terminalAccessMiddleware := terminalMiddleware.NewTerminalAccessMiddleware(db)
 
 	routes := router.Group("/terminals")
 
 	// Routes spécialisées pour les fonctionnalités Terminal Trainer
-	// Apply terminal creation limit middleware to start-session route
-	routes.POST("/start-session", middleware.AuthManagement(), usageLimitMiddleware.CheckTerminalCreationLimit(), terminalController.StartSession)
+	// Apply effective plan + limit + RAM check middlewares to start-session route
+	routes.POST("/start-session", middleware.AuthManagement(), paymentMiddleware.InjectEffectivePlan(effectivePlanService), paymentMiddleware.RequirePlan(), paymentMiddleware.CheckLimit(effectivePlanService, db, "concurrent_terminals"), paymentMiddleware.CheckRAMAvailability(terminalService), terminalController.StartSession)
 
 	// Console access requires "read" level access (Layer 2 security check)
 	routes.GET("/:id/console", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelRead), terminalController.ConnectConsole)
 
 	// Bulk operations for groups
 	groupRoutes := router.Group("/class-groups")
-	// NOTE: We don't apply CheckTerminalCreationLimit() here because bulk creation has its own quota logic
-	// Instead, we use InjectSubscriptionInfo() to attach the plan to context for validation
-	subscriptionMiddleware := paymentMiddleware.NewSubscriptionIntegrationMiddleware(db)
-	groupRoutes.POST("/:id/bulk-create-terminals", middleware.AuthManagement(), subscriptionMiddleware.InjectSubscriptionInfo(), terminalController.BulkCreateTerminalsForGroup)
+	// Use effective plan middlewares for bulk creation validation
+	groupRoutes.POST("/:id/bulk-create-terminals", middleware.AuthManagement(), paymentMiddleware.InjectEffectivePlan(effectivePlanService), paymentMiddleware.RequirePlan(), terminalController.BulkCreateTerminalsForGroup)
 	groupRoutes.GET("/:id/command-history", middleware.AuthManagement(), terminalController.GetGroupCommandHistory)
 	groupRoutes.GET("/:id/command-history-stats", middleware.AuthManagement(), terminalController.GetGroupCommandHistoryStats)
 
