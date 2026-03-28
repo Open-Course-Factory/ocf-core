@@ -123,11 +123,6 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Migrate existing hint_content to progressive hint records
 	migrateHintContentToHints(db)
 
-	// Rename filename → name on project_files (GORM AutoMigrate doesn't rename columns)
-	if db.Migrator().HasColumn(&scenarioModels.ProjectFile{}, "filename") {
-		db.Migrator().RenameColumn(&scenarioModels.ProjectFile{}, "filename", "name")
-	}
-
 	// Migrate inline scripts/markdown to ProjectFile records
 	migrateInlineContentToProjectFiles(db)
 
