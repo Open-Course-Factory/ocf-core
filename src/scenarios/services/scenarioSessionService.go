@@ -152,10 +152,21 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 	}
 
 	if session.TerminalSessionID != nil && s.verificationService != nil {
+		slog.Info("StartScenario post-create",
+			"session_id", session.ID,
+			"terminal_id", *session.TerminalSessionID,
+			"crash_traps", scenario.CrashTraps,
+			"flags_count", len(session.Flags),
+			"steps_count", len(scenario.Steps),
+		)
+
 		// For crash_traps scenarios: push /etc/challenge/config.json with all flags
 		// BEFORE running the background script (setup.sh reads this file)
 		if scenario.CrashTraps && len(session.Flags) > 0 {
-			s.deployChallengeConfig(*session.TerminalSessionID, &scenario, session, userID)
+			if err := s.deployChallengeConfig(*session.TerminalSessionID, &scenario, session, userID); err != nil {
+				slog.Error("failed to deploy challenge config", "session_id", session.ID, "err", err)
+				return nil, fmt.Errorf("failed to deploy challenge config: %w", err)
+			}
 		}
 
 		// Execute background script for the first step.
@@ -164,6 +175,7 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		// status transition to "active" once setup completes.
 		if len(scenario.Steps) > 0 {
 			bgScript := ResolveScriptContent(s.db, scenario.Steps[0].BackgroundScriptID, scenario.Steps[0].BackgroundScript)
+			slog.Info("StartScenario background script", "session_id", session.ID, "script_len", len(bgScript))
 			if bgScript != "" {
 				// Set session to provisioning — frontend will poll until active
 				s.db.Model(session).Update("status", "provisioning")
@@ -811,9 +823,9 @@ func (s *ScenarioSessionService) deploySingleFlagToContainer(terminalSessionID s
 // deployChallengeConfig pushes /etc/challenge/config.json to the container.
 // This is required for crash_traps scenarios where setup.sh reads flags from this file.
 // The config contains the student ID, all flags (keyed by step order), and the initial password.
-func (s *ScenarioSessionService) deployChallengeConfig(terminalSessionID string, scenario *models.Scenario, session *models.ScenarioSession, userID string) {
+func (s *ScenarioSessionService) deployChallengeConfig(terminalSessionID string, scenario *models.Scenario, session *models.ScenarioSession, userID string) error {
 	if s.verificationService == nil {
-		return
+		return fmt.Errorf("verification service not available")
 	}
 
 	// Build the flags map: {"0": "FLAG{...}", "1": "FLAG{...}", ...}
@@ -831,17 +843,16 @@ func (s *ScenarioSessionService) deployChallengeConfig(terminalSessionID string,
 
 	configJSON, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		slog.Warn("failed to marshal challenge config", "err", err)
-		return
+		return fmt.Errorf("failed to marshal challenge config: %w", err)
 	}
 
 	// Push to /tmp/ (tt-backend restricts paths), setup.sh will move it
 	if err := s.verificationService.PushFile(terminalSessionID, "/tmp/challenge_config.json", string(configJSON), "0600"); err != nil {
-		slog.Warn("failed to push challenge config to container", "err", err)
-		return
+		return fmt.Errorf("failed to push challenge config: %w", err)
 	}
 
 	slog.Info("deployed challenge config", "session_id", session.ID, "flags_count", len(flagsMap))
+	return nil
 }
 
 // maxInlineScriptSize is the max script size that can be passed as a command argument.
