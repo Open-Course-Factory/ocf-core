@@ -14,18 +14,19 @@ import (
 	"soli/formations/src/scenarios/services"
 )
 
-// waitForProvisioning waits until the session transitions from "provisioning" to "active".
-func waitForProvisioning(t *testing.T, db *gorm.DB, sessionID any) {
+// waitForSetupDone waits until the session transitions out of "provisioning" (to "active" or "setup_failed").
+func waitForSetupDone(t *testing.T, db *gorm.DB, sessionID any) string {
 	t.Helper()
 	for i := 0; i < 50; i++ { // max 500ms
 		var s models.ScenarioSession
 		db.First(&s, "id = ?", sessionID)
-		if s.Status == "active" {
-			return
+		if s.Status != "provisioning" {
+			return s.Status
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("session did not transition from provisioning to active within timeout")
+	t.Fatal("session did not transition from provisioning within timeout")
+	return ""
 }
 
 // bgTrackingVerificationService is a mock that tracks both ExecInContainer and PushFile calls,
@@ -87,7 +88,8 @@ func TestExecuteBackgroundScript_SmallScript_UsesInline(t *testing.T) {
 	assert.Equal(t, "provisioning", session.Status)
 
 	// Wait for async setup to complete
-	waitForProvisioning(t, db, session.ID)
+	status := waitForSetupDone(t, db, session.ID)
+	assert.Equal(t, "active", status)
 
 	// Small script: should use inline ExecInContainer with /bin/sh -c
 	assert.Len(t, verifySvc.pushFileCalls, 0, "PushFile should NOT be called for small scripts")
@@ -130,7 +132,8 @@ func TestExecuteBackgroundScript_LargeScript_UsesPushFile(t *testing.T) {
 	assert.Equal(t, "provisioning", session.Status)
 
 	// Wait for async setup to complete
-	waitForProvisioning(t, db, session.ID)
+	status := waitForSetupDone(t, db, session.ID)
+	assert.Equal(t, "active", status)
 
 	// Large script: should use PushFile then ExecInContainer with temp path, then cleanup
 	require.Len(t, verifySvc.pushFileCalls, 1, "PushFile should be called once")
@@ -220,8 +223,9 @@ func TestExecuteBackgroundScript_PushFileFails_LogsAndReturns(t *testing.T) {
 	require.NotNil(t, session)
 	assert.Equal(t, "provisioning", session.Status)
 
-	// Wait for async setup to complete (goroutine transitions to active even on failure)
-	waitForProvisioning(t, db, session.ID)
+	// Wait for async setup — should fail since PushFile errors
+	status := waitForSetupDone(t, db, session.ID)
+	assert.Equal(t, "setup_failed", status)
 
 	// PushFile was called and failed
 	require.Len(t, verifySvc.pushFileCalls, 1, "PushFile should be called once")

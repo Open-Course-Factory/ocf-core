@@ -180,12 +180,19 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 }
 
 // runStep0Setup runs the step 0 background script asynchronously and transitions
-// the session from "provisioning" to "active" once setup completes.
+// the session from "provisioning" to "active" once setup completes, or to
+// "setup_failed" if the script fails.
 func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag) {
 	step := &scenario.Steps[0]
 
 	// Execute the background script (uses the 5-minute timeout for step 0)
-	s.executeBackgroundScript(terminalSessionID, step)
+	if err := s.executeBackgroundScript(terminalSessionID, step); err != nil {
+		slog.Error("step 0 setup failed", "session_id", sessionID, "err", err)
+		s.db.Model(&models.ScenarioSession{}).
+			Where("id = ? AND status = ?", sessionID, "provisioning").
+			Update("status", "setup_failed")
+		return
+	}
 
 	// Deploy the flag for step 0
 	if len(flags) > 0 {
@@ -218,6 +225,15 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 			TotalSteps: len(session.Scenario.Steps),
 			Title:      "Setting up environment...",
 			Status:     "provisioning",
+		}, nil
+	}
+
+	if session.Status == "setup_failed" {
+		return &dto.CurrentStepResponse{
+			StepOrder:  0,
+			TotalSteps: len(session.Scenario.Steps),
+			Title:      "Environment setup failed",
+			Status:     "setup_failed",
 		}, nil
 	}
 
@@ -414,7 +430,7 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	if response.Passed && response.NextStep != nil && session.TerminalSessionID != nil {
 		for i := range session.Scenario.Steps {
 			if session.Scenario.Steps[i].Order == *response.NextStep {
-				s.executeBackgroundScript(*session.TerminalSessionID, &session.Scenario.Steps[i])
+				_ = s.executeBackgroundScript(*session.TerminalSessionID, &session.Scenario.Steps[i])
 				break
 			}
 		}
@@ -508,7 +524,7 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 	if response.NextStep != nil && session.TerminalSessionID != nil {
 		for i := range session.Scenario.Steps {
 			if session.Scenario.Steps[i].Order == *response.NextStep {
-				s.executeBackgroundScript(*session.TerminalSessionID, &session.Scenario.Steps[i])
+				_ = s.executeBackgroundScript(*session.TerminalSessionID, &session.Scenario.Steps[i])
 				break
 			}
 		}
@@ -839,20 +855,20 @@ const (
 )
 
 // executeBackgroundScript runs a step's background script in the student's container.
-// This is best-effort: errors are logged but don't fail the step transition,
-// following the same pattern as deploySingleFlagToContainer.
+// Returns nil on success, an error if the script could not be pushed/executed or exited non-zero.
+// For non-step-0 scripts the caller may choose to ignore the error (best-effort).
 //
 // Small scripts (<=4000 bytes) are passed inline via /bin/sh -c.
 // Large scripts are pushed as temp files via PushFile, then executed from disk
 // and cleaned up afterward, to avoid tt-backend's 4KB exec argument limit.
-func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID string, step *models.ScenarioStep) {
+func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID string, step *models.ScenarioStep) error {
 	// Resolve background script from ProjectFile if available
 	bgScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript)
 	if bgScript == "" {
-		return
+		return nil
 	}
 	if s.verificationService == nil {
-		return
+		return fmt.Errorf("verification service not available")
 	}
 
 	timeout := bgScriptTimeoutDefault
@@ -878,7 +894,7 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 		tmpPath := fmt.Sprintf("/tmp/.ocf_bg_%d.sh", step.Order)
 		if pushErr := s.verificationService.PushFile(terminalSessionID, tmpPath, bgScript, "0700"); pushErr != nil {
 			slog.Warn("failed to push background script to container", "step_order", step.Order, "err", pushErr)
-			return
+			return fmt.Errorf("failed to push script: %w", pushErr)
 		}
 		exitCode, _, stderr, err = s.verificationService.ExecInContainer(
 			terminalSessionID,
@@ -895,9 +911,11 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 
 	if err != nil {
 		slog.Warn("background script failed to execute", "step_order", step.Order, "err", err)
-		return
+		return fmt.Errorf("script execution failed: %w", err)
 	}
 	if exitCode != 0 {
 		slog.Warn("background script exited with non-zero code", "step_order", step.Order, "exit_code", exitCode, "stderr", stderr)
+		return fmt.Errorf("script exited with code %d: %s", exitCode, stderr)
 	}
+	return nil
 }

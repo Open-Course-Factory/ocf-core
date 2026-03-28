@@ -954,11 +954,11 @@ func TestScenarioSessionService_BackgroundScript_Error_DoesNotFailStart(t *testi
 	require.NotNil(t, session)
 	assert.Equal(t, "provisioning", session.Status)
 
-	// Wait for async setup to complete (error is best-effort, session still transitions to active)
+	// Wait for async setup — should fail since exec errors
 	for i := 0; i < 50; i++ {
 		var s models.ScenarioSession
 		db.First(&s, "id = ?", session.ID)
-		if s.Status == "active" {
+		if s.Status != "provisioning" {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -966,5 +966,5 @@ func TestScenarioSessionService_BackgroundScript_Error_DoesNotFailStart(t *testi
 
 	var final models.ScenarioSession
 	db.First(&final, "id = ?", session.ID)
-	assert.Equal(t, "active", final.Status)
+	assert.Equal(t, "setup_failed", final.Status)
 }
