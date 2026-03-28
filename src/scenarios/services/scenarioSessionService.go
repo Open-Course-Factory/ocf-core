@@ -73,21 +73,24 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		// Check for existing active session inside the transaction to prevent race conditions
 		var existingSession models.ScenarioSession
 		if err := tx.Where("user_id = ? AND scenario_id = ? AND status IN ?", userID, scenarioID, []string{"in_progress", "active", "provisioning", "setup_failed"}).First(&existingSession).Error; err == nil {
-			// Found an active session — check if its terminal is still alive
-			shouldAbandon := false
+			// setup_failed sessions are always auto-abandoned — the environment is broken
+			shouldAbandon := existingSession.Status == "setup_failed"
 
-			if existingSession.TerminalSessionID == nil {
-				// Orphan session with no terminal — auto-abandon
-				shouldAbandon = true
-			} else {
-				// Look up the terminal record
-				var terminal terminalModels.Terminal
-				if err := tx.Where("session_id = ?", *existingSession.TerminalSessionID).First(&terminal).Error; err != nil {
-					// Terminal not found (deleted or soft-deleted) — auto-abandon
+			if !shouldAbandon {
+				// For other statuses, check if the terminal is still alive
+				if existingSession.TerminalSessionID == nil {
+					// Orphan session with no terminal — auto-abandon
 					shouldAbandon = true
-				} else if terminal.Status != "active" {
-					// Terminal exists but is expired/stopped — auto-abandon
-					shouldAbandon = true
+				} else {
+					// Look up the terminal record
+					var terminal terminalModels.Terminal
+					if err := tx.Where("session_id = ?", *existingSession.TerminalSessionID).First(&terminal).Error; err != nil {
+						// Terminal not found (deleted or soft-deleted) — auto-abandon
+						shouldAbandon = true
+					} else if terminal.Status != "active" {
+						// Terminal exists but is expired/stopped — auto-abandon
+						shouldAbandon = true
+					}
 				}
 			}
 
