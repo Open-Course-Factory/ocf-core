@@ -72,7 +72,7 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		// Check for existing active session inside the transaction to prevent race conditions
 		var existingSession models.ScenarioSession
-		if err := tx.Where("user_id = ? AND scenario_id = ? AND status IN ?", userID, scenarioID, []string{"in_progress", "active", "provisioning"}).First(&existingSession).Error; err == nil {
+		if err := tx.Where("user_id = ? AND scenario_id = ? AND status IN ?", userID, scenarioID, []string{"in_progress", "active", "provisioning", "setup_failed"}).First(&existingSession).Error; err == nil {
 			// Found an active session — check if its terminal is still alive
 			shouldAbandon := false
 

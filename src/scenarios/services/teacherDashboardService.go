@@ -350,7 +350,7 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 			// Check for existing active session — abandon it and create a new one
 			var existing models.ScenarioSession
 			err := s.db.Where("user_id = ? AND scenario_id = ? AND status IN ?",
-				member.UserID, scenarioID, []string{"active", "in_progress", "provisioning"}).First(&existing).Error
+				member.UserID, scenarioID, []string{"active", "in_progress", "provisioning", "setup_failed"}).First(&existing).Error
 			if err == nil {
 				utils.Debug("BulkStartScenario - Member %s has existing session %s (status=%s), abandoning it", member.UserID, existing.ID, existing.Status)
 				if abandonErr := s.db.Model(&existing).Update("status", "abandoned").Error; abandonErr != nil {
