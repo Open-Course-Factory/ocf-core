@@ -602,6 +602,181 @@ func TestScenarioImporter_ImportFromDirectory_KillerCodaQuizFormat(t *testing.T)
 	assert.NotEmpty(t, reloaded.Steps[1].BackgroundScript, "step 2 background script should persist in DB")
 }
 
+func TestExtractLocalImagePaths(t *testing.T) {
+	t.Run("extracts relative image paths", func(t *testing.T) {
+		md := `# Title
+
+![Browse Registry](./assets/step1-1.png)
+
+Some text.
+
+![View Provider](./assets/step1-2.png)
+`
+		paths := services.ExtractLocalImagePaths(md)
+		assert.Len(t, paths, 2)
+		assert.Contains(t, paths, "./assets/step1-1.png")
+		assert.Contains(t, paths, "./assets/step1-2.png")
+	})
+
+	t.Run("skips external URLs", func(t *testing.T) {
+		md := `![Logo](https://example.com/logo.svg)
+![Local](./local.png)
+![HTTP](http://cdn.example.com/img.jpg)`
+		paths := services.ExtractLocalImagePaths(md)
+		assert.Len(t, paths, 1)
+		assert.Equal(t, "./local.png", paths[0])
+	})
+
+	t.Run("skips data URIs", func(t *testing.T) {
+		md := `![Inline](data:image/png;base64,iVBOR...)
+![Local](assets/real.png)`
+		paths := services.ExtractLocalImagePaths(md)
+		assert.Len(t, paths, 1)
+		assert.Equal(t, "assets/real.png", paths[0])
+	})
+
+	t.Run("skips non-image extensions", func(t *testing.T) {
+		md := `![PDF](./doc.pdf)
+![Image](./photo.jpg)
+![Script](./run.sh)`
+		paths := services.ExtractLocalImagePaths(md)
+		assert.Len(t, paths, 1)
+		assert.Equal(t, "./photo.jpg", paths[0])
+	})
+
+	t.Run("deduplicates paths", func(t *testing.T) {
+		md := `![A](./img.png)
+![B](./img.png)
+![C](./img.png)`
+		paths := services.ExtractLocalImagePaths(md)
+		assert.Len(t, paths, 1)
+	})
+
+	t.Run("handles multiple image formats", func(t *testing.T) {
+		md := `![PNG](a.png)
+![JPG](b.jpg)
+![JPEG](c.jpeg)
+![GIF](d.gif)
+![SVG](e.svg)
+![WEBP](f.webp)`
+		paths := services.ExtractLocalImagePaths(md)
+		assert.Len(t, paths, 6)
+	})
+
+	t.Run("returns empty for no images", func(t *testing.T) {
+		md := "# Just text\n\nNo images here."
+		paths := services.ExtractLocalImagePaths(md)
+		assert.Empty(t, paths)
+	})
+}
+
+func TestScenarioImporter_ImportFromDirectory_WithImages(t *testing.T) {
+	db := setupTestDB(t)
+	importer := services.NewScenarioImporterService(db)
+
+	tmpDir := t.TempDir()
+
+	// Create step directory with an image
+	os.MkdirAll(filepath.Join(tmpDir, "step1", "assets"), 0755)
+
+	// Write a small 1x1 red PNG (valid minimal PNG)
+	pngData := []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1 pixels
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, // RGB, CRC
+		0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, // IDAT chunk
+		0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00, 0x00, // compressed
+		0x00, 0x02, 0x00, 0x01, 0xe2, 0x21, 0xbc, 0x33, // CRC
+		0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, // IEND chunk
+		0xae, 0x42, 0x60, 0x82,
+	}
+	err := os.WriteFile(filepath.Join(tmpDir, "step1", "assets", "screenshot.png"), pngData, 0644)
+	require.NoError(t, err)
+
+	// Markdown referencing the image
+	writeTestFile(t, tmpDir, "step1/text.md", "# Step 1\n\n![Screenshot](./assets/screenshot.png)\n\nSee above.")
+	writeTestFile(t, tmpDir, "intro.md", "# Intro\nWelcome.")
+	writeTestFile(t, tmpDir, "finish.md", "# Done")
+
+	indexJSON := `{
+		"title": "Image Test Lab",
+		"description": "Testing image import",
+		"details": {
+			"intro": {"text": "intro.md"},
+			"steps": [
+				{"title": "Step With Image", "text": "step1/text.md"}
+			],
+			"finish": {"text": "finish.md"}
+		},
+		"backend": {"imageid": "ubuntu"}
+	}`
+	writeTestFile(t, tmpDir, "index.json", indexJSON)
+
+	scenario, err := importer.ImportFromDirectory(tmpDir, "user-img", nil, "upload")
+
+	require.NoError(t, err)
+	require.Len(t, scenario.Steps, 1)
+	assert.Contains(t, scenario.Steps[0].TextContent, "screenshot.png")
+
+	// Verify image ProjectFile was created
+	var imageFiles []models.ProjectFile
+	db.Where("scenario_id = ? AND content_type = ?", scenario.ID, "image").Find(&imageFiles)
+
+	require.Len(t, imageFiles, 1)
+	assert.Equal(t, "screenshot.png", imageFiles[0].Name)
+	assert.Equal(t, "step1/assets/screenshot.png", imageFiles[0].RelPath)
+	assert.Equal(t, "image", imageFiles[0].ContentType)
+	assert.Equal(t, "image/png", imageFiles[0].MimeType)
+	assert.Equal(t, int64(len(pngData)), imageFiles[0].SizeBytes)
+	assert.NotEmpty(t, imageFiles[0].Content) // base64 content
+	assert.Equal(t, &scenario.ID, imageFiles[0].ScenarioID)
+}
+
+func TestScenarioImporter_ImportFromDirectory_UpsertCleansOldImages(t *testing.T) {
+	db := setupTestDB(t)
+	importer := services.NewScenarioImporterService(db)
+
+	tmpDir := t.TempDir()
+	os.MkdirAll(filepath.Join(tmpDir, "step1", "assets"), 0755)
+
+	pngData := []byte{0x89, 0x50, 0x4e, 0x47} // minimal "PNG" for test
+	os.WriteFile(filepath.Join(tmpDir, "step1", "assets", "old.png"), pngData, 0644)
+
+	writeTestFile(t, tmpDir, "step1/text.md", "![Old](./assets/old.png)")
+	writeTestFile(t, tmpDir, "index.json", `{
+		"title": "Upsert Image Lab",
+		"details": {
+			"steps": [{"title": "Step 1", "text": "step1/text.md"}]
+		},
+		"backend": {"imageid": "ubuntu"}
+	}`)
+
+	// First import
+	scenario1, err := importer.ImportFromDirectory(tmpDir, "user-1", nil, "upload")
+	require.NoError(t, err)
+
+	var count1 int64
+	db.Model(&models.ProjectFile{}).Where("scenario_id = ? AND content_type = ?", scenario1.ID, "image").Count(&count1)
+	assert.Equal(t, int64(1), count1)
+
+	// Replace image with a new one
+	os.Remove(filepath.Join(tmpDir, "step1", "assets", "old.png"))
+	os.WriteFile(filepath.Join(tmpDir, "step1", "assets", "new.png"), pngData, 0644)
+	writeTestFile(t, tmpDir, "step1/text.md", "![New](./assets/new.png)")
+
+	// Second import (upsert)
+	scenario2, err := importer.ImportFromDirectory(tmpDir, "user-1", nil, "upload")
+	require.NoError(t, err)
+	assert.Equal(t, scenario1.ID, scenario2.ID) // same scenario
+
+	// Old image should be deleted, new one created
+	var imageFiles []models.ProjectFile
+	db.Where("scenario_id = ? AND content_type = ?", scenario2.ID, "image").Find(&imageFiles)
+	require.Len(t, imageFiles, 1)
+	assert.Equal(t, "new.png", imageFiles[0].Name)
+}
+
 func writeTestFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	fullPath := filepath.Join(dir, name)

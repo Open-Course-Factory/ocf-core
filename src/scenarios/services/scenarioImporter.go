@@ -2,11 +2,14 @@ package services
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"mime"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -194,6 +197,11 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 				return err
 			}
 
+			// Import images referenced in markdown content
+			if err := importScenarioImages(tx, existing.ID, dirPath, index, scenario); err != nil {
+				return err
+			}
+
 			return nil
 		})
 		if err != nil {
@@ -219,6 +227,11 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 
 		// Create ProjectFiles for scenario and steps (dual-write)
 		if err := createProjectFilesForScenario(tx, scenario, scenario, stepRelPaths); err != nil {
+			return err
+		}
+
+		// Import images referenced in markdown content
+		if err := importScenarioImages(tx, scenario.ID, dirPath, index, scenario); err != nil {
 			return err
 		}
 
@@ -422,6 +435,13 @@ func collectProjectFileIDs(tx *gorm.DB, scenarioID uuid.UUID) []uuid.UUID {
 		}
 	}
 
+	// Image files linked via ScenarioID
+	var imageFiles []models.ProjectFile
+	tx.Select("id").Where("scenario_id = ? AND content_type = ?", scenarioID, "image").Find(&imageFiles)
+	for _, f := range imageFiles {
+		ids = append(ids, f.ID)
+	}
+
 	return ids
 }
 
@@ -622,5 +642,137 @@ func readFileContent(dirPath string, relPath string) string {
 		return ""
 	}
 	return string(data)
+}
+
+// readBinaryFileBase64 reads a binary file and returns its content as base64.
+// Returns empty string if the file doesn't exist or can't be read.
+func readBinaryFileBase64(dirPath string, relPath string) (string, int64) {
+	if relPath == "" {
+		return "", 0
+	}
+	fullPath := filepath.Join(dirPath, relPath)
+	cleanPath := filepath.Clean(fullPath)
+	cleanDir := filepath.Clean(dirPath)
+	if !strings.HasPrefix(cleanPath, cleanDir+string(filepath.Separator)) && cleanPath != cleanDir {
+		return "", 0
+	}
+	data, err := os.ReadFile(cleanPath)
+	if err != nil {
+		return "", 0
+	}
+	return base64.StdEncoding.EncodeToString(data), int64(len(data))
+}
+
+// imageRefRegex matches markdown image references: ![alt](path)
+var imageRefRegex = regexp.MustCompile(`!\[[^\]]*\]\(([^)]+)\)`)
+
+// imageExtensions lists file extensions treated as images
+var imageExtensions = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true,
+	".svg": true, ".webp": true, ".ico": true, ".bmp": true,
+}
+
+// ExtractLocalImagePaths finds all local image paths referenced in markdown.
+// Skips external URLs (http://, https://) and data URIs.
+func ExtractLocalImagePaths(markdown string) []string {
+	matches := imageRefRegex.FindAllStringSubmatch(markdown, -1)
+	seen := make(map[string]bool)
+	var paths []string
+	for _, m := range matches {
+		path := m[1]
+		// Skip external URLs and data URIs
+		if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") || strings.HasPrefix(path, "data:") {
+			continue
+		}
+		// Check file extension
+		ext := strings.ToLower(filepath.Ext(path))
+		if !imageExtensions[ext] {
+			continue
+		}
+		if !seen[path] {
+			seen[path] = true
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+// importScenarioImages scans all markdown content for image references,
+// reads the image files from the directory, and creates ProjectFile records.
+func importScenarioImages(tx *gorm.DB, scenarioID uuid.UUID, dirPath string, index *KillerCodaIndex, srcScenario *models.Scenario) error {
+	// Collect (markdownContent, markdownFileDir) pairs to scan for images
+	type mdSource struct {
+		content string
+		dir     string // directory the markdown file lives in, relative to dirPath
+	}
+
+	var sources []mdSource
+
+	// Scenario-level markdown
+	if srcScenario.IntroText != "" {
+		sources = append(sources, mdSource{srcScenario.IntroText, ""})
+	}
+	if srcScenario.FinishText != "" {
+		sources = append(sources, mdSource{srcScenario.FinishText, ""})
+	}
+
+	// Step-level markdown
+	for i, step := range srcScenario.Steps {
+		stepDir := fmt.Sprintf("step%d", i+1)
+		// Use KillerCoda path to determine the actual step directory
+		if i < len(index.Details.Steps) && index.Details.Steps[i].Text != "" {
+			stepDir = filepath.Dir(index.Details.Steps[i].Text)
+		}
+		if step.TextContent != "" {
+			sources = append(sources, mdSource{step.TextContent, stepDir})
+		}
+		if step.HintContent != "" {
+			sources = append(sources, mdSource{step.HintContent, stepDir})
+		}
+	}
+
+	// Extract all unique image paths (resolved to scenario root)
+	seen := make(map[string]bool)
+	for _, src := range sources {
+		localPaths := ExtractLocalImagePaths(src.content)
+		for _, imgPath := range localPaths {
+			// Resolve relative to the markdown file's directory
+			resolved := filepath.Join(src.dir, imgPath)
+			resolved = filepath.Clean(resolved)
+			if !seen[resolved] {
+				seen[resolved] = true
+			}
+		}
+	}
+
+	// Import each image
+	for relPath := range seen {
+		content, sizeBytes := readBinaryFileBase64(dirPath, relPath)
+		if content == "" {
+			continue // Image file not found in directory
+		}
+
+		ext := strings.ToLower(filepath.Ext(relPath))
+		mimeType := mime.TypeByExtension(ext)
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+
+		file := models.ProjectFile{
+			Name:        filepath.Base(relPath),
+			RelPath:     relPath,
+			ContentType: "image",
+			MimeType:    mimeType,
+			Content:     content,
+			StorageType: "database",
+			SizeBytes:   sizeBytes,
+			ScenarioID:  &scenarioID,
+		}
+		if err := tx.Create(&file).Error; err != nil {
+			return fmt.Errorf("failed to create image ProjectFile %s: %w", relPath, err)
+		}
+	}
+
+	return nil
 }
 

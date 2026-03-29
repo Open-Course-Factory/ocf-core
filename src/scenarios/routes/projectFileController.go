@@ -1,8 +1,11 @@
 package scenarioController
 
 import (
+	"encoding/base64"
 	"log/slog"
+	"mime"
 	"net/http"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -46,6 +49,25 @@ func (c *projectFileController) GetContent(ctx *gin.Context) {
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Failed to retrieve file",
 		})
+		return
+	}
+
+	// Images are stored as base64 — decode and serve with proper MIME type
+	if file.ContentType == "image" {
+		data, err := base64.StdEncoding.DecodeString(file.Content)
+		if err != nil {
+			slog.Error("failed to decode image content", "id", fileID, "err", err)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to decode image",
+			})
+			return
+		}
+		mimeType := file.MimeType
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		ctx.Data(http.StatusOK, mimeType, data)
 		return
 	}
 
@@ -182,6 +204,22 @@ func (c *projectFileController) GetByScenario(ctx *gin.Context) {
 		})
 	}
 
+	// Also include image files linked via ScenarioID
+	var imageFiles []models.ProjectFile
+	if err := c.db.Where("scenario_id = ? AND content_type = ?", scenarioID, "image").Find(&imageFiles).Error; err == nil {
+		for _, f := range imageFiles {
+			result = append(result, projectFileListItem{
+				ID:          f.ID,
+				Name:        f.Name,
+				RelPath:     f.RelPath,
+				ContentType: f.ContentType,
+				StorageType: f.StorageType,
+				SizeBytes:   f.SizeBytes,
+				UsedAs:      "image",
+			})
+		}
+	}
+
 	ctx.JSON(http.StatusOK, result)
 }
 
@@ -277,4 +315,69 @@ func (c *projectFileController) GetUsage(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, refs)
+}
+
+// GetImage serves a scenario image by its relative path within the scenario directory.
+// GET /api/v1/project-files/image/:scenarioId/*relPath
+func (c *projectFileController) GetImage(ctx *gin.Context) {
+	scenarioID, err := uuid.Parse(ctx.Param("scenarioId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid scenario ID",
+		})
+		return
+	}
+
+	relPath := ctx.Param("relPath")
+	// Strip leading slash from wildcard param
+	if len(relPath) > 0 && relPath[0] == '/' {
+		relPath = relPath[1:]
+	}
+	if relPath == "" {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Missing image path",
+		})
+		return
+	}
+
+	var file models.ProjectFile
+	if err := c.db.Where("scenario_id = ? AND rel_path = ? AND content_type = ?", scenarioID, relPath, "image").
+		First(&file).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Image not found",
+			})
+			return
+		}
+		slog.Error("failed to load image", "scenarioId", scenarioID, "relPath", relPath, "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to retrieve image",
+		})
+		return
+	}
+
+	data, err := base64.StdEncoding.DecodeString(file.Content)
+	if err != nil {
+		slog.Error("failed to decode image content", "id", file.ID, "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to decode image",
+		})
+		return
+	}
+
+	mimeType := file.MimeType
+	if mimeType == "" {
+		mimeType = mime.TypeByExtension(filepath.Ext(file.Name))
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+	}
+
+	ctx.Header("Cache-Control", "public, max-age=86400")
+	ctx.Data(http.StatusOK, mimeType, data)
 }
