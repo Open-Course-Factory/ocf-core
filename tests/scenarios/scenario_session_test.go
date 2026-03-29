@@ -637,7 +637,7 @@ func TestScenarioSessionService_StartScenario_ExecutesBackgroundScript(t *testin
 
 	require.Len(t, verifySvc.execCalls, 1)
 	assert.Equal(t, "test-terminal", verifySvc.execCalls[0].sessionID)
-	assert.Equal(t, []string{"/bin/sh", "-c", "echo setup"}, verifySvc.execCalls[0].command)
+	assert.Equal(t, []string{"/bin/sh", "-c", "set -e\necho setup"}, verifySvc.execCalls[0].command)
 	assert.Equal(t, 300, verifySvc.execCalls[0].timeout) // step 0 gets 5-minute timeout
 }
 
@@ -723,7 +723,7 @@ func TestScenarioSessionService_VerifyAndAdvance_ExecutesNextBackgroundScript(t 
 	require.NotNil(t, result.NextStep)
 	assert.Equal(t, 1, *result.NextStep)
 	require.True(t, len(verifySvc.execCalls) >= 1)
-	assert.Equal(t, []string{"/bin/sh", "-c", "echo step1-init"}, verifySvc.execCalls[len(verifySvc.execCalls)-1].command)
+	assert.Equal(t, []string{"/bin/sh", "-c", "set -e\necho step1-init"}, verifySvc.execCalls[len(verifySvc.execCalls)-1].command)
 	assert.Equal(t, 30, verifySvc.execCalls[len(verifySvc.execCalls)-1].timeout)
 }
 
@@ -833,7 +833,7 @@ func TestScenarioSessionService_SubmitFlag_AdvanceExecutesBackgroundScript(t *te
 	require.NotNil(t, result.NextStep)
 	assert.Equal(t, 1, *result.NextStep)
 	require.True(t, len(verifySvc.execCalls) >= 1)
-	assert.Equal(t, []string{"/bin/sh", "-c", "echo flag-advance"}, verifySvc.execCalls[len(verifySvc.execCalls)-1].command)
+	assert.Equal(t, []string{"/bin/sh", "-c", "set -e\necho flag-advance"}, verifySvc.execCalls[len(verifySvc.execCalls)-1].command)
 }
 
 func TestScenarioSessionService_SubmitFlag_LockedAfterMaxAttempts(t *testing.T) {

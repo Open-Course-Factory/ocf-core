@@ -916,9 +916,16 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 
 	interpreter := parseShebang(bgScript)
 
+	// Inject "set -e" so any failing command stops the script immediately.
+	// Without this, scripts without explicit error handling silently continue
+	// after failures (e.g., failed downloads) and exit 0.
+	bgScript = injectSetE(bgScript)
+
+	var stdout string
+
 	if len(bgScript) <= maxInlineScriptSize {
 		// Small scripts: pass inline (fast, single API call)
-		exitCode, _, stderr, err = s.verificationService.ExecInContainer(
+		exitCode, stdout, stderr, err = s.verificationService.ExecInContainer(
 			terminalSessionID,
 			[]string{interpreter, "-c", bgScript},
 			timeout,
@@ -930,7 +937,7 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 			slog.Warn("failed to push background script to container", "step_order", step.Order, "err", pushErr)
 			return fmt.Errorf("failed to push script: %w", pushErr)
 		}
-		exitCode, _, stderr, err = s.verificationService.ExecInContainer(
+		exitCode, stdout, stderr, err = s.verificationService.ExecInContainer(
 			terminalSessionID,
 			[]string{interpreter, tmpPath},
 			timeout,
@@ -944,12 +951,13 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 	}
 
 	if err != nil {
-		slog.Warn("background script failed to execute", "step_order", step.Order, "err", err)
+		slog.Error("background script failed to execute", "step_order", step.Order, "err", err, "stdout", truncateLog(stdout), "stderr", truncateLog(stderr))
 		return fmt.Errorf("script execution failed: %w", err)
 	}
 	if exitCode != 0 {
-		slog.Warn("background script exited with non-zero code", "step_order", step.Order, "exit_code", exitCode, "stderr", stderr)
+		slog.Error("background script exited with non-zero code", "step_order", step.Order, "exit_code", exitCode, "stdout", truncateLog(stdout), "stderr", truncateLog(stderr))
 		return fmt.Errorf("script exited with code %d: %s", exitCode, stderr)
 	}
+	slog.Info("background script completed", "step_order", step.Order, "exit_code", 0)
 	return nil
 }

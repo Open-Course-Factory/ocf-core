@@ -94,7 +94,7 @@ func TestExecuteBackgroundScript_SmallScript_UsesInline(t *testing.T) {
 	// Small script: should use inline ExecInContainer with /bin/sh -c
 	assert.Len(t, verifySvc.pushFileCalls, 0, "PushFile should NOT be called for small scripts")
 	require.Len(t, verifySvc.execCalls, 1, "ExecInContainer should be called once")
-	assert.Equal(t, []string{"/bin/sh", "-c", smallScript}, verifySvc.execCalls[0].command)
+	assert.Equal(t, []string{"/bin/sh", "-c", "set -e\n" + smallScript}, verifySvc.execCalls[0].command)
 	assert.Equal(t, 300, verifySvc.execCalls[0].timeout) // step 0 gets 5-minute timeout
 }
 
@@ -139,7 +139,9 @@ func TestExecuteBackgroundScript_LargeScript_UsesPushFile(t *testing.T) {
 	require.Len(t, verifySvc.pushFileCalls, 1, "PushFile should be called once")
 	assert.Equal(t, "test-terminal", verifySvc.pushFileCalls[0].sessionID)
 	assert.Equal(t, "/tmp/.ocf_bg_0.sh", verifySvc.pushFileCalls[0].targetPath)
-	assert.Equal(t, largeScript, verifySvc.pushFileCalls[0].content)
+	// Content has "set -e" injected after the shebang
+	expectedScript := "#!/bin/bash\nset -e\n" + strings.Repeat("echo 'line of script padding to make it large enough'\n", 100)
+	assert.Equal(t, expectedScript, verifySvc.pushFileCalls[0].content)
 	assert.Equal(t, "0700", verifySvc.pushFileCalls[0].mode)
 
 	// Should have 2 exec calls: run script + cleanup rm
