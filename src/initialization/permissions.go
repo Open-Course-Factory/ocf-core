@@ -227,6 +227,26 @@ func SetupScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		reconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
+	// Group-level combined scenario listing (teachers see org + group scenarios)
+	reconcilePolicy(enforcer, "member", "/api/v1/groups/:groupId/scenarios", "GET")
+
+	// Organization-level scenario management routes - available to all authenticated members
+	// (fine-grained org ownership checks happen in the controller via validateOrgManagerAccess)
+	orgScenarioRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/organizations/:id/scenarios", "GET"},
+		{"/api/v1/organizations/:id/scenarios/import-json", "POST"},
+		{"/api/v1/organizations/:id/scenarios/upload", "POST"},
+		{"/api/v1/organizations/:id/scenarios/:scenarioId/export", "GET"},
+		{"/api/v1/organizations/:id/scenarios/:scenarioId", "DELETE"},
+	}
+
+	for _, route := range orgScenarioRoutes {
+		reconcilePolicy(enforcer, "member", route.path, route.method)
+	}
+
 	// Admin-only scenario management routes
 	reconcilePolicy(enforcer, "administrator", "/api/v1/scenarios/import", "POST")
 	reconcilePolicy(enforcer, "administrator", "/api/v1/scenarios/seed", "POST")

@@ -1597,11 +1597,11 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 // @Description List all scenarios belonging to an organization
 // @Tags scenarios
 // @Produce json
-// @Param orgId path string true "Organization ID"
+// @Param id path string true "Organization ID"
 // @Success 200 {array} dto.ScenarioOutput
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
-// @Router /organizations/{orgId}/scenarios [get]
+// @Router /organizations/{id}/scenarios [get]
 // @Security BearerAuth
 func (sc *scenarioController) OrgListScenarios(ctx *gin.Context) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
@@ -1640,13 +1640,13 @@ func (sc *scenarioController) OrgListScenarios(ctx *gin.Context) {
 // @Tags scenarios
 // @Accept json
 // @Produce json
-// @Param orgId path string true "Organization ID"
+// @Param id path string true "Organization ID"
 // @Param body body dto.SeedScenarioInput true "Scenario data"
 // @Success 201 {object} dto.ScenarioOutput
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
 // @Failure 500 {object} errors.APIError
-// @Router /organizations/{orgId}/scenarios/import-json [post]
+// @Router /organizations/{id}/scenarios/import-json [post]
 // @Security BearerAuth
 func (sc *scenarioController) OrgImportJSON(ctx *gin.Context) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
@@ -1698,13 +1698,13 @@ func (sc *scenarioController) OrgImportJSON(ctx *gin.Context) {
 // @Tags scenarios
 // @Accept multipart/form-data
 // @Produce json
-// @Param orgId path string true "Organization ID"
+// @Param id path string true "Organization ID"
 // @Param file formData file true "Scenario archive (.zip, .tar.gz, or .tgz)"
 // @Success 200 {object} dto.ScenarioOutput
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
 // @Failure 500 {object} errors.APIError
-// @Router /organizations/{orgId}/scenarios/upload [post]
+// @Router /organizations/{id}/scenarios/upload [post]
 // @Security BearerAuth
 func (sc *scenarioController) OrgUploadScenario(ctx *gin.Context) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
@@ -1859,14 +1859,14 @@ func (sc *scenarioController) OrgUploadScenario(ctx *gin.Context) {
 // @Tags scenarios
 // @Produce json
 // @Produce application/zip
-// @Param orgId path string true "Organization ID"
+// @Param id path string true "Organization ID"
 // @Param scenarioId path string true "Scenario ID"
 // @Param format query string false "Export format: json (default) or killerkoda"
 // @Success 200 {object} dto.ScenarioExportOutput
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
 // @Failure 404 {object} errors.APIError
-// @Router /organizations/{orgId}/scenarios/{scenarioId}/export [get]
+// @Router /organizations/{id}/scenarios/{scenarioId}/export [get]
 // @Security BearerAuth
 func (sc *scenarioController) OrgExportScenario(ctx *gin.Context) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
@@ -1941,13 +1941,13 @@ func (sc *scenarioController) OrgExportScenario(ctx *gin.Context) {
 // @Summary Delete an organization scenario
 // @Description Delete a scenario belonging to an organization and clean up its assignments
 // @Tags scenarios
-// @Param orgId path string true "Organization ID"
+// @Param id path string true "Organization ID"
 // @Param scenarioId path string true "Scenario ID"
 // @Success 200 {object} gin.H
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
 // @Failure 404 {object} errors.APIError
-// @Router /organizations/{orgId}/scenarios/{scenarioId} [delete]
+// @Router /organizations/{id}/scenarios/{scenarioId} [delete]
 // @Security BearerAuth
 func (sc *scenarioController) OrgDeleteScenario(ctx *gin.Context) {
 	orgID, err := uuid.Parse(ctx.Param("id"))
@@ -1982,18 +1982,29 @@ func (sc *scenarioController) OrgDeleteScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Delete all assignments referencing this scenario
-	if err := sc.db.Where("scenario_id = ?", scenarioID).Delete(&models.ScenarioAssignment{}).Error; err != nil {
-		slog.Error("failed to delete scenario assignments", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to delete scenario assignments",
+	// Check for active sessions — reject if any exist
+	var activeSessionCount int64
+	sc.db.Model(&models.ScenarioSession{}).
+		Where("scenario_id = ? AND status IN ?", scenarioID, []string{"active", "provisioning"}).
+		Count(&activeSessionCount)
+	if activeSessionCount > 0 {
+		ctx.JSON(http.StatusConflict, &errors.APIError{
+			ErrorCode:    http.StatusConflict,
+			ErrorMessage: fmt.Sprintf("Cannot delete scenario with %d active session(s). Abandon or wait for them to complete first.", activeSessionCount),
 		})
 		return
 	}
 
-	// Delete the scenario (hard delete)
-	if err := sc.db.Delete(&scenario).Error; err != nil {
+	// Delete in a transaction: assignments first, then scenario
+	if err := sc.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("scenario_id = ?", scenarioID).Delete(&models.ScenarioAssignment{}).Error; err != nil {
+			return fmt.Errorf("delete assignments: %w", err)
+		}
+		if err := tx.Delete(&scenario).Error; err != nil {
+			return fmt.Errorf("delete scenario: %w", err)
+		}
+		return nil
+	}); err != nil {
 		slog.Error("failed to delete scenario", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
