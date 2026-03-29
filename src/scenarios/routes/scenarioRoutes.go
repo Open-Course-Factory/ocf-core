@@ -42,9 +42,18 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 
 	// Group-level scenario import/export routes (teachers/group admins)
 	groupScenarioRoutes := router.Group("/groups/:groupId/scenarios")
+	groupScenarioRoutes.GET("", middleware.AuthManagement(), controller.ListGroupAvailableScenarios)
 	groupScenarioRoutes.GET("/:scenarioId/export", middleware.AuthManagement(), controller.GroupExportScenario)
 	groupScenarioRoutes.POST("/import-json", middleware.AuthManagement(), controller.GroupImportJSON)
 	groupScenarioRoutes.POST("/upload", middleware.AuthManagement(), controller.GroupUploadScenario)
+
+	// Organization-level scenario management routes (org managers)
+	orgScenarioRoutes := router.Group("/organizations/:orgId/scenarios")
+	orgScenarioRoutes.GET("", middleware.AuthManagement(), controller.OrgListScenarios)
+	orgScenarioRoutes.POST("/import-json", middleware.AuthManagement(), controller.OrgImportJSON)
+	orgScenarioRoutes.POST("/upload", middleware.AuthManagement(), controller.OrgUploadScenario)
+	orgScenarioRoutes.GET("/:scenarioId/export", middleware.AuthManagement(), controller.OrgExportScenario)
+	orgScenarioRoutes.DELETE("/:scenarioId", middleware.AuthManagement(), controller.OrgDeleteScenario)
 
 	// ProjectFile custom routes
 	projectFileCtrl := NewProjectFileController(db)

@@ -47,6 +47,12 @@ type ScenarioController interface {
 	GroupImportJSON(ctx *gin.Context)
 	GroupUploadScenario(ctx *gin.Context)
 	GetAvailableScenarios(ctx *gin.Context)
+	OrgListScenarios(ctx *gin.Context)
+	OrgImportJSON(ctx *gin.Context)
+	OrgUploadScenario(ctx *gin.Context)
+	OrgExportScenario(ctx *gin.Context)
+	OrgDeleteScenario(ctx *gin.Context)
+	ListGroupAvailableScenarios(ctx *gin.Context)
 }
 
 type scenarioController struct {
@@ -911,6 +917,31 @@ func (sc *scenarioController) validateTeacherAccess(ctx *gin.Context, groupID uu
 	return true
 }
 
+// validateOrgManagerAccess checks that the current user is a platform admin or an org owner/manager
+func (sc *scenarioController) validateOrgManagerAccess(ctx *gin.Context, orgID uuid.UUID) bool {
+	userID := ctx.GetString("userId")
+	userRoles, _ := ctx.Get("userRoles")
+
+	// Platform admins have access
+	if roles, ok := userRoles.([]string); ok {
+		for _, role := range roles {
+			if strings.EqualFold(role, "admin") || strings.EqualFold(role, "administrator") {
+				return true
+			}
+		}
+	}
+
+	// Check org-level ownership/manager
+	var member orgModels.OrganizationMember
+	err := sc.db.Where("organization_id = ? AND user_id = ? AND is_active = true AND role IN ?",
+		orgID, userID, []string{"owner", "manager"}).First(&member).Error
+	if err != nil {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+		return false
+	}
+	return true
+}
+
 // buildScenarioOutput converts a Scenario model to a ScenarioOutput DTO
 func (sc *scenarioController) buildScenarioOutput(scenario *models.Scenario) dto.ScenarioOutput {
 	output := dto.ScenarioOutput{
@@ -1558,6 +1589,535 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 			"os_type":        s.OsType,
 		})
 	}
+	ctx.JSON(http.StatusOK, output)
+}
+
+// OrgListScenarios godoc
+// @Summary List organization scenarios
+// @Description List all scenarios belonging to an organization
+// @Tags scenarios
+// @Produce json
+// @Param orgId path string true "Organization ID"
+// @Success 200 {array} dto.ScenarioOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Router /organizations/{orgId}/scenarios [get]
+// @Security BearerAuth
+func (sc *scenarioController) OrgListScenarios(ctx *gin.Context) {
+	orgID, err := uuid.Parse(ctx.Param("orgId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	if !sc.validateOrgManagerAccess(ctx, orgID) {
+		return
+	}
+
+	var scenarios []models.Scenario
+	if err := sc.db.Where("organization_id = ?", orgID).Preload("Steps").Find(&scenarios).Error; err != nil {
+		slog.Error("failed to list org scenarios", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to list scenarios",
+		})
+		return
+	}
+
+	output := make([]dto.ScenarioOutput, 0, len(scenarios))
+	for i := range scenarios {
+		output = append(output, sc.buildScenarioOutput(&scenarios[i]))
+	}
+	ctx.JSON(http.StatusOK, output)
+}
+
+// OrgImportJSON godoc
+// @Summary Import a scenario into an organization from JSON
+// @Description Create or update a scenario from JSON and assign it to an organization
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param orgId path string true "Organization ID"
+// @Param body body dto.SeedScenarioInput true "Scenario data"
+// @Success 201 {object} dto.ScenarioOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /organizations/{orgId}/scenarios/import-json [post]
+// @Security BearerAuth
+func (sc *scenarioController) OrgImportJSON(ctx *gin.Context) {
+	orgID, err := uuid.Parse(ctx.Param("orgId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	if !sc.validateOrgManagerAccess(ctx, orgID) {
+		return
+	}
+
+	var input dto.SeedScenarioInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	userID := ctx.GetString("userId")
+
+	scenario, isUpdate, err := sc.seedService.SeedScenario(input, userID, &orgID)
+	if err != nil {
+		slog.Error("failed to import scenario for org", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to import scenario",
+		})
+		return
+	}
+
+	// Do NOT create ScenarioAssignment (unlike GroupImportJSON)
+
+	statusCode := http.StatusCreated
+	if isUpdate {
+		statusCode = http.StatusOK
+	}
+	ctx.JSON(statusCode, sc.buildScenarioOutput(scenario))
+}
+
+// OrgUploadScenario godoc
+// @Summary Upload a scenario archive for an organization
+// @Description Upload a .zip or .tar.gz archive containing a KillerCoda-compatible scenario for an organization
+// @Tags scenarios
+// @Accept multipart/form-data
+// @Produce json
+// @Param orgId path string true "Organization ID"
+// @Param file formData file true "Scenario archive (.zip, .tar.gz, or .tgz)"
+// @Success 200 {object} dto.ScenarioOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /organizations/{orgId}/scenarios/upload [post]
+// @Security BearerAuth
+func (sc *scenarioController) OrgUploadScenario(ctx *gin.Context) {
+	orgID, err := uuid.Parse(ctx.Param("orgId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	if !sc.validateOrgManagerAccess(ctx, orgID) {
+		return
+	}
+
+	userID := ctx.GetString("userId")
+
+	// Get file from multipart form
+	file, err := ctx.FormFile("file")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "File is required",
+		})
+		return
+	}
+
+	// Validate file size (10MB max)
+	if file.Size > 10*1024*1024 {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "File size exceeds 10MB limit",
+		})
+		return
+	}
+
+	// Validate extension
+	filename := strings.ToLower(file.Filename)
+	var ext string
+	switch {
+	case strings.HasSuffix(filename, ".tar.gz"):
+		ext = ".tar.gz"
+	case strings.HasSuffix(filename, ".tgz"):
+		ext = ".tgz"
+	case strings.HasSuffix(filename, ".zip"):
+		ext = ".zip"
+	default:
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "File must be .zip, .tar.gz, or .tgz",
+		})
+		return
+	}
+
+	// Save to temp file
+	tmpFile, err := os.CreateTemp("", "scenario-upload-*"+ext)
+	if err != nil {
+		slog.Error("failed to create temp file", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to process upload",
+		})
+		return
+	}
+	defer os.Remove(tmpFile.Name())
+
+	src, err := file.Open()
+	if err != nil {
+		tmpFile.Close()
+		slog.Error("failed to open uploaded file", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to read uploaded file",
+		})
+		return
+	}
+
+	_, err = io.Copy(tmpFile, src)
+	src.Close()
+	tmpFile.Close()
+	if err != nil {
+		slog.Error("failed to save uploaded file", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to save uploaded file",
+		})
+		return
+	}
+
+	// Extract archive
+	tmpDir, err := os.MkdirTemp("", "scenario-extract-*")
+	if err != nil {
+		slog.Error("failed to create temp dir", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to process upload",
+		})
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := utils.ExtractArchive(tmpFile.Name(), tmpDir); err != nil {
+		slog.Error("failed to extract archive", "err", err)
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: fmt.Sprintf("Failed to extract archive: %s", err.Error()),
+		})
+		return
+	}
+
+	// Find index.json
+	scenarioDir, err := utils.FindIndexJSON(tmpDir)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Archive must contain an index.json file",
+		})
+		return
+	}
+
+	// Import scenario with org ID directly
+	scenario, err := sc.importerService.ImportFromDirectory(scenarioDir, userID, &orgID, "upload")
+	if err != nil {
+		slog.Error("failed to import scenario from upload", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to import scenario: %s", err.Error()),
+		})
+		return
+	}
+
+	// Do NOT create ScenarioAssignment (unlike GroupUploadScenario)
+
+	// Reload with steps
+	var loaded models.Scenario
+	if err := sc.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).First(&loaded, "id = ?", scenario.ID).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to reload scenario",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, sc.buildScenarioOutput(&loaded))
+}
+
+// OrgExportScenario godoc
+// @Summary Export an organization scenario
+// @Description Export a scenario belonging to an organization as JSON or KillerCoda archive
+// @Tags scenarios
+// @Produce json
+// @Produce application/zip
+// @Param orgId path string true "Organization ID"
+// @Param scenarioId path string true "Scenario ID"
+// @Param format query string false "Export format: json (default) or killerkoda"
+// @Success 200 {object} dto.ScenarioExportOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Router /organizations/{orgId}/scenarios/{scenarioId}/export [get]
+// @Security BearerAuth
+func (sc *scenarioController) OrgExportScenario(ctx *gin.Context) {
+	orgID, err := uuid.Parse(ctx.Param("orgId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	scenarioID, err := uuid.Parse(ctx.Param("scenarioId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid scenario ID",
+		})
+		return
+	}
+
+	if !sc.validateOrgManagerAccess(ctx, orgID) {
+		return
+	}
+
+	// Verify scenario belongs to this organization
+	var scenario models.Scenario
+	if err := sc.db.Where("id = ? AND organization_id = ?", scenarioID, orgID).First(&scenario).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Scenario not found in this organization",
+		})
+		return
+	}
+
+	format := ctx.DefaultQuery("format", "json")
+
+	switch format {
+	case "json":
+		export, err := sc.exportService.ExportAsJSON(scenarioID)
+		if err != nil {
+			slog.Error("failed to export org scenario as JSON", "err", err)
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Scenario not found",
+			})
+			return
+		}
+		ctx.JSON(http.StatusOK, export)
+
+	case "killerkoda":
+		zipBytes, filename, err := sc.exportService.ExportAsArchive(scenarioID)
+		if err != nil {
+			slog.Error("failed to export org scenario as archive", "err", err)
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Scenario not found",
+			})
+			return
+		}
+		ctx.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+		ctx.Data(http.StatusOK, "application/zip", zipBytes)
+
+	default:
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid format. Use 'json' or 'killerkoda'",
+		})
+	}
+}
+
+// OrgDeleteScenario godoc
+// @Summary Delete an organization scenario
+// @Description Delete a scenario belonging to an organization and clean up its assignments
+// @Tags scenarios
+// @Param orgId path string true "Organization ID"
+// @Param scenarioId path string true "Scenario ID"
+// @Success 200 {object} gin.H
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Router /organizations/{orgId}/scenarios/{scenarioId} [delete]
+// @Security BearerAuth
+func (sc *scenarioController) OrgDeleteScenario(ctx *gin.Context) {
+	orgID, err := uuid.Parse(ctx.Param("orgId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	scenarioID, err := uuid.Parse(ctx.Param("scenarioId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid scenario ID",
+		})
+		return
+	}
+
+	if !sc.validateOrgManagerAccess(ctx, orgID) {
+		return
+	}
+
+	// Verify scenario belongs to this organization
+	var scenario models.Scenario
+	if err := sc.db.Where("id = ? AND organization_id = ?", scenarioID, orgID).First(&scenario).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Scenario not found in this organization",
+		})
+		return
+	}
+
+	// Delete all assignments referencing this scenario
+	if err := sc.db.Where("scenario_id = ?", scenarioID).Delete(&models.ScenarioAssignment{}).Error; err != nil {
+		slog.Error("failed to delete scenario assignments", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to delete scenario assignments",
+		})
+		return
+	}
+
+	// Delete the scenario (hard delete)
+	if err := sc.db.Delete(&scenario).Error; err != nil {
+		slog.Error("failed to delete scenario", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to delete scenario",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Scenario deleted successfully"})
+}
+
+// ListGroupAvailableScenarios godoc
+// @Summary List scenarios available for a group
+// @Description List all scenarios available to a group, including org-level and group-level assignments
+// @Tags scenarios
+// @Produce json
+// @Param groupId path string true "Group ID"
+// @Success 200 {array} gin.H
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Router /groups/{groupId}/scenarios [get]
+// @Security BearerAuth
+func (sc *scenarioController) ListGroupAvailableScenarios(ctx *gin.Context) {
+	groupID, err := uuid.Parse(ctx.Param("groupId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid group ID",
+		})
+		return
+	}
+
+	if !sc.validateTeacherAccess(ctx, groupID) {
+		return
+	}
+
+	// Get the group to find its organization ID
+	var group groupModels.ClassGroup
+	if err := sc.db.First(&group, "id = ?", groupID).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Group not found",
+		})
+		return
+	}
+
+	// Collect scenarios with their source info
+	type scenarioWithSource struct {
+		Scenario models.Scenario
+		Source   string
+	}
+
+	scenarioMap := make(map[uuid.UUID]*scenarioWithSource)
+
+	// 1. Org-level scenarios (via ScenarioAssignment with scope="org")
+	if group.OrganizationID != nil {
+		var orgAssignments []models.ScenarioAssignment
+		if err := sc.db.Where("organization_id = ? AND scope = ? AND is_active = true",
+			group.OrganizationID, "org").
+			Preload("Scenario").Preload("Scenario.Steps").
+			Find(&orgAssignments).Error; err != nil {
+			slog.Error("failed to fetch org scenario assignments", "err", err)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to fetch scenarios",
+			})
+			return
+		}
+		for _, a := range orgAssignments {
+			if a.Scenario.ID != uuid.Nil {
+				scenarioMap[a.Scenario.ID] = &scenarioWithSource{
+					Scenario: a.Scenario,
+					Source:   "org",
+				}
+			}
+		}
+	}
+
+	// 2. Group-level scenarios (via ScenarioAssignment with scope="group")
+	var groupAssignments []models.ScenarioAssignment
+	if err := sc.db.Where("group_id = ? AND scope = ? AND is_active = true",
+		groupID, "group").
+		Preload("Scenario").Preload("Scenario.Steps").
+		Find(&groupAssignments).Error; err != nil {
+		slog.Error("failed to fetch group scenario assignments", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to fetch scenarios",
+		})
+		return
+	}
+	for _, a := range groupAssignments {
+		if a.Scenario.ID != uuid.Nil {
+			// Group assignment takes precedence over org assignment
+			scenarioMap[a.Scenario.ID] = &scenarioWithSource{
+				Scenario: a.Scenario,
+				Source:   "group",
+			}
+		}
+	}
+
+	// Build output with source field
+	output := make([]gin.H, 0, len(scenarioMap))
+	for _, sw := range scenarioMap {
+		scenarioOutput := sc.buildScenarioOutput(&sw.Scenario)
+		output = append(output, gin.H{
+			"id":              scenarioOutput.ID,
+			"name":            scenarioOutput.Name,
+			"title":           scenarioOutput.Title,
+			"description":     scenarioOutput.Description,
+			"difficulty":      scenarioOutput.Difficulty,
+			"estimated_time":  scenarioOutput.EstimatedTime,
+			"instance_type":   scenarioOutput.InstanceType,
+			"os_type":         scenarioOutput.OsType,
+			"source_type":     scenarioOutput.SourceType,
+			"created_by_id":   scenarioOutput.CreatedByID,
+			"organization_id": scenarioOutput.OrganizationID,
+			"created_at":      scenarioOutput.CreatedAt,
+			"updated_at":      scenarioOutput.UpdatedAt,
+			"steps":           scenarioOutput.Steps,
+			"source":          sw.Source,
+		})
+	}
+
 	ctx.JSON(http.StatusOK, output)
 }
 
