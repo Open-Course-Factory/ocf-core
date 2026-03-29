@@ -378,6 +378,8 @@ func (c *projectFileController) GetImage(ctx *gin.Context) {
 		}
 	}
 
-	ctx.Header("Cache-Control", "public, max-age=86400")
+	ctx.Header("Cache-Control", "private, max-age=86400")
+	// Prevent script execution in SVGs opened directly
+	ctx.Header("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'")
 	ctx.Data(http.StatusOK, mimeType, data)
 }

@@ -745,11 +745,15 @@ func importScenarioImages(tx *gorm.DB, scenarioID uuid.UUID, dirPath string, ind
 		}
 	}
 
-	// Import each image
+	// Import each image (skip files over 5MB to protect database from bloat)
+	const maxImageBytes int64 = 5 * 1024 * 1024
 	for relPath := range seen {
 		content, sizeBytes := readBinaryFileBase64(dirPath, relPath)
 		if content == "" {
 			continue // Image file not found in directory
+		}
+		if sizeBytes > maxImageBytes {
+			continue // Skip oversized images
 		}
 
 		ext := strings.ToLower(filepath.Ext(relPath))
