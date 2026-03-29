@@ -51,7 +51,7 @@ func RegisterInvoice(service *ems.EntityRegistrationService) {
 			},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
-					string(authModels.Member): "(" + http.MethodGet + ")",
+					string(authModels.Member): "()",
 					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
 				},
 			},

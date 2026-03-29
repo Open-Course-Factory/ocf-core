@@ -44,7 +44,7 @@ func RegisterUserSubscription(service *ems.EntityRegistrationService) {
 			},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
-					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + ")",
+					string(authModels.Member): "(" + http.MethodPost + "|" + http.MethodPatch + ")",
 					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
 				},
 			},
