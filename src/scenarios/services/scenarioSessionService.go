@@ -906,7 +906,7 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 	}
 
 	timeout := bgScriptTimeoutDefault
-	if step.Order == 0 {
+	if step.Order <= 0 {
 		timeout = bgScriptTimeoutStep0
 	}
 
