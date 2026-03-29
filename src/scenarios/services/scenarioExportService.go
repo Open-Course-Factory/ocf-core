@@ -80,6 +80,7 @@ func (s *ScenarioExportService) ExportMultipleAsJSON(scenarioIDs []uuid.UUID) ([
 func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dto.ScenarioExportOutput {
 	introText := ResolveScriptContent(s.db, scenario.IntroFileID, scenario.IntroText)
 	finishText := ResolveScriptContent(s.db, scenario.FinishFileID, scenario.FinishText)
+	setupScript := ResolveScriptContent(s.db, scenario.SetupScriptID, scenario.SetupScript)
 
 	steps := make([]dto.ScenarioExportStepOutput, 0, len(scenario.Steps))
 	for _, step := range scenario.Steps {
@@ -109,6 +110,7 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dt
 		CrashTraps:    scenario.CrashTraps,
 		IntroText:     introText,
 		FinishText:    finishText,
+		SetupScript:   setupScript,
 		Steps:         steps,
 	}
 }
@@ -127,6 +129,14 @@ func (s *ScenarioExportService) buildArchive(scenario *models.Scenario) ([]byte,
 
 	if err := addFileToZip(w, "index.json", indexJSON); err != nil {
 		return nil, err
+	}
+
+	// Write background.sh (scenario-level setup script)
+	archiveSetupScript := ResolveScriptContent(s.db, scenario.SetupScriptID, scenario.SetupScript)
+	if archiveSetupScript != "" {
+		if err := addFileToZip(w, "background.sh", []byte(archiveSetupScript)); err != nil {
+			return nil, err
+		}
 	}
 
 	// Write intro.md (resolve from ProjectFile if available)
@@ -196,8 +206,16 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 	}
 
 	introText := ResolveScriptContent(s.db, scenario.IntroFileID, scenario.IntroText)
+	indexSetupScript := ResolveScriptContent(s.db, scenario.SetupScriptID, scenario.SetupScript)
+	introFile := KillerCodaFile{}
 	if introText != "" {
-		details.Intro = KillerCodaFile{Text: "intro.md"}
+		introFile.Text = "intro.md"
+	}
+	if indexSetupScript != "" {
+		introFile.Background = "background.sh"
+	}
+	if introFile.Text != "" || introFile.Background != "" {
+		details.Intro = introFile
 	}
 	finishText := ResolveScriptContent(s.db, scenario.FinishFileID, scenario.FinishText)
 	if finishText != "" {

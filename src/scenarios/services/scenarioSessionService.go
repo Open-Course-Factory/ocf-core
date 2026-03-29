@@ -169,21 +169,20 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 			}
 		}
 
-		// Execute background script for the first step.
-		// If Step 0 has a background script, run it asynchronously and set status
-		// to "provisioning". A goroutine handles execution, flag deployment, and
-		// status transition to "active" once setup completes.
+		// Execute scenario-level setup script and/or step 0 background script.
+		// Setup script runs first (global env prep), then step 0 background.
 		if len(scenario.Steps) > 0 {
+			setupScript := ResolveScriptContent(s.db, scenario.SetupScriptID, scenario.SetupScript)
 			bgScript := ResolveScriptContent(s.db, scenario.Steps[0].BackgroundScriptID, scenario.Steps[0].BackgroundScript)
-			slog.Info("StartScenario background script", "session_id", session.ID, "script_len", len(bgScript))
-			if bgScript != "" {
+			slog.Info("StartScenario scripts", "session_id", session.ID, "setup_len", len(setupScript), "bg_len", len(bgScript))
+			if setupScript != "" || bgScript != "" {
 				// Set session to provisioning — frontend will poll until active
 				s.db.Model(session).Update("status", "provisioning")
 				session.Status = "provisioning"
 
 				go s.runStep0Setup(session.ID, *session.TerminalSessionID, &scenario, session.Flags)
 			} else {
-				// No background script — deploy flag and stay active
+				// No scripts — deploy flag and stay active
 				if len(session.Flags) > 0 {
 					s.deploySingleFlagToContainer(*session.TerminalSessionID, &scenario, session.Flags, 0)
 				}
@@ -198,15 +197,36 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 // the session from "provisioning" to "active" once setup completes, or to
 // "setup_failed" if the script fails.
 func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag) {
+	// Execute scenario-level setup script first (global environment preparation)
+	setupScript := ResolveScriptContent(s.db, scenario.SetupScriptID, scenario.SetupScript)
+	if setupScript != "" {
+		slog.Info("executing scenario setup script", "session_id", sessionID, "script_len", len(setupScript))
+		// Create a temporary step-like structure for executeBackgroundScript
+		setupStep := &models.ScenarioStep{
+			Order:            -1, // sentinel value for logging
+			BackgroundScript: setupScript,
+		}
+		if err := s.executeBackgroundScript(terminalSessionID, setupStep); err != nil {
+			slog.Error("scenario setup script failed", "session_id", sessionID, "err", err)
+			s.db.Model(&models.ScenarioSession{}).
+				Where("id = ? AND status = ?", sessionID, "provisioning").
+				Update("status", "setup_failed")
+			return
+		}
+	}
+
 	step := &scenario.Steps[0]
 
-	// Execute the background script (uses the 5-minute timeout for step 0)
-	if err := s.executeBackgroundScript(terminalSessionID, step); err != nil {
-		slog.Error("step 0 setup failed", "session_id", sessionID, "err", err)
-		s.db.Model(&models.ScenarioSession{}).
-			Where("id = ? AND status = ?", sessionID, "provisioning").
-			Update("status", "setup_failed")
-		return
+	// Execute step 0 background script
+	bgScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript)
+	if bgScript != "" {
+		if err := s.executeBackgroundScript(terminalSessionID, step); err != nil {
+			slog.Error("step 0 setup failed", "session_id", sessionID, "err", err)
+			s.db.Model(&models.ScenarioSession{}).
+				Where("id = ? AND status = ?", sessionID, "provisioning").
+				Update("status", "setup_failed")
+			return
+		}
 	}
 
 	// Deploy the flag for step 0

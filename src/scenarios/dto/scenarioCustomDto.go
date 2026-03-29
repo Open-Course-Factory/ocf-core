@@ -91,6 +91,7 @@ type SeedScenarioInput struct {
 	CrashTraps    bool            `json:"crash_traps"`
 	IntroText     string          `json:"intro_text" binding:"max=65536"`
 	FinishText    string          `json:"finish_text" binding:"max=65536"`
+	SetupScript   string          `json:"setup_script,omitempty"`
 	Steps         []SeedStepInput `json:"steps" binding:"required,min=1"`
 }
 
@@ -134,6 +135,7 @@ type ScenarioExportOutput struct {
 	CrashTraps    bool                       `json:"crash_traps"`
 	IntroText     string                     `json:"intro_text,omitempty"`
 	FinishText    string                     `json:"finish_text,omitempty"`
+	SetupScript   string                     `json:"setup_script,omitempty"`
 	Steps         []ScenarioExportStepOutput `json:"steps"`
 }
 

@@ -42,7 +42,9 @@ type KillerCodaDetails struct {
 
 // KillerCodaFile references a markdown file
 type KillerCodaFile struct {
-	Text string `json:"text"`
+	Text       string `json:"text"`
+	Background string `json:"background"` // path to background.sh (intro only)
+	Foreground string `json:"foreground"` // path to foreground.sh (intro only)
 }
 
 // KillerCodaStep describes a single step with its associated files
@@ -154,6 +156,7 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 				"crash_traps":     scenario.CrashTraps,
 				"intro_text":      scenario.IntroText,
 				"finish_text":     scenario.FinishText,
+				"setup_script":    scenario.SetupScript,
 				"setup_script_id": nil,
 				"intro_file_id":   nil,
 				"finish_file_id":  nil,
@@ -273,6 +276,12 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	introText := readFileContent(dirPath, introFile)
 	finishText := readFileContent(dirPath, finishFile)
 
+	// Read global background/foreground scripts (KillerCoda intro-level scripts)
+	setupScript := readFileContent(dirPath, index.Details.Intro.Background)
+	if setupScript == "" {
+		setupScript = readFileContent(dirPath, index.Intro.Background)
+	}
+
 	scenario := &models.Scenario{
 		Name:           utils.GenerateSlug(index.Title),
 		Title:          index.Title,
@@ -287,6 +296,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		CrashTraps:     crashTraps,
 		IntroText:      introText,
 		FinishText:     finishText,
+		SetupScript:    setupScript,
 		CreatedByID:    createdByID,
 		OrganizationID: orgID,
 	}
@@ -419,6 +429,24 @@ func collectProjectFileIDs(tx *gorm.DB, scenarioID uuid.UUID) []uuid.UUID {
 // and updates the FKs accordingly. dbScenario is the persisted scenario (with valid ID),
 // srcScenario provides the inline content, and stepRelPaths provides original KillerCoda paths.
 func createProjectFilesForScenario(tx *gorm.DB, dbScenario *models.Scenario, srcScenario *models.Scenario, stepRelPaths []stepRelPathInfo) error {
+	// Scenario-level setup script (global background)
+	if srcScenario.SetupScript != "" {
+		file := models.ProjectFile{
+			Name:        "background.sh",
+			RelPath:     "background.sh",
+			ContentType: "script",
+			Content:     srcScenario.SetupScript,
+			StorageType: "database",
+			SizeBytes:   int64(len(srcScenario.SetupScript)),
+		}
+		if err := tx.Create(&file).Error; err != nil {
+			return fmt.Errorf("failed to create setup script ProjectFile: %w", err)
+		}
+		if err := tx.Model(dbScenario).Update("setup_script_id", file.ID).Error; err != nil {
+			return fmt.Errorf("failed to update setup_script_id: %w", err)
+		}
+	}
+
 	// Scenario-level files
 	if srcScenario.IntroText != "" {
 		file := models.ProjectFile{

@@ -105,6 +105,7 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 				"crash_traps":    input.CrashTraps,
 				"intro_text":     input.IntroText,
 				"finish_text":    input.FinishText,
+				"setup_script":   input.SetupScript,
 				"setup_script_id": nil,
 				"intro_file_id":   nil,
 				"finish_file_id":  nil,
@@ -139,9 +140,10 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 
 			// Create ProjectFiles (dual-write: content stored inline AND in ProjectFile)
 			srcScenario := &models.Scenario{
-				IntroText:  input.IntroText,
-				FinishText: input.FinishText,
-				Steps:      newSteps,
+				IntroText:   input.IntroText,
+				FinishText:  input.FinishText,
+				SetupScript: input.SetupScript,
+				Steps:       newSteps,
 			}
 			if err := createProjectFilesForScenario(tx, &existing, srcScenario, nil); err != nil {
 				return fmt.Errorf("failed to create project files: %w", err)
@@ -178,6 +180,7 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			CrashTraps:     input.CrashTraps,
 			IntroText:      input.IntroText,
 			FinishText:     input.FinishText,
+			SetupScript:    input.SetupScript,
 			CreatedByID:    userID,
 			OrganizationID: orgID,
 		}
@@ -189,9 +192,10 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 
 		// Create ProjectFiles (dual-write)
 		srcScenario := &models.Scenario{
-			IntroText:  input.IntroText,
-			FinishText: input.FinishText,
-			Steps:      newSteps,
+			IntroText:   input.IntroText,
+			FinishText:  input.FinishText,
+			SetupScript: input.SetupScript,
+			Steps:       newSteps,
 		}
 		if err := createProjectFilesForScenario(s.db, &scenario, srcScenario, nil); err != nil {
 			return nil, false, fmt.Errorf("failed to create project files: %w", err)
