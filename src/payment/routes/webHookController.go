@@ -83,26 +83,23 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 		return
 	}
 
-	// 6 : Marquer comme traité AVANT le traitement
+	// 6 : Traitement synchrone — Stripe accorde 20 secondes pour répondre
+	if err := wc.stripeService.ProcessWebhook(payload, signature); err != nil {
+		utils.Debug("❌ Webhook processing failed for event %s: %v", event.ID, err)
+		// Ne PAS marquer comme traité → Stripe réessaiera automatiquement
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Webhook processing failed",
+		})
+		return
+	}
+
+	// 7 : Marquer comme traité APRÈS le succès
 	wc.markEventProcessed(event.ID)
 
-	// 7 : Traitement asynchrone pour éviter les timeouts Stripe
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				utils.Debug("🚨 Webhook processing panic for event %s: %v", event.ID, r)
-			}
-		}()
+	utils.Debug("✅ Successfully processed webhook event %s", event.ID)
 
-		if err := wc.stripeService.ProcessWebhook(payload, signature); err != nil {
-			utils.Debug("❌ Webhook processing failed for event %s: %v", event.ID, err)
-			// TODO: Dans un futur système, envoyer dans une queue pour retry
-		} else {
-			utils.Debug("✅ Successfully processed webhook event %s", event.ID)
-		}
-	}()
-
-	// 8 : Réponse immédiate à Stripe (OBLIGATOIRE)
+	// 8 : Réponse de succès à Stripe
 	ctx.JSON(http.StatusOK, gin.H{
 		"received":  true,
 		"event_id":  event.ID,
