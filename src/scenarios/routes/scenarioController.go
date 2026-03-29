@@ -1982,21 +1982,14 @@ func (sc *scenarioController) OrgDeleteScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Check for active sessions — reject if any exist
-	var activeSessionCount int64
-	sc.db.Model(&models.ScenarioSession{}).
-		Where("scenario_id = ? AND status IN ?", scenarioID, []string{"active", "provisioning"}).
-		Count(&activeSessionCount)
-	if activeSessionCount > 0 {
-		ctx.JSON(http.StatusConflict, &errors.APIError{
-			ErrorCode:    http.StatusConflict,
-			ErrorMessage: fmt.Sprintf("Cannot delete scenario with %d active session(s). Abandon or wait for them to complete first.", activeSessionCount),
-		})
-		return
-	}
-
-	// Delete in a transaction: assignments first, then scenario
+	// Delete in a transaction: abandon active sessions, delete assignments, then scenario
 	if err := sc.db.Transaction(func(tx *gorm.DB) error {
+		// Auto-abandon all active/provisioning sessions before deletion
+		if err := tx.Model(&models.ScenarioSession{}).
+			Where("scenario_id = ? AND status IN ?", scenarioID, []string{"active", "provisioning", "setup_failed"}).
+			Updates(map[string]any{"status": "abandoned"}).Error; err != nil {
+			return fmt.Errorf("abandon sessions: %w", err)
+		}
 		if err := tx.Where("scenario_id = ?", scenarioID).Delete(&models.ScenarioAssignment{}).Error; err != nil {
 			return fmt.Errorf("delete assignments: %w", err)
 		}

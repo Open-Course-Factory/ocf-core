@@ -425,10 +425,17 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	// Pre-populate VerifyScript from ProjectFile (VerificationService doesn't have DB access)
 	currentStep.VerifyScript = ResolveScriptContent(s.db, currentStep.VerifyScriptID, currentStep.VerifyScript)
 
-	// Run verification
-	passed, output, err := s.verificationService.VerifyStep(*session.TerminalSessionID, currentStep)
-	if err != nil {
-		return nil, fmt.Errorf("verification failed: %w", err)
+	// Steps without a verify script auto-pass when the user clicks verify
+	var passed bool
+	var output string
+	if currentStep.VerifyScript == "" {
+		passed = true
+	} else {
+		var err error
+		passed, output, err = s.verificationService.VerifyStep(*session.TerminalSessionID, currentStep)
+		if err != nil {
+			return nil, fmt.Errorf("verification failed: %w", err)
+		}
 	}
 
 	response := &dto.VerifyStepResponse{
