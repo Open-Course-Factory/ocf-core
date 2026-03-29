@@ -2059,26 +2059,24 @@ func (sc *scenarioController) ListGroupAvailableScenarios(ctx *gin.Context) {
 
 	scenarioMap := make(map[uuid.UUID]*scenarioWithSource)
 
-	// 1. Org-level scenarios (via ScenarioAssignment with scope="org")
+	// 1. Org-level scenarios: all scenarios belonging to the group's organization
+	// These are available for assignment whether or not they have a ScenarioAssignment
 	if group.OrganizationID != nil {
-		var orgAssignments []models.ScenarioAssignment
-		if err := sc.db.Where("organization_id = ? AND scope = ? AND is_active = true",
-			group.OrganizationID, "org").
-			Preload("Scenario").Preload("Scenario.Steps").
-			Find(&orgAssignments).Error; err != nil {
-			slog.Error("failed to fetch org scenario assignments", "err", err)
+		var orgScenarios []models.Scenario
+		if err := sc.db.Where("organization_id = ?", group.OrganizationID).
+			Preload("Steps").
+			Find(&orgScenarios).Error; err != nil {
+			slog.Error("failed to fetch org scenarios", "err", err)
 			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 				ErrorCode:    http.StatusInternalServerError,
 				ErrorMessage: "Failed to fetch scenarios",
 			})
 			return
 		}
-		for _, a := range orgAssignments {
-			if a.Scenario.ID != uuid.Nil {
-				scenarioMap[a.Scenario.ID] = &scenarioWithSource{
-					Scenario: a.Scenario,
-					Source:   "org",
-				}
+		for _, s := range orgScenarios {
+			scenarioMap[s.ID] = &scenarioWithSource{
+				Scenario: s,
+				Source:   "org",
 			}
 		}
 	}
