@@ -286,18 +286,40 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 	featureSet := make(map[string]bool)
 	var highestPriority int = -1
 
-	// Get organization details
+	// Batch-fetch all organizations and member records in 2 queries (not 2N)
+	orgIDs := make([]uuid.UUID, 0, len(subscriptions))
 	for _, sub := range subscriptions {
-		var org organizationModels.Organization
-		if err := oss.db.Where("id = ?", sub.OrganizationID).First(&org).Error; err != nil {
-			utils.Warn("Failed to get organization %s: %v", sub.OrganizationID, err)
+		orgIDs = append(orgIDs, sub.OrganizationID)
+	}
+
+	var orgs []organizationModels.Organization
+	if err := oss.db.Where("id IN ?", orgIDs).Find(&orgs).Error; err != nil {
+		return nil, fmt.Errorf("failed to batch-fetch organizations: %w", err)
+	}
+	orgMap := make(map[uuid.UUID]organizationModels.Organization, len(orgs))
+	for _, org := range orgs {
+		orgMap[org.ID] = org
+	}
+
+	var members []organizationModels.OrganizationMember
+	if err := oss.db.Where("organization_id IN ? AND user_id = ?", orgIDs, userID).Find(&members).Error; err != nil {
+		return nil, fmt.Errorf("failed to batch-fetch member records: %w", err)
+	}
+	memberMap := make(map[uuid.UUID]organizationModels.OrganizationMember, len(members))
+	for _, m := range members {
+		memberMap[m.OrganizationID] = m
+	}
+
+	for _, sub := range subscriptions {
+		org, orgFound := orgMap[sub.OrganizationID]
+		if !orgFound {
+			utils.Warn("Organization %s not found in batch", sub.OrganizationID)
 			continue
 		}
 
-		// Get member info
-		var member organizationModels.OrganizationMember
-		if err := oss.db.Where("organization_id = ? AND user_id = ?", sub.OrganizationID, userID).First(&member).Error; err != nil {
-			utils.Warn("Failed to get member info for org %s: %v", sub.OrganizationID, err)
+		member, memberFound := memberMap[sub.OrganizationID]
+		if !memberFound {
+			utils.Warn("Member info not found for org %s", sub.OrganizationID)
 			continue
 		}
 
@@ -368,13 +390,13 @@ func (oss *organizationSubscriptionService) GetUserOrganizationWithFeature(userI
 		return nil, fmt.Errorf("failed to get user organization subscriptions: %w", err)
 	}
 
-	var bestOrg *organizationModels.Organization
+	// First pass: find the best matching subscription (no DB queries in loop)
+	var bestSub *models.OrganizationSubscription
 	highestPriority := -1
 
-	for _, sub := range subscriptions {
+	for i, sub := range subscriptions {
 		plan := sub.SubscriptionPlan
 
-		// Check if this plan has the feature
 		hasFeature := false
 		for _, f := range plan.Features {
 			if f == feature {
@@ -384,17 +406,20 @@ func (oss *organizationSubscriptionService) GetUserOrganizationWithFeature(userI
 		}
 
 		if hasFeature && plan.Priority > highestPriority {
-			var org organizationModels.Organization
-			if err := oss.db.Where("id = ?", sub.OrganizationID).First(&org).Error; err == nil {
-				bestOrg = &org
-				highestPriority = plan.Priority
-			}
+			bestSub = &subscriptions[i]
+			highestPriority = plan.Priority
 		}
 	}
 
-	if bestOrg == nil {
+	if bestSub == nil {
 		return nil, fmt.Errorf("no organization provides feature: %s", feature)
 	}
 
-	return bestOrg, nil
+	// Single query: fetch only the winning organization
+	var bestOrg organizationModels.Organization
+	if err := oss.db.Where("id = ?", bestSub.OrganizationID).First(&bestOrg).Error; err != nil {
+		return nil, fmt.Errorf("failed to get organization %s: %w", bestSub.OrganizationID, err)
+	}
+
+	return &bestOrg, nil
 }
