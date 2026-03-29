@@ -159,31 +159,48 @@ func (s *bulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID s
 		return nil, fmt.Errorf("user not found: the specified user ID does not exist")
 	}
 
-	// Check if batch has available licenses
-	if batch.AssignedQuantity >= batch.TotalQuantity {
-		return nil, fmt.Errorf("no available licenses in this batch")
-	}
-
-	// Find an unassigned license from this batch
+	// Assign license within a transaction to prevent race conditions
 	var license models.UserSubscription
-	err = s.db.Where("subscription_batch_id = ? AND status = ?", batchID, "unassigned").
-		First(&license).Error
-	if err != nil {
-		return nil, fmt.Errorf("no unassigned licenses found: %w", err)
-	}
+	txErr := s.db.Transaction(func(tx *gorm.DB) error {
+		// Lock the batch row to prevent concurrent assignments
+		var lockedBatch models.SubscriptionBatch
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("id = ?", batchID).First(&lockedBatch).Error; err != nil {
+			return fmt.Errorf("failed to lock batch: %w", err)
+		}
 
-	// Assign the license
-	license.UserID = targetUserID
-	license.Status = "active"
-	license.SubscriptionType = "assigned" // Mark as assigned license for stacked subscription priority
+		// Check availability under lock
+		if lockedBatch.AssignedQuantity >= lockedBatch.TotalQuantity {
+			return fmt.Errorf("no available licenses in this batch")
+		}
 
-	if err := s.subscriptionRepo.UpdateUserSubscription(&license); err != nil {
-		return nil, fmt.Errorf("failed to assign license: %w", err)
-	}
+		// Find and lock an unassigned license
+		if err := tx.Set("gorm:query_option", "FOR UPDATE SKIP LOCKED").
+			Where("subscription_batch_id = ? AND status = ?", batchID, "unassigned").
+			First(&license).Error; err != nil {
+			return fmt.Errorf("no unassigned licenses found: %w", err)
+		}
 
-	// Increment assigned quantity
-	if err := s.batchRepository.IncrementAssignedQuantity(batchID, 1); err != nil {
-		utils.Warn("Failed to increment assigned quantity: %v", err)
+		// Assign the license
+		license.UserID = targetUserID
+		license.Status = "active"
+		license.SubscriptionType = "assigned"
+
+		if err := tx.Save(&license).Error; err != nil {
+			return fmt.Errorf("failed to assign license: %w", err)
+		}
+
+		// Increment assigned quantity atomically within the same transaction
+		if err := tx.Model(&models.SubscriptionBatch{}).
+			Where("id = ?", batchID).
+			Update("assigned_quantity", gorm.Expr("assigned_quantity + 1")).Error; err != nil {
+			return fmt.Errorf("failed to increment assigned quantity: %w", err)
+		}
+
+		return nil
+	})
+	if txErr != nil {
+		return nil, txErr
 	}
 
 	utils.Info("License %s assigned to user %s from batch %s", license.ID, targetUserID, batchID)
