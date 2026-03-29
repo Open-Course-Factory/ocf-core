@@ -109,8 +109,7 @@ type CreateUserSubscriptionInput struct {
 }
 
 type UpdateUserSubscriptionInput struct {
-	Status            string `json:"status,omitempty" mapstructure:"status"`
-	CancelAtPeriodEnd *bool  `json:"cancel_at_period_end,omitempty" mapstructure:"cancel_at_period_end"`
+	CancelAtPeriodEnd *bool `json:"cancel_at_period_end,omitempty" mapstructure:"cancel_at_period_end"`
 }
 
 type UpgradePlanInput struct {
