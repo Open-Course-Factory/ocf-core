@@ -48,6 +48,33 @@ func TestMain(m *testing.M) {
 		panic("failed to migrate shared test DB: " + err.Error())
 	}
 
+	// Create tables with PostgreSQL-specific defaults using raw SQL for SQLite compatibility
+	// Terminal table (has no PostgreSQL-specific defaults but isn't in the payment models package)
+	db.Exec(`CREATE TABLE IF NOT EXISTS terminals (
+		id TEXT PRIMARY KEY,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME,
+		session_id TEXT UNIQUE,
+		user_id TEXT NOT NULL,
+		name TEXT,
+		status TEXT DEFAULT 'active',
+		expires_at DATETIME,
+		user_terminal_key_id TEXT,
+		owner_ids TEXT
+	)`)
+
+	// Webhook events table (WebhookEvent model uses gen_random_uuid() which is PostgreSQL-only)
+	db.Exec(`CREATE TABLE IF NOT EXISTS webhook_events (
+		id TEXT PRIMARY KEY,
+		event_id TEXT UNIQUE NOT NULL,
+		event_type TEXT NOT NULL DEFAULT '',
+		processed_at DATETIME NOT NULL,
+		expires_at DATETIME NOT NULL,
+		payload TEXT,
+		created_at DATETIME
+	)`)
+
 	sharedTestDB = db
 	os.Exit(m.Run())
 }
@@ -70,5 +97,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM features")
 	sharedTestDB.Exec("DELETE FROM billing_addresses")
 	sharedTestDB.Exec("DELETE FROM payment_methods")
+	sharedTestDB.Exec("DELETE FROM terminals")
+	sharedTestDB.Exec("DELETE FROM webhook_events")
 	return sharedTestDB
 }
