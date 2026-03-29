@@ -1027,6 +1027,14 @@ func (sc *userSubscriptionController) ImportPlansFromStripe(ctx *gin.Context) {
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/sync-existing [post]
 func (sc *userSubscriptionController) SyncExistingSubscriptions(ctx *gin.Context) {
+	if !isAdmin(ctx) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Access denied - admin role required",
+		})
+		return
+	}
+
 	// Synchroniser tous les abonnements depuis Stripe
 	result, err := sc.stripeService.SyncExistingSubscriptions()
 	if err != nil {
@@ -1054,6 +1062,14 @@ func (sc *userSubscriptionController) SyncExistingSubscriptions(ctx *gin.Context
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/users/{user_id}/sync [post]
 func (sc *userSubscriptionController) SyncUserSubscriptions(ctx *gin.Context) {
+	if !isAdmin(ctx) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Access denied - admin role required",
+		})
+		return
+	}
+
 	userID := ctx.Param("user_id")
 	if userID == "" {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
@@ -1088,6 +1104,14 @@ func (sc *userSubscriptionController) SyncUserSubscriptions(ctx *gin.Context) {
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/sync-missing-metadata [post]
 func (sc *userSubscriptionController) SyncSubscriptionsWithMissingMetadata(ctx *gin.Context) {
+	if !isAdmin(ctx) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Access denied - admin role required",
+		})
+		return
+	}
+
 	// Synchroniser les abonnements avec métadonnées manquantes
 	result, err := sc.stripeService.SyncSubscriptionsWithMissingMetadata()
 	if err != nil {
@@ -1117,6 +1141,14 @@ func (sc *userSubscriptionController) SyncSubscriptionsWithMissingMetadata(ctx *
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/user-subscriptions/link/{subscription_id} [post]
 func (sc *userSubscriptionController) LinkSubscriptionToUser(ctx *gin.Context) {
+	if !isAdmin(ctx) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Access denied - admin role required",
+		})
+		return
+	}
+
 	subscriptionID := ctx.Param("subscription_id")
 	if subscriptionID == "" {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
