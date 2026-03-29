@@ -65,7 +65,16 @@ func (bac *billingAddressController) SetDefaultBillingAddress(ctx *gin.Context) 
 	userId := ctx.GetString("userId")
 	addressID := ctx.Param("id")
 
-	err := bac.subscriptionService.SetDefaultBillingAddress(userId, uuid.MustParse(addressID))
+	parsedID, parseErr := uuid.Parse(addressID)
+	if parseErr != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid billing address ID format",
+		})
+		return
+	}
+
+	err := bac.subscriptionService.SetDefaultBillingAddress(userId, parsedID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,

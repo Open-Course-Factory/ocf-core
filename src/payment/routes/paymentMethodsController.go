@@ -53,7 +53,16 @@ func (pmc *paymentMethodController) SetDefaultPaymentMethod(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	paymentMethodID := ctx.Param("id")
 
-	err := pmc.subscriptionService.SetDefaultPaymentMethod(userId, uuid.MustParse(paymentMethodID))
+	parsedID, parseErr := uuid.Parse(paymentMethodID)
+	if parseErr != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid payment method ID format",
+		})
+		return
+	}
+
+	err := pmc.subscriptionService.SetDefaultPaymentMethod(userId, parsedID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,

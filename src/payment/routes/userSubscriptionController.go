@@ -404,8 +404,18 @@ func (sc *userSubscriptionController) CancelSubscription(ctx *gin.Context) {
 	subscriptionID := ctx.Param("id")
 	cancelImmediately := ctx.Query("cancel_immediately") == "true"
 
+	// Vérifier que l'ID est un UUID valide
+	parsedID, parseErr := uuid.Parse(subscriptionID)
+	if parseErr != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid subscription ID format",
+		})
+		return
+	}
+
 	// Vérifier que l'abonnement appartient à l'utilisateur
-	subscription, err := sc.subscriptionService.GetUserSubscriptionByID(uuid.MustParse(subscriptionID))
+	subscription, err := sc.subscriptionService.GetUserSubscriptionByID(parsedID)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
@@ -521,8 +531,18 @@ func (sc *userSubscriptionController) ReactivateSubscription(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	subscriptionID := ctx.Param("id")
 
+	// Vérifier que l'ID est un UUID valide
+	parsedID, parseErr := uuid.Parse(subscriptionID)
+	if parseErr != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid subscription ID format",
+		})
+		return
+	}
+
 	// Vérifier l'accès
-	subscription, err := sc.subscriptionService.GetUserSubscriptionByID(uuid.MustParse(subscriptionID))
+	subscription, err := sc.subscriptionService.GetUserSubscriptionByID(parsedID)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,

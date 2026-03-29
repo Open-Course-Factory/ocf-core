@@ -96,8 +96,17 @@ func (ic *invoiceController) DownloadInvoice(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	invoiceID := ctx.Param("id")
 
+	parsedID, parseErr := uuid.Parse(invoiceID)
+	if parseErr != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid invoice ID format",
+		})
+		return
+	}
+
 	// Récupérer la facture depuis le service (retourne un model)
-	invoice, err := ic.subscriptionService.GetInvoiceByID(uuid.MustParse(invoiceID))
+	invoice, err := ic.subscriptionService.GetInvoiceByID(parsedID)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
