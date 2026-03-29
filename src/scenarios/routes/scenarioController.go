@@ -1604,7 +1604,7 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 // @Router /organizations/{orgId}/scenarios [get]
 // @Security BearerAuth
 func (sc *scenarioController) OrgListScenarios(ctx *gin.Context) {
-	orgID, err := uuid.Parse(ctx.Param("orgId"))
+	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
@@ -1649,7 +1649,7 @@ func (sc *scenarioController) OrgListScenarios(ctx *gin.Context) {
 // @Router /organizations/{orgId}/scenarios/import-json [post]
 // @Security BearerAuth
 func (sc *scenarioController) OrgImportJSON(ctx *gin.Context) {
-	orgID, err := uuid.Parse(ctx.Param("orgId"))
+	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
@@ -1707,7 +1707,7 @@ func (sc *scenarioController) OrgImportJSON(ctx *gin.Context) {
 // @Router /organizations/{orgId}/scenarios/upload [post]
 // @Security BearerAuth
 func (sc *scenarioController) OrgUploadScenario(ctx *gin.Context) {
-	orgID, err := uuid.Parse(ctx.Param("orgId"))
+	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
@@ -1869,7 +1869,7 @@ func (sc *scenarioController) OrgUploadScenario(ctx *gin.Context) {
 // @Router /organizations/{orgId}/scenarios/{scenarioId}/export [get]
 // @Security BearerAuth
 func (sc *scenarioController) OrgExportScenario(ctx *gin.Context) {
-	orgID, err := uuid.Parse(ctx.Param("orgId"))
+	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
@@ -1950,7 +1950,7 @@ func (sc *scenarioController) OrgExportScenario(ctx *gin.Context) {
 // @Router /organizations/{orgId}/scenarios/{scenarioId} [delete]
 // @Security BearerAuth
 func (sc *scenarioController) OrgDeleteScenario(ctx *gin.Context) {
-	orgID, err := uuid.Parse(ctx.Param("orgId"))
+	orgID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,

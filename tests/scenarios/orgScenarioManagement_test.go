@@ -36,7 +36,7 @@ func setupOrgTestRouterWithUserAndRoles(db *gorm.DB, userID string, roles []stri
 	controller := scenarioController.NewScenarioController(db)
 
 	// Organization-level scenario routes (the new endpoints under test)
-	orgScenarios := api.Group("/organizations/:orgId/scenarios")
+	orgScenarios := api.Group("/organizations/:id/scenarios")
 	orgScenarios.GET("", controller.OrgListScenarios)
 	orgScenarios.POST("/import-json", controller.OrgImportJSON)
 	orgScenarios.POST("/upload", controller.OrgUploadScenario)

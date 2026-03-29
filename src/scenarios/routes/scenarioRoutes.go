@@ -48,7 +48,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	groupScenarioRoutes.POST("/upload", middleware.AuthManagement(), controller.GroupUploadScenario)
 
 	// Organization-level scenario management routes (org managers)
-	orgScenarioRoutes := router.Group("/organizations/:orgId/scenarios")
+	orgScenarioRoutes := router.Group("/organizations/:id/scenarios")
 	orgScenarioRoutes.GET("", middleware.AuthManagement(), controller.OrgListScenarios)
 	orgScenarioRoutes.POST("/import-json", middleware.AuthManagement(), controller.OrgImportJSON)
 	orgScenarioRoutes.POST("/upload", middleware.AuthManagement(), controller.OrgUploadScenario)
