@@ -22,6 +22,263 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 	registerHooksPermissions(enforcer)
 	registerBulkLicensePermissions(enforcer)
 
+	// --- Route registry declarations (declarative permission metadata) ---
+
+	casbinUtils.RouteRegistry.Register("Subscriptions",
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/current", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Get current user subscription",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/all", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "List all user subscriptions",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/usage", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Get subscription usage summary",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/checkout", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Create Stripe checkout session",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/portal", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Open Stripe billing portal",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/:id/cancel", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Cancel a subscription",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/:id/reactivate", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Reactivate a cancelled subscription",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/upgrade", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Upgrade subscription plan",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/usage/check", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Check usage limit availability",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/sync-usage-limits", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Sync usage limits from Stripe",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/purchase-bulk", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Purchase bulk license batch",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/analytics", Method: "GET",
+			CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Description: "View subscription analytics",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/admin-assign", Method: "POST",
+			CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Description: "Admin-assign subscription to user",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/sync-existing", Method: "POST",
+			CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Description: "Sync all existing Stripe subscriptions",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/users/:user_id/sync", Method: "POST",
+			CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Description: "Sync Stripe subscription for specific user",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/sync-missing-metadata", Method: "POST",
+			CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Description: "Sync missing Stripe metadata",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/user-subscriptions/link/:subscription_id", Method: "POST",
+			CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Description: "Link Stripe subscription to user",
+		},
+	)
+
+	casbinUtils.RouteRegistry.Register("Organization Subscriptions",
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/organizations/:id/subscribe", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "member"},
+			Description: "Subscribe organization to a plan",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/organizations/:id/subscription", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "member"},
+			Description: "Get organization subscription",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/organizations/:id/subscription", Method: "DELETE",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "member"},
+			Description: "Cancel organization subscription",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/organizations/:id/features", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "member"},
+			Description: "List organization features",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/organizations/:id/usage-limits", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "member"},
+			Description: "Get organization usage limits",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/users/me/features", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "List features available to current user",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/admin/organizations/subscriptions", Method: "GET",
+			CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Description: "List all organization subscriptions (admin)",
+		},
+	)
+
+	casbinUtils.RouteRegistry.Register("Billing",
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/invoices/user", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "List user invoices",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/invoices/sync", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Sync invoices from Stripe",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/invoices/:id/download", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Download invoice PDF",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/invoices/admin/cleanup", Method: "POST",
+			CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Description: "Clean up orphaned invoices",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/payment-methods/user", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "List user payment methods",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/payment-methods/sync", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Sync payment methods from Stripe",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/payment-methods/:id/set-default", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Set default payment method",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/billing-addresses/user", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "List user billing addresses",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/billing-addresses/:id/set-default", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Set default billing address",
+		},
+	)
+
+	casbinUtils.RouteRegistry.Register("Usage & Plans",
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/usage-metrics/user", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Get user usage metrics",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/usage-metrics/increment", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Increment usage metric counter",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/usage-metrics/reset", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Description: "Reset usage metric counter",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/subscription-plans/:id/sync-stripe", Method: "POST",
+			CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Description: "Sync single plan from Stripe",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/subscription-plans/sync-stripe", Method: "POST",
+			CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Description: "Sync all plans from Stripe",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/subscription-plans/import-stripe", Method: "POST",
+			CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Description: "Import plans from Stripe",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/hooks/stripe/toggle", Method: "POST",
+			CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Description: "Toggle Stripe webhook processing",
+		},
+	)
+
+	casbinUtils.RouteRegistry.Register("Bulk Licenses",
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/subscription-batches/create-checkout-session", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Description: "Create batch checkout session",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/subscription-batches", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Description: "List owned subscription batches",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/subscription-batches/:id", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Description: "Get subscription batch details",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/subscription-batches/:id/licenses", Method: "GET",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Description: "List licenses in a batch",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/subscription-batches/:id/assign", Method: "POST",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Description: "Assign license from batch to user",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/subscription-batches/:id/licenses/:license_id/revoke", Method: "DELETE",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Description: "Revoke a batch license",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/subscription-batches/:id/quantity", Method: "PATCH",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Description: "Update batch license quantity",
+		},
+		casbinUtils.RoutePermission{
+			Path: "/api/v1/subscription-batches/:id/permanent", Method: "DELETE",
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Description: "Permanently delete a batch",
+		},
+	)
+
 	log.Println("=== Payment module permissions registered ===")
 }
 

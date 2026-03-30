@@ -25,5 +25,16 @@ func RegisterSecurityAdminPermissions(enforcer interfaces.EnforcerInterface) {
 		casbinUtils.ReconcilePolicy(enforcer, "administrator", route.path, route.method)
 	}
 
+	// Permission reference — available to all authenticated users
+	casbinUtils.ReconcilePolicy(enforcer, "member", "/api/v1/permissions/reference", "GET")
+
+	casbinUtils.RouteRegistry.Register("Security Administration",
+		casbinUtils.RoutePermission{Path: "/api/v1/admin/security/policies", Method: "GET", CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly}, Description: "View all Casbin policies"},
+		casbinUtils.RoutePermission{Path: "/api/v1/admin/security/user-permissions", Method: "GET", CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly}, Description: "Look up user permissions"},
+		casbinUtils.RoutePermission{Path: "/api/v1/admin/security/entity-roles", Method: "GET", CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly}, Description: "View entity role matrix"},
+		casbinUtils.RoutePermission{Path: "/api/v1/admin/security/health-checks", Method: "GET", CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly}, Description: "Run policy health checks"},
+		casbinUtils.RoutePermission{Path: "/api/v1/permissions/reference", Method: "GET", CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public}, Description: "View permission reference page"},
+	)
+
 	log.Println("=== Security admin permissions registered ===")
 }

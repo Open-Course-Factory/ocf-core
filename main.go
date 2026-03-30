@@ -21,6 +21,7 @@ import (
 	// groupController "soli/formations/src/auth/routes/groupsRoutes" // Legacy Casdoor groups - replaced by class-groups
 	passwordResetController "soli/formations/src/auth/routes/passwordResetRoutes"
 userController "soli/formations/src/auth/routes/usersRoutes"
+	permissionReferenceRoutes "soli/formations/src/auth/routes/permissionReferenceRoutes"
 	securityAdminController "soli/formations/src/auth/routes/securityAdminRoutes"
 	emailController "soli/formations/src/email/routes"
 	emailServices "soli/formations/src/email/services"
@@ -190,6 +191,7 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	organizationController.OrganizationRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	emailController.EmailTemplateRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	securityAdminController.SecurityAdminRoutes(apiGroup, sqldb.DB)
+	permissionReferenceRoutes.PermissionReferenceRoutes(apiGroup)
 	scenarioController.ScenarioRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	feedback.FeedbackRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
