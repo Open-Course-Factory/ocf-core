@@ -157,7 +157,7 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 	resourceName := Pluralize(entityName)
 	resourceName = utils.PascalToKebab(resourceName)
 	resourceName = strings.ToLower(resourceName)
-	apiGroupPath := "/api/v1/" + resourceName + "/*" // Use wildcard for specific resource endpoints
+	apiGroupPath := "/api/v1/" + resourceName + "/:id" // Match single resource by ID only (not sub-paths)
 	apiListPath := "/api/v1/" + resourceName         // List endpoint without wildcard
 
 	appUtils.Info("Setting up entity access for %s at %s and %s", entityName, apiListPath, apiGroupPath)

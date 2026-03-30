@@ -163,16 +163,16 @@ func TestEntityRegistrationService_SetDefaultEntityAccesses(t *testing.T) {
 	for _, role := range allRoles {
 		// GetFilteredPolicy returns empty (no existing policy) so AddPolicy will be called
 		mockEnforcer.On("GetFilteredPolicy", 0, []string{role, "/api/v1/test-entities"}).Return([][]string{}, nil)
-		mockEnforcer.On("GetFilteredPolicy", 0, []string{role, "/api/v1/test-entities/*"}).Return([][]string{}, nil)
-		// List endpoint (without wildcard) - note: "TestEntity" becomes "test-entities" via PascalToKebab
+		mockEnforcer.On("GetFilteredPolicy", 0, []string{role, "/api/v1/test-entities/:id"}).Return([][]string{}, nil)
+		// List endpoint (without parameter)
 		mockEnforcer.On("AddPolicy",
 			role,
 			"/api/v1/test-entities",
 			"("+http.MethodGet+"|"+http.MethodPost+")").Return(true, nil)
-		// Resource endpoints (with wildcard)
+		// Resource endpoints (with :id parameter)
 		mockEnforcer.On("AddPolicy",
 			role,
-			"/api/v1/test-entities/*",
+			"/api/v1/test-entities/:id",
 			"("+http.MethodGet+"|"+http.MethodPost+")").Return(true, nil)
 	}
 

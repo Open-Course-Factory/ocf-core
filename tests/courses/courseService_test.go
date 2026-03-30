@@ -490,16 +490,16 @@ func TestEntityRegistrationService_WithMockEnforcer(t *testing.T) {
 	assert.Equal(t, 22, mockEnforcer.GetAddPolicyCallCount())
 
 	// Vérifier que les rôles member et admin sont bien ajoutés
-	// Note: The new system uses /* instead of / and adds Casdoor role mappings
+	// Note: The system uses /:id for single resource and adds Casdoor role mappings
 	calls := mockEnforcer.AddPolicyCalls
 	assert.GreaterOrEqual(t, len(calls), 2, "Should have at least member and admin roles")
 
 	// Verify member role exists (OCF role) - specifically check for wildcard endpoint
 	foundMember := false
 	for _, call := range calls {
-		if len(call) >= 3 && call[0] == string(authModels.Member) && call[1] == "/api/v1/test-entities/*" {
+		if len(call) >= 3 && call[0] == string(authModels.Member) && call[1] == "/api/v1/test-entities/:id" {
 			foundMember = true
-			assert.Equal(t, "/api/v1/test-entities/*", call[1])
+			assert.Equal(t, "/api/v1/test-entities/:id", call[1])
 			assert.Equal(t, "("+http.MethodGet+"|"+http.MethodPost+")", call[2])
 			break
 		}
@@ -509,9 +509,9 @@ func TestEntityRegistrationService_WithMockEnforcer(t *testing.T) {
 	// Verify admin role exists (OCF role) - specifically check for wildcard endpoint
 	foundAdmin := false
 	for _, call := range calls {
-		if len(call) >= 3 && call[0] == string(authModels.Admin) && call[1] == "/api/v1/test-entities/*" {
+		if len(call) >= 3 && call[0] == string(authModels.Admin) && call[1] == "/api/v1/test-entities/:id" {
 			foundAdmin = true
-			assert.Equal(t, "/api/v1/test-entities/*", call[1])
+			assert.Equal(t, "/api/v1/test-entities/:id", call[1])
 			assert.Equal(t, "("+http.MethodGet+"|"+http.MethodPost+"|"+http.MethodDelete+")", call[2])
 			break
 		}
