@@ -846,6 +846,15 @@ func TestProjectFileController_GetByScenario_Success(t *testing.T) {
 	assert.True(t, usedAsValues["Step 1 — text"])
 }
 
+// adminMiddleware injects admin role for tests that require admin access.
+func adminMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set("userId", "test-user")
+		c.Set("userRoles", []string{"admin"})
+		c.Next()
+	}
+}
+
 func TestProjectFileController_GetByScenario_Empty(t *testing.T) {
 	db := setupTestDB(t)
 
@@ -864,7 +873,7 @@ func TestProjectFileController_GetByScenario_Empty(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	ctrl := scenarioController.NewProjectFileController(db)
-	r.GET("/api/v1/project-files/by-scenario/:scenarioId", ctrl.GetByScenario)
+	r.GET("/api/v1/project-files/by-scenario/:scenarioId", adminMiddleware(), ctrl.GetByScenario)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/project-files/by-scenario/"+scenario.ID.String(), nil)
@@ -883,7 +892,7 @@ func TestProjectFileController_GetByScenario_NotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	ctrl := scenarioController.NewProjectFileController(db)
-	r.GET("/api/v1/project-files/by-scenario/:scenarioId", ctrl.GetByScenario)
+	r.GET("/api/v1/project-files/by-scenario/:scenarioId", adminMiddleware(), ctrl.GetByScenario)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/project-files/by-scenario/"+uuid.New().String(), nil)
@@ -924,7 +933,7 @@ func TestProjectFileController_GetUsage_Success(t *testing.T) {
 	r := gin.New()
 	api := r.Group("/api/v1")
 	ctrl := scenarioController.NewProjectFileController(db)
-	api.GET("/project-files/:id/usage", ctrl.GetUsage)
+	api.GET("/project-files/:id/usage", adminMiddleware(), ctrl.GetUsage)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/project-files/"+file.ID.String()+"/usage", nil)
@@ -954,7 +963,7 @@ func TestProjectFileController_GetUsage_Unused(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	ctrl := scenarioController.NewProjectFileController(db)
-	r.GET("/api/v1/project-files/:id/usage", ctrl.GetUsage)
+	r.GET("/api/v1/project-files/:id/usage", adminMiddleware(), ctrl.GetUsage)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/project-files/"+file.ID.String()+"/usage", nil)
@@ -973,7 +982,7 @@ func TestProjectFileController_GetUsage_NotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	ctrl := scenarioController.NewProjectFileController(db)
-	r.GET("/api/v1/project-files/:id/usage", ctrl.GetUsage)
+	r.GET("/api/v1/project-files/:id/usage", adminMiddleware(), ctrl.GetUsage)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/project-files/"+uuid.New().String()+"/usage", nil)

@@ -23,6 +23,17 @@ func NewProjectFileController(db *gorm.DB) *projectFileController {
 	return &projectFileController{db: db}
 }
 
+// isProjectFileAdmin checks if the current user has the administrator role.
+func isProjectFileAdmin(ctx *gin.Context) bool {
+	userRoles := ctx.GetStringSlice("userRoles")
+	for _, role := range userRoles {
+		if role == "administrator" || role == "admin" {
+			return true
+		}
+	}
+	return false
+}
+
 // GetContent returns the raw content of a ProjectFile with an appropriate Content-Type header.
 // GET /api/v1/project-files/:id/content
 func (c *projectFileController) GetContent(ctx *gin.Context) {
@@ -48,6 +59,15 @@ func (c *projectFileController) GetContent(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Failed to retrieve file",
+		})
+		return
+	}
+
+	// Block script content for non-admin users (prevents verify script answer leakage)
+	if file.ContentType == "script" && !isProjectFileAdmin(ctx) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Admin access required for script files",
 		})
 		return
 	}
@@ -94,8 +114,17 @@ type projectFileListItem struct {
 }
 
 // GetByScenario returns all ProjectFile records referenced by a given scenario and its steps.
+// Admin-only: exposes file metadata including script references.
 // GET /api/v1/project-files/by-scenario/:scenarioId
 func (c *projectFileController) GetByScenario(ctx *gin.Context) {
+	if !isProjectFileAdmin(ctx) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Admin access required",
+		})
+		return
+	}
+
 	scenarioID, err := uuid.Parse(ctx.Param("scenarioId"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
@@ -233,8 +262,17 @@ type usageRef struct {
 }
 
 // GetUsage returns which scenarios and steps reference a given ProjectFile.
+// Admin-only: exposes cross-scenario reference information.
 // GET /api/v1/project-files/:id/usage
 func (c *projectFileController) GetUsage(ctx *gin.Context) {
+	if !isProjectFileAdmin(ctx) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Admin access required",
+		})
+		return
+	}
+
 	fileID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
