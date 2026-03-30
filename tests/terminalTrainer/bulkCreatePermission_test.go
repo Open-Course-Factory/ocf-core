@@ -134,7 +134,7 @@ func TestBulkCreate_GroupAdmin_Allowed(t *testing.T) {
 	ownerID := "owner-user-id"
 	adminID := "admin-user-id"
 	group := createTestGroup(t, db, ownerID)
-	addGroupMember(t, db, group.ID, adminID, groupModels.GroupMemberRoleAdmin)
+	addGroupMember(t, db, group.ID, adminID, groupModels.GroupMemberRoleManager)
 	plan := createTestPlanAndSubscription(t, db, adminID)
 
 	router := setupBulkCreateRouter(db, adminID, []string{"member"}, plan)

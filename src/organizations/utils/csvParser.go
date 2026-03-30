@@ -480,7 +480,7 @@ func validateMembershipRow(membership dto.MembershipImportRow, rowNum int) []dto
 	}
 
 	// Validate role
-	validRoles := map[string]bool{"member": true, "admin": true, "assistant": true, "owner": true}
+	validRoles := map[string]bool{"member": true, "manager": true, "owner": true}
 	if membership.Role == "" {
 		errors = append(errors, dto.ImportError{
 			Row:     rowNum,
@@ -494,7 +494,7 @@ func validateMembershipRow(membership dto.MembershipImportRow, rowNum int) []dto
 			Row:     rowNum,
 			File:    "memberships",
 			Field:   "role",
-			Message: fmt.Sprintf("Invalid role '%s'. Must be one of: member, admin, assistant, owner", membership.Role),
+			Message: fmt.Sprintf("Invalid role '%s'. Must be one of: member, manager, owner", membership.Role),
 			Code:    dto.ErrCodeInvalidRole,
 		})
 	}

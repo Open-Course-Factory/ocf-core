@@ -52,7 +52,7 @@ func (tc *TeacherController) validateTeacherAccess(c *gin.Context, groupID uuid.
 	// Check group-level ownership/admin
 	var member groupModels.GroupMember
 	err := tc.db.Where("group_id = ? AND user_id = ? AND is_active = true AND role IN ?",
-		groupID, userID, []string{"owner", "admin"}).First(&member).Error
+		groupID, userID, []string{"owner", "manager"}).First(&member).Error
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized as group teacher"})
 		return false

@@ -62,7 +62,7 @@ type MemberRepository interface {
 type MemberConfig struct {
 	EntityType      string   // "group", "organization", etc.
 	RoleOwner       string   // "owner"
-	RoleManager     string   // "manager", "admin"
+	RoleManager     string   // "manager"
 	AllowedRoles    []string // List of allowed roles
 	PermissionPaths []string // Custom permission paths to grant
 }

@@ -909,7 +909,7 @@ func (sc *scenarioController) validateTeacherAccess(ctx *gin.Context, groupID uu
 	// Check group-level ownership/admin
 	var member groupModels.GroupMember
 	err := sc.db.Where("group_id = ? AND user_id = ? AND is_active = true AND role IN ?",
-		groupID, userID, []string{"owner", "admin"}).First(&member).Error
+		groupID, userID, []string{"owner", "manager"}).First(&member).Error
 	if err != nil {
 		ctx.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
 		return false

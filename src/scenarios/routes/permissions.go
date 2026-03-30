@@ -189,32 +189,32 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	casbinUtils.RouteRegistry.Register("Teacher Dashboard",
 		casbinUtils.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/activity", Method: "GET",
-			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "admin"},
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "View group activity overview",
 		},
 		casbinUtils.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results", Method: "GET",
-			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "admin"},
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "View scenario results for a group",
 		},
 		casbinUtils.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/analytics", Method: "GET",
-			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "admin"},
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "View scenario analytics for a group",
 		},
 		casbinUtils.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/sessions/:sessionId/detail", Method: "GET",
-			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "admin"},
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "View detailed session info for a student",
 		},
 		casbinUtils.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/bulk-start", Method: "POST",
-			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "admin"},
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Bulk-start scenario sessions for group members",
 		},
 		casbinUtils.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/reset-sessions", Method: "POST",
-			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "admin"},
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Reset scenario sessions for group members",
 		},
 	)
@@ -228,17 +228,17 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		},
 		casbinUtils.RoutePermission{
 			Path: "/api/v1/groups/:groupId/scenarios/upload", Method: "POST",
-			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "admin"},
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Upload a scenario to a group",
 		},
 		casbinUtils.RoutePermission{
 			Path: "/api/v1/groups/:groupId/scenarios/import-json", Method: "POST",
-			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "admin"},
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Import a scenario from JSON into a group",
 		},
 		casbinUtils.RoutePermission{
 			Path: "/api/v1/groups/:groupId/scenarios/:scenarioId/export", Method: "GET",
-			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "admin"},
+			CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Export a scenario from a group",
 		},
 		// Organization scenario routes

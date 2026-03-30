@@ -379,7 +379,7 @@ func (gs *groupService) CanUserManageGroup(groupID uuid.UUID, userID string) (bo
 		return false, nil
 	}
 
-	return member.IsAdmin(), nil
+	return member.IsManager(), nil
 }
 
 // CanUserAccessGroupViaOrg checks if a user can access a group through organization membership

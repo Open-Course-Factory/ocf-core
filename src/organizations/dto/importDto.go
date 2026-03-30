@@ -33,7 +33,7 @@ type GroupImportRow struct {
 type MembershipImportRow struct {
 	UserEmail string `csv:"user_email"`
 	GroupName string `csv:"group_name"`
-	Role      string `csv:"role"` // member, admin, assistant, owner
+	Role      string `csv:"role"` // member, manager, owner
 }
 
 // Request/Response Structures

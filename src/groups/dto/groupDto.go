@@ -78,19 +78,19 @@ type GroupListOutput struct {
 type CreateGroupMemberInput struct {
 	GroupID   uuid.UUID              `json:"group_id" mapstructure:"group_id" binding:"required"`
 	UserID    string                 `json:"user_id" mapstructure:"user_id" binding:"required"`
-	Role      models.GroupMemberRole `json:"role" mapstructure:"role" binding:"omitempty,oneof=member admin assistant"`
+	Role      models.GroupMemberRole `json:"role" mapstructure:"role" binding:"omitempty,oneof=member manager owner"`
 	InvitedBy string                 `json:"invited_by,omitempty" mapstructure:"invited_by"`
 }
 
 // AddGroupMembersInput - DTO for adding members to a group
 type AddGroupMembersInput struct {
 	UserIDs []string               `json:"user_ids" binding:"required,min=1"`
-	Role    models.GroupMemberRole `json:"role" binding:"omitempty,oneof=member admin assistant"`
+	Role    models.GroupMemberRole `json:"role" binding:"omitempty,oneof=member manager owner"`
 }
 
 // UpdateGroupMemberRoleInput - DTO for updating a member's role
 type UpdateGroupMemberRoleInput struct {
-	Role models.GroupMemberRole `json:"role" binding:"required,oneof=member admin assistant owner"`
+	Role models.GroupMemberRole `json:"role" binding:"required,oneof=member manager owner"`
 }
 
 // UserSummary contains basic user information (avoids import cycle with auth/dto)

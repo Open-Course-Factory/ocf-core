@@ -82,7 +82,7 @@ const (
 	Status          = "oneof=active inactive pending cancelled"
 
 	// Role validation
-	GroupMemberRole = "oneof=member admin assistant owner"
+	GroupMemberRole = "oneof=member manager owner"
 	OrgMemberRole   = "oneof=owner manager member"
 	AccessLevel     = "oneof=read write admin"
 

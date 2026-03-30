@@ -1799,7 +1799,7 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 		// Check if user is an admin of the group
 		if !canManage {
 			for _, member := range group.Members {
-				if member.UserID == requestingUserID && (member.Role == groupModels.GroupMemberRoleAdmin || member.Role == groupModels.GroupMemberRoleOwner) {
+				if member.UserID == requestingUserID && (member.Role == groupModels.GroupMemberRoleManager || member.Role == groupModels.GroupMemberRoleOwner) {
 					canManage = true
 					break
 				}
@@ -2211,8 +2211,8 @@ func (tts *terminalTrainerService) GetGroupCommandHistory(groupID string, userID
 			break
 		}
 	}
-	if userMember == nil || !(userMember.Role == groupModels.GroupMemberRoleOwner || userMember.Role == groupModels.GroupMemberRoleAdmin || userMember.Role == groupModels.GroupMemberRoleAssistant) {
-		return nil, "", fmt.Errorf("unauthorized: only group owner, admin, or assistant can view group command history")
+	if userMember == nil || !(userMember.Role == groupModels.GroupMemberRoleOwner || userMember.Role == groupModels.GroupMemberRoleManager) {
+		return nil, "", fmt.Errorf("unauthorized: only group owner or manager can view group command history")
 	}
 
 	// Collect active member user IDs
@@ -2401,8 +2401,8 @@ func (tts *terminalTrainerService) GetGroupCommandHistoryStats(groupID string, u
 			break
 		}
 	}
-	if userMember == nil || !(userMember.Role == groupModels.GroupMemberRoleOwner || userMember.Role == groupModels.GroupMemberRoleAdmin || userMember.Role == groupModels.GroupMemberRoleAssistant) {
-		return nil, "", fmt.Errorf("unauthorized: only group owner, admin, or assistant can view group command history stats")
+	if userMember == nil || !(userMember.Role == groupModels.GroupMemberRoleOwner || userMember.Role == groupModels.GroupMemberRoleManager) {
+		return nil, "", fmt.Errorf("unauthorized: only group owner or manager can view group command history stats")
 	}
 
 	// Collect active member user IDs

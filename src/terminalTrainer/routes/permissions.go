@@ -122,9 +122,9 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		casbinUtils.RoutePermission{Path: "/api/v1/terminals/fix-hide-permissions", Method: "POST", CasbinRole: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly}, Description: "Fix terminal hide permissions for all users"},
 
 		// Group terminal routes
-		casbinUtils.RoutePermission{Path: "/api/v1/class-groups/:id/bulk-create-terminals", Method: "POST", CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "id", MinRole: "admin"}, Description: "Bulk create terminals for all group members"},
-		casbinUtils.RoutePermission{Path: "/api/v1/class-groups/:id/command-history", Method: "GET", CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "id", MinRole: "admin"}, Description: "Get command history for all group members"},
-		casbinUtils.RoutePermission{Path: "/api/v1/class-groups/:id/command-history-stats", Method: "GET", CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "id", MinRole: "admin"}, Description: "Get command history statistics for a group"},
+		casbinUtils.RoutePermission{Path: "/api/v1/class-groups/:id/bulk-create-terminals", Method: "POST", CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "id", MinRole: "manager"}, Description: "Bulk create terminals for all group members"},
+		casbinUtils.RoutePermission{Path: "/api/v1/class-groups/:id/command-history", Method: "GET", CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "id", MinRole: "manager"}, Description: "Get command history for all group members"},
+		casbinUtils.RoutePermission{Path: "/api/v1/class-groups/:id/command-history-stats", Method: "GET", CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "id", MinRole: "manager"}, Description: "Get command history statistics for a group"},
 
 		// Organization terminal routes
 		casbinUtils.RoutePermission{Path: "/api/v1/organizations/:id/terminal-sessions", Method: "GET", CasbinRole: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "member"}, Description: "List terminal sessions for an organization"},

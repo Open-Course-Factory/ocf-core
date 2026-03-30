@@ -120,6 +120,9 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Audit logging entities (compliance & security)
 	db.AutoMigrate(&auditModels.AuditLog{})
 
+	// Harmonize group roles: admin → manager, assistant → member
+	migrateGroupRoles(db)
+
 	// Migrate existing hint_content to progressive hint records
 	migrateHintContentToHints(db)
 
@@ -415,6 +418,25 @@ func ensureUsersHaveTrialPlan(db *gorm.DB) {
 
 	if fixed > 0 {
 		log.Printf("[TRIAL-SYNC] Assigned Trial plan to %d users who were missing subscriptions", fixed)
+	}
+}
+
+// migrateGroupRoles harmonizes the old 4-level group role model (owner, admin,
+// assistant, member) into the new 3-level model (owner, manager, member).
+// Idempotent: only updates rows that still use the old role names.
+func migrateGroupRoles(db *gorm.DB) {
+	sqldb := db.Session(&gorm.Session{})
+
+	// assistant → member
+	result := sqldb.Exec("UPDATE group_members SET role = 'member' WHERE role = 'assistant'")
+	if result.RowsAffected > 0 {
+		log.Printf("[MIGRATION] Migrated %d group members from 'assistant' to 'member'", result.RowsAffected)
+	}
+
+	// admin → manager
+	result = sqldb.Exec("UPDATE group_members SET role = 'manager' WHERE role = 'admin'")
+	if result.RowsAffected > 0 {
+		log.Printf("[MIGRATION] Migrated %d group members from 'admin' to 'manager'", result.RowsAffected)
 	}
 }
 

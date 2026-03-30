@@ -166,7 +166,7 @@ m1_devops,,Description`
 func TestParseMembershipsCSV_ValidFile(t *testing.T) {
 	content := `user_email,group_name,role
 john@test.com,m1_devops_a,member
-jane@test.com,m1_devops_a,admin`
+jane@test.com,m1_devops_a,manager`
 
 	fileHeader := createMultipartFileHeader(t, "memberships.csv", content)
 	memberships, errors := orgUtils.ParseMembershipsCSV(fileHeader)
@@ -179,7 +179,7 @@ jane@test.com,m1_devops_a,admin`
 	assert.Equal(t, "member", memberships[0].Role)
 
 	assert.Equal(t, "jane@test.com", memberships[1].UserEmail)
-	assert.Equal(t, "admin", memberships[1].Role)
+	assert.Equal(t, "manager", memberships[1].Role)
 }
 
 func TestParseMembershipsCSV_InvalidRole(t *testing.T) {

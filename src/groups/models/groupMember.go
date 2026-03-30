@@ -11,10 +11,9 @@ import (
 type GroupMemberRole string
 
 const (
-	GroupMemberRoleOwner     GroupMemberRole = "owner"     // Group creator (full control)
-	GroupMemberRoleAdmin     GroupMemberRole = "admin"     // Can manage members and settings
-	GroupMemberRoleMember    GroupMemberRole = "member"    // Regular member (student)
-	GroupMemberRoleAssistant GroupMemberRole = "assistant" // Helper role (teaching assistant)
+	GroupMemberRoleOwner   GroupMemberRole = "owner"   // Group creator (full control)
+	GroupMemberRoleManager GroupMemberRole = "manager" // Can manage members and settings
+	GroupMemberRoleMember  GroupMemberRole = "member"  // Regular member (student)
 )
 
 // GroupMember represents a user's membership in a group
@@ -53,19 +52,19 @@ func (gm *GroupMember) IsOwner() bool {
 	return gm.Role == GroupMemberRoleOwner
 }
 
-// IsAdmin checks if this member is an admin or owner
-func (gm *GroupMember) IsAdmin() bool {
-	return gm.Role == GroupMemberRoleOwner || gm.Role == GroupMemberRoleAdmin
+// IsManager checks if this member is a manager or owner
+func (gm *GroupMember) IsManager() bool {
+	return gm.Role == GroupMemberRoleOwner || gm.Role == GroupMemberRoleManager
 }
 
 // CanManageMembers checks if this member can add/remove other members
 func (gm *GroupMember) CanManageMembers() bool {
-	return gm.IsAdmin()
+	return gm.IsManager()
 }
 
 // CanEditGroup checks if this member can edit group settings
 func (gm *GroupMember) CanEditGroup() bool {
-	return gm.IsAdmin()
+	return gm.IsManager()
 }
 
 // GetRolePriority returns a priority number for role comparison (higher = more permissions)
@@ -73,10 +72,8 @@ func (gm *GroupMember) GetRolePriority() int {
 	switch gm.Role {
 	case GroupMemberRoleOwner:
 		return 100
-	case GroupMemberRoleAdmin:
+	case GroupMemberRoleManager:
 		return 50
-	case GroupMemberRoleAssistant:
-		return 20
 	case GroupMemberRoleMember:
 		return 10
 	default:

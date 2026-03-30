@@ -157,7 +157,7 @@ func ValidateStringLength(value, field string, min, max int) error {
 //
 // Usage:
 //
-//	err := ValidateOneOf(role, "role", []string{"member", "admin", "owner"})
+//	err := ValidateOneOf(role, "role", []string{"member", "manager", "owner"})
 func ValidateOneOf(value, field string, allowed []string) error {
 	for _, a := range allowed {
 		if value == a {
