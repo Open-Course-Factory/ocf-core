@@ -873,6 +873,11 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/subscription-plans/{id}/sync-stripe [post]
 func (sc *userSubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Context) {
+	if !isAdmin(ctx) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{ErrorCode: http.StatusForbidden, ErrorMessage: "Admin access required"})
+		return
+	}
+
 	planIDStr := ctx.Param("id")
 	planID, err := uuid.Parse(planIDStr)
 	if err != nil {
@@ -947,6 +952,11 @@ func (sc *userSubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Co
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/subscription-plans/sync-stripe [post]
 func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gin.Context) {
+	if !isAdmin(ctx) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{ErrorCode: http.StatusForbidden, ErrorMessage: "Admin access required"})
+		return
+	}
+
 	// Récupérer tous les plans
 	plansPtr, err := sc.subscriptionService.GetAllSubscriptionPlans(false) // Récupérer tous les plans, même inactifs
 	if err != nil {
@@ -1002,6 +1012,11 @@ func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gi
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/subscription-plans/import-stripe [post]
 func (sc *userSubscriptionController) ImportPlansFromStripe(ctx *gin.Context) {
+	if !isAdmin(ctx) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{ErrorCode: http.StatusForbidden, ErrorMessage: "Admin access required"})
+		return
+	}
+
 	// Import plans from Stripe
 	result, err := sc.stripeService.ImportPlansFromStripe()
 	if err != nil {

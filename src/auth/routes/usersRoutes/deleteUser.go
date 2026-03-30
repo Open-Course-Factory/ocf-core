@@ -28,6 +28,23 @@ import (
 //
 //	@Router			/users/{id} [delete]
 func (u userController) DeleteUser(ctx *gin.Context) {
+	userRoles := ctx.GetStringSlice("userRoles")
+	isAdmin := false
+	for _, role := range userRoles {
+		if role == "administrator" {
+			isAdmin = true
+			break
+		}
+	}
+	if !isAdmin {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Admin access required",
+		})
+		ctx.Abort()
+		return
+	}
+
 	idParam := ctx.Param("id")
 
 	id, parseError := uuid.Parse(idParam)
