@@ -100,6 +100,8 @@ func main() {
 	initialization.SetupSecurityAdminPermissions(casdoor.Enforcer)
 	initialization.SetupScenarioPermissions(casdoor.Enforcer)
 	initialization.SetupFeedbackPermissions(casdoor.Enforcer)
+	initialization.SetupCoursePermissions(casdoor.Enforcer)
+	initialization.SetupUserManagementPermissions(casdoor.Enforcer)
 	log.Println("✅ All permissions setup completed")
 
 	// Initialize remaining hooks

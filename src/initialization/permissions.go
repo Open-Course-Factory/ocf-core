@@ -173,11 +173,101 @@ func SetupPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Setting up payment and subscription permissions ===")
 
 	// User subscription endpoints - available to all authenticated members
+	// (handlers use userId from JWT for self-scoped operations)
 	log.Println("Setting up user subscription permissions...")
-	reconcilePolicy(enforcer, "member", "/api/v1/user-subscriptions/current", "GET")
-	reconcilePolicy(enforcer, "member", "/api/v1/user-subscriptions/portal", "POST")
+	subscriptionMemberRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/user-subscriptions/current", "GET"},
+		{"/api/v1/user-subscriptions/all", "GET"},
+		{"/api/v1/user-subscriptions/usage", "GET"},
+		{"/api/v1/user-subscriptions/checkout", "POST"},
+		{"/api/v1/user-subscriptions/portal", "POST"},
+		{"/api/v1/user-subscriptions/:id/cancel", "POST"},
+		{"/api/v1/user-subscriptions/:id/reactivate", "POST"},
+		{"/api/v1/user-subscriptions/upgrade", "POST"},
+		{"/api/v1/user-subscriptions/usage/check", "POST"},
+		{"/api/v1/user-subscriptions/sync-usage-limits", "POST"},
+		{"/api/v1/user-subscriptions/purchase-bulk", "POST"},
+	}
+
+	for _, route := range subscriptionMemberRoutes {
+		reconcilePolicy(enforcer, "member", route.path, route.method)
+	}
+
+	// Admin subscription management (handlers have isAdmin() checks as defense-in-depth)
+	log.Println("Setting up admin subscription permissions...")
+	subscriptionAdminRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/user-subscriptions/analytics", "GET"},
+		{"/api/v1/user-subscriptions/admin-assign", "POST"},
+		{"/api/v1/user-subscriptions/sync-existing", "POST"},
+		{"/api/v1/user-subscriptions/users/:user_id/sync", "POST"},
+		{"/api/v1/user-subscriptions/sync-missing-metadata", "POST"},
+		{"/api/v1/user-subscriptions/link/:subscription_id", "POST"},
+	}
+
+	for _, route := range subscriptionAdminRoutes {
+		reconcilePolicy(enforcer, "administrator", route.path, route.method)
+	}
+
+	// Organization subscription endpoints - available to all authenticated members
+	// (handlers check org membership / admin status)
+	log.Println("Setting up organization subscription permissions...")
+	orgSubscriptionRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/organizations/:id/subscribe", "POST"},
+		{"/api/v1/organizations/:id/subscription", "GET"},
+		{"/api/v1/organizations/:id/subscription", "DELETE"},
+		{"/api/v1/organizations/:id/features", "GET"},
+		{"/api/v1/organizations/:id/usage-limits", "GET"},
+		{"/api/v1/users/me/features", "GET"},
+	}
+
+	for _, route := range orgSubscriptionRoutes {
+		reconcilePolicy(enforcer, "member", route.path, route.method)
+	}
+
+	// Admin-only organization subscription overview
+	reconcilePolicy(enforcer, "administrator", "/api/v1/admin/organizations/subscriptions", "GET")
+
+	// Invoice endpoints
+	log.Println("Setting up invoice permissions...")
 	reconcilePolicy(enforcer, "member", "/api/v1/invoices/user", "GET")
+	reconcilePolicy(enforcer, "member", "/api/v1/invoices/sync", "POST")
+	reconcilePolicy(enforcer, "member", "/api/v1/invoices/:id/download", "GET")
+	reconcilePolicy(enforcer, "administrator", "/api/v1/invoices/admin/cleanup", "POST")
+
+	// Payment method endpoints
+	log.Println("Setting up payment method permissions...")
 	reconcilePolicy(enforcer, "member", "/api/v1/payment-methods/user", "GET")
+	reconcilePolicy(enforcer, "member", "/api/v1/payment-methods/sync", "POST")
+	reconcilePolicy(enforcer, "member", "/api/v1/payment-methods/:id/set-default", "POST")
+
+	// Billing address endpoints
+	log.Println("Setting up billing address permissions...")
+	reconcilePolicy(enforcer, "member", "/api/v1/billing-addresses/user", "GET")
+	reconcilePolicy(enforcer, "member", "/api/v1/billing-addresses/:id/set-default", "POST")
+
+	// Usage metrics endpoints
+	log.Println("Setting up usage metrics permissions...")
+	reconcilePolicy(enforcer, "member", "/api/v1/usage-metrics/user", "GET")
+	reconcilePolicy(enforcer, "member", "/api/v1/usage-metrics/increment", "POST")
+	reconcilePolicy(enforcer, "member", "/api/v1/usage-metrics/reset", "POST")
+
+	// Subscription plan sync (admin-only)
+	log.Println("Setting up subscription plan admin permissions...")
+	reconcilePolicy(enforcer, "administrator", "/api/v1/subscription-plans/:id/sync-stripe", "POST")
+	reconcilePolicy(enforcer, "administrator", "/api/v1/subscription-plans/sync-stripe", "POST")
+	reconcilePolicy(enforcer, "administrator", "/api/v1/subscription-plans/import-stripe", "POST")
+
+	// Stripe hooks toggle (admin-only)
+	reconcilePolicy(enforcer, "administrator", "/api/v1/hooks/stripe/toggle", "POST")
 
 	// Subscription batch endpoints - available to all authenticated members
 	log.Println("Setting up subscription batch permissions...")
@@ -185,14 +275,14 @@ func SetupPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 		path   string
 		method string
 	}{
-		{"/api/v1/subscription-batches", "GET"},                                    // List accessible batches
-		{"/api/v1/subscription-batches/:id", "GET"},                                // Get batch details
-		{"/api/v1/subscription-batches/:id/licenses", "GET"},                       // List licenses in batch
-		{"/api/v1/subscription-batches/:id/assign", "POST"},                        // Assign a license
-		{"/api/v1/subscription-batches/:id/licenses/:license_id/revoke", "DELETE"}, // Revoke a license
-		{"/api/v1/subscription-batches/:id/quantity", "PATCH"},                     // Update quantity
-		{"/api/v1/subscription-batches/:id/permanent", "DELETE"},                   // Permanently delete batch
-		{"/api/v1/subscription-batches/create-checkout-session", "POST"},           // Create checkout session
+		{"/api/v1/subscription-batches", "GET"},
+		{"/api/v1/subscription-batches/:id", "GET"},
+		{"/api/v1/subscription-batches/:id/licenses", "GET"},
+		{"/api/v1/subscription-batches/:id/assign", "POST"},
+		{"/api/v1/subscription-batches/:id/licenses/:license_id/revoke", "DELETE"},
+		{"/api/v1/subscription-batches/:id/quantity", "PATCH"},
+		{"/api/v1/subscription-batches/:id/permanent", "DELETE"},
+		{"/api/v1/subscription-batches/create-checkout-session", "POST"},
 	}
 
 	for _, route := range batchRoutes {
@@ -222,12 +312,16 @@ func SetupScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}{
 		{"/api/v1/scenario-sessions/start", "POST"},
 		{"/api/v1/scenario-sessions/my", "GET"},
+		{"/api/v1/scenario-sessions/available", "GET"},
 		{"/api/v1/scenario-sessions/by-terminal/:terminalId", "GET"},
 		{"/api/v1/scenario-sessions/:id/current-step", "GET"},
 		{"/api/v1/scenario-sessions/:id/step/:stepOrder", "GET"},
 		{"/api/v1/scenario-sessions/:id/verify", "POST"},
 		{"/api/v1/scenario-sessions/:id/submit-flag", "POST"},
 		{"/api/v1/scenario-sessions/:id/abandon", "POST"},
+		{"/api/v1/scenario-sessions/:id/info", "GET"},
+		{"/api/v1/scenario-sessions/:id/flags", "GET"},
+		{"/api/v1/scenario-sessions/:id/steps/:stepOrder/hints/:level/reveal", "POST"},
 	}
 
 	for _, route := range sessionRoutes {
@@ -287,9 +381,96 @@ func SetupScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		reconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
-	// Admin-only scenario management routes
-	reconcilePolicy(enforcer, "administrator", "/api/v1/scenarios/import", "POST")
-	reconcilePolicy(enforcer, "administrator", "/api/v1/scenarios/seed", "POST")
+	// Admin-only scenario management routes (handlers have isAdmin() checks)
+	scenarioAdminRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/scenarios/import", "POST"},
+		{"/api/v1/scenarios/seed", "POST"},
+		{"/api/v1/scenarios/upload", "POST"},
+		{"/api/v1/scenarios/:id/export", "GET"},
+		{"/api/v1/scenarios/export", "POST"},
+		{"/api/v1/scenarios/import-json", "POST"},
+	}
+
+	for _, route := range scenarioAdminRoutes {
+		reconcilePolicy(enforcer, "administrator", route.path, route.method)
+	}
+
+	// Project file routes - available to all authenticated members
+	// (files are read-only views of scenario content for rendering)
+	projectFileRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/project-files/by-scenario/:scenarioId", "GET"},
+		{"/api/v1/project-files/image/:scenarioId/*", "GET"},
+		{"/api/v1/project-files/:id/content", "GET"},
+		{"/api/v1/project-files/:id/usage", "GET"},
+	}
+
+	for _, route := range projectFileRoutes {
+		reconcilePolicy(enforcer, "member", route.path, route.method)
+	}
 
 	log.Println("✅ Scenario and teacher dashboard permissions setup completed")
+}
+
+// SetupCoursePermissions sets up course and generation-related permissions
+func SetupCoursePermissions(enforcer interfaces.EnforcerInterface) {
+	log.Println("=== Setting up course and generation permissions ===")
+
+	courseRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/courses/git", "POST"},
+		{"/api/v1/courses/source", "POST"},
+		{"/api/v1/courses/generate", "POST"},
+		{"/api/v1/courses/versions", "GET"},
+		{"/api/v1/courses/by-version", "GET"},
+		{"/api/v1/generations/:id/status", "GET"},
+		{"/api/v1/generations/:id/download", "GET"},
+		{"/api/v1/generations/:id/retry", "POST"},
+		{"/api/v1/generations", "GET"},
+		{"/api/v1/generations", "POST"},
+		{"/api/v1/generations/:id", "DELETE"},
+	}
+
+	for _, route := range courseRoutes {
+		reconcilePolicy(enforcer, "member", route.path, route.method)
+	}
+
+	log.Println("✅ Course and generation permissions setup completed")
+}
+
+// SetupUserManagementPermissions sets up user management and access control permissions
+func SetupUserManagementPermissions(enforcer interfaces.EnforcerInterface) {
+	log.Println("=== Setting up user management permissions ===")
+
+	// User lookup routes - available to members for collaboration (sharing, group management)
+	reconcilePolicy(enforcer, "member", "/api/v1/users", "GET")
+	reconcilePolicy(enforcer, "member", "/api/v1/users/batch", "POST")
+	reconcilePolicy(enforcer, "member", "/api/v1/users/search", "GET")
+
+	// User deletion - admin only
+	reconcilePolicy(enforcer, "administrator", "/api/v1/users/:id", "DELETE")
+
+	// Entity access management - admin only (manipulates Casbin RBAC policies directly)
+	reconcilePolicy(enforcer, "administrator", "/api/v1/accesses", "POST")
+	reconcilePolicy(enforcer, "administrator", "/api/v1/accesses", "DELETE")
+
+	// Entity hook management - admin only
+	reconcilePolicy(enforcer, "administrator", "/api/v1/hooks", "GET")
+	reconcilePolicy(enforcer, "administrator", "/api/v1/hooks/:hook_name/enable", "POST")
+	reconcilePolicy(enforcer, "administrator", "/api/v1/hooks/:hook_name/disable", "POST")
+
+	// Email template testing - admin only
+	reconcilePolicy(enforcer, "administrator", "/api/v1/email-templates/:id/test", "POST")
+
+	// WebSSH - available to all authenticated members
+	reconcilePolicy(enforcer, "member", "/api/v1/ssh", "GET")
+
+	log.Println("✅ User management permissions setup completed")
 }
