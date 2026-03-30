@@ -9,6 +9,7 @@ import (
 	userController "soli/formations/src/auth/routes/usersRoutes"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	"soli/formations/src/initialization"
+	organizationRoutes "soli/formations/src/organizations/routes"
 	paymentController "soli/formations/src/payment/routes"
 	scenarioController "soli/formations/src/scenarios/routes"
 )
@@ -469,6 +470,53 @@ func TestSetupUserManagementPermissions_AdminRoutes(t *testing.T) {
 		{"/api/v1/hooks/:hook_name/disable", "POST"},
 		// Email template testing
 		{"/api/v1/email-templates/:id/test", "POST"},
+	}
+
+	for _, r := range adminRoutes {
+		t.Run("admin "+r.method+" "+r.path, func(t *testing.T) {
+			assertPolicy(t, ps, "administrator", r.path, r.method)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Organization permissions (custom routes — migrated from organizationRoutes.go)
+// ---------------------------------------------------------------------------
+
+func TestRegisterOrganizationPermissions_MemberRoutes(t *testing.T) {
+	mock := mocks.NewMockEnforcer()
+	organizationRoutes.RegisterOrganizationPermissions(mock)
+	ps := collectPolicies(mock)
+
+	memberRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/organizations/:id/members", "GET"},
+		{"/api/v1/organizations/:id/groups", "GET"},
+		{"/api/v1/organizations/:id/convert-to-team", "POST"},
+		{"/api/v1/organizations/:id/backends", "GET"},
+		{"/api/v1/organizations/:id/import", "POST"},
+		{"/api/v1/organizations/:id/groups/:groupId/regenerate-passwords", "POST"},
+	}
+
+	for _, r := range memberRoutes {
+		t.Run("member "+r.method+" "+r.path, func(t *testing.T) {
+			assertPolicy(t, ps, "member", r.path, r.method)
+		})
+	}
+}
+
+func TestRegisterOrganizationPermissions_AdminRoutes(t *testing.T) {
+	mock := mocks.NewMockEnforcer()
+	organizationRoutes.RegisterOrganizationPermissions(mock)
+	ps := collectPolicies(mock)
+
+	adminRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/organizations/:id/backends", "PUT"},
 	}
 
 	for _, r := range adminRoutes {

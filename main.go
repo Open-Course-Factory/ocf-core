@@ -105,6 +105,7 @@ func main() {
 	courseController.RegisterCoursePermissions(casdoor.Enforcer)
 	userController.RegisterUserPermissions(casdoor.Enforcer)
 	paymentController.RegisterPaymentPermissions(casdoor.Enforcer)
+	organizationController.RegisterOrganizationPermissions(casdoor.Enforcer)
 	log.Println("✅ All permissions setup completed")
 
 	// Initialize remaining hooks
