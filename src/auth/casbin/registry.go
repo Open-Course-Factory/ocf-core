@@ -8,12 +8,14 @@ import (
 // RouteRegistry collects route permission declarations from all modules.
 // Each module calls Register() during its permission setup.
 var RouteRegistry = &routeRegistry{
-	routes: make(map[string][]RoutePermission),
+	routes:  make(map[string][]RoutePermission),
+	byRoute: make(map[string]RoutePermission),
 }
 
 type routeRegistry struct {
-	mu     sync.RWMutex
-	routes map[string][]RoutePermission // category -> routes
+	mu      sync.RWMutex
+	routes  map[string][]RoutePermission // category -> routes
+	byRoute map[string]RoutePermission   // "METHOD:path" -> RoutePermission
 }
 
 // Register adds route permissions to the registry under the given category.
@@ -22,6 +24,8 @@ func (r *routeRegistry) Register(category string, routes ...RoutePermission) {
 	defer r.mu.Unlock()
 	for i := range routes {
 		routes[i].Category = category
+		key := routes[i].Method + ":" + routes[i].Path
+		r.byRoute[key] = routes[i]
 	}
 	r.routes[category] = append(r.routes[category], routes...)
 }
@@ -56,4 +60,15 @@ func (r *routeRegistry) Reset() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.routes = make(map[string][]RoutePermission)
+	r.byRoute = make(map[string]RoutePermission)
+}
+
+// Lookup returns the RoutePermission for a given HTTP method and path.
+// The second return value is false if no matching route is registered.
+func (r *routeRegistry) Lookup(method, path string) (RoutePermission, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	key := method + ":" + path
+	perm, found := r.byRoute[key]
+	return perm, found
 }

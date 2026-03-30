@@ -23,6 +23,8 @@ package hooks
 
 import (
 	"context"
+
+	casbinUtils "soli/formations/src/auth/casbin"
 )
 
 // HookType defines the different moments when hooks can be executed during entity lifecycle.
@@ -56,14 +58,10 @@ type HookContext struct {
 	Context    context.Context        `json:"-"`                    // Go context for cancellation
 }
 
-// IsAdmin checks if the user has the "Administrator" role.
+// IsAdmin checks if the user has administrator privileges.
+// Delegates to the canonical casbin.IsAdmin helper for case-insensitive matching.
 func (ctx *HookContext) IsAdmin() bool {
-	for _, role := range ctx.UserRoles {
-		if role == "Administrator" {
-			return true
-		}
-	}
-	return false
+	return casbinUtils.IsAdmin(ctx.UserRoles)
 }
 
 // Hook interface that all hooks must implement.
