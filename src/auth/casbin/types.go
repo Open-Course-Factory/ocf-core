@@ -58,3 +58,10 @@ type PermissionReference struct {
 	Categories []PermissionCategory `json:"categories"`
 	Entities   []EntityCRUDPermissions `json:"entities"`
 }
+
+// OwnershipConfig declares how ownership is enforced on a generic entity.
+type OwnershipConfig struct {
+	OwnerField  string   `json:"owner_field"`  // e.g., "UserID"
+	Operations  []string `json:"operations"`   // e.g., ["create", "update", "delete"]
+	AdminBypass bool     `json:"admin_bypass"` // whether admins skip ownership checks
+}
