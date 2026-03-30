@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	casbinUtils "soli/formations/src/auth/casbin"
 	"soli/formations/src/auth/mocks"
 	securityAdminController "soli/formations/src/auth/routes/securityAdminRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
@@ -524,5 +525,65 @@ func TestRegisterOrganizationPermissions_AdminRoutes(t *testing.T) {
 		t.Run("admin "+r.method+" "+r.path, func(t *testing.T) {
 			assertPolicy(t, ps, "administrator", r.path, r.method)
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Entity CRUD permission registration in RouteRegistry (Phase 3.5)
+// ---------------------------------------------------------------------------
+
+func TestRouteRegistry_RegisterEntity(t *testing.T) {
+	// Reset registry to isolate this test
+	casbinUtils.RouteRegistry.Reset()
+
+	entity := casbinUtils.EntityCRUDPermissions{
+		Entity: "TestWidget",
+		Create: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+		Read:   casbinUtils.AccessRule{Type: casbinUtils.Public},
+		Update: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "TestWidget", Field: "UserID"},
+		Delete: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+	}
+
+	// RegisterEntity does not exist yet — this should fail to compile
+	casbinUtils.RouteRegistry.RegisterEntity(entity)
+
+	ref := casbinUtils.RouteRegistry.GetReference()
+	assert.Len(t, ref.Entities, 1, "expected 1 entity in the registry after RegisterEntity")
+	assert.Equal(t, "TestWidget", ref.Entities[0].Entity)
+}
+
+func TestEntityRegistration_PopulatesRegistry(t *testing.T) {
+	// Reset registry to isolate this test
+	casbinUtils.RouteRegistry.Reset()
+
+	entity := casbinUtils.EntityCRUDPermissions{
+		Entity: "TestWidget",
+		Create: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+		Read:   casbinUtils.AccessRule{Type: casbinUtils.Public},
+		Update: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "TestWidget", Field: "UserID"},
+		Delete: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+	}
+
+	// RegisterEntity does not exist yet — this should fail to compile
+	casbinUtils.RouteRegistry.RegisterEntity(entity)
+
+	ref := casbinUtils.RouteRegistry.GetReference()
+
+	// Verify the entity is present
+	if assert.Len(t, ref.Entities, 1, "expected 1 registered entity") {
+		registered := ref.Entities[0]
+
+		// Verify entity name
+		assert.Equal(t, "TestWidget", registered.Entity)
+
+		// Verify all 4 CRUD AccessRules
+		assert.Equal(t, casbinUtils.SelfScoped, registered.Create.Type, "Create rule type")
+		assert.Equal(t, casbinUtils.Public, registered.Read.Type, "Read rule type")
+
+		assert.Equal(t, casbinUtils.EntityOwner, registered.Update.Type, "Update rule type")
+		assert.Equal(t, "TestWidget", registered.Update.Entity, "Update rule entity")
+		assert.Equal(t, "UserID", registered.Update.Field, "Update rule field")
+
+		assert.Equal(t, casbinUtils.AdminOnly, registered.Delete.Type, "Delete rule type")
 	}
 }

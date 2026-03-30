@@ -2,6 +2,7 @@ package services
 
 import (
 	"soli/formations/src/auth/casdoor"
+	casbinUtils "soli/formations/src/auth/casbin"
 	"soli/formations/src/auth/interfaces"
 	authModels "soli/formations/src/auth/models"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
@@ -264,6 +265,49 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 
 	// Set up access policies
 	service.setDefaultEntityAccesses(name, reg.Roles, casdoor.Enforcer)
+
+	// Register CRUD permissions in RouteRegistry for the permission reference page
+	casbinUtils.RouteRegistry.RegisterEntity(casbinUtils.EntityCRUDPermissions{
+		Entity: name,
+		Create: deriveAccessRule(reg.Roles, "POST", name, reg.OwnershipConfig),
+		Read:   deriveAccessRule(reg.Roles, "GET", name, reg.OwnershipConfig),
+		Update: deriveAccessRule(reg.Roles, "PATCH", name, reg.OwnershipConfig),
+		Delete: deriveAccessRule(reg.Roles, "DELETE", name, reg.OwnershipConfig),
+	})
+}
+
+// deriveAccessRule determines the Layer 2 access rule for an entity CRUD operation
+// based on Casbin role config and optional ownership config.
+func deriveAccessRule(roles entityManagementInterfaces.EntityRoles, method string, entityName string, ownershipConfig *casbinUtils.OwnershipConfig) casbinUtils.AccessRule {
+	memberMethods := roles.Roles["member"]
+
+	// Check if member role includes this HTTP method
+	memberHasAccess := strings.Contains(memberMethods, method)
+
+	if !memberHasAccess {
+		return casbinUtils.AccessRule{Type: casbinUtils.AdminOnly}
+	}
+
+	// Member has access — check if an ownership hook protects this operation
+	if ownershipConfig != nil {
+		opMap := map[string]string{"POST": "create", "PATCH": "update", "DELETE": "delete"}
+		if op, ok := opMap[method]; ok {
+			for _, configOp := range ownershipConfig.Operations {
+				if configOp == op {
+					if op == "create" {
+						return casbinUtils.AccessRule{Type: casbinUtils.SelfScoped}
+					}
+					return casbinUtils.AccessRule{
+						Type:   casbinUtils.EntityOwner,
+						Entity: entityName,
+						Field:  ownershipConfig.OwnerField,
+					}
+				}
+			}
+		}
+	}
+
+	return casbinUtils.AccessRule{Type: casbinUtils.Public}
 }
 
 var GlobalEntityRegistrationService = NewEntityRegistrationService()

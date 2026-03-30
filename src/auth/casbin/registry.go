@@ -13,9 +13,10 @@ var RouteRegistry = &routeRegistry{
 }
 
 type routeRegistry struct {
-	mu      sync.RWMutex
-	routes  map[string][]RoutePermission // category -> routes
-	byRoute map[string]RoutePermission   // "METHOD:path" -> RoutePermission
+	mu       sync.RWMutex
+	routes   map[string][]RoutePermission // category -> routes
+	byRoute  map[string]RoutePermission   // "METHOD:path" -> RoutePermission
+	entities []EntityCRUDPermissions       // registered entity CRUD permissions
 }
 
 // Register adds route permissions to the registry under the given category.
@@ -28,6 +29,13 @@ func (r *routeRegistry) Register(category string, routes ...RoutePermission) {
 		r.byRoute[key] = routes[i]
 	}
 	r.routes[category] = append(r.routes[category], routes...)
+}
+
+// RegisterEntity adds an entity's CRUD permission declarations to the registry.
+func (r *routeRegistry) RegisterEntity(config EntityCRUDPermissions) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.entities = append(r.entities, config)
 }
 
 // GetReference returns the full permission reference, sorted by category.
@@ -50,8 +58,12 @@ func (r *routeRegistry) GetReference() PermissionReference {
 		})
 	}
 
+	entities := make([]EntityCRUDPermissions, len(r.entities))
+	copy(entities, r.entities)
+
 	return PermissionReference{
 		Categories: categories,
+		Entities:   entities,
 	}
 }
 
@@ -61,6 +73,7 @@ func (r *routeRegistry) Reset() {
 	defer r.mu.Unlock()
 	r.routes = make(map[string][]RoutePermission)
 	r.byRoute = make(map[string]RoutePermission)
+	r.entities = nil
 }
 
 // Lookup returns the RoutePermission for a given HTTP method and path.
