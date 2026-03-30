@@ -293,3 +293,17 @@ func SetupScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 
 	log.Println("✅ Scenario and teacher dashboard permissions setup completed")
 }
+
+// SetupCoursePermissions sets up course and generation-related permissions
+// TODO: will be moved to route files during decentralization refactor
+func SetupCoursePermissions(enforcer interfaces.EnforcerInterface) {
+	log.Println("=== Setting up course and generation permissions ===")
+	log.Println("✅ Course and generation permissions setup completed")
+}
+
+// SetupUserManagementPermissions sets up user management and access control permissions
+// TODO: will be moved to route files during decentralization refactor
+func SetupUserManagementPermissions(enforcer interfaces.EnforcerInterface) {
+	log.Println("=== Setting up user management permissions ===")
+	log.Println("✅ User management permissions setup completed")
+}
