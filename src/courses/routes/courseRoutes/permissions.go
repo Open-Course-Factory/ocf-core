@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"soli/formations/src/auth/interfaces"
-	"soli/formations/src/initialization"
+	casbinUtils "soli/formations/src/auth/casbin"
 )
 
 // RegisterCoursePermissions registers Casbin permissions for course and generation routes.
@@ -25,7 +25,7 @@ func RegisterCoursePermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range courseMemberRoutes {
-		initialization.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Generation custom routes - available to all authenticated members
@@ -42,7 +42,7 @@ func RegisterCoursePermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range generationMemberRoutes {
-		initialization.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	log.Println("=== Course and generation permissions setup completed ===")

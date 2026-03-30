@@ -4,7 +4,8 @@ import (
 	"log"
 
 	"soli/formations/src/auth/interfaces"
-	"soli/formations/src/initialization"
+	authModels "soli/formations/src/auth/models"
+	casbinUtils "soli/formations/src/auth/casbin"
 )
 
 // RegisterUserPermissions registers Casbin permissions for user management,
@@ -25,11 +26,11 @@ func RegisterUserPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range memberRoutes {
-		initialization.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// SSH web client route
-	initialization.ReconcilePolicy(enforcer, "member", "/api/v1/ssh", "GET")
+	casbinUtils.ReconcilePolicy(enforcer, "member", "/api/v1/ssh", "GET")
 
 	// --- Admin routes ---
 
@@ -51,8 +52,34 @@ func RegisterUserPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range adminRoutes {
-		initialization.ReconcilePolicy(enforcer, "administrator", route.path, route.method)
+		casbinUtils.ReconcilePolicy(enforcer, "administrator", route.path, route.method)
 	}
 
 	log.Println("=== User management and access control permissions setup completed ===")
+}
+
+// RegisterAuthPermissions registers Casbin policies for core authentication routes.
+// These are registered per-Casdoor-role (not just "member") because the auth
+// middleware resolves the user's actual Casdoor role before checking permissions.
+func RegisterAuthPermissions(enforcer interfaces.EnforcerInterface) {
+	log.Println("=== Registering authentication permissions ===")
+
+	casdoorRoles := authModels.GetCasdoorRolesForOCFRole(authModels.Member)
+
+	for _, role := range casdoorRoles {
+		casbinUtils.ReconcilePolicy(enforcer, role, "/api/v1/users/:id", "GET")
+		casbinUtils.ReconcilePolicy(enforcer, role, "/api/v1/users/me/*", "(GET|POST|PATCH|DELETE)")
+		casbinUtils.ReconcilePolicy(enforcer, role, "/api/v1/auth/permissions", "GET")
+		casbinUtils.ReconcilePolicy(enforcer, role, "/api/v1/auth/me", "GET")
+		casbinUtils.ReconcilePolicy(enforcer, role, "/api/v1/auth/verify-status", "GET")
+	}
+
+	log.Println("=== Authentication permissions registered ===")
+}
+
+// RegisterFeedbackPermissions registers Casbin policies for feedback routes.
+func RegisterFeedbackPermissions(enforcer interfaces.EnforcerInterface) {
+	log.Println("=== Registering feedback permissions ===")
+	casbinUtils.ReconcilePolicy(enforcer, "member", "/api/v1/feedback/*", "POST")
+	log.Println("=== Feedback permissions registered ===")
 }

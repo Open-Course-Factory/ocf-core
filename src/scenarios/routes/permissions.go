@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"soli/formations/src/auth/interfaces"
-	"soli/formations/src/initialization"
+	casbinUtils "soli/formations/src/auth/casbin"
 )
 
 // RegisterScenarioPermissions registers all Casbin policies for scenario routes.
@@ -34,7 +34,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range sessionRoutes {
-		initialization.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Teacher dashboard routes - available to all authenticated members
@@ -52,7 +52,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range teacherRoutes {
-		initialization.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Group-level scenario routes - available to all authenticated members
@@ -68,7 +68,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range groupScenarioRoutes {
-		initialization.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Organization-level scenario routes - available to all authenticated members
@@ -85,7 +85,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range orgScenarioRoutes {
-		initialization.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Project file routes - available to all authenticated members
@@ -100,7 +100,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range projectFileRoutes {
-		initialization.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Admin-only scenario management routes
@@ -118,7 +118,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range adminRoutes {
-		initialization.ReconcilePolicy(enforcer, "administrator", route.path, route.method)
+		casbinUtils.ReconcilePolicy(enforcer, "administrator", route.path, route.method)
 	}
 
 	log.Println("=== Scenario permissions setup completed ===")

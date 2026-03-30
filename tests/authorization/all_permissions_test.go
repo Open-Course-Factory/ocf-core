@@ -6,12 +6,13 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"soli/formations/src/auth/mocks"
+	securityAdminController "soli/formations/src/auth/routes/securityAdminRoutes"
 	userController "soli/formations/src/auth/routes/usersRoutes"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
-	"soli/formations/src/initialization"
 	organizationRoutes "soli/formations/src/organizations/routes"
 	paymentController "soli/formations/src/payment/routes"
 	scenarioController "soli/formations/src/scenarios/routes"
+	terminalController "soli/formations/src/terminalTrainer/routes"
 )
 
 // policySet collects all policies added by a Setup function for easy assertion.
@@ -59,7 +60,7 @@ func assertPolicy(t *testing.T, ps policySet, role, path, method string) {
 
 func TestSetupAuthPermissions_ExistingPolicies(t *testing.T) {
 	mock := mocks.NewMockEnforcer()
-	initialization.SetupAuthPermissions(mock)
+	userController.RegisterAuthPermissions(mock)
 	ps := collectPolicies(mock)
 
 	// Users/:id GET should be registered for each Casdoor role that maps to member
@@ -95,7 +96,7 @@ func TestSetupAuthPermissions_ExistingPolicies(t *testing.T) {
 
 func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 	mock := mocks.NewMockEnforcer()
-	initialization.SetupTerminalPermissions(mock)
+	terminalController.RegisterTerminalPermissions(mock)
 	ps := collectPolicies(mock)
 
 	memberRoutes := []struct {
@@ -148,7 +149,7 @@ func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 
 func TestSetupTerminalPermissions_AdminRoutes(t *testing.T) {
 	mock := mocks.NewMockEnforcer()
-	initialization.SetupTerminalPermissions(mock)
+	terminalController.RegisterTerminalPermissions(mock)
 	ps := collectPolicies(mock)
 
 	adminRoutes := []struct {
@@ -174,7 +175,7 @@ func TestSetupTerminalPermissions_AdminRoutes(t *testing.T) {
 
 func TestSetupSecurityAdminPermissions(t *testing.T) {
 	mock := mocks.NewMockEnforcer()
-	initialization.SetupSecurityAdminPermissions(mock)
+	securityAdminController.RegisterSecurityAdminPermissions(mock)
 	ps := collectPolicies(mock)
 
 	routes := []struct {
@@ -301,7 +302,7 @@ func TestSetupPaymentPermissions_AdminRoutes(t *testing.T) {
 
 func TestSetupFeedbackPermissions(t *testing.T) {
 	mock := mocks.NewMockEnforcer()
-	initialization.SetupFeedbackPermissions(mock)
+	userController.RegisterFeedbackPermissions(mock)
 	ps := collectPolicies(mock)
 
 	assertPolicy(t, ps, "member", "/api/v1/feedback/*", "POST")

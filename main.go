@@ -92,18 +92,16 @@ func main() {
 	// Initialize email templates
 	emailServices.InitDefaultTemplates(sqldb.DB)
 
-	// Setup role-based permissions
+	// Setup role-based permissions — each module registers its own policies
 	log.Println("Setting up role-based permissions...")
 	casdoor.Enforcer.LoadPolicy()
-	initialization.SetupAuthPermissions(casdoor.Enforcer)
-	initialization.SetupTerminalPermissions(casdoor.Enforcer)
-	initialization.SetupSecurityAdminPermissions(casdoor.Enforcer)
-	initialization.SetupFeedbackPermissions(casdoor.Enforcer)
-
-	// Module-level permission registration (each module owns its policies)
+	userController.RegisterAuthPermissions(casdoor.Enforcer)
+	userController.RegisterUserPermissions(casdoor.Enforcer)
+	userController.RegisterFeedbackPermissions(casdoor.Enforcer)
+	terminalController.RegisterTerminalPermissions(casdoor.Enforcer)
+	securityAdminController.RegisterSecurityAdminPermissions(casdoor.Enforcer)
 	scenarioController.RegisterScenarioPermissions(casdoor.Enforcer)
 	courseController.RegisterCoursePermissions(casdoor.Enforcer)
-	userController.RegisterUserPermissions(casdoor.Enforcer)
 	paymentController.RegisterPaymentPermissions(casdoor.Enforcer)
 	organizationController.RegisterOrganizationPermissions(casdoor.Enforcer)
 	log.Println("✅ All permissions setup completed")

@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"soli/formations/src/auth/interfaces"
-	"soli/formations/src/initialization"
+	casbinUtils "soli/formations/src/auth/casbin"
 )
 
 // RegisterOrganizationPermissions registers Casbin policies for custom organization routes.
@@ -28,11 +28,11 @@ func RegisterOrganizationPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range memberRoutes {
-		initialization.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Admin-only routes — handler also has isAdmin() check
-	initialization.ReconcilePolicy(enforcer, "administrator", "/api/v1/organizations/:id/backends", "PUT")
+	casbinUtils.ReconcilePolicy(enforcer, "administrator", "/api/v1/organizations/:id/backends", "PUT")
 
 	log.Println("=== Organization custom route permissions registered ===")
 }
