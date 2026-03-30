@@ -9,11 +9,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	casbinUtils "soli/formations/src/auth/casbin"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
-	paymentHooks "soli/formations/src/payment/hooks"
 	"soli/formations/src/payment/models"
 )
+
+var userSubscriptionOwnershipConfig = casbinUtils.OwnershipConfig{
+	OwnerField: "UserID", Operations: []string{"create", "update", "delete"}, AdminBypass: true,
+}
 
 // createTestSubscriptionPlan inserts a SubscriptionPlan for FK reference
 func createTestSubscriptionPlan(t *testing.T) *models.SubscriptionPlan {
@@ -53,7 +57,7 @@ func createTestUserSubscription(t *testing.T, userID string, plan *models.Subscr
 
 func TestUserSubscriptionOwnership_BeforeCreate_SetsUserID(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewUserSubscriptionOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "UserSubscription", userSubscriptionOwnershipConfig)
 
 	plan := createTestSubscriptionPlan(t)
 	userID := "user-creator-123"
@@ -77,7 +81,7 @@ func TestUserSubscriptionOwnership_BeforeCreate_SetsUserID(t *testing.T) {
 
 func TestUserSubscriptionOwnership_BeforeCreate_AdminCanSetAnyUserID(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewUserSubscriptionOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "UserSubscription", userSubscriptionOwnershipConfig)
 
 	plan := createTestSubscriptionPlan(t)
 	adminID := "admin-user-789"
@@ -107,7 +111,7 @@ func TestUserSubscriptionOwnership_BeforeCreate_AdminCanSetAnyUserID(t *testing.
 
 func TestUserSubscriptionOwnership_BeforeUpdate_OwnerCanUpdate(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewUserSubscriptionOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "UserSubscription", userSubscriptionOwnershipConfig)
 
 	plan := createTestSubscriptionPlan(t)
 	ownerID := "user-owner-123"
@@ -129,7 +133,7 @@ func TestUserSubscriptionOwnership_BeforeUpdate_OwnerCanUpdate(t *testing.T) {
 
 func TestUserSubscriptionOwnership_BeforeUpdate_NonOwnerBlocked(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewUserSubscriptionOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "UserSubscription", userSubscriptionOwnershipConfig)
 
 	plan := createTestSubscriptionPlan(t)
 	ownerID := "user-owner-123"
@@ -153,7 +157,7 @@ func TestUserSubscriptionOwnership_BeforeUpdate_NonOwnerBlocked(t *testing.T) {
 
 func TestUserSubscriptionOwnership_BeforeUpdate_AdminCanUpdate(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewUserSubscriptionOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "UserSubscription", userSubscriptionOwnershipConfig)
 
 	plan := createTestSubscriptionPlan(t)
 	ownerID := "user-owner-123"
@@ -181,7 +185,7 @@ func TestUserSubscriptionOwnership_BeforeUpdate_AdminCanUpdate(t *testing.T) {
 
 func TestUserSubscriptionOwnership_BeforeDelete_OwnerCanDelete(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewUserSubscriptionOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "UserSubscription", userSubscriptionOwnershipConfig)
 
 	plan := createTestSubscriptionPlan(t)
 	ownerID := "user-owner-123"
@@ -202,7 +206,7 @@ func TestUserSubscriptionOwnership_BeforeDelete_OwnerCanDelete(t *testing.T) {
 
 func TestUserSubscriptionOwnership_BeforeDelete_NonOwnerBlocked(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewUserSubscriptionOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "UserSubscription", userSubscriptionOwnershipConfig)
 
 	plan := createTestSubscriptionPlan(t)
 	ownerID := "user-owner-123"
@@ -225,7 +229,7 @@ func TestUserSubscriptionOwnership_BeforeDelete_NonOwnerBlocked(t *testing.T) {
 
 func TestUserSubscriptionOwnership_BeforeDelete_AdminCanDelete(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewUserSubscriptionOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "UserSubscription", userSubscriptionOwnershipConfig)
 
 	plan := createTestSubscriptionPlan(t)
 	ownerID := "user-owner-123"

@@ -8,11 +8,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	casbinUtils "soli/formations/src/auth/casbin"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	terminalHooks "soli/formations/src/terminalTrainer/hooks"
 	"soli/formations/src/terminalTrainer/models"
 )
+
+var terminalOwnershipConfig = casbinUtils.OwnershipConfig{
+	OwnerField: "UserID", Operations: []string{"create"}, AdminBypass: true,
+}
 
 // ============================================================================
 // Terminal Ownership Hook — BeforeCreate Tests
@@ -20,7 +25,7 @@ import (
 
 func TestTerminalOwnership_BeforeCreate_SetsUserID(t *testing.T) {
 	db := setupTestDB(t)
-	hook := terminalHooks.NewTerminalOwnershipHook(db)
+	hook := hooks.NewOwnershipHook(db, "Terminal", terminalOwnershipConfig)
 
 	userID := "user-creator-123"
 	terminal := &models.Terminal{
@@ -44,7 +49,7 @@ func TestTerminalOwnership_BeforeCreate_SetsUserID(t *testing.T) {
 
 func TestTerminalOwnership_BeforeCreate_PreventsImpersonation(t *testing.T) {
 	db := setupTestDB(t)
-	hook := terminalHooks.NewTerminalOwnershipHook(db)
+	hook := hooks.NewOwnershipHook(db, "Terminal", terminalOwnershipConfig)
 
 	authenticatedUserID := "real-user-123"
 	terminal := &models.Terminal{
@@ -69,7 +74,7 @@ func TestTerminalOwnership_BeforeCreate_PreventsImpersonation(t *testing.T) {
 
 func TestTerminalOwnership_BeforeCreate_AdminCanSetAnyUserID(t *testing.T) {
 	db := setupTestDB(t)
-	hook := terminalHooks.NewTerminalOwnershipHook(db)
+	hook := hooks.NewOwnershipHook(db, "Terminal", terminalOwnershipConfig)
 
 	adminID := "admin-user-789"
 	targetUserID := "target-user-456"

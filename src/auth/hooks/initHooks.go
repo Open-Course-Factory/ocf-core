@@ -2,6 +2,8 @@ package authHooks
 
 import (
 	"log"
+
+	casbinUtils "soli/formations/src/auth/casbin"
 	"soli/formations/src/entityManagement/hooks"
 
 	"gorm.io/gorm"
@@ -20,8 +22,9 @@ func InitAuthHooks(db *gorm.DB) {
 	}
 
 	// Ownership hook to enforce that only the owner (or admin) can update UserSettings
-	userSettingsOwnershipHook := NewUserSettingsOwnershipHook(db)
-	if err := hooks.GlobalHookRegistry.RegisterHook(userSettingsOwnershipHook); err != nil {
+	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "UserSettings", casbinUtils.OwnershipConfig{
+		OwnerField: "UserID", Operations: []string{"update"}, AdminBypass: true,
+	})); err != nil {
 		log.Printf("❌ Failed to register UserSettings ownership hook: %v", err)
 	} else {
 		log.Println("✅ UserSettings ownership hook registered")

@@ -8,11 +8,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	casbinUtils "soli/formations/src/auth/casbin"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
-	paymentHooks "soli/formations/src/payment/hooks"
 	"soli/formations/src/payment/models"
 )
+
+var paymentMethodOwnershipConfig = casbinUtils.OwnershipConfig{
+	OwnerField: "UserID", Operations: []string{"create", "update", "delete"}, AdminBypass: true,
+}
 
 // createTestPaymentMethod inserts a PaymentMethod owned by the given userID
 func createTestPaymentMethod(t *testing.T, userID string) *models.PaymentMethod {
@@ -38,7 +42,7 @@ func createTestPaymentMethod(t *testing.T, userID string) *models.PaymentMethod 
 
 func TestPaymentMethodOwnership_BeforeCreate_SetsUserID(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewPaymentMethodOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "PaymentMethod", paymentMethodOwnershipConfig)
 
 	userID := "user-creator-123"
 	pm := &models.PaymentMethod{
@@ -61,7 +65,7 @@ func TestPaymentMethodOwnership_BeforeCreate_SetsUserID(t *testing.T) {
 
 func TestPaymentMethodOwnership_BeforeCreate_AdminCanSetAnyUserID(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewPaymentMethodOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "PaymentMethod", paymentMethodOwnershipConfig)
 
 	adminID := "admin-user-789"
 	targetUserID := "target-user-456"
@@ -90,7 +94,7 @@ func TestPaymentMethodOwnership_BeforeCreate_AdminCanSetAnyUserID(t *testing.T) 
 
 func TestPaymentMethodOwnership_BeforeUpdate_OwnerCanUpdate(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewPaymentMethodOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "PaymentMethod", paymentMethodOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	pm := createTestPaymentMethod(t, ownerID)
@@ -111,7 +115,7 @@ func TestPaymentMethodOwnership_BeforeUpdate_OwnerCanUpdate(t *testing.T) {
 
 func TestPaymentMethodOwnership_BeforeUpdate_NonOwnerBlocked(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewPaymentMethodOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "PaymentMethod", paymentMethodOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	attackerID := "user-attacker-456"
@@ -134,7 +138,7 @@ func TestPaymentMethodOwnership_BeforeUpdate_NonOwnerBlocked(t *testing.T) {
 
 func TestPaymentMethodOwnership_BeforeUpdate_AdminCanUpdate(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewPaymentMethodOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "PaymentMethod", paymentMethodOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	adminID := "admin-user-789"
@@ -160,7 +164,7 @@ func TestPaymentMethodOwnership_BeforeUpdate_AdminCanUpdate(t *testing.T) {
 
 func TestPaymentMethodOwnership_BeforeDelete_OwnerCanDelete(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewPaymentMethodOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "PaymentMethod", paymentMethodOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	pm := createTestPaymentMethod(t, ownerID)
@@ -180,7 +184,7 @@ func TestPaymentMethodOwnership_BeforeDelete_OwnerCanDelete(t *testing.T) {
 
 func TestPaymentMethodOwnership_BeforeDelete_NonOwnerBlocked(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewPaymentMethodOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "PaymentMethod", paymentMethodOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	attackerID := "user-attacker-456"
@@ -202,7 +206,7 @@ func TestPaymentMethodOwnership_BeforeDelete_NonOwnerBlocked(t *testing.T) {
 
 func TestPaymentMethodOwnership_BeforeDelete_AdminCanDelete(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewPaymentMethodOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "PaymentMethod", paymentMethodOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	adminID := "admin-user-789"

@@ -11,69 +11,6 @@ import (
 )
 
 // ========================
-// Terminal Ownership Hook (BeforeCreate)
-// ========================
-
-// TerminalOwnershipHook forces the UserID from the authenticated user on create,
-// preventing impersonation. Admins bypass this check.
-type TerminalOwnershipHook struct {
-	db       *gorm.DB
-	enabled  bool
-	priority int
-}
-
-func NewTerminalOwnershipHook(db *gorm.DB) hooks.Hook {
-	return &TerminalOwnershipHook{
-		db:       db,
-		enabled:  true,
-		priority: 10,
-	}
-}
-
-func (h *TerminalOwnershipHook) GetName() string {
-	return "terminal_ownership"
-}
-
-func (h *TerminalOwnershipHook) GetEntityName() string {
-	return "Terminal"
-}
-
-func (h *TerminalOwnershipHook) GetHookTypes() []hooks.HookType {
-	return []hooks.HookType{hooks.BeforeCreate}
-}
-
-func (h *TerminalOwnershipHook) IsEnabled() bool {
-	return h.enabled
-}
-
-func (h *TerminalOwnershipHook) GetPriority() int {
-	return h.priority
-}
-
-func (h *TerminalOwnershipHook) Execute(ctx *hooks.HookContext) error {
-	if ctx.HookType != hooks.BeforeCreate {
-		return nil
-	}
-
-	terminal, ok := ctx.NewEntity.(*terminalModels.Terminal)
-	if !ok {
-		return fmt.Errorf("expected *terminalModels.Terminal, got %T", ctx.NewEntity)
-	}
-
-	// Admin can create for any user
-	if ctx.IsAdmin() {
-		return nil
-	}
-
-	// Force UserID from authenticated user to prevent impersonation
-	if ctx.UserID != "" {
-		terminal.UserID = ctx.UserID
-	}
-
-	return nil
-}
-
-// ========================
 // TerminalShare Ownership Hook (BeforeCreate)
 // ========================
 

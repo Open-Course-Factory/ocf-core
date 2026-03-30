@@ -8,11 +8,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	casbinUtils "soli/formations/src/auth/casbin"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
-	paymentHooks "soli/formations/src/payment/hooks"
 	"soli/formations/src/payment/models"
 )
+
+var billingAddressOwnershipConfig = casbinUtils.OwnershipConfig{
+	OwnerField: "UserID", Operations: []string{"create", "update", "delete"}, AdminBypass: true,
+}
 
 // createTestBillingAddress inserts a BillingAddress owned by the given userID
 func createTestBillingAddress(t *testing.T, userID string) *models.BillingAddress {
@@ -36,7 +40,7 @@ func createTestBillingAddress(t *testing.T, userID string) *models.BillingAddres
 
 func TestBillingAddressOwnership_BeforeCreate_SetsUserID(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewBillingAddressOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "BillingAddress", billingAddressOwnershipConfig)
 
 	userID := "user-creator-123"
 	address := &models.BillingAddress{
@@ -61,7 +65,7 @@ func TestBillingAddressOwnership_BeforeCreate_SetsUserID(t *testing.T) {
 
 func TestBillingAddressOwnership_BeforeCreate_AdminCanSetAnyUserID(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewBillingAddressOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "BillingAddress", billingAddressOwnershipConfig)
 
 	adminID := "admin-user-789"
 	targetUserID := "target-user-456"
@@ -92,7 +96,7 @@ func TestBillingAddressOwnership_BeforeCreate_AdminCanSetAnyUserID(t *testing.T)
 
 func TestBillingAddressOwnership_BeforeUpdate_OwnerCanUpdate(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewBillingAddressOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "BillingAddress", billingAddressOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	address := createTestBillingAddress(t, ownerID)
@@ -113,7 +117,7 @@ func TestBillingAddressOwnership_BeforeUpdate_OwnerCanUpdate(t *testing.T) {
 
 func TestBillingAddressOwnership_BeforeUpdate_NonOwnerBlocked(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewBillingAddressOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "BillingAddress", billingAddressOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	attackerID := "user-attacker-456"
@@ -136,7 +140,7 @@ func TestBillingAddressOwnership_BeforeUpdate_NonOwnerBlocked(t *testing.T) {
 
 func TestBillingAddressOwnership_BeforeUpdate_AdminCanUpdate(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewBillingAddressOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "BillingAddress", billingAddressOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	adminID := "admin-user-789"
@@ -162,7 +166,7 @@ func TestBillingAddressOwnership_BeforeUpdate_AdminCanUpdate(t *testing.T) {
 
 func TestBillingAddressOwnership_BeforeDelete_OwnerCanDelete(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewBillingAddressOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "BillingAddress", billingAddressOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	address := createTestBillingAddress(t, ownerID)
@@ -182,7 +186,7 @@ func TestBillingAddressOwnership_BeforeDelete_OwnerCanDelete(t *testing.T) {
 
 func TestBillingAddressOwnership_BeforeDelete_NonOwnerBlocked(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewBillingAddressOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "BillingAddress", billingAddressOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	attackerID := "user-attacker-456"
@@ -204,7 +208,7 @@ func TestBillingAddressOwnership_BeforeDelete_NonOwnerBlocked(t *testing.T) {
 
 func TestBillingAddressOwnership_BeforeDelete_AdminCanDelete(t *testing.T) {
 	_ = freshTestDB(t)
-	hook := paymentHooks.NewBillingAddressOwnershipHook(sharedTestDB)
+	hook := hooks.NewOwnershipHook(sharedTestDB, "BillingAddress", billingAddressOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	adminID := "admin-user-789"

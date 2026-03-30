@@ -11,12 +11,15 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	casbinUtils "soli/formations/src/auth/casbin"
 	authModels "soli/formations/src/auth/models"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
-
-	authHooks "soli/formations/src/auth/hooks"
 )
+
+var userSettingsOwnershipConfig = casbinUtils.OwnershipConfig{
+	OwnerField: "UserID", Operations: []string{"update"}, AdminBypass: true,
+}
 
 // setupUserSettingsTestDB creates an in-memory SQLite DB with UserSettings table
 func setupUserSettingsTestDB(t *testing.T) *gorm.DB {
@@ -53,7 +56,7 @@ func createTestUserSettings(t *testing.T, db *gorm.DB, userID string) *authModel
 
 func TestUserSettingsOwnership_BeforeUpdate_OwnerCanUpdate(t *testing.T) {
 	db := setupUserSettingsTestDB(t)
-	hook := authHooks.NewUserSettingsOwnershipHook(db)
+	hook := hooks.NewOwnershipHook(db, "UserSettings", userSettingsOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	settings := createTestUserSettings(t, db, ownerID)
@@ -75,7 +78,7 @@ func TestUserSettingsOwnership_BeforeUpdate_OwnerCanUpdate(t *testing.T) {
 
 func TestUserSettingsOwnership_BeforeUpdate_NonOwnerBlocked(t *testing.T) {
 	db := setupUserSettingsTestDB(t)
-	hook := authHooks.NewUserSettingsOwnershipHook(db)
+	hook := hooks.NewOwnershipHook(db, "UserSettings", userSettingsOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	attackerID := "user-attacker-456"
@@ -99,7 +102,7 @@ func TestUserSettingsOwnership_BeforeUpdate_NonOwnerBlocked(t *testing.T) {
 
 func TestUserSettingsOwnership_BeforeUpdate_AdminCanUpdate(t *testing.T) {
 	db := setupUserSettingsTestDB(t)
-	hook := authHooks.NewUserSettingsOwnershipHook(db)
+	hook := hooks.NewOwnershipHook(db, "UserSettings", userSettingsOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	adminID := "admin-user-789"
