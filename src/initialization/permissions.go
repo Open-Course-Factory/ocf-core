@@ -93,11 +93,51 @@ func SetupTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/terminals/:id/history", "GET"},
 		{"/api/v1/terminals/:id/history", "DELETE"},
 		{"/api/v1/terminals/my-history", "DELETE"},
+		{"/api/v1/terminals/:id/access-status", "GET"},
+		{"/api/v1/terminals/consent-status", "GET"},
+		{"/api/v1/terminals/backends", "GET"},
 	}
 
 	for _, route := range terminalRoutes {
 		reconcilePolicy(enforcer, "member", route.path, route.method)
 	}
+
+	// Terminal admin routes
+	log.Println("Setting up terminal admin route permissions...")
+	terminalAdminRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/terminals/backends/:backendId/set-default", "PATCH"},
+		{"/api/v1/terminals/enums/status", "GET"},
+		{"/api/v1/terminals/enums/refresh", "POST"},
+		{"/api/v1/terminals/fix-hide-permissions", "POST"},
+	}
+
+	for _, route := range terminalAdminRoutes {
+		reconcilePolicy(enforcer, "administrator", route.path, route.method)
+	}
+
+	// Group terminal routes - available to all authenticated members
+	// (fine-grained group ownership checks happen in the controller)
+	log.Println("Setting up group terminal route permissions...")
+	groupTerminalRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/class-groups/:id/bulk-create-terminals", "POST"},
+		{"/api/v1/class-groups/:id/command-history", "GET"},
+		{"/api/v1/class-groups/:id/command-history-stats", "GET"},
+	}
+
+	for _, route := range groupTerminalRoutes {
+		reconcilePolicy(enforcer, "member", route.path, route.method)
+	}
+
+	// Organization terminal session routes - available to all authenticated members
+	// (fine-grained org membership checks happen in the controller)
+	log.Println("Setting up organization terminal route permissions...")
+	reconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/terminal-sessions", "GET")
 
 	// Incus UI proxy routes - available to all authenticated members
 	// (fine-grained backend access checks happen in IsUserAuthorizedForBackend)
