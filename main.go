@@ -29,6 +29,7 @@ userController "soli/formations/src/auth/routes/usersRoutes"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	generationController "soli/formations/src/courses/routes/generationRoutes"
 	genericController "soli/formations/src/entityManagement/routes"
+	paymentController "soli/formations/src/payment/routes"
 	groupHooks "soli/formations/src/groups/hooks"
 	organizationHooks "soli/formations/src/organizations/hooks"
 	organizationController "soli/formations/src/organizations/routes"
@@ -96,10 +97,14 @@ func main() {
 	casdoor.Enforcer.LoadPolicy()
 	initialization.SetupAuthPermissions(casdoor.Enforcer)
 	initialization.SetupTerminalPermissions(casdoor.Enforcer)
-	initialization.SetupPaymentPermissions(casdoor.Enforcer)
 	initialization.SetupSecurityAdminPermissions(casdoor.Enforcer)
-	initialization.SetupScenarioPermissions(casdoor.Enforcer)
 	initialization.SetupFeedbackPermissions(casdoor.Enforcer)
+
+	// Module-level permission registration (each module owns its policies)
+	scenarioController.RegisterScenarioPermissions(casdoor.Enforcer)
+	courseController.RegisterCoursePermissions(casdoor.Enforcer)
+	userController.RegisterUserPermissions(casdoor.Enforcer)
+	paymentController.RegisterPaymentPermissions(casdoor.Enforcer)
 	log.Println("✅ All permissions setup completed")
 
 	// Initialize remaining hooks

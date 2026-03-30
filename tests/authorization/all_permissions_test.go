@@ -6,7 +6,11 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"soli/formations/src/auth/mocks"
+	userController "soli/formations/src/auth/routes/usersRoutes"
+	courseController "soli/formations/src/courses/routes/courseRoutes"
 	"soli/formations/src/initialization"
+	paymentController "soli/formations/src/payment/routes"
+	scenarioController "soli/formations/src/scenarios/routes"
 )
 
 // policySet collects all policies added by a Setup function for easy assertion.
@@ -195,7 +199,7 @@ func TestSetupSecurityAdminPermissions(t *testing.T) {
 
 func TestSetupPaymentPermissions_MemberRoutes(t *testing.T) {
 	mock := mocks.NewMockEnforcer()
-	initialization.SetupPaymentPermissions(mock)
+	paymentController.RegisterPaymentPermissions(mock)
 	ps := collectPolicies(mock)
 
 	memberRoutes := []struct {
@@ -257,7 +261,7 @@ func TestSetupPaymentPermissions_MemberRoutes(t *testing.T) {
 
 func TestSetupPaymentPermissions_AdminRoutes(t *testing.T) {
 	mock := mocks.NewMockEnforcer()
-	initialization.SetupPaymentPermissions(mock)
+	paymentController.RegisterPaymentPermissions(mock)
 	ps := collectPolicies(mock)
 
 	adminRoutes := []struct {
@@ -308,7 +312,7 @@ func TestSetupFeedbackPermissions(t *testing.T) {
 
 func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 	mock := mocks.NewMockEnforcer()
-	initialization.SetupScenarioPermissions(mock)
+	scenarioController.RegisterScenarioPermissions(mock)
 	ps := collectPolicies(mock)
 
 	memberRoutes := []struct {
@@ -363,7 +367,7 @@ func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 
 func TestSetupScenarioPermissions_AdminRoutes(t *testing.T) {
 	mock := mocks.NewMockEnforcer()
-	initialization.SetupScenarioPermissions(mock)
+	scenarioController.RegisterScenarioPermissions(mock)
 	ps := collectPolicies(mock)
 
 	adminRoutes := []struct {
@@ -393,7 +397,7 @@ func TestSetupScenarioPermissions_AdminRoutes(t *testing.T) {
 
 func TestSetupCoursePermissions_MemberRoutes(t *testing.T) {
 	mock := mocks.NewMockEnforcer()
-	initialization.SetupCoursePermissions(mock)
+	courseController.RegisterCoursePermissions(mock)
 	ps := collectPolicies(mock)
 
 	memberRoutes := []struct {
@@ -426,7 +430,7 @@ func TestSetupCoursePermissions_MemberRoutes(t *testing.T) {
 
 func TestSetupUserManagementPermissions_MemberRoutes(t *testing.T) {
 	mock := mocks.NewMockEnforcer()
-	initialization.SetupUserManagementPermissions(mock)
+	userController.RegisterUserPermissions(mock)
 	ps := collectPolicies(mock)
 
 	memberRoutes := []struct {
@@ -448,7 +452,7 @@ func TestSetupUserManagementPermissions_MemberRoutes(t *testing.T) {
 
 func TestSetupUserManagementPermissions_AdminRoutes(t *testing.T) {
 	mock := mocks.NewMockEnforcer()
-	initialization.SetupUserManagementPermissions(mock)
+	userController.RegisterUserPermissions(mock)
 	ps := collectPolicies(mock)
 
 	adminRoutes := []struct {

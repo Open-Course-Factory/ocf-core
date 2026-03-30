@@ -7,17 +7,17 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"soli/formations/src/auth/mocks"
-	"soli/formations/src/initialization"
+	scenarioController "soli/formations/src/scenarios/routes"
 )
 
-// TestSetupScenarioPermissions_GroupLevelRoutes verifies that SetupScenarioPermissions
+// TestSetupScenarioPermissions_GroupLevelRoutes verifies that RegisterScenarioPermissions
 // registers Casbin policies for the group-level scenario routes (upload, import-json,
 // export). Without these policies, all users (including group owners) get 403 errors
 // on these endpoints.
 func TestSetupScenarioPermissions_GroupLevelRoutes(t *testing.T) {
 	mockEnforcer := mocks.NewMockEnforcer()
 
-	initialization.SetupScenarioPermissions(mockEnforcer)
+	scenarioController.RegisterScenarioPermissions(mockEnforcer)
 
 	// Collect all (role, path, method) tuples that were added as policies.
 	type policy struct {
@@ -60,7 +60,7 @@ func TestSetupScenarioPermissions_GroupLevelRoutes(t *testing.T) {
 		},
 	}
 
-	require.NotEmpty(t, addedPolicies, "SetupScenarioPermissions should add at least some policies")
+	require.NotEmpty(t, addedPolicies, "RegisterScenarioPermissions should add at least some policies")
 
 	for _, route := range requiredGroupRoutes {
 		t.Run(route.desc, func(t *testing.T) {
@@ -72,7 +72,7 @@ func TestSetupScenarioPermissions_GroupLevelRoutes(t *testing.T) {
 				}
 			}
 			assert.True(t, found,
-				"SetupScenarioPermissions must register member policy for %s %s — "+
+				"RegisterScenarioPermissions must register member policy for %s %s — "+
 					"without it, all users get 403 on this endpoint",
 				route.method, route.path)
 		})

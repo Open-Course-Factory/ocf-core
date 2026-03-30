@@ -6,9 +6,10 @@ import (
 	authModels "soli/formations/src/auth/models"
 )
 
-// reconcilePolicy compares the desired policy with what exists in the DB and only
+// ReconcilePolicy compares the desired policy with what exists in the DB and only
 // makes changes when they differ. This is safe for production — no blind deletes.
-func reconcilePolicy(enforcer interfaces.EnforcerInterface, role, path, method string) {
+// Exported so module-level route packages can register their own permissions.
+func ReconcilePolicy(enforcer interfaces.EnforcerInterface, role, path, method string) {
 	existing, err := enforcer.GetFilteredPolicy(0, role, path)
 	if err != nil {
 		log.Printf("Error reading policy for %s %s: %v — falling back to add", role, path, err)
@@ -47,13 +48,13 @@ func SetupAuthPermissions(enforcer interfaces.EnforcerInterface) {
 
 	for _, role := range casdoorRoles {
 		// User endpoints
-		reconcilePolicy(enforcer, role, "/api/v1/users/:id", "GET")
-		reconcilePolicy(enforcer, role, "/api/v1/users/me/*", "(GET|POST|PATCH|DELETE)")
+		ReconcilePolicy(enforcer, role, "/api/v1/users/:id", "GET")
+		ReconcilePolicy(enforcer, role, "/api/v1/users/me/*", "(GET|POST|PATCH|DELETE)")
 
 		// Auth endpoints
-		reconcilePolicy(enforcer, role, "/api/v1/auth/permissions", "GET")
-		reconcilePolicy(enforcer, role, "/api/v1/auth/me", "GET")
-		reconcilePolicy(enforcer, role, "/api/v1/auth/verify-status", "GET")
+		ReconcilePolicy(enforcer, role, "/api/v1/auth/permissions", "GET")
+		ReconcilePolicy(enforcer, role, "/api/v1/auth/me", "GET")
+		ReconcilePolicy(enforcer, role, "/api/v1/auth/verify-status", "GET")
 	}
 
 	log.Println("✅ Authentication and user permissions setup completed")
@@ -65,8 +66,8 @@ func SetupTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 
 	// User Terminal Key custom routes - available to all authenticated members
 	log.Println("Setting up user terminal key custom route permissions...")
-	reconcilePolicy(enforcer, "member", "/api/v1/user-terminal-keys/regenerate", "POST")
-	reconcilePolicy(enforcer, "member", "/api/v1/user-terminal-keys/my-key", "GET")
+	ReconcilePolicy(enforcer, "member", "/api/v1/user-terminal-keys/regenerate", "POST")
+	ReconcilePolicy(enforcer, "member", "/api/v1/user-terminal-keys/my-key", "GET")
 
 	// Terminal custom routes - available to all authenticated members
 	log.Println("Setting up terminal custom route permissions...")
@@ -99,7 +100,7 @@ func SetupTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range terminalRoutes {
-		reconcilePolicy(enforcer, "member", route.path, route.method)
+		ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Terminal admin routes
@@ -115,7 +116,7 @@ func SetupTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range terminalAdminRoutes {
-		reconcilePolicy(enforcer, "administrator", route.path, route.method)
+		ReconcilePolicy(enforcer, "administrator", route.path, route.method)
 	}
 
 	// Group terminal routes - available to all authenticated members
@@ -131,18 +132,18 @@ func SetupTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range groupTerminalRoutes {
-		reconcilePolicy(enforcer, "member", route.path, route.method)
+		ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Organization terminal session routes - available to all authenticated members
 	// (fine-grained org membership checks happen in the controller)
 	log.Println("Setting up organization terminal route permissions...")
-	reconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/terminal-sessions", "GET")
+	ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/terminal-sessions", "GET")
 
 	// Incus UI proxy routes - available to all authenticated members
 	// (fine-grained backend access checks happen in IsUserAuthorizedForBackend)
 	log.Println("Setting up Incus UI proxy permissions...")
-	reconcilePolicy(enforcer, "member", "/api/v1/incus-ui/:backendId/*", "(GET|POST|PUT|PATCH|DELETE)")
+	ReconcilePolicy(enforcer, "member", "/api/v1/incus-ui/:backendId/*", "(GET|POST|PUT|PATCH|DELETE)")
 
 	log.Println("✅ Terminal permissions setup completed")
 }
@@ -162,148 +163,43 @@ func SetupSecurityAdminPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range adminRoutes {
-		reconcilePolicy(enforcer, "administrator", route.path, route.method)
+		ReconcilePolicy(enforcer, "administrator", route.path, route.method)
 	}
 
 	log.Println("✅ Security admin permissions setup completed")
 }
 
-// SetupPaymentPermissions sets up payment and subscription-related permissions
+// SetupPaymentPermissions is kept for backward compatibility but delegates
+// to the payment module's own RegisterPaymentPermissions. This function
+// will be removed once all callers are updated.
+// NOTE: Now a no-op — permissions are registered by paymentController.RegisterPaymentPermissions
 func SetupPaymentPermissions(enforcer interfaces.EnforcerInterface) {
-	log.Println("=== Setting up payment and subscription permissions ===")
-
-	// User subscription endpoints - available to all authenticated members
-	log.Println("Setting up user subscription permissions...")
-	reconcilePolicy(enforcer, "member", "/api/v1/user-subscriptions/current", "GET")
-	reconcilePolicy(enforcer, "member", "/api/v1/user-subscriptions/portal", "POST")
-	reconcilePolicy(enforcer, "member", "/api/v1/invoices/user", "GET")
-	reconcilePolicy(enforcer, "member", "/api/v1/payment-methods/user", "GET")
-
-	// Subscription batch endpoints - available to all authenticated members
-	log.Println("Setting up subscription batch permissions...")
-	batchRoutes := []struct {
-		path   string
-		method string
-	}{
-		{"/api/v1/subscription-batches", "GET"},                                    // List accessible batches
-		{"/api/v1/subscription-batches/:id", "GET"},                                // Get batch details
-		{"/api/v1/subscription-batches/:id/licenses", "GET"},                       // List licenses in batch
-		{"/api/v1/subscription-batches/:id/assign", "POST"},                        // Assign a license
-		{"/api/v1/subscription-batches/:id/licenses/:license_id/revoke", "DELETE"}, // Revoke a license
-		{"/api/v1/subscription-batches/:id/quantity", "PATCH"},                     // Update quantity
-		{"/api/v1/subscription-batches/:id/permanent", "DELETE"},                   // Permanently delete batch
-		{"/api/v1/subscription-batches/create-checkout-session", "POST"},           // Create checkout session
-	}
-
-	for _, route := range batchRoutes {
-		reconcilePolicy(enforcer, "member", route.path, route.method)
-	}
-
-	log.Println("✅ Payment and subscription permissions setup completed")
+	// Permissions moved to src/payment/routes/permissions.go
 }
 
 // SetupFeedbackPermissions sets up feedback-related permissions
 func SetupFeedbackPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Setting up feedback permissions ===")
 
-	reconcilePolicy(enforcer, "member", "/api/v1/feedback/*", "POST")
+	ReconcilePolicy(enforcer, "member", "/api/v1/feedback/*", "POST")
 
 	log.Println("✅ Feedback permissions setup completed")
 }
 
-// SetupScenarioPermissions sets up scenario session and teacher dashboard permissions
+// SetupScenarioPermissions is kept for backward compatibility but is now a no-op.
+// Permissions are registered by scenarioController.RegisterScenarioPermissions.
 func SetupScenarioPermissions(enforcer interfaces.EnforcerInterface) {
-	log.Println("=== Setting up scenario and teacher dashboard permissions ===")
-
-	// Scenario session routes - available to all authenticated members
-	sessionRoutes := []struct {
-		path   string
-		method string
-	}{
-		{"/api/v1/scenario-sessions/start", "POST"},
-		{"/api/v1/scenario-sessions/my", "GET"},
-		{"/api/v1/scenario-sessions/by-terminal/:terminalId", "GET"},
-		{"/api/v1/scenario-sessions/:id/current-step", "GET"},
-		{"/api/v1/scenario-sessions/:id/step/:stepOrder", "GET"},
-		{"/api/v1/scenario-sessions/:id/verify", "POST"},
-		{"/api/v1/scenario-sessions/:id/submit-flag", "POST"},
-		{"/api/v1/scenario-sessions/:id/abandon", "POST"},
-	}
-
-	for _, route := range sessionRoutes {
-		reconcilePolicy(enforcer, "member", route.path, route.method)
-	}
-
-	// Teacher dashboard routes - available to all authenticated members
-	// (fine-grained group ownership checks happen in the controller)
-	teacherRoutes := []struct {
-		path   string
-		method string
-	}{
-		{"/api/v1/teacher/groups/:groupId/activity", "GET"},
-		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results", "GET"},
-		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/analytics", "GET"},
-		{"/api/v1/teacher/groups/:groupId/sessions/:sessionId/detail", "GET"},
-		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/bulk-start", "POST"},
-		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/reset-sessions", "POST"},
-	}
-
-	for _, route := range teacherRoutes {
-		reconcilePolicy(enforcer, "member", route.path, route.method)
-	}
-
-	// Group-level scenario import/export routes - available to all authenticated members
-	// (fine-grained group ownership checks happen in the controller via validateTeacherAccess)
-	groupScenarioRoutes := []struct {
-		path   string
-		method string
-	}{
-		{"/api/v1/groups/:groupId/scenarios/upload", "POST"},
-		{"/api/v1/groups/:groupId/scenarios/import-json", "POST"},
-		{"/api/v1/groups/:groupId/scenarios/:scenarioId/export", "GET"},
-	}
-
-	for _, route := range groupScenarioRoutes {
-		reconcilePolicy(enforcer, "member", route.path, route.method)
-	}
-
-	// Group-level combined scenario listing (teachers see org + group scenarios)
-	reconcilePolicy(enforcer, "member", "/api/v1/groups/:groupId/scenarios", "GET")
-
-	// Organization-level scenario management routes - available to all authenticated members
-	// (fine-grained org ownership checks happen in the controller via validateOrgManagerAccess)
-	orgScenarioRoutes := []struct {
-		path   string
-		method string
-	}{
-		{"/api/v1/organizations/:id/scenarios", "GET"},
-		{"/api/v1/organizations/:id/scenarios/import-json", "POST"},
-		{"/api/v1/organizations/:id/scenarios/upload", "POST"},
-		{"/api/v1/organizations/:id/scenarios/:scenarioId/export", "GET"},
-		{"/api/v1/organizations/:id/scenarios/:scenarioId", "DELETE"},
-	}
-
-	for _, route := range orgScenarioRoutes {
-		reconcilePolicy(enforcer, "member", route.path, route.method)
-	}
-
-	// Admin-only scenario management routes
-	reconcilePolicy(enforcer, "administrator", "/api/v1/scenarios/import", "POST")
-	reconcilePolicy(enforcer, "administrator", "/api/v1/scenarios/seed", "POST")
-
-	log.Println("✅ Scenario and teacher dashboard permissions setup completed")
+	// Permissions moved to src/scenarios/routes/permissions.go
 }
 
-// SetupCoursePermissions sets up course and generation-related permissions
-// TODO: will be moved to route files during decentralization refactor
+// SetupCoursePermissions is kept for backward compatibility but is now a no-op.
+// Permissions are registered by courseController.RegisterCoursePermissions.
 func SetupCoursePermissions(enforcer interfaces.EnforcerInterface) {
-	log.Println("=== Setting up course and generation permissions ===")
-	log.Println("✅ Course and generation permissions setup completed")
+	// Permissions moved to src/courses/routes/courseRoutes/permissions.go
 }
 
-// SetupUserManagementPermissions sets up user management and access control permissions
-// TODO: will be moved to route files during decentralization refactor
+// SetupUserManagementPermissions is kept for backward compatibility but is now a no-op.
+// Permissions are registered by userController.RegisterUserPermissions.
 func SetupUserManagementPermissions(enforcer interfaces.EnforcerInterface) {
-	log.Println("=== Setting up user management permissions ===")
-	log.Println("✅ User management permissions setup completed")
+	// Permissions moved to src/auth/routes/usersRoutes/permissions.go
 }
