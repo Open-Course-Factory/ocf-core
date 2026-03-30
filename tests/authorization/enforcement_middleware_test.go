@@ -1,8 +1,12 @@
 package authorization_tests
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
 	casbinUtils "soli/formations/src/auth/casbin"
@@ -232,4 +236,311 @@ func TestRouteRegistry_Lookup_MultipleMethodsSamePath(t *testing.T) {
 	assert.True(t, postFound)
 	assert.Equal(t, casbinUtils.AdminOnly, postPerm.Access.Type)
 	assert.Equal(t, "administrator", postPerm.CasbinRole)
+}
+
+// ---------------------------------------------------------------------------
+// Mock implementations for Layer 2 enforcement middleware tests
+// ---------------------------------------------------------------------------
+
+// mockEntityLoader implements casbinUtils.EntityLoader for testing.
+type mockEntityLoader struct {
+	ownerFieldValue string
+	err             error
+}
+
+func (m *mockEntityLoader) GetOwnerField(entityName string, entityID string, fieldName string) (string, error) {
+	return m.ownerFieldValue, m.err
+}
+
+// mockMembershipChecker implements casbinUtils.MembershipChecker for testing.
+type mockMembershipChecker struct {
+	groupRoleResult bool
+	groupRoleErr    error
+	orgRoleResult   bool
+	orgRoleErr      error
+}
+
+func (m *mockMembershipChecker) CheckGroupRole(groupID string, userID string, minRole string) (bool, error) {
+	return m.groupRoleResult, m.groupRoleErr
+}
+
+func (m *mockMembershipChecker) CheckOrgRole(orgID string, userID string, minRole string) (bool, error) {
+	return m.orgRoleResult, m.orgRoleErr
+}
+
+// setupTestRouter creates a Gin engine with userId/userRoles injected from
+// request headers, followed by the given middleware.
+func setupTestRouter(middleware gin.HandlerFunc) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	// Inject userId and userRoles before the enforcement middleware
+	r.Use(func(c *gin.Context) {
+		c.Set("userId", c.GetHeader("X-Test-UserId"))
+		c.Set("userRoles", strings.Split(c.GetHeader("X-Test-Roles"), ","))
+		c.Next()
+	})
+	r.Use(middleware)
+	return r
+}
+
+// okHandler is a simple 200 OK handler for test routes.
+func okHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// ---------------------------------------------------------------------------
+// Test 3: Layer 2 Enforcement Middleware
+// ---------------------------------------------------------------------------
+
+func TestLayer2_AdminOnly_Allowed(t *testing.T) {
+	casbinUtils.RouteRegistry.Reset()
+	defer casbinUtils.RouteRegistry.Reset()
+
+	// Register the route as AdminOnly
+	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+		Path:       "/api/v1/test/admin-action",
+		Method:     "POST",
+		CasbinRole: "administrator",
+		Access:     casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+	})
+
+	loader := &mockEntityLoader{}
+	checker := &mockMembershipChecker{}
+	mw := casbinUtils.NewLayer2Enforcement(loader, checker)
+	r := setupTestRouter(mw)
+	r.POST("/api/v1/test/admin-action", okHandler)
+
+	req := httptest.NewRequest("POST", "/api/v1/test/admin-action", nil)
+	req.Header.Set("X-Test-UserId", "user1")
+	req.Header.Set("X-Test-Roles", "administrator")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "administrator should be allowed on AdminOnly route")
+}
+
+func TestLayer2_AdminOnly_Denied(t *testing.T) {
+	casbinUtils.RouteRegistry.Reset()
+	defer casbinUtils.RouteRegistry.Reset()
+
+	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+		Path:       "/api/v1/test/admin-action",
+		Method:     "POST",
+		CasbinRole: "administrator",
+		Access:     casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+	})
+
+	loader := &mockEntityLoader{}
+	checker := &mockMembershipChecker{}
+	mw := casbinUtils.NewLayer2Enforcement(loader, checker)
+	r := setupTestRouter(mw)
+	r.POST("/api/v1/test/admin-action", okHandler)
+
+	req := httptest.NewRequest("POST", "/api/v1/test/admin-action", nil)
+	req.Header.Set("X-Test-UserId", "user1")
+	req.Header.Set("X-Test-Roles", "member")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code, "member should be denied on AdminOnly route")
+}
+
+func TestLayer2_EntityOwner_Allowed(t *testing.T) {
+	casbinUtils.RouteRegistry.Reset()
+	defer casbinUtils.RouteRegistry.Reset()
+
+	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+		Path:       "/api/v1/test/:id/edit",
+		Method:     "PATCH",
+		CasbinRole: "member",
+		Access: casbinUtils.AccessRule{
+			Type:   casbinUtils.EntityOwner,
+			Entity: "TestEntity",
+			Field:  "UserID",
+		},
+	})
+
+	// Mock returns "user1" as the owner
+	loader := &mockEntityLoader{ownerFieldValue: "user1"}
+	checker := &mockMembershipChecker{}
+	mw := casbinUtils.NewLayer2Enforcement(loader, checker)
+	r := setupTestRouter(mw)
+	r.PATCH("/api/v1/test/:id/edit", okHandler)
+
+	req := httptest.NewRequest("PATCH", "/api/v1/test/entity123/edit", nil)
+	req.Header.Set("X-Test-UserId", "user1")
+	req.Header.Set("X-Test-Roles", "member")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "entity owner should be allowed")
+}
+
+func TestLayer2_EntityOwner_Denied(t *testing.T) {
+	casbinUtils.RouteRegistry.Reset()
+	defer casbinUtils.RouteRegistry.Reset()
+
+	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+		Path:       "/api/v1/test/:id/edit",
+		Method:     "PATCH",
+		CasbinRole: "member",
+		Access: casbinUtils.AccessRule{
+			Type:   casbinUtils.EntityOwner,
+			Entity: "TestEntity",
+			Field:  "UserID",
+		},
+	})
+
+	// Mock returns "user1" as the owner, but the requester is "user2"
+	loader := &mockEntityLoader{ownerFieldValue: "user1"}
+	checker := &mockMembershipChecker{}
+	mw := casbinUtils.NewLayer2Enforcement(loader, checker)
+	r := setupTestRouter(mw)
+	r.PATCH("/api/v1/test/:id/edit", okHandler)
+
+	req := httptest.NewRequest("PATCH", "/api/v1/test/entity123/edit", nil)
+	req.Header.Set("X-Test-UserId", "user2")
+	req.Header.Set("X-Test-Roles", "member")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code, "non-owner should be denied")
+}
+
+func TestLayer2_EntityOwner_AdminBypass(t *testing.T) {
+	casbinUtils.RouteRegistry.Reset()
+	defer casbinUtils.RouteRegistry.Reset()
+
+	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+		Path:       "/api/v1/test/:id/edit",
+		Method:     "PATCH",
+		CasbinRole: "member",
+		Access: casbinUtils.AccessRule{
+			Type:   casbinUtils.EntityOwner,
+			Entity: "TestEntity",
+			Field:  "UserID",
+		},
+	})
+
+	// Mock returns "user1" as the owner, but requester is "user2" with admin role
+	loader := &mockEntityLoader{ownerFieldValue: "user1"}
+	checker := &mockMembershipChecker{}
+	mw := casbinUtils.NewLayer2Enforcement(loader, checker)
+	r := setupTestRouter(mw)
+	r.PATCH("/api/v1/test/:id/edit", okHandler)
+
+	req := httptest.NewRequest("PATCH", "/api/v1/test/entity123/edit", nil)
+	req.Header.Set("X-Test-UserId", "user2")
+	req.Header.Set("X-Test-Roles", "administrator")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "administrator should bypass entity owner check")
+}
+
+func TestLayer2_GroupRole_Allowed(t *testing.T) {
+	casbinUtils.RouteRegistry.Reset()
+	defer casbinUtils.RouteRegistry.Reset()
+
+	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+		Path:       "/api/v1/test/groups/:groupId/manage",
+		Method:     "POST",
+		CasbinRole: "member",
+		Access: casbinUtils.AccessRule{
+			Type:    casbinUtils.GroupRole,
+			Param:   "groupId",
+			MinRole: "manager",
+		},
+	})
+
+	loader := &mockEntityLoader{}
+	checker := &mockMembershipChecker{groupRoleResult: true}
+	mw := casbinUtils.NewLayer2Enforcement(loader, checker)
+	r := setupTestRouter(mw)
+	r.POST("/api/v1/test/groups/:groupId/manage", okHandler)
+
+	req := httptest.NewRequest("POST", "/api/v1/test/groups/group42/manage", nil)
+	req.Header.Set("X-Test-UserId", "user1")
+	req.Header.Set("X-Test-Roles", "member")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "user with sufficient group role should be allowed")
+}
+
+func TestLayer2_GroupRole_Denied(t *testing.T) {
+	casbinUtils.RouteRegistry.Reset()
+	defer casbinUtils.RouteRegistry.Reset()
+
+	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+		Path:       "/api/v1/test/groups/:groupId/manage",
+		Method:     "POST",
+		CasbinRole: "member",
+		Access: casbinUtils.AccessRule{
+			Type:    casbinUtils.GroupRole,
+			Param:   "groupId",
+			MinRole: "manager",
+		},
+	})
+
+	loader := &mockEntityLoader{}
+	checker := &mockMembershipChecker{groupRoleResult: false}
+	mw := casbinUtils.NewLayer2Enforcement(loader, checker)
+	r := setupTestRouter(mw)
+	r.POST("/api/v1/test/groups/:groupId/manage", okHandler)
+
+	req := httptest.NewRequest("POST", "/api/v1/test/groups/group42/manage", nil)
+	req.Header.Set("X-Test-UserId", "user1")
+	req.Header.Set("X-Test-Roles", "member")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code, "user without sufficient group role should be denied")
+}
+
+func TestLayer2_Public_Passthrough(t *testing.T) {
+	casbinUtils.RouteRegistry.Reset()
+	defer casbinUtils.RouteRegistry.Reset()
+
+	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+		Path:       "/api/v1/test/public-resource",
+		Method:     "GET",
+		CasbinRole: "member",
+		Access:     casbinUtils.AccessRule{Type: casbinUtils.Public},
+	})
+
+	loader := &mockEntityLoader{}
+	checker := &mockMembershipChecker{}
+	mw := casbinUtils.NewLayer2Enforcement(loader, checker)
+	r := setupTestRouter(mw)
+	r.GET("/api/v1/test/public-resource", okHandler)
+
+	req := httptest.NewRequest("GET", "/api/v1/test/public-resource", nil)
+	req.Header.Set("X-Test-UserId", "anyuser")
+	req.Header.Set("X-Test-Roles", "member")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "public route should allow any authenticated user")
+}
+
+func TestLayer2_UnregisteredRoute_Passthrough(t *testing.T) {
+	casbinUtils.RouteRegistry.Reset()
+	defer casbinUtils.RouteRegistry.Reset()
+
+	// Deliberately do NOT register any route in the registry
+
+	loader := &mockEntityLoader{}
+	checker := &mockMembershipChecker{}
+	mw := casbinUtils.NewLayer2Enforcement(loader, checker)
+	r := setupTestRouter(mw)
+	r.GET("/api/v1/test/unregistered", okHandler)
+
+	req := httptest.NewRequest("GET", "/api/v1/test/unregistered", nil)
+	req.Header.Set("X-Test-UserId", "anyuser")
+	req.Header.Set("X-Test-Roles", "member")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "unregistered route should pass through for backwards compatibility")
 }
