@@ -92,7 +92,9 @@ func TestIsAdmin_CaseInsensitive(t *testing.T) {
 func TestRouteRegistry_Lookup_Hit(t *testing.T) {
 	// Use a fresh registry to avoid test pollution
 	casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 	defer casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 
 	// Register some routes
 	casbinUtils.RouteRegistry.Register("auth", casbinUtils.RoutePermission{
@@ -167,7 +169,9 @@ func TestRouteRegistry_Lookup_Hit(t *testing.T) {
 
 func TestRouteRegistry_Lookup_Miss(t *testing.T) {
 	casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 	defer casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 
 	// Register one route
 	casbinUtils.RouteRegistry.Register("auth", casbinUtils.RoutePermission{
@@ -209,7 +213,9 @@ func TestRouteRegistry_Lookup_Miss(t *testing.T) {
 
 func TestRouteRegistry_Lookup_MultipleMethodsSamePath(t *testing.T) {
 	casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 	defer casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 
 	// Register GET and POST on the same path with different access rules
 	casbinUtils.RouteRegistry.Register("terminals", casbinUtils.RoutePermission{
@@ -294,7 +300,9 @@ func okHandler(c *gin.Context) {
 
 func TestLayer2_AdminOnly_Allowed(t *testing.T) {
 	casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 	defer casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 
 	// Register the route as AdminOnly
 	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
@@ -322,7 +330,9 @@ func TestLayer2_AdminOnly_Allowed(t *testing.T) {
 
 func TestLayer2_AdminOnly_Denied(t *testing.T) {
 	casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 	defer casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 
 	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
 		Path:       "/api/v1/test/admin-action",
@@ -349,7 +359,9 @@ func TestLayer2_AdminOnly_Denied(t *testing.T) {
 
 func TestLayer2_EntityOwner_Allowed(t *testing.T) {
 	casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 	defer casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 
 	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
 		Path:       "/api/v1/test/:id/edit",
@@ -381,7 +393,9 @@ func TestLayer2_EntityOwner_Allowed(t *testing.T) {
 
 func TestLayer2_EntityOwner_Denied(t *testing.T) {
 	casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 	defer casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 
 	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
 		Path:       "/api/v1/test/:id/edit",
@@ -413,7 +427,9 @@ func TestLayer2_EntityOwner_Denied(t *testing.T) {
 
 func TestLayer2_EntityOwner_AdminBypass(t *testing.T) {
 	casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 	defer casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 
 	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
 		Path:       "/api/v1/test/:id/edit",
@@ -445,7 +461,9 @@ func TestLayer2_EntityOwner_AdminBypass(t *testing.T) {
 
 func TestLayer2_GroupRole_Allowed(t *testing.T) {
 	casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 	defer casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 
 	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
 		Path:       "/api/v1/test/groups/:groupId/manage",
@@ -476,7 +494,9 @@ func TestLayer2_GroupRole_Allowed(t *testing.T) {
 
 func TestLayer2_GroupRole_Denied(t *testing.T) {
 	casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 	defer casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 
 	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
 		Path:       "/api/v1/test/groups/:groupId/manage",
@@ -507,7 +527,9 @@ func TestLayer2_GroupRole_Denied(t *testing.T) {
 
 func TestLayer2_Public_Passthrough(t *testing.T) {
 	casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 	defer casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 
 	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
 		Path:       "/api/v1/test/public-resource",
@@ -534,7 +556,9 @@ func TestLayer2_Public_Passthrough(t *testing.T) {
 
 func TestLayer2_UnregisteredRoute_Passthrough(t *testing.T) {
 	casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 	defer casbinUtils.RouteRegistry.Reset()
+	casbinUtils.ResetEnforcers()
 
 	// Deliberately do NOT register any route in the registry
 

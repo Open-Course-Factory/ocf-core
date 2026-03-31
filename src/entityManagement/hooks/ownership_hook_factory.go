@@ -126,6 +126,10 @@ func (h *ownershipHook) handleBeforeDelete(ctx *HookContext) error {
 
 // loadOwnerFromDB loads the ownership field value from the database for the given entity ID.
 func (h *ownershipHook) loadOwnerFromDB(entityID any) (string, error) {
+	if entityID == nil || entityID == "" {
+		return "", fmt.Errorf("entity ID is empty for %s ownership check", h.entityName)
+	}
+
 	tableName := h.db.Config.NamingStrategy.TableName(h.entityName)
 	column := pascalToSnake(h.config.OwnerField)
 
@@ -136,7 +140,10 @@ func (h *ownershipHook) loadOwnerFromDB(entityID any) (string, error) {
 		Scan(&ownerValue)
 
 	if result.Error != nil {
-		return "", fmt.Errorf("failed to load entity for ownership check: %w", result.Error)
+		return "", fmt.Errorf("failed to load %s for ownership check: %w", h.entityName, result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return "", fmt.Errorf("%s not found (id=%v)", h.entityName, entityID)
 	}
 
 	return ownerValue, nil
