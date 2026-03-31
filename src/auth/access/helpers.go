@@ -17,27 +17,45 @@ func IsAdmin(roles []string) bool {
 	return false
 }
 
-// rolePriority maps role names to their priority for both group and organization hierarchies.
-// Higher value = more permissions.
-var rolePriority = map[string]int{
+// roleHierarchy maps role names to their priority for group and organization hierarchies.
+// Higher value = more permissions. Call RegisterRole() to add or override roles.
+var roleHierarchy = map[string]int{
 	"member":  10,
 	"manager": 50,
 	"owner":   100,
 }
 
+// RegisterRole adds or overrides a role in the hierarchy.
+// Call at startup to extend the built-in roles (member < manager < owner)
+// with custom roles for your project.
+//
+// Example: access.RegisterRole("supervisor", 75) // between manager and owner
+func RegisterRole(name string, priority int) {
+	roleHierarchy[name] = priority
+}
+
+// GetRoleHierarchy returns a copy of the current role hierarchy (for the reference page).
+func GetRoleHierarchy() map[string]int {
+	copy := make(map[string]int, len(roleHierarchy))
+	for k, v := range roleHierarchy {
+		copy[k] = v
+	}
+	return copy
+}
+
 // IsRoleAtLeast checks whether userRole has at least the same privilege level
-// as requiredRole within the group role hierarchy (member < manager < owner).
+// as requiredRole within the role hierarchy.
 // Returns false if either role is unknown.
 func IsRoleAtLeast(userRole, requiredRole string) bool {
-	userPriority, userOk := rolePriority[userRole]
-	requiredPriority, reqOk := rolePriority[requiredRole]
+	userPriority, userOk := roleHierarchy[userRole]
+	requiredPriority, reqOk := roleHierarchy[requiredRole]
 
 	if !userOk {
-		log.Printf("[WARN] IsRoleAtLeast: unknown user role %q (valid: member, manager, owner)", userRole)
+		log.Printf("[WARN] IsRoleAtLeast: unknown user role %q", userRole)
 		return false
 	}
 	if !reqOk {
-		log.Printf("[WARN] IsRoleAtLeast: unknown required role %q (valid: member, manager, owner)", requiredRole)
+		log.Printf("[WARN] IsRoleAtLeast: unknown required role %q", requiredRole)
 		return false
 	}
 

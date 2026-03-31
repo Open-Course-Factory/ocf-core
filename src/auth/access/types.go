@@ -1,8 +1,18 @@
 package access
 
 // AccessRuleType defines how Layer 2 authorization is enforced on a route.
+// This is a string type — plugins can define new values without modifying this file.
+// Register a handler for custom types via RegisterAccessEnforcer().
+//
+// Example for a plugin:
+//
+//	const TenantScoped access.AccessRuleType = "tenant_scoped"
+//	access.RegisterAccessEnforcer(TenantScoped, func(ctx *gin.Context, rule access.AccessRule, ...) bool { ... })
 type AccessRuleType string
 
+// Built-in access rule types. These are the defaults provided by the framework.
+// Projects can define additional types as plain string constants and register
+// their enforcement handlers via RegisterAccessEnforcer().
 const (
 	// Public means the RBAC role check is sufficient — no additional Layer 2 check.
 	Public AccessRuleType = "public"
