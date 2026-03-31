@@ -89,38 +89,26 @@ func (h *ownershipHook) handleBeforeCreate(ctx *HookContext) error {
 }
 
 func (h *ownershipHook) handleBeforeUpdate(ctx *HookContext) error {
-	// Admin bypass
-	if h.config.AdminBypass && ctx.IsAdmin() {
-		return nil
-	}
-
-	ownerValue, err := h.loadOwnerFromDB(ctx.EntityID)
-	if err != nil {
-		return err
-	}
-
-	if ownerValue != ctx.UserID {
-		return fmt.Errorf("permission denied: you do not own this %s", h.entityName)
-	}
-
-	return nil
+	return h.verifyOwnership(ctx)
 }
 
 func (h *ownershipHook) handleBeforeDelete(ctx *HookContext) error {
-	// Admin bypass
+	return h.verifyOwnership(ctx)
+}
+
+// verifyOwnership checks that the authenticated user owns the entity.
+// Used by both handleBeforeUpdate and handleBeforeDelete.
+func (h *ownershipHook) verifyOwnership(ctx *HookContext) error {
 	if h.config.AdminBypass && ctx.IsAdmin() {
 		return nil
 	}
-
 	ownerValue, err := h.loadOwnerFromDB(ctx.EntityID)
 	if err != nil {
 		return err
 	}
-
 	if ownerValue != ctx.UserID {
 		return fmt.Errorf("permission denied: you do not own this %s", h.entityName)
 	}
-
 	return nil
 }
 
@@ -131,7 +119,7 @@ func (h *ownershipHook) loadOwnerFromDB(entityID any) (string, error) {
 	}
 
 	tableName := h.db.Config.NamingStrategy.TableName(h.entityName)
-	column := pascalToSnake(h.config.OwnerField)
+	column := h.db.Config.NamingStrategy.ColumnName("", h.config.OwnerField)
 
 	var ownerValue string
 	result := h.db.Table(tableName).
@@ -163,29 +151,4 @@ func operationsToHookTypes(operations []string) []HookType {
 		}
 	}
 	return types
-}
-
-// pascalToSnake converts a PascalCase string to snake_case,
-// matching GORM's default column naming convention.
-// e.g., "UserID" -> "user_id", "OwnerField" -> "owner_field"
-func pascalToSnake(s string) string {
-	var result strings.Builder
-	runes := []rune(s)
-	for i, r := range runes {
-		if r >= 'A' && r <= 'Z' {
-			// Insert underscore before an uppercase letter when:
-			// - Not the first character, AND
-			// - Either the previous char is lowercase, OR
-			//   the next char is lowercase (handles acronyms like "ID" in "UserID")
-			if i > 0 {
-				prevLower := runes[i-1] >= 'a' && runes[i-1] <= 'z'
-				nextLower := i+1 < len(runes) && runes[i+1] >= 'a' && runes[i+1] <= 'z'
-				if prevLower || nextLower {
-					result.WriteRune('_')
-				}
-			}
-		}
-		result.WriteRune(r)
-	}
-	return strings.ToLower(result.String())
 }

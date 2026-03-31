@@ -1,6 +1,9 @@
 package casbin
 
-import "strings"
+import (
+	"log"
+	"strings"
+)
 
 // IsAdmin checks whether any of the given roles indicates administrator status.
 // It is case-insensitive and also accepts "admin" as an alias (Casdoor uses both forms).
@@ -29,7 +32,12 @@ func IsRoleAtLeast(userRole, requiredRole string) bool {
 	userPriority, userOk := rolePriority[userRole]
 	requiredPriority, reqOk := rolePriority[requiredRole]
 
-	if !userOk || !reqOk {
+	if !userOk {
+		log.Printf("[WARN] IsRoleAtLeast: unknown user role %q (valid: member, manager, owner)", userRole)
+		return false
+	}
+	if !reqOk {
+		log.Printf("[WARN] IsRoleAtLeast: unknown required role %q (valid: member, manager, owner)", requiredRole)
 		return false
 	}
 
