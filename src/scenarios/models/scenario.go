@@ -29,6 +29,7 @@ type Scenario struct {
 	FinishText     string     `gorm:"type:text" json:"finish_text,omitempty"`
 	CreatedByID    string     `gorm:"type:varchar(255)" json:"created_by_id"`
 	OrganizationID *uuid.UUID `gorm:"type:uuid;index" json:"organization_id,omitempty"`
+	IsPublic       bool       `gorm:"default:false" json:"is_public"`
 	SetupScript    string     `gorm:"type:text" json:"setup_script,omitempty"`
 	SetupScriptID  *uuid.UUID `gorm:"type:uuid;index" json:"setup_script_id,omitempty" mapstructure:"setup_script_id"`
 	IntroFileID    *uuid.UUID `gorm:"type:uuid;index" json:"intro_file_id,omitempty" mapstructure:"intro_file_id"`

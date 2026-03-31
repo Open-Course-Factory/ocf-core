@@ -245,8 +245,10 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 		}
 	}
 
-	// Check group-based scenario assignment access (admins bypass)
-	if !sc.hasAdminRole(ctx) {
+	// Check group-based scenario assignment access (admins and public scenarios bypass)
+	if scenario.IsPublic {
+		// Public scenarios are available to everyone, skip assignment check
+	} else if !sc.hasAdminRole(ctx) {
 		var groupIDs []uuid.UUID
 		if err := sc.db.Model(&groupModels.GroupMember{}).
 			Where("user_id = ? AND is_active = true", userID).
@@ -1509,27 +1511,37 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 			args = append(args, orgIDs)
 		}
 
-		if len(conditions) == 0 {
-			// No groups or orgs — return empty
-			ctx.JSON(http.StatusOK, []any{})
-			return
+		if len(conditions) > 0 {
+			now := time.Now()
+			combined := strings.Join(conditions, " OR ")
+			query := sc.db.Distinct().
+				Preload("CompatibleInstanceTypes").
+				Joins("JOIN scenario_assignments sa ON sa.scenario_id = scenarios.id").
+				Where("sa.is_active = true AND (sa.deadline IS NULL OR sa.deadline > ?)", now).
+				Where(combined, args...)
+
+			if err := query.Find(&scenarios).Error; err != nil {
+				slog.Error("failed to fetch available scenarios", "err", err)
+				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+					ErrorCode:    http.StatusInternalServerError,
+					ErrorMessage: "Failed to fetch scenarios",
+				})
+				return
+			}
 		}
 
-		now := time.Now()
-		combined := strings.Join(conditions, " OR ")
-		query := sc.db.Distinct().
-			Preload("CompatibleInstanceTypes").
-			Joins("JOIN scenario_assignments sa ON sa.scenario_id = scenarios.id").
-			Where("sa.is_active = true AND (sa.deadline IS NULL OR sa.deadline > ?)", now).
-			Where(combined, args...)
-
-		if err := query.Find(&scenarios).Error; err != nil {
-			slog.Error("failed to fetch available scenarios", "err", err)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to fetch scenarios",
-			})
-			return
+		// Also include public scenarios
+		var publicScenarios []models.Scenario
+		sc.db.Preload("CompatibleInstanceTypes").Where("is_public = ?", true).Find(&publicScenarios)
+		// Merge, avoiding duplicates
+		existingIDs := make(map[uuid.UUID]bool)
+		for _, s := range scenarios {
+			existingIDs[s.ID] = true
+		}
+		for _, s := range publicScenarios {
+			if !existingIDs[s.ID] {
+				scenarios = append(scenarios, s)
+			}
 		}
 	}
 
@@ -1592,6 +1604,7 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 			EstimatedTime: s.EstimatedTime,
 			InstanceType:  s.InstanceType,
 			OsType:        s.OsType,
+			IsPublic:      s.IsPublic,
 		}
 
 		// Convert compatible instance types
@@ -1619,7 +1632,7 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 
 		// Flag scenarios visible only due to admin status
-		if isAdmin && !assignedScenarioIDs[s.ID] {
+		if isAdmin && !assignedScenarioIDs[s.ID] && !s.IsPublic {
 			item.AdminOnly = true
 		}
 
@@ -1892,6 +1905,12 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 
 // checkScenarioAccess checks if a user has access to a scenario via group or org assignments
 func (sc *scenarioController) checkScenarioAccess(userID string, scenarioID uuid.UUID) (bool, error) {
+	// Public scenarios are accessible to everyone
+	var scenario models.Scenario
+	if err := sc.db.First(&scenario, "id = ?", scenarioID).Error; err == nil && scenario.IsPublic {
+		return true, nil
+	}
+
 	// Get user's group IDs
 	var groupIDs []uuid.UUID
 	if err := sc.db.Model(&groupModels.GroupMember{}).

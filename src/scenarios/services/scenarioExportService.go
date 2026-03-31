@@ -108,6 +108,7 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dt
 		FlagsEnabled:  scenario.FlagsEnabled,
 		GshEnabled:    scenario.GshEnabled,
 		CrashTraps:    scenario.CrashTraps,
+		IsPublic:      scenario.IsPublic,
 		IntroText:     introText,
 		FinishText:    finishText,
 		SetupScript:   setupScript,

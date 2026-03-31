@@ -38,6 +38,7 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						FinishText:     model.FinishText,
 						CreatedByID:    model.CreatedByID,
 						OrganizationID: model.OrganizationID,
+						IsPublic:       model.IsPublic,
 						SetupScriptID:  model.SetupScriptID,
 						IntroFileID:    model.IntroFileID,
 						FinishFileID:   model.FinishFileID,
@@ -108,6 +109,7 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						IntroText:      input.IntroText,
 						FinishText:     input.FinishText,
 						OrganizationID: input.OrganizationID,
+						IsPublic:       input.IsPublic,
 						SetupScriptID:  input.SetupScriptID,
 						IntroFileID:    input.IntroFileID,
 						FinishFileID:   input.FinishFileID,
@@ -169,6 +171,9 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 					}
 					if input.OrganizationID != nil {
 						updates["organization_id"] = *input.OrganizationID
+					}
+					if input.IsPublic != nil {
+						updates["is_public"] = *input.IsPublic
 					}
 					if input.SetupScriptID != nil {
 						updates["setup_script_id"] = *input.SetupScriptID

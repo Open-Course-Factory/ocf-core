@@ -89,6 +89,7 @@ type SeedScenarioInput struct {
 	FlagsEnabled  bool            `json:"flags_enabled"`
 	GshEnabled    bool            `json:"gsh_enabled"`
 	CrashTraps    bool            `json:"crash_traps"`
+	IsPublic      bool            `json:"is_public"`
 	IntroText     string          `json:"intro_text" binding:"max=65536"`
 	FinishText    string          `json:"finish_text" binding:"max=65536"`
 	SetupScript   string          `json:"setup_script,omitempty"`
@@ -133,6 +134,7 @@ type ScenarioExportOutput struct {
 	FlagsEnabled  bool                       `json:"flags_enabled"`
 	GshEnabled    bool                       `json:"gsh_enabled"`
 	CrashTraps    bool                       `json:"crash_traps"`
+	IsPublic      bool                       `json:"is_public"`
 	IntroText     string                     `json:"intro_text,omitempty"`
 	FinishText    string                     `json:"finish_text,omitempty"`
 	SetupScript   string                     `json:"setup_script,omitempty"`
@@ -170,6 +172,7 @@ type AvailableScenarioOutput struct {
 	CompatibleInstanceTypes []ScenarioInstanceTypeOutput `json:"compatible_instance_types,omitempty"`
 	Launchable              bool                         `json:"launchable"`
 	AvailableInstanceTypes  []string                     `json:"available_instance_types,omitempty"`
+	IsPublic                bool                         `json:"is_public"`
 	AdminOnly               bool                         `json:"admin_only,omitempty"`
 }
 
