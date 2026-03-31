@@ -17,6 +17,7 @@ import (
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	"soli/formations/src/scenarios/utils"
+	paymentServices "soli/formations/src/payment/services"
 	terminalDto "soli/formations/src/terminalTrainer/dto"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	terminalServices "soli/formations/src/terminalTrainer/services"
@@ -1771,13 +1772,41 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Create terminal session (4h default expiry)
+	// Get user's effective plan for limit enforcement
+	effectivePlanService := paymentServices.NewEffectivePlanService(sc.db)
+	planResult, planErr := effectivePlanService.GetUserEffectivePlan(userID)
+	if planErr != nil || planResult == nil || planResult.Plan == nil {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "No active subscription plan",
+		})
+		return
+	}
+
+	// Check concurrent terminal limit
+	limitCheck, limitErr := effectivePlanService.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	if limitErr != nil {
+		slog.Error("failed to check usage limit", "userID", userID, "err", limitErr)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to check usage limits",
+		})
+		return
+	}
+	if !limitCheck.Allowed {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: fmt.Sprintf("Terminal limit reached (%d/%d). Stop an existing session first.", limitCheck.CurrentUsage, limitCheck.Limit),
+		})
+		return
+	}
+
+	// Create terminal session with plan validation (enforces size, duration, etc.)
 	sessionInput := terminalDto.CreateTerminalSessionInput{
 		Terms:        terms,
 		InstanceType: selectedType,
 		Backend:      input.Backend,
 		Name:         fmt.Sprintf("scenario-%s", scenario.Title),
-		Expiry:       14400, // 4 hours
 		Hostname:     scenario.Hostname,
 		OrganizationID: func() string {
 			if scenario.OrganizationID != nil {
@@ -1789,7 +1818,7 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 		HistoryRetentionDays: 30,
 	}
 
-	terminalResp, termErr := sc.terminalService.StartSession(userID, sessionInput)
+	terminalResp, termErr := sc.terminalService.StartSessionWithPlan(userID, sessionInput, planResult.Plan)
 	if termErr != nil {
 		slog.Error("failed to create terminal session", "userID", userID, "err", termErr)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{

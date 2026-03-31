@@ -104,6 +104,7 @@ func (m *mockTTService) CleanupExpiredSessions() error             { return nil 
 func (m *mockTTService) GetInstanceTypes(string) ([]ttDto.InstanceType, error) {
 	return nil, nil
 }
+func (m *mockTTService) GetSizes() ([]string, error) { return nil, nil }
 func (m *mockTTService) GetServerMetrics(bool, string) (*ttDto.ServerMetricsResponse, error) {
 	return nil, nil
 }

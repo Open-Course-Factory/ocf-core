@@ -114,6 +114,7 @@ func (m *capturingTTService) CleanupExpiredSessions() error             { return
 func (m *capturingTTService) GetInstanceTypes(string) ([]ttDto.InstanceType, error) {
 	return nil, nil
 }
+func (m *capturingTTService) GetSizes() ([]string, error) { return nil, nil }
 func (m *capturingTTService) GetServerMetrics(bool, string) (*ttDto.ServerMetricsResponse, error) {
 	return nil, nil
 }
