@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"sort"
-
 	"soli/formations/src/auth/errors"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
@@ -1499,12 +1497,6 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 		availableTypes = instanceTypes
 	}
 
-	// Build available prefix set for quick lookup
-	availablePrefixSet := make(map[string]bool, len(availableTypes))
-	for _, inst := range availableTypes {
-		availablePrefixSet[inst.Prefix] = true
-	}
-
 	// Convert to enriched output with launchability info
 	output := make([]dto.AvailableScenarioOutput, 0, len(scenarios))
 	for _, s := range scenarios {
@@ -1538,7 +1530,7 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 
 		// Determine launchability by cross-referencing with available instance types
 		if len(availableTypes) > 0 {
-			matched := findMatchingInstanceTypes(s, availablePrefixSet)
+			matched := findMatchingInstanceTypes(s, availableTypes)
 			item.AvailableInstanceTypes = matched
 			item.Launchable = len(matched) > 0
 		}
@@ -1548,20 +1540,47 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, output)
 }
 
-// findMatchingInstanceTypes returns available instance type prefixes that match a scenario
-func findMatchingInstanceTypes(scenario models.Scenario, availablePrefixSet map[string]bool) []string {
-	var matched []string
+// instanceMatchesScenario checks if an instance type matches a scenario's requirements.
+// Matching criteria: OS type must match AND instance must have the required size.
+// scenario.OsType = "deb" matches instances with OsType "deb" (debian, ubuntu, etc.)
+// scenario.InstanceType = "M" matches instances whose Size contains "M" (e.g., "S|M|L")
+func instanceMatchesScenario(inst terminalDto.InstanceType, osType string, requiredSize string) bool {
+	// Check OS type match
+	if osType != "" && inst.OsType != osType {
+		return false
+	}
 
-	if len(scenario.CompatibleInstanceTypes) > 0 {
-		for _, ct := range scenario.CompatibleInstanceTypes {
-			if availablePrefixSet[ct.InstanceType] {
-				matched = append(matched, ct.InstanceType)
+	// Check size match — instance Size is pipe-separated (e.g., "XS|S|M")
+	if requiredSize != "" {
+		sizes := strings.Split(inst.Size, "|")
+		found := false
+		for _, s := range sizes {
+			if strings.TrimSpace(s) == requiredSize {
+				found = true
+				break
 			}
 		}
-	} else {
-		// Fallback: use legacy InstanceType field
-		if availablePrefixSet[scenario.InstanceType] {
-			matched = append(matched, scenario.InstanceType)
+		if !found {
+			return false
+		}
+	}
+
+	return true
+}
+
+// findMatchingInstanceTypes returns available instance type prefixes that match a scenario
+func findMatchingInstanceTypes(scenario models.Scenario, available []terminalDto.InstanceType) []string {
+	var matched []string
+	seen := make(map[string]bool)
+
+	// Use scenario's OsType and InstanceType (which now stores size like "M")
+	osType := scenario.OsType
+	requiredSize := scenario.InstanceType
+
+	for _, inst := range available {
+		if instanceMatchesScenario(inst, osType, requiredSize) && !seen[inst.Prefix] {
+			matched = append(matched, inst.Prefix)
+			seen[inst.Prefix] = true
 		}
 	}
 
@@ -1571,30 +1590,12 @@ func findMatchingInstanceTypes(scenario models.Scenario, availablePrefixSet map[
 // findBestInstanceType selects the best compatible instance type for a scenario
 // from the list of available types. Returns the prefix string or empty if none match.
 func findBestInstanceType(scenario models.Scenario, available []terminalDto.InstanceType) string {
-	availableSet := make(map[string]bool, len(available))
+	osType := scenario.OsType
+	requiredSize := scenario.InstanceType
+
 	for _, inst := range available {
-		availableSet[inst.Prefix] = true
-	}
-
-	if len(scenario.CompatibleInstanceTypes) == 0 {
-		// Fallback: use legacy InstanceType field
-		if availableSet[scenario.InstanceType] {
-			return scenario.InstanceType
-		}
-		return ""
-	}
-
-	// Sort compatible types by priority (descending — higher priority first)
-	sorted := make([]models.ScenarioInstanceType, len(scenario.CompatibleInstanceTypes))
-	copy(sorted, scenario.CompatibleInstanceTypes)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Priority > sorted[j].Priority
-	})
-
-	// Return the first available match
-	for _, ct := range sorted {
-		if availableSet[ct.InstanceType] {
-			return ct.InstanceType
+		if instanceMatchesScenario(inst, osType, requiredSize) {
+			return inst.Prefix
 		}
 	}
 

@@ -419,7 +419,8 @@ type InstanceType struct {
 	Name        string `json:"name"`
 	Prefix      string `json:"prefix"`
 	Description string `json:"description"`
-	Size        string `json:"size"` // XS, S, M, L, XL, etc.
+	Size        string `json:"size"`    // XS, S, M, L, XL, etc.
+	OsType      string `json:"os_type"` // deb, apk, rpm, pacman
 }
 
 // InstanceTypesResponse réponse contenant la liste des types d'instances
