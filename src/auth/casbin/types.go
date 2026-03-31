@@ -9,6 +9,8 @@ const (
 	// AdminOnly means the handler checks isAdmin() and rejects non-administrators.
 	AdminOnly AccessRuleType = "admin_only"
 	// SelfScoped means the handler operates on the authenticated user's own data (userId from JWT).
+	// WARNING: The enforcement middleware does NOT enforce self-scoping — it is a documentation
+	// marker only. Each handler must verify userId scoping independently.
 	SelfScoped AccessRuleType = "self_scoped"
 	// EntityOwner means the handler verifies the user owns the specific entity instance.
 	EntityOwner AccessRuleType = "entity_owner"

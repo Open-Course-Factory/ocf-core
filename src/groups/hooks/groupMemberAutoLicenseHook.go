@@ -12,7 +12,7 @@ import (
 
 // GroupMemberAutoLicenseHook auto-assigns an available license from a linked
 // batch when a new member is added to a group. Only fires for the "member"
-// role (owners/admins don't consume licenses). Non-blocking: silently returns
+// role (owners/managers don't consume licenses). Non-blocking: silently returns
 // nil if no batch or no available license exists.
 type GroupMemberAutoLicenseHook struct {
 	db       *gorm.DB
@@ -54,7 +54,7 @@ func (h *GroupMemberAutoLicenseHook) Execute(ctx *hooks.HookContext) error {
 		return nil
 	}
 
-	// Only auto-assign for regular members, not owners or admins
+	// Only auto-assign for regular members, not owners or managers
 	if member.Role != models.GroupMemberRoleMember {
 		return nil
 	}
