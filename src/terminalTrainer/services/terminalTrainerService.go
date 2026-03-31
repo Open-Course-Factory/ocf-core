@@ -72,6 +72,7 @@ type TerminalTrainerService interface {
 
 	// Configuration
 	GetInstanceTypes(backend string) ([]dto.InstanceType, error)
+	GetSizes() ([]string, error)
 	GetTerms() (string, error)
 
 	// Metrics
@@ -847,6 +848,20 @@ func (tts *terminalTrainerService) GetInstanceTypes(backend string) ([]dto.Insta
 	}
 
 	return instanceTypes, nil
+}
+
+// GetSizes returns the list of all possible machine size tiers from Terminal Trainer
+func (tts *terminalTrainerService) GetSizes() ([]string, error) {
+	path := fmt.Sprintf("/%s/sizes", tts.apiVersion)
+	url := fmt.Sprintf("%s%s", tts.baseURL, path)
+
+	var sizes []string
+	opts := utils.DefaultHTTPClientOptions()
+	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sizes, opts)
+	if err != nil {
+		return nil, err
+	}
+	return sizes, nil
 }
 
 // GetTerms fetches the terms of service text from Terminal Trainer

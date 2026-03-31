@@ -73,6 +73,7 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	// Configuration (no terminal-specific access needed)
 	routes.GET("/instance-types", middleware.AuthManagement(), terminalController.GetInstanceTypes)
+	routes.GET("/sizes", middleware.AuthManagement(), terminalController.GetSizes)
 	routes.GET("/metrics", middleware.AuthManagement(), terminalController.GetServerMetrics)
 	routes.GET("/backends", middleware.AuthManagement(), terminalController.GetBackends)
 	routes.PATCH("/backends/:backendId/set-default", middleware.AuthManagement(), terminalController.SetDefaultBackend)

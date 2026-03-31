@@ -58,6 +58,7 @@ type TerminalController interface {
 
 	// Méthodes de configuration
 	GetInstanceTypes(ctx *gin.Context)
+	GetSizes(ctx *gin.Context)
 
 	// Méthodes de métriques
 	GetServerMetrics(ctx *gin.Context)
@@ -967,6 +968,27 @@ func (tc *terminalController) GetInstanceTypes(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, instanceTypes)
+}
+
+// GetSizes godoc
+//
+//	@Summary		Get all possible machine size tiers
+//	@Description	Returns the list of all defined machine sizes (e.g., XS, S, M, L, XL)
+//	@Tags			terminals
+//	@Produce		json
+//	@Success		200	{array}		string
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/terminals/sizes [get]
+func (tc *terminalController) GetSizes(ctx *gin.Context) {
+	sizes, err := tc.service.GetSizes()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to get sizes: %v", err),
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, sizes)
 }
 
 // Get Server Metrics godoc
