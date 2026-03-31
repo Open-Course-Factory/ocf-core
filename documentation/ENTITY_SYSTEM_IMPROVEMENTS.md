@@ -1,12 +1,71 @@
-# Entity System Improvement Plan
+# Entity Framework Evolution Plan
 
 **Created:** 2025-10-04
-**Status:** Planning Phase
-**Estimated Total Effort:** 6-8 weeks
+**Updated:** 2026-03-31
+**Status:** Framework Extraction Phase
+**Completed:** 8/12 original tasks (67%)
+**Remaining + New:** 4 original tasks + 7 framework phases
+**Estimated Total Effort:** 12-16 weeks (remaining)
 
 ## Overview
 
-This document tracks improvements to the generic entity management system (`src/entityManagement/`). The system is well-architected with ~3,660 lines of core code and 3,000+ lines of tests, but has critical issues blocking testing and some performance concerns.
+This document tracks the evolution of ocf-core's generic entity management system (`src/entityManagement/`) from an internal CRUD framework into a reusable, full-stack Go+Vue framework for building entity-driven applications.
+
+### Current State (v1 — Internal Framework)
+
+The system powers **38 entities** across 8 modules with ~3,660 lines of core code and 3,000+ lines of tests. It provides:
+
+- Auto-generated CRUD routes from a single entity registration file
+- Cursor-based + offset pagination (UUIDv7 time-ordered)
+- Strategy-based filtering (direct, FK, M2M, relationship paths, membership)
+- Lifecycle hooks (6 events, priority-based, async error tracking)
+- Casbin RBAC auto-policy generation per entity
+- Swagger auto-documentation per operation
+- Typed DTO pipeline (Create/Edit/Output with converters)
+- Modular feature flag system
+- Standardized error handling (EntityError with codes ENT001-ENT010)
+
+The frontend counterpart (ocf-front) mirrors this with **27 stores** on `useBaseStore()`, `Entity.vue` for universal CRUD UI, `FieldBuilder` (40+ fluent methods, 13 field types) for declarative field definitions, and bilingual i18n.
+
+### Target State (v2 — Reusable Full-Stack Framework)
+
+A framework any Go+Vue team can adopt to build entity-driven applications, adding:
+
+- **CLI scaffolding** — `ocf generate entity Tag --fields name:string,color:string` produces model, DTOs, registration, store, page, route
+- **Declarative validation** — struct tags + custom validators + cross-field rules, integrated at service layer
+- **Transaction support** — atomic multi-entity operations with rollback, hook-aware
+- **Soft deletes** — `deleted_at` with automatic query filtering and restore operations
+- **Audit trail** — `created_by`, `updated_by` tracking + optional change history table
+- **Bulk operations** — batch create/update/delete with validation and hooks
+- **Full-text search** — generic search endpoint with configurable indexed fields
+- **Pluggable caching** — Redis or in-memory, per-entity TTL, automatic invalidation
+- **Frontend parity** — TypeScript entity schemas, advanced field types, test factories
+
+### Maturity Scorecard
+
+| Capability | Backend | Frontend | Target |
+|---|---|---|---|
+| CRUD generation | 5/5 | 5/5 | Done |
+| Filtering & pagination | 5/5 | 4/5 | Done |
+| Hook/lifecycle system | 5/5 | 4/5 | Done |
+| Error handling | 4/5 | 3/5 | Done |
+| Permissions (RBAC) | 4/5 | 4/5 | Done |
+| i18n | N/A | 5/5 | Done |
+| Validation | 1/5 | 2/5 | Phase 3.3 |
+| Transactions | 0/5 | N/A | Phase 5 |
+| Code generation / CLI | 0/5 | 0/5 | Phase 6 |
+| Soft deletes | 0/5 | N/A | Phase 7 |
+| Bulk operations | 1/5 | 0/5 | Phase 8 |
+| Audit trail | 0/5 | N/A | Phase 7 |
+| Full-text search | 0/5 | N/A | Phase 9 |
+| Caching | 0/5 | 3/5 | Phase 2.3 |
+| Frontend TypeScript strictness | N/A | 2/5 | Phase 10 |
+
+---
+
+## Phases 1-4: Foundation (Original Plan)
+
+Phases 1-4 addressed critical testing blockers, performance, maintainability, and polish. **8 of 12 tasks completed.** Detailed implementation notes for each completed task are preserved below.
 
 ---
 
@@ -1636,78 +1695,698 @@ grep -r "convertion" src/entityManagement/
 
 ---
 
-## 🎯 Quick Wins (Do First)
+---
 
-**Total Effort: ~6.5 hours for significant improvement**
+## Framework Phases (New)
 
-1. **Fix naming issues** (30 min) - Task 4.3
-2. **Extract OwnerIDs duplication** (1 hour) - Task 1.3
-3. **Add package documentation** (2 hours) - Task 4.2
-4. **Create test utilities** (3 hours) - Task 4.1
+The following phases transform the entity system from an OCF-internal tool into a reusable full-stack framework. They build on the completed foundation (Phases 1-4) and the remaining items (2.3, 3.3).
+
+---
+
+## 🔐 Phase 5: Transaction Support (Week 6-7)
+
+**Goal:** Atomic multi-entity operations with rollback semantics
+
+### 5.1 Transaction-Aware Service Layer
+
+**Priority:** CRITICAL
+**Effort:** 8-12 hours
+**Impact:** Data integrity for any non-trivial use case
+
+**Problem:**
+- No transaction support in the generic service/repository layers
+- Multi-step operations (create entity + create children + run hooks) can leave inconsistent state on failure
+- AfterCreate/Update/Delete hooks run outside any transaction boundary
+- No way to atomically create related entities (e.g., Course + Chapters + Sections in one call)
+
+**Solution:**
+
+```go
+// NEW FILE: src/entityManagement/services/transactionService.go
+
+// TransactionContext wraps a GORM transaction and passes it through the service layer
+type TransactionContext struct {
+    tx     *gorm.DB
+    committed bool
+}
+
+// WithTransaction executes a function within a database transaction.
+// If the function returns an error, the transaction is rolled back.
+// If the function panics, the transaction is rolled back and the panic is re-raised.
+func (gs *genericService) WithTransaction(fn func(tx *TransactionContext) error) error {
+    return gs.db.Transaction(func(gormTx *gorm.DB) error {
+        txCtx := &TransactionContext{tx: gormTx}
+        return fn(txCtx)
+    })
+}
+
+// CreateEntityTx creates an entity within a transaction
+func (gs *genericService) CreateEntityTx(tx *TransactionContext, dto interface{}, userId string) (interface{}, error) {
+    // Same logic as CreateEntity but using tx.tx instead of gs.db
+}
+```
+
+**Hook Integration:**
+```go
+// Before-hooks run INSIDE the transaction (can abort it)
+// After-hooks receive a flag indicating whether they're in a transaction
+type HookContext struct {
+    // ... existing fields ...
+    InTransaction bool     // NEW: true if running inside a transaction
+    TxDB          *gorm.DB // NEW: transaction-scoped DB handle (nil if not in tx)
+}
+```
+
+**Files to Create/Modify:**
+- [ ] `src/entityManagement/services/transactionService.go` (NEW — transaction wrapper)
+- [ ] `src/entityManagement/services/genericService.go` (add Tx variants of CRUD methods)
+- [ ] `src/entityManagement/repositories/genericRepository.go` (accept `*gorm.DB` param for tx)
+- [ ] `src/entityManagement/hooks/interfaces.go` (add InTransaction + TxDB to HookContext)
+- [ ] `tests/entityManagement/transaction_test.go` (NEW)
+
+**Test Coverage:**
+- [ ] Successful multi-entity creation in transaction
+- [ ] Rollback on service error
+- [ ] Rollback on hook error (Before* hook fails mid-transaction)
+- [ ] Nested transactions (savepoints)
+- [ ] After-hooks fire only after commit
+- [ ] Concurrent transaction isolation
+
+---
+
+## 🛠️ Phase 6: CLI Scaffolding & Code Generation (Week 7-8)
+
+**Goal:** Zero-boilerplate entity creation with a single CLI command
+
+### 6.1 Entity Generator CLI
+
+**Priority:** HIGH
+**Effort:** 12-16 hours
+**Impact:** Reduces new entity setup from ~1 hour of copy-paste to ~30 seconds
+
+**Problem:**
+- 38 entities were created by manually copying and adapting existing registration files
+- Each new entity requires creating 4-6 files (model, DTOs, registration, hooks) on backend + 3 files (store, page, route) on frontend
+- Error-prone: field names, converter functions, and route paths must match perfectly
+- No automation — the "framework" is really "copy-paste from an existing entity"
+
+**Solution: `ocf-gen` CLI tool**
+
+```bash
+# Generate a full entity (backend only)
+ocf-gen entity Tag --fields "name:string:required,color:string,description:text"
+
+# Generate with relationships
+ocf-gen entity Chapter --fields "title:string:required,order:int" --belongs-to Course
+
+# Generate a full-stack entity (backend + frontend)
+ocf-gen entity Tag --fields "name:string:required,color:string" --full-stack
+
+# List registered entities
+ocf-gen list
+
+# Validate entity registration (check for missing converters, routes, etc.)
+ocf-gen validate
+```
+
+**Generated Files (backend):**
+```
+src/{module}/models/tag.go              # Model with BaseModel + fields
+src/{module}/dtos/tagDto.go             # CreateDTO, EditDTO, OutputDTO
+src/{module}/entityRegistration/tagRegistration.go  # TypedEntityRegistration
+src/{module}/hooks/tagHooks.go          # Hook stubs (BeforeCreate, etc.)
+```
+
+**Generated Files (frontend, with `--full-stack`):**
+```
+src/stores/tags.ts                      # Pinia store extending baseStore
+src/components/Pages/Tags.vue           # Page component wrapping Entity.vue
+# + route entry instruction in stdout
+```
+
+**Implementation Approach:**
+```go
+// cmd/ocf-gen/main.go — standalone CLI binary
+// Uses Go text/template for file generation
+// Reads existing entity registrations to validate naming conflicts
+// Templates stored in cmd/ocf-gen/templates/
+
+type EntitySpec struct {
+    Name       string            // PascalCase: "Tag"
+    Module     string            // lowercase: "courses"
+    Fields     []FieldSpec       // parsed from --fields flag
+    BelongsTo  []string          // parent entities
+    HasMany    []string          // child entities
+    FullStack  bool              // generate frontend files too
+}
+
+type FieldSpec struct {
+    Name       string            // camelCase: "tagName"
+    Type       string            // Go type: "string", "int", "uuid.UUID"
+    GoType     string            // resolved Go type
+    TSType     string            // resolved TypeScript type
+    Required   bool
+    Validation string            // validate tag: "required,min=3"
+    JSONName   string            // json tag: "tag_name"
+}
+```
+
+**Files to Create:**
+- [ ] `cmd/ocf-gen/main.go` (CLI entry point)
+- [ ] `cmd/ocf-gen/generator/entity.go` (entity generation logic)
+- [ ] `cmd/ocf-gen/generator/fields.go` (field parsing and type mapping)
+- [ ] `cmd/ocf-gen/generator/validator.go` (validate existing registrations)
+- [ ] `cmd/ocf-gen/templates/model.go.tmpl`
+- [ ] `cmd/ocf-gen/templates/dto.go.tmpl`
+- [ ] `cmd/ocf-gen/templates/registration.go.tmpl`
+- [ ] `cmd/ocf-gen/templates/hooks.go.tmpl`
+- [ ] `cmd/ocf-gen/templates/store.ts.tmpl` (frontend)
+- [ ] `cmd/ocf-gen/templates/page.vue.tmpl` (frontend)
+- [ ] `tests/cmd/ocf_gen_test.go` (NEW)
+
+**Test Coverage:**
+- [ ] Generate entity with basic fields
+- [ ] Generate entity with relationships (belongs-to, has-many)
+- [ ] Generate full-stack (backend + frontend)
+- [ ] Validate naming conflict detection
+- [ ] Validate generated code compiles (`go build`)
+- [ ] Validate generated store has correct field types
+- [ ] `ocf-gen validate` catches missing converters
+- [ ] `ocf-gen list` shows all registered entities
+
+### 6.2 OpenAPI → Frontend Store Generation (Optional Enhancement)
+
+**Priority:** LOW
+**Effort:** 8-12 hours
+**Impact:** Keeps frontend stores in sync with backend automatically
+
+```bash
+# Generate/update frontend stores from Swagger spec
+ocf-gen sync-frontend --swagger docs/swagger.json --output ../ocf-front/src/stores/
+```
+
+This reads the Swagger spec and generates or updates Pinia stores with the correct field types, validation rules, and API paths. Useful for keeping backend and frontend in sync after schema changes.
+
+---
+
+## 🗑️ Phase 7: Soft Deletes & Audit Trail (Week 8-9)
+
+**Goal:** Data preservation and change tracking for compliance and debugging
+
+### 7.1 Soft Delete Support
+
+**Priority:** HIGH
+**Effort:** 4-6 hours
+**Impact:** Required for any SaaS, compliance, or audit use case
+
+**Problem:**
+- Only hard deletes supported — data is permanently lost
+- No `deleted_at` column or automatic filtering
+- No restore operations
+- Blocks compliance requirements (GDPR right to erasure with audit, Qualiopi traceability)
+
+**Solution:**
+
+GORM natively supports soft deletes via `gorm.DeletedAt`. The framework needs to wire this into the generic layers.
+
+```go
+// Updated BaseModel — add soft delete support
+type BaseModel struct {
+    ID        uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
+    CreatedAt time.Time      `json:"createdAt"`
+    UpdatedAt time.Time      `json:"updatedAt"`
+    DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt,omitempty"` // NEW
+}
+```
+
+```go
+// Entity registration opt-in for soft deletes
+type EntityConfig struct {
+    // ... existing fields ...
+    SoftDelete     bool  // If true, DELETE marks as deleted instead of removing
+    IncludeDeleted bool  // If true, GET endpoints include soft-deleted records (admin use)
+}
+```
+
+```go
+// Restore endpoint (auto-generated when SoftDelete=true)
+// PATCH /api/v1/courses/:id/restore
+func (gc *genericController) RestoreEntity(ctx *gin.Context) {
+    id := ctx.Param("id")
+    // Use Unscoped() to find soft-deleted record
+    result := gc.db.Unscoped().Model(gc.entity).Where("id = ?", id).Update("deleted_at", nil)
+    // ...
+}
+```
+
+**Files to Modify:**
+- [ ] `src/entityManagement/models/baseModel.go` (add DeletedAt field)
+- [ ] `src/entityManagement/interfaces/typedEntity.go` (add SoftDelete config)
+- [ ] `src/entityManagement/routes/deleteEntity.go` (soft delete logic)
+- [ ] `src/entityManagement/routes/restoreEntity.go` (NEW — restore endpoint)
+- [ ] `src/entityManagement/routes/getEntities.go` (filter deleted by default, `?includeDeleted=true` for admin)
+- [ ] `src/entityManagement/swagger/routeGenerator.go` (generate restore endpoint docs)
+- [ ] `tests/entityManagement/soft_delete_test.go` (NEW)
+
+**Test Coverage:**
+- [ ] Soft delete marks record (deleted_at set, not removed from DB)
+- [ ] GET excludes soft-deleted records by default
+- [ ] GET with `?includeDeleted=true` returns soft-deleted records
+- [ ] Restore endpoint clears deleted_at
+- [ ] Restore non-existent record returns 404
+- [ ] Hard delete still available via config or `?permanent=true`
+- [ ] Hooks fire on soft delete (BeforeDelete, AfterDelete)
+- [ ] Unique constraints handle soft-deleted records (e.g., allow re-creating same name)
+- [ ] Cursor/offset pagination respects soft delete filter
+
+### 7.2 Audit Trail
+
+**Priority:** MEDIUM
+**Effort:** 6-8 hours
+**Impact:** Change tracking for compliance, debugging, and accountability
+
+**Problem:**
+- No `created_by` / `updated_by` tracking on entities
+- No change history — impossible to answer "who changed what, when?"
+- Manual implementation required per entity
+
+**Solution:**
+
+```go
+// Updated BaseModel — add audit fields
+type AuditableModel struct {
+    BaseModel
+    CreatedBy string `gorm:"type:varchar(255)" json:"createdBy,omitempty"`
+    UpdatedBy string `gorm:"type:varchar(255)" json:"updatedBy,omitempty"`
+}
+
+// Audit log table (optional, per-entity)
+type AuditLog struct {
+    ID         uuid.UUID              `gorm:"type:uuid;primaryKey"`
+    EntityName string                 `gorm:"type:varchar(100);index"`
+    EntityID   uuid.UUID              `gorm:"type:uuid;index"`
+    Action     string                 `gorm:"type:varchar(20)"` // create, update, delete, restore
+    UserID     string                 `gorm:"type:varchar(255)"`
+    Changes    datatypes.JSON         `gorm:"type:jsonb"`       // {"field": {"old": x, "new": y}}
+    CreatedAt  time.Time
+}
+```
+
+```go
+// Entity registration opt-in for audit
+type EntityConfig struct {
+    // ... existing fields ...
+    Auditable   bool  // If true, populate CreatedBy/UpdatedBy automatically
+    AuditLog    bool  // If true, write to audit_logs table on every change
+}
+```
+
+**Implementation:**
+- `CreatedBy`/`UpdatedBy` populated automatically via hooks using `HookContext.UserID`
+- Audit log entries created in AfterCreate/AfterUpdate/AfterDelete hooks
+- Change diff computed by comparing old vs new entity state
+- Query endpoint: `GET /api/v1/audit-logs?entityName=Course&entityId=<id>`
+
+**Files to Create/Modify:**
+- [ ] `src/entityManagement/models/auditableModel.go` (NEW)
+- [ ] `src/entityManagement/models/auditLog.go` (NEW)
+- [ ] `src/entityManagement/hooks/auditHooks.go` (NEW — auto-register audit hooks)
+- [ ] `src/entityManagement/routes/auditRoutes.go` (NEW — query endpoint)
+- [ ] `src/entityManagement/services/genericService.go` (populate CreatedBy/UpdatedBy)
+- [ ] `tests/entityManagement/audit_test.go` (NEW)
+
+**Test Coverage:**
+- [ ] CreatedBy set on create
+- [ ] UpdatedBy set on update
+- [ ] Audit log entry created on each operation
+- [ ] Change diff captures old and new values
+- [ ] Query audit logs by entity name + ID
+- [ ] Audit log not created for read operations
+- [ ] Audit works with soft deletes
+
+---
+
+## 📦 Phase 8: Bulk Operations (Week 9-10)
+
+**Goal:** Efficient batch processing for admin workflows and data imports
+
+### 8.1 Batch CRUD Operations
+
+**Priority:** HIGH
+**Effort:** 8-12 hours
+**Impact:** Enables admin workflows, data migration, import/export
+
+**Problem:**
+- No bulk create/update/delete — each operation is a separate HTTP request
+- Importing 100 entities requires 100 API calls
+- No transaction semantics for batch operations
+- Frontend Entity.vue has import (JSON) but backend processes one-by-one
+
+**Solution:**
+
+```go
+// Batch create
+// POST /api/v1/courses/batch
+// Body: [{"title": "Course 1", ...}, {"title": "Course 2", ...}]
+type BatchCreateRequest struct {
+    Items []interface{} `json:"items" validate:"required,min=1,max=100"`
+}
+
+type BatchResponse struct {
+    Succeeded []BatchItemResult `json:"succeeded"`
+    Failed    []BatchItemResult `json:"failed"`
+    Total     int               `json:"total"`
+}
+
+type BatchItemResult struct {
+    Index  int         `json:"index"`
+    ID     string      `json:"id,omitempty"`
+    Error  string      `json:"error,omitempty"`
+}
+```
+
+```go
+// Batch update
+// PATCH /api/v1/courses/batch
+// Body: [{"id": "...", "title": "New Title"}, ...]
+
+// Batch delete
+// DELETE /api/v1/courses/batch
+// Body: {"ids": ["id1", "id2", "id3"]}
+```
+
+**Transaction Modes:**
+```go
+type BatchConfig struct {
+    Atomic bool // If true, all-or-nothing (single transaction). If false, partial success allowed.
+    MaxSize int // Maximum batch size (default 100)
+}
+```
+
+**Hook Integration:**
+- Before/After hooks fire for each item in the batch
+- In atomic mode, a single BeforeCreate failure rolls back the entire batch
+- In non-atomic mode, failed items are collected and reported
+
+**Files to Create/Modify:**
+- [ ] `src/entityManagement/routes/batchEntity.go` (NEW — batch endpoints)
+- [ ] `src/entityManagement/services/batchService.go` (NEW — batch logic with transaction modes)
+- [ ] `src/entityManagement/interfaces/typedEntity.go` (add BatchConfig to registration)
+- [ ] `src/entityManagement/swagger/routeGenerator.go` (generate batch endpoint docs)
+- [ ] `tests/entityManagement/batch_test.go` (NEW)
+
+**Test Coverage:**
+- [ ] Batch create (all succeed)
+- [ ] Batch create with validation failure (partial, non-atomic)
+- [ ] Batch create atomic rollback on failure
+- [ ] Batch update
+- [ ] Batch delete
+- [ ] Batch size limit enforced
+- [ ] Hooks fire for each item
+- [ ] Batch response format correct
+
+---
+
+## 🔍 Phase 9: Full-Text Search (Week 10-11)
+
+**Goal:** Generic search endpoint with configurable indexed fields
+
+### 9.1 Entity Search Endpoint
+
+**Priority:** MEDIUM
+**Effort:** 6-8 hours
+**Impact:** Expected feature in any CRUD framework
+
+**Problem:**
+- No search functionality — only exact field filtering
+- No way to search across multiple fields (e.g., "golang" matching title, description, code)
+- No relevance ranking
+
+**Solution:**
+
+```go
+// Entity registration — declare searchable fields
+type EntityConfig struct {
+    // ... existing fields ...
+    SearchFields []string // Fields to include in full-text search (e.g., ["title", "description", "code"])
+}
+```
+
+```go
+// Search endpoint (auto-generated when SearchFields is non-empty)
+// GET /api/v1/courses/search?q=golang&limit=20
+func (gc *genericController) SearchEntities(ctx *gin.Context) {
+    query := ctx.Query("q")
+    limit := ctx.DefaultQuery("limit", "20")
+    // ...
+}
+```
+
+**PostgreSQL Implementation:**
+```go
+// Uses PostgreSQL tsvector for efficient full-text search
+func (gr *genericRepository) SearchEntities(query string, fields []string, limit int) ([]any, error) {
+    searchConditions := make([]string, len(fields))
+    for i, field := range fields {
+        col := toSnakeCase(field)
+        searchConditions[i] = fmt.Sprintf("COALESCE(%s, '') ILIKE ?", col)
+    }
+
+    condition := strings.Join(searchConditions, " OR ")
+    pattern := "%" + query + "%"
+
+    args := make([]interface{}, len(fields))
+    for i := range fields {
+        args[i] = pattern
+    }
+
+    var results []any
+    err := gr.db.Model(gr.entity).
+        Where(condition, args...).
+        Limit(limit).
+        Find(&results).Error
+
+    return results, err
+}
+```
+
+**Advanced (Phase 9.2 — optional):**
+- PostgreSQL `to_tsvector` / `to_tsquery` for proper full-text indexing
+- Relevance ranking with `ts_rank`
+- Search highlighting
+- Faceted search (count by category)
+
+**Files to Create/Modify:**
+- [ ] `src/entityManagement/interfaces/typedEntity.go` (add SearchFields to config)
+- [ ] `src/entityManagement/repositories/searchRepository.go` (NEW)
+- [ ] `src/entityManagement/routes/searchEntity.go` (NEW)
+- [ ] `src/entityManagement/swagger/routeGenerator.go` (generate search endpoint docs)
+- [ ] `tests/entityManagement/search_test.go` (NEW)
+
+**Test Coverage:**
+- [ ] Search matches single field
+- [ ] Search matches across multiple fields
+- [ ] Search is case-insensitive
+- [ ] Search with no results returns empty array
+- [ ] Search respects soft delete filter
+- [ ] Search respects Casbin permissions
+- [ ] Search with pagination
+
+---
+
+## 🖥️ Phase 10: Frontend Framework Parity (Week 11-13)
+
+**Goal:** Bring ocf-front's generic system to framework-grade quality
+
+This phase lives primarily in the `ocf-front` repository but is tracked here for full-stack coherence.
+
+### 10.1 TypeScript Entity Schemas
+
+**Priority:** HIGH
+**Effort:** 8-12 hours
+**Impact:** Type safety, IDE autocompletion, catch errors at compile time
+
+**Problem:**
+- Entities are loosely typed — stores use `any` for entity data
+- No compile-time guarantee that field names match backend schema
+- FieldBuilder config is the only "schema" but it's runtime-only
+
+**Solution:**
+```typescript
+// Auto-generated (or hand-written) entity interfaces
+interface Course {
+    id: string
+    title: string
+    code: string
+    description?: string
+    chapters?: Chapter[]
+    createdAt: string
+    updatedAt: string
+}
+
+// BaseStore becomes generic
+function useBaseStore<T extends BaseEntity>() {
+    const entities = ref<T[]>([])
+    const currentEntity = ref<T | null>(null)
+    // ... all methods typed with T
+}
+
+// Store usage
+const useCourseStore = defineStore('courses', () => {
+    const base = useBaseStore<Course>()
+    // ...
+})
+```
+
+### 10.2 Advanced Field Types
+
+**Priority:** HIGH
+**Effort:** 8-12 hours
+**Impact:** Unblocks content-heavy entities
+
+New field types for EntityModal:
+- **`file`** — file upload with preview (images, PDFs)
+- **`richtext`** — WYSIWYG editor (TipTap or similar)
+- **`color`** — color picker
+- **`json`** — JSON editor with validation
+- **`conditional`** — show/hide based on other field values
+- **`repeater`** — dynamic array of field groups
+
+### 10.3 Frontend Test Utilities
+
+**Priority:** MEDIUM
+**Effort:** 4-6 hours
+**Impact:** Enables testing of stores and components
+
+```typescript
+// Test factory for creating mock entities
+function createMockEntity<T>(overrides?: Partial<T>): T { ... }
+
+// Test wrapper for stores
+function withMockStore<S>(store: S, options?: MockOptions): S { ... }
+
+// Component test helper
+function mountEntity(entityName: string, options?: MountOptions): VueWrapper { ... }
+```
+
+### 10.4 Bulk Actions in Entity.vue
+
+**Priority:** MEDIUM
+**Effort:** 4-6 hours
+**Impact:** Completes the full-stack bulk operations story (Phase 8 backend)
+
+- Checkbox selection for multiple entities
+- Bulk delete, bulk export
+- Integration with backend batch endpoints (Phase 8)
 
 ---
 
 ## 📊 Progress Tracking
 
-### Overall Progress: 8/12 tasks completed (67%) 🎉
+### Overall Progress: 8/23 tasks completed (35%)
 
-### Phase 1 (Critical): 3/3 ✅ COMPLETE!
-- [x] 1.1 Decouple Casdoor ✅
-- [x] 1.2 Fix async hooks ✅
-- [x] 1.3 Extract OwnerIDs ✅
+### Phase 1 — Unblock Testing: 3/3 ✅ COMPLETE
+- [x] 1.1 Decouple Casdoor dependency
+- [x] 1.2 Fix async hook error handling
+- [x] 1.3 Extract OwnerIDs duplication
 
-### Phase 2 (Performance): 2/3 ⏳
-- [x] 2.1 Cursor pagination ✅ (+ CRITICAL FIX: UUIDv7 for time-ordered IDs)
-- [x] 2.2 Selective preloading ✅
-- [ ] 2.3 Query caching
+### Phase 2 — Performance Foundation: 2/3 ⏳
+- [x] 2.1 Cursor-based pagination (+ UUIDv7 fix)
+- [x] 2.2 Selective preloading
+- [ ] 2.3 Query result caching
 
-### Phase 3 (Maintainability): 2/3 ⏳
-- [x] 3.1 Refactor filters ✅ (Strategy Pattern implemented)
-- [x] 3.2 Standardize errors ✅ (EntityError with codes ENT001-ENT010)
-- [ ] 3.3 Add validation
+### Phase 3 — Maintainability: 2/3 ⏳
+- [x] 3.1 Filter strategy pattern
+- [x] 3.2 Standardized error handling
+- [ ] 3.3 DTO validation layer
 
-### Phase 4 (Polish): 3/3 ✅ COMPLETE!
-- [x] 4.1 Test utilities ✅
-- [x] 4.2 Package docs ✅
-- [x] 4.3 Fix naming ✅
+### Phase 4 — Polish: 3/3 ✅ COMPLETE
+- [x] 4.1 Test utilities
+- [x] 4.2 Package documentation
+- [x] 4.3 Naming fixes
+
+### Phase 5 — Transactions: 0/1 ⏳ NEW
+- [ ] 5.1 Transaction-aware service layer
+
+### Phase 6 — CLI Scaffolding: 0/2 ⏳ NEW
+- [ ] 6.1 Entity generator CLI (`ocf-gen`)
+- [ ] 6.2 OpenAPI → frontend store sync (optional)
+
+### Phase 7 — Soft Deletes & Audit: 0/2 ⏳ NEW
+- [ ] 7.1 Soft delete support
+- [ ] 7.2 Audit trail
+
+### Phase 8 — Bulk Operations: 0/1 ⏳ NEW
+- [ ] 8.1 Batch CRUD operations
+
+### Phase 9 — Full-Text Search: 0/1 ⏳ NEW
+- [ ] 9.1 Entity search endpoint
+
+### Phase 10 — Frontend Parity: 0/4 ⏳ NEW
+- [ ] 10.1 TypeScript entity schemas
+- [ ] 10.2 Advanced field types
+- [ ] 10.3 Frontend test utilities
+- [ ] 10.4 Bulk actions in Entity.vue
 
 ---
 
 ## 📈 Success Metrics
 
-**After completion, we expect:**
+### Foundation Metrics (Phases 1-4)
 
-| Metric | Current | Target | Status |
-|--------|---------|--------|--------|
+| Metric | Before | After | Status |
+|--------|--------|-------|--------|
 | Controller test coverage | 60% | 95%+ | ✅ |
 | Test setup code | ~100 lines/file | ~10 lines/file | ✅ |
-| Silent errors | Async hooks | 0 | ✅ |
+| Silent async errors | Untracked | Circular buffer + callback | ✅ |
 | Code duplication | 3-4 instances | 0 | ✅ |
-| Pagination scalability | 10K records | 1M+ records | ✅ (+ UUIDv7 fix) |
-| Cache hit rate | 0% | 50-90% | ⏳ |
+| Pagination scalability | 10K records | 1M+ (cursor + UUIDv7) | ✅ |
 | Filter complexity | 200+ lines monolithic | ~30 lines/strategy | ✅ |
-| API error consistency | Mixed | 100% standardized | ✅ |
+| API error consistency | Mixed formats | ENT001-ENT010 codes | ✅ |
+
+### Framework Metrics (Phases 5-10)
+
+| Metric | Current | Target | Phase |
+|--------|---------|--------|-------|
+| New entity setup time | ~1 hour (copy-paste) | ~30 seconds (CLI) | 6 |
+| Boilerplate per entity | 4-6 files, ~300 lines | 1 command | 6 |
+| Validation coverage | 0% of DTOs | 100% of DTOs | 3.3 |
+| Data loss on delete | Permanent | Recoverable (soft delete) | 7 |
+| Change traceability | None | Full audit log | 7 |
+| Bulk import speed | N requests for N items | 1 request per 100 items | 8 |
+| Search capability | Exact field match only | Multi-field full-text | 9 |
+| Frontend type safety | Loose (any) | Strict (generics) | 10 |
+| Frontend field types | 13 | 19+ (file, richtext, etc.) | 10 |
 
 ---
 
-## 🔄 Review Schedule
+## 🗓️ Recommended Execution Order
 
-- **Weekly:** Review completed tasks, update progress
-- **After Phase 1:** Performance testing baseline
-- **After Phase 2:** Load testing with 100K+ records
-- **After Phase 3:** Code review for maintainability
-- **After Phase 4:** Final documentation review
+**Critical path** (must be done in order):
+1. **3.3 Validation** — unblocks everything that needs input safety
+2. **5.1 Transactions** — unblocks atomic bulk operations
+3. **7.1 Soft deletes** — changes BaseModel, so do before bulk adoption
+4. **8.1 Bulk operations** — depends on transactions + validation
+5. **6.1 CLI scaffolding** — generates code using all the above features
+
+**Independent tracks** (can be done in parallel with critical path):
+- **2.3 Caching** — independent infrastructure concern
+- **7.2 Audit trail** — independent, uses existing hook system
+- **9.1 Search** — independent, additive feature
+- **10.x Frontend** — can start 10.1 (TypeScript) and 10.3 (test utils) any time
 
 ---
 
 ## 📝 Notes
 
-- This plan is a living document - update as we learn more
-- Priorities may shift based on production issues
-- Each task should have tests before marking complete
-- Performance benchmarks should be documented
+- This plan is a living document — update as we learn more
+- Priorities may shift based on production needs or framework adoption interest
+- Each task must follow TDD: failing test → implementation → verification
+- Performance benchmarks should be documented for each phase
+- Framework extraction should remain backward-compatible with existing 38 entities
+- The CLI tool (Phase 6) should be designed to eventually support plugins for custom field types and templates
 
 ---
 
-**Last Updated:** 2025-10-06
-**Next Review:** After Phase 3 completion
+**Last Updated:** 2026-03-31
+**Next Review:** After Phase 3.3 (Validation) + Phase 5 (Transactions) completion

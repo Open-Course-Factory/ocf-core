@@ -153,7 +153,7 @@ func (gs *groupService) GetGroupsByOrganization(organizationID uuid.UUID, includ
 	return gs.repository.GetGroupsByOrganization(organizationID, includes)
 }
 
-// UpdateGroup updates a group (only owner or admin can update)
+// UpdateGroup updates a group (only owner or manager can update)
 func (gs *groupService) UpdateGroup(groupID uuid.UUID, requestingUserID string, updates map[string]any) (*models.ClassGroup, error) {
 	// Check if user can manage this group
 	canManage, err := gs.CanUserManageGroup(groupID, requestingUserID)
@@ -353,7 +353,7 @@ func (gs *groupService) GetUserGroupRole(groupID uuid.UUID, userID string) (mode
 	return member.Role, nil
 }
 
-// CanUserManageGroup checks if a user can manage a group (owner or admin)
+// CanUserManageGroup checks if a user can manage a group (owner or manager)
 func (gs *groupService) CanUserManageGroup(groupID uuid.UUID, userID string) (bool, error) {
 	group, err := gs.repository.GetGroupByID(groupID, false)
 	if err != nil {
@@ -373,7 +373,7 @@ func (gs *groupService) CanUserManageGroup(groupID uuid.UUID, userID string) (bo
 		}
 	}
 
-	// Check if user is an admin member
+	// Check if user is a manager member
 	member, err := gs.repository.GetGroupMember(groupID, userID)
 	if err != nil || member == nil {
 		return false, nil

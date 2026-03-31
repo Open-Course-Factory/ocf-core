@@ -25,8 +25,10 @@ func RegisterSecurityAdminPermissions(enforcer interfaces.EnforcerInterface) {
 		access.ReconcilePolicy(enforcer, "administrator", route.path, route.method)
 	}
 
-	// Permission reference — available to all authenticated users
-	access.ReconcilePolicy(enforcer, "member", "/api/v1/permissions/reference", "GET")
+	// Note: /permissions/reference is registered without AuthManagement() middleware
+	// (public endpoint), so no Casbin policy is needed — any authenticated or
+	// unauthenticated user can access it. Only the RouteRegistry declaration below
+	// is needed for the reference page itself.
 
 	access.RouteRegistry.Register("Security Administration",
 		access.RoutePermission{Path: "/api/v1/admin/security/policies", Method: "GET", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "View all access control policies"},
