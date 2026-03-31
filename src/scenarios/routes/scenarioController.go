@@ -1506,20 +1506,19 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 		now := time.Now()
 		if len(groupIDs) > 0 || len(orgIDs) > 0 {
 			var conditions []string
-			var args []interface{}
+			var scopeArgs []interface{}
 			if len(groupIDs) > 0 {
 				conditions = append(conditions, "(scope = 'group' AND group_id IN ?)")
-				args = append(args, groupIDs)
+				scopeArgs = append(scopeArgs, groupIDs)
 			}
 			if len(orgIDs) > 0 {
 				conditions = append(conditions, "(scope = 'org' AND organization_id IN ?)")
-				args = append(args, orgIDs)
+				scopeArgs = append(scopeArgs, orgIDs)
 			}
 			combined := strings.Join(conditions, " OR ")
-			args = append([]interface{}{true, now}, args...)
 			sc.db.Model(&models.ScenarioAssignment{}).
-				Where("is_active = ? AND (deadline IS NULL OR deadline > ?)", args...).
-				Where(combined, args[2:]...).
+				Where("is_active = ? AND (deadline IS NULL OR deadline > ?)", true, now).
+				Where(combined, scopeArgs...).
 				Pluck("scenario_id", &assignedIDs)
 		}
 		for _, id := range assignedIDs {
