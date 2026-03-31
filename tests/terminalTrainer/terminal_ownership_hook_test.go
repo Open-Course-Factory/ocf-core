@@ -8,14 +8,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	terminalHooks "soli/formations/src/terminalTrainer/hooks"
 	"soli/formations/src/terminalTrainer/models"
 )
 
-var terminalOwnershipConfig = casbinUtils.OwnershipConfig{
+var terminalOwnershipConfig = access.OwnershipConfig{
 	OwnerField: "UserID", Operations: []string{"create"}, AdminBypass: true,
 }
 

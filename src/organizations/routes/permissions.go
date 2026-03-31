@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"soli/formations/src/auth/interfaces"
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 )
 
 // RegisterOrganizationPermissions registers Casbin policies for custom organization routes.
@@ -28,48 +28,48 @@ func RegisterOrganizationPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range memberRoutes {
-		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Admin-only routes — handler also has isAdmin() check
-	casbinUtils.ReconcilePolicy(enforcer, "administrator", "/api/v1/organizations/:id/backends", "PUT")
+	access.ReconcilePolicy(enforcer, "administrator", "/api/v1/organizations/:id/backends", "PUT")
 
 	// --- Route Registry: declarative permission metadata ---
 
-	casbinUtils.RouteRegistry.Register("Organizations",
-		casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("Organizations",
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/members", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "member"},
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"},
 			Description: "List organization members",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/groups", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "member"},
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"},
 			Description: "List organization groups",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/import", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
 			Description: "Import members into an organization",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/groups/:groupId/regenerate-passwords", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
 			Description: "Regenerate passwords for a group in the organization",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/convert-to-team", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "owner"},
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "owner"},
 			Description: "Convert organization to a team",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/backends", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "member"},
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"},
 			Description: "List organization backends",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/backends", Method: "PUT",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Update organization backends (admin only)",
 		},
 	)

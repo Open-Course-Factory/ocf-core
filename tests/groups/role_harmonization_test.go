@@ -3,7 +3,7 @@ package groups_tests
 import (
 	"testing"
 
-	"soli/formations/src/auth/casbin"
+	"soli/formations/src/auth/access"
 	"soli/formations/src/groups/models"
 
 	"github.com/stretchr/testify/assert"
@@ -120,7 +120,7 @@ func TestGroupMember_CanManageMembers(t *testing.T) {
 }
 
 // =============================================================================
-// Test 5: IsRoleAtLeast() helper in auth/casbin package
+// Test 5: IsRoleAtLeast() helper in auth/access package
 // =============================================================================
 
 func TestRoleHierarchy_IsRoleAtLeast(t *testing.T) {
@@ -152,7 +152,7 @@ func TestRoleHierarchy_IsRoleAtLeast(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := casbin.IsRoleAtLeast(tc.userRole, tc.requiredRole)
+			result := access.IsRoleAtLeast(tc.userRole, tc.requiredRole)
 			assert.Equal(t, tc.expected, result,
 				"IsRoleAtLeast(%q, %q) should be %v", tc.userRole, tc.requiredRole, tc.expected)
 		})

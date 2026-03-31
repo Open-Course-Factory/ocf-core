@@ -10,7 +10,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 )
 
 // ============================================================================
@@ -101,7 +101,7 @@ func TestGormEntityLoader_GetOwnerField_Found(t *testing.T) {
 
 	// The GormEntityLoader must be able to retrieve a specific field value
 	// from any entity table given (entityName, entityID, fieldName).
-	loader := casbinUtils.NewGormEntityLoader(db)
+	loader := access.NewGormEntityLoader(db)
 
 	value, err := loader.GetOwnerField("test_entities", entityID.String(), "user_id")
 	assert.NoError(t, err)
@@ -114,7 +114,7 @@ func TestGormEntityLoader_GetOwnerField_NotFound(t *testing.T) {
 	nonExistentID, err := uuid.NewV7()
 	require.NoError(t, err)
 
-	loader := casbinUtils.NewGormEntityLoader(db)
+	loader := access.NewGormEntityLoader(db)
 
 	// Looking up a non-existent entity should return an error.
 	_, err = loader.GetOwnerField("test_entities", nonExistentID.String(), "user_id")
@@ -124,7 +124,7 @@ func TestGormEntityLoader_GetOwnerField_NotFound(t *testing.T) {
 func TestGormEntityLoader_GetOwnerField_EmptyID(t *testing.T) {
 	db := setupEntityLoaderDB(t)
 
-	loader := casbinUtils.NewGormEntityLoader(db)
+	loader := access.NewGormEntityLoader(db)
 
 	// Empty ID is invalid and should return an error immediately.
 	_, err := loader.GetOwnerField("test_entities", "", "user_id")
@@ -152,7 +152,7 @@ func TestGormMembershipChecker_CheckGroupRole_OwnerMeetsManager(t *testing.T) {
 	err := db.Create(&member).Error
 	require.NoError(t, err)
 
-	checker := casbinUtils.NewGormMembershipChecker(db)
+	checker := access.NewGormMembershipChecker(db)
 
 	// Owner (priority 100) should meet minimum role "manager" (priority 50).
 	allowed, err := checker.CheckGroupRole(groupID.String(), "user-owner-001", "manager")
@@ -177,7 +177,7 @@ func TestGormMembershipChecker_CheckGroupRole_MemberFailsManager(t *testing.T) {
 	err := db.Create(&member).Error
 	require.NoError(t, err)
 
-	checker := casbinUtils.NewGormMembershipChecker(db)
+	checker := access.NewGormMembershipChecker(db)
 
 	// Member (priority 10) should NOT meet minimum role "manager" (priority 50).
 	allowed, err := checker.CheckGroupRole(groupID.String(), "user-member-001", "manager")
@@ -190,7 +190,7 @@ func TestGormMembershipChecker_CheckGroupRole_NotAMember(t *testing.T) {
 
 	groupID, _ := uuid.NewV7()
 
-	checker := casbinUtils.NewGormMembershipChecker(db)
+	checker := access.NewGormMembershipChecker(db)
 
 	// User is not in the group at all — should return false (not an error).
 	allowed, err := checker.CheckGroupRole(groupID.String(), "user-nonexistent", "member")
@@ -215,7 +215,7 @@ func TestGormMembershipChecker_CheckOrgRole_ManagerMeetsManager(t *testing.T) {
 	err := db.Create(&member).Error
 	require.NoError(t, err)
 
-	checker := casbinUtils.NewGormMembershipChecker(db)
+	checker := access.NewGormMembershipChecker(db)
 
 	// Manager (priority 50) should meet minimum role "manager" (priority 50).
 	allowed, err := checker.CheckOrgRole(orgID.String(), "user-manager-001", "manager")
@@ -240,7 +240,7 @@ func TestGormMembershipChecker_CheckOrgRole_MemberFailsManager(t *testing.T) {
 	err := db.Create(&member).Error
 	require.NoError(t, err)
 
-	checker := casbinUtils.NewGormMembershipChecker(db)
+	checker := access.NewGormMembershipChecker(db)
 
 	// Member (priority 10) should NOT meet minimum role "manager" (priority 50).
 	allowed, err := checker.CheckOrgRole(orgID.String(), "user-member-002", "manager")

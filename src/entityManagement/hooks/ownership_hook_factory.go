@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 
 	"gorm.io/gorm"
 )
@@ -15,13 +15,13 @@ import (
 type ownershipHook struct {
 	db         *gorm.DB
 	entityName string
-	config     casbinUtils.OwnershipConfig
+	config     access.OwnershipConfig
 	hookTypes  []HookType
 }
 
 // NewOwnershipHook creates a generic ownership hook for any entity.
 // The hook uses reflection to get/set the ownership field specified in config.
-func NewOwnershipHook(db *gorm.DB, entityName string, config casbinUtils.OwnershipConfig) Hook {
+func NewOwnershipHook(db *gorm.DB, entityName string, config access.OwnershipConfig) Hook {
 	hookTypes := operationsToHookTypes(config.Operations)
 
 	return &ownershipHook{

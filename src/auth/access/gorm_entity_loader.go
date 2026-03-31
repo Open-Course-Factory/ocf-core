@@ -1,4 +1,4 @@
-package casbin
+package access
 
 import (
 	"errors"

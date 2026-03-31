@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"soli/formations/src/auth/interfaces"
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 )
 
 // RegisterCoursePermissions registers Casbin permissions for course and generation routes.
@@ -25,7 +25,7 @@ func RegisterCoursePermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range courseMemberRoutes {
-		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Generation custom routes - available to all authenticated members
@@ -42,68 +42,68 @@ func RegisterCoursePermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range generationMemberRoutes {
-		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// --- Route Registry: declarative permission metadata ---
 
-	casbinUtils.RouteRegistry.Register("Courses",
-		casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("Courses",
+		access.RoutePermission{
 			Path: "/api/v1/courses/git", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "Create a course from a Git repository",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/courses/source", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "Create a course from uploaded source",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/courses/generate", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "Trigger course generation",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/courses/versions", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "List available course versions",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/courses/by-version", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "Get a course by version",
 		},
 	)
 
-	casbinUtils.RouteRegistry.Register("Generations",
-		casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("Generations",
+		access.RoutePermission{
 			Path: "/api/v1/generations", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "List generation jobs",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/generations", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "Create a new generation job",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/generations/:id", Method: "DELETE",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "Delete a generation job",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/generations/:id/status", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "Get generation job status",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/generations/:id/download", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "Download generation output",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/generations/:id/retry", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "Retry a failed generation job",
 		},
 	)

@@ -11,7 +11,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/entityManagement/hooks"
 )
 
@@ -71,7 +71,7 @@ func insertTestOwnedEntity(t *testing.T, db *gorm.DB, userID, name string) TestO
 func TestOwnershipHook_BeforeCreate_ForcesUserID(t *testing.T) {
 	db := setupOwnershipTestDB(t)
 
-	config := casbinUtils.OwnershipConfig{
+	config := access.OwnershipConfig{
 		OwnerField:  "UserID",
 		Operations:  []string{"create", "update", "delete"},
 		AdminBypass: true,
@@ -106,7 +106,7 @@ func TestOwnershipHook_BeforeCreate_ForcesUserID(t *testing.T) {
 func TestOwnershipHook_BeforeCreate_AdminBypass(t *testing.T) {
 	db := setupOwnershipTestDB(t)
 
-	config := casbinUtils.OwnershipConfig{
+	config := access.OwnershipConfig{
 		OwnerField:  "UserID",
 		Operations:  []string{"create", "update", "delete"},
 		AdminBypass: true,
@@ -143,7 +143,7 @@ func TestOwnershipHook_BeforeUpdate_OwnerAllowed(t *testing.T) {
 
 	entity := insertTestOwnedEntity(t, db, "user1", "My Entity")
 
-	config := casbinUtils.OwnershipConfig{
+	config := access.OwnershipConfig{
 		OwnerField:  "UserID",
 		Operations:  []string{"create", "update", "delete"},
 		AdminBypass: true,
@@ -173,7 +173,7 @@ func TestOwnershipHook_BeforeUpdate_NonOwnerDenied(t *testing.T) {
 
 	entity := insertTestOwnedEntity(t, db, "user1", "User1 Entity")
 
-	config := casbinUtils.OwnershipConfig{
+	config := access.OwnershipConfig{
 		OwnerField:  "UserID",
 		Operations:  []string{"create", "update", "delete"},
 		AdminBypass: true,
@@ -205,7 +205,7 @@ func TestOwnershipHook_BeforeUpdate_AdminBypass(t *testing.T) {
 
 	entity := insertTestOwnedEntity(t, db, "user1", "User1 Entity")
 
-	config := casbinUtils.OwnershipConfig{
+	config := access.OwnershipConfig{
 		OwnerField:  "UserID",
 		Operations:  []string{"create", "update", "delete"},
 		AdminBypass: true,
@@ -235,7 +235,7 @@ func TestOwnershipHook_BeforeDelete_OwnerAllowed(t *testing.T) {
 
 	entity := insertTestOwnedEntity(t, db, "user1", "My Entity")
 
-	config := casbinUtils.OwnershipConfig{
+	config := access.OwnershipConfig{
 		OwnerField:  "UserID",
 		Operations:  []string{"create", "update", "delete"},
 		AdminBypass: true,
@@ -265,7 +265,7 @@ func TestOwnershipHook_BeforeDelete_NonOwnerDenied(t *testing.T) {
 
 	entity := insertTestOwnedEntity(t, db, "user1", "User1 Entity")
 
-	config := casbinUtils.OwnershipConfig{
+	config := access.OwnershipConfig{
 		OwnerField:  "UserID",
 		Operations:  []string{"create", "update", "delete"},
 		AdminBypass: true,

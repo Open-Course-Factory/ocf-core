@@ -11,13 +11,13 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 	authModels "soli/formations/src/auth/models"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 )
 
-var userSettingsOwnershipConfig = casbinUtils.OwnershipConfig{
+var userSettingsOwnershipConfig = access.OwnershipConfig{
 	OwnerField: "UserID", Operations: []string{"update"}, AdminBypass: true,
 }
 

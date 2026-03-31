@@ -8,13 +8,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/payment/models"
 )
 
-var billingAddressOwnershipConfig = casbinUtils.OwnershipConfig{
+var billingAddressOwnershipConfig = access.OwnershipConfig{
 	OwnerField: "UserID", Operations: []string{"create", "update", "delete"}, AdminBypass: true,
 }
 

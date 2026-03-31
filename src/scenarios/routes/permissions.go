@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"soli/formations/src/auth/interfaces"
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 )
 
 // RegisterScenarioPermissions registers all Casbin policies for scenario routes.
@@ -34,7 +34,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range sessionRoutes {
-		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Teacher dashboard routes - available to all authenticated members
@@ -52,7 +52,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range teacherRoutes {
-		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Group-level scenario routes - available to all authenticated members
@@ -68,7 +68,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range groupScenarioRoutes {
-		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Organization-level scenario routes - available to all authenticated members
@@ -85,7 +85,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range orgScenarioRoutes {
-		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Project file routes - available to all authenticated members
@@ -100,7 +100,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range projectFileRoutes {
-		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// Admin-only scenario management routes
@@ -118,205 +118,205 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range adminRoutes {
-		casbinUtils.ReconcilePolicy(enforcer, "administrator", route.path, route.method)
+		access.ReconcilePolicy(enforcer, "administrator", route.path, route.method)
 	}
 
 	// --- Route Registry: declarative permission metadata ---
 
-	casbinUtils.RouteRegistry.Register("Scenario Sessions",
-		casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("Scenario Sessions",
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/start", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Start a new scenario session for the authenticated user",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/my", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "List the authenticated user's scenario sessions",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/available", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "List scenarios available to the authenticated user",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/by-terminal/:terminalId", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
 			Description: "Get session by terminal ID (must own the session)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/info", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
 			Description: "Get session info (must own the session)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/flags", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
 			Description: "Get session flags (must own the session)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/current-step", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
 			Description: "Get current step of a session (must own the session)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/step/:stepOrder", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
 			Description: "Get a specific step of a session (must own the session)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/verify", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
 			Description: "Verify step completion (must own the session)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/submit-flag", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
 			Description: "Submit a flag answer (must own the session)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/steps/:stepOrder/hints/:level/reveal", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
 			Description: "Reveal a hint for a step (must own the session)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/abandon", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
 			Description: "Abandon a session (must own the session)",
 		},
 	)
 
-	casbinUtils.RouteRegistry.Register("Teacher Dashboard",
-		casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("Teacher Dashboard",
+		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/activity", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "View group activity overview",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "View scenario results for a group",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/analytics", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "View scenario analytics for a group",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/sessions/:sessionId/detail", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "View detailed session info for a student",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/bulk-start", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Bulk-start scenario sessions for group members",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/reset-sessions", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Reset scenario sessions for group members",
 		},
 	)
 
-	casbinUtils.RouteRegistry.Register("Scenario Management",
+	access.RouteRegistry.Register("Scenario Management",
 		// Group scenario routes
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/groups/:groupId/scenarios", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "member"},
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "member"},
 			Description: "List scenarios assigned to a group",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/groups/:groupId/scenarios/upload", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Upload a scenario to a group",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/groups/:groupId/scenarios/import-json", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Import a scenario from JSON into a group",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/groups/:groupId/scenarios/:scenarioId/export", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.GroupRole, Param: "groupId", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "Export a scenario from a group",
 		},
 		// Organization scenario routes
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "member"},
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"},
 			Description: "List scenarios in an organization",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios/upload", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
 			Description: "Upload a scenario to an organization",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios/import-json", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
 			Description: "Import a scenario from JSON into an organization",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios/:scenarioId/export", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
 			Description: "Export a scenario from an organization",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios/:scenarioId", Method: "DELETE",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.OrgRole, Param: "id", MinRole: "manager"},
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
 			Description: "Delete a scenario from an organization",
 		},
 		// Admin scenario routes
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenarios/import", Method: "POST",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Import scenarios (admin only)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenarios/seed", Method: "POST",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Seed default scenarios (admin only)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenarios/upload", Method: "POST",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Upload a scenario at platform level (admin only)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenarios/:id/export", Method: "GET",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Export a scenario at platform level (admin only)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenarios/export", Method: "POST",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Bulk export scenarios (admin only)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/scenarios/import-json", Method: "POST",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Import scenarios from JSON (admin only)",
 		},
 		// Project file routes
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/project-files/by-scenario/:scenarioId", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "member", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "List project files for a scenario (admin only)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/project-files/:id/usage", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "member", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Get project file usage info (admin only)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/project-files/:id/content", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "Get project file content (scripts require admin, others public)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/project-files/image/:scenarioId/*", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "Get scenario image (public to all authenticated users)",
 		},
 	)

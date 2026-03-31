@@ -5,7 +5,7 @@ import (
 
 	"soli/formations/src/auth/interfaces"
 	authModels "soli/formations/src/auth/models"
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 )
 
 // RegisterUserPermissions registers RBAC permissions for user management,
@@ -26,11 +26,11 @@ func RegisterUserPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range memberRoutes {
-		casbinUtils.ReconcilePolicy(enforcer, "member", route.path, route.method)
+		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
 	// SSH web client route
-	casbinUtils.ReconcilePolicy(enforcer, "member", "/api/v1/ssh", "GET")
+	access.ReconcilePolicy(enforcer, "member", "/api/v1/ssh", "GET")
 
 	// --- Admin routes ---
 
@@ -52,68 +52,68 @@ func RegisterUserPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range adminRoutes {
-		casbinUtils.ReconcilePolicy(enforcer, "administrator", route.path, route.method)
+		access.ReconcilePolicy(enforcer, "administrator", route.path, route.method)
 	}
 
 	// --- Route Registry: declarative permission metadata ---
 
-	casbinUtils.RouteRegistry.Register("User Management",
-		casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("User Management",
+		access.RoutePermission{
 			Path: "/api/v1/users", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "List users",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/users/batch", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "Batch lookup users by IDs",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/users/search", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "Search users",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/users/:id", Method: "DELETE",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Delete a user (admin only)",
 		},
 	)
 
-	casbinUtils.RouteRegistry.Register("Access Control",
-		casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("Access Control",
+		access.RoutePermission{
 			Path: "/api/v1/accesses", Method: "POST",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Grant access to a user (admin only)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/accesses", Method: "DELETE",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Revoke access from a user (admin only)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/hooks", Method: "GET",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "List entity hooks (admin only)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/hooks/:hook_name/enable", Method: "POST",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Enable an entity hook (admin only)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/hooks/:hook_name/disable", Method: "POST",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Disable an entity hook (admin only)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/email-templates/:id/test", Method: "POST",
-			Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Send a test email template (admin only)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/ssh", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public},
+			Role: "member", Access: access.AccessRule{Type: access.Public},
 			Description: "SSH web client proxy",
 		},
 	)
@@ -130,39 +130,39 @@ func RegisterAuthPermissions(enforcer interfaces.EnforcerInterface) {
 	casdoorRoles := authModels.GetCasdoorRolesForOCFRole(authModels.Member)
 
 	for _, role := range casdoorRoles {
-		casbinUtils.ReconcilePolicy(enforcer, role, "/api/v1/users/:id", "GET")
-		casbinUtils.ReconcilePolicy(enforcer, role, "/api/v1/users/me/*", "(GET|POST|PATCH|DELETE)")
-		casbinUtils.ReconcilePolicy(enforcer, role, "/api/v1/auth/permissions", "GET")
-		casbinUtils.ReconcilePolicy(enforcer, role, "/api/v1/auth/me", "GET")
-		casbinUtils.ReconcilePolicy(enforcer, role, "/api/v1/auth/verify-status", "GET")
+		access.ReconcilePolicy(enforcer, role, "/api/v1/users/:id", "GET")
+		access.ReconcilePolicy(enforcer, role, "/api/v1/users/me/*", "(GET|POST|PATCH|DELETE)")
+		access.ReconcilePolicy(enforcer, role, "/api/v1/auth/permissions", "GET")
+		access.ReconcilePolicy(enforcer, role, "/api/v1/auth/me", "GET")
+		access.ReconcilePolicy(enforcer, role, "/api/v1/auth/verify-status", "GET")
 	}
 
 	// --- Route Registry: declarative permission metadata ---
 
-	casbinUtils.RouteRegistry.Register("Authentication",
-		casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("Authentication",
+		access.RoutePermission{
 			Path: "/api/v1/users/:id", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Get a user's profile (scoped to own ID)",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/users/me/*", Method: "(GET|POST|PATCH|DELETE)",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Manage own user sub-resources",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/auth/permissions", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Get own permissions",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/auth/me", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Get own authentication info",
 		},
-		casbinUtils.RoutePermission{
+		access.RoutePermission{
 			Path: "/api/v1/auth/verify-status", Method: "GET",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Verify own authentication status",
 		},
 	)
@@ -173,14 +173,14 @@ func RegisterAuthPermissions(enforcer interfaces.EnforcerInterface) {
 // RegisterFeedbackPermissions registers RBAC policies for feedback routes.
 func RegisterFeedbackPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Registering feedback permissions ===")
-	casbinUtils.ReconcilePolicy(enforcer, "member", "/api/v1/feedback/*", "POST")
+	access.ReconcilePolicy(enforcer, "member", "/api/v1/feedback/*", "POST")
 
 	// --- Route Registry: declarative permission metadata ---
 
-	casbinUtils.RouteRegistry.Register("Feedback",
-		casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("Feedback",
+		access.RoutePermission{
 			Path: "/api/v1/feedback/*", Method: "POST",
-			Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Submit feedback (scoped to authenticated user)",
 		},
 	)

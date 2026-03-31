@@ -2,7 +2,7 @@ package services
 
 import (
 	"soli/formations/src/auth/casdoor"
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/interfaces"
 	authModels "soli/formations/src/auth/models"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
@@ -267,7 +267,7 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 	service.setDefaultEntityAccesses(name, reg.Roles, casdoor.Enforcer)
 
 	// Register CRUD permissions in RouteRegistry for the permission reference page
-	casbinUtils.RouteRegistry.RegisterEntity(casbinUtils.EntityCRUDPermissions{
+	access.RouteRegistry.RegisterEntity(access.EntityCRUDPermissions{
 		Entity: name,
 		Create: deriveAccessRule(reg.Roles, "POST", name, reg.OwnershipConfig),
 		Read:   deriveAccessRule(reg.Roles, "GET", name, reg.OwnershipConfig),
@@ -278,14 +278,14 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 
 // deriveAccessRule determines the Layer 2 access rule for an entity CRUD operation
 // based on RBAC role config and optional ownership config.
-func deriveAccessRule(roles entityManagementInterfaces.EntityRoles, method string, entityName string, ownershipConfig *casbinUtils.OwnershipConfig) casbinUtils.AccessRule {
+func deriveAccessRule(roles entityManagementInterfaces.EntityRoles, method string, entityName string, ownershipConfig *access.OwnershipConfig) access.AccessRule {
 	memberMethods := roles.Roles["member"]
 
 	// Check if member role includes this HTTP method
 	memberHasAccess := strings.Contains(memberMethods, method)
 
 	if !memberHasAccess {
-		return casbinUtils.AccessRule{Type: casbinUtils.AdminOnly}
+		return access.AccessRule{Type: access.AdminOnly}
 	}
 
 	// Member has access — check if an ownership hook protects this operation
@@ -295,10 +295,10 @@ func deriveAccessRule(roles entityManagementInterfaces.EntityRoles, method strin
 			for _, configOp := range ownershipConfig.Operations {
 				if configOp == op {
 					if op == "create" {
-						return casbinUtils.AccessRule{Type: casbinUtils.SelfScoped}
+						return access.AccessRule{Type: access.SelfScoped}
 					}
-					return casbinUtils.AccessRule{
-						Type:   casbinUtils.EntityOwner,
+					return access.AccessRule{
+						Type:   access.EntityOwner,
 						Entity: entityName,
 						Field:  ownershipConfig.OwnerField,
 					}
@@ -307,7 +307,7 @@ func deriveAccessRule(roles entityManagementInterfaces.EntityRoles, method strin
 		}
 	}
 
-	return casbinUtils.AccessRule{Type: casbinUtils.Public}
+	return access.AccessRule{Type: access.Public}
 }
 
 var GlobalEntityRegistrationService = NewEntityRegistrationService()

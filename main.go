@@ -14,7 +14,7 @@ import (
 	"soli/formations/src/payment"
 
 	authController "soli/formations/src/auth"
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	authHooks "soli/formations/src/auth/hooks"
 	accessController "soli/formations/src/auth/routes/accessesRoutes"
@@ -109,9 +109,9 @@ func main() {
 	log.Println("✅ All permissions setup completed")
 
 	// Register Layer 2 enforcement handlers (business logic authorization)
-	entityLoader := casbinUtils.NewGormEntityLoader(sqldb.DB)
-	memberChecker := casbinUtils.NewGormMembershipChecker(sqldb.DB)
-	casbinUtils.RegisterBuiltinEnforcers(entityLoader, memberChecker)
+	entityLoader := access.NewGormEntityLoader(sqldb.DB)
+	memberChecker := access.NewGormMembershipChecker(sqldb.DB)
+	access.RegisterBuiltinEnforcers(entityLoader, memberChecker)
 	log.Println("✅ Layer 2 enforcement handlers registered")
 
 	// Initialize remaining hooks
@@ -177,7 +177,7 @@ func main() {
 	apiGroup := r.Group("/api/v1")
 
 	// Layer 2 enforcement — applied globally, acts only on routes registered in RouteRegistry
-	apiGroup.Use(casbinUtils.Layer2Enforcement())
+	apiGroup.Use(access.Layer2Enforcement())
 
 	// Version endpoint (no auth required)
 	versionCtrl := versionController.NewVersionController()

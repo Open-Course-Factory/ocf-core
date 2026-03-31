@@ -54,7 +54,7 @@ When you add a new route that uses `middleware.AuthManagement()`, you **MUST** a
 
 ### Key rules
 
-- `ReconcilePolicy` lives in `src/auth/casbin/reconcile.go` — **never import `initialization` from module permission files** (it pulls in swagger.go → generated docs/ → CI failure)
+- `ReconcilePolicy` lives in `src/auth/access/reconcile.go` — **never import `initialization` from module permission files** (it pulls in swagger.go → generated docs/ → CI failure)
 - Entity CRUD routes get policies automatically via entity registration (`/:id` pattern, not `/*`)
 - Custom routes need manual policy registration in the module's `permissions.go`
 - Admin routes should have **both** Casbin `administrator` policy AND handler-level `isAdmin()` check (defense-in-depth)

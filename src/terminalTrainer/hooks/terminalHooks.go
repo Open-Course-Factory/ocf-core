@@ -3,7 +3,7 @@ package terminalHooks
 import (
 	"fmt"
 
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/entityManagement/hooks"
 	terminalModels "soli/formations/src/terminalTrainer/models"
@@ -292,7 +292,7 @@ func InitTerminalHooks(db *gorm.DB) {
 	utils.Info("🔗 Initializing terminal hooks...")
 
 	// Register Terminal ownership hook (BeforeCreate - prevents impersonation)
-	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "Terminal", casbinUtils.OwnershipConfig{
+	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "Terminal", access.OwnershipConfig{
 		OwnerField: "UserID", Operations: []string{"create"}, AdminBypass: true,
 	})); err != nil {
 		utils.Error("❌ Failed to register Terminal ownership hook: %v", err)

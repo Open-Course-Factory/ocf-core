@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 )
 
 // ---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ func TestIsAdmin_CaseInsensitive(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// IsAdmin is the NEW canonical helper in the casbin package.
 			// It does not exist yet — this test should fail to compile.
-			result := casbinUtils.IsAdmin(tt.roles)
+			result := access.IsAdmin(tt.roles)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -91,31 +91,31 @@ func TestIsAdmin_CaseInsensitive(t *testing.T) {
 
 func TestRouteRegistry_Lookup_Hit(t *testing.T) {
 	// Use a fresh registry to avoid test pollution
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
 	// Register some routes
-	casbinUtils.RouteRegistry.Register("auth", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("auth", access.RoutePermission{
 		Path:       "/api/v1/auth/me",
 		Method:     "GET",
 		Role: "member",
-		Access:     casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+		Access:     access.AccessRule{Type: access.SelfScoped},
 	})
-	casbinUtils.RouteRegistry.Register("admin", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("admin", access.RoutePermission{
 		Path:       "/api/v1/admin/security/policies",
 		Method:     "GET",
 		Role: "administrator",
-		Access:     casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+		Access:     access.AccessRule{Type: access.AdminOnly},
 	})
-	casbinUtils.RouteRegistry.Register("terminal", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("terminal", access.RoutePermission{
 		Path:       "/api/v1/terminals/start-session",
 		Method:     "POST",
 		Role: "member",
-		Access:     casbinUtils.AccessRule{Type: casbinUtils.Public},
+		Access:     access.AccessRule{Type: access.Public},
 	})
 
 	tests := []struct {
@@ -123,7 +123,7 @@ func TestRouteRegistry_Lookup_Hit(t *testing.T) {
 		method         string
 		path           string
 		expectFound    bool
-		expectAccess   casbinUtils.AccessRuleType
+		expectAccess   access.AccessRuleType
 		expectCasbin   string
 		expectCategory string
 	}{
@@ -132,7 +132,7 @@ func TestRouteRegistry_Lookup_Hit(t *testing.T) {
 			method:         "GET",
 			path:           "/api/v1/auth/me",
 			expectFound:    true,
-			expectAccess:   casbinUtils.SelfScoped,
+			expectAccess:   access.SelfScoped,
 			expectCasbin:   "member",
 			expectCategory: "auth",
 		},
@@ -141,7 +141,7 @@ func TestRouteRegistry_Lookup_Hit(t *testing.T) {
 			method:         "GET",
 			path:           "/api/v1/admin/security/policies",
 			expectFound:    true,
-			expectAccess:   casbinUtils.AdminOnly,
+			expectAccess:   access.AdminOnly,
 			expectCasbin:   "administrator",
 			expectCategory: "admin",
 		},
@@ -150,7 +150,7 @@ func TestRouteRegistry_Lookup_Hit(t *testing.T) {
 			method:         "POST",
 			path:           "/api/v1/terminals/start-session",
 			expectFound:    true,
-			expectAccess:   casbinUtils.Public,
+			expectAccess:   access.Public,
 			expectCasbin:   "member",
 			expectCategory: "terminal",
 		},
@@ -160,7 +160,7 @@ func TestRouteRegistry_Lookup_Hit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Lookup is the NEW method on routeRegistry.
 			// It does not exist yet — this test should fail to compile.
-			perm, found := casbinUtils.RouteRegistry.Lookup(tt.method, tt.path)
+			perm, found := access.RouteRegistry.Lookup(tt.method, tt.path)
 			assert.True(t, found, "expected route to be found")
 			assert.Equal(t, tt.expectAccess, perm.Access.Type)
 			assert.Equal(t, tt.expectCasbin, perm.Role)
@@ -170,19 +170,19 @@ func TestRouteRegistry_Lookup_Hit(t *testing.T) {
 }
 
 func TestRouteRegistry_Lookup_Miss(t *testing.T) {
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
 	// Register one route
-	casbinUtils.RouteRegistry.Register("auth", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("auth", access.RoutePermission{
 		Path:       "/api/v1/auth/me",
 		Method:     "GET",
 		Role: "member",
-		Access:     casbinUtils.AccessRule{Type: casbinUtils.SelfScoped},
+		Access:     access.AccessRule{Type: access.SelfScoped},
 	})
 
 	tests := []struct {
@@ -209,44 +209,44 @@ func TestRouteRegistry_Lookup_Miss(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, found := casbinUtils.RouteRegistry.Lookup(tt.method, tt.path)
+			_, found := access.RouteRegistry.Lookup(tt.method, tt.path)
 			assert.False(t, found, "expected route NOT to be found for %s %s", tt.method, tt.path)
 		})
 	}
 }
 
 func TestRouteRegistry_Lookup_MultipleMethodsSamePath(t *testing.T) {
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
 	// Register GET and POST on the same path with different access rules
-	casbinUtils.RouteRegistry.Register("terminals", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("terminals", access.RoutePermission{
 		Path:       "/api/v1/terminals",
 		Method:     "GET",
 		Role: "member",
-		Access:     casbinUtils.AccessRule{Type: casbinUtils.Public},
+		Access:     access.AccessRule{Type: access.Public},
 	})
-	casbinUtils.RouteRegistry.Register("terminals", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("terminals", access.RoutePermission{
 		Path:       "/api/v1/terminals",
 		Method:     "POST",
 		Role: "administrator",
-		Access:     casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+		Access:     access.AccessRule{Type: access.AdminOnly},
 	})
 
 	// GET should return Public
-	getPerm, getFound := casbinUtils.RouteRegistry.Lookup("GET", "/api/v1/terminals")
+	getPerm, getFound := access.RouteRegistry.Lookup("GET", "/api/v1/terminals")
 	assert.True(t, getFound)
-	assert.Equal(t, casbinUtils.Public, getPerm.Access.Type)
+	assert.Equal(t, access.Public, getPerm.Access.Type)
 	assert.Equal(t, "member", getPerm.Role)
 
 	// POST should return AdminOnly
-	postPerm, postFound := casbinUtils.RouteRegistry.Lookup("POST", "/api/v1/terminals")
+	postPerm, postFound := access.RouteRegistry.Lookup("POST", "/api/v1/terminals")
 	assert.True(t, postFound)
-	assert.Equal(t, casbinUtils.AdminOnly, postPerm.Access.Type)
+	assert.Equal(t, access.AdminOnly, postPerm.Access.Type)
 	assert.Equal(t, "administrator", postPerm.Role)
 }
 
@@ -254,7 +254,7 @@ func TestRouteRegistry_Lookup_MultipleMethodsSamePath(t *testing.T) {
 // Mock implementations for Layer 2 enforcement middleware tests
 // ---------------------------------------------------------------------------
 
-// mockEntityLoader implements casbinUtils.EntityLoader for testing.
+// mockEntityLoader implements access.EntityLoader for testing.
 type mockEntityLoader struct {
 	ownerFieldValue string
 	err             error
@@ -264,7 +264,7 @@ func (m *mockEntityLoader) GetOwnerField(entityName string, entityID string, fie
 	return m.ownerFieldValue, m.err
 }
 
-// mockMembershipChecker implements casbinUtils.MembershipChecker for testing.
+// mockMembershipChecker implements access.MembershipChecker for testing.
 type mockMembershipChecker struct {
 	groupRoleResult bool
 	groupRoleErr    error
@@ -305,25 +305,25 @@ func okHandler(c *gin.Context) {
 // ---------------------------------------------------------------------------
 
 func TestLayer2_AdminOnly_Allowed(t *testing.T) {
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
 	// Register the route as AdminOnly
-	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("test", access.RoutePermission{
 		Path:       "/api/v1/test/admin-action",
 		Method:     "POST",
 		Role: "administrator",
-		Access:     casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+		Access:     access.AccessRule{Type: access.AdminOnly},
 	})
 
 	loader := &mockEntityLoader{}
 	checker := &mockMembershipChecker{}
-	casbinUtils.RegisterBuiltinEnforcers(loader, checker)
-	mw := casbinUtils.Layer2Enforcement()
+	access.RegisterBuiltinEnforcers(loader, checker)
+	mw := access.Layer2Enforcement()
 	r := setupTestRouter(mw)
 	r.POST("/api/v1/test/admin-action", okHandler)
 
@@ -337,24 +337,24 @@ func TestLayer2_AdminOnly_Allowed(t *testing.T) {
 }
 
 func TestLayer2_AdminOnly_Denied(t *testing.T) {
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
-	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("test", access.RoutePermission{
 		Path:       "/api/v1/test/admin-action",
 		Method:     "POST",
 		Role: "administrator",
-		Access:     casbinUtils.AccessRule{Type: casbinUtils.AdminOnly},
+		Access:     access.AccessRule{Type: access.AdminOnly},
 	})
 
 	loader := &mockEntityLoader{}
 	checker := &mockMembershipChecker{}
-	casbinUtils.RegisterBuiltinEnforcers(loader, checker)
-	mw := casbinUtils.Layer2Enforcement()
+	access.RegisterBuiltinEnforcers(loader, checker)
+	mw := access.Layer2Enforcement()
 	r := setupTestRouter(mw)
 	r.POST("/api/v1/test/admin-action", okHandler)
 
@@ -368,19 +368,19 @@ func TestLayer2_AdminOnly_Denied(t *testing.T) {
 }
 
 func TestLayer2_EntityOwner_Allowed(t *testing.T) {
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
-	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("test", access.RoutePermission{
 		Path:       "/api/v1/test/:id/edit",
 		Method:     "PATCH",
 		Role: "member",
-		Access: casbinUtils.AccessRule{
-			Type:   casbinUtils.EntityOwner,
+		Access: access.AccessRule{
+			Type:   access.EntityOwner,
 			Entity: "TestEntity",
 			Field:  "UserID",
 		},
@@ -389,8 +389,8 @@ func TestLayer2_EntityOwner_Allowed(t *testing.T) {
 	// Mock returns "user1" as the owner
 	loader := &mockEntityLoader{ownerFieldValue: "user1"}
 	checker := &mockMembershipChecker{}
-	casbinUtils.RegisterBuiltinEnforcers(loader, checker)
-	mw := casbinUtils.Layer2Enforcement()
+	access.RegisterBuiltinEnforcers(loader, checker)
+	mw := access.Layer2Enforcement()
 	r := setupTestRouter(mw)
 	r.PATCH("/api/v1/test/:id/edit", okHandler)
 
@@ -404,19 +404,19 @@ func TestLayer2_EntityOwner_Allowed(t *testing.T) {
 }
 
 func TestLayer2_EntityOwner_Denied(t *testing.T) {
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
-	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("test", access.RoutePermission{
 		Path:       "/api/v1/test/:id/edit",
 		Method:     "PATCH",
 		Role: "member",
-		Access: casbinUtils.AccessRule{
-			Type:   casbinUtils.EntityOwner,
+		Access: access.AccessRule{
+			Type:   access.EntityOwner,
 			Entity: "TestEntity",
 			Field:  "UserID",
 		},
@@ -425,8 +425,8 @@ func TestLayer2_EntityOwner_Denied(t *testing.T) {
 	// Mock returns "user1" as the owner, but the requester is "user2"
 	loader := &mockEntityLoader{ownerFieldValue: "user1"}
 	checker := &mockMembershipChecker{}
-	casbinUtils.RegisterBuiltinEnforcers(loader, checker)
-	mw := casbinUtils.Layer2Enforcement()
+	access.RegisterBuiltinEnforcers(loader, checker)
+	mw := access.Layer2Enforcement()
 	r := setupTestRouter(mw)
 	r.PATCH("/api/v1/test/:id/edit", okHandler)
 
@@ -440,19 +440,19 @@ func TestLayer2_EntityOwner_Denied(t *testing.T) {
 }
 
 func TestLayer2_EntityOwner_AdminBypass(t *testing.T) {
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
-	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("test", access.RoutePermission{
 		Path:       "/api/v1/test/:id/edit",
 		Method:     "PATCH",
 		Role: "member",
-		Access: casbinUtils.AccessRule{
-			Type:   casbinUtils.EntityOwner,
+		Access: access.AccessRule{
+			Type:   access.EntityOwner,
 			Entity: "TestEntity",
 			Field:  "UserID",
 		},
@@ -461,8 +461,8 @@ func TestLayer2_EntityOwner_AdminBypass(t *testing.T) {
 	// Mock returns "user1" as the owner, but requester is "user2" with admin role
 	loader := &mockEntityLoader{ownerFieldValue: "user1"}
 	checker := &mockMembershipChecker{}
-	casbinUtils.RegisterBuiltinEnforcers(loader, checker)
-	mw := casbinUtils.Layer2Enforcement()
+	access.RegisterBuiltinEnforcers(loader, checker)
+	mw := access.Layer2Enforcement()
 	r := setupTestRouter(mw)
 	r.PATCH("/api/v1/test/:id/edit", okHandler)
 
@@ -476,19 +476,19 @@ func TestLayer2_EntityOwner_AdminBypass(t *testing.T) {
 }
 
 func TestLayer2_GroupRole_Allowed(t *testing.T) {
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
-	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("test", access.RoutePermission{
 		Path:       "/api/v1/test/groups/:groupId/manage",
 		Method:     "POST",
 		Role: "member",
-		Access: casbinUtils.AccessRule{
-			Type:    casbinUtils.GroupRole,
+		Access: access.AccessRule{
+			Type:    access.GroupRole,
 			Param:   "groupId",
 			MinRole: "manager",
 		},
@@ -496,8 +496,8 @@ func TestLayer2_GroupRole_Allowed(t *testing.T) {
 
 	loader := &mockEntityLoader{}
 	checker := &mockMembershipChecker{groupRoleResult: true}
-	casbinUtils.RegisterBuiltinEnforcers(loader, checker)
-	mw := casbinUtils.Layer2Enforcement()
+	access.RegisterBuiltinEnforcers(loader, checker)
+	mw := access.Layer2Enforcement()
 	r := setupTestRouter(mw)
 	r.POST("/api/v1/test/groups/:groupId/manage", okHandler)
 
@@ -511,19 +511,19 @@ func TestLayer2_GroupRole_Allowed(t *testing.T) {
 }
 
 func TestLayer2_GroupRole_Denied(t *testing.T) {
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
-	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("test", access.RoutePermission{
 		Path:       "/api/v1/test/groups/:groupId/manage",
 		Method:     "POST",
 		Role: "member",
-		Access: casbinUtils.AccessRule{
-			Type:    casbinUtils.GroupRole,
+		Access: access.AccessRule{
+			Type:    access.GroupRole,
 			Param:   "groupId",
 			MinRole: "manager",
 		},
@@ -531,8 +531,8 @@ func TestLayer2_GroupRole_Denied(t *testing.T) {
 
 	loader := &mockEntityLoader{}
 	checker := &mockMembershipChecker{groupRoleResult: false}
-	casbinUtils.RegisterBuiltinEnforcers(loader, checker)
-	mw := casbinUtils.Layer2Enforcement()
+	access.RegisterBuiltinEnforcers(loader, checker)
+	mw := access.Layer2Enforcement()
 	r := setupTestRouter(mw)
 	r.POST("/api/v1/test/groups/:groupId/manage", okHandler)
 
@@ -546,19 +546,19 @@ func TestLayer2_GroupRole_Denied(t *testing.T) {
 }
 
 func TestLayer2_OrgRole_Allowed(t *testing.T) {
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
-	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("test", access.RoutePermission{
 		Path:   "/api/v1/test/orgs/:orgId/manage",
 		Method: "POST",
 		Role:   "member",
-		Access: casbinUtils.AccessRule{
-			Type:    casbinUtils.OrgRole,
+		Access: access.AccessRule{
+			Type:    access.OrgRole,
 			Param:   "orgId",
 			MinRole: "manager",
 		},
@@ -566,8 +566,8 @@ func TestLayer2_OrgRole_Allowed(t *testing.T) {
 
 	loader := &mockEntityLoader{}
 	checker := &mockMembershipChecker{orgRoleResult: true}
-	casbinUtils.RegisterBuiltinEnforcers(loader, checker)
-	mw := casbinUtils.Layer2Enforcement()
+	access.RegisterBuiltinEnforcers(loader, checker)
+	mw := access.Layer2Enforcement()
 	r := setupTestRouter(mw)
 	r.POST("/api/v1/test/orgs/:orgId/manage", okHandler)
 
@@ -581,19 +581,19 @@ func TestLayer2_OrgRole_Allowed(t *testing.T) {
 }
 
 func TestLayer2_OrgRole_Denied(t *testing.T) {
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
-	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("test", access.RoutePermission{
 		Path:   "/api/v1/test/orgs/:orgId/manage",
 		Method: "POST",
 		Role:   "member",
-		Access: casbinUtils.AccessRule{
-			Type:    casbinUtils.OrgRole,
+		Access: access.AccessRule{
+			Type:    access.OrgRole,
 			Param:   "orgId",
 			MinRole: "manager",
 		},
@@ -601,8 +601,8 @@ func TestLayer2_OrgRole_Denied(t *testing.T) {
 
 	loader := &mockEntityLoader{}
 	checker := &mockMembershipChecker{orgRoleResult: false}
-	casbinUtils.RegisterBuiltinEnforcers(loader, checker)
-	mw := casbinUtils.Layer2Enforcement()
+	access.RegisterBuiltinEnforcers(loader, checker)
+	mw := access.Layer2Enforcement()
 	r := setupTestRouter(mw)
 	r.POST("/api/v1/test/orgs/:orgId/manage", okHandler)
 
@@ -616,24 +616,24 @@ func TestLayer2_OrgRole_Denied(t *testing.T) {
 }
 
 func TestLayer2_Public_Passthrough(t *testing.T) {
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
-	casbinUtils.RouteRegistry.Register("test", casbinUtils.RoutePermission{
+	access.RouteRegistry.Register("test", access.RoutePermission{
 		Path:       "/api/v1/test/public-resource",
 		Method:     "GET",
 		Role: "member",
-		Access:     casbinUtils.AccessRule{Type: casbinUtils.Public},
+		Access:     access.AccessRule{Type: access.Public},
 	})
 
 	loader := &mockEntityLoader{}
 	checker := &mockMembershipChecker{}
-	casbinUtils.RegisterBuiltinEnforcers(loader, checker)
-	mw := casbinUtils.Layer2Enforcement()
+	access.RegisterBuiltinEnforcers(loader, checker)
+	mw := access.Layer2Enforcement()
 	r := setupTestRouter(mw)
 	r.GET("/api/v1/test/public-resource", okHandler)
 
@@ -647,19 +647,19 @@ func TestLayer2_Public_Passthrough(t *testing.T) {
 }
 
 func TestLayer2_UnregisteredRoute_Passthrough(t *testing.T) {
-	casbinUtils.RouteRegistry.Reset()
-	casbinUtils.ResetEnforcers()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
 	defer func() {
-		casbinUtils.RouteRegistry.Reset()
-		casbinUtils.ResetEnforcers()
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
 	}()
 
 	// Deliberately do NOT register any route in the registry
 
 	loader := &mockEntityLoader{}
 	checker := &mockMembershipChecker{}
-	casbinUtils.RegisterBuiltinEnforcers(loader, checker)
-	mw := casbinUtils.Layer2Enforcement()
+	access.RegisterBuiltinEnforcers(loader, checker)
+	mw := access.Layer2Enforcement()
 	r := setupTestRouter(mw)
 	r.GET("/api/v1/test/unregistered", okHandler)
 

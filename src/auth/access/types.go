@@ -1,4 +1,4 @@
-package casbin
+package access
 
 // AccessRuleType defines how Layer 2 authorization is enforced on a route.
 type AccessRuleType string

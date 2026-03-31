@@ -3,7 +3,7 @@ package entityManagementInterfaces
 import (
 	"github.com/google/uuid"
 
-	casbin "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 )
 
 // EntityModel is a constraint satisfied by any model that embeds BaseModel.
@@ -28,5 +28,5 @@ type TypedEntityRegistration[M any, C any, E any, O any] struct {
 	RelationshipFilters []RelationshipFilter
 	MembershipConfig    *MembershipConfig
 	DefaultIncludes     []string
-	OwnershipConfig     *casbin.OwnershipConfig `json:"-"` // If set, auto-generates ownership hooks
+	OwnershipConfig     *access.OwnershipConfig `json:"-"` // If set, auto-generates ownership hooks
 }

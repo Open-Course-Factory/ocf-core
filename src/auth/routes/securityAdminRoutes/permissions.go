@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"soli/formations/src/auth/interfaces"
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 )
 
 // RegisterSecurityAdminPermissions registers RBAC policies for security admin panel routes.
@@ -22,18 +22,18 @@ func RegisterSecurityAdminPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	for _, route := range adminRoutes {
-		casbinUtils.ReconcilePolicy(enforcer, "administrator", route.path, route.method)
+		access.ReconcilePolicy(enforcer, "administrator", route.path, route.method)
 	}
 
 	// Permission reference — available to all authenticated users
-	casbinUtils.ReconcilePolicy(enforcer, "member", "/api/v1/permissions/reference", "GET")
+	access.ReconcilePolicy(enforcer, "member", "/api/v1/permissions/reference", "GET")
 
-	casbinUtils.RouteRegistry.Register("Security Administration",
-		casbinUtils.RoutePermission{Path: "/api/v1/admin/security/policies", Method: "GET", Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly}, Description: "View all access control policies"},
-		casbinUtils.RoutePermission{Path: "/api/v1/admin/security/user-permissions", Method: "GET", Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly}, Description: "Look up user permissions"},
-		casbinUtils.RoutePermission{Path: "/api/v1/admin/security/entity-roles", Method: "GET", Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly}, Description: "View entity role matrix"},
-		casbinUtils.RoutePermission{Path: "/api/v1/admin/security/health-checks", Method: "GET", Role: "administrator", Access: casbinUtils.AccessRule{Type: casbinUtils.AdminOnly}, Description: "Run policy health checks"},
-		casbinUtils.RoutePermission{Path: "/api/v1/permissions/reference", Method: "GET", Role: "member", Access: casbinUtils.AccessRule{Type: casbinUtils.Public}, Description: "View permission reference page"},
+	access.RouteRegistry.Register("Security Administration",
+		access.RoutePermission{Path: "/api/v1/admin/security/policies", Method: "GET", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "View all access control policies"},
+		access.RoutePermission{Path: "/api/v1/admin/security/user-permissions", Method: "GET", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "Look up user permissions"},
+		access.RoutePermission{Path: "/api/v1/admin/security/entity-roles", Method: "GET", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "View entity role matrix"},
+		access.RoutePermission{Path: "/api/v1/admin/security/health-checks", Method: "GET", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "Run policy health checks"},
+		access.RoutePermission{Path: "/api/v1/permissions/reference", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "View permission reference page"},
 	)
 
 	log.Println("=== Security admin permissions registered ===")

@@ -4,7 +4,7 @@ package paymentHooks
 import (
 	"log"
 
-	casbinUtils "soli/formations/src/auth/casbin"
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/entityManagement/hooks"
 
 	"gorm.io/gorm"
@@ -31,7 +31,7 @@ func InitPaymentHooks(db *gorm.DB) {
 	}
 
 	// Ownership hooks to enforce that only the owner (or admin) can modify payment entities
-	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "BillingAddress", casbinUtils.OwnershipConfig{
+	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "BillingAddress", access.OwnershipConfig{
 		OwnerField: "UserID", Operations: []string{"create", "update", "delete"}, AdminBypass: true,
 	})); err != nil {
 		log.Printf("❌ Failed to register BillingAddress ownership hook: %v", err)
@@ -39,7 +39,7 @@ func InitPaymentHooks(db *gorm.DB) {
 		log.Println("✅ BillingAddress ownership hook registered")
 	}
 
-	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "PaymentMethod", casbinUtils.OwnershipConfig{
+	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "PaymentMethod", access.OwnershipConfig{
 		OwnerField: "UserID", Operations: []string{"create", "update", "delete"}, AdminBypass: true,
 	})); err != nil {
 		log.Printf("❌ Failed to register PaymentMethod ownership hook: %v", err)
@@ -47,7 +47,7 @@ func InitPaymentHooks(db *gorm.DB) {
 		log.Println("✅ PaymentMethod ownership hook registered")
 	}
 
-	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "UserSubscription", casbinUtils.OwnershipConfig{
+	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "UserSubscription", access.OwnershipConfig{
 		OwnerField: "UserID", Operations: []string{"create", "update", "delete"}, AdminBypass: true,
 	})); err != nil {
 		log.Printf("❌ Failed to register UserSubscription ownership hook: %v", err)
