@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"sort"
+
 	"soli/formations/src/auth/errors"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
@@ -17,8 +19,11 @@ import (
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	"soli/formations/src/scenarios/utils"
+	terminalDto "soli/formations/src/terminalTrainer/dto"
 	terminalModels "soli/formations/src/terminalTrainer/models"
+	terminalServices "soli/formations/src/terminalTrainer/services"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -47,6 +52,7 @@ type ScenarioController interface {
 	GroupImportJSON(ctx *gin.Context)
 	GroupUploadScenario(ctx *gin.Context)
 	GetAvailableScenarios(ctx *gin.Context)
+	LaunchScenario(ctx *gin.Context)
 	OrgListScenarios(ctx *gin.Context)
 	OrgImportJSON(ctx *gin.Context)
 	OrgUploadScenario(ctx *gin.Context)
@@ -61,6 +67,7 @@ type scenarioController struct {
 	importerService *services.ScenarioImporterService
 	exportService   *services.ScenarioExportService
 	seedService     *services.ScenarioSeedService
+	terminalService terminalServices.TerminalTrainerService
 }
 
 // NewScenarioController creates a new scenario controller with its service dependencies
@@ -71,6 +78,7 @@ func NewScenarioController(db *gorm.DB) ScenarioController {
 	importerService := services.NewScenarioImporterService(db)
 	exportService := services.NewScenarioExportService(db)
 	seedService := services.NewScenarioSeedService(db)
+	terminalService := terminalServices.NewTerminalTrainerService(db)
 
 	return &scenarioController{
 		db:              db,
@@ -78,6 +86,7 @@ func NewScenarioController(db *gorm.DB) ScenarioController {
 		importerService: importerService,
 		exportService:   exportService,
 		seedService:     seedService,
+		terminalService: terminalService,
 	}
 }
 
@@ -1409,7 +1418,7 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 	var scenarios []models.Scenario
 
 	if sc.hasAdminRole(ctx) {
-		if err := sc.db.Find(&scenarios).Error; err != nil {
+		if err := sc.db.Preload("CompatibleInstanceTypes").Find(&scenarios).Error; err != nil {
 			slog.Error("failed to fetch all scenarios", "err", err)
 			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 				ErrorCode:    http.StatusInternalServerError,
@@ -1466,6 +1475,7 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 		now := time.Now()
 		combined := strings.Join(conditions, " OR ")
 		query := sc.db.Distinct().
+			Preload("CompatibleInstanceTypes").
 			Joins("JOIN scenario_assignments sa ON sa.scenario_id = scenarios.id").
 			Where("sa.is_active = true AND (sa.deadline IS NULL OR sa.deadline > ?)", now).
 			Where(combined, args...)
@@ -1480,21 +1490,326 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 	}
 
-	// Convert to lightweight output (no steps)
-	output := make([]gin.H, 0, len(scenarios))
+	// Fetch available instance types from tt-backend (best-effort)
+	var availableTypes []terminalDto.InstanceType
+	instanceTypes, ttErr := sc.terminalService.GetInstanceTypes("")
+	if ttErr != nil {
+		slog.Warn("failed to fetch instance types from tt-backend", "err", ttErr)
+	} else {
+		availableTypes = instanceTypes
+	}
+
+	// Build available prefix set for quick lookup
+	availablePrefixSet := make(map[string]bool, len(availableTypes))
+	for _, inst := range availableTypes {
+		availablePrefixSet[inst.Prefix] = true
+	}
+
+	// Convert to enriched output with launchability info
+	output := make([]dto.AvailableScenarioOutput, 0, len(scenarios))
 	for _, s := range scenarios {
-		output = append(output, gin.H{
-			"id":             s.ID,
-			"name":           s.Name,
-			"title":          s.Title,
-			"description":    s.Description,
-			"difficulty":     s.Difficulty,
-			"estimated_time": s.EstimatedTime,
-			"instance_type":  s.InstanceType,
-			"os_type":        s.OsType,
-		})
+		item := dto.AvailableScenarioOutput{
+			ID:            s.ID,
+			Name:          s.Name,
+			Title:         s.Title,
+			Description:   s.Description,
+			Difficulty:    s.Difficulty,
+			EstimatedTime: s.EstimatedTime,
+			InstanceType:  s.InstanceType,
+			OsType:        s.OsType,
+		}
+
+		// Convert compatible instance types
+		if len(s.CompatibleInstanceTypes) > 0 {
+			types := make([]dto.ScenarioInstanceTypeOutput, 0, len(s.CompatibleInstanceTypes))
+			for _, t := range s.CompatibleInstanceTypes {
+				types = append(types, dto.ScenarioInstanceTypeOutput{
+					ID:           t.ID,
+					ScenarioID:   t.ScenarioID,
+					InstanceType: t.InstanceType,
+					OsType:       t.OsType,
+					Priority:     t.Priority,
+					CreatedAt:    t.CreatedAt,
+					UpdatedAt:    t.UpdatedAt,
+				})
+			}
+			item.CompatibleInstanceTypes = types
+		}
+
+		// Determine launchability by cross-referencing with available instance types
+		if len(availableTypes) > 0 {
+			matched := findMatchingInstanceTypes(s, availablePrefixSet)
+			item.AvailableInstanceTypes = matched
+			item.Launchable = len(matched) > 0
+		}
+
+		output = append(output, item)
 	}
 	ctx.JSON(http.StatusOK, output)
+}
+
+// findMatchingInstanceTypes returns available instance type prefixes that match a scenario
+func findMatchingInstanceTypes(scenario models.Scenario, availablePrefixSet map[string]bool) []string {
+	var matched []string
+
+	if len(scenario.CompatibleInstanceTypes) > 0 {
+		for _, ct := range scenario.CompatibleInstanceTypes {
+			if availablePrefixSet[ct.InstanceType] {
+				matched = append(matched, ct.InstanceType)
+			}
+		}
+	} else {
+		// Fallback: use legacy InstanceType field
+		if availablePrefixSet[scenario.InstanceType] {
+			matched = append(matched, scenario.InstanceType)
+		}
+	}
+
+	return matched
+}
+
+// findBestInstanceType selects the best compatible instance type for a scenario
+// from the list of available types. Returns the prefix string or empty if none match.
+func findBestInstanceType(scenario models.Scenario, available []terminalDto.InstanceType) string {
+	availableSet := make(map[string]bool, len(available))
+	for _, inst := range available {
+		availableSet[inst.Prefix] = true
+	}
+
+	if len(scenario.CompatibleInstanceTypes) == 0 {
+		// Fallback: use legacy InstanceType field
+		if availableSet[scenario.InstanceType] {
+			return scenario.InstanceType
+		}
+		return ""
+	}
+
+	// Sort compatible types by priority (descending — higher priority first)
+	sorted := make([]models.ScenarioInstanceType, len(scenario.CompatibleInstanceTypes))
+	copy(sorted, scenario.CompatibleInstanceTypes)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Priority > sorted[j].Priority
+	})
+
+	// Return the first available match
+	for _, ct := range sorted {
+		if availableSet[ct.InstanceType] {
+			return ct.InstanceType
+		}
+	}
+
+	return ""
+}
+
+// LaunchScenario godoc
+// @Summary Launch a scenario with auto-provisioned terminal
+// @Description Creates a terminal session and starts a scenario session in one call
+// @Tags scenario-sessions
+// @Accept json
+// @Produce json
+// @Param input body dto.LaunchScenarioInput true "Launch input"
+// @Success 200 {object} dto.LaunchScenarioResponse
+// @Failure 400 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Failure 409 {object} errors.APIError
+// @Failure 503 {object} errors.APIError
+// @Router /scenario-sessions/launch [post]
+// @Security BearerAuth
+func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
+	var input dto.LaunchScenarioInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid input: " + err.Error(),
+		})
+		return
+	}
+
+	userID := ctx.GetString("userId")
+	scenarioID, err := uuid.Parse(input.ScenarioID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid scenario ID",
+		})
+		return
+	}
+
+	// Load scenario with CompatibleInstanceTypes and Steps
+	var scenario models.Scenario
+	if err := sc.db.Preload("CompatibleInstanceTypes").Preload("Steps").First(&scenario, scenarioID).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Scenario not found",
+		})
+		return
+	}
+
+	// Check assignment access: admin OR user has group/org assignment
+	if !sc.hasAdminRole(ctx) {
+		hasAccess, err := sc.checkScenarioAccess(userID, scenarioID)
+		if err != nil {
+			slog.Error("failed to check scenario access", "err", err)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to verify access",
+			})
+			return
+		}
+		if !hasAccess {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "No access to this scenario",
+			})
+			return
+		}
+	}
+
+	// Get available instance types from tt-backend
+	instanceTypes, err := sc.terminalService.GetInstanceTypes(input.Backend)
+	if err != nil {
+		slog.Error("failed to get instance types from tt-backend", "err", err)
+		ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
+			ErrorCode:    http.StatusServiceUnavailable,
+			ErrorMessage: "Terminal service unavailable",
+		})
+		return
+	}
+
+	// Find best compatible instance type
+	selectedType := findBestInstanceType(scenario, instanceTypes)
+	if selectedType == "" {
+		ctx.JSON(http.StatusConflict, &errors.APIError{
+			ErrorCode:    http.StatusConflict,
+			ErrorMessage: "No compatible instance type available",
+		})
+		return
+	}
+
+	// Auto-provision terminal key if missing
+	_, keyErr := sc.terminalService.GetUserKey(userID)
+	if keyErr != nil {
+		user, userErr := casdoorsdk.GetUserByUserId(userID)
+		keyName := "auto-" + userID
+		if userErr == nil && user != nil && user.Email != "" {
+			keyName = "auto-" + user.Email
+		}
+		if createErr := sc.terminalService.CreateUserKey(userID, keyName); createErr != nil {
+			slog.Error("failed to create terminal key for user", "userID", userID, "err", createErr)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to provision terminal access",
+			})
+			return
+		}
+	}
+
+	// Fetch terms from tt-backend
+	terms, termsErr := sc.terminalService.GetTerms()
+	if termsErr != nil {
+		slog.Error("failed to fetch terminal terms", "err", termsErr)
+		ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
+			ErrorCode:    http.StatusServiceUnavailable,
+			ErrorMessage: "Terminal service unavailable",
+		})
+		return
+	}
+
+	// Create terminal session (4h default expiry)
+	sessionInput := terminalDto.CreateTerminalSessionInput{
+		Terms:        terms,
+		InstanceType: selectedType,
+		Backend:      input.Backend,
+		Name:         fmt.Sprintf("scenario-%s", scenario.Title),
+		Expiry:       14400, // 4 hours
+		Hostname:     scenario.Hostname,
+		OrganizationID: func() string {
+			if scenario.OrganizationID != nil {
+				return scenario.OrganizationID.String()
+			}
+			return ""
+		}(),
+		RecordingEnabled:     1,
+		HistoryRetentionDays: 30,
+	}
+
+	terminalResp, termErr := sc.terminalService.StartSession(userID, sessionInput)
+	if termErr != nil {
+		slog.Error("failed to create terminal session", "userID", userID, "err", termErr)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to create terminal session: " + termErr.Error(),
+		})
+		return
+	}
+
+	// Create scenario session
+	session, startErr := sc.sessionService.StartScenario(userID, scenarioID, terminalResp.SessionID)
+	if startErr != nil {
+		slog.Error("failed to start scenario session", "userID", userID, "scenarioID", scenarioID, "err", startErr)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to start scenario session: " + startErr.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dto.LaunchScenarioResponse{
+		TerminalSessionID: terminalResp.SessionID,
+		ScenarioSessionID: session.ID.String(),
+		Status:            session.Status,
+	})
+}
+
+// checkScenarioAccess checks if a user has access to a scenario via group or org assignments
+func (sc *scenarioController) checkScenarioAccess(userID string, scenarioID uuid.UUID) (bool, error) {
+	// Get user's group IDs
+	var groupIDs []uuid.UUID
+	if err := sc.db.Model(&groupModels.GroupMember{}).
+		Where("user_id = ? AND is_active = true", userID).
+		Pluck("group_id", &groupIDs).Error; err != nil {
+		return false, err
+	}
+
+	// Get user's org IDs
+	var orgIDs []uuid.UUID
+	if err := sc.db.Model(&orgModels.OrganizationMember{}).
+		Where("user_id = ? AND is_active = true", userID).
+		Pluck("organization_id", &orgIDs).Error; err != nil {
+		return false, err
+	}
+
+	// Build OR conditions for group and org scopes
+	var conditions []string
+	var args []interface{}
+
+	args = append(args, scenarioID)
+
+	if len(groupIDs) > 0 {
+		conditions = append(conditions, "(scope = 'group' AND group_id IN ?)")
+		args = append(args, groupIDs)
+	}
+	if len(orgIDs) > 0 {
+		conditions = append(conditions, "(scope = 'org' AND organization_id IN ?)")
+		args = append(args, orgIDs)
+	}
+
+	if len(conditions) == 0 {
+		return false, nil
+	}
+
+	now := time.Now()
+	combined := strings.Join(conditions, " OR ")
+
+	var count int64
+	if err := sc.db.Model(&models.ScenarioAssignment{}).
+		Where("scenario_id = ? AND is_active = true AND (deadline IS NULL OR deadline > ?)", args[0], now).
+		Where(combined, args[1:]...).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
 }
 
 // OrgListScenarios godoc

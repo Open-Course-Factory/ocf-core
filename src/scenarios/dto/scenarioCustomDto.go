@@ -144,6 +144,34 @@ type ExportScenariosInput struct {
 	IDs []uuid.UUID `json:"ids" binding:"required,min=1"`
 }
 
+// LaunchScenarioInput - DTO for direct scenario launch (auto-provisions terminal)
+type LaunchScenarioInput struct {
+	ScenarioID string `json:"scenario_id" binding:"required"`
+	Backend    string `json:"backend,omitempty"`
+}
+
+// LaunchScenarioResponse - DTO for launch scenario result
+type LaunchScenarioResponse struct {
+	TerminalSessionID string `json:"terminal_session_id"`
+	ScenarioSessionID string `json:"scenario_session_id"`
+	Status            string `json:"status"`
+}
+
+// AvailableScenarioOutput - enriched scenario with launchability info
+type AvailableScenarioOutput struct {
+	ID                      uuid.UUID                    `json:"id"`
+	Name                    string                       `json:"name"`
+	Title                   string                       `json:"title"`
+	Description             string                       `json:"description,omitempty"`
+	Difficulty              string                       `json:"difficulty"`
+	EstimatedTime           string                       `json:"estimated_time"`
+	InstanceType            string                       `json:"instance_type"`
+	OsType                  string                       `json:"os_type,omitempty"`
+	CompatibleInstanceTypes []ScenarioInstanceTypeOutput `json:"compatible_instance_types,omitempty"`
+	Launchable              bool                         `json:"launchable"`
+	AvailableInstanceTypes  []string                     `json:"available_instance_types,omitempty"`
+}
+
 // MySessionResponse - DTO for a learner's own scenario session
 type MySessionResponse struct {
 	ID                uuid.UUID  `json:"id"`

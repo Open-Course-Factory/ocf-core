@@ -39,6 +39,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	sessionRoutes.POST("/:id/submit-flag", middleware.AuthManagement(), rateLimiter, controller.SubmitFlag)
 	sessionRoutes.POST("/:id/steps/:stepOrder/hints/:level/reveal", middleware.AuthManagement(), controller.RevealHint)
 	sessionRoutes.POST("/:id/abandon", middleware.AuthManagement(), controller.AbandonSession)
+	sessionRoutes.POST("/launch", middleware.AuthManagement(), controller.LaunchScenario)
 
 	// Group-level scenario import/export routes (teachers/group admins)
 	groupScenarioRoutes := router.Group("/groups/:groupId/scenarios")

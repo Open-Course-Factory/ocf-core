@@ -31,6 +31,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/scenario-sessions/:id/submit-flag", "POST"},
 		{"/api/v1/scenario-sessions/:id/steps/:stepOrder/hints/:level/reveal", "POST"},
 		{"/api/v1/scenario-sessions/:id/abandon", "POST"},
+		{"/api/v1/scenario-sessions/launch", "POST"},
 	}
 
 	for _, route := range sessionRoutes {
@@ -183,6 +184,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Path: "/api/v1/scenario-sessions/:id/abandon", Method: "POST",
 			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
 			Description: "Abandon a session (must own the session)",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/scenario-sessions/launch", Method: "POST",
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Launch a scenario with auto-provisioned terminal",
 		},
 	)
 
