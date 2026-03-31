@@ -201,6 +201,50 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 		return
 	}
 
+	// Check machine compatibility: terminal must match scenario requirements
+	var scenario models.Scenario
+	if err := sc.db.First(&scenario, "id = ?", scenarioID).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Scenario not found",
+		})
+		return
+	}
+
+	// Size check: terminal size must be >= scenario required size
+	requiredSize := scenario.InstanceType // stores size like "M", "XL"
+	machineSize := terminal.MachineSize   // actual terminal size like "L"
+	if requiredSize != "" && machineSize != "" {
+		requiredOrder, reqOk := sizeOrder[requiredSize]
+		machineOrder, machOk := sizeOrder[machineSize]
+		if reqOk && machOk && machineOrder < requiredOrder {
+			ctx.JSON(http.StatusConflict, &errors.APIError{
+				ErrorCode:    http.StatusConflict,
+				ErrorMessage: fmt.Sprintf("This scenario requires a %s machine or larger, but this terminal is %s", requiredSize, machineSize),
+			})
+			return
+		}
+	}
+
+	// OS type check: look up terminal's instance type to get its OS type from tt-backend
+	if scenario.OsType != "" {
+		instanceTypes, ttErr := sc.terminalService.GetInstanceTypes("")
+		if ttErr == nil {
+			for _, inst := range instanceTypes {
+				if inst.Prefix == terminal.InstanceType {
+					if inst.OsType != "" && inst.OsType != scenario.OsType {
+						ctx.JSON(http.StatusConflict, &errors.APIError{
+							ErrorCode:    http.StatusConflict,
+							ErrorMessage: fmt.Sprintf("This scenario requires a %s-based machine, but this terminal runs %s", scenario.OsType, inst.OsType),
+						})
+						return
+					}
+					break
+				}
+			}
+		}
+	}
+
 	// Check group-based scenario assignment access (admins bypass)
 	if !sc.hasAdminRole(ctx) {
 		var groupIDs []uuid.UUID
