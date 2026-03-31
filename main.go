@@ -211,6 +211,9 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	// Initialize Swagger documentation
 	initialization.InitSwagger(r, sqldb.DB)
 
+	// Validate permission setup
+	access.ValidatePermissionSetup(r)
+
 	// Start server
 	r.Run(":8080")
 }
