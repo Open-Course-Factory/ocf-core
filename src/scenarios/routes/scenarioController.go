@@ -1540,22 +1540,34 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, output)
 }
 
+// sizeOrder maps size labels to numeric order for comparison.
+// A larger number means a more powerful machine.
+var sizeOrder = map[string]int{
+	"XS": 1, "S": 2, "M": 3, "L": 4, "XL": 5, "XXL": 6,
+}
+
 // instanceMatchesScenario checks if an instance type matches a scenario's requirements.
-// Matching criteria: OS type must match AND instance must have the required size.
-// scenario.OsType = "deb" matches instances with OsType "deb" (debian, ubuntu, etc.)
-// scenario.InstanceType = "M" matches instances whose Size contains "M" (e.g., "S|M|L")
+// Matching criteria: OS type must match AND instance size must be >= required size.
+// A scenario requiring "M" can run on M, L, XL, or XXL machines.
 func instanceMatchesScenario(inst terminalDto.InstanceType, osType string, requiredSize string) bool {
 	// Check OS type match
 	if osType != "" && inst.OsType != osType {
 		return false
 	}
 
-	// Check size match — instance Size is pipe-separated (e.g., "XS|S|M")
+	// Check size: instance must be at least as large as required
 	if requiredSize != "" {
+		requiredOrder, reqOk := sizeOrder[requiredSize]
+		if !reqOk {
+			return false
+		}
+		// Instance Size can be a single value (e.g., "L") or pipe-separated (e.g., "S|M|L")
+		// Match if ANY of the instance's sizes is >= the required size
 		sizes := strings.Split(inst.Size, "|")
 		found := false
 		for _, s := range sizes {
-			if strings.TrimSpace(s) == requiredSize {
+			instOrder, ok := sizeOrder[strings.TrimSpace(s)]
+			if ok && instOrder >= requiredOrder {
 				found = true
 				break
 			}
