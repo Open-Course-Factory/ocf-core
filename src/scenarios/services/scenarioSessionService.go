@@ -70,6 +70,15 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 	}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		// Check if the terminal already has any scenario bound (permanent binding)
+		var existingCount int64
+		if err := tx.Model(&models.ScenarioSession{}).Where("terminal_session_id = ?", terminalSessionID).Count(&existingCount).Error; err != nil {
+			return fmt.Errorf("failed to check terminal binding: %w", err)
+		}
+		if existingCount > 0 {
+			return fmt.Errorf("terminal already has a scenario bound")
+		}
+
 		// Check for existing active session inside the transaction to prevent race conditions
 		var existingSession models.ScenarioSession
 		if err := tx.Where("user_id = ? AND scenario_id = ? AND status IN ?", userID, scenarioID, []string{"in_progress", "active", "provisioning", "setup_failed"}).First(&existingSession).Error; err == nil {

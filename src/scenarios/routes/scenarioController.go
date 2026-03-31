@@ -520,7 +520,7 @@ func (sc *scenarioController) AbandonSession(ctx *gin.Context) {
 
 // GetSessionByTerminal godoc
 // @Summary Get scenario session by terminal
-// @Description Find the active scenario session linked to a terminal session
+// @Description Find the most recent scenario session linked to a terminal session
 // @Tags scenario-sessions
 // @Produce json
 // @Param terminalId path string true "Terminal session ID"
@@ -540,11 +540,11 @@ func (sc *scenarioController) GetSessionByTerminal(ctx *gin.Context) {
 	}
 
 	var session models.ScenarioSession
-	err := sc.db.Where("terminal_session_id = ? AND status = ?", terminalID, "active").First(&session).Error
+	err := sc.db.Where("terminal_session_id = ?", terminalID).Order("created_at DESC").First(&session).Error
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "No active scenario session for this terminal",
+			ErrorMessage: "No scenario session for this terminal",
 		})
 		return
 	}
