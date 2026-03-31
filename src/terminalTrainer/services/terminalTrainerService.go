@@ -520,6 +520,16 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 		utils.Warn("failed to decrement concurrent_terminals for user %s: %v", terminal.UserID, decrementErr)
 	}
 
+	// 4. Auto-abandon any active scenario sessions linked to this terminal
+	result := tts.db.Model(&struct{}{}).Table("scenario_sessions").
+		Where("terminal_session_id = ? AND status IN ?", sessionID, []string{"active", "provisioning", "in_progress"}).
+		Update("status", "abandoned")
+	if result.Error != nil {
+		utils.Warn("failed to abandon scenario sessions for terminal %s: %v", sessionID, result.Error)
+	} else if result.RowsAffected > 0 {
+		utils.Debug("Auto-abandoned %d scenario session(s) for stopped terminal %s", result.RowsAffected, sessionID)
+	}
+
 	utils.Debug("Successfully updated session %s status to 'stopped'", sessionID)
 	return nil
 }
