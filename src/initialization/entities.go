@@ -55,6 +55,7 @@ func RegisterEntities() {
 	scenarioRegistration.RegisterScenarioStepProgress(ems.GlobalEntityRegistrationService)
 	scenarioRegistration.RegisterScenarioFlag(ems.GlobalEntityRegistrationService)
 	scenarioRegistration.RegisterScenarioAssignment(ems.GlobalEntityRegistrationService)
+	scenarioRegistration.RegisterScenarioInstanceType(ems.GlobalEntityRegistrationService)
 
 	configRegistration.RegisterFeature(ems.GlobalEntityRegistrationService)
 

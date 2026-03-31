@@ -84,5 +84,30 @@ type ScenarioOutput struct {
 	FinishFileID   *uuid.UUID         `json:"finish_file_id,omitempty"`
 	CreatedAt      time.Time          `json:"created_at"`
 	UpdatedAt      time.Time          `json:"updated_at"`
-	Steps          []ScenarioStepOutput `json:"steps,omitempty"`
+	Steps                  []ScenarioStepOutput          `json:"steps,omitempty"`
+	CompatibleInstanceTypes []ScenarioInstanceTypeOutput `json:"compatible_instance_types,omitempty"`
+}
+
+// ScenarioInstanceType DTOs
+type CreateScenarioInstanceTypeInput struct {
+	ScenarioID   uuid.UUID `json:"scenario_id" mapstructure:"scenario_id" binding:"required"`
+	InstanceType string    `json:"instance_type" mapstructure:"instance_type" binding:"required"`
+	OsType       string    `json:"os_type,omitempty" mapstructure:"os_type"`
+	Priority     int       `json:"priority,omitempty" mapstructure:"priority"`
+}
+
+type EditScenarioInstanceTypeInput struct {
+	InstanceType *string `json:"instance_type,omitempty" mapstructure:"instance_type"`
+	OsType       *string `json:"os_type,omitempty" mapstructure:"os_type"`
+	Priority     *int    `json:"priority,omitempty" mapstructure:"priority"`
+}
+
+type ScenarioInstanceTypeOutput struct {
+	ID           uuid.UUID `json:"id"`
+	ScenarioID   uuid.UUID `json:"scenario_id"`
+	InstanceType string    `json:"instance_type"`
+	OsType       string    `json:"os_type,omitempty"`
+	Priority     int       `json:"priority"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }

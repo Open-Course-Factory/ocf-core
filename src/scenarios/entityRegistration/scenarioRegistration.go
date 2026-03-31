@@ -70,6 +70,22 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						output.Steps = steps
 					}
 
+					if len(model.CompatibleInstanceTypes) > 0 {
+						types := make([]dto.ScenarioInstanceTypeOutput, 0, len(model.CompatibleInstanceTypes))
+						for _, t := range model.CompatibleInstanceTypes {
+							types = append(types, dto.ScenarioInstanceTypeOutput{
+								ID:           t.ID,
+								ScenarioID:   t.ScenarioID,
+								InstanceType: t.InstanceType,
+								OsType:       t.OsType,
+								Priority:     t.Priority,
+								CreatedAt:    t.CreatedAt,
+								UpdatedAt:    t.UpdatedAt,
+							})
+						}
+						output.CompatibleInstanceTypes = types
+					}
+
 					return output, nil
 				},
 				DtoToModel: func(input dto.CreateScenarioInput) *models.Scenario {
@@ -166,8 +182,8 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 					return updates
 				},
 			},
-			SubEntities: []any{models.ScenarioStep{}},
-			DefaultIncludes: []string{"Steps"},
+			SubEntities: []any{models.ScenarioStep{}, models.ScenarioInstanceType{}},
+			DefaultIncludes: []string{"Steps", "CompatibleInstanceTypes"},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
 					string(authModels.Member): "(" + http.MethodGet + ")",

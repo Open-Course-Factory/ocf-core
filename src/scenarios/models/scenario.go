@@ -35,7 +35,8 @@ type Scenario struct {
 	FinishFileID   *uuid.UUID `gorm:"type:uuid;index" json:"finish_file_id,omitempty" mapstructure:"finish_file_id"`
 
 	// Relations
-	Steps []ScenarioStep `gorm:"foreignKey:ScenarioID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"steps,omitempty"`
+	Steps                  []ScenarioStep         `gorm:"foreignKey:ScenarioID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"steps,omitempty"`
+	CompatibleInstanceTypes []ScenarioInstanceType `gorm:"foreignKey:ScenarioID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"compatible_instance_types,omitempty"`
 }
 
 // Implement interfaces for entity management system
