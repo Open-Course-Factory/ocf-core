@@ -28,12 +28,12 @@ type AccessRule struct {
 }
 
 // RoutePermission declares the full authorization contract for a single route.
-// Both Layer 1 (Casbin) and Layer 2 (business logic) are described here.
+// Both Layer 1 (role-based gateway) and Layer 2 (business logic) are described here.
 type RoutePermission struct {
 	Path        string     `json:"path"`
 	Method      string     `json:"method"`
 	Category    string     `json:"category"`
-	CasbinRole  string     `json:"casbin_role"` // "member" or "administrator"
+	Role        string     `json:"role"` // "member" or "administrator"
 	Access      AccessRule `json:"access"`
 	Description string     `json:"description"`
 }
