@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	access "soli/formations/src/auth/access"
+	"soli/formations/src/auth/mocks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/payment/models"
 	paymentController "soli/formations/src/payment/routes"
@@ -18,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // setupOrgAndPlan creates an org (via raw SQL to avoid SQLite jsonb issues) and a plan.
@@ -67,6 +70,43 @@ func newTestContext(method, path string, body interface{}, userID string, roles 
 	return ctx, w
 }
 
+// setupOrgSubscriptionRouter creates a test router with org subscription routes
+// and Layer 2 enforcement middleware wired up.
+func setupOrgSubscriptionRouter(t *testing.T, db *gorm.DB, userID string, roles []string) *gin.Engine {
+	t.Helper()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
+	t.Cleanup(func() {
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
+	})
+
+	mockEnforcer := mocks.NewMockEnforcer()
+	paymentController.RegisterPaymentPermissions(mockEnforcer)
+
+	access.RegisterBuiltinEnforcers(nil, access.NewGormMembershipChecker(db))
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	api := r.Group("/api/v1")
+	api.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Set("userRoles", roles)
+		c.Next()
+	})
+	api.Use(access.Layer2Enforcement())
+
+	controller := paymentController.NewOrganizationSubscriptionController(db)
+	org := api.Group("/organizations/:id")
+	org.POST("/subscribe", controller.CreateOrganizationSubscription)
+	org.GET("/subscription", controller.GetOrganizationSubscription)
+	org.DELETE("/subscription", controller.CancelOrganizationSubscription)
+	org.GET("/features", controller.GetOrganizationFeatures)
+	org.GET("/usage-limits", controller.GetOrganizationUsageLimits)
+
+	return r
+}
+
 func TestCreateOrgSubscription_AdminNonMember_Succeeds(t *testing.T) {
 	orgID, planID := setupOrgAndPlan(t)
 	controller := paymentController.NewOrganizationSubscriptionController(sharedTestDB)
@@ -88,18 +128,21 @@ func TestCreateOrgSubscription_AdminNonMember_Succeeds(t *testing.T) {
 
 func TestCreateOrgSubscription_NonMemberNonAdmin_Forbidden(t *testing.T) {
 	orgID, planID := setupOrgAndPlan(t)
-	controller := paymentController.NewOrganizationSubscriptionController(sharedTestDB)
 
 	regularUserID := uuid.New().String() // Not a member, not an admin
+
+	// Use a router-based test so Layer 2 middleware can match the route
+	router := setupOrgSubscriptionRouter(t, sharedTestDB, regularUserID, []string{"member"})
 
 	body := map[string]interface{}{
 		"subscription_plan_id": planID.String(),
 		"quantity":             1,
 	}
-	ctx, w := newTestContext("POST", "/organizations/"+orgID.String()+"/subscribe", body, regularUserID, []string{"member"})
-	ctx.Params = gin.Params{{Key: "id", Value: orgID.String()}}
-
-	controller.CreateOrganizationSubscription(ctx)
+	jsonBytes, _ := json.Marshal(body)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/v1/organizations/"+orgID.String()+"/subscribe", bytes.NewBuffer(jsonBytes))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code,
 		"Non-member non-admin should get 403 Forbidden")

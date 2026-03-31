@@ -100,28 +100,6 @@ func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ct
 		return
 	}
 
-	// Admins can manage any organization's subscriptions
-	if !isAdmin(ctx) {
-		// Check if user has permission to manage organization subscriptions
-		var member organizationModels.OrganizationMember
-		if err := osc.db.Where("organization_id = ? AND user_id = ? AND is_active = ?",
-			orgID, userID, true).First(&member).Error; err != nil {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "You are not a member of this organization",
-			})
-			return
-		}
-
-		if !member.IsOwner() && !member.IsManager() {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Only organization owners and managers can manage subscriptions",
-			})
-			return
-		}
-	}
-
 	// Create the subscription
 	subscription, err := osc.orgSubService.CreateOrganizationSubscription(
 		orgID,
@@ -173,8 +151,6 @@ func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ct
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/organizations/{orgID}/subscription [get]
 func (osc *organizationSubscriptionController) GetOrganizationSubscription(ctx *gin.Context) {
-	userID := ctx.GetString("userId")
-
 	// Parse organization ID from URL
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
@@ -184,20 +160,6 @@ func (osc *organizationSubscriptionController) GetOrganizationSubscription(ctx *
 			ErrorMessage: "Invalid organization ID",
 		})
 		return
-	}
-
-	// Admins can view any organization's subscription
-	if !isAdmin(ctx) {
-		// Verify user is member of the organization
-		var member organizationModels.OrganizationMember
-		if err := osc.db.Where("organization_id = ? AND user_id = ? AND is_active = ?",
-			orgID, userID, true).First(&member).Error; err != nil {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "You are not a member of this organization",
-			})
-			return
-		}
 	}
 
 	// Get subscription
@@ -292,8 +254,6 @@ func (osc *organizationSubscriptionController) GetAllOrganizationSubscriptions(c
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/organizations/{orgID}/subscription [delete]
 func (osc *organizationSubscriptionController) CancelOrganizationSubscription(ctx *gin.Context) {
-	userID := ctx.GetString("userId")
-
 	// Parse organization ID from URL
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
@@ -312,28 +272,6 @@ func (osc *organizationSubscriptionController) CancelOrganizationSubscription(ct
 			ErrorMessage: err.Error(),
 		})
 		return
-	}
-
-	// Admins can cancel any organization's subscription
-	if !isAdmin(ctx) {
-		// Verify user is owner or manager of the organization
-		var member organizationModels.OrganizationMember
-		if err := osc.db.Where("organization_id = ? AND user_id = ? AND is_active = ?",
-			orgID, userID, true).First(&member).Error; err != nil {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "You are not a member of this organization",
-			})
-			return
-		}
-
-		if !member.IsOwner() && !member.IsManager() {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Only organization owners and managers can manage subscriptions",
-			})
-			return
-		}
 	}
 
 	// Cancel subscription
@@ -433,8 +371,6 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/organizations/{orgID}/features [get]
 func (osc *organizationSubscriptionController) GetOrganizationFeatures(ctx *gin.Context) {
-	userID := ctx.GetString("userId")
-
 	// Parse organization ID from URL
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
@@ -444,20 +380,6 @@ func (osc *organizationSubscriptionController) GetOrganizationFeatures(ctx *gin.
 			ErrorMessage: "Invalid organization ID",
 		})
 		return
-	}
-
-	// Admins can view any organization's features
-	if !isAdmin(ctx) {
-		// Verify user is member of the organization
-		var member organizationModels.OrganizationMember
-		if err := osc.db.Where("organization_id = ? AND user_id = ? AND is_active = ?",
-			orgID, userID, true).First(&member).Error; err != nil {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "You are not a member of this organization",
-			})
-			return
-		}
 	}
 
 	// Get features
@@ -487,8 +409,6 @@ func (osc *organizationSubscriptionController) GetOrganizationFeatures(ctx *gin.
 //	@Failure		404	{object}	errors.APIError
 //	@Router			/organizations/{orgID}/usage-limits [get]
 func (osc *organizationSubscriptionController) GetOrganizationUsageLimits(ctx *gin.Context) {
-	userID := ctx.GetString("userId")
-
 	// Parse organization ID from URL
 	orgIDStr := ctx.Param("id")
 	orgID, err := uuid.Parse(orgIDStr)
@@ -498,20 +418,6 @@ func (osc *organizationSubscriptionController) GetOrganizationUsageLimits(ctx *g
 			ErrorMessage: "Invalid organization ID",
 		})
 		return
-	}
-
-	// Admins can view any organization's usage limits
-	if !isAdmin(ctx) {
-		// Verify user is member of the organization
-		var member organizationModels.OrganizationMember
-		if err := osc.db.Where("organization_id = ? AND user_id = ? AND is_active = ?",
-			orgID, userID, true).First(&member).Error; err != nil {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "You are not a member of this organization",
-			})
-			return
-		}
 	}
 
 	// Get usage limits

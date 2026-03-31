@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/scenarios/services"
 	ttServices "soli/formations/src/terminalTrainer/services"
 )
@@ -18,7 +17,6 @@ type TeacherController struct {
 	dashboardService *services.TeacherDashboardService
 	sessionService   *services.ScenarioSessionService
 	terminalService  ttServices.TerminalTrainerService
-	db               *gorm.DB
 }
 
 // NewTeacherController creates a new teacher controller
@@ -31,23 +29,7 @@ func NewTeacherController(db *gorm.DB) *TeacherController {
 		dashboardService: services.NewTeacherDashboardService(db, terminalService, sessionService),
 		sessionService:   sessionService,
 		terminalService:  terminalService,
-		db:               db,
 	}
-}
-
-// validateTeacherAccess checks that the current user is a group owner/admin
-func (tc *TeacherController) validateTeacherAccess(c *gin.Context, groupID uuid.UUID) bool {
-	userID := c.GetString("userId")
-
-	// Check group-level ownership/admin
-	var member groupModels.GroupMember
-	err := tc.db.Where("group_id = ? AND user_id = ? AND is_active = true AND role IN ?",
-		groupID, userID, []string{"owner", "manager"}).First(&member).Error
-	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized as group teacher"})
-		return false
-	}
-	return true
 }
 
 // GetGroupActivity godoc
@@ -66,10 +48,6 @@ func (tc *TeacherController) GetGroupActivity(c *gin.Context) {
 	groupID, err := uuid.Parse(c.Param("groupId"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group ID"})
-		return
-	}
-
-	if !tc.validateTeacherAccess(c, groupID) {
 		return
 	}
 
@@ -109,10 +87,6 @@ func (tc *TeacherController) GetScenarioResults(c *gin.Context) {
 		return
 	}
 
-	if !tc.validateTeacherAccess(c, groupID) {
-		return
-	}
-
 	results, err := tc.dashboardService.GetScenarioResults(groupID, scenarioID)
 	if err != nil {
 		slog.Error("failed to get scenario results", "err", err)
@@ -149,10 +123,6 @@ func (tc *TeacherController) GetScenarioAnalytics(c *gin.Context) {
 		return
 	}
 
-	if !tc.validateTeacherAccess(c, groupID) {
-		return
-	}
-
 	analytics, err := tc.dashboardService.GetScenarioAnalytics(groupID, scenarioID)
 	if err != nil {
 		slog.Error("failed to get scenario analytics", "err", err)
@@ -186,10 +156,6 @@ func (tc *TeacherController) GetSessionDetail(c *gin.Context) {
 	sessionID, err := uuid.Parse(c.Param("sessionId"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session ID"})
-		return
-	}
-
-	if !tc.validateTeacherAccess(c, groupID) {
 		return
 	}
 
@@ -239,10 +205,6 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 		return
 	}
 
-	if !tc.validateTeacherAccess(c, groupID) {
-		return
-	}
-
 	var req BulkStartRequest
 	if c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -284,10 +246,6 @@ func (tc *TeacherController) ResetGroupScenarioSessions(c *gin.Context) {
 	scenarioID, err := uuid.Parse(c.Param("scenarioId"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario ID"})
-		return
-	}
-
-	if !tc.validateTeacherAccess(c, groupID) {
 		return
 	}
 

@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	access "soli/formations/src/auth/access"
+	"soli/formations/src/auth/mocks"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/scenarios/models"
@@ -23,7 +25,24 @@ import (
 
 // setupOrgTestRouterWithUserAndRoles creates a test router with org-level scenario
 // routes registered and custom userId + userRoles in the Gin context.
-func setupOrgTestRouterWithUserAndRoles(db *gorm.DB, userID string, roles []string) *gin.Engine {
+// It also wires up the Layer 2 enforcement middleware so authorization is tested.
+func setupOrgTestRouterWithUserAndRoles(t *testing.T, db *gorm.DB, userID string, roles []string) *gin.Engine {
+	t.Helper()
+	// Reset and re-register the RouteRegistry + enforcers for test isolation
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
+	t.Cleanup(func() {
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
+	})
+
+	// Register scenario permissions (populates RouteRegistry)
+	mockEnforcer := mocks.NewMockEnforcer()
+	scenarioController.RegisterScenarioPermissions(mockEnforcer)
+
+	// Register builtin enforcers with a real DB membership checker
+	access.RegisterBuiltinEnforcers(nil, access.NewGormMembershipChecker(db))
+
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	api := r.Group("/api/v1")
@@ -32,6 +51,9 @@ func setupOrgTestRouterWithUserAndRoles(db *gorm.DB, userID string, roles []stri
 		c.Set("userRoles", roles)
 		c.Next()
 	})
+
+	// Add Layer 2 enforcement middleware
+	api.Use(access.Layer2Enforcement())
 
 	controller := scenarioController.NewScenarioController(db)
 
@@ -174,7 +196,7 @@ func TestOrgListScenarios_ReturnsOrgScenarios(t *testing.T) {
 	// Create 1 scenario NOT belonging to this org (should not appear)
 	createTestScenarioNoOrg(t, db, "unrelated-scenario")
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgID.String()+"/scenarios", nil)
@@ -194,7 +216,7 @@ func TestOrgListScenarios_EmptyList(t *testing.T) {
 	orgID := createTestOrg(t, db, ownerID)
 	addOrgMember(t, db, orgID, ownerID, orgModels.OrgRoleOwner)
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgID.String()+"/scenarios", nil)
@@ -216,7 +238,7 @@ func TestOrgListScenarios_Forbidden_NonManager(t *testing.T) {
 	addOrgMember(t, db, orgID, ownerID, orgModels.OrgRoleOwner)
 	addOrgMember(t, db, orgID, memberID, orgModels.OrgRoleMember)
 
-	router := setupOrgTestRouterWithUserAndRoles(db, memberID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, memberID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgID.String()+"/scenarios", nil)
@@ -228,13 +250,15 @@ func TestOrgListScenarios_Forbidden_NonManager(t *testing.T) {
 func TestOrgListScenarios_BadRequest_InvalidOrgID(t *testing.T) {
 	db := freshTestDB(t)
 
-	router := setupOrgTestRouterWithUserAndRoles(db, "some-user", []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, "some-user", []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/organizations/not-a-uuid/scenarios", nil)
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	// Layer 2 middleware rejects before the controller can parse the UUID:
+	// user has no role in the (non-existent) org, so 403 is returned.
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
 func TestOrgListScenarios_AdminBypass(t *testing.T) {
@@ -246,16 +270,14 @@ func TestOrgListScenarios_AdminBypass(t *testing.T) {
 
 	createTestScenarioForOrg(t, db, orgID, "admin-visible-scenario")
 
-	// Admin without org membership gets 403 at controller level.
-	// In production, Casbin middleware (Layer 1) grants admin access
-	// before the controller is reached; this test bypasses middleware.
-	router := setupOrgTestRouterWithUserAndRoles(db, adminID, []string{"Administrator"})
+	// Platform admin bypasses Layer 2 org role check (admin bypass in OrgRole enforcer).
+	router := setupOrgTestRouterWithUserAndRoles(t, db, adminID, []string{"Administrator"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgID.String()+"/scenarios", nil)
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 // ============================================================================
@@ -268,7 +290,7 @@ func TestOrgImportJSON_Success(t *testing.T) {
 	orgID := createTestOrg(t, db, ownerID)
 	addOrgMember(t, db, orgID, ownerID, orgModels.OrgRoleOwner)
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	payload := map[string]any{
 		"title":         "Org-Imported Scenario",
@@ -299,7 +321,7 @@ func TestOrgImportJSON_NoAutoAssignment(t *testing.T) {
 	orgID := createTestOrg(t, db, ownerID)
 	addOrgMember(t, db, orgID, ownerID, orgModels.OrgRoleOwner)
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	payload := map[string]any{
 		"title":         "No-Assignment Scenario",
@@ -331,7 +353,7 @@ func TestOrgImportJSON_Forbidden_NonManager(t *testing.T) {
 	addOrgMember(t, db, orgID, ownerID, orgModels.OrgRoleOwner)
 	addOrgMember(t, db, orgID, memberID, orgModels.OrgRoleMember)
 
-	router := setupOrgTestRouterWithUserAndRoles(db, memberID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, memberID, []string{"Member"})
 
 	payload := map[string]any{
 		"title":         "Blocked Import",
@@ -356,7 +378,7 @@ func TestOrgImportJSON_BadRequest_InvalidInput(t *testing.T) {
 	orgID := createTestOrg(t, db, ownerID)
 	addOrgMember(t, db, orgID, ownerID, orgModels.OrgRoleOwner)
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	// Missing required "title" and "steps"
 	payload := map[string]any{}
@@ -378,7 +400,7 @@ func TestOrgImportJSON_ManagerCanImport(t *testing.T) {
 	addOrgMember(t, db, orgID, ownerID, orgModels.OrgRoleOwner)
 	addOrgMember(t, db, orgID, managerID, orgModels.OrgRoleManager)
 
-	router := setupOrgTestRouterWithUserAndRoles(db, managerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, managerID, []string{"Member"})
 
 	payload := map[string]any{
 		"title":         "Manager-Imported Scenario",
@@ -413,7 +435,7 @@ func TestOrgDeleteScenario_Success(t *testing.T) {
 	groupID := createTestGroupInOrg(t, db, orgID, ownerID)
 	createScenarioAssignment(t, db, scenario.ID, &groupID, &orgID, "group")
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("DELETE", "/api/v1/organizations/"+orgID.String()+"/scenarios/"+scenario.ID.String(), nil)
@@ -442,7 +464,7 @@ func TestOrgDeleteScenario_Forbidden_NonManager(t *testing.T) {
 
 	scenario := createTestScenarioForOrg(t, db, orgID, "no-delete")
 
-	router := setupOrgTestRouterWithUserAndRoles(db, memberID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, memberID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("DELETE", "/api/v1/organizations/"+orgID.String()+"/scenarios/"+scenario.ID.String(), nil)
@@ -466,7 +488,7 @@ func TestOrgDeleteScenario_NotFound_WrongOrg(t *testing.T) {
 	otherOrgID := createTestOrg(t, db, "other-owner-003")
 	scenario := createTestScenarioForOrg(t, db, otherOrgID, "wrong-org-scenario")
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("DELETE", "/api/v1/organizations/"+orgID.String()+"/scenarios/"+scenario.ID.String(), nil)
@@ -483,7 +505,7 @@ func TestOrgDeleteScenario_NotFound_NonexistentScenario(t *testing.T) {
 
 	fakeScenarioID := uuid.New()
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("DELETE", "/api/v1/organizations/"+orgID.String()+"/scenarios/"+fakeScenarioID.String(), nil)
@@ -504,7 +526,7 @@ func TestOrgExportScenario_JSON_Success(t *testing.T) {
 
 	scenario := createTestScenarioForOrg(t, db, orgID, "export-me")
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgID.String()+"/scenarios/"+scenario.ID.String()+"/export?format=json", nil)
@@ -526,7 +548,7 @@ func TestOrgExportScenario_KillerCoda_Success(t *testing.T) {
 
 	scenario := createTestScenarioForOrg(t, db, orgID, "export-archive")
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgID.String()+"/scenarios/"+scenario.ID.String()+"/export?format=killerkoda", nil)
@@ -546,7 +568,7 @@ func TestOrgExportScenario_Forbidden_NonManager(t *testing.T) {
 
 	scenario := createTestScenarioForOrg(t, db, orgID, "no-export")
 
-	router := setupOrgTestRouterWithUserAndRoles(db, memberID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, memberID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgID.String()+"/scenarios/"+scenario.ID.String()+"/export", nil)
@@ -565,7 +587,7 @@ func TestOrgExportScenario_NotFound_WrongOrg(t *testing.T) {
 	otherOrgID := createTestOrg(t, db, "other-owner-export-004")
 	scenario := createTestScenarioForOrg(t, db, otherOrgID, "other-org-export")
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgID.String()+"/scenarios/"+scenario.ID.String()+"/export", nil)
@@ -595,7 +617,7 @@ func TestListGroupAvailableScenarios_ReturnsCombinedWithSource(t *testing.T) {
 	groupScenario := createTestScenarioNoOrg(t, db, "group-level-scenario")
 	createScenarioAssignment(t, db, groupScenario.ID, &groupID, nil, "group")
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/groups/"+groupID.String()+"/scenarios", nil)
@@ -631,7 +653,7 @@ func TestListGroupAvailableScenarios_OrgScenarioHasOrgSource(t *testing.T) {
 	orgScenario := createTestScenarioForOrg(t, db, orgID, "org-only")
 	createScenarioAssignment(t, db, orgScenario.ID, nil, &orgID, "org")
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/groups/"+groupID.String()+"/scenarios", nil)
@@ -658,7 +680,7 @@ func TestListGroupAvailableScenarios_GroupScenarioHasGroupSource(t *testing.T) {
 	groupScenario := createTestScenarioNoOrg(t, db, "group-only")
 	createScenarioAssignment(t, db, groupScenario.ID, &groupID, nil, "group")
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/groups/"+groupID.String()+"/scenarios", nil)
@@ -685,7 +707,7 @@ func TestListGroupAvailableScenarios_Forbidden_NonTeacher(t *testing.T) {
 	addGroupMember(t, db, groupID, ownerID, groupModels.GroupMemberRoleOwner)
 	addGroupMember(t, db, groupID, memberID, groupModels.GroupMemberRoleMember)
 
-	router := setupOrgTestRouterWithUserAndRoles(db, memberID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, memberID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/groups/"+groupID.String()+"/scenarios", nil)
@@ -715,7 +737,7 @@ func TestListGroupAvailableScenarios_FiltersAlreadyAssigned(t *testing.T) {
 	// to the group show with source "group" rather than "org"
 	createScenarioAssignment(t, db, s2.ID, &groupID, nil, "group")
 
-	router := setupOrgTestRouterWithUserAndRoles(db, ownerID, []string{"Member"})
+	router := setupOrgTestRouterWithUserAndRoles(t, db, ownerID, []string{"Member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/groups/"+groupID.String()+"/scenarios", nil)

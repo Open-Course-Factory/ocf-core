@@ -16,7 +16,7 @@ type AccessRuleType string
 const (
 	// Public means the RBAC role check is sufficient — no additional Layer 2 check.
 	Public AccessRuleType = "public"
-	// AdminOnly means the handler checks isAdmin() and rejects non-administrators.
+	// AdminOnly means Layer 2 enforces that only administrators can access the route.
 	AdminOnly AccessRuleType = "admin_only"
 	// SelfScoped means the handler operates on the authenticated user's own data (userId from JWT).
 	// WARNING: The enforcement middleware does NOT enforce self-scoping — it is a documentation

@@ -115,8 +115,8 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 	access.RouteRegistry.Register("Organization Subscriptions",
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/subscribe", Method: "POST",
-			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"},
-			Description: "Subscribe organization to a plan",
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "Subscribe organization to a plan (manager+)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/subscription", Method: "GET",
@@ -125,8 +125,8 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/subscription", Method: "DELETE",
-			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"},
-			Description: "Cancel organization subscription",
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "Cancel organization subscription (manager+)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/features", Method: "GET",
@@ -300,7 +300,7 @@ func registerUserSubscriptionPermissions(enforcer interfaces.EnforcerInterface) 
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/user-subscriptions/usage/check", "POST")
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/user-subscriptions/sync-usage-limits", "POST")
 
-	// Admin routes (handlers have isAdmin() checks)
+	// Admin routes (Layer 1 restricts to administrator, Layer 2 enforces AdminOnly)
 	access.ReconcilePolicy(enforcer, "administrator", "/api/v1/user-subscriptions/analytics", "GET")
 	access.ReconcilePolicy(enforcer, "administrator", "/api/v1/user-subscriptions/admin-assign", "POST")
 	access.ReconcilePolicy(enforcer, "administrator", "/api/v1/user-subscriptions/sync-existing", "POST")
@@ -313,7 +313,7 @@ func registerUserSubscriptionPermissions(enforcer interfaces.EnforcerInterface) 
 func registerOrganizationSubscriptionPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("Registering organization subscription permissions...")
 
-	// Organization subscription management (member-scoped, fine-grained checks in controller)
+	// Organization subscription management (member-scoped, Layer 2 enforces OrgRole with admin bypass)
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/subscribe", "POST")
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/subscription", "GET")
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/subscription", "DELETE")

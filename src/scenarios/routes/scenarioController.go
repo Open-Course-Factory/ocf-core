@@ -871,49 +871,6 @@ func (sc *scenarioController) hasAdminRole(ctx *gin.Context) bool {
 	return false
 }
 
-// isAdmin checks if the current user has admin/administrator role.
-// Returns false and writes a 403 response if not admin.
-func (sc *scenarioController) isAdmin(ctx *gin.Context) bool {
-	if sc.hasAdminRole(ctx) {
-		return true
-	}
-	ctx.JSON(http.StatusForbidden, &errors.APIError{
-		ErrorCode:    http.StatusForbidden,
-		ErrorMessage: "Admin access required",
-	})
-	return false
-}
-
-// validateTeacherAccess checks that the current user is a group owner/admin
-func (sc *scenarioController) validateTeacherAccess(ctx *gin.Context, groupID uuid.UUID) bool {
-	userID := ctx.GetString("userId")
-
-	// Check group-level ownership/admin
-	var member groupModels.GroupMember
-	err := sc.db.Where("group_id = ? AND user_id = ? AND is_active = true AND role IN ?",
-		groupID, userID, []string{"owner", "manager"}).First(&member).Error
-	if err != nil {
-		ctx.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
-		return false
-	}
-	return true
-}
-
-// validateOrgManagerAccess checks that the current user is an org owner/manager
-func (sc *scenarioController) validateOrgManagerAccess(ctx *gin.Context, orgID uuid.UUID) bool {
-	userID := ctx.GetString("userId")
-
-	// Check org-level ownership/manager
-	var member orgModels.OrganizationMember
-	err := sc.db.Where("organization_id = ? AND user_id = ? AND is_active = true AND role IN ?",
-		orgID, userID, []string{"owner", "manager"}).First(&member).Error
-	if err != nil {
-		ctx.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
-		return false
-	}
-	return true
-}
-
 // buildScenarioOutput converts a Scenario model to a ScenarioOutput DTO
 func (sc *scenarioController) buildScenarioOutput(scenario *models.Scenario) dto.ScenarioOutput {
 	output := dto.ScenarioOutput{
@@ -973,10 +930,6 @@ func (sc *scenarioController) buildScenarioOutput(scenario *models.Scenario) dto
 // @Router /scenarios/{id}/export [get]
 // @Security BearerAuth
 func (sc *scenarioController) ExportScenario(ctx *gin.Context) {
-	if !sc.isAdmin(ctx) {
-		return
-	}
-
 	scenarioID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
@@ -1035,10 +988,6 @@ func (sc *scenarioController) ExportScenario(ctx *gin.Context) {
 // @Router /scenarios/export [post]
 // @Security BearerAuth
 func (sc *scenarioController) ExportScenarios(ctx *gin.Context) {
-	if !sc.isAdmin(ctx) {
-		return
-	}
-
 	var input dto.ExportScenariosInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
@@ -1075,10 +1024,6 @@ func (sc *scenarioController) ExportScenarios(ctx *gin.Context) {
 // @Router /scenarios/import-json [post]
 // @Security BearerAuth
 func (sc *scenarioController) ImportJSON(ctx *gin.Context) {
-	if !sc.isAdmin(ctx) {
-		return
-	}
-
 	var input dto.SeedScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
@@ -1138,10 +1083,6 @@ func (sc *scenarioController) GroupExportScenario(ctx *gin.Context) {
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: "Invalid scenario ID",
 		})
-		return
-	}
-
-	if !sc.validateTeacherAccess(ctx, groupID) {
 		return
 	}
 
@@ -1213,10 +1154,6 @@ func (sc *scenarioController) GroupImportJSON(ctx *gin.Context) {
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: "Invalid group ID",
 		})
-		return
-	}
-
-	if !sc.validateTeacherAccess(ctx, groupID) {
 		return
 	}
 
@@ -1297,10 +1234,6 @@ func (sc *scenarioController) GroupUploadScenario(ctx *gin.Context) {
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: "Invalid group ID",
 		})
-		return
-	}
-
-	if !sc.validateTeacherAccess(ctx, groupID) {
 		return
 	}
 
@@ -1585,10 +1518,6 @@ func (sc *scenarioController) OrgListScenarios(ctx *gin.Context) {
 		return
 	}
 
-	if !sc.validateOrgManagerAccess(ctx, orgID) {
-		return
-	}
-
 	var scenarios []models.Scenario
 	if err := sc.db.Where("organization_id = ?", orgID).Preload("Steps").Find(&scenarios).Error; err != nil {
 		slog.Error("failed to list org scenarios", "err", err)
@@ -1627,10 +1556,6 @@ func (sc *scenarioController) OrgImportJSON(ctx *gin.Context) {
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: "Invalid organization ID",
 		})
-		return
-	}
-
-	if !sc.validateOrgManagerAccess(ctx, orgID) {
 		return
 	}
 
@@ -1685,10 +1610,6 @@ func (sc *scenarioController) OrgUploadScenario(ctx *gin.Context) {
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: "Invalid organization ID",
 		})
-		return
-	}
-
-	if !sc.validateOrgManagerAccess(ctx, orgID) {
 		return
 	}
 
@@ -1859,10 +1780,6 @@ func (sc *scenarioController) OrgExportScenario(ctx *gin.Context) {
 		return
 	}
 
-	if !sc.validateOrgManagerAccess(ctx, orgID) {
-		return
-	}
-
 	// Verify scenario belongs to this organization
 	var scenario models.Scenario
 	if err := sc.db.Where("id = ? AND organization_id = ?", scenarioID, orgID).First(&scenario).Error; err != nil {
@@ -1940,10 +1857,6 @@ func (sc *scenarioController) OrgDeleteScenario(ctx *gin.Context) {
 		return
 	}
 
-	if !sc.validateOrgManagerAccess(ctx, orgID) {
-		return
-	}
-
 	// Verify scenario belongs to this organization
 	var scenario models.Scenario
 	if err := sc.db.Where("id = ? AND organization_id = ?", scenarioID, orgID).First(&scenario).Error; err != nil {
@@ -1999,10 +1912,6 @@ func (sc *scenarioController) ListGroupAvailableScenarios(ctx *gin.Context) {
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: "Invalid group ID",
 		})
-		return
-	}
-
-	if !sc.validateTeacherAccess(ctx, groupID) {
 		return
 	}
 

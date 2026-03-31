@@ -31,7 +31,7 @@ func RegisterOrganizationPermissions(enforcer interfaces.EnforcerInterface) {
 		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
-	// Admin-only routes — handler also has isAdmin() check
+	// Admin-only routes (Layer 1 restricts to administrator, Layer 2 enforces AdminOnly)
 	access.ReconcilePolicy(enforcer, "administrator", "/api/v1/organizations/:id/backends", "PUT")
 
 	// --- Route Registry: declarative permission metadata ---

@@ -38,7 +38,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	// Teacher dashboard routes - available to all authenticated members
-	// (fine-grained group ownership checks happen in the controller)
+	// (Layer 2 enforces GroupRole:manager with admin bypass)
 	teacherRoutes := []struct {
 		path   string
 		method string
@@ -56,7 +56,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	// Group-level scenario routes - available to all authenticated members
-	// (fine-grained group ownership checks happen in the controller via validateTeacherAccess)
+	// (Layer 2 enforces GroupRole with admin bypass)
 	groupScenarioRoutes := []struct {
 		path   string
 		method string
@@ -72,7 +72,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	// Organization-level scenario routes - available to all authenticated members
-	// (fine-grained org ownership checks happen in the controller via validateOrgManagerAccess)
+	// (Layer 2 enforces OrgRole with admin bypass)
 	orgScenarioRoutes := []struct {
 		path   string
 		method string
@@ -104,7 +104,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 	}
 
 	// Admin-only scenario management routes
-	// (handlers have isAdmin() checks for additional protection)
+	// (Layer 1 restricts to administrator, Layer 2 enforces AdminOnly)
 	adminRoutes := []struct {
 		path   string
 		method string
@@ -223,8 +223,8 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		// Group scenario routes
 		access.RoutePermission{
 			Path: "/api/v1/groups/:groupId/scenarios", Method: "GET",
-			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "member"},
-			Description: "List scenarios assigned to a group",
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
+			Description: "List scenarios available to a group (manager+)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/groups/:groupId/scenarios/upload", Method: "POST",
@@ -244,8 +244,8 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		// Organization scenario routes
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios", Method: "GET",
-			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"},
-			Description: "List scenarios in an organization",
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "List scenarios in an organization (manager+)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios/upload", Method: "POST",

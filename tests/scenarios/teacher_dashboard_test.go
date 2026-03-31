@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	access "soli/formations/src/auth/access"
+	"soli/formations/src/auth/mocks"
 	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
@@ -319,7 +321,23 @@ func TestTeacherAPI_BulkStart(t *testing.T) {
 
 // --- Real TeacherController tests (with access control) ---
 
-func setupRealTeacherRouter(db *gorm.DB, userID string, roles []string) *gin.Engine {
+func setupRealTeacherRouter(t *testing.T, db *gorm.DB, userID string, roles []string) *gin.Engine {
+	t.Helper()
+	// Reset and re-register the RouteRegistry + enforcers for test isolation
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
+	t.Cleanup(func() {
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
+	})
+
+	// Register scenario permissions (populates RouteRegistry with teacher dashboard rules)
+	mockEnforcer := mocks.NewMockEnforcer()
+	scenarioController.RegisterScenarioPermissions(mockEnforcer)
+
+	// Register builtin enforcers with a real DB membership checker
+	access.RegisterBuiltinEnforcers(nil, access.NewGormMembershipChecker(db))
+
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	api := r.Group("/api/v1")
@@ -328,6 +346,9 @@ func setupRealTeacherRouter(db *gorm.DB, userID string, roles []string) *gin.Eng
 		c.Set("userRoles", roles)
 		c.Next()
 	})
+
+	// Add Layer 2 enforcement middleware
+	api.Use(access.Layer2Enforcement())
 
 	ctrl := scenarioController.NewTeacherController(db)
 	teacher := api.Group("/teacher")
@@ -349,7 +370,7 @@ func TestTeacherController_AccessDenied_NonTeacher(t *testing.T) {
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 
 	// Random student (not group owner/admin, not platform admin)
-	router := setupRealTeacherRouter(db, "random-student", []string{"member"})
+	router := setupRealTeacherRouter(t, db, "random-student", []string{"member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/teacher/groups/"+group.ID.String()+"/activity", nil)
@@ -366,16 +387,14 @@ func TestTeacherController_PlatformAdminAccess(t *testing.T) {
 	}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 
-	// Platform admin without group membership gets 403 at controller level.
-	// In production, Casbin middleware (Layer 1) grants admin access before
-	// the controller is reached; this test bypasses middleware.
-	router := setupRealTeacherRouter(db, "platform-admin", []string{"admin"})
+	// Platform admin bypasses Layer 2 group role check (admin bypass in GroupRole enforcer).
+	router := setupRealTeacherRouter(t, db, "platform-admin", []string{"admin"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/teacher/groups/"+group.ID.String()+"/activity", nil)
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestTeacherController_GroupOwnerAccess(t *testing.T) {
@@ -393,7 +412,7 @@ func TestTeacherController_GroupOwnerAccess(t *testing.T) {
 	require.NoError(t, db.Omit("Metadata").Create(&member).Error)
 
 	// Group owner with non-admin platform role can access their own group
-	router := setupRealTeacherRouter(db, "teacher-own", []string{"member"})
+	router := setupRealTeacherRouter(t, db, "teacher-own", []string{"member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/teacher/groups/"+group.ID.String()+"/activity", nil)
@@ -788,8 +807,7 @@ func TestTeacherController_ResetSessions_ReturnsCount(t *testing.T) {
 		}).Error)
 	}
 
-	// Add the admin as group owner so validateTeacherAccess succeeds
-	// (admin bypass is now handled at middleware level, not controller level)
+	// Add the admin as group owner so Layer 2 GroupRole enforcement succeeds
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
 		GroupID: group.ID, UserID: "teacher-reset", Role: groupModels.GroupMemberRoleOwner,
 		JoinedAt: time.Now(), IsActive: true,
@@ -808,7 +826,7 @@ func TestTeacherController_ResetSessions_ReturnsCount(t *testing.T) {
 		ScenarioID: scenario.ID, UserID: "rc-student-2", Status: "active", StartedAt: time.Now(),
 	}).Error)
 
-	router := setupRealTeacherRouter(db, "teacher-reset", []string{"member"})
+	router := setupRealTeacherRouter(t, db, "teacher-reset", []string{"member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/api/v1/teacher/groups/"+group.ID.String()+"/scenarios/"+scenario.ID.String()+"/reset-sessions", nil)
@@ -834,7 +852,7 @@ func TestTeacherController_ResetSessions_AccessDenied(t *testing.T) {
 	require.NoError(t, db.Create(&scenario).Error)
 
 	// Random student (not group owner/admin, not platform admin)
-	router := setupRealTeacherRouter(db, "random-student", []string{"member"})
+	router := setupRealTeacherRouter(t, db, "random-student", []string{"member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/api/v1/teacher/groups/"+group.ID.String()+"/scenarios/"+scenario.ID.String()+"/reset-sessions", nil)

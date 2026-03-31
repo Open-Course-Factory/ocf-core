@@ -188,24 +188,6 @@ func (ic *invoiceController) SyncUserInvoices(ctx *gin.Context) {
 //	@Failure		500	{object}	errors.APIError				"Internal server error"
 //	@Router			/invoices/admin/cleanup [post]
 func (ic *invoiceController) CleanupInvoices(ctx *gin.Context) {
-	// Check if user has administrator role
-	userRoles := ctx.GetStringSlice("userRoles")
-	isAdmin := false
-	for _, role := range userRoles {
-		if role == "administrator" {
-			isAdmin = true
-			break
-		}
-	}
-
-	if !isAdmin {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Administrator role required to cleanup invoices",
-		})
-		return
-	}
-
 	// Parse request body
 	var input dto.CleanupInvoicesInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
