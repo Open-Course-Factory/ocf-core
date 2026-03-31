@@ -337,6 +337,20 @@ func (tts *terminalTrainerService) startSession(userID string, sessionInput dto.
 		}
 	}
 
+	// Get machine size from tt-backend response, or compute from instance types
+	machineSize := sessionResp.MachineSize
+	if machineSize == "" && sessionInput.InstanceType != "" {
+		instanceTypes, itErr := tts.GetInstanceTypes(sessionInput.Backend)
+		if itErr == nil {
+			for _, it := range instanceTypes {
+				if it.Prefix == sessionInput.InstanceType {
+					machineSize = it.Size
+					break
+				}
+			}
+		}
+	}
+
 	terminal := &models.Terminal{
 		SessionID:         sessionResp.SessionID,
 		UserID:            userID,
@@ -344,7 +358,7 @@ func (tts *terminalTrainerService) startSession(userID string, sessionInput dto.
 		Status:            "active",
 		ExpiresAt:         expiresAt,
 		InstanceType:      sessionInput.InstanceType,
-		MachineSize:       sessionResp.MachineSize, // Taille réelle retournée par Terminal Trainer
+		MachineSize:       machineSize,
 		Backend:           sessionResp.Backend,
 		OrganizationID:    orgID,
 		UserTerminalKeyID: userKey.ID,
