@@ -1488,6 +1488,45 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 	}
 
+	// For admins: determine which scenarios they'd see as a regular user
+	// so we can flag admin-only visibility
+	assignedScenarioIDs := make(map[uuid.UUID]bool)
+	isAdmin := sc.hasAdminRole(ctx)
+	if isAdmin {
+		var groupIDs []uuid.UUID
+		sc.db.Model(&groupModels.GroupMember{}).
+			Where("user_id = ? AND is_active = true", userID).
+			Pluck("group_id", &groupIDs)
+		var orgIDs []uuid.UUID
+		sc.db.Model(&orgModels.OrganizationMember{}).
+			Where("user_id = ? AND is_active = true", userID).
+			Pluck("organization_id", &orgIDs)
+
+		var assignedIDs []uuid.UUID
+		now := time.Now()
+		if len(groupIDs) > 0 || len(orgIDs) > 0 {
+			var conditions []string
+			var args []interface{}
+			if len(groupIDs) > 0 {
+				conditions = append(conditions, "(scope = 'group' AND group_id IN ?)")
+				args = append(args, groupIDs)
+			}
+			if len(orgIDs) > 0 {
+				conditions = append(conditions, "(scope = 'org' AND organization_id IN ?)")
+				args = append(args, orgIDs)
+			}
+			combined := strings.Join(conditions, " OR ")
+			args = append([]interface{}{true, now}, args...)
+			sc.db.Model(&models.ScenarioAssignment{}).
+				Where("is_active = ? AND (deadline IS NULL OR deadline > ?)", args...).
+				Where(combined, args[2:]...).
+				Pluck("scenario_id", &assignedIDs)
+		}
+		for _, id := range assignedIDs {
+			assignedScenarioIDs[id] = true
+		}
+	}
+
 	// Fetch available instance types from tt-backend (best-effort)
 	var availableTypes []terminalDto.InstanceType
 	instanceTypes, ttErr := sc.terminalService.GetInstanceTypes("")
@@ -1533,6 +1572,11 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 			matched := findMatchingInstanceTypes(s, availableTypes)
 			item.AvailableInstanceTypes = matched
 			item.Launchable = len(matched) > 0
+		}
+
+		// Flag scenarios visible only due to admin status
+		if isAdmin && !assignedScenarioIDs[s.ID] {
+			item.AdminOnly = true
 		}
 
 		output = append(output, item)

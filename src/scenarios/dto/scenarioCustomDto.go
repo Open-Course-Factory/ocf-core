@@ -170,6 +170,7 @@ type AvailableScenarioOutput struct {
 	CompatibleInstanceTypes []ScenarioInstanceTypeOutput `json:"compatible_instance_types,omitempty"`
 	Launchable              bool                         `json:"launchable"`
 	AvailableInstanceTypes  []string                     `json:"available_instance_types,omitempty"`
+	AdminOnly               bool                         `json:"admin_only,omitempty"`
 }
 
 // MySessionResponse - DTO for a learner's own scenario session
