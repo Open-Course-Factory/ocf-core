@@ -120,7 +120,8 @@ type CreateTerminalSessionInput struct {
 	HistoryRetentionDays int    `json:"history_retention_days,omitempty" form:"history_retention_days"`
 	RecordingEnabled     int    `json:"recording_enabled,omitempty" form:"recording_enabled"` // 1 = recording enabled (always on)
 	ExternalRef          string `json:"external_ref,omitempty" form:"external_ref"`           // Optional training session reference
-	Hostname             string `json:"hostname,omitempty" form:"hostname"`
+	Hostname             string   `json:"hostname,omitempty" form:"hostname"`
+	Packages             []string `json:"packages,omitempty" form:"packages"`
 }
 
 type TerminalSessionResponse struct {
