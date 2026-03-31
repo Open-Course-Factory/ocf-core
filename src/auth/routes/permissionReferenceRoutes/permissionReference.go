@@ -17,7 +17,7 @@ func PermissionReferenceRoutes(rg *gin.RouterGroup) {
 // declarative route registrations across all modules.
 //
 //	@Summary		Get permission reference
-//	@Description	Returns all route permissions grouped by category, including Casbin roles and Layer 2 access rules. Available to all authenticated users.
+//	@Description	Returns all route permissions grouped by category, including platform roles and Layer 2 access rules. Available to all authenticated users.
 //	@Tags			permissions
 //	@Produce		json
 //	@Security		Bearer

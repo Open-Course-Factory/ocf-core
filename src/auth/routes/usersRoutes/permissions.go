@@ -8,7 +8,7 @@ import (
 	casbinUtils "soli/formations/src/auth/casbin"
 )
 
-// RegisterUserPermissions registers Casbin permissions for user management,
+// RegisterUserPermissions registers RBAC permissions for user management,
 // access control, entity hooks, email templates, and SSH routes.
 func RegisterUserPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Setting up user management and access control permissions ===")
@@ -121,7 +121,7 @@ func RegisterUserPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== User management and access control permissions setup completed ===")
 }
 
-// RegisterAuthPermissions registers Casbin policies for core authentication routes.
+// RegisterAuthPermissions registers RBAC policies for core authentication routes.
 // These are registered per-Casdoor-role (not just "member") because the auth
 // middleware resolves the user's actual Casdoor role before checking permissions.
 func RegisterAuthPermissions(enforcer interfaces.EnforcerInterface) {
@@ -170,7 +170,7 @@ func RegisterAuthPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Authentication permissions registered ===")
 }
 
-// RegisterFeedbackPermissions registers Casbin policies for feedback routes.
+// RegisterFeedbackPermissions registers RBAC policies for feedback routes.
 func RegisterFeedbackPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Registering feedback permissions ===")
 	casbinUtils.ReconcilePolicy(enforcer, "member", "/api/v1/feedback/*", "POST")

@@ -35,7 +35,7 @@ func (c *SecurityAdminController) requireAdmin(ctx *gin.Context) bool {
 }
 
 // GetPolicyOverview godoc
-// @Summary Get all Casbin policies grouped by subject type
+// @Summary Get all access control policies grouped by subject type
 // @Tags Security Admin
 // @Security Bearer
 // @Success 200 {object} dto.PolicyOverviewOutput

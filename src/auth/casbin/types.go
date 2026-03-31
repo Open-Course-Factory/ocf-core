@@ -4,7 +4,7 @@ package casbin
 type AccessRuleType string
 
 const (
-	// Public means Casbin role check is sufficient — no additional Layer 2 check.
+	// Public means the RBAC role check is sufficient — no additional Layer 2 check.
 	Public AccessRuleType = "public"
 	// AdminOnly means the handler checks isAdmin() and rejects non-administrators.
 	AdminOnly AccessRuleType = "admin_only"

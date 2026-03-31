@@ -13,7 +13,7 @@ import (
 // GetUserPermissions godoc
 //
 //	@Summary		Get user permissions
-//	@Description	Retrieve comprehensive permissions for the authenticated user including Casbin permissions, roles, organization memberships, group memberships, and aggregated features
+//	@Description	Retrieve comprehensive permissions for the authenticated user including role-based access permissions, roles, organization memberships, group memberships, and aggregated features
 //	@Tags			users
 //	@Accept			json
 //	@Produce		json

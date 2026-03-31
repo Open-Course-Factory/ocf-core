@@ -277,7 +277,7 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 }
 
 // deriveAccessRule determines the Layer 2 access rule for an entity CRUD operation
-// based on Casbin role config and optional ownership config.
+// based on RBAC role config and optional ownership config.
 func deriveAccessRule(roles entityManagementInterfaces.EntityRoles, method string, entityName string, ownershipConfig *casbinUtils.OwnershipConfig) casbinUtils.AccessRule {
 	memberMethods := roles.Roles["member"]
 
@@ -290,7 +290,7 @@ func deriveAccessRule(roles entityManagementInterfaces.EntityRoles, method strin
 
 	// Member has access — check if an ownership hook protects this operation
 	if ownershipConfig != nil {
-		opMap := map[string]string{"POST": "create", "PATCH": "update", "DELETE": "delete"}
+		opMap := map[string]string{"GET": "read", "POST": "create", "PATCH": "update", "DELETE": "delete"}
 		if op, ok := opMap[method]; ok {
 			for _, configOp := range ownershipConfig.Operations {
 				if configOp == op {

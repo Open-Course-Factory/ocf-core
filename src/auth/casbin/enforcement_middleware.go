@@ -48,6 +48,13 @@ func getAccessEnforcer(ruleType AccessRuleType) AccessEnforcer {
 	return enforcerRegistry.handlers[ruleType]
 }
 
+// ResetEnforcers clears all registered access enforcers (for testing).
+func ResetEnforcers() {
+	enforcerRegistry.mu.Lock()
+	defer enforcerRegistry.mu.Unlock()
+	enforcerRegistry.handlers = make(map[AccessRuleType]AccessEnforcer)
+}
+
 // RegisterBuiltinEnforcers registers the default access rule handlers.
 // Called at startup. A simple project can skip specific handlers or
 // override them with custom implementations.
@@ -155,7 +162,12 @@ func Layer2Enforcement() gin.HandlerFunc {
 			return
 		}
 
-		userId, _ := ctx.Get("userId")
+		userId, exists := ctx.Get("userId")
+		if !exists {
+			// AuthManagement should have set this — if missing, skip Layer 2
+			ctx.Next()
+			return
+		}
 		userIdStr, _ := userId.(string)
 
 		rolesVal, _ := ctx.Get("userRoles")
