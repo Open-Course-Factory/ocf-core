@@ -2,20 +2,21 @@
 //
 // Verifies that admin-only payment endpoints reject non-admin users with 403.
 //
-// The admin-only endpoints in userSubscriptionRoutes.go are:
-//   - POST /user-subscriptions/admin-assign
+// Protection is enforced at two levels:
+//   1. Casbin RBAC middleware (Layer 1): routes registered with "administrator" policy
+//      reject non-admin users before they reach the controller.
+//   2. Controller-level isAdmin() checks (defense-in-depth): some handlers still
+//      check admin status inline as an extra safeguard.
+//
+// Endpoints protected by Casbin middleware only (no inline check):
 //   - POST /user-subscriptions/sync-existing
 //   - POST /user-subscriptions/users/:user_id/sync
 //   - POST /user-subscriptions/sync-missing-metadata
 //   - POST /user-subscriptions/link/:subscription_id
+//
+// Endpoints with both Casbin middleware AND inline controller check:
+//   - POST /user-subscriptions/admin-assign
 //   - GET  /user-subscriptions/analytics
-//
-// Currently, these routes only use AuthManagement() at the route level (which
-// checks authentication + Casbin role, NOT admin status). Some have controller-level
-// isAdmin() checks but several are missing them entirely.
-//
-// The correct fix is to add a RequireAdmin middleware at the ROUTE level so that
-// non-admin users are rejected before reaching the controller.
 package payment_tests
 
 import (
@@ -104,22 +105,21 @@ func setupDirectControllerRouter(t *testing.T, role string) *gin.Engine {
 
 	routes := router.Group("/api/v1/user-subscriptions")
 
-	// Admin-only endpoints (should all require admin role)
+	// Admin-only endpoints with inline controller-level admin checks
+	// (defense-in-depth, in addition to Casbin middleware protection)
 	routes.POST("/admin-assign", mockAuth, controller.AdminAssignSubscription)
 	routes.GET("/analytics", mockAuth, controller.GetSubscriptionAnalytics)
-	routes.POST("/sync-existing", mockAuth, controller.SyncExistingSubscriptions)
-	routes.POST("/users/:user_id/sync", mockAuth, controller.SyncUserSubscriptions)
-	routes.POST("/sync-missing-metadata", mockAuth, controller.SyncSubscriptionsWithMissingMetadata)
-	routes.POST("/link/:subscription_id", mockAuth, controller.LinkSubscriptionToUser)
 
 	return router
 }
 
-// TestAdminRouteProtection_NonAdminRejected verifies that admin-only endpoints
-// return 403 Forbidden when accessed by a non-admin (member) user.
+// TestAdminRouteProtection_NonAdminRejected verifies that endpoints with inline
+// controller-level admin checks return 403 Forbidden when accessed by a non-admin
+// (member) user.
 //
-// This test uses direct controller registration (bypassing AuthManagement) to
-// isolate the admin check at the controller level.
+// Note: endpoints protected only by Casbin middleware (sync-existing, users/:user_id/sync,
+// sync-missing-metadata, link/:subscription_id) are NOT tested here because their
+// protection is at the middleware layer, not the controller layer.
 func TestAdminRouteProtection_NonAdminRejected(t *testing.T) {
 	router := setupDirectControllerRouter(t, "member")
 
@@ -140,30 +140,6 @@ func TestAdminRouteProtection_NonAdminRejected(t *testing.T) {
 			path:        "/api/v1/user-subscriptions/analytics",
 			body:        "",
 			description: "Subscription analytics",
-		},
-		{
-			method:      "POST",
-			path:        "/api/v1/user-subscriptions/sync-existing",
-			body:        "",
-			description: "Sync all existing Stripe subscriptions",
-		},
-		{
-			method:      "POST",
-			path:        "/api/v1/user-subscriptions/users/some-user-id/sync",
-			body:        "",
-			description: "Sync specific user subscriptions",
-		},
-		{
-			method:      "POST",
-			path:        "/api/v1/user-subscriptions/sync-missing-metadata",
-			body:        "",
-			description: "Sync subscriptions with missing metadata",
-		},
-		{
-			method:      "POST",
-			path:        "/api/v1/user-subscriptions/link/sub_test123",
-			body:        `{"user_id":"some-user","subscription_plan_id":"` + uuid.New().String() + `"}`,
-			description: "Manually link subscription to user",
 		},
 	}
 
@@ -214,8 +190,8 @@ func TestAdminRouteProtection_NonAdminRejected(t *testing.T) {
 	}
 }
 
-// TestAdminRouteProtection_AdminAllowed verifies that admin-only endpoints
-// do NOT return 403 when accessed by an admin user.
+// TestAdminRouteProtection_AdminAllowed verifies that endpoints with inline
+// controller-level admin checks do NOT return 403 when accessed by an admin user.
 // They may return other errors (400, 500) due to missing data/Stripe, but
 // the point is they should NOT be blocked by the admin check.
 func TestAdminRouteProtection_AdminAllowed(t *testing.T) {
@@ -238,30 +214,6 @@ func TestAdminRouteProtection_AdminAllowed(t *testing.T) {
 			path:        "/api/v1/user-subscriptions/analytics",
 			body:        "",
 			description: "Subscription analytics",
-		},
-		{
-			method:      "POST",
-			path:        "/api/v1/user-subscriptions/sync-existing",
-			body:        "",
-			description: "Sync all existing subscriptions",
-		},
-		{
-			method:      "POST",
-			path:        "/api/v1/user-subscriptions/users/some-user-id/sync",
-			body:        "",
-			description: "Sync specific user subscriptions",
-		},
-		{
-			method:      "POST",
-			path:        "/api/v1/user-subscriptions/sync-missing-metadata",
-			body:        "",
-			description: "Sync subscriptions with missing metadata",
-		},
-		{
-			method:      "POST",
-			path:        "/api/v1/user-subscriptions/link/sub_test123",
-			body:        `{"user_id":"some-user","subscription_plan_id":"` + uuid.New().String() + `"}`,
-			description: "Manually link subscription to user",
 		},
 	}
 

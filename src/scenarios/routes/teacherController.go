@@ -35,19 +35,9 @@ func NewTeacherController(db *gorm.DB) *TeacherController {
 	}
 }
 
-// validateTeacherAccess checks that the current user is an admin or a group owner/admin
+// validateTeacherAccess checks that the current user is a group owner/admin
 func (tc *TeacherController) validateTeacherAccess(c *gin.Context, groupID uuid.UUID) bool {
 	userID := c.GetString("userId")
-	userRoles, _ := c.Get("userRoles")
-
-	// Platform admins have access
-	if roles, ok := userRoles.([]string); ok {
-		for _, role := range roles {
-			if role == "admin" || role == "administrator" {
-				return true
-			}
-		}
-	}
 
 	// Check group-level ownership/admin
 	var member groupModels.GroupMember

@@ -693,10 +693,6 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 		return
 	}
 
-	if !sc.isAdmin(ctx) {
-		return
-	}
-
 	userID := ctx.GetString("userId")
 
 	scenario, isUpdate, err := sc.seedService.SeedScenario(input, userID, nil)
@@ -731,10 +727,6 @@ func (sc *scenarioController) SeedScenario(ctx *gin.Context) {
 // @Router /scenarios/upload [post]
 // @Security BearerAuth
 func (sc *scenarioController) UploadScenario(ctx *gin.Context) {
-	if !sc.isAdmin(ctx) {
-		return
-	}
-
 	userID := ctx.GetString("userId")
 
 	// Get file from multipart form
@@ -892,19 +884,9 @@ func (sc *scenarioController) isAdmin(ctx *gin.Context) bool {
 	return false
 }
 
-// validateTeacherAccess checks that the current user is an admin or a group owner/admin
+// validateTeacherAccess checks that the current user is a group owner/admin
 func (sc *scenarioController) validateTeacherAccess(ctx *gin.Context, groupID uuid.UUID) bool {
 	userID := ctx.GetString("userId")
-	userRoles, _ := ctx.Get("userRoles")
-
-	// Platform admins have access
-	if roles, ok := userRoles.([]string); ok {
-		for _, role := range roles {
-			if role == "admin" || role == "administrator" {
-				return true
-			}
-		}
-	}
 
 	// Check group-level ownership/admin
 	var member groupModels.GroupMember
@@ -917,19 +899,9 @@ func (sc *scenarioController) validateTeacherAccess(ctx *gin.Context, groupID uu
 	return true
 }
 
-// validateOrgManagerAccess checks that the current user is a platform admin or an org owner/manager
+// validateOrgManagerAccess checks that the current user is an org owner/manager
 func (sc *scenarioController) validateOrgManagerAccess(ctx *gin.Context, orgID uuid.UUID) bool {
 	userID := ctx.GetString("userId")
-	userRoles, _ := ctx.Get("userRoles")
-
-	// Platform admins have access
-	if roles, ok := userRoles.([]string); ok {
-		for _, role := range roles {
-			if strings.EqualFold(role, "admin") || strings.EqualFold(role, "administrator") {
-				return true
-			}
-		}
-	}
 
 	// Check org-level ownership/manager
 	var member orgModels.OrganizationMember

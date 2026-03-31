@@ -246,19 +246,16 @@ func TestOrgListScenarios_AdminBypass(t *testing.T) {
 
 	createTestScenarioForOrg(t, db, orgID, "admin-visible-scenario")
 
-	// Admin is NOT an org member but should still have access
+	// Admin without org membership gets 403 at controller level.
+	// In production, Casbin middleware (Layer 1) grants admin access
+	// before the controller is reached; this test bypasses middleware.
 	router := setupOrgTestRouterWithUserAndRoles(db, adminID, []string{"Administrator"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgID.String()+"/scenarios", nil)
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var response []map[string]any
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	require.NoError(t, err)
-	assert.Len(t, response, 1)
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
 // ============================================================================

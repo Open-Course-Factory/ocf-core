@@ -366,14 +366,16 @@ func TestTeacherController_PlatformAdminAccess(t *testing.T) {
 	}
 	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
 
-	// Platform admin can access any group
+	// Platform admin without group membership gets 403 at controller level.
+	// In production, Casbin middleware (Layer 1) grants admin access before
+	// the controller is reached; this test bypasses middleware.
 	router := setupRealTeacherRouter(db, "platform-admin", []string{"admin"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/api/v1/teacher/groups/"+group.ID.String()+"/activity", nil)
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
 func TestTeacherController_GroupOwnerAccess(t *testing.T) {
@@ -786,6 +788,13 @@ func TestTeacherController_ResetSessions_ReturnsCount(t *testing.T) {
 		}).Error)
 	}
 
+	// Add the admin as group owner so validateTeacherAccess succeeds
+	// (admin bypass is now handled at middleware level, not controller level)
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: group.ID, UserID: "teacher-reset", Role: groupModels.GroupMemberRoleOwner,
+		JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+
 	scenario := models.Scenario{
 		Name: "reset-ctrl-test", Title: "Reset Ctrl", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
 	}
@@ -799,7 +808,7 @@ func TestTeacherController_ResetSessions_ReturnsCount(t *testing.T) {
 		ScenarioID: scenario.ID, UserID: "rc-student-2", Status: "active", StartedAt: time.Now(),
 	}).Error)
 
-	router := setupRealTeacherRouter(db, "platform-admin", []string{"admin"})
+	router := setupRealTeacherRouter(db, "teacher-reset", []string{"member"})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/api/v1/teacher/groups/"+group.ID.String()+"/scenarios/"+scenario.ID.String()+"/reset-sessions", nil)

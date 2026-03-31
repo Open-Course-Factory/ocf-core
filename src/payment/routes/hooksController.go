@@ -4,7 +4,6 @@ package paymentController
 import (
 	"net/http"
 	"soli/formations/src/auth/errors"
-	controller "soli/formations/src/entityManagement/routes"
 	paymentHooks "soli/formations/src/payment/hooks"
 
 	"github.com/gin-gonic/gin"
@@ -14,14 +13,10 @@ type HooksController interface {
 	ToggleStripeSync(ctx *gin.Context)
 }
 
-type hooksController struct {
-	genericHookController controller.GenericHooksController
-}
+type hooksController struct{}
 
 func NewHooksController() HooksController {
-	return &hooksController{
-		genericHookController: controller.NewGenericHooksController(),
-	}
+	return &hooksController{}
 }
 
 type Input struct {
@@ -41,14 +36,6 @@ type Input struct {
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Router			/hooks/stripe/toggle [post]
 func (hc *hooksController) ToggleStripeSync(ctx *gin.Context) {
-	if !hc.genericHookController.IsAdmin(ctx) {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Admin access required",
-		})
-		return
-	}
-
 	var input Input
 
 	if err := ctx.ShouldBindJSON(&input); err != nil {

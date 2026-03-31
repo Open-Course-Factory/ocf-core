@@ -243,14 +243,6 @@ func (osc *organizationSubscriptionController) GetOrganizationSubscription(ctx *
 //	@Failure		403	{object}	errors.APIError
 //	@Router			/admin/organizations/subscriptions [get]
 func (osc *organizationSubscriptionController) GetAllOrganizationSubscriptions(ctx *gin.Context) {
-	if !isAdmin(ctx) {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "Admin access required",
-		})
-		return
-	}
-
 	subscriptions, err := osc.orgSubService.GetAllActiveOrganizationSubscriptions()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
