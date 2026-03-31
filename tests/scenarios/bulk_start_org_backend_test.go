@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	groupModels "soli/formations/src/groups/models"
+	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	ttDto "soli/formations/src/terminalTrainer/dto"
@@ -18,7 +19,7 @@ import (
 )
 
 // --- Capturing mock for TerminalTrainerService ---
-// This mock captures the CreateTerminalSessionInput passed to StartSession,
+// This mock captures the CreateTerminalSessionInput passed to StartSessionWithPlan,
 // so we can assert on the fields sent to the terminal trainer.
 
 type capturingTTService struct {
@@ -57,17 +58,13 @@ func (m *capturingTTService) GetTerms() (string, error) {
 	return "test-terms", nil
 }
 
-func (m *capturingTTService) StartSession(userID string, sessionInput ttDto.CreateTerminalSessionInput) (*ttDto.TerminalSessionResponse, error) {
-	m.capturedUserIDs = append(m.capturedUserIDs, userID)
-	m.capturedInputs = append(m.capturedInputs, sessionInput)
-	return &ttDto.TerminalSessionResponse{SessionID: "terminal-" + userID, Status: "running"}, nil
-}
-
 // --- Stubs for the rest of the interface (not called by BulkStartScenario) ---
 
 func (m *capturingTTService) DisableUserKey(string) error { return nil }
-func (m *capturingTTService) StartSessionWithPlan(string, ttDto.CreateTerminalSessionInput, any) (*ttDto.TerminalSessionResponse, error) {
-	return nil, nil
+func (m *capturingTTService) StartSessionWithPlan(userID string, sessionInput ttDto.CreateTerminalSessionInput, _ any) (*ttDto.TerminalSessionResponse, error) {
+	m.capturedUserIDs = append(m.capturedUserIDs, userID)
+	m.capturedInputs = append(m.capturedInputs, sessionInput)
+	return &ttDto.TerminalSessionResponse{SessionID: "terminal-" + userID, Status: "running"}, nil
 }
 func (m *capturingTTService) GetSessionInfo(string) (*ttModels.Terminal, error) { return nil, nil }
 func (m *capturingTTService) GetTerminalByUUID(string) (*ttModels.Terminal, error) {
@@ -162,7 +159,7 @@ func (m *capturingTTService) IsUserOrgManagerOrAdmin(string, uuid.UUID, bool) bo
 
 // TestBulkStartScenario_PassesOrganizationID verifies that when a scenario has an
 // OrganizationID set, the BulkStartScenario method passes it through to the
-// CreateTerminalSessionInput when calling StartSession on the terminal trainer.
+// CreateTerminalSessionInput when calling StartSessionWithPlan on the terminal trainer.
 func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 	db := setupTestDB(t)
 
@@ -190,11 +187,31 @@ func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 	require.NotNil(t, savedScenario.OrganizationID, "scenario should have OrganizationID set")
 	require.Equal(t, orgID, *savedScenario.OrganizationID)
 
+	// Create a subscription plan and user subscription so plan resolution works
+	plan := paymentModels.SubscriptionPlan{
+		Name:                        "Test Plan",
+		IsActive:                    true,
+		MaxConcurrentUsers:          10,
+		MaxSessionDurationMinutes:   240,
+		AllowedMachineSizes:         []string{"all"},
+		CommandHistoryRetentionDays: 30,
+	}
+	require.NoError(t, db.Create(&plan).Error)
+
 	// Create group with 1 member
 	groupID := uuid.New()
 	userID := "org-backend-user1"
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
 		GroupID: groupID, UserID: userID, Role: "member", JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+
+	// Create active subscription for the user
+	require.NoError(t, db.Create(&paymentModels.UserSubscription{
+		UserID:             userID,
+		SubscriptionPlanID: plan.ID,
+		Status:             "active",
+		CurrentPeriodStart: time.Now().Add(-24 * time.Hour),
+		CurrentPeriodEnd:   time.Now().Add(30 * 24 * time.Hour),
 	}).Error)
 
 	// Set up capturing mock
@@ -209,9 +226,9 @@ func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	// Verify: StartSession was called exactly once
-	require.Len(t, ttMock.capturedInputs, 1, "StartSession should have been called once")
-	require.Len(t, ttMock.capturedUserIDs, 1, "StartSession should have been called for 1 user")
+	// Verify: StartSessionWithPlan was called exactly once
+	require.Len(t, ttMock.capturedInputs, 1, "StartSessionWithPlan should have been called once")
+	require.Len(t, ttMock.capturedUserIDs, 1, "StartSessionWithPlan should have been called for 1 user")
 	assert.Equal(t, userID, ttMock.capturedUserIDs[0])
 
 	// THE KEY ASSERTION: OrganizationID must be passed through from the scenario

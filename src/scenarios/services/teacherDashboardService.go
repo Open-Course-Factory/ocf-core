@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	groupModels "soli/formations/src/groups/models"
+	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/models"
 	ttDto "soli/formations/src/terminalTrainer/dto"
 	ttServices "soli/formations/src/terminalTrainer/services"
@@ -417,7 +418,20 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 					HistoryRetentionDays: 30,
 				}
 
-				terminalResp, termErr := s.terminalService.StartSession(member.UserID, sessionInput)
+				// Resolve the member's effective subscription plan
+				planResult, planErr := paymentServices.NewEffectivePlanService(s.db).GetUserEffectivePlan(member.UserID)
+				if planErr != nil {
+					utils.Warn("BulkStartScenario - Failed to resolve plan for user %s: %v", member.UserID, planErr)
+					mu.Lock()
+					result.Errors = append(result.Errors, BulkStartError{
+						UserID: member.UserID,
+						Error:  fmt.Sprintf("failed to resolve subscription plan: %v", planErr),
+					})
+					mu.Unlock()
+					return nil
+				}
+
+				terminalResp, termErr := s.terminalService.StartSessionWithPlan(member.UserID, sessionInput, planResult.Plan)
 				if termErr != nil {
 					utils.Warn("BulkStartScenario - Failed to create terminal for user %s: %v", member.UserID, termErr)
 					mu.Lock()

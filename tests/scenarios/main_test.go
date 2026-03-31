@@ -6,6 +6,7 @@ import (
 
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
+	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 
@@ -43,6 +44,9 @@ func TestMain(m *testing.M) {
 		&terminalModels.UserTerminalKey{},
 		&orgModels.Organization{},
 		&orgModels.OrganizationMember{},
+		&paymentModels.SubscriptionPlan{},
+		&paymentModels.UserSubscription{},
+		&paymentModels.OrganizationSubscription{},
 	)
 	if err != nil {
 		panic("failed to migrate shared test DB: " + err.Error())
@@ -70,5 +74,8 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM organizations")
 	sharedTestDB.Exec("DELETE FROM terminals")
 	sharedTestDB.Exec("DELETE FROM user_terminal_keys")
+	sharedTestDB.Exec("DELETE FROM user_subscriptions")
+	sharedTestDB.Exec("DELETE FROM organization_subscriptions")
+	sharedTestDB.Exec("DELETE FROM subscription_plans")
 	return sharedTestDB
 }

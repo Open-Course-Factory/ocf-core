@@ -49,15 +49,11 @@ func (m *mockTTService) GetTerms() (string, error) {
 	return "test-terms", nil
 }
 
-func (m *mockTTService) StartSession(userID string, sessionInput ttDto.CreateTerminalSessionInput) (*ttDto.TerminalSessionResponse, error) {
-	return &ttDto.TerminalSessionResponse{SessionID: "terminal-" + userID, Status: "running"}, nil
-}
-
 // --- Stubs for the rest of the interface (not called by BulkStartScenario) ---
 
 func (m *mockTTService) DisableUserKey(string) error { return nil }
-func (m *mockTTService) StartSessionWithPlan(string, ttDto.CreateTerminalSessionInput, any) (*ttDto.TerminalSessionResponse, error) {
-	return nil, nil
+func (m *mockTTService) StartSessionWithPlan(userID string, sessionInput ttDto.CreateTerminalSessionInput, _ any) (*ttDto.TerminalSessionResponse, error) {
+	return &ttDto.TerminalSessionResponse{SessionID: "terminal-" + userID, Status: "running"}, nil
 }
 func (m *mockTTService) GetSessionInfo(string) (*ttModels.Terminal, error) { return nil, nil }
 func (m *mockTTService) GetTerminalByUUID(string) (*ttModels.Terminal, error) {

@@ -39,7 +39,6 @@ type TerminalTrainerService interface {
 	DisableUserKey(userID string) error
 
 	// Session management
-	StartSession(userID string, sessionInput dto.CreateTerminalSessionInput) (*dto.TerminalSessionResponse, error)
 	StartSessionWithPlan(userID string, sessionInput dto.CreateTerminalSessionInput, planInterface any) (*dto.TerminalSessionResponse, error)
 	GetSessionInfo(sessionID string) (*models.Terminal, error)
 	GetTerminalByUUID(terminalUUID string) (*models.Terminal, error)
@@ -244,8 +243,8 @@ func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 	return tts.repository.UpdateUserTerminalKey(key)
 }
 
-// StartSession démarre une nouvelle session
-func (tts *terminalTrainerService) StartSession(userID string, sessionInput dto.CreateTerminalSessionInput) (*dto.TerminalSessionResponse, error) {
+// startSession démarre une nouvelle session (private — use StartSessionWithPlan for plan-validated access)
+func (tts *terminalTrainerService) startSession(userID string, sessionInput dto.CreateTerminalSessionInput) (*dto.TerminalSessionResponse, error) {
 	// Récupérer la clé utilisateur
 	userKey, err := tts.repository.GetUserTerminalKeyByUserID(userID, true)
 	if err != nil {
@@ -463,8 +462,8 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 	utils.Debug("StartSessionWithPlan - FINAL: HistoryRetentionDays=%d, RecordingEnabled=%d",
 		sessionInput.HistoryRetentionDays, sessionInput.RecordingEnabled)
 
-	// Appeler la méthode StartSession originale avec les paramètres validés
-	return tts.StartSession(userID, sessionInput)
+	// Appeler la méthode startSession interne avec les paramètres validés
+	return tts.startSession(userID, sessionInput)
 }
 
 // GetSessionInfo récupère les informations d'une session
