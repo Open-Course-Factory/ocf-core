@@ -651,6 +651,7 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 			ID:                session.ID,
 			ScenarioID:        session.ScenarioID,
 			ScenarioTitle:     session.Scenario.Title,
+			TrainerID:         session.TrainerID,
 			Status:            session.Status,
 			ProvisioningPhase: session.ProvisioningPhase,
 			Grade:             session.Grade,

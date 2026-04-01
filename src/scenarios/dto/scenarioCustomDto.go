@@ -11,6 +11,7 @@ type SessionResponse struct {
 	ID                string    `json:"id"`
 	ScenarioID        string    `json:"scenario_id"`
 	UserID            string    `json:"user_id"`
+	TrainerID         *string   `json:"trainer_id,omitempty"`
 	TerminalSessionID string    `json:"terminal_session_id"`
 	CurrentStep       int       `json:"current_step"`
 	Status            string    `json:"status"`
@@ -183,6 +184,7 @@ type MySessionResponse struct {
 	ID                uuid.UUID  `json:"id"`
 	ScenarioID        uuid.UUID  `json:"scenario_id"`
 	ScenarioTitle     string     `json:"scenario_title"`
+	TrainerID         *string    `json:"trainer_id,omitempty"`
 	Status            string     `json:"status"`
 	ProvisioningPhase string     `json:"provisioning_phase,omitempty"`
 	Grade             *float64   `json:"grade,omitempty"`

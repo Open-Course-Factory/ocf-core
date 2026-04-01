@@ -222,7 +222,7 @@ func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 	dashSvc := services.NewTeacherDashboardService(db, ttMock, sessionSvc)
 
 	// Call BulkStartScenario WITH an instanceType so terminal creation triggers
-	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, "ubuntu:22.04", "", 0)
+	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, "ubuntu:22.04", "", 0, "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 

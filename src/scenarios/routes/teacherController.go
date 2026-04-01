@@ -213,7 +213,8 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 		}
 	}
 
-	result, err := tc.dashboardService.BulkStartScenario(groupID, scenarioID, req.InstanceType, req.Backend, req.SessionDurationMinutes)
+	trainerID := c.GetString("userId")
+	result, err := tc.dashboardService.BulkStartScenario(groupID, scenarioID, req.InstanceType, req.Backend, req.SessionDurationMinutes, trainerID)
 	if err != nil {
 		slog.Error("failed to bulk start scenario", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

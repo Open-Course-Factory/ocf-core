@@ -280,7 +280,7 @@ func (tc *testTeacherController) BulkStart(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scenario ID"})
 		return
 	}
-	result, err := tc.dashboardService.BulkStartScenario(groupID, scenarioID, "", "", 0)
+	result, err := tc.dashboardService.BulkStartScenario(groupID, scenarioID, "", "", 0, "")
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

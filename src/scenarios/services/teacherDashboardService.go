@@ -306,7 +306,8 @@ func (s *TeacherDashboardService) CalculateGrade(sessionID uuid.UUID) float64 {
 // Auto-provisions terminal keys for members who don't have one.
 // If instanceType is empty, only creates scenario sessions (no terminals).
 // sessionDurationMinutes controls terminal session lifetime (default: 240 = 4 hours).
-func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioID uuid.UUID, instanceType, backend string, sessionDurationMinutes int) (*BulkStartResult, error) {
+// trainerID identifies the trainer who initiated the bulk start (for Qualiopi traceability).
+func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioID uuid.UUID, instanceType, backend string, sessionDurationMinutes int, trainerID string) (*BulkStartResult, error) {
 	var members []groupModels.GroupMember
 	if err := s.db.Where("group_id = ? AND is_active = ?", groupID, true).Find(&members).Error; err != nil {
 		return nil, fmt.Errorf("failed to load group members: %w", err)
@@ -466,6 +467,13 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 				mu.Unlock()
 				return nil
 			}
+			// Set trainer ID for Qualiopi traceability
+			if trainerID != "" {
+				if updateErr := s.db.Model(session).Update("trainer_id", trainerID).Error; updateErr != nil {
+					utils.Warn("BulkStartScenario - Failed to set trainer_id for session %s: %v", session.ID, updateErr)
+				}
+			}
+
 			utils.Debug("BulkStartScenario - ScenarioSession created for member %s: sessionID=%s terminalSessionID=%v", member.UserID, session.ID, terminalSessionID)
 
 			mu.Lock()
@@ -527,6 +535,7 @@ type SessionDetailResponse struct {
 	UserID            string             `json:"user_id"`
 	UserName          string             `json:"user_name,omitempty"`
 	UserEmail         string             `json:"user_email,omitempty"`
+	TrainerID         *string            `json:"trainer_id,omitempty"`
 	ScenarioID        uuid.UUID          `json:"scenario_id"`
 	ScenarioTitle     string             `json:"scenario_title"`
 	Status            string             `json:"status"`
@@ -586,6 +595,7 @@ func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID)
 	resp := &SessionDetailResponse{
 		SessionID:         session.ID,
 		UserID:            session.UserID,
+		TrainerID:         session.TrainerID,
 		ScenarioID:        session.ScenarioID,
 		ScenarioTitle:     scenario.Title,
 		Status:            session.Status,
