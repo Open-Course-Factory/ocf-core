@@ -48,7 +48,7 @@ type VerifyStepResponse struct {
 
 // SubmitFlagInput - DTO for submitting a flag answer
 type SubmitFlagInput struct {
-	Flag string `json:"flag" binding:"required"`
+	Flag string `json:"flag" binding:"required,max=1000"`
 }
 
 // SubmitFlagResponse - DTO for flag submission results

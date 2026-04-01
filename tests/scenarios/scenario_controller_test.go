@@ -330,6 +330,33 @@ func TestSubmitFlag_MissingBody(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestSubmitFlag_ExceedsMaxLength_ReturnsValidationError(t *testing.T) {
+	db := setupTestDB(t)
+	router := setupTestRouter(db)
+
+	session := models.ScenarioSession{
+		ScenarioID:  uuid.New(),
+		UserID:      "test-user-123",
+		CurrentStep: 0,
+		Status:      "active",
+		StartedAt:   time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	// Create a flag string that exceeds 1000 characters
+	longFlag := make([]byte, 1001)
+	for i := range longFlag {
+		longFlag[i] = 'A'
+	}
+	body, _ := json.Marshal(map[string]string{"flag": string(longFlag)})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/scenario-sessions/"+session.ID.String()+"/submit-flag", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 // --- AbandonSession tests ---
 
 func TestAbandonSession_Success(t *testing.T) {
