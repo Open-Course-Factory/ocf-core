@@ -269,8 +269,8 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 		var count int64
 		if len(groupIDs) > 0 {
 			if err := sc.db.Model(&models.ScenarioAssignment{}).
-				Where("scenario_id = ? AND group_id IN ? AND scope = ? AND is_active = true AND (deadline IS NULL OR deadline > ?)",
-					scenarioID, groupIDs, "group", time.Now()).
+				Where("scenario_id = ? AND group_id IN ? AND scope = ? AND is_active = true AND (deadline IS NULL OR deadline > ?) AND (start_date IS NULL OR start_date <= ?)",
+					scenarioID, groupIDs, "group", time.Now(), time.Now()).
 				Count(&count).Error; err != nil {
 				slog.Error("failed to check group scenario assignment", "err", err)
 				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -296,8 +296,8 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 			}
 			if len(orgIDs) > 0 {
 				if err := sc.db.Model(&models.ScenarioAssignment{}).
-					Where("scenario_id = ? AND organization_id IN ? AND scope = ? AND is_active = true AND (deadline IS NULL OR deadline > ?)",
-						scenarioID, orgIDs, "org", time.Now()).
+					Where("scenario_id = ? AND organization_id IN ? AND scope = ? AND is_active = true AND (deadline IS NULL OR deadline > ?) AND (start_date IS NULL OR start_date <= ?)",
+						scenarioID, orgIDs, "org", time.Now(), time.Now()).
 					Count(&count).Error; err != nil {
 					slog.Error("failed to check org scenario assignment", "err", err)
 					ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -1996,7 +1996,7 @@ func (sc *scenarioController) checkScenarioAccess(userID string, scenarioID uuid
 
 	var count int64
 	if err := sc.db.Model(&models.ScenarioAssignment{}).
-		Where("scenario_id = ? AND is_active = true AND (deadline IS NULL OR deadline > ?)", args[0], now).
+		Where("scenario_id = ? AND is_active = true AND (deadline IS NULL OR deadline > ?) AND (start_date IS NULL OR start_date <= ?)", args[0], now, now).
 		Where(combined, args[1:]...).
 		Count(&count).Error; err != nil {
 		return false, err
