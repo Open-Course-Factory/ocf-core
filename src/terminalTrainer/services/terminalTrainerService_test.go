@@ -95,7 +95,7 @@ func TestGetInstanceTypes_AdminKeyHeader(t *testing.T) {
 	var capturedAdminKey string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedAdminKey = r.Header.Get("X-Admin-Key")
+		capturedAdminKey = r.Header.Get("X-API-Key")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]dto.InstanceType{})
 	}))
