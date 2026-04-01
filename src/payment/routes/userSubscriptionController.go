@@ -16,6 +16,7 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -66,10 +67,14 @@ type userSubscriptionController struct {
 }
 
 func NewSubscriptionController(db *gorm.DB) SubscriptionController {
+	svc := services.NewSubscriptionService(db)
+	svc.SetUserLookupFunc(func(userID string) (interface{}, error) {
+		return casdoorsdk.GetUserByUserId(userID)
+	})
 	return &userSubscriptionController{
 		GenericController:    controller.NewGenericController(db, casdoor.Enforcer),
 		db:                   db,
-		subscriptionService:  services.NewSubscriptionService(db),
+		subscriptionService:  svc,
 		conversionService:    services.NewConversionService(),
 		stripeService:        services.NewStripeService(db),
 		effectivePlanService: services.NewEffectivePlanService(db),

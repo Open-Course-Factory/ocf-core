@@ -14,7 +14,6 @@ import (
 
 	genericService "soli/formations/src/entityManagement/services"
 
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -105,28 +104,14 @@ func NewSubscriptionService(db *gorm.DB) *subscriptionService {
 		genericService: genericService.NewGenericService(db, casdoor.Enforcer),
 		repository:     repositories.NewPaymentRepository(db),
 		db:             db,
-		userLookupFunc: defaultUserLookup,
 	}
 }
 
-// SetUserLookupFunc overrides the default Casdoor user lookup function.
-// Primarily used in tests to avoid depending on a running Casdoor instance.
+// SetUserLookupFunc sets the function used to validate user existence
+// before admin operations. Must be called by the controller layer
+// which has access to the Casdoor SDK.
 func (ss *subscriptionService) SetUserLookupFunc(fn UserLookupFunc) {
 	ss.userLookupFunc = fn
-}
-
-// defaultUserLookup fetches a user from Casdoor with panic recovery
-// for environments where the SDK is not initialized (e.g., unit tests).
-func defaultUserLookup(userID string) (user interface{}, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			user = nil
-			err = fmt.Errorf("casdoor SDK not initialized: %v", r)
-		}
-	}()
-
-	u, lookupErr := casdoorsdk.GetUserByUserId(userID)
-	return u, lookupErr
 }
 
 // HasActiveSubscription vérifie si un utilisateur a un abonnement actif
@@ -643,12 +628,14 @@ func (ss *subscriptionService) AdminAssignSubscription(userID string, planID uui
 		return nil, fmt.Errorf("user ID is required")
 	}
 
-	// Validate that the target user exists in Casdoor
-	targetUser, userErr := ss.userLookupFunc(userID)
-	if userErr != nil {
-		utils.Warn("Could not validate user %s in Casdoor: %v", userID, userErr)
-	} else if targetUser == nil {
-		return nil, fmt.Errorf("user not found: the specified user ID does not exist")
+	// Validate that the target user exists (if lookup function is configured)
+	if ss.userLookupFunc != nil {
+		targetUser, userErr := ss.userLookupFunc(userID)
+		if userErr != nil {
+			utils.Warn("Could not validate user %s: %v", userID, userErr)
+		} else if targetUser == nil {
+			return nil, fmt.Errorf("user not found: the specified user ID does not exist")
+		}
 	}
 
 	var subscription *models.UserSubscription
