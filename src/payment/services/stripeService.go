@@ -345,6 +345,11 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 
 	session, err := session.New(params)
 	if err != nil {
+		if input.CouponCode != "" {
+			if couponErr := MapStripeCouponError(err); couponErr != err {
+				return nil, couponErr
+			}
+		}
 		return nil, fmt.Errorf("failed to create checkout session: %w", err)
 	}
 
@@ -472,6 +477,11 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 	// Create checkout session
 	checkoutSession, err := session.New(params)
 	if err != nil {
+		if input.CouponCode != "" {
+			if couponErr := MapStripeCouponError(err); couponErr != err {
+				return nil, couponErr
+			}
+		}
 		return nil, fmt.Errorf("failed to create bulk checkout session: %w", err)
 	}
 
