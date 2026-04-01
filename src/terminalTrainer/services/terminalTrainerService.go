@@ -16,7 +16,6 @@ import (
 
 	"soli/formations/src/auth/casdoor"
 	authModels "soli/formations/src/auth/models"
-	configRepositories "soli/formations/src/configuration/repositories"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
@@ -126,13 +125,11 @@ type terminalTrainerService struct {
 	subscriptionService     paymentServices.UserSubscriptionService
 	orgSubscriptionService  paymentServices.OrganizationSubscriptionService
 	enumService             TerminalTrainerEnumService
-	featureRepo             configRepositories.FeatureRepository
 	db                      *gorm.DB
 	backendCache            []dto.BackendInfo
 	backendCacheTime        time.Time
 	backendCacheMu          sync.RWMutex
 	backendCacheSF          singleflight.Group
-	systemDefaultBackend    string
 }
 
 func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
@@ -148,8 +145,6 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 
 	baseURL := os.Getenv("TERMINAL_TRAINER_URL") // http://localhost:8090
 
-	featureRepo := configRepositories.NewFeatureRepository(db)
-
 	return &terminalTrainerService{
 		adminKey:               os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
 		baseURL:                baseURL,
@@ -159,9 +154,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		subscriptionService:    paymentServices.NewSubscriptionService(db),
 		orgSubscriptionService: paymentServices.NewOrganizationSubscriptionService(db),
 		enumService:            NewTerminalTrainerEnumService(baseURL, apiVersion),
-		featureRepo:            featureRepo,
 		db:                     db,
-		systemDefaultBackend:   loadSystemDefaultBackend(featureRepo),
 	}
 }
 
@@ -1548,10 +1541,6 @@ func (tts *terminalTrainerService) GetBackends() ([]dto.BackendInfo, error) {
 		if backends[i].Name == "" {
 			backends[i].Name = backends[i].ID
 		}
-		// Mark the system default backend
-		if tts.systemDefaultBackend != "" && backends[i].ID == tts.systemDefaultBackend {
-			backends[i].IsDefault = true
-		}
 	}
 
 	return backends, nil
@@ -1591,6 +1580,30 @@ func (tts *terminalTrainerService) getBackendsCached() ([]dto.BackendInfo, error
 	return v.([]dto.BackendInfo), nil
 }
 
+// getSystemDefault returns the backend ID marked as default by tt-backend.
+// Returns empty string if no backend is marked as default.
+func (tts *terminalTrainerService) getSystemDefault() string {
+	backends, err := tts.getBackendsCached()
+	if err != nil || len(backends) == 0 {
+		return ""
+	}
+	for _, b := range backends {
+		if b.IsDefault {
+			return b.ID
+		}
+	}
+	return ""
+}
+
+// invalidateBackendCache clears the cached backends so the next read
+// fetches fresh data from tt-backend.
+func (tts *terminalTrainerService) invalidateBackendCache() {
+	tts.backendCacheMu.Lock()
+	tts.backendCache = nil
+	tts.backendCacheTime = time.Time{}
+	tts.backendCacheMu.Unlock()
+}
+
 // GetBackendsForOrganization returns backends filtered by org's AllowedBackends/DefaultBackend
 func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) ([]dto.BackendInfo, error) {
 	var org orgModels.Organization
@@ -1609,7 +1622,7 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 		// Priority: org default → system default → first backend in list
 		defaultID := org.DefaultBackend
 		if defaultID == "" {
-			defaultID = tts.systemDefaultBackend
+			defaultID = tts.getSystemDefault()
 		}
 		if defaultID == "" && len(allBackends) > 0 {
 			defaultID = allBackends[0].ID
@@ -1635,7 +1648,7 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 
 	defaultID := org.DefaultBackend
 	if defaultID == "" {
-		defaultID = tts.systemDefaultBackend
+		defaultID = tts.getSystemDefault()
 	}
 
 	var filtered []dto.BackendInfo
@@ -1687,7 +1700,7 @@ func (tts *terminalTrainerService) validateBackendForOrg(orgID *uuid.UUID, reque
 	// Resolve org's effective default: org default → system default → ""
 	effectiveDefault := org.DefaultBackend
 	if effectiveDefault == "" {
-		effectiveDefault = tts.systemDefaultBackend
+		effectiveDefault = tts.getSystemDefault()
 	}
 
 	// If no backend requested, use the effective default
@@ -2027,15 +2040,6 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 	return true, "active", nil
 }
 
-// loadSystemDefaultBackend reads the system default backend from the features table
-func loadSystemDefaultBackend(repo configRepositories.FeatureRepository) string {
-	feature, err := repo.GetFeatureByKey("terminal_default_backend")
-	if err != nil {
-		return ""
-	}
-	return feature.Value
-}
-
 // GetSessionCommandHistory retrieves command history from tt-backend
 func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, since *int64, format string, limit, offset int) ([]byte, string, error) {
 	// Validate format against whitelist to prevent URL parameter injection
@@ -2130,14 +2134,15 @@ func (tts *terminalTrainerService) DeleteAllUserCommandHistory(apiKey string) (i
 	return result.SessionsCleared, nil
 }
 
-// SetSystemDefaultBackend sets the system-wide default backend
+// SetSystemDefaultBackend sets the system-wide default backend by calling
+// tt-backend's admin API to mark the backend as default.
 func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*dto.BackendInfo, error) {
+	// Verify backend exists and is connected
 	backends, err := tts.getBackendsCached()
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch backends: %w", err)
 	}
 
-	// Find the backend
 	var target *dto.BackendInfo
 	for i := range backends {
 		if backends[i].ID == backendID {
@@ -2148,21 +2153,104 @@ func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*d
 	if target == nil {
 		return nil, fmt.Errorf("backend not found: %s", backendID)
 	}
-
 	if !target.Connected {
 		return nil, fmt.Errorf("backend is offline: %s", backendID)
 	}
 
-	// Persist to features table
-	if err := tts.featureRepo.UpdateFeatureValue("terminal_default_backend", backendID); err != nil {
-		return nil, fmt.Errorf("failed to persist default backend: %w", err)
+	// Find the numeric DB ID by listing admin backends
+	adminBackends, err := tts.getAdminBackends()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list admin backends: %w", err)
 	}
 
-	// Update in-memory cache
-	tts.systemDefaultBackend = backendID
+	var adminEntry *adminBackendEntry
+	for i := range adminBackends {
+		if adminBackends[i].BackendID == backendID {
+			adminEntry = &adminBackends[i]
+			break
+		}
+	}
+	if adminEntry == nil {
+		return nil, fmt.Errorf("backend not found in admin API: %s", backendID)
+	}
+
+	// Call PUT /admin/backends/{id} with is_default=true, preserving all existing fields
+	isDefault := true
+	updateReq := struct {
+		Name              string `json:"name"`
+		Description       string `json:"description,omitempty"`
+		IsDefault         *bool  `json:"is_default"`
+		IsActive          bool   `json:"is_active"`
+		ServerURL         string `json:"server_url,omitempty"`
+		ServerCertificate string `json:"server_certificate,omitempty"`
+		ClientCertificate string `json:"client_certificate,omitempty"`
+		Project           string `json:"project,omitempty"`
+		Target            string `json:"target,omitempty"`
+	}{
+		Name:              adminEntry.Name,
+		Description:       adminEntry.Description,
+		IsDefault:         &isDefault,
+		IsActive:          adminEntry.IsActive,
+		ServerURL:         adminEntry.ServerURL,
+		ServerCertificate: adminEntry.ServerCertificate,
+		ClientCertificate: adminEntry.ClientCertificate,
+		Project:           adminEntry.Project,
+		Target:            adminEntry.Target,
+	}
+
+	url := fmt.Sprintf("%s/%s/admin/backends/%d", tts.baseURL, tts.apiVersion, adminEntry.ID)
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithHeader("X-Admin-Key", tts.adminKey))
+
+	_, err = utils.MakeExternalAPIRequest("Terminal Trainer", "PUT", url, updateReq, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set default backend on tt-backend: %w", err)
+	}
+
+	// Invalidate backend cache so next read picks up the change
+	tts.invalidateBackendCache()
 
 	target.IsDefault = true
 	return target, nil
+}
+
+// adminBackendEntry represents a backend from tt-backend's admin API
+type adminBackendEntry struct {
+	ID                int64  `json:"id"`
+	BackendID         string `json:"backend_id"`
+	Name              string `json:"name"`
+	Description       string `json:"description,omitempty"`
+	IsDefault         bool   `json:"is_default"`
+	IsActive          bool   `json:"is_active"`
+	ServerURL         string `json:"server_url,omitempty"`
+	ServerCertificate string `json:"server_certificate,omitempty"`
+	ClientCertificate string `json:"client_certificate,omitempty"`
+	Project           string `json:"project,omitempty"`
+	Target            string `json:"target,omitempty"`
+	Connected         bool   `json:"connected"`
+}
+
+type adminAPIResponse struct {
+	Success bool            `json:"success"`
+	Data    json.RawMessage `json:"data"`
+}
+
+func (tts *terminalTrainerService) getAdminBackends() ([]adminBackendEntry, error) {
+	url := fmt.Sprintf("%s/%s/admin/backends", tts.baseURL, tts.apiVersion)
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithHeader("X-Admin-Key", tts.adminKey))
+
+	var resp adminAPIResponse
+	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &resp, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	var backends []adminBackendEntry
+	if err := json.Unmarshal(resp.Data, &backends); err != nil {
+		return nil, fmt.Errorf("failed to decode admin backends: %w", err)
+	}
+	return backends, nil
 }
 
 func (tts *terminalTrainerService) GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error) {

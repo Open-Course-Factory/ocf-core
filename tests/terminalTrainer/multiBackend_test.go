@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	configModels "soli/formations/src/configuration/models"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	orgController "soli/formations/src/organizations/controller"
 	orgDto "soli/formations/src/organizations/dto"
@@ -505,95 +504,73 @@ func TestSetDefaultBackend_AdminOnly(t *testing.T) {
 	})
 }
 
-func TestFeatureValueFieldPersistence(t *testing.T) {
-	db := freshTestDB(t)
-
-	t.Run("Value field is persisted and retrieved", func(t *testing.T) {
-		feature := &configModels.Feature{
-			Key:     "terminal_default_backend",
-			Name:    "Terminal Default Backend",
-			Value:   "cloud-eu-1",
-			Enabled: true,
-		}
-		err := db.Create(feature).Error
-		require.NoError(t, err)
-
-		var retrieved configModels.Feature
-		err = db.Where("key = ?", "terminal_default_backend").First(&retrieved).Error
-		require.NoError(t, err)
-
-		assert.Equal(t, "cloud-eu-1", retrieved.Value)
-		assert.Equal(t, "terminal_default_backend", retrieved.Key)
-	})
-
-	t.Run("Value field can be updated", func(t *testing.T) {
-		var feature configModels.Feature
-		err := db.Where("key = ?", "terminal_default_backend").First(&feature).Error
-		require.NoError(t, err)
-
-		feature.Value = "cloud-us-1"
-		err = db.Save(&feature).Error
-		require.NoError(t, err)
-
-		var retrieved configModels.Feature
-		err = db.Where("key = ?", "terminal_default_backend").First(&retrieved).Error
-		require.NoError(t, err)
-		assert.Equal(t, "cloud-us-1", retrieved.Value)
-	})
-}
-
-func TestGetBackends_MarksSystemDefault(t *testing.T) {
-	db := freshTestDB(t)
-
-	// Seed a system default backend feature
-	feature := &configModels.Feature{
-		Key:     "terminal_default_backend",
-		Name:    "Terminal Default Backend",
-		Value:   "local",
-		Enabled: true,
+func TestGetBackends_ReturnsIsDefaultFromTTBackend(t *testing.T) {
+	// Verify that GetBackends passes through the is_default field from tt-backend
+	// without overwriting it (tt-backend is the single source of truth).
+	expectedBackends := []dto.BackendInfo{
+		{ID: "local", Name: "Local Backend", Connected: true, IsDefault: true},
+		{ID: "cloud-eu-1", Name: "Cloud EU", Connected: true, IsDefault: false},
 	}
-	err := db.Create(feature).Error
-	require.NoError(t, err)
 
-	// Create a service instance — it should load the system default from DB
+	ttServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(expectedBackends)
+	}))
+	defer ttServer.Close()
+
+	db := freshTestDB(t)
+
+	origURL := t.TempDir() // just to save/restore
+	_ = origURL
+	t.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)
+	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-key")
+	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+
 	svc := services.NewTerminalTrainerService(db)
 
-	// We can't call GetBackends directly (no TT API), but we can verify
-	// the service was created with the cached default by testing SetSystemDefaultBackend
-	// indirectly. Instead, test via the controller which wraps the service.
-
-	// The service loads "local" from the feature table at construction time.
-	// Verify that GetBackends would mark "local" as default by checking that
-	// the controller returns the expected behavior.
-	ctrl := terminalController.NewTerminalController(db)
-	gin.SetMode(gin.TestMode)
-
-	// Since we don't have a real TT API, the GetBackends call will fail.
-	// But we can verify the 403 path still works (admin check is separate).
-	router := gin.New()
-	router.Use(func(c *gin.Context) {
-		c.Set("userId", "admin-user")
-		c.Set("userRoles", []string{"administrator"})
-		c.Next()
-	})
-	router.GET("/terminals/backends", ctrl.GetBackends)
-
-	req := httptest.NewRequest("GET", "/terminals/backends", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	// Without TT API configured, we get 500 — that's expected
-	// The important thing is that the controller was constructed without error
-	// and the system default was loaded from the feature table
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
-
-	// Verify the feature is persisted correctly
-	var retrieved configModels.Feature
-	err = db.Where("key = ?", "terminal_default_backend").First(&retrieved).Error
+	backends, err := svc.GetBackends()
 	require.NoError(t, err)
-	assert.Equal(t, "local", retrieved.Value)
+	require.Len(t, backends, 2)
 
-	_ = svc // Service created successfully with default backend loaded
+	// "local" should be marked as default (from tt-backend response)
+	assert.True(t, backends[0].IsDefault, "local backend should be default")
+	assert.Equal(t, "local", backends[0].ID)
+
+	// "cloud-eu-1" should NOT be default
+	assert.False(t, backends[1].IsDefault, "cloud-eu-1 should not be default")
+}
+
+func TestGetBackends_NoDefaultInResponse(t *testing.T) {
+	// When tt-backend returns no backend with is_default=true,
+	// GetBackends should pass that through (no backend marked as default).
+	expectedBackends := []dto.BackendInfo{
+		{ID: "local", Name: "Local Backend", Connected: true, IsDefault: false},
+		{ID: "cloud-eu-1", Name: "Cloud EU", Connected: true, IsDefault: false},
+	}
+
+	ttServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(expectedBackends)
+	}))
+	defer ttServer.Close()
+
+	db := freshTestDB(t)
+
+	t.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)
+	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-key")
+	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+
+	svc := services.NewTerminalTrainerService(db)
+
+	backends, err := svc.GetBackends()
+	require.NoError(t, err)
+	require.Len(t, backends, 2)
+
+	for _, b := range backends {
+		assert.False(t, b.IsDefault, "no backend should be marked as default when tt-backend returns none")
+	}
+
+	_ = svc
 }
 
 // ============================================

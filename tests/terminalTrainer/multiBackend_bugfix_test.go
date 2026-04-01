@@ -8,7 +8,6 @@ import (
 	"os"
 	"testing"
 
-	configModels "soli/formations/src/configuration/models"
 	organizationModels "soli/formations/src/organizations/models"
 	terminalDto "soli/formations/src/terminalTrainer/dto"
 	terminalController "soli/formations/src/terminalTrainer/routes"
@@ -395,9 +394,16 @@ func TestMapBasedUpdate_AllowedBackends_MustBeJSONMarshaled(t *testing.T) {
 // =============================================================================
 
 // setupServiceWithMockBackends creates a TerminalTrainerService backed by a fake
-// TT API that returns the given backends, with a seeded system default backend.
+// TT API that returns the given backends. The system default is indicated by
+// setting IsDefault=true on the matching backend in the response (tt-backend is
+// the single source of truth for default backend).
 func setupServiceWithMockBackends(t *testing.T, backends []terminalDto.BackendInfo, systemDefault string) (services.TerminalTrainerService, *gorm.DB) {
 	t.Helper()
+
+	// Mark the system default in the backend list (tt-backend is source of truth)
+	for i := range backends {
+		backends[i].IsDefault = (backends[i].ID == systemDefault)
+	}
 
 	// Fake TT backend API
 	ttServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -407,16 +413,6 @@ func setupServiceWithMockBackends(t *testing.T, backends []terminalDto.BackendIn
 	t.Cleanup(func() { ttServer.Close() })
 
 	db := freshTestDB(t)
-
-	// Seed system default backend feature
-	if systemDefault != "" {
-		db.Create(&configModels.Feature{
-			Key:     "terminal_default_backend",
-			Name:    "Default Backend",
-			Enabled: true,
-			Value:   systemDefault,
-		})
-	}
 
 	// Set env vars for the service constructor, then restore
 	origURL := os.Getenv("TERMINAL_TRAINER_URL")
