@@ -14,9 +14,14 @@ import (
 
 	genericService "soli/formations/src/entityManagement/services"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+// UserLookupFunc is a function that looks up a user by ID.
+// Returns the user (or nil if not found) and any error.
+type UserLookupFunc func(userID string) (interface{}, error)
 
 type UserSubscriptionService interface {
 	// Subscription management - retourne des models
@@ -92,14 +97,36 @@ type subscriptionService struct {
 	repository     repositories.PaymentRepository
 	db             *gorm.DB
 	genericService genericService.GenericService
+	userLookupFunc UserLookupFunc
 }
 
-func NewSubscriptionService(db *gorm.DB) UserSubscriptionService {
+func NewSubscriptionService(db *gorm.DB) *subscriptionService {
 	return &subscriptionService{
 		genericService: genericService.NewGenericService(db, casdoor.Enforcer),
 		repository:     repositories.NewPaymentRepository(db),
 		db:             db,
+		userLookupFunc: defaultUserLookup,
 	}
+}
+
+// SetUserLookupFunc overrides the default Casdoor user lookup function.
+// Primarily used in tests to avoid depending on a running Casdoor instance.
+func (ss *subscriptionService) SetUserLookupFunc(fn UserLookupFunc) {
+	ss.userLookupFunc = fn
+}
+
+// defaultUserLookup fetches a user from Casdoor with panic recovery
+// for environments where the SDK is not initialized (e.g., unit tests).
+func defaultUserLookup(userID string) (user interface{}, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			user = nil
+			err = fmt.Errorf("casdoor SDK not initialized: %v", r)
+		}
+	}()
+
+	u, lookupErr := casdoorsdk.GetUserByUserId(userID)
+	return u, lookupErr
 }
 
 // HasActiveSubscription vérifie si un utilisateur a un abonnement actif
@@ -614,6 +641,14 @@ func (ss *subscriptionService) AdminAssignSubscription(userID string, planID uui
 	// Validate userID is not empty
 	if userID == "" {
 		return nil, fmt.Errorf("user ID is required")
+	}
+
+	// Validate that the target user exists in Casdoor
+	targetUser, userErr := ss.userLookupFunc(userID)
+	if userErr != nil {
+		utils.Warn("Could not validate user %s in Casdoor: %v", userID, userErr)
+	} else if targetUser == nil {
+		return nil, fmt.Errorf("user not found: the specified user ID does not exist")
 	}
 
 	var subscription *models.UserSubscription

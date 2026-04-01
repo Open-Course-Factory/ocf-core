@@ -134,15 +134,6 @@ func TestAdminAssignSubscription_SubscriptionType_IsAssigned(t *testing.T) {
 		"Admin-assigned subscriptions should have type 'assigned'")
 }
 
-// ==========================================
-// BUG-EXPOSING TEST (should FAIL with current code — item #11)
-// ==========================================
-
-// TestAdminAssignSubscription_DurationExceedsMax_ReturnsError tests that passing
-// an extremely large durationDays is rejected.
-// BUG: The current code has no upper bound on durationDays. It accepts any positive
-// integer, which could create subscriptions lasting thousands of years.
-// A reasonable maximum (e.g., 3650 days = 10 years) should be enforced.
 func TestAdminAssignSubscription_DurationExceedsMax_ReturnsError(t *testing.T) {
 	db := freshTestDB(t)
 	plan := createTestPlan(t, "Max Duration Plan", 1200)
@@ -153,10 +144,44 @@ func TestAdminAssignSubscription_DurationExceedsMax_ReturnsError(t *testing.T) {
 	// Pass an absurdly large duration — 999999 days (about 2739 years)
 	sub, err := svc.AdminAssignSubscription(userID, plan.ID, 999999, "")
 
-	// BUG: Current code accepts any positive duration with no upper bound.
-	// This test expects an error to be returned for unreasonable durations.
-	// With current code, this assertion FAILS because the subscription is created
-	// successfully with an end date in the year ~4765.
 	assert.Error(t, err, "Should reject unreasonably large durations (no upper bound validation)")
 	assert.Nil(t, sub, "No subscription should be created for invalid duration")
+}
+
+func TestAdminAssignSubscription_NonExistentUser_ReturnsError(t *testing.T) {
+	db := freshTestDB(t)
+	plan := createTestPlan(t, "User Validation Plan", 1200)
+	svc := services.NewSubscriptionService(db)
+
+	// Override the user lookup function to simulate Casdoor returning nil (user not found)
+	svc.SetUserLookupFunc(func(userID string) (interface{}, error) {
+		return nil, nil // No error, but user is nil = user does not exist
+	})
+
+	nonExistentUserID := uuid.New().String()
+	sub, err := svc.AdminAssignSubscription(nonExistentUserID, plan.ID, 30, "admin-user")
+
+	assert.Error(t, err, "Should fail when target user does not exist in Casdoor")
+	assert.Nil(t, sub, "No subscription should be created for non-existent user")
+	assert.Contains(t, err.Error(), "user not found",
+		"Error message should indicate user was not found")
+}
+
+func TestAdminAssignSubscription_ExistingUser_Succeeds(t *testing.T) {
+	db := freshTestDB(t)
+	plan := createTestPlan(t, "Existing User Plan", 1200)
+	svc := services.NewSubscriptionService(db)
+
+	// Override the user lookup function to simulate Casdoor returning a valid user
+	svc.SetUserLookupFunc(func(userID string) (interface{}, error) {
+		return &struct{ Name string }{Name: "Test User"}, nil
+	})
+
+	userID := uuid.New().String()
+	sub, err := svc.AdminAssignSubscription(userID, plan.ID, 30, "admin-user")
+
+	require.NoError(t, err, "Should succeed when target user exists in Casdoor")
+	require.NotNil(t, sub)
+	assert.Equal(t, userID, sub.UserID)
+	assert.Equal(t, "active", sub.Status)
 }
