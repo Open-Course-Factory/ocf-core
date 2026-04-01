@@ -1,10 +1,12 @@
 package models
 
 import (
+	"fmt"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // ScenarioSession represents a user's active session working through a scenario
@@ -38,4 +40,38 @@ func (s ScenarioSession) GetReferenceObject() string {
 // TableName specifies the table name
 func (ScenarioSession) TableName() string {
 	return "scenario_sessions"
+}
+
+// MigrateUniqueActiveSessionIndex creates a partial unique index to prevent
+// duplicate active/provisioning sessions for the same user+scenario.
+func MigrateUniqueActiveSessionIndex(db *gorm.DB) {
+	indexName := "idx_unique_active_session"
+
+	// Check if index already exists (idempotent)
+	if db.Migrator().HasIndex(&ScenarioSession{}, indexName) {
+		return
+	}
+
+	// Detect dialect for correct SQL syntax
+	dialect := db.Dialector.Name()
+	var sql string
+	switch dialect {
+	case "postgres":
+		sql = fmt.Sprintf(
+			`CREATE UNIQUE INDEX %s ON scenario_sessions (user_id, scenario_id) WHERE status IN ('active', 'provisioning')`,
+			indexName,
+		)
+	case "sqlite":
+		sql = fmt.Sprintf(
+			`CREATE UNIQUE INDEX IF NOT EXISTS %s ON scenario_sessions (user_id, scenario_id) WHERE status IN ('active', 'provisioning')`,
+			indexName,
+		)
+	default:
+		fmt.Printf("MigrateUniqueActiveSessionIndex: unsupported dialect %s, skipping\n", dialect)
+		return
+	}
+
+	if err := db.Exec(sql).Error; err != nil {
+		fmt.Printf("MigrateUniqueActiveSessionIndex: failed to create index: %v\n", err)
+	}
 }

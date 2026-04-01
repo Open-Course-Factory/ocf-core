@@ -968,3 +968,112 @@ func TestScenarioSessionService_BackgroundScript_Error_DoesNotFailStart(t *testi
 	db.First(&final, "id = ?", session.ID)
 	assert.Equal(t, "setup_failed", final.Status)
 }
+
+// --- Unique active session index tests ---
+
+func TestScenarioSession_DuplicateActiveSession_ReturnsError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenarioID := uuid.New()
+	userID := "user-1"
+
+	session1 := models.ScenarioSession{
+		ScenarioID: scenarioID,
+		UserID:     userID,
+		Status:     "active",
+		StartedAt:  time.Now(),
+	}
+	require.NoError(t, db.Create(&session1).Error)
+
+	session2 := models.ScenarioSession{
+		ScenarioID: scenarioID,
+		UserID:     userID,
+		Status:     "active",
+		StartedAt:  time.Now(),
+	}
+	err := db.Create(&session2).Error
+	assert.Error(t, err, "should reject duplicate active session for same user+scenario")
+}
+
+func TestScenarioSession_DuplicateProvisioningSession_ReturnsError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenarioID := uuid.New()
+	userID := "user-1"
+
+	session1 := models.ScenarioSession{
+		ScenarioID: scenarioID,
+		UserID:     userID,
+		Status:     "active",
+		StartedAt:  time.Now(),
+	}
+	require.NoError(t, db.Create(&session1).Error)
+
+	session2 := models.ScenarioSession{
+		ScenarioID: scenarioID,
+		UserID:     userID,
+		Status:     "provisioning",
+		StartedAt:  time.Now(),
+	}
+	err := db.Create(&session2).Error
+	assert.Error(t, err, "should reject provisioning session when active session exists")
+}
+
+func TestScenarioSession_DifferentUsers_ActiveSessions_Allowed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenarioID := uuid.New()
+
+	session1 := models.ScenarioSession{
+		ScenarioID: scenarioID,
+		UserID:     "user-1",
+		Status:     "active",
+		StartedAt:  time.Now(),
+	}
+	require.NoError(t, db.Create(&session1).Error)
+
+	session2 := models.ScenarioSession{
+		ScenarioID: scenarioID,
+		UserID:     "user-2",
+		Status:     "active",
+		StartedAt:  time.Now(),
+	}
+	err := db.Create(&session2).Error
+	assert.NoError(t, err, "different users should be allowed active sessions for same scenario")
+}
+
+func TestScenarioSession_CompletedAndActive_Allowed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenarioID := uuid.New()
+	userID := "user-1"
+
+	completedSession := models.ScenarioSession{
+		ScenarioID: scenarioID,
+		UserID:     userID,
+		Status:     "completed",
+		StartedAt:  time.Now(),
+	}
+	require.NoError(t, db.Create(&completedSession).Error)
+
+	activeSession := models.ScenarioSession{
+		ScenarioID: scenarioID,
+		UserID:     userID,
+		Status:     "active",
+		StartedAt:  time.Now(),
+	}
+	err := db.Create(&activeSession).Error
+	assert.NoError(t, err, "same user should be allowed completed + active sessions")
+}

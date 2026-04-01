@@ -103,6 +103,9 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&scenarioModels.ScenarioAssignment{})
 	db.AutoMigrate(&scenarioModels.ScenarioInstanceType{})
 
+	// Scenario indexes
+	scenarioModels.MigrateUniqueActiveSessionIndex(db)
+
 	// Payment entities
 	db.AutoMigrate(&paymentModels.SubscriptionPlan{})
 	db.AutoMigrate(&paymentModels.SubscriptionBatch{})

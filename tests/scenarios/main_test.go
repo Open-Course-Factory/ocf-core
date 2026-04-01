@@ -52,6 +52,9 @@ func TestMain(m *testing.M) {
 		panic("failed to migrate shared test DB: " + err.Error())
 	}
 
+	// Create partial unique index for active session dedup
+	models.MigrateUniqueActiveSessionIndex(db)
+
 	sharedTestDB = db
 	os.Exit(m.Run())
 }
