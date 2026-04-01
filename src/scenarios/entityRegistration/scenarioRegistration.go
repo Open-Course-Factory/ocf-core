@@ -34,6 +34,8 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						FlagsEnabled:   model.FlagsEnabled,
 						GshEnabled:     model.GshEnabled,
 						CrashTraps:     model.CrashTraps,
+						Objectives:     model.Objectives,
+						Prerequisites:  model.Prerequisites,
 						IntroText:      model.IntroText,
 						FinishText:     model.FinishText,
 						CreatedByID:    model.CreatedByID,
@@ -106,6 +108,8 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						FlagsEnabled:   input.FlagsEnabled,
 						GshEnabled:     input.GshEnabled,
 						CrashTraps:     input.CrashTraps,
+						Objectives:     input.Objectives,
+						Prerequisites:  input.Prerequisites,
 						IntroText:      input.IntroText,
 						FinishText:     input.FinishText,
 						OrganizationID: input.OrganizationID,
@@ -162,6 +166,12 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 					}
 					if input.CrashTraps != nil {
 						updates["crash_traps"] = *input.CrashTraps
+					}
+					if input.Objectives != nil {
+						updates["objectives"] = *input.Objectives
+					}
+					if input.Prerequisites != nil {
+						updates["prerequisites"] = *input.Prerequisites
 					}
 					if input.IntroText != nil {
 						updates["intro_text"] = *input.IntroText

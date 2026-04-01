@@ -23,6 +23,8 @@ type CreateScenarioInput struct {
 	FlagsEnabled   bool       `json:"flags_enabled,omitempty" mapstructure:"flags_enabled"`
 	GshEnabled     bool       `json:"gsh_enabled,omitempty" mapstructure:"gsh_enabled"`
 	CrashTraps     bool       `json:"crash_traps,omitempty" mapstructure:"crash_traps"`
+	Objectives     string     `json:"objectives,omitempty" mapstructure:"objectives" binding:"omitempty,max=5000"`
+	Prerequisites  string     `json:"prerequisites,omitempty" mapstructure:"prerequisites" binding:"omitempty,max=5000"`
 	IntroText      string     `json:"intro_text,omitempty" mapstructure:"intro_text"`
 	FinishText     string     `json:"finish_text,omitempty" mapstructure:"finish_text"`
 	OrganizationID *uuid.UUID `json:"organization_id,omitempty" mapstructure:"organization_id"`
@@ -50,6 +52,8 @@ type EditScenarioInput struct {
 	FlagsEnabled   *bool      `json:"flags_enabled,omitempty" mapstructure:"flags_enabled"`
 	GshEnabled     *bool      `json:"gsh_enabled,omitempty" mapstructure:"gsh_enabled"`
 	CrashTraps     *bool      `json:"crash_traps,omitempty" mapstructure:"crash_traps"`
+	Objectives     *string    `json:"objectives,omitempty" mapstructure:"objectives" binding:"omitempty,max=5000"`
+	Prerequisites  *string    `json:"prerequisites,omitempty" mapstructure:"prerequisites" binding:"omitempty,max=5000"`
 	IntroText      *string    `json:"intro_text,omitempty" mapstructure:"intro_text"`
 	FinishText     *string    `json:"finish_text,omitempty" mapstructure:"finish_text"`
 	OrganizationID *uuid.UUID `json:"organization_id,omitempty" mapstructure:"organization_id"`
@@ -77,6 +81,8 @@ type ScenarioOutput struct {
 	FlagsEnabled   bool               `json:"flags_enabled"`
 	GshEnabled     bool               `json:"gsh_enabled"`
 	CrashTraps     bool               `json:"crash_traps"`
+	Objectives     string             `json:"objectives,omitempty"`
+	Prerequisites  string             `json:"prerequisites,omitempty"`
 	IntroText      string             `json:"intro_text,omitempty"`
 	FinishText     string             `json:"finish_text,omitempty"`
 	CreatedByID    string             `json:"created_by_id"`

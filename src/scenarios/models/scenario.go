@@ -25,6 +25,8 @@ type Scenario struct {
 	FlagSecret     string     `gorm:"type:varchar(500)" json:"-"` // never exposed in API
 	GshEnabled     bool       `gorm:"default:false" json:"gsh_enabled"`
 	CrashTraps     bool       `gorm:"default:false" json:"crash_traps"`
+	Objectives     string     `gorm:"type:text" json:"objectives,omitempty"`
+	Prerequisites  string     `gorm:"type:text" json:"prerequisites,omitempty"`
 	IntroText      string     `gorm:"type:text" json:"intro_text,omitempty"`
 	FinishText     string     `gorm:"type:text" json:"finish_text,omitempty"`
 	CreatedByID    string     `gorm:"type:varchar(255)" json:"created_by_id"`
