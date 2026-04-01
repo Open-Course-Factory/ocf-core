@@ -412,6 +412,56 @@ func TestConversionService_SubscriptionPlanToDTO_PricingTiers(t *testing.T) {
 	}
 }
 
+// TestConversionService_SubscriptionPlanToDTO_NoBackendFields verifies that
+// SubscriptionPlan can be created and converted to DTO without any backend fields.
+// AllowedBackends and DefaultBackend were vestigial on SubscriptionPlan — backends
+// are managed at the Organization level.
+func TestConversionService_SubscriptionPlanToDTO_NoBackendFields(t *testing.T) {
+	conversionService := services.NewConversionService()
+
+	planID := uuid.New()
+	createdAt := time.Now()
+	updatedAt := time.Now()
+
+	plan := &models.SubscriptionPlan{
+		BaseModel: emm.BaseModel{
+			ID: planID,
+			Model: gorm.Model{
+				CreatedAt: createdAt,
+				UpdatedAt: updatedAt,
+			},
+		},
+		Name:                      "Pro Plan",
+		Description:               "Professional plan",
+		PriceAmount:               2999,
+		Currency:                  "eur",
+		BillingInterval:           "month",
+		TrialDays:                 14,
+		Features:                  []string{"terminals", "ssh"},
+		MaxConcurrentUsers:        10,
+		MaxCourses:                -1,
+		IsActive:                  true,
+		MaxSessionDurationMinutes: 120,
+		MaxConcurrentTerminals:    5,
+		AllowedMachineSizes:       []string{"S", "M"},
+		NetworkAccessEnabled:      true,
+		AllowedTemplates:          []string{"tmpl-1"},
+	}
+
+	result, err := conversionService.SubscriptionPlanToDTO(plan)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, planID, result.ID)
+	assert.Equal(t, "Pro Plan", result.Name)
+	assert.Equal(t, int64(2999), result.PriceAmount)
+	assert.Equal(t, 120, result.MaxSessionDurationMinutes)
+	assert.Equal(t, 5, result.MaxConcurrentTerminals)
+	assert.Equal(t, []string{"S", "M"}, result.AllowedMachineSizes)
+	assert.True(t, result.NetworkAccessEnabled)
+	assert.Equal(t, []string{"tmpl-1"}, result.AllowedTemplates)
+}
+
 // Test de performance pour vérifier que les conversions sont rapides
 func BenchmarkConversionService_SubscriptionPlanToDTO(b *testing.B) {
 	conversionService := services.NewConversionService()

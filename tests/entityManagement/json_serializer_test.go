@@ -276,7 +276,6 @@ func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 		"features":              []string{"terminal", "ssh", "vnc"},
 		"allowed_machine_sizes": []string{"XS", "S", "M"},
 		"allowed_templates":     []string{"tmpl-1", "tmpl-2"},
-		"allowed_backends":      []string{"backend-a"},
 		"planned_features":      []string{"gpu-support"},
 		"pricing_tiers": []map[string]any{
 			{"min_quantity": 1, "max_quantity": 5, "unit_amount": 1000},
@@ -293,7 +292,6 @@ func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 		"features",
 		"allowed_machine_sizes",
 		"allowed_templates",
-		"allowed_backends",
 		"planned_features",
 		"pricing_tiers",
 	}

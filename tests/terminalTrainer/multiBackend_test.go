@@ -8,12 +8,10 @@ import (
 	"testing"
 	"time"
 
-	entityManagementModels "soli/formations/src/entityManagement/models"
 	orgController "soli/formations/src/organizations/controller"
 	orgDto "soli/formations/src/organizations/dto"
 	organizationModels "soli/formations/src/organizations/models"
 	orgServices "soli/formations/src/organizations/services"
-	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/repositories"
@@ -400,58 +398,6 @@ func TestGetUserSessions_IncludesBackendAndOrgFields(t *testing.T) {
 	assert.Equal(t, "cloud-eu-1", terminals[0].Backend)
 	assert.NotNil(t, terminals[0].OrganizationID)
 	assert.Equal(t, orgID, *terminals[0].OrganizationID)
-}
-
-// ============================================
-// SubscriptionPlan backend fields tests
-// ============================================
-
-func TestSubscriptionPlan_BackendFields(t *testing.T) {
-	db := freshTestDB(t)
-
-	t.Run("AllowedBackends and DefaultBackend are persisted", func(t *testing.T) {
-		plan := &paymentModels.SubscriptionPlan{
-			BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
-			Name:            "Test Plan",
-			PriceAmount:     1200,
-			Currency:        "eur",
-			BillingInterval: "month",
-			IsActive:        true,
-			AllowedBackends: []string{"local", "cloud-eu-1", "cloud-us-1"},
-			DefaultBackend:  "local",
-		}
-		err := db.Create(plan).Error
-		require.NoError(t, err)
-
-		var retrieved paymentModels.SubscriptionPlan
-		err = db.Where("id = ?", plan.ID).First(&retrieved).Error
-		require.NoError(t, err)
-
-		assert.Equal(t, []string{"local", "cloud-eu-1", "cloud-us-1"}, retrieved.AllowedBackends)
-		assert.Equal(t, "local", retrieved.DefaultBackend)
-	})
-
-	t.Run("empty AllowedBackends is valid", func(t *testing.T) {
-		plan := &paymentModels.SubscriptionPlan{
-			BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
-			Name:            "Free Plan",
-			PriceAmount:     0,
-			Currency:        "eur",
-			BillingInterval: "month",
-			IsActive:        true,
-			AllowedBackends: []string{},
-			DefaultBackend:  "",
-		}
-		err := db.Create(plan).Error
-		require.NoError(t, err)
-
-		var retrieved paymentModels.SubscriptionPlan
-		err = db.Where("id = ?", plan.ID).First(&retrieved).Error
-		require.NoError(t, err)
-
-		assert.Empty(t, retrieved.AllowedBackends)
-		assert.Equal(t, "", retrieved.DefaultBackend)
-	})
 }
 
 // ============================================

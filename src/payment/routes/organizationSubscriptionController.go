@@ -485,8 +485,6 @@ func convertSubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.Subscrip
 		DataPersistenceEnabled:     plan.DataPersistenceEnabled,
 		DataPersistenceGB:          plan.DataPersistenceGB,
 		AllowedTemplates:           plan.AllowedTemplates,
-		AllowedBackends:            plan.AllowedBackends,
-		DefaultBackend:             plan.DefaultBackend,
 		CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
 
 		// Planned features

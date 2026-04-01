@@ -55,8 +55,6 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						DataPersistenceEnabled:    plan.DataPersistenceEnabled,
 						DataPersistenceGB:         plan.DataPersistenceGB,
 						AllowedTemplates:          plan.AllowedTemplates,
-						AllowedBackends:           plan.AllowedBackends,
-						DefaultBackend:            plan.DefaultBackend,
 
 						// Command history
 						CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
@@ -92,8 +90,6 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						DataPersistenceEnabled:     input.DataPersistenceEnabled,
 						DataPersistenceGB:          input.DataPersistenceGB,
 						AllowedTemplates:           input.AllowedTemplates,
-						AllowedBackends:            input.AllowedBackends,
-						DefaultBackend:             input.DefaultBackend,
 						CommandHistoryRetentionDays: input.CommandHistoryRetentionDays,
 						Priority:                   input.Priority,
 						IsActive:                   isActive,

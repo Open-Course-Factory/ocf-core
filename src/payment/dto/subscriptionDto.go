@@ -26,8 +26,6 @@ type CreateSubscriptionPlanInput struct {
 	DataPersistenceEnabled         bool     `json:"data_persistence_enabled" mapstructure:"data_persistence_enabled"`
 	DataPersistenceGB              int      `json:"data_persistence_gb" mapstructure:"data_persistence_gb"`
 	AllowedTemplates               []string `json:"allowed_templates" mapstructure:"allowed_templates"`
-	AllowedBackends                []string `json:"allowed_backends" mapstructure:"allowed_backends"`
-	DefaultBackend                 string   `json:"default_backend" mapstructure:"default_backend"`
 	CommandHistoryRetentionDays    int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
 	Priority                       int      `json:"priority" mapstructure:"priority"`
 	IsActive                       *bool    `json:"is_active" mapstructure:"is_active"`
@@ -47,8 +45,6 @@ type UpdateSubscriptionPlanInput struct {
 	DataPersistenceEnabled         *bool    `json:"data_persistence_enabled,omitempty" mapstructure:"data_persistence_enabled"`
 	DataPersistenceGB              *int     `json:"data_persistence_gb,omitempty" mapstructure:"data_persistence_gb"`
 	AllowedTemplates               []string `json:"allowed_templates,omitempty" mapstructure:"allowed_templates"`
-	AllowedBackends                []string `json:"allowed_backends,omitempty" mapstructure:"allowed_backends"`
-	DefaultBackend                 *string  `json:"default_backend,omitempty" mapstructure:"default_backend"`
 	CommandHistoryRetentionDays    *int     `json:"command_history_retention_days,omitempty" mapstructure:"command_history_retention_days"`
 	Priority                       *int     `json:"priority,omitempty" mapstructure:"priority"`
 }
@@ -79,9 +75,7 @@ type SubscriptionPlanOutput struct {
 	NetworkAccessEnabled      bool     `json:"network_access_enabled"`
 	DataPersistenceEnabled    bool     `json:"data_persistence_enabled"`
 	DataPersistenceGB         int      `json:"data_persistence_gb"`
-	AllowedTemplates          []string `json:"allowed_templates"`
-	AllowedBackends           []string `json:"allowed_backends"`
-	DefaultBackend            string   `json:"default_backend"`
+	AllowedTemplates            []string `json:"allowed_templates"`
 	CommandHistoryRetentionDays int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
 
 	// Planned features (announced but not yet available)

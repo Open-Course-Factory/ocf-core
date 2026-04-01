@@ -276,8 +276,6 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		DataPersistenceEnabled:    false,
 		DataPersistenceGB:         0,
 		AllowedTemplates:          []string{"ubuntu-basic", "alpine-basic"},
-		AllowedBackends:           []string{},
-		DefaultBackend:            "",
 		CommandHistoryRetentionDays: 7,
 	}
 
@@ -326,8 +324,6 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		NetworkAccessEnabled:      true,
 		DataPersistenceEnabled:    true,
 		DataPersistenceGB:         5,
-		AllowedBackends:             []string{}, // empty = all backends allowed
-		DefaultBackend:              "",         // empty = TT default
 		CommandHistoryRetentionDays: 90,
 	}
 
@@ -351,8 +347,6 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		NetworkAccessEnabled:      true,
 		DataPersistenceEnabled:    true,
 		DataPersistenceGB:         20,
-		AllowedBackends:             []string{}, // empty = all backends allowed
-		DefaultBackend:              "",         // empty = TT default
 		CommandHistoryRetentionDays: 365,
 		PricingTiers: []paymentModels.PricingTier{
 			{MinQuantity: 1, MaxQuantity: 5, UnitAmount: 1200, Description: "1-5 licences: 12€/licence"},
