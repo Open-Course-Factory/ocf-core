@@ -162,11 +162,13 @@ func (s *emailVerificationService) VerifyEmail(token string) error {
 		return fmt.Errorf("failed to get user: %w", err)
 	}
 
+	// Use native Casdoor EmailVerified field
+	user.EmailVerified = true
+
+	// Store timestamp in Properties (no native Casdoor field for this)
 	if user.Properties == nil {
 		user.Properties = make(map[string]string)
 	}
-
-	user.Properties["email_verified"] = "true"
 	user.Properties["email_verified_at"] = time.Now().Format(time.RFC3339)
 
 	if _, err := casdoorsdk.UpdateUser(user); err != nil {
@@ -187,8 +189,8 @@ func (s *emailVerificationService) ResendVerification(email string) error {
 		return nil // Return success to avoid user enumeration
 	}
 
-	// Check if user is already verified
-	if user.Properties != nil && user.Properties["email_verified"] == "true" {
+	// Check if user is already verified using native Casdoor field
+	if user.EmailVerified {
 		// Already verified, but don't reveal this to avoid user enumeration
 		utils.Debug("Verification resend requested for already verified email: %s", email)
 		return nil
@@ -231,18 +233,14 @@ func (s *emailVerificationService) ResendVerification(email string) error {
 	return nil
 }
 
-// IsEmailVerified checks if a user's email is verified
+// IsEmailVerified checks if a user's email is verified using native Casdoor field
 func (s *emailVerificationService) IsEmailVerified(userID string) (bool, error) {
 	user, err := casdoorsdk.GetUserByUserId(userID)
 	if err != nil {
 		return false, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	if user.Properties != nil && user.Properties["email_verified"] == "true" {
-		return true, nil
-	}
-
-	return false, nil
+	return user.EmailVerified, nil
 }
 
 // GetVerificationStatus returns the verification status for a user
@@ -253,15 +251,12 @@ func (s *emailVerificationService) GetVerificationStatus(userID string) (*Verifi
 	}
 
 	status := &VerificationStatus{
-		Verified: false,
+		Verified: user.EmailVerified,
 		Email:    user.Email,
 	}
 
-	if user.Properties != nil {
-		if user.Properties["email_verified"] == "true" {
-			status.Verified = true
-			status.VerifiedAt = user.Properties["email_verified_at"]
-		}
+	if user.EmailVerified && user.Properties != nil {
+		status.VerifiedAt = user.Properties["email_verified_at"]
 	}
 
 	return status, nil

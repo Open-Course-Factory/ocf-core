@@ -45,27 +45,27 @@ func main() {
 			continue
 		}
 
-		// Initialize Properties map if nil
-		if user.Properties == nil {
-			user.Properties = make(map[string]string)
-		}
+		// Only mark if not already verified (using native Casdoor field)
+		if !user.EmailVerified {
+			user.EmailVerified = true
 
-		// Only mark if not already set
-		if user.Properties["email_verified"] == "" || user.Properties["email_verified"] == "false" {
-			user.Properties["email_verified"] = "true"
+			// Initialize Properties map if nil
+			if user.Properties == nil {
+				user.Properties = make(map[string]string)
+			}
 			user.Properties["email_verified_at"] = verificationTime
 
 			// Update user in Casdoor
 			_, err := casdoorsdk.UpdateUser(user)
 			if err != nil {
-				log.Printf("❌ Failed to update user %s (%s): %v\n", user.Name, user.Email, err)
+				log.Printf("Failed to update user %s (%s): %v\n", user.Name, user.Email, err)
 				errorCount++
 			} else {
-				fmt.Printf("✅ Marked user %s (%s) as verified\n", user.Name, user.Email)
+				fmt.Printf("Marked user %s (%s) as verified\n", user.Name, user.Email)
 				markedCount++
 			}
 		} else {
-			fmt.Printf("ℹ️  User %s (%s) already verified, skipping\n", user.Name, user.Email)
+			fmt.Printf("User %s (%s) already verified, skipping\n", user.Name, user.Email)
 			skippedCount++
 		}
 	}

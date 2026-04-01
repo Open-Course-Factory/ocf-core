@@ -10,12 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/models"
 	"soli/formations/src/auth/services"
 	emailVerificationRoutes "soli/formations/src/auth/routes/emailVerificationRoutes"
@@ -479,4 +481,72 @@ func TestTerminalAccessLevelConstants(t *testing.T) {
 	assert.Equal(t, "read", "read")
 	assert.Equal(t, "write", "write")
 	assert.Equal(t, "admin", "admin")
+}
+
+// ============================================================
+// Native EmailVerified field tests (Casdoor v2.337.0+)
+// Verify the code reads from the native user.EmailVerified bool
+// field instead of the custom Properties["email_verified"] string.
+// ============================================================
+
+func TestUserModelToUserOutput_NativeEmailVerified(t *testing.T) {
+	t.Run("reads email_verified from native field when true", func(t *testing.T) {
+		user := &casdoorsdk.User{
+			Id:            "test-uuid-1234-5678-9012-345678901234",
+			Name:          "testuser",
+			DisplayName:   "Test User",
+			Email:         "test@example.com",
+			EmailVerified: true,
+			Properties:    map[string]string{},
+		}
+
+		output := dto.UserModelToUserOutput(user)
+		assert.True(t, output.EmailVerified, "should read EmailVerified from native Casdoor field")
+	})
+
+	t.Run("reads email_verified from native field when false", func(t *testing.T) {
+		user := &casdoorsdk.User{
+			Id:            "test-uuid-1234-5678-9012-345678901234",
+			Name:          "testuser",
+			DisplayName:   "Test User",
+			Email:         "test@example.com",
+			EmailVerified: false,
+			Properties:    map[string]string{},
+		}
+
+		output := dto.UserModelToUserOutput(user)
+		assert.False(t, output.EmailVerified, "should read EmailVerified=false from native Casdoor field")
+	})
+
+	t.Run("native field takes precedence over missing property", func(t *testing.T) {
+		// Native field is true, but no Properties key at all
+		user := &casdoorsdk.User{
+			Id:            "test-uuid-1234-5678-9012-345678901234",
+			Name:          "testuser",
+			DisplayName:   "Test User",
+			Email:         "test@example.com",
+			EmailVerified: true,
+			Properties:    nil,
+		}
+
+		output := dto.UserModelToUserOutput(user)
+		assert.True(t, output.EmailVerified, "native EmailVerified=true should work even with nil Properties")
+	})
+
+	t.Run("email_verified_at still read from properties", func(t *testing.T) {
+		user := &casdoorsdk.User{
+			Id:            "test-uuid-1234-5678-9012-345678901234",
+			Name:          "testuser",
+			DisplayName:   "Test User",
+			Email:         "test@example.com",
+			EmailVerified: true,
+			Properties: map[string]string{
+				"email_verified_at": "2025-01-15T10:00:00Z",
+			},
+		}
+
+		output := dto.UserModelToUserOutput(user)
+		assert.True(t, output.EmailVerified)
+		assert.Equal(t, "2025-01-15T10:00:00Z", output.EmailVerifiedAt, "email_verified_at should still come from Properties")
+	})
 }

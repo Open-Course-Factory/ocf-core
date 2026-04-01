@@ -200,7 +200,6 @@ func createUserIntoCasdoor(generatedUsername string, userCreateDTO dto.CreateUse
 	properties["username"] = generatedUsername
 	properties["tos_accepted_at"] = userCreateDTO.TosAcceptedAt
 	properties["tos_version"] = userCreateDTO.TosVersion
-	properties["email_verified"] = "false"
 
 	user1 := casdoorsdk.User{
 		Name:              userCreateDTO.UserName,
@@ -210,6 +209,7 @@ func createUserIntoCasdoor(generatedUsername string, userCreateDTO dto.CreateUse
 		LastName:          userCreateDTO.LastName,
 		FirstName:         userCreateDTO.FirstName,
 		SignupApplication: "ocf",
+		EmailVerified:     false,
 		Properties:        properties,
 	}
 

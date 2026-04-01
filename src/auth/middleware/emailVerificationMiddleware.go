@@ -42,13 +42,8 @@ func (m *emailVerificationMiddleware) RequireVerifiedEmail() gin.HandlerFunc {
 			return
 		}
 
-		// Check verification status
-		emailVerified := false
-		if user.Properties != nil {
-			emailVerified = user.Properties["email_verified"] == "true"
-		}
-
-		if !emailVerified {
+		// Check verification status using native Casdoor field
+		if !user.EmailVerified {
 			ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error":    "EMAIL_NOT_VERIFIED",
 				"message":  "Please verify your email address to access this resource",

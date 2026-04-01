@@ -61,15 +61,13 @@ func UserModelToUserOutput(userModel *casdoorsdk.User) *UserOutput {
 		uuid_parsed = uuid.New()
 	}
 
-	// Extract ToS information from Properties map
+	// Extract ToS and email_verified_at from Properties map
 	tosAcceptedAt := ""
 	tosVersion := ""
-	emailVerified := false
 	emailVerifiedAt := ""
 	if userModel.Properties != nil {
 		tosAcceptedAt = userModel.Properties["tos_accepted_at"]
 		tosVersion = userModel.Properties["tos_version"]
-		emailVerified = userModel.Properties["email_verified"] == "true"
 		emailVerifiedAt = userModel.Properties["email_verified_at"]
 	}
 
@@ -81,7 +79,7 @@ func UserModelToUserOutput(userModel *casdoorsdk.User) *UserOutput {
 		CreatedAt:       userModel.CreatedTime,
 		TosAcceptedAt:   tosAcceptedAt,
 		TosVersion:      tosVersion,
-		EmailVerified:   emailVerified,
+		EmailVerified:   userModel.EmailVerified,
 		EmailVerifiedAt: emailVerifiedAt,
 	}
 }
