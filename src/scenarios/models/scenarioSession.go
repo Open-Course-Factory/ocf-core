@@ -15,6 +15,7 @@ type ScenarioSession struct {
 	TerminalSessionID *string    `gorm:"type:varchar(255)" json:"terminal_session_id,omitempty"`
 	CurrentStep       int        `gorm:"default:0" json:"current_step"`
 	Status            string     `gorm:"type:varchar(50);default:'active'" json:"status"` // provisioning, active, completed, abandoned, setup_failed
+	ProvisioningPhase string     `gorm:"type:varchar(50);default:''" json:"provisioning_phase,omitempty"`
 	StartedAt         time.Time  `gorm:"not null" json:"started_at"`
 	CompletedAt       *time.Time `json:"completed_at,omitempty"`
 	Grade             *float64   `gorm:"type:decimal(5,2)" json:"grade,omitempty"`

@@ -189,8 +189,12 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 			slog.Info("StartScenario scripts", "session_id", session.ID, "setup_len", len(setupScript), "bg_len", len(bgScript))
 			if setupScript != "" || bgScript != "" {
 				// Set session to provisioning — frontend will poll until active
-				s.db.Model(session).Update("status", "provisioning")
+				s.db.Model(session).Updates(map[string]any{
+					"status":             "provisioning",
+					"provisioning_phase": "setup_script",
+				})
 				session.Status = "provisioning"
+				session.ProvisioningPhase = "setup_script"
 
 				go s.runStep0Setup(session.ID, *session.TerminalSessionID, &scenario, session.Flags)
 			} else {
@@ -222,7 +226,10 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 			slog.Error("scenario setup script failed", "session_id", sessionID, "err", err)
 			s.db.Model(&models.ScenarioSession{}).
 				Where("id = ? AND status = ?", sessionID, "provisioning").
-				Update("status", "setup_failed")
+				Updates(map[string]any{
+					"status":             "setup_failed",
+					"provisioning_phase": "",
+				})
 			return
 		}
 	}
@@ -232,11 +239,17 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 	// Execute step 0 background script
 	bgScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript)
 	if bgScript != "" {
+		s.db.Model(&models.ScenarioSession{}).
+			Where("id = ? AND status = ?", sessionID, "provisioning").
+			Update("provisioning_phase", "step_setup")
 		if err := s.executeBackgroundScript(terminalSessionID, step); err != nil {
 			slog.Error("step 0 setup failed", "session_id", sessionID, "err", err)
 			s.db.Model(&models.ScenarioSession{}).
 				Where("id = ? AND status = ?", sessionID, "provisioning").
-				Update("status", "setup_failed")
+				Updates(map[string]any{
+					"status":             "setup_failed",
+					"provisioning_phase": "",
+				})
 			return
 		}
 	}
@@ -249,7 +262,10 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 	// Transition to active — only if still provisioning (not abandoned meanwhile)
 	result := s.db.Model(&models.ScenarioSession{}).
 		Where("id = ? AND status = ?", sessionID, "provisioning").
-		Update("status", "active")
+		Updates(map[string]any{
+			"status":             "active",
+			"provisioning_phase": "",
+		})
 	if result.RowsAffected > 0 {
 		slog.Info("scenario session setup complete", "session_id", sessionID)
 	}
@@ -615,6 +631,7 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 			ScenarioID:        session.ScenarioID,
 			ScenarioTitle:     session.Scenario.Title,
 			Status:            session.Status,
+			ProvisioningPhase: session.ProvisioningPhase,
 			Grade:             session.Grade,
 			CurrentStep:       session.CurrentStep,
 			TotalSteps:        totalSteps,

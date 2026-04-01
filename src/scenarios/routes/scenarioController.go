@@ -656,6 +656,7 @@ func (sc *scenarioController) GetSessionInfo(ctx *gin.Context) {
 		TerminalSessionID: terminalSessionID,
 		CurrentStep:       session.CurrentStep,
 		Status:            session.Status,
+		ProvisioningPhase: session.ProvisioningPhase,
 		Grade:             session.Grade,
 		StartedAt:         session.StartedAt,
 	})
@@ -1900,6 +1901,7 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 		TerminalSessionID: terminalResp.SessionID,
 		ScenarioSessionID: session.ID.String(),
 		Status:            session.Status,
+		ProvisioningPhase: session.ProvisioningPhase,
 	})
 }
 

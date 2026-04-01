@@ -14,6 +14,7 @@ type SessionResponse struct {
 	TerminalSessionID string    `json:"terminal_session_id"`
 	CurrentStep       int       `json:"current_step"`
 	Status            string    `json:"status"`
+	ProvisioningPhase string    `json:"provisioning_phase,omitempty"`
 	Grade             *float64  `json:"grade,omitempty"`
 	StartedAt         time.Time `json:"started_at"`
 }
@@ -157,6 +158,7 @@ type LaunchScenarioResponse struct {
 	TerminalSessionID string `json:"terminal_session_id"`
 	ScenarioSessionID string `json:"scenario_session_id"`
 	Status            string `json:"status"`
+	ProvisioningPhase string `json:"provisioning_phase,omitempty"`
 }
 
 // AvailableScenarioOutput - enriched scenario with launchability info
@@ -182,6 +184,7 @@ type MySessionResponse struct {
 	ScenarioID        uuid.UUID  `json:"scenario_id"`
 	ScenarioTitle     string     `json:"scenario_title"`
 	Status            string     `json:"status"`
+	ProvisioningPhase string     `json:"provisioning_phase,omitempty"`
 	Grade             *float64   `json:"grade,omitempty"`
 	CurrentStep       int        `json:"current_step"`
 	TotalSteps        int        `json:"total_steps"`

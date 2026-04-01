@@ -29,6 +29,7 @@ type ScenarioSessionOutput struct {
 	TerminalSessionID *string                      `json:"terminal_session_id,omitempty"`
 	CurrentStep       int                          `json:"current_step"`
 	Status            string                       `json:"status"`
+	ProvisioningPhase string                       `json:"provisioning_phase,omitempty"`
 	StartedAt         time.Time                    `json:"started_at"`
 	CompletedAt       *time.Time                   `json:"completed_at,omitempty"`
 	CreatedAt         time.Time                    `json:"created_at"`

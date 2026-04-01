@@ -25,6 +25,7 @@ func RegisterScenarioSession(service *ems.EntityRegistrationService) {
 						TerminalSessionID: model.TerminalSessionID,
 						CurrentStep:       model.CurrentStep,
 						Status:            model.Status,
+						ProvisioningPhase: model.ProvisioningPhase,
 						StartedAt:         model.StartedAt,
 						CompletedAt:       model.CompletedAt,
 						CreatedAt:         model.CreatedAt,
