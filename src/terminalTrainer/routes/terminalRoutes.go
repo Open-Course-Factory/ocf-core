@@ -94,12 +94,18 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	// cookie (set by the frontend iframe loader) and injects it as an
 	// Authorization header so the standard auth middleware can validate it.
 	// Build set of protected backends (admin-only for Incus UI proxy).
-	// Includes the system default backend + any listed in incus_ui_protected_backends.
+	// Includes the system default backend (from tt-backend) + any listed in incus_ui_protected_backends.
 	protectedBackends := make(map[string]bool)
-	featureRepo := configRepositories.NewFeatureRepository(db)
-	if f, err := featureRepo.GetFeatureByKey("terminal_default_backend"); err == nil && f.Value != "" {
-		protectedBackends[f.Value] = true
+	// Get system default backend from tt-backend (single source of truth)
+	if backends, err := terminalService.GetBackends(); err == nil {
+		for _, b := range backends {
+			if b.IsDefault {
+				protectedBackends[b.ID] = true
+				break
+			}
+		}
 	}
+	featureRepo := configRepositories.NewFeatureRepository(db)
 	if f, err := featureRepo.GetFeatureByKey("incus_ui_protected_backends"); err == nil && f.Value != "" {
 		for _, id := range strings.Split(f.Value, ",") {
 			if id = strings.TrimSpace(id); id != "" {

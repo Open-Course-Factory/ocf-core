@@ -520,8 +520,6 @@ func TestGetBackends_ReturnsIsDefaultFromTTBackend(t *testing.T) {
 
 	db := freshTestDB(t)
 
-	origURL := t.TempDir() // just to save/restore
-	_ = origURL
 	t.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)
 	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-key")
 	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
@@ -569,8 +567,6 @@ func TestGetBackends_NoDefaultInResponse(t *testing.T) {
 	for _, b := range backends {
 		assert.False(t, b.IsDefault, "no backend should be marked as default when tt-backend returns none")
 	}
-
-	_ = svc
 }
 
 // ============================================

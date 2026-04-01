@@ -842,7 +842,7 @@ func (tts *terminalTrainerService) GetInstanceTypes(backend string) ([]dto.Insta
 
 	var instanceTypes []dto.InstanceType
 	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithHeader("X-Admin-Key", tts.adminKey))
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
 
 	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &instanceTypes, opts)
 	if err != nil {
@@ -1529,7 +1529,7 @@ func (tts *terminalTrainerService) GetBackends() ([]dto.BackendInfo, error) {
 
 	var backends []dto.BackendInfo
 	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithHeader("X-Admin-Key", tts.adminKey))
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
 
 	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &backends, opts)
 	if err != nil {
@@ -1602,6 +1602,9 @@ func (tts *terminalTrainerService) invalidateBackendCache() {
 	tts.backendCache = nil
 	tts.backendCacheTime = time.Time{}
 	tts.backendCacheMu.Unlock()
+	// Cancel any in-flight singleflight request that could repopulate the
+	// cache with stale data.
+	tts.backendCacheSF.Forget("backends")
 }
 
 // GetBackendsForOrganization returns backends filtered by org's AllowedBackends/DefaultBackend
@@ -2200,7 +2203,7 @@ func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*d
 
 	url := fmt.Sprintf("%s/%s/admin/backends/%d", tts.baseURL, tts.apiVersion, adminEntry.ID)
 	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithHeader("X-Admin-Key", tts.adminKey))
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
 
 	_, err = utils.MakeExternalAPIRequest("Terminal Trainer", "PUT", url, updateReq, opts)
 	if err != nil {
@@ -2238,7 +2241,7 @@ type adminAPIResponse struct {
 func (tts *terminalTrainerService) getAdminBackends() ([]adminBackendEntry, error) {
 	url := fmt.Sprintf("%s/%s/admin/backends", tts.baseURL, tts.apiVersion)
 	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithHeader("X-Admin-Key", tts.adminKey))
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
 
 	var resp adminAPIResponse
 	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &resp, opts)
