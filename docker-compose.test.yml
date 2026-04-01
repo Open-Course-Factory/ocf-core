@@ -1,37 +1,27 @@
 services:
   postgres-test:
     image: postgres:16
-    container_name: ocf-postgres-test
     environment:
       POSTGRES_DB: ocf_test
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-    volumes:
-      - postgres-test-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 2s
       timeout: 2s
       retries: 15
-    networks:
-      - test-network
 
   casdoor-db-test:
     image: mysql:8.0.25
     platform: linux/amd64
-    container_name: ocf-casdoor-db-test
     environment:
       MYSQL_ROOT_PASSWORD: 123456
       MYSQL_DATABASE: casdoor
-    volumes:
-      - casdoor-mysql-test-data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 2s
       timeout: 2s
       retries: 30
-    networks:
-      - test-network
 
   casdoor-test:
     build:
@@ -39,7 +29,6 @@ services:
       dockerfile: Dockerfile.casdoor
       args:
         CONFIG_FILE: src/configuration/casdoor_app_test.conf
-    container_name: ocf-casdoor-test
     depends_on:
       casdoor-db-test:
         condition: service_healthy
@@ -52,15 +41,3 @@ services:
       timeout: 2s
       retries: 30
       start_period: 15s
-    networks:
-      - test-network
-
-volumes:
-  postgres-test-data:
-    driver: local
-  casdoor-mysql-test-data:
-    driver: local
-
-networks:
-  test-network:
-    driver: bridge

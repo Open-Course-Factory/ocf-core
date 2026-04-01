@@ -141,15 +141,18 @@ test:auth:
   variables:
     DOCKER_DRIVER: overlay2
     DOCKER_TLS_CERTDIR: "/certs"
-    # PostgreSQL connection via docker network
+    # Unique project name per job to avoid container name collisions
+    # when multiple MR pipelines run in parallel on the same runner
+    COMPOSE_PROJECT: "ocf-test-${CI_JOB_ID}"
+    # PostgreSQL connection via docker network (service name, resolved by compose DNS)
     POSTGRES_DB: ocf_test
     POSTGRES_USER: postgres
     POSTGRES_PASSWORD: "postgres"
-    POSTGRES_HOST: ocf-postgres-test
+    POSTGRES_HOST: postgres-test
     POSTGRES_PORT: "5432"
     POSTGRES_SSLMODE: disable
-    # Casdoor connection (loaded from .env.test file in container)
-    CASDOOR_ENDPOINT: "http://ocf-casdoor-test:8000"
+    # Casdoor connection (service name, resolved by compose DNS)
+    CASDOOR_ENDPOINT: "http://casdoor-test:8000"
 
   before_script:
     # Install required tools
@@ -168,24 +171,24 @@ test:auth:
 
     # Clean up previous run's resources to ensure a fresh start
     - echo "🧹 Cleaning up old Docker resources..."
-    - docker-compose -f docker-compose.test.yml down -v --remove-orphans || true
+    - docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml down -v --remove-orphans || true
 
     # Start database services first (PostgreSQL and MySQL for Casdoor)
     - echo "🐳 Starting database services..."
-    - docker-compose -f docker-compose.test.yml up -d postgres-test casdoor-db-test
+    - docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml up -d postgres-test casdoor-db-test
 
     # Wait for databases to be FULLY ready before starting Casdoor
     - chmod +x scripts/ci/wait-for-services.sh
     - echo "⏳ Waiting for PostgreSQL to be ready..."
     - |
       for i in $(seq 1 60); do
-        if docker exec ocf-postgres-test pg_isready -U postgres 2>/dev/null; then
+        if docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml exec -T postgres-test pg_isready -U postgres 2>/dev/null; then
           echo "✅ PostgreSQL is ready!"
           break
         fi
         if [ $i -eq 60 ]; then
           echo "❌ PostgreSQL failed to start after 60s"
-          docker-compose -f docker-compose.test.yml logs postgres-test
+          docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml logs postgres-test
           exit 1
         fi
         sleep 1
@@ -193,13 +196,13 @@ test:auth:
     - echo "⏳ Waiting for MySQL to be ready..."
     - |
       for i in $(seq 1 60); do
-        if docker exec ocf-casdoor-db-test mysqladmin ping -h localhost --silent 2>/dev/null; then
+        if docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml exec -T casdoor-db-test mysqladmin ping -h localhost --silent 2>/dev/null; then
           echo "✅ MySQL is ready!"
           break
         fi
         if [ $i -eq 60 ]; then
           echo "❌ MySQL failed to start"
-          docker-compose -f docker-compose.test.yml logs casdoor-db-test
+          docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml logs casdoor-db-test
           exit 1
         fi
         sleep 1
@@ -207,20 +210,20 @@ test:auth:
 
     # Now start Casdoor AFTER MySQL is confirmed ready
     - echo "🐳 Starting Casdoor (MySQL is ready)..."
-    - docker-compose -f docker-compose.test.yml up -d casdoor-test
+    - docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml up -d casdoor-test
 
     # Wait for Casdoor to be ready
     - echo "⏳ Waiting for Casdoor to be ready..."
     - |
       for i in $(seq 1 90); do
-        if docker exec ocf-casdoor-test wget --spider -q http://localhost:8000/api/get-account 2>/dev/null; then
+        if docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml exec -T casdoor-test wget --spider -q http://localhost:8000/api/get-account 2>/dev/null; then
           echo "✅ Casdoor is ready!"
           break
         fi
         if [ $i -eq 90 ]; then
           echo "❌ Casdoor failed to start"
-          docker-compose -f docker-compose.test.yml logs casdoor-test
-          docker-compose -f docker-compose.test.yml logs casdoor-db-test
+          docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml logs casdoor-test
+          docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml logs casdoor-db-test
           exit 1
         fi
         sleep 1
@@ -234,14 +237,13 @@ test:auth:
 
   script:
     - echo "🔐 Running auth tests..."
-    # Run tests inside docker network to access services
-    # Note: Casdoor config loaded from .env.test file inside container
+    # Run tests inside the compose network to access services by service name
     - |
       docker run --rm \
-        --network ocf-core_test-network \
+        --network ${COMPOSE_PROJECT}_default \
         -v $(pwd):/workspace \
-        -v ocf-core-gomod-cache:/go/pkg/mod \
-        -v ocf-core-gobuild-cache:/root/.cache/go-build \
+        -v ${COMPOSE_PROJECT}-gomod-cache:/go/pkg/mod \
+        -v ${COMPOSE_PROJECT}-gobuild-cache:/root/.cache/go-build \
         -w /workspace \
         -e POSTGRES_DB=$POSTGRES_DB \
         -e POSTGRES_USER=$POSTGRES_USER \
@@ -255,7 +257,7 @@ test:auth:
     - cat auth_tests.log | go-junit-report -set-exit-code > auth_report.xml
 
   after_script:
-    - docker-compose -f docker-compose.test.yml down -v || true
+    - docker-compose -p ${COMPOSE_PROJECT:-ocf-test-cleanup} -f docker-compose.test.yml down -v --remove-orphans || true
 
   artifacts:
     reports:
