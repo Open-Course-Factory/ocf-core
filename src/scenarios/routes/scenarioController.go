@@ -1530,7 +1530,7 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 			query := sc.db.Distinct().
 				Preload("CompatibleInstanceTypes").
 				Joins("JOIN scenario_assignments sa ON sa.scenario_id = scenarios.id").
-				Where("sa.is_active = true AND (sa.deadline IS NULL OR sa.deadline > ?)", now).
+				Where("sa.is_active = true AND (sa.deadline IS NULL OR sa.deadline > ?) AND (sa.start_date IS NULL OR sa.start_date <= ?)", now, now).
 				Where(combined, args...)
 
 			if err := query.Find(&scenarios).Error; err != nil {
@@ -1587,7 +1587,7 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 			}
 			combined := strings.Join(conditions, " OR ")
 			sc.db.Model(&models.ScenarioAssignment{}).
-				Where("is_active = ? AND (deadline IS NULL OR deadline > ?)", true, now).
+				Where("is_active = ? AND (deadline IS NULL OR deadline > ?) AND (start_date IS NULL OR start_date <= ?)", true, now, now).
 				Where(combined, scopeArgs...).
 				Pluck("scenario_id", &assignedIDs)
 		}

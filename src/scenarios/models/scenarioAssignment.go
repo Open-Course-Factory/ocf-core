@@ -16,6 +16,7 @@ type ScenarioAssignment struct {
 	OrganizationID *uuid.UUID `gorm:"type:uuid;index" json:"organization_id,omitempty" mapstructure:"organization_id"`
 	Scope          string     `gorm:"type:varchar(50);not null" json:"scope" mapstructure:"scope"` // "group" or "org"
 	CreatedByID    string     `gorm:"type:varchar(255);not null" json:"created_by_id" mapstructure:"created_by_id"`
+	StartDate      *time.Time `json:"start_date,omitempty" mapstructure:"start_date"`
 	Deadline       *time.Time `json:"deadline,omitempty" mapstructure:"deadline"`
 	IsActive       bool       `gorm:"default:true" json:"is_active" mapstructure:"is_active"`
 

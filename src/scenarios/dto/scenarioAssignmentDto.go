@@ -12,14 +12,16 @@ type CreateScenarioAssignmentInput struct {
 	GroupID        *uuid.UUID `json:"group_id,omitempty" mapstructure:"group_id"`
 	OrganizationID *uuid.UUID `json:"organization_id,omitempty" mapstructure:"organization_id"`
 	Scope          string     `json:"scope" mapstructure:"scope" binding:"required,oneof=group org"`
+	StartDate      *time.Time `json:"start_date,omitempty" mapstructure:"start_date"`
 	Deadline       *time.Time `json:"deadline,omitempty" mapstructure:"deadline"`
 	IsActive       bool       `json:"is_active,omitempty" mapstructure:"is_active"`
 }
 
 // EditScenarioAssignmentInput - DTO for editing a scenario assignment (partial updates)
 type EditScenarioAssignmentInput struct {
-	Deadline *time.Time `json:"deadline,omitempty" mapstructure:"deadline"`
-	IsActive *bool      `json:"is_active,omitempty" mapstructure:"is_active"`
+	StartDate *time.Time `json:"start_date,omitempty" mapstructure:"start_date"`
+	Deadline  *time.Time `json:"deadline,omitempty" mapstructure:"deadline"`
+	IsActive  *bool      `json:"is_active,omitempty" mapstructure:"is_active"`
 }
 
 // ScenarioAssignmentOutput - DTO for scenario assignment responses
@@ -30,6 +32,7 @@ type ScenarioAssignmentOutput struct {
 	OrganizationID *uuid.UUID      `json:"organization_id,omitempty"`
 	Scope          string          `json:"scope"`
 	CreatedByID    string          `json:"created_by_id"`
+	StartDate      *time.Time      `json:"start_date,omitempty"`
 	Deadline       *time.Time      `json:"deadline,omitempty"`
 	IsActive       bool            `json:"is_active"`
 	CreatedAt      time.Time       `json:"created_at"`
