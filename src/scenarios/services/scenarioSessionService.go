@@ -28,11 +28,15 @@ type VerificationServiceInterface interface {
 	ExecInContainer(sessionID string, command []string, timeout int) (exitCode int, stdout string, stderr string, err error)
 }
 
+// TerminalStopFunc is a callback to stop a terminal session (injected from controller layer)
+type TerminalStopFunc func(terminalSessionID string) error
+
 // ScenarioSessionService manages the lifecycle of a student's scenario session
 type ScenarioSessionService struct {
 	db                  *gorm.DB
 	flagService         FlagServiceInterface
 	verificationService VerificationServiceInterface
+	stopTerminal        TerminalStopFunc
 }
 
 // NewScenarioSessionService creates a new session service with its dependencies
@@ -41,6 +45,21 @@ func NewScenarioSessionService(db *gorm.DB, flagService FlagServiceInterface, ve
 		db:                  db,
 		flagService:         flagService,
 		verificationService: verificationService,
+	}
+}
+
+// SetTerminalStopFunc sets the callback used to stop terminal sessions on failure
+func (s *ScenarioSessionService) SetTerminalStopFunc(fn TerminalStopFunc) {
+	s.stopTerminal = fn
+}
+
+// tryStopTerminal stops the linked terminal session (best-effort, logs on failure)
+func (s *ScenarioSessionService) tryStopTerminal(terminalSessionID string, sessionID uuid.UUID) {
+	if s.stopTerminal == nil || terminalSessionID == "" {
+		return
+	}
+	if err := s.stopTerminal(terminalSessionID); err != nil {
+		slog.Warn("failed to stop terminal on setup failure", "terminal_session_id", terminalSessionID, "session_id", sessionID, "err", err)
 	}
 }
 
@@ -230,6 +249,7 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 					"status":             "setup_failed",
 					"provisioning_phase": "",
 				})
+			s.tryStopTerminal(terminalSessionID, sessionID)
 			return
 		}
 	}
@@ -250,6 +270,7 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 					"status":             "setup_failed",
 					"provisioning_phase": "",
 				})
+			s.tryStopTerminal(terminalSessionID, sessionID)
 			return
 		}
 	}

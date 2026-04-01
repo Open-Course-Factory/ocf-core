@@ -79,6 +79,11 @@ func NewScenarioController(db *gorm.DB) ScenarioController {
 	seedService := services.NewScenarioSeedService(db)
 	terminalService := terminalServices.NewTerminalTrainerService(db)
 
+	// Wire terminal stop callback so the session service can stop terminals on setup failure
+	sessionService.SetTerminalStopFunc(func(terminalSessionID string) error {
+		return terminalService.StopSession(terminalSessionID)
+	})
+
 	return &scenarioController{
 		db:              db,
 		sessionService:  sessionService,
@@ -567,6 +572,13 @@ func (sc *scenarioController) AbandonSession(ctx *gin.Context) {
 			ErrorMessage: "Failed to abandon session",
 		})
 		return
+	}
+
+	// Stop the linked terminal session (best-effort, don't block the abandon)
+	if session.TerminalSessionID != nil && *session.TerminalSessionID != "" {
+		if stopErr := sc.terminalService.StopSession(*session.TerminalSessionID); stopErr != nil {
+			slog.Warn("failed to stop terminal session on abandon", "terminal_session_id", *session.TerminalSessionID, "err", stopErr)
+		}
 	}
 
 	ctx.JSON(http.StatusOK, dto.MessageResponse{Message: "Session abandoned"})
@@ -1701,19 +1713,50 @@ func findMatchingInstanceTypes(scenario models.Scenario, available []terminalDto
 	return matched
 }
 
-// findBestInstanceType selects the best compatible instance type for a scenario
-// from the list of available types. Returns the prefix string or empty if none match.
+// findBestInstanceType selects the smallest compatible instance type for a scenario.
+// Prefers the smallest size >= required to avoid picking oversized machines that may
+// not be in the user's subscription plan.
 func findBestInstanceType(scenario models.Scenario, available []terminalDto.InstanceType) string {
 	osType := scenario.OsType
 	requiredSize := scenario.InstanceType
 
+	bestPrefix := ""
+	bestOrder := 999
+
 	for _, inst := range available {
-		if instanceMatchesScenario(inst, osType, requiredSize) {
-			return inst.Prefix
+		if !instanceMatchesScenario(inst, osType, requiredSize) {
+			continue
+		}
+		// Find the smallest size this instance offers that meets the requirement
+		sizes := strings.Split(inst.Size, "|")
+		for _, s := range sizes {
+			s = strings.TrimSpace(s)
+			order, ok := sizeOrder[s]
+			if !ok {
+				continue
+			}
+			if requiredSize != "" {
+				if reqOrder, reqOk := sizeOrder[requiredSize]; reqOk && order < reqOrder {
+					continue
+				}
+			}
+			if order < bestOrder {
+				bestOrder = order
+				bestPrefix = inst.Prefix
+			}
 		}
 	}
 
-	return ""
+	// Fallback: if no instance had a known size label, return first compatible match
+	if bestPrefix == "" {
+		for _, inst := range available {
+			if instanceMatchesScenario(inst, osType, requiredSize) {
+				return inst.Prefix
+			}
+		}
+	}
+
+	return bestPrefix
 }
 
 // LaunchScenario godoc
