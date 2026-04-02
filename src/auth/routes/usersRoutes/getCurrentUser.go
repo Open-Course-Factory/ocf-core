@@ -6,9 +6,13 @@ import (
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/auth/models"
+	sqldb "soli/formations/src/db"
+	"soli/formations/src/utils"
 )
 
 // GetCurrentUser godoc
@@ -86,5 +90,58 @@ func GetCurrentUser(ctx *gin.Context) {
 		ForcePasswordReset: forcePasswordReset,
 	}
 
+	// Include user settings (reduces separate /users/me/settings call)
+	if sqldb.DB != nil {
+		settings, err := fetchUserSettings(sqldb.DB, userID)
+		if err != nil {
+			utils.Warn("Failed to fetch settings for user %s in /auth/me: %v", userID, err)
+		} else {
+			response.Settings = settings
+		}
+	}
+
 	ctx.JSON(http.StatusOK, response)
+}
+
+// fetchUserSettings loads or creates default user settings and converts to output DTO.
+// Exported as FetchUserSettings for testing.
+func fetchUserSettings(db *gorm.DB, userID string) (*dto.UserSettingsOutput, error) {
+	var settings models.UserSettings
+	defaults := models.UserSettings{
+		UserID:               userID,
+		DefaultLandingPage:   "/dashboard",
+		PreferredLanguage:    "en",
+		Timezone:             "UTC",
+		Theme:                "light",
+		CompactMode:          false,
+		EmailNotifications:   true,
+		DesktopNotifications: false,
+		TwoFactorEnabled:     false,
+	}
+
+	result := db.Where("user_id = ?", userID).Attrs(defaults).FirstOrCreate(&settings)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return &dto.UserSettingsOutput{
+		ID:                   settings.ID,
+		UserID:               settings.UserID,
+		DefaultLandingPage:   settings.DefaultLandingPage,
+		PreferredLanguage:    settings.PreferredLanguage,
+		Timezone:             settings.Timezone,
+		Theme:                settings.Theme,
+		CompactMode:          settings.CompactMode,
+		EmailNotifications:   settings.EmailNotifications,
+		DesktopNotifications: settings.DesktopNotifications,
+		PasswordLastChanged:  settings.PasswordLastChanged,
+		TwoFactorEnabled:     settings.TwoFactorEnabled,
+		CreatedAt:            settings.CreatedAt,
+		UpdatedAt:            settings.UpdatedAt,
+	}, nil
+}
+
+// FetchUserSettings is the exported version for testing.
+func FetchUserSettings(db *gorm.DB, userID string) (*dto.UserSettingsOutput, error) {
+	return fetchUserSettings(db, userID)
 }
