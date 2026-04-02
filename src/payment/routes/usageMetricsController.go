@@ -38,7 +38,9 @@ func NewUsageMetricsController(db *gorm.DB) UsageMetricsController {
 func (umc *usageMetricsController) GetUserUsageMetrics(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
-	// Pour les admins, permettre de voir les métriques d'autres utilisateurs
+	// Manual admin check for user targeting: this endpoint is SelfScoped (member-accessible),
+	// unlike increment/reset which are AdminOnly. So we must check roles manually when
+	// a user_id param targets another user's metrics.
 	targetUserID := ctx.Query("user_id")
 	if targetUserID != "" {
 		userRoles := ctx.GetStringSlice("userRoles")
@@ -84,7 +86,12 @@ func (umc *usageMetricsController) GetUserUsageMetrics(ctx *gin.Context) {
 }
 
 func (umc *usageMetricsController) IncrementUsageMetric(ctx *gin.Context) {
+	// Admin-only endpoint (enforced by Layer 1 + Layer 2 middleware).
+	// Optionally target a specific user via ?user_id= query param.
 	userId := ctx.GetString("userId")
+	if targetUserID := ctx.Query("user_id"); targetUserID != "" {
+		userId = targetUserID
+	}
 
 	var input struct {
 		MetricType string `json:"metric_type" binding:"required"`
@@ -116,27 +123,10 @@ func (umc *usageMetricsController) IncrementUsageMetric(ctx *gin.Context) {
 }
 
 func (umc *usageMetricsController) ResetUserUsage(ctx *gin.Context) {
+	// Admin-only endpoint (enforced by Layer 1 + Layer 2 middleware).
+	// Optionally target a specific user via ?user_id= query param.
 	userId := ctx.GetString("userId")
-
-	// Seuls les admins peuvent reset les métriques d'autres utilisateurs
-	targetUserID := ctx.Query("user_id")
-	if targetUserID != "" {
-		userRoles := ctx.GetStringSlice("userRoles")
-		isAdmin := false
-		for _, role := range userRoles {
-			if role == "administrator" {
-				isAdmin = true
-				break
-			}
-		}
-
-		if !isAdmin {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Access denied",
-			})
-			return
-		}
+	if targetUserID := ctx.Query("user_id"); targetUserID != "" {
 		userId = targetUserID
 	}
 

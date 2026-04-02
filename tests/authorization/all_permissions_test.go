@@ -249,10 +249,8 @@ func TestSetupPaymentPermissions_MemberRoutes(t *testing.T) {
 		// NEW: Billing address routes
 		{"/api/v1/billing-addresses/user", "GET"},
 		{"/api/v1/billing-addresses/:id/set-default", "POST"},
-		// NEW: Usage metrics routes
+		// NEW: Usage metrics routes (read-only for members)
 		{"/api/v1/usage-metrics/user", "GET"},
-		{"/api/v1/usage-metrics/increment", "POST"},
-		{"/api/v1/usage-metrics/reset", "POST"},
 	}
 
 	for _, r := range memberRoutes {
@@ -288,6 +286,9 @@ func TestSetupPaymentPermissions_AdminRoutes(t *testing.T) {
 		{"/api/v1/subscription-plans/import-stripe", "POST"},
 		// NEW: Stripe hooks toggle
 		{"/api/v1/hooks/stripe/toggle", "POST"},
+		// NEW: Usage metrics admin routes (prevent subscription limit bypass)
+		{"/api/v1/usage-metrics/increment", "POST"},
+		{"/api/v1/usage-metrics/reset", "POST"},
 	}
 
 	for _, r := range adminRoutes {

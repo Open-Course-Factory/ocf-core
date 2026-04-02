@@ -206,13 +206,13 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 		},
 		access.RoutePermission{
 			Path: "/api/v1/usage-metrics/increment", Method: "POST",
-			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
-			Description: "Increment usage metric counter",
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Increment usage metric counter (admin only)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/usage-metrics/reset", Method: "POST",
-			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
-			Description: "Reset usage metric counter",
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Reset usage metric counter (admin only)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/subscription-plans/:id/sync-stripe", Method: "POST",
@@ -362,8 +362,8 @@ func registerUsageMetricsPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("Registering usage metrics permissions...")
 
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/usage-metrics/user", "GET")
-	access.ReconcilePolicy(enforcer, "member", "/api/v1/usage-metrics/increment", "POST")
-	access.ReconcilePolicy(enforcer, "member", "/api/v1/usage-metrics/reset", "POST")
+	access.ReconcilePolicy(enforcer, "administrator", "/api/v1/usage-metrics/increment", "POST")
+	access.ReconcilePolicy(enforcer, "administrator", "/api/v1/usage-metrics/reset", "POST")
 }
 
 // registerSubscriptionPlanPermissions registers policies for /api/v1/subscription-plans/*
