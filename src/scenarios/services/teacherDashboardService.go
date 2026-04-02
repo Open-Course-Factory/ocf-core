@@ -360,7 +360,7 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 					mu.Lock()
 					result.Errors = append(result.Errors, BulkStartError{
 						UserID: member.UserID,
-						Error:  fmt.Sprintf("failed to abandon existing session: %v", abandonErr),
+						Error:  "failed to abandon existing session",
 					})
 					mu.Unlock()
 					return nil
@@ -426,7 +426,7 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 					mu.Lock()
 					result.Errors = append(result.Errors, BulkStartError{
 						UserID: member.UserID,
-						Error:  fmt.Sprintf("failed to resolve subscription plan: %v", planErr),
+						Error:  "failed to resolve subscription plan",
 					})
 					mu.Unlock()
 					return nil
@@ -438,7 +438,7 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 					mu.Lock()
 					result.Errors = append(result.Errors, BulkStartError{
 						UserID: member.UserID,
-						Error:  termErr.Error(),
+						Error:  "failed to create terminal session",
 					})
 					mu.Unlock()
 					return nil
@@ -462,7 +462,7 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 				mu.Lock()
 				result.Errors = append(result.Errors, BulkStartError{
 					UserID: member.UserID,
-					Error:  startErr.Error(),
+					Error:  "failed to start scenario",
 				})
 				mu.Unlock()
 				return nil
