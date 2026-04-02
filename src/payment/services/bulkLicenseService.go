@@ -7,7 +7,6 @@ import (
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
-	terminalRepo "soli/formations/src/terminalTrainer/repositories"
 	"soli/formations/src/utils"
 	"time"
 
@@ -23,6 +22,7 @@ type BulkLicenseService interface {
 	UpdateBatchQuantity(batchID uuid.UUID, requestingUserID string, newQuantity int) error
 	GetBatchesByPurchaser(purchaserUserID string) (*[]models.SubscriptionBatch, error)
 	GetAccessibleBatches(userID string) (*[]models.SubscriptionBatch, error)
+	GetAccessibleBatchByID(batchID uuid.UUID, userID string) (*models.SubscriptionBatch, error)
 	GetBatchLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error)
 	GetAvailableLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error)
 	PermanentlyDeleteBatch(batchID uuid.UUID, requestingUserID string) error
@@ -43,6 +43,17 @@ func NewBulkLicenseService(db *gorm.DB) BulkLicenseService {
 		subscriptionRepo: repositories.NewPaymentRepository(db),
 		planRepository:   repositories.NewSubscriptionPlanRepository(db),
 		stripeService:    NewStripeService(db),
+	}
+}
+
+// NewBulkLicenseServiceWithDeps creates a BulkLicenseService with injectable dependencies (for testing)
+func NewBulkLicenseServiceWithDeps(db *gorm.DB, stripeService StripeService) BulkLicenseService {
+	return &bulkLicenseService{
+		db:               db,
+		batchRepository:  repositories.NewSubscriptionBatchRepository(db),
+		subscriptionRepo: repositories.NewPaymentRepository(db),
+		planRepository:   repositories.NewSubscriptionPlanRepository(db),
+		stripeService:    stripeService,
 	}
 }
 
@@ -104,10 +115,6 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 		CurrentPeriodEnd:         periodEnd,
 	}
 
-	if err := s.batchRepository.Create(batch); err != nil {
-		return nil, nil, fmt.Errorf("failed to create batch: %w", err)
-	}
-
 	// Create individual license records with pending_payment status
 	// Will be activated when payment succeeds
 	licenses := make([]models.UserSubscription, input.Quantity)
@@ -123,10 +130,31 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 			CurrentPeriodStart:   now,
 			CurrentPeriodEnd:     periodEnd,
 		}
+	}
 
-		if err := s.subscriptionRepo.CreateUserSubscription(&licenses[i]); err != nil {
-			utils.Error("Failed to create license %d: %v", i, err)
+	// Wrap batch and license creation in a transaction to prevent partial records
+	// if any license creation fails
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(batch).Error; err != nil {
+			return fmt.Errorf("failed to create batch: %w", err)
 		}
+
+		for i := 0; i < input.Quantity; i++ {
+			if err := tx.Create(&licenses[i]).Error; err != nil {
+				return fmt.Errorf("failed to create license %d: %w", i, err)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		// Transaction failed — cancel the Stripe subscription to avoid orphaned payment
+		utils.Error("Failed to create batch records, cancelling Stripe subscription %s: %v", stripeSubscriptionID, err)
+		if cancelErr := s.stripeService.CancelSubscription(stripeSubscriptionID, false); cancelErr != nil {
+			utils.Error("Failed to cancel Stripe subscription %s after batch creation failure: %v", stripeSubscriptionID, cancelErr)
+		}
+		return nil, nil, fmt.Errorf("failed to create batch records: %w", err)
 	}
 
 	utils.Info("Bulk purchase created: %d licenses for plan %s by user %s", input.Quantity, plan.Name, purchaserUserID)
@@ -134,9 +162,11 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 	return batch, &licenses, nil
 }
 
-// AssignLicense assigns an unassigned license to a user
+// AssignLicense assigns an unassigned license to a user.
+// Uses a database transaction with row-level locking to prevent race conditions
+// where concurrent requests could exceed TotalQuantity.
 func (s *bulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID string, targetUserID string) (*models.UserSubscription, error) {
-	// Get the batch
+	// Get the batch (outside transaction for access check — read-only, no race risk)
 	batch, err := s.batchRepository.GetByID(batchID)
 	if err != nil {
 		return nil, fmt.Errorf("batch not found: %w", err)
@@ -159,41 +189,65 @@ func (s *bulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID s
 		return nil, fmt.Errorf("user not found: the specified user ID does not exist")
 	}
 
-	// Check if batch has available licenses
-	if batch.AssignedQuantity >= batch.TotalQuantity {
-		return nil, fmt.Errorf("no available licenses in this batch")
-	}
+	// Wrap availability check + license assignment in a transaction with row locking
+	// to prevent concurrent requests from exceeding TotalQuantity.
+	// PostgreSQL: FOR UPDATE locks the batch row so concurrent transactions wait.
+	// SQLite: the transaction boundary itself provides serialization.
+	var assignedLicense models.UserSubscription
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// Lock and re-read the batch row inside the transaction
+		var lockedBatch models.SubscriptionBatch
+		query := tx.Where("id = ?", batchID)
+		// FOR UPDATE is PostgreSQL-specific; SQLite ignores it but serializes via its locking
+		if tx.Dialector.Name() == "postgres" {
+			query = query.Set("gorm:query_option", "FOR UPDATE")
+		}
+		if err := query.First(&lockedBatch).Error; err != nil {
+			return fmt.Errorf("batch not found: %w", err)
+		}
 
-	// Find an unassigned license from this batch
-	var license models.UserSubscription
-	err = s.db.Where("subscription_batch_id = ? AND status = ?", batchID, "unassigned").
-		First(&license).Error
+		// Check availability with the locked row — no other transaction can modify it concurrently
+		if lockedBatch.AssignedQuantity >= lockedBatch.TotalQuantity {
+			return fmt.Errorf("no available licenses in this batch")
+		}
+
+		// Find an unassigned license from this batch (within transaction)
+		if err := tx.Where("subscription_batch_id = ? AND status = ?", batchID, "unassigned").
+			First(&assignedLicense).Error; err != nil {
+			return fmt.Errorf("no unassigned licenses found: %w", err)
+		}
+
+		// Assign the license
+		assignedLicense.UserID = targetUserID
+		assignedLicense.Status = "active"
+		assignedLicense.SubscriptionType = "assigned"
+
+		if err := tx.Save(&assignedLicense).Error; err != nil {
+			return fmt.Errorf("failed to assign license: %w", err)
+		}
+
+		// Increment assigned quantity atomically within the same transaction
+		if err := tx.Model(&models.SubscriptionBatch{}).
+			Where("id = ?", batchID).
+			UpdateColumn("assigned_quantity", gorm.Expr("assigned_quantity + ?", 1)).
+			Error; err != nil {
+			return fmt.Errorf("failed to increment assigned quantity: %w", err)
+		}
+
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("no unassigned licenses found: %w", err)
+		return nil, err
 	}
 
-	// Assign the license
-	license.UserID = targetUserID
-	license.Status = "active"
-	license.SubscriptionType = "assigned" // Mark as assigned license for stacked subscription priority
+	utils.Info("License %s assigned to user %s from batch %s", assignedLicense.ID, targetUserID, batchID)
 
-	if err := s.subscriptionRepo.UpdateUserSubscription(&license); err != nil {
-		return nil, fmt.Errorf("failed to assign license: %w", err)
-	}
-
-	// Increment assigned quantity
-	if err := s.batchRepository.IncrementAssignedQuantity(batchID, 1); err != nil {
-		utils.Warn("Failed to increment assigned quantity: %v", err)
-	}
-
-	utils.Info("License %s assigned to user %s from batch %s", license.ID, targetUserID, batchID)
-
-	// Auto-add user to batch's linked group (non-blocking)
+	// Auto-add user to batch's linked group (non-blocking, outside transaction)
 	if batch.GroupID != nil {
 		s.autoAddUserToGroup(*batch.GroupID, batch.PurchaserUserID, targetUserID)
 	}
 
-	return &license, nil
+	return &assignedLicense, nil
 }
 
 // RevokeLicense removes a license assignment and returns it to the pool
@@ -228,23 +282,35 @@ func (s *bulkLicenseService) RevokeLicense(licenseID uuid.UUID, requestingUserID
 	oldUserID := license.UserID
 	if oldUserID != "" {
 		utils.Info("🔌 Terminating all active terminals for user %s due to license revocation", oldUserID)
-		if err := s.terminateUserTerminals(oldUserID); err != nil {
+		if err := TerminateUserTerminals(s.db, oldUserID); err != nil {
 			utils.Error("Failed to terminate terminals for user %s: %v", oldUserID, err)
 			// Don't fail license revocation if terminal termination fails
 		}
 	}
 
-	// Revoke the license
-	license.UserID = ""
-	license.Status = "unassigned"
+	// Wrap license revocation and batch quantity decrement in a transaction
+	// to prevent inconsistent state if either operation fails
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		// Revoke the license
+		license.UserID = ""
+		license.Status = "unassigned"
 
-	if err := s.subscriptionRepo.UpdateUserSubscription(license); err != nil {
-		return fmt.Errorf("failed to revoke license: %w", err)
-	}
+		if err := tx.Save(license).Error; err != nil {
+			return fmt.Errorf("failed to revoke license: %w", err)
+		}
 
-	// Decrement assigned quantity
-	if err := s.batchRepository.DecrementAssignedQuantity(*license.SubscriptionBatchID, 1); err != nil {
-		utils.Warn("Failed to decrement assigned quantity: %v", err)
+		// Decrement assigned quantity
+		if err := tx.Model(&models.SubscriptionBatch{}).
+			Where("id = ?", *license.SubscriptionBatchID).
+			UpdateColumn("assigned_quantity", gorm.Expr("assigned_quantity - ?", 1)).
+			Error; err != nil {
+			return fmt.Errorf("failed to decrement assigned quantity: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	utils.Info("License %s revoked from user %s", licenseID, oldUserID)
@@ -369,6 +435,25 @@ func (s *bulkLicenseService) GetAccessibleBatches(userID string) (*[]models.Subs
 	return s.batchRepository.GetAccessibleByUser(userID)
 }
 
+// GetAccessibleBatchByID returns a specific batch if the user can access it
+// (either as the purchaser or through shared team organization membership)
+func (s *bulkLicenseService) GetAccessibleBatchByID(batchID uuid.UUID, userID string) (*models.SubscriptionBatch, error) {
+	batch, err := s.batchRepository.GetByID(batchID)
+	if err != nil {
+		return nil, fmt.Errorf("batch not found: %w", err)
+	}
+
+	canAccess, err := s.canUserAccessBatch(batch, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify access: %w", err)
+	}
+	if !canAccess {
+		return nil, fmt.Errorf("batch not found or access denied")
+	}
+
+	return batch, nil
+}
+
 // GetBatchLicenses returns all licenses in a batch
 func (s *bulkLicenseService) GetBatchLicenses(batchID uuid.UUID, requestingUserID string) (*[]models.UserSubscription, error) {
 	batch, err := s.batchRepository.GetByID(batchID)
@@ -426,73 +511,6 @@ func (s *bulkLicenseService) GetAvailableLicenses(batchID uuid.UUID, requestingU
 	return &licenses, nil
 }
 
-// terminateUserTerminals stops all active terminals for a user
-// This uses direct repository calls to avoid circular dependency with terminalTrainer/services
-func (s *bulkLicenseService) terminateUserTerminals(userID string) error {
-	// Get terminal repository
-	termRepository := terminalRepo.NewTerminalRepository(s.db)
-
-	// Get all active terminals for this user
-	terminals, err := termRepository.GetTerminalSessionsByUserID(userID, true)
-	if err != nil {
-		return fmt.Errorf("failed to get user terminals: %w", err)
-	}
-
-	if terminals == nil || len(*terminals) == 0 {
-		utils.Debug("No active terminals found for user %s", userID)
-		return nil
-	}
-
-	utils.Info("Found %d active terminals for user %s, terminating all", len(*terminals), userID)
-
-	// Stop each terminal directly using repository
-	terminatedCount := 0
-	for _, terminal := range *terminals {
-		if terminal.Status == "active" {
-			utils.Debug("Stopping terminal %s (session: %s) for user %s", terminal.ID, terminal.SessionID, userID)
-
-			// Update terminal status to stopped
-			terminal.Status = "stopped"
-			if err := termRepository.UpdateTerminalSession(&terminal); err != nil {
-				utils.Error("Failed to update terminal %s status for user %s: %v", terminal.SessionID, userID, err)
-				continue
-			}
-
-			// Decrement concurrent_terminals metric
-			if err := s.decrementConcurrentTerminals(userID); err != nil {
-				utils.Warn("Failed to decrement concurrent_terminals for user %s: %v", userID, err)
-			}
-
-			terminatedCount++
-			utils.Debug("Successfully stopped terminal %s for user %s", terminal.SessionID, userID)
-		}
-	}
-
-	utils.Info("Successfully terminated %d/%d terminals for user %s", terminatedCount, len(*terminals), userID)
-	return nil
-}
-
-// decrementConcurrentTerminals decrements the concurrent_terminals metric for a user
-func (s *bulkLicenseService) decrementConcurrentTerminals(userID string) error {
-	// Get the user's current usage metric for concurrent_terminals
-	var usageMetric models.UsageMetrics
-	err := s.db.Where("user_id = ? AND metric_type = ?", userID, "concurrent_terminals").First(&usageMetric).Error
-	if err != nil {
-		return fmt.Errorf("usage metric not found: %w", err)
-	}
-
-	// Decrement usage by 1 (ensure it doesn't go negative)
-	if usageMetric.CurrentValue > 0 {
-		usageMetric.CurrentValue -= 1
-		usageMetric.LastUpdated = time.Now()
-		if err := s.db.Save(&usageMetric).Error; err != nil {
-			return fmt.Errorf("failed to update usage metric: %w", err)
-		}
-	}
-
-	return nil
-}
-
 // autoCancelBatchFromStripeError cancels a batch locally when Stripe reports it's already cancelled
 // This handles the case where a subscription was cancelled in Stripe but the webhook wasn't received
 func (s *bulkLicenseService) autoCancelBatchFromStripeError(batchID uuid.UUID) error {
@@ -516,7 +534,7 @@ func (s *bulkLicenseService) autoCancelBatchFromStripeError(batchID uuid.UUID) e
 		// Terminate terminals for assigned active licenses
 		if license.UserID != "" && license.Status == "active" {
 			utils.Info("🔌 Terminating terminals for user %s due to batch cancellation", license.UserID)
-			if err := s.terminateUserTerminals(license.UserID); err != nil {
+			if err := TerminateUserTerminals(s.db, license.UserID); err != nil {
 				utils.Error("Failed to terminate terminals for user %s: %v", license.UserID, err)
 				// Continue with cancellation even if terminal termination fails
 			}
@@ -597,7 +615,7 @@ func (s *bulkLicenseService) PermanentlyDeleteBatch(batchID uuid.UUID, requestin
 
 	for userID := range affectedUsers {
 		utils.Info("🔌 Terminating terminals for user %s before batch deletion", userID)
-		if err := s.terminateUserTerminals(userID); err != nil {
+		if err := TerminateUserTerminals(s.db, userID); err != nil {
 			utils.Error("Failed to terminate terminals for user %s: %v", userID, err)
 			// Continue with deletion even if terminal termination fails
 		}

@@ -201,7 +201,18 @@ func (oss *organizationSubscriptionService) CancelOrganizationSubscription(orgID
 		utils.Info("Organization subscription %s cancelled immediately", subscription.ID)
 	}
 
-	return oss.repository.UpdateOrganizationSubscription(subscription)
+	if err := oss.repository.UpdateOrganizationSubscription(subscription); err != nil {
+		return err
+	}
+
+	// Terminate active terminals for org members on immediate cancellation.
+	// For cancel-at-period-end, terminals are terminated when Stripe fires
+	// the subscription.deleted webhook at the end of the billing period.
+	if !cancelAtPeriodEnd {
+		TerminateOrganizationMemberTerminals(oss.db, orgID)
+	}
+
+	return nil
 }
 
 // GetOrganizationFeatures returns the subscription plan features for an organization

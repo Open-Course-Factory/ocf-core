@@ -49,19 +49,39 @@ func TestMain(m *testing.M) {
 	}
 
 	// Create tables with PostgreSQL-specific defaults using raw SQL for SQLite compatibility
+	// UserTerminalKey table (referenced by Terminal via foreign key)
+	db.Exec(`CREATE TABLE IF NOT EXISTS user_terminal_keys (
+		id TEXT PRIMARY KEY,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME,
+		owner_ids TEXT,
+		user_id TEXT NOT NULL,
+		api_key TEXT NOT NULL,
+		key_name TEXT NOT NULL,
+		is_active BOOLEAN DEFAULT true,
+		max_sessions INTEGER DEFAULT 5
+	)`)
+
 	// Terminal table (has no PostgreSQL-specific defaults but isn't in the payment models package)
 	db.Exec(`CREATE TABLE IF NOT EXISTS terminals (
 		id TEXT PRIMARY KEY,
 		created_at DATETIME,
 		updated_at DATETIME,
 		deleted_at DATETIME,
+		owner_ids TEXT,
 		session_id TEXT UNIQUE,
 		user_id TEXT NOT NULL,
 		name TEXT,
 		status TEXT DEFAULT 'active',
 		expires_at DATETIME,
-		user_terminal_key_id TEXT,
-		owner_ids TEXT
+		instance_type TEXT,
+		machine_size TEXT,
+		backend TEXT DEFAULT '',
+		organization_id TEXT,
+		user_terminal_key_id TEXT REFERENCES user_terminal_keys(id),
+		is_hidden_by_owner BOOLEAN DEFAULT false,
+		hidden_by_owner_at DATETIME
 	)`)
 
 	// Webhook events table (WebhookEvent model uses gen_random_uuid() which is PostgreSQL-only)
@@ -98,6 +118,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM billing_addresses")
 	sharedTestDB.Exec("DELETE FROM payment_methods")
 	sharedTestDB.Exec("DELETE FROM terminals")
+	sharedTestDB.Exec("DELETE FROM user_terminal_keys")
 	sharedTestDB.Exec("DELETE FROM webhook_events")
 	return sharedTestDB
 }

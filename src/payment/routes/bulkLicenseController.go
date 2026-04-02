@@ -8,6 +8,7 @@ import (
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/services"
 	"soli/formations/src/utils"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -230,48 +231,37 @@ func (c *bulkLicenseController) GetBatchDetails(ctx *gin.Context) {
 		return
 	}
 
-	batches, err := c.bulkService.GetBatchesByPurchaser(userID)
+	batch, err := c.bulkService.GetAccessibleBatchByID(batchID, userID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve batch",
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Batch not found or access denied",
 		})
 		return
 	}
 
-	// Find the specific batch
-	for _, batch := range *batches {
-		if batch.ID == batchID {
-			batchOutput := dto.SubscriptionBatchOutput{
-				ID:                       batch.ID,
-				PurchaserUserID:          batch.PurchaserUserID,
-				SubscriptionPlanID:       batch.SubscriptionPlanID,
-				GroupID:                  batch.GroupID,
-				StripeSubscriptionID:     batch.StripeSubscriptionID,
-				StripeSubscriptionItemID: batch.StripeSubscriptionItemID,
-				TotalQuantity:            batch.TotalQuantity,
-				AssignedQuantity:         batch.AssignedQuantity,
-				AvailableQuantity:        batch.TotalQuantity - batch.AssignedQuantity,
-				Status:                   batch.Status,
-				CurrentPeriodStart:       batch.CurrentPeriodStart,
-				CurrentPeriodEnd:         batch.CurrentPeriodEnd,
-				CancelledAt:              batch.CancelledAt,
-				CreatedAt:                batch.CreatedAt,
-				UpdatedAt:                batch.UpdatedAt,
-			}
-
-			planOutput, _ := c.conversionService.SubscriptionPlanToDTO(&batch.SubscriptionPlan)
-			batchOutput.SubscriptionPlan = *planOutput
-
-			ctx.JSON(http.StatusOK, batchOutput)
-			return
-		}
+	batchOutput := dto.SubscriptionBatchOutput{
+		ID:                       batch.ID,
+		PurchaserUserID:          batch.PurchaserUserID,
+		SubscriptionPlanID:       batch.SubscriptionPlanID,
+		GroupID:                  batch.GroupID,
+		StripeSubscriptionID:     batch.StripeSubscriptionID,
+		StripeSubscriptionItemID: batch.StripeSubscriptionItemID,
+		TotalQuantity:            batch.TotalQuantity,
+		AssignedQuantity:         batch.AssignedQuantity,
+		AvailableQuantity:        batch.TotalQuantity - batch.AssignedQuantity,
+		Status:                   batch.Status,
+		CurrentPeriodStart:       batch.CurrentPeriodStart,
+		CurrentPeriodEnd:         batch.CurrentPeriodEnd,
+		CancelledAt:              batch.CancelledAt,
+		CreatedAt:                batch.CreatedAt,
+		UpdatedAt:                batch.UpdatedAt,
 	}
 
-	ctx.JSON(http.StatusNotFound, &errors.APIError{
-		ErrorCode:    http.StatusNotFound,
-		ErrorMessage: "Batch not found or access denied",
-	})
+	planOutput, _ := c.conversionService.SubscriptionPlanToDTO(&batch.SubscriptionPlan)
+	batchOutput.SubscriptionPlan = *planOutput
+
+	ctx.JSON(http.StatusOK, batchOutput)
 }
 
 // GetBatchLicenses godoc
@@ -301,7 +291,7 @@ func (c *bulkLicenseController) GetBatchLicenses(ctx *gin.Context) {
 
 	licenses, err := c.bulkService.GetBatchLicenses(batchID, userID)
 	if err != nil {
-		if err.Error() == "access denied" {
+		if strings.Contains(err.Error(), "access denied") {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
 				ErrorMessage: "Access denied",

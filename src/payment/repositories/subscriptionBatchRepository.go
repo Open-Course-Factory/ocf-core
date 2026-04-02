@@ -107,9 +107,9 @@ func (r *subscriptionBatchRepository) GetAccessibleByUser(userID string) (*[]mod
 	// 2. OR where purchaser is a member of user's team organizations
 	query := r.db.Preload("SubscriptionPlan").
 		Distinct().
-		Joins("LEFT JOIN organization_members om1 ON subscription_batches.purchaser_user_id = om1.user_id").
+		Joins("LEFT JOIN organization_members om1 ON subscription_batches.purchaser_user_id = om1.user_id AND om1.is_active = true").
 		Joins("LEFT JOIN organizations org ON om1.organization_id = org.id AND org.organization_type = 'team'").
-		Joins("LEFT JOIN organization_members om2 ON org.id = om2.organization_id AND om2.user_id = ?", userID).
+		Joins("LEFT JOIN organization_members om2 ON org.id = om2.organization_id AND om2.user_id = ? AND om2.is_active = true", userID).
 		Where("subscription_batches.purchaser_user_id = ? OR om2.user_id IS NOT NULL", userID).
 		Order("subscription_batches.created_at DESC")
 

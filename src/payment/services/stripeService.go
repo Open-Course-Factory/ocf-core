@@ -14,7 +14,6 @@ import (
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
-	terminalRepo "soli/formations/src/terminalTrainer/repositories"
 
 	genericService "soli/formations/src/entityManagement/services"
 
@@ -861,8 +860,8 @@ func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 
 	// CRITICAL: Terminate terminals if subscription is being cancelled
 	if isBeingCancelled {
-		utils.Info("🔌 Terminating all active terminals for user %s due to subscription cancellation", userSub.UserID)
-		if err := ss.terminateUserTerminals(userSub.UserID); err != nil {
+		utils.Info("Terminating all active terminals for user %s due to subscription cancellation", userSub.UserID)
+		if err := TerminateUserTerminals(ss.db, userSub.UserID); err != nil {
 			utils.Error("Failed to terminate terminals for user %s: %v", userSub.UserID, err)
 			// Don't fail webhook processing if terminal termination fails
 		}
@@ -906,8 +905,8 @@ func (ss *stripeService) handleSubscriptionDeleted(event *stripe.Event) error {
 	}
 
 	// CRITICAL: Terminate all active terminals for this user before cancelling subscription
-	utils.Info("🔌 Terminating all active terminals for user %s due to subscription cancellation", userSub.UserID)
-	if err := ss.terminateUserTerminals(userSub.UserID); err != nil {
+	utils.Info("Terminating all active terminals for user %s due to subscription cancellation", userSub.UserID)
+	if err := TerminateUserTerminals(ss.db, userSub.UserID); err != nil {
 		utils.Error("Failed to terminate terminals for user %s: %v", userSub.UserID, err)
 		// Don't fail subscription cancellation if terminal termination fails
 	}
@@ -1108,6 +1107,9 @@ func (ss *stripeService) handleOrganizationSubscriptionDeleted(subscription *str
 	}
 
 	utils.Info("✅ Cancelled organization subscription %s for org %s", orgSub.ID, orgSub.OrganizationID)
+
+	// CRITICAL: Terminate all active terminals for organization members
+	TerminateOrganizationMemberTerminals(ss.db, orgSub.OrganizationID)
 
 	return nil
 }
@@ -1694,8 +1696,8 @@ func (ss *stripeService) handleBulkSubscriptionUpdated(subscription *stripe.Subs
 		for _, license := range licenses {
 			// Terminate terminals for assigned licenses
 			if license.UserID != "" {
-				utils.Info("🔌 Terminating all active terminals for user %s due to batch cancellation", license.UserID)
-				if err := ss.terminateUserTerminals(license.UserID); err != nil {
+				utils.Info("Terminating all active terminals for user %s due to batch cancellation", license.UserID)
+				if err := TerminateUserTerminals(ss.db, license.UserID); err != nil {
 					utils.Error("Failed to terminate terminals for user %s: %v", license.UserID, err)
 					// Continue with other licenses
 				}
@@ -1789,8 +1791,8 @@ func (ss *stripeService) handleBulkSubscriptionDeleted(subscription *stripe.Subs
 	for _, license := range licenses {
 		// CRITICAL: Terminate all active terminals for assigned licenses
 		if license.UserID != "" {
-			utils.Info("🔌 Terminating all active terminals for user %s due to batch license cancellation", license.UserID)
-			if err := ss.terminateUserTerminals(license.UserID); err != nil {
+			utils.Info("Terminating all active terminals for user %s due to batch license cancellation", license.UserID)
+			if err := TerminateUserTerminals(ss.db, license.UserID); err != nil {
 				utils.Error("Failed to terminate terminals for user %s: %v", license.UserID, err)
 				// Don't fail batch cancellation if terminal termination fails
 			}
@@ -1867,8 +1869,8 @@ func (ss *stripeService) CancelSubscription(subscriptionID string, cancelAtPerio
 // Also terminates all active terminals for the user
 func (ss *stripeService) MarkSubscriptionAsCancelled(userSubscription *models.UserSubscription) error {
 	// CRITICAL: Terminate all active terminals before cancelling subscription
-	utils.Info("🔌 Terminating all active terminals for user %s due to manual subscription cancellation", userSubscription.UserID)
-	if err := ss.terminateUserTerminals(userSubscription.UserID); err != nil {
+	utils.Info("Terminating all active terminals for user %s due to manual subscription cancellation", userSubscription.UserID)
+	if err := TerminateUserTerminals(ss.db, userSubscription.UserID); err != nil {
 		utils.Error("Failed to terminate terminals for user %s: %v", userSubscription.UserID, err)
 		// Don't fail subscription cancellation if terminal termination fails
 	}
@@ -1877,73 +1879,6 @@ func (ss *stripeService) MarkSubscriptionAsCancelled(userSubscription *models.Us
 	now := time.Now()
 	userSubscription.CancelledAt = &now
 	return ss.repository.UpdateUserSubscription(userSubscription)
-}
-
-// terminateUserTerminals stops all active terminals for a user
-// This uses direct repository calls to avoid circular dependency with terminalTrainer/services
-func (ss *stripeService) terminateUserTerminals(userID string) error {
-	// Get terminal repository
-	termRepository := terminalRepo.NewTerminalRepository(ss.db)
-
-	// Get all active terminals for this user
-	terminals, err := termRepository.GetTerminalSessionsByUserID(userID, true)
-	if err != nil {
-		return fmt.Errorf("failed to get user terminals: %w", err)
-	}
-
-	if terminals == nil || len(*terminals) == 0 {
-		utils.Debug("No active terminals found for user %s", userID)
-		return nil
-	}
-
-	utils.Info("Found %d active terminals for user %s, terminating all", len(*terminals), userID)
-
-	// Stop each terminal directly using repository
-	terminatedCount := 0
-	for _, terminal := range *terminals {
-		if terminal.Status == "active" {
-			utils.Debug("Stopping terminal %s (session: %s) for user %s", terminal.ID, terminal.SessionID, userID)
-
-			// Update terminal status to stopped
-			terminal.Status = "stopped"
-			if err := termRepository.UpdateTerminalSession(&terminal); err != nil {
-				utils.Error("Failed to update terminal %s status for user %s: %v", terminal.SessionID, userID, err)
-				continue
-			}
-
-			// Decrement concurrent_terminals metric (call UpdateUsageMetricValue directly)
-			if err := ss.decrementConcurrentTerminals(userID); err != nil {
-				utils.Warn("Failed to decrement concurrent_terminals for user %s: %v", userID, err)
-			}
-
-			terminatedCount++
-			utils.Debug("Successfully stopped terminal %s for user %s", terminal.SessionID, userID)
-		}
-	}
-
-	utils.Info("Successfully terminated %d/%d terminals for user %s", terminatedCount, len(*terminals), userID)
-	return nil
-}
-
-// decrementConcurrentTerminals decrements the concurrent_terminals metric for a user
-func (ss *stripeService) decrementConcurrentTerminals(userID string) error {
-	// Get the user's current usage metric for concurrent_terminals
-	var usageMetric models.UsageMetrics
-	err := ss.db.Where("user_id = ? AND metric_type = ?", userID, "concurrent_terminals").First(&usageMetric).Error
-	if err != nil {
-		return fmt.Errorf("usage metric not found: %w", err)
-	}
-
-	// Decrement usage by 1 (ensure it doesn't go negative)
-	if usageMetric.CurrentValue > 0 {
-		usageMetric.CurrentValue -= 1
-		usageMetric.LastUpdated = time.Now()
-		if err := ss.db.Save(&usageMetric).Error; err != nil {
-			return fmt.Errorf("failed to update usage metric: %w", err)
-		}
-	}
-
-	return nil
 }
 
 // ReactivateSubscription réactive un abonnement annulé

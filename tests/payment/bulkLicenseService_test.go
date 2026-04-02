@@ -302,6 +302,86 @@ func TestBulkLicenseService_GetBatchesByPurchaser(t *testing.T) {
 	assert.Len(t, *batches, 2)
 }
 
+// --- GetAccessibleBatchByID tests ---
+
+func TestBulkLicenseService_GetAccessibleBatchByID_Purchaser(t *testing.T) {
+	db := setupBulkLicenseTestDB(t)
+	svc := services.NewBulkLicenseService(db)
+	purchaserID := "purchaser-access-01"
+
+	_, batch, _ := seedBulkLicenseTestData(t, db, purchaserID, 3, 0)
+
+	result, err := svc.GetAccessibleBatchByID(batch.ID, purchaserID)
+	require.NoError(t, err)
+	assert.Equal(t, batch.ID, result.ID)
+}
+
+func TestBulkLicenseService_GetAccessibleBatchByID_OrgMember(t *testing.T) {
+	db := setupBulkLicenseTestDB(t)
+	svc := services.NewBulkLicenseService(db)
+
+	purchaserID := "purchaser-access-02"
+	orgMemberID := "org-member-access-02"
+
+	_, batch, _ := seedBulkLicenseTestData(t, db, purchaserID, 3, 0)
+
+	// Create a team organization with both the purchaser and the org member
+	org := orgModels.Organization{
+		Name:             "test-org-access",
+		DisplayName:      "Test Org Access",
+		OwnerUserID:      purchaserID,
+		OrganizationType: "team",
+		IsActive:         true,
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&org).Error)
+
+	// Add purchaser as org member
+	require.NoError(t, db.Omit("Metadata").Create(&orgModels.OrganizationMember{
+		OrganizationID: org.ID,
+		UserID:         purchaserID,
+		Role:           "owner",
+		JoinedAt:       time.Now(),
+		IsActive:       true,
+	}).Error)
+
+	// Add the other user as org member
+	require.NoError(t, db.Omit("Metadata").Create(&orgModels.OrganizationMember{
+		OrganizationID: org.ID,
+		UserID:         orgMemberID,
+		Role:           "member",
+		JoinedAt:       time.Now(),
+		IsActive:       true,
+	}).Error)
+
+	// Org member should be able to access the batch details
+	result, err := svc.GetAccessibleBatchByID(batch.ID, orgMemberID)
+	require.NoError(t, err)
+	assert.Equal(t, batch.ID, result.ID)
+	assert.Equal(t, purchaserID, result.PurchaserUserID)
+}
+
+func TestBulkLicenseService_GetAccessibleBatchByID_AccessDenied(t *testing.T) {
+	db := setupBulkLicenseTestDB(t)
+	svc := services.NewBulkLicenseService(db)
+	purchaserID := "purchaser-access-03"
+
+	_, batch, _ := seedBulkLicenseTestData(t, db, purchaserID, 3, 0)
+
+	// Unrelated user should not have access
+	_, err := svc.GetAccessibleBatchByID(batch.ID, "unrelated-user")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found or access denied")
+}
+
+func TestBulkLicenseService_GetAccessibleBatchByID_NotFound(t *testing.T) {
+	db := setupBulkLicenseTestDB(t)
+	svc := services.NewBulkLicenseService(db)
+
+	_, err := svc.GetAccessibleBatchByID(uuid.New(), "some-user")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "batch not found")
+}
+
 // --- UpdateBatchQuantity tests ---
 // Note: UpdateBatchQuantity calls stripeService.UpdateSubscriptionQuantity which
 // requires a real Stripe connection. We test the validation logic only.
