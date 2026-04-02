@@ -990,3 +990,69 @@ func TestProjectFileController_GetUsage_NotFound(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
+
+// ---------------------------------------------------------------------------
+// 12. Filter ProjectFiles by scenarioId (admin page filter)
+// ---------------------------------------------------------------------------
+
+func TestProjectFile_FilterByScenarioId(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create two scenarios
+	scenario1 := models.Scenario{
+		Name:         "filter-scenario-1",
+		Title:        "Filter Scenario 1",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "user-1",
+	}
+	scenario2 := models.Scenario{
+		Name:         "filter-scenario-2",
+		Title:        "Filter Scenario 2",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "user-1",
+	}
+	require.NoError(t, db.Create(&scenario1).Error)
+	require.NoError(t, db.Create(&scenario2).Error)
+
+	// Create ProjectFiles: 2 for scenario1, 1 for scenario2, 1 with no scenario
+	s1Files := []models.ProjectFile{
+		{Name: "s1-intro.md", ContentType: "markdown", Content: "Intro 1", ScenarioID: &scenario1.ID},
+		{Name: "s1-verify.sh", ContentType: "script", Content: "#!/bin/bash\ntrue", ScenarioID: &scenario1.ID},
+	}
+	s2File := models.ProjectFile{Name: "s2-intro.md", ContentType: "markdown", Content: "Intro 2", ScenarioID: &scenario2.ID}
+	orphanFile := models.ProjectFile{Name: "orphan.txt", ContentType: "text", Content: "No scenario"}
+
+	for i := range s1Files {
+		require.NoError(t, db.Create(&s1Files[i]).Error)
+	}
+	require.NoError(t, db.Create(&s2File).Error)
+	require.NoError(t, db.Create(&orphanFile).Error)
+
+	// Filter by scenario1 — should return exactly 2 files
+	var filtered1 []models.ProjectFile
+	err := db.Where("scenario_id = ?", scenario1.ID).Find(&filtered1).Error
+	require.NoError(t, err)
+	assert.Len(t, filtered1, 2, "should find 2 files for scenario1")
+	for _, f := range filtered1 {
+		assert.Equal(t, scenario1.ID, *f.ScenarioID)
+	}
+
+	// Filter by scenario2 — should return exactly 1 file
+	var filtered2 []models.ProjectFile
+	err = db.Where("scenario_id = ?", scenario2.ID).Find(&filtered2).Error
+	require.NoError(t, err)
+	assert.Len(t, filtered2, 1, "should find 1 file for scenario2")
+	assert.Equal(t, "s2-intro.md", filtered2[0].Name)
+
+	// No filter — should return all 4
+	var all []models.ProjectFile
+	err = db.Find(&all).Error
+	require.NoError(t, err)
+	assert.Len(t, all, 4, "should find all 4 files without filter")
+
+	// Filter by nonexistent scenario — should return 0
+	var none []models.ProjectFile
+	err = db.Where("scenario_id = ?", uuid.New()).Find(&none).Error
+	require.NoError(t, err)
+	assert.Len(t, none, 0, "should find 0 files for nonexistent scenario")
+}
