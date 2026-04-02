@@ -187,7 +187,7 @@ func allEntityRoles() []entityRoleDefinition {
 			entityName: "UserSubscription",
 			routeName:  "user-subscriptions",
 			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + ")",
+				memberRole: "()",
 				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
 			}},
 		},

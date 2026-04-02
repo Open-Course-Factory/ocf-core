@@ -1,12 +1,12 @@
 // tests/payment/userSubscription_crud_permissions_test.go
 //
-// Verifies that the UserSubscription entity registration restricts members to
-// GET-only access on the generic CRUD routes (/api/v1/user-subscriptions).
+// Verifies that the UserSubscription entity registration gives members NO access
+// to the generic CRUD routes (/api/v1/user-subscriptions).
 //
-// Members must NOT be able to POST or PATCH via generic CRUD, as that would
-// bypass the checkout controller and Stripe validation. Write operations for
-// members are only available through dedicated custom routes (checkout, cancel,
-// upgrade, etc.) declared in permissions.go.
+// Members must NOT access generic CRUD at all: POST/PATCH would bypass Stripe
+// validation, and GET would expose ALL users' subscription data (IDOR).
+// Members access their own data through dedicated user-scoped routes
+// (/current, /all, /checkout, /cancel, /upgrade) declared in permissions.go.
 package payment_tests
 
 import (
@@ -55,11 +55,11 @@ func setupCrudPermCasbinEnforcer(t *testing.T) {
 	require.NoError(t, err)
 
 	// Register the UserSubscription entity policies using the ACTUAL roles
-	// from the registration (member: GET only, admin: all methods).
+	// from the registration (member: no access, admin: all methods).
 	service := ems.NewEntityRegistrationService()
 	roles := entityManagementInterfaces.EntityRoles{
 		Roles: map[string]string{
-			string(authModels.Member): "(" + http.MethodGet + ")",
+			string(authModels.Member): "()",
 			string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
 		},
 	}
@@ -70,23 +70,27 @@ func setupCrudPermCasbinEnforcer(t *testing.T) {
 // Member CRUD access — generic routes must be GET-only
 // ============================================================================
 
-func TestUserSubscriptionCRUD_MemberCanGET(t *testing.T) {
+func TestUserSubscriptionCRUD_MemberDeniedGET(t *testing.T) {
 	setupCrudPermCasbinEnforcer(t)
 
-	memberUser := "member-crud-get-ok"
+	memberUser := "member-crud-get-denied"
 	opts := utils.DefaultPermissionOptions()
 	err := utils.AddGroupingPolicy(casdoor.Enforcer, memberUser, string(authModels.Member), opts)
 	require.NoError(t, err)
 
-	// List endpoint
+	// Generic list endpoint — would expose ALL users' subscriptions (IDOR)
 	allowed, err := casdoor.Enforcer.Enforce(memberUser, "/api/v1/user-subscriptions", "GET")
 	require.NoError(t, err)
-	assert.True(t, allowed, "Member should be allowed GET on /api/v1/user-subscriptions (list)")
+	assert.False(t, allowed,
+		"Member MUST be denied GET on /api/v1/user-subscriptions — "+
+			"generic list exposes all users' data. Use /user-subscriptions/current instead")
 
-	// Single resource endpoint
+	// Single resource endpoint — would expose other users' subscriptions by ID
 	allowed, err = casdoor.Enforcer.Enforce(memberUser, "/api/v1/user-subscriptions/550e8400-e29b-41d4-a716-446655440000", "GET")
 	require.NoError(t, err)
-	assert.True(t, allowed, "Member should be allowed GET on /api/v1/user-subscriptions/:id")
+	assert.False(t, allowed,
+		"Member MUST be denied GET on /api/v1/user-subscriptions/:id — "+
+			"use /user-subscriptions/current for own subscription")
 }
 
 func TestUserSubscriptionCRUD_MemberDeniedPOST(t *testing.T) {
