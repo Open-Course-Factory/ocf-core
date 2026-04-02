@@ -3,6 +3,7 @@ package scenarioController
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -63,12 +64,14 @@ func (tc *TeacherController) GetGroupActivity(c *gin.Context) {
 
 // GetScenarioResults godoc
 // @Summary Get scenario results
-// @Description Returns all sessions for a specific scenario within a group
+// @Description Returns sessions for a specific scenario within a group, with optional pagination
 // @Tags scenario-teacher
 // @Produce json
 // @Param groupId path string true "Group ID (UUID)"
 // @Param scenarioId path string true "Scenario ID (UUID)"
-// @Success 200 {array} services.ScenarioResultItem
+// @Param limit query int false "Max results per page (0 or absent = all)"
+// @Param offset query int false "Number of results to skip"
+// @Success 200 {object} services.PaginatedScenarioResults
 // @Failure 400 {object} map[string]string
 // @Failure 403 {object} map[string]string
 // @Failure 500 {object} map[string]string
@@ -87,7 +90,26 @@ func (tc *TeacherController) GetScenarioResults(c *gin.Context) {
 		return
 	}
 
-	results, err := tc.dashboardService.GetScenarioResults(groupID, scenarioID)
+	// Parse optional pagination params
+	var limit, offset *int
+	if limitStr := c.Query("limit"); limitStr != "" {
+		v, err := strconv.Atoi(limitStr)
+		if err != nil || v < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit parameter"})
+			return
+		}
+		limit = &v
+	}
+	if offsetStr := c.Query("offset"); offsetStr != "" {
+		v, err := strconv.Atoi(offsetStr)
+		if err != nil || v < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid offset parameter"})
+			return
+		}
+		offset = &v
+	}
+
+	results, err := tc.dashboardService.GetScenarioResults(groupID, scenarioID, limit, offset)
 	if err != nil {
 		slog.Error("failed to get scenario results", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get scenario results"})

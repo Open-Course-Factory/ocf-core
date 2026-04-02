@@ -2,6 +2,7 @@ package scenarios_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -175,13 +176,144 @@ func TestGetScenarioResults_Success(t *testing.T) {
 	require.NoError(t, db.Create(&session).Error)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)
-	results, err := svc.GetScenarioResults(groupID, scenario.ID)
+	paginated, err := svc.GetScenarioResults(groupID, scenario.ID, nil, nil)
 	require.NoError(t, err)
-	assert.Len(t, results, 1)
-	assert.Equal(t, "student-1", results[0].UserID)
-	assert.Equal(t, "completed", results[0].Status)
-	require.NotNil(t, results[0].Grade)
-	assert.InDelta(t, 100.0, *results[0].Grade, 0.01)
+	assert.Len(t, paginated.Items, 1)
+	assert.Equal(t, int64(1), paginated.Total)
+	assert.Equal(t, 0, paginated.Limit)
+	assert.Equal(t, 0, paginated.Offset)
+	assert.Equal(t, "student-1", paginated.Items[0].UserID)
+	assert.Equal(t, "completed", paginated.Items[0].Status)
+	require.NotNil(t, paginated.Items[0].Grade)
+	assert.InDelta(t, 100.0, *paginated.Items[0].Grade, 0.01)
+}
+
+// --- Pagination tests ---
+
+func TestGetScenarioResults_Paginated(t *testing.T) {
+	db := setupTestDB(t)
+
+	groupID := uuid.New()
+	// Create 5 students with sessions
+	for i := 0; i < 5; i++ {
+		uid := fmt.Sprintf("pag-student-%d", i)
+		require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+			GroupID: groupID, UserID: uid, Role: "member", JoinedAt: time.Now(), IsActive: true,
+		}).Error)
+	}
+
+	scenario := models.Scenario{
+		Name: "paginate-test", Title: "Paginate", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	for i := 0; i < 5; i++ {
+		uid := fmt.Sprintf("pag-student-%d", i)
+		require.NoError(t, db.Create(&models.ScenarioSession{
+			ScenarioID: scenario.ID, UserID: uid, Status: "completed",
+			StartedAt: time.Now().Add(-time.Duration(5-i) * time.Hour),
+		}).Error)
+	}
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+
+	// Page 1: limit=2, offset=0 → should get 2 items, total=5
+	limit := 2
+	offset := 0
+	page1, err := svc.GetScenarioResults(groupID, scenario.ID, &limit, &offset)
+	require.NoError(t, err)
+	assert.Len(t, page1.Items, 2)
+	assert.Equal(t, int64(5), page1.Total)
+	assert.Equal(t, 2, page1.Limit)
+	assert.Equal(t, 0, page1.Offset)
+
+	// Page 2: limit=2, offset=2 → should get 2 items, total=5
+	offset = 2
+	page2, err := svc.GetScenarioResults(groupID, scenario.ID, &limit, &offset)
+	require.NoError(t, err)
+	assert.Len(t, page2.Items, 2)
+	assert.Equal(t, int64(5), page2.Total)
+	assert.Equal(t, 2, page2.Limit)
+	assert.Equal(t, 2, page2.Offset)
+
+	// Page 3: limit=2, offset=4 → should get 1 item, total=5
+	offset = 4
+	page3, err := svc.GetScenarioResults(groupID, scenario.ID, &limit, &offset)
+	require.NoError(t, err)
+	assert.Len(t, page3.Items, 1)
+	assert.Equal(t, int64(5), page3.Total)
+
+	// No pagination (nil params) → all 5 results
+	all, err := svc.GetScenarioResults(groupID, scenario.ID, nil, nil)
+	require.NoError(t, err)
+	assert.Len(t, all.Items, 5)
+	assert.Equal(t, int64(5), all.Total)
+	assert.Equal(t, 0, all.Limit)
+	assert.Equal(t, 0, all.Offset)
+}
+
+func TestGetScenarioResults_Paginated_HTTPController(t *testing.T) {
+	db := setupTestDB(t)
+
+	group := groupModels.ClassGroup{
+		Name: "pag-http-group", DisplayName: "Pag HTTP", OwnerUserID: "teacher-pag", IsActive: true,
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&group).Error)
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: group.ID, UserID: "teacher-pag", Role: groupModels.GroupMemberRoleOwner,
+		JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+
+	// Create 3 students with sessions
+	for i := 0; i < 3; i++ {
+		uid := fmt.Sprintf("pag-http-student-%d", i)
+		require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+			GroupID: group.ID, UserID: uid, Role: "member", JoinedAt: time.Now(), IsActive: true,
+		}).Error)
+	}
+
+	scenario := models.Scenario{
+		Name: "pag-http-test", Title: "Pag HTTP", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	for i := 0; i < 3; i++ {
+		uid := fmt.Sprintf("pag-http-student-%d", i)
+		require.NoError(t, db.Create(&models.ScenarioSession{
+			ScenarioID: scenario.ID, UserID: uid, Status: "completed",
+			StartedAt: time.Now().Add(-time.Duration(3-i) * time.Hour),
+		}).Error)
+	}
+
+	router := setupRealTeacherRouter(t, db, "teacher-pag", []string{"member"})
+
+	// With pagination: limit=2&offset=0
+	w := httptest.NewRecorder()
+	url := fmt.Sprintf("/api/v1/teacher/groups/%s/scenarios/%s/results?limit=2&offset=0", group.ID.String(), scenario.ID.String())
+	req, _ := http.NewRequest("GET", url, nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var paginated map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &paginated))
+	items := paginated["items"].([]any)
+	assert.Len(t, items, 2)
+	assert.Equal(t, float64(3), paginated["total"])
+	assert.Equal(t, float64(2), paginated["limit"])
+	assert.Equal(t, float64(0), paginated["offset"])
+
+	// Without pagination: should return all items in paginated envelope
+	w2 := httptest.NewRecorder()
+	url2 := fmt.Sprintf("/api/v1/teacher/groups/%s/scenarios/%s/results", group.ID.String(), scenario.ID.String())
+	req2, _ := http.NewRequest("GET", url2, nil)
+	router.ServeHTTP(w2, req2)
+
+	assert.Equal(t, http.StatusOK, w2.Code)
+	var allResults map[string]any
+	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &allResults))
+	allItems := allResults["items"].([]any)
+	assert.Len(t, allItems, 3)
+	assert.Equal(t, float64(3), allResults["total"])
 }
 
 func TestGetScenarioAnalytics_Success(t *testing.T) {
@@ -664,11 +796,11 @@ func TestGetScenarioResults_ExcludesSoftDeletedSteps(t *testing.T) {
 	}).Error)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)
-	results, err := svc.GetScenarioResults(groupID, scenario.ID)
+	paginated, err := svc.GetScenarioResults(groupID, scenario.ID, nil, nil)
 	require.NoError(t, err)
-	require.Len(t, results, 1)
+	require.Len(t, paginated.Items, 1)
 	// total_steps should be 3, not 4
-	assert.Equal(t, int64(3), results[0].TotalSteps)
+	assert.Equal(t, int64(3), paginated.Items[0].TotalSteps)
 }
 
 func TestGetSessionDetail_ExcludesSoftDeletedSteps(t *testing.T) {

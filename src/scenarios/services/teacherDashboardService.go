@@ -50,6 +50,14 @@ type ScenarioResultItem struct {
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 }
 
+// PaginatedScenarioResults represents paginated scenario results with total count
+type PaginatedScenarioResults struct {
+	Items  []ScenarioResultItem `json:"items"`
+	Total  int64                `json:"total"`
+	Limit  int                  `json:"limit"`
+	Offset int                  `json:"offset"`
+}
+
 // ScenarioAnalytics represents aggregated analytics for a scenario within a group
 type ScenarioAnalytics struct {
 	TotalSessions         int64    `json:"total_sessions"`
@@ -180,10 +188,24 @@ func (s *TeacherDashboardService) GetGroupActivity(groupID uuid.UUID) ([]GroupAc
 	return results, nil
 }
 
-// GetScenarioResults returns all sessions for a specific scenario within a group (single JOIN query, no N+1)
-func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UUID) ([]ScenarioResultItem, error) {
-	var results []ScenarioResultItem
-	err := s.db.Raw(`
+// GetScenarioResults returns sessions for a specific scenario within a group with optional pagination.
+// When limit is nil or zero, all results are returned (backward compatible).
+// Always returns total count for frontend pagination controls.
+func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UUID, limit, offset *int) (*PaginatedScenarioResults, error) {
+	// Count total matching rows first
+	var total int64
+	countErr := s.db.Raw(`
+		SELECT COUNT(*)
+		FROM scenario_sessions ss
+		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
+		WHERE ss.scenario_id = ?
+	`, groupID, scenarioID).Scan(&total).Error
+	if countErr != nil {
+		return nil, countErr
+	}
+
+	// Build paginated query
+	query := `
 		SELECT ss.id as session_id, ss.user_id, ss.status, ss.grade, ss.started_at, ss.completed_at, ss.current_step,
 		       (SELECT COUNT(*) FROM scenario_steps WHERE scenario_id = ss.scenario_id AND deleted_at IS NULL) as total_steps,
 		       (SELECT COUNT(*) FROM scenario_step_progress WHERE session_id = ss.id AND status = 'completed') as completed_steps,
@@ -192,7 +214,25 @@ func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UU
 		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
 		WHERE ss.scenario_id = ?
 		ORDER BY ss.started_at DESC
-	`, groupID, scenarioID).Scan(&results).Error
+	`
+	args := []any{groupID, scenarioID}
+
+	effectiveLimit := 0
+	effectiveOffset := 0
+
+	if limit != nil && *limit > 0 {
+		effectiveLimit = *limit
+		query += " LIMIT ?"
+		args = append(args, *limit)
+		if offset != nil && *offset > 0 {
+			effectiveOffset = *offset
+			query += " OFFSET ?"
+			args = append(args, *offset)
+		}
+	}
+
+	var results []ScenarioResultItem
+	err := s.db.Raw(query, args...).Scan(&results).Error
 	if err != nil {
 		return nil, err
 	}
@@ -209,26 +249,31 @@ func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UU
 		}
 	}
 
-	return results, nil
+	return &PaginatedScenarioResults{
+		Items:  results,
+		Total:  total,
+		Limit:  effectiveLimit,
+		Offset: effectiveOffset,
+	}, nil
 }
 
 // GetScenarioAnalytics computes aggregate statistics for a scenario within a group.
 // Calculations are done in Go to avoid SQLite vs PostgreSQL syntax differences.
 func (s *TeacherDashboardService) GetScenarioAnalytics(groupID, scenarioID uuid.UUID) (*ScenarioAnalytics, error) {
-	results, err := s.GetScenarioResults(groupID, scenarioID)
+	paginated, err := s.GetScenarioResults(groupID, scenarioID, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	analytics := &ScenarioAnalytics{}
-	analytics.TotalSessions = int64(len(results))
+	analytics.TotalSessions = int64(len(paginated.Items))
 
 	var gradeSum float64
 	var gradeCount int64
 	var timeSum float64
 	var timeCount int64
 
-	for _, r := range results {
+	for _, r := range paginated.Items {
 		if r.Status == "completed" {
 			analytics.CompletedCount++
 			if r.Grade != nil {
