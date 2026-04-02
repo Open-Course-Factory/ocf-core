@@ -157,8 +157,12 @@ func TestGetAccessStatus_ExpiredSession(t *testing.T) {
 	assert.Equal(t, "expired", response["denial_reason"].(string))
 }
 
-// TestGetAccessStatus_ActiveSession tests the access status endpoint with active session
+// TestGetAccessStatus_ActiveSession tests the access status endpoint with active session.
+// Requires a running Terminal Trainer backend (ValidateSessionAccess calls the API).
 func TestGetAccessStatus_ActiveSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode (requires Terminal Trainer API)")
+	}
 	db := setupTestDB(t)
 	controller := terminalController.NewTerminalController(db)
 
