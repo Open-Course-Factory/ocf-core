@@ -29,12 +29,14 @@ type CreateSubscriptionPlanInput struct {
 	CommandHistoryRetentionDays    int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
 	Priority                       int      `json:"priority" mapstructure:"priority"`
 	IsActive                       *bool    `json:"is_active" mapstructure:"is_active"`
+	IsCatalog                      *bool    `json:"is_catalog" mapstructure:"is_catalog"`
 }
 
 type UpdateSubscriptionPlanInput struct {
 	Name               string   `json:"name,omitempty" mapstructure:"name"`
 	Description        string   `json:"description,omitempty" mapstructure:"description"`
 	IsActive           *bool    `json:"is_active,omitempty" mapstructure:"is_active"`
+	IsCatalog          *bool    `json:"is_catalog,omitempty" mapstructure:"is_catalog"`
 	Features           []string `json:"features,omitempty" mapstructure:"features"`
 	MaxConcurrentUsers *int     `json:"max_concurrent_users,omitempty" mapstructure:"max_concurrent_users"`
 	MaxCourses         *int     `json:"max_courses,omitempty" mapstructure:"max_courses"`
@@ -64,6 +66,7 @@ type SubscriptionPlanOutput struct {
 	MaxConcurrentUsers int       `json:"max_concurrent_users"`
 	MaxCourses         int       `json:"max_courses"`
 	IsActive           bool      `json:"is_active"`
+	IsCatalog          bool      `json:"is_catalog"`
 	RequiredRole       string    `json:"required_role"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`

@@ -20,6 +20,7 @@ type SubscriptionPlan struct {
 	MaxConcurrentUsers int      `gorm:"default:1" json:"max_concurrent_users"`
 	MaxCourses         int      `gorm:"default:-1" json:"max_courses"` // -1 = illimité
 	IsActive           bool     `gorm:"default:true" json:"is_active"`
+	IsCatalog          bool     `gorm:"default:true" json:"is_catalog" mapstructure:"is_catalog"` // true = shown on pricing page, false = custom/unlisted plan
 	RequiredRole       string   `gorm:"type:varchar(50)" json:"required_role"`
 	StripeCreated      bool     `gorm:"default:false" json:"stripe_created"`
 	CreationError      *string  `gorm:"type:text" json:"creation_error,omitempty"`

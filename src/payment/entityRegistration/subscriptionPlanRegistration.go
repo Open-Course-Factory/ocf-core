@@ -43,6 +43,7 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						MaxConcurrentUsers: plan.MaxConcurrentUsers,
 						MaxCourses:         plan.MaxCourses,
 						IsActive:           plan.IsActive,
+						IsCatalog:          plan.IsCatalog,
 						RequiredRole:       plan.RequiredRole,
 						CreatedAt:          plan.CreatedAt,
 						UpdatedAt:          plan.UpdatedAt,
@@ -72,6 +73,10 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 					if input.IsActive != nil {
 						isActive = *input.IsActive
 					}
+					isCatalog := true
+					if input.IsCatalog != nil {
+						isCatalog = *input.IsCatalog
+					}
 					return &models.SubscriptionPlan{
 						Name:                       input.Name,
 						Description:                input.Description,
@@ -93,6 +98,7 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						CommandHistoryRetentionDays: input.CommandHistoryRetentionDays,
 						Priority:                   input.Priority,
 						IsActive:                   isActive,
+						IsCatalog:                  isCatalog,
 					}
 				},
 				DtoToMap: nil,
