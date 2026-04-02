@@ -55,12 +55,12 @@ func setupCrudPermCasbinEnforcer(t *testing.T) {
 	require.NoError(t, err)
 
 	// Register the UserSubscription entity policies using the ACTUAL roles
-	// from the registration (member: no access, admin: all methods).
+	// from the registration (member: no entry = no access, admin: all methods).
 	service := ems.NewEntityRegistrationService()
 	roles := entityManagementInterfaces.EntityRoles{
 		Roles: map[string]string{
-			string(authModels.Member): "()",
-			string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
+			// Member deliberately omitted — no generic CRUD access
+			string(authModels.Admin): "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
 		},
 	}
 	service.SetDefaultEntityAccesses("UserSubscription", roles, casdoor.Enforcer)

@@ -44,8 +44,8 @@ func RegisterUserSubscription(service *ems.EntityRegistrationService) {
 			},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
-					string(authModels.Member): "()",
-					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
+					// Member has no generic CRUD access — use dedicated routes (/current, /all, /checkout, etc.)
+					string(authModels.Admin): "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
 				},
 			},
 			SubEntities: []any{models.SubscriptionPlan{}},
