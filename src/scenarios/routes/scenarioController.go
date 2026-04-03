@@ -58,15 +58,18 @@ type ScenarioController interface {
 	OrgExportScenario(ctx *gin.Context)
 	OrgDeleteScenario(ctx *gin.Context)
 	ListGroupAvailableScenarios(ctx *gin.Context)
+	DuplicateScenario(ctx *gin.Context)
+	OrgDuplicateScenario(ctx *gin.Context)
 }
 
 type scenarioController struct {
-	db              *gorm.DB
-	sessionService  *services.ScenarioSessionService
-	importerService *services.ScenarioImporterService
-	exportService   *services.ScenarioExportService
-	seedService     *services.ScenarioSeedService
-	terminalService terminalServices.TerminalTrainerService
+	db               *gorm.DB
+	sessionService   *services.ScenarioSessionService
+	importerService  *services.ScenarioImporterService
+	exportService    *services.ScenarioExportService
+	seedService      *services.ScenarioSeedService
+	duplicateService *services.ScenarioDuplicateService
+	terminalService  terminalServices.TerminalTrainerService
 }
 
 // NewScenarioController creates a new scenario controller with its service dependencies
@@ -77,6 +80,7 @@ func NewScenarioController(db *gorm.DB) ScenarioController {
 	importerService := services.NewScenarioImporterService(db)
 	exportService := services.NewScenarioExportService(db)
 	seedService := services.NewScenarioSeedService(db)
+	duplicateService := services.NewScenarioDuplicateService(db)
 	terminalService := terminalServices.NewTerminalTrainerService(db)
 
 	// Wire terminal stop callback so the session service can stop terminals on setup failure
@@ -85,12 +89,13 @@ func NewScenarioController(db *gorm.DB) ScenarioController {
 	})
 
 	return &scenarioController{
-		db:              db,
-		sessionService:  sessionService,
-		importerService: importerService,
-		exportService:   exportService,
-		seedService:     seedService,
-		terminalService: terminalService,
+		db:               db,
+		sessionService:   sessionService,
+		importerService:  importerService,
+		exportService:    exportService,
+		seedService:      seedService,
+		duplicateService: duplicateService,
+		terminalService:  terminalService,
 	}
 }
 
@@ -2513,5 +2518,101 @@ func (sc *scenarioController) ListGroupAvailableScenarios(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, output)
+}
+
+// DuplicateScenario godoc
+// @Summary Duplicate a scenario
+// @Description Create a deep copy of a scenario including steps, hints, instance types, and project files
+// @Tags scenarios
+// @Produce json
+// @Param id path string true "Source Scenario ID"
+// @Success 201 {object} dto.ScenarioOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenarios/{id}/duplicate [post]
+// @Security BearerAuth
+func (sc *scenarioController) DuplicateScenario(ctx *gin.Context) {
+	scenarioID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid scenario ID",
+		})
+		return
+	}
+
+	userID := ctx.GetString("userId")
+
+	newScenario, err := sc.duplicateService.DuplicateScenario(scenarioID, userID, nil)
+	if err != nil {
+		slog.Error("failed to duplicate scenario", "err", err)
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Scenario not found",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, sc.buildScenarioOutput(newScenario))
+}
+
+// OrgDuplicateScenario godoc
+// @Summary Duplicate an organization scenario
+// @Description Create a deep copy of a scenario within an organization
+// @Tags scenarios
+// @Produce json
+// @Param id path string true "Organization ID"
+// @Param scenarioId path string true "Source Scenario ID"
+// @Success 201 {object} dto.ScenarioOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /organizations/{id}/scenarios/{scenarioId}/duplicate [post]
+// @Security BearerAuth
+func (sc *scenarioController) OrgDuplicateScenario(ctx *gin.Context) {
+	orgID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	scenarioID, err := uuid.Parse(ctx.Param("scenarioId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid scenario ID",
+		})
+		return
+	}
+
+	// Verify scenario belongs to this organization
+	var scenario models.Scenario
+	if err := sc.db.Where("id = ? AND organization_id = ?", scenarioID, orgID).First(&scenario).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Scenario not found in this organization",
+		})
+		return
+	}
+
+	userID := ctx.GetString("userId")
+
+	newScenario, err := sc.duplicateService.DuplicateScenario(scenarioID, userID, &orgID)
+	if err != nil {
+		slog.Error("failed to duplicate org scenario", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to duplicate scenario",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, sc.buildScenarioOutput(newScenario))
 }
 

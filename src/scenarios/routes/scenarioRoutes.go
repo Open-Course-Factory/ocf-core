@@ -23,6 +23,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	scenarioRoutes.GET("/:id/export", middleware.AuthManagement(), controller.ExportScenario)
 	scenarioRoutes.POST("/export", middleware.AuthManagement(), controller.ExportScenarios)
 	scenarioRoutes.POST("/import-json", middleware.AuthManagement(), controller.ImportJSON)
+	scenarioRoutes.POST("/:id/duplicate", middleware.AuthManagement(), controller.DuplicateScenario)
 
 	// Session routes (students)
 	rateLimiter := scenarioMiddleware.PerUserRateLimit()
@@ -55,6 +56,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	orgScenarioRoutes.POST("/upload", middleware.AuthManagement(), controller.OrgUploadScenario)
 	orgScenarioRoutes.GET("/:scenarioId/export", middleware.AuthManagement(), controller.OrgExportScenario)
 	orgScenarioRoutes.DELETE("/:scenarioId", middleware.AuthManagement(), controller.OrgDeleteScenario)
+	orgScenarioRoutes.POST("/:scenarioId/duplicate", middleware.AuthManagement(), controller.OrgDuplicateScenario)
 
 	// ProjectFile custom routes
 	projectFileCtrl := NewProjectFileController(db)

@@ -355,6 +355,7 @@ func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/organizations/:id/scenarios/upload", "POST"},
 		{"/api/v1/organizations/:id/scenarios/:scenarioId/export", "GET"},
 		{"/api/v1/organizations/:id/scenarios/:scenarioId", "DELETE"},
+		{"/api/v1/organizations/:id/scenarios/:scenarioId/duplicate", "POST"},
 		// NEW: Project file routes
 		{"/api/v1/project-files/by-scenario/:scenarioId", "GET"},
 		{"/api/v1/project-files/image/:scenarioId/*", "GET"},
@@ -386,6 +387,7 @@ func TestSetupScenarioPermissions_AdminRoutes(t *testing.T) {
 		{"/api/v1/scenarios/:id/export", "GET"},
 		{"/api/v1/scenarios/export", "POST"},
 		{"/api/v1/scenarios/import-json", "POST"},
+		{"/api/v1/scenarios/:id/duplicate", "POST"},
 	}
 
 	for _, r := range adminRoutes {

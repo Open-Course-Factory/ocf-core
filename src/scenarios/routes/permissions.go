@@ -83,6 +83,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/organizations/:id/scenarios/import-json", "POST"},
 		{"/api/v1/organizations/:id/scenarios/:scenarioId/export", "GET"},
 		{"/api/v1/organizations/:id/scenarios/:scenarioId", "DELETE"},
+		{"/api/v1/organizations/:id/scenarios/:scenarioId/duplicate", "POST"},
 	}
 
 	for _, route := range orgScenarioRoutes {
@@ -116,6 +117,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/scenarios/:id/export", "GET"},
 		{"/api/v1/scenarios/export", "POST"},
 		{"/api/v1/scenarios/import-json", "POST"},
+		{"/api/v1/scenarios/:id/duplicate", "POST"},
 	}
 
 	for _, route := range adminRoutes {
@@ -273,6 +275,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
 			Description: "Delete a scenario from an organization",
 		},
+		access.RoutePermission{
+			Path: "/api/v1/organizations/:id/scenarios/:scenarioId/duplicate", Method: "POST",
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "Duplicate a scenario within an organization",
+		},
 		// Admin scenario routes
 		access.RoutePermission{
 			Path: "/api/v1/scenarios/import", Method: "POST",
@@ -303,6 +310,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Path: "/api/v1/scenarios/import-json", Method: "POST",
 			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Import scenarios from JSON (admin only)",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/scenarios/:id/duplicate", Method: "POST",
+			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Duplicate a scenario at platform level (admin only)",
 		},
 		// Project file routes
 		access.RoutePermission{
