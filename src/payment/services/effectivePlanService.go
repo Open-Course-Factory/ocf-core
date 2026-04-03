@@ -130,15 +130,18 @@ func (s *effectivePlanService) GetUserEffectivePlan(userID string) (*EffectivePl
 // CheckEffectiveUsageLimit checks whether the user can perform the given action
 // based on their effective plan limits.
 func (s *effectivePlanService) CheckEffectiveUsageLimit(userID string, metricType string, increment int64) (*UsageLimitCheck, error) {
-	// 1. Get the effective plan
 	result, err := s.GetUserEffectivePlan(userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get effective plan: %w", err)
 	}
+	return s.checkUsageLimitFromResult(result, userID, metricType, increment)
+}
 
+// checkUsageLimitFromResult computes the usage limit check from an already-resolved plan result.
+func (s *effectivePlanService) checkUsageLimitFromResult(result *EffectivePlanResult, userID string, metricType string, increment int64) (*UsageLimitCheck, error) {
 	plan := result.Plan
 
-	// 2. Determine the limit from the plan
+	// Determine the limit from the plan
 	var limit int64
 	switch metricType {
 	case "concurrent_terminals":
@@ -149,10 +152,9 @@ func (s *effectivePlanService) CheckEffectiveUsageLimit(userID string, metricTyp
 		limit = -1 // unlimited
 	}
 
-	// 3. Get current usage
+	// Get current usage
 	var currentUsage int64
 	if metricType == "concurrent_terminals" {
-		// Real-time count from the terminals table
 		countErr := s.db.Table("terminals").
 			Where("user_id = ? AND status = ? AND deleted_at IS NULL", userID, "active").
 			Count(&currentUsage).Error
@@ -160,7 +162,6 @@ func (s *effectivePlanService) CheckEffectiveUsageLimit(userID string, metricTyp
 			return nil, fmt.Errorf("failed to count active terminals: %w", countErr)
 		}
 	} else {
-		// Check from usage_metrics table for the current period
 		metrics, metricsErr := s.paymentRepo.GetUserUsageMetrics(userID, metricType)
 		if metricsErr != nil {
 			if !errors.Is(metricsErr, gorm.ErrRecordNotFound) {
@@ -172,7 +173,7 @@ func (s *effectivePlanService) CheckEffectiveUsageLimit(userID string, metricTyp
 		}
 	}
 
-	// 4. Calculate and return
+	// Calculate and return
 	allowed := limit == -1 || (currentUsage+increment) <= limit
 	var remaining int64
 	if limit == -1 {
@@ -228,7 +229,18 @@ func (s *effectivePlanService) GetUserEffectivePlanForOrg(userID string, orgID *
 		}, nil
 	}
 
-	// Team org → return that org's subscription
+	// Team org → check that the user is actually a member of this org
+	var memberCount int64
+	if err := s.db.Model(&orgModels.OrganizationMember{}).
+		Where("organization_id = ? AND user_id = ? AND is_active = ?", *orgID, userID, true).
+		Count(&memberCount).Error; err != nil {
+		return nil, fmt.Errorf("failed to check org membership: %w", err)
+	}
+	if memberCount == 0 {
+		return nil, fmt.Errorf("user %s is not a member of organization %s", userID, orgID.String())
+	}
+
+	// Return that org's subscription
 	orgSub, err := s.orgSubRepo.GetActiveOrganizationSubscription(*orgID)
 	if err != nil {
 		return nil, fmt.Errorf("no active subscription for organization %s: %w", orgID.String(), err)
@@ -247,65 +259,5 @@ func (s *effectivePlanService) CheckEffectiveUsageLimitForOrg(userID string, org
 	if err != nil {
 		return nil, fmt.Errorf("failed to get effective plan for org context: %w", err)
 	}
-
-	plan := result.Plan
-
-	// Determine the limit from the plan
-	var limit int64
-	switch metricType {
-	case "concurrent_terminals":
-		limit = int64(plan.MaxConcurrentTerminals)
-	case "courses_created":
-		limit = int64(plan.MaxCourses)
-	default:
-		limit = -1 // unlimited
-	}
-
-	// Get current usage
-	var currentUsage int64
-	if metricType == "concurrent_terminals" {
-		countErr := s.db.Table("terminals").
-			Where("user_id = ? AND status = ? AND deleted_at IS NULL", userID, "active").
-			Count(&currentUsage).Error
-		if countErr != nil {
-			return nil, fmt.Errorf("failed to count active terminals: %w", countErr)
-		}
-	} else {
-		metrics, metricsErr := s.paymentRepo.GetUserUsageMetrics(userID, metricType)
-		if metricsErr != nil {
-			if !errors.Is(metricsErr, gorm.ErrRecordNotFound) {
-				utils.Warn("Failed to get usage metrics for user %s, metric %s: %v", userID, metricType, metricsErr)
-			}
-			currentUsage = 0
-		} else {
-			currentUsage = metrics.CurrentValue
-		}
-	}
-
-	allowed := limit == -1 || (currentUsage+increment) <= limit
-	var remaining int64
-	if limit == -1 {
-		remaining = -1
-	} else {
-		remaining = limit - currentUsage
-		if remaining < 0 {
-			remaining = 0
-		}
-	}
-
-	message := ""
-	if !allowed {
-		message = fmt.Sprintf("Usage limit exceeded for %s. Current: %d, Limit: %d", metricType, currentUsage, limit)
-	}
-
-	return &UsageLimitCheck{
-		Allowed:        allowed,
-		CurrentUsage:   currentUsage,
-		Limit:          limit,
-		RemainingUsage: remaining,
-		Message:        message,
-		UserID:         userID,
-		MetricType:     metricType,
-		Source:         result.Source,
-	}, nil
+	return s.checkUsageLimitFromResult(result, userID, metricType, increment)
 }
