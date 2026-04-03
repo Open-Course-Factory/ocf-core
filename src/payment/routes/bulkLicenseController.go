@@ -395,9 +395,24 @@ func (c *bulkLicenseController) RevokeLicense(ctx *gin.Context) {
 	err = c.bulkService.RevokeLicense(licenseID, userID)
 	if err != nil {
 		utils.Error("Failed to revoke license: %v", err)
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: err.Error(),
+
+		statusCode := http.StatusInternalServerError
+		msg := "Internal error"
+
+		if strings.Contains(err.Error(), "not found") {
+			statusCode = http.StatusNotFound
+			msg = "License or batch not found"
+		} else if strings.Contains(err.Error(), "access denied") {
+			statusCode = http.StatusForbidden
+			msg = "Access denied"
+		} else if strings.Contains(err.Error(), "not part of a batch") {
+			statusCode = http.StatusBadRequest
+			msg = "This license is not part of a batch"
+		}
+
+		ctx.JSON(statusCode, &errors.APIError{
+			ErrorCode:    statusCode,
+			ErrorMessage: msg,
 		})
 		return
 	}
@@ -490,15 +505,19 @@ func (c *bulkLicenseController) PermanentlyDeleteBatch(ctx *gin.Context) {
 		utils.Error("Failed to permanently delete batch: %v", err)
 
 		statusCode := http.StatusInternalServerError
-		if err.Error() == "batch not found" {
+		msg := "Internal error"
+
+		if strings.Contains(err.Error(), "batch not found") {
 			statusCode = http.StatusNotFound
-		} else if err.Error() == "only the purchaser can delete this batch" {
+			msg = "Batch not found"
+		} else if strings.Contains(err.Error(), "access denied") {
 			statusCode = http.StatusForbidden
+			msg = "Access denied"
 		}
 
 		ctx.JSON(statusCode, &errors.APIError{
 			ErrorCode:    statusCode,
-			ErrorMessage: err.Error(),
+			ErrorMessage: msg,
 		})
 		return
 	}
