@@ -60,6 +60,7 @@ type ScenarioController interface {
 	ListGroupAvailableScenarios(ctx *gin.Context)
 	DuplicateScenario(ctx *gin.Context)
 	OrgDuplicateScenario(ctx *gin.Context)
+	PreviewScenario(ctx *gin.Context)
 }
 
 type scenarioController struct {
@@ -2622,5 +2623,182 @@ func (sc *scenarioController) OrgDuplicateScenario(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, sc.buildScenarioOutput(newScenario))
+}
+
+// PreviewScenario starts a preview session for testing a scenario without group assignment.
+// Only the scenario creator, an org manager, or a platform admin can use this endpoint.
+func (sc *scenarioController) PreviewScenario(ctx *gin.Context) {
+	scenarioID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid scenario ID",
+		})
+		return
+	}
+
+	userID := ctx.GetString("userId")
+
+	// Load scenario with CompatibleInstanceTypes and Steps
+	var scenario models.Scenario
+	if err := sc.db.Preload("CompatibleInstanceTypes").Preload("Steps").First(&scenario, scenarioID).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Scenario not found",
+		})
+		return
+	}
+
+	// Build preview options
+	var previewOpts []services.PreviewOption
+	if sc.hasAdminRole(ctx) {
+		previewOpts = append(previewOpts, services.WithAdminBypass())
+	}
+	// Inject org manager check
+	previewOpts = append(previewOpts, services.WithOrgManagerCheck(func(uid string, orgID uuid.UUID) bool {
+		var count int64
+		sc.db.Model(&orgModels.OrganizationMember{}).
+			Where("user_id = ? AND organization_id = ? AND is_active = true AND role IN ?", uid, orgID, []string{"manager", "owner"}).
+			Count(&count)
+		return count > 0
+	}))
+
+	// Read optional backend from query param or JSON body
+	backend := ctx.Query("backend")
+	if backend == "" {
+		var body struct {
+			Backend string `json:"backend"`
+		}
+		_ = ctx.ShouldBindJSON(&body)
+		backend = body.Backend
+	}
+
+	// Get available instance types from tt-backend
+	instanceTypes, err := sc.terminalService.GetInstanceTypes(backend)
+	if err != nil {
+		slog.Error("failed to get instance types from tt-backend", "err", err)
+		ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
+			ErrorCode:    http.StatusServiceUnavailable,
+			ErrorMessage: "Terminal service unavailable",
+		})
+		return
+	}
+
+	// Find best compatible instance type
+	selectedType := findBestInstanceType(scenario, instanceTypes)
+	if selectedType == "" {
+		ctx.JSON(http.StatusConflict, &errors.APIError{
+			ErrorCode:    http.StatusConflict,
+			ErrorMessage: "No compatible instance type available",
+		})
+		return
+	}
+
+	// Auto-provision terminal key if missing
+	_, keyErr := sc.terminalService.GetUserKey(userID)
+	if keyErr != nil {
+		user, userErr := casdoorsdk.GetUserByUserId(userID)
+		keyName := "auto-" + userID
+		if userErr == nil && user != nil && user.Email != "" {
+			keyName = "auto-" + user.Email
+		}
+		if createErr := sc.terminalService.CreateUserKey(userID, keyName); createErr != nil {
+			slog.Error("failed to create terminal key for user", "userID", userID, "err", createErr)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to provision terminal access",
+			})
+			return
+		}
+	}
+
+	// Fetch terms from tt-backend
+	terms, termsErr := sc.terminalService.GetTerms()
+	if termsErr != nil {
+		slog.Error("failed to fetch terminal terms", "err", termsErr)
+		ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
+			ErrorCode:    http.StatusServiceUnavailable,
+			ErrorMessage: "Terminal service unavailable",
+		})
+		return
+	}
+
+	// Get user's effective plan for limit enforcement
+	effectivePlanService := paymentServices.NewEffectivePlanService(sc.db)
+	planResult, planErr := effectivePlanService.GetUserEffectivePlan(userID)
+	if planErr != nil || planResult == nil || planResult.Plan == nil {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "No active subscription plan",
+		})
+		return
+	}
+
+	// Check concurrent terminal limit
+	limitCheck, limitErr := effectivePlanService.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	if limitErr != nil {
+		slog.Error("failed to check usage limit", "userID", userID, "err", limitErr)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to check usage limits",
+		})
+		return
+	}
+	if !limitCheck.Allowed {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: fmt.Sprintf("Terminal limit reached (%d/%d). Stop an existing session first.", limitCheck.CurrentUsage, limitCheck.Limit),
+		})
+		return
+	}
+
+	// Create terminal session with plan validation
+	sessionInput := terminalDto.CreateTerminalSessionInput{
+		Terms:        terms,
+		InstanceType: selectedType,
+		Backend:      backend,
+		Name:         fmt.Sprintf("preview-%s", scenario.Title),
+		Hostname:     scenario.Hostname,
+		OrganizationID: func() string {
+			if scenario.OrganizationID != nil {
+				return scenario.OrganizationID.String()
+			}
+			return ""
+		}(),
+		RecordingEnabled:     1,
+		HistoryRetentionDays: 30,
+	}
+
+	terminalResp, termErr := sc.terminalService.StartSessionWithPlan(userID, sessionInput, planResult.Plan)
+	if termErr != nil {
+		slog.Error("failed to create terminal session for preview", "userID", userID, "err", termErr)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to create terminal session: " + termErr.Error(),
+		})
+		return
+	}
+
+	// Create preview session (skips assignment check, sets IsPreview)
+	session, startErr := sc.sessionService.PreviewScenario(userID, scenarioID, terminalResp.SessionID, previewOpts...)
+	if startErr != nil {
+		slog.Error("failed to start preview session", "userID", userID, "scenarioID", scenarioID, "err", startErr)
+		statusCode := http.StatusInternalServerError
+		if strings.Contains(startErr.Error(), "not authorized") {
+			statusCode = http.StatusForbidden
+		}
+		ctx.JSON(statusCode, &errors.APIError{
+			ErrorCode:    statusCode,
+			ErrorMessage: startErr.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dto.LaunchScenarioResponse{
+		TerminalSessionID: terminalResp.SessionID,
+		ScenarioSessionID: session.ID.String(),
+		Status:            session.Status,
+		ProvisioningPhase: session.ProvisioningPhase,
+	})
 }
 

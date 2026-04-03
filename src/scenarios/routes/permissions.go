@@ -32,6 +32,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/scenario-sessions/:id/steps/:stepOrder/hints/:level/reveal", "POST"},
 		{"/api/v1/scenario-sessions/:id/abandon", "POST"},
 		{"/api/v1/scenario-sessions/launch", "POST"},
+		{"/api/v1/scenarios/:id/preview", "POST"},
 	}
 
 	for _, route := range sessionRoutes {
@@ -191,6 +192,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Path: "/api/v1/scenario-sessions/launch", Method: "POST",
 			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Launch a scenario with auto-provisioned terminal",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/scenarios/:id/preview", Method: "POST",
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Preview a scenario without group assignment (creator/org manager/admin)",
 		},
 	)
 

@@ -24,6 +24,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	scenarioRoutes.POST("/export", middleware.AuthManagement(), controller.ExportScenarios)
 	scenarioRoutes.POST("/import-json", middleware.AuthManagement(), controller.ImportJSON)
 	scenarioRoutes.POST("/:id/duplicate", middleware.AuthManagement(), controller.DuplicateScenario)
+	scenarioRoutes.POST("/:id/preview", middleware.AuthManagement(), controller.PreviewScenario)
 
 	// Session routes (students)
 	rateLimiter := scenarioMiddleware.PerUserRateLimit()

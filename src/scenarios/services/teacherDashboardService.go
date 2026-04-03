@@ -175,7 +175,7 @@ func (s *TeacherDashboardService) GetGroupActivity(groupID uuid.UUID) ([]GroupAc
 		FROM scenario_sessions ss
 		JOIN scenarios sc ON sc.id = ss.scenario_id
 		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
-		WHERE ss.status = 'active'
+		WHERE ss.status = 'active' AND ss.is_preview = false
 		ORDER BY ss.started_at DESC
 	`, groupID).Scan(&results).Error
 	if err != nil {
@@ -198,7 +198,7 @@ func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UU
 		SELECT COUNT(*)
 		FROM scenario_sessions ss
 		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
-		WHERE ss.scenario_id = ?
+		WHERE ss.scenario_id = ? AND ss.is_preview = false
 	`, groupID, scenarioID).Scan(&total).Error
 	if countErr != nil {
 		return nil, countErr
@@ -212,7 +212,7 @@ func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UU
 		       (SELECT COALESCE(SUM(hints_revealed), 0) FROM scenario_step_progress WHERE session_id = ss.id) as total_hints_used
 		FROM scenario_sessions ss
 		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
-		WHERE ss.scenario_id = ?
+		WHERE ss.scenario_id = ? AND ss.is_preview = false
 		ORDER BY ss.started_at DESC
 	`
 	args := []any{groupID, scenarioID}

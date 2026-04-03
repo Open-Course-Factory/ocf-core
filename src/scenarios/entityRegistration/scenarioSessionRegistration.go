@@ -28,6 +28,7 @@ func RegisterScenarioSession(service *ems.EntityRegistrationService) {
 						ProvisioningPhase: model.ProvisioningPhase,
 						StartedAt:         model.StartedAt,
 						CompletedAt:       model.CompletedAt,
+						IsPreview:         model.IsPreview,
 						CreatedAt:         model.CreatedAt,
 						UpdatedAt:         model.UpdatedAt,
 					}

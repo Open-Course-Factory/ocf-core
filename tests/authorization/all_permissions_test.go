@@ -356,6 +356,8 @@ func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/organizations/:id/scenarios/:scenarioId/export", "GET"},
 		{"/api/v1/organizations/:id/scenarios/:scenarioId", "DELETE"},
 		{"/api/v1/organizations/:id/scenarios/:scenarioId/duplicate", "POST"},
+		// Preview route
+		{"/api/v1/scenarios/:id/preview", "POST"},
 		// NEW: Project file routes
 		{"/api/v1/project-files/by-scenario/:scenarioId", "GET"},
 		{"/api/v1/project-files/image/:scenarioId/*", "GET"},

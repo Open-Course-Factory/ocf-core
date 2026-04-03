@@ -256,6 +256,67 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 	return session, nil
 }
 
+// PreviewOption configures optional behavior for PreviewScenario.
+type PreviewOption func(*previewConfig)
+
+type previewConfig struct {
+	isOrgManager func(userID string, orgID uuid.UUID) bool
+	isAdmin      bool
+}
+
+// WithOrgManagerCheck injects a callback to check if a user is an org manager.
+func WithOrgManagerCheck(fn func(userID string, orgID uuid.UUID) bool) PreviewOption {
+	return func(c *previewConfig) {
+		c.isOrgManager = fn
+	}
+}
+
+// WithAdminBypass marks the caller as a platform admin, bypassing authorization.
+func WithAdminBypass() PreviewOption {
+	return func(c *previewConfig) {
+		c.isAdmin = true
+	}
+}
+
+// PreviewScenario creates a preview session for testing a scenario without group assignment.
+// Only the scenario creator, an org manager (if the scenario belongs to an org), or a
+// platform admin may preview.
+func (s *ScenarioSessionService) PreviewScenario(userID string, scenarioID uuid.UUID, terminalSessionID string, opts ...PreviewOption) (*models.ScenarioSession, error) {
+	cfg := &previewConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
+
+	// Load scenario
+	var scenario models.Scenario
+	if err := s.db.First(&scenario, "id = ?", scenarioID).Error; err != nil {
+		return nil, fmt.Errorf("scenario not found: %w", err)
+	}
+
+	// Authorization: creator, org manager, or admin
+	authorized := cfg.isAdmin || scenario.CreatedByID == userID
+	if !authorized && scenario.OrganizationID != nil && cfg.isOrgManager != nil {
+		authorized = cfg.isOrgManager(userID, *scenario.OrganizationID)
+	}
+	if !authorized {
+		return nil, fmt.Errorf("not authorized to preview this scenario")
+	}
+
+	// Delegate to StartScenario for session creation
+	session, err := s.StartScenario(userID, scenarioID, terminalSessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Mark as preview
+	if err := s.db.Model(session).Update("is_preview", true).Error; err != nil {
+		return nil, fmt.Errorf("failed to set preview flag: %w", err)
+	}
+	session.IsPreview = true
+
+	return session, nil
+}
+
 // runStep0Setup runs the step 0 background script asynchronously and transitions
 // the session from "provisioning" to "active" once setup completes, or to
 // "setup_failed" if the script fails.

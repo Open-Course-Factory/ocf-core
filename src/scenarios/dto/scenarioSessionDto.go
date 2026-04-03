@@ -32,6 +32,7 @@ type ScenarioSessionOutput struct {
 	ProvisioningPhase string                       `json:"provisioning_phase,omitempty"`
 	StartedAt         time.Time                    `json:"started_at"`
 	CompletedAt       *time.Time                   `json:"completed_at,omitempty"`
+	IsPreview         bool                         `json:"is_preview,omitempty"`
 	CreatedAt         time.Time                    `json:"created_at"`
 	UpdatedAt         time.Time                    `json:"updated_at"`
 	StepProgress      []ScenarioStepProgressOutput `json:"step_progress,omitempty"`
