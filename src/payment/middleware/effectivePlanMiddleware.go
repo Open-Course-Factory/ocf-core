@@ -1,6 +1,9 @@
 package middleware
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 
 	"soli/formations/src/auth/errors"
@@ -9,8 +12,33 @@ import (
 	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+// InjectOrgContext peeks at the request body to extract organization_id and
+// stores it in the Gin context as "org_context_id". The body is reset so
+// downstream handlers can still read it.
+func InjectOrgContext() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		bodyBytes, err := io.ReadAll(ctx.Request.Body)
+		if err != nil {
+			ctx.Next()
+			return
+		}
+		// Reset body for downstream handlers
+		ctx.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+		// Parse organization_id from JSON
+		var partial struct {
+			OrganizationID string `json:"organization_id"`
+		}
+		if json.Unmarshal(bodyBytes, &partial) == nil && partial.OrganizationID != "" {
+			ctx.Set("org_context_id", partial.OrganizationID)
+		}
+		ctx.Next()
+	}
+}
 
 // InjectEffectivePlan resolves the user's effective subscription plan and stores
 // it in the request context. Downstream middleware (RequirePlan, CheckLimit) can
@@ -24,11 +52,19 @@ func InjectEffectivePlan(effectivePlanService services.EffectivePlanService) gin
 			return
 		}
 
-		result, err := effectivePlanService.GetUserEffectivePlan(userID)
+		// Check for org context (set by InjectOrgContext middleware)
+		var orgID *uuid.UUID
+		if orgContextStr, exists := ctx.Get("org_context_id"); exists {
+			if parsed, err := uuid.Parse(orgContextStr.(string)); err == nil {
+				orgID = &parsed
+			}
+		}
+
+		result, err := effectivePlanService.GetUserEffectivePlanForOrg(userID, orgID)
 		if err != nil {
 			// No plan found — store nil so RequirePlan can decide what to do
 			ctx.Set("effective_plan_result", (*services.EffectivePlanResult)(nil))
-			utils.Debug("No effective plan for user %s: %v", userID, err)
+			utils.Debug("No effective plan for user %s (org context: %v): %v", userID, orgID, err)
 			ctx.Next()
 			return
 		}
@@ -81,7 +117,15 @@ func CheckLimit(effectivePlanService services.EffectivePlanService, db *gorm.DB,
 			return
 		}
 
-		limitCheck, err := effectivePlanService.CheckEffectiveUsageLimit(userID, metricType, 1)
+		// Check for org context (set by InjectOrgContext middleware)
+		var orgID *uuid.UUID
+		if orgContextStr, exists := ctx.Get("org_context_id"); exists {
+			if parsed, err := uuid.Parse(orgContextStr.(string)); err == nil {
+				orgID = &parsed
+			}
+		}
+
+		limitCheck, err := effectivePlanService.CheckEffectiveUsageLimitForOrg(userID, orgID, metricType, 1)
 		if err != nil {
 			utils.Warn("Failed to check usage limit for user %s: %v", userID, err)
 			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
