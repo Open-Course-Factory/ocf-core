@@ -3,6 +3,7 @@ package services
 
 import (
 	"fmt"
+	"strings"
 	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
@@ -115,31 +116,28 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 		CurrentPeriodEnd:         periodEnd,
 	}
 
-	// Create individual license records with pending_payment status
-	// Will be activated when payment succeeds
-	licenses := make([]models.UserSubscription, input.Quantity)
-	for i := 0; i < input.Quantity; i++ {
-		licenses[i] = models.UserSubscription{
-			UserID:               "", // Unassigned
-			PurchaserUserID:      &purchaserUserID,
-			SubscriptionBatchID:  &batch.ID,
-			SubscriptionPlanID:   input.SubscriptionPlanID,
-			StripeSubscriptionID: &stripeSubscriptionID,
-			StripeCustomerID:     &customerID,       // Use Stripe customer ID
-			Status:               "pending_payment", // Wait for payment
-			CurrentPeriodStart:   now,
-			CurrentPeriodEnd:     periodEnd,
-		}
-	}
-
 	// Wrap batch and license creation in a transaction to prevent partial records
-	// if any license creation fails
+	// if any license creation fails.
+	var licenses []models.UserSubscription
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(batch).Error; err != nil {
 			return fmt.Errorf("failed to create batch: %w", err)
 		}
 
+		// Create licenses AFTER batch so batch.ID is populated by GORM's BeforeCreate hook
+		licenses = make([]models.UserSubscription, input.Quantity)
 		for i := 0; i < input.Quantity; i++ {
+			licenses[i] = models.UserSubscription{
+				UserID:               "", // Unassigned
+				PurchaserUserID:      &purchaserUserID,
+				SubscriptionBatchID:  &batch.ID,
+				SubscriptionPlanID:   input.SubscriptionPlanID,
+				StripeSubscriptionID: &stripeSubscriptionID,
+				StripeCustomerID:     &customerID,
+				Status:               "pending_payment",
+				CurrentPeriodStart:   now,
+				CurrentPeriodEnd:     periodEnd,
+			}
 			if err := tx.Create(&licenses[i]).Error; err != nil {
 				return fmt.Errorf("failed to create license %d: %w", i, err)
 			}
@@ -562,12 +560,8 @@ func (s *bulkLicenseService) autoCancelBatchFromStripeError(batchID uuid.UUID) e
 // containsAny checks if a string contains any of the substrings
 func containsAny(s string, substrings []string) bool {
 	for _, substr := range substrings {
-		if len(s) >= len(substr) {
-			for i := 0; i <= len(s)-len(substr); i++ {
-				if s[i:i+len(substr)] == substr {
-					return true
-				}
-			}
+		if strings.Contains(s, substr) {
+			return true
 		}
 	}
 	return false

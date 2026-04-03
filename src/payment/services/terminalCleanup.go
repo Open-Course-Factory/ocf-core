@@ -13,9 +13,14 @@ import (
 	"gorm.io/gorm"
 )
 
-// TerminateUserTerminals stops all active terminals for a given user and decrements
-// the concurrent_terminals usage metric for each stopped terminal.
+// TerminateUserTerminals marks all active terminals as "stopped" in the database and
+// decrements the concurrent_terminals usage metric for each stopped terminal.
 // This is the shared implementation used by both user and organization subscription cancellation.
+//
+// Note: this only updates the DB status — it does NOT call the tt-backend API to stop
+// the actual Incus containers. Container cleanup is handled by tt-backend's own expiration
+// mechanism. The DB update ensures ocf-core immediately reflects the correct state and
+// prevents new terminal access via middleware checks.
 func TerminateUserTerminals(db *gorm.DB, userID string) error {
 	termRepository := terminalRepo.NewTerminalRepository(db)
 
@@ -82,21 +87,20 @@ func TerminateOrganizationMemberTerminals(db *gorm.DB, orgID uuid.UUID) {
 	}
 }
 
-// decrementConcurrentTerminalsForUser decrements the concurrent_terminals metric for a user.
+// decrementConcurrentTerminalsForUser atomically decrements the concurrent_terminals metric for a user.
+// Uses a single SQL UPDATE with current_value - 1 to avoid read-modify-write race conditions.
 func decrementConcurrentTerminalsForUser(db *gorm.DB, userID string) error {
-	var usageMetric models.UsageMetrics
-	err := db.Where("user_id = ? AND metric_type = ?", userID, "concurrent_terminals").First(&usageMetric).Error
-	if err != nil {
-		return fmt.Errorf("usage metric not found: %w", err)
+	result := db.Model(&models.UsageMetrics{}).
+		Where("user_id = ? AND metric_type = ? AND current_value > 0", userID, "concurrent_terminals").
+		Updates(map[string]interface{}{
+			"current_value": gorm.Expr("current_value - 1"),
+			"last_updated":  time.Now(),
+		})
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to decrement usage metric: %w", result.Error)
 	}
 
-	if usageMetric.CurrentValue > 0 {
-		usageMetric.CurrentValue -= 1
-		usageMetric.LastUpdated = time.Now()
-		if err := db.Save(&usageMetric).Error; err != nil {
-			return fmt.Errorf("failed to update usage metric: %w", err)
-		}
-	}
-
+	// No rows affected = metric doesn't exist or already at 0, both are fine
 	return nil
 }
