@@ -254,6 +254,65 @@ func TestCheckEffectiveUsageLimitForOrg_TeamOrg_UsesOrgPlanLimits(t *testing.T) 
 	assert.Equal(t, int64(1), check.RemainingUsage)
 }
 
+// --- Security: org membership validation tests ---
+
+// TestGetUserEffectivePlanForOrg_NonMember_TeamOrg_ShouldRejectAccess verifies that a user
+// who is NOT a member of a team org cannot access that org's subscription plan.
+// BUG: The current implementation only checks that the org exists and has a subscription,
+// but does NOT verify the requesting user is a member of the org. This allows any user
+// to escalate their plan by passing another org's ID.
+func TestGetUserEffectivePlanForOrg_NonMember_TeamOrg_ShouldRejectAccess(t *testing.T) {
+	db := freshTestDB(t)
+
+	ownerUserID := "org-owner-user"
+	attackerUserID := "attacker-user"
+
+	// Create a premium plan and attach it to a team org owned by ownerUserID
+	premiumPlan := createPlan(t, db, "PremiumTeamPlan", 100, 50)
+	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "premium-team", ownerUserID, premiumPlan, organizationModels.OrgTypeTeam)
+
+	// attackerUserID is NOT a member of teamOrg — no OrganizationMember row exists for them.
+	// They should NOT be able to access this org's plan.
+
+	svc := services.NewEffectivePlanService(db)
+	result, err := svc.GetUserEffectivePlanForOrg(attackerUserID, &teamOrg.ID)
+
+	// EXPECTED: error indicating the user is not a member of the org
+	// CURRENT BUG: returns the org's premium plan without any membership check
+	assert.Error(t, err, "should reject access for non-member user")
+	assert.Nil(t, result, "should not return a plan for non-member user")
+	if err != nil {
+		assert.Contains(t, err.Error(), "not a member",
+			"error should indicate the user is not a member of the organization")
+	}
+}
+
+// TestCheckEffectiveUsageLimitForOrg_NonMember_ShouldRejectAccess verifies that
+// CheckEffectiveUsageLimitForOrg also rejects non-member access.
+// BUG: Since it delegates to GetUserEffectivePlanForOrg which has no membership check,
+// a non-member user can query (and benefit from) another org's usage limits.
+func TestCheckEffectiveUsageLimitForOrg_NonMember_ShouldRejectAccess(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+
+	ownerUserID := "org-owner-for-limit"
+	attackerUserID := "attacker-for-limit"
+
+	// Create a generous plan for the team org
+	generousPlan := createPlan(t, db, "GenerousPlan", 50, 100) // 100 concurrent terminals
+	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "generous-team", ownerUserID, generousPlan, organizationModels.OrgTypeTeam)
+
+	// attackerUserID is NOT a member — should not be able to check limits against this org
+
+	svc := services.NewEffectivePlanService(db)
+	check, err := svc.CheckEffectiveUsageLimitForOrg(attackerUserID, &teamOrg.ID, "concurrent_terminals", 1)
+
+	// EXPECTED: error indicating the user is not a member of the org
+	// CURRENT BUG: returns the org's generous limits (100 terminals) for the attacker
+	assert.Error(t, err, "should reject usage limit check for non-member user")
+	assert.Nil(t, check, "should not return usage limits for non-member user")
+}
+
 func TestCheckEffectiveUsageLimitForOrg_NilOrg_FallsBackToGlobal(t *testing.T) {
 	db := freshTestDB(t)
 	ensureTerminalsTable(t, db)

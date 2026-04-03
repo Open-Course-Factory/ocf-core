@@ -2,6 +2,7 @@
 package terminalTrainer_tests
 
 import (
+	"strings"
 	"testing"
 
 	entityManagementModels "soli/formations/src/entityManagement/models"
@@ -212,4 +213,73 @@ func TestValidateBackendForContext_PersonalOrg_NoConfig_PlanRestricts(t *testing
 	assert.Error(t, err)
 	assert.Nil(t, resp)
 	assert.Contains(t, err.Error(), "not allowed by your subscription plan")
+}
+
+// TestValidateBackendForContext_NilOrg_NoPlanRestrictions_ArbitraryBackend_ShouldRejectOrDefault
+// verifies that when a plan has empty AllowedBackends and empty DefaultBackend, an explicit
+// backend request should NOT be passed through verbatim. It should either be rejected or
+// fall back to the system default.
+//
+// BUG: The current implementation falls through to `return requestedBackend, nil` at the
+// end of validateBackendForContext when plan.AllowedBackends is empty and plan.DefaultBackend
+// is empty. This allows any arbitrary backend name to pass validation, which means users
+// on unrestricted plans can request backends they shouldn't have access to.
+//
+// The fix should ensure that when a plan has no backend restrictions (empty AllowedBackends
+// and empty DefaultBackend), the system default is returned instead of the arbitrary request.
+func TestValidateBackendForContext_NilOrg_NoPlanRestrictions_ArbitraryBackend_ShouldRejectOrDefault(t *testing.T) {
+	db := freshTestDB(t)
+
+	userID := "user-no-restrictions-passthrough"
+	_, err := createTestUserKey(db, userID)
+	require.NoError(t, err)
+
+	// Plan with NO backend restrictions: empty AllowedBackends and empty DefaultBackend
+	plan := createPlanWithBackendConfig(t, db, "UnrestrictedPlan", 5, 2,
+		"",         // no DefaultBackend
+		[]string{}, // no AllowedBackends
+	)
+
+	svc := services.NewTerminalTrainerService(db)
+	sessionInput := dto.CreateTerminalSessionInput{
+		Terms:   "accepted",
+		Backend: "some-arbitrary-backend", // arbitrary backend that doesn't exist
+		// No OrganizationID — nil org context
+	}
+
+	resp, err := svc.StartSessionWithPlan(userID, sessionInput, plan)
+
+	// EXPECTED behavior: When a plan has no backend configuration (no AllowedBackends,
+	// no DefaultBackend), an arbitrary backend request should NOT pass through.
+	// The function should return the system default backend, not the arbitrary name.
+	//
+	// CURRENT BUG: validateBackendForContext returns ("some-arbitrary-backend", nil),
+	// passing the arbitrary name through without validation. The function then
+	// proceeds to startSession with a possibly non-existent backend name.
+	//
+	// We verify this bug by checking: if the call succeeds or fails with a network
+	// error (connection refused), that proves the arbitrary backend was passed through
+	// without validation. If backend validation worked correctly, we'd get either:
+	// - An error about the backend not being allowed, OR
+	// - A successful session using the system default backend (not the arbitrary one)
+	if err != nil {
+		// If there's an error, it should be a validation error about the backend,
+		// NOT a network/connection error from trying to contact an invalid backend
+		assert.NotContains(t, err.Error(), "connection refused",
+			"should not reach network call with arbitrary backend — validation should have caught it")
+		assert.NotContains(t, err.Error(), "no such host",
+			"should not reach network call with arbitrary backend — validation should have caught it")
+		assert.NotContains(t, err.Error(), "failed to get user key",
+			"should not reach session creation with arbitrary backend — validation should have caught it")
+		// The error should be about the backend being rejected
+		assert.True(t,
+			strings.Contains(err.Error(), "not allowed") || strings.Contains(err.Error(), "invalid backend"),
+			"error should indicate backend was rejected by validation, got: %s", err.Error())
+	} else {
+		// If no error, the session was created — but the backend should be the system
+		// default, not the arbitrary one we requested
+		assert.NotNil(t, resp)
+		assert.NotEqual(t, "some-arbitrary-backend", sessionInput.Backend,
+			"arbitrary backend should not have been passed through; should be system default")
+	}
 }
