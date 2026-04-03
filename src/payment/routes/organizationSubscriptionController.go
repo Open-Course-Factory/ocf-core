@@ -8,6 +8,7 @@ import (
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
+	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -328,9 +329,10 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 		// Resolve features for this specific org context
 		result, err := osc.effectivePlanService.GetUserEffectivePlanForOrg(userID, &orgID)
 		if err != nil {
+			utils.Warn("Failed to get effective plan for user %s org %s: %v", userID, orgID.String(), err)
 			ctx.JSON(http.StatusNotFound, &errors.APIError{
 				ErrorCode:    http.StatusNotFound,
-				ErrorMessage: "No subscription found for this organization context: " + err.Error(),
+				ErrorMessage: "No subscription found for this organization context",
 			})
 			return
 		}

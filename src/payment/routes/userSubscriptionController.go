@@ -287,9 +287,15 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 	// Check for optional organization_id query param for org-context-aware resolution
 	var orgID *uuid.UUID
 	if orgIDStr := ctx.Query("organization_id"); orgIDStr != "" {
-		if parsed, err := uuid.Parse(orgIDStr); err == nil {
-			orgID = &parsed
+		parsed, err := uuid.Parse(orgIDStr)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: "Invalid organization_id format",
+			})
+			return
 		}
+		orgID = &parsed
 	}
 
 	// Use unified effective plan resolution (org-scoped if org context provided)
