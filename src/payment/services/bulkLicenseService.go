@@ -367,55 +367,67 @@ func (s *bulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUs
 		return fmt.Errorf("failed to update Stripe subscription quantity: %w", err)
 	}
 
-	if difference > 0 {
-		// Get Stripe customer ID from an existing license in the batch
-		var existingLicense models.UserSubscription
-		err = s.db.Where("subscription_batch_id = ?", batchID).First(&existingLicense).Error
-		if err != nil {
-			return fmt.Errorf("failed to get existing license for customer ID: %w", err)
-		}
-
-		// Adding licenses
-		stripeSubID := batch.StripeSubscriptionID
-		for i := 0; i < difference; i++ {
-			license := models.UserSubscription{
-				UserID:               "",
-				PurchaserUserID:      &batch.PurchaserUserID,
-				SubscriptionBatchID:  &batch.ID,
-				SubscriptionPlanID:   batch.SubscriptionPlanID,
-				StripeSubscriptionID: &stripeSubID,
-				StripeCustomerID:     existingLicense.StripeCustomerID, // Use same customer ID as existing licenses
-				Status:               "unassigned",
-				CurrentPeriodStart:   batch.CurrentPeriodStart,
-				CurrentPeriodEnd:     batch.CurrentPeriodEnd,
+	// Wrap license creation/deletion and batch quantity update in a transaction
+	// to prevent inconsistent state if any operation fails mid-loop.
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if difference > 0 {
+			// Get Stripe customer ID from an existing license in the batch
+			var existingLicense models.UserSubscription
+			if err := tx.Where("subscription_batch_id = ?", batchID).First(&existingLicense).Error; err != nil {
+				return fmt.Errorf("failed to get existing license for customer ID: %w", err)
 			}
-			if err := s.subscriptionRepo.CreateUserSubscription(&license); err != nil {
-				utils.Error("Failed to create additional license: %v", err)
+
+			// Adding licenses
+			stripeSubID := batch.StripeSubscriptionID
+			for i := 0; i < difference; i++ {
+				license := models.UserSubscription{
+					UserID:               "",
+					PurchaserUserID:      &batch.PurchaserUserID,
+					SubscriptionBatchID:  &batch.ID,
+					SubscriptionPlanID:   batch.SubscriptionPlanID,
+					StripeSubscriptionID: &stripeSubID,
+					StripeCustomerID:     existingLicense.StripeCustomerID, // Use same customer ID as existing licenses
+					Status:               "unassigned",
+					CurrentPeriodStart:   batch.CurrentPeriodStart,
+					CurrentPeriodEnd:     batch.CurrentPeriodEnd,
+				}
+				if err := tx.Create(&license).Error; err != nil {
+					return fmt.Errorf("failed to create additional license %d: %w", i, err)
+				}
 			}
-		}
-		utils.Info("Added %d licenses to batch %s", difference, batchID)
-	} else {
-		// Removing licenses (only unassigned ones)
-		toRemove := -difference
-		var unassignedLicenses []models.UserSubscription
-		s.db.Where("subscription_batch_id = ? AND status = ?", batchID, "unassigned").
-			Limit(toRemove).
-			Find(&unassignedLicenses)
+			utils.Info("Added %d licenses to batch %s", difference, batchID)
+		} else {
+			// Removing licenses (only unassigned ones)
+			toRemove := -difference
+			var unassignedLicenses []models.UserSubscription
+			if err := tx.Where("subscription_batch_id = ? AND status = ?", batchID, "unassigned").
+				Limit(toRemove).
+				Find(&unassignedLicenses).Error; err != nil {
+				return fmt.Errorf("failed to find unassigned licenses: %w", err)
+			}
 
-		if len(unassignedLicenses) < toRemove {
-			return fmt.Errorf("not enough unassigned licenses to remove")
+			if len(unassignedLicenses) < toRemove {
+				return fmt.Errorf("not enough unassigned licenses to remove")
+			}
+
+			for _, license := range unassignedLicenses {
+				if err := tx.Delete(&license).Error; err != nil {
+					return fmt.Errorf("failed to delete license %s: %w", license.ID, err)
+				}
+			}
+			utils.Info("Removed %d licenses from batch %s", toRemove, batchID)
 		}
 
-		for _, license := range unassignedLicenses {
-			s.db.Delete(&license)
+		// Update batch total quantity within the same transaction
+		batch.TotalQuantity = newQuantity
+		if err := tx.Save(batch).Error; err != nil {
+			return fmt.Errorf("failed to update batch: %w", err)
 		}
-		utils.Info("Removed %d licenses from batch %s", toRemove, batchID)
-	}
 
-	// Update batch total quantity
-	batch.TotalQuantity = newQuantity
-	if err := s.batchRepository.Update(batch); err != nil {
-		return fmt.Errorf("failed to update batch: %w", err)
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -624,19 +636,24 @@ func (s *bulkLicenseService) PermanentlyDeleteBatch(batchID uuid.UUID, requestin
 		}
 	}
 
-	// Step 4: Delete all licenses in this batch
-	utils.Info("🗑️ Deleting %d licenses from batch %s", len(licenses), batchID)
-	for _, license := range licenses {
-		if err := s.db.Unscoped().Delete(&license).Error; err != nil {
-			utils.Error("Failed to delete license %s: %v", license.ID, err)
-			// Continue with other deletions
+	// Step 4+5: Delete all licenses and the batch in a transaction
+	// to prevent orphaned licenses if one deletion fails.
+	utils.Info("🗑️ Deleting %d licenses and batch %s", len(licenses), batchID)
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		for _, license := range licenses {
+			if err := tx.Unscoped().Delete(&license).Error; err != nil {
+				return fmt.Errorf("failed to delete license %s: %w", license.ID, err)
+			}
 		}
-	}
 
-	// Step 5: Delete the batch itself
-	utils.Info("🗑️ Deleting batch record %s", batchID)
-	if err := s.db.Unscoped().Delete(&models.SubscriptionBatch{}, batchID).Error; err != nil {
-		return fmt.Errorf("failed to delete batch: %w", err)
+		if err := tx.Unscoped().Delete(&models.SubscriptionBatch{}, batchID).Error; err != nil {
+			return fmt.Errorf("failed to delete batch: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	utils.Info("✅ Successfully deleted batch %s and all %d licenses", batchID, len(licenses))
