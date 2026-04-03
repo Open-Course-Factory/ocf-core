@@ -1738,11 +1738,12 @@ func (tts *terminalTrainerService) validateBackendForContext(orgID *uuid.UUID, p
 		}
 	}
 
-	// Final fallback: system default
-	if requestedBackend == "" {
-		return tts.getSystemDefault(), nil
+	// Final fallback: no org config, no plan config — only system default is allowed
+	systemDefault := tts.getSystemDefault()
+	if requestedBackend == "" || requestedBackend == systemDefault {
+		return systemDefault, nil
 	}
-	return requestedBackend, nil
+	return "", fmt.Errorf("backend '%s' is not allowed: no backend restrictions configured, only system default is available", requestedBackend)
 }
 
 // validateBackendForOrg validates and resolves the backend for an organization
