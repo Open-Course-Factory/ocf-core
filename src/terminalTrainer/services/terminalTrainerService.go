@@ -331,17 +331,18 @@ func (tts *terminalTrainerService) startSession(userID string, sessionInput dto.
 	}
 
 	terminal := &models.Terminal{
-		SessionID:         sessionResp.SessionID,
-		UserID:            userID,
-		Name:              sessionInput.Name,
-		Status:            "active",
-		ExpiresAt:         expiresAt,
-		InstanceType:      sessionInput.InstanceType,
-		MachineSize:       sessionResp.MachineSize,
-		Backend:           sessionResp.Backend,
-		OrganizationID:    orgID,
-		UserTerminalKeyID: userKey.ID,
-		UserTerminalKey:   *userKey,
+		SessionID:          sessionResp.SessionID,
+		UserID:             userID,
+		Name:               sessionInput.Name,
+		Status:             "active",
+		ExpiresAt:          expiresAt,
+		InstanceType:       sessionInput.InstanceType,
+		MachineSize:        sessionResp.MachineSize,
+		Backend:            sessionResp.Backend,
+		OrganizationID:     orgID,
+		SubscriptionPlanID: sessionInput.SubscriptionPlanID,
+		UserTerminalKeyID:  userKey.ID,
+		UserTerminalKey:    *userKey,
 	}
 
 	if err := tts.repository.CreateTerminalSession(terminal); err != nil {
@@ -438,7 +439,7 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 		orgID = &parsed
 	}
 
-	validatedBackend, err := tts.validateBackendForOrg(orgID, sessionInput.Backend)
+	validatedBackend, err := tts.validateBackendForContext(orgID, plan, sessionInput.Backend)
 	if err != nil {
 		return nil, err
 	}
@@ -454,6 +455,9 @@ func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionIn
 	sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
 	utils.Debug("StartSessionWithPlan - FINAL: HistoryRetentionDays=%d, RecordingEnabled=%d",
 		sessionInput.HistoryRetentionDays, sessionInput.RecordingEnabled)
+
+	// Set the plan ID for audit trail
+	sessionInput.SubscriptionPlanID = &plan.ID
 
 	// Appeler la méthode startSession interne avec les paramètres validés
 	return tts.startSession(userID, sessionInput)
@@ -1687,6 +1691,58 @@ func (tts *terminalTrainerService) IsBackendOnline(backendName string) (bool, er
 
 	// Backend not found in list - assume offline
 	return false, nil
+}
+
+// validateBackendForContext resolves the backend using a multi-level chain:
+// 1. If orgID != nil and the org has backend config → delegate to validateBackendForOrg
+// 2. Otherwise, apply plan-level backend rules
+// 3. Final fallback: system default from tt-backend
+func (tts *terminalTrainerService) validateBackendForContext(orgID *uuid.UUID, plan *paymentModels.SubscriptionPlan, requestedBackend string) (string, error) {
+	// If org context is present, check if the org has its own backend config
+	if orgID != nil {
+		var org orgModels.Organization
+		if err := tts.db.First(&org, "id = ?", *orgID).Error; err != nil {
+			return "", fmt.Errorf("failed to get organization: %w", err)
+		}
+
+		// If the org has its own backend config, delegate to org rules
+		if len(org.AllowedBackends) > 0 || org.DefaultBackend != "" {
+			return tts.validateBackendForOrg(orgID, requestedBackend)
+		}
+	}
+
+	// No org backend config (or no org / personal org) → apply plan-level rules
+	if plan != nil {
+		// No backend requested → use plan default, fallback to system default
+		if requestedBackend == "" {
+			if plan.DefaultBackend != "" {
+				return plan.DefaultBackend, nil
+			}
+			return tts.getSystemDefault(), nil
+		}
+
+		// Backend requested → check against plan's AllowedBackends
+		if len(plan.AllowedBackends) > 0 {
+			for _, allowed := range plan.AllowedBackends {
+				if allowed == requestedBackend {
+					return requestedBackend, nil
+				}
+			}
+			return "", fmt.Errorf("backend '%s' is not allowed by your subscription plan. Allowed backends: %v",
+				requestedBackend, plan.AllowedBackends)
+		}
+
+		// Plan has no AllowedBackends restriction → use plan default or system default
+		if plan.DefaultBackend != "" {
+			return plan.DefaultBackend, nil
+		}
+	}
+
+	// Final fallback: system default
+	if requestedBackend == "" {
+		return tts.getSystemDefault(), nil
+	}
+	return requestedBackend, nil
 }
 
 // validateBackendForOrg validates and resolves the backend for an organization

@@ -123,6 +123,9 @@ type CreateTerminalSessionInput struct {
 	ExternalRef          string `json:"external_ref,omitempty" form:"external_ref"`           // Optional training session reference
 	Hostname             string   `json:"hostname,omitempty" form:"hostname"`
 	Packages             []string `json:"packages,omitempty" form:"packages"`
+
+	// Internal fields (not bound from JSON, set by service layer)
+	SubscriptionPlanID *uuid.UUID `json:"-"` // Set by StartSessionWithPlan for audit trail
 }
 
 type TerminalSessionResponse struct {
