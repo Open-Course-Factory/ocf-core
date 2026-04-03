@@ -96,6 +96,18 @@ func createFullSourceScenario(t *testing.T, db *gorm.DB, orgID *uuid.UUID) model
 	}
 	require.NoError(t, db.Create(&textFile).Error)
 
+	fgFile := models.ProjectFile{
+		Name: "foreground.sh", RelPath: "step1/foreground.sh", ContentType: "script",
+		Content: "#!/bin/bash\necho fg", StorageType: "database", SizeBytes: 21,
+	}
+	require.NoError(t, db.Create(&fgFile).Error)
+
+	hintFile := models.ProjectFile{
+		Name: "hint.md", RelPath: "step1/hint.md", ContentType: "markdown",
+		Content: "# Hint\nTry this approach", StorageType: "database", SizeBytes: 25,
+	}
+	require.NoError(t, db.Create(&hintFile).Error)
+
 	// Create an image file linked to the scenario
 	imageFile := models.ProjectFile{
 		Name: "diagram.png", RelPath: "images/diagram.png", ContentType: "image",
@@ -118,7 +130,9 @@ func createFullSourceScenario(t *testing.T, db *gorm.DB, orgID *uuid.UUID) model
 		FlagLevel:          1,
 		VerifyScriptID:     &verifyFile.ID,
 		BackgroundScriptID: &bgFile.ID,
+		ForegroundScriptID: &fgFile.ID,
 		TextFileID:         &textFile.ID,
+		HintFileID:         &hintFile.ID,
 	}
 	require.NoError(t, db.Create(&step1).Error)
 
@@ -285,10 +299,12 @@ func TestDuplicateScenario_StepFKsUpdated(t *testing.T) {
 	require.NoError(t, db.Where("scenario_id = ?", result.ID).Order("\"order\" ASC").Find(&newSteps).Error)
 	require.Len(t, newSteps, 2)
 
-	// Step 0 had VerifyScriptID, BackgroundScriptID, TextFileID set
+	// Step 0 had all 5 FK fields set
 	assert.NotNil(t, newSteps[0].VerifyScriptID)
 	assert.NotNil(t, newSteps[0].BackgroundScriptID)
+	assert.NotNil(t, newSteps[0].ForegroundScriptID)
 	assert.NotNil(t, newSteps[0].TextFileID)
+	assert.NotNil(t, newSteps[0].HintFileID)
 
 	// Verify the FKs point to new project files (not the source ones)
 	var sourceSteps []models.ScenarioStep
@@ -296,7 +312,9 @@ func TestDuplicateScenario_StepFKsUpdated(t *testing.T) {
 
 	assert.NotEqual(t, *sourceSteps[0].VerifyScriptID, *newSteps[0].VerifyScriptID)
 	assert.NotEqual(t, *sourceSteps[0].BackgroundScriptID, *newSteps[0].BackgroundScriptID)
+	assert.NotEqual(t, *sourceSteps[0].ForegroundScriptID, *newSteps[0].ForegroundScriptID)
 	assert.NotEqual(t, *sourceSteps[0].TextFileID, *newSteps[0].TextFileID)
+	assert.NotEqual(t, *sourceSteps[0].HintFileID, *newSteps[0].HintFileID)
 
 	// Verify the new project files actually exist and have the right content
 	var verifyFile models.ProjectFile

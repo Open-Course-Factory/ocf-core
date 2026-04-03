@@ -80,8 +80,13 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 			flagSecret = hex.EncodeToString(secretBytes)
 		}
 
+		// Generate a short random suffix to ensure unique slug on repeated duplication
+		suffixBytes := make([]byte, 3)
+		rand.Read(suffixBytes)
+		slugSuffix := hex.EncodeToString(suffixBytes) // 6 hex chars
+
 		newScenario = &models.Scenario{
-			Name:           utils.GenerateSlug(source.Title + " Copy"),
+			Name:           utils.GenerateSlug(source.Title+" Copy") + "-" + slugSuffix,
 			Title:          source.Title + " (Copy)",
 			Description:    source.Description,
 			Difficulty:     source.Difficulty,
@@ -112,6 +117,9 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 		}
 
 		// 2. Copy ProjectFiles (map old ID -> new ID)
+		// NOTE: StorageRef is shallow-copied. If S3-backed storage is introduced,
+		// duplication must either copy the S3 object or implement reference counting
+		// to prevent a delete of one copy from breaking the other's reference.
 		fileIDMap := make(map[uuid.UUID]uuid.UUID) // oldID -> newID
 		for _, srcFile := range sourceFiles {
 			newFile := models.ProjectFile{

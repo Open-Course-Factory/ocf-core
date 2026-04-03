@@ -2548,10 +2548,17 @@ func (sc *scenarioController) DuplicateScenario(ctx *gin.Context) {
 	newScenario, err := sc.duplicateService.DuplicateScenario(scenarioID, userID, nil)
 	if err != nil {
 		slog.Error("failed to duplicate scenario", "err", err)
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Scenario not found",
-		})
+		if strings.Contains(err.Error(), "not found") {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Scenario not found",
+			})
+		} else {
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Failed to duplicate scenario",
+			})
+		}
 		return
 	}
 
