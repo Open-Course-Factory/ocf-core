@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 
+	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
 	"soli/formations/src/utils"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -30,7 +32,9 @@ type EffectivePlanResult struct {
 // EffectivePlanService is the single source of truth for "what plan does this user have?"
 type EffectivePlanService interface {
 	GetUserEffectivePlan(userID string) (*EffectivePlanResult, error)
+	GetUserEffectivePlanForOrg(userID string, orgID *uuid.UUID) (*EffectivePlanResult, error)
 	CheckEffectiveUsageLimit(userID string, metricType string, increment int64) (*UsageLimitCheck, error)
+	CheckEffectiveUsageLimitForOrg(userID string, orgID *uuid.UUID, metricType string, increment int64) (*UsageLimitCheck, error)
 }
 
 type effectivePlanService struct {
@@ -169,6 +173,115 @@ func (s *effectivePlanService) CheckEffectiveUsageLimit(userID string, metricTyp
 	}
 
 	// 4. Calculate and return
+	allowed := limit == -1 || (currentUsage+increment) <= limit
+	var remaining int64
+	if limit == -1 {
+		remaining = -1
+	} else {
+		remaining = limit - currentUsage
+		if remaining < 0 {
+			remaining = 0
+		}
+	}
+
+	message := ""
+	if !allowed {
+		message = fmt.Sprintf("Usage limit exceeded for %s. Current: %d, Limit: %d", metricType, currentUsage, limit)
+	}
+
+	return &UsageLimitCheck{
+		Allowed:        allowed,
+		CurrentUsage:   currentUsage,
+		Limit:          limit,
+		RemainingUsage: remaining,
+		Message:        message,
+		UserID:         userID,
+		MetricType:     metricType,
+		Source:         result.Source,
+	}, nil
+}
+
+// GetUserEffectivePlanForOrg resolves the effective plan for a user in the context of a
+// specific organization. If orgID is nil, falls back to the global resolution.
+func (s *effectivePlanService) GetUserEffectivePlanForOrg(userID string, orgID *uuid.UUID) (*EffectivePlanResult, error) {
+	// If no org context, fall back to global resolution (backward compat)
+	if orgID == nil {
+		return s.GetUserEffectivePlan(userID)
+	}
+
+	// Load the organization to check its type
+	var org orgModels.Organization
+	if err := s.db.First(&org, "id = ?", *orgID).Error; err != nil {
+		return nil, fmt.Errorf("failed to load organization %s: %w", orgID.String(), err)
+	}
+
+	if org.IsPersonalOrg() {
+		// Personal org → return user's personal subscription
+		sub, err := s.paymentRepo.GetActiveUserSubscription(userID)
+		if err != nil {
+			return nil, fmt.Errorf("no active personal subscription for user %s: %w", userID, err)
+		}
+		return &EffectivePlanResult{
+			Plan:             &sub.SubscriptionPlan,
+			Source:           PlanSourcePersonal,
+			UserSubscription: sub,
+		}, nil
+	}
+
+	// Team org → return that org's subscription
+	orgSub, err := s.orgSubRepo.GetActiveOrganizationSubscription(*orgID)
+	if err != nil {
+		return nil, fmt.Errorf("no active subscription for organization %s: %w", orgID.String(), err)
+	}
+	return &EffectivePlanResult{
+		Plan:                     &orgSub.SubscriptionPlan,
+		Source:                   PlanSourceOrganization,
+		OrganizationSubscription: orgSub,
+	}, nil
+}
+
+// CheckEffectiveUsageLimitForOrg checks usage limits in the context of a specific org.
+// If orgID is nil, falls back to the global resolution.
+func (s *effectivePlanService) CheckEffectiveUsageLimitForOrg(userID string, orgID *uuid.UUID, metricType string, increment int64) (*UsageLimitCheck, error) {
+	result, err := s.GetUserEffectivePlanForOrg(userID, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get effective plan for org context: %w", err)
+	}
+
+	plan := result.Plan
+
+	// Determine the limit from the plan
+	var limit int64
+	switch metricType {
+	case "concurrent_terminals":
+		limit = int64(plan.MaxConcurrentTerminals)
+	case "courses_created":
+		limit = int64(plan.MaxCourses)
+	default:
+		limit = -1 // unlimited
+	}
+
+	// Get current usage
+	var currentUsage int64
+	if metricType == "concurrent_terminals" {
+		countErr := s.db.Table("terminals").
+			Where("user_id = ? AND status = ? AND deleted_at IS NULL", userID, "active").
+			Count(&currentUsage).Error
+		if countErr != nil {
+			return nil, fmt.Errorf("failed to count active terminals: %w", countErr)
+		}
+	} else {
+		metrics, metricsErr := s.paymentRepo.GetUserUsageMetrics(userID, metricType)
+		if metricsErr != nil {
+			if !errors.Is(metricsErr, gorm.ErrRecordNotFound) {
+				utils.Warn("Failed to get usage metrics for user %s, metric %s: %v", userID, metricType, metricsErr)
+			}
+			currentUsage = 0
+		} else {
+			currentUsage = metrics.CurrentValue
+		}
+	}
+
 	allowed := limit == -1 || (currentUsage+increment) <= limit
 	var remaining int64
 	if limit == -1 {
