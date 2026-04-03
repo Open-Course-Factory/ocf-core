@@ -150,6 +150,10 @@ func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan
 		AllowedTemplates:          plan.AllowedTemplates,
 		CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
 
+		// Backend routing
+		DefaultBackend:  plan.DefaultBackend,
+		AllowedBackends: plan.AllowedBackends,
+
 		// Planned features
 		PlannedFeatures:  plan.PlannedFeatures,
 		UseTieredPricing: plan.UseTieredPricing,

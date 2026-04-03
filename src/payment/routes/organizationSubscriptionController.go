@@ -487,6 +487,10 @@ func convertSubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.Subscrip
 		AllowedTemplates:           plan.AllowedTemplates,
 		CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
 
+		// Backend routing
+		DefaultBackend:  plan.DefaultBackend,
+		AllowedBackends: plan.AllowedBackends,
+
 		// Planned features
 		PlannedFeatures: plan.PlannedFeatures,
 

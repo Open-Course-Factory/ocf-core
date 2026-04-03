@@ -27,6 +27,8 @@ type CreateSubscriptionPlanInput struct {
 	DataPersistenceGB              int      `json:"data_persistence_gb" mapstructure:"data_persistence_gb"`
 	AllowedTemplates               []string `json:"allowed_templates" mapstructure:"allowed_templates"`
 	CommandHistoryRetentionDays    int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
+	DefaultBackend                 string   `json:"default_backend" mapstructure:"default_backend"`
+	AllowedBackends                []string `json:"allowed_backends" mapstructure:"allowed_backends"`
 	Priority                       int      `json:"priority" mapstructure:"priority"`
 	IsActive                       *bool    `json:"is_active" mapstructure:"is_active"`
 	IsCatalog                      *bool    `json:"is_catalog" mapstructure:"is_catalog"`
@@ -48,6 +50,8 @@ type UpdateSubscriptionPlanInput struct {
 	DataPersistenceGB              *int     `json:"data_persistence_gb,omitempty" mapstructure:"data_persistence_gb"`
 	AllowedTemplates               []string `json:"allowed_templates,omitempty" mapstructure:"allowed_templates"`
 	CommandHistoryRetentionDays    *int     `json:"command_history_retention_days,omitempty" mapstructure:"command_history_retention_days"`
+	DefaultBackend                 string   `json:"default_backend,omitempty" mapstructure:"default_backend"`
+	AllowedBackends                []string `json:"allowed_backends,omitempty" mapstructure:"allowed_backends"`
 	Priority                       *int     `json:"priority,omitempty" mapstructure:"priority"`
 }
 
@@ -80,6 +84,10 @@ type SubscriptionPlanOutput struct {
 	DataPersistenceGB         int      `json:"data_persistence_gb"`
 	AllowedTemplates            []string `json:"allowed_templates"`
 	CommandHistoryRetentionDays int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
+
+	// Backend routing
+	DefaultBackend  string   `json:"default_backend"`
+	AllowedBackends []string `json:"allowed_backends"`
 
 	// Planned features (announced but not yet available)
 	PlannedFeatures []string `json:"planned_features"` // Features coming soon

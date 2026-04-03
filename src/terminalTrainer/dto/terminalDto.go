@@ -32,9 +32,10 @@ type TerminalOutput struct {
 	ExpiresAt       time.Time  `json:"expires_at"`
 	InstanceType    string     `json:"instance_type"`
 	MachineSize     string     `json:"machine_size"` // XS, S, M, L, XL
-	Backend         string     `json:"backend,omitempty"`
-	OrganizationID  *uuid.UUID `json:"organization_id,omitempty"`
-	IsHiddenByOwner bool       `json:"is_hidden_by_owner"`
+	Backend            string     `json:"backend,omitempty"`
+	OrganizationID     *uuid.UUID `json:"organization_id,omitempty"`
+	SubscriptionPlanID *uuid.UUID `json:"subscription_plan_id,omitempty"`
+	IsHiddenByOwner    bool       `json:"is_hidden_by_owner"`
 	HiddenByOwnerAt *time.Time `json:"hidden_by_owner_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 }

@@ -36,6 +36,10 @@ type SubscriptionPlan struct {
 	AllowedTemplates           []string `gorm:"serializer:json" json:"allowed_templates"`       // Template IDs allowed
 	CommandHistoryRetentionDays int     `gorm:"default:0" json:"command_history_retention_days" mapstructure:"command_history_retention_days"` // days to retain command history (minimum 1)
 
+	// Backend routing (applies when org has no backend config)
+	DefaultBackend  string   `gorm:"type:varchar(255);default:''" json:"default_backend"`
+	AllowedBackends []string `gorm:"serializer:json" json:"allowed_backends"` // Empty = no restriction
+
 	// Add-on pricing (Stripe Price IDs for metered/add-on billing)
 	AddonNetworkPriceID  *string `gorm:"type:varchar(100)" json:"addon_network_price_id,omitempty"`
 	AddonStoragePriceID  *string `gorm:"type:varchar(100)" json:"addon_storage_price_id,omitempty"`
