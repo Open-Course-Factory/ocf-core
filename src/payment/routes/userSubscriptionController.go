@@ -284,11 +284,19 @@ func (sc *userSubscriptionController) CreatePortalSession(ctx *gin.Context) {
 func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
-	// Use unified effective plan resolution
-	result, err := sc.effectivePlanService.GetUserEffectivePlan(userId)
+	// Check for optional organization_id query param for org-context-aware resolution
+	var orgID *uuid.UUID
+	if orgIDStr := ctx.Query("organization_id"); orgIDStr != "" {
+		if parsed, err := uuid.Parse(orgIDStr); err == nil {
+			orgID = &parsed
+		}
+	}
+
+	// Use unified effective plan resolution (org-scoped if org context provided)
+	result, err := sc.effectivePlanService.GetUserEffectivePlanForOrg(userId, orgID)
 	if err != nil {
 		// This handles the case where user returns from checkout before webhook fires
-		utils.Debug("No effective plan found for user %s, attempting sync from Stripe...", userId)
+		utils.Debug("No effective plan found for user %s (org: %v), attempting sync from Stripe...", userId, orgID)
 
 		syncResult, syncErr := sc.stripeService.SyncUserSubscriptions(userId)
 		if syncErr != nil {
@@ -298,7 +306,7 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 				syncResult.CreatedSubscriptions+syncResult.UpdatedSubscriptions, userId)
 
 			// Retry after sync
-			result, err = sc.effectivePlanService.GetUserEffectivePlan(userId)
+			result, err = sc.effectivePlanService.GetUserEffectivePlanForOrg(userId, orgID)
 		}
 	}
 

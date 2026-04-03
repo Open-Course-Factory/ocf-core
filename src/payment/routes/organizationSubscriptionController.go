@@ -30,14 +30,16 @@ type OrganizationSubscriptionController interface {
 }
 
 type organizationSubscriptionController struct {
-	db            *gorm.DB
-	orgSubService services.OrganizationSubscriptionService
+	db                   *gorm.DB
+	orgSubService        services.OrganizationSubscriptionService
+	effectivePlanService services.EffectivePlanService
 }
 
 func NewOrganizationSubscriptionController(db *gorm.DB) OrganizationSubscriptionController {
 	return &organizationSubscriptionController{
-		db:            db,
-		orgSubService: services.NewOrganizationSubscriptionService(db),
+		db:                   db,
+		orgSubService:        services.NewOrganizationSubscriptionService(db),
+		effectivePlanService: services.NewEffectivePlanService(db),
 	}
 }
 
@@ -312,6 +314,39 @@ func (osc *organizationSubscriptionController) CancelOrganizationSubscription(ct
 func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 
+	// Check for optional organization_id query param for org-context-aware resolution
+	if orgIDStr := ctx.Query("organization_id"); orgIDStr != "" {
+		orgID, err := uuid.Parse(orgIDStr)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: "Invalid organization_id format",
+			})
+			return
+		}
+
+		// Resolve features for this specific org context
+		result, err := osc.effectivePlanService.GetUserEffectivePlanForOrg(userID, &orgID)
+		if err != nil {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "No subscription found for this organization context: " + err.Error(),
+			})
+			return
+		}
+
+		effectivePlan := convertSubscriptionPlanToOutput(result.Plan)
+		output := dto.UserEffectiveFeaturesOutput{
+			UserID:                  userID,
+			EffectiveFeatures:       effectivePlan,
+			SourceOrganizations:     nil, // Single org context, no aggregation
+			HasPersonalSubscription: result.Source == services.PlanSourcePersonal,
+		}
+		ctx.JSON(http.StatusOK, output)
+		return
+	}
+
+	// No org context — return aggregated features from all organizations (backward compat)
 	features, err := osc.orgSubService.GetUserEffectiveFeatures(userID)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
