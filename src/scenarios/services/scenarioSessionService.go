@@ -28,6 +28,34 @@ type VerificationServiceInterface interface {
 	ExecInContainer(sessionID string, command []string, timeout int) (exitCode int, stdout string, stderr string, err error)
 }
 
+// defaultAllowedFlagPaths is the fallback list of allowed path prefixes for flag deployment
+// when a scenario does not define its own AllowedFlagPaths.
+var defaultAllowedFlagPaths = []string{"/tmp/", "/home/", "/var/", "/opt/", "/World/"}
+
+// parseAllowedFlagPaths splits a comma-separated string of path prefixes into a slice.
+// Each prefix is trimmed of whitespace. Empty entries are ignored.
+func parseAllowedFlagPaths(raw string) []string {
+	parts := strings.Split(raw, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// isFlagPathAllowed checks whether flagPath starts with any of the allowed prefixes.
+func isFlagPathAllowed(flagPath string, allowedPrefixes []string) bool {
+	for _, prefix := range allowedPrefixes {
+		if strings.HasPrefix(flagPath, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // TerminalStopFunc is a callback to stop a terminal session (injected from controller layer)
 type TerminalStopFunc func(terminalSessionID string) error
 
@@ -887,7 +915,11 @@ func (s *ScenarioSessionService) deploySingleFlagToContainer(terminalSessionID s
 		slog.Warn("skipping flag deployment: path contains '..'", "step_order", flag.StepOrder, "path", flagPath)
 		return
 	}
-	if !strings.HasPrefix(flagPath, "/tmp/") && !strings.HasPrefix(flagPath, "/home/") && !strings.HasPrefix(flagPath, "/var/") && !strings.HasPrefix(flagPath, "/opt/") && !strings.HasPrefix(flagPath, "/World/") {
+	allowedPrefixes := defaultAllowedFlagPaths
+	if scenario.AllowedFlagPaths != "" {
+		allowedPrefixes = parseAllowedFlagPaths(scenario.AllowedFlagPaths)
+	}
+	if !isFlagPathAllowed(flagPath, allowedPrefixes) {
 		slog.Warn("skipping flag deployment: path not in allowed prefix", "step_order", flag.StepOrder, "path", flagPath)
 		return
 	}

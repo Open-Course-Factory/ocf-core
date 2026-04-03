@@ -20,7 +20,8 @@ type CreateScenarioInput struct {
 	GitRepository  string     `json:"git_repository,omitempty" mapstructure:"git_repository"`
 	GitBranch      string     `json:"git_branch,omitempty" mapstructure:"git_branch"`
 	SourcePath     string     `json:"source_path,omitempty" mapstructure:"source_path"`
-	FlagsEnabled   bool       `json:"flags_enabled,omitempty" mapstructure:"flags_enabled"`
+	FlagsEnabled     bool       `json:"flags_enabled,omitempty" mapstructure:"flags_enabled"`
+	AllowedFlagPaths string     `json:"allowed_flag_paths,omitempty" mapstructure:"allowed_flag_paths"`
 	GshEnabled     bool       `json:"gsh_enabled,omitempty" mapstructure:"gsh_enabled"`
 	CrashTraps     bool       `json:"crash_traps,omitempty" mapstructure:"crash_traps"`
 	Objectives     string     `json:"objectives,omitempty" mapstructure:"objectives" binding:"omitempty,max=5000"`
@@ -49,7 +50,8 @@ type EditScenarioInput struct {
 	GitRepository  *string    `json:"git_repository,omitempty" mapstructure:"git_repository"`
 	GitBranch      *string    `json:"git_branch,omitempty" mapstructure:"git_branch"`
 	SourcePath     *string    `json:"source_path,omitempty" mapstructure:"source_path"`
-	FlagsEnabled   *bool      `json:"flags_enabled,omitempty" mapstructure:"flags_enabled"`
+	FlagsEnabled     *bool      `json:"flags_enabled,omitempty" mapstructure:"flags_enabled"`
+	AllowedFlagPaths *string    `json:"allowed_flag_paths,omitempty" mapstructure:"allowed_flag_paths"`
 	GshEnabled     *bool      `json:"gsh_enabled,omitempty" mapstructure:"gsh_enabled"`
 	CrashTraps     *bool      `json:"crash_traps,omitempty" mapstructure:"crash_traps"`
 	Objectives     *string    `json:"objectives,omitempty" mapstructure:"objectives" binding:"omitempty,max=5000"`
@@ -78,7 +80,8 @@ type ScenarioOutput struct {
 	GitRepository  string             `json:"git_repository,omitempty"`
 	GitBranch      string             `json:"git_branch"`
 	SourcePath     string             `json:"source_path,omitempty"`
-	FlagsEnabled   bool               `json:"flags_enabled"`
+	FlagsEnabled     bool               `json:"flags_enabled"`
+	AllowedFlagPaths string             `json:"allowed_flag_paths,omitempty"`
 	GshEnabled     bool               `json:"gsh_enabled"`
 	CrashTraps     bool               `json:"crash_traps"`
 	Objectives     string             `json:"objectives,omitempty"`

@@ -277,6 +277,110 @@ func TestDeployFlags_CrashTraps_EmptyPathSkipped(t *testing.T) {
 	assert.Equal(t, "/home/student/.the_key", flagPushes[0].targetPath)
 }
 
+func TestDeployFlags_CustomAllowedPaths_Accepted(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Scenario with custom allowed paths that include /etc/ (normally disallowed)
+	scenario := models.Scenario{
+		Name:             "custom-allowed-paths",
+		Title:            "Custom Allowed Paths",
+		InstanceType:     "ubuntu:22.04",
+		FlagsEnabled:     true,
+		FlagSecret:       "test-secret",
+		CreatedByID:      "creator-1",
+		AllowedFlagPaths: "/etc/,/srv/",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	steps := []models.ScenarioStep{
+		{ScenarioID: scenario.ID, Order: 0, Title: "Step 1", TextContent: "Do something", HasFlag: true, FlagPath: "/etc/challenge/flag.txt"},
+	}
+	for i := range steps {
+		require.NoError(t, db.Create(&steps[i]).Error)
+	}
+
+	verifySvc := &capturingVerificationService{}
+	flagSvc := services.NewFlagService()
+	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
+
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	require.NoError(t, err)
+	require.NotNil(t, session)
+
+	// /etc/ path should be accepted because AllowedFlagPaths includes it
+	require.Len(t, verifySvc.pushCalls, 1)
+	assert.Equal(t, "/etc/challenge/flag.txt", verifySvc.pushCalls[0].targetPath)
+}
+
+func TestDeployFlags_CustomAllowedPaths_Rejected(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Scenario with custom allowed paths that does NOT include /tmp/
+	scenario := models.Scenario{
+		Name:             "custom-paths-rejected",
+		Title:            "Custom Paths Rejected",
+		InstanceType:     "ubuntu:22.04",
+		FlagsEnabled:     true,
+		FlagSecret:       "test-secret",
+		CreatedByID:      "creator-1",
+		AllowedFlagPaths: "/etc/,/srv/",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	steps := []models.ScenarioStep{
+		{ScenarioID: scenario.ID, Order: 0, Title: "Step 1", TextContent: "Do something", HasFlag: true, FlagPath: "/tmp/flag.txt"},
+	}
+	for i := range steps {
+		require.NoError(t, db.Create(&steps[i]).Error)
+	}
+
+	verifySvc := &capturingVerificationService{}
+	flagSvc := services.NewFlagService()
+	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
+
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	require.NoError(t, err)
+	require.NotNil(t, session)
+
+	// /tmp/ is NOT in the custom allowed paths, so it should be rejected
+	assert.Empty(t, verifySvc.pushCalls, "/tmp/ path should be rejected when custom AllowedFlagPaths does not include it")
+}
+
+func TestDeployFlags_EmptyAllowedPaths_FallsBackToDefaults(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Scenario with empty AllowedFlagPaths — should use hardcoded defaults
+	scenario := models.Scenario{
+		Name:             "empty-allowed-paths",
+		Title:            "Empty Allowed Paths",
+		InstanceType:     "ubuntu:22.04",
+		FlagsEnabled:     true,
+		FlagSecret:       "test-secret",
+		CreatedByID:      "creator-1",
+		AllowedFlagPaths: "",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	steps := []models.ScenarioStep{
+		{ScenarioID: scenario.ID, Order: 0, Title: "Step 1", TextContent: "Do something", HasFlag: true, FlagPath: "/home/student/.flag"},
+	}
+	for i := range steps {
+		require.NoError(t, db.Create(&steps[i]).Error)
+	}
+
+	verifySvc := &capturingVerificationService{}
+	flagSvc := services.NewFlagService()
+	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
+
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	require.NoError(t, err)
+	require.NotNil(t, session)
+
+	// /home/ is in the default allowed paths, so it should be accepted
+	require.Len(t, verifySvc.pushCalls, 1)
+	assert.Equal(t, "/home/student/.flag", verifySvc.pushCalls[0].targetPath)
+}
+
 func TestDeployFlags_CrashTraps_CustomPathStillDeployed(t *testing.T) {
 	db := setupTestDB(t)
 

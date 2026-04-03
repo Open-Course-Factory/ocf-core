@@ -88,14 +88,15 @@ type SeedScenarioInput struct {
 	InstanceType  string          `json:"instance_type"`
 	Hostname      string          `json:"hostname,omitempty"`
 	OsType        string          `json:"os_type"`
-	FlagsEnabled  bool            `json:"flags_enabled"`
-	GshEnabled    bool            `json:"gsh_enabled"`
-	CrashTraps    bool            `json:"crash_traps"`
-	IsPublic      bool            `json:"is_public"`
-	IntroText     string          `json:"intro_text" binding:"max=65536"`
-	FinishText    string          `json:"finish_text" binding:"max=65536"`
-	SetupScript   string          `json:"setup_script,omitempty"`
-	Steps         []SeedStepInput `json:"steps" binding:"required,min=1"`
+	FlagsEnabled     bool            `json:"flags_enabled"`
+	AllowedFlagPaths string          `json:"allowed_flag_paths,omitempty"`
+	GshEnabled       bool            `json:"gsh_enabled"`
+	CrashTraps       bool            `json:"crash_traps"`
+	IsPublic         bool            `json:"is_public"`
+	IntroText        string          `json:"intro_text" binding:"max=65536"`
+	FinishText       string          `json:"finish_text" binding:"max=65536"`
+	SetupScript      string          `json:"setup_script,omitempty"`
+	Steps            []SeedStepInput `json:"steps" binding:"required,min=1"`
 }
 
 // SeedStepInput - DTO for a single step in a seed scenario
@@ -133,10 +134,11 @@ type ScenarioExportOutput struct {
 	EstimatedTime string                     `json:"estimated_time,omitempty"`
 	InstanceType  string                     `json:"instance_type"`
 	OsType        string                     `json:"os_type,omitempty"`
-	FlagsEnabled  bool                       `json:"flags_enabled"`
-	GshEnabled    bool                       `json:"gsh_enabled"`
-	CrashTraps    bool                       `json:"crash_traps"`
-	IsPublic      bool                       `json:"is_public"`
+	FlagsEnabled     bool                       `json:"flags_enabled"`
+	AllowedFlagPaths string                     `json:"allowed_flag_paths,omitempty"`
+	GshEnabled       bool                       `json:"gsh_enabled"`
+	CrashTraps       bool                       `json:"crash_traps"`
+	IsPublic         bool                       `json:"is_public"`
 	IntroText     string                     `json:"intro_text,omitempty"`
 	FinishText    string                     `json:"finish_text,omitempty"`
 	SetupScript   string                     `json:"setup_script,omitempty"`

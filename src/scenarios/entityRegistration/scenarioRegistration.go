@@ -31,7 +31,8 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						GitRepository:  model.GitRepository,
 						GitBranch:      model.GitBranch,
 						SourcePath:     model.SourcePath,
-						FlagsEnabled:   model.FlagsEnabled,
+						FlagsEnabled:     model.FlagsEnabled,
+						AllowedFlagPaths: model.AllowedFlagPaths,
 						GshEnabled:     model.GshEnabled,
 						CrashTraps:     model.CrashTraps,
 						Objectives:     model.Objectives,
@@ -105,7 +106,8 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						GitRepository:  input.GitRepository,
 						GitBranch:      input.GitBranch,
 						SourcePath:     input.SourcePath,
-						FlagsEnabled:   input.FlagsEnabled,
+						FlagsEnabled:     input.FlagsEnabled,
+						AllowedFlagPaths: input.AllowedFlagPaths,
 						GshEnabled:     input.GshEnabled,
 						CrashTraps:     input.CrashTraps,
 						Objectives:     input.Objectives,
@@ -160,6 +162,9 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 					}
 					if input.FlagsEnabled != nil {
 						updates["flags_enabled"] = *input.FlagsEnabled
+					}
+					if input.AllowedFlagPaths != nil {
+						updates["allowed_flag_paths"] = *input.AllowedFlagPaths
 					}
 					if input.GshEnabled != nil {
 						updates["gsh_enabled"] = *input.GshEnabled

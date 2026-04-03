@@ -22,7 +22,8 @@ type Scenario struct {
 	GitBranch      string     `gorm:"type:varchar(255);default:'main'" json:"git_branch"`
 	SourcePath     string     `gorm:"type:varchar(1000)" json:"source_path,omitempty"`
 	FlagsEnabled   bool       `gorm:"default:false" json:"flags_enabled"`
-	FlagSecret     string     `gorm:"type:varchar(500)" json:"-"` // never exposed in API
+	FlagSecret       string     `gorm:"type:varchar(500)" json:"-"` // never exposed in API
+	AllowedFlagPaths string     `gorm:"type:text" json:"allowed_flag_paths,omitempty" mapstructure:"allowed_flag_paths"` // comma-separated allowed path prefixes; empty = defaults
 	GshEnabled     bool       `gorm:"default:false" json:"gsh_enabled"`
 	CrashTraps     bool       `gorm:"default:false" json:"crash_traps"`
 	Objectives     string     `gorm:"type:text" json:"objectives,omitempty"`
