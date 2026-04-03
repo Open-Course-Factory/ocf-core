@@ -79,6 +79,7 @@ func TestMain(m *testing.M) {
 		machine_size TEXT,
 		backend TEXT DEFAULT '',
 		organization_id TEXT,
+		subscription_plan_id TEXT,
 		user_terminal_key_id TEXT REFERENCES user_terminal_keys(id),
 		is_hidden_by_owner BOOLEAN DEFAULT false,
 		hidden_by_owner_at DATETIME
