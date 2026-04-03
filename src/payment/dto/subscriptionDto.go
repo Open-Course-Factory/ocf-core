@@ -308,6 +308,7 @@ type UsageLimitCheckOutput struct {
 	Limit          int64  `json:"limit"`
 	RemainingUsage int64  `json:"remaining_usage"`
 	Message        string `json:"message,omitempty"`
+	Source         string `json:"source"` // "personal" or "organization" — indicates where the effective plan comes from
 }
 
 // DTOs for bulk license purchases

@@ -33,9 +33,10 @@ func InjectEffectivePlan(effectivePlanService services.EffectivePlanService) gin
 			return
 		}
 
-		// Store result and backward-compatible plan reference
+		// Store result, source, and backward-compatible plan reference
 		ctx.Set("effective_plan_result", result)
 		ctx.Set("subscription_plan", result.Plan)
+		ctx.Set("planSource", string(result.Source))
 		ctx.Next()
 	}
 }
@@ -92,9 +93,10 @@ func CheckLimit(effectivePlanService services.EffectivePlanService, db *gorm.DB,
 		}
 
 		if !limitCheck.Allowed {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: limitCheck.Message,
+			ctx.JSON(http.StatusForbidden, gin.H{
+				"error_code":    http.StatusForbidden,
+				"error_message": limitCheck.Message,
+				"source":        string(limitCheck.Source),
 			})
 			ctx.Abort()
 			return

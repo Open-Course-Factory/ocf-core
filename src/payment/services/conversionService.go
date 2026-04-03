@@ -235,6 +235,7 @@ func (cs *conversionService) UsageLimitCheckToDTO(check *UsageLimitCheck) *dto.U
 		Limit:          check.Limit,
 		RemainingUsage: check.RemainingUsage,
 		Message:        check.Message,
+		Source:         string(check.Source),
 	}
 }
 

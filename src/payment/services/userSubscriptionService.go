@@ -76,6 +76,7 @@ type UsageLimitCheck struct {
 	Message        string
 	UserID         string
 	MetricType     string
+	Source         EffectivePlanSource // "personal" or "organization"
 }
 
 type SubscriptionAnalytics struct {
