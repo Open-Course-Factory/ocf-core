@@ -824,8 +824,21 @@ func (sc *userSubscriptionController) CheckUsageLimit(ctx *gin.Context) {
 func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
-	// Get effective plan for limit values
-	effectiveResult, _ := sc.effectivePlanService.GetUserEffectivePlan(userId)
+	// Get effective plan for limit values (org-context-aware)
+	var effectiveResult *services.EffectivePlanResult
+	if orgIDStr := ctx.Query("organization_id"); orgIDStr != "" {
+		if parsed, err := uuid.Parse(orgIDStr); err == nil {
+			effectiveResult, _ = sc.effectivePlanService.GetUserEffectivePlanForOrg(userId, &parsed)
+		} else {
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: "Invalid organization_id format",
+			})
+			return
+		}
+	} else {
+		effectiveResult, _ = sc.effectivePlanService.GetUserEffectivePlan(userId)
+	}
 
 	// Get personal usage metrics (these track actual usage counts)
 	usageMetrics, err := sc.subscriptionService.GetUserUsageMetrics(userId)
