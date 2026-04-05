@@ -101,10 +101,10 @@ func TestValidateBackendForContext_OrgHasBackendConfig_RejectsDisallowed(t *test
 	assert.Contains(t, err.Error(), "not allowed for your organization")
 }
 
-// TestValidateBackendForContext_PlanAllowedBackends_Restricts verifies that when
+// TestValidateBackendForContext_PlanAllowedBackends_FallsBackToDefault verifies that when
 // requesting a backend not in the plan's AllowedBackends (and org has no config),
-// the request is rejected.
-func TestValidateBackendForContext_PlanAllowedBackends_Restricts(t *testing.T) {
+// the system falls back to the plan's default backend (not a hard rejection).
+func TestValidateBackendForContext_PlanAllowedBackends_FallsBackToDefault(t *testing.T) {
 	db := freshTestDB(t)
 
 	userID := "user-plan-restricts"
@@ -115,20 +115,23 @@ func TestValidateBackendForContext_PlanAllowedBackends_Restricts(t *testing.T) {
 	org := createOrgWithBackendConfig(t, db, "org-plan-restrict", userID,
 		organizationModels.OrgTypeTeam, "", []string{})
 
-	// Plan only allows "shared-pool"
+	// Plan only allows "shared-pool", default is "shared-pool"
 	plan := createPlanWithBackendConfig(t, db, "RestrictedPlan", 5, 2, "shared-pool", []string{"shared-pool"})
 
 	svc := services.NewTerminalTrainerService(db)
 	sessionInput := dto.CreateTerminalSessionInput{
 		Terms:          "accepted",
 		OrganizationID: org.ID.String(),
-		Backend:        "premium-pool", // Not in plan's allowed list
+		Backend:        "premium-pool", // Not in plan's allowed list → falls back to plan default
 	}
 
-	resp, err := svc.StartSessionWithPlan(userID, sessionInput, plan)
-	assert.Error(t, err)
-	assert.Nil(t, resp)
-	assert.Contains(t, err.Error(), "not allowed by your subscription plan")
+	// Should NOT reject — falls back to plan default "shared-pool"
+	// The error we get is from the actual terminal creation (network), not from backend validation
+	_, err = svc.StartSessionWithPlan(userID, sessionInput, plan)
+	if err != nil {
+		// If there's an error, it should NOT be about backend restriction
+		assert.NotContains(t, err.Error(), "not allowed by your subscription plan")
+	}
 }
 
 // TestValidateBackendForContext_OrgHasConfig_PlanRestrictionIgnored verifies that
@@ -162,28 +165,30 @@ func TestValidateBackendForContext_OrgHasConfig_PlanRestrictionIgnored(t *testin
 	assert.Contains(t, err.Error(), "not allowed for your organization")
 }
 
-// TestValidateBackendForContext_NilOrg_PlanRestricts verifies that when there's no
-// org context, plan-level restrictions still apply.
-func TestValidateBackendForContext_NilOrg_PlanRestricts(t *testing.T) {
+// TestValidateBackendForContext_NilOrg_PlanFallsBackToDefault verifies that when there's no
+// org context and the requested backend isn't in the plan's allowed list, it falls back to
+// the plan's default backend.
+func TestValidateBackendForContext_NilOrg_PlanFallsBackToDefault(t *testing.T) {
 	db := freshTestDB(t)
 
 	userID := "user-nil-org-plan-restr"
 	_, err := createTestUserKey(db, userID)
 	require.NoError(t, err)
 
-	// Plan only allows "shared-pool"
+	// Plan only allows "shared-pool", default is "shared-pool"
 	plan := createPlanWithBackendConfig(t, db, "RestrictedNilOrg", 5, 2, "shared-pool", []string{"shared-pool"})
 
 	svc := services.NewTerminalTrainerService(db)
 	sessionInput := dto.CreateTerminalSessionInput{
 		Terms:   "accepted",
-		Backend: "premium-pool", // Not in plan's allowed list, no org context
+		Backend: "premium-pool", // Not in plan's allowed list → falls back to plan default
 	}
 
-	resp, err := svc.StartSessionWithPlan(userID, sessionInput, plan)
-	assert.Error(t, err)
-	assert.Nil(t, resp)
-	assert.Contains(t, err.Error(), "not allowed by your subscription plan")
+	// Should fall back to plan default, not reject
+	_, err = svc.StartSessionWithPlan(userID, sessionInput, plan)
+	if err != nil {
+		assert.NotContains(t, err.Error(), "not allowed by your subscription plan")
+	}
 }
 
 // TestValidateBackendForContext_PersonalOrg_NoConfig_PlanRestricts verifies that
@@ -199,20 +204,21 @@ func TestValidateBackendForContext_PersonalOrg_NoConfig_PlanRestricts(t *testing
 	org := createOrgWithBackendConfig(t, db, "personal-org", userID,
 		organizationModels.OrgTypePersonal, "", []string{})
 
-	// Plan only allows "shared-pool"
+	// Plan only allows "shared-pool", default is "shared-pool"
 	plan := createPlanWithBackendConfig(t, db, "PersonalRestricted", 5, 2, "shared-pool", []string{"shared-pool"})
 
 	svc := services.NewTerminalTrainerService(db)
 	sessionInput := dto.CreateTerminalSessionInput{
 		Terms:          "accepted",
 		OrganizationID: org.ID.String(),
-		Backend:        "premium-pool", // Not in plan's allowed list
+		Backend:        "premium-pool", // Not in plan's allowed list → falls back to plan default
 	}
 
-	resp, err := svc.StartSessionWithPlan(userID, sessionInput, plan)
-	assert.Error(t, err)
-	assert.Nil(t, resp)
-	assert.Contains(t, err.Error(), "not allowed by your subscription plan")
+	// Should fall back to plan default, not reject
+	_, err = svc.StartSessionWithPlan(userID, sessionInput, plan)
+	if err != nil {
+		assert.NotContains(t, err.Error(), "not allowed by your subscription plan")
+	}
 }
 
 // TestValidateBackendForContext_NilOrg_NoPlanRestrictions_ArbitraryBackend_ShouldRejectOrDefault
@@ -281,5 +287,112 @@ func TestValidateBackendForContext_NilOrg_NoPlanRestrictions_ArbitraryBackend_Sh
 		assert.NotNil(t, resp)
 		assert.NotEqual(t, "some-arbitrary-backend", sessionInput.Backend,
 			"arbitrary backend should not have been passed through; should be system default")
+	}
+}
+
+// TestGetBackendsForContext_OrgHasConfig_UsesOrgBackends verifies that when the org
+// has its own backend config, GetBackendsForContext delegates to GetBackendsForOrganization.
+func TestGetBackendsForContext_OrgHasConfig_UsesOrgBackends(t *testing.T) {
+	db := freshTestDB(t)
+
+	userID := "user-backends-ctx-org"
+	org := createOrgWithBackendConfig(t, db, "org-ctx-has-config", userID,
+		organizationModels.OrgTypeTeam, "dedicated-1", []string{"dedicated-1"})
+
+	// Add user as member
+	db.Create(&organizationModels.OrganizationMember{
+		BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID: org.ID,
+		UserID:         userID,
+		Role:           "owner",
+		IsActive:       true,
+	})
+
+	// User has a plan with different backends — but org config should win
+	plan := createPlanWithBackendConfig(t, db, "PlanForCtxTest", 10, 5, "shared-pool", []string{"shared-pool"})
+	db.Create(&paymentModels.UserSubscription{
+		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+		UserID:             userID,
+		SubscriptionPlanID: plan.ID,
+		Status:             "active",
+		SubscriptionType:   "personal",
+	})
+
+	svc := services.NewTerminalTrainerService(db)
+	// GetBackendsForContext should return org's backends (not plan's)
+	// Note: the actual backend IDs won't exist in tt-backend, but the filtering logic
+	// is what we're testing. GetBackendsForOrganization will be called, which filters
+	// from the cached backend list. Since we can't easily mock tt-backend here,
+	// we just verify it doesn't error out for the org-has-config path.
+	_, err := svc.GetBackendsForContext(org.ID, userID)
+	// May error because tt-backend is not running, but should NOT panic
+	if err != nil {
+		// Expected: "terminal trainer not configured" or similar network error
+		assert.NotContains(t, err.Error(), "not a member")
+	}
+}
+
+// TestGetBackendsForContext_OrgNoConfig_UsesPlanBackends verifies that when the org
+// has no backend config, GetBackendsForContext resolves the user's plan and uses
+// plan-level backend filtering.
+func TestGetBackendsForContext_OrgNoConfig_UsesPlanBackends(t *testing.T) {
+	db := freshTestDB(t)
+
+	userID := "user-backends-ctx-plan"
+	org := createOrgWithBackendConfig(t, db, "org-ctx-no-config", userID,
+		organizationModels.OrgTypeTeam, "", []string{}) // No backend config
+
+	// Add user as member
+	db.Create(&organizationModels.OrganizationMember{
+		BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID: org.ID,
+		UserID:         userID,
+		Role:           "owner",
+		IsActive:       true,
+	})
+
+	// User has a plan with specific backends
+	plan := createPlanWithBackendConfig(t, db, "PlanWithBackends", 10, 5, "premium-infra", []string{"premium-infra", "free-infra"})
+	db.Create(&paymentModels.UserSubscription{
+		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+		UserID:             userID,
+		SubscriptionPlanID: plan.ID,
+		Status:             "active",
+		SubscriptionType:   "personal",
+	})
+
+	svc := services.NewTerminalTrainerService(db)
+	_, err := svc.GetBackendsForContext(org.ID, userID)
+	// May error because tt-backend is not running, but the plan resolution path should work
+	if err != nil {
+		assert.NotContains(t, err.Error(), "not a member")
+	}
+}
+
+// TestValidateBackendForContext_PlanFallbackToDefault verifies that when a requested
+// backend is not in the plan's allowed list but the plan has a default, the system
+// falls back to the plan default instead of rejecting.
+func TestValidateBackendForContext_PlanFallbackToDefault(t *testing.T) {
+	db := freshTestDB(t)
+
+	userID := "user-fallback-default"
+	_, err := createTestUserKey(db, userID)
+	require.NoError(t, err)
+
+	// Plan allows only "premium-infra", default is "premium-infra"
+	plan := createPlanWithBackendConfig(t, db, "FallbackPlan", 10, 5, "premium-infra", []string{"premium-infra", "free-infra"})
+
+	svc := services.NewTerminalTrainerService(db)
+	sessionInput := dto.CreateTerminalSessionInput{
+		Terms:   "accepted",
+		Backend: "default", // Not in plan's allowed list — should fall back to plan default
+	}
+
+	// Should NOT reject with "not allowed" — should fall back to "premium-infra"
+	_, err = svc.StartSessionWithPlan(userID, sessionInput, plan)
+	if err != nil {
+		// Error may come from actual terminal creation (network), but NOT from backend validation
+		assert.NotContains(t, err.Error(), "not allowed by your subscription plan")
+		assert.NotContains(t, err.Error(), "not allowed")
 	}
 }

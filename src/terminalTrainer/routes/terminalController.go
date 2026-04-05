@@ -1560,7 +1560,9 @@ func (tc *terminalController) GetBackends(ctx *gin.Context) {
 			})
 			return
 		}
-		backends, err = tc.service.GetBackendsForOrganization(orgUUID)
+		// Use plan-aware backend filtering (org config > plan config > system default)
+		userID := ctx.GetString("userId")
+		backends, err = tc.service.GetBackendsForContext(orgUUID, userID)
 	} else {
 		// Unfiltered backend list requires admin role
 		userRoles := ctx.GetStringSlice("userRoles")
