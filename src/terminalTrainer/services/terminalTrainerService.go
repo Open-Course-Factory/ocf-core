@@ -3151,6 +3151,9 @@ func (tts *terminalTrainerService) StartComposedSession(userID string, input dto
 		return nil, err
 	}
 
+	// Store the distribution prefix for console URL and InstanceType
+	input.DistributionPrefix = options.Distribution.Prefix
+
 	// Validate requested size
 	requestedSizeNorm := NormalizeSizeKey(input.Size)
 	sizeAllowed := false
@@ -3317,7 +3320,7 @@ func (tts *terminalTrainerService) startComposedSession(userID string, input dto
 		Name:                 input.Name,
 		Status:               "active",
 		ExpiresAt:            expiresAt,
-		InstanceType:         input.Distribution,
+		InstanceType:         input.DistributionPrefix,
 		MachineSize:          strings.ToUpper(input.Size),
 		Backend:              sessionResp.Backend,
 		OrganizationID:       orgID,
@@ -3342,7 +3345,7 @@ func (tts *terminalTrainerService) startComposedSession(userID string, input dto
 	}
 
 	// Build console URL
-	consolePath := tts.buildAPIPath("/console", input.Distribution)
+	consolePath := tts.buildAPIPath("/console", input.DistributionPrefix)
 	response := &dto.TerminalSessionResponse{
 		SessionID:  sessionResp.SessionID,
 		ExpiresAt:  expiresAt,

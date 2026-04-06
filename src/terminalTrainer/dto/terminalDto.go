@@ -540,8 +540,9 @@ type CreateComposedSessionInput struct {
 	RecordingEnabled int             `json:"recording_enabled,omitempty"`
 	ExternalRef      string          `json:"external_ref,omitempty"`
 	// Set by service layer
-	HistoryRetentionDays int        `json:"-"`
-	SubscriptionPlanID   *uuid.UUID `json:"-"`
+	HistoryRetentionDays   int        `json:"-"`
+	SubscriptionPlanID     *uuid.UUID `json:"-"`
+	DistributionPrefix     string     `json:"-"` // Resolved from TTDistribution.Prefix
 }
 
 // TTDistribution mirrors tt-backend's Distribution struct
