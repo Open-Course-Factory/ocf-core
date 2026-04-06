@@ -82,6 +82,11 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.GET("/enums/status", middleware.AuthManagement(), terminalController.GetEnumStatus)
 	routes.POST("/enums/refresh", middleware.AuthManagement(), terminalController.RefreshEnums)
 
+	// Composed session routes (Phase 4)
+	routes.GET("/distributions", middleware.AuthManagement(), terminalController.GetDistributions)
+	routes.GET("/session-options", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService), paymentMiddleware.RequirePlan(), terminalController.GetSessionOptions)
+	routes.POST("/start-composed-session", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService), paymentMiddleware.RequirePlan(), paymentMiddleware.CheckLimit(effectivePlanService, db, "concurrent_terminals"), paymentMiddleware.CheckRAMAvailability(terminalService), terminalController.StartComposedSession)
+
 	// Correction des permissions (no terminal-specific access needed)
 	routes.POST("/fix-hide-permissions", middleware.AuthManagement(), terminalController.FixTerminalHidePermissions)
 

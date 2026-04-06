@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	groupModels "soli/formations/src/groups/models"
+	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	ttDto "soli/formations/src/terminalTrainer/dto"
@@ -146,6 +147,17 @@ func (m *mockTTService) IsUserAuthorizedForSession(string, *ttModels.Terminal, b
 	return true
 }
 func (m *mockTTService) IsUserOrgManagerOrAdmin(string, uuid.UUID, bool) bool { return true }
+func (m *mockTTService) GetDistributions(string) ([]ttDto.TTDistribution, error) {
+	return nil, nil
+}
+func (m *mockTTService) GetCatalogSizes() ([]ttDto.TTSize, error) { return nil, nil }
+func (m *mockTTService) GetCatalogFeatures() ([]ttDto.TTFeature, error) { return nil, nil }
+func (m *mockTTService) GetSessionOptions(*paymentModels.SubscriptionPlan, string, string) (*ttDto.SessionOptionsResponse, error) {
+	return nil, nil
+}
+func (m *mockTTService) StartComposedSession(string, ttDto.CreateComposedSessionInput, any) (*ttDto.TerminalSessionResponse, error) {
+	return nil, nil
+}
 
 // --- Tests ---
 

@@ -115,6 +115,13 @@ type TerminalTrainerService interface {
 	// Authorization helpers
 	IsUserAuthorizedForSession(userID string, terminal *models.Terminal, isAdmin bool) bool
 	IsUserOrgManagerOrAdmin(userID string, orgID uuid.UUID, isAdmin bool) bool
+
+	// Composed session (Phase 4)
+	GetDistributions(backend string) ([]dto.TTDistribution, error)
+	GetCatalogSizes() ([]dto.TTSize, error)
+	GetCatalogFeatures() ([]dto.TTFeature, error)
+	GetSessionOptions(plan *paymentModels.SubscriptionPlan, distribution string, backend string) (*dto.SessionOptionsResponse, error)
+	StartComposedSession(userID string, input dto.CreateComposedSessionInput, planInterface any) (*dto.TerminalSessionResponse, error)
 }
 
 type terminalTrainerService struct {
@@ -131,6 +138,12 @@ type terminalTrainerService struct {
 	backendCacheTime        time.Time
 	backendCacheMu          sync.RWMutex
 	backendCacheSF          singleflight.Group
+	catalogSizesCache       []dto.TTSize
+	catalogSizesCacheTime   time.Time
+	catalogSizesMu          sync.RWMutex
+	catalogFeaturesCache     []dto.TTFeature
+	catalogFeaturesCacheTime time.Time
+	catalogFeaturesMu        sync.RWMutex
 }
 
 func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
@@ -2899,4 +2912,444 @@ func (tts *terminalTrainerService) checkGroupOwnerAccess(terminalOwnerUserID, re
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// ==========================================
+// Composed Session (Phase 4)
+// ==========================================
+
+const catalogCacheTTL = 60 * time.Second
+
+// featurePlanMapping maps feature keys to plan predicates
+var featurePlanMapping = map[string]func(*paymentModels.SubscriptionPlan) bool{
+	"network":     func(p *paymentModels.SubscriptionPlan) bool { return p.NetworkAccessEnabled },
+	"persistence": func(p *paymentModels.SubscriptionPlan) bool { return p.DataPersistenceEnabled },
+}
+
+// NormalizeSizeKey uppercases and trims a size key for comparison
+func NormalizeSizeKey(key string) string {
+	return strings.ToUpper(strings.TrimSpace(key))
+}
+
+// GetDistributions fetches available distributions from tt-backend
+func (tts *terminalTrainerService) GetDistributions(backend string) ([]dto.TTDistribution, error) {
+	url := fmt.Sprintf("%s/%s/distributions", tts.baseURL, tts.apiVersion)
+	if backend != "" {
+		url += fmt.Sprintf("?backend=%s", backend)
+	}
+
+	var distributions []dto.TTDistribution
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
+
+	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &distributions, opts)
+	if err != nil {
+		return nil, err
+	}
+	return distributions, nil
+}
+
+// GetCatalogSizes fetches sizes from tt-backend with a 60s TTL cache
+func (tts *terminalTrainerService) GetCatalogSizes() ([]dto.TTSize, error) {
+	tts.catalogSizesMu.RLock()
+	if tts.catalogSizesCache != nil && time.Since(tts.catalogSizesCacheTime) < catalogCacheTTL {
+		cached := tts.catalogSizesCache
+		tts.catalogSizesMu.RUnlock()
+		return cached, nil
+	}
+	tts.catalogSizesMu.RUnlock()
+
+	url := fmt.Sprintf("%s/%s/sizes", tts.baseURL, tts.apiVersion)
+	var sizes []dto.TTSize
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
+
+	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sizes, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	tts.catalogSizesMu.Lock()
+	tts.catalogSizesCache = sizes
+	tts.catalogSizesCacheTime = time.Now()
+	tts.catalogSizesMu.Unlock()
+
+	return sizes, nil
+}
+
+// GetCatalogFeatures fetches features from tt-backend with a 60s TTL cache
+func (tts *terminalTrainerService) GetCatalogFeatures() ([]dto.TTFeature, error) {
+	tts.catalogFeaturesMu.RLock()
+	if tts.catalogFeaturesCache != nil && time.Since(tts.catalogFeaturesCacheTime) < catalogCacheTTL {
+		cached := tts.catalogFeaturesCache
+		tts.catalogFeaturesMu.RUnlock()
+		return cached, nil
+	}
+	tts.catalogFeaturesMu.RUnlock()
+
+	url := fmt.Sprintf("%s/%s/features", tts.baseURL, tts.apiVersion)
+	var features []dto.TTFeature
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
+
+	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &features, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	tts.catalogFeaturesMu.Lock()
+	tts.catalogFeaturesCache = features
+	tts.catalogFeaturesCacheTime = time.Now()
+	tts.catalogFeaturesMu.Unlock()
+
+	return features, nil
+}
+
+// ComputeSessionOptions computes allowed sizes and features given catalogs, a distribution, and a plan.
+// Exported for testing.
+func ComputeSessionOptions(
+	distro dto.TTDistribution,
+	allSizes []dto.TTSize,
+	allFeatures []dto.TTFeature,
+	plan *paymentModels.SubscriptionPlan,
+) *dto.SessionOptionsResponse {
+	// Build a lookup of size sort orders by normalized key
+	sizeSortOrder := make(map[string]int, len(allSizes))
+	for _, s := range allSizes {
+		sizeSortOrder[NormalizeSizeKey(s.Key)] = s.SortOrder
+	}
+
+	// Determine the minimum size sort order for this distribution
+	minSortOrder := 0
+	if distro.MinSizeKey != "" {
+		if so, ok := sizeSortOrder[NormalizeSizeKey(distro.MinSizeKey)]; ok {
+			minSortOrder = so
+		}
+	}
+
+	// Build the set of plan-allowed size keys
+	planAllowsAll := false
+	planSizeSet := make(map[string]bool, len(plan.AllowedMachineSizes))
+	for _, s := range plan.AllowedMachineSizes {
+		norm := NormalizeSizeKey(s)
+		if norm == "ALL" {
+			planAllowsAll = true
+		}
+		planSizeSet[norm] = true
+	}
+
+	// Evaluate each size
+	allowedSizes := make([]dto.SessionOptionSize, 0, len(allSizes))
+	for _, s := range allSizes {
+		opt := dto.SessionOptionSize{TTSize: s, Allowed: true}
+		normKey := NormalizeSizeKey(s.Key)
+
+		if s.SortOrder < minSortOrder {
+			opt.Allowed = false
+			opt.Reason = "min_size"
+		} else if !planAllowsAll && !planSizeSet[normKey] {
+			opt.Allowed = false
+			opt.Reason = "plan_limit"
+		}
+
+		allowedSizes = append(allowedSizes, opt)
+	}
+
+	// Build a set of the distribution's supported features
+	supportedFeatures := make(map[string]bool, len(distro.SupportedFeatures))
+	for _, f := range distro.SupportedFeatures {
+		supportedFeatures[f] = true
+	}
+
+	// Find the minimum sort order among allowed sizes (for min_size_key feature check)
+	maxAllowedSortOrder := 0
+	for _, s := range allowedSizes {
+		if s.Allowed && s.SortOrder > maxAllowedSortOrder {
+			maxAllowedSortOrder = s.SortOrder
+		}
+	}
+
+	// Evaluate each feature
+	allowedFeatures := make([]dto.SessionOptionFeature, 0, len(allFeatures))
+	for _, f := range allFeatures {
+		opt := dto.SessionOptionFeature{
+			Key:         f.Key,
+			Name:        f.Name,
+			Description: f.Description,
+			Allowed:     true,
+		}
+
+		if !supportedFeatures[f.Key] {
+			opt.Allowed = false
+			opt.Reason = "not_supported"
+		} else if checker, ok := featurePlanMapping[f.Key]; ok && !checker(plan) {
+			opt.Allowed = false
+			opt.Reason = "plan_disabled"
+		} else if f.MinSizeKey != "" {
+			// Check if at least one allowed size meets the feature's minimum
+			featureMinSortOrder := 0
+			if so, ok := sizeSortOrder[NormalizeSizeKey(f.MinSizeKey)]; ok {
+				featureMinSortOrder = so
+			}
+			if maxAllowedSortOrder < featureMinSortOrder {
+				opt.Allowed = false
+				opt.Reason = "size_too_small"
+			}
+		}
+
+		allowedFeatures = append(allowedFeatures, opt)
+	}
+
+	return &dto.SessionOptionsResponse{
+		Distribution:    distro,
+		AllowedSizes:    allowedSizes,
+		AllowedFeatures: allowedFeatures,
+	}
+}
+
+// GetSessionOptions validates a distribution and computes plan-intersected options
+func (tts *terminalTrainerService) GetSessionOptions(plan *paymentModels.SubscriptionPlan, distribution string, backend string) (*dto.SessionOptionsResponse, error) {
+	distributions, err := tts.GetDistributions(backend)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get distributions: %w", err)
+	}
+
+	var distro *dto.TTDistribution
+	for i := range distributions {
+		if distributions[i].Name == distribution || distributions[i].Prefix == distribution {
+			distro = &distributions[i]
+			break
+		}
+	}
+	if distro == nil {
+		return nil, fmt.Errorf("distribution '%s' not found", distribution)
+	}
+
+	sizes, err := tts.GetCatalogSizes()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get catalog sizes: %w", err)
+	}
+
+	features, err := tts.GetCatalogFeatures()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get catalog features: %w", err)
+	}
+
+	return ComputeSessionOptions(*distro, sizes, features, plan), nil
+}
+
+// StartComposedSession validates inputs against the plan and starts a composed session
+func (tts *terminalTrainerService) StartComposedSession(userID string, input dto.CreateComposedSessionInput, planInterface any) (*dto.TerminalSessionResponse, error) {
+	plan, ok := planInterface.(*paymentModels.SubscriptionPlan)
+	if !ok {
+		return nil, fmt.Errorf("invalid subscription plan type")
+	}
+
+	// Compute session options to validate the request
+	options, err := tts.GetSessionOptions(plan, input.Distribution, input.Backend)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate requested size
+	requestedSizeNorm := NormalizeSizeKey(input.Size)
+	sizeAllowed := false
+	for _, s := range options.AllowedSizes {
+		if NormalizeSizeKey(s.Key) == requestedSizeNorm {
+			if !s.Allowed {
+				return nil, fmt.Errorf("size '%s' is not allowed: %s", input.Size, s.Reason)
+			}
+			sizeAllowed = true
+			break
+		}
+	}
+	if !sizeAllowed {
+		return nil, fmt.Errorf("size '%s' not found in catalog", input.Size)
+	}
+
+	// Validate requested features
+	if input.Features != nil {
+		featureAllowedMap := make(map[string]*dto.SessionOptionFeature, len(options.AllowedFeatures))
+		for i := range options.AllowedFeatures {
+			featureAllowedMap[options.AllowedFeatures[i].Key] = &options.AllowedFeatures[i]
+		}
+		for featureKey, enabled := range input.Features {
+			if !enabled {
+				continue
+			}
+			opt, exists := featureAllowedMap[featureKey]
+			if !exists {
+				return nil, fmt.Errorf("feature '%s' not found in catalog", featureKey)
+			}
+			if !opt.Allowed {
+				return nil, fmt.Errorf("feature '%s' is not allowed: %s", featureKey, opt.Reason)
+			}
+		}
+	}
+
+	// Validate backend
+	var orgID *uuid.UUID
+	if input.OrganizationID != "" {
+		parsed, err := uuid.Parse(input.OrganizationID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid organization_id: %w", err)
+		}
+		orgID = &parsed
+	}
+
+	validatedBackend, err := tts.validateBackendForContext(orgID, plan, input.Backend)
+	if err != nil {
+		return nil, err
+	}
+	input.Backend = validatedBackend
+
+	// Enforce max session duration
+	maxDurationSeconds := plan.MaxSessionDurationMinutes * 60
+	if input.Expiry == 0 || input.Expiry > maxDurationSeconds {
+		input.Expiry = maxDurationSeconds
+	}
+
+	// Set plan-derived fields
+	input.HistoryRetentionDays = plan.CommandHistoryRetentionDays
+	input.SubscriptionPlanID = &plan.ID
+
+	return tts.startComposedSession(userID, input)
+}
+
+// startComposedSession is the internal method that calls tt-backend's POST /sessions endpoint
+func (tts *terminalTrainerService) startComposedSession(userID string, input dto.CreateComposedSessionInput) (*dto.TerminalSessionResponse, error) {
+	// Get user key
+	userKey, err := tts.repository.GetUserTerminalKeyByUserID(userID, true)
+	if err != nil {
+		return nil, fmt.Errorf("no terminal trainer key found for user: %w", err)
+	}
+	if !userKey.IsActive {
+		return nil, fmt.Errorf("user terminal trainer key is disabled")
+	}
+
+	// Compute terms hash
+	hash := sha256.New()
+	io.WriteString(hash, input.Terms)
+	termsHash := fmt.Sprintf("%x", hash.Sum(nil))
+
+	// Clamp recording_enabled
+	if input.RecordingEnabled > 1 {
+		input.RecordingEnabled = 1
+	}
+	if input.RecordingEnabled < 0 {
+		input.RecordingEnabled = 0
+	}
+
+	// Build POST body for tt-backend
+	ttReqBody := map[string]interface{}{
+		"distribution":         input.Distribution,
+		"size":                 strings.ToLower(input.Size),
+		"features":             input.Features,
+		"terms":                termsHash,
+		"expiry":               input.Expiry,
+		"hostname":             input.Hostname,
+		"packages":             input.Packages,
+		"history_retention_days": input.HistoryRetentionDays,
+		"recording_enabled":     input.RecordingEnabled,
+		"external_ref":          input.ExternalRef,
+	}
+	if input.Name != "" {
+		ttReqBody["name"] = input.Name
+	}
+
+	// Build URL
+	url := fmt.Sprintf("%s/%s/sessions", tts.baseURL, tts.apiVersion)
+	if input.Backend != "" {
+		url += fmt.Sprintf("?backend=%s", input.Backend)
+	}
+
+	utils.Debug("StartComposedSession - POST %s", url)
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(userKey.APIKey))
+
+	// tt-backend may stream NDJSON, use the same pattern as startSession
+	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, ttReqBody, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	var sessionResp dto.TerminalTrainerSessionResponse
+	if err := resp.DecodeLastJSON(&sessionResp); err != nil {
+		return nil, utils.ExternalAPIError("Terminal Trainer", "decode response", err)
+	}
+
+	if sessionResp.Status != 0 {
+		errorMsg := tts.enumService.FormatError("session_status", int(sessionResp.Status), "Failed to start composed session")
+		return nil, fmt.Errorf("%s", errorMsg)
+	}
+
+	// Build local terminal record
+	expiresAt := time.Unix(sessionResp.ExpiresAt, 0)
+
+	var orgID *uuid.UUID
+	if input.OrganizationID != "" {
+		parsed, err := uuid.Parse(input.OrganizationID)
+		if err == nil {
+			orgID = &parsed
+		}
+	}
+
+	// Serialize enabled features as JSON
+	composedFeaturesJSON := ""
+	if input.Features != nil {
+		enabledFeatures := make(map[string]bool)
+		for k, v := range input.Features {
+			if v {
+				enabledFeatures[k] = true
+			}
+		}
+		if len(enabledFeatures) > 0 {
+			if b, err := json.Marshal(enabledFeatures); err == nil {
+				composedFeaturesJSON = string(b)
+			}
+		}
+	}
+
+	terminal := &models.Terminal{
+		SessionID:            sessionResp.SessionID,
+		UserID:               userID,
+		Name:                 input.Name,
+		Status:               "active",
+		ExpiresAt:            expiresAt,
+		InstanceType:         input.Distribution,
+		MachineSize:          strings.ToUpper(input.Size),
+		Backend:              sessionResp.Backend,
+		OrganizationID:       orgID,
+		SubscriptionPlanID:   input.SubscriptionPlanID,
+		UserTerminalKeyID:    userKey.ID,
+		UserTerminalKey:      *userKey,
+		ComposedDistribution: input.Distribution,
+		ComposedSize:         input.Size,
+		ComposedFeatures:     composedFeaturesJSON,
+	}
+
+	if err := tts.repository.CreateTerminalSession(terminal); err != nil {
+		return nil, fmt.Errorf("failed to save terminal session: %w", err)
+	}
+
+	// Add Casbin permissions (same as startSession)
+	if err := tts.addTerminalHidePermissions(userID); err != nil {
+		utils.Warn("failed to add hide permissions for terminal %s: %v", terminal.ID.String(), err)
+	}
+	if err := tts.addTerminalConsolePermissions(userID); err != nil {
+		utils.Warn("failed to add console permissions for terminal %s: %v", terminal.ID.String(), err)
+	}
+
+	// Build console URL
+	consolePath := tts.buildAPIPath("/console", input.Distribution)
+	response := &dto.TerminalSessionResponse{
+		SessionID:  sessionResp.SessionID,
+		ExpiresAt:  expiresAt,
+		ConsoleURL: fmt.Sprintf("%s%s?id=%s", tts.baseURL, consolePath, sessionResp.SessionID),
+		Status:     "active",
+		Backend:    sessionResp.Backend,
+	}
+
+	return response, nil
 }

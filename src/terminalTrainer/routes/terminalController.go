@@ -13,6 +13,7 @@ import (
 
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
+	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/services"
@@ -96,6 +97,11 @@ type TerminalController interface {
 
 	// Consent status
 	GetConsentStatus(ctx *gin.Context)
+
+	// Composed session (Phase 4)
+	GetDistributions(ctx *gin.Context)
+	GetSessionOptions(ctx *gin.Context)
+	StartComposedSession(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -2123,4 +2129,130 @@ func (tc *terminalController) GetConsentStatus(ctx *gin.Context) {
 		"consent_handled": consentHandled,
 		"source":          source,
 	})
+}
+
+// GetDistributions godoc
+//
+//	@Summary		List available distributions
+//	@Description	Returns the list of distributions from the terminal backend
+//	@Tags			terminals
+//	@Produce		json
+//	@Param			backend	query		string	false	"Backend ID"
+//	@Security		Bearer
+//	@Success		200	{array}		dto.TTDistribution
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/terminals/distributions [get]
+func (tc *terminalController) GetDistributions(ctx *gin.Context) {
+	backend := ctx.Query("backend")
+	distributions, err := tc.service.GetDistributions(backend)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to get distributions: %v", err),
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, distributions)
+}
+
+// GetSessionOptions godoc
+//
+//	@Summary		Get session composition options
+//	@Description	Returns sizes and features allowed by the user's plan for a given distribution
+//	@Tags			terminals
+//	@Produce		json
+//	@Param			distribution	query		string	true	"Distribution name or prefix"
+//	@Param			backend			query		string	false	"Backend ID"
+//	@Security		Bearer
+//	@Success		200	{object}	dto.SessionOptionsResponse
+//	@Failure		400	{object}	errors.APIError	"Missing distribution"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/terminals/session-options [get]
+func (tc *terminalController) GetSessionOptions(ctx *gin.Context) {
+	distribution := ctx.Query("distribution")
+	if distribution == "" {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "distribution query parameter is required",
+		})
+		return
+	}
+
+	backend := ctx.Query("backend")
+
+	planInterface, exists := ctx.Get("subscription_plan")
+	if !exists {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Subscription plan not found in context",
+		})
+		return
+	}
+
+	plan, ok := planInterface.(*paymentModels.SubscriptionPlan)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Invalid subscription plan type",
+		})
+		return
+	}
+
+	options, err := tc.service.GetSessionOptions(plan, distribution, backend)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to get session options: %v", err),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, options)
+}
+
+// StartComposedSession godoc
+//
+//	@Summary		Start a composed terminal session
+//	@Description	Starts a terminal session with specific distribution, size, and features
+//	@Tags			terminals
+//	@Accept			json
+//	@Produce		json
+//	@Param			session	body	dto.CreateComposedSessionInput	true	"Composed session input"
+//	@Security		Bearer
+//	@Success		200	{object}	dto.TerminalSessionResponse
+//	@Failure		400	{object}	errors.APIError	"Bad request"
+//	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Failure		500	{object}	errors.APIError	"Terminal trainer error"
+//	@Router			/terminals/start-composed-session [post]
+func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
+	userID := ctx.GetString("userId")
+
+	var input dto.CreateComposedSessionInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	planInterface, exists := ctx.Get("subscription_plan")
+	if !exists {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Subscription plan not found in context",
+		})
+		return
+	}
+
+	sessionResponse, err := tc.service.StartComposedSession(userID, input, planInterface)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, sessionResponse)
 }

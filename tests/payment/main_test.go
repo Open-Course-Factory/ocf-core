@@ -82,7 +82,10 @@ func TestMain(m *testing.M) {
 		subscription_plan_id TEXT,
 		user_terminal_key_id TEXT REFERENCES user_terminal_keys(id),
 		is_hidden_by_owner BOOLEAN DEFAULT false,
-		hidden_by_owner_at DATETIME
+		hidden_by_owner_at DATETIME,
+		composed_distribution TEXT,
+		composed_size TEXT,
+		composed_features TEXT
 	)`)
 
 	// Webhook events table (WebhookEvent model uses gen_random_uuid() which is PostgreSQL-only)

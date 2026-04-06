@@ -157,6 +157,17 @@ func (m *capturingTTService) IsUserAuthorizedForSession(string, *ttModels.Termin
 	return true
 }
 func (m *capturingTTService) IsUserOrgManagerOrAdmin(string, uuid.UUID, bool) bool { return true }
+func (m *capturingTTService) GetDistributions(string) ([]ttDto.TTDistribution, error) {
+	return nil, nil
+}
+func (m *capturingTTService) GetCatalogSizes() ([]ttDto.TTSize, error) { return nil, nil }
+func (m *capturingTTService) GetCatalogFeatures() ([]ttDto.TTFeature, error) { return nil, nil }
+func (m *capturingTTService) GetSessionOptions(*paymentModels.SubscriptionPlan, string, string) (*ttDto.SessionOptionsResponse, error) {
+	return nil, nil
+}
+func (m *capturingTTService) StartComposedSession(string, ttDto.CreateComposedSessionInput, any) (*ttDto.TerminalSessionResponse, error) {
+	return nil, nil
+}
 
 // --- Test ---
 

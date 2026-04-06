@@ -43,6 +43,9 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/terminals/:id/access-status", "GET"},
 		{"/api/v1/terminals/consent-status", "GET"},
 		{"/api/v1/terminals/backends", "GET"},
+		{"/api/v1/terminals/distributions", "GET"},
+		{"/api/v1/terminals/session-options", "GET"},
+		{"/api/v1/terminals/start-composed-session", "POST"},
 	}
 
 	for _, route := range terminalRoutes {
@@ -116,6 +119,9 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{Path: "/api/v1/terminals/sizes", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "List all possible machine size tiers"},
 		access.RoutePermission{Path: "/api/v1/terminals/metrics", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "Get terminal server metrics"},
 		access.RoutePermission{Path: "/api/v1/terminals/backends", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "List available terminal backends"},
+		access.RoutePermission{Path: "/api/v1/terminals/distributions", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "List available distributions"},
+		access.RoutePermission{Path: "/api/v1/terminals/session-options", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get session composition options for a distribution"},
+		access.RoutePermission{Path: "/api/v1/terminals/start-composed-session", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Start a composed terminal session"},
 
 		// Admin routes
 		access.RoutePermission{Path: "/api/v1/terminals/backends/:backendId/set-default", Method: "PATCH", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "Set the default terminal backend"},
