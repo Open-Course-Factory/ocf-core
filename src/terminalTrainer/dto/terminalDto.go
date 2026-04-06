@@ -110,24 +110,6 @@ type SharedTerminalInfo struct {
 	Shares              []TerminalShareOutput `json:"shares,omitempty"`
 }
 
-// Terminal Service DTOs (pour les appels au Terminal Trainer)
-type CreateTerminalSessionInput struct {
-	Terms                string `binding:"required" json:"terms" form:"terms"`
-	Name                 string `json:"name,omitempty" form:"name"`                   // User-friendly name for the terminal session
-	Expiry               int    `json:"expiry,omitempty" form:"expiry"`               // optionnel
-	InstanceType         string `json:"instance_type,omitempty" form:"instance_type"` // préfixe du type d'instance
-	Backend              string `json:"backend,omitempty" form:"backend"`             // Backend ID to use
-	OrganizationID       string `json:"organization_id,omitempty" form:"organization_id"`
-	HistoryRetentionDays int    `json:"history_retention_days,omitempty" form:"history_retention_days"`
-	RecordingEnabled     int    `json:"recording_enabled,omitempty" form:"recording_enabled"` // 1 = recording enabled (always on)
-	ExternalRef          string `json:"external_ref,omitempty" form:"external_ref"`           // Optional training session reference
-	Hostname             string   `json:"hostname,omitempty" form:"hostname"`
-	Packages             []string `json:"packages,omitempty" form:"packages"`
-
-	// Internal fields (not bound from JSON, set by service layer)
-	SubscriptionPlanID *uuid.UUID `json:"-"` // Set by StartSessionWithPlan for audit trail
-}
-
 type TerminalSessionResponse struct {
 	SessionID  string    `json:"session_id"`
 	ExpiresAt  time.Time `json:"expires_at"`
@@ -416,20 +398,6 @@ type FullSyncResponse struct {
 	StartedAt   time.Time     `json:"started_at"`
 	CompletedAt time.Time     `json:"completed_at"`
 	Duration    time.Duration `json:"duration"`
-}
-
-// InstanceType représente un type d'instance disponible pour les clients
-type InstanceType struct {
-	Name        string `json:"name"`
-	Prefix      string `json:"prefix"`
-	Description string `json:"description"`
-	Size        string `json:"size"`    // XS, S, M, L, XL, etc.
-	OsType      string `json:"os_type"` // deb, apk, rpm, pacman
-}
-
-// InstanceTypesResponse réponse contenant la liste des types d'instances
-type InstanceTypesResponse struct {
-	InstanceTypes []InstanceType `json:"instance_types"`
 }
 
 // FixPermissionsResponse réponse de la correction des permissions de masquage

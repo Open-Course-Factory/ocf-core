@@ -53,9 +53,6 @@ func (m *mockTTService) GetTerms() (string, error) {
 // --- Stubs for the rest of the interface (not called by BulkStartScenario) ---
 
 func (m *mockTTService) DisableUserKey(string) error { return nil }
-func (m *mockTTService) StartSessionWithPlan(userID string, sessionInput ttDto.CreateTerminalSessionInput, _ any) (*ttDto.TerminalSessionResponse, error) {
-	return &ttDto.TerminalSessionResponse{SessionID: "terminal-" + userID, Status: "running"}, nil
-}
 func (m *mockTTService) GetSessionInfo(string) (*ttModels.Terminal, error) { return nil, nil }
 func (m *mockTTService) GetTerminalByUUID(string) (*ttModels.Terminal, error) {
 	return nil, nil
@@ -98,10 +95,6 @@ func (m *mockTTService) GetSessionInfoFromAPI(string) (*ttDto.TerminalTrainerSes
 }
 func (m *mockTTService) GetRepository() ttRepos.TerminalRepository { return nil }
 func (m *mockTTService) CleanupExpiredSessions() error             { return nil }
-func (m *mockTTService) GetInstanceTypes(string) ([]ttDto.InstanceType, error) {
-	return nil, nil
-}
-func (m *mockTTService) GetSizes() ([]string, error) { return nil, nil }
 func (m *mockTTService) GetServerMetrics(bool, string) (*ttDto.ServerMetricsResponse, error) {
 	return nil, nil
 }
@@ -155,8 +148,8 @@ func (m *mockTTService) GetCatalogFeatures() ([]ttDto.TTFeature, error) { return
 func (m *mockTTService) GetSessionOptions(*paymentModels.SubscriptionPlan, string, string) (*ttDto.SessionOptionsResponse, error) {
 	return nil, nil
 }
-func (m *mockTTService) StartComposedSession(string, ttDto.CreateComposedSessionInput, any) (*ttDto.TerminalSessionResponse, error) {
-	return nil, nil
+func (m *mockTTService) StartComposedSession(userID string, _ ttDto.CreateComposedSessionInput, _ any) (*ttDto.TerminalSessionResponse, error) {
+	return &ttDto.TerminalSessionResponse{SessionID: "terminal-" + userID, Status: "running"}, nil
 }
 
 // --- Tests ---

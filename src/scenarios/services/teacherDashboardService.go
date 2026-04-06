@@ -442,13 +442,14 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 				}
 			}
 
-			// Create terminal session if instance type is provided
+			// Create terminal session if instance type (distribution) is provided
 			var terminalSessionID *string
 			if instanceType != "" {
-				utils.Debug("BulkStartScenario - Creating terminal for member %s (instanceType=%s)", member.UserID, instanceType)
-				sessionInput := ttDto.CreateTerminalSessionInput{
+				utils.Debug("BulkStartScenario - Creating terminal for member %s (distribution=%s)", member.UserID, instanceType)
+				composedInput := ttDto.CreateComposedSessionInput{
+					Distribution: instanceType, // instanceType now maps to distribution name
+					Size:         "S",          // Default size for bulk scenario creation
 					Terms:        terms,
-					InstanceType: instanceType,
 					Backend:      backend,
 					Name:         fmt.Sprintf("scenario-%s", scenario.Title),
 					Expiry:       sessionExpirySecs,
@@ -460,8 +461,7 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 						return ""
 					}(),
 					// RecordingEnabled: recording is always on (RGPD Art. 6.1.f — legitimate interest)
-					RecordingEnabled:     1,
-					HistoryRetentionDays: 30,
+					RecordingEnabled: 1,
 				}
 
 				// Resolve the member's effective subscription plan
@@ -477,7 +477,7 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 					return nil
 				}
 
-				terminalResp, termErr := s.terminalService.StartSessionWithPlan(member.UserID, sessionInput, planResult.Plan)
+				terminalResp, termErr := s.terminalService.StartComposedSession(member.UserID, composedInput, planResult.Plan)
 				if termErr != nil {
 					utils.Warn("BulkStartScenario - Failed to create terminal for user %s: %v", member.UserID, termErr)
 					mu.Lock()

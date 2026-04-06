@@ -225,7 +225,7 @@ func TestValidateSessionAccess_NoBackend_Passes(t *testing.T) {
 
 func TestValidateBackendForOrg_NoOrg_AllowsAny(t *testing.T) {
 	// When no org context is provided, any backend should be allowed
-	// This is tested indirectly through StartSessionWithPlan without org ID
+	// This is tested indirectly through StartComposedSession without org ID
 
 	db := freshTestDB(t)
 

@@ -38,7 +38,6 @@ type TerminalTrainerService interface {
 	DisableUserKey(userID string) error
 
 	// Session management
-	StartSessionWithPlan(userID string, sessionInput dto.CreateTerminalSessionInput, planInterface any) (*dto.TerminalSessionResponse, error)
 	GetSessionInfo(sessionID string) (*models.Terminal, error)
 	GetTerminalByUUID(terminalUUID string) (*models.Terminal, error)
 	GetActiveUserSessions(userID string) (*[]models.Terminal, error)
@@ -69,8 +68,6 @@ type TerminalTrainerService interface {
 	CleanupExpiredSessions() error
 
 	// Configuration
-	GetInstanceTypes(backend string) ([]dto.InstanceType, error)
-	GetSizes() ([]string, error)
 	GetTerms() (string, error)
 
 	// Metrics
@@ -250,232 +247,6 @@ func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 	return tts.repository.UpdateUserTerminalKey(key)
 }
 
-// startSession démarre une nouvelle session (private — use StartSessionWithPlan for plan-validated access)
-func (tts *terminalTrainerService) startSession(userID string, sessionInput dto.CreateTerminalSessionInput) (*dto.TerminalSessionResponse, error) {
-	// Récupérer la clé utilisateur
-	userKey, err := tts.repository.GetUserTerminalKeyByUserID(userID, true)
-	if err != nil {
-		return nil, fmt.Errorf("no terminal trainer key found for user: %w", err)
-	}
-
-	if !userKey.IsActive {
-		return nil, fmt.Errorf("user terminal trainer key is disabled")
-	}
-
-	// NOTE: Concurrent terminal checks are now handled by the EffectivePlanMiddleware
-	// Machine size, template, and network validation should be added here based on subscription plan
-
-	// Appel à l'API Terminal Trainer pour démarrer la session
-	hash := sha256.New()
-	io.WriteString(hash, sessionInput.Terms)
-
-	// Construire le chemin avec version et type d'instance dynamique
-	path := tts.buildAPIPath("/start", sessionInput.InstanceType)
-
-	// Construire l'URL avec les paramètres
-	url := fmt.Sprintf("%s%s?terms=%s", tts.baseURL, path, fmt.Sprintf("%x", hash.Sum(nil)))
-	if sessionInput.Expiry > 0 {
-		url += fmt.Sprintf("&expiry=%d", sessionInput.Expiry)
-	}
-	if sessionInput.Backend != "" {
-		url += fmt.Sprintf("&backend=%s", neturl.QueryEscape(sessionInput.Backend))
-	}
-	if sessionInput.HistoryRetentionDays > 0 {
-		url += fmt.Sprintf("&history_retention_days=%d", sessionInput.HistoryRetentionDays)
-	}
-	if sessionInput.RecordingEnabled > 1 {
-		sessionInput.RecordingEnabled = 1
-	}
-	if sessionInput.RecordingEnabled < 0 {
-		sessionInput.RecordingEnabled = 0
-	}
-	if sessionInput.RecordingEnabled > 0 {
-		url += fmt.Sprintf("&recording_enabled=%d", sessionInput.RecordingEnabled)
-	}
-	if sessionInput.ExternalRef != "" {
-		url += fmt.Sprintf("&external_ref=%s", neturl.QueryEscape(sessionInput.ExternalRef))
-	}
-	if sessionInput.Hostname != "" {
-		url += fmt.Sprintf("&hostname=%s", neturl.QueryEscape(sessionInput.Hostname))
-	}
-	if len(sessionInput.Packages) > 0 {
-		url += fmt.Sprintf("&packages=%s", neturl.QueryEscape(strings.Join(sessionInput.Packages, ",")))
-	}
-	utils.Debug("StartSession - Full TT URL: %s", url)
-
-	// Parser la réponse du Terminal Trainer
-	var sessionResp dto.TerminalTrainerSessionResponse
-	opts := utils.DefaultHTTPClientOptions()
-
-	// Debug: Log API key usage (without exposing the key itself)
-	if len(userKey.APIKey) > 0 {
-		utils.Debug("StartSession - Using API key for user %s (length: %d)", userID, len(userKey.APIKey))
-	} else {
-		utils.Debug("StartSession - WARNING: Empty API key for user %s!", userID)
-	}
-
-	utils.ApplyOptions(&opts, utils.WithAPIKey(userKey.APIKey))
-
-	// Use MakeExternalAPIRequest + DecodeLastJSON because tt-backend's /start
-	// endpoint streams progress messages as NDJSON before the final session JSON.
-	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "GET", url, nil, opts)
-	if err != nil {
-		return nil, err
-	}
-	if err := resp.DecodeLastJSON(&sessionResp); err != nil {
-		return nil, utils.ExternalAPIError("Terminal Trainer", "decode response", err)
-	}
-
-	if sessionResp.Status != 0 {
-		// Use enum service to provide detailed error message
-		errorMsg := tts.enumService.FormatError("session_status", int(sessionResp.Status), "Failed to start session")
-		return nil, fmt.Errorf("%s", errorMsg)
-	}
-
-	// Créer l'enregistrement local
-	expiresAt := time.Unix(sessionResp.ExpiresAt, 0)
-
-	// Parse organization ID if provided
-	var orgID *uuid.UUID
-	if sessionInput.OrganizationID != "" {
-		parsed, err := uuid.Parse(sessionInput.OrganizationID)
-		if err == nil {
-			orgID = &parsed
-		}
-	}
-
-	terminal := &models.Terminal{
-		SessionID:          sessionResp.SessionID,
-		UserID:             userID,
-		Name:               sessionInput.Name,
-		Status:             "active",
-		ExpiresAt:          expiresAt,
-		InstanceType:       sessionInput.InstanceType,
-		MachineSize:        sessionResp.MachineSize,
-		Backend:            sessionResp.Backend,
-		OrganizationID:     orgID,
-		SubscriptionPlanID: sessionInput.SubscriptionPlanID,
-		UserTerminalKeyID:  userKey.ID,
-		UserTerminalKey:    *userKey,
-	}
-
-	if err := tts.repository.CreateTerminalSession(terminal); err != nil {
-		return nil, fmt.Errorf("failed to save terminal session: %w", err)
-	}
-
-	// Ajouter les permissions Casbin pour que le propriétaire puisse masquer des terminaux
-	err = tts.addTerminalHidePermissions(userID)
-	if err != nil {
-		// Log l'erreur mais ne pas faire échouer la création du terminal
-		utils.Warn("failed to add hide permissions for terminal %s: %v", terminal.ID.String(), err)
-	}
-
-	// Ajouter les permissions Casbin pour que le propriétaire puisse accéder à la console WebSocket
-	err = tts.addTerminalConsolePermissions(userID)
-	if err != nil {
-		// Log l'erreur mais ne pas faire échouer la création du terminal
-		utils.Warn("failed to add console permissions for terminal %s: %v", terminal.ID.String(), err)
-	}
-
-	// Construire la réponse
-	consolePath := tts.buildAPIPath("/console", sessionInput.InstanceType)
-	response := &dto.TerminalSessionResponse{
-		SessionID:  sessionResp.SessionID,
-		ExpiresAt:  expiresAt,
-		ConsoleURL: fmt.Sprintf("%s%s?id=%s", tts.baseURL, consolePath, sessionResp.SessionID),
-		Status:     "active",
-		Backend:    sessionResp.Backend,
-	}
-
-	return response, nil
-}
-
-// StartSessionWithPlan démarre une nouvelle session avec validation du plan d'abonnement
-func (tts *terminalTrainerService) StartSessionWithPlan(userID string, sessionInput dto.CreateTerminalSessionInput, planInterface any) (*dto.TerminalSessionResponse, error) {
-	// Convertir l'interface en SubscriptionPlan
-	plan, ok := planInterface.(*paymentModels.SubscriptionPlan)
-	if !ok {
-		return nil, fmt.Errorf("invalid subscription plan type")
-	}
-	utils.Debug("StartSessionWithPlan - Plan: %s (ID: %s), CommandHistoryRetentionDays: %d, RecordingEnabled from input: %d",
-		plan.Name, plan.ID, plan.CommandHistoryRetentionDays, sessionInput.RecordingEnabled)
-
-	// Valider la taille de la machine
-	if sessionInput.InstanceType != "" {
-		// Récupérer les types d'instances disponibles depuis l'API Terminal Trainer
-		instanceTypes, err := tts.GetInstanceTypes(sessionInput.Backend)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get instance types: %w", err)
-		}
-
-		// Trouver la taille correspondant au type d'instance demandé
-		var instanceSizes string
-		for _, it := range instanceTypes {
-			if it.Prefix == sessionInput.InstanceType || it.Name == sessionInput.InstanceType {
-				instanceSizes = it.Size
-				break
-			}
-		}
-
-		if instanceSizes == "" {
-			return nil, fmt.Errorf("instance type '%s' not found", sessionInput.InstanceType)
-		}
-
-		// Parse les tailles disponibles pour cette instance (format: "XS|S|M")
-		availableSizes := strings.Split(instanceSizes, "|")
-
-		// Vérifier qu'au moins une des tailles de l'instance est autorisée dans le plan
-		allowed := false
-		for _, instanceSize := range availableSizes {
-			for _, allowedSize := range plan.AllowedMachineSizes {
-				if allowedSize == strings.TrimSpace(instanceSize) || allowedSize == "all" {
-					allowed = true
-					break
-				}
-			}
-			if allowed {
-				break
-			}
-		}
-		if !allowed {
-			return nil, fmt.Errorf("instance '%s' with sizes [%s] not allowed in your plan. Allowed sizes: %v",
-				sessionInput.InstanceType, instanceSizes, plan.AllowedMachineSizes)
-		}
-	}
-
-	// Validate backend against organization's plan
-	var orgID *uuid.UUID
-	if sessionInput.OrganizationID != "" {
-		parsed, err := uuid.Parse(sessionInput.OrganizationID)
-		if err != nil {
-			return nil, fmt.Errorf("invalid organization_id: %w", err)
-		}
-		orgID = &parsed
-	}
-
-	validatedBackend, err := tts.validateBackendForContext(orgID, plan, sessionInput.Backend)
-	if err != nil {
-		return nil, err
-	}
-	sessionInput.Backend = validatedBackend
-
-	// Appliquer la durée maximale de session depuis le plan
-	maxDurationSeconds := plan.MaxSessionDurationMinutes * 60
-	if sessionInput.Expiry == 0 || sessionInput.Expiry > maxDurationSeconds {
-		sessionInput.Expiry = maxDurationSeconds
-	}
-
-	// Pass command history retention days from subscription plan
-	sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
-	utils.Debug("StartSessionWithPlan - FINAL: HistoryRetentionDays=%d, RecordingEnabled=%d",
-		sessionInput.HistoryRetentionDays, sessionInput.RecordingEnabled)
-
-	// Set the plan ID for audit trail
-	sessionInput.SubscriptionPlanID = &plan.ID
-
-	// Appeler la méthode startSession interne avec les paramètres validés
-	return tts.startSession(userID, sessionInput)
-}
 
 // GetSessionInfo récupère les informations d'une session
 func (tts *terminalTrainerService) GetSessionInfo(sessionID string) (*models.Terminal, error) {
@@ -846,42 +617,6 @@ func (tts *terminalTrainerService) GetRepository() repositories.TerminalReposito
 // CleanupExpiredSessions nettoie les sessions expirées
 func (tts *terminalTrainerService) CleanupExpiredSessions() error {
 	return tts.repository.CleanupExpiredSessions()
-}
-
-// GetInstanceTypes récupère la liste des types d'instances disponibles depuis Terminal Trainer
-// Si backend est non-vide, filtre par backend (retourne uniquement les instances disponibles sur ce backend)
-func (tts *terminalTrainerService) GetInstanceTypes(backend string) ([]dto.InstanceType, error) {
-	// Utiliser le type par défaut pour récupérer la liste des instances disponibles
-	path := tts.buildAPIPath("/instances", "")
-	url := fmt.Sprintf("%s%s", tts.baseURL, path)
-	if backend != "" {
-		url += fmt.Sprintf("?backend=%s", backend)
-	}
-
-	var instanceTypes []dto.InstanceType
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
-
-	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &instanceTypes, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	return instanceTypes, nil
-}
-
-// GetSizes returns the list of all possible machine size tiers from Terminal Trainer
-func (tts *terminalTrainerService) GetSizes() ([]string, error) {
-	path := fmt.Sprintf("/%s/sizes", tts.apiVersion)
-	url := fmt.Sprintf("%s%s", tts.baseURL, path)
-
-	var sizes []string
-	opts := utils.DefaultHTTPClientOptions()
-	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sizes, opts)
-	if err != nil {
-		return nil, err
-	}
-	return sizes, nil
 }
 
 // GetTerms fetches the terms of service text from Terminal Trainer
@@ -2041,27 +1776,22 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 		// Generate terminal name using template
 		terminalName := tts.applyNameTemplate(request.NameTemplate, group.DisplayName, userEmail, member.UserID)
 
-		// Create session input for this user
-		sessionInput := dto.CreateTerminalSessionInput{
+		// Create composed session input for this user
+		composedInput := dto.CreateComposedSessionInput{
+			Distribution:     request.InstanceType, // InstanceType now maps to distribution name
+			Size:             "S",                  // Default size for bulk creation
 			Terms:            request.Terms,
 			Name:             terminalName,
 			Expiry:           request.Expiry,
-			InstanceType:     request.InstanceType,
 			Backend:          request.Backend,
 			OrganizationID:   request.OrganizationID,
 			RecordingEnabled: request.RecordingEnabled,
 			ExternalRef:      request.ExternalRef,
+			Hostname:         request.Hostname,
 		}
 
-		// Apply retention days from plan (defense-in-depth: StartSessionWithPlan
-		// also sets this, but we set it here to make the intent explicit and
-		// protect against future refactoring that might bypass StartSessionWithPlan)
-		if plan, ok := planInterface.(*paymentModels.SubscriptionPlan); ok {
-			sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
-		}
-
-		// Try to create terminal
-		sessionResp, err := tts.StartSessionWithPlan(member.UserID, sessionInput, planInterface)
+		// Try to create terminal via composed session
+		sessionResp, err := tts.StartComposedSession(member.UserID, composedInput, planInterface)
 
 		result := dto.BulkTerminalCreationResult{
 			UserID:    member.UserID,

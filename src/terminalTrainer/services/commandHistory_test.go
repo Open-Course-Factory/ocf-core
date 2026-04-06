@@ -566,36 +566,28 @@ func TestStartSessionURLConstruction_ExternalRef(t *testing.T) {
 	}
 }
 
-// TestStartSessionWithPlan_RetentionDaysCopied verifies that StartSessionWithPlan correctly
+// TestStartComposedSession_RetentionDaysCopied verifies that StartComposedSession correctly
 // copies CommandHistoryRetentionDays from the plan to the session input
-func TestStartSessionWithPlan_RetentionDaysCopied(t *testing.T) {
+func TestStartComposedSession_RetentionDaysCopied(t *testing.T) {
 	testCases := []struct {
-		name                string
-		planRetentionDays   int
-		inputRetentionDays  int
-		expectedInURL       bool
-		expectedValue       int
+		name              string
+		planRetentionDays int
+		expectedValue     int
 	}{
 		{
-			name:               "plan_overrides_input",
-			planRetentionDays:  30,
-			inputRetentionDays: 0,
-			expectedInURL:      true,
-			expectedValue:      30,
+			name:              "plan_sets_30_days",
+			planRetentionDays: 30,
+			expectedValue:     30,
 		},
 		{
-			name:               "plan_overrides_existing_input",
-			planRetentionDays:  90,
-			inputRetentionDays: 7,
-			expectedInURL:      true,
-			expectedValue:      90,
+			name:              "plan_sets_90_days",
+			planRetentionDays: 90,
+			expectedValue:     90,
 		},
 		{
-			name:               "zero_retention_not_in_url",
-			planRetentionDays:  0,
-			inputRetentionDays: 0,
-			expectedInURL:      false,
-			expectedValue:      0,
+			name:              "plan_zero_retention",
+			planRetentionDays: 0,
+			expectedValue:     0,
 		},
 	}
 
@@ -607,34 +599,17 @@ func TestStartSessionWithPlan_RetentionDaysCopied(t *testing.T) {
 				CommandHistoryRetentionDays: tc.planRetentionDays,
 			}
 
-			sessionInput := dto.CreateTerminalSessionInput{
-				Terms:                "accepted",
-				HistoryRetentionDays: tc.inputRetentionDays,
+			composedInput := dto.CreateComposedSessionInput{
+				Distribution: "debian",
+				Size:         "S",
+				Terms:        "accepted",
 			}
 
-			// Simulate the StartSessionWithPlan logic (line 423 in service)
-			sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
+			// Simulate the StartComposedSession logic
+			composedInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
 
-			assert.Equal(t, tc.expectedValue, sessionInput.HistoryRetentionDays,
+			assert.Equal(t, tc.expectedValue, composedInput.HistoryRetentionDays,
 				"HistoryRetentionDays should be set from plan")
-
-			// Verify URL construction behavior
-			urlStr := "http://example.com/start?terms=abc"
-			if sessionInput.HistoryRetentionDays > 0 {
-				urlStr += fmt.Sprintf("&history_retention_days=%d", sessionInput.HistoryRetentionDays)
-			}
-
-			parsed, err := url.Parse(urlStr)
-			require.NoError(t, err)
-
-			retentionParam := parsed.Query().Get("history_retention_days")
-			if tc.expectedInURL {
-				assert.Equal(t, fmt.Sprintf("%d", tc.expectedValue), retentionParam,
-					"history_retention_days should be in URL with correct value")
-			} else {
-				assert.Empty(t, retentionParam,
-					"history_retention_days should not be in URL when 0")
-			}
 		})
 	}
 }
@@ -646,7 +621,7 @@ func TestStartSessionWithPlan_RetentionDaysCopied(t *testing.T) {
 // TestBulkCreateTerminals_SetsRetentionDaysFromPlan verifies that the bulk
 // terminal creation path explicitly sets HistoryRetentionDays from the
 // subscription plan. Recording stays enabled regardless of retention days.
-// This tests the sessionInput construction logic in BulkCreateTerminalsForGroup.
+// This tests the composedInput construction logic in BulkCreateTerminalsForGroup.
 func TestBulkCreateTerminals_SetsRetentionDaysFromPlan(t *testing.T) {
 	testCases := []struct {
 		name                   string
@@ -699,29 +674,30 @@ func TestBulkCreateTerminals_SetsRetentionDaysFromPlan(t *testing.T) {
 				InstanceType:     "alp",
 			}
 
-			// Simulate BulkCreateTerminalsForGroup sessionInput construction
-			sessionInput := dto.CreateTerminalSessionInput{
+			// Simulate BulkCreateTerminalsForGroup composed input construction
+			composedInput := dto.CreateComposedSessionInput{
+				Distribution:     request.InstanceType,
+				Size:             "S",
 				Terms:            request.Terms,
 				Expiry:           request.Expiry,
-				InstanceType:     request.InstanceType,
 				Backend:          request.Backend,
 				OrganizationID:   request.OrganizationID,
 				RecordingEnabled: request.RecordingEnabled,
 			}
 
-			// B1 FIX: Apply retention days from plan to sessionInput
-			sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
+			// StartComposedSession sets retention days from plan
+			composedInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
 
-			assert.Equal(t, tc.expectedRetentionDays, sessionInput.HistoryRetentionDays,
+			assert.Equal(t, tc.expectedRetentionDays, composedInput.HistoryRetentionDays,
 				"HistoryRetentionDays should be set from plan")
-			assert.Equal(t, tc.expectedEnabled, sessionInput.RecordingEnabled,
+			assert.Equal(t, tc.expectedEnabled, composedInput.RecordingEnabled,
 				"RecordingEnabled should stay enabled regardless of retention days")
 		})
 	}
 }
 
-// TestStartSessionWithPlan_InvalidPlanType tests that invalid plan type returns error
-func TestStartSessionWithPlan_InvalidPlanType(t *testing.T) {
+// TestStartComposedSession_InvalidPlanType tests that invalid plan type returns error
+func TestStartComposedSession_InvalidPlanType(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
@@ -734,12 +710,14 @@ func TestStartSessionWithPlan_InvalidPlanType(t *testing.T) {
 		repository: repositories.NewTerminalRepository(db),
 	}
 
-	sessionInput := dto.CreateTerminalSessionInput{
-		Terms: "accepted",
+	composedInput := dto.CreateComposedSessionInput{
+		Distribution: "debian",
+		Size:         "S",
+		Terms:        "accepted",
 	}
 
 	// Pass wrong type as plan
-	_, err := svc.StartSessionWithPlan("user1", sessionInput, "not-a-plan")
+	_, err := svc.StartComposedSession("user1", composedInput, "not-a-plan")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid subscription plan type")
 }
@@ -748,40 +726,32 @@ func TestStartSessionWithPlan_InvalidPlanType(t *testing.T) {
 // C-1: Recording stays enabled regardless of retention days
 // =============================================================================
 
-// TestStartSessionWithPlan_ZeroRetention_RecordingStaysEnabled verifies that
+// TestStartComposedSession_ZeroRetention_RecordingStaysEnabled verifies that
 // recording stays enabled regardless of plan retention days. Recording is always
 // on (RGPD Art. 6.1.f — legitimate interest).
-func TestStartSessionWithPlan_ZeroRetention_RecordingStaysEnabled(t *testing.T) {
+func TestStartComposedSession_ZeroRetention_RecordingStaysEnabled(t *testing.T) {
 	plan := &paymentModels.SubscriptionPlan{
 		MaxSessionDurationMinutes:   60,
 		AllowedMachineSizes:         []string{"S", "M"},
 		CommandHistoryRetentionDays: 0,
 	}
 
-	sessionInput := dto.CreateTerminalSessionInput{
+	composedInput := dto.CreateComposedSessionInput{
+		Distribution:     "debian",
+		Size:             "S",
 		Terms:            "accepted",
 		RecordingEnabled: 1, // Recording is always on
 	}
 
-	// Simulate the StartSessionWithPlan logic:
-	sessionInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
+	// Simulate the StartComposedSession logic:
+	composedInput.HistoryRetentionDays = plan.CommandHistoryRetentionDays
 
-	assert.Equal(t, 0, sessionInput.HistoryRetentionDays,
+	assert.Equal(t, 0, composedInput.HistoryRetentionDays,
 		"HistoryRetentionDays should be 0 from plan")
 
 	// Recording stays enabled — no override based on retention days
-	assert.Equal(t, 1, sessionInput.RecordingEnabled,
+	assert.Equal(t, 1, composedInput.RecordingEnabled,
 		"RecordingEnabled must stay 1 regardless of plan retention days")
-
-	// Verify the URL includes recording_enabled
-	urlStr := "http://example.com/start?terms=abc"
-	if sessionInput.RecordingEnabled > 0 {
-		urlStr += fmt.Sprintf("&recording_enabled=%d", sessionInput.RecordingEnabled)
-	}
-	parsed, err := url.Parse(urlStr)
-	require.NoError(t, err)
-	assert.Equal(t, "1", parsed.Query().Get("recording_enabled"),
-		"recording_enabled should appear in URL even when retention days is 0")
 }
 
 // =============================================================================
@@ -978,85 +948,56 @@ func TestGetSessionCommandHistory_429RateLimit_ReturnsError(t *testing.T) {
 // values < 0 are clamped to 0.
 func TestRecordingEnabledValidation(t *testing.T) {
 	testCases := []struct {
-		name            string
-		enabledValue    int
-		shouldBeInURL   bool
-		expectedURLVal  string // expected value if present in URL
-		expectError     bool
+		name           string
+		enabledValue   int
+		expectedValue  int
 	}{
 		{
-			name:           "valid_enabled_1",
-			enabledValue:   1,
-			shouldBeInURL:  true,
-			expectedURLVal: "1",
-			expectError:    false,
+			name:          "valid_enabled_1",
+			enabledValue:  1,
+			expectedValue: 1,
 		},
 		{
 			name:          "valid_enabled_0",
 			enabledValue:  0,
-			shouldBeInURL: false,
-			expectError:   false,
+			expectedValue: 0,
 		},
 		{
-			name:          "invalid_enabled_2_should_be_normalized",
+			name:          "invalid_enabled_2_clamped_to_1",
 			enabledValue:  2,
-			shouldBeInURL: false, // Should NOT be forwarded as-is (2 is invalid)
-			expectError:   false,
+			expectedValue: 1,
 		},
 		{
-			name:          "invalid_enabled_negative_should_be_normalized",
+			name:          "invalid_enabled_negative_clamped_to_0",
 			enabledValue:  -1,
-			shouldBeInURL: false, // Negative values should not appear in URL
-			expectError:   false,
+			expectedValue: 0,
 		},
 		{
-			name:          "invalid_enabled_large_number",
+			name:          "invalid_enabled_large_number_clamped_to_1",
 			enabledValue:  999,
-			shouldBeInURL: false, // Should NOT be forwarded as-is
-			expectError:   false,
+			expectedValue: 1,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			sessionInput := dto.CreateTerminalSessionInput{
+			composedInput := dto.CreateComposedSessionInput{
+				Distribution:     "debian",
+				Size:             "S",
 				Terms:            "accepted",
 				RecordingEnabled: tc.enabledValue,
 			}
 
-			// Simulate the URL construction logic from StartSession,
-			// including normalization:
-			if sessionInput.RecordingEnabled > 1 {
-				sessionInput.RecordingEnabled = 1
+			// Simulate the normalization logic from startComposedSession
+			if composedInput.RecordingEnabled > 1 {
+				composedInput.RecordingEnabled = 1
 			}
-			if sessionInput.RecordingEnabled < 0 {
-				sessionInput.RecordingEnabled = 0
-			}
-
-			urlStr := "http://example.com/start?terms=abc"
-			if sessionInput.RecordingEnabled > 0 {
-				urlStr += fmt.Sprintf("&recording_enabled=%d", sessionInput.RecordingEnabled)
+			if composedInput.RecordingEnabled < 0 {
+				composedInput.RecordingEnabled = 0
 			}
 
-			parsed, err := url.Parse(urlStr)
-			require.NoError(t, err)
-
-			enabledParam := parsed.Query().Get("recording_enabled")
-
-			if tc.shouldBeInURL {
-				assert.Equal(t, tc.expectedURLVal, enabledParam,
-					"recording_enabled=%d should appear in URL as '%s'", tc.enabledValue, tc.expectedURLVal)
-			} else {
-				// For invalid values (2, -1, 999), the parameter should NOT be in the URL
-				// or should be normalized to a valid value.
-				if enabledParam != "" {
-					// If present, it must be "1" (normalized) - not the raw invalid value
-					assert.Equal(t, "1", enabledParam,
-						"recording_enabled=%d is invalid; if present in URL it must be normalized to 1, got '%s'",
-						tc.enabledValue, enabledParam)
-				}
-				// If not present, that's also acceptable (enabled=0 means recording off)
-			}
+			assert.Equal(t, tc.expectedValue, composedInput.RecordingEnabled,
+				"recording_enabled=%d should be normalized to %d", tc.enabledValue, tc.expectedValue)
 		})
 	}
 }

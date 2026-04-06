@@ -19,19 +19,19 @@ import (
 )
 
 // --- Capturing mock for TerminalTrainerService ---
-// This mock captures the CreateTerminalSessionInput passed to StartSessionWithPlan,
+// This mock captures the CreateComposedSessionInput passed to StartComposedSession,
 // so we can assert on the fields sent to the terminal trainer.
 
 type capturingTTService struct {
 	keys             map[string]*ttModels.UserTerminalKey
-	capturedInputs   []ttDto.CreateTerminalSessionInput
+	capturedInputs   []ttDto.CreateComposedSessionInput
 	capturedUserIDs  []string
 }
 
 func newCapturingTTService() *capturingTTService {
 	return &capturingTTService{
-		keys:           make(map[string]*ttModels.UserTerminalKey),
-		capturedInputs: make([]ttDto.CreateTerminalSessionInput, 0),
+		keys:            make(map[string]*ttModels.UserTerminalKey),
+		capturedInputs:  make([]ttDto.CreateComposedSessionInput, 0),
 		capturedUserIDs: make([]string, 0),
 	}
 }
@@ -61,11 +61,6 @@ func (m *capturingTTService) GetTerms() (string, error) {
 // --- Stubs for the rest of the interface (not called by BulkStartScenario) ---
 
 func (m *capturingTTService) DisableUserKey(string) error { return nil }
-func (m *capturingTTService) StartSessionWithPlan(userID string, sessionInput ttDto.CreateTerminalSessionInput, _ any) (*ttDto.TerminalSessionResponse, error) {
-	m.capturedUserIDs = append(m.capturedUserIDs, userID)
-	m.capturedInputs = append(m.capturedInputs, sessionInput)
-	return &ttDto.TerminalSessionResponse{SessionID: "terminal-" + userID, Status: "running"}, nil
-}
 func (m *capturingTTService) GetSessionInfo(string) (*ttModels.Terminal, error) { return nil, nil }
 func (m *capturingTTService) GetTerminalByUUID(string) (*ttModels.Terminal, error) {
 	return nil, nil
@@ -108,10 +103,6 @@ func (m *capturingTTService) GetSessionInfoFromAPI(string) (*ttDto.TerminalTrain
 }
 func (m *capturingTTService) GetRepository() ttRepos.TerminalRepository { return nil }
 func (m *capturingTTService) CleanupExpiredSessions() error             { return nil }
-func (m *capturingTTService) GetInstanceTypes(string) ([]ttDto.InstanceType, error) {
-	return nil, nil
-}
-func (m *capturingTTService) GetSizes() ([]string, error) { return nil, nil }
 func (m *capturingTTService) GetServerMetrics(bool, string) (*ttDto.ServerMetricsResponse, error) {
 	return nil, nil
 }
@@ -165,15 +156,17 @@ func (m *capturingTTService) GetCatalogFeatures() ([]ttDto.TTFeature, error) { r
 func (m *capturingTTService) GetSessionOptions(*paymentModels.SubscriptionPlan, string, string) (*ttDto.SessionOptionsResponse, error) {
 	return nil, nil
 }
-func (m *capturingTTService) StartComposedSession(string, ttDto.CreateComposedSessionInput, any) (*ttDto.TerminalSessionResponse, error) {
-	return nil, nil
+func (m *capturingTTService) StartComposedSession(userID string, input ttDto.CreateComposedSessionInput, _ any) (*ttDto.TerminalSessionResponse, error) {
+	m.capturedUserIDs = append(m.capturedUserIDs, userID)
+	m.capturedInputs = append(m.capturedInputs, input)
+	return &ttDto.TerminalSessionResponse{SessionID: "terminal-" + userID, Status: "running"}, nil
 }
 
 // --- Test ---
 
 // TestBulkStartScenario_PassesOrganizationID verifies that when a scenario has an
 // OrganizationID set, the BulkStartScenario method passes it through to the
-// CreateTerminalSessionInput when calling StartSessionWithPlan on the terminal trainer.
+// CreateComposedSessionInput when calling StartComposedSession on the terminal trainer.
 func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 	db := setupTestDB(t)
 
@@ -235,25 +228,25 @@ func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 	dashSvc := services.NewTeacherDashboardService(db, ttMock, sessionSvc)
 
-	// Call BulkStartScenario WITH an instanceType so terminal creation triggers
+	// Call BulkStartScenario WITH an instanceType (distribution) so terminal creation triggers
 	result, err := dashSvc.BulkStartScenario(groupID, scenario.ID, "ubuntu:22.04", "", 0, "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	// Verify: StartSessionWithPlan was called exactly once
-	require.Len(t, ttMock.capturedInputs, 1, "StartSessionWithPlan should have been called once")
-	require.Len(t, ttMock.capturedUserIDs, 1, "StartSessionWithPlan should have been called for 1 user")
+	// Verify: StartComposedSession was called exactly once
+	require.Len(t, ttMock.capturedInputs, 1, "StartComposedSession should have been called once")
+	require.Len(t, ttMock.capturedUserIDs, 1, "StartComposedSession should have been called for 1 user")
 	assert.Equal(t, userID, ttMock.capturedUserIDs[0])
 
 	// THE KEY ASSERTION: OrganizationID must be passed through from the scenario
 	capturedInput := ttMock.capturedInputs[0]
 	assert.Equal(t, orgID.String(), capturedInput.OrganizationID,
-		"CreateTerminalSessionInput.OrganizationID should match the scenario's OrganizationID, "+
+		"CreateComposedSessionInput.OrganizationID should match the scenario's OrganizationID, "+
 			"but got %q (empty means the field was not set)", capturedInput.OrganizationID)
 
 	// Also verify other fields were set correctly
 	assert.Equal(t, "test-terms", capturedInput.Terms)
-	assert.Equal(t, "ubuntu:22.04", capturedInput.InstanceType)
+	assert.Equal(t, "ubuntu:22.04", capturedInput.Distribution)
 
 	// Verify session was created successfully
 	assert.Equal(t, 1, result.Created, "should report 1 created session")
