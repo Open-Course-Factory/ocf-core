@@ -551,6 +551,7 @@ type TTDistribution struct {
 	Prefix            string   `json:"prefix"`
 	Description       string   `json:"description"`
 	OsType            string   `json:"os_type,omitempty"`
+	IsGlobal          bool     `json:"is_global"`
 	MinSizeKey        string   `json:"min_size_key,omitempty"`
 	DefaultSizeKey    string   `json:"default_size_key,omitempty"`
 	SupportedFeatures []string `json:"supported_features,omitempty"`
