@@ -1606,13 +1606,13 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 	}
 
-	// Fetch available instance types from tt-backend (best-effort)
-	var availableTypes []terminalDto.InstanceType
-	instanceTypes, ttErr := sc.terminalService.GetInstanceTypes("")
+	// Fetch available distributions from tt-backend (best-effort)
+	var availableDistributions []terminalDto.TTDistribution
+	distributions, ttErr := sc.terminalService.GetDistributions("")
 	if ttErr != nil {
-		slog.Warn("failed to fetch instance types from tt-backend", "err", ttErr)
+		slog.Warn("failed to fetch distributions from tt-backend", "err", ttErr)
 	} else {
-		availableTypes = instanceTypes
+		availableDistributions = distributions
 	}
 
 	// Convert to enriched output with launchability info
@@ -1647,11 +1647,16 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 			item.CompatibleInstanceTypes = types
 		}
 
-		// Determine launchability by cross-referencing with available instance types
-		if len(availableTypes) > 0 {
-			matched := findMatchingInstanceTypes(s, availableTypes)
-			item.AvailableInstanceTypes = matched
-			item.Launchable = len(matched) > 0
+		// Populate required features
+		item.RequiredFeatures = s.GetRequiredFeatures()
+
+		// Determine launchability by checking distribution compatibility
+		if len(availableDistributions) > 0 {
+			resolvedDist, _, _, resolveErr := resolveDistribution(s, availableDistributions)
+			item.Launchable = resolveErr == nil && resolvedDist != ""
+			if resolveErr != nil {
+				item.BlockReason = "no_distribution"
+			}
 		}
 
 		// Flag scenarios visible only due to admin status
@@ -1769,6 +1774,56 @@ func findBestInstanceType(scenario models.Scenario, available []terminalDto.Inst
 	return bestPrefix
 }
 
+// resolveDistribution finds a compatible distribution for a scenario.
+// Returns the distribution name, the size key, and the features map.
+func resolveDistribution(scenario models.Scenario, distributions []terminalDto.TTDistribution) (distName string, size string, features map[string]bool, err error) {
+	requiredFeatures := scenario.GetRequiredFeatures()
+	requiredSize := scenario.InstanceType // This is actually a SIZE like "M"
+
+	for _, dist := range distributions {
+		// Match OS type
+		if scenario.OsType != "" && dist.OsType != scenario.OsType {
+			continue
+		}
+		// Check distribution supports all required features
+		if !distributionSupportsFeatures(dist, requiredFeatures) {
+			continue
+		}
+		// Check distribution's min_size_key allows the requested size
+		if requiredSize != "" && dist.MinSizeKey != "" {
+			reqOrder, reqOk := sizeOrder[strings.ToUpper(requiredSize)]
+			minOrder, minOk := sizeOrder[strings.ToUpper(dist.MinSizeKey)]
+			if reqOk && minOk && reqOrder < minOrder {
+				continue // requested size is smaller than distribution's minimum
+			}
+		}
+		// Found a compatible distribution
+		size = requiredSize
+		if size == "" && dist.DefaultSizeKey != "" {
+			size = dist.DefaultSizeKey
+		}
+		return dist.Name, size, scenario.GetFeaturesMap(), nil
+	}
+	return "", "", nil, fmt.Errorf("no compatible distribution found for scenario (os_type=%s, size=%s)", scenario.OsType, requiredSize)
+}
+
+// distributionSupportsFeatures checks if a distribution supports all required features
+func distributionSupportsFeatures(dist terminalDto.TTDistribution, required []string) bool {
+	if len(required) == 0 {
+		return true
+	}
+	supported := make(map[string]bool, len(dist.SupportedFeatures))
+	for _, f := range dist.SupportedFeatures {
+		supported[f] = true
+	}
+	for _, req := range required {
+		if !supported[req] {
+			return false
+		}
+	}
+	return true
+}
+
 // LaunchScenario godoc
 // @Summary Launch a scenario with auto-provisioned terminal
 // @Description Creates a terminal session and starts a scenario session in one call
@@ -1833,10 +1888,10 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 		}
 	}
 
-	// Get available instance types from tt-backend
-	instanceTypes, err := sc.terminalService.GetInstanceTypes(input.Backend)
+	// Get available distributions from tt-backend
+	distributions, err := sc.terminalService.GetDistributions(input.Backend)
 	if err != nil {
-		slog.Error("failed to get instance types from tt-backend", "err", err)
+		slog.Error("failed to get distributions from tt-backend", "err", err)
 		ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
 			ErrorCode:    http.StatusServiceUnavailable,
 			ErrorMessage: "Terminal service unavailable",
@@ -1844,12 +1899,12 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Find best compatible instance type
-	selectedType := findBestInstanceType(scenario, instanceTypes)
-	if selectedType == "" {
+	// Find a compatible distribution for the scenario
+	distName, size, features, distErr := resolveDistribution(scenario, distributions)
+	if distErr != nil {
 		ctx.JSON(http.StatusConflict, &errors.APIError{
 			ErrorCode:    http.StatusConflict,
-			ErrorMessage: "No compatible instance type available",
+			ErrorMessage: fmt.Sprintf("No compatible distribution: %s", distErr.Error()),
 		})
 		return
 	}
@@ -1912,24 +1967,22 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Create terminal session with plan validation (enforces size, duration, etc.)
-	sessionInput := terminalDto.CreateTerminalSessionInput{
-		Terms:        terms,
-		InstanceType: selectedType,
-		Backend:      input.Backend,
-		Name:         fmt.Sprintf("scenario-%s", scenario.Title),
-		Hostname:     scenario.Hostname,
-		OrganizationID: func() string {
-			if scenario.OrganizationID != nil {
-				return scenario.OrganizationID.String()
-			}
-			return ""
-		}(),
-		RecordingEnabled:     1,
-		HistoryRetentionDays: 30,
+	// Create terminal session via composed session flow (distribution + size + features)
+	composedInput := terminalDto.CreateComposedSessionInput{
+		Distribution:     distName,
+		Size:             size,
+		Features:         features,
+		Terms:            terms,
+		Name:             fmt.Sprintf("scenario-%s", scenario.Title),
+		Hostname:         scenario.Hostname,
+		Backend:          input.Backend,
+		RecordingEnabled: 1,
+	}
+	if scenario.OrganizationID != nil {
+		composedInput.OrganizationID = scenario.OrganizationID.String()
 	}
 
-	terminalResp, termErr := sc.terminalService.StartSessionWithPlan(userID, sessionInput, planResult.Plan)
+	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, planResult.Plan)
 	if termErr != nil {
 		slog.Error("failed to create terminal session", "userID", userID, "err", termErr)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
