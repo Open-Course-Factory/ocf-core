@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
@@ -56,28 +57,31 @@ func (s Scenario) GetReferenceObject() string {
 }
 
 // GetRequiredFeatures parses the RequiredFeatures JSON array field
-func (s Scenario) GetRequiredFeatures() []string {
+func (s Scenario) GetRequiredFeatures() ([]string, error) {
 	if s.RequiredFeatures == "" {
-		return nil
+		return nil, nil
 	}
 	var features []string
 	if err := json.Unmarshal([]byte(s.RequiredFeatures), &features); err != nil {
-		return nil
+		return nil, fmt.Errorf("invalid required_features format (must be JSON array): %w", err)
 	}
-	return features
+	return features, nil
 }
 
 // GetFeaturesMap returns required features as a map[string]bool for composed sessions
-func (s Scenario) GetFeaturesMap() map[string]bool {
-	features := s.GetRequiredFeatures()
+func (s Scenario) GetFeaturesMap() (map[string]bool, error) {
+	features, err := s.GetRequiredFeatures()
+	if err != nil {
+		return nil, err
+	}
 	if len(features) == 0 {
-		return nil
+		return nil, nil
 	}
 	m := make(map[string]bool, len(features))
 	for _, f := range features {
 		m[f] = true
 	}
-	return m
+	return m, nil
 }
 
 // TableName specifies the table name

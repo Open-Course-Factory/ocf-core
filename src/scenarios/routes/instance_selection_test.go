@@ -217,6 +217,20 @@ func TestResolveDistribution_DefaultSize(t *testing.T) {
 
 // --- distributionSupportsFeatures tests ---
 
+func TestResolveDistribution_InvalidJSON(t *testing.T) {
+	scenario := models.Scenario{
+		OsType:           "deb",
+		InstanceType:     "M",
+		RequiredFeatures: "docker,python3", // invalid JSON
+	}
+	distributions := []terminalDto.TTDistribution{
+		{Name: "debian", OsType: "deb"},
+	}
+	_, _, _, err := resolveDistribution(scenario, distributions)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid")
+}
+
 func TestDistributionSupportsFeatures_AllPresent(t *testing.T) {
 	dist := terminalDto.TTDistribution{SupportedFeatures: []string{"network", "persistence"}}
 	assert.True(t, distributionSupportsFeatures(dist, []string{"network"}))
