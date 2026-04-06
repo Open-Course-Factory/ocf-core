@@ -26,8 +26,9 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						EstimatedTime:  model.EstimatedTime,
 						InstanceType:   model.InstanceType,
 						Hostname:       model.Hostname,
-						OsType:         model.OsType,
-						SourceType:     model.SourceType,
+						OsType:           model.OsType,
+						RequiredFeatures: model.RequiredFeatures,
+						SourceType:       model.SourceType,
 						GitRepository:  model.GitRepository,
 						GitBranch:      model.GitBranch,
 						SourcePath:     model.SourcePath,
@@ -101,8 +102,9 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						EstimatedTime:  input.EstimatedTime,
 						InstanceType:   input.InstanceType,
 						Hostname:       input.Hostname,
-						OsType:         input.OsType,
-						SourceType:     input.SourceType,
+						OsType:           input.OsType,
+						RequiredFeatures: input.RequiredFeatures,
+						SourceType:       input.SourceType,
 						GitRepository:  input.GitRepository,
 						GitBranch:      input.GitBranch,
 						SourcePath:     input.SourcePath,
@@ -147,6 +149,9 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 					}
 					if input.OsType != nil {
 						updates["os_type"] = *input.OsType
+					}
+					if input.RequiredFeatures != nil {
+						updates["required_features"] = *input.RequiredFeatures
 					}
 					if input.SourceType != nil {
 						updates["source_type"] = *input.SourceType

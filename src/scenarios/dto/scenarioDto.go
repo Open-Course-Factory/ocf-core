@@ -15,8 +15,9 @@ type CreateScenarioInput struct {
 	EstimatedTime  string     `json:"estimated_time,omitempty" mapstructure:"estimated_time"`
 	InstanceType   string     `json:"instance_type" mapstructure:"instance_type" binding:"required"`
 	Hostname       string     `json:"hostname,omitempty" mapstructure:"hostname" binding:"omitempty,max=63"`
-	OsType         string     `json:"os_type,omitempty" mapstructure:"os_type" binding:"omitempty,oneof=deb rpm apk pacman"`
-	SourceType     string     `json:"source_type,omitempty" mapstructure:"source_type" binding:"omitempty,oneof=git upload builtin"`
+	OsType           string     `json:"os_type,omitempty" mapstructure:"os_type" binding:"omitempty,oneof=deb rpm apk pacman"`
+	RequiredFeatures string     `json:"required_features,omitempty" mapstructure:"required_features"`
+	SourceType       string     `json:"source_type,omitempty" mapstructure:"source_type" binding:"omitempty,oneof=git upload builtin"`
 	GitRepository  string     `json:"git_repository,omitempty" mapstructure:"git_repository"`
 	GitBranch      string     `json:"git_branch,omitempty" mapstructure:"git_branch"`
 	SourcePath     string     `json:"source_path,omitempty" mapstructure:"source_path"`
@@ -45,8 +46,9 @@ type EditScenarioInput struct {
 	EstimatedTime  *string    `json:"estimated_time,omitempty" mapstructure:"estimated_time"`
 	InstanceType   *string    `json:"instance_type,omitempty" mapstructure:"instance_type"`
 	Hostname       *string    `json:"hostname,omitempty" mapstructure:"hostname" binding:"omitempty,max=63"`
-	OsType         *string    `json:"os_type,omitempty" mapstructure:"os_type" binding:"omitempty,oneof=deb rpm apk pacman"`
-	SourceType     *string    `json:"source_type,omitempty" mapstructure:"source_type" binding:"omitempty,oneof=git upload builtin"`
+	OsType           *string    `json:"os_type,omitempty" mapstructure:"os_type" binding:"omitempty,oneof=deb rpm apk pacman"`
+	RequiredFeatures *string    `json:"required_features,omitempty" mapstructure:"required_features"`
+	SourceType       *string    `json:"source_type,omitempty" mapstructure:"source_type" binding:"omitempty,oneof=git upload builtin"`
 	GitRepository  *string    `json:"git_repository,omitempty" mapstructure:"git_repository"`
 	GitBranch      *string    `json:"git_branch,omitempty" mapstructure:"git_branch"`
 	SourcePath     *string    `json:"source_path,omitempty" mapstructure:"source_path"`
@@ -75,8 +77,9 @@ type ScenarioOutput struct {
 	EstimatedTime  string             `json:"estimated_time"`
 	InstanceType   string             `json:"instance_type"`
 	Hostname       string             `json:"hostname,omitempty"`
-	OsType         string             `json:"os_type,omitempty"`
-	SourceType     string             `json:"source_type"`
+	OsType           string             `json:"os_type,omitempty"`
+	RequiredFeatures string             `json:"required_features,omitempty"`
+	SourceType       string             `json:"source_type"`
 	GitRepository  string             `json:"git_repository,omitempty"`
 	GitBranch      string             `json:"git_branch"`
 	SourcePath     string             `json:"source_path,omitempty"`

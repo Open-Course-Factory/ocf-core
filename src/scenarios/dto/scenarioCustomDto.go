@@ -175,7 +175,9 @@ type AvailableScenarioOutput struct {
 	InstanceType            string                       `json:"instance_type"`
 	OsType                  string                       `json:"os_type,omitempty"`
 	CompatibleInstanceTypes []ScenarioInstanceTypeOutput `json:"compatible_instance_types,omitempty"`
+	RequiredFeatures        []string                     `json:"required_features,omitempty"`
 	Launchable              bool                         `json:"launchable"`
+	BlockReason             string                       `json:"block_reason,omitempty"`
 	AvailableInstanceTypes  []string                     `json:"available_instance_types,omitempty"`
 	IsPublic                bool                         `json:"is_public"`
 	AdminOnly               bool                         `json:"admin_only,omitempty"`
