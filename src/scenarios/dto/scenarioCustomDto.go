@@ -152,8 +152,9 @@ type ExportScenariosInput struct {
 
 // LaunchScenarioInput - DTO for direct scenario launch (auto-provisions terminal)
 type LaunchScenarioInput struct {
-	ScenarioID string `json:"scenario_id" binding:"required"`
-	Backend    string `json:"backend,omitempty"`
+	ScenarioID     string `json:"scenario_id" binding:"required"`
+	Backend        string `json:"backend,omitempty"`
+	OrganizationID string `json:"organization_id,omitempty"`
 }
 
 // LaunchScenarioResponse - DTO for launch scenario result

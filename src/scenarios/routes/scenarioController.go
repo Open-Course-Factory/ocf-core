@@ -1615,6 +1615,28 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 		availableDistributions = distributions
 	}
 
+	// Get user's effective plan to check allowed sizes
+	effectivePlanService := paymentServices.NewEffectivePlanService(sc.db)
+	var orgIDForPlan *uuid.UUID
+	if orgCtx := ctx.Query("organization_id"); orgCtx != "" {
+		if parsed, parseErr := uuid.Parse(orgCtx); parseErr == nil {
+			orgIDForPlan = &parsed
+		}
+	}
+	var allowedSizeSet map[string]bool
+	var planAllowsAllSizes bool
+	planResult, planErr := effectivePlanService.GetUserEffectivePlanForOrg(userID, orgIDForPlan)
+	if planErr == nil && planResult != nil && planResult.Plan != nil {
+		allowedSizeSet = make(map[string]bool, len(planResult.Plan.AllowedMachineSizes))
+		for _, s := range planResult.Plan.AllowedMachineSizes {
+			norm := strings.ToUpper(strings.TrimSpace(s))
+			if norm == "ALL" {
+				planAllowsAllSizes = true
+			}
+			allowedSizeSet[norm] = true
+		}
+	}
+
 	// Convert to enriched output with launchability info
 	output := make([]dto.AvailableScenarioOutput, 0, len(scenarios))
 	for _, s := range scenarios {
@@ -1654,12 +1676,19 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 			item.RequiredFeatures = rf
 		}
 
-		// Determine launchability by checking distribution compatibility
+		// Determine launchability by checking distribution compatibility + plan size
 		if len(availableDistributions) > 0 {
-			resolvedDist, _, _, resolveErr := resolveDistribution(s, availableDistributions)
+			resolvedDist, resolvedSize, _, resolveErr := resolveDistribution(s, availableDistributions)
 			item.Launchable = resolveErr == nil && resolvedDist != ""
 			if resolveErr != nil {
 				item.BlockReason = "no_distribution"
+			} else if item.Launchable && allowedSizeSet != nil && !planAllowsAllSizes {
+				// Check if the scenario's required size is in the user's plan
+				normalizedSize := strings.ToUpper(strings.TrimSpace(resolvedSize))
+				if normalizedSize != "" && !allowedSizeSet[normalizedSize] {
+					item.Launchable = false
+					item.BlockReason = "plan"
+				}
 			}
 		}
 
@@ -1931,9 +1960,21 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Get user's effective plan for limit enforcement
+	// Get user's effective plan for limit enforcement (org-context-aware)
 	effectivePlanService := paymentServices.NewEffectivePlanService(sc.db)
-	planResult, planErr := effectivePlanService.GetUserEffectivePlan(userID)
+	var orgIDForPlan *uuid.UUID
+	if orgCtx := ctx.Query("organization_id"); orgCtx != "" {
+		if parsed, parseErr := uuid.Parse(orgCtx); parseErr == nil {
+			orgIDForPlan = &parsed
+		}
+	} else if orgFromCtx, exists := ctx.Get("org_context_id"); exists {
+		if orgStr, ok := orgFromCtx.(string); ok && orgStr != "" {
+			if parsed, parseErr := uuid.Parse(orgStr); parseErr == nil {
+				orgIDForPlan = &parsed
+			}
+		}
+	}
+	planResult, planErr := effectivePlanService.GetUserEffectivePlanForOrg(userID, orgIDForPlan)
 	if planErr != nil || planResult == nil || planResult.Plan == nil {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,
@@ -2770,9 +2811,21 @@ func (sc *scenarioController) PreviewScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Get user's effective plan for limit enforcement
+	// Get user's effective plan for limit enforcement (org-context-aware)
 	effectivePlanService := paymentServices.NewEffectivePlanService(sc.db)
-	planResult, planErr := effectivePlanService.GetUserEffectivePlan(userID)
+	var orgIDForPlan *uuid.UUID
+	if orgCtx := ctx.Query("organization_id"); orgCtx != "" {
+		if parsed, parseErr := uuid.Parse(orgCtx); parseErr == nil {
+			orgIDForPlan = &parsed
+		}
+	} else if orgFromCtx, exists := ctx.Get("org_context_id"); exists {
+		if orgStr, ok := orgFromCtx.(string); ok && orgStr != "" {
+			if parsed, parseErr := uuid.Parse(orgStr); parseErr == nil {
+				orgIDForPlan = &parsed
+			}
+		}
+	}
+	planResult, planErr := effectivePlanService.GetUserEffectivePlanForOrg(userID, orgIDForPlan)
 	if planErr != nil || planResult == nil || planResult.Plan == nil {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,
