@@ -21,6 +21,13 @@ import (
 // downstream handlers can still read it.
 func InjectOrgContext() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
+		// Check query parameter first (for GET requests)
+		if orgID := ctx.Query("organization_id"); orgID != "" {
+			ctx.Set("org_context_id", orgID)
+			ctx.Next()
+			return
+		}
+
 		bodyBytes, err := io.ReadAll(ctx.Request.Body)
 		if err != nil {
 			ctx.Next()
@@ -29,7 +36,7 @@ func InjectOrgContext() gin.HandlerFunc {
 		// Reset body for downstream handlers
 		ctx.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
-		// Parse organization_id from JSON
+		// Parse organization_id from JSON body (for POST requests)
 		var partial struct {
 			OrganizationID string `json:"organization_id"`
 		}
