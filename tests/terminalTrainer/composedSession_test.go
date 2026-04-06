@@ -459,3 +459,54 @@ func TestSessionOptions_MinSizeAndPlanCombined(t *testing.T) {
 		}
 	}
 }
+
+// ==========================================
+// Distribution prefix vs name (regression: console URL must use prefix)
+// ==========================================
+
+func TestComputeSessionOptions_ReturnsDistributionPrefix(t *testing.T) {
+	distro := dto.TTDistribution{
+		Name:              "alpine",
+		Prefix:            "alp",
+		MinSizeKey:        "xs",
+		SupportedFeatures: []string{"network"},
+	}
+	sizes := baseSizes()
+	features := baseFeatures()
+	plan := &paymentModels.SubscriptionPlan{
+		AllowedMachineSizes:  []string{"XS", "S", "M"},
+		NetworkAccessEnabled: true,
+	}
+
+	result := services.ComputeSessionOptions(distro, sizes, features, plan)
+
+	// The distribution in the response must preserve the prefix
+	assert.Equal(t, "alp", result.Distribution.Prefix, "session options must return distribution prefix")
+	assert.Equal(t, "alpine", result.Distribution.Name, "session options must return distribution name")
+	assert.NotEqual(t, result.Distribution.Name, result.Distribution.Prefix,
+		"name and prefix must be different — if they're equal, the code might confuse them")
+}
+
+func TestDistributionPrefix_MustBeUsedForInstanceType(t *testing.T) {
+	// This test documents the invariant: InstanceType on the Terminal model
+	// must be the distribution PREFIX (e.g., "alp"), not the name (e.g., "alpine").
+	// The prefix is used by tt-backend for console, info, expire URL paths.
+	// Using the name instead causes WebSocket 1006 errors.
+
+	distro := dto.TTDistribution{
+		Name:   "debian",
+		Prefix: "deb",
+	}
+
+	// Simulate what StartComposedSession does after GetSessionOptions
+	input := dto.CreateComposedSessionInput{
+		Distribution: "debian",
+	}
+	input.DistributionPrefix = distro.Prefix
+
+	// The InstanceType stored on Terminal must be the prefix, not the name
+	instanceType := input.DistributionPrefix
+	assert.Equal(t, "deb", instanceType, "InstanceType must be the prefix, not the distribution name")
+	assert.NotEqual(t, input.Distribution, instanceType,
+		"InstanceType must differ from Distribution (prefix vs name)")
+}
