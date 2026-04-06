@@ -20,12 +20,9 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		path   string
 		method string
 	}{
-		{"/api/v1/terminals/start-session", "POST"},
 		{"/api/v1/terminals/user-sessions", "GET"},
 		{"/api/v1/terminals/shared-with-me", "GET"},
 		{"/api/v1/terminals/sync-all", "POST"},
-		{"/api/v1/terminals/instance-types", "GET"},
-		{"/api/v1/terminals/sizes", "GET"},
 		{"/api/v1/terminals/metrics", "GET"},
 		{"/api/v1/terminals/:id/console", "GET"},
 		{"/api/v1/terminals/:id/stop", "POST"},
@@ -90,7 +87,6 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 	// Declarative route permission registry
 	access.RouteRegistry.Register("Terminals",
 		// Session management
-		access.RoutePermission{Path: "/api/v1/terminals/start-session", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Start a new terminal session"},
 		access.RoutePermission{Path: "/api/v1/terminals/user-sessions", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "List current user's active terminal sessions"},
 		access.RoutePermission{Path: "/api/v1/terminals/shared-with-me", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "List terminals shared with current user"},
 		access.RoutePermission{Path: "/api/v1/terminals/my-history", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Delete all command history for current user"},
@@ -115,8 +111,6 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 
 		// Public configuration routes
 		access.RoutePermission{Path: "/api/v1/terminals/consent-status", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "Get consent policy status for command recording"},
-		access.RoutePermission{Path: "/api/v1/terminals/instance-types", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "List available terminal instance types"},
-		access.RoutePermission{Path: "/api/v1/terminals/sizes", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "List all possible machine size tiers"},
 		access.RoutePermission{Path: "/api/v1/terminals/metrics", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "Get terminal server metrics"},
 		access.RoutePermission{Path: "/api/v1/terminals/backends", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "List available terminal backends"},
 		access.RoutePermission{Path: "/api/v1/terminals/distributions", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "List available distributions"},

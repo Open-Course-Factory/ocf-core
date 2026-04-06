@@ -105,11 +105,9 @@ func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 		method string
 	}{
 		// Existing (pre-#171)
-		{"/api/v1/terminals/start-session", "POST"},
 		{"/api/v1/terminals/user-sessions", "GET"},
 		{"/api/v1/terminals/shared-with-me", "GET"},
 		{"/api/v1/terminals/sync-all", "POST"},
-		{"/api/v1/terminals/instance-types", "GET"},
 		{"/api/v1/terminals/metrics", "GET"},
 		{"/api/v1/terminals/:id/console", "GET"},
 		{"/api/v1/terminals/:id/stop", "POST"},

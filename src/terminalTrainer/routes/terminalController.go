@@ -34,7 +34,6 @@ type TerminalController interface {
 	GetEntity(ctx *gin.Context)
 
 	// Méthodes spécialisées Terminal Trainer
-	StartSession(ctx *gin.Context)
 	ConnectConsole(ctx *gin.Context)
 	StopSession(ctx *gin.Context)
 	GetUserSessions(ctx *gin.Context)
@@ -57,9 +56,6 @@ type TerminalController interface {
 	GetSessionStatus(ctx *gin.Context)
 	GetSyncStatistics(ctx *gin.Context)
 
-	// Méthodes de configuration
-	GetInstanceTypes(ctx *gin.Context)
-	GetSizes(ctx *gin.Context)
 
 	// Méthodes de métriques
 	GetServerMetrics(ctx *gin.Context)
@@ -159,54 +155,6 @@ var upgrader = websocket.Upgrader{
 // DeleteEntity override pour gérer les sessions de terminal avec hard delete
 func (tc *terminalController) DeleteEntity(ctx *gin.Context) {
 	tc.GenericController.DeleteEntity(ctx, false)
-}
-
-// Start Terminal Session godoc
-//
-//	@Summary		Démarrer une session terminal
-//	@Description	Démarre une nouvelle session de terminal via Terminal Trainer
-//	@Tags			terminals
-//	@Accept			json
-//	@Produce		json
-//	@Param			session	body	dto.CreateTerminalSessionInput	true	"Terminal session input"
-//	@Security		Bearer
-//	@Success		200	{object}	dto.TerminalSessionResponse
-//	@Failure		400	{object}	errors.APIError	"Bad request"
-//	@Failure		403	{object}	errors.APIError	"Access denied"
-//	@Failure		500	{object}	errors.APIError	"Terminal trainer error"
-//	@Router			/terminals/start-session [post]
-func (tc *terminalController) StartSession(ctx *gin.Context) {
-	userId := ctx.GetString("userId")
-
-	sessionInput := dto.CreateTerminalSessionInput{}
-	if err := ctx.ShouldBindJSON(&sessionInput); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	// Get subscription plan from middleware context
-	planInterface, exists := ctx.Get("subscription_plan")
-	if !exists {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Subscription plan not found in context",
-		})
-		return
-	}
-
-	sessionResponse, err := tc.service.StartSessionWithPlan(userId, sessionInput, planInterface)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, sessionResponse)
 }
 
 // Connect Console godoc
@@ -948,53 +896,6 @@ func (tc *terminalController) GetSyncStatistics(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, response)
-}
-
-// Get Instance Types godoc
-//
-//	@Summary		Récupérer les types d'instances disponibles
-//	@Description	Récupère la liste des types d'instances/préfixes disponibles depuis Terminal Trainer. Optionnellement filtré par backend.
-//	@Tags			terminals
-//	@Security		Bearer
-//	@Accept			json
-//	@Produce		json
-//	@Param			backend	query		string	false	"Backend ID to filter instance types for"
-//	@Success		200	{array}		dto.InstanceType
-//	@Failure		500	{object}	errors.APIError	"Erreur interne du serveur"
-//	@Router			/terminals/instance-types [get]
-func (tc *terminalController) GetInstanceTypes(ctx *gin.Context) {
-	backend := ctx.Query("backend")
-	instanceTypes, err := tc.service.GetInstanceTypes(backend)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to get instance types: %v", err),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, instanceTypes)
-}
-
-// GetSizes godoc
-//
-//	@Summary		Get all possible machine size tiers
-//	@Description	Returns the list of all defined machine sizes (e.g., XS, S, M, L, XL)
-//	@Tags			terminals
-//	@Produce		json
-//	@Success		200	{array}		string
-//	@Failure		500	{object}	errors.APIError	"Internal server error"
-//	@Router			/terminals/sizes [get]
-func (tc *terminalController) GetSizes(ctx *gin.Context) {
-	sizes, err := tc.service.GetSizes()
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: fmt.Sprintf("Failed to get sizes: %v", err),
-		})
-		return
-	}
-	ctx.JSON(http.StatusOK, sizes)
 }
 
 // Get Server Metrics godoc

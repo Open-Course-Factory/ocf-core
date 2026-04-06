@@ -27,10 +27,6 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	routes := router.Group("/terminals")
 
-	// Routes spécialisées pour les fonctionnalités Terminal Trainer
-	// Apply effective plan + limit + RAM check middlewares to start-session route
-	routes.POST("/start-session", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService), paymentMiddleware.RequirePlan(), paymentMiddleware.CheckLimit(effectivePlanService, db, "concurrent_terminals"), paymentMiddleware.CheckRAMAvailability(terminalService), terminalController.StartSession)
-
 	// Console access requires "read" level access (Layer 2 security check)
 	routes.GET("/:id/console", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelRead), terminalController.ConnectConsole)
 
@@ -72,8 +68,6 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.GET("/consent-status", middleware.AuthManagement(), terminalController.GetConsentStatus)
 
 	// Configuration (no terminal-specific access needed)
-	routes.GET("/instance-types", middleware.AuthManagement(), terminalController.GetInstanceTypes)
-	routes.GET("/sizes", middleware.AuthManagement(), terminalController.GetSizes)
 	routes.GET("/metrics", middleware.AuthManagement(), terminalController.GetServerMetrics)
 	routes.GET("/backends", middleware.AuthManagement(), terminalController.GetBackends)
 	routes.PATCH("/backends/:backendId/set-default", middleware.AuthManagement(), terminalController.SetDefaultBackend)

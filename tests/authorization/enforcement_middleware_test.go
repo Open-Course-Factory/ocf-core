@@ -112,10 +112,10 @@ func TestRouteRegistry_Lookup_Hit(t *testing.T) {
 		Access:     access.AccessRule{Type: access.AdminOnly},
 	})
 	access.RouteRegistry.Register("terminal", access.RoutePermission{
-		Path:       "/api/v1/terminals/start-session",
+		Path:       "/api/v1/terminals/start-composed-session",
 		Method:     "POST",
 		Role: "member",
-		Access:     access.AccessRule{Type: access.Public},
+		Access:     access.AccessRule{Type: access.SelfScoped},
 	})
 
 	tests := []struct {
@@ -146,11 +146,11 @@ func TestRouteRegistry_Lookup_Hit(t *testing.T) {
 			expectCategory: "admin",
 		},
 		{
-			name:           "lookup terminal start-session POST",
+			name:           "lookup terminal start-composed-session POST",
 			method:         "POST",
-			path:           "/api/v1/terminals/start-session",
+			path:           "/api/v1/terminals/start-composed-session",
 			expectFound:    true,
-			expectAccess:   access.Public,
+			expectAccess:   access.SelfScoped,
 			expectCasbin:   "member",
 			expectCategory: "terminal",
 		},
