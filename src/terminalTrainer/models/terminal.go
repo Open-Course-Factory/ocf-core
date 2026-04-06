@@ -21,9 +21,12 @@ type Terminal struct {
 	OrganizationID     *uuid.UUID `gorm:"index" json:"organization_id,omitempty"`
 	SubscriptionPlanID *uuid.UUID `gorm:"type:uuid;index" json:"subscription_plan_id,omitempty"`
 	UserTerminalKeyID uuid.UUID  `gorm:"not null;index" json:"user_terminal_key_id"`
-	IsHiddenByOwner   bool       `gorm:"default:false" json:"is_hidden_by_owner"`
-	HiddenByOwnerAt   *time.Time `json:"hidden_by_owner_at,omitempty"`
-	UserTerminalKey   UserTerminalKey
+	IsHiddenByOwner      bool       `gorm:"default:false" json:"is_hidden_by_owner"`
+	HiddenByOwnerAt      *time.Time `json:"hidden_by_owner_at,omitempty"`
+	ComposedDistribution string     `gorm:"type:varchar(100)" json:"composed_distribution,omitempty"`
+	ComposedSize         string     `gorm:"type:varchar(10)" json:"composed_size,omitempty"`
+	ComposedFeatures     string     `gorm:"type:text" json:"composed_features,omitempty"`
+	UserTerminalKey      UserTerminalKey
 }
 
 // UserTerminalKey stocke la clé API Terminal Trainer pour chaque utilisateur

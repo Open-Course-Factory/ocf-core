@@ -523,6 +523,85 @@ type EnumServiceStatus struct {
 	Mismatches    []string  `json:"mismatches,omitempty"`
 }
 
+// --- Composed Session DTOs (Phase 4) ---
+
+// CreateComposedSessionInput is the request body for POST /terminals/start-composed-session
+type CreateComposedSessionInput struct {
+	Distribution     string          `binding:"required" json:"distribution"`
+	Size             string          `binding:"required" json:"size"`
+	Features         map[string]bool `json:"features"`
+	Terms            string          `binding:"required" json:"terms"`
+	Name             string          `json:"name,omitempty"`
+	Expiry           int             `json:"expiry,omitempty"`
+	Backend          string          `json:"backend,omitempty"`
+	OrganizationID   string          `json:"organization_id,omitempty"`
+	Hostname         string          `json:"hostname,omitempty"`
+	Packages         []string        `json:"packages,omitempty"`
+	RecordingEnabled int             `json:"recording_enabled,omitempty"`
+	ExternalRef      string          `json:"external_ref,omitempty"`
+	// Set by service layer
+	HistoryRetentionDays int        `json:"-"`
+	SubscriptionPlanID   *uuid.UUID `json:"-"`
+}
+
+// TTDistribution mirrors tt-backend's Distribution struct
+type TTDistribution struct {
+	Name              string   `json:"name"`
+	Prefix            string   `json:"prefix"`
+	Description       string   `json:"description"`
+	OsType            string   `json:"os_type,omitempty"`
+	MinSizeKey        string   `json:"min_size_key,omitempty"`
+	DefaultSizeKey    string   `json:"default_size_key,omitempty"`
+	SupportedFeatures []string `json:"supported_features,omitempty"`
+}
+
+// TTSize mirrors tt-backend's Size struct
+type TTSize struct {
+	Key          string `json:"key"`
+	Name         string `json:"name"`
+	Description  string `json:"description,omitempty"`
+	CPU          int    `json:"cpu"`
+	CPUAllowance string `json:"cpu_allowance"`
+	Memory       string `json:"memory"`
+	Disk         string `json:"disk"`
+	Processes    int    `json:"processes"`
+	SortOrder    int    `json:"sort_order"`
+}
+
+// TTFeature mirrors tt-backend's Feature struct
+type TTFeature struct {
+	Key            string `json:"key"`
+	Name           string `json:"name"`
+	Description    string `json:"description,omitempty"`
+	ProfileName    string `json:"profile_name"`
+	MinSizeKey     string `json:"min_size_key,omitempty"`
+	DefaultEnabled bool   `json:"default_enabled"`
+	SortOrder      int    `json:"sort_order"`
+}
+
+// SessionOptionsResponse is returned by GET /terminals/session-options
+type SessionOptionsResponse struct {
+	Distribution    TTDistribution         `json:"distribution"`
+	AllowedSizes    []SessionOptionSize    `json:"allowed_sizes"`
+	AllowedFeatures []SessionOptionFeature `json:"allowed_features"`
+}
+
+// SessionOptionSize describes a size with its allowed status
+type SessionOptionSize struct {
+	TTSize
+	Allowed bool   `json:"allowed"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// SessionOptionFeature describes a feature with its allowed status (no ProfileName exposed)
+type SessionOptionFeature struct {
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Allowed     bool   `json:"allowed"`
+	Reason      string `json:"reason,omitempty"`
+}
+
 // CommandHistoryEntry represents a single command from a terminal session
 type CommandHistoryEntry struct {
 	SequenceNum int    `json:"sequence_num"`
