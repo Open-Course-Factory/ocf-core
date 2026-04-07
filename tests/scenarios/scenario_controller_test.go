@@ -1101,6 +1101,13 @@ func setupAvailableRouter(db *gorm.DB, userID string, roles []string) *gin.Engin
 	})
 	controller := scenarioController.NewScenarioController(db)
 	sessions := api.Group("/scenario-sessions")
+	// InjectOrgContext equivalent: read organization_id from query param into gin context
+	sessions.Use(func(c *gin.Context) {
+		if orgID := c.Query("organization_id"); orgID != "" {
+			c.Set("org_context_id", orgID)
+		}
+		c.Next()
+	})
 	sessions.GET("/available", controller.GetAvailableScenarios)
 	return r
 }
@@ -1327,8 +1334,9 @@ func TestGetAvailableScenarios_IncludesOrgAssignment(t *testing.T) {
 
 	router := setupAvailableRouter(db, "user-org-1", []string{"member"})
 
+	// Must pass organization_id to see org-scoped scenarios (org-aware filtering)
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/available", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/available?organization_id="+org.ID.String(), nil)
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -1336,6 +1344,6 @@ func TestGetAvailableScenarios_IncludesOrgAssignment(t *testing.T) {
 	var scenarios []map[string]any
 	err := json.Unmarshal(w.Body.Bytes(), &scenarios)
 	require.NoError(t, err)
-	assert.Len(t, scenarios, 1, "should return the org-assigned scenario")
+	assert.Len(t, scenarios, 1, "should return the org-assigned scenario when org context is provided")
 	assert.Equal(t, scenario.ID.String(), scenarios[0]["id"])
 }
