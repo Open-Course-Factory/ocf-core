@@ -1485,6 +1485,16 @@ func (sc *scenarioController) GroupUploadScenario(ctx *gin.Context) {
 func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 
+	// Read org context from middleware (set by InjectOrgContext)
+	var orgID *uuid.UUID
+	if orgCtx, exists := ctx.Get("org_context_id"); exists {
+		if orgStr, ok := orgCtx.(string); ok && orgStr != "" {
+			if parsed, parseErr := uuid.Parse(orgStr); parseErr == nil {
+				orgID = &parsed
+			}
+		}
+	}
+
 	var scenarios []models.Scenario
 
 	if sc.hasAdminRole(ctx) {
@@ -1497,43 +1507,41 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 			return
 		}
 	} else {
-		// Get user's group IDs
+		// Scope scenario list to the current org context:
+		// - With org context: only show that org's assignments + that org's groups
+		// - Without org context (personal): only personal groups (no org) + public scenarios
 		var groupIDs []uuid.UUID
-		if err := sc.db.Model(&groupModels.GroupMember{}).
-			Where("user_id = ? AND is_active = true", userID).
-			Pluck("group_id", &groupIDs).Error; err != nil {
-			slog.Error("failed to get user group memberships", "err", err)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to fetch scenarios",
-			})
-			return
-		}
-
-		// Get user's org IDs
-		var orgIDs []uuid.UUID
-		if err := sc.db.Model(&orgModels.OrganizationMember{}).
-			Where("user_id = ? AND is_active = true", userID).
-			Pluck("organization_id", &orgIDs).Error; err != nil {
-			slog.Error("failed to get user org memberships", "err", err)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to fetch scenarios",
-			})
-			return
-		}
-
-		// Build OR conditions for group and org scopes
 		var conditions []string
 		var args []interface{}
 
-		if len(groupIDs) > 0 {
-			conditions = append(conditions, "(sa.scope = 'group' AND sa.group_id IN ?)")
-			args = append(args, groupIDs)
-		}
-		if len(orgIDs) > 0 {
-			conditions = append(conditions, "(sa.scope = 'org' AND sa.organization_id IN ?)")
-			args = append(args, orgIDs)
+		if orgID != nil {
+			// Get groups belonging to this org that the user is a member of
+			if err := sc.db.Model(&groupModels.GroupMember{}).
+				Joins("JOIN class_groups cg ON cg.id = group_members.group_id").
+				Where("group_members.user_id = ? AND group_members.is_active = true AND cg.organization_id = ?", userID, *orgID).
+				Pluck("group_members.group_id", &groupIDs).Error; err != nil {
+				slog.Error("failed to get user group memberships for org", "err", err)
+			}
+
+			if len(groupIDs) > 0 {
+				conditions = append(conditions, "(sa.scope = 'group' AND sa.group_id IN ?)")
+				args = append(args, groupIDs)
+			}
+			conditions = append(conditions, "(sa.scope = 'org' AND sa.organization_id = ?)")
+			args = append(args, *orgID)
+		} else {
+			// Personal context: only groups without an org
+			if err := sc.db.Model(&groupModels.GroupMember{}).
+				Joins("JOIN class_groups cg ON cg.id = group_members.group_id").
+				Where("group_members.user_id = ? AND group_members.is_active = true AND cg.organization_id IS NULL", userID).
+				Pluck("group_members.group_id", &groupIDs).Error; err != nil {
+				slog.Error("failed to get user personal group memberships", "err", err)
+			}
+
+			if len(groupIDs) > 0 {
+				conditions = append(conditions, "(sa.scope = 'group' AND sa.group_id IN ?)")
+				args = append(args, groupIDs)
+			}
 		}
 
 		if len(conditions) > 0 {
@@ -1605,16 +1613,6 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 		for _, id := range assignedIDs {
 			assignedScenarioIDs[id] = true
-		}
-	}
-
-	// Read org context from middleware (set by InjectOrgContext)
-	var orgID *uuid.UUID
-	if orgCtx, exists := ctx.Get("org_context_id"); exists {
-		if orgStr, ok := orgCtx.(string); ok && orgStr != "" {
-			if parsed, parseErr := uuid.Parse(orgStr); parseErr == nil {
-				orgID = &parsed
-			}
 		}
 	}
 
