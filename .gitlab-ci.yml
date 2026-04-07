@@ -26,8 +26,8 @@ variables:
 # ============================================================================
 
 stages:
-  - check    # Version validation and auto-tagging
-  - test     # All test suites (unit, integration, race, auth)
+  - test     # All test suites (unit, integration, race, auth) — MUST pass before tagging
+  - check    # Version validation and auto-tagging (only after tests pass)
   - build    # Docker image creation on release tags
   - release  # Release creation
 
