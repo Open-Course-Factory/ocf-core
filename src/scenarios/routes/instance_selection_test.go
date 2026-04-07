@@ -3,8 +3,10 @@ package scenarioController
 import (
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/scenarios/models"
 	terminalDto "soli/formations/src/terminalTrainer/dto"
 )
@@ -127,4 +129,114 @@ func TestDistributionSupportsFeatures_Empty(t *testing.T) {
 	dist := terminalDto.TTDistribution{SupportedFeatures: nil}
 	assert.True(t, distributionSupportsFeatures(dist, nil))
 	assert.True(t, distributionSupportsFeatures(dist, []string{}))
+}
+
+// --- CompatibleInstanceTypes tests ---
+
+func makeScenarioInstanceType(scenarioID uuid.UUID, instanceType string, osType string, priority int) models.ScenarioInstanceType {
+	return models.ScenarioInstanceType{
+		BaseModel:    entityManagementModels.BaseModel{ID: uuid.New()},
+		ScenarioID:   scenarioID,
+		InstanceType: instanceType,
+		OsType:       osType,
+		Priority:     priority,
+	}
+}
+
+func TestResolveDistribution_CompatibleInstanceTypes_MatchByName(t *testing.T) {
+	scenarioID := uuid.New()
+	scenario := models.Scenario{
+		OsType: "deb",
+		CompatibleInstanceTypes: []models.ScenarioInstanceType{
+			makeScenarioInstanceType(scenarioID, "rogueLite", "", 0),
+		},
+	}
+	scenario.BaseModel = entityManagementModels.BaseModel{ID: scenarioID}
+
+	distributions := []terminalDto.TTDistribution{
+		{Name: "debian", OsType: "deb", DefaultSizeKey: "s"},
+		{Name: "rogueLite", OsType: "debian", DefaultSizeKey: "m"},
+	}
+
+	distName, size, _, err := resolveDistribution(scenario, distributions)
+	assert.NoError(t, err)
+	assert.Equal(t, "rogueLite", distName, "should match by CompatibleInstanceTypes name, not by OsType")
+	assert.Equal(t, "m", size, "should use distribution's DefaultSizeKey when scenario has no InstanceType")
+}
+
+func TestResolveDistribution_CompatibleInstanceTypes_Priority(t *testing.T) {
+	scenarioID := uuid.New()
+	scenario := models.Scenario{
+		CompatibleInstanceTypes: []models.ScenarioInstanceType{
+			makeScenarioInstanceType(scenarioID, "ubuntu", "", 10),
+			makeScenarioInstanceType(scenarioID, "rogueLite", "", 1),
+		},
+	}
+	scenario.BaseModel = entityManagementModels.BaseModel{ID: scenarioID}
+
+	distributions := []terminalDto.TTDistribution{
+		{Name: "ubuntu", OsType: "deb", DefaultSizeKey: "s"},
+		{Name: "rogueLite", OsType: "debian", DefaultSizeKey: "m"},
+	}
+
+	distName, size, _, err := resolveDistribution(scenario, distributions)
+	assert.NoError(t, err)
+	assert.Equal(t, "rogueLite", distName, "lower priority number should be selected first")
+	assert.Equal(t, "m", size)
+}
+
+func TestResolveDistribution_CompatibleInstanceTypes_FallbackToOsType(t *testing.T) {
+	scenarioID := uuid.New()
+	scenario := models.Scenario{
+		OsType: "deb",
+		CompatibleInstanceTypes: []models.ScenarioInstanceType{
+			makeScenarioInstanceType(scenarioID, "nonexistent", "", 0),
+		},
+	}
+	scenario.BaseModel = entityManagementModels.BaseModel{ID: scenarioID}
+
+	distributions := []terminalDto.TTDistribution{
+		{Name: "debian", OsType: "deb", DefaultSizeKey: "s"},
+	}
+
+	distName, size, _, err := resolveDistribution(scenario, distributions)
+	assert.NoError(t, err)
+	assert.Equal(t, "debian", distName, "should fall back to OsType matching when no CompatibleInstanceTypes match")
+	assert.Equal(t, "s", size)
+}
+
+func TestResolveDistribution_CompatibleInstanceTypes_Empty(t *testing.T) {
+	scenario := models.Scenario{
+		OsType:                  "apk",
+		CompatibleInstanceTypes: []models.ScenarioInstanceType{},
+	}
+
+	distributions := []terminalDto.TTDistribution{
+		{Name: "alpine", OsType: "apk", DefaultSizeKey: "xs"},
+	}
+
+	distName, size, _, err := resolveDistribution(scenario, distributions)
+	assert.NoError(t, err)
+	assert.Equal(t, "alpine", distName, "empty CompatibleInstanceTypes should use normal OsType matching")
+	assert.Equal(t, "xs", size)
+}
+
+func TestResolveDistribution_CompatibleInstanceTypes_UsesScenarioSize(t *testing.T) {
+	scenarioID := uuid.New()
+	scenario := models.Scenario{
+		InstanceType: "L",
+		CompatibleInstanceTypes: []models.ScenarioInstanceType{
+			makeScenarioInstanceType(scenarioID, "rogueLite", "", 0),
+		},
+	}
+	scenario.BaseModel = entityManagementModels.BaseModel{ID: scenarioID}
+
+	distributions := []terminalDto.TTDistribution{
+		{Name: "rogueLite", OsType: "debian", DefaultSizeKey: "m"},
+	}
+
+	distName, size, _, err := resolveDistribution(scenario, distributions)
+	assert.NoError(t, err)
+	assert.Equal(t, "rogueLite", distName)
+	assert.Equal(t, "L", size, "scenario's InstanceType should take precedence over distribution's DefaultSizeKey")
 }

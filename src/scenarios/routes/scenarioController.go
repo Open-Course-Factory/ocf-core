@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,11 +14,12 @@ import (
 	"soli/formations/src/auth/errors"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
+	paymentModels "soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	"soli/formations/src/scenarios/utils"
-	paymentServices "soli/formations/src/payment/services"
 	terminalDto "soli/formations/src/terminalTrainer/dto"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	terminalServices "soli/formations/src/terminalTrainer/services"
@@ -1606,26 +1608,21 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 	}
 
-	// Fetch available distributions from tt-backend (best-effort)
-	var availableDistributions []terminalDto.TTDistribution
-	distributions, ttErr := sc.terminalService.GetDistributions("")
-	if ttErr != nil {
-		slog.Warn("failed to fetch distributions from tt-backend", "err", ttErr)
-	} else {
-		availableDistributions = distributions
+	// Read org context from middleware (set by InjectOrgContext)
+	var orgID *uuid.UUID
+	if orgCtx, exists := ctx.Get("org_context_id"); exists {
+		if orgStr, ok := orgCtx.(string); ok && orgStr != "" {
+			if parsed, parseErr := uuid.Parse(orgStr); parseErr == nil {
+				orgID = &parsed
+			}
+		}
 	}
 
 	// Get user's effective plan to check allowed sizes
 	effectivePlanService := paymentServices.NewEffectivePlanService(sc.db)
-	var orgIDForPlan *uuid.UUID
-	if orgCtx := ctx.Query("organization_id"); orgCtx != "" {
-		if parsed, parseErr := uuid.Parse(orgCtx); parseErr == nil {
-			orgIDForPlan = &parsed
-		}
-	}
 	var allowedSizeSet map[string]bool
 	var planAllowsAllSizes bool
-	planResult, planErr := effectivePlanService.GetUserEffectivePlanForOrg(userID, orgIDForPlan)
+	planResult, planErr := effectivePlanService.GetUserEffectivePlanForOrg(userID, orgID)
 	if planErr == nil && planResult != nil && planResult.Plan != nil {
 		allowedSizeSet = make(map[string]bool, len(planResult.Plan.AllowedMachineSizes))
 		for _, s := range planResult.Plan.AllowedMachineSizes {
@@ -1677,18 +1674,16 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 
 		// Determine launchability by checking distribution compatibility + plan size
-		if len(availableDistributions) > 0 {
-			resolvedDist, resolvedSize, _, resolveErr := resolveDistribution(s, availableDistributions)
-			item.Launchable = resolveErr == nil && resolvedDist != ""
-			if resolveErr != nil {
-				item.BlockReason = "no_distribution"
-			} else if item.Launchable && allowedSizeSet != nil && !planAllowsAllSizes {
-				// Check if the scenario's required size is in the user's plan
-				normalizedSize := strings.ToUpper(strings.TrimSpace(resolvedSize))
-				if normalizedSize != "" && !allowedSizeSet[normalizedSize] {
-					item.Launchable = false
-					item.BlockReason = "plan"
-				}
+		_, resolvedDist, resolvedSize, _, resolveErr := sc.resolveScenarioBackendAndDistribution(s, orgID)
+		item.Launchable = resolveErr == nil && resolvedDist != ""
+		if resolveErr != nil {
+			item.BlockReason = "no_distribution"
+		} else if item.Launchable && allowedSizeSet != nil && !planAllowsAllSizes {
+			// Check if the scenario's required size is in the user's plan
+			normalizedSize := strings.ToUpper(strings.TrimSpace(resolvedSize))
+			if normalizedSize != "" && !allowedSizeSet[normalizedSize] {
+				item.Launchable = false
+				item.BlockReason = "plan"
 			}
 		}
 
@@ -1716,6 +1711,34 @@ func resolveDistribution(scenario models.Scenario, distributions []terminalDto.T
 		return "", "", nil, fmt.Errorf("invalid scenario configuration: %w", featErr)
 	}
 	requiredSize := scenario.InstanceType // This is actually a SIZE like "M"
+
+	// Priority path: if CompatibleInstanceTypes is populated, try matching by name first
+	if len(scenario.CompatibleInstanceTypes) > 0 {
+		// Sort by priority ascending (lower number = higher priority)
+		sorted := make([]models.ScenarioInstanceType, len(scenario.CompatibleInstanceTypes))
+		copy(sorted, scenario.CompatibleInstanceTypes)
+		sort.Slice(sorted, func(i, j int) bool {
+			return sorted[i].Priority < sorted[j].Priority
+		})
+
+		for _, cit := range sorted {
+			for _, dist := range distributions {
+				if strings.EqualFold(cit.InstanceType, dist.Name) {
+					// Match found — use scenario size if set, otherwise distribution default
+					resolvedSize := requiredSize
+					if resolvedSize == "" {
+						resolvedSize = dist.DefaultSizeKey
+					}
+					featuresMap, featMapErr := scenario.GetFeaturesMap()
+					if featMapErr != nil {
+						return "", "", nil, fmt.Errorf("invalid scenario configuration: %w", featMapErr)
+					}
+					return dist.Name, resolvedSize, featuresMap, nil
+				}
+			}
+		}
+		// No CompatibleInstanceType matched — fall through to OsType matching
+	}
 
 	for _, dist := range distributions {
 		// Match OS type
@@ -1763,6 +1786,52 @@ func distributionSupportsFeatures(dist terminalDto.TTDistribution, required []st
 		}
 	}
 	return true
+}
+
+// resolveScenarioBackendAndDistribution determines the best backend and distribution
+// for a scenario, taking into account the user's organization context. It tries
+// org-allowed backends first (defaultBackend has priority), then falls back to the
+// system default backend.
+func (sc *scenarioController) resolveScenarioBackendAndDistribution(
+	scenario models.Scenario,
+	orgID *uuid.UUID,
+) (backend string, distName string, size string, features map[string]bool, err error) {
+	// Determine candidate backends
+	var candidateBackends []string
+	if orgID != nil {
+		var org orgModels.Organization
+		if err := sc.db.First(&org, "id = ?", *orgID).Error; err == nil {
+			if org.DefaultBackend != "" {
+				candidateBackends = append(candidateBackends, org.DefaultBackend)
+			}
+			for _, b := range org.AllowedBackends {
+				if b != org.DefaultBackend {
+					candidateBackends = append(candidateBackends, b)
+				}
+			}
+		}
+	}
+	if len(candidateBackends) == 0 {
+		candidateBackends = []string{""} // system default
+	}
+
+	// Try each candidate backend
+	var lastErr error
+	for _, b := range candidateBackends {
+		distributions, distErr := sc.terminalService.GetDistributions(b)
+		if distErr != nil {
+			lastErr = distErr
+			continue
+		}
+		resolvedDist, resolvedSize, resolvedFeatures, resolveErr := resolveDistribution(scenario, distributions)
+		if resolveErr != nil {
+			lastErr = resolveErr
+			continue
+		}
+		return b, resolvedDist, resolvedSize, resolvedFeatures, nil
+	}
+
+	return "", "", "", nil, fmt.Errorf("no compatible distribution on any backend: %v", lastErr)
 }
 
 // LaunchScenario godoc
@@ -1829,19 +1898,18 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 		}
 	}
 
-	// Get available distributions from tt-backend
-	distributions, err := sc.terminalService.GetDistributions(input.Backend)
-	if err != nil {
-		slog.Error("failed to get distributions from tt-backend", "err", err)
-		ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
-			ErrorCode:    http.StatusServiceUnavailable,
-			ErrorMessage: "Terminal service unavailable",
-		})
-		return
+	// Read org context from middleware (set by InjectOrgContext)
+	var orgID *uuid.UUID
+	if orgCtx, exists := ctx.Get("org_context_id"); exists {
+		if orgStr, ok := orgCtx.(string); ok && orgStr != "" {
+			if parsed, parseErr := uuid.Parse(orgStr); parseErr == nil {
+				orgID = &parsed
+			}
+		}
 	}
 
-	// Find a compatible distribution for the scenario
-	distName, size, features, distErr := resolveDistribution(scenario, distributions)
+	// Resolve backend + distribution using org-aware logic
+	backend, distName, size, features, distErr := sc.resolveScenarioBackendAndDistribution(scenario, orgID)
 	if distErr != nil {
 		slog.Error("no compatible distribution for scenario", "scenario", scenario.Name, "err", distErr)
 		ctx.JSON(http.StatusConflict, &errors.APIError{
@@ -1880,43 +1948,20 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Get user's effective plan for limit enforcement (org-context-aware)
-	effectivePlanService := paymentServices.NewEffectivePlanService(sc.db)
-	var orgIDForPlan *uuid.UUID
-	if orgCtx := ctx.Query("organization_id"); orgCtx != "" {
-		if parsed, parseErr := uuid.Parse(orgCtx); parseErr == nil {
-			orgIDForPlan = &parsed
-		}
-	} else if orgFromCtx, exists := ctx.Get("org_context_id"); exists {
-		if orgStr, ok := orgFromCtx.(string); ok && orgStr != "" {
-			if parsed, parseErr := uuid.Parse(orgStr); parseErr == nil {
-				orgIDForPlan = &parsed
-			}
-		}
-	}
-	planResult, planErr := effectivePlanService.GetUserEffectivePlanForOrg(userID, orgIDForPlan)
-	if planErr != nil || planResult == nil || planResult.Plan == nil {
+	// Read plan from middleware context (set by InjectEffectivePlan + RequirePlan)
+	planInterface, exists := ctx.Get("subscription_plan")
+	if !exists {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,
 			ErrorMessage: "No active subscription plan",
 		})
 		return
 	}
-
-	// Check concurrent terminal limit
-	limitCheck, limitErr := effectivePlanService.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
-	if limitErr != nil {
-		slog.Error("failed to check usage limit", "userID", userID, "err", limitErr)
+	plan, ok := planInterface.(*paymentModels.SubscriptionPlan)
+	if !ok {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to check usage limits",
-		})
-		return
-	}
-	if !limitCheck.Allowed {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: fmt.Sprintf("Terminal limit reached (%d/%d). Stop an existing session first.", limitCheck.CurrentUsage, limitCheck.Limit),
+			ErrorMessage: "Invalid subscription plan",
 		})
 		return
 	}
@@ -1929,19 +1974,19 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 		Terms:            terms,
 		Name:             fmt.Sprintf("scenario-%s", scenario.Title),
 		Hostname:         scenario.Hostname,
-		Backend:          input.Backend,
+		Backend:          backend,
 		RecordingEnabled: 1,
 	}
-	if scenario.OrganizationID != nil {
-		composedInput.OrganizationID = scenario.OrganizationID.String()
+	if orgID != nil {
+		composedInput.OrganizationID = orgID.String()
 	}
 
-	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, planResult.Plan)
+	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, plan)
 	if termErr != nil {
 		slog.Error("failed to create terminal session for scenario", "scenario", scenario.Name, "userID", userID, "err", termErr)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to start terminal session. Please try again or contact support.",
+			ErrorMessage: termErr.Error(),
 		})
 		return
 	}

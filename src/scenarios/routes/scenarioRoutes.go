@@ -5,7 +5,10 @@ import (
 
 	auth "soli/formations/src/auth"
 	config "soli/formations/src/configuration"
+	paymentMiddleware "soli/formations/src/payment/middleware"
+	paymentServices "soli/formations/src/payment/services"
 	scenarioMiddleware "soli/formations/src/scenarios/middleware"
+	terminalServices "soli/formations/src/terminalTrainer/services"
 
 	"gorm.io/gorm"
 )
@@ -28,8 +31,12 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 
 	// Session routes (students)
 	rateLimiter := scenarioMiddleware.PerUserRateLimit()
+	effectivePlanService := paymentServices.NewEffectivePlanService(db)
+	terminalService := terminalServices.NewTerminalTrainerService(db)
 	sessionRoutes := router.Group("/scenario-sessions")
-	sessionRoutes.GET("/available", middleware.AuthManagement(), controller.GetAvailableScenarios)
+	sessionRoutes.GET("/available", middleware.AuthManagement(),
+		paymentMiddleware.InjectOrgContext(),
+		controller.GetAvailableScenarios)
 	sessionRoutes.GET("/my", middleware.AuthManagement(), controller.GetMySessions)
 	sessionRoutes.POST("/start", middleware.AuthManagement(), controller.StartScenario)
 	sessionRoutes.GET("/by-terminal/:terminalId", middleware.AuthManagement(), controller.GetSessionByTerminal)
@@ -41,7 +48,13 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	sessionRoutes.POST("/:id/submit-flag", middleware.AuthManagement(), rateLimiter, controller.SubmitFlag)
 	sessionRoutes.POST("/:id/steps/:stepOrder/hints/:level/reveal", middleware.AuthManagement(), controller.RevealHint)
 	sessionRoutes.POST("/:id/abandon", middleware.AuthManagement(), controller.AbandonSession)
-	sessionRoutes.POST("/launch", middleware.AuthManagement(), controller.LaunchScenario)
+	sessionRoutes.POST("/launch", middleware.AuthManagement(),
+		paymentMiddleware.InjectOrgContext(),
+		paymentMiddleware.InjectEffectivePlan(effectivePlanService),
+		paymentMiddleware.RequirePlan(),
+		paymentMiddleware.CheckLimit(effectivePlanService, db, "concurrent_terminals"),
+		paymentMiddleware.CheckRAMAvailability(terminalService),
+		controller.LaunchScenario)
 
 	// Group-level scenario import/export routes (teachers/group admins)
 	groupScenarioRoutes := router.Group("/groups/:groupId/scenarios")
