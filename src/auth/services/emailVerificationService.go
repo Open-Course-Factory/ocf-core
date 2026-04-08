@@ -283,10 +283,13 @@ func (s *emailVerificationService) getVerificationStatusFromDB(userID string) (*
 	var token models.EmailVerificationToken
 	err := s.db.Where("user_id = ? AND used_at IS NOT NULL", userID).First(&token).Error
 	if err != nil {
-		// No used token found — user is genuinely unverified
-		return &VerificationStatus{
-			Verified: false,
-		}, nil
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// No used token found — user is genuinely unverified
+			return &VerificationStatus{
+				Verified: false,
+			}, nil
+		}
+		return nil, fmt.Errorf("database error checking verification: %w", err)
 	}
 
 	status := &VerificationStatus{
