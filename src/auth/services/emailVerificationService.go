@@ -149,14 +149,8 @@ func (s *emailVerificationService) VerifyEmail(token string) error {
 		return ErrTokenExpired
 	}
 
-	// Mark token as used
-	now := time.Now()
-	verificationToken.UsedAt = &now
-	if err := s.db.Save(&verificationToken).Error; err != nil {
-		return fmt.Errorf("failed to mark token as used: %w", err)
-	}
-
-	// Update user's email verification status in Casdoor
+	// Update user's email verification status in Casdoor BEFORE marking token as used.
+	// If Casdoor fails, the token remains valid so the user can retry.
 	user, err := casdoorsdk.GetUserByUserId(verificationToken.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
@@ -173,6 +167,13 @@ func (s *emailVerificationService) VerifyEmail(token string) error {
 
 	if _, err := casdoorsdk.UpdateUser(user); err != nil {
 		return fmt.Errorf("failed to update user verification status: %w", err)
+	}
+
+	// Mark token as used only after Casdoor update succeeds
+	now := time.Now()
+	verificationToken.UsedAt = &now
+	if err := s.db.Save(&verificationToken).Error; err != nil {
+		return fmt.Errorf("failed to mark token as used: %w", err)
 	}
 
 	utils.Info("Email verified for user: %s", verificationToken.UserID)
@@ -243,11 +244,14 @@ func (s *emailVerificationService) IsEmailVerified(userID string) (bool, error) 
 	return user.EmailVerified, nil
 }
 
-// GetVerificationStatus returns the verification status for a user
+// GetVerificationStatus returns the verification status for a user.
+// It checks Casdoor first, then falls back to PostgreSQL if Casdoor
+// is unavailable or reports the email as unverified.
 func (s *emailVerificationService) GetVerificationStatus(userID string) (*VerificationStatus, error) {
 	user, err := casdoorsdk.GetUserByUserId(userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		// Casdoor unavailable — fall back to PostgreSQL
+		return s.getVerificationStatusFromDB(userID)
 	}
 
 	status := &VerificationStatus{
@@ -257,6 +261,40 @@ func (s *emailVerificationService) GetVerificationStatus(userID string) (*Verifi
 
 	if user.EmailVerified && user.Properties != nil {
 		status.VerifiedAt = user.Properties["email_verified_at"]
+	}
+
+	// If Casdoor says unverified, check PostgreSQL for used tokens as fallback
+	if !status.Verified {
+		dbStatus, dbErr := s.getVerificationStatusFromDB(userID)
+		if dbErr == nil && dbStatus.Verified {
+			status.Verified = dbStatus.Verified
+			status.VerifiedAt = dbStatus.VerifiedAt
+			if dbStatus.Email != "" {
+				status.Email = dbStatus.Email
+			}
+		}
+	}
+
+	return status, nil
+}
+
+// getVerificationStatusFromDB checks PostgreSQL for a used verification token
+func (s *emailVerificationService) getVerificationStatusFromDB(userID string) (*VerificationStatus, error) {
+	var token models.EmailVerificationToken
+	err := s.db.Where("user_id = ? AND used_at IS NOT NULL", userID).First(&token).Error
+	if err != nil {
+		// No used token found — user is genuinely unverified
+		return &VerificationStatus{
+			Verified: false,
+		}, nil
+	}
+
+	status := &VerificationStatus{
+		Verified: true,
+		Email:    token.Email,
+	}
+	if token.UsedAt != nil {
+		status.VerifiedAt = token.UsedAt.Format("2006-01-02T15:04:05Z07:00")
 	}
 
 	return status, nil
