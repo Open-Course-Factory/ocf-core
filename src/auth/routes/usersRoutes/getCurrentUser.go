@@ -74,6 +74,18 @@ func GetCurrentUser(ctx *gin.Context) {
 		forcePasswordReset = user.Properties["force_password_reset"] == "true"
 	}
 
+	// PostgreSQL fallback: if Casdoor says unverified, check for used tokens in DB
+	emailVerified := user.EmailVerified
+	if !emailVerified && sqldb.DB != nil {
+		var usedToken models.EmailVerificationToken
+		if err := sqldb.DB.Where("user_id = ? AND used_at IS NOT NULL", userID).First(&usedToken).Error; err == nil {
+			emailVerified = true
+			if usedToken.UsedAt != nil {
+				emailVerifiedAt = usedToken.UsedAt.Format("2006-01-02T15:04:05Z07:00")
+			}
+		}
+	}
+
 	// Build response
 	response := &dto.CurrentUserOutput{
 		UserID:             user.Id,
@@ -85,7 +97,7 @@ func GetCurrentUser(ctx *gin.Context) {
 		Avatar:             user.Avatar,
 		Roles:              roles,
 		IsAdmin:            isAdmin,
-		EmailVerified:      user.EmailVerified,
+		EmailVerified:      emailVerified,
 		EmailVerifiedAt:    emailVerifiedAt,
 		ForcePasswordReset: forcePasswordReset,
 	}
