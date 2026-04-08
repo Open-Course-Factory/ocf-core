@@ -200,11 +200,11 @@ func TestGetUserEffectivePlanForOrg_PersonalOrg_NoPersonalSub_Error(t *testing.T
 	assert.Contains(t, err.Error(), "no active personal subscription")
 }
 
-func TestGetUserEffectivePlanForOrg_TeamOrg_NoSubscription_Error(t *testing.T) {
+func TestGetUserEffectivePlanForOrg_TeamOrg_NoSubscription_NoPersonalSub_Error(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "user-team-no-sub"
 
-	// Create a team org without any subscription
+	// Create a team org without any subscription (and no personal subscription either)
 	teamOrg := createTeamOrgWithoutSubscription(t, db, "my-team", userID)
 
 	svc := services.NewEffectivePlanService(db)
@@ -212,7 +212,7 @@ func TestGetUserEffectivePlanForOrg_TeamOrg_NoSubscription_Error(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "no active subscription for organization")
+	assert.Contains(t, err.Error(), "no personal fallback")
 }
 
 func TestGetUserEffectivePlanForOrg_NonexistentOrg_Error(t *testing.T) {

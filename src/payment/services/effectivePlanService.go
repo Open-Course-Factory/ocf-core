@@ -27,6 +27,7 @@ type EffectivePlanResult struct {
 	Source                   EffectivePlanSource
 	UserSubscription         *models.UserSubscription         // non-nil if source=personal
 	OrganizationSubscription *models.OrganizationSubscription // non-nil if source=organization
+	IsFallback               bool                             // true when using personal subscription as fallback for a team org without its own subscription
 }
 
 // EffectivePlanService is the single source of truth for "what plan does this user have?"
@@ -243,7 +244,13 @@ func (s *effectivePlanService) GetUserEffectivePlanForOrg(userID string, orgID *
 	// Return that org's subscription
 	orgSub, err := s.orgSubRepo.GetActiveOrganizationSubscription(*orgID)
 	if err != nil {
-		return nil, fmt.Errorf("no active subscription for organization %s: %w", orgID.String(), err)
+		// Team org has no subscription — fall back to user's personal subscription
+		result, fallbackErr := s.GetUserEffectivePlan(userID)
+		if fallbackErr != nil {
+			return nil, fmt.Errorf("no active subscription for organization %s and no personal fallback: %w", orgID.String(), fallbackErr)
+		}
+		result.IsFallback = true
+		return result, nil
 	}
 	return &EffectivePlanResult{
 		Plan:                     &orgSub.SubscriptionPlan,

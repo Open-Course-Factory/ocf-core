@@ -335,10 +335,12 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 			return
 		}
 		subscriptionDTO.IsPrimary = true
+		subscriptionDTO.IsFallback = result.IsFallback
 		ctx.JSON(http.StatusOK, subscriptionDTO)
 
 	case services.PlanSourceOrganization:
 		output := sc.orgSubscriptionToUserDTO(userId, result.OrganizationSubscription, result.Plan)
+		output.IsFallback = result.IsFallback
 		ctx.JSON(http.StatusOK, output)
 
 	default:

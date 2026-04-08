@@ -132,6 +132,7 @@ type UserSubscriptionOutput struct {
 	Status               string                 `json:"status"`
 	SubscriptionType     string                 `json:"subscription_type"` // "personal" or "assigned"
 	IsPrimary            bool                   `json:"is_primary"`        // True if this is the active subscription being used
+	IsFallback           bool                   `json:"is_fallback"`       // True when using personal subscription as fallback for a team org without its own subscription
 	CurrentPeriodStart   time.Time              `json:"current_period_start"`
 	CurrentPeriodEnd     time.Time              `json:"current_period_end"`
 	TrialEnd             *time.Time             `json:"trial_end,omitempty"`
