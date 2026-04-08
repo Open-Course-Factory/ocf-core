@@ -155,6 +155,9 @@ func (s *emailVerificationService) VerifyEmail(token string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
 	}
+	if user == nil {
+		return fmt.Errorf("failed to get user: user not found in identity provider")
+	}
 
 	// Use native Casdoor EmailVerified field
 	user.EmailVerified = true
