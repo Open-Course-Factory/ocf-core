@@ -170,6 +170,11 @@ func (ac *authController) Login(ctx *gin.Context) {
 
 	roles := getUserRoles(user)
 
+	emailVerifiedAt := ""
+	if user.Properties != nil {
+		emailVerifiedAt = user.Properties["email_verified_at"]
+	}
+
 	loginOutputDto := &dto.LoginOutput{
 		UserName:         user.Name,
 		DisplayName:      user.DisplayName,
@@ -177,6 +182,9 @@ func (ac *authController) Login(ctx *gin.Context) {
 		AccessToken:      response.AccessToken,
 		RenewAccessToken: response.RefreshToken,
 		UserRoles:        roles,
+		Email:            user.Email,
+		EmailVerified:    user.EmailVerified,
+		EmailVerifiedAt:  emailVerifiedAt,
 	}
 
 	utils.Info("Login successful. You are connected as: %s", loginOutputDto.UserName)
