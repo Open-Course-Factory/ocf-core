@@ -10,6 +10,8 @@ import (
 	"os"
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/auth/models"
+	sqldb "soli/formations/src/db"
 	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -175,6 +177,19 @@ func (ac *authController) Login(ctx *gin.Context) {
 		emailVerifiedAt = user.Properties["email_verified_at"]
 	}
 
+	// PostgreSQL fallback: if Casdoor says unverified, check for used tokens in DB
+	emailVerified := user.EmailVerified
+	if !emailVerified && sqldb.DB != nil {
+		var usedToken models.EmailVerificationToken
+		if err := sqldb.DB.Where("user_id = ? AND used_at IS NOT NULL", user.Id).
+			Order("used_at DESC").First(&usedToken).Error; err == nil {
+			emailVerified = true
+			if usedToken.UsedAt != nil {
+				emailVerifiedAt = usedToken.UsedAt.Format("2006-01-02T15:04:05Z07:00")
+			}
+		}
+	}
+
 	loginOutputDto := &dto.LoginOutput{
 		UserName:         user.Name,
 		DisplayName:      user.DisplayName,
@@ -183,7 +198,7 @@ func (ac *authController) Login(ctx *gin.Context) {
 		RenewAccessToken: response.RefreshToken,
 		UserRoles:        roles,
 		Email:            user.Email,
-		EmailVerified:    user.EmailVerified,
+		EmailVerified:    emailVerified,
 		EmailVerifiedAt:  emailVerifiedAt,
 	}
 

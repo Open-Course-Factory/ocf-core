@@ -173,6 +173,7 @@ func (s *emailVerificationService) VerifyEmail(token string) error {
 	now := time.Now()
 	verificationToken.UsedAt = &now
 	if err := s.db.Save(&verificationToken).Error; err != nil {
+		utils.Warn("Casdoor already updated for user %s but failed to mark token as used: %v", verificationToken.UserID, err)
 		return fmt.Errorf("failed to mark token as used: %w", err)
 	}
 
@@ -281,7 +282,7 @@ func (s *emailVerificationService) GetVerificationStatus(userID string) (*Verifi
 // getVerificationStatusFromDB checks PostgreSQL for a used verification token
 func (s *emailVerificationService) getVerificationStatusFromDB(userID string) (*VerificationStatus, error) {
 	var token models.EmailVerificationToken
-	err := s.db.Where("user_id = ? AND used_at IS NOT NULL", userID).First(&token).Error
+	err := s.db.Where("user_id = ? AND used_at IS NOT NULL", userID).Order("used_at DESC").First(&token).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// No used token found — user is genuinely unverified

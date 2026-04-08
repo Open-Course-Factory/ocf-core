@@ -30,7 +30,9 @@ func StartEmailVerificationCleanupJob(db *gorm.DB) {
 func cleanupExpiredVerificationTokens(db *gorm.DB) {
 	cutoffTime := time.Now().Add(-48 * time.Hour)
 
-	result := db.Unscoped().Where("expires_at < ?", cutoffTime).
+	// Only delete unused expired tokens — used tokens are proof of verification
+	// and are needed by the PostgreSQL fallback in GetVerificationStatus / /auth/me
+	result := db.Unscoped().Where("expires_at < ? AND used_at IS NULL", cutoffTime).
 		Delete(&models.EmailVerificationToken{})
 
 	if result.Error != nil {

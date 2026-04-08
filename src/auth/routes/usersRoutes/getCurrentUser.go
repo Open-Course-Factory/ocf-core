@@ -78,11 +78,14 @@ func GetCurrentUser(ctx *gin.Context) {
 	emailVerified := user.EmailVerified
 	if !emailVerified && sqldb.DB != nil {
 		var usedToken models.EmailVerificationToken
-		if err := sqldb.DB.Where("user_id = ? AND used_at IS NOT NULL", userID).First(&usedToken).Error; err == nil {
+		if err := sqldb.DB.Where("user_id = ? AND used_at IS NOT NULL", userID).
+			Order("used_at DESC").First(&usedToken).Error; err == nil {
 			emailVerified = true
 			if usedToken.UsedAt != nil {
 				emailVerifiedAt = usedToken.UsedAt.Format("2006-01-02T15:04:05Z07:00")
 			}
+		} else if err != gorm.ErrRecordNotFound {
+			utils.Warn("Failed to check email verification fallback for user %s: %v", userID, err)
 		}
 	}
 
