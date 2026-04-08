@@ -126,6 +126,9 @@ func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/terminals/:id/access-status", "GET"},
 		{"/api/v1/terminals/consent-status", "GET"},
 		{"/api/v1/terminals/backends", "GET"},
+		// Catalog proxy routes (cached from tt-backend)
+		{"/api/v1/terminals/catalog-sizes", "GET"},
+		{"/api/v1/terminals/catalog-features", "GET"},
 		// User terminal keys
 		{"/api/v1/user-terminal-keys/regenerate", "POST"},
 		{"/api/v1/user-terminal-keys/my-key", "GET"},

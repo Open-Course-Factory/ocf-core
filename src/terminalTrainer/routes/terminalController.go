@@ -96,6 +96,8 @@ type TerminalController interface {
 
 	// Composed session (Phase 4)
 	GetDistributions(ctx *gin.Context)
+	GetCatalogSizes(ctx *gin.Context)
+	GetCatalogFeatures(ctx *gin.Context)
 	GetSessionOptions(ctx *gin.Context)
 	StartComposedSession(ctx *gin.Context)
 }
@@ -2054,6 +2056,50 @@ func (tc *terminalController) GetDistributions(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, distributions)
+}
+
+// GetCatalogSizes godoc
+//
+//	@Summary		List available resource sizes
+//	@Description	Returns the catalog of resource sizes from the terminal backend
+//	@Tags			terminals
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{array}		dto.TTSize
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/terminals/catalog-sizes [get]
+func (tc *terminalController) GetCatalogSizes(ctx *gin.Context) {
+	sizes, err := tc.service.GetCatalogSizes()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to get catalog sizes: %v", err),
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, sizes)
+}
+
+// GetCatalogFeatures godoc
+//
+//	@Summary		List available feature options
+//	@Description	Returns the catalog of available features from the terminal backend
+//	@Tags			terminals
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{array}		dto.TTFeature
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/terminals/catalog-features [get]
+func (tc *terminalController) GetCatalogFeatures(ctx *gin.Context) {
+	features, err := tc.service.GetCatalogFeatures()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to get catalog features: %v", err),
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, features)
 }
 
 // GetSessionOptions godoc
