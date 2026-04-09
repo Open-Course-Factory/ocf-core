@@ -218,15 +218,19 @@ func (s *effectivePlanService) GetUserEffectivePlanForOrg(userID string, orgID *
 	}
 
 	if org.IsPersonalOrg() {
-		// Personal org → return user's personal subscription
-		sub, err := s.paymentRepo.GetActiveUserSubscription(userID)
+		// Personal org → return user's personal subscription (not assigned org plans)
+		var sub models.UserSubscription
+		err := s.db.Preload("SubscriptionPlan").
+			Where("user_id = ? AND subscription_type = ? AND status IN ?", userID, "personal", []string{"active", "trialing"}).
+			Order("created_at DESC").
+			First(&sub).Error
 		if err != nil {
 			return nil, fmt.Errorf("no active personal subscription for user %s: %w", userID, err)
 		}
 		return &EffectivePlanResult{
 			Plan:             &sub.SubscriptionPlan,
 			Source:           PlanSourcePersonal,
-			UserSubscription: sub,
+			UserSubscription: &sub,
 		}, nil
 	}
 
