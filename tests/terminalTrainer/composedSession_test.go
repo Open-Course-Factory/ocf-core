@@ -177,11 +177,16 @@ func TestSessionOptions_MinSizeConstraint(t *testing.T) {
 
 	opts := services.ComputeSessionOptions(distro, sizes, features, plan)
 
+	// XS should be excluded entirely (not present in AllowedSizes)
+	sizeKeys := make([]string, 0, len(opts.AllowedSizes))
+	for _, s := range opts.AllowedSizes {
+		sizeKeys = append(sizeKeys, s.Key)
+	}
+	assert.NotContains(t, sizeKeys, "XS", "XS should not be present in AllowedSizes at all")
+
+	// S, M, L, XL should still be present and allowed
 	for _, s := range opts.AllowedSizes {
 		switch s.Key {
-		case "XS":
-			assert.False(t, s.Allowed, "XS should be below distro min_size S")
-			assert.Equal(t, "min_size", s.Reason)
 		case "S", "M", "L", "XL":
 			assert.True(t, s.Allowed, "size %s should be >= distro min_size S", s.Key)
 		}
@@ -435,7 +440,7 @@ func TestStartComposedSession_AllowedSizeWorks(t *testing.T) {
 
 func TestSessionOptions_MinSizeAndPlanCombined(t *testing.T) {
 	// Distro min_size=S + plan allows only XS, S, M
-	// XS: denied by min_size, S/M: allowed, L/XL: denied by plan_limit
+	// XS: excluded (below min_size), S/M: allowed, L/XL: denied by plan_limit
 	plan := &paymentModels.SubscriptionPlan{
 		AllowedMachineSizes: []string{"XS", "S", "M"},
 	}
@@ -446,11 +451,16 @@ func TestSessionOptions_MinSizeAndPlanCombined(t *testing.T) {
 
 	opts := services.ComputeSessionOptions(distro, sizes, features, plan)
 
+	// XS should be excluded entirely (not present in AllowedSizes)
+	sizeKeys := make([]string, 0, len(opts.AllowedSizes))
+	for _, s := range opts.AllowedSizes {
+		sizeKeys = append(sizeKeys, s.Key)
+	}
+	assert.NotContains(t, sizeKeys, "XS", "XS should not be present in AllowedSizes at all")
+
+	// S/M allowed, L/XL denied by plan_limit
 	for _, s := range opts.AllowedSizes {
 		switch s.Key {
-		case "XS":
-			assert.False(t, s.Allowed, "XS below distro min_size")
-			assert.Equal(t, "min_size", s.Reason)
 		case "S", "M":
 			assert.True(t, s.Allowed, "%s should be allowed", s.Key)
 		case "L", "XL":

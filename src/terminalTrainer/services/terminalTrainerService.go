@@ -2775,9 +2775,9 @@ func ComputeSessionOptions(
 		normKey := NormalizeSizeKey(s.Key)
 
 		if s.SortOrder < minSortOrder {
-			opt.Allowed = false
-			opt.Reason = "min_size"
-		} else if !planAllowsAll && !planSizeSet[normKey] {
+			continue
+		}
+		if !planAllowsAll && !planSizeSet[normKey] {
 			opt.Allowed = false
 			opt.Reason = "plan_limit"
 		}
