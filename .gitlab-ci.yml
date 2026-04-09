@@ -26,6 +26,7 @@ variables:
 # ============================================================================
 
 stages:
+  - prepare  # Build CI images (only when Dockerfiles change)
   - test     # All test suites (unit, integration, race, auth) — MUST pass before tagging
   - check    # Version validation and auto-tagging (only after tests pass)
   - build    # Docker image creation on release tags
@@ -86,6 +87,30 @@ include:
       disable_changelog: true
 
 # ============================================================================
+# Prepare Stage — build CI images when their Dockerfiles change
+# ============================================================================
+
+build:ci-auth-image:
+  stage: prepare
+  image: docker:27
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    CI_AUTH_IMAGE: ${CI_REGISTRY_IMAGE}/ci-auth:latest
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -f Dockerfile.ci-auth -t $CI_AUTH_IMAGE .
+    - docker push $CI_AUTH_IMAGE
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - Dockerfile.ci-auth
+    - if: $CI_PIPELINE_SOURCE == "web"
+      changes:
+        - Dockerfile.ci-auth
+
+# ============================================================================
 # Test Stage
 # ============================================================================
 
@@ -119,10 +144,12 @@ test:unit:
 # Only runs tests with //go:build integration tag
 test:auth:
   stage: test
-  # Note: Using custom image would be more efficient, but using base for now
-  # To use custom image: registry.gitlab.com/your-project/auth-test:latest
-  image: docker:27-dind
-  needs: []  # Run in parallel with other test jobs
+  # Custom image with Go + tools pre-installed (see Dockerfile.ci-auth).
+  # Auto-built by build:ci-auth-image job when Dockerfile.ci-auth changes.
+  image: ${CI_REGISTRY_IMAGE}/ci-auth:latest
+  needs:
+    - job: build:ci-auth-image
+      optional: true  # Skip dependency when Dockerfile.ci-auth hasn't changed
 
   services:
     - docker:27-dind
@@ -144,95 +171,32 @@ test:auth:
     CASDOOR_ENDPOINT: "http://casdoor-test:8000"
 
   before_script:
-    # Install required tools
-    - apk add --no-cache docker-compose postgresql-client wget bash
-
-    # Install Go 1.24 (Alpine's go package is too old)
-    - wget https://go.dev/dl/go1.24.1.linux-amd64.tar.gz
-    - tar -C /usr/local -xzf go1.24.1.linux-amd64.tar.gz
-    - export PATH=$PATH:/usr/local/go/bin
-    - export GOPATH=/go
-    - export PATH=$PATH:/go/bin
-    - go version
-
     # Create JWT certificate from GitLab CI variable (use test certificate for auth tests)
     - echo $token_jwt_key_test | base64 -d > ./src/auth/casdoor/token_jwt_key.pem
 
     # Clean up previous run's resources to ensure a fresh start
     - echo "🧹 Cleaning up old Docker resources..."
-    - docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml down -v --remove-orphans || true
+    - docker compose -p $COMPOSE_PROJECT -f docker-compose.test.yml down -v --remove-orphans || true
 
-    # Start database services first (PostgreSQL and MySQL for Casdoor)
-    - echo "🐳 Starting database services..."
-    - docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml up -d postgres-test casdoor-db-test
-
-    # Wait for databases to be FULLY ready before starting Casdoor
-    - chmod +x scripts/ci/wait-for-services.sh
-    - echo "⏳ Waiting for PostgreSQL to be ready..."
-    - |
-      for i in $(seq 1 60); do
-        if docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml exec -T postgres-test pg_isready -U postgres 2>/dev/null; then
-          echo "✅ PostgreSQL is ready!"
-          break
-        fi
-        if [ $i -eq 60 ]; then
-          echo "❌ PostgreSQL failed to start after 60s"
-          docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml logs postgres-test
-          exit 1
-        fi
-        sleep 1
-      done
-    - echo "⏳ Waiting for MySQL to be ready..."
-    - |
-      for i in $(seq 1 60); do
-        if docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml exec -T casdoor-db-test mysqladmin ping -h localhost --silent 2>/dev/null; then
-          echo "✅ MySQL is ready!"
-          break
-        fi
-        if [ $i -eq 60 ]; then
-          echo "❌ MySQL failed to start"
-          docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml logs casdoor-db-test
-          exit 1
-        fi
-        sleep 1
-      done
-
-    # Now start Casdoor AFTER MySQL is confirmed ready
-    - echo "🐳 Starting Casdoor (MySQL is ready)..."
-    - docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml up -d casdoor-test
-
-    # Wait for Casdoor to be ready
-    - echo "⏳ Waiting for Casdoor to be ready..."
-    - |
-      for i in $(seq 1 90); do
-        if docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml exec -T casdoor-test wget --spider -q http://localhost:8000/api/get-account 2>/dev/null; then
-          echo "✅ Casdoor is ready!"
-          break
-        fi
-        if [ $i -eq 90 ]; then
-          echo "❌ Casdoor failed to start"
-          docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml logs casdoor-test
-          docker-compose -p $COMPOSE_PROJECT -f docker-compose.test.yml logs casdoor-db-test
-          exit 1
-        fi
-        sleep 1
-      done
+    # Start all services at once — compose handles ordering via depends_on + healthchecks
+    - echo "🐳 Starting all services (compose handles dependency ordering)..."
+    - docker compose -p $COMPOSE_PROJECT -f docker-compose.test.yml up -d --wait --wait-timeout 120
 
     - echo "🎉 All services are ready!"
 
-    # Install Go dependencies
+    # Download Go modules (host side, for go-junit-report)
     - go mod download
-    - go install github.com/jstemmer/go-junit-report/v2@latest
 
   script:
-    - echo "🔐 Running auth tests..."
+    - echo "🔐 Running auth integration tests..."
     # Run tests inside the compose network to access services by service name
+    # Fixed volume names (not per-job) so Go module cache persists across CI runs
     - |
       docker run --rm \
         --network ${COMPOSE_PROJECT}_default \
         -v $(pwd):/workspace \
-        -v ${COMPOSE_PROJECT}-gomod-cache:/go/pkg/mod \
-        -v ${COMPOSE_PROJECT}-gobuild-cache:/root/.cache/go-build \
+        -v ocf-gomod-cache:/go/pkg/mod \
+        -v ocf-gobuild-cache:/root/.cache/go-build \
         -w /workspace \
         -e POSTGRES_DB=$POSTGRES_DB \
         -e POSTGRES_USER=$POSTGRES_USER \
@@ -241,12 +205,12 @@ test:auth:
         -e POSTGRES_PORT=$POSTGRES_PORT \
         -e POSTGRES_SSLMODE=$POSTGRES_SSLMODE \
         -e CASDOOR_ENDPOINT=$CASDOOR_ENDPOINT \
-        golang:1.24.1 \
+        golang:1.24 \
         sh -c "go test -v -tags integration -timeout=120s ./tests/auth/... 2>&1 | tee auth_tests.log"
     - cat auth_tests.log | go-junit-report -set-exit-code > auth_report.xml
 
   after_script:
-    - docker-compose -p ${COMPOSE_PROJECT:-ocf-test-cleanup} -f docker-compose.test.yml down -v --remove-orphans || true
+    - docker compose -p ${COMPOSE_PROJECT:-ocf-test-cleanup} -f docker-compose.test.yml down -v --remove-orphans || true
 
   artifacts:
     reports:

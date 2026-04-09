@@ -1,0 +1,17 @@
+# CI image for test:auth job
+# Pre-installs Go + tools to avoid downloading them on every pipeline run.
+# Auto-built by build:ci-auth-image CI job when this file changes.
+
+FROM docker:27
+
+# Copy Go from official image (Alpine's apk go is too old)
+COPY --from=golang:1.24-alpine /usr/local/go /usr/local/go
+
+ENV PATH=$PATH:/usr/local/go/bin:/root/go/bin
+ENV GOPATH=/root/go
+
+RUN apk add --no-cache \
+      bash \
+      postgresql-client \
+      wget \
+    && go install github.com/jstemmer/go-junit-report/v2@latest
