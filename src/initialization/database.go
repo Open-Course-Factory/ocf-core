@@ -258,8 +258,10 @@ func syncCasdoorRolesToCasbin() {
 
 // EnsureTrialPlanExists ensures the free Trial plan always exists in the database.
 // Uses FirstOrCreate so it is idempotent and safe to call in any environment.
+// Also syncs key fields on existing Trial plans to match the code-defined values.
 func EnsureTrialPlanExists(db *gorm.DB) {
-	trialPlan := paymentModels.SubscriptionPlan{
+	// Desired Trial plan values (source of truth)
+	desired := paymentModels.SubscriptionPlan{
 		Name:                      "Trial",
 		Description:               "Free plan for testing the platform. 2 hour sessions with network access. Perfect for trying out terminals.",
 		PriceAmount:               0,
@@ -282,17 +284,32 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		CommandHistoryRetentionDays: 7,
 	}
 
-	result := db.Where("name = ? AND price_amount = 0", "Trial").FirstOrCreate(&trialPlan)
+	// Create if missing
+	var existing paymentModels.SubscriptionPlan
+	result := db.Where("name = ? AND price_amount = 0", "Trial").FirstOrCreate(&existing, desired)
 	if result.Error != nil {
 		log.Printf("Warning: Failed to ensure Trial plan exists: %v\n", result.Error)
-	} else if result.RowsAffected > 0 {
-		log.Println("Created missing Trial plan")
-	} else {
-		// Fix existing Trial plans that have retention=0 (recording won't work without retention)
-		db.Model(&paymentModels.SubscriptionPlan{}).
-			Where("name = ? AND price_amount = 0 AND command_history_retention_days = 0", "Trial").
-			Update("command_history_retention_days", 7)
+		return
 	}
+	if result.RowsAffected > 0 {
+		log.Println("Created missing Trial plan")
+		return
+	}
+
+	// Sync existing Trial plan fields to match code (FirstOrCreate doesn't update).
+	// This ensures prod Trial plans stay in sync when we change limits in code.
+	desired.ID = existing.ID
+	db.Model(&desired).
+		Select(
+			"description",
+			"features",
+			"max_session_duration_minutes",
+			"max_concurrent_terminals",
+			"allowed_machine_sizes",
+			"network_access_enabled",
+			"command_history_retention_days",
+		).
+		Updates(desired)
 }
 
 // SetupDefaultSubscriptionPlans initializes default subscription plans
