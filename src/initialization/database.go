@@ -138,6 +138,9 @@ func AutoMigrateAll(db *gorm.DB) {
 
 	// Ensure the free Trial plan always exists (regardless of environment)
 	EnsureTrialPlanExists(db)
+
+	// Heal organizations that are missing their Trial subscription (all environments)
+	ensureOrganizationsHaveTrialPlan(db)
 }
 
 // InitDevelopmentData sets up development data in debug mode
@@ -416,6 +419,58 @@ func ensureUsersHaveTrialPlan(db *gorm.DB) {
 
 	if fixed > 0 {
 		log.Printf("[TRIAL-SYNC] Assigned Trial plan to %d users who were missing subscriptions", fixed)
+	}
+}
+
+// ensureOrganizationsHaveTrialPlan checks all active team organizations and
+// assigns the free Trial plan to any organization that doesn't have an active
+// OrganizationSubscription. This heals cases where the subscription assignment
+// failed during organization creation (e.g. due to initialization order issues).
+// Mirrors ensureUsersHaveTrialPlan but for organizations.
+func ensureOrganizationsHaveTrialPlan(db *gorm.DB) {
+	var trialPlan paymentModels.SubscriptionPlan
+	result := db.Where("name = ? AND price_amount = 0 AND is_active = true", "Trial").First(&trialPlan)
+	if result.Error != nil {
+		log.Printf("[ORG-TRIAL-SYNC] Could not find active Trial plan: %v", result.Error)
+		return
+	}
+
+	// Find all active team organizations
+	var orgs []organizationModels.Organization
+	db.Where("organization_type = ? AND is_active = true", "team").Find(&orgs)
+
+	fixed := 0
+	for _, org := range orgs {
+		// Check if org already has an active OrganizationSubscription
+		var existingSub paymentModels.OrganizationSubscription
+		subResult := db.Where("organization_id = ? AND status = ?", org.ID, "active").First(&existingSub)
+		if subResult.Error == nil {
+			continue // Org already has an active subscription
+		}
+
+		now := time.Now()
+		newSub := paymentModels.OrganizationSubscription{
+			OrganizationID:     org.ID,
+			SubscriptionPlanID: trialPlan.ID,
+			Status:             "active",
+			CurrentPeriodStart: now,
+			CurrentPeriodEnd:   now.AddDate(1, 0, 0),
+			Quantity:           1,
+		}
+
+		if err := db.Create(&newSub).Error; err != nil {
+			log.Printf("[ORG-TRIAL-SYNC] Failed to assign Trial plan to organization %s: %v", org.ID, err)
+		} else {
+			// Also update Organization.SubscriptionPlanID if not set
+			if org.SubscriptionPlanID == nil {
+				db.Model(&org).Update("subscription_plan_id", trialPlan.ID)
+			}
+			fixed++
+		}
+	}
+
+	if fixed > 0 {
+		log.Printf("[ORG-TRIAL-SYNC] Assigned Trial plan to %d organizations that were missing subscriptions", fixed)
 	}
 }
 
