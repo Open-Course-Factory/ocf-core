@@ -35,7 +35,7 @@ type UserSubscriptionService interface {
 	// Usage limits and metrics - types métiers
 	CheckUsageLimit(userID, metricType string, increment int64) (*UsageLimitCheck, error)
 	IncrementUsage(userID, metricType string, increment int64) error
-	GetUserUsageMetrics(userID string) (*[]models.UsageMetrics, error)
+	GetUserUsageMetrics(userID string, organizationID ...string) (*[]models.UsageMetrics, error)
 	ResetMonthlyUsage(userID string) error
 	UpdateUsageMetricLimits(userID string, newPlanID uuid.UUID) error
 	InitializeUsageMetrics(userID string, subscriptionID uuid.UUID, planID uuid.UUID) error
@@ -304,8 +304,9 @@ func (ss *subscriptionService) IncrementUsage(userID, metricType string, increme
 }
 
 // GetUserUsageMetrics récupère toutes les métriques d'utilisation d'un utilisateur
-// Pour concurrent_terminals, recalcule la valeur en temps réel depuis les terminaux actifs
-func (ss *subscriptionService) GetUserUsageMetrics(userID string) (*[]models.UsageMetrics, error) {
+// Pour concurrent_terminals, recalcule la valeur en temps réel depuis les terminaux actifs.
+// If organizationID is provided, terminal counts are scoped to that organization.
+func (ss *subscriptionService) GetUserUsageMetrics(userID string, organizationID ...string) (*[]models.UsageMetrics, error) {
 	metrics, err := ss.repository.GetAllUserUsageMetrics(userID)
 	if err != nil {
 		return nil, err
@@ -315,14 +316,14 @@ func (ss *subscriptionService) GetUserUsageMetrics(userID string) (*[]models.Usa
 	for i := range *metrics {
 		metric := &(*metrics)[i]
 		if metric.MetricType == "concurrent_terminals" {
-			// Compter uniquement les terminaux avec status 'active'
+			// Compter uniquement les terminaux avec status 'active', scoped to org if provided
 			var activeCount int64
-			err := ss.db.Table("terminals").
-				Where("user_id = ? AND status = ? AND deleted_at IS NULL", userID, "active").
-				Count(&activeCount).Error
-
-			if err == nil {
-				// Mettre à jour la valeur avec le compte réel
+			query := ss.db.Table("terminals").
+				Where("user_id = ? AND status = ? AND deleted_at IS NULL", userID, "active")
+			if len(organizationID) > 0 && organizationID[0] != "" {
+				query = query.Where("organization_id = ?", organizationID[0])
+			}
+			if err := query.Count(&activeCount).Error; err == nil {
 				metric.CurrentValue = activeCount
 			}
 		}

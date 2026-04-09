@@ -828,8 +828,10 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 
 	// Get effective plan for limit values (org-context-aware)
 	var effectiveResult *services.EffectivePlanResult
+	var orgID string
 	if orgIDStr := ctx.Query("organization_id"); orgIDStr != "" {
 		if parsed, err := uuid.Parse(orgIDStr); err == nil {
+			orgID = orgIDStr
 			effectiveResult, _ = sc.effectivePlanService.GetUserEffectivePlanForOrg(userId, &parsed)
 		} else {
 			ctx.JSON(http.StatusBadRequest, &errors.APIError{
@@ -842,8 +844,8 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 		effectiveResult, _ = sc.effectivePlanService.GetUserEffectivePlan(userId)
 	}
 
-	// Get personal usage metrics (these track actual usage counts)
-	usageMetrics, err := sc.subscriptionService.GetUserUsageMetrics(userId)
+	// Get usage metrics scoped to org context
+	usageMetrics, err := sc.subscriptionService.GetUserUsageMetrics(userId, orgID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -858,23 +860,16 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 		return
 	}
 
-	// Override limits with effective plan limits
+	// Set limits from effective plan (source of truth for current org context)
 	if effectiveResult != nil && effectiveResult.Plan != nil {
 		plan := effectiveResult.Plan
 		for i := range *usageMetrics {
 			metric := &(*usageMetrics)[i]
-			var effectiveLimit int64
 			switch metric.MetricType {
 			case "concurrent_terminals":
-				effectiveLimit = int64(plan.MaxConcurrentTerminals)
+				metric.LimitValue = int64(plan.MaxConcurrentTerminals)
 			case "courses_created":
-				effectiveLimit = int64(plan.MaxCourses)
-			default:
-				continue
-			}
-			// Use effective plan limit if it's unlimited (-1) or higher than personal
-			if effectiveLimit == -1 || (metric.LimitValue != -1 && effectiveLimit > metric.LimitValue) {
-				metric.LimitValue = effectiveLimit
+				metric.LimitValue = int64(plan.MaxCourses)
 			}
 		}
 	}
