@@ -256,60 +256,76 @@ func syncCasdoorRolesToCasbin() {
 	log.Println("[ROLE-SYNC] Casdoor-to-Casbin role sync complete")
 }
 
-// EnsureTrialPlanExists ensures the free Trial plan always exists in the database.
-// Uses FirstOrCreate so it is idempotent and safe to call in any environment.
-// Also syncs key fields on existing Trial plans to match the code-defined values.
+// EnsureTrialPlanExists ensures the free Trial plan always exists in the database
+// and keeps its key fields in sync with the code-defined values.
 func EnsureTrialPlanExists(db *gorm.DB) {
-	// Desired Trial plan values (source of truth)
-	desired := paymentModels.SubscriptionPlan{
-		Name:                      "Trial",
-		Description:               "Free plan for testing the platform. 2 hour sessions with network access. Perfect for trying out terminals.",
-		PriceAmount:               0,
-		Currency:                  "eur",
-		BillingInterval:           "month",
-		TrialDays:                 0,
-		Features:                  []string{"Unlimited restarts", "2 hour max session", "2 concurrent terminals", "S machine", "Network access", "Ephemeral storage only"},
-		MaxConcurrentUsers:        1,
-		MaxCourses:                -1,
-		IsActive:                  true,
-		RequiredRole:              "member",
-		UseTieredPricing:          false,
-		MaxSessionDurationMinutes: 120,
-		MaxConcurrentTerminals:    2,
-		AllowedMachineSizes:       []string{"S"},
-		NetworkAccessEnabled:      true,
-		DataPersistenceEnabled:    false,
-		DataPersistenceGB:         0,
-		AllowedTemplates:          []string{"ubuntu-basic", "alpine-basic"},
-		CommandHistoryRetentionDays: 7,
+	// Clean up duplicate Trial plans (keep oldest, delete newer duplicates)
+	var duplicates []paymentModels.SubscriptionPlan
+	db.Where("name = ? AND price_amount = 0", "Trial").Order("created_at ASC").Find(&duplicates)
+	if len(duplicates) > 1 {
+		for _, dup := range duplicates[1:] {
+			log.Printf("[TRIAL-PLAN] Removing duplicate Trial plan %s", dup.ID)
+			// Reassign any org subscriptions pointing to the duplicate
+			db.Model(&paymentModels.OrganizationSubscription{}).
+				Where("subscription_plan_id = ?", dup.ID).
+				Update("subscription_plan_id", duplicates[0].ID)
+			db.Model(&paymentModels.UserSubscription{}).
+				Where("subscription_plan_id = ?", dup.ID).
+				Update("subscription_plan_id", duplicates[0].ID)
+			db.Delete(&dup)
+		}
 	}
 
-	// Create if missing
+	// Check if Trial plan exists
 	var existing paymentModels.SubscriptionPlan
-	result := db.Where("name = ? AND price_amount = 0", "Trial").FirstOrCreate(&existing, desired)
-	if result.Error != nil {
-		log.Printf("Warning: Failed to ensure Trial plan exists: %v\n", result.Error)
-		return
-	}
-	if result.RowsAffected > 0 {
-		log.Println("Created missing Trial plan")
+	err := db.Where("name = ? AND price_amount = 0", "Trial").First(&existing).Error
+
+	if err != nil {
+		// Create new Trial plan
+		newPlan := paymentModels.SubscriptionPlan{
+			Name:                      "Trial",
+			Description:               "Free plan for testing the platform. 2 hour sessions with network access. Perfect for trying out terminals.",
+			PriceAmount:               0,
+			Currency:                  "eur",
+			BillingInterval:           "month",
+			TrialDays:                 0,
+			Features:                  []string{"Unlimited restarts", "2 hour max session", "2 concurrent terminals", "S machine", "Network access", "Ephemeral storage only"},
+			MaxConcurrentUsers:        1,
+			MaxCourses:                -1,
+			IsActive:                  true,
+			RequiredRole:              "member",
+			UseTieredPricing:          false,
+			MaxSessionDurationMinutes: 120,
+			MaxConcurrentTerminals:    2,
+			AllowedMachineSizes:       []string{"S"},
+			NetworkAccessEnabled:      true,
+			DataPersistenceEnabled:    false,
+			DataPersistenceGB:         0,
+			AllowedTemplates:          []string{"ubuntu-basic", "alpine-basic"},
+			CommandHistoryRetentionDays: 7,
+		}
+		if createErr := db.Create(&newPlan).Error; createErr != nil {
+			log.Printf("Warning: Failed to create Trial plan: %v\n", createErr)
+		} else {
+			log.Println("Created missing Trial plan")
+		}
 		return
 	}
 
-	// Sync existing Trial plan fields to match code (FirstOrCreate doesn't update).
-	// This ensures prod Trial plans stay in sync when we change limits in code.
-	desired.ID = existing.ID
-	db.Model(&desired).
-		Select(
-			"description",
-			"features",
-			"max_session_duration_minutes",
-			"max_concurrent_terminals",
-			"allowed_machine_sizes",
-			"network_access_enabled",
-			"command_history_retention_days",
-		).
-		Updates(desired)
+	// Sync existing Trial plan fields to match code
+	db.Model(&existing).Updates(map[string]interface{}{
+		"description":                  "Free plan for testing the platform. 2 hour sessions with network access. Perfect for trying out terminals.",
+		"max_session_duration_minutes":  120,
+		"max_concurrent_terminals":      2,
+		"max_courses":                   -1,
+		"network_access_enabled":        true,
+		"command_history_retention_days": 7,
+	})
+	// JSON-serialized fields need struct-based update
+	db.Model(&existing).Select("features", "allowed_machine_sizes").Updates(paymentModels.SubscriptionPlan{
+		Features:            []string{"Unlimited restarts", "2 hour max session", "2 concurrent terminals", "S machine", "Network access", "Ephemeral storage only"},
+		AllowedMachineSizes: []string{"S"},
+	})
 }
 
 // SetupDefaultSubscriptionPlans initializes default subscription plans
