@@ -139,7 +139,8 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Ensure the free Trial plan always exists (regardless of environment)
 	EnsureTrialPlanExists(db)
 
-	// Heal organizations that are missing their Trial subscription (all environments)
+	// Heal users and organizations that are missing their Trial subscription (all environments)
+	ensureUsersHaveTrialPlan(db)
 	ensureOrganizationsHaveTrialPlan(db)
 }
 
@@ -284,21 +285,21 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		// Create new Trial plan
 		newPlan := paymentModels.SubscriptionPlan{
 			Name:                      "Trial",
-			Description:               "Free plan for testing the platform. 2 hour sessions with network access. Perfect for trying out terminals.",
+			Description:               "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
 			PriceAmount:               0,
 			Currency:                  "eur",
 			BillingInterval:           "month",
 			TrialDays:                 0,
-			Features:                  []string{"Unlimited restarts", "2 hour max session", "2 concurrent terminals", "S machine", "Network access", "Ephemeral storage only"},
+			Features:                  []string{"Unlimited restarts", "1 hour max session", "1 concurrent terminal", "XS machine", "No network access", "Ephemeral storage only"},
 			MaxConcurrentUsers:        1,
 			MaxCourses:                -1,
 			IsActive:                  true,
 			RequiredRole:              "member",
 			UseTieredPricing:          false,
-			MaxSessionDurationMinutes: 120,
-			MaxConcurrentTerminals:    2,
-			AllowedMachineSizes:       []string{"S"},
-			NetworkAccessEnabled:      true,
+			MaxSessionDurationMinutes: 60,
+			MaxConcurrentTerminals:    1,
+			AllowedMachineSizes:       []string{"XS"},
+			NetworkAccessEnabled:      false,
 			DataPersistenceEnabled:    false,
 			DataPersistenceGB:         0,
 			AllowedTemplates:          []string{"ubuntu-basic", "alpine-basic"},
@@ -314,17 +315,17 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 
 	// Sync existing Trial plan fields to match code
 	db.Model(&existing).Updates(map[string]interface{}{
-		"description":                  "Free plan for testing the platform. 2 hour sessions with network access. Perfect for trying out terminals.",
-		"max_session_duration_minutes":  120,
-		"max_concurrent_terminals":      2,
+		"description":                  "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
+		"max_session_duration_minutes":  60,
+		"max_concurrent_terminals":      1,
 		"max_courses":                   -1,
-		"network_access_enabled":        true,
+		"network_access_enabled":        false,
 		"command_history_retention_days": 7,
 	})
 	// JSON-serialized fields need struct-based update
 	db.Model(&existing).Select("features", "allowed_machine_sizes").Updates(paymentModels.SubscriptionPlan{
-		Features:            []string{"Unlimited restarts", "2 hour max session", "2 concurrent terminals", "S machine", "Network access", "Ephemeral storage only"},
-		AllowedMachineSizes: []string{"S"},
+		Features:            []string{"Unlimited restarts", "1 hour max session", "1 concurrent terminal", "XS machine", "No network access", "Ephemeral storage only"},
+		AllowedMachineSizes: []string{"XS"},
 	})
 }
 
