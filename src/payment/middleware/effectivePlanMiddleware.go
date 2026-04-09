@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
 	"soli/formations/src/payment/services"
 	"soli/formations/src/utils"
@@ -50,7 +52,12 @@ func InjectOrgContext() gin.HandlerFunc {
 // InjectEffectivePlan resolves the user's effective subscription plan and stores
 // it in the request context. Downstream middleware (RequirePlan, CheckLimit) can
 // then read it without repeating the resolution logic.
-func InjectEffectivePlan(effectivePlanService services.EffectivePlanService) gin.HandlerFunc {
+// The db parameter is used for the admin bypass fallback (see issue #239).
+func InjectEffectivePlan(effectivePlanService services.EffectivePlanService, db ...*gorm.DB) gin.HandlerFunc {
+	var adminDB *gorm.DB
+	if len(db) > 0 {
+		adminDB = db[0]
+	}
 	return func(ctx *gin.Context) {
 		userID := ctx.GetString("userId")
 		if userID == "" {
@@ -69,11 +76,21 @@ func InjectEffectivePlan(effectivePlanService services.EffectivePlanService) gin
 
 		result, err := effectivePlanService.GetUserEffectivePlanForOrg(userID, orgID)
 		if err != nil {
-			// No plan found — store nil so RequirePlan can decide what to do
-			ctx.Set("effective_plan_result", (*services.EffectivePlanResult)(nil))
-			utils.Debug("No effective plan for user %s (org context: %v): %v", userID, orgID, err)
-			ctx.Next()
-			return
+			// Admin bypass: if plan resolution failed (e.g. admin is not a member
+			// of the org), resolve the org's subscription directly.
+			// See issue #239 for the cleaner service-level refactor.
+			roles, _ := ctx.Get("userRoles")
+			userRoles, _ := roles.([]string)
+			if orgID != nil && adminDB != nil && access.IsAdmin(userRoles) {
+				result = resolveOrgPlanForAdmin(adminDB, *orgID)
+			}
+
+			if result == nil {
+				ctx.Set("effective_plan_result", (*services.EffectivePlanResult)(nil))
+				utils.Debug("No effective plan for user %s (org context: %v): %v", userID, orgID, err)
+				ctx.Next()
+				return
+			}
 		}
 
 		// Store result, source, and backward-compatible plan reference
@@ -81,6 +98,25 @@ func InjectEffectivePlan(effectivePlanService services.EffectivePlanService) gin
 		ctx.Set("subscription_plan", result.Plan)
 		ctx.Set("planSource", string(result.Source))
 		ctx.Next()
+	}
+}
+
+// resolveOrgPlanForAdmin fetches the org's subscription directly, bypassing
+// the membership check that the normal effective plan service enforces.
+// Returns nil if the org has no active subscription.
+func resolveOrgPlanForAdmin(db *gorm.DB, orgID uuid.UUID) *services.EffectivePlanResult {
+	var orgSub models.OrganizationSubscription
+	err := db.Preload("SubscriptionPlan").
+		Where("organization_id = ? AND status IN ?", orgID, []string{"active", "trialing"}).
+		First(&orgSub).Error
+	if err != nil {
+		utils.Debug("Admin fallback: no active subscription for org %s: %v", orgID, err)
+		return nil
+	}
+	return &services.EffectivePlanResult{
+		Plan:                     &orgSub.SubscriptionPlan,
+		Source:                   services.PlanSourceOrganization,
+		OrganizationSubscription: &orgSub,
 	}
 }
 

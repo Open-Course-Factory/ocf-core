@@ -50,7 +50,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	sessionRoutes.POST("/:id/abandon", middleware.AuthManagement(), controller.AbandonSession)
 	sessionRoutes.POST("/launch", middleware.AuthManagement(),
 		paymentMiddleware.InjectOrgContext(),
-		paymentMiddleware.InjectEffectivePlan(effectivePlanService),
+		paymentMiddleware.InjectEffectivePlan(effectivePlanService, db),
 		paymentMiddleware.RequirePlan(),
 		paymentMiddleware.CheckLimit(effectivePlanService, db, "concurrent_terminals"),
 		paymentMiddleware.CheckRAMAvailability(terminalService),
