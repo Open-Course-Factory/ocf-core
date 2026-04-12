@@ -130,6 +130,23 @@ func NewTerminalController(db *gorm.DB) TerminalController {
 	}
 }
 
+// NewTerminalControllerWithService creates a TerminalController with an injected service.
+// Used in tests to mock the service layer.
+func NewTerminalControllerWithService(db *gorm.DB, svc services.TerminalTrainerService) TerminalController {
+	apiVersion := os.Getenv("TERMINAL_TRAINER_API_VERSION")
+	if apiVersion == "" {
+		apiVersion = "1.0"
+	}
+	terminalType := os.Getenv("TERMINAL_TRAINER_TYPE")
+	return &terminalController{
+		GenericController:  controller.NewGenericController(db, casdoor.Enforcer),
+		terminalTrainerURL: os.Getenv("TERMINAL_TRAINER_URL"),
+		apiVersion:         apiVersion,
+		terminalType:       terminalType,
+		service:            svc,
+	}
+}
+
 // hasTerminalAccess vérifie si un utilisateur a accès à un terminal avec le niveau requis
 func (tc *terminalController) hasTerminalAccess(ctx *gin.Context, terminalID, userID, requiredLevel string) (bool, error) {
 	// Vérifier d'abord si l'utilisateur est admin
