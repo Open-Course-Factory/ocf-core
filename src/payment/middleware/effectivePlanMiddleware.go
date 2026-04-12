@@ -21,32 +21,90 @@ import (
 // InjectOrgContext peeks at the request body to extract organization_id and
 // stores it in the Gin context as "org_context_id". The body is reset so
 // downstream handlers can still read it.
-func InjectOrgContext() gin.HandlerFunc {
+//
+// An optional MembershipChecker may be passed to validate that the
+// authenticated user is actually a member of the requested organization.
+// When a checker is provided:
+//   - Unauthenticated requests (no userId) pass through — auth middleware handles them.
+//   - Requests without organization_id pass through unchanged.
+//   - Non-members and DB errors are rejected with 403 (fail-closed).
+//
+// When no checker is provided the middleware behaves as before (backward
+// compatible for callers that do not yet supply a checker).
+func InjectOrgContext(checkers ...access.MembershipChecker) gin.HandlerFunc {
+	var checker access.MembershipChecker
+	if len(checkers) > 0 {
+		checker = checkers[0]
+	}
+
 	return func(ctx *gin.Context) {
-		// Check query parameter first (for GET requests)
-		if orgID := ctx.Query("organization_id"); orgID != "" {
-			ctx.Set("org_context_id", orgID)
+		// Resolve organization_id from query param or request body.
+		orgID, bodyBytes := resolveOrgID(ctx)
+
+		// Reset body so downstream handlers can read it (body may have been consumed).
+		if bodyBytes != nil {
+			ctx.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		}
+
+		if orgID == "" {
+			// No org context requested — pass through.
 			ctx.Next()
 			return
 		}
 
-		bodyBytes, err := io.ReadAll(ctx.Request.Body)
-		if err != nil {
-			ctx.Next()
-			return
-		}
-		// Reset body for downstream handlers
-		ctx.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		// If a membership checker is configured, validate the user's membership
+		// before injecting the org context.
+		if checker != nil {
+			userID := ctx.GetString("userId")
+			if userID == "" {
+				// Unauthenticated — defer to auth middleware, do NOT inject org context.
+				ctx.Next()
+				return
+			}
 
-		// Parse organization_id from JSON body (for POST requests)
-		var partial struct {
-			OrganizationID string `json:"organization_id"`
+			allowed, err := checker.CheckOrgRole(orgID, userID, "member")
+			if err != nil || !allowed {
+				utils.Warn("InjectOrgContext: user %s denied org context %s (allowed=%v err=%v)", userID, orgID, allowed, err)
+				ctx.JSON(http.StatusForbidden, &errors.APIError{
+					ErrorCode:    http.StatusForbidden,
+					ErrorMessage: "You are not a member of the requested organization",
+				})
+				ctx.Abort()
+				return
+			}
 		}
-		if json.Unmarshal(bodyBytes, &partial) == nil && partial.OrganizationID != "" {
-			ctx.Set("org_context_id", partial.OrganizationID)
-		}
+
+		ctx.Set("org_context_id", orgID)
 		ctx.Next()
 	}
+}
+
+// resolveOrgID extracts the organization_id from the request. It first checks
+// the query parameter, then falls back to the JSON request body. It returns
+// the orgID string (empty if not found) and the raw body bytes (nil if the
+// body was not read).
+func resolveOrgID(ctx *gin.Context) (string, []byte) {
+	if orgID := ctx.Query("organization_id"); orgID != "" {
+		return orgID, nil
+	}
+
+	if ctx.Request.Body == nil {
+		return "", nil
+	}
+
+	bodyBytes, err := io.ReadAll(ctx.Request.Body)
+	if err != nil {
+		return "", nil
+	}
+
+	var partial struct {
+		OrganizationID string `json:"organization_id"`
+	}
+	if json.Unmarshal(bodyBytes, &partial) == nil && partial.OrganizationID != "" {
+		return partial.OrganizationID, bodyBytes
+	}
+
+	return "", bodyBytes
 }
 
 // InjectEffectivePlan resolves the user's effective subscription plan and stores
