@@ -91,8 +91,8 @@ func setupLayer2Router(t *testing.T, db *gorm.DB, userID string, roles []string)
 // ============================================================================
 
 // TestOrgListScenarios_NonMember_RawController_ShouldNotReturn200
-// Demonstrates that the raw controller (no Layer 2) leaks data to non-members.
-// This test PASSES today (proves the gap exists — raw controller returns 200 to outsiders).
+// Verifies that the in-handler membership check (fix for issue #241) denies
+// non-members even when Layer 2 middleware is not present.
 func TestOrgListScenarios_NonMember_RawController_ShouldNotReturn200(t *testing.T) {
 	db := freshTestDB(t)
 	ownerID := "auth-owner-001"
@@ -109,17 +109,9 @@ func TestOrgListScenarios_NonMember_RawController_ShouldNotReturn200(t *testing.
 	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgID.String()+"/scenarios", nil)
 	router.ServeHTTP(w, req)
 
-	// The raw controller returns 200 — this proves the gap: no in-handler auth check.
-	// When the fix is applied (in-handler check added), this should return 403.
-	assert.Equal(t, http.StatusOK, w.Code,
-		"SECURITY GAP CONFIRMED: raw controller returns 200 to a non-member outsider — "+
-			"there is no in-handler membership check. Fix must add one.")
-
-	var response []map[string]any
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	require.NoError(t, err)
-	assert.NotEmpty(t, response,
-		"SECURITY GAP CONFIRMED: outsider can enumerate org scenarios via the raw controller")
+	// After the in-handler fix, the raw controller must return 403 to non-members.
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"the in-handler membership check must deny a non-member outsider even without Layer 2")
 }
 
 // TestOrgListScenarios_NonMember_ShouldBeDenied
@@ -182,8 +174,8 @@ func TestOrgListScenarios_Member_ShouldSucceed(t *testing.T) {
 // ============================================================================
 
 // TestOrgListScenarios_DifferentOrg_RawController_LeaksData
-// Demonstrates that the raw controller (no Layer 2) returns org B's data
-// to a manager of org A. Proves the gap exists at the controller level.
+// Verifies that the in-handler membership check (fix for issue #241) denies
+// cross-org access even when Layer 2 middleware is not present.
 func TestOrgListScenarios_DifferentOrg_RawController_LeaksData(t *testing.T) {
 	db := freshTestDB(t)
 	orgAOwnerID := "auth-owner-a-004"
@@ -204,17 +196,9 @@ func TestOrgListScenarios_DifferentOrg_RawController_LeaksData(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/api/v1/organizations/"+orgBID.String()+"/scenarios", nil)
 	router.ServeHTTP(w, req)
 
-	// Raw controller returns 200 with org B's data — proves the gap.
-	// After the fix, this should return 403.
-	assert.Equal(t, http.StatusOK, w.Code,
-		"SECURITY GAP CONFIRMED: raw controller returns 200 to a manager of a different org — "+
-			"cross-org scenario enumeration is possible without a Layer 2 or in-handler check")
-
-	var response []map[string]any
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	require.NoError(t, err)
-	assert.NotEmpty(t, response,
-		"SECURITY GAP CONFIRMED: org A manager can see org B scenarios via URL manipulation")
+	// After the in-handler fix, the raw controller must return 403 for cross-org access.
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"the in-handler membership check must deny access to org B's scenarios for an org A manager")
 }
 
 // TestOrgListScenarios_DifferentOrg_ShouldNotLeakData
