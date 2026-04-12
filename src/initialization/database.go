@@ -277,43 +277,40 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		}
 	}
 
-	// Check if Trial plan exists
+	// Use FirstOrCreate to atomically find or create the Trial plan, preventing TOCTOU race
+	// when two pods start simultaneously. Attrs are applied only on creation.
 	var existing paymentModels.SubscriptionPlan
-	err := db.Where("name = ? AND price_amount = 0", "Trial").First(&existing).Error
-
-	if err != nil {
-		// Create new Trial plan
-		newPlan := paymentModels.SubscriptionPlan{
-			Name:                      "Trial",
-			Description:               "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
-			PriceAmount:               0,
-			Currency:                  "eur",
-			BillingInterval:           "month",
-			TrialDays:                 0,
-			Features:                  []string{"Unlimited restarts", "1 hour max session", "1 concurrent terminal", "XS machine", "No network access", "Ephemeral storage only"},
-			MaxConcurrentUsers:        1,
-			MaxCourses:                -1,
-			IsActive:                  true,
-			RequiredRole:              "member",
-			UseTieredPricing:          false,
-			MaxSessionDurationMinutes: 60,
-			MaxConcurrentTerminals:    1,
-			AllowedMachineSizes:       []string{"XS"},
-			NetworkAccessEnabled:      false,
-			DataPersistenceEnabled:    false,
-			DataPersistenceGB:         0,
-			AllowedTemplates:          []string{"ubuntu-basic", "alpine-basic"},
-			CommandHistoryRetentionDays: 7,
-		}
-		if createErr := db.Create(&newPlan).Error; createErr != nil {
-			log.Printf("Warning: Failed to create Trial plan: %v\n", createErr)
-		} else {
-			log.Println("Created missing Trial plan")
-		}
+	result := db.Where("name = ? AND price_amount = 0", "Trial").Attrs(paymentModels.SubscriptionPlan{
+		Name:                        "Trial",
+		Description:                 "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
+		PriceAmount:                 0,
+		Currency:                    "eur",
+		BillingInterval:             "month",
+		TrialDays:                   0,
+		Features:                    []string{"Unlimited restarts", "1 hour max session", "1 concurrent terminal", "XS machine", "No network access", "Ephemeral storage only"},
+		MaxConcurrentUsers:          1,
+		MaxCourses:                  -1,
+		IsActive:                    true,
+		RequiredRole:                "member",
+		UseTieredPricing:            false,
+		MaxSessionDurationMinutes:   60,
+		MaxConcurrentTerminals:      1,
+		AllowedMachineSizes:         []string{"XS"},
+		NetworkAccessEnabled:        false,
+		DataPersistenceEnabled:      false,
+		DataPersistenceGB:           0,
+		AllowedTemplates:            []string{"ubuntu-basic", "alpine-basic"},
+		CommandHistoryRetentionDays: 7,
+	}).FirstOrCreate(&existing)
+	if result.Error != nil {
+		log.Printf("Warning: Failed to find or create Trial plan: %v\n", result.Error)
 		return
 	}
+	if result.RowsAffected > 0 {
+		log.Println("Created missing Trial plan")
+	}
 
-	// Sync existing Trial plan fields to match code
+	// Sync existing Trial plan fields to match code (handles drift on existing plans)
 	db.Model(&existing).Updates(map[string]interface{}{
 		"description":                  "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
 		"max_session_duration_minutes":  60,
