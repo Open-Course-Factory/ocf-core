@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
@@ -2084,6 +2085,23 @@ func (sc *scenarioController) OrgListScenarios(ctx *gin.Context) {
 			ErrorMessage: "Invalid organization ID",
 		})
 		return
+	}
+
+	// In-handler membership check (defense in depth — do not rely solely on Layer 2).
+	// Admins bypass; all other users must be an active member of this org.
+	userID := ctx.GetString("userId")
+	userRoles, _ := ctx.Get("userRoles")
+	roles, _ := userRoles.([]string)
+	if !access.IsAdmin(roles) {
+		var orgMember orgModels.OrganizationMember
+		result := sc.db.Where("organization_id = ? AND user_id = ? AND is_active = ?", orgID, userID, true).First(&orgMember)
+		if result.Error != nil {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Access denied",
+			})
+			return
+		}
 	}
 
 	var scenarios []models.Scenario
