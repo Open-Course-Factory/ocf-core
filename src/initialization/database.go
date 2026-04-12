@@ -312,11 +312,14 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 
 	// Sync existing Trial plan fields to match code (handles drift on existing plans)
 	db.Model(&existing).Updates(map[string]interface{}{
-		"description":                  "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
-		"max_session_duration_minutes":  60,
-		"max_concurrent_terminals":      1,
-		"max_courses":                   -1,
-		"network_access_enabled":        false,
+		"description":                   "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
+		"max_session_duration_minutes":   60,
+		"max_concurrent_terminals":       1,
+		"max_courses":                    -1,
+		"network_access_enabled":         false,
+		"data_persistence_enabled":       false,
+		"data_persistence_gb":            0,
+		"is_active":                      true,
 		"command_history_retention_days": 7,
 	})
 	// JSON-serialized fields need struct-based update
