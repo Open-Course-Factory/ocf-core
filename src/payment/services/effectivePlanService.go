@@ -36,6 +36,10 @@ type EffectivePlanService interface {
 	GetUserEffectivePlanForOrg(userID string, orgID *uuid.UUID) (*EffectivePlanResult, error)
 	CheckEffectiveUsageLimit(userID string, metricType string, increment int64) (*UsageLimitCheck, error)
 	CheckEffectiveUsageLimitForOrg(userID string, orgID *uuid.UUID, metricType string, increment int64) (*UsageLimitCheck, error)
+	// CheckEffectiveUsageLimitFromResult checks usage limits using an already-resolved plan,
+	// skipping the plan resolution DB round-trip. Used by CheckLimit middleware when
+	// InjectEffectivePlan has already placed the result in the Gin context.
+	CheckEffectiveUsageLimitFromResult(result *EffectivePlanResult, userID string, metricType string, increment int64) (*UsageLimitCheck, error)
 }
 
 type effectivePlanService struct {
@@ -270,5 +274,12 @@ func (s *effectivePlanService) CheckEffectiveUsageLimitForOrg(userID string, org
 	if err != nil {
 		return nil, fmt.Errorf("failed to get effective plan for org context: %w", err)
 	}
+	return s.checkUsageLimitFromResult(result, userID, metricType, increment)
+}
+
+// CheckEffectiveUsageLimitFromResult checks usage limits using a pre-resolved plan result,
+// avoiding the plan resolution DB round-trip. Called by CheckLimit middleware when
+// InjectEffectivePlan has already resolved and stored the plan in the Gin context.
+func (s *effectivePlanService) CheckEffectiveUsageLimitFromResult(result *EffectivePlanResult, userID string, metricType string, increment int64) (*UsageLimitCheck, error) {
 	return s.checkUsageLimitFromResult(result, userID, metricType, increment)
 }
