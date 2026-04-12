@@ -128,18 +128,25 @@ func (s *emailVerificationService) sendVerificationEmail(email, token, userName 
 	})
 }
 
-// VerifyEmail validates the token and marks the email as verified
+// VerifyEmail validates the token and marks the email as verified.
+//
+// Concurrency safety: the token is claimed atomically using a conditional
+// UPDATE (WHERE used_at IS NULL). If two requests race with the same token,
+// only one UPDATE will match a row; the other receives rowsAffected == 0 and
+// returns ErrTokenUsed. The Casdoor call intentionally happens outside the
+// UPDATE to avoid holding a lock during an external HTTP request.
 func (s *emailVerificationService) VerifyEmail(token string) error {
-	// Find the verification token
+	// Find the verification token (read-only, no lock needed here — the
+	// atomic claim below is what serializes concurrent requests).
 	var verificationToken models.EmailVerificationToken
 	if err := s.db.Where("token = ?", token).First(&verificationToken).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrInvalidToken
 		}
 		return fmt.Errorf("database error: %w", err)
 	}
 
-	// Check if token is already used
+	// Fast-path: token was already used before this request arrived.
 	if verificationToken.IsUsed() {
 		return ErrTokenUsed
 	}
@@ -172,12 +179,20 @@ func (s *emailVerificationService) VerifyEmail(token string) error {
 		return fmt.Errorf("failed to update user verification status: %w", err)
 	}
 
-	// Mark token as used only after Casdoor update succeeds
+	// Atomically claim the token: UPDATE … SET used_at = now WHERE id = ? AND used_at IS NULL.
+	// If another concurrent request already claimed it (rowsAffected == 0), we treat it as a
+	// conflict. The Casdoor update above is idempotent (setting EmailVerified = true twice is safe).
 	now := time.Now()
-	verificationToken.UsedAt = &now
-	if err := s.db.Save(&verificationToken).Error; err != nil {
-		utils.Warn("Casdoor already updated for user %s but failed to mark token as used: %v", verificationToken.UserID, err)
-		return fmt.Errorf("failed to mark token as used: %w", err)
+	result := s.db.Model(&verificationToken).
+		Where("used_at IS NULL").
+		Update("used_at", &now)
+	if result.Error != nil {
+		utils.Warn("Casdoor already updated for user %s but failed to mark token as used: %v", verificationToken.UserID, result.Error)
+		return fmt.Errorf("failed to mark token as used: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		// Another concurrent request won the race and already claimed this token.
+		return ErrTokenUsed
 	}
 
 	utils.Info("Email verified for user: %s", verificationToken.UserID)
