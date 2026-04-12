@@ -429,7 +429,7 @@ func ensureUsersHaveTrialPlan(db *gorm.DB) {
 		}
 
 		var existingSub paymentModels.UserSubscription
-		subResult := db.Where("user_id = ? AND status = ?", user.Id, "active").First(&existingSub)
+		subResult := db.Where("user_id = ? AND status IN ?", user.Id, []string{"active", "trialing"}).First(&existingSub)
 		if subResult.Error == nil {
 			continue // User already has an active subscription
 		}
