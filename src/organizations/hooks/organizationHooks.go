@@ -11,6 +11,71 @@ import (
 	"gorm.io/gorm"
 )
 
+// OrganizationPlanProtectionHook strips subscription_plan_id from create/update
+// payloads when the caller is not an Administrator. This prevents Members from
+// bypassing payment by injecting a paid plan UUID into the request body.
+type OrganizationPlanProtectionHook struct {
+	enabled  bool
+	priority int
+}
+
+func NewOrganizationPlanProtectionHook() hooks.Hook {
+	return &OrganizationPlanProtectionHook{
+		enabled:  true,
+		priority: 5, // Run before owner setup (priority 10)
+	}
+}
+
+func (h *OrganizationPlanProtectionHook) GetName() string {
+	return "organization_plan_protection"
+}
+
+func (h *OrganizationPlanProtectionHook) GetEntityName() string {
+	return "Organization"
+}
+
+func (h *OrganizationPlanProtectionHook) GetHookTypes() []hooks.HookType {
+	return []hooks.HookType{hooks.BeforeCreate, hooks.BeforeUpdate}
+}
+
+func (h *OrganizationPlanProtectionHook) IsEnabled() bool {
+	return h.enabled
+}
+
+func (h *OrganizationPlanProtectionHook) GetPriority() int {
+	return h.priority
+}
+
+func (h *OrganizationPlanProtectionHook) Execute(ctx *hooks.HookContext) error {
+	if ctx.IsAdmin() {
+		return nil
+	}
+
+	switch ctx.HookType {
+	case hooks.BeforeCreate:
+		org, ok := ctx.NewEntity.(*models.Organization)
+		if !ok {
+			return fmt.Errorf("expected *models.Organization, got %T", ctx.NewEntity)
+		}
+		if org.SubscriptionPlanID != nil {
+			utils.Debug("Stripping member-supplied subscription_plan_id on org create for user %s", ctx.UserID)
+			org.SubscriptionPlanID = nil
+		}
+
+	case hooks.BeforeUpdate:
+		updateMap, ok := ctx.NewEntity.(map[string]any)
+		if !ok {
+			return fmt.Errorf("expected map[string]any for BeforeUpdate, got %T", ctx.NewEntity)
+		}
+		if _, present := updateMap["subscription_plan_id"]; present {
+			utils.Debug("Stripping member-supplied subscription_plan_id on org update for user %s", ctx.UserID)
+			delete(updateMap, "subscription_plan_id")
+		}
+	}
+
+	return nil
+}
+
 // OrganizationOwnerSetupHook sets the owner and creates the owner member when an organization is created
 type OrganizationOwnerSetupHook struct {
 	db                  *gorm.DB

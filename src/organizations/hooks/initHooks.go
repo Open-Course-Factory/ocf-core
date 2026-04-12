@@ -11,6 +11,14 @@ import (
 func InitOrganizationHooks(db *gorm.DB) {
 	log.Println("🔗 Initializing organization hooks...")
 
+	// Hook that strips subscription_plan_id from non-admin create/update payloads
+	planProtectionHook := NewOrganizationPlanProtectionHook()
+	if err := hooks.GlobalHookRegistry.RegisterHook(planProtectionHook); err != nil {
+		log.Printf("❌ Failed to register organization plan protection hook: %v", err)
+	} else {
+		log.Println("✅ Organization plan protection hook registered")
+	}
+
 	// Hook for setting up organization owner and creating owner member
 	ownerSetupHook := NewOrganizationOwnerSetupHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(ownerSetupHook); err != nil {

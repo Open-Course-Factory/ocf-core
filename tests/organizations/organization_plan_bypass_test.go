@@ -1,30 +1,26 @@
 package organizations_tests
 
-// Tests proving the subscription_plan_id bypass vulnerability (issue #240).
+// Tests for the subscription_plan_id bypass vulnerability (issue #240).
 //
 // The CreateOrganizationInput and EditOrganizationInput DTOs expose
-// subscription_plan_id as a writable JSON field. Any authenticated Member can
-// therefore craft a payload that assigns an arbitrary paid plan to their
-// organization, bypassing Stripe payment.
+// subscription_plan_id as a writable JSON field. Without protection, any
+// authenticated Member can assign a paid plan to their organization for free.
+//
+// The fix registers OrganizationPlanProtectionHook (BeforeCreate + BeforeUpdate)
+// which strips the field when the caller is not an Administrator.
 //
 // NOTE: The Organization model uses PostgreSQL-specific types (jsonb, pq.StringArray)
 // that are incompatible with in-memory SQLite. Following the established pattern in
 // this package (see importController_test.go), these tests operate at the DTO and
-// converter layer — exactly where the vulnerability manifests — without requiring a DB.
-//
-// The three layers where the vulnerability exists:
-//   1. JSON deserialization: subscription_plan_id is accepted from the request body.
-//   2. DtoToModel converter: the field is copied to the Organization model on create.
-//   3. DtoToMap converter: the field is passed into UPDATE queries on PATCH.
-//
-// Expected behaviour after the fix:
-//   - Member: subscription_plan_id in input is silently stripped (nil) before reaching DB.
-//   - Administrator: subscription_plan_id is honoured.
+// hook layer — exactly where the protection is enforced — without requiring a DB.
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
+	hookpkg "soli/formations/src/entityManagement/hooks"
+	organizationHooks "soli/formations/src/organizations/hooks"
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/models"
 
@@ -34,101 +30,95 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Layer 1: JSON deserialization — the API accepts subscription_plan_id
+// BeforeCreate protection — member caller
 // ---------------------------------------------------------------------------
 
-// TestOrganizationCreate_WithSubscriptionPlanID_ShouldIgnoreForNonAdmin proves
-// that CreateOrganizationInput accepts a subscription_plan_id from JSON, which
-// means a Member user can inject a plan ID through the API.
+// TestOrganizationCreate_WithSubscriptionPlanID_ShouldIgnoreForNonAdmin verifies
+// that the plan protection hook strips subscription_plan_id from the Organization
+// model when the caller holds only the "Member" role.
 //
-// After the fix, the DTO should either strip this field for non-admins (via a
-// hook or service-layer check) so that it never reaches the DB with a
-// member-supplied value.
-//
-// This test currently FAILS the security assertion: the DTO faithfully
-// deserializes the member-supplied plan ID and the converter copies it to the
-// model with no role check — proving the vulnerability.
+// Without the hook, a Member who POSTs {"subscription_plan_id": "<paid-plan-uuid>"}
+// would have that value faithfully copied into the model and persisted to the DB.
+// After the fix the hook zeros the field before the model reaches the repository.
 func TestOrganizationCreate_WithSubscriptionPlanID_ShouldIgnoreForNonAdmin(t *testing.T) {
 	paidPlanID := uuid.New()
 
-	// Simulate what the API receives from a Member's HTTP request body.
-	payload := map[string]interface{}{
-		"name":                 "my-org",
-		"display_name":         "My Org",
-		"subscription_plan_id": paidPlanID.String(), // Member injects a paid plan.
-	}
-	raw, err := json.Marshal(payload)
-	require.NoError(t, err)
-
-	var input dto.CreateOrganizationInput
-	err = json.Unmarshal(raw, &input)
-	require.NoError(t, err)
-
-	// The DTO deserialization must succeed — this is by design so the field can
-	// be accepted from admins. The security check must happen *downstream*.
-
-	// Layer 2: DtoToModel — simulate what the entity registration converter does.
-	// This mirrors organizationRegistration.go DtoToModel exactly.
+	// Simulate the Organization model as produced by DtoToModel after a Member
+	// submits a create payload containing a paid plan UUID.
 	org := &models.Organization{
-		Name:               input.Name,
-		DisplayName:        input.DisplayName,
-		Description:        input.Description,
-		SubscriptionPlanID: input.SubscriptionPlanID, // ← vulnerability: no role check
-		MaxGroups:          input.MaxGroups,
-		MaxMembers:         input.MaxMembers,
-		Metadata:           input.Metadata,
+		Name:               "my-org",
+		DisplayName:        "My Org",
+		SubscriptionPlanID: &paidPlanID, // member-injected value
 		IsActive:           true,
 	}
 
-	// CURRENT BEHAVIOUR (bug): SubscriptionPlanID is set to the member-supplied value.
-	// EXPECTED (after fix): SubscriptionPlanID must be nil for non-admin callers;
-	// the fix should strip it before the model is persisted.
+	ctx := &hookpkg.HookContext{
+		EntityName: "Organization",
+		HookType:   hookpkg.BeforeCreate,
+		NewEntity:  org,
+		UserID:     "user-123",
+		UserRoles:  []string{"Member"},
+		Context:    context.Background(),
+	}
+
+	hook := organizationHooks.NewOrganizationPlanProtectionHook()
+	err := hook.Execute(ctx)
+	require.NoError(t, err)
+
+	// EXPECTED (after fix): the hook strips the field for non-admin callers.
 	assert.Nil(t, org.SubscriptionPlanID,
 		"Member-supplied subscription_plan_id must not reach the Organization model; "+
-			"got %v — the service or hook must strip this field for non-admin callers",
+			"got %v — the BeforeCreate hook must strip this field for non-admin callers",
 		org.SubscriptionPlanID)
 }
 
-// TestOrganizationUpdate_WithSubscriptionPlanID_ShouldIgnoreForNonAdmin proves
-// that EditOrganizationInput accepts a subscription_plan_id and that the
-// DtoToMap converter propagates it into the UPDATE map with no role check.
+// ---------------------------------------------------------------------------
+// BeforeUpdate protection — member caller
+// ---------------------------------------------------------------------------
+
+// TestOrganizationUpdate_WithSubscriptionPlanID_ShouldIgnoreForNonAdmin verifies
+// that the plan protection hook removes subscription_plan_id from the update map
+// when the caller holds only the "Member" role.
 //
-// This test currently FAILS: the update map contains subscription_plan_id,
-// meaning any Member who owns an org can change its plan for free via PATCH.
+// Without the hook, a Member who PATCHes {"subscription_plan_id": "<paid-plan-uuid>"}
+// would have that key included in the UPDATE map and written to the DB unconditionally.
+// After the fix the hook deletes the key before the map reaches the repository.
 func TestOrganizationUpdate_WithSubscriptionPlanID_ShouldIgnoreForNonAdmin(t *testing.T) {
 	paidPlanID := uuid.New()
 
-	// Simulate what the API receives from a Member's PATCH request body.
-	payload := map[string]interface{}{
-		"subscription_plan_id": paidPlanID.String(),
-	}
-	raw, err := json.Marshal(payload)
-	require.NoError(t, err)
-
-	var input dto.EditOrganizationInput
-	err = json.Unmarshal(raw, &input)
-	require.NoError(t, err)
-
-	// The field is deserialized successfully.
-	require.NotNil(t, input.SubscriptionPlanID, "SubscriptionPlanID should be parsed from JSON")
-	assert.Equal(t, paidPlanID, *input.SubscriptionPlanID)
-
-	// Layer 3: DtoToMap — simulate what the entity registration converter does.
-	// This mirrors organizationRegistration.go DtoToMap exactly.
-	updates := make(map[string]any)
-	if input.SubscriptionPlanID != nil {
-		updates["subscription_plan_id"] = *input.SubscriptionPlanID // ← vulnerability
+	// Simulate the update map as produced by DtoToMap when a Member sends a PATCH
+	// request containing subscription_plan_id.
+	updateMap := map[string]any{
+		"subscription_plan_id": paidPlanID,
+		"display_name":         "New Name",
 	}
 
-	// CURRENT BEHAVIOUR (bug): the update map contains subscription_plan_id,
-	// which will be written to the DB via a raw UPDATE with no role check.
-	// EXPECTED (after fix): subscription_plan_id must not appear in the update
-	// map for non-admin callers; it should be stripped before DtoToMap is called.
-	_, containsPlanID := updates["subscription_plan_id"]
+	ctx := &hookpkg.HookContext{
+		EntityName: "Organization",
+		HookType:   hookpkg.BeforeUpdate,
+		NewEntity:  updateMap,
+		UserID:     "user-123",
+		UserRoles:  []string{"Member"},
+		Context:    context.Background(),
+	}
+
+	hook := organizationHooks.NewOrganizationPlanProtectionHook()
+	err := hook.Execute(ctx)
+	require.NoError(t, err)
+
+	// EXPECTED (after fix): subscription_plan_id must not appear in the update map.
+	_, containsPlanID := updateMap["subscription_plan_id"]
 	assert.False(t, containsPlanID,
 		"subscription_plan_id must not appear in the update map for non-admin callers; "+
-			"the DtoToMap converter (or upstream hook) must strip it, but it was included")
+			"the BeforeUpdate hook must strip it, but it was included")
+
+	// Other fields must not be affected.
+	assert.Equal(t, "New Name", updateMap["display_name"])
 }
+
+// ---------------------------------------------------------------------------
+// Admin caller — plan ID must be preserved (BeforeCreate)
+// ---------------------------------------------------------------------------
 
 // TestOrganizationCreate_WithSubscriptionPlanID_ShouldAllowForAdmin verifies
 // the positive case: an Administrator can assign a specific subscription plan
@@ -159,16 +149,27 @@ func TestOrganizationCreate_WithSubscriptionPlanID_ShouldAllowForAdmin(t *testin
 		"SubscriptionPlanID must be correctly deserialized")
 
 	// After the fix: when the caller is identified as an administrator (e.g. via
-	// ctx.UserRoles containing "administrator"), the service/hook must NOT strip
-	// the field. The model should be created with the supplied plan ID.
-	//
-	// We simulate the converter as the admin code path should produce it:
+	// ctx.UserRoles containing "administrator"), the hook must NOT strip the field.
+	// The model should be created with the supplied plan ID.
 	org := &models.Organization{
 		Name:               input.Name,
 		DisplayName:        input.DisplayName,
 		SubscriptionPlanID: input.SubscriptionPlanID, // retained for admins
 		IsActive:           true,
 	}
+
+	ctx := &hookpkg.HookContext{
+		EntityName: "Organization",
+		HookType:   hookpkg.BeforeCreate,
+		NewEntity:  org,
+		UserID:     "admin-456",
+		UserRoles:  []string{"Administrator"},
+		Context:    context.Background(),
+	}
+
+	hook := organizationHooks.NewOrganizationPlanProtectionHook()
+	err = hook.Execute(ctx)
+	require.NoError(t, err)
 
 	// This assertion documents and enforces the admin privilege:
 	require.NotNil(t, org.SubscriptionPlanID,
@@ -177,10 +178,13 @@ func TestOrganizationCreate_WithSubscriptionPlanID_ShouldAllowForAdmin(t *testin
 		"Administrator-supplied plan ID must reach the Organization model unchanged")
 }
 
+// ---------------------------------------------------------------------------
+// Baseline — nil plan ID is a no-op
+// ---------------------------------------------------------------------------
+
 // TestOrganizationCreate_NoSubscriptionPlanID_ShouldAssignTrialPlan documents
-// the baseline: when no subscription_plan_id is supplied, the service assigns
-// the Trial plan. This test verifies the DTO correctly leaves the field nil,
-// allowing the Trial assignment logic to run.
+// the baseline: when no subscription_plan_id is supplied, the DTO field is nil
+// and the hook is a no-op, allowing the Trial plan assignment logic to run downstream.
 func TestOrganizationCreate_NoSubscriptionPlanID_ShouldAssignTrialPlan(t *testing.T) {
 	payload := map[string]interface{}{
 		"name":         "trial-org",
@@ -200,10 +204,13 @@ func TestOrganizationCreate_NoSubscriptionPlanID_ShouldAssignTrialPlan(t *testin
 			"Trial plan assignment logic can run")
 }
 
+// ---------------------------------------------------------------------------
+// DTO round-trip — subscription_plan_id is accepted in EditOrganizationInput
+// ---------------------------------------------------------------------------
+
 // TestOrganizationUpdate_WithSubscriptionPlanID_DTODeserialization documents
 // that subscription_plan_id is fully functional in the EditOrganizationInput DTO.
-// This is the prerequisite for the vulnerability and also for the admin fix:
-// the field must be parse-able so it can be selectively applied for admins.
+// This is the prerequisite for the admin PATCH path to work.
 func TestOrganizationUpdate_WithSubscriptionPlanID_DTODeserialization(t *testing.T) {
 	planID := uuid.New()
 
