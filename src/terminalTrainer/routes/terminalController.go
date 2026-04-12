@@ -2211,9 +2211,20 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 
 	sessionResponse, err := tc.service.StartComposedSession(userID, input, planInterface)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: err.Error(),
+		errMsg := err.Error()
+		statusCode := http.StatusInternalServerError
+
+		// Plan limit / authorization errors → 403
+		if strings.Contains(errMsg, "plan_limit") || strings.Contains(errMsg, "plan_disabled") || strings.Contains(errMsg, "not allowed") {
+			statusCode = http.StatusForbidden
+		// Validation / input errors → 400
+		} else if strings.Contains(errMsg, "invalid") || strings.Contains(errMsg, "missing") || strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "required") {
+			statusCode = http.StatusBadRequest
+		}
+
+		ctx.JSON(statusCode, &errors.APIError{
+			ErrorCode:    statusCode,
+			ErrorMessage: errMsg,
 		})
 		return
 	}
