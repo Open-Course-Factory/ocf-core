@@ -156,6 +156,9 @@ func (m *mockTerminalTrainerService) DeleteAllUserCommandHistory(apiKey string) 
 func (m *mockTerminalTrainerService) GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error) {
 	panic("not implemented")
 }
+func (m *mockTerminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.OrgTerminalUsageResponse, error) {
+	panic("not implemented")
+}
 func (m *mockTerminalTrainerService) GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool, search string) ([]byte, string, error) {
 	panic("not implemented")
 }

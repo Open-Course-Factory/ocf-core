@@ -127,6 +127,9 @@ func (m *mockTTService) DeleteAllUserCommandHistory(string) (int64, error) { ret
 func (m *mockTTService) GetOrganizationTerminalSessions(uuid.UUID) (*[]ttModels.Terminal, error) {
 	return nil, nil
 }
+func (m *mockTTService) GetOrgTerminalUsage(uuid.UUID) (*ttDto.OrgTerminalUsageResponse, error) {
+	return nil, nil
+}
 func (m *mockTTService) GetGroupCommandHistory(string, string, *int64, string, int, int, bool, string) ([]byte, string, error) {
 	return nil, "", nil
 }

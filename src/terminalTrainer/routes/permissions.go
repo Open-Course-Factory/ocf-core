@@ -82,6 +82,8 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 
 	// Organization terminal sessions (fine-grained org checks in controller)
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/terminal-sessions", "GET")
+	// Organization terminal usage (managers/owners only — Layer 2 via OrgRole + MinRole manager)
+	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/terminal-usage", "GET")
 
 	// Incus UI proxy (fine-grained backend access checks in controller)
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/incus-ui/:backendId/*", "(GET|POST|PUT|PATCH|DELETE)")
@@ -134,6 +136,7 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 
 		// Organization terminal routes
 		access.RoutePermission{Path: "/api/v1/organizations/:id/terminal-sessions", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"}, Description: "List terminal sessions for an organization"},
+		access.RoutePermission{Path: "/api/v1/organizations/:id/terminal-usage", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"}, Description: "Get org-wide active terminal usage for managers/owners"},
 
 		// Incus UI proxy
 		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*", Method: "(GET|POST|PUT|PATCH|DELETE)", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "backendId", MinRole: "member"}, Description: "Proxy requests to Incus UI for a backend"},

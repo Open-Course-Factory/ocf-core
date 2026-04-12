@@ -135,6 +135,9 @@ func (m *capturingTTService) DeleteAllUserCommandHistory(string) (int64, error) 
 func (m *capturingTTService) GetOrganizationTerminalSessions(uuid.UUID) (*[]ttModels.Terminal, error) {
 	return nil, nil
 }
+func (m *capturingTTService) GetOrgTerminalUsage(uuid.UUID) (*ttDto.OrgTerminalUsageResponse, error) {
+	return nil, nil
+}
 func (m *capturingTTService) GetGroupCommandHistory(string, string, *int64, string, int, int, bool, string) ([]byte, string, error) {
 	return nil, "", nil
 }

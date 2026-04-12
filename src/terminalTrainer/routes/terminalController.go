@@ -84,6 +84,7 @@ type TerminalController interface {
 
 	// Organization session management
 	GetOrganizationTerminalSessions(ctx *gin.Context)
+	GetOrgTerminalUsage(ctx *gin.Context)
 
 	// Group command history
 	GetGroupCommandHistory(ctx *gin.Context)
@@ -1913,6 +1914,60 @@ func (tc *terminalController) GetOrganizationTerminalSessions(ctx *gin.Context) 
 		"sessions": sessions,
 		"count":    len(*sessions),
 	})
+}
+
+// GetOrgTerminalUsage returns org-wide active terminal usage for managers/owners.
+//
+//	@Summary		Get org-wide terminal usage
+//	@Description	Returns the org's active terminal count, plan limits, and a per-user breakdown. Only accessible by organization managers, owners, or platform admins.
+//	@Tags			terminal
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"Organization ID"
+//	@Security		BearerAuth
+//	@Success		200	{object}	dto.OrgTerminalUsageResponse
+//	@Failure		400	{object}	errors.APIError	"Invalid organization ID"
+//	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/organizations/{id}/terminal-usage [get]
+func (tc *terminalController) GetOrgTerminalUsage(ctx *gin.Context) {
+	orgIDStr := ctx.Param("id")
+	orgID, err := uuid.Parse(orgIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	userID := ctx.GetString("userId")
+	userRoles := ctx.GetStringSlice("userRoles")
+	isAdmin := false
+	for _, role := range userRoles {
+		if role == "administrator" {
+			isAdmin = true
+			break
+		}
+	}
+	if !tc.service.IsUserOrgManagerOrAdmin(userID, orgID, isAdmin) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Only organization owners, managers, or admins can access this resource",
+		})
+		return
+	}
+
+	usage, err := tc.service.GetOrgTerminalUsage(orgID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get organization terminal usage",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, usage)
 }
 
 // GetGroupCommandHistory returns aggregated command history for all members of a group

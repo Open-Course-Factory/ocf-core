@@ -587,3 +587,21 @@ type CommandHistoryResponse struct {
 	Limit     int                   `json:"limit,omitempty"`
 	Offset    int                   `json:"offset,omitempty"`
 }
+
+// OrgTerminalUsageUser holds per-user active terminal count for an organization.
+type OrgTerminalUsageUser struct {
+	UserID      string `json:"user_id"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	ActiveCount int    `json:"active_count"`
+}
+
+// OrgTerminalUsageResponse is returned by GET /organizations/:id/terminal-usage.
+type OrgTerminalUsageResponse struct {
+	OrganizationID  string                 `json:"organization_id"`
+	ActiveTerminals int                    `json:"active_terminals"`
+	MaxTerminals    int                    `json:"max_terminals"`
+	PlanName        string                 `json:"plan_name"`
+	IsFallback      bool                   `json:"is_fallback"`
+	Users           []OrgTerminalUsageUser `json:"users"`
+}

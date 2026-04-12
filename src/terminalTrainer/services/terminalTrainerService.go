@@ -99,6 +99,7 @@ type TerminalTrainerService interface {
 
 	// Organization session management
 	GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error)
+	GetOrgTerminalUsage(orgID uuid.UUID) (*dto.OrgTerminalUsageResponse, error)
 
 	// Group command history
 	GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool, search string) ([]byte, string, error)
@@ -2127,6 +2128,68 @@ func (tts *terminalTrainerService) getAdminBackends() ([]adminBackendEntry, erro
 
 func (tts *terminalTrainerService) GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error) {
 	return tts.repository.GetTerminalSessionsByOrganizationID(orgID)
+}
+
+// GetOrgTerminalUsage returns aggregated active terminal usage for an organization:
+// the org's effective plan limits, and a per-user breakdown of active terminal counts.
+func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.OrgTerminalUsageResponse, error) {
+	// 1. Resolve the org's effective plan via EffectivePlanService (owner's plan in the org context).
+	effectivePlanSvc := paymentServices.NewEffectivePlanService(tts.db)
+
+	// Load the org to find owner
+	var org orgModels.Organization
+	if err := tts.db.First(&org, "id = ?", orgID).Error; err != nil {
+		return nil, fmt.Errorf("organization not found: %w", err)
+	}
+
+	orgIDPtr := orgID
+	planResult, err := effectivePlanSvc.GetUserEffectivePlanForOrg(org.OwnerUserID, &orgIDPtr)
+
+	planName := "unknown"
+	maxTerminals := 0
+	isFallback := false
+	if err == nil && planResult != nil && planResult.Plan != nil {
+		planName = planResult.Plan.Name
+		maxTerminals = planResult.Plan.MaxConcurrentTerminals
+		isFallback = planResult.IsFallback
+	}
+
+	// 2. Count active terminals across all members, grouped by user.
+	type userCount struct {
+		UserID      string
+		ActiveCount int64
+	}
+	var rows []userCount
+	err = tts.db.Table("terminals").
+		Select("user_id, COUNT(*) as active_count").
+		Where("organization_id = ? AND status = ? AND deleted_at IS NULL", orgID, "active").
+		Group("user_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to count active terminals: %w", err)
+	}
+
+	// 3. Build per-user entries and total count.
+	totalActive := 0
+	users := make([]dto.OrgTerminalUsageUser, 0, len(rows))
+	for _, row := range rows {
+		totalActive += int(row.ActiveCount)
+		users = append(users, dto.OrgTerminalUsageUser{
+			UserID:      row.UserID,
+			DisplayName: row.UserID, // display name enrichment happens in the frontend
+			Email:       "",
+			ActiveCount: int(row.ActiveCount),
+		})
+	}
+
+	return &dto.OrgTerminalUsageResponse{
+		OrganizationID:  orgID.String(),
+		ActiveTerminals: totalActive,
+		MaxTerminals:    maxTerminals,
+		PlanName:        planName,
+		IsFallback:      isFallback,
+		Users:           users,
+	}, nil
 }
 
 // IsUserAuthorizedForSession checks if a user is authorized to access a terminal session.
