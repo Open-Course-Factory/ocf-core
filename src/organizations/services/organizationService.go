@@ -90,7 +90,7 @@ func (os *organizationService) CreateOrganization(userID string, input dto.Creat
 	}
 
 	if org.MaxGroups == 0 {
-		org.MaxGroups = 10 // Default limit
+		org.MaxGroups = 250 // Default limit
 	}
 	if org.MaxMembers == 0 {
 		org.MaxMembers = 50 // Default limit
@@ -229,7 +229,7 @@ func (os *organizationService) ConvertToTeam(orgID uuid.UUID, requestingUserID s
 	}
 
 	// Update limits to team defaults
-	updates["max_groups"] = 30  // Team default
+	updates["max_groups"] = 250  // Team default
 	updates["max_members"] = 100 // Team default
 
 	// Update is_personal for backward compatibility (since direct updates bypass BeforeSave hook)

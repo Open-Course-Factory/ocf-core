@@ -26,7 +26,7 @@ type Organization struct {
 	SubscriptionPlanID *uuid.UUID       `gorm:"type:uuid;index" json:"subscription_plan_id,omitempty"` // Organization subscription
 	IsPersonal         bool             `gorm:"default:false" json:"is_personal"`                      // Deprecated: use OrganizationType instead
 	OrganizationType   OrganizationType `gorm:"type:varchar(20);default:'team';index" json:"organization_type"` // 'personal' or 'team'
-	MaxGroups          int              `gorm:"default:30" json:"max_groups"`                                   // Limit for groups in org
+	MaxGroups          int              `gorm:"default:250" json:"max_groups"`                                  // Limit for groups in org
 	MaxMembers         int              `gorm:"default:100" json:"max_members"`                                 // Limit for total org members
 	IsActive           bool             `gorm:"default:true" json:"is_active"`
 

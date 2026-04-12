@@ -113,7 +113,7 @@ func RegisterOrganization(service *ems.EntityRegistrationService) {
 						IsActive:           true,
 					}
 					if org.MaxGroups == 0 {
-						org.MaxGroups = 10
+						org.MaxGroups = 250
 					}
 					if org.MaxMembers == 0 {
 						org.MaxMembers = 50
