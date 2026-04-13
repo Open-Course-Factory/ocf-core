@@ -73,31 +73,5 @@ func createTestTerminal(db *gorm.DB, userID string, status string, userKeyIDOrEx
 	return terminal, err
 }
 
-// createTestTerminalShare creates a test terminal share
-func createTestTerminalShare(db *gorm.DB, terminalID uuid.UUID, sharedByUserID, sharedWithUserID string) (*models.TerminalShare, error) {
-	share := &models.TerminalShare{
-		TerminalID:          terminalID,
-		SharedWithUserID:    &sharedWithUserID,
-		SharedByUserID:      sharedByUserID,
-		AccessLevel:         models.AccessLevelRead,
-		IsActive:            true,
-		IsHiddenByRecipient: false,
-	}
-	err := db.Create(share).Error
-	return share, err
-}
 
-// createTestGroupShare creates a test terminal share with a group
-func createTestGroupShare(db *gorm.DB, terminalID uuid.UUID, sharedByUserID string, groupID uuid.UUID, accessLevel string) (*models.TerminalShare, error) {
-	share := &models.TerminalShare{
-		TerminalID:          terminalID,
-		SharedWithGroupID:   &groupID,
-		SharedByUserID:      sharedByUserID,
-		AccessLevel:         accessLevel,
-		IsActive:            true,
-		IsHiddenByRecipient: false,
-	}
-	err := db.Create(share).Error
-	return share, err
-}
 

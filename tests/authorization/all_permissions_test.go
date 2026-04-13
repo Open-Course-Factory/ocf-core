@@ -106,17 +106,10 @@ func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 	}{
 		// Existing (pre-#171)
 		{"/api/v1/terminals/user-sessions", "GET"},
-		{"/api/v1/terminals/shared-with-me", "GET"},
 		{"/api/v1/terminals/sync-all", "POST"},
 		{"/api/v1/terminals/metrics", "GET"},
 		{"/api/v1/terminals/:id/console", "GET"},
 		{"/api/v1/terminals/:id/stop", "POST"},
-		{"/api/v1/terminals/:id/share", "POST"},
-		{"/api/v1/terminals/:id/share/:user_id", "DELETE"},
-		{"/api/v1/terminals/:id/shares", "GET"},
-		{"/api/v1/terminals/:id/info", "GET"},
-		{"/api/v1/terminals/:id/hide", "POST"},
-		{"/api/v1/terminals/:id/hide", "DELETE"},
 		{"/api/v1/terminals/:id/sync", "POST"},
 		{"/api/v1/terminals/:id/status", "GET"},
 		{"/api/v1/terminals/:id/history", "GET"},
@@ -163,7 +156,6 @@ func TestSetupTerminalPermissions_AdminRoutes(t *testing.T) {
 		{"/api/v1/terminals/catalog-features", "GET"},
 		{"/api/v1/terminals/enums/status", "GET"},
 		{"/api/v1/terminals/enums/refresh", "POST"},
-		{"/api/v1/terminals/fix-hide-permissions", "POST"},
 	}
 
 	for _, r := range adminRoutes {

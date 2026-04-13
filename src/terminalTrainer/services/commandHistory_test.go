@@ -24,7 +24,7 @@ func setupTestDBForService(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	err = db.AutoMigrate(&models.UserTerminalKey{}, &models.Terminal{}, &models.TerminalShare{})
+	err = db.AutoMigrate(&models.UserTerminalKey{}, &models.Terminal{})
 	require.NoError(t, err)
 
 	return db

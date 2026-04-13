@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -63,34 +62,7 @@ func (m *mockTerminalTrainerService) GetActiveUserSessions(userID string) (*[]mo
 func (m *mockTerminalTrainerService) StopSession(sessionID string) error {
 	panic("not implemented")
 }
-func (m *mockTerminalTrainerService) ShareTerminal(sessionID, sharedByUserID, sharedWithUserID, accessLevel string, expiresAt *time.Time) error {
-	panic("not implemented")
-}
-func (m *mockTerminalTrainerService) ShareTerminalWithGroup(sessionID, sharedByUserID string, groupID uuid.UUID, accessLevel string, expiresAt *time.Time) error {
-	panic("not implemented")
-}
-func (m *mockTerminalTrainerService) RevokeTerminalAccess(sessionID, sharedWithUserID, requestingUserID string) error {
-	panic("not implemented")
-}
-func (m *mockTerminalTrainerService) GetTerminalShares(sessionID, requestingUserID string) (*[]models.TerminalShare, error) {
-	panic("not implemented")
-}
-func (m *mockTerminalTrainerService) GetSharedTerminals(userID string) (*[]models.Terminal, error) {
-	panic("not implemented")
-}
-func (m *mockTerminalTrainerService) GetSharedTerminalsWithHidden(userID string, includeHidden bool) (*[]models.Terminal, error) {
-	panic("not implemented")
-}
 func (m *mockTerminalTrainerService) HasTerminalAccess(sessionID, userID string, requiredLevel string) (bool, error) {
-	panic("not implemented")
-}
-func (m *mockTerminalTrainerService) GetSharedTerminalInfo(sessionID, userID string) (*dto.SharedTerminalInfo, error) {
-	panic("not implemented")
-}
-func (m *mockTerminalTrainerService) HideTerminal(terminalID, userID string) error {
-	panic("not implemented")
-}
-func (m *mockTerminalTrainerService) UnhideTerminal(terminalID, userID string) error {
 	panic("not implemented")
 }
 func (m *mockTerminalTrainerService) GetAllSessionsFromAPI(userAPIKey string) (*dto.TerminalTrainerSessionsResponse, error) {
@@ -130,9 +102,6 @@ func (m *mockTerminalTrainerService) IsBackendOnline(backendName string) (bool, 
 	panic("not implemented")
 }
 func (m *mockTerminalTrainerService) SetSystemDefaultBackend(backendID string) (*dto.BackendInfo, error) {
-	panic("not implemented")
-}
-func (m *mockTerminalTrainerService) FixTerminalHidePermissions(userID string) (*dto.FixPermissionsResponse, error) {
 	panic("not implemented")
 }
 func (m *mockTerminalTrainerService) BulkCreateTerminalsForGroup(groupID string, requestingUserID string, userRoles []string, request dto.BulkCreateTerminalsRequest, planInterface any) (*dto.BulkCreateTerminalsResponse, error) {

@@ -29,7 +29,6 @@ func TestMain(m *testing.M) {
 	err = db.AutoMigrate(
 		&models.UserTerminalKey{},
 		&models.Terminal{},
-		&models.TerminalShare{},
 		&groupModels.ClassGroup{},
 		&groupModels.GroupMember{},
 		&orgModels.Organization{},
@@ -52,7 +51,6 @@ func TestMain(m *testing.M) {
 func freshTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	// Delete in dependency order to respect foreign keys
-	sharedTestDB.Exec("DELETE FROM terminal_shares")
 	sharedTestDB.Exec("DELETE FROM terminals")
 	sharedTestDB.Exec("DELETE FROM user_terminal_keys")
 	sharedTestDB.Exec("DELETE FROM group_members")

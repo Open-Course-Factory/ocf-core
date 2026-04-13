@@ -69,28 +69,9 @@ func (m *capturingTTService) GetActiveUserSessions(string) (*[]ttModels.Terminal
 	return nil, nil
 }
 func (m *capturingTTService) StopSession(string) error { return nil }
-func (m *capturingTTService) ShareTerminal(string, string, string, string, *time.Time) error {
-	return nil
-}
-func (m *capturingTTService) ShareTerminalWithGroup(string, string, uuid.UUID, string, *time.Time) error {
-	return nil
-}
-func (m *capturingTTService) RevokeTerminalAccess(string, string, string) error { return nil }
-func (m *capturingTTService) GetTerminalShares(string, string) (*[]ttModels.TerminalShare, error) {
-	return nil, nil
-}
-func (m *capturingTTService) GetSharedTerminals(string) (*[]ttModels.Terminal, error) { return nil, nil }
-func (m *capturingTTService) GetSharedTerminalsWithHidden(string, bool) (*[]ttModels.Terminal, error) {
-	return nil, nil
-}
 func (m *capturingTTService) HasTerminalAccess(string, string, string) (bool, error) {
 	return false, nil
 }
-func (m *capturingTTService) GetSharedTerminalInfo(string, string) (*ttDto.SharedTerminalInfo, error) {
-	return nil, nil
-}
-func (m *capturingTTService) HideTerminal(string, string) error   { return nil }
-func (m *capturingTTService) UnhideTerminal(string, string) error { return nil }
 func (m *capturingTTService) GetAllSessionsFromAPI(string) (*ttDto.TerminalTrainerSessionsResponse, error) {
 	return nil, nil
 }
@@ -115,9 +96,6 @@ func (m *capturingTTService) GetBackendsForContext(uuid.UUID, string) ([]ttDto.B
 }
 func (m *capturingTTService) IsBackendOnline(string) (bool, error) { return true, nil }
 func (m *capturingTTService) SetSystemDefaultBackend(string) (*ttDto.BackendInfo, error) {
-	return nil, nil
-}
-func (m *capturingTTService) FixTerminalHidePermissions(string) (*ttDto.FixPermissionsResponse, error) {
 	return nil, nil
 }
 func (m *capturingTTService) BulkCreateTerminalsForGroup(string, string, []string, ttDto.BulkCreateTerminalsRequest, any) (*ttDto.BulkCreateTerminalsResponse, error) {

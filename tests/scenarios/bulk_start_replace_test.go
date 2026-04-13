@@ -61,28 +61,9 @@ func (m *mockTTService) GetActiveUserSessions(string) (*[]ttModels.Terminal, err
 	return nil, nil
 }
 func (m *mockTTService) StopSession(string) error { return nil }
-func (m *mockTTService) ShareTerminal(string, string, string, string, *time.Time) error {
-	return nil
-}
-func (m *mockTTService) ShareTerminalWithGroup(string, string, uuid.UUID, string, *time.Time) error {
-	return nil
-}
-func (m *mockTTService) RevokeTerminalAccess(string, string, string) error { return nil }
-func (m *mockTTService) GetTerminalShares(string, string) (*[]ttModels.TerminalShare, error) {
-	return nil, nil
-}
-func (m *mockTTService) GetSharedTerminals(string) (*[]ttModels.Terminal, error) { return nil, nil }
-func (m *mockTTService) GetSharedTerminalsWithHidden(string, bool) (*[]ttModels.Terminal, error) {
-	return nil, nil
-}
 func (m *mockTTService) HasTerminalAccess(string, string, string) (bool, error) {
 	return false, nil
 }
-func (m *mockTTService) GetSharedTerminalInfo(string, string) (*ttDto.SharedTerminalInfo, error) {
-	return nil, nil
-}
-func (m *mockTTService) HideTerminal(string, string) error   { return nil }
-func (m *mockTTService) UnhideTerminal(string, string) error { return nil }
 func (m *mockTTService) GetAllSessionsFromAPI(string) (*ttDto.TerminalTrainerSessionsResponse, error) {
 	return nil, nil
 }
@@ -107,9 +88,6 @@ func (m *mockTTService) GetBackendsForContext(uuid.UUID, string) ([]ttDto.Backen
 }
 func (m *mockTTService) IsBackendOnline(string) (bool, error) { return true, nil }
 func (m *mockTTService) SetSystemDefaultBackend(string) (*ttDto.BackendInfo, error) {
-	return nil, nil
-}
-func (m *mockTTService) FixTerminalHidePermissions(string) (*ttDto.FixPermissionsResponse, error) {
 	return nil, nil
 }
 func (m *mockTTService) BulkCreateTerminalsForGroup(string, string, []string, ttDto.BulkCreateTerminalsRequest, any) (*ttDto.BulkCreateTerminalsResponse, error) {

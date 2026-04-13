@@ -202,14 +202,6 @@ func allEntityRoles() []entityRoleDefinition {
 			}},
 		},
 		{
-			entityName: "TerminalShare",
-			routeName:  "terminal-shares",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + "|" + http.MethodPost + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
-			}},
-		},
-		{
 			entityName: "UserTerminalKey",
 			routeName:  "user-terminal-keys",
 			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
@@ -862,7 +854,6 @@ func TestRBAC_RouteNameDerivation(t *testing.T) {
 		"UsageMetrics":       "usage-metrics",
 		"UserSubscription":   "user-subscriptions",
 		"Terminal":           "terminals",
-		"TerminalShare":      "terminal-shares",
 		"UserTerminalKey":    "user-terminal-keys",
 		"Chapter":            "chapters",
 		"Course":             "courses",
