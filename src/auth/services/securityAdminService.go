@@ -42,8 +42,6 @@ var entityTableMap = map[string]entityTableLookup{
 	"generations":        {table: "generations", nameExpr: "id"},
 	"terminal":           {table: "terminals", nameExpr: "name"},
 	"terminals":          {table: "terminals", nameExpr: "name"},
-	"terminal-share":     {table: "terminal_shares", nameExpr: "id"},
-	"terminal-shares":    {table: "terminal_shares", nameExpr: "id"},
 	"subscription-plan":  {table: "subscription_plans", nameExpr: "name"},
 	"subscription-plans": {table: "subscription_plans", nameExpr: "name"},
 	"feature":            {table: "features", nameExpr: "name"},

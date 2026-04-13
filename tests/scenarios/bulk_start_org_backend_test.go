@@ -69,7 +69,7 @@ func (m *capturingTTService) GetActiveUserSessions(string) (*[]ttModels.Terminal
 	return nil, nil
 }
 func (m *capturingTTService) StopSession(string) error { return nil }
-func (m *capturingTTService) HasTerminalAccess(string, string, string) (bool, error) {
+func (m *capturingTTService) HasTerminalAccess(string, string) (bool, error) {
 	return false, nil
 }
 func (m *capturingTTService) GetAllSessionsFromAPI(string) (*ttDto.TerminalTrainerSessionsResponse, error) {

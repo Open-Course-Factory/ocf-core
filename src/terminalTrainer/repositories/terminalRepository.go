@@ -25,7 +25,6 @@ type TerminalRepository interface {
 	GetTerminalSessionsByUserID(userID string, isActive bool) (*[]models.Terminal, error)
 	GetTerminalSessionsByUserIDAndOrg(userID string, organizationID *uuid.UUID, isActive bool) (*[]models.Terminal, error)
 	GetTerminalSessionsByUserIDWithHidden(userID string, isActive bool, includeHidden bool) (*[]models.Terminal, error)
-	GetTerminalSessionsSharedWithGroup(groupID string, includeHidden bool) (*[]models.Terminal, error)
 	GetTerminalSessionsByOrganizationID(orgID uuid.UUID) (*[]models.Terminal, error)
 	UpdateTerminalSession(terminal *models.Terminal) error
 	DeleteTerminalSession(sessionID string) error
@@ -380,28 +379,3 @@ func (r *terminalRepository) UnhideOwnedTerminal(terminalID, userID string) erro
 		Updates(terminal).Error
 }
 
-func (r *terminalRepository) GetTerminalSessionsSharedWithGroup(groupID string, includeHidden bool) (*[]models.Terminal, error) {
-	var terminals []models.Terminal
-
-	// Parse group ID as UUID
-	groupUUID, err := uuid.Parse(groupID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid group ID format: %w", err)
-	}
-
-	// Query terminals that are shared with the specified group
-	query := r.db.Joins("JOIN terminal_shares ON terminals.id = terminal_shares.terminal_id").
-		Preload("UserTerminalKey").
-		Where("terminal_shares.shared_with_group_id = ? AND terminal_shares.is_active = ?", groupUUID, true)
-
-	// Filter by hidden status if requested
-	if !includeHidden {
-		query = query.Where("terminal_shares.is_hidden_by_recipient = ?", false)
-	}
-
-	err = query.Find(&terminals).Error
-	if err != nil {
-		return nil, err
-	}
-	return &terminals, nil
-}

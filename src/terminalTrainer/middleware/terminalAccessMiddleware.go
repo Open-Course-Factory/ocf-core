@@ -26,7 +26,7 @@ func NewTerminalAccessMiddleware(db *gorm.DB) *TerminalAccessMiddleware {
 // RequireTerminalAccess is a middleware that ensures the user has the required access level to a terminal.
 // This implements the second layer of the two-layer security model:
 // - Layer 1: Casbin checks generic route permissions (/api/v1/terminals/:id)
-// - Layer 2: This middleware checks resource-specific access via terminal_shares table
+// - Layer 2: This middleware checks terminal ownership (owner or group owner)
 //
 // The terminal ID is expected to be in the route parameter "id".
 // The user ID is expected to be in the context (set by AuthManagement middleware).
@@ -66,8 +66,8 @@ func (tam *TerminalAccessMiddleware) RequireTerminalAccess(requiredLevel string)
 			}
 		}
 
-		// Check terminal-specific access (owner or shared)
-		hasAccess, err := tam.service.HasTerminalAccess(terminalID, userID, requiredLevel)
+		// Check terminal-specific access (owner or group owner)
+		hasAccess, err := tam.service.HasTerminalAccess(terminalID, userID)
 		if err != nil {
 			// Check if it's a "terminal not found" error
 			if err.Error() == "terminal not found" {

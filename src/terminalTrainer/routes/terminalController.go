@@ -134,8 +134,8 @@ func NewTerminalControllerWithService(db *gorm.DB, svc services.TerminalTrainerS
 	}
 }
 
-// hasTerminalAccess vérifie si un utilisateur a accès à un terminal avec le niveau requis
-func (tc *terminalController) hasTerminalAccess(ctx *gin.Context, terminalID, userID, requiredLevel string) (bool, error) {
+// hasTerminalAccess vérifie si un utilisateur a accès à un terminal
+func (tc *terminalController) hasTerminalAccess(ctx *gin.Context, terminalID, userID string) (bool, error) {
 	// Vérifier d'abord si l'utilisateur est admin
 	userRoles := ctx.GetStringSlice("userRoles")
 	for _, role := range userRoles {
@@ -144,8 +144,8 @@ func (tc *terminalController) hasTerminalAccess(ctx *gin.Context, terminalID, us
 		}
 	}
 
-	// Utiliser le service pour vérifier l'accès (propriétaire ou partagé)
-	return tc.service.HasTerminalAccess(terminalID, userID, requiredLevel)
+	// Utiliser le service pour vérifier l'accès (propriétaire ou accès en tant que propriétaire du groupe)
+	return tc.service.HasTerminalAccess(terminalID, userID)
 }
 
 var upgrader = websocket.Upgrader{
@@ -200,8 +200,8 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 		return
 	}
 
-	// Vérifier les droits d'accès (read level minimum pour la console)
-	hasAccess, accessErr := tc.hasTerminalAccess(ctx, sessionID, userId, models.AccessLevelRead)
+	// Vérifier les droits d'accès (propriétaire ou propriétaire du groupe)
+	hasAccess, accessErr := tc.hasTerminalAccess(ctx, sessionID, userId)
 	if accessErr != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -406,8 +406,8 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 		return
 	}
 
-	// Vérifier les droits d'accès (admin level requis pour arrêter)
-	hasAccess, err := tc.hasTerminalAccess(ctx, terminalID, userId, models.AccessLevelOwner)
+	// Vérifier les droits d'accès (propriétaire ou propriétaire du groupe)
+	hasAccess, err := tc.hasTerminalAccess(ctx, terminalID, userId)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -438,12 +438,13 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 // Get User Sessions godoc
 //
 //	@Summary		Sessions utilisateur
-//	@Description	Récupère toutes les sessions actives d'un utilisateur ou les sessions partagées avec un groupe
+//	@Description	Récupère toutes les sessions actives d'un utilisateur
 //	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
-//	@Param			include_hidden	query	bool	false	"Include hidden terminals"
-//	@Param			group_id		query	string	false	"Filter terminals shared with this group (UUID)"
+//	@Param			include_hidden		query	bool	false	"Include hidden terminals"
+//	@Param			user_id				query	string	false	"Filter sessions for a specific user (administrators only)"
+//	@Param			organization_id		query	string	false	"Filter sessions by organization UUID"
 //	@Security		Bearer
 //	@Success		200	{array}		dto.TerminalOutput
 //	@Failure		400	{object}	errors.APIError	"Bad request"
@@ -452,68 +453,54 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	includeHidden := ctx.Query("include_hidden") == "true"
-	groupID := ctx.Query("group_id")
 	organizationID := ctx.Query("organization_id")
 
 	var terminals *[]models.Terminal
 	var err error
 
-	// If group_id is provided, return terminals shared with that group
-	if groupID != "" {
-		terminals, err = tc.service.GetRepository().GetTerminalSessionsSharedWithGroup(groupID, includeHidden)
-		if err != nil {
+	// Pour les admins, permettre de voir les sessions d'autres utilisateurs
+	targetUserID := ctx.Query("user_id")
+	if targetUserID != "" {
+		userRoles := ctx.GetStringSlice("userRoles")
+		isAdmin := false
+		for _, role := range userRoles {
+			if role == "administrator" {
+				isAdmin = true
+				break
+			}
+		}
+
+		if !isAdmin {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Only administrators can view other users' sessions",
+			})
+			return
+		}
+		userId = targetUserID
+	}
+
+	// If organization_id provided, filter by org
+	if organizationID != "" {
+		orgUUID, parseErr := uuid.Parse(organizationID)
+		if parseErr != nil {
 			ctx.JSON(http.StatusBadRequest, &errors.APIError{
 				ErrorCode:    http.StatusBadRequest,
-				ErrorMessage: fmt.Sprintf("Invalid group_id: %v", err),
+				ErrorMessage: fmt.Sprintf("Invalid organization_id: %v", parseErr),
 			})
 			return
 		}
+		terminals, err = tc.service.GetRepository().GetTerminalSessionsByUserIDAndOrg(userId, &orgUUID, false)
 	} else {
-		// Default behavior: return user's own terminals
-		// Pour les admins, permettre de voir les sessions d'autres utilisateurs
-		targetUserID := ctx.Query("user_id")
-		if targetUserID != "" {
-			userRoles := ctx.GetStringSlice("userRoles")
-			isAdmin := false
-			for _, role := range userRoles {
-				if role == "administrator" {
-					isAdmin = true
-					break
-				}
-			}
-
-			if !isAdmin {
-				ctx.JSON(http.StatusForbidden, &errors.APIError{
-					ErrorCode:    http.StatusForbidden,
-					ErrorMessage: "Only administrators can view other users' sessions",
-				})
-				return
-			}
-			userId = targetUserID
-		}
-
-		// If organization_id provided, filter by org
-		if organizationID != "" {
-			orgUUID, parseErr := uuid.Parse(organizationID)
-			if parseErr != nil {
-				ctx.JSON(http.StatusBadRequest, &errors.APIError{
-					ErrorCode:    http.StatusBadRequest,
-					ErrorMessage: fmt.Sprintf("Invalid organization_id: %v", parseErr),
-				})
-				return
-			}
-			terminals, err = tc.service.GetRepository().GetTerminalSessionsByUserIDAndOrg(userId, &orgUUID, false)
-		} else {
-			// Récupérer les sessions de l'utilisateur avec gestion des masquées (toutes les sessions, pas seulement les actives)
-			terminals, err = tc.service.GetRepository().GetTerminalSessionsByUserIDWithHidden(userId, false, includeHidden)
-		}
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: err.Error(),
-			})
-			return
-		}
+		// Récupérer les sessions de l'utilisateur avec gestion des masquées (toutes les sessions, pas seulement les actives)
+		terminals, err = tc.service.GetRepository().GetTerminalSessionsByUserIDWithHidden(userId, false, includeHidden)
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
+		return
 	}
 
 	// Convertir vers DTOs
@@ -567,8 +554,8 @@ func (tc *terminalController) SyncSession(ctx *gin.Context) {
 		return
 	}
 
-	// Vérifier les droits d'accès (read level minimum pour sync)
-	hasAccess, err := tc.hasTerminalAccess(ctx, sessionID, userId, models.AccessLevelRead)
+	// Vérifier les droits d'accès (propriétaire ou propriétaire du groupe)
+	hasAccess, err := tc.hasTerminalAccess(ctx, sessionID, userId)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -1165,7 +1152,7 @@ func (tc *terminalController) GetAccessStatus(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
 	// Check if user has access
-	hasAccess, err := tc.service.HasTerminalAccess(sessionID, userId, models.AccessLevelRead)
+	hasAccess, err := tc.service.HasTerminalAccess(sessionID, userId)
 	if err != nil {
 		if err.Error() == "terminal not found" {
 			ctx.JSON(http.StatusNotFound, &errors.APIError{
@@ -1251,7 +1238,7 @@ func (tc *terminalController) isSessionOwnerOrAdmin(ctx *gin.Context, terminal *
 func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 	sessionID := ctx.Param("id")
 
-	// Command history is accessible to session owner, admin, or any user with shared access to the terminal.
+	// Command history is accessible to session owner, admin, or group owner.
 	terminal, err := tc.service.GetSessionInfo(sessionID)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
@@ -1261,13 +1248,13 @@ func (tc *terminalController) GetSessionHistory(ctx *gin.Context) {
 		return
 	}
 	if !tc.isSessionOwnerOrAdmin(ctx, terminal) {
-		// Check if the user has shared access (any level, including read)
+		// Check if the user has access as a group owner
 		userId := ctx.GetString("userId")
-		hasSharedAccess, accessErr := tc.service.HasTerminalAccess(sessionID, userId, models.AccessLevelRead)
-		if accessErr != nil || !hasSharedAccess {
+		hasAccess, accessErr := tc.service.HasTerminalAccess(sessionID, userId)
+		if accessErr != nil || !hasAccess {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Only session owner, admin, or shared users can access command history",
+				ErrorMessage: "Only session owner, admin, or group owner can access command history",
 			})
 			return
 		}

@@ -61,7 +61,7 @@ func (m *mockTTService) GetActiveUserSessions(string) (*[]ttModels.Terminal, err
 	return nil, nil
 }
 func (m *mockTTService) StopSession(string) error { return nil }
-func (m *mockTTService) HasTerminalAccess(string, string, string) (bool, error) {
+func (m *mockTTService) HasTerminalAccess(string, string) (bool, error) {
 	return false, nil
 }
 func (m *mockTTService) GetAllSessionsFromAPI(string) (*ttDto.TerminalTrainerSessionsResponse, error) {

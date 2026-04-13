@@ -62,7 +62,7 @@ func (m *mockTerminalTrainerService) GetActiveUserSessions(userID string) (*[]mo
 func (m *mockTerminalTrainerService) StopSession(sessionID string) error {
 	panic("not implemented")
 }
-func (m *mockTerminalTrainerService) HasTerminalAccess(sessionID, userID string, requiredLevel string) (bool, error) {
+func (m *mockTerminalTrainerService) HasTerminalAccess(sessionID, userID string) (bool, error) {
 	panic("not implemented")
 }
 func (m *mockTerminalTrainerService) GetAllSessionsFromAPI(userAPIKey string) (*dto.TerminalTrainerSessionsResponse, error) {

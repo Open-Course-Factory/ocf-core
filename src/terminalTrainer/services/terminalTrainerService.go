@@ -41,7 +41,7 @@ type TerminalTrainerService interface {
 	GetTerminalByUUID(terminalUUID string) (*models.Terminal, error)
 	GetActiveUserSessions(userID string) (*[]models.Terminal, error)
 	StopSession(sessionID string) error
-	HasTerminalAccess(terminalIDOrSessionID, userID string, requiredLevel string) (bool, error)
+	HasTerminalAccess(terminalIDOrSessionID, userID string) (bool, error)
 
 	// Synchronization methods (nouvelle approche avec API comme source de vérité)
 	GetAllSessionsFromAPI(userAPIKey string) (*dto.TerminalTrainerSessionsResponse, error)
@@ -699,7 +699,7 @@ func (tts *terminalTrainerService) getSessionsFromInstanceType(userAPIKey, insta
 
 // HasTerminalAccess checks if a user has access to a terminal.
 // Only terminal owners and group owners of the owner's group have access.
-func (tts *terminalTrainerService) HasTerminalAccess(terminalIDOrSessionID, userID string, requiredLevel string) (bool, error) {
+func (tts *terminalTrainerService) HasTerminalAccess(terminalIDOrSessionID, userID string) (bool, error) {
 	// Try to get terminal by UUID first (most common case from API)
 	terminal, err := tts.repository.GetTerminalByUUID(terminalIDOrSessionID)
 	if err != nil {

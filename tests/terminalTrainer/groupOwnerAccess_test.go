@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	groupModels "soli/formations/src/groups/models"
-	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/services"
 
 	"github.com/stretchr/testify/assert"
@@ -13,10 +12,10 @@ import (
 
 // --- Test cases for group owner implicit terminal access ---
 
-// TestGroupOwnerAccess_OwnerGetsWriteAccess verifies that the owner of a group
-// gets implicit write access to terminals of group members, even without an
+// TestGroupOwnerAccess_OwnerGetsOwnerAccess verifies that the owner of a group
+// gets implicit access to terminals of group members, even without an
 // explicit terminal share.
-func TestGroupOwnerAccess_OwnerGetsWriteAccess(t *testing.T) {
+func TestGroupOwnerAccess_OwnerGetsOwnerAccess(t *testing.T) {
 	db := setupTestDB(t)
 
 	trainerUserID := "trainer-1"
@@ -42,16 +41,16 @@ func TestGroupOwnerAccess_OwnerGetsWriteAccess(t *testing.T) {
 	// Add student as an active member of the group
 	createTestGroupMember(t, db, group.ID, studentUserID, groupModels.GroupMemberRoleMember)
 
-	// Service-level check: trainer (group owner) should have write access
+	// Service-level check: trainer (group owner) should have access
 	svc := services.NewTerminalTrainerService(db)
-	hasAccess, err := svc.HasTerminalAccess(terminal.ID.String(), trainerUserID, models.AccessLevelOwner)
+	hasAccess, err := svc.HasTerminalAccess(terminal.ID.String(), trainerUserID)
 	assert.NoError(t, err)
-	assert.True(t, hasAccess, "group owner should have implicit write access to member's terminal")
+	assert.True(t, hasAccess, "group owner should have implicit access to member's terminal")
 }
 
-// TestGroupOwnerAccess_OwnerGetsReadAccess verifies that the owner of a group
-// also gets implicit read access to terminals of group members (read <= write).
-func TestGroupOwnerAccess_OwnerGetsReadAccess(t *testing.T) {
+// TestGroupOwnerAccess_OwnerAlsoGetsGroupAccess verifies that the owner of a group
+// also gets implicit access when looking up via terminal UUID (different lookup path).
+func TestGroupOwnerAccess_OwnerAlsoGetsGroupAccess(t *testing.T) {
 	db := setupTestDB(t)
 
 	trainerUserID := "trainer-1"
@@ -77,11 +76,11 @@ func TestGroupOwnerAccess_OwnerGetsReadAccess(t *testing.T) {
 	// Add student as an active member
 	createTestGroupMember(t, db, group.ID, studentUserID, groupModels.GroupMemberRoleMember)
 
-	// Service-level check: trainer should also have read access
+	// Service-level check: trainer (group owner) should have access
 	svc := services.NewTerminalTrainerService(db)
-	hasAccess, err := svc.HasTerminalAccess(terminal.ID.String(), trainerUserID, models.AccessLevelRead)
+	hasAccess, err := svc.HasTerminalAccess(terminal.ID.String(), trainerUserID)
 	assert.NoError(t, err)
-	assert.True(t, hasAccess, "group owner should have implicit read access to member's terminal")
+	assert.True(t, hasAccess, "group owner should have implicit access to member's terminal")
 }
 
 // TestGroupOwnerAccess_RegularMemberNoAccess verifies that a regular group member
@@ -116,7 +115,7 @@ func TestGroupOwnerAccess_RegularMemberNoAccess(t *testing.T) {
 
 	// student-2 should NOT get implicit access to student-1's terminal
 	svc := services.NewTerminalTrainerService(db)
-	hasAccess, err := svc.HasTerminalAccess(terminal.ID.String(), otherStudentID, models.AccessLevelRead)
+	hasAccess, err := svc.HasTerminalAccess(terminal.ID.String(), otherStudentID)
 	assert.NoError(t, err)
 	assert.False(t, hasAccess, "regular group member should NOT have implicit access to another member's terminal")
 }
@@ -154,7 +153,7 @@ func TestGroupOwnerAccess_InactiveGroup_NoAccess(t *testing.T) {
 
 	// Group owner should NOT have access because the group is inactive
 	svc := services.NewTerminalTrainerService(db)
-	hasAccess, err := svc.HasTerminalAccess(terminal.ID.String(), trainerUserID, models.AccessLevelOwner)
+	hasAccess, err := svc.HasTerminalAccess(terminal.ID.String(), trainerUserID)
 	assert.NoError(t, err)
 	assert.False(t, hasAccess, "inactive group should NOT grant implicit terminal access")
 }
@@ -190,7 +189,7 @@ func TestGroupOwnerAccess_UserNotInGroup_NoAccess(t *testing.T) {
 
 	// Group owner should NOT have access because the terminal owner is not in the group
 	svc := services.NewTerminalTrainerService(db)
-	hasAccess, err := svc.HasTerminalAccess(terminal.ID.String(), trainerUserID, models.AccessLevelOwner)
+	hasAccess, err := svc.HasTerminalAccess(terminal.ID.String(), trainerUserID)
 	assert.NoError(t, err)
 	assert.False(t, hasAccess, "group owner should NOT have access when terminal owner is not in the group")
 }
