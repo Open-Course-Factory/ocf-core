@@ -22,5 +22,6 @@
     "playwright-chromium": "^1.42.1",
     "sass": "^1.72.0",
     "vite-svg-loader": "^5.1.0"
-  }
+  },
+  "version": "0.23.9"
 }
