@@ -7,28 +7,20 @@ import (
 	"github.com/google/uuid"
 )
 
-// Terminal access level constants (owner-only access model)
-const (
-	AccessLevelRead  = "read"
-	AccessLevelOwner = "owner"
-)
-
 // Terminal représente une session de terminal actif
 type Terminal struct {
 	entityManagementModels.BaseModel
-	SessionID         string     `gorm:"type:varchar(255);uniqueIndex" json:"session_id"`
-	UserID            string     `gorm:"type:varchar(255);not null;index" json:"user_id"`
-	Name              string     `gorm:"type:varchar(255)" json:"name"`                   // User-friendly name for the terminal session
-	Status            string     `gorm:"type:varchar(50);default:'active'" json:"status"` // active, stopped, expired
-	ExpiresAt         time.Time  `gorm:"not null" json:"expires_at"`
-	InstanceType      string     `gorm:"type:varchar(100)" json:"instance_type"` // préfixe du type d'instance utilisé
-	MachineSize       string     `gorm:"type:varchar(10)" json:"machine_size"`   // XS, S, M, L, XL (taille réelle utilisée)
-	Backend            string     `gorm:"type:varchar(255);default:''" json:"backend"`
-	OrganizationID     *uuid.UUID `gorm:"index" json:"organization_id,omitempty"`
-	SubscriptionPlanID *uuid.UUID `gorm:"type:uuid;index" json:"subscription_plan_id,omitempty"`
-	UserTerminalKeyID uuid.UUID  `gorm:"not null;index" json:"user_terminal_key_id"`
-	IsHiddenByOwner      bool       `gorm:"default:false" json:"is_hidden_by_owner"`
-	HiddenByOwnerAt      *time.Time `json:"hidden_by_owner_at,omitempty"`
+	SessionID            string     `gorm:"type:varchar(255);uniqueIndex" json:"session_id"`
+	UserID               string     `gorm:"type:varchar(255);not null;index" json:"user_id"`
+	Name                 string     `gorm:"type:varchar(255)" json:"name"`                   // User-friendly name for the terminal session
+	Status               string     `gorm:"type:varchar(50);default:'active'" json:"status"` // active, stopped, expired
+	ExpiresAt            time.Time  `gorm:"not null" json:"expires_at"`
+	InstanceType         string     `gorm:"type:varchar(100)" json:"instance_type"` // préfixe du type d'instance utilisé
+	MachineSize          string     `gorm:"type:varchar(10)" json:"machine_size"`   // XS, S, M, L, XL (taille réelle utilisée)
+	Backend              string     `gorm:"type:varchar(255);default:''" json:"backend"`
+	OrganizationID       *uuid.UUID `gorm:"index" json:"organization_id,omitempty"`
+	SubscriptionPlanID   *uuid.UUID `gorm:"type:uuid;index" json:"subscription_plan_id,omitempty"`
+	UserTerminalKeyID    uuid.UUID  `gorm:"not null;index" json:"user_terminal_key_id"`
 	ComposedDistribution string     `gorm:"type:varchar(100)" json:"composed_distribution,omitempty"`
 	ComposedSize         string     `gorm:"type:varchar(10)" json:"composed_size,omitempty"`
 	ComposedFeatures     string     `gorm:"type:text" json:"composed_features,omitempty"`
@@ -63,27 +55,4 @@ func (u UserTerminalKey) GetBaseModel() entityManagementModels.BaseModel {
 
 func (u UserTerminalKey) GetReferenceObject() string {
 	return "UserTerminalKey"
-}
-
-// IsHiddenByOwner vérifie si le terminal est masqué par le propriétaire
-func (t *Terminal) IsHidden() bool {
-	return t.IsHiddenByOwner
-}
-
-// Hide masque le terminal pour le propriétaire
-func (t *Terminal) Hide() {
-	t.IsHiddenByOwner = true
-	now := time.Now()
-	t.HiddenByOwnerAt = &now
-}
-
-// Unhide affiche à nouveau le terminal pour le propriétaire
-func (t *Terminal) Unhide() {
-	t.IsHiddenByOwner = false
-	t.HiddenByOwnerAt = nil
-}
-
-// CanBeHidden vérifie si le terminal peut être masqué (seulement les terminaux inactifs)
-func (t *Terminal) CanBeHidden() bool {
-	return t.Status != "active"
 }

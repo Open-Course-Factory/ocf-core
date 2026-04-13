@@ -442,7 +442,6 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 //	@Tags			terminals
 //	@Accept			json
 //	@Produce		json
-//	@Param			include_hidden		query	bool	false	"Include hidden terminals"
 //	@Param			user_id				query	string	false	"Filter sessions for a specific user (administrators only)"
 //	@Param			organization_id		query	string	false	"Filter sessions by organization UUID"
 //	@Security		Bearer
@@ -452,7 +451,6 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 //	@Router			/terminals/user-sessions [get]
 func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
-	includeHidden := ctx.Query("include_hidden") == "true"
 	organizationID := ctx.Query("organization_id")
 
 	var terminals *[]models.Terminal
@@ -492,8 +490,8 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 		}
 		terminals, err = tc.service.GetRepository().GetTerminalSessionsByUserIDAndOrg(userId, &orgUUID, false)
 	} else {
-		// Récupérer les sessions de l'utilisateur avec gestion des masquées (toutes les sessions, pas seulement les actives)
-		terminals, err = tc.service.GetRepository().GetTerminalSessionsByUserIDWithHidden(userId, false, includeHidden)
+		// Récupérer toutes les sessions de l'utilisateur (pas seulement les actives)
+		terminals, err = tc.service.GetRepository().GetTerminalSessionsByUserID(userId, false)
 	}
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -507,19 +505,17 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 	var terminalOutputs []dto.TerminalOutput
 	for _, terminal := range *terminals {
 		terminalOutputs = append(terminalOutputs, dto.TerminalOutput{
-			ID:              terminal.ID,
-			SessionID:       terminal.SessionID,
-			UserID:          terminal.UserID,
-			Name:            terminal.Name,
-			Status:          terminal.Status,
-			ExpiresAt:       terminal.ExpiresAt,
-			InstanceType:    terminal.InstanceType,
-			MachineSize:     terminal.MachineSize,
-			Backend:         terminal.Backend,
-			OrganizationID:  terminal.OrganizationID,
-			IsHiddenByOwner: terminal.IsHiddenByOwner,
-			HiddenByOwnerAt: terminal.HiddenByOwnerAt,
-			CreatedAt:       terminal.CreatedAt,
+			ID:             terminal.ID,
+			SessionID:      terminal.SessionID,
+			UserID:         terminal.UserID,
+			Name:           terminal.Name,
+			Status:         terminal.Status,
+			ExpiresAt:      terminal.ExpiresAt,
+			InstanceType:   terminal.InstanceType,
+			MachineSize:    terminal.MachineSize,
+			Backend:        terminal.Backend,
+			OrganizationID: terminal.OrganizationID,
+			CreatedAt:      terminal.CreatedAt,
 		})
 	}
 

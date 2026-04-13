@@ -35,9 +35,7 @@ type TerminalOutput struct {
 	Backend            string     `json:"backend,omitempty"`
 	OrganizationID     *uuid.UUID `json:"organization_id,omitempty"`
 	SubscriptionPlanID *uuid.UUID `json:"subscription_plan_id,omitempty"`
-	IsHiddenByOwner    bool       `json:"is_hidden_by_owner"`
-	HiddenByOwnerAt *time.Time `json:"hidden_by_owner_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 // UserTerminalKey DTOs for generic system

@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"soli/formations/src/terminalTrainer/models"
 	terminalMiddleware "soli/formations/src/terminalTrainer/middleware"
 
 	"github.com/gin-gonic/gin"
@@ -36,7 +35,7 @@ func TestMiddleware_NoBackend_Passes(t *testing.T) {
 	})
 
 	router.GET("/terminals/:id/test",
-		tam.RequireTerminalAccess(models.AccessLevelRead),
+		tam.RequireTerminalAccess(),
 		func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"message": "passed"})
 		},
@@ -75,7 +74,7 @@ func TestMiddleware_StoppedSession_ReturnsForbidden(t *testing.T) {
 	})
 
 	router.GET("/terminals/:id/test",
-		tam.RequireTerminalAccess(models.AccessLevelRead),
+		tam.RequireTerminalAccess(),
 		func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"message": "should not reach"})
 		},
@@ -109,7 +108,7 @@ func TestMiddleware_ExpiredSession_ReturnsGone(t *testing.T) {
 	})
 
 	router.GET("/terminals/:id/test",
-		tam.RequireTerminalAccess(models.AccessLevelRead),
+		tam.RequireTerminalAccess(),
 		func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"message": "should not reach"})
 		},

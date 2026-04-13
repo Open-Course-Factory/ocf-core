@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -24,12 +23,9 @@ type TerminalRepository interface {
 	GetTerminalByUUID(terminalUUID string) (*models.Terminal, error)
 	GetTerminalSessionsByUserID(userID string, isActive bool) (*[]models.Terminal, error)
 	GetTerminalSessionsByUserIDAndOrg(userID string, organizationID *uuid.UUID, isActive bool) (*[]models.Terminal, error)
-	GetTerminalSessionsByUserIDWithHidden(userID string, isActive bool, includeHidden bool) (*[]models.Terminal, error)
 	GetTerminalSessionsByOrganizationID(orgID uuid.UUID) (*[]models.Terminal, error)
 	UpdateTerminalSession(terminal *models.Terminal) error
 	DeleteTerminalSession(sessionID string) error
-	HideOwnedTerminal(terminalID, userID string) error
-	UnhideOwnedTerminal(terminalID, userID string) error
 
 	// Synchronisation
 	GetAllActiveUserKeys() (*[]models.UserTerminalKey, error)
@@ -326,56 +322,4 @@ func (tr *terminalRepository) GetSyncStatistics(userID string) (map[string]int, 
 	return stats, nil
 }
 
-func (r *terminalRepository) GetTerminalSessionsByUserIDWithHidden(userID string, isActive bool, includeHidden bool) (*[]models.Terminal, error) {
-	var terminals []models.Terminal
-
-	query := r.db.Preload("UserTerminalKey").Where("user_id = ?", userID)
-
-	if isActive {
-		query = query.Where("status = ?", "active")
-	}
-
-	if !includeHidden {
-		query = query.Where("is_hidden_by_owner = ?", false)
-	}
-
-	err := query.Find(&terminals).Error
-	if err != nil {
-		return nil, err
-	}
-	return &terminals, nil
-}
-
-func (r *terminalRepository) HideOwnedTerminal(terminalID, userID string) error {
-	terminalUUID, err := uuid.Parse(terminalID)
-	if err != nil {
-		return fmt.Errorf("invalid terminal ID format: %w", err)
-	}
-
-	now := time.Now()
-	return r.db.Model(&models.Terminal{}).
-		Where("id = ? AND user_id = ?", terminalUUID, userID).
-		Updates(map[string]any{
-			"is_hidden_by_owner": true,
-			"hidden_by_owner_at": now,
-		}).Error
-}
-
-func (r *terminalRepository) UnhideOwnedTerminal(terminalID, userID string) error {
-	terminalUUID, err := uuid.Parse(terminalID)
-	if err != nil {
-		return fmt.Errorf("invalid terminal ID format: %w", err)
-	}
-
-	// Create an empty terminal model to update with
-	terminal := models.Terminal{
-		IsHiddenByOwner: false,
-		HiddenByOwnerAt: nil,
-	}
-
-	return r.db.Model(&models.Terminal{}).
-		Where("id = ? AND user_id = ?", terminalUUID, userID).
-		Select("is_hidden_by_owner", "hidden_by_owner_at").
-		Updates(terminal).Error
-}
 

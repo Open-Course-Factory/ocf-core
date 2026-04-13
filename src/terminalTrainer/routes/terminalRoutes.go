@@ -12,7 +12,6 @@ import (
 	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentServices "soli/formations/src/payment/services"
 	terminalMiddleware "soli/formations/src/terminalTrainer/middleware"
-	"soli/formations/src/terminalTrainer/models"
 	terminalServices "soli/formations/src/terminalTrainer/services"
 
 	"gorm.io/gorm"
@@ -27,8 +26,8 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	routes := router.Group("/terminals")
 
-	// Console access requires "read" level access (Layer 2 security check)
-	routes.GET("/:id/console", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelRead), terminalController.ConnectConsole)
+	// Console access requires terminal ownership (Layer 2 security check)
+	routes.GET("/:id/console", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.ConnectConsole)
 
 	// Bulk operations for groups
 	groupRoutes := router.Group("/class-groups")
@@ -37,14 +36,14 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	groupRoutes.GET("/:id/command-history", middleware.AuthManagement(), terminalController.GetGroupCommandHistory)
 	groupRoutes.GET("/:id/command-history-stats", middleware.AuthManagement(), terminalController.GetGroupCommandHistoryStats)
 
-	// Stop session requires owner or admin access (Layer 2 security check)
-	routes.POST("/:id/stop", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelOwner), terminalController.StopSession)
+	// Stop session requires terminal ownership (Layer 2 security check)
+	routes.POST("/:id/stop", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.StopSession)
 	routes.GET("/user-sessions", middleware.AuthManagement(), terminalController.GetUserSessions)
 
 	// Sync routes (Layer 2 security checks)
-	routes.POST("/:id/sync", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelRead), terminalController.SyncSession)
+	routes.POST("/:id/sync", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.SyncSession)
 	routes.POST("/sync-all", middleware.AuthManagement(), terminalController.SyncAllSessions) // No terminal ID, no Layer 2 check
-	routes.GET("/:id/status", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelRead), terminalController.GetSessionStatus)
+	routes.GET("/:id/status", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.GetSessionStatus)
 	routes.GET("/:id/access-status", middleware.AuthManagement(), terminalController.GetAccessStatus)
 
 	// Command history routes (no terminal access middleware - handlers verify access internally,

@@ -84,7 +84,6 @@ const (
 	// Role validation
 	GroupMemberRole = "oneof=member manager owner"
 	OrgMemberRole   = "oneof=owner manager member"
-	AccessLevel     = "oneof=read write admin"
 
 	// Boolean-like enums
 	YesNo     = "oneof=yes no"

@@ -67,7 +67,6 @@ func createTestTerminal(db *gorm.DB, userID string, status string, userKeyIDOrEx
 		InstanceType:      "test",
 		MachineSize:       "S",
 		UserTerminalKeyID: userKeyID,
-		IsHiddenByOwner:   false,
 	}
 	err := db.Create(terminal).Error
 	return terminal, err

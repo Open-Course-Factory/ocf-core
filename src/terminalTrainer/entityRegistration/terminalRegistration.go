@@ -17,19 +17,17 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.Terminal, dto.CreateTerminalInput, dto.UpdateTerminalInput, dto.TerminalOutput]{
 				ModelToDto: func(model *models.Terminal) (dto.TerminalOutput, error) {
 					return dto.TerminalOutput{
-						ID:              model.ID,
-						SessionID:       model.SessionID,
-						UserID:          model.UserID,
-						Name:            model.Name,
-						Status:          model.Status,
-						ExpiresAt:       model.ExpiresAt,
-						InstanceType:    model.InstanceType,
-						MachineSize:     model.MachineSize,
-						Backend:         model.Backend,
-						OrganizationID:  model.OrganizationID,
-						IsHiddenByOwner: model.IsHiddenByOwner,
-						HiddenByOwnerAt: model.HiddenByOwnerAt,
-						CreatedAt:       model.CreatedAt,
+						ID:             model.ID,
+						SessionID:      model.SessionID,
+						UserID:         model.UserID,
+						Name:           model.Name,
+						Status:         model.Status,
+						ExpiresAt:      model.ExpiresAt,
+						InstanceType:   model.InstanceType,
+						MachineSize:    model.MachineSize,
+						Backend:        model.Backend,
+						OrganizationID: model.OrganizationID,
+						CreatedAt:      model.CreatedAt,
 					}, nil
 				},
 				DtoToModel: func(input dto.CreateTerminalInput) *models.Terminal {

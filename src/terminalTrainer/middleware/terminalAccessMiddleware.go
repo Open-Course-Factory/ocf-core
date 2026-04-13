@@ -23,7 +23,7 @@ func NewTerminalAccessMiddleware(db *gorm.DB) *TerminalAccessMiddleware {
 	}
 }
 
-// RequireTerminalAccess is a middleware that ensures the user has the required access level to a terminal.
+// RequireTerminalAccess is a middleware that ensures the user has access to a terminal.
 // This implements the second layer of the two-layer security model:
 // - Layer 1: Casbin checks generic route permissions (/api/v1/terminals/:id)
 // - Layer 2: This middleware checks terminal ownership (owner or group owner)
@@ -33,8 +33,8 @@ func NewTerminalAccessMiddleware(db *gorm.DB) *TerminalAccessMiddleware {
 //
 // Usage:
 //
-//	routes.GET("/:id", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess("read"), handler)
-func (tam *TerminalAccessMiddleware) RequireTerminalAccess(requiredLevel string) gin.HandlerFunc {
+//	routes.GET("/:id", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), handler)
+func (tam *TerminalAccessMiddleware) RequireTerminalAccess() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		// Get terminal ID from route parameter
 		terminalID := ctx.Param("id")
@@ -88,7 +88,7 @@ func (tam *TerminalAccessMiddleware) RequireTerminalAccess(requiredLevel string)
 		if !hasAccess {
 			ctx.AbortWithStatusJSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: fmt.Sprintf("you do not have '%s' access to this terminal", requiredLevel),
+				ErrorMessage: "terminal access denied",
 			})
 			return
 		}

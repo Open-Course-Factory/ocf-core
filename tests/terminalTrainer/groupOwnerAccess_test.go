@@ -14,7 +14,7 @@ import (
 
 // TestGroupOwnerAccess_OwnerGetsOwnerAccess verifies that the owner of a group
 // gets implicit access to terminals of group members, even without an
-// explicit terminal share.
+// explicit delegation.
 func TestGroupOwnerAccess_OwnerGetsOwnerAccess(t *testing.T) {
 	db := setupTestDB(t)
 
