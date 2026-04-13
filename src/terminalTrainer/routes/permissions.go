@@ -21,17 +21,10 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		method string
 	}{
 		{"/api/v1/terminals/user-sessions", "GET"},
-		{"/api/v1/terminals/shared-with-me", "GET"},
 		{"/api/v1/terminals/sync-all", "POST"},
 		{"/api/v1/terminals/metrics", "GET"},
 		{"/api/v1/terminals/:id/console", "GET"},
 		{"/api/v1/terminals/:id/stop", "POST"},
-		{"/api/v1/terminals/:id/share", "POST"},
-		{"/api/v1/terminals/:id/share/:user_id", "DELETE"},
-		{"/api/v1/terminals/:id/shares", "GET"},
-		{"/api/v1/terminals/:id/info", "GET"},
-		{"/api/v1/terminals/:id/hide", "POST"},
-		{"/api/v1/terminals/:id/hide", "DELETE"},
 		{"/api/v1/terminals/:id/sync", "POST"},
 		{"/api/v1/terminals/:id/status", "GET"},
 		{"/api/v1/terminals/:id/history", "GET"},
@@ -59,7 +52,6 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/terminals/catalog-features", "GET"},
 		{"/api/v1/terminals/enums/status", "GET"},
 		{"/api/v1/terminals/enums/refresh", "POST"},
-		{"/api/v1/terminals/fix-hide-permissions", "POST"},
 	}
 
 	for _, route := range terminalAdminRoutes {
@@ -92,19 +84,12 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 	access.RouteRegistry.Register("Terminals",
 		// Session management
 		access.RoutePermission{Path: "/api/v1/terminals/user-sessions", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "List current user's active terminal sessions"},
-		access.RoutePermission{Path: "/api/v1/terminals/shared-with-me", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "List terminals shared with current user"},
 		access.RoutePermission{Path: "/api/v1/terminals/my-history", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Delete all command history for current user"},
 		access.RoutePermission{Path: "/api/v1/terminals/sync-all", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Sync all terminal sessions for current user"},
 
 		// Per-terminal operations (owner-scoped)
 		access.RoutePermission{Path: "/api/v1/terminals/:id/console", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Connect to terminal console via WebSocket"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id/stop", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Stop a running terminal session"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/share", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Share terminal with another user"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/share/:user_id", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Revoke terminal access from a user"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/shares", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "List users a terminal is shared with"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/info", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Get terminal session details"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/hide", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Hide a terminal from the session list"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/hide", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Unhide a terminal in the session list"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id/sync", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Sync terminal session state with backend"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id/status", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Get terminal session status"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id/history", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Get command history for a terminal session"},
@@ -127,7 +112,6 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{Path: "/api/v1/terminals/catalog-features", Method: "GET", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "List full catalog of features (admin scenario editing)"},
 		access.RoutePermission{Path: "/api/v1/terminals/enums/status", Method: "GET", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "Get enum cache status for diagnostics"},
 		access.RoutePermission{Path: "/api/v1/terminals/enums/refresh", Method: "POST", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "Refresh enum caches from backend"},
-		access.RoutePermission{Path: "/api/v1/terminals/fix-hide-permissions", Method: "POST", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "Fix terminal hide permissions for all users"},
 
 		// Group terminal routes
 		access.RoutePermission{Path: "/api/v1/class-groups/:id/bulk-create-terminals", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "Bulk create terminals for all group members"},

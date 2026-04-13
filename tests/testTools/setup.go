@@ -53,7 +53,6 @@ func SetupTestDatabase() {
 
 	sqldb.DB.AutoMigrate(&terminalModels.UserTerminalKey{})
 	sqldb.DB.AutoMigrate(&terminalModels.Terminal{})
-	sqldb.DB.AutoMigrate(&terminalModels.TerminalShare{})
 
 	// Now clean up existing test data
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&courseModels.Page{})
@@ -64,7 +63,6 @@ func SetupTestDatabase() {
 
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&authModels.SshKey{})
 
-	sqldb.DB.Where("1 = 1").Unscoped().Delete(&terminalModels.TerminalShare{})
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&terminalModels.Terminal{})
 	sqldb.DB.Where("1 = 1").Unscoped().Delete(&terminalModels.UserTerminalKey{})
 

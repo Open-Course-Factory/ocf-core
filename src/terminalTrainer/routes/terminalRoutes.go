@@ -41,17 +41,6 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.POST("/:id/stop", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelOwner), terminalController.StopSession)
 	routes.GET("/user-sessions", middleware.AuthManagement(), terminalController.GetUserSessions)
 
-	// Routes de partage de terminaux (Layer 2 security checks for terminal owner)
-	routes.POST("/:id/share", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelOwner), terminalController.ShareTerminal)
-	routes.DELETE("/:id/share/:user_id", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelOwner), terminalController.RevokeTerminalAccess)
-	routes.GET("/:id/shares", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelOwner), terminalController.GetTerminalShares)
-	routes.GET("/shared-with-me", middleware.AuthManagement(), terminalController.GetSharedTerminals) // No terminal ID, no Layer 2 check
-	routes.GET("/:id/info", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelRead), terminalController.GetSharedTerminalInfo)
-
-	// Routes de masquage de terminaux (Layer 2 security checks)
-	routes.POST("/:id/hide", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelRead), terminalController.HideTerminal)
-	routes.DELETE("/:id/hide", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelRead), terminalController.UnhideTerminal)
-
 	// Sync routes (Layer 2 security checks)
 	routes.POST("/:id/sync", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(models.AccessLevelRead), terminalController.SyncSession)
 	routes.POST("/sync-all", middleware.AuthManagement(), terminalController.SyncAllSessions) // No terminal ID, no Layer 2 check
@@ -82,9 +71,6 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.GET("/catalog-features", middleware.AuthManagement(), terminalController.GetCatalogFeatures)
 	routes.GET("/session-options", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), terminalController.GetSessionOptions)
 	routes.POST("/start-composed-session", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), paymentMiddleware.CheckLimit(effectivePlanService, db, "concurrent_terminals"), paymentMiddleware.CheckRAMAvailability(terminalService), terminalController.StartComposedSession)
-
-	// Correction des permissions (no terminal-specific access needed)
-	routes.POST("/fix-hide-permissions", middleware.AuthManagement(), terminalController.FixTerminalHidePermissions)
 
 	// Organization terminal sessions (for trainers/managers)
 	orgRoutes := router.Group("/organizations")

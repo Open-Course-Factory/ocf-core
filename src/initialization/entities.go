@@ -39,7 +39,6 @@ func RegisterEntities() {
 
 	terminalRegistration.RegisterTerminal(ems.GlobalEntityRegistrationService)
 	terminalRegistration.RegisterUserTerminalKey(ems.GlobalEntityRegistrationService)
-	terminalRegistration.RegisterTerminalShare(ems.GlobalEntityRegistrationService)
 
 	groupRegistration.RegisterGroup(ems.GlobalEntityRegistrationService)
 	groupRegistration.RegisterGroupMember(ems.GlobalEntityRegistrationService)

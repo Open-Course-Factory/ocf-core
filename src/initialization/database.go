@@ -82,7 +82,6 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Terminal entities
 	db.AutoMigrate(&terminalModels.Terminal{})
 	db.AutoMigrate(&terminalModels.UserTerminalKey{})
-	db.AutoMigrate(&terminalModels.TerminalShare{})
 
 	// Group entities
 	db.AutoMigrate(&groupModels.ClassGroup{})

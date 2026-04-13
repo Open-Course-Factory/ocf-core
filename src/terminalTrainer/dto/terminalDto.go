@@ -62,53 +62,6 @@ type UserTerminalKeyOutput struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-// TerminalShare DTOs for generic system
-type CreateTerminalShareInput struct {
-	TerminalID        uuid.UUID  `binding:"required" json:"terminal_id"`
-	SharedWithUserID  *string    `json:"shared_with_user_id,omitempty"`   // Share to specific user
-	SharedWithGroupID *uuid.UUID `json:"shared_with_group_id,omitempty"`  // OR share to group
-	AccessLevel       string     `binding:"required" json:"access_level"` // read, write, owner
-	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
-}
-
-type UpdateTerminalShareInput struct {
-	AccessLevel *string    `json:"access_level,omitempty" mapstructure:"access_level"`
-	ExpiresAt   *time.Time `json:"expires_at,omitempty" mapstructure:"expires_at"`
-	IsActive    *bool      `json:"is_active,omitempty" mapstructure:"is_active"`
-}
-
-type TerminalShareOutput struct {
-	ID                  uuid.UUID  `json:"id"`
-	TerminalID          uuid.UUID  `json:"terminal_id"`
-	SharedWithUserID    *string    `json:"shared_with_user_id,omitempty"`
-	SharedWithGroupID   *uuid.UUID `json:"shared_with_group_id,omitempty"`
-	SharedByUserID      string     `json:"shared_by_user_id"`
-	AccessLevel         string     `json:"access_level"`
-	ShareType           string     `json:"share_type"` // "user" or "group"
-	ExpiresAt           *time.Time `json:"expires_at,omitempty"`
-	IsActive            bool       `json:"is_active"`
-	IsHiddenByRecipient bool       `json:"is_hidden_by_recipient"`
-	HiddenAt            *time.Time `json:"hidden_at,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
-}
-
-// Terminal sharing specific DTOs
-type ShareTerminalRequest struct {
-	SharedWithUserID  *string    `json:"shared_with_user_id,omitempty"`
-	SharedWithGroupID *uuid.UUID `json:"shared_with_group_id,omitempty"`
-	AccessLevel       string     `binding:"required" json:"access_level"` // read, write, owner
-	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
-}
-
-type SharedTerminalInfo struct {
-	Terminal            TerminalOutput        `json:"terminal"`
-	SharedBy            string                `json:"shared_by"`
-	SharedByDisplayName string                `json:"shared_by_display_name"`
-	AccessLevel         string                `json:"access_level"`
-	ExpiresAt           *time.Time            `json:"expires_at,omitempty"`
-	SharedAt            time.Time             `json:"shared_at"`
-	Shares              []TerminalShareOutput `json:"shares,omitempty"`
-}
 
 type TerminalSessionResponse struct {
 	SessionID  string    `json:"session_id"`
@@ -398,16 +351,6 @@ type FullSyncResponse struct {
 	StartedAt   time.Time     `json:"started_at"`
 	CompletedAt time.Time     `json:"completed_at"`
 	Duration    time.Duration `json:"duration"`
-}
-
-// FixPermissionsResponse réponse de la correction des permissions de masquage
-type FixPermissionsResponse struct {
-	UserID             string   `json:"user_id"`
-	Success            bool     `json:"success"`
-	Message            string   `json:"message"`
-	ProcessedTerminals int      `json:"processed_terminals"`
-	ProcessedShares    int      `json:"processed_shares"`
-	Errors             []string `json:"errors,omitempty"`
 }
 
 // ServerMetricsResponse représente les métriques du serveur Terminal Trainer

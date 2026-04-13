@@ -7,6 +7,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// Terminal access level constants (owner-only access model)
+const (
+	AccessLevelRead  = "read"
+	AccessLevelOwner = "owner"
+)
+
 // Terminal représente une session de terminal actif
 type Terminal struct {
 	entityManagementModels.BaseModel
