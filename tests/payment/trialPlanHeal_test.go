@@ -39,7 +39,7 @@ import (
 //	db.Where("user_id = ? AND status IN (?)", userID, []string{"active", "trialing"})
 func simulateHealQueryForUser(db *gorm.DB, userID string) bool {
 	var existingSub paymentModels.UserSubscription
-	subResult := db.Where("user_id = ? AND status = ?", userID, "active").First(&existingSub)
+	subResult := db.Where("user_id = ? AND status IN ?", userID, []string{"active", "trialing"}).First(&existingSub)
 	// Returns true when the heal function would create a new subscription
 	// (i.e. no matching row was found → subResult.Error != nil)
 	return subResult.Error != nil
