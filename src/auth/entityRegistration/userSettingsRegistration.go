@@ -26,10 +26,11 @@ func RegisterUserSettings(service *ems.EntityRegistrationService) {
 						CompactMode:          model.CompactMode,
 						EmailNotifications:   model.EmailNotifications,
 						DesktopNotifications: model.DesktopNotifications,
-						PasswordLastChanged:  model.PasswordLastChanged,
-						TwoFactorEnabled:     model.TwoFactorEnabled,
-						CreatedAt:            model.CreatedAt,
-						UpdatedAt:            model.UpdatedAt,
+						PasswordLastChanged:     model.PasswordLastChanged,
+						TwoFactorEnabled:        model.TwoFactorEnabled,
+						RecordingAcknowledgedAt: model.RecordingAcknowledgedAt,
+						CreatedAt:               model.CreatedAt,
+						UpdatedAt:               model.UpdatedAt,
 					}, nil
 				},
 				DtoToModel: func(input dto.UserSettingsInput) *authModels.UserSettings {
@@ -81,6 +82,9 @@ func RegisterUserSettings(service *ems.EntityRegistrationService) {
 					}
 					if input.DesktopNotifications != nil {
 						updateMap["desktop_notifications"] = *input.DesktopNotifications
+					}
+					if input.RecordingAcknowledgedAt != nil {
+						updateMap["recording_acknowledged_at"] = *input.RecordingAcknowledgedAt
 					}
 					return updateMap
 				},

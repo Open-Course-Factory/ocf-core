@@ -17,10 +17,11 @@ type UserSettingsOutput struct {
 	CompactMode          bool       `json:"compact_mode"`
 	EmailNotifications   bool       `json:"email_notifications"`
 	DesktopNotifications bool       `json:"desktop_notifications"`
-	PasswordLastChanged  *time.Time `json:"password_last_changed,omitempty"`
-	TwoFactorEnabled     bool       `json:"two_factor_enabled"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	PasswordLastChanged     *time.Time `json:"password_last_changed,omitempty"`
+	TwoFactorEnabled        bool       `json:"two_factor_enabled"`
+	RecordingAcknowledgedAt *time.Time `json:"recording_acknowledged_at,omitempty"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
 }
 
 // UserSettingsInput for creating new settings (typically done automatically)
@@ -37,13 +38,14 @@ type UserSettingsInput struct {
 
 // EditUserSettingsInput for partial updates (all fields optional)
 type EditUserSettingsInput struct {
-	DefaultLandingPage   *string `json:"default_landing_page"`
-	PreferredLanguage    *string `json:"preferred_language"`
-	Timezone             *string `json:"timezone"`
-	Theme                *string `json:"theme"`
-	CompactMode          *bool   `json:"compact_mode"`
-	EmailNotifications   *bool   `json:"email_notifications"`
-	DesktopNotifications *bool   `json:"desktop_notifications"`
+	DefaultLandingPage      *string    `json:"default_landing_page"`
+	PreferredLanguage       *string    `json:"preferred_language"`
+	Timezone                *string    `json:"timezone"`
+	Theme                   *string    `json:"theme"`
+	CompactMode             *bool      `json:"compact_mode"`
+	EmailNotifications      *bool      `json:"email_notifications"`
+	DesktopNotifications    *bool      `json:"desktop_notifications"`
+	RecordingAcknowledgedAt *time.Time `json:"recording_acknowledged_at,omitempty"`
 }
 
 // ChangePasswordInput for password change endpoint

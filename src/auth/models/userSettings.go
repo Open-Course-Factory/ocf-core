@@ -28,4 +28,7 @@ type UserSettings struct {
 	// Security (metadata only, not actual password)
 	PasswordLastChanged *time.Time `json:"password_last_changed,omitempty"`
 	TwoFactorEnabled    bool       `gorm:"default:false" json:"two_factor_enabled"`
+
+	// RGPD: server-side record of recording acknowledgement (#72)
+	RecordingAcknowledgedAt *time.Time `json:"recording_acknowledged_at,omitempty"`
 }
