@@ -1,4 +1,4 @@
-package auth_tests
+package crypto_test
 
 import (
 	"strings"
@@ -7,16 +7,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"soli/formations/src/auth/crypto"
+	"soli/formations/src/utils/crypto"
 )
 
 const testPrivateKey = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAA=\n-----END OPENSSH PRIVATE KEY-----"
 
-// TestSshKeyEncryption_EncryptDecrypt_Roundtrip verifies that encrypting a
-// private key and then decrypting it returns the original plaintext, and that
+// TestFieldEncryption_EncryptDecrypt_Roundtrip verifies that encrypting a
+// value and then decrypting it returns the original plaintext, and that
 // the encrypted form carries the expected "enc::v1:" prefix.
-func TestSshKeyEncryption_EncryptDecrypt_Roundtrip(t *testing.T) {
-	t.Setenv("SSH_KEY_ENCRYPTION_SECRET", "a-very-secret-key-for-testing-ok")
+func TestFieldEncryption_EncryptDecrypt_Roundtrip(t *testing.T) {
+	t.Setenv("FIELD_ENCRYPTION_SECRET", "a-very-secret-key-for-testing-ok")
 
 	encrypted, err := crypto.Encrypt(testPrivateKey)
 	require.NoError(t, err, "Encrypt should not return an error when secret is set")
@@ -27,11 +27,11 @@ func TestSshKeyEncryption_EncryptDecrypt_Roundtrip(t *testing.T) {
 	assert.Equal(t, testPrivateKey, decrypted, "Decrypted value must equal the original plaintext")
 }
 
-// TestSshKeyEncryption_Decrypt_LegacyPlaintext_ReturnsAsIs verifies that
+// TestFieldEncryption_Decrypt_LegacyPlaintext_ReturnsAsIs verifies that
 // Decrypt is backward-compatible: values without the "enc::v1:" prefix are
 // returned unchanged (no error, no transformation).
-func TestSshKeyEncryption_Decrypt_LegacyPlaintext_ReturnsAsIs(t *testing.T) {
-	t.Setenv("SSH_KEY_ENCRYPTION_SECRET", "a-very-secret-key-for-testing-ok")
+func TestFieldEncryption_Decrypt_LegacyPlaintext_ReturnsAsIs(t *testing.T) {
+	t.Setenv("FIELD_ENCRYPTION_SECRET", "a-very-secret-key-for-testing-ok")
 
 	legacy := "some legacy plaintext"
 	result, err := crypto.Decrypt(legacy)
@@ -39,10 +39,10 @@ func TestSshKeyEncryption_Decrypt_LegacyPlaintext_ReturnsAsIs(t *testing.T) {
 	assert.Equal(t, legacy, result, "Decrypt must return the legacy plaintext unchanged")
 }
 
-// TestSshKeyEncryption_Decrypt_TamperedCiphertext_Fails verifies that AES-GCM
+// TestFieldEncryption_Decrypt_TamperedCiphertext_Fails verifies that AES-GCM
 // authentication catches any modification of the ciphertext after encryption.
-func TestSshKeyEncryption_Decrypt_TamperedCiphertext_Fails(t *testing.T) {
-	t.Setenv("SSH_KEY_ENCRYPTION_SECRET", "a-very-secret-key-for-testing-ok")
+func TestFieldEncryption_Decrypt_TamperedCiphertext_Fails(t *testing.T) {
+	t.Setenv("FIELD_ENCRYPTION_SECRET", "a-very-secret-key-for-testing-ok")
 
 	encrypted, err := crypto.Encrypt(testPrivateKey)
 	require.NoError(t, err)
@@ -57,11 +57,11 @@ func TestSshKeyEncryption_Decrypt_TamperedCiphertext_Fails(t *testing.T) {
 	assert.Error(t, err, "Decrypt must fail when the ciphertext has been tampered with")
 }
 
-// TestSshKeyEncryption_Encrypt_MissingSecret_Fails verifies that Encrypt
-// returns an error when the SSH_KEY_ENCRYPTION_SECRET env var is not set.
-func TestSshKeyEncryption_Encrypt_MissingSecret_Fails(t *testing.T) {
-	t.Setenv("SSH_KEY_ENCRYPTION_SECRET", "")
+// TestFieldEncryption_Encrypt_MissingSecret_Fails verifies that Encrypt
+// returns an error when the FIELD_ENCRYPTION_SECRET env var is not set.
+func TestFieldEncryption_Encrypt_MissingSecret_Fails(t *testing.T) {
+	t.Setenv("FIELD_ENCRYPTION_SECRET", "")
 
 	_, err := crypto.Encrypt("x")
-	assert.Error(t, err, "Encrypt must fail when SSH_KEY_ENCRYPTION_SECRET is empty")
+	assert.Error(t, err, "Encrypt must fail when FIELD_ENCRYPTION_SECRET is empty")
 }
