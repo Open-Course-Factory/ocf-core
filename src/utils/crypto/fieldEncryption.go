@@ -16,19 +16,19 @@ import (
 const prefix = "enc::v1:"
 
 // Encrypt encrypts plaintext using AES-256-GCM with a key derived from the
-// SSH_KEY_ENCRYPTION_SECRET environment variable.
+// FIELD_ENCRYPTION_SECRET environment variable.
 //
 // If plaintext is empty, Encrypt returns ("", nil) without reading the env var.
-// If SSH_KEY_ENCRYPTION_SECRET is unset or empty, Encrypt returns an error.
+// If FIELD_ENCRYPTION_SECRET is unset or empty, Encrypt returns an error.
 // The returned ciphertext is base64-encoded and prefixed with "enc::v1:".
 func Encrypt(plaintext string) (string, error) {
 	if plaintext == "" {
 		return "", nil
 	}
 
-	secret := os.Getenv("SSH_KEY_ENCRYPTION_SECRET")
+	secret := os.Getenv("FIELD_ENCRYPTION_SECRET")
 	if secret == "" {
-		return "", errors.New("SSH_KEY_ENCRYPTION_SECRET is not set")
+		return "", errors.New("FIELD_ENCRYPTION_SECRET is not set")
 	}
 
 	key := deriveKey(secret)
@@ -70,9 +70,9 @@ func Decrypt(value string) (string, error) {
 		return value, nil
 	}
 
-	secret := os.Getenv("SSH_KEY_ENCRYPTION_SECRET")
+	secret := os.Getenv("FIELD_ENCRYPTION_SECRET")
 	if secret == "" {
-		return "", errors.New("SSH_KEY_ENCRYPTION_SECRET is not set")
+		return "", errors.New("FIELD_ENCRYPTION_SECRET is not set")
 	}
 
 	key := deriveKey(secret)

@@ -31,7 +31,7 @@ func setupSshKeyTestDB(t *testing.T) *gorm.DB {
 //   - BeforeSave: PrivateKey is encrypted and the stored value starts with "enc::v1:"
 //   - AfterFind:  PrivateKey is transparently decrypted back to the original plaintext
 func TestSshKey_GormHooks_EncryptOnSave_DecryptOnFind(t *testing.T) {
-	t.Setenv("SSH_KEY_ENCRYPTION_SECRET", "a-very-secret-key-for-testing-ok")
+	t.Setenv("FIELD_ENCRYPTION_SECRET", "a-very-secret-key-for-testing-ok")
 
 	db := setupSshKeyTestDB(t)
 

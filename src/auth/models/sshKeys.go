@@ -5,7 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"soli/formations/src/auth/crypto"
+	"soli/formations/src/utils/crypto"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 )
 
