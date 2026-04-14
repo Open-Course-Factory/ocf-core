@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	neturl "net/url"
@@ -1115,6 +1116,11 @@ func (tts *terminalTrainerService) applyNameTemplate(template, groupName, userEm
 	return result
 }
 
+// ErrBulkInsufficientRAM is returned by BulkCreateTerminalsForGroup when the
+// Terminal Trainer server lacks enough RAM to provision terminals for all active
+// group members. Callers should map this to HTTP 503.
+var ErrBulkInsufficientRAM = errors.New("server at capacity: insufficient RAM for bulk terminal creation")
+
 // BulkCreateTerminalsForGroup creates terminals for all members of a group
 func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 	groupID string,
@@ -1167,6 +1173,57 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 	for _, member := range group.Members {
 		if member.IsActive {
 			activeMembers = append(activeMembers, member)
+		}
+	}
+
+	// Pre-flight RAM check: refuse up-front if the server lacks capacity for all terminals.
+	// Mirrors the logic in src/payment/middleware/ramCheckMiddleware.go.
+	// Fail-open: if metrics are unavailable, skip the check and proceed.
+	if len(activeMembers) > 0 {
+		metrics, metricsErr := tts.GetServerMetrics(true, "")
+		if metricsErr != nil {
+			utils.Warn("bulk terminal creation: could not fetch server metrics, skipping RAM check: %v", metricsErr)
+		} else {
+			plan, _ := planInterface.(*paymentModels.SubscriptionPlan)
+			if plan != nil {
+				machineSizeToRAM := map[string]float64{
+					"XS": 0.25,
+					"S":  0.5,
+					"M":  1.0,
+					"L":  2.0,
+					"XL": 4.0,
+				}
+
+				// Estimate RAM per terminal: max of allowed sizes (mirrors middleware logic)
+				perTerminalRAM := 0.5 // default for S
+				if len(plan.AllowedMachineSizes) > 0 {
+					maxRAM := 0.0
+					for _, size := range plan.AllowedMachineSizes {
+						if size == "all" {
+							perTerminalRAM = 1.0 // use M as average for "all"
+							maxRAM = 0            // signal: already set
+							break
+						}
+						if ram, found := machineSizeToRAM[size]; found && ram > maxRAM {
+							maxRAM = ram
+						}
+					}
+					if maxRAM > 0 {
+						perTerminalRAM = maxRAM
+					}
+				}
+
+				totalRequiredRAM := float64(len(activeMembers)) * perTerminalRAM
+				totalRAM := metrics.RAMAvailableGB / (1.0 - metrics.RAMPercent/100.0)
+				minReservedRAM := totalRAM * 0.05
+
+				if metrics.RAMPercent >= 99.0 || metrics.RAMAvailableGB-totalRequiredRAM < minReservedRAM {
+					utils.Warn("bulk terminal creation blocked: insufficient RAM (%d terminals × %.2f GB = %.2f GB required, %.2f GB available)",
+						len(activeMembers), perTerminalRAM, totalRequiredRAM, metrics.RAMAvailableGB)
+					return nil, fmt.Errorf("%w: %d terminals need %.2f GB, %.2f GB available",
+						ErrBulkInsufficientRAM, len(activeMembers), totalRequiredRAM, metrics.RAMAvailableGB)
+				}
+			}
 		}
 	}
 

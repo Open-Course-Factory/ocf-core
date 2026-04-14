@@ -1,6 +1,7 @@
 package terminalController
 
 import (
+	stderrors "errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -16,7 +17,7 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
-	"soli/formations/src/terminalTrainer/services"
+	services "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
@@ -963,7 +964,9 @@ func (tc *terminalController) BulkCreateTerminalsForGroup(ctx *gin.Context) {
 	if err != nil {
 		// Determine appropriate status code based on error
 		statusCode := http.StatusInternalServerError
-		if err.Error() == "group not found" {
+		if stderrors.Is(err, services.ErrBulkInsufficientRAM) {
+			statusCode = http.StatusServiceUnavailable
+		} else if err.Error() == "group not found" {
 			statusCode = http.StatusNotFound
 		} else if err.Error() == "only group owner or admin can create bulk terminals" {
 			statusCode = http.StatusForbidden
