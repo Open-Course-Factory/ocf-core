@@ -151,6 +151,11 @@ func RegisterAuthPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Manage own user sub-resources",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/users/me/account", Method: "DELETE",
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Permanently delete own account and all associated data (RGPD right to erasure)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/auth/permissions", Method: "GET",
 			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Get own permissions",
