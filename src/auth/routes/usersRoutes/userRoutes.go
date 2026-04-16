@@ -32,6 +32,9 @@ func UsersRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm
 	routes.POST("/me/change-password", middleware.AuthManagement(), userController.ChangePassword)
 	routes.POST("/me/force-change-password", middleware.AuthManagement(), userController.ForceChangePassword)
 
+	// RGPD right to erasure
+	routes.DELETE("/me/account", middleware.AuthManagement(), userController.DeleteMyAccount)
+
 	// Auth/permission routes
 	authRoutes := router.Group("/auth")
 	authRoutes.GET("/me", middleware.AuthManagement(), GetCurrentUser)
