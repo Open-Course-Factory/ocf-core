@@ -231,10 +231,13 @@ test:auth:
 # Build Docker image and push to registry
 # Only runs when version tags are pushed (triggered by check:version job)
 # Tags image with both the version number and 'latest'
+#
+# Inherits image/services/script from the release component's .build-docker.
+# We override before_script to keep the component's setup (docker login,
+# buildx create) AND add our project-specific JWT key decoding — !reference
+# merges them; a plain `before_script:` list would replace the component's.
 build-docker:
-  image: docker:27
-  services:
-    - docker:27-dind
   before_script:
+    - !reference [.build-docker, before_script]
     - echo $token_jwt_key | base64 -d > ./token_jwt_key.pem
 
