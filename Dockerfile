@@ -4,20 +4,20 @@ FROM golang:1.24-bookworm AS builder
 # Setup working directory
 WORKDIR /usr/src/ocf-core
 
-# Copy source code to
-COPY . /usr/src/ocf-core
+# Dep layer — cached unless go.mod/go.sum change
+COPY go.mod go.sum ./
+RUN go mod download
 
-# Install Swagger
+# Tooling layer — cached unless version bumps
 RUN go install github.com/swaggo/swag/cmd/swag@v1.8.12
 
-RUN go mod tidy
+# Source layer — invalidates on every commit, but deps above are cached
+COPY . .
 
 # Init Swagger
-RUN cd /usr/src/ocf-core && swag init --parseDependency --parseInternal
+RUN swag init --parseDependency --parseInternal
 
-RUN go mod tidy
-
-RUN go build -o ocf /usr/src/ocf-core/main.go
+RUN go build -o ocf main.go
 
 FROM debian:12-slim
 
