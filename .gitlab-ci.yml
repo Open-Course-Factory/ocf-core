@@ -62,7 +62,7 @@ stages:
 # ============================================================================
 
 include:
-  - component: usine.solution-libre.fr/gitlab/components/release/default@0.2.1
+  - component: usine.solution-libre.fr/gitlab/components/release/default@0.3.2
     inputs:
       # Enable all new features
       enable_version_check: true
