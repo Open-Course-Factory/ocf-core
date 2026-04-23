@@ -32,6 +32,16 @@ func NewWebhookController(db *gorm.DB) WebhookController {
 	// This prevents memory leaks and persists across restarts
 }
 
+// NewWebhookControllerWithService is a test-only constructor that allows
+// injecting a custom StripeService implementation (typically a mock).
+// Production code should always use NewWebhookController.
+func NewWebhookControllerWithService(db *gorm.DB, stripeService services.StripeService) WebhookController {
+	return &webhookController{
+		stripeService: stripeService,
+		db:            db,
+	}
+}
+
 // Handle Stripe Webhook godoc
 //
 //	@Summary		Traiter les webhooks Stripe
