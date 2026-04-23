@@ -20,10 +20,14 @@ package authorization_tests
 //       GET  /api/v1/class-groups/:id/command-history
 //       GET  /api/v1/class-groups/:id/command-history-stats
 //
-//   - OrgRole (3 routes):
-//       GET  /api/v1/organizations/:id/terminal-sessions         (member)
-//       GET  /api/v1/organizations/:id/terminal-usage            (manager)
-//       ALL  /api/v1/incus-ui/:backendId/*                       (member, Param=backendId)
+//   - OrgRole (7 routes):
+//       GET    /api/v1/organizations/:id/terminal-sessions                (member)
+//       GET    /api/v1/organizations/:id/terminal-usage                   (manager)
+//       GET    /api/v1/incus-ui/:backendId/*                              (member, Param=backendId)
+//       POST   /api/v1/incus-ui/:backendId/*                              (member, Param=backendId)
+//       PUT    /api/v1/incus-ui/:backendId/*                              (member, Param=backendId)
+//       PATCH  /api/v1/incus-ui/:backendId/*                              (member, Param=backendId)
+//       DELETE /api/v1/incus-ui/:backendId/*                              (member, Param=backendId)
 //
 // For each route we run four scenarios:
 //
@@ -32,9 +36,10 @@ package authorization_tests
 //   3. Authorized — user meets the declared rule → expect 200 (fake handler)
 //   4. Admin bypass — Casbin Administrator → expect 200 (fake handler)
 //
-// The incus-ui route additionally gets a method-coverage test (GET and POST
-// against the same registered path) to confirm Layer 2 honors the regex
-// method matcher on its Lookup.
+// The incus-ui routes additionally get a method-coverage test (GET and POST
+// against the same registered path) to confirm Layer 2 enforces each
+// concrete verb — regression guard for the MR !180 bug where a regex method
+// declaration made Lookup silently skip.
 //
 // The fake handler is a no-op that returns 200. If Layer 2 allows the request
 // through, the handler fires and we see 200. If Layer 2 blocks, we see 403.
@@ -133,10 +138,19 @@ var terminalsAuditGroupRoutes = []terminalsAuditRoute{
 var terminalsAuditOrgRoutes = []terminalsAuditRoute{
 	{method: "GET", registeredPath: "/api/v1/organizations/:id/terminal-sessions", requestPath: "/api/v1/organizations/org-audit-sessions/terminal-sessions", scopeID: "org-audit-sessions", ruleType: access.OrgRole, minRole: "member", paramName: "id"},
 	{method: "GET", registeredPath: "/api/v1/organizations/:id/terminal-usage", requestPath: "/api/v1/organizations/org-audit-usage/terminal-usage", scopeID: "org-audit-usage", ruleType: access.OrgRole, minRole: "manager", paramName: "id"},
-	// Declared with regex method "(GET|POST|PUT|PATCH|DELETE)" and Param: "backendId".
-	// See TestTerminalsLayer2_IncusUI_MethodCoverage for why this is tested
-	// separately.
-	{method: "(GET|POST|PUT|PATCH|DELETE)", registeredPath: "/api/v1/incus-ui/:backendId/*path", requestPath: "/api/v1/incus-ui/backend-audit/resources", scopeID: "backend-audit", ruleType: access.OrgRole, minRole: "member", paramName: "backendId"},
+	// Incus UI proxy — mirrors the production split in
+	// src/terminalTrainer/routes/permissions.go. One concrete-method entry
+	// per HTTP verb is required because RouteRegistry.Lookup does exact
+	// string match on method+path; a regex-style "(GET|POST|PUT|PATCH|DELETE)"
+	// declaration would silently bypass Layer 2 for all verbs (the exact
+	// production bug MR !180 fixes). Declaring 5 per-method entries here is
+	// the regression guard: if someone re-introduces a regex method, these
+	// subtests will fail because the literal verb lookup won't match.
+	{method: "GET", registeredPath: "/api/v1/incus-ui/:backendId/*path", requestPath: "/api/v1/incus-ui/backend-audit/resources", scopeID: "backend-audit", ruleType: access.OrgRole, minRole: "member", paramName: "backendId"},
+	{method: "POST", registeredPath: "/api/v1/incus-ui/:backendId/*path", requestPath: "/api/v1/incus-ui/backend-audit/resources", scopeID: "backend-audit", ruleType: access.OrgRole, minRole: "member", paramName: "backendId"},
+	{method: "PUT", registeredPath: "/api/v1/incus-ui/:backendId/*path", requestPath: "/api/v1/incus-ui/backend-audit/resources", scopeID: "backend-audit", ruleType: access.OrgRole, minRole: "member", paramName: "backendId"},
+	{method: "PATCH", registeredPath: "/api/v1/incus-ui/:backendId/*path", requestPath: "/api/v1/incus-ui/backend-audit/resources", scopeID: "backend-audit", ruleType: access.OrgRole, minRole: "member", paramName: "backendId"},
+	{method: "DELETE", registeredPath: "/api/v1/incus-ui/:backendId/*path", requestPath: "/api/v1/incus-ui/backend-audit/resources", scopeID: "backend-audit", ruleType: access.OrgRole, minRole: "member", paramName: "backendId"},
 }
 
 // setupTerminalsAuditRouter installs Layer 2 for a single route under audit.
@@ -157,30 +171,25 @@ func setupTerminalsAuditRouter(
 		access.ResetEnforcers()
 	})
 
-	// Mirror the real declaration from the terminals module. For regex-style
-	// methods (e.g. "(GET|POST|PUT|PATCH|DELETE)") we expand into one entry
-	// per concrete verb, matching the production split in
-	// src/terminalTrainer/routes/permissions.go. This is required because
-	// RouteRegistry.Lookup does exact string match on method+path.
-	methods := []string{route.method}
-	if strings.Contains(route.method, "|") {
-		methods = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
+	// Mirror the real declaration from the terminals module exactly —
+	// one concrete-verb entry per route, no regex alternation. This keeps
+	// the harness honest: if production (or the catalog above) ever
+	// re-introduces a regex method, RouteRegistry.Lookup will fail to
+	// match concrete requests and the corresponding subtests will fail,
+	// flagging the regression (MR !180 / #264).
+	perm := access.RoutePermission{
+		Path:   route.registeredPath,
+		Method: route.method,
+		Role:   "member",
+		Access: access.AccessRule{
+			Type:    route.ruleType,
+			Param:   route.paramName,
+			MinRole: route.minRole,
+			Entity:  route.entity,
+			Field:   route.field,
+		},
 	}
-	for _, m := range methods {
-		perm := access.RoutePermission{
-			Path:   route.registeredPath,
-			Method: m,
-			Role:   "member",
-			Access: access.AccessRule{
-				Type:    route.ruleType,
-				Param:   route.paramName,
-				MinRole: route.minRole,
-				Entity:  route.entity,
-				Field:   route.field,
-			},
-		}
-		access.RouteRegistry.Register("Terminals", perm)
-	}
+	access.RouteRegistry.Register("Terminals", perm)
 
 	access.RegisterBuiltinEnforcers(loader, checker)
 
@@ -204,16 +213,69 @@ func setupTerminalsAuditRouter(
 	fake := func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "layer2-allowed"})
 	}
-	// For the regex-method incus-ui route, we must attach the handler under
-	// real HTTP verbs so Gin can actually route the request. We register the
-	// union of allowed methods — the goal is to let the request reach
-	// Layer2Enforcement, which performs the RouteRegistry.Lookup using the
-	// actual request method.
-	if strings.Contains(route.method, "|") {
-		for _, m := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
-			r.Handle(m, route.registeredPath, fake)
+	r.Handle(route.method, route.registeredPath, fake)
+	return r
+}
+
+// setupTerminalsAuditRouterMulti installs Layer 2 for multiple routes on a
+// single Gin engine. This is needed for the incus-ui method-coverage test,
+// which fires requests with different HTTP verbs against the same path and
+// needs each verb to have both a registered RoutePermission and a Gin
+// handler (Gin returns 404 for unregistered verbs, which would mask the
+// Layer 2 decision).
+func setupTerminalsAuditRouterMulti(
+	t *testing.T,
+	routes []terminalsAuditRoute,
+	checker access.MembershipChecker,
+	loader access.EntityLoader,
+) *gin.Engine {
+	t.Helper()
+
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
+	t.Cleanup(func() {
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
+	})
+
+	for _, route := range routes {
+		perm := access.RoutePermission{
+			Path:   route.registeredPath,
+			Method: route.method,
+			Role:   "member",
+			Access: access.AccessRule{
+				Type:    route.ruleType,
+				Param:   route.paramName,
+				MinRole: route.minRole,
+				Entity:  route.entity,
+				Field:   route.field,
+			},
 		}
-	} else {
+		access.RouteRegistry.Register("Terminals", perm)
+	}
+
+	access.RegisterBuiltinEnforcers(loader, checker)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+
+	r.Use(func(c *gin.Context) {
+		uid := c.GetHeader("X-Test-UserId")
+		c.Set("userId", uid)
+		rolesHeader := c.GetHeader("X-Test-Roles")
+		if rolesHeader != "" {
+			c.Set("userRoles", strings.Split(rolesHeader, ","))
+		} else {
+			c.Set("userRoles", []string{})
+		}
+		c.Next()
+	})
+	r.Use(access.Layer2Enforcement())
+
+	fake := func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "layer2-allowed"})
+	}
+	for _, route := range routes {
 		r.Handle(route.method, route.registeredPath, fake)
 	}
 	return r
@@ -234,13 +296,10 @@ func doTerminalsAuditRequest(r *gin.Engine, method, path, userID, roles string) 
 }
 
 // requestMethodFor returns the actual HTTP verb to use when issuing the
-// request. For the regex-method incus-ui route we deliberately issue a
-// real verb (GET) — the registered "method" in the registry is a regex
-// literal that Lookup will only match if it was stored as literal.
+// request. Every route in the catalog now declares a single concrete verb
+// (mirroring the production split), so this is a straight passthrough —
+// kept as a seam in case we ever need to translate a catalog method.
 func requestMethodFor(route terminalsAuditRoute) string {
-	if strings.Contains(route.method, "|") {
-		return "GET"
-	}
 	return route.method
 }
 
@@ -390,32 +449,32 @@ func TestTerminalsLayer2_AdminBypass_Allowed(t *testing.T) {
 // -----------------------------------------------------------------------------
 // Case 5: Wildcard incus-ui route must enforce across multiple methods.
 //
-// src/terminalTrainer/routes/permissions.go declares the route with
-// Method: "(GET|POST|PUT|PATCH|DELETE)". The Layer2Enforcement middleware
-// performs RouteRegistry.Lookup using the exact request method string. If
-// the registry stores the literal regex as the method, concrete requests
-// (GET /api/v1/incus-ui/...) will NOT match and Layer 2 silently passes
-// through — a production gap.
+// src/terminalTrainer/routes/permissions.go previously declared the route
+// with Method: "(GET|POST|PUT|PATCH|DELETE)". The Layer2Enforcement
+// middleware performs RouteRegistry.Lookup using the exact request method
+// string — a regex-alternation method never matches a concrete request, so
+// Layer 2 would silently pass through. MR !180 split that declaration into
+// five per-method entries; this test is the regression guard.
 //
-// This test documents the expected behavior (both GET and POST must be
-// denied for an outsider). If it fails, see the MR description: the fix is
-// either to split the incus-ui declaration into five per-method entries or
-// to teach RouteRegistry.Lookup to understand alternation.
-// TODO(#264): currently failing — see MR description.
+// All five incus-ui per-method entries are registered on a single router so
+// that Gin can route each verb to the fake handler. If the catalog (or
+// production) ever collapses back into a regex method, the concrete-verb
+// Lookup will fail and these subtests will return 200, failing the assert.
 // -----------------------------------------------------------------------------
 
 func TestTerminalsLayer2_IncusUI_MethodCoverage(t *testing.T) {
-	// Find the incus-ui declaration in the catalog.
-	var incus terminalsAuditRoute
+	// Collect every incus-ui declaration from the catalog so each verb has
+	// both a RoutePermission in the registry and a Gin handler.
+	var incusRoutes []terminalsAuditRoute
 	for _, r := range terminalsAuditOrgRoutes {
 		if strings.Contains(r.registeredPath, "/incus-ui/") {
-			incus = r
-			break
+			incusRoutes = append(incusRoutes, r)
 		}
 	}
-	if incus.registeredPath == "" {
-		t.Fatal("incus-ui route missing from catalog")
+	if len(incusRoutes) == 0 {
+		t.Fatal("incus-ui routes missing from catalog")
 	}
+	requestPath := incusRoutes[0].requestPath
 
 	for _, verb := range []string{"GET", "POST"} {
 		t.Run(verb+"_outsider_denied", func(t *testing.T) {
@@ -424,13 +483,12 @@ func TestTerminalsLayer2_IncusUI_MethodCoverage(t *testing.T) {
 				groupRoles: map[string]string{},
 				orgRoles:   map[string]string{},
 			}
-			r := setupTerminalsAuditRouter(t, incus, checker, loader)
+			r := setupTerminalsAuditRouterMulti(t, incusRoutes, checker, loader)
 
-			w := doTerminalsAuditRequest(r, verb, incus.requestPath, "outsider-user", "member")
-			// TODO(#264): currently failing — see MR description.
+			w := doTerminalsAuditRequest(r, verb, requestPath, "outsider-user", "member")
 			assert.Equal(t, http.StatusForbidden, w.Code,
-				"outsider must be denied on %s %s (observed %d); if 200, Layer 2 is not matching the regex method declaration",
-				verb, incus.requestPath, w.Code)
+				"outsider must be denied on %s %s (observed %d); if 200, Layer 2 is not matching the concrete-method declaration — check that permissions.go still declares one entry per verb",
+				verb, requestPath, w.Code)
 		})
 	}
 }
