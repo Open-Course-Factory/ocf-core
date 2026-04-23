@@ -157,20 +157,30 @@ func setupTerminalsAuditRouter(
 		access.ResetEnforcers()
 	})
 
-	// Mirror the real declaration from the terminals module.
-	perm := access.RoutePermission{
-		Path:   route.registeredPath,
-		Method: route.method,
-		Role:   "member",
-		Access: access.AccessRule{
-			Type:    route.ruleType,
-			Param:   route.paramName,
-			MinRole: route.minRole,
-			Entity:  route.entity,
-			Field:   route.field,
-		},
+	// Mirror the real declaration from the terminals module. For regex-style
+	// methods (e.g. "(GET|POST|PUT|PATCH|DELETE)") we expand into one entry
+	// per concrete verb, matching the production split in
+	// src/terminalTrainer/routes/permissions.go. This is required because
+	// RouteRegistry.Lookup does exact string match on method+path.
+	methods := []string{route.method}
+	if strings.Contains(route.method, "|") {
+		methods = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
 	}
-	access.RouteRegistry.Register("Terminals", perm)
+	for _, m := range methods {
+		perm := access.RoutePermission{
+			Path:   route.registeredPath,
+			Method: m,
+			Role:   "member",
+			Access: access.AccessRule{
+				Type:    route.ruleType,
+				Param:   route.paramName,
+				MinRole: route.minRole,
+				Entity:  route.entity,
+				Field:   route.field,
+			},
+		}
+		access.RouteRegistry.Register("Terminals", perm)
+	}
 
 	access.RegisterBuiltinEnforcers(loader, checker)
 
