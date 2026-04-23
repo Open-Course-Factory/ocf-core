@@ -1,3 +1,21 @@
+# ============================================================================
+# Workflow rules — avoid duplicate pipelines
+# When an MR is open for a branch, only the MR pipeline runs (skip the
+# branch-push pipeline that would duplicate the same tests).
+# ============================================================================
+
+workflow:
+  rules:
+    # Tags always run (release pipelines)
+    - if: $CI_COMMIT_TAG
+    # MR events always run
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # Skip branch-push pipelines when an MR is open for that branch
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    # Plain branch push (no MR) still runs — e.g. main after merge
+    - if: $CI_COMMIT_BRANCH
+
 default:
   tags:
     - ocf-core
