@@ -10,10 +10,8 @@ import (
 	"soli/formations/src/auth/errors"
 	authModels "soli/formations/src/auth/models"
 	sqldb "soli/formations/src/db"
-	"strings"
 	"time"
 
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -37,7 +35,7 @@ func NewAuthMiddleware(db *gorm.DB) AuthMiddleware {
 
 func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		userId, tokenJTI, err := getUserIdFromToken(ctx)
+		userId, tokenJTI, err := casdoor.ParseUserIDFromRequest(ctx)
 
 		if err != nil {
 			// 🔍 AUDIT LOG: Failed authentication attempt
@@ -123,52 +121,6 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 		ctx.Set("userId", userId)
 
 	}
-}
-
-func getUserIdFromToken(ctx *gin.Context) (string, string, error) {
-	token := ctx.Request.Header.Get("Authorization")
-
-	// ✅ SECURITY: Allow query parameter auth ONLY for WebSocket upgrade requests
-	// WebSocket connections in browsers cannot send custom headers, so they need query params
-	// This is secure because:
-	// 1. Only applies to WebSocket upgrades (checked via Upgrade header)
-	// 2. Connection is immediately upgraded to WebSocket (not logged in access logs)
-	// 3. Token is consumed immediately and not stored in browser history
-	isWebSocketUpgrade := strings.ToLower(ctx.Request.Header.Get("Upgrade")) == "websocket" &&
-		strings.Contains(strings.ToLower(ctx.Request.Header.Get("Connection")), "upgrade")
-
-	if token == "" && isWebSocketUpgrade {
-		// For WebSocket connections, check query parameter as fallback
-		token = ctx.Query("token")
-		if token == "" {
-			return "", "", fmt.Errorf("missing Authorization header or token query parameter for WebSocket connection")
-		}
-	} else if token == "" {
-		// ✅ SECURITY FIX: JWT tokens must ONLY come from Authorization header for regular HTTP requests
-		// Query parameters are logged and visible in URLs (security risk)
-		return "", "", fmt.Errorf("missing Authorization header - tokens in query parameters are not allowed for non-WebSocket requests")
-	}
-
-	// Enlever le préfixe "Bearer " s'il est présent
-	if strings.HasPrefix(token, "Bearer ") {
-		token = strings.TrimPrefix(token, "Bearer ")
-	} else if strings.HasPrefix(token, "bearer ") {
-		token = strings.TrimPrefix(token, "bearer ")
-	}
-
-	// Vérifier que le token n'est pas vide après nettoyage
-	if token == "" {
-		return "", "", fmt.Errorf("missing or invalid authorization token")
-	}
-
-	claims, err := casdoorsdk.ParseJwtToken(token)
-	if err != nil {
-		return "", "", err
-	}
-
-	userId := claims.Id
-	tokenJTI := claims.ID // JWT ID claim
-	return userId, tokenJTI, nil
 }
 
 // isTokenBlacklisted checks if a token JTI is in the blacklist
