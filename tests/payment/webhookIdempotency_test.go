@@ -263,7 +263,11 @@ func countWebhookEvents(t *testing.T, db *gorm.DB, eventID string) int64 {
 // goroutine should observe the reservation and return 200 "already processed"
 // without calling ProcessWebhook.
 func TestWebhook_ConcurrentDuplicateEvent_OnlyProcessedOnce(t *testing.T) {
-	db := freshTestDB(t)
+	// Use an isolated DB with MaxOpenConns=1 for this concurrent writer test.
+	// We can't cap the shared DB globally because other tests (notably
+	// TestCheckLimit_UsesContextPlan_SkipsPlanResolution) use internal GORM
+	// transactions that would deadlock on a single-connection pool.
+	db := cappedTestDB(t, "webhook_race_"+t.Name())
 	eventID := "evt_race_" + uuid.NewString()
 
 	mockSvc := &webhookTestStripeService{

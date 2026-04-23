@@ -5,6 +5,7 @@
 package payment_tests
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -34,16 +35,20 @@ func TestMain(m *testing.M) {
 		panic("failed to open shared test DB: " + err.Error())
 	}
 
-	// Cap the pool to a single connection to serialize writes.
-	// SQLite's shared-cache mode still exposes table-level locks under concurrent
-	// writers (SQLITE_LOCKED) even with a busy_timeout — and in the webhook race
-	// tests we intentionally launch parallel writers. Forcing MaxOpenConns=1
-	// serializes them at the pool level, matching tests/scenarios/main_test.go.
-	sqlDB, _ := db.DB()
-	sqlDB.SetMaxOpenConns(1)
+	if err := runTestMigrations(db); err != nil {
+		panic("failed to migrate shared test DB: " + err.Error())
+	}
 
+	sharedTestDB = db
+	os.Exit(m.Run())
+}
+
+// runTestMigrations applies the full payment-test schema to the given DB.
+// Extracted so both the shared DB and per-test isolated DBs (see
+// cappedTestDB) can reuse the same migration logic.
+func runTestMigrations(db *gorm.DB) error {
 	// Migrate all tables needed by any payment test
-	err = db.AutoMigrate(
+	if err := db.AutoMigrate(
 		&models.SubscriptionPlan{},
 		&models.UserSubscription{},
 		&models.UsageMetrics{},
@@ -57,9 +62,8 @@ func TestMain(m *testing.M) {
 		&groupModels.GroupMember{},
 		&models.BillingAddress{},
 		&models.PaymentMethod{},
-	)
-	if err != nil {
-		panic("failed to migrate shared test DB: " + err.Error())
+	); err != nil {
+		return err
 	}
 
 	// Create tables with PostgreSQL-specific defaults using raw SQL for SQLite compatibility
@@ -113,8 +117,7 @@ func TestMain(m *testing.M) {
 		created_at DATETIME
 	)`)
 
-	sharedTestDB = db
-	os.Exit(m.Run())
+	return nil
 }
 
 // freshTestDB returns the shared DB after cleaning all rows.
@@ -139,4 +142,33 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM user_terminal_keys")
 	sharedTestDB.Exec("DELETE FROM webhook_events")
 	return sharedTestDB
+}
+
+// cappedTestDB returns an isolated in-memory SQLite DB with MaxOpenConns=1.
+// Use this for tests that exercise concurrent writers (e.g. webhook race) —
+// the shared sharedTestDB can't use MaxOpenConns=1 globally because some
+// tests use internal transactions that would deadlock on a single-connection
+// pool (notably TestCheckLimit_UsesContextPlan_SkipsPlanResolution).
+//
+// Each invocation must use a unique `name` (e.g. t.Name()) — the DSN encodes
+// it so every caller gets an isolated in-memory DB and cannot pollute the
+// shared schema.
+func cappedTestDB(t *testing.T, name string) *gorm.DB {
+	t.Helper()
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared&_busy_timeout=5000", name)
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("cappedTestDB: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("cappedTestDB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := runTestMigrations(db); err != nil {
+		t.Fatalf("cappedTestDB migrate: %v", err)
+	}
+	return db
 }
