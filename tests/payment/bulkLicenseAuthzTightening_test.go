@@ -367,6 +367,59 @@ func TestBulkLicenseService_ManagerCan_UpdateBatchQuantity(t *testing.T) {
 	require.NoError(t, err, "org manager must retain management rights")
 }
 
+// TestCanUserManageBatch_TwoSharedOrgs_ManagerRoleWins — the requester shares
+// TWO team orgs with the purchaser: one where the requester is a regular
+// member, one where the requester is a manager. The manager role in the
+// second org must grant management access (any single manager+ row wins).
+//
+// This guards against a regression where the auth check returns on the first
+// role scanned (e.g. early-return or LIMIT 1) and happens to pick the member
+// row, causing a false denial.
+func TestCanUserManageBatch_TwoSharedOrgs_ManagerRoleWins(t *testing.T) {
+	db := setupBulkLicenseTestDB(t)
+	svc := services.NewBulkLicenseService(db)
+
+	purchaserID := "multi-org-purchaser-01"
+	requesterID := "multi-org-requester-01"
+
+	_, batch, _ := seedBulkLicenseTestData(t, db, purchaserID, 3, 0)
+
+	// Org A: requester is a regular member (no mgmt rights from this row).
+	seedSharedTeamOrg(t, db, purchaserID, requesterID, orgModels.OrgRoleMember)
+
+	// Org B: requester is a manager (this row MUST grant mgmt rights).
+	// We build a second independent team org the purchaser also belongs to
+	// (as owner) and the requester joins as manager.
+	orgB := orgModels.Organization{
+		Name:             "team-second-org-" + requesterID,
+		DisplayName:      "Team Second Org",
+		OwnerUserID:      purchaserID,
+		OrganizationType: "team",
+		IsActive:         true,
+	}
+	require.NoError(t, db.Omit("Metadata").Create(&orgB).Error)
+	require.NoError(t, db.Omit("Metadata").Create(&orgModels.OrganizationMember{
+		OrganizationID: orgB.ID,
+		UserID:         purchaserID,
+		Role:           orgModels.OrgRoleOwner,
+		JoinedAt:       time.Now(),
+		IsActive:       true,
+	}).Error)
+	require.NoError(t, db.Omit("Metadata").Create(&orgModels.OrganizationMember{
+		OrganizationID: orgB.ID,
+		UserID:         requesterID,
+		Role:           orgModels.OrgRoleManager,
+		JoinedAt:       time.Now(),
+		IsActive:       true,
+	}).Error)
+
+	// No-op quantity update — if auth passes, difference==0 returns nil.
+	// If the authz incorrectly picks the "member" row from org A and denies,
+	// we'd see "access denied" here.
+	err := svc.UpdateBatchQuantity(batch.ID, requesterID, 3)
+	require.NoError(t, err, "manager role in a second shared org must grant mgmt access even when requester is a regular member in another shared org")
+}
+
 // -----------------------------------------------------------------------------
 // Layer-2 permissions registry test — field name mismatch
 // -----------------------------------------------------------------------------
