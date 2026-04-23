@@ -13,6 +13,7 @@ import (
 	groupServices "soli/formations/src/groups/services"
 	"soli/formations/src/organizations/dto"
 	"soli/formations/src/organizations/services"
+	paymentServices "soli/formations/src/payment/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -29,8 +30,11 @@ type OrganizationController struct {
 
 func NewOrganizationController(service services.OrganizationService, importService services.ImportService, db *gorm.DB) *OrganizationController {
 	return &OrganizationController{
-		service:       service,
-		userService:   authServices.NewDefaultUserService(),
+		service: service,
+		userService: authServices.NewUserService(
+			authServices.NewCasdoorUserClient(),
+			paymentServices.NewPaymentDeletionHelper(db),
+		),
 		importService: importService,
 		groupService:  groupServices.NewGroupService(db),
 		db:            db,

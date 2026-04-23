@@ -10,10 +10,15 @@ import (
 	services "soli/formations/src/auth/services"
 
 	"soli/formations/src/auth/casdoor"
+	sqldb "soli/formations/src/db"
+	paymentServices "soli/formations/src/payment/services"
 )
 
 func TestUserCreation(t *testing.T) {
-	userService := services.NewDefaultUserService()
+	userService := services.NewUserService(
+		services.NewCasdoorUserClient(),
+		paymentServices.NewPaymentDeletionHelper(sqldb.DB),
+	)
 
 	users, _ := userService.GetAllUsers()
 

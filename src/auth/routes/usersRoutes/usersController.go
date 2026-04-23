@@ -7,6 +7,7 @@ import (
 	services "soli/formations/src/auth/services"
 	sqldb "soli/formations/src/db"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
@@ -32,7 +33,10 @@ type userController struct {
 
 func NewUserController() UserController {
 	return &userController{
-		service:         services.NewDefaultUserService(),
+		service: services.NewUserService(
+			services.NewCasdoorUserClient(),
+			paymentServices.NewPaymentDeletionHelper(sqldb.DB),
+		),
 		settingsService: services.NewUserSettingsService(),
 	}
 }

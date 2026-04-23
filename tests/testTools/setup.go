@@ -11,6 +11,7 @@ import (
 	"soli/formations/src/auth/dto"
 	"soli/formations/src/auth/services"
 	coursesDto "soli/formations/src/courses/dto"
+	paymentServices "soli/formations/src/payment/services"
 	"testing"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -194,7 +195,10 @@ func SetupRoles() {
 }
 
 func SetupUsers() {
-	userService := services.NewDefaultUserService()
+	userService := services.NewUserService(
+		services.NewCasdoorUserClient(),
+		paymentServices.NewPaymentDeletionHelper(sqldb.DB),
+	)
 	tosTime := time.Now().UTC().Format(time.RFC3339)
 	tosVersion := "2025-01-01"
 
@@ -234,7 +238,10 @@ func DeleteAllObjects() {
 	}
 	fmt.Printf("✅ Safety check passed: Using test database '%s'\n", dbName)
 
-	userService := services.NewDefaultUserService()
+	userService := services.NewUserService(
+		services.NewCasdoorUserClient(),
+		paymentServices.NewPaymentDeletionHelper(sqldb.DB),
+	)
 
 	casdoor.Enforcer.RemovePolicy("administrator")
 	casdoor.Enforcer.RemovePolicy("member")

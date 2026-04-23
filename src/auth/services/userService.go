@@ -35,24 +35,14 @@ type userService struct {
 	paymentHelper paymentServices.PaymentDeletionHelper
 }
 
-// NewUserService builds a UserService with explicit collaborators. Tests pass
-// stubs; production callers should use NewDefaultUserService unless they have
-// a reason to inject custom behaviour.
+// NewUserService builds a UserService with explicit collaborators. Production
+// callers wire NewCasdoorUserClient() and paymentServices.NewPaymentDeletionHelper(sqldb.DB);
+// tests pass stubs.
 func NewUserService(casdoorClient CasdoorUserClient, paymentHelper paymentServices.PaymentDeletionHelper) UserService {
 	return &userService{
 		casdoorClient: casdoorClient,
 		paymentHelper: paymentHelper,
 	}
-}
-
-// NewDefaultUserService wires the default Casdoor SDK client and the default
-// payment deletion helper (Stripe + GORM). This is the convenience factory
-// used by controllers and test setup harnesses.
-func NewDefaultUserService() UserService {
-	return NewUserService(
-		NewDefaultCasdoorUserClient(),
-		paymentServices.NewPaymentDeletionHelper(sqldb.DB),
-	)
 }
 
 // validateTosAcceptance validates that Terms of Service have been properly accepted

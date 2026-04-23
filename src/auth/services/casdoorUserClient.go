@@ -22,9 +22,9 @@ type CasdoorUserClient interface {
 // the casdoorsdk package-level functions.
 type defaultCasdoorUserClient struct{}
 
-// NewDefaultCasdoorUserClient returns a CasdoorUserClient wired to the real
+// NewCasdoorUserClient returns a CasdoorUserClient wired to the real
 // casdoorsdk package functions. Use this in production constructors.
-func NewDefaultCasdoorUserClient() CasdoorUserClient {
+func NewCasdoorUserClient() CasdoorUserClient {
 	return &defaultCasdoorUserClient{}
 }
 
