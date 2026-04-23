@@ -30,7 +30,7 @@ type OrganizationController struct {
 func NewOrganizationController(service services.OrganizationService, importService services.ImportService, db *gorm.DB) *OrganizationController {
 	return &OrganizationController{
 		service:       service,
-		userService:   authServices.NewUserService(),
+		userService:   authServices.NewDefaultUserService(),
 		importService: importService,
 		groupService:  groupServices.NewGroupService(db),
 		db:            db,

@@ -32,7 +32,7 @@ type userController struct {
 
 func NewUserController() UserController {
 	return &userController{
-		service:         services.NewUserService(),
+		service:         services.NewDefaultUserService(),
 		settingsService: services.NewUserSettingsService(),
 	}
 }

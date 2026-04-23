@@ -31,10 +31,28 @@ type UserService interface {
 }
 
 type userService struct {
+	casdoorClient CasdoorUserClient
+	paymentHelper paymentServices.PaymentDeletionHelper
 }
 
-func NewUserService() UserService {
-	return &userService{}
+// NewUserService builds a UserService with explicit collaborators. Tests pass
+// stubs; production callers should use NewDefaultUserService unless they have
+// a reason to inject custom behaviour.
+func NewUserService(casdoorClient CasdoorUserClient, paymentHelper paymentServices.PaymentDeletionHelper) UserService {
+	return &userService{
+		casdoorClient: casdoorClient,
+		paymentHelper: paymentHelper,
+	}
+}
+
+// NewDefaultUserService wires the default Casdoor SDK client and the default
+// payment deletion helper (Stripe + GORM). This is the convenience factory
+// used by controllers and test setup harnesses.
+func NewDefaultUserService() UserService {
+	return NewUserService(
+		NewDefaultCasdoorUserClient(),
+		paymentServices.NewPaymentDeletionHelper(sqldb.DB),
+	)
 }
 
 // validateTosAcceptance validates that Terms of Service have been properly accepted
@@ -253,8 +271,22 @@ func (us *userService) GetAllUsers() (*[]dto.UserOutput, error) {
 	return &results, nil
 }
 
+// DeleteUser orchestrates the RGPD-compliant cascade deletion of a user.
+//
+// Order of operations is load-bearing:
+//  1. Look up the Casdoor user (fail fast if not found).
+//  2. Cancel every active Stripe subscription — on error ABORT so we never
+//     leave a deleted user who is still being billed.
+//  3. Pseudonymize billing PII (BillingAddress, PaymentMethod). Best-effort:
+//     a failure here is logged but does NOT abort, because the security-
+//     critical work (Stripe cancel) is already done and we still want the
+//     Casdoor row gone.
+//  4. Delete the Casdoor user and remove their grouping policies.
+//
+// Invoices preserved per French law (Art. L. 123-22 Code de commerce, 10y
+// legitimate-interest retention).
 func (us *userService) DeleteUser(id string) error {
-	user, errUser := casdoorsdk.GetUserByUserId(id)
+	user, errUser := us.casdoorClient.GetUserByUserId(id)
 	if errUser != nil {
 		utils.Error("%s", errUser.Error())
 		return errUser
@@ -262,12 +294,35 @@ func (us *userService) DeleteUser(id string) error {
 	if user == nil {
 		return errors.New("user not found")
 	}
-	casdoorsdk.DeleteUser(user)
 
-	// Remove all role associations for this user
-	opts := utils.DefaultPermissionOptions()
-	opts.WarnOnError = true
-	utils.RemoveGroupingPolicy(casdoor.Enforcer, user.Id, "", opts)
+	// Step 1: cancel active Stripe subscriptions BEFORE touching Casdoor.
+	// If this fails we must not proceed — otherwise the user is deleted
+	// from the identity provider but Stripe keeps charging the card.
+	if err := us.paymentHelper.CancelAllActiveSubscriptionsForUser(id); err != nil {
+		utils.Error("Aborting user deletion for %s: Stripe cancel failed: %v", id, err)
+		return fmt.Errorf("stripe cancellation failed, aborting user deletion: %w", err)
+	}
+
+	// Step 2: pseudonymize billing PII. Best-effort — log and continue on
+	// failure so the user still gets deleted from the identity provider.
+	if err := us.paymentHelper.PseudonymizeBillingDataForUser(id); err != nil {
+		utils.Warn("Failed to pseudonymize billing data for user %s (continuing with deletion): %v", id, err)
+	}
+
+	// Step 3: delete from Casdoor.
+	if _, err := us.casdoorClient.DeleteUser(user); err != nil {
+		utils.Error("Failed to delete Casdoor user %s: %v", id, err)
+		return err
+	}
+
+	// Step 4: remove all role associations for this user. Guarded against a
+	// nil enforcer so unit tests that don't wire Casbin can still exercise
+	// this path.
+	if casdoor.Enforcer != nil {
+		opts := utils.DefaultPermissionOptions()
+		opts.WarnOnError = true
+		utils.RemoveGroupingPolicy(casdoor.Enforcer, user.Id, "", opts)
+	}
 
 	return nil
 }

@@ -194,7 +194,7 @@ func SetupRoles() {
 }
 
 func SetupUsers() {
-	userService := services.NewUserService()
+	userService := services.NewDefaultUserService()
 	tosTime := time.Now().UTC().Format(time.RFC3339)
 	tosVersion := "2025-01-01"
 
@@ -234,7 +234,7 @@ func DeleteAllObjects() {
 	}
 	fmt.Printf("✅ Safety check passed: Using test database '%s'\n", dbName)
 
-	userService := services.NewUserService()
+	userService := services.NewDefaultUserService()
 
 	casdoor.Enforcer.RemovePolicy("administrator")
 	casdoor.Enforcer.RemovePolicy("member")
