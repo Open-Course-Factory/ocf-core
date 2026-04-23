@@ -462,6 +462,65 @@ func TestLayer2Enforcement_UserIdAlreadyInContext_SkipsJWTParsing(t *testing.T) 
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+// TestLayer2Enforcement_FallsThroughOnEmptyUserIdFromJWT covers the defensive
+// branch in resolveUserForEnforcement that rejects an empty userID even when
+// the JWT parsed without error. A malformed / malicious JWT whose `Id` claim
+// is the empty string must NOT be treated as a valid authenticated identity:
+// the enforcer must NOT run (which would silently allow the request through
+// under permissive rules), and the middleware must pass through so
+// downstream AuthManagement can reject with 401.
+func TestLayer2Enforcement_FallsThroughOnEmptyUserIdFromJWT(t *testing.T) {
+	const (
+		routePath   = "/api/v1/test/owned-resource/:id"
+		routeMethod = "POST"
+	)
+
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
+	defer func() {
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
+	}()
+
+	// Resolver returns no error but an empty userID — e.g. a JWT that parsed
+	// successfully but whose Id claim is missing.
+	restore := access.SetUserResolver(func(ctx *gin.Context) (string, []string, error) {
+		return "", nil, nil
+	})
+	defer restore()
+
+	access.RouteRegistry.Register("test", access.RoutePermission{
+		Path:   routePath,
+		Method: routeMethod,
+		Role:   "member",
+		Access: access.AccessRule{
+			Type:   access.EntityOwner,
+			Entity: "TestEntity",
+			Field:  "UserID",
+		},
+	})
+
+	spy := &spyEnforcer{}
+	access.RegisterAccessEnforcer(access.EntityOwner, spy.handler())
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	apiGroup := r.Group("/api/v1")
+	apiGroup.Use(access.Layer2Enforcement())
+	subGroup := apiGroup.Group("/test")
+	subGroup.POST("/owned-resource/:id", okHandler)
+
+	req := httptest.NewRequest(routeMethod, "/api/v1/test/owned-resource/abc-123", nil)
+	req.Header.Set("Authorization", "Bearer jwt-with-empty-userid")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.False(t, spy.wasCalled(),
+		"enforcer MUST NOT run when the resolved userID is empty — empty-identity JWTs must never reach Layer 2 handlers")
+	assert.Equal(t, http.StatusOK, w.Code,
+		"pass-through is the correct behaviour when userID is empty; downstream AuthManagement will reject with 401")
+}
+
 // TestLayer2Enforcement_AdminRoleResolvedViaJWT_BypassesEntityOwner asserts
 // that admin bypass works end-to-end even when Layer2Enforcement resolves
 // the userId from the JWT itself (i.e. roles come from the resolver, not
