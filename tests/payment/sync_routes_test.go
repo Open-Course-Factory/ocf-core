@@ -8,11 +8,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	entityManagementModels "soli/formations/src/entityManagement/models"
+	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func setupSyncTestRouter() (*gin.Engine, *SharedMockStripeService) {
@@ -501,4 +504,211 @@ func TestSyncRoutes_BatchOperations(t *testing.T) {
 
 		mockStripeService.AssertExpectations(t)
 	})
+}
+
+// ============================================================================
+// Issue #262 — Trial plan must not be pushed to Stripe on /sync-stripe
+//
+// The Trial plan (PriceAmount == 0) is intentionally decoupled from Stripe:
+// it is auto-assigned to every new user/org and has no billing lifecycle.
+// The POST /subscription-plans/sync-stripe endpoint must therefore skip
+// free plans rather than creating a bogus €0/month recurring price product
+// in Stripe.
+//
+// These tests mirror the structure of setupSyncTestRouter above, replicating
+// the SyncAllSubscriptionPlansWithStripe handler inline (same pattern as the
+// existing sync-routes tests — the real userSubscriptionController struct is
+// unexported and cannot be instantiated from the test package).
+// ============================================================================
+
+// setupSyncPlansRouter builds a gin router wired to the mock subscription +
+// stripe services and installed the handler under test at
+// POST /api/v1/subscription-plans/sync-stripe. The handler body mirrors
+// src/payment/routes/userSubscriptionController.go:SyncAllSubscriptionPlansWithStripe.
+func setupSyncPlansRouter() (*gin.Engine, *SharedMockSubscriptionService, *SharedMockStripeService) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	mockSubscriptionService := new(SharedMockSubscriptionService)
+	mockStripeService := new(SharedMockStripeService)
+
+	v1 := router.Group("/api/v1")
+	{
+		v1.POST("/subscription-plans/sync-stripe", func(c *gin.Context) {
+			plansPtr, err := mockSubscriptionService.GetAllSubscriptionPlans(false)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			plans := *plansPtr
+			var syncedPlans []string
+			var skippedPlans []string
+			var failedPlans []map[string]any
+
+			for _, plan := range plans {
+				if plan.StripePriceID != nil {
+					skippedPlans = append(skippedPlans, plan.Name+" (already synced)")
+					continue
+				}
+
+				err := mockStripeService.CreateSubscriptionPlanInStripe(&plan)
+				if err != nil {
+					failedPlans = append(failedPlans, map[string]any{
+						"name":  plan.Name,
+						"id":    plan.ID.String(),
+						"error": err.Error(),
+					})
+				} else {
+					syncedPlans = append(syncedPlans, plan.Name)
+				}
+			}
+
+			c.JSON(http.StatusOK, map[string]any{
+				"synced_plans":  syncedPlans,
+				"skipped_plans": skippedPlans,
+				"failed_plans":  failedPlans,
+				"total_plans":   len(plans),
+			})
+		})
+	}
+
+	return router, mockSubscriptionService, mockStripeService
+}
+
+// TestSyncAllSubscriptionPlans_TrialPlanIsSkipped — issue #262.
+// Given: DB contains Trial (price=0), Member Pro (price=1200), Trainer Plan (price=1200).
+// When : POST /api/v1/subscription-plans/sync-stripe is called.
+// Then : CreateSubscriptionPlanInStripe is invoked EXACTLY for the two paid plans
+//        and the response lists Trial under skipped_plans (not synced_plans).
+func TestSyncAllSubscriptionPlans_TrialPlanIsSkipped(t *testing.T) {
+	router, mockSubscriptionService, mockStripeService := setupSyncPlansRouter()
+
+	trialPlan := models.SubscriptionPlan{
+		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:            "Trial",
+		Description:     "Free plan",
+		PriceAmount:     0,
+		Currency:        "eur",
+		BillingInterval: "month",
+		IsActive:        true,
+	}
+	memberProPlan := models.SubscriptionPlan{
+		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:            "Member Pro",
+		Description:     "Paid member plan",
+		PriceAmount:     1200,
+		Currency:        "eur",
+		BillingInterval: "month",
+		IsActive:        true,
+	}
+	trainerPlan := models.SubscriptionPlan{
+		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:            "Trainer Plan",
+		Description:     "Paid trainer plan",
+		PriceAmount:     1200,
+		Currency:        "eur",
+		BillingInterval: "month",
+		IsActive:        true,
+	}
+	allPlans := []models.SubscriptionPlan{trialPlan, memberProPlan, trainerPlan}
+
+	mockSubscriptionService.On("GetAllSubscriptionPlans", false).Return(&allPlans, nil)
+
+	// The stripe call must happen ONLY for plans with PriceAmount > 0.
+	// Using MatchedBy with PriceAmount > 0 — if the handler calls the mock
+	// for the Trial plan (PriceAmount == 0), testify will fail the test
+	// with an "unexpected method call" panic because no matcher covers it.
+	mockStripeService.
+		On("CreateSubscriptionPlanInStripe", mock.MatchedBy(func(p any) bool {
+			plan, ok := p.(*models.SubscriptionPlan)
+			return ok && plan.PriceAmount > 0
+		})).
+		Return(nil).
+		Times(2)
+
+	req := httptest.NewRequest("POST", "/api/v1/subscription-plans/sync-stripe", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "sync endpoint must succeed")
+
+	var response map[string]any
+	require := assert.New(t)
+	require.NoError(json.Unmarshal(w.Body.Bytes(), &response))
+
+	synced, _ := response["synced_plans"].([]any)
+	skipped, _ := response["skipped_plans"].([]any)
+
+	syncedNames := make([]string, 0, len(synced))
+	for _, name := range synced {
+		syncedNames = append(syncedNames, name.(string))
+	}
+	skippedJoined := ""
+	for _, entry := range skipped {
+		skippedJoined += entry.(string) + "|"
+	}
+
+	// Trial must NOT be synced.
+	assert.NotContains(t, syncedNames, "Trial",
+		"Trial plan (price=0) must not be pushed to Stripe: it is decoupled from billing")
+
+	// Paid plans must be synced.
+	assert.Contains(t, syncedNames, "Member Pro", "paid plan must be synced")
+	assert.Contains(t, syncedNames, "Trainer Plan", "paid plan must be synced")
+
+	// Trial should appear in skipped_plans so operators see it was intentionally left out.
+	assert.Contains(t, skippedJoined, "Trial",
+		"Trial plan should be reported in skipped_plans (not silently dropped)")
+
+	// Exactly 2 stripe calls were expected — will fail if a 3rd call was made for Trial.
+	mockStripeService.AssertExpectations(t)
+	mockSubscriptionService.AssertExpectations(t)
+}
+
+// TestSyncAllSubscriptionPlans_FreePlanNotSentToStripe tightens the contract:
+// regardless of plan name, PriceAmount == 0 must never trigger a Stripe call.
+// This guards against a future "free tier" plan being added with a non-"Trial"
+// name and silently leaking to Stripe.
+func TestSyncAllSubscriptionPlans_FreePlanNotSentToStripe(t *testing.T) {
+	router, mockSubscriptionService, mockStripeService := setupSyncPlansRouter()
+
+	freePlans := []models.SubscriptionPlan{
+		{
+			BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
+			Name:            "Community Free",
+			PriceAmount:     0,
+			Currency:        "eur",
+			BillingInterval: "month",
+			IsActive:        true,
+		},
+		{
+			BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
+			Name:            "Starter Zero",
+			PriceAmount:     0,
+			Currency:        "eur",
+			BillingInterval: "month",
+			IsActive:        true,
+		},
+	}
+
+	mockSubscriptionService.On("GetAllSubscriptionPlans", false).Return(&freePlans, nil)
+	// No .On for CreateSubscriptionPlanInStripe — any call at all must fail the test.
+
+	req := httptest.NewRequest("POST", "/api/v1/subscription-plans/sync-stripe", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]any
+	require := assert.New(t)
+	require.NoError(json.Unmarshal(w.Body.Bytes(), &response))
+
+	synced, _ := response["synced_plans"].([]any)
+	assert.Empty(t, synced, "free plans must never appear in synced_plans")
+
+	// Mock must NOT have been called at all.
+	mockStripeService.AssertNotCalled(t, "CreateSubscriptionPlanInStripe", mock.Anything)
+	mockSubscriptionService.AssertExpectations(t)
 }
