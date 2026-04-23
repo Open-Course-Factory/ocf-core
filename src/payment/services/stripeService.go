@@ -3,6 +3,7 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	auditServices "soli/formations/src/audit/services"
@@ -764,6 +765,24 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 		}
 	}
 
+	// Idempotency: if a UserSubscription already exists for this
+	// stripe_subscription_id, treat this as a successful no-op. Stripe may
+	// redeliver the event (different event_id, same subscription) after a
+	// reservation was released following a transient downstream error, or
+	// when an operator replays events manually. Without this guard the
+	// repository's Create hits the partial unique index
+	// idx_user_stripe_sub_not_null and bubbles up as a 500 to Stripe, which
+	// retries forever.
+	var existingSub models.UserSubscription
+	err := ss.db.Where("stripe_subscription_id = ?", subscription.ID).First(&existingSub).Error
+	if err == nil {
+		utils.Info("🔁 UserSubscription already exists for stripe_subscription_id %s — event already applied, skipping", subscription.ID)
+		return nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("failed to check existing subscription: %w", err)
+	}
+
 	// Créer directement dans la base via le repository
 	if err := ss.repository.CreateUserSubscription(userSubscription); err != nil {
 		return fmt.Errorf("failed to create subscription: %w", err)
@@ -998,6 +1017,21 @@ func (ss *stripeService) handleOrganizationSubscriptionCreated(subscription *str
 
 	// Get organization subscription repository
 	orgSubRepo := repositories.NewOrganizationSubscriptionRepository(ss.db)
+
+	// Idempotency: if this Stripe subscription has already been persisted,
+	// treat the duplicate event as a no-op (same rationale as
+	// handleSubscriptionCreated — Stripe may redeliver the event after a
+	// reservation release, and blindly re-inserting would hit the unique
+	// index on stripe_subscription_id).
+	var existingOrgSub models.OrganizationSubscription
+	err = ss.db.Where("stripe_subscription_id = ?", subscription.ID).First(&existingOrgSub).Error
+	if err == nil {
+		utils.Info("🔁 OrganizationSubscription already exists for stripe_subscription_id %s — event already applied, skipping", subscription.ID)
+		return nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("failed to check existing organization subscription: %w", err)
+	}
 
 	// Create the organization subscription
 	if err := orgSubRepo.CreateOrganizationSubscription(orgSubscription); err != nil {
@@ -1629,6 +1663,22 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 	}
 
 	batchRepo := repositories.NewSubscriptionBatchRepository(ss.db)
+
+	// Idempotency: bail out early if a batch already exists for this Stripe
+	// subscription. Without this, a redelivered event would hit the unique
+	// index on stripe_subscription_id and surface as a 500 to Stripe, and
+	// would also risk re-creating `quantity` extra UserSubscription license
+	// rows below. Same rationale as handleSubscriptionCreated.
+	var existingBatch models.SubscriptionBatch
+	err = ss.db.Where("stripe_subscription_id = ?", subscription.ID).First(&existingBatch).Error
+	if err == nil {
+		utils.Info("🔁 SubscriptionBatch already exists for stripe_subscription_id %s — event already applied, skipping", subscription.ID)
+		return nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("failed to check existing subscription batch: %w", err)
+	}
+
 	if err := batchRepo.Create(batch); err != nil {
 		return fmt.Errorf("failed to create batch: %w", err)
 	}
