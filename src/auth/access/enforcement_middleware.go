@@ -4,8 +4,21 @@ import (
 	"net/http"
 	"sync"
 
+	"soli/formations/src/auth/casdoor"
+
 	"github.com/gin-gonic/gin"
 )
+
+// userResolver is the package-level seam used by Layer2Enforcement to
+// resolve the authenticated user's ID and roles directly from the
+// request's JWT. It is abstracted as a variable so tests can inject a
+// stub without needing a live Casdoor configuration.
+//
+// Production code should not override this — set JwtTokenParser in the
+// casdoor package instead if you need to stub JWT parsing itself.
+var userResolver = func(ctx *gin.Context) (userID string, roles []string, err error) {
+	return casdoor.ResolveUserFromRequest(ctx)
+}
 
 // EntityLoader retrieves ownership fields from entity instances.
 type EntityLoader interface {
@@ -53,6 +66,20 @@ func ResetEnforcers() {
 	enforcerRegistry.mu.Lock()
 	defer enforcerRegistry.mu.Unlock()
 	enforcerRegistry.handlers = make(map[AccessRuleType]AccessEnforcer)
+}
+
+// SetUserResolver installs a custom user-resolver function for Layer 2
+// enforcement. Intended for use in tests that exercise the middleware
+// without a live Casdoor / JWT pipeline.
+//
+// The returned restore function reverts to the previous resolver — call
+// it from a defer block to avoid test pollution.
+func SetUserResolver(resolver func(ctx *gin.Context) (string, []string, error)) (restore func()) {
+	previous := userResolver
+	userResolver = resolver
+	return func() {
+		userResolver = previous
+	}
 }
 
 // RegisterBuiltinEnforcers registers the default access rule handlers.
@@ -151,6 +178,18 @@ func RegisterBuiltinEnforcers(entityLoader EntityLoader, memberChecker Membershi
 // Layer2Enforcement returns a Gin middleware that enforces Layer 2
 // business-logic authorization based on the RouteRegistry.
 // Routes not registered in the registry pass through for backwards compatibility.
+//
+// Layer2Enforcement is self-sufficient with respect to authentication: when
+// the request context already carries a `userId` (e.g. because
+// AuthManagement ran earlier in the chain), it is reused as-is. Otherwise
+// the middleware parses the JWT from the request itself so the declared
+// RouteRegistry rule is evaluated at request time regardless of whether
+// AuthManagement happens to run before or after Layer2Enforcement.
+//
+// Layer2Enforcement is NOT an authentication checkpoint. If the JWT is
+// missing or invalid, it falls through to the next middleware (which is
+// AuthManagement in production) instead of rejecting the request. This
+// preserves the single source of truth for 401 responses.
 func Layer2Enforcement() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		method := ctx.Request.Method
@@ -162,16 +201,14 @@ func Layer2Enforcement() gin.HandlerFunc {
 			return
 		}
 
-		userId, exists := ctx.Get("userId")
-		if !exists {
-			// AuthManagement should have set this — if missing, skip Layer 2
+		userIdStr, roles, ok := resolveUserForEnforcement(ctx)
+		if !ok {
+			// JWT missing / invalid — Layer 2 is not an authentication
+			// checkpoint. Pass through so the downstream AuthManagement
+			// middleware can reject with 401.
 			ctx.Next()
 			return
 		}
-		userIdStr, _ := userId.(string)
-
-		rolesVal, _ := ctx.Get("userRoles")
-		roles, _ := rolesVal.([]string)
 
 		handler := getAccessEnforcer(perm.Access.Type)
 		if handler == nil {
@@ -184,4 +221,30 @@ func Layer2Enforcement() gin.HandlerFunc {
 			ctx.Next()
 		}
 	}
+}
+
+// resolveUserForEnforcement returns the authenticated user's ID and roles
+// for the current request. If AuthManagement has already populated the
+// context, the pre-resolved values are reused. Otherwise the JWT is
+// parsed directly from the request.
+//
+// The boolean return is false when no authenticated user could be
+// resolved — the caller must treat this as "pass-through", NOT as a
+// rejection.
+func resolveUserForEnforcement(ctx *gin.Context) (userID string, roles []string, ok bool) {
+	if existing, exists := ctx.Get("userId"); exists {
+		uid, _ := existing.(string)
+		if uid == "" {
+			return "", nil, false
+		}
+		rolesVal, _ := ctx.Get("userRoles")
+		existingRoles, _ := rolesVal.([]string)
+		return uid, existingRoles, true
+	}
+
+	uid, resolvedRoles, err := userResolver(ctx)
+	if err != nil || uid == "" {
+		return "", nil, false
+	}
+	return uid, resolvedRoles, true
 }
