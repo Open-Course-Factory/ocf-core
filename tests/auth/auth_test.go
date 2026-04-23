@@ -13,7 +13,7 @@ import (
 )
 
 func TestUserCreation(t *testing.T) {
-	userService := services.NewUserService()
+	userService := services.NewDefaultUserService()
 
 	users, _ := userService.GetAllUsers()
 

@@ -136,9 +136,11 @@ func (h *paymentDeletionHelper) PseudonymizeBillingDataForUser(userID string) er
 		if err := tx.Model(&models.PaymentMethod{}).
 			Where("user_id = ?", userID).
 			Updates(map[string]any{
-				"card_brand": pseudonymizedTextPlaceholder,
-				"card_last4": pseudonymizedLast4,
-				"is_active":  false,
+				"card_brand":     pseudonymizedTextPlaceholder,
+				"card_last4":     pseudonymizedLast4,
+				"card_exp_month": 0,
+				"card_exp_year":  0,
+				"is_active":      false,
 			}).Error; err != nil {
 			return fmt.Errorf("failed to pseudonymize payment methods for user %s: %w", userID, err)
 		}

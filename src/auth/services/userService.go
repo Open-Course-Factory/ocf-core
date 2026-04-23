@@ -286,6 +286,9 @@ func (us *userService) GetAllUsers() (*[]dto.UserOutput, error) {
 // Invoices preserved per French law (Art. L. 123-22 Code de commerce, 10y
 // legitimate-interest retention).
 func (us *userService) DeleteUser(id string) error {
+	// Safe to retry on partial failure: Stripe cancellation filters out already-cancelled
+	// subs, pseudonymization is a no-op on already-[deleted] rows, and Casdoor delete
+	// returns an error that the caller can act on.
 	user, errUser := us.casdoorClient.GetUserByUserId(id)
 	if errUser != nil {
 		utils.Error("%s", errUser.Error())
