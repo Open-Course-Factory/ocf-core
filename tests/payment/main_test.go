@@ -21,7 +21,13 @@ import (
 var sharedTestDB *gorm.DB
 
 func TestMain(m *testing.M) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+	// SQLite ":memory:" is per-connection by default: a second connection
+	// from the Go sql.DB pool would point at a DIFFERENT in-memory DB that
+	// doesn't have our tables. Using file::memory:?cache=shared keeps a
+	// single shared in-memory DB across all connections in the process,
+	// which is what we need for concurrent webhook tests (goroutines
+	// opening new connections from the pool).
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {

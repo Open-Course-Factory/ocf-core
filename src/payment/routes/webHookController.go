@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Webhook Controller pour traiter les événements Stripe
@@ -75,14 +76,7 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 		return
 	}
 
-	// 4 : Prévention des attaques par rejeu
-	if wc.isEventProcessed(event.ID) {
-		utils.Debug("🔄 Duplicate event %s from IP %s", event.ID, ctx.ClientIP())
-		ctx.JSON(http.StatusOK, gin.H{"message": "Event already processed"})
-		return
-	}
-
-	// 5 : Vérifier l'âge de l'événement (anti-replay)
+	// 4 : Vérifier l'âge de l'événement (anti-replay)
 	eventTime := time.Unix(event.Created, 0)
 	if time.Since(eventTime) > 10*time.Minute {
 		utils.Debug("🕐 Event %s too old (%v), rejecting", event.ID, time.Since(eventTime))
@@ -93,10 +87,35 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 		return
 	}
 
-	// 6 : Traitement synchrone — Stripe accorde 20 secondes pour répondre
+	// 5 : Reserve the event atomically BEFORE processing.
+	// Uses INSERT ... ON CONFLICT DO NOTHING on the unique event_id.
+	// - RowsAffected == 1 -> we own processing for this event.
+	// - RowsAffected == 0 -> another pod (or an earlier delivery) already
+	//   reserved/processed this event; return 200 so Stripe stops retrying.
+	//
+	// This replaces the former check-then-act flow (SELECT then INSERT) which
+	// let two concurrent deliveries both pass the check and both run the
+	// handler, causing duplicate side effects.
+	reserved, err := wc.reserveEvent(event.ID, string(event.Type), payload)
+	if err != nil {
+		utils.Debug("⚠️ Failed to reserve event %s: %v", event.ID, err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to reserve event",
+		})
+		return
+	}
+	if !reserved {
+		utils.Debug("🔄 Event %s already reserved/processed (IP %s)", event.ID, ctx.ClientIP())
+		ctx.JSON(http.StatusOK, gin.H{"message": "Event already reserved or processed"})
+		return
+	}
+
+	// 6 : Traitement synchrone — Stripe accorde 20 secondes pour répondre.
+	// On failure, release the reservation so Stripe's retry can succeed.
 	if err := wc.stripeService.ProcessWebhook(payload, signature); err != nil {
 		utils.Debug("❌ Webhook processing failed for event %s: %v", event.ID, err)
-		// Ne PAS marquer comme traité → Stripe réessaiera automatiquement
+		wc.releaseReservation(event.ID)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Webhook processing failed",
@@ -104,12 +123,9 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 		return
 	}
 
-	// 7 : Marquer comme traité APRÈS le succès
-	wc.markEventProcessed(event.ID)
-
 	utils.Debug("✅ Successfully processed webhook event %s", event.ID)
 
-	// 8 : Réponse de succès à Stripe
+	// 7 : Réponse de succès à Stripe — reservation row remains as processed marker.
 	ctx.JSON(http.StatusOK, gin.H{
 		"received":  true,
 		"event_id":  event.ID,
@@ -178,34 +194,40 @@ func (wc *webhookController) validatePayloadAndSignature(ctx *gin.Context) ([]by
 	return payload, signature, true
 }
 
-// 🔐 Gestion des événements déjà traités (anti-replay avec database)
-// ✅ SECURITY: Database-backed duplicate prevention (survives restarts)
-func (wc *webhookController) isEventProcessed(eventID string) bool {
-	var count int64
-	wc.db.Model(&models.WebhookEvent{}).
-		Where("event_id = ? AND expires_at > ?", eventID, time.Now()).
-		Count(&count)
-
-	return count > 0
+// reserveEvent atomically attempts to claim processing ownership of an event
+// using INSERT ... ON CONFLICT (event_id) DO NOTHING on webhook_events.
+//
+// Returns (true, nil) if this caller successfully reserved the event and
+// should proceed to process it. Returns (false, nil) if another caller has
+// already reserved/processed this event (idempotent short-circuit).
+// Returns (false, err) on unexpected DB errors.
+func (wc *webhookController) reserveEvent(eventID, eventType string, payload []byte) (bool, error) {
+	now := time.Now()
+	row := &models.WebhookEvent{
+		EventID:     eventID,
+		EventType:   eventType,
+		ProcessedAt: now,
+		ExpiresAt:   now.Add(24 * time.Hour),
+		Payload:     string(payload),
+	}
+	tx := wc.db.Clauses(clause.OnConflict{DoNothing: true}).Create(row)
+	if tx.Error != nil {
+		return false, tx.Error
+	}
+	// RowsAffected == 1 -> we inserted (reserved); 0 -> conflict (already reserved).
+	return tx.RowsAffected == 1, nil
 }
 
-func (wc *webhookController) markEventProcessed(eventID string) {
-	// Create webhook event record
-	webhookEvent := &models.WebhookEvent{
-		EventID:     eventID,
-		EventType:   "", // Will be populated from Stripe event if needed
-		ProcessedAt: time.Now(),
-		ExpiresAt:   time.Now().Add(24 * time.Hour), // Keep for 24 hours
-	}
-
-	if err := wc.db.Create(webhookEvent).Error; err != nil {
-		utils.Debug("⚠️ Failed to mark event %s as processed: %v", eventID, err)
-		// Continue anyway - better to process twice than not at all
-		// The unique constraint on event_id will prevent duplicates in the database
+// releaseReservation hard-deletes the webhook_events row for the given event
+// so Stripe's retry can pass reservation again after a processing failure.
+// Unscoped is used defensively even though WebhookEvent has no soft-delete.
+func (wc *webhookController) releaseReservation(eventID string) {
+	if err := wc.db.Unscoped().
+		Where("event_id = ?", eventID).
+		Delete(&models.WebhookEvent{}).Error; err != nil {
+		utils.Debug("⚠️ Failed to release reservation for event %s: %v", eventID, err)
 	}
 }
 
 // ✅ SECURITY: Cleanup is now handled by a separate cron job
 // See: src/cron/webhookCleanup.go
-// This method has been removed - cleanup happens in background job
-

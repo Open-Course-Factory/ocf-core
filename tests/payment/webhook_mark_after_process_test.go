@@ -1,14 +1,20 @@
 // tests/payment/webhook_mark_after_process_test.go
 //
 // Structural regression tests that verify the webhook controller processes
-// events SYNCHRONOUSLY and marks them as processed ONLY AFTER success.
+// events SYNCHRONOUSLY under the reserve-then-process flow introduced for
+// GitLab issue #260.
 //
-// The critical invariant:
-//   - Success: process -> mark as processed -> return 200
-//   - Failure: process -> DON'T mark -> return 500 (Stripe retries)
+// The critical invariants:
+//   - Events are reserved BEFORE ProcessWebhook runs (prevents concurrent dup).
+//   - On ProcessWebhook failure the reservation is released so Stripe's retry
+//     is not swallowed as a duplicate; handler returns 500.
+//   - On ProcessWebhook success the reservation row stays; handler returns 200.
+//   - No async goroutine: everything runs synchronously under Stripe's 20s
+//     response window.
 //
 // These tests read the actual source code to detect dangerous patterns,
-// preventing accidental reversion to the "mark-before-process" flow.
+// preventing accidental reversion to the "check-then-act" flow (SELECT then
+// INSERT) or to a mark-before-process variant.
 package payment_tests
 
 import (
@@ -42,23 +48,38 @@ func extractHandlerBody(t *testing.T, source string) string {
 	return handlerBody
 }
 
-// TestWebhook_ProcessBeforeMarkOrder verifies that ProcessWebhook is called
-// BEFORE markEventProcessed in the webhook handler source code.
-func TestWebhook_ProcessBeforeMarkOrder(t *testing.T) {
+// TestWebhook_ReserveBeforeProcessOrder verifies that the reservation is
+// obtained BEFORE ProcessWebhook is invoked. The reverse order would recreate
+// the race condition fixed in issue #260: two concurrent pods could both
+// invoke the handler before either recorded a row.
+func TestWebhook_ReserveBeforeProcessOrder(t *testing.T) {
 	source := readWebhookControllerSource(t)
 
-	// Find positions in the full source
+	reserveIdx := strings.Index(source, "reserveEvent(event.ID")
 	processIdx := strings.Index(source, "ProcessWebhook(payload")
-	markIdx := strings.Index(source, "markEventProcessed(event.ID)")
 
+	require.Greater(t, reserveIdx, 0, "reserveEvent call should exist in source")
 	require.Greater(t, processIdx, 0, "ProcessWebhook call should exist in source")
-	require.Greater(t, markIdx, 0, "markEventProcessed call should exist in source")
 
-	assert.Less(t, processIdx, markIdx,
-		"SECURITY: ProcessWebhook must be called BEFORE markEventProcessed. "+
-			"The mark-before-process pattern causes silent data loss: if processing "+
-			"fails after marking, Stripe won't retry because the event appears 'processed'. "+
-			"Subscriptions may never activate after payment.")
+	assert.Less(t, reserveIdx, processIdx,
+		"SECURITY: reserveEvent must be called BEFORE ProcessWebhook. "+
+			"Reversing the order reintroduces the concurrent-duplicate race "+
+			"(two deliveries can both pass the reservation check before either "+
+			"records a row). Fix: atomic INSERT ... ON CONFLICT DO NOTHING "+
+			"must run first, and only the caller with RowsAffected == 1 may "+
+			"proceed to ProcessWebhook.")
+}
+
+// TestWebhook_ReservationUsesOnConflictDoNothing verifies the reservation is
+// atomic (ON CONFLICT DO NOTHING) rather than a check-then-act pattern.
+func TestWebhook_ReservationUsesOnConflictDoNothing(t *testing.T) {
+	source := readWebhookControllerSource(t)
+
+	assert.True(t, strings.Contains(source, "OnConflict{DoNothing: true}"),
+		"SECURITY: reserveEvent must use clause.OnConflict{DoNothing: true} "+
+			"to atomically claim the event. A plain Create or a SELECT-then-"+
+			"INSERT is racy — two concurrent pods could both observe 'not "+
+			"processed' and both insert.")
 }
 
 // TestWebhook_NoAsyncGoroutine verifies that the webhook handler does NOT
@@ -89,27 +110,32 @@ func TestWebhook_FailureReturns500(t *testing.T) {
 			"mechanism for transient failures (DB outage, network issues, etc.).")
 }
 
-// TestWebhook_FailureDoesNotMark verifies that when processing fails,
-// the handler returns BEFORE calling markEventProcessed. This ensures
-// failed events are not marked as processed.
-func TestWebhook_FailureDoesNotMark(t *testing.T) {
+// TestWebhook_FailureReleasesReservation verifies that when ProcessWebhook
+// fails, the handler releases the reservation so Stripe's retry can
+// re-enter the critical section. Skipping the release would cause retries
+// to be silently swallowed as duplicates.
+func TestWebhook_FailureReleasesReservation(t *testing.T) {
 	source := readWebhookControllerSource(t)
 	handlerBody := extractHandlerBody(t, source)
 
-	// After ProcessWebhook fails, there should be a "return" before markEventProcessed
 	processIdx := strings.Index(handlerBody, "ProcessWebhook(payload")
-	require.Greater(t, processIdx, 0)
+	require.Greater(t, processIdx, 0, "ProcessWebhook call should exist")
 
-	// Find the error handling block after ProcessWebhook
 	afterProcess := handlerBody[processIdx:]
-	returnIdx := strings.Index(afterProcess, "return\n")
-	markIdx := strings.Index(afterProcess, "markEventProcessed")
 
-	require.Greater(t, returnIdx, 0, "Should have a return statement after error check")
-	require.Greater(t, markIdx, 0, "Should have markEventProcessed after success path")
+	releaseIdx := strings.Index(afterProcess, "releaseReservation(event.ID")
+	require.Greater(t, releaseIdx, 0,
+		"Handler must call releaseReservation in the failure path so Stripe's "+
+			"retry is not swallowed as a duplicate.")
 
-	assert.Less(t, returnIdx, markIdx,
-		"SECURITY: When ProcessWebhook fails, the handler must return BEFORE "+
-			"calling markEventProcessed. The 'return' in the error path must come "+
-			"before the mark call in the success path.")
+	// The release must precede the 500 return (i.e. appear before the error
+	// response is sent).
+	errResponseIdx := strings.Index(afterProcess, "StatusInternalServerError")
+	require.Greater(t, errResponseIdx, 0)
+
+	assert.Less(t, releaseIdx, errResponseIdx,
+		"SECURITY: releaseReservation must be called BEFORE returning 500. "+
+			"Otherwise the reservation row persists and Stripe's retry is "+
+			"swallowed as 'already processed', leaving the underlying event "+
+			"permanently un-applied.")
 }
