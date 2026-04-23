@@ -527,6 +527,13 @@ func (ss *stripeService) CreatePortalSession(userID string, input dto.CreatePort
 
 // CreateSubscriptionPlanInStripe crée un produit et un prix dans Stripe
 func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.SubscriptionPlan) error {
+	// Défense en profondeur : les plans gratuits (ex: Trial) sont volontairement
+	// découplés de Stripe. Si un appelant oublie le garde côté contrôleur, on
+	// refuse ici plutôt que de créer un produit Stripe €0/mois bidon.
+	if plan.PriceAmount == 0 {
+		return nil
+	}
+
 	// 1. Créer le produit Stripe
 	// Metadata carries plan_id + the CPU/RAM budget caps so importers can
 	// reconcile back to the SubscriptionPlan row — see
