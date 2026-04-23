@@ -122,8 +122,15 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{Path: "/api/v1/organizations/:id/terminal-sessions", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"}, Description: "List terminal sessions for an organization"},
 		access.RoutePermission{Path: "/api/v1/organizations/:id/terminal-usage", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"}, Description: "Get org-wide active terminal usage for managers/owners"},
 
-		// Incus UI proxy
-		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*", Method: "(GET|POST|PUT|PATCH|DELETE)", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "backendId", MinRole: "member"}, Description: "Proxy requests to Incus UI for a backend"},
+		// Incus UI proxy — split into per-method entries because the Layer2
+		// registry Lookup does exact-match on method+path; a regex-style
+		// "(GET|POST|PUT|PATCH|DELETE)" method never matches concrete requests
+		// and would silently bypass the declared OrgRole rule.
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "backendId", MinRole: "member"}, Description: "Proxy requests to Incus UI for a backend"},
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "backendId", MinRole: "member"}, Description: "Proxy requests to Incus UI for a backend"},
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*", Method: "PUT", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "backendId", MinRole: "member"}, Description: "Proxy requests to Incus UI for a backend"},
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*", Method: "PATCH", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "backendId", MinRole: "member"}, Description: "Proxy requests to Incus UI for a backend"},
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "backendId", MinRole: "member"}, Description: "Proxy requests to Incus UI for a backend"},
 
 		// User terminal keys
 		access.RoutePermission{Path: "/api/v1/user-terminal-keys/regenerate", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Regenerate terminal authentication key"},
