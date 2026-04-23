@@ -3,12 +3,14 @@ package services
 
 import (
 	"fmt"
-	"strings"
+	access "soli/formations/src/auth/access"
 	groupModels "soli/formations/src/groups/models"
+	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
 	"soli/formations/src/utils"
+	"strings"
 	"time"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -170,13 +172,14 @@ func (s *bulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID s
 		return nil, fmt.Errorf("batch not found: %w", err)
 	}
 
-	// Verify requester can access this batch (as purchaser or organization member)
-	canAccess, err := s.canUserAccessBatch(batch, requestingUserID)
+	// Verify requester can manage this batch (purchaser or team-org manager+).
+	// Regular org members are intentionally denied.
+	canManage, err := s.canUserManageBatch(batch, requestingUserID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify access: %w", err)
 	}
-	if !canAccess {
-		return nil, fmt.Errorf("access denied: you can only assign licenses from your own batches or your organization's batches")
+	if !canManage {
+		return nil, fmt.Errorf("access denied: only the purchaser or an organization manager can assign licenses from this batch")
 	}
 
 	// Validate that the target user exists in Casdoor
@@ -267,13 +270,14 @@ func (s *bulkLicenseService) RevokeLicense(licenseID uuid.UUID, requestingUserID
 		return fmt.Errorf("batch not found: %w", err)
 	}
 
-	// Verify requester can access this batch (as purchaser or organization member)
-	canAccess, err := s.canUserAccessBatch(batch, requestingUserID)
+	// Verify requester can manage this batch (purchaser or team-org manager+).
+	// Regular org members are intentionally denied.
+	canManage, err := s.canUserManageBatch(batch, requestingUserID)
 	if err != nil {
 		return fmt.Errorf("failed to verify access: %w", err)
 	}
-	if !canAccess {
-		return fmt.Errorf("access denied: you can only revoke licenses from your own batches or your organization's batches")
+	if !canManage {
+		return fmt.Errorf("access denied: only the purchaser or an organization manager can revoke licenses from this batch")
 	}
 
 	// CRITICAL: Terminate all active terminals for this user before revoking license
@@ -323,13 +327,14 @@ func (s *bulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUs
 		return fmt.Errorf("batch not found: %w", err)
 	}
 
-	// Verify requester can access this batch (as purchaser or organization member)
-	canAccess, err := s.canUserAccessBatch(batch, requestingUserID)
+	// Verify requester can manage this batch (purchaser or team-org manager+).
+	// Regular org members are intentionally denied.
+	canManage, err := s.canUserManageBatch(batch, requestingUserID)
 	if err != nil {
 		return fmt.Errorf("failed to verify access: %w", err)
 	}
-	if !canAccess {
-		return fmt.Errorf("access denied: you can only update batches you purchased or your organization's batches")
+	if !canManage {
+		return fmt.Errorf("access denied: only the purchaser or an organization manager can update this batch's quantity")
 	}
 
 	if newQuantity < batch.AssignedQuantity {
@@ -453,7 +458,7 @@ func (s *bulkLicenseService) GetAccessibleBatchByID(batchID uuid.UUID, userID st
 		return nil, fmt.Errorf("batch not found: %w", err)
 	}
 
-	canAccess, err := s.canUserAccessBatch(batch, userID)
+	canAccess, err := s.canUserReadBatch(batch, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify access: %w", err)
 	}
@@ -471,8 +476,9 @@ func (s *bulkLicenseService) GetBatchLicenses(batchID uuid.UUID, requestingUserI
 		return nil, fmt.Errorf("batch not found: %w", err)
 	}
 
-	// Verify requester can access this batch (as purchaser or organization member)
-	canAccess, err := s.canUserAccessBatch(batch, requestingUserID)
+	// Verify requester can read this batch (purchaser or any active co-member
+	// of a shared team organization — lenient read).
+	canAccess, err := s.canUserReadBatch(batch, requestingUserID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify access: %w", err)
 	}
@@ -500,8 +506,9 @@ func (s *bulkLicenseService) GetAvailableLicenses(batchID uuid.UUID, requestingU
 		return nil, fmt.Errorf("batch not found: %w", err)
 	}
 
-	// Verify requester can access this batch (as purchaser or organization member)
-	canAccess, err := s.canUserAccessBatch(batch, requestingUserID)
+	// Verify requester can read this batch (purchaser or any active co-member
+	// of a shared team organization — lenient read).
+	canAccess, err := s.canUserReadBatch(batch, requestingUserID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify access: %w", err)
 	}
@@ -593,13 +600,14 @@ func (s *bulkLicenseService) PermanentlyDeleteBatch(batchID uuid.UUID, requestin
 		return fmt.Errorf("batch not found: %w", err)
 	}
 
-	// Verify requester can access this batch (as purchaser or organization member)
-	canAccess, err := s.canUserAccessBatch(batch, requestingUserID)
+	// Verify requester can manage this batch (purchaser or team-org manager+).
+	// Regular org members are intentionally denied.
+	canManage, err := s.canUserManageBatch(batch, requestingUserID)
 	if err != nil {
 		return fmt.Errorf("failed to verify access: %w", err)
 	}
-	if !canAccess {
-		return fmt.Errorf("access denied: you can only delete batches you purchased or your organization's batches")
+	if !canManage {
+		return fmt.Errorf("access denied: only the purchaser or an organization manager can permanently delete this batch")
 	}
 
 	utils.Info("🗑️ Permanently deleting batch %s with %d licenses", batchID, batch.TotalQuantity)
@@ -674,10 +682,14 @@ func (s *bulkLicenseService) getUserFromCasdoor(userID string) (user *casdoorsdk
 	return
 }
 
-// canUserAccessBatch checks if a user can access a batch through:
+// canUserReadBatch checks if a user can READ a batch through:
 // 1. Direct purchase (user is the purchaser)
-// 2. Organization membership (user is a member of a team organization that the purchaser belongs to)
-func (s *bulkLicenseService) canUserAccessBatch(batch *models.SubscriptionBatch, userID string) (bool, error) {
+// 2. Organization membership (any active member of a team organization that
+//    the purchaser also belongs to — including regular members).
+//
+// This is the lenient check used for read-only endpoints. Destructive
+// operations must use canUserManageBatch instead.
+func (s *bulkLicenseService) canUserReadBatch(batch *models.SubscriptionBatch, userID string) (bool, error) {
 	// Check if user is the direct purchaser
 	if batch.PurchaserUserID == userID {
 		return true, nil
@@ -697,6 +709,48 @@ func (s *bulkLicenseService) canUserAccessBatch(batch *models.SubscriptionBatch,
 	}
 
 	return count > 0, nil
+}
+
+// canUserManageBatch checks if a user can perform DESTRUCTIVE operations on a
+// batch (assign, revoke, update quantity, permanent delete).
+//
+// Authorization is granted when:
+// 1. User is the direct purchaser, OR
+// 2. User is an active member of a team organization that the purchaser also
+//    belongs to AND the requesting user's role in that shared team org is
+//    manager or owner (>= manager per the role hierarchy).
+//
+// Regular org "members" are intentionally denied even if they would pass the
+// lenient read check.
+func (s *bulkLicenseService) canUserManageBatch(batch *models.SubscriptionBatch, userID string) (bool, error) {
+	// Purchaser always has full control
+	if batch.PurchaserUserID == userID {
+		return true, nil
+	}
+
+	// Look up the requesting user's role in every team org also shared with
+	// the purchaser. We only need to find ONE shared org where the user is
+	// manager+ to authorize the operation.
+	var roles []orgModels.OrganizationMemberRole
+	err := s.db.Table("organization_members om1").
+		Select("om2.role").
+		Joins("JOIN organizations org ON om1.organization_id = org.id AND org.organization_type = 'team'").
+		Joins("JOIN organization_members om2 ON org.id = om2.organization_id").
+		Where("om1.user_id = ? AND om2.user_id = ? AND om1.is_active = true AND om2.is_active = true",
+			batch.PurchaserUserID, userID).
+		Scan(&roles).Error
+
+	if err != nil {
+		return false, fmt.Errorf("failed to check organization membership: %w", err)
+	}
+
+	for _, role := range roles {
+		if access.IsRoleAtLeast(string(role), string(orgModels.OrgRoleManager)) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // autoAddUserToGroup adds a user to a group as a member via direct DB insert.

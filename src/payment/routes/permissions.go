@@ -239,42 +239,42 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 	access.RouteRegistry.Register("Bulk Licenses",
 		access.RoutePermission{
 			Path: "/api/v1/subscription-batches/create-checkout-session", Method: "POST",
-			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserUserID"},
 			Description: "Create batch checkout session",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/subscription-batches", Method: "GET",
-			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserUserID"},
 			Description: "List owned subscription batches",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/subscription-batches/:id", Method: "GET",
-			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserUserID"},
 			Description: "Get subscription batch details",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/subscription-batches/:id/licenses", Method: "GET",
-			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserUserID"},
 			Description: "List licenses in a batch",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/subscription-batches/:id/assign", Method: "POST",
-			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserUserID"},
 			Description: "Assign license from batch to user",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/subscription-batches/:id/licenses/:license_id/revoke", Method: "DELETE",
-			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserUserID"},
 			Description: "Revoke a batch license",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/subscription-batches/:id/quantity", Method: "PATCH",
-			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserUserID"},
 			Description: "Update batch license quantity",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/subscription-batches/:id/permanent", Method: "DELETE",
-			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserID"},
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserUserID"},
 			Description: "Permanently delete a batch",
 		},
 	)
