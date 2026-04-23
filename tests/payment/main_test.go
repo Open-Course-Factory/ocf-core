@@ -27,12 +27,20 @@ func TestMain(m *testing.M) {
 	// single shared in-memory DB across all connections in the process,
 	// which is what we need for concurrent webhook tests (goroutines
 	// opening new connections from the pool).
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared&_busy_timeout=5000"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
 		panic("failed to open shared test DB: " + err.Error())
 	}
+
+	// Cap the pool to a single connection to serialize writes.
+	// SQLite's shared-cache mode still exposes table-level locks under concurrent
+	// writers (SQLITE_LOCKED) even with a busy_timeout — and in the webhook race
+	// tests we intentionally launch parallel writers. Forcing MaxOpenConns=1
+	// serializes them at the pool level, matching tests/scenarios/main_test.go.
+	sqlDB, _ := db.DB()
+	sqlDB.SetMaxOpenConns(1)
 
 	// Migrate all tables needed by any payment test
 	err = db.AutoMigrate(
