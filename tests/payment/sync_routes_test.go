@@ -552,6 +552,11 @@ func setupSyncPlansRouter() (*gin.Engine, *SharedMockSubscriptionService, *Share
 					continue
 				}
 
+				if plan.PriceAmount == 0 {
+					skippedPlans = append(skippedPlans, plan.Name+" (free plan)")
+					continue
+				}
+
 				err := mockStripeService.CreateSubscriptionPlanInStripe(&plan)
 				if err != nil {
 					failedPlans = append(failedPlans, map[string]any{

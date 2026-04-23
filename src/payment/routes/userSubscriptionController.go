@@ -998,6 +998,13 @@ func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gi
 			continue
 		}
 
+		if plan.PriceAmount == 0 {
+			// Plans gratuits (ex: Trial) sont volontairement découplés de Stripe —
+			// ne pas créer de produit/prix €0/mois bidon côté Stripe.
+			skippedPlans = append(skippedPlans, plan.Name+" (free plan)")
+			continue
+		}
+
 		// Tenter de synchroniser le plan
 		err := sc.stripeService.CreateSubscriptionPlanInStripe(&plan)
 		if err != nil {
