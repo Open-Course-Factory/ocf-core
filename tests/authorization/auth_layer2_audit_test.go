@@ -134,13 +134,14 @@ var authAuditAdminRoutes = []authAuditRoute{
 // enforcement, since SelfScoped is documentation-only at the Layer 2
 // level — controllers must verify userId scoping themselves.
 //
-// IMPORTANT: the second entry below uses Method="(GET|POST|PATCH|DELETE)"
-// which mirrors the buggy production declaration (#265). The
-// `NoRegexMethodInCatalog` subtest below FAILS on this entry until the
-// declaration is split into four concrete-verb entries.
+// /api/v1/users/me/* is declared as four per-method entries because the
+// Layer2 registry Lookup does exact-match on method+path (see #265, !180).
 var authAuditSelfScopedRoutes = []authAuditRoute{
 	{module: "Authentication", method: "GET", registeredPath: "/api/v1/users/:id", requestPath: "/api/v1/users/audit-self", ruleType: access.SelfScoped},
-	{module: "Authentication", method: "(GET|POST|PATCH|DELETE)", registeredPath: "/api/v1/users/me/*", requestPath: "/api/v1/users/me/anything", ruleType: access.SelfScoped},
+	{module: "Authentication", method: "GET", registeredPath: "/api/v1/users/me/*", requestPath: "/api/v1/users/me/anything", ruleType: access.SelfScoped},
+	{module: "Authentication", method: "POST", registeredPath: "/api/v1/users/me/*", requestPath: "/api/v1/users/me/anything", ruleType: access.SelfScoped},
+	{module: "Authentication", method: "PATCH", registeredPath: "/api/v1/users/me/*", requestPath: "/api/v1/users/me/anything", ruleType: access.SelfScoped},
+	{module: "Authentication", method: "DELETE", registeredPath: "/api/v1/users/me/*", requestPath: "/api/v1/users/me/anything", ruleType: access.SelfScoped},
 	{module: "Authentication", method: "GET", registeredPath: "/api/v1/auth/permissions", requestPath: "/api/v1/auth/permissions", ruleType: access.SelfScoped},
 	{module: "Authentication", method: "GET", registeredPath: "/api/v1/auth/me", requestPath: "/api/v1/auth/me", ruleType: access.SelfScoped},
 	{module: "Authentication", method: "GET", registeredPath: "/api/v1/auth/verify-status", requestPath: "/api/v1/auth/verify-status", ruleType: access.SelfScoped},

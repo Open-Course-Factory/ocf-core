@@ -145,8 +145,27 @@ func RegisterAuthPermissions(enforcer interfaces.EnforcerInterface) {
 			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Get a user's profile (scoped to own ID)",
 		},
+		// /api/v1/users/me/* — split into per-method entries because the Layer2
+		// registry Lookup does exact-match on method+path; a regex-style
+		// "(GET|POST|PATCH|DELETE)" method never matches concrete requests
+		// and would silently bypass the declared SelfScoped rule.
 		access.RoutePermission{
-			Path: "/api/v1/users/me/*", Method: "(GET|POST|PATCH|DELETE)",
+			Path: "/api/v1/users/me/*", Method: "GET",
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Manage own user sub-resources",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/users/me/*", Method: "POST",
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Manage own user sub-resources",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/users/me/*", Method: "PATCH",
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Manage own user sub-resources",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/users/me/*", Method: "DELETE",
 			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Manage own user sub-resources",
 		},
