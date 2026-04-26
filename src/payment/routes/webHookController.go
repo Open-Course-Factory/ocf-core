@@ -92,7 +92,8 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 	// - no row              -> INSERT(status=reserved), reserved=true
 	// - row status=reserved -> reserved=false (another pod owns it)
 	// - row status=processed-> reserved=false (idempotent skip)
-	// - row status=failed   -> UPDATE(status=reserved), reserved=true (re-claim)
+	// - row status=failed   -> conditional UPDATE(status=reserved WHERE status=failed),
+	//                          reserved=true only if RowsAffected==1 (re-claim)
 	//
 	// This replaces the former check-then-act flow (SELECT then INSERT) which
 	// let two concurrent deliveries both pass the check and both run the
@@ -100,6 +101,13 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 	// reservation" bug (#261): a transient DB error during cleanup no longer
 	// wedges the row in `reserved` forever — failures land in `failed` and
 	// are re-reservable on the next retry.
+	//
+	// Race protection has two distinct layers:
+	//   - INSERT path: the unique index on event_id rejects the loser of a
+	//     concurrent insert.
+	//   - UPDATE path (failed -> reserved): a conditional UPDATE with
+	//     `WHERE status='failed'` ensures only one transaction can flip the
+	//     row, so concurrent retries on a failed row do not both proceed.
 	reserved, err := wc.reserveEvent(event.ID, string(event.Type), payload)
 	if err != nil {
 		utils.Debug("⚠️ Failed to reserve event %s: %v", event.ID, err)
@@ -206,12 +214,27 @@ func (wc *webhookController) validatePayloadAndSignature(ctx *gin.Context) ([]by
 //   - no existing row          -> INSERT(status=reserved); returns (true, nil)
 //   - existing status=reserved -> another worker owns it; returns (false, nil)
 //   - existing status=processed-> idempotent terminal state; returns (false, nil)
-//   - existing status=failed   -> UPDATE(status=reserved); returns (true, nil)
+//   - existing status=failed   -> conditional UPDATE(status=reserved
+//                                 WHERE status='failed'); returns (true, nil)
+//                                 if RowsAffected==1, else (false, nil)
 //
 // Implemented as a transactional SELECT-then-INSERT/UPDATE for portability
-// across SQLite (tests) and PostgreSQL (production). The unique index on
-// event_id resolves any racing concurrent INSERTs (the loser hits the
-// constraint and is treated as "another pod won the reservation").
+// across SQLite (tests) and PostgreSQL (production).
+//
+// Two complementary race-protection mechanisms are in play:
+//
+//   - INSERT path: the unique index on event_id (DB-level constraint) makes
+//     the loser of two concurrent inserts get an error and treat itself as
+//     "another pod won the reservation". This argument only covers the
+//     INSERT path.
+//
+//   - UPDATE path (failed -> reserved): on Postgres Read Committed, two
+//     transactions can both SELECT a row with status='failed' before either
+//     UPDATEs it. To avoid both flipping the row to 'reserved' and both
+//     running ProcessWebhook, the UPDATE itself is scoped with
+//     `WHERE event_id = ? AND status = 'failed'`. We then use RowsAffected
+//     to decide who won: exactly one transaction sees RowsAffected==1; the
+//     other sees 0 and treats it as "lost the race".
 func (wc *webhookController) reserveEvent(eventID, eventType string, payload []byte) (bool, error) {
 	now := time.Now()
 
@@ -246,17 +269,31 @@ func (wc *webhookController) reserveEvent(eventID, eventType string, payload []b
 		// Row exists — branch on its current status.
 		switch existing.Status {
 		case models.WebhookEventStatusFailed:
-			// Re-claim a previously failed reservation. Use a WHERE clause
-			// keyed on event_id (the natural key) rather than relying on the
-			// struct's primary key, which may not be populated by SQLite for
-			// rows seeded with a Postgres-side `gen_random_uuid()` default.
-			if updateErr := tx.Model(&models.WebhookEvent{}).
-				Where("event_id = ?", eventID).
+			// Re-claim a previously failed reservation.
+			//
+			// Race fix: the WHERE clause includes `status = 'failed'` so two
+			// concurrent retries cannot both flip the row from failed ->
+			// reserved. Postgres Read Committed lets both transactions
+			// observe `status='failed'` in the SELECT above, but the
+			// conditional UPDATE allows only one to actually transition the
+			// row. The loser sees RowsAffected==0 and returns reserved=false.
+			//
+			// We key on event_id (the natural key) rather than the struct's
+			// primary key, which may not be populated by SQLite for rows
+			// seeded with a Postgres-side `gen_random_uuid()` default.
+			result := tx.Model(&models.WebhookEvent{}).
+				Where("event_id = ? AND status = ?", eventID, models.WebhookEventStatusFailed).
 				Updates(map[string]interface{}{
 					"status":       models.WebhookEventStatusReserved,
 					"processed_at": now,
-				}).Error; updateErr != nil {
-				return updateErr
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				// Another caller raced us and re-reserved the failed row first.
+				reserved = false
+				return nil
 			}
 			reserved = true
 			return nil
@@ -287,7 +324,10 @@ func (wc *webhookController) markProcessed(eventID string) {
 			"status":       models.WebhookEventStatusProcessed,
 			"processed_at": time.Now(),
 		}).Error; err != nil {
-		utils.Debug("⚠️ Failed to mark event %s as processed: %v", eventID, err)
+		// TODO(#261-followup): if this UPDATE fails, the row stays in 'reserved'
+		// and the next retry will skip processing. Consider adding
+		// retry-with-backoff or a metric/alert.
+		utils.Error("🚨 Failed to mark event %s as processed: %v (row stays in 'reserved' — next retry will skip)", eventID, err)
 	}
 }
 
@@ -299,7 +339,10 @@ func (wc *webhookController) markFailed(eventID string) {
 	if err := wc.db.Model(&models.WebhookEvent{}).
 		Where("event_id = ?", eventID).
 		Update("status", models.WebhookEventStatusFailed).Error; err != nil {
-		utils.Debug("⚠️ Failed to mark event %s as failed: %v", eventID, err)
+		// TODO(#261-followup): if this UPDATE fails, the row stays in 'reserved'
+		// and the next retry will skip processing. Consider adding
+		// retry-with-backoff or a metric/alert.
+		utils.Error("🚨 Failed to mark event %s as failed: %v (row stays in 'reserved' — next retry will skip)", eventID, err)
 	}
 }
 

@@ -625,6 +625,77 @@ func TestWebhook_FailedReservation_NextDeliveryReprocesses(t *testing.T) {
 		"reserveEvent must UPDATE the existing failed row, not INSERT a new one")
 }
 
+// TestWebhook_FailedReservation_RaceProtected documents the intended semantics
+// for two concurrent retries hitting a row in status=failed.
+//
+// On Postgres Read Committed, two transactions can both SELECT the row and
+// observe status='failed' before either UPDATEs it. Without the conditional
+// `WHERE status='failed'` predicate on the UPDATE, both would flip the row to
+// 'reserved', both would commit, and both would invoke ProcessWebhook —
+// duplicating side effects.
+//
+// The fix scopes the UPDATE: only one transaction sees RowsAffected==1 and
+// proceeds; the other sees RowsAffected==0 and treats it as "lost the race".
+//
+// SQLite serializes writes globally so this test cannot reliably reproduce the
+// race itself, but it documents the intended invariant: under any concurrent
+// retry on a failed row, ProcessWebhook is called exactly once.
+func TestWebhook_FailedReservation_RaceProtected(t *testing.T) {
+	db := cappedTestDB(t, "webhook_failed_race_"+t.Name())
+	eventID := "evt_failed_race_" + uuid.NewString()
+
+	// Seed the row in status=failed (a previous retry left it here).
+	seedWebhookEvent(t, db, eventID, "customer.subscription.created", "failed")
+	require.Equal(t, "failed", fetchWebhookEventStatus(t, db, eventID),
+		"precondition: seeded row must be in status=failed")
+
+	mockSvc := &webhookTestStripeService{
+		eventID:      eventID,
+		processSleep: 100 * time.Millisecond, // widen any race window
+	}
+	router := newRouterWithMockService(db, mockSvc)
+
+	payload := []byte(fmt.Sprintf(`{"id":%q,"type":"customer.subscription.created"}`, eventID))
+
+	// Release both goroutines simultaneously.
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	results := make([]int, 2)
+
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-start
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, buildWebhookRequest(t, payload))
+			results[idx] = w.Code
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	// Both responses are 200 (one re-claims+processes; the other observes the
+	// in-flight reservation and short-circuits).
+	assert.Equal(t, http.StatusOK, results[0], "first goroutine should get 200")
+	assert.Equal(t, http.StatusOK, results[1], "second goroutine should get 200")
+
+	// Critical invariant: ProcessWebhook runs exactly once even though both
+	// callers SELECTed status='failed'. The conditional UPDATE
+	// (`WHERE status='failed'`) ensures only one of them flips the row.
+	assert.Equal(t, int32(1), mockSvc.processCalls.Load(),
+		"RACE: ProcessWebhook must be called exactly once when two concurrent "+
+			"retries hit a row in status=failed. The conditional UPDATE in "+
+			"reserveEvent (WHERE status='failed') is what guarantees this on "+
+			"Postgres Read Committed.")
+
+	// Final state: exactly one row, status=processed.
+	assert.Equal(t, "processed", fetchWebhookEventStatus(t, db, eventID),
+		"after the winning retry, the row must be in status=processed")
+	assert.Equal(t, int64(1), countWebhookEvents(t, db, eventID),
+		"exactly one row should still exist for the event_id")
+}
+
 // TestWebhook_ProcessedReservation_NotReprocessed asserts that a row already
 // in status=processed short-circuits to 200 OK without re-running the handler.
 // This is the standard Stripe-replays-the-same-event idempotency case under
