@@ -1,8 +1,9 @@
 package paymentController
 
 import (
+	"errors"
 	"net/http"
-	"soli/formations/src/auth/errors"
+	authErrors "soli/formations/src/auth/errors"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
 	"soli/formations/src/utils"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // Webhook Controller pour traiter les événements Stripe
@@ -69,7 +69,7 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 	event, err := wc.stripeService.ValidateWebhookSignature(payload, signature)
 	if err != nil {
 		utils.Debug("🚨 Webhook signature validation failed from IP %s: %v", ctx.ClientIP(), err)
-		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
+		ctx.JSON(http.StatusUnauthorized, &authErrors.APIError{
 			ErrorCode:    http.StatusUnauthorized,
 			ErrorMessage: "Invalid webhook signature",
 		})
@@ -80,7 +80,7 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 	eventTime := time.Unix(event.Created, 0)
 	if time.Since(eventTime) > 10*time.Minute {
 		utils.Debug("🕐 Event %s too old (%v), rejecting", event.ID, time.Since(eventTime))
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+		ctx.JSON(http.StatusBadRequest, &authErrors.APIError{
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: "Event too old",
 		})
@@ -88,18 +88,22 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 	}
 
 	// 5 : Reserve the event atomically BEFORE processing.
-	// Uses INSERT ... ON CONFLICT DO NOTHING on the unique event_id.
-	// - RowsAffected == 1 -> we own processing for this event.
-	// - RowsAffected == 0 -> another pod (or an earlier delivery) already
-	//   reserved/processed this event; return 200 so Stripe stops retrying.
+	// Uses a status-aware reservation:
+	// - no row              -> INSERT(status=reserved), reserved=true
+	// - row status=reserved -> reserved=false (another pod owns it)
+	// - row status=processed-> reserved=false (idempotent skip)
+	// - row status=failed   -> UPDATE(status=reserved), reserved=true (re-claim)
 	//
 	// This replaces the former check-then-act flow (SELECT then INSERT) which
 	// let two concurrent deliveries both pass the check and both run the
-	// handler, causing duplicate side effects.
+	// handler, causing duplicate side effects. It also fixes the "stuck
+	// reservation" bug (#261): a transient DB error during cleanup no longer
+	// wedges the row in `reserved` forever — failures land in `failed` and
+	// are re-reservable on the next retry.
 	reserved, err := wc.reserveEvent(event.ID, string(event.Type), payload)
 	if err != nil {
 		utils.Debug("⚠️ Failed to reserve event %s: %v", event.ID, err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+		ctx.JSON(http.StatusInternalServerError, &authErrors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Failed to reserve event",
 		})
@@ -112,17 +116,19 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 	}
 
 	// 6 : Traitement synchrone — Stripe accorde 20 secondes pour répondre.
-	// On failure, release the reservation so Stripe's retry can succeed.
+	// On failure, mark the reservation as failed so Stripe's retry can re-claim it.
 	if err := wc.stripeService.ProcessWebhook(payload, signature); err != nil {
 		utils.Debug("❌ Webhook processing failed for event %s: %v", event.ID, err)
-		wc.releaseReservation(event.ID)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+		wc.markFailed(event.ID)
+		ctx.JSON(http.StatusInternalServerError, &authErrors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Webhook processing failed",
 		})
 		return
 	}
 
+	// Mark the row as processed (terminal state) so future deliveries short-circuit.
+	wc.markProcessed(event.ID)
 	utils.Debug("✅ Successfully processed webhook event %s", event.ID)
 
 	// 7 : Réponse de succès à Stripe — reservation row remains as processed marker.
@@ -139,7 +145,7 @@ func (wc *webhookController) basicSecurityChecks(ctx *gin.Context) bool {
 	userAgent := ctx.GetHeader("User-Agent")
 	if !strings.Contains(userAgent, "Stripe") {
 		utils.Debug("🚨 Invalid User-Agent from IP %s: %s", ctx.ClientIP(), userAgent)
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
+		ctx.JSON(http.StatusForbidden, &authErrors.APIError{
 			ErrorCode:    http.StatusForbidden,
 			ErrorMessage: "Invalid request source",
 		})
@@ -150,7 +156,7 @@ func (wc *webhookController) basicSecurityChecks(ctx *gin.Context) bool {
 	contentType := ctx.GetHeader("Content-Type")
 	if !strings.Contains(contentType, "application/json") {
 		utils.Debug("🚨 Invalid Content-Type from IP %s: %s", ctx.ClientIP(), contentType)
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+		ctx.JSON(http.StatusBadRequest, &authErrors.APIError{
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: "Invalid content type",
 		})
@@ -164,7 +170,7 @@ func (wc *webhookController) validatePayloadAndSignature(ctx *gin.Context) ([]by
 	// Récupérer le payload brut
 	payload, err := ctx.GetRawData()
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+		ctx.JSON(http.StatusBadRequest, &authErrors.APIError{
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: "Failed to read request body",
 		})
@@ -174,7 +180,7 @@ func (wc *webhookController) validatePayloadAndSignature(ctx *gin.Context) ([]by
 	// Vérifier la taille (protection contre les gros payloads)
 	if len(payload) > 1024*1024 { // 1MB max
 		utils.Debug("🚨 Payload too large from IP %s: %d bytes", ctx.ClientIP(), len(payload))
-		ctx.JSON(http.StatusRequestEntityTooLarge, &errors.APIError{
+		ctx.JSON(http.StatusRequestEntityTooLarge, &authErrors.APIError{
 			ErrorCode:    http.StatusRequestEntityTooLarge,
 			ErrorMessage: "Payload too large",
 		})
@@ -184,7 +190,7 @@ func (wc *webhookController) validatePayloadAndSignature(ctx *gin.Context) ([]by
 	// Récupérer la signature
 	signature := ctx.GetHeader("Stripe-Signature")
 	if signature == "" {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+		ctx.JSON(http.StatusBadRequest, &authErrors.APIError{
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: "Missing Stripe signature",
 		})
@@ -194,38 +200,106 @@ func (wc *webhookController) validatePayloadAndSignature(ctx *gin.Context) ([]by
 	return payload, signature, true
 }
 
-// reserveEvent atomically attempts to claim processing ownership of an event
-// using INSERT ... ON CONFLICT (event_id) DO NOTHING on webhook_events.
+// reserveEvent attempts to claim processing ownership of a webhook event.
 //
-// Returns (true, nil) if this caller successfully reserved the event and
-// should proceed to process it. Returns (false, nil) if another caller has
-// already reserved/processed this event (idempotent short-circuit).
-// Returns (false, err) on unexpected DB errors.
+// Status-aware semantics:
+//   - no existing row          -> INSERT(status=reserved); returns (true, nil)
+//   - existing status=reserved -> another worker owns it; returns (false, nil)
+//   - existing status=processed-> idempotent terminal state; returns (false, nil)
+//   - existing status=failed   -> UPDATE(status=reserved); returns (true, nil)
+//
+// Implemented as a transactional SELECT-then-INSERT/UPDATE for portability
+// across SQLite (tests) and PostgreSQL (production). The unique index on
+// event_id resolves any racing concurrent INSERTs (the loser hits the
+// constraint and is treated as "another pod won the reservation").
 func (wc *webhookController) reserveEvent(eventID, eventType string, payload []byte) (bool, error) {
 	now := time.Now()
-	row := &models.WebhookEvent{
-		EventID:     eventID,
-		EventType:   eventType,
-		ProcessedAt: now,
-		ExpiresAt:   now.Add(24 * time.Hour),
-		Payload:     string(payload),
+
+	var reserved bool
+	err := wc.db.Transaction(func(tx *gorm.DB) error {
+		var existing models.WebhookEvent
+		err := tx.Where("event_id = ?", eventID).First(&existing).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// No row exists — INSERT a fresh reservation.
+			row := &models.WebhookEvent{
+				EventID:     eventID,
+				EventType:   eventType,
+				ProcessedAt: now,
+				ExpiresAt:   now.Add(24 * time.Hour),
+				Payload:     string(payload),
+				Status:      models.WebhookEventStatusReserved,
+			}
+			if createErr := tx.Create(row).Error; createErr != nil {
+				// A concurrent INSERT (unique index on event_id) likely won the
+				// race. Treat as "not reserved by us" rather than a hard error.
+				utils.Debug("reserveEvent: concurrent insert for %s: %v", eventID, createErr)
+				reserved = false
+				return nil
+			}
+			reserved = true
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		// Row exists — branch on its current status.
+		switch existing.Status {
+		case models.WebhookEventStatusFailed:
+			// Re-claim a previously failed reservation. Use a WHERE clause
+			// keyed on event_id (the natural key) rather than relying on the
+			// struct's primary key, which may not be populated by SQLite for
+			// rows seeded with a Postgres-side `gen_random_uuid()` default.
+			if updateErr := tx.Model(&models.WebhookEvent{}).
+				Where("event_id = ?", eventID).
+				Updates(map[string]interface{}{
+					"status":       models.WebhookEventStatusReserved,
+					"processed_at": now,
+				}).Error; updateErr != nil {
+				return updateErr
+			}
+			reserved = true
+			return nil
+		case models.WebhookEventStatusReserved, models.WebhookEventStatusProcessed:
+			// Another worker owns it OR we already processed it.
+			reserved = false
+			return nil
+		default:
+			// Unknown status — treat as not-reservable (defensive).
+			utils.Debug("reserveEvent: unknown status %q for event %s", existing.Status, eventID)
+			reserved = false
+			return nil
+		}
+	})
+	if err != nil {
+		return false, err
 	}
-	tx := wc.db.Clauses(clause.OnConflict{DoNothing: true}).Create(row)
-	if tx.Error != nil {
-		return false, tx.Error
-	}
-	// RowsAffected == 1 -> we inserted (reserved); 0 -> conflict (already reserved).
-	return tx.RowsAffected == 1, nil
+	return reserved, nil
 }
 
-// releaseReservation hard-deletes the webhook_events row for the given event
-// so Stripe's retry can pass reservation again after a processing failure.
-// Unscoped is used defensively even though WebhookEvent has no soft-delete.
-func (wc *webhookController) releaseReservation(eventID string) {
-	if err := wc.db.Unscoped().
+// markProcessed transitions an existing reservation row to status=processed
+// after ProcessWebhook ran to success. This is the terminal state — future
+// deliveries for the same event_id short-circuit on the row.
+func (wc *webhookController) markProcessed(eventID string) {
+	if err := wc.db.Model(&models.WebhookEvent{}).
 		Where("event_id = ?", eventID).
-		Delete(&models.WebhookEvent{}).Error; err != nil {
-		utils.Debug("⚠️ Failed to release reservation for event %s: %v", eventID, err)
+		Updates(map[string]interface{}{
+			"status":       models.WebhookEventStatusProcessed,
+			"processed_at": time.Now(),
+		}).Error; err != nil {
+		utils.Debug("⚠️ Failed to mark event %s as processed: %v", eventID, err)
+	}
+}
+
+// markFailed transitions an existing reservation row to status=failed after
+// ProcessWebhook returned an error. Replaces the previous hard DELETE: the
+// row stays around so a transient DB glitch on cleanup can no longer wedge
+// the event in `reserved` forever — `failed` is re-reservable.
+func (wc *webhookController) markFailed(eventID string) {
+	if err := wc.db.Model(&models.WebhookEvent{}).
+		Where("event_id = ?", eventID).
+		Update("status", models.WebhookEventStatusFailed).Error; err != nil {
+		utils.Debug("⚠️ Failed to mark event %s as failed: %v", eventID, err)
 	}
 }
 

@@ -319,16 +319,15 @@ func TestWebhook_ConcurrentDuplicateEvent_OnlyProcessedOnce(t *testing.T) {
 }
 
 // TestWebhook_ReservedThenProcessingFails_AllowsRetry locks in the retry
-// behavior under the reserve-then-process flow.
+// behavior under the reserve-then-process flow with status tracking.
 //
-// First delivery: ProcessWebhook fails -> 500 response, NO permanent
-// reservation (so Stripe can retry). Second delivery: ProcessWebhook succeeds
-// -> 200, one webhook_events row.
+// First delivery: ProcessWebhook fails -> 500 response, row stays as
+// status=failed (re-reservable on retry). Second delivery: row transitions
+// failed -> reserved -> processed; 200, one webhook_events row.
 //
-// Under the planned fix, the controller will INSERT the reservation first,
-// then DELETE it if processing fails. The test asserts the externally
-// observable behavior: two ProcessWebhook calls (one failed + one successful
-// retry), one row at the end, no duplicate side effects.
+// The test asserts the externally observable behavior: two ProcessWebhook
+// calls (one failed + one successful retry), one row at the end with
+// status=processed, no duplicate side effects.
 func TestWebhook_ReservedThenProcessingFails_AllowsRetry(t *testing.T) {
 	db := freshTestDB(t)
 	eventID := "evt_retry_" + uuid.NewString()
@@ -348,11 +347,14 @@ func TestWebhook_ReservedThenProcessingFails_AllowsRetry(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w1.Code,
 		"first delivery (handler failure) should return 500 so Stripe retries")
 
-	// After a failed delivery there must be NO permanent reservation, else
-	// the retry would be silently dropped as "already processed".
-	assert.Equal(t, int64(0), countWebhookEvents(t, db, eventID),
-		"after processing failure, no webhook_events row should persist "+
-			"(otherwise Stripe's retry would be silently swallowed as duplicate)")
+	// After a failed delivery the row must persist as status=failed so the
+	// next retry can re-reserve it. (Pre-fix the row was hard-DELETEd; if
+	// that DELETE itself failed, the row was wedged as 'reserved' forever.)
+	assert.Equal(t, int64(1), countWebhookEvents(t, db, eventID),
+		"after processing failure, the row must persist (status=failed) so "+
+			"a transient cleanup error can't wedge the reservation forever")
+	assert.Equal(t, "failed", fetchWebhookEventStatus(t, db, eventID),
+		"row must be in status=failed after a processing failure")
 
 	// Second delivery (Stripe retry): expect 200 and a successful reprocess.
 	w2 := httptest.NewRecorder()
@@ -363,9 +365,11 @@ func TestWebhook_ReservedThenProcessingFails_AllowsRetry(t *testing.T) {
 	assert.Equal(t, int32(2), mockSvc.processCalls.Load(),
 		"ProcessWebhook must be called twice: once on initial failure, once on retry")
 
-	// Exactly one row at the end (the successful retry's reservation).
+	// Exactly one row at the end, transitioned to status=processed.
 	assert.Equal(t, int64(1), countWebhookEvents(t, db, eventID),
 		"after successful retry, exactly one webhook_events row should exist")
+	assert.Equal(t, "processed", fetchWebhookEventStatus(t, db, eventID),
+		"after a successful retry, the row must be in status=processed")
 }
 
 // TestWebhook_DuplicateEventID_AfterSuccess_ReturnsIdempotentOK is a

@@ -70,16 +70,32 @@ func TestWebhook_ReserveBeforeProcessOrder(t *testing.T) {
 			"proceed to ProcessWebhook.")
 }
 
-// TestWebhook_ReservationUsesOnConflictDoNothing verifies the reservation is
-// atomic (ON CONFLICT DO NOTHING) rather than a check-then-act pattern.
-func TestWebhook_ReservationUsesOnConflictDoNothing(t *testing.T) {
+// TestWebhook_ReservationIsAtomic verifies the reservation is performed
+// inside a DB transaction (atomic SELECT-then-INSERT/UPDATE) rather than
+// a plain check-then-act outside any transaction. The unique index on
+// event_id resolves any racing concurrent INSERTs.
+//
+// This replaces the old "must use OnConflict{DoNothing}" check: the new
+// status-aware reservation needs to also handle status=failed -> reserved
+// transitions, which a plain ON CONFLICT DO NOTHING cannot express.
+func TestWebhook_ReservationIsAtomic(t *testing.T) {
 	source := readWebhookControllerSource(t)
 
-	assert.True(t, strings.Contains(source, "OnConflict{DoNothing: true}"),
-		"SECURITY: reserveEvent must use clause.OnConflict{DoNothing: true} "+
-			"to atomically claim the event. A plain Create or a SELECT-then-"+
-			"INSERT is racy — two concurrent pods could both observe 'not "+
-			"processed' and both insert.")
+	// Locate reserveEvent and verify it uses a transaction.
+	reserveStart := strings.Index(source, "func (wc *webhookController) reserveEvent(")
+	require.Greater(t, reserveStart, 0, "reserveEvent function must exist")
+
+	reserveBody := source[reserveStart:]
+	if next := strings.Index(reserveBody[1:], "\nfunc "); next > 0 {
+		reserveBody = reserveBody[:next+1]
+	}
+
+	assert.True(t, strings.Contains(reserveBody, "wc.db.Transaction("),
+		"SECURITY: reserveEvent must run its SELECT-then-INSERT/UPDATE inside "+
+			"a DB transaction (wc.db.Transaction(...)) so the reservation is "+
+			"atomic. A plain check-then-act outside a transaction is racy — "+
+			"two concurrent pods could both observe 'not present' and both "+
+			"insert. The unique index on event_id then resolves the loser.")
 }
 
 // TestWebhook_NoAsyncGoroutine verifies that the webhook handler does NOT
@@ -110,11 +126,13 @@ func TestWebhook_FailureReturns500(t *testing.T) {
 			"mechanism for transient failures (DB outage, network issues, etc.).")
 }
 
-// TestWebhook_FailureReleasesReservation verifies that when ProcessWebhook
-// fails, the handler releases the reservation so Stripe's retry can
-// re-enter the critical section. Skipping the release would cause retries
-// to be silently swallowed as duplicates.
-func TestWebhook_FailureReleasesReservation(t *testing.T) {
+// TestWebhook_FailureMarksReservationFailed verifies that when ProcessWebhook
+// fails, the handler marks the reservation as failed (status=failed) so
+// Stripe's retry can re-claim and re-enter the critical section. Skipping
+// this transition would either swallow retries as duplicates (if the row
+// stayed in status=reserved) or duplicate side effects (if the row were
+// hard-deleted but the delete itself failed).
+func TestWebhook_FailureMarksReservationFailed(t *testing.T) {
 	source := readWebhookControllerSource(t)
 	handlerBody := extractHandlerBody(t, source)
 
@@ -123,19 +141,34 @@ func TestWebhook_FailureReleasesReservation(t *testing.T) {
 
 	afterProcess := handlerBody[processIdx:]
 
-	releaseIdx := strings.Index(afterProcess, "releaseReservation(event.ID")
-	require.Greater(t, releaseIdx, 0,
-		"Handler must call releaseReservation in the failure path so Stripe's "+
-			"retry is not swallowed as a duplicate.")
+	markFailedIdx := strings.Index(afterProcess, "markFailed(event.ID")
+	require.Greater(t, markFailedIdx, 0,
+		"Handler must call markFailed in the failure path so Stripe's "+
+			"retry is not swallowed as a duplicate. The row must transition "+
+			"reserved -> failed (re-reservable), NOT be hard-deleted.")
 
-	// The release must precede the 500 return (i.e. appear before the error
+	// The mark must precede the 500 return (i.e. appear before the error
 	// response is sent).
 	errResponseIdx := strings.Index(afterProcess, "StatusInternalServerError")
 	require.Greater(t, errResponseIdx, 0)
 
-	assert.Less(t, releaseIdx, errResponseIdx,
-		"SECURITY: releaseReservation must be called BEFORE returning 500. "+
-			"Otherwise the reservation row persists and Stripe's retry is "+
-			"swallowed as 'already processed', leaving the underlying event "+
-			"permanently un-applied.")
+	assert.Less(t, markFailedIdx, errResponseIdx,
+		"SECURITY: markFailed must be called BEFORE returning 500. "+
+			"Otherwise the reservation row stays as 'reserved' and Stripe's "+
+			"retry is swallowed as 'already reserved', leaving the underlying "+
+			"event permanently un-applied.")
+}
+
+// TestWebhook_SuccessMarksReservationProcessed verifies that on a successful
+// ProcessWebhook the reservation row is transitioned to status=processed
+// (terminal state) so future deliveries short-circuit on the row.
+func TestWebhook_SuccessMarksReservationProcessed(t *testing.T) {
+	source := readWebhookControllerSource(t)
+	handlerBody := extractHandlerBody(t, source)
+
+	assert.True(t, strings.Contains(handlerBody, "markProcessed(event.ID"),
+		"Handler must call markProcessed after ProcessWebhook succeeds so "+
+			"the row transitions reserved -> processed. Without this, future "+
+			"deliveries would see status=reserved and short-circuit, but "+
+			"this 'soft success' would lose visibility into the terminal state.")
 }

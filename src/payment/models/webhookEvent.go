@@ -6,15 +6,25 @@ import (
 	"github.com/google/uuid"
 )
 
+// WebhookEvent reservation status values.
+// The status column tracks the lifecycle of a webhook event reservation
+// so that a transient processing failure doesn't wedge the row forever.
+const (
+	WebhookEventStatusReserved  = "reserved"  // Claimed by a worker, processing in progress
+	WebhookEventStatusProcessed = "processed" // ProcessWebhook ran to success (terminal state)
+	WebhookEventStatusFailed    = "failed"    // ProcessWebhook returned an error; row is re-reservable
+)
+
 // WebhookEvent tracks processed Stripe webhook events to prevent duplicate processing
 // This is critical for idempotency - webhooks may be delivered multiple times by Stripe
 type WebhookEvent struct {
 	ID          uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-	EventID     string    `gorm:"type:varchar(255);uniqueIndex;not null"` // Stripe event ID (e.g., evt_...)
-	EventType   string    `gorm:"type:varchar(100);not null;index"`        // e.g., "invoice.paid", "customer.subscription.updated"
-	ProcessedAt time.Time `gorm:"not null"`                                // When we processed this event
-	ExpiresAt   time.Time `gorm:"index;not null"`                          // When to delete this record (cleanup)
-	Payload     string    `gorm:"type:text"`                               // Optional: store full event payload for debugging
+	EventID     string    `gorm:"type:varchar(255);uniqueIndex;not null"`                     // Stripe event ID (e.g., evt_...)
+	EventType   string    `gorm:"type:varchar(100);not null;index"`                           // e.g., "invoice.paid", "customer.subscription.updated"
+	ProcessedAt time.Time `gorm:"not null"`                                                   // When we processed this event
+	ExpiresAt   time.Time `gorm:"index;not null"`                                             // When to delete this record (cleanup)
+	Payload     string    `gorm:"type:text"`                                                  // Optional: store full event payload for debugging
+	Status      string    `gorm:"type:varchar(20);not null;default:'reserved';index"`         // reserved / processed / failed
 	CreatedAt   time.Time
 }
 
