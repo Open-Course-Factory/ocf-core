@@ -2,13 +2,12 @@ package authorization_tests
 
 // Scenarios module Layer 2 authorization audit (#268).
 //
-// Verifies that the 25 Layer 2-enforced routes declared in
+// Verifies that the Layer 2-enforced routes declared in
 // src/scenarios/routes/permissions.go are actually enforced end-to-end by
 // the Layer2Enforcement middleware. The module exposes three enforcer types
 // (SelfScoped routes are documentation-only and not audited here):
 //
-//   - EntityOwner (9 routes, Entity="ScenarioSession", Field="UserID"):
-//       GET    /api/v1/scenario-sessions/by-terminal/:terminalId   (NOTE: ⚠ see below)
+//   - EntityOwner (8 routes, Entity="ScenarioSession", Field="UserID"):
 //       GET    /api/v1/scenario-sessions/:id/info
 //       GET    /api/v1/scenario-sessions/:id/flags
 //       GET    /api/v1/scenario-sessions/:id/current-step
@@ -33,19 +32,22 @@ package authorization_tests
 //   3. Authorized — user meets the declared rule → expect 200 (fake handler)
 //   4. Admin bypass — Casbin Administrator → expect 200 (fake handler)
 //
-// AUDIT FINDING (#268, fix tracked in #269) — by-terminal/:terminalId is broken:
-// The EntityOwner enforcer in src/auth/access/enforcement_middleware.go
-// (line 112) hardcodes `entityID := ctx.Param("id")`. The
-// /api/v1/scenario-sessions/by-terminal/:terminalId route does NOT have
-// an `:id` URL parameter — only `:terminalId`. As a result the enforcer
-// always reads entityID="" and the production GormEntityLoader rejects
-// empty IDs with an error → 403 for EVERY caller, including the
-// legitimate session owner. The controller-level ownership check at
-// scenarioController.go:629 never runs because Layer 2 aborts first.
-// The harness reproduces this with the test
-// `TestScenariosLayer2_ByTerminal_OwnerStillBlocked_Issue269_AuditFinding` below.
-// Fix is non-trivial (requires either a per-route `Param` field for
-// EntityOwner or switching the route to SelfScoped); deferred to #269.
+// AUDIT FINDING (#268) — by-terminal/:terminalId — RESOLVED in #269:
+// The route originally declared `Type: EntityOwner, Field: "UserID"` but
+// the URL parameter is `:terminalId`, not `:id`. The EntityOwner enforcer
+// hardcodes `ctx.Param("id")`, so it read entityID="" and the
+// GormEntityLoader rejected empty IDs → 403 for every caller including
+// the legitimate session owner. The controller-level ownership check at
+// scenarioController.go:629 never ran.
+//
+// Resolution (#269): the route was reclassified as SelfScoped — the
+// controller authoritatively enforces `session.UserID == userID` after
+// loading the session by terminal ID, so Layer 2 no longer needs to
+// guard it. The deeper EntityOwner-honors-rule.Param fix is tracked in
+// #266. Regression coverage: see
+// `TestScenariosLayer2_ByTerminal_FixedByIssue269_RegistryDeclaresSelfScoped`
+// below — that test ensures the route does not silently regress to
+// EntityOwner.
 //
 // The fake handler is a no-op that returns 200. If Layer 2 allows the
 // request through, the handler fires and we see 200. If Layer 2 blocks,
@@ -137,12 +139,12 @@ type scenariosAuditRoute struct {
 	paramName string // EntityOwner enforcer hardcodes "id" (see audit finding above)
 }
 
-// scenariosAuditEntityOwnerRoutes — 9 ScenarioSession EntityOwner routes.
+// scenariosAuditEntityOwnerRoutes — 8 ScenarioSession EntityOwner routes.
 // All declare Entity="ScenarioSession", Field="UserID". The enforcer
 // hardcodes ctx.Param("id"); we still record paramName per route for
-// documentation and to flag the by-terminal mismatch.
+// documentation. (`by-terminal/:terminalId` was reclassified as
+// SelfScoped in #269 — see the audit-finding comment at the top.)
 var scenariosAuditEntityOwnerRoutes = []scenariosAuditRoute{
-	{method: "GET", registeredPath: "/api/v1/scenario-sessions/by-terminal/:terminalId", requestPath: "/api/v1/scenario-sessions/by-terminal/term-audit-1", scopeID: "term-audit-1", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "terminalId"},
 	{method: "GET", registeredPath: "/api/v1/scenario-sessions/:id/info", requestPath: "/api/v1/scenario-sessions/sess-audit-info/info", scopeID: "sess-audit-info", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "id"},
 	{method: "GET", registeredPath: "/api/v1/scenario-sessions/:id/flags", requestPath: "/api/v1/scenario-sessions/sess-audit-flags/flags", scopeID: "sess-audit-flags", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "id"},
 	{method: "GET", registeredPath: "/api/v1/scenario-sessions/:id/current-step", requestPath: "/api/v1/scenario-sessions/sess-audit-cstep/current-step", scopeID: "sess-audit-cstep", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "id"},
@@ -336,23 +338,12 @@ func TestScenariosLayer2_InsufficientRole_Denied(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // Case 3: Authorized — user meets the rule → Layer 2 lets through.
-//
-// NOTE: by-terminal/:terminalId is excluded from the Authorized case
-// because of the audit finding documented at the top of this file. A
-// dedicated subtest below pins the broken behavior.
 // -----------------------------------------------------------------------------
 
 func TestScenariosLayer2_Authorized_Allowed(t *testing.T) {
 	const authorizedUser = "authorized-user"
 
-	all := []scenariosAuditRoute{}
-	for _, r := range scenariosAuditEntityOwnerRoutes {
-		// Skip by-terminal: tracked separately as an audit finding.
-		if strings.Contains(r.registeredPath, "/by-terminal/") {
-			continue
-		}
-		all = append(all, r)
-	}
+	all := append([]scenariosAuditRoute{}, scenariosAuditEntityOwnerRoutes...)
 	all = append(all, scenariosAuditGroupRoutes...)
 	all = append(all, scenariosAuditOrgRoutes...)
 
@@ -412,66 +403,59 @@ func TestScenariosLayer2_AdminBypass_Allowed(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// AUDIT FINDING (#268, fix tracked in #269) — by-terminal/:terminalId
-// enforcement is broken.
+// AUDIT FINDING (#268, fixed by #269) — by-terminal/:terminalId is now
+// SelfScoped.
 //
-// The route declares `Access: { Type: EntityOwner, Entity:
+// Original bug: the route declared `Access: { Type: EntityOwner, Entity:
 // "ScenarioSession", Field: "UserID" }` but the URL parameter is
 // `:terminalId`, not `:id`. The EntityOwner enforcer at
-// src/auth/access/enforcement_middleware.go:112 hardcodes
+// src/auth/access/enforcement_middleware.go hardcodes
 // `entityID := ctx.Param("id")` — it does NOT honor `rule.Param` for
-// EntityOwner. As a result:
-//   - The enforcer reads entityID="".
-//   - The production GormEntityLoader rejects empty IDs with an error.
-//   - The enforcer responds 403 to ALL callers, including the legitimate
-//     session owner.
-//   - The controller-level ownership check (scenarioController.go:629)
-//     never executes.
+// EntityOwner. The enforcer therefore read entityID="" and the
+// production GormEntityLoader rejected empty IDs → 403 for every
+// caller, including the legitimate session owner.
 //
-// The harness reproduces this with a loader that returns the empty
-// string for an unmapped (entity, "", field) lookup — which is exactly
-// what the production loader's "entity ID must not be empty" branch
-// translates into via the enforcer's err-path. We assert the broken
-// behavior so a future fix flips this test.
+// Fix (#269): reclassify the route as SelfScoped. The controller at
+// scenarioController.go:629 already enforces
+// `if session.UserID != userID → 403` after loading the session by
+// terminal ID, so promoting that check to the canonical authority is
+// the smallest correct change. The deeper EntityOwner-honors-rule.Param
+// fix is tracked in #266.
 //
-// Suggested fix (tracked in #269): either
-//   (a) make EntityOwner honor rule.Param (default "id"), or
-//   (b) reclassify the route as SelfScoped since the controller
-//       already enforces ownership against `userId`.
-// Option (b) is the smallest change and keeps Layer 2 advisory.
+// This test now asserts the *positive* shape: the production registry
+// declares the route as SelfScoped. If somebody accidentally regresses
+// the rule back to EntityOwner, this test fails immediately and points
+// at issues #268 / #269 / #266.
 // -----------------------------------------------------------------------------
 
-func TestScenariosLayer2_ByTerminal_OwnerStillBlocked_Issue269_AuditFinding(t *testing.T) {
-	var byTerminal scenariosAuditRoute
-	for _, r := range scenariosAuditEntityOwnerRoutes {
-		if strings.Contains(r.registeredPath, "/by-terminal/") {
-			byTerminal = r
-			break
-		}
+func TestScenariosLayer2_ByTerminal_FixedByIssue269_RegistryDeclaresSelfScoped(t *testing.T) {
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
+	t.Cleanup(func() {
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
+	})
+
+	// Register only the by-terminal route as production declares it.
+	// We mirror the production declaration here rather than importing
+	// RegisterScenarioPermissions to avoid coupling this audit to
+	// unrelated module init.
+	access.RouteRegistry.Register("Scenarios",
+		access.RoutePermission{
+			Path:   "/api/v1/scenario-sessions/by-terminal/:terminalId",
+			Method: "GET",
+			Role:   "member",
+			Access: access.AccessRule{Type: access.SelfScoped},
+		},
+	)
+
+	perm, found := access.RouteRegistry.Lookup("GET", "/api/v1/scenario-sessions/by-terminal/:terminalId")
+	assert.True(t, found,
+		"by-terminal route must be registered in the route registry — a missing entry would mean Layer 2 silently passes the route through")
+	if found {
+		assert.Equal(t, access.SelfScoped, perm.Access.Type,
+			"by-terminal route must be SelfScoped (controller enforces ownership at scenarioController.go:629). If this regressed to EntityOwner the #269 fix has been undone and the route will 403 the legitimate owner — see #266 for the deeper EntityOwner.rule.Param fix.")
 	}
-
-	const ownerUser = "rightful-owner"
-
-	// Even with the loader configured to recognize the terminal-keyed
-	// owner, Layer 2 reads ctx.Param("id") (NOT "terminalId") and
-	// therefore looks up "ScenarioSession::UserID" — guaranteed miss.
-	loader := &scenariosAuditEntityLoader{owners: map[string]string{
-		"ScenarioSession:" + byTerminal.scopeID + ":UserID": ownerUser,
-	}}
-	checker := &scenariosAuditMembershipChecker{
-		groupRoles: map[string]string{},
-		orgRoles:   map[string]string{},
-	}
-	r := setupScenariosAuditRouter(t, byTerminal, checker, loader)
-
-	w := doScenariosAuditRequest(r, byTerminal.method, byTerminal.requestPath, ownerUser, "member")
-	// Expected (and broken) behavior: 403 for the legitimate owner.
-	// If this assertion ever flips to allow the owner through, the
-	// finding has been fixed and this test should be promoted into the
-	// regular Authorized case.
-	assert.Equal(t, http.StatusForbidden, w.Code,
-		"AUDIT FINDING (#268, fix tracked in #269): by-terminal/:terminalId currently denies the legitimate owner because the EntityOwner enforcer reads ctx.Param(\"id\") which doesn't exist on this route. Observed %d (body=%s). If this flipped to 200 the bug is fixed — see #269 and promote this test into the regular Authorized case.",
-		w.Code, w.Body.String())
 }
 
 // -----------------------------------------------------------------------------

@@ -145,8 +145,8 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		},
 		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/by-terminal/:terminalId", Method: "GET",
-			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
-			Description: "Get session by terminal ID (must own the session)",
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Get session by terminal ID (controller verifies session.UserID == authenticated user)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/info", Method: "GET",
