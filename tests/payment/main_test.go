@@ -107,6 +107,8 @@ func runTestMigrations(db *gorm.DB) error {
 	)`)
 
 	// Webhook events table (WebhookEvent model uses gen_random_uuid() which is PostgreSQL-only)
+	// `status` column is part of the planned reservation-status fix (#261):
+	// values are "reserved" / "processed" / "failed".
 	db.Exec(`CREATE TABLE IF NOT EXISTS webhook_events (
 		id TEXT PRIMARY KEY,
 		event_id TEXT UNIQUE NOT NULL,
@@ -114,6 +116,7 @@ func runTestMigrations(db *gorm.DB) error {
 		processed_at DATETIME NOT NULL,
 		expires_at DATETIME NOT NULL,
 		payload TEXT,
+		status TEXT NOT NULL DEFAULT 'reserved',
 		created_at DATETIME
 	)`)
 

@@ -508,3 +508,235 @@ func TestHandleSubscriptionCreated_DuplicateStripeSubID_IsIdempotent(t *testing.
 		"exactly one UserSubscription row should exist after two deliveries "+
 			"with the same stripe_subscription_id")
 }
+
+// -----------------------------------------------------------------------------
+// Reservation-status tests (issue #261)
+// -----------------------------------------------------------------------------
+//
+// These tests drive the fix for the "stuck reservation" bug: if the cleanup
+// DELETE after a failed ProcessWebhook itself fails, the row stays as
+// reserved forever and Stripe's retries are silently swallowed.
+//
+// The fix introduces a `Status` column on WebhookEvent with values:
+//   - "reserved"  : a worker claimed the event and is processing it
+//   - "processed" : ProcessWebhook ran to success
+//   - "failed"    : ProcessWebhook returned an error; row is re-reservable
+//
+// reserveEvent semantics (post-fix):
+//   - no row              -> INSERT(status=reserved), reserved=true
+//   - row status=reserved -> reserved=false (another pod owns it)
+//   - row status=processed-> reserved=false (idempotent skip)
+//   - row status=failed   -> UPDATE(status=reserved), reserved=true (re-claim)
+//
+// The on-failure path UPDATEs status=failed (no DELETE), so a transient DB
+// glitch on cleanup can no longer wedge the row in `reserved` forever.
+//
+// While the model field is missing these tests fail to COMPILE — that is
+// the strongest red signal we can give the GREEN-phase implementer.
+
+// fetchWebhookEventStatus reads the status column for an event_id directly
+// via SQL so the test doesn't depend on which Go field name the eventual
+// model uses (Status / State / etc.). Returns "" if no row exists.
+func fetchWebhookEventStatus(t *testing.T, db *gorm.DB, eventID string) string {
+	t.Helper()
+	var status string
+	row := db.Raw("SELECT status FROM webhook_events WHERE event_id = ?", eventID).Row()
+	if err := row.Scan(&status); err != nil {
+		// No row, or status column missing — caller asserts on the empty value.
+		return ""
+	}
+	return status
+}
+
+// seedWebhookEvent inserts a webhook_events row with the given status.
+// Used to set up "row already exists" scenarios.
+func seedWebhookEvent(t *testing.T, db *gorm.DB, eventID, eventType, status string) {
+	t.Helper()
+	now := time.Now()
+	row := &models.WebhookEvent{
+		EventID:     eventID,
+		EventType:   eventType,
+		ProcessedAt: now,
+		ExpiresAt:   now.Add(24 * time.Hour),
+		Payload:     "{}",
+		Status:      status, // RED: field doesn't exist yet on WebhookEvent
+	}
+	require.NoError(t, db.Create(row).Error)
+}
+
+// TestWebhook_FailedReservation_NextDeliveryReprocesses verifies that a row
+// in status=failed is re-reservable. Stripe's retry must re-enter
+// ProcessWebhook and, on success, the row must end as status=processed.
+//
+// Today: a failed run hard-DELETEs the row, so a "failed" row never exists.
+// The bug is when the DELETE itself fails: the row sits in status=reserved
+// (or, with the old schema, just exists) and reserveEvent's INSERT ON
+// CONFLICT DO NOTHING returns 0 rows affected -> Stripe gets 200 -> event
+// is silently lost.
+//
+// Post-fix: the row is left in status=failed on processing failure;
+// reserveEvent recognizes status=failed and UPDATEs it back to reserved
+// to allow retry.
+func TestWebhook_FailedReservation_NextDeliveryReprocesses(t *testing.T) {
+	db := freshTestDB(t)
+	eventID := "evt_failed_retry_" + uuid.NewString()
+
+	// Seed a row already in status=failed (simulates a previous delivery
+	// where ProcessWebhook returned an error and the controller marked the
+	// row as failed instead of deleting it).
+	seedWebhookEvent(t, db, eventID, "customer.subscription.created", "failed")
+
+	// Sanity: row is present with status=failed.
+	require.Equal(t, "failed", fetchWebhookEventStatus(t, db, eventID),
+		"precondition: seeded row must be in status=failed")
+
+	// Working ProcessWebhook (no error this time — Stripe's retry succeeds).
+	mockSvc := &webhookTestStripeService{
+		eventID: eventID,
+	}
+	router := newRouterWithMockService(db, mockSvc)
+
+	payload := []byte(fmt.Sprintf(`{"id":%q,"type":"customer.subscription.created"}`, eventID))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, buildWebhookRequest(t, payload))
+
+	// Critical: a failed row must NOT block retries.
+	assert.Equal(t, http.StatusOK, w.Code,
+		"RETRY: a row in status=failed must be treated as re-reservable. "+
+			"Currently reserveEvent uses INSERT ON CONFLICT DO NOTHING, which "+
+			"returns RowsAffected=0 for any existing row regardless of status, "+
+			"so a stuck failed row would surface as 200 'already processed' and "+
+			"the event would be silently lost. Fix: detect status=failed and "+
+			"UPDATE it back to status=reserved before processing.")
+
+	assert.Equal(t, int32(1), mockSvc.processCalls.Load(),
+		"ProcessWebhook must run exactly once (retry actually re-enters the handler)")
+
+	// After a successful retry, the row must be marked processed.
+	assert.Equal(t, "processed", fetchWebhookEventStatus(t, db, eventID),
+		"after a successful retry, the existing row must be UPDATEd to status=processed")
+
+	// Still exactly one row for this event_id (UPDATE, not INSERT).
+	assert.Equal(t, int64(1), countWebhookEvents(t, db, eventID),
+		"reserveEvent must UPDATE the existing failed row, not INSERT a new one")
+}
+
+// TestWebhook_ProcessedReservation_NotReprocessed asserts that a row already
+// in status=processed short-circuits to 200 OK without re-running the handler.
+// This is the standard Stripe-replays-the-same-event idempotency case under
+// the new schema.
+func TestWebhook_ProcessedReservation_NotReprocessed(t *testing.T) {
+	db := freshTestDB(t)
+	eventID := "evt_already_processed_" + uuid.NewString()
+
+	// Row exists, status=processed (we already handled this event before).
+	seedWebhookEvent(t, db, eventID, "customer.subscription.created", "processed")
+
+	mockSvc := &webhookTestStripeService{
+		eventID: eventID,
+	}
+	router := newRouterWithMockService(db, mockSvc)
+
+	payload := []byte(fmt.Sprintf(`{"id":%q,"type":"customer.subscription.created"}`, eventID))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, buildWebhookRequest(t, payload))
+
+	assert.Equal(t, http.StatusOK, w.Code,
+		"a duplicate delivery for an already-processed event must return 200")
+
+	// Critical: the handler must NOT run again — that's the whole point of
+	// reservation-status idempotency.
+	assert.Equal(t, int32(0), mockSvc.processCalls.Load(),
+		"IDEMPOTENCY: ProcessWebhook must NOT run when a status=processed row "+
+			"already exists for this event_id. Today, INSERT ON CONFLICT DO "+
+			"NOTHING already short-circuits this case (the test passes today "+
+			"under the existing flow); this assertion locks in the behavior "+
+			"under the new status-aware reserveEvent.")
+
+	// Row must remain unchanged (status=processed, count=1).
+	assert.Equal(t, "processed", fetchWebhookEventStatus(t, db, eventID),
+		"status must remain 'processed' (no transition allowed from terminal state)")
+	assert.Equal(t, int64(1), countWebhookEvents(t, db, eventID),
+		"exactly one row should still exist (no duplicate insert)")
+}
+
+// TestWebhook_ReservedRowExists_NotReprocessed covers the concurrent case
+// where another pod is currently processing the event (its row is in
+// status=reserved). The losing delivery must short-circuit, NOT call the
+// handler, and leave the row alone so the active pod can finish.
+func TestWebhook_ReservedRowExists_NotReprocessed(t *testing.T) {
+	db := freshTestDB(t)
+	eventID := "evt_reserved_other_pod_" + uuid.NewString()
+
+	// Another pod has reserved this event and is mid-processing.
+	seedWebhookEvent(t, db, eventID, "customer.subscription.created", "reserved")
+
+	mockSvc := &webhookTestStripeService{
+		eventID: eventID,
+	}
+	router := newRouterWithMockService(db, mockSvc)
+
+	payload := []byte(fmt.Sprintf(`{"id":%q,"type":"customer.subscription.created"}`, eventID))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, buildWebhookRequest(t, payload))
+
+	// 200 OK so Stripe doesn't keep retrying while the other pod processes.
+	assert.Equal(t, http.StatusOK, w.Code,
+		"when another pod is already processing the event (status=reserved), "+
+			"return 200 to short-circuit Stripe — let the active pod finish")
+
+	assert.Equal(t, int32(0), mockSvc.processCalls.Load(),
+		"CONCURRENCY: ProcessWebhook must NOT run when the row is already "+
+			"status=reserved (another pod owns processing). Running again "+
+			"would defeat the whole point of atomic reservation.")
+
+	// Row must remain unchanged so the active pod can transition it itself.
+	assert.Equal(t, "reserved", fetchWebhookEventStatus(t, db, eventID),
+		"a non-owning delivery must not mutate the reservation")
+	assert.Equal(t, int64(1), countWebhookEvents(t, db, eventID),
+		"exactly one row should still exist (no duplicate insert)")
+}
+
+// TestWebhook_ProcessFailure_MarksRowFailed_DoesNotDelete is the core
+// regression guard for issue #261: a processing failure must leave a row
+// in status=failed, NOT delete the row. Hard-deleting is the bug — if the
+// delete itself silently fails (transient DB error), the row stays as
+// status=reserved and subsequent deliveries are silently swallowed.
+func TestWebhook_ProcessFailure_MarksRowFailed_DoesNotDelete(t *testing.T) {
+	db := freshTestDB(t)
+	eventID := "evt_failure_marks_failed_" + uuid.NewString()
+
+	processErr := errors.New("simulated downstream failure")
+	mockSvc := &webhookTestStripeService{
+		eventID:    eventID,
+		processErr: processErr,
+	}
+	router := newRouterWithMockService(db, mockSvc)
+
+	payload := []byte(fmt.Sprintf(`{"id":%q,"type":"customer.subscription.created"}`, eventID))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, buildWebhookRequest(t, payload))
+
+	// Failure must surface as 5xx so Stripe knows to retry.
+	assert.GreaterOrEqual(t, w.Code, 500,
+		"a ProcessWebhook failure must surface as 5xx so Stripe retries")
+	assert.Less(t, w.Code, 600,
+		"a ProcessWebhook failure must surface as 5xx so Stripe retries")
+
+	// Critical invariant: the row MUST exist in status=failed (NOT deleted).
+	// This is the heart of the fix: if releaseReservation's DELETE itself
+	// fails today, the row is wedged forever as 'reserved'. The new code
+	// uses an UPDATE to status=failed, which is recoverable on next retry.
+	assert.Equal(t, int64(1), countWebhookEvents(t, db, eventID),
+		"FIX: after ProcessWebhook fails, the reservation row MUST persist "+
+			"(in status=failed). Today the controller hard-DELETEs the row "+
+			"in releaseReservation; if that DELETE itself fails (transient "+
+			"DB glitch), the row stays as 'reserved' and Stripe's retries "+
+			"are silently swallowed. Fix: replace DELETE with UPDATE status='failed'.")
+
+	assert.Equal(t, "failed", fetchWebhookEventStatus(t, db, eventID),
+		"row must end in status='failed' so the next Stripe retry can re-reserve it")
+
+	assert.Equal(t, int32(1), mockSvc.processCalls.Load(),
+		"ProcessWebhook must have been called exactly once (we don't retry inline)")
+}
