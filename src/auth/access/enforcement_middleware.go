@@ -109,7 +109,11 @@ func RegisterBuiltinEnforcers(entityLoader EntityLoader, memberChecker Membershi
 		if IsAdmin(roles) {
 			return true
 		}
-		entityID := ctx.Param("id")
+		paramName := rule.Param
+		if paramName == "" {
+			paramName = "id" // backward-compatible default
+		}
+		entityID := ctx.Param(paramName)
 		ownerValue, err := entityLoader.GetOwnerField(rule.Entity, entityID, rule.Field)
 		if err != nil {
 			ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
