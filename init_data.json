@@ -4,7 +4,7 @@
         "owner": "admin", 
         "name": "soli",
         "displayName": "Demo Organization",
-        "passwordType": "plain",
+        "passwordType": "argon2id",
         "passwordOptions": ["AtLeast6"],
         "defaultApplication": "ocf",
         "languages": [
