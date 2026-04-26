@@ -121,6 +121,9 @@ func (m *webhookTestStripeService) CreateSubscriptionPlanInStripe(plan *models.S
 func (m *webhookTestStripeService) UpdateSubscriptionPlanInStripe(plan *models.SubscriptionPlan) error {
 	return nil
 }
+func (m *webhookTestStripeService) ArchiveSubscriptionPlanInStripe(productID string) error {
+	return nil
+}
 func (m *webhookTestStripeService) CancelSubscription(subscriptionID string, cancelAtPeriodEnd bool) error {
 	return nil
 }

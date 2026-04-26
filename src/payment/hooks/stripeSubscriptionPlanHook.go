@@ -134,9 +134,11 @@ func (h *StripeSubscriptionPlanHook) handleAfterDelete(ctx *hooks.HookContext) e
 	log.Printf("🎯 Archiving Stripe product for deleted plan: %s", plan.Name)
 
 	// Dans Stripe, on ne supprime pas vraiment les produits,
-	// on les désactive pour préserver l'historique
+	// on les désactive pour préserver l'historique. UpdateSubscriptionPlanInStripe
+	// ne suffit pas car il forwarde plan.IsActive (toujours true après un soft
+	// delete GORM) — d'où l'usage explicite de ArchiveSubscriptionPlanInStripe.
 	if plan.StripeProductID != nil {
-		err := h.stripeService.UpdateSubscriptionPlanInStripe(plan)
+		err := h.stripeService.ArchiveSubscriptionPlanInStripe(*plan.StripeProductID)
 		if err != nil {
 			log.Printf("❌ Failed to archive Stripe product for plan %s: %v", plan.Name, err)
 			return nil

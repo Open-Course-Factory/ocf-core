@@ -83,6 +83,9 @@ func (s *stubStripeForPDH) CreateSubscriptionPlanInStripe(*models.SubscriptionPl
 func (s *stubStripeForPDH) UpdateSubscriptionPlanInStripe(*models.SubscriptionPlan) error {
 	panic("stubStripeForPDH: UpdateSubscriptionPlanInStripe not stubbed")
 }
+func (s *stubStripeForPDH) ArchiveSubscriptionPlanInStripe(string) error {
+	panic("stubStripeForPDH: ArchiveSubscriptionPlanInStripe not stubbed")
+}
 func (s *stubStripeForPDH) ProcessWebhook([]byte, string) error {
 	panic("stubStripeForPDH: ProcessWebhook not stubbed")
 }

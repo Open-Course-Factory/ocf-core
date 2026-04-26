@@ -99,6 +99,7 @@ type StripeService interface {
 	// Product & Price management
 	CreateSubscriptionPlanInStripe(plan *models.SubscriptionPlan) error
 	UpdateSubscriptionPlanInStripe(plan *models.SubscriptionPlan) error
+	ArchiveSubscriptionPlanInStripe(productID string) error
 
 	// Webhook handling
 	ProcessWebhook(payload []byte, signature string) error
@@ -575,6 +576,15 @@ func (ss *stripeService) UpdateSubscriptionPlanInStripe(plan *models.Subscriptio
 	}
 
 	_, err := product.Update(*plan.StripeProductID, productParams)
+	return err
+}
+
+// ArchiveSubscriptionPlanInStripe deactivates a Stripe product by setting active=false.
+// Stripe doesn't truly delete products — archiving preserves history while preventing new uses.
+func (ss *stripeService) ArchiveSubscriptionPlanInStripe(productID string) error {
+	_, err := product.Update(productID, &stripe.ProductParams{
+		Active: stripe.Bool(false),
+	})
 	return err
 }
 
