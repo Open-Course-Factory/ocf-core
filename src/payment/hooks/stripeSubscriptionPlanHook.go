@@ -25,6 +25,17 @@ func NewStripeSubscriptionPlanHook(db *gorm.DB) hooks.Hook {
 	}
 }
 
+// NewStripeSubscriptionPlanHookWithService is a test seam allowing injection
+// of a custom StripeService implementation. Production code uses
+// NewStripeSubscriptionPlanHook(db) instead.
+func NewStripeSubscriptionPlanHookWithService(stripeService services.StripeService) hooks.Hook {
+	return &StripeSubscriptionPlanHook{
+		stripeService: stripeService,
+		enabled:       true,
+		priority:      10,
+	}
+}
+
 func (h *StripeSubscriptionPlanHook) GetName() string {
 	return "stripe_subscription_plan_sync"
 }
