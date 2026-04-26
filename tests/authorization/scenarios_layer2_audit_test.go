@@ -33,7 +33,7 @@ package authorization_tests
 //   3. Authorized — user meets the declared rule → expect 200 (fake handler)
 //   4. Admin bypass — Casbin Administrator → expect 200 (fake handler)
 //
-// AUDIT FINDING — by-terminal/:terminalId is broken:
+// AUDIT FINDING (#268, fix tracked in #269) — by-terminal/:terminalId is broken:
 // The EntityOwner enforcer in src/auth/access/enforcement_middleware.go
 // (line 112) hardcodes `entityID := ctx.Param("id")`. The
 // /api/v1/scenario-sessions/by-terminal/:terminalId route does NOT have
@@ -43,10 +43,9 @@ package authorization_tests
 // legitimate session owner. The controller-level ownership check at
 // scenarioController.go:629 never runs because Layer 2 aborts first.
 // The harness reproduces this with the test
-// `TestScenariosLayer2_ByTerminal_OwnerStillBlocked_AuditFinding` below.
+// `TestScenariosLayer2_ByTerminal_OwnerStillBlocked_Issue269_AuditFinding` below.
 // Fix is non-trivial (requires either a per-route `Param` field for
-// EntityOwner or switching the route to SelfScoped); deferring to a
-// follow-up issue per the audit boundary in the task brief.
+// EntityOwner or switching the route to SelfScoped); deferred to #269.
 //
 // The fake handler is a no-op that returns 200. If Layer 2 allows the
 // request through, the handler fires and we see 200. If Layer 2 blocks,
@@ -96,7 +95,7 @@ func (c *scenariosAuditMembershipChecker) CheckOrgRole(orgID, userID, minRole st
 // scenariosAuditEntityLoader exposes a configurable owner map for
 // ScenarioSession entities. Keys are
 // "entityName:entityID:fieldName" -> owner value, mirroring the harness
-// in terminals_layer2_audit_test.go.
+// in payment_layer2_audit_test.go.
 type scenariosAuditEntityLoader struct {
 	owners map[string]string
 }
@@ -106,9 +105,14 @@ func (l *scenariosAuditEntityLoader) GetOwnerField(entity, id, field string) (st
 	if v, ok := l.owners[key]; ok {
 		return v, nil
 	}
-	// Absent: return empty string. Layer 2's EntityOwner compares against
-	// userID; an empty string only matches an empty userID (which Layer 2
-	// treats as unauthenticated and passes through).
+	// Harness/production divergence note: this harness returns ("", nil)
+	// for absent entries, whereas the production GormEntityLoader returns
+	// an error ("entity ID must not be empty") when called with an empty
+	// id. Both paths converge on a 403 from the EntityOwner enforcer
+	// (empty owner != caller userID; error path also denies), so the
+	// observable behavior under audit is identical. Kept simple here on
+	// purpose — do not "fix" the harness to mimic the error branch
+	// unless a test specifically depends on the error message.
 	return "", nil
 }
 
@@ -187,7 +191,8 @@ func allScenariosAuditRoutes() []scenariosAuditRoute {
 
 // -----------------------------------------------------------------------------
 // Harness — installs Layer 2 with exactly the production declarations
-// for one route under audit. Mirrors setupTerminalsAuditRouter.
+// for one route under audit. Same shape as the payment audit harness in
+// payment_layer2_audit_test.go.
 // -----------------------------------------------------------------------------
 
 func setupScenariosAuditRouter(
@@ -407,7 +412,8 @@ func TestScenariosLayer2_AdminBypass_Allowed(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// AUDIT FINDING — by-terminal/:terminalId enforcement is broken.
+// AUDIT FINDING (#268, fix tracked in #269) — by-terminal/:terminalId
+// enforcement is broken.
 //
 // The route declares `Access: { Type: EntityOwner, Entity:
 // "ScenarioSession", Field: "UserID" }` but the URL parameter is
@@ -428,14 +434,14 @@ func TestScenariosLayer2_AdminBypass_Allowed(t *testing.T) {
 // translates into via the enforcer's err-path. We assert the broken
 // behavior so a future fix flips this test.
 //
-// Suggested fix: either
+// Suggested fix (tracked in #269): either
 //   (a) make EntityOwner honor rule.Param (default "id"), or
 //   (b) reclassify the route as SelfScoped since the controller
 //       already enforces ownership against `userId`.
 // Option (b) is the smallest change and keeps Layer 2 advisory.
 // -----------------------------------------------------------------------------
 
-func TestScenariosLayer2_ByTerminal_OwnerStillBlocked_AuditFinding(t *testing.T) {
+func TestScenariosLayer2_ByTerminal_OwnerStillBlocked_Issue269_AuditFinding(t *testing.T) {
 	var byTerminal scenariosAuditRoute
 	for _, r := range scenariosAuditEntityOwnerRoutes {
 		if strings.Contains(r.registeredPath, "/by-terminal/") {
@@ -464,7 +470,7 @@ func TestScenariosLayer2_ByTerminal_OwnerStillBlocked_AuditFinding(t *testing.T)
 	// finding has been fixed and this test should be promoted into the
 	// regular Authorized case.
 	assert.Equal(t, http.StatusForbidden, w.Code,
-		"AUDIT FINDING (#268): by-terminal/:terminalId currently denies the legitimate owner because the EntityOwner enforcer reads ctx.Param(\"id\") which doesn't exist on this route. Observed %d (body=%s). If this flipped to 200 the bug is fixed.",
+		"AUDIT FINDING (#268, fix tracked in #269): by-terminal/:terminalId currently denies the legitimate owner because the EntityOwner enforcer reads ctx.Param(\"id\") which doesn't exist on this route. Observed %d (body=%s). If this flipped to 200 the bug is fixed — see #269 and promote this test into the regular Authorized case.",
 		w.Code, w.Body.String())
 }
 
