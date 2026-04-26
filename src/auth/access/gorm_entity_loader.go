@@ -30,27 +30,41 @@ func NewGormEntityLoader(db *gorm.DB) *GormEntityLoader {
 }
 
 // GetOwnerField retrieves a single field value from an entity row.
-// entityName is the table name, entityID is the primary key, and fieldName is the column name.
+//
+// entityName is the Go struct name (e.g. "Terminal", "ScenarioSession") and
+// fieldName is the Go field name (e.g. "UserID", "PurchaserUserID"), exactly
+// as declared in route permissions (RoutePermission.AccessRule). Both are
+// translated to their database identifiers via GORM's NamingStrategy before
+// being interpolated into SQL.
+//
+// Assumption: callers pass Go names (PascalCase). The entity registry only
+// uses Go struct names, so this is the production contract. NamingStrategy
+// is idempotent for already-snake_case+plural names (the underlying
+// schema.toDBName + inflection logic is a no-op on properly normalized
+// inputs), so passing a pre-translated name still works in practice.
 func (l *GormEntityLoader) GetOwnerField(entityName string, entityID string, fieldName string) (string, error) {
 	if entityID == "" {
 		return "", errors.New("entity ID must not be empty")
 	}
 
-	if err := validateSQLIdentifier(entityName); err != nil {
-		return "", fmt.Errorf("unsafe entity name: %w", err)
+	tableName := l.db.NamingStrategy.TableName(entityName)
+	columnName := l.db.NamingStrategy.ColumnName(tableName, fieldName)
+
+	if err := validateSQLIdentifier(tableName); err != nil {
+		return "", fmt.Errorf("unsafe table name: %w", err)
 	}
-	if err := validateSQLIdentifier(fieldName); err != nil {
-		return "", fmt.Errorf("unsafe field name: %w", err)
+	if err := validateSQLIdentifier(columnName); err != nil {
+		return "", fmt.Errorf("unsafe column name: %w", err)
 	}
 
 	var value string
-	query := fmt.Sprintf("SELECT %s FROM %s WHERE id = ?", fieldName, entityName)
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE id = ?", columnName, tableName)
 	result := l.db.Raw(query, entityID).Scan(&value)
 	if result.Error != nil {
 		return "", result.Error
 	}
 	if result.RowsAffected == 0 {
-		return "", fmt.Errorf("entity not found in %s with id %s", entityName, entityID)
+		return "", fmt.Errorf("entity not found in %s with id %s", tableName, entityID)
 	}
 
 	return value, nil
