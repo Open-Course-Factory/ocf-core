@@ -475,6 +475,109 @@ func TestLayer2_EntityOwner_AdminBypass(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code, "administrator should bypass entity owner check")
 }
 
+// ---------------------------------------------------------------------------
+// Regression: EntityOwner enforcer must honor rule.Param (issue #266)
+// ---------------------------------------------------------------------------
+// The EntityOwner enforcer in src/auth/access/enforcement_middleware.go (line 112)
+// reads `entityID := ctx.Param("id")` — a hardcoded literal that ignores
+// `rule.Param`. The sibling enforcers GroupRole (line 135) and OrgRole (line 158)
+// both correctly read `ctx.Param(rule.Param)`.
+//
+// This is a hidden footgun: a route declaring EntityOwner with a custom param
+// name (e.g., `Param: "resourceId"` on `/api/v1/test-resources/:resourceId`)
+// silently misroutes the lookup — `ctx.Param("id")` returns "" and the
+// owner check fails for the legitimate owner.
+//
+// Expected behavior: when rule.Param is non-empty, the enforcer must use
+// `ctx.Param(rule.Param)`. When rule.Param is empty, it must default to "id"
+// for backward-compatibility with existing declarations.
+//
+// This test exercises the non-default branch with `Param: "resourceId"` on a
+// route whose only path param is `:resourceId` (no `:id`). It MUST currently
+// FAIL (owner gets 403 instead of 200) and pass once the enforcer is fixed.
+func TestEnforcementMiddleware_EntityOwner_HonorsRuleParam_Issue266(t *testing.T) {
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
+	defer func() {
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
+	}()
+
+	// Register an EntityOwner rule that uses a non-"id" path parameter name.
+	access.RouteRegistry.Register("test", access.RoutePermission{
+		Path:   "/api/v1/test-resources/:resourceId",
+		Method: "PATCH",
+		Role:   "member",
+		Access: access.AccessRule{
+			Type:   access.EntityOwner,
+			Entity: "TestResource",
+			Field:  "UserID",
+			Param:  "resourceId",
+		},
+	})
+
+	// The loader returns the correct owner ("user1") ONLY when looked up
+	// with the right entity ID ("res-42"). Any other ID (notably the empty
+	// string the buggy enforcer would send) returns "" — which fails the
+	// owner comparison and yields 403. This makes the primary 200/403
+	// assertion a faithful signal of the bug, not just an artefact of the
+	// loader stub.
+	loader := &idAwareEntityLoader{
+		ownersByID: map[string]string{"res-42": "user1"},
+	}
+	checker := &mockMembershipChecker{}
+	access.RegisterBuiltinEnforcers(loader, checker)
+	mw := access.Layer2Enforcement()
+	r := setupTestRouter(mw)
+	r.PATCH("/api/v1/test-resources/:resourceId", okHandler)
+
+	req := httptest.NewRequest("PATCH", "/api/v1/test-resources/res-42", nil)
+	req.Header.Set("X-Test-UserId", "user1")
+	req.Header.Set("X-Test-Roles", "member")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	// Primary assertion: owner must reach the handler (200).
+	// Currently fails because the enforcer reads ctx.Param("id") which is
+	// empty for this route (only :resourceId exists). With the empty ID
+	// the loader returns "" (not "user1"), the comparison fails, and the
+	// enforcer aborts with 403. With the planned fix (read
+	// ctx.Param(rule.Param) when non-empty, default to "id" otherwise) the
+	// entityID is "res-42", the loader returns "user1", the request reaches
+	// okHandler.
+	assert.Equal(t, http.StatusOK, w.Code,
+		"EntityOwner enforcer must honor rule.Param — owner of resource via :resourceId should be allowed (#266)")
+
+	// Secondary assertion: the loader must have been invoked with the
+	// path parameter value, NOT an empty string. This pin-points the bug
+	// even if the primary assertion is masked by future loader changes.
+	assert.Equal(t, "res-42", loader.lastEntityID,
+		"EntityOwner enforcer must pass the value of rule.Param to the loader, not the value of a hardcoded \"id\" param (#266)")
+}
+
+// idAwareEntityLoader returns the configured owner only when the lookup ID
+// matches one in its map; for unknown IDs (including the empty string the
+// buggy enforcer would send) it returns an empty owner. It also records the
+// last entityID it was called with so tests can pin-point routing bugs.
+// Used by the #266 regression test.
+type idAwareEntityLoader struct {
+	ownersByID     map[string]string
+	err            error
+	lastEntityName string
+	lastEntityID   string
+	lastFieldName  string
+}
+
+func (m *idAwareEntityLoader) GetOwnerField(entityName string, entityID string, fieldName string) (string, error) {
+	m.lastEntityName = entityName
+	m.lastEntityID = entityID
+	m.lastFieldName = fieldName
+	if m.err != nil {
+		return "", m.err
+	}
+	return m.ownersByID[entityID], nil
+}
+
 func TestLayer2_GroupRole_Allowed(t *testing.T) {
 	access.RouteRegistry.Reset()
 	access.ResetEnforcers()
