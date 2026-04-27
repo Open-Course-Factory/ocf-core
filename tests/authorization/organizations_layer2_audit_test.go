@@ -21,21 +21,13 @@ package authorization_tests
 //   - AdminOnly (1 route):
 //       PUT    /api/v1/organizations/:id/backends
 //
-// For each Layer 2-enforced route we run four scenarios mirroring prior
-// audits (payment / scenarios):
+// Enforcement scenarios (Outsider, InsufficientRole, Authorized, AdminBypass)
+// are covered by the generic parameterized suite in
+// layer2_audit_parameterized_test.go via adaptOrganizationsRoutes().
 //
-//   1. Outsider — Casbin Member with NO organization membership → expect 403
-//   2. Insufficient role — only on routes with MinRole > member (member when
-//      manager is required, manager when owner is required) → expect 403
-//   3. Authorized — user meets the declared rule → expect 200 (fake handler)
-//   4. Admin bypass — Casbin Administrator → expect 200 (fake handler)
-//
-// For the AdminOnly route we verify that non-admin members get 403 while
-// Casbin Administrators get 200.
-//
-// The fake handler is a no-op that returns 200. If Layer 2 allows the
-// request through, the handler fires and we see 200. If Layer 2 blocks,
-// we see 403.
+// This file retains the route catalog and structural guards:
+//   - TestOrganizationsLayer2_RegistryDeclaresEveryAuditedRoute
+//   - TestOrganizationsLayer2_NoRegexMethodInCatalog
 //
 // Implementation note on /organizations/:id/groups/:groupId/regenerate-passwords:
 // the RoutePermission declares Param="id" (the organization ID), NOT
@@ -46,49 +38,12 @@ package authorization_tests
 // :id is consulted by the OrgRole enforcer.
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
 	access "soli/formations/src/auth/access"
 )
-
-// -----------------------------------------------------------------------------
-// Shared harness types — scoped to this audit file so we don't couple to
-// the shared mockMembershipChecker used elsewhere in the package.
-// -----------------------------------------------------------------------------
-
-// organizationsAuditMembershipChecker records org memberships keyed by
-// "orgID:userID". CheckOrgRole applies the role hierarchy via
-// access.IsRoleAtLeast. CheckGroupRole is unused by this module but
-// required by the MembershipChecker interface.
-type organizationsAuditMembershipChecker struct {
-	orgRoles map[string]string
-}
-
-func (c *organizationsAuditMembershipChecker) CheckGroupRole(groupID, userID, minRole string) (bool, error) {
-	return false, nil
-}
-
-func (c *organizationsAuditMembershipChecker) CheckOrgRole(orgID, userID, minRole string) (bool, error) {
-	role, ok := c.orgRoles[orgID+":"+userID]
-	if !ok {
-		return false, nil
-	}
-	return access.IsRoleAtLeast(role, minRole), nil
-}
-
-// organizationsAuditEntityLoader is unused by OrgRole / AdminOnly but
-// required by the RegisterBuiltinEnforcers signature.
-type organizationsAuditEntityLoader struct{}
-
-func (l *organizationsAuditEntityLoader) GetOwnerField(entity, id, field string) (string, error) {
-	return "", nil
-}
 
 // -----------------------------------------------------------------------------
 // Route catalog — mirrors src/organizations/routes/permissions.go.
@@ -133,205 +88,6 @@ func allOrganizationsAuditRoutes() []organizationsAuditRoute {
 	all := append([]organizationsAuditRoute{}, organizationsAuditOrgRoutes...)
 	all = append(all, organizationsAuditAdminRoutes...)
 	return all
-}
-
-// -----------------------------------------------------------------------------
-// Harness — installs Layer 2 with exactly the production declarations
-// for one route under audit. Same shape as the payment / scenarios audit
-// harnesses.
-// -----------------------------------------------------------------------------
-
-func setupOrganizationsAuditRouter(
-	t *testing.T,
-	route organizationsAuditRoute,
-	checker access.MembershipChecker,
-	loader access.EntityLoader,
-) *gin.Engine {
-	t.Helper()
-
-	access.RouteRegistry.Reset()
-	access.ResetEnforcers()
-	t.Cleanup(func() {
-		access.RouteRegistry.Reset()
-		access.ResetEnforcers()
-	})
-
-	rule := access.AccessRule{
-		Type:    route.ruleType,
-		MinRole: route.minRole,
-	}
-	if route.ruleType == access.OrgRole {
-		rule.Param = route.paramName
-	}
-
-	role := "member"
-	if route.ruleType == access.AdminOnly {
-		role = "administrator"
-	}
-
-	access.RouteRegistry.Register("Organizations",
-		access.RoutePermission{
-			Path:   route.registeredPath,
-			Method: route.method,
-			Role:   role,
-			Access: rule,
-		},
-	)
-
-	access.RegisterBuiltinEnforcers(loader, checker)
-
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-
-	r.Use(func(c *gin.Context) {
-		uid := c.GetHeader("X-Test-UserId")
-		c.Set("userId", uid)
-		rolesHeader := c.GetHeader("X-Test-Roles")
-		if rolesHeader != "" {
-			c.Set("userRoles", strings.Split(rolesHeader, ","))
-		} else {
-			c.Set("userRoles", []string{})
-		}
-		c.Next()
-	})
-	r.Use(access.Layer2Enforcement())
-
-	fake := func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "layer2-allowed"})
-	}
-	r.Handle(route.method, route.registeredPath, fake)
-	return r
-}
-
-func doOrganizationsAuditRequest(r *gin.Engine, method, path, userID, roles string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
-	if userID != "" {
-		req.Header.Set("X-Test-UserId", userID)
-	}
-	if roles != "" {
-		req.Header.Set("X-Test-Roles", roles)
-	}
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	return w
-}
-
-// -----------------------------------------------------------------------------
-// Case 1: Outsider — Member with no org membership → 403
-// -----------------------------------------------------------------------------
-
-func TestOrganizationsLayer2_Outsider_Denied(t *testing.T) {
-	for _, route := range allOrganizationsAuditRoutes() {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			loader := &organizationsAuditEntityLoader{}
-			checker := &organizationsAuditMembershipChecker{orgRoles: map[string]string{}}
-			r := setupOrganizationsAuditRouter(t, route, checker, loader)
-
-			w := doOrganizationsAuditRequest(r, route.method, route.requestPath, "outsider-user", "member")
-			assert.Equal(t, http.StatusForbidden, w.Code,
-				"outsider must be denied on %s %s (observed %d, body=%s)",
-				route.method, route.requestPath, w.Code, w.Body.String())
-		})
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Case 2: Insufficient role — only on OrgRole routes with MinRole > member.
-// We test:
-//   - manager-gated routes: a plain "member" must be denied
-//   - owner-gated routes: a "manager" must be denied (one rung below owner)
-// AdminOnly routes are skipped here — covered by Case 1 (any non-admin member
-// is an "outsider" w.r.t. AdminOnly).
-// -----------------------------------------------------------------------------
-
-func TestOrganizationsLayer2_InsufficientRole_Denied(t *testing.T) {
-	for _, route := range organizationsAuditOrgRoutes {
-		// member-gated routes have no insufficient-role case.
-		if route.minRole == "member" {
-			continue
-		}
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			// Pick a role one rung below the required role:
-			//   manager-gated → grant "member"
-			//   owner-gated   → grant "manager"
-			var insufficientRole string
-			switch route.minRole {
-			case "manager":
-				insufficientRole = "member"
-			case "owner":
-				insufficientRole = "manager"
-			default:
-				t.Fatalf("unexpected minRole %q in catalog for %s %s — extend this switch",
-					route.minRole, route.method, route.registeredPath)
-			}
-
-			checker := &organizationsAuditMembershipChecker{
-				orgRoles: map[string]string{
-					route.scopeID + ":insufficient-user": insufficientRole,
-				},
-			}
-			loader := &organizationsAuditEntityLoader{}
-			r := setupOrganizationsAuditRouter(t, route, checker, loader)
-
-			w := doOrganizationsAuditRequest(r, route.method, route.requestPath, "insufficient-user", "member")
-			assert.Equal(t, http.StatusForbidden, w.Code,
-				"%s must be denied on %s-gated %s %s (observed %d)",
-				insufficientRole, route.minRole, route.method, route.requestPath, w.Code)
-		})
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Case 3: Authorized — user meets the rule → Layer 2 lets through.
-// AdminOnly routes are excluded here (only an Administrator role passes —
-// covered by Case 4).
-// -----------------------------------------------------------------------------
-
-func TestOrganizationsLayer2_Authorized_Allowed(t *testing.T) {
-	const authorizedUser = "authorized-user"
-
-	for _, route := range organizationsAuditOrgRoutes {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			checker := &organizationsAuditMembershipChecker{
-				orgRoles: map[string]string{
-					route.scopeID + ":" + authorizedUser: route.minRole,
-				},
-			}
-			loader := &organizationsAuditEntityLoader{}
-			r := setupOrganizationsAuditRouter(t, route, checker, loader)
-
-			w := doOrganizationsAuditRequest(r, route.method, route.requestPath, authorizedUser, "member")
-			assert.NotEqual(t, http.StatusForbidden, w.Code,
-				"authorized user (role=%s) must not be blocked on %s %s (observed %d, body=%s)",
-				route.minRole, route.method, route.requestPath, w.Code, w.Body.String())
-			assert.Equal(t, http.StatusOK, w.Code,
-				"fake handler should have returned 200 for %s %s (body=%s)",
-				route.method, route.requestPath, w.Body.String())
-		})
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Case 4: Admin bypass — Casbin Administrator always allowed (both OrgRole
-// and AdminOnly routes).
-// -----------------------------------------------------------------------------
-
-func TestOrganizationsLayer2_AdminBypass_Allowed(t *testing.T) {
-	for _, route := range allOrganizationsAuditRoutes() {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			loader := &organizationsAuditEntityLoader{}
-			// Admin has NO org membership — bypass must still allow.
-			checker := &organizationsAuditMembershipChecker{orgRoles: map[string]string{}}
-			r := setupOrganizationsAuditRouter(t, route, checker, loader)
-
-			w := doOrganizationsAuditRequest(r, route.method, route.requestPath, "admin-user", "administrator")
-			assert.NotEqual(t, http.StatusForbidden, w.Code,
-				"administrator must bypass %s enforcement on %s %s (observed %d)",
-				route.ruleType, route.method, route.requestPath, w.Code)
-			assert.Equal(t, http.StatusOK, w.Code,
-				"admin must reach handler on %s %s", route.method, route.requestPath)
-		})
-	}
 }
 
 // -----------------------------------------------------------------------------
@@ -389,6 +145,7 @@ func TestOrganizationsLayer2_RegistryDeclaresEveryAuditedRoute(t *testing.T) {
 	}
 
 	for _, route := range allOrganizationsAuditRoutes() {
+		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
 			perm, found := access.RouteRegistry.Lookup(route.method, route.registeredPath)
 			assert.True(t, found,
@@ -419,6 +176,7 @@ func TestOrganizationsLayer2_NoRegexMethodInCatalog(t *testing.T) {
 	}
 
 	for _, route := range allOrganizationsAuditRoutes() {
+		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
 			assert.True(t, allowed[route.method],
 				"catalog route %s %s declares a non-canonical HTTP method — Layer 2 Lookup is exact-match, regex/alternation methods would silently bypass enforcement",

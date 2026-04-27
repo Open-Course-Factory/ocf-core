@@ -11,9 +11,9 @@ package authorization_tests
 // Scope:
 //
 //   - AdminOnly (11 routes): the only Layer 2-enforced rule type used by
-//     the auth module. Two enforcement scenarios per route:
-//       1. Outsider — Casbin Member with no admin role → expect 403
-//       2. Admin allowed — Casbin Administrator → expect 200 (fake handler)
+//     the auth module.  Enforcement scenarios (Outsider denied / Admin allowed /
+//     AdminBypass) are covered by the generic parameterized suite in
+//     layer2_audit_parameterized_test.go via adaptAuthAdminRoutes().
 //
 //   - SelfScoped (handler-enforced, doc-only): we only assert registry
 //     parity (the route is declared with the right type). Enforcement
@@ -21,11 +21,12 @@ package authorization_tests
 //
 //   - Public routes are out of scope (no Layer 2 check by design).
 //
-// Plus structural guards:
+// Structural guards retained in this file:
 //
 //   - TestAuthLayer2_RegistryDeclaresEveryAuditedRoute — catalog/registry
-//     parity check. Every (path, method) pair in the audit catalog must
-//     be findable via RouteRegistry.Lookup.
+//     parity check covering both AdminOnly and SelfScoped routes (the
+//     SelfScoped routes cannot be covered by the generic parameterized suite
+//     since they are excluded from enforcement assertions there).
 //
 //   - TestAuthLayer2_NoRegexMethodInCatalog — !180 regression marker.
 //     Surfaces the #265 bug where the SelfScoped declaration for
@@ -36,8 +37,8 @@ package authorization_tests
 // AUDIT FINDING (#265, fix tracked in this MR) — /api/v1/users/me/* uses
 // a regex-alternation HTTP method:
 //
-//   src/auth/routes/usersRoutes/permissions.go:149
-//     Path: "/api/v1/users/me/*", Method: "(GET|POST|PATCH|DELETE)"
+//	src/auth/routes/usersRoutes/permissions.go:149
+//	  Path: "/api/v1/users/me/*", Method: "(GET|POST|PATCH|DELETE)"
 //
 // RouteRegistry.Lookup does exact method+path string matching. A method
 // like "(GET|POST|PATCH|DELETE)" can never be matched by an incoming
@@ -58,41 +59,12 @@ package authorization_tests
 // audit here.
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
 	access "soli/formations/src/auth/access"
 )
-
-// -----------------------------------------------------------------------------
-// Shared harness types — scoped to this audit file so we don't couple to
-// the shared mockMembershipChecker used elsewhere in the package.
-// -----------------------------------------------------------------------------
-
-// authAuditMembershipChecker is unused by AdminOnly / SelfScoped but
-// required by the RegisterBuiltinEnforcers signature.
-type authAuditMembershipChecker struct{}
-
-func (c *authAuditMembershipChecker) CheckGroupRole(groupID, userID, minRole string) (bool, error) {
-	return false, nil
-}
-
-func (c *authAuditMembershipChecker) CheckOrgRole(orgID, userID, minRole string) (bool, error) {
-	return false, nil
-}
-
-// authAuditEntityLoader is unused by AdminOnly / SelfScoped but required
-// by the RegisterBuiltinEnforcers signature.
-type authAuditEntityLoader struct{}
-
-func (l *authAuditEntityLoader) GetOwnerField(entity, id, field string) (string, error) {
-	return "", nil
-}
 
 // -----------------------------------------------------------------------------
 // Route catalog — mirrors src/auth/routes/usersRoutes/permissions.go and
@@ -112,7 +84,8 @@ type authAuditRoute struct {
 }
 
 // authAuditAdminRoutes — 11 AdminOnly routes split across two files.
-// These ARE Layer 2-enforced and MUST 403 outsiders / 200 admins.
+// These ARE Layer 2-enforced. Enforcement scenarios are covered by the
+// parameterized suite in layer2_audit_parameterized_test.go.
 var authAuditAdminRoutes = []authAuditRoute{
 	// usersRoutes — 7 routes
 	{module: "User Management", method: "DELETE", registeredPath: "/api/v1/users/:id", requestPath: "/api/v1/users/audit-uid", ruleType: access.AdminOnly},
@@ -157,127 +130,6 @@ func allAuthAuditRoutes() []authAuditRoute {
 }
 
 // -----------------------------------------------------------------------------
-// Harness — installs Layer 2 with exactly the production declaration
-// for one route under audit. Same shape as the organizations / scenarios
-// audit harnesses.
-// -----------------------------------------------------------------------------
-
-func setupAuthAuditRouter(
-	t *testing.T,
-	route authAuditRoute,
-	checker access.MembershipChecker,
-	loader access.EntityLoader,
-) *gin.Engine {
-	t.Helper()
-
-	access.RouteRegistry.Reset()
-	access.ResetEnforcers()
-	t.Cleanup(func() {
-		access.RouteRegistry.Reset()
-		access.ResetEnforcers()
-	})
-
-	rule := access.AccessRule{Type: route.ruleType}
-
-	role := "member"
-	if route.ruleType == access.AdminOnly {
-		role = "administrator"
-	}
-
-	access.RouteRegistry.Register(route.module,
-		access.RoutePermission{
-			Path:   route.registeredPath,
-			Method: route.method,
-			Role:   role,
-			Access: rule,
-		},
-	)
-
-	access.RegisterBuiltinEnforcers(loader, checker)
-
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-
-	r.Use(func(c *gin.Context) {
-		uid := c.GetHeader("X-Test-UserId")
-		c.Set("userId", uid)
-		rolesHeader := c.GetHeader("X-Test-Roles")
-		if rolesHeader != "" {
-			c.Set("userRoles", strings.Split(rolesHeader, ","))
-		} else {
-			c.Set("userRoles", []string{})
-		}
-		c.Next()
-	})
-	r.Use(access.Layer2Enforcement())
-
-	fake := func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "layer2-allowed"})
-	}
-	r.Handle(route.method, route.registeredPath, fake)
-	return r
-}
-
-func doAuthAuditRequest(r *gin.Engine, method, path, userID, roles string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
-	if userID != "" {
-		req.Header.Set("X-Test-UserId", userID)
-	}
-	if roles != "" {
-		req.Header.Set("X-Test-Roles", roles)
-	}
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	return w
-}
-
-// -----------------------------------------------------------------------------
-// Case 1: Outsider — Casbin Member (non-admin) on AdminOnly routes → 403.
-//
-// Note: in production, non-admin Members are also blocked at Layer 1
-// (RBAC gateway: the policy says "administrator" only). This audit is
-// scoped to Layer 2 — we verify the AdminOnly enforcer rejects
-// non-admins independently of Layer 1.
-// -----------------------------------------------------------------------------
-
-func TestAuthLayer2_AdminOnly_Outsider_Denied(t *testing.T) {
-	for _, route := range authAuditAdminRoutes {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			loader := &authAuditEntityLoader{}
-			checker := &authAuditMembershipChecker{}
-			r := setupAuthAuditRouter(t, route, checker, loader)
-
-			w := doAuthAuditRequest(r, route.method, route.requestPath, "outsider-user", "member")
-			assert.Equal(t, http.StatusForbidden, w.Code,
-				"non-admin must be denied on AdminOnly %s %s (observed %d, body=%s)",
-				route.method, route.requestPath, w.Code, w.Body.String())
-		})
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Case 2: Admin allowed — Casbin Administrator on AdminOnly routes → 200.
-// -----------------------------------------------------------------------------
-
-func TestAuthLayer2_AdminOnly_Admin_Allowed(t *testing.T) {
-	for _, route := range authAuditAdminRoutes {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			loader := &authAuditEntityLoader{}
-			checker := &authAuditMembershipChecker{}
-			r := setupAuthAuditRouter(t, route, checker, loader)
-
-			w := doAuthAuditRequest(r, route.method, route.requestPath, "admin-user", "administrator")
-			assert.NotEqual(t, http.StatusForbidden, w.Code,
-				"administrator must bypass AdminOnly enforcement on %s %s (observed %d)",
-				route.method, route.requestPath, w.Code)
-			assert.Equal(t, http.StatusOK, w.Code,
-				"admin must reach handler on %s %s (body=%s)",
-				route.method, route.requestPath, w.Body.String())
-		})
-	}
-}
-
-// -----------------------------------------------------------------------------
 // AUDIT FINDING (positive) — Layer 1 / Layer 2 path consistency.
 //
 // Every (path, method) pair appearing in the Layer 1 ReconcilePolicy
@@ -301,6 +153,10 @@ func TestAuthLayer2_AdminOnly_Admin_Allowed(t *testing.T) {
 // a route is added or removed from the auth permission files, the
 // catalog must be updated to match — this subtest is a reminder that
 // the two must stay aligned.
+//
+// Note: SelfScoped routes are included here (not in the generic parameterized
+// suite) because enforcement assertions for SelfScoped are omitted — only
+// registry parity is asserted.
 // -----------------------------------------------------------------------------
 
 func TestAuthLayer2_RegistryDeclaresEveryAuditedRoute(t *testing.T) {
@@ -333,6 +189,7 @@ func TestAuthLayer2_RegistryDeclaresEveryAuditedRoute(t *testing.T) {
 	}
 
 	for _, route := range allAuthAuditRoutes() {
+		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
 			perm, found := access.RouteRegistry.Lookup(route.method, route.registeredPath)
 			assert.True(t, found,
@@ -362,6 +219,9 @@ func TestAuthLayer2_RegistryDeclaresEveryAuditedRoute(t *testing.T) {
 // state on purpose, so the failing subtest below pins the bug. When the
 // fix lands (this MR), the catalog and production declaration will both
 // be split into four entries and this subtest will go green.
+//
+// This guard covers the FULL catalog (AdminOnly + SelfScoped) — the generic
+// parameterized suite checks only AdminOnly routes.
 // -----------------------------------------------------------------------------
 
 func TestAuthLayer2_NoRegexMethodInCatalog(t *testing.T) {
@@ -370,6 +230,7 @@ func TestAuthLayer2_NoRegexMethodInCatalog(t *testing.T) {
 	}
 
 	for _, route := range allAuthAuditRoutes() {
+		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
 			assert.True(t, allowed[route.method],
 				"catalog route %s %s declares a non-canonical HTTP method — Layer 2 Lookup is exact-match, regex/alternation methods would silently bypass enforcement (see #265, MR !180)",

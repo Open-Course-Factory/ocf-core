@@ -19,49 +19,19 @@ package authorization_tests
 // The fake handler is a no-op that returns 200. If Layer 2 allows the request
 // through, the handler fires and we see 200. If Layer 2 blocks, we see 403.
 // This avoids needing to stand up the real Stripe-backed controller.
+//
+// Scenarios 1–4 are covered by the generic parameterized suite in
+// layer2_audit_parameterized_test.go via adaptPaymentRoutes().
+// This file retains only the route catalog and scenario 5 (NoUser_Passthrough),
+// which is specific to the payment module and cannot be generalized without
+// adding complexity to the shared suite.
 
 import (
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
-
-	access "soli/formations/src/auth/access"
 )
-
-// paymentAuditMembershipChecker is a local MembershipChecker for the payment
-// audit. It records what roles each user has in each org and answers
-// CheckOrgRole based on a provided role map. We use a distinct type (not the
-// shared mockMembershipChecker) to avoid coupling this audit to tests in
-// enforcement_middleware_test.go.
-type paymentAuditMembershipChecker struct {
-	// orgRoles maps "orgID:userID" -> role name (e.g. "member", "manager",
-	// "owner"). Absence means the user has no membership in that org.
-	orgRoles map[string]string
-}
-
-func (c *paymentAuditMembershipChecker) CheckGroupRole(groupID, userID, minRole string) (bool, error) {
-	return false, nil
-}
-
-func (c *paymentAuditMembershipChecker) CheckOrgRole(orgID, userID, minRole string) (bool, error) {
-	role, ok := c.orgRoles[orgID+":"+userID]
-	if !ok {
-		return false, nil
-	}
-	return access.IsRoleAtLeast(role, minRole), nil
-}
-
-// paymentAuditEntityLoader is unused by OrgRole but required by the
-// RegisterBuiltinEnforcers signature.
-type paymentAuditEntityLoader struct{}
-
-func (l *paymentAuditEntityLoader) GetOwnerField(entity, id, field string) (string, error) {
-	return "", nil
-}
 
 // paymentAuditRoute describes one of the five routes under audit.
 type paymentAuditRoute struct {
@@ -87,168 +57,6 @@ var paymentAuditRoutes = []paymentAuditRoute{
 	{method: "GET", registeredPath: "/api/v1/organizations/:id/usage-limits", requestPath: "/api/v1/organizations/org-audit-5/usage-limits", orgID: "org-audit-5", minRole: "member"},
 }
 
-// setupPaymentAuditRouter sets up a Gin engine with:
-//   - a header-driven userId/userRoles injector (matching setupTestRouter in
-//     enforcement_middleware_test.go)
-//   - Layer2Enforcement middleware
-//   - a fake handler on the declared route that returns 200
-//
-// The membership checker is provided by the caller so each subtest can
-// control what org roles each user has.
-func setupPaymentAuditRouter(t *testing.T, route paymentAuditRoute, checker access.MembershipChecker) *gin.Engine {
-	t.Helper()
-
-	access.RouteRegistry.Reset()
-	access.ResetEnforcers()
-	t.Cleanup(func() {
-		access.RouteRegistry.Reset()
-		access.ResetEnforcers()
-	})
-
-	// Register the real route permission exactly as declared in
-	// src/payment/routes/permissions.go.
-	access.RouteRegistry.Register("Organization Subscriptions",
-		access.RoutePermission{
-			Path:   route.registeredPath,
-			Method: route.method,
-			Role:   "member",
-			Access: access.AccessRule{
-				Type:    access.OrgRole,
-				Param:   "id",
-				MinRole: route.minRole,
-			},
-		},
-	)
-
-	loader := &paymentAuditEntityLoader{}
-	access.RegisterBuiltinEnforcers(loader, checker)
-
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	// Inject userId / userRoles from headers BEFORE Layer 2 — the same
-	// pattern used by setupTestRouter in enforcement_middleware_test.go.
-	// If X-Test-UserId is empty (unauthenticated case) we deliberately set
-	// an empty string so resolveUserForEnforcement returns ok=false.
-	r.Use(func(c *gin.Context) {
-		uid := c.GetHeader("X-Test-UserId")
-		c.Set("userId", uid)
-		rolesHeader := c.GetHeader("X-Test-Roles")
-		if rolesHeader != "" {
-			c.Set("userRoles", strings.Split(rolesHeader, ","))
-		} else {
-			c.Set("userRoles", []string{})
-		}
-		c.Next()
-	})
-	r.Use(access.Layer2Enforcement())
-
-	// Fake handler — if the request reaches here, Layer 2 allowed it.
-	fake := func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "layer2-allowed"})
-	}
-	r.Handle(route.method, route.registeredPath, fake)
-	return r
-}
-
-// doRequest performs the HTTP request with the given userId + roles headers.
-func doRequest(r *gin.Engine, method, path, userID, roles string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
-	if userID != "" {
-		req.Header.Set("X-Test-UserId", userID)
-	}
-	if roles != "" {
-		req.Header.Set("X-Test-Roles", roles)
-	}
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	return w
-}
-
-// -----------------------------------------------------------------------------
-// Case 1: Outsider — Member with no org membership at all → 403
-// -----------------------------------------------------------------------------
-
-func TestPaymentLayer2_Outsider_Denied(t *testing.T) {
-	for _, route := range paymentAuditRoutes {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			// Checker has NO entries for this user in this org.
-			checker := &paymentAuditMembershipChecker{orgRoles: map[string]string{}}
-			r := setupPaymentAuditRouter(t, route, checker)
-
-			w := doRequest(r, route.method, route.requestPath, "outsider-user", "member")
-			assert.Equal(t, http.StatusForbidden, w.Code,
-				"outsider (no org membership) must be denied on %s %s", route.method, route.requestPath)
-		})
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Case 2: Insufficient role — user is a plain org "member" but route needs
-// "manager". Only applies to the three manager-gated routes.
-// -----------------------------------------------------------------------------
-
-func TestPaymentLayer2_InsufficientRole_Denied(t *testing.T) {
-	for _, route := range paymentAuditRoutes {
-		if route.minRole != "manager" {
-			continue // only manager-gated routes have an insufficient-role case
-		}
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			checker := &paymentAuditMembershipChecker{orgRoles: map[string]string{
-				route.orgID + ":insufficient-user": "member",
-			}}
-			r := setupPaymentAuditRouter(t, route, checker)
-
-			w := doRequest(r, route.method, route.requestPath, "insufficient-user", "member")
-			assert.Equal(t, http.StatusForbidden, w.Code,
-				"org member must be denied on manager-gated %s %s", route.method, route.requestPath)
-		})
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Case 3: Authorized — user meets MinRole → Layer 2 lets the request through
-// (fake handler returns 200).
-// -----------------------------------------------------------------------------
-
-func TestPaymentLayer2_Authorized_Allowed(t *testing.T) {
-	for _, route := range paymentAuditRoutes {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			// Grant exactly the minimum required role.
-			checker := &paymentAuditMembershipChecker{orgRoles: map[string]string{
-				route.orgID + ":authorized-user": route.minRole,
-			}}
-			r := setupPaymentAuditRouter(t, route, checker)
-
-			w := doRequest(r, route.method, route.requestPath, "authorized-user", "member")
-			assert.NotEqual(t, http.StatusForbidden, w.Code,
-				"user with MinRole=%s must not be blocked by Layer 2 on %s %s", route.minRole, route.method, route.requestPath)
-			assert.Equal(t, http.StatusOK, w.Code,
-				"fake handler should have returned 200 for %s %s", route.method, route.requestPath)
-		})
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Case 4: Admin bypass — Casbin Administrator → 200 even without org
-// membership.
-// -----------------------------------------------------------------------------
-
-func TestPaymentLayer2_AdminBypass_Allowed(t *testing.T) {
-	for _, route := range paymentAuditRoutes {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			// Admin has NO org membership — bypass must still allow.
-			checker := &paymentAuditMembershipChecker{orgRoles: map[string]string{}}
-			r := setupPaymentAuditRouter(t, route, checker)
-
-			w := doRequest(r, route.method, route.requestPath, "admin-user", "administrator")
-			assert.NotEqual(t, http.StatusForbidden, w.Code,
-				"administrator must bypass OrgRole check on %s %s", route.method, route.requestPath)
-			assert.Equal(t, http.StatusOK, w.Code,
-				"admin must be allowed on %s %s", route.method, route.requestPath)
-		})
-	}
-}
-
 // -----------------------------------------------------------------------------
 // Case 5: No JWT / unauthenticated — Layer2Enforcement deliberately passes
 // through so AuthManagement (which runs later in the real chain) can reject
@@ -265,14 +73,36 @@ func TestPaymentLayer2_AdminBypass_Allowed(t *testing.T) {
 
 func TestPaymentLayer2_NoUser_Passthrough(t *testing.T) {
 	for _, route := range paymentAuditRoutes {
+		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			checker := &paymentAuditMembershipChecker{orgRoles: map[string]string{}}
-			r := setupPaymentAuditRouter(t, route, checker)
+			// Reuse the generic helpers from layer2_audit_parameterized_test.go.
+			adapted := adaptPaymentRoute(route)
+			checker := &layer2AuditMembershipChecker{orgRoles: map[string]string{}}
+			loader := &layer2AuditEntityLoader{owners: map[string]string{}}
+			r := setupLayer2AuditRouter(t, adapted, checker, loader)
 
 			// No X-Test-UserId header → userId="" → Layer 2 passthrough.
-			w := doRequest(r, route.method, route.requestPath, "", "")
+			w := doLayer2AuditRequest(r, route.method, route.requestPath, "", "")
 			assert.Equal(t, http.StatusOK, w.Code,
 				"Layer 2 must pass through when no user is resolved (AuthManagement owns the 401 response) on %s %s", route.method, route.requestPath)
 		})
 	}
+}
+
+// adaptPaymentRoute converts a single paymentAuditRoute to layer2AuditRoute
+// for use with the generic helpers.
+func adaptPaymentRoute(r paymentAuditRoute) layer2AuditRoute {
+	return adaptPaymentRoutes()[findPaymentRouteIndex(r)]
+}
+
+// findPaymentRouteIndex returns the index of r in paymentAuditRoutes so we can
+// use the pre-built adapted slice from adaptPaymentRoutes() without duplicating
+// the conversion logic.
+func findPaymentRouteIndex(r paymentAuditRoute) int {
+	for i, pr := range paymentAuditRoutes {
+		if pr.method == r.method && pr.registeredPath == r.registeredPath {
+			return i
+		}
+	}
+	return 0
 }

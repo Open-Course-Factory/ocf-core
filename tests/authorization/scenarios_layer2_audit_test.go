@@ -24,13 +24,9 @@ package authorization_tests
 //   - OrgRole (6 routes, MinRole="manager", Param="id",
 //             under /api/v1/organizations/:id/scenarios/...)
 //
-// For each route we run four scenarios mirroring the payment / terminals
-// audits:
-//
-//   1. Outsider — Casbin Member with NO ownership / membership → expect 403
-//   2. Insufficient role — only on routes with MinRole > member → expect 403
-//   3. Authorized — user meets the declared rule → expect 200 (fake handler)
-//   4. Admin bypass — Casbin Administrator → expect 200 (fake handler)
+// Enforcement scenarios (Outsider, InsufficientRole, Authorized, AdminBypass)
+// are covered by the generic parameterized suite in
+// layer2_audit_parameterized_test.go via adaptScenariosRoutes().
 //
 // AUDIT FINDING (#268) — by-terminal/:terminalId — RESOLVED in #269:
 // The route originally declared `Type: EntityOwner, Field: "UserID"` but
@@ -48,75 +44,14 @@ package authorization_tests
 // `TestScenariosLayer2_ByTerminal_FixedByIssue269_RegistryDeclaresSelfScoped`
 // below — that test ensures the route does not silently regress to
 // EntityOwner.
-//
-// The fake handler is a no-op that returns 200. If Layer 2 allows the
-// request through, the handler fires and we see 200. If Layer 2 blocks,
-// we see 403.
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
 	access "soli/formations/src/auth/access"
 )
-
-// -----------------------------------------------------------------------------
-// Shared harness types — scoped to this audit file so we don't couple to
-// the shared mockMembershipChecker used elsewhere in the package.
-// -----------------------------------------------------------------------------
-
-// scenariosAuditMembershipChecker records group and org memberships keyed
-// by "scopeID:userID". CheckGroupRole and CheckOrgRole apply the role
-// hierarchy via access.IsRoleAtLeast.
-type scenariosAuditMembershipChecker struct {
-	groupRoles map[string]string
-	orgRoles   map[string]string
-}
-
-func (c *scenariosAuditMembershipChecker) CheckGroupRole(groupID, userID, minRole string) (bool, error) {
-	role, ok := c.groupRoles[groupID+":"+userID]
-	if !ok {
-		return false, nil
-	}
-	return access.IsRoleAtLeast(role, minRole), nil
-}
-
-func (c *scenariosAuditMembershipChecker) CheckOrgRole(orgID, userID, minRole string) (bool, error) {
-	role, ok := c.orgRoles[orgID+":"+userID]
-	if !ok {
-		return false, nil
-	}
-	return access.IsRoleAtLeast(role, minRole), nil
-}
-
-// scenariosAuditEntityLoader exposes a configurable owner map for
-// ScenarioSession entities. Keys are
-// "entityName:entityID:fieldName" -> owner value, mirroring the harness
-// in payment_layer2_audit_test.go.
-type scenariosAuditEntityLoader struct {
-	owners map[string]string
-}
-
-func (l *scenariosAuditEntityLoader) GetOwnerField(entity, id, field string) (string, error) {
-	key := entity + ":" + id + ":" + field
-	if v, ok := l.owners[key]; ok {
-		return v, nil
-	}
-	// Harness/production divergence note: this harness returns ("", nil)
-	// for absent entries, whereas the production GormEntityLoader returns
-	// an error ("entity ID must not be empty") when called with an empty
-	// id. Both paths converge on a 403 from the EntityOwner enforcer
-	// (empty owner != caller userID; error path also denies), so the
-	// observable behavior under audit is identical. Kept simple here on
-	// purpose — do not "fix" the harness to mimic the error branch
-	// unless a test specifically depends on the error message.
-	return "", nil
-}
 
 // -----------------------------------------------------------------------------
 // Route catalog — mirrors src/scenarios/routes/permissions.go.
@@ -189,217 +124,6 @@ func allScenariosAuditRoutes() []scenariosAuditRoute {
 	all = append(all, scenariosAuditGroupRoutes...)
 	all = append(all, scenariosAuditOrgRoutes...)
 	return all
-}
-
-// -----------------------------------------------------------------------------
-// Harness — installs Layer 2 with exactly the production declarations
-// for one route under audit. Same shape as the payment audit harness in
-// payment_layer2_audit_test.go.
-// -----------------------------------------------------------------------------
-
-func setupScenariosAuditRouter(
-	t *testing.T,
-	route scenariosAuditRoute,
-	checker access.MembershipChecker,
-	loader access.EntityLoader,
-) *gin.Engine {
-	t.Helper()
-
-	access.RouteRegistry.Reset()
-	access.ResetEnforcers()
-	t.Cleanup(func() {
-		access.RouteRegistry.Reset()
-		access.ResetEnforcers()
-	})
-
-	// EntityOwner declarations always use Param="id" in production
-	// (see permissions.go lines 147-189). GroupRole and OrgRole use the
-	// route-specific param name. We reproduce production exactly so
-	// changes to the catalog are visible here.
-	rule := access.AccessRule{
-		Type:    route.ruleType,
-		MinRole: route.minRole,
-		Entity:  route.entity,
-		Field:   route.field,
-	}
-	switch route.ruleType {
-	case access.GroupRole, access.OrgRole:
-		rule.Param = route.paramName
-	}
-
-	access.RouteRegistry.Register("Scenarios",
-		access.RoutePermission{
-			Path:   route.registeredPath,
-			Method: route.method,
-			Role:   "member",
-			Access: rule,
-		},
-	)
-
-	access.RegisterBuiltinEnforcers(loader, checker)
-
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-
-	r.Use(func(c *gin.Context) {
-		uid := c.GetHeader("X-Test-UserId")
-		c.Set("userId", uid)
-		rolesHeader := c.GetHeader("X-Test-Roles")
-		if rolesHeader != "" {
-			c.Set("userRoles", strings.Split(rolesHeader, ","))
-		} else {
-			c.Set("userRoles", []string{})
-		}
-		c.Next()
-	})
-	r.Use(access.Layer2Enforcement())
-
-	fake := func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "layer2-allowed"})
-	}
-	r.Handle(route.method, route.registeredPath, fake)
-	return r
-}
-
-func doScenariosAuditRequest(r *gin.Engine, method, path, userID, roles string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
-	if userID != "" {
-		req.Header.Set("X-Test-UserId", userID)
-	}
-	if roles != "" {
-		req.Header.Set("X-Test-Roles", roles)
-	}
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	return w
-}
-
-// -----------------------------------------------------------------------------
-// Case 1: Outsider — Member with no ownership / no membership → 403
-// -----------------------------------------------------------------------------
-
-func TestScenariosLayer2_Outsider_Denied(t *testing.T) {
-	for _, route := range allScenariosAuditRoutes() {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			owners := map[string]string{}
-			if route.ruleType == access.EntityOwner {
-				// Session is owned by someone else so the outsider never
-				// matches even if Layer 2 happened to look up the right
-				// param (see audit finding for by-terminal).
-				owners["ScenarioSession:"+route.scopeID+":UserID"] = "real-owner-user"
-			}
-			loader := &scenariosAuditEntityLoader{owners: owners}
-			checker := &scenariosAuditMembershipChecker{
-				groupRoles: map[string]string{},
-				orgRoles:   map[string]string{},
-			}
-			r := setupScenariosAuditRouter(t, route, checker, loader)
-
-			w := doScenariosAuditRequest(r, route.method, route.requestPath, "outsider-user", "member")
-			assert.Equal(t, http.StatusForbidden, w.Code,
-				"outsider must be denied on %s %s (observed %d, body=%s)",
-				route.method, route.requestPath, w.Code, w.Body.String())
-		})
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Case 2: Insufficient role — only on routes with MinRole > member.
-// All Group / Org routes in scope require manager.
-// -----------------------------------------------------------------------------
-
-func TestScenariosLayer2_InsufficientRole_Denied(t *testing.T) {
-	var managerGated []scenariosAuditRoute
-	managerGated = append(managerGated, scenariosAuditGroupRoutes...)
-	managerGated = append(managerGated, scenariosAuditOrgRoutes...)
-
-	for _, route := range managerGated {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			checker := &scenariosAuditMembershipChecker{
-				groupRoles: map[string]string{},
-				orgRoles:   map[string]string{},
-			}
-			switch route.ruleType {
-			case access.GroupRole:
-				checker.groupRoles[route.scopeID+":insufficient-user"] = "member"
-			case access.OrgRole:
-				checker.orgRoles[route.scopeID+":insufficient-user"] = "member"
-			}
-			loader := &scenariosAuditEntityLoader{owners: map[string]string{}}
-			r := setupScenariosAuditRouter(t, route, checker, loader)
-
-			w := doScenariosAuditRequest(r, route.method, route.requestPath, "insufficient-user", "member")
-			assert.Equal(t, http.StatusForbidden, w.Code,
-				"plain member must be denied on manager-gated %s %s (observed %d)",
-				route.method, route.requestPath, w.Code)
-		})
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Case 3: Authorized — user meets the rule → Layer 2 lets through.
-// -----------------------------------------------------------------------------
-
-func TestScenariosLayer2_Authorized_Allowed(t *testing.T) {
-	const authorizedUser = "authorized-user"
-
-	all := append([]scenariosAuditRoute{}, scenariosAuditEntityOwnerRoutes...)
-	all = append(all, scenariosAuditGroupRoutes...)
-	all = append(all, scenariosAuditOrgRoutes...)
-
-	for _, route := range all {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			checker := &scenariosAuditMembershipChecker{
-				groupRoles: map[string]string{},
-				orgRoles:   map[string]string{},
-			}
-			owners := map[string]string{}
-
-			switch route.ruleType {
-			case access.EntityOwner:
-				owners["ScenarioSession:"+route.scopeID+":UserID"] = authorizedUser
-			case access.GroupRole:
-				checker.groupRoles[route.scopeID+":"+authorizedUser] = route.minRole
-			case access.OrgRole:
-				checker.orgRoles[route.scopeID+":"+authorizedUser] = route.minRole
-			}
-
-			loader := &scenariosAuditEntityLoader{owners: owners}
-			r := setupScenariosAuditRouter(t, route, checker, loader)
-
-			w := doScenariosAuditRequest(r, route.method, route.requestPath, authorizedUser, "member")
-			assert.NotEqual(t, http.StatusForbidden, w.Code,
-				"authorized user must not be blocked on %s %s (observed %d, body=%s)",
-				route.method, route.requestPath, w.Code, w.Body.String())
-			assert.Equal(t, http.StatusOK, w.Code,
-				"fake handler should have returned 200 for %s %s (body=%s)",
-				route.method, route.requestPath, w.Body.String())
-		})
-	}
-}
-
-// -----------------------------------------------------------------------------
-// Case 4: Admin bypass — Casbin Administrator always allowed.
-// -----------------------------------------------------------------------------
-
-func TestScenariosLayer2_AdminBypass_Allowed(t *testing.T) {
-	for _, route := range allScenariosAuditRoutes() {
-		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
-			loader := &scenariosAuditEntityLoader{owners: map[string]string{}}
-			checker := &scenariosAuditMembershipChecker{
-				groupRoles: map[string]string{},
-				orgRoles:   map[string]string{},
-			}
-			r := setupScenariosAuditRouter(t, route, checker, loader)
-
-			w := doScenariosAuditRequest(r, route.method, route.requestPath, "admin-user", "administrator")
-			assert.NotEqual(t, http.StatusForbidden, w.Code,
-				"administrator must bypass %s enforcement on %s %s (observed %d)",
-				route.ruleType, route.method, route.requestPath, w.Code)
-			assert.Equal(t, http.StatusOK, w.Code,
-				"admin must reach handler on %s %s", route.method, route.requestPath)
-		})
-	}
 }
 
 // -----------------------------------------------------------------------------
@@ -511,6 +235,7 @@ func TestScenariosLayer2_RegistryDeclaresEveryAuditedRoute(t *testing.T) {
 	}
 
 	for _, route := range allScenariosAuditRoutes() {
+		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
 			perm, found := access.RouteRegistry.Lookup(route.method, route.registeredPath)
 			assert.True(t, found,
@@ -541,6 +266,7 @@ func TestScenariosLayer2_NoRegexMethodInCatalog(t *testing.T) {
 	}
 
 	for _, route := range allScenariosAuditRoutes() {
+		route := route // capture
 		t.Run(route.method+" "+route.registeredPath, func(t *testing.T) {
 			assert.True(t, allowed[route.method],
 				"catalog route %s %s declares a non-canonical HTTP method — Layer 2 Lookup is exact-match, regex/alternation methods would silently bypass enforcement",
