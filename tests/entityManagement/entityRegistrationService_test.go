@@ -11,6 +11,7 @@ import (
 	"soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -116,6 +117,27 @@ type TestEntityInput struct {
 type TestEntityOutput struct {
 	ID   string
 	Name string
+}
+
+// TestEntityWithBaseModel, TestEntityInputDto, TestEntityOutputDto are shared
+// test entity types originally defined in genericService_test.go. Moved here
+// (their only remaining consumer) when genericService_test.go was deleted.
+type TestEntityWithBaseModel struct {
+	entityManagementModels.BaseModel
+	Name        string
+	Description string
+}
+
+type TestEntityInputDto struct {
+	Name        string
+	Description string
+}
+
+type TestEntityOutputDto struct {
+	ID          string
+	Name        string
+	Description string
+	OwnerIDs    []string
 }
 
 func TestEntityRegistrationService_NewEntityRegistrationService(t *testing.T) {

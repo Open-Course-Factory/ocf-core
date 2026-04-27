@@ -24,9 +24,11 @@ import (
 	authMocks "soli/formations/src/auth/mocks"
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	"soli/formations/src/entityManagement/hooks"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	controller "soli/formations/src/entityManagement/routes"
+	"soli/formations/src/entityManagement/services"
 )
 
 // ============================================================================
@@ -596,4 +598,147 @@ func TestIntegration_ErrorHandling(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, w.Code)
 		t.Logf("✅ Delete non-existent entity handled correctly")
 	})
+}
+
+// === Migrated from genericService_test.go (error branches) ===
+
+// erroringHookRegistry is a mock HookRegistry whose ExecuteHooks always returns an error.
+// This is needed because the real hookRegistry.ExecuteHooks swallows errors and returns nil.
+// Moved from genericService_test.go on deletion.
+type erroringHookRegistry struct{}
+
+func (r *erroringHookRegistry) RegisterHook(hook hooks.Hook) error              { return nil }
+func (r *erroringHookRegistry) UnregisterHook(hookName string) error            { return nil }
+func (r *erroringHookRegistry) GetHooks(string, hooks.HookType) []hooks.Hook    { return nil }
+func (r *erroringHookRegistry) EnableHook(string, bool) error                   { return nil }
+func (r *erroringHookRegistry) ClearAllHooks()                                  {}
+func (r *erroringHookRegistry) SetTestMode(bool)                                {}
+func (r *erroringHookRegistry) DisableAllHooks(bool)                            {}
+func (r *erroringHookRegistry) IsTestMode() bool                                { return true }
+func (r *erroringHookRegistry) GetRecentErrors(int) []hooks.HookError           { return nil }
+func (r *erroringHookRegistry) ClearErrors()                                    {}
+func (r *erroringHookRegistry) SetErrorCallback(hooks.HookErrorCallback)        {}
+func (r *erroringHookRegistry) ExecuteHooks(ctx *hooks.HookContext) error {
+	return fmt.Errorf("hook execution failed")
+}
+
+// capturingHook is a real Hook implementation that records the userID and userRoles
+// from the HookContext it receives. Used to verify *WithUser propagation.
+type capturingHook struct {
+	entityName     string
+	capturedUserID string
+	capturedRoles  []string
+}
+
+func (h *capturingHook) GetName() string             { return h.entityName + "CapturingHook" }
+func (h *capturingHook) GetEntityName() string        { return h.entityName }
+func (h *capturingHook) GetHookTypes() []hooks.HookType { return []hooks.HookType{hooks.BeforeCreate} }
+func (h *capturingHook) IsEnabled() bool              { return true }
+func (h *capturingHook) GetPriority() int             { return 1 }
+func (h *capturingHook) Execute(ctx *hooks.HookContext) error {
+	h.capturedUserID = ctx.UserID
+	h.capturedRoles = ctx.UserRoles
+	return nil
+}
+
+// setupServiceWithRealDB builds a GenericService backed by the real in-memory SQLite
+// that already has IntegrationTestEntity migrated (reusing setupIntegrationTest).
+func setupServiceWithRealDB(t *testing.T) (*IntegrationTestSuite, services.GenericService) {
+	suite := setupIntegrationTest(t)
+	svc := services.NewGenericService(suite.db, nil)
+	return suite, svc
+}
+
+// TestService_CreateUnregisteredEntity_ReturnsENT003 verifies that calling
+// CreateEntityWithUser with an entity name that has no typed ops registered
+// returns an error containing "ENT003".
+// Production line: genericService.go:96-97 — GetEntityOps returns false.
+func TestService_CreateUnregisteredEntity_ReturnsENT003(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+
+	// Use a completely fresh registration service with NO entities in it.
+	original := ems.GlobalEntityRegistrationService
+	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
+	t.Cleanup(func() { ems.GlobalEntityRegistrationService = original })
+
+	svc := services.NewGenericService(db, nil)
+	_, gotErr := svc.CreateEntityWithUser(IntegrationTestEntityInput{Name: "x"}, "NeverRegistered", "user1")
+
+	require.Error(t, gotErr)
+	assert.Contains(t, gotErr.Error(), "ENT003",
+		"expected ENT003 conversion error when entity is not registered; got: %v", gotErr)
+}
+
+// TestService_CreateEntityWithWrongDtoType_ReturnsENT003 verifies that passing a DTO of
+// the wrong type causes ConvertDtoToModel to fail and the service to return ENT003.
+// Production lines: genericService.go:100-102 — ConvertDtoToModel returns error.
+func TestService_CreateEntityWithWrongDtoType_ReturnsENT003(t *testing.T) {
+	_, svc := setupServiceWithRealDB(t)
+
+	// Pass a plain string — the registered entity expects IntegrationTestEntityInput.
+	_, gotErr := svc.CreateEntityWithUser("wrong-dto-type", "IntegrationTestEntity", "user1")
+
+	require.Error(t, gotErr)
+	assert.Contains(t, gotErr.Error(), "ENT003",
+		"expected ENT003 when DTO type does not match; got: %v", gotErr)
+}
+
+// TestService_CreateEntityWithFailingHook_ReturnsENT007 verifies that when the
+// BeforeCreate hook returns an error the service wraps it as ENT007.
+// Production lines: genericService.go:115-116 — ExecuteHooks returns error,
+// WrapHookError produces ENT007.
+// Note: the real hookRegistry.ExecuteHooks swallows errors; we must substitute
+// GlobalHookRegistry with erroringHookRegistry (the same technique used in genericService_test.go).
+func TestService_CreateEntityWithFailingHook_ReturnsENT007(t *testing.T) {
+	_, svc := setupServiceWithRealDB(t)
+
+	origRegistry := hooks.GlobalHookRegistry
+	hooks.GlobalHookRegistry = &erroringHookRegistry{}
+	t.Cleanup(func() { hooks.GlobalHookRegistry = origRegistry })
+
+	_, gotErr := svc.CreateEntityWithUser(IntegrationTestEntityInput{Name: "hook-fail"}, "IntegrationTestEntity", "user1")
+
+	require.Error(t, gotErr)
+	assert.Contains(t, gotErr.Error(), "ENT007",
+		"expected ENT007 when BeforeCreate hook fails; got: %v", gotErr)
+}
+
+// TestService_CreateEntityWithUser_PropagatesUserIDAndDefaultsRole verifies two behaviours:
+//  1. The userID supplied to CreateEntityWithUser reaches the BeforeCreate hook context.
+//  2. When no roles are provided for a non-empty userID, the role defaults to "Member".
+//
+// Production lines:
+//   - genericService.go:90-92 — empty userRoles → default "Member"
+//   - genericService.go:106-113 — HookContext populated with userID and userRoles
+func TestService_CreateEntityWithUser_PropagatesUserIDAndDefaultsRole(t *testing.T) {
+	suite := setupIntegrationTest(t)
+
+	// Ensure hooks are enabled (setupIntegrationTest doesn't disable them globally).
+	hooks.GlobalHookRegistry.DisableAllHooks(false)
+
+	// Register our capturing hook for the duration of this test.
+	capturer := &capturingHook{entityName: "IntegrationTestEntity"}
+	err := hooks.GlobalHookRegistry.RegisterHook(capturer)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		hooks.GlobalHookRegistry.UnregisterHook(capturer.GetName())
+	})
+
+	svc := services.NewGenericService(suite.db, nil)
+
+	const testUserID = "user-propagation-test"
+	// Call with non-empty userID and NO explicit roles — should default to "Member".
+	_, createErr := svc.CreateEntityWithUser(
+		IntegrationTestEntityInput{Name: "propagation test"},
+		"IntegrationTestEntity",
+		testUserID,
+		// no roles → default expected
+	)
+	require.NoError(t, createErr)
+
+	assert.Equal(t, testUserID, capturer.capturedUserID,
+		"hook should receive the userID passed to CreateEntityWithUser")
+	assert.Equal(t, []string{"Member"}, capturer.capturedRoles,
+		"empty roles with non-empty userID should default to [Member]")
 }
