@@ -682,7 +682,8 @@ type CtrlDeleteParentOutput struct {
 }
 
 // Test that DELETE returns HTTP 409 when a FK constraint violation occurs.
-// Currently FAILS because deleteEntity.go hardcodes http.StatusNotFound for all delete errors.
+// Production handles this via deleteEntity.go which inspects EntityError.HTTPStatus
+// and surfaces 409 when the repository wraps the FK error as ENT011.
 func TestGenericController_DeleteEntity_ForeignKeyConstraint_Returns409(t *testing.T) {
 	// Setup
 	gin.SetMode(gin.TestMode)
