@@ -27,5 +27,13 @@ func (s *ScenariosModuleConfig) GetFeatures() []models.FeatureDefinition {
 			Category:    "modules",
 			Module:      "scenarios",
 		},
+		{
+			Key:         "scenario_conception",
+			Name:        "Scenario Editor",
+			Description: "Enable/disable the visual scenario editor for teachers to design and manage interactive lab scenarios",
+			Enabled:     false,
+			Category:    "modules",
+			Module:      "scenarios",
+		},
 	}
 }
