@@ -44,7 +44,7 @@ func setupRecordingAckTestService(t *testing.T) *ems.EntityRegistrationService {
 func TestUserSettings_ModelToDto_IncludesRecordingAcknowledgedAt(t *testing.T) {
 	svc := setupRecordingAckTestService(t)
 
-	ops, ok := svc.GetEntityOps("UserSettings")
+	ops, ok := svc.GetEntityOps("UserSetting")
 	require.True(t, ok, "UserSettings must be registered")
 
 	now := time.Now().UTC().Truncate(time.Second)
@@ -71,7 +71,7 @@ func TestUserSettings_ModelToDto_IncludesRecordingAcknowledgedAt(t *testing.T) {
 func TestUserSettings_DtoToMap_AcceptsRecordingAcknowledgedAt(t *testing.T) {
 	svc := setupRecordingAckTestService(t)
 
-	ops, ok := svc.GetEntityOps("UserSettings")
+	ops, ok := svc.GetEntityOps("UserSetting")
 	require.True(t, ok, "UserSettings must be registered")
 
 	now := time.Now().UTC().Truncate(time.Second)

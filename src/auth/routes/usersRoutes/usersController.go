@@ -80,7 +80,7 @@ func (uc *userController) GetMySettings(ctx *gin.Context) {
 	}
 
 	// Convert to output DTO
-	ops, _ := ems.GlobalEntityRegistrationService.GetEntityOps("UserSettings")
+	ops, _ := ems.GlobalEntityRegistrationService.GetEntityOps("UserSetting")
 	output, err := ops.ConvertModelToDto(&settings)
 	if err != nil {
 		utils.Error("Failed to convert settings to output: %v", err)
@@ -127,7 +127,7 @@ func (uc *userController) UpdateMySettings(ctx *gin.Context) {
 	}
 
 	// Convert DTO to update map
-	ops, _ := ems.GlobalEntityRegistrationService.GetEntityOps("UserSettings")
+	ops, _ := ems.GlobalEntityRegistrationService.GetEntityOps("UserSetting")
 	updateMap, _ := ops.ConvertEditDtoToMap(editInput)
 
 	// Update the settings

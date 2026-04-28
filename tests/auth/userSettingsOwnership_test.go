@@ -56,14 +56,14 @@ func createTestUserSettings(t *testing.T, db *gorm.DB, userID string) *authModel
 
 func TestUserSettingsOwnership_BeforeUpdate_OwnerCanUpdate(t *testing.T) {
 	db := setupUserSettingsTestDB(t)
-	hook := hooks.NewOwnershipHook(db, "UserSettings", userSettingsOwnershipConfig)
+	hook := hooks.NewOwnershipHook(db, "UserSetting", userSettingsOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	settings := createTestUserSettings(t, db, ownerID)
 
 	// Owner updates their own settings
 	ctx := &hooks.HookContext{
-		EntityName: "UserSettings",
+		EntityName: "UserSetting",
 		HookType:   hooks.BeforeUpdate,
 		EntityID:   settings.ID,
 		OldEntity:  settings,
@@ -78,7 +78,7 @@ func TestUserSettingsOwnership_BeforeUpdate_OwnerCanUpdate(t *testing.T) {
 
 func TestUserSettingsOwnership_BeforeUpdate_NonOwnerBlocked(t *testing.T) {
 	db := setupUserSettingsTestDB(t)
-	hook := hooks.NewOwnershipHook(db, "UserSettings", userSettingsOwnershipConfig)
+	hook := hooks.NewOwnershipHook(db, "UserSetting", userSettingsOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	attackerID := "user-attacker-456"
@@ -86,7 +86,7 @@ func TestUserSettingsOwnership_BeforeUpdate_NonOwnerBlocked(t *testing.T) {
 
 	// Non-owner tries to update someone else's settings
 	ctx := &hooks.HookContext{
-		EntityName: "UserSettings",
+		EntityName: "UserSetting",
 		HookType:   hooks.BeforeUpdate,
 		EntityID:   settings.ID,
 		OldEntity:  settings,
@@ -102,7 +102,7 @@ func TestUserSettingsOwnership_BeforeUpdate_NonOwnerBlocked(t *testing.T) {
 
 func TestUserSettingsOwnership_BeforeUpdate_AdminCanUpdate(t *testing.T) {
 	db := setupUserSettingsTestDB(t)
-	hook := hooks.NewOwnershipHook(db, "UserSettings", userSettingsOwnershipConfig)
+	hook := hooks.NewOwnershipHook(db, "UserSetting", userSettingsOwnershipConfig)
 
 	ownerID := "user-owner-123"
 	adminID := "admin-user-789"
@@ -110,7 +110,7 @@ func TestUserSettingsOwnership_BeforeUpdate_AdminCanUpdate(t *testing.T) {
 
 	// Admin updates someone else's settings
 	ctx := &hooks.HookContext{
-		EntityName: "UserSettings",
+		EntityName: "UserSetting",
 		HookType:   hooks.BeforeUpdate,
 		EntityID:   settings.ID,
 		OldEntity:  settings,
