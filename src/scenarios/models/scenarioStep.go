@@ -26,7 +26,8 @@ type ScenarioStep struct {
 	ForegroundScriptID *uuid.UUID `gorm:"type:uuid;index" json:"foreground_script_id,omitempty" mapstructure:"foreground_script_id"`
 	TextFileID         *uuid.UUID `gorm:"type:uuid;index" json:"text_file_id,omitempty" mapstructure:"text_file_id"`
 	HintFileID         *uuid.UUID `gorm:"type:uuid;index" json:"hint_file_id,omitempty" mapstructure:"hint_file_id"`
-	Hints            []ScenarioStepHint `gorm:"foreignKey:StepID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"hints,omitempty"`
+	Hints            []ScenarioStepHint     `gorm:"foreignKey:StepID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"hints,omitempty"`
+	Questions        []ScenarioStepQuestion `gorm:"foreignKey:StepID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"questions,omitempty"`
 }
 
 // Implement interfaces for entity management system
