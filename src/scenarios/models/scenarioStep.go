@@ -12,6 +12,7 @@ type ScenarioStep struct {
 	ScenarioID       uuid.UUID `gorm:"type:uuid;not null;index" json:"scenario_id"`
 	Order            int       `gorm:"not null" json:"order"`
 	Title            string    `gorm:"type:varchar(500);not null" json:"title"`
+	StepType         string    `gorm:"type:varchar(50);default:'terminal'" json:"step_type"`
 	TextContent      string    `gorm:"type:text" json:"text_content,omitempty"`      // markdown
 	HintContent      string    `gorm:"type:text" json:"hint_content,omitempty"`      // markdown
 	VerifyScript     string    `gorm:"type:text" json:"-"`

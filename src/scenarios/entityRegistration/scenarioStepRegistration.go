@@ -22,6 +22,7 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						ScenarioID:         model.ScenarioID,
 						Order:              model.Order,
 						Title:              model.Title,
+						StepType:           model.StepType,
 						TextContent:        model.TextContent,
 						HintContent:        model.HintContent,
 						VerifyScript:       model.VerifyScript,
@@ -40,10 +41,15 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 					}, nil
 				},
 				DtoToModel: func(input dto.CreateScenarioStepInput) *models.ScenarioStep {
+					stepType := input.StepType
+					if stepType == "" {
+						stepType = "terminal"
+					}
 					return &models.ScenarioStep{
 						ScenarioID:         input.ScenarioID,
 						Order:              input.Order,
 						Title:              input.Title,
+						StepType:           stepType,
 						TextContent:        input.TextContent,
 						HintContent:        input.HintContent,
 						VerifyScript:       input.VerifyScript,
@@ -66,6 +72,9 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 					}
 					if input.Title != nil {
 						updates["title"] = *input.Title
+					}
+					if input.StepType != nil {
+						updates["step_type"] = *input.StepType
 					}
 					if input.TextContent != nil {
 						updates["text_content"] = *input.TextContent
