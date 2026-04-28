@@ -31,6 +31,7 @@ type CreateScenarioInput struct {
 	FinishText     string     `json:"finish_text,omitempty" mapstructure:"finish_text"`
 	OrganizationID *uuid.UUID `json:"organization_id,omitempty" mapstructure:"organization_id"`
 	IsPublic       bool       `json:"is_public,omitempty" mapstructure:"is_public"`
+	SetupScript    string     `json:"setup_script,omitempty" mapstructure:"setup_script"`
 	SetupScriptID  *uuid.UUID `json:"setup_script_id,omitempty" mapstructure:"setup_script_id"`
 	IntroFileID    *uuid.UUID `json:"intro_file_id,omitempty" mapstructure:"intro_file_id"`
 	FinishFileID   *uuid.UUID `json:"finish_file_id,omitempty" mapstructure:"finish_file_id"`
@@ -62,6 +63,7 @@ type EditScenarioInput struct {
 	FinishText     *string    `json:"finish_text,omitempty" mapstructure:"finish_text"`
 	OrganizationID *uuid.UUID `json:"organization_id,omitempty" mapstructure:"organization_id"`
 	IsPublic       *bool      `json:"is_public,omitempty" mapstructure:"is_public"`
+	SetupScript    *string    `json:"setup_script,omitempty" mapstructure:"setup_script"`
 	SetupScriptID  *uuid.UUID `json:"setup_script_id,omitempty" mapstructure:"setup_script_id"`
 	IntroFileID    *uuid.UUID `json:"intro_file_id,omitempty" mapstructure:"intro_file_id"`
 	FinishFileID   *uuid.UUID `json:"finish_file_id,omitempty" mapstructure:"finish_file_id"`
@@ -94,6 +96,7 @@ type ScenarioOutput struct {
 	CreatedByID    string             `json:"created_by_id"`
 	OrganizationID *uuid.UUID         `json:"organization_id,omitempty"`
 	IsPublic       bool               `json:"is_public"`
+	SetupScript    string             `json:"setup_script,omitempty"`
 	SetupScriptID  *uuid.UUID         `json:"setup_script_id,omitempty"`
 	IntroFileID    *uuid.UUID         `json:"intro_file_id,omitempty"`
 	FinishFileID   *uuid.UUID         `json:"finish_file_id,omitempty"`
