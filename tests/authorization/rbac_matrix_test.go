@@ -80,7 +80,7 @@ func allEntityRoles() []entityRoleDefinition {
 			}},
 		},
 		{
-			entityName: "UserSettings",
+			entityName: "UserSetting",
 			routeName:  "user-settings",
 			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
 				memberRole: "(" + http.MethodGet + "|" + http.MethodPatch + ")",
@@ -840,7 +840,7 @@ func TestRBAC_EntitiesWithoutRoles_HaveNoPolicies(t *testing.T) {
 func TestRBAC_RouteNameDerivation(t *testing.T) {
 	expected := map[string]string{
 		"SshKey":             "ssh-keys",
-		"UserSettings":       "user-settings",
+		"UserSetting":       "user-settings",
 		"Feature":            "features",
 		"ClassGroup":         "class-groups",
 		"GroupMember":        "group-members",

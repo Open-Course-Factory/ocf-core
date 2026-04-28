@@ -32,3 +32,11 @@ type UserSettings struct {
 	// RGPD: server-side record of recording acknowledgement (#72)
 	RecordingAcknowledgedAt *time.Time `json:"recording_acknowledged_at,omitempty"`
 }
+
+func (u UserSettings) GetBaseModel() entityManagementModels.BaseModel {
+	return u.BaseModel
+}
+
+func (u UserSettings) GetReferenceObject() string {
+	return "UserSetting"
+}

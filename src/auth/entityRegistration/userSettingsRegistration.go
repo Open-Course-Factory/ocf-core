@@ -12,7 +12,7 @@ import (
 func RegisterUserSettings(service *ems.EntityRegistrationService) {
 	ems.RegisterTypedEntity[authModels.UserSettings, dto.UserSettingsInput, dto.EditUserSettingsInput, dto.UserSettingsOutput](
 		service,
-		"UserSettings",
+		"UserSetting",
 		entityManagementInterfaces.TypedEntityRegistration[authModels.UserSettings, dto.UserSettingsInput, dto.EditUserSettingsInput, dto.UserSettingsOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[authModels.UserSettings, dto.UserSettingsInput, dto.EditUserSettingsInput, dto.UserSettingsOutput]{
 				ModelToDto: func(model *authModels.UserSettings) (dto.UserSettingsOutput, error) {
@@ -97,7 +97,7 @@ func RegisterUserSettings(service *ems.EntityRegistrationService) {
 			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{
 				Tag:        "user-settings",
-				EntityName: "UserSettings",
+				EntityName: "UserSetting",
 				GetAll: &entityManagementInterfaces.SwaggerOperation{
 					Summary:     "Get all user settings",
 					Description: "Returns all user settings (admin only)",

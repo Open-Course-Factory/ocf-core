@@ -22,7 +22,7 @@ func InitAuthHooks(db *gorm.DB) {
 	}
 
 	// Ownership hook to enforce that only the owner (or admin) can update UserSettings
-	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "UserSettings", access.OwnershipConfig{
+	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "UserSetting", access.OwnershipConfig{
 		OwnerField: "UserID", Operations: []string{"update"}, AdminBypass: true,
 	})); err != nil {
 		log.Printf("❌ Failed to register UserSettings ownership hook: %v", err)
