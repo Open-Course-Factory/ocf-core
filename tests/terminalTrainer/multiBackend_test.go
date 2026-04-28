@@ -3,8 +3,13 @@ package terminalTrainer_tests
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // setupMultiBackendTestDB creates a fresh test DB and returns repo + service.
@@ -768,4 +774,623 @@ func TestGetOrganizationBackends(t *testing.T) {
 
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
+}
+
+// =============================================================================
+// GetBackends — controller-level authorization & error contract
+// =============================================================================
+
+func TestGetBackends_NonAdminWithoutOrgID_Returns403(t *testing.T) {
+	db := freshTestDB(t)
+
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "regular-user")
+		c.Set("userRoles", []string{"member"})
+		c.Next()
+	})
+	router.GET("/terminals/backends", ctrl.GetBackends)
+
+	// Non-admin without organization_id should get 403
+	req := httptest.NewRequest("GET", "/terminals/backends", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	var apiErr map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &apiErr)
+	require.NoError(t, err)
+	assert.Contains(t, apiErr["error_message"], "Admin access required")
+}
+
+func TestGetBackends_NonAdminWithOrgID_Allowed(t *testing.T) {
+	db := freshTestDB(t)
+
+	// Create an organization
+	org := &organizationModels.Organization{
+		Name:             "test-org-backend-access",
+		DisplayName:      "Test Org",
+		OwnerUserID:      "regular-user",
+		IsActive:         true,
+		OrganizationType: organizationModels.OrgTypeTeam,
+		MaxGroups:        10,
+		MaxMembers:       50,
+		AllowedBackends:  []string{"local"},
+		DefaultBackend:   "local",
+	}
+	err := db.Omit("Metadata").Create(org).Error
+	require.NoError(t, err)
+
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "regular-user")
+		c.Set("userRoles", []string{"member"})
+		c.Next()
+	})
+	router.GET("/terminals/backends", ctrl.GetBackends)
+
+	// Non-admin with valid organization_id should be allowed (will fail 500 due to no TT API, but NOT 403)
+	req := httptest.NewRequest("GET", "/terminals/backends?organization_id="+org.ID.String(), nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// Should NOT be 403 - the org-filtered path doesn't require admin
+	assert.NotEqual(t, http.StatusForbidden, w.Code, "Non-admin should be able to access org-filtered backends")
+}
+
+func TestGetBackends_AdminWithoutOrgID_Allowed(t *testing.T) {
+	db := freshTestDB(t)
+
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "admin-user")
+		c.Set("userRoles", []string{"administrator"})
+		c.Next()
+	})
+	router.GET("/terminals/backends", ctrl.GetBackends)
+
+	// Admin without organization_id should be allowed (will get 500 due to no TT API, but NOT 403)
+	req := httptest.NewRequest("GET", "/terminals/backends", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// Should NOT be 403
+	assert.NotEqual(t, http.StatusForbidden, w.Code, "Admin should be able to list all backends")
+}
+
+func TestGetBackends_ErrorDoesNotLeakInternalDetails(t *testing.T) {
+	db := freshTestDB(t)
+
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "admin-user")
+		c.Set("userRoles", []string{"administrator"})
+		c.Next()
+	})
+	router.GET("/terminals/backends", ctrl.GetBackends)
+
+	// This will fail (no TT API configured) - verify error message is generic
+	req := httptest.NewRequest("GET", "/terminals/backends", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code == http.StatusInternalServerError {
+		var apiErr map[string]interface{}
+		err := json.Unmarshal(w.Body.Bytes(), &apiErr)
+		require.NoError(t, err)
+
+		errMsg := apiErr["error_message"].(string)
+		// Should NOT contain internal URLs, API keys, or detailed error messages
+		assert.NotContains(t, errMsg, "http://")
+		assert.NotContains(t, errMsg, "https://")
+		assert.NotContains(t, errMsg, "key=")
+		assert.Equal(t, "Failed to get backends", errMsg)
+	}
+}
+
+func TestGetServerMetrics_ErrorDoesNotLeakInternalDetails(t *testing.T) {
+	db := freshTestDB(t)
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "admin-user")
+		c.Set("userRoles", []string{"administrator"})
+		c.Next()
+	})
+	router.GET("/terminals/metrics", ctrl.GetServerMetrics)
+
+	req := httptest.NewRequest("GET", "/terminals/metrics", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code == http.StatusInternalServerError {
+		var apiErr map[string]interface{}
+		err := json.Unmarshal(w.Body.Bytes(), &apiErr)
+		require.NoError(t, err)
+
+		errMsg := apiErr["error_message"].(string)
+		assert.Equal(t, "Failed to get server metrics", errMsg)
+	}
+}
+
+func TestGetBackends_InvalidOrgID_Returns400WithoutLeak(t *testing.T) {
+	db := freshTestDB(t)
+
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "regular-user")
+		c.Set("userRoles", []string{"member"})
+		c.Next()
+	})
+	router.GET("/terminals/backends", ctrl.GetBackends)
+
+	req := httptest.NewRequest("GET", "/terminals/backends?organization_id=not-a-uuid", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var apiErr map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &apiErr)
+	require.NoError(t, err)
+	// Should say "Invalid organization_id" without leaking the parse error details
+	assert.Equal(t, "Invalid organization_id", apiErr["error_message"])
+}
+
+func TestGetBackends_NonExistentOrg_ReturnsError(t *testing.T) {
+	db := freshTestDB(t)
+
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "regular-user")
+		c.Set("userRoles", []string{"member"})
+		c.Next()
+	})
+	router.GET("/terminals/backends", ctrl.GetBackends)
+
+	fakeOrgID := uuid.New().String()
+	req := httptest.NewRequest("GET", "/terminals/backends?organization_id="+fakeOrgID, nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// Should return 500 (org not found wrapped in service error), not 403
+	assert.NotEqual(t, http.StatusForbidden, w.Code)
+	assert.True(t, w.Code == http.StatusInternalServerError || w.Code == http.StatusNotFound,
+		"Expected 404 or 500 for non-existent org, got %d", w.Code)
+}
+
+// =============================================================================
+// GetBackendsForOrganization — service-level filtering
+// =============================================================================
+
+// setupServiceWithMockBackends creates a TerminalTrainerService backed by a fake
+// TT API that returns the given backends. The system default is indicated by
+// setting IsDefault=true on the matching backend in the response (tt-backend is
+// the single source of truth for default backend).
+func setupServiceWithMockBackends(t *testing.T, backends []dto.BackendInfo, systemDefault string) (services.TerminalTrainerService, *gorm.DB) {
+	t.Helper()
+
+	// Mark the system default in the backend list (tt-backend is source of truth)
+	for i := range backends {
+		backends[i].IsDefault = (backends[i].ID == systemDefault)
+	}
+
+	// Fake TT backend API
+	ttServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(backends)
+	}))
+	t.Cleanup(func() { ttServer.Close() })
+
+	db := freshTestDB(t)
+
+	// Set env vars for the service constructor, then restore
+	origURL := os.Getenv("TERMINAL_TRAINER_URL")
+	origKey := os.Getenv("TERMINAL_TRAINER_ADMIN_KEY")
+	origVer := os.Getenv("TERMINAL_TRAINER_API_VERSION")
+	os.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)
+	os.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-key")
+	os.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+	t.Cleanup(func() {
+		os.Setenv("TERMINAL_TRAINER_URL", origURL)
+		os.Setenv("TERMINAL_TRAINER_ADMIN_KEY", origKey)
+		os.Setenv("TERMINAL_TRAINER_API_VERSION", origVer)
+	})
+
+	svc := services.NewTerminalTrainerService(db)
+	return svc, db
+}
+
+// createTestOrgWithBackends creates an org with a given backend allow-list and default.
+func createTestOrgWithBackends(t *testing.T, db *gorm.DB, name string, allowedBackends []string, defaultBackend string) *organizationModels.Organization {
+	t.Helper()
+
+	org := &organizationModels.Organization{
+		Name:             name,
+		DisplayName:      name,
+		OwnerUserID:      "owner1",
+		IsActive:         true,
+		OrganizationType: organizationModels.OrgTypeTeam,
+		MaxGroups:        10,
+		MaxMembers:       50,
+		AllowedBackends:  allowedBackends,
+		DefaultBackend:   defaultBackend,
+	}
+	err := db.Omit("Metadata").Create(org).Error
+	require.NoError(t, err)
+	return org
+}
+
+func TestGetBackendsForOrganization_Filtering(t *testing.T) {
+	// Two backends exist in the system
+	allBackends := []dto.BackendInfo{
+		{ID: "default", Name: "Default Backend", Connected: true},
+		{ID: "oracle1", Name: "Oracle Cloud", Connected: true},
+	}
+
+	svc, db := setupServiceWithMockBackends(t, allBackends, "default")
+
+	t.Run("org with null allowed_backends gets only default backend", func(t *testing.T) {
+		org := createTestOrgWithBackends(t, db,
+			fmt.Sprintf("null-backends-%s", uuid.New().String()[:8]),
+			nil, "") // nil = null in DB
+
+		backends, err := svc.GetBackendsForOrganization(org.ID)
+		require.NoError(t, err)
+
+		require.Len(t, backends, 1, "Org with null allowed_backends should get ONLY the default backend")
+		assert.Equal(t, "default", backends[0].ID)
+		assert.True(t, backends[0].IsDefault)
+	})
+
+	t.Run("org with empty allowed_backends gets only default backend", func(t *testing.T) {
+		org := createTestOrgWithBackends(t, db,
+			fmt.Sprintf("empty-backends-%s", uuid.New().String()[:8]),
+			[]string{}, "") // empty slice
+
+		backends, err := svc.GetBackendsForOrganization(org.ID)
+		require.NoError(t, err)
+
+		require.Len(t, backends, 1, "Org with empty allowed_backends should get ONLY the default backend")
+		assert.Equal(t, "default", backends[0].ID)
+	})
+
+	t.Run("org with both backends configured gets both", func(t *testing.T) {
+		org := createTestOrgWithBackends(t, db,
+			fmt.Sprintf("both-backends-%s", uuid.New().String()[:8]),
+			[]string{"default", "oracle1"}, "oracle1")
+
+		backends, err := svc.GetBackendsForOrganization(org.ID)
+		require.NoError(t, err)
+
+		require.Len(t, backends, 2, "Org with both backends should get both")
+
+		ids := []string{backends[0].ID, backends[1].ID}
+		assert.Contains(t, ids, "default")
+		assert.Contains(t, ids, "oracle1")
+
+		// Verify only oracle1 is marked as default (org default), not both
+		defaultCount := 0
+		for _, b := range backends {
+			if b.IsDefault {
+				defaultCount++
+				assert.Equal(t, "oracle1", b.ID, "Only org default backend should be marked as default")
+			}
+		}
+		assert.Equal(t, 1, defaultCount, "Exactly one backend should be marked as default")
+	})
+
+	t.Run("org with only oracle1 gets only oracle1", func(t *testing.T) {
+		org := createTestOrgWithBackends(t, db,
+			fmt.Sprintf("oracle-only-%s", uuid.New().String()[:8]),
+			[]string{"oracle1"}, "oracle1")
+
+		backends, err := svc.GetBackendsForOrganization(org.ID)
+		require.NoError(t, err)
+
+		require.Len(t, backends, 1, "Org with only oracle1 should get only oracle1")
+		assert.Equal(t, "oracle1", backends[0].ID)
+	})
+
+	t.Run("org with only default gets only default", func(t *testing.T) {
+		org := createTestOrgWithBackends(t, db,
+			fmt.Sprintf("default-only-%s", uuid.New().String()[:8]),
+			[]string{"default"}, "default")
+
+		backends, err := svc.GetBackendsForOrganization(org.ID)
+		require.NoError(t, err)
+
+		require.Len(t, backends, 1, "Org with only default should get only default")
+		assert.Equal(t, "default", backends[0].ID)
+	})
+}
+
+// Critical: test that filtering works even when no system default is configured
+// (matches production state where features table has no terminal_default_backend)
+func TestGetBackendsForOrganization_NoSystemDefault(t *testing.T) {
+	allBackends := []dto.BackendInfo{
+		{ID: "default", Name: "Default Backend", Connected: true},
+		{ID: "oracle1", Name: "Oracle Cloud", Connected: true},
+	}
+
+	// Empty string = no system default configured (matches production)
+	svc, db := setupServiceWithMockBackends(t, allBackends, "")
+
+	t.Run("null allowed_backends with no system default returns first backend only", func(t *testing.T) {
+		org := createTestOrgWithBackends(t, db,
+			fmt.Sprintf("no-sysdefault-%s", uuid.New().String()[:8]),
+			nil, "")
+
+		backends, err := svc.GetBackendsForOrganization(org.ID)
+		require.NoError(t, err)
+
+		require.Len(t, backends, 1, "Should return only 1 backend, not all")
+		assert.Equal(t, "default", backends[0].ID, "Should return the first backend as fallback")
+	})
+
+	t.Run("explicit config still works without system default", func(t *testing.T) {
+		org := createTestOrgWithBackends(t, db,
+			fmt.Sprintf("explicit-no-sysdefault-%s", uuid.New().String()[:8]),
+			[]string{"default", "oracle1"}, "oracle1")
+
+		backends, err := svc.GetBackendsForOrganization(org.ID)
+		require.NoError(t, err)
+
+		require.Len(t, backends, 2, "Explicit config should still return both")
+	})
+}
+
+// =============================================================================
+// SetSystemDefaultBackend — service-level behavior
+// =============================================================================
+
+// setupSetDefaultTestServer creates an httptest.Server that routes requests
+// to the public GET /backends, admin GET /admin/backends, and admin PUT /admin/backends/{id}
+// endpoints, allowing each test to control responses independently.
+func setupSetDefaultTestServer(
+	t *testing.T,
+	backends []dto.BackendInfo,
+	adminBackends []map[string]interface{},
+	putHandler func(w http.ResponseWriter, r *http.Request),
+) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/backends") && !strings.Contains(r.URL.Path, "/admin/"):
+			json.NewEncoder(w).Encode(backends)
+		case r.Method == "GET" && strings.Contains(r.URL.Path, "/admin/backends"):
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"data":    adminBackends,
+			})
+		case r.Method == "PUT" && strings.Contains(r.URL.Path, "/admin/backends/"):
+			if putHandler != nil {
+				putHandler(w, r)
+			} else {
+				json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Backend updated successfully"})
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+}
+
+func setupSetDefaultService(t *testing.T, serverURL string) services.TerminalTrainerService {
+	t.Helper()
+	db := freshTestDB(t)
+	t.Setenv("TERMINAL_TRAINER_URL", serverURL)
+	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-admin-key")
+	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+	return services.NewTerminalTrainerService(db)
+}
+
+func TestSetSystemDefaultBackend_HappyPath(t *testing.T) {
+	publicBackends := []dto.BackendInfo{
+		{ID: "local", Name: "Local Server", Connected: true, IsDefault: true},
+		{ID: "cloud1", Name: "Cloud 1", Connected: true, IsDefault: false},
+	}
+	adminBackends := []map[string]interface{}{
+		{"id": 1, "backend_id": "local", "name": "Local Server", "is_default": true, "is_active": true, "server_url": "", "server_certificate": "", "client_certificate": "", "project": "default"},
+		{"id": 2, "backend_id": "cloud1", "name": "Cloud 1", "is_default": false, "is_active": true, "server_url": "https://cloud1:8443", "server_certificate": "", "client_certificate": "", "project": "default"},
+	}
+
+	var putCalled atomic.Int32
+	var putBody map[string]interface{}
+
+	ts := setupSetDefaultTestServer(t, publicBackends, adminBackends, func(w http.ResponseWriter, r *http.Request) {
+		putCalled.Add(1)
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &putBody)
+		// Verify correct path (should target backend id=2 for "cloud1")
+		assert.True(t, strings.HasSuffix(r.URL.Path, "/admin/backends/2"), "PUT should target admin backend ID 2, got %s", r.URL.Path)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Backend updated successfully"})
+	})
+	defer ts.Close()
+
+	svc := setupSetDefaultService(t, ts.URL)
+
+	result, err := svc.SetSystemDefaultBackend("cloud1")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	assert.Equal(t, "cloud1", result.ID)
+	assert.True(t, result.IsDefault, "returned backend should be marked as default")
+	assert.Equal(t, int32(1), putCalled.Load(), "PUT should have been called exactly once")
+
+	// Verify the PUT body preserved the name and set is_default=true
+	assert.Equal(t, "Cloud 1", putBody["name"], "PUT body should preserve backend name")
+	assert.Equal(t, true, putBody["is_default"], "PUT body should set is_default to true")
+}
+
+func TestSetSystemDefaultBackend_NotFound(t *testing.T) {
+	publicBackends := []dto.BackendInfo{
+		{ID: "local", Name: "Local Server", Connected: true, IsDefault: true},
+	}
+
+	ts := setupSetDefaultTestServer(t, publicBackends, nil, nil)
+	defer ts.Close()
+
+	svc := setupSetDefaultService(t, ts.URL)
+
+	result, err := svc.SetSystemDefaultBackend("nonexistent")
+	assert.Nil(t, result)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "backend not found")
+}
+
+func TestSetSystemDefaultBackend_Offline(t *testing.T) {
+	publicBackends := []dto.BackendInfo{
+		{ID: "local", Name: "Local Server", Connected: false, IsDefault: false},
+	}
+
+	ts := setupSetDefaultTestServer(t, publicBackends, nil, nil)
+	defer ts.Close()
+
+	svc := setupSetDefaultService(t, ts.URL)
+
+	result, err := svc.SetSystemDefaultBackend("local")
+	assert.Nil(t, result)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "backend is offline")
+}
+
+func TestSetSystemDefaultBackend_AdminAPIError(t *testing.T) {
+	publicBackends := []dto.BackendInfo{
+		{ID: "local", Name: "Local Server", Connected: true, IsDefault: false},
+	}
+
+	// Override the admin endpoint to return 500
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/backends") && !strings.Contains(r.URL.Path, "/admin/"):
+			json.NewEncoder(w).Encode(publicBackends)
+		case r.Method == "GET" && strings.Contains(r.URL.Path, "/admin/backends"):
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"error": "internal server error"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	svc := setupSetDefaultService(t, ts.URL)
+
+	result, err := svc.SetSystemDefaultBackend("local")
+	assert.Nil(t, result)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to list admin backends")
+}
+
+func TestSetSystemDefaultBackend_PutFails(t *testing.T) {
+	publicBackends := []dto.BackendInfo{
+		{ID: "local", Name: "Local Server", Connected: true, IsDefault: false},
+	}
+	adminBackends := []map[string]interface{}{
+		{"id": 1, "backend_id": "local", "name": "Local Server", "is_default": false, "is_active": true, "server_url": "", "server_certificate": "", "client_certificate": "", "project": "default"},
+	}
+
+	ts := setupSetDefaultTestServer(t, publicBackends, adminBackends, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": "database error"}`))
+	})
+	defer ts.Close()
+
+	svc := setupSetDefaultService(t, ts.URL)
+
+	result, err := svc.SetSystemDefaultBackend("local")
+	assert.Nil(t, result)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to set default")
+}
+
+func TestSetSystemDefaultBackend_InvalidatesCache(t *testing.T) {
+	var getBackendsCount atomic.Int32
+
+	publicBackends := []dto.BackendInfo{
+		{ID: "local", Name: "Local Server", Connected: true, IsDefault: true},
+		{ID: "cloud1", Name: "Cloud 1", Connected: true, IsDefault: false},
+	}
+	adminBackends := []map[string]interface{}{
+		{"id": 1, "backend_id": "local", "name": "Local Server", "is_default": true, "is_active": true, "server_url": "", "server_certificate": "", "client_certificate": "", "project": "default"},
+		{"id": 2, "backend_id": "cloud1", "name": "Cloud 1", "is_default": false, "is_active": true, "server_url": "https://cloud1:8443", "server_certificate": "", "client_certificate": "", "project": "default"},
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/backends") && !strings.Contains(r.URL.Path, "/admin/"):
+			getBackendsCount.Add(1)
+			json.NewEncoder(w).Encode(publicBackends)
+		case r.Method == "GET" && strings.Contains(r.URL.Path, "/admin/backends"):
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"data":    adminBackends,
+			})
+		case r.Method == "PUT" && strings.Contains(r.URL.Path, "/admin/backends/"):
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	svc := setupSetDefaultService(t, ts.URL)
+
+	// 1. First GetBackends call should hit the server
+	_, err := svc.GetBackends()
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), getBackendsCount.Load(), "first GetBackends should hit server")
+
+	// 2. Call SetSystemDefaultBackend — this calls getBackendsCached (populates cache)
+	//    then invalidates cache after PUT succeeds
+	_, err = svc.SetSystemDefaultBackend("cloud1")
+	require.NoError(t, err)
+	countAfterSet := getBackendsCount.Load()
+
+	// 3. Call GetBackends again after invalidation — should hit the server again
+	_, err = svc.GetBackends()
+	require.NoError(t, err)
+	assert.Greater(t, getBackendsCount.Load(), countAfterSet,
+		"GetBackends after SetSystemDefaultBackend should fetch fresh data")
+}
+
+func TestSetSystemDefaultBackend_NotInAdminAPI(t *testing.T) {
+	publicBackends := []dto.BackendInfo{
+		{ID: "local", Name: "Local Server", Connected: true, IsDefault: false},
+	}
+	// Admin API returns empty list — backend exists publicly but not in admin API
+	adminBackends := []map[string]interface{}{}
+
+	ts := setupSetDefaultTestServer(t, publicBackends, adminBackends, nil)
+	defer ts.Close()
+
+	svc := setupSetDefaultService(t, ts.URL)
+
+	result, err := svc.SetSystemDefaultBackend("local")
+	assert.Nil(t, result)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found in admin API")
 }
