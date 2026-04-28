@@ -36,6 +36,9 @@ func RegisterSection(service *ems.EntityRegistrationService) {
 					if input.Number != nil {
 						updates["number"] = *input.Number
 					}
+					if input.Order != nil {
+						updates["order"] = *input.Order
+					}
 					if len(input.Pages) > 0 {
 						updates["pages"] = input.Pages
 					}

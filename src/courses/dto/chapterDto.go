@@ -35,6 +35,7 @@ type ChapterOutput struct {
 type EditChapterInput struct {
 	Title        *string         `json:"title,omitempty" mapstructure:"title"`
 	Number       *int            `json:"number,omitempty" mapstructure:"number"`
+	Order        *int            `json:"order,omitempty" mapstructure:"order"`
 	Footer       *string         `json:"footer,omitempty" mapstructure:"footer"`
 	Introduction *string         `json:"introduction,omitempty" mapstructure:"introduction"`
 	Sections     []*SectionInput `json:"sections,omitempty" mapstructure:"sections"`

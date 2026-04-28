@@ -46,6 +46,7 @@ type EditSectionInput struct {
 	Intro       *string       `json:"intro,omitempty" mapstructure:"intro"`
 	Conclusion  *string       `json:"conclusion,omitempty" mapstructure:"conclusion"`
 	Number      *int          `json:"number,omitempty" mapstructure:"number"`
+	Order       *int          `json:"order,omitempty" mapstructure:"order"`
 	Pages       []models.Page `json:"pages,omitempty" mapstructure:"pages"`
 	HiddenPages []int         `json:"hiddenPages,omitempty" mapstructure:"hiddenPages"`
 }
