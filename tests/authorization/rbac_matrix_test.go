@@ -60,169 +60,255 @@ type entityRoleDefinition struct {
 	roles      entityManagementInterfaces.EntityRoles
 }
 
-// allEntityRoles returns the complete role matrix for every registered entity
-// extracted from their registration files. Entities without explicit roles
-// (Chapter, Course, Page, Section, Session, Theme, Schedule, Generation,
-// EmailTemplate) have an empty role map, meaning no Casbin policies are
-// created for them through the entity registration system.
-func allEntityRoles() []entityRoleDefinition {
-	memberRole := string(authModels.Member)
-	adminRole := string(authModels.Admin)
+// --------------------------------------------------------------------------
+// Role-regex helpers
+// --------------------------------------------------------------------------
+//
+// These builders compose the small set of CRUD method-regexes that recur
+// across the matrix. They keep the per-entity definitions terse and make
+// non-standard rows visually conspicuous.
 
+// methodRegex builds the "(M1|M2|...)" string Casbin uses to match HTTP methods
+// against a role policy.
+func methodRegex(methods ...string) string {
+	return "(" + strings.Join(methods, "|") + ")"
+}
+
+// adminFullCRUD is the regex granting an admin full GET|POST|PATCH|DELETE.
+// This is the most common admin grant in the matrix.
+func adminFullCRUD() string {
+	return methodRegex(http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete)
+}
+
+// memberRoles / adminRoles return the OCF role names. Wrapping them keeps
+// the per-entity functions readable.
+func memberRoles() string { return string(authModels.Member) }
+func adminRoles() string  { return string(authModels.Admin) }
+
+// rolesForReadOnlyMember returns the most common pattern: members can only
+// read (GET); admins have full CRUD. Used for catalog-style entities where
+// only platform operators mutate data.
+func rolesForReadOnlyMember() entityManagementInterfaces.EntityRoles {
+	return entityManagementInterfaces.EntityRoles{Roles: map[string]string{
+		memberRoles(): methodRegex(http.MethodGet),
+		adminRoles():  adminFullCRUD(),
+	}}
+}
+
+// rolesForCreatableByMember returns the pattern where members can list and
+// create (GET|POST); admins have full CRUD.
+func rolesForCreatableByMember() entityManagementInterfaces.EntityRoles {
+	return entityManagementInterfaces.EntityRoles{Roles: map[string]string{
+		memberRoles(): methodRegex(http.MethodGet, http.MethodPost),
+		adminRoles():  adminFullCRUD(),
+	}}
+}
+
+// rolesForAdminOnly returns the pattern where members have no role-level
+// access at all and admins have full CRUD. Used by entities that expose
+// dedicated routes for member operations (e.g., UserSubscription).
+func rolesForAdminOnly() entityManagementInterfaces.EntityRoles {
+	return entityManagementInterfaces.EntityRoles{Roles: map[string]string{
+		adminRoles(): adminFullCRUD(),
+	}}
+}
+
+// rolesEmpty returns an empty role map. Entities with no explicit roles fall
+// through to default/owner-based access — no Casbin policies are created via
+// the entity registration system.
+func rolesEmpty() entityManagementInterfaces.EntityRoles {
+	return entityManagementInterfaces.EntityRoles{Roles: map[string]string{}}
+}
+
+// --------------------------------------------------------------------------
+// Per-entity-class role definitions
+// --------------------------------------------------------------------------
+
+// authEntityRoles covers entities owned by the auth module: SshKey and
+// UserSetting. UserSetting is special: members may PATCH their own settings.
+func authEntityRoles() []entityRoleDefinition {
 	return []entityRoleDefinition{
-		// --- Auth ---
 		{
 			entityName: "SshKey",
 			routeName:  "ssh-keys",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
-			}},
+			roles:      rolesForReadOnlyMember(),
 		},
 		{
 			entityName: "UserSetting",
 			routeName:  "user-settings",
 			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + "|" + http.MethodPatch + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
+				memberRoles(): methodRegex(http.MethodGet, http.MethodPatch),
+				adminRoles():  adminFullCRUD(),
 			}},
 		},
+	}
+}
 
-		// --- Configuration ---
-		{
-			entityName: "Feature",
-			routeName:  "features",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
-			}},
-		},
+// configurationEntityRoles covers feature-flag and configuration entities.
+// Members can read flags; only admins toggle them.
+func configurationEntityRoles() []entityRoleDefinition {
+	return []entityRoleDefinition{
+		{entityName: "Feature", routeName: "features", roles: rolesForReadOnlyMember()},
+	}
+}
 
-		// --- Groups ---
+// groupsEntityRoles covers ClassGroup and GroupMember. Members can create
+// groups (POST); GroupMember writes are admin-only at the Casbin layer
+// (Layer 2 hooks enforce group-role permissions).
+func groupsEntityRoles() []entityRoleDefinition {
+	return []entityRoleDefinition{
 		{
 			entityName: "ClassGroup",
 			routeName:  "class-groups",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + "|" + http.MethodPost + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
-			}},
+			roles:      rolesForCreatableByMember(),
 		},
 		{
 			entityName: "GroupMember",
 			routeName:  "group-members",
 			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + ")",
+				memberRoles(): methodRegex(http.MethodGet),
+				adminRoles():  methodRegex(http.MethodGet, http.MethodPost, http.MethodDelete),
 			}},
 		},
+	}
+}
 
-		// --- Organizations ---
+// organizationsEntityRoles covers Organization and OrganizationMember.
+// Members can create organizations they will own; OrganizationMember
+// modifications are gated by Layer 2 org-role hooks.
+func organizationsEntityRoles() []entityRoleDefinition {
+	return []entityRoleDefinition{
 		{
 			entityName: "Organization",
 			routeName:  "organizations",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + "|" + http.MethodPost + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
-			}},
+			roles:      rolesForCreatableByMember(),
 		},
 		{
 			entityName: "OrganizationMember",
 			routeName:  "organization-members",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
-			}},
+			roles:      rolesForReadOnlyMember(),
 		},
-
-		// --- Payment ---
-		{
-			entityName: "BillingAddress",
-			routeName:  "billing-addresses",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
-			}},
-		},
-		{
-			entityName: "Invoice",
-			routeName:  "invoices",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
-			}},
-		},
-		{
-			entityName: "PaymentMethod",
-			routeName:  "payment-methods",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
-			}},
-		},
-		{
-			entityName: "PlanFeature",
-			routeName:  "plan-features",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
-			}},
-		},
-		{
-			entityName: "SubscriptionPlan",
-			routeName:  "subscription-plans",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
-			}},
-		},
-		{
-			entityName: "UsageMetrics",
-			routeName:  "usage-metrics",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
-			}},
-		},
-		{
-			entityName: "UserSubscription",
-			routeName:  "user-subscriptions",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				// Member has no generic CRUD access — dedicated routes only
-				adminRole: "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
-			}},
-		},
-
-		// --- Terminal Trainer ---
-		{
-			entityName: "Terminal",
-			routeName:  "terminals",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + "|" + http.MethodPost + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
-			}},
-		},
-		{
-			entityName: "UserTerminalKey",
-			routeName:  "user-terminal-keys",
-			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
-				memberRole: "(" + http.MethodGet + ")",
-				adminRole:  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
-			}},
-		},
-
-		// --- Courses (no explicit roles defined — relying on default/owner-based access) ---
-		{entityName: "Chapter", routeName: "chapters", roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{}}},
-		{entityName: "Course", routeName: "courses", roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{}}},
-		{entityName: "Generation", routeName: "generations", roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{}}},
-		{entityName: "Page", routeName: "pages", roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{}}},
-		{entityName: "Schedule", routeName: "schedules", roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{}}},
-		{entityName: "Section", routeName: "sections", roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{}}},
-		{entityName: "Session", routeName: "sessions", roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{}}},
-		{entityName: "Theme", routeName: "themes", roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{}}},
-
-		// --- Email (no explicit roles defined) ---
-		{entityName: "EmailTemplate", routeName: "email-templates", roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{}}},
 	}
+}
+
+// paymentEntityRoles covers Stripe-related entities. The matrix here is
+// the most varied:
+//   - BillingAddress / PaymentMethod: members can mutate but cannot list
+//     others' records (note: GET is intentionally absent for member at
+//     the role level — handlers serve the user's own records via dedicated
+//     routes).
+//   - Invoice / UsageMetrics / SubscriptionPlan / PlanFeature: members read
+//     only; admins have full CRUD.
+//   - UserSubscription: admin-only at the role layer; members use dedicated
+//     routes (/current, /all, /checkout) instead.
+func paymentEntityRoles() []entityRoleDefinition {
+	memberMutateOnly := entityManagementInterfaces.EntityRoles{Roles: map[string]string{
+		memberRoles(): methodRegex(http.MethodGet, http.MethodPost, http.MethodDelete, http.MethodPatch),
+		adminRoles():  methodRegex(http.MethodGet, http.MethodPost, http.MethodDelete, http.MethodPatch),
+	}}
+	return []entityRoleDefinition{
+		{entityName: "BillingAddress", routeName: "billing-addresses", roles: memberMutateOnly},
+		{entityName: "Invoice", routeName: "invoices", roles: rolesForReadOnlyMember()},
+		{entityName: "PaymentMethod", routeName: "payment-methods", roles: memberMutateOnly},
+		{entityName: "PlanFeature", routeName: "plan-features", roles: rolesForReadOnlyMember()},
+		{entityName: "SubscriptionPlan", routeName: "subscription-plans", roles: rolesForReadOnlyMember()},
+		{entityName: "UsageMetrics", routeName: "usage-metrics", roles: rolesForReadOnlyMember()},
+		{entityName: "UserSubscription", routeName: "user-subscriptions", roles: rolesForAdminOnly()},
+	}
+}
+
+// terminalTrainerEntityRoles covers Terminal sessions and per-user terminal
+// keys. Members can list and create terminal sessions; key management is
+// admin-only at the role layer.
+func terminalTrainerEntityRoles() []entityRoleDefinition {
+	return []entityRoleDefinition{
+		{entityName: "Terminal", routeName: "terminals", roles: rolesForCreatableByMember()},
+		{entityName: "UserTerminalKey", routeName: "user-terminal-keys", roles: rolesForReadOnlyMember()},
+	}
+}
+
+// coursesEntityRoles covers the course-authoring entities. None of them
+// declare explicit Casbin roles — access is governed by entity ownership
+// hooks (and, for courses, group/org sharing). The empty role maps mean
+// no role-level Casbin policies are created at registration time.
+func coursesEntityRoles() []entityRoleDefinition {
+	return []entityRoleDefinition{
+		{entityName: "Chapter", routeName: "chapters", roles: rolesEmpty()},
+		{entityName: "Course", routeName: "courses", roles: rolesEmpty()},
+		{entityName: "Generation", routeName: "generations", roles: rolesEmpty()},
+		{entityName: "Page", routeName: "pages", roles: rolesEmpty()},
+		{entityName: "Schedule", routeName: "schedules", roles: rolesEmpty()},
+		{entityName: "Section", routeName: "sections", roles: rolesEmpty()},
+		{entityName: "Session", routeName: "sessions", roles: rolesEmpty()},
+		{entityName: "Theme", routeName: "themes", roles: rolesEmpty()},
+	}
+}
+
+// emailEntityRoles covers email-related entities. EmailTemplate has no
+// explicit roles; access is admin-only via dedicated routes.
+func emailEntityRoles() []entityRoleDefinition {
+	return []entityRoleDefinition{
+		{entityName: "EmailTemplate", routeName: "email-templates", roles: rolesEmpty()},
+	}
+}
+
+// allEntityRoles returns the complete role matrix used as both the fixture
+// (to seed the in-memory Casbin enforcer) and the oracle (to assert the
+// expected allow/deny per role × method × entity).
+//
+// Matrix structure
+// ----------------
+// Each row is an `entityRoleDefinition` with three fields:
+//   - entityName: PascalCase registration name (must match production registration)
+//   - routeName:  kebab-case pluralized route segment (must match Pluralize +
+//                 PascalToKebab — validated by TestRBAC_RouteNameDerivation)
+//   - roles:      map[ocfRole]"(METHOD1|METHOD2|...)" — one entry per OCF role
+//                 that has Casbin access. Missing role => no Casbin policy
+//                 for that role on that entity.
+//
+// Empty `roles.Roles` map means the entity does NOT register Casbin policies
+// at registration time. Access for these entities (Chapter, Course, Page,
+// Section, Session, Theme, Schedule, Generation, EmailTemplate) is governed
+// entirely by entity-ownership hooks and dedicated routes.
+//
+// Each subgroup below is sourced from the production registration files in
+// `src/{module}/entityRegistration/*.go`. When production registration roles
+// change, the corresponding subgroup function MUST be updated. See the per-
+// function docstrings for the exact mapping.
+//
+// Tests in this file consume this matrix in two ways:
+//  1. As fixture: seed the Casbin enforcer via `loadEntityPolicies` so the
+//     enforcer behaves as production would for these entities.
+//  2. As oracle: drive `buildMatrixTestCases` which generates one test case
+//     per (entity, method, role) tuple and asserts allow/deny matches the
+//     regex.
+//
+// Two layers of authorization (CRITICAL — see CLAUDE.md):
+//   - Layer 1 (this matrix): Casbin RBAC. Coarse method-on-route gating.
+//   - Layer 2 (NOT here):    Group/org/owner role enforcement via entity
+//                            hooks and `RouteRegistry`. Tested elsewhere.
+//
+// Adding a new entity:
+//  1. Add the row to the appropriate per-class function below.
+//  2. Add the route to TestRBAC_RouteNameDerivation's expected map.
+//  3. Verify the row matches the production registration's `Roles:` block.
+func allEntityRoles() []entityRoleDefinition {
+	groups := [][]entityRoleDefinition{
+		authEntityRoles(),
+		configurationEntityRoles(),
+		groupsEntityRoles(),
+		organizationsEntityRoles(),
+		paymentEntityRoles(),
+		terminalTrainerEntityRoles(),
+		coursesEntityRoles(),
+		emailEntityRoles(),
+	}
+
+	var all []entityRoleDefinition
+	for _, g := range groups {
+		all = append(all, g...)
+	}
+	return all
 }
 
 // loadEntityPolicies registers Casbin policies for the given entity definition
