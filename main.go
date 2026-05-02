@@ -33,6 +33,7 @@ userController "soli/formations/src/auth/routes/usersRoutes"
 	genericController "soli/formations/src/entityManagement/routes"
 	paymentController "soli/formations/src/payment/routes"
 	groupHooks "soli/formations/src/groups/hooks"
+	groupRoutes "soli/formations/src/groups/routes"
 	organizationHooks "soli/formations/src/organizations/hooks"
 	organizationController "soli/formations/src/organizations/routes"
 	terminalController "soli/formations/src/terminalTrainer/routes"
@@ -106,6 +107,7 @@ func main() {
 	courseController.RegisterCoursePermissions(casdoor.Enforcer)
 	paymentController.RegisterPaymentPermissions(casdoor.Enforcer)
 	organizationController.RegisterOrganizationPermissions(casdoor.Enforcer)
+	groupRoutes.RegisterGroupPermissions(casdoor.Enforcer)
 	log.Println("✅ All permissions setup completed")
 
 	// Register Layer 2 enforcement handlers (business logic authorization)
@@ -199,6 +201,7 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	terminalController.TerminalRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	terminalController.UserTerminalKeyRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	organizationController.OrganizationRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	groupRoutes.GroupRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	emailController.EmailTemplateRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	securityAdminController.SecurityAdminRoutes(apiGroup, sqldb.DB)
 	permissionReferenceRoutes.PermissionReferenceRoutes(apiGroup)

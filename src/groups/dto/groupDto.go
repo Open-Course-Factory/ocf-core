@@ -102,6 +102,14 @@ type UserSummary struct {
 	Username    string `json:"username,omitempty"`
 }
 
+// MyGroupMembershipOutput is a compact representation of one of the
+// authenticated user's group memberships, used to build per-group role
+// lookups on the frontend.
+type MyGroupMembershipOutput struct {
+	GroupID uuid.UUID              `json:"group_id"`
+	Role    models.GroupMemberRole `json:"role"`
+}
+
 // GroupMemberOutput - DTO for group member responses
 type GroupMemberOutput struct {
 	ID        uuid.UUID              `json:"id"`
