@@ -87,13 +87,26 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{Path: "/api/v1/terminals/my-history", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Delete all command history for current user"},
 		access.RoutePermission{Path: "/api/v1/terminals/sync-all", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Sync all terminal sessions for current user"},
 
-		// Per-terminal operations (owner-scoped)
-		access.RoutePermission{Path: "/api/v1/terminals/:id/console", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Connect to terminal console via WebSocket"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/stop", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Stop a running terminal session"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/sync", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Sync terminal session state with backend"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/status", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Get terminal session status"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/history", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Get command history for a terminal session"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/history", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "Terminal", Field: "UserID"}, Description: "Delete command history for a terminal session"},
+		// Per-terminal operations.
+		//
+		// The URL parameter `:id` here is the tt-backend `session_id` (a
+		// uniqueIndex on the Terminal model), NOT the Terminal row's primary
+		// key. The controllers (`SyncSession`, `GetCommandHistory`, etc.)
+		// look the row up via `WHERE session_id = ?` and then run an inline
+		// ownership check (`hasTerminalAccess`).
+		//
+		// Layer 2's EntityOwner enforcer assumes `:id` is the primary key
+		// (see GormEntityLoader.GetOwnerField — `WHERE id = ?`), so it
+		// would 403 every legitimate caller because their `session_id`
+		// never matches a row's `id`. Reclassify as SelfScoped — the
+		// controllers retain authoritative ownership enforcement. Same
+		// pattern as `/scenario-sessions/by-terminal/:terminalId` (#269).
+		access.RoutePermission{Path: "/api/v1/terminals/:id/console", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Connect to terminal console via WebSocket (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/stop", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Stop a running terminal session (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/sync", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Sync terminal session state with backend (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/status", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get terminal session status (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/history", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get command history for a terminal session (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/history", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Delete command history for a terminal session (controller-enforced ownership)"},
 
 		// Access status (self-scoped - checks own access level)
 		access.RoutePermission{Path: "/api/v1/terminals/:id/access-status", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Check current user's access level for a terminal"},
