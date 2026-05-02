@@ -54,11 +54,12 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 					if len(model.Steps) > 0 {
 						steps := make([]dto.ScenarioStepOutput, 0, len(model.Steps))
 						for _, step := range model.Steps {
-							steps = append(steps, dto.ScenarioStepOutput{
+							stepDto := dto.ScenarioStepOutput{
 								ID:                 step.ID,
 								ScenarioID:         step.ScenarioID,
 								Order:              step.Order,
 								Title:              step.Title,
+								StepType:           step.StepType,
 								TextContent:        step.TextContent,
 								HintContent:        step.HintContent,
 								HasFlag:            step.HasFlag,
@@ -71,7 +72,27 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 								HintFileID:         step.HintFileID,
 								CreatedAt:          step.CreatedAt,
 								UpdatedAt:          step.UpdatedAt,
-							})
+							}
+							if len(step.Questions) > 0 {
+								questions := make([]dto.ScenarioStepQuestionOutput, 0, len(step.Questions))
+								for _, q := range step.Questions {
+									questions = append(questions, dto.ScenarioStepQuestionOutput{
+										ID:            q.ID,
+										StepID:        q.StepID,
+										Order:         q.Order,
+										QuestionText:  q.QuestionText,
+										QuestionType:  q.QuestionType,
+										Options:       q.Options,
+										CorrectAnswer: q.CorrectAnswer,
+										Explanation:   q.Explanation,
+										Points:        q.Points,
+										CreatedAt:     q.CreatedAt,
+										UpdatedAt:     q.UpdatedAt,
+									})
+								}
+								stepDto.Questions = questions
+							}
+							steps = append(steps, stepDto)
 						}
 						output.Steps = steps
 					}
@@ -213,7 +234,7 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 				},
 			},
 			SubEntities: []any{models.ScenarioStep{}, models.ScenarioInstanceType{}},
-			DefaultIncludes: []string{"Steps", "CompatibleInstanceTypes"},
+			DefaultIncludes: []string{"Steps.Questions", "CompatibleInstanceTypes"},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
 					string(authModels.Member): "(" + http.MethodGet + ")",

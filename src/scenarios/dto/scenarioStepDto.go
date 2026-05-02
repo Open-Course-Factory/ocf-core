@@ -70,4 +70,5 @@ type ScenarioStepOutput struct {
 	HintFileID         *uuid.UUID `json:"hint_file_id,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
+	Questions          []ScenarioStepQuestionOutput `json:"questions,omitempty"`
 }

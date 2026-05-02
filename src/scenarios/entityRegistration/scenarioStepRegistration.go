@@ -17,7 +17,7 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 		entityManagementInterfaces.TypedEntityRegistration[models.ScenarioStep, dto.CreateScenarioStepInput, dto.EditScenarioStepInput, dto.ScenarioStepOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.ScenarioStep, dto.CreateScenarioStepInput, dto.EditScenarioStepInput, dto.ScenarioStepOutput]{
 				ModelToDto: func(model *models.ScenarioStep) (dto.ScenarioStepOutput, error) {
-					return dto.ScenarioStepOutput{
+					output := dto.ScenarioStepOutput{
 						ID:                 model.ID,
 						ScenarioID:         model.ScenarioID,
 						Order:              model.Order,
@@ -38,7 +38,27 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						HintFileID:         model.HintFileID,
 						CreatedAt:          model.CreatedAt,
 						UpdatedAt:          model.UpdatedAt,
-					}, nil
+					}
+					if len(model.Questions) > 0 {
+						questions := make([]dto.ScenarioStepQuestionOutput, 0, len(model.Questions))
+						for _, q := range model.Questions {
+							questions = append(questions, dto.ScenarioStepQuestionOutput{
+								ID:            q.ID,
+								StepID:        q.StepID,
+								Order:         q.Order,
+								QuestionText:  q.QuestionText,
+								QuestionType:  q.QuestionType,
+								Options:       q.Options,
+								CorrectAnswer: q.CorrectAnswer,
+								Explanation:   q.Explanation,
+								Points:        q.Points,
+								CreatedAt:     q.CreatedAt,
+								UpdatedAt:     q.UpdatedAt,
+							})
+						}
+						output.Questions = questions
+					}
+					return output, nil
 				},
 				DtoToModel: func(input dto.CreateScenarioStepInput) *models.ScenarioStep {
 					stepType := input.StepType
@@ -118,6 +138,7 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 					return updates
 				},
 			},
+			DefaultIncludes: []string{"Questions"},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
 					string(authModels.Admin): "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
