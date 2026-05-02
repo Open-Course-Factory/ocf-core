@@ -155,7 +155,11 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 			DefaultIncludes: []string{"Questions"},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
-					string(authModels.Admin): "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
+					// Members may CRUD steps; the ScenarioStepAuthorizationHook
+					// gates write operations to scenarios the user can manage
+					// (creator / org-manager / group-manager via assignment).
+					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
+					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 				},
 			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{

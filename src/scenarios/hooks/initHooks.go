@@ -19,5 +19,21 @@ func InitScenarioHooks(db *gorm.DB) {
 		log.Println("Scenario assignment authorization hook registered")
 	}
 
+	// Hook for verifying parent-scenario authorship before creating/updating/deleting steps
+	stepAuthorizationHook := NewScenarioStepAuthorizationHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(stepAuthorizationHook); err != nil {
+		log.Printf("Failed to register scenario step authorization hook: %v", err)
+	} else {
+		log.Println("Scenario step authorization hook registered")
+	}
+
+	// Hook for verifying parent-scenario authorship before creating/updating/deleting step questions
+	stepQuestionAuthorizationHook := NewScenarioStepQuestionAuthorizationHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(stepQuestionAuthorizationHook); err != nil {
+		log.Printf("Failed to register scenario step question authorization hook: %v", err)
+	} else {
+		log.Println("Scenario step question authorization hook registered")
+	}
+
 	log.Println("Scenario hooks initialization complete")
 }
