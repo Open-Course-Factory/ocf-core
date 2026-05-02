@@ -247,8 +247,14 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 			SubEntities: []any{models.ScenarioStep{}, models.ScenarioInstanceType{}},
 			DefaultIncludes: []string{"Steps.Questions", "CompatibleInstanceTypes"},
 			Roles: entityManagementInterfaces.EntityRoles{
+				// Member can GET / PATCH / DELETE — the ScenarioAuthorizationHook
+				// gates writes to scenarios the user can manage (creator /
+				// org-manager / group-manager via assignment). POST stays
+				// admin-only at the platform level; org / group managers create
+				// blank scenarios via /organizations/:id/scenarios and
+				// /groups/:groupId/scenarios respectively.
 				Roles: map[string]string{
-					string(authModels.Member): "(" + http.MethodGet + ")",
+					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 				},
 			},

@@ -84,6 +84,45 @@ func TestScenarioStepQuestion_Layer1_MemberHasFullCRUD(t *testing.T) {
 	}
 }
 
+// The Scenario entity is the parent. Members can read, edit, and delete
+// scenarios they manage (gated by ScenarioAuthorizationHook). They CANNOT
+// POST at the platform-wide /scenarios endpoint — blank creation routes
+// through the dedicated /organizations/:id/scenarios and
+// /groups/:groupId/scenarios endpoints, both gated by Layer 2 OrgRole /
+// GroupRole respectively.
+func TestScenario_Layer1_MemberCanReadEditDeleteButNotPlatformPost(t *testing.T) {
+	svc := ems.NewEntityRegistrationService()
+	scenarioRegistration.RegisterScenario(svc)
+
+	all := svc.GetAllEntityRoles()
+	roles, ok := all["Scenario"]
+	require.True(t, ok, "Scenario must be registered")
+
+	memberMethods, ok := roles.Roles[string(authModels.Member)]
+	require.True(t, ok, "Member must be in the Roles map for Scenario — "+
+		"editor's PATCH/DELETE on /scenarios/:id needs Member access; "+
+		"removing it would silently 403 every org-manager and group-owner")
+
+	for _, m := range []string{http.MethodGet, http.MethodPatch, http.MethodDelete} {
+		assert.Contains(t, memberMethods, m,
+			"Scenario Layer 1: Member must keep %s — Layer 2 hook gates writes "+
+				"to manageable scenarios; create is admin-only at /scenarios "+
+				"(non-admins use /organizations/:id/scenarios and "+
+				"/groups/:groupId/scenarios)", m)
+	}
+
+	// POST is intentionally NOT in Member methods on the platform-wide route.
+	// If a future change opens it, that's a deliberate decision — but it
+	// changes the security model and should be paired with a hook that
+	// gates platform-wide scenario creation.
+	assert.NotContains(t, memberMethods, http.MethodPost,
+		"Scenario Layer 1: Member must NOT have platform-wide POST. "+
+			"Blank scenarios for non-admins go through the org/group scoped "+
+			"endpoints — adding POST here would let any member pollute the "+
+			"platform-wide catalog. If this is intentional, also add a "+
+			"BeforeCreate hook to ScenarioAuthorizationHook.")
+}
+
 // Sanity guard: the current Roles map opens routes to "Member" + "Admin"
 // strings. If someone renames the Member role constant or introduces a new
 // role tier, this test signals that the audit needs revisiting.
