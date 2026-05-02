@@ -60,6 +60,7 @@ type ScenarioController interface {
 	OrgImportJSON(ctx *gin.Context)
 	OrgUploadScenario(ctx *gin.Context)
 	OrgExportScenario(ctx *gin.Context)
+	OrgCreateScenario(ctx *gin.Context)
 	OrgDeleteScenario(ctx *gin.Context)
 	ListGroupAvailableScenarios(ctx *gin.Context)
 	DuplicateScenario(ctx *gin.Context)
@@ -2234,6 +2235,92 @@ func (sc *scenarioController) OrgImportJSON(ctx *gin.Context) {
 // @Failure 400 {object} errors.APIError
 // @Failure 403 {object} errors.APIError
 // @Failure 500 {object} errors.APIError
+// OrgCreateScenario creates a blank scenario inside an organization.
+//
+// Org managers can't POST to the platform-wide /scenarios endpoint
+// (admin-only). They use this org-scoped variant; organization_id is
+// taken from the path so the body cannot retarget another org.
+//
+// @Summary Create a scenario in an organization
+// @Description Org-scoped scenario creation for managers/owners. organization_id comes from the path.
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param id path string true "Organization ID"
+// @Param input body dto.CreateScenarioInput true "Scenario fields (organization_id is overridden by the path)"
+// @Success 201 {object} dto.ScenarioOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /organizations/{id}/scenarios [post]
+// @Security BearerAuth
+func (sc *scenarioController) OrgCreateScenario(ctx *gin.Context) {
+	orgID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	var input dto.CreateScenarioInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	// Path is the source of truth for org scoping — never trust the body.
+	input.OrganizationID = &orgID
+
+	userID := ctx.GetString("userId")
+
+	scenario := &models.Scenario{
+		Name:             input.Name,
+		Title:            input.Title,
+		Description:      input.Description,
+		Difficulty:       input.Difficulty,
+		EstimatedTime:    input.EstimatedTime,
+		InstanceType:     input.InstanceType,
+		Hostname:         input.Hostname,
+		OsType:           input.OsType,
+		RequiredFeatures: input.RequiredFeatures,
+		SourceType:       input.SourceType,
+		GitRepository:    input.GitRepository,
+		GitBranch:        input.GitBranch,
+		SourcePath:       input.SourcePath,
+		FlagsEnabled:     input.FlagsEnabled,
+		AllowedFlagPaths: input.AllowedFlagPaths,
+		GshEnabled:       input.GshEnabled,
+		CrashTraps:       input.CrashTraps,
+		Objectives:       input.Objectives,
+		Prerequisites:    input.Prerequisites,
+		IntroText:        input.IntroText,
+		FinishText:       input.FinishText,
+		OrganizationID:   &orgID,
+		IsPublic:         input.IsPublic,
+		SetupScript:      input.SetupScript,
+		SetupScriptID:    input.SetupScriptID,
+		IntroFileID:      input.IntroFileID,
+		FinishFileID:     input.FinishFileID,
+		CreatedByID:      userID,
+	}
+
+	if err := sc.db.Create(scenario).Error; err != nil {
+		slog.Error("failed to create org scenario", "err", err, "org_id", orgID)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to create scenario",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, sc.buildScenarioOutput(scenario))
+}
+
 // @Router /organizations/{id}/scenarios/upload [post]
 // @Security BearerAuth
 func (sc *scenarioController) OrgUploadScenario(ctx *gin.Context) {

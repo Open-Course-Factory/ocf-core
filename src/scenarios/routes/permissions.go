@@ -81,6 +81,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		method string
 	}{
 		{"/api/v1/organizations/:id/scenarios", "GET"},
+		{"/api/v1/organizations/:id/scenarios", "POST"},
 		{"/api/v1/organizations/:id/scenarios/upload", "POST"},
 		{"/api/v1/organizations/:id/scenarios/import-json", "POST"},
 		{"/api/v1/organizations/:id/scenarios/:scenarioId/export", "GET"},
@@ -266,6 +267,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Path: "/api/v1/organizations/:id/scenarios", Method: "GET",
 			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
 			Description: "List scenarios in an organization (manager+)",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/organizations/:id/scenarios", Method: "POST",
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "Create a blank scenario in an organization (manager+)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/scenarios/upload", Method: "POST",
