@@ -96,7 +96,7 @@ func (s *VerificationService) VerifyStep(terminalSessionID string, step *models.
 
 	// Execute the verify script inline with a 10s timeout.
 	// Parse the shebang to use the correct interpreter (e.g., bash vs sh).
-	exitCode, stdout, _, err := s.ExecInContainer(
+	exitCode, stdout, stderr, err := s.ExecInContainer(
 		terminalSessionID,
 		[]string{parseShebang(step.VerifyScript), "-c", step.VerifyScript},
 		10,
@@ -105,5 +105,16 @@ func (s *VerificationService) VerifyStep(terminalSessionID string, step *models.
 		return false, "", fmt.Errorf("failed to execute verify script: %w", err)
 	}
 
-	return exitCode == 0, stdout, nil
+	// Surface stdout AND stderr so the learner sees what actually failed when
+	// the script exits non-zero. Without this, a script like `[ -f /foo ] ||
+	// echo "missing" >&2` produces an empty output panel — Karim's UX feedback.
+	output = stdout
+	if stderr != "" {
+		if output != "" {
+			output += "\n"
+		}
+		output += stderr
+	}
+
+	return exitCode == 0, output, nil
 }
