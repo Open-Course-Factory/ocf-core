@@ -17,6 +17,7 @@ func RegisterOrganizationPermissions(enforcer interfaces.EnforcerInterface) {
 		path   string
 		method string
 	}{
+		{"/api/v1/organizations/me/memberships", "GET"},
 		{"/api/v1/organizations/:id/members", "GET"},
 		{"/api/v1/organizations/:id/groups", "GET"},
 		{"/api/v1/organizations/:id/convert-to-team", "POST"},
@@ -37,6 +38,11 @@ func RegisterOrganizationPermissions(enforcer interfaces.EnforcerInterface) {
 	// --- Route Registry: declarative permission metadata ---
 
 	access.RouteRegistry.Register("Organizations",
+		access.RoutePermission{
+			Path: "/api/v1/organizations/me/memberships", Method: "GET",
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "List the authenticated user's organization memberships and roles",
+		},
 		access.RoutePermission{
 			Path: "/api/v1/organizations/:id/members", Method: "GET",
 			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"},

@@ -12,6 +12,7 @@ import (
 	groupDto "soli/formations/src/groups/dto"
 	groupServices "soli/formations/src/groups/services"
 	"soli/formations/src/organizations/dto"
+	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/services"
 	paymentServices "soli/formations/src/payment/services"
 
@@ -709,4 +710,55 @@ func (oc *OrganizationController) RegenerateGroupMemberPasswords(ctx *gin.Contex
 	}
 
 	ctx.JSON(http.StatusOK, response)
+}
+
+// GetMyOrganizationMemberships godoc
+// @Summary List the authenticated user's organization memberships
+// @Description Returns one entry per active organization the caller belongs to, including the caller's role within that organization. Used by the frontend to gate UI actions per-org without N round-trips.
+// @Tags organizations
+// @Produce json
+// @Success 200 {array} dto.MyOrganizationMembershipOutput
+// @Failure 401 {object} errors.APIError "User not authenticated"
+// @Failure 500 {object} errors.APIError "Internal server error"
+// @Security BearerAuth
+// @Router /organizations/me/memberships [get]
+func (oc *OrganizationController) GetMyOrganizationMemberships(ctx *gin.Context) {
+	userID, exists := ctx.Get("userId")
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
+			ErrorCode:    http.StatusUnauthorized,
+			ErrorMessage: "User not authenticated",
+		})
+		return
+	}
+
+	uid, ok := userID.(string)
+	if !ok || uid == "" {
+		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
+			ErrorCode:    http.StatusUnauthorized,
+			ErrorMessage: "User not authenticated",
+		})
+		return
+	}
+
+	var members []orgModels.OrganizationMember
+	if err := oc.db.
+		Where("user_id = ? AND is_active = ?", uid, true).
+		Find(&members).Error; err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to load memberships",
+		})
+		return
+	}
+
+	output := make([]dto.MyOrganizationMembershipOutput, 0, len(members))
+	for _, m := range members {
+		output = append(output, dto.MyOrganizationMembershipOutput{
+			OrganizationID: m.OrganizationID,
+			Role:           m.Role,
+		})
+	}
+
+	ctx.JSON(http.StatusOK, output)
 }

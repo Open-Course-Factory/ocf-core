@@ -25,6 +25,10 @@ func OrganizationRoutes(rg *gin.RouterGroup, conf *config.Configuration, db *gor
 	// Setup nested routes for organizations
 	organizations := rg.Group("/organizations")
 	{
+		// List the authenticated user's organization memberships (per-org role lookup)
+		// Registered before /:id/* routes so "me" is matched as a literal segment.
+		organizations.GET("/me/memberships", middleware.AuthManagement(), orgController.GetMyOrganizationMemberships)
+
 		// Get members of a specific organization
 		organizations.GET("/:id/members", middleware.AuthManagement(), orgController.GetOrganizationMembers)
 

@@ -496,6 +496,7 @@ func TestRegisterOrganizationPermissions_MemberRoutes(t *testing.T) {
 		path   string
 		method string
 	}{
+		{"/api/v1/organizations/me/memberships", "GET"},
 		{"/api/v1/organizations/:id/members", "GET"},
 		{"/api/v1/organizations/:id/groups", "GET"},
 		{"/api/v1/organizations/:id/convert-to-team", "POST"},

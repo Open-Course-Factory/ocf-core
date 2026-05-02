@@ -37,6 +37,14 @@ type EditOrganizationMemberInput struct {
 	Metadata *map[string]any        `json:"metadata,omitempty" mapstructure:"metadata"`
 }
 
+// MyOrganizationMembershipOutput is a compact representation of one
+// of the authenticated user's organization memberships, used to build
+// per-org role lookups on the frontend.
+type MyOrganizationMembershipOutput struct {
+	OrganizationID uuid.UUID                     `json:"organization_id"`
+	Role           models.OrganizationMemberRole `json:"role"`
+}
+
 // OrganizationMemberOutput represents the output for an organization member
 type OrganizationMemberOutput struct {
 	ID             uuid.UUID                     `json:"id"`
