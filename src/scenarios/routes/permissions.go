@@ -29,6 +29,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/scenario-sessions/:id/step/:stepOrder", "GET"},
 		{"/api/v1/scenario-sessions/:id/verify", "POST"},
 		{"/api/v1/scenario-sessions/:id/submit-flag", "POST"},
+		{"/api/v1/scenario-sessions/:id/submit-quiz", "POST"},
 		{"/api/v1/scenario-sessions/:id/steps/:stepOrder/hints/:level/reveal", "POST"},
 		{"/api/v1/scenario-sessions/:id/abandon", "POST"},
 		{"/api/v1/scenario-sessions/launch", "POST"},
@@ -177,6 +178,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Path: "/api/v1/scenario-sessions/:id/submit-flag", Method: "POST",
 			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
 			Description: "Submit a flag answer (must own the session)",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/scenario-sessions/:id/submit-quiz", Method: "POST",
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Submit quiz answers for a scenario session step (controller verifies session ownership)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/steps/:stepOrder/hints/:level/reveal", Method: "POST",

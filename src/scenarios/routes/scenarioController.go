@@ -41,6 +41,7 @@ type ScenarioController interface {
 	GetStepByOrder(ctx *gin.Context)
 	VerifyStep(ctx *gin.Context)
 	SubmitFlag(ctx *gin.Context)
+	SubmitQuiz(ctx *gin.Context)
 	RevealHint(ctx *gin.Context)
 	AbandonSession(ctx *gin.Context)
 	GetSessionByTerminal(ctx *gin.Context)
@@ -498,6 +499,52 @@ func (sc *scenarioController) SubmitFlag(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Failed to submit flag",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
+}
+
+// SubmitQuiz godoc
+// @Summary Submit quiz answers
+// @Description Submit quiz answers for the current step. Each answer is scored against the canonical correct_answer; the response includes per-question correctness and an aggregate score.
+// @Tags scenario-sessions
+// @Accept json
+// @Produce json
+// @Param id path string true "Session ID"
+// @Param body body dto.SubmitQuizInput true "Quiz answers"
+// @Success 200 {object} dto.SubmitQuizResponse
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 422 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenario-sessions/{id}/submit-quiz [post]
+// @Security BearerAuth
+func (sc *scenarioController) SubmitQuiz(ctx *gin.Context) {
+	session, err := sc.getSessionIfOwned(ctx)
+	if err != nil {
+		return
+	}
+
+	var input dto.SubmitQuizInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	result, err := sc.sessionService.SubmitQuiz(session.ID, input)
+	if err != nil {
+		// Service rejects with a domain error for invalid step type / unknown
+		// question IDs / empty answers — surface as 422 so the frontend can
+		// distinguish from a 500.
+		slog.Warn("failed to submit quiz", "err", err)
+		ctx.JSON(http.StatusUnprocessableEntity, &errors.APIError{
+			ErrorCode:    http.StatusUnprocessableEntity,
+			ErrorMessage: err.Error(),
 		})
 		return
 	}
