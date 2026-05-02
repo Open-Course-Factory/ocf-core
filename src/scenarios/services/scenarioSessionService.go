@@ -1,6 +1,7 @@
 package services
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -436,13 +437,20 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 	hintContent := ResolveScriptContent(s.db, currentStep.HintFileID, currentStep.HintContent)
 
 	response := &dto.CurrentStepResponse{
-		StepOrder:  currentStep.Order,
-		TotalSteps: len(session.Scenario.Steps),
-		Title:      currentStep.Title,
-		Text:       textContent,
-		Hint:       hintContent,
-		Status:     stepStatus,
-		HasFlag:    currentStep.HasFlag,
+		StepOrder:   currentStep.Order,
+		TotalSteps:  len(session.Scenario.Steps),
+		Title:       currentStep.Title,
+		Text:        textContent,
+		Hint:        hintContent,
+		Status:      stepStatus,
+		HasFlag:     currentStep.HasFlag,
+		StepType:    normalizeStepType(currentStep.StepType),
+		TextContent: textContent,
+	}
+
+	// Quiz steps: populate the sanitized question list (no correct_answer/explanation)
+	if response.StepType == "quiz" {
+		response.Questions = loadSanitizedQuestions(s.db, currentStep.ID)
 	}
 
 	// Add progressive hint metadata
@@ -462,6 +470,37 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 	}
 
 	return response, nil
+}
+
+// normalizeStepType returns the canonical step_type string. Empty values from
+// pre-migration rows default to "terminal" so the frontend never sees a blank.
+func normalizeStepType(stepType string) string {
+	if stepType == "" {
+		return "terminal"
+	}
+	return stepType
+}
+
+// loadSanitizedQuestions fetches the quiz questions for a step and returns them
+// without the CorrectAnswer/Explanation fields (those are only revealed in
+// per-question results after submission).
+func loadSanitizedQuestions(db *gorm.DB, stepID uuid.UUID) []dto.CurrentStepQuestion {
+	var questions []models.ScenarioStepQuestion
+	if err := db.Where("step_id = ?", stepID).Order("\"order\" ASC").Find(&questions).Error; err != nil {
+		slog.Warn("failed to load quiz questions", "step_id", stepID, "err", err)
+		return nil
+	}
+	out := make([]dto.CurrentStepQuestion, 0, len(questions))
+	for _, q := range questions {
+		out = append(out, dto.CurrentStepQuestion{
+			ID:           q.ID,
+			Order:        q.Order,
+			QuestionText: q.QuestionText,
+			QuestionType: q.QuestionType,
+			Options:      q.Options,
+		})
+	}
+	return out
 }
 
 // GetStepByOrder returns the content of a specific step by its order for a session.
@@ -505,13 +544,19 @@ func (s *ScenarioSessionService) GetStepByOrder(sessionID uuid.UUID, stepOrder i
 	hintContent := ResolveScriptContent(s.db, targetStep.HintFileID, targetStep.HintContent)
 
 	response := &dto.CurrentStepResponse{
-		StepOrder:  targetStep.Order,
-		TotalSteps: len(session.Scenario.Steps),
-		Title:      targetStep.Title,
-		Text:       textContent,
-		Hint:       hintContent,
-		Status:     stepStatus,
-		HasFlag:    targetStep.HasFlag,
+		StepOrder:   targetStep.Order,
+		TotalSteps:  len(session.Scenario.Steps),
+		Title:       targetStep.Title,
+		Text:        textContent,
+		Hint:        hintContent,
+		Status:      stepStatus,
+		HasFlag:     targetStep.HasFlag,
+		StepType:    normalizeStepType(targetStep.StepType),
+		TextContent: textContent,
+	}
+
+	if response.StepType == "quiz" {
+		response.Questions = loadSanitizedQuestions(s.db, targetStep.ID)
 	}
 
 	// Add progressive hint metadata
@@ -556,8 +601,24 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 		return nil, fmt.Errorf("current step (order=%d) not found", session.CurrentStep)
 	}
 
-	if currentStep.HasFlag {
-		return nil, fmt.Errorf("this step requires a flag submission, not verification")
+	stepType := normalizeStepType(currentStep.StepType)
+
+	// Branch on step_type. Flag and quiz steps have dedicated submission
+	// endpoints; calling /verify on them is a client error.
+	switch stepType {
+	case "flag":
+		return nil, fmt.Errorf("this step requires flag submission via /submit-flag, not /verify")
+	case "quiz":
+		return nil, fmt.Errorf("this step requires quiz submission via /submit-quiz, not /verify")
+	case "info":
+		// Info steps have no script — clicking "next" advances the session.
+		return s.completeInfoStep(&session)
+	}
+
+	// Backward compat: legacy steps with HasFlag but no step_type still route
+	// to flag submission.
+	if currentStep.HasFlag && stepType == "terminal" {
+		return nil, fmt.Errorf("this step requires flag submission via /submit-flag, not /verify")
 	}
 
 	// Pre-populate VerifyScript from ProjectFile (VerificationService doesn't have DB access)
@@ -608,6 +669,177 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	// Execute background script for the next step (after successful DB transaction),
 	// then deploy the next step's flag (after the script created any needed directories).
 	if response.Passed && response.NextStep != nil && session.TerminalSessionID != nil {
+		for i := range session.Scenario.Steps {
+			if session.Scenario.Steps[i].Order == *response.NextStep {
+				_ = s.executeBackgroundScript(*session.TerminalSessionID, &session.Scenario.Steps[i])
+				break
+			}
+		}
+		s.deploySingleFlagToContainer(*session.TerminalSessionID, &session.Scenario, session.Flags, *response.NextStep)
+	}
+
+	return response, nil
+}
+
+// completeInfoStep auto-marks an info step as completed and advances the
+// session to the next step. Info steps have no verification script — the
+// "verify" call is the equivalent of clicking "next".
+func (s *ScenarioSessionService) completeInfoStep(session *models.ScenarioSession) (*dto.VerifyStepResponse, error) {
+	now := time.Now()
+	response := &dto.VerifyStepResponse{Passed: true}
+
+	txErr := s.db.Transaction(func(tx *gorm.DB) error {
+		nextStep, err := s.advanceToNextStep(tx, session, now)
+		if err != nil {
+			return err
+		}
+		response.NextStep = nextStep
+		return nil
+	})
+	if txErr != nil {
+		return nil, txErr
+	}
+
+	// Run the next step's background script and deploy its flag (mirrors the
+	// terminal verify path).
+	if response.NextStep != nil && session.TerminalSessionID != nil {
+		for i := range session.Scenario.Steps {
+			if session.Scenario.Steps[i].Order == *response.NextStep {
+				_ = s.executeBackgroundScript(*session.TerminalSessionID, &session.Scenario.Steps[i])
+				break
+			}
+		}
+		s.deploySingleFlagToContainer(*session.TerminalSessionID, &session.Scenario, session.Flags, *response.NextStep)
+	}
+
+	return response, nil
+}
+
+// SubmitQuiz scores a quiz answer set for the current step and advances the
+// session. Each answer is compared with constant-time equality (mirrors the
+// flag-submit pattern). The score is correct_count / total. The full submitted
+// answer set is persisted as JSON on ScenarioStepProgress for the teacher
+// dashboard. Quiz steps are graded but NOT gated — even a 0% quiz advances.
+//
+// TODO: per-question persistence — see issue #283 follow-up. Karim wants each
+// answer persisted as it's submitted (so a tab close / network drop doesn't
+// lose answered questions); a separate POST .../quiz-answer endpoint will
+// cover that without changing this final-submission contract.
+func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.SubmitQuizInput) (*dto.SubmitQuizResponse, error) {
+	// Reject empty/nil submissions early (controller would map this to 400).
+	if len(input.Answers) == 0 {
+		return nil, fmt.Errorf("answers are required")
+	}
+
+	var session models.ScenarioSession
+	if err := s.db.Preload("Scenario.Steps", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).Preload("StepProgress").Preload("Flags").First(&session, "id = ?", sessionID).Error; err != nil {
+		return nil, fmt.Errorf("session not found: %w", err)
+	}
+
+	// Find the current step
+	var currentStep *models.ScenarioStep
+	for i := range session.Scenario.Steps {
+		if session.Scenario.Steps[i].Order == session.CurrentStep {
+			currentStep = &session.Scenario.Steps[i]
+			break
+		}
+	}
+	if currentStep == nil {
+		return nil, fmt.Errorf("current step (order=%d) not found", session.CurrentStep)
+	}
+
+	if normalizeStepType(currentStep.StepType) != "quiz" {
+		return nil, fmt.Errorf("current step is not a quiz step")
+	}
+
+	// Load every question for this step so we can validate IDs and score
+	// answers against the canonical correct_answer.
+	var questions []models.ScenarioStepQuestion
+	if err := s.db.Where("step_id = ?", currentStep.ID).Order("\"order\" ASC").Find(&questions).Error; err != nil {
+		return nil, fmt.Errorf("failed to load questions: %w", err)
+	}
+	if len(questions) == 0 {
+		return nil, fmt.Errorf("quiz step has no questions")
+	}
+
+	// Build a lookup so we can reject answers with unknown question IDs and
+	// score with O(1) per submitted answer.
+	byID := make(map[uuid.UUID]models.ScenarioStepQuestion, len(questions))
+	for _, q := range questions {
+		byID[q.ID] = q
+	}
+	for qID := range input.Answers {
+		if _, ok := byID[qID]; !ok {
+			return nil, fmt.Errorf("answer references unknown question id %s", qID)
+		}
+	}
+
+	total := len(questions)
+	correctCount := 0
+	results := make([]dto.QuizQuestionResult, 0, total)
+	for _, q := range questions {
+		submitted := input.Answers[q.ID]
+		correct := subtle.ConstantTimeCompare([]byte(submitted), []byte(q.CorrectAnswer)) == 1
+		if correct {
+			correctCount++
+		}
+		results = append(results, dto.QuizQuestionResult{
+			QuestionID:    q.ID,
+			Correct:       correct,
+			CorrectAnswer: q.CorrectAnswer,
+			Explanation:   q.Explanation,
+		})
+	}
+
+	score := 0.0
+	if total > 0 {
+		score = float64(correctCount) / float64(total)
+	}
+
+	answersJSON, err := json.Marshal(input.Answers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode answers: %w", err)
+	}
+
+	response := &dto.SubmitQuizResponse{
+		Score:              score,
+		CorrectCount:       correctCount,
+		Total:              total,
+		PerQuestionResults: results,
+	}
+
+	now := time.Now()
+	scoreCopy := score
+	txErr := s.db.Transaction(func(tx *gorm.DB) error {
+		// Persist the score + answer payload + step_type on the progress row
+		// so the teacher dashboard can report per-attempt grades without
+		// joining ScenarioStep.
+		if err := tx.Model(&models.ScenarioStepProgress{}).
+			Where("session_id = ? AND step_order = ?", session.ID, session.CurrentStep).
+			Updates(map[string]any{
+				"step_type":    "quiz",
+				"quiz_score":   &scoreCopy,
+				"quiz_answers": string(answersJSON),
+			}).Error; err != nil {
+			return fmt.Errorf("failed to persist quiz progress: %w", err)
+		}
+
+		nextStep, err := s.advanceToNextStep(tx, &session, now)
+		if err != nil {
+			return err
+		}
+		response.NextStep = nextStep
+		return nil
+	})
+	if txErr != nil {
+		return nil, txErr
+	}
+
+	// Run the next step's background script + deploy its flag (mirrors the
+	// terminal verify path).
+	if response.NextStep != nil && session.TerminalSessionID != nil {
 		for i := range session.Scenario.Steps {
 			if session.Scenario.Steps[i].Order == *response.NextStep {
 				_ = s.executeBackgroundScript(*session.TerminalSessionID, &session.Scenario.Steps[i])
