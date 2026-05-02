@@ -344,8 +344,10 @@ func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/groups/:groupId/scenarios/import-json", "POST"},
 		{"/api/v1/groups/:groupId/scenarios/:scenarioId/export", "GET"},
 		{"/api/v1/groups/:groupId/scenarios", "GET"},
+		{"/api/v1/groups/:groupId/scenarios", "POST"},
 		// Org scenario routes (existing)
 		{"/api/v1/organizations/:id/scenarios", "GET"},
+		{"/api/v1/organizations/:id/scenarios", "POST"},
 		{"/api/v1/organizations/:id/scenarios/import-json", "POST"},
 		{"/api/v1/organizations/:id/scenarios/upload", "POST"},
 		{"/api/v1/organizations/:id/scenarios/:scenarioId/export", "GET"},

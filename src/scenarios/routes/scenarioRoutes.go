@@ -60,6 +60,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	// Group-level scenario import/export routes (teachers/group admins)
 	groupScenarioRoutes := router.Group("/groups/:groupId/scenarios")
 	groupScenarioRoutes.GET("", middleware.AuthManagement(), controller.ListGroupAvailableScenarios)
+	groupScenarioRoutes.POST("", middleware.AuthManagement(), controller.GroupCreateScenario)
 	groupScenarioRoutes.GET("/:scenarioId/export", middleware.AuthManagement(), controller.GroupExportScenario)
 	groupScenarioRoutes.POST("/import-json", middleware.AuthManagement(), controller.GroupImportJSON)
 	groupScenarioRoutes.POST("/upload", middleware.AuthManagement(), controller.GroupUploadScenario)

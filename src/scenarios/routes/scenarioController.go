@@ -54,6 +54,7 @@ type ScenarioController interface {
 	GroupExportScenario(ctx *gin.Context)
 	GroupImportJSON(ctx *gin.Context)
 	GroupUploadScenario(ctx *gin.Context)
+	GroupCreateScenario(ctx *gin.Context)
 	GetAvailableScenarios(ctx *gin.Context)
 	LaunchScenario(ctx *gin.Context)
 	OrgListScenarios(ctx *gin.Context)
@@ -2316,6 +2317,121 @@ func (sc *scenarioController) OrgCreateScenario(ctx *gin.Context) {
 			ErrorMessage: "Failed to create scenario",
 		})
 		return
+	}
+
+	ctx.JSON(http.StatusCreated, sc.buildScenarioOutput(scenario))
+}
+
+// GroupCreateScenario creates a blank scenario inside a group's organization
+// and auto-assigns it to the group.
+//
+// Group managers (typically teachers) can't POST to the platform-wide
+// /scenarios endpoint and may not have org-manager role on the parent org.
+// This endpoint mirrors OrgCreateScenario but takes a groupId path param,
+// derives the organization_id from the group record, and additionally
+// creates a ScenarioAssignment so the new scenario is immediately visible
+// to the group (mirrors the auto-assignment block from GroupImportJSON).
+//
+// @Summary Create a scenario in a group
+// @Description Group-scoped scenario creation for managers/owners. organization_id is derived from the group; auto-creates a group ScenarioAssignment.
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param groupId path string true "Group ID"
+// @Param input body dto.CreateScenarioInput true "Scenario fields (organization_id is overridden by the group's org)"
+// @Success 201 {object} dto.ScenarioOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /groups/{groupId}/scenarios [post]
+// @Security BearerAuth
+func (sc *scenarioController) GroupCreateScenario(ctx *gin.Context) {
+	groupID, err := uuid.Parse(ctx.Param("groupId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid group ID",
+		})
+		return
+	}
+
+	var input dto.CreateScenarioInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	// Look up the group to derive the organization scope.
+	var group groupModels.ClassGroup
+	if err := sc.db.First(&group, "id = ?", groupID).Error; err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Group not found",
+		})
+		return
+	}
+
+	// Path-derived org — never trust the body.
+	input.OrganizationID = group.OrganizationID
+
+	userID := ctx.GetString("userId")
+
+	scenario := &models.Scenario{
+		Name:             input.Name,
+		Title:            input.Title,
+		Description:      input.Description,
+		Difficulty:       input.Difficulty,
+		EstimatedTime:    input.EstimatedTime,
+		InstanceType:     input.InstanceType,
+		Hostname:         input.Hostname,
+		OsType:           input.OsType,
+		RequiredFeatures: input.RequiredFeatures,
+		SourceType:       input.SourceType,
+		GitRepository:    input.GitRepository,
+		GitBranch:        input.GitBranch,
+		SourcePath:       input.SourcePath,
+		FlagsEnabled:     input.FlagsEnabled,
+		AllowedFlagPaths: input.AllowedFlagPaths,
+		GshEnabled:       input.GshEnabled,
+		CrashTraps:       input.CrashTraps,
+		Objectives:       input.Objectives,
+		Prerequisites:    input.Prerequisites,
+		IntroText:        input.IntroText,
+		FinishText:       input.FinishText,
+		OrganizationID:   group.OrganizationID,
+		IsPublic:         input.IsPublic,
+		SetupScript:      input.SetupScript,
+		SetupScriptID:    input.SetupScriptID,
+		IntroFileID:      input.IntroFileID,
+		FinishFileID:     input.FinishFileID,
+		CreatedByID:      userID,
+	}
+
+	if err := sc.db.Create(scenario).Error; err != nil {
+		slog.Error("failed to create group scenario", "err", err, "group_id", groupID)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to create scenario",
+		})
+		return
+	}
+
+	// Auto-create a ScenarioAssignment so the new scenario is immediately
+	// visible to the group (mirrors GroupImportJSON's behaviour).
+	assignment := models.ScenarioAssignment{
+		ScenarioID:  scenario.ID,
+		GroupID:     &groupID,
+		Scope:       "group",
+		CreatedByID: userID,
+		IsActive:    true,
+	}
+	if err := sc.db.Create(&assignment).Error; err != nil {
+		slog.Error("failed to create scenario assignment for group", "err", err, "group_id", groupID, "scenario_id", scenario.ID)
+		// Don't fail the whole request — the scenario was already created.
 	}
 
 	ctx.JSON(http.StatusCreated, sc.buildScenarioOutput(scenario))

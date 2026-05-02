@@ -60,14 +60,16 @@ func setupOrgTestRouterWithUserAndRoles(t *testing.T, db *gorm.DB, userID string
 	// Organization-level scenario routes (the new endpoints under test)
 	orgScenarios := api.Group("/organizations/:id/scenarios")
 	orgScenarios.GET("", controller.OrgListScenarios)
+	orgScenarios.POST("", controller.OrgCreateScenario)
 	orgScenarios.POST("/import-json", controller.OrgImportJSON)
 	orgScenarios.POST("/upload", controller.OrgUploadScenario)
 	orgScenarios.GET("/:scenarioId/export", controller.OrgExportScenario)
 	orgScenarios.DELETE("/:scenarioId", controller.OrgDeleteScenario)
 
-	// Group-level combined listing (the new endpoint under test)
+	// Group-level scenario routes
 	groupScenarios := api.Group("/groups/:groupId/scenarios")
 	groupScenarios.GET("", controller.ListGroupAvailableScenarios)
+	groupScenarios.POST("", controller.GroupCreateScenario)
 
 	return r
 }

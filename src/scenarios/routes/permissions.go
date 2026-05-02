@@ -65,6 +65,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		method string
 	}{
 		{"/api/v1/groups/:groupId/scenarios", "GET"},
+		{"/api/v1/groups/:groupId/scenarios", "POST"},
 		{"/api/v1/groups/:groupId/scenarios/upload", "POST"},
 		{"/api/v1/groups/:groupId/scenarios/import-json", "POST"},
 		{"/api/v1/groups/:groupId/scenarios/:scenarioId/export", "GET"},
@@ -246,6 +247,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Path: "/api/v1/groups/:groupId/scenarios", Method: "GET",
 			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "List scenarios available to a group (manager+)",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/groups/:groupId/scenarios", Method: "POST",
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
+			Description: "Create a blank scenario for a group (manager+, auto-assigns)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/groups/:groupId/scenarios/upload", Method: "POST",
