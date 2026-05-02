@@ -567,11 +567,16 @@ func (s *TeacherDashboardService) ResetGroupScenarioSessions(groupID uuid.UUID, 
 type SessionStepDetail struct {
 	StepOrder        int        `json:"step_order"`
 	StepTitle        string     `json:"step_title"`
+	StepType         string     `json:"step_type"`
 	Status           string     `json:"status"`
 	VerifyAttempts   int        `json:"verify_attempts"`
 	HintsRevealed    int        `json:"hints_revealed"`
 	CompletedAt      *time.Time `json:"completed_at,omitempty"`
 	TimeSpentSeconds int        `json:"time_spent_seconds"`
+	// QuizScore is the aggregate score in [0, 1] for quiz steps after submission.
+	// Nil for non-quiz steps or quizzes that have not been submitted.
+	// Per-question answers are intentionally not exposed (privacy invariant).
+	QuizScore *float64 `json:"quiz_score,omitempty"`
 }
 
 // SessionDetailResponse contains full session info with step-by-step progress
@@ -620,11 +625,16 @@ func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID)
 		return nil, fmt.Errorf("scenario not found: %w", err)
 	}
 
-	// Get step-level progress joined with step metadata
+	// Get step-level progress joined with step metadata.
+	// COALESCE on step_type defaults legacy rows (empty string) to "terminal" to match
+	// the player's normalization. quiz_score is included; quiz_answers is intentionally
+	// excluded — trainers see the aggregate score, never per-question answers.
 	var steps []SessionStepDetail
 	err := s.db.Raw(`
-		SELECT sp.step_order, ss.title as step_title, sp.status,
-		       sp.verify_attempts, sp.hints_revealed, sp.completed_at, sp.time_spent_seconds
+		SELECT sp.step_order, ss.title as step_title,
+		       COALESCE(NULLIF(ss.step_type, ''), 'terminal') as step_type,
+		       sp.status, sp.verify_attempts, sp.hints_revealed, sp.completed_at,
+		       sp.time_spent_seconds, sp.quiz_score
 		FROM scenario_step_progress sp
 		JOIN scenario_steps ss ON ss.scenario_id = ? AND ss."order" = sp.step_order AND ss.deleted_at IS NULL
 		WHERE sp.session_id = ?
