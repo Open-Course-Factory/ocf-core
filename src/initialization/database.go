@@ -101,6 +101,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&scenarioModels.ScenarioFlag{})
 	db.AutoMigrate(&scenarioModels.ScenarioAssignment{})
 	db.AutoMigrate(&scenarioModels.ScenarioInstanceType{})
+	db.AutoMigrate(&scenarioModels.ScenarioStepQuestion{})
 
 	// Scenario indexes
 	scenarioModels.MigrateUniqueActiveSessionIndex(db)
