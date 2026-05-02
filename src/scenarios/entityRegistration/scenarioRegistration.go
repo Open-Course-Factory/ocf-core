@@ -60,6 +60,7 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 								Order:              step.Order,
 								Title:              step.Title,
 								StepType:           step.StepType,
+								ShowImmediateFeedback: step.ShowImmediateFeedback,
 								TextContent:        step.TextContent,
 								HintContent:        step.HintContent,
 								HasFlag:            step.HasFlag,

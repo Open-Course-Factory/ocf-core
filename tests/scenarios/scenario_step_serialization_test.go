@@ -207,3 +207,61 @@ func TestScenarioStepOutput_GetSingle_IncludesQuestions(t *testing.T) {
 	assert.Contains(t, stepIncludes, "Questions",
 		"ScenarioStep DefaultIncludes must include Questions so a single step GET reloads them")
 }
+
+// TestScenarioStepOutput_PreservesShowImmediateFeedback verifies that the
+// per-step show_immediate_feedback flag flows through both serialization paths:
+//   - GET /scenario-steps/:id (ScenarioStep registration ModelToDto)
+//   - GET /scenarios/:id?include=steps (Scenario registration ModelToDto Steps loop)
+//
+// The flag defaults to false (exam-safe) and trainers opt in to learning mode.
+// The frontend player needs this through both code paths to choose its UI mode.
+func TestScenarioStepOutput_PreservesShowImmediateFeedback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name: "preserve-feedback", Title: "Preserve Feedback", InstanceType: "ubuntu:22.04", CreatedByID: "u1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID:            scenario.ID,
+		Order:                 1,
+		Title:                 "Quiz Step",
+		StepType:              "quiz",
+		ShowImmediateFeedback: true,
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	svc := setupScenarioRegistrationService(t)
+
+	// Path 1: ScenarioStep registration ModelToDto (GET /scenario-steps/:id).
+	var loadedStep models.ScenarioStep
+	require.NoError(t, db.First(&loadedStep, "id = ?", step.ID).Error)
+
+	stepOps, ok := svc.GetEntityOps("ScenarioStep")
+	require.True(t, ok, "ScenarioStep must be registered")
+	rawStepDto, err := stepOps.ConvertModelToDto(&loadedStep)
+	require.NoError(t, err)
+	stepOutput, ok := rawStepDto.(dto.ScenarioStepOutput)
+	require.True(t, ok, "output must be a ScenarioStepOutput")
+	assert.True(t, stepOutput.ShowImmediateFeedback,
+		"ScenarioStepOutput must preserve show_immediate_feedback through its own ModelToDto")
+
+	// Path 2: Scenario registration ModelToDto Steps loop (GET /scenarios/:id?include=steps).
+	var loadedScenario models.Scenario
+	require.NoError(t, db.Preload("Steps").First(&loadedScenario, "id = ?", scenario.ID).Error)
+	require.Len(t, loadedScenario.Steps, 1)
+
+	scenarioOps, ok := svc.GetEntityOps("Scenario")
+	require.True(t, ok, "Scenario must be registered")
+	rawScenarioDto, err := scenarioOps.ConvertModelToDto(&loadedScenario)
+	require.NoError(t, err)
+	scenarioOutput, ok := rawScenarioDto.(dto.ScenarioOutput)
+	require.True(t, ok, "output must be a ScenarioOutput")
+	require.Len(t, scenarioOutput.Steps, 1)
+	assert.True(t, scenarioOutput.Steps[0].ShowImmediateFeedback,
+		"Scenario.Steps[0] must preserve show_immediate_feedback through the Steps loop")
+}

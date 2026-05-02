@@ -227,6 +227,49 @@ func TestGetCurrentStep_QuizStep_IncludesSanitizedQuestions(t *testing.T) {
 	}
 }
 
+// TestGetCurrentStep_QuizStep_IncludesShowImmediateFeedback verifies that the
+// per-step show_immediate_feedback flag flows through GetCurrentStep so the
+// player can decide whether to reveal correct/explanation after each question.
+// Defaults to false (exam-safe); trainer opts in for learning quizzes.
+func TestGetCurrentStep_QuizStep_IncludesShowImmediateFeedback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name: "quiz-feedback", Title: "Quiz Feedback", InstanceType: "ubuntu:22.04", CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID:            scenario.ID,
+		Order:                 0,
+		Title:                 "Quiz Step",
+		StepType:              "quiz",
+		ShowImmediateFeedback: true,
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "student-1", CurrentStep: 0,
+		Status: "active", StartedAt: time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 0, Status: "active",
+	}).Error)
+
+	svc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
+	response, err := svc.GetCurrentStep(session.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, response)
+	assert.Equal(t, "quiz", response.StepType, "quiz step must expose StepType=\"quiz\"")
+	assert.True(t, response.ShowImmediateFeedback,
+		"CurrentStepResponse must expose show_immediate_feedback=true when the step opted in")
+}
+
 // TestGetCurrentStep_TerminalStep_OmitsQuestions — terminal/flag/info steps
 // must not include a populated Questions array (keep payload tight + avoid
 // leaking unrelated rows if a quiz happens to share the step).

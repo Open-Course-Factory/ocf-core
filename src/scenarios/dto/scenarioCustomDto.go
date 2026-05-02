@@ -73,6 +73,7 @@ type CurrentStepResponse struct {
 	StepType        string                `json:"step_type"`
 	TextContent     string                `json:"text_content,omitempty"`
 	Questions       []CurrentStepQuestion `json:"questions,omitempty"`
+	ShowImmediateFeedback bool            `json:"show_immediate_feedback"`
 }
 
 // CurrentStepQuestion - sanitized public DTO for a quiz question.

@@ -12,6 +12,7 @@ type CreateScenarioStepInput struct {
 	Order              int        `json:"order" mapstructure:"order" binding:"required"`
 	Title              string     `json:"title" mapstructure:"title" binding:"required"`
 	StepType           string     `json:"step_type,omitempty" mapstructure:"step_type"`
+	ShowImmediateFeedback bool    `json:"show_immediate_feedback,omitempty" mapstructure:"show_immediate_feedback"`
 	TextContent        string     `json:"text_content,omitempty" mapstructure:"text_content"`
 	HintContent        string     `json:"hint_content,omitempty" mapstructure:"hint_content"`
 	VerifyScript       string     `json:"verify_script,omitempty" mapstructure:"verify_script"`
@@ -32,6 +33,7 @@ type EditScenarioStepInput struct {
 	Order              *int       `json:"order,omitempty" mapstructure:"order"`
 	Title              *string    `json:"title,omitempty" mapstructure:"title"`
 	StepType           *string    `json:"step_type,omitempty" mapstructure:"step_type"`
+	ShowImmediateFeedback *bool   `json:"show_immediate_feedback,omitempty" mapstructure:"show_immediate_feedback"`
 	TextContent        *string    `json:"text_content,omitempty" mapstructure:"text_content"`
 	HintContent        *string    `json:"hint_content,omitempty" mapstructure:"hint_content"`
 	VerifyScript       *string    `json:"verify_script,omitempty" mapstructure:"verify_script"`
@@ -55,6 +57,7 @@ type ScenarioStepOutput struct {
 	Order              int        `json:"order"`
 	Title              string     `json:"title"`
 	StepType           string     `json:"step_type"`
+	ShowImmediateFeedback bool    `json:"show_immediate_feedback"`
 	TextContent        string     `json:"text_content,omitempty"`
 	HintContent        string     `json:"hint_content,omitempty"`
 	VerifyScript       string     `json:"verify_script,omitempty"`

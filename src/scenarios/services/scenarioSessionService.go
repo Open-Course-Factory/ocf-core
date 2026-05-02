@@ -446,6 +446,7 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 		HasFlag:     currentStep.HasFlag,
 		StepType:    normalizeStepType(currentStep.StepType),
 		TextContent: textContent,
+		ShowImmediateFeedback: currentStep.ShowImmediateFeedback,
 	}
 
 	// Quiz steps: populate the sanitized question list (no correct_answer/explanation)
@@ -553,6 +554,7 @@ func (s *ScenarioSessionService) GetStepByOrder(sessionID uuid.UUID, stepOrder i
 		HasFlag:     targetStep.HasFlag,
 		StepType:    normalizeStepType(targetStep.StepType),
 		TextContent: textContent,
+		ShowImmediateFeedback: targetStep.ShowImmediateFeedback,
 	}
 
 	if response.StepType == "quiz" {

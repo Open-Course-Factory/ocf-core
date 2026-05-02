@@ -23,6 +23,7 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						Order:              model.Order,
 						Title:              model.Title,
 						StepType:           model.StepType,
+						ShowImmediateFeedback: model.ShowImmediateFeedback,
 						TextContent:        model.TextContent,
 						HintContent:        model.HintContent,
 						VerifyScript:       model.VerifyScript,
@@ -70,6 +71,7 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						Order:              input.Order,
 						Title:              input.Title,
 						StepType:           stepType,
+						ShowImmediateFeedback: input.ShowImmediateFeedback,
 						TextContent:        input.TextContent,
 						HintContent:        input.HintContent,
 						VerifyScript:       input.VerifyScript,
@@ -95,6 +97,9 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 					}
 					if input.StepType != nil {
 						updates["step_type"] = *input.StepType
+					}
+					if input.ShowImmediateFeedback != nil {
+						updates["show_immediate_feedback"] = *input.ShowImmediateFeedback
 					}
 					if input.TextContent != nil {
 						updates["text_content"] = *input.TextContent

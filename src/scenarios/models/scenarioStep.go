@@ -13,6 +13,7 @@ type ScenarioStep struct {
 	Order            int       `gorm:"not null" json:"order"`
 	Title            string    `gorm:"type:varchar(500);not null" json:"title"`
 	StepType         string    `gorm:"type:varchar(50);default:'terminal'" json:"step_type"`
+	ShowImmediateFeedback bool `gorm:"default:false" json:"show_immediate_feedback"`
 	TextContent      string    `gorm:"type:text" json:"text_content,omitempty"`      // markdown
 	HintContent      string    `gorm:"type:text" json:"hint_content,omitempty"`      // markdown
 	VerifyScript     string    `gorm:"type:text" json:"-"`
