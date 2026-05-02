@@ -51,6 +51,8 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	access "soli/formations/src/auth/access"
+	"soli/formations/src/auth/mocks"
+	scenarioRoutes "soli/formations/src/scenarios/routes"
 )
 
 // -----------------------------------------------------------------------------
@@ -275,5 +277,43 @@ func TestScenariosLayer2_NoRegexMethodInCatalog(t *testing.T) {
 				"alternation in method string for %s %s would silently bypass Layer 2 (see MR !180)",
 				route.method, route.registeredPath)
 		})
+	}
+}
+
+// -----------------------------------------------------------------------------
+// AUDIT: submit-quiz route (#283).
+//
+// The new POST /api/v1/scenario-sessions/:id/submit-quiz route must be
+// declared as SelfScoped — the controller authoritatively enforces session
+// ownership (just like /submit-flag) but unlike /submit-flag we use SelfScoped
+// per task spec because the controller's session-ownership check is the
+// authoritative gate (Layer 2 EntityOwner+":id" param pattern works fine here,
+// but the spec says SelfScoped — keep this test in sync with the spec).
+//
+// If the dev agent forgets to register the route, Layer 2 silently passes the
+// request through and any authenticated user could submit answers for any
+// session. This test fails the moment the registration is missing.
+// -----------------------------------------------------------------------------
+
+func TestScenariosLayer2_SubmitQuiz_RegisteredAsSelfScoped(t *testing.T) {
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
+	t.Cleanup(func() {
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
+	})
+
+	// Trigger the production registration path so we test the actual
+	// permissions.go declarations (not a hand-built fake).
+	scenarioRoutes.RegisterScenarioPermissions(mocks.NewMockEnforcer())
+
+	perm, found := access.RouteRegistry.Lookup("POST", "/api/v1/scenario-sessions/:id/submit-quiz")
+	assert.True(t, found,
+		"submit-quiz must be declared in the RouteRegistry — a missing entry means Layer 2 silently passes the route through and lets any authenticated user submit answers to any session")
+	if found {
+		assert.Equal(t, "member", perm.Role,
+			"submit-quiz must be a member-role route (just like /verify and /submit-flag)")
+		assert.Equal(t, access.SelfScoped, perm.Access.Type,
+			"submit-quiz must be declared as SelfScoped — the controller enforces session ownership before reading the body")
 	}
 }

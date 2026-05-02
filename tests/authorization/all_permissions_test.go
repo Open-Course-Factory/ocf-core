@@ -587,3 +587,21 @@ func TestEntityRegistration_PopulatesRegistry(t *testing.T) {
 		assert.Equal(t, access.AdminOnly, registered.Delete.Type, "Delete rule type")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Quiz submission permissions (#283)
+//
+// The new POST /api/v1/scenario-sessions/:id/submit-quiz route must be
+// registered with the same shape as /verify and /submit-flag:
+//   - Layer 1: Casbin policy for role "member" + POST
+//   - Layer 2: SelfScoped (controller verifies session ownership) — see
+//             scenarios_layer2_audit_test.go for the registry assertion.
+// ---------------------------------------------------------------------------
+
+func TestSetupScenarioPermissions_SubmitQuizMemberPolicy(t *testing.T) {
+	mock := mocks.NewMockEnforcer()
+	scenarioController.RegisterScenarioPermissions(mock)
+	ps := collectPolicies(mock)
+
+	assertPolicy(t, ps, "member", "/api/v1/scenario-sessions/:id/submit-quiz", "POST")
+}
