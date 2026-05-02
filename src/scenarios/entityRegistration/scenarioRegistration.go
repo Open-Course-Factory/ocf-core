@@ -2,6 +2,7 @@ package scenarioRegistration
 
 import (
 	"net/http"
+	"sort"
 
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -75,8 +76,17 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 								UpdatedAt:          step.UpdatedAt,
 							}
 							if len(step.Questions) > 0 {
-								questions := make([]dto.ScenarioStepQuestionOutput, 0, len(step.Questions))
-								for _, q := range step.Questions {
+								// GORM's nested Preload ("Steps.Questions")
+								// doesn't apply ordering. Sort here so the
+								// editor and player see questions in
+								// author-defined order.
+								sortedQuestions := make([]models.ScenarioStepQuestion, len(step.Questions))
+								copy(sortedQuestions, step.Questions)
+								sort.SliceStable(sortedQuestions, func(i, j int) bool {
+									return sortedQuestions[i].Order < sortedQuestions[j].Order
+								})
+								questions := make([]dto.ScenarioStepQuestionOutput, 0, len(sortedQuestions))
+								for _, q := range sortedQuestions {
 									questions = append(questions, dto.ScenarioStepQuestionOutput{
 										ID:            q.ID,
 										StepID:        q.StepID,
