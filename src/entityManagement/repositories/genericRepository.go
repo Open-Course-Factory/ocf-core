@@ -116,21 +116,19 @@ func (o *genericRepository) GetEntity(id uuid.UUID, data any, entityName string,
 	}
 	query := o.db.Model(model)
 
-	// Apply selective preloading
-	// Use default includes when none specified, falling back to legacy behavior
-	if includes == nil || len(includes) == 0 {
-		defaultIncludes := ems.GlobalEntityRegistrationService.GetDefaultIncludes(entityName)
-		if len(defaultIncludes) > 0 {
-			query = applyIncludes(query, defaultIncludes)
-		} else {
-			queryPreloadString := ""
-			getPreloadString(entityName, &queryPreloadString, true)
-			if queryPreloadString != "" {
-				query = query.Preload(queryPreloadString)
-			}
-		}
+	// Apply selective preloading.
+	// Default includes are always merged with requested includes so that
+	// callers can extend, never silently shrink, the preload set. This
+	// matches GetAllEntities's behavior — keep both paths consistent.
+	merged := o.mergeDefaultIncludes(entityName, includes)
+	if len(merged) > 0 {
+		query = applyIncludes(query, merged)
 	} else {
-		query = applyIncludes(query, includes)
+		queryPreloadString := ""
+		getPreloadString(entityName, &queryPreloadString, true)
+		if queryPreloadString != "" {
+			query = query.Preload(queryPreloadString)
+		}
 	}
 
 	result := query.Find(model, id)
