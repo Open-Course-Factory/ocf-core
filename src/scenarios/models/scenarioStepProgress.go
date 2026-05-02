@@ -17,6 +17,15 @@ type ScenarioStepProgress struct {
 	HintsRevealed    int        `gorm:"default:0" json:"hints_revealed"`
 	CompletedAt      *time.Time `json:"completed_at,omitempty"`
 	TimeSpentSeconds int        `gorm:"default:0" json:"time_spent_seconds"`
+	// StepType is denormalized from ScenarioStep.StepType so the teacher
+	// dashboard can filter quiz/info/flag/terminal progress without joining.
+	StepType string `gorm:"type:varchar(50)" json:"step_type,omitempty"`
+	// QuizScore is the fraction of correct answers in [0, 1] for quiz steps.
+	// Nil for non-quiz steps or quizzes that have not been submitted yet.
+	QuizScore *float64 `json:"quiz_score,omitempty"`
+	// QuizAnswers is the JSON-encoded map of question_id -> submitted answer.
+	// Empty for non-quiz steps.
+	QuizAnswers string `gorm:"type:text" json:"quiz_answers,omitempty"`
 }
 
 // Implement interfaces for entity management system

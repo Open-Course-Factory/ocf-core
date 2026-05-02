@@ -61,15 +61,54 @@ type SubmitFlagResponse struct {
 
 // CurrentStepResponse - DTO for current step information
 type CurrentStepResponse struct {
-	StepOrder       int    `json:"step_order"`
-	TotalSteps      int    `json:"total_steps"`
-	Title           string `json:"title"`
-	Text            string `json:"text,omitempty"`
-	Hint            string `json:"hint,omitempty"`
-	HintsTotalCount int    `json:"hints_total_count"`
-	HintsRevealed   int    `json:"hints_revealed"`
-	Status          string `json:"status"`
-	HasFlag         bool   `json:"has_flag"`
+	StepOrder       int                   `json:"step_order"`
+	TotalSteps      int                   `json:"total_steps"`
+	Title           string                `json:"title"`
+	Text            string                `json:"text,omitempty"`
+	Hint            string                `json:"hint,omitempty"`
+	HintsTotalCount int                   `json:"hints_total_count"`
+	HintsRevealed   int                   `json:"hints_revealed"`
+	Status          string                `json:"status"`
+	HasFlag         bool                  `json:"has_flag"`
+	StepType        string                `json:"step_type"`
+	TextContent     string                `json:"text_content,omitempty"`
+	Questions       []CurrentStepQuestion `json:"questions,omitempty"`
+}
+
+// CurrentStepQuestion - sanitized public DTO for a quiz question.
+// CRITICAL: this DTO MUST NOT include CorrectAnswer or Explanation — those
+// would leak the answer to the student. Post-submission results expose them
+// via QuizQuestionResult.
+type CurrentStepQuestion struct {
+	ID           uuid.UUID `json:"id"`
+	Order        int       `json:"order"`
+	QuestionText string    `json:"question_text"`
+	QuestionType string    `json:"question_type"`
+	Options      string    `json:"options,omitempty"`
+}
+
+// SubmitQuizInput - DTO for submitting a quiz answer set
+type SubmitQuizInput struct {
+	Answers map[uuid.UUID]string `json:"answers" binding:"required"`
+}
+
+// SubmitQuizResponse - DTO for quiz submission results
+type SubmitQuizResponse struct {
+	Score              float64              `json:"score"`
+	CorrectCount       int                  `json:"correct_count"`
+	Total              int                  `json:"total"`
+	PerQuestionResults []QuizQuestionResult `json:"per_question_results"`
+	NextStep           *int                 `json:"next_step,omitempty"`
+}
+
+// QuizQuestionResult - per-question result returned after submission.
+// Once submitted, the correct_answer is no longer secret — exposing it here
+// (and the explanation) lets the learner see what they got right/wrong.
+type QuizQuestionResult struct {
+	QuestionID    uuid.UUID `json:"question_id"`
+	Correct       bool      `json:"correct"`
+	CorrectAnswer string    `json:"correct_answer,omitempty"`
+	Explanation   string    `json:"explanation,omitempty"`
 }
 
 // RevealHintResponse - DTO for revealing a progressive hint
