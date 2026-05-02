@@ -107,12 +107,18 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		return nil, fmt.Errorf("scenario has no steps")
 	}
 
+	// Initialize CurrentStep to the first step's actual Order, not a
+	// hardcoded 0. Editor-created scenarios use 1-based ordering; legacy
+	// seeded ones may use 0-based. Either way, GetCurrentStep looks up
+	// the step whose Order matches CurrentStep, so seed it from data.
+	firstStepOrder := scenario.Steps[0].Order
+
 	now := time.Now()
 	session := &models.ScenarioSession{
 		ScenarioID:        scenarioID,
 		UserID:            userID,
 		TerminalSessionID: &terminalSessionID,
-		CurrentStep:       0,
+		CurrentStep:       firstStepOrder,
 		Status:            "active",
 		StartedAt:         now,
 	}
