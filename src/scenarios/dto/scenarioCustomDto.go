@@ -139,30 +139,58 @@ type SeedScenarioInput struct {
 	Steps            []SeedStepInput `json:"steps" binding:"required,min=1"`
 }
 
+// SeedQuestionInput - DTO for a quiz question inside a SeedStepInput
+type SeedQuestionInput struct {
+	Order         int    `json:"order"`
+	QuestionText  string `json:"question_text"`
+	QuestionType  string `json:"question_type"`
+	Options       string `json:"options,omitempty"`
+	CorrectAnswer string `json:"correct_answer,omitempty"`
+	Explanation   string `json:"explanation,omitempty"`
+	Points        int    `json:"points,omitempty"`
+}
+
 // SeedStepInput - DTO for a single step in a seed scenario
 type SeedStepInput struct {
-	Title            string `json:"title" binding:"required,max=1000"`
-	TextContent      string `json:"text_content" binding:"max=65536"`
-	HintContent      string `json:"hint_content" binding:"max=65536"`
-	VerifyScript     string `json:"verify_script"`
-	BackgroundScript string `json:"background_script"`
-	ForegroundScript string `json:"foreground_script"`
-	HasFlag          bool   `json:"has_flag"`
-	FlagPath         string `json:"flag_path"`
+	Title                 string              `json:"title" binding:"required,max=1000"`
+	StepType              string              `json:"step_type,omitempty"`
+	ShowImmediateFeedback bool                `json:"show_immediate_feedback,omitempty"`
+	TextContent           string              `json:"text_content" binding:"max=65536"`
+	HintContent           string              `json:"hint_content" binding:"max=65536"`
+	VerifyScript          string              `json:"verify_script"`
+	BackgroundScript      string              `json:"background_script"`
+	ForegroundScript      string              `json:"foreground_script"`
+	HasFlag               bool                `json:"has_flag"`
+	FlagPath              string              `json:"flag_path"`
+	Questions             []SeedQuestionInput `json:"questions,omitempty"`
+}
+
+// ScenarioExportStepQuestionOutput — quiz question shape inside a scenario export
+type ScenarioExportStepQuestionOutput struct {
+	Order         int    `json:"order"`
+	QuestionText  string `json:"question_text"`
+	QuestionType  string `json:"question_type"`
+	Options       string `json:"options,omitempty"`
+	CorrectAnswer string `json:"correct_answer,omitempty"`
+	Explanation   string `json:"explanation,omitempty"`
+	Points        int    `json:"points,omitempty"`
 }
 
 // ScenarioExportStepOutput — full step data including scripts (for export only)
 type ScenarioExportStepOutput struct {
-	Order            int    `json:"order"`
-	Title            string `json:"title"`
-	TextContent      string `json:"text_content,omitempty"`
-	HintContent      string `json:"hint_content,omitempty"`
-	VerifyScript     string `json:"verify_script,omitempty"`
-	BackgroundScript string `json:"background_script,omitempty"`
-	ForegroundScript string `json:"foreground_script,omitempty"`
-	HasFlag          bool   `json:"has_flag"`
-	FlagPath         string `json:"flag_path,omitempty"`
-	FlagLevel        int    `json:"flag_level,omitempty"`
+	Order                 int                                `json:"order"`
+	Title                 string                             `json:"title"`
+	StepType              string                             `json:"step_type,omitempty"`
+	ShowImmediateFeedback bool                               `json:"show_immediate_feedback,omitempty"`
+	TextContent           string                             `json:"text_content,omitempty"`
+	HintContent           string                             `json:"hint_content,omitempty"`
+	VerifyScript          string                             `json:"verify_script,omitempty"`
+	BackgroundScript      string                             `json:"background_script,omitempty"`
+	ForegroundScript      string                             `json:"foreground_script,omitempty"`
+	HasFlag               bool                               `json:"has_flag"`
+	FlagPath              string                             `json:"flag_path,omitempty"`
+	FlagLevel             int                                `json:"flag_level,omitempty"`
+	Questions             []ScenarioExportStepQuestionOutput `json:"questions,omitempty"`
 }
 
 // ScenarioExportOutput — full scenario data for JSON export/re-import

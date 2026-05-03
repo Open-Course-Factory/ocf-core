@@ -60,15 +60,17 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 	newSteps := make([]models.ScenarioStep, len(input.Steps))
 	for i, st := range input.Steps {
 		newSteps[i] = models.ScenarioStep{
-			Order:            i,
-			Title:            st.Title,
-			TextContent:      st.TextContent,
-			HintContent:      st.HintContent,
-			VerifyScript:     st.VerifyScript,
-			BackgroundScript: st.BackgroundScript,
-			ForegroundScript: st.ForegroundScript,
-			HasFlag:          st.HasFlag,
-			FlagPath:         st.FlagPath,
+			Order:                 i,
+			Title:                 st.Title,
+			StepType:              st.StepType,
+			ShowImmediateFeedback: st.ShowImmediateFeedback,
+			TextContent:           st.TextContent,
+			HintContent:           st.HintContent,
+			VerifyScript:          st.VerifyScript,
+			BackgroundScript:      st.BackgroundScript,
+			ForegroundScript:      st.ForegroundScript,
+			HasFlag:               st.HasFlag,
+			FlagPath:              st.FlagPath,
 		}
 
 		// Build progressive hints from hint content
@@ -82,6 +84,23 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 				}
 			}
 			newSteps[i].Hints = hints
+		}
+
+		// Build quiz questions; GORM cascade-creates them with the step
+		if len(st.Questions) > 0 {
+			questions := make([]models.ScenarioStepQuestion, len(st.Questions))
+			for j, q := range st.Questions {
+				questions[j] = models.ScenarioStepQuestion{
+					Order:         q.Order,
+					QuestionText:  q.QuestionText,
+					QuestionType:  q.QuestionType,
+					Options:       q.Options,
+					CorrectAnswer: q.CorrectAnswer,
+					Explanation:   q.Explanation,
+					Points:        q.Points,
+				}
+			}
+			newSteps[i].Questions = questions
 		}
 	}
 
@@ -120,6 +139,12 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 				tx.Model(&models.ScenarioStep{}).Select("id").Where("scenario_id = ?", existing.ID),
 			).Delete(&models.ScenarioStepHint{}).Error; err != nil {
 				return fmt.Errorf("failed to delete old hints: %w", err)
+			}
+			// Delete old quiz questions before steps (soft-delete won't cascade)
+			if err := tx.Where("step_id IN (?)",
+				tx.Model(&models.ScenarioStep{}).Select("id").Where("scenario_id = ?", existing.ID),
+			).Delete(&models.ScenarioStepQuestion{}).Error; err != nil {
+				return fmt.Errorf("failed to delete old questions: %w", err)
 			}
 			// Delete old steps
 			if err := tx.Where("scenario_id = ?", existing.ID).Delete(&models.ScenarioStep{}).Error; err != nil {

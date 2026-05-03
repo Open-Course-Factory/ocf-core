@@ -174,6 +174,12 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 			).Delete(&models.ScenarioStepHint{}).Error; err != nil {
 				return fmt.Errorf("failed to delete old hints: %w", err)
 			}
+			// Delete old quiz questions before steps (soft-delete won't cascade)
+			if err := tx.Where("step_id IN (?)",
+				tx.Model(&models.ScenarioStep{}).Select("id").Where("scenario_id = ?", existing.ID),
+			).Delete(&models.ScenarioStepQuestion{}).Error; err != nil {
+				return fmt.Errorf("failed to delete old questions: %w", err)
+			}
 			// Delete old steps
 			if err := tx.Where("scenario_id = ?", existing.ID).Delete(&models.ScenarioStep{}).Error; err != nil {
 				return fmt.Errorf("failed to delete old steps: %w", err)
@@ -349,6 +355,33 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 			step.Hints = hints
 		}
 
+		// Apply OCF sidecar (ocf.json) if present — overrides step_type and
+		// adds quiz questions without changing the KillerCoda index.json schema.
+		stepDir := fmt.Sprintf("step%d", i+1)
+		if sidecar, err := readStepOcfSidecar(dirPath, stepDir); err != nil {
+			return nil, fmt.Errorf("failed to parse %s/ocf.json: %w", stepDir, err)
+		} else if sidecar != nil {
+			if sidecar.StepType != "" {
+				step.StepType = sidecar.StepType
+			}
+			step.ShowImmediateFeedback = sidecar.ShowImmediateFeedback
+			if len(sidecar.Questions) > 0 {
+				questions := make([]models.ScenarioStepQuestion, len(sidecar.Questions))
+				for j, q := range sidecar.Questions {
+					questions[j] = models.ScenarioStepQuestion{
+						Order:         q.Order,
+						QuestionText:  q.QuestionText,
+						QuestionType:  q.QuestionType,
+						Options:       q.Options,
+						CorrectAnswer: q.CorrectAnswer,
+						Explanation:   q.Explanation,
+						Points:        q.Points,
+					}
+				}
+				step.Questions = questions
+			}
+		}
+
 		steps = append(steps, step)
 	}
 
@@ -360,6 +393,54 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	scenario.Steps = steps
 
 	return scenario, nil
+}
+
+// stepOcfSidecar mirrors the per-step OCF extension data written to step{N}/ocf.json
+// by the export service. It carries OCF-specific fields that don't fit the legacy
+// KillerCoda index.json schema.
+type stepOcfSidecar struct {
+	StepType              string                 `json:"step_type"`
+	ShowImmediateFeedback bool                   `json:"show_immediate_feedback"`
+	Questions             []stepOcfSidecarQuestion `json:"questions"`
+}
+
+// stepOcfSidecarQuestion is the on-disk shape of a quiz question inside ocf.json.
+type stepOcfSidecarQuestion struct {
+	Order         int    `json:"order"`
+	QuestionText  string `json:"question_text"`
+	QuestionType  string `json:"question_type"`
+	Options       string `json:"options,omitempty"`
+	CorrectAnswer string `json:"correct_answer,omitempty"`
+	Explanation   string `json:"explanation,omitempty"`
+	Points        int    `json:"points,omitempty"`
+}
+
+// readStepOcfSidecar attempts to read step{N}/ocf.json from dirPath. Returns
+// (nil, nil) when the file is absent (legacy KillerCoda archive — not an error),
+// (nil, err) when the file exists but cannot be parsed, and (sidecar, nil) when
+// it parses successfully. Path traversal is prevented via the same scheme as
+// readFileContent.
+func readStepOcfSidecar(dirPath string, stepDir string) (*stepOcfSidecar, error) {
+	relPath := filepath.Join(stepDir, "ocf.json")
+	fullPath := filepath.Join(dirPath, relPath)
+	cleanPath := filepath.Clean(fullPath)
+	cleanDir := filepath.Clean(dirPath)
+	if !strings.HasPrefix(cleanPath, cleanDir+string(filepath.Separator)) && cleanPath != cleanDir {
+		return nil, nil
+	}
+	if _, err := os.Stat(cleanPath); err != nil {
+		// Missing or unreadable → treat as legacy archive (no sidecar)
+		return nil, nil
+	}
+	data, err := os.ReadFile(cleanPath)
+	if err != nil {
+		return nil, nil
+	}
+	var sidecar stepOcfSidecar
+	if err := json.Unmarshal(data, &sidecar); err != nil {
+		return nil, fmt.Errorf("invalid ocf.json: %w", err)
+	}
+	return &sidecar, nil
 }
 
 // stepRelPathInfo holds KillerCoda original relative paths for a step's files.

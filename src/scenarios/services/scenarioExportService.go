@@ -29,6 +29,8 @@ func (s *ScenarioExportService) ExportAsJSON(scenarioID uuid.UUID) (*dto.Scenari
 	var scenario models.Scenario
 	if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
 		return db.Order("\"order\" ASC")
+	}).Preload("Steps.Questions", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
 	}).First(&scenario, "id = ?", scenarioID).Error; err != nil {
 		return nil, fmt.Errorf("scenario not found: %w", err)
 	}
@@ -41,6 +43,8 @@ func (s *ScenarioExportService) ExportAsJSON(scenarioID uuid.UUID) (*dto.Scenari
 func (s *ScenarioExportService) ExportAsArchive(scenarioID uuid.UUID) ([]byte, string, error) {
 	var scenario models.Scenario
 	if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).Preload("Steps.Questions", func(db *gorm.DB) *gorm.DB {
 		return db.Order("\"order\" ASC")
 	}).First(&scenario, "id = ?", scenarioID).Error; err != nil {
 		return nil, "", fmt.Errorf("scenario not found: %w", err)
@@ -59,6 +63,8 @@ func (s *ScenarioExportService) ExportAsArchive(scenarioID uuid.UUID) ([]byte, s
 func (s *ScenarioExportService) ExportMultipleAsJSON(scenarioIDs []uuid.UUID) ([]dto.ScenarioExportOutput, error) {
 	var scenarios []models.Scenario
 	if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).Preload("Steps.Questions", func(db *gorm.DB) *gorm.DB {
 		return db.Order("\"order\" ASC")
 	}).Where("id IN ?", scenarioIDs).Find(&scenarios).Error; err != nil {
 		return nil, fmt.Errorf("failed to load scenarios: %w", err)
@@ -84,17 +90,41 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dt
 
 	steps := make([]dto.ScenarioExportStepOutput, 0, len(scenario.Steps))
 	for _, step := range scenario.Steps {
+		stepType := step.StepType
+		if stepType == "" {
+			stepType = "terminal"
+		}
+
+		var questions []dto.ScenarioExportStepQuestionOutput
+		if len(step.Questions) > 0 {
+			questions = make([]dto.ScenarioExportStepQuestionOutput, 0, len(step.Questions))
+			for _, q := range step.Questions {
+				questions = append(questions, dto.ScenarioExportStepQuestionOutput{
+					Order:         q.Order,
+					QuestionText:  q.QuestionText,
+					QuestionType:  q.QuestionType,
+					Options:       q.Options,
+					CorrectAnswer: q.CorrectAnswer,
+					Explanation:   q.Explanation,
+					Points:        q.Points,
+				})
+			}
+		}
+
 		steps = append(steps, dto.ScenarioExportStepOutput{
-			Order:            step.Order,
-			Title:            step.Title,
-			TextContent:      ResolveScriptContent(s.db, step.TextFileID, step.TextContent),
-			HintContent:      ResolveScriptContent(s.db, step.HintFileID, step.HintContent),
-			VerifyScript:     ResolveScriptContent(s.db, step.VerifyScriptID, step.VerifyScript),
-			BackgroundScript: ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript),
-			ForegroundScript: ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript),
-			HasFlag:          step.HasFlag,
-			FlagPath:         step.FlagPath,
-			FlagLevel:        step.FlagLevel,
+			Order:                 step.Order,
+			Title:                 step.Title,
+			StepType:              stepType,
+			ShowImmediateFeedback: step.ShowImmediateFeedback,
+			TextContent:           ResolveScriptContent(s.db, step.TextFileID, step.TextContent),
+			HintContent:           ResolveScriptContent(s.db, step.HintFileID, step.HintContent),
+			VerifyScript:          ResolveScriptContent(s.db, step.VerifyScriptID, step.VerifyScript),
+			BackgroundScript:      ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript),
+			ForegroundScript:      ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript),
+			HasFlag:               step.HasFlag,
+			FlagPath:              step.FlagPath,
+			FlagLevel:             step.FlagLevel,
+			Questions:             questions,
 		})
 	}
 
@@ -188,6 +218,20 @@ func (s *ScenarioExportService) buildArchive(scenario *models.Scenario) ([]byte,
 		fgScript := ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript)
 		if fgScript != "" {
 			if err := addFileToZip(w, stepDir+"/foreground.sh", []byte(fgScript)); err != nil {
+				return nil, err
+			}
+		}
+
+		// Write OCF-specific extension data as a sidecar file so KillerCoda
+		// compatibility (index.json schema) is preserved. Only write when
+		// the step carries non-default OCF data.
+		if needsOcfSidecar(&step) {
+			sidecar := buildOcfStepSidecar(&step)
+			sidecarBytes, err := json.MarshalIndent(sidecar, "", "  ")
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal step %d ocf.json: %w", i+1, err)
+			}
+			if err := addFileToZip(w, stepDir+"/ocf.json", sidecarBytes); err != nil {
 				return nil, err
 			}
 		}
@@ -298,6 +342,60 @@ func resolveRelPath(db *gorm.DB, fileID *uuid.UUID, fallback string) string {
 		return file.RelPath
 	}
 	return fallback
+}
+
+// ocfStepSidecar describes the per-step OCF extension data written to step{N}/ocf.json
+// alongside the KillerCoda files. This is the symmetric companion to the importer's
+// stepOcfSidecar and the export DTO question shape.
+type ocfStepSidecar struct {
+	StepType              string                                 `json:"step_type,omitempty"`
+	ShowImmediateFeedback bool                                   `json:"show_immediate_feedback,omitempty"`
+	Questions             []dto.ScenarioExportStepQuestionOutput `json:"questions,omitempty"`
+}
+
+// needsOcfSidecar reports whether a step carries OCF-specific data that does not fit
+// the legacy KillerCoda index.json schema (and therefore needs a sidecar file).
+func needsOcfSidecar(step *models.ScenarioStep) bool {
+	if len(step.Questions) > 0 {
+		return true
+	}
+	if step.ShowImmediateFeedback {
+		return true
+	}
+	if step.StepType != "" && step.StepType != "terminal" {
+		return true
+	}
+	return false
+}
+
+// buildOcfStepSidecar converts a step's OCF-specific fields into the sidecar payload.
+func buildOcfStepSidecar(step *models.ScenarioStep) *ocfStepSidecar {
+	stepType := step.StepType
+	if stepType == "" {
+		stepType = "terminal"
+	}
+
+	var questions []dto.ScenarioExportStepQuestionOutput
+	if len(step.Questions) > 0 {
+		questions = make([]dto.ScenarioExportStepQuestionOutput, 0, len(step.Questions))
+		for _, q := range step.Questions {
+			questions = append(questions, dto.ScenarioExportStepQuestionOutput{
+				Order:         q.Order,
+				QuestionText:  q.QuestionText,
+				QuestionType:  q.QuestionType,
+				Options:       q.Options,
+				CorrectAnswer: q.CorrectAnswer,
+				Explanation:   q.Explanation,
+				Points:        q.Points,
+			})
+		}
+	}
+
+	return &ocfStepSidecar{
+		StepType:              stepType,
+		ShowImmediateFeedback: step.ShowImmediateFeedback,
+		Questions:             questions,
+	}
 }
 
 // addFileToZip adds a file with the given content to the zip writer
