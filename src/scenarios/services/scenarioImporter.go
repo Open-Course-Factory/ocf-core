@@ -361,9 +361,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		if sidecar, err := readStepOcfSidecar(dirPath, stepDir); err != nil {
 			return nil, fmt.Errorf("failed to parse %s/ocf.json: %w", stepDir, err)
 		} else if sidecar != nil {
-			if sidecar.StepType != "" {
-				step.StepType = sidecar.StepType
-			}
+			step.StepType = sidecar.StepType
 			step.ShowImmediateFeedback = sidecar.ShowImmediateFeedback
 			if len(sidecar.Questions) > 0 {
 				questions := make([]models.ScenarioStepQuestion, len(sidecar.Questions))
@@ -421,6 +419,7 @@ type stepOcfSidecarQuestion struct {
 // it parses successfully. Path traversal is prevented via the same scheme as
 // readFileContent.
 func readStepOcfSidecar(dirPath string, stepDir string) (*stepOcfSidecar, error) {
+	const maxSidecarBytes int64 = 5 * 1024 * 1024
 	relPath := filepath.Join(stepDir, "ocf.json")
 	fullPath := filepath.Join(dirPath, relPath)
 	cleanPath := filepath.Clean(fullPath)
@@ -428,17 +427,24 @@ func readStepOcfSidecar(dirPath string, stepDir string) (*stepOcfSidecar, error)
 	if !strings.HasPrefix(cleanPath, cleanDir+string(filepath.Separator)) && cleanPath != cleanDir {
 		return nil, nil
 	}
-	if _, err := os.Stat(cleanPath); err != nil {
-		// Missing or unreadable → treat as legacy archive (no sidecar)
+	info, err := os.Stat(cleanPath)
+	if err != nil {
+		// Missing → legacy archive, soft no-op
 		return nil, nil
+	}
+	if info.Size() > maxSidecarBytes {
+		return nil, fmt.Errorf("ocf.json exceeds %d bytes", maxSidecarBytes)
 	}
 	data, err := os.ReadFile(cleanPath)
 	if err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("failed to read ocf.json: %w", err)
 	}
 	var sidecar stepOcfSidecar
 	if err := json.Unmarshal(data, &sidecar); err != nil {
 		return nil, fmt.Errorf("invalid ocf.json: %w", err)
+	}
+	if sidecar.StepType == "" {
+		sidecar.StepType = "terminal"
 	}
 	return &sidecar, nil
 }
