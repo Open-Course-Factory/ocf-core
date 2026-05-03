@@ -118,4 +118,8 @@ func RegisterScenarioStepQuestion(service *ems.EntityRegistrationService) {
 			},
 		},
 	)
+
+	// Register the read-time redactor so the generic GET handlers strip
+	// CorrectAnswer + Explanation from non-managers (issue #293).
+	service.RegisterDtoRedactor("ScenarioStepQuestion", scenarioStepQuestionRedactor)
 }

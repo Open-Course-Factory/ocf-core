@@ -13,11 +13,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// scenarioRedactor strips sensitive step + question content from a
-// ScenarioOutput DTO when the requesting user is NOT authorized to manage
-// the scenario (per scenarioHooks.CanManageScenario, with admin bypass).
+// scenarioRedactor strips sensitive scenario fields and step + question
+// content from a ScenarioOutput DTO when the requesting user is NOT
+// authorized to manage the scenario (per scenarioHooks.CanManageScenario,
+// with admin bypass).
 //
 // Sensitive fields exposed by the leak (issue #293):
+//   - Scenario.SetupScript, SetupScriptID, IntroFileID, FinishFileID
 //   - Step.HintContent, FlagPath, FlagLevel
 //   - Step.VerifyScriptID, BackgroundScriptID, ForegroundScriptID
 //   - Step.TextFileID, HintFileID
@@ -31,7 +33,7 @@ import (
 // model→DTO conversion, so it works regardless of any `?include=Steps.Questions`
 // the client sends — fixing the leak even when default preloads or explicit
 // includes have already populated the steps in the model.
-func scenarioRedactor(c *gin.Context, dtoPtr any) error {
+func scenarioRedactor(c *gin.Context, dtoPtr any, db *gorm.DB) error {
 	// The handler passes &entityDto (interface holding ScenarioOutput).
 	// Unwrap to the concrete value.
 	wrapper, ok := dtoPtr.(*any)
@@ -59,15 +61,8 @@ func scenarioRedactor(c *gin.Context, dtoPtr any) error {
 		return nil
 	}
 
-	db, ok := c.Get("ocf_db")
-	if !ok || db == nil {
+	if db == nil {
 		// Without DB we cannot run the manage check — strip defensively.
-		stripScenarioDto(&output)
-		*wrapper = output
-		return nil
-	}
-	gormDB, ok := db.(*gorm.DB)
-	if !ok {
 		stripScenarioDto(&output)
 		*wrapper = output
 		return nil
@@ -80,8 +75,8 @@ func scenarioRedactor(c *gin.Context, dtoPtr any) error {
 	scenario.CreatedByID = output.CreatedByID
 	scenario.OrganizationID = output.OrganizationID
 
-	groupSvc := groupServices.NewGroupService(gormDB)
-	allowed, err := scenarioHooks.CanManageScenario(gormDB, groupSvc, scenario, userID)
+	groupSvc := groupServices.NewGroupService(db)
+	allowed, err := scenarioHooks.CanManageScenario(db, groupSvc, scenario, userID)
 	if err != nil {
 		return fmt.Errorf("scenarioRedactor: check manage permission: %w", err)
 	}
@@ -98,8 +93,17 @@ func scenarioRedactor(c *gin.Context, dtoPtr any) error {
 // Steps is the umbrella container for HintContent, FlagPath, script IDs,
 // file IDs, and the entire Questions slice (with CorrectAnswer + Explanation).
 // Setting it to nil makes JSON `omitempty` drop the field entirely.
+//
+// Top-level scenario fields that also leak setup-time secrets:
+//   - SetupScript: shell script that may contain secrets / cleanup commands
+//   - SetupScriptID, IntroFileID, FinishFileID: project-file UUIDs that
+//     enable enumeration of internal artifacts
 func stripScenarioDto(out *dto.ScenarioOutput) {
 	out.Steps = nil
+	out.SetupScript = ""
+	out.SetupScriptID = nil
+	out.IntroFileID = nil
+	out.FinishFileID = nil
 }
 
 // readRoles extracts the roles slice from the gin context, tolerating

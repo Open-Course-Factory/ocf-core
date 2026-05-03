@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type PaginationResponse struct {
@@ -125,10 +126,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 		}
 
 		// Apply per-entity DTO redactor if registered.
-		if genericController.db != nil {
-			ctx.Set("ocf_db", genericController.db)
-		}
-		if err := applyDtoRedactor(ctx, entityName, entitiesDto); err != nil {
+		if err := applyDtoRedactor(ctx, entityName, entitiesDto, genericController.db); err != nil {
 			errors.HandleError(http.StatusInternalServerError, err, ctx)
 			return
 		}
@@ -164,10 +162,7 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 	}
 
 	// Apply per-entity DTO redactor if registered.
-	if genericController.db != nil {
-		ctx.Set("ocf_db", genericController.db)
-	}
-	if err := applyDtoRedactor(ctx, entityName, entitiesDto); err != nil {
+	if err := applyDtoRedactor(ctx, entityName, entitiesDto, genericController.db); err != nil {
 		errors.HandleError(http.StatusInternalServerError, err, ctx)
 		return
 	}
@@ -191,8 +186,9 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 // applyDtoRedactor invokes the registered DtoRedactor (if any) on each item
 // in the slice in place. Each item is passed by pointer so the redactor can
 // type-assert and mutate it. Items that are already pointers are passed
-// through. Returns the first redactor error encountered.
-func applyDtoRedactor(ctx *gin.Context, entityName string, entitiesDto []any) error {
+// through. The controller's *gorm.DB is forwarded so the redactor can run
+// authorization queries. Returns the first redactor error encountered.
+func applyDtoRedactor(ctx *gin.Context, entityName string, entitiesDto []any, db *gorm.DB) error {
 	redactor, ok := ems.GlobalEntityRegistrationService.GetDtoRedactor(entityName)
 	if !ok {
 		return nil
@@ -200,7 +196,7 @@ func applyDtoRedactor(ctx *gin.Context, entityName string, entitiesDto []any) er
 	for i := range entitiesDto {
 		// Pass &entitiesDto[i] so the redactor can mutate the slot via its
 		// pointer-to-DTO contract (matches getEntity's &entityDto pattern).
-		if err := redactor(ctx, &entitiesDto[i]); err != nil {
+		if err := redactor(ctx, &entitiesDto[i], db); err != nil {
 			return err
 		}
 	}

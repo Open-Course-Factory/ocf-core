@@ -198,4 +198,8 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 			},
 		},
 	)
+
+	// Register the read-time redactor so the generic GET handlers strip
+	// sensitive step + embedded question content from non-managers (issue #293).
+	service.RegisterDtoRedactor("ScenarioStep", scenarioStepRedactor)
 }

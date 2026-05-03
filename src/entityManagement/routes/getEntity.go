@@ -79,14 +79,11 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 	}
 
 	// Apply per-entity DTO redactor if registered (e.g. strip sensitive
-	// step / question content from non-manager users on scenarios).
+	// step / question content from non-manager users on scenarios). The
+	// controller's *gorm.DB is passed explicitly so the redactor can run
+	// authorization queries (CanManageScenario, etc.).
 	if redactor, ok := ems.GlobalEntityRegistrationService.GetDtoRedactor(entityName); ok {
-		// Expose the controller's *gorm.DB to the redactor via context so
-		// it can run authorization queries (CanManageScenario, etc.).
-		if genericController.db != nil {
-			ctx.Set("ocf_db", genericController.db)
-		}
-		if err := redactor(ctx, &entityDto); err != nil {
+		if err := redactor(ctx, &entityDto, genericController.db); err != nil {
 			errors.HandleError(http.StatusInternalServerError, err, ctx)
 			return
 		}

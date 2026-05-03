@@ -12,17 +12,22 @@ import (
 
 	"github.com/gertd/go-pluralize"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // DtoRedactor is invoked by the generic GET handlers AFTER the model has been
 // converted to its output DTO, but BEFORE the response is written. It lets a
 // module strip sensitive fields from the DTO based on the requesting user's
-// authorization (typically read from the gin.Context — userId, userRoles).
+// authorization (typically read from the gin.Context — userId, userRoles) and
+// authorization queries against the supplied database handle.
 //
 // The DTO is passed by pointer to a typed value (e.g. *dto.ScenarioOutput);
 // implementations should do a type assertion. Mutating the DTO in place is
 // the expected pattern. Returning an error aborts the request with 500.
-type DtoRedactor func(c *gin.Context, dto any) error
+//
+// The db parameter is the controller's *gorm.DB, passed explicitly so the
+// redactor does not depend on a stringly-typed gin.Context key.
+type DtoRedactor func(c *gin.Context, dto any, db *gorm.DB) error
 
 type EntityRegistrationService struct {
 	registry            map[string]any
