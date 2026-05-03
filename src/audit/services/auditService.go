@@ -67,6 +67,7 @@ func (as *auditService) Log(entry models.AuditLogCreate) error {
 		TargetType:     entry.TargetType,
 		TargetName:     entry.TargetName,
 		OrganizationID: entry.OrganizationID,
+		OnBehalfOfID:   entry.OnBehalfOfID,
 		Action:         entry.Action,
 		Status:         entry.Status,
 		ErrorMessage:   entry.ErrorMessage,
@@ -113,19 +114,21 @@ func (as *auditService) LogAuthentication(ctx *gin.Context, eventType models.Aud
 		severity = models.AuditSeverityWarning
 	}
 
-	as.Log(models.AuditLogCreate{
+	entry := models.AuditLogCreate{
 		EventType:      eventType,
 		Severity:       severity,
 		ActorID:        userID,
 		ActorEmail:     email,
 		ActorIP:        getClientIP(ctx),
-		ActorUserAgent: ctx.Request.UserAgent(),
+		ActorUserAgent: getUserAgent(ctx),
 		Action:         fmt.Sprintf("User %s", eventType),
 		Status:         status,
 		ErrorMessage:   errorMsg,
 		RequestID:      getRequestID(ctx),
 		SessionID:      getSessionID(ctx),
-	})
+	}
+	applyImpersonationFromContext(ctx, &entry)
+	as.Log(entry)
 }
 
 // LogBilling logs billing and payment-related events
@@ -137,13 +140,13 @@ func (as *auditService) LogBilling(ctx *gin.Context, eventType models.AuditEvent
 		severity = models.AuditSeverityWarning
 	}
 
-	as.Log(models.AuditLogCreate{
+	entry := models.AuditLogCreate{
 		EventType:      eventType,
 		Severity:       severity,
 		ActorID:        userID,
 		ActorEmail:     getActorEmail(ctx),
 		ActorIP:        getClientIP(ctx),
-		ActorUserAgent: ctx.Request.UserAgent(),
+		ActorUserAgent: getUserAgent(ctx),
 		TargetID:       targetID,
 		TargetType:     targetType,
 		Action:         fmt.Sprintf("Billing event: %s", eventType),
@@ -153,20 +156,22 @@ func (as *auditService) LogBilling(ctx *gin.Context, eventType models.AuditEvent
 		Currency:       currency,
 		RequestID:      getRequestID(ctx),
 		SessionID:      getSessionID(ctx),
-	})
+	}
+	applyImpersonationFromContext(ctx, &entry)
+	as.Log(entry)
 }
 
 // LogOrganization logs organization-related events
 func (as *auditService) LogOrganization(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, orgID *uuid.UUID, targetID *uuid.UUID, targetType string, action string, metadata map[string]interface{}) {
 	metadataJSON, _ := json.Marshal(metadata)
 
-	as.Log(models.AuditLogCreate{
+	entry := models.AuditLogCreate{
 		EventType:      eventType,
 		Severity:       models.AuditSeverityInfo,
 		ActorID:        userID,
 		ActorEmail:     getActorEmail(ctx),
 		ActorIP:        getClientIP(ctx),
-		ActorUserAgent: ctx.Request.UserAgent(),
+		ActorUserAgent: getUserAgent(ctx),
 		TargetID:       targetID,
 		TargetType:     targetType,
 		OrganizationID: orgID,
@@ -175,7 +180,9 @@ func (as *auditService) LogOrganization(ctx *gin.Context, eventType models.Audit
 		Metadata:       string(metadataJSON),
 		RequestID:      getRequestID(ctx),
 		SessionID:      getSessionID(ctx),
-	})
+	}
+	applyImpersonationFromContext(ctx, &entry)
+	as.Log(entry)
 }
 
 // LogUserManagement logs user management events
@@ -187,13 +194,13 @@ func (as *auditService) LogUserManagement(ctx *gin.Context, eventType models.Aud
 		severity = models.AuditSeverityWarning
 	}
 
-	as.Log(models.AuditLogCreate{
+	entry := models.AuditLogCreate{
 		EventType:      eventType,
 		Severity:       severity,
 		ActorID:        actorID,
 		ActorEmail:     getActorEmail(ctx),
 		ActorIP:        getClientIP(ctx),
-		ActorUserAgent: ctx.Request.UserAgent(),
+		ActorUserAgent: getUserAgent(ctx),
 		TargetID:       targetUserID,
 		TargetType:     "user",
 		TargetName:     targetEmail,
@@ -202,42 +209,48 @@ func (as *auditService) LogUserManagement(ctx *gin.Context, eventType models.Aud
 		Metadata:       string(metadataJSON),
 		RequestID:      getRequestID(ctx),
 		SessionID:      getSessionID(ctx),
-	})
+	}
+	applyImpersonationFromContext(ctx, &entry)
+	as.Log(entry)
 }
 
 // LogSecurityEvent logs security-related events
 func (as *auditService) LogSecurityEvent(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, targetID *uuid.UUID, action string, severity models.AuditSeverity) {
-	as.Log(models.AuditLogCreate{
+	entry := models.AuditLogCreate{
 		EventType:      eventType,
 		Severity:       severity,
 		ActorID:        userID,
 		ActorEmail:     getActorEmail(ctx),
 		ActorIP:        getClientIP(ctx),
-		ActorUserAgent: ctx.Request.UserAgent(),
+		ActorUserAgent: getUserAgent(ctx),
 		TargetID:       targetID,
 		Action:         action,
 		Status:         "detected",
 		RequestID:      getRequestID(ctx),
 		SessionID:      getSessionID(ctx),
-	})
+	}
+	applyImpersonationFromContext(ctx, &entry)
+	as.Log(entry)
 }
 
 // LogResourceAccess logs access to resources
 func (as *auditService) LogResourceAccess(ctx *gin.Context, eventType models.AuditEventType, userID *uuid.UUID, resourceID *uuid.UUID, resourceType string, action string) {
-	as.Log(models.AuditLogCreate{
+	entry := models.AuditLogCreate{
 		EventType:      eventType,
 		Severity:       models.AuditSeverityInfo,
 		ActorID:        userID,
 		ActorEmail:     getActorEmail(ctx),
 		ActorIP:        getClientIP(ctx),
-		ActorUserAgent: ctx.Request.UserAgent(),
+		ActorUserAgent: getUserAgent(ctx),
 		TargetID:       resourceID,
 		TargetType:     resourceType,
 		Action:         action,
 		Status:         "success",
 		RequestID:      getRequestID(ctx),
 		SessionID:      getSessionID(ctx),
-	})
+	}
+	applyImpersonationFromContext(ctx, &entry)
+	as.Log(entry)
 }
 
 // GetAuditLogs retrieves audit logs based on the provided filter
@@ -296,6 +309,9 @@ func (as *auditService) GetAuditLogs(filter AuditLogFilter) ([]models.AuditLog, 
 // Helper functions to extract context information
 
 func getClientIP(ctx *gin.Context) string {
+	if ctx == nil || ctx.Request == nil {
+		return ""
+	}
 	// Try to get real IP from X-Forwarded-For or X-Real-IP headers
 	ip := ctx.GetHeader("X-Forwarded-For")
 	if ip == "" {
@@ -308,14 +324,29 @@ func getClientIP(ctx *gin.Context) string {
 }
 
 func getRequestID(ctx *gin.Context) string {
+	if ctx == nil {
+		return ""
+	}
 	// Try to get request ID from header (if set by reverse proxy/middleware)
-	requestID := ctx.GetHeader("X-Request-ID")
+	var requestID string
+	if ctx.Request != nil {
+		requestID = ctx.GetHeader("X-Request-ID")
+	}
 	if requestID == "" {
 		// Generate a new one if not present
 		requestID = uuid.New().String()
 		ctx.Set("request_id", requestID)
 	}
 	return requestID
+}
+
+// getUserAgent returns the request User-Agent or "" if the request is unset
+// (e.g. in tests that build a gin.Context without an HTTP request).
+func getUserAgent(ctx *gin.Context) string {
+	if ctx == nil || ctx.Request == nil {
+		return ""
+	}
+	return ctx.Request.UserAgent()
 }
 
 func getSessionID(ctx *gin.Context) string {
@@ -332,4 +363,43 @@ func getActorEmail(ctx *gin.Context) string {
 		return email.(string)
 	}
 	return ""
+}
+
+// applyImpersonationFromContext rewrites the entry's ActorID to the real
+// human (impersonator) and records the impersonated user in OnBehalfOfID,
+// when the request context indicates an active impersonation.
+//
+// Behaviour:
+//   - No "impersonatorId" in ctx → entry left unchanged.
+//   - Malformed impersonatorId   → entry left unchanged (no panic).
+//   - entry.OnBehalfOfID already set → entry left unchanged (explicit caller wins).
+//   - Otherwise: OnBehalfOfID = current ActorID (the impersonation middleware
+//     has already substituted ctx.userId to the target), ActorID = impersonator.
+func applyImpersonationFromContext(ctx *gin.Context, entry *models.AuditLogCreate) {
+	if ctx == nil || entry == nil {
+		return
+	}
+	raw, exists := ctx.Get("impersonatorId")
+	if !exists {
+		return
+	}
+	impersonatorStr, ok := raw.(string)
+	if !ok {
+		return
+	}
+	impersonatorUUID, err := uuid.Parse(impersonatorStr)
+	if err != nil {
+		// Malformed value — fail gracefully, do not corrupt the entry.
+		return
+	}
+	if entry.OnBehalfOfID != nil {
+		// Caller explicitly supplied OnBehalfOfID — preserve it.
+		return
+	}
+	// Move the existing ActorID (the target — already swapped by the
+	// impersonation middleware into ctx.userId and propagated by the caller)
+	// into OnBehalfOfID, and replace ActorID with the real human admin.
+	entry.OnBehalfOfID = entry.ActorID
+	id := impersonatorUUID
+	entry.ActorID = &id
 }

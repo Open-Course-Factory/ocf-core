@@ -33,6 +33,7 @@ func TestMain(m *testing.M) {
 		target_type TEXT,
 		target_name TEXT,
 		organization_id TEXT,
+		on_behalf_of_id TEXT,
 		action TEXT NOT NULL,
 		status TEXT NOT NULL,
 		error_message TEXT,
@@ -46,6 +47,11 @@ func TestMain(m *testing.M) {
 	)`).Error
 	if err != nil {
 		panic("failed to create audit_logs table: " + err.Error())
+	}
+
+	err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_on_behalf_of_id ON audit_logs(on_behalf_of_id)`).Error
+	if err != nil {
+		panic("failed to create idx_audit_logs_on_behalf_of_id: " + err.Error())
 	}
 
 	sharedTestDB = db

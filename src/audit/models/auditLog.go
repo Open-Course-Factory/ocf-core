@@ -81,6 +81,11 @@ const (
 	AuditEventConfigurationChanged AuditEventType = "system.configuration.changed"
 	AuditEventMaintenanceStarted   AuditEventType = "system.maintenance.started"
 	AuditEventMaintenanceEnded     AuditEventType = "system.maintenance.ended"
+
+	// Impersonation Events
+	AuditEventImpersonationStarted AuditEventType = "impersonation_started"
+	AuditEventImpersonationStopped AuditEventType = "impersonation_stopped"
+	AuditEventImpersonationExpired AuditEventType = "impersonation_expired"
 )
 
 // AuditSeverity represents the importance level of an audit event
@@ -113,6 +118,9 @@ type AuditLog struct {
 
 	// Organization Context (for multi-tenant filtering)
 	OrganizationID   *uuid.UUID     `gorm:"type:uuid;index"`                  // Organization context (null for personal actions)
+
+	// Impersonation Context (who the actor was acting on behalf of)
+	OnBehalfOfID     *uuid.UUID     `gorm:"type:uuid;index" json:"on_behalf_of_id,omitempty"` // Target user when actor is impersonating
 
 	// Event Details
 	Action           string         `gorm:"type:varchar(255);not null"`       // Human-readable action description
@@ -149,6 +157,7 @@ type AuditLogCreate struct {
 	TargetType     string
 	TargetName     string
 	OrganizationID *uuid.UUID
+	OnBehalfOfID   *uuid.UUID `json:"on_behalf_of_id,omitempty"`
 	Action         string
 	Status         string
 	ErrorMessage   string
