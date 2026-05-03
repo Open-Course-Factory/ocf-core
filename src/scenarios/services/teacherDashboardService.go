@@ -2,8 +2,11 @@ package services
 
 import (
 	"context"
+	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -14,6 +17,7 @@ import (
 
 	groupModels "soli/formations/src/groups/models"
 	paymentServices "soli/formations/src/payment/services"
+	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	ttDto "soli/formations/src/terminalTrainer/dto"
 	ttServices "soli/formations/src/terminalTrainer/services"
@@ -23,10 +27,10 @@ import (
 // Sentinel errors for teacher dashboard operations. Controllers translate these
 // into HTTP status codes (404 for the first three to avoid leaking existence).
 var (
-	ErrSessionNotFound            = errors.New("session not found")
-	ErrSessionNotInGroup          = errors.New("session does not belong to this group")
-	ErrSessionHasNoTerminal       = errors.New("session has no terminal yet")
-	ErrScenarioNotAssignedToGroup = errors.New("scenario is not assigned to this group")
+	ErrSessionNotFound              = errors.New("session not found")
+	ErrSessionNotInGroup            = errors.New("session does not belong to this group")
+	ErrSessionHasNoTerminal         = errors.New("session has no terminal yet")
+	ErrScenarioNotAssignedToGroup   = errors.New("scenario is not assigned to this group")
 )
 
 // GroupActivityItem represents an active session for a group member
@@ -251,10 +255,18 @@ func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UU
 	}
 	enrichResultUsers(results)
 
-	// Calculate partial grade for active sessions (completed_steps / total_steps * 100)
+	// Calculate partial grade for active sessions using the weighted formula
+	// (terminal/flag/info → 1.0 if completed else 0; quiz → QuizScore).
+	// NOTE: this is N+1 over the page (one extra query per row to load steps
+	// and progress). Pages are bounded (limit ≤ 50 in practice), so this is
+	// acceptable. If profiling ever shows it as a hotspot, batch-load steps
+	// and progress for the whole page and inline ComputeWeightedGradeFromLoaded.
 	for i := range results {
 		if results[i].Grade == nil && results[i].TotalSteps > 0 {
-			partialGrade := float64(results[i].CompletedSteps) / float64(results[i].TotalSteps) * 100.0
+			partialGrade, gerr := ComputeWeightedGrade(s.db, results[i].SessionID)
+			if gerr != nil {
+				continue
+			}
 			results[i].Grade = &partialGrade
 		}
 	}
@@ -338,23 +350,16 @@ type BulkStartError struct {
 	Error  string `json:"error"`
 }
 
-// CalculateGrade computes the grade for a session as percentage of completed steps
+// CalculateGrade computes the weighted grade for a session as a percentage in
+// [0, 100]. terminal/flag/info steps contribute 1.0 if completed; quiz steps
+// contribute their persisted QuizScore (0 if nil). Returns 0 on any DB error
+// (matches the previous missing-session behaviour).
 func (s *TeacherDashboardService) CalculateGrade(sessionID uuid.UUID) float64 {
-	var session models.ScenarioSession
-	if err := s.db.First(&session, "id = ?", sessionID).Error; err != nil {
+	grade, err := ComputeWeightedGrade(s.db, sessionID)
+	if err != nil {
 		return 0
 	}
-
-	var totalSteps int64
-	s.db.Model(&models.ScenarioStep{}).Where("scenario_id = ?", session.ScenarioID).Count(&totalSteps)
-	if totalSteps == 0 {
-		return 0
-	}
-
-	var completedSteps int64
-	s.db.Model(&models.ScenarioStepProgress{}).Where("session_id = ? AND status = ?", sessionID, "completed").Count(&completedSteps)
-
-	return (float64(completedSteps) / float64(totalSteps)) * 100
+	return grade
 }
 
 // BulkStartScenario creates terminal sessions and scenario sessions for group members.
@@ -583,10 +588,25 @@ type SessionStepDetail struct {
 	HintsRevealed    int        `json:"hints_revealed"`
 	CompletedAt      *time.Time `json:"completed_at,omitempty"`
 	TimeSpentSeconds int        `json:"time_spent_seconds"`
+	// StartedAt is derived (no DB column): for step 0 it is session.StartedAt;
+	// for subsequent steps it is the previous step's CompletedAt (nil if the
+	// previous step is not yet completed). Lets the trainer see when a student
+	// actually began each step.
+	StartedAt *time.Time `json:"started_at,omitempty"`
 	// QuizScore is the aggregate score in [0, 1] for quiz steps after submission.
 	// Nil for non-quiz steps or quizzes that have not been submitted.
-	// Per-question answers are intentionally not exposed (privacy invariant).
+	// Per-question answers are intentionally not exposed in this aggregate
+	// field (privacy invariant). Per-question detail for quiz steps is
+	// surfaced via the Questions field below.
 	QuizScore *float64 `json:"quiz_score,omitempty"`
+	// Questions is populated for quiz steps only — exposes per-question detail
+	// (student's answer + correct answer + correctness flag) so trainers can
+	// see HOW the student answered. This route is gated by Layer 2
+	// GroupRole(manager), so only group managers / platform admins ever reach
+	// this code path. Learners never see this field.
+	// gorm:"-" — never scanned from a SQL row; populated post-query by
+	// populateQuizQuestions().
+	Questions []dto.SessionStepQuestionDetail `gorm:"-" json:"questions,omitempty"`
 }
 
 // SessionDetailResponse contains full session info with step-by-step progress
@@ -657,6 +677,24 @@ func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID)
 		steps = []SessionStepDetail{}
 	}
 
+	// Derive per-step StartedAt:
+	//   step 0 → session.StartedAt
+	//   step N>0 → previous step's CompletedAt (nil if previous incomplete)
+	for i := range steps {
+		if i == 0 {
+			started := session.StartedAt
+			steps[i].StartedAt = &started
+		} else {
+			steps[i].StartedAt = steps[i-1].CompletedAt
+		}
+	}
+
+	// Populate Questions for quiz steps. Single batch query for all questions
+	// across all quiz steps in the session, plus a lookup of QuizAnswers JSON.
+	if err := populateQuizQuestions(s.db, session.ScenarioID, sessionID, steps); err != nil {
+		return nil, fmt.Errorf("failed to populate quiz questions: %w", err)
+	}
+
 	resp := &SessionDetailResponse{
 		SessionID:         session.ID,
 		UserID:            session.UserID,
@@ -683,13 +721,12 @@ func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID)
 
 // GetSessionCommands proxies the terminal command history for a scenario session
 // to tt-backend, using the OCF admin API key. It enforces the same group-membership
-// invariants as GetSessionDetail (the session's user must belong to the group AND
-// the scenario must be assigned to the group) so trainers cannot read commands
-// from sessions outside their managerial scope.
+// invariant as GetSessionDetail (the session's user must belong to the group) so
+// trainers cannot read commands from sessions outside their group.
 //
 // Returns sentinel errors (ErrSessionNotFound, ErrSessionNotInGroup,
-// ErrSessionHasNoTerminal, ErrScenarioNotAssignedToGroup) so the controller can
-// map them to 404 responses without leaking session existence.
+// ErrSessionHasNoTerminal) so the controller can map them to 404 responses
+// without leaking session existence.
 func (s *TeacherDashboardService) GetSessionCommands(groupID, sessionID uuid.UUID, limit, offset int) ([]byte, string, error) {
 	var session models.ScenarioSession
 	if err := s.db.First(&session, "id = ?", sessionID).Error; err != nil {
@@ -709,9 +746,10 @@ func (s *TeacherDashboardService) GetSessionCommands(groupID, sessionID uuid.UUI
 		return nil, "", ErrSessionHasNoTerminal
 	}
 
-	// Verify the session's scenario is assigned to this group (mirror GetSessionDetail).
-	// Without this, a trainer of group A could read commands from a session a
-	// dual-membership learner ran in group B's scenario.
+	// Verify the session's scenario is assigned to this group. Without this
+	// check, a manager of group A could read commands from a session whose
+	// student happens to also be in group A but is running a scenario only
+	// assigned to group B (IDOR).
 	var assignmentCount int64
 	s.db.Table("scenario_assignments").
 		Where("group_id = ? AND scenario_id = ? AND deleted_at IS NULL", groupID, session.ScenarioID).
@@ -725,4 +763,124 @@ func (s *TeacherDashboardService) GetSessionCommands(groupID, sessionID uuid.UUI
 		return nil, "", err
 	}
 	return body, contentType, nil
+}
+
+// populateQuizQuestions fills the Questions slice on every quiz step in `steps`.
+// It batches the question lookup (one query for all quiz steps in the session)
+// and the QuizAnswers lookup (one query for the relevant progress rows).
+// Malformed QuizAnswers JSON is logged at warn level but never propagated —
+// the questions metadata is still surfaced so the trainer view doesn't break.
+func populateQuizQuestions(db *gorm.DB, scenarioID, sessionID uuid.UUID, steps []SessionStepDetail) error {
+	// Collect step orders for quiz steps.
+	quizStepOrders := make([]int, 0)
+	for i := range steps {
+		if steps[i].StepType == "quiz" {
+			quizStepOrders = append(quizStepOrders, steps[i].StepOrder)
+		}
+	}
+	if len(quizStepOrders) == 0 {
+		return nil
+	}
+
+	// Load the matching ScenarioStep rows so we can resolve their IDs to
+	// fetch questions. Order is required to map back to step.Order.
+	type stepRow struct {
+		ID    uuid.UUID
+		Order int
+	}
+	var stepRows []stepRow
+	if err := db.Table("scenario_steps").
+		Select("id, \"order\"").
+		Where("scenario_id = ? AND \"order\" IN ? AND deleted_at IS NULL", scenarioID, quizStepOrders).
+		Scan(&stepRows).Error; err != nil {
+		return fmt.Errorf("failed to load quiz step IDs: %w", err)
+	}
+	if len(stepRows) == 0 {
+		return nil
+	}
+
+	stepIDByOrder := make(map[int]uuid.UUID, len(stepRows))
+	stepIDs := make([]uuid.UUID, 0, len(stepRows))
+	for _, sr := range stepRows {
+		stepIDByOrder[sr.Order] = sr.ID
+		stepIDs = append(stepIDs, sr.ID)
+	}
+
+	// Load all questions for the involved quiz steps in one query.
+	var allQuestions []models.ScenarioStepQuestion
+	if err := db.Where("step_id IN ?", stepIDs).
+		Order("\"order\" ASC").
+		Find(&allQuestions).Error; err != nil {
+		return fmt.Errorf("failed to load quiz questions: %w", err)
+	}
+	questionsByStepID := make(map[uuid.UUID][]models.ScenarioStepQuestion, len(stepIDs))
+	for _, q := range allQuestions {
+		questionsByStepID[q.StepID] = append(questionsByStepID[q.StepID], q)
+	}
+
+	// Load QuizAnswers JSON per quiz step in one query.
+	type answersRow struct {
+		StepOrder   int
+		QuizAnswers string
+	}
+	var answersRows []answersRow
+	if err := db.Table("scenario_step_progress").
+		Select("step_order, quiz_answers").
+		Where("session_id = ? AND step_order IN ?", sessionID, quizStepOrders).
+		Scan(&answersRows).Error; err != nil {
+		return fmt.Errorf("failed to load quiz answers: %w", err)
+	}
+	answersByStepOrder := make(map[int]string, len(answersRows))
+	for _, ar := range answersRows {
+		answersByStepOrder[ar.StepOrder] = ar.QuizAnswers
+	}
+
+	// Build per-step Questions slice.
+	for i := range steps {
+		if steps[i].StepType != "quiz" {
+			continue
+		}
+		stepID, ok := stepIDByOrder[steps[i].StepOrder]
+		if !ok {
+			continue
+		}
+		questions := questionsByStepID[stepID]
+		if len(questions) == 0 {
+			continue
+		}
+
+		// Parse the student's submitted answers. Malformed JSON degrades to
+		// an empty map (every student_answer ends up empty).
+		studentAnswers := map[string]string{}
+		if rawAnswers, ok := answersByStepOrder[steps[i].StepOrder]; ok && rawAnswers != "" {
+			if err := json.Unmarshal([]byte(rawAnswers), &studentAnswers); err != nil {
+				slog.Warn("malformed quiz answers JSON, degrading to empty map",
+					"session_id", sessionID, "step_order", steps[i].StepOrder, "err", err)
+				studentAnswers = map[string]string{}
+			}
+		}
+
+		details := make([]dto.SessionStepQuestionDetail, 0, len(questions))
+		for _, q := range questions {
+			submitted := studentAnswers[q.ID.String()]
+			isCorrect := false
+			if submitted != "" {
+				isCorrect = subtle.ConstantTimeCompare([]byte(submitted), []byte(q.CorrectAnswer)) == 1
+			}
+			details = append(details, dto.SessionStepQuestionDetail{
+				ID:            q.ID,
+				Order:         q.Order,
+				QuestionText:  q.QuestionText,
+				QuestionType:  q.QuestionType,
+				Options:       q.Options,
+				CorrectAnswer: q.CorrectAnswer,
+				StudentAnswer: submitted,
+				IsCorrect:     isCorrect,
+				Points:        q.Points,
+				Explanation:   q.Explanation,
+			})
+		}
+		steps[i].Questions = details
+	}
+	return nil
 }

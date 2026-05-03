@@ -834,6 +834,17 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 			return fmt.Errorf("failed to persist quiz progress: %w", err)
 		}
 
+		// Mirror the just-persisted quiz score onto the in-memory progress
+		// slice so advanceToNextStep's weighted grade calculation sees it.
+		// The preloaded StepProgress slice was loaded before this update.
+		for i := range session.StepProgress {
+			if session.StepProgress[i].StepOrder == session.CurrentStep {
+				session.StepProgress[i].StepType = "quiz"
+				session.StepProgress[i].QuizScore = &scoreCopy
+				break
+			}
+		}
+
 		nextStep, err := s.advanceToNextStep(tx, &session, now)
 		if err != nil {
 			return err
@@ -1131,16 +1142,24 @@ func (s *ScenarioSessionService) advanceToNextStep(tx *gorm.DB, session *models.
 	}
 
 	if isLastStep {
-		// Calculate grade: percentage of completed steps
-		completedSteps := 0
-		for _, sp := range session.StepProgress {
-			if sp.Status == "completed" {
-				completedSteps++
+		// Calculate weighted grade: each step contributes its own weight.
+		//   terminal/flag/info → 1.0 if completed else 0.0
+		//   quiz               → progress.QuizScore (0 if nil)
+		// Mirror the just-applied "completed" status onto the in-memory
+		// session.StepProgress slice for the current step so the helper
+		// counts it as completed. Quiz scores must be set on the in-memory
+		// slice by the caller (SubmitQuiz) before reaching here.
+		for i := range session.StepProgress {
+			if session.StepProgress[i].StepOrder == session.CurrentStep {
+				session.StepProgress[i].Status = "completed"
+				if session.StepProgress[i].CompletedAt == nil {
+					completedAt := now
+					session.StepProgress[i].CompletedAt = &completedAt
+				}
+				break
 			}
 		}
-		completedSteps++ // current step being completed now
-		totalSteps := len(session.Scenario.Steps)
-		grade := float64(completedSteps) / float64(totalSteps) * 100.0
+		grade := ComputeWeightedGradeFromLoaded(session.Scenario.Steps, session.StepProgress, nil)
 
 		// Mark session as completed with grade
 		if err := tx.Model(session).Updates(map[string]any{
