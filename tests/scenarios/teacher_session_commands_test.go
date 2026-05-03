@@ -82,6 +82,13 @@ func TestGetSessionCommands_AsGroupManager_Allowed(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
+	// Scenario must be assigned to the group — without this the new IDOR check
+	// rejects the request with ErrScenarioNotAssignedToGroup.
+	require.NoError(t, db.Create(&models.ScenarioAssignment{
+		ScenarioID: scenario.ID, GroupID: &groupID, Scope: "group",
+		CreatedByID: "c1", IsActive: true,
+	}).Error)
+
 	terminalUUID := "tt-session-uuid-" + uuid.NewString()
 	session := models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: studentID, Status: "active",

@@ -246,8 +246,9 @@ func (tc *TeacherController) GetSessionCommands(c *gin.Context) {
 	if err != nil {
 		switch err {
 		case services.ErrSessionNotFound,
-			services.ErrSessionNotInGroup:
-			// Don't leak existence — return 404 for both
+			services.ErrSessionNotInGroup,
+			services.ErrScenarioNotAssignedToGroup:
+			// Don't leak existence — return 404 for all three
 			c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
 			return
 		case services.ErrSessionHasNoTerminal:
