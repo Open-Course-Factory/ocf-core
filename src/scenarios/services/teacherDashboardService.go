@@ -655,26 +655,56 @@ func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID)
 		return nil, fmt.Errorf("scenario not found: %w", err)
 	}
 
-	// Get step-level progress joined with step metadata.
-	// COALESCE on step_type defaults legacy rows (empty string) to "terminal" to match
-	// the player's normalization. quiz_score is included; quiz_answers is intentionally
-	// excluded — trainers see the aggregate score, never per-question answers.
-	var steps []SessionStepDetail
-	err := s.db.Raw(`
-		SELECT sp.step_order, ss.title as step_title,
-		       COALESCE(NULLIF(ss.step_type, ''), 'terminal') as step_type,
-		       sp.status, sp.verify_attempts, sp.hints_revealed, sp.completed_at,
-		       sp.time_spent_seconds, sp.quiz_score
-		FROM scenario_step_progress sp
-		JOIN scenario_steps ss ON ss.scenario_id = ? AND ss."order" = sp.step_order AND ss.deleted_at IS NULL
-		WHERE sp.session_id = ?
-		ORDER BY sp.step_order ASC
-	`, session.ScenarioID, sessionID).Scan(&steps).Error
-	if err != nil {
+	// Load progress and step metadata separately, then merge in Go. We deliberately
+	// avoid `JOIN scenario_steps ON (scenario_id, order)` because nothing in the
+	// schema enforces (scenario_id, order) as unique on scenario_steps — an editor
+	// bug can leave two steps with the same order, which under a SQL JOIN turns
+	// into a Cartesian explosion (N progress × M duplicate steps = N*M rows).
+	// Driving from progress and picking the first matching step per order keeps
+	// the result row count == progress row count regardless of editor data.
+	var progress []models.ScenarioStepProgress
+	if err := s.db.Where("session_id = ?", sessionID).Order("step_order ASC, created_at ASC").Find(&progress).Error; err != nil {
 		return nil, fmt.Errorf("failed to load step progress: %w", err)
 	}
-	if steps == nil {
-		steps = []SessionStepDetail{}
+
+	var stepRows []models.ScenarioStep
+	if err := s.db.Where("scenario_id = ?", session.ScenarioID).Order("\"order\" ASC, id ASC").Find(&stepRows).Error; err != nil {
+		return nil, fmt.Errorf("failed to load steps: %w", err)
+	}
+	stepByOrder := make(map[int]models.ScenarioStep, len(stepRows))
+	for _, st := range stepRows {
+		// Keep the first occurrence per order (driven by ORDER BY id ASC above).
+		if _, ok := stepByOrder[st.Order]; !ok {
+			stepByOrder[st.Order] = st
+		}
+	}
+
+	steps := make([]SessionStepDetail, 0, len(progress))
+	for _, p := range progress {
+		// Skip progress rows whose scenario_step has been soft-deleted —
+		// matches the previous inner-JOIN semantics.
+		st, ok := stepByOrder[p.StepOrder]
+		if !ok {
+			continue
+		}
+		stepType := p.StepType
+		if stepType == "" {
+			stepType = st.StepType
+		}
+		if stepType == "" {
+			stepType = "terminal"
+		}
+		steps = append(steps, SessionStepDetail{
+			StepOrder:        p.StepOrder,
+			StepTitle:        st.Title,
+			StepType:         stepType,
+			Status:           p.Status,
+			VerifyAttempts:   p.VerifyAttempts,
+			HintsRevealed:    p.HintsRevealed,
+			CompletedAt:      p.CompletedAt,
+			TimeSpentSeconds: p.TimeSpentSeconds,
+			QuizScore:        p.QuizScore,
+		})
 	}
 
 	// Derive per-step StartedAt:
