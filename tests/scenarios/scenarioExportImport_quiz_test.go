@@ -339,7 +339,7 @@ func TestExportImport_JSONRoundtrip_Quiz(t *testing.T) {
 	assert.Equal(t, 2, q.Points)
 }
 
-// --- 4. Archive: ocf.json sidecar without polluting index.json ---
+// --- 4. Archive: extensions.json sidecar without polluting index.json ---
 
 func TestExportArchive_AddsQuizFileWithoutChangingIndexJson(t *testing.T) {
 	db := freshTestDB(t)
@@ -414,7 +414,7 @@ func TestExportArchive_AddsQuizFileWithoutChangingIndexJson(t *testing.T) {
 	require.Len(t, index.Details.Steps, 2)
 
 	// index.json's step entries must NOT carry step_type or questions
-	// at the top level — those are an OCF extension and live in ocf.json.
+	// at the top level — those are an OCF extension and live in extensions.json.
 	var rawIndex map[string]any
 	require.NoError(t, json.Unmarshal(indexBytes, &rawIndex))
 	details, ok := rawIndex["details"].(map[string]any)
@@ -429,17 +429,17 @@ func TestExportArchive_AddsQuizFileWithoutChangingIndexJson(t *testing.T) {
 		assert.False(t, hasQuestions, "index.json step %d must not contain questions at the top level", i)
 	}
 
-	// step2/ocf.json must exist (the quiz step) with the expected payload.
-	ocfBytes, ok := files["step2/ocf.json"]
-	require.True(t, ok, "archive must contain step2/ocf.json for the quiz step (today: missing)")
+	// step2/extensions.json must exist (the quiz step) with the expected payload.
+	extBytes, ok := files["step2/extensions.json"]
+	require.True(t, ok, "archive must contain step2/extensions.json for the quiz step (today: missing)")
 
-	var ocf map[string]any
-	require.NoError(t, json.Unmarshal(ocfBytes, &ocf))
-	assert.Equal(t, "quiz", ocf["step_type"])
-	assert.Equal(t, true, ocf["show_immediate_feedback"])
+	var ext map[string]any
+	require.NoError(t, json.Unmarshal(extBytes, &ext))
+	assert.Equal(t, "quiz", ext["step_type"])
+	assert.Equal(t, true, ext["show_immediate_feedback"])
 
-	questionsAny, ok := ocf["questions"].([]any)
-	require.True(t, ok, "step2/ocf.json must include a questions array")
+	questionsAny, ok := ext["questions"].([]any)
+	require.True(t, ok, "step2/extensions.json must include a questions array")
 	require.Len(t, questionsAny, 2)
 
 	q0 := questionsAny[0].(map[string]any)
@@ -451,9 +451,9 @@ func TestExportArchive_AddsQuizFileWithoutChangingIndexJson(t *testing.T) {
 	assert.Equal(t, float64(2), q0["points"])
 }
 
-// --- 5. Importer reads ocf.json sidecars for quiz steps ---
+// --- 5. Importer reads extensions.json sidecars for quiz steps ---
 
-func TestImportFromDirectory_ReadsOcfJsonForQuizSteps(t *testing.T) {
+func TestImportFromDirectory_ReadsExtensionsJsonForQuizSteps(t *testing.T) {
 	db := freshTestDB(t)
 
 	dir := t.TempDir()
@@ -480,7 +480,7 @@ func TestImportFromDirectory_ReadsOcfJsonForQuizSteps(t *testing.T) {
 	require.NoError(t, os.MkdirAll(stepDir, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(stepDir, "text.md"), []byte("Answer the questions"), 0o644))
 
-	ocfJSON := []byte(`{
+	extJSON := []byte(`{
 		"step_type": "quiz",
 		"show_immediate_feedback": true,
 		"questions": [
@@ -495,7 +495,7 @@ func TestImportFromDirectory_ReadsOcfJsonForQuizSteps(t *testing.T) {
 			}
 		]
 	}`)
-	require.NoError(t, os.WriteFile(filepath.Join(stepDir, "ocf.json"), ocfJSON, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(stepDir, "extensions.json"), extJSON, 0o644))
 
 	importerService := services.NewScenarioImporterService(db)
 	scenario, err := importerService.ImportFromDirectory(dir, "user-1", nil, "upload")
@@ -512,11 +512,11 @@ func TestImportFromDirectory_ReadsOcfJsonForQuizSteps(t *testing.T) {
 	step := loaded.Steps[0]
 
 	assert.Equal(t, "quiz", step.StepType,
-		"importer must read step_type='quiz' from ocf.json (today: defaults to 'terminal')")
+		"importer must read step_type='quiz' from extensions.json (today: defaults to 'terminal')")
 	assert.True(t, step.ShowImmediateFeedback,
-		"importer must read show_immediate_feedback=true from ocf.json (today: false)")
+		"importer must read show_immediate_feedback=true from extensions.json (today: false)")
 	require.Len(t, step.Questions, 1,
-		"importer must persist 1 quiz question from ocf.json (today: 0)")
+		"importer must persist 1 quiz question from extensions.json (today: 0)")
 
 	q := step.Questions[0]
 	assert.Equal(t, 0, q.Order)
@@ -528,7 +528,7 @@ func TestImportFromDirectory_ReadsOcfJsonForQuizSteps(t *testing.T) {
 	assert.Equal(t, 1, q.Points)
 }
 
-// --- 6. Legacy archive (no ocf.json) still imports as terminal step ---
+// --- 6. Legacy archive (no extensions.json) still imports as terminal step ---
 
 func TestImportFromDirectory_LegacyArchiveStillWorks(t *testing.T) {
 	db := freshTestDB(t)
@@ -537,7 +537,7 @@ func TestImportFromDirectory_LegacyArchiveStillWorks(t *testing.T) {
 
 	indexJSON := []byte(`{
 		"title": "Legacy KillerCoda",
-		"description": "No ocf.json sidecars",
+		"description": "No extensions.json sidecars",
 		"difficulty": "beginner",
 		"time": "5",
 		"intro": {"text": "", "background": "", "foreground": ""},
@@ -571,7 +571,7 @@ func TestImportFromDirectory_LegacyArchiveStillWorks(t *testing.T) {
 	require.Len(t, loaded.Steps, 1)
 	step := loaded.Steps[0]
 
-	// Default behaviour: legacy KillerCoda steps without ocf.json must
+	// Default behaviour: legacy KillerCoda steps without extensions.json must
 	// remain terminal steps with no questions. This guards against the
 	// fix accidentally breaking legacy archives.
 	stepType := step.StepType

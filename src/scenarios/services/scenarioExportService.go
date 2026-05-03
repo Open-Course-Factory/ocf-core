@@ -225,13 +225,13 @@ func (s *ScenarioExportService) buildArchive(scenario *models.Scenario) ([]byte,
 		// Write OCF-specific extension data as a sidecar file so KillerCoda
 		// compatibility (index.json schema) is preserved. Only write when
 		// the step carries non-default OCF data.
-		if needsOcfSidecar(&step) {
-			sidecar := buildOcfStepSidecar(&step)
+		if needsStepExtensions(&step) {
+			sidecar := buildStepExtensions(&step)
 			sidecarBytes, err := json.MarshalIndent(sidecar, "", "  ")
 			if err != nil {
-				return nil, fmt.Errorf("failed to marshal step %d ocf.json: %w", i+1, err)
+				return nil, fmt.Errorf("failed to marshal step %d extensions.json: %w", i+1, err)
 			}
-			if err := addFileToZip(w, stepDir+"/ocf.json", sidecarBytes); err != nil {
+			if err := addFileToZip(w, stepDir+"/extensions.json", sidecarBytes); err != nil {
 				return nil, err
 			}
 		}
@@ -344,18 +344,10 @@ func resolveRelPath(db *gorm.DB, fileID *uuid.UUID, fallback string) string {
 	return fallback
 }
 
-// ocfStepSidecar describes the per-step OCF extension data written to step{N}/ocf.json
-// alongside the KillerCoda files. This is the symmetric companion to the importer's
-// stepOcfSidecar and the export DTO question shape.
-type ocfStepSidecar struct {
-	StepType              string                                 `json:"step_type,omitempty"`
-	ShowImmediateFeedback bool                                   `json:"show_immediate_feedback,omitempty"`
-	Questions             []dto.ScenarioExportStepQuestionOutput `json:"questions,omitempty"`
-}
-
-// needsOcfSidecar reports whether a step carries OCF-specific data that does not fit
+// needsStepExtensions reports whether a step carries extension data that does not fit
 // the legacy KillerCoda index.json schema (and therefore needs a sidecar file).
-func needsOcfSidecar(step *models.ScenarioStep) bool {
+// The on-disk payload type (stepExtensions) is defined alongside the importer.
+func needsStepExtensions(step *models.ScenarioStep) bool {
 	if len(step.Questions) > 0 {
 		return true
 	}
@@ -368,18 +360,19 @@ func needsOcfSidecar(step *models.ScenarioStep) bool {
 	return false
 }
 
-// buildOcfStepSidecar converts a step's OCF-specific fields into the sidecar payload.
-func buildOcfStepSidecar(step *models.ScenarioStep) *ocfStepSidecar {
+// buildStepExtensions converts a step's extension fields into the sidecar payload.
+// The returned type is shared with the importer so the on-disk JSON shape is symmetric.
+func buildStepExtensions(step *models.ScenarioStep) *stepExtensions {
 	stepType := step.StepType
 	if stepType == "" {
 		stepType = "terminal"
 	}
 
-	var questions []dto.ScenarioExportStepQuestionOutput
+	var questions []stepExtensionsQuestion
 	if len(step.Questions) > 0 {
-		questions = make([]dto.ScenarioExportStepQuestionOutput, 0, len(step.Questions))
+		questions = make([]stepExtensionsQuestion, 0, len(step.Questions))
 		for _, q := range step.Questions {
-			questions = append(questions, dto.ScenarioExportStepQuestionOutput{
+			questions = append(questions, stepExtensionsQuestion{
 				Order:         q.Order,
 				QuestionText:  q.QuestionText,
 				QuestionType:  q.QuestionType,
@@ -391,7 +384,7 @@ func buildOcfStepSidecar(step *models.ScenarioStep) *ocfStepSidecar {
 		}
 	}
 
-	return &ocfStepSidecar{
+	return &stepExtensions{
 		StepType:              stepType,
 		ShowImmediateFeedback: step.ShowImmediateFeedback,
 		Questions:             questions,

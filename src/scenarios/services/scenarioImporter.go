@@ -355,11 +355,11 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 			step.Hints = hints
 		}
 
-		// Apply OCF sidecar (ocf.json) if present — overrides step_type and
-		// adds quiz questions without changing the KillerCoda index.json schema.
+		// Apply step extensions sidecar (extensions.json) if present — overrides step_type
+		// and adds quiz questions without changing the KillerCoda index.json schema.
 		stepDir := fmt.Sprintf("step%d", i+1)
-		if sidecar, err := readStepOcfSidecar(dirPath, stepDir); err != nil {
-			return nil, fmt.Errorf("failed to parse %s/ocf.json: %w", stepDir, err)
+		if sidecar, err := readStepExtensions(dirPath, stepDir); err != nil {
+			return nil, fmt.Errorf("failed to parse %s/extensions.json: %w", stepDir, err)
 		} else if sidecar != nil {
 			step.StepType = sidecar.StepType
 			step.ShowImmediateFeedback = sidecar.ShowImmediateFeedback
@@ -393,17 +393,18 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	return scenario, nil
 }
 
-// stepOcfSidecar mirrors the per-step OCF extension data written to step{N}/ocf.json
-// by the export service. It carries OCF-specific fields that don't fit the legacy
-// KillerCoda index.json schema.
-type stepOcfSidecar struct {
-	StepType              string                 `json:"step_type"`
-	ShowImmediateFeedback bool                   `json:"show_immediate_feedback"`
-	Questions             []stepOcfSidecarQuestion `json:"questions"`
+// stepExtensions mirrors the per-step extension data written to step{N}/extensions.json
+// by the export service. It carries extension fields that don't fit the legacy
+// KillerCoda index.json schema. The exporter and importer share this type so the
+// on-disk JSON shape is symmetric.
+type stepExtensions struct {
+	StepType              string                   `json:"step_type,omitempty"`
+	ShowImmediateFeedback bool                     `json:"show_immediate_feedback,omitempty"`
+	Questions             []stepExtensionsQuestion `json:"questions,omitempty"`
 }
 
-// stepOcfSidecarQuestion is the on-disk shape of a quiz question inside ocf.json.
-type stepOcfSidecarQuestion struct {
+// stepExtensionsQuestion is the on-disk shape of a quiz question inside extensions.json.
+type stepExtensionsQuestion struct {
 	Order         int    `json:"order"`
 	QuestionText  string `json:"question_text"`
 	QuestionType  string `json:"question_type"`
@@ -413,14 +414,14 @@ type stepOcfSidecarQuestion struct {
 	Points        int    `json:"points,omitempty"`
 }
 
-// readStepOcfSidecar attempts to read step{N}/ocf.json from dirPath. Returns
+// readStepExtensions attempts to read step{N}/extensions.json from dirPath. Returns
 // (nil, nil) when the file is absent (legacy KillerCoda archive — not an error),
 // (nil, err) when the file exists but cannot be parsed, and (sidecar, nil) when
 // it parses successfully. Path traversal is prevented via the same scheme as
 // readFileContent.
-func readStepOcfSidecar(dirPath string, stepDir string) (*stepOcfSidecar, error) {
+func readStepExtensions(dirPath string, stepDir string) (*stepExtensions, error) {
 	const maxSidecarBytes int64 = 5 * 1024 * 1024
-	relPath := filepath.Join(stepDir, "ocf.json")
+	relPath := filepath.Join(stepDir, "extensions.json")
 	fullPath := filepath.Join(dirPath, relPath)
 	cleanPath := filepath.Clean(fullPath)
 	cleanDir := filepath.Clean(dirPath)
@@ -433,15 +434,15 @@ func readStepOcfSidecar(dirPath string, stepDir string) (*stepOcfSidecar, error)
 		return nil, nil
 	}
 	if info.Size() > maxSidecarBytes {
-		return nil, fmt.Errorf("ocf.json exceeds %d bytes", maxSidecarBytes)
+		return nil, fmt.Errorf("extensions.json exceeds %d bytes", maxSidecarBytes)
 	}
 	data, err := os.ReadFile(cleanPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read ocf.json: %w", err)
+		return nil, fmt.Errorf("failed to read extensions.json: %w", err)
 	}
-	var sidecar stepOcfSidecar
+	var sidecar stepExtensions
 	if err := json.Unmarshal(data, &sidecar); err != nil {
-		return nil, fmt.Errorf("invalid ocf.json: %w", err)
+		return nil, fmt.Errorf("invalid extensions.json: %w", err)
 	}
 	if sidecar.StepType == "" {
 		sidecar.StepType = "terminal"
