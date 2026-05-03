@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// canManageScenario centralises the "can this user edit this scenario's
+// CanManageScenario centralises the "can this user edit this scenario's
 // content (steps + questions)?" rule. The user is allowed if any of the
 // following holds:
 //
@@ -23,8 +23,9 @@ import (
 //   - they are a manager or owner of any group the scenario is assigned
 //     to (so group-scoped trainers can author their own labs).
 //
-// Platform admin bypass is handled by callers via ctx.IsAdmin().
-func canManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenario *models.Scenario, userID string) (bool, error) {
+// Platform admin bypass is handled by callers via ctx.IsAdmin() (hooks)
+// or access.IsAdmin(roles) (controllers).
+func CanManageScenario(db *gorm.DB, groupSvc groupServices.GroupService, scenario *models.Scenario, userID string) (bool, error) {
 	if userID == "" {
 		return false, nil
 	}
@@ -152,7 +153,7 @@ func (h *ScenarioStepAuthorizationHook) checkCreate(ctx *hooks.HookContext) erro
 	if err != nil {
 		return err
 	}
-	allowed, err := canManageScenario(h.db, h.groupService, scenario, ctx.UserID)
+	allowed, err := CanManageScenario(h.db, h.groupService, scenario, ctx.UserID)
 	if err != nil {
 		return fmt.Errorf("permission check failed: %w", err)
 	}
@@ -171,7 +172,7 @@ func (h *ScenarioStepAuthorizationHook) checkUpdateOrDelete(ctx *hooks.HookConte
 	if err != nil {
 		return err
 	}
-	allowed, err := canManageScenario(h.db, h.groupService, scenario, ctx.UserID)
+	allowed, err := CanManageScenario(h.db, h.groupService, scenario, ctx.UserID)
 	if err != nil {
 		return fmt.Errorf("permission check failed: %w", err)
 	}
@@ -250,7 +251,7 @@ func (h *ScenarioStepQuestionAuthorizationHook) checkCreate(ctx *hooks.HookConte
 	if err != nil {
 		return err
 	}
-	allowed, err := canManageScenario(h.db, h.groupService, scenario, ctx.UserID)
+	allowed, err := CanManageScenario(h.db, h.groupService, scenario, ctx.UserID)
 	if err != nil {
 		return fmt.Errorf("permission check failed: %w", err)
 	}
@@ -273,7 +274,7 @@ func (h *ScenarioStepQuestionAuthorizationHook) checkExisting(ctx *hooks.HookCon
 	if err != nil {
 		return err
 	}
-	allowed, err := canManageScenario(h.db, h.groupService, scenario, ctx.UserID)
+	allowed, err := CanManageScenario(h.db, h.groupService, scenario, ctx.UserID)
 	if err != nil {
 		return fmt.Errorf("permission check failed: %w", err)
 	}

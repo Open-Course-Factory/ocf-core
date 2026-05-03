@@ -109,6 +109,22 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
 	}
 
+	// Platform-level scenario export routes - available to all authenticated members.
+	// Layer 1 lets any Member through; the controller verifies CanManageScenario
+	// (with admin bypass), so creators / org managers / group managers can export
+	// their own scenarios while unrelated members are rejected.
+	platformExportRoutes := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/scenarios/:id/export", "GET"},
+		{"/api/v1/scenarios/export", "POST"},
+	}
+
+	for _, route := range platformExportRoutes {
+		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
+	}
+
 	// Admin-only scenario management routes
 	// (Layer 1 restricts to administrator, Layer 2 enforces AdminOnly)
 	adminRoutes := []struct {
@@ -118,8 +134,6 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/scenarios/import", "POST"},
 		{"/api/v1/scenarios/seed", "POST"},
 		{"/api/v1/scenarios/upload", "POST"},
-		{"/api/v1/scenarios/:id/export", "GET"},
-		{"/api/v1/scenarios/export", "POST"},
 		{"/api/v1/scenarios/import-json", "POST"},
 		{"/api/v1/scenarios/:id/duplicate", "POST"},
 	}
@@ -322,13 +336,13 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		},
 		access.RoutePermission{
 			Path: "/api/v1/scenarios/:id/export", Method: "GET",
-			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
-			Description: "Export a scenario at platform level (admin only)",
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Export a scenario at platform level (controller verifies CanManageScenario: creator, org manager, group manager, or admin)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/scenarios/export", Method: "POST",
-			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
-			Description: "Bulk export scenarios (admin only)",
+			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Bulk export scenarios at platform level (controller verifies CanManageScenario for every requested ID)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/scenarios/import-json", Method: "POST",

@@ -381,10 +381,12 @@ func TestSetupScenarioPermissions_AdminRoutes(t *testing.T) {
 		// Existing
 		{"/api/v1/scenarios/import", "POST"},
 		{"/api/v1/scenarios/seed", "POST"},
-		// NEW: Admin scenario management
+		// Admin scenario management.
+		// NOTE: /scenarios/:id/export and /scenarios/export are intentionally
+		// NOT in this list — they are member-allowed at Layer 1 and gated by
+		// CanManageScenario in the controller. See
+		// tests/authorization/scenario_export_permissions_test.go.
 		{"/api/v1/scenarios/upload", "POST"},
-		{"/api/v1/scenarios/:id/export", "GET"},
-		{"/api/v1/scenarios/export", "POST"},
 		{"/api/v1/scenarios/import-json", "POST"},
 		{"/api/v1/scenarios/:id/duplicate", "POST"},
 	}

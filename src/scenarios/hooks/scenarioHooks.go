@@ -17,7 +17,7 @@ import (
 // can only do so on scenarios they actually manage (creator, org-manager
 // of the scenario's org, or group-manager of any group it's assigned to).
 //
-// Reuses the canManageScenario helper from scenarioStepHooks.go so the
+// Reuses the CanManageScenario helper from scenarioStepHooks.go so the
 // authorization rule for editing a scenario stays consistent with editing
 // its steps and questions.
 //
@@ -69,7 +69,7 @@ func (h *ScenarioAuthorizationHook) checkExisting(ctx *hooks.HookContext, raw an
 	if !ok {
 		return fmt.Errorf("expected *models.Scenario, got %T", raw)
 	}
-	allowed, err := canManageScenario(h.db, h.groupService, scenario, ctx.UserID)
+	allowed, err := CanManageScenario(h.db, h.groupService, scenario, ctx.UserID)
 	if err != nil {
 		return fmt.Errorf("permission check failed: %w", err)
 	}

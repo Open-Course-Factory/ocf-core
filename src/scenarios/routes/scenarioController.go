@@ -14,10 +14,12 @@ import (
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	groupModels "soli/formations/src/groups/models"
+	groupServices "soli/formations/src/groups/services"
 	orgModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/dto"
+	scenarioHooks "soli/formations/src/scenarios/hooks"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	"soli/formations/src/scenarios/utils"
@@ -77,6 +79,7 @@ type scenarioController struct {
 	seedService      *services.ScenarioSeedService
 	duplicateService *services.ScenarioDuplicateService
 	terminalService  terminalServices.TerminalTrainerService
+	groupService     groupServices.GroupService
 }
 
 // NewScenarioController creates a new scenario controller with its service dependencies
@@ -103,6 +106,7 @@ func NewScenarioController(db *gorm.DB) ScenarioController {
 		seedService:      seedService,
 		duplicateService: duplicateService,
 		terminalService:  terminalService,
+		groupService:     groupServices.NewGroupService(db),
 	}
 }
 
@@ -1068,6 +1072,47 @@ func (sc *scenarioController) ExportScenario(ctx *gin.Context) {
 		return
 	}
 
+	// Authorization: admin always allowed; otherwise the caller must be able
+	// to manage this scenario (creator, org manager, or group manager of any
+	// group it's assigned to). Aligns export with the PATCH/DELETE rule.
+	userID := ctx.GetString("userId")
+	userRoles, _ := ctx.Get("userRoles")
+	roles, _ := userRoles.([]string)
+	if !access.IsAdmin(roles) {
+		var scenario models.Scenario
+		if err := sc.db.Where("id = ?", scenarioID).First(&scenario).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				ctx.JSON(http.StatusNotFound, &errors.APIError{
+					ErrorCode:    http.StatusNotFound,
+					ErrorMessage: "Scenario not found",
+				})
+				return
+			}
+			slog.Error("failed to load scenario for export auth check", "err", err)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Internal error",
+			})
+			return
+		}
+		allowed, err := scenarioHooks.CanManageScenario(sc.db, sc.groupService, &scenario, userID)
+		if err != nil {
+			slog.Error("failed to check scenario manage permission", "err", err)
+			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+				ErrorCode:    http.StatusInternalServerError,
+				ErrorMessage: "Internal error",
+			})
+			return
+		}
+		if !allowed {
+			ctx.JSON(http.StatusForbidden, &errors.APIError{
+				ErrorCode:    http.StatusForbidden,
+				ErrorMessage: "Access denied",
+			})
+			return
+		}
+	}
+
 	format := ctx.DefaultQuery("format", "json")
 
 	switch format {
@@ -1124,6 +1169,49 @@ func (sc *scenarioController) ExportScenarios(ctx *gin.Context) {
 			ErrorMessage: err.Error(),
 		})
 		return
+	}
+
+	// Authorization: admin always allowed; otherwise every scenario in the
+	// list must be manageable by the caller. If ANY id is unauthorized the
+	// whole request is rejected — avoids partial exports leaking data.
+	userID := ctx.GetString("userId")
+	userRoles, _ := ctx.Get("userRoles")
+	roles, _ := userRoles.([]string)
+	if !access.IsAdmin(roles) {
+		for _, id := range input.IDs {
+			var scenario models.Scenario
+			if err := sc.db.Where("id = ?", id).First(&scenario).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					ctx.JSON(http.StatusForbidden, &errors.APIError{
+						ErrorCode:    http.StatusForbidden,
+						ErrorMessage: "Access denied: not authorized to export one or more scenarios",
+					})
+					return
+				}
+				slog.Error("failed to load scenario for bulk export auth check", "err", err)
+				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+					ErrorCode:    http.StatusInternalServerError,
+					ErrorMessage: "Internal error",
+				})
+				return
+			}
+			allowed, err := scenarioHooks.CanManageScenario(sc.db, sc.groupService, &scenario, userID)
+			if err != nil {
+				slog.Error("failed to check scenario manage permission", "err", err)
+				ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+					ErrorCode:    http.StatusInternalServerError,
+					ErrorMessage: "Internal error",
+				})
+				return
+			}
+			if !allowed {
+				ctx.JSON(http.StatusForbidden, &errors.APIError{
+					ErrorCode:    http.StatusForbidden,
+					ErrorMessage: "Access denied: not authorized to export one or more scenarios",
+				})
+				return
+			}
+		}
 	}
 
 	exports, err := sc.exportService.ExportMultipleAsJSON(input.IDs)
