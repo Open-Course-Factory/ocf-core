@@ -57,7 +57,10 @@ import (
 // =============================================================================
 
 const (
-	leakSetupScript = "SECRET-SETUP-script-do-not-leak: rm -rf /home/student/.solution"
+	leakSetupScript      = "SECRET-SETUP-script-do-not-leak: rm -rf /home/student/.solution"
+	leakVerifyScript     = "SECRET-VERIFY-script: test -f /tmp/flag && grep -q 'OCF{leak}' /tmp/flag"
+	leakBackgroundScript = "SECRET-BG-script-do-not-leak"
+	leakForegroundScript = "SECRET-FG-script-do-not-leak"
 )
 
 // =============================================================================
@@ -149,6 +152,9 @@ func buildLeakyScenarioWithSetupScript(t *testing.T, db *gorm.DB, name, creatorI
 		StepType:           "flag",
 		TextContent:        "Find the flag",
 		HintContent:        "SECRET-HINT-look-in-/etc/secret",
+		VerifyScript:       leakVerifyScript,
+		BackgroundScript:   leakBackgroundScript,
+		ForegroundScript:   leakForegroundScript,
 		HasFlag:            true,
 		FlagPath:           "/etc/secret/flag.txt",
 		FlagLevel:          3,
@@ -188,6 +194,12 @@ func assertStepBodyHasFullContent(t *testing.T, step map[string]any) {
 	t.Helper()
 	assert.Equal(t, "SECRET-HINT-look-in-/etc/secret", step["hint_content"],
 		"manager must see hint_content")
+	assert.Equal(t, leakVerifyScript, step["verify_script"],
+		"manager must see verify_script body")
+	assert.Equal(t, leakBackgroundScript, step["background_script"],
+		"manager must see background_script body")
+	assert.Equal(t, leakForegroundScript, step["foreground_script"],
+		"manager must see foreground_script body")
 	assert.Equal(t, "/etc/secret/flag.txt", step["flag_path"],
 		"manager must see flag_path")
 	if v, ok := step["flag_level"]; ok {

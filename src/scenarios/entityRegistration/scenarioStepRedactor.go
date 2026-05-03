@@ -86,11 +86,19 @@ func scenarioStepRedactor(c *gin.Context, dtoPtr any, db *gorm.DB) error {
 // place. JSON `omitempty` drops empty strings, zero ints, nil pointers, and
 // nil slices, so the redacted fields disappear entirely from the response.
 //
-// Note: VerifyScript/BackgroundScript/ForegroundScript bodies are already
-// stripped at JSON-marshal time (`json:"-"` on the model). The *ScriptID
-// UUIDs are what leak, so we zero those.
+// Note: although models.ScenarioStep tags VerifyScript/BackgroundScript/
+// ForegroundScript with `json:"-"`, the response is marshalled from
+// dto.ScenarioStepOutput, which redeclares those fields with
+// `json:"verify_script,omitempty"` (etc.) and the converter in
+// scenarioStepRegistration.go explicitly copies the raw script bodies into
+// the DTO. The DTO's tag wins at marshal time, so we MUST zero the bodies
+// here — otherwise the verify-script (i.e. the grading logic / answer key)
+// leaks to any authenticated learner.
 func stripScenarioStepDto(out *dto.ScenarioStepOutput) {
 	out.HintContent = ""
+	out.VerifyScript = ""
+	out.BackgroundScript = ""
+	out.ForegroundScript = ""
 	out.FlagPath = ""
 	out.FlagLevel = 0
 	out.VerifyScriptID = nil
