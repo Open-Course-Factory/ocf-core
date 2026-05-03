@@ -90,6 +90,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	teacherRoutes.GET("/groups/:groupId/scenarios/:scenarioId/results", middleware.AuthManagement(), teacherCtrl.GetScenarioResults)
 	teacherRoutes.GET("/groups/:groupId/scenarios/:scenarioId/analytics", middleware.AuthManagement(), teacherCtrl.GetScenarioAnalytics)
 	teacherRoutes.GET("/groups/:groupId/sessions/:sessionId/detail", middleware.AuthManagement(), teacherCtrl.GetSessionDetail)
+	teacherRoutes.GET("/groups/:groupId/sessions/:sessionId/commands", middleware.AuthManagement(), teacherCtrl.GetSessionCommands)
 	teacherRoutes.POST("/groups/:groupId/scenarios/:scenarioId/bulk-start", middleware.AuthManagement(), teacherCtrl.BulkStartScenario)
 	teacherRoutes.POST("/groups/:groupId/scenarios/:scenarioId/reset-sessions", middleware.AuthManagement(), teacherCtrl.ResetGroupScenarioSessions)
 }

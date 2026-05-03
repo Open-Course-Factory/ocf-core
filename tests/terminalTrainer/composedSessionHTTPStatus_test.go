@@ -116,6 +116,9 @@ func (m *mockTerminalTrainerService) ValidateSessionAccess(sessionID string, che
 func (m *mockTerminalTrainerService) GetSessionCommandHistory(sessionID string, since *int64, format string, limit, offset int) ([]byte, string, error) {
 	panic("not implemented")
 }
+func (m *mockTerminalTrainerService) GetSessionCommandHistoryAdmin(sessionUUID string, limit, offset int) ([]byte, string, error) {
+	panic("not implemented")
+}
 func (m *mockTerminalTrainerService) DeleteSessionCommandHistory(sessionID string) error {
 	panic("not implemented")
 }

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -17,6 +18,14 @@ import (
 	ttDto "soli/formations/src/terminalTrainer/dto"
 	ttServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
+)
+
+// Sentinel errors for teacher dashboard operations. Controllers translate these
+// into HTTP status codes (404 for the first three to avoid leaking existence).
+var (
+	ErrSessionNotFound      = errors.New("session not found")
+	ErrSessionNotInGroup    = errors.New("session does not belong to this group")
+	ErrSessionHasNoTerminal = errors.New("session has no terminal yet")
 )
 
 // GroupActivityItem represents an active session for a group member
@@ -669,4 +678,38 @@ func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID)
 	}
 
 	return resp, nil
+}
+
+// GetSessionCommands proxies the terminal command history for a scenario session
+// to tt-backend, using the OCF admin API key. It enforces the same group-membership
+// invariant as GetSessionDetail (the session's user must belong to the group) so
+// trainers cannot read commands from sessions outside their group.
+//
+// Returns sentinel errors (ErrSessionNotFound, ErrSessionNotInGroup,
+// ErrSessionHasNoTerminal) so the controller can map them to 404 responses
+// without leaking session existence.
+func (s *TeacherDashboardService) GetSessionCommands(groupID, sessionID uuid.UUID, limit, offset int) ([]byte, string, error) {
+	var session models.ScenarioSession
+	if err := s.db.First(&session, "id = ?", sessionID).Error; err != nil {
+		return nil, "", ErrSessionNotFound
+	}
+
+	// Verify the session's user is a member of this group (mirror GetSessionDetail).
+	var memberCount int64
+	s.db.Model(&groupModels.GroupMember{}).
+		Where("group_id = ? AND user_id = ? AND is_active = true", groupID, session.UserID).
+		Count(&memberCount)
+	if memberCount == 0 {
+		return nil, "", ErrSessionNotInGroup
+	}
+
+	if session.TerminalSessionID == nil || *session.TerminalSessionID == "" {
+		return nil, "", ErrSessionHasNoTerminal
+	}
+
+	body, contentType, err := s.terminalService.GetSessionCommandHistoryAdmin(*session.TerminalSessionID, limit, offset)
+	if err != nil {
+		return nil, "", err
+	}
+	return body, contentType, nil
 }
