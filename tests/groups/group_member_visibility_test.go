@@ -12,21 +12,12 @@ package groups_tests
 // These tests bypass the HTTP layer and call the generic repository directly
 // so any failure points squarely at the SQL filter logic.
 //
-// IMPORTANT — assumption about the future fix:
-// The fix will require a configuration change so that GroupMember's
-// MembershipConfig declares OrgAccessEnabled: true and provides the path
-// from group_members to the parent organization (via class_groups.organization_id).
-// The current MembershipConfig shape only exposes OrgAccessEnabled + ManagerRoles
-// and assumes the entity table itself has an organization_id column — which is
-// NOT the case for group_members. Tests 1, 2, and 6 register the membership
-// config with the future-shaped flags (OrgAccessEnabled: true, ManagerRoles:
-// ["owner", "manager"]). On the current code these tests are EXPECTED TO FAIL
-// because:
-//   - Either the SQL fails (no such column: group_members.organization_id), OR
-//   - The filter does not produce the org-access branch and returns 0 rows.
-// Once backend-dev introduces the new config shape and updates the filter,
-// these tests must be updated to use the new field names. Document any change
-// here in the verify step.
+// Fix landed: MembershipConfig gained an OrgIDViaParent option that tells the
+// generic membership filter to resolve organization_id via a parent table
+// (class_groups) instead of expecting an organization_id column directly on
+// the entity table (group_members). The test helper below registers the
+// MembershipConfig with that option set, which mirrors the production
+// registration in src/groups/entityRegistration/groupMemberRegistration.go.
 
 import (
 	"reflect"
@@ -71,11 +62,10 @@ func setupGroupMemberVisibilityDB(t *testing.T) *gorm.DB {
 }
 
 // registerGroupMemberMembershipConfig registers the MembershipConfig for
-// "GroupMember" with the future-shaped flags (OrgAccessEnabled: true,
-// ManagerRoles: ["owner", "manager"]).
-//
-// The current production code registers OrgAccessEnabled: false, which is
-// precisely the bug. The tests register the future config to drive the fix.
+// "GroupMember" using the same shape as production: OrgAccessEnabled: true,
+// ManagerRoles: ["owner", "manager"], and OrgIDViaParent pointing at
+// class_groups.organization_id so the filter joins through the parent row to
+// match org owners/managers.
 func registerGroupMemberMembershipConfig() {
 	ems.GlobalEntityRegistrationService.RegisterMembershipConfig("GroupMember",
 		&entityManagementInterfaces.MembershipConfig{
@@ -86,6 +76,11 @@ func registerGroupMemberMembershipConfig() {
 			IsActiveColumn:   "is_active",
 			OrgAccessEnabled: true,
 			ManagerRoles:     []string{"owner", "manager"},
+			OrgIDViaParent: &entityManagementInterfaces.OrgIDViaParent{
+				ParentTable:       "class_groups",
+				ParentJoinColumn:  "id",
+				ParentOrgIDColumn: "organization_id",
+			},
 		},
 	)
 }

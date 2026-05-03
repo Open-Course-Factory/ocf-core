@@ -138,7 +138,17 @@ func RegisterGroupMember(service *ems.EntityRegistrationService) {
 				UserIDColumn:     "user_id",
 				RoleColumn:       "role",
 				IsActiveColumn:   "is_active",
-				OrgAccessEnabled: false,
+				OrgAccessEnabled: true,
+				ManagerRoles:     []string{"owner", "manager"},
+				// group_members has no organization_id column of its own;
+				// the org id lives on the parent class_groups row, so the
+				// filter must join through class_groups to enforce org
+				// owner/manager visibility (issue #288).
+				OrgIDViaParent: &entityManagementInterfaces.OrgIDViaParent{
+					ParentTable:       "class_groups",
+					ParentJoinColumn:  "id",
+					ParentOrgIDColumn: "organization_id",
+				},
 			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{
 				Tag:        "group-members",
