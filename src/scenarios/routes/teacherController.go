@@ -191,6 +191,80 @@ func (tc *TeacherController) GetSessionDetail(c *gin.Context) {
 	c.JSON(http.StatusOK, detail)
 }
 
+// GetSessionCommands godoc
+// @Summary Get session terminal commands
+// @Description Returns the command history for the terminal session attached to a scenario session.
+// @Description Group managers (and platform admins) only — Layer 2 enforces GroupRole(manager) on :groupId.
+// @Description Proxies to tt-backend's admin bulk history endpoint with the OCF admin API key.
+// @Tags scenario-teacher
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param sessionId path string true "Scenario session ID (UUID)"
+// @Param limit query int false "Max results per page (default 50, max 1000)"
+// @Param offset query int false "Number of results to skip"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /teacher/groups/{groupId}/sessions/{sessionId}/commands [get]
+// @Security BearerAuth
+func (tc *TeacherController) GetSessionCommands(c *gin.Context) {
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group ID"})
+		return
+	}
+
+	sessionID, err := uuid.Parse(c.Param("sessionId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session ID"})
+		return
+	}
+
+	// Parse optional pagination params
+	limit := 0
+	offset := 0
+	if limitStr := c.Query("limit"); limitStr != "" {
+		v, err := strconv.Atoi(limitStr)
+		if err != nil || v < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit parameter"})
+			return
+		}
+		limit = v
+	}
+	if offsetStr := c.Query("offset"); offsetStr != "" {
+		v, err := strconv.Atoi(offsetStr)
+		if err != nil || v < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid offset parameter"})
+			return
+		}
+		offset = v
+	}
+
+	body, contentType, err := tc.dashboardService.GetSessionCommands(groupID, sessionID, limit, offset)
+	if err != nil {
+		switch err {
+		case services.ErrSessionNotFound,
+			services.ErrSessionNotInGroup:
+			// Don't leak existence — return 404 for both
+			c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+			return
+		case services.ErrSessionHasNoTerminal:
+			c.JSON(http.StatusNotFound, gin.H{"error": "session has no terminal yet"})
+			return
+		}
+		slog.Error("failed to get session commands", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session commands"})
+		return
+	}
+
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	c.Data(http.StatusOK, contentType, body)
+}
+
 // BulkStartRequest is the request body for bulk starting a scenario
 type BulkStartRequest struct {
 	InstanceType           string `json:"instance_type"`

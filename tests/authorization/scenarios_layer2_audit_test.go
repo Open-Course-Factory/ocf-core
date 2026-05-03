@@ -17,8 +17,8 @@ package authorization_tests
 //       POST   /api/v1/scenario-sessions/:id/steps/:stepOrder/hints/:level/reveal
 //       POST   /api/v1/scenario-sessions/:id/abandon
 //
-//   - GroupRole (10 routes, MinRole="manager", Param="groupId"):
-//       Teacher dashboard (6 routes under /api/v1/teacher/groups/:groupId/...)
+//   - GroupRole (11 routes, MinRole="manager", Param="groupId"):
+//       Teacher dashboard (7 routes under /api/v1/teacher/groups/:groupId/...)
 //       Group scenario management (4 routes under /api/v1/groups/:groupId/scenarios/...)
 //
 //   - OrgRole (6 routes, MinRole="manager", Param="id",
@@ -92,14 +92,15 @@ var scenariosAuditEntityOwnerRoutes = []scenariosAuditRoute{
 	{method: "POST", registeredPath: "/api/v1/scenario-sessions/:id/abandon", requestPath: "/api/v1/scenario-sessions/sess-audit-aban/abandon", scopeID: "sess-audit-aban", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "id"},
 }
 
-// scenariosAuditGroupRoutes — 10 GroupRole(manager) routes. All key off
+// scenariosAuditGroupRoutes — 11 GroupRole(manager) routes. All key off
 // the `groupId` URL parameter.
 var scenariosAuditGroupRoutes = []scenariosAuditRoute{
-	// Teacher dashboard (6)
+	// Teacher dashboard (7)
 	{method: "GET", registeredPath: "/api/v1/teacher/groups/:groupId/activity", requestPath: "/api/v1/teacher/groups/grp-audit-act/activity", scopeID: "grp-audit-act", ruleType: access.GroupRole, minRole: "manager", paramName: "groupId"},
 	{method: "GET", registeredPath: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results", requestPath: "/api/v1/teacher/groups/grp-audit-res/scenarios/scn-1/results", scopeID: "grp-audit-res", ruleType: access.GroupRole, minRole: "manager", paramName: "groupId"},
 	{method: "GET", registeredPath: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/analytics", requestPath: "/api/v1/teacher/groups/grp-audit-ana/scenarios/scn-1/analytics", scopeID: "grp-audit-ana", ruleType: access.GroupRole, minRole: "manager", paramName: "groupId"},
 	{method: "GET", registeredPath: "/api/v1/teacher/groups/:groupId/sessions/:sessionId/detail", requestPath: "/api/v1/teacher/groups/grp-audit-det/sessions/sess-1/detail", scopeID: "grp-audit-det", ruleType: access.GroupRole, minRole: "manager", paramName: "groupId"},
+	{method: "GET", registeredPath: "/api/v1/teacher/groups/:groupId/sessions/:sessionId/commands", requestPath: "/api/v1/teacher/groups/grp-audit-cmd/sessions/sess-1/commands", scopeID: "grp-audit-cmd", ruleType: access.GroupRole, minRole: "manager", paramName: "groupId"},
 	{method: "POST", registeredPath: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/bulk-start", requestPath: "/api/v1/teacher/groups/grp-audit-bulk/scenarios/scn-1/bulk-start", scopeID: "grp-audit-bulk", ruleType: access.GroupRole, minRole: "manager", paramName: "groupId"},
 	{method: "POST", registeredPath: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/reset-sessions", requestPath: "/api/v1/teacher/groups/grp-audit-rst/scenarios/scn-1/reset-sessions", scopeID: "grp-audit-rst", ruleType: access.GroupRole, minRole: "manager", paramName: "groupId"},
 	// Group scenario routes (4)

@@ -50,6 +50,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results", "GET"},
 		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/analytics", "GET"},
 		{"/api/v1/teacher/groups/:groupId/sessions/:sessionId/detail", "GET"},
+		{"/api/v1/teacher/groups/:groupId/sessions/:sessionId/commands", "GET"},
 		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/bulk-start", "POST"},
 		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/reset-sessions", "POST"},
 	}
@@ -228,6 +229,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Path: "/api/v1/teacher/groups/:groupId/sessions/:sessionId/detail", Method: "GET",
 			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "View detailed session info for a student",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/teacher/groups/:groupId/sessions/:sessionId/commands", Method: "GET",
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
+			Description: "View terminal command history for a student's scenario session (proxies to tt-backend)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/bulk-start", Method: "POST",

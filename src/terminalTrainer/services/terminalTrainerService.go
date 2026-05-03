@@ -78,6 +78,7 @@ type TerminalTrainerService interface {
 
 	// Command history
 	GetSessionCommandHistory(sessionID string, since *int64, format string, limit, offset int) ([]byte, string, error)
+	GetSessionCommandHistoryAdmin(sessionUUID string, limit, offset int) ([]byte, string, error)
 	DeleteSessionCommandHistory(sessionID string) error
 	DeleteAllUserCommandHistory(apiKey string) (int64, error)
 
@@ -1454,6 +1455,48 @@ func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, si
 		}
 	}
 
+	return resp.Body, contentType, nil
+}
+
+// GetSessionCommandHistoryAdmin retrieves command history for a single tt-backend
+// session UUID using the OCF admin API key. Used by trainer endpoints where the
+// requesting user is a group manager and does not own the student's session key.
+//
+// It proxies to tt-backend's bulk history endpoint with a single UUID, returning
+// the response body verbatim ({commands, total, limit, offset}). Returns the
+// raw JSON bytes plus the content type. limit defaults to 50 and is capped at
+// 1000 by tt-backend; offset defaults to 0.
+func (tts *terminalTrainerService) GetSessionCommandHistoryAdmin(sessionUUID string, limit, offset int) ([]byte, string, error) {
+	if tts.baseURL == "" || tts.adminKey == "" {
+		return nil, "", fmt.Errorf("terminal trainer not configured")
+	}
+
+	url := fmt.Sprintf("%s/%s/admin/history/bulk", tts.baseURL, tts.apiVersion)
+
+	reqBody := map[string]interface{}{
+		"session_uuids": []string{sessionUUID},
+		"limit":         limit,
+		"offset":        offset,
+		"format":        "json",
+	}
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
+
+	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, reqBody, opts)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to fetch session history: %w", err)
+	}
+
+	const maxResponseSize = 10 * 1024 * 1024 // 10MB
+	if len(resp.Body) > maxResponseSize {
+		return nil, "", fmt.Errorf("response body exceeds maximum allowed size (%d bytes > %d bytes)", len(resp.Body), maxResponseSize)
+	}
+
+	contentType := resp.Headers.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/json"
+	}
 	return resp.Body, contentType, nil
 }
 

@@ -108,6 +108,9 @@ func (m *capturingTTService) ValidateSessionAccess(string, bool) (bool, string, 
 func (m *capturingTTService) GetSessionCommandHistory(string, *int64, string, int, int) ([]byte, string, error) {
 	return nil, "", nil
 }
+func (m *capturingTTService) GetSessionCommandHistoryAdmin(string, int, int) ([]byte, string, error) {
+	return nil, "", nil
+}
 func (m *capturingTTService) DeleteSessionCommandHistory(string) error      { return nil }
 func (m *capturingTTService) DeleteAllUserCommandHistory(string) (int64, error) { return 0, nil }
 func (m *capturingTTService) GetOrganizationTerminalSessions(uuid.UUID) (*[]ttModels.Terminal, error) {

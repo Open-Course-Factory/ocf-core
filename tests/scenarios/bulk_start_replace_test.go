@@ -100,6 +100,9 @@ func (m *mockTTService) ValidateSessionAccess(string, bool) (bool, string, error
 func (m *mockTTService) GetSessionCommandHistory(string, *int64, string, int, int) ([]byte, string, error) {
 	return nil, "", nil
 }
+func (m *mockTTService) GetSessionCommandHistoryAdmin(string, int, int) ([]byte, string, error) {
+	return nil, "", nil
+}
 func (m *mockTTService) DeleteSessionCommandHistory(string) error      { return nil }
 func (m *mockTTService) DeleteAllUserCommandHistory(string) (int64, error) { return 0, nil }
 func (m *mockTTService) GetOrganizationTerminalSessions(uuid.UUID) (*[]ttModels.Terminal, error) {
