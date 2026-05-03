@@ -855,6 +855,58 @@ func TestGetSessionDetail_ExcludesSoftDeletedSteps(t *testing.T) {
 	assert.Equal(t, 2, detail.Steps[1].StepOrder)
 }
 
+// TestGetSessionDetail_DuplicateStepOrders_NoCartesianExplosion verifies that
+// when two scenario_steps share the same `order` (an editor bug, see issue
+// tracked separately), GetSessionDetail still returns one row per progress row
+// rather than the Cartesian product of progress × steps. Without the defensive
+// merge in Go, a 2-step / 2-progress session with duplicate orders would
+// surface as 4 rows.
+func TestGetSessionDetail_DuplicateStepOrders_NoCartesianExplosion(t *testing.T) {
+	db := setupTestDB(t)
+
+	groupID := uuid.New()
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: "dup-s1", Role: "member", JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+
+	scenario := models.Scenario{
+		Name: "dup-orders", Title: "Duplicate Step Orders", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioAssignment{
+		ScenarioID: scenario.ID, GroupID: &groupID, Scope: "group", CreatedByID: "c1", IsActive: true,
+	}).Error)
+
+	// Two scenario_steps both with order=1 (the editor-bug shape).
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 1, Title: "First", StepType: "quiz",
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 1, Title: "Second", StepType: "quiz",
+	}).Error)
+
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "dup-s1", Status: "active", StartedAt: time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	// Two progress rows, both step_order=1 (matches what StartScenario would
+	// create against duplicate-order steps).
+	now := time.Now()
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 1, Status: "active",
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 1, Status: "locked", CompletedAt: &now,
+	}).Error)
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	detail, err := svc.GetSessionDetail(groupID, session.ID)
+	require.NoError(t, err)
+	// Must equal the number of progress rows (2), NOT progress × steps (4).
+	assert.Len(t, detail.Steps, 2, "duplicate-order steps must not produce a cross-join")
+}
+
 // --- Scenario assignment validation in GetSessionDetail ---
 
 func TestGetSessionDetail_AssignedScenario_Success(t *testing.T) {
