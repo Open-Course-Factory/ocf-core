@@ -23,9 +23,10 @@ import (
 // Sentinel errors for teacher dashboard operations. Controllers translate these
 // into HTTP status codes (404 for the first three to avoid leaking existence).
 var (
-	ErrSessionNotFound      = errors.New("session not found")
-	ErrSessionNotInGroup    = errors.New("session does not belong to this group")
-	ErrSessionHasNoTerminal = errors.New("session has no terminal yet")
+	ErrSessionNotFound            = errors.New("session not found")
+	ErrSessionNotInGroup          = errors.New("session does not belong to this group")
+	ErrSessionHasNoTerminal       = errors.New("session has no terminal yet")
+	ErrScenarioNotAssignedToGroup = errors.New("scenario is not assigned to this group")
 )
 
 // GroupActivityItem represents an active session for a group member
@@ -682,12 +683,13 @@ func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID)
 
 // GetSessionCommands proxies the terminal command history for a scenario session
 // to tt-backend, using the OCF admin API key. It enforces the same group-membership
-// invariant as GetSessionDetail (the session's user must belong to the group) so
-// trainers cannot read commands from sessions outside their group.
+// invariants as GetSessionDetail (the session's user must belong to the group AND
+// the scenario must be assigned to the group) so trainers cannot read commands
+// from sessions outside their managerial scope.
 //
 // Returns sentinel errors (ErrSessionNotFound, ErrSessionNotInGroup,
-// ErrSessionHasNoTerminal) so the controller can map them to 404 responses
-// without leaking session existence.
+// ErrSessionHasNoTerminal, ErrScenarioNotAssignedToGroup) so the controller can
+// map them to 404 responses without leaking session existence.
 func (s *TeacherDashboardService) GetSessionCommands(groupID, sessionID uuid.UUID, limit, offset int) ([]byte, string, error) {
 	var session models.ScenarioSession
 	if err := s.db.First(&session, "id = ?", sessionID).Error; err != nil {
@@ -705,6 +707,17 @@ func (s *TeacherDashboardService) GetSessionCommands(groupID, sessionID uuid.UUI
 
 	if session.TerminalSessionID == nil || *session.TerminalSessionID == "" {
 		return nil, "", ErrSessionHasNoTerminal
+	}
+
+	// Verify the session's scenario is assigned to this group (mirror GetSessionDetail).
+	// Without this, a trainer of group A could read commands from a session a
+	// dual-membership learner ran in group B's scenario.
+	var assignmentCount int64
+	s.db.Table("scenario_assignments").
+		Where("group_id = ? AND scenario_id = ? AND deleted_at IS NULL", groupID, session.ScenarioID).
+		Count(&assignmentCount)
+	if assignmentCount == 0 {
+		return nil, "", ErrScenarioNotAssignedToGroup
 	}
 
 	body, contentType, err := s.terminalService.GetSessionCommandHistoryAdmin(*session.TerminalSessionID, limit, offset)
