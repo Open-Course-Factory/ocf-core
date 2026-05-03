@@ -25,6 +25,7 @@ type genericController struct {
 	genericService            services.GenericService
 	entityRegistrationService *ems.EntityRegistrationService
 	enforcer                  authInterfaces.EnforcerInterface
+	db                        *gorm.DB
 }
 
 // NewGenericController creates a new generic controller with the given database and enforcer.
@@ -34,6 +35,7 @@ func NewGenericController(db *gorm.DB, enforcer authInterfaces.EnforcerInterface
 		genericService:            services.NewGenericService(db, enforcer),
 		entityRegistrationService: ems.GlobalEntityRegistrationService,
 		enforcer:                  enforcer,
+		db:                        db,
 	}
 
 	return controller

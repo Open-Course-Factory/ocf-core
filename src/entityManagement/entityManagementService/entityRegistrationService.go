@@ -1,8 +1,8 @@
 package services
 
 import (
-	"soli/formations/src/auth/casdoor"
 	access "soli/formations/src/auth/access"
+	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/interfaces"
 	authModels "soli/formations/src/auth/models"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
@@ -11,7 +11,18 @@ import (
 	"strings"
 
 	"github.com/gertd/go-pluralize"
+	"github.com/gin-gonic/gin"
 )
+
+// DtoRedactor is invoked by the generic GET handlers AFTER the model has been
+// converted to its output DTO, but BEFORE the response is written. It lets a
+// module strip sensitive fields from the DTO based on the requesting user's
+// authorization (typically read from the gin.Context — userId, userRoles).
+//
+// The DTO is passed by pointer to a typed value (e.g. *dto.ScenarioOutput);
+// implementations should do a type assertion. Mutating the DTO in place is
+// the expected pattern. Returning an error aborts the request with 500.
+type DtoRedactor func(c *gin.Context, dto any) error
 
 type EntityRegistrationService struct {
 	registry            map[string]any
@@ -22,6 +33,7 @@ type EntityRegistrationService struct {
 	defaultIncludes     map[string][]string
 	typedOps            map[string]entityManagementInterfaces.EntityOperations
 	entityRoles         map[string]entityManagementInterfaces.EntityRoles
+	dtoRedactors        map[string]DtoRedactor
 }
 
 func NewEntityRegistrationService() *EntityRegistrationService {
@@ -34,6 +46,7 @@ func NewEntityRegistrationService() *EntityRegistrationService {
 		defaultIncludes:     make(map[string][]string),
 		typedOps:            make(map[string]entityManagementInterfaces.EntityOperations),
 		entityRoles:         make(map[string]entityManagementInterfaces.EntityRoles),
+		dtoRedactors:        make(map[string]DtoRedactor),
 	}
 }
 
@@ -48,6 +61,7 @@ func (s *EntityRegistrationService) Reset() {
 	s.defaultIncludes = make(map[string][]string)
 	s.typedOps = make(map[string]entityManagementInterfaces.EntityOperations)
 	s.entityRoles = make(map[string]entityManagementInterfaces.EntityRoles)
+	s.dtoRedactors = make(map[string]DtoRedactor)
 }
 
 // UnregisterEntity removes all registrations for a specific entity
@@ -61,6 +75,7 @@ func (s *EntityRegistrationService) UnregisterEntity(name string) {
 	delete(s.defaultIncludes, name)
 	delete(s.typedOps, name)
 	delete(s.entityRoles, name)
+	delete(s.dtoRedactors, name)
 }
 
 func (s *EntityRegistrationService) RegisterEntityInterface(name string, entityType any) {
@@ -159,7 +174,7 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 	resourceName = utils.PascalToKebab(resourceName)
 	resourceName = strings.ToLower(resourceName)
 	apiGroupPath := "/api/v1/" + resourceName + "/:id" // Match single resource by ID only (not sub-paths)
-	apiListPath := "/api/v1/" + resourceName         // List endpoint without wildcard
+	apiListPath := "/api/v1/" + resourceName           // List endpoint without wildcard
 
 	appUtils.Info("Setting up entity access for %s at %s and %s", entityName, apiListPath, apiGroupPath)
 
@@ -229,6 +244,24 @@ func (s *EntityRegistrationService) GetAllEntityRoles() map[string]entityManagem
 func (s *EntityRegistrationService) GetEntityOps(name string) (entityManagementInterfaces.EntityOperations, bool) {
 	ops, ok := s.typedOps[name]
 	return ops, ok
+}
+
+// RegisterDtoRedactor registers a redactor invoked by the generic GET handlers
+// after model→DTO conversion. Use this to strip sensitive fields from the DTO
+// based on the requesting user's authorization (e.g. hide step content from
+// non-managers in scenarios).
+func (s *EntityRegistrationService) RegisterDtoRedactor(name string, r DtoRedactor) {
+	if r == nil {
+		return
+	}
+	s.dtoRedactors[name] = r
+	appUtils.Debug("DTO redactor registered for entity: %s", name)
+}
+
+// GetDtoRedactor returns the redactor for the named entity, if any.
+func (s *EntityRegistrationService) GetDtoRedactor(name string) (DtoRedactor, bool) {
+	r, ok := s.dtoRedactors[name]
+	return r, ok
 }
 
 // RegisterTypedEntity registers an entity using type-safe generics.

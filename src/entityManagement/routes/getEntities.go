@@ -124,6 +124,15 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 			return
 		}
 
+		// Apply per-entity DTO redactor if registered.
+		if genericController.db != nil {
+			ctx.Set("ocf_db", genericController.db)
+		}
+		if err := applyDtoRedactor(ctx, entityName, entitiesDto); err != nil {
+			errors.HandleError(http.StatusInternalServerError, err, ctx)
+			return
+		}
+
 		response := CursorPaginationResponse{
 			Data:       entitiesDto,
 			NextCursor: nextCursor,
@@ -154,6 +163,15 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 		return
 	}
 
+	// Apply per-entity DTO redactor if registered.
+	if genericController.db != nil {
+		ctx.Set("ocf_db", genericController.db)
+	}
+	if err := applyDtoRedactor(ctx, entityName, entitiesDto); err != nil {
+		errors.HandleError(http.StatusInternalServerError, err, ctx)
+		return
+	}
+
 	// Calculate total pages
 	totalPages := int(math.Ceil(float64(total) / float64(pageSize)))
 
@@ -168,6 +186,25 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, response)
+}
+
+// applyDtoRedactor invokes the registered DtoRedactor (if any) on each item
+// in the slice in place. Each item is passed by pointer so the redactor can
+// type-assert and mutate it. Items that are already pointers are passed
+// through. Returns the first redactor error encountered.
+func applyDtoRedactor(ctx *gin.Context, entityName string, entitiesDto []any) error {
+	redactor, ok := ems.GlobalEntityRegistrationService.GetDtoRedactor(entityName)
+	if !ok {
+		return nil
+	}
+	for i := range entitiesDto {
+		// Pass &entitiesDto[i] so the redactor can mutate the slot via its
+		// pointer-to-DTO contract (matches getEntity's &entityDto pattern).
+		if err := redactor(ctx, &entitiesDto[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (genericController genericController) getEntities(ctx *gin.Context, page int, pageSize int, filters map[string]any, includes []string) ([]any, int64, error) {
