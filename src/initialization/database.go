@@ -75,6 +75,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&authModels.TokenBlacklist{})
 	db.AutoMigrate(&authModels.PasswordResetToken{})
 	db.AutoMigrate(&authModels.EmailVerificationToken{})
+	db.AutoMigrate(&authModels.ImpersonationSession{})
 
 	// Email entities
 	db.AutoMigrate(&emailModels.EmailTemplate{})
