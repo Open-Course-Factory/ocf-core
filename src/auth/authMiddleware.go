@@ -33,6 +33,26 @@ func NewAuthMiddleware(db *gorm.DB) AuthMiddleware {
 	}
 }
 
+// Package-level impersonation handler. Configured once at startup via
+// SetImpersonationHandler. nil = impersonation disabled (tests, etc.).
+var impersonationHandler gin.HandlerFunc
+
+// SetImpersonationHandler installs the impersonation middleware that
+// AuthManagement invokes after authenticating the caller. Call this once at
+// app startup, after the impersonation service has been built.
+//
+// If h is nil, AuthManagement skips the impersonation step (this is the
+// default; tests and apps without impersonation work unchanged).
+//
+// Why a package-level setter instead of a constructor parameter: AuthManagement
+// is wired per-route from ~18 call sites via NewAuthMiddleware(db).AuthManagement().
+// Threading an impersonation dependency through every caller would be invasive
+// and error-prone. The setter pattern keeps the change surgical and lets tests
+// install/uninstall the handler around their assertions.
+func SetImpersonationHandler(h gin.HandlerFunc) {
+	impersonationHandler = h
+}
+
 func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		userId, tokenJTI, err := casdoor.ParseUserIDFromRequest(ctx)
@@ -120,6 +140,12 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 		ctx.Set("userRoles", userRoles)
 		ctx.Set("userId", userId)
 
+		// Apply impersonation swap if configured. The handler reads
+		// X-Impersonate-User and (when set + caller is admin + valid session)
+		// swaps ctx.userId / ctx.userRoles to the target user. No header → no-op.
+		if impersonationHandler != nil {
+			impersonationHandler(ctx)
+		}
 	}
 }
 

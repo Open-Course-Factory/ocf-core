@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -17,13 +18,16 @@ import (
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	authHooks "soli/formations/src/auth/hooks"
+	authMiddleware "soli/formations/src/auth/middleware"
 	accessController "soli/formations/src/auth/routes/accessesRoutes"
 	emailVerificationController "soli/formations/src/auth/routes/emailVerificationRoutes"
 	// groupController "soli/formations/src/auth/routes/groupsRoutes" // Legacy Casdoor groups - replaced by class-groups
+	impersonationController "soli/formations/src/auth/routes/impersonationRoutes"
 	passwordResetController "soli/formations/src/auth/routes/passwordResetRoutes"
 userController "soli/formations/src/auth/routes/usersRoutes"
 	permissionReferenceRoutes "soli/formations/src/auth/routes/permissionReferenceRoutes"
 	securityAdminController "soli/formations/src/auth/routes/securityAdminRoutes"
+	authServices "soli/formations/src/auth/services"
 	emailController "soli/formations/src/email/routes"
 	emailServices "soli/formations/src/email/services"
 	"soli/formations/src/feedback"
@@ -106,6 +110,7 @@ func main() {
 	courseController.RegisterCoursePermissions(casdoor.Enforcer)
 	paymentController.RegisterPaymentPermissions(casdoor.Enforcer)
 	organizationController.RegisterOrganizationPermissions(casdoor.Enforcer)
+	impersonationController.RegisterImpersonationPermissions(casdoor.Enforcer)
 	log.Println("✅ All permissions setup completed")
 
 	// Register Layer 2 enforcement handlers (business logic authorization)
@@ -125,11 +130,39 @@ func main() {
 	// Register module features
 	initialization.RegisterModuleFeatures(sqldb.DB)
 
+	// Impersonation service — shared between routes, middleware, and the
+	// background expiry goroutine below.
+	impersonationSvc := authServices.NewImpersonationService(sqldb.DB)
+	impersonationValidator := casdoor.NewCasdoorUserValidator()
+	impersonationRoles := func(uid string) ([]string, error) {
+		return casdoor.Enforcer.GetRolesForUser(uid)
+	}
+
+	// Wire impersonation into AuthManagement so the swap takes effect on every
+	// authenticated route. AuthManagement is registered per-route across the
+	// codebase, so this single configuration call covers all callers without
+	// having to hoist AuthManagement up to the apiGroup level.
+	authController.SetImpersonationHandler(authMiddleware.ImpersonationMiddleware(impersonationSvc, impersonationRoles))
+
 	// ✅ SECURITY: Start background jobs
 	cron.StartWebhookCleanupJob(sqldb.DB)
 	cron.StartAuditLogCleanupJob(sqldb.DB) // Start audit log cleanup (retention management)
 	cron.StartEmailVerificationCleanupJob(sqldb.DB)    // Clean up expired email verification tokens
 	cron.StartScenarioSessionCleanupJob(sqldb.DB)      // Abandon zombie scenario sessions with dead terminals
+
+	// Background job: close idle impersonation sessions every minute. Mirrors
+	// the safety net described in src/auth/services/impersonationService.go.
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if n, err := impersonationSvc.ExpireStale(authServices.ImpersonationIdleTimeout); err != nil {
+				log.Printf("[impersonation] ExpireStale error: %v", err)
+			} else if n > 0 {
+				log.Printf("[impersonation] expired %d stale session(s)", n)
+			}
+		}
+	}()
 
 	// Parse CLI flags for course generation
 	if cli.ParseFlags(sqldb.DB, casdoor.Enforcer) {
@@ -204,6 +237,7 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	permissionReferenceRoutes.PermissionReferenceRoutes(apiGroup)
 	scenarioController.ScenarioRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	feedback.FeedbackRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+	impersonationController.ImpersonationRoutes(apiGroup, sqldb.DB, impersonationSvc, impersonationValidator)
 
 	// Initialize payment routes
 	payment.InitPaymentRoutes(apiGroup, &config.Configuration{}, sqldb.DB)

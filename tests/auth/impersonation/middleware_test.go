@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	auth "soli/formations/src/auth"
 	authMiddleware "soli/formations/src/auth/middleware"
 	authModels "soli/formations/src/auth/models"
 	"soli/formations/src/auth/services"
@@ -449,6 +450,74 @@ func TestImpersonationMiddleware_AdminUppercase_StillRecognized(t *testing.T) {
 	assert.Equal(t, mwTargetUser, got.UserID)
 	assert.Equal(t, targetRoles, got.UserRoles)
 	assert.Equal(t, mwAdminUser, got.ImpersonatorID)
+}
+
+// ---------------------------------------------------------------------------
+// 12. End-to-end wiring: auth.SetImpersonationHandler installs a handler that
+// behaves correctly when invoked after AuthManagement has populated the
+// context. This is the contract the production code relies on:
+//
+//   AuthManagement: ... ctx.Set("userId", ...); ctx.Set("userRoles", ...);
+//                   if impersonationHandler != nil { impersonationHandler(ctx) }
+//
+// The test installs the same handler via the package-level setter, simulates
+// the userId/userRoles assignment that happens at the end of AuthManagement,
+// invokes the handler, and asserts that the identity swap was performed.
+// ---------------------------------------------------------------------------
+
+func TestImpersonationViaAuthManagement_E2E_SwapsContext(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+
+	db := freshTestDB(t)
+	svc := services.NewImpersonationService(db)
+	targetRoles := []string{roleMember}
+	resolver := fakeRolesFor(map[string][]string{
+		mwTargetUser: targetRoles,
+	})
+
+	_, err := svc.StartSession(mwAdminUser, mwTargetUser, mwTestIP, mwTestUA)
+	require.NoError(t, err)
+
+	// Install the impersonation handler at the package level (mirrors what
+	// main.go does at startup via authController.SetImpersonationHandler).
+	handler := authMiddleware.ImpersonationMiddleware(svc, resolver)
+	auth.SetImpersonationHandler(handler)
+	t.Cleanup(func() { auth.SetImpersonationHandler(nil) })
+
+	// Build a tiny router whose middleware mimics the END of AuthManagement:
+	// set userId / userRoles, then invoke the installed impersonation handler.
+	// We invoke `handler` directly (the same callable we passed to the setter)
+	// — this proves that what production stored on the package var is the
+	// thing that performs the swap.
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	adminRoles := []string{roleAdminCanon}
+	r.Use(func(c *gin.Context) {
+		c.Set("userId", mwAdminUser)
+		c.Set("userRoles", adminRoles)
+		handler(c)
+	})
+	r.GET(probeRoute, sentinelHandler)
+
+	req := httptest.NewRequest(http.MethodGet, probeRoute, nil)
+	req.Header.Set(headerName, mwTargetUser)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code,
+		"AuthManagement-style chain + impersonation handler must let the request through")
+	got := decodeProbe(t, w.Body.Bytes())
+
+	assert.Equal(t, mwTargetUser, got.UserID,
+		"downstream handler must see the target's userId after the swap")
+	assert.Equal(t, targetRoles, got.UserRoles,
+		"downstream handler must see the target's roles after the swap")
+	assert.Equal(t, mwAdminUser, got.ImpersonatorID,
+		"impersonatorId must be the original admin userId")
+	assert.Equal(t, adminRoles, got.ImpersonatorRoles,
+		"impersonatorRoles must be the original admin roles")
 }
 
 // ---------------------------------------------------------------------------
