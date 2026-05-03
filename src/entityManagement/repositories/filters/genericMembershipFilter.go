@@ -101,17 +101,39 @@ func (f *GenericMembershipFilter) Apply(
 		}
 		rolesPlaceholder := strings.Join(placeholders, ", ")
 
-		orgAccessCondition := fmt.Sprintf(`
-			EXISTS (
-				SELECT 1 FROM organization_members om
-				WHERE om.organization_id = %s.organization_id
-				AND om.user_id = ?
-				AND om.is_active = true
-				AND om.role IN (%s)
-			)`,
-			tableName,
-			rolesPlaceholder,
-		)
+		// Resolve organization_id either directly on the entity table or via
+		// a parent table (for entities like group_members that inherit org
+		// scoping from a parent class_groups row).
+		var orgAccessCondition string
+		if f.config.OrgIDViaParent != nil {
+			parent := f.config.OrgIDViaParent
+			orgAccessCondition = fmt.Sprintf(`
+				EXISTS (
+					SELECT 1 FROM organization_members om
+					JOIN %s p ON p.%s = %s.%s
+					WHERE om.organization_id = p.%s
+					AND om.user_id = ?
+					AND om.is_active = true
+					AND om.role IN (%s)
+				)`,
+				parent.ParentTable,
+				parent.ParentJoinColumn, tableName, f.config.EntityIDColumn,
+				parent.ParentOrgIDColumn,
+				rolesPlaceholder,
+			)
+		} else {
+			orgAccessCondition = fmt.Sprintf(`
+				EXISTS (
+					SELECT 1 FROM organization_members om
+					WHERE om.organization_id = %s.organization_id
+					AND om.user_id = ?
+					AND om.is_active = true
+					AND om.role IN (%s)
+				)`,
+				tableName,
+				rolesPlaceholder,
+			)
+		}
 
 		// Add the user ID for organization check
 		args = append(args, userID)
