@@ -195,6 +195,7 @@ func main() {
 			"Origin",
 			"Access-Control-Request-Method",
 			"Access-Control-Request-Headers",
+			"X-Impersonate-User",
 		},
 		ExposedHeaders: []string{
 			"X-RateLimit-Limit",
