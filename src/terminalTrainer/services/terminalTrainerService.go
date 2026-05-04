@@ -1755,6 +1755,34 @@ func (tts *terminalTrainerService) IsUserAuthorizedForSession(userID string, ter
 	return false
 }
 
+// History row-count caps.
+//
+// JSON pagination is 1k — loading more rows into the DOM is a UX/perf issue.
+// CSV export is 100k — sized for exam-scale exports (~5k observed in the field)
+// with two orders of magnitude of headroom while still bounded for memory safety.
+const (
+	defaultHistoryLimit = 50
+	maxJSONHistoryLimit = 1000
+	maxCSVHistoryLimit  = 100000
+)
+
+// ClampHistoryLimit returns the effective row limit for a command-history
+// request, applying defaults (when limit <= 0) and a format-aware ceiling
+// (1000 for JSON/default, 100000 for CSV).
+func ClampHistoryLimit(limit int, format string) int {
+	if limit <= 0 {
+		return defaultHistoryLimit
+	}
+	cap := maxJSONHistoryLimit
+	if format == "csv" {
+		cap = maxCSVHistoryLimit
+	}
+	if limit > cap {
+		return cap
+	}
+	return limit
+}
+
 // GetGroupCommandHistory aggregates command history for all active members of a group.
 // Only group owner, admin, or assistant can access this endpoint.
 func (tts *terminalTrainerService) GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool, search string) ([]byte, string, error) {
@@ -1766,13 +1794,7 @@ func (tts *terminalTrainerService) GetGroupCommandHistory(groupID string, userID
 		format = "json"
 	}
 
-	// Default limit to 50, cap at 1000
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 1000 {
-		limit = 1000
-	}
+	limit = ClampHistoryLimit(limit, format)
 
 	// Parse groupID to UUID
 	groupUUID, err := uuid.Parse(groupID)

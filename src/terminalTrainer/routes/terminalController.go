@@ -1539,16 +1539,13 @@ func (tc *terminalController) GetGroupCommandHistory(ctx *gin.Context) {
 	}
 	format := ctx.Query("format")
 
-	const maxHistoryLimit = 1000
-	limit := 50 // default
+	limit := 0 // 0 means "use default" — ClampHistoryLimit handles defaulting
 	if limitStr := ctx.Query("limit"); limitStr != "" {
 		if v, err := strconv.Atoi(limitStr); err == nil && v > 0 {
 			limit = v
 		}
 	}
-	if limit > maxHistoryLimit {
-		limit = maxHistoryLimit
-	}
+	limit = services.ClampHistoryLimit(limit, format)
 
 	offset := 0
 	if offsetStr := ctx.Query("offset"); offsetStr != "" {
