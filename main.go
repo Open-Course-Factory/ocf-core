@@ -24,6 +24,7 @@ import (
 	// groupController "soli/formations/src/auth/routes/groupsRoutes" // Legacy Casdoor groups - replaced by class-groups
 	impersonationController "soli/formations/src/auth/routes/impersonationRoutes"
 	passwordResetController "soli/formations/src/auth/routes/passwordResetRoutes"
+	adminUsersController "soli/formations/src/admin/routes/adminUsersRoutes"
 userController "soli/formations/src/auth/routes/usersRoutes"
 	permissionReferenceRoutes "soli/formations/src/auth/routes/permissionReferenceRoutes"
 	securityAdminController "soli/formations/src/auth/routes/securityAdminRoutes"
@@ -111,6 +112,7 @@ func main() {
 	paymentController.RegisterPaymentPermissions(casdoor.Enforcer)
 	organizationController.RegisterOrganizationPermissions(casdoor.Enforcer)
 	impersonationController.RegisterImpersonationPermissions(casdoor.Enforcer)
+	adminUsersController.RegisterPermissions(casdoor.Enforcer)
 	log.Println("✅ All permissions setup completed")
 
 	// Register Layer 2 enforcement handlers (business logic authorization)
@@ -238,6 +240,7 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	scenarioController.ScenarioRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	feedback.FeedbackRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	impersonationController.ImpersonationRoutes(apiGroup, sqldb.DB, impersonationSvc, impersonationValidator)
+	adminUsersController.RegisterRoutes(apiGroup, sqldb.DB)
 
 	// Initialize payment routes
 	payment.InitPaymentRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
