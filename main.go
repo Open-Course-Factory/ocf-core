@@ -135,7 +135,7 @@ func main() {
 	// Impersonation service — shared between routes, middleware, and the
 	// background expiry goroutine below.
 	impersonationSvc := authServices.NewImpersonationService(sqldb.DB)
-	impersonationValidator := casdoor.NewCasdoorUserValidator()
+	impersonationValidator := impersonationController.NewCasdoorValidatorAdapter(casdoor.NewCasdoorUserValidator())
 	impersonationRoles := func(uid string) ([]string, error) {
 		return casdoor.Enforcer.GetRolesForUser(uid)
 	}

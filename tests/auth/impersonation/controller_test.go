@@ -65,6 +65,21 @@ func (f *fakeUserValidator) UserExists(userID string) (bool, error) {
 	return f.knownUsers[userID], nil
 }
 
+func (f *fakeUserValidator) GetUser(userID string) (*impersonationRoutes.TargetUser, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if !f.knownUsers[userID] {
+		return nil, nil
+	}
+	return &impersonationRoutes.TargetUser{
+		ID:          userID,
+		Username:    "fake-" + userID,
+		DisplayName: "Fake " + userID,
+		Email:       userID + "@example.com",
+	}, nil
+}
+
 func newKnownValidator(ids ...string) *fakeUserValidator {
 	known := make(map[string]bool, len(ids))
 	for _, id := range ids {
@@ -122,9 +137,10 @@ func startBody(targetID string) *bytes.Buffer {
 
 // startSuccessPayload is what the controller returns on a successful start.
 type startSuccessPayload struct {
-	SessionID    string    `json:"session_id"`
-	TargetUserID string    `json:"target_user_id"`
-	StartedAt    time.Time `json:"started_at"`
+	SessionID    string                          `json:"session_id"`
+	TargetUserID string                          `json:"target_user_id"`
+	StartedAt    time.Time                       `json:"started_at"`
+	Target       *impersonationRoutes.TargetUser `json:"target,omitempty"`
 }
 
 // activeSuccessPayload is what GET /active returns when a session is open.
@@ -188,6 +204,40 @@ func TestStartImpersonation_Success_Returns201WithSessionInfo(t *testing.T) {
 	assert.NoError(t, err, "session_id must be a valid UUID")
 	assert.Equal(t, ctrlTargetUser, got.TargetUserID)
 	assert.False(t, got.StartedAt.IsZero(), "started_at must be a valid timestamp")
+}
+
+// TestStartImpersonation_Success_IncludesTargetProfile_InResponse asserts
+// that /start returns the target user's profile alongside the session info,
+// so the frontend can populate the impersonation banner without a follow-up
+// lookup. Bug 2 from B3 manual testing — banner showed empty target name.
+func TestStartImpersonation_Success_IncludesTargetProfile_InResponse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+
+	validator := newKnownValidator(ctrlTargetUser)
+	ctrl, _, _ := newCtrl(t, validator)
+
+	r := buildControllerRouter(t, ctrl, ctxInjector{
+		userID:    ctrlAdminUser,
+		userRoles: []string{"administrator"},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, startPath, startBody(ctrlTargetUser))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusCreated, w.Code, "body=%s", w.Body.String())
+
+	var got startSuccessPayload
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+
+	require.NotNil(t, got.Target, "response must include the target profile")
+	assert.Equal(t, ctrlTargetUser, got.Target.ID,
+		"target.id must match the requested target_user_id")
+	assert.NotEmpty(t, got.Target.Username,
+		"target.username must be populated by the validator lookup")
 }
 
 func TestStartImpersonation_Success_PersistsSessionInDB(t *testing.T) {
@@ -445,12 +495,11 @@ func TestStopImpersonation_Success_Returns204_AndClosesSession(t *testing.T) {
 	_, err := svc.StartSession(ctrlAdminUser, ctrlTargetUser, ctrlClientIP, ctrlUserAgent)
 	require.NoError(t, err)
 
-	// The middleware would normally have set impersonatorId to the admin's
-	// real id — simulate that here.
+	// AuthManagement always sets userId to the authenticated admin's id —
+	// the handler reads userId, NOT impersonatorId.
 	r := buildControllerRouter(t, ctrl, ctxInjector{
-		userID:         ctrlTargetUser,
-		userRoles:      []string{"member"},
-		impersonatorID: ctrlAdminUser,
+		userID:    ctrlAdminUser,
+		userRoles: []string{"administrator"},
 	})
 
 	req := httptest.NewRequest(http.MethodPost, stopPath, nil)
@@ -477,9 +526,8 @@ func TestStopImpersonation_Success_RecordsManualReason(t *testing.T) {
 	require.NoError(t, err)
 
 	r := buildControllerRouter(t, ctrl, ctxInjector{
-		userID:         ctrlTargetUser,
-		userRoles:      []string{"member"},
-		impersonatorID: ctrlAdminUser,
+		userID:    ctrlAdminUser,
+		userRoles: []string{"administrator"},
 	})
 
 	req := httptest.NewRequest(http.MethodPost, stopPath, nil)
@@ -494,7 +542,7 @@ func TestStopImpersonation_Success_RecordsManualReason(t *testing.T) {
 		"controller must call StopSession with reason \"manual\"")
 }
 
-func TestStopImpersonation_NoImpersonatorContext_Returns400(t *testing.T) {
+func TestStopImpersonation_NoUserId_Returns401Unauthenticated(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping DB test in short mode")
 	}
@@ -502,18 +550,17 @@ func TestStopImpersonation_NoImpersonatorContext_Returns400(t *testing.T) {
 	validator := newKnownValidator(ctrlTargetUser)
 	ctrl, _, _ := newCtrl(t, validator)
 
-	// No impersonatorId was injected → controller must refuse.
-	r := buildControllerRouter(t, ctrl, ctxInjector{
-		userID:    ctrlAdminUser,
-		userRoles: []string{"administrator"},
-	})
+	// No userId injected — defence-in-depth case (AuthManagement should
+	// always populate it in production, but the handler must not panic
+	// or silently succeed if it is missing).
+	r := buildControllerRouter(t, ctrl, ctxInjector{})
 
 	req := httptest.NewRequest(http.MethodPost, stopPath, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Equal(t, "not_impersonating", decodeJSONErr(t, w.Body.Bytes()).Error)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Equal(t, "unauthenticated", decodeJSONErr(t, w.Body.Bytes()).Error)
 }
 
 func TestStopImpersonation_NoActiveSession_Returns404(t *testing.T) {
@@ -524,12 +571,11 @@ func TestStopImpersonation_NoActiveSession_Returns404(t *testing.T) {
 	validator := newKnownValidator(ctrlTargetUser)
 	ctrl, _, _ := newCtrl(t, validator)
 
-	// Context says we ARE impersonating, but no session row exists in the DB
-	// (e.g. it was already stopped between middleware and handler).
+	// Admin is authenticated (userId set) but there is no active session
+	// row in the DB for them.
 	r := buildControllerRouter(t, ctrl, ctxInjector{
-		userID:         ctrlTargetUser,
-		userRoles:      []string{"member"},
-		impersonatorID: ctrlAdminUser,
+		userID:    ctrlAdminUser,
+		userRoles: []string{"administrator"},
 	})
 
 	req := httptest.NewRequest(http.MethodPost, stopPath, nil)
@@ -538,6 +584,46 @@ func TestStopImpersonation_NoActiveSession_Returns404(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 	assert.Equal(t, "no_active_session", decodeJSONErr(t, w.Body.Bytes()).Error)
+}
+
+// TestStopImpersonation_HeaderNotPresent_StillStopsSessionByAuthenticatedAdmin
+// proves the recovery contract: even when the frontend has lost its
+// X-Impersonate-User header (e.g. after a transient 401 silent-stop or a
+// page-navigation race), an admin can still call /stop and close their
+// active session as long as they are authenticated. Bug 1 from B3 manual
+// testing — DB row would otherwise stay open until the 30-min sweep.
+func TestStopImpersonation_HeaderNotPresent_StillStopsSessionByAuthenticatedAdmin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+
+	validator := newKnownValidator(ctrlTargetUser)
+	ctrl, svc, db := newCtrl(t, validator)
+
+	// An active session exists in the DB for admin → target.
+	session, err := svc.StartSession(ctrlAdminUser, ctrlTargetUser, ctrlClientIP, ctrlUserAgent)
+	require.NoError(t, err)
+
+	// Build a router that ONLY sets userId (no impersonatorId — simulating
+	// the lost-header case). The request itself does not carry
+	// X-Impersonate-User either.
+	r := buildControllerRouter(t, ctrl, ctxInjector{
+		userID:    ctrlAdminUser,
+		userRoles: []string{"administrator"},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, stopPath, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNoContent, w.Code,
+		"stop must succeed by authenticated admin id, regardless of header presence; body=%s", w.Body.String())
+
+	var stored authModels.ImpersonationSession
+	require.NoError(t, db.First(&stored, "id = ?", session.ID).Error)
+	assert.NotNil(t, stored.EndedAt, "session row must be closed after stop")
+	assert.Equal(t, "manual", stored.EndReason,
+		"end reason must be \"manual\" for an explicit stop call")
 }
 
 // ---------------------------------------------------------------------------

@@ -11,10 +11,14 @@ import (
 	services "soli/formations/src/auth/services"
 )
 
-// UserValidator abstracts the existence check for a target user. The
-// production implementation calls Casdoor; tests inject an in-memory fake.
+// UserValidator abstracts the lookup of a target user. The production
+// implementation calls Casdoor; tests inject an in-memory fake.
 type UserValidator interface {
+	// UserExists is kept for backwards compatibility with existing fakes/tests.
 	UserExists(userID string) (bool, error)
+	// GetUser returns the target profile, or nil if the user does not exist.
+	// A transport / API error is propagated.
+	GetUser(userID string) (*TargetUser, error)
 }
 
 // Controller holds the dependencies for the three impersonation HTTP
@@ -69,13 +73,14 @@ func (c *Controller) StartImpersonation(ctx *gin.Context) {
 		return
 	}
 
-	// 4. Confirm the target exists in the identity provider.
-	exists, err := c.UserValidator.UserExists(req.TargetUserID)
+	// 4. Confirm the target exists in the identity provider, and grab its
+	// profile in the same call so we can echo it back to the frontend.
+	target, err := c.UserValidator.GetUser(req.TargetUserID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "user_validation_failed"})
 		return
 	}
-	if !exists {
+	if target == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "target_not_found"})
 		return
 	}
@@ -99,30 +104,32 @@ func (c *Controller) StartImpersonation(ctx *gin.Context) {
 		SessionID:    session.ID.String(),
 		TargetUserID: session.TargetID,
 		StartedAt:    session.StartedAt.Format(time.RFC3339Nano),
+		Target:       target,
 	})
 }
 
 // StopImpersonation handles POST /admin/impersonate/stop.
 //
-// The handler relies on the upstream ImpersonationMiddleware to populate
-// `impersonatorId` on the gin context when the request is part of an active
-// impersonation session.
+// The handler stops the session belonging to the authenticated admin
+// (read from `userId`, set by AuthManagement). It does NOT depend on the
+// X-Impersonate-User header or on ImpersonationMiddleware: an admin must
+// always be able to recover from a lost-header situation (e.g. a transient
+// 401 silent-stop on the frontend) without being trapped by a stale DB row.
 //
 // Contract:
-//   - 400 not_impersonating — context carries no impersonatorId (the caller
-//     is not currently impersonating anyone).
-//   - 404 no_active_session — context says we are impersonating, but the DB
-//     row is gone (e.g. another tab already stopped it).
+//   - 401 unauthenticated — context carries no userId (should never happen
+//     in practice because AuthManagement runs first; defence-in-depth).
+//   - 404 no_active_session — no active session exists for this admin.
 //   - 500 stop_failed — any other service error.
 //   - 204 No Content on success.
 func (c *Controller) StopImpersonation(ctx *gin.Context) {
-	impersonatorID := ctx.GetString("impersonatorId")
-	if impersonatorID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "not_impersonating"})
+	adminID := ctx.GetString("userId")
+	if adminID == "" {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
 		return
 	}
 
-	if err := c.Service.StopSession(impersonatorID, "manual"); err != nil {
+	if err := c.Service.StopSession(adminID, "manual"); err != nil {
 		switch {
 		case errors.Is(err, services.ErrNoActiveSession):
 			ctx.JSON(http.StatusNotFound, gin.H{"error": "no_active_session"})
