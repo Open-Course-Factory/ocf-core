@@ -16,6 +16,7 @@ import (
 
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/mocks"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/scenarios/models"
 	scenarioController "soli/formations/src/scenarios/routes"
@@ -1043,4 +1044,357 @@ func TestTeacherController_ResetSessions_AccessDenied(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+// --- Correct-answer counts (numerator/denominator) ---
+//
+// These tests pin the behaviour of the new ComputeCorrectCountsFromLoaded
+// helper and the two new fields (CorrectCount, TotalCorrectPossible) on
+// ScenarioResultItem and SessionDetailResponse. They are RED until the
+// helper and fields are implemented in src/scenarios/services.
+
+// floatPtr returns a pointer to the supplied float (used by quiz-score setup).
+func floatPtr(v float64) *float64 { return &v }
+
+// entityModelWithID is a tiny helper used by the unit-level
+// ComputeCorrectCountsFromLoaded tests to construct a ScenarioStep with a
+// known ID without going through the DB. The helper writes only into the
+// embedded BaseModel's ID; gorm.Model timestamps are left zero (the helper
+// is pure-Go and never persists).
+func entityModelWithID(id uuid.UUID) entityManagementModels.BaseModel {
+	return entityManagementModels.BaseModel{ID: id}
+}
+
+func TestComputeCorrectCountsFromLoaded_QuizAndFlag_AllCorrect(t *testing.T) {
+	quizStepID := uuid.New()
+	flagStepID := uuid.New()
+
+	steps := []models.ScenarioStep{
+		{BaseModel: entityModelWithID(quizStepID), Order: 0, StepType: "quiz"},
+		{BaseModel: entityModelWithID(flagStepID), Order: 1, StepType: "flag", HasFlag: true},
+	}
+	progress := []models.ScenarioStepProgress{
+		{StepOrder: 0, StepType: "quiz", Status: "completed", QuizScore: floatPtr(1.0)},
+		{StepOrder: 1, StepType: "flag", Status: "completed"},
+	}
+	flags := []models.ScenarioFlag{
+		{StepOrder: 1, IsCorrect: true},
+	}
+	questionCounts := map[uuid.UUID]int{quizStepID: 3}
+
+	correct, total := services.ComputeCorrectCountsFromLoaded(steps, progress, flags, questionCounts)
+	assert.Equal(t, int64(4), correct, "numerator: 3 quiz answers + 1 flag")
+	assert.Equal(t, int64(4), total, "denominator: 3 questions + 1 flag step")
+}
+
+func TestComputeCorrectCountsFromLoaded_PartialQuiz(t *testing.T) {
+	quizStepID := uuid.New()
+	steps := []models.ScenarioStep{
+		{BaseModel: entityModelWithID(quizStepID), Order: 0, StepType: "quiz"},
+	}
+	progress := []models.ScenarioStepProgress{
+		{StepOrder: 0, StepType: "quiz", Status: "completed", QuizScore: floatPtr(0.6)},
+	}
+	questionCounts := map[uuid.UUID]int{quizStepID: 5}
+
+	correct, total := services.ComputeCorrectCountsFromLoaded(steps, progress, nil, questionCounts)
+	assert.Equal(t, int64(3), correct, "0.6 * 5 = 3 correct answers")
+	assert.Equal(t, int64(5), total, "5 questions in denominator")
+}
+
+func TestComputeCorrectCountsFromLoaded_QuizScoreNil(t *testing.T) {
+	quizStepID := uuid.New()
+	steps := []models.ScenarioStep{
+		{BaseModel: entityModelWithID(quizStepID), Order: 0, StepType: "quiz"},
+	}
+	progress := []models.ScenarioStepProgress{
+		{StepOrder: 0, StepType: "quiz", Status: "active", QuizScore: nil},
+	}
+	questionCounts := map[uuid.UUID]int{quizStepID: 4}
+
+	correct, total := services.ComputeCorrectCountsFromLoaded(steps, progress, nil, questionCounts)
+	assert.Equal(t, int64(0), correct, "nil quiz score contributes 0 to numerator")
+	assert.Equal(t, int64(4), total, "denominator unchanged: full question count")
+}
+
+func TestComputeCorrectCountsFromLoaded_FlagIncorrect(t *testing.T) {
+	flagStepID := uuid.New()
+	steps := []models.ScenarioStep{
+		{BaseModel: entityModelWithID(flagStepID), Order: 0, StepType: "flag", HasFlag: true},
+	}
+	progress := []models.ScenarioStepProgress{
+		{StepOrder: 0, StepType: "flag", Status: "active"},
+	}
+	flags := []models.ScenarioFlag{
+		{StepOrder: 0, IsCorrect: false},
+	}
+
+	correct, total := services.ComputeCorrectCountsFromLoaded(steps, progress, flags, map[uuid.UUID]int{})
+	assert.Equal(t, int64(0), correct, "incorrect flag contributes 0 to numerator")
+	assert.Equal(t, int64(1), total, "flag step still counts toward denominator")
+
+	// Same expectation when there is no flag row at all (student hasn't tried).
+	correct2, total2 := services.ComputeCorrectCountsFromLoaded(steps, progress, nil, map[uuid.UUID]int{})
+	assert.Equal(t, int64(0), correct2, "missing flag row -> 0 in numerator")
+	assert.Equal(t, int64(1), total2, "denominator unchanged when flag row missing")
+}
+
+func TestComputeCorrectCountsFromLoaded_TerminalOnlyScenario(t *testing.T) {
+	terminalID := uuid.New()
+	infoID := uuid.New()
+	steps := []models.ScenarioStep{
+		{BaseModel: entityModelWithID(terminalID), Order: 0, StepType: "terminal"},
+		{BaseModel: entityModelWithID(infoID), Order: 1, StepType: "info"},
+	}
+	progress := []models.ScenarioStepProgress{
+		{StepOrder: 0, StepType: "terminal", Status: "completed"},
+		{StepOrder: 1, StepType: "info", Status: "completed"},
+	}
+
+	correct, total := services.ComputeCorrectCountsFromLoaded(steps, progress, nil, map[uuid.UUID]int{})
+	assert.Equal(t, int64(0), correct, "no quiz/flag steps -> 0 numerator")
+	assert.Equal(t, int64(0), total, "no quiz/flag steps -> 0 denominator")
+}
+
+func TestComputeCorrectCountsFromLoaded_FloatRoundingSafety(t *testing.T) {
+	// 0.6 * 5 in IEEE 754 = 2.9999999... — a naive int conversion would yield 2.
+	// The helper must use math.Round so the answer is 3.
+	quizStepID := uuid.New()
+	steps := []models.ScenarioStep{
+		{BaseModel: entityModelWithID(quizStepID), Order: 0, StepType: "quiz"},
+	}
+	progress := []models.ScenarioStepProgress{
+		{StepOrder: 0, StepType: "quiz", Status: "completed", QuizScore: floatPtr(0.6)},
+	}
+	questionCounts := map[uuid.UUID]int{quizStepID: 5}
+
+	correct, total := services.ComputeCorrectCountsFromLoaded(steps, progress, nil, questionCounts)
+	assert.Equal(t, int64(3), correct, "0.6*5 must round to 3, not floor to 2")
+	assert.Equal(t, int64(5), total)
+}
+
+func TestGetScenarioResults_PopulatesCorrectCounts(t *testing.T) {
+	db := setupTestDB(t)
+
+	groupID := uuid.New()
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: "cc-results-s1", Role: "member", JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+
+	scenario := models.Scenario{
+		Name: "cc-results", Title: "Correct Counts Results", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	// Step 0: quiz (4 questions), score 1.0 (4/4 correct)
+	quiz1 := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Quiz 1", StepType: "quiz"}
+	require.NoError(t, db.Create(&quiz1).Error)
+	for i := 0; i < 4; i++ {
+		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
+			StepID: quiz1.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
+		}).Error)
+	}
+
+	// Step 1: quiz (2 questions), score 0.5 (1/2 correct)
+	quiz2 := models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "Quiz 2", StepType: "quiz"}
+	require.NoError(t, db.Create(&quiz2).Error)
+	for i := 0; i < 2; i++ {
+		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
+			StepID: quiz2.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
+		}).Error)
+	}
+
+	// Step 2: flag (1 flag, correct)
+	flagStep := models.ScenarioStep{ScenarioID: scenario.ID, Order: 2, Title: "Flag", StepType: "flag", HasFlag: true}
+	require.NoError(t, db.Create(&flagStep).Error)
+
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "cc-results-s1", Status: "active", StartedAt: time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	// Per-step progress with quiz scores
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 0, StepType: "quiz", Status: "completed",
+		QuizScore: floatPtr(1.0),
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 1, StepType: "quiz", Status: "completed",
+		QuizScore: floatPtr(0.5),
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 2, StepType: "flag", Status: "completed",
+	}).Error)
+
+	// Correct flag submission
+	now := time.Now()
+	require.NoError(t, db.Create(&models.ScenarioFlag{
+		SessionID: session.ID, StepOrder: 2, IsCorrect: true, SubmittedAt: &now,
+	}).Error)
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	paginated, err := svc.GetScenarioResults(groupID, scenario.ID, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, paginated.Items, 1)
+
+	// Numerator: 4 (quiz1: 1.0*4) + 1 (quiz2: 0.5*2) + 1 (flag) = 6
+	// Denominator: 4 + 2 + 1 = 7
+	assert.Equal(t, int64(6), paginated.Items[0].CorrectCount, "4+1+1 correct answers")
+	assert.Equal(t, int64(7), paginated.Items[0].TotalCorrectPossible, "4+2+1 total possible")
+}
+
+func TestGetScenarioResults_TotalCorrectPossibleStaticForInProgress(t *testing.T) {
+	db := setupTestDB(t)
+
+	groupID := uuid.New()
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: "cc-static-s1", Role: "member", JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+
+	scenario := models.Scenario{
+		Name: "cc-static", Title: "Static Denominator", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	// Quiz step with 5 questions (full denominator should be 5+1=6)
+	quiz := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Quiz", StepType: "quiz"}
+	require.NoError(t, db.Create(&quiz).Error)
+	for i := 0; i < 5; i++ {
+		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
+			StepID: quiz.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
+		}).Error)
+	}
+	// Flag step
+	flagStep := models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "Flag", StepType: "flag", HasFlag: true}
+	require.NoError(t, db.Create(&flagStep).Error)
+
+	// Active session with NO progress rows yet
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "cc-static-s1", Status: "active", StartedAt: time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	paginated, err := svc.GetScenarioResults(groupID, scenario.ID, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, paginated.Items, 1)
+
+	// Denominator must be the FULL scenario total (5+1=6), even with no progress.
+	// Numerator must be 0.
+	assert.Equal(t, int64(0), paginated.Items[0].CorrectCount, "no progress -> 0 correct")
+	assert.Equal(t, int64(6), paginated.Items[0].TotalCorrectPossible, "denominator is static: 5 questions + 1 flag")
+}
+
+func TestGetScenarioResults_ExcludesSoftDeletedStepsFromCounts(t *testing.T) {
+	db := setupTestDB(t)
+
+	groupID := uuid.New()
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: "cc-sd-s1", Role: "member", JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+
+	scenario := models.Scenario{
+		Name: "cc-sd", Title: "Soft-Deleted Counts", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	// Quiz step #1 (3 questions) — kept
+	keepQuiz := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Keep", StepType: "quiz"}
+	require.NoError(t, db.Create(&keepQuiz).Error)
+	for i := 0; i < 3; i++ {
+		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
+			StepID: keepQuiz.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
+		}).Error)
+	}
+
+	// Quiz step #2 (4 questions) — soft-deleted
+	delQuiz := models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "Delete", StepType: "quiz"}
+	require.NoError(t, db.Create(&delQuiz).Error)
+	for i := 0; i < 4; i++ {
+		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
+			StepID: delQuiz.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
+		}).Error)
+	}
+	require.NoError(t, db.Delete(&delQuiz).Error)
+
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "cc-sd-s1", Status: "active", StartedAt: time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	paginated, err := svc.GetScenarioResults(groupID, scenario.ID, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, paginated.Items, 1)
+
+	// Soft-deleted quiz's 4 questions must NOT be counted. Denominator = 3.
+	assert.Equal(t, int64(3), paginated.Items[0].TotalCorrectPossible,
+		"soft-deleted quiz's questions excluded from denominator")
+	assert.Equal(t, int64(0), paginated.Items[0].CorrectCount,
+		"no progress -> 0 correct, soft-delete state irrelevant to numerator")
+}
+
+func TestGetSessionDetail_PopulatesCorrectCounts(t *testing.T) {
+	db := setupTestDB(t)
+
+	groupID := uuid.New()
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: "cc-detail-s1", Role: "member", JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+
+	scenario := models.Scenario{
+		Name: "cc-detail", Title: "Detail Counts", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioAssignment{
+		ScenarioID: scenario.ID, GroupID: &groupID, Scope: "group", CreatedByID: "c1", IsActive: true,
+	}).Error)
+
+	// Same content shape as the populates-correct-counts test above:
+	// 2 quiz steps (4q at 100%, 2q at 50%) + 1 flag (correct) → 6/7.
+	quiz1 := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "Quiz 1", StepType: "quiz"}
+	require.NoError(t, db.Create(&quiz1).Error)
+	for i := 0; i < 4; i++ {
+		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
+			StepID: quiz1.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
+		}).Error)
+	}
+	quiz2 := models.ScenarioStep{ScenarioID: scenario.ID, Order: 1, Title: "Quiz 2", StepType: "quiz"}
+	require.NoError(t, db.Create(&quiz2).Error)
+	for i := 0; i < 2; i++ {
+		require.NoError(t, db.Create(&models.ScenarioStepQuestion{
+			StepID: quiz2.ID, Order: i, QuestionText: "Q", QuestionType: "true_false",
+		}).Error)
+	}
+	flagStep := models.ScenarioStep{ScenarioID: scenario.ID, Order: 2, Title: "Flag", StepType: "flag", HasFlag: true}
+	require.NoError(t, db.Create(&flagStep).Error)
+
+	session := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "cc-detail-s1", Status: "active", StartedAt: time.Now(),
+	}
+	require.NoError(t, db.Create(&session).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 0, StepType: "quiz", Status: "completed",
+		QuizScore: floatPtr(1.0),
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 1, StepType: "quiz", Status: "completed",
+		QuizScore: floatPtr(0.5),
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID, StepOrder: 2, StepType: "flag", Status: "completed",
+	}).Error)
+	now := time.Now()
+	require.NoError(t, db.Create(&models.ScenarioFlag{
+		SessionID: session.ID, StepOrder: 2, IsCorrect: true, SubmittedAt: &now,
+	}).Error)
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	detail, err := svc.GetSessionDetail(groupID, session.ID)
+	require.NoError(t, err)
+	require.NotNil(t, detail)
+
+	// The session-level fields on SessionDetailResponse must mirror the list view.
+	assert.Equal(t, int64(6), detail.CorrectCount, "4+1+1 correct on the session-level field")
+	assert.Equal(t, int64(7), detail.TotalCorrectPossible, "4+2+1 total possible on the session-level field")
 }
