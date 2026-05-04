@@ -1839,9 +1839,51 @@ var sizeOrder = map[string]int{
 	"XS": 1, "S": 2, "M": 3, "L": 4, "XL": 5, "XXL": 6,
 }
 
+// resolveSizeOrFallback returns a valid size key, falling back when the
+// requested size is not in the catalog. Returns the canonical key from the
+// catalog and a bool indicating whether a fallback was applied.
+//
+// Resolution order:
+//  1. Requested matches a catalog entry (case-insensitive) → use canonical key
+//  2. Distribution default matches a catalog entry → use it
+//  3. Smallest size in catalog (lowest SortOrder)
+//  4. Catalog unavailable (nil/empty) → pass requested through unchanged
+//     (preserves prior behavior when the catalog fetch fails)
+func resolveSizeOrFallback(requested string, dist terminalDto.TTDistribution, sizes []terminalDto.TTSize) (string, bool) {
+	for _, s := range sizes {
+		if strings.EqualFold(s.Key, requested) {
+			return s.Key, false
+		}
+	}
+	if dist.DefaultSizeKey != "" {
+		for _, s := range sizes {
+			if strings.EqualFold(s.Key, dist.DefaultSizeKey) {
+				return s.Key, true
+			}
+		}
+	}
+	if len(sizes) > 0 {
+		smallest := sizes[0]
+		for _, s := range sizes[1:] {
+			if s.SortOrder < smallest.SortOrder {
+				smallest = s
+			}
+		}
+		return smallest.Key, true
+	}
+	return requested, false
+}
+
 // resolveDistribution finds a compatible distribution for a scenario.
 // Returns the distribution name, the size key, and the features map.
-func resolveDistribution(scenario models.Scenario, distributions []terminalDto.TTDistribution) (distName string, size string, features map[string]bool, err error) {
+//
+// The `sizes` parameter is the live tt-backend size catalog used to validate
+// the scenario's stored InstanceType and apply launch-time fallback when it
+// is unknown (typo, stale import, key from another tt-backend instance). When
+// `sizes` is nil/empty (catalog fetch failed), the requested size is passed
+// through unchanged — tt-backend's `validateComposition()` remains the final
+// authority and will reject truly invalid sizes.
+func resolveDistribution(scenario models.Scenario, distributions []terminalDto.TTDistribution, sizes []terminalDto.TTSize) (distName string, size string, features map[string]bool, err error) {
 	requiredFeatures, featErr := scenario.GetRequiredFeatures()
 	if featErr != nil {
 		return "", "", nil, fmt.Errorf("invalid scenario configuration: %w", featErr)
@@ -1869,7 +1911,16 @@ func resolveDistribution(scenario models.Scenario, distributions []terminalDto.T
 					if featMapErr != nil {
 						return "", "", nil, fmt.Errorf("invalid scenario configuration: %w", featMapErr)
 					}
-					return dist.Name, resolvedSize, featuresMap, nil
+					finalSize, fellBack := resolveSizeOrFallback(resolvedSize, dist, sizes)
+					if fellBack {
+						slog.Warn("scenario size fallback",
+							"scenario_id", scenario.ID,
+							"requested", resolvedSize,
+							"resolved", finalSize,
+							"fallback", true,
+						)
+					}
+					return dist.Name, finalSize, featuresMap, nil
 				}
 			}
 		}
@@ -1902,7 +1953,16 @@ func resolveDistribution(scenario models.Scenario, distributions []terminalDto.T
 		if featMapErr != nil {
 			return "", "", nil, fmt.Errorf("invalid scenario configuration: %w", featMapErr)
 		}
-		return dist.Name, size, featuresMap, nil
+		finalSize, fellBack := resolveSizeOrFallback(size, dist, sizes)
+		if fellBack {
+			slog.Warn("scenario size fallback",
+				"scenario_id", scenario.ID,
+				"requested", size,
+				"resolved", finalSize,
+				"fallback", true,
+			)
+		}
+		return dist.Name, finalSize, featuresMap, nil
 	}
 	return "", "", nil, fmt.Errorf("no compatible distribution found for scenario (os_type=%s, size=%s)", scenario.OsType, requiredSize)
 }
@@ -1951,6 +2011,17 @@ func (sc *scenarioController) resolveScenarioBackendAndDistribution(
 		candidateBackends = []string{""} // system default
 	}
 
+	// Fetch the size catalog once (cached 60s in the service) so resolveDistribution
+	// can apply launch-time fallback for scenarios with unknown InstanceType values
+	// (typos, stale imports, keys from another tt-backend instance). On fetch
+	// failure we pass nil — resolveDistribution then preserves prior behavior
+	// and tt-backend's validateComposition() remains the final authority.
+	sizes, sizesErr := sc.terminalService.GetCatalogSizes()
+	if sizesErr != nil {
+		slog.Warn("failed to fetch sizes catalog, scenario size fallback disabled", "err", sizesErr)
+		sizes = nil
+	}
+
 	// Try each candidate backend
 	var lastErr error
 	for _, b := range candidateBackends {
@@ -1959,7 +2030,7 @@ func (sc *scenarioController) resolveScenarioBackendAndDistribution(
 			lastErr = distErr
 			continue
 		}
-		resolvedDist, resolvedSize, resolvedFeatures, resolveErr := resolveDistribution(scenario, distributions)
+		resolvedDist, resolvedSize, resolvedFeatures, resolveErr := resolveDistribution(scenario, distributions, sizes)
 		if resolveErr != nil {
 			lastErr = resolveErr
 			continue
@@ -3090,8 +3161,16 @@ func (sc *scenarioController) PreviewScenario(ctx *gin.Context) {
 		return
 	}
 
+	// Fetch the size catalog (cached 60s) to enable launch-time size fallback
+	// for scenarios with unknown InstanceType values. Non-fatal on failure.
+	previewSizes, previewSizesErr := sc.terminalService.GetCatalogSizes()
+	if previewSizesErr != nil {
+		slog.Warn("failed to fetch sizes catalog, scenario size fallback disabled", "err", previewSizesErr)
+		previewSizes = nil
+	}
+
 	// Find a compatible distribution for the scenario
-	distName, size, features, distErr := resolveDistribution(scenario, distributions)
+	distName, size, features, distErr := resolveDistribution(scenario, distributions, previewSizes)
 	if distErr != nil {
 		slog.Error("no compatible distribution for scenario preview", "scenario", scenario.Name, "err", distErr)
 		ctx.JSON(http.StatusConflict, &errors.APIError{

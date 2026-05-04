@@ -19,7 +19,7 @@ func TestResolveDistribution_MatchesOsType(t *testing.T) {
 		{Name: "alpine", Prefix: "alp", OsType: "apk"},
 		{Name: "debian", Prefix: "deb", OsType: "deb", MinSizeKey: "xs", DefaultSizeKey: "s"},
 	}
-	distName, size, _, err := resolveDistribution(scenario, distributions)
+	distName, size, _, err := resolveDistribution(scenario, distributions, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "debian", distName)
 	assert.Equal(t, "M", size)
@@ -30,7 +30,7 @@ func TestResolveDistribution_NoMatch(t *testing.T) {
 	distributions := []terminalDto.TTDistribution{
 		{Name: "debian", Prefix: "deb", OsType: "deb"},
 	}
-	_, _, _, err := resolveDistribution(scenario, distributions)
+	_, _, _, err := resolveDistribution(scenario, distributions, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no compatible distribution")
 }
@@ -45,7 +45,7 @@ func TestResolveDistribution_FeatureRequirement(t *testing.T) {
 		{Name: "debian-basic", OsType: "deb", SupportedFeatures: nil},
 		{Name: "debian-full", OsType: "deb", SupportedFeatures: []string{"network", "persistence"}},
 	}
-	distName, _, features, err := resolveDistribution(scenario, distributions)
+	distName, _, features, err := resolveDistribution(scenario, distributions, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "debian-full", distName)
 	assert.True(t, features["network"])
@@ -60,7 +60,7 @@ func TestResolveDistribution_FeatureNotSupported(t *testing.T) {
 	distributions := []terminalDto.TTDistribution{
 		{Name: "debian", OsType: "deb", SupportedFeatures: []string{"network"}},
 	}
-	_, _, _, err := resolveDistribution(scenario, distributions)
+	_, _, _, err := resolveDistribution(scenario, distributions, nil)
 	assert.Error(t, err)
 }
 
@@ -70,7 +70,7 @@ func TestResolveDistribution_MinSizeRespected(t *testing.T) {
 		{Name: "debian-heavy", OsType: "deb", MinSizeKey: "M"},  // requires at least M
 		{Name: "debian-light", OsType: "deb", MinSizeKey: "XS"}, // XS is fine
 	}
-	distName, _, _, err := resolveDistribution(scenario, distributions)
+	distName, _, _, err := resolveDistribution(scenario, distributions, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "debian-light", distName)
 }
@@ -80,7 +80,7 @@ func TestResolveDistribution_EmptyFeatures(t *testing.T) {
 	distributions := []terminalDto.TTDistribution{
 		{Name: "alpine", OsType: "apk", SupportedFeatures: []string{"network"}},
 	}
-	distName, _, features, err := resolveDistribution(scenario, distributions)
+	distName, _, features, err := resolveDistribution(scenario, distributions, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "alpine", distName)
 	assert.Nil(t, features) // no features required
@@ -91,7 +91,7 @@ func TestResolveDistribution_DefaultSize(t *testing.T) {
 	distributions := []terminalDto.TTDistribution{
 		{Name: "debian", OsType: "deb", DefaultSizeKey: "M"},
 	}
-	distName, size, _, err := resolveDistribution(scenario, distributions)
+	distName, size, _, err := resolveDistribution(scenario, distributions, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "debian", distName)
 	assert.Equal(t, "M", size)
@@ -108,7 +108,7 @@ func TestResolveDistribution_InvalidJSON(t *testing.T) {
 	distributions := []terminalDto.TTDistribution{
 		{Name: "debian", OsType: "deb"},
 	}
-	_, _, _, err := resolveDistribution(scenario, distributions)
+	_, _, _, err := resolveDistribution(scenario, distributions, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid")
 }
@@ -158,7 +158,7 @@ func TestResolveDistribution_CompatibleInstanceTypes_MatchByName(t *testing.T) {
 		{Name: "rogueLite", OsType: "debian", DefaultSizeKey: "m"},
 	}
 
-	distName, size, _, err := resolveDistribution(scenario, distributions)
+	distName, size, _, err := resolveDistribution(scenario, distributions, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "rogueLite", distName, "should match by CompatibleInstanceTypes name, not by OsType")
 	assert.Equal(t, "m", size, "should use distribution's DefaultSizeKey when scenario has no InstanceType")
@@ -179,7 +179,7 @@ func TestResolveDistribution_CompatibleInstanceTypes_Priority(t *testing.T) {
 		{Name: "rogueLite", OsType: "debian", DefaultSizeKey: "m"},
 	}
 
-	distName, size, _, err := resolveDistribution(scenario, distributions)
+	distName, size, _, err := resolveDistribution(scenario, distributions, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "rogueLite", distName, "lower priority number should be selected first")
 	assert.Equal(t, "m", size)
@@ -199,7 +199,7 @@ func TestResolveDistribution_CompatibleInstanceTypes_FallbackToOsType(t *testing
 		{Name: "debian", OsType: "deb", DefaultSizeKey: "s"},
 	}
 
-	distName, size, _, err := resolveDistribution(scenario, distributions)
+	distName, size, _, err := resolveDistribution(scenario, distributions, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "debian", distName, "should fall back to OsType matching when no CompatibleInstanceTypes match")
 	assert.Equal(t, "s", size)
@@ -215,7 +215,7 @@ func TestResolveDistribution_CompatibleInstanceTypes_Empty(t *testing.T) {
 		{Name: "alpine", OsType: "apk", DefaultSizeKey: "xs"},
 	}
 
-	distName, size, _, err := resolveDistribution(scenario, distributions)
+	distName, size, _, err := resolveDistribution(scenario, distributions, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "alpine", distName, "empty CompatibleInstanceTypes should use normal OsType matching")
 	assert.Equal(t, "xs", size)
@@ -235,7 +235,7 @@ func TestResolveDistribution_CompatibleInstanceTypes_UsesScenarioSize(t *testing
 		{Name: "rogueLite", OsType: "debian", DefaultSizeKey: "m"},
 	}
 
-	distName, size, _, err := resolveDistribution(scenario, distributions)
+	distName, size, _, err := resolveDistribution(scenario, distributions, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, "rogueLite", distName)
 	assert.Equal(t, "L", size, "scenario's InstanceType should take precedence over distribution's DefaultSizeKey")
