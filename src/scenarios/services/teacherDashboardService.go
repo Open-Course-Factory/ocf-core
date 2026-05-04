@@ -214,6 +214,14 @@ func (s *TeacherDashboardService) GetGroupActivity(groupID uuid.UUID) ([]GroupAc
 // When limit is nil or zero, all results are returned (backward compatible).
 // Always returns total count for frontend pagination controls.
 func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UUID, limit, offset *int) (*PaginatedScenarioResults, error) {
+	return s.getScenarioResults(groupID, scenarioID, limit, offset, true)
+}
+
+// getScenarioResults is the internal implementation backing GetScenarioResults.
+// The enrichCorrectCounts flag lets analytics callers skip the per-session
+// correct-count enrichment (which adds DB queries per row) when those fields
+// are not needed.
+func (s *TeacherDashboardService) getScenarioResults(groupID, scenarioID uuid.UUID, limit, offset *int, enrichCorrectCounts bool) (*PaginatedScenarioResults, error) {
 	// Count total matching rows first
 	var total int64
 	countErr := s.db.Raw(`
@@ -272,18 +280,22 @@ func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UU
 	for i := range results {
 		if results[i].Grade == nil && results[i].TotalSteps > 0 {
 			partialGrade, gerr := ComputeWeightedGrade(s.db, results[i].SessionID)
-			if gerr != nil {
-				continue
+			if gerr == nil {
+				results[i].Grade = &partialGrade
 			}
-			results[i].Grade = &partialGrade
+			// Grade-calc failure must not prevent count enrichment below.
 		}
 
-		// Populate absolute correct counts (numerator/denominator) so the
-		// teacher view can render "X/Y correct" alongside the percentage.
-		// Same N+1 shape as the grade enrichment above; same justification.
-		correct, total := computeSessionCorrectCounts(s.db, scenarioID, results[i].SessionID)
-		results[i].CorrectCount = correct
-		results[i].TotalCorrectPossible = total
+		if enrichCorrectCounts {
+			// Populate absolute correct counts (numerator/denominator) so the
+			// teacher view can render "X/Y correct" alongside the percentage.
+			// Same N+1 shape as the grade enrichment above; same justification.
+			// Analytics callers pass false to skip these extra queries since
+			// the aggregate computation does not read these fields.
+			correctCount, totalCorrectPossible := computeSessionCorrectCounts(s.db, scenarioID, results[i].SessionID)
+			results[i].CorrectCount = correctCount
+			results[i].TotalCorrectPossible = totalCorrectPossible
+		}
 	}
 
 	return &PaginatedScenarioResults{
@@ -297,7 +309,7 @@ func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UU
 // GetScenarioAnalytics computes aggregate statistics for a scenario within a group.
 // Calculations are done in Go to avoid SQLite vs PostgreSQL syntax differences.
 func (s *TeacherDashboardService) GetScenarioAnalytics(groupID, scenarioID uuid.UUID) (*ScenarioAnalytics, error) {
-	paginated, err := s.GetScenarioResults(groupID, scenarioID, nil, nil)
+	paginated, err := s.getScenarioResults(groupID, scenarioID, nil, nil, false)
 	if err != nil {
 		return nil, err
 	}
