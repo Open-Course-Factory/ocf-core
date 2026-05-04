@@ -15,6 +15,11 @@ import (
 	"soli/formations/src/utils"
 )
 
+// LookupCasdoorUser is a swappable lookup for the Casdoor user profile,
+// used both for the authenticated user and (when impersonating) the
+// impersonator. Tests replace this var to inject fakes.
+var LookupCasdoorUser = casdoorsdk.GetUserByUserId
+
 // GetCurrentUser godoc
 //
 //	@Summary		Get current user
@@ -46,7 +51,7 @@ func GetCurrentUser(ctx *gin.Context) {
 	}
 
 	// Get user from Casdoor
-	user, err := casdoorsdk.GetUserByUserId(userID)
+	user, err := LookupCasdoorUser(userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -113,6 +118,23 @@ func GetCurrentUser(ctx *gin.Context) {
 		} else {
 			response.Settings = settings
 		}
+	}
+
+	// If this request is being made under an active impersonation session,
+	// surface the original administrator's identity so the frontend can
+	// render the impersonation banner.
+	if impersonatorID := ctx.GetString("impersonatorId"); impersonatorID != "" {
+		if u, err := LookupCasdoorUser(impersonatorID); err == nil && u != nil {
+			response.ImpersonatedBy = &dto.UserSummary{
+				ID:          u.Id,
+				Username:    u.Name,
+				DisplayName: u.DisplayName,
+				Email:       u.Email,
+				Avatar:      u.Avatar,
+			}
+		}
+		// If lookup fails, silently leave ImpersonatedBy nil — the rest of the
+		// response remains valid (the swap from middleware already worked).
 	}
 
 	ctx.JSON(http.StatusOK, response)
