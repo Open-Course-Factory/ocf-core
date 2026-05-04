@@ -66,6 +66,7 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	// Composed session routes (Phase 4)
 	routes.GET("/distributions", middleware.AuthManagement(), terminalController.GetDistributions)
+	routes.GET("/sizes", middleware.AuthManagement(), terminalController.GetSizes)
 	routes.GET("/catalog-sizes", middleware.AuthManagement(), terminalController.GetCatalogSizes)
 	routes.GET("/catalog-features", middleware.AuthManagement(), terminalController.GetCatalogFeatures)
 	routes.GET("/session-options", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), terminalController.GetSessionOptions)

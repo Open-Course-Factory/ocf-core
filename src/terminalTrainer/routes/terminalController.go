@@ -86,6 +86,7 @@ type TerminalController interface {
 	GetDistributions(ctx *gin.Context)
 	GetCatalogSizes(ctx *gin.Context)
 	GetCatalogFeatures(ctx *gin.Context)
+	GetSizes(ctx *gin.Context)
 	GetSessionOptions(ctx *gin.Context)
 	StartComposedSession(ctx *gin.Context)
 }
@@ -1697,6 +1698,28 @@ func (tc *terminalController) GetCatalogSizes(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: fmt.Sprintf("Failed to get catalog sizes: %v", err),
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, sizes)
+}
+
+// GetSizes godoc
+//
+//	@Summary		List available machine sizes catalog
+//	@Description	Returns the catalog of resource sizes (CPU/RAM/disk tiers). Member-accessible for scenario editing UI. Backed by the same 60s service-layer cache as the admin catalog endpoint.
+//	@Tags			terminals
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{array}		dto.TTSize
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/terminals/sizes [get]
+func (tc *terminalController) GetSizes(ctx *gin.Context) {
+	sizes, err := tc.service.GetCatalogSizes()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: fmt.Sprintf("Failed to get sizes catalog: %v", err),
 		})
 		return
 	}
