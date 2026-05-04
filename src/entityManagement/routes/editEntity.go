@@ -131,6 +131,57 @@ func CollectSerializerFields(t reflect.Type, updateMap map[string]any) {
 	}
 }
 
+// stringFieldsOf inspects an Edit DTO instance and returns the set of
+// JSON tag names whose target field is a string or *string. The PATCH
+// cleanup uses this to decide whether an empty-string value in the
+// inbound map represents "clear the field" (string target → keep) or
+// "no change" (non-string target → drop, since "" can't decode to UUID,
+// time, or be a meaningful zero for bool/int under WeaklyTypedInput).
+//
+// dto may be a value, pointer, or nil. Returns an empty set on anything
+// that's not a struct so the caller can skip the lookup safely.
+func stringFieldsOf(dto any) map[string]bool {
+	out := map[string]bool{}
+	if dto == nil {
+		return out
+	}
+	t := reflect.TypeOf(dto)
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return out
+	}
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		ft := field.Type
+		for ft.Kind() == reflect.Ptr {
+			ft = ft.Elem()
+		}
+		if ft.Kind() != reflect.String {
+			continue
+		}
+		// Resolve the JSON tag (preferred) or fall back to mapstructure
+		// or snake_case of the field name to match the inbound map keys.
+		key := ""
+		if jsonTag := field.Tag.Get("json"); jsonTag != "" && jsonTag != "-" {
+			key = strings.SplitN(jsonTag, ",", 2)[0]
+		}
+		if key == "" {
+			if msTag := field.Tag.Get("mapstructure"); msTag != "" && msTag != "-" {
+				key = strings.SplitN(msTag, ",", 2)[0]
+			}
+		}
+		if key == "" {
+			key = CamelToSnake(field.Name)
+		}
+		if key != "" {
+			out[key] = true
+		}
+	}
+	return out
+}
+
 // CamelToSnake converts a Go CamelCase field name to snake_case,
 // matching GORM's default column naming convention.
 func CamelToSnake(s string) string {
@@ -168,11 +219,23 @@ func (genericController genericController) EditEntity(ctx *gin.Context) {
 		return
 	}
 
-	// Clean up the input map - remove empty strings to prevent decode issues
-	// Empty strings are treated as "no change" for the field
+	// Clean up the input map: drop empty strings ONLY for fields whose
+	// target DTO type is not a string (e.g. *uuid.UUID, *time.Time, *bool).
+	// Empty strings on those would either fail to decode (time) or coerce
+	// to surprising zero values (bool false, int 0) under WeaklyTypedInput.
+	//
+	// Empty strings on string / *string fields MUST be preserved — PATCH
+	// semantics require that callers can clear an optional text field by
+	// sending "". Dropping them silently caused issue: a PATCH with
+	// {"description": ""} returned 204 but kept the previous value.
 	if inputMap, ok := entityPatchDtoInput.(map[string]any); ok {
+		stringFields := stringFieldsOf(decodedData)
 		for key, value := range inputMap {
-			if strValue, isString := value.(string); isString && strValue == "" {
+			strValue, isString := value.(string)
+			if !isString || strValue != "" {
+				continue
+			}
+			if !stringFields[key] {
 				delete(inputMap, key)
 			}
 		}
