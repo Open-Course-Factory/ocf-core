@@ -1874,6 +1874,21 @@ func resolveSizeOrFallback(requested string, dist terminalDto.TTDistribution, si
 	return requested, false
 }
 
+// applySizeFallback resolves the requested size against the catalog and logs
+// a warning when a fallback is applied, so the two return sites in
+// resolveDistribution stay terse and consistent.
+func applySizeFallback(scenario models.Scenario, requested string, dist terminalDto.TTDistribution, sizes []terminalDto.TTSize) string {
+	final, fellBack := resolveSizeOrFallback(requested, dist, sizes)
+	if fellBack {
+		slog.Warn("scenario size fallback",
+			"scenario_id", scenario.ID,
+			"requested", requested,
+			"resolved", final,
+		)
+	}
+	return final
+}
+
 // resolveDistribution finds a compatible distribution for a scenario.
 // Returns the distribution name, the size key, and the features map.
 //
@@ -1911,16 +1926,7 @@ func resolveDistribution(scenario models.Scenario, distributions []terminalDto.T
 					if featMapErr != nil {
 						return "", "", nil, fmt.Errorf("invalid scenario configuration: %w", featMapErr)
 					}
-					finalSize, fellBack := resolveSizeOrFallback(resolvedSize, dist, sizes)
-					if fellBack {
-						slog.Warn("scenario size fallback",
-							"scenario_id", scenario.ID,
-							"requested", resolvedSize,
-							"resolved", finalSize,
-							"fallback", true,
-						)
-					}
-					return dist.Name, finalSize, featuresMap, nil
+					return dist.Name, applySizeFallback(scenario, resolvedSize, dist, sizes), featuresMap, nil
 				}
 			}
 		}
@@ -1953,16 +1959,7 @@ func resolveDistribution(scenario models.Scenario, distributions []terminalDto.T
 		if featMapErr != nil {
 			return "", "", nil, fmt.Errorf("invalid scenario configuration: %w", featMapErr)
 		}
-		finalSize, fellBack := resolveSizeOrFallback(size, dist, sizes)
-		if fellBack {
-			slog.Warn("scenario size fallback",
-				"scenario_id", scenario.ID,
-				"requested", size,
-				"resolved", finalSize,
-				"fallback", true,
-			)
-		}
-		return dist.Name, finalSize, featuresMap, nil
+		return dist.Name, applySizeFallback(scenario, size, dist, sizes), featuresMap, nil
 	}
 	return "", "", nil, fmt.Errorf("no compatible distribution found for scenario (os_type=%s, size=%s)", scenario.OsType, requiredSize)
 }
