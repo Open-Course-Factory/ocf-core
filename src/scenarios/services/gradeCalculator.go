@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -101,4 +102,71 @@ func ComputeWeightedGradeFromLoaded(steps []models.ScenarioStep, progress []mode
 	}
 
 	return (sum / float64(totalSteps)) * 100.0
+}
+
+// ComputeCorrectCountsFromLoaded is a pure function that returns the absolute
+// count of correct answers (numerator) and the total possible (denominator)
+// for a session. The denominator is static per scenario — it counts every
+// quiz question in every quiz step plus every flag-bearing step, regardless
+// of session progress. This means in-progress sessions show their absolute
+// progress (e.g. 3/15) rather than a ratio of attempted (3/5).
+//
+// Numerator semantics:
+//   - quiz step: math.Round(QuizScore * questionCount) when progress has a
+//     non-nil QuizScore; 0 otherwise. math.Round avoids float drift
+//     (e.g. 0.6*5 = 2.9999... must yield 3, not 2).
+//   - flag-bearing step: 1 if a ScenarioFlag row for that step exists with
+//     IsCorrect=true; 0 otherwise (including missing row).
+//   - terminal/info steps: ignored entirely.
+//
+// Denominator semantics:
+//   - quiz step: + questionCountByStepID[step.ID]
+//   - flag-bearing step (StepType=="flag" OR HasFlag): + 1
+//   - terminal/info steps: ignored entirely.
+//
+// Callers must pre-filter `steps` to exclude soft-deleted rows and
+// `questionCountByStepID` to exclude soft-deleted questions.
+func ComputeCorrectCountsFromLoaded(
+	steps []models.ScenarioStep,
+	progress []models.ScenarioStepProgress,
+	flags []models.ScenarioFlag,
+	questionCountByStepID map[uuid.UUID]int,
+) (correct int64, total int64) {
+	// Index progress and flags by step_order for O(1) lookup. Both models key
+	// off StepOrder (not StepID) because they predate the per-step UUID
+	// linkage.
+	progressByOrder := make(map[int]models.ScenarioStepProgress, len(progress))
+	for _, p := range progress {
+		progressByOrder[p.StepOrder] = p
+	}
+	flagByOrder := make(map[int]models.ScenarioFlag, len(flags))
+	for _, f := range flags {
+		// Prefer a correct submission if multiple rows exist for the same step.
+		if existing, ok := flagByOrder[f.StepOrder]; ok && existing.IsCorrect {
+			continue
+		}
+		flagByOrder[f.StepOrder] = f
+	}
+
+	for _, step := range steps {
+		stepType := normalizeStepType(step.StepType)
+		switch {
+		case stepType == "quiz":
+			n := questionCountByStepID[step.ID]
+			if n == 0 {
+				continue
+			}
+			total += int64(n)
+			if p, ok := progressByOrder[step.Order]; ok && p.QuizScore != nil {
+				correct += int64(math.Round(*p.QuizScore * float64(n)))
+			}
+		case stepType == "flag" || step.HasFlag:
+			total += 1
+			if f, ok := flagByOrder[step.Order]; ok && f.IsCorrect {
+				correct += 1
+			}
+		}
+	}
+
+	return correct, total
 }

@@ -60,8 +60,16 @@ type ScenarioResultItem struct {
 	TotalSteps     int64      `json:"total_steps"`
 	CompletedSteps int64      `json:"completed_steps"`
 	TotalHintsUsed int64      `json:"total_hints_used"`
-	StartedAt      time.Time  `json:"started_at"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	// CorrectCount is the absolute number of correct answers in the session
+	// (correct quiz answers + correct flag submissions). Computed in Go from
+	// step progress and ScenarioFlag rows; not stored in DB.
+	CorrectCount int64 `json:"correct_count"`
+	// TotalCorrectPossible is the static maximum for this scenario: total quiz
+	// questions across all (non-deleted) quiz steps + count of flag-bearing
+	// steps. Does not change as the session progresses.
+	TotalCorrectPossible int64      `json:"total_correct_possible"`
+	StartedAt            time.Time  `json:"started_at"`
+	CompletedAt          *time.Time `json:"completed_at,omitempty"`
 }
 
 // PaginatedScenarioResults represents paginated scenario results with total count
@@ -269,6 +277,13 @@ func (s *TeacherDashboardService) GetScenarioResults(groupID, scenarioID uuid.UU
 			}
 			results[i].Grade = &partialGrade
 		}
+
+		// Populate absolute correct counts (numerator/denominator) so the
+		// teacher view can render "X/Y correct" alongside the percentage.
+		// Same N+1 shape as the grade enrichment above; same justification.
+		correct, total := computeSessionCorrectCounts(s.db, scenarioID, results[i].SessionID)
+		results[i].CorrectCount = correct
+		results[i].TotalCorrectPossible = total
 	}
 
 	return &PaginatedScenarioResults{
@@ -620,10 +635,16 @@ type SessionDetailResponse struct {
 	ScenarioTitle     string             `json:"scenario_title"`
 	Status            string             `json:"status"`
 	Grade             *float64           `json:"grade,omitempty"`
-	StartedAt         time.Time          `json:"started_at"`
-	CompletedAt       *time.Time         `json:"completed_at,omitempty"`
-	TerminalSessionID *string            `json:"terminal_session_id,omitempty"`
-	Steps             []SessionStepDetail `json:"steps"`
+	// CorrectCount mirrors ScenarioResultItem.CorrectCount at the session level
+	// so the detail modal header can render absolute progress without a second
+	// trip through the list endpoint.
+	CorrectCount int64 `json:"correct_count"`
+	// TotalCorrectPossible mirrors ScenarioResultItem.TotalCorrectPossible.
+	TotalCorrectPossible int64               `json:"total_correct_possible"`
+	StartedAt            time.Time           `json:"started_at"`
+	CompletedAt          *time.Time          `json:"completed_at,omitempty"`
+	TerminalSessionID    *string             `json:"terminal_session_id,omitempty"`
+	Steps                []SessionStepDetail `json:"steps"`
 }
 
 // GetSessionDetail returns full session details with step-by-step progress for a specific session.
@@ -725,18 +746,24 @@ func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID)
 		return nil, fmt.Errorf("failed to populate quiz questions: %w", err)
 	}
 
+	// Compute absolute correct counts so the modal header can render
+	// "Correct answers: X/Y" next to the percentage.
+	correctCount, totalCorrectPossible := computeSessionCorrectCounts(s.db, session.ScenarioID, session.ID)
+
 	resp := &SessionDetailResponse{
-		SessionID:         session.ID,
-		UserID:            session.UserID,
-		TrainerID:         session.TrainerID,
-		ScenarioID:        session.ScenarioID,
-		ScenarioTitle:     scenario.Title,
-		Status:            session.Status,
-		Grade:             session.Grade,
-		StartedAt:         session.StartedAt,
-		CompletedAt:       session.CompletedAt,
-		TerminalSessionID: session.TerminalSessionID,
-		Steps:             steps,
+		SessionID:            session.ID,
+		UserID:               session.UserID,
+		TrainerID:            session.TrainerID,
+		ScenarioID:           session.ScenarioID,
+		ScenarioTitle:        scenario.Title,
+		Status:               session.Status,
+		Grade:                session.Grade,
+		CorrectCount:         correctCount,
+		TotalCorrectPossible: totalCorrectPossible,
+		StartedAt:            session.StartedAt,
+		CompletedAt:          session.CompletedAt,
+		TerminalSessionID:    session.TerminalSessionID,
+		Steps:                steps,
 	}
 
 	// Enrich with user info
@@ -793,6 +820,66 @@ func (s *TeacherDashboardService) GetSessionCommands(groupID, sessionID uuid.UUI
 		return nil, "", err
 	}
 	return body, contentType, nil
+}
+
+// computeSessionCorrectCounts loads the data required by
+// ComputeCorrectCountsFromLoaded (steps, progress, flags, per-step question
+// counts) for a single session and returns the absolute correct count
+// (numerator) and the static total possible (denominator).
+//
+// Soft-deleted scenario steps and questions are excluded — the standard GORM
+// soft-delete predicate (deleted_at IS NULL) is applied via the model query
+// for steps and explicitly via the Where clause for questions (which are
+// scanned into a small struct rather than the full model).
+//
+// On any DB error this returns (0, 0); callers continue rendering the row
+// without the absolute count rather than failing the whole list.
+func computeSessionCorrectCounts(db *gorm.DB, scenarioID, sessionID uuid.UUID) (int64, int64) {
+	var steps []models.ScenarioStep
+	if err := db.Where("scenario_id = ?", scenarioID).Find(&steps).Error; err != nil {
+		return 0, 0
+	}
+	if len(steps) == 0 {
+		return 0, 0
+	}
+
+	// Collect quiz step IDs, then count questions per step (excluding
+	// soft-deleted questions).
+	quizStepIDs := make([]uuid.UUID, 0, len(steps))
+	for _, st := range steps {
+		if normalizeStepType(st.StepType) == "quiz" {
+			quizStepIDs = append(quizStepIDs, st.ID)
+		}
+	}
+	questionCountByStepID := make(map[uuid.UUID]int, len(quizStepIDs))
+	if len(quizStepIDs) > 0 {
+		type countRow struct {
+			StepID uuid.UUID
+			Count  int
+		}
+		var rows []countRow
+		if err := db.Table("scenario_step_questions").
+			Select("step_id, COUNT(*) as count").
+			Where("step_id IN ? AND deleted_at IS NULL", quizStepIDs).
+			Group("step_id").
+			Scan(&rows).Error; err == nil {
+			for _, r := range rows {
+				questionCountByStepID[r.StepID] = r.Count
+			}
+		}
+	}
+
+	var progress []models.ScenarioStepProgress
+	if err := db.Where("session_id = ?", sessionID).Find(&progress).Error; err != nil {
+		return 0, 0
+	}
+
+	var flags []models.ScenarioFlag
+	if err := db.Where("session_id = ?", sessionID).Find(&flags).Error; err != nil {
+		return 0, 0
+	}
+
+	return ComputeCorrectCountsFromLoaded(steps, progress, flags, questionCountByStepID)
 }
 
 // populateQuizQuestions fills the Questions slice on every quiz step in `steps`.
