@@ -15,12 +15,8 @@ func InitAllowedOrigins() []string {
 	origins := []string{}
 	environment := os.Getenv("ENVIRONMENT")
 
-	if frontendURL := os.Getenv("FRONTEND_URL"); frontendURL != "" {
-		origins = append(origins, frontendURL)
-	}
-	if adminURL := os.Getenv("ADMIN_FRONTEND_URL"); adminURL != "" {
-		origins = append(origins, adminURL)
-	}
+	origins = append(origins, parseOriginList(os.Getenv("FRONTEND_URL"))...)
+	origins = append(origins, parseOriginList(os.Getenv("ADMIN_FRONTEND_URL"))...)
 
 	if environment == "development" || environment == "" || len(origins) == 0 {
 		log.Println("Development mode: CORS allowing common localhost origins")
@@ -46,6 +42,22 @@ func InitAllowedOrigins() []string {
 // GetAllowedOrigins returns the list of allowed origins.
 func GetAllowedOrigins() []string {
 	return allowedOrigins
+}
+
+// parseOriginList splits a comma-separated env-var value into a clean list
+// of origins. Whitespace is trimmed; empty entries are dropped.
+func parseOriginList(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 // IsOriginAllowed checks if a given origin is in the allowed list.
