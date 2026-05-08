@@ -507,17 +507,20 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 	var terminalOutputs []dto.TerminalOutput
 	for _, terminal := range *terminals {
 		terminalOutputs = append(terminalOutputs, dto.TerminalOutput{
-			ID:             terminal.ID,
-			SessionID:      terminal.SessionID,
-			UserID:         terminal.UserID,
-			Name:           terminal.Name,
-			Status:         terminal.Status,
-			ExpiresAt:      terminal.ExpiresAt,
-			InstanceType:   terminal.InstanceType,
-			MachineSize:    terminal.MachineSize,
-			Backend:        terminal.Backend,
-			OrganizationID: terminal.OrganizationID,
-			CreatedAt:      terminal.CreatedAt,
+			ID:              terminal.ID,
+			SessionID:       terminal.SessionID,
+			UserID:          terminal.UserID,
+			Name:            terminal.Name,
+			Status:          terminal.Status,
+			State:           terminal.State,
+			PersistenceMode: terminal.PersistenceMode,
+			IdleUntil:       terminal.IdleUntil,
+			ExpiresAt:       terminal.ExpiresAt,
+			InstanceType:    terminal.InstanceType,
+			MachineSize:     terminal.MachineSize,
+			Backend:         terminal.Backend,
+			OrganizationID:  terminal.OrganizationID,
+			CreatedAt:       terminal.CreatedAt,
 		})
 	}
 

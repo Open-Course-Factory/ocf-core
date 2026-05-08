@@ -44,6 +44,14 @@ type Organization struct {
 	AllowedBackends []string `gorm:"serializer:json" json:"allowed_backends"`            // Backend IDs allowed (empty = all)
 	DefaultBackend  string   `gorm:"type:varchar(255);default:''" json:"default_backend"` // Default backend for this org
 
+	// Idle window overrides (org-level overrides for the global tt-backend defaults).
+	// All three are nullable: nil means "fall back to the global default configured in
+	// tt-backend". Set per-org to extend or shorten the idle policies for ephemeral and
+	// persistent sessions, or to bound the absolute lifetime via a hard cap.
+	IdleWindowEphemeralSeconds  *int `json:"idle_window_ephemeral_seconds,omitempty"`
+	IdleWindowPersistentSeconds *int `json:"idle_window_persistent_seconds,omitempty"`
+	IdleWindowHardCapSeconds    *int `json:"idle_window_hard_cap_seconds,omitempty"`
+
 	// Relations
 	Groups  []groupModels.ClassGroup `gorm:"foreignKey:OrganizationID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"groups,omitempty"`
 	Members []OrganizationMember     `gorm:"foreignKey:OrganizationID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"members,omitempty"`

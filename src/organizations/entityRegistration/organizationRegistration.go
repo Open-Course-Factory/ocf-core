@@ -22,23 +22,26 @@ func RegisterOrganization(service *ems.EntityRegistrationService) {
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.Organization, dto.CreateOrganizationInput, dto.EditOrganizationInput, dto.OrganizationOutput]{
 				ModelToDto: func(org *models.Organization) (dto.OrganizationOutput, error) {
 					output := dto.OrganizationOutput{
-						ID:                 org.ID,
-						Name:               org.Name,
-						DisplayName:        org.DisplayName,
-						Description:        org.Description,
-						OwnerUserID:        org.OwnerUserID,
-						SubscriptionPlanID: org.SubscriptionPlanID,
-						IsPersonal:         org.IsPersonal,
-						OrganizationType:   string(org.OrganizationType),
-						MaxGroups:          org.MaxGroups,
-						MaxMembers:         org.MaxMembers,
-						IsActive:           org.IsActive,
-						IncusUIEnabled:     org.IncusUIEnabled,
-						Metadata:           org.Metadata,
-						AllowedBackends:    org.AllowedBackends,
-						DefaultBackend:     org.DefaultBackend,
-						CreatedAt:          org.CreatedAt,
-						UpdatedAt:          org.UpdatedAt,
+						ID:                          org.ID,
+						Name:                        org.Name,
+						DisplayName:                 org.DisplayName,
+						Description:                 org.Description,
+						OwnerUserID:                 org.OwnerUserID,
+						SubscriptionPlanID:          org.SubscriptionPlanID,
+						IsPersonal:                  org.IsPersonal,
+						OrganizationType:            string(org.OrganizationType),
+						MaxGroups:                   org.MaxGroups,
+						MaxMembers:                  org.MaxMembers,
+						IsActive:                    org.IsActive,
+						IncusUIEnabled:              org.IncusUIEnabled,
+						Metadata:                    org.Metadata,
+						AllowedBackends:             org.AllowedBackends,
+						DefaultBackend:              org.DefaultBackend,
+						IdleWindowEphemeralSeconds:  org.IdleWindowEphemeralSeconds,
+						IdleWindowPersistentSeconds: org.IdleWindowPersistentSeconds,
+						IdleWindowHardCapSeconds:    org.IdleWindowHardCapSeconds,
+						CreatedAt:                   org.CreatedAt,
+						UpdatedAt:                   org.UpdatedAt,
 					}
 
 					// Include members if loaded
@@ -157,6 +160,15 @@ func RegisterOrganization(service *ems.EntityRegistrationService) {
 					}
 					if input.DefaultBackend != nil {
 						updates["default_backend"] = *input.DefaultBackend
+					}
+					if input.IdleWindowEphemeralSeconds != nil {
+						updates["idle_window_ephemeral_seconds"] = *input.IdleWindowEphemeralSeconds
+					}
+					if input.IdleWindowPersistentSeconds != nil {
+						updates["idle_window_persistent_seconds"] = *input.IdleWindowPersistentSeconds
+					}
+					if input.IdleWindowHardCapSeconds != nil {
+						updates["idle_window_hard_cap_seconds"] = *input.IdleWindowHardCapSeconds
 					}
 					return updates
 				},

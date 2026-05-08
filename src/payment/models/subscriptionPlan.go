@@ -33,6 +33,11 @@ type SubscriptionPlan struct {
 	NetworkAccessEnabled       bool     `gorm:"default:false" json:"network_access_enabled"`    // Allow external network access
 	DataPersistenceEnabled     bool     `gorm:"default:false" json:"data_persistence_enabled"`  // Allow saving data between sessions
 	DataPersistenceGB          int      `gorm:"default:0" json:"data_persistence_gb"`           // Storage quota in GB
+
+	// Persistent session controls (new lifecycle)
+	PersistentSessionsEnabled bool `gorm:"default:false" json:"persistent_sessions_enabled"` // Plan permits persistent sessions
+	MaxPersistentSessions     int  `gorm:"default:0" json:"max_persistent_sessions"`         // Max persistent sessions per user (0 = none)
+
 	AllowedTemplates           []string `gorm:"serializer:json" json:"allowed_templates"`       // Template IDs allowed
 	CommandHistoryRetentionDays int     `gorm:"default:0" json:"command_history_retention_days" mapstructure:"command_history_retention_days"` // days to retain command history (minimum 1)
 

@@ -21,6 +21,12 @@ type CreateTerminalInput struct {
 type UpdateTerminalInput struct {
 	Name   *string `json:"name,omitempty" mapstructure:"name"`
 	Status *string `json:"status,omitempty" mapstructure:"status"`
+	// State is the new lifecycle field (running, paused, hibernating, etc.).
+	// Phasing out Status above.
+	State *string `json:"state,omitempty" mapstructure:"state"`
+	// PersistenceMode allows switching a session between ephemeral and persistent
+	// when the plan permits it. Values: "ephemeral", "persistent".
+	PersistenceMode *string `json:"persistence_mode,omitempty" mapstructure:"persistence_mode"`
 }
 
 type TerminalOutput struct {
@@ -29,6 +35,13 @@ type TerminalOutput struct {
 	UserID          string     `json:"user_id"`
 	Name            string     `json:"name"` // User-friendly name for the terminal session
 	Status          string     `json:"status"`
+	// State is the new session lifecycle field (running, paused, hibernating, etc.).
+	State           string     `json:"state,omitempty"`
+	// PersistenceMode is "ephemeral" or "persistent".
+	PersistenceMode string     `json:"persistence_mode,omitempty"`
+	// IdleUntil is the absolute deadline after which the session may be reaped or
+	// hibernated. Nil = no idle policy currently applies.
+	IdleUntil       *time.Time `json:"idle_until,omitempty"`
 	ExpiresAt       time.Time  `json:"expires_at"`
 	InstanceType    string     `json:"instance_type"`
 	MachineSize     string     `json:"machine_size"` // XS, S, M, L, XL
@@ -448,6 +461,9 @@ type CreateComposedSessionInput struct {
 	Packages         []string        `json:"packages,omitempty"`
 	RecordingEnabled int             `json:"recording_enabled,omitempty"`
 	ExternalRef      string          `json:"external_ref,omitempty"`
+	// PersistenceMode requests an "ephemeral" (default) or "persistent" session.
+	// Tier enforcement (whether the plan allows persistent sessions) lands in MR-F.
+	PersistenceMode string `json:"persistence_mode,omitempty"`
 	// Set by service layer
 	HistoryRetentionDays   int        `json:"-"`
 	SubscriptionPlanID     *uuid.UUID `json:"-"`

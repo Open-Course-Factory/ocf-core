@@ -12,8 +12,24 @@ type Terminal struct {
 	entityManagementModels.BaseModel
 	SessionID            string     `gorm:"type:varchar(255);uniqueIndex" json:"session_id"`
 	UserID               string     `gorm:"type:varchar(255);not null;index" json:"user_id"`
-	Name                 string     `gorm:"type:varchar(255)" json:"name"`                   // User-friendly name for the terminal session
-	Status               string     `gorm:"type:varchar(50);default:'active'" json:"status"` // active, stopped, expired
+	Name                 string     `gorm:"type:varchar(255)" json:"name"` // User-friendly name for the terminal session
+	// Status is the legacy lifecycle field (active, stopped, expired) kept for
+	// backward compatibility with existing code paths. It is being phased out
+	// in favor of State below — new code should consume State.
+	Status string `gorm:"type:varchar(50);default:'active'" json:"status"`
+	// State is the new session lifecycle field driven by the proxy + persistence
+	// rules: running, paused, hibernating, resuming, terminated, etc.
+	State                string     `gorm:"type:varchar(50);default:'running'" json:"state"`
+	// PersistenceMode controls whether the session is ephemeral (default) or
+	// persistent across stop/start cycles. Values: "ephemeral", "persistent".
+	PersistenceMode      string     `gorm:"type:varchar(20);default:'ephemeral'" json:"persistence_mode"`
+	// LastStartedAt records the most recent transition into a running state.
+	// Server-managed; not user-editable.
+	LastStartedAt        time.Time  `json:"last_started_at"`
+	// IdleUntil is the absolute deadline after which an idle session may be
+	// reaped or hibernated. Nil means no idle policy currently applies.
+	// Server-managed; not user-editable.
+	IdleUntil            *time.Time `json:"idle_until,omitempty"`
 	ExpiresAt            time.Time  `gorm:"not null" json:"expires_at"`
 	InstanceType         string     `gorm:"type:varchar(100)" json:"instance_type"` // préfixe du type d'instance utilisé
 	MachineSize          string     `gorm:"type:varchar(10)" json:"machine_size"`   // XS, S, M, L, XL (taille réelle utilisée)

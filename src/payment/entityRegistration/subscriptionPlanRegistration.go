@@ -55,6 +55,8 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						NetworkAccessEnabled:      plan.NetworkAccessEnabled,
 						DataPersistenceEnabled:    plan.DataPersistenceEnabled,
 						DataPersistenceGB:         plan.DataPersistenceGB,
+						PersistentSessionsEnabled: plan.PersistentSessionsEnabled,
+						MaxPersistentSessions:     plan.MaxPersistentSessions,
 						AllowedTemplates:          plan.AllowedTemplates,
 
 						// Command history
@@ -94,6 +96,8 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						NetworkAccessEnabled:       input.NetworkAccessEnabled,
 						DataPersistenceEnabled:     input.DataPersistenceEnabled,
 						DataPersistenceGB:          input.DataPersistenceGB,
+						PersistentSessionsEnabled:  input.PersistentSessionsEnabled,
+						MaxPersistentSessions:      input.MaxPersistentSessions,
 						AllowedTemplates:           input.AllowedTemplates,
 						CommandHistoryRetentionDays: input.CommandHistoryRetentionDays,
 						Priority:                   input.Priority,

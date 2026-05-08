@@ -17,17 +17,20 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.Terminal, dto.CreateTerminalInput, dto.UpdateTerminalInput, dto.TerminalOutput]{
 				ModelToDto: func(model *models.Terminal) (dto.TerminalOutput, error) {
 					return dto.TerminalOutput{
-						ID:             model.ID,
-						SessionID:      model.SessionID,
-						UserID:         model.UserID,
-						Name:           model.Name,
-						Status:         model.Status,
-						ExpiresAt:      model.ExpiresAt,
-						InstanceType:   model.InstanceType,
-						MachineSize:    model.MachineSize,
-						Backend:        model.Backend,
-						OrganizationID: model.OrganizationID,
-						CreatedAt:      model.CreatedAt,
+						ID:              model.ID,
+						SessionID:       model.SessionID,
+						UserID:          model.UserID,
+						Name:            model.Name,
+						Status:          model.Status,
+						State:           model.State,
+						PersistenceMode: model.PersistenceMode,
+						IdleUntil:       model.IdleUntil,
+						ExpiresAt:       model.ExpiresAt,
+						InstanceType:    model.InstanceType,
+						MachineSize:     model.MachineSize,
+						Backend:         model.Backend,
+						OrganizationID:  model.OrganizationID,
+						CreatedAt:       model.CreatedAt,
 					}, nil
 				},
 				DtoToModel: func(input dto.CreateTerminalInput) *models.Terminal {
@@ -47,6 +50,12 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 					}
 					if input.Status != nil {
 						updates["status"] = *input.Status
+					}
+					if input.State != nil {
+						updates["state"] = *input.State
+					}
+					if input.PersistenceMode != nil {
+						updates["persistence_mode"] = *input.PersistenceMode
 					}
 					return updates
 				},

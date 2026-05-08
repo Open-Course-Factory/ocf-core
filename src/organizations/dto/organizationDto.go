@@ -31,6 +31,11 @@ type EditOrganizationInput struct {
 	Metadata           *map[string]any `json:"metadata,omitempty" mapstructure:"metadata"`
 	AllowedBackends    *[]string               `json:"allowed_backends,omitempty" mapstructure:"allowed_backends"`
 	DefaultBackend     *string                 `json:"default_backend,omitempty" mapstructure:"default_backend"`
+
+	// Idle window overrides — nullable. Nil/omitted = inherit global tt-backend default.
+	IdleWindowEphemeralSeconds  *int `json:"idle_window_ephemeral_seconds,omitempty" mapstructure:"idle_window_ephemeral_seconds"`
+	IdleWindowPersistentSeconds *int `json:"idle_window_persistent_seconds,omitempty" mapstructure:"idle_window_persistent_seconds"`
+	IdleWindowHardCapSeconds    *int `json:"idle_window_hard_cap_seconds,omitempty" mapstructure:"idle_window_hard_cap_seconds"`
 }
 
 // OrganizationOutput represents the output for an organization
@@ -50,6 +55,12 @@ type OrganizationOutput struct {
 	Metadata           map[string]any `json:"metadata,omitempty"`
 	AllowedBackends    []string               `json:"allowed_backends"`
 	DefaultBackend     string                 `json:"default_backend"`
+
+	// Idle window overrides (nil = inherits global default)
+	IdleWindowEphemeralSeconds  *int `json:"idle_window_ephemeral_seconds,omitempty"`
+	IdleWindowPersistentSeconds *int `json:"idle_window_persistent_seconds,omitempty"`
+	IdleWindowHardCapSeconds    *int `json:"idle_window_hard_cap_seconds,omitempty"`
+
 	CreatedAt          time.Time              `json:"created_at"`
 	UpdatedAt          time.Time              `json:"updated_at"`
 
