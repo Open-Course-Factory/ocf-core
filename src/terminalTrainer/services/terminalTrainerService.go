@@ -2588,6 +2588,14 @@ func (tts *terminalTrainerService) StartComposedSession(userID string, input dto
 		return nil, fmt.Errorf("invalid subscription plan type")
 	}
 
+	// Resolve effective persistence mode (free tier hard-fails; empty defaults to ephemeral).
+	// Done up-front so we never hit tt-backend with a request the plan forbids.
+	effectiveMode, persistErr := resolvePersistenceMode(input.PersistenceMode, plan)
+	if persistErr != nil {
+		return nil, persistErr
+	}
+	input.PersistenceMode = effectiveMode
+
 	// Compute session options to validate the request
 	options, err := tts.GetSessionOptions(plan, input.Distribution, input.Backend)
 	if err != nil {
@@ -2649,6 +2657,10 @@ func (tts *terminalTrainerService) StartComposedSession(userID string, input dto
 	}
 	input.Backend = validatedBackend
 
+	// Resolve effective idle window from the org override (if any). nil means
+	// "let tt-backend fall back to its global default".
+	input.IdleWindowSeconds = tts.resolveIdleWindowSeconds(orgID, input.PersistenceMode)
+
 	// Enforce max session duration
 	maxDurationSeconds := plan.MaxSessionDurationMinutes * 60
 	if input.Expiry == 0 || input.Expiry > maxDurationSeconds {
@@ -2660,6 +2672,20 @@ func (tts *terminalTrainerService) StartComposedSession(userID string, input dto
 	input.SubscriptionPlanID = &plan.ID
 
 	return tts.startComposedSession(userID, input)
+}
+
+// resolveIdleWindowSeconds returns the org-level idle window override for the
+// requested persistence mode, or nil if the org has no override (in which case
+// tt-backend falls back to its globally-configured default).
+func (tts *terminalTrainerService) resolveIdleWindowSeconds(orgID *uuid.UUID, mode string) *int {
+	if orgID == nil {
+		return nil
+	}
+	var org orgModels.Organization
+	if err := tts.db.First(&org, "id = ?", *orgID).Error; err != nil {
+		return nil
+	}
+	return computeIdleWindowSeconds(&org, mode)
 }
 
 // startComposedSession is the internal method that calls tt-backend's POST /sessions endpoint
@@ -2701,6 +2727,12 @@ func (tts *terminalTrainerService) startComposedSession(userID string, input dto
 	}
 	if input.Name != "" {
 		ttReqBody["name"] = input.Name
+	}
+	if input.PersistenceMode != "" {
+		ttReqBody["persistence_mode"] = input.PersistenceMode
+	}
+	if input.IdleWindowSeconds != nil {
+		ttReqBody["idle_window_seconds"] = *input.IdleWindowSeconds
 	}
 
 	// Build URL
@@ -2762,6 +2794,7 @@ func (tts *terminalTrainerService) startComposedSession(userID string, input dto
 		UserID:               userID,
 		Name:                 input.Name,
 		Status:               "active",
+		PersistenceMode:      input.PersistenceMode,
 		ExpiresAt:            expiresAt,
 		InstanceType:         input.DistributionPrefix,
 		MachineSize:          strings.ToUpper(input.Size),

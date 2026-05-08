@@ -2184,6 +2184,11 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 	if orgID != nil {
 		composedInput.OrganizationID = orgID.String()
 	}
+	// Scenarios with crash_traps must run ephemeral: the trap mechanics rely on
+	// container destruction, so persistence would defeat the design.
+	if terminalServices.ScenarioForcesEphemeral(scenario.CrashTraps) {
+		composedInput.PersistenceMode = "ephemeral"
+	}
 
 	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, plan)
 	if termErr != nil {
@@ -3260,6 +3265,10 @@ func (sc *scenarioController) PreviewScenario(ctx *gin.Context) {
 	}
 	if scenario.OrganizationID != nil {
 		composedInput.OrganizationID = scenario.OrganizationID.String()
+	}
+	// Scenarios with crash_traps must run ephemeral (see LaunchScenario).
+	if terminalServices.ScenarioForcesEphemeral(scenario.CrashTraps) {
+		composedInput.PersistenceMode = "ephemeral"
 	}
 
 	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, planResult.Plan)

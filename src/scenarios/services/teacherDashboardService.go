@@ -505,6 +505,10 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 					// RecordingEnabled: recording is always on (RGPD Art. 6.1.f — legitimate interest)
 					RecordingEnabled: 1,
 				}
+				// Scenarios with crash_traps must run ephemeral: trap mechanics rely on container destruction.
+				if ttServices.ScenarioForcesEphemeral(scenario.CrashTraps) {
+					composedInput.PersistenceMode = "ephemeral"
+				}
 
 				// Resolve the member's effective subscription plan
 				planResult, planErr := paymentServices.NewEffectivePlanService(s.db).GetUserEffectivePlan(member.UserID)

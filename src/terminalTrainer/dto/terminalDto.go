@@ -462,12 +462,18 @@ type CreateComposedSessionInput struct {
 	RecordingEnabled int             `json:"recording_enabled,omitempty"`
 	ExternalRef      string          `json:"external_ref,omitempty"`
 	// PersistenceMode requests an "ephemeral" (default) or "persistent" session.
-	// Tier enforcement (whether the plan allows persistent sessions) lands in MR-F.
+	// Tier enforcement (free tier cannot request persistent) is applied by
+	// StartComposedSession. The value is forwarded to tt-backend.
 	PersistenceMode string `json:"persistence_mode,omitempty"`
 	// Set by service layer
 	HistoryRetentionDays   int        `json:"-"`
 	SubscriptionPlanID     *uuid.UUID `json:"-"`
 	DistributionPrefix     string     `json:"-"` // Resolved from TTDistribution.Prefix
+	// IdleWindowSeconds is the org-level idle window override forwarded to
+	// tt-backend (nil = let tt-backend use its global default for the mode).
+	// Set by the service layer based on the resolved persistence mode + org
+	// override; not accepted from the public request body.
+	IdleWindowSeconds *int `json:"-"`
 }
 
 // TTDistribution mirrors tt-backend's Distribution struct
