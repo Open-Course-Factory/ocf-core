@@ -36,6 +36,7 @@ func TestMain(m *testing.M) {
 		&paymentModels.SubscriptionPlan{},
 		&paymentModels.OrganizationSubscription{},
 		&paymentModels.UserSubscription{},
+		&paymentModels.UsageMetrics{},
 		&configModels.Feature{},
 	)
 	if err != nil {
@@ -58,6 +59,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM organization_members")
 	sharedTestDB.Exec("DELETE FROM organization_subscriptions")
 	sharedTestDB.Exec("DELETE FROM user_subscriptions")
+	sharedTestDB.Exec("DELETE FROM usage_metrics")
 	sharedTestDB.Exec("DELETE FROM organizations")
 	sharedTestDB.Exec("DELETE FROM subscription_plans")
 	sharedTestDB.Exec("DELETE FROM features")

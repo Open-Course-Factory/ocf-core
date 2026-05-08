@@ -35,6 +35,18 @@ func NewTerminalAccessMiddleware(db *gorm.DB) *TerminalAccessMiddleware {
 //
 //	routes.GET("/:id", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), handler)
 func (tam *TerminalAccessMiddleware) RequireTerminalAccess() gin.HandlerFunc {
+	return tam.requireTerminalAccess(false)
+}
+
+// RequireTerminalAccessAllowStopped behaves like RequireTerminalAccess but
+// permits sessions in the "stopped" state to pass through. Used by lifecycle
+// endpoints whose semantics include resuming or deleting a stopped session
+// (POST /:id/start, DELETE /:id) — the ownership check still runs.
+func (tam *TerminalAccessMiddleware) RequireTerminalAccessAllowStopped() gin.HandlerFunc {
+	return tam.requireTerminalAccess(true)
+}
+
+func (tam *TerminalAccessMiddleware) requireTerminalAccess(allowStopped bool) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		// Get terminal ID from route parameter
 		terminalID := ctx.Param("id")
@@ -116,6 +128,11 @@ func (tam *TerminalAccessMiddleware) RequireTerminalAccess() gin.HandlerFunc {
 					ErrorMessage: "Terminal session has expired and is no longer accessible",
 				})
 			} else if reason == "stopped" {
+				if allowStopped {
+					// Lifecycle endpoint (start/delete): pass through.
+					ctx.Next()
+					return
+				}
 				ctx.AbortWithStatusJSON(http.StatusForbidden, &errors.APIError{
 					ErrorCode:    http.StatusForbidden,
 					ErrorMessage: "Terminal session has been stopped and is no longer accessible",

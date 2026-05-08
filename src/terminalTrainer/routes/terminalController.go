@@ -37,6 +37,8 @@ type TerminalController interface {
 	// Méthodes spécialisées Terminal Trainer
 	ConnectConsole(ctx *gin.Context)
 	StopSession(ctx *gin.Context)
+	StartSession(ctx *gin.Context)
+	DeleteSession(ctx *gin.Context)
 	GetUserSessions(ctx *gin.Context)
 
 	// Méthodes de synchronisation
@@ -435,6 +437,114 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Session stopped successfully"})
+}
+
+// Start Session godoc
+//
+//	@Summary		Reprendre une session terminal arrêtée
+//	@Description	Redémarre une session de terminal précédemment arrêtée. Le disque est restauré côté tt-backend.
+//	@Tags			terminals
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"Terminal ID"
+//	@Security		Bearer
+//	@Success		200	{object}	string
+//	@Failure		400	{object}	errors.APIError	"Bad request"
+//	@Failure		404	{object}	errors.APIError	"Session not found"
+//	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Router			/terminals/{id}/start [post]
+func (tc *terminalController) StartSession(ctx *gin.Context) {
+	terminalID := ctx.Param("id")
+	userId := ctx.GetString("userId")
+
+	terminal, err := tc.service.GetSessionInfo(terminalID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Session not found",
+		})
+		return
+	}
+
+	hasAccess, err := tc.hasTerminalAccess(ctx, terminalID, userId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to check access",
+		})
+		return
+	}
+	if !hasAccess {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Access denied to this session",
+		})
+		return
+	}
+
+	if err := tc.service.StartSession(terminal.SessionID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Session started successfully"})
+}
+
+// Delete Session godoc
+//
+//	@Summary		Supprimer définitivement une session terminal
+//	@Description	Supprime définitivement une session de terminal et libère le slot de quota. L'opération est irréversible.
+//	@Tags			terminals
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"Terminal ID"
+//	@Security		Bearer
+//	@Success		200	{object}	string
+//	@Failure		400	{object}	errors.APIError	"Bad request"
+//	@Failure		404	{object}	errors.APIError	"Session not found"
+//	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Router			/terminals/{id} [delete]
+func (tc *terminalController) DeleteSession(ctx *gin.Context) {
+	terminalID := ctx.Param("id")
+	userId := ctx.GetString("userId")
+
+	terminal, err := tc.service.GetSessionInfo(terminalID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "Session not found",
+		})
+		return
+	}
+
+	hasAccess, err := tc.hasTerminalAccess(ctx, terminalID, userId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to check access",
+		})
+		return
+	}
+	if !hasAccess {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Access denied to this session",
+		})
+		return
+	}
+
+	if err := tc.service.DeleteSession(terminal.SessionID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Session deleted successfully"})
 }
 
 // Get User Sessions godoc

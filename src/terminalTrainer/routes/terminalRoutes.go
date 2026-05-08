@@ -38,6 +38,12 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	// Stop session requires terminal ownership (Layer 2 security check)
 	routes.POST("/:id/stop", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.StopSession)
+	// Start a stopped session — same Layer 2 ownership middleware, but
+	// the "stopped" state is intentionally allowed to pass through.
+	routes.POST("/:id/start", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccessAllowStopped(), terminalController.StartSession)
+	// Permanently delete a session — ownership enforced via Layer 2,
+	// "stopped" state allowed.
+	routes.DELETE("/:id", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccessAllowStopped(), terminalController.DeleteSession)
 	routes.GET("/user-sessions", middleware.AuthManagement(), terminalController.GetUserSessions)
 
 	// Sync routes (Layer 2 security checks)

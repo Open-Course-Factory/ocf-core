@@ -110,6 +110,9 @@ func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/terminals/metrics", "GET"},
 		{"/api/v1/terminals/:id/console", "GET"},
 		{"/api/v1/terminals/:id/stop", "POST"},
+		// Added in MR-E (#305)
+		{"/api/v1/terminals/:id/start", "POST"},
+		{"/api/v1/terminals/:id", "DELETE"},
 		{"/api/v1/terminals/:id/sync", "POST"},
 		{"/api/v1/terminals/:id/status", "GET"},
 		{"/api/v1/terminals/:id/history", "GET"},

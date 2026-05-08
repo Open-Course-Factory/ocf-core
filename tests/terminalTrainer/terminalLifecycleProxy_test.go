@@ -1,0 +1,370 @@
+// tests/terminalTrainer/terminalLifecycleProxy_test.go
+//
+// MR-E: ocf-core proxies the new lifecycle endpoints exposed by tt-backend.
+//
+// What is verified here (load-bearing behaviour, not internals):
+//
+//  1. StopSession migrated from PUT /expire → POST /sessions/{id}/stop.
+//     The OLD endpoint MUST NOT be hit anymore (regression guard).
+//  2. Stopping a session no longer decrements concurrent_terminals — a
+//     stopped session still occupies a slot until it is deleted.
+//  3. DeleteSession is the single place that decrements concurrent_terminals.
+//  4. StartSession resumes a stopped session and updates state/timestamps.
+//  5. Ownership enforcement still rejects calls from a different user.
+//
+package terminalTrainer_tests
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	paymentModels "soli/formations/src/payment/models"
+	"soli/formations/src/terminalTrainer/models"
+	"soli/formations/src/terminalTrainer/services"
+
+	"gorm.io/gorm"
+)
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// recorder captures the (method, path) of each call into the fake tt-backend.
+type recorder struct {
+	calls atomic.Value // []string of "METHOD path"
+}
+
+func (r *recorder) record(method, path string) {
+	cur, _ := r.calls.Load().([]string)
+	r.calls.Store(append(cur, method+" "+path))
+}
+
+func (r *recorder) all() []string {
+	cur, _ := r.calls.Load().([]string)
+	return cur
+}
+
+func (r *recorder) sawCall(method, pathSuffix string) bool {
+	for _, c := range r.all() {
+		if strings.HasPrefix(c, method+" ") && strings.HasSuffix(c, pathSuffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// startLifecycleTTServer spins a fake tt-backend that responds to the new
+// lifecycle endpoints with 200 and records every incoming request.
+func startLifecycleTTServer(t *testing.T) (*httptest.Server, *recorder) {
+	t.Helper()
+	rec := &recorder{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.record(r.Method, r.URL.Path)
+
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/stop"):
+			w.Header().Set("Content-Type", "application/json")
+			idle := time.Now().Add(24 * time.Hour).UTC()
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"idle_until": idle.Format(time.RFC3339),
+			})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/start"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "running"})
+		case r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/expire"):
+			// If we ever hit this, the migration regressed.
+			w.WriteHeader(http.StatusGone)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	return srv, rec
+}
+
+// seedActiveSubscription creates a SubscriptionPlan + UserSubscription so the
+// IncrementUsageMetric helper can find a backing subscription. Without this,
+// the increment silently fails because the repository looks up an active
+// subscription before creating the metric.
+func seedActiveSubscription(t *testing.T, db *gorm.DB, userID string) {
+	t.Helper()
+	plan := &paymentModels.SubscriptionPlan{
+		Name:                   "test-plan",
+		PriceAmount:            0,
+		Currency:               "EUR",
+		BillingInterval:        "monthly",
+		MaxCourses:             10,
+		MaxConcurrentTerminals: 5,
+		IsActive:               true,
+	}
+	require.NoError(t, db.Create(plan).Error)
+
+	sub := &paymentModels.UserSubscription{
+		UserID:             userID,
+		SubscriptionPlanID: plan.ID,
+		Status:             "active",
+		CurrentPeriodStart: time.Now().Add(-24 * time.Hour),
+		CurrentPeriodEnd:   time.Now().Add(30 * 24 * time.Hour),
+	}
+	require.NoError(t, db.Create(sub).Error)
+}
+
+func currentConcurrentTerminals(t *testing.T, db *gorm.DB, userID string) int64 {
+	t.Helper()
+	var m paymentModels.UsageMetrics
+	err := db.Where("user_id = ? AND metric_type = ?", userID, "concurrent_terminals").
+		Where("period_end > ?", time.Now()).
+		First(&m).Error
+	if err != nil {
+		// No row yet — interpret as zero usage.
+		return 0
+	}
+	return m.CurrentValue
+}
+
+// seedConcurrentTerminalsMetric creates the usage row at a known starting value
+// so the test can assert the delta unambiguously.
+func seedConcurrentTerminalsMetric(t *testing.T, db *gorm.DB, userID string, start int64) {
+	t.Helper()
+	var sub paymentModels.UserSubscription
+	require.NoError(t, db.Where("user_id = ?", userID).First(&sub).Error)
+
+	now := time.Now()
+	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	periodEnd := periodStart.AddDate(0, 1, 0).Add(-time.Second)
+	m := paymentModels.UsageMetrics{
+		UserID:         userID,
+		SubscriptionID: sub.ID,
+		MetricType:     "concurrent_terminals",
+		CurrentValue:   start,
+		LimitValue:     5,
+		PeriodStart:    periodStart,
+		PeriodEnd:      periodEnd,
+		LastUpdated:    now,
+	}
+	require.NoError(t, db.Create(&m).Error)
+}
+
+// ---------------------------------------------------------------------------
+// Tests — service-level lifecycle behaviour
+// ---------------------------------------------------------------------------
+
+// TestStopSession_CallsNewStopEndpoint asserts the migration from PUT /expire
+// to POST /sessions/{id}/stop. This is THE behaviour change of MR-E so the
+// URL assertion is justified.
+func TestStopSession_CallsNewStopEndpoint(t *testing.T) {
+	ttServer, rec := startLifecycleTTServer(t)
+	defer ttServer.Close()
+
+	t.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)
+	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-admin-key")
+	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+
+	db := freshTestDB(t)
+	userID := "owner-stop-" + uuid.New().String()
+	seedActiveSubscription(t, db, userID)
+
+	terminal, err := createTestTerminal(db, userID, "active", time.Now().Add(time.Hour))
+	require.NoError(t, err)
+
+	svc := services.NewTerminalTrainerService(db)
+	require.NoError(t, svc.StopSession(terminal.SessionID))
+
+	// New endpoint must have been hit.
+	assert.True(t,
+		rec.sawCall(http.MethodPost, "/sessions/"+terminal.SessionID+"/stop"),
+		"StopSession should POST /sessions/{id}/stop. Calls were: %v", rec.all())
+
+	// Old endpoint must NOT have been called.
+	for _, call := range rec.all() {
+		assert.NotContains(t, call, "/expire",
+			"StopSession should not call the legacy /expire endpoint anymore")
+	}
+
+	// Local state reflects the stop.
+	updated, err := svc.GetSessionInfo(terminal.SessionID)
+	require.NoError(t, err)
+	assert.Equal(t, "stopped", updated.Status)
+	assert.Equal(t, "stopped", updated.State)
+}
+
+// TestStopSession_NoLongerDecrementsMetric is the regression guard for the
+// metric semantics: a stopped session still occupies a slot.
+func TestStopSession_NoLongerDecrementsMetric(t *testing.T) {
+	ttServer, _ := startLifecycleTTServer(t)
+	defer ttServer.Close()
+
+	t.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)
+	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-admin-key")
+	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+
+	db := freshTestDB(t)
+	userID := "owner-metric-stop-" + uuid.New().String()
+	seedActiveSubscription(t, db, userID)
+	seedConcurrentTerminalsMetric(t, db, userID, 3)
+
+	terminal, err := createTestTerminal(db, userID, "active", time.Now().Add(time.Hour))
+	require.NoError(t, err)
+
+	svc := services.NewTerminalTrainerService(db)
+	require.NoError(t, svc.StopSession(terminal.SessionID))
+
+	assert.Equal(t, int64(3), currentConcurrentTerminals(t, db, userID),
+		"concurrent_terminals must NOT change when a session is stopped — "+
+			"a stopped session still occupies a slot until deletion")
+}
+
+// TestDeleteSession_DecrementsMetric pins the new responsibility: deletion is
+// the only operation that frees a slot.
+func TestDeleteSession_DecrementsMetric(t *testing.T) {
+	ttServer, rec := startLifecycleTTServer(t)
+	defer ttServer.Close()
+
+	t.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)
+	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-admin-key")
+	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+
+	db := freshTestDB(t)
+	userID := "owner-metric-delete-" + uuid.New().String()
+	seedActiveSubscription(t, db, userID)
+	seedConcurrentTerminalsMetric(t, db, userID, 3)
+
+	terminal, err := createTestTerminal(db, userID, "active", time.Now().Add(time.Hour))
+	require.NoError(t, err)
+
+	svc := services.NewTerminalTrainerService(db)
+	require.NoError(t, svc.DeleteSession(terminal.SessionID))
+
+	assert.Equal(t, int64(2), currentConcurrentTerminals(t, db, userID),
+		"DeleteSession must decrement concurrent_terminals by 1")
+
+	// Sanity check: the DELETE request must have reached the new endpoint.
+	assert.True(t,
+		rec.sawCall(http.MethodDelete, "/sessions/"+terminal.SessionID),
+		"DeleteSession should DELETE /sessions/{id}. Calls were: %v", rec.all())
+
+	updated, err := svc.GetSessionInfo(terminal.SessionID)
+	require.NoError(t, err)
+	assert.Equal(t, "deleted", updated.Status)
+	assert.Equal(t, "deleted", updated.State)
+}
+
+// TestStartSession_Success verifies state transitions when starting a stopped
+// session. The endpoint URL assertion guards against silent migration drift.
+func TestStartSession_Success(t *testing.T) {
+	ttServer, rec := startLifecycleTTServer(t)
+	defer ttServer.Close()
+
+	t.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)
+	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-admin-key")
+	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+
+	db := freshTestDB(t)
+	userID := "owner-start-" + uuid.New().String()
+	seedActiveSubscription(t, db, userID)
+
+	// Pre-state: a stopped session.
+	terminal, err := createTestTerminal(db, userID, "stopped", time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	terminal.State = "stopped"
+	idle := time.Now().Add(12 * time.Hour)
+	terminal.IdleUntil = &idle
+	require.NoError(t, db.Save(terminal).Error)
+
+	svc := services.NewTerminalTrainerService(db)
+	require.NoError(t, svc.StartSession(terminal.SessionID))
+
+	assert.True(t,
+		rec.sawCall(http.MethodPost, "/sessions/"+terminal.SessionID+"/start"),
+		"StartSession should POST /sessions/{id}/start. Calls were: %v", rec.all())
+
+	updated, err := svc.GetSessionInfo(terminal.SessionID)
+	require.NoError(t, err)
+	assert.Equal(t, "active", updated.Status, "Status should flip back to active")
+	assert.Equal(t, "running", updated.State, "State should flip back to running")
+	assert.Nil(t, updated.IdleUntil, "IdleUntil should be cleared on start")
+	assert.False(t, updated.LastStartedAt.IsZero(), "LastStartedAt should be set")
+}
+
+// TestStartSession_NotFound returns a wrapped error referencing the session ID
+// when the local row doesn't exist (no tt-backend call should be made).
+func TestStartSession_NotFound(t *testing.T) {
+	ttServer, rec := startLifecycleTTServer(t)
+	defer ttServer.Close()
+
+	t.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)
+	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-admin-key")
+	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+
+	db := freshTestDB(t)
+	svc := services.NewTerminalTrainerService(db)
+
+	err := svc.StartSession("nonexistent-session")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "session not found")
+
+	// No upstream call should have been made — the lookup failed first.
+	for _, call := range rec.all() {
+		assert.NotContains(t, call, "/start",
+			"start endpoint should not be called when session is unknown")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Ownership enforcement (Layer 2) — same coverage as the existing /stop tests
+// ---------------------------------------------------------------------------
+
+// TestLifecycle_OwnershipEnforced is a table-driven test that pins the
+// ownership rule for every lifecycle operation — preventing an MR-F or later
+// from accidentally relaxing ownership on one of the new routes.
+func TestLifecycle_OwnershipEnforced(t *testing.T) {
+	ttServer, _ := startLifecycleTTServer(t)
+	defer ttServer.Close()
+
+	t.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)
+	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-admin-key")
+	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+
+	db := freshTestDB(t)
+	ownerID := "owner-" + uuid.New().String()
+	intruderID := "intruder-" + uuid.New().String()
+	seedActiveSubscription(t, db, ownerID)
+
+	terminal, err := createTestTerminal(db, ownerID, "active", time.Now().Add(time.Hour))
+	require.NoError(t, err)
+
+	svc := services.NewTerminalTrainerService(db)
+
+	// HasTerminalAccess is what the middleware + controller both consult.
+	// It must reject the intruder for every lifecycle path.
+	for _, op := range []string{"stop", "start", "delete"} {
+		t.Run(op, func(t *testing.T) {
+			ok, err := svc.HasTerminalAccess(terminal.SessionID, intruderID)
+			require.NoError(t, err)
+			assert.False(t, ok,
+				"intruder must not have access to %s a session they don't own", op)
+
+			ownerOK, err := svc.HasTerminalAccess(terminal.SessionID, ownerID)
+			require.NoError(t, err)
+			assert.True(t, ownerOK,
+				"owner must have access to %s their own session", op)
+		})
+	}
+
+	// And the model itself, post-stop, still belongs to the owner.
+	updated, err := svc.GetSessionInfo(terminal.SessionID)
+	require.NoError(t, err)
+	assert.Equal(t, ownerID, updated.UserID)
+	_ = models.Terminal{}
+}

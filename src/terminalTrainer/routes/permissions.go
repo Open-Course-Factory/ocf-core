@@ -25,6 +25,8 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/terminals/metrics", "GET"},
 		{"/api/v1/terminals/:id/console", "GET"},
 		{"/api/v1/terminals/:id/stop", "POST"},
+		{"/api/v1/terminals/:id/start", "POST"},
+		{"/api/v1/terminals/:id", "DELETE"},
 		{"/api/v1/terminals/:id/sync", "POST"},
 		{"/api/v1/terminals/:id/status", "GET"},
 		{"/api/v1/terminals/:id/history", "GET"},
@@ -104,6 +106,8 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		// pattern as `/scenario-sessions/by-terminal/:terminalId` (#269).
 		access.RoutePermission{Path: "/api/v1/terminals/:id/console", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Connect to terminal console via WebSocket (controller-enforced ownership)"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id/stop", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Stop a running terminal session (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/start", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Resume a stopped terminal (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Permanently delete a terminal session (controller-enforced ownership)"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id/sync", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Sync terminal session state with backend (controller-enforced ownership)"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id/status", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get terminal session status (controller-enforced ownership)"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id/history", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get command history for a terminal session (controller-enforced ownership)"},

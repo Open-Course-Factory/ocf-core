@@ -60,7 +60,9 @@ func (m *mockTTService) GetTerminalByUUID(string) (*ttModels.Terminal, error) {
 func (m *mockTTService) GetActiveUserSessions(string) (*[]ttModels.Terminal, error) {
 	return nil, nil
 }
-func (m *mockTTService) StopSession(string) error { return nil }
+func (m *mockTTService) StopSession(string) error   { return nil }
+func (m *mockTTService) StartSession(string) error  { return nil }
+func (m *mockTTService) DeleteSession(string) error { return nil }
 func (m *mockTTService) HasTerminalAccess(string, string) (bool, error) {
 	return false, nil
 }

@@ -42,6 +42,8 @@ type TerminalTrainerService interface {
 	GetTerminalByUUID(terminalUUID string) (*models.Terminal, error)
 	GetActiveUserSessions(userID string) (*[]models.Terminal, error)
 	StopSession(sessionID string) error
+	StartSession(sessionID string) error
+	DeleteSession(sessionID string) error
 	HasTerminalAccess(terminalIDOrSessionID, userID string) (bool, error)
 
 	// Synchronization methods (nouvelle approche avec API comme source de vérité)
@@ -248,7 +250,13 @@ func (tts *terminalTrainerService) GetActiveUserSessions(userID string) (*[]mode
 	return tts.repository.GetTerminalSessionsByUserID(userID, true)
 }
 
-// StopSession arrête une session ET appelle l'API externe pour expirer
+// StopSession arrête une session en appelant le nouvel endpoint /stop de
+// tt-backend. Contrairement à l'ancien /expire, le disque est préservé pour
+// permettre un redémarrage ultérieur via StartSession.
+//
+// Le compteur concurrent_terminals N'est PAS décrémenté ici — une session
+// arrêtée occupe toujours un slot. La décrémentation se fait dans
+// DeleteSession.
 func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	utils.Debug("StopSession called for session %s", sessionID)
 
@@ -259,35 +267,27 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 
 	utils.Debug("Session %s current status: %s", sessionID, terminal.Status)
 
-	// 1. Appeler l'API Terminal Trainer pour expirer la session
-	utils.Debug("Calling expireSessionInAPI for session %s", sessionID)
-	err = tts.expireSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey, terminal.InstanceType)
+	// 1. Appeler le nouvel endpoint /sessions/{id}/stop de tt-backend
+	idleUntil, err := tts.stopSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey)
 	if err != nil {
-		// Log l'erreur complète pour debugging
-		utils.Warn("failed to expire session in Terminal Trainer API: %v", err)
-	} else {
-		utils.Debug("Successfully called expireSessionInAPI for session %s", sessionID)
+		// Log mais on continue : le state local reflètera "stopped" même si
+		// tt-backend est temporairement injoignable.
+		utils.Warn("failed to stop session in Terminal Trainer API: %v", err)
 	}
 
 	// 2. Marquer la session comme arrêtée localement
-	// L'utilisateur pourra la masquer s'il le souhaite
-	utils.Debug("Updating session %s status to 'stopped'", sessionID)
+	utils.Debug("Updating session %s status/state to 'stopped'", sessionID)
 	terminal.Status = "stopped"
-	err = tts.repository.UpdateTerminalSession(terminal)
-	if err != nil {
+	terminal.State = "stopped"
+	if idleUntil != nil {
+		terminal.IdleUntil = idleUntil
+	}
+	if err := tts.repository.UpdateTerminalSession(terminal); err != nil {
 		utils.Error("Failed to update session %s status: %v", sessionID, err)
 		return err
 	}
 
-	// 3. Décrémenter la métrique concurrent_terminals
-	utils.Debug("Decrementing concurrent_terminals for user %s", terminal.UserID)
-	decrementErr := tts.subscriptionService.IncrementUsage(terminal.UserID, "concurrent_terminals", -1)
-	if decrementErr != nil {
-		// Log l'erreur mais ne pas faire échouer l'arrêt du terminal
-		utils.Warn("failed to decrement concurrent_terminals for user %s: %v", terminal.UserID, decrementErr)
-	}
-
-	// 4. Auto-abandon any active scenario sessions linked to this terminal
+	// 3. Auto-abandon any active scenario sessions linked to this terminal
 	result := tts.db.Model(&struct{}{}).Table("scenario_sessions").
 		Where("terminal_session_id = ? AND status IN ?", sessionID, []string{"active", "provisioning", "in_progress"}).
 		Update("status", "abandoned")
@@ -297,27 +297,122 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 		utils.Debug("Auto-abandoned %d scenario session(s) for stopped terminal %s", result.RowsAffected, sessionID)
 	}
 
-	utils.Debug("Successfully updated session %s status to 'stopped'", sessionID)
 	return nil
 }
 
-// expireSessionInAPI appelle l'endpoint /expire de l'API Terminal Trainer
-func (tts *terminalTrainerService) expireSessionInAPI(sessionID, userAPIKey, instanceType string) error {
-	// Construire le chemin avec version et type d'instance dynamique
-	path := tts.buildAPIPath("/expire", instanceType)
-	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, sessionID)
+// StartSession reprend une session précédemment arrêtée via l'endpoint
+// /sessions/{id}/start de tt-backend. Le disque est restauré côté backend.
+func (tts *terminalTrainerService) StartSession(sessionID string) error {
+	utils.Debug("StartSession called for session %s", sessionID)
 
-	utils.Debug("expireSessionInAPI - calling %s", url)
-
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
-
-	_, err := utils.MakeExternalAPIRequest("Terminal Trainer", "PUT", url, nil, opts)
+	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
 	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+
+	if err := tts.startSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey); err != nil {
+		return fmt.Errorf("failed to start session in Terminal Trainer API: %w", err)
+	}
+
+	terminal.Status = "active"
+	terminal.State = "running"
+	terminal.LastStartedAt = time.Now()
+	terminal.IdleUntil = nil
+	if err := tts.repository.UpdateTerminalSession(terminal); err != nil {
+		utils.Error("Failed to update session %s after start: %v", sessionID, err)
 		return err
 	}
 
 	return nil
+}
+
+// DeleteSession supprime définitivement une session via DELETE /sessions/{id}
+// de tt-backend. Décrémente la métrique concurrent_terminals et abandonne
+// tout scenario session lié.
+func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
+	utils.Debug("DeleteSession called for session %s", sessionID)
+
+	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+
+	if err := tts.deleteSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey); err != nil {
+		// Log mais on continue : la session locale doit être marquée "deleted"
+		// même si tt-backend est injoignable, sinon l'utilisateur reste bloqué
+		// avec un slot consommé.
+		utils.Warn("failed to delete session in Terminal Trainer API: %v", err)
+	}
+
+	terminal.Status = "deleted"
+	terminal.State = "deleted"
+	if err := tts.repository.UpdateTerminalSession(terminal); err != nil {
+		utils.Error("Failed to update session %s after delete: %v", sessionID, err)
+		return err
+	}
+
+	// Décrémenter le compteur de slots — c'est ici que ça se passe désormais
+	// (et plus dans StopSession), car une session "stopped" occupe encore un slot.
+	if decErr := tts.subscriptionService.IncrementUsage(terminal.UserID, "concurrent_terminals", -1); decErr != nil {
+		utils.Warn("failed to decrement concurrent_terminals for user %s: %v", terminal.UserID, decErr)
+	}
+
+	// Auto-abandon any active scenario sessions linked to this terminal
+	result := tts.db.Model(&struct{}{}).Table("scenario_sessions").
+		Where("terminal_session_id = ? AND status IN ?", sessionID, []string{"active", "provisioning", "in_progress"}).
+		Update("status", "abandoned")
+	if result.Error != nil {
+		utils.Warn("failed to abandon scenario sessions for terminal %s: %v", sessionID, result.Error)
+	} else if result.RowsAffected > 0 {
+		utils.Debug("Auto-abandoned %d scenario session(s) for deleted terminal %s", result.RowsAffected, sessionID)
+	}
+
+	return nil
+}
+
+// stopSessionInAPI appelle POST /sessions/{id}/stop sur tt-backend.
+// Retourne idle_until si tt-backend en propose un.
+func (tts *terminalTrainerService) stopSessionInAPI(sessionID, userAPIKey string) (*time.Time, error) {
+	url := fmt.Sprintf("%s/%s/sessions/%s/stop", tts.baseURL, tts.apiVersion, sessionID)
+
+	utils.Debug("stopSessionInAPI - calling %s", url)
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
+
+	var resp struct {
+		IdleUntil *time.Time `json:"idle_until,omitempty"`
+	}
+	if err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, nil, &resp, opts); err != nil {
+		return nil, err
+	}
+	return resp.IdleUntil, nil
+}
+
+// startSessionInAPI appelle POST /sessions/{id}/start sur tt-backend.
+func (tts *terminalTrainerService) startSessionInAPI(sessionID, userAPIKey string) error {
+	url := fmt.Sprintf("%s/%s/sessions/%s/start", tts.baseURL, tts.apiVersion, sessionID)
+
+	utils.Debug("startSessionInAPI - calling %s", url)
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
+
+	_, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, nil, opts)
+	return err
+}
+
+// deleteSessionInAPI appelle DELETE /sessions/{id} sur tt-backend.
+func (tts *terminalTrainerService) deleteSessionInAPI(sessionID, userAPIKey string) error {
+	url := fmt.Sprintf("%s/%s/sessions/%s", tts.baseURL, tts.apiVersion, sessionID)
+
+	utils.Debug("deleteSessionInAPI - calling %s", url)
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
+
+	_, err := utils.MakeExternalAPIRequest("Terminal Trainer", "DELETE", url, nil, opts)
+	return err
 }
 
 // GetAllSessionsFromAPI récupère toutes les sessions depuis l'API Terminal Trainer
