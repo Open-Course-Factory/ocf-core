@@ -11,12 +11,22 @@ var allowedOrigins []string
 
 // InitAllowedOrigins builds the allowed origins list from environment variables.
 // Must be called once at startup before any WebSocket or CORS usage.
+//
+// FRONTEND_URL and ADMIN_FRONTEND_URL are expected to be the canonical
+// single URL of the corresponding frontend (used elsewhere to build email
+// links, etc.). EXTRA_FRONTEND_ORIGINS is the place to add additional
+// CORS-allowed origins without overloading FRONTEND_URL — useful during
+// domain migrations when two frontend hosts must coexist.
+//
+// All three are parsed as comma-separated for forward compatibility, but
+// only EXTRA_FRONTEND_ORIGINS is intended to carry multiple values.
 func InitAllowedOrigins() []string {
 	origins := []string{}
 	environment := os.Getenv("ENVIRONMENT")
 
 	origins = append(origins, parseOriginList(os.Getenv("FRONTEND_URL"))...)
 	origins = append(origins, parseOriginList(os.Getenv("ADMIN_FRONTEND_URL"))...)
+	origins = append(origins, parseOriginList(os.Getenv("EXTRA_FRONTEND_ORIGINS"))...)
 
 	if environment == "development" || environment == "" || len(origins) == 0 {
 		log.Println("Development mode: CORS allowing common localhost origins")

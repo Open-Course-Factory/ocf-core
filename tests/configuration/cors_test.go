@@ -13,6 +13,7 @@ func TestInitAllowedOrigins_FrontendURL_ParsedAsCommaSeparatedList(t *testing.T)
 		name           string
 		frontendURL    string
 		adminURL       string
+		extraOrigins   string
 		wantContains   []string
 		wantNotContain []string
 	}{
@@ -43,6 +44,12 @@ func TestInitAllowedOrigins_FrontendURL_ParsedAsCommaSeparatedList(t *testing.T)
 			adminURL:     "https://admin1.com,https://admin2.com",
 			wantContains: []string{"https://front.com", "https://admin1.com", "https://admin2.com"},
 		},
+		{
+			name:         "EXTRA_FRONTEND_ORIGINS appends additional CORS-allowed origins",
+			frontendURL:  "https://ocf.solution-libre.fr",
+			extraOrigins: "https://ocf.labinux.com,https://staging.example.com",
+			wantContains: []string{"https://ocf.solution-libre.fr", "https://ocf.labinux.com", "https://staging.example.com"},
+		},
 	}
 
 	for _, tc := range cases {
@@ -50,6 +57,7 @@ func TestInitAllowedOrigins_FrontendURL_ParsedAsCommaSeparatedList(t *testing.T)
 			t.Setenv("ENVIRONMENT", "production") // skip dev-mode localhost fallback
 			t.Setenv("FRONTEND_URL", tc.frontendURL)
 			t.Setenv("ADMIN_FRONTEND_URL", tc.adminURL)
+			t.Setenv("EXTRA_FRONTEND_ORIGINS", tc.extraOrigins)
 
 			got := config.InitAllowedOrigins()
 
