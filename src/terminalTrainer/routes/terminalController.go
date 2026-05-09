@@ -21,6 +21,7 @@ import (
 	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
@@ -1933,7 +1934,13 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 
 	var input dto.CreateComposedSessionInput
-	if err := ctx.ShouldBindJSON(&input); err != nil {
+	// Use ShouldBindBodyWith because the upstream CheckRAMAvailability
+	// middleware already consumed c.Request.Body via ShouldBindBodyWith.
+	// ShouldBindJSON would read from the (now-empty) raw body and fail
+	// with EOF. ShouldBindBodyWith reads from the cached bytes stored in
+	// the gin context, and falls back to reading the raw body when the
+	// cache is empty (e.g. when the middleware skipped parsing).
+	if err := ctx.ShouldBindBodyWith(&input, binding.JSON); err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
 			ErrorMessage: err.Error(),
