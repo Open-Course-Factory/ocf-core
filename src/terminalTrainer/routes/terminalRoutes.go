@@ -77,6 +77,9 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.GET("/catalog-features", middleware.AuthManagement(), terminalController.GetCatalogFeatures)
 	routes.GET("/session-options", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), terminalController.GetSessionOptions)
 	routes.POST("/start-composed-session", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), paymentMiddleware.CheckLimit(effectivePlanService, db, "concurrent_terminals"), paymentMiddleware.CheckRAMAvailability(terminalService), terminalController.StartComposedSession)
+	// Capacity check: same plan-resolution chain as start-composed-session
+	// but no CheckLimit/CheckRAMAvailability — this endpoint IS the check.
+	routes.GET("/capacity-check", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), terminalController.CapacityCheck)
 
 	// Organization terminal sessions (for trainers/managers)
 	orgRoutes := router.Group("/organizations")

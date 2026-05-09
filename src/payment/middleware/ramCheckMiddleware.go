@@ -5,16 +5,23 @@ import (
 
 	"soli/formations/src/auth/errors"
 	paymentModels "soli/formations/src/payment/models"
+	"soli/formations/src/terminalTrainer/dto"
 	terminalServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 )
 
 // CheckRAMAvailability verifies that the Terminal Trainer server has enough RAM
 // to create a new terminal. It reads the subscription_plan from the context
-// (set by InjectEffectivePlan) to estimate RAM requirements based on allowed
-// machine sizes.
+// (set by InjectEffectivePlan) AND the chosen size from the request body so the
+// estimate matches the actual allocation rather than always using the plan max
+// (which would over-reject high-tier users launching small sizes).
+//
+// The capacity decision itself lives in
+// terminalServices.EvaluateLaunchCapacity so the same logic backs the
+// GET /terminals/capacity-check query endpoint.
 func CheckRAMAvailability(terminalService terminalServices.TerminalTrainerService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		// Read subscription_plan from context (set by InjectEffectivePlan)
@@ -31,6 +38,17 @@ func CheckRAMAvailability(terminalService terminalServices.TerminalTrainerServic
 			return
 		}
 
+		// Read the chosen size from the request body (when present) so we
+		// estimate RAM for the actual allocation, not the plan's max.
+		// ShouldBindBodyWith re-buffers the body so the handler can re-read
+		// it. Body parse errors are non-fatal here — let the handler return
+		// the canonical 400; we just fall back to the plan-max estimate.
+		chosenSize := ""
+		var input dto.CreateComposedSessionInput
+		if err := ctx.ShouldBindBodyWith(&input, binding.JSON); err == nil {
+			chosenSize = input.Size
+		}
+
 		// Get real-time server metrics (nocache=true)
 		metrics, err := terminalService.GetServerMetrics(true, "")
 		if err != nil {
@@ -40,60 +58,21 @@ func CheckRAMAvailability(terminalService terminalServices.TerminalTrainerServic
 			return
 		}
 
-		// Map machine sizes to required RAM (GB)
-		machineSizeToRAM := map[string]float64{
-			"XS": 0.25,
-			"S":  0.5,
-			"M":  1.0,
-			"L":  2.0,
-			"XL": 4.0,
-		}
+		result := terminalServices.EvaluateLaunchCapacity(plan, chosenSize, metrics)
 
-		// Estimate RAM based on the largest allowed machine size in the plan
-		var estimatedRAM float64 = 0.5 // default for S
-
-		if len(plan.AllowedMachineSizes) > 0 {
-			maxRAM := 0.0
-			for _, size := range plan.AllowedMachineSizes {
-				if size == "all" {
-					estimatedRAM = 1.0 // Use M as average for "all"
-					break
-				}
-				if ram, found := machineSizeToRAM[size]; found && ram > maxRAM {
-					maxRAM = ram
-				}
+		if result.Status == terminalServices.CapacityStatusCritical {
+			// Preserve the previous user-facing messages so frontend error
+			// handling stays bit-compatible.
+			msg := "Server at capacity. Please try again later."
+			if result.Reason == "ram_full" {
+				msg = "Server at capacity: RAM fully utilized. Please try again later."
+			} else {
+				utils.Warn("Terminal creation blocked: insufficient RAM for size=%q (%.2f GB available)",
+					chosenSize, metrics.RAMAvailableGB)
 			}
-			if maxRAM > 0 {
-				estimatedRAM = maxRAM
-			}
-		}
-
-		const minRAMReservePercent = 5.0
-
-		if metrics.RAMPercent >= 99.0 {
 			ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
 				ErrorCode:    http.StatusServiceUnavailable,
-				ErrorMessage: "Server at capacity: RAM fully utilized. Please try again later.",
-			})
-			ctx.Abort()
-			return
-		}
-
-		// Calculate approximate total RAM from available RAM and usage percentage
-		// ram_available_gb = total_ram * (1 - ram_percent/100)
-		// therefore: total_ram = ram_available_gb / (1 - ram_percent/100)
-		totalRAM := metrics.RAMAvailableGB / (1.0 - metrics.RAMPercent/100.0)
-		minReservedRAM := totalRAM * (minRAMReservePercent / 100.0)
-
-		// Check that enough RAM remains after creating the terminal
-		ramAfterCreation := metrics.RAMAvailableGB - estimatedRAM
-
-		if ramAfterCreation < minReservedRAM {
-			utils.Warn("Terminal creation blocked: insufficient RAM (%.2f GB available, %.2f GB required + %.2f GB reserve)",
-				metrics.RAMAvailableGB, estimatedRAM, minReservedRAM)
-			ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
-				ErrorCode:    http.StatusServiceUnavailable,
-				ErrorMessage: "Server at capacity. Please try again later.",
+				ErrorMessage: msg,
 			})
 			ctx.Abort()
 			return

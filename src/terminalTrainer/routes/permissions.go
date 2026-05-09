@@ -39,6 +39,7 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/terminals/sizes", "GET"},
 		{"/api/v1/terminals/session-options", "GET"},
 		{"/api/v1/terminals/start-composed-session", "POST"},
+		{"/api/v1/terminals/capacity-check", "GET"},
 	}
 
 	for _, route := range terminalRoutes {
@@ -124,6 +125,7 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{Path: "/api/v1/terminals/sizes", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "List available machine sizes catalog (for scenario editing UI)"},
 		access.RoutePermission{Path: "/api/v1/terminals/session-options", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get session composition options for a distribution"},
 		access.RoutePermission{Path: "/api/v1/terminals/start-composed-session", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Start a composed terminal session"},
+		access.RoutePermission{Path: "/api/v1/terminals/capacity-check", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Check whether a session of the given size can be launched right now"},
 
 		// Admin routes
 		access.RoutePermission{Path: "/api/v1/terminals/backends/:backendId/set-default", Method: "PATCH", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "Set the default terminal backend"},

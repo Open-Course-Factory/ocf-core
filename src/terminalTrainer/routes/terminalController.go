@@ -91,6 +91,11 @@ type TerminalController interface {
 	GetSizes(ctx *gin.Context)
 	GetSessionOptions(ctx *gin.Context)
 	StartComposedSession(ctx *gin.Context)
+
+	// CapacityCheck mirrors the CheckRAMAvailability middleware as a
+	// no-side-effect query, so the frontend can drive its launch
+	// indicator from the same source of truth the launch path enforces.
+	CapacityCheck(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -1966,4 +1971,43 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, sessionResponse)
+}
+
+// CapacityCheck godoc
+//
+//	@Summary		Check whether a session of the given size can be launched right now
+//	@Description	Returns the same capacity decision CheckRAMAvailability would compute, without provisioning anything. Frontend uses this as its single source of truth for the launch indicator.
+//	@Tags			terminals
+//	@Produce		json
+//	@Param			distribution	query		string	false	"Distribution name or prefix"
+//	@Param			size			query		string	false	"Machine size key (XS/S/M/L/XL)"
+//	@Security		Bearer
+//	@Success		200	{object}	services.CapacityResult
+//	@Router			/terminals/capacity-check [get]
+func (tc *terminalController) CapacityCheck(ctx *gin.Context) {
+	metrics, err := tc.service.GetServerMetrics(true, "")
+	if err != nil {
+		// Backend unreachable — surface "unknown" so the frontend can
+		// show a neutral indicator rather than a blocking error. Always
+		// 200 because this endpoint is a query, not an action.
+		ctx.JSON(http.StatusOK, services.CapacityResult{
+			Status: services.CapacityStatusUnknown,
+			Reason: "metrics_unavailable",
+		})
+		return
+	}
+
+	planInterface, exists := ctx.Get("subscription_plan")
+	if !exists {
+		ctx.JSON(http.StatusOK, services.CapacityResult{
+			Status: services.CapacityStatusUnknown,
+			Reason: "no_plan",
+		})
+		return
+	}
+
+	plan, _ := planInterface.(*paymentModels.SubscriptionPlan)
+
+	result := services.EvaluateLaunchCapacity(plan, ctx.Query("size"), metrics)
+	ctx.JSON(http.StatusOK, result)
 }

@@ -126,6 +126,7 @@ func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/terminals/sizes", "GET"},
 		{"/api/v1/terminals/session-options", "GET"},
 		{"/api/v1/terminals/start-composed-session", "POST"},
+		{"/api/v1/terminals/capacity-check", "GET"},
 		// User terminal keys
 		{"/api/v1/user-terminal-keys/regenerate", "POST"},
 		{"/api/v1/user-terminal-keys/my-key", "GET"},
