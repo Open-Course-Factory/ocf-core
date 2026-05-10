@@ -730,14 +730,9 @@ func migrateInlineContentToProjectFiles(db *gorm.DB) {
 }
 
 // SeedPlanFeatures populates the plan_features catalog table with default features.
-// Only seeds if the table is empty.
+// Idempotent: each row is created only if a row with the same key does not yet exist,
+// so this safely tops up an existing DB when new features are added in code.
 func SeedPlanFeatures(db *gorm.DB) {
-	var count int64
-	db.Model(&paymentModels.PlanFeature{}).Count(&count)
-	if count > 0 {
-		return
-	}
-
 	features := []paymentModels.PlanFeature{
 		// Capabilities (boolean)
 		{Key: "unlimited_courses", DisplayNameEn: "Unlimited Courses", DisplayNameFr: "Formations illimitées", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
@@ -765,16 +760,26 @@ func SeedPlanFeatures(db *gorm.DB) {
 		{Key: "command_history_retention_days", DisplayNameEn: "History Retention", DisplayNameFr: "Conservation de l'historique", Category: "terminal_limits", ValueType: "number", Unit: "days", DefaultValue: "0", IsActive: true},
 		{Key: "max_session_duration_minutes", DisplayNameEn: "Max Session Duration", DisplayNameFr: "Durée max de session", Category: "terminal_limits", ValueType: "number", Unit: "minutes", DefaultValue: "60", IsActive: true},
 		{Key: "max_concurrent_terminals", DisplayNameEn: "Max Concurrent Terminals", DisplayNameFr: "Terminaux simultanés max", Category: "terminal_limits", ValueType: "number", Unit: "count", DefaultValue: "1", IsActive: true},
+		{Key: "persistent_sessions_enabled", DisplayNameEn: "Persistent Sessions", DisplayNameFr: "Sessions persistantes", DescriptionEn: "Allow users on this plan to opt sessions into persistent storage (disk kept across stop/start cycles).", DescriptionFr: "Autoriser les utilisateurs de ce plan à choisir le mode persistant pour leurs sessions (disque conservé entre stop/start).", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
+		{Key: "max_persistent_sessions", DisplayNameEn: "Max Persistent Sessions", DisplayNameFr: "Sessions persistantes max", DescriptionEn: "Maximum number of stopped sessions a user can keep on persistent storage at once (counts toward storage quota).", DescriptionFr: "Nombre maximum de sessions arrêtées qu'un utilisateur peut conserver en mode persistant simultanément (compte dans le quota de stockage).", Category: "terminal_limits", ValueType: "number", DefaultValue: "0", IsActive: true},
 
 		// Course limits (number)
 		{Key: "max_courses", DisplayNameEn: "Max Courses", DisplayNameFr: "Nombre de cours max", Category: "course_limits", ValueType: "number", Unit: "count", DefaultValue: "-1", IsActive: true},
 		{Key: "max_concurrent_users", DisplayNameEn: "Max Concurrent Users", DisplayNameFr: "Utilisateurs simultanés max", Category: "course_limits", ValueType: "number", Unit: "count", DefaultValue: "1", IsActive: true},
 	}
 
+	created := 0
 	err := db.Transaction(func(tx *gorm.DB) error {
 		for _, feature := range features {
-			if err := tx.Create(&feature).Error; err != nil {
-				return fmt.Errorf("failed to seed plan feature %s: %w", feature.Key, err)
+			// FirstOrCreate keyed on the unique `key` column makes this idempotent:
+			// existing rows are left untouched, new rows are inserted.
+			var existing paymentModels.PlanFeature
+			result := tx.Where("key = ?", feature.Key).Attrs(feature).FirstOrCreate(&existing)
+			if result.Error != nil {
+				return fmt.Errorf("failed to seed plan feature %s: %w", feature.Key, result.Error)
+			}
+			if result.RowsAffected > 0 {
+				created++
 			}
 		}
 		return nil
@@ -783,5 +788,7 @@ func SeedPlanFeatures(db *gorm.DB) {
 		log.Printf("Error seeding plan features: %v\n", err)
 		return
 	}
-	log.Printf("Seeded %d plan features\n", len(features))
+	if created > 0 {
+		log.Printf("Seeded %d new plan features (catalog now has %d entries)\n", created, len(features))
+	}
 }

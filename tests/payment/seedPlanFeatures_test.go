@@ -19,23 +19,64 @@ func TestSeedPlanFeatures_EmptyDB_SeedsAllFeatures(t *testing.T) {
 
 	var count int64
 	db.Model(&models.PlanFeature{}).Count(&count)
-	assert.Equal(t, int64(23), count, "Should seed exactly 23 features")
+	assert.Equal(t, int64(25), count, "Should seed exactly 25 features")
 }
 
-func TestSeedPlanFeatures_NonEmptyDB_SkipsSeed(t *testing.T) {
+func TestSeedPlanFeatures_RerunIsIdempotent(t *testing.T) {
 	db := freshTestDB(t)
 
 	// First seed
 	initialization.SeedPlanFeatures(db)
 	var countAfterFirst int64
 	db.Model(&models.PlanFeature{}).Count(&countAfterFirst)
-	require.Equal(t, int64(23), countAfterFirst)
+	require.Equal(t, int64(25), countAfterFirst)
 
-	// Second seed — should skip (idempotent)
+	// Second seed — per-row FirstOrCreate must not add duplicates
 	initialization.SeedPlanFeatures(db)
 	var countAfterSecond int64
 	db.Model(&models.PlanFeature{}).Count(&countAfterSecond)
 	assert.Equal(t, countAfterFirst, countAfterSecond, "Second seed should not add more features (idempotent)")
+}
+
+// TestSeedPlanFeatures_TopsUpExistingDB verifies the seed adds newly-introduced
+// features to a DB that was already populated with an older catalog — the case
+// that motivated the switch from "skip if any rows exist" to per-row FirstOrCreate.
+func TestSeedPlanFeatures_TopsUpExistingDB(t *testing.T) {
+	db := freshTestDB(t)
+
+	// Simulate an older deployment that only has one feature already seeded.
+	existing := models.PlanFeature{
+		Key: "unlimited_courses", DisplayNameEn: "Unlimited Courses", DisplayNameFr: "Formations illimitées",
+		Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true,
+	}
+	require.NoError(t, db.Create(&existing).Error)
+
+	initialization.SeedPlanFeatures(db)
+
+	var count int64
+	db.Model(&models.PlanFeature{}).Count(&count)
+	assert.Equal(t, int64(25), count, "Seed should top up missing features without duplicating existing ones")
+}
+
+func TestSeedPlanFeatures_IncludesPersistenceFields(t *testing.T) {
+	db := freshTestDB(t)
+	initialization.SeedPlanFeatures(db)
+
+	var enabled models.PlanFeature
+	require.NoError(t, db.Where("key = ?", "persistent_sessions_enabled").First(&enabled).Error)
+	assert.Equal(t, "terminal_limits", enabled.Category)
+	assert.Equal(t, "boolean", enabled.ValueType)
+	assert.Equal(t, "false", enabled.DefaultValue)
+	assert.NotEmpty(t, enabled.DescriptionEn)
+	assert.NotEmpty(t, enabled.DescriptionFr)
+
+	var maxPersistent models.PlanFeature
+	require.NoError(t, db.Where("key = ?", "max_persistent_sessions").First(&maxPersistent).Error)
+	assert.Equal(t, "terminal_limits", maxPersistent.Category)
+	assert.Equal(t, "number", maxPersistent.ValueType)
+	assert.Equal(t, "0", maxPersistent.DefaultValue)
+	assert.NotEmpty(t, maxPersistent.DescriptionEn)
+	assert.NotEmpty(t, maxPersistent.DescriptionFr)
 }
 
 func TestSeedPlanFeatures_FeatureCategories_AllPresent(t *testing.T) {
