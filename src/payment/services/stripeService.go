@@ -1043,8 +1043,10 @@ func (ss *stripeService) handleOrganizationSubscriptionCreated(subscription *str
 		return fmt.Errorf("failed to check existing organization subscription: %w", err)
 	}
 
-	// Create the organization subscription
-	if err := orgSubRepo.CreateOrganizationSubscription(orgSubscription); err != nil {
+	// Create the organization subscription atomically with deactivation of
+	// any existing active subscription for the same org. Prevents two
+	// concurrent active subscriptions when the org upgrades or replans.
+	if err := orgSubRepo.CreateOrganizationSubscriptionAtomic(orgSubscription); err != nil {
 		return fmt.Errorf("failed to create organization subscription: %w", err)
 	}
 

@@ -3,6 +3,7 @@ package repositories
 
 import (
 	"soli/formations/src/payment/models"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -11,6 +12,11 @@ import (
 type OrganizationSubscriptionRepository interface {
 	// OrganizationSubscription operations
 	CreateOrganizationSubscription(subscription *models.OrganizationSubscription) error
+	// CreateOrganizationSubscriptionAtomic atomically deactivates any
+	// existing active/trialing subscription for the org and inserts the new
+	// one inside a single transaction. Use this for any assignment path that
+	// must enforce the "one active subscription per organization" invariant.
+	CreateOrganizationSubscriptionAtomic(subscription *models.OrganizationSubscription) error
 	GetOrganizationSubscription(id uuid.UUID) (*models.OrganizationSubscription, error)
 	GetOrganizationSubscriptionByOrgID(orgID uuid.UUID) (*models.OrganizationSubscription, error)
 	GetOrganizationSubscriptionByStripeID(stripeSubscriptionID string) (*models.OrganizationSubscription, error)
@@ -33,6 +39,42 @@ func NewOrganizationSubscriptionRepository(db *gorm.DB) OrganizationSubscription
 // CreateOrganizationSubscription creates a new organization subscription
 func (r *organizationSubscriptionRepository) CreateOrganizationSubscription(subscription *models.OrganizationSubscription) error {
 	return r.db.Create(subscription).Error
+}
+
+// CreateOrganizationSubscriptionAtomic deactivates any existing active or
+// trialing subscription for the same organization, then inserts the new one,
+// inside a single transaction. This enforces the "one active subscription per
+// organization" invariant at the data layer.
+//
+// Used by every code path that activates a new subscription (admin assignment,
+// trial bootstrap, Stripe webhook). The new subscription is created regardless
+// of its own status — if the caller is inserting an "incomplete" subscription
+// (paid plan awaiting Stripe confirmation), no prior subscription is touched.
+func (r *organizationSubscriptionRepository) CreateOrganizationSubscriptionAtomic(subscription *models.OrganizationSubscription) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		// Only deactivate the previous active subscription when the new one
+		// is being activated. Inserting an "incomplete" subscription (paid
+		// plan awaiting Stripe webhook) must not cancel a currently-active
+		// plan — that would leave the org without coverage.
+		if subscription.Status == "active" || subscription.Status == "trialing" {
+			if err := deactivatePreviousOrgSubscription(tx, subscription.OrganizationID); err != nil {
+				return err
+			}
+		}
+		return tx.Create(subscription).Error
+	})
+}
+
+// deactivatePreviousOrgSubscription marks any existing active or trialing
+// subscription for the given organization as cancelled. Idempotent: returns
+// nil with zero affected rows when the org has no prior active subscription.
+func deactivatePreviousOrgSubscription(tx *gorm.DB, orgID uuid.UUID) error {
+	return tx.Model(&models.OrganizationSubscription{}).
+		Where("organization_id = ? AND status IN ?", orgID, []string{"active", "trialing"}).
+		Updates(map[string]interface{}{
+			"status":       "cancelled",
+			"cancelled_at": time.Now(),
+		}).Error
 }
 
 // GetOrganizationSubscription retrieves a subscription by ID

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	auditModels "soli/formations/src/audit/models"
@@ -139,6 +140,12 @@ func AutoMigrateAll(db *gorm.DB) {
 
 	// Ensure the free Trial plan always exists (regardless of environment)
 	EnsureTrialPlanExists(db)
+
+	// Enforce "one active subscription per organization" on existing data.
+	// Runs BEFORE ensureOrganizationsHaveTrialPlan so the latter sees a
+	// clean state (zero or one active sub per org). Idempotent and safe
+	// to run on every startup.
+	backfillSingleActiveOrgSubscription(db)
 
 	// Heal users and organizations that are missing their Trial subscription (all environments)
 	ensureUsersHaveTrialPlan(db)
@@ -476,9 +483,9 @@ func ensureOrganizationsHaveTrialPlan(db *gorm.DB) {
 
 	fixed := 0
 	for _, org := range orgs {
-		// Check if org already has an active OrganizationSubscription
+		// Check if org already has an active or trialing OrganizationSubscription
 		var existingSub paymentModels.OrganizationSubscription
-		subResult := db.Where("organization_id = ? AND status = ?", org.ID, "active").First(&existingSub)
+		subResult := db.Where("organization_id = ? AND status IN ?", org.ID, []string{"active", "trialing"}).First(&existingSub)
 		if subResult.Error == nil {
 			continue // Org already has an active subscription
 		}
@@ -507,6 +514,101 @@ func ensureOrganizationsHaveTrialPlan(db *gorm.DB) {
 	if fixed > 0 {
 		log.Printf("[ORG-TRIAL-SYNC] Assigned Trial plan to %d organizations that were missing subscriptions", fixed)
 	}
+}
+
+// backfillSingleActiveOrgSubscription enforces the "one active subscription
+// per organization" invariant on the existing data. For each org with more
+// than one active (or trialing) subscription, it keeps the most recently
+// created row and marks the rest as cancelled.
+//
+// Idempotent: re-runs are no-ops because the WHERE clause only matches orgs
+// that still have duplicates. Re-running on a clean database affects zero rows.
+//
+// Background: until the assignment paths were wrapped in a transaction that
+// deactivates the previous active subscription, assigning a new plan to an
+// org would leave the old subscription active. Different queries
+// (`ORDER BY created_at DESC` vs joins) then resolved different rows for
+// the same org, causing inconsistent plan resolution across endpoints.
+func backfillSingleActiveOrgSubscription(db *gorm.DB) {
+	// PostgreSQL syntax — use window functions to rank rows per org and
+	// cancel everything but the newest. We cannot use this against SQLite
+	// in tests; tests cover the underlying assignment behaviour directly.
+	dialect := db.Dialector.Name()
+	if dialect != "postgres" {
+		return
+	}
+
+	result := db.Exec(`
+		UPDATE organization_subscriptions
+		SET status = 'cancelled',
+			cancelled_at = COALESCE(cancelled_at, NOW())
+		WHERE id IN (
+			SELECT id FROM (
+				SELECT id,
+					   ROW_NUMBER() OVER (
+						   PARTITION BY organization_id
+						   ORDER BY created_at DESC
+					   ) AS rn
+				FROM organization_subscriptions
+				WHERE status IN ('active', 'trialing')
+				  AND deleted_at IS NULL
+			) ranked
+			WHERE rn > 1
+		)
+	`)
+	if result.Error != nil {
+		log.Printf("[ORG-SUB-BACKFILL] Failed to backfill single active subscription: %v", result.Error)
+		return
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("[ORG-SUB-BACKFILL] Cancelled %d duplicate active organization subscriptions (kept newest per org)", result.RowsAffected)
+	}
+}
+
+// BackfillSingleActiveOrgSubscriptionGeneric is a dialect-agnostic version
+// of the backfill that walks the data in Go rather than relying on window
+// functions. Exported for tests where the DB is SQLite. Behaves identically
+// to the PostgreSQL version: keeps the most recently created active/trialing
+// subscription per organization and cancels the rest.
+func BackfillSingleActiveOrgSubscriptionGeneric(db *gorm.DB) {
+	type row struct {
+		ID             uuid.UUID
+		OrganizationID uuid.UUID
+		CreatedAt      time.Time
+	}
+
+	var rows []row
+	if err := db.Table("organization_subscriptions").
+		Select("id, organization_id, created_at").
+		Where("status IN ? AND deleted_at IS NULL", []string{"active", "trialing"}).
+		Order("organization_id, created_at DESC").
+		Scan(&rows).Error; err != nil {
+		log.Printf("[ORG-SUB-BACKFILL] Failed to scan org subscriptions: %v", err)
+		return
+	}
+
+	var toCancel []uuid.UUID
+	var currentOrg uuid.UUID
+	for _, r := range rows {
+		if r.OrganizationID != currentOrg {
+			currentOrg = r.OrganizationID
+			continue // keep first (newest) row per org
+		}
+		toCancel = append(toCancel, r.ID)
+	}
+
+	if len(toCancel) == 0 {
+		return
+	}
+
+	if err := db.Exec(`UPDATE organization_subscriptions
+		SET status = 'cancelled',
+			cancelled_at = COALESCE(cancelled_at, ?)
+		WHERE id IN ?`, time.Now(), toCancel).Error; err != nil {
+		log.Printf("[ORG-SUB-BACKFILL] Failed to cancel duplicate subscriptions: %v", err)
+		return
+	}
+	log.Printf("[ORG-SUB-BACKFILL] Cancelled %d duplicate active organization subscriptions (kept newest per org)", len(toCancel))
 }
 
 // migrateGroupRoles harmonizes the old 4-level group role model (owner, admin,
