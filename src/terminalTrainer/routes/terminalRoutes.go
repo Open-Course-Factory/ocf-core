@@ -38,9 +38,20 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	// Stop session requires terminal ownership (Layer 2 security check)
 	routes.POST("/:id/stop", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.StopSession)
-	// Start a stopped session — same Layer 2 ownership middleware, but
-	// the "stopped" state is intentionally allowed to pass through.
-	routes.POST("/:id/start", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccessAllowStopped(), terminalController.StartSession)
+	// Start a stopped session — Layer 2 ownership runs first (fail-fast on
+	// access), then the plan-resolution chain enforces concurrent_terminals
+	// and RAM availability. Without these checks the stop/start cycle could
+	// be used to resurrect sessions beyond MaxConcurrentTerminals.
+	routes.POST("/:id/start",
+		middleware.AuthManagement(),
+		terminalAccessMiddleware.RequireTerminalAccessAllowStopped(),
+		paymentMiddleware.InjectOrgContext(),
+		paymentMiddleware.InjectEffectivePlan(effectivePlanService, db),
+		paymentMiddleware.RequirePlan(),
+		paymentMiddleware.CheckLimit(effectivePlanService, db, "concurrent_terminals"),
+		paymentMiddleware.CheckRAMAvailability(terminalService),
+		terminalController.StartSession,
+	)
 	// Permanently delete a session — ownership enforced via Layer 2,
 	// "stopped" state allowed.
 	routes.DELETE("/:id", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccessAllowStopped(), terminalController.DeleteSession)

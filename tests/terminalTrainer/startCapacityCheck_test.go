@@ -47,12 +47,12 @@ import (
 )
 
 // setupStartRouter wires a router that mirrors the production /start route's
-// EXACT middleware chain plus a CheckLimit step that the route SHOULD have.
+// middleware chain post-fix: auth → access → plan resolution → CheckLimit →
+// (RAM check omitted — relies on a live tt-backend) → StartSession.
 //
-// The test does NOT install CheckLimit deliberately — it wires the route the
-// way production wires it today. The assertion then proves that the production
-// wiring lets a stop/start bypass through. The fix is to add a capacity check
-// at this seam (either as middleware or inside the handler/service).
+// The CheckLimit middleware is what protects the route against the stop/start
+// bypass: at cap=1 with 1 running + 1 stopped session, attempting to start
+// another session must be rejected before StartSession runs.
 func setupStartRouter(t *testing.T, userID string, plan *paymentModels.SubscriptionPlan) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -65,23 +65,20 @@ func setupStartRouter(t *testing.T, userID string, plan *paymentModels.Subscript
 		c.Next()
 	})
 
-	// Subscribe the user so EffectivePlanService can resolve the plan
-	// (the eventual fix may inject the plan via middleware exactly like
-	// /start-composed-session does).
-	router.Use(paymentMiddleware.InjectEffectivePlan(
-		paymentServices.NewEffectivePlanService(sharedTestDB), sharedTestDB))
-	router.Use(paymentMiddleware.RequirePlan())
-	_ = plan // kept for future hookups when the fix uses inject-from-context
+	effectivePlanService := paymentServices.NewEffectivePlanService(sharedTestDB)
+	_ = plan // sub'd via DB seed in the test; kept in signature for symmetry
 
 	accessMW := terminalMiddleware.NewTerminalAccessMiddleware(sharedTestDB)
 	ctrl := terminalController.NewTerminalController(sharedTestDB)
 
-	// THIS IS THE EXACT PRODUCTION WIRING — no CheckLimit middleware. When
-	// the fix lands, this line must be updated to mirror the new production
-	// wiring (e.g. add paymentMiddleware.CheckLimit(...)). At that point the
-	// test will pass.
+	// Production wiring post-fix (CheckRAMAvailability omitted: it requires a
+	// live tt-backend and is orthogonal to the cap-enforcement assertion).
 	router.POST("/terminals/:id/start",
 		accessMW.RequireTerminalAccessAllowStopped(),
+		paymentMiddleware.InjectOrgContext(),
+		paymentMiddleware.InjectEffectivePlan(effectivePlanService, sharedTestDB),
+		paymentMiddleware.RequirePlan(),
+		paymentMiddleware.CheckLimit(effectivePlanService, sharedTestDB, "concurrent_terminals"),
 		ctrl.StartSession,
 	)
 
