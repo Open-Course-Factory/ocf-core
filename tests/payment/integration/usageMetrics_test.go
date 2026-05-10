@@ -12,9 +12,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestUsageMetrics_ConcurrentTerminals_OnlyCountsActive tests that concurrent_terminals metric
-// only counts terminals with status='active', not stopped/expired ones
-func TestUsageMetrics_ConcurrentTerminals_OnlyCountsActive(t *testing.T) {
+// TestUsageMetrics_ConcurrentTerminals_StoppedCountedExpiredNot tests that the
+// concurrent_terminals metric counts BOTH 'active' and 'stopped' terminals
+// (since stopped sessions still occupy a slot until DELETE), while excluding
+// 'expired' sessions whose slot has already been released.
+//
+// Replaces the earlier TestUsageMetrics_ConcurrentTerminals_OnlyCountsActive
+// which encoded the buggy "stopped is free" semantics — see fix(payment):
+// count stopped terminals toward concurrent limit.
+func TestUsageMetrics_ConcurrentTerminals_StoppedCountedExpiredNot(t *testing.T) {
 	// Setup database
 	db := setupIntegrationDB(t)
 	plans := seedTestPlans(t, db)
@@ -60,7 +66,7 @@ func TestUsageMetrics_ConcurrentTerminals_OnlyCountsActive(t *testing.T) {
 	err = db.Create(activeTerminal2).Error
 	require.NoError(t, err)
 
-	// Create 1 stopped terminal (should NOT be counted)
+	// Create 1 stopped terminal — MUST be counted (still occupies a slot).
 	stoppedTerminal := &terminalModels.Terminal{
 		SessionID:         "session-stopped",
 		UserID:            userID,
@@ -71,7 +77,7 @@ func TestUsageMetrics_ConcurrentTerminals_OnlyCountsActive(t *testing.T) {
 	err = db.Create(stoppedTerminal).Error
 	require.NoError(t, err)
 
-	// Create 1 expired terminal (should NOT be counted)
+	// Create 1 expired terminal — must NOT be counted (slot released).
 	expiredTerminal := &terminalModels.Terminal{
 		SessionID:         "session-expired",
 		UserID:            userID,
@@ -82,13 +88,13 @@ func TestUsageMetrics_ConcurrentTerminals_OnlyCountsActive(t *testing.T) {
 	err = db.Create(expiredTerminal).Error
 	require.NoError(t, err)
 
-	// Manually create usage metric with WRONG value (simulating out-of-sync state)
-	// This simulates the bug where the metric wasn't decremented when terminals stopped
+	// Manually create usage metric with WRONG value (simulating out-of-sync state).
+	// Real-time recalc must overwrite the stored value.
 	wrongMetric := &paymentModels.UsageMetrics{
 		UserID:         userID,
 		SubscriptionID: subscription.ID,
 		MetricType:     "concurrent_terminals",
-		CurrentValue:   4, // WRONG: Should be 2, not 4!
+		CurrentValue:   4, // WRONG: real-time count is 3 (2 active + 1 stopped).
 		LimitValue:     3, // Trainer plan allows 3 concurrent
 		PeriodStart:    time.Now().AddDate(0, 0, -1),
 		PeriodEnd:      time.Now().AddDate(0, 1, 0),
@@ -97,13 +103,11 @@ func TestUsageMetrics_ConcurrentTerminals_OnlyCountsActive(t *testing.T) {
 	err = db.Create(wrongMetric).Error
 	require.NoError(t, err)
 
-	t.Run("GetUserUsageMetrics should return real-time active terminal count", func(t *testing.T) {
-		// Call the service method
+	t.Run("GetUserUsageMetrics returns real-time count including stopped", func(t *testing.T) {
 		metrics, err := service.GetUserUsageMetrics(userID)
 		require.NoError(t, err)
 		require.NotNil(t, metrics)
 
-		// Find the concurrent_terminals metric
 		var concurrentTerminalsMetric *paymentModels.UsageMetrics
 		for _, m := range *metrics {
 			if m.MetricType == "concurrent_terminals" {
@@ -114,34 +118,38 @@ func TestUsageMetrics_ConcurrentTerminals_OnlyCountsActive(t *testing.T) {
 
 		require.NotNil(t, concurrentTerminalsMetric, "concurrent_terminals metric should exist")
 
-		// CRITICAL TEST: Should return 2 (only active terminals), not 4 (stored wrong value)
-		assert.Equal(t, int64(2), concurrentTerminalsMetric.CurrentValue,
-			"Should count only active terminals (2), not stopped/expired ones")
+		// 2 active + 1 stopped = 3. Expired is excluded.
+		assert.Equal(t, int64(3), concurrentTerminalsMetric.CurrentValue,
+			"Should count active+stopped (3); expired and deleted are excluded")
 		assert.Equal(t, int64(3), concurrentTerminalsMetric.LimitValue,
 			"Limit should match subscription plan")
 	})
 
-	t.Run("Verify database still has wrong value but API returns correct count", func(t *testing.T) {
-		// Check database value is still wrong
+	t.Run("Verify database still has wrong value but API returns recalculated count", func(t *testing.T) {
 		var dbMetric paymentModels.UsageMetrics
 		err := db.Where("user_id = ? AND metric_type = ?", userID, "concurrent_terminals").First(&dbMetric).Error
 		require.NoError(t, err)
-		assert.Equal(t, int64(4), dbMetric.CurrentValue, "Database should still have wrong value")
+		assert.Equal(t, int64(4), dbMetric.CurrentValue, "Database should still have wrong stored value")
 
-		// But GetUserUsageMetrics should return corrected value
 		metrics, err := service.GetUserUsageMetrics(userID)
 		require.NoError(t, err)
 
 		for _, m := range *metrics {
 			if m.MetricType == "concurrent_terminals" {
-				assert.Equal(t, int64(2), m.CurrentValue, "API should return real-time count")
+				assert.Equal(t, int64(3), m.CurrentValue, "API should return real-time count (2 active + 1 stopped)")
 			}
 		}
 	})
 }
 
-// TestUsageMetrics_ConcurrentTerminals_ZeroActiveTerminals tests the case where all terminals are stopped
-func TestUsageMetrics_ConcurrentTerminals_ZeroActiveTerminals(t *testing.T) {
+// TestUsageMetrics_ConcurrentTerminals_OnlyExpiredOrDeleted verifies that the
+// real-time recalc returns 0 only when the user has no slot-occupying
+// terminals — i.e. only 'expired' or 'deleted' rows remain. Stopped sessions
+// are NOT in this set (they still occupy a slot until DELETE).
+//
+// Replaces the earlier TestUsageMetrics_ConcurrentTerminals_ZeroActiveTerminals
+// which encoded the buggy "stopped is free" semantics.
+func TestUsageMetrics_ConcurrentTerminals_OnlyExpiredOrDeleted(t *testing.T) {
 	// Setup database
 	db := setupIntegrationDB(t)
 	plans := seedTestPlans(t, db)
@@ -166,15 +174,15 @@ func TestUsageMetrics_ConcurrentTerminals_ZeroActiveTerminals(t *testing.T) {
 	err = db.Create(userKey).Error
 	require.NoError(t, err)
 
-	// Create only stopped terminals (no active ones)
-	stoppedTerminal := &terminalModels.Terminal{
-		SessionID:         "session-stopped-only",
+	// Only expired terminals exist — no slot occupied.
+	expiredTerminal := &terminalModels.Terminal{
+		SessionID:         "session-expired-only",
 		UserID:            userID,
-		Status:            "stopped",
-		ExpiresAt:         time.Now().Add(1 * time.Hour),
+		Status:            "expired",
+		ExpiresAt:         time.Now().Add(-1 * time.Hour),
 		UserTerminalKeyID: userKey.ID,
 	}
-	err = db.Create(stoppedTerminal).Error
+	err = db.Create(expiredTerminal).Error
 	require.NoError(t, err)
 
 	// Create metric with wrong value (1 instead of 0)
@@ -191,14 +199,14 @@ func TestUsageMetrics_ConcurrentTerminals_ZeroActiveTerminals(t *testing.T) {
 	err = db.Create(wrongMetric).Error
 	require.NoError(t, err)
 
-	t.Run("Should return 0 when all terminals are stopped", func(t *testing.T) {
+	t.Run("Should return 0 when only expired terminals remain", func(t *testing.T) {
 		metrics, err := service.GetUserUsageMetrics(userID)
 		require.NoError(t, err)
 
 		for _, m := range *metrics {
 			if m.MetricType == "concurrent_terminals" {
 				assert.Equal(t, int64(0), m.CurrentValue,
-					"Should return 0 when no active terminals exist")
+					"Should return 0 when no slot-occupying terminals exist")
 			}
 		}
 	})

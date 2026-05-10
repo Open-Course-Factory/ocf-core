@@ -383,26 +383,34 @@ func TestCheckEffectiveUsageLimit_DeletedTerminalsNotCounted(t *testing.T) {
 	assert.Equal(t, int64(1), check.RemainingUsage)
 }
 
-func TestCheckEffectiveUsageLimit_InactiveTerminalsNotCounted(t *testing.T) {
+// TestCheckEffectiveUsageLimit_StoppedCountedExpiredNotCounted documents the
+// post-fix counter semantics: a stopped session still occupies a slot (it is
+// only freed by DELETE), while expired sessions do not. This replaces the
+// earlier TestCheckEffectiveUsageLimit_InactiveTerminalsNotCounted which
+// asserted the buggy behavior — see fix(payment): count stopped terminals
+// toward concurrent limit.
+func TestCheckEffectiveUsageLimit_StoppedCountedExpiredNotCounted(t *testing.T) {
 	db := freshTestDB(t)
 	ensureTerminalsTable(t, db)
-	userID := "user-inactive-terminals"
+	userID := "user-stopped-vs-expired"
 
-	plan := createPlan(t, db, "Basic", 5, 2) // max 2 concurrent terminals
+	plan := createPlan(t, db, "Basic", 5, 3) // max 3 concurrent terminals
 	createUserSubscription(t, db, userID, plan)
 
-	// Insert 1 active terminal and 1 stopped terminal
+	// 1 active + 1 stopped — both must count (2 total).
 	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
 	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
+	// 1 expired — must NOT count (slot already released).
+	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "expired")
 
 	svc := services.NewEffectivePlanService(db)
 	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
-	assert.True(t, check.Allowed)
-	assert.Equal(t, int64(1), check.CurrentUsage, "non-active terminals should not be counted")
-	assert.Equal(t, int64(2), check.Limit)
+	assert.True(t, check.Allowed, "2 occupying + 1 increment ≤ 3 cap → allowed")
+	assert.Equal(t, int64(2), check.CurrentUsage, "active and stopped both occupy a slot; expired does not")
+	assert.Equal(t, int64(3), check.Limit)
 	assert.Equal(t, int64(1), check.RemainingUsage)
 }
 

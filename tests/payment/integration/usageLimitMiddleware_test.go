@@ -102,30 +102,53 @@ func TestCheckUsageLimit_ConcurrentTerminals_RealTimeCount(t *testing.T) {
 		assert.Contains(t, check.Message, "Usage limit exceeded")
 	})
 
-	t.Run("Should allow after stopping terminals", func(t *testing.T) {
-		// Stop 2 terminals (leaving only 1 active)
-		// First, get 2 terminals to stop
+	t.Run("Stopping does NOT free slots — only DELETE does", func(t *testing.T) {
+		// Pull 2 of the active terminals and STOP them. Per the design
+		// contract a stopped session still occupies a slot until DELETE,
+		// so the counter must remain at 3.
 		var terminalsToStop []terminalModels.Terminal
 		err := db.Where("user_id = ? AND status = ?", userID, "active").
 			Limit(2).
 			Find(&terminalsToStop).Error
 		require.NoError(t, err)
-		require.Len(t, terminalsToStop, 2, "Should find 2 active terminals to stop")
+		require.Len(t, terminalsToStop, 2)
 
-		// Stop them
 		for _, terminal := range terminalsToStop {
 			err := db.Model(&terminal).Update("status", "stopped").Error
 			require.NoError(t, err)
 		}
 
-		// Try to create another terminal
 		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
 		require.NoError(t, err)
 
-		// Should be ALLOWED because only 1 active now
-		assert.True(t, check.Allowed, "Should allow after stopping terminals")
-		assert.Equal(t, int64(1), check.CurrentUsage, "Should count only 1 active terminal")
-		assert.Equal(t, int64(2), check.RemainingUsage, "Should have 2 remaining slots")
+		assert.False(t, check.Allowed,
+			"stop-only must not free slots; user is still at 3/3 after stop")
+		assert.Equal(t, int64(3), check.CurrentUsage,
+			"1 active + 2 stopped = 3 occupied")
+		assert.Equal(t, int64(0), check.RemainingUsage)
+	})
+
+	t.Run("Deleting frees slots", func(t *testing.T) {
+		// Now mark the 2 stopped terminals as deleted (matching DeleteSession
+		// behavior). The counter must drop to 1 active and the next launch
+		// must be allowed.
+		var terminalsToDelete []terminalModels.Terminal
+		err := db.Where("user_id = ? AND status = ?", userID, "stopped").
+			Find(&terminalsToDelete).Error
+		require.NoError(t, err)
+		require.Len(t, terminalsToDelete, 2)
+
+		for _, terminal := range terminalsToDelete {
+			err := db.Model(&terminal).Update("status", "deleted").Error
+			require.NoError(t, err)
+		}
+
+		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		require.NoError(t, err)
+
+		assert.True(t, check.Allowed, "Should allow after deleting terminals")
+		assert.Equal(t, int64(1), check.CurrentUsage, "Only 1 active terminal remains")
+		assert.Equal(t, int64(2), check.RemainingUsage)
 	})
 }
 
