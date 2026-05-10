@@ -160,8 +160,11 @@ func (s *effectivePlanService) checkUsageLimitFromResult(result *EffectivePlanRe
 	// Get current usage
 	var currentUsage int64
 	if metricType == "concurrent_terminals" {
+		// A stopped session still occupies a concurrent_terminals slot — the
+		// slot is only freed by DELETE (which sets status='deleted'). See the
+		// design contract in terminalTrainerService.go (StopSession).
 		countErr := s.db.Table("terminals").
-			Where("user_id = ? AND status = ? AND deleted_at IS NULL", userID, "active").
+			Where("user_id = ? AND status IN ? AND deleted_at IS NULL", userID, []string{"active", "stopped"}).
 			Count(&currentUsage).Error
 		if countErr != nil {
 			return nil, fmt.Errorf("failed to count active terminals: %w", countErr)

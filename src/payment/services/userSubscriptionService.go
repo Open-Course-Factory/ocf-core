@@ -231,12 +231,13 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 				limit = -1 // Illimité
 			}
 
-			// Pour concurrent_terminals, vérifier le compte réel depuis la DB
+			// Pour concurrent_terminals, vérifier le compte réel depuis la DB.
+			// Une session arrêtée occupe toujours un slot (libéré uniquement par DELETE).
 			var currentUsage int64 = 0
 			if metricType == "concurrent_terminals" {
 				var activeCount int64
 				countErr := ss.db.Table("terminals").
-					Where("user_id = ? AND status = ? AND deleted_at IS NULL", userID, "active").
+					Where("user_id = ? AND status IN ? AND deleted_at IS NULL", userID, []string{"active", "stopped"}).
 					Count(&activeCount).Error
 				if countErr == nil {
 					currentUsage = activeCount
@@ -256,12 +257,13 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 		return nil, err
 	}
 
-	// Pour concurrent_terminals, recalculer la valeur en temps réel
+	// Pour concurrent_terminals, recalculer la valeur en temps réel.
+	// Une session arrêtée occupe toujours un slot (libéré uniquement par DELETE).
 	currentValue := metrics.CurrentValue
 	if metricType == "concurrent_terminals" {
 		var activeCount int64
 		err := ss.db.Table("terminals").
-			Where("user_id = ? AND status = ? AND deleted_at IS NULL", userID, "active").
+			Where("user_id = ? AND status IN ? AND deleted_at IS NULL", userID, []string{"active", "stopped"}).
 			Count(&activeCount).Error
 		if err == nil {
 			currentValue = activeCount
@@ -316,10 +318,11 @@ func (ss *subscriptionService) GetUserUsageMetrics(userID string, organizationID
 	for i := range *metrics {
 		metric := &(*metrics)[i]
 		if metric.MetricType == "concurrent_terminals" {
-			// Compter uniquement les terminaux avec status 'active', scoped to org if provided
+			// Compter les terminaux qui occupent un slot — actifs ET arrêtés
+			// (le slot n'est libéré que par DELETE, qui passe status='deleted').
 			var activeCount int64
 			query := ss.db.Table("terminals").
-				Where("user_id = ? AND status = ? AND deleted_at IS NULL", userID, "active")
+				Where("user_id = ? AND status IN ? AND deleted_at IS NULL", userID, []string{"active", "stopped"})
 			if len(organizationID) > 0 && organizationID[0] != "" {
 				query = query.Where("organization_id = ?", organizationID[0])
 			}
