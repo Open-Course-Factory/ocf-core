@@ -358,15 +358,12 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 		return
 	}
 
-	// Build effective_features: the highest plan with aggregated features/limits
+	// Build effective_features: the highest plan, with the union of boolean features
+	// from all plans. Numeric limits come from HighestPlan only — no max-aggregation,
+	// so the response is internally consistent (machine sizes, terminal cap, etc. all
+	// originate from the same plan).
 	effectivePlan := convertSubscriptionPlanToOutput(features.HighestPlan)
 	effectivePlan.Features = features.AllFeatures
-	if features.MaxConcurrentTerminals > effectivePlan.MaxConcurrentTerminals {
-		effectivePlan.MaxConcurrentTerminals = features.MaxConcurrentTerminals
-	}
-	if features.MaxCourses > effectivePlan.MaxCourses {
-		effectivePlan.MaxCourses = features.MaxCourses
-	}
 
 	// Build source_organizations
 	sourceOrgs := make([]dto.OrganizationFeatureSourceInfo, len(features.Organizations))

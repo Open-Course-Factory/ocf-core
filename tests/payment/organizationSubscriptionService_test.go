@@ -366,7 +366,7 @@ func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
 		assert.Contains(t, features.AllFeatures, "advanced_labs")
 		assert.Contains(t, features.AllFeatures, "basic_features")
 
-		// Should take maximum limits
+		// Numeric limits come from the HighestPlan (Premium Free) only.
 		assert.Equal(t, premiumFreePlan.MaxConcurrentTerminals, features.MaxConcurrentTerminals)
 		assert.Equal(t, premiumFreePlan.MaxCourses, features.MaxCourses)
 
@@ -509,13 +509,132 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		assert.Contains(t, features.AllFeatures, "feature_d") // from Enterprise
 		assert.Contains(t, features.AllFeatures, "feature_e") // from Enterprise
 
-		// Should take maximum limits (Enterprise has unlimited)
+		// Numeric limits come from the HighestPlan only (Enterprise = -1 / unlimited).
 		assert.Equal(t, -1, features.MaxConcurrentTerminals)
 		assert.Equal(t, -1, features.MaxCourses)
 
 		// Should include all three organizations
 		assert.Equal(t, 3, len(features.Organizations))
 	})
+}
+
+// TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated guards the
+// "single effective plan" contract: when a user has multiple active org
+// subscriptions, all numeric limits in the returned UserEffectiveFeatures must
+// come from the highest-priority plan — NOT from a max() across plans. Boolean
+// features remain a union (capabilities compose), but numeric limits must be
+// internally consistent with the labelled plan.
+//
+// Regression scenario: a user has two active subs on the same org (data
+// leftover from a plan change). The lower-priority plan has a HIGHER terminal
+// cap than the higher-priority plan. The old behaviour returned max() across
+// plans, producing a confusing "Trainer Plan with max=5 from Member Pro" UI.
+// The new behaviour returns the HighestPlan's cap so the UI is internally
+// consistent.
+func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *testing.T) {
+	db := freshTestDB(t)
+	service := services.NewOrganizationSubscriptionService(db)
+	userID := "user_with_two_active_subs"
+
+	// Lower-priority plan with HIGHER numeric limits.
+	memberPro := &models.SubscriptionPlan{
+		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:                   "Member Pro",
+		Priority:               10,
+		PriceAmount:            0,
+		Currency:               "eur",
+		BillingInterval:        "month",
+		Features:               []string{"basic_features"},
+		MaxConcurrentTerminals: 5, // higher than Trainer Plan
+		MaxCourses:             20,
+		IsActive:               true,
+	}
+	err := db.Create(memberPro).Error
+	assert.NoError(t, err)
+
+	// Higher-priority plan with LOWER numeric limits (mirrors prod data shape).
+	// NOTE: MaxConcurrentTerminals has `gorm:"default:1"`, so we use 2 (not 0)
+	// to avoid the zero-value→default substitution. Old max() would return 5;
+	// new HighestPlan-only behaviour returns 2.
+	trainerPlan := &models.SubscriptionPlan{
+		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:                   "Trainer Plan",
+		Priority:               20,
+		PriceAmount:            0,
+		Currency:               "eur",
+		BillingInterval:        "month",
+		Features:               []string{"trainer_features"},
+		MaxConcurrentTerminals: 2, // intentionally lower than Member Pro's 5
+		MaxCourses:             3, // intentionally lower than Member Pro's 20
+		IsActive:               true,
+	}
+	err = db.Create(trainerPlan).Error
+	assert.NoError(t, err)
+
+	// One org, the user is owner
+	org := &organizationModels.Organization{
+		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:        "test_org",
+		DisplayName: "Test Org",
+		OwnerUserID: userID,
+		IsActive:    true,
+	}
+	err = db.Omit("Metadata").Create(org).Error
+	assert.NoError(t, err)
+
+	member := &organizationModels.OrganizationMember{
+		BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID: org.ID,
+		UserID:         userID,
+		Role:           organizationModels.OrgRoleOwner,
+		JoinedAt:       time.Now(),
+		IsActive:       true,
+	}
+	err = db.Omit("Metadata").Create(member).Error
+	assert.NoError(t, err)
+
+	// TWO active subscriptions on the SAME org (the data-integrity edge case)
+	subA := &models.OrganizationSubscription{
+		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID:     org.ID,
+		SubscriptionPlanID: memberPro.ID,
+		Status:             "active",
+		CurrentPeriodStart: time.Now(),
+		CurrentPeriodEnd:   time.Now().AddDate(0, 1, 0),
+		Quantity:           1,
+	}
+	err = db.Create(subA).Error
+	assert.NoError(t, err)
+
+	subB := &models.OrganizationSubscription{
+		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID:     org.ID,
+		SubscriptionPlanID: trainerPlan.ID,
+		Status:             "active",
+		CurrentPeriodStart: time.Now(),
+		CurrentPeriodEnd:   time.Now().AddDate(0, 1, 0),
+		Quantity:           1,
+	}
+	err = db.Create(subB).Error
+	assert.NoError(t, err)
+
+	features, err := service.GetUserEffectiveFeatures(userID)
+	assert.NoError(t, err)
+	assert.NotNil(t, features)
+
+	// HighestPlan is Trainer Plan (priority 20 > 10)
+	assert.Equal(t, "Trainer Plan", features.HighestPlan.Name)
+
+	// CRITICAL: numeric limits come from HighestPlan ONLY — NOT max() across plans.
+	// Old behaviour would have returned 5 (max of 2, 5). New behaviour returns 2.
+	assert.Equal(t, 2, features.MaxConcurrentTerminals,
+		"MaxConcurrentTerminals must come from HighestPlan (Trainer Plan = 2), not max() across plans (which would give 5)")
+	assert.Equal(t, 3, features.MaxCourses,
+		"MaxCourses must come from HighestPlan (Trainer Plan = 3), not max() across plans (which would give 20)")
+
+	// Boolean features remain a union (capabilities compose across plans)
+	assert.Contains(t, features.AllFeatures, "trainer_features", "feature from HighestPlan present")
+	assert.Contains(t, features.AllFeatures, "basic_features", "feature from lower-priority plan still unioned")
 }
 
 func TestOrganizationSubscription_Create_RespectsQuantity(t *testing.T) {

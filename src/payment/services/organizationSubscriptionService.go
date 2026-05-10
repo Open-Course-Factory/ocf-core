@@ -342,21 +342,9 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 			features.HighestPlan = &plan
 		}
 
-		// Aggregate features
+		// Aggregate boolean features (union across plans — capabilities compose)
 		for _, feature := range plan.Features {
 			featureSet[feature] = true
-		}
-
-		// Take maximum limits (-1 means unlimited, which is always the maximum)
-		if features.MaxConcurrentTerminals != -1 {
-			if plan.MaxConcurrentTerminals == -1 || plan.MaxConcurrentTerminals > features.MaxConcurrentTerminals {
-				features.MaxConcurrentTerminals = plan.MaxConcurrentTerminals
-			}
-		}
-		if features.MaxCourses != -1 {
-			if plan.MaxCourses == -1 || plan.MaxCourses > features.MaxCourses {
-				features.MaxCourses = plan.MaxCourses
-			}
 		}
 
 		// Add organization info
@@ -367,6 +355,14 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 			IsOwner:          member.IsOwner(),
 			IsManager:        member.IsManager(),
 		})
+	}
+
+	// Numeric limits come from the single HighestPlan (no max-aggregation across plans).
+	// This keeps the effective plan internally consistent: every numeric field reflects
+	// the same plan the UI labels as the user's effective plan.
+	if features.HighestPlan != nil {
+		features.MaxConcurrentTerminals = features.HighestPlan.MaxConcurrentTerminals
+		features.MaxCourses = features.HighestPlan.MaxCourses
 	}
 
 	// Convert feature set to slice
