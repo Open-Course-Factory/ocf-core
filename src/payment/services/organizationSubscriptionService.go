@@ -136,7 +136,10 @@ func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID
 		utils.Debug("Creating incomplete organization subscription for org %s (will be activated by Stripe)", orgID)
 	}
 
-	err := oss.repository.CreateOrganizationSubscription(subscription)
+	// Use the atomic variant so any existing active/trialing subscription
+	// for this org is deactivated in the same transaction. Enforces the
+	// "one active subscription per organization" invariant.
+	err := oss.repository.CreateOrganizationSubscriptionAtomic(subscription)
 	if err != nil {
 		return nil, err
 	}
