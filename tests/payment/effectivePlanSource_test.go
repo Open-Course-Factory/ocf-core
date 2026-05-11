@@ -121,11 +121,14 @@ func TestCheckEffectiveUsageLimit_Source_LimitExceeded_Organization(t *testing.T
 	userID := "user-source-exceeded-org"
 
 	orgPlan := createPlan(t, db, "Org Basic", 10, 2)
-	createOrgWithSubscription(t, db, "source-exceeded-org", userID, orgPlan)
+	org, _ := createOrgWithSubscription(t, db, "source-exceeded-org", userID, orgPlan)
 
-	// Insert 2 active terminals to hit the limit
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
+	// Insert 2 active terminals scoped to the org to hit the limit (#311 I2 fix:
+	// the count for an org-sourced plan must be scoped to that org).
+	db.Exec("INSERT INTO terminals (id, user_id, status, organization_id) VALUES (?, ?, ?, ?)",
+		uuid.New().String(), userID, "active", org.ID.String())
+	db.Exec("INSERT INTO terminals (id, user_id, status, organization_id) VALUES (?, ?, ?, ?)",
+		uuid.New().String(), userID, "active", org.ID.String())
 
 	svc := services.NewEffectivePlanService(db)
 	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)

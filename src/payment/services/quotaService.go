@@ -81,6 +81,12 @@ func (s *quotaService) CheckUserQuota(userID string, orgID *uuid.UUID, metric st
 
 // CheckUserQuotaWithPlan is the actual decision function. Every quota
 // check in the codebase eventually flows through this.
+//
+// Slot counts are scoped to the same org context the plan was resolved in:
+// when the plan came from an organization subscription, the count is filtered
+// to that org so that two orgs with separate caps cannot share a single
+// global counter. When the plan is personal (or org context was nil), the
+// count is global to the user.
 func (s *quotaService) CheckUserQuotaWithPlan(plan *EffectivePlanResult, userID string, metric string, increment int64) (*UsageLimitCheck, error) {
 	if plan == nil || plan.Plan == nil {
 		return nil, fmt.Errorf("cannot check quota without a resolved plan")
@@ -88,7 +94,16 @@ func (s *quotaService) CheckUserQuotaWithPlan(plan *EffectivePlanResult, userID 
 
 	limit := limitForMetric(plan.Plan, metric)
 
-	currentUsage, err := s.currentUsage(userID, nil, metric)
+	// Derive the org scope from the resolved plan so the slot count matches
+	// the limit being checked. Plans sourced from an organization carry the
+	// OrganizationSubscription; personal plans leave orgID nil (global count).
+	var orgID *uuid.UUID
+	if plan.Source == PlanSourceOrganization && plan.OrganizationSubscription != nil {
+		id := plan.OrganizationSubscription.OrganizationID
+		orgID = &id
+	}
+
+	currentUsage, err := s.currentUsage(userID, orgID, metric)
 	if err != nil {
 		return nil, err
 	}
@@ -163,20 +178,21 @@ func (s *quotaService) GetUserUsage(userID string, orgID *uuid.UUID, metric stri
 // SSOT slot scope; other metrics fall back to the stored usage_metrics
 // row (which is what the legacy paths did).
 //
-// For concurrent_terminals: if the live count fails (e.g. the terminals
-// table is missing in some integration test setups), we fall back to
-// the stored usage_metrics row to preserve the historical defensive
-// behavior of the pre-refactor code. Phase D of the consolidation
-// (#311) will revisit this once the materialized counter is removed.
+// For concurrent_terminals we fail closed: if the live count fails
+// (e.g. a transient DB error), the error is surfaced to the caller so
+// the request returns 5xx rather than silently reporting near-zero
+// usage and granting unlimited terminals. Post-Phase D the materialized
+// counter is no longer kept in sync, so the previous fallback would
+// have effectively bypassed the cap.
 func (s *quotaService) currentUsage(userID string, orgID *uuid.UUID, metric string) (int64, error) {
 	switch metric {
 	case "concurrent_terminals":
 		count, err := terminalModels.CountUserOccupiedSlots(s.db, userID, orgID)
-		if err == nil {
-			return count, nil
+		if err != nil {
+			utils.Error("Live terminal count failed for user %s (org=%v): %v", userID, orgID, err)
+			return 0, fmt.Errorf("failed to count user terminal slots: %w", err)
 		}
-		utils.Warn("Live terminal count failed for user %s, falling back to stored metric: %v", userID, err)
-		return s.storedUsage(userID, metric), nil
+		return count, nil
 	default:
 		return s.storedUsage(userID, metric), nil
 	}
