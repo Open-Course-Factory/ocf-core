@@ -192,19 +192,16 @@ func TestQuotaService_GetOrgQuota_ReturnsCurrentAndLimit(t *testing.T) {
 	assert.Equal(t, 2, limits.CurrentTerminals, "both active and stopped occupy a slot")
 }
 
-// TestQuotaService_CheckUserQuota_ScenarioControllerBug_Regression documents
-// the bug fixed in scenarioController.PreviewScenario (#311). Before the fix,
-// the controller resolved orgIDForPlan a few lines above the quota check, then
-// called EffectivePlanService.CheckEffectiveUsageLimit (no org argument),
-// which fell back to the global plan resolution and counted against the user's
-// PERSONAL quota — even when the scenario was launched in an org context.
+// TestQuotaService_CheckUserQuota_WithOrgContext_UsesOrgPlanLimit asserts
+// that when an org context is passed to CheckUserQuota, the limit comes
+// from that org's plan — even if the user's personal plan has a higher
+// resolution priority (which would otherwise win in the global fallback).
 //
-// The fix routes the quota check through QuotaService.CheckUserQuota with the
-// resolved orgIDForPlan, so the org's plan limit applies. This test asserts
-// that contract: a user with a tight personal plan (1 terminal) and a
-// generous team-org plan (5 terminals) gets the team plan's limit when the
-// org context is provided, even with the personal plan currently at quota.
-func TestQuotaService_CheckUserQuota_ScenarioControllerBug_Regression(t *testing.T) {
+// This is the QuotaService-level contract relied on by scenarioController
+// (#311), but it exercises QuotaService directly: it does NOT cover the
+// controller wiring. A real HTTP-level test for PreviewScenario quota
+// scoping would belong in tests/scenarios.
+func TestQuotaService_CheckUserQuota_WithOrgContext_UsesOrgPlanLimit(t *testing.T) {
 	db := freshTestDB(t)
 	ensureTerminalsTable(t, db)
 	userID := "scenario-org-bug-regression"
@@ -235,6 +232,46 @@ func TestQuotaService_CheckUserQuota_ScenarioControllerBug_Regression(t *testing
 	assert.NoError(t, errO)
 	assert.Equal(t, int64(5), checkOrg.Limit, "with org context the team plan's limit applies (regression for #311)")
 	assert.Equal(t, services.PlanSourceOrganization, checkOrg.Source)
+}
+
+// TestQuotaService_CheckUserQuota_OrgScopedCount_DoesNotLeakAcrossOrgs locks
+// in the I2 fix: when a user is a member of two orgs (each with its own cap),
+// the concurrent_terminals count used by CheckUserQuota must be scoped to
+// the org that owns the resolved plan. A global count would let a user blow
+// past one org's cap by occupying slots in a different org.
+func TestQuotaService_CheckUserQuota_OrgScopedCount_DoesNotLeakAcrossOrgs(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "quota-multi-org-user"
+
+	// Two orgs, each capped at 1 concurrent terminal.
+	planX := createPlan(t, db, "OrgXPlan", 10, 1)
+	planY := createPlan(t, db, "OrgYPlan", 10, 1)
+	orgX, _ := createOrgWithSubscriptionAndType(t, db, "org-x", userID, planX, organizationModels.OrgTypeTeam)
+	orgY, _ := createOrgWithSubscriptionAndType(t, db, "org-y", userID, planY, organizationModels.OrgTypeTeam)
+
+	// One terminal in each org — each org is at its cap, but globally the user has 2.
+	db.Exec("INSERT INTO terminals (id, user_id, status, organization_id) VALUES (?, ?, ?, ?)",
+		uuid.New().String(), userID, "active", orgX.ID.String())
+	db.Exec("INSERT INTO terminals (id, user_id, status, organization_id) VALUES (?, ?, ?, ?)",
+		uuid.New().String(), userID, "active", orgY.ID.String())
+
+	eps := services.NewEffectivePlanService(db)
+	svc := services.NewQuotaService(db, eps)
+
+	// Org X scope — count must be 1 (only the terminal in X), not 2.
+	checkX, errX := svc.CheckUserQuota(userID, &orgX.ID, "concurrent_terminals", 1)
+	assert.NoError(t, errX)
+	assert.Equal(t, int64(1), checkX.CurrentUsage, "count must be scoped to org X only")
+	assert.Equal(t, int64(1), checkX.Limit)
+	assert.False(t, checkX.Allowed, "user is already at org X cap")
+
+	// Org Y scope — count must be 1 (only the terminal in Y), not 2.
+	checkY, errY := svc.CheckUserQuota(userID, &orgY.ID, "concurrent_terminals", 1)
+	assert.NoError(t, errY)
+	assert.Equal(t, int64(1), checkY.CurrentUsage, "count must be scoped to org Y only")
+	assert.Equal(t, int64(1), checkY.Limit)
+	assert.False(t, checkY.Allowed, "user is already at org Y cap")
 }
 
 func TestQuotaService_GetUserUsage_ConcurrentTerminals_LiveCount(t *testing.T) {
