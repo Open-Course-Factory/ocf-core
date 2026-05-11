@@ -19,12 +19,16 @@ var TerminalStatusesOccupyingSlot = []string{"active", "stopped"}
 // the "occupies a slot" rule — every counter / quota query must use
 // this scope so the rule stays expressed in exactly one place.
 //
+// Columns are qualified with the `terminals.` prefix so the scope is
+// safe to combine with JOINs against other tables that share a
+// `deleted_at` column (e.g. organization_members via gorm.Model).
+//
 // Usage:
 //
 //	db.Table("terminals").Scopes(models.OccupiesSlotScope).
-//	    Where("user_id = ?", userID).Count(&count)
+//	    Where("terminals.user_id = ?", userID).Count(&count)
 func OccupiesSlotScope(tx *gorm.DB) *gorm.DB {
-	return tx.Where("status IN ? AND deleted_at IS NULL", TerminalStatusesOccupyingSlot)
+	return tx.Where("terminals.status IN ? AND terminals.deleted_at IS NULL", TerminalStatusesOccupyingSlot)
 }
 
 // Terminal représente une session de terminal actif

@@ -6,6 +6,7 @@ import (
 	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
 	"time"
 
@@ -254,12 +255,17 @@ func (oss *organizationSubscriptionService) GetOrganizationUsageLimits(orgID uui
 
 	plan := subscription.SubscriptionPlan
 
-	// Count current usage
+	// Count current usage. The "occupies a slot" rule lives in
+	// terminalModels.OccupiesSlotScope — stopped sessions still count
+	// toward the org's concurrent_terminals limit, only deleted/expired
+	// rows free a slot. Previously this counted only status='active',
+	// which under-reported usage and let orgs exceed their plan limit
+	// by stopping then starting new sessions (issue #309).
 	var currentTerminals int64
 	oss.db.Table("terminals").
+		Scopes(terminalModels.OccupiesSlotScope).
 		Joins("JOIN organization_members ON organization_members.user_id = terminals.user_id").
-		Where("organization_members.organization_id = ? AND terminals.status = ? AND terminals.deleted_at IS NULL",
-			orgID, "active").
+		Where("organization_members.organization_id = ?", orgID).
 		Count(&currentTerminals)
 
 	var currentCourses int64

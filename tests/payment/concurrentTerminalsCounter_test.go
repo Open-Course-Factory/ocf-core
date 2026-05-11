@@ -29,7 +29,11 @@ package payment_tests
 
 import (
 	"testing"
+	"time"
 
+	entityManagementModels "soli/formations/src/entityManagement/models"
+	organizationModels "soli/formations/src/organizations/models"
+	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
 
 	"github.com/google/uuid"
@@ -119,4 +123,81 @@ func TestConcurrentTerminalsCounter_StopStartCycleBypass(t *testing.T) {
 	assert.False(t, check.Allowed,
 		"stop/start cycle bypass: launching a second terminal after stopping "+
 			"the first must remain denied — the slot is not freed until DELETE")
+}
+
+// TestOrganizationConcurrentTerminalsCounter_StoppedSessionStillOccupiesSlot
+// is the org-level analogue of the personal counter test. It guards the fix
+// for issue #309: GetOrganizationUsageLimits previously counted only
+// status='active' terminals, which let an org owner bypass the org's
+// MaxConcurrentTerminals plan limit by stopping sessions before launching new
+// ones. The org counter must use the same "occupies a slot" rule
+// (terminalModels.OccupiesSlotScope) as the personal counter.
+func TestOrganizationConcurrentTerminalsCounter_StoppedSessionStillOccupiesSlot(t *testing.T) {
+	db := freshTestDB(t)
+	userID := "org-counter-owner"
+
+	// Plan with MaxConcurrentTerminals=2 so we can stage a clear stopped+active mix.
+	plan := &models.SubscriptionPlan{
+		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:                   "OrgCounterPlan",
+		Priority:               10,
+		PriceAmount:            0,
+		Currency:               "eur",
+		BillingInterval:        "month",
+		IsActive:               true,
+		MaxConcurrentTerminals: 2,
+		MaxCourses:             5,
+	}
+	assert.NoError(t, db.Create(plan).Error)
+
+	// Org + owner membership + active org subscription.
+	org := &organizationModels.Organization{
+		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:        "counter-org",
+		DisplayName: "Counter Org",
+		OwnerUserID: userID,
+		IsActive:    true,
+	}
+	assert.NoError(t, db.Omit("Metadata").Create(org).Error)
+
+	member := &organizationModels.OrganizationMember{
+		BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID: org.ID,
+		UserID:         userID,
+		Role:           organizationModels.OrgRoleOwner,
+		JoinedAt:       time.Now(),
+		IsActive:       true,
+	}
+	assert.NoError(t, db.Omit("Metadata").Create(member).Error)
+
+	orgSub := &models.OrganizationSubscription{
+		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID:     org.ID,
+		SubscriptionPlanID: plan.ID,
+		Status:             "active",
+		CurrentPeriodStart: time.Now(),
+		CurrentPeriodEnd:   time.Now().AddDate(1, 0, 0),
+		Quantity:           1,
+	}
+	assert.NoError(t, db.Create(orgSub).Error)
+
+	// One active + one stopped terminal owned by the org member. Both must
+	// be counted toward the org's MaxConcurrentTerminals — the stopped row
+	// is the case the bug ignored.
+	db.Exec("INSERT INTO terminals (id, user_id, status, state, organization_id) VALUES (?, ?, ?, ?, ?)",
+		uuid.New().String(), userID, "active", "running", org.ID.String())
+	db.Exec("INSERT INTO terminals (id, user_id, status, state, organization_id) VALUES (?, ?, ?, ?, ?)",
+		uuid.New().String(), userID, "stopped", "stopped", org.ID.String())
+
+	svc := services.NewOrganizationSubscriptionService(db)
+	limits, err := svc.GetOrganizationUsageLimits(org.ID)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, limits)
+	assert.Equal(t, 2, limits.MaxConcurrentTerminals)
+	// The fix (issue #309): stopped sessions must still count toward the
+	// org's concurrent_terminals quota. Pre-fix this returned 1.
+	assert.Equal(t, 2, limits.CurrentTerminals,
+		"org counter must include stopped sessions — they still occupy a "+
+			"slot until DELETE, matching the personal counter semantics")
 }
