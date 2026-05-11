@@ -142,14 +142,26 @@ func TestUsageMetrics_ConcurrentTerminals_StoppedCountedExpiredNot(t *testing.T)
 	})
 }
 
-// TestUsageMetrics_ConcurrentTerminals_OnlyExpiredOrDeleted verifies that the
-// real-time recalc returns 0 only when the user has no slot-occupying
-// terminals — i.e. only 'expired' or 'deleted' rows remain. Stopped sessions
-// are NOT in this set (they still occupy a slot until DELETE).
+// TestUsageMetrics_ConcurrentTerminals_OnlyStoppedCountsAmongInactives is a
+// kill-switch for the concurrent_terminals counter SQL. It seeds three terminals
+// — one 'stopped', one 'expired', one soft-deleted — and asserts that ONLY the
+// stopped one is counted (CurrentValue == 1).
 //
-// Replaces the earlier TestUsageMetrics_ConcurrentTerminals_ZeroActiveTerminals
-// which encoded the buggy "stopped is free" semantics.
-func TestUsageMetrics_ConcurrentTerminals_OnlyExpiredOrDeleted(t *testing.T) {
+// This triple-state seed catches three independent regressions in
+// effectivePlanService.go's counter query (`status IN ('active','stopped') AND
+// deleted_at IS NULL`):
+//   - Reverting to `status = 'active'` → stopped would not count → CurrentValue
+//     becomes 0 → test fails.
+//   - Dropping the status filter (counting 'expired') → CurrentValue becomes 2
+//     → test fails.
+//   - Dropping the `deleted_at IS NULL` clause → CurrentValue becomes 2 → test
+//     fails.
+//
+// Replaces the earlier TestUsageMetrics_ConcurrentTerminals_OnlyExpiredOrDeleted
+// which seeded only an expired terminal — a weak kill-switch because reverting
+// the SQL to `status = 'active'` still produced 0 (the test passed for the
+// wrong reason).
+func TestUsageMetrics_ConcurrentTerminals_OnlyStoppedCountsAmongInactives(t *testing.T) {
 	// Setup database
 	db := setupIntegrationDB(t)
 	plans := seedTestPlans(t, db)
@@ -160,7 +172,7 @@ func TestUsageMetrics_ConcurrentTerminals_OnlyExpiredOrDeleted(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create test user
-	userID := "zero-terminals-user"
+	userID := "stopped-only-counts-user"
 	subscription := createUserSubscription(t, db, userID, plans["Trial"].ID)
 
 	// Create user terminal key
@@ -174,9 +186,20 @@ func TestUsageMetrics_ConcurrentTerminals_OnlyExpiredOrDeleted(t *testing.T) {
 	err = db.Create(userKey).Error
 	require.NoError(t, err)
 
-	// Only expired terminals exist — no slot occupied.
+	// 1 stopped — MUST count (still occupies a slot until DELETE).
+	stoppedTerminal := &terminalModels.Terminal{
+		SessionID:         "session-stopped-only",
+		UserID:            userID,
+		Status:            "stopped",
+		ExpiresAt:         time.Now().Add(1 * time.Hour),
+		UserTerminalKeyID: userKey.ID,
+	}
+	err = db.Create(stoppedTerminal).Error
+	require.NoError(t, err)
+
+	// 1 expired — must NOT count (slot released by expiry).
 	expiredTerminal := &terminalModels.Terminal{
-		SessionID:         "session-expired-only",
+		SessionID:         "session-expired-mix",
 		UserID:            userID,
 		Status:            "expired",
 		ExpiresAt:         time.Now().Add(-1 * time.Hour),
@@ -185,12 +208,27 @@ func TestUsageMetrics_ConcurrentTerminals_OnlyExpiredOrDeleted(t *testing.T) {
 	err = db.Create(expiredTerminal).Error
 	require.NoError(t, err)
 
-	// Create metric with wrong value (1 instead of 0)
+	// 1 soft-deleted (deleted_at IS NOT NULL) — must NOT count. We create it
+	// active first, then soft-delete it, so the counter is forced to honour
+	// the `deleted_at IS NULL` clause rather than relying on the status filter.
+	deletedTerminal := &terminalModels.Terminal{
+		SessionID:         "session-deleted-mix",
+		UserID:            userID,
+		Status:            "active",
+		ExpiresAt:         time.Now().Add(1 * time.Hour),
+		UserTerminalKeyID: userKey.ID,
+	}
+	err = db.Create(deletedTerminal).Error
+	require.NoError(t, err)
+	err = db.Delete(deletedTerminal).Error // soft delete via GORM
+	require.NoError(t, err)
+
+	// Create metric with wrong value (0 instead of 1)
 	wrongMetric := &paymentModels.UsageMetrics{
 		UserID:         userID,
 		SubscriptionID: subscription.ID,
 		MetricType:     "concurrent_terminals",
-		CurrentValue:   1, // WRONG: Should be 0!
+		CurrentValue:   0, // WRONG: real-time count is 1 (the stopped one).
 		LimitValue:     1, // Trial plan
 		PeriodStart:    time.Now().AddDate(0, 0, -1),
 		PeriodEnd:      time.Now().AddDate(0, 1, 0),
@@ -199,15 +237,21 @@ func TestUsageMetrics_ConcurrentTerminals_OnlyExpiredOrDeleted(t *testing.T) {
 	err = db.Create(wrongMetric).Error
 	require.NoError(t, err)
 
-	t.Run("Should return 0 when only expired terminals remain", func(t *testing.T) {
+	t.Run("Counts only the stopped terminal; expired and soft-deleted are excluded", func(t *testing.T) {
 		metrics, err := service.GetUserUsageMetrics(userID)
 		require.NoError(t, err)
+		require.NotNil(t, metrics)
 
+		var concurrentTerminalsMetric *paymentModels.UsageMetrics
 		for _, m := range *metrics {
 			if m.MetricType == "concurrent_terminals" {
-				assert.Equal(t, int64(0), m.CurrentValue,
-					"Should return 0 when no slot-occupying terminals exist")
+				concurrentTerminalsMetric = &m
+				break
 			}
 		}
+		require.NotNil(t, concurrentTerminalsMetric, "concurrent_terminals metric should exist")
+
+		assert.Equal(t, int64(1), concurrentTerminalsMetric.CurrentValue,
+			"Should count exactly the stopped terminal (1); expired and soft-deleted are excluded")
 	})
 }
