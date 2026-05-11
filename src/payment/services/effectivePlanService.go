@@ -7,7 +7,6 @@ import (
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
-	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
 
 	"github.com/google/uuid"
@@ -135,79 +134,25 @@ func (s *effectivePlanService) GetUserEffectivePlan(userID string) (*EffectivePl
 
 // CheckEffectiveUsageLimit checks whether the user can perform the given action
 // based on their effective plan limits.
+//
+// Thin wrapper kept for backward compatibility with existing callers and test
+// mocks. The actual quota logic lives in QuotaService — see
+// src/payment/services/quotaService.go.
 func (s *effectivePlanService) CheckEffectiveUsageLimit(userID string, metricType string, increment int64) (*UsageLimitCheck, error) {
 	result, err := s.GetUserEffectivePlan(userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get effective plan: %w", err)
 	}
-	return s.checkUsageLimitFromResult(result, userID, metricType, increment)
+	return s.quotaService().CheckUserQuotaWithPlan(result, userID, metricType, increment)
 }
 
-// checkUsageLimitFromResult computes the usage limit check from an already-resolved plan result.
-func (s *effectivePlanService) checkUsageLimitFromResult(result *EffectivePlanResult, userID string, metricType string, increment int64) (*UsageLimitCheck, error) {
-	plan := result.Plan
-
-	// Determine the limit from the plan
-	var limit int64
-	switch metricType {
-	case "concurrent_terminals":
-		limit = int64(plan.MaxConcurrentTerminals)
-	case "courses_created":
-		limit = int64(plan.MaxCourses)
-	default:
-		limit = -1 // unlimited
-	}
-
-	// Get current usage
-	var currentUsage int64
-	if metricType == "concurrent_terminals" {
-		// SSOT: CountUserOccupiedSlots wraps OccupiesSlotScope — stopped
-		// sessions still count, only deleted/expired rows free a slot.
-		// orgID=nil → personal quota gate counts all user terminals.
-		count, countErr := terminalModels.CountUserOccupiedSlots(s.db, userID, nil)
-		if countErr != nil {
-			return nil, fmt.Errorf("failed to count active terminals: %w", countErr)
-		}
-		currentUsage = count
-	} else {
-		metrics, metricsErr := s.paymentRepo.GetUserUsageMetrics(userID, metricType)
-		if metricsErr != nil {
-			if !errors.Is(metricsErr, gorm.ErrRecordNotFound) {
-				utils.Warn("Failed to get usage metrics for user %s, metric %s: %v", userID, metricType, metricsErr)
-			}
-			currentUsage = 0
-		} else {
-			currentUsage = metrics.CurrentValue
-		}
-	}
-
-	// Calculate and return
-	allowed := limit == -1 || (currentUsage+increment) <= limit
-	var remaining int64
-	if limit == -1 {
-		remaining = -1
-	} else {
-		remaining = limit - currentUsage
-		if remaining < 0 {
-			remaining = 0
-		}
-	}
-
-	message := ""
-	if !allowed {
-		message = fmt.Sprintf("Usage limit exceeded for %s. Current: %d, Limit: %d", metricType, currentUsage, limit)
-	}
-
-	return &UsageLimitCheck{
-		Allowed:        allowed,
-		CurrentUsage:   currentUsage,
-		Limit:          limit,
-		RemainingUsage: remaining,
-		Message:        message,
-		UserID:         userID,
-		MetricType:     metricType,
-		Source:         result.Source,
-	}, nil
+// quotaService builds a transient QuotaService backed by this
+// effectivePlanService. The two services are intentionally separate
+// (QuotaService takes EffectivePlanService as a dependency) — building
+// it on demand avoids a hard reference cycle while keeping the quota
+// rule expressed in exactly one place.
+func (s *effectivePlanService) quotaService() QuotaService {
+	return NewQuotaService(s.db, s)
 }
 
 // GetUserEffectivePlanForOrg resolves the effective plan for a user in the context of a
@@ -272,17 +217,21 @@ func (s *effectivePlanService) GetUserEffectivePlanForOrg(userID string, orgID *
 
 // CheckEffectiveUsageLimitForOrg checks usage limits in the context of a specific org.
 // If orgID is nil, falls back to the global resolution.
+//
+// Thin wrapper kept for backward compatibility — actual logic lives in QuotaService.
 func (s *effectivePlanService) CheckEffectiveUsageLimitForOrg(userID string, orgID *uuid.UUID, metricType string, increment int64) (*UsageLimitCheck, error) {
 	result, err := s.GetUserEffectivePlanForOrg(userID, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get effective plan for org context: %w", err)
 	}
-	return s.checkUsageLimitFromResult(result, userID, metricType, increment)
+	return s.quotaService().CheckUserQuotaWithPlan(result, userID, metricType, increment)
 }
 
 // CheckEffectiveUsageLimitFromResult checks usage limits using a pre-resolved plan result,
 // avoiding the plan resolution DB round-trip. Called by CheckLimit middleware when
 // InjectEffectivePlan has already resolved and stored the plan in the Gin context.
+//
+// Thin wrapper kept for backward compatibility — actual logic lives in QuotaService.
 func (s *effectivePlanService) CheckEffectiveUsageLimitFromResult(result *EffectivePlanResult, userID string, metricType string, increment int64) (*UsageLimitCheck, error) {
-	return s.checkUsageLimitFromResult(result, userID, metricType, increment)
+	return s.quotaService().CheckUserQuotaWithPlan(result, userID, metricType, increment)
 }

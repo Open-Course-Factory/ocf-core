@@ -6,7 +6,6 @@ import (
 	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
-	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
 	"time"
 
@@ -246,36 +245,15 @@ func (oss *organizationSubscriptionService) CanOrganizationAccessFeature(orgID u
 	return false, nil
 }
 
-// GetOrganizationUsageLimits returns the current usage and limits for an organization
+// GetOrganizationUsageLimits returns the current usage and limits for an organization.
+//
+// Thin wrapper kept for backward compatibility with existing callers and
+// test mocks. The actual quota-counting and limit-extraction logic lives
+// in QuotaService.GetOrgQuota — see src/payment/services/quotaService.go.
 func (oss *organizationSubscriptionService) GetOrganizationUsageLimits(orgID uuid.UUID) (*OrganizationLimits, error) {
-	subscription, err := oss.repository.GetActiveOrganizationSubscription(orgID)
-	if err != nil {
-		return nil, fmt.Errorf("no active subscription found for organization: %w", err)
-	}
-
-	plan := subscription.SubscriptionPlan
-
-	// Count current usage via the SSOT helper. The "occupies a slot"
-	// rule lives in terminalModels.OccupiesSlotScope — stopped sessions
-	// still count toward the org's concurrent_terminals limit, only
-	// deleted/expired rows free a slot. Previously this counted only
-	// status='active', which under-reported usage and let orgs exceed
-	// their plan limit by stopping then starting new sessions (#309).
-	currentTerminals, _ := terminalModels.CountOrgOccupiedSlots(oss.db, orgID)
-
-	var currentCourses int64
-	oss.db.Table("courses").
-		Joins("JOIN organization_members ON organization_members.user_id = courses.owner_user_id").
-		Where("organization_members.organization_id = ? AND courses.deleted_at IS NULL", orgID).
-		Count(&currentCourses)
-
-	return &OrganizationLimits{
-		OrganizationID:         orgID,
-		MaxConcurrentTerminals: plan.MaxConcurrentTerminals,
-		MaxCourses:             plan.MaxCourses,
-		CurrentTerminals:       int(currentTerminals),
-		CurrentCourses:         int(currentCourses),
-	}, nil
+	eps := NewEffectivePlanService(oss.db)
+	quotaSvc := NewQuotaService(oss.db, eps)
+	return quotaSvc.GetOrgQuota(orgID)
 }
 
 // GetUserEffectiveFeatures returns the highest-tier features from all user's organizations

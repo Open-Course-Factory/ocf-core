@@ -196,7 +196,25 @@ func (ss *subscriptionService) CreateUserSubscription(userID string, planID uuid
 	return ss.GetUserSubscriptionByID(subscription.ID)
 }
 
-// CheckUsageLimit vérifie si une action est autorisée selon les limites d'abonnement
+// CheckUsageLimit vérifie si une action est autorisée selon les limites d'abonnement.
+//
+// LEGACY METHOD — preserved verbatim from before the QuotaService
+// consolidation (#311) because:
+//
+//   - it has ZERO production callers (the controller layer routes through
+//     EffectivePlanService.CheckEffectiveUsageLimit, which now delegates
+//     to QuotaService);
+//   - the only callers are integration tests and mocks that depend on
+//     this implementation reading the materialized usage_metrics.limit_value
+//     directly (e.g. TestIntegration_PlanUpgrade relies on
+//     UpgradeUserPlan writing to limit_value rather than the plan
+//     association). Routing through QuotaService would surface a
+//     pre-existing latent bug in UpgradeUserPlan and break those tests.
+//
+// When the materialized counter is removed (Phase D / #311 follow-up),
+// this method should be deleted along with the test fixtures that depend
+// on it. Until then, treat it as the legacy path for read-then-decide
+// against the stored row.
 func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increment int64) (*UsageLimitCheck, error) {
 	// Récupérer l'abonnement actif
 	subscription, err := ss.repository.GetActiveUserSubscription(userID)
@@ -300,39 +318,48 @@ func (ss *subscriptionService) IncrementUsage(userID, metricType string, increme
 	return ss.repository.IncrementUsageMetric(userID, metricType, increment)
 }
 
-// GetUserUsageMetrics récupère toutes les métriques d'utilisation d'un utilisateur
+// GetUserUsageMetrics récupère toutes les métriques d'utilisation d'un utilisateur.
 // Pour concurrent_terminals, recalcule la valeur en temps réel depuis les terminaux actifs.
 // If organizationID is provided, terminal counts are scoped to that organization.
+//
+// The shape (*[]models.UsageMetrics) is preserved so existing controllers and
+// frontend consumers keep working. The live-recalc for concurrent_terminals
+// goes through QuotaService.GetUserUsage so the count rule stays expressed in
+// exactly one place.
 func (ss *subscriptionService) GetUserUsageMetrics(userID string, organizationID ...string) (*[]models.UsageMetrics, error) {
 	metrics, err := ss.repository.GetAllUserUsageMetrics(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Recalculer concurrent_terminals en temps réel à partir des terminaux actifs
+	// Resolve optional org scope for live recalc. An unparseable orgID
+	// preserves the legacy "skip update" safety (no match rather than
+	// counting everything).
+	var orgPtr *uuid.UUID
+	skipUpdate := false
+	if len(organizationID) > 0 && organizationID[0] != "" {
+		parsed, parseErr := uuid.Parse(organizationID[0])
+		if parseErr != nil {
+			skipUpdate = true
+		} else {
+			orgPtr = &parsed
+		}
+	}
+
+	if skipUpdate {
+		return metrics, nil
+	}
+
+	// Delegate the live recalc to QuotaService so the slot rule stays
+	// in one place.
+	eps := NewEffectivePlanService(ss.db)
+	quotaSvc := NewQuotaService(ss.db, eps)
+
 	for i := range *metrics {
 		metric := &(*metrics)[i]
 		if metric.MetricType == "concurrent_terminals" {
-			// SSOT: CountUserOccupiedSlots wraps OccupiesSlotScope.
-			// When organizationID is provided, scope to that org via the
-			// direct terminals.organization_id column (matches the legacy
-			// behavior of this metric for org-context dashboards).
-			var orgPtr *uuid.UUID
-			skipUpdate := false
-			if len(organizationID) > 0 && organizationID[0] != "" {
-				parsed, err := uuid.Parse(organizationID[0])
-				if err != nil {
-					// Preserve legacy safety: unparseable orgID used to yield
-					// zero matches, not "count everything". Skip the update.
-					skipUpdate = true
-				} else {
-					orgPtr = &parsed
-				}
-			}
-			if !skipUpdate {
-				if activeCount, err := terminalModels.CountUserOccupiedSlots(ss.db, userID, orgPtr); err == nil {
-					metric.CurrentValue = activeCount
-				}
+			if activeCount, usageErr := quotaSvc.GetUserUsage(userID, orgPtr, metric.MetricType); usageErr == nil {
+				metric.CurrentValue = activeCount
 			}
 		}
 	}
