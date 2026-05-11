@@ -148,7 +148,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Runs BEFORE ensureOrganizationsHaveTrialPlan so the latter sees a
 	// clean state (zero or one active sub per org). Idempotent and safe
 	// to run on every startup.
-	backfillSingleActiveOrgSubscription(db)
+	BackfillSingleActiveOrgSubscription(db)
 
 	// Create the DB-level partial unique index AFTER the backfill cleanup
 	// so legacy duplicate-active rows cannot block the CREATE INDEX. From
@@ -525,61 +525,23 @@ func ensureOrganizationsHaveTrialPlan(db *gorm.DB) {
 	}
 }
 
-// backfillSingleActiveOrgSubscription enforces the "one active subscription
+// BackfillSingleActiveOrgSubscription enforces the "one active subscription
 // per organization" invariant on the existing data. For each org with more
 // than one active (or trialing) subscription, it keeps the most recently
 // created row and marks the rest as cancelled.
 //
-// Idempotent: re-runs are no-ops because the WHERE clause only matches orgs
-// that still have duplicates. Re-running on a clean database affects zero rows.
+// Idempotent: re-runs are no-ops because the loop only matches orgs that
+// still have duplicates. Re-running on a clean database affects zero rows.
+//
+// Dialect-agnostic: walks the data in Go rather than relying on window
+// functions, so it works identically against SQLite and PostgreSQL.
 //
 // Background: until the assignment paths were wrapped in a transaction that
 // deactivates the previous active subscription, assigning a new plan to an
 // org would leave the old subscription active. Different queries
 // (`ORDER BY created_at DESC` vs joins) then resolved different rows for
 // the same org, causing inconsistent plan resolution across endpoints.
-func backfillSingleActiveOrgSubscription(db *gorm.DB) {
-	// PostgreSQL syntax — use window functions to rank rows per org and
-	// cancel everything but the newest. We cannot use this against SQLite
-	// in tests; tests cover the underlying assignment behaviour directly.
-	dialect := db.Dialector.Name()
-	if dialect != "postgres" {
-		return
-	}
-
-	result := db.Exec(`
-		UPDATE organization_subscriptions
-		SET status = 'cancelled',
-			cancelled_at = COALESCE(cancelled_at, NOW())
-		WHERE id IN (
-			SELECT id FROM (
-				SELECT id,
-					   ROW_NUMBER() OVER (
-						   PARTITION BY organization_id
-						   ORDER BY created_at DESC
-					   ) AS rn
-				FROM organization_subscriptions
-				WHERE status IN ('active', 'trialing')
-				  AND deleted_at IS NULL
-			) ranked
-			WHERE rn > 1
-		)
-	`)
-	if result.Error != nil {
-		log.Printf("[ORG-SUB-BACKFILL] Failed to backfill single active subscription: %v", result.Error)
-		return
-	}
-	if result.RowsAffected > 0 {
-		log.Printf("[ORG-SUB-BACKFILL] Cancelled %d duplicate active organization subscriptions (kept newest per org)", result.RowsAffected)
-	}
-}
-
-// BackfillSingleActiveOrgSubscriptionGeneric is a dialect-agnostic version
-// of the backfill that walks the data in Go rather than relying on window
-// functions. Exported for tests where the DB is SQLite. Behaves identically
-// to the PostgreSQL version: keeps the most recently created active/trialing
-// subscription per organization and cancels the rest.
-func BackfillSingleActiveOrgSubscriptionGeneric(db *gorm.DB) {
+func BackfillSingleActiveOrgSubscription(db *gorm.DB) {
 	type row struct {
 		ID             uuid.UUID
 		OrganizationID uuid.UUID

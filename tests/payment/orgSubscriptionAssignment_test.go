@@ -24,12 +24,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// runBackfillForTest calls the dialect-agnostic backfill so the same
-// invariant the production PostgreSQL query enforces is exercised against
-// the SQLite test DB.
+// runBackfillForTest calls the backfill that enforces the
+// "one active subscription per organization" invariant. The same function
+// runs in production; this helper exists only to keep tests readable.
 func runBackfillForTest(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	initialization.BackfillSingleActiveOrgSubscriptionGeneric(db)
+	initialization.BackfillSingleActiveOrgSubscription(db)
 }
 
 // seedOrgAndTwoPlans creates a Free plan, a Pro plan, and a single
