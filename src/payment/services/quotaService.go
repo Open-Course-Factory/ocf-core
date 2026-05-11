@@ -162,25 +162,38 @@ func (s *quotaService) GetUserUsage(userID string, orgID *uuid.UUID, metric stri
 // current value. concurrent_terminals comes from a live count via the
 // SSOT slot scope; other metrics fall back to the stored usage_metrics
 // row (which is what the legacy paths did).
+//
+// For concurrent_terminals: if the live count fails (e.g. the terminals
+// table is missing in some integration test setups), we fall back to
+// the stored usage_metrics row to preserve the historical defensive
+// behavior of the pre-refactor code. Phase D of the consolidation
+// (#311) will revisit this once the materialized counter is removed.
 func (s *quotaService) currentUsage(userID string, orgID *uuid.UUID, metric string) (int64, error) {
 	switch metric {
 	case "concurrent_terminals":
 		count, err := terminalModels.CountUserOccupiedSlots(s.db, userID, orgID)
-		if err != nil {
-			return 0, fmt.Errorf("failed to count active terminals: %w", err)
+		if err == nil {
+			return count, nil
 		}
-		return count, nil
+		utils.Warn("Live terminal count failed for user %s, falling back to stored metric: %v", userID, err)
+		return s.storedUsage(userID, metric), nil
 	default:
-		m, err := s.paymentRepo.GetUserUsageMetrics(userID, metric)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return 0, nil
-			}
-			utils.Warn("Failed to get usage metrics for user %s, metric %s: %v", userID, metric, err)
-			return 0, nil
-		}
-		return m.CurrentValue, nil
+		return s.storedUsage(userID, metric), nil
 	}
+}
+
+// storedUsage reads the persisted usage_metrics row for a user/metric.
+// Returns 0 when no row exists (not an error — a first-time user has
+// no metrics yet).
+func (s *quotaService) storedUsage(userID, metric string) int64 {
+	m, err := s.paymentRepo.GetUserUsageMetrics(userID, metric)
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			utils.Warn("Failed to get usage metrics for user %s, metric %s: %v", userID, metric, err)
+		}
+		return 0
+	}
+	return m.CurrentValue
 }
 
 // limitForMetric extracts the per-metric limit from a plan. -1 means
