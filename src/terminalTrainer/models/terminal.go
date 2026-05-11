@@ -31,6 +31,41 @@ func OccupiesSlotScope(tx *gorm.DB) *gorm.DB {
 	return tx.Where("terminals.status IN ? AND terminals.deleted_at IS NULL", TerminalStatusesOccupyingSlot)
 }
 
+// CountUserOccupiedSlots returns the number of terminals owned by the
+// user that count against their concurrent_terminals quota. If orgID
+// is nil, counts all terminals across all orgs (and personal). If
+// orgID is non-nil, counts only terminals tied to that org context
+// via the direct terminals.organization_id column.
+//
+// Single source of truth for "how many slots is this user using?".
+// Always uses OccupiesSlotScope — callers must never write their own
+// count query.
+func CountUserOccupiedSlots(db *gorm.DB, userID string, orgID *uuid.UUID) (int64, error) {
+	q := db.Model(&Terminal{}).Scopes(OccupiesSlotScope).Where("terminals.user_id = ?", userID)
+	if orgID != nil {
+		q = q.Where("terminals.organization_id = ?", orgID)
+	}
+	var count int64
+	return count, q.Count(&count).Error
+}
+
+// CountOrgOccupiedSlots returns the number of terminals owned by any
+// member of the org (joined via organization_members) that count
+// against the org's concurrent_terminals quota.
+//
+// Single source of truth for "how many slots is this org using?".
+// Always uses OccupiesSlotScope. Mirrors the join shape used by
+// payment/services/organizationSubscriptionService.go (the production
+// quota gate), so an org's quota counter and the helper agree.
+func CountOrgOccupiedSlots(db *gorm.DB, orgID uuid.UUID) (int64, error) {
+	var count int64
+	err := db.Model(&Terminal{}).Scopes(OccupiesSlotScope).
+		Joins("JOIN organization_members ON organization_members.user_id = terminals.user_id").
+		Where("organization_members.organization_id = ? AND organization_members.deleted_at IS NULL", orgID).
+		Count(&count).Error
+	return count, err
+}
+
 // Terminal représente une session de terminal actif
 type Terminal struct {
 	entityManagementModels.BaseModel
