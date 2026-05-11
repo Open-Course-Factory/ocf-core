@@ -9,13 +9,45 @@ import (
 	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestTerminateOrganizationMemberTerminals_StopsActiveTerminals(t *testing.T) {
+// TestTerminateUserTerminals_FreesQuotaSlotViaOccupiesSlotScope asserts the
+// SSOT-correct outcome: after TerminateUserTerminals, the user's occupied slot
+// count (as reported by models.CountUserOccupiedSlots — the canonical real-time
+// counter from MR !218) drops to zero. A "stopped" terminal still occupies a
+// slot per TerminalStatusesOccupyingSlot, so the cleanup must mark terminals
+// as "deleted" to free the slot. This guards against regressing to the old
+// stop-semantic which left users appearing over-quota after subscription
+// cancellation.
+func TestTerminateUserTerminals_FreesQuotaSlotViaOccupiesSlotScope(t *testing.T) {
+	db := freshTestDB(t)
+	userID := "user-frees-slot"
+
+	db.Exec(
+		`INSERT INTO terminals (id, session_id, user_id, name, status, state, expires_at) VALUES (?, ?, ?, ?, 'active', 'running', ?)`,
+		uuid.New().String(), uuid.New().String(), userID, "term-frees-slot", time.Now().Add(time.Hour),
+	)
+
+	// Sanity: before cleanup, the user occupies 1 slot.
+	before, err := terminalModels.CountUserOccupiedSlots(db, userID, nil)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), before, "precondition: user must occupy 1 slot before cleanup")
+
+	// Execute
+	require.NoError(t, services.TerminateUserTerminals(db, userID))
+
+	// SSOT assertion: real-time counter returns 0 — the slot has been freed.
+	after, err := terminalModels.CountUserOccupiedSlots(db, userID, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), after, "after TerminateUserTerminals, the user must occupy 0 slots (terminal must be 'deleted', not 'stopped')")
+}
+
+func TestTerminateOrganizationMemberTerminals_DeletesActiveTerminals(t *testing.T) {
 	db := freshTestDB(t)
 
 	// Create organization
@@ -50,7 +82,7 @@ func TestTerminateOrganizationMemberTerminals_StopsActiveTerminals(t *testing.T)
 		termID := uuid.New()
 		terminalIDs = append(terminalIDs, termID)
 		db.Exec(
-			`INSERT INTO terminals (id, session_id, user_id, name, status, expires_at) VALUES (?, ?, ?, ?, 'active', ?)`,
+			`INSERT INTO terminals (id, session_id, user_id, name, status, state, expires_at) VALUES (?, ?, ?, ?, 'active', 'running', ?)`,
 			termID.String(), uuid.New().String(), userID, "term-"+userID, time.Now().Add(time.Hour),
 		)
 	}
@@ -63,10 +95,12 @@ func TestTerminateOrganizationMemberTerminals_StopsActiveTerminals(t *testing.T)
 	// Execute
 	services.TerminateOrganizationMemberTerminals(db, orgID)
 
-	// Assert: all terminals should be stopped
-	var stoppedCount int64
-	db.Raw("SELECT COUNT(*) FROM terminals WHERE status = 'stopped'").Scan(&stoppedCount)
-	assert.Equal(t, int64(3), stoppedCount)
+	// Assert: all terminals should be deleted (both status and state in sync).
+	// This frees the quota slot — stopped sessions still occupy slots per
+	// models.TerminalStatusesOccupyingSlot.
+	var deletedCount int64
+	db.Raw("SELECT COUNT(*) FROM terminals WHERE status = 'deleted' AND state = 'deleted'").Scan(&deletedCount)
+	assert.Equal(t, int64(3), deletedCount)
 
 	var remainingActive int64
 	db.Raw("SELECT COUNT(*) FROM terminals WHERE status = 'active'").Scan(&remainingActive)
@@ -125,10 +159,10 @@ func TestTerminateOrganizationMemberTerminals_IgnoresInactiveMembers(t *testing.
 	// Execute
 	services.TerminateOrganizationMemberTerminals(db, orgID)
 
-	// Active member's terminal should be stopped
-	var stoppedStatus string
-	db.Raw("SELECT status FROM terminals WHERE user_id = 'active_user'").Scan(&stoppedStatus)
-	assert.Equal(t, "stopped", stoppedStatus)
+	// Active member's terminal should be deleted (frees the quota slot)
+	var deletedStatus string
+	db.Raw("SELECT status FROM terminals WHERE user_id = 'active_user'").Scan(&deletedStatus)
+	assert.Equal(t, "deleted", deletedStatus)
 
 	// Inactive member's terminal should remain active (member was not queried)
 	var activeStatus string
@@ -153,12 +187,15 @@ func TestTerminateOrganizationMemberTerminals_NoMembers(t *testing.T) {
 	services.TerminateOrganizationMemberTerminals(db, orgID)
 }
 
-func TestTerminateUserTerminals_StopsActiveAndDecrementsMetrics(t *testing.T) {
+func TestTerminateUserTerminals_DeletesActiveTerminals(t *testing.T) {
 	db := freshTestDB(t)
 
 	userID := "test_user_term"
 
-	// Create a subscription and usage metric
+	// Create a subscription (the existence of a usage metric is no longer
+	// part of the contract — quota is computed in real time from terminal
+	// rows via models.OccupiesSlotScope. The stored counter is left alone:
+	// it self-heals on the next reconcile pass and is not consulted by gating).
 	plan := &models.SubscriptionPlan{
 		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:                   "Test Plan",
@@ -178,23 +215,10 @@ func TestTerminateUserTerminals_StopsActiveAndDecrementsMetrics(t *testing.T) {
 	}
 	require.NoError(t, db.Create(sub).Error)
 
-	usageMetric := &models.UsageMetrics{
-		BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
-		UserID:         userID,
-		SubscriptionID: sub.ID,
-		MetricType:     "concurrent_terminals",
-		CurrentValue:   2,
-		LimitValue:     5,
-		PeriodStart:    time.Now(),
-		PeriodEnd:      time.Now().Add(30 * 24 * time.Hour),
-		LastUpdated:    time.Now(),
-	}
-	require.NoError(t, db.Create(usageMetric).Error)
-
 	// Create 2 active terminals
 	for i := 0; i < 2; i++ {
 		db.Exec(
-			`INSERT INTO terminals (id, session_id, user_id, name, status, expires_at) VALUES (?, ?, ?, ?, 'active', ?)`,
+			`INSERT INTO terminals (id, session_id, user_id, name, status, state, expires_at) VALUES (?, ?, ?, ?, 'active', 'running', ?)`,
 			uuid.New().String(), uuid.New().String(), userID, "term", time.Now().Add(time.Hour),
 		)
 	}
@@ -203,15 +227,16 @@ func TestTerminateUserTerminals_StopsActiveAndDecrementsMetrics(t *testing.T) {
 	err := services.TerminateUserTerminals(db, userID)
 	require.NoError(t, err)
 
-	// All terminals stopped
-	var stoppedCount int64
-	db.Raw("SELECT COUNT(*) FROM terminals WHERE user_id = ? AND status = 'stopped'", userID).Scan(&stoppedCount)
-	assert.Equal(t, int64(2), stoppedCount)
+	// All terminals deleted (status AND state — kept in sync per the canonical
+	// terminalTrainerService.DeleteSession pattern).
+	var deletedCount int64
+	db.Raw("SELECT COUNT(*) FROM terminals WHERE user_id = ? AND status = 'deleted' AND state = 'deleted'", userID).Scan(&deletedCount)
+	assert.Equal(t, int64(2), deletedCount)
 
-	// Usage metric decremented to 0
-	var updatedMetric models.UsageMetrics
-	db.Where("user_id = ? AND metric_type = ?", userID, "concurrent_terminals").First(&updatedMetric)
-	assert.Equal(t, int64(0), updatedMetric.CurrentValue)
+	// SSOT check: real-time occupied-slot count is now 0.
+	occupied, err := terminalModels.CountUserOccupiedSlots(db, userID, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), occupied)
 }
 
 func TestCancelOrganizationSubscription_ImmediateTerminatesTerminals(t *testing.T) {
@@ -266,7 +291,7 @@ func TestCancelOrganizationSubscription_ImmediateTerminatesTerminals(t *testing.
 
 	// Create active terminal for the member
 	db.Exec(
-		`INSERT INTO terminals (id, session_id, user_id, name, status, expires_at) VALUES (?, ?, 'org_member_1', 'org-term', 'active', ?)`,
+		`INSERT INTO terminals (id, session_id, user_id, name, status, state, expires_at) VALUES (?, ?, 'org_member_1', 'org-term', 'active', 'running', ?)`,
 		uuid.New().String(), uuid.New().String(), time.Now().Add(time.Hour),
 	)
 
@@ -275,8 +300,9 @@ func TestCancelOrganizationSubscription_ImmediateTerminatesTerminals(t *testing.
 	err := svc.CancelOrganizationSubscription(orgID, false)
 	require.NoError(t, err)
 
-	// Terminal should be stopped
+	// Terminal should be deleted (frees the quota slot — stopped sessions
+	// still occupy slots per models.TerminalStatusesOccupyingSlot).
 	var status string
 	db.Raw("SELECT status FROM terminals WHERE user_id = 'org_member_1'").Scan(&status)
-	assert.Equal(t, "stopped", status)
+	assert.Equal(t, "deleted", status)
 }
