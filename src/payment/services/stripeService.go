@@ -890,7 +890,7 @@ func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 	// CRITICAL: Terminate terminals if subscription is being cancelled
 	if isBeingCancelled {
 		utils.Info("Terminating all active terminals for user %s due to subscription cancellation", userSub.UserID)
-		if err := TerminateUserTerminals(ss.db, userSub.UserID); err != nil {
+		if err := TerminateUserTerminals(ss.db, userSub.UserID, nil); err != nil {
 			utils.Error("Failed to terminate terminals for user %s: %v", userSub.UserID, err)
 			// Don't fail webhook processing if terminal termination fails
 		}
@@ -935,7 +935,7 @@ func (ss *stripeService) handleSubscriptionDeleted(event *stripe.Event) error {
 
 	// CRITICAL: Terminate all active terminals for this user before cancelling subscription
 	utils.Info("Terminating all active terminals for user %s due to subscription cancellation", userSub.UserID)
-	if err := TerminateUserTerminals(ss.db, userSub.UserID); err != nil {
+	if err := TerminateUserTerminals(ss.db, userSub.UserID, nil); err != nil {
 		utils.Error("Failed to terminate terminals for user %s: %v", userSub.UserID, err)
 		// Don't fail subscription cancellation if terminal termination fails
 	}
@@ -1759,7 +1759,7 @@ func (ss *stripeService) handleBulkSubscriptionUpdated(subscription *stripe.Subs
 			// Terminate terminals for assigned licenses
 			if license.UserID != "" {
 				utils.Info("Terminating all active terminals for user %s due to batch cancellation", license.UserID)
-				if err := TerminateUserTerminals(ss.db, license.UserID); err != nil {
+				if err := TerminateUserTerminals(ss.db, license.UserID, nil); err != nil {
 					utils.Error("Failed to terminate terminals for user %s: %v", license.UserID, err)
 					// Continue with other licenses
 				}
@@ -1854,7 +1854,7 @@ func (ss *stripeService) handleBulkSubscriptionDeleted(subscription *stripe.Subs
 		// CRITICAL: Terminate all active terminals for assigned licenses
 		if license.UserID != "" {
 			utils.Info("Terminating all active terminals for user %s due to batch license cancellation", license.UserID)
-			if err := TerminateUserTerminals(ss.db, license.UserID); err != nil {
+			if err := TerminateUserTerminals(ss.db, license.UserID, nil); err != nil {
 				utils.Error("Failed to terminate terminals for user %s: %v", license.UserID, err)
 				// Don't fail batch cancellation if terminal termination fails
 			}
@@ -1932,7 +1932,7 @@ func (ss *stripeService) CancelSubscription(subscriptionID string, cancelAtPerio
 func (ss *stripeService) MarkSubscriptionAsCancelled(userSubscription *models.UserSubscription) error {
 	// CRITICAL: Terminate all active terminals before cancelling subscription
 	utils.Info("Terminating all active terminals for user %s due to manual subscription cancellation", userSubscription.UserID)
-	if err := TerminateUserTerminals(ss.db, userSubscription.UserID); err != nil {
+	if err := TerminateUserTerminals(ss.db, userSubscription.UserID, nil); err != nil {
 		utils.Error("Failed to terminate terminals for user %s: %v", userSubscription.UserID, err)
 		// Don't fail subscription cancellation if terminal termination fails
 	}

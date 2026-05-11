@@ -39,7 +39,7 @@ func TestTerminateUserTerminals_FreesQuotaSlotViaOccupiesSlotScope(t *testing.T)
 	require.Equal(t, int64(1), before, "precondition: user must occupy 1 slot before cleanup")
 
 	// Execute
-	require.NoError(t, services.TerminateUserTerminals(db, userID))
+	require.NoError(t, services.TerminateUserTerminals(db, userID, nil))
 
 	// SSOT assertion: real-time counter returns 0 — the slot has been freed.
 	after, err := terminalModels.CountUserOccupiedSlots(db, userID, nil)
@@ -76,14 +76,15 @@ func TestTerminateOrganizationMemberTerminals_DeletesActiveTerminals(t *testing.
 		require.NoError(t, db.Omit("Metadata").Create(member).Error)
 	}
 
-	// Create active terminals for both members
+	// Create active terminals for both members, all scoped to the org being cancelled.
+	// (Cross-org isolation is exercised by TestTerminateOrganizationMemberTerminals_DoesNotTouchPersonalTerminals.)
 	terminalIDs := make([]uuid.UUID, 0, 3)
 	for _, userID := range []string{userA, userA, userB} {
 		termID := uuid.New()
 		terminalIDs = append(terminalIDs, termID)
 		db.Exec(
-			`INSERT INTO terminals (id, session_id, user_id, name, status, state, expires_at) VALUES (?, ?, ?, ?, 'active', 'running', ?)`,
-			termID.String(), uuid.New().String(), userID, "term-"+userID, time.Now().Add(time.Hour),
+			`INSERT INTO terminals (id, session_id, user_id, name, status, state, organization_id, expires_at) VALUES (?, ?, ?, ?, 'active', 'running', ?, ?)`,
+			termID.String(), uuid.New().String(), userID, "term-"+userID, orgID, time.Now().Add(time.Hour),
 		)
 	}
 
@@ -146,14 +147,14 @@ func TestTerminateOrganizationMemberTerminals_IgnoresInactiveMembers(t *testing.
 	require.NoError(t, db.Omit("Metadata").Create(inactiveMember).Error)
 	require.NoError(t, db.Model(&organizationModels.OrganizationMember{}).Where("id = ?", inactiveMemberID).Update("is_active", false).Error)
 
-	// Create terminals for both
+	// Create terminals for both, scoped to the org being cancelled.
 	db.Exec(
-		`INSERT INTO terminals (id, session_id, user_id, name, status, expires_at) VALUES (?, ?, 'active_user', 'term-active', 'active', ?)`,
-		uuid.New().String(), uuid.New().String(), time.Now().Add(time.Hour),
+		`INSERT INTO terminals (id, session_id, user_id, name, status, organization_id, expires_at) VALUES (?, ?, 'active_user', 'term-active', 'active', ?, ?)`,
+		uuid.New().String(), uuid.New().String(), orgID, time.Now().Add(time.Hour),
 	)
 	db.Exec(
-		`INSERT INTO terminals (id, session_id, user_id, name, status, expires_at) VALUES (?, ?, 'inactive_user', 'term-inactive', 'active', ?)`,
-		uuid.New().String(), uuid.New().String(), time.Now().Add(time.Hour),
+		`INSERT INTO terminals (id, session_id, user_id, name, status, organization_id, expires_at) VALUES (?, ?, 'inactive_user', 'term-inactive', 'active', ?, ?)`,
+		uuid.New().String(), uuid.New().String(), orgID, time.Now().Add(time.Hour),
 	)
 
 	// Execute
@@ -224,7 +225,7 @@ func TestTerminateUserTerminals_DeletesActiveTerminals(t *testing.T) {
 	}
 
 	// Execute
-	err := services.TerminateUserTerminals(db, userID)
+	err := services.TerminateUserTerminals(db, userID, nil)
 	require.NoError(t, err)
 
 	// All terminals deleted (status AND state — kept in sync per the canonical
@@ -289,10 +290,10 @@ func TestCancelOrganizationSubscription_ImmediateTerminatesTerminals(t *testing.
 	}
 	require.NoError(t, db.Omit("Metadata").Create(member).Error)
 
-	// Create active terminal for the member
+	// Create active terminal for the member, scoped to the org being cancelled.
 	db.Exec(
-		`INSERT INTO terminals (id, session_id, user_id, name, status, state, expires_at) VALUES (?, ?, 'org_member_1', 'org-term', 'active', 'running', ?)`,
-		uuid.New().String(), uuid.New().String(), time.Now().Add(time.Hour),
+		`INSERT INTO terminals (id, session_id, user_id, name, status, state, organization_id, expires_at) VALUES (?, ?, 'org_member_1', 'org-term', 'active', 'running', ?, ?)`,
+		uuid.New().String(), uuid.New().String(), orgID, time.Now().Add(time.Hour),
 	)
 
 	// Cancel immediately (not at period end)

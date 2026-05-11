@@ -11,8 +11,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// TerminateUserTerminals marks all active terminals as "deleted" in the database.
+// TerminateUserTerminals marks active terminals as "deleted" in the database.
 // This is the shared implementation used by both user and organization subscription cancellation.
+//
+// Scope (closes #314): when orgID is nil, ALL of the user's terminals are
+// terminated (used for user-account cancellations: bulk-license revocation,
+// batch deletion, personal Stripe sub cancel). When orgID is non-nil, only
+// terminals whose organization_id matches are terminated — this is the org
+// path. The org path MUST pass &orgID to avoid wiping personal-plan terminals
+// of users who happen to be members of the cancelled organization (which
+// caused permanent data loss after the stop→delete change).
 //
 // Semantics: "Terminate" releases the resources — a terminated subscription must not
 // continue to consume quota slots. Per the SSOT consolidation in MR !218
@@ -28,11 +36,11 @@ import (
 // to delete the actual Incus containers. Container cleanup is handled by tt-backend's own
 // expiration mechanism. The DB update ensures ocf-core immediately reflects the correct
 // state and prevents new terminal access via middleware checks.
-func TerminateUserTerminals(db *gorm.DB, userID string) error {
+func TerminateUserTerminals(db *gorm.DB, userID string, orgID *uuid.UUID) error {
 	termRepository := terminalRepo.NewTerminalRepository(db)
 
-	// Get all active terminals for this user
-	terminals, err := termRepository.GetTerminalSessionsByUserID(userID, true)
+	// Get active terminals for this user (optionally scoped to an organization)
+	terminals, err := termRepository.GetTerminalSessionsByUserIDAndOrg(userID, orgID, true)
 	if err != nil {
 		return fmt.Errorf("failed to get user terminals: %w", err)
 	}
@@ -83,7 +91,9 @@ func TerminateOrganizationMemberTerminals(db *gorm.DB, orgID uuid.UUID) {
 	utils.Info("Terminating terminals for %d members of organization %s due to subscription cancellation", len(members), orgID)
 
 	for _, member := range members {
-		if err := TerminateUserTerminals(db, member.UserID); err != nil {
+		// Scope termination to THIS org only — never touch the member's personal
+		// terminals or their terminals in other orgs (closes #314).
+		if err := TerminateUserTerminals(db, member.UserID, &orgID); err != nil {
 			utils.Error("Failed to terminate terminals for org member %s (org %s): %v", member.UserID, orgID, err)
 			// Continue with other members — don't let one failure block the rest
 		}

@@ -284,7 +284,7 @@ func (s *bulkLicenseService) RevokeLicense(licenseID uuid.UUID, requestingUserID
 	oldUserID := license.UserID
 	if oldUserID != "" {
 		utils.Info("🔌 Terminating all active terminals for user %s due to license revocation", oldUserID)
-		if err := TerminateUserTerminals(s.db, oldUserID); err != nil {
+		if err := TerminateUserTerminals(s.db, oldUserID, nil); err != nil {
 			utils.Error("Failed to terminate terminals for user %s: %v", oldUserID, err)
 			// Don't fail license revocation if terminal termination fails
 		}
@@ -551,7 +551,7 @@ func (s *bulkLicenseService) autoCancelBatchFromStripeError(batchID uuid.UUID) e
 		// Terminate terminals for assigned active licenses
 		if license.UserID != "" && license.Status == "active" {
 			utils.Info("🔌 Terminating terminals for user %s due to batch cancellation", license.UserID)
-			if err := TerminateUserTerminals(s.db, license.UserID); err != nil {
+			if err := TerminateUserTerminals(s.db, license.UserID, nil); err != nil {
 				utils.Error("Failed to terminate terminals for user %s: %v", license.UserID, err)
 				// Continue with cancellation even if terminal termination fails
 			}
@@ -629,7 +629,7 @@ func (s *bulkLicenseService) PermanentlyDeleteBatch(batchID uuid.UUID, requestin
 
 	for userID := range affectedUsers {
 		utils.Info("🔌 Terminating terminals for user %s before batch deletion", userID)
-		if err := TerminateUserTerminals(s.db, userID); err != nil {
+		if err := TerminateUserTerminals(s.db, userID, nil); err != nil {
 			utils.Error("Failed to terminate terminals for user %s: %v", userID, err)
 			// Continue with deletion even if terminal termination fails
 		}
