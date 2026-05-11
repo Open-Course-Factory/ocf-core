@@ -306,3 +306,96 @@ func TestCancelOrganizationSubscription_ImmediateTerminatesTerminals(t *testing.
 	db.Raw("SELECT status FROM terminals WHERE user_id = 'org_member_1'").Scan(&status)
 	assert.Equal(t, "deleted", status)
 }
+
+// TestTerminateOrganizationMemberTerminals_DoesNotTouchPersonalTerminals
+// asserts that when an organization subscription is cancelled, only the
+// terminals tied to THAT organization are terminated. Personal-plan
+// terminals (organization_id IS NULL) and terminals for other orgs must
+// remain untouched.
+//
+// Without orgID scoping, TerminateUserTerminals wipes ALL of a member's
+// terminals — causing permanent data loss for users on a personal plan
+// who happen to be members of a cancelled organization (closes #314).
+func TestTerminateOrganizationMemberTerminals_DoesNotTouchPersonalTerminals(t *testing.T) {
+	db := freshTestDB(t)
+
+	// Two orgs — the cancelled one (orgA) and an unrelated one (orgB)
+	orgA := uuid.New()
+	orgB := uuid.New()
+	for _, oid := range []uuid.UUID{orgA, orgB} {
+		org := &organizationModels.Organization{
+			BaseModel:   entityManagementModels.BaseModel{ID: oid},
+			Name:        "org-" + oid.String()[:8],
+			DisplayName: "Org " + oid.String()[:8],
+			OwnerUserID: "owner",
+			IsActive:    true,
+		}
+		require.NoError(t, db.Omit("Metadata").Create(org).Error)
+	}
+
+	// One user is a member of orgA only
+	userID := "shared_user"
+	member := &organizationModels.OrganizationMember{
+		BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID: orgA,
+		UserID:         userID,
+		Role:           organizationModels.OrgRoleMember,
+		JoinedAt:       time.Now(),
+		IsActive:       true,
+	}
+	require.NoError(t, db.Omit("Metadata").Create(member).Error)
+
+	// User has THREE terminals:
+	//  - one tied to orgA (the org being cancelled)
+	//  - one tied to orgB (an unrelated org, but user happens to share user_id)
+	//  - one personal (organization_id IS NULL)
+	termOrgA := uuid.New()
+	termOrgB := uuid.New()
+	termPersonal := uuid.New()
+	require.NoError(t, db.Exec(
+		`INSERT INTO terminals (id, session_id, user_id, name, status, state, organization_id, expires_at) VALUES (?, ?, ?, 'term-orgA', 'active', 'running', ?, ?)`,
+		termOrgA.String(), uuid.New().String(), userID, orgA, time.Now().Add(time.Hour),
+	).Error)
+	require.NoError(t, db.Exec(
+		`INSERT INTO terminals (id, session_id, user_id, name, status, state, organization_id, expires_at) VALUES (?, ?, ?, 'term-orgB', 'active', 'running', ?, ?)`,
+		termOrgB.String(), uuid.New().String(), userID, orgB, time.Now().Add(time.Hour),
+	).Error)
+	require.NoError(t, db.Exec(
+		`INSERT INTO terminals (id, session_id, user_id, name, status, state, organization_id, expires_at) VALUES (?, ?, ?, 'term-personal', 'active', 'running', NULL, ?)`,
+		termPersonal.String(), uuid.New().String(), userID, time.Now().Add(time.Hour),
+	).Error)
+
+	// Cancel orgA's subscription -> should terminate ONLY orgA's terminal
+	services.TerminateOrganizationMemberTerminals(db, orgA)
+
+	// orgA terminal: deleted
+	var statusOrgA string
+	db.Raw("SELECT status FROM terminals WHERE id = ?", termOrgA.String()).Scan(&statusOrgA)
+	assert.Equal(t, "deleted", statusOrgA, "orgA terminal must be deleted")
+
+	// orgB terminal: untouched
+	var statusOrgB string
+	db.Raw("SELECT status FROM terminals WHERE id = ?", termOrgB.String()).Scan(&statusOrgB)
+	assert.Equal(t, "active", statusOrgB, "orgB terminal must NOT be touched (different org)")
+
+	// Personal terminal: untouched — this is the critical data-loss prevention
+	var statusPersonal string
+	db.Raw("SELECT status FROM terminals WHERE id = ?", termPersonal.String()).Scan(&statusPersonal)
+	assert.Equal(t, "active", statusPersonal, "personal terminal must NOT be touched (organization_id is NULL)")
+
+	// SSOT checks via CountUserOccupiedSlots
+	// All-scope: user still occupies 2 slots (personal + orgB)
+	totalSlots, err := terminalModels.CountUserOccupiedSlots(db, userID, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), totalSlots, "user should still occupy 2 slots (personal + orgB) after orgA cancellation")
+
+	// orgA-scope: 0 slots
+	orgASlots, err := terminalModels.CountUserOccupiedSlots(db, userID, &orgA)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), orgASlots, "user should occupy 0 slots within orgA after cancellation")
+
+	// orgB-scope: 1 slot (unchanged)
+	orgBSlots, err := terminalModels.CountUserOccupiedSlots(db, userID, &orgB)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), orgBSlots, "user should still occupy 1 slot in orgB")
+}
