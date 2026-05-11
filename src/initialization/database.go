@@ -113,7 +113,9 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&paymentModels.SubscriptionBatch{})
 	db.AutoMigrate(&paymentModels.UserSubscription{})         // DEPRECATED in Phase 2 (kept for backward compat)
 	db.AutoMigrate(&paymentModels.OrganizationSubscription{}) // NEW: Phase 2 - Organization subscriptions
-	paymentModels.MigrateUniqueActiveOrgSubscriptionIndex(db) // DB-level partial unique index (closes #312)
+	// NOTE: The partial unique index on organization_subscriptions is
+	// created AFTER backfillSingleActiveOrgSubscription so the cleanup of
+	// legacy duplicate rows has a chance to run first. See line ~149.
 	db.AutoMigrate(&paymentModels.Invoice{})
 	db.AutoMigrate(&paymentModels.PaymentMethod{})
 	db.AutoMigrate(&paymentModels.UsageMetrics{})
@@ -147,6 +149,12 @@ func AutoMigrateAll(db *gorm.DB) {
 	// clean state (zero or one active sub per org). Idempotent and safe
 	// to run on every startup.
 	backfillSingleActiveOrgSubscription(db)
+
+	// Create the DB-level partial unique index AFTER the backfill cleanup
+	// so legacy duplicate-active rows cannot block the CREATE INDEX. From
+	// this point on, the index serializes cross-pod concurrent inserts —
+	// closes #312.
+	paymentModels.MigrateUniqueActiveOrgSubscriptionIndex(db)
 
 	// Heal users and organizations that are missing their Trial subscription (all environments)
 	ensureUsersHaveTrialPlan(db)
