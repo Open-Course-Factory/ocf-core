@@ -421,11 +421,13 @@ func TestCheckEffectiveUsageLimit_OrgPlan(t *testing.T) {
 
 	// User has no personal subscription, only an org subscription
 	proPlan := createPlan(t, db, "Pro", 10, 5)
-	createOrgWithSubscription(t, db, "org-limit", userID, proPlan)
+	org, _ := createOrgWithSubscription(t, db, "org-limit", userID, proPlan)
 
-	// Insert 3 active terminals
+	// Insert 3 active terminals scoped to the org — the count must reflect
+	// only terminals tied to this org's context (#311 I2 fix).
 	for i := 0; i < 3; i++ {
-		db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
+		db.Exec("INSERT INTO terminals (id, user_id, status, organization_id) VALUES (?, ?, ?, ?)",
+			uuid.New().String(), userID, "active", org.ID.String())
 	}
 
 	svc := services.NewEffectivePlanService(db)
