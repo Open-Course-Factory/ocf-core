@@ -5,7 +5,27 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
+
+// TerminalStatusesOccupyingSlot are the status values that count toward
+// the concurrent_terminals limit. Stopped sessions still occupy a slot
+// because they preserve disk and can be resumed — only deleted/expired
+// rows free a slot.
+var TerminalStatusesOccupyingSlot = []string{"active", "stopped"}
+
+// OccupiesSlotScope is a GORM scope that filters terminals counted
+// against the concurrent_terminals quota. Single source of truth for
+// the "occupies a slot" rule — every counter / quota query must use
+// this scope so the rule stays expressed in exactly one place.
+//
+// Usage:
+//
+//	db.Table("terminals").Scopes(models.OccupiesSlotScope).
+//	    Where("user_id = ?", userID).Count(&count)
+func OccupiesSlotScope(tx *gorm.DB) *gorm.DB {
+	return tx.Where("status IN ? AND deleted_at IS NULL", TerminalStatusesOccupyingSlot)
+}
 
 // Terminal représente une session de terminal actif
 type Terminal struct {
