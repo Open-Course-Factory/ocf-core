@@ -66,6 +66,10 @@ func runTestMigrations(db *gorm.DB) error {
 		return err
 	}
 
+	// Create the partial unique index that enforces "at most one
+	// active/trialing OrganizationSubscription per org" at the DB level.
+	models.MigrateUniqueActiveOrgSubscriptionIndex(db)
+
 	// Create tables with PostgreSQL-specific defaults using raw SQL for SQLite compatibility
 	// UserTerminalKey table (referenced by Terminal via foreign key)
 	db.Exec(`CREATE TABLE IF NOT EXISTS user_terminal_keys (

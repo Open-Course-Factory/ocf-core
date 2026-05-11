@@ -113,6 +113,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&paymentModels.SubscriptionBatch{})
 	db.AutoMigrate(&paymentModels.UserSubscription{})         // DEPRECATED in Phase 2 (kept for backward compat)
 	db.AutoMigrate(&paymentModels.OrganizationSubscription{}) // NEW: Phase 2 - Organization subscriptions
+	paymentModels.MigrateUniqueActiveOrgSubscriptionIndex(db) // DB-level partial unique index (closes #312)
 	db.AutoMigrate(&paymentModels.Invoice{})
 	db.AutoMigrate(&paymentModels.PaymentMethod{})
 	db.AutoMigrate(&paymentModels.UsageMetrics{})

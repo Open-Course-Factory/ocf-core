@@ -1,11 +1,13 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // OrganizationSubscription represents an organization's subscription (Phase 2)
@@ -34,4 +36,51 @@ func (os OrganizationSubscription) GetBaseModel() entityManagementModels.BaseMod
 
 func (os OrganizationSubscription) GetReferenceObject() string {
 	return "OrganizationSubscription"
+}
+
+// MigrateUniqueActiveOrgSubscriptionIndex creates a partial unique index that
+// enforces "at most one active/trialing OrganizationSubscription per
+// organization" at the database level.
+//
+// This is the canonical defense against multi-pod races where two writers
+// (e.g. an admin assign and a Stripe webhook firing simultaneously) both
+// pass the in-process deactivate check before inserting their new rows.
+// The Go-level transaction in CreateOrganizationSubscriptionAtomic prevents
+// races inside a single process, but only the DB can serialize cross-pod
+// concurrent inserts.
+//
+// We use a raw partial-index migration (rather than a GORM `uniqueIndex` tag)
+// because GORM's struct-tag parser does not reliably emit multi-column WHERE
+// clauses across dialects (`status IN ('active','trialing') AND deleted_at
+// IS NULL`). The same pattern is already used by scenarios:
+// MigrateUniqueActiveSessionIndex.
+func MigrateUniqueActiveOrgSubscriptionIndex(db *gorm.DB) {
+	indexName := "idx_unique_active_org_subscription"
+
+	// Idempotent: skip if the index is already in place.
+	if db.Migrator().HasIndex(&OrganizationSubscription{}, indexName) {
+		return
+	}
+
+	dialect := db.Dialector.Name()
+	var sql string
+	switch dialect {
+	case "postgres":
+		sql = fmt.Sprintf(
+			`CREATE UNIQUE INDEX %s ON organization_subscriptions (organization_id) WHERE status IN ('active', 'trialing') AND deleted_at IS NULL`,
+			indexName,
+		)
+	case "sqlite":
+		sql = fmt.Sprintf(
+			`CREATE UNIQUE INDEX IF NOT EXISTS %s ON organization_subscriptions (organization_id) WHERE status IN ('active', 'trialing') AND deleted_at IS NULL`,
+			indexName,
+		)
+	default:
+		fmt.Printf("MigrateUniqueActiveOrgSubscriptionIndex: unsupported dialect %s, skipping\n", dialect)
+		return
+	}
+
+	if err := db.Exec(sql).Error; err != nil {
+		fmt.Printf("MigrateUniqueActiveOrgSubscriptionIndex: failed to create index: %v\n", err)
+	}
 }
