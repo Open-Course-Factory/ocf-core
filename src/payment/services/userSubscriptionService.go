@@ -196,10 +196,9 @@ func (ss *subscriptionService) CreateUserSubscription(userID string, planID uuid
 	return ss.GetUserSubscriptionByID(subscription.ID)
 }
 
-// CheckUsageLimit vérifie si une action est autorisée selon les limites d'abonnement.
-//
-// LEGACY METHOD — preserved verbatim from before the QuotaService
-// consolidation (#311) because:
+// Deprecated: CheckUsageLimit is the pre-#311 quota path. New callers must
+// use QuotaService.CheckUserQuota (or EffectivePlanService.CheckEffectiveUsageLimit*
+// which delegates to it). This method is preserved because:
 //
 //   - it has ZERO production callers (the controller layer routes through
 //     EffectivePlanService.CheckEffectiveUsageLimit, which now delegates
