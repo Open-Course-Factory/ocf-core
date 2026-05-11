@@ -255,18 +255,13 @@ func (oss *organizationSubscriptionService) GetOrganizationUsageLimits(orgID uui
 
 	plan := subscription.SubscriptionPlan
 
-	// Count current usage. The "occupies a slot" rule lives in
-	// terminalModels.OccupiesSlotScope — stopped sessions still count
-	// toward the org's concurrent_terminals limit, only deleted/expired
-	// rows free a slot. Previously this counted only status='active',
-	// which under-reported usage and let orgs exceed their plan limit
-	// by stopping then starting new sessions (issue #309).
-	var currentTerminals int64
-	oss.db.Table("terminals").
-		Scopes(terminalModels.OccupiesSlotScope).
-		Joins("JOIN organization_members ON organization_members.user_id = terminals.user_id").
-		Where("organization_members.organization_id = ?", orgID).
-		Count(&currentTerminals)
+	// Count current usage via the SSOT helper. The "occupies a slot"
+	// rule lives in terminalModels.OccupiesSlotScope — stopped sessions
+	// still count toward the org's concurrent_terminals limit, only
+	// deleted/expired rows free a slot. Previously this counted only
+	// status='active', which under-reported usage and let orgs exceed
+	// their plan limit by stopping then starting new sessions (#309).
+	currentTerminals, _ := terminalModels.CountOrgOccupiedSlots(oss.db, orgID)
 
 	var currentCourses int64
 	oss.db.Table("courses").

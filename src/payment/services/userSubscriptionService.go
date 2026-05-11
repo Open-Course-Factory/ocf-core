@@ -233,15 +233,11 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 			}
 
 			// Pour concurrent_terminals, vérifier le compte réel depuis la DB.
-			// "Occupies a slot" rule lives in terminalModels.OccupiesSlotScope.
+			// SSOT: CountUserOccupiedSlots wraps OccupiesSlotScope.
+			// orgID=nil → personal quota counts all user terminals.
 			var currentUsage int64 = 0
 			if metricType == "concurrent_terminals" {
-				var activeCount int64
-				countErr := ss.db.Table("terminals").
-					Scopes(terminalModels.OccupiesSlotScope).
-					Where("user_id = ?", userID).
-					Count(&activeCount).Error
-				if countErr == nil {
+				if activeCount, countErr := terminalModels.CountUserOccupiedSlots(ss.db, userID, nil); countErr == nil {
 					currentUsage = activeCount
 				}
 			}
@@ -260,15 +256,11 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 	}
 
 	// Pour concurrent_terminals, recalculer la valeur en temps réel.
-	// "Occupies a slot" rule lives in terminalModels.OccupiesSlotScope.
+	// SSOT: CountUserOccupiedSlots wraps OccupiesSlotScope.
+	// orgID=nil → personal quota counts all user terminals.
 	currentValue := metrics.CurrentValue
 	if metricType == "concurrent_terminals" {
-		var activeCount int64
-		err := ss.db.Table("terminals").
-			Scopes(terminalModels.OccupiesSlotScope).
-			Where("user_id = ?", userID).
-			Count(&activeCount).Error
-		if err == nil {
+		if activeCount, err := terminalModels.CountUserOccupiedSlots(ss.db, userID, nil); err == nil {
 			currentValue = activeCount
 		}
 	}
@@ -321,18 +313,26 @@ func (ss *subscriptionService) GetUserUsageMetrics(userID string, organizationID
 	for i := range *metrics {
 		metric := &(*metrics)[i]
 		if metric.MetricType == "concurrent_terminals" {
-			// "Occupies a slot" rule lives in terminalModels.OccupiesSlotScope —
-			// active + stopped sessions are counted; only deleted/expired rows
-			// free a slot.
-			var activeCount int64
-			query := ss.db.Table("terminals").
-				Scopes(terminalModels.OccupiesSlotScope).
-				Where("user_id = ?", userID)
+			// SSOT: CountUserOccupiedSlots wraps OccupiesSlotScope.
+			// When organizationID is provided, scope to that org via the
+			// direct terminals.organization_id column (matches the legacy
+			// behavior of this metric for org-context dashboards).
+			var orgPtr *uuid.UUID
+			skipUpdate := false
 			if len(organizationID) > 0 && organizationID[0] != "" {
-				query = query.Where("organization_id = ?", organizationID[0])
+				parsed, err := uuid.Parse(organizationID[0])
+				if err != nil {
+					// Preserve legacy safety: unparseable orgID used to yield
+					// zero matches, not "count everything". Skip the update.
+					skipUpdate = true
+				} else {
+					orgPtr = &parsed
+				}
 			}
-			if err := query.Count(&activeCount).Error; err == nil {
-				metric.CurrentValue = activeCount
+			if !skipUpdate {
+				if activeCount, err := terminalModels.CountUserOccupiedSlots(ss.db, userID, orgPtr); err == nil {
+					metric.CurrentValue = activeCount
+				}
 			}
 		}
 	}

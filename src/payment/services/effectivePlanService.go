@@ -161,15 +161,14 @@ func (s *effectivePlanService) checkUsageLimitFromResult(result *EffectivePlanRe
 	// Get current usage
 	var currentUsage int64
 	if metricType == "concurrent_terminals" {
-		// "Occupies a slot" rule lives in terminalModels.OccupiesSlotScope —
-		// stopped sessions still count, only deleted/expired rows free a slot.
-		countErr := s.db.Table("terminals").
-			Scopes(terminalModels.OccupiesSlotScope).
-			Where("user_id = ?", userID).
-			Count(&currentUsage).Error
+		// SSOT: CountUserOccupiedSlots wraps OccupiesSlotScope — stopped
+		// sessions still count, only deleted/expired rows free a slot.
+		// orgID=nil → personal quota gate counts all user terminals.
+		count, countErr := terminalModels.CountUserOccupiedSlots(s.db, userID, nil)
 		if countErr != nil {
 			return nil, fmt.Errorf("failed to count active terminals: %w", countErr)
 		}
+		currentUsage = count
 	} else {
 		metrics, metricsErr := s.paymentRepo.GetUserUsageMetrics(userID, metricType)
 		if metricsErr != nil {

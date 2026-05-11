@@ -1800,6 +1800,19 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 	// 3. Count quota-relevant slot occupancy per user using the SSOT scope
 	// (models.OccupiesSlotScope). Stopped sessions still occupy a slot and
 	// must be reflected separately from the running-only display count.
+	//
+	// NOTE: this uses the direct terminals.organization_id column, NOT the
+	// member-join shape of models.CountOrgOccupiedSlots. The two semantics
+	// disagree:
+	//   - dashboard (here): "terminals attributed to this org via the
+	//     terminals.organization_id column" — what dashboards historically
+	//     displayed per-user for the org.
+	//   - quota (CountOrgOccupiedSlots): "terminals owned by any member of
+	//     the org" — the production quota gate semantics.
+	// Aligning the two is a real product-behavior change; tracked separately
+	// so this security-fix branch stays behavior-preserving. We deliberately
+	// do NOT use CountOrgOccupiedSlots here for that reason, and we cannot
+	// use a flat helper anyway because this query is a GROUP BY user_id.
 	type userSlotCount struct {
 		UserID         string
 		OccupyingCount int64
