@@ -192,6 +192,51 @@ func TestQuotaService_GetOrgQuota_ReturnsCurrentAndLimit(t *testing.T) {
 	assert.Equal(t, 2, limits.CurrentTerminals, "both active and stopped occupy a slot")
 }
 
+// TestQuotaService_CheckUserQuota_ScenarioControllerBug_Regression documents
+// the bug fixed in scenarioController.PreviewScenario (#311). Before the fix,
+// the controller resolved orgIDForPlan a few lines above the quota check, then
+// called EffectivePlanService.CheckEffectiveUsageLimit (no org argument),
+// which fell back to the global plan resolution and counted against the user's
+// PERSONAL quota — even when the scenario was launched in an org context.
+//
+// The fix routes the quota check through QuotaService.CheckUserQuota with the
+// resolved orgIDForPlan, so the org's plan limit applies. This test asserts
+// that contract: a user with a tight personal plan (1 terminal) and a
+// generous team-org plan (5 terminals) gets the team plan's limit when the
+// org context is provided, even with the personal plan currently at quota.
+func TestQuotaService_CheckUserQuota_ScenarioControllerBug_Regression(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "scenario-org-bug-regression"
+
+	// Personal plan (1 terminal) at HIGHER priority than the team plan, so
+	// the global fallback (no org context) prefers the personal plan. The
+	// team plan still has a different limit (5) so we can distinguish which
+	// plan was actually consulted.
+	personalPlan := createPlan(t, db, "PersonalTight", 50, 1)
+	teamPlan := createPlan(t, db, "TeamGenerous", 20, 5)
+
+	createUserSubscription(t, db, userID, personalPlan)
+	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "scenario-org", userID, teamPlan, organizationModels.OrgTypeTeam)
+
+	// User has 0 terminals — both checks should be Allowed by their own plan,
+	// but the LIMIT they report must differ depending on org context.
+	eps := services.NewEffectivePlanService(db)
+	svc := services.NewQuotaService(db, eps)
+
+	// Without org context — the bug path (global fallback to personal plan)
+	checkPersonal, errP := svc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
+	assert.NoError(t, errP)
+	assert.Equal(t, int64(1), checkPersonal.Limit, "without org context the user's personal limit applies")
+	assert.Equal(t, services.PlanSourcePersonal, checkPersonal.Source)
+
+	// With org context — the fixed path (team plan wins regardless of priority)
+	checkOrg, errO := svc.CheckUserQuota(userID, &teamOrg.ID, "concurrent_terminals", 1)
+	assert.NoError(t, errO)
+	assert.Equal(t, int64(5), checkOrg.Limit, "with org context the team plan's limit applies (regression for #311)")
+	assert.Equal(t, services.PlanSourceOrganization, checkOrg.Source)
+}
+
 func TestQuotaService_GetUserUsage_ConcurrentTerminals_LiveCount(t *testing.T) {
 	db := freshTestDB(t)
 	ensureTerminalsTable(t, db)

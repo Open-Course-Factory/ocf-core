@@ -3234,8 +3234,12 @@ func (sc *scenarioController) PreviewScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Check concurrent terminal limit
-	limitCheck, limitErr := effectivePlanService.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	// Check concurrent terminal limit using the org-aware plan resolved just above.
+	// Reusing planResult avoids a redundant DB round-trip AND fixes a latent bug
+	// where a scenario launched in an org context counted against the user's
+	// PERSONAL quota instead of the org's (the previous call ignored orgIDForPlan).
+	// See QuotaService consolidation (#311).
+	limitCheck, limitErr := effectivePlanService.CheckEffectiveUsageLimitFromResult(planResult, userID, "concurrent_terminals", 1)
 	if limitErr != nil {
 		slog.Error("failed to check usage limit", "userID", userID, "err", limitErr)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
