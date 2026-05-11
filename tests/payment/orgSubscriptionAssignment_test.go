@@ -196,6 +196,9 @@ func insertOrgSubAtTime(t *testing.T, db *gorm.DB, orgID, planID uuid.UUID, crea
 // Use ONLY for tests that exercise the legacy backfill helper — the index
 // is the production-correct invariant and dropping it elsewhere defeats
 // the protection.
+//
+// NOT SAFE under t.Parallel(): dropping the shared-DB index would break
+// any concurrent test that relies on the unique-active-org-sub invariant.
 func withoutUniqueActiveOrgSubIndex(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	const indexName = "idx_unique_active_org_subscription"

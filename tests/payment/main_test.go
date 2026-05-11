@@ -133,6 +133,11 @@ func runTestMigrations(db *gorm.DB) error {
 
 // freshTestDB returns the shared DB after cleaning all rows.
 // Safe because Go tests within a package run sequentially (no t.Parallel).
+//
+// IMPORTANT: tests in this package MUST NOT call t.Parallel(). The helper
+// withoutUniqueActiveOrgSubIndex (in orgSubscriptionAssignment_test.go)
+// temporarily drops the partial unique index on organization_subscriptions;
+// any parallel test relying on that invariant would flake.
 func freshTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	// Delete in dependency order to respect foreign keys
