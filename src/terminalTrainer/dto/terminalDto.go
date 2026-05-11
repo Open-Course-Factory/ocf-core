@@ -551,18 +551,31 @@ type CommandHistoryResponse struct {
 	Offset    int                   `json:"offset,omitempty"`
 }
 
-// OrgTerminalUsageUser holds per-user active terminal count for an organization.
+// OrgTerminalUsageUser holds per-user terminal counts for an organization.
+//
+// ActiveCount reports running sessions only (status='active'). OccupyingSlots
+// reports every session that still consumes a slot under the canonical rule
+// in models.TerminalStatusesOccupyingSlot (currently active+stopped). The two
+// values differ because a stopped session keeps disk and a quota slot until
+// it is deleted — see models.OccupiesSlotScope for the single source of truth.
 type OrgTerminalUsageUser struct {
-	UserID      string `json:"user_id"`
-	DisplayName string `json:"display_name"`
-	Email       string `json:"email"`
-	ActiveCount int    `json:"active_count"`
+	UserID          string `json:"user_id"`
+	DisplayName     string `json:"display_name"`
+	Email           string `json:"email"`
+	ActiveCount     int    `json:"active_count"`
+	OccupyingSlots  int    `json:"occupying_slots"`
 }
 
 // OrgTerminalUsageResponse is returned by GET /organizations/:id/terminal-usage.
+//
+// ActiveTerminals is the "what's running right now" display count. OccupyingSlots
+// is the quota-relevant count and matches MaxTerminals semantics (stopped sessions
+// still occupy a slot — see models.TerminalStatusesOccupyingSlot). Both are
+// surfaced so the dashboard can show "5 running / 7 slots used / 10 max".
 type OrgTerminalUsageResponse struct {
 	OrganizationID  string                 `json:"organization_id"`
 	ActiveTerminals int                    `json:"active_terminals"`
+	OccupyingSlots  int                    `json:"occupying_slots"`
 	MaxTerminals    int                    `json:"max_terminals"`
 	PlanName        string                 `json:"plan_name"`
 	IsFallback      bool                   `json:"is_fallback"`

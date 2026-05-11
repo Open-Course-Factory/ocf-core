@@ -1782,37 +1782,83 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 		isFallback = planResult.IsFallback
 	}
 
-	// 2. Count active terminals across all members, grouped by user.
+	// 2. Count active terminals (what's running) per user — display field.
 	type userCount struct {
 		UserID      string
 		ActiveCount int64
 	}
-	var rows []userCount
+	var activeRows []userCount
 	err = tts.db.Table("terminals").
 		Select("user_id, COUNT(*) as active_count").
 		Where("organization_id = ? AND status = ? AND deleted_at IS NULL", orgID, "active").
 		Group("user_id").
-		Scan(&rows).Error
+		Scan(&activeRows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to count active terminals: %w", err)
 	}
 
-	// 3. Build per-user entries and total count.
+	// 3. Count quota-relevant slot occupancy per user using the SSOT scope
+	// (models.OccupiesSlotScope). Stopped sessions still occupy a slot and
+	// must be reflected separately from the running-only display count.
+	type userSlotCount struct {
+		UserID         string
+		OccupyingCount int64
+	}
+	var slotRows []userSlotCount
+	err = tts.db.Table("terminals").
+		Scopes(models.OccupiesSlotScope).
+		Select("terminals.user_id as user_id, COUNT(*) as occupying_count").
+		Where("terminals.organization_id = ?", orgID).
+		Group("terminals.user_id").
+		Scan(&slotRows).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to count slot-occupying terminals: %w", err)
+	}
+
+	// 4. Build per-user entries merging both counts. A user may appear in
+	// slotRows but not in activeRows (e.g. all their sessions are stopped),
+	// so we key by UserID and union the two sets.
+	type userEntry struct {
+		active    int
+		occupying int
+	}
+	byUser := make(map[string]*userEntry)
+	for _, row := range activeRows {
+		e, ok := byUser[row.UserID]
+		if !ok {
+			e = &userEntry{}
+			byUser[row.UserID] = e
+		}
+		e.active = int(row.ActiveCount)
+	}
+	for _, row := range slotRows {
+		e, ok := byUser[row.UserID]
+		if !ok {
+			e = &userEntry{}
+			byUser[row.UserID] = e
+		}
+		e.occupying = int(row.OccupyingCount)
+	}
+
 	totalActive := 0
-	users := make([]dto.OrgTerminalUsageUser, 0, len(rows))
-	for _, row := range rows {
-		totalActive += int(row.ActiveCount)
+	totalOccupying := 0
+	users := make([]dto.OrgTerminalUsageUser, 0, len(byUser))
+	for userID, e := range byUser {
+		totalActive += e.active
+		totalOccupying += e.occupying
 		users = append(users, dto.OrgTerminalUsageUser{
-			UserID:      row.UserID,
-			DisplayName: row.UserID, // display name enrichment happens in the frontend
-			Email:       "",
-			ActiveCount: int(row.ActiveCount),
+			UserID:         userID,
+			DisplayName:    userID, // display name enrichment happens in the frontend
+			Email:          "",
+			ActiveCount:    e.active,
+			OccupyingSlots: e.occupying,
 		})
 	}
 
 	return &dto.OrgTerminalUsageResponse{
 		OrganizationID:  orgID.String(),
 		ActiveTerminals: totalActive,
+		OccupyingSlots:  totalOccupying,
 		MaxTerminals:    maxTerminals,
 		PlanName:        planName,
 		IsFallback:      isFallback,

@@ -296,6 +296,146 @@ func TestGetOrgTerminalUsage_ActiveTerminalsAggregated(t *testing.T) {
 	assert.Equal(t, 1, len(users), "There should be 1 user entry (student1)")
 }
 
+// TestGetOrgTerminalUsage_OccupyingSlotsIncludesStopped verifies that the
+// new OccupyingSlots field reports the quota-relevant count (active + stopped)
+// while ActiveTerminals continues to report only running sessions. This is the
+// SSOT rule documented in models.TerminalStatusesOccupyingSlot: a stopped
+// session still occupies a slot until it is deleted.
+func TestGetOrgTerminalUsage_OccupyingSlotsIncludesStopped(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	org := createTestOrgForHistory(t, db, "owner1")
+	createTestOrgMember(t, db, org.ID, "owner1", orgModels.OrgRoleOwner)
+	createTestOrgMember(t, db, org.ID, "student1", orgModels.OrgRoleMember)
+
+	userKey, err := createTestUserKey(db, "student1")
+	require.NoError(t, err)
+
+	// 1 active terminal for student1
+	activeTerminal := &models.Terminal{
+		SessionID:         "active-session-" + uuid.New().String(),
+		UserID:            "student1",
+		Status:            "active",
+		ExpiresAt:         time.Now().Add(1 * time.Hour),
+		InstanceType:      "test",
+		MachineSize:       "S",
+		UserTerminalKeyID: userKey.ID,
+		OrganizationID:    &org.ID,
+	}
+	require.NoError(t, db.Create(activeTerminal).Error)
+
+	// 1 stopped terminal for student1 — still occupies a slot per
+	// models.OccupiesSlotScope (the SSOT rule).
+	stoppedTerminal := &models.Terminal{
+		SessionID:         "stopped-session-" + uuid.New().String(),
+		UserID:            "student1",
+		Status:            "stopped",
+		ExpiresAt:         time.Now().Add(1 * time.Hour),
+		InstanceType:      "test",
+		MachineSize:       "S",
+		UserTerminalKeyID: userKey.ID,
+		OrganizationID:    &org.ID,
+	}
+	require.NoError(t, db.Create(stoppedTerminal).Error)
+
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "owner1")
+		c.Set("userRoles", []string{"member"})
+		c.Next()
+	})
+	router.GET("/organizations/:id/terminal-usage", ctrl.GetOrgTerminalUsage)
+
+	req := httptest.NewRequest("GET", "/organizations/"+org.ID.String()+"/terminal-usage", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	// active_terminals = 1 (the running one)
+	assert.Equal(t, float64(1), resp["active_terminals"],
+		"active_terminals reports running-only sessions")
+	// occupying_slots = 2 (active + stopped) — matches the quota rule
+	assert.Equal(t, float64(2), resp["occupying_slots"],
+		"occupying_slots must include stopped sessions per OccupiesSlotScope")
+
+	// Per-user breakdown carries both counts as well.
+	users, ok := resp["users"].([]interface{})
+	require.True(t, ok, "users should be a JSON array")
+	require.Equal(t, 1, len(users), "There should be 1 user entry (student1)")
+	userEntry := users[0].(map[string]interface{})
+	assert.Equal(t, "student1", userEntry["user_id"])
+	assert.Equal(t, float64(1), userEntry["active_count"],
+		"per-user active_count reports running-only sessions")
+	assert.Equal(t, float64(2), userEntry["occupying_slots"],
+		"per-user occupying_slots must include stopped sessions")
+}
+
+// TestGetOrgTerminalUsage_OccupyingSlotsAllStopped verifies that a user whose
+// only sessions are stopped still appears in the breakdown with active_count=0
+// and occupying_slots>0 — the field union must not drop users that have no
+// running sessions.
+func TestGetOrgTerminalUsage_OccupyingSlotsAllStopped(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	org := createTestOrgForHistory(t, db, "owner1")
+	createTestOrgMember(t, db, org.ID, "owner1", orgModels.OrgRoleOwner)
+	createTestOrgMember(t, db, org.ID, "student2", orgModels.OrgRoleMember)
+
+	userKey, err := createTestUserKey(db, "student2")
+	require.NoError(t, err)
+
+	stoppedTerminal := &models.Terminal{
+		SessionID:         "stopped-only-" + uuid.New().String(),
+		UserID:            "student2",
+		Status:            "stopped",
+		ExpiresAt:         time.Now().Add(1 * time.Hour),
+		InstanceType:      "test",
+		MachineSize:       "S",
+		UserTerminalKeyID: userKey.ID,
+		OrganizationID:    &org.ID,
+	}
+	require.NoError(t, db.Create(stoppedTerminal).Error)
+
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "owner1")
+		c.Set("userRoles", []string{"member"})
+		c.Next()
+	})
+	router.GET("/organizations/:id/terminal-usage", ctrl.GetOrgTerminalUsage)
+
+	req := httptest.NewRequest("GET", "/organizations/"+org.ID.String()+"/terminal-usage", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, float64(0), resp["active_terminals"])
+	assert.Equal(t, float64(1), resp["occupying_slots"])
+
+	users, ok := resp["users"].([]interface{})
+	require.True(t, ok)
+	require.Equal(t, 1, len(users),
+		"user with only stopped sessions must still appear in the breakdown")
+	userEntry := users[0].(map[string]interface{})
+	assert.Equal(t, "student2", userEntry["user_id"])
+	assert.Equal(t, float64(0), userEntry["active_count"])
+	assert.Equal(t, float64(1), userEntry["occupying_slots"])
+}
+
 // TestGetOrgTerminalUsage_PlanLimitsFromSubscription verifies that max_terminals
 // is populated from the organization's subscription plan.
 func TestGetOrgTerminalUsage_PlanLimitsFromSubscription(t *testing.T) {
