@@ -188,8 +188,30 @@ func insertOrgSubAtTime(t *testing.T, db *gorm.DB, orgID, planID uuid.UUID, crea
 	return id
 }
 
+// withoutUniqueActiveOrgSubIndex temporarily drops the partial unique index
+// that enforces "one active subscription per org" so the test can seed the
+// pre-fix bad state of multiple active rows. The index is recreated when
+// the test ends.
+//
+// Use ONLY for tests that exercise the legacy backfill helper — the index
+// is the production-correct invariant and dropping it elsewhere defeats
+// the protection.
+func withoutUniqueActiveOrgSubIndex(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	const indexName = "idx_unique_active_org_subscription"
+	require.NoError(t, db.Exec(`DROP INDEX IF EXISTS `+indexName).Error)
+	t.Cleanup(func() {
+		// Recreate so the next test's fresh DB inherits the index again.
+		models.MigrateUniqueActiveOrgSubscriptionIndex(db)
+	})
+}
+
 func TestBackfillSingleActiveSubscription_DeactivatesAllButNewest(t *testing.T) {
 	db := freshTestDB(t)
+	// This test simulates the legacy pre-fix bad state, which the DB-level
+	// partial unique index now prevents from being created in the first
+	// place. Drop the index for the duration of the test so we can seed it.
+	withoutUniqueActiveOrgSubIndex(t, db)
 	freePlan, proPlan, org, _ := seedOrgAndTwoPlans(t, db)
 
 	// Simulate the pre-fix bad state: 3 active subscriptions for the same org.
@@ -230,6 +252,10 @@ func TestBackfillSingleActiveSubscription_DeactivatesAllButNewest(t *testing.T) 
 
 func TestBackfillSingleActiveSubscription_Idempotent(t *testing.T) {
 	db := freshTestDB(t)
+	// See TestBackfillSingleActiveSubscription_DeactivatesAllButNewest: the
+	// partial unique index is dropped while we seed legacy bad data, then
+	// recreated via t.Cleanup.
+	withoutUniqueActiveOrgSubIndex(t, db)
 	freePlan, proPlan, org, _ := seedOrgAndTwoPlans(t, db)
 
 	t1 := time.Now().Add(-2 * time.Hour)

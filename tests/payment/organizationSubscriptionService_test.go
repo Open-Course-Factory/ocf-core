@@ -533,6 +533,13 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 // consistent.
 func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *testing.T) {
 	db := freshTestDB(t)
+	// The scenario deliberately seeds two active subscriptions on the same
+	// org to mirror legacy "data leftover from a plan change". The new
+	// DB-level partial unique index would reject the second insert; drop
+	// it for the duration of this test so we can still exercise the
+	// resilient-aggregation behaviour. The index is recreated via
+	// t.Cleanup.
+	withoutUniqueActiveOrgSubIndex(t, db)
 	service := services.NewOrganizationSubscriptionService(db)
 	userID := "user_with_two_active_subs"
 
