@@ -11,6 +11,7 @@ import (
 
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	genericService "soli/formations/src/entityManagement/services"
 
@@ -232,12 +233,13 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 			}
 
 			// Pour concurrent_terminals, vérifier le compte réel depuis la DB.
-			// Une session arrêtée occupe toujours un slot (libéré uniquement par DELETE).
+			// "Occupies a slot" rule lives in terminalModels.OccupiesSlotScope.
 			var currentUsage int64 = 0
 			if metricType == "concurrent_terminals" {
 				var activeCount int64
 				countErr := ss.db.Table("terminals").
-					Where("user_id = ? AND status IN ? AND deleted_at IS NULL", userID, []string{"active", "stopped"}).
+					Scopes(terminalModels.OccupiesSlotScope).
+					Where("user_id = ?", userID).
 					Count(&activeCount).Error
 				if countErr == nil {
 					currentUsage = activeCount
@@ -258,12 +260,13 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 	}
 
 	// Pour concurrent_terminals, recalculer la valeur en temps réel.
-	// Une session arrêtée occupe toujours un slot (libéré uniquement par DELETE).
+	// "Occupies a slot" rule lives in terminalModels.OccupiesSlotScope.
 	currentValue := metrics.CurrentValue
 	if metricType == "concurrent_terminals" {
 		var activeCount int64
 		err := ss.db.Table("terminals").
-			Where("user_id = ? AND status IN ? AND deleted_at IS NULL", userID, []string{"active", "stopped"}).
+			Scopes(terminalModels.OccupiesSlotScope).
+			Where("user_id = ?", userID).
 			Count(&activeCount).Error
 		if err == nil {
 			currentValue = activeCount
@@ -318,11 +321,13 @@ func (ss *subscriptionService) GetUserUsageMetrics(userID string, organizationID
 	for i := range *metrics {
 		metric := &(*metrics)[i]
 		if metric.MetricType == "concurrent_terminals" {
-			// Compter les terminaux qui occupent un slot — actifs ET arrêtés
-			// (le slot n'est libéré que par DELETE, qui passe status='deleted').
+			// "Occupies a slot" rule lives in terminalModels.OccupiesSlotScope —
+			// active + stopped sessions are counted; only deleted/expired rows
+			// free a slot.
 			var activeCount int64
 			query := ss.db.Table("terminals").
-				Where("user_id = ? AND status IN ? AND deleted_at IS NULL", userID, []string{"active", "stopped"})
+				Scopes(terminalModels.OccupiesSlotScope).
+				Where("user_id = ?", userID)
 			if len(organizationID) > 0 && organizationID[0] != "" {
 				query = query.Where("organization_id = ?", organizationID[0])
 			}

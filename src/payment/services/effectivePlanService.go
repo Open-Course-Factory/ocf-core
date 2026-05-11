@@ -7,6 +7,7 @@ import (
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
 
 	"github.com/google/uuid"
@@ -160,11 +161,11 @@ func (s *effectivePlanService) checkUsageLimitFromResult(result *EffectivePlanRe
 	// Get current usage
 	var currentUsage int64
 	if metricType == "concurrent_terminals" {
-		// A stopped session still occupies a concurrent_terminals slot — the
-		// slot is only freed by DELETE (which sets status='deleted'). See the
-		// design contract in terminalTrainerService.go (StopSession).
+		// "Occupies a slot" rule lives in terminalModels.OccupiesSlotScope —
+		// stopped sessions still count, only deleted/expired rows free a slot.
 		countErr := s.db.Table("terminals").
-			Where("user_id = ? AND status IN ? AND deleted_at IS NULL", userID, []string{"active", "stopped"}).
+			Scopes(terminalModels.OccupiesSlotScope).
+			Where("user_id = ?", userID).
 			Count(&currentUsage).Error
 		if countErr != nil {
 			return nil, fmt.Errorf("failed to count active terminals: %w", countErr)
