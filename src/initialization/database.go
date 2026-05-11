@@ -114,7 +114,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&paymentModels.UserSubscription{})         // DEPRECATED in Phase 2 (kept for backward compat)
 	db.AutoMigrate(&paymentModels.OrganizationSubscription{}) // NEW: Phase 2 - Organization subscriptions
 	// NOTE: The partial unique index on organization_subscriptions is
-	// created AFTER backfillSingleActiveOrgSubscription so the cleanup of
+	// created AFTER BackfillSingleActiveOrgSubscription so the cleanup of
 	// legacy duplicate rows has a chance to run first. See line ~149.
 	db.AutoMigrate(&paymentModels.Invoice{})
 	db.AutoMigrate(&paymentModels.PaymentMethod{})
