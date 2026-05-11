@@ -268,7 +268,16 @@ func CheckLimit(effectivePlanService services.EffectivePlanService, db *gorm.DB,
 		// Process the request
 		ctx.Next()
 
-		// After response: if successful, increment usage
+		// After response: if successful, increment usage.
+		//
+		// concurrent_terminals is no longer materialized — every read path
+		// recomputes from the terminals table via QuotaService (#311).
+		// Incrementing the stored counter here would be dead-write drift
+		// cruft, so we skip it.
+		if metricType == "concurrent_terminals" {
+			return
+		}
+
 		if ctx.Writer.Status() >= 200 && ctx.Writer.Status() < 300 {
 			if incrementErr := paymentRepo.IncrementUsageMetric(userID, metricType, 1); incrementErr != nil {
 				utils.Warn("Failed to increment usage metric %s for user %s: %v", metricType, userID, incrementErr)
