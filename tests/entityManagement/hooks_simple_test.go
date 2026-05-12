@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -688,4 +689,141 @@ func TestHooksSimple_ErrorTracking_BeforeHooksNotTracked(t *testing.T) {
 	assert.Len(t, errors, 0, "Before hooks should not be tracked in error buffer")
 
 	t.Logf("✅ Before hooks correctly not tracked (they return errors synchronously)")
+}
+
+// ============================================================================
+// Synchronous AfterHook Contract (issue #316)
+// ============================================================================
+//
+// These tests lock in the contract that AfterCreate hooks run synchronously,
+// so their side effects (and any errors they report) are visible to the caller
+// immediately after CreateEntity returns. The hook deliberately sleeps inside
+// its Execute() — if the framework spawns a goroutine, the assertions race the
+// goroutine and fail. Once hooks are sync, the sleep happens inline and the
+// assertions trivially succeed.
+
+// slowSideEffectHook flips an atomic flag inside Execute, after sleeping long
+// enough that an async dispatch is observable to the caller.
+type slowSideEffectHook struct {
+	*SimpleTrackingHook
+	flag  *int32
+	delay time.Duration
+}
+
+func newSlowSideEffectHook(name, entityName string, hookTypes []hooks.HookType, flag *int32, delay time.Duration) *slowSideEffectHook {
+	return &slowSideEffectHook{
+		SimpleTrackingHook: NewSimpleTrackingHook(name, entityName, hookTypes, 50),
+		flag:               flag,
+		delay:              delay,
+	}
+}
+
+func (h *slowSideEffectHook) Execute(ctx *hooks.HookContext) error {
+	_ = h.SimpleTrackingHook.Execute(ctx)
+	if h.delay > 0 {
+		time.Sleep(h.delay)
+	}
+	atomic.StoreInt32(h.flag, 1)
+	return nil
+}
+
+// slowFailingHook is like SimpleFailingHook but sleeps before returning, to
+// ensure the failure cannot reach the error sink before CreateEntity returns
+// if the registry dispatches it asynchronously.
+type slowFailingHook struct {
+	*SimpleTrackingHook
+	delay time.Duration
+}
+
+func newSlowFailingHook(name, entityName string, hookTypes []hooks.HookType, delay time.Duration) *slowFailingHook {
+	return &slowFailingHook{
+		SimpleTrackingHook: NewSimpleTrackingHook(name, entityName, hookTypes, 50),
+		delay:              delay,
+	}
+}
+
+func (h *slowFailingHook) Execute(ctx *hooks.HookContext) error {
+	_ = h.SimpleTrackingHook.Execute(ctx)
+	if h.delay > 0 {
+		time.Sleep(h.delay)
+	}
+	return errors.New("slow hook failed")
+}
+
+// TestGenericService_AfterCreate_RunsSynchronouslyInProdMode locks in that
+// AfterCreate side effects are visible immediately after CreateEntity returns,
+// without test-mode bypassing the production code path.
+//
+// Expected to FAIL on current code: the registry dispatches AfterCreate in a
+// goroutine when IsTestMode()==false, so the atomic flag is still 0 when the
+// assertion runs.
+func TestGenericService_AfterCreate_RunsSynchronouslyInProdMode(t *testing.T) {
+	_, service, registry := setupHookServiceTestSimple(t)
+
+	// Use the production code path: NO test-mode short-circuit.
+	registry.SetTestMode(false)
+
+	var hookRan int32
+	hook := newSlowSideEffectHook(
+		"sync-after-create",
+		"HookTestEntity",
+		[]hooks.HookType{hooks.AfterCreate},
+		&hookRan,
+		50*time.Millisecond, // long enough that async dispatch is observable
+	)
+	require.NoError(t, registry.RegisterHook(hook))
+
+	entity := HookTestEntitySimple{Name: "Sync Test", Value: 1, Status: "active"}
+
+	_, err := service.CreateEntity(entity, "HookTestEntity")
+	require.NoError(t, err)
+
+	// IMMEDIATE assertion — no sleep, no eventually. If the hook ran in a
+	// goroutine, the flag is still 0 here.
+	require.Equal(t, int32(1), atomic.LoadInt32(&hookRan),
+		"AfterCreate hook must complete before CreateEntity returns (side effect must be visible synchronously)")
+}
+
+// TestGenericService_AfterCreate_ErrorSurfacesSynchronously locks in that an
+// AfterCreate hook error reaches the registered error callback before
+// CreateEntity returns, so callers (controllers, tests, monitoring) can act on
+// it without polling.
+//
+// Expected to FAIL on current code: the registry runs both the hook and the
+// error callback in goroutines, so the captured error is still nil when the
+// assertion runs.
+func TestGenericService_AfterCreate_ErrorSurfacesSynchronously(t *testing.T) {
+	_, service, registry := setupHookServiceTestSimple(t)
+
+	// Use the production code path.
+	registry.SetTestMode(false)
+	registry.ClearErrors()
+
+	var capturedErr atomic.Value // stores *hooks.HookError
+	registry.SetErrorCallback(func(err *hooks.HookError) {
+		capturedErr.Store(err)
+	})
+
+	failing := newSlowFailingHook(
+		"sync-failing-after-create",
+		"HookTestEntity",
+		[]hooks.HookType{hooks.AfterCreate},
+		50*time.Millisecond,
+	)
+	require.NoError(t, registry.RegisterHook(failing))
+
+	entity := HookTestEntitySimple{Name: "Error Sync Test", Value: 2, Status: "active"}
+
+	_, err := service.CreateEntity(entity, "HookTestEntity")
+	require.NoError(t, err, "CreateEntity must still succeed even when AfterCreate fails")
+
+	// IMMEDIATE assertion — no sleep. If either the hook or the callback ran in
+	// a goroutine, the captured value is still nil here.
+	got := capturedErr.Load()
+	require.NotNil(t, got, "AfterCreate hook error must surface to the callback before CreateEntity returns")
+	hookErr := got.(*hooks.HookError)
+	assert.Equal(t, "sync-failing-after-create", hookErr.HookName)
+	assert.Equal(t, "HookTestEntity", hookErr.EntityName)
+	assert.Equal(t, hooks.AfterCreate, hookErr.HookType)
+	assert.Contains(t, hookErr.Error, "slow hook failed")
 }
