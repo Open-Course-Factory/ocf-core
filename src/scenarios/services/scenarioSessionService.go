@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -88,7 +89,7 @@ func (s *ScenarioSessionService) tryStopTerminal(terminalSessionID string, sessi
 		return
 	}
 	if err := s.stopTerminal(terminalSessionID); err != nil {
-		slog.Warn("failed to stop terminal on setup failure", "terminal_session_id", terminalSessionID, "session_id", sessionID, "err", err)
+		slog.Error("failed to stop terminal — container may be orphaned", "terminal_session_id", terminalSessionID, "session_id", sessionID, "err", err)
 	}
 }
 
@@ -328,6 +329,24 @@ func (s *ScenarioSessionService) PreviewScenario(userID string, scenarioID uuid.
 // the session from "provisioning" to "active" once setup completes, or to
 // "setup_failed" if the script fails.
 func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("runStep0Setup panic recovered",
+				"session_id", sessionID,
+				"panic", r,
+				"stack", string(debug.Stack()))
+			// Match the existing error-path updates: gate on status='provisioning'
+			// so we don't clobber an abandoned session.
+			s.db.Model(&models.ScenarioSession{}).
+				Where("id = ? AND status = ?", sessionID, "provisioning").
+				Updates(map[string]any{
+					"status":             "setup_failed",
+					"provisioning_phase": "",
+				})
+			s.tryStopTerminal(terminalSessionID, sessionID)
+		}
+	}()
+
 	// Execute scenario-level setup script first (global environment preparation)
 	setupScript := ResolveScriptContent(s.db, scenario.SetupScriptID, scenario.SetupScript)
 	if setupScript != "" {
@@ -383,9 +402,15 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 			"status":             "active",
 			"provisioning_phase": "",
 		})
-	if result.RowsAffected > 0 {
-		slog.Info("scenario session setup complete", "session_id", sessionID)
+	if result.Error != nil {
+		slog.Error("scenario session active-transition failed", "session_id", sessionID, "err", result.Error)
+		return
 	}
+	if result.RowsAffected == 0 {
+		slog.Warn("scenario session setup complete but row no longer in provisioning (likely abandoned mid-setup)", "session_id", sessionID)
+		return
+	}
+	slog.Info("scenario session setup complete", "session_id", sessionID)
 }
 
 // GetCurrentStep returns the current step content for a session.
