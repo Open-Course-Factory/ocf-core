@@ -835,26 +835,51 @@ func (s *TeacherDashboardService) GetSessionDetails(groupID uuid.UUID, sessionID
 		return []*SessionDetailResponse{}, nil
 	}
 
-	// 1. Load all sessions in one query.
+	sessions, err := s.loadSessionsForBulkDetails(sessionIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.verifyGroupAccessForBulkDetails(groupID, sessions); err != nil {
+		return nil, err
+	}
+
+	data, err := s.loadBulkSessionDetailData(sessions)
+	if err != nil {
+		return nil, err
+	}
+
+	return assembleBulkSessionDetails(sessionIDs, data), nil
+}
+
+// loadSessionsForBulkDetails loads every session referenced by sessionIDs in a
+// single query. If any ID is missing, it returns the same "session not found"
+// error a looped GetSessionDetail would have hit at the first miss (walks the
+// input order so the error is deterministic).
+func (s *TeacherDashboardService) loadSessionsForBulkDetails(sessionIDs []uuid.UUID) ([]models.ScenarioSession, error) {
 	var sessions []models.ScenarioSession
 	if err := s.db.Where("id IN ?", sessionIDs).Find(&sessions).Error; err != nil {
 		return nil, fmt.Errorf("failed to load sessions: %w", err)
 	}
-	sessionByID := make(map[uuid.UUID]models.ScenarioSession, len(sessions))
-	for _, ss := range sessions {
-		sessionByID[ss.ID] = ss
-	}
-	// Detect missing IDs deterministically: walk the input order so the first
-	// miss reports the same error a looped GetSessionDetail would have hit.
 	if len(sessions) != len(sessionIDs) {
+		sessionByID := make(map[uuid.UUID]struct{}, len(sessions))
+		for _, ss := range sessions {
+			sessionByID[ss.ID] = struct{}{}
+		}
 		for _, id := range sessionIDs {
 			if _, ok := sessionByID[id]; !ok {
 				return nil, fmt.Errorf("session not found: %s", id)
 			}
 		}
 	}
+	return sessions, nil
+}
 
-	// 2. Collect distinct user IDs and scenario IDs from the loaded sessions.
+// verifyGroupAccessForBulkDetails is the IDOR gate for the bulk path: every
+// session's user must be an active member of groupID, AND every referenced
+// scenario must be assigned to groupID. Two COUNT(DISTINCT) queries cover the
+// whole batch regardless of size.
+func (s *TeacherDashboardService) verifyGroupAccessForBulkDetails(groupID uuid.UUID, sessions []models.ScenarioSession) error {
 	userIDSet := make(map[string]struct{}, len(sessions))
 	scenarioIDSet := make(map[uuid.UUID]struct{}, len(sessions))
 	for _, ss := range sessions {
@@ -870,30 +895,72 @@ func (s *TeacherDashboardService) GetSessionDetails(groupID uuid.UUID, sessionID
 		scenarioIDs = append(scenarioIDs, id)
 	}
 
-	// 3. Batch IDOR check: every session user must be a group member.
+	// Every session user must be a group member.
 	// COUNT(DISTINCT user_id) so duplicate active rows don't inflate the count.
 	var memberCount int64
 	if err := s.db.Model(&groupModels.GroupMember{}).
 		Where("group_id = ? AND user_id IN ? AND is_active = true", groupID, userIDs).
 		Distinct("user_id").Count(&memberCount).Error; err != nil {
-		return nil, fmt.Errorf("failed to verify group membership: %w", err)
+		return fmt.Errorf("failed to verify group membership: %w", err)
 	}
 	if memberCount != int64(len(userIDs)) {
-		return nil, fmt.Errorf("session does not belong to this group")
+		return fmt.Errorf("session does not belong to this group")
 	}
 
-	// 4. Batch IDOR check: every session scenario must be assigned to the group.
+	// Every session scenario must be assigned to the group.
 	var assignmentCount int64
 	if err := s.db.Table("scenario_assignments").
 		Where("group_id = ? AND scenario_id IN ? AND deleted_at IS NULL", groupID, scenarioIDs).
 		Distinct("scenario_id").Count(&assignmentCount).Error; err != nil {
-		return nil, fmt.Errorf("failed to verify scenario assignments: %w", err)
+		return fmt.Errorf("failed to verify scenario assignments: %w", err)
 	}
 	if assignmentCount != int64(len(scenarioIDs)) {
-		return nil, fmt.Errorf("scenario is not assigned to this group")
+		return fmt.Errorf("scenario is not assigned to this group")
+	}
+	return nil
+}
+
+// bulkSessionDetailData holds all the pre-loaded data needed to assemble
+// per-session responses in GetSessionDetails. Built by loadBulkSessionDetailData
+// in a constant number of queries; consumed by assembleBulkSessionDetails.
+type bulkSessionDetailData struct {
+	sessionByID           map[uuid.UUID]models.ScenarioSession
+	scenarioByID          map[uuid.UUID]models.Scenario
+	progressBySession     map[uuid.UUID][]models.ScenarioStepProgress
+	stepByScenarioOrder   map[uuid.UUID]map[int]models.ScenarioStep
+	stepsByScenario       map[uuid.UUID][]models.ScenarioStep
+	flagsBySession        map[uuid.UUID][]models.ScenarioFlag
+	questionsByStepID     map[uuid.UUID][]models.ScenarioStepQuestion
+	questionCountByStepID map[uuid.UUID]int
+	userMap               map[string]userInfo
+}
+
+// loadBulkSessionDetailData runs the constant-count query plan that feeds the
+// assembler: scenarios, step progress, scenario steps (two views), flag
+// submissions, quiz questions (+ per-step counts), and the Casdoor user map.
+// Sessions are already loaded; this helper consumes them and indexes everything
+// the per-session assembly loop needs.
+func (s *TeacherDashboardService) loadBulkSessionDetailData(sessions []models.ScenarioSession) (*bulkSessionDetailData, error) {
+	sessionIDs := make([]uuid.UUID, 0, len(sessions))
+	sessionByID := make(map[uuid.UUID]models.ScenarioSession, len(sessions))
+	userIDSet := make(map[string]struct{}, len(sessions))
+	scenarioIDSet := make(map[uuid.UUID]struct{}, len(sessions))
+	for _, ss := range sessions {
+		sessionIDs = append(sessionIDs, ss.ID)
+		sessionByID[ss.ID] = ss
+		userIDSet[ss.UserID] = struct{}{}
+		scenarioIDSet[ss.ScenarioID] = struct{}{}
+	}
+	userIDs := make([]string, 0, len(userIDSet))
+	for id := range userIDSet {
+		userIDs = append(userIDs, id)
+	}
+	scenarioIDs := make([]uuid.UUID, 0, len(scenarioIDSet))
+	for id := range scenarioIDSet {
+		scenarioIDs = append(scenarioIDs, id)
 	}
 
-	// 5. Load all referenced scenarios in one query.
+	// Load all referenced scenarios in one query.
 	var scenarios []models.Scenario
 	if err := s.db.Where("id IN ?", scenarioIDs).Find(&scenarios).Error; err != nil {
 		return nil, fmt.Errorf("failed to load scenarios: %w", err)
@@ -903,7 +970,7 @@ func (s *TeacherDashboardService) GetSessionDetails(groupID uuid.UUID, sessionID
 		scenarioByID[sc.ID] = sc
 	}
 
-	// 6. Load all step progress for all sessions in one query, group by session.
+	// Load all step progress for all sessions in one query, group by session.
 	var allProgress []models.ScenarioStepProgress
 	if err := s.db.Where("session_id IN ?", sessionIDs).
 		Order("step_order ASC, created_at ASC").
@@ -915,7 +982,7 @@ func (s *TeacherDashboardService) GetSessionDetails(groupID uuid.UUID, sessionID
 		progressBySession[p.SessionID] = append(progressBySession[p.SessionID], p)
 	}
 
-	// 7. Load all steps for all referenced scenarios in one query.
+	// Load all steps for all referenced scenarios in one query.
 	// Two views of this data are needed downstream:
 	//   - stepByScenarioOrder[scenario_id][order] for the step-merge pass
 	//     (first-win on duplicate (scenario, order) to match GetSessionDetail)
@@ -943,7 +1010,7 @@ func (s *TeacherDashboardService) GetSessionDetails(groupID uuid.UUID, sessionID
 		}
 	}
 
-	// 8. Load all flag submissions in one query, grouped by session.
+	// Load all flag submissions in one query, grouped by session.
 	var allFlags []models.ScenarioFlag
 	if err := s.db.Where("session_id IN ?", sessionIDs).Find(&allFlags).Error; err != nil {
 		return nil, fmt.Errorf("failed to load flags: %w", err)
@@ -953,7 +1020,7 @@ func (s *TeacherDashboardService) GetSessionDetails(groupID uuid.UUID, sessionID
 		flagsBySession[f.SessionID] = append(flagsBySession[f.SessionID], f)
 	}
 
-	// 9. Load all quiz questions for every quiz step across all scenarios in
+	// Load all quiz questions for every quiz step across all scenarios in
 	// one query — and a single COUNT(*) GROUP BY for the per-step question
 	// counts ComputeCorrectCountsFromLoaded requires.
 	questionsByStepID := make(map[uuid.UUID][]models.ScenarioStepQuestion, len(allQuizStepIDs))
@@ -971,35 +1038,49 @@ func (s *TeacherDashboardService) GetSessionDetails(groupID uuid.UUID, sessionID
 		}
 	}
 
-	// 10. Batch Casdoor user lookup (single map covers every session).
+	// Batch Casdoor user lookup (single map covers every session).
 	userMap := fetchUserMap(userIDs)
 
-	// 11. Assemble responses in input order. All DB data is already loaded;
-	// every per-session step from here is pure Go. Quiz answers (per-progress
-	// JSON) come from the already-loaded allProgress slice via progressBySession.
+	return &bulkSessionDetailData{
+		sessionByID:           sessionByID,
+		scenarioByID:          scenarioByID,
+		progressBySession:     progressBySession,
+		stepByScenarioOrder:   stepByScenarioOrder,
+		stepsByScenario:       stepsByScenario,
+		flagsBySession:        flagsBySession,
+		questionsByStepID:     questionsByStepID,
+		questionCountByStepID: questionCountByStepID,
+		userMap:               userMap,
+	}, nil
+}
+
+// assembleBulkSessionDetails walks sessionIDs in input order and stitches each
+// response from the pre-loaded data. Pure Go, no DB calls — every map lookup
+// hits data already loaded by loadBulkSessionDetailData.
+func assembleBulkSessionDetails(sessionIDs []uuid.UUID, data *bulkSessionDetailData) []*SessionDetailResponse {
 	details := make([]*SessionDetailResponse, 0, len(sessionIDs))
 	for _, id := range sessionIDs {
-		session := sessionByID[id]
-		scenario := scenarioByID[session.ScenarioID]
-		stepByOrder := stepByScenarioOrder[session.ScenarioID]
+		session := data.sessionByID[id]
+		scenario := data.scenarioByID[session.ScenarioID]
+		stepByOrder := data.stepByScenarioOrder[session.ScenarioID]
 		if stepByOrder == nil {
 			stepByOrder = map[int]models.ScenarioStep{}
 		}
-		sessionProgress := progressBySession[session.ID]
+		sessionProgress := data.progressBySession[session.ID]
 
 		steps := buildSessionStepDetails(session, sessionProgress, stepByOrder)
-		populateQuizQuestionsFromLoaded(session.ID, steps, stepByOrder, questionsByStepID, sessionProgress)
+		populateQuizQuestionsFromLoaded(session.ID, steps, stepByOrder, data.questionsByStepID, sessionProgress)
 
 		correctCount, totalCorrectPossible := ComputeCorrectCountsFromLoaded(
-			stepsByScenario[session.ScenarioID],
+			data.stepsByScenario[session.ScenarioID],
 			sessionProgress,
-			flagsBySession[session.ID],
-			questionCountByStepID,
+			data.flagsBySession[session.ID],
+			data.questionCountByStepID,
 		)
 
-		details = append(details, buildSessionDetailResponse(session, scenario, steps, correctCount, totalCorrectPossible, userMap[session.UserID]))
+		details = append(details, buildSessionDetailResponse(session, scenario, steps, correctCount, totalCorrectPossible, data.userMap[session.UserID]))
 	}
-	return details, nil
+	return details
 }
 
 // populateQuizQuestionsFromLoaded is the pre-loaded-data variant of
