@@ -8,6 +8,7 @@ import (
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
 	"soli/formations/src/payment/services"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -27,14 +28,22 @@ func setupIntegrationDB(t *testing.T) *gorm.DB {
 	})
 	require.NoError(t, err, "Failed to open test database")
 
-	// Auto-migrate all payment models
+	// Auto-migrate all payment models, plus the tables that QuotaService
+	// touches when delegating quota decisions:
+	//   - OrganizationSubscription: looked up by EffectivePlanService when
+	//     resolving the effective plan (returns 0 rows in personal-quota
+	//     tests, but the table must exist).
+	//   - Terminal: live recalc for concurrent_terminals via
+	//     CountUserOccupiedSlots.
 	err = db.AutoMigrate(
 		&models.SubscriptionPlan{},
 		&models.UserSubscription{},
+		&models.OrganizationSubscription{},
 		&models.UsageMetrics{},
 		&models.Invoice{},
 		&models.PaymentMethod{},
 		&models.BillingAddress{},
+		&terminalModels.Terminal{},
 	)
 	require.NoError(t, err, "Failed to migrate test database")
 
@@ -124,6 +133,66 @@ func seedTestPlans(t *testing.T, db *gorm.DB) map[string]*models.SubscriptionPla
 	return plans
 }
 
+// startTerminals creates n active terminal rows for the given user.
+//
+// This replaces the legacy pattern of calling
+// service.IncrementUsage(userID, "concurrent_terminals", n) to fake
+// terminal creation. Since #311 the SSOT for concurrent_terminals is
+// the live count from the terminals table (see
+// terminalModels.CountUserOccupiedSlots / OccupiesSlotScope), so tests
+// that exercise the quota path must create real terminal rows. The
+// usage_metrics row remains for other (non-live) metric types.
+//
+// Returns the created terminal IDs so callers can stop / delete a
+// specific subset.
+func startTerminals(t *testing.T, db *gorm.DB, userID string, n int) []uuid.UUID {
+	t.Helper()
+	// Create a single user terminal key (FK target). Reuse if already
+	// present so subsequent calls don't conflict on api_key.
+	var key terminalModels.UserTerminalKey
+	err := db.Where("user_id = ?", userID).First(&key).Error
+	if err != nil {
+		key = terminalModels.UserTerminalKey{
+			UserID:      userID,
+			APIKey:      "test-key-" + userID,
+			KeyName:     "Test Key",
+			IsActive:    true,
+			MaxSessions: 100,
+		}
+		require.NoError(t, db.Create(&key).Error)
+	}
+
+	ids := make([]uuid.UUID, 0, n)
+	for i := 0; i < n; i++ {
+		term := &terminalModels.Terminal{
+			SessionID:         "session-" + userID + "-" + uuid.NewString(),
+			UserID:            userID,
+			Status:            "active",
+			ExpiresAt:         time.Now().Add(1 * time.Hour),
+			UserTerminalKeyID: key.ID,
+		}
+		require.NoError(t, db.Create(term).Error)
+		ids = append(ids, term.ID)
+	}
+	return ids
+}
+
+// stopTerminals soft-deletes n terminal rows for the given user. Used
+// to simulate the user stopping (releasing) terminals so the live quota
+// recalc reflects the change.
+func stopTerminals(t *testing.T, db *gorm.DB, userID string, n int) {
+	t.Helper()
+	var ids []uuid.UUID
+	require.NoError(t, db.
+		Model(&terminalModels.Terminal{}).
+		Where("user_id = ? AND deleted_at IS NULL", userID).
+		Limit(n).
+		Pluck("id", &ids).Error)
+	for _, id := range ids {
+		require.NoError(t, db.Delete(&terminalModels.Terminal{}, "id = ?", id).Error)
+	}
+}
+
 // createUserSubscription creates an active subscription for a user
 func createUserSubscription(t *testing.T, db *gorm.DB, userID string, planID uuid.UUID) *models.UserSubscription {
 	customerID := "cus_test_" + userID
@@ -149,16 +218,20 @@ func createUserSubscription(t *testing.T, db *gorm.DB, userID string, planID uui
 	return subscription
 }
 
-// TestIntegration_TrialPlan_FullFlow tests the complete flow for Trial plan
+// TestIntegration_TrialPlan_FullFlow tests the complete flow for Trial plan.
+//
+// Since #311 (live-recalc SSOT for concurrent_terminals), creating a
+// terminal is modeled by inserting a real Terminal row via the
+// startTerminals helper, not by incrementing the materialized
+// usage_metrics counter.
 func TestIntegration_TrialPlan_FullFlow(t *testing.T) {
 	// Setup
 	db := setupIntegrationDB(t)
 	plans := seedTestPlans(t, db)
 	service := services.NewSubscriptionService(db)
-	repo := repositories.NewPaymentRepository(db)
 
 	userID := "trial-user-integration"
-	subscription := createUserSubscription(t, db, userID, plans["Trial"].ID)
+	createUserSubscription(t, db, userID, plans["Trial"].ID)
 
 	t.Run("First terminal creation - should succeed", func(t *testing.T) {
 		// Check limit
@@ -168,15 +241,8 @@ func TestIntegration_TrialPlan_FullFlow(t *testing.T) {
 		assert.Equal(t, int64(0), check.CurrentUsage)
 		assert.Equal(t, int64(1), check.Limit)
 
-		// Simulate terminal creation
-		err = service.IncrementUsage(userID, "concurrent_terminals", 1)
-		assert.NoError(t, err)
-
-		// Verify metric was created
-		metric, err := repo.GetUserUsageMetrics(userID, "concurrent_terminals")
-		assert.NoError(t, err)
-		assert.Equal(t, int64(1), metric.CurrentValue)
-		assert.Equal(t, subscription.ID, metric.SubscriptionID)
+		// Simulate terminal creation (real row).
+		startTerminals(t, db, userID, 1)
 	})
 
 	t.Run("Second terminal creation - should fail", func(t *testing.T) {
@@ -189,9 +255,8 @@ func TestIntegration_TrialPlan_FullFlow(t *testing.T) {
 	})
 
 	t.Run("Stop first terminal - should allow new terminal", func(t *testing.T) {
-		// Simulate terminal stop (decrement)
-		err := service.IncrementUsage(userID, "concurrent_terminals", -1)
-		assert.NoError(t, err)
+		// Simulate terminal stop (release slot).
+		stopTerminals(t, db, userID, 1)
 
 		// Verify can create new terminal
 		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
@@ -201,7 +266,11 @@ func TestIntegration_TrialPlan_FullFlow(t *testing.T) {
 	})
 }
 
-// TestIntegration_TrainerPlan_MultipleTerminals tests creating multiple terminals
+// TestIntegration_TrainerPlan_MultipleTerminals tests creating multiple
+// terminals against the Trainer plan limit.
+//
+// Real Terminal rows are inserted via startTerminals / stopTerminals
+// since live-recalc is the SSOT for concurrent_terminals.
 func TestIntegration_TrainerPlan_MultipleTerminals(t *testing.T) {
 	// Setup
 	db := setupIntegrationDB(t)
@@ -218,8 +287,7 @@ func TestIntegration_TrainerPlan_MultipleTerminals(t *testing.T) {
 			assert.NoError(t, err)
 			assert.True(t, check.Allowed, "Terminal %d should be allowed", i)
 
-			err = service.IncrementUsage(userID, "concurrent_terminals", 1)
-			assert.NoError(t, err)
+			startTerminals(t, db, userID, 1)
 
 			// Verify current usage
 			check2, _ := service.CheckUsageLimit(userID, "concurrent_terminals", 0)
@@ -236,7 +304,7 @@ func TestIntegration_TrainerPlan_MultipleTerminals(t *testing.T) {
 
 	t.Run("Stop 2 terminals and create 2 new ones", func(t *testing.T) {
 		// Stop 2 terminals
-		service.IncrementUsage(userID, "concurrent_terminals", -2)
+		stopTerminals(t, db, userID, 2)
 
 		// Verify current usage
 		check, _ := service.CheckUsageLimit(userID, "concurrent_terminals", 0)
@@ -247,7 +315,7 @@ func TestIntegration_TrainerPlan_MultipleTerminals(t *testing.T) {
 			check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
 			assert.NoError(t, err)
 			assert.True(t, check.Allowed)
-			service.IncrementUsage(userID, "concurrent_terminals", 1)
+			startTerminals(t, db, userID, 1)
 		}
 
 		// Should be at limit again
@@ -274,8 +342,7 @@ func TestIntegration_OrganizationPlan_HighConcurrency(t *testing.T) {
 			assert.NoError(t, err)
 			assert.True(t, check.Allowed, "Terminal %d/%d should be allowed", i, 10)
 
-			err = service.IncrementUsage(userID, "concurrent_terminals", 1)
-			assert.NoError(t, err)
+			startTerminals(t, db, userID, 1)
 		}
 
 		// Verify final state
@@ -292,15 +359,14 @@ func TestIntegration_OrganizationPlan_HighConcurrency(t *testing.T) {
 
 	t.Run("Stop all and verify reset", func(t *testing.T) {
 		// Stop all 10 terminals
-		err := service.IncrementUsage(userID, "concurrent_terminals", -10)
-		assert.NoError(t, err)
+		stopTerminals(t, db, userID, 10)
 
 		// Verify reset to 0
 		check, _ := service.CheckUsageLimit(userID, "concurrent_terminals", 0)
 		assert.Equal(t, int64(0), check.CurrentUsage)
 
 		// Should be able to create new terminal
-		check, err = service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
 		assert.NoError(t, err)
 		assert.True(t, check.Allowed)
 	})
@@ -336,7 +402,7 @@ func TestIntegration_PlanComparison(t *testing.T) {
 				check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
 				assert.NoError(t, err)
 				assert.True(t, check.Allowed, "%s: terminal %d/%d should be allowed", config.planName, i+1, config.maxTerminals)
-				service.IncrementUsage(userID, "concurrent_terminals", 1)
+				startTerminals(t, db, userID, 1)
 			}
 
 			// One more should fail
@@ -385,14 +451,21 @@ func TestIntegration_UsageMetricsPersistence(t *testing.T) {
 	})
 
 	t.Run("Increment beyond limit should still update metric", func(t *testing.T) {
-		// Increment to limit
+		// Increment metric to limit (3 for Trainer plan).
 		service.IncrementUsage(userID, "concurrent_terminals", 2)
 
-		// Try to increment beyond (should fail check, but metric still updates if we force it)
+		// Live recalc (SSOT for concurrent_terminals since #311) reads
+		// from terminals table — create real rows so the quota check
+		// reflects an "at limit" state.
+		startTerminals(t, db, userID, 3)
+
+		// Try to increment beyond (should fail check).
 		check, _ := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
 		assert.False(t, check.Allowed)
 
-		// Current value should be at limit
+		// Current value of the materialized metric should still reflect
+		// the accumulated increments (this subtest is about persistence
+		// of the metric row, not the SSOT count).
 		metric, _ := repo.GetUserUsageMetrics(userID, "concurrent_terminals")
 		assert.Equal(t, int64(3), metric.CurrentValue)
 	})
@@ -415,7 +488,12 @@ func TestIntegration_NoSubscription(t *testing.T) {
 	})
 }
 
-// TestIntegration_PlanUpgrade simulates upgrading from Trial to Trainer
+// TestIntegration_PlanUpgrade simulates upgrading from Trial to Trainer.
+//
+// Since #311 live recalc is the SSOT for concurrent_terminals: real
+// Terminal rows drive the count, and plan.MaxConcurrentTerminals drives
+// the limit (read off the user's effective plan, which now reflects
+// UpgradeUserPlan's correctly-persisted SubscriptionPlanID — see #315).
 func TestIntegration_PlanUpgrade(t *testing.T) {
 	// Setup
 	db := setupIntegrationDB(t)
@@ -428,8 +506,7 @@ func TestIntegration_PlanUpgrade(t *testing.T) {
 	createUserSubscription(t, db, userID, plans["Trial"].ID)
 
 	// Create 1 terminal (max for Trial)
-	err := service.IncrementUsage(userID, "concurrent_terminals", 1)
-	assert.NoError(t, err)
+	startTerminals(t, db, userID, 1)
 
 	// Cannot create second on Trial plan
 	check, _ := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
@@ -447,7 +524,7 @@ func TestIntegration_PlanUpgrade(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, check.Allowed, "Should allow terminal %d after upgrade", i+2)
 		assert.Equal(t, int64(3), check.Limit, "Limit should be updated to Trainer plan limit")
-		service.IncrementUsage(userID, "concurrent_terminals", 1)
+		startTerminals(t, db, userID, 1)
 	}
 
 	// Now at limit (3 terminals)

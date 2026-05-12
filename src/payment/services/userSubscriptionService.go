@@ -11,7 +11,6 @@ import (
 
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
-	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	genericService "soli/formations/src/entityManagement/services"
 
@@ -196,29 +195,22 @@ func (ss *subscriptionService) CreateUserSubscription(userID string, planID uuid
 	return ss.GetUserSubscriptionByID(subscription.ID)
 }
 
-// Deprecated: CheckUsageLimit is the pre-#311 quota path. New callers must
-// use QuotaService.CheckUserQuota (or EffectivePlanService.CheckEffectiveUsageLimit*
-// which delegates to it). This method is preserved because:
+// CheckUsageLimit verifies whether the user can perform the given action
+// based on their current plan limits.
 //
-//   - it has ZERO production callers (the controller layer routes through
-//     EffectivePlanService.CheckEffectiveUsageLimit, which now delegates
-//     to QuotaService);
-//   - the only callers are integration tests and mocks that depend on
-//     this implementation reading the materialized usage_metrics.limit_value
-//     directly (e.g. TestIntegration_PlanUpgrade relies on
-//     UpgradeUserPlan writing to limit_value rather than the plan
-//     association). Routing through QuotaService would surface a
-//     pre-existing latent bug in UpgradeUserPlan and break those tests.
-//
-// When the materialized counter is removed (Phase D / #311 follow-up),
-// this method should be deleted along with the test fixtures that depend
-// on it. Until then, treat it as the legacy path for read-then-decide
-// against the stored row.
+// Thin wrapper kept for backward compatibility with existing callers and
+// test mocks. The actual quota logic lives in QuotaService — see
+// src/payment/services/quotaService.go. The "no active subscription"
+// case preserves the legacy struct shape (Allowed:false +
+// "No active subscription" message) rather than propagating the
+// EffectivePlanService error, because frontend / integration test code
+// depends on it.
 func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increment int64) (*UsageLimitCheck, error) {
-	// Récupérer l'abonnement actif
-	subscription, err := ss.repository.GetActiveUserSubscription(userID)
-	if err != nil {
-		// Pas d'abonnement = utilisateur gratuit avec des limites très restrictives
+	// Preserve the legacy "no subscription" envelope: callers (and the
+	// TestIntegration_TrialPlan_FullFlow integration test) expect a
+	// blocked UsageLimitCheck with a recognizable message rather than
+	// an error.
+	if _, err := ss.repository.GetActiveUserSubscription(userID); err != nil {
 		return &UsageLimitCheck{
 			Allowed:        false,
 			CurrentUsage:   0,
@@ -230,86 +222,16 @@ func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increm
 		}, nil
 	}
 
-	sPlan := subscription.SubscriptionPlan
+	// Delegate the actual decision to QuotaService so the quota rule
+	// stays expressed in exactly one place. orgID=nil → personal quota.
+	return ss.quotaService().CheckUserQuota(userID, nil, metricType, increment)
+}
 
-	// Récupérer les métriques actuelles
-	metrics, err := ss.repository.GetUserUsageMetrics(userID, metricType)
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			// Première utilisation, créer les métriques
-			var limit int64
-			switch metricType {
-			case "courses_created":
-				limit = int64(sPlan.MaxCourses)
-			case "concurrent_users":
-				limit = int64(sPlan.MaxConcurrentUsers)
-			case "concurrent_terminals":
-				limit = int64(sPlan.MaxConcurrentTerminals)
-			default:
-				limit = -1 // Illimité
-			}
-
-			// Pour concurrent_terminals, vérifier le compte réel depuis la DB.
-			// SSOT: CountUserOccupiedSlots wraps OccupiesSlotScope.
-			// orgID=nil → personal quota counts all user terminals.
-			var currentUsage int64 = 0
-			if metricType == "concurrent_terminals" {
-				if activeCount, countErr := terminalModels.CountUserOccupiedSlots(ss.db, userID, nil); countErr == nil {
-					currentUsage = activeCount
-				}
-			}
-
-			return &UsageLimitCheck{
-				Allowed:        limit == -1 || (currentUsage+increment) <= limit,
-				CurrentUsage:   currentUsage,
-				Limit:          limit,
-				RemainingUsage: limit - currentUsage,
-				Message:        "",
-				UserID:         userID,
-				MetricType:     metricType,
-			}, nil
-		}
-		return nil, err
-	}
-
-	// Pour concurrent_terminals, recalculer la valeur en temps réel.
-	// SSOT: CountUserOccupiedSlots wraps OccupiesSlotScope.
-	// orgID=nil → personal quota counts all user terminals.
-	currentValue := metrics.CurrentValue
-	if metricType == "concurrent_terminals" {
-		if activeCount, err := terminalModels.CountUserOccupiedSlots(ss.db, userID, nil); err == nil {
-			currentValue = activeCount
-		}
-	}
-
-	// Calculer si l'action est autorisée
-	newUsage := currentValue + increment
-	allowed := metrics.LimitValue == -1 || newUsage <= metrics.LimitValue
-
-	var remaining int64
-	if metrics.LimitValue == -1 {
-		remaining = -1 // Illimité
-	} else {
-		remaining = metrics.LimitValue - currentValue
-		if remaining < 0 {
-			remaining = 0
-		}
-	}
-
-	message := ""
-	if !allowed {
-		message = fmt.Sprintf("Usage limit exceeded. Current: %d, Limit: %d", currentValue, metrics.LimitValue)
-	}
-
-	return &UsageLimitCheck{
-		Allowed:        allowed,
-		CurrentUsage:   currentValue,
-		Limit:          metrics.LimitValue,
-		RemainingUsage: remaining,
-		Message:        message,
-		UserID:         userID,
-		MetricType:     metricType,
-	}, nil
+// quotaService builds a transient QuotaService for delegating quota
+// decisions. Constructed on demand to avoid an import cycle between
+// QuotaService and EffectivePlanService.
+func (ss *subscriptionService) quotaService() QuotaService {
+	return NewQuotaService(ss.db, NewEffectivePlanService(ss.db))
 }
 
 // IncrementUsage incrémente l'utilisation d'une métrique
