@@ -29,6 +29,7 @@ package payment_tests
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
@@ -203,6 +204,7 @@ func TestStripeSubscriptionPlanHook_AfterDelete_CallsArchive_WhenStripeProductID
 	}
 
 	err := hook.Execute(ctx)
+	hook.(*paymentHooks.StripeSubscriptionPlanHook).WaitForAsyncSyncs()
 	assert.NoError(t, err, "hook should not return an error")
 
 	stripeMock.AssertCalled(t, "ArchiveSubscriptionPlanInStripe", "prod_test_123")
@@ -234,6 +236,7 @@ func TestStripeSubscriptionPlanHook_AfterDelete_SkipsArchive_WhenStripeProductID
 	}
 
 	err := hook.Execute(ctx)
+	hook.(*paymentHooks.StripeSubscriptionPlanHook).WaitForAsyncSyncs()
 	assert.NoError(t, err)
 
 	stripeMock.AssertNotCalled(t, "ArchiveSubscriptionPlanInStripe", mock.Anything)
@@ -268,6 +271,7 @@ func TestStripeSubscriptionPlanHook_AfterDelete_DoesNotPropagateArchiveError(t *
 	}
 
 	err := hook.Execute(ctx)
+	hook.(*paymentHooks.StripeSubscriptionPlanHook).WaitForAsyncSyncs()
 	assert.NoError(t, err, "Stripe API errors must NOT propagate from AfterDelete hook")
 
 	stripeMock.AssertCalled(t, "ArchiveSubscriptionPlanInStripe", "prod_test_999")
@@ -300,6 +304,111 @@ func TestStripeSubscriptionPlanHook_AfterDelete_NeverCallsUpdate(t *testing.T) {
 	}
 
 	_ = hook.Execute(ctx)
+	hook.(*paymentHooks.StripeSubscriptionPlanHook).WaitForAsyncSyncs()
 
 	stripeMock.AssertNotCalled(t, "UpdateSubscriptionPlanInStripe", mock.Anything)
+}
+
+// ============================================================================
+// Async contract tests — added for issue #319
+//
+// StripeSubscriptionPlanHook.Execute must spawn a goroutine for Stripe calls
+// and return immediately, so admin requests are not blocked by Stripe latency.
+//
+// These tests assert the async contract via:
+//   1. A blocking fake — proves Execute returns BEFORE Stripe completes.
+//   2. A panicking fake — proves the goroutine recovers and never crashes
+//      the process.
+//
+// The contract method `WaitForAsyncSyncs()` on *StripeSubscriptionPlanHook
+// (which the existing tests above also use) is what allows deterministic
+// assertion on side effects after the async path.
+// ============================================================================
+
+// TestStripeSubscriptionPlanHook_Execute_ReturnsBeforeStripeCompletes asserts
+// that Execute returns well before the underlying Stripe call completes —
+// proving the Stripe sync is offloaded to a goroutine.
+func TestStripeSubscriptionPlanHook_Execute_ReturnsBeforeStripeCompletes(t *testing.T) {
+	// ARRANGE: fake that blocks until `release` is closed; signals when started.
+	release := make(chan struct{})
+	started := make(chan struct{})
+
+	fake := &fakeStripeService{}
+	fake.On("CreateSubscriptionPlanInStripe", mock.Anything).Run(func(args mock.Arguments) {
+		close(started)
+		<-release
+	}).Return(nil)
+
+	hook := paymentHooks.NewStripeSubscriptionPlanHookWithService(fake)
+	plan := &models.SubscriptionPlan{
+		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:        "Test Plan",
+		PriceAmount: 1000, // > 0 so AfterCreate actually runs the Stripe call
+	}
+
+	ctx := &hooks.HookContext{
+		EntityName: "SubscriptionPlan",
+		HookType:   hooks.AfterCreate,
+		NewEntity:  plan,
+	}
+
+	// ACT: time the Execute call. It must return promptly.
+	start := time.Now()
+	err := hook.Execute(ctx)
+	elapsed := time.Since(start)
+
+	// ASSERT: Execute returned quickly (< 100ms — very generous).
+	assert.NoError(t, err)
+	assert.Less(t, elapsed, 100*time.Millisecond,
+		"Execute must return immediately, took %v", elapsed)
+
+	// The goroutine has started and is blocked on release.
+	select {
+	case <-started:
+		// good — Stripe call is in progress in the background.
+	case <-time.After(2 * time.Second):
+		t.Fatal("goroutine never started — Stripe call did not run async")
+	}
+
+	// Release the goroutine and wait for completion deterministically.
+	close(release)
+	hook.(*paymentHooks.StripeSubscriptionPlanHook).WaitForAsyncSyncs()
+
+	fake.AssertExpectations(t)
+}
+
+// TestStripeSubscriptionPlanHook_Execute_RecoversFromPanic asserts that a
+// panic inside the Stripe service does NOT crash the goroutine or propagate
+// to the caller. WaitForAsyncSyncs must return normally even when the
+// goroutine panicked.
+func TestStripeSubscriptionPlanHook_Execute_RecoversFromPanic(t *testing.T) {
+	fake := &fakeStripeService{}
+	fake.On("CreateSubscriptionPlanInStripe", mock.Anything).Run(func(args mock.Arguments) {
+		panic("simulated stripe SDK nil-deref")
+	}).Return(nil)
+
+	hook := paymentHooks.NewStripeSubscriptionPlanHookWithService(fake)
+	plan := &models.SubscriptionPlan{
+		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:        "Panic Plan",
+		PriceAmount: 1000,
+	}
+
+	ctx := &hooks.HookContext{
+		EntityName: "SubscriptionPlan",
+		HookType:   hooks.AfterCreate,
+		NewEntity:  plan,
+	}
+
+	// Execute must return without panicking.
+	err := hook.Execute(ctx)
+	assert.NoError(t, err)
+
+	// WaitForAsyncSyncs must NOT panic — recover() in the goroutine must catch
+	// the panic from the Stripe call.
+	assert.NotPanics(t, func() {
+		hook.(*paymentHooks.StripeSubscriptionPlanHook).WaitForAsyncSyncs()
+	})
+
+	fake.AssertExpectations(t)
 }
