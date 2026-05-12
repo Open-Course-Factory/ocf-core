@@ -32,11 +32,11 @@ type HookType string
 
 const (
 	BeforeCreate HookType = "before_create" // Executed before entity creation (synchronous)
-	AfterCreate  HookType = "after_create"  // Executed after entity creation (async in production)
+	AfterCreate  HookType = "after_create"  // Executed after entity creation (synchronous)
 	BeforeUpdate HookType = "before_update" // Executed before entity update (synchronous)
-	AfterUpdate  HookType = "after_update"  // Executed after entity update (async in production)
+	AfterUpdate  HookType = "after_update"  // Executed after entity update (synchronous)
 	BeforeDelete HookType = "before_delete" // Executed before entity deletion (synchronous)
-	AfterDelete  HookType = "after_delete"  // Executed after entity deletion (async in production)
+	AfterDelete  HookType = "after_delete"  // Executed after entity deletion (synchronous)
 )
 
 // HookContext contains all information available to a hook during execution.
@@ -108,22 +108,16 @@ type HookRegistry interface {
 	// ClearAllHooks removes all registered hooks (useful for testing)
 	ClearAllHooks()
 
-	// SetTestMode enables or disables test mode (synchronous execution)
-	SetTestMode(enabled bool)
-
 	// DisableAllHooks globally disables all hook execution (for tests)
 	DisableAllHooks(disabled bool)
 
-	// IsTestMode returns whether test mode is enabled
-	IsTestMode() bool
-
-	// GetRecentErrors returns recent async hook errors (up to maxErrors, 0 = all)
+	// GetRecentErrors returns recent hook errors (up to maxErrors, 0 = all)
 	GetRecentErrors(maxErrors int) []HookError
 
 	// ClearErrors clears the error history
 	ClearErrors()
 
-	// SetErrorCallback sets a callback to be invoked when async hooks fail
+	// SetErrorCallback sets a callback to be invoked when after-hooks fail
 	SetErrorCallback(callback HookErrorCallback)
 }
 

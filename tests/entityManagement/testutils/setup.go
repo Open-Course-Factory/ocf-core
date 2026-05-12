@@ -43,9 +43,8 @@ func SetupEntityTest(t *testing.T, entity any) *TestContext {
 	// Setup entity registry
 	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
 
-	// Setup hooks in test mode
+	// Setup hooks (after-hooks now always run synchronously)
 	hooks.GlobalHookRegistry = hooks.NewHookRegistry()
-	hooks.GlobalHookRegistry.SetTestMode(true)
 
 	cleanup := func() {
 		CleanupTestDB(db)

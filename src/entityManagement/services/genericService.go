@@ -132,17 +132,9 @@ func (g *genericService) CreateEntityWithUser(inputDto any, entityName string, u
 		Context:    context.Background(),
 	}
 
-	// Exécuter les hooks après création (synchrone en test mode, async sinon)
-	if hooks.GlobalHookRegistry.IsTestMode() {
-		if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
-			appUtils.Warn("after_create hooks failed for %s: %v", entityName, err)
-		}
-	} else {
-		go func() {
-			if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
-				appUtils.Warn("after_create hooks failed for %s: %v", entityName, err)
-			}
-		}()
+	// Exécuter les hooks après création (synchrone)
+	if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
+		appUtils.Warn("after_create hooks failed for %s: %v", entityName, err)
 	}
 
 	return entity, nil
@@ -261,17 +253,9 @@ func (g *genericService) DeleteEntityWithUser(id uuid.UUID, entity any, scoped b
 		Context:    context.Background(),
 	}
 
-	// Exécuter les hooks après suppression (synchrone en test mode, async sinon)
-	if hooks.GlobalHookRegistry.IsTestMode() {
-		if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
-			appUtils.Warn("after_delete hooks failed for %s: %v", entityName, err)
-		}
-	} else {
-		go func() {
-			if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
-				appUtils.Warn("after_delete hooks failed for %s: %v", entityName, err)
-			}
-		}()
+	// Exécuter les hooks après suppression (synchrone)
+	if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
+		appUtils.Warn("after_delete hooks failed for %s: %v", entityName, err)
 	}
 
 	return nil
@@ -330,17 +314,9 @@ func (g *genericService) EditEntityWithUser(id uuid.UUID, entityName string, ent
 		Context:    context.Background(),
 	}
 
-	// Exécuter les hooks après mise à jour (synchrone en test mode, async sinon)
-	if hooks.GlobalHookRegistry.IsTestMode() {
-		if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
-			appUtils.Warn("after_update hooks failed for %s: %v", entityName, err)
-		}
-	} else {
-		go func() {
-			if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
-				appUtils.Warn("after_update hooks failed for %s: %v", entityName, err)
-			}
-		}()
+	// Exécuter les hooks après mise à jour (synchrone)
+	if err := hooks.GlobalHookRegistry.ExecuteHooks(afterCtx); err != nil {
+		appUtils.Warn("after_update hooks failed for %s: %v", entityName, err)
 	}
 	return nil
 }

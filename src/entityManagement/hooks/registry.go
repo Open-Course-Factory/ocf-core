@@ -14,10 +14,9 @@ type hookRegistry struct {
 	enabled       map[string]bool   // hookName -> enabled
 	byEntity      map[string][]Hook // entityName -> []Hook
 	mutex         sync.RWMutex
-	testMode      bool              // Test mode disables async execution
 	globalDisable bool              // Globally disable all hooks (for tests)
-	errors        []HookError       // Recent async hook errors (circular buffer)
-	errorCallback HookErrorCallback // Optional callback for async errors
+	errors        []HookError       // Recent hook errors (circular buffer)
+	errorCallback HookErrorCallback // Optional callback for hook errors
 	maxErrors     int               // Maximum errors to keep (default 100)
 }
 
@@ -191,19 +190,6 @@ func (hr *hookRegistry) ClearAllHooks() {
 	log.Println("🔗 All hooks cleared")
 }
 
-// SetTestMode enables or disables test mode (synchronous execution)
-func (hr *hookRegistry) SetTestMode(enabled bool) {
-	hr.mutex.Lock()
-	defer hr.mutex.Unlock()
-
-	hr.testMode = enabled
-	if enabled {
-		log.Println("🔗 Hook test mode enabled (synchronous execution)")
-	} else {
-		log.Println("🔗 Hook test mode disabled (async execution)")
-	}
-}
-
 // DisableAllHooks globally disables all hook execution (for tests)
 func (hr *hookRegistry) DisableAllHooks(disabled bool) {
 	hr.mutex.Lock()
@@ -217,14 +203,7 @@ func (hr *hookRegistry) DisableAllHooks(disabled bool) {
 	}
 }
 
-// IsTestMode returns whether test mode is enabled
-func (hr *hookRegistry) IsTestMode() bool {
-	hr.mutex.RLock()
-	defer hr.mutex.RUnlock()
-	return hr.testMode
-}
-
-// GetRecentErrors returns recent async hook errors
+// GetRecentErrors returns recent hook errors
 func (hr *hookRegistry) GetRecentErrors(maxErrors int) []HookError {
 	hr.mutex.RLock()
 	defer hr.mutex.RUnlock()
@@ -265,10 +244,9 @@ func (hr *hookRegistry) SetErrorCallback(callback HookErrorCallback) {
 	}
 }
 
-// recordError records an async hook error (internal method)
+// recordError records a hook error (internal method)
 func (hr *hookRegistry) recordError(hookName, entityName string, hookType HookType, entityID any, err error) {
 	hr.mutex.Lock()
-	defer hr.mutex.Unlock()
 
 	hookError := HookError{
 		HookName:   hookName,
@@ -285,10 +263,14 @@ func (hr *hookRegistry) recordError(hookName, entityName string, hookType HookTy
 	}
 	hr.errors = append(hr.errors, hookError)
 
-	// Call error callback if set (outside mutex to avoid deadlock)
 	callback := hr.errorCallback
+	hr.mutex.Unlock()
+
+	// Invoke the callback synchronously, outside the lock, so callers observe
+	// the error before ExecuteHooks returns (and the callback may safely call
+	// back into the registry without deadlocking).
 	if callback != nil {
-		go callback(&hookError)
+		callback(&hookError)
 	}
 }
 

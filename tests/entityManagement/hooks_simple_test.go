@@ -383,7 +383,6 @@ func setupHookServiceTestSimple(t *testing.T) (*gorm.DB, services.GenericService
 	// Replace global hook registry with test registry
 	originalRegistry := hooks.GlobalHookRegistry
 	testRegistry := hooks.NewHookRegistry()
-	testRegistry.SetTestMode(true) // Enable test mode for synchronous execution
 	hooks.GlobalHookRegistry = testRegistry
 	t.Cleanup(func() {
 		hooks.GlobalHookRegistry = originalRegistry
@@ -477,9 +476,6 @@ func TestHooksSimple_ConcurrentExecution(t *testing.T) {
 func TestHooksSimple_ErrorTracking_AsyncHookFailure(t *testing.T) {
 	_, service, registry := setupHookServiceTestSimple(t)
 
-	// Disable test mode to allow async execution
-	registry.SetTestMode(false)
-
 	// Register a failing after-create hook
 	failingHook := NewSimpleFailingHook("failing-after-create", "HookTestEntity", []hooks.HookType{hooks.AfterCreate})
 	_ = registry.RegisterHook(failingHook)
@@ -497,9 +493,6 @@ func TestHooksSimple_ErrorTracking_AsyncHookFailure(t *testing.T) {
 	createdEntity, err := service.CreateEntity(entity, "HookTestEntity")
 	require.NoError(t, err, "Entity creation should succeed even if after-hook fails")
 
-	// Wait for async hook to execute
-	time.Sleep(200 * time.Millisecond)
-
 	// Check that error was recorded
 	errors := registry.GetRecentErrors(0)
 	require.Len(t, errors, 1, "Should have 1 recorded error")
@@ -512,13 +505,12 @@ func TestHooksSimple_ErrorTracking_AsyncHookFailure(t *testing.T) {
 	assert.NotNil(t, hookError.Timestamp)
 	assert.Equal(t, createdEntity.(*HookTestEntitySimple).ID, hookError.EntityID)
 
-	t.Logf("✅ Async hook error tracked: %+v", hookError)
+	t.Logf("✅ After-hook error tracked: %+v", hookError)
 }
 
 func TestHooksSimple_ErrorTracking_MultipleErrors(t *testing.T) {
 	_, service, registry := setupHookServiceTestSimple(t)
 
-	registry.SetTestMode(false)
 	registry.ClearErrors()
 
 	// Register failing after-create hook
@@ -529,7 +521,6 @@ func TestHooksSimple_ErrorTracking_MultipleErrors(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		entity := HookTestEntitySimple{Name: fmt.Sprintf("Test %d", i), Value: i, Status: "active"}
 		_, _ = service.CreateEntity(entity, "HookTestEntity")
-		time.Sleep(50 * time.Millisecond)
 	}
 
 	// Check all errors recorded
@@ -547,7 +538,6 @@ func TestHooksSimple_ErrorTracking_MultipleErrors(t *testing.T) {
 
 func TestHooksSimple_ErrorTracking_GetRecentErrors(t *testing.T) {
 	registry := hooks.NewHookRegistry()
-	registry.SetTestMode(false)
 
 	// Register ONE failing hook
 	failingHook := NewSimpleFailingHook("test-hook", "TestEntity", []hooks.HookType{hooks.AfterCreate})
@@ -584,7 +574,6 @@ func TestHooksSimple_ErrorTracking_GetRecentErrors(t *testing.T) {
 
 func TestHooksSimple_ErrorTracking_CircularBuffer(t *testing.T) {
 	registry := hooks.NewHookRegistry()
-	registry.SetTestMode(false)
 
 	// Register ONE failing hook
 	failingHook := NewSimpleFailingHook("test-hook", "TestEntity", []hooks.HookType{hooks.AfterCreate})
@@ -607,7 +596,6 @@ func TestHooksSimple_ErrorTracking_CircularBuffer(t *testing.T) {
 
 func TestHooksSimple_ErrorTracking_ClearErrors(t *testing.T) {
 	registry := hooks.NewHookRegistry()
-	registry.SetTestMode(false)
 
 	// Register ONE failing hook
 	failingHook := NewSimpleFailingHook("test-hook", "TestEntity", []hooks.HookType{hooks.AfterCreate})
@@ -633,7 +621,6 @@ func TestHooksSimple_ErrorTracking_ClearErrors(t *testing.T) {
 
 func TestHooksSimple_ErrorTracking_Callback(t *testing.T) {
 	registry := hooks.NewHookRegistry()
-	registry.SetTestMode(false)
 
 	// Track callback invocations
 	var callbackErrors []hooks.HookError
@@ -655,9 +642,6 @@ func TestHooksSimple_ErrorTracking_Callback(t *testing.T) {
 	failingHook := NewSimpleFailingHook("callback-test-hook", "TestEntity", []hooks.HookType{hooks.AfterCreate})
 	_ = registry.RegisterHook(failingHook)
 	_ = registry.ExecuteHooks(ctx)
-
-	// Wait for async callback
-	time.Sleep(100 * time.Millisecond)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -698,9 +682,9 @@ func TestHooksSimple_ErrorTracking_BeforeHooksNotTracked(t *testing.T) {
 // These tests lock in the contract that AfterCreate hooks run synchronously,
 // so their side effects (and any errors they report) are visible to the caller
 // immediately after CreateEntity returns. The hook deliberately sleeps inside
-// its Execute() — if the framework spawns a goroutine, the assertions race the
-// goroutine and fail. Once hooks are sync, the sleep happens inline and the
-// assertions trivially succeed.
+// its Execute() — if the framework spawned a goroutine, the assertions would
+// race the goroutine and fail. With hooks always running sync, the sleep
+// happens inline and the assertions trivially succeed.
 
 // slowSideEffectHook flips an atomic flag inside Execute, after sleeping long
 // enough that an async dispatch is observable to the caller.
@@ -751,17 +735,11 @@ func (h *slowFailingHook) Execute(ctx *hooks.HookContext) error {
 }
 
 // TestGenericService_AfterCreate_RunsSynchronouslyInProdMode locks in that
-// AfterCreate side effects are visible immediately after CreateEntity returns,
-// without test-mode bypassing the production code path.
-//
-// Expected to FAIL on current code: the registry dispatches AfterCreate in a
-// goroutine when IsTestMode()==false, so the atomic flag is still 0 when the
-// assertion runs.
+// AfterCreate side effects are visible immediately after CreateEntity returns.
+// The same production code path is used for tests and prod (no test-mode
+// short-circuit), so this contract holds everywhere.
 func TestGenericService_AfterCreate_RunsSynchronouslyInProdMode(t *testing.T) {
 	_, service, registry := setupHookServiceTestSimple(t)
-
-	// Use the production code path: NO test-mode short-circuit.
-	registry.SetTestMode(false)
 
 	var hookRan int32
 	hook := newSlowSideEffectHook(
@@ -788,15 +766,9 @@ func TestGenericService_AfterCreate_RunsSynchronouslyInProdMode(t *testing.T) {
 // AfterCreate hook error reaches the registered error callback before
 // CreateEntity returns, so callers (controllers, tests, monitoring) can act on
 // it without polling.
-//
-// Expected to FAIL on current code: the registry runs both the hook and the
-// error callback in goroutines, so the captured error is still nil when the
-// assertion runs.
 func TestGenericService_AfterCreate_ErrorSurfacesSynchronously(t *testing.T) {
 	_, service, registry := setupHookServiceTestSimple(t)
 
-	// Use the production code path.
-	registry.SetTestMode(false)
 	registry.ClearErrors()
 
 	var capturedErr atomic.Value // stores *hooks.HookError

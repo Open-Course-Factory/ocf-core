@@ -77,7 +77,6 @@ func setupGroupTestEnvironment(t *testing.T) (*gorm.DB, services.GenericService)
 
 	// Clear hooks and register group hooks
 	hooks.GlobalHookRegistry.ClearAllHooks()
-	hooks.GlobalHookRegistry.SetTestMode(true)
 	groupHooks.InitGroupHooks(db)
 
 	genericService := services.NewGenericService(db, casdoor.Enforcer)

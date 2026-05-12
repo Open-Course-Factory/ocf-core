@@ -607,17 +607,15 @@ func TestIntegration_ErrorHandling(t *testing.T) {
 // Moved from genericService_test.go on deletion.
 type erroringHookRegistry struct{}
 
-func (r *erroringHookRegistry) RegisterHook(hook hooks.Hook) error              { return nil }
-func (r *erroringHookRegistry) UnregisterHook(hookName string) error            { return nil }
-func (r *erroringHookRegistry) GetHooks(string, hooks.HookType) []hooks.Hook    { return nil }
-func (r *erroringHookRegistry) EnableHook(string, bool) error                   { return nil }
-func (r *erroringHookRegistry) ClearAllHooks()                                  {}
-func (r *erroringHookRegistry) SetTestMode(bool)                                {}
-func (r *erroringHookRegistry) DisableAllHooks(bool)                            {}
-func (r *erroringHookRegistry) IsTestMode() bool                                { return true }
-func (r *erroringHookRegistry) GetRecentErrors(int) []hooks.HookError           { return nil }
-func (r *erroringHookRegistry) ClearErrors()                                    {}
-func (r *erroringHookRegistry) SetErrorCallback(hooks.HookErrorCallback)        {}
+func (r *erroringHookRegistry) RegisterHook(hook hooks.Hook) error           { return nil }
+func (r *erroringHookRegistry) UnregisterHook(hookName string) error         { return nil }
+func (r *erroringHookRegistry) GetHooks(string, hooks.HookType) []hooks.Hook { return nil }
+func (r *erroringHookRegistry) EnableHook(string, bool) error                { return nil }
+func (r *erroringHookRegistry) ClearAllHooks()                               {}
+func (r *erroringHookRegistry) DisableAllHooks(bool)                         {}
+func (r *erroringHookRegistry) GetRecentErrors(int) []hooks.HookError        { return nil }
+func (r *erroringHookRegistry) ClearErrors()                                 {}
+func (r *erroringHookRegistry) SetErrorCallback(hooks.HookErrorCallback)     {}
 func (r *erroringHookRegistry) ExecuteHooks(ctx *hooks.HookContext) error {
 	return fmt.Errorf("hook execution failed")
 }
