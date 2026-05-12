@@ -157,3 +157,95 @@ func TestAbandonSession_StopsTerminalViaService(t *testing.T) {
 	// This is a design choice — the service layer only manages session state,
 	// while the controller layer orchestrates the terminal cleanup.
 }
+
+// panickingVerificationService panics on ExecInContainer to simulate an
+// unexpected runtime fault inside runStep0Setup (e.g. a nil-deref from a
+// malformed tt-backend response). VerifyStep and PushFile return zero values.
+type panickingVerificationService struct{}
+
+func (p *panickingVerificationService) VerifyStep(terminalSessionID string, step *models.ScenarioStep) (bool, string, error) {
+	return false, "", nil
+}
+
+func (p *panickingVerificationService) PushFile(sessionID string, targetPath string, content string, mode string) error {
+	return nil
+}
+
+func (p *panickingVerificationService) ExecInContainer(sessionID string, command []string, timeout int) (int, string, string, error) {
+	panic("simulated nil-deref inside ExecInContainer")
+}
+
+// TestRunStep0Setup_RecoversFromPanic_TransitionsToSetupFailed locks the
+// contract that runStep0Setup MUST recover from any panic in its body so
+// the ocf-core process does not crash. After recovery the session row must
+// be marked status='setup_failed' with provisioning_phase='' and the linked
+// terminal must be stopped via the configured TerminalStopFunc.
+//
+// Without `defer recover()` at the top of runStep0Setup, the goroutine
+// spawned by StartScenario will crash the entire test binary when
+// executeBackgroundScript panics — that is the RED state.
+func TestRunStep0Setup_RecoversFromPanic_TransitionsToSetupFailed(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Scenario with a non-empty setup script so runStep0Setup enters the
+	// executeBackgroundScript branch and the panicking verification service
+	// is invoked.
+	scenario := models.Scenario{
+		Name:         "panic-recovery-test",
+		Title:        "Panic Recovery Test",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-panic-1",
+		SetupScript:  "#!/bin/bash\necho setup",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	// One step is required so StartScenario spawns the runStep0Setup goroutine
+	// (see scenarioSessionService.go: `if len(scenario.Steps) > 0`).
+	step := models.ScenarioStep{
+		ScenarioID:  scenario.ID,
+		Order:       0,
+		Title:       "Step 1",
+		TextContent: "First step",
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	flagSvc := &mockFlagService{}
+	verifySvc := &panickingVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
+
+	tracker := &terminalStopTracker{}
+	sessionSvc.SetTerminalStopFunc(tracker.StopFunc())
+
+	terminalID := "terminal-panic-recovery-1"
+	session, err := sessionSvc.StartScenario("student-panic-1", scenario.ID, terminalID)
+	require.NoError(t, err)
+	require.Equal(t, "provisioning", session.Status,
+		"session should be provisioning before the goroutine runs")
+
+	// Poll the DB until the goroutine settles. With `defer recover()` in
+	// place, the goroutine will catch the panic, update the row, and
+	// invoke tryStopTerminal. Without it, the test binary will have
+	// already crashed before reaching this line.
+	deadline := time.Now().Add(5 * time.Second)
+	var finalStatus, finalPhase string
+	for time.Now().Before(deadline) {
+		var dbSession models.ScenarioSession
+		require.NoError(t, db.First(&dbSession, "id = ?", session.ID).Error)
+		if dbSession.Status != "provisioning" {
+			finalStatus = dbSession.Status
+			finalPhase = dbSession.ProvisioningPhase
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	assert.Equal(t, "setup_failed", finalStatus,
+		"runStep0Setup must mark the session as setup_failed after recovering from a panic")
+	assert.Equal(t, "", finalPhase,
+		"runStep0Setup must clear provisioning_phase after recovering from a panic")
+
+	assert.GreaterOrEqual(t, tracker.CallCount(), 1,
+		"runStep0Setup must call tryStopTerminal after recovering from a panic")
+	assert.Contains(t, tracker.CalledWith(), terminalID,
+		"tryStopTerminal must be invoked with the linked terminal session ID")
+}
