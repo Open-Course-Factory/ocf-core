@@ -32,8 +32,12 @@ type UserSubscriptionService interface {
 	CreateUserSubscription(userID string, planID uuid.UUID) (*models.UserSubscription, error)
 	UpgradeUserPlan(userID string, newPlanID uuid.UUID, prorationBehavior string) (*models.UserSubscription, error)
 
-	// Usage limits and metrics - types métiers
-	CheckUsageLimit(userID, metricType string, increment int64) (*UsageLimitCheck, error)
+	// Usage limits and metrics - types métiers.
+	//
+	// Quota checks live in QuotaService (CheckUserQuota /
+	// CheckUserQuotaWithPlan). Production controllers and the CheckLimit
+	// middleware call into QuotaService directly; no legacy
+	// CheckUsageLimit wrapper is exposed here.
 	IncrementUsage(userID, metricType string, increment int64) error
 	GetUserUsageMetrics(userID string, organizationID ...string) (*[]models.UsageMetrics, error)
 	ResetMonthlyUsage(userID string) error
@@ -193,45 +197,6 @@ func (ss *subscriptionService) CreateUserSubscription(userID string, planID uuid
 	}
 
 	return ss.GetUserSubscriptionByID(subscription.ID)
-}
-
-// CheckUsageLimit verifies whether the user can perform the given action
-// based on their current plan limits.
-//
-// Thin wrapper kept for backward compatibility with existing callers and
-// test mocks. The actual quota logic lives in QuotaService — see
-// src/payment/services/quotaService.go. The "no active subscription"
-// case preserves the legacy struct shape (Allowed:false +
-// "No active subscription" message) rather than propagating the
-// EffectivePlanService error, because frontend / integration test code
-// depends on it.
-func (ss *subscriptionService) CheckUsageLimit(userID, metricType string, increment int64) (*UsageLimitCheck, error) {
-	// Preserve the legacy "no subscription" envelope: callers (and the
-	// TestIntegration_TrialPlan_FullFlow integration test) expect a
-	// blocked UsageLimitCheck with a recognizable message rather than
-	// an error.
-	if _, err := ss.repository.GetActiveUserSubscription(userID); err != nil {
-		return &UsageLimitCheck{
-			Allowed:        false,
-			CurrentUsage:   0,
-			Limit:          0,
-			RemainingUsage: 0,
-			Message:        "No active subscription - upgrade required",
-			UserID:         userID,
-			MetricType:     metricType,
-		}, nil
-	}
-
-	// Delegate the actual decision to QuotaService so the quota rule
-	// stays expressed in exactly one place. orgID=nil → personal quota.
-	return ss.quotaService().CheckUserQuota(userID, nil, metricType, increment)
-}
-
-// quotaService builds a transient QuotaService for delegating quota
-// decisions. Constructed on demand to avoid an import cycle between
-// QuotaService and EffectivePlanService.
-func (ss *subscriptionService) quotaService() QuotaService {
-	return NewQuotaService(ss.db, NewEffectivePlanService(ss.db))
 }
 
 // IncrementUsage incrémente l'utilisation d'une métrique

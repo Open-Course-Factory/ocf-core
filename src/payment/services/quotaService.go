@@ -22,10 +22,9 @@ import (
 // quota decision is actually computed.
 //
 // External consumers (effectivePlanService.CheckEffectiveUsageLimit*,
-// userSubscriptionService.CheckUsageLimit, the CheckLimit middleware,
-// and scenario controllers) delegate to QuotaService. Their public
-// surfaces are kept stable for backward compatibility, but the logic
-// lives here.
+// the CheckLimit middleware, and scenario controllers) delegate to
+// QuotaService. Their public surfaces are kept stable for backward
+// compatibility, but the logic lives here.
 type QuotaService interface {
 	// CheckUserQuota resolves the user's effective plan (in the given org
 	// context if non-nil) and decides whether the proposed increment keeps
