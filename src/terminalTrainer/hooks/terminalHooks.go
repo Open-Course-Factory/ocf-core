@@ -62,7 +62,6 @@ func (h *TerminalOwnerPermissionHook) Execute(ctx *hooks.HookContext) error {
 
 	route := fmt.Sprintf("/api/v1/terminals/%s", terminal.ID.String())
 	opts := utils.DefaultPermissionOptions()
-	opts.LoadPolicyFirst = true
 	opts.WarnOnError = true
 
 	err := utils.AddPolicy(casdoor.Enforcer, terminal.UserID, route, "PATCH", opts)
@@ -124,7 +123,6 @@ func (h *TerminalCleanupHook) Execute(ctx *hooks.HookContext) error {
 
 	route := fmt.Sprintf("/api/v1/terminals/%s", terminal.ID.String())
 	opts := utils.DefaultPermissionOptions()
-	opts.LoadPolicyFirst = true
 	opts.WarnOnError = true
 
 	err := utils.RemoveFilteredPolicy(casdoor.Enforcer, 1, opts, route)
