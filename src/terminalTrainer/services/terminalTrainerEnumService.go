@@ -2,7 +2,7 @@ package services
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -83,17 +83,14 @@ func (s *terminalTrainerEnumService) initializeLocalEnums() {
 		3: {Value: 3, Name: "revoked", Description: "API key has been revoked by admin"},
 	}
 
-	log.Printf("[TerminalTrainerEnumService] Initialized with %d local enum definitions", len(s.enums))
+	slog.Info("terminal trainer enum service initialized", "local_enum_count", len(s.enums))
 }
 
 // asyncRefresh attempts to fetch enums from the API in the background
 func (s *terminalTrainerEnumService) asyncRefresh() {
-	// Wait a bit before first fetch to allow system to stabilize
-	time.Sleep(5 * time.Second)
-
 	// Try initial fetch
 	if err := s.fetchEnumsFromAPI(); err != nil {
-		log.Printf("[TerminalTrainerEnumService] Initial enum fetch failed (using local fallbacks): %v", err)
+		slog.Warn("initial terminal trainer enum fetch failed; using local fallbacks", "err", err)
 	}
 
 	// Set up periodic refresh every 5 minutes
@@ -102,7 +99,7 @@ func (s *terminalTrainerEnumService) asyncRefresh() {
 
 	for range ticker.C {
 		if err := s.fetchEnumsFromAPI(); err != nil {
-			log.Printf("[TerminalTrainerEnumService] Periodic enum refresh failed: %v", err)
+			slog.Warn("periodic terminal trainer enum refresh failed", "err", err)
 		}
 	}
 }
@@ -144,7 +141,7 @@ func (s *terminalTrainerEnumService) fetchEnumsFromAPI() error {
 					mismatch := fmt.Sprintf("Enum '%s' value %d: local='%s' api='%s'",
 						enumDef.Name, apiValue.Value, localValue.Name, apiValue.Name)
 					newMismatches = append(newMismatches, mismatch)
-					log.Printf("[TerminalTrainerEnumService] Warning: %s", mismatch)
+					slog.Warn("terminal trainer enum mismatch", "detail", mismatch)
 				}
 			}
 
@@ -157,9 +154,9 @@ func (s *terminalTrainerEnumService) fetchEnumsFromAPI() error {
 	s.lastFetch = time.Now()
 	s.source = "api"
 
-	log.Printf("[TerminalTrainerEnumService] Successfully fetched %d enum definitions from API", len(response.Enums))
+	slog.Info("fetched terminal trainer enums from API", "count", len(response.Enums))
 	if len(newMismatches) > 0 {
-		log.Printf("[TerminalTrainerEnumService] Warning: Found %d mismatches between local and API definitions", len(newMismatches))
+		slog.Warn("terminal trainer enum mismatches found", "count", len(newMismatches))
 	}
 
 	return nil
