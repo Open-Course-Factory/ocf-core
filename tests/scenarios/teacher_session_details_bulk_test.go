@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -185,6 +186,46 @@ func TestGetSessionDetailsBulkHandler_ReturnsItems(t *testing.T) {
 	assert.Len(t, resp.Items, 2)
 	assert.Equal(t, ids[0], resp.Items[0].SessionID)
 	assert.Equal(t, ids[1], resp.Items[1].SessionID)
+}
+
+// TestGetSessionDetails_Batch_MatchesIndividualCalls asserts that the batched
+// GetSessionDetails produces the same output as N individual GetSessionDetail
+// calls. Guards against merge bugs in the post-query mapping (scenarios by ID,
+// progress by session ID, steps by (scenario_id, order)).
+//
+// This is a CONTRACT-LOCK test, not a RED→GREEN test. The current production
+// implementation of GetSessionDetails is a thin loop over GetSessionDetail, so
+// the equivalence is trivially satisfied today. The test exists to fail when
+// the upcoming refactor swaps the loop for batched IN queries — any drift in
+// nested fields (steps, quiz questions, timestamps, correct counts) will trip
+// reflect.DeepEqual.
+//
+// The seed helper creates ONE scenario shared by N sessions, so the eventual
+// batched implementation will naturally exercise scenario-de-dup (single
+// scenario row fetched once, fanned out to N response items).
+func TestGetSessionDetails_Batch_MatchesIndividualCalls(t *testing.T) {
+	groupID, sessionIDs := seedBulkSessionDetailsScenario(t, "batch-equiv", 5)
+	svc := services.NewTeacherDashboardService(sharedTestDB, nil, nil)
+
+	// Call batched.
+	batched, err := svc.GetSessionDetails(groupID, sessionIDs)
+	if err != nil {
+		t.Fatalf("GetSessionDetails returned error: %v", err)
+	}
+	if len(batched) != len(sessionIDs) {
+		t.Fatalf("expected %d batched results, got %d", len(sessionIDs), len(batched))
+	}
+
+	// Call individual N times and compare every field via DeepEqual.
+	for i, id := range sessionIDs {
+		single, err := svc.GetSessionDetail(groupID, id)
+		if err != nil {
+			t.Fatalf("GetSessionDetail(%s) returned error: %v", id, err)
+		}
+		if !reflect.DeepEqual(batched[i], single) {
+			t.Errorf("batched[%d] differs from individual:\n  batched:    %+v\n  individual: %+v", i, batched[i], single)
+		}
+	}
 }
 
 // contains is a tiny helper to avoid importing "strings" twice in a row;
