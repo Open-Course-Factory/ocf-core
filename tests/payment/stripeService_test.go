@@ -73,14 +73,6 @@ func (m *MockSubscriptionService) HasActiveSubscription(userID string) (bool, er
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockSubscriptionService) CheckUsageLimit(userID, metricType string, increment int64) (*services.UsageLimitCheck, error) {
-	args := m.Called(userID, metricType, increment)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*services.UsageLimitCheck), args.Error(1)
-}
-
 func (m *MockSubscriptionService) RecordUsage(userID, metricType string, amount int64) error {
 	args := m.Called(userID, metricType, amount)
 	return args.Error(0)

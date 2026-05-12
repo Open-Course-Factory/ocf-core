@@ -182,14 +182,6 @@ func (m *SharedMockSubscriptionService) HasActiveSubscription(userID string) (bo
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *SharedMockSubscriptionService) CheckUsageLimit(userID, metricType string, increment int64) (*services.UsageLimitCheck, error) {
-	args := m.Called(userID, metricType, increment)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*services.UsageLimitCheck), args.Error(1)
-}
-
 func (m *SharedMockSubscriptionService) RecordUsage(userID, metricType string, amount int64) error {
 	args := m.Called(userID, metricType, amount)
 	return args.Error(0)
