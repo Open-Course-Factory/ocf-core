@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -189,6 +190,61 @@ func (tc *TeacherController) GetSessionDetail(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, detail)
+}
+
+// GetSessionDetailsBulkRequest is the body of POST /teacher/groups/:groupId/sessions/details.
+type GetSessionDetailsBulkRequest struct {
+	SessionIDs []uuid.UUID `json:"session_ids" binding:"required"`
+}
+
+// GetSessionDetailsBulk godoc
+// @Summary Get session details (bulk)
+// @Description Returns details for multiple sessions in one request. Same per-session
+// @Description auth checks as the single endpoint. Used by CSV export to avoid N+1.
+// @Tags scenario-teacher
+// @Accept json
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Param body body GetSessionDetailsBulkRequest true "Session IDs to fetch"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /teacher/groups/{groupId}/sessions/details [post]
+// @Security BearerAuth
+func (tc *TeacherController) GetSessionDetailsBulk(c *gin.Context) {
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group ID"})
+		return
+	}
+
+	var req GetSessionDetailsBulkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body: " + err.Error()})
+		return
+	}
+
+	details, err := tc.dashboardService.GetSessionDetails(groupID, req.SessionIDs)
+	if err != nil {
+		// Map known errors to appropriate status codes. The service preserves
+		// GetSessionDetail's verbatim phrasing for "session not found" and
+		// "session does not belong to this group" — both are 4xx.
+		errStr := err.Error()
+		if strings.Contains(errStr, "too many session IDs") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": errStr})
+			return
+		}
+		if strings.Contains(errStr, "session not found") || strings.Contains(errStr, "does not belong") || strings.Contains(errStr, "scenario is not assigned") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": errStr})
+			return
+		}
+		slog.Error("failed to get bulk session details", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get session details"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"items": details})
 }
 
 // GetSessionCommands godoc

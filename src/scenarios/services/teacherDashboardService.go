@@ -792,6 +792,30 @@ func (s *TeacherDashboardService) GetSessionDetail(groupID, sessionID uuid.UUID)
 	return resp, nil
 }
 
+// maxSessionDetailsBulkSize caps how many session details can be requested in
+// one bulk call. Typical class size is 30-50; 200 covers larger amphis.
+const maxSessionDetailsBulkSize = 200
+
+// GetSessionDetails returns session details for a batch of session IDs, in the
+// same order as the input. Mirrors GetSessionDetail's authorization semantics
+// per session (verifies the session's user is a group member AND the scenario
+// is assigned to the group). Returns an error if any single lookup fails — for
+// CSV export, a partial result is worse than no result.
+func (s *TeacherDashboardService) GetSessionDetails(groupID uuid.UUID, sessionIDs []uuid.UUID) ([]*SessionDetailResponse, error) {
+	if len(sessionIDs) > maxSessionDetailsBulkSize {
+		return nil, fmt.Errorf("too many session IDs: %d (max %d)", len(sessionIDs), maxSessionDetailsBulkSize)
+	}
+	details := make([]*SessionDetailResponse, 0, len(sessionIDs))
+	for _, id := range sessionIDs {
+		d, err := s.GetSessionDetail(groupID, id)
+		if err != nil {
+			return nil, err // propagate verbatim — tests grep for "session not found" and "session does not belong to this group"
+		}
+		details = append(details, d)
+	}
+	return details, nil
+}
+
 // GetSessionCommands proxies the terminal command history for a scenario session
 // to tt-backend, using the OCF admin API key. It enforces the same group-membership
 // invariant as GetSessionDetail (the session's user must belong to the group) so
