@@ -162,6 +162,12 @@ type Terminal struct {
 	ComposedDistribution string     `gorm:"type:varchar(100)" json:"composed_distribution,omitempty"`
 	ComposedSize         string     `gorm:"type:varchar(10)" json:"composed_size,omitempty"`
 	ComposedFeatures     string     `gorm:"type:text" json:"composed_features,omitempty"`
+	// Denormalized resource footprint (MR-CORE-3). Populated by the
+	// BeforeCreate hook in a later MR from the size catalog so the budget
+	// quota counter can sum CPU/RAM without re-joining against tt-backend.
+	// Existing rows remain at 0 until the backfill runs.
+	SizeCPU      int `gorm:"default:0" json:"size_cpu,omitempty"`
+	SizeMemoryMB int `gorm:"default:0" json:"size_memory_mb,omitempty"`
 	UserTerminalKey      UserTerminalKey
 }
 

@@ -120,7 +120,9 @@ func runTestMigrations(db *gorm.DB) error {
 		hidden_by_owner_at DATETIME,
 		composed_distribution TEXT,
 		composed_size TEXT,
-		composed_features TEXT
+		composed_features TEXT,
+		size_cpu INTEGER DEFAULT 0,
+		size_memory_mb INTEGER DEFAULT 0
 	)`)
 
 	// Webhook events table (WebhookEvent model uses gen_random_uuid() which is PostgreSQL-only)
