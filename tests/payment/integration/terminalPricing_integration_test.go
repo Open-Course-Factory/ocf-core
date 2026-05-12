@@ -218,6 +218,14 @@ func createUserSubscription(t *testing.T, db *gorm.DB, userID string, planID uui
 	return subscription
 }
 
+// newQuotaService builds the canonical QuotaService wiring used across
+// these integration tests. Quota checks are exercised through this
+// service directly — the legacy subscriptionService.CheckUsageLimit
+// wrapper has been removed (SSOT consolidation).
+func newQuotaService(db *gorm.DB) services.QuotaService {
+	return services.NewQuotaService(db, services.NewEffectivePlanService(db))
+}
+
 // TestIntegration_TrialPlan_FullFlow tests the complete flow for Trial plan.
 //
 // Since #311 (live-recalc SSOT for concurrent_terminals), creating a
@@ -228,14 +236,14 @@ func TestIntegration_TrialPlan_FullFlow(t *testing.T) {
 	// Setup
 	db := setupIntegrationDB(t)
 	plans := seedTestPlans(t, db)
-	service := services.NewSubscriptionService(db)
+	quotaSvc := newQuotaService(db)
 
 	userID := "trial-user-integration"
 	createUserSubscription(t, db, userID, plans["Trial"].ID)
 
 	t.Run("First terminal creation - should succeed", func(t *testing.T) {
 		// Check limit
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		assert.NoError(t, err)
 		assert.True(t, check.Allowed, "First terminal should be allowed")
 		assert.Equal(t, int64(0), check.CurrentUsage)
@@ -247,7 +255,7 @@ func TestIntegration_TrialPlan_FullFlow(t *testing.T) {
 
 	t.Run("Second terminal creation - should fail", func(t *testing.T) {
 		// Check limit
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		assert.NoError(t, err)
 		assert.False(t, check.Allowed, "Second terminal should NOT be allowed on Trial plan")
 		assert.Equal(t, int64(1), check.CurrentUsage)
@@ -259,7 +267,7 @@ func TestIntegration_TrialPlan_FullFlow(t *testing.T) {
 		stopTerminals(t, db, userID, 1)
 
 		// Verify can create new terminal
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		assert.NoError(t, err)
 		assert.True(t, check.Allowed, "Should allow terminal after stopping previous one")
 		assert.Equal(t, int64(0), check.CurrentUsage)
@@ -275,7 +283,7 @@ func TestIntegration_TrainerPlan_MultipleTerminals(t *testing.T) {
 	// Setup
 	db := setupIntegrationDB(t)
 	plans := seedTestPlans(t, db)
-	service := services.NewSubscriptionService(db)
+	quotaSvc := newQuotaService(db)
 
 	userID := "trainer-user-integration"
 	createUserSubscription(t, db, userID, plans["Trainer"].ID)
@@ -283,20 +291,20 @@ func TestIntegration_TrainerPlan_MultipleTerminals(t *testing.T) {
 	// Trainer plan allows 3 concurrent terminals
 	t.Run("Create 3 terminals sequentially", func(t *testing.T) {
 		for i := 1; i <= 3; i++ {
-			check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+			check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 			assert.NoError(t, err)
 			assert.True(t, check.Allowed, "Terminal %d should be allowed", i)
 
 			startTerminals(t, db, userID, 1)
 
 			// Verify current usage
-			check2, _ := service.CheckUsageLimit(userID, "concurrent_terminals", 0)
+			check2, _ := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 0)
 			assert.Equal(t, int64(i), check2.CurrentUsage, "Current usage should be %d", i)
 		}
 	})
 
 	t.Run("Fourth terminal should fail", func(t *testing.T) {
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		assert.NoError(t, err)
 		assert.False(t, check.Allowed, "Fourth terminal should NOT be allowed")
 		assert.Equal(t, int64(3), check.CurrentUsage)
@@ -307,19 +315,19 @@ func TestIntegration_TrainerPlan_MultipleTerminals(t *testing.T) {
 		stopTerminals(t, db, userID, 2)
 
 		// Verify current usage
-		check, _ := service.CheckUsageLimit(userID, "concurrent_terminals", 0)
+		check, _ := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 0)
 		assert.Equal(t, int64(1), check.CurrentUsage)
 
 		// Should be able to create 2 more
 		for i := 0; i < 2; i++ {
-			check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+			check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 			assert.NoError(t, err)
 			assert.True(t, check.Allowed)
 			startTerminals(t, db, userID, 1)
 		}
 
 		// Should be at limit again
-		check, _ = service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, _ = quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		assert.False(t, check.Allowed)
 		assert.Equal(t, int64(3), check.CurrentUsage)
 	})
@@ -330,7 +338,7 @@ func TestIntegration_OrganizationPlan_HighConcurrency(t *testing.T) {
 	// Setup
 	db := setupIntegrationDB(t)
 	plans := seedTestPlans(t, db)
-	service := services.NewSubscriptionService(db)
+	quotaSvc := newQuotaService(db)
 
 	userID := "org-user-integration"
 	createUserSubscription(t, db, userID, plans["Organization"].ID)
@@ -338,7 +346,7 @@ func TestIntegration_OrganizationPlan_HighConcurrency(t *testing.T) {
 	// Organization plan allows 10 concurrent terminals
 	t.Run("Create 10 terminals", func(t *testing.T) {
 		for i := 1; i <= 10; i++ {
-			check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+			check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 			assert.NoError(t, err)
 			assert.True(t, check.Allowed, "Terminal %d/%d should be allowed", i, 10)
 
@@ -346,13 +354,13 @@ func TestIntegration_OrganizationPlan_HighConcurrency(t *testing.T) {
 		}
 
 		// Verify final state
-		check, _ := service.CheckUsageLimit(userID, "concurrent_terminals", 0)
+		check, _ := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 0)
 		assert.Equal(t, int64(10), check.CurrentUsage)
 		assert.Equal(t, int64(10), check.Limit)
 	})
 
 	t.Run("11th terminal should fail", func(t *testing.T) {
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		assert.NoError(t, err)
 		assert.False(t, check.Allowed)
 	})
@@ -362,11 +370,11 @@ func TestIntegration_OrganizationPlan_HighConcurrency(t *testing.T) {
 		stopTerminals(t, db, userID, 10)
 
 		// Verify reset to 0
-		check, _ := service.CheckUsageLimit(userID, "concurrent_terminals", 0)
+		check, _ := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 0)
 		assert.Equal(t, int64(0), check.CurrentUsage)
 
 		// Should be able to create new terminal
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		assert.NoError(t, err)
 		assert.True(t, check.Allowed)
 	})
@@ -377,7 +385,7 @@ func TestIntegration_PlanComparison(t *testing.T) {
 	// Setup
 	db := setupIntegrationDB(t)
 	plans := seedTestPlans(t, db)
-	service := services.NewSubscriptionService(db)
+	quotaSvc := newQuotaService(db)
 
 	users := map[string]struct {
 		planName     string
@@ -399,14 +407,14 @@ func TestIntegration_PlanComparison(t *testing.T) {
 		t.Run(config.planName+" plan limits", func(t *testing.T) {
 			// Create up to max
 			for i := 0; i < config.maxTerminals; i++ {
-				check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+				check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 				assert.NoError(t, err)
 				assert.True(t, check.Allowed, "%s: terminal %d/%d should be allowed", config.planName, i+1, config.maxTerminals)
 				startTerminals(t, db, userID, 1)
 			}
 
 			// One more should fail
-			check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+			check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 			assert.NoError(t, err)
 			assert.False(t, check.Allowed, "%s: should not allow beyond limit", config.planName)
 			assert.Equal(t, int64(config.maxTerminals), check.CurrentUsage)
@@ -420,6 +428,7 @@ func TestIntegration_UsageMetricsPersistence(t *testing.T) {
 	db := setupIntegrationDB(t)
 	plans := seedTestPlans(t, db)
 	service := services.NewSubscriptionService(db)
+	quotaSvc := newQuotaService(db)
 	repo := repositories.NewPaymentRepository(db)
 
 	userID := "metrics-user"
@@ -460,7 +469,7 @@ func TestIntegration_UsageMetricsPersistence(t *testing.T) {
 		startTerminals(t, db, userID, 3)
 
 		// Try to increment beyond (should fail check).
-		check, _ := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, _ := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		assert.False(t, check.Allowed)
 
 		// Current value of the materialized metric should still reflect
@@ -471,20 +480,26 @@ func TestIntegration_UsageMetricsPersistence(t *testing.T) {
 	})
 }
 
-// TestIntegration_NoSubscription tests behavior without active subscription
+// TestIntegration_NoSubscription tests behavior without active subscription.
+//
+// QuotaService.CheckUserQuota returns an error when no effective plan can
+// be resolved — middleware/controllers translate that error into an HTTP
+// 4xx for the caller. This is the honest production contract; the legacy
+// CheckUsageLimit wrapper used to fake a friendly UsageLimitCheck envelope
+// with Allowed:false and a "No active subscription" message, but that
+// wrapper has been removed as part of the SSOT consolidation.
 func TestIntegration_NoSubscription(t *testing.T) {
 	// Setup
 	db := setupIntegrationDB(t)
 	seedTestPlans(t, db)
-	service := services.NewSubscriptionService(db)
+	quotaSvc := newQuotaService(db)
 
 	userID := "no-sub-user"
 
 	t.Run("User without subscription cannot create terminals", func(t *testing.T) {
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
-		assert.NoError(t, err)
-		assert.False(t, check.Allowed)
-		assert.Contains(t, check.Message, "No active subscription")
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
+		assert.Error(t, err, "no resolvable plan must surface as an error")
+		assert.Nil(t, check, "QuotaService returns nil check when plan resolution fails")
 	})
 }
 
@@ -499,6 +514,7 @@ func TestIntegration_PlanUpgrade(t *testing.T) {
 	db := setupIntegrationDB(t)
 	plans := seedTestPlans(t, db)
 	service := services.NewSubscriptionService(db)
+	quotaSvc := newQuotaService(db)
 
 	userID := "upgrade-user"
 
@@ -509,7 +525,7 @@ func TestIntegration_PlanUpgrade(t *testing.T) {
 	startTerminals(t, db, userID, 1)
 
 	// Cannot create second on Trial plan
-	check, _ := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+	check, _ := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 	assert.False(t, check.Allowed, "Trial plan should block 2nd terminal")
 	assert.Equal(t, int64(1), check.Limit)
 
@@ -520,7 +536,7 @@ func TestIntegration_PlanUpgrade(t *testing.T) {
 
 	// After upgrade - can create 2 more terminals (3 total)
 	for i := 0; i < 2; i++ {
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		assert.NoError(t, err)
 		assert.True(t, check.Allowed, "Should allow terminal %d after upgrade", i+2)
 		assert.Equal(t, int64(3), check.Limit, "Limit should be updated to Trainer plan limit")
@@ -528,7 +544,7 @@ func TestIntegration_PlanUpgrade(t *testing.T) {
 	}
 
 	// Now at limit (3 terminals)
-	check, _ = service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+	check, _ = quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 	assert.False(t, check.Allowed, "Should not allow 4th terminal")
 	assert.Equal(t, int64(3), check.CurrentUsage)
 	assert.Equal(t, int64(3), check.Limit)
@@ -538,7 +554,7 @@ func TestIntegration_PlanUpgrade(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Now limit is 1, but usage is still 3 - should not allow more
-	check, _ = service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+	check, _ = quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 	assert.False(t, check.Allowed, "Should not allow more terminals when over limit after downgrade")
 	assert.Equal(t, int64(3), check.CurrentUsage)
 	assert.Equal(t, int64(1), check.Limit, "Limit should be updated to Trial plan limit")
@@ -551,7 +567,7 @@ func TestIntegration_PlanUpgrade(t *testing.T) {
 // The pre-#311 TestIntegration_PlanUpgrade did not catch this because it only
 // asserted on metrics.limit_value (which UpgradeUserPlan writes correctly
 // via its second Updates(map[...]) call), not on the subscription's
-// SubscriptionPlanID column itself. Once CheckUsageLimit is migrated to
+// SubscriptionPlanID column itself. Now that the quota path goes through
 // QuotaService (live recalc against the resolved plan rather than the
 // materialized limit_value), the integration test would have failed without
 // this fix in place.

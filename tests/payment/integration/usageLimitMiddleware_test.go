@@ -5,20 +5,22 @@ import (
 	"time"
 
 	paymentModels "soli/formations/src/payment/models"
-	paymentServices "soli/formations/src/payment/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestCheckUsageLimit_ConcurrentTerminals_RealTimeCount tests that CheckUsageLimit
-// uses real-time active terminal count instead of stored metric value
-func TestCheckUsageLimit_ConcurrentTerminals_RealTimeCount(t *testing.T) {
+// TestQuotaCheck_ConcurrentTerminals_RealTimeCount asserts the
+// concurrent_terminals quota path uses a real-time active terminal count
+// rather than the stored usage_metrics value. The check now goes through
+// QuotaService directly (the legacy CheckUsageLimit wrapper has been
+// removed as part of the SSOT consolidation).
+func TestQuotaCheck_ConcurrentTerminals_RealTimeCount(t *testing.T) {
 	// Setup
 	db := setupIntegrationDB(t)
 	plans := seedTestPlans(t, db)
-	service := paymentServices.NewSubscriptionService(db)
+	quotaSvc := newQuotaService(db)
 
 	// Migrate terminal tables
 	err := db.AutoMigrate(&terminalModels.Terminal{}, &terminalModels.UserTerminalKey{})
@@ -65,7 +67,7 @@ func TestCheckUsageLimit_ConcurrentTerminals_RealTimeCount(t *testing.T) {
 		require.NoError(t, err)
 
 		// Check if creating a new terminal is allowed (increment=1)
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		require.NoError(t, err)
 		require.NotNil(t, check)
 
@@ -91,7 +93,7 @@ func TestCheckUsageLimit_ConcurrentTerminals_RealTimeCount(t *testing.T) {
 		}
 
 		// Try to create another terminal (increment=1)
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		require.NoError(t, err)
 		require.NotNil(t, check)
 
@@ -118,7 +120,7 @@ func TestCheckUsageLimit_ConcurrentTerminals_RealTimeCount(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		require.NoError(t, err)
 
 		assert.False(t, check.Allowed,
@@ -143,7 +145,7 @@ func TestCheckUsageLimit_ConcurrentTerminals_RealTimeCount(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		require.NoError(t, err)
 
 		assert.True(t, check.Allowed, "Should allow after deleting terminals")
@@ -152,12 +154,12 @@ func TestCheckUsageLimit_ConcurrentTerminals_RealTimeCount(t *testing.T) {
 	})
 }
 
-// TestCheckUsageLimit_FirstTimeUser tests the case where user has no metrics yet
-func TestCheckUsageLimit_FirstTimeUser(t *testing.T) {
+// TestQuotaCheck_FirstTimeUser tests the case where user has no metrics yet
+func TestQuotaCheck_FirstTimeUser(t *testing.T) {
 	// Setup
 	db := setupIntegrationDB(t)
 	plans := seedTestPlans(t, db)
-	service := paymentServices.NewSubscriptionService(db)
+	quotaSvc := newQuotaService(db)
 
 	// Migrate terminal tables
 	err := db.AutoMigrate(&terminalModels.Terminal{}, &terminalModels.UserTerminalKey{})
@@ -179,7 +181,7 @@ func TestCheckUsageLimit_FirstTimeUser(t *testing.T) {
 
 	t.Run("Should allow first terminal when no metrics exist", func(t *testing.T) {
 		// No metrics exist yet, but user has 0 active terminals
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		require.NoError(t, err)
 
 		assert.True(t, check.Allowed, "Should allow first terminal")
@@ -200,7 +202,7 @@ func TestCheckUsageLimit_FirstTimeUser(t *testing.T) {
 		require.NoError(t, err)
 
 		// Try to create second terminal
-		check, err := service.CheckUsageLimit(userID, "concurrent_terminals", 1)
+		check, err := quotaSvc.CheckUserQuota(userID, nil, "concurrent_terminals", 1)
 		require.NoError(t, err)
 
 		assert.False(t, check.Allowed, "Should block second terminal on Solo plan")
