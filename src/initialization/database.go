@@ -122,6 +122,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&paymentModels.BillingAddress{})
 	db.AutoMigrate(&paymentModels.PlanFeature{})
 	db.AutoMigrate(&paymentModels.WebhookEvent{}) // ✅ SECURITY: Track processed webhooks in database
+	db.AutoMigrate(&paymentModels.StripeSync{})   // Persistent Stripe sync queue (issue #326)
 
 	// Configuration entities
 	db.AutoMigrate(&configModels.Feature{})

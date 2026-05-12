@@ -157,6 +157,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM terminals")
 	sharedTestDB.Exec("DELETE FROM user_terminal_keys")
 	sharedTestDB.Exec("DELETE FROM webhook_events")
+	sharedTestDB.Exec("DELETE FROM stripe_syncs")
 	return sharedTestDB
 }
 
