@@ -466,3 +466,48 @@ func TestIntegration_PlanUpgrade(t *testing.T) {
 	assert.Equal(t, int64(3), check.CurrentUsage)
 	assert.Equal(t, int64(1), check.Limit, "Limit should be updated to Trial plan limit")
 }
+
+// TestUpgradeUserPlan_PersistsNewPlanID is the kill-switch test for the
+// latent bug in UpgradeUserPlan where tx.Model(subscription).Update(col, value)
+// emitted UPDATE ... SET subscription_plan_id = <OLD ID> instead of <newPlanID>.
+//
+// The pre-#311 TestIntegration_PlanUpgrade did not catch this because it only
+// asserted on metrics.limit_value (which UpgradeUserPlan writes correctly
+// via its second Updates(map[...]) call), not on the subscription's
+// SubscriptionPlanID column itself. Once CheckUsageLimit is migrated to
+// QuotaService (live recalc against the resolved plan rather than the
+// materialized limit_value), the integration test would have failed without
+// this fix in place.
+//
+// This test asserts on the persisted column directly, so it stays a kill-switch
+// regardless of how the rest of the quota path evolves.
+func TestUpgradeUserPlan_PersistsNewPlanID(t *testing.T) {
+	db := setupIntegrationDB(t)
+	plans := seedTestPlans(t, db)
+	service := services.NewSubscriptionService(db)
+
+	userID := "persist-plan-id-user"
+	createUserSubscription(t, db, userID, plans["Trial"].ID)
+
+	trialID := plans["Trial"].ID
+	trainerID := plans["Trainer"].ID
+	require.NotEqual(t, trialID, trainerID, "test plan IDs must differ")
+
+	// Upgrade from Trial to Trainer.
+	returned, err := service.UpgradeUserPlan(userID, trainerID, "")
+	require.NoError(t, err)
+	require.NotNil(t, returned)
+
+	// The returned subscription must reference the new plan.
+	assert.Equal(t, trainerID, returned.SubscriptionPlanID,
+		"UpgradeUserPlan return value must reference the new plan")
+
+	// Reload the subscription from the DB and verify the column was
+	// actually written. This is the assertion the legacy test was missing.
+	reloaded, err := service.GetActiveUserSubscription(userID)
+	require.NoError(t, err)
+	assert.Equal(t, trainerID, reloaded.SubscriptionPlanID,
+		"persisted subscription_plan_id must be the new plan ID; if this fails, "+
+			"UpgradeUserPlan's GORM Update is writing the loaded struct value "+
+			"(old plan ID) instead of the newPlanID argument")
+}
