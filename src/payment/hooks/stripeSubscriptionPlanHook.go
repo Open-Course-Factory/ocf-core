@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"soli/formations/src/entityManagement/hooks"
+	"soli/formations/src/observability"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
 
@@ -135,6 +136,7 @@ func (h *StripeSubscriptionPlanHook) Execute(ctx *hooks.HookContext) error {
 		// downstream Stripe call (including SDK nil-derefs) is caught.
 		defer func() {
 			if rec := recover(); rec != nil {
+				observability.Metrics.StripeSyncPanic.Add(1)
 				slog.Error("stripe sync panicked",
 					"hook_type", string(hookType),
 					"plan_id", planCopy.ID,
@@ -163,9 +165,11 @@ func (h *StripeSubscriptionPlanHook) syncAfterCreate(plan *models.SubscriptionPl
 	slog.Info("creating stripe product and price", "plan_name", plan.Name)
 	if err := h.stripeService.CreateSubscriptionPlanInStripe(plan); err != nil {
 		// Ne pas faire échouer la création si Stripe échoue.
+		observability.Metrics.StripeCreateFailure.Add(1)
 		slog.Error("stripe create failed", "plan_id", plan.ID, "plan_name", plan.Name, "err", err)
 		return
 	}
+	observability.Metrics.StripeCreateSuccess.Add(1)
 	slog.Info("stripe product and price created", "plan_name", plan.Name)
 }
 
@@ -173,9 +177,11 @@ func (h *StripeSubscriptionPlanHook) syncAfterUpdate(plan *models.SubscriptionPl
 	slog.Info("updating stripe product", "plan_name", plan.Name)
 	if err := h.stripeService.UpdateSubscriptionPlanInStripe(plan); err != nil {
 		// Ne pas faire échouer la mise à jour.
+		observability.Metrics.StripeUpdateFailure.Add(1)
 		slog.Error("stripe update failed", "plan_id", plan.ID, "plan_name", plan.Name, "err", err)
 		return
 	}
+	observability.Metrics.StripeUpdateSuccess.Add(1)
 	slog.Info("stripe product updated", "plan_name", plan.Name)
 }
 
@@ -187,10 +193,12 @@ func (h *StripeSubscriptionPlanHook) syncAfterDelete(plan *models.SubscriptionPl
 	// delete GORM) — d'où l'usage explicite de ArchiveSubscriptionPlanInStripe.
 	if plan.StripeProductID != nil {
 		if err := h.stripeService.ArchiveSubscriptionPlanInStripe(*plan.StripeProductID); err != nil {
+			observability.Metrics.StripeArchiveFailure.Add(1)
 			slog.Error("stripe archive failed", "plan_id", plan.ID, "plan_name", plan.Name, "err", err)
 			return
 		}
 	}
+	observability.Metrics.StripeArchiveSuccess.Add(1)
 	slog.Info("stripe product archived", "plan_name", plan.Name)
 }
 

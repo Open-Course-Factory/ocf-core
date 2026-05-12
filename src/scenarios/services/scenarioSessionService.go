@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"soli/formations/src/observability"
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
@@ -89,6 +90,7 @@ func (s *ScenarioSessionService) tryStopTerminal(terminalSessionID string, sessi
 		return
 	}
 	if err := s.stopTerminal(terminalSessionID); err != nil {
+		observability.Metrics.TerminalStopOnCleanupFailure.Add(1)
 		slog.Error("failed to stop terminal — container may be orphaned", "terminal_session_id", terminalSessionID, "session_id", sessionID, "err", err)
 	}
 }
@@ -331,6 +333,7 @@ func (s *ScenarioSessionService) PreviewScenario(userID string, scenarioID uuid.
 func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag) {
 	defer func() {
 		if r := recover(); r != nil {
+			observability.Metrics.ScenarioSetupPanic.Add(1)
 			slog.Error("runStep0Setup panic recovered",
 				"session_id", sessionID,
 				"panic", r,
@@ -364,6 +367,7 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 					"status":             "setup_failed",
 					"provisioning_phase": "",
 				})
+			observability.Metrics.ScenarioSetupFailed.Add(1)
 			s.tryStopTerminal(terminalSessionID, sessionID)
 			return
 		}
@@ -385,6 +389,7 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 					"status":             "setup_failed",
 					"provisioning_phase": "",
 				})
+			observability.Metrics.ScenarioSetupFailed.Add(1)
 			s.tryStopTerminal(terminalSessionID, sessionID)
 			return
 		}
