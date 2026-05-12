@@ -503,8 +503,20 @@ func (ss *subscriptionService) UpgradeUserPlan(userID string, newPlanID uuid.UUI
 
 	// Use transaction to ensure atomicity
 	err = ss.db.Transaction(func(tx *gorm.DB) error {
-		// Update subscription plan ID only (don't save associations)
-		if err := tx.Model(subscription).Update("subscription_plan_id", newPlanID).Error; err != nil {
+		// Update subscription plan ID only (don't save associations).
+		//
+		// Use an explicit fresh-model + Where rather than
+		// tx.Model(subscription).Update(col, newPlanID): when the loaded
+		// struct already has a value in the target column, GORM's
+		// reflection picks the struct field's value (the OLD plan ID)
+		// instead of the value argument, emitting SQL like
+		//   UPDATE ... SET subscription_plan_id = <OLD ID> WHERE id = ...
+		// The bug is silent because metrics.limit_value (written below)
+		// still gets the new plan's limits, so any test asserting only
+		// on limits passes. See #315 / TestUpgradeUserPlan_PersistsNewPlanID.
+		if err := tx.Model(&models.UserSubscription{}).
+			Where("id = ?", subscription.ID).
+			Update("subscription_plan_id", newPlanID).Error; err != nil {
 			return fmt.Errorf("failed to update subscription: %w", err)
 		}
 
