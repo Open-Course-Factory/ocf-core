@@ -66,6 +66,11 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						// Tiered pricing
 						UseTieredPricing: plan.UseTieredPricing,
 						PricingTiers:     pricingTiers,
+
+						// Budget-based quota (MR-CORE-3, dual-mode)
+						MaxCPU:      plan.MaxCPU,
+						MaxMemoryMB: plan.MaxMemoryMB,
+						QuotaModel:  plan.QuotaModel,
 					}, nil
 				},
 				DtoToModel: func(input dto.CreateSubscriptionPlanInput) *models.SubscriptionPlan {
@@ -76,6 +81,13 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 					isCatalog := true
 					if input.IsCatalog != nil {
 						isCatalog = *input.IsCatalog
+					}
+					// QuotaModel defaults to "count" (legacy) when not provided —
+					// the model's GORM default fires only on raw inserts, so we
+					// honour the same fallback here.
+					quotaModel := input.QuotaModel
+					if quotaModel == "" {
+						quotaModel = "count"
 					}
 					return &models.SubscriptionPlan{
 						Name:                       input.Name,
@@ -99,6 +111,11 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						Priority:                   input.Priority,
 						IsActive:                   isActive,
 						IsCatalog:                  isCatalog,
+
+						// Budget-based quota (MR-CORE-3, dual-mode — not yet enforced)
+						MaxCPU:      input.MaxCPU,
+						MaxMemoryMB: input.MaxMemoryMB,
+						QuotaModel:  quotaModel,
 					}
 				},
 				DtoToMap: nil,
