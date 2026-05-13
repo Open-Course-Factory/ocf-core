@@ -528,12 +528,14 @@ func (ss *stripeService) CreatePortalSession(userID string, input dto.CreatePort
 // CreateSubscriptionPlanInStripe crée un produit et un prix dans Stripe
 func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.SubscriptionPlan) error {
 	// 1. Créer le produit Stripe
+	// Metadata includes the legacy `max_concurrent_terminals` key alongside
+	// the new budget keys (`max_cpu`, `max_memory_mb`, `quota_model`) so
+	// downstream readers (import + reconcile) can detect either generation
+	// — see services/stripeProductMetadata.go for the dual-mode policy.
 	productParams := &stripe.ProductParams{
 		Name:        stripe.String(plan.Name),
 		Description: stripe.String(plan.Description),
-		Metadata: map[string]string{
-			"plan_id": plan.ID.String(),
-		},
+		Metadata:    BuildPlanProductMetadata(plan),
 	}
 
 	stripeProduct, err := product.New(productParams)
@@ -566,13 +568,18 @@ func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.Subscriptio
 	return ss.genericService.EditEntity(plan.ID, "SubscriptionPlan", models.SubscriptionPlan{}, plan)
 }
 
-// UpdateSubscriptionPlanInStripe met à jour un plan dans Stripe
+// UpdateSubscriptionPlanInStripe met à jour un plan dans Stripe.
+//
+// Metadata is re-emitted on every update so budget changes (MaxCPU,
+// MaxMemoryMB, QuotaModel) propagate to Stripe alongside name/description
+// edits. Stripe merges metadata key-by-key, so an explicit nil/empty value
+// is required to remove a key — we always write the full dual-mode set.
 func (ss *stripeService) UpdateSubscriptionPlanInStripe(plan *models.SubscriptionPlan) error {
-	// Mettre à jour le produit Stripe
 	productParams := &stripe.ProductParams{
 		Name:        stripe.String(plan.Name),
 		Description: stripe.String(plan.Description),
 		Active:      stripe.Bool(plan.IsActive),
+		Metadata:    BuildPlanProductMetadata(plan),
 	}
 
 	_, err := product.Update(*plan.StripeProductID, productParams)
@@ -2913,6 +2920,10 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 				continue
 			}
 
+			// Parse the dual-mode budget metadata once per product (new keys
+			// preferred, legacy `max_concurrent_terminals` as fallback).
+			budgetMeta := ParsePlanProductMetadata(prod.Metadata)
+
 			// Check if plan already exists by Stripe price ID
 			existingPlan, err := ss.repository.GetSubscriptionPlanByStripePriceID(priceObj.ID)
 			if err == nil && existingPlan != nil {
@@ -2922,6 +2933,14 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 				existingPlan.Currency = string(priceObj.Currency)
 				existingPlan.BillingInterval = string(priceObj.Recurring.Interval)
 				existingPlan.IsActive = prod.Active
+
+				// Reconcile budget fields from Stripe metadata. Legacy
+				// `max_concurrent_terminals` continues to drive the count-mode
+				// cap; new keys fill MaxCPU/MaxMemoryMB/QuotaModel.
+				existingPlan.MaxConcurrentTerminals = budgetMeta.MaxConcurrentTerminals
+				existingPlan.MaxCPU = budgetMeta.MaxCPU
+				existingPlan.MaxMemoryMB = budgetMeta.MaxMemoryMB
+				existingPlan.QuotaModel = budgetMeta.QuotaModel
 
 				// Handle tiered pricing for updates
 				if priceObj.Tiers != nil && len(priceObj.Tiers) > 0 {
@@ -2983,16 +3002,20 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 
 			// Plan doesn't exist - create it
 			newPlan := &models.SubscriptionPlan{
-				Name:               prod.Name,
-				Description:        prod.Description,
-				StripeProductID:    &prod.ID,
-				StripePriceID:      &priceObj.ID,
-				Currency:           string(priceObj.Currency),
-				BillingInterval:    string(priceObj.Recurring.Interval),
-				IsActive:           prod.Active,
-				StripeCreated:      true,
-				MaxConcurrentUsers: 1,  // Default value
-				MaxCourses:         -1, // Default unlimited
+				Name:                   prod.Name,
+				Description:            prod.Description,
+				StripeProductID:        &prod.ID,
+				StripePriceID:          &priceObj.ID,
+				Currency:               string(priceObj.Currency),
+				BillingInterval:        string(priceObj.Recurring.Interval),
+				IsActive:               prod.Active,
+				StripeCreated:          true,
+				MaxConcurrentUsers:     1,  // Default value
+				MaxCourses:             -1, // Default unlimited
+				MaxConcurrentTerminals: budgetMeta.MaxConcurrentTerminals,
+				MaxCPU:                 budgetMeta.MaxCPU,
+				MaxMemoryMB:            budgetMeta.MaxMemoryMB,
+				QuotaModel:             budgetMeta.QuotaModel,
 			}
 
 			// Handle tiered pricing (volume/graduated pricing in Stripe)
