@@ -24,9 +24,14 @@ var ErrPersistenceForbidden = errors.New("persistence not available on your plan
 //
 //   - empty string  → defaults to ephemeral
 //   - "ephemeral"   → always allowed
-//   - "persistent"  → only allowed when plan.PersistentSessionsEnabled is true,
+//   - "persistent"  → only allowed when plan.DataPersistenceEnabled is true,
 //                     otherwise returns ErrPersistenceForbidden (hard 403,
 //                     no silent downgrade).
+//
+// SSOT: DataPersistenceEnabled is the single source of truth for "this plan
+// permits persistent storage / persistent sessions". It used to coexist with
+// a duplicate PersistentSessionsEnabled field; the two drifted (launcher read
+// one, gate read the other → user-visible bug) so they were collapsed here.
 //
 // Any other value is rejected as invalid input.
 func resolvePersistenceMode(requested string, plan *paymentModels.SubscriptionPlan) (string, error) {
@@ -36,7 +41,7 @@ func resolvePersistenceMode(requested string, plan *paymentModels.SubscriptionPl
 	case PersistenceModeEphemeral:
 		return PersistenceModeEphemeral, nil
 	case PersistenceModePersistent:
-		if plan == nil || !plan.PersistentSessionsEnabled {
+		if plan == nil || !plan.DataPersistenceEnabled {
 			// Wrap the sentinel and include "plan_disabled" so the existing
 			// controller error mapping returns 403 instead of 500.
 			return "", fmt.Errorf("persistence_mode is not allowed: plan_disabled: %w", ErrPersistenceForbidden)

@@ -125,15 +125,20 @@ func TestSessionOptions_FreePlan(t *testing.T) {
 		}
 	}
 
-	// network should be plan_disabled, persistence should be plan_disabled
+	// network should be plan_disabled (the only remaining plan-gated feature chip).
+	// persistence is NO LONGER a feature chip after MR !239 — the persistent vs
+	// ephemeral choice is surfaced as a persistence_mode radio, gated upstream
+	// via DataPersistenceEnabled. Here it still falls under "size_too_small"
+	// because the baseFeatures catalog declares MinSizeKey="M" and the Free
+	// plan only allows up to S.
 	for _, f := range opts.AllowedFeatures {
 		switch f.Key {
 		case "network":
 			assert.False(t, f.Allowed, "network should be disabled on Free plan")
 			assert.Equal(t, "plan_disabled", f.Reason)
 		case "persistence":
-			assert.False(t, f.Allowed, "persistence should be disabled on Free plan")
-			assert.Equal(t, "plan_disabled", f.Reason)
+			assert.False(t, f.Allowed, "persistence requires M but Free plan caps at S")
+			assert.Equal(t, "size_too_small", f.Reason)
 		case "gpu":
 			assert.False(t, f.Allowed, "gpu should not be supported by this distro")
 			assert.Equal(t, "not_supported", f.Reason)

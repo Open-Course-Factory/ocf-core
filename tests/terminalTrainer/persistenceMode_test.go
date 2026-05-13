@@ -4,16 +4,21 @@
 //
 // Behaviour pinned here:
 //
-//  1. Free tier (PersistentSessionsEnabled=false) requesting "persistent" must
+//  1. Free tier (DataPersistenceEnabled=false) requesting "persistent" must
 //     hard-fail with an error mappable to HTTP 403 ("plan_disabled" / "not
 //     allowed"). No silent downgrade.
 //  2. Free tier requesting "ephemeral" or empty must succeed and forward the
 //     resolved mode to tt-backend.
-//  3. Paid tier (PersistentSessionsEnabled=true) requesting "persistent" must
+//  3. Paid tier (DataPersistenceEnabled=true) requesting "persistent" must
 //     succeed and forward "persistent" to tt-backend.
 //  4. Empty PersistenceMode defaults to "ephemeral" in the body posted to
 //     tt-backend.
 //  5. Invalid PersistenceMode is rejected as a 400-mappable validation error.
+//
+// SSOT: DataPersistenceEnabled is the canonical "this plan permits persistent
+// storage / persistent sessions" field. A duplicate PersistentSessionsEnabled
+// existed briefly and was removed (MR !239) — the launcher and the gate now
+// read the same field.
 //
 // Idle window helpers are pure functions and are unit-tested in isolation.
 package terminalTrainer_tests
@@ -114,13 +119,13 @@ func configureTTServer(t *testing.T, url string) {
 // by the fake server.
 func makePlan(persistent bool) *paymentModels.SubscriptionPlan {
 	return &paymentModels.SubscriptionPlan{
-		BaseModel:                  entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                       "test-plan",
-		IsActive:                   true,
-		AllowedMachineSizes:        []string{"S"},
-		MaxConcurrentTerminals:     5,
-		MaxSessionDurationMinutes:  60,
-		PersistentSessionsEnabled:  persistent,
+		BaseModel:                 entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:                      "test-plan",
+		IsActive:                  true,
+		AllowedMachineSizes:       []string{"S"},
+		MaxConcurrentTerminals:    5,
+		MaxSessionDurationMinutes: 60,
+		DataPersistenceEnabled:    persistent,
 	}
 }
 
@@ -138,7 +143,7 @@ func TestStartComposedSession_Returns403ForFreeTierPersistent(t *testing.T) {
 	_, err := createTestUserKey(db, userID)
 	require.NoError(t, err)
 
-	plan := makePlan(false) // PersistentSessionsEnabled = false
+	plan := makePlan(false) // DataPersistenceEnabled = false
 	svc := services.NewTerminalTrainerService(db)
 
 	resp, err := svc.StartComposedSession(userID, dto.CreateComposedSessionInput{
@@ -440,6 +445,89 @@ func TestStartScenario_CrashTrapsOverride_PostsEphemeral(t *testing.T) {
 	require.NotNil(t, resp)
 	assert.Equal(t, "ephemeral", rec.gotBody["persistence_mode"],
 		"crash_traps scenario must force persistence_mode=ephemeral on the wire even when user asked for persistent; got %v", rec.gotBody)
+}
+
+// ---------------------------------------------------------------------------
+// SSOT: persistence_mode reads DataPersistenceEnabled (single source of truth)
+// ---------------------------------------------------------------------------
+//
+// MR !239 follow-up: PersistentSessionsEnabled was a duplicate of
+// DataPersistenceEnabled that drifted (launcher read one field, gate read the
+// other → user-visible bug). The two were collapsed into DataPersistenceEnabled.
+// resolvePersistenceMode (and therefore StartComposedSession) MUST gate on
+// DataPersistenceEnabled, not on the dropped PersistentSessionsEnabled field.
+func TestStartComposedSession_PersistentGatedByDataPersistenceEnabled(t *testing.T) {
+	srv, rec := startComposedSessionTTServer(t)
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
+	db := freshTestDB(t)
+	userID := "ssot-data-pers-user-" + uuid.New().String()
+	_, err := createTestUserKey(db, userID)
+	require.NoError(t, err)
+
+	// Plan has DataPersistenceEnabled=true — the SSOT field. Persistent mode
+	// must be permitted purely on the basis of this single field.
+	plan := &paymentModels.SubscriptionPlan{
+		BaseModel:                 entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:                      "ssot-plan",
+		IsActive:                  true,
+		AllowedMachineSizes:       []string{"S"},
+		MaxConcurrentTerminals:    5,
+		MaxSessionDurationMinutes: 60,
+		DataPersistenceEnabled:    true,
+	}
+	svc := services.NewTerminalTrainerService(db)
+
+	resp, err := svc.StartComposedSession(userID, dto.CreateComposedSessionInput{
+		Distribution:    "ubuntu-24.04",
+		Size:            "S",
+		Terms:           "accepted",
+		PersistenceMode: "persistent",
+	}, plan)
+
+	require.NoError(t, err, "DataPersistenceEnabled=true must allow persistent mode")
+	require.NotNil(t, resp)
+	assert.Equal(t, "persistent", rec.gotBody["persistence_mode"],
+		"body posted to tt-backend must carry persistence_mode=persistent when DataPersistenceEnabled=true; got %v", rec.gotBody)
+}
+
+// TestStartComposedSession_PersistentRejectedWhenDataPersistenceDisabled is the
+// complementary negative: when DataPersistenceEnabled=false, persistent mode
+// must be rejected with the same 403-mappable error as before.
+func TestStartComposedSession_PersistentRejectedWhenDataPersistenceDisabled(t *testing.T) {
+	srv, rec := startComposedSessionTTServer(t)
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
+	db := freshTestDB(t)
+	userID := "ssot-no-pers-user-" + uuid.New().String()
+	_, err := createTestUserKey(db, userID)
+	require.NoError(t, err)
+
+	plan := &paymentModels.SubscriptionPlan{
+		BaseModel:                 entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:                      "ssot-plan-no-pers",
+		IsActive:                  true,
+		AllowedMachineSizes:       []string{"S"},
+		MaxConcurrentTerminals:    5,
+		MaxSessionDurationMinutes: 60,
+		DataPersistenceEnabled:    false,
+	}
+	svc := services.NewTerminalTrainerService(db)
+
+	resp, err := svc.StartComposedSession(userID, dto.CreateComposedSessionInput{
+		Distribution:    "ubuntu-24.04",
+		Size:            "S",
+		Terms:           "accepted",
+		PersistenceMode: "persistent",
+	}, plan)
+
+	require.Error(t, err)
+	assert.Nil(t, resp)
+	assert.True(t, errors.Is(err, services.ErrPersistenceForbidden),
+		"error should wrap ErrPersistenceForbidden when DataPersistenceEnabled=false")
+	assert.Equal(t, 0, rec.calls, "tt-backend must not be reached on plan-disabled rejection")
 }
 
 func TestComputeIdleWindowSeconds_FallsBackToNilWhenFieldUnset(t *testing.T) {

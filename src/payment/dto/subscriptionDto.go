@@ -25,8 +25,6 @@ type CreateSubscriptionPlanInput struct {
 	NetworkAccessEnabled           bool     `json:"network_access_enabled" mapstructure:"network_access_enabled"`
 	DataPersistenceEnabled         bool     `json:"data_persistence_enabled" mapstructure:"data_persistence_enabled"`
 	DataPersistenceGB              int      `json:"data_persistence_gb" mapstructure:"data_persistence_gb"`
-	PersistentSessionsEnabled      bool     `json:"persistent_sessions_enabled" mapstructure:"persistent_sessions_enabled"`
-	MaxPersistentSessions          int      `json:"max_persistent_sessions" mapstructure:"max_persistent_sessions"`
 	AllowedTemplates               []string `json:"allowed_templates" mapstructure:"allowed_templates"`
 	CommandHistoryRetentionDays    int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
 	DefaultBackend                 string   `json:"default_backend" mapstructure:"default_backend"`
@@ -50,8 +48,6 @@ type UpdateSubscriptionPlanInput struct {
 	NetworkAccessEnabled           *bool    `json:"network_access_enabled,omitempty" mapstructure:"network_access_enabled"`
 	DataPersistenceEnabled         *bool    `json:"data_persistence_enabled,omitempty" mapstructure:"data_persistence_enabled"`
 	DataPersistenceGB              *int     `json:"data_persistence_gb,omitempty" mapstructure:"data_persistence_gb"`
-	PersistentSessionsEnabled      *bool    `json:"persistent_sessions_enabled,omitempty" mapstructure:"persistent_sessions_enabled"`
-	MaxPersistentSessions          *int     `json:"max_persistent_sessions,omitempty" mapstructure:"max_persistent_sessions"`
 	AllowedTemplates               []string `json:"allowed_templates,omitempty" mapstructure:"allowed_templates"`
 	CommandHistoryRetentionDays    *int     `json:"command_history_retention_days,omitempty" mapstructure:"command_history_retention_days"`
 	DefaultBackend                 string   `json:"default_backend,omitempty" mapstructure:"default_backend"`
@@ -86,8 +82,6 @@ type SubscriptionPlanOutput struct {
 	NetworkAccessEnabled      bool     `json:"network_access_enabled"`
 	DataPersistenceEnabled    bool     `json:"data_persistence_enabled"`
 	DataPersistenceGB         int      `json:"data_persistence_gb"`
-	PersistentSessionsEnabled bool     `json:"persistent_sessions_enabled"`
-	MaxPersistentSessions     int      `json:"max_persistent_sessions"`
 	AllowedTemplates            []string `json:"allowed_templates"`
 	CommandHistoryRetentionDays int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
 

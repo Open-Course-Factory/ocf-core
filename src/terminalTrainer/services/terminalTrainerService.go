@@ -2511,10 +2511,14 @@ func (tts *terminalTrainerService) checkGroupOwnerAccess(terminalOwnerUserID, re
 
 const catalogCacheTTL = 60 * time.Second
 
-// featurePlanMapping maps feature keys to plan predicates
+// featurePlanMapping maps feature keys to plan predicates.
+//
+// Persistence is intentionally NOT in this map: the persistent-vs-ephemeral
+// choice is surfaced as a persistence_mode radio (in TerminalAdvancedOptions),
+// not as a "feature" chip in the SessionComposer. It is gated upstream by
+// resolvePersistenceMode reading plan.DataPersistenceEnabled (SSOT).
 var featurePlanMapping = map[string]func(*paymentModels.SubscriptionPlan) bool{
-	"network":     func(p *paymentModels.SubscriptionPlan) bool { return p.NetworkAccessEnabled },
-	"persistence": func(p *paymentModels.SubscriptionPlan) bool { return p.DataPersistenceEnabled },
+	"network": func(p *paymentModels.SubscriptionPlan) bool { return p.NetworkAccessEnabled },
 }
 
 // NormalizeSizeKey uppercases and trims a size key for comparison

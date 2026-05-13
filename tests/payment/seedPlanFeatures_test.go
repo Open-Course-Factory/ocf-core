@@ -12,6 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// expectedSeededFeatureCount must match the number of entries in the features
+// slice in initialization.SeedPlanFeatures. Updated when entries are added or
+// removed (e.g. the persistence consolidation in MR !239 dropped the duplicate
+// persistent_sessions_enabled / max_persistent_sessions catalog entries — the
+// canonical entry is data_persistence + data_persistence_gb).
+const expectedSeededFeatureCount = int64(23)
+
 func TestSeedPlanFeatures_EmptyDB_SeedsAllFeatures(t *testing.T) {
 	db := freshTestDB(t)
 
@@ -19,7 +26,7 @@ func TestSeedPlanFeatures_EmptyDB_SeedsAllFeatures(t *testing.T) {
 
 	var count int64
 	db.Model(&models.PlanFeature{}).Count(&count)
-	assert.Equal(t, int64(25), count, "Should seed exactly 25 features")
+	assert.Equal(t, expectedSeededFeatureCount, count, "Should seed exactly %d features", expectedSeededFeatureCount)
 }
 
 func TestSeedPlanFeatures_RerunIsIdempotent(t *testing.T) {
@@ -29,7 +36,7 @@ func TestSeedPlanFeatures_RerunIsIdempotent(t *testing.T) {
 	initialization.SeedPlanFeatures(db)
 	var countAfterFirst int64
 	db.Model(&models.PlanFeature{}).Count(&countAfterFirst)
-	require.Equal(t, int64(25), countAfterFirst)
+	require.Equal(t, expectedSeededFeatureCount, countAfterFirst)
 
 	// Second seed — per-row FirstOrCreate must not add duplicates
 	initialization.SeedPlanFeatures(db)
@@ -55,28 +62,28 @@ func TestSeedPlanFeatures_TopsUpExistingDB(t *testing.T) {
 
 	var count int64
 	db.Model(&models.PlanFeature{}).Count(&count)
-	assert.Equal(t, int64(25), count, "Seed should top up missing features without duplicating existing ones")
+	assert.Equal(t, expectedSeededFeatureCount, count, "Seed should top up missing features without duplicating existing ones")
 }
 
-func TestSeedPlanFeatures_IncludesPersistenceFields(t *testing.T) {
+// TestSeedPlanFeatures_IncludesDataPersistence verifies the SSOT persistence
+// catalog entry is seeded. After MR !239 there is a single entry
+// (data_persistence) — the previous duplicate persistent_sessions_enabled was
+// collapsed into the canonical data_persistence_enabled model field.
+func TestSeedPlanFeatures_IncludesDataPersistence(t *testing.T) {
 	db := freshTestDB(t)
 	initialization.SeedPlanFeatures(db)
 
-	var enabled models.PlanFeature
-	require.NoError(t, db.Where("key = ?", "persistent_sessions_enabled").First(&enabled).Error)
-	assert.Equal(t, "terminal_limits", enabled.Category)
-	assert.Equal(t, "boolean", enabled.ValueType)
-	assert.Equal(t, "false", enabled.DefaultValue)
-	assert.NotEmpty(t, enabled.DescriptionEn)
-	assert.NotEmpty(t, enabled.DescriptionFr)
+	var dataPersistence models.PlanFeature
+	require.NoError(t, db.Where("key = ?", "data_persistence").First(&dataPersistence).Error)
+	assert.Equal(t, "terminal_limits", dataPersistence.Category)
+	assert.Equal(t, "boolean", dataPersistence.ValueType)
+	assert.Equal(t, "false", dataPersistence.DefaultValue)
 
-	var maxPersistent models.PlanFeature
-	require.NoError(t, db.Where("key = ?", "max_persistent_sessions").First(&maxPersistent).Error)
-	assert.Equal(t, "terminal_limits", maxPersistent.Category)
-	assert.Equal(t, "number", maxPersistent.ValueType)
-	assert.Equal(t, "0", maxPersistent.DefaultValue)
-	assert.NotEmpty(t, maxPersistent.DescriptionEn)
-	assert.NotEmpty(t, maxPersistent.DescriptionFr)
+	var quota models.PlanFeature
+	require.NoError(t, db.Where("key = ?", "data_persistence_gb").First(&quota).Error)
+	assert.Equal(t, "terminal_limits", quota.Category)
+	assert.Equal(t, "number", quota.ValueType)
+	assert.Equal(t, "0", quota.DefaultValue)
 }
 
 func TestSeedPlanFeatures_FeatureCategories_AllPresent(t *testing.T) {
