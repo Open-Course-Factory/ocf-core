@@ -19,6 +19,27 @@ var TerminalStatusesOccupyingSlot = []string{"active", "stopped"}
 // the "occupies a slot" rule — every counter / quota query must use
 // this scope so the rule stays expressed in exactly one place.
 //
+// The canonical rule is:
+//
+//	status IN ('active', 'stopped')   -- lifecycle still owes capacity
+//	AND deleted_at IS NULL            -- gorm-soft-delete excluded
+//	AND expires_at > NOW()            -- past-expiry rows are "zombie" slots
+//
+// The expires_at clause aligns the backend with the UI's
+// `getEffectiveSessionState` invariant, which treats any row whose
+// `expires_at` is in the past as effectively terminated. Without that
+// clause, stale rows whose proxy session is long gone but whose status
+// column was never updated would keep blocking new sessions ("30 active
+// sessions" with zero visible) — a quota mismatch between the
+// per-second-aware UI and the dumb status-only backend count.
+//
+// `expires_at` is compared against `time.Now()` bound as a SQL
+// parameter (not `NOW()` / `CURRENT_TIMESTAMP`) for two reasons:
+//   - SQLite (used in unit tests) does not have `NOW()`; production
+//     PostgreSQL does. A bound parameter is dialect-portable.
+//   - The Go side owns the clock, so there is no drift between the app
+//     server and the database when the two are on different machines.
+//
 // Columns are qualified with the `terminals.` prefix so the scope is
 // safe to combine with JOINs against other tables that share a
 // `deleted_at` column (e.g. organization_members via gorm.Model).
@@ -28,7 +49,11 @@ var TerminalStatusesOccupyingSlot = []string{"active", "stopped"}
 //	db.Table("terminals").Scopes(models.OccupiesSlotScope).
 //	    Where("terminals.user_id = ?", userID).Count(&count)
 func OccupiesSlotScope(tx *gorm.DB) *gorm.DB {
-	return tx.Where("terminals.status IN ? AND terminals.deleted_at IS NULL", TerminalStatusesOccupyingSlot)
+	return tx.Where(
+		"terminals.status IN ? AND terminals.deleted_at IS NULL AND terminals.expires_at > ?",
+		TerminalStatusesOccupyingSlot,
+		time.Now(),
+	)
 }
 
 // CountUserOccupiedSlots returns the number of terminals owned by the

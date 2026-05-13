@@ -34,6 +34,15 @@
 //     excluded; a row with status='active' but ExpiresAt in the past is NOT
 //     excluded by the SSOT. The "expired" tests below use status='expired'
 //     (the lifecycle-correct way), not just a past ExpiresAt.
+//
+//   - UPDATE (zombie-slot fix, !239): OccupiesSlotScope now also excludes rows
+//     whose `expires_at` is in the past. The rule above ("active+past-expiry is
+//     NOT excluded") was the bug, not the spec — it allowed "zombie slots" to
+//     keep blocking new sessions even though the UI's
+//     `getEffectiveSessionState` already treats expires_at < NOW() as
+//     terminated. The TestCount*_ExpiredByDate tests below pin the corrected
+//     behavior. The "expired status" tests above remain valid: a row with
+//     status='expired' is still excluded the same way it always was.
 package terminalTrainer_tests
 
 import (

@@ -85,7 +85,15 @@ func runTestMigrations(db *gorm.DB) error {
 		max_sessions INTEGER DEFAULT 5
 	)`)
 
-	// Terminal table (has no PostgreSQL-specific defaults but isn't in the payment models package)
+	// Terminal table (has no PostgreSQL-specific defaults but isn't in the payment models package).
+	//
+	// expires_at defaults to a far-future timestamp (year 2099) so raw
+	// `INSERT INTO terminals (id, user_id, status) VALUES (...)` statements
+	// that omit the column still produce a row that satisfies the
+	// OccupiesSlotScope predicate (`expires_at > NOW()`). Production rows
+	// always have an expires_at — the schema default is a test-only
+	// convenience that mirrors that invariant. See
+	// src/terminalTrainer/models/terminal.go::OccupiesSlotScope.
 	db.Exec(`CREATE TABLE IF NOT EXISTS terminals (
 		id TEXT PRIMARY KEY,
 		created_at DATETIME,
@@ -100,7 +108,7 @@ func runTestMigrations(db *gorm.DB) error {
 		persistence_mode TEXT DEFAULT 'ephemeral',
 		last_started_at DATETIME,
 		idle_until DATETIME,
-		expires_at DATETIME,
+		expires_at DATETIME DEFAULT '2099-12-31 23:59:59',
 		instance_type TEXT,
 		machine_size TEXT,
 		backend TEXT DEFAULT '',
