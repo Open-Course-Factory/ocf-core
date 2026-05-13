@@ -1488,9 +1488,32 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 		return false, "", fmt.Errorf("session not found: %w", err)
 	}
 
-	// 2. Check local state
-	if terminal.Status != "active" {
-		return false, terminal.Status, nil // "stopped" or "expired"
+	// 2. Check local lifecycle state.
+	//
+	// State is the canonical SSOT, populated by SyncUserSessions from
+	// tt-backend's authoritative session.state. Status is a legacy field
+	// (see models/terminal.go) that drifts to "expired" when ExpiresAt
+	// passes, even on persistent sessions that tt-backend has correctly
+	// auto-stopped (State="stopped"). Reading Status first 410-Gone'd the
+	// user out of the Resume flow.
+	switch terminal.State {
+	case "running":
+		// continue to backend + expiration checks below
+	case "stopped":
+		return false, "stopped", nil
+	case "deleted":
+		// Preserve the existing wire format the FE maps to "Session ended".
+		return false, "expired", nil
+	case "":
+		// Legacy row that pre-dates the State column being populated.
+		// Fall back to the old Status check so old data doesn't break.
+		if terminal.Status != "active" {
+			return false, terminal.Status, nil
+		}
+	default:
+		// Surface other lifecycle states (paused, hibernating, resuming, ...)
+		// to the caller; the middleware will 403 with the state name.
+		return false, terminal.State, nil
 	}
 
 	// 3. Check backend online status
@@ -1503,14 +1526,13 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 		}
 	}
 
-	// 4. Check expiration time
+	// 4. Check expiration time.
+	//
+	// For State="running" sessions, ExpiresAt in the past means the sync
+	// hasn't caught up yet — tt-backend's auto-stop will land on the next
+	// poll. Returning "expired" here is conservative; we don't write the
+	// legacy Status field anymore — the next sync owns the State update.
 	if time.Now().After(terminal.ExpiresAt) {
-		terminal.Status = "expired"
-		err := tts.repository.UpdateTerminalSession(terminal)
-		if err != nil {
-			// Log error but continue - we know the session is expired
-			utils.Warn("failed to update expired session %s status: %v", sessionID, err)
-		}
 		return false, "expired", nil
 	}
 
