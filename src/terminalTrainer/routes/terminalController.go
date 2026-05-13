@@ -596,6 +596,14 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 		userId = targetUserID
 	}
 
+	// Refresh local cache from tt-backend so auto-stopped sessions show the
+	// right state, not their last user-initiated value. tt-backend is the
+	// source of truth for State/PersistenceMode/IdleUntil; a temporary
+	// reachability hiccup must not break the list view, so we log and continue.
+	if _, syncErr := tc.service.SyncUserSessions(userId); syncErr != nil {
+		utils.Warn("GetUserSessions: pre-list sync failed for user %s (continuing with cached rows): %v", userId, syncErr)
+	}
+
 	// If organization_id provided, filter by org
 	if organizationID != "" {
 		orgUUID, parseErr := uuid.Parse(organizationID)

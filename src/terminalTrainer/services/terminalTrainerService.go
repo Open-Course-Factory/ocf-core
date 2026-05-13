@@ -598,6 +598,30 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 				needsUpdate = true
 			}
 
+			// Propager les champs de cycle de vie depuis tt-backend (source de vérité).
+			// Sans ça, une session auto-arrêtée côté tt-backend reste affichée comme
+			// "running" en local et le front continue d'afficher "Session expirée"
+			// au lieu d'offrir un bouton Reprendre.
+			if apiSession.State != "" && localSession.State != apiSession.State {
+				utils.Debug("SyncUserSessions - State mismatch for session %s: changing '%s' -> '%s'",
+					sessionID, localSession.State, apiSession.State)
+				localSession.State = apiSession.State
+				needsUpdate = true
+			}
+			if apiSession.PersistenceMode != "" && localSession.PersistenceMode != apiSession.PersistenceMode {
+				utils.Debug("SyncUserSessions - PersistenceMode mismatch for session %s: changing '%s' -> '%s'",
+					sessionID, localSession.PersistenceMode, apiSession.PersistenceMode)
+				localSession.PersistenceMode = apiSession.PersistenceMode
+				needsUpdate = true
+			}
+			if apiSession.IdleUntil > 0 {
+				t := time.Unix(apiSession.IdleUntil, 0).UTC()
+				if localSession.IdleUntil == nil || !localSession.IdleUntil.Equal(t) {
+					localSession.IdleUntil = &t
+					needsUpdate = true
+				}
+			}
+
 			if needsUpdate {
 				utils.Debug("SyncUserSessions - Updating session %s status to '%s'", sessionID, localSession.Status)
 				err := tts.repository.UpdateTerminalSession(localSession)
@@ -682,6 +706,20 @@ func (tts *terminalTrainerService) createMissingLocalSession(userID string, user
 		Backend:           apiSession.Backend,
 		UserTerminalKeyID: userKey.ID,
 		UserTerminalKey:   *userKey,
+	}
+
+	// Propager les champs de cycle de vie depuis tt-backend (source de vérité)
+	// dès la création de la ligne locale, sinon le front verra des valeurs par
+	// défaut ("running"/"ephemeral") qui ne reflètent pas l'état réel.
+	if apiSession.State != "" {
+		terminal.State = apiSession.State
+	}
+	if apiSession.PersistenceMode != "" {
+		terminal.PersistenceMode = apiSession.PersistenceMode
+	}
+	if apiSession.IdleUntil > 0 {
+		t := time.Unix(apiSession.IdleUntil, 0).UTC()
+		terminal.IdleUntil = &t
 	}
 
 	return tts.repository.CreateTerminalSessionFromAPI(terminal)
