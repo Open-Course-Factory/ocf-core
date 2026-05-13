@@ -277,3 +277,122 @@ func TestCountOrgOccupiedSlots(t *testing.T) {
 				"organization_members is the source of truth")
 	})
 }
+
+// seedTerminalWithExpiry inserts a Terminal row with an explicit ExpiresAt.
+// Used to exercise the "expires_at in the past" branch of OccupiesSlotScope.
+// Kept separate from seedTerminal (which hardcodes a 1h-future expiry) to
+// avoid breaking the many existing tests that rely on that default.
+func seedTerminalWithExpiry(t *testing.T, db *gorm.DB, userID, status string, orgID *uuid.UUID, expiresAt time.Time) *models.Terminal {
+	t.Helper()
+	userKey, err := createTestUserKey(db, userID+"-"+uuid.New().String()[:6])
+	require.NoError(t, err)
+
+	terminal := &models.Terminal{
+		SessionID:         "seed-expiry-session-" + uuid.New().String(),
+		UserID:            userID,
+		Name:              "Seed Terminal (custom expiry)",
+		Status:            status,
+		ExpiresAt:         expiresAt,
+		InstanceType:      "test",
+		MachineSize:       "S",
+		UserTerminalKeyID: userKey.ID,
+		OrganizationID:    orgID,
+	}
+	require.NoError(t, db.Create(terminal).Error)
+	return terminal
+}
+
+// TestCountUserOccupiedSlots_ExpiredByDate is the "zombie slot" regression
+// guard. A row whose status is active/stopped but whose ExpiresAt is in the
+// past must NOT be counted toward the user's concurrent_terminals quota —
+// the UI treats expires_at < NOW() as deleted, the count must agree.
+//
+// Before the fix, OccupiesSlotScope filtered only on status + deleted_at,
+// so stale rows kept blocking new sessions ("30 active sessions" with zero
+// visible).
+func TestCountUserOccupiedSlots_ExpiredByDate(t *testing.T) {
+	past := time.Now().Add(-1 * time.Hour)
+	future := time.Now().Add(1 * time.Hour)
+
+	cases := []struct {
+		name     string
+		seed     func(t *testing.T, db *gorm.DB, userID string)
+		expected int64
+	}{
+		{
+			name: "active with expires_at in the past is excluded (zombie slot)",
+			seed: func(t *testing.T, db *gorm.DB, userID string) {
+				seedTerminalWithExpiry(t, db, userID, "active", nil, past)
+			},
+			expected: 0,
+		},
+		{
+			name: "stopped with expires_at in the past is excluded (zombie slot)",
+			seed: func(t *testing.T, db *gorm.DB, userID string) {
+				seedTerminalWithExpiry(t, db, userID, "stopped", nil, past)
+			},
+			expected: 0,
+		},
+		{
+			name: "active with expires_at in the future is counted",
+			seed: func(t *testing.T, db *gorm.DB, userID string) {
+				seedTerminalWithExpiry(t, db, userID, "active", nil, future)
+			},
+			expected: 1,
+		},
+		{
+			name: "stopped with expires_at in the future is counted (disk-preserved resumable)",
+			seed: func(t *testing.T, db *gorm.DB, userID string) {
+				seedTerminalWithExpiry(t, db, userID, "stopped", nil, future)
+			},
+			expected: 1,
+		},
+		{
+			name: "mix of 2 future + 3 past returns 2",
+			seed: func(t *testing.T, db *gorm.DB, userID string) {
+				seedTerminalWithExpiry(t, db, userID, "active", nil, future)
+				seedTerminalWithExpiry(t, db, userID, "stopped", nil, future)
+				seedTerminalWithExpiry(t, db, userID, "active", nil, past)
+				seedTerminalWithExpiry(t, db, userID, "stopped", nil, past)
+				seedTerminalWithExpiry(t, db, userID, "active", nil, past)
+			},
+			expected: 2,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := freshTestDB(t)
+			userID := "expiry-user-" + uuid.New().String()[:8]
+			tc.seed(t, db, userID)
+
+			got, err := models.CountUserOccupiedSlots(db, userID, nil)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, got,
+				"OccupiesSlotScope must exclude rows with expires_at < NOW()")
+		})
+	}
+}
+
+// TestCountOrgOccupiedSlots_ExpiredByDate is the org-quota regression guard
+// for the same zombie-slot fix. One representative case is enough — the
+// predicate is shared via OccupiesSlotScope.
+func TestCountOrgOccupiedSlots_ExpiredByDate(t *testing.T) {
+	db := freshTestDB(t)
+	org := createTestOrgForHistory(t, db, "expiry-owner")
+	createTestOrgMember(t, db, org.ID, "expiry-owner", orgModels.OrgRoleOwner)
+	createTestOrgMember(t, db, org.ID, "expiry-member", orgModels.OrgRoleMember)
+
+	past := time.Now().Add(-1 * time.Hour)
+	future := time.Now().Add(1 * time.Hour)
+
+	// 1 future-active (counts), 1 past-active (zombie), 1 past-stopped (zombie)
+	seedTerminalWithExpiry(t, db, "expiry-owner", "active", &org.ID, future)
+	seedTerminalWithExpiry(t, db, "expiry-member", "active", &org.ID, past)
+	seedTerminalWithExpiry(t, db, "expiry-owner", "stopped", &org.ID, past)
+
+	got, err := models.CountOrgOccupiedSlots(db, org.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), got,
+		"OccupiesSlotScope must exclude past-expiry rows from the org count")
+}
