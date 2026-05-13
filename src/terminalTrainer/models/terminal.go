@@ -56,6 +56,47 @@ func OccupiesSlotScope(tx *gorm.DB) *gorm.DB {
 	)
 }
 
+// RunningDisplayScope is a GORM scope that filters terminals currently
+// running and usable — the "is this terminal alive RIGHT NOW?" predicate.
+// Distinct from OccupiesSlotScope, which also counts 'stopped' sessions
+// for quota purposes. Use this for display/listing surfaces that want to
+// show only sessions the user can interact with this instant.
+//
+// The canonical rule is:
+//
+//	status = 'active'                 -- not stopped / expired / errored
+//	AND deleted_at IS NULL            -- gorm-soft-delete excluded
+//	AND expires_at > NOW()            -- past-expiry rows are "zombie" running
+//
+// Mirrors the SSOT pattern set by OccupiesSlotScope: every display/listing
+// query that wants "currently running" terminals must route through this
+// scope so the rule stays expressed in exactly one place. Past-expiry
+// rows whose status column was never updated (proxy session is gone, the
+// stale row remains) are excluded — without this clause, the dumb
+// status-only count drifts from the per-second-aware UI which already
+// treats past-expiry as terminated.
+//
+// `expires_at` is compared against `time.Now()` bound as a SQL parameter
+// (not `NOW()` / `CURRENT_TIMESTAMP`) for dialect portability (SQLite,
+// used in unit tests, has no `NOW()`) and clock locality. Same rationale
+// as OccupiesSlotScope.
+//
+// Columns are qualified with the `terminals.` prefix so the scope is
+// safe to combine with JOINs against other tables that share these
+// column names (e.g. organization_members via gorm.Model).
+//
+// Usage:
+//
+//	db.Table("terminals").Scopes(models.RunningDisplayScope).
+//	    Where("terminals.user_id = ?", userID).Count(&count)
+func RunningDisplayScope(tx *gorm.DB) *gorm.DB {
+	return tx.Where(
+		"terminals.status = ? AND terminals.deleted_at IS NULL AND terminals.expires_at > ?",
+		"active",
+		time.Now(),
+	)
+}
+
 // CountUserOccupiedSlots returns the number of terminals owned by the
 // user that count against their concurrent_terminals quota. If orgID
 // is nil, counts all terminals across all orgs (and personal). If

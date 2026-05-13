@@ -140,7 +140,10 @@ func (r *terminalRepository) GetTerminalSessionsByUserID(userID string, isActive
 		Where("user_id = ?", userID)
 
 	if isActive {
-		query = query.Where("status = ?", "active")
+		// SSOT: "alive RIGHT NOW" is defined once in models.RunningDisplayScope.
+		// Inline `status = "active"` predicates drifted from the per-second-aware
+		// UI by including past-expiry zombie rows.
+		query = query.Scopes(models.RunningDisplayScope)
 	}
 
 	err := query.
@@ -162,7 +165,9 @@ func (r *terminalRepository) GetTerminalSessionsByUserIDAndOrg(userID string, or
 	}
 
 	if isActive {
-		query = query.Where("status = ?", "active")
+		// SSOT: route through models.RunningDisplayScope so this caller
+		// agrees with every other "currently running terminals" query.
+		query = query.Scopes(models.RunningDisplayScope)
 	}
 
 	err := query.Find(&terminals).Error

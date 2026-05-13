@@ -1817,30 +1817,24 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 
 	// 2. Count active terminals (what's running) per user — display field.
 	//
-	// SSOT alignment with models.OccupiesSlotScope: both predicates exclude
-	// past-expiry rows. Without this, a session whose status='active' but
-	// whose expires_at is in the past inflates active_terminals while being
-	// correctly excluded from occupying_slots (see the slot query below),
-	// producing inconsistent counts on the same dashboard (the per-second
-	// UI treats past-expiry as terminated, the dumb status-only query did
-	// not). expires_at is compared against time.Now() bound as a parameter
-	// — same dialect-portability + clock-locality rationale as
-	// OccupiesSlotScope.
-	//
-	// NOTE: this query intentionally narrows further than OccupiesSlotScope
-	// (status='active' only, not status IN ('active','stopped')) because
-	// "active_terminals" is the display field for what is currently running;
-	// the slot count below uses OccupiesSlotScope for quota semantics.
+	// SSOT: "currently running terminals" is owned by
+	// models.RunningDisplayScope. Both this counter and the slot counter
+	// below now route through their respective scopes so the dashboard
+	// stays internally consistent (no "1 active / 0 occupying" zombie
+	// drift). RunningDisplayScope intentionally narrows further than
+	// OccupiesSlotScope (status='active' only, not active+stopped)
+	// because "active_terminals" reports what is currently running; the
+	// slot count uses OccupiesSlotScope for quota semantics.
 	type userCount struct {
 		UserID      string
 		ActiveCount int64
 	}
 	var activeRows []userCount
 	err = tts.db.Table("terminals").
-		Where("organization_id = ? AND status = ? AND deleted_at IS NULL AND expires_at > ?",
-			orgID, "active", time.Now()).
-		Select("user_id, COUNT(*) as active_count").
-		Group("user_id").
+		Scopes(models.RunningDisplayScope).
+		Where("terminals.organization_id = ?", orgID).
+		Select("terminals.user_id as user_id, COUNT(*) as active_count").
+		Group("terminals.user_id").
 		Scan(&activeRows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to count active terminals: %w", err)
@@ -2078,7 +2072,11 @@ func (tts *terminalTrainerService) GetGroupCommandHistory(groupID string, userID
 		query = query.Where("organization_id = ?", *group.OrganizationID)
 	}
 	if !includeStopped {
-		query = query.Where("status = ?", "active")
+		// SSOT: "running display" lives in models.RunningDisplayScope.
+		// Inline `status = "active"` predicates drift away from the UI's
+		// per-second-aware view (past-expiry zombies remain in results
+		// even though their proxy session is gone).
+		query = query.Scopes(models.RunningDisplayScope)
 	}
 	if err := query.Find(&terminals).Error; err != nil {
 		return nil, "", fmt.Errorf("failed to query terminals: %w", err)
@@ -2268,7 +2266,9 @@ func (tts *terminalTrainerService) GetGroupCommandHistoryStats(groupID string, u
 		query = query.Where("organization_id = ?", *group.OrganizationID)
 	}
 	if !includeStopped {
-		query = query.Where("status = ?", "active")
+		// SSOT alignment — see RunningDisplayScope rationale on the
+		// matching block in GetGroupCommandHistory above.
+		query = query.Scopes(models.RunningDisplayScope)
 	}
 	if err := query.Find(&terminals).Error; err != nil {
 		return nil, "", fmt.Errorf("failed to query terminals: %w", err)
