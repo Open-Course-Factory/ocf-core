@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -76,6 +79,10 @@ func main() {
 		log.Default().Println(err)
 	}
 
+	// Set up signal handling: SIGTERM (k8s pod stop) and SIGINT (Ctrl-C in dev).
+	shutdownCtx, shutdownCancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer shutdownCancel()
+
 	// Initialize Casdoor connection
 	casdoor.InitCasdoorConnection("", envFile)
 
@@ -101,13 +108,10 @@ func main() {
 
 	// Start the StripeSyncWorker: a single goroutine that polls the queue and
 	// drains pending rows to Stripe. Survives ocf-core restarts via the queue.
-	// TODO(#327): wire a real shutdown signal handler (SIGTERM/SIGINT) and
-	// call stripeSyncWorker.Shutdown(10s) before r.Run returns; ocf-core does
-	// not yet have an orderly shutdown sequence. context.Background() means
-	// the worker only stops on process exit, which is acceptable today.
 	stripeSyncWorker := paymentServices.NewStripeSyncWorker(stripeSyncQueue, paymentServices.NewStripeService(sqldb.DB))
-	stripeSyncWorker.Start(context.Background())
-	defer stripeSyncWorker.Shutdown(10 * time.Second)
+	stripeSyncWorker.Start(shutdownCtx)
+	// stripeSyncWorker.Shutdown(10s) is called below in the orderly-shutdown
+	// block, after http.Server.Shutdown drains in-flight requests.
 	log.Println("✅ Stripe sync worker started")
 
 	// Setup development data (test users, default subscription plans)
@@ -277,6 +281,44 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	// Validate permission setup
 	access.ValidatePermissionSetup(r)
 
-	// Start server
-	r.Run(":8080")
+	// Run the HTTP server in a goroutine so we can wait for the shutdown signal.
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: r,
+	}
+
+	serverErrCh := make(chan error, 1)
+	go func() {
+		log.Printf("HTTP server starting on :8080")
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErrCh <- err
+		}
+		close(serverErrCh)
+	}()
+
+	// Wait for either a fatal server error or a shutdown signal.
+	select {
+	case err := <-serverErrCh:
+		if err != nil {
+			log.Fatalf("HTTP server failed: %v", err)
+		}
+	case <-shutdownCtx.Done():
+		log.Println("shutdown signal received — beginning orderly shutdown")
+	}
+
+	// Orderly shutdown: HTTP first (stop accepting new connections, drain
+	// in-flight requests), then the Stripe sync worker. Each capped at 10s —
+	// total worst-case ~20s. Recommend terminationGracePeriodSeconds: 30+ on
+	// the deployment.
+	const shutdownStepTimeout = 10 * time.Second
+
+	httpShutdownCtx, httpShutdownCancel := context.WithTimeout(context.Background(), shutdownStepTimeout)
+	if err := server.Shutdown(httpShutdownCtx); err != nil {
+		log.Printf("HTTP server shutdown error: %v", err)
+	}
+	httpShutdownCancel()
+
+	stripeSyncWorker.Shutdown(shutdownStepTimeout)
+
+	log.Println("shutdown complete")
 }
