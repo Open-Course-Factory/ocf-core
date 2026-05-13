@@ -38,17 +38,27 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	// Stop session requires terminal ownership (Layer 2 security check)
 	routes.POST("/:id/stop", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.StopSession)
-	// Start a stopped session — Layer 2 ownership runs first (fail-fast on
-	// access), then the plan-resolution chain enforces concurrent_terminals
-	// and RAM availability. Without these checks the stop/start cycle could
-	// be used to resurrect sessions beyond MaxConcurrentTerminals.
+	// Resume a stopped session — slot-neutral state transition. The stopped
+	// session already counts against `OccupiesSlotScope` (terminals.status
+	// IN ('active','stopped') AND expires_at > now), so this path does NOT
+	// add a slot and must NOT carry CheckLimit("concurrent_terminals") —
+	// doing so 403s the user out of resuming their own session at 1/1.
+	// The fresh-create flow at POST /start-composed-session is the only
+	// path that adds a slot and remains gated there.
+	//
+	// What stays here:
+	//   - RequireTerminalAccessAllowStopped: Layer 2 ownership.
+	//   - InjectOrgContext / InjectEffectivePlan / RequirePlan: the resumed
+	//     session may consume paid features; the plan-validity gate still
+	//     applies.
+	//   - CheckRAMAvailability: RAM is a separate, independent gate (resume
+	//     spins the container back up; the host needs the capacity).
 	routes.POST("/:id/start",
 		middleware.AuthManagement(),
 		terminalAccessMiddleware.RequireTerminalAccessAllowStopped(),
 		paymentMiddleware.InjectOrgContext(),
 		paymentMiddleware.InjectEffectivePlan(effectivePlanService, db),
 		paymentMiddleware.RequirePlan(),
-		paymentMiddleware.CheckLimit(effectivePlanService, db, "concurrent_terminals"),
 		paymentMiddleware.CheckRAMAvailability(terminalService),
 		terminalController.StartSession,
 	)

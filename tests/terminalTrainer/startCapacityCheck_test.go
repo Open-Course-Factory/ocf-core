@@ -1,35 +1,30 @@
 // tests/terminalTrainer/startCapacityCheck_test.go
 //
-// Failing-first test for the second root cause of the MaxConcurrentTerminals
-// bypass: the `POST /api/v1/terminals/:id/start` route has NO capacity-check
-// middleware.
+// History: this file originally asserted that `POST /terminals/:id/start`
+// carries `CheckLimit("concurrent_terminals")` to defeat a stop/start
+// "slot resurrection" bypass. After the SSOT tightening of
+// `OccupiesSlotScope` (active+stopped both count), the bypass becomes
+// impossible at create time: the user can no longer reach a 2-session
+// state with cap=1, because the second create attempt is denied while
+// the first session is still stopped.
 //
-// Route wiring today (src/terminalTrainer/routes/terminalRoutes.go:43):
+// Resume itself is slot-neutral and now has NO `CheckLimit` on the
+// route (see startResumeAtLimit_test.go for the positive assertion).
+// The defense moved to the create gate (`POST /start-composed-session`)
+// and to the SSOT slot helper, which is now the single home for the
+// occupied-slot count.
 //
-//     routes.POST("/:id/start",
-//         middleware.AuthManagement(),
-//         terminalAccessMiddleware.RequireTerminalAccessAllowStopped(),
-//         terminalController.StartSession)
-//
-// Compare with /start-composed-session (line 79) which has:
-//
-//     paymentMiddleware.InjectOrgContext(),
-//     paymentMiddleware.InjectEffectivePlan(...),
-//     paymentMiddleware.RequirePlan(),
-//     paymentMiddleware.CheckLimit(..., "concurrent_terminals"),
-//     paymentMiddleware.CheckRAMAvailability(...),
-//
-// The fix is to add (at minimum) `CheckLimit("concurrent_terminals")` to the
-// /start route — OR to perform the equivalent check inside StartSession at
-// the service layer. Either implementation will make this test pass.
-//
-// This test uses the same auth-stubbing pattern as capacityEndpoint_test.go.
-// It wires the production-equivalent middleware chain for the /start route
-// and asserts that POSTing to /:id/start while at the concurrent_terminals
-// cap is denied with 403.
+// This file keeps a single residual assertion: at the moment a user is
+// at the slot-occupancy limit, a fresh-create attempt MUST be denied
+// with 403 by the CheckLimit middleware on /start-composed-session.
+// The "resurrect via /start" angle is covered by the SSOT itself —
+// stopped sessions are counted, so the user is at cap, and `start`
+// transitions an already-counted session without changing the count.
 package terminalTrainer_tests
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -42,59 +37,21 @@ import (
 	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
-	terminalMiddleware "soli/formations/src/terminalTrainer/middleware"
 	terminalController "soli/formations/src/terminalTrainer/routes"
 )
 
-// setupStartRouter wires a router that mirrors the production /start route's
-// middleware chain post-fix: auth → access → plan resolution → CheckLimit →
-// (RAM check omitted — relies on a live tt-backend) → StartSession.
+// TestCreateRoute_DeniesWhenAtConcurrentCap pins the create-gate side
+// of the slot-occupancy invariant: when a user has 1 stopped session
+// and cap=1, the SSOT counts them as 1/1, and POST
+// /terminals/start-composed-session must respond 403.
 //
-// The CheckLimit middleware is what protects the route against the stop/start
-// bypass: at cap=1 with 1 running + 1 stopped session, attempting to start
-// another session must be rejected before StartSession runs.
-func setupStartRouter(t *testing.T, userID string, plan *paymentModels.SubscriptionPlan) *gin.Engine {
-	t.Helper()
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-
-	// Stub auth: simulate AuthManagement() having validated a JWT.
-	router.Use(func(c *gin.Context) {
-		c.Set("userId", userID)
-		c.Set("userRoles", []string{"member"})
-		c.Next()
-	})
-
-	effectivePlanService := paymentServices.NewEffectivePlanService(sharedTestDB)
-	_ = plan // sub'd via DB seed in the test; kept in signature for symmetry
-
-	accessMW := terminalMiddleware.NewTerminalAccessMiddleware(sharedTestDB)
-	ctrl := terminalController.NewTerminalController(sharedTestDB)
-
-	// Production wiring post-fix (CheckRAMAvailability omitted: it requires a
-	// live tt-backend and is orthogonal to the cap-enforcement assertion).
-	router.POST("/terminals/:id/start",
-		accessMW.RequireTerminalAccessAllowStopped(),
-		paymentMiddleware.InjectOrgContext(),
-		paymentMiddleware.InjectEffectivePlan(effectivePlanService, sharedTestDB),
-		paymentMiddleware.RequirePlan(),
-		paymentMiddleware.CheckLimit(effectivePlanService, sharedTestDB, "concurrent_terminals"),
-		ctrl.StartSession,
-	)
-
-	return router
-}
-
-// TestStartRoute_DeniesWhenAtConcurrentCap is the handler-level proof that
-// the /start route allows a stop/start bypass. The user is on cap=1 with
-// one running terminal and one stopped terminal. Calling /start on the
-// stopped one would resurrect a second active session — the route MUST
-// reject it.
-func TestStartRoute_DeniesWhenAtConcurrentCap(t *testing.T) {
+// This replaces the legacy assertion about /:id/start being CheckLimit-gated.
+// /:id/start is slot-neutral and intentionally NOT gated (see
+// startResumeAtLimit_test.go).
+func TestCreateRoute_DeniesWhenAtConcurrentCap(t *testing.T) {
 	db := freshTestDB(t)
-	userID := "start-route-cap-user"
+	userID := "create-cap-user"
 
-	// Plan: cap=1 concurrent terminal.
 	plan := &paymentModels.SubscriptionPlan{
 		Name:                   "Solo",
 		Priority:               5,
@@ -114,36 +71,45 @@ func TestStartRoute_DeniesWhenAtConcurrentCap(t *testing.T) {
 		CurrentPeriodEnd:   time.Now().AddDate(1, 0, 0),
 	}).Error)
 
-	// Pre-state: one running terminal AND one stopped terminal owned by
-	// the same user. The user is already at cap. Calling /start on the
-	// stopped one would bring the active count to 2 — must be denied.
-	_, err := createTestTerminal(db, userID, "active", time.Now().Add(time.Hour))
-	require.NoError(t, err)
-
+	// One stopped session, future expiry → counted by OccupiesSlotScope → 1/1.
 	stopped, err := createTestTerminal(db, userID, "stopped", time.Now().Add(time.Hour))
 	require.NoError(t, err)
 	stopped.State = "stopped"
 	require.NoError(t, db.Save(stopped).Error)
 
-	router := setupStartRouter(t, userID, plan)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Set("userRoles", []string{"member"})
+		c.Next()
+	})
 
-	// The route's :id param is matched against terminal.session_id by the
-	// access middleware (ValidateSessionAccess queries WHERE session_id = ?).
+	effectivePlanService := paymentServices.NewEffectivePlanService(sharedTestDB)
+	ctrl := terminalController.NewTerminalController(sharedTestDB)
+
+	router.POST("/api/v1/terminals/start-composed-session",
+		paymentMiddleware.InjectOrgContext(),
+		paymentMiddleware.InjectEffectivePlan(effectivePlanService, sharedTestDB),
+		paymentMiddleware.RequirePlan(),
+		paymentMiddleware.CheckLimit(effectivePlanService, sharedTestDB, "concurrent_terminals"),
+		ctrl.StartComposedSession,
+	)
+
+	body, _ := json.Marshal(map[string]any{
+		"distribution": "ubuntu-24.04",
+		"size":         "S",
+		"terms":        "accepted",
+	})
 	req := httptest.NewRequest(http.MethodPost,
-		"/terminals/"+stopped.SessionID+"/start", nil)
+		"/api/v1/terminals/start-composed-session", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	// The fix must abort the request BEFORE the StartSession handler runs.
-	// Acceptable status codes:
-	//   403 — CheckLimit middleware (matches /start-composed-session)
-	//   429 — rate-limit-style rejection
-	// Any other code (200, 500, etc.) means the handler was invoked — i.e.
-	// the request passed all gates including (the missing) capacity check.
 	assert.Contains(t, []int{http.StatusForbidden, http.StatusTooManyRequests}, w.Code,
-		"POST /terminals/:id/start must be denied with 403/429 when the user "+
-			"is at the concurrent_terminals cap — got %d. The current behavior "+
-			"reaches the handler (likely 500 from a downstream call), proving "+
-			"the bypass: a stop/launch cycle resurrects a slot. Body: %s",
-		w.Code, w.Body.String())
+		"POST /terminals/start-composed-session must reject fresh-create at the "+
+			"slot-occupancy cap (user has 1 stopped session, cap=1) — got %d. "+
+			"This is the only path that adds a slot; CheckLimit must stay here. "+
+			"Body: %s", w.Code, w.Body.String())
 }
