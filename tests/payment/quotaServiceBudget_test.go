@@ -1,0 +1,467 @@
+// tests/payment/quotaServiceBudget_test.go
+//
+// Tests for the budget-based methods on QuotaService (MR-CORE-4).
+//
+// These cover the new dual-mode contract: when a plan's QuotaModel is
+// "budget", the service sums per-terminal CPU/RAM footprints against
+// the plan's MaxCPU/MaxMemoryMB caps. When QuotaModel is the legacy
+// "count" value, CheckBudget short-circuits as a pass-through so the
+// existing slot-based methods (CheckUserQuota) remain authoritative.
+//
+// Lifecycle rule under test (D6): a terminal counts against the budget
+// iff state = 'running' OR persistence_mode = 'persistent'. Ephemeral
+// non-running sessions do not count.
+//
+// Allowed-sizes rule under test (D8): when AllowedMachineSizes is
+// non-empty and the requested size is not in it, the request is
+// rejected even if the budget would have allowed it. This is the
+// secondary advanced gate; an empty allowlist means no extra
+// restriction.
+package payment_tests
+
+import (
+	"math"
+	"testing"
+	"time"
+
+	entityManagementModels "soli/formations/src/entityManagement/models"
+	organizationModels "soli/formations/src/organizations/models"
+	"soli/formations/src/payment/models"
+	"soli/formations/src/payment/services"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+)
+
+// budgetPlan builds a SubscriptionPlan tuned for budget-mode tests.
+// maxCPU=0 / maxMem=0 mean unlimited per the contract.
+func budgetPlan(t *testing.T, db *gorm.DB, name string, maxCPU, maxMemMB int, allowed []string) *models.SubscriptionPlan {
+	t.Helper()
+	plan := &models.SubscriptionPlan{
+		BaseModel:           entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:                name,
+		PriceAmount:         0,
+		Currency:            "eur",
+		BillingInterval:     "month",
+		IsActive:            true,
+		QuotaModel:          "budget",
+		MaxCPU:              maxCPU,
+		MaxMemoryMB:         maxMemMB,
+		AllowedMachineSizes: allowed,
+	}
+	require.NoError(t, db.Create(plan).Error)
+	return plan
+}
+
+// insertTerminal inserts a row with the columns budget logic depends on.
+// state and persistence_mode are the new lifecycle fields; size_cpu /
+// size_memory_mb are the denormalised footprint columns from MR-CORE-3.
+//
+// The schema default for expires_at ('2099-12-31') already satisfies the
+// `expires_at > NOW()` filter in sumActiveResources*, so callers that
+// want a "live" terminal do not need to set it explicitly.
+// insertTerminalWithExpiry exists for tests that need to exercise the
+// past-expiry exclusion path. MR !239 dropped the legacy `status` column —
+// it is no longer written here.
+func insertTerminal(t *testing.T, db *gorm.DB, userID string, orgID *uuid.UUID, state, persistence string, cpu, memMB int) {
+	t.Helper()
+	id := uuid.New().String()
+	var orgStr any
+	if orgID != nil {
+		orgStr = orgID.String()
+	} else {
+		orgStr = nil
+	}
+	err := db.Exec(`INSERT INTO terminals
+		(id, user_id, organization_id, state, persistence_mode, size_cpu, size_memory_mb)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, userID, orgStr, state, persistence, cpu, memMB).Error
+	require.NoError(t, err)
+}
+
+// insertTerminalWithExpiry is the same as insertTerminal but lets the
+// caller pin expires_at. Used by past-expiry tests to verify that the
+// `expires_at > NOW()` predicate excludes zombie rows from the budget
+// sum (mirrors OccupiesSlotScope's zombie-exclusion rule).
+func insertTerminalWithExpiry(t *testing.T, db *gorm.DB, userID string, orgID *uuid.UUID, state, persistence string, cpu, memMB int, expiresAt time.Time) {
+	t.Helper()
+	id := uuid.New().String()
+	var orgStr any
+	if orgID != nil {
+		orgStr = orgID.String()
+	} else {
+		orgStr = nil
+	}
+	err := db.Exec(`INSERT INTO terminals
+		(id, user_id, organization_id, state, persistence_mode, size_cpu, size_memory_mb, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, userID, orgStr, state, persistence, cpu, memMB, expiresAt).Error
+	require.NoError(t, err)
+}
+
+func newQuotaSvc(t *testing.T, db *gorm.DB) services.QuotaService {
+	t.Helper()
+	eps := services.NewEffectivePlanService(db)
+	return services.NewQuotaService(db, eps)
+}
+
+// --- CheckBudget --------------------------------------------------------
+
+func TestQuotaService_CheckBudget_BindingAxisCPU(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "u-budget-cpu-axis"
+
+	// 4 vCPU / 8 GiB budget; no usage yet; requesting size L (4c / 2g).
+	plan := budgetPlan(t, db, "BudgetCPU", 4, 8192, nil)
+
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+
+	require.NoError(t, err)
+	require.NotNil(t, check)
+	assert.True(t, check.Allowed, "L (4c/2g) fits in a 4c/8g budget with no usage")
+	assert.Equal(t, 0, check.RemainingCPU, "after this request would consume the full CPU axis")
+	assert.Equal(t, 6144, check.RemainingMemMB, "memory remaining = 8192 - 2048 = 6144 MiB")
+	assert.Empty(t, check.Reason)
+}
+
+func TestQuotaService_CheckBudget_BindingAxisRAM(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "u-budget-ram-axis"
+
+	// 8 vCPU / 2 GiB budget; requesting size L (4c / 2g) — RAM is the
+	// binding axis.
+	plan := budgetPlan(t, db, "BudgetRAM", 8, 2048, nil)
+
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+
+	require.NoError(t, err)
+	require.NotNil(t, check)
+	assert.True(t, check.Allowed)
+	assert.Equal(t, 4, check.RemainingCPU)
+	assert.Equal(t, 0, check.RemainingMemMB, "RAM is the binding axis")
+}
+
+func TestQuotaService_CheckBudget_RejectsOverBudget_CPU(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "u-budget-cpu-reject"
+
+	// 4 vCPU / 8 GiB budget; 4 CPU already used; request L (4c / 2g) → reject.
+	plan := budgetPlan(t, db, "BudgetCPUReject", 4, 8192, nil)
+	insertTerminal(t, db, userID, nil, "running", "ephemeral", 4, 2048)
+
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+
+	require.NoError(t, err)
+	require.NotNil(t, check)
+	assert.False(t, check.Allowed)
+	assert.Equal(t, "budget_cpu_exceeded", check.Reason)
+}
+
+func TestQuotaService_CheckBudget_RejectsOverBudget_Memory(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "u-budget-mem-reject"
+
+	// 8 vCPU / 2 GiB budget; 2 GiB used; request L (4c / 2g) → reject.
+	plan := budgetPlan(t, db, "BudgetMemReject", 8, 2048, nil)
+	insertTerminal(t, db, userID, nil, "running", "ephemeral", 0, 2048)
+
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+
+	require.NoError(t, err)
+	require.NotNil(t, check)
+	assert.False(t, check.Allowed)
+	assert.Equal(t, "budget_memory_exceeded", check.Reason)
+}
+
+func TestQuotaService_CheckBudget_MixedActiveSessions(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "u-budget-mixed"
+
+	// Budget: 8 vCPU / 4 GiB.
+	// Used: 1 M (2c / 1024MiB) + 1 S (1c / 512MiB) = 3c / 1536MiB.
+	// Request: L (4c / 2048MiB). Remaining post-check: 5c-4c=1c, 2560-2048=512MiB → fits.
+	plan := budgetPlan(t, db, "BudgetMixed", 8, 4096, nil)
+	insertTerminal(t, db, userID, nil, "running", "ephemeral", 2, 1024)
+	insertTerminal(t, db, userID, nil, "running", "ephemeral", 1, 512)
+
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+
+	require.NoError(t, err)
+	require.NotNil(t, check)
+	assert.True(t, check.Allowed)
+	assert.Equal(t, 1, check.RemainingCPU, "8 - (2+1) - 4 = 1")
+	assert.Equal(t, 512, check.RemainingMemMB, "4096 - (1024+512) - 2048 = 512")
+}
+
+func TestQuotaService_CheckBudget_ZeroBudget_Unlimited(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "u-budget-unlimited"
+
+	// MaxCPU = 0 and MaxMemoryMB = 0 → unlimited. Even XL (4c / 4g) is fine.
+	plan := budgetPlan(t, db, "BudgetUnlimited", 0, 0, nil)
+
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 4096)
+
+	require.NoError(t, err)
+	require.NotNil(t, check)
+	assert.True(t, check.Allowed)
+	assert.Equal(t, math.MaxInt32, check.RemainingCPU, "unlimited budget reports a sentinel")
+	assert.Equal(t, math.MaxInt32, check.RemainingMemMB)
+}
+
+func TestQuotaService_CheckBudget_PersistentStoppedCounts(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "u-budget-persistent-stopped"
+
+	// Budget: 4 vCPU / 2 GiB. One terminal stopped+persistent of size M (2c / 1g).
+	// Request M again → 2c used, 2c remaining; request 2c/1g must fit.
+	plan := budgetPlan(t, db, "BudgetPersistentStopped", 4, 2048, nil)
+	insertTerminal(t, db, userID, nil, "stopped", "persistent", 2, 1024)
+
+	// Sanity: a request that overflows must still be rejected, proving the
+	// stopped-persistent row counted.
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+	require.NoError(t, err)
+	require.NotNil(t, check)
+	assert.False(t, check.Allowed, "persistent stopped session must count against budget (D6)")
+}
+
+func TestQuotaService_CheckBudget_EphemeralStoppedDoesNotCount(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "u-budget-ephemeral-stopped"
+
+	// One terminal stopped+ephemeral (4c / 2g). It must NOT count.
+	plan := budgetPlan(t, db, "BudgetEphemeralStopped", 4, 2048, nil)
+	insertTerminal(t, db, userID, nil, "stopped", "ephemeral", 4, 2048)
+
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+
+	require.NoError(t, err)
+	require.NotNil(t, check)
+	assert.True(t, check.Allowed, "ephemeral stopped session must NOT count (D6)")
+}
+
+// Past-expiry zombie rows must not count against the budget. Mirrors the
+// `expires_at > NOW()` clause added to OccupiesSlotScope in MR !239: a row
+// whose proxy session is long gone but whose state column was never reset
+// must not keep eating budget. Without this, "you have 0 visible sessions
+// but the budget is full" — the exact failure mode the slot count had
+// before the SSOT consolidation.
+func TestQuotaService_CheckBudget_PastExpirySessionsDoNotCount(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "u-budget-past-expiry"
+
+	plan := budgetPlan(t, db, "BudgetPastExpiry", 4, 2048, nil)
+
+	// A persistent terminal whose lifecycle says "should count" (state=running)
+	// but whose expires_at is in the past. The new expires_at > NOW() filter
+	// must exclude it, freeing the whole budget for the new request.
+	pastExpiry := time.Now().Add(-1 * time.Hour)
+	insertTerminalWithExpiry(t, db, userID, nil, "running", "persistent", 4, 2048, pastExpiry)
+
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+
+	require.NoError(t, err)
+	require.NotNil(t, check)
+	assert.True(t, check.Allowed, "past-expiry session must NOT count against budget")
+	// After granting the request the budget is exactly consumed. The key
+	// assertion is Allowed=true: without the expires_at > NOW() clause, the
+	// zombie row would consume the budget and the request would be denied.
+	assert.Equal(t, 0, check.RemainingCPU, "after grant, CPU budget is exactly consumed (4-0-4)")
+	assert.Equal(t, 0, check.RemainingMemMB, "after grant, memory budget is exactly consumed (2048-0-2048)")
+}
+
+func TestQuotaService_CheckBudget_OrgScoped(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	owner := "u-budget-org-owner"
+	user2 := "u-budget-org-2"
+	user3 := "u-budget-org-3"
+
+	// Team plan with budget mode. Three users in the org; two have a running
+	// terminal of size M (2c / 1g). The third user checks budget — sums must
+	// include all three users (total 4c / 2g used).
+	teamPlan := budgetPlan(t, db, "BudgetTeam", 8, 4096, nil)
+	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "budget-team", owner, teamPlan, organizationModels.OrgTypeTeam)
+
+	// Add user2 + user3 as members (helper only added the owner)
+	require.NoError(t, db.Omit("Metadata").Create(&organizationModels.OrganizationMember{
+		BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID: teamOrg.ID,
+		UserID:         user2,
+		Role:           "member",
+		JoinedAt:       time.Now(),
+		IsActive:       true,
+	}).Error)
+	require.NoError(t, db.Omit("Metadata").Create(&organizationModels.OrganizationMember{
+		BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID: teamOrg.ID,
+		UserID:         user3,
+		Role:           "member",
+		JoinedAt:       time.Now(),
+		IsActive:       true,
+	}).Error)
+
+	// owner + user2 each have a running M-sized terminal in the org.
+	insertTerminal(t, db, owner, &teamOrg.ID, "running", "ephemeral", 2, 1024)
+	insertTerminal(t, db, user2, &teamOrg.ID, "running", "ephemeral", 2, 1024)
+
+	// user3 asks for an L (4c / 2g). Used = 4c / 2g; remaining = 4c / 2g; fits.
+	check, err := newQuotaSvc(t, db).CheckBudget(user3, &teamOrg.ID, teamPlan, 4, 2048)
+	require.NoError(t, err)
+	require.NotNil(t, check)
+	assert.True(t, check.Allowed)
+	assert.Equal(t, 0, check.RemainingCPU)
+	assert.Equal(t, 0, check.RemainingMemMB)
+
+	// And an XL request from user3 must be rejected — proving the org-wide
+	// sum was applied, not just user3's own (zero) usage.
+	checkOver, err := newQuotaSvc(t, db).CheckBudget(user3, &teamOrg.ID, teamPlan, 4, 4096)
+	require.NoError(t, err)
+	require.NotNil(t, checkOver)
+	assert.False(t, checkOver.Allowed, "org-wide sum must include the other two members")
+}
+
+func TestQuotaService_CheckBudget_QuotaModelCount_PassesThrough(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "u-budget-count-passthrough"
+
+	// QuotaModel = "count" (legacy). CheckBudget must short-circuit:
+	// allowed=true with sentinel remaining values; NO DB query is needed.
+	plan := &models.SubscriptionPlan{
+		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:                   "LegacyCountPlan",
+		QuotaModel:             "count",
+		MaxConcurrentTerminals: 1,
+		MaxCPU:                 1,
+		MaxMemoryMB:            128,
+	}
+	require.NoError(t, db.Create(plan).Error)
+
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 4096)
+
+	require.NoError(t, err)
+	require.NotNil(t, check)
+	assert.True(t, check.Allowed, "count-mode plan must short-circuit to allowed")
+	assert.Equal(t, math.MaxInt32, check.RemainingCPU)
+	assert.Equal(t, math.MaxInt32, check.RemainingMemMB)
+}
+
+func TestQuotaService_CheckBudget_AllowedMachineSizesGate(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "u-budget-allowlist"
+
+	// Budget would allow L, but plan restricts to S and M.
+	plan := budgetPlan(t, db, "BudgetAllowlist", 8, 4096, []string{"s", "m"})
+
+	// Helper variant of CheckBudget that consults the allowlist needs a size
+	// key. Use RemainingBudgetFits for the rejection path; CheckBudget alone
+	// works on raw cpu/mem and ignores the allowlist.
+	fits, reason, err := newQuotaSvc(t, db).RemainingBudgetFitsWithReason(userID, nil, plan, "L")
+	require.NoError(t, err)
+	assert.False(t, fits, "L is not in the plan's allowlist")
+	assert.Equal(t, "plan_restriction", reason)
+
+	// And a size that IS in the allowlist passes.
+	fitsM, reasonM, err := newQuotaSvc(t, db).RemainingBudgetFitsWithReason(userID, nil, plan, "M")
+	require.NoError(t, err)
+	assert.True(t, fitsM)
+	assert.Empty(t, reasonM)
+}
+
+// --- ComputeRemainingBySize --------------------------------------------
+
+func TestQuotaService_ComputeRemainingBySize_AllSizes(t *testing.T) {
+	db := freshTestDB(t)
+
+	// Budget: 8 vCPU / 4 GiB. Used: 2c / 1 GiB.
+	// Remaining axis: 6c / 3 GiB (= 3072 MiB).
+	// Per size:
+	//   xs (1c / 256MiB)  → min(6/1, 3072/256)  = min(6, 12) = 6
+	//   s  (1c / 512MiB)  → min(6/1, 3072/512)  = min(6, 6)  = 6
+	//   m  (2c / 1024MiB) → min(6/2, 3072/1024) = min(3, 3)  = 3
+	//   l  (4c / 2048MiB) → min(6/4, 3072/2048) = min(1, 1)  = 1
+	//   xl (4c / 4096MiB) → min(6/4, 3072/4096) = min(1, 0)  = 0
+	plan := budgetPlan(t, db, "BudgetRemainings", 8, 4096, nil)
+	svc := newQuotaSvc(t, db)
+
+	remaining := svc.ComputeRemainingBySize(plan, 2, 1024)
+
+	// Build a map for easy lookup
+	got := map[string]services.SizeRemaining{}
+	for _, r := range remaining {
+		got[r.Key] = r
+	}
+
+	require.Contains(t, got, "xs")
+	require.Contains(t, got, "s")
+	require.Contains(t, got, "m")
+	require.Contains(t, got, "l")
+	require.Contains(t, got, "xl")
+
+	assert.Equal(t, 6, got["xs"].RemainingCount)
+	assert.Equal(t, 6, got["s"].RemainingCount)
+	assert.Equal(t, 3, got["m"].RemainingCount)
+	assert.Equal(t, 1, got["l"].RemainingCount)
+	assert.Equal(t, 0, got["xl"].RemainingCount)
+
+	// Spot-check that the CPU/MemoryMB per size are correctly populated too.
+	assert.Equal(t, 4, got["l"].CPU)
+	assert.Equal(t, 2048, got["l"].MemoryMB)
+}
+
+func TestQuotaService_ComputeRemainingBySize_ZeroBudget_Unlimited(t *testing.T) {
+	db := freshTestDB(t)
+
+	plan := budgetPlan(t, db, "BudgetUnlimitedRemainings", 0, 0, nil)
+	svc := newQuotaSvc(t, db)
+
+	remaining := svc.ComputeRemainingBySize(plan, 0, 0)
+
+	require.NotEmpty(t, remaining)
+	for _, r := range remaining {
+		assert.Equal(t, math.MaxInt32, r.RemainingCount, "unlimited budget reports sentinel for every size, got size %s = %d", r.Key, r.RemainingCount)
+	}
+}
+
+// --- RemainingBudgetFits ------------------------------------------------
+
+func TestQuotaService_RemainingBudgetFits_True(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "u-budget-fits-true"
+
+	// 8c / 4g budget, no usage, request "m" (2c / 1g). Plenty of room.
+	plan := budgetPlan(t, db, "BudgetFitsTrue", 8, 4096, nil)
+
+	fits, err := newQuotaSvc(t, db).RemainingBudgetFits(userID, nil, plan, "m")
+	require.NoError(t, err)
+	assert.True(t, fits)
+}
+
+func TestQuotaService_RemainingBudgetFits_False(t *testing.T) {
+	db := freshTestDB(t)
+	ensureTerminalsTable(t, db)
+	userID := "u-budget-fits-false"
+
+	// 4c / 2g budget, one running M (2c / 1g), request "L" (4c / 2g). Doesn't fit.
+	plan := budgetPlan(t, db, "BudgetFitsFalse", 4, 2048, nil)
+	insertTerminal(t, db, userID, nil, "running", "ephemeral", 2, 1024)
+
+	fits, err := newQuotaSvc(t, db).RemainingBudgetFits(userID, nil, plan, "l")
+	require.NoError(t, err)
+	assert.False(t, fits)
+}

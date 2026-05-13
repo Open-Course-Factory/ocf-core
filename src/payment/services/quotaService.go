@@ -3,7 +3,11 @@ package services
 import (
 	"errors"
 	"fmt"
+	"math"
+	"strings"
+	"time"
 
+	"soli/formations/src/payment/backfill"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
 	terminalModels "soli/formations/src/terminalTrainer/models"
@@ -45,6 +49,88 @@ type QuotaService interface {
 	// concurrent_terminals this is a live count via the SSOT slot helper;
 	// for other metrics it falls back to the stored usage_metrics row.
 	GetUserUsage(userID string, orgID *uuid.UUID, metric string) (int64, error)
+
+	// CheckBudget evaluates whether a session of the requested CPU/RAM cost
+	// fits within the user's (or org's) effective plan, using the new
+	// budget-based quota model.
+	//
+	// When the plan's QuotaModel is anything other than "budget" (e.g. the
+	// legacy "count" model), CheckBudget short-circuits to allowed=true
+	// with sentinel "unlimited" remaining values — slot-based methods
+	// (CheckUserQuota) remain authoritative for those plans.
+	//
+	// When MaxCPU/MaxMemoryMB on the plan are zero, the corresponding axis
+	// is treated as unlimited.
+	//
+	// Sessions counted toward the budget follow lifecycle rule D6:
+	//   (state = 'running') OR (persistence_mode = 'persistent').
+	// Ephemeral non-running sessions are excluded. Past-expiry rows are
+	// also excluded (expires_at > NOW()) to mirror OccupiesSlotScope —
+	// stale rows whose proxy session is gone but whose state column was
+	// never reset must not keep eating budget.
+	//
+	// NOTE: This method is for read-time gating (composer UI, scenario
+	// list). It is NOT race-safe — write-time enforcement requires a
+	// transactional check inside a BeforeCreate hook (MR-CORE-5) using
+	// `SELECT ... FOR UPDATE`. Two concurrent CheckBudget calls may both
+	// observe enough budget for the same slice of resources.
+	CheckBudget(userID string, orgID *uuid.UUID, plan *models.SubscriptionPlan, requestedCPU, requestedMemMB int) (*BudgetCheck, error)
+
+	// ComputeRemainingBySize returns the per-size remaining count after
+	// accounting for usedCPU / usedMemMB. The formula is
+	//
+	//   remaining(size) = floor(min((max_cpu - used_cpu)/size.cpu,
+	//                                (max_mem - used_mem)/size.memory))
+	//
+	// An entry is returned for every canonical size in the catalog, even
+	// when the count is zero. When MaxCPU/MaxMemoryMB are zero (unlimited),
+	// RemainingCount reports math.MaxInt32 for every size.
+	//
+	// This is a pure function (no DB access) intended for endpoints that
+	// already know the user's current footprint, e.g.
+	// GET /terminals/session-options or the scenario list endpoint.
+	ComputeRemainingBySize(plan *models.SubscriptionPlan, usedCPU, usedMemMB int) []SizeRemaining
+
+	// RemainingBudgetFits is a one-shot helper: it queries current usage
+	// for the user (org-scoped if orgID is non-nil) and answers whether
+	// one container of the given size key fits in the remaining budget.
+	//
+	// The plan's AllowedMachineSizes restriction is NOT consulted here —
+	// only the raw budget. Use RemainingBudgetFitsWithReason when callers
+	// need to distinguish a budget rejection from a plan_restriction
+	// rejection.
+	RemainingBudgetFits(userID string, orgID *uuid.UUID, plan *models.SubscriptionPlan, sizeKey string) (bool, error)
+
+	// RemainingBudgetFitsWithReason behaves like RemainingBudgetFits but
+	// also applies the plan's AllowedMachineSizes secondary restriction
+	// (D8). When a non-empty allowlist excludes the requested size, the
+	// returned reason is "plan_restriction" and fits=false. When the
+	// budget itself rejects, the reason reflects which axis ran out.
+	RemainingBudgetFitsWithReason(userID string, orgID *uuid.UUID, plan *models.SubscriptionPlan, sizeKey string) (bool, string, error)
+}
+
+// BudgetCheck reports the outcome of a CheckBudget evaluation.
+//
+// Reason is "" when Allowed is true. Otherwise it carries a short code
+// describing the rejection cause:
+//
+//	"budget_cpu_exceeded"     — the request would exceed MaxCPU
+//	"budget_memory_exceeded"  — the request would exceed MaxMemoryMB
+//	"plan_restriction"        — the requested size is not in AllowedMachineSizes
+type BudgetCheck struct {
+	Allowed        bool
+	RemainingCPU   int
+	RemainingMemMB int
+	Reason         string
+}
+
+// SizeRemaining describes how many additional instances of one machine
+// size the user could still afford under the current budget.
+type SizeRemaining struct {
+	Key            string `json:"key"`
+	CPU            int    `json:"cpu"`
+	MemoryMB       int    `json:"memory_mb"`
+	RemainingCount int    `json:"remaining_count"`
 }
 
 type quotaService struct {
@@ -225,4 +311,332 @@ func limitForMetric(plan *models.SubscriptionPlan, metric string) int64 {
 	default:
 		return -1
 	}
+}
+
+// --- Budget-mode quota methods (MR-CORE-4) -----------------------------
+//
+// These methods power the new CPU/RAM budget quota model. They are only
+// active for plans with QuotaModel = "budget"; for the legacy "count"
+// model, CheckBudget short-circuits and the existing slot-based methods
+// above remain authoritative.
+//
+// Resource counters use the denormalised size_cpu / size_memory_mb
+// columns on the Terminal table (added in MR-CORE-3). Older rows where
+// those columns are zero fall back to a catalog lookup of MachineSize —
+// MR-CORE-5's BeforeCreate hook will populate the columns on create so
+// new sessions never need the fallback.
+
+// budgetUnlimited is the sentinel returned for the "remaining" axis on
+// an unlimited (zero-cap) plan. Chosen as math.MaxInt32 so JSON callers
+// can recognise it without special-casing.
+const budgetUnlimited = math.MaxInt32
+
+// CheckBudget — see interface doc.
+func (s *quotaService) CheckBudget(
+	userID string,
+	orgID *uuid.UUID,
+	plan *models.SubscriptionPlan,
+	requestedCPU, requestedMemMB int,
+) (*BudgetCheck, error) {
+	if plan == nil {
+		return nil, fmt.Errorf("CheckBudget: plan is nil")
+	}
+	// Legacy "count" plans bypass the budget logic entirely.
+	if plan.QuotaModel != "budget" {
+		return &BudgetCheck{
+			Allowed:        true,
+			RemainingCPU:   budgetUnlimited,
+			RemainingMemMB: budgetUnlimited,
+		}, nil
+	}
+
+	usedCPU, usedMemMB, err := s.sumActiveResources(userID, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("CheckBudget: sum active resources: %w", err)
+	}
+
+	// CPU axis
+	cpuUnlimited := plan.MaxCPU <= 0
+	remainingCPU := budgetUnlimited
+	if !cpuUnlimited {
+		remainingCPU = plan.MaxCPU - usedCPU - requestedCPU
+	}
+
+	// RAM axis
+	memUnlimited := plan.MaxMemoryMB <= 0
+	remainingMem := budgetUnlimited
+	if !memUnlimited {
+		remainingMem = plan.MaxMemoryMB - usedMemMB - requestedMemMB
+	}
+
+	switch {
+	case !cpuUnlimited && remainingCPU < 0:
+		// CPU axis exhausted first.
+		left := plan.MaxCPU - usedCPU
+		if left < 0 {
+			left = 0
+		}
+		return &BudgetCheck{
+			Allowed:        false,
+			RemainingCPU:   left,
+			RemainingMemMB: memRemainingForReport(plan, usedMemMB),
+			Reason:         "budget_cpu_exceeded",
+		}, nil
+	case !memUnlimited && remainingMem < 0:
+		left := plan.MaxMemoryMB - usedMemMB
+		if left < 0 {
+			left = 0
+		}
+		return &BudgetCheck{
+			Allowed:        false,
+			RemainingCPU:   cpuRemainingForReport(plan, usedCPU),
+			RemainingMemMB: left,
+			Reason:         "budget_memory_exceeded",
+		}, nil
+	}
+
+	return &BudgetCheck{
+		Allowed:        true,
+		RemainingCPU:   remainingCPU,
+		RemainingMemMB: remainingMem,
+	}, nil
+}
+
+// cpuRemainingForReport produces the "remaining" CPU value used in
+// rejection responses (clamped to >=0 and respecting the unlimited
+// sentinel for zero-cap plans).
+func cpuRemainingForReport(plan *models.SubscriptionPlan, usedCPU int) int {
+	if plan.MaxCPU <= 0 {
+		return budgetUnlimited
+	}
+	r := plan.MaxCPU - usedCPU
+	if r < 0 {
+		return 0
+	}
+	return r
+}
+
+// memRemainingForReport mirrors cpuRemainingForReport for the memory axis.
+func memRemainingForReport(plan *models.SubscriptionPlan, usedMemMB int) int {
+	if plan.MaxMemoryMB <= 0 {
+		return budgetUnlimited
+	}
+	r := plan.MaxMemoryMB - usedMemMB
+	if r < 0 {
+		return 0
+	}
+	return r
+}
+
+// ComputeRemainingBySize — see interface doc.
+func (s *quotaService) ComputeRemainingBySize(
+	plan *models.SubscriptionPlan,
+	usedCPU, usedMemMB int,
+) []SizeRemaining {
+	out := make([]SizeRemaining, 0, len(backfill.CanonicalSizeKeys))
+
+	cpuUnlimited := plan == nil || plan.MaxCPU <= 0
+	memUnlimited := plan == nil || plan.MaxMemoryMB <= 0
+
+	remCPU := 0
+	if !cpuUnlimited {
+		remCPU = plan.MaxCPU - usedCPU
+		if remCPU < 0 {
+			remCPU = 0
+		}
+	}
+	remMem := 0
+	if !memUnlimited {
+		remMem = plan.MaxMemoryMB - usedMemMB
+		if remMem < 0 {
+			remMem = 0
+		}
+	}
+
+	for _, key := range backfill.CanonicalSizeKeys {
+		size, ok := backfill.LookupSize(key)
+		if !ok {
+			continue
+		}
+		count := 0
+		switch {
+		case cpuUnlimited && memUnlimited:
+			count = budgetUnlimited
+		case cpuUnlimited:
+			if size.MemoryMB > 0 {
+				count = remMem / size.MemoryMB
+			} else {
+				count = budgetUnlimited
+			}
+		case memUnlimited:
+			if size.CPU > 0 {
+				count = remCPU / size.CPU
+			} else {
+				count = budgetUnlimited
+			}
+		default:
+			byCPU := budgetUnlimited
+			if size.CPU > 0 {
+				byCPU = remCPU / size.CPU
+			}
+			byMem := budgetUnlimited
+			if size.MemoryMB > 0 {
+				byMem = remMem / size.MemoryMB
+			}
+			if byCPU < byMem {
+				count = byCPU
+			} else {
+				count = byMem
+			}
+		}
+		out = append(out, SizeRemaining{
+			Key:            key,
+			CPU:            size.CPU,
+			MemoryMB:       size.MemoryMB,
+			RemainingCount: count,
+		})
+	}
+	return out
+}
+
+// RemainingBudgetFits — see interface doc.
+func (s *quotaService) RemainingBudgetFits(
+	userID string,
+	orgID *uuid.UUID,
+	plan *models.SubscriptionPlan,
+	sizeKey string,
+) (bool, error) {
+	fits, _, err := s.remainingBudgetFitsCore(userID, orgID, plan, sizeKey, false)
+	return fits, err
+}
+
+// RemainingBudgetFitsWithReason — see interface doc.
+func (s *quotaService) RemainingBudgetFitsWithReason(
+	userID string,
+	orgID *uuid.UUID,
+	plan *models.SubscriptionPlan,
+	sizeKey string,
+) (bool, string, error) {
+	return s.remainingBudgetFitsCore(userID, orgID, plan, sizeKey, true)
+}
+
+// remainingBudgetFitsCore is the shared core for the two RemainingBudgetFits
+// variants. When consultAllowlist is true, the plan's AllowedMachineSizes
+// (D8 secondary restriction) is applied.
+func (s *quotaService) remainingBudgetFitsCore(
+	userID string,
+	orgID *uuid.UUID,
+	plan *models.SubscriptionPlan,
+	sizeKey string,
+	consultAllowlist bool,
+) (bool, string, error) {
+	if plan == nil {
+		return false, "", fmt.Errorf("remainingBudgetFits: plan is nil")
+	}
+	size, ok := backfill.LookupSize(sizeKey)
+	if !ok {
+		return false, "", fmt.Errorf("remainingBudgetFits: unknown size %q", sizeKey)
+	}
+	if consultAllowlist && !sizeKeyInAllowlist(plan.AllowedMachineSizes, sizeKey) {
+		return false, "plan_restriction", nil
+	}
+
+	check, err := s.CheckBudget(userID, orgID, plan, size.CPU, size.MemoryMB)
+	if err != nil {
+		return false, "", err
+	}
+	if !check.Allowed {
+		return false, check.Reason, nil
+	}
+	return true, "", nil
+}
+
+// sizeKeyInAllowlist applies D8: an empty allowlist means "no extra
+// restriction"; otherwise the requested key must match an entry
+// (case-insensitive). The pseudo-entry "all" means "any size".
+func sizeKeyInAllowlist(allowed []string, sizeKey string) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	want := strings.ToLower(strings.TrimSpace(sizeKey))
+	for _, raw := range allowed {
+		got := strings.ToLower(strings.TrimSpace(raw))
+		if got == "" {
+			continue
+		}
+		if got == "all" || got == want {
+			return true
+		}
+	}
+	return false
+}
+
+// sumActiveResources returns the total CPU + RAM footprint of terminals
+// counted against the budget for this user (or org).
+//
+// Counting rule (D6): a terminal counts iff state = 'running' OR
+// persistence_mode = 'persistent'. Ephemeral non-running sessions are
+// excluded; deleted rows are always excluded (deleted_at IS NULL).
+//
+// Past-expiry rows are also excluded (expires_at > NOW()) to mirror the
+// SSOT pattern set by terminalModels.OccupiesSlotScope / RunningDisplayScope.
+// Without this clause, a stale row whose proxy session is long gone but
+// whose state column was never reset would keep eating budget — the same
+// "zombie slot" failure mode the slot count had before MR !239.
+// time.Now() is bound as a parameter (not SQL NOW()) for dialect
+// portability: SQLite (unit tests) has no NOW(); production PostgreSQL
+// does. Same rationale as OccupiesSlotScope.
+//
+// orgID:
+//   - nil    → personal scope (terminals where organization_id IS NULL).
+//   - non-nil → org scope, summed across ALL members of the org via the
+//     organization_members join (mirrors CountOrgOccupiedSlots).
+//
+// Returns (0, 0, nil) when no rows match — not an error.
+func (s *quotaService) sumActiveResources(userID string, orgID *uuid.UUID) (int, int, error) {
+	if orgID != nil {
+		return s.sumActiveResourcesForOrg(*orgID)
+	}
+	return s.sumActiveResourcesForUser(userID)
+}
+
+func (s *quotaService) sumActiveResourcesForUser(userID string) (int, int, error) {
+	var row struct {
+		CPU int64
+		Mem int64
+	}
+	q := s.db.Table("terminals").
+		Select("COALESCE(SUM(size_cpu), 0) AS cpu, COALESCE(SUM(size_memory_mb), 0) AS mem").
+		Where("deleted_at IS NULL").
+		Where("user_id = ?", userID).
+		Where("expires_at > ?", time.Now()).
+		Where("(state = ? OR persistence_mode = ?)", "running", "persistent")
+	if err := q.Scan(&row).Error; err != nil {
+		utils.Error("sumActiveResourcesForUser failed for %s: %v", userID, err)
+		return 0, 0, err
+	}
+	return int(row.CPU), int(row.Mem), nil
+}
+
+func (s *quotaService) sumActiveResourcesForOrg(orgID uuid.UUID) (int, int, error) {
+	var row struct {
+		CPU int64
+		Mem int64
+	}
+	// Mirror CountOrgOccupiedSlots: join through organization_members so
+	// we count terminals owned by any active member of the org. We also
+	// keep the direct terminals.organization_id filter to handle the
+	// post-Phase-D world where a terminal is tied to its org context.
+	q := s.db.Table("terminals").
+		Select("COALESCE(SUM(terminals.size_cpu), 0) AS cpu, COALESCE(SUM(terminals.size_memory_mb), 0) AS mem").
+		Joins("JOIN organization_members ON organization_members.user_id = terminals.user_id").
+		Where("terminals.deleted_at IS NULL").
+		Where("organization_members.organization_id = ? AND organization_members.deleted_at IS NULL", orgID).
+		Where("terminals.expires_at > ?", time.Now()).
+		Where("(terminals.state = ? OR terminals.persistence_mode = ?)", "running", "persistent")
+	if err := q.Scan(&row).Error; err != nil {
+		utils.Error("sumActiveResourcesForOrg failed for %s: %v", orgID, err)
+		return 0, 0, err
+	}
+	return int(row.CPU), int(row.Mem), nil
 }
