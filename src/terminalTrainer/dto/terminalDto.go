@@ -150,6 +150,16 @@ type TerminalTrainerSession struct {
 	FQDN        string      `json:"fqdn,omitempty"`
 	MachineSize string      `json:"machine_size,omitempty"` // XS, S, M, L, XL
 	Backend     string      `json:"backend,omitempty"`
+	// State is the lifecycle field driven by tt-backend (running, stopped,
+	// hibernating, ...). tt-backend is the source of truth; ocf-core caches it.
+	State string `json:"state,omitempty" mapstructure:"state"`
+	// PersistenceMode is "ephemeral" or "persistent". A stopped persistent
+	// session is still resumable and the frontend uses this to decide between
+	// a "Resume" affordance and a "Session expirée" message.
+	PersistenceMode string `json:"persistence_mode,omitempty" mapstructure:"persistence_mode"`
+	// IdleUntil is the absolute deadline (Unix seconds) after which the session
+	// may be reaped or hibernated by tt-backend.
+	IdleUntil int64 `json:"idle_until,omitempty" mapstructure:"idle_until"`
 }
 
 // TerminalTrainerSessionsResponse réponse de l'endpoint /1.0/sessions
