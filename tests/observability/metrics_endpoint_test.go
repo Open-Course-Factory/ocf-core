@@ -70,6 +70,8 @@ func resetObservabilityMetrics() {
 	observability.Metrics.StripeArchiveSuccess.Store(0)
 	observability.Metrics.StripeArchiveFailure.Store(0)
 	observability.Metrics.StripeSyncPanic.Store(0)
+	observability.Metrics.StripeQueueRetry.Store(0)
+	observability.Metrics.StripeQueueExhausted.Store(0)
 	observability.Metrics.ScenarioSetupPanic.Store(0)
 	observability.Metrics.ScenarioSetupFailed.Store(0)
 	observability.Metrics.TerminalStopOnCleanupFailure.Store(0)
@@ -200,6 +202,15 @@ func TestObservabilityMetrics_ZeroSnapshotShape(t *testing.T) {
 	mustZero(t, archive, "success")
 	mustZero(t, archive, "failure")
 	mustZero(t, stripe, "panics")
+
+	// stripe.queue group — added for the persistent sync queue (issue #327).
+	// pending_depth comes from the queue itself (queue.CountPending), retry and
+	// exhausted are atomic counters bumped by the worker on each retry / final
+	// failure transition.
+	queue := mustMap(t, stripe, "queue")
+	mustZero(t, queue, "retry")
+	mustZero(t, queue, "exhausted")
+	mustZero(t, queue, "pending_depth")
 
 	// scenarios group
 	scenarios := mustMap(t, resp, "scenarios")
@@ -372,5 +383,48 @@ func TestObservabilityMetrics_SurfacesHookErrors(t *testing.T) {
 	}
 	if got := seeded["hook_type"]; got != string(hooks.AfterCreate) {
 		t.Errorf("hook_type: expected %q, got %v", string(hooks.AfterCreate), got)
+	}
+}
+
+// TestObservabilityMetrics_IncrementsStripeQueueRetryCounter directly bumps
+// StripeQueueRetry and verifies:
+//   - the targeted counter surfaces at stripe.queue.retry
+//   - sibling stripe.queue.exhausted stays 0 (catches conflation)
+func TestObservabilityMetrics_IncrementsStripeQueueRetryCounter(t *testing.T) {
+	t.Cleanup(resetObservabilityMetrics)
+
+	observability.Metrics.StripeQueueRetry.Add(1)
+
+	r := setupObservabilityRouter(true)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/observability-metrics", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON: %v (raw: %s)", err, w.Body.String())
+	}
+
+	stripe := mustMap(t, resp, "stripe")
+	queue := mustMap(t, stripe, "queue")
+
+	retry, ok := queue["retry"].(float64)
+	if !ok {
+		t.Fatalf("stripe.queue.retry must be a number, got %T", queue["retry"])
+	}
+	if retry != 1 {
+		t.Errorf("stripe.queue.retry: expected 1, got %v", retry)
+	}
+
+	// Conflation check — sibling must stay 0.
+	exhausted, ok := queue["exhausted"].(float64)
+	if !ok {
+		t.Fatalf("stripe.queue.exhausted must be a number, got %T", queue["exhausted"])
+	}
+	if exhausted != 0 {
+		t.Errorf("stripe.queue.exhausted should remain 0, got %v", exhausted)
 	}
 }

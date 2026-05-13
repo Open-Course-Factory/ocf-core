@@ -27,9 +27,9 @@
 package payment_tests
 
 import (
+	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
@@ -182,13 +182,23 @@ var _ services.StripeService = (*fakeStripeService)(nil)
 // AfterDelete, the hook calls ArchiveSubscriptionPlanInStripe(productID) —
 // NOT UpdateSubscriptionPlanInStripe(plan).
 func TestStripeSubscriptionPlanHook_AfterDelete_CallsArchive_WhenStripeProductIDPresent(t *testing.T) {
+	// MR-O refactor: the hook now enqueues into a persistent queue; the Stripe
+	// call happens when the worker drains. We assert the end-to-end contract:
+	// after Execute + ProcessOnce, Stripe.Archive was called with the right ID
+	// and Stripe.Update was NOT called.
+	db := freshTestDB(t)
+	if err := db.AutoMigrate(&models.StripeSync{}); err != nil {
+		t.Fatalf("AutoMigrate failed: %v", err)
+	}
+	queue := services.NewStripeSyncQueue(db)
 	stripeMock := &fakeStripeService{}
+	worker := services.NewStripeSyncWorker(queue, stripeMock)
 	stripeMock.On("ArchiveSubscriptionPlanInStripe", "prod_test_123").Return(nil)
 	// We also tolerate UpdateSubscriptionPlanInStripe so testify doesn't panic
 	// on the buggy code path — the AssertNotCalled below is the actual check.
 	stripeMock.On("UpdateSubscriptionPlanInStripe", mock.Anything).Return(nil)
 
-	hook := paymentHooks.NewStripeSubscriptionPlanHookWithService(stripeMock)
+	hook := paymentHooks.NewStripeSubscriptionPlanHookWithQueue(queue)
 
 	plan := &models.SubscriptionPlan{
 		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
@@ -204,8 +214,10 @@ func TestStripeSubscriptionPlanHook_AfterDelete_CallsArchive_WhenStripeProductID
 	}
 
 	err := hook.Execute(ctx)
-	hook.(*paymentHooks.StripeSubscriptionPlanHook).WaitForAsyncSyncs()
 	assert.NoError(t, err, "hook should not return an error")
+
+	// Drain the queue — this is where the actual Stripe call happens.
+	_ = worker.ProcessOnce(context.Background())
 
 	stripeMock.AssertCalled(t, "ArchiveSubscriptionPlanInStripe", "prod_test_123")
 	stripeMock.AssertNotCalled(t, "UpdateSubscriptionPlanInStripe", mock.Anything)
@@ -215,12 +227,21 @@ func TestStripeSubscriptionPlanHook_AfterDelete_CallsArchive_WhenStripeProductID
 // asserts the hook skips Stripe archival entirely for plans that were never
 // synced to Stripe (e.g. free plans with PriceAmount=0).
 func TestStripeSubscriptionPlanHook_AfterDelete_SkipsArchive_WhenStripeProductIDIsNil(t *testing.T) {
+	// MR-O refactor: the hook short-circuits without enqueueing for free plans;
+	// we still assert no Stripe call happens after a worker drain (which should
+	// be a no-op since the queue is empty).
+	db := freshTestDB(t)
+	if err := db.AutoMigrate(&models.StripeSync{}); err != nil {
+		t.Fatalf("AutoMigrate failed: %v", err)
+	}
+	queue := services.NewStripeSyncQueue(db)
 	stripeMock := &fakeStripeService{}
+	worker := services.NewStripeSyncWorker(queue, stripeMock)
 	// Tolerate any call to avoid testify panic — AssertNotCalled below is the check.
 	stripeMock.On("ArchiveSubscriptionPlanInStripe", mock.Anything).Return(nil)
 	stripeMock.On("UpdateSubscriptionPlanInStripe", mock.Anything).Return(nil)
 
-	hook := paymentHooks.NewStripeSubscriptionPlanHookWithService(stripeMock)
+	hook := paymentHooks.NewStripeSubscriptionPlanHookWithQueue(queue)
 
 	plan := &models.SubscriptionPlan{
 		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
@@ -236,11 +257,17 @@ func TestStripeSubscriptionPlanHook_AfterDelete_SkipsArchive_WhenStripeProductID
 	}
 
 	err := hook.Execute(ctx)
-	hook.(*paymentHooks.StripeSubscriptionPlanHook).WaitForAsyncSyncs()
 	assert.NoError(t, err)
+
+	// Drain the queue — should be a no-op since nothing was enqueued.
+	_ = worker.ProcessOnce(context.Background())
 
 	stripeMock.AssertNotCalled(t, "ArchiveSubscriptionPlanInStripe", mock.Anything)
 	stripeMock.AssertNotCalled(t, "UpdateSubscriptionPlanInStripe", mock.Anything)
+
+	// Queue must be empty — no pending work was enqueued for a free plan.
+	pending, _ := queue.ListPending(10)
+	assert.Empty(t, pending, "free plan deletion should not enqueue a sync row")
 }
 
 // TestStripeSubscriptionPlanHook_AfterDelete_DoesNotPropagateArchiveError
@@ -249,13 +276,22 @@ func TestStripeSubscriptionPlanHook_AfterDelete_SkipsArchive_WhenStripeProductID
 // 130 of stripeSubscriptionPlanHook.go: errors are logged and the hook
 // returns nil). This prevents Stripe outages from blocking plan deletion.
 func TestStripeSubscriptionPlanHook_AfterDelete_DoesNotPropagateArchiveError(t *testing.T) {
+	// MR-O refactor: hook.Execute enqueues and returns nil; the Stripe error
+	// surfaces in the worker pass (and must not propagate either — the worker
+	// records it and keeps the row retryable).
+	db := freshTestDB(t)
+	if err := db.AutoMigrate(&models.StripeSync{}); err != nil {
+		t.Fatalf("AutoMigrate failed: %v", err)
+	}
+	queue := services.NewStripeSyncQueue(db)
 	stripeMock := &fakeStripeService{}
+	worker := services.NewStripeSyncWorker(queue, stripeMock)
 	stripeMock.On("ArchiveSubscriptionPlanInStripe", "prod_test_999").
 		Return(errors.New("stripe API down"))
 	// Tolerate the buggy call so the test produces a clean failure instead of a panic.
 	stripeMock.On("UpdateSubscriptionPlanInStripe", mock.Anything).Return(nil)
 
-	hook := paymentHooks.NewStripeSubscriptionPlanHookWithService(stripeMock)
+	hook := paymentHooks.NewStripeSubscriptionPlanHookWithQueue(queue)
 
 	plan := &models.SubscriptionPlan{
 		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
@@ -271,8 +307,11 @@ func TestStripeSubscriptionPlanHook_AfterDelete_DoesNotPropagateArchiveError(t *
 	}
 
 	err := hook.Execute(ctx)
-	hook.(*paymentHooks.StripeSubscriptionPlanHook).WaitForAsyncSyncs()
 	assert.NoError(t, err, "Stripe API errors must NOT propagate from AfterDelete hook")
+
+	// Worker drain — must also not propagate (ProcessOnce return is best-effort,
+	// errors are recorded via MarkFailure on the queue row).
+	_ = worker.ProcessOnce(context.Background())
 
 	stripeMock.AssertCalled(t, "ArchiveSubscriptionPlanInStripe", "prod_test_999")
 }
@@ -283,12 +322,19 @@ func TestStripeSubscriptionPlanHook_AfterDelete_DoesNotPropagateArchiveError(t *
 // forwards plan.IsActive (still true after a soft delete) to Stripe, which
 // keeps the product active — exactly the behavior we're fixing.
 func TestStripeSubscriptionPlanHook_AfterDelete_NeverCallsUpdate(t *testing.T) {
+	// MR-O refactor: drain the queue before asserting on Stripe call history.
+	db := freshTestDB(t)
+	if err := db.AutoMigrate(&models.StripeSync{}); err != nil {
+		t.Fatalf("AutoMigrate failed: %v", err)
+	}
+	queue := services.NewStripeSyncQueue(db)
 	stripeMock := &fakeStripeService{}
+	worker := services.NewStripeSyncWorker(queue, stripeMock)
 	stripeMock.On("ArchiveSubscriptionPlanInStripe", mock.Anything).Return(nil)
 	// Tolerate the buggy call so the test produces a clean assertion failure.
 	stripeMock.On("UpdateSubscriptionPlanInStripe", mock.Anything).Return(nil)
 
-	hook := paymentHooks.NewStripeSubscriptionPlanHookWithService(stripeMock)
+	hook := paymentHooks.NewStripeSubscriptionPlanHookWithQueue(queue)
 
 	plan := &models.SubscriptionPlan{
 		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
@@ -304,46 +350,46 @@ func TestStripeSubscriptionPlanHook_AfterDelete_NeverCallsUpdate(t *testing.T) {
 	}
 
 	_ = hook.Execute(ctx)
-	hook.(*paymentHooks.StripeSubscriptionPlanHook).WaitForAsyncSyncs()
+	_ = worker.ProcessOnce(context.Background())
 
 	stripeMock.AssertNotCalled(t, "UpdateSubscriptionPlanInStripe", mock.Anything)
 }
 
 // ============================================================================
-// Async contract tests — added for issue #319
+// Async contract tests — refactored for the persistent queue (issue #327, MR-O)
 //
-// StripeSubscriptionPlanHook.Execute must spawn a goroutine for Stripe calls
-// and return immediately, so admin requests are not blocked by Stripe latency.
+// Before MR-O: hook.Execute spawned an in-process goroutine; tests used
+// hook.WaitForAsyncSyncs() to synchronize.
 //
-// These tests assert the async contract via:
-//   1. A blocking fake — proves Execute returns BEFORE Stripe completes.
-//   2. A panicking fake — proves the goroutine recovers and never crashes
-//      the process.
+// After MR-O: hook.Execute enqueues a row into the persistent StripeSyncQueue
+// and returns. The Stripe API call is performed by a separate worker. Tests
+// drive the worker explicitly via worker.ProcessOnce(context.Background()).
 //
-// The contract method `WaitForAsyncSyncs()` on *StripeSubscriptionPlanHook
-// (which the existing tests above also use) is what allows deterministic
-// assertion on side effects after the async path.
+// The TestStripeSubscriptionPlanHook_Execute_RecoversFromPanic test was moved
+// to tests/payment/stripeSyncWorker_test.go — the panic-recovery contract now
+// belongs to the worker, not the hook.
 // ============================================================================
 
 // TestStripeSubscriptionPlanHook_Execute_ReturnsBeforeStripeCompletes asserts
-// that Execute returns well before the underlying Stripe call completes —
-// proving the Stripe sync is offloaded to a goroutine.
+// that Execute returns BEFORE any Stripe API call happens — proving Stripe
+// sync is fully offloaded to the queue/worker rather than performed inline.
 func TestStripeSubscriptionPlanHook_Execute_ReturnsBeforeStripeCompletes(t *testing.T) {
-	// ARRANGE: fake that blocks until `release` is closed; signals when started.
-	release := make(chan struct{})
-	started := make(chan struct{})
-
+	db := freshTestDB(t)
+	if err := db.AutoMigrate(&models.StripeSync{}); err != nil {
+		t.Fatalf("AutoMigrate failed: %v", err)
+	}
+	queue := services.NewStripeSyncQueue(db)
 	fake := &fakeStripeService{}
-	fake.On("CreateSubscriptionPlanInStripe", mock.Anything).Run(func(args mock.Arguments) {
-		close(started)
-		<-release
-	}).Return(nil)
+	worker := services.NewStripeSyncWorker(queue, fake)
+	// We set up the expectation but assert AFTER the drain. Before the drain,
+	// AssertNotCalled is what proves Execute did not perform the Stripe call.
+	fake.On("CreateSubscriptionPlanInStripe", mock.Anything).Return(nil)
 
-	hook := paymentHooks.NewStripeSubscriptionPlanHookWithService(fake)
+	hook := paymentHooks.NewStripeSubscriptionPlanHookWithQueue(queue)
 	plan := &models.SubscriptionPlan{
 		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:        "Test Plan",
-		PriceAmount: 1000, // > 0 so AfterCreate actually runs the Stripe call
+		PriceAmount: 1000, // > 0 so AfterCreate actually enqueues
 	}
 
 	ctx := &hooks.HookContext{
@@ -352,63 +398,19 @@ func TestStripeSubscriptionPlanHook_Execute_ReturnsBeforeStripeCompletes(t *test
 		NewEntity:  plan,
 	}
 
-	// ACT: time the Execute call. It must return promptly.
-	start := time.Now()
-	err := hook.Execute(ctx)
-	elapsed := time.Since(start)
-
-	// ASSERT: Execute returned quickly (< 100ms — very generous).
-	assert.NoError(t, err)
-	assert.Less(t, elapsed, 100*time.Millisecond,
-		"Execute must return immediately, took %v", elapsed)
-
-	// The goroutine has started and is blocked on release.
-	select {
-	case <-started:
-		// good — Stripe call is in progress in the background.
-	case <-time.After(2 * time.Second):
-		t.Fatal("goroutine never started — Stripe call did not run async")
-	}
-
-	// Release the goroutine and wait for completion deterministically.
-	close(release)
-	hook.(*paymentHooks.StripeSubscriptionPlanHook).WaitForAsyncSyncs()
-
-	fake.AssertExpectations(t)
-}
-
-// TestStripeSubscriptionPlanHook_Execute_RecoversFromPanic asserts that a
-// panic inside the Stripe service does NOT crash the goroutine or propagate
-// to the caller. WaitForAsyncSyncs must return normally even when the
-// goroutine panicked.
-func TestStripeSubscriptionPlanHook_Execute_RecoversFromPanic(t *testing.T) {
-	fake := &fakeStripeService{}
-	fake.On("CreateSubscriptionPlanInStripe", mock.Anything).Run(func(args mock.Arguments) {
-		panic("simulated stripe SDK nil-deref")
-	}).Return(nil)
-
-	hook := paymentHooks.NewStripeSubscriptionPlanHookWithService(fake)
-	plan := &models.SubscriptionPlan{
-		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:        "Panic Plan",
-		PriceAmount: 1000,
-	}
-
-	ctx := &hooks.HookContext{
-		EntityName: "SubscriptionPlan",
-		HookType:   hooks.AfterCreate,
-		NewEntity:  plan,
-	}
-
-	// Execute must return without panicking.
 	err := hook.Execute(ctx)
 	assert.NoError(t, err)
 
-	// WaitForAsyncSyncs must NOT panic — recover() in the goroutine must catch
-	// the panic from the Stripe call.
-	assert.NotPanics(t, func() {
-		hook.(*paymentHooks.StripeSubscriptionPlanHook).WaitForAsyncSyncs()
-	})
+	// Right after Execute: a pending row exists, but no Stripe call has happened.
+	pending, _ := queue.ListPending(10)
+	assert.Len(t, pending, 1, "Execute must enqueue exactly one row")
+	fake.AssertNotCalled(t, "CreateSubscriptionPlanInStripe", mock.Anything,
+		"Execute must not call Stripe directly — only the worker does")
 
+	// Now drive the worker — Stripe is called and the row drains.
+	_ = worker.ProcessOnce(context.Background())
 	fake.AssertExpectations(t)
+
+	pendingAfter, _ := queue.ListPending(10)
+	assert.Empty(t, pendingAfter, "row should drain after a successful worker pass")
 }
