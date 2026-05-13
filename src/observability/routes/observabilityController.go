@@ -60,6 +60,11 @@ func snapshot() map[string]any {
 			"update":  map[string]uint64{"success": m.StripeUpdateSuccess.Load(), "failure": m.StripeUpdateFailure.Load()},
 			"archive": map[string]uint64{"success": m.StripeArchiveSuccess.Load(), "failure": m.StripeArchiveFailure.Load()},
 			"panics":  m.StripeSyncPanic.Load(),
+			"queue": map[string]uint64{
+				"retry":         m.StripeQueueRetry.Load(),
+				"exhausted":     m.StripeQueueExhausted.Load(),
+				"pending_depth": m.StripeQueuePendingDepth.Load(),
+			},
 		},
 		"scenarios": map[string]any{
 			"setup_panics":             m.ScenarioSetupPanic.Load(),

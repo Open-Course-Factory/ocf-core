@@ -21,6 +21,14 @@ type observabilityMetrics struct {
 	// Stripe sync panic recovery
 	StripeSyncPanic atomic.Uint64
 
+	// Stripe sync queue (issue #327)
+	// - Retry: bumped on every MarkFailure
+	// - Exhausted: bumped when a row transitions to terminal state=failed
+	// - PendingDepth: gauge updated by the worker after each pass
+	StripeQueueRetry        atomic.Uint64
+	StripeQueueExhausted    atomic.Uint64
+	StripeQueuePendingDepth atomic.Uint64
+
 	// Scenario session setup failures
 	ScenarioSetupPanic           atomic.Uint64
 	ScenarioSetupFailed          atomic.Uint64

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"time"
@@ -13,6 +14,7 @@ import (
 	generator "soli/formations/src/generationEngine"
 	slidev "soli/formations/src/generationEngine/slidev_integration"
 	"soli/formations/src/payment"
+	paymentServices "soli/formations/src/payment/services"
 
 	authController "soli/formations/src/auth"
 	access "soli/formations/src/auth/access"
@@ -92,7 +94,21 @@ func main() {
 	// Initialize payment entities and hooks
 	// NOTE: Must be before InitDevelopmentData so that SubscriptionPlan entity
 	// is registered when assignFreeTrialPlan() runs during test user setup.
-	payment.InitPaymentEntities(sqldb.DB)
+	//
+	// The shared StripeSyncQueue is returned so the worker and the admin
+	// /admin/stripe/pending-syncs endpoint can be wired on the same instance.
+	stripeSyncQueue := payment.InitPaymentEntities(sqldb.DB)
+
+	// Start the StripeSyncWorker: a single goroutine that polls the queue and
+	// drains pending rows to Stripe. Survives ocf-core restarts via the queue.
+	// TODO(#327): wire a real shutdown signal handler (SIGTERM/SIGINT) and
+	// call stripeSyncWorker.Shutdown(10s) before r.Run returns; ocf-core does
+	// not yet have an orderly shutdown sequence. context.Background() means
+	// the worker only stops on process exit, which is acceptable today.
+	stripeSyncWorker := paymentServices.NewStripeSyncWorker(stripeSyncQueue, paymentServices.NewStripeService(sqldb.DB))
+	stripeSyncWorker.Start(context.Background())
+	defer stripeSyncWorker.Shutdown(10 * time.Second)
+	log.Println("✅ Stripe sync worker started")
 
 	// Setup development data (test users, default subscription plans)
 	initialization.InitDevelopmentData(sqldb.DB)
@@ -111,6 +127,7 @@ func main() {
 	scenarioController.RegisterScenarioPermissions(casdoor.Enforcer)
 	courseController.RegisterCoursePermissions(casdoor.Enforcer)
 	paymentController.RegisterPaymentPermissions(casdoor.Enforcer)
+	paymentController.RegisterAdminStripePermissions(casdoor.Enforcer)
 	organizationController.RegisterOrganizationPermissions(casdoor.Enforcer)
 	impersonationController.RegisterImpersonationPermissions(casdoor.Enforcer)
 	adminUsersController.RegisterPermissions(casdoor.Enforcer)
@@ -248,6 +265,11 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	// Initialize payment routes
 	payment.InitPaymentRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
+
+	// Admin Stripe queue visibility (admin only) — shares the queue instance
+	// constructed in InitPaymentEntities so the hook, worker, and endpoint all
+	// see the same durable rows.
+	paymentController.RegisterAdminStripeRoutes(apiGroup, sqldb.DB, stripeSyncQueue)
 
 	// Initialize Swagger documentation
 	initialization.InitSwagger(r, sqldb.DB)

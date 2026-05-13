@@ -6,12 +6,19 @@ import (
 
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/entityManagement/hooks"
+	paymentServices "soli/formations/src/payment/services"
 
 	"gorm.io/gorm"
 )
 
-// InitPaymentHooks enregistre tous les hooks de paiement
-func InitPaymentHooks(db *gorm.DB) {
+// InitPaymentHooks enregistre tous les hooks de paiement.
+//
+// Stripe sync flow (issue #327): the hook enqueues into a durable
+// StripeSyncQueue and a background StripeSyncWorker drains it. The queue is
+// constructed here and returned so main.go can wire the worker into the
+// process lifecycle (start at boot, shutdown on signal). The admin
+// /admin/stripe/pending-syncs endpoint shares the same queue instance.
+func InitPaymentHooks(db *gorm.DB) paymentServices.StripeSyncQueue {
 	log.Println("🔗 Initializing payment hooks...")
 
 	// Hook pour valider les features des plans (priority 5 - runs before Stripe)
@@ -22,8 +29,12 @@ func InitPaymentHooks(db *gorm.DB) {
 		log.Println("✅ Plan features validation hook registered")
 	}
 
+	// Stripe sync queue — shared between the hook (enqueues) and the worker
+	// (drains). Returned to main.go for worker + admin-endpoint wiring.
+	stripeSyncQueue := paymentServices.NewStripeSyncQueue(db)
+
 	// Hook pour synchroniser les SubscriptionPlan avec Stripe (priority 10)
-	stripeHook := NewStripeSubscriptionPlanHook(db)
+	stripeHook := NewStripeSubscriptionPlanHookWithQueue(stripeSyncQueue)
 	if err := hooks.GlobalHookRegistry.RegisterHook(stripeHook); err != nil {
 		log.Printf("❌ Failed to register Stripe hook: %v", err)
 	} else {
@@ -56,6 +67,7 @@ func InitPaymentHooks(db *gorm.DB) {
 	}
 
 	log.Println("🔗 Payment hooks initialization complete")
+	return stripeSyncQueue
 }
 
 // EnableStripeSync permet d'activer/désactiver la synchronisation Stripe
