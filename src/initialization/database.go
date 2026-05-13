@@ -110,6 +110,12 @@ func AutoMigrateAll(db *gorm.DB) {
 
 	// Payment entities
 	db.AutoMigrate(&paymentModels.SubscriptionPlan{})
+	// MR !239 (SSOT consolidation): persistent_sessions_enabled and
+	// max_persistent_sessions were duplicates of data_persistence_enabled /
+	// data_persistence_gb. The model fields were removed; AutoMigrate leaves
+	// orphan columns behind, so we explicitly drop them here. Idempotent —
+	// HasColumn returns false once the column is gone.
+	dropOrphanSubscriptionPlanColumns(db)
 	db.AutoMigrate(&paymentModels.SubscriptionBatch{})
 	db.AutoMigrate(&paymentModels.UserSubscription{})         // DEPRECATED in Phase 2 (kept for backward compat)
 	db.AutoMigrate(&paymentModels.OrganizationSubscription{}) // NEW: Phase 2 - Organization subscriptions
@@ -586,6 +592,30 @@ func BackfillSingleActiveOrgSubscription(db *gorm.DB) {
 // migrateGroupRoles harmonizes the old 4-level group role model (owner, admin,
 // assistant, member) into the new 3-level model (owner, manager, member).
 // Idempotent: only updates rows that still use the old role names.
+// dropOrphanSubscriptionPlanColumns drops columns that used to back removed
+// model fields. AutoMigrate adds columns but never drops them, so without
+// this we leave behind dead columns that confuse SELECTs and Stripe sync
+// (drift the SSOT). Idempotent: HasColumn returns false once the column is
+// gone, so re-runs are safe.
+//
+// MR !239 (SSOT consolidation): collapsed PersistentSessionsEnabled /
+// MaxPersistentSessions into DataPersistenceEnabled / DataPersistenceGB. The
+// two duplicate columns are dropped here.
+func dropOrphanSubscriptionPlanColumns(db *gorm.DB) {
+	orphans := []string{"persistent_sessions_enabled", "max_persistent_sessions"}
+	migrator := db.Migrator()
+	for _, col := range orphans {
+		if !migrator.HasColumn(&paymentModels.SubscriptionPlan{}, col) {
+			continue
+		}
+		if err := migrator.DropColumn(&paymentModels.SubscriptionPlan{}, col); err != nil {
+			log.Printf("[MIGRATION] failed to drop orphan column subscription_plans.%s: %v", col, err)
+			continue
+		}
+		log.Printf("[MIGRATION] dropped orphan column subscription_plans.%s", col)
+	}
+}
+
 func migrateGroupRoles(db *gorm.DB) {
 	sqldb := db.Session(&gorm.Session{})
 
@@ -834,8 +864,6 @@ func SeedPlanFeatures(db *gorm.DB) {
 		{Key: "command_history_retention_days", DisplayNameEn: "History Retention", DisplayNameFr: "Conservation de l'historique", Category: "terminal_limits", ValueType: "number", Unit: "days", DefaultValue: "0", IsActive: true},
 		{Key: "max_session_duration_minutes", DisplayNameEn: "Max Session Duration", DisplayNameFr: "Durée max de session", Category: "terminal_limits", ValueType: "number", Unit: "minutes", DefaultValue: "60", IsActive: true},
 		{Key: "max_concurrent_terminals", DisplayNameEn: "Max Concurrent Terminals", DisplayNameFr: "Terminaux simultanés max", Category: "terminal_limits", ValueType: "number", Unit: "count", DefaultValue: "1", IsActive: true},
-		{Key: "persistent_sessions_enabled", DisplayNameEn: "Persistent Sessions", DisplayNameFr: "Sessions persistantes", DescriptionEn: "Allow users on this plan to opt sessions into persistent storage (disk kept across stop/start cycles).", DescriptionFr: "Autoriser les utilisateurs de ce plan à choisir le mode persistant pour leurs sessions (disque conservé entre stop/start).", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "max_persistent_sessions", DisplayNameEn: "Max Persistent Sessions", DisplayNameFr: "Sessions persistantes max", DescriptionEn: "Maximum number of stopped sessions a user can keep on persistent storage at once (counts toward storage quota).", DescriptionFr: "Nombre maximum de sessions arrêtées qu'un utilisateur peut conserver en mode persistant simultanément (compte dans le quota de stockage).", Category: "terminal_limits", ValueType: "number", DefaultValue: "0", IsActive: true},
 
 		// Course limits (number)
 		{Key: "max_courses", DisplayNameEn: "Max Courses", DisplayNameFr: "Nombre de cours max", Category: "course_limits", ValueType: "number", Unit: "count", DefaultValue: "-1", IsActive: true},
