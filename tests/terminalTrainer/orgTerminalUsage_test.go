@@ -2,11 +2,13 @@ package terminalTrainer_tests
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -14,8 +16,9 @@ import (
 
 	orgModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
-	terminalController "soli/formations/src/terminalTrainer/routes"
 	"soli/formations/src/terminalTrainer/models"
+	terminalController "soli/formations/src/terminalTrainer/routes"
+	"soli/formations/src/terminalTrainer/services"
 )
 
 // makeOrgUsageRequest builds a Gin router and sends GET /organizations/:id/terminal-usage.
@@ -489,4 +492,291 @@ func TestGetOrgTerminalUsage_PlanLimitsFromSubscription(t *testing.T) {
 		"max_terminals should come from the organization's subscription plan")
 	assert.Equal(t, "Pro", resp["plan_name"],
 		"plan_name should match the subscription plan name")
+}
+
+// TestGetOrgTerminalUsage_PastExpiryNotCountedAsActive verifies the SSOT
+// alignment between the "active" (running display) count and the slot count:
+// both must exclude past-expiry rows. Without this guard, a session whose
+// status='active' but whose expires_at is in the past inflates active_terminals
+// while being correctly excluded from occupying_slots — producing inconsistent
+// numbers in the same dashboard (e.g. "1 active / 0 occupying"). This mirrors
+// the OccupiesSlotScope rule documented in src/terminalTrainer/models/terminal.go.
+func TestGetOrgTerminalUsage_PastExpiryNotCountedAsActive(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	org := createTestOrgForHistory(t, db, "owner1")
+	createTestOrgMember(t, db, org.ID, "owner1", orgModels.OrgRoleOwner)
+	createTestOrgMember(t, db, org.ID, "student1", orgModels.OrgRoleMember)
+
+	userKey, err := createTestUserKey(db, "student1")
+	require.NoError(t, err)
+
+	// A zombie terminal: status/state still say "active/running" but the
+	// session's expires_at is in the past. The proxy session is long gone;
+	// only the stale row remains.
+	zombie := &models.Terminal{
+		SessionID:         "zombie-active-" + uuid.New().String(),
+		UserID:            "student1",
+		Status:            "active",
+		State:             "running",
+		ExpiresAt:         time.Now().Add(-30 * time.Minute), // past expiry
+		InstanceType:      "test",
+		MachineSize:       "S",
+		UserTerminalKeyID: userKey.ID,
+		OrganizationID:    &org.ID,
+	}
+	require.NoError(t, db.Create(zombie).Error)
+
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "owner1")
+		c.Set("userRoles", []string{"member"})
+		c.Next()
+	})
+	router.GET("/organizations/:id/terminal-usage", ctrl.GetOrgTerminalUsage)
+
+	req := httptest.NewRequest("GET", "/organizations/"+org.ID.String()+"/terminal-usage", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	// Both counts must exclude past-expiry rows for SSOT alignment.
+	assert.Equal(t, float64(0), resp["active_terminals"],
+		"active_terminals must exclude past-expiry rows (SSOT alignment with OccupiesSlotScope)")
+	assert.Equal(t, float64(0), resp["occupying_slots"],
+		"occupying_slots already excludes past-expiry rows via OccupiesSlotScope")
+}
+
+// TestGetOrgTerminalUsage_FutureExpiryCountedAsActive is the regression guard
+// for the past-expiry fix: a still-valid running session MUST continue to be
+// counted as active. Ensures the SSOT alignment does not over-correct.
+func TestGetOrgTerminalUsage_FutureExpiryCountedAsActive(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	org := createTestOrgForHistory(t, db, "owner1")
+	createTestOrgMember(t, db, org.ID, "owner1", orgModels.OrgRoleOwner)
+	createTestOrgMember(t, db, org.ID, "student1", orgModels.OrgRoleMember)
+
+	userKey, err := createTestUserKey(db, "student1")
+	require.NoError(t, err)
+
+	live := &models.Terminal{
+		SessionID:         "live-active-" + uuid.New().String(),
+		UserID:            "student1",
+		Status:            "active",
+		State:             "running",
+		ExpiresAt:         time.Now().Add(1 * time.Hour), // future
+		InstanceType:      "test",
+		MachineSize:       "S",
+		UserTerminalKeyID: userKey.ID,
+		OrganizationID:    &org.ID,
+	}
+	require.NoError(t, db.Create(live).Error)
+
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "owner1")
+		c.Set("userRoles", []string{"member"})
+		c.Next()
+	})
+	router.GET("/organizations/:id/terminal-usage", ctrl.GetOrgTerminalUsage)
+
+	req := httptest.NewRequest("GET", "/organizations/"+org.ID.String()+"/terminal-usage", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, float64(1), resp["active_terminals"],
+		"a future-expiry running session must still be counted as active")
+	assert.Equal(t, float64(1), resp["occupying_slots"],
+		"a future-expiry running session must still occupy a slot")
+}
+
+// TestGetOrgTerminalUsage_DisplayNameResolvedFromCasdoor verifies that the
+// per-user breakdown resolves DisplayName + Email through the Casdoor lookup
+// seam instead of hardcoding DisplayName to the user_id (which is what the
+// previous implementation did — frontend renders `user.display_name` directly
+// without enrichment, so users saw raw UUIDs).
+//
+// The Casdoor lookup is exposed via the package-level
+// `services.LookupCasdoorUser` test seam (mirrors the pattern from
+// `usersRoutes.LookupCasdoorUser`). Tests swap the function to inject fake
+// user records without standing up a real Casdoor server.
+func TestGetOrgTerminalUsage_DisplayNameResolvedFromCasdoor(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	org := createTestOrgForHistory(t, db, "owner1")
+	createTestOrgMember(t, db, org.ID, "owner1", orgModels.OrgRoleOwner)
+	createTestOrgMember(t, db, org.ID, "student1", orgModels.OrgRoleMember)
+
+	userKey, err := createTestUserKey(db, "student1")
+	require.NoError(t, err)
+
+	terminal := &models.Terminal{
+		SessionID:         "name-test-" + uuid.New().String(),
+		UserID:            "student1",
+		Status:            "active",
+		State:             "running",
+		ExpiresAt:         time.Now().Add(1 * time.Hour),
+		InstanceType:      "test",
+		MachineSize:       "S",
+		UserTerminalKeyID: userKey.ID,
+		OrganizationID:    &org.ID,
+	}
+	require.NoError(t, db.Create(terminal).Error)
+
+	// Swap the Casdoor lookup seam to return a deterministic record for
+	// student1. Restore it on test exit so other tests stay isolated.
+	originalLookup := services.LookupCasdoorUserForOrgUsage
+	services.LookupCasdoorUserForOrgUsage = func(id string) (*casdoorsdk.User, error) {
+		if id == "student1" {
+			return &casdoorsdk.User{
+				Id:          "student1",
+				Name:        "alice",
+				DisplayName: "Alice Liddell",
+				Email:       "alice@example.com",
+			}, nil
+		}
+		return nil, fmt.Errorf("user not found")
+	}
+	t.Cleanup(func() { services.LookupCasdoorUserForOrgUsage = originalLookup })
+
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "owner1")
+		c.Set("userRoles", []string{"member"})
+		c.Next()
+	})
+	router.GET("/organizations/:id/terminal-usage", ctrl.GetOrgTerminalUsage)
+
+	req := httptest.NewRequest("GET", "/organizations/"+org.ID.String()+"/terminal-usage", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	users, ok := resp["users"].([]interface{})
+	require.True(t, ok, "users should be a JSON array")
+	require.Equal(t, 1, len(users))
+
+	entry := users[0].(map[string]interface{})
+	assert.Equal(t, "student1", entry["user_id"], "user_id must carry the Casdoor ID")
+	assert.Equal(t, "Alice Liddell", entry["display_name"],
+		"display_name must be resolved from Casdoor, not hardcoded to the user_id")
+	assert.Equal(t, "alice@example.com", entry["email"],
+		"email must be resolved from Casdoor")
+}
+
+// TestGetOrgTerminalUsage_DisplayNameFallbackChain verifies the fallback
+// behaviour when Casdoor returns an incomplete record (no DisplayName) or
+// fails the lookup entirely: DisplayName should chain through name -> email
+// -> user_id so users always get a sensible label even when Casdoor data is
+// missing.
+func TestGetOrgTerminalUsage_DisplayNameFallbackChain(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	org := createTestOrgForHistory(t, db, "owner1")
+	createTestOrgMember(t, db, org.ID, "owner1", orgModels.OrgRoleOwner)
+	createTestOrgMember(t, db, org.ID, "student-noname", orgModels.OrgRoleMember)
+	createTestOrgMember(t, db, org.ID, "student-missing", orgModels.OrgRoleMember)
+
+	userKey1, err := createTestUserKey(db, "student-noname")
+	require.NoError(t, err)
+	userKey2, err := createTestUserKey(db, "student-missing")
+	require.NoError(t, err)
+
+	for _, uid := range []string{"student-noname", "student-missing"} {
+		key := userKey1
+		if uid == "student-missing" {
+			key = userKey2
+		}
+		terminal := &models.Terminal{
+			SessionID:         "fallback-" + uid + "-" + uuid.New().String(),
+			UserID:            uid,
+			Status:            "active",
+			State:             "running",
+			ExpiresAt:         time.Now().Add(1 * time.Hour),
+			InstanceType:      "test",
+			MachineSize:       "S",
+			UserTerminalKeyID: key.ID,
+			OrganizationID:    &org.ID,
+		}
+		require.NoError(t, db.Create(terminal).Error)
+	}
+
+	originalLookup := services.LookupCasdoorUserForOrgUsage
+	services.LookupCasdoorUserForOrgUsage = func(id string) (*casdoorsdk.User, error) {
+		if id == "student-noname" {
+			// No DisplayName, but has email -> email used as label.
+			return &casdoorsdk.User{
+				Id:    "student-noname",
+				Email: "ghost@example.com",
+			}, nil
+		}
+		// student-missing: lookup fails -> fallback to user_id.
+		return nil, fmt.Errorf("not found")
+	}
+	t.Cleanup(func() { services.LookupCasdoorUserForOrgUsage = originalLookup })
+
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "owner1")
+		c.Set("userRoles", []string{"member"})
+		c.Next()
+	})
+	router.GET("/organizations/:id/terminal-usage", ctrl.GetOrgTerminalUsage)
+
+	req := httptest.NewRequest("GET", "/organizations/"+org.ID.String()+"/terminal-usage", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	users, ok := resp["users"].([]interface{})
+	require.True(t, ok)
+	require.Equal(t, 2, len(users))
+
+	byUser := make(map[string]map[string]interface{})
+	for _, u := range users {
+		entry := u.(map[string]interface{})
+		byUser[entry["user_id"].(string)] = entry
+	}
+
+	noname, ok := byUser["student-noname"]
+	require.True(t, ok)
+	assert.Equal(t, "ghost@example.com", noname["display_name"],
+		"when DisplayName is empty, email must be used as label")
+
+	missing, ok := byUser["student-missing"]
+	require.True(t, ok)
+	assert.Equal(t, "student-missing", missing["display_name"],
+		"when Casdoor lookup fails, user_id must be used as final fallback")
+	assert.Equal(t, "", missing["email"],
+		"failed lookup must leave email empty (not invent a value)")
 }

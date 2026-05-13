@@ -1778,6 +1778,19 @@ func (tts *terminalTrainerService) GetOrganizationTerminalSessions(orgID uuid.UU
 	return tts.repository.GetTerminalSessionsByOrganizationID(orgID)
 }
 
+// LookupCasdoorUserForOrgUsage is a swappable seam for the Casdoor user
+// lookup used by GetOrgTerminalUsage to enrich the per-user breakdown with
+// DisplayName + Email. Defaults to the package-level Casdoor SDK function;
+// tests replace it with a fake to avoid standing up a real Casdoor server.
+//
+// Mirrors the pattern used in src/auth/routes/usersRoutes/getCurrentUser.go
+// (LookupCasdoorUser). Resolution logically duplicates a slice-loop over
+// auth/services.UserService.GetUsersByIds, but importing auth/services here
+// would create a cycle (auth/services already imports this package). The
+// seam keeps the call site honest about graceful degradation without
+// introducing the cycle — see code comment in GetOrgTerminalUsage below.
+var LookupCasdoorUserForOrgUsage = casdoorsdk.GetUserByUserId
+
 // GetOrgTerminalUsage returns aggregated active terminal usage for an organization:
 // the org's effective plan limits, and a per-user breakdown of active terminal counts.
 func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.OrgTerminalUsageResponse, error) {
@@ -1803,14 +1816,30 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 	}
 
 	// 2. Count active terminals (what's running) per user — display field.
+	//
+	// SSOT alignment with models.OccupiesSlotScope: both predicates exclude
+	// past-expiry rows. Without this, a session whose status='active' but
+	// whose expires_at is in the past inflates active_terminals while being
+	// correctly excluded from occupying_slots (see the slot query below),
+	// producing inconsistent counts on the same dashboard (the per-second
+	// UI treats past-expiry as terminated, the dumb status-only query did
+	// not). expires_at is compared against time.Now() bound as a parameter
+	// — same dialect-portability + clock-locality rationale as
+	// OccupiesSlotScope.
+	//
+	// NOTE: this query intentionally narrows further than OccupiesSlotScope
+	// (status='active' only, not status IN ('active','stopped')) because
+	// "active_terminals" is the display field for what is currently running;
+	// the slot count below uses OccupiesSlotScope for quota semantics.
 	type userCount struct {
 		UserID      string
 		ActiveCount int64
 	}
 	var activeRows []userCount
 	err = tts.db.Table("terminals").
+		Where("organization_id = ? AND status = ? AND deleted_at IS NULL AND expires_at > ?",
+			orgID, "active", time.Now()).
 		Select("user_id, COUNT(*) as active_count").
-		Where("organization_id = ? AND status = ? AND deleted_at IS NULL", orgID, "active").
 		Group("user_id").
 		Scan(&activeRows).Error
 	if err != nil {
@@ -1873,16 +1902,56 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 		e.occupying = int(row.OccupyingCount)
 	}
 
+	// 5. Resolve DisplayName + Email per user via Casdoor. The Casdoor SDK
+	// has no bulk endpoint, so this is an N+1 loop. Acceptable for a
+	// dashboard with a handful of users on a ~30s auto-refresh; if the
+	// shape ever grows to hundreds of users, introduce caching at the
+	// seam. Fallback chain: DisplayName -> Name -> Email -> userID, so
+	// users with missing or partial Casdoor records still get a sensible
+	// label.
+	//
+	// SSOT note: this mirrors authServices.UserService.GetUsersByIds
+	// (auth/services/userService.go) which loops over GetUserByUserId
+	// with the same graceful-degradation contract. We cannot reuse that
+	// helper here because auth/services already imports this package
+	// (would create an import cycle). The seam below keeps the resolution
+	// rule visible in one place. If a third caller appears, lift this
+	// loop into a shared helper in a leaf package both can import.
+	type userInfo struct {
+		DisplayName string
+		Email       string
+	}
+	infoByUser := make(map[string]userInfo, len(byUser))
+	for userID := range byUser {
+		user, lookupErr := LookupCasdoorUserForOrgUsage(userID)
+		if lookupErr != nil || user == nil {
+			infoByUser[userID] = userInfo{DisplayName: userID, Email: ""}
+			continue
+		}
+		label := user.DisplayName
+		if label == "" {
+			label = user.Name
+		}
+		if label == "" {
+			label = user.Email
+		}
+		if label == "" {
+			label = userID
+		}
+		infoByUser[userID] = userInfo{DisplayName: label, Email: user.Email}
+	}
+
 	totalActive := 0
 	totalOccupying := 0
 	users := make([]dto.OrgTerminalUsageUser, 0, len(byUser))
 	for userID, e := range byUser {
 		totalActive += e.active
 		totalOccupying += e.occupying
+		info := infoByUser[userID]
 		users = append(users, dto.OrgTerminalUsageUser{
 			UserID:         userID,
-			DisplayName:    userID, // display name enrichment happens in the frontend
-			Email:          "",
+			DisplayName:    info.DisplayName,
+			Email:          info.Email,
 			ActiveCount:    e.active,
 			OccupyingSlots: e.occupying,
 		})

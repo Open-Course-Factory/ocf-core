@@ -10,6 +10,7 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/models"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -18,6 +19,15 @@ import (
 var sharedTestDB *gorm.DB
 
 func TestMain(m *testing.M) {
+	// Initialize Casdoor SDK with a dummy config so package-level lookup
+	// functions don't panic on a nil client when production code calls
+	// casdoorsdk.GetUserByUserId. The HTTP call will fail gracefully and
+	// the code falls back to its userID/email fallback chain — which is
+	// the expected behaviour under unit tests that don't stand up a real
+	// Casdoor server. Tests that need a specific Casdoor record swap the
+	// per-feature seam (e.g. services.LookupCasdoorUserForOrgUsage).
+	casdoorsdk.InitConfig("http://localhost:0", "dummy-endpoint", "dummy-client", "dummy-secret", "dummy-org", "dummy-app")
+
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
