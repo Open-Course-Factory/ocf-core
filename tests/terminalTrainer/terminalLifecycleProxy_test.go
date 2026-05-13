@@ -297,6 +297,72 @@ func TestStartSession_Success(t *testing.T) {
 	assert.False(t, updated.LastStartedAt.IsZero(), "LastStartedAt should be set")
 }
 
+// TestStartSession_SyncsExpiresAtFromResponse verifies that StartSession reads
+// the freshly-computed expires_at from the tt-backend response body and mirrors
+// it into terminal.ExpiresAt.
+//
+// Bug shape (before fix): tt-backend resets the instance expiry server-side on
+// resume but the response body only carried state/last_started_at/ip. ocf-core
+// kept terminal.ExpiresAt at the stale (past) value, so the frontend rendered
+// "Session expirée" on a successfully-resumed terminal until the next sync poll.
+//
+// Fix shape: the new response body (tt-backend MR for #108) includes expires_at
+// (unix seconds). startSessionInAPI now decodes it, StartSession mirrors it
+// into the local row. This test seeds an already-past ExpiresAt, has the fake
+// tt-backend return a future expires_at, and asserts the row was updated.
+func TestStartSession_SyncsExpiresAtFromResponse(t *testing.T) {
+	// Compute a deterministic future expiry the fake server will return.
+	futureExpiryUnix := time.Now().Add(30 * time.Minute).Unix()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/start"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"state":           "running",
+				"last_started_at": time.Now().Unix(),
+				"ip":              "10.0.0.99",
+				"expires_at":      futureExpiryUnix,
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	t.Setenv("TERMINAL_TRAINER_URL", srv.URL)
+	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-admin-key")
+	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+
+	db := freshTestDB(t)
+	userID := "owner-start-syncexpiry-" + uuid.New().String()
+	seedActiveSubscription(t, db, userID)
+
+	// Seed a terminal whose ExpiresAt is in the past (this is exactly the
+	// situation the user hits: stopped session, original expiry elapsed,
+	// they click Resume).
+	pastExpiry := time.Now().Add(-10 * time.Minute)
+	terminal, err := createTestTerminal(db, userID, "stopped", pastExpiry)
+	require.NoError(t, err)
+	terminal.State = "stopped"
+	require.NoError(t, db.Save(terminal).Error)
+
+	svc := services.NewTerminalTrainerService(db)
+	require.NoError(t, svc.StartSession(terminal.SessionID))
+
+	// The local row's ExpiresAt MUST be updated to the value returned by
+	// tt-backend. Without the fix it stays in the past.
+	var refreshed models.Terminal
+	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&refreshed).Error)
+	gotUnix := refreshed.ExpiresAt.Unix()
+	if gotUnix != futureExpiryUnix {
+		t.Errorf("expected terminal.ExpiresAt to be synced to %d (future), got %d (past=%d)",
+			futureExpiryUnix, gotUnix, pastExpiry.Unix())
+	}
+	assert.True(t, refreshed.ExpiresAt.After(time.Now()),
+		"after resume, ExpiresAt must be in the future (was %v)", refreshed.ExpiresAt)
+}
+
 // TestStartSession_NotFound returns a wrapped error referencing the session ID
 // when the local row doesn't exist (no tt-backend call should be made).
 func TestStartSession_NotFound(t *testing.T) {

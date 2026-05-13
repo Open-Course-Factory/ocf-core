@@ -302,6 +302,13 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 
 // StartSession reprend une session précédemment arrêtée via l'endpoint
 // /sessions/{id}/start de tt-backend. Le disque est restauré côté backend.
+//
+// La réponse de tt-backend porte le nouveau expires_at (unix seconds) calculé
+// côté backend après réinitialisation du timer d'auto-stop. On le mire dans
+// terminal.ExpiresAt pour que le front voie immédiatement la nouvelle échéance
+// (sinon il affiche "Session expirée" sur une session qui vient d'être reprise,
+// jusqu'à la prochaine synchro). Si tt-backend ne renvoie pas d'expires_at
+// (instance sans expiry fini), on conserve la valeur actuelle.
 func (tts *terminalTrainerService) StartSession(sessionID string) error {
 	utils.Debug("StartSession called for session %s", sessionID)
 
@@ -310,7 +317,8 @@ func (tts *terminalTrainerService) StartSession(sessionID string) error {
 		return fmt.Errorf("session not found: %w", err)
 	}
 
-	if err := tts.startSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey); err != nil {
+	expiresAtUnix, err := tts.startSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey)
+	if err != nil {
 		return fmt.Errorf("failed to start session in Terminal Trainer API: %w", err)
 	}
 
@@ -318,6 +326,9 @@ func (tts *terminalTrainerService) StartSession(sessionID string) error {
 	terminal.State = "running"
 	terminal.LastStartedAt = time.Now()
 	terminal.IdleUntil = nil
+	if expiresAtUnix > 0 {
+		terminal.ExpiresAt = time.Unix(expiresAtUnix, 0)
+	}
 	if err := tts.repository.UpdateTerminalSession(terminal); err != nil {
 		utils.Error("Failed to update session %s after start: %v", sessionID, err)
 		return err
@@ -390,7 +401,11 @@ func (tts *terminalTrainerService) stopSessionInAPI(sessionID, userAPIKey string
 }
 
 // startSessionInAPI appelle POST /sessions/{id}/start sur tt-backend.
-func (tts *terminalTrainerService) startSessionInAPI(sessionID, userAPIKey string) error {
+// Retourne le nouveau expires_at (unix seconds) tel que tt-backend l'a recalculé
+// au redémarrage de l'instance. Retourne 0 si le champ est absent (instance
+// sans expiry fini côté backend) — l'appelant doit alors conserver la valeur
+// locale actuelle.
+func (tts *terminalTrainerService) startSessionInAPI(sessionID, userAPIKey string) (int64, error) {
 	url := fmt.Sprintf("%s/%s/sessions/%s/start", tts.baseURL, tts.apiVersion, sessionID)
 
 	utils.Debug("startSessionInAPI - calling %s", url)
@@ -398,8 +413,13 @@ func (tts *terminalTrainerService) startSessionInAPI(sessionID, userAPIKey strin
 	opts := utils.DefaultHTTPClientOptions()
 	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
 
-	_, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, nil, opts)
-	return err
+	var resp struct {
+		ExpiresAt int64 `json:"expires_at,omitempty"`
+	}
+	if err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, nil, &resp, opts); err != nil {
+		return 0, err
+	}
+	return resp.ExpiresAt, nil
 }
 
 // deleteSessionInAPI appelle DELETE /sessions/{id} sur tt-backend.
