@@ -35,7 +35,11 @@ func (fm *FeatureMiddleware) RequireFeature(featureName string) gin.HandlerFunc 
 			return
 		}
 
-		result, err := fm.effectivePlanService.GetUserEffectivePlan(userID)
+		// nil orgID: feature-availability gate runs at request entry before any
+		// org context is known. Falls back to the user's globally highest-priority
+		// plan — the right policy for "does ANY of this user's plans include
+		// feature X?".
+		result, err := fm.effectivePlanService.GetUserEffectivePlan(userID, nil)
 		if err != nil {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,

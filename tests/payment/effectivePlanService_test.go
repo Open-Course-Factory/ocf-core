@@ -119,7 +119,7 @@ func TestGetUserEffectivePlan_PersonalOnly(t *testing.T) {
 	createUserSubscription(t, db, userID, trialPlan)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlan(userID)
+	result, err := svc.GetUserEffectivePlan(userID, nil)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -138,7 +138,7 @@ func TestGetUserEffectivePlan_OrgOnly(t *testing.T) {
 	createOrgWithSubscription(t, db, "org-pro", userID, proPlan)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlan(userID)
+	result, err := svc.GetUserEffectivePlan(userID, nil)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -160,7 +160,7 @@ func TestGetUserEffectivePlan_BothPersonalAndOrg_OrgWins(t *testing.T) {
 	createOrgWithSubscription(t, db, "org-pro", userID, proPlan)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlan(userID)
+	result, err := svc.GetUserEffectivePlan(userID, nil)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -182,7 +182,7 @@ func TestGetUserEffectivePlan_BothPersonalAndOrg_PersonalWins(t *testing.T) {
 	createOrgWithSubscription(t, db, "org-pro", userID, proPlan)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlan(userID)
+	result, err := svc.GetUserEffectivePlan(userID, nil)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -198,7 +198,7 @@ func TestGetUserEffectivePlan_NoPlan(t *testing.T) {
 	userID := "user-no-plan"
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlan(userID)
+	result, err := svc.GetUserEffectivePlan(userID, nil)
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -216,7 +216,7 @@ func TestGetUserEffectivePlan_MultipleOrgs(t *testing.T) {
 	createOrgWithSubscription(t, db, "org-pro", userID, proPlan)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlan(userID)
+	result, err := svc.GetUserEffectivePlan(userID, nil)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -241,7 +241,7 @@ func TestGetUserEffectivePlan_EqualPriority_PersonalWins(t *testing.T) {
 	createOrgWithSubscription(t, db, "equal-org", userID, orgPlan)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlan(userID)
+	result, err := svc.GetUserEffectivePlan(userID, nil)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -262,7 +262,7 @@ func TestCheckEffectiveUsageLimit_ConcurrentTerminals_UnderLimit(t *testing.T) {
 	// No active terminals inserted — current usage = 0
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -286,7 +286,7 @@ func TestCheckEffectiveUsageLimit_ConcurrentTerminals_AtLimit(t *testing.T) {
 	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -311,7 +311,7 @@ func TestCheckEffectiveUsageLimit_Unlimited(t *testing.T) {
 	}
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -329,7 +329,7 @@ func TestCheckEffectiveUsageLimit_NoSubscription(t *testing.T) {
 
 	// No subscription created — should return an error
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.Error(t, err)
 	assert.Nil(t, check)
@@ -349,7 +349,7 @@ func TestCheckEffectiveUsageLimit_WithinLimit_WithExistingTerminals(t *testing.T
 	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -373,7 +373,7 @@ func TestCheckEffectiveUsageLimit_DeletedTerminalsNotCounted(t *testing.T) {
 	db.Exec("INSERT INTO terminals (id, user_id, status, deleted_at) VALUES (?, ?, ?, ?)", uuid.New().String(), userID, "active", time.Now())
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -404,7 +404,7 @@ func TestCheckEffectiveUsageLimit_StoppedCountedExpiredNotCounted(t *testing.T) 
 	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "expired")
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -431,7 +431,7 @@ func TestCheckEffectiveUsageLimit_OrgPlan(t *testing.T) {
 	}
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)

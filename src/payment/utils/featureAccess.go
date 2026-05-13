@@ -13,7 +13,11 @@ import (
 // This is a helper function that delegates to EffectivePlanService.
 func GetUserEffectiveFeatures(db *gorm.DB, userID string) (*models.SubscriptionPlan, error) {
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlan(userID)
+	// nil orgID: these utility helpers run outside any HTTP request and have
+	// no org context to pass — fall back to the user's globally highest-priority
+	// plan. Callers that DO have an org context should use EffectivePlanService
+	// directly with the org ID.
+	result, err := svc.GetUserEffectivePlan(userID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +28,11 @@ func GetUserEffectiveFeatures(db *gorm.DB, userID string) (*models.SubscriptionP
 // (unified resolution: org subscription with personal fallback).
 func CanUserAccessFeature(db *gorm.DB, userID string, feature string) (bool, error) {
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlan(userID)
+	// nil orgID: these utility helpers run outside any HTTP request and have
+	// no org context to pass — fall back to the user's globally highest-priority
+	// plan. Callers that DO have an org context should use EffectivePlanService
+	// directly with the org ID.
+	result, err := svc.GetUserEffectivePlan(userID, nil)
 	if err != nil {
 		return false, nil // no plan → no access (not an error for callers)
 	}
@@ -48,7 +56,11 @@ func GetUserOrganizationWithFeature(db *gorm.DB, userID string, feature string) 
 // (unified resolution: org subscription with personal fallback).
 func GetUserEffectiveLimits(db *gorm.DB, userID string) (*EffectiveLimits, error) {
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlan(userID)
+	// nil orgID: these utility helpers run outside any HTTP request and have
+	// no org context to pass — fall back to the user's globally highest-priority
+	// plan. Callers that DO have an org context should use EffectivePlanService
+	// directly with the org ID.
+	result, err := svc.GetUserEffectivePlan(userID, nil)
 	if err != nil {
 		return nil, err
 	}

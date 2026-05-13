@@ -21,7 +21,7 @@ func TestCheckEffectiveUsageLimit_Source_Personal(t *testing.T) {
 	createUserSubscription(t, db, userID, plan)
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -39,7 +39,7 @@ func TestCheckEffectiveUsageLimit_Source_Organization(t *testing.T) {
 	createOrgWithSubscription(t, db, "source-test-org", userID, orgPlan)
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -62,7 +62,7 @@ func TestCheckEffectiveUsageLimit_Source_OrgWinsOverPersonal(t *testing.T) {
 	createOrgWithSubscription(t, db, "source-enterprise-org", userID, orgPlan)
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -85,7 +85,7 @@ func TestCheckEffectiveUsageLimit_Source_PersonalWinsOverOrg(t *testing.T) {
 	createOrgWithSubscription(t, db, "source-basic-org", userID, orgPlan)
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -106,7 +106,7 @@ func TestCheckEffectiveUsageLimit_Source_LimitExceeded_Personal(t *testing.T) {
 	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -131,7 +131,7 @@ func TestCheckEffectiveUsageLimit_Source_LimitExceeded_Organization(t *testing.T
 		uuid.New().String(), userID, "active", org.ID.String())
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -146,7 +146,7 @@ func TestCheckEffectiveUsageLimit_NoSubscription_ReturnsError(t *testing.T) {
 	userID := "user-no-subscription"
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.Error(t, err)
 	assert.Nil(t, check)

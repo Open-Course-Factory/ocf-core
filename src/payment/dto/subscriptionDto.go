@@ -315,6 +315,12 @@ type SubscriptionAnalyticsOutput struct {
 type UsageLimitCheckInput struct {
 	MetricType string `binding:"required" json:"metric_type"`
 	Increment  int64  `json:"increment"` // Combien on veut ajouter
+	// OrganizationID scopes the limit check to a specific org context. When set,
+	// the gate uses THAT org's plan (matching the launcher's display path). When
+	// empty, the gate falls back to the user's globally highest-priority plan —
+	// reserved for callers that genuinely have no org context.
+	// See issue #334 / MR !239 for the launcher-vs-gate mismatch this prevents.
+	OrganizationID *string `json:"organization_id,omitempty"`
 }
 
 type UsageLimitCheckOutput struct {

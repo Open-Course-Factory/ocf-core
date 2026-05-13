@@ -132,7 +132,7 @@ func TestGetUserEffectivePlanForOrg_NilOrg_FallsBackToGlobal(t *testing.T) {
 	createUserSubscription(t, db, userID, proPlan)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlanForOrg(userID, nil)
+	result, err := svc.GetUserEffectivePlan(userID, nil)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -152,7 +152,7 @@ func TestGetUserEffectivePlanForOrg_PersonalOrg_ReturnsPersonalPlan(t *testing.T
 	createOrgWithSubscriptionAndType(t, db, "my-team", userID, teamPlan, organizationModels.OrgTypeTeam)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlanForOrg(userID, &personalOrg.ID)
+	result, err := svc.GetUserEffectivePlan(userID, &personalOrg.ID)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -174,7 +174,7 @@ func TestGetUserEffectivePlanForOrg_TeamOrg_ReturnsOrgPlan(t *testing.T) {
 	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "my-team", userID, teamPlan, organizationModels.OrgTypeTeam)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlanForOrg(userID, &teamOrg.ID)
+	result, err := svc.GetUserEffectivePlan(userID, &teamOrg.ID)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -193,7 +193,7 @@ func TestGetUserEffectivePlanForOrg_PersonalOrg_NoPersonalSub_Error(t *testing.T
 	personalOrg := createPersonalOrgWithoutSubscription(t, db, "my-personal", userID)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlanForOrg(userID, &personalOrg.ID)
+	result, err := svc.GetUserEffectivePlan(userID, &personalOrg.ID)
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -208,7 +208,7 @@ func TestGetUserEffectivePlanForOrg_TeamOrg_NoSubscription_NoPersonalSub_Error(t
 	teamOrg := createTeamOrgWithoutSubscription(t, db, "my-team", userID)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlanForOrg(userID, &teamOrg.ID)
+	result, err := svc.GetUserEffectivePlan(userID, &teamOrg.ID)
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -222,7 +222,7 @@ func TestGetUserEffectivePlanForOrg_NonexistentOrg_Error(t *testing.T) {
 	fakeOrgID := uuid.New()
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlanForOrg(userID, &fakeOrgID)
+	result, err := svc.GetUserEffectivePlan(userID, &fakeOrgID)
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -247,7 +247,7 @@ func TestCheckEffectiveUsageLimitForOrg_TeamOrg_UsesOrgPlanLimits(t *testing.T) 
 		uuid.New().String(), userID, "active", teamOrg.ID.String())
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimitForOrg(userID, &teamOrg.ID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, &teamOrg.ID, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -278,7 +278,7 @@ func TestGetUserEffectivePlanForOrg_NonMember_TeamOrg_ShouldRejectAccess(t *test
 	// They should NOT be able to access this org's plan.
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlanForOrg(attackerUserID, &teamOrg.ID)
+	result, err := svc.GetUserEffectivePlan(attackerUserID, &teamOrg.ID)
 
 	// EXPECTED: error indicating the user is not a member of the org
 	// CURRENT BUG: returns the org's premium plan without any membership check
@@ -308,7 +308,7 @@ func TestCheckEffectiveUsageLimitForOrg_NonMember_ShouldRejectAccess(t *testing.
 	// attackerUserID is NOT a member — should not be able to check limits against this org
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimitForOrg(attackerUserID, &teamOrg.ID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(attackerUserID, &teamOrg.ID, "concurrent_terminals", 1)
 
 	// EXPECTED: error indicating the user is not a member of the org
 	// CURRENT BUG: returns the org's generous limits (100 terminals) for the attacker
@@ -325,7 +325,7 @@ func TestCheckEffectiveUsageLimitForOrg_NilOrg_FallsBackToGlobal(t *testing.T) {
 	createUserSubscription(t, db, userID, plan)
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimitForOrg(userID, nil, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)

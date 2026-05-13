@@ -8,7 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	groupModels "soli/formations/src/groups/models"
+	orgModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
@@ -156,8 +158,28 @@ func (m *capturingTTService) StartComposedSession(userID string, input ttDto.Cre
 func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 	db := setupTestDB(t)
 
-	// Create an organization ID for the scenario
+	// Create the team organization the scenario will be scoped to. Bulk start
+	// now resolves the member's plan with scenario.OrganizationID as context
+	// (#334 — gate/display SSOT), so the org row and member row must exist
+	// for plan resolution to succeed.
 	orgID := uuid.New()
+	userID := "org-backend-user1"
+	require.NoError(t, db.Omit("Metadata").Create(&orgModels.Organization{
+		BaseModel:        entityManagementModels.BaseModel{ID: orgID},
+		Name:             "scenario-org",
+		DisplayName:      "Scenario Org",
+		OwnerUserID:      userID,
+		IsActive:         true,
+		OrganizationType: orgModels.OrgTypeTeam,
+	}).Error)
+	require.NoError(t, db.Omit("Metadata").Create(&orgModels.OrganizationMember{
+		BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID: orgID,
+		UserID:         userID,
+		Role:           "owner",
+		JoinedAt:       time.Now(),
+		IsActive:       true,
+	}).Error)
 
 	// Create scenario WITH OrganizationID and steps
 	scenario := models.Scenario{
@@ -193,12 +215,13 @@ func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 
 	// Create group with 1 member
 	groupID := uuid.New()
-	userID := "org-backend-user1"
 	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
 		GroupID: groupID, UserID: userID, Role: "member", JoinedAt: time.Now(), IsActive: true,
 	}).Error)
 
-	// Create active subscription for the user
+	// Create active personal subscription for the user. The team org has no
+	// subscription, so resolveForOrg will fall back to this personal plan
+	// (IsFallback=true) — still a successful resolution.
 	require.NoError(t, db.Create(&paymentModels.UserSubscription{
 		UserID:             userID,
 		SubscriptionPlanID: plan.ID,

@@ -28,7 +28,7 @@ func TestEffectivePlanService_TeamOrgNoSubscription_FallsBackToPersonal(t *testi
 	teamOrg := createTeamOrgWithoutSubscription(t, db, "team-no-sub", userID)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlanForOrg(userID, &teamOrg.ID)
+	result, err := svc.GetUserEffectivePlan(userID, &teamOrg.ID)
 
 	// Should succeed (fallback), not error
 	assert.NoError(t, err, "should fall back to personal subscription, not error")
@@ -60,7 +60,7 @@ func TestEffectivePlanService_TeamOrgWithSubscription_NoFallback(t *testing.T) {
 	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "team-with-sub", userID, teamPlan, organizationModels.OrgTypeTeam)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlanForOrg(userID, &teamOrg.ID)
+	result, err := svc.GetUserEffectivePlan(userID, &teamOrg.ID)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -90,7 +90,7 @@ func TestEffectivePlanService_PersonalOrg_NoFallback(t *testing.T) {
 	personalOrg := createPersonalOrgWithoutSubscription(t, db, "my-personal-org", userID)
 
 	svc := services.NewEffectivePlanService(db)
-	result, err := svc.GetUserEffectivePlanForOrg(userID, &personalOrg.ID)
+	result, err := svc.GetUserEffectivePlan(userID, &personalOrg.ID)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)

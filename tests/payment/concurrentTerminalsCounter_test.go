@@ -59,7 +59,7 @@ func TestConcurrentTerminalsCounter_StoppedSessionStillOccupiesSlot(t *testing.T
 		uuid.New().String(), userID, "stopped", "stopped")
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, check)
@@ -104,7 +104,7 @@ func TestConcurrentTerminalsCounter_StopStartCycleBypass(t *testing.T) {
 	db.Exec("INSERT INTO terminals (id, user_id, status, state) VALUES (?, ?, ?, ?)",
 		runningID, userID, "active", "running")
 
-	check, err := svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 	assert.NoError(t, err)
 	assert.False(t, check.Allowed, "user with 1 running terminal on cap=1 must be denied")
 
@@ -112,7 +112,7 @@ func TestConcurrentTerminalsCounter_StopStartCycleBypass(t *testing.T) {
 	db.Exec("UPDATE terminals SET status = ?, state = ? WHERE id = ?",
 		"stopped", "stopped", runningID)
 
-	check, err = svc.CheckEffectiveUsageLimit(userID, "concurrent_terminals", 1)
+	check, err = svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 	assert.NoError(t, err)
 
 	// The bug: after stopping, the counter drops to 0/1 and the user is

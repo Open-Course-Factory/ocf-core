@@ -964,7 +964,7 @@ func (tts *terminalTrainerService) GetBackendsForContext(orgID uuid.UUID, userID
 
 	// No org config → resolve the user's effective plan for this org to get plan-level backends
 	effectivePlanService := paymentServices.NewEffectivePlanService(tts.db)
-	result, err := effectivePlanService.GetUserEffectivePlanForOrg(userID, &orgID)
+	result, err := effectivePlanService.GetUserEffectivePlan(userID, &orgID)
 	if err != nil || result == nil || result.Plan == nil {
 		// No plan resolved — fall back to system default
 		return tts.GetBackendsForOrganization(orgID)
@@ -1771,7 +1771,7 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 	}
 
 	orgIDPtr := orgID
-	planResult, err := effectivePlanSvc.GetUserEffectivePlanForOrg(org.OwnerUserID, &orgIDPtr)
+	planResult, err := effectivePlanSvc.GetUserEffectivePlan(org.OwnerUserID, &orgIDPtr)
 
 	planName := "unknown"
 	maxTerminals := 0

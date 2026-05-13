@@ -510,8 +510,13 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 					composedInput.PersistenceMode = "ephemeral"
 				}
 
-				// Resolve the member's effective subscription plan
-				planResult, planErr := paymentServices.NewEffectivePlanService(s.db).GetUserEffectivePlan(member.UserID)
+				// Resolve the member's effective subscription plan, scoping it to
+				// the scenario's organization when present so the plan matches the
+				// org context the bulk-start is running in (#334 — gate/display
+				// SSOT). scenario.OrganizationID is nil for platform-wide scenarios,
+				// which correctly falls back to the member's globally highest-priority
+				// plan.
+				planResult, planErr := paymentServices.NewEffectivePlanService(s.db).GetUserEffectivePlan(member.UserID, scenario.OrganizationID)
 				if planErr != nil {
 					utils.Warn("BulkStartScenario - Failed to resolve plan for user %s: %v", member.UserID, planErr)
 					mu.Lock()

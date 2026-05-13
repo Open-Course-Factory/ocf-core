@@ -299,7 +299,7 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 	}
 
 	// Use unified effective plan resolution (org-scoped if org context provided)
-	result, err := sc.effectivePlanService.GetUserEffectivePlanForOrg(userId, orgID)
+	result, err := sc.effectivePlanService.GetUserEffectivePlan(userId, orgID)
 	if err != nil {
 		// This handles the case where user returns from checkout before webhook fires
 		utils.Debug("No effective plan found for user %s (org: %v), attempting sync from Stripe...", userId, orgID)
@@ -312,7 +312,7 @@ func (sc *userSubscriptionController) GetUserSubscription(ctx *gin.Context) {
 				syncResult.CreatedSubscriptions+syncResult.UpdatedSubscriptions, userId)
 
 			// Retry after sync
-			result, err = sc.effectivePlanService.GetUserEffectivePlanForOrg(userId, orgID)
+			result, err = sc.effectivePlanService.GetUserEffectivePlan(userId, orgID)
 		}
 	}
 
@@ -796,8 +796,24 @@ func (sc *userSubscriptionController) CheckUsageLimit(ctx *gin.Context) {
 		return
 	}
 
+	// Parse optional organization_id so the gate uses the same plan as the
+	// launcher's display path (#334 — gate previously resolved a different plan
+	// than the dashboard when the user had both personal and org subscriptions).
+	var orgID *uuid.UUID
+	if input.OrganizationID != nil && *input.OrganizationID != "" {
+		parsed, parseErr := uuid.Parse(*input.OrganizationID)
+		if parseErr != nil {
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: "Invalid organization_id format",
+			})
+			return
+		}
+		orgID = &parsed
+	}
+
 	// Vérifier les limites via le service effectif (prend en compte personal + org)
-	result, err := sc.effectivePlanService.CheckEffectiveUsageLimit(userId, input.MetricType, input.Increment)
+	result, err := sc.effectivePlanService.CheckEffectiveUsageLimit(userId, orgID, input.MetricType, input.Increment)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -826,23 +842,24 @@ func (sc *userSubscriptionController) CheckUsageLimit(ctx *gin.Context) {
 func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
-	// Get effective plan for limit values (org-context-aware)
+	// Get effective plan for limit values (org-context-aware).
+	// nil orgID falls back to globally highest-priority plan.
 	var effectiveResult *services.EffectivePlanResult
 	var orgID string
+	var orgIDParsed *uuid.UUID
 	if orgIDStr := ctx.Query("organization_id"); orgIDStr != "" {
-		if parsed, err := uuid.Parse(orgIDStr); err == nil {
-			orgID = orgIDStr
-			effectiveResult, _ = sc.effectivePlanService.GetUserEffectivePlanForOrg(userId, &parsed)
-		} else {
+		parsed, err := uuid.Parse(orgIDStr)
+		if err != nil {
 			ctx.JSON(http.StatusBadRequest, &errors.APIError{
 				ErrorCode:    http.StatusBadRequest,
 				ErrorMessage: "Invalid organization_id format",
 			})
 			return
 		}
-	} else {
-		effectiveResult, _ = sc.effectivePlanService.GetUserEffectivePlan(userId)
+		orgID = orgIDStr
+		orgIDParsed = &parsed
 	}
+	effectiveResult, _ = sc.effectivePlanService.GetUserEffectivePlan(userId, orgIDParsed)
 
 	// Get usage metrics scoped to org context
 	usageMetrics, err := sc.subscriptionService.GetUserUsageMetrics(userId, orgID)

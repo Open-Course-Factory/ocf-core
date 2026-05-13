@@ -132,7 +132,7 @@ func InjectEffectivePlan(effectivePlanService services.EffectivePlanService, db 
 			}
 		}
 
-		result, err := effectivePlanService.GetUserEffectivePlanForOrg(userID, orgID)
+		result, err := effectivePlanService.GetUserEffectivePlan(userID, orgID)
 		if err != nil {
 			// Admin bypass: if plan resolution failed (e.g. admin is not a member
 			// of the org), resolve the org's subscription directly.
@@ -242,7 +242,7 @@ func CheckLimit(effectivePlanService services.EffectivePlanService, db *gorm.DB,
 					orgID = &parsed
 				}
 			}
-			limitCheck, err = effectivePlanService.CheckEffectiveUsageLimitForOrg(userID, orgID, metricType, 1)
+			limitCheck, err = effectivePlanService.CheckEffectiveUsageLimit(userID, orgID, metricType, 1)
 		}
 
 		if err != nil {

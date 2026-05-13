@@ -1758,7 +1758,7 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 	effectivePlanService := paymentServices.NewEffectivePlanService(sc.db)
 	var allowedSizeSet map[string]bool
 	var planAllowsAllSizes bool
-	planResult, planErr := effectivePlanService.GetUserEffectivePlanForOrg(userID, orgID)
+	planResult, planErr := effectivePlanService.GetUserEffectivePlan(userID, orgID)
 	if planErr == nil && planResult != nil && planResult.Plan != nil {
 		allowedSizeSet = make(map[string]bool, len(planResult.Plan.AllowedMachineSizes))
 		for _, s := range planResult.Plan.AllowedMachineSizes {
@@ -3225,7 +3225,7 @@ func (sc *scenarioController) PreviewScenario(ctx *gin.Context) {
 			}
 		}
 	}
-	planResult, planErr := effectivePlanService.GetUserEffectivePlanForOrg(userID, orgIDForPlan)
+	planResult, planErr := effectivePlanService.GetUserEffectivePlan(userID, orgIDForPlan)
 	if planErr != nil || planResult == nil || planResult.Plan == nil {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{
 			ErrorCode:    http.StatusForbidden,

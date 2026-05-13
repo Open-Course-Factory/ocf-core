@@ -21,15 +21,7 @@ type mockEffectivePlanService struct {
 	mock.Mock
 }
 
-func (m *mockEffectivePlanService) GetUserEffectivePlan(userID string) (*paymentServices.EffectivePlanResult, error) {
-	args := m.Called(userID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*paymentServices.EffectivePlanResult), args.Error(1)
-}
-
-func (m *mockEffectivePlanService) GetUserEffectivePlanForOrg(userID string, orgID *uuid.UUID) (*paymentServices.EffectivePlanResult, error) {
+func (m *mockEffectivePlanService) GetUserEffectivePlan(userID string, orgID *uuid.UUID) (*paymentServices.EffectivePlanResult, error) {
 	args := m.Called(userID, orgID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -37,15 +29,7 @@ func (m *mockEffectivePlanService) GetUserEffectivePlanForOrg(userID string, org
 	return args.Get(0).(*paymentServices.EffectivePlanResult), args.Error(1)
 }
 
-func (m *mockEffectivePlanService) CheckEffectiveUsageLimit(userID string, metricType string, increment int64) (*paymentServices.UsageLimitCheck, error) {
-	args := m.Called(userID, metricType, increment)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*paymentServices.UsageLimitCheck), args.Error(1)
-}
-
-func (m *mockEffectivePlanService) CheckEffectiveUsageLimitForOrg(userID string, orgID *uuid.UUID, metricType string, increment int64) (*paymentServices.UsageLimitCheck, error) {
+func (m *mockEffectivePlanService) CheckEffectiveUsageLimit(userID string, orgID *uuid.UUID, metricType string, increment int64) (*paymentServices.UsageLimitCheck, error) {
 	args := m.Called(userID, orgID, metricType, increment)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -72,9 +56,9 @@ func makePlan(maxConcurrent int) *paymentModels.SubscriptionPlan {
 
 // TestCheckLimit_UsesContextPlan_SkipsPlanResolution verifies that when
 // InjectEffectivePlan has already stored the plan result in the Gin context,
-// CheckLimit reads it from there and does NOT call GetUserEffectivePlanForOrg
+// CheckLimit reads it from there and does NOT call GetUserEffectivePlan
 // (i.e. CheckEffectiveUsageLimitFromResult is called instead of
-// CheckEffectiveUsageLimitForOrg).
+// CheckEffectiveUsageLimit).
 func TestCheckLimit_UsesContextPlan_SkipsPlanResolution(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -101,7 +85,7 @@ func TestCheckLimit_UsesContextPlan_SkipsPlanResolution(t *testing.T) {
 	svc.On("CheckEffectiveUsageLimitFromResult", contextResult, "user-1", "concurrent_terminals", int64(1)).
 		Return(allowedCheck, nil)
 
-	// CheckEffectiveUsageLimitForOrg must NOT be called.
+	// CheckEffectiveUsageLimit must NOT be called.
 	// (If it were called, testify would fail with an unexpected call.)
 
 	router := gin.New()
@@ -125,14 +109,14 @@ func TestCheckLimit_UsesContextPlan_SkipsPlanResolution(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	svc.AssertExpectations(t)
-	// Confirm GetUserEffectivePlanForOrg was never called.
-	svc.AssertNotCalled(t, "GetUserEffectivePlanForOrg", mock.Anything, mock.Anything)
-	svc.AssertNotCalled(t, "CheckEffectiveUsageLimitForOrg", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	// Confirm GetUserEffectivePlan was never called.
+	svc.AssertNotCalled(t, "GetUserEffectivePlan", mock.Anything, mock.Anything)
+	svc.AssertNotCalled(t, "CheckEffectiveUsageLimit", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestCheckLimit_NoContextPlan_FallsBackToFullResolution verifies that when
 // no plan is stored in the Gin context (InjectEffectivePlan absent from chain),
-// CheckLimit falls back to CheckEffectiveUsageLimitForOrg for full resolution.
+// CheckLimit falls back to CheckEffectiveUsageLimit for full resolution.
 func TestCheckLimit_NoContextPlan_FallsBackToFullResolution(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -149,8 +133,8 @@ func TestCheckLimit_NoContextPlan_FallsBackToFullResolution(t *testing.T) {
 		Source:         paymentServices.PlanSourcePersonal,
 	}
 
-	// No "effective_plan_result" in context → should call CheckEffectiveUsageLimitForOrg.
-	svc.On("CheckEffectiveUsageLimitForOrg", "user-2", (*uuid.UUID)(nil), "concurrent_terminals", int64(1)).
+	// No "effective_plan_result" in context → should call CheckEffectiveUsageLimit.
+	svc.On("CheckEffectiveUsageLimit", "user-2", (*uuid.UUID)(nil), "concurrent_terminals", int64(1)).
 		Return(allowedCheck, nil)
 
 	router := gin.New()

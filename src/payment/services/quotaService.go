@@ -71,7 +71,7 @@ func NewQuotaService(db *gorm.DB, eps EffectivePlanService) QuotaService {
 // CheckUserQuotaWithPlan. Keeping the two-step shape lets the middleware
 // skip resolution when it already has a plan in context.
 func (s *quotaService) CheckUserQuota(userID string, orgID *uuid.UUID, metric string, increment int64) (*UsageLimitCheck, error) {
-	result, err := s.effectivePlanService.GetUserEffectivePlanForOrg(userID, orgID)
+	result, err := s.effectivePlanService.GetUserEffectivePlan(userID, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get effective plan: %w", err)
 	}

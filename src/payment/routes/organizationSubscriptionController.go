@@ -327,7 +327,7 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 		}
 
 		// Resolve features for this specific org context
-		result, err := osc.effectivePlanService.GetUserEffectivePlanForOrg(userID, &orgID)
+		result, err := osc.effectivePlanService.GetUserEffectivePlan(userID, &orgID)
 		if err != nil {
 			utils.Warn("Failed to get effective plan for user %s org %s: %v", userID, orgID.String(), err)
 			ctx.JSON(http.StatusNotFound, &errors.APIError{

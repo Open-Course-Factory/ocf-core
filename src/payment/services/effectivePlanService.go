@@ -31,11 +31,38 @@ type EffectivePlanResult struct {
 }
 
 // EffectivePlanService is the single source of truth for "what plan does this user have?"
+//
+// Resolution is org-context-aware: callers that know which organization the
+// user is currently acting in MUST pass that org's ID. Only callers that
+// genuinely have no org context (e.g. featureMiddleware enforcing
+// feature-availability at request entry, or featureAccess utilities used by
+// background jobs) may pass nil.
+//
+// Historical context: this interface previously exposed TWO resolvers —
+// GetUserEffectivePlan (no-org, global highest priority) and
+// GetUserEffectivePlanForOrg (org-aware). They returned DIFFERENT plans for
+// the same user, so the "display" path (org-aware) and the "gate" path
+// (global) silently disagreed. See MR !239 / issue #334 for the launcher-vs-
+// gate mismatch this caused. The methods were merged into a single
+// org-aware resolver to prevent the same SSOT drift from recurring.
 type EffectivePlanService interface {
-	GetUserEffectivePlan(userID string) (*EffectivePlanResult, error)
-	GetUserEffectivePlanForOrg(userID string, orgID *uuid.UUID) (*EffectivePlanResult, error)
-	CheckEffectiveUsageLimit(userID string, metricType string, increment int64) (*UsageLimitCheck, error)
-	CheckEffectiveUsageLimitForOrg(userID string, orgID *uuid.UUID, metricType string, increment int64) (*UsageLimitCheck, error)
+	// GetUserEffectivePlan resolves the user's effective plan.
+	//
+	// orgID != nil → returns THAT org's plan (or personal fallback if the org has
+	// no subscription, with IsFallback=true).
+	//
+	// orgID == nil → returns the globally highest-priority plan across personal +
+	// every org the user is in. Only callers that truly have no org context
+	// should pass nil.
+	GetUserEffectivePlan(userID string, orgID *uuid.UUID) (*EffectivePlanResult, error)
+
+	// CheckEffectiveUsageLimit checks whether the user can perform the given action
+	// based on their effective plan limits.
+	//
+	// orgID has the same semantics as GetUserEffectivePlan: pass the org when known,
+	// nil only when no org context exists.
+	CheckEffectiveUsageLimit(userID string, orgID *uuid.UUID, metricType string, increment int64) (*UsageLimitCheck, error)
+
 	// CheckEffectiveUsageLimitFromResult checks usage limits using an already-resolved plan,
 	// skipping the plan resolution DB round-trip. Used by CheckLimit middleware when
 	// InjectEffectivePlan has already placed the result in the Gin context.
@@ -57,9 +84,28 @@ func NewEffectivePlanService(db *gorm.DB) EffectivePlanService {
 	}
 }
 
-// GetUserEffectivePlan resolves which subscription plan applies to a user by comparing
-// personal and organization subscriptions and returning the highest-priority one.
-func (s *effectivePlanService) GetUserEffectivePlan(userID string) (*EffectivePlanResult, error) {
+// GetUserEffectivePlan resolves which subscription plan applies to a user.
+//
+// orgID != nil → resolves THAT org's plan (org subscription if any, else falls
+// back to the user's personal subscription with IsFallback=true). Membership
+// is verified for team orgs; non-members are rejected.
+//
+// orgID == nil → returns the globally highest-priority plan across personal +
+// every org the user is in. Reserved for callers that genuinely have no org
+// context (feature-availability middleware at request entry, background-job
+// helpers in featureAccess). Production gates that DO know the org context
+// MUST pass it — passing nil instead silently drifts the gate away from the
+// display path (see issue #334 / MR !239).
+func (s *effectivePlanService) GetUserEffectivePlan(userID string, orgID *uuid.UUID) (*EffectivePlanResult, error) {
+	if orgID != nil {
+		return s.resolveForOrg(userID, *orgID)
+	}
+	return s.resolveGlobal(userID)
+}
+
+// resolveGlobal returns the globally highest-priority plan across personal +
+// every org the user is in. This is the nil-orgID branch of GetUserEffectivePlan.
+func (s *effectivePlanService) resolveGlobal(userID string) (*EffectivePlanResult, error) {
 	var personalSub *models.UserSubscription
 	var personalPlan *models.SubscriptionPlan
 
@@ -132,40 +178,14 @@ func (s *effectivePlanService) GetUserEffectivePlan(userID string) (*EffectivePl
 	return nil, fmt.Errorf("no active subscription found for user %s", userID)
 }
 
-// CheckEffectiveUsageLimit checks whether the user can perform the given action
-// based on their effective plan limits.
-//
-// Thin wrapper kept for backward compatibility with existing callers and test
-// mocks. The actual quota logic lives in QuotaService — see
-// src/payment/services/quotaService.go.
-func (s *effectivePlanService) CheckEffectiveUsageLimit(userID string, metricType string, increment int64) (*UsageLimitCheck, error) {
-	result, err := s.GetUserEffectivePlan(userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get effective plan: %w", err)
-	}
-	return s.quotaService().CheckUserQuotaWithPlan(result, userID, metricType, increment)
-}
-
-// quotaService builds a transient QuotaService backed by this
-// effectivePlanService. The two services are intentionally separate
-// (QuotaService takes EffectivePlanService as a dependency) — building
-// it on demand avoids a hard reference cycle while keeping the quota
-// rule expressed in exactly one place.
-func (s *effectivePlanService) quotaService() QuotaService {
-	return NewQuotaService(s.db, s)
-}
-
-// GetUserEffectivePlanForOrg resolves the effective plan for a user in the context of a
-// specific organization. If orgID is nil, falls back to the global resolution.
-func (s *effectivePlanService) GetUserEffectivePlanForOrg(userID string, orgID *uuid.UUID) (*EffectivePlanResult, error) {
-	// If no org context, fall back to global resolution (backward compat)
-	if orgID == nil {
-		return s.GetUserEffectivePlan(userID)
-	}
-
+// resolveForOrg returns the plan for the user in the context of a specific
+// organization. Personal orgs short-circuit to the user's personal sub; team
+// orgs verify membership and either return the org's plan or fall back to the
+// user's personal sub (marked IsFallback=true).
+func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*EffectivePlanResult, error) {
 	// Load the organization to check its type
 	var org orgModels.Organization
-	if err := s.db.First(&org, "id = ?", *orgID).Error; err != nil {
+	if err := s.db.First(&org, "id = ?", orgID).Error; err != nil {
 		return nil, fmt.Errorf("failed to load organization %s: %w", orgID.String(), err)
 	}
 
@@ -189,7 +209,7 @@ func (s *effectivePlanService) GetUserEffectivePlanForOrg(userID string, orgID *
 	// Team org → check that the user is actually a member of this org
 	var memberCount int64
 	if err := s.db.Model(&orgModels.OrganizationMember{}).
-		Where("organization_id = ? AND user_id = ? AND is_active = ?", *orgID, userID, true).
+		Where("organization_id = ? AND user_id = ? AND is_active = ?", orgID, userID, true).
 		Count(&memberCount).Error; err != nil {
 		return nil, fmt.Errorf("failed to check org membership: %w", err)
 	}
@@ -198,10 +218,12 @@ func (s *effectivePlanService) GetUserEffectivePlanForOrg(userID string, orgID *
 	}
 
 	// Return that org's subscription
-	orgSub, err := s.orgSubRepo.GetActiveOrganizationSubscription(*orgID)
+	orgSub, err := s.orgSubRepo.GetActiveOrganizationSubscription(orgID)
 	if err != nil {
-		// Team org has no subscription — fall back to user's personal subscription
-		result, fallbackErr := s.GetUserEffectivePlan(userID)
+		// Team org has no subscription — fall back to user's personal subscription.
+		// Calling resolveGlobal here, not GetUserEffectivePlan(userID, nil), to
+		// keep the fallback explicit and avoid any future recursion confusion.
+		result, fallbackErr := s.resolveGlobal(userID)
 		if fallbackErr != nil {
 			return nil, fmt.Errorf("no active subscription for organization %s and no personal fallback: %w", orgID.String(), fallbackErr)
 		}
@@ -215,16 +237,30 @@ func (s *effectivePlanService) GetUserEffectivePlanForOrg(userID string, orgID *
 	}, nil
 }
 
-// CheckEffectiveUsageLimitForOrg checks usage limits in the context of a specific org.
-// If orgID is nil, falls back to the global resolution.
+// CheckEffectiveUsageLimit checks whether the user can perform the given action
+// based on their effective plan limits.
 //
-// Thin wrapper kept for backward compatibility — actual logic lives in QuotaService.
-func (s *effectivePlanService) CheckEffectiveUsageLimitForOrg(userID string, orgID *uuid.UUID, metricType string, increment int64) (*UsageLimitCheck, error) {
-	result, err := s.GetUserEffectivePlanForOrg(userID, orgID)
+// orgID has the same semantics as GetUserEffectivePlan — pass the org context
+// when known, nil only when no org context exists.
+//
+// Thin wrapper kept for backward compatibility with existing callers and test
+// mocks. The actual quota logic lives in QuotaService — see
+// src/payment/services/quotaService.go.
+func (s *effectivePlanService) CheckEffectiveUsageLimit(userID string, orgID *uuid.UUID, metricType string, increment int64) (*UsageLimitCheck, error) {
+	result, err := s.GetUserEffectivePlan(userID, orgID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get effective plan for org context: %w", err)
+		return nil, fmt.Errorf("failed to get effective plan: %w", err)
 	}
 	return s.quotaService().CheckUserQuotaWithPlan(result, userID, metricType, increment)
+}
+
+// quotaService builds a transient QuotaService backed by this
+// effectivePlanService. The two services are intentionally separate
+// (QuotaService takes EffectivePlanService as a dependency) — building
+// it on demand avoids a hard reference cycle while keeping the quota
+// rule expressed in exactly one place.
+func (s *effectivePlanService) quotaService() QuotaService {
+	return NewQuotaService(s.db, s)
 }
 
 // CheckEffectiveUsageLimitFromResult checks usage limits using a pre-resolved plan result,
