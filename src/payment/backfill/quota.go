@@ -50,6 +50,26 @@ var sizeCatalog = map[string]MachineSize{
 // contains "all" — matches the catalog's largest entry.
 var xlSize = MachineSize{CPU: 4, MemoryMB: 4096}
 
+// CanonicalSizeKeys is the list of canonical (lowercase) size keys in
+// monotonically increasing order. Exposed so the quota service can
+// iterate the catalog deterministically (e.g. for ComputeRemainingBySize).
+var CanonicalSizeKeys = []string{"xs", "s", "m", "l", "xl"}
+
+// LookupSize returns the CPU/memory footprint for a size key (case-insensitive),
+// along with whether the key was found. Used by the QuotaService to evaluate
+// "does this size fit in the remaining budget?" without re-declaring the catalog.
+func LookupSize(key string) (MachineSize, bool) {
+	size, ok := sizeCatalog[key]
+	if ok {
+		return size, true
+	}
+	// Try canonicalised (lowercase) key as a fallback.
+	if size, ok := sizeCatalog[strings.ToLower(strings.TrimSpace(key))]; ok {
+		return size, true
+	}
+	return MachineSize{}, false
+}
+
 // Options controls a backfill / rollback run.
 type Options struct {
 	// Apply commits the changes. When false (the default), the migration
