@@ -6,6 +6,7 @@ import (
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/entityManagement/hooks"
+	paymentServices "soli/formations/src/payment/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
 
@@ -164,6 +165,18 @@ func InitTerminalHooks(db *gorm.DB) {
 		utils.Error("❌ Failed to register Terminal cleanup hook: %v", err)
 	} else {
 		utils.Info("✅ Terminal cleanup hook registered")
+	}
+
+	// Register Terminal budget enforcement hook (MR-CORE-5 — BeforeCreate).
+	// Wraps the request in a transaction that locks the user's (or org's)
+	// active rows via SELECT FOR UPDATE so concurrent session starts can't
+	// race past the budget cap. Also denormalises the size's CPU/RAM
+	// footprint onto the Terminal row for race-safe future accounting.
+	budgetHook := NewTerminalBudgetHook(db, paymentServices.NewEffectivePlanService(db))
+	if err := hooks.GlobalHookRegistry.RegisterHook(budgetHook); err != nil {
+		utils.Error("❌ Failed to register Terminal budget hook: %v", err)
+	} else {
+		utils.Info("✅ Terminal budget hook registered")
 	}
 
 	utils.Info("🔗 Terminal hooks initialization complete")
