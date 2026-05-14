@@ -83,8 +83,8 @@ func (r *terminalRepository) CreateTerminalSession(terminal *models.Terminal) er
 		if existing.DeletedAt.Valid {
 			// Soft-deleted record found: restore it with updated fields
 			return r.db.Unscoped().Model(&existing).Updates(map[string]any{
-				"deleted_at":            nil,
-				"status":               terminal.Status,
+				"deleted_at":           nil,
+				"state":                terminal.State,
 				"user_id":              terminal.UserID,
 				"name":                 terminal.Name,
 				"expires_at":           terminal.ExpiresAt,
@@ -96,7 +96,7 @@ func (r *terminalRepository) CreateTerminalSession(terminal *models.Terminal) er
 		}
 		// Active record found (reinit case): update it with new fields
 		return r.db.Model(&existing).Updates(map[string]any{
-			"status":               terminal.Status,
+			"state":                terminal.State,
 			"user_id":              terminal.UserID,
 			"name":                 terminal.Name,
 			"expires_at":           terminal.ExpiresAt,
@@ -202,9 +202,12 @@ func (r *terminalRepository) DeleteTerminalSession(sessionID string) error {
 
 // Cleanup methods
 func (r *terminalRepository) CleanupExpiredSessions() error {
+	// State is the SSOT — past-expiry rows that aren't already marked as
+	// terminated get flipped to "deleted" so they stop appearing in active
+	// queries and the slot accounting is correct.
 	return r.db.Model(&models.Terminal{}).
-		Where("expires_at < NOW() AND status != ?", "expired").
-		Update("status", "expired").Error
+		Where("expires_at < NOW() AND state NOT IN ?", []string{"deleted", "stopped"}).
+		Update("state", "deleted").Error
 }
 
 func (tr *terminalRepository) GetAllActiveUserKeys() (*[]models.UserTerminalKey, error) {
@@ -241,8 +244,8 @@ func (tr *terminalRepository) CreateTerminalSessionFromAPI(terminal *models.Term
 		if existing.DeletedAt.Valid {
 			// Soft-deleted: restore it with updated fields
 			return tr.db.Unscoped().Model(&existing).Updates(map[string]any{
-				"deleted_at":            nil,
-				"status":               terminal.Status,
+				"deleted_at":           nil,
+				"state":                terminal.State,
 				"user_id":              terminal.UserID,
 				"name":                 terminal.Name,
 				"expires_at":           terminal.ExpiresAt,
@@ -262,21 +265,26 @@ func (tr *terminalRepository) CreateTerminalSessionFromAPI(terminal *models.Term
 func (tr *terminalRepository) GetOrphanedLocalSessions(apiSessionIDs []string) (*[]models.Terminal, error) {
 	var orphanedSessions []models.Terminal
 
+	// "Alive" sessions are those whose State indicates they're still consumable.
+	// We don't include "stopped" because those are intentionally paused — they
+	// shouldn't be treated as orphans even if tt-backend doesn't list them
+	// on a /sessions sweep.
+	aliveStates := []string{"running", "resuming", "hibernating", "paused"}
+
 	if len(apiSessionIDs) == 0 {
-		// Si aucune session côté API, toutes les sessions locales actives sont orphelines
+		// Si aucune session côté API, toutes les sessions locales vivantes sont orphelines
 		result := tr.db.Preload("UserTerminalKey").Where(
-			"status IN (?)",
-			[]string{"active", "pending", "connecting", "waiting"},
+			"state IN (?)", aliveStates,
 		).Find(&orphanedSessions)
 
 		if result.Error != nil {
 			return nil, result.Error
 		}
 	} else {
-		// Sessions actives qui ne sont pas dans la liste API
+		// Sessions vivantes qui ne sont pas dans la liste API
 		result := tr.db.Preload("UserTerminalKey").Where(
-			"status IN (?) AND session_id NOT IN (?)",
-			[]string{"active", "pending", "connecting", "waiting"},
+			"state IN (?) AND session_id NOT IN (?)",
+			aliveStates,
 			apiSessionIDs,
 		).Find(&orphanedSessions)
 
@@ -292,15 +300,15 @@ func (tr *terminalRepository) GetOrphanedLocalSessions(apiSessionIDs []string) (
 func (tr *terminalRepository) GetSyncStatistics(userID string) (map[string]int, error) {
 	stats := make(map[string]int)
 
-	// Compter par statut
+	// Compter par state (SSOT)
 	var counts []struct {
-		Status string
-		Count  int
+		State string
+		Count int
 	}
 
 	query := tr.db.Model(&models.Terminal{}).
-		Select("status, COUNT(*) as count").
-		Group("status")
+		Select("state, COUNT(*) as count").
+		Group("state")
 
 	if userID != "" {
 		query = query.Where("user_id = ?", userID)
@@ -312,7 +320,7 @@ func (tr *terminalRepository) GetSyncStatistics(userID string) (map[string]int, 
 	}
 
 	for _, count := range counts {
-		stats[count.Status] = count.Count
+		stats[count.State] = count.Count
 	}
 
 	// Ajouter le total

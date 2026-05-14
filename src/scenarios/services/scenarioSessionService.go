@@ -156,8 +156,8 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 					if err := tx.Where("session_id = ?", *existingSession.TerminalSessionID).First(&terminal).Error; err != nil {
 						// Terminal not found (deleted or soft-deleted) — auto-abandon
 						shouldAbandon = true
-					} else if terminal.Status != "active" {
-						// Terminal exists but is expired/stopped — auto-abandon
+					} else if terminal.State != "running" {
+						// Terminal exists but is expired/stopped/deleted — auto-abandon
 						shouldAbandon = true
 					}
 				}

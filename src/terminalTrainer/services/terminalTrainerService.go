@@ -265,7 +265,7 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 		return fmt.Errorf("session not found: %w", err)
 	}
 
-	utils.Debug("Session %s current status: %s", sessionID, terminal.Status)
+	utils.Debug("Session %s current state: %s", sessionID, terminal.State)
 
 	// 1. Appeler le nouvel endpoint /sessions/{id}/stop de tt-backend
 	idleUntil, err := tts.stopSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey)
@@ -276,14 +276,13 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	}
 
 	// 2. Marquer la session comme arrêtée localement
-	utils.Debug("Updating session %s status/state to 'stopped'", sessionID)
-	terminal.Status = "stopped"
+	utils.Debug("Updating session %s state to 'stopped'", sessionID)
 	terminal.State = "stopped"
 	if idleUntil != nil {
 		terminal.IdleUntil = idleUntil
 	}
 	if err := tts.repository.UpdateTerminalSession(terminal); err != nil {
-		utils.Error("Failed to update session %s status: %v", sessionID, err)
+		utils.Error("Failed to update session %s state: %v", sessionID, err)
 		return err
 	}
 
@@ -322,7 +321,6 @@ func (tts *terminalTrainerService) StartSession(sessionID string) error {
 		return fmt.Errorf("failed to start session in Terminal Trainer API: %w", err)
 	}
 
-	terminal.Status = "active"
 	terminal.State = "running"
 	terminal.LastStartedAt = time.Now()
 	terminal.IdleUntil = nil
@@ -355,7 +353,6 @@ func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
 		utils.Warn("failed to delete session in Terminal Trainer API: %v", err)
 	}
 
-	terminal.Status = "deleted"
 	terminal.State = "deleted"
 	if err := tts.repository.UpdateTerminalSession(terminal); err != nil {
 		utils.Error("Failed to update session %s after delete: %v", sessionID, err)
@@ -529,72 +526,75 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 	for sessionID, apiSession := range apiSessionsMap {
 		localSession := localSessionsMap[sessionID]
 
-		// Map SessionStatus from /sessions endpoint to terminal lifecycle status.
+		// Map SessionStatus from /sessions endpoint to terminal lifecycle state.
 		// /sessions returns SessionStatus: 0=active, 1=expired, 2=preallocated, 3+=deleted.
+		// We translate to State-space directly: 0 → "running", anything else → "deleted".
 		// This is different from InstanceCreationStatus (0=started, 1=invalid_terms) used by /start and /info.
-		apiStatusName := "expired"
+		apiStateName := "deleted"
 		if apiSession.Status == 0 {
-			apiStatusName = "active"
+			apiStateName = "running"
 		}
 
 		if localSession == nil {
 			// Session existe côté API mais pas côté local
-			// Ne recréer que les sessions actives, pas les expirées/arrêtées
-			if apiStatusName == "active" {
-				utils.Debug("SyncUserSessions - Creating missing active session %s (status=%d, name=%s)",
-					sessionID, apiSession.Status, apiStatusName)
+			// Ne recréer que les sessions actives (state='running'), pas les expirées/arrêtées
+			if apiStateName == "running" {
+				utils.Debug("SyncUserSessions - Creating missing running session %s (api_status=%d, state=%s)",
+					sessionID, apiSession.Status, apiStateName)
 				err := tts.createMissingLocalSession(userID, userKey, apiSession)
 				if err != nil {
 					errors = append(errors, fmt.Sprintf("Failed to create missing session %s: %v", sessionID, err))
 				} else {
 					sessionResults = append(sessionResults, dto.SyncSessionResponse{
-						SessionID:      sessionID,
-						PreviousStatus: "missing",
-						CurrentStatus:  apiStatusName,
-						Updated:        true,
-						LastSyncAt:     time.Now(),
+						SessionID:    sessionID,
+						PreviousState: "missing",
+						CurrentState:  apiStateName,
+						Updated:      true,
+						LastSyncAt:   time.Now(),
 					})
 					syncedCount++
 					updatedCount++
 					createdCount++
 				}
 			} else {
-				utils.Debug("SyncUserSessions - Ignoring non-active session %s (status=%d, name=%s) from API",
-					sessionID, apiSession.Status, apiStatusName)
+				utils.Debug("SyncUserSessions - Ignoring non-running session %s (api_status=%d, state=%s) from API",
+					sessionID, apiSession.Status, apiStateName)
 				// Ajouter quand même aux résultats pour le suivi
 				sessionResults = append(sessionResults, dto.SyncSessionResponse{
-					SessionID:      sessionID,
-					PreviousStatus: "missing",
-					CurrentStatus:  fmt.Sprintf("ignored-%s", apiStatusName),
-					Updated:        false,
-					LastSyncAt:     time.Now(),
+					SessionID:    sessionID,
+					PreviousState: "missing",
+					CurrentState:  fmt.Sprintf("ignored-%s", apiStateName),
+					Updated:      false,
+					LastSyncAt:   time.Now(),
 				})
 				syncedCount++
 			}
 		} else {
-			// Session existe des deux côtés -> synchroniser le statut
-			previousStatus := localSession.Status
+			// Session existe des deux côtés -> synchroniser le state
+			previousState := localSession.State
 			needsUpdate := false
 
-			utils.Debug("SyncUserSessions - Session %s: local='%s', api='%d' (name='%s')",
-				sessionID, localSession.Status, apiSession.Status, apiStatusName)
+			utils.Debug("SyncUserSessions - Session %s: local='%s', api_status='%d' (target_state='%s')",
+				sessionID, localSession.State, apiSession.Status, apiStateName)
 
-			// Vérifier si le statut a changé
-			// Ne pas écraser les sessions arrêtées manuellement (status "stopped")
-			if localSession.Status != apiStatusName && localSession.Status != "stopped" {
-				utils.Debug("SyncUserSessions - Status mismatch for session %s: changing '%s' -> '%s'",
-					sessionID, localSession.Status, apiStatusName)
-				localSession.Status = apiStatusName
+			// Vérifier si le state a changé.
+			// Ne pas écraser les sessions arrêtées manuellement (state "stopped").
+			if localSession.State != apiStateName && localSession.State != "stopped" {
+				utils.Debug("SyncUserSessions - State mismatch for session %s: changing '%s' -> '%s'",
+					sessionID, localSession.State, apiStateName)
+				localSession.State = apiStateName
 				needsUpdate = true
-			} else if localSession.Status == "stopped" {
-				utils.Debug("SyncUserSessions - Session %s is manually stopped, keeping local status", sessionID)
+			} else if localSession.State == "stopped" {
+				utils.Debug("SyncUserSessions - Session %s is manually stopped, keeping local state", sessionID)
 			}
 
-			// Vérifier si la session a expiré selon la date
+			// Vérifier si la session a expiré selon la date.
+			// Si tt-backend la voit encore "running" mais ExpiresAt est passé,
+			// le sync local doit la marquer comme effacée.
 			expiryTime := time.Unix(apiSession.ExpiresAt, 0)
-			if time.Now().After(expiryTime) && apiStatusName == "active" {
-				utils.Debug("SyncUserSessions - Session %s expired by date, marking as expired", sessionID)
-				localSession.Status = "expired"
+			if time.Now().After(expiryTime) && apiStateName == "running" {
+				utils.Debug("SyncUserSessions - Session %s expired by date, marking as deleted", sessionID)
+				localSession.State = "deleted"
 				needsUpdate = true
 			}
 
@@ -623,7 +623,7 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 			}
 
 			if needsUpdate {
-				utils.Debug("SyncUserSessions - Updating session %s status to '%s'", sessionID, localSession.Status)
+				utils.Debug("SyncUserSessions - Updating session %s state to '%s'", sessionID, localSession.State)
 				err := tts.repository.UpdateTerminalSession(localSession)
 				if err != nil {
 					utils.Error("SyncUserSessions - Failed to update session %s: %v", sessionID, err)
@@ -635,11 +635,11 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 			}
 
 			sessionResults = append(sessionResults, dto.SyncSessionResponse{
-				SessionID:      sessionID,
-				PreviousStatus: previousStatus,
-				CurrentStatus:  localSession.Status,
-				Updated:        needsUpdate,
-				LastSyncAt:     time.Now(),
+				SessionID:    sessionID,
+				PreviousState: previousState,
+				CurrentState:  localSession.State,
+				Updated:      needsUpdate,
+				LastSyncAt:   time.Now(),
 			})
 			syncedCount++
 		}
@@ -649,21 +649,23 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 	expiredCount := 0
 	for sessionID, localSession := range localSessionsMap {
 		if _, exists := apiSessionsMap[sessionID]; !exists {
-			// Session existe côté local mais pas côté API -> la marquer comme expirée
-			if localSession.Status != "expired" && localSession.Status != "stopped" {
-				previousStatus := localSession.Status
-				localSession.Status = "expired"
+			// Session existe côté local mais pas côté API -> la marquer comme deleted.
+			// "deleted" est l'équivalent state-space de l'ancien "expired" — tt-backend
+			// l'a effacée, donc localement on n'a plus rien à exposer.
+			if localSession.State != "deleted" && localSession.State != "stopped" {
+				previousState := localSession.State
+				localSession.State = "deleted"
 
 				err := tts.repository.UpdateTerminalSession(localSession)
 				if err != nil {
 					errors = append(errors, fmt.Sprintf("Failed to expire orphaned session %s: %v", sessionID, err))
 				} else {
 					sessionResults = append(sessionResults, dto.SyncSessionResponse{
-						SessionID:      sessionID,
-						PreviousStatus: previousStatus,
-						CurrentStatus:  "expired",
-						Updated:        true,
-						LastSyncAt:     time.Now(),
+						SessionID:    sessionID,
+						PreviousState: previousState,
+						CurrentState:  "deleted",
+						Updated:      true,
+						LastSyncAt:   time.Now(),
 					})
 					updatedCount++
 					expiredCount++
@@ -691,16 +693,17 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 func (tts *terminalTrainerService) createMissingLocalSession(userID string, userKey *models.UserTerminalKey, apiSession *dto.TerminalTrainerSession) error {
 	expiresAt := time.Unix(apiSession.ExpiresAt, 0)
 
-	// Map SessionStatus from /sessions endpoint to terminal lifecycle status
-	statusName := "expired"
+	// Map SessionStatus from /sessions endpoint to terminal lifecycle state.
+	// /sessions returns SessionStatus: 0=active, 1=expired. Translate to State-space.
+	stateName := "deleted"
 	if apiSession.Status == 0 {
-		statusName = "active"
+		stateName = "running"
 	}
 
 	terminal := &models.Terminal{
 		SessionID:         apiSession.SessionID,
 		UserID:            userID,
-		Status:            statusName, // Terminal lifecycle status: "active" or "expired"
+		State:             stateName, // Terminal lifecycle state: "running" or "deleted"
 		ExpiresAt:         expiresAt,
 		MachineSize:       apiSession.MachineSize, // Taille réelle depuis l'API
 		Backend:           apiSession.Backend,
@@ -708,9 +711,9 @@ func (tts *terminalTrainerService) createMissingLocalSession(userID string, user
 		UserTerminalKey:   *userKey,
 	}
 
-	// Propager les champs de cycle de vie depuis tt-backend (source de vérité)
-	// dès la création de la ligne locale, sinon le front verra des valeurs par
-	// défaut ("running"/"ephemeral") qui ne reflètent pas l'état réel.
+	// Propager le State de tt-backend (source de vérité authoritative) s'il
+	// est explicitement fourni — il a la précédence sur notre traduction
+	// depuis api_status.
 	if apiSession.State != "" {
 		terminal.State = apiSession.State
 	}
@@ -1491,11 +1494,8 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 	// 2. Check local lifecycle state.
 	//
 	// State is the canonical SSOT, populated by SyncUserSessions from
-	// tt-backend's authoritative session.state. Status is a legacy field
-	// (see models/terminal.go) that drifts to "expired" when ExpiresAt
-	// passes, even on persistent sessions that tt-backend has correctly
-	// auto-stopped (State="stopped"). Reading Status first 410-Gone'd the
-	// user out of the Resume flow.
+	// tt-backend's authoritative session.state. The legacy parallel Status
+	// field has been removed — every reader and writer now agrees on State.
 	switch terminal.State {
 	case "running":
 		// continue to backend + expiration checks below
@@ -1505,11 +1505,11 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 		// Preserve the existing wire format the FE maps to "Session ended".
 		return false, "expired", nil
 	case "":
-		// Legacy row that pre-dates the State column being populated.
-		// Fall back to the old Status check so old data doesn't break.
-		if terminal.Status != "active" {
-			return false, terminal.Status, nil
-		}
+		// Defensive fallback for rows that pre-date State being populated.
+		// Treat as deleted — without State we cannot prove the session is
+		// alive, so we conservatively deny access (matches what the legacy
+		// Status="expired" path used to return).
+		return false, "expired", nil
 	default:
 		// Surface other lifecycle states (paused, hibernating, resuming, ...)
 		// to the caller; the middleware will 403 with the state name.
@@ -1530,8 +1530,8 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 	//
 	// For State="running" sessions, ExpiresAt in the past means the sync
 	// hasn't caught up yet — tt-backend's auto-stop will land on the next
-	// poll. Returning "expired" here is conservative; we don't write the
-	// legacy Status field anymore — the next sync owns the State update.
+	// poll. Returning "expired" here is conservative; the next sync owns
+	// the State update.
 	if time.Now().After(terminal.ExpiresAt) {
 		return false, "expired", nil
 	}
@@ -1542,10 +1542,10 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 		if err != nil {
 			// Handle 404 = session doesn't exist in Terminal Trainer
 			if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
-				terminal.Status = "expired"
+				terminal.State = "deleted"
 				updateErr := tts.repository.UpdateTerminalSession(terminal)
 				if updateErr != nil {
-					utils.Warn("failed to update session %s status after API 404: %v", sessionID, updateErr)
+					utils.Warn("failed to update session %s state after API 404: %v", sessionID, updateErr)
 				}
 				return false, "expired", nil
 			}
@@ -1555,24 +1555,27 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 			return false, "", fmt.Errorf("failed to validate session with API: %w", err)
 		}
 
-		// Map InstanceCreationStatus from /info endpoint to terminal lifecycle status.
+		// Map InstanceCreationStatus from /info endpoint to terminal lifecycle state.
 		// /info returns InstanceCreationStatus: 0=started (instance running), 6=expired (instance gone).
 		// These are different from SessionStatus (0=active, 1=expired) used by /sessions.
-		apiStatusName := "expired"
+		apiStateName := "deleted"
 		if apiInfo.Status == 0 {
-			apiStatusName = "active"
+			apiStateName = "running"
 		}
 
-		// Sync status if mismatch detected
-		if apiStatusName != terminal.Status {
-			previousStatus := terminal.Status
-			terminal.Status = apiStatusName
+		// Sync state if mismatch detected
+		if apiStateName != terminal.State {
+			previousState := terminal.State
+			terminal.State = apiStateName
 			err := tts.repository.UpdateTerminalSession(terminal)
 			if err != nil {
-				utils.Warn("failed to sync session %s status from '%s' to '%s': %v",
-					sessionID, previousStatus, apiStatusName, err)
+				utils.Warn("failed to sync session %s state from '%s' to '%s': %v",
+					sessionID, previousState, apiStateName, err)
 			}
-			return terminal.Status == "active", terminal.Status, nil
+			if terminal.State == "running" {
+				return true, "active", nil
+			}
+			return false, "expired", nil
 		}
 	}
 
@@ -3005,7 +3008,7 @@ func (tts *terminalTrainerService) startComposedSession(userID string, input dto
 		SessionID:            sessionResp.SessionID,
 		UserID:               userID,
 		Name:                 input.Name,
-		Status:               "active",
+		State:                "running",
 		PersistenceMode:      input.PersistenceMode,
 		ExpiresAt:            expiresAt,
 		InstanceType:         input.DistributionPrefix,

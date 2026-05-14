@@ -24,13 +24,13 @@ import (
 //
 // Semantics: "Terminate" releases the resources — a terminated subscription must not
 // continue to consume quota slots. Per the SSOT consolidation in MR !218
-// (models.OccupiesSlotScope counts status IN ('active','stopped')), "stopped" terminals
-// still occupy a slot. To actually free the slot, we mark them "deleted" — matching
-// the canonical lifecycle delete in terminalTrainerService.DeleteSession which sets
-// both Status="deleted" and State="deleted". Because deleted rows are excluded by
-// OccupiesSlotScope, the stored concurrent_terminals counter no longer needs explicit
-// decrementing — the real-time counter (models.CountUserOccupiedSlots) reports the
-// correct value directly.
+// (models.OccupiesSlotScope counts state IN ('running','stopped')), "stopped" terminals
+// still occupy a slot. To actually free the slot, we mark them State="deleted" —
+// matching the canonical lifecycle delete in terminalTrainerService.DeleteSession.
+// Because deleted rows are excluded by OccupiesSlotScope, the stored
+// concurrent_terminals counter no longer needs explicit decrementing — the
+// real-time counter (models.CountUserOccupiedSlots) reports the correct value
+// directly.
 //
 // Note: this only updates the DB lifecycle fields — it does NOT call the tt-backend API
 // to delete the actual Incus containers. Container cleanup is handled by tt-backend's own
@@ -54,13 +54,12 @@ func TerminateUserTerminals(db *gorm.DB, userID string, orgID *uuid.UUID) error 
 
 	terminatedCount := 0
 	for _, terminal := range *terminals {
-		if terminal.Status == "active" {
+		if terminal.State == "running" {
 			utils.Debug("Deleting terminal %s (session: %s) for user %s", terminal.ID, terminal.SessionID, userID)
 
-			terminal.Status = "deleted"
 			terminal.State = "deleted"
 			if err := termRepository.UpdateTerminalSession(&terminal); err != nil {
-				utils.Error("Failed to update terminal %s status for user %s: %v", terminal.SessionID, userID, err)
+				utils.Error("Failed to update terminal %s state for user %s: %v", terminal.SessionID, userID, err)
 				continue
 			}
 
