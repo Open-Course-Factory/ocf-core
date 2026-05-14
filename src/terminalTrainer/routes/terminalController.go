@@ -1921,6 +1921,20 @@ func (tc *terminalController) GetSessionOptions(ctx *gin.Context) {
 		return
 	}
 
+	// Budget enrichment (MR-CORE-6). Reads org context from middleware (set
+	// by InjectOrgContext) and stamps the per-size RemainingCount + top-level
+	// Quota block. Mutates options in place; controller stays a thin shell.
+	userID := ctx.GetString("userId")
+	var orgID *uuid.UUID
+	if orgCtx, exists := ctx.Get("org_context_id"); exists {
+		if orgStr, ok := orgCtx.(string); ok && orgStr != "" {
+			if parsed, parseErr := uuid.Parse(orgStr); parseErr == nil {
+				orgID = &parsed
+			}
+		}
+	}
+	tc.service.EnrichSessionOptionsBudget(options, plan, userID, orgID)
+
 	ctx.JSON(http.StatusOK, options)
 }
 
@@ -1967,6 +1981,25 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 
 	sessionResponse, err := tc.service.StartComposedSession(userID, input, planInterface)
 	if err != nil {
+		// Structured budget rejection — MR-CORE-6. Carries the rejection
+		// reason and remaining axes so the frontend can render a helpful
+		// "Budget exhausted — 0 vCPU / 256 MiB left" panel rather than a
+		// generic 500.
+		var budgetErr *services.BudgetRejection
+		if stderrors.As(err, &budgetErr) {
+			ctx.JSON(http.StatusForbidden, gin.H{
+				"error_code":    http.StatusForbidden,
+				"error_message": budgetErr.Error(),
+				"source":        "budget",
+				"reason":        budgetErr.Reason,
+				"remaining": gin.H{
+					"cpu":       budgetErr.RemainingCPU,
+					"memory_mb": budgetErr.RemainingMemoryMB,
+				},
+			})
+			return
+		}
+
 		errMsg := err.Error()
 		statusCode := http.StatusInternalServerError
 

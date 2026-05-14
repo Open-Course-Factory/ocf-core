@@ -16,8 +16,10 @@ import (
 	"time"
 
 	authModels "soli/formations/src/auth/models"
+	config "soli/formations/src/configuration"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
+	"soli/formations/src/payment/backfill"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/terminalTrainer/dto"
@@ -106,6 +108,12 @@ type TerminalTrainerService interface {
 	GetCatalogSizes() ([]dto.TTSize, error)
 	GetCatalogFeatures() ([]dto.TTFeature, error)
 	GetSessionOptions(plan *paymentModels.SubscriptionPlan, distribution string, backend string) (*dto.SessionOptionsResponse, error)
+	// EnrichSessionOptionsBudget populates the per-size RemainingCount /
+	// MemoryMB fields and the top-level Quota block on a SessionOptionsResponse.
+	// In count-mode or when the feature flag is off, Quota.Scope is set to
+	// "unlimited" and per-size remaining counts are left at zero — the frontend
+	// renders the legacy shape. Mutates opts in place.
+	EnrichSessionOptionsBudget(opts *dto.SessionOptionsResponse, plan *paymentModels.SubscriptionPlan, userID string, orgID *uuid.UUID)
 	StartComposedSession(userID string, input dto.CreateComposedSessionInput, planInterface any) (*dto.TerminalSessionResponse, error)
 }
 
@@ -117,6 +125,7 @@ type terminalTrainerService struct {
 	repository              repositories.TerminalRepository
 	subscriptionService     paymentServices.UserSubscriptionService
 	orgSubscriptionService  paymentServices.OrganizationSubscriptionService
+	quotaService            paymentServices.QuotaService
 	enumService             TerminalTrainerEnumService
 	db                      *gorm.DB
 	backendCache            []dto.BackendInfo
@@ -144,6 +153,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 
 	baseURL := os.Getenv("TERMINAL_TRAINER_URL") // http://localhost:8090
 
+	eps := paymentServices.NewEffectivePlanService(db)
 	return &terminalTrainerService{
 		adminKey:               os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
 		baseURL:                baseURL,
@@ -152,9 +162,16 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		repository:             repositories.NewTerminalRepository(db),
 		subscriptionService:    paymentServices.NewSubscriptionService(db),
 		orgSubscriptionService: paymentServices.NewOrganizationSubscriptionService(db),
+		quotaService:           paymentServices.NewQuotaService(db, eps),
 		enumService:            NewTerminalTrainerEnumService(baseURL, apiVersion),
 		db:                     db,
 	}
+}
+
+// SetQuotaServiceForTest replaces the wired QuotaService. Exported for unit
+// tests that need to inject a fake — production code must not call this.
+func (tts *terminalTrainerService) SetQuotaServiceForTest(qs paymentServices.QuotaService) {
+	tts.quotaService = qs
 }
 
 // CreateUserKey crée une clé Terminal Trainer et la stocke en DB
@@ -1932,10 +1949,12 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 	planName := "unknown"
 	maxTerminals := 0
 	isFallback := false
+	var resolvedPlan *paymentModels.SubscriptionPlan
 	if err == nil && planResult != nil && planResult.Plan != nil {
 		planName = planResult.Plan.Name
 		maxTerminals = planResult.Plan.MaxConcurrentTerminals
 		isFallback = planResult.IsFallback
+		resolvedPlan = planResult.Plan
 	}
 
 	// 2. Count active terminals (what's running) per user — display field.
@@ -1994,12 +2013,37 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 		return nil, fmt.Errorf("failed to count slot-occupying terminals: %w", err)
 	}
 
+	// 3b. Per-user CPU + RAM footprint under the budget counting rule (D6:
+	// state='running' OR persistence_mode='persistent', expires_at > NOW(),
+	// deleted_at IS NULL). Computed regardless of QuotaModel so the dashboard
+	// always reports the breakdown; budget enforcement reads the same numbers
+	// in budget-mode and ignores them in count-mode.
+	type userResourceSum struct {
+		UserID    string
+		SumCPU    int64
+		SumMemory int64
+	}
+	var resourceRows []userResourceSum
+	err = tts.db.Table("terminals").
+		Select("terminals.user_id as user_id, COALESCE(SUM(terminals.size_cpu), 0) as sum_cpu, COALESCE(SUM(terminals.size_memory_mb), 0) as sum_memory").
+		Where("terminals.deleted_at IS NULL").
+		Where("terminals.organization_id = ?", orgID).
+		Where("terminals.expires_at > ?", time.Now()).
+		Where("(terminals.state = ? OR terminals.persistence_mode = ?)", "running", "persistent").
+		Group("terminals.user_id").
+		Scan(&resourceRows).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to sum per-user resources: %w", err)
+	}
+
 	// 4. Build per-user entries merging both counts. A user may appear in
 	// slotRows but not in activeRows (e.g. all their sessions are stopped),
 	// so we key by UserID and union the two sets.
 	type userEntry struct {
 		active    int
 		occupying int
+		cpu       int
+		memMB     int
 	}
 	byUser := make(map[string]*userEntry)
 	for _, row := range activeRows {
@@ -2017,6 +2061,15 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 			byUser[row.UserID] = e
 		}
 		e.occupying = int(row.OccupyingCount)
+	}
+	for _, row := range resourceRows {
+		e, ok := byUser[row.UserID]
+		if !ok {
+			e = &userEntry{}
+			byUser[row.UserID] = e
+		}
+		e.cpu = int(row.SumCPU)
+		e.memMB = int(row.SumMemory)
 	}
 
 	// 5. Resolve DisplayName + Email per user via Casdoor. The Casdoor SDK
@@ -2060,10 +2113,14 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 
 	totalActive := 0
 	totalOccupying := 0
+	totalCPU := 0
+	totalMem := 0
 	users := make([]dto.OrgTerminalUsageUser, 0, len(byUser))
 	for userID, e := range byUser {
 		totalActive += e.active
 		totalOccupying += e.occupying
+		totalCPU += e.cpu
+		totalMem += e.memMB
 		info := infoByUser[userID]
 		users = append(users, dto.OrgTerminalUsageUser{
 			UserID:         userID,
@@ -2071,10 +2128,12 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 			Email:          info.Email,
 			ActiveCount:    e.active,
 			OccupyingSlots: e.occupying,
+			ActiveCPU:      e.cpu,
+			ActiveMemoryMB: e.memMB,
 		})
 	}
 
-	return &dto.OrgTerminalUsageResponse{
+	resp := &dto.OrgTerminalUsageResponse{
 		OrganizationID:  orgID.String(),
 		ActiveTerminals: totalActive,
 		OccupyingSlots:  totalOccupying,
@@ -2082,7 +2141,49 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 		PlanName:        planName,
 		IsFallback:      isFallback,
 		Users:           users,
-	}, nil
+	}
+
+	// 6. Budget-mode enrichment (MR-CORE-6). Always emit a Quota envelope
+	// for shape stability — Scope="unlimited" signals "ignore the numeric
+	// fields". RemainingBySize is only populated in budget mode (frontend
+	// keys off non-empty slice).
+	if config.IsBudgetQuotasEnabled() && resolvedPlan != nil && resolvedPlan.QuotaModel == "budget" && tts.quotaService != nil {
+		remCPU := resolvedPlan.MaxCPU - totalCPU
+		if remCPU < 0 {
+			remCPU = 0
+		}
+		remMem := resolvedPlan.MaxMemoryMB - totalMem
+		if remMem < 0 {
+			remMem = 0
+		}
+		resp.Quota = &dto.SessionQuotaInfo{
+			MaxCPU:            resolvedPlan.MaxCPU,
+			MaxMemoryMB:       resolvedPlan.MaxMemoryMB,
+			UsedCPU:           totalCPU,
+			UsedMemoryMB:      totalMem,
+			RemainingCPU:      remCPU,
+			RemainingMemoryMB: remMem,
+			Scope:             "organization",
+		}
+
+		sizeRemaining := tts.quotaService.ComputeRemainingBySize(resolvedPlan, totalCPU, totalMem)
+		// Largest sizes first so the dashboard renders xl → xs by default.
+		out := make([]dto.SizeRemainingDTO, 0, len(sizeRemaining))
+		for i := len(sizeRemaining) - 1; i >= 0; i-- {
+			sr := sizeRemaining[i]
+			out = append(out, dto.SizeRemainingDTO{
+				Key:            sr.Key,
+				CPU:            sr.CPU,
+				MemoryMB:       sr.MemoryMB,
+				RemainingCount: sr.RemainingCount,
+			})
+		}
+		resp.RemainingBySize = out
+	} else {
+		resp.Quota = &dto.SessionQuotaInfo{Scope: "unlimited"}
+	}
+
+	return resp, nil
 }
 
 // IsUserAuthorizedForSession checks if a user is authorized to access a terminal session.
@@ -2856,6 +2957,86 @@ func (tts *terminalTrainerService) GetSessionOptions(plan *paymentModels.Subscri
 	return ComputeSessionOptions(*distro, sizes, features, plan), nil
 }
 
+// EnrichSessionOptionsBudget — see interface doc.
+//
+// In count-mode OR when the feature flag is off, Quota.Scope is "unlimited",
+// every numeric field is zero, and per-size RemainingCount stays at zero
+// (the existing Allowed flag remains authoritative). In budget-mode, we
+// read the current footprint via QuotaService.GetBudgetUsage, fan it out
+// across catalog sizes via ComputeRemainingBySize, and stamp the top-level
+// Quota block.
+func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
+	opts *dto.SessionOptionsResponse,
+	plan *paymentModels.SubscriptionPlan,
+	userID string,
+	orgID *uuid.UUID,
+) {
+	if opts == nil {
+		return
+	}
+
+	// Always seed memory_mb per size so the frontend can stop re-parsing
+	// the human-readable Memory string. This is independent of budget mode.
+	for i := range opts.AllowedSizes {
+		key := NormalizeSizeKey(opts.AllowedSizes[i].Key)
+		if cataSize, found := backfill.LookupSize(key); found {
+			opts.AllowedSizes[i].MemoryMB = cataSize.MemoryMB
+		}
+	}
+
+	// Default unlimited quota envelope — overwritten below only when both
+	// the feature flag is on AND the plan opts into budget mode.
+	opts.Quota = &dto.SessionQuotaInfo{Scope: "unlimited"}
+
+	if !config.IsBudgetQuotasEnabled() || plan == nil || plan.QuotaModel != "budget" {
+		return
+	}
+	if tts.quotaService == nil {
+		return
+	}
+
+	usedCPU, usedMem, err := tts.quotaService.GetBudgetUsage(userID, orgID)
+	if err != nil {
+		utils.Warn("EnrichSessionOptionsBudget: usage lookup failed for user=%s org=%v: %v", userID, orgID, err)
+		return
+	}
+
+	// Per-size remaining counts.
+	remainingBySize := tts.quotaService.ComputeRemainingBySize(plan, usedCPU, usedMem)
+	remByKey := make(map[string]int, len(remainingBySize))
+	for _, sr := range remainingBySize {
+		remByKey[strings.ToLower(strings.TrimSpace(sr.Key))] = sr.RemainingCount
+	}
+	for i := range opts.AllowedSizes {
+		key := strings.ToLower(strings.TrimSpace(opts.AllowedSizes[i].Key))
+		if rc, ok := remByKey[key]; ok {
+			opts.AllowedSizes[i].RemainingCount = rc
+		}
+	}
+
+	scope := "user"
+	if orgID != nil {
+		scope = "organization"
+	}
+	remCPU := plan.MaxCPU - usedCPU
+	if remCPU < 0 {
+		remCPU = 0
+	}
+	remMem := plan.MaxMemoryMB - usedMem
+	if remMem < 0 {
+		remMem = 0
+	}
+	opts.Quota = &dto.SessionQuotaInfo{
+		MaxCPU:            plan.MaxCPU,
+		MaxMemoryMB:       plan.MaxMemoryMB,
+		UsedCPU:           usedCPU,
+		UsedMemoryMB:      usedMem,
+		RemainingCPU:      remCPU,
+		RemainingMemoryMB: remMem,
+		Scope:             scope,
+	}
+}
+
 // StartComposedSession validates inputs against the plan and starts a composed session
 func (tts *terminalTrainerService) StartComposedSession(userID string, input dto.CreateComposedSessionInput, planInterface any) (*dto.TerminalSessionResponse, error) {
 	plan, ok := planInterface.(*paymentModels.SubscriptionPlan)
@@ -2926,6 +3107,36 @@ func (tts *terminalTrainerService) StartComposedSession(userID string, input dto
 		orgID = &parsed
 	}
 
+	// Snapshot the size catalog footprint onto the input so the persisted
+	// Terminal row carries SizeCPU / SizeMemoryMB even in count-mode. The
+	// budget sum query reads from these columns, so leaving them at zero
+	// would let post-rollout count-mode rows escape budget accounting if
+	// the deployment later flips to budget mode mid-session. Mirrors the
+	// snapshot step the TerminalBudgetHook performs on the generic path.
+	if cataSize, found := backfill.LookupSize(input.Size); found {
+		input.SizeCPU = cataSize.CPU
+		input.SizeMemoryMB = cataSize.MemoryMB
+	}
+
+	// Budget enforcement (MR-CORE-6).
+	//
+	// The TerminalBudgetHook (MR-CORE-5) is a no-op on this path because
+	// StartComposedSession bypasses the generic Create flow — terminals
+	// are persisted directly via repository.CreateTerminalSession in
+	// startComposedSession() below. We therefore call CheckBudget
+	// explicitly here.
+	//
+	// Dual-mode: when the feature flag is off OR the plan's QuotaModel is
+	// not "budget", we short-circuit and the legacy CheckLimit middleware
+	// + AllowedMachineSizes gate above remains the only enforcement
+	// (preserves count-mode behaviour). When both conditions are true we
+	// reject overspend with a structured budget error.
+	if config.IsBudgetQuotasEnabled() && plan.QuotaModel == "budget" {
+		if budgetErr := tts.enforceBudget(userID, orgID, plan, input.SizeCPU, input.SizeMemoryMB); budgetErr != nil {
+			return nil, budgetErr
+		}
+	}
+
 	validatedBackend, err := tts.validateBackendForContext(orgID, plan, input.Backend)
 	if err != nil {
 		return nil, err
@@ -2949,6 +3160,57 @@ func (tts *terminalTrainerService) StartComposedSession(userID string, input dto
 	input.SubscriptionPlanID = &plan.ID
 
 	return tts.startComposedSession(userID, input)
+}
+
+// BudgetRejection is the structured error surfaced by StartComposedSession
+// when CheckBudget rejects a request in budget-mode. Carries enough context
+// for the controller to translate into a 403 with body
+// {error_code, error_message, source:"budget", reason, remaining}.
+type BudgetRejection struct {
+	Reason            string // "budget_cpu_exceeded" | "budget_memory_exceeded" | "plan_restriction"
+	RemainingCPU      int
+	RemainingMemoryMB int
+}
+
+func (e *BudgetRejection) Error() string {
+	return fmt.Sprintf("budget rejected: %s (remaining_cpu=%d, remaining_mem_mb=%d)",
+		e.Reason, e.RemainingCPU, e.RemainingMemoryMB)
+}
+
+// enforceBudget runs the budget gate before the Terminal is persisted.
+// It is only called when (a) the feature flag is on AND (b) the plan's
+// QuotaModel is "budget". Returns a *BudgetRejection on overspend and nil
+// otherwise.
+//
+// Defense-in-depth: the TerminalBudgetHook covers any code path that goes
+// through the generic Create flow, but StartComposedSession persists the
+// Terminal directly via repository.CreateTerminalSession and bypasses the
+// hook. Both call paths reuse QuotaService.CheckBudget so the rule can't
+// drift.
+func (tts *terminalTrainerService) enforceBudget(
+	userID string,
+	orgID *uuid.UUID,
+	plan *paymentModels.SubscriptionPlan,
+	requestedCPU, requestedMemMB int,
+) error {
+	if tts.quotaService == nil {
+		// Fail open at the explicit-check layer — the hook still gates the
+		// generic Create path. This branch only triggers in tests that
+		// build the service without wiring QuotaService.
+		return nil
+	}
+	check, err := tts.quotaService.CheckBudget(userID, orgID, plan, requestedCPU, requestedMemMB)
+	if err != nil {
+		return fmt.Errorf("budget check failed: %w", err)
+	}
+	if check.Allowed {
+		return nil
+	}
+	return &BudgetRejection{
+		Reason:            check.Reason,
+		RemainingCPU:      check.RemainingCPU,
+		RemainingMemoryMB: check.RemainingMemMB,
+	}
 }
 
 // resolveIdleWindowSeconds returns the org-level idle window override for the
@@ -3083,6 +3345,8 @@ func (tts *terminalTrainerService) startComposedSession(userID string, input dto
 		ComposedDistribution: input.Distribution,
 		ComposedSize:         input.Size,
 		ComposedFeatures:     composedFeaturesJSON,
+		SizeCPU:              input.SizeCPU,
+		SizeMemoryMB:         input.SizeMemoryMB,
 	}
 
 	if err := tts.repository.CreateTerminalSession(terminal); err != nil {

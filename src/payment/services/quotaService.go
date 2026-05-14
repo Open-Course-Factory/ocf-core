@@ -107,6 +107,12 @@ type QuotaService interface {
 	// returned reason is "plan_restriction" and fits=false. When the
 	// budget itself rejects, the reason reflects which axis ran out.
 	RemainingBudgetFitsWithReason(userID string, orgID *uuid.UUID, plan *models.SubscriptionPlan, sizeKey string) (bool, string, error)
+
+	// GetBudgetUsage returns the user's (or org's) current CPU + RAM
+	// footprint under the budget counting rule (D6). It is a thin
+	// passthrough over sumActiveResources for callers that need to
+	// surface usage in dashboards without re-implementing the predicate.
+	GetBudgetUsage(userID string, orgID *uuid.UUID) (usedCPU, usedMemMB int, err error)
 }
 
 // BudgetCheck reports the outcome of a CheckBudget evaluation.
@@ -569,6 +575,11 @@ func sizeKeyInAllowlist(allowed []string, sizeKey string) bool {
 		}
 	}
 	return false
+}
+
+// GetBudgetUsage — see interface doc.
+func (s *quotaService) GetBudgetUsage(userID string, orgID *uuid.UUID) (int, int, error) {
+	return s.sumActiveResources(userID, orgID)
 }
 
 // sumActiveResources returns the total CPU + RAM footprint of terminals
