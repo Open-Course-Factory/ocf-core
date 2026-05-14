@@ -27,7 +27,7 @@ func TestQuotaService_CheckUserQuota_UnderLimit_Allowed(t *testing.T) {
 	createUserSubscription(t, db, userID, plan)
 
 	// 1 occupying terminal — under limit
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
 
 	eps := services.NewEffectivePlanService(db)
 	svc := services.NewQuotaService(db, eps)
@@ -52,8 +52,8 @@ func TestQuotaService_CheckUserQuota_AtLimit_Denied(t *testing.T) {
 	createUserSubscription(t, db, userID, plan)
 
 	// 2 active terminals already — at limit
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
 
 	eps := services.NewEffectivePlanService(db)
 	svc := services.NewQuotaService(db, eps)
@@ -78,9 +78,9 @@ func TestQuotaService_CheckUserQuota_OverLimit_Denied(t *testing.T) {
 	createUserSubscription(t, db, userID, plan)
 
 	// 3 occupying terminals — already over (1 active + 2 stopped)
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
 
 	eps := services.NewEffectivePlanService(db)
 	svc := services.NewQuotaService(db, eps)
@@ -151,8 +151,8 @@ func TestQuotaService_CheckUserQuotaWithPlan_SkipsResolution(t *testing.T) {
 	}
 
 	// Insert 2 terminals
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
 
 	eps := services.NewEffectivePlanService(db)
 	svc := services.NewQuotaService(db, eps)
@@ -177,8 +177,8 @@ func TestQuotaService_GetOrgQuota_ReturnsCurrentAndLimit(t *testing.T) {
 
 	// Insert 2 terminals owned by the org owner; tag them with org id so
 	// CountOrgOccupiedSlots picks them up via the organization_members join.
-	db.Exec("INSERT INTO terminals (id, user_id, status, organization_id) VALUES (?, ?, ?, ?)", uuid.New().String(), ownerID, "active", teamOrg.ID.String())
-	db.Exec("INSERT INTO terminals (id, user_id, status, organization_id) VALUES (?, ?, ?, ?)", uuid.New().String(), ownerID, "stopped", teamOrg.ID.String())
+	db.Exec("INSERT INTO terminals (id, user_id, state, organization_id) VALUES (?, ?, ?, ?)", uuid.New().String(), ownerID, "running", teamOrg.ID.String())
+	db.Exec("INSERT INTO terminals (id, user_id, state, organization_id) VALUES (?, ?, ?, ?)", uuid.New().String(), ownerID, "stopped", teamOrg.ID.String())
 
 	eps := services.NewEffectivePlanService(db)
 	svc := services.NewQuotaService(db, eps)
@@ -251,10 +251,10 @@ func TestQuotaService_CheckUserQuota_OrgScopedCount_DoesNotLeakAcrossOrgs(t *tes
 	orgY, _ := createOrgWithSubscriptionAndType(t, db, "org-y", userID, planY, organizationModels.OrgTypeTeam)
 
 	// One terminal in each org — each org is at its cap, but globally the user has 2.
-	db.Exec("INSERT INTO terminals (id, user_id, status, organization_id) VALUES (?, ?, ?, ?)",
-		uuid.New().String(), userID, "active", orgX.ID.String())
-	db.Exec("INSERT INTO terminals (id, user_id, status, organization_id) VALUES (?, ?, ?, ?)",
-		uuid.New().String(), userID, "active", orgY.ID.String())
+	db.Exec("INSERT INTO terminals (id, user_id, state, organization_id) VALUES (?, ?, ?, ?)",
+		uuid.New().String(), userID, "running", orgX.ID.String())
+	db.Exec("INSERT INTO terminals (id, user_id, state, organization_id) VALUES (?, ?, ?, ?)",
+		uuid.New().String(), userID, "running", orgY.ID.String())
 
 	eps := services.NewEffectivePlanService(db)
 	svc := services.NewQuotaService(db, eps)
@@ -283,9 +283,9 @@ func TestQuotaService_GetUserUsage_ConcurrentTerminals_LiveCount(t *testing.T) {
 	createUserSubscription(t, db, userID, plan)
 
 	// 2 occupying + 1 expired = real count 2
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "expired")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "deleted")
 
 	eps := services.NewEffectivePlanService(db)
 	svc := services.NewQuotaService(db, eps)

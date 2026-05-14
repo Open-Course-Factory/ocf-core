@@ -29,8 +29,12 @@ func createTestUserKey(db *gorm.DB, userID string) (*models.UserTerminalKey, err
 	return userKey, err
 }
 
-// createTestTerminal creates a test terminal session (backwards compatible with old signature)
-func createTestTerminal(db *gorm.DB, userID string, status string, userKeyIDOrExpiry interface{}) (*models.Terminal, error) {
+// createTestTerminal creates a test terminal session. The `lifecycleLabel`
+// argument accepts both the canonical State values ("running"/"stopped"/
+// "deleted") and the legacy convenience labels ("active"/"expired") that
+// pre-date the SSOT consolidation — those are translated via labelToState
+// so existing call sites keep compiling.
+func createTestTerminal(db *gorm.DB, userID string, lifecycleLabel string, userKeyIDOrExpiry interface{}) (*models.Terminal, error) {
 	// Support both old signature (userKeyID uuid.UUID) and new signature (expiresAt time.Time)
 	var userKeyID uuid.UUID
 	var expiresAt time.Time
@@ -62,12 +66,7 @@ func createTestTerminal(db *gorm.DB, userID string, status string, userKeyIDOrEx
 		SessionID:         "test-session-" + uuid.New().String(),
 		UserID:            userID,
 		Name:              "Test Terminal",
-		Status:            status,
-		// Keep State aligned with Status so the new SSOT-aware
-		// ValidateSessionAccess sees a consistent row. Older test fixtures
-		// only set Status; this mapping keeps them green by deriving the
-		// canonical State from the legacy label.
-		State:             statusToState(status),
+		State:             labelToState(lifecycleLabel),
 		ExpiresAt:         expiresAt,
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -77,18 +76,18 @@ func createTestTerminal(db *gorm.DB, userID string, status string, userKeyIDOrEx
 	return terminal, err
 }
 
-// statusToState maps a legacy Status label to its canonical State value.
-// Status is being deprecated; new test fixtures should set State explicitly.
-func statusToState(status string) string {
-	switch status {
+// labelToState maps both legacy Status labels and canonical State values to
+// State-space. Test call sites still use "active"/"expired" for readability;
+// this keeps that ergonomic without resurrecting a parallel field.
+func labelToState(label string) string {
+	switch label {
 	case "active":
 		return "running"
-	case "stopped":
-		return "stopped"
 	case "expired":
 		return "deleted"
 	default:
-		return status
+		// "running", "stopped", "deleted", "hibernating", ... all pass through.
+		return label
 	}
 }
 

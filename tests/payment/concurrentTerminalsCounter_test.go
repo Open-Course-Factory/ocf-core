@@ -54,9 +54,9 @@ func TestConcurrentTerminalsCounter_StoppedSessionStillOccupiesSlot(t *testing.T
 	createUserSubscription(t, db, userID, plan)
 
 	// One stopped session — matches the lifecycle StopSession produces:
-	// terminal.Status = "stopped", terminal.State = "stopped".
-	db.Exec("INSERT INTO terminals (id, user_id, status, state) VALUES (?, ?, ?, ?)",
-		uuid.New().String(), userID, "stopped", "stopped")
+	// terminal.State = "stopped" (canonical SSOT).
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)",
+		uuid.New().String(), userID, "stopped")
 
 	svc := services.NewEffectivePlanService(db)
 	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
@@ -101,16 +101,16 @@ func TestConcurrentTerminalsCounter_StopStartCycleBypass(t *testing.T) {
 
 	// Step 1 — one running terminal, user is at cap.
 	runningID := uuid.New().String()
-	db.Exec("INSERT INTO terminals (id, user_id, status, state) VALUES (?, ?, ?, ?)",
-		runningID, userID, "active", "running")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)",
+		runningID, userID, "running")
 
 	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 	assert.NoError(t, err)
 	assert.False(t, check.Allowed, "user with 1 running terminal on cap=1 must be denied")
 
 	// Step 2 — stop the terminal (matches what StopSession does in production).
-	db.Exec("UPDATE terminals SET status = ?, state = ? WHERE id = ?",
-		"stopped", "stopped", runningID)
+	db.Exec("UPDATE terminals SET state = ? WHERE id = ?",
+		"stopped", runningID)
 
 	check, err = svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
 	assert.NoError(t, err)
@@ -184,10 +184,10 @@ func TestOrganizationConcurrentTerminalsCounter_StoppedSessionStillOccupiesSlot(
 	// One active + one stopped terminal owned by the org member. Both must
 	// be counted toward the org's MaxConcurrentTerminals — the stopped row
 	// is the case the bug ignored.
-	db.Exec("INSERT INTO terminals (id, user_id, status, state, organization_id) VALUES (?, ?, ?, ?, ?)",
-		uuid.New().String(), userID, "active", "running", org.ID.String())
-	db.Exec("INSERT INTO terminals (id, user_id, status, state, organization_id) VALUES (?, ?, ?, ?, ?)",
-		uuid.New().String(), userID, "stopped", "stopped", org.ID.String())
+	db.Exec("INSERT INTO terminals (id, user_id, state, organization_id) VALUES (?, ?, ?, ?)",
+		uuid.New().String(), userID, "running", org.ID.String())
+	db.Exec("INSERT INTO terminals (id, user_id, state, organization_id) VALUES (?, ?, ?, ?)",
+		uuid.New().String(), userID, "stopped", org.ID.String())
 
 	svc := services.NewOrganizationSubscriptionService(db)
 	limits, err := svc.GetOrganizationUsageLimits(org.ID)

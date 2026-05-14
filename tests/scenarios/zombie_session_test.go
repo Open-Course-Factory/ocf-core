@@ -46,7 +46,7 @@ func TestStartScenario_ZombieSession_ExpiredTerminal_AutoAbandons(t *testing.T) 
 	oldTerminal := terminalModels.Terminal{
 		SessionID:         "terminal-old",
 		UserID:            "student-zombie-1",
-		Status:            "expired",
+		State:            "deleted",
 		ExpiresAt:         time.Now().Add(-1 * time.Hour),
 		InstanceType:      "ubuntu:22.04",
 		UserTerminalKeyID: utk.ID,
@@ -75,7 +75,7 @@ func TestStartScenario_ZombieSession_ExpiredTerminal_AutoAbandons(t *testing.T) 
 	newTerminal := terminalModels.Terminal{
 		SessionID:         "terminal-new",
 		UserID:            "student-zombie-1",
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "ubuntu:22.04",
 		UserTerminalKeyID: utk2.ID,
@@ -126,7 +126,7 @@ func TestStartScenario_ZombieSession_StoppedTerminal_AutoAbandons(t *testing.T) 
 	stoppedTerminal := terminalModels.Terminal{
 		SessionID:         "terminal-stopped",
 		UserID:            "student-zombie-2",
-		Status:            "stopped",
+		State:            "stopped",
 		ExpiresAt:         time.Now().Add(-30 * time.Minute),
 		InstanceType:      "ubuntu:22.04",
 		UserTerminalKeyID: utk.ID,
@@ -154,7 +154,7 @@ func TestStartScenario_ZombieSession_StoppedTerminal_AutoAbandons(t *testing.T) 
 	newTerminal := terminalModels.Terminal{
 		SessionID:         "terminal-new-2",
 		UserID:            "student-zombie-2",
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "ubuntu:22.04",
 		UserTerminalKeyID: utk2.ID,
@@ -227,7 +227,7 @@ func TestStartScenario_ZombieSession_DeletedTerminal_AutoAbandons(t *testing.T) 
 	newTerminal := terminalModels.Terminal{
 		SessionID:         "terminal-real",
 		UserID:            "student-zombie-3",
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "ubuntu:22.04",
 		UserTerminalKeyID: utk.ID,
@@ -274,7 +274,7 @@ func TestStartScenario_ActiveTerminal_StillBlocks(t *testing.T) {
 	activeTerminal := terminalModels.Terminal{
 		SessionID:         "terminal-1",
 		UserID:            "student-active-1",
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "ubuntu:22.04",
 		UserTerminalKeyID: utk.ID,
@@ -303,7 +303,7 @@ func TestStartScenario_ActiveTerminal_StillBlocks(t *testing.T) {
 	otherTerminal := terminalModels.Terminal{
 		SessionID:         "terminal-2",
 		UserID:            "student-active-1",
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "ubuntu:22.04",
 		UserTerminalKeyID: utk2.ID,
@@ -369,7 +369,7 @@ func TestStartScenario_ZombieSession_NilTerminalID_AutoAbandons(t *testing.T) {
 	newTerminal := terminalModels.Terminal{
 		SessionID:         "terminal-nil-test",
 		UserID:            "student-zombie-nil",
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "ubuntu:22.04",
 		UserTerminalKeyID: utk.ID,

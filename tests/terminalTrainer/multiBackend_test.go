@@ -61,7 +61,7 @@ func TestGetTerminalSessionsByUserIDAndOrg(t *testing.T) {
 		SessionID:         "session-org1-a",
 		UserID:            "user1",
 		Name:              "Terminal Org1 A",
-		Status:            "active",
+		State:             "running",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -76,7 +76,7 @@ func TestGetTerminalSessionsByUserIDAndOrg(t *testing.T) {
 		SessionID:         "session-org2-a",
 		UserID:            "user1",
 		Name:              "Terminal Org2 A",
-		Status:            "active",
+		State:             "running",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -91,7 +91,7 @@ func TestGetTerminalSessionsByUserIDAndOrg(t *testing.T) {
 		SessionID:         "session-no-org",
 		UserID:            "user1",
 		Name:              "Terminal No Org",
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -132,7 +132,7 @@ func TestGetTerminalSessionsByUserIDAndOrg(t *testing.T) {
 			SessionID:         "session-org1-stopped",
 			UserID:            "user1",
 			Name:              "Stopped Terminal",
-			Status:            "stopped",
+			State:            "stopped",
 			ExpiresAt:         time.Now().Add(time.Hour),
 			InstanceType:      "test",
 			MachineSize:       "S",
@@ -146,7 +146,7 @@ func TestGetTerminalSessionsByUserIDAndOrg(t *testing.T) {
 		terminals, err := repo.GetTerminalSessionsByUserIDAndOrg("user1", &orgID1, true)
 		require.NoError(t, err)
 		assert.Len(t, *terminals, 1)
-		assert.Equal(t, "active", (*terminals)[0].Status)
+		assert.Equal(t, "running", (*terminals)[0].State)
 	})
 }
 
@@ -163,7 +163,7 @@ func TestTerminalBackendFieldPersistence(t *testing.T) {
 		SessionID:         "session-backend-test",
 		UserID:            "user1",
 		Name:              "Backend Test",
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -271,7 +271,7 @@ func TestGetUserSessions_FilterByOrg(t *testing.T) {
 		SessionID:         "session-with-org",
 		UserID:            "test-user-org",
 		Name:              "With Org",
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -286,7 +286,7 @@ func TestGetUserSessions_FilterByOrg(t *testing.T) {
 		SessionID:         "session-without-org",
 		UserID:            "test-user-org",
 		Name:              "Without Org",
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -371,7 +371,7 @@ func TestGetUserSessions_IncludesBackendAndOrgFields(t *testing.T) {
 		SessionID:         "session-fields-test",
 		UserID:            "test-user-fields",
 		Name:              "Fields Test",
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "M",

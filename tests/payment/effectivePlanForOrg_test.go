@@ -241,10 +241,10 @@ func TestCheckEffectiveUsageLimitForOrg_TeamOrg_UsesOrgPlanLimits(t *testing.T) 
 
 	// Insert 2 active terminals scoped to the org (#311 I2 fix: the count for
 	// an org-sourced plan must be scoped to that org).
-	db.Exec("INSERT INTO terminals (id, user_id, status, organization_id) VALUES (?, ?, ?, ?)",
-		uuid.New().String(), userID, "active", teamOrg.ID.String())
-	db.Exec("INSERT INTO terminals (id, user_id, status, organization_id) VALUES (?, ?, ?, ?)",
-		uuid.New().String(), userID, "active", teamOrg.ID.String())
+	db.Exec("INSERT INTO terminals (id, user_id, state, organization_id) VALUES (?, ?, ?, ?)",
+		uuid.New().String(), userID, "running", teamOrg.ID.String())
+	db.Exec("INSERT INTO terminals (id, user_id, state, organization_id) VALUES (?, ?, ?, ?)",
+		uuid.New().String(), userID, "running", teamOrg.ID.String())
 
 	svc := services.NewEffectivePlanService(db)
 	check, err := svc.CheckEffectiveUsageLimit(userID, &teamOrg.ID, "concurrent_terminals", 1)

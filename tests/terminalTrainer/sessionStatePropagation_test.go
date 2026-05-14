@@ -174,8 +174,7 @@ func TestSyncUserSessions_PropagatesStateFromTTBackend(t *testing.T) {
 		SessionID:         sessionID,
 		UserID:            userID,
 		Name:              "Test Terminal",
-		Status:            "active",  // legacy status field
-		State:             "running", // new lifecycle field — must be flipped to "stopped"
+		State:             "running", // canonical SSOT — sync must flip to "stopped"
 		PersistenceMode:   "ephemeral",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "",

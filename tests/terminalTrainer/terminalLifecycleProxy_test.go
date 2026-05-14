@@ -195,7 +195,6 @@ func TestStopSession_CallsNewStopEndpoint(t *testing.T) {
 	// Local state reflects the stop.
 	updated, err := svc.GetSessionInfo(terminal.SessionID)
 	require.NoError(t, err)
-	assert.Equal(t, "stopped", updated.Status)
 	assert.Equal(t, "stopped", updated.State)
 }
 
@@ -256,7 +255,6 @@ func TestDeleteSession_DecrementsMetric(t *testing.T) {
 
 	updated, err := svc.GetSessionInfo(terminal.SessionID)
 	require.NoError(t, err)
-	assert.Equal(t, "deleted", updated.Status)
 	assert.Equal(t, "deleted", updated.State)
 }
 
@@ -291,7 +289,6 @@ func TestStartSession_Success(t *testing.T) {
 
 	updated, err := svc.GetSessionInfo(terminal.SessionID)
 	require.NoError(t, err)
-	assert.Equal(t, "active", updated.Status, "Status should flip back to active")
 	assert.Equal(t, "running", updated.State, "State should flip back to running")
 	assert.Nil(t, updated.IdleUntil, "IdleUntil should be cleared on start")
 	assert.False(t, updated.LastStartedAt.IsZero(), "LastStartedAt should be set")

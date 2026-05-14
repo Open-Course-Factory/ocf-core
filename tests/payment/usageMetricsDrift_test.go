@@ -90,8 +90,8 @@ func TestUsageMetricsDrift_GetUserUsage_IgnoresStoredValue(t *testing.T) {
 	}).Error)
 
 	// Insert 2 real terminals — the truth.
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
 
 	eps := services.NewEffectivePlanService(db)
 	svc := services.NewQuotaService(db, eps)

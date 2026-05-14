@@ -80,7 +80,7 @@ func TestStartScenario_Success(t *testing.T) {
 	terminal := terminalModels.Terminal{
 		SessionID: "test-terminal-ctrl",
 		UserID:    "test-user-123",
-		Status:    "active",
+		State:    "running",
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	require.NoError(t, db.Create(&terminal).Error)
@@ -128,7 +128,7 @@ func TestStartScenario_NotFound(t *testing.T) {
 	terminal := terminalModels.Terminal{
 		SessionID: "test-terminal-nf",
 		UserID:    "test-user-123",
-		Status:    "active",
+		State:    "running",
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	require.NoError(t, db.Create(&terminal).Error)
@@ -789,7 +789,7 @@ func TestStartScenario_NoAssignment_Returns403(t *testing.T) {
 	terminal := terminalModels.Terminal{
 		SessionID: "terminal-no-assign",
 		UserID:    "regular-user-1",
-		Status:    "active",
+		State:    "running",
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	require.NoError(t, db.Create(&terminal).Error)
@@ -862,7 +862,7 @@ func TestStartScenario_WithGroupAssignment_Succeeds(t *testing.T) {
 	terminal := terminalModels.Terminal{
 		SessionID: "terminal-assigned",
 		UserID:    "assigned-user-1",
-		Status:    "active",
+		State:    "running",
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	require.NoError(t, db.Create(&terminal).Error)
@@ -913,7 +913,7 @@ func TestStartScenario_AdminBypassesAssignmentCheck(t *testing.T) {
 	terminal := terminalModels.Terminal{
 		SessionID: "terminal-admin-bypass",
 		UserID:    "admin-user-1",
-		Status:    "active",
+		State:    "running",
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	require.NoError(t, db.Create(&terminal).Error)
@@ -994,7 +994,7 @@ func TestStartScenario_ExpiredDeadline_Returns403(t *testing.T) {
 	terminal := terminalModels.Terminal{
 		SessionID: "terminal-expired",
 		UserID:    "expired-user-1",
-		Status:    "active",
+		State:    "running",
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	require.NoError(t, db.Create(&terminal).Error)
@@ -1068,7 +1068,7 @@ func TestStartScenario_InactiveAssignment_Returns403(t *testing.T) {
 	terminal := terminalModels.Terminal{
 		SessionID: "terminal-inactive",
 		UserID:    "inactive-user-1",
-		Status:    "active",
+		State:    "running",
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	require.NoError(t, db.Create(&terminal).Error)

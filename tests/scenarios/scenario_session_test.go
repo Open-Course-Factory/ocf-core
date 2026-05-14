@@ -540,7 +540,7 @@ func TestScenarioSessionService_ConcurrentStartNoDuplicates(t *testing.T) {
 		terminal := terminalModels.Terminal{
 			SessionID:         fmt.Sprintf("terminal-%d", i),
 			UserID:            "student-concurrent",
-			Status:            "active",
+			State:            "running",
 			ExpiresAt:         time.Now().Add(1 * time.Hour),
 			InstanceType:      "ubuntu:22.04",
 			UserTerminalKeyID: utk.ID,

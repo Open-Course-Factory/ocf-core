@@ -73,7 +73,7 @@ func TestGormEntityLoader_ResolvesGoNameToTableName(t *testing.T) {
 		SessionID:         "session-abc",
 		UserID:            "user-owner-xyz",
 		Name:              "test terminal",
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		UserTerminalKeyID: keyID,
 	}

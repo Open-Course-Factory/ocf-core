@@ -47,7 +47,6 @@ func TestValidateSessionAccess_StoppedSession(t *testing.T) {
 		SessionID:         "test-stopped-session-basic",
 		UserID:            "test-user",
 		Name:              "Test Terminal",
-		Status:            "stopped",
 		State:             "stopped",
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		UserTerminalKeyID: userKey.ID,
@@ -93,7 +92,6 @@ func TestGetAccessStatus_StoppedSession(t *testing.T) {
 		SessionID:         "test-stopped-access-status",
 		UserID:            "test-user-123",
 		Name:              "Test Terminal",
-		Status:            "stopped",
 		State:             "stopped",
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		UserTerminalKeyID: userKey.ID,
@@ -258,15 +256,15 @@ func TestGetAccessStatus_NoPermission(t *testing.T) {
 	assert.Equal(t, "no_permission", response["denial_reason"].(string))
 }
 
-// TestValidateSessionAccess_StateStopped_ReturnsStoppedNotExpired reproduces
-// the zombie-slot bug: a persistent session whose 60s expiry passed gets
-// auto-stopped by tt-backend (sessions.state='stopped'). The sync mirrors
-// State='stopped' into ocf-core, but the legacy Status field drifts to
-// 'expired' once ExpiresAt is in the past. The frontend Resume button POSTs
-// /terminals/:id/start, which goes through ValidateSessionAccess. Before the
-// fix, this returns ("expired") because the function reads the legacy Status
-// field. After the fix, it must return ("stopped") so the middleware's
-// allowStopped branch lets the Start handler run.
+// TestValidateSessionAccess_StateStopped_ReturnsStoppedNotExpired pins that
+// a persistent session whose ExpiresAt is in the past but whose State is
+// 'stopped' (tt-backend auto-stopped it) reports "stopped" — not "expired" —
+// so the middleware's allowStopped branch lets Resume succeed.
+//
+// Before the SSOT consolidation in MR !239 there was a parallel legacy
+// `status` field that drifted to 'expired' on past-expiry rows even though
+// State was correctly 'stopped'. The legacy field is gone; the only check
+// left is on State, which makes this regression structurally impossible.
 func TestValidateSessionAccess_StateStopped_ReturnsStoppedNotExpired(t *testing.T) {
 	db := setupTestDB(t)
 	service := services.NewTerminalTrainerService(db)
@@ -274,17 +272,13 @@ func TestValidateSessionAccess_StateStopped_ReturnsStoppedNotExpired(t *testing.
 	userKey, err := createTestUserKey(db, "test-user")
 	assert.NoError(t, err)
 
-	// Reproduce the exact bug shape: tt-backend auto-stopped the session
-	// (State='stopped'), but ExpiresAt is in the past and the legacy Status
-	// drifted to 'expired'. The canonical truth is State.
 	terminal := &models.Terminal{
 		SessionID:         "test-stopped-session",
 		UserID:            "test-user",
 		Name:              "Persistent",
-		Status:            "expired", // drifted legacy field — what triggers the bug
 		State:             "stopped", // canonical SSOT — auto-stop succeeded
 		PersistenceMode:   "persistent",
-		ExpiresAt:         time.Now().Add(-time.Hour), // past — would also be "expired" by Status path
+		ExpiresAt:         time.Now().Add(-time.Hour), // past — past-expiry must NOT win over State
 		UserTerminalKeyID: userKey.ID,
 	}
 	assert.NoError(t, db.Create(terminal).Error)
@@ -294,27 +288,26 @@ func TestValidateSessionAccess_StateStopped_ReturnsStoppedNotExpired(t *testing.
 	assert.NoError(t, err)
 	assert.False(t, isValid)
 	assert.Equal(t, "stopped", reason,
-		"persistent session with State='stopped' must report 'stopped' so the middleware's allowStopped branch lets Resume succeed; reading legacy Status returns 'expired' and 410-Gone's the user")
+		"persistent session with State='stopped' must report 'stopped' so the middleware's allowStopped branch lets Resume succeed")
 }
 
-// TestValidateSessionAccess_StateEmpty_FallsBackToStatus pins the migration
-// path: pre-State rows (empty State) keep behaving on the legacy Status
-// field so old data doesn't suddenly break.
-func TestValidateSessionAccess_StateEmpty_FallsBackToStatus(t *testing.T) {
+// TestValidateSessionAccess_StateEmpty_DeniesConservatively pins the new
+// post-MR-!239 contract for rows whose State column is empty (legacy data
+// that pre-dates the State backfill). Status no longer exists, so empty
+// State has no fallback signal — we conservatively deny access, which
+// matches what the legacy Status='expired' path used to return.
+func TestValidateSessionAccess_StateEmpty_DeniesConservatively(t *testing.T) {
 	db := setupTestDB(t)
 	service := services.NewTerminalTrainerService(db)
 
 	userKey, err := createTestUserKey(db, "test-user")
 	assert.NoError(t, err)
 
-	// Legacy row without a State value. SQLite's column default is 'running'
-	// for new inserts, so we have to explicitly write "" via Update to
-	// simulate a row that pre-dates the State column being populated.
 	terminal := &models.Terminal{
 		SessionID:         "test-legacy-session",
 		UserID:            "test-user",
 		Name:              "Legacy",
-		Status:            "active",
+		State:             "running",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		UserTerminalKeyID: userKey.ID,
 	}
@@ -327,8 +320,8 @@ func TestValidateSessionAccess_StateEmpty_FallsBackToStatus(t *testing.T) {
 	isValid, reason, err := service.ValidateSessionAccess(terminal.SessionID, false)
 
 	assert.NoError(t, err)
-	assert.True(t, isValid, "legacy row with State='' and Status='active' must still be accessible")
-	assert.Equal(t, "active", reason)
+	assert.False(t, isValid, "legacy row with empty State must be conservatively denied — there is no longer a Status fallback")
+	assert.Equal(t, "expired", reason)
 }
 
 // TestValidateSessionAccess_StateDeleted_ReturnsExpiredWireFormat preserves
@@ -346,7 +339,6 @@ func TestValidateSessionAccess_StateDeleted_ReturnsExpiredWireFormat(t *testing.
 		SessionID:         "test-deleted-session",
 		UserID:            "test-user",
 		Name:              "Deleted",
-		Status:            "deleted",
 		State:             "deleted",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		UserTerminalKeyID: userKey.ID,

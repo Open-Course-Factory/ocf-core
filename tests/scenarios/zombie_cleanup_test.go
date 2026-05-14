@@ -40,7 +40,7 @@ func TestCleanupZombieScenarioSessions_AbandonsStaleSessions(t *testing.T) {
 
 	expiredTerminal := terminalModels.Terminal{
 		SessionID: "terminal-expired-cleanup", UserID: "student-cleanup-1",
-		Status: "expired", ExpiresAt: time.Now().Add(-2 * time.Hour),
+		State: "deleted", ExpiresAt: time.Now().Add(-2 * time.Hour),
 		InstanceType: "ubuntu:22.04", UserTerminalKeyID: utk1.ID,
 	}
 	require.NoError(t, db.Create(&expiredTerminal).Error)
@@ -61,7 +61,7 @@ func TestCleanupZombieScenarioSessions_AbandonsStaleSessions(t *testing.T) {
 
 	stoppedTerminal := terminalModels.Terminal{
 		SessionID: "terminal-stopped-cleanup", UserID: "student-cleanup-2",
-		Status: "stopped", ExpiresAt: time.Now().Add(-1 * time.Hour),
+		State: "stopped", ExpiresAt: time.Now().Add(-1 * time.Hour),
 		InstanceType: "ubuntu:22.04", UserTerminalKeyID: utk2.ID,
 	}
 	require.NoError(t, db.Create(&stoppedTerminal).Error)
@@ -82,7 +82,7 @@ func TestCleanupZombieScenarioSessions_AbandonsStaleSessions(t *testing.T) {
 
 	activeTerminal := terminalModels.Terminal{
 		SessionID: "terminal-active-cleanup", UserID: "student-cleanup-3",
-		Status: "active", ExpiresAt: time.Now().Add(1 * time.Hour),
+		State: "running", ExpiresAt: time.Now().Add(1 * time.Hour),
 		InstanceType: "ubuntu:22.04", UserTerminalKeyID: utk3.ID,
 	}
 	require.NoError(t, db.Create(&activeTerminal).Error)
@@ -141,7 +141,7 @@ func TestCleanupZombieScenarioSessions_HandlesInProgressStatus(t *testing.T) {
 
 	expiredTerminal := terminalModels.Terminal{
 		SessionID: "terminal-ip-expired", UserID: "student-cleanup-ip",
-		Status: "expired", ExpiresAt: time.Now().Add(-2 * time.Hour),
+		State: "deleted", ExpiresAt: time.Now().Add(-2 * time.Hour),
 		InstanceType: "ubuntu:22.04", UserTerminalKeyID: utk.ID,
 	}
 	require.NoError(t, db.Create(&expiredTerminal).Error)
@@ -189,7 +189,7 @@ func TestCleanupZombieScenarioSessions_IgnoresCompletedSessions(t *testing.T) {
 
 	expiredTerminal := terminalModels.Terminal{
 		SessionID: "terminal-completed-expired", UserID: "student-cleanup-done",
-		Status: "expired", ExpiresAt: time.Now().Add(-2 * time.Hour),
+		State: "deleted", ExpiresAt: time.Now().Add(-2 * time.Hour),
 		InstanceType: "ubuntu:22.04", UserTerminalKeyID: utk.ID,
 	}
 	require.NoError(t, db.Create(&expiredTerminal).Error)

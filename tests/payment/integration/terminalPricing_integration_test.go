@@ -167,7 +167,7 @@ func startTerminals(t *testing.T, db *gorm.DB, userID string, n int) []uuid.UUID
 		term := &terminalModels.Terminal{
 			SessionID:         "session-" + userID + "-" + uuid.NewString(),
 			UserID:            userID,
-			Status:            "active",
+			State:            "running",
 			ExpiresAt:         time.Now().Add(1 * time.Hour),
 			UserTerminalKeyID: key.ID,
 		}

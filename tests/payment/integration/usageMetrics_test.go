@@ -49,7 +49,7 @@ func TestUsageMetrics_ConcurrentTerminals_StoppedCountedExpiredNot(t *testing.T)
 	activeTerminal1 := &terminalModels.Terminal{
 		SessionID:         "session-active-1",
 		UserID:            userID,
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		UserTerminalKeyID: userKey.ID,
 	}
@@ -59,7 +59,7 @@ func TestUsageMetrics_ConcurrentTerminals_StoppedCountedExpiredNot(t *testing.T)
 	activeTerminal2 := &terminalModels.Terminal{
 		SessionID:         "session-active-2",
 		UserID:            userID,
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		UserTerminalKeyID: userKey.ID,
 	}
@@ -70,7 +70,7 @@ func TestUsageMetrics_ConcurrentTerminals_StoppedCountedExpiredNot(t *testing.T)
 	stoppedTerminal := &terminalModels.Terminal{
 		SessionID:         "session-stopped",
 		UserID:            userID,
-		Status:            "stopped",
+		State:            "stopped",
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		UserTerminalKeyID: userKey.ID,
 	}
@@ -81,7 +81,7 @@ func TestUsageMetrics_ConcurrentTerminals_StoppedCountedExpiredNot(t *testing.T)
 	expiredTerminal := &terminalModels.Terminal{
 		SessionID:         "session-expired",
 		UserID:            userID,
-		Status:            "expired",
+		State:            "deleted",
 		ExpiresAt:         time.Now().Add(-1 * time.Hour),
 		UserTerminalKeyID: userKey.ID,
 	}
@@ -190,7 +190,7 @@ func TestUsageMetrics_ConcurrentTerminals_OnlyStoppedCountsAmongInactives(t *tes
 	stoppedTerminal := &terminalModels.Terminal{
 		SessionID:         "session-stopped-only",
 		UserID:            userID,
-		Status:            "stopped",
+		State:            "stopped",
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		UserTerminalKeyID: userKey.ID,
 	}
@@ -201,7 +201,7 @@ func TestUsageMetrics_ConcurrentTerminals_OnlyStoppedCountsAmongInactives(t *tes
 	expiredTerminal := &terminalModels.Terminal{
 		SessionID:         "session-expired-mix",
 		UserID:            userID,
-		Status:            "expired",
+		State:            "deleted",
 		ExpiresAt:         time.Now().Add(-1 * time.Hour),
 		UserTerminalKeyID: userKey.ID,
 	}
@@ -214,7 +214,7 @@ func TestUsageMetrics_ConcurrentTerminals_OnlyStoppedCountsAmongInactives(t *tes
 	deletedTerminal := &terminalModels.Terminal{
 		SessionID:         "session-deleted-mix",
 		UserID:            userID,
-		Status:            "active",
+		State:            "running",
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		UserTerminalKeyID: userKey.ID,
 	}

@@ -101,7 +101,7 @@ func ensureTerminalsTable(t *testing.T, db *gorm.DB) {
 	err := db.Exec(`CREATE TABLE IF NOT EXISTS terminals (
 		id TEXT PRIMARY KEY,
 		user_id TEXT,
-		status TEXT,
+		state TEXT,
 		deleted_at DATETIME
 	)`).Error
 	assert.NoError(t, err)
@@ -229,7 +229,7 @@ func TestGetUserEffectivePlan_MultipleOrgs(t *testing.T) {
 func TestGetUserEffectivePlan_EqualPriority_PersonalWins(t *testing.T) {
 	db := freshTestDB(t)
 	// Create terminals table for this test
-	db.Exec("CREATE TABLE IF NOT EXISTS terminals (id TEXT PRIMARY KEY, user_id TEXT, status TEXT, deleted_at DATETIME)")
+	db.Exec("CREATE TABLE IF NOT EXISTS terminals (id TEXT PRIMARY KEY, user_id TEXT, state TEXT, deleted_at DATETIME)")
 
 	userID := "user_equal_priority"
 
@@ -282,8 +282,8 @@ func TestCheckEffectiveUsageLimit_ConcurrentTerminals_AtLimit(t *testing.T) {
 	createUserSubscription(t, db, userID, plan)
 
 	// Insert 2 active terminals
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
 
 	svc := services.NewEffectivePlanService(db)
 	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
@@ -307,7 +307,7 @@ func TestCheckEffectiveUsageLimit_Unlimited(t *testing.T) {
 
 	// Insert 10 active terminals
 	for i := 0; i < 10; i++ {
-		db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
+		db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
 	}
 
 	svc := services.NewEffectivePlanService(db)
@@ -345,8 +345,8 @@ func TestCheckEffectiveUsageLimit_WithinLimit_WithExistingTerminals(t *testing.T
 	createUserSubscription(t, db, userID, plan)
 
 	// Insert 2 active terminals — user is within the limit of 5
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
 
 	svc := services.NewEffectivePlanService(db)
 	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
@@ -369,8 +369,8 @@ func TestCheckEffectiveUsageLimit_DeletedTerminalsNotCounted(t *testing.T) {
 	createUserSubscription(t, db, userID, plan)
 
 	// Insert 1 active terminal and 1 soft-deleted terminal
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
-	db.Exec("INSERT INTO terminals (id, user_id, status, deleted_at) VALUES (?, ?, ?, ?)", uuid.New().String(), userID, "active", time.Now())
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
+	db.Exec("INSERT INTO terminals (id, user_id, state, deleted_at) VALUES (?, ?, ?, ?)", uuid.New().String(), userID, "running", time.Now())
 
 	svc := services.NewEffectivePlanService(db)
 	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
@@ -398,10 +398,10 @@ func TestCheckEffectiveUsageLimit_StoppedCountedExpiredNotCounted(t *testing.T) 
 	createUserSubscription(t, db, userID, plan)
 
 	// 1 active + 1 stopped — both must count (2 total).
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "active")
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
 	// 1 expired — must NOT count (slot already released).
-	db.Exec("INSERT INTO terminals (id, user_id, status) VALUES (?, ?, ?)", uuid.New().String(), userID, "expired")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "deleted")
 
 	svc := services.NewEffectivePlanService(db)
 	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
@@ -426,8 +426,8 @@ func TestCheckEffectiveUsageLimit_OrgPlan(t *testing.T) {
 	// Insert 3 active terminals scoped to the org — the count must reflect
 	// only terminals tied to this org's context (#311 I2 fix).
 	for i := 0; i < 3; i++ {
-		db.Exec("INSERT INTO terminals (id, user_id, status, organization_id) VALUES (?, ?, ?, ?)",
-			uuid.New().String(), userID, "active", org.ID.String())
+		db.Exec("INSERT INTO terminals (id, user_id, state, organization_id) VALUES (?, ?, ?, ?)",
+			uuid.New().String(), userID, "running", org.ID.String())
 	}
 
 	svc := services.NewEffectivePlanService(db)

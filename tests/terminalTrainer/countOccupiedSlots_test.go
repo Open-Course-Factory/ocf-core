@@ -59,9 +59,11 @@ import (
 )
 
 // seedTerminal inserts a Terminal row with explicit lifecycle fields.
-// status is what OccupiesSlotScope filters on. softDelete=true sets
+// lifecycleLabel is what OccupiesSlotScope filters on (mapped to State).
+// Accepts both canonical State values ("running"/"stopped"/"deleted") and
+// legacy convenience labels ("active"/"expired"). softDelete=true sets
 // deleted_at via db.Delete() (the gorm-native soft delete path).
-func seedTerminal(t *testing.T, db *gorm.DB, userID, status string, orgID *uuid.UUID, softDelete bool) *models.Terminal {
+func seedTerminal(t *testing.T, db *gorm.DB, userID, lifecycleLabel string, orgID *uuid.UUID, softDelete bool) *models.Terminal {
 	t.Helper()
 	userKey, err := createTestUserKey(db, userID+"-"+uuid.New().String()[:6])
 	require.NoError(t, err)
@@ -70,7 +72,7 @@ func seedTerminal(t *testing.T, db *gorm.DB, userID, status string, orgID *uuid.
 		SessionID:         "seed-session-" + uuid.New().String(),
 		UserID:            userID,
 		Name:              "Seed Terminal",
-		Status:            status,
+		State:             labelToState(lifecycleLabel),
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -291,7 +293,7 @@ func TestCountOrgOccupiedSlots(t *testing.T) {
 // Used to exercise the "expires_at in the past" branch of OccupiesSlotScope.
 // Kept separate from seedTerminal (which hardcodes a 1h-future expiry) to
 // avoid breaking the many existing tests that rely on that default.
-func seedTerminalWithExpiry(t *testing.T, db *gorm.DB, userID, status string, orgID *uuid.UUID, expiresAt time.Time) *models.Terminal {
+func seedTerminalWithExpiry(t *testing.T, db *gorm.DB, userID, lifecycleLabel string, orgID *uuid.UUID, expiresAt time.Time) *models.Terminal {
 	t.Helper()
 	userKey, err := createTestUserKey(db, userID+"-"+uuid.New().String()[:6])
 	require.NoError(t, err)
@@ -300,7 +302,7 @@ func seedTerminalWithExpiry(t *testing.T, db *gorm.DB, userID, status string, or
 		SessionID:         "seed-expiry-session-" + uuid.New().String(),
 		UserID:            userID,
 		Name:              "Seed Terminal (custom expiry)",
-		Status:            status,
+		State:             labelToState(lifecycleLabel),
 		ExpiresAt:         expiresAt,
 		InstanceType:      "test",
 		MachineSize:       "S",

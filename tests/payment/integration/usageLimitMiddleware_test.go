@@ -45,7 +45,7 @@ func TestQuotaCheck_ConcurrentTerminals_RealTimeCount(t *testing.T) {
 		activeTerminal := &terminalModels.Terminal{
 			SessionID:         "middleware-session-1",
 			UserID:            userID,
-			Status:            "active",
+			State:            "running",
 			ExpiresAt:         time.Now().Add(1 * time.Hour),
 			UserTerminalKeyID: userKey.ID,
 		}
@@ -84,7 +84,7 @@ func TestQuotaCheck_ConcurrentTerminals_RealTimeCount(t *testing.T) {
 			terminal := &terminalModels.Terminal{
 				SessionID:         "middleware-session-" + string(rune('0'+i)),
 				UserID:            userID,
-				Status:            "active",
+				State:            "running",
 				ExpiresAt:         time.Now().Add(1 * time.Hour),
 				UserTerminalKeyID: userKey.ID,
 			}
@@ -105,18 +105,18 @@ func TestQuotaCheck_ConcurrentTerminals_RealTimeCount(t *testing.T) {
 	})
 
 	t.Run("Stopping does NOT free slots — only DELETE does", func(t *testing.T) {
-		// Pull 2 of the active terminals and STOP them. Per the design
+		// Pull 2 of the running terminals and STOP them. Per the design
 		// contract a stopped session still occupies a slot until DELETE,
 		// so the counter must remain at 3.
 		var terminalsToStop []terminalModels.Terminal
-		err := db.Where("user_id = ? AND status = ?", userID, "active").
+		err := db.Where("user_id = ? AND state = ?", userID, "running").
 			Limit(2).
 			Find(&terminalsToStop).Error
 		require.NoError(t, err)
 		require.Len(t, terminalsToStop, 2)
 
 		for _, terminal := range terminalsToStop {
-			err := db.Model(&terminal).Update("status", "stopped").Error
+			err := db.Model(&terminal).Update("state", "stopped").Error
 			require.NoError(t, err)
 		}
 
@@ -126,22 +126,22 @@ func TestQuotaCheck_ConcurrentTerminals_RealTimeCount(t *testing.T) {
 		assert.False(t, check.Allowed,
 			"stop-only must not free slots; user is still at 3/3 after stop")
 		assert.Equal(t, int64(3), check.CurrentUsage,
-			"1 active + 2 stopped = 3 occupied")
+			"1 running + 2 stopped = 3 occupied")
 		assert.Equal(t, int64(0), check.RemainingUsage)
 	})
 
 	t.Run("Deleting frees slots", func(t *testing.T) {
 		// Now mark the 2 stopped terminals as deleted (matching DeleteSession
-		// behavior). The counter must drop to 1 active and the next launch
+		// behavior). The counter must drop to 1 running and the next launch
 		// must be allowed.
 		var terminalsToDelete []terminalModels.Terminal
-		err := db.Where("user_id = ? AND status = ?", userID, "stopped").
+		err := db.Where("user_id = ? AND state = ?", userID, "stopped").
 			Find(&terminalsToDelete).Error
 		require.NoError(t, err)
 		require.Len(t, terminalsToDelete, 2)
 
 		for _, terminal := range terminalsToDelete {
-			err := db.Model(&terminal).Update("status", "deleted").Error
+			err := db.Model(&terminal).Update("state", "deleted").Error
 			require.NoError(t, err)
 		}
 
@@ -149,7 +149,7 @@ func TestQuotaCheck_ConcurrentTerminals_RealTimeCount(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.True(t, check.Allowed, "Should allow after deleting terminals")
-		assert.Equal(t, int64(1), check.CurrentUsage, "Only 1 active terminal remains")
+		assert.Equal(t, int64(1), check.CurrentUsage, "Only 1 running terminal remains")
 		assert.Equal(t, int64(2), check.RemainingUsage)
 	})
 }
@@ -194,7 +194,7 @@ func TestQuotaCheck_FirstTimeUser(t *testing.T) {
 		terminal := &terminalModels.Terminal{
 			SessionID:         "first-time-session",
 			UserID:            userID,
-			Status:            "active",
+			State:            "running",
 			ExpiresAt:         time.Now().Add(1 * time.Hour),
 			UserTerminalKeyID: userKey.ID,
 		}

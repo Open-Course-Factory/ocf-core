@@ -54,8 +54,8 @@ func TestCheckEffectiveUsageLimit_OrgContext_UsesOrgPlan_NotGlobalWinner(t *test
 	personalPlan := createPlan(t, db, "RestrictivePersonal", 10, 1)
 	createUserSubscription(t, db, userID, personalPlan)
 	// One active personal terminal (no organization_id) — fills the personal cap.
-	db.Exec("INSERT INTO terminals (id, user_id, status, state) VALUES (?, ?, ?, ?)",
-		uuid.New().String(), userID, "active", "running")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)",
+		uuid.New().String(), userID, "running")
 
 	// Team org has a generous plan with lower priority, and no terminals in its scope.
 	orgPlan := createPlan(t, db, "GenerousTeam", 5, 5)
@@ -92,8 +92,8 @@ func TestCheckEffectiveUsageLimit_NilOrgContext_KeepsGlobalSemantics(t *testing.
 	personalPlan := createPlan(t, db, "RestrictivePersonal", 10, 1)
 	createUserSubscription(t, db, userID, personalPlan)
 	// Fill the personal cap with one active terminal (no organization_id).
-	db.Exec("INSERT INTO terminals (id, user_id, status, state) VALUES (?, ?, ?, ?)",
-		uuid.New().String(), userID, "active", "running")
+	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)",
+		uuid.New().String(), userID, "running")
 
 	orgPlan := createPlan(t, db, "GenerousTeam", 5, 5)
 	createOrgWithSubscriptionAndType(t, db, "team-A", userID, orgPlan, organizationModels.OrgTypeTeam)
