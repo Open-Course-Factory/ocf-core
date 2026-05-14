@@ -144,6 +144,8 @@ func (m *capturingTTService) GetCatalogFeatures() ([]ttDto.TTFeature, error) { r
 func (m *capturingTTService) GetSessionOptions(*paymentModels.SubscriptionPlan, string, string) (*ttDto.SessionOptionsResponse, error) {
 	return nil, nil
 }
+func (m *capturingTTService) EnrichSessionOptionsBudget(*ttDto.SessionOptionsResponse, *paymentModels.SubscriptionPlan, string, *uuid.UUID) {
+}
 func (m *capturingTTService) StartComposedSession(userID string, input ttDto.CreateComposedSessionInput, _ any) (*ttDto.TerminalSessionResponse, error) {
 	m.capturedUserIDs = append(m.capturedUserIDs, userID)
 	m.capturedInputs = append(m.capturedInputs, input)
