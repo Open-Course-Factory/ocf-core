@@ -6,6 +6,7 @@ import (
 
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/terminalTrainer/services"
+	"soli/formations/src/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -103,6 +104,24 @@ func (tam *TerminalAccessMiddleware) requireTerminalAccess(allowStopped bool) gi
 				ErrorMessage: "terminal access denied",
 			})
 			return
+		}
+
+		// Lifecycle endpoints (POST /:id/start, DELETE /:id) need a fresh
+		// view of tt-backend's authoritative state — tt-backend may have
+		// auto-stopped a persistent session within the last few seconds
+		// (graceful SIGTERM window) and ocf-core's terminals.state would
+		// otherwise still report 'running' until the next user-sessions
+		// poll. Reading endpoints don't need this; they tolerate the
+		// staleness in exchange for a faster response.
+		//
+		// Tolerate sync failures: a temporary tt-backend hiccup must not
+		// block the user from acting on a session they own. We log and
+		// fall through to ValidateSessionAccess on the cached row.
+		if allowStopped {
+			if _, syncErr := tam.service.SyncUserSessions(userID); syncErr != nil {
+				utils.Warn("RequireTerminalAccess: pre-validate sync failed for user %s, terminal %s (continuing with cached row): %v",
+					userID, terminalID, syncErr)
+			}
 		}
 
 		// NEW: Validate session state (use local state only for performance)
