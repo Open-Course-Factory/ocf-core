@@ -21,7 +21,6 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 						SessionID:       model.SessionID,
 						UserID:          model.UserID,
 						Name:            model.Name,
-						Status:          model.Status,
 						State:           model.State,
 						PersistenceMode: model.PersistenceMode,
 						IdleUntil:       model.IdleUntil,
@@ -38,7 +37,7 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 						SessionID:         input.SessionID,
 						UserID:            input.UserID,
 						Name:              input.Name,
-						Status:            "active",
+						State:             "running",
 						ExpiresAt:         input.ExpiresAt,
 						UserTerminalKeyID: input.TerminalTrainerKeyID,
 					}
@@ -47,9 +46,6 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 					updates := make(map[string]any)
 					if input.Name != nil {
 						updates["name"] = *input.Name
-					}
-					if input.Status != nil {
-						updates["status"] = *input.Status
 					}
 					if input.State != nil {
 						updates["state"] = *input.State

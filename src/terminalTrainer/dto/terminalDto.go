@@ -19,10 +19,9 @@ type CreateTerminalInput struct {
 }
 
 type UpdateTerminalInput struct {
-	Name   *string `json:"name,omitempty" mapstructure:"name"`
-	Status *string `json:"status,omitempty" mapstructure:"status"`
-	// State is the new lifecycle field (running, paused, hibernating, etc.).
-	// Phasing out Status above.
+	Name *string `json:"name,omitempty" mapstructure:"name"`
+	// State is the lifecycle field (running, stopped, hibernating, deleted, etc.).
+	// SSOT — the legacy `status` field has been removed.
 	State *string `json:"state,omitempty" mapstructure:"state"`
 	// PersistenceMode allows switching a session between ephemeral and persistent
 	// when the plan permits it. Values: "ephemeral", "persistent".
@@ -34,9 +33,9 @@ type TerminalOutput struct {
 	SessionID       string     `json:"session_id"`
 	UserID          string     `json:"user_id"`
 	Name            string     `json:"name"` // User-friendly name for the terminal session
-	Status          string     `json:"status"`
-	// State is the new session lifecycle field (running, paused, hibernating, etc.).
-	State           string     `json:"state,omitempty"`
+	// State is the session lifecycle field (running, stopped, hibernating, deleted, etc.).
+	// SSOT — the legacy `status` field has been removed from the wire contract.
+	State           string     `json:"state"`
 	// PersistenceMode is "ephemeral" or "persistent".
 	PersistenceMode string     `json:"persistence_mode,omitempty"`
 	// IdleUntil is the absolute deadline after which the session may be reaped or
@@ -185,16 +184,19 @@ type TerminalTrainerSessionInfo struct {
 	Backend     string      `json:"backend,omitempty"`
 }
 
-// SyncSessionResponse représente le résultat de synchronisation d'une session
+// SyncSessionResponse représente le résultat de synchronisation d'une session.
+// PreviousState/CurrentState carry the SSOT state names (running, stopped,
+// deleted, ...). The legacy `previous_status`/`current_status` JSON keys were
+// renamed to make the namespace explicit.
 type SyncSessionResponse struct {
-	SessionID      string    `json:"session_id"`
-	Action         string    `json:"action"` // "created", "updated", "expired", "no_change"
-	PreviousStatus string    `json:"previous_status"`
-	CurrentStatus  string    `json:"current_status"`
-	Updated        bool      `json:"updated"`
-	Source         string    `json:"source"` // "api", "local", "both"
-	ErrorMessage   string    `json:"error_message,omitempty"`
-	LastSyncAt     time.Time `json:"last_sync_at"`
+	SessionID    string    `json:"session_id"`
+	Action       string    `json:"action"` // "created", "updated", "expired", "no_change"
+	PreviousState string    `json:"previous_state"`
+	CurrentState  string    `json:"current_state"`
+	Updated      bool      `json:"updated"`
+	Source       string    `json:"source"` // "api", "local", "both"
+	ErrorMessage string    `json:"error_message,omitempty"`
+	LastSyncAt   time.Time `json:"last_sync_at"`
 }
 
 // SyncAllSessionsResponse représente la réponse de synchronisation de toutes les sessions
@@ -563,9 +565,9 @@ type CommandHistoryResponse struct {
 
 // OrgTerminalUsageUser holds per-user terminal counts for an organization.
 //
-// ActiveCount reports running sessions only (status='active'). OccupyingSlots
+// ActiveCount reports running sessions only (state='running'). OccupyingSlots
 // reports every session that still consumes a slot under the canonical rule
-// in models.TerminalStatusesOccupyingSlot (currently active+stopped). The two
+// in models.TerminalStatesOccupyingSlot (currently running+stopped). The two
 // values differ because a stopped session keeps disk and a quota slot until
 // it is deleted — see models.OccupiesSlotScope for the single source of truth.
 type OrgTerminalUsageUser struct {
@@ -580,7 +582,7 @@ type OrgTerminalUsageUser struct {
 //
 // ActiveTerminals is the "what's running right now" display count. OccupyingSlots
 // is the quota-relevant count and matches MaxTerminals semantics (stopped sessions
-// still occupy a slot — see models.TerminalStatusesOccupyingSlot). Both are
+// still occupy a slot — see models.TerminalStatesOccupyingSlot). Both are
 // surfaced so the dashboard can show "5 running / 7 slots used / 10 max".
 type OrgTerminalUsageResponse struct {
 	OrganizationID  string                 `json:"organization_id"`

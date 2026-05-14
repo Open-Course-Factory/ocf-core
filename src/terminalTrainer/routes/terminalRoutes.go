@@ -39,8 +39,8 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	// Stop session requires terminal ownership (Layer 2 security check)
 	routes.POST("/:id/stop", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.StopSession)
 	// Resume a stopped session — slot-neutral state transition. The stopped
-	// session already counts against `OccupiesSlotScope` (terminals.status
-	// IN ('active','stopped') AND expires_at > now), so this path does NOT
+	// session already counts against `OccupiesSlotScope` (terminals.state
+	// IN ('running','stopped') AND expires_at > now), so this path does NOT
 	// add a slot and must NOT carry CheckLimit("concurrent_terminals") —
 	// doing so 403s the user out of resuming their own session at 1/1.
 	// The fresh-create flow at POST /start-composed-session is the only

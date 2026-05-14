@@ -635,7 +635,6 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 			SessionID:       terminal.SessionID,
 			UserID:          terminal.UserID,
 			Name:            terminal.Name,
-			Status:          terminal.Status,
 			State:           terminal.State,
 			PersistenceMode: terminal.PersistenceMode,
 			IdleUntil:       terminal.IdleUntil,
@@ -718,11 +717,11 @@ func (tc *terminalController) SyncSession(ctx *gin.Context) {
 	if sessionResult == nil {
 		// Session non trouvée dans les résultats, créer une réponse par défaut
 		sessionResult = &dto.SyncSessionResponse{
-			SessionID:      sessionID,
-			PreviousStatus: terminal.Status,
-			CurrentStatus:  terminal.Status,
-			Updated:        false,
-			LastSyncAt:     time.Now(),
+			SessionID:    sessionID,
+			PreviousState: terminal.State,
+			CurrentState:  terminal.State,
+			Updated:      false,
+			LastSyncAt:   time.Now(),
 		}
 	}
 
@@ -910,10 +909,10 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 
 	response := dto.ExtendedSessionStatusResponse{
 		SessionID:       sessionID,
-		Status:          terminal.Status,
+		Status:          terminal.State,
 		ExpiresAt:       terminal.ExpiresAt,
 		LastChecked:     time.Now(),
-		LocalStatus:     terminal.Status,
+		LocalStatus:     terminal.State,
 		ExistsInAPI:     false,
 		ExistsLocally:   true,
 		SyncRecommended: false,
@@ -934,18 +933,19 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 		}
 
 		if foundInAPI != nil {
-			// Map SessionStatus from /sessions endpoint to terminal lifecycle status
-			// SessionStatus: 0=active, 1=expired, 2+=other (different from InstanceCreationStatus)
-			apiStatusName := "expired"
+			// Map SessionStatus from /sessions endpoint to terminal lifecycle state.
+			// SessionStatus: 0=active, 1=expired, 2+=other. Translate to State-space
+			// so the comparison below is namespace-consistent with terminal.State.
+			apiStateName := "deleted"
 			if foundInAPI.Status == 0 {
-				apiStatusName = "active"
+				apiStateName = "running"
 			}
 
 			response.ExistsInAPI = true
-			response.APIStatus = apiStatusName
+			response.APIStatus = apiStateName
 			response.APIExpiresAt = time.Unix(foundInAPI.ExpiresAt, 0)
-			response.SyncRecommended = terminal.Status != apiStatusName
-			response.StatusMatch = terminal.Status == apiStatusName
+			response.SyncRecommended = terminal.State != apiStateName
+			response.StatusMatch = terminal.State == apiStateName
 		} else {
 			response.APIStatus = "not_found"
 			response.SyncRecommended = true
