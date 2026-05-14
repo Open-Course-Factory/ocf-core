@@ -1579,9 +1579,20 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 	//
 	// For State="running" sessions, ExpiresAt in the past means the sync
 	// hasn't caught up yet — tt-backend's auto-stop will land on the next
-	// poll. Returning "expired" here is conservative; the next sync owns
-	// the State update.
+	// poll. The handling diverges by PersistenceMode:
+	//
+	//   - persistent: the session is resumable. Report "stopped" so the
+	//     lifecycle middleware's allowStopped branch lets Resume / Delete
+	//     pass through during tt-backend's graceful auto-stop window.
+	//     Otherwise the user gets a 410 when clicking Resume on a session
+	//     that still exists and is about to (or has just) auto-stopped.
+	//
+	//   - ephemeral (default): the container is being destroyed; "expired"
+	//     is correct — there is nothing to resume.
 	if time.Now().After(terminal.ExpiresAt) {
+		if terminal.PersistenceMode == "persistent" {
+			return false, "stopped", nil
+		}
 		return false, "expired", nil
 	}
 
