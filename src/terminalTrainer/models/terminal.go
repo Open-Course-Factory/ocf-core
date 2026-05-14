@@ -8,11 +8,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// TerminalStatusesOccupyingSlot are the status values that count toward
+// TerminalStatesOccupyingSlot are the state values that count toward
 // the concurrent_terminals limit. Stopped sessions still occupy a slot
-// because they preserve disk and can be resumed — only deleted/expired
-// rows free a slot.
-var TerminalStatusesOccupyingSlot = []string{"active", "stopped"}
+// because they preserve disk and can be resumed — only deleted (or
+// other terminal-state) rows free a slot.
+var TerminalStatesOccupyingSlot = []string{"running", "stopped"}
 
 // OccupiesSlotScope is a GORM scope that filters terminals counted
 // against the concurrent_terminals quota. Single source of truth for
@@ -21,17 +21,17 @@ var TerminalStatusesOccupyingSlot = []string{"active", "stopped"}
 //
 // The canonical rule is:
 //
-//	status IN ('active', 'stopped')   -- lifecycle still owes capacity
+//	state IN ('running', 'stopped')   -- lifecycle still owes capacity
 //	AND deleted_at IS NULL            -- gorm-soft-delete excluded
 //	AND expires_at > NOW()            -- past-expiry rows are "zombie" slots
 //
 // The expires_at clause aligns the backend with the UI's
 // `getEffectiveSessionState` invariant, which treats any row whose
 // `expires_at` is in the past as effectively terminated. Without that
-// clause, stale rows whose proxy session is long gone but whose status
+// clause, stale rows whose proxy session is long gone but whose state
 // column was never updated would keep blocking new sessions ("30 active
 // sessions" with zero visible) — a quota mismatch between the
-// per-second-aware UI and the dumb status-only backend count.
+// per-second-aware UI and the dumb state-only backend count.
 //
 // `expires_at` is compared against `time.Now()` bound as a SQL
 // parameter (not `NOW()` / `CURRENT_TIMESTAMP`) for two reasons:
@@ -50,8 +50,8 @@ var TerminalStatusesOccupyingSlot = []string{"active", "stopped"}
 //	    Where("terminals.user_id = ?", userID).Count(&count)
 func OccupiesSlotScope(tx *gorm.DB) *gorm.DB {
 	return tx.Where(
-		"terminals.status IN ? AND terminals.deleted_at IS NULL AND terminals.expires_at > ?",
-		TerminalStatusesOccupyingSlot,
+		"terminals.state IN ? AND terminals.deleted_at IS NULL AND terminals.expires_at > ?",
+		TerminalStatesOccupyingSlot,
 		time.Now(),
 	)
 }
@@ -64,16 +64,16 @@ func OccupiesSlotScope(tx *gorm.DB) *gorm.DB {
 //
 // The canonical rule is:
 //
-//	status = 'active'                 -- not stopped / expired / errored
+//	state = 'running'                 -- not stopped / deleted / errored
 //	AND deleted_at IS NULL            -- gorm-soft-delete excluded
 //	AND expires_at > NOW()            -- past-expiry rows are "zombie" running
 //
 // Mirrors the SSOT pattern set by OccupiesSlotScope: every display/listing
 // query that wants "currently running" terminals must route through this
 // scope so the rule stays expressed in exactly one place. Past-expiry
-// rows whose status column was never updated (proxy session is gone, the
+// rows whose state column was never updated (proxy session is gone, the
 // stale row remains) are excluded — without this clause, the dumb
-// status-only count drifts from the per-second-aware UI which already
+// state-only count drifts from the per-second-aware UI which already
 // treats past-expiry as terminated.
 //
 // `expires_at` is compared against `time.Now()` bound as a SQL parameter
@@ -91,8 +91,8 @@ func OccupiesSlotScope(tx *gorm.DB) *gorm.DB {
 //	    Where("terminals.user_id = ?", userID).Count(&count)
 func RunningDisplayScope(tx *gorm.DB) *gorm.DB {
 	return tx.Where(
-		"terminals.status = ? AND terminals.deleted_at IS NULL AND terminals.expires_at > ?",
-		"active",
+		"terminals.state = ? AND terminals.deleted_at IS NULL AND terminals.expires_at > ?",
+		"running",
 		time.Now(),
 	)
 }
@@ -138,12 +138,9 @@ type Terminal struct {
 	SessionID            string     `gorm:"type:varchar(255);uniqueIndex" json:"session_id"`
 	UserID               string     `gorm:"type:varchar(255);not null;index" json:"user_id"`
 	Name                 string     `gorm:"type:varchar(255)" json:"name"` // User-friendly name for the terminal session
-	// Status is the legacy lifecycle field (active, stopped, expired) kept for
-	// backward compatibility with existing code paths. It is being phased out
-	// in favor of State below — new code should consume State.
-	Status string `gorm:"type:varchar(50);default:'active'" json:"status"`
-	// State is the new session lifecycle field driven by the proxy + persistence
-	// rules: running, paused, hibernating, resuming, terminated, etc.
+	// State is the session lifecycle field driven by the proxy + persistence
+	// rules: running, stopped, hibernating, resuming, deleted, etc. It is the
+	// SSOT — every reader and writer must use this field.
 	State                string     `gorm:"type:varchar(50);default:'running'" json:"state"`
 	// PersistenceMode controls whether the session is ephemeral (default) or
 	// persistent across stop/start cycles. Values: "ephemeral", "persistent".

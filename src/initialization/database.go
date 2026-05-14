@@ -84,6 +84,11 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Terminal entities
 	db.AutoMigrate(&terminalModels.Terminal{})
 	db.AutoMigrate(&terminalModels.UserTerminalKey{})
+	// MR !239 (SSOT consolidation): the legacy `status` column on `terminals`
+	// was a parallel field that drifted from `state` and caused zombie-resume
+	// and dashboard banner bugs. The model field is gone; this drops the
+	// orphan column. Idempotent — HasColumn returns false once dropped.
+	dropOrphanTerminalColumns(db)
 
 	// Group entities
 	db.AutoMigrate(&groupModels.ClassGroup{})
@@ -613,6 +618,30 @@ func dropOrphanSubscriptionPlanColumns(db *gorm.DB) {
 			continue
 		}
 		log.Printf("[MIGRATION] dropped orphan column subscription_plans.%s", col)
+	}
+}
+
+// dropOrphanTerminalColumns drops legacy columns from the `terminals` table
+// that used to back removed model fields. Mirrors
+// dropOrphanSubscriptionPlanColumns and is idempotent.
+//
+// MR !239 (SSOT consolidation): the `status` column was a duplicate of
+// `state` and drifted in ways that broke Resume + dashboard banners. The
+// model field is gone; this drops the column so reads/writes that still
+// reference it (none should remain) fail loudly instead of silently
+// reading stale data.
+func dropOrphanTerminalColumns(db *gorm.DB) {
+	orphans := []string{"status"}
+	migrator := db.Migrator()
+	for _, col := range orphans {
+		if !migrator.HasColumn(&terminalModels.Terminal{}, col) {
+			continue
+		}
+		if err := migrator.DropColumn(&terminalModels.Terminal{}, col); err != nil {
+			log.Printf("[MIGRATION] failed to drop orphan column terminals.%s: %v", col, err)
+			continue
+		}
+		log.Printf("[MIGRATION] dropped orphan column terminals.%s", col)
 	}
 }
 
