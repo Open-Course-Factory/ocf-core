@@ -164,6 +164,8 @@ func (m *mockTerminalTrainerService) GetCatalogFeatures() ([]dto.TTFeature, erro
 func (m *mockTerminalTrainerService) GetSessionOptions(plan *paymentModels.SubscriptionPlan, distribution string, backend string) (*dto.SessionOptionsResponse, error) {
 	panic("not implemented")
 }
+func (m *mockTerminalTrainerService) EnrichSessionOptionsBudget(opts *dto.SessionOptionsResponse, plan *paymentModels.SubscriptionPlan, userID string, orgID *uuid.UUID) {
+}
 
 // ==========================================
 // Router helper

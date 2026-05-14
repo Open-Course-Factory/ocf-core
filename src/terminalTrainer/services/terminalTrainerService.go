@@ -3180,26 +3180,40 @@ func (e *BudgetRejection) Error() string {
 // enforceBudget runs the budget gate before the Terminal is persisted.
 // It is only called when (a) the feature flag is on AND (b) the plan's
 // QuotaModel is "budget". Returns a *BudgetRejection on overspend and nil
-// otherwise.
-//
-// Defense-in-depth: the TerminalBudgetHook covers any code path that goes
-// through the generic Create flow, but StartComposedSession persists the
-// Terminal directly via repository.CreateTerminalSession and bypasses the
-// hook. Both call paths reuse QuotaService.CheckBudget so the rule can't
-// drift.
+// otherwise. Thin wrapper over EnforceBudget — exposes the configured
+// QuotaService to the package-private composed-session path.
 func (tts *terminalTrainerService) enforceBudget(
 	userID string,
 	orgID *uuid.UUID,
 	plan *paymentModels.SubscriptionPlan,
 	requestedCPU, requestedMemMB int,
 ) error {
-	if tts.quotaService == nil {
+	return EnforceBudget(tts.quotaService, userID, orgID, plan, requestedCPU, requestedMemMB)
+}
+
+// EnforceBudget translates a QuotaService.CheckBudget outcome into either nil
+// (allowed) or a *BudgetRejection (rejected). Exported so tests can exercise
+// the same translation logic without standing up a full TerminalTrainerService.
+//
+// Defense-in-depth: the TerminalBudgetHook covers any code path that goes
+// through the generic Create flow, but StartComposedSession persists the
+// Terminal directly via repository.CreateTerminalSession and bypasses the
+// hook. Both call paths reuse QuotaService.CheckBudget so the rule can't
+// drift.
+func EnforceBudget(
+	quotaService paymentServices.QuotaService,
+	userID string,
+	orgID *uuid.UUID,
+	plan *paymentModels.SubscriptionPlan,
+	requestedCPU, requestedMemMB int,
+) error {
+	if quotaService == nil {
 		// Fail open at the explicit-check layer — the hook still gates the
 		// generic Create path. This branch only triggers in tests that
 		// build the service without wiring QuotaService.
 		return nil
 	}
-	check, err := tts.quotaService.CheckBudget(userID, orgID, plan, requestedCPU, requestedMemMB)
+	check, err := quotaService.CheckBudget(userID, orgID, plan, requestedCPU, requestedMemMB)
 	if err != nil {
 		return fmt.Errorf("budget check failed: %w", err)
 	}

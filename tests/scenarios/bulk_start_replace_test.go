@@ -134,6 +134,8 @@ func (m *mockTTService) GetCatalogFeatures() ([]ttDto.TTFeature, error) { return
 func (m *mockTTService) GetSessionOptions(*paymentModels.SubscriptionPlan, string, string) (*ttDto.SessionOptionsResponse, error) {
 	return nil, nil
 }
+func (m *mockTTService) EnrichSessionOptionsBudget(*ttDto.SessionOptionsResponse, *paymentModels.SubscriptionPlan, string, *uuid.UUID) {
+}
 func (m *mockTTService) StartComposedSession(userID string, _ ttDto.CreateComposedSessionInput, _ any) (*ttDto.TerminalSessionResponse, error) {
 	return &ttDto.TerminalSessionResponse{SessionID: "terminal-" + userID, Status: "running"}, nil
 }
