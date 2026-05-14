@@ -299,6 +299,22 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	return nil
 }
 
+// resolvePlanExpirySeconds is the SSOT for converting a plan's
+// MaxSessionDurationMinutes into the `expiry` seconds value posted to
+// tt-backend. Both the create path (StartComposedSession) and the resume
+// path (StartSession) must derive expiry through this helper so the plan
+// cap is honored uniformly.
+//
+// Returns 0 when the plan is nil or has no positive duration cap — callers
+// should then OMIT the expiry field on the wire so tt-backend can fall
+// back to its instance config default.
+func resolvePlanExpirySeconds(plan *paymentModels.SubscriptionPlan) int {
+	if plan == nil || plan.MaxSessionDurationMinutes <= 0 {
+		return 0
+	}
+	return plan.MaxSessionDurationMinutes * 60
+}
+
 // StartSession reprend une session précédemment arrêtée via l'endpoint
 // /sessions/{id}/start de tt-backend. Le disque est restauré côté backend.
 //
@@ -308,6 +324,13 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 // (sinon il affiche "Session expirée" sur une session qui vient d'être reprise,
 // jusqu'à la prochaine synchro). Si tt-backend ne renvoie pas d'expires_at
 // (instance sans expiry fini), on conserve la valeur actuelle.
+//
+// L'expiry envoyé à tt-backend dérive de la SubscriptionPlan référencée par
+// le terminal (terminal.SubscriptionPlanID). Sans cela, le resume retombait
+// sur la valeur par défaut de tt-backend (~1h), bypassant la limite du plan
+// (bug observé avec MaxSessionDurationMinutes=1: création 60s OK, reprise 1h).
+// Si SubscriptionPlanID est nil (ancien terminal créé avant que le champ
+// existe), on n'envoie pas d'expiry et tt-backend utilise son défaut.
 func (tts *terminalTrainerService) StartSession(sessionID string) error {
 	utils.Debug("StartSession called for session %s", sessionID)
 
@@ -316,7 +339,21 @@ func (tts *terminalTrainerService) StartSession(sessionID string) error {
 		return fmt.Errorf("session not found: %w", err)
 	}
 
-	expiresAtUnix, err := tts.startSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey)
+	// Resolve the plan-derived expiry cap. When the terminal predates the
+	// SubscriptionPlanID column (legacy row), we leave expirySeconds=0 so
+	// the call sends no expiry field and tt-backend uses its default.
+	expirySeconds := 0
+	if terminal.SubscriptionPlanID != nil {
+		var plan paymentModels.SubscriptionPlan
+		if err := tts.db.First(&plan, "id = ?", *terminal.SubscriptionPlanID).Error; err == nil {
+			expirySeconds = resolvePlanExpirySeconds(&plan)
+		} else {
+			utils.Warn("StartSession: failed to load plan %s for terminal %s: %v — falling back to tt-backend default expiry",
+				terminal.SubscriptionPlanID.String(), sessionID, err)
+		}
+	}
+
+	expiresAtUnix, err := tts.startSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey, expirySeconds)
 	if err != nil {
 		return fmt.Errorf("failed to start session in Terminal Trainer API: %w", err)
 	}
@@ -402,18 +439,30 @@ func (tts *terminalTrainerService) stopSessionInAPI(sessionID, userAPIKey string
 // au redémarrage de l'instance. Retourne 0 si le champ est absent (instance
 // sans expiry fini côté backend) — l'appelant doit alors conserver la valeur
 // locale actuelle.
-func (tts *terminalTrainerService) startSessionInAPI(sessionID, userAPIKey string) (int64, error) {
+//
+// expirySeconds, lorsqu'il est > 0, est envoyé dans le corps JSON comme
+// {"expiry": N} pour que tt-backend recalcule instance_expiry sur la base
+// de la limite du plan plutôt que sur la valeur par défaut de l'instance.
+// Quand expirySeconds == 0, le corps est nil et tt-backend utilise son défaut.
+func (tts *terminalTrainerService) startSessionInAPI(sessionID, userAPIKey string, expirySeconds int) (int64, error) {
 	url := fmt.Sprintf("%s/%s/sessions/%s/start", tts.baseURL, tts.apiVersion, sessionID)
 
-	utils.Debug("startSessionInAPI - calling %s", url)
+	utils.Debug("startSessionInAPI - calling %s (expiry=%d)", url, expirySeconds)
 
 	opts := utils.DefaultHTTPClientOptions()
 	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
 
+	// Build body only when we have a positive expiry to forward. A nil body
+	// preserves tt-backend's instance-config default for legacy sessions.
+	var body any
+	if expirySeconds > 0 {
+		body = map[string]any{"expiry": expirySeconds}
+	}
+
 	var resp struct {
 		ExpiresAt int64 `json:"expires_at,omitempty"`
 	}
-	if err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, nil, &resp, opts); err != nil {
+	if err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, body, &resp, opts); err != nil {
 		return 0, err
 	}
 	return resp.ExpiresAt, nil
@@ -2876,9 +2925,11 @@ func (tts *terminalTrainerService) StartComposedSession(userID string, input dto
 	// "let tt-backend fall back to its global default".
 	input.IdleWindowSeconds = tts.resolveIdleWindowSeconds(orgID, input.PersistenceMode)
 
-	// Enforce max session duration
-	maxDurationSeconds := plan.MaxSessionDurationMinutes * 60
-	if input.Expiry == 0 || input.Expiry > maxDurationSeconds {
+	// Enforce max session duration. resolvePlanExpirySeconds is the SSOT
+	// for this conversion — the resume path (StartSession) reads from it too,
+	// so a single plan-cap rule covers both create and resume.
+	maxDurationSeconds := resolvePlanExpirySeconds(plan)
+	if maxDurationSeconds > 0 && (input.Expiry == 0 || input.Expiry > maxDurationSeconds) {
 		input.Expiry = maxDurationSeconds
 	}
 
