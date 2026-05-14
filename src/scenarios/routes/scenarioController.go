@@ -13,6 +13,7 @@ import (
 
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
+	config "soli/formations/src/configuration"
 	groupModels "soli/formations/src/groups/models"
 	groupServices "soli/formations/src/groups/services"
 	orgModels "soli/formations/src/organizations/models"
@@ -1758,8 +1759,10 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 	effectivePlanService := paymentServices.NewEffectivePlanService(sc.db)
 	var allowedSizeSet map[string]bool
 	var planAllowsAllSizes bool
+	var resolvedPlan *paymentModels.SubscriptionPlan
 	planResult, planErr := effectivePlanService.GetUserEffectivePlan(userID, orgID)
 	if planErr == nil && planResult != nil && planResult.Plan != nil {
+		resolvedPlan = planResult.Plan
 		allowedSizeSet = make(map[string]bool, len(planResult.Plan.AllowedMachineSizes))
 		for _, s := range planResult.Plan.AllowedMachineSizes {
 			norm := strings.ToUpper(strings.TrimSpace(s))
@@ -1768,6 +1771,20 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 			}
 			allowedSizeSet[norm] = true
 		}
+	}
+
+	// Budget-mode block-reason gate (MR-CORE-6, D8). When the feature flag is
+	// on AND the plan opts into the budget model, also check whether the
+	// scenario's required size fits in the user's remaining budget. The
+	// RemainingBudgetFitsWithReason helper returns "plan_restriction" for
+	// the AllowedMachineSizes allowlist gate (D8) and "budget_*_exceeded"
+	// when an axis is exhausted. We surface the reason verbatim so the
+	// frontend can render the i18n string "scenarioLauncher.blockReason.*"
+	// without re-deriving the cause.
+	budgetGateActive := config.IsBudgetQuotasEnabled() && resolvedPlan != nil && resolvedPlan.QuotaModel == "budget"
+	var quotaSvc paymentServices.QuotaService
+	if budgetGateActive {
+		quotaSvc = paymentServices.NewQuotaService(sc.db, effectivePlanService)
 	}
 
 	// Convert to enriched output with launchability info
@@ -1820,6 +1837,29 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 			if normalizedSize != "" && !allowedSizeSet[normalizedSize] {
 				item.Launchable = false
 				item.BlockReason = "plan"
+			}
+		}
+
+		// Budget-mode gate (MR-CORE-6). Even when AllowedMachineSizes admits
+		// the size, the remaining CPU/RAM budget may not fit one container
+		// of that size. Apply after the plan-allowlist check so the more
+		// specific "plan" reason wins when both apply. Skipped in count-mode
+		// or when feature flag is off (budgetGateActive=false).
+		if budgetGateActive && item.Launchable && resolvedSize != "" {
+			fits, reason, fitErr := quotaSvc.RemainingBudgetFitsWithReason(userID, orgID, resolvedPlan, resolvedSize)
+			if fitErr != nil {
+				slog.Warn("budget fit check failed for scenario", "scenario", s.Name, "err", fitErr)
+			} else if !fits {
+				item.Launchable = false
+				// Map quota reasons to scenario block_reason values.
+				// Frontend keys i18n strings by these codes.
+				switch reason {
+				case "plan_restriction":
+					item.BlockReason = "plan_restriction"
+				default:
+					// Covers "budget_cpu_exceeded", "budget_memory_exceeded".
+					item.BlockReason = "budget_exhausted"
+				}
 			}
 		}
 

@@ -486,6 +486,14 @@ type CreateComposedSessionInput struct {
 	// Set by the service layer based on the resolved persistence mode + org
 	// override; not accepted from the public request body.
 	IdleWindowSeconds *int `json:"-"`
+	// SizeCPU / SizeMemoryMB are snapshot from the size catalog by the
+	// service layer so the persisted Terminal row carries its budget
+	// footprint without a downstream catalog lookup. Only meaningful when
+	// the size key was resolvable in the catalog; zero otherwise (legacy
+	// behaviour). Mirrors what TerminalBudgetHook does on the generic
+	// Create path.
+	SizeCPU      int `json:"-"`
+	SizeMemoryMB int `json:"-"`
 }
 
 // TTDistribution mirrors tt-backend's Distribution struct
@@ -524,18 +532,45 @@ type TTFeature struct {
 	SortOrder      int    `json:"sort_order"`
 }
 
-// SessionOptionsResponse is returned by GET /terminals/session-options
+// SessionOptionsResponse is returned by GET /terminals/session-options.
+//
+// Budget fields (Quota, AllowedSizes[i].RemainingCount, AllowedSizes[i].MemoryMB)
+// are populated when the deployment-level OCF_FEATURE_BUDGET_QUOTAS flag is on
+// AND the user's effective plan has QuotaModel="budget". Otherwise Quota.Scope
+// is "unlimited" and per-size RemainingCount is 0 — the legacy slot-count gate
+// remains authoritative and the frontend renders the previous shape.
 type SessionOptionsResponse struct {
 	Distribution    TTDistribution         `json:"distribution"`
 	AllowedSizes    []SessionOptionSize    `json:"allowed_sizes"`
 	AllowedFeatures []SessionOptionFeature `json:"allowed_features"`
+	// Quota carries the user's (or org's) budget snapshot. Always present
+	// so the frontend can render generically; Scope="unlimited" signals
+	// "no budget enforcement, ignore the numeric fields".
+	Quota *SessionQuotaInfo `json:"quota,omitempty"`
 }
 
-// SessionOptionSize describes a size with its allowed status
+// SessionQuotaInfo is the budget snapshot embedded in session-options and
+// org-usage responses. MaxCPU / MaxMemoryMB of 0 paired with Scope="unlimited"
+// means the plan has no budget cap (or the feature flag is off).
+type SessionQuotaInfo struct {
+	MaxCPU            int    `json:"max_cpu"`
+	MaxMemoryMB       int    `json:"max_memory_mb"`
+	UsedCPU           int    `json:"used_cpu"`
+	UsedMemoryMB      int    `json:"used_memory_mb"`
+	RemainingCPU      int    `json:"remaining_cpu"`
+	RemainingMemoryMB int    `json:"remaining_memory_mb"`
+	Scope             string `json:"scope"` // "user" | "organization" | "unlimited"
+}
+
+// SessionOptionSize describes a size with its allowed status. RemainingCount
+// and MemoryMB are populated in budget mode so the frontend can disable
+// sizes whose remaining count is 0 and skip re-parsing the Memory string.
 type SessionOptionSize struct {
 	TTSize
-	Allowed bool   `json:"allowed"`
-	Reason  string `json:"reason,omitempty"`
+	Allowed        bool   `json:"allowed"`
+	Reason         string `json:"reason,omitempty"`
+	RemainingCount int    `json:"remaining_count"`
+	MemoryMB       int    `json:"memory_mb"`
 }
 
 // SessionOptionFeature describes a feature with its allowed status (no ProfileName exposed)
@@ -570,12 +605,28 @@ type CommandHistoryResponse struct {
 // in models.TerminalStatesOccupyingSlot (currently running+stopped). The two
 // values differ because a stopped session keeps disk and a quota slot until
 // it is deleted — see models.OccupiesSlotScope for the single source of truth.
+//
+// ActiveCPU / ActiveMemoryMB sum the budget-counted resources for this user
+// (state='running' OR persistence_mode='persistent', not past expiry). In
+// count-mode they are reported alongside the slot count for parity but
+// quotas are still enforced by the slot counter.
 type OrgTerminalUsageUser struct {
-	UserID          string `json:"user_id"`
-	DisplayName     string `json:"display_name"`
-	Email           string `json:"email"`
-	ActiveCount     int    `json:"active_count"`
-	OccupyingSlots  int    `json:"occupying_slots"`
+	UserID         string `json:"user_id"`
+	DisplayName    string `json:"display_name"`
+	Email          string `json:"email"`
+	ActiveCount    int    `json:"active_count"`
+	OccupyingSlots int    `json:"occupying_slots"`
+	ActiveCPU      int    `json:"active_cpu"`
+	ActiveMemoryMB int    `json:"active_memory_mb"`
+}
+
+// SizeRemainingDTO is the public-facing shape of QuotaService.SizeRemaining.
+// Duplicated to keep the dto package free of payment-service imports.
+type SizeRemainingDTO struct {
+	Key            string `json:"key"`
+	CPU            int    `json:"cpu"`
+	MemoryMB       int    `json:"memory_mb"`
+	RemainingCount int    `json:"remaining_count"`
 }
 
 // OrgTerminalUsageResponse is returned by GET /organizations/:id/terminal-usage.
@@ -584,6 +635,11 @@ type OrgTerminalUsageUser struct {
 // is the quota-relevant count and matches MaxTerminals semantics (stopped sessions
 // still occupy a slot — see models.TerminalStatesOccupyingSlot). Both are
 // surfaced so the dashboard can show "5 running / 7 slots used / 10 max".
+//
+// Budget fields (Quota, RemainingBySize) are populated when the deployment-level
+// OCF_FEATURE_BUDGET_QUOTAS flag is on AND the org's effective plan has
+// QuotaModel="budget". Otherwise Quota.Scope is "unlimited" and RemainingBySize
+// is an empty slice — the dashboard renders only the legacy slot count.
 type OrgTerminalUsageResponse struct {
 	OrganizationID  string                 `json:"organization_id"`
 	ActiveTerminals int                    `json:"active_terminals"`
@@ -592,4 +648,6 @@ type OrgTerminalUsageResponse struct {
 	PlanName        string                 `json:"plan_name"`
 	IsFallback      bool                   `json:"is_fallback"`
 	Users           []OrgTerminalUsageUser `json:"users"`
+	Quota           *SessionQuotaInfo      `json:"quota,omitempty"`
+	RemainingBySize []SizeRemainingDTO     `json:"remaining_by_size,omitempty"`
 }

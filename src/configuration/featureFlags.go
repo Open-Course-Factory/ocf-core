@@ -48,3 +48,21 @@ func getEnvBool(key string, defaultValue bool) bool {
 	}
 	return val == "true" || val == "1" || val == "yes"
 }
+
+// IsBudgetQuotasEnabled reports whether the CPU/RAM budget quota model is
+// active for plan-gated terminal/scenario flows. When false (the default),
+// every path that consults this flag must fall back to the legacy slot-based
+// quota behaviour (MaxConcurrentTerminals + AllowedMachineSizes).
+//
+// The flag is read from the OCF_FEATURE_BUDGET_QUOTAS environment variable
+// so the feature can be toggled per-deployment without a DB migration. The
+// underlying SubscriptionPlan.QuotaModel = "budget" rows have no effect
+// until this flag flips on — production rollout proceeds in two safe steps:
+//
+//  1. Run the backfill (CORE-3) so plans carry MaxCPU / MaxMemoryMB.
+//  2. Flip OCF_FEATURE_BUDGET_QUOTAS=1 to start enforcing.
+//
+// CI tests that need to exercise the budget path set the env var explicitly.
+func IsBudgetQuotasEnabled() bool {
+	return getEnvBool("OCF_FEATURE_BUDGET_QUOTAS", false)
+}
