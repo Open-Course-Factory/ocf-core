@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"soli/formations/src/payment/backfill"
+	paymentDto "soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
 	terminalModels "soli/formations/src/terminalTrainer/models"
@@ -130,14 +131,11 @@ type BudgetCheck struct {
 	Reason         string
 }
 
-// SizeRemaining describes how many additional instances of one machine
-// size the user could still afford under the current budget.
-type SizeRemaining struct {
-	Key            string `json:"key"`
-	CPU            int    `json:"cpu"`
-	MemoryMB       int    `json:"memory_mb"`
-	RemainingCount int    `json:"remaining_count"`
-}
+// SizeRemaining is re-exported from payment/dto so existing callers
+// (tests, other services) keep working without an import churn. The
+// canonical definition lives in payment/dto/sizeRemaining.go — see
+// that file for the rationale.
+type SizeRemaining = paymentDto.SizeRemaining
 
 type quotaService struct {
 	db                   *gorm.DB
@@ -543,7 +541,7 @@ func (s *quotaService) remainingBudgetFitsCore(
 	if !ok {
 		return false, "", fmt.Errorf("remainingBudgetFits: unknown size %q", sizeKey)
 	}
-	if consultAllowlist && !sizeKeyInAllowlist(plan.AllowedMachineSizes, sizeKey) {
+	if consultAllowlist && !SizeKeyInAllowlist(plan.AllowedMachineSizes, sizeKey) {
 		return false, "plan_restriction", nil
 	}
 
@@ -557,10 +555,15 @@ func (s *quotaService) remainingBudgetFitsCore(
 	return true, "", nil
 }
 
-// sizeKeyInAllowlist applies D8: an empty allowlist means "no extra
+// SizeKeyInAllowlist applies D8: an empty allowlist means "no extra
 // restriction"; otherwise the requested key must match an entry
 // (case-insensitive). The pseudo-entry "all" means "any size".
-func sizeKeyInAllowlist(allowed []string, sizeKey string) bool {
+//
+// Exported because the same predicate is needed by the BeforeCreate
+// hook in terminalTrainer/hooks (separate package). Keeping a single
+// implementation prevents D8 from drifting between the read-time check
+// (RemainingBudgetFitsWithReason) and the write-time enforcement.
+func SizeKeyInAllowlist(allowed []string, sizeKey string) bool {
 	if len(allowed) == 0 {
 		return true
 	}

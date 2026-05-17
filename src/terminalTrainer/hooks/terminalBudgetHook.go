@@ -184,7 +184,7 @@ func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 
 	// (5) D8 allowlist. Applied BEFORE the lock so we don't take a row
 	//     lock just to reject the request on a non-resource reason.
-	if !sizeKeyInAllowlist(plan.AllowedMachineSizes, sizeKey) {
+	if !paymentServices.SizeKeyInAllowlist(plan.AllowedMachineSizes, sizeKey) {
 		return &ErrPlanRestrictionSize{
 			Requested: sizeKey,
 			Allowed:   append([]string(nil), plan.AllowedMachineSizes...),
@@ -312,26 +312,6 @@ func supportsRowLock(tx *gorm.DB) bool {
 	}
 	name := tx.Dialector.Name()
 	return name == "postgres" || name == "mysql"
-}
-
-// sizeKeyInAllowlist mirrors paymentServices.sizeKeyInAllowlist (which
-// is unexported). Empty allowlist = no extra restriction. "all" matches
-// any size. Comparison is case-insensitive.
-func sizeKeyInAllowlist(allowed []string, sizeKey string) bool {
-	if len(allowed) == 0 {
-		return true
-	}
-	want := strings.ToLower(strings.TrimSpace(sizeKey))
-	for _, raw := range allowed {
-		got := strings.ToLower(strings.TrimSpace(raw))
-		if got == "" {
-			continue
-		}
-		if got == "all" || got == want {
-			return true
-		}
-	}
-	return false
 }
 
 // IsBudgetError reports whether err is one of the budget-related

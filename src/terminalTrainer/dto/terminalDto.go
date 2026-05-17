@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	paymentDto "soli/formations/src/payment/dto"
+
 	"github.com/google/uuid"
 )
 
@@ -620,14 +622,10 @@ type OrgTerminalUsageUser struct {
 	ActiveMemoryMB int    `json:"active_memory_mb"`
 }
 
-// SizeRemainingDTO is the public-facing shape of QuotaService.SizeRemaining.
-// Duplicated to keep the dto package free of payment-service imports.
-type SizeRemainingDTO struct {
-	Key            string `json:"key"`
-	CPU            int    `json:"cpu"`
-	MemoryMB       int    `json:"memory_mb"`
-	RemainingCount int    `json:"remaining_count"`
-}
+// SizeRemainingDTO is an alias to paymentDto.SizeRemaining — the
+// canonical shape lives in src/payment/dto/sizeRemaining.go. The alias
+// preserves existing call-site spellings while removing the duplicate.
+type SizeRemainingDTO = paymentDto.SizeRemaining
 
 // OrgTerminalUsageResponse is returned by GET /organizations/:id/terminal-usage.
 //
