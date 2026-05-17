@@ -53,9 +53,9 @@ func countTestPlan(maxConcurrent int) *paymentModels.SubscriptionPlan {
 	}
 }
 
-// TestStartComposedSession_BudgetMode_RejectsOverBudget — plan MaxCPU=4,
+// TestEnforceBudget_OverCPU_RejectsWithBudgetCPUExceeded — plan MaxCPU=4,
 // used=4 (one L) → request L → BudgetRejection with budget_cpu_exceeded.
-func TestStartComposedSession_BudgetMode_RejectsOverBudget(t *testing.T) {
+func TestEnforceBudget_OverCPU_RejectsWithBudgetCPUExceeded(t *testing.T) {
 	db := freshTestDB(t)
 	eps := paymentServices.NewEffectivePlanService(db)
 	quotaSvc := paymentServices.NewQuotaService(db, eps)
@@ -78,9 +78,9 @@ func TestStartComposedSession_BudgetMode_RejectsOverBudget(t *testing.T) {
 		"CPU axis already at the cap — RemainingCPU should clamp to 0")
 }
 
-// TestStartComposedSession_BudgetMode_AllowsWithinBudget — plan MaxCPU=8,
+// TestEnforceBudget_WithinBudget_Allows — plan MaxCPU=8,
 // used=0 → request M (2c/1g) → allowed.
-func TestStartComposedSession_BudgetMode_AllowsWithinBudget(t *testing.T) {
+func TestEnforceBudget_WithinBudget_Allows(t *testing.T) {
 	db := freshTestDB(t)
 	eps := paymentServices.NewEffectivePlanService(db)
 	quotaSvc := paymentServices.NewQuotaService(db, eps)
@@ -91,8 +91,8 @@ func TestStartComposedSession_BudgetMode_AllowsWithinBudget(t *testing.T) {
 	require.NoError(t, err, "M (2c/1g) fits in 8c/4g budget with no existing sessions")
 }
 
-// TestStartComposedSession_BudgetMode_RejectsOverBudgetMemory — RAM axis.
-func TestStartComposedSession_BudgetMode_RejectsOverBudgetMemory(t *testing.T) {
+// TestEnforceBudget_OverMemory_RejectsWithBudgetMemoryExceeded — RAM axis.
+func TestEnforceBudget_OverMemory_RejectsWithBudgetMemoryExceeded(t *testing.T) {
 	db := freshTestDB(t)
 	eps := paymentServices.NewEffectivePlanService(db)
 	quotaSvc := paymentServices.NewQuotaService(db, eps)
@@ -112,9 +112,9 @@ func TestStartComposedSession_BudgetMode_RejectsOverBudgetMemory(t *testing.T) {
 	assert.Equal(t, "budget_memory_exceeded", rej.Reason)
 }
 
-// TestStartComposedSession_CountMode_BypassesBudgetCheck — count-mode plans
+// TestEnforceBudget_CountModePlan_ShortCircuits — count-mode plans
 // short-circuit even with heavy usage; the slot middleware enforces.
-func TestStartComposedSession_CountMode_BypassesBudgetCheck(t *testing.T) {
+func TestEnforceBudget_CountModePlan_ShortCircuits(t *testing.T) {
 	db := freshTestDB(t)
 	eps := paymentServices.NewEffectivePlanService(db)
 	quotaSvc := paymentServices.NewQuotaService(db, eps)
@@ -130,19 +130,19 @@ func TestStartComposedSession_CountMode_BypassesBudgetCheck(t *testing.T) {
 	require.NoError(t, err, "count-mode plan must short-circuit budget enforcement")
 }
 
-// TestStartComposedSession_NilQuotaService_FailsOpen — defensive: if a test
+// TestEnforceBudget_NilQuotaService_FailsOpen — defensive: if a test
 // builds the service without QuotaService wired, the explicit check is a
 // no-op (the hook still gates the generic-create path).
-func TestStartComposedSession_NilQuotaService_FailsOpen(t *testing.T) {
+func TestEnforceBudget_NilQuotaService_FailsOpen(t *testing.T) {
 	plan := budgetTestPlan(1, 256)
 	err := services.EnforceBudget(nil, "u-no-quota", nil, plan, 8, 8192)
 	require.NoError(t, err, "nil QuotaService must fail open (defense-in-depth on the hook)")
 }
 
-// TestStartComposedSession_BudgetMode_OrgScopedQuota — when orgID is provided,
+// TestEnforceBudget_OrgScopedQuota_IsolatesOrgs — when orgID is provided,
 // the budget sum joins through organization_members; another org's usage must
 // not bleed in.
-func TestStartComposedSession_BudgetMode_OrgScopedQuota(t *testing.T) {
+func TestEnforceBudget_OrgScopedQuota_IsolatesOrgs(t *testing.T) {
 	db := freshTestDB(t)
 	eps := paymentServices.NewEffectivePlanService(db)
 	quotaSvc := paymentServices.NewQuotaService(db, eps)
