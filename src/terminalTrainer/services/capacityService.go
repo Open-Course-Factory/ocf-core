@@ -8,6 +8,7 @@
 package services
 
 import (
+	"soli/formations/src/payment/backfill"
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/dto"
 )
@@ -43,15 +44,18 @@ type CapacityResult struct {
 // preserved bit-for-bit when no size is passed in the request body.
 const minRAMReserveFraction = 0.05
 
-// machineSizeToRAM is the canonical mapping of machine size keys to
-// expected RAM consumption in GB. Mirrors the table already used by
-// CheckRAMAvailability before the refactor.
-var machineSizeToRAM = map[string]float64{
-	"XS": 0.25,
-	"S":  0.5,
-	"M":  1.0,
-	"L":  2.0,
-	"XL": 4.0,
+// sizeRAMGB returns the per-instance RAM estimate (in GB) for a size key,
+// derived from the canonical catalog (backfill.LookupSize). Used by the
+// capacity evaluator to keep capacity decisions aligned with the budget
+// engine — a drift here would let users bypass the budget at launch time.
+//
+// Returns (0, false) for unknown keys; callers handle the miss explicitly.
+func sizeRAMGB(key string) (float64, bool) {
+	size, ok := backfill.LookupSize(key)
+	if !ok {
+		return 0, false
+	}
+	return float64(size.MemoryMB) / 1024.0, true
 }
 
 // EvaluateLaunchCapacity computes whether a session of the given size could
@@ -114,7 +118,7 @@ func EvaluateLaunchCapacity(plan *paymentModels.SubscriptionPlan, requestedSize 
 // default as the pre-refactor middleware.
 func resolveRequiredRAM(plan *paymentModels.SubscriptionPlan, requestedSize string) float64 {
 	if requestedSize != "" {
-		if ram, ok := machineSizeToRAM[requestedSize]; ok && planAllowsSize(plan, requestedSize) {
+		if ram, ok := sizeRAMGB(requestedSize); ok && planAllowsSize(plan, requestedSize) {
 			return ram
 		}
 	}
@@ -124,17 +128,65 @@ func resolveRequiredRAM(plan *paymentModels.SubscriptionPlan, requestedSize stri
 		for _, size := range plan.AllowedMachineSizes {
 			if size == "all" {
 				// "all" is unbounded by definition — fall back to the
-				// historic average of M (1 GB) used by the legacy
-				// middleware.
+				// historic average of M used by the legacy middleware.
+				if ram, ok := sizeRAMGB("M"); ok {
+					return ram
+				}
 				return 1.0
 			}
-			if ram, ok := machineSizeToRAM[size]; ok && ram > maxRAM {
+			if ram, ok := sizeRAMGB(size); ok && ram > maxRAM {
 				maxRAM = ram
 			}
 		}
 		if maxRAM > 0 {
 			return maxRAM
 		}
+	}
+	// Default for plans with no allowlist: historic S estimate.
+	if ram, ok := sizeRAMGB("S"); ok {
+		return ram
+	}
+	return 0.5
+}
+
+// EstimatePerTerminalRAMGB returns the per-terminal RAM estimate in GB
+// used by bulk pre-flight checks: take the largest allowed size from the
+// catalog. Special cases mirror the legacy inline logic so behaviour is
+// unchanged:
+//
+//   - empty / nil allowlist → S estimate (0.5 GB historically; now sourced
+//     from backfill so a future catalog change to S flows through)
+//   - allowlist contains "all" → M estimate (legacy 1 GB)
+//   - otherwise → max RAM across known sizes in the allowlist
+//
+// Exported so it can be unit-tested directly and reused by other
+// pre-flight callers; also the explicit reason this helper exists.
+func EstimatePerTerminalRAMGB(allowedSizes []string) float64 {
+	if len(allowedSizes) == 0 {
+		if ram, ok := sizeRAMGB("S"); ok {
+			return ram
+		}
+		return 0.5
+	}
+	maxRAM := 0.0
+	for _, size := range allowedSizes {
+		if size == "all" {
+			if ram, ok := sizeRAMGB("M"); ok {
+				return ram
+			}
+			return 1.0
+		}
+		if ram, ok := sizeRAMGB(size); ok && ram > maxRAM {
+			maxRAM = ram
+		}
+	}
+	if maxRAM > 0 {
+		return maxRAM
+	}
+	// Allowlist contained only unknown keys: fall back to S so we err on
+	// the side of admitting the launch (the historic default).
+	if ram, ok := sizeRAMGB("S"); ok {
+		return ram
 	}
 	return 0.5
 }

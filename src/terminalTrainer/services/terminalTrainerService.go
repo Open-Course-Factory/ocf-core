@@ -1437,32 +1437,11 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 		} else {
 			plan, _ := planInterface.(*paymentModels.SubscriptionPlan)
 			if plan != nil {
-				machineSizeToRAM := map[string]float64{
-					"XS": 0.25,
-					"S":  0.5,
-					"M":  1.0,
-					"L":  2.0,
-					"XL": 4.0,
-				}
-
-				// Estimate RAM per terminal: max of allowed sizes (mirrors middleware logic)
-				perTerminalRAM := 0.5 // default for S
-				if len(plan.AllowedMachineSizes) > 0 {
-					maxRAM := 0.0
-					for _, size := range plan.AllowedMachineSizes {
-						if size == "all" {
-							perTerminalRAM = 1.0 // use M as average for "all"
-							maxRAM = 0            // signal: already set
-							break
-						}
-						if ram, found := machineSizeToRAM[size]; found && ram > maxRAM {
-							maxRAM = ram
-						}
-					}
-					if maxRAM > 0 {
-						perTerminalRAM = maxRAM
-					}
-				}
+				// SSOT: derive per-terminal RAM from backfill catalog via
+				// EstimatePerTerminalRAMGB. Keeps bulk pre-flight aligned
+				// with the budget engine — a hand-rolled literal here
+				// would silently drift if a size's RAM is retuned.
+				perTerminalRAM := EstimatePerTerminalRAMGB(plan.AllowedMachineSizes)
 
 				totalRequiredRAM := float64(len(activeMembers)) * perTerminalRAM
 				totalRAM := metrics.RAMAvailableGB / (1.0 - metrics.RAMPercent/100.0)
