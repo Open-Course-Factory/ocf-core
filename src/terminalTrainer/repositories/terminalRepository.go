@@ -81,7 +81,10 @@ func (r *terminalRepository) CreateTerminalSession(terminal *models.Terminal) er
 	err := r.db.Unscoped().Where("session_id = ?", terminal.SessionID).First(&existing).Error
 	if err == nil {
 		if existing.DeletedAt.Valid {
-			// Soft-deleted record found: restore it with updated fields
+			// Soft-deleted record found: restore it with updated fields.
+			// size_cpu / size_memory_mb MUST be carried in the Updates map —
+			// otherwise a reinit at a different size silently keeps the old
+			// denorm and the budget aggregate undercharges the new footprint.
 			return r.db.Unscoped().Model(&existing).Updates(map[string]any{
 				"deleted_at":           nil,
 				"state":                terminal.State,
@@ -92,9 +95,12 @@ func (r *terminalRepository) CreateTerminalSession(terminal *models.Terminal) er
 				"machine_size":         terminal.MachineSize,
 				"backend":              terminal.Backend,
 				"user_terminal_key_id": terminal.UserTerminalKeyID,
+				"size_cpu":             terminal.SizeCPU,
+				"size_memory_mb":       terminal.SizeMemoryMB,
 			}).Error
 		}
-		// Active record found (reinit case): update it with new fields
+		// Active record found (reinit case): update it with new fields.
+		// size_cpu / size_memory_mb MUST be carried — same reason as above.
 		return r.db.Model(&existing).Updates(map[string]any{
 			"state":                terminal.State,
 			"user_id":              terminal.UserID,
@@ -104,6 +110,8 @@ func (r *terminalRepository) CreateTerminalSession(terminal *models.Terminal) er
 			"machine_size":         terminal.MachineSize,
 			"backend":              terminal.Backend,
 			"user_terminal_key_id": terminal.UserTerminalKeyID,
+			"size_cpu":             terminal.SizeCPU,
+			"size_memory_mb":       terminal.SizeMemoryMB,
 		}).Error
 	}
 	// No existing record: create normally

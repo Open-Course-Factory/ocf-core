@@ -757,6 +757,20 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 
 // createMissingLocalSession crée une session locale manquante basée sur les données de l'API
 func (tts *terminalTrainerService) createMissingLocalSession(userID string, userKey *models.UserTerminalKey, apiSession *dto.TerminalTrainerSession) error {
+	terminal := BuildTerminalFromAPISession(userID, userKey, apiSession)
+	return tts.repository.CreateTerminalSessionFromAPI(terminal)
+}
+
+// BuildTerminalFromAPISession materialises a Terminal from a tt-backend
+// /sessions response. Exported (and side-effect free) so the sync path AND
+// the unit tests can exercise the exact same denormalisation logic — the C5
+// regression (size_cpu / size_memory_mb left at 0 on synced rows) is gated
+// on this single builder.
+//
+// MachineSize is resolved through backfill.LookupSize (case-insensitive).
+// Unknown size keys leave SizeCPU / SizeMemoryMB at 0 — matches the
+// defensive pattern used for legacy rows that pre-date the denorm columns.
+func BuildTerminalFromAPISession(userID string, userKey *models.UserTerminalKey, apiSession *dto.TerminalTrainerSession) *models.Terminal {
 	expiresAt := time.Unix(apiSession.ExpiresAt, 0)
 
 	// Map SessionStatus from /sessions endpoint to terminal lifecycle state.
@@ -777,6 +791,20 @@ func (tts *terminalTrainerService) createMissingLocalSession(userID string, user
 		UserTerminalKey:   *userKey,
 	}
 
+	// Snapshot the catalog footprint so the budget summing query has a
+	// non-zero size_cpu / size_memory_mb for synced rows. Without this the
+	// row would be invisible to the budget aggregate even though it
+	// occupies real resources on tt-backend (C5).
+	if size, found := backfill.LookupSize(apiSession.MachineSize); found {
+		terminal.SizeCPU = size.CPU
+		terminal.SizeMemoryMB = size.MemoryMB
+	} else if strings.TrimSpace(apiSession.MachineSize) != "" {
+		// Unknown size key — log and continue with zeroes (matches the
+		// legacy-row defensive pattern). Operators can backfill later if
+		// the catalog grows to cover this key.
+		utils.Warn("createMissingLocalSession: machine_size %q not in catalog; size denorm left at 0", apiSession.MachineSize)
+	}
+
 	// Propager le State de tt-backend (source de vérité authoritative) s'il
 	// est explicitement fourni — il a la précédence sur notre traduction
 	// depuis api_status.
@@ -791,7 +819,7 @@ func (tts *terminalTrainerService) createMissingLocalSession(userID string, user
 		terminal.IdleUntil = &t
 	}
 
-	return tts.repository.CreateTerminalSessionFromAPI(terminal)
+	return terminal
 }
 
 // SyncAllActiveSessions - version améliorée qui utilise la nouvelle logique
