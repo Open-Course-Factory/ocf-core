@@ -3,6 +3,7 @@ package terminalController
 import (
 	stderrors "errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -1983,15 +1984,27 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 	if err != nil {
 		// Structured budget rejection — MR-CORE-6. Carries the rejection
 		// reason and remaining axes so the frontend can render a helpful
-		// "Budget exhausted — 0 vCPU / 256 MiB left" panel rather than a
-		// generic 500.
+		// "Budget exhausted" panel rather than a generic 500.
+		//
+		// The HTTP body deliberately collapses the CPU- and RAM-axis
+		// granular reasons into the single "budget_exhausted" code
+		// (matches the scenario controller's behaviour and the locked UX
+		// decision that customers see size-count language, not vCPU/RAM).
+		// The granular reason is logged server-side for debugging.
 		var budgetErr *services.BudgetRejection
 		if stderrors.As(err, &budgetErr) {
+			publicReason := coarseBudgetReason(budgetErr.Reason)
+			if publicReason != budgetErr.Reason {
+				slog.Debug("collapsing budget axis reason for HTTP response",
+					"internal_reason", budgetErr.Reason,
+					"public_reason", publicReason,
+					"user_id", userID)
+			}
 			ctx.JSON(http.StatusForbidden, gin.H{
 				"error_code":    http.StatusForbidden,
 				"error_message": budgetErr.Error(),
 				"source":        "budget",
-				"reason":        budgetErr.Reason,
+				"reason":        publicReason,
 				"remaining": gin.H{
 					"cpu":       budgetErr.RemainingCPU,
 					"memory_mb": budgetErr.RemainingMemoryMB,
@@ -2019,6 +2032,23 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, sessionResponse)
+}
+
+// coarseBudgetReason collapses the granular CPU- and RAM-axis reasons
+// emitted by QuotaService into a single customer-facing code. Per the
+// locked UX decision (feedback_quota_ux_size_count.md), the API surface
+// must speak in size-count language; leaking the axis (CPU vs RAM)
+// invites users to game one axis at the expense of the other.
+//
+// Non-axis reasons (e.g. "plan_restriction") pass through unchanged —
+// they correspond to a distinct user-visible message.
+func coarseBudgetReason(internal string) string {
+	switch internal {
+	case "budget_cpu_exceeded", "budget_memory_exceeded":
+		return "budget_exhausted"
+	default:
+		return internal
+	}
 }
 
 // CapacityCheck godoc
