@@ -34,7 +34,6 @@ import (
 
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/payment/backfill"
-	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 
@@ -344,6 +343,7 @@ func IsBudgetError(err error) bool {
 	return errors.As(err, &be) || errors.As(err, &pr)
 }
 
-// Ensure the package-level model references are not stripped if a
-// future refactor removes the (currently unused) direct dependency.
-var _ = paymentModels.SubscriptionPlan{}
+// Compile-time check that TerminalBudgetHook satisfies hooks.Hook. Catches
+// any drift in the Hook interface without waiting for the registry's runtime
+// type assertion to blow up.
+var _ hooks.Hook = (*TerminalBudgetHook)(nil)
