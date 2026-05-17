@@ -111,6 +111,49 @@ func TestStripeMetadata_ReadEmpty_DefaultsToCount(t *testing.T) {
 	assert.Equal(t, 0, parsed.MaxConcurrentTerminals)
 }
 
+// TestParsePlanProductMetadata_UnknownQuotaModel_DefaultsToCount —
+// regression for C8: a Stripe admin typing "buget" (typo) used to be
+// accepted verbatim, which made the plan fall through CheckBudget's
+// `quota_model != "budget"` short-circuit and silently behave as count
+// mode. The parse must whitelist against {"count","budget"} and fall back
+// to "count" for anything else.
+func TestParsePlanProductMetadata_UnknownQuotaModel_DefaultsToCount(t *testing.T) {
+	metadata := map[string]string{
+		"quota_model": "buget", // typo
+	}
+
+	parsed := services.ParsePlanProductMetadata(metadata)
+
+	assert.Equal(t, "count", parsed.QuotaModel,
+		"unknown quota_model values must fall back to 'count', not be passed through verbatim")
+}
+
+// TestParsePlanProductMetadata_ValidBudgetMode_Preserved — sanity that the
+// whitelist passes "budget" through unchanged.
+func TestParsePlanProductMetadata_ValidBudgetMode_Preserved(t *testing.T) {
+	metadata := map[string]string{
+		"quota_model": "budget",
+	}
+
+	parsed := services.ParsePlanProductMetadata(metadata)
+
+	assert.Equal(t, "budget", parsed.QuotaModel,
+		"'budget' is a whitelisted value and must be preserved")
+}
+
+// TestParsePlanProductMetadata_ValidCountMode_Preserved — sanity that the
+// whitelist passes "count" through unchanged.
+func TestParsePlanProductMetadata_ValidCountMode_Preserved(t *testing.T) {
+	metadata := map[string]string{
+		"quota_model": "count",
+	}
+
+	parsed := services.ParsePlanProductMetadata(metadata)
+
+	assert.Equal(t, "count", parsed.QuotaModel,
+		"'count' is a whitelisted value and must be preserved")
+}
+
 func TestStripeMetadata_ReadGarbageInts_DefaultsToZero(t *testing.T) {
 	// Stripe metadata is always string — defensively handle malformed ints.
 	metadata := map[string]string{

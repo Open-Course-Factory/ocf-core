@@ -21,7 +21,18 @@ import (
 	"strconv"
 
 	"soli/formations/src/payment/models"
+	"soli/formations/src/utils"
 )
+
+// validQuotaModels is the closed set of QuotaModel values the system
+// understands. Anything outside this set in Stripe metadata is treated as
+// "count" so a typo (e.g. "buget") in a Stripe admin's hands cannot make
+// a budget plan silently fall through CheckBudget's `quota_model != "budget"`
+// short-circuit and behave as count mode without anyone noticing.
+var validQuotaModels = map[string]struct{}{
+	"count":  {},
+	"budget": {},
+}
 
 // Stripe Product metadata keys for SubscriptionPlan budget fields.
 const (
@@ -96,7 +107,13 @@ func ParsePlanProductMetadata(metadata map[string]string) PlanProductMetadata {
 		}
 	}
 	if v, ok := metadata[metadataKeyQuotaModel]; ok && v != "" {
-		parsed.QuotaModel = v
+		if _, valid := validQuotaModels[v]; valid {
+			parsed.QuotaModel = v
+		} else {
+			// Unknown / typo: default to "count" (the safe legacy behaviour)
+			// and log so the operator can correct Stripe metadata.
+			utils.Warn("ParsePlanProductMetadata: unknown quota_model %q (expected one of count|budget); defaulting to count", v)
+		}
 	}
 
 	return parsed
