@@ -55,27 +55,24 @@ func addGroupMember(t *testing.T, db *gorm.DB, groupID uuid.UUID, userID string,
 
 // createTestPlanAndSubscription creates a subscription plan and user subscription for testing
 func createTestPlanAndSubscription(t *testing.T, db *gorm.DB, userID string) *paymentModels.SubscriptionPlan {
-	planID := uuid.New()
-	err := db.Exec(
-		`INSERT INTO subscription_plans (id, created_at, updated_at, name, is_active, max_concurrent_terminals, max_session_duration_minutes) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		planID.String(), time.Now(), time.Now(), "Test Plan", true, 5, 60,
-	).Error
-	require.NoError(t, err)
-
-	subID := uuid.New()
-	err = db.Exec(
-		`INSERT INTO user_subscriptions (id, created_at, updated_at, user_id, subscription_plan_id, status) VALUES (?, ?, ?, ?, ?, ?)`,
-		subID.String(), time.Now(), time.Now(), userID, planID.String(), "active",
-	).Error
-	require.NoError(t, err)
-
+	// Build via GORM so the column list stays aligned with the model
+	// (raw INSERTs broke during the dual-mode → budget cleanup).
 	plan := &paymentModels.SubscriptionPlan{
 		Name:                      "Test Plan",
 		IsActive:                  true,
-		MaxConcurrentTerminals:    5,
+		MaxCPU:                    20, // 5 × XL (4 vCPU)
+		MaxMemoryMB:               20480,
 		MaxSessionDurationMinutes: 60,
 	}
-	plan.ID = planID
+	require.NoError(t, db.Create(plan).Error)
+
+	subID := uuid.New()
+	err := db.Exec(
+		`INSERT INTO user_subscriptions (id, created_at, updated_at, user_id, subscription_plan_id, status) VALUES (?, ?, ?, ?, ?, ?)`,
+		subID.String(), time.Now(), time.Now(), userID, plan.ID.String(), "active",
+	).Error
+	require.NoError(t, err)
+
 	return plan
 }
 

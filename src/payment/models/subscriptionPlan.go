@@ -31,13 +31,11 @@ type SubscriptionPlan struct {
 	MaxConcurrentTerminals     int      `gorm:"default:1" json:"max_concurrent_terminals"`      // Max terminals running at once
 	AllowedMachineSizes        []string `gorm:"serializer:json" json:"allowed_machine_sizes"`   // ["XS", "S", "M", "L", "XL"]
 
-	// Budget-based quota fields (MR-CORE-3). Additive — not yet consumed by
-	// middleware or services. Will progressively replace the count-based
-	// limits above (MaxConcurrentTerminals + AllowedMachineSizes) once the
-	// reader paths land in later MRs.
-	MaxCPU      int    `gorm:"default:0" mapstructure:"max_cpu" json:"max_cpu"`               // Total vCPU budget; 0 = unlimited
-	MaxMemoryMB int    `gorm:"default:0" mapstructure:"max_memory_mb" json:"max_memory_mb"`   // Total RAM budget in MiB; 0 = unlimited
-	QuotaModel  string `gorm:"type:varchar(20);default:'count'" mapstructure:"quota_model" json:"quota_model"` // "count" (legacy) | "budget" (new)
+	// Budget-based quota fields. The CPU/RAM budget is the single source
+	// of truth for resource caps; the legacy MaxConcurrentTerminals +
+	// AllowedMachineSizes pair above is being retired in this cleanup.
+	MaxCPU      int `gorm:"default:0" mapstructure:"max_cpu" json:"max_cpu"`             // Total vCPU budget; 0 = unlimited
+	MaxMemoryMB int `gorm:"default:0" mapstructure:"max_memory_mb" json:"max_memory_mb"` // Total RAM budget in MiB; 0 = unlimited
 
 	NetworkAccessEnabled       bool     `gorm:"default:false" json:"network_access_enabled"`    // Allow external network access
 	DataPersistenceEnabled     bool     `gorm:"default:false" json:"data_persistence_enabled"`  // Allow saving data between sessions (also gates persistent persistence_mode — SSOT)

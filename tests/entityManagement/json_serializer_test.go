@@ -264,7 +264,7 @@ func TestCamelToSnake(t *testing.T) {
 
 // TestJsonEncodeSerializedFields_RealSubscriptionPlan tests with the actual
 // SubscriptionPlan model from the payment module, ensuring real-world fields
-// like features, allowed_machine_sizes, allowed_templates, etc. are all encoded.
+// like features, allowed_backends, allowed_templates, etc. are all encoded.
 func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping in short mode")
@@ -272,11 +272,11 @@ func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 
 	model := paymentModels.SubscriptionPlan{}
 	updateMap := map[string]any{
-		"name":                  "Pro Plan",
-		"features":              []string{"terminal", "ssh", "vnc"},
-		"allowed_machine_sizes": []string{"XS", "S", "M"},
-		"allowed_templates":     []string{"tmpl-1", "tmpl-2"},
-		"planned_features":      []string{"gpu-support"},
+		"name":              "Pro Plan",
+		"features":          []string{"terminal", "ssh", "vnc"},
+		"allowed_backends":  []string{"incus-prod", "incus-staging"},
+		"allowed_templates": []string{"tmpl-1", "tmpl-2"},
+		"planned_features":  []string{"gpu-support"},
 		"pricing_tiers": []map[string]any{
 			{"min_quantity": 1, "max_quantity": 5, "unit_amount": 1000},
 			{"min_quantity": 6, "max_quantity": 0, "unit_amount": 800},
@@ -290,7 +290,7 @@ func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 	// All serializer:json fields should be encoded to strings
 	serializedFields := []string{
 		"features",
-		"allowed_machine_sizes",
+		"allowed_backends",
 		"allowed_templates",
 		"planned_features",
 		"pricing_tiers",
@@ -312,10 +312,10 @@ func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"terminal", "ssh", "vnc"}, features)
 
-	var sizes []string
-	err = json.Unmarshal([]byte(updateMap["allowed_machine_sizes"].(string)), &sizes)
+	var backends []string
+	err = json.Unmarshal([]byte(updateMap["allowed_backends"].(string)), &backends)
 	assert.NoError(t, err)
-	assert.Equal(t, []string{"XS", "S", "M"}, sizes)
+	assert.Equal(t, []string{"incus-prod", "incus-staging"}, backends)
 }
 
 // TestJsonEncodeSerializedFields_NilModel tests that a nil model is handled

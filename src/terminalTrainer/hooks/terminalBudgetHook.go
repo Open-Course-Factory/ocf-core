@@ -1,4 +1,4 @@
-// Package terminalHooks — TerminalBudgetHook (MR-CORE-5)
+// Package terminalHooks — TerminalBudgetHook
 //
 // This BeforeCreate hook on Terminal does two things:
 //
@@ -7,23 +7,16 @@
 //     historical accounting from future catalog drift and lets the
 //     budget summing query stay a pure SQL aggregate.
 //
-//  2. Enforces the user's (or org's) effective plan budget atomically
-//     when QuotaModel = "budget". The check is performed inside a
-//     transaction with `SELECT ... FOR UPDATE` on the rows that
-//     contribute to current usage (running OR persistent) so two
-//     concurrent session starts cannot both observe enough budget for
-//     the same slice of resources.
-//
-// For plans with QuotaModel = "count" (legacy), the hook still
-// populates SizeCPU/SizeMemoryMB (cheap denormalisation that helps
-// auditing and any future migration) but skips budget enforcement —
-// the existing CheckLimit middleware / slot-based path stays
-// authoritative for those plans.
+//  2. Enforces the user's (or org's) effective plan budget atomically.
+//     The check is performed inside a transaction with
+//     `SELECT ... FOR UPDATE` on the rows that contribute to current
+//     usage (running OR persistent) so two concurrent session starts
+//     cannot both observe enough budget for the same slice of resources.
 //
 // Caveat: the generic Create path is what fires this hook. The
 // production composed-session flow (terminalTrainerService.
 // StartComposedSession → repository.CreateTerminalSession) bypasses the
-// hook today; wiring the hook through that path is MR-CORE-6's job.
+// hook and calls EnforceBudget explicitly.
 package terminalHooks
 
 import (
@@ -131,8 +124,7 @@ func (h *TerminalBudgetHook) GetPriority() int { return h.priority }
 //  3. If no EffectivePlanService is wired OR no plan resolves, skip the
 //     budget check entirely (we can't enforce what we can't resolve;
 //     other gates such as CheckLimit middleware handle the no-plan case).
-//  4. For "budget" plans: lock + sum + compare. For other QuotaModel
-//     values: return nil (legacy slot enforcement runs elsewhere).
+//  4. Lock + sum + compare against the plan's CPU/RAM caps.
 //  5. Apply D8 AllowedMachineSizes allowlist when non-empty.
 func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 	if ctx.HookType != hooks.BeforeCreate {
@@ -176,11 +168,6 @@ func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 		return nil
 	}
 	plan := planResult.Plan
-
-	// (4) Short-circuit for non-budget plans.
-	if plan.QuotaModel != "budget" {
-		return nil
-	}
 
 	// (5) D8 allowlist. Applied BEFORE the lock so we don't take a row
 	//     lock just to reject the request on a non-resource reason.

@@ -77,8 +77,9 @@ func addActiveGroupMember(t *testing.T, db interface {
 
 // TestBulkCreateTerminals_InsufficientRAM_Refused is the red TDD test for issue #170.
 //
-// Setup: 5 active members, plan AllowedMachineSizes=["S"] (0.5 GB each),
-//        server metrics: 1.0 GB available at 95% usage.
+// Setup: 5 active members, budget caps 100 vCPU / 51200 MiB so the size
+//        catalog still allows S (0.5 GB each).
+//        Server metrics: 1.0 GB available at 95% usage.
 // Expected RAM needed: 5 × 0.5 = 2.5 GB > 1.0 GB available → refused.
 //
 // Current behaviour (FAILING): the service returns nil error and a Success=false response
@@ -114,28 +115,21 @@ func TestBulkCreateTerminals_InsufficientRAM_Refused(t *testing.T) {
 	}
 
 	// --- Subscription plan -----------------------------------------------------
-	planID := uuid.New()
-	err := db.Exec(
-		`INSERT INTO subscription_plans (id, created_at, updated_at, name, is_active, max_concurrent_terminals, max_session_duration_minutes, allowed_machine_sizes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		planID.String(), time.Now(), time.Now(), "BulkRAMTestPlan", true, 100, 60, `["S"]`,
-	).Error
-	require.NoError(t, err)
-
-	subID := uuid.New()
-	err = db.Exec(
-		`INSERT INTO user_subscriptions (id, created_at, updated_at, user_id, subscription_plan_id, status) VALUES (?, ?, ?, ?, ?, ?)`,
-		subID.String(), time.Now(), time.Now(), ownerID, planID.String(), "active",
-	).Error
-	require.NoError(t, err)
-
 	plan := &paymentModels.SubscriptionPlan{
 		Name:                      "BulkRAMTestPlan",
 		IsActive:                  true,
-		AllowedMachineSizes:       []string{"S"},
-		MaxConcurrentTerminals:    100,
+		MaxCPU:                    100,
+		MaxMemoryMB:               51200,
 		MaxSessionDurationMinutes: 60,
 	}
-	plan.ID = planID
+	require.NoError(t, db.Create(plan).Error)
+
+	subID := uuid.New()
+	err := db.Exec(
+		`INSERT INTO user_subscriptions (id, created_at, updated_at, user_id, subscription_plan_id, status) VALUES (?, ?, ?, ?, ?, ?)`,
+		subID.String(), time.Now(), time.Now(), ownerID, plan.ID.String(), "active",
+	).Error
+	require.NoError(t, err)
 
 	// --- Call the service directly ---------------------------------------------
 	svc := services.NewTerminalTrainerService(db)

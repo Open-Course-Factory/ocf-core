@@ -7,7 +7,7 @@
 //
 //  1. Denormalises the size catalog footprint onto the Terminal row
 //     (SizeCPU / SizeMemoryMB) — always, even for legacy "count" plans.
-//  2. Enforces CPU / RAM budget caps when QuotaModel = "budget".
+//  2. Enforces CPU / RAM budget caps from the resolved plan.
 //  3. Applies the AllowedMachineSizes secondary restriction (D8).
 //
 // SQLite covers correctness (no real concurrency); a PostgreSQL-only race
@@ -86,26 +86,15 @@ func (s *stubEffectivePlanService) CheckEffectiveUsageLimitFromResult(result *pa
 // Test helpers
 // ---------------------------------------------------------------------------
 
-// budgetPlan builds an in-memory plan (not persisted) for hook tests.
+// budgetPlanInMem builds an in-memory plan (not persisted) for hook tests.
 // MaxCPU/MaxMemoryMB of 0 means "unlimited" per the contract.
 func budgetPlanInMem(name string, maxCPU, maxMem int, allowed []string) *paymentModels.SubscriptionPlan {
 	return &paymentModels.SubscriptionPlan{
 		BaseModel:           entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:                name,
-		QuotaModel:          "budget",
 		MaxCPU:              maxCPU,
 		MaxMemoryMB:         maxMem,
 		AllowedMachineSizes: allowed,
-	}
-}
-
-// countPlanInMem builds an in-memory legacy "count" plan.
-func countPlanInMem(name string, maxConcurrent int) *paymentModels.SubscriptionPlan {
-	return &paymentModels.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   name,
-		QuotaModel:             "count",
-		MaxConcurrentTerminals: maxConcurrent,
 	}
 }
 
@@ -260,33 +249,6 @@ func TestTerminalBudgetHook_BeforeCreate_RejectedOverBudget_Memory(t *testing.T)
 	var budgetErr *terminalHooks.ErrBudgetExhausted
 	require.ErrorAs(t, err, &budgetErr)
 	assert.Equal(t, terminalHooks.BudgetAxisMemory, budgetErr.Axis)
-}
-
-// ---------------------------------------------------------------------------
-// 5) QuotaModel = "count" is a no-op (for budget); still snapshots size
-// ---------------------------------------------------------------------------
-
-func TestTerminalBudgetHook_BeforeCreate_QuotaModelCount_NoOp(t *testing.T) {
-	db := freshTestDB(t)
-	plan := countPlanInMem("LegacyCount", 1)
-	hook := newHookForTest(db, plan, nil)
-
-	user := "u-count-mode"
-	// Even with a heavy pre-existing footprint, the count-mode path must NOT
-	// raise a budget error from this hook.
-	insertExistingTerminal(t, db, user, nil, "running", "ephemeral", 4, 4096)
-
-	terminal := &terminalModels.Terminal{
-		UserID:      user,
-		MachineSize: "XL",
-	}
-
-	err := execBeforeCreate(hook, terminal)
-	require.NoError(t, err, "count-mode plan must short-circuit (no budget enforcement)")
-
-	// Denormalisation must still happen.
-	assert.Equal(t, 4, terminal.SizeCPU)
-	assert.Equal(t, 4096, terminal.SizeMemoryMB)
 }
 
 // ---------------------------------------------------------------------------

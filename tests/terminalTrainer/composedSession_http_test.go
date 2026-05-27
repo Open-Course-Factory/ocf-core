@@ -139,12 +139,11 @@ func seedBudgetPlanForUser(t *testing.T, userID string, maxCPU, maxMemMB int) uu
 		IsActive:               true,
 		BillingInterval:        "month",
 		Currency:               "eur",
-		QuotaModel:             "budget",
 		MaxCPU:                 maxCPU,
 		MaxMemoryMB:            maxMemMB,
 		MaxCourses:             10,
-		MaxConcurrentTerminals: 100, // high enough to not collide with slot gate
-		AllowedMachineSizes:    []string{"all"}, // size gating handled by budget, not size allowlist
+		MaxConcurrentTerminals: 100,            // dropped in phase D (slot enforcement)
+		AllowedMachineSizes:    []string{"all"}, // dropped in phase E (allowlist)
 	}
 	require.NoError(t, sharedTestDB.Create(plan).Error)
 	require.NoError(t, sharedTestDB.Create(&paymentModels.UserSubscription{

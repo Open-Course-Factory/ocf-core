@@ -2021,9 +2021,8 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 
 	// 3b. Per-user CPU + RAM footprint under the budget counting rule (D6:
 	// state='running' OR persistence_mode='persistent', expires_at > NOW(),
-	// deleted_at IS NULL). Computed regardless of QuotaModel so the dashboard
-	// always reports the breakdown; budget enforcement reads the same numbers
-	// in budget-mode and ignores them in count-mode.
+	// deleted_at IS NULL). Always computed so the dashboard surfaces the
+	// breakdown; budget enforcement reads the same numbers downstream.
 	type userResourceSum struct {
 		UserID    string
 		SumCPU    int64
@@ -3182,10 +3181,9 @@ func (e *BudgetRejection) Error() string {
 }
 
 // enforceBudget runs the budget gate before the Terminal is persisted.
-// It is only called when (a) the feature flag is on AND (b) the plan's
-// QuotaModel is "budget". Returns a *BudgetRejection on overspend and nil
-// otherwise. Thin wrapper over EnforceBudget — exposes the configured
-// QuotaService to the package-private composed-session path.
+// Returns a *BudgetRejection on overspend and nil otherwise. Thin
+// wrapper over EnforceBudget — exposes the configured QuotaService to
+// the package-private composed-session path.
 func (tts *terminalTrainerService) enforceBudget(
 	userID string,
 	orgID *uuid.UUID,

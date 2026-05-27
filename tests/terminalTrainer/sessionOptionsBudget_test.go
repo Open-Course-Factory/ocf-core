@@ -1,11 +1,10 @@
 // tests/terminalTrainer/sessionOptionsBudget_test.go
 //
-// MR-CORE-6 — Budget enrichment of GET /terminals/session-options response.
+// Budget enrichment of GET /terminals/session-options response.
 //
 // EnrichSessionOptionsBudget stamps the per-size RemainingCount + MemoryMB
 // and the top-level Quota envelope on a SessionOptionsResponse. The pure
-// ComputeSessionOptions test coverage lives in composedSession_test.go;
-// this file covers the enrichment seam in both budget and count modes.
+// ComputeSessionOptions test coverage lives in composedSession_test.go.
 package terminalTrainer_tests
 
 import (
@@ -56,7 +55,6 @@ func TestSessionOptions_BudgetMode_IncludesRemainingCount(t *testing.T) {
 	plan := &paymentModels.SubscriptionPlan{
 		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:        "BudgetEnrich",
-		QuotaModel:  "budget",
 		MaxCPU:      8,
 		MaxMemoryMB: 4096,
 	}
@@ -90,7 +88,6 @@ func TestSessionOptions_BudgetMode_IncludesTopLevelQuota(t *testing.T) {
 	plan := &paymentModels.SubscriptionPlan{
 		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:        "BudgetEnrichQuota",
-		QuotaModel:  "budget",
 		MaxCPU:      4,
 		MaxMemoryMB: 2048,
 	}
@@ -140,7 +137,6 @@ func TestSessionOptions_BudgetMode_OrgScope(t *testing.T) {
 	plan := &paymentModels.SubscriptionPlan{
 		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:        "OrgBudget",
-		QuotaModel:  "budget",
 		MaxCPU:      8,
 		MaxMemoryMB: 4096,
 	}

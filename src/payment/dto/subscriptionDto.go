@@ -32,10 +32,9 @@ type CreateSubscriptionPlanInput struct {
 	Priority                       int      `json:"priority" mapstructure:"priority"`
 	IsActive                       *bool    `json:"is_active" mapstructure:"is_active"`
 	IsCatalog                      *bool    `json:"is_catalog" mapstructure:"is_catalog"`
-	// Budget-based quota fields (MR-CORE-3, dual-mode — not yet enforced).
-	MaxCPU      int    `json:"max_cpu" mapstructure:"max_cpu"`
-	MaxMemoryMB int    `json:"max_memory_mb" mapstructure:"max_memory_mb"`
-	QuotaModel  string `json:"quota_model" mapstructure:"quota_model"`
+	// Budget-based quota fields.
+	MaxCPU      int `json:"max_cpu" mapstructure:"max_cpu"`
+	MaxMemoryMB int `json:"max_memory_mb" mapstructure:"max_memory_mb"`
 }
 
 type UpdateSubscriptionPlanInput struct {
@@ -57,10 +56,9 @@ type UpdateSubscriptionPlanInput struct {
 	DefaultBackend                 string   `json:"default_backend,omitempty" mapstructure:"default_backend"`
 	AllowedBackends                []string `json:"allowed_backends,omitempty" mapstructure:"allowed_backends"`
 	Priority                       *int     `json:"priority,omitempty" mapstructure:"priority"`
-	// Budget-based quota fields (MR-CORE-3, dual-mode — not yet enforced).
-	MaxCPU      *int    `json:"max_cpu,omitempty" mapstructure:"max_cpu"`
-	MaxMemoryMB *int    `json:"max_memory_mb,omitempty" mapstructure:"max_memory_mb"`
-	QuotaModel  *string `json:"quota_model,omitempty" mapstructure:"quota_model"`
+	// Budget-based quota fields.
+	MaxCPU      *int `json:"max_cpu,omitempty" mapstructure:"max_cpu"`
+	MaxMemoryMB *int `json:"max_memory_mb,omitempty" mapstructure:"max_memory_mb"`
 }
 
 type SubscriptionPlanOutput struct {
@@ -97,10 +95,9 @@ type SubscriptionPlanOutput struct {
 	DefaultBackend  string   `json:"default_backend"`
 	AllowedBackends []string `json:"allowed_backends"`
 
-	// Budget-based quota fields (MR-CORE-3, dual-mode — not yet enforced).
-	MaxCPU      int    `json:"max_cpu"`
-	MaxMemoryMB int    `json:"max_memory_mb"`
-	QuotaModel  string `json:"quota_model"`
+	// Budget-based quota fields.
+	MaxCPU      int `json:"max_cpu"`
+	MaxMemoryMB int `json:"max_memory_mb"`
 
 	// Planned features (announced but not yet available)
 	PlannedFeatures []string `json:"planned_features"` // Features coming soon

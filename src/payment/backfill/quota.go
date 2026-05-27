@@ -1,14 +1,14 @@
-// Package backfill provides the one-shot data migration that translates
-// the legacy count-based terminal quota
-// (AllowedMachineSizes × MaxConcurrentTerminals) into a budget-based
-// quota (MaxCPU / MaxMemoryMB) on each SubscriptionPlan, then flips
-// QuotaModel to "budget". A reverse `Rollback` is provided for safety.
+// Package backfill provides the one-shot data migration that translated
+// the legacy count-based terminal quota (AllowedMachineSizes ×
+// MaxConcurrentTerminals) into a budget-based quota (MaxCPU /
+// MaxMemoryMB) on each SubscriptionPlan. A reverse `Rollback` is
+// provided for safety.
 //
 // This package is a one-shot tool retained for the cleanup-deploy era:
 // once production has migrated and the legacy columns have been dropped
 // by `initialization.dropOrphanSubscriptionPlanColumns`, both `Run` and
-// `Rollback` become inert (no plans to update). Kept around so operators
-// can re-run safely on staging or replay against historical snapshots.
+// `Rollback` become inert (the legacy column reads return zero). Kept
+// around so operators can replay against historical snapshots.
 package backfill
 
 import (
@@ -32,8 +32,6 @@ type Options struct {
 type PlanReport struct {
 	PlanID      string
 	Name        string
-	BeforeModel string
-	AfterModel  string
 	MaxCPU      int
 	MaxMemoryMB int
 	Reason      string
@@ -48,8 +46,16 @@ type Report struct {
 	Plans       []PlanReport
 }
 
-// Run applies the count → budget migration. It is idempotent: plans
-// already on the budget model are skipped.
+// legacyPlanLimits is a read-only projection of the now-removed columns,
+// fetched directly via SQL so the model struct can stay free of dead
+// fields. Returns zeroes when the columns are absent (post-cleanup DB).
+type legacyPlanLimits struct {
+	MaxConcurrentTerminals int
+	AllowedMachineSizes    string // JSON-encoded []string
+}
+
+// Run applies the count → budget migration. Idempotent: plans already
+// carrying a non-zero MaxCPU or MaxMemoryMB are skipped.
 func Run(db *gorm.DB, opts Options) (*Report, error) {
 	var plans []models.SubscriptionPlan
 	if err := db.Find(&plans).Error; err != nil {
@@ -61,13 +67,11 @@ func Run(db *gorm.DB, opts Options) (*Report, error) {
 	apply := func(tx *gorm.DB) error {
 		for i := range plans {
 			plan := &plans[i]
-			if plan.QuotaModel == "budget" {
+			if plan.MaxCPU > 0 || plan.MaxMemoryMB > 0 {
 				report.Skipped++
 				report.Plans = append(report.Plans, PlanReport{
 					PlanID:      plan.ID.String(),
 					Name:        plan.Name,
-					BeforeModel: plan.QuotaModel,
-					AfterModel:  plan.QuotaModel,
 					MaxCPU:      plan.MaxCPU,
 					MaxMemoryMB: plan.MaxMemoryMB,
 					Reason:      "already on budget model",
@@ -75,12 +79,10 @@ func Run(db *gorm.DB, opts Options) (*Report, error) {
 				continue
 			}
 
-			cpu, mem, reason := derivePlanBudget(plan)
+			cpu, mem, reason := derivePlanBudget(tx, plan)
 			pr := PlanReport{
 				PlanID:      plan.ID.String(),
 				Name:        plan.Name,
-				BeforeModel: plan.QuotaModel,
-				AfterModel:  "budget",
 				MaxCPU:      cpu,
 				MaxMemoryMB: mem,
 				Reason:      reason,
@@ -90,7 +92,6 @@ func Run(db *gorm.DB, opts Options) (*Report, error) {
 				updates := map[string]any{
 					"max_cpu":       cpu,
 					"max_memory_mb": mem,
-					"quota_model":   "budget",
 				}
 				if err := tx.Model(plan).Updates(updates).Error; err != nil {
 					return fmt.Errorf("update plan %s: %w", plan.ID, err)
@@ -120,8 +121,8 @@ func Run(db *gorm.DB, opts Options) (*Report, error) {
 	return report, nil
 }
 
-// Rollback reverses Run: clears MaxCPU/MaxMemoryMB and flips QuotaModel
-// back to "count". AllowedMachineSizes is preserved.
+// Rollback reverses Run: clears MaxCPU/MaxMemoryMB. The legacy columns
+// (if still present on the DB) are not touched.
 func Rollback(db *gorm.DB, opts Options) (*Report, error) {
 	var plans []models.SubscriptionPlan
 	if err := db.Find(&plans).Error; err != nil {
@@ -133,14 +134,12 @@ func Rollback(db *gorm.DB, opts Options) (*Report, error) {
 	apply := func(tx *gorm.DB) error {
 		for i := range plans {
 			plan := &plans[i]
-			if plan.QuotaModel == "count" && plan.MaxCPU == 0 && plan.MaxMemoryMB == 0 {
+			if plan.MaxCPU == 0 && plan.MaxMemoryMB == 0 {
 				report.Skipped++
 				report.Plans = append(report.Plans, PlanReport{
-					PlanID:      plan.ID.String(),
-					Name:        plan.Name,
-					BeforeModel: plan.QuotaModel,
-					AfterModel:  plan.QuotaModel,
-					Reason:      "already on count model",
+					PlanID: plan.ID.String(),
+					Name:   plan.Name,
+					Reason: "already cleared",
 				})
 				continue
 			}
@@ -148,18 +147,15 @@ func Rollback(db *gorm.DB, opts Options) (*Report, error) {
 			pr := PlanReport{
 				PlanID:      plan.ID.String(),
 				Name:        plan.Name,
-				BeforeModel: plan.QuotaModel,
-				AfterModel:  "count",
 				MaxCPU:      0,
 				MaxMemoryMB: 0,
-				Reason:      "rollback to count model",
+				Reason:      "rollback to zero budget",
 			}
 
 			if opts.Apply {
 				updates := map[string]any{
 					"max_cpu":       0,
 					"max_memory_mb": 0,
-					"quota_model":   "count",
 				}
 				if err := tx.Model(plan).Updates(updates).Error; err != nil {
 					return fmt.Errorf("rollback plan %s: %w", plan.ID, err)
@@ -186,22 +182,59 @@ func Rollback(db *gorm.DB, opts Options) (*Report, error) {
 	return report, nil
 }
 
-// derivePlanBudget translates the legacy count-based limits into a
-// budget. Returns (cpu, mem, reason) where reason is a human-readable
-// summary suitable for the migration log line.
-func derivePlanBudget(plan *models.SubscriptionPlan) (cpu, mem int, reason string) {
-	// Unlimited terminals → unlimited budget. Same for explicit zero
-	// (no terminals allowed) — both map to "0" sentinel.
-	if plan.MaxConcurrentTerminals <= 0 {
-		return 0, 0, fmt.Sprintf("count(%d) → budget(unlimited/zero)", plan.MaxConcurrentTerminals)
+// derivePlanBudget translates a plan's legacy count-based limits into a
+// CPU/RAM budget. Reads the legacy columns directly via SQL so it works
+// before the dropOrphanSubscriptionPlanColumns migration has run; after
+// the columns are dropped it returns (0, 0, …) and the plan is left at
+// unlimited (which is the safe fallback during a re-run on a clean DB).
+func derivePlanBudget(db *gorm.DB, plan *models.SubscriptionPlan) (cpu, mem int, reason string) {
+	legacy := readLegacyLimits(db, plan.ID.String())
+	if legacy.MaxConcurrentTerminals <= 0 {
+		return 0, 0, fmt.Sprintf("count(%d) → budget(unlimited/zero)", legacy.MaxConcurrentTerminals)
 	}
 
-	largest := largestAllowedSize(plan.AllowedMachineSizes)
-	cpu = largest.CPU * plan.MaxConcurrentTerminals
-	mem = largest.MemoryMB * plan.MaxConcurrentTerminals
+	largest := largestAllowedSize(parseAllowedSizes(legacy.AllowedMachineSizes))
+	cpu = largest.CPU * legacy.MaxConcurrentTerminals
+	mem = largest.MemoryMB * legacy.MaxConcurrentTerminals
 	reason = fmt.Sprintf("count(%d) × max(%dc/%dMiB) → budget(%d vCPU / %d MiB)",
-		plan.MaxConcurrentTerminals, largest.CPU, largest.MemoryMB, cpu, mem)
+		legacy.MaxConcurrentTerminals, largest.CPU, largest.MemoryMB, cpu, mem)
 	return cpu, mem, reason
+}
+
+// readLegacyLimits fetches the legacy columns from the DB if they still
+// exist. Any error (column missing on post-cleanup DBs) is swallowed and
+// returns zero limits.
+func readLegacyLimits(db *gorm.DB, planID string) legacyPlanLimits {
+	var out legacyPlanLimits
+	_ = db.Table("subscription_plans").
+		Select("max_concurrent_terminals, allowed_machine_sizes").
+		Where("id = ?", planID).
+		Row().
+		Scan(&out.MaxConcurrentTerminals, &out.AllowedMachineSizes)
+	return out
+}
+
+// parseAllowedSizes turns a JSON-encoded []string into a Go slice. The
+// migration was lenient about format (some plans stored a CSV); we
+// keep that lenience here by splitting on either commas or JSON list
+// delimiters.
+func parseAllowedSizes(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	raw = strings.Trim(raw, "[]")
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		s := strings.TrimSpace(strings.Trim(part, `"`))
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // largestAllowedSize returns the worst-case size implied by an

@@ -1,12 +1,9 @@
 // tests/payment/quotaServiceBudget_test.go
 //
-// Tests for the budget-based methods on QuotaService (MR-CORE-4).
+// Tests for the budget-based methods on QuotaService.
 //
-// These cover the new dual-mode contract: when a plan's QuotaModel is
-// "budget", the service sums per-terminal CPU/RAM footprints against
-// the plan's MaxCPU/MaxMemoryMB caps. When QuotaModel is the legacy
-// "count" value, CheckBudget short-circuits as a pass-through so the
-// existing slot-based methods (CheckUserQuota) remain authoritative.
+// The service sums per-terminal CPU/RAM footprints against the plan's
+// MaxCPU/MaxMemoryMB caps.
 //
 // Lifecycle rule under test (D6): a terminal counts against the budget
 // iff state = 'running' OR persistence_mode = 'persistent'. Ephemeral
@@ -46,7 +43,6 @@ func budgetPlan(t *testing.T, db *gorm.DB, name string, maxCPU, maxMemMB int, al
 		Currency:            "eur",
 		BillingInterval:     "month",
 		IsActive:            true,
-		QuotaModel:          "budget",
 		MaxCPU:              maxCPU,
 		MaxMemoryMB:         maxMemMB,
 		AllowedMachineSizes: allowed,
@@ -331,32 +327,6 @@ func TestQuotaService_CheckBudget_OrgScoped(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, checkOver)
 	assert.False(t, checkOver.Allowed, "org-wide sum must include the other two members")
-}
-
-func TestQuotaService_CheckBudget_QuotaModelCount_PassesThrough(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "u-budget-count-passthrough"
-
-	// QuotaModel = "count" (legacy). CheckBudget must short-circuit:
-	// allowed=true with sentinel remaining values; NO DB query is needed.
-	plan := &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "LegacyCountPlan",
-		QuotaModel:             "count",
-		MaxConcurrentTerminals: 1,
-		MaxCPU:                 1,
-		MaxMemoryMB:            128,
-	}
-	require.NoError(t, db.Create(plan).Error)
-
-	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 4096)
-
-	require.NoError(t, err)
-	require.NotNil(t, check)
-	assert.True(t, check.Allowed, "count-mode plan must short-circuit to allowed")
-	assert.Equal(t, math.MaxInt32, check.RemainingCPU)
-	assert.Equal(t, math.MaxInt32, check.RemainingMemMB)
 }
 
 func TestQuotaService_CheckBudget_AllowedMachineSizesGate(t *testing.T) {

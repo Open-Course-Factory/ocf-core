@@ -52,13 +52,7 @@ type QuotaService interface {
 	GetUserUsage(userID string, orgID *uuid.UUID, metric string) (int64, error)
 
 	// CheckBudget evaluates whether a session of the requested CPU/RAM cost
-	// fits within the user's (or org's) effective plan, using the new
-	// budget-based quota model.
-	//
-	// When the plan's QuotaModel is anything other than "budget" (e.g. the
-	// legacy "count" model), CheckBudget short-circuits to allowed=true
-	// with sentinel "unlimited" remaining values — slot-based methods
-	// (CheckUserQuota) remain authoritative for those plans.
+	// fits within the user's (or org's) effective plan.
 	//
 	// When MaxCPU/MaxMemoryMB on the plan are zero, the corresponding axis
 	// is treated as unlimited.
@@ -317,18 +311,14 @@ func limitForMetric(plan *models.SubscriptionPlan, metric string) int64 {
 	}
 }
 
-// --- Budget-mode quota methods (MR-CORE-4) -----------------------------
+// --- Budget quota methods -----------------------------------------------
 //
-// These methods power the new CPU/RAM budget quota model. They are only
-// active for plans with QuotaModel = "budget"; for the legacy "count"
-// model, CheckBudget short-circuits and the existing slot-based methods
-// above remain authoritative.
+// These methods power the CPU/RAM budget quota engine.
 //
 // Resource counters use the denormalised size_cpu / size_memory_mb
-// columns on the Terminal table (added in MR-CORE-3). Older rows where
-// those columns are zero fall back to a catalog lookup of MachineSize —
-// MR-CORE-5's BeforeCreate hook will populate the columns on create so
-// new sessions never need the fallback.
+// columns on the Terminal table. The TerminalBudgetHook (and the
+// composed-session path) populates these columns on create so new
+// sessions never need a catalog fallback.
 
 // budgetUnlimited is the sentinel returned for the "remaining" axis on
 // an unlimited (zero-cap) plan. Chosen as math.MaxInt32 so JSON callers
@@ -344,14 +334,6 @@ func (s *quotaService) CheckBudget(
 ) (*BudgetCheck, error) {
 	if plan == nil {
 		return nil, fmt.Errorf("CheckBudget: plan is nil")
-	}
-	// Legacy "count" plans bypass the budget logic entirely.
-	if plan.QuotaModel != "budget" {
-		return &BudgetCheck{
-			Allowed:        true,
-			RemainingCPU:   budgetUnlimited,
-			RemainingMemMB: budgetUnlimited,
-		}, nil
 	}
 
 	usedCPU, usedMemMB, err := s.sumActiveResources(userID, orgID)

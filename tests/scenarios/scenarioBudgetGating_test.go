@@ -89,25 +89,14 @@ func insertExistingTerminalBudget(t *testing.T, db *gorm.DB, userID string, orgI
 		id, now, now, userID, orgVal, "sess-"+id, state, cpu, memMB, expires, uuid.New().String()).Error)
 }
 
-// budgetTestPlanInMem builds an in-memory budget-mode plan.
+// budgetTestPlanInMem builds an in-memory plan with the given CPU/RAM caps.
 func budgetTestPlanInMem(maxCPU, maxMem int, allowedSizes []string) *paymentModels.SubscriptionPlan {
 	return &paymentModels.SubscriptionPlan{
 		BaseModel:           entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:                "ScenarioBudgetTest",
-		QuotaModel:          "budget",
 		MaxCPU:              maxCPU,
 		MaxMemoryMB:         maxMem,
 		AllowedMachineSizes: allowedSizes,
-	}
-}
-
-// countTestPlanInMem builds an in-memory legacy count-mode plan.
-func countTestPlanInMem(maxConcurrent int) *paymentModels.SubscriptionPlan {
-	return &paymentModels.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "ScenarioCountTest",
-		QuotaModel:             "count",
-		MaxConcurrentTerminals: maxConcurrent,
 	}
 }
 
@@ -186,25 +175,3 @@ func TestGetAvailableScenarios_BudgetMode_AllowsWhenFits(t *testing.T) {
 	assert.Equal(t, "", reason)
 }
 
-// TestGetAvailableScenarios_CountMode_UsesLegacyGate — count-mode plan
-// short-circuits CheckBudget (returns allowed=true), so even at the slot
-// limit the budget gate is a no-op. The existing slot-count enforcement
-// (CheckLimit middleware) remains authoritative; the scenario controller
-// never sets BlockReason="budget_exhausted" for count-mode plans.
-func TestGetAvailableScenarios_CountMode_UsesLegacyGate(t *testing.T) {
-	db := scenarioBudgetTestDB(t)
-	eps := paymentServices.NewEffectivePlanService(db)
-	quotaSvc := paymentServices.NewQuotaService(db, eps)
-
-	// Count-mode plan at slot limit (1 concurrent, one running already).
-	plan := countTestPlanInMem(1)
-	insertExistingTerminalBudget(t, db, "u-count-gate", nil, "running", 4, 4096)
-
-	fits, reason, err := quotaSvc.RemainingBudgetFitsWithReason(
-		"u-count-gate", nil, plan, "L",
-	)
-	require.NoError(t, err)
-	assert.True(t, fits,
-		"count-mode plans short-circuit CheckBudget; the controller falls back to CheckLimit middleware")
-	assert.Equal(t, "", reason)
-}

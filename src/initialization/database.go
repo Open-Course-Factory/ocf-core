@@ -603,11 +603,19 @@ func BackfillSingleActiveOrgSubscription(db *gorm.DB) {
 // (drift the SSOT). Idempotent: HasColumn returns false once the column is
 // gone, so re-runs are safe.
 //
-// MR !239 (SSOT consolidation): collapsed PersistentSessionsEnabled /
-// MaxPersistentSessions into DataPersistenceEnabled / DataPersistenceGB. The
-// two duplicate columns are dropped here.
+// Dropped columns:
+//   - persistent_sessions_enabled / max_persistent_sessions (MR !239 — collapsed
+//     into DataPersistenceEnabled / DataPersistenceGB).
+//   - quota_model / max_concurrent_terminals / allowed_machine_sizes
+//     (dual-mode cleanup — the CPU/RAM budget is now the only quota model).
 func dropOrphanSubscriptionPlanColumns(db *gorm.DB) {
-	orphans := []string{"persistent_sessions_enabled", "max_persistent_sessions"}
+	orphans := []string{
+		"persistent_sessions_enabled",
+		"max_persistent_sessions",
+		"quota_model",
+		"max_concurrent_terminals",
+		"allowed_machine_sizes",
+	}
 	migrator := db.Migrator()
 	for _, col := range orphans {
 		if !migrator.HasColumn(&paymentModels.SubscriptionPlan{}, col) {

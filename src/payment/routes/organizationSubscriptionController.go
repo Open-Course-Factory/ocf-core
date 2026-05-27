@@ -532,9 +532,8 @@ func convertSubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.Subscrip
 		UseTieredPricing: plan.UseTieredPricing,
 		PricingTiers:     pricingTiers,
 
-		// Budget-based quota (MR-CORE-3, dual-mode)
+		// Budget-based quota
 		MaxCPU:      plan.MaxCPU,
 		MaxMemoryMB: plan.MaxMemoryMB,
-		QuotaModel:  plan.QuotaModel,
 	}
 }
