@@ -19,7 +19,7 @@ import (
 	config "soli/formations/src/configuration"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
-	"soli/formations/src/payment/backfill"
+	"soli/formations/src/payment/catalog"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/terminalTrainer/dto"
@@ -767,7 +767,7 @@ func (tts *terminalTrainerService) createMissingLocalSession(userID string, user
 // regression (size_cpu / size_memory_mb left at 0 on synced rows) is gated
 // on this single builder.
 //
-// MachineSize is resolved through backfill.LookupSize (case-insensitive).
+// MachineSize is resolved through catalog.LookupSize (case-insensitive).
 // Unknown size keys leave SizeCPU / SizeMemoryMB at 0 — matches the
 // defensive pattern used for legacy rows that pre-date the denorm columns.
 func BuildTerminalFromAPISession(userID string, userKey *models.UserTerminalKey, apiSession *dto.TerminalTrainerSession) *models.Terminal {
@@ -795,7 +795,7 @@ func BuildTerminalFromAPISession(userID string, userKey *models.UserTerminalKey,
 	// non-zero size_cpu / size_memory_mb for synced rows. Without this the
 	// row would be invisible to the budget aggregate even though it
 	// occupies real resources on tt-backend (C5).
-	if size, found := backfill.LookupSize(apiSession.MachineSize); found {
+	if size, found := catalog.LookupSize(apiSession.MachineSize); found {
 		terminal.SizeCPU = size.CPU
 		terminal.SizeMemoryMB = size.MemoryMB
 	} else if strings.TrimSpace(apiSession.MachineSize) != "" {
@@ -1437,8 +1437,8 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 		} else {
 			plan, _ := planInterface.(*paymentModels.SubscriptionPlan)
 			if plan != nil {
-				// SSOT: derive per-terminal RAM from backfill catalog via
-				// EstimatePerTerminalRAMGB. Keeps bulk pre-flight aligned
+				// SSOT: derive per-terminal RAM from the canonical catalog
+				// via EstimatePerTerminalRAMGB. Keeps bulk pre-flight aligned
 				// with the budget engine — a hand-rolled literal here
 				// would silently drift if a size's RAM is retuned.
 				perTerminalRAM := EstimatePerTerminalRAMGB(plan.AllowedMachineSizes)
@@ -2986,7 +2986,7 @@ func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
 	// the human-readable Memory string. This is independent of budget mode.
 	for i := range opts.AllowedSizes {
 		key := NormalizeSizeKey(opts.AllowedSizes[i].Key)
-		if cataSize, found := backfill.LookupSize(key); found {
+		if cataSize, found := catalog.LookupSize(key); found {
 			opts.AllowedSizes[i].MemoryMB = cataSize.MemoryMB
 		}
 	}
@@ -3120,7 +3120,7 @@ func (tts *terminalTrainerService) StartComposedSession(userID string, input dto
 	// would let post-rollout count-mode rows escape budget accounting if
 	// the deployment later flips to budget mode mid-session. Mirrors the
 	// snapshot step the TerminalBudgetHook performs on the generic path.
-	if cataSize, found := backfill.LookupSize(input.Size); found {
+	if cataSize, found := catalog.LookupSize(input.Size); found {
 		input.SizeCPU = cataSize.CPU
 		input.SizeMemoryMB = cataSize.MemoryMB
 	}

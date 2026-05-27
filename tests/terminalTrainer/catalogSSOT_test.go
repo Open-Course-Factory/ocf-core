@@ -1,13 +1,13 @@
 // Catalog SSOT tests — assert that the former mirrors of the size catalog
 // in capacityService.go and terminalTrainerService.go now derive their
-// values from backfill.LookupSize.
+// values from catalog.LookupSize.
 //
 // Pre-cleanup, three places re-encoded the size→RAM mapping in ocf-core:
 //   - backfill.sizeCatalog (canonical CPU+RAM source)
 //   - capacityService.machineSizeToRAM (GB)
 //   - terminalTrainerService.go inline map (GB, for bulk pre-flight RAM)
 //
-// The cleanup unifies the latter two on backfill.LookupSize. These tests
+// The cleanup unifies the latter two on catalog.LookupSize. These tests
 // pin the behavioural parity: if a future maintainer reintroduces a
 // hardcoded literal that drifts from backfill, the test fails.
 package terminalTrainer_tests
@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"soli/formations/src/payment/backfill"
+	"soli/formations/src/payment/catalog"
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/services"
@@ -26,7 +26,7 @@ import (
 
 // TestCapacityService_UsesBackfillLookup_ForRequestedSize — for each
 // canonical size, the RAM estimate consumed by EvaluateLaunchCapacity
-// matches backfill.LookupSize(key).MemoryMB / 1024.
+// matches catalog.LookupSize(key).MemoryMB / 1024.
 //
 // The test computes the expected post-launch availability from the
 // catalog value, then asserts the resulting CapacityStatus boundary
@@ -40,7 +40,7 @@ func TestCapacityService_UsesBackfillLookup_ForRequestedSize(t *testing.T) {
 	}
 
 	for _, key := range []string{"XS", "S", "M", "L", "XL"} {
-		size, ok := backfill.LookupSize(key)
+		size, ok := catalog.LookupSize(key)
 		require.True(t, ok, "backfill must know %s", key)
 		expectedRAMGB := float64(size.MemoryMB) / 1024.0
 
@@ -82,11 +82,11 @@ func TestCapacityService_UsesBackfillLookup_ForRequestedSize(t *testing.T) {
 
 // TestCapacityService_UsesBackfillLookup_ForPlanMax — when no size is
 // requested, EvaluateLaunchCapacity falls back to the plan's largest
-// allowed size. The estimate must derive from backfill.LookupSize, not
+// allowed size. The estimate must derive from catalog.LookupSize, not
 // a stale local literal.
 func TestCapacityService_UsesBackfillLookup_ForPlanMax(t *testing.T) {
 	// Plan allows up to L → expected required RAM = backfill["L"].MemoryMB / 1024.
-	l, ok := backfill.LookupSize("L")
+	l, ok := catalog.LookupSize("L")
 	require.True(t, ok)
 	expectedRAMGB := float64(l.MemoryMB) / 1024.0
 
@@ -122,11 +122,11 @@ func TestCapacityService_UsesBackfillLookup_ForPlanMax(t *testing.T) {
 // TestEstimatePerTerminalRAMGB_UsesBackfillLookup — exercises the
 // extracted helper that replaces the inline catalog literal in
 // terminalTrainerService.go (bulk RAM pre-flight). Behaviour parity:
-// the helper must agree with backfill.LookupSize for every canonical
+// the helper must agree with catalog.LookupSize for every canonical
 // key, and must return 1.0 (M-equivalent) for the "all" sentinel.
 func TestEstimatePerTerminalRAMGB_UsesBackfillLookup(t *testing.T) {
 	for _, key := range []string{"XS", "S", "M", "L", "XL"} {
-		size, ok := backfill.LookupSize(key)
+		size, ok := catalog.LookupSize(key)
 		require.True(t, ok)
 		expected := float64(size.MemoryMB) / 1024.0
 		got := services.EstimatePerTerminalRAMGB([]string{key})
@@ -137,7 +137,7 @@ func TestEstimatePerTerminalRAMGB_UsesBackfillLookup(t *testing.T) {
 		// "all" sentinel preserves the legacy 1GB estimate (matches M).
 		// Use the M entry from the catalog so a future catalog change to
 		// M flows through automatically.
-		m, ok := backfill.LookupSize("M")
+		m, ok := catalog.LookupSize("M")
 		require.True(t, ok)
 		expected := float64(m.MemoryMB) / 1024.0
 		got := services.EstimatePerTerminalRAMGB([]string{"all"})
@@ -146,7 +146,7 @@ func TestEstimatePerTerminalRAMGB_UsesBackfillLookup(t *testing.T) {
 
 	t.Run("empty_allowlist_returns_S_default", func(t *testing.T) {
 		// Empty/unset allowlist preserves the legacy 0.5GB default (S).
-		s, ok := backfill.LookupSize("S")
+		s, ok := catalog.LookupSize("S")
 		require.True(t, ok)
 		expected := float64(s.MemoryMB) / 1024.0
 		got := services.EstimatePerTerminalRAMGB(nil)
@@ -155,7 +155,7 @@ func TestEstimatePerTerminalRAMGB_UsesBackfillLookup(t *testing.T) {
 
 	t.Run("max_of_multiple_sizes", func(t *testing.T) {
 		// When the plan allows several sizes the estimate is the max.
-		l, ok := backfill.LookupSize("L")
+		l, ok := catalog.LookupSize("L")
 		require.True(t, ok)
 		expected := float64(l.MemoryMB) / 1024.0
 		got := services.EstimatePerTerminalRAMGB([]string{"XS", "S", "M", "L"})

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"soli/formations/src/payment/backfill"
+	"soli/formations/src/payment/catalog"
 	paymentDto "soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
@@ -437,7 +437,7 @@ func (s *quotaService) ComputeRemainingBySize(
 	plan *models.SubscriptionPlan,
 	usedCPU, usedMemMB int,
 ) []SizeRemaining {
-	out := make([]SizeRemaining, 0, len(backfill.CanonicalSizeKeys))
+	out := make([]SizeRemaining, 0, len(catalog.CanonicalSizeKeys))
 
 	cpuUnlimited := plan == nil || plan.MaxCPU <= 0
 	memUnlimited := plan == nil || plan.MaxMemoryMB <= 0
@@ -457,8 +457,8 @@ func (s *quotaService) ComputeRemainingBySize(
 		}
 	}
 
-	for _, key := range backfill.CanonicalSizeKeys {
-		size, ok := backfill.LookupSize(key)
+	for _, key := range catalog.CanonicalSizeKeys {
+		size, ok := catalog.LookupSize(key)
 		if !ok {
 			continue
 		}
@@ -537,7 +537,7 @@ func (s *quotaService) remainingBudgetFitsCore(
 	if plan == nil {
 		return false, "", fmt.Errorf("remainingBudgetFits: plan is nil")
 	}
-	size, ok := backfill.LookupSize(sizeKey)
+	size, ok := catalog.LookupSize(sizeKey)
 	if !ok {
 		return false, "", fmt.Errorf("remainingBudgetFits: unknown size %q", sizeKey)
 	}

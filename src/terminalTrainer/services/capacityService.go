@@ -8,7 +8,7 @@
 package services
 
 import (
-	"soli/formations/src/payment/backfill"
+	"soli/formations/src/payment/catalog"
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/dto"
 )
@@ -45,13 +45,13 @@ type CapacityResult struct {
 const minRAMReserveFraction = 0.05
 
 // sizeRAMGB returns the per-instance RAM estimate (in GB) for a size key,
-// derived from the canonical catalog (backfill.LookupSize). Used by the
+// derived from the canonical catalog (catalog.LookupSize). Used by the
 // capacity evaluator to keep capacity decisions aligned with the budget
 // engine — a drift here would let users bypass the budget at launch time.
 //
 // Returns (0, false) for unknown keys; callers handle the miss explicitly.
 func sizeRAMGB(key string) (float64, bool) {
-	size, ok := backfill.LookupSize(key)
+	size, ok := catalog.LookupSize(key)
 	if !ok {
 		return 0, false
 	}

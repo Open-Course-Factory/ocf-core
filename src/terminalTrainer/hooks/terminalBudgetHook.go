@@ -3,7 +3,7 @@
 // This BeforeCreate hook on Terminal does two things:
 //
 //  1. Populates the denormalised SizeCPU / SizeMemoryMB columns from the
-//     resource catalog (backfill.LookupSize). The snapshot insulates
+//     resource catalog (catalog.LookupSize). The snapshot insulates
 //     historical accounting from future catalog drift and lets the
 //     budget summing query stay a pure SQL aggregate.
 //
@@ -33,7 +33,7 @@ import (
 	"time"
 
 	"soli/formations/src/entityManagement/hooks"
-	"soli/formations/src/payment/backfill"
+	"soli/formations/src/payment/catalog"
 	paymentServices "soli/formations/src/payment/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 
@@ -153,7 +153,7 @@ func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 		// matches existing semantics where MachineSize is optional.
 		return nil
 	}
-	size, found := backfill.LookupSize(sizeKey)
+	size, found := catalog.LookupSize(sizeKey)
 	if !found {
 		return &ErrUnknownMachineSize{Requested: sizeKey}
 	}

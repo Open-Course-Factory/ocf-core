@@ -1,74 +1,25 @@
-// Package backfill provides one-off data migrations for payment plans.
+// Package backfill provides the one-shot data migration that translates
+// the legacy count-based terminal quota
+// (AllowedMachineSizes × MaxConcurrentTerminals) into a budget-based
+// quota (MaxCPU / MaxMemoryMB) on each SubscriptionPlan, then flips
+// QuotaModel to "budget". A reverse `Rollback` is provided for safety.
 //
-// The current migration translates the legacy count-based terminal quota
-// (AllowedMachineSizes × MaxConcurrentTerminals) into a budget-based quota
-// (MaxCPU / MaxMemoryMB) on each SubscriptionPlan, then flips QuotaModel
-// to "budget". A reverse `Rollback` is provided for safety.
-//
-// The migration is intentionally additive: existing AllowedMachineSizes
-// and MaxConcurrentTerminals are left untouched and will continue to be
-// honoured by all current readers. The new MaxCPU/MaxMemoryMB columns are
-// only consumed once subsequent MRs wire them through the middleware.
+// This package is a one-shot tool retained for the cleanup-deploy era:
+// once production has migrated and the legacy columns have been dropped
+// by `initialization.dropOrphanSubscriptionPlanColumns`, both `Run` and
+// `Rollback` become inert (no plans to update). Kept around so operators
+// can re-run safely on staging or replay against historical snapshots.
 package backfill
 
 import (
 	"fmt"
 	"strings"
 
+	"soli/formations/src/payment/catalog"
 	"soli/formations/src/payment/models"
 
 	"gorm.io/gorm"
 )
-
-// MachineSize describes one entry in the resource catalog used to derive
-// budget caps from the legacy AllowedMachineSizes field.
-//
-// MIRROR OF tt-backend/backend/db.go `dbSeedSizes` — keep in sync. If a
-// new size is added on the terminal backend it must be mirrored here so
-// the backfill produces accurate budgets.
-type MachineSize struct {
-	CPU      int
-	MemoryMB int
-}
-
-// sizeCatalog is keyed by both the canonical uppercase code and the
-// lowercase variant that some existing plans store.
-var sizeCatalog = map[string]MachineSize{
-	"XS": {CPU: 1, MemoryMB: 256},
-	"xs": {CPU: 1, MemoryMB: 256},
-	"S":  {CPU: 1, MemoryMB: 512},
-	"s":  {CPU: 1, MemoryMB: 512},
-	"M":  {CPU: 2, MemoryMB: 1024},
-	"m":  {CPU: 2, MemoryMB: 1024},
-	"L":  {CPU: 4, MemoryMB: 2048},
-	"l":  {CPU: 4, MemoryMB: 2048},
-	"XL": {CPU: 4, MemoryMB: 4096},
-	"xl": {CPU: 4, MemoryMB: 4096},
-}
-
-// xlSize is the implicit cap when AllowedMachineSizes is empty or
-// contains "all" — matches the catalog's largest entry.
-var xlSize = MachineSize{CPU: 4, MemoryMB: 4096}
-
-// CanonicalSizeKeys is the list of canonical (lowercase) size keys in
-// monotonically increasing order. Exposed so the quota service can
-// iterate the catalog deterministically (e.g. for ComputeRemainingBySize).
-var CanonicalSizeKeys = []string{"xs", "s", "m", "l", "xl"}
-
-// LookupSize returns the CPU/memory footprint for a size key (case-insensitive),
-// along with whether the key was found. Used by the QuotaService to evaluate
-// "does this size fit in the remaining budget?" without re-declaring the catalog.
-func LookupSize(key string) (MachineSize, bool) {
-	size, ok := sizeCatalog[key]
-	if ok {
-		return size, true
-	}
-	// Try canonicalised (lowercase) key as a fallback.
-	if size, ok := sizeCatalog[strings.ToLower(strings.TrimSpace(key))]; ok {
-		return size, true
-	}
-	return MachineSize{}, false
-}
 
 // Options controls a backfill / rollback run.
 type Options struct {
@@ -255,13 +206,13 @@ func derivePlanBudget(plan *models.SubscriptionPlan) (cpu, mem int, reason strin
 
 // largestAllowedSize returns the worst-case size implied by an
 // AllowedMachineSizes value. Empty list or any "all" entry means the
-// plan was unrestricted, so we fall back to XL.
-func largestAllowedSize(allowed []string) MachineSize {
+// plan was unrestricted, so we fall back to the catalog's largest entry.
+func largestAllowedSize(allowed []string) catalog.MachineSize {
 	if len(allowed) == 0 {
-		return xlSize
+		return catalog.LargestSize
 	}
 
-	var largest MachineSize
+	var largest catalog.MachineSize
 	matched := false
 	for _, raw := range allowed {
 		code := strings.TrimSpace(raw)
@@ -269,14 +220,14 @@ func largestAllowedSize(allowed []string) MachineSize {
 			continue
 		}
 		if strings.EqualFold(code, "all") {
-			return xlSize
+			return catalog.LargestSize
 		}
-		size, ok := sizeCatalog[code]
+		size, ok := catalog.LookupSize(code)
 		if !ok {
-			// Unknown size: be conservative and assume XL — this keeps
-			// the migration safe for any custom plan that snuck in a
-			// non-catalog code.
-			return xlSize
+			// Unknown size: be conservative and assume the largest —
+			// this keeps the migration safe for any custom plan that
+			// snuck in a non-catalog code.
+			return catalog.LargestSize
 		}
 		matched = true
 		if size.CPU > largest.CPU {
@@ -287,7 +238,7 @@ func largestAllowedSize(allowed []string) MachineSize {
 		}
 	}
 	if !matched {
-		return xlSize
+		return catalog.LargestSize
 	}
 	return largest
 }
