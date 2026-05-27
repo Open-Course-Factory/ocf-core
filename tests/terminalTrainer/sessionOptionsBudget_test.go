@@ -9,7 +9,6 @@
 package terminalTrainer_tests
 
 import (
-	"os"
 	"testing"
 
 	"github.com/google/uuid"
@@ -36,25 +35,6 @@ func budgetSessionOptions() *dto.SessionOptionsResponse {
 	return &dto.SessionOptionsResponse{AllowedSizes: sizes}
 }
 
-// withBudgetFlag temporarily sets OCF_FEATURE_BUDGET_QUOTAS to "1" and
-// restores the previous value on cleanup.
-func withBudgetFlag(t *testing.T, on bool) {
-	t.Helper()
-	saved, hadValue := os.LookupEnv("OCF_FEATURE_BUDGET_QUOTAS")
-	t.Cleanup(func() {
-		if hadValue {
-			os.Setenv("OCF_FEATURE_BUDGET_QUOTAS", saved)
-		} else {
-			os.Unsetenv("OCF_FEATURE_BUDGET_QUOTAS")
-		}
-	})
-	if on {
-		os.Setenv("OCF_FEATURE_BUDGET_QUOTAS", "1")
-	} else {
-		os.Unsetenv("OCF_FEATURE_BUDGET_QUOTAS")
-	}
-}
-
 // findSize returns the SessionOptionSize matching the requested key.
 func findSize(t *testing.T, opts *dto.SessionOptionsResponse, key string) *dto.SessionOptionSize {
 	t.Helper()
@@ -70,8 +50,6 @@ func findSize(t *testing.T, opts *dto.SessionOptionsResponse, key string) *dto.S
 // TestSessionOptions_BudgetMode_IncludesRemainingCount — each size's
 // RemainingCount must reflect the user's remaining budget.
 func TestSessionOptions_BudgetMode_IncludesRemainingCount(t *testing.T) {
-	withBudgetFlag(t, true)
-
 	db := freshTestDB(t)
 	svc := services.NewTerminalTrainerService(db)
 
@@ -106,8 +84,6 @@ func TestSessionOptions_BudgetMode_IncludesRemainingCount(t *testing.T) {
 // TestSessionOptions_BudgetMode_IncludesTopLevelQuota — Quota block must
 // carry MaxCPU/MaxMemoryMB, Used*, Remaining* and Scope.
 func TestSessionOptions_BudgetMode_IncludesTopLevelQuota(t *testing.T) {
-	withBudgetFlag(t, true)
-
 	db := freshTestDB(t)
 	svc := services.NewTerminalTrainerService(db)
 
@@ -135,70 +111,29 @@ func TestSessionOptions_BudgetMode_IncludesTopLevelQuota(t *testing.T) {
 	assert.Equal(t, "user", opts.Quota.Scope, "personal context → scope=user")
 }
 
-// TestSessionOptions_CountMode_UnlimitedScope — count-mode plans must
-// emit Scope="unlimited" so the frontend renders the legacy shape.
-func TestSessionOptions_CountMode_UnlimitedScope(t *testing.T) {
-	withBudgetFlag(t, true) // flag on, but plan is count-mode
-
+// TestSessionOptions_UnlimitedPlan_UnlimitedScope — plans with zero CPU/RAM
+// caps emit Scope="unlimited" so the frontend renders an unconstrained UI.
+func TestSessionOptions_UnlimitedPlan_UnlimitedScope(t *testing.T) {
 	db := freshTestDB(t)
 	svc := services.NewTerminalTrainerService(db)
 
 	plan := &paymentModels.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "Count",
-		QuotaModel:             "count",
-		MaxConcurrentTerminals: 5,
+		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:      "Unlimited",
+		// MaxCPU=0 and MaxMemoryMB=0 → unlimited on both axes.
 	}
 
 	opts := budgetSessionOptions()
-	svc.EnrichSessionOptionsBudget(opts, plan, "u-count", nil)
+	svc.EnrichSessionOptionsBudget(opts, plan, "u-unlim", nil)
 
 	require.NotNil(t, opts.Quota)
-	assert.Equal(t, "unlimited", opts.Quota.Scope,
-		"count-mode plan must emit Scope=unlimited")
-	assert.Equal(t, 0, opts.Quota.MaxCPU)
-	assert.Equal(t, 0, opts.Quota.RemainingCPU)
-
-	// Per-size RemainingCount should stay at zero in count-mode.
-	for _, s := range opts.AllowedSizes {
-		assert.Equal(t, 0, s.RemainingCount,
-			"size %s must have zero remaining_count in count-mode", s.Key)
-	}
-
-	// But MemoryMB still gets stamped — independent of mode.
+	// MemoryMB stamp is mode-independent.
 	assert.Equal(t, 1024, findSize(t, opts, "M").MemoryMB)
-}
-
-// TestSessionOptions_FeatureFlagOff_BypassesBudgetEnrichment — when the
-// env var is off, even a budget-mode plan reverts to Scope=unlimited.
-func TestSessionOptions_FeatureFlagOff_BypassesBudgetEnrichment(t *testing.T) {
-	withBudgetFlag(t, false) // flag explicitly off
-
-	db := freshTestDB(t)
-	svc := services.NewTerminalTrainerService(db)
-
-	plan := &paymentModels.SubscriptionPlan{
-		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:        "BudgetButFlagOff",
-		QuotaModel:  "budget",
-		MaxCPU:      4,
-		MaxMemoryMB: 2048,
-	}
-
-	opts := budgetSessionOptions()
-	svc.EnrichSessionOptionsBudget(opts, plan, "u-flag-off", nil)
-
-	require.NotNil(t, opts.Quota)
-	assert.Equal(t, "unlimited", opts.Quota.Scope,
-		"flag off must short-circuit even for budget-mode plans")
-	assert.Equal(t, 0, opts.Quota.UsedCPU)
 }
 
 // TestSessionOptions_BudgetMode_OrgScope — when orgID is non-nil, Scope
 // must be "organization" so dashboards can label the budget accordingly.
 func TestSessionOptions_BudgetMode_OrgScope(t *testing.T) {
-	withBudgetFlag(t, true)
-
 	db := freshTestDB(t)
 	svc := services.NewTerminalTrainerService(db)
 

@@ -1,16 +1,15 @@
 // tests/terminalTrainer/orgTerminalUsageBudget_test.go
 //
-// MR-CORE-6 — Budget fields on GET /organizations/:id/terminal-usage.
+// Budget fields on GET /organizations/:id/terminal-usage.
 //
-// When the OCF_FEATURE_BUDGET_QUOTAS flag is on AND the org's effective plan
-// is in budget mode, the response gains:
+// The response carries:
 //
 //   * Quota envelope (MaxCPU / MaxMemoryMB / Used* / Remaining* / Scope)
 //   * RemainingBySize array (one entry per catalog size, XL → XS)
 //   * Per-user ActiveCPU / ActiveMemoryMB
 //
-// In count-mode (or with the flag off), Quota.Scope is "unlimited" and
-// RemainingBySize is empty — the dashboard renders the legacy shape.
+// For plans with zero CPU/RAM caps Quota.Scope is "unlimited" and
+// RemainingBySize is empty — the dashboard renders an unconstrained view.
 package terminalTrainer_tests
 
 import (
@@ -31,16 +30,13 @@ import (
 )
 
 // TestOrgTerminalUsage_BudgetMode_IncludesQuotaAndRemainingBySize covers the
-// happy path: flag on + budget plan + one running M → Quota matches,
-// RemainingBySize is populated (xl→xs), and per-user CPU/RAM is summed.
+// happy path: budget plan + one running M → Quota matches, RemainingBySize
+// is populated (xl→xs), and per-user CPU/RAM is summed.
 func TestOrgTerminalUsage_BudgetMode_IncludesQuotaAndRemainingBySize(t *testing.T) {
-	withBudgetFlag(t, true)
-
 	db := setupTestDBWithOrgs(t)
 
 	plan := &paymentModels.SubscriptionPlan{
 		Name:        "BudgetPro",
-		QuotaModel:  "budget",
 		MaxCPU:      8,
 		MaxMemoryMB: 4096,
 		IsActive:    true,
@@ -114,19 +110,16 @@ func TestOrgTerminalUsage_BudgetMode_IncludesQuotaAndRemainingBySize(t *testing.
 	assert.Equal(t, float64(1024), student["active_memory_mb"])
 }
 
-// TestOrgTerminalUsage_CountMode_UnlimitedScope — count-mode plan emits
-// the legacy shape; Quota.Scope=unlimited and RemainingBySize is empty/nil.
-func TestOrgTerminalUsage_CountMode_UnlimitedScope(t *testing.T) {
-	withBudgetFlag(t, true) // flag on, but plan is count-mode
-
+// TestOrgTerminalUsage_UnlimitedPlan_UnlimitedScope — plans with zero
+// CPU/RAM caps emit Scope=unlimited and an empty RemainingBySize.
+func TestOrgTerminalUsage_UnlimitedPlan_UnlimitedScope(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
 	plan := &paymentModels.SubscriptionPlan{
-		Name:                   "CountPro",
-		QuotaModel:             "count",
-		MaxConcurrentTerminals: 5,
-		IsActive:               true,
-		IsCatalog:              true,
+		Name:      "Unlimited",
+		IsActive:  true,
+		IsCatalog: true,
+		// MaxCPU=0 and MaxMemoryMB=0 → unlimited.
 	}
 	require.NoError(t, db.Create(plan).Error)
 
@@ -165,13 +158,13 @@ func TestOrgTerminalUsage_CountMode_UnlimitedScope(t *testing.T) {
 	quota, ok := resp["quota"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, "unlimited", quota["scope"],
-		"count-mode plan must emit Scope=unlimited")
+		"plan with zero caps must emit Scope=unlimited")
 
 	// remaining_by_size must be empty/nil so the frontend skips that block.
 	bySize, present := resp["remaining_by_size"]
 	if present {
 		slice, ok := bySize.([]interface{})
 		assert.True(t, ok && len(slice) == 0,
-			"remaining_by_size must be empty in count-mode (got %v)", bySize)
+			"remaining_by_size must be empty for unlimited plan (got %v)", bySize)
 	}
 }

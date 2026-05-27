@@ -172,9 +172,6 @@ func seedBudgetPlanForUser(t *testing.T, userID string, maxCPU, maxMemMB int) uu
 // The "reason" must be the coarse code (not budget_cpu_exceeded) per
 // cleanup 4.
 func TestStartComposedSession_HTTP_BudgetMode_RejectsOverBudget(t *testing.T) {
-	// Feature flag must be on for the budget gate to fire.
-	t.Setenv("OCF_FEATURE_BUDGET_QUOTAS", "1")
-
 	ttServer := startComposedTTBackendStub(t)
 	defer ttServer.Close()
 	t.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)
@@ -233,8 +230,6 @@ func TestStartComposedSession_HTTP_BudgetMode_RejectsOverBudget(t *testing.T) {
 // the HTTP status AND the persisted footprint so a regression that
 // silently zeroes the denormalised columns is caught here.
 func TestStartComposedSession_HTTP_BudgetMode_AllowsWithinBudget(t *testing.T) {
-	t.Setenv("OCF_FEATURE_BUDGET_QUOTAS", "1")
-
 	ttServer := startComposedTTBackendStub(t)
 	defer ttServer.Close()
 	t.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)

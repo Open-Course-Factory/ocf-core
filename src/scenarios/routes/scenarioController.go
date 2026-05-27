@@ -13,7 +13,6 @@ import (
 
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
-	config "soli/formations/src/configuration"
 	groupModels "soli/formations/src/groups/models"
 	groupServices "soli/formations/src/groups/services"
 	orgModels "soli/formations/src/organizations/models"
@@ -1773,15 +1772,13 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 	}
 
-	// Budget-mode block-reason gate (MR-CORE-6, D8). When the feature flag is
-	// on AND the plan opts into the budget model, also check whether the
-	// scenario's required size fits in the user's remaining budget. The
-	// RemainingBudgetFitsWithReason helper returns "plan_restriction" for
-	// the AllowedMachineSizes allowlist gate (D8) and "budget_*_exceeded"
-	// when an axis is exhausted. We surface the reason verbatim so the
-	// frontend can render the i18n string "scenarioLauncher.blockReason.*"
-	// without re-deriving the cause.
-	budgetGateActive := config.IsBudgetQuotasEnabled() && resolvedPlan != nil && resolvedPlan.QuotaModel == "budget"
+	// Budget block-reason gate. Check whether the scenario's required size
+	// fits in the user's remaining budget. The RemainingBudgetFitsWithReason
+	// helper returns "plan_restriction" for the AllowedMachineSizes
+	// allowlist gate (D8) and "budget_*_exceeded" when an axis is exhausted.
+	// We surface the reason verbatim so the frontend can render the i18n
+	// string "scenarioLauncher.blockReason.*" without re-deriving the cause.
+	budgetGateActive := resolvedPlan != nil
 	var quotaSvc paymentServices.QuotaService
 	if budgetGateActive {
 		quotaSvc = paymentServices.NewQuotaService(sc.db, effectivePlanService)

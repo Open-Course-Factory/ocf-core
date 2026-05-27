@@ -16,7 +16,6 @@ import (
 	"time"
 
 	authModels "soli/formations/src/auth/models"
-	config "soli/formations/src/configuration"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/catalog"
@@ -2150,11 +2149,13 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 		Users:           users,
 	}
 
-	// 6. Budget-mode enrichment (MR-CORE-6). Always emit a Quota envelope
-	// for shape stability — Scope="unlimited" signals "ignore the numeric
-	// fields". RemainingBySize is only populated in budget mode (frontend
-	// keys off non-empty slice).
-	if config.IsBudgetQuotasEnabled() && resolvedPlan != nil && resolvedPlan.QuotaModel == "budget" && tts.quotaService != nil {
+	// 6. Budget enrichment. Always emit a Quota envelope for shape
+	// stability — Scope="unlimited" signals "ignore the numeric fields".
+	// RemainingBySize is populated whenever the plan exposes a budget cap
+	// (frontend keys off the non-empty slice). Plans with zero caps on
+	// both axes are unlimited and keep the default unlimited envelope.
+	if resolvedPlan != nil && tts.quotaService != nil &&
+		(resolvedPlan.MaxCPU > 0 || resolvedPlan.MaxMemoryMB > 0) {
 		remCPU := resolvedPlan.MaxCPU - totalCPU
 		if remCPU < 0 {
 			remCPU = 0
@@ -2991,14 +2992,16 @@ func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
 		}
 	}
 
-	// Default unlimited quota envelope — overwritten below only when both
-	// the feature flag is on AND the plan opts into budget mode.
+	// Default unlimited quota envelope — overwritten below when a plan is
+	// resolved AND the quota service is wired AND the plan declares a cap
+	// on at least one axis. Plans with MaxCPU=MaxMemoryMB=0 are unlimited
+	// and keep the envelope as-is so the frontend renders an unconstrained UI.
 	opts.Quota = &dto.SessionQuotaInfo{Scope: "unlimited"}
 
-	if !config.IsBudgetQuotasEnabled() || plan == nil || plan.QuotaModel != "budget" {
+	if plan == nil || tts.quotaService == nil {
 		return
 	}
-	if tts.quotaService == nil {
+	if plan.MaxCPU <= 0 && plan.MaxMemoryMB <= 0 {
 		return
 	}
 
@@ -3133,15 +3136,9 @@ func (tts *terminalTrainerService) StartComposedSession(userID string, input dto
 	// startComposedSession() below. We therefore call CheckBudget
 	// explicitly here.
 	//
-	// Dual-mode: when the feature flag is off OR the plan's QuotaModel is
-	// not "budget", we short-circuit and the legacy CheckLimit middleware
-	// + AllowedMachineSizes gate above remains the only enforcement
-	// (preserves count-mode behaviour). When both conditions are true we
-	// reject overspend with a structured budget error.
-	if config.IsBudgetQuotasEnabled() && plan.QuotaModel == "budget" {
-		if budgetErr := tts.enforceBudget(userID, orgID, plan, input.SizeCPU, input.SizeMemoryMB); budgetErr != nil {
-			return nil, budgetErr
-		}
+	// Budget enforcement: reject overspend with a structured budget error.
+	if budgetErr := tts.enforceBudget(userID, orgID, plan, input.SizeCPU, input.SizeMemoryMB); budgetErr != nil {
+		return nil, budgetErr
 	}
 
 	validatedBackend, err := tts.validateBackendForContext(orgID, plan, input.Backend)

@@ -537,10 +537,10 @@ type TTFeature struct {
 // SessionOptionsResponse is returned by GET /terminals/session-options.
 //
 // Budget fields (Quota, AllowedSizes[i].RemainingCount, AllowedSizes[i].MemoryMB)
-// are populated when the deployment-level OCF_FEATURE_BUDGET_QUOTAS flag is on
-// AND the user's effective plan has QuotaModel="budget". Otherwise Quota.Scope
-// is "unlimited" and per-size RemainingCount is 0 — the legacy slot-count gate
-// remains authoritative and the frontend renders the previous shape.
+// reflect the user's (or org's) current CPU/RAM footprint against the
+// effective plan's caps. Plans with zero caps report Quota.Scope="unlimited"
+// and per-size RemainingCount=0 — the frontend renders an unconstrained UI
+// in that case.
 type SessionOptionsResponse struct {
 	Distribution    TTDistribution         `json:"distribution"`
 	AllowedSizes    []SessionOptionSize    `json:"allowed_sizes"`
@@ -634,10 +634,10 @@ type SizeRemainingDTO = paymentDto.SizeRemaining
 // still occupy a slot — see models.TerminalStatesOccupyingSlot). Both are
 // surfaced so the dashboard can show "5 running / 7 slots used / 10 max".
 //
-// Budget fields (Quota, RemainingBySize) are populated when the deployment-level
-// OCF_FEATURE_BUDGET_QUOTAS flag is on AND the org's effective plan has
-// QuotaModel="budget". Otherwise Quota.Scope is "unlimited" and RemainingBySize
-// is an empty slice — the dashboard renders only the legacy slot count.
+// Budget fields (Quota, RemainingBySize) reflect the org's current CPU/RAM
+// footprint against the effective plan's caps. Plans with zero caps report
+// Quota.Scope="unlimited" and an empty RemainingBySize slice — the dashboard
+// renders an unconstrained view in that case.
 type OrgTerminalUsageResponse struct {
 	OrganizationID  string                 `json:"organization_id"`
 	ActiveTerminals int                    `json:"active_terminals"`
