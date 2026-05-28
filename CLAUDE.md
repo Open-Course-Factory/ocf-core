@@ -137,7 +137,7 @@ The `terminalTrainer` module gained a composed session API that lets the fronten
 |---|---|---|---|
 | `GET` | `/terminals/distributions` | `member` | List all distributions available on the backend (cached) |
 | `GET` | `/terminals/session-options` | `member` + effectivePlanMiddleware | Compute allowed sizes and features for a given distribution + plan |
-| `POST` | `/terminals/start-composed-session` | `member` + effectivePlanMiddleware + CheckLimit + CheckRAMAvailability | Start a composed terminal session |
+| `POST` | `/terminals/start-composed-session` | `member` + effectivePlanMiddleware + CheckRAMAvailability (budget enforced in handler via `QuotaService.CheckBudget`) | Start a composed terminal session |
 | `GET` | `/terminals/catalog-sizes` | `administrator` | Full catalog of resource sizes (for admin scenario editing) |
 | `GET` | `/terminals/catalog-features` | `administrator` | Full catalog of features (for admin scenario editing) |
 
@@ -146,7 +146,7 @@ The `terminalTrainer` module gained a composed session API that lets the fronten
 - `GetDistributions(backend string)` — calls tt-backend and returns available distributions (with caching)
 - `GetCatalogSizes()` — full size catalog from tt-backend (admin use)
 - `GetCatalogFeatures()` — full feature catalog from tt-backend (admin use)
-- `ComputeSessionOptions(distro, sizes, features, plan)` — pure function, intersects catalog data with plan limits (`AllowedMachineSizes`); exported for testing
+- `ComputeSessionOptions(distro, sizes, features, plan)` — pure function. Admits every catalog size at or above the distribution's `MinSizeKey` and filters features by `featurePlanMapping` + each feature's `MinSizeKey`. The budget engine sets `RemainingCount` per size downstream. Exported for testing.
 - `GetSessionOptions(plan, distribution, backend)` — validates distribution exists, then calls `ComputeSessionOptions`; used by the GET endpoint
 - `StartComposedSession(userID, input, planInterface)` — validates size/feature choices against the plan, then POSTs to tt-backend `/compose` endpoint and saves the `Terminal` record
 
@@ -155,7 +155,7 @@ The `terminalTrainer` module gained a composed session API that lets the fronten
 The composed session routes use a middleware chain that threads plan resolution through the request context, avoiding redundant DB round-trips:
 
 ```
-InjectOrgContext → InjectEffectivePlan → RequirePlan → CheckLimit → CheckRAMAvailability → handler
+InjectOrgContext → InjectEffectivePlan → RequirePlan → CheckRAMAvailability → handler
 ```
 
 | Middleware | File | Responsibility |
@@ -163,20 +163,21 @@ InjectOrgContext → InjectEffectivePlan → RequirePlan → CheckLimit → Chec
 | `InjectOrgContext()` | `effectivePlanMiddleware.go` | Reads `organization_id` from query param or JSON body, stores in context as `org_context_id` |
 | `InjectEffectivePlan(svc, db)` | `effectivePlanMiddleware.go` | Resolves effective plan per user+org, stores `effective_plan_result` and `subscription_plan` in context |
 | `RequirePlan()` | `effectivePlanMiddleware.go` | Aborts 403 if no plan was resolved |
-| `CheckLimit(svc, db, metricType)` | `effectivePlanMiddleware.go` | Reads pre-resolved plan from context, checks concurrent limit (e.g. `"concurrent_terminals"`), increments metric after success |
-| `CheckRAMAvailability(svc)` | `ramCheckMiddleware.go` | Reads `subscription_plan` from context to estimate RAM needed (from `AllowedMachineSizes`), checks real-time server metrics, aborts 503 if insufficient |
+| `CheckRAMAvailability(svc)` | `ramCheckMiddleware.go` | Reads `subscription_plan` from context AND the chosen size from the JSON body (`CreateComposedSessionInput.Size`) so the estimate matches the actual allocation rather than the plan's max. Delegates to `terminalServices.EvaluateLaunchCapacity`, aborts 503 if the server lacks RAM headroom |
 
-`CheckLimit` falls back to full plan resolution if `InjectEffectivePlan` was not in the chain.
+The CPU/RAM budget cap (from `MaxCPU` / `MaxMemoryMB`) is no longer enforced as middleware — `StartComposedSession` calls `QuotaService.CheckBudget` directly so the same logic also powers `GET /terminals/capacity-check`.
 
 ### Plan Gating (`src/payment/models/subscriptionPlan.go`)
 
-`SubscriptionPlan` has terminal-specific fields used for composed session gating:
+`SubscriptionPlan` gates terminals through a CPU/RAM budget instead of an explicit size allowlist + concurrent session cap. The budget is the single source of truth: every catalog size is admissible if the remaining budget can fit it, and concurrent sessions are bounded indirectly by the total budget. Terminal-relevant fields:
 
-- `AllowedMachineSizes []string` — e.g. `["XS", "S"]`; empty = no restriction. The `"all"` value means any size is allowed.
-- `MaxConcurrentTerminals int` — enforced by `CheckLimit("concurrent_terminals")`
-- `MaxSessionDurationMinutes int`
-- `NetworkAccessEnabled`, `DataPersistenceEnabled`, `DataPersistenceGB`
-- `DefaultBackend`, `AllowedBackends []string`
+- `MaxCPU int` — total vCPU budget across active sessions; `0` = unlimited
+- `MaxMemoryMB int` — total RAM budget in MiB across active sessions; `0` = unlimited
+- `MaxSessionDurationMinutes int` — per-session wall-clock cap
+- `NetworkAccessEnabled`, `DataPersistenceEnabled`, `DataPersistenceGB` — feature toggles + persistence quota
+- `DefaultBackend string`, `AllowedBackends []string` — backend routing (used when the org has no backend config)
+
+Budget enforcement happens in `QuotaService.CheckBudget`, called from `StartComposedSession` (write path) and `GET /terminals/capacity-check` (read-only probe).
 
 ### EffectivePlanService (`src/payment/services/effectivePlanService.go`)
 
