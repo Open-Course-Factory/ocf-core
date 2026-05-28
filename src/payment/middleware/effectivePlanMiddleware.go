@@ -9,7 +9,6 @@ import (
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	"soli/formations/src/payment/models"
-	"soli/formations/src/payment/repositories"
 	"soli/formations/src/payment/services"
 	"soli/formations/src/utils"
 
@@ -206,82 +205,3 @@ func RequirePlan() gin.HandlerFunc {
 	}
 }
 
-// CheckLimit verifies that the user has not exceeded the given metricType limit
-// and increments usage after a successful response.
-// When InjectEffectivePlan has already resolved the plan and stored it in the
-// Gin context as "effective_plan_result", CheckLimit reads it from there and
-// skips the second plan-resolution DB round-trip.
-func CheckLimit(effectivePlanService services.EffectivePlanService, db *gorm.DB, metricType string) gin.HandlerFunc {
-	paymentRepo := repositories.NewPaymentRepository(db)
-
-	return func(ctx *gin.Context) {
-		userID := ctx.GetString("userId")
-		if userID == "" {
-			ctx.Next()
-			return
-		}
-
-		var limitCheck *services.UsageLimitCheck
-		var err error
-
-		// Use the plan already resolved by InjectEffectivePlan when available,
-		// avoiding a redundant DB round-trip for plan resolution.
-		if val, exists := ctx.Get("effective_plan_result"); exists {
-			if result, ok := val.(*services.EffectivePlanResult); ok && result != nil {
-				limitCheck, err = effectivePlanService.CheckEffectiveUsageLimitFromResult(result, userID, metricType, 1)
-			}
-		}
-
-		// Fall back to full resolution when the context plan is absent
-		// (e.g. middleware chain does not include InjectEffectivePlan).
-		if limitCheck == nil && err == nil {
-			// Check for org context (set by InjectOrgContext middleware)
-			var orgID *uuid.UUID
-			if orgContextStr, exists := ctx.Get("org_context_id"); exists {
-				if parsed, parseErr := uuid.Parse(orgContextStr.(string)); parseErr == nil {
-					orgID = &parsed
-				}
-			}
-			limitCheck, err = effectivePlanService.CheckEffectiveUsageLimit(userID, orgID, metricType, 1)
-		}
-
-		if err != nil {
-			utils.Warn("Failed to check usage limit for user %s: %v", userID, err)
-			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-				ErrorCode:    http.StatusInternalServerError,
-				ErrorMessage: "Failed to check usage limit",
-			})
-			ctx.Abort()
-			return
-		}
-
-		if !limitCheck.Allowed {
-			ctx.JSON(http.StatusForbidden, gin.H{
-				"error_code":    http.StatusForbidden,
-				"error_message": limitCheck.Message,
-				"source":        string(limitCheck.Source),
-			})
-			ctx.Abort()
-			return
-		}
-
-		// Process the request
-		ctx.Next()
-
-		// After response: if successful, increment usage.
-		//
-		// concurrent_terminals is no longer materialized — every read path
-		// recomputes from the terminals table via QuotaService (#311).
-		// Incrementing the stored counter here would be dead-write drift
-		// cruft, so we skip it.
-		if metricType == "concurrent_terminals" {
-			return
-		}
-
-		if ctx.Writer.Status() >= 200 && ctx.Writer.Status() < 300 {
-			if incrementErr := paymentRepo.IncrementUsageMetric(userID, metricType, 1); incrementErr != nil {
-				utils.Warn("Failed to increment usage metric %s for user %s: %v", metricType, userID, incrementErr)
-			}
-		}
-	}
-}

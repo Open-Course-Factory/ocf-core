@@ -38,13 +38,10 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	// Stop session requires terminal ownership (Layer 2 security check)
 	routes.POST("/:id/stop", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.StopSession)
-	// Resume a stopped session — slot-neutral state transition. The stopped
-	// session already counts against `OccupiesSlotScope` (terminals.state
-	// IN ('running','stopped') AND expires_at > now), so this path does NOT
-	// add a slot and must NOT carry CheckLimit("concurrent_terminals") —
-	// doing so 403s the user out of resuming their own session at 1/1.
-	// The fresh-create flow at POST /start-composed-session is the only
-	// path that adds a slot and remains gated there.
+	// Resume a stopped session — slot-neutral state transition. The
+	// resumed session may consume paid features so the plan-validity gate
+	// applies, but no count check is needed: the budget engine already
+	// counts the persistent session against the user's CPU/RAM cap.
 	//
 	// What stays here:
 	//   - RequireTerminalAccessAllowStopped: Layer 2 ownership.
@@ -97,7 +94,10 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.GET("/catalog-sizes", middleware.AuthManagement(), terminalController.GetCatalogSizes)
 	routes.GET("/catalog-features", middleware.AuthManagement(), terminalController.GetCatalogFeatures)
 	routes.GET("/session-options", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), terminalController.GetSessionOptions)
-	routes.POST("/start-composed-session", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), paymentMiddleware.CheckLimit(effectivePlanService, db, "concurrent_terminals"), paymentMiddleware.CheckRAMAvailability(terminalService), terminalController.StartComposedSession)
+	// Budget enforcement (CPU/RAM cap from MaxCPU/MaxMemoryMB) is performed
+	// inside StartComposedSession via QuotaService.CheckBudget; no
+	// middleware-level slot counter is needed.
+	routes.POST("/start-composed-session", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), paymentMiddleware.CheckRAMAvailability(terminalService), terminalController.StartComposedSession)
 	// Capacity check: same plan-resolution chain as start-composed-session
 	// but no CheckLimit/CheckRAMAvailability — this endpoint IS the check.
 	routes.GET("/capacity-check", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), terminalController.CapacityCheck)

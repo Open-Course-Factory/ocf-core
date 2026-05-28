@@ -3238,27 +3238,9 @@ func (sc *scenarioController) PreviewScenario(ctx *gin.Context) {
 		return
 	}
 
-	// Check concurrent terminal limit using the org-aware plan resolved just above.
-	// Reusing planResult avoids a redundant DB round-trip AND fixes a latent bug
-	// where a scenario launched in an org context counted against the user's
-	// PERSONAL quota instead of the org's (the previous call ignored orgIDForPlan).
-	// See QuotaService consolidation (#311).
-	limitCheck, limitErr := effectivePlanService.CheckEffectiveUsageLimitFromResult(planResult, userID, "concurrent_terminals", 1)
-	if limitErr != nil {
-		slog.Error("failed to check usage limit", "userID", userID, "err", limitErr)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to check usage limits",
-		})
-		return
-	}
-	if !limitCheck.Allowed {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: fmt.Sprintf("Terminal limit reached (%d/%d). Stop an existing session first.", limitCheck.CurrentUsage, limitCheck.Limit),
-		})
-		return
-	}
+	// Terminal launch budget enforcement is performed downstream by
+	// StartComposedSession via QuotaService.CheckBudget; no separate slot
+	// check is needed here.
 
 	// Create terminal session via composed session flow (distribution + size + features)
 	composedInput := terminalDto.CreateComposedSessionInput{

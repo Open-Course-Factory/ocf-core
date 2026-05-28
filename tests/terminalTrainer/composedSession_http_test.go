@@ -121,7 +121,6 @@ func setupBudgetHTTPRouter(t *testing.T, userID string, svc terminalServices.Ter
 		paymentMiddleware.InjectOrgContext(),
 		paymentMiddleware.InjectEffectivePlan(eps, sharedTestDB),
 		paymentMiddleware.RequirePlan(),
-		paymentMiddleware.CheckLimit(eps, sharedTestDB, "concurrent_terminals"),
 		ctrl.StartComposedSession,
 	)
 	return router

@@ -2035,13 +2035,9 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 }
 
 // coarseBudgetReason collapses the granular CPU- and RAM-axis reasons
-// emitted by QuotaService into a single customer-facing code. Per the
-// locked UX decision (feedback_quota_ux_size_count.md), the API surface
-// must speak in size-count language; leaking the axis (CPU vs RAM)
+// emitted by QuotaService into a single customer-facing code. The API
+// surface speaks in size-count language; leaking the axis (CPU vs RAM)
 // invites users to game one axis at the expense of the other.
-//
-// Non-axis reasons (e.g. "plan_restriction") pass through unchanged —
-// they correspond to a distinct user-visible message.
 func coarseBudgetReason(internal string) string {
 	switch internal {
 	case "budget_cpu_exceeded", "budget_memory_exceeded":
