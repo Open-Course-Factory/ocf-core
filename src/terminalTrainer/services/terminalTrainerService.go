@@ -272,14 +272,25 @@ func (tts *terminalTrainerService) GetActiveUserSessions(userID string) (*[]mode
 }
 
 // StopSession arrête une session en appelant le nouvel endpoint /stop de
-// tt-backend. Contrairement à l'ancien /expire, le disque est préservé pour
-// permettre un redémarrage ultérieur via StartSession.
+// tt-backend. Le comportement de la ligne locale dépend du PersistenceMode :
+//
+//   - persistent : le disque est conservé, la session est résumable. On
+//     étend terminal.ExpiresAt à la fenêtre de reap réelle de tt-backend
+//     (idle_until renvoyé par /stop, ou à défaut now() + plan.MaxSessionDuration).
+//     Sans ça, BudgetOccupyingScope laisse tomber la ligne dès que l'expires_at
+//     d'origine est dépassé, alors qu'elle est toujours résumable côté
+//     tt-backend — l'utilisateur perd la capacité réservée dans le panneau
+//     "Utilisation Actuelle" et dans la garde du budget, alors qu'elle apparaît
+//     encore comme "stopped" sur /terminal-sessions (cf. getEffectiveSessionState).
+//
+//   - ephemeral (ou non renseigné) : tt-backend détruit le conteneur. La ligne
+//     locale doit refléter cette destruction : state = "deleted" (pas
+//     "stopped") — sinon /terminal-sessions affiche un fantôme et la ligne
+//     reste en cache jusqu'à un sync ultérieur.
 //
 // Aucune métrique de quota n'est mise à jour ici : la capacité terminale
 // est exclusivement régie par le moteur de budget CPU/RAM
 // (QuotaService.CheckBudget), qui lit en direct via BudgetOccupyingScope.
-// Une session "stopped" persistante reste comptée tant qu'elle n'est pas
-// supprimée ; une "stopped" éphémère sort immédiatement du décompte.
 func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	utils.Debug("StopSession called for session %s", sessionID)
 
@@ -288,22 +299,63 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 		return fmt.Errorf("session not found: %w", err)
 	}
 
-	utils.Debug("Session %s current state: %s", sessionID, terminal.State)
+	utils.Debug("Session %s current state: %s (persistence_mode=%s)",
+		sessionID, terminal.State, terminal.PersistenceMode)
 
 	// 1. Appeler le nouvel endpoint /sessions/{id}/stop de tt-backend
 	idleUntil, err := tts.stopSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey)
 	if err != nil {
-		// Log mais on continue : le state local reflètera "stopped" même si
-		// tt-backend est temporairement injoignable.
+		// Log mais on continue : la ligne locale doit refléter l'intention
+		// même si tt-backend est temporairement injoignable. Pour une session
+		// persistante, on garde l'expires_at actuel (best-effort) ; pour une
+		// éphémère, on la marque deleted comme si la destruction avait eu lieu.
 		utils.Warn("failed to stop session in Terminal Trainer API: %v", err)
 	}
 
-	// 2. Marquer la session comme arrêtée localement
-	utils.Debug("Updating session %s state to 'stopped'", sessionID)
-	terminal.State = "stopped"
-	if idleUntil != nil {
-		terminal.IdleUntil = idleUntil
+	// 2. Brancher sur le mode de persistance.
+	if terminal.PersistenceMode == "persistent" {
+		terminal.State = "stopped"
+		if idleUntil != nil {
+			terminal.IdleUntil = idleUntil
+			// .Local() normalise la zone : sans ça, SQLite compare
+			// lexicographiquement le format UTC "Z" (issu du JSON tt-backend)
+			// avec le format local "+02:00" utilisé par les autres écritures
+			// du codebase, et BudgetOccupyingScope ne retrouve plus la ligne
+			// dans les tests. En production (PostgreSQL) la conversion est
+			// implicite.
+			localIdleUntil := idleUntil.Local()
+			terminal.ExpiresAt = localIdleUntil
+		} else {
+			// Fallback : on déduit la fenêtre de reap du plan (même valeur
+			// que celle posée à la création par StartComposedSession et au
+			// resume par StartSession). Si le plan n'est pas trouvable ou
+			// n'a pas de cap positif, on laisse ExpiresAt tel quel — c'est
+			// la seule valeur dont on dispose.
+			if terminal.SubscriptionPlanID != nil {
+				var plan paymentModels.SubscriptionPlan
+				if planErr := tts.db.First(&plan, "id = ?", *terminal.SubscriptionPlanID).Error; planErr == nil {
+					if plan.MaxSessionDurationMinutes > 0 {
+						terminal.ExpiresAt = time.Now().Add(time.Duration(plan.MaxSessionDurationMinutes) * time.Minute)
+					}
+				} else {
+					utils.Warn("StopSession: failed to load plan %s for terminal %s: %v — leaving ExpiresAt untouched",
+						terminal.SubscriptionPlanID.String(), sessionID, planErr)
+				}
+			}
+		}
+	} else {
+		// Ephemeral (ou mode vide / inconnu) : le conteneur n'existe plus
+		// côté tt-backend, la ligne locale doit le refléter pour ne pas
+		// apparaître comme fantôme sur /terminal-sessions.
+		utils.Debug("Marking ephemeral session %s as deleted (container destroyed by tt-backend)", sessionID)
+		terminal.State = "deleted"
+		if idleUntil != nil {
+			// On stocke quand même idle_until si tt-backend l'a renvoyé,
+			// pour la traçabilité — mais ExpiresAt reste intouché.
+			terminal.IdleUntil = idleUntil
+		}
 	}
+
 	if err := tts.repository.UpdateTerminalSession(terminal); err != nil {
 		utils.Error("Failed to update session %s state: %v", sessionID, err)
 		return err
@@ -717,14 +769,21 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 		}
 	}
 
-	// 5b. Traiter les sessions qui existent côté local mais pas côté API
+	// 5b. Traiter les sessions qui existent côté local mais pas côté API.
+	//
+	// tt-backend est la SSOT pour "ce conteneur existe-t-il ?". Si une ligne
+	// locale n'apparaît plus dans /sessions (qui inclut déjà les rows expirées
+	// via include_expired=true), c'est que le conteneur a été reapé : on doit
+	// donc la marquer "deleted" — peu importe son state local actuel.
+	//
+	// L'ancien skip sur state="stopped" laissait des fantômes : une session
+	// éphémère stoppée par l'utilisateur (ou auto-stoppée) restait visible
+	// sur /terminal-sessions alors qu'aucun conteneur ne pouvait plus être
+	// repris. Si le state local est déjà "deleted", on n'a rien à faire.
 	expiredCount := 0
 	for sessionID, localSession := range localSessionsMap {
 		if _, exists := apiSessionsMap[sessionID]; !exists {
-			// Session existe côté local mais pas côté API -> la marquer comme deleted.
-			// "deleted" est l'équivalent state-space de l'ancien "expired" — tt-backend
-			// l'a effacée, donc localement on n'a plus rien à exposer.
-			if localSession.State != "deleted" && localSession.State != "stopped" {
+			if localSession.State != "deleted" {
 				previousState := localSession.State
 				localSession.State = "deleted"
 

@@ -143,6 +143,12 @@ func TestStopSession_CallsNewStopEndpoint(t *testing.T) {
 
 	terminal, err := createTestTerminal(db, userID, "active", time.Now().Add(time.Hour))
 	require.NoError(t, err)
+	// Use persistent mode so the state-after-stop assertion targets the
+	// resumable lifecycle ("stopped"); ephemeral stops now mark the row
+	// "deleted" because tt-backend destroys the container — that branch
+	// is covered by TestStopSession_Ephemeral_MarksDeleted.
+	terminal.PersistenceMode = "persistent"
+	require.NoError(t, db.Save(terminal).Error)
 
 	svc := services.NewTerminalTrainerService(db)
 	require.NoError(t, svc.StopSession(terminal.SessionID))

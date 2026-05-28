@@ -28,6 +28,16 @@ import (
 // legacy `status` key on any terminal. Stripping `Status` from TerminalOutput
 // is what removes the drifted parallel field.
 func TestGetUserSessions_ResponseExposesStateNotStatus(t *testing.T) {
+	// Stand up a fake tt-backend that mirrors the local stopped session so
+	// the pre-list sync inside GetUserSessions does not reconcile it away.
+	// Without this, the SSOT reconciliation rule (tt-backend missing → mark
+	// deleted) flips state from "stopped" to "deleted" and the test would
+	// be asserting on a row the test infrastructure itself just rewrote.
+	sessionID := "contract-session-stopped"
+	srv := sessionListContainingTTServer(t, sessionID, "stopped")
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
 	db := freshTestDB(t)
 	controller := terminalController.NewTerminalController(db)
 
@@ -35,10 +45,11 @@ func TestGetUserSessions_ResponseExposesStateNotStatus(t *testing.T) {
 	require.NoError(t, err)
 
 	terminal := &models.Terminal{
-		SessionID:         "contract-session-stopped",
+		SessionID:         sessionID,
 		UserID:            "contract-user",
 		Name:              "Contract Stopped",
 		State:             "stopped",
+		PersistenceMode:   "persistent",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
