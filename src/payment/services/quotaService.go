@@ -242,11 +242,40 @@ func (s *quotaService) GetUserUsage(userID string, orgID *uuid.UUID, metric stri
 }
 
 // currentUsage centralizes the per-metric strategy for reading the
-// current value. Terminal usage is now driven by the budget engine
-// (CheckBudget) and no longer flows through this dispatcher; the
-// remaining metric types fall back to the stored usage_metrics row.
-func (s *quotaService) currentUsage(userID string, _ *uuid.UUID, metric string) (int64, error) {
+// current value.
+//
+// For concurrent_terminals the count is live-recomputed via the SSOT
+// RunningDisplayScope so the dashboard always shows the truth, regardless
+// of any drift in the persisted usage_metrics row. This is the same scope
+// used by GetOrgTerminalUsage so org-level "active terminals" and
+// user-level "Actifs" agree.
+//
+// All other metrics fall back to the stored usage_metrics row.
+func (s *quotaService) currentUsage(userID string, orgID *uuid.UUID, metric string) (int64, error) {
+	if metric == "concurrent_terminals" {
+		return s.liveRunningTerminals(userID, orgID)
+	}
 	return s.storedUsage(userID, metric), nil
+}
+
+// liveRunningTerminals counts terminals currently running for a user (or
+// for an org, when orgID is non-nil) using the canonical
+// terminalModels.RunningDisplayScope. The scope already excludes deleted
+// rows and past-expiry zombies — keeping the predicate expressed in
+// exactly one place (SSOT).
+func (s *quotaService) liveRunningTerminals(userID string, orgID *uuid.UUID) (int64, error) {
+	q := s.db.Table("terminals").Scopes(terminalModels.RunningDisplayScope)
+	if orgID != nil {
+		q = q.Where("terminals.organization_id = ?", orgID)
+	} else {
+		q = q.Where("terminals.user_id = ?", userID)
+	}
+	var count int64
+	if err := q.Count(&count).Error; err != nil {
+		utils.Error("liveRunningTerminals failed for user %s: %v", userID, err)
+		return 0, err
+	}
+	return count, nil
 }
 
 // storedUsage reads the persisted usage_metrics row for a user/metric.

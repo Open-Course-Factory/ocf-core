@@ -122,7 +122,6 @@ type terminalTrainerService struct {
 	apiVersion              string
 	terminalType            string
 	repository              repositories.TerminalRepository
-	subscriptionService     paymentServices.UserSubscriptionService
 	orgSubscriptionService  paymentServices.OrganizationSubscriptionService
 	quotaService            paymentServices.QuotaService
 	enumService             TerminalTrainerEnumService
@@ -159,7 +158,6 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		apiVersion:             apiVersion,
 		terminalType:           terminalType,
 		repository:             repositories.NewTerminalRepository(db),
-		subscriptionService:    paymentServices.NewSubscriptionService(db),
 		orgSubscriptionService: paymentServices.NewOrganizationSubscriptionService(db),
 		quotaService:           paymentServices.NewQuotaService(db, eps),
 		enumService:            NewTerminalTrainerEnumService(baseURL, apiVersion),
@@ -270,9 +268,9 @@ func (tts *terminalTrainerService) GetActiveUserSessions(userID string) (*[]mode
 // tt-backend. Contrairement à l'ancien /expire, le disque est préservé pour
 // permettre un redémarrage ultérieur via StartSession.
 //
-// Le compteur concurrent_terminals N'est PAS décrémenté ici — une session
-// arrêtée occupe toujours un slot. La décrémentation se fait dans
-// DeleteSession.
+// Le compteur concurrent_terminals n'est pas mis à jour : il est recalculé
+// en lecture par QuotaService.currentUsage via RunningDisplayScope, qui
+// exclut déjà les sessions "stopped" du décompte affiché.
 func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	utils.Debug("StopSession called for session %s", sessionID)
 
@@ -389,8 +387,13 @@ func (tts *terminalTrainerService) StartSession(sessionID string) error {
 }
 
 // DeleteSession supprime définitivement une session via DELETE /sessions/{id}
-// de tt-backend. Décrémente la métrique concurrent_terminals et abandonne
-// tout scenario session lié.
+// de tt-backend, marque la ligne locale comme "deleted" et abandonne tout
+// scenario session lié.
+//
+// La métrique concurrent_terminals n'est PAS touchée ici : depuis la sortie
+// du dual-mode, le compteur est recalculé en lecture par
+// QuotaService.currentUsage via RunningDisplayScope, donc la ligne
+// usage_metrics est en lecture seule pour ce métric.
 func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
 	utils.Debug("DeleteSession called for session %s", sessionID)
 
@@ -410,12 +413,6 @@ func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
 	if err := tts.repository.UpdateTerminalSession(terminal); err != nil {
 		utils.Error("Failed to update session %s after delete: %v", sessionID, err)
 		return err
-	}
-
-	// Décrémenter le compteur de slots — c'est ici que ça se passe désormais
-	// (et plus dans StopSession), car une session "stopped" occupe encore un slot.
-	if decErr := tts.subscriptionService.IncrementUsage(terminal.UserID, "concurrent_terminals", -1); decErr != nil {
-		utils.Warn("failed to decrement concurrent_terminals for user %s: %v", terminal.UserID, decErr)
 	}
 
 	// Auto-abandon any active scenario sessions linked to this terminal

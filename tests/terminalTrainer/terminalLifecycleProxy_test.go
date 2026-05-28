@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	paymentModels "soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/services"
 
@@ -197,9 +198,30 @@ func TestStopSession_CallsNewStopEndpoint(t *testing.T) {
 	assert.Equal(t, "stopped", updated.State)
 }
 
-// TestStopSession_NoLongerDecrementsMetric is the regression guard for the
-// metric semantics: a stopped session still occupies a slot.
-func TestStopSession_NoLongerDecrementsMetric(t *testing.T) {
+// readLiveConcurrentTerminals exercises the same code path the dashboard hits
+// (`subscriptionService.GetUserUsageMetrics`) and returns the concurrent_terminals
+// CurrentValue, or 0 if no metric row was returned. Routing the assertion through
+// this path is what proves the live recompute kicks in — a direct DB read would
+// only confirm the (drifted) stored row.
+func readLiveConcurrentTerminals(t *testing.T, db *gorm.DB, userID string) int64 {
+	t.Helper()
+	subSvc := paymentServices.NewSubscriptionService(db)
+	metrics, err := subSvc.GetUserUsageMetrics(userID)
+	require.NoError(t, err)
+	for _, m := range *metrics {
+		if m.MetricType == "concurrent_terminals" {
+			return m.CurrentValue
+		}
+	}
+	return 0
+}
+
+// TestStopSession_LiveCountExcludesStopped is the regression guard for the
+// metric semantics under the live-recompute model: after StopSession the
+// terminal is no longer "running" (RunningDisplayScope excludes 'stopped'),
+// so the dashboard count drops to zero. The stored usage_metrics row is
+// irrelevant — the recompute overrides it.
+func TestStopSession_LiveCountExcludesStopped(t *testing.T) {
 	ttServer, _ := startLifecycleTTServer(t)
 	defer ttServer.Close()
 
@@ -210,22 +232,33 @@ func TestStopSession_NoLongerDecrementsMetric(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "owner-metric-stop-" + uuid.New().String()
 	seedActiveSubscription(t, db, userID)
+	// Seed a drifted stored value to prove it is ignored by the live recompute.
 	seedConcurrentTerminalsMetric(t, db, userID, 3)
 
 	terminal, err := createTestTerminal(db, userID, "active", time.Now().Add(time.Hour))
 	require.NoError(t, err)
 
+	// Sanity: with one running terminal the live count is 1, NOT the seeded 3.
+	assert.Equal(t, int64(1), readLiveConcurrentTerminals(t, db, userID),
+		"live recompute should report 1 active terminal, not the stored 3")
+
 	svc := services.NewTerminalTrainerService(db)
 	require.NoError(t, svc.StopSession(terminal.SessionID))
 
-	assert.Equal(t, int64(3), currentConcurrentTerminals(t, db, userID),
-		"concurrent_terminals must NOT change when a session is stopped — "+
-			"a stopped session still occupies a slot until deletion")
+	// After stop the terminal state is 'stopped' — RunningDisplayScope filters
+	// it out, so the live count is 0.
+	assert.Equal(t, int64(0), readLiveConcurrentTerminals(t, db, userID),
+		"after StopSession the running-display count should be 0 — "+
+			"RunningDisplayScope excludes stopped terminals")
 }
 
-// TestDeleteSession_DecrementsMetric pins the new responsibility: deletion is
-// the only operation that frees a slot.
-func TestDeleteSession_DecrementsMetric(t *testing.T) {
+// TestDeleteSession_LiveCountReturnsZero_NoNegativeDrift pins the new contract:
+// DeleteSession does NOT mutate the usage_metrics row, and the live count
+// returned by the dashboard path is the actual count of running terminals,
+// which can never drift negative regardless of the seeded stored value.
+//
+// This is the direct regression for the user-reported "Actifs: -9" bug.
+func TestDeleteSession_LiveCountReturnsZero_NoNegativeDrift(t *testing.T) {
 	ttServer, rec := startLifecycleTTServer(t)
 	defer ttServer.Close()
 
@@ -236,16 +269,24 @@ func TestDeleteSession_DecrementsMetric(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "owner-metric-delete-" + uuid.New().String()
 	seedActiveSubscription(t, db, userID)
+	// Seed a deliberately wrong stored value. The dual-mode cleanup left this
+	// row writable by the now-removed decrement; nothing should rely on it.
 	seedConcurrentTerminalsMetric(t, db, userID, 3)
 
 	terminal, err := createTestTerminal(db, userID, "active", time.Now().Add(time.Hour))
 	require.NoError(t, err)
 
+	// Before delete: live count is 1 (one running terminal), not the seeded 3.
+	assert.Equal(t, int64(1), readLiveConcurrentTerminals(t, db, userID),
+		"live recompute should report 1 active terminal pre-delete")
+
 	svc := services.NewTerminalTrainerService(db)
 	require.NoError(t, svc.DeleteSession(terminal.SessionID))
 
-	assert.Equal(t, int64(2), currentConcurrentTerminals(t, db, userID),
-		"DeleteSession must decrement concurrent_terminals by 1")
+	// After delete: no running terminals, live count is 0 — never negative.
+	assert.Equal(t, int64(0), readLiveConcurrentTerminals(t, db, userID),
+		"after DeleteSession the live count must be 0 — never negative, "+
+			"regardless of any stored drift")
 
 	// Sanity check: the DELETE request must have reached the new endpoint.
 	assert.True(t,
@@ -255,6 +296,26 @@ func TestDeleteSession_DecrementsMetric(t *testing.T) {
 	updated, err := svc.GetSessionInfo(terminal.SessionID)
 	require.NoError(t, err)
 	assert.Equal(t, "deleted", updated.State)
+}
+
+// TestGetUserUsageMetrics_ConcurrentTerminals_IgnoresNegativeStoredDrift
+// reproduces the exact user-reported scenario: the dashboard renders
+// "Actifs: -9" because the persisted usage_metrics row drifted negative
+// after deletions ran without matching increments. The live recompute MUST
+// override the drift so the dashboard reports the truth (zero, since no
+// terminal is running).
+func TestGetUserUsageMetrics_ConcurrentTerminals_IgnoresNegativeStoredDrift(t *testing.T) {
+	db := freshTestDB(t)
+	userID := "owner-drift-" + uuid.New().String()
+	seedActiveSubscription(t, db, userID)
+	// Reproduce the bug shape: no running terminals, but the persisted row
+	// shows -9 (or any negative value) because of the broken decrement loop.
+	seedConcurrentTerminalsMetric(t, db, userID, -9)
+
+	got := readLiveConcurrentTerminals(t, db, userID)
+	assert.Equal(t, int64(0), got,
+		"live recompute must override the -9 stored drift; the dashboard "+
+			"should never show a negative active count")
 }
 
 // TestStartSession_Success verifies state transitions when starting a stopped
