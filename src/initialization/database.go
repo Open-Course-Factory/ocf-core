@@ -140,6 +140,14 @@ func AutoMigrateAll(db *gorm.DB) {
 	// /usage-metrics entity endpoint. Idempotent — once the rows are
 	// gone, subsequent runs are no-ops.
 	DeleteOrphanConcurrentTerminalsRows(db)
+	// One-shot rescale: SubscriptionPlan.MaxCPU and Terminal.SizeCPU
+	// changed unit from integer vCPU to integer millicores (mCPU) so the
+	// budget engine could price XS containers correctly (XS runs at
+	// cpu_allowance=50% on tt-backend → 500 mCPU, not 1 vCPU). Idempotent
+	// via the >0 AND <100 guard: any legacy value (1..99) is a vCPU
+	// reading and gets ×1000; anything ≥100 is already in mCPU (the new
+	// catalog/plan values start at 500) and is left alone.
+	RescaleVCPUToMillicores(db)
 	db.AutoMigrate(&paymentModels.BillingAddress{})
 	db.AutoMigrate(&paymentModels.PlanFeature{})
 	db.AutoMigrate(&paymentModels.WebhookEvent{}) // ✅ SECURITY: Track processed webhooks in database
@@ -333,7 +341,7 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		RequiredRole:                "member",
 		UseTieredPricing:            false,
 		MaxSessionDurationMinutes:   60,
-		MaxCPU:                      1,   // 1 × XS
+		MaxCPU:                      500, // 1 × XS (500 mCPU = 0.5 vCPU)
 		MaxMemoryMB:                 256, // 1 × XS
 		NetworkAccessEnabled:        false,
 		DataPersistenceEnabled:      false,
@@ -353,7 +361,7 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 	db.Model(&existing).Updates(map[string]interface{}{
 		"description":                    "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
 		"max_session_duration_minutes":   60,
-		"max_cpu":                        1,
+		"max_cpu":                        500, // 1 × XS in mCPU (0.5 vCPU)
 		"max_memory_mb":                  256,
 		"max_courses":                    -1,
 		"network_access_enabled":         false,
@@ -395,7 +403,7 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		RequiredRole:                "member", // Changed from "member_pro" (deprecated) to "member"
 		UseTieredPricing:            false,
 		MaxSessionDurationMinutes:   180,
-		MaxCPU:                      6,    // 3 × M (2 vCPU each)
+		MaxCPU:                      6000, // 3 × M (2000 mCPU each)
 		MaxMemoryMB:                 3072, // 3 × M (1024 MiB each)
 		NetworkAccessEnabled:        true,
 		DataPersistenceEnabled:      true,
@@ -418,7 +426,7 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		RequiredRole:                "trainer",
 		UseTieredPricing:            true,
 		MaxSessionDurationMinutes:   480,
-		MaxCPU:                      40,    // 10 × XL (4 vCPU each)
+		MaxCPU:                      40000, // 10 × XL (4000 mCPU each)
 		MaxMemoryMB:                 40960, // 10 × XL (4096 MiB each)
 		NetworkAccessEnabled:        true,
 		DataPersistenceEnabled:      true,
@@ -692,6 +700,33 @@ func DeleteOrphanConcurrentTerminalsRows(db *gorm.DB) {
 	}
 }
 
+// RescaleVCPUToMillicores rescales legacy integer-vCPU budget values to
+// integer millicores (mCPU) on both subscription_plans.max_cpu and
+// terminals.size_cpu. The unit switch was made so the budget engine can
+// price sub-vCPU sizes correctly (XS = 500 mCPU because tt-backend runs
+// XS at cpu_allowance=50%); under the old vCPU unit XS rounded to 1 and
+// the budget over-counted by 2×.
+//
+// Idempotency guard: only rows with value >0 AND <100 are rescaled. The
+// new catalog/plan values start at 500 mCPU (XS); any value ≥100 is
+// already in mCPU and must NOT be multiplied again. The seed plans (Trial
+// 500, Member Pro 6000, Trainer 40000) all clear the threshold from the
+// first migration onwards.
+//
+// Exported so tests in `tests/payment/` can drive it directly.
+func RescaleVCPUToMillicores(db *gorm.DB) {
+	if r := db.Exec(`UPDATE subscription_plans SET max_cpu = max_cpu * 1000 WHERE max_cpu > 0 AND max_cpu < 100`); r.Error != nil {
+		log.Printf("[MIGRATION] failed to rescale subscription_plans.max_cpu vCPU→mCPU: %v", r.Error)
+	} else if n := r.RowsAffected; n > 0 {
+		log.Printf("[MIGRATION] rescaled %d subscription_plans rows from vCPU to mCPU", n)
+	}
+	if r := db.Exec(`UPDATE terminals SET size_cpu = size_cpu * 1000 WHERE size_cpu > 0 AND size_cpu < 100`); r.Error != nil {
+		log.Printf("[MIGRATION] failed to rescale terminals.size_cpu vCPU→mCPU: %v", r.Error)
+	} else if n := r.RowsAffected; n > 0 {
+		log.Printf("[MIGRATION] rescaled %d terminals rows from vCPU to mCPU", n)
+	}
+}
+
 func migrateGroupRoles(db *gorm.DB) {
 	sqldb := db.Session(&gorm.Session{})
 
@@ -939,7 +974,7 @@ func SeedPlanFeatures(db *gorm.DB) {
 		{Key: "command_history", DisplayNameEn: "Command History Recording", DisplayNameFr: "Historique des commandes", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
 		{Key: "command_history_retention_days", DisplayNameEn: "History Retention", DisplayNameFr: "Conservation de l'historique", Category: "terminal_limits", ValueType: "number", Unit: "days", DefaultValue: "0", IsActive: true},
 		{Key: "max_session_duration_minutes", DisplayNameEn: "Max Session Duration", DisplayNameFr: "Durée max de session", Category: "terminal_limits", ValueType: "number", Unit: "minutes", DefaultValue: "60", IsActive: true},
-		{Key: "max_cpu", DisplayNameEn: "Max vCPU Budget", DisplayNameFr: "Budget vCPU max", Category: "terminal_limits", ValueType: "number", Unit: "vCPU", DefaultValue: "0", IsActive: true},
+		{Key: "max_cpu", DisplayNameEn: "Max CPU Budget", DisplayNameFr: "Budget CPU max", Category: "terminal_limits", ValueType: "number", Unit: "mCPU", DefaultValue: "0", IsActive: true},
 		{Key: "max_memory_mb", DisplayNameEn: "Max Memory Budget", DisplayNameFr: "Budget mémoire max", Category: "terminal_limits", ValueType: "number", Unit: "MiB", DefaultValue: "0", IsActive: true},
 
 		// Course limits (number)
