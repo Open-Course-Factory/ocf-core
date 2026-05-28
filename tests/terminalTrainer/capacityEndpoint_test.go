@@ -206,7 +206,7 @@ func TestCapacityCheck_ReturnsOKForSmallSize(t *testing.T) {
 		// Plenty of RAM: 10 GB available, 50% used → total 20 GB.
 		metrics: &dto.ServerMetricsResponse{RAMAvailableGB: 10.0, RAMPercent: 50.0},
 	}
-	plan := &paymentModels.SubscriptionPlan{AllowedMachineSizes: []string{"XS", "S", "M", "L"}}
+	plan := &paymentModels.SubscriptionPlan{}
 	router := setupCapacityRouter(svc, plan, true)
 
 	req := httptest.NewRequest(http.MethodGet, "/terminals/capacity-check?distribution=ubuntu&size=XS", nil)
@@ -225,7 +225,7 @@ func TestCapacityCheck_ReturnsCriticalForOversizedRequest(t *testing.T) {
 		// Requesting L (2 GB) leaves 1.7 - 2 = -0.3 GB → critical.
 		metrics: &dto.ServerMetricsResponse{RAMAvailableGB: 1.7, RAMPercent: 83.0},
 	}
-	plan := &paymentModels.SubscriptionPlan{AllowedMachineSizes: []string{"XS", "S", "M", "L"}}
+	plan := &paymentModels.SubscriptionPlan{}
 	router := setupCapacityRouter(svc, plan, true)
 
 	req := httptest.NewRequest(http.MethodGet, "/terminals/capacity-check?distribution=ubuntu&size=L", nil)
@@ -257,7 +257,7 @@ func TestCapacityCheck_ReturnsUnknownWhenMetricsUnavailable(t *testing.T) {
 	svc := &metricsAwareMockService{
 		metricsErr: errors.New("tt-backend unreachable"),
 	}
-	plan := &paymentModels.SubscriptionPlan{AllowedMachineSizes: []string{"XS"}}
+	plan := &paymentModels.SubscriptionPlan{}
 	router := setupCapacityRouter(svc, plan, true)
 
 	req := httptest.NewRequest(http.MethodGet, "/terminals/capacity-check?size=XS", nil)
@@ -286,7 +286,7 @@ func TestCheckRAMAvailability_UsesChosenSizeNotPlanMax(t *testing.T) {
 		// Tight RAM: 1.7 GB available, 83% used.
 		metrics: &dto.ServerMetricsResponse{RAMAvailableGB: 1.7, RAMPercent: 83.0},
 	}
-	plan := &paymentModels.SubscriptionPlan{AllowedMachineSizes: []string{"XS", "S", "M", "L"}}
+	plan := &paymentModels.SubscriptionPlan{}
 
 	// Inject auth + plan.
 	router.Use(func(c *gin.Context) {
@@ -326,7 +326,7 @@ func TestCheckRAMAvailability_RejectsLargeSizeWhenRAMTight(t *testing.T) {
 	svc := &metricsAwareMockService{
 		metrics: &dto.ServerMetricsResponse{RAMAvailableGB: 1.7, RAMPercent: 83.0},
 	}
-	plan := &paymentModels.SubscriptionPlan{AllowedMachineSizes: []string{"XS", "S", "M", "L"}}
+	plan := &paymentModels.SubscriptionPlan{}
 
 	router.Use(func(c *gin.Context) {
 		c.Set("userId", "test-user-id")
@@ -368,7 +368,7 @@ func TestCheckRAMAvailability_NoBodyFallsBackToPlanMax(t *testing.T) {
 	svc := &metricsAwareMockService{
 		metrics: &dto.ServerMetricsResponse{RAMAvailableGB: 1.7, RAMPercent: 83.0},
 	}
-	plan := &paymentModels.SubscriptionPlan{AllowedMachineSizes: []string{"XS", "S", "M", "L"}}
+	plan := &paymentModels.SubscriptionPlan{}
 
 	router.Use(func(c *gin.Context) {
 		c.Set("userId", "test-user-id")

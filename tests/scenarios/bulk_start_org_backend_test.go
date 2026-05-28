@@ -210,7 +210,6 @@ func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 		IsActive:                    true,
 		MaxConcurrentUsers:          10,
 		MaxSessionDurationMinutes:   240,
-		AllowedMachineSizes:         []string{"all"},
 		CommandHistoryRetentionDays: 30,
 	}
 	require.NoError(t, db.Create(&plan).Error)

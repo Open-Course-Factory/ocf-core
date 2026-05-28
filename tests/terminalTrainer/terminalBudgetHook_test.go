@@ -8,7 +8,6 @@
 //  1. Denormalises the size catalog footprint onto the Terminal row
 //     (SizeCPU / SizeMemoryMB) — always, even for legacy "count" plans.
 //  2. Enforces CPU / RAM budget caps from the resolved plan.
-//  3. Applies the AllowedMachineSizes secondary restriction (D8).
 //
 // SQLite covers correctness (no real concurrency); a PostgreSQL-only race
 // test is gated with `testing.Short()` and a runtime PG check.
@@ -87,14 +86,15 @@ func (s *stubEffectivePlanService) CheckEffectiveUsageLimitFromResult(result *pa
 // ---------------------------------------------------------------------------
 
 // budgetPlanInMem builds an in-memory plan (not persisted) for hook tests.
-// MaxCPU/MaxMemoryMB of 0 means "unlimited" per the contract.
-func budgetPlanInMem(name string, maxCPU, maxMem int, allowed []string) *paymentModels.SubscriptionPlan {
+// MaxCPU/MaxMemoryMB of 0 means "unlimited" per the contract. The
+// trailing []string parameter is retained for call-site compatibility
+// (it used to carry AllowedMachineSizes); it is now ignored.
+func budgetPlanInMem(name string, maxCPU, maxMem int, _ []string) *paymentModels.SubscriptionPlan {
 	return &paymentModels.SubscriptionPlan{
-		BaseModel:           entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                name,
-		MaxCPU:              maxCPU,
-		MaxMemoryMB:         maxMem,
-		AllowedMachineSizes: allowed,
+		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:        name,
+		MaxCPU:      maxCPU,
+		MaxMemoryMB: maxMem,
 	}
 }
 
@@ -375,29 +375,7 @@ func TestTerminalBudgetHook_BeforeCreate_OrgScoped(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 9) AllowedMachineSizes restriction (D8)
-// ---------------------------------------------------------------------------
-
-func TestTerminalBudgetHook_BeforeCreate_AllowedMachineSizesRestriction(t *testing.T) {
-	db := freshTestDB(t)
-	// Budget is plenty (16c / 16g) but allowlist excludes L.
-	plan := budgetPlanInMem("Restricted", 16, 16384, []string{"s", "m"})
-	hook := newHookForTest(db, plan, nil)
-
-	terminal := &terminalModels.Terminal{
-		UserID:      "u-restricted",
-		MachineSize: "L",
-	}
-
-	err := execBeforeCreate(hook, terminal)
-	require.Error(t, err)
-	var prErr *terminalHooks.ErrPlanRestrictionSize
-	require.ErrorAs(t, err, &prErr)
-	assert.Equal(t, "L", prErr.Requested)
-}
-
-// ---------------------------------------------------------------------------
-// 10) Unknown size fails closed
+// Unknown size fails closed
 // ---------------------------------------------------------------------------
 
 func TestTerminalBudgetHook_BeforeCreate_UnknownSize_Error(t *testing.T) {

@@ -1,7 +1,6 @@
 // Command rollback_quota reverses backfill_quota. It clears MaxCPU /
-// MaxMemoryMB and flips QuotaModel back to "count" for every plan.
-// AllowedMachineSizes and MaxConcurrentTerminals are preserved so the
-// legacy gating continues to work after rollback.
+// MaxMemoryMB on every plan, leaving the (now-dropped) legacy columns
+// untouched.
 //
 // Usage:
 //

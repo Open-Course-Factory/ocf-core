@@ -142,7 +142,6 @@ func seedBudgetPlanForUser(t *testing.T, userID string, maxCPU, maxMemMB int) uu
 		MaxCPU:                 maxCPU,
 		MaxMemoryMB:            maxMemMB,
 		MaxCourses:             10,
-		AllowedMachineSizes:    []string{"all"}, // dropped in phase E (allowlist)
 	}
 	require.NoError(t, sharedTestDB.Create(plan).Error)
 	require.NoError(t, sharedTestDB.Create(&paymentModels.UserSubscription{

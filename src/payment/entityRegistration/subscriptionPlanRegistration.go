@@ -50,7 +50,6 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 
 						// Terminal-specific limits
 						MaxSessionDurationMinutes: plan.MaxSessionDurationMinutes,
-						AllowedMachineSizes:       plan.AllowedMachineSizes,
 						NetworkAccessEnabled:      plan.NetworkAccessEnabled,
 						DataPersistenceEnabled:    plan.DataPersistenceEnabled,
 						DataPersistenceGB:         plan.DataPersistenceGB,
@@ -92,7 +91,6 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						MaxCourses:                 input.MaxCourses,
 						RequiredRole:               input.RequiredRole,
 						MaxSessionDurationMinutes:  input.MaxSessionDurationMinutes,
-						AllowedMachineSizes:        input.AllowedMachineSizes,
 						NetworkAccessEnabled:       input.NetworkAccessEnabled,
 						DataPersistenceEnabled:     input.DataPersistenceEnabled,
 						DataPersistenceGB:          input.DataPersistenceGB,

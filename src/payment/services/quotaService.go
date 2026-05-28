@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strings"
 	"time"
 
 	"soli/formations/src/payment/catalog"
@@ -89,19 +88,7 @@ type QuotaService interface {
 	// RemainingBudgetFits is a one-shot helper: it queries current usage
 	// for the user (org-scoped if orgID is non-nil) and answers whether
 	// one container of the given size key fits in the remaining budget.
-	//
-	// The plan's AllowedMachineSizes restriction is NOT consulted here —
-	// only the raw budget. Use RemainingBudgetFitsWithReason when callers
-	// need to distinguish a budget rejection from a plan_restriction
-	// rejection.
 	RemainingBudgetFits(userID string, orgID *uuid.UUID, plan *models.SubscriptionPlan, sizeKey string) (bool, error)
-
-	// RemainingBudgetFitsWithReason behaves like RemainingBudgetFits but
-	// also applies the plan's AllowedMachineSizes secondary restriction
-	// (D8). When a non-empty allowlist excludes the requested size, the
-	// returned reason is "plan_restriction" and fits=false. When the
-	// budget itself rejects, the reason reflects which axis ran out.
-	RemainingBudgetFitsWithReason(userID string, orgID *uuid.UUID, plan *models.SubscriptionPlan, sizeKey string) (bool, string, error)
 
 	// GetBudgetUsage returns the user's (or org's) current CPU + RAM
 	// footprint under the budget counting rule (D6). It is a thin
@@ -117,7 +104,6 @@ type QuotaService interface {
 //
 //	"budget_cpu_exceeded"     — the request would exceed MaxCPU
 //	"budget_memory_exceeded"  — the request would exceed MaxMemoryMB
-//	"plan_restriction"        — the requested size is not in AllowedMachineSizes
 type BudgetCheck struct {
 	Allowed        bool
 	RemainingCPU   int
@@ -473,74 +459,19 @@ func (s *quotaService) RemainingBudgetFits(
 	plan *models.SubscriptionPlan,
 	sizeKey string,
 ) (bool, error) {
-	fits, _, err := s.remainingBudgetFitsCore(userID, orgID, plan, sizeKey, false)
-	return fits, err
-}
-
-// RemainingBudgetFitsWithReason — see interface doc.
-func (s *quotaService) RemainingBudgetFitsWithReason(
-	userID string,
-	orgID *uuid.UUID,
-	plan *models.SubscriptionPlan,
-	sizeKey string,
-) (bool, string, error) {
-	return s.remainingBudgetFitsCore(userID, orgID, plan, sizeKey, true)
-}
-
-// remainingBudgetFitsCore is the shared core for the two RemainingBudgetFits
-// variants. When consultAllowlist is true, the plan's AllowedMachineSizes
-// (D8 secondary restriction) is applied.
-func (s *quotaService) remainingBudgetFitsCore(
-	userID string,
-	orgID *uuid.UUID,
-	plan *models.SubscriptionPlan,
-	sizeKey string,
-	consultAllowlist bool,
-) (bool, string, error) {
 	if plan == nil {
-		return false, "", fmt.Errorf("remainingBudgetFits: plan is nil")
+		return false, fmt.Errorf("RemainingBudgetFits: plan is nil")
 	}
 	size, ok := catalog.LookupSize(sizeKey)
 	if !ok {
-		return false, "", fmt.Errorf("remainingBudgetFits: unknown size %q", sizeKey)
-	}
-	if consultAllowlist && !SizeKeyInAllowlist(plan.AllowedMachineSizes, sizeKey) {
-		return false, "plan_restriction", nil
+		return false, fmt.Errorf("RemainingBudgetFits: unknown size %q", sizeKey)
 	}
 
 	check, err := s.CheckBudget(userID, orgID, plan, size.CPU, size.MemoryMB)
 	if err != nil {
-		return false, "", err
+		return false, err
 	}
-	if !check.Allowed {
-		return false, check.Reason, nil
-	}
-	return true, "", nil
-}
-
-// SizeKeyInAllowlist applies D8: an empty allowlist means "no extra
-// restriction"; otherwise the requested key must match an entry
-// (case-insensitive). The pseudo-entry "all" means "any size".
-//
-// Exported because the same predicate is needed by the BeforeCreate
-// hook in terminalTrainer/hooks (separate package). Keeping a single
-// implementation prevents D8 from drifting between the read-time check
-// (RemainingBudgetFitsWithReason) and the write-time enforcement.
-func SizeKeyInAllowlist(allowed []string, sizeKey string) bool {
-	if len(allowed) == 0 {
-		return true
-	}
-	want := strings.ToLower(strings.TrimSpace(sizeKey))
-	for _, raw := range allowed {
-		got := strings.ToLower(strings.TrimSpace(raw))
-		if got == "" {
-			continue
-		}
-		if got == "all" || got == want {
-			return true
-		}
-	}
-	return false
+	return check.Allowed, nil
 }
 
 // GetBudgetUsage — see interface doc.

@@ -1437,10 +1437,10 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 			plan, _ := planInterface.(*paymentModels.SubscriptionPlan)
 			if plan != nil {
 				// SSOT: derive per-terminal RAM from the canonical catalog
-				// via EstimatePerTerminalRAMGB. Keeps bulk pre-flight aligned
-				// with the budget engine — a hand-rolled literal here
-				// would silently drift if a size's RAM is retuned.
-				perTerminalRAM := EstimatePerTerminalRAMGB(plan.AllowedMachineSizes)
+				// via EstimatePerTerminalRAMGB. Bulk pre-flight uses the
+				// catalog's largest size as a worst-case estimate — the
+				// real per-terminal cost is decided by the launcher.
+				perTerminalRAM := EstimatePerTerminalRAMGB()
 
 				totalRequiredRAM := float64(len(activeMembers)) * perTerminalRAM
 				totalRAM := metrics.RAMAvailableGB / (1.0 - metrics.RAMPercent/100.0)
@@ -2850,32 +2850,14 @@ func ComputeSessionOptions(
 		}
 	}
 
-	// Build the set of plan-allowed size keys
-	planAllowsAll := false
-	planSizeSet := make(map[string]bool, len(plan.AllowedMachineSizes))
-	for _, s := range plan.AllowedMachineSizes {
-		norm := NormalizeSizeKey(s)
-		if norm == "ALL" {
-			planAllowsAll = true
-		}
-		planSizeSet[norm] = true
-	}
-
-	// Evaluate each size
+	// Evaluate each size. All catalog sizes are admitted; the budget
+	// engine sets RemainingCount per size downstream.
 	allowedSizes := make([]dto.SessionOptionSize, 0, len(allSizes))
 	for _, s := range allSizes {
-		opt := dto.SessionOptionSize{TTSize: s, Allowed: true}
-		normKey := NormalizeSizeKey(s.Key)
-
 		if s.SortOrder < minSortOrder {
 			continue
 		}
-		if !planAllowsAll && !planSizeSet[normKey] {
-			opt.Allowed = false
-			opt.Reason = "plan_limit"
-		}
-
-		allowedSizes = append(allowedSizes, opt)
+		allowedSizes = append(allowedSizes, dto.SessionOptionSize{TTSize: s, Allowed: true})
 	}
 
 	// Build a set of the distribution's supported features

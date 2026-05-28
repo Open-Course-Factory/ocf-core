@@ -30,8 +30,11 @@ func metricsFor(availableGB, usedPercent float64) *dto.ServerMetricsResponse {
 	}
 }
 
-func planAllowing(sizes ...string) *paymentModels.SubscriptionPlan {
-	return &paymentModels.SubscriptionPlan{AllowedMachineSizes: sizes}
+// planAllowing builds a plan placeholder for capacity tests. The legacy
+// per-launch RAM estimate from the requested size alone (with the catalog's
+// largest entry as the fallback worst case).
+func planAllowing(_ ...string) *paymentModels.SubscriptionPlan {
+	return &paymentModels.SubscriptionPlan{}
 }
 
 func TestEvaluateLaunchCapacity(t *testing.T) {

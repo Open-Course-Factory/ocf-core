@@ -112,99 +112,23 @@ func EvaluateLaunchCapacity(plan *paymentModels.SubscriptionPlan, requestedSize 
 }
 
 // resolveRequiredRAM picks the RAM estimate for the requested size when
-// it is set AND the plan allows it; otherwise falls back to the plan's
-// max allowed size (keeps the legacy middleware behaviour). Defaults to
-// the "S" estimate (0.5 GB) when no plan information is available — same
-// default as the pre-refactor middleware.
-func resolveRequiredRAM(plan *paymentModels.SubscriptionPlan, requestedSize string) float64 {
+// it is set; otherwise falls back to the catalog's largest entry as a
+// conservative worst-case (matches the spirit of the legacy middleware,
+// which used the plan's max-allowed size).
+func resolveRequiredRAM(_ *paymentModels.SubscriptionPlan, requestedSize string) float64 {
 	if requestedSize != "" {
-		if ram, ok := sizeRAMGB(requestedSize); ok && planAllowsSize(plan, requestedSize) {
+		if ram, ok := sizeRAMGB(requestedSize); ok {
 			return ram
 		}
 	}
-
-	if plan != nil && len(plan.AllowedMachineSizes) > 0 {
-		maxRAM := 0.0
-		for _, size := range plan.AllowedMachineSizes {
-			if size == "all" {
-				// "all" is unbounded by definition — fall back to the
-				// historic average of M used by the legacy middleware.
-				if ram, ok := sizeRAMGB("M"); ok {
-					return ram
-				}
-				return 1.0
-			}
-			if ram, ok := sizeRAMGB(size); ok && ram > maxRAM {
-				maxRAM = ram
-			}
-		}
-		if maxRAM > 0 {
-			return maxRAM
-		}
-	}
-	// Default for plans with no allowlist: historic S estimate.
-	if ram, ok := sizeRAMGB("S"); ok {
-		return ram
-	}
-	return 0.5
+	return float64(catalog.LargestSize.MemoryMB) / 1024.0
 }
 
 // EstimatePerTerminalRAMGB returns the per-terminal RAM estimate in GB
-// used by bulk pre-flight checks: take the largest allowed size from the
-// catalog. Special cases mirror the legacy inline logic so behaviour is
-// unchanged:
-//
-//   - empty / nil allowlist → S estimate (0.5 GB historically; now sourced
-//     from backfill so a future catalog change to S flows through)
-//   - allowlist contains "all" → M estimate (legacy 1 GB)
-//   - otherwise → max RAM across known sizes in the allowlist
-//
+// used by bulk pre-flight checks. Without a per-request size to anchor
+// on, we use the catalog's largest entry as a conservative worst-case.
 // Exported so it can be unit-tested directly and reused by other
-// pre-flight callers; also the explicit reason this helper exists.
-func EstimatePerTerminalRAMGB(allowedSizes []string) float64 {
-	if len(allowedSizes) == 0 {
-		if ram, ok := sizeRAMGB("S"); ok {
-			return ram
-		}
-		return 0.5
-	}
-	maxRAM := 0.0
-	for _, size := range allowedSizes {
-		if size == "all" {
-			if ram, ok := sizeRAMGB("M"); ok {
-				return ram
-			}
-			return 1.0
-		}
-		if ram, ok := sizeRAMGB(size); ok && ram > maxRAM {
-			maxRAM = ram
-		}
-	}
-	if maxRAM > 0 {
-		return maxRAM
-	}
-	// Allowlist contained only unknown keys: fall back to S so we err on
-	// the side of admitting the launch (the historic default).
-	if ram, ok := sizeRAMGB("S"); ok {
-		return ram
-	}
-	return 0.5
-}
-
-// planAllowsSize reports whether the plan permits the given machine size.
-// A nil plan or empty AllowedMachineSizes list is treated as unrestricted
-// (matches GetSessionOptions semantics elsewhere in the codebase).
-func planAllowsSize(plan *paymentModels.SubscriptionPlan, size string) bool {
-	if plan == nil {
-		return true
-	}
-	if len(plan.AllowedMachineSizes) == 0 {
-		return true
-	}
-	for _, s := range plan.AllowedMachineSizes {
-		if s == "all" || s == size {
-			return true
-		}
-	}
-	return false
+// pre-flight callers.
+func EstimatePerTerminalRAMGB() float64 {
+	return float64(catalog.LargestSize.MemoryMB) / 1024.0
 }

@@ -512,7 +512,6 @@ func convertSubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.Subscrip
 
 		// Terminal-specific limits
 		MaxSessionDurationMinutes:  plan.MaxSessionDurationMinutes,
-		AllowedMachineSizes:        plan.AllowedMachineSizes,
 		NetworkAccessEnabled:       plan.NetworkAccessEnabled,
 		DataPersistenceEnabled:     plan.DataPersistenceEnabled,
 		DataPersistenceGB:          plan.DataPersistenceGB,

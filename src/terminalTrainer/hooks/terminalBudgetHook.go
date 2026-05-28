@@ -60,20 +60,6 @@ func (e *ErrBudgetExhausted) Error() string {
 	)
 }
 
-// ErrPlanRestrictionSize indicates the plan's AllowedMachineSizes
-// allowlist excludes the requested size (D8 secondary restriction).
-type ErrPlanRestrictionSize struct {
-	Requested string
-	Allowed   []string
-}
-
-func (e *ErrPlanRestrictionSize) Error() string {
-	return fmt.Sprintf(
-		"plan restriction: size %q not in allowed sizes %v",
-		e.Requested, e.Allowed,
-	)
-}
-
 // ErrUnknownMachineSize indicates the Terminal's MachineSize is not
 // present in the catalog. We fail closed: an unknown size would either
 // silently bypass the budget (if treated as zero-cost) or crash the
@@ -125,7 +111,6 @@ func (h *TerminalBudgetHook) GetPriority() int { return h.priority }
 //     budget check entirely (we can't enforce what we can't resolve;
 //     other gates such as CheckLimit middleware handle the no-plan case).
 //  4. Lock + sum + compare against the plan's CPU/RAM caps.
-//  5. Apply D8 AllowedMachineSizes allowlist when non-empty.
 func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 	if ctx.HookType != hooks.BeforeCreate {
 		return nil
@@ -169,16 +154,7 @@ func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 	}
 	plan := planResult.Plan
 
-	// (5) D8 allowlist. Applied BEFORE the lock so we don't take a row
-	//     lock just to reject the request on a non-resource reason.
-	if !paymentServices.SizeKeyInAllowlist(plan.AllowedMachineSizes, sizeKey) {
-		return &ErrPlanRestrictionSize{
-			Requested: sizeKey,
-			Allowed:   append([]string(nil), plan.AllowedMachineSizes...),
-		}
-	}
-
-	// (6) Atomic budget check inside a transaction. The SELECT FOR UPDATE
+	// (4) Atomic budget check inside a transaction. The SELECT FOR UPDATE
 	//     locks every row that contributes to the current usage sum so
 	//     concurrent starts for the same scope (user / org) serialise.
 	//     On SQLite (unit tests) FOR UPDATE is a no-op but the
@@ -301,13 +277,12 @@ func supportsRowLock(tx *gorm.DB) bool {
 	return name == "postgres" || name == "mysql"
 }
 
-// IsBudgetError reports whether err is one of the budget-related
-// sentinel errors raised by this hook. Useful for middleware that
-// wants to translate the hook error into a 402/403 HTTP response.
+// IsBudgetError reports whether err is the budget-related sentinel
+// raised by this hook. Useful for middleware that wants to translate
+// the hook error into a 402/403 HTTP response.
 func IsBudgetError(err error) bool {
 	var be *ErrBudgetExhausted
-	var pr *ErrPlanRestrictionSize
-	return errors.As(err, &be) || errors.As(err, &pr)
+	return errors.As(err, &be)
 }
 
 // Compile-time check that TerminalBudgetHook satisfies hooks.Hook. Catches

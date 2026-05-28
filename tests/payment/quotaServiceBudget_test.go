@@ -9,7 +9,6 @@
 // iff state = 'running' OR persistence_mode = 'persistent'. Ephemeral
 // non-running sessions do not count.
 //
-// Allowed-sizes rule under test (D8): when AllowedMachineSizes is
 // non-empty and the requested size is not in it, the request is
 // rejected even if the budget would have allowed it. This is the
 // secondary advanced gate; an empty allowlist means no extra
@@ -34,18 +33,20 @@ import (
 
 // budgetPlan builds a SubscriptionPlan tuned for budget-mode tests.
 // maxCPU=0 / maxMem=0 mean unlimited per the contract.
-func budgetPlan(t *testing.T, db *gorm.DB, name string, maxCPU, maxMemMB int, allowed []string) *models.SubscriptionPlan {
+// budgetPlan builds a plan with the given CPU/RAM caps. The trailing
+// []string parameter is retained for call-site compatibility (it used to
+// carry AllowedMachineSizes); it is now ignored.
+func budgetPlan(t *testing.T, db *gorm.DB, name string, maxCPU, maxMemMB int, _ []string) *models.SubscriptionPlan {
 	t.Helper()
 	plan := &models.SubscriptionPlan{
-		BaseModel:           entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                name,
-		PriceAmount:         0,
-		Currency:            "eur",
-		BillingInterval:     "month",
-		IsActive:            true,
-		MaxCPU:              maxCPU,
-		MaxMemoryMB:         maxMemMB,
-		AllowedMachineSizes: allowed,
+		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:            name,
+		PriceAmount:     0,
+		Currency:        "eur",
+		BillingInterval: "month",
+		IsActive:        true,
+		MaxCPU:          maxCPU,
+		MaxMemoryMB:     maxMemMB,
 	}
 	require.NoError(t, db.Create(plan).Error)
 	return plan
@@ -327,29 +328,6 @@ func TestQuotaService_CheckBudget_OrgScoped(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, checkOver)
 	assert.False(t, checkOver.Allowed, "org-wide sum must include the other two members")
-}
-
-func TestQuotaService_CheckBudget_AllowedMachineSizesGate(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "u-budget-allowlist"
-
-	// Budget would allow L, but plan restricts to S and M.
-	plan := budgetPlan(t, db, "BudgetAllowlist", 8, 4096, []string{"s", "m"})
-
-	// Helper variant of CheckBudget that consults the allowlist needs a size
-	// key. Use RemainingBudgetFits for the rejection path; CheckBudget alone
-	// works on raw cpu/mem and ignores the allowlist.
-	fits, reason, err := newQuotaSvc(t, db).RemainingBudgetFitsWithReason(userID, nil, plan, "L")
-	require.NoError(t, err)
-	assert.False(t, fits, "L is not in the plan's allowlist")
-	assert.Equal(t, "plan_restriction", reason)
-
-	// And a size that IS in the allowlist passes.
-	fitsM, reasonM, err := newQuotaSvc(t, db).RemainingBudgetFitsWithReason(userID, nil, plan, "M")
-	require.NoError(t, err)
-	assert.True(t, fitsM)
-	assert.Empty(t, reasonM)
 }
 
 // --- ComputeRemainingBySize --------------------------------------------

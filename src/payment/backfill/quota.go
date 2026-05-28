@@ -1,5 +1,4 @@
 // Package backfill provides the one-shot data migration that translated
-// the legacy count-based terminal quota (AllowedMachineSizes ×
 // MaxConcurrentTerminals) into a budget-based quota (MaxCPU /
 // MaxMemoryMB) on each SubscriptionPlan. A reverse `Rollback` is
 // provided for safety.
@@ -51,7 +50,7 @@ type Report struct {
 // fields. Returns zeroes when the columns are absent (post-cleanup DB).
 type legacyPlanLimits struct {
 	MaxConcurrentTerminals int
-	AllowedMachineSizes    string // JSON-encoded []string
+	AllowedMachineSizes    string // JSON-encoded []string, raw from DB
 }
 
 // Run applies the count → budget migration. Idempotent: plans already
@@ -238,7 +237,6 @@ func parseAllowedSizes(raw string) []string {
 }
 
 // largestAllowedSize returns the worst-case size implied by an
-// AllowedMachineSizes value. Empty list or any "all" entry means the
 // plan was unrestricted, so we fall back to the catalog's largest entry.
 func largestAllowedSize(allowed []string) catalog.MachineSize {
 	if len(allowed) == 0 {

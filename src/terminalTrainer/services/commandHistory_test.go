@@ -595,7 +595,6 @@ func TestStartComposedSession_RetentionDaysCopied(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			plan := &paymentModels.SubscriptionPlan{
 				MaxSessionDurationMinutes:   60,
-				AllowedMachineSizes:         []string{"S", "M"},
 				CommandHistoryRetentionDays: tc.planRetentionDays,
 			}
 
@@ -664,7 +663,6 @@ func TestBulkCreateTerminals_SetsRetentionDaysFromPlan(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			plan := &paymentModels.SubscriptionPlan{
 				MaxSessionDurationMinutes:   60,
-				AllowedMachineSizes:         []string{"S", "M"},
 				CommandHistoryRetentionDays: tc.planRetentionDays,
 			}
 
@@ -732,7 +730,6 @@ func TestStartComposedSession_InvalidPlanType(t *testing.T) {
 func TestStartComposedSession_ZeroRetention_RecordingStaysEnabled(t *testing.T) {
 	plan := &paymentModels.SubscriptionPlan{
 		MaxSessionDurationMinutes:   60,
-		AllowedMachineSizes:         []string{"S", "M"},
 		CommandHistoryRetentionDays: 0,
 	}
 

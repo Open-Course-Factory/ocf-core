@@ -442,7 +442,6 @@ func TestConversionService_SubscriptionPlanToDTO_NoBackendFields(t *testing.T) {
 		MaxCourses:                -1,
 		IsActive:                  true,
 		MaxSessionDurationMinutes: 120,
-		AllowedMachineSizes:       []string{"S", "M"},
 		NetworkAccessEnabled:      true,
 		AllowedTemplates:          []string{"tmpl-1"},
 	}
@@ -455,7 +454,6 @@ func TestConversionService_SubscriptionPlanToDTO_NoBackendFields(t *testing.T) {
 	assert.Equal(t, "Pro Plan", result.Name)
 	assert.Equal(t, int64(2999), result.PriceAmount)
 	assert.Equal(t, 120, result.MaxSessionDurationMinutes)
-	assert.Equal(t, []string{"S", "M"}, result.AllowedMachineSizes)
 	assert.True(t, result.NetworkAccessEnabled)
 	assert.Equal(t, []string{"tmpl-1"}, result.AllowedTemplates)
 }

@@ -1754,30 +1754,15 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 		}
 	}
 
-	// Get user's effective plan to check allowed sizes
+	// Get user's effective plan so the budget gate can check remaining
+	// CPU/RAM against the scenario's required size.
 	effectivePlanService := paymentServices.NewEffectivePlanService(sc.db)
-	var allowedSizeSet map[string]bool
-	var planAllowsAllSizes bool
 	var resolvedPlan *paymentModels.SubscriptionPlan
 	planResult, planErr := effectivePlanService.GetUserEffectivePlan(userID, orgID)
 	if planErr == nil && planResult != nil && planResult.Plan != nil {
 		resolvedPlan = planResult.Plan
-		allowedSizeSet = make(map[string]bool, len(planResult.Plan.AllowedMachineSizes))
-		for _, s := range planResult.Plan.AllowedMachineSizes {
-			norm := strings.ToUpper(strings.TrimSpace(s))
-			if norm == "ALL" {
-				planAllowsAllSizes = true
-			}
-			allowedSizeSet[norm] = true
-		}
 	}
 
-	// Budget block-reason gate. Check whether the scenario's required size
-	// fits in the user's remaining budget. The RemainingBudgetFitsWithReason
-	// helper returns "plan_restriction" for the AllowedMachineSizes
-	// allowlist gate (D8) and "budget_*_exceeded" when an axis is exhausted.
-	// We surface the reason verbatim so the frontend can render the i18n
-	// string "scenarioLauncher.blockReason.*" without re-deriving the cause.
 	budgetGateActive := resolvedPlan != nil
 	var quotaSvc paymentServices.QuotaService
 	if budgetGateActive {
@@ -1823,40 +1808,22 @@ func (sc *scenarioController) GetAvailableScenarios(ctx *gin.Context) {
 			item.RequiredFeatures = rf
 		}
 
-		// Determine launchability by checking distribution compatibility + plan size
+		// Determine launchability by checking distribution compatibility.
 		_, resolvedDist, resolvedSize, _, resolveErr := sc.resolveScenarioBackendAndDistribution(s, orgID)
 		item.Launchable = resolveErr == nil && resolvedDist != ""
 		if resolveErr != nil {
 			item.BlockReason = "no_distribution"
-		} else if item.Launchable && allowedSizeSet != nil && !planAllowsAllSizes {
-			// Check if the scenario's required size is in the user's plan
-			normalizedSize := strings.ToUpper(strings.TrimSpace(resolvedSize))
-			if normalizedSize != "" && !allowedSizeSet[normalizedSize] {
-				item.Launchable = false
-				item.BlockReason = "plan"
-			}
 		}
 
-		// Budget-mode gate (MR-CORE-6). Even when AllowedMachineSizes admits
-		// the size, the remaining CPU/RAM budget may not fit one container
-		// of that size. Apply after the plan-allowlist check so the more
-		// specific "plan" reason wins when both apply. Skipped in count-mode
-		// or when feature flag is off (budgetGateActive=false).
+		// Budget gate: the scenario's required size must fit in the user's
+		// remaining CPU/RAM budget.
 		if budgetGateActive && item.Launchable && resolvedSize != "" {
-			fits, reason, fitErr := quotaSvc.RemainingBudgetFitsWithReason(userID, orgID, resolvedPlan, resolvedSize)
+			fits, fitErr := quotaSvc.RemainingBudgetFits(userID, orgID, resolvedPlan, resolvedSize)
 			if fitErr != nil {
 				slog.Warn("budget fit check failed for scenario", "scenario", s.Name, "err", fitErr)
 			} else if !fits {
 				item.Launchable = false
-				// Map quota reasons to scenario block_reason values.
-				// Frontend keys i18n strings by these codes.
-				switch reason {
-				case "plan_restriction":
-					item.BlockReason = "plan_restriction"
-				default:
-					// Covers "budget_cpu_exceeded", "budget_memory_exceeded".
-					item.BlockReason = "budget_exhausted"
-				}
+				item.BlockReason = "budget_exhausted"
 			}
 		}
 

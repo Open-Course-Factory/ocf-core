@@ -122,7 +122,6 @@ func makePlan(persistent bool) *paymentModels.SubscriptionPlan {
 		BaseModel:                 entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:                      "test-plan",
 		IsActive:                  true,
-		AllowedMachineSizes:       []string{"S"},
 		MaxSessionDurationMinutes: 60,
 		DataPersistenceEnabled:    persistent,
 	}
@@ -471,7 +470,6 @@ func TestStartComposedSession_PersistentGatedByDataPersistenceEnabled(t *testing
 		BaseModel:                 entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:                      "ssot-plan",
 		IsActive:                  true,
-		AllowedMachineSizes:       []string{"S"},
 		MaxSessionDurationMinutes: 60,
 		DataPersistenceEnabled:    true,
 	}
@@ -507,7 +505,6 @@ func TestStartComposedSession_PersistentRejectedWhenDataPersistenceDisabled(t *t
 		BaseModel:                 entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:                      "ssot-plan-no-pers",
 		IsActive:                  true,
-		AllowedMachineSizes:       []string{"S"},
 		MaxSessionDurationMinutes: 60,
 		DataPersistenceEnabled:    false,
 	}

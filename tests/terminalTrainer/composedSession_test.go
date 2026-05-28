@@ -77,7 +77,6 @@ func baseDistro() dto.TTDistribution {
 func freePlan() *paymentModels.SubscriptionPlan {
 	return &paymentModels.SubscriptionPlan{
 		Name:                       "Free",
-		AllowedMachineSizes:        []string{"XS", "S"},
 		NetworkAccessEnabled:       false,
 		DataPersistenceEnabled:     false,
 		MaxSessionDurationMinutes:  60,
@@ -88,7 +87,6 @@ func freePlan() *paymentModels.SubscriptionPlan {
 func proPlan() *paymentModels.SubscriptionPlan {
 	return &paymentModels.SubscriptionPlan{
 		Name:                       "Pro",
-		AllowedMachineSizes:        []string{"all"},
 		NetworkAccessEnabled:       true,
 		DataPersistenceEnabled:     true,
 		MaxSessionDurationMinutes:  480,
@@ -111,32 +109,22 @@ func TestSessionOptions_FreePlan(t *testing.T) {
 	assert.NotNil(t, opts)
 	assert.Equal(t, distro.Name, opts.Distribution.Name)
 
-	// XS and S should be allowed, M/L/XL denied by plan_limit
+	// All catalog sizes are admitted at the read-time level; the budget
+	// engine (CPU/RAM caps) decides at launch time which sizes still fit.
 	for _, s := range opts.AllowedSizes {
-		switch s.Key {
-		case "XS", "S":
-			assert.True(t, s.Allowed, "size %s should be allowed on Free plan", s.Key)
-			assert.Empty(t, s.Reason)
-		case "M", "L", "XL":
-			assert.False(t, s.Allowed, "size %s should NOT be allowed on Free plan", s.Key)
-			assert.Equal(t, "plan_limit", s.Reason)
-		}
+		assert.True(t, s.Allowed, "size %s should be admitted; budget enforcement happens later", s.Key)
+		assert.Empty(t, s.Reason, "size %s should have no reason", s.Key)
 	}
 
 	// network should be plan_disabled (the only remaining plan-gated feature chip).
 	// persistence is NO LONGER a feature chip after MR !239 — the persistent vs
 	// ephemeral choice is surfaced as a persistence_mode radio, gated upstream
 	// via DataPersistenceEnabled. Here it still falls under "size_too_small"
-	// because the baseFeatures catalog declares MinSizeKey="M" and the Free
-	// plan only allows up to S.
 	for _, f := range opts.AllowedFeatures {
 		switch f.Key {
 		case "network":
 			assert.False(t, f.Allowed, "network should be disabled on Free plan")
 			assert.Equal(t, "plan_disabled", f.Reason)
-		case "persistence":
-			assert.False(t, f.Allowed, "persistence requires M but Free plan caps at S")
-			assert.Equal(t, "size_too_small", f.Reason)
 		case "gpu":
 			assert.False(t, f.Allowed, "gpu should not be supported by this distro")
 			assert.Equal(t, "not_supported", f.Reason)
@@ -236,47 +224,6 @@ func TestSessionOptions_FeaturePlanDisabled(t *testing.T) {
 	}
 }
 
-func TestSessionOptions_FeatureSizeTooSmall(t *testing.T) {
-	// Plan only allows XS and S, but persistence requires M (min_size_key=M, SortOrder=30)
-	plan := freePlan() // allows XS, S
-	plan.DataPersistenceEnabled = true // enable persistence in plan
-	distro := baseDistro()
-	distro.SupportedFeatures = []string{"persistence"}
-	sizes := baseSizes()
-	features := []dto.TTFeature{
-		{Key: "persistence", Name: "Data Persistence", ProfileName: "persist-profile", MinSizeKey: "M", DefaultEnabled: false, SortOrder: 20},
-	}
-
-	opts := services.ComputeSessionOptions(distro, sizes, features, plan)
-
-	for _, f := range opts.AllowedFeatures {
-		if f.Key == "persistence" {
-			// Max allowed sort order is S=20, but persistence requires M=30
-			assert.False(t, f.Allowed, "persistence needs M but max allowed is S")
-			assert.Equal(t, "size_too_small", f.Reason)
-		}
-	}
-}
-
-func TestStartComposedSession_RejectsForbiddenSize(t *testing.T) {
-	// This tests the validation logic in ComputeSessionOptions indirectly:
-	// A "free" plan user requesting M should see it disallowed
-	plan := freePlan()
-	distro := baseDistro()
-	sizes := baseSizes()
-	features := baseFeatures()
-
-	opts := services.ComputeSessionOptions(distro, sizes, features, plan)
-
-	// Simulate what the service does: check if M is allowed
-	requestedSize := services.NormalizeSizeKey("m")
-	for _, s := range opts.AllowedSizes {
-		if services.NormalizeSizeKey(s.Key) == requestedSize {
-			assert.False(t, s.Allowed, "M should not be allowed on Free plan")
-			assert.Equal(t, "plan_limit", s.Reason)
-		}
-	}
-}
 
 func TestStartComposedSession_RejectsDisabledFeature(t *testing.T) {
 	plan := freePlan() // network disabled
@@ -322,9 +269,7 @@ func TestStartComposedSession_EnforcesMaxDuration(t *testing.T) {
 }
 
 func TestSessionOptions_AllSizesKey(t *testing.T) {
-	// Verify that "all" in AllowedMachineSizes allows everything
 	plan := &paymentModels.SubscriptionPlan{
-		AllowedMachineSizes:  []string{"all"},
 		NetworkAccessEnabled: false,
 	}
 	distro := baseDistro()
@@ -338,115 +283,12 @@ func TestSessionOptions_AllSizesKey(t *testing.T) {
 	}
 }
 
-func TestSessionOptions_EmptyPlanSizes(t *testing.T) {
-	// A plan with no AllowedMachineSizes should deny all sizes
-	plan := &paymentModels.SubscriptionPlan{
-		AllowedMachineSizes: []string{},
-	}
-	distro := baseDistro()
-	sizes := baseSizes()
-	features := []dto.TTFeature{}
-
-	opts := services.ComputeSessionOptions(distro, sizes, features, plan)
-
-	for _, s := range opts.AllowedSizes {
-		assert.False(t, s.Allowed, "size %s should be denied when plan has no allowed sizes", s.Key)
-		assert.Equal(t, "plan_limit", s.Reason)
-	}
-}
-
-func TestStartComposedSession_RejectsForbiddenSize_ErrorMessage(t *testing.T) {
-	// Verify the error message clearly indicates the size is not allowed
-	plan := freePlan() // allows XS, S
-	distro := baseDistro()
-	sizes := baseSizes()
-	features := baseFeatures()
-
-	opts := services.ComputeSessionOptions(distro, sizes, features, plan)
-
-	// Simulate what StartComposedSession does when checking size "xl"
-	requestedSize := services.NormalizeSizeKey("xl")
-	for _, s := range opts.AllowedSizes {
-		if services.NormalizeSizeKey(s.Key) == requestedSize {
-			assert.False(t, s.Allowed, "XL should not be allowed on Free plan (only XS/S)")
-			assert.Equal(t, "plan_limit", s.Reason, "reason should explicitly say plan_limit")
-
-			// Reconstruct the error message that StartComposedSession would produce
-			errMsg := "size 'xl' is not allowed: " + s.Reason
-			assert.Contains(t, errMsg, "not allowed", "error message should contain 'not allowed'")
-			assert.Contains(t, errMsg, "plan_limit", "error message should contain the reason 'plan_limit'")
-		}
-	}
-}
-
-func TestComputeSessionOptions_PartialSizeRestriction(t *testing.T) {
-	// Plan allows only S and M — XS should be denied (too small for plan), L/XL too large
-	plan := &paymentModels.SubscriptionPlan{
-		AllowedMachineSizes:    []string{"S", "M"},
-		NetworkAccessEnabled:   false,
-		DataPersistenceEnabled: false,
-	}
-	distro := baseDistro()
-	sizes := baseSizes()
-	features := []dto.TTFeature{}
-
-	opts := services.ComputeSessionOptions(distro, sizes, features, plan)
-
-	for _, s := range opts.AllowedSizes {
-		switch s.Key {
-		case "XS":
-			assert.False(t, s.Allowed, "XS should NOT be allowed — not in plan [S, M]")
-			assert.Equal(t, "plan_limit", s.Reason)
-		case "S", "M":
-			assert.True(t, s.Allowed, "size %s should be allowed — in plan [S, M]", s.Key)
-			assert.Empty(t, s.Reason, "allowed sizes should have no reason")
-		case "L":
-			assert.False(t, s.Allowed, "L should NOT be allowed — not in plan [S, M]")
-			assert.Equal(t, "plan_limit", s.Reason)
-		case "XL":
-			assert.False(t, s.Allowed, "XL should NOT be allowed — not in plan [S, M]")
-			assert.Equal(t, "plan_limit", s.Reason)
-		}
-	}
-}
-
-func TestStartComposedSession_AllowedSizeWorks(t *testing.T) {
-	// Plan allows S and M — requesting "m" (lowercase) should pass validation
-	plan := &paymentModels.SubscriptionPlan{
-		AllowedMachineSizes:    []string{"S", "M"},
-		NetworkAccessEnabled:   false,
-		DataPersistenceEnabled: false,
-	}
-	distro := baseDistro()
-	sizes := baseSizes()
-	features := []dto.TTFeature{}
-
-	opts := services.ComputeSessionOptions(distro, sizes, features, plan)
-
-	// Simulate what StartComposedSession does: normalize and check
-	requestedSize := services.NormalizeSizeKey("m")
-	sizeAllowed := false
-	var sizeErr error
-	for _, s := range opts.AllowedSizes {
-		if services.NormalizeSizeKey(s.Key) == requestedSize {
-			if !s.Allowed {
-				sizeErr = assert.AnError // would produce an error
-			}
-			sizeAllowed = true
-			break
-		}
-	}
-
-	assert.True(t, sizeAllowed, "M should be found in the catalog")
-	assert.Nil(t, sizeErr, "M should pass validation — no error from plan check")
-}
-
-func TestSessionOptions_MinSizeAndPlanCombined(t *testing.T) {
-	// Distro min_size=S + plan allows only XS, S, M
-	// XS: excluded (below min_size), S/M: allowed, L/XL: denied by plan_limit
-	plan := &paymentModels.SubscriptionPlan{
-		AllowedMachineSizes: []string{"XS", "S", "M"},
-	}
+// TestSessionOptions_MinSize_DistroExcludesBelowFloor — the distro's
+// MinSizeKey is now the only size gate at read time. Sizes below the
+// floor are dropped from AllowedSizes entirely; everything at or above
+// is admitted (the budget engine handles per-launch limits).
+func TestSessionOptions_MinSize_DistroExcludesBelowFloor(t *testing.T) {
+	plan := &paymentModels.SubscriptionPlan{}
 	distro := baseDistro()
 	distro.MinSizeKey = "S"
 	sizes := baseSizes()
@@ -454,22 +296,14 @@ func TestSessionOptions_MinSizeAndPlanCombined(t *testing.T) {
 
 	opts := services.ComputeSessionOptions(distro, sizes, features, plan)
 
-	// XS should be excluded entirely (not present in AllowedSizes)
 	sizeKeys := make([]string, 0, len(opts.AllowedSizes))
 	for _, s := range opts.AllowedSizes {
 		sizeKeys = append(sizeKeys, s.Key)
 	}
-	assert.NotContains(t, sizeKeys, "XS", "XS should not be present in AllowedSizes at all")
+	assert.NotContains(t, sizeKeys, "XS", "XS should be excluded by distro min_size")
 
-	// S/M allowed, L/XL denied by plan_limit
 	for _, s := range opts.AllowedSizes {
-		switch s.Key {
-		case "S", "M":
-			assert.True(t, s.Allowed, "%s should be allowed", s.Key)
-		case "L", "XL":
-			assert.False(t, s.Allowed, "%s not in plan", s.Key)
-			assert.Equal(t, "plan_limit", s.Reason)
-		}
+		assert.True(t, s.Allowed, "%s should be admitted", s.Key)
 	}
 }
 
@@ -487,7 +321,6 @@ func TestComputeSessionOptions_ReturnsDistributionPrefix(t *testing.T) {
 	sizes := baseSizes()
 	features := baseFeatures()
 	plan := &paymentModels.SubscriptionPlan{
-		AllowedMachineSizes:  []string{"XS", "S", "M"},
 		NetworkAccessEnabled: true,
 	}
 
