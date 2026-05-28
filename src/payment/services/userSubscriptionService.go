@@ -205,52 +205,17 @@ func (ss *subscriptionService) IncrementUsage(userID, metricType string, increme
 }
 
 // GetUserUsageMetrics récupère toutes les métriques d'utilisation d'un utilisateur.
-// Pour concurrent_terminals, recalcule la valeur en temps réel depuis les terminaux actifs.
-// If organizationID is provided, terminal counts are scoped to that organization.
 //
-// The shape (*[]models.UsageMetrics) is preserved so existing controllers and
-// frontend consumers keep working. The live-recalc for concurrent_terminals
-// goes through QuotaService.GetUserUsage so the count rule stays expressed in
-// exactly one place.
+// The optional organizationID parameter is preserved for call-site
+// compatibility but is no longer consulted: terminal capacity is now
+// enforced exclusively by the CPU/RAM budget engine
+// (QuotaService.CheckBudget on SubscriptionPlan.MaxCPU / MaxMemoryMB),
+// which is the single authoritative quota gate. The remaining usage
+// metrics (e.g. courses_created) are not org-scoped at the storage
+// layer, so no per-org rewrite is required here.
 func (ss *subscriptionService) GetUserUsageMetrics(userID string, organizationID ...string) (*[]models.UsageMetrics, error) {
-	metrics, err := ss.repository.GetAllUserUsageMetrics(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Resolve optional org scope for live recalc. An unparseable orgID
-	// preserves the legacy "skip update" safety (no match rather than
-	// counting everything).
-	var orgPtr *uuid.UUID
-	skipUpdate := false
-	if len(organizationID) > 0 && organizationID[0] != "" {
-		parsed, parseErr := uuid.Parse(organizationID[0])
-		if parseErr != nil {
-			skipUpdate = true
-		} else {
-			orgPtr = &parsed
-		}
-	}
-
-	if skipUpdate {
-		return metrics, nil
-	}
-
-	// Delegate the live recalc to QuotaService so the slot rule stays
-	// in one place.
-	eps := NewEffectivePlanService(ss.db)
-	quotaSvc := NewQuotaService(ss.db, eps)
-
-	for i := range *metrics {
-		metric := &(*metrics)[i]
-		if metric.MetricType == "concurrent_terminals" {
-			if activeCount, usageErr := quotaSvc.GetUserUsage(userID, orgPtr, metric.MetricType); usageErr == nil {
-				metric.CurrentValue = activeCount
-			}
-		}
-	}
-
-	return metrics, nil
+	_ = organizationID // retained for API stability; see godoc above.
+	return ss.repository.GetAllUserUsageMetrics(userID)
 }
 
 // ResetMonthlyUsage remet à zéro les métriques mensuelles

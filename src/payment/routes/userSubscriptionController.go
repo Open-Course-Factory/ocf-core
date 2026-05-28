@@ -878,8 +878,8 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 	}
 
 	// Set limits from effective plan (source of truth for current org context).
-	// concurrent_terminals rows are no longer seeded — the budget engine
-	// (MaxCPU/MaxMemoryMB) is the sole authoritative cap for terminals.
+	// Terminal capacity is enforced exclusively by the CPU/RAM budget engine
+	// (MaxCPU/MaxMemoryMB on the plan) and does not appear in usage_metrics.
 	if effectiveResult != nil && effectiveResult.Plan != nil {
 		plan := effectiveResult.Plan
 		for i := range *usageMetrics {

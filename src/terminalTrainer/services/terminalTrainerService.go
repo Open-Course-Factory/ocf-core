@@ -268,9 +268,11 @@ func (tts *terminalTrainerService) GetActiveUserSessions(userID string) (*[]mode
 // tt-backend. Contrairement à l'ancien /expire, le disque est préservé pour
 // permettre un redémarrage ultérieur via StartSession.
 //
-// Le compteur concurrent_terminals n'est pas mis à jour : il est recalculé
-// en lecture par QuotaService.currentUsage via RunningDisplayScope, qui
-// exclut déjà les sessions "stopped" du décompte affiché.
+// Aucune métrique de quota n'est mise à jour ici : la capacité terminale
+// est exclusivement régie par le moteur de budget CPU/RAM
+// (QuotaService.CheckBudget), qui lit en direct via BudgetOccupyingScope.
+// Une session "stopped" persistante reste comptée tant qu'elle n'est pas
+// supprimée ; une "stopped" éphémère sort immédiatement du décompte.
 func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	utils.Debug("StopSession called for session %s", sessionID)
 
@@ -390,10 +392,11 @@ func (tts *terminalTrainerService) StartSession(sessionID string) error {
 // de tt-backend, marque la ligne locale comme "deleted" et abandonne tout
 // scenario session lié.
 //
-// La métrique concurrent_terminals n'est PAS touchée ici : depuis la sortie
-// du dual-mode, le compteur est recalculé en lecture par
-// QuotaService.currentUsage via RunningDisplayScope, donc la ligne
-// usage_metrics est en lecture seule pour ce métric.
+// Aucune métrique de quota n'est touchée : la capacité terminale est
+// exclusivement régie par le moteur de budget CPU/RAM
+// (QuotaService.CheckBudget via BudgetOccupyingScope). La ligne locale
+// passée à state="deleted" sort automatiquement de toutes les portées
+// (slot, budget) sans écriture supplémentaire.
 func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
 	utils.Debug("DeleteSession called for session %s", sessionID)
 

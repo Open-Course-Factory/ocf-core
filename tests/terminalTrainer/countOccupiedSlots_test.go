@@ -314,8 +314,8 @@ func seedTerminalWithExpiry(t *testing.T, db *gorm.DB, userID, lifecycleLabel st
 
 // TestCountUserOccupiedSlots_ExpiredByDate is the "zombie slot" regression
 // guard. A row whose status is active/stopped but whose ExpiresAt is in the
-// past must NOT be counted toward the user's concurrent_terminals quota —
-// the UI treats expires_at < NOW() as deleted, the count must agree.
+// past must NOT be counted as occupying a slot — the UI treats
+// expires_at < NOW() as deleted, the count must agree.
 //
 // Before the fix, OccupiesSlotScope filtered only on status + deleted_at,
 // so stale rows kept blocking new sessions ("30 active sessions" with zero

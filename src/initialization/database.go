@@ -130,17 +130,16 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&paymentModels.Invoice{})
 	db.AutoMigrate(&paymentModels.PaymentMethod{})
 	db.AutoMigrate(&paymentModels.UsageMetrics{})
-	// Defense-in-depth cleanup for a known drift bug: the dual-mode quota
-	// cleanup left a decrement-only path that drove
-	// `usage_metrics.current_value` negative for users who deleted sessions
-	// after the cleanup landed (one user observed -9). Commit 577336a fixed
-	// the live recompute on the read path; this migration scrubs the
-	// persisted bad rows so any code path that still reads the model field
-	// directly (e.g. the generic /usage-metrics entity endpoint) cannot
-	// serve a negative number. Must run AFTER AutoMigrate above so the
-	// `usage_metrics` table is guaranteed to exist; safe to keep running on
-	// every boot because clamping a row that's already at 0 is a no-op.
-	ClampNegativeConcurrentTerminalsUsage(db)
+	// One-shot cleanup: the legacy `concurrent_terminals` usage metric is
+	// dead infrastructure. The CPU/RAM budget engine
+	// (SubscriptionPlan.MaxCPU / MaxMemoryMB enforced by
+	// QuotaService.CheckBudget) is now the sole authoritative quota gate
+	// for terminals. The seed for this row was removed; any rows still
+	// present in usage_metrics are leftovers from previous deployments
+	// and must be scrubbed so they cannot resurface through the generic
+	// /usage-metrics entity endpoint. Idempotent — once the rows are
+	// gone, subsequent runs are no-ops.
+	DeleteOrphanConcurrentTerminalsRows(db)
 	db.AutoMigrate(&paymentModels.BillingAddress{})
 	db.AutoMigrate(&paymentModels.PlanFeature{})
 	db.AutoMigrate(&paymentModels.WebhookEvent{}) // ✅ SECURITY: Track processed webhooks in database
@@ -664,32 +663,32 @@ func dropOrphanTerminalColumns(db *gorm.DB) {
 	}
 }
 
-// ClampNegativeConcurrentTerminalsUsage clamps any `usage_metrics` row whose
-// `metric_type = 'concurrent_terminals'` and `current_value < 0` back to zero.
+// DeleteOrphanConcurrentTerminalsRows deletes any `usage_metrics` row whose
+// `metric_type = 'concurrent_terminals'`.
 //
-// Why: the dual-mode quota cleanup left a decrement-only path that drove the
-// persisted value negative for users who had deleted sessions since the
-// cleanup landed (one user observed -9). Commit 577336a switched the read
-// path to live-recompute, so the dashboard now shows the truth, but the
-// drifted rows themselves are still bad data. This is defense-in-depth: if
-// any future code path bypasses the live recalc (e.g. the generic
-// `/usage-metrics` entity endpoint returns the model's CurrentValue
-// directly), at worst it shows a stale-but-non-negative number.
+// Why: the legacy concurrent_terminals usage metric was retired when the
+// CPU/RAM budget engine (SubscriptionPlan.MaxCPU / MaxMemoryMB) became the
+// sole authoritative quota gate for terminals. The seed for this row was
+// removed from initializeUserMetrics; rows still present in existing
+// databases are leftovers from previous deployments and must be scrubbed
+// so they cannot resurface through the generic /usage-metrics entity
+// endpoint or any other code path that reads the model directly.
 //
-// Idempotent: the WHERE clause filters on `current_value < 0`, so once a row
-// is clamped to 0 the next run skips it. Safe to run on every boot.
+// We do NOT drop the column or the table — other metric types
+// (courses_created, ...) continue to use them.
+//
+// Idempotent: once the rows are gone, subsequent runs are no-ops. Safe to
+// run on every boot.
 //
 // Exported so tests in `tests/payment/` can drive it directly.
-func ClampNegativeConcurrentTerminalsUsage(db *gorm.DB) {
-	result := db.Exec(`UPDATE usage_metrics
-		SET current_value = 0
-		WHERE metric_type = 'concurrent_terminals' AND current_value < 0`)
+func DeleteOrphanConcurrentTerminalsRows(db *gorm.DB) {
+	result := db.Exec(`DELETE FROM usage_metrics WHERE metric_type = 'concurrent_terminals'`)
 	if result.Error != nil {
-		log.Printf("[MIGRATION] failed to clamp drifted concurrent_terminals rows: %v", result.Error)
+		log.Printf("[MIGRATION] failed to delete orphan concurrent_terminals rows: %v", result.Error)
 		return
 	}
 	if n := result.RowsAffected; n > 0 {
-		log.Printf("[MIGRATION] clamped %d drifted concurrent_terminals rows to zero", n)
+		log.Printf("[MIGRATION] deleted %d orphan concurrent_terminals rows from usage_metrics", n)
 	}
 }
 

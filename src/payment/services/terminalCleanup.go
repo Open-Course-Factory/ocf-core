@@ -23,14 +23,14 @@ import (
 // caused permanent data loss after the stop→delete change).
 //
 // Semantics: "Terminate" releases the resources — a terminated subscription must not
-// continue to consume quota slots. Per the SSOT consolidation in MR !218
-// (models.OccupiesSlotScope counts state IN ('running','stopped')), "stopped" terminals
-// still occupy a slot. To actually free the slot, we mark them State="deleted" —
-// matching the canonical lifecycle delete in terminalTrainerService.DeleteSession.
-// Because deleted rows are excluded by OccupiesSlotScope, the stored
-// concurrent_terminals counter no longer needs explicit decrementing — the
-// real-time counter (models.CountUserOccupiedSlots) reports the correct value
-// directly.
+// continue to consume quota. Per the SSOT consolidation in MR !218
+// (models.OccupiesSlotScope counts state IN ('running','stopped')), "stopped"
+// terminals still occupy a slot. To actually free both the slot and the
+// CPU/RAM budget, we mark them State="deleted" — matching the canonical
+// lifecycle delete in terminalTrainerService.DeleteSession. Deleted rows
+// are excluded by both OccupiesSlotScope and BudgetOccupyingScope, so the
+// live counters (models.CountUserOccupiedSlots, QuotaService.CheckBudget)
+// reflect the new state without any further bookkeeping.
 //
 // Note: this only updates the DB lifecycle fields — it does NOT call the tt-backend API
 // to delete the actual Incus containers. Container cleanup is handled by tt-backend's own

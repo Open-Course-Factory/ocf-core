@@ -111,7 +111,7 @@ func TestUsageMetricsReset_MemberCannotCallReset(t *testing.T) {
 func TestUsageMetricsIncrement_MemberCannotCallIncrement(t *testing.T) {
 	router := setupUsageMetricsRealRouter(t, "member")
 
-	body := `{"metric_type":"concurrent_terminals","increment":1}`
+	body := `{"metric_type":"courses_created","increment":1}`
 	req := httptest.NewRequest("POST", "/api/v1/usage-metrics/increment",
 		bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -147,7 +147,7 @@ func TestUsageMetricsReset_AdminCanCallReset(t *testing.T) {
 func TestUsageMetricsIncrement_AdminCanCallIncrement(t *testing.T) {
 	router := setupUsageMetricsDirectRouter(t, "administrator")
 
-	body := `{"metric_type":"concurrent_terminals","increment":1}`
+	body := `{"metric_type":"courses_created","increment":1}`
 	req := httptest.NewRequest("POST", "/api/v1/usage-metrics/increment",
 		bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -197,7 +197,7 @@ func TestUsageMetricsReset_AdminCanTargetSpecificUser(t *testing.T) {
 func TestUsageMetricsIncrement_AdminCanTargetSpecificUser(t *testing.T) {
 	router := setupUsageMetricsDirectRouter(t, "administrator")
 
-	body := `{"metric_type":"concurrent_terminals","increment":1}`
+	body := `{"metric_type":"courses_created","increment":1}`
 	req := httptest.NewRequest("POST", "/api/v1/usage-metrics/increment?user_id=target-user",
 		bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")

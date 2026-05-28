@@ -44,11 +44,6 @@ type QuotaService interface {
 	// organization. Used by GET /organizations/:id/usage-limits.
 	GetOrgQuota(orgID uuid.UUID) (*OrganizationLimits, error)
 
-	// GetUserUsage returns the live current usage for a metric. For
-	// concurrent_terminals this is a live count via the SSOT slot helper;
-	// for other metrics it falls back to the stored usage_metrics row.
-	GetUserUsage(userID string, orgID *uuid.UUID, metric string) (int64, error)
-
 	// CheckBudget evaluates whether a session of the requested CPU/RAM cost
 	// fits within the user's (or org's) effective plan.
 	//
@@ -236,56 +231,18 @@ func (s *quotaService) GetOrgQuota(orgID uuid.UUID) (*OrganizationLimits, error)
 	}, nil
 }
 
-// GetUserUsage returns the live usage for a metric. The dispatcher
-// lives in currentUsage so that new metric types can be added in one
-// place.
-func (s *quotaService) GetUserUsage(userID string, orgID *uuid.UUID, metric string) (int64, error) {
-	return s.currentUsage(userID, orgID, metric)
-}
-
-// currentUsage centralizes the per-metric strategy for reading the
-// current value.
+// currentUsage reads the persisted usage_metrics row for a user/metric.
+// Returns 0 when no row exists (not an error — a first-time user has
+// no metrics yet).
 //
-// For concurrent_terminals the count is live-recomputed via the SSOT
-// terminalModels.BudgetOccupyingScope so the dashboard "Actifs" badge
-// reports exactly what the budget gate counts — a stopped persistent
-// session keeps its capacity reserved (D6) and must therefore appear in
-// both numbers, while a stopped ephemeral session is gone on both sides.
-// The dashboard count and the budget gate cannot drift apart because
-// they read through the same scope. The stored usage_metrics row is
-// ignored for this metric (read-only after the dual-mode cleanup) so
-// any past write-time drift cannot surface as a negative "Actifs".
-//
-// All other metrics fall back to the stored usage_metrics row.
+// Terminal capacity is NOT routed through here: the CPU/RAM budget engine
+// (CheckBudget on SubscriptionPlan.MaxCPU / MaxMemoryMB, fed by
+// sumActiveResources*) is the sole authoritative quota gate for terminals.
+// The metric dispatcher only serves the remaining numeric metrics
+// (courses_created, concurrent_users, ...).
 func (s *quotaService) currentUsage(userID string, orgID *uuid.UUID, metric string) (int64, error) {
-	if metric == "concurrent_terminals" {
-		return s.liveBudgetOccupyingTerminals(userID, orgID)
-	}
+	_ = orgID // org-scoped usage rows do not exist for the remaining metrics.
 	return s.storedUsage(userID, metric), nil
-}
-
-// liveBudgetOccupyingTerminals counts terminals currently occupying
-// budget for a user (or for an org, when orgID is non-nil) using the
-// canonical terminalModels.BudgetOccupyingScope. The scope already
-// excludes deleted rows, past-expiry zombies, and stopped ephemeral
-// rows — keeping the predicate expressed in exactly one place (SSOT).
-//
-// This is the dashboard side of the budget predicate. The budget gate
-// (CheckBudget → sumActiveResources*) uses the same scope, so the two
-// numbers can never diverge.
-func (s *quotaService) liveBudgetOccupyingTerminals(userID string, orgID *uuid.UUID) (int64, error) {
-	q := s.db.Table("terminals").Scopes(terminalModels.BudgetOccupyingScope)
-	if orgID != nil {
-		q = q.Where("terminals.organization_id = ?", orgID)
-	} else {
-		q = q.Where("terminals.user_id = ?", userID)
-	}
-	var count int64
-	if err := q.Count(&count).Error; err != nil {
-		utils.Error("liveBudgetOccupyingTerminals failed for user %s: %v", userID, err)
-		return 0, err
-	}
-	return count, nil
 }
 
 // storedUsage reads the persisted usage_metrics row for a user/metric.
@@ -527,8 +484,8 @@ func (s *quotaService) GetBudgetUsage(userID string, orgID *uuid.UUID) (int, int
 // rationale (design decision D6) and for why this predicate differs
 // from OccupiesSlotScope and RunningDisplayScope.
 //
-// The dashboard "Actifs" counter (liveBudgetOccupyingTerminals) reads
-// through the same scope, so the budget gate and the dashboard count
+// This is the same scope used to derive remaining capacity for size
+// catalogs, so the budget gate and any downstream "remaining" surface
 // cannot drift apart.
 //
 // orgID:

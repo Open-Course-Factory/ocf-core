@@ -9,15 +9,23 @@ import (
 )
 
 // TerminalStatesOccupyingSlot are the state values that count toward
-// the concurrent_terminals limit. Stopped sessions still occupy a slot
-// because they preserve disk and can be resumed — only deleted (or
-// other terminal-state) rows free a slot.
+// the "occupies a slot" predicate used by the org dashboard and other
+// listing surfaces. Stopped sessions still occupy a slot because they
+// preserve disk and can be resumed — only deleted (or other
+// terminal-state) rows free a slot.
 var TerminalStatesOccupyingSlot = []string{"running", "stopped"}
 
-// OccupiesSlotScope is a GORM scope that filters terminals counted
-// against the concurrent_terminals quota. Single source of truth for
-// the "occupies a slot" rule — every counter / quota query must use
-// this scope so the rule stays expressed in exactly one place.
+// OccupiesSlotScope is a GORM scope that filters terminals which still
+// occupy a "slot" — i.e. their disk and identity are reserved.
+// Single source of truth for the "occupies a slot" rule — every
+// listing / counting query that needs this predicate must use this
+// scope so the rule stays expressed in exactly one place.
+//
+// Note: this is NOT the budget-accounting predicate. CPU/RAM budget
+// enforcement uses BudgetOccupyingScope (see below). The slot scope is
+// broader (counts stopped ephemeral sessions too) and is retained for
+// the org dashboard, scenario listings, and similar surfaces that
+// want to show "everything the user still owns".
 //
 // The canonical rule is:
 //
@@ -100,9 +108,8 @@ func RunningDisplayScope(tx *gorm.DB) *gorm.DB {
 // BudgetOccupyingScope is a GORM scope that filters terminals whose
 // CPU/RAM is currently reserved against the user's (or org's) budget.
 // Single source of truth for the "occupies budget RIGHT NOW" rule —
-// both the budget gate (CheckBudget via sumActiveResources*) and the
-// dashboard live-recalc for the concurrent_terminals metric must route
-// through this scope so the rule stays expressed in exactly one place.
+// the budget gate (CheckBudget via sumActiveResources*) routes through
+// this scope so the rule stays expressed in exactly one place.
 //
 // The canonical rule is:
 //
@@ -119,9 +126,9 @@ func RunningDisplayScope(tx *gorm.DB) *gorm.DB {
 // Set membership vs. the two sibling scopes:
 //
 //   - OccupiesSlotScope (state IN ('running','stopped')) counts EVERY
-//     stopped session — including ephemeral stopped — against the
-//     legacy concurrent_terminals slot rule. That rule predates the
-//     CPU/RAM budget and is broader than what budget enforcement needs:
+//     stopped session — including ephemeral stopped — for the broader
+//     "this row still owns a slot" sense used by listing surfaces.
+//     That predicate is broader than what budget enforcement needs:
 //     a stopped ephemeral has no resume path, so its CPU/RAM is freed,
 //     but it still "occupies a slot" in the slot-count sense.
 //   - RunningDisplayScope (state = 'running') is the "alive RIGHT NOW"
@@ -148,7 +155,7 @@ func RunningDisplayScope(tx *gorm.DB) *gorm.DB {
 //	    Where("terminals.user_id = ?", userID).Count(&count)
 //
 // See: src/payment/services/quotaService.go::sumActiveResourcesForUser,
-// sumActiveResourcesForOrg, and liveBudgetOccupyingTerminals.
+// sumActiveResourcesForOrg.
 func BudgetOccupyingScope(tx *gorm.DB) *gorm.DB {
 	return tx.Where(
 		"terminals.deleted_at IS NULL AND terminals.expires_at > ? AND (terminals.state = ? OR terminals.persistence_mode = ?)",
@@ -157,10 +164,10 @@ func BudgetOccupyingScope(tx *gorm.DB) *gorm.DB {
 }
 
 // CountUserOccupiedSlots returns the number of terminals owned by the
-// user that count against their concurrent_terminals quota. If orgID
-// is nil, counts all terminals across all orgs (and personal). If
-// orgID is non-nil, counts only terminals tied to that org context
-// via the direct terminals.organization_id column.
+// user that still "occupy a slot" (running or stopped, not expired,
+// not deleted). If orgID is nil, counts all terminals across all orgs
+// (and personal). If orgID is non-nil, counts only terminals tied to
+// that org context via the direct terminals.organization_id column.
 //
 // Single source of truth for "how many slots is this user using?".
 // Always uses OccupiesSlotScope — callers must never write their own
@@ -175,8 +182,8 @@ func CountUserOccupiedSlots(db *gorm.DB, userID string, orgID *uuid.UUID) (int64
 }
 
 // CountOrgOccupiedSlots returns the number of terminals owned by any
-// member of the org (joined via organization_members) that count
-// against the org's concurrent_terminals quota.
+// member of the org (joined via organization_members) that still
+// "occupy a slot" — used by org dashboards and listing surfaces.
 //
 // Single source of truth for "how many slots is this org using?".
 // Always uses OccupiesSlotScope. Mirrors the join shape used by
