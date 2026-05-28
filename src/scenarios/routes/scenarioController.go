@@ -2203,10 +2203,17 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 	if orgID != nil {
 		composedInput.OrganizationID = orgID.String()
 	}
-	// Scenarios with crash_traps must run ephemeral: the trap mechanics rely on
-	// container destruction, so persistence would defeat the design.
+	// Persistence resolution:
+	//   - CrashTraps scenarios force ephemeral (trap mechanics rely on
+	//     container destruction; persistence would defeat the design).
+	//   - Otherwise, opt into persistent when the user's plan allows it so
+	//     learners can pause/resume across sessions. Plans without
+	//     DataPersistenceEnabled fall through to the empty-default
+	//     ("ephemeral") in resolvePersistenceMode.
 	if terminalServices.ScenarioForcesEphemeral(scenario.CrashTraps) {
 		composedInput.PersistenceMode = "ephemeral"
+	} else if plan != nil && plan.DataPersistenceEnabled {
+		composedInput.PersistenceMode = "persistent"
 	}
 
 	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, plan)
