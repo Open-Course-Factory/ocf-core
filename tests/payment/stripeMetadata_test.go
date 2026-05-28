@@ -18,15 +18,16 @@ import (
 )
 
 func TestStripeMetadata_WriteBudgetPlan_EmitsCPUAndMemoryKeys(t *testing.T) {
+	// MaxCPU is in millicores (mCPU): 8000 mCPU = 8 vCPU.
 	plan := &models.SubscriptionPlan{
 		Name:        "Budget Pro",
-		MaxCPU:      8,
+		MaxCPU:      8000,
 		MaxMemoryMB: 4096,
 	}
 
 	metadata := services.BuildPlanProductMetadata(plan)
 
-	assert.Equal(t, "8", metadata["max_cpu"], "max_cpu must be the stringified MaxCPU value")
+	assert.Equal(t, "8000", metadata["max_cpu"], "max_cpu must be the stringified MaxCPU value (mCPU)")
 	assert.Equal(t, "4096", metadata["max_memory_mb"], "max_memory_mb must be the stringified MaxMemoryMB value")
 	assert.NotEmpty(t, metadata["plan_id"], "plan_id must be emitted so importers can reconcile")
 }
@@ -41,14 +42,15 @@ func TestStripeMetadata_WriteZeroBudget_EmitsZeros(t *testing.T) {
 }
 
 func TestStripeMetadata_ReadBudgetMetadata_ParsesCPUAndMemory(t *testing.T) {
+	// max_cpu is stored as stringified mCPU (1000 mCPU = 1 vCPU).
 	metadata := map[string]string{
-		"max_cpu":       "8",
+		"max_cpu":       "8000",
 		"max_memory_mb": "4096",
 	}
 
 	parsed := services.ParsePlanProductMetadata(metadata)
 
-	assert.Equal(t, 8, parsed.MaxCPU)
+	assert.Equal(t, 8000, parsed.MaxCPU)
 	assert.Equal(t, 4096, parsed.MaxMemoryMB)
 }
 

@@ -118,7 +118,7 @@ func TestBulkCreateTerminals_InsufficientRAM_Refused(t *testing.T) {
 	plan := &paymentModels.SubscriptionPlan{
 		Name:                      "BulkRAMTestPlan",
 		IsActive:                  true,
-		MaxCPU:                    100,
+		MaxCPU:                    100000, // 100 vCPU in mCPU
 		MaxMemoryMB:               51200,
 		MaxSessionDurationMinutes: 60,
 	}

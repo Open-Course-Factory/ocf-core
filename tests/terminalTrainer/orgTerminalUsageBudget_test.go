@@ -37,7 +37,7 @@ func TestOrgTerminalUsage_BudgetMode_IncludesQuotaAndRemainingBySize(t *testing.
 
 	plan := &paymentModels.SubscriptionPlan{
 		Name:        "BudgetPro",
-		MaxCPU:      8,
+		MaxCPU:      8000, // 8 vCPU in mCPU
 		MaxMemoryMB: 4096,
 		IsActive:    true,
 		IsCatalog:   true,
@@ -58,10 +58,10 @@ func TestOrgTerminalUsage_BudgetMode_IncludesQuotaAndRemainingBySize(t *testing.
 	}
 	require.NoError(t, db.Create(orgSub).Error)
 
-	// Student has a running M (2c/1g). The hook would denormalise size_cpu
-	// / size_memory_mb on insert; here we set them directly so the budget
-	// sum picks them up.
-	insertExistingTerminal(t, db, "student1", &org.ID, "running", "ephemeral", 2, 1024)
+	// Student has a running M (2000 mCPU / 1g). The hook would denormalise
+	// size_cpu / size_memory_mb on insert; here we set them directly so
+	// the budget sum picks them up.
+	insertExistingTerminal(t, db, "student1", &org.ID, "running", "ephemeral", 2000, 1024)
 
 	ctrl := terminalController.NewTerminalController(db)
 	gin.SetMode(gin.TestMode)
@@ -82,14 +82,15 @@ func TestOrgTerminalUsage_BudgetMode_IncludesQuotaAndRemainingBySize(t *testing.
 	var resp map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
-	// Top-level quota envelope.
+	// Top-level quota envelope. Values are in mCPU (frontend converts to
+	// fractional vCPU for display).
 	quota, ok := resp["quota"].(map[string]interface{})
 	require.True(t, ok, "quota envelope must be present in budget mode")
-	assert.Equal(t, float64(8), quota["max_cpu"])
+	assert.Equal(t, float64(8000), quota["max_cpu"])
 	assert.Equal(t, float64(4096), quota["max_memory_mb"])
-	assert.Equal(t, float64(2), quota["used_cpu"])
+	assert.Equal(t, float64(2000), quota["used_cpu"])
 	assert.Equal(t, float64(1024), quota["used_memory_mb"])
-	assert.Equal(t, float64(6), quota["remaining_cpu"])
+	assert.Equal(t, float64(6000), quota["remaining_cpu"])
 	assert.Equal(t, float64(3072), quota["remaining_memory_mb"])
 	assert.Equal(t, "organization", quota["scope"])
 
@@ -100,13 +101,13 @@ func TestOrgTerminalUsage_BudgetMode_IncludesQuotaAndRemainingBySize(t *testing.
 	first := bySize[0].(map[string]interface{})
 	assert.Equal(t, "xl", first["key"], "largest size must come first")
 
-	// Per-user CPU/RAM.
+	// Per-user CPU/RAM (mCPU + MiB).
 	users, ok := resp["users"].([]interface{})
 	require.True(t, ok)
 	require.Equal(t, 1, len(users))
 	student := users[0].(map[string]interface{})
 	assert.Equal(t, "student1", student["user_id"])
-	assert.Equal(t, float64(2), student["active_cpu"])
+	assert.Equal(t, float64(2000), student["active_cpu"])
 	assert.Equal(t, float64(1024), student["active_memory_mb"])
 }
 

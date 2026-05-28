@@ -56,6 +56,7 @@ func reinitSizeCase(t *testing.T, softDeleteFirst bool) {
 	sessionID := "sess-reinit-" + uuid.New().String()
 
 	// Seed an existing M-sized Terminal with the denorm columns populated.
+	// SizeCPU is in millicores (mCPU): M = 2000.
 	original := &models.Terminal{
 		SessionID:         sessionID,
 		UserID:            "u-reinit",
@@ -66,7 +67,7 @@ func reinitSizeCase(t *testing.T, softDeleteFirst bool) {
 		MachineSize:       "M",
 		Backend:           "incus-test",
 		UserTerminalKeyID: userKey.ID,
-		SizeCPU:           2,
+		SizeCPU:           2000,
 		SizeMemoryMB:      1024,
 	}
 	require.NoError(t, repo.CreateTerminalSession(original))
@@ -75,9 +76,9 @@ func reinitSizeCase(t *testing.T, softDeleteFirst bool) {
 		require.NoError(t, repo.DeleteTerminalSession(sessionID))
 	}
 
-	// Reinit at size L. The production write path receives a NEW Terminal
-	// pointer with the L denorm — exactly what StartComposedSession does
-	// after the hook snapshots from the catalog.
+	// Reinit at size L (4000 mCPU). The production write path receives a
+	// NEW Terminal pointer with the L denorm — exactly what
+	// StartComposedSession does after the hook snapshots from the catalog.
 	reinit := &models.Terminal{
 		SessionID:         sessionID,
 		UserID:            "u-reinit",
@@ -88,7 +89,7 @@ func reinitSizeCase(t *testing.T, softDeleteFirst bool) {
 		MachineSize:       "L",
 		Backend:           "incus-test",
 		UserTerminalKeyID: userKey.ID,
-		SizeCPU:           4,
+		SizeCPU:           4000,
 		SizeMemoryMB:      2048,
 	}
 	require.NoError(t, repo.CreateTerminalSession(reinit))
@@ -96,7 +97,7 @@ func reinitSizeCase(t *testing.T, softDeleteFirst bool) {
 	// Read back from canonical state (unscoped to catch a botched restore).
 	var got models.Terminal
 	require.NoError(t, db.Unscoped().Where("session_id = ?", sessionID).First(&got).Error)
-	assert.Equal(t, 4, got.SizeCPU, "size_cpu must follow MachineSize=L on reinit")
+	assert.Equal(t, 4000, got.SizeCPU, "size_cpu must follow MachineSize=L on reinit (4000 mCPU)")
 	assert.Equal(t, 2048, got.SizeMemoryMB, "size_memory_mb must follow MachineSize=L on reinit")
 }
 
@@ -143,7 +144,7 @@ func TestCreateMissingLocalSession_PopulatesSizeDenorm_KnownSize(t *testing.T) {
 
 	var got models.Terminal
 	require.NoError(t, db.Where("session_id = ?", apiSession.SessionID).First(&got).Error)
-	assert.Equal(t, 2, got.SizeCPU, "M maps to size_cpu=2 in the catalog")
+	assert.Equal(t, 2000, got.SizeCPU, "M maps to size_cpu=2000 mCPU in the catalog (2 vCPU × 1000)")
 	assert.Equal(t, 1024, got.SizeMemoryMB, "M maps to size_memory_mb=1024 in the catalog")
 }
 

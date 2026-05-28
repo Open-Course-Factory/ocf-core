@@ -446,7 +446,7 @@ func TestGetOrgTerminalUsage_PlanLimitsFromSubscription(t *testing.T) {
 
 	plan := &paymentModels.SubscriptionPlan{
 		Name:        "Pro",
-		MaxCPU:      8,
+		MaxCPU:      8000, // 8 vCPU in mCPU
 		MaxMemoryMB: 4096,
 		MaxCourses:  -1,
 		IsActive:    true,
@@ -490,7 +490,7 @@ func TestGetOrgTerminalUsage_PlanLimitsFromSubscription(t *testing.T) {
 
 	quota, ok := resp["quota"].(map[string]interface{})
 	require.True(t, ok, "response must carry budget quota envelope")
-	assert.Equal(t, float64(8), quota["max_cpu"], "quota max_cpu should come from the plan")
+	assert.Equal(t, float64(8000), quota["max_cpu"], "quota max_cpu should come from the plan in mCPU")
 	assert.Equal(t, float64(4096), quota["max_memory_mb"], "quota max_memory_mb should come from the plan")
 	assert.Equal(t, "Pro", resp["plan_name"],
 		"plan_name should match the subscription plan name")

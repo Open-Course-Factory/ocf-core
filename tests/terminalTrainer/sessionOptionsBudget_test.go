@@ -55,20 +55,21 @@ func TestSessionOptions_BudgetMode_IncludesRemainingCount(t *testing.T) {
 	plan := &paymentModels.SubscriptionPlan{
 		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:        "BudgetEnrich",
-		MaxCPU:      8,
+		MaxCPU:      8000, // 8 vCPU in mCPU
 		MaxMemoryMB: 4096,
 	}
 
 	opts := budgetSessionOptions()
 	svc.EnrichSessionOptionsBudget(opts, plan, "u-enrich", nil)
 
-	// With 8 vCPU / 4096 MiB and zero usage:
-	//   xs (1c/256MiB)  → min(8/1, 4096/256)  = 8
-	//   s  (1c/512MiB)  → min(8/1, 4096/512)  = 8
-	//   m  (2c/1024MiB) → min(8/2, 4096/1024) = 4
-	//   l  (4c/2048MiB) → min(8/4, 4096/2048) = 2
-	//   xl (4c/4096MiB) → min(8/4, 4096/4096) = 1
-	assert.Equal(t, 8, findSize(t, opts, "XS").RemainingCount)
+	// With 8000 mCPU / 4096 MiB and zero usage (sizes in mCPU):
+	//   xs (500/256MiB)   → min(8000/500,  4096/256)  = min(16, 16) = 16
+	//   s  (1000/512MiB)  → min(8000/1000, 4096/512)  = min(8, 8)   = 8
+	//   m  (2000/1024MiB) → min(8000/2000, 4096/1024) = min(4, 4)   = 4
+	//   l  (4000/2048MiB) → min(8000/4000, 4096/2048) = min(2, 2)   = 2
+	//   xl (4000/4096MiB) → min(8000/4000, 4096/4096) = min(2, 1)   = 1
+	assert.Equal(t, 16, findSize(t, opts, "XS").RemainingCount,
+		"XS at 500 mCPU under 8000 mCPU → 16 (twice the old XS=1 result)")
 	assert.Equal(t, 8, findSize(t, opts, "S").RemainingCount)
 	assert.Equal(t, 4, findSize(t, opts, "M").RemainingCount)
 	assert.Equal(t, 2, findSize(t, opts, "L").RemainingCount)
@@ -88,22 +89,22 @@ func TestSessionOptions_BudgetMode_IncludesTopLevelQuota(t *testing.T) {
 	plan := &paymentModels.SubscriptionPlan{
 		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:        "BudgetEnrichQuota",
-		MaxCPU:      4,
+		MaxCPU:      4000, // 4 vCPU in mCPU
 		MaxMemoryMB: 2048,
 	}
 
-	// Seed an M (2c/1g) so usage is non-zero.
-	insertExistingTerminal(t, db, "u-quota", nil, "running", "ephemeral", 2, 1024)
+	// Seed an M (2000 mCPU / 1g) so usage is non-zero.
+	insertExistingTerminal(t, db, "u-quota", nil, "running", "ephemeral", 2000, 1024)
 
 	opts := budgetSessionOptions()
 	svc.EnrichSessionOptionsBudget(opts, plan, "u-quota", nil)
 
 	require.NotNil(t, opts.Quota, "Quota block must be present in budget mode")
-	assert.Equal(t, 4, opts.Quota.MaxCPU)
+	assert.Equal(t, 4000, opts.Quota.MaxCPU)
 	assert.Equal(t, 2048, opts.Quota.MaxMemoryMB)
-	assert.Equal(t, 2, opts.Quota.UsedCPU)
+	assert.Equal(t, 2000, opts.Quota.UsedCPU)
 	assert.Equal(t, 1024, opts.Quota.UsedMemoryMB)
-	assert.Equal(t, 2, opts.Quota.RemainingCPU)
+	assert.Equal(t, 2000, opts.Quota.RemainingCPU)
 	assert.Equal(t, 1024, opts.Quota.RemainingMemoryMB)
 	assert.Equal(t, "user", opts.Quota.Scope, "personal context → scope=user")
 }
@@ -137,7 +138,7 @@ func TestSessionOptions_BudgetMode_OrgScope(t *testing.T) {
 	plan := &paymentModels.SubscriptionPlan{
 		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:        "OrgBudget",
-		MaxCPU:      8,
+		MaxCPU:      8000, // 8 vCPU in mCPU
 		MaxMemoryMB: 4096,
 	}
 	orgID := uuid.New()

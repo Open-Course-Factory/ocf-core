@@ -82,7 +82,7 @@ func seedPersonalPlanFor(t *testing.T, userID string, maxCPU, maxMem, maxDur int
 func TestMyTerminalUsage_EmptyState(t *testing.T) {
 	freshTestDB(t)
 	userID := "user-empty"
-	seedPersonalPlanFor(t, userID, 8, 4096, 60, "Pro")
+	seedPersonalPlanFor(t, userID, 8000, 4096, 60, "Pro")
 
 	router := mountMyUsageRouter(t, sharedTestDB, userID)
 	req := httptest.NewRequest("GET", "/terminals/my-usage", nil)
@@ -96,7 +96,7 @@ func TestMyTerminalUsage_EmptyState(t *testing.T) {
 	assert.Equal(t, "Pro", resp["plan_name"])
 	assert.Equal(t, "personal", resp["plan_source"])
 	assert.Equal(t, "", resp["plan_source_name"])
-	assert.Equal(t, float64(8), resp["max_cpu"])
+	assert.Equal(t, float64(8000), resp["max_cpu"])
 	assert.Equal(t, float64(4096), resp["max_memory_mb"])
 	assert.Equal(t, float64(60), resp["max_session_duration_minutes"])
 	assert.Equal(t, float64(0), resp["used_cpu"])
@@ -107,14 +107,15 @@ func TestMyTerminalUsage_EmptyState(t *testing.T) {
 	assert.Equal(t, 0, len(sessions))
 }
 
-// TestMyTerminalUsage_RunningEphemeral — one running ephemeral M (2c/1g).
-// Counted + listed with state=running, persistence_mode=ephemeral.
+// TestMyTerminalUsage_RunningEphemeral — one running ephemeral M
+// (2000 mCPU / 1g). Counted + listed with state=running,
+// persistence_mode=ephemeral.
 func TestMyTerminalUsage_RunningEphemeral(t *testing.T) {
 	freshTestDB(t)
 	userID := "user-running-eph"
-	seedPersonalPlanFor(t, userID, 8, 4096, 60, "Pro")
+	seedPersonalPlanFor(t, userID, 8000, 4096, 60, "Pro")
 
-	insertExistingTerminal(t, sharedTestDB, userID, nil, "running", "ephemeral", 2, 1024)
+	insertExistingTerminal(t, sharedTestDB, userID, nil, "running", "ephemeral", 2000, 1024)
 
 	router := mountMyUsageRouter(t, sharedTestDB, userID)
 	req := httptest.NewRequest("GET", "/terminals/my-usage", nil)
@@ -125,7 +126,7 @@ func TestMyTerminalUsage_RunningEphemeral(t *testing.T) {
 	var resp map[string]interface{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
-	assert.Equal(t, float64(2), resp["used_cpu"])
+	assert.Equal(t, float64(2000), resp["used_cpu"])
 	assert.Equal(t, float64(1024), resp["used_memory_mb"])
 
 	sessions, ok := resp["active_sessions"].([]interface{})
@@ -134,7 +135,7 @@ func TestMyTerminalUsage_RunningEphemeral(t *testing.T) {
 	entry := sessions[0].(map[string]interface{})
 	assert.Equal(t, "running", entry["state"])
 	assert.Equal(t, "ephemeral", entry["persistence_mode"])
-	assert.Equal(t, float64(2), entry["size_cpu"])
+	assert.Equal(t, float64(2000), entry["size_cpu"])
 	assert.Equal(t, float64(1024), entry["size_memory_mb"])
 }
 
@@ -153,9 +154,9 @@ func TestMyTerminalUsage_Stopped_CountedRegardlessOfPersistence(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			freshTestDB(t)
 			userID := "user-stopped-" + tc.mode
-			seedPersonalPlanFor(t, userID, 8, 4096, 60, "Pro")
+			seedPersonalPlanFor(t, userID, 8000, 4096, 60, "Pro")
 
-			insertExistingTerminal(t, sharedTestDB, userID, nil, "stopped", tc.mode, 4, 2048)
+			insertExistingTerminal(t, sharedTestDB, userID, nil, "stopped", tc.mode, 4000, 2048)
 
 			router := mountMyUsageRouter(t, sharedTestDB, userID)
 			req := httptest.NewRequest("GET", "/terminals/my-usage", nil)
@@ -166,7 +167,7 @@ func TestMyTerminalUsage_Stopped_CountedRegardlessOfPersistence(t *testing.T) {
 			var resp map[string]interface{}
 			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
-			assert.Equal(t, float64(4), resp["used_cpu"],
+			assert.Equal(t, float64(4000), resp["used_cpu"],
 				"stopped %s reserves CPU under OccupiesSlotScope (D6')", tc.mode)
 			assert.Equal(t, float64(2048), resp["used_memory_mb"])
 
@@ -186,10 +187,10 @@ func TestMyTerminalUsage_Stopped_CountedRegardlessOfPersistence(t *testing.T) {
 func TestMyTerminalUsage_ExpiredZombie_Excluded(t *testing.T) {
 	freshTestDB(t)
 	userID := "user-zombie"
-	seedPersonalPlanFor(t, userID, 8, 4096, 60, "Pro")
+	seedPersonalPlanFor(t, userID, 8000, 4096, 60, "Pro")
 
 	insertExistingTerminalWithExpiry(t, sharedTestDB, userID, nil,
-		"running", "persistent", 4, 2048, time.Now().Add(-1*time.Hour))
+		"running", "persistent", 4000, 2048, time.Now().Add(-1*time.Hour))
 
 	router := mountMyUsageRouter(t, sharedTestDB, userID)
 	req := httptest.NewRequest("GET", "/terminals/my-usage", nil)
@@ -214,7 +215,7 @@ func TestMyTerminalUsage_OrgContext(t *testing.T) {
 	memberID := "org-member-1"
 	// Seed a personal plan for the calling user so the org-context path can
 	// be exercised distinctly — used to assert that the org plan supersedes.
-	seedPersonalPlanFor(t, ownerID, 2, 1024, 30, "PersonalSolo")
+	seedPersonalPlanFor(t, ownerID, 2000, 1024, 30, "PersonalSolo")
 
 	// Build org + members.
 	org := createTestOrgForHistory(t, sharedTestDB, ownerID)
@@ -224,7 +225,7 @@ func TestMyTerminalUsage_OrgContext(t *testing.T) {
 	// Org-level plan (richer than the personal one).
 	orgPlan := &paymentModels.SubscriptionPlan{
 		Name:                      "OrgPro",
-		MaxCPU:                    16,
+		MaxCPU:                    16000, // 16 vCPU in mCPU
 		MaxMemoryMB:                16384,
 		MaxSessionDurationMinutes: 120,
 		IsActive:                  true,
@@ -244,8 +245,8 @@ func TestMyTerminalUsage_OrgContext(t *testing.T) {
 	// Two terminals — one per org member — both tied to the org via the
 	// terminals.organization_id column. The org-context sum is built by
 	// joining through organization_members (mirrors sumActiveResourcesForOrg).
-	insertExistingTerminal(t, sharedTestDB, ownerID, &org.ID, "running", "ephemeral", 2, 1024)
-	insertExistingTerminal(t, sharedTestDB, memberID, &org.ID, "stopped", "persistent", 4, 2048)
+	insertExistingTerminal(t, sharedTestDB, ownerID, &org.ID, "running", "ephemeral", 2000, 1024)
+	insertExistingTerminal(t, sharedTestDB, memberID, &org.ID, "stopped", "persistent", 4000, 2048)
 
 	ctrl := terminalController.NewTerminalController(sharedTestDB)
 	gin.SetMode(gin.TestMode)
@@ -270,12 +271,12 @@ func TestMyTerminalUsage_OrgContext(t *testing.T) {
 	assert.Equal(t, "OrgPro", resp["plan_name"], "org plan must supersede personal")
 	assert.Equal(t, "organization", resp["plan_source"])
 	assert.Equal(t, org.Name, resp["plan_source_name"])
-	assert.Equal(t, float64(16), resp["max_cpu"])
+	assert.Equal(t, float64(16000), resp["max_cpu"])
 	assert.Equal(t, float64(16384), resp["max_memory_mb"])
 	assert.Equal(t, float64(120), resp["max_session_duration_minutes"])
 
-	// 2 + 4 CPU = 6; 1024 + 2048 = 3072.
-	assert.Equal(t, float64(6), resp["used_cpu"],
-		"org context must sum across all org members (owner + member)")
+	// 2000 + 4000 mCPU = 6000; 1024 + 2048 = 3072.
+	assert.Equal(t, float64(6000), resp["used_cpu"],
+		"org context must sum across all org members (owner + member) in mCPU")
 	assert.Equal(t, float64(3072), resp["used_memory_mb"])
 }

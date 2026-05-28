@@ -60,7 +60,7 @@ func createTestPlanAndSubscription(t *testing.T, db *gorm.DB, userID string) *pa
 	plan := &paymentModels.SubscriptionPlan{
 		Name:                      "Test Plan",
 		IsActive:                  true,
-		MaxCPU:                    20, // 5 × XL (4 vCPU)
+		MaxCPU:                    20000, // 5 × XL (4000 mCPU each)
 		MaxMemoryMB:               20480,
 		MaxSessionDurationMinutes: 60,
 	}

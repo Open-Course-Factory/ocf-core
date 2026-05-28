@@ -177,8 +177,8 @@ func TestStartComposedSession_HTTP_BudgetMode_RejectsOverBudget(t *testing.T) {
 	freshTestDB(t)
 	userID := "http-budget-overbudget-user"
 
-	// Plan: 4 CPU / 2048 MiB.
-	seedBudgetPlanForUser(t, userID, 4, 2048)
+	// Plan: 4 vCPU / 2048 MiB = 4000 mCPU / 2048 MiB.
+	seedBudgetPlanForUser(t, userID, 4000, 2048)
 
 	// User key — startComposedSession looks this up before posting to
 	// tt-backend. We won't reach that step in the reject path, but the
@@ -187,8 +187,8 @@ func TestStartComposedSession_HTTP_BudgetMode_RejectsOverBudget(t *testing.T) {
 	_, err := createTestUserKey(sharedTestDB, userID)
 	require.NoError(t, err)
 
-	// Pre-state: one running L (4 CPU / 2048 MiB) → budget fully spent.
-	insertExistingTerminal(t, sharedTestDB, userID, nil, "running", "ephemeral", 4, 2048)
+	// Pre-state: one running L (4000 mCPU / 2048 MiB) → budget fully spent.
+	insertExistingTerminal(t, sharedTestDB, userID, nil, "running", "ephemeral", 4000, 2048)
 
 	// NewTerminalTrainerService wires the real QuotaService internally.
 	// No mocking: the budget check runs against the real DB state seeded above.
@@ -235,7 +235,7 @@ func TestStartComposedSession_HTTP_BudgetMode_AllowsWithinBudget(t *testing.T) {
 	freshTestDB(t)
 	userID := "http-budget-happy-user"
 
-	seedBudgetPlanForUser(t, userID, 8, 4096)
+	seedBudgetPlanForUser(t, userID, 8000, 4096)
 	_, err := createTestUserKey(sharedTestDB, userID)
 	require.NoError(t, err)
 
@@ -261,11 +261,12 @@ func TestStartComposedSession_HTTP_BudgetMode_AllowsWithinBudget(t *testing.T) {
 	// Verify the persisted Terminal row carries the denormalised footprint
 	// sourced from the backfill catalog (cleanup 1's SSOT). A drift here
 	// breaks the budget-sum query (which reads from these columns).
+	// XS = 500 mCPU after the unit switch.
 	var cnt int64
 	require.NoError(t, sharedTestDB.Raw(
 		`SELECT COUNT(*) FROM terminals WHERE user_id = ? AND size_cpu = ? AND size_memory_mb = ?`,
-		userID, 1, 256,
+		userID, 500, 256,
 	).Scan(&cnt).Error)
 	assert.EqualValues(t, 1, cnt,
-		"persisted Terminal must carry SizeCPU=1, SizeMemoryMB=256 from the backfill catalog (XS)")
+		"persisted Terminal must carry SizeCPU=500 (mCPU), SizeMemoryMB=256 from the backfill catalog (XS)")
 }

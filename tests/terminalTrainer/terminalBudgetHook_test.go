@@ -89,6 +89,8 @@ func (s *stubEffectivePlanService) CheckEffectiveUsageLimitFromResult(result *pa
 // MaxCPU/MaxMemoryMB of 0 means "unlimited" per the contract. The
 // trailing []string parameter is retained for call-site compatibility
 // (it used to carry AllowedMachineSizes); it is now ignored.
+//
+// maxCPU is in millicores (mCPU): 1000 mCPU = 1 vCPU.
 func budgetPlanInMem(name string, maxCPU, maxMem int, _ []string) *paymentModels.SubscriptionPlan {
 	return &paymentModels.SubscriptionPlan{
 		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
@@ -165,18 +167,18 @@ func execBeforeCreate(hook hooks.Hook, terminal *terminalModels.Terminal) error 
 
 func TestTerminalBudgetHook_BeforeCreate_PopulatesSizeFields(t *testing.T) {
 	db := freshTestDB(t)
-	plan := budgetPlanInMem("Pro", 8, 4096, nil)
+	plan := budgetPlanInMem("Pro", 8000, 4096, nil)
 	hook := newHookForTest(db, plan, nil)
 
 	terminal := &terminalModels.Terminal{
 		UserID:      "u-populates",
-		MachineSize: "m", // catalog: cpu=2, mem=1024
+		MachineSize: "m", // catalog: cpu=2000 mCPU, mem=1024
 	}
 
 	err := execBeforeCreate(hook, terminal)
 	require.NoError(t, err)
 
-	assert.Equal(t, 2, terminal.SizeCPU, "M size cpu=2 must be snapshot onto Terminal")
+	assert.Equal(t, 2000, terminal.SizeCPU, "M size cpu=2000 mCPU must be snapshot onto Terminal")
 	assert.Equal(t, 1024, terminal.SizeMemoryMB, "M size memory_mb=1024 must be snapshot onto Terminal")
 }
 
@@ -186,7 +188,7 @@ func TestTerminalBudgetHook_BeforeCreate_PopulatesSizeFields(t *testing.T) {
 
 func TestTerminalBudgetHook_BeforeCreate_AllowedWithinBudget(t *testing.T) {
 	db := freshTestDB(t)
-	plan := budgetPlanInMem("Pro", 8, 4096, nil)
+	plan := budgetPlanInMem("Pro", 8000, 4096, nil)
 	hook := newHookForTest(db, plan, nil)
 
 	terminal := &terminalModels.Terminal{
@@ -195,7 +197,7 @@ func TestTerminalBudgetHook_BeforeCreate_AllowedWithinBudget(t *testing.T) {
 	}
 
 	err := execBeforeCreate(hook, terminal)
-	require.NoError(t, err, "M (2c/1g) fits in 8c/4g budget with no existing sessions")
+	require.NoError(t, err, "M (2000 mCPU/1g) fits in 8000 mCPU/4g budget with no existing sessions")
 }
 
 // ---------------------------------------------------------------------------
@@ -204,16 +206,16 @@ func TestTerminalBudgetHook_BeforeCreate_AllowedWithinBudget(t *testing.T) {
 
 func TestTerminalBudgetHook_BeforeCreate_RejectedOverBudget_CPU(t *testing.T) {
 	db := freshTestDB(t)
-	plan := budgetPlanInMem("Tight", 4, 8192, nil) // 4c / 8g
+	plan := budgetPlanInMem("Tight", 4000, 8192, nil) // 4000 mCPU / 8g
 	hook := newHookForTest(db, plan, nil)
 
 	user := "u-overbudget-cpu"
-	// Pre-existing L (4 CPU) running → budget fully used on CPU axis.
-	insertExistingTerminal(t, db, user, nil, "running", "ephemeral", 4, 2048)
+	// Pre-existing L (4000 mCPU) running → budget fully used on CPU axis.
+	insertExistingTerminal(t, db, user, nil, "running", "ephemeral", 4000, 2048)
 
 	terminal := &terminalModels.Terminal{
 		UserID:      user,
-		MachineSize: "L", // requires 4 more CPU → reject
+		MachineSize: "L", // requires 4000 more mCPU → reject
 	}
 
 	err := execBeforeCreate(hook, terminal)
@@ -221,9 +223,9 @@ func TestTerminalBudgetHook_BeforeCreate_RejectedOverBudget_CPU(t *testing.T) {
 	var budgetErr *terminalHooks.ErrBudgetExhausted
 	require.ErrorAs(t, err, &budgetErr)
 	assert.Equal(t, terminalHooks.BudgetAxisCPU, budgetErr.Axis)
-	assert.Equal(t, 4, budgetErr.Limit)
-	assert.Equal(t, 4, budgetErr.Current)
-	assert.Equal(t, 4, budgetErr.Requested)
+	assert.Equal(t, 4000, budgetErr.Limit)
+	assert.Equal(t, 4000, budgetErr.Current)
+	assert.Equal(t, 4000, budgetErr.Requested)
 }
 
 // ---------------------------------------------------------------------------
@@ -232,12 +234,12 @@ func TestTerminalBudgetHook_BeforeCreate_RejectedOverBudget_CPU(t *testing.T) {
 
 func TestTerminalBudgetHook_BeforeCreate_RejectedOverBudget_Memory(t *testing.T) {
 	db := freshTestDB(t)
-	plan := budgetPlanInMem("RAMBound", 16, 2048, nil) // 16c / 2g
+	plan := budgetPlanInMem("RAMBound", 16000, 2048, nil) // 16000 mCPU / 2g
 	hook := newHookForTest(db, plan, nil)
 
 	user := "u-overbudget-mem"
 	// Pre-existing L (2 GiB used) running. 2g of RAM fully consumed.
-	insertExistingTerminal(t, db, user, nil, "running", "ephemeral", 4, 2048)
+	insertExistingTerminal(t, db, user, nil, "running", "ephemeral", 4000, 2048)
 
 	terminal := &terminalModels.Terminal{
 		UserID:      user,
@@ -257,13 +259,13 @@ func TestTerminalBudgetHook_BeforeCreate_RejectedOverBudget_Memory(t *testing.T)
 
 func TestTerminalBudgetHook_BeforeCreate_PersistentStoppedCounts(t *testing.T) {
 	db := freshTestDB(t)
-	plan := budgetPlanInMem("Tight", 2, 1024, nil) // 2c / 1g — exactly one M
+	plan := budgetPlanInMem("Tight", 2000, 1024, nil) // 2000 mCPU / 1g — exactly one M
 	hook := newHookForTest(db, plan, nil)
 
 	user := "u-persistent-stopped"
 	// One persistent + stopped M-size terminal already exists. By D6 it
 	// counts: full budget consumed.
-	insertExistingTerminal(t, db, user, nil, "stopped", "persistent", 2, 1024)
+	insertExistingTerminal(t, db, user, nil, "stopped", "persistent", 2000, 1024)
 
 	terminal := &terminalModels.Terminal{
 		UserID:      user,
@@ -282,14 +284,14 @@ func TestTerminalBudgetHook_BeforeCreate_PersistentStoppedCounts(t *testing.T) {
 
 func TestTerminalBudgetHook_BeforeCreate_EphemeralStoppedAlsoCounts(t *testing.T) {
 	db := freshTestDB(t)
-	plan := budgetPlanInMem("Tight", 2, 1024, nil)
+	plan := budgetPlanInMem("Tight", 2000, 1024, nil)
 	hook := newHookForTest(db, plan, nil)
 
 	user := "u-ephemeral-stopped"
 	// One ephemeral + stopped M-size terminal. Under D6' (supersedes D6),
 	// "a stop is a stop": it MUST count against the budget until sync
 	// confirms tt-backend reaped the container.
-	insertExistingTerminal(t, db, user, nil, "stopped", "ephemeral", 2, 1024)
+	insertExistingTerminal(t, db, user, nil, "stopped", "ephemeral", 2000, 1024)
 
 	terminal := &terminalModels.Terminal{
 		UserID:      user,
@@ -311,14 +313,14 @@ func TestTerminalBudgetHook_BeforeCreate_EphemeralStoppedAlsoCounts(t *testing.T
 // request fits.
 func TestTerminalBudgetHook_BeforeCreate_PastExpirySessionsDoNotCount(t *testing.T) {
 	db := freshTestDB(t)
-	plan := budgetPlanInMem("Tight", 2, 1024, nil)
+	plan := budgetPlanInMem("Tight", 2000, 1024, nil)
 	hook := newHookForTest(db, plan, nil)
 
 	user := "u-past-expiry"
 	// A persistent + running M-size terminal whose expires_at is in the past.
 	// Lifecycle (D6) says it should count, but past-expiry excludes it.
 	pastExpiry := time.Now().Add(-1 * time.Hour)
-	insertExistingTerminalWithExpiry(t, db, user, nil, "running", "persistent", 2, 1024, pastExpiry)
+	insertExistingTerminalWithExpiry(t, db, user, nil, "running", "persistent", 2000, 1024, pastExpiry)
 
 	terminal := &terminalModels.Terminal{
 		UserID:      user,
@@ -356,13 +358,13 @@ func TestTerminalBudgetHook_BeforeCreate_OrgScoped(t *testing.T) {
 		}).Error)
 	}
 
-	plan := budgetPlanInMem("Team", 3, 4096, nil) // 3 CPU total
+	plan := budgetPlanInMem("Team", 3000, 4096, nil) // 3000 mCPU total
 	hook := newHookForTest(db, nil, plan)
 
-	// 3 members each have a running S (1 CPU). Total 3/3 CPU used.
-	insertExistingTerminal(t, db, "u-org-a", &orgID, "running", "ephemeral", 1, 512)
-	insertExistingTerminal(t, db, "u-org-b", &orgID, "running", "ephemeral", 1, 512)
-	insertExistingTerminal(t, db, "u-org-c", &orgID, "running", "ephemeral", 1, 512)
+	// 3 members each have a running S (1000 mCPU). Total 3000/3000 mCPU used.
+	insertExistingTerminal(t, db, "u-org-a", &orgID, "running", "ephemeral", 1000, 512)
+	insertExistingTerminal(t, db, "u-org-b", &orgID, "running", "ephemeral", 1000, 512)
+	insertExistingTerminal(t, db, "u-org-c", &orgID, "running", "ephemeral", 1000, 512)
 
 	// 4th member requests another S → must be rejected.
 	terminal := &terminalModels.Terminal{
@@ -372,7 +374,7 @@ func TestTerminalBudgetHook_BeforeCreate_OrgScoped(t *testing.T) {
 	}
 
 	err := execBeforeCreate(hook, terminal)
-	require.Error(t, err, "org-wide sum (3 CPU) exhausts the 3-CPU team budget")
+	require.Error(t, err, "org-wide sum (3000 mCPU) exhausts the 3000-mCPU team budget")
 	var budgetErr *terminalHooks.ErrBudgetExhausted
 	require.ErrorAs(t, err, &budgetErr)
 	assert.Equal(t, terminalHooks.BudgetAxisCPU, budgetErr.Axis)
@@ -384,7 +386,7 @@ func TestTerminalBudgetHook_BeforeCreate_OrgScoped(t *testing.T) {
 
 func TestTerminalBudgetHook_BeforeCreate_UnknownSize_Error(t *testing.T) {
 	db := freshTestDB(t)
-	plan := budgetPlanInMem("Pro", 8, 4096, nil)
+	plan := budgetPlanInMem("Pro", 8000, 4096, nil)
 	hook := newHookForTest(db, plan, nil)
 
 	terminal := &terminalModels.Terminal{
@@ -410,13 +412,13 @@ func TestTerminalBudgetHook_BeforeCreate_UnlimitedBudget(t *testing.T) {
 
 	terminal := &terminalModels.Terminal{
 		UserID:      "u-unlimited",
-		MachineSize: "XL", // 4c / 4g
+		MachineSize: "XL", // 4000 mCPU / 4g
 	}
 
 	err := execBeforeCreate(hook, terminal)
 	require.NoError(t, err, "0-cap MaxCPU/MaxMemoryMB → unlimited → any size allowed")
 
-	assert.Equal(t, 4, terminal.SizeCPU)
+	assert.Equal(t, 4000, terminal.SizeCPU)
 	assert.Equal(t, 4096, terminal.SizeMemoryMB)
 }
 
@@ -444,7 +446,7 @@ func TestTerminalBudgetHook_RaceCondition_ConcurrentStarts(t *testing.T) {
 	}
 
 	db := freshTestDB(t)
-	plan := budgetPlanInMem("Race", 4, 2048, nil) // exactly one L fits
+	plan := budgetPlanInMem("Race", 4000, 2048, nil) // exactly one L fits
 	hook := newHookForTest(db, plan, nil)
 
 	user := "u-race"
@@ -464,7 +466,7 @@ func TestTerminalBudgetHook_RaceCondition_ConcurrentStarts(t *testing.T) {
 			// On success we also insert (mimics what genericService does
 			// after the BeforeCreate hook returns nil).
 			if err == nil {
-				insertExistingTerminal(t, db, user, nil, "running", "ephemeral", 4, 2048)
+				insertExistingTerminal(t, db, user, nil, "running", "ephemeral", 4000, 2048)
 			}
 			results[idx] = err
 		}(i)

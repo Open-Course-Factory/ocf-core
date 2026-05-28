@@ -93,13 +93,14 @@ func TestGetAvailableScenarios_BudgetMode_BlockReasonBudget(t *testing.T) {
 	eps := paymentServices.NewEffectivePlanService(db)
 	quotaSvc := paymentServices.NewQuotaService(db, eps)
 
-	// Plan: 4 CPU / 4096 MiB. Fully used by an existing L (4c, 2048).
-	plan := budgetTestPlanInMem(4, 4096)
-	insertExistingTerminalBudget(t, db, "u-budget-block", nil, "running", 4, 2048)
+	// Plan: 4 vCPU / 4096 MiB = 4000 mCPU / 4096 MiB. Fully used by an
+	// existing L (4000 mCPU, 2048 MiB).
+	plan := budgetTestPlanInMem(4000, 4096)
+	insertExistingTerminalBudget(t, db, "u-budget-block", nil, "running", 4000, 2048)
 
 	fits, err := quotaSvc.RemainingBudgetFits("u-budget-block", nil, plan, "L")
 	require.NoError(t, err)
-	assert.False(t, fits, "L (4c) cannot fit when remaining CPU is 0")
+	assert.False(t, fits, "L (4000 mCPU) cannot fit when remaining CPU is 0")
 }
 
 // TestGetAvailableScenarios_BudgetMode_AllowsWhenFits — budget has room
@@ -109,9 +110,9 @@ func TestGetAvailableScenarios_BudgetMode_AllowsWhenFits(t *testing.T) {
 	eps := paymentServices.NewEffectivePlanService(db)
 	quotaSvc := paymentServices.NewQuotaService(db, eps)
 
-	plan := budgetTestPlanInMem(8, 4096)
+	plan := budgetTestPlanInMem(8000, 4096)
 
 	fits, err := quotaSvc.RemainingBudgetFits("u-fits", nil, plan, "L")
 	require.NoError(t, err)
-	assert.True(t, fits, "L (4c/2g) fits in 8c/4g budget with no existing sessions")
+	assert.True(t, fits, "L (4000 mCPU/2g) fits in 8000 mCPU/4g budget with no existing sessions")
 }

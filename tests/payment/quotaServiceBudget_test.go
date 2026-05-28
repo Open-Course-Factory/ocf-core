@@ -31,6 +31,10 @@ import (
 
 // budgetPlan builds a SubscriptionPlan tuned for budget-mode tests.
 // maxCPU=0 / maxMem=0 mean unlimited per the contract.
+//
+// maxCPU is in millicores (mCPU): 1000 mCPU = 1 vCPU. Callers passing
+// integer vCPU values (legacy fixtures) must multiply by 1000.
+//
 // budgetPlan builds a plan with the given CPU/RAM caps. The trailing
 // []string parameter is retained for call-site compatibility (it used to
 // carry AllowedMachineSizes); it is now ignored.
@@ -109,14 +113,14 @@ func TestQuotaService_CheckBudget_BindingAxisCPU(t *testing.T) {
 	ensureTerminalsTable(t, db)
 	userID := "u-budget-cpu-axis"
 
-	// 4 vCPU / 8 GiB budget; no usage yet; requesting size L (4c / 2g).
-	plan := budgetPlan(t, db, "BudgetCPU", 4, 8192, nil)
+	// 4 vCPU / 8 GiB budget; no usage yet; requesting size L (4000 mCPU / 2g).
+	plan := budgetPlan(t, db, "BudgetCPU", 4000, 8192, nil)
 
-	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4000, 2048)
 
 	require.NoError(t, err)
 	require.NotNil(t, check)
-	assert.True(t, check.Allowed, "L (4c/2g) fits in a 4c/8g budget with no usage")
+	assert.True(t, check.Allowed, "L (4000mCPU/2g) fits in a 4000mCPU/8g budget with no usage")
 	assert.Equal(t, 0, check.RemainingCPU, "after this request would consume the full CPU axis")
 	assert.Equal(t, 6144, check.RemainingMemMB, "memory remaining = 8192 - 2048 = 6144 MiB")
 	assert.Empty(t, check.Reason)
@@ -127,16 +131,16 @@ func TestQuotaService_CheckBudget_BindingAxisRAM(t *testing.T) {
 	ensureTerminalsTable(t, db)
 	userID := "u-budget-ram-axis"
 
-	// 8 vCPU / 2 GiB budget; requesting size L (4c / 2g) — RAM is the
-	// binding axis.
-	plan := budgetPlan(t, db, "BudgetRAM", 8, 2048, nil)
+	// 8 vCPU / 2 GiB budget; requesting size L (4000 mCPU / 2g) — RAM is
+	// the binding axis.
+	plan := budgetPlan(t, db, "BudgetRAM", 8000, 2048, nil)
 
-	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4000, 2048)
 
 	require.NoError(t, err)
 	require.NotNil(t, check)
 	assert.True(t, check.Allowed)
-	assert.Equal(t, 4, check.RemainingCPU)
+	assert.Equal(t, 4000, check.RemainingCPU)
 	assert.Equal(t, 0, check.RemainingMemMB, "RAM is the binding axis")
 }
 
@@ -145,11 +149,12 @@ func TestQuotaService_CheckBudget_RejectsOverBudget_CPU(t *testing.T) {
 	ensureTerminalsTable(t, db)
 	userID := "u-budget-cpu-reject"
 
-	// 4 vCPU / 8 GiB budget; 4 CPU already used; request L (4c / 2g) → reject.
-	plan := budgetPlan(t, db, "BudgetCPUReject", 4, 8192, nil)
-	insertTerminal(t, db, userID, nil, "running", "ephemeral", 4, 2048)
+	// 4 vCPU / 8 GiB budget; 4000 mCPU already used; request L
+	// (4000 mCPU / 2g) → reject.
+	plan := budgetPlan(t, db, "BudgetCPUReject", 4000, 8192, nil)
+	insertTerminal(t, db, userID, nil, "running", "ephemeral", 4000, 2048)
 
-	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4000, 2048)
 
 	require.NoError(t, err)
 	require.NotNil(t, check)
@@ -162,11 +167,11 @@ func TestQuotaService_CheckBudget_RejectsOverBudget_Memory(t *testing.T) {
 	ensureTerminalsTable(t, db)
 	userID := "u-budget-mem-reject"
 
-	// 8 vCPU / 2 GiB budget; 2 GiB used; request L (4c / 2g) → reject.
-	plan := budgetPlan(t, db, "BudgetMemReject", 8, 2048, nil)
+	// 8 vCPU / 2 GiB budget; 2 GiB used; request L (4000 mCPU / 2g) → reject.
+	plan := budgetPlan(t, db, "BudgetMemReject", 8000, 2048, nil)
 	insertTerminal(t, db, userID, nil, "running", "ephemeral", 0, 2048)
 
-	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4000, 2048)
 
 	require.NoError(t, err)
 	require.NotNil(t, check)
@@ -179,19 +184,21 @@ func TestQuotaService_CheckBudget_MixedActiveSessions(t *testing.T) {
 	ensureTerminalsTable(t, db)
 	userID := "u-budget-mixed"
 
-	// Budget: 8 vCPU / 4 GiB.
-	// Used: 1 M (2c / 1024MiB) + 1 S (1c / 512MiB) = 3c / 1536MiB.
-	// Request: L (4c / 2048MiB). Remaining post-check: 5c-4c=1c, 2560-2048=512MiB → fits.
-	plan := budgetPlan(t, db, "BudgetMixed", 8, 4096, nil)
-	insertTerminal(t, db, userID, nil, "running", "ephemeral", 2, 1024)
-	insertTerminal(t, db, userID, nil, "running", "ephemeral", 1, 512)
+	// Budget: 8 vCPU / 4 GiB = 8000 mCPU / 4096 MiB.
+	// Used: 1 M (2000 mCPU / 1024MiB) + 1 S (1000 mCPU / 512MiB)
+	//       = 3000 mCPU / 1536MiB.
+	// Request: L (4000 mCPU / 2048MiB). Remaining post-check:
+	//   5000-4000=1000 mCPU, 2560-2048=512MiB → fits.
+	plan := budgetPlan(t, db, "BudgetMixed", 8000, 4096, nil)
+	insertTerminal(t, db, userID, nil, "running", "ephemeral", 2000, 1024)
+	insertTerminal(t, db, userID, nil, "running", "ephemeral", 1000, 512)
 
-	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4000, 2048)
 
 	require.NoError(t, err)
 	require.NotNil(t, check)
 	assert.True(t, check.Allowed)
-	assert.Equal(t, 1, check.RemainingCPU, "8 - (2+1) - 4 = 1")
+	assert.Equal(t, 1000, check.RemainingCPU, "8000 - (2000+1000) - 4000 = 1000")
 	assert.Equal(t, 512, check.RemainingMemMB, "4096 - (1024+512) - 2048 = 512")
 }
 
@@ -200,10 +207,11 @@ func TestQuotaService_CheckBudget_ZeroBudget_Unlimited(t *testing.T) {
 	ensureTerminalsTable(t, db)
 	userID := "u-budget-unlimited"
 
-	// MaxCPU = 0 and MaxMemoryMB = 0 → unlimited. Even XL (4c / 4g) is fine.
+	// MaxCPU = 0 and MaxMemoryMB = 0 → unlimited. Even XL (4000 mCPU / 4g)
+	// is fine.
 	plan := budgetPlan(t, db, "BudgetUnlimited", 0, 0, nil)
 
-	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 4096)
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4000, 4096)
 
 	require.NoError(t, err)
 	require.NotNil(t, check)
@@ -231,13 +239,14 @@ func TestQuotaService_CheckBudget_StoppedCountsRegardlessOfPersistence(t *testin
 			ensureTerminalsTable(t, db)
 			userID := "u-budget-stopped-" + tc.persistence
 
-			// Budget: 4 vCPU / 2 GiB. One stopped session of size M (2c / 1g)
-			// in the persistence mode under test. Request M again → 2c used,
-			// 2c remaining; an L (4c/2g) overflows and must be rejected.
-			plan := budgetPlan(t, db, "BudgetStopped-"+tc.persistence, 4, 2048, nil)
-			insertTerminal(t, db, userID, nil, "stopped", tc.persistence, 2, 1024)
+			// Budget: 4 vCPU / 2 GiB = 4000 mCPU / 2048 MiB. One stopped
+			// session of size M (2000 mCPU / 1g) in the persistence mode
+			// under test. Request L (4000 mCPU / 2g): 2000 used + 4000
+			// requested > 4000 cap → reject.
+			plan := budgetPlan(t, db, "BudgetStopped-"+tc.persistence, 4000, 2048, nil)
+			insertTerminal(t, db, userID, nil, "stopped", tc.persistence, 2000, 1024)
 
-			check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+			check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4000, 2048)
 			require.NoError(t, err)
 			require.NotNil(t, check)
 			assert.False(t, check.Allowed,
@@ -247,8 +256,8 @@ func TestQuotaService_CheckBudget_StoppedCountsRegardlessOfPersistence(t *testin
 			// /Utilisation Actuelle bars read through the same path).
 			usedCPU, usedMem, err := newQuotaSvc(t, db).GetBudgetUsage(userID, nil)
 			require.NoError(t, err)
-			assert.Equal(t, 2, usedCPU,
-				"stopped %s session must report CPU usage", tc.persistence)
+			assert.Equal(t, 2000, usedCPU,
+				"stopped %s session must report CPU usage in mCPU", tc.persistence)
 			assert.Equal(t, 1024, usedMem,
 				"stopped %s session must report memory usage", tc.persistence)
 		})
@@ -266,15 +275,15 @@ func TestQuotaService_CheckBudget_PastExpirySessionsDoNotCount(t *testing.T) {
 	ensureTerminalsTable(t, db)
 	userID := "u-budget-past-expiry"
 
-	plan := budgetPlan(t, db, "BudgetPastExpiry", 4, 2048, nil)
+	plan := budgetPlan(t, db, "BudgetPastExpiry", 4000, 2048, nil)
 
 	// A persistent terminal whose lifecycle says "should count" (state=running)
 	// but whose expires_at is in the past. The new expires_at > NOW() filter
 	// must exclude it, freeing the whole budget for the new request.
 	pastExpiry := time.Now().Add(-1 * time.Hour)
-	insertTerminalWithExpiry(t, db, userID, nil, "running", "persistent", 4, 2048, pastExpiry)
+	insertTerminalWithExpiry(t, db, userID, nil, "running", "persistent", 4000, 2048, pastExpiry)
 
-	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4000, 2048)
 
 	require.NoError(t, err)
 	require.NotNil(t, check)
@@ -282,7 +291,7 @@ func TestQuotaService_CheckBudget_PastExpirySessionsDoNotCount(t *testing.T) {
 	// After granting the request the budget is exactly consumed. The key
 	// assertion is Allowed=true: without the expires_at > NOW() clause, the
 	// zombie row would consume the budget and the request would be denied.
-	assert.Equal(t, 0, check.RemainingCPU, "after grant, CPU budget is exactly consumed (4-0-4)")
+	assert.Equal(t, 0, check.RemainingCPU, "after grant, CPU budget is exactly consumed (4000-0-4000)")
 	assert.Equal(t, 0, check.RemainingMemMB, "after grant, memory budget is exactly consumed (2048-0-2048)")
 }
 
@@ -294,9 +303,9 @@ func TestQuotaService_CheckBudget_OrgScoped(t *testing.T) {
 	user3 := "u-budget-org-3"
 
 	// Team plan with budget mode. Three users in the org; two have a running
-	// terminal of size M (2c / 1g). The third user checks budget — sums must
-	// include all three users (total 4c / 2g used).
-	teamPlan := budgetPlan(t, db, "BudgetTeam", 8, 4096, nil)
+	// terminal of size M (2000 mCPU / 1g). The third user checks budget —
+	// sums must include all three users (total 4000 mCPU / 2g used).
+	teamPlan := budgetPlan(t, db, "BudgetTeam", 8000, 4096, nil)
 	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "budget-team", owner, teamPlan, organizationModels.OrgTypeTeam)
 
 	// Add user2 + user3 as members (helper only added the owner)
@@ -318,11 +327,12 @@ func TestQuotaService_CheckBudget_OrgScoped(t *testing.T) {
 	}).Error)
 
 	// owner + user2 each have a running M-sized terminal in the org.
-	insertTerminal(t, db, owner, &teamOrg.ID, "running", "ephemeral", 2, 1024)
-	insertTerminal(t, db, user2, &teamOrg.ID, "running", "ephemeral", 2, 1024)
+	insertTerminal(t, db, owner, &teamOrg.ID, "running", "ephemeral", 2000, 1024)
+	insertTerminal(t, db, user2, &teamOrg.ID, "running", "ephemeral", 2000, 1024)
 
-	// user3 asks for an L (4c / 2g). Used = 4c / 2g; remaining = 4c / 2g; fits.
-	check, err := newQuotaSvc(t, db).CheckBudget(user3, &teamOrg.ID, teamPlan, 4, 2048)
+	// user3 asks for an L (4000 mCPU / 2g). Used = 4000 mCPU / 2g;
+	// remaining = 4000 mCPU / 2g; fits.
+	check, err := newQuotaSvc(t, db).CheckBudget(user3, &teamOrg.ID, teamPlan, 4000, 2048)
 	require.NoError(t, err)
 	require.NotNil(t, check)
 	assert.True(t, check.Allowed)
@@ -331,7 +341,7 @@ func TestQuotaService_CheckBudget_OrgScoped(t *testing.T) {
 
 	// And an XL request from user3 must be rejected — proving the org-wide
 	// sum was applied, not just user3's own (zero) usage.
-	checkOver, err := newQuotaSvc(t, db).CheckBudget(user3, &teamOrg.ID, teamPlan, 4, 4096)
+	checkOver, err := newQuotaSvc(t, db).CheckBudget(user3, &teamOrg.ID, teamPlan, 4000, 4096)
 	require.NoError(t, err)
 	require.NotNil(t, checkOver)
 	assert.False(t, checkOver.Allowed, "org-wide sum must include the other two members")
@@ -342,18 +352,18 @@ func TestQuotaService_CheckBudget_OrgScoped(t *testing.T) {
 func TestQuotaService_ComputeRemainingBySize_AllSizes(t *testing.T) {
 	db := freshTestDB(t)
 
-	// Budget: 8 vCPU / 4 GiB. Used: 2c / 1 GiB.
-	// Remaining axis: 6c / 3 GiB (= 3072 MiB).
-	// Per size:
-	//   xs (1c / 256MiB)  → min(6/1, 3072/256)  = min(6, 12) = 6
-	//   s  (1c / 512MiB)  → min(6/1, 3072/512)  = min(6, 6)  = 6
-	//   m  (2c / 1024MiB) → min(6/2, 3072/1024) = min(3, 3)  = 3
-	//   l  (4c / 2048MiB) → min(6/4, 3072/2048) = min(1, 1)  = 1
-	//   xl (4c / 4096MiB) → min(6/4, 3072/4096) = min(1, 0)  = 0
-	plan := budgetPlan(t, db, "BudgetRemainings", 8, 4096, nil)
+	// Budget: 8 vCPU / 4 GiB = 8000 mCPU / 4096 MiB. Used: 2000 mCPU /
+	// 1 GiB (1024 MiB). Remaining axis: 6000 mCPU / 3072 MiB.
+	// Per size (CPU in mCPU; floor division):
+	//   xs (500 / 256MiB)   → min(6000/500,  3072/256)  = min(12, 12) = 12
+	//   s  (1000 / 512MiB)  → min(6000/1000, 3072/512)  = min(6, 6)   = 6
+	//   m  (2000 / 1024MiB) → min(6000/2000, 3072/1024) = min(3, 3)   = 3
+	//   l  (4000 / 2048MiB) → min(6000/4000, 3072/2048) = min(1, 1)   = 1
+	//   xl (4000 / 4096MiB) → min(6000/4000, 3072/4096) = min(1, 0)   = 0
+	plan := budgetPlan(t, db, "BudgetRemainings", 8000, 4096, nil)
 	svc := newQuotaSvc(t, db)
 
-	remaining := svc.ComputeRemainingBySize(plan, 2, 1024)
+	remaining := svc.ComputeRemainingBySize(plan, 2000, 1024)
 
 	// Build a map for easy lookup
 	got := map[string]services.SizeRemaining{}
@@ -367,14 +377,16 @@ func TestQuotaService_ComputeRemainingBySize_AllSizes(t *testing.T) {
 	require.Contains(t, got, "l")
 	require.Contains(t, got, "xl")
 
-	assert.Equal(t, 6, got["xs"].RemainingCount)
+	assert.Equal(t, 12, got["xs"].RemainingCount,
+		"XS at 500 mCPU under 6000 mCPU remaining = 12 (post-switch: twice as many as the legacy XS=1 unit)")
 	assert.Equal(t, 6, got["s"].RemainingCount)
 	assert.Equal(t, 3, got["m"].RemainingCount)
 	assert.Equal(t, 1, got["l"].RemainingCount)
 	assert.Equal(t, 0, got["xl"].RemainingCount)
 
-	// Spot-check that the CPU/MemoryMB per size are correctly populated too.
-	assert.Equal(t, 4, got["l"].CPU)
+	// Spot-check that the CPU/MemoryMB per size are correctly populated
+	// too — CPU stamped in mCPU.
+	assert.Equal(t, 4000, got["l"].CPU)
 	assert.Equal(t, 2048, got["l"].MemoryMB)
 }
 
@@ -399,8 +411,9 @@ func TestQuotaService_RemainingBudgetFits_True(t *testing.T) {
 	ensureTerminalsTable(t, db)
 	userID := "u-budget-fits-true"
 
-	// 8c / 4g budget, no usage, request "m" (2c / 1g). Plenty of room.
-	plan := budgetPlan(t, db, "BudgetFitsTrue", 8, 4096, nil)
+	// 8 vCPU / 4 GiB = 8000 mCPU / 4096 MiB. No usage. Request "m"
+	// (2000 mCPU / 1g). Plenty of room.
+	plan := budgetPlan(t, db, "BudgetFitsTrue", 8000, 4096, nil)
 
 	fits, err := newQuotaSvc(t, db).RemainingBudgetFits(userID, nil, plan, "m")
 	require.NoError(t, err)
@@ -412,9 +425,10 @@ func TestQuotaService_RemainingBudgetFits_False(t *testing.T) {
 	ensureTerminalsTable(t, db)
 	userID := "u-budget-fits-false"
 
-	// 4c / 2g budget, one running M (2c / 1g), request "L" (4c / 2g). Doesn't fit.
-	plan := budgetPlan(t, db, "BudgetFitsFalse", 4, 2048, nil)
-	insertTerminal(t, db, userID, nil, "running", "ephemeral", 2, 1024)
+	// 4 vCPU / 2 GiB = 4000 mCPU / 2048 MiB. One running M
+	// (2000 mCPU / 1g). Request "L" (4000 mCPU / 2g). Doesn't fit.
+	plan := budgetPlan(t, db, "BudgetFitsFalse", 4000, 2048, nil)
+	insertTerminal(t, db, userID, nil, "running", "ephemeral", 2000, 1024)
 
 	fits, err := newQuotaSvc(t, db).RemainingBudgetFits(userID, nil, plan, "l")
 	require.NoError(t, err)
