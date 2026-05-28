@@ -1,35 +1,34 @@
 // tests/terminalTrainer/startSessionResumeRAMCheck_test.go
 //
-// Regression for a user-reported 503 on the Resume flow.
+// Regression coverage for the Resume flow's host-capacity check.
 //
-// Symptom: POST /api/v1/terminals/:id/start (Resume) returns
-//   503 "Server at capacity. Please try again later."
-// even when the user can create a brand-new session immediately
-// afterwards on the same backend.
+// Symptom of the original user-reported bug: POST /api/v1/terminals/:id/start
+// (Resume) was returning 503 "Server at capacity. Please try again later."
+// even for a tiny session, because production's CheckRAMAvailability
+// middleware read CreateComposedSessionInput.Size from the JSON body. The
+// resume frontend posts no body, so chosenSize = "" and resolveRequiredRAM
+// fell back to plan-max (LargestSize = 4 GiB / XL). A user resuming an XS
+// session got checked against 4 GiB needed, 503'd whenever host headroom
+// was below that — even though their actual session only needs 256 MiB.
 //
-// Root cause: production's POST /:id/start middleware chain calls
-// paymentMiddleware.CheckRAMAvailability(terminalService). That middleware
-// reads CreateComposedSessionInput.Size from the JSON body to size the
-// estimate. Resume sends NO body, so the middleware falls back to the
-// plan-max estimate (LargestSize). On a host whose headroom is below the
-// plan-max — i.e., the steady state of any well-utilised production host —
-// every Resume 503s, regardless of the actual size of the persisted
-// session.
+// The fix is NOT to drop the host check entirely: paused/stopped LXC
+// containers DO free their RAM (incus stop terminates processes, kernel
+// reclaims pages), so incus start re-allocates fresh RAM. A capacity
+// check on resume IS legitimate. The fix is to evaluate the check against
+// the session's PERSISTED MachineSize (set at creation, never modified),
+// not against an empty request body.
 //
-// Why CheckRAMAvailability is the wrong gate on resume:
+// Contract pinned by these tests:
 //
-//   1. The session was already counted against the user's budget at
-//      creation (D6': stopped sessions occupy a slot). The resumed
-//      footprint is deterministic — it cannot exceed what was allocated.
-//   2. tt-backend's resume handler is a state transition on an EXISTING
-//      Incus container — no new disk, no new memory allocation up front.
-//   3. The size is fixed at creation. Re-checking host capacity against
-//      a body-less fallback estimate is meaningless.
+//  1. Resume of a small (XS) session SUCCEEDS even when host can fit XS but
+//     not XL — proves we no longer fall back to the plan-max estimate.
 //
-// Contract pinned here: the Resume route MUST NOT invoke CheckRAMAvailability.
-// The other plan-validity middleware (Auth, Layer-2 ownership, InjectOrgContext,
-// InjectEffectivePlan, RequirePlan) stays — those checks are still appropriate
-// on resume.
+//  2. Resume of a large session 503s when host genuinely cannot fit it —
+//     proves we did not lose the legitimate guard against OOM.
+//
+// Implementation: the check runs inside the StartSession controller
+// (after it has loaded the Terminal row for ownership), evaluating
+// EvaluateLaunchCapacity against terminal.MachineSize.
 package terminalTrainer_tests
 
 import (
@@ -53,26 +52,26 @@ import (
 	"soli/formations/src/terminalTrainer/services"
 )
 
-// newTightRAMTTBackend stands up a fake tt-backend that mirrors the
-// minimum surface the Resume flow exercises (sessions list, sessions/{id}/start)
-// AND returns a deliberately tight /1.0/metrics response.
+// newResumeTTBackend stands up a fake tt-backend that mirrors the surface
+// the Resume flow exercises (sessions list, sessions/{id}/start), with a
+// configurable /1.0/metrics response so each test can pin a specific host
+// pressure scenario.
 //
-// The metrics shape (1.7 GB available / 83% used) is the canonical
-// "tight host" fixture from the CheckRAMAvailability unit tests: it sits
-// below the threshold for any plan-max fallback estimate, so a body-less
-// Resume request that flows through CheckRAMAvailability will 503 — which
-// is exactly the bug this regression test pins.
-func newTightRAMTTBackend(t *testing.T, sessionID string) *httptest.Server {
+//   - ramAvailableGB: the RAM headroom the fake reports.
+//   - ramPercent: the host utilisation the fake reports.
+//
+// Pair (1.0, 75) means a host with ~4 GB total RAM, 25% free, 75% used —
+// it can fit an XS (256 MiB) but cannot fit an XL (4 GiB).
+// Pair (0.04, 99) means a host effectively saturated — even XS is refused.
+func newResumeTTBackend(t *testing.T, sessionID string, ramAvailableGB, ramPercent float64) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/1.0/metrics":
-			// Tight host — pre-fix this triggers CapacityStatusCritical on
-			// the plan-max fallback path inside CheckRAMAvailability.
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"ram_available_gb": 1.7,
-				"ram_percent":      83.0,
+				"ram_available_gb": ramAvailableGB,
+				"ram_percent":      ramPercent,
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/1.0/sessions":
 			// SyncUserSessions sees the session as stopped (status=1) so
@@ -84,7 +83,7 @@ func newTightRAMTTBackend(t *testing.T, sessionID string) *httptest.Server {
 					{
 						"id":               sessionID,
 						"session_id":       sessionID,
-						"name":             "ram-check",
+						"name":             "resume-target",
 						"status":           1,
 						"expires_at":       time.Now().Add(-30 * time.Second).Unix(),
 						"created_at":       time.Now().Add(-time.Hour).Unix(),
@@ -116,13 +115,8 @@ func newTightRAMTTBackend(t *testing.T, sessionID string) *httptest.Server {
 //
 // Everything else (RequireTerminalAccessAllowStopped, InjectOrgContext,
 // InjectEffectivePlan, RequirePlan, StartSession handler) is the real
-// production middleware/handler.
-//
-// CONTRACT: this helper MUST stay in lock-step with the production route.
-// If a reviewer adds CheckRAMAvailability (or any other capacity gate)
-// back to the production /:id/start chain, this helper must mirror it —
-// and the regression test below will then turn red on the 503 it produces
-// against the tight-RAM fixture.
+// production middleware/handler — so the size-aware capacity check that
+// lives inside the StartSession controller is exercised under HTTP.
 func setupResumeRouterWithProdMiddleware(
 	t *testing.T,
 	userID string,
@@ -152,34 +146,16 @@ func setupResumeRouterWithProdMiddleware(
 	return router
 }
 
-// TestStartSession_ResumeStoppedSession_DoesNotCheckRAMAvailability pins
-// the contract the bug-fix establishes: the Resume route must NOT invoke
-// CheckRAMAvailability. The session's footprint is already counted in the
-// budget at creation; re-checking host RAM against a body-less fallback
-// estimate produces spurious 503s on hosts whose headroom is below the
-// plan-max — i.e., every realistic production host.
-//
-// The test seeds a stopped persistent terminal, hits the Resume route
-// with NO body (mirroring the production frontend), and asserts the
-// response is NOT a 503 — pre-fix, CheckRAMAvailability is on the chain
-// and the body-less fallback inside it estimates a plan-max allocation
-// against a tight-RAM tt-backend fixture and aborts with 503.
-func TestStartSession_ResumeStoppedSession_DoesNotCheckRAMAvailability(t *testing.T) {
-	sessionID := "ram-check-resume-session"
-
-	// Fake tt-backend with a tight /1.0/metrics response. Pre-fix, this is
-	// what would have made CheckRAMAvailability abort with 503; post-fix the
-	// metrics endpoint is never called because the middleware is no longer
-	// wired into the Resume chain.
-	ttSrv := newTightRAMTTBackend(t, sessionID)
-	configureTTServer(t, ttSrv.URL)
-
+// seedResumeTarget creates a stopped persistent terminal with the given
+// MachineSize so the test can exercise resume with a specific persisted
+// size. Returns the session ID to drive the HTTP request against.
+func seedResumeTarget(t *testing.T, userID string, machineSize string) string {
+	t.Helper()
 	db := freshTestDB(t)
-	userID := "ram-check-resume-user"
 
-	// Plan with a non-trivial MaxMemoryMB so the body-less fallback inside
-	// CheckRAMAvailability would estimate a LargestSize allocation — the
-	// scenario that 503s pre-fix on a tight host.
+	// Plan with a non-trivial MaxMemoryMB so the body-less request would,
+	// under the old buggy path, estimate a LargestSize (XL = 4 GiB)
+	// allocation. The fix evaluates against the persisted size instead.
 	plan := &paymentModels.SubscriptionPlan{
 		Name:                      "Formateur",
 		Priority:                  10,
@@ -203,7 +179,7 @@ func TestStartSession_ResumeStoppedSession_DoesNotCheckRAMAvailability(t *testin
 	userKey, err := createTestUserKey(db, userID)
 	require.NoError(t, err)
 
-	// Seed a stopped persistent terminal — the canonical Resume target.
+	sessionID := "resume-" + machineSize + "-session"
 	stopped := &models.Terminal{
 		SessionID:         sessionID,
 		UserID:            userID,
@@ -212,29 +188,92 @@ func TestStartSession_ResumeStoppedSession_DoesNotCheckRAMAvailability(t *testin
 		PersistenceMode:   "persistent",
 		ExpiresAt:         time.Now().Add(-time.Minute),
 		InstanceType:      "",
-		MachineSize:       "S",
+		MachineSize:       machineSize,
 		UserTerminalKeyID: userKey.ID,
 	}
 	require.NoError(t, db.Create(stopped).Error)
+	return sessionID
+}
+
+// TestStartSession_Resume_XSAllowedWhenHostFitsXS_Even_If_It_DoesNotFit_XL
+// is the regression test for the user-reported 503 bug.
+//
+// Setup: stopped persistent terminal with MachineSize="xs" (256 MiB). The
+// host reports 1 GB available / 75% used — enough room for an XS, but
+// nowhere near enough for the plan's max-size XL (4 GiB).
+//
+// Pre-fix behaviour (CheckRAMAvailability middleware on the route, body-less
+// request): chosenSize="", resolveRequiredRAM falls back to LargestSize
+// (4 GiB), check fails, 503.
+//
+// Post-fix behaviour (size-aware check using persisted MachineSize="xs"):
+// 256 MiB required vs 1 GB available, check passes, request reaches handler.
+func TestStartSession_Resume_XSAllowedWhenHostFitsXS_Even_If_It_DoesNotFit_XL(t *testing.T) {
+	userID := "resume-xs-user"
+	sessionID := seedResumeTarget(t, userID, "xs")
+
+	// 1 GB available / 75% used — fits XS (256 MiB) comfortably, cannot
+	// fit XL (4 GiB).
+	ttSrv := newResumeTTBackend(t, sessionID, 1.0, 75.0)
+	configureTTServer(t, ttSrv.URL)
 
 	realSvc := services.NewTerminalTrainerService(sharedTestDB)
 	router := setupResumeRouterWithProdMiddleware(t, userID, realSvc)
 
-	// Resume request: NO body — the production frontend posts to /:id/start
-	// without a body, which is exactly what triggers the body-less fallback
-	// inside CheckRAMAvailability.
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/terminals/"+sessionID+"/start", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	// Primary contract: no 503 from the RAM gate. The user-observable bug
-	// was a 503 from CheckRAMAvailability when its body-less fallback to
-	// plan-max ran against a host whose actual headroom was below that
-	// estimate. Removing the middleware from the Resume chain eliminates
-	// the gate; the request now reaches the StartSession handler.
 	assert.NotEqual(t, http.StatusServiceUnavailable, w.Code,
-		"Resume must not 503 because of CheckRAMAvailability — the session's "+
-			"footprint is already counted in the budget at creation. Got %d. Body: %s",
-		w.Code, w.Body.String())
+		"Resume of an XS session must not 503 just because the host can't fit "+
+			"the plan's max-size XL. The check must evaluate against the persisted "+
+			"MachineSize. Got %d. Body: %s", w.Code, w.Body.String())
+	assert.Equal(t, http.StatusOK, w.Code,
+		"Resume of an XS session on a host with 1 GB free should succeed. "+
+			"Got %d. Body: %s", w.Code, w.Body.String())
+}
+
+// TestStartSession_Resume_503sWhenHostCannotFitActualSize proves the
+// legitimate guard against OOM remains. A session resuming into a host
+// that genuinely cannot fit its persisted size must still get a 503 —
+// otherwise the host risks running out of memory when incus start
+// allocates fresh pages.
+//
+// Setup: stopped persistent terminal with MachineSize="xl" (4 GiB). Host
+// reports 0.04 GB available / 99% used — RAM saturated, even an XS is
+// refused per EvaluateLaunchCapacity's ram_full short-circuit.
+//
+// Expected: 503 with the same error shape the middleware produced, so the
+// frontend error-handling code stays bit-compatible.
+func TestStartSession_Resume_503sWhenHostCannotFitActualSize(t *testing.T) {
+	userID := "resume-xl-user"
+	sessionID := seedResumeTarget(t, userID, "xl")
+
+	// 0.04 GB available / 99% used — host is RAM-saturated. Any resume
+	// must be refused per the ram_full short-circuit in
+	// EvaluateLaunchCapacity.
+	ttSrv := newResumeTTBackend(t, sessionID, 0.04, 99.0)
+	configureTTServer(t, ttSrv.URL)
+
+	realSvc := services.NewTerminalTrainerService(sharedTestDB)
+	router := setupResumeRouterWithProdMiddleware(t, userID, realSvc)
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/terminals/"+sessionID+"/start", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, w.Code,
+		"Resume of an XL session on a saturated host (99%% RAM used, 0.04 GB "+
+			"free) must 503 — the host cannot satisfy the allocation. Got %d. "+
+			"Body: %s", w.Code, w.Body.String())
+
+	// Match the bit-compatible error shape from ramCheckMiddleware.go
+	// so frontend error handling stays uniform across the resume and
+	// create paths.
+	body := w.Body.String()
+	assert.Contains(t, body, "Server at capacity",
+		"503 body must contain the canonical 'Server at capacity' string so "+
+			"frontend error handling stays uniform. Got %q", body)
 }

@@ -495,6 +495,45 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 		return
 	}
 
+	// Resume re-allocates host RAM (Incus stop frees pages; Incus start
+	// reserves them again). Check capacity against the session's persisted
+	// MachineSize — NOT the request body, which the resume flow leaves
+	// empty. Using EvaluateLaunchCapacity here guarantees the gate produces
+	// the same answer the create path does, and avoids the body-less
+	// fallback to LargestSize that previously 503'd every Resume on a
+	// well-utilised host.
+	if planVal, exists := ctx.Get("subscription_plan"); exists && planVal != nil {
+		if plan, ok := planVal.(*paymentModels.SubscriptionPlan); ok && plan != nil {
+			metrics, metricsErr := tc.service.GetServerMetrics(true, "")
+			if metricsErr != nil {
+				// Metrics unavailable — same fail-open posture as the
+				// create path's middleware: log and continue rather than
+				// block resume on a transient tt-backend hiccup.
+				utils.Warn("Resume capacity check: failed to fetch server metrics for terminal %s: %v",
+					terminalID, metricsErr)
+			} else {
+				result := services.EvaluateLaunchCapacity(plan, terminal.MachineSize, metrics)
+				if result.Status == services.CapacityStatusCritical {
+					// Match the bit-compatible error shape from
+					// ramCheckMiddleware.go so frontend error handling is
+					// uniform across create and resume.
+					msg := "Server at capacity. Please try again later."
+					if result.Reason == "ram_full" {
+						msg = "Server at capacity: RAM fully utilized. Please try again later."
+					} else {
+						utils.Warn("Resume blocked: insufficient RAM for size=%q (%.2f GB available)",
+							terminal.MachineSize, metrics.RAMAvailableGB)
+					}
+					ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
+						ErrorCode:    http.StatusServiceUnavailable,
+						ErrorMessage: msg,
+					})
+					return
+				}
+			}
+		}
+	}
+
 	if err := tc.service.StartSession(terminal.SessionID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
