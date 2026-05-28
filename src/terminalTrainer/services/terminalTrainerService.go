@@ -271,19 +271,27 @@ func (tts *terminalTrainerService) GetActiveUserSessions(userID string) (*[]mode
 	return tts.repository.GetTerminalSessionsByUserID(userID, true)
 }
 
-// StopSession arrête une session en appelant le nouvel endpoint /stop de
-// tt-backend, puis applique la transition "stop" sur la ligne locale via
-// l'unique helper markSessionStopped.
+// StopSession arrête une session en appelant l'endpoint /stop de tt-backend.
+// Le comportement de la ligne locale dépend du PersistenceMode :
 //
-// Règle (D6', décrochée 2026-05-28, supersède D6) : "un stop est un stop".
-// On ne branche PAS sur persistence_mode. Toute session arrêtée passe en
-// state="stopped" et son expires_at est étendu à la deadline de reap de
-// tt-backend (idle_until, ou fallback plan.MaxSessionDurationMinutes).
-// Tant que la ligne est "stopped" non supprimée, OccupiesSlotScope la
-// compte dans le budget — l'utilisateur garde sa capacité réservée jusqu'à
-// ce que sync (étape 5b) constate la disparition côté tt-backend et marque
-// la ligne deleted. Le cycle est symétrique entre persistent et ephemeral
-// — leur seule différence reste UX (resume vs no-resume), pas budget.
+//   - persistent : tt-backend conserve le disque, la session est résumable.
+//     On délègue à markSessionStopped, qui passe state="stopped" et étend
+//     ExpiresAt à la fenêtre de reap réelle (idleUntil renvoyé par /stop, ou
+//     fallback plan.MaxSessionDurationMinutes). Tant que la ligne est
+//     "stopped" non supprimée, OccupiesSlotScope la compte dans le budget —
+//     l'utilisateur garde sa capacité réservée jusqu'à ce que sync (étape 5b)
+//     constate la disparition côté tt-backend et marque la ligne deleted.
+//
+//   - ephemeral (ou non renseigné) : tt-backend détruit le conteneur
+//     immédiatement, il n'y a plus rien à garder en ligne. On passe
+//     directement state="deleted" — la ligne devient une pierre tombale,
+//     ExpiresAt et IdleUntil sont laissés tels quels. Pas de passage par
+//     "stopped" : ce serait un état fantôme (aucun conteneur à reprendre).
+//     OccupiesSlotScope sort la ligne dès la transition deleted.
+//
+// Aucune métrique de quota n'est mise à jour ici : la capacité terminale
+// est exclusivement régie par le moteur de budget CPU/RAM
+// (QuotaService.CheckBudget via OccupiesSlotScope), qui lit en direct.
 func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	utils.Debug("StopSession called for session %s", sessionID)
 
@@ -299,18 +307,26 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	idleUntil, err := tts.stopSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey)
 	if err != nil {
 		// Log mais on continue : la ligne locale doit refléter l'intention
-		// même si tt-backend est temporairement injoignable. La capacité
-		// reste réservée jusqu'au prochain sync — au pire on garde un slot
-		// de plus pour quelques secondes, ce qui est préférable à
-		// l'inverse (libérer prématurément un slot que tt-backend gère
-		// toujours).
+		// même si tt-backend est temporairement injoignable. Pour une session
+		// persistante, on garde l'expires_at actuel (best-effort) ; pour une
+		// éphémère, on la marque deleted comme si la destruction avait eu lieu.
 		utils.Warn("failed to stop session in Terminal Trainer API: %v", err)
 	}
 
-	// 2. Transition unique : on délègue à markSessionStopped — même chemin
-	// que la propagation depuis sync (étape 5a). Pas de branche
-	// persistence_mode.
-	tts.markSessionStopped(terminal, idleUntil)
+	// 2. Brancher sur le mode de persistance.
+	if terminal.PersistenceMode == "persistent" {
+		// Persistent : markSessionStopped est la SSOT — même chemin que la
+		// propagation depuis sync (étape 5a) quand tt-backend signale stop.
+		tts.markSessionStopped(terminal, idleUntil)
+	} else {
+		// Ephemeral (ou mode vide / inconnu) : le conteneur n'existe plus
+		// côté tt-backend, la ligne locale doit le refléter directement —
+		// pas de transition "stopped" intermédiaire. ExpiresAt/IdleUntil sont
+		// laissés tels quels : la ligne est une pierre tombale, les filtres
+		// aval (OccupiesSlotScope) la sortent dès le state="deleted".
+		utils.Debug("Marking ephemeral session %s as deleted (container destroyed by tt-backend)", sessionID)
+		terminal.State = "deleted"
+	}
 
 	if err := tts.repository.UpdateTerminalSession(terminal); err != nil {
 		utils.Error("Failed to update session %s state: %v", sessionID, err)
