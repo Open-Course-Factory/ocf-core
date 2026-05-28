@@ -40,23 +40,30 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.POST("/:id/stop", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.StopSession)
 	// Resume a stopped session — slot-neutral state transition. The
 	// resumed session may consume paid features so the plan-validity gate
-	// applies, but no count check is needed: the budget engine already
-	// counts the persistent session against the user's CPU/RAM cap.
+	// applies, but NO capacity check is needed: the budget engine already
+	// counts the persistent session against the user's CPU/RAM cap at
+	// creation (D6': a stopped session occupies a slot), and tt-backend's
+	// resume handler is a state transition on an existing container — not
+	// a fresh allocation.
 	//
 	// What stays here:
 	//   - RequireTerminalAccessAllowStopped: Layer 2 ownership.
 	//   - InjectOrgContext / InjectEffectivePlan / RequirePlan: the resumed
 	//     session may consume paid features; the plan-validity gate still
 	//     applies.
-	//   - CheckRAMAvailability: RAM is a separate, independent gate (resume
-	//     spins the container back up; the host needs the capacity).
+	//
+	// What was removed (regression: spurious 503 on every Resume):
+	//   - CheckRAMAvailability — Resume sends no body, so the middleware
+	//     fell back to a plan-max (LargestSize) estimate. On any host whose
+	//     headroom was below that estimate (i.e. realistic production
+	//     state) every Resume 503'd, even though the session's actual
+	//     footprint had not changed since it was admitted at creation.
 	routes.POST("/:id/start",
 		middleware.AuthManagement(),
 		terminalAccessMiddleware.RequireTerminalAccessAllowStopped(),
 		paymentMiddleware.InjectOrgContext(),
 		paymentMiddleware.InjectEffectivePlan(effectivePlanService, db),
 		paymentMiddleware.RequirePlan(),
-		paymentMiddleware.CheckRAMAvailability(terminalService),
 		terminalController.StartSession,
 	)
 	// Permanently delete a session — ownership enforced via Layer 2,
