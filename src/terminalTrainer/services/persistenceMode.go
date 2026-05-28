@@ -62,6 +62,29 @@ func ScenarioForcesEphemeral(crashTraps bool) bool {
 	return crashTraps
 }
 
+// ResolveScenarioPersistenceMode is the SSOT for the persistence_mode an
+// auto-provisioned scenario session should carry into StartComposedSession.
+//
+//   - crash_traps scenarios → "ephemeral" (forced — trap mechanics rely on
+//     container destruction; persistence would defeat the design)
+//   - otherwise + plan.DataPersistenceEnabled → "persistent" (learners can
+//     pause/resume across sessions)
+//   - otherwise → "" (let resolvePersistenceMode's empty-default → ephemeral
+//     kick in, no silent downgrade for users who didn't opt into persistence)
+//
+// Callers: LaunchScenario (POST /scenario-sessions/launch) and the scenario
+// preview path. Both must go through here — see SSOT discipline note in
+// CLAUDE.md.
+func ResolveScenarioPersistenceMode(crashTraps bool, plan *paymentModels.SubscriptionPlan) string {
+	if ScenarioForcesEphemeral(crashTraps) {
+		return PersistenceModeEphemeral
+	}
+	if plan != nil && plan.DataPersistenceEnabled {
+		return PersistenceModePersistent
+	}
+	return ""
+}
+
 // computeIdleWindowSeconds returns the org-level idle window override for the
 // given persistence mode, or nil if the org has no override configured.
 // nil means "tt-backend falls back to its global default".

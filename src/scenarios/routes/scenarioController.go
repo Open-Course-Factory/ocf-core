@@ -2203,18 +2203,9 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 	if orgID != nil {
 		composedInput.OrganizationID = orgID.String()
 	}
-	// Persistence resolution:
-	//   - CrashTraps scenarios force ephemeral (trap mechanics rely on
-	//     container destruction; persistence would defeat the design).
-	//   - Otherwise, opt into persistent when the user's plan allows it so
-	//     learners can pause/resume across sessions. Plans without
-	//     DataPersistenceEnabled fall through to the empty-default
-	//     ("ephemeral") in resolvePersistenceMode.
-	if terminalServices.ScenarioForcesEphemeral(scenario.CrashTraps) {
-		composedInput.PersistenceMode = "ephemeral"
-	} else if plan != nil && plan.DataPersistenceEnabled {
-		composedInput.PersistenceMode = "persistent"
-	}
+	// Persistence: SSOT lives in ResolveScenarioPersistenceMode (crash_traps →
+	// ephemeral; plan-allows-persistence → persistent; else empty default).
+	composedInput.PersistenceMode = terminalServices.ResolveScenarioPersistenceMode(scenario.CrashTraps, plan)
 
 	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, plan)
 	if termErr != nil {
@@ -3278,10 +3269,8 @@ func (sc *scenarioController) PreviewScenario(ctx *gin.Context) {
 	if scenario.OrganizationID != nil {
 		composedInput.OrganizationID = scenario.OrganizationID.String()
 	}
-	// Scenarios with crash_traps must run ephemeral (see LaunchScenario).
-	if terminalServices.ScenarioForcesEphemeral(scenario.CrashTraps) {
-		composedInput.PersistenceMode = "ephemeral"
-	}
+	// Persistence: SSOT lives in ResolveScenarioPersistenceMode (shared with LaunchScenario).
+	composedInput.PersistenceMode = terminalServices.ResolveScenarioPersistenceMode(scenario.CrashTraps, planResult.Plan)
 
 	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, planResult.Plan)
 	if termErr != nil {

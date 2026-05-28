@@ -524,6 +524,74 @@ func TestStartComposedSession_PersistentRejectedWhenDataPersistenceDisabled(t *t
 	assert.Equal(t, 0, rec.calls, "tt-backend must not be reached on plan-disabled rejection")
 }
 
+// ---------------------------------------------------------------------------
+// ResolveScenarioPersistenceMode — SSOT helper for scenario launch + preview
+// ---------------------------------------------------------------------------
+//
+// Pure function. Pins the user-observable contract: the string returned is
+// what the scenario controller writes into composedInput.PersistenceMode
+// before calling StartComposedSession. Both LaunchScenario and the scenario
+// preview path must go through this helper.
+func TestResolveScenarioPersistenceMode(t *testing.T) {
+	planWithPersistence := &paymentModels.SubscriptionPlan{
+		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:                   "with-persistence",
+		IsActive:               true,
+		DataPersistenceEnabled: true,
+	}
+	planWithoutPersistence := &paymentModels.SubscriptionPlan{
+		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:                   "no-persistence",
+		IsActive:               true,
+		DataPersistenceEnabled: false,
+	}
+
+	cases := []struct {
+		name       string
+		crashTraps bool
+		plan       *paymentModels.SubscriptionPlan
+		want       string
+	}{
+		{
+			name:       "crash_traps wins over plan-allows-persistence",
+			crashTraps: true,
+			plan:       planWithPersistence,
+			want:       "ephemeral",
+		},
+		{
+			name:       "crash_traps wins even when plan forbids persistence",
+			crashTraps: true,
+			plan:       planWithoutPersistence,
+			want:       "ephemeral",
+		},
+		{
+			name:       "plan allows persistence and no crash_traps -> persistent",
+			crashTraps: false,
+			plan:       planWithPersistence,
+			want:       "persistent",
+		},
+		{
+			name:       "plan forbids persistence and no crash_traps -> empty (default ephemeral)",
+			crashTraps: false,
+			plan:       planWithoutPersistence,
+			want:       "",
+		},
+		{
+			name:       "nil plan and no crash_traps -> empty (default ephemeral)",
+			crashTraps: false,
+			plan:       nil,
+			want:       "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := services.ResolveScenarioPersistenceMode(tc.crashTraps, tc.plan)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestComputeIdleWindowSeconds_FallsBackToNilWhenFieldUnset(t *testing.T) {
 	srv, rec := startComposedSessionTTServer(t)
 	defer srv.Close()
