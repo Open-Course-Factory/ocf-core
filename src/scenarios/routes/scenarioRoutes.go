@@ -8,7 +8,6 @@ import (
 	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentServices "soli/formations/src/payment/services"
 	scenarioMiddleware "soli/formations/src/scenarios/middleware"
-	terminalServices "soli/formations/src/terminalTrainer/services"
 
 	"gorm.io/gorm"
 )
@@ -32,7 +31,6 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	// Session routes (students)
 	rateLimiter := scenarioMiddleware.PerUserRateLimit()
 	effectivePlanService := paymentServices.NewEffectivePlanService(db)
-	terminalService := terminalServices.NewTerminalTrainerService(db)
 	sessionRoutes := router.Group("/scenario-sessions")
 	sessionRoutes.GET("/available", middleware.AuthManagement(),
 		paymentMiddleware.InjectOrgContext(),
@@ -51,11 +49,25 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	sessionRoutes.POST("/:id/abandon", middleware.AuthManagement(), controller.AbandonSession)
 	// Budget enforcement is performed inside LaunchScenario via
 	// QuotaService.CheckBudget; no middleware-level slot counter is needed.
+	//
+	// Host RAM capacity is checked INSIDE LaunchScenario (not as middleware)
+	// because CheckRAMAvailability calls ctx.ShouldBindBodyWith() which
+	// drains c.Request.Body and only re-reads through the cached BodyBytes
+	// path. The controller's ctx.ShouldBindJSON(&input) would then see EOF
+	// and return 400 "Invalid input: EOF" — the user-reported regression.
+	// Beyond fixing the body-read issue, the in-controller check has a
+	// real-correctness advantage: scenarios resolve their effective size
+	// (via scenario.InstanceType + distribution MinSizeKey + launch-time
+	// fallback) AFTER the request enters the handler. The middleware never
+	// saw the resolved size, so it estimated against the plan's max size
+	// (XL=4GiB) and 503'd whenever host headroom was below 4 GiB — even
+	// for an M scenario needing only 1 GiB. EvaluateLaunchCapacity is now
+	// called against the resolved size, mirroring commit 951b69c on the
+	// resume route.
 	sessionRoutes.POST("/launch", middleware.AuthManagement(),
 		paymentMiddleware.InjectOrgContext(),
 		paymentMiddleware.InjectEffectivePlan(effectivePlanService, db),
 		paymentMiddleware.RequirePlan(),
-		paymentMiddleware.CheckRAMAvailability(terminalService),
 		controller.LaunchScenario)
 
 	// Group-level scenario import/export routes (teachers/group admins)

@@ -2127,6 +2127,40 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 
+	// Host RAM capacity check — see scenarioRoutes.go for why this is here
+	// instead of in middleware. CheckRAMAvailability drains the request
+	// body via ShouldBindBodyWith, which made ShouldBindJSON above return
+	// EOF (user-reported 400 "Invalid input: EOF"). Beyond that fix, this
+	// check evaluates against the ACTUAL resolved scenario size — not the
+	// plan-max fallback the middleware used because scenarios don't carry
+	// a size in the request body. Mirrors commit 951b69c (resume path).
+	if planVal, exists := ctx.Get("subscription_plan"); exists && planVal != nil {
+		if plan, ok := planVal.(*paymentModels.SubscriptionPlan); ok && plan != nil {
+			metrics, metricsErr := sc.terminalService.GetServerMetrics(true, "")
+			if metricsErr != nil {
+				// Fail open on transient tt-backend hiccups, mirroring the
+				// create-path middleware's posture.
+				slog.Warn("scenario launch capacity check: failed to fetch server metrics", "scenario", scenario.Name, "err", metricsErr)
+			} else {
+				result := terminalServices.EvaluateLaunchCapacity(plan, size, metrics)
+				if result.Status == terminalServices.CapacityStatusCritical {
+					msg := "Server at capacity. Please try again later."
+					if result.Reason == "ram_full" {
+						msg = "Server at capacity: RAM fully utilized. Please try again later."
+					} else {
+						slog.Warn("scenario launch blocked: insufficient RAM for resolved size",
+							"scenario", scenario.Name, "size", size, "ram_available_gb", metrics.RAMAvailableGB)
+					}
+					ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
+						ErrorCode:    http.StatusServiceUnavailable,
+						ErrorMessage: msg,
+					})
+					return
+				}
+			}
+		}
+	}
+
 	// Auto-provision terminal key if missing
 	_, keyErr := sc.terminalService.GetUserKey(userID)
 	if keyErr != nil {
