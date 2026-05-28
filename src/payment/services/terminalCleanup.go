@@ -28,9 +28,10 @@ import (
 // terminals still occupy a slot. To actually free both the slot and the
 // CPU/RAM budget, we mark them State="deleted" — matching the canonical
 // lifecycle delete in terminalTrainerService.DeleteSession. Deleted rows
-// are excluded by both OccupiesSlotScope and BudgetOccupyingScope, so the
-// live counters (models.CountUserOccupiedSlots, QuotaService.CheckBudget)
-// reflect the new state without any further bookkeeping.
+// are excluded by OccupiesSlotScope (the single SSOT for slot + budget
+// counting), so the live counters (models.CountUserOccupiedSlots,
+// QuotaService.CheckBudget) reflect the new state without any further
+// bookkeeping.
 //
 // Note: this only updates the DB lifecycle fields — it does NOT call the tt-backend API
 // to delete the actual Incus containers. Container cleanup is handled by tt-backend's own

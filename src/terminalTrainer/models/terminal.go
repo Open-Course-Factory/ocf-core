@@ -16,22 +16,34 @@ import (
 var TerminalStatesOccupyingSlot = []string{"running", "stopped"}
 
 // OccupiesSlotScope is a GORM scope that filters terminals which still
-// occupy a "slot" — i.e. their disk and identity are reserved.
-// Single source of truth for the "occupies a slot" rule — every
-// listing / counting query that needs this predicate must use this
-// scope so the rule stays expressed in exactly one place.
+// "occupy capacity" — both in the slot sense (disk/identity reserved)
+// AND in the budget sense (CPU/RAM reserved). Single source of truth
+// for every counting/listing surface that needs to know "is this row
+// still consuming the user's plan?".
 //
-// Note: this is NOT the budget-accounting predicate. CPU/RAM budget
-// enforcement uses BudgetOccupyingScope (see below). The slot scope is
-// broader (counts stopped ephemeral sessions too) and is retained for
-// the org dashboard, scenario listings, and similar surfaces that
-// want to show "everything the user still owns".
+// Used by:
+//   - QuotaService.sumActiveResources* — the CPU/RAM budget gate.
+//   - QuotaService.GetBudgetUsage — the dashboard "Utilisation Actuelle"
+//     bars.
+//   - GetUserTerminalUsage — the dashboard session list.
+//   - CountUserOccupiedSlots / CountOrgOccupiedSlots — org dashboard.
 //
 // The canonical rule is:
 //
 //	state IN ('running', 'stopped')   -- lifecycle still owes capacity
 //	AND deleted_at IS NULL            -- gorm-soft-delete excluded
 //	AND expires_at > NOW()            -- past-expiry rows are "zombie" slots
+//
+// Note (decision D6' — locked 2026-05-28, supersedes D6 from
+// project_resource_quota_refactor.md): the persistence_mode distinction
+// is NOT part of this predicate. "A stop is a stop" — every stopped
+// session reserves its slot until tt-backend confirms the container is
+// gone, at which point SyncUserSessions step 5b marks the row deleted
+// and capacity is freed. The previous design carried a separate
+// BudgetOccupyingScope that excluded stopped ephemeral; that scope was
+// removed because it caused user-visible drift between the dashboard
+// session list and the budget bars (commit 1dcc19a introduced it; the
+// supersession deletes it).
 //
 // The expires_at clause aligns the backend with the UI's
 // `getEffectiveSessionState` invariant, which treats any row whose
@@ -102,64 +114,6 @@ func RunningDisplayScope(tx *gorm.DB) *gorm.DB {
 		"terminals.state = ? AND terminals.deleted_at IS NULL AND terminals.expires_at > ?",
 		"running",
 		time.Now(),
-	)
-}
-
-// BudgetOccupyingScope is a GORM scope that filters terminals whose
-// CPU/RAM is currently reserved against the user's (or org's) budget.
-// Single source of truth for the "occupies budget RIGHT NOW" rule —
-// the budget gate (CheckBudget via sumActiveResources*) routes through
-// this scope so the rule stays expressed in exactly one place.
-//
-// The canonical rule is:
-//
-//	deleted_at IS NULL                                 -- gorm-soft-delete excluded
-//	AND expires_at > NOW()                             -- past-expiry rows are "zombie"
-//	AND (state = 'running' OR persistence_mode = 'persistent')
-//
-// This matches design decision D6: a terminal reserves capacity iff it
-// is currently running OR it is persistent (because a persistent stopped
-// session can be resumed without going through a fresh budget check —
-// its capacity remains reserved on the gate side, so it must appear in
-// the dashboard count too).
-//
-// Set membership vs. the two sibling scopes:
-//
-//   - OccupiesSlotScope (state IN ('running','stopped')) counts EVERY
-//     stopped session — including ephemeral stopped — for the broader
-//     "this row still owns a slot" sense used by listing surfaces.
-//     That predicate is broader than what budget enforcement needs:
-//     a stopped ephemeral has no resume path, so its CPU/RAM is freed,
-//     but it still "occupies a slot" in the slot-count sense.
-//   - RunningDisplayScope (state = 'running') is the "alive RIGHT NOW"
-//     predicate — useful for display surfaces that want to show only
-//     sessions the user can interact with this instant. It excludes
-//     stopped persistent sessions, so it must NOT be used for budget
-//     accounting or for the dashboard "Actifs" counter.
-//   - BudgetOccupyingScope (THIS scope) is the budget-accounting
-//     predicate. It includes stopped persistent (capacity reserved)
-//     and excludes stopped ephemeral (capacity released).
-//
-// `expires_at` is compared against `time.Now()` bound as a SQL parameter
-// (not `NOW()` / `CURRENT_TIMESTAMP`) for dialect portability (SQLite,
-// used in unit tests, has no `NOW()`) and clock locality. Same rationale
-// as OccupiesSlotScope and RunningDisplayScope.
-//
-// Columns are qualified with the `terminals.` prefix so the scope is
-// safe to combine with JOINs against other tables that share these
-// column names (e.g. organization_members via gorm.Model).
-//
-// Usage:
-//
-//	db.Table("terminals").Scopes(models.BudgetOccupyingScope).
-//	    Where("terminals.user_id = ?", userID).Count(&count)
-//
-// See: src/payment/services/quotaService.go::sumActiveResourcesForUser,
-// sumActiveResourcesForOrg.
-func BudgetOccupyingScope(tx *gorm.DB) *gorm.DB {
-	return tx.Where(
-		"terminals.deleted_at IS NULL AND terminals.expires_at > ? AND (terminals.state = ? OR terminals.persistence_mode = ?)",
-		time.Now(), "running", "persistent",
 	)
 }
 

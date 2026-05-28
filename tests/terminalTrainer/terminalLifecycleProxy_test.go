@@ -10,10 +10,9 @@
 //  3. Ownership enforcement still rejects calls from a different user.
 //
 // Terminal capacity counting is covered by the budget engine tests
-// (TestQuotaService_CheckBudget_PersistentStoppedCounts /
-// TestQuotaService_CheckBudget_EphemeralStoppedDoesNotCount in
-// tests/payment/quotaServiceBudget_test.go) — there is no usage metric to
-// drift, so the lifecycle proxy no longer asserts a counter contract.
+// (TestQuotaService_CheckBudget_StoppedCountsRegardlessOfPersistence in
+// tests/payment/quotaServiceBudget_test.go) — there is no usage metric
+// to drift, so the lifecycle proxy no longer asserts a counter contract.
 //
 package terminalTrainer_tests
 
@@ -143,10 +142,10 @@ func TestStopSession_CallsNewStopEndpoint(t *testing.T) {
 
 	terminal, err := createTestTerminal(db, userID, "active", time.Now().Add(time.Hour))
 	require.NoError(t, err)
-	// Use persistent mode so the state-after-stop assertion targets the
-	// resumable lifecycle ("stopped"); ephemeral stops now mark the row
-	// "deleted" because tt-backend destroys the container — that branch
-	// is covered by TestStopSession_Ephemeral_MarksDeleted.
+	// Use persistent mode here; ephemeral stops are exercised separately
+	// by TestStopSession_Ephemeral_AlsoMarksStopped_NotDeleted. Under D6'
+	// (locked 2026-05-28), both modes transition to state="stopped" via
+	// the same markSessionStopped helper — the distinction is UX-only.
 	terminal.PersistenceMode = "persistent"
 	require.NoError(t, db.Save(terminal).Error)
 

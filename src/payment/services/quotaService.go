@@ -50,15 +50,17 @@ type QuotaService interface {
 	// When MaxCPU/MaxMemoryMB on the plan are zero, the corresponding axis
 	// is treated as unlimited.
 	//
-	// Sessions counted toward the budget follow lifecycle rule D6, encoded
-	// in the SSOT terminalModels.BudgetOccupyingScope:
-	//   deleted_at IS NULL AND expires_at > NOW() AND
-	//     (state = 'running' OR persistence_mode = 'persistent').
-	// Ephemeral non-running sessions are excluded. Past-expiry zombie rows
-	// are also excluded — a stale row whose proxy session is gone but
-	// whose state column was never reset must not keep eating budget.
-	// The dashboard "Actifs" counter reads through the same scope, so the
-	// gate and the dashboard count cannot diverge.
+	// Sessions counted toward the budget follow lifecycle rule D6'
+	// (supersedes D6, locked 2026-05-28), encoded in the SSOT
+	// terminalModels.OccupiesSlotScope:
+	//   state IN ('running','stopped') AND deleted_at IS NULL
+	//   AND expires_at > NOW().
+	// Every stopped session counts — the persistence_mode distinction is
+	// UX-only ("a stop is a stop"). Past-expiry zombie rows are excluded:
+	// a stale row whose proxy session is gone but whose state column was
+	// never reset must not keep eating budget. The dashboard "Actifs"
+	// counter reads through the same scope, so the gate and the dashboard
+	// count cannot diverge.
 	//
 	// NOTE: This method is for read-time gating (composer UI, scenario
 	// list). It is NOT race-safe — write-time enforcement requires a
@@ -478,15 +480,17 @@ func (s *quotaService) GetBudgetUsage(userID string, orgID *uuid.UUID) (int, int
 // sumActiveResources returns the total CPU + RAM footprint of terminals
 // counted against the budget for this user (or org).
 //
-// The counting predicate is the SSOT terminalModels.BudgetOccupyingScope
-// (deleted_at IS NULL AND expires_at > NOW() AND (state = 'running' OR
-// persistence_mode = 'persistent')). See that scope's doc for the
-// rationale (design decision D6) and for why this predicate differs
-// from OccupiesSlotScope and RunningDisplayScope.
+// The counting predicate is the SSOT terminalModels.OccupiesSlotScope
+// (state IN ('running','stopped') AND deleted_at IS NULL AND
+// expires_at > NOW()). See that scope's doc for the rationale (D6',
+// supersedes D6, locked 2026-05-28): a stop is a stop, every stopped
+// session reserves capacity until sync confirms tt-backend has reaped
+// the container. The persistence_mode distinction is UX-only, not
+// budget logic.
 //
 // This is the same scope used to derive remaining capacity for size
-// catalogs, so the budget gate and any downstream "remaining" surface
-// cannot drift apart.
+// catalogs and to feed the dashboard session list, so the budget gate
+// and any downstream "remaining" surface cannot drift apart.
 //
 // orgID:
 //   - nil    → personal scope (terminals where user_id matches).
@@ -507,7 +511,7 @@ func (s *quotaService) sumActiveResourcesForUser(userID string) (int, int, error
 		Mem int64
 	}
 	q := s.db.Table("terminals").
-		Scopes(terminalModels.BudgetOccupyingScope).
+		Scopes(terminalModels.OccupiesSlotScope).
 		Select("COALESCE(SUM(terminals.size_cpu), 0) AS cpu, COALESCE(SUM(terminals.size_memory_mb), 0) AS mem").
 		Where("terminals.user_id = ?", userID)
 	if err := q.Scan(&row).Error; err != nil {
@@ -524,12 +528,12 @@ func (s *quotaService) sumActiveResourcesForOrg(orgID uuid.UUID) (int, int, erro
 	}
 	// Mirror CountOrgOccupiedSlots: join through organization_members so
 	// we count terminals owned by any active member of the org. The
-	// terminals.* predicates (soft-delete, expiry, state/persistence)
-	// live in BudgetOccupyingScope; the join-table filter
+	// terminals.* predicates (soft-delete, expiry, state) live in
+	// OccupiesSlotScope; the join-table filter
 	// (organization_members.deleted_at IS NULL) stays inline because
 	// the scope only knows about the terminals table.
 	q := s.db.Table("terminals").
-		Scopes(terminalModels.BudgetOccupyingScope).
+		Scopes(terminalModels.OccupiesSlotScope).
 		Select("COALESCE(SUM(terminals.size_cpu), 0) AS cpu, COALESCE(SUM(terminals.size_memory_mb), 0) AS mem").
 		Joins("JOIN organization_members ON organization_members.user_id = terminals.user_id").
 		Where("organization_members.organization_id = ? AND organization_members.deleted_at IS NULL", orgID)

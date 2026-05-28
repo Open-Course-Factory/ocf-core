@@ -1,20 +1,18 @@
 // tests/terminalTrainer/stopSessionPersistence_test.go
 //
-// These tests pin the StopSession + SyncUserSessions contract for the
-// "stopped persistent vs ephemeral" lifecycle bug:
+// These tests pin the StopSession + SyncUserSessions contract under rule
+// D6' (locked 2026-05-28, supersedes D6): "a stop is a stop". Every
+// stopped session — persistent or ephemeral — counts against the budget
+// and reserves its slot until tt-backend confirms the container is gone.
 //
-//   - persistent stop: extend expires_at so BudgetOccupyingScope keeps the
-//     row visible until tt-backend would actually reap it. Without this
-//     the budget panel and the gate stop counting capacity that the user
-//     can still resume from /terminal-sessions.
+//   - stop: state="stopped" and expires_at is extended to the tt-backend
+//     reap deadline (idle_until, with plan-derived fallback). One unified
+//     path via markSessionStopped — no persistence_mode branch.
 //
-//   - ephemeral stop: the container is destroyed by tt-backend, the local
-//     row must be marked deleted (not stopped) so it stops appearing as a
-//     ghost in the sessions list.
-//
-//   - sync: tt-backend is SSOT for container existence — if a local row is
-//     missing from the API, it must be marked deleted regardless of
-//     whether its current state is "stopped" or anything else.
+//   - sync: tt-backend is SSOT for container existence — if a local row
+//     is missing from the API, it must be marked deleted regardless of
+//     its current state. While it is still listed by tt-backend, sync
+//     mirrors the API state through the same markSessionStopped helper.
 //
 // All scenarios use the real terminalTrainerService against an in-memory
 // SQLite DB and a fake tt-backend HTTP server (matching the convention of
@@ -139,96 +137,124 @@ func seedPlanForTerminal(t *testing.T, db *gorm.DB, terminal *models.Terminal, m
 }
 
 // ---------------------------------------------------------------------------
-// (a) Persistent stop extends expires_at to the idle_until from tt-backend.
+// (a) Stop extends expires_at to the idle_until from tt-backend — both
+//     persistence modes. The contract is now mode-independent.
 // ---------------------------------------------------------------------------
 
-func TestStopSession_Persistent_ExtendsExpiresAtToIdleUntil(t *testing.T) {
+func TestStopSession_ExtendsExpiresAtToIdleUntil(t *testing.T) {
+	cases := []struct {
+		name string
+		mode string
+	}{
+		{"persistent", "persistent"},
+		{"ephemeral", "ephemeral"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			idleUntil := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Second)
+			srv := stopOnlyTTServer(t, idleUntil.Format(time.RFC3339))
+			defer srv.Close()
+			configureTTServer(t, srv.URL)
+
+			db := freshTestDB(t)
+			userID := "owner-stop-" + tc.mode + "-" + uuid.New().String()
+			seedActiveSubscription(t, db, userID)
+
+			// Original expiry near-now — this is the regression case: after stop,
+			// the original deadline elapses but the row should stay budget-visible.
+			originalExpiry := time.Now().Add(2 * time.Minute)
+			terminal, err := createTestTerminal(db, userID, "running", originalExpiry)
+			require.NoError(t, err)
+			terminal.PersistenceMode = tc.mode
+			require.NoError(t, db.Save(terminal).Error)
+
+			svc := services.NewTerminalTrainerService(db)
+			require.NoError(t, svc.StopSession(terminal.SessionID))
+
+			var reloaded models.Terminal
+			require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
+			assert.Equal(t, "stopped", reloaded.State,
+				"a stop is a stop: %s stop must mark state=stopped (D6')", tc.mode)
+
+			// ExpiresAt must be aligned with idle_until (tolerate 1s clock drift /
+			// JSON round-trip truncation).
+			delta := reloaded.ExpiresAt.Sub(idleUntil)
+			if delta < -time.Second || delta > time.Second {
+				t.Errorf("expected ExpiresAt ~= idleUntil (%v), got %v (delta=%v)",
+					idleUntil, reloaded.ExpiresAt, delta)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// (b) Stop with idle_until nil falls back to plan duration — both modes.
+// ---------------------------------------------------------------------------
+
+func TestStopSession_IdleUntilNil_FallsBackToPlanDuration(t *testing.T) {
+	cases := []struct {
+		name string
+		mode string
+	}{
+		{"persistent", "persistent"},
+		{"ephemeral", "ephemeral"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := stopOnlyTTServer(t, "") // tt-backend returns no idle_until
+			defer srv.Close()
+			configureTTServer(t, srv.URL)
+
+			db := freshTestDB(t)
+			userID := "owner-stop-fallback-" + tc.mode + "-" + uuid.New().String()
+			seedActiveSubscription(t, db, userID)
+
+			originalExpiry := time.Now().Add(2 * time.Minute)
+			terminal, err := createTestTerminal(db, userID, "running", originalExpiry)
+			require.NoError(t, err)
+			terminal.PersistenceMode = tc.mode
+			require.NoError(t, db.Save(terminal).Error)
+
+			// Plan dictates the fallback: 60 minutes.
+			seedPlanForTerminal(t, db, terminal, 60)
+
+			before := time.Now()
+			svc := services.NewTerminalTrainerService(db)
+			require.NoError(t, svc.StopSession(terminal.SessionID))
+			after := time.Now()
+
+			var reloaded models.Terminal
+			require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
+			assert.Equal(t, "stopped", reloaded.State,
+				"a stop is a stop: %s stop must mark state=stopped (D6')", tc.mode)
+
+			// ExpiresAt should be within [before+60min, after+60min+5s tolerance].
+			expectedLow := before.Add(60 * time.Minute).Add(-time.Second)
+			expectedHigh := after.Add(60 * time.Minute).Add(5 * time.Second)
+			if reloaded.ExpiresAt.Before(expectedLow) || reloaded.ExpiresAt.After(expectedHigh) {
+				t.Errorf("expected ExpiresAt in [%v, %v], got %v",
+					expectedLow, expectedHigh, reloaded.ExpiresAt)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// (c) Ephemeral stop ALSO marks state="stopped" (NOT "deleted"). This is the
+//     load-bearing change of D6': ephemeral stops go through markSessionStopped
+//     just like persistent stops. The local row stays stopped until sync
+//     observes tt-backend has reaped the container, at which point step 5b
+//     marks it deleted. This pins that the new rule actually fires.
+// ---------------------------------------------------------------------------
+
+func TestStopSession_Ephemeral_AlsoMarksStopped_NotDeleted(t *testing.T) {
 	idleUntil := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Second)
 	srv := stopOnlyTTServer(t, idleUntil.Format(time.RFC3339))
 	defer srv.Close()
 	configureTTServer(t, srv.URL)
 
 	db := freshTestDB(t)
-	userID := "owner-stop-persistent-" + uuid.New().String()
-	seedActiveSubscription(t, db, userID)
-
-	// Original expiry near-now — this is the regression case: after stop,
-	// the original deadline elapses but the row should stay budget-visible.
-	originalExpiry := time.Now().Add(2 * time.Minute)
-	terminal, err := createTestTerminal(db, userID, "running", originalExpiry)
-	require.NoError(t, err)
-	terminal.PersistenceMode = "persistent"
-	require.NoError(t, db.Save(terminal).Error)
-
-	svc := services.NewTerminalTrainerService(db)
-	require.NoError(t, svc.StopSession(terminal.SessionID))
-
-	var reloaded models.Terminal
-	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
-	assert.Equal(t, "stopped", reloaded.State, "persistent stop must mark state=stopped")
-
-	// ExpiresAt must be aligned with idle_until (tolerate 1s clock drift /
-	// JSON round-trip truncation).
-	delta := reloaded.ExpiresAt.Sub(idleUntil)
-	if delta < -time.Second || delta > time.Second {
-		t.Errorf("expected ExpiresAt ~= idleUntil (%v), got %v (delta=%v)",
-			idleUntil, reloaded.ExpiresAt, delta)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// (b) Persistent stop with idle_until nil falls back to plan duration.
-// ---------------------------------------------------------------------------
-
-func TestStopSession_Persistent_IdleUntilNil_FallsBackToPlanDuration(t *testing.T) {
-	srv := stopOnlyTTServer(t, "") // tt-backend returns no idle_until
-	defer srv.Close()
-	configureTTServer(t, srv.URL)
-
-	db := freshTestDB(t)
-	userID := "owner-stop-persistent-fallback-" + uuid.New().String()
-	seedActiveSubscription(t, db, userID)
-
-	originalExpiry := time.Now().Add(2 * time.Minute)
-	terminal, err := createTestTerminal(db, userID, "running", originalExpiry)
-	require.NoError(t, err)
-	terminal.PersistenceMode = "persistent"
-	require.NoError(t, db.Save(terminal).Error)
-
-	// Plan dictates the fallback: 60 minutes.
-	seedPlanForTerminal(t, db, terminal, 60)
-
-	before := time.Now()
-	svc := services.NewTerminalTrainerService(db)
-	require.NoError(t, svc.StopSession(terminal.SessionID))
-	after := time.Now()
-
-	var reloaded models.Terminal
-	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
-	assert.Equal(t, "stopped", reloaded.State, "persistent stop must mark state=stopped")
-
-	// ExpiresAt should be within [before+60min, after+60min+5s tolerance].
-	expectedLow := before.Add(60 * time.Minute).Add(-time.Second)
-	expectedHigh := after.Add(60 * time.Minute).Add(5 * time.Second)
-	if reloaded.ExpiresAt.Before(expectedLow) || reloaded.ExpiresAt.After(expectedHigh) {
-		t.Errorf("expected ExpiresAt in [%v, %v], got %v",
-			expectedLow, expectedHigh, reloaded.ExpiresAt)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// (c) Ephemeral stop marks the row deleted (container destroyed by tt-backend).
-// ---------------------------------------------------------------------------
-
-func TestStopSession_Ephemeral_MarksDeleted(t *testing.T) {
-	// Send an idle_until anyway — it must be ignored for ephemeral.
-	idleUntil := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Second)
-	srv := stopOnlyTTServer(t, idleUntil.Format(time.RFC3339))
-	defer srv.Close()
-	configureTTServer(t, srv.URL)
-
-	db := freshTestDB(t)
-	userID := "owner-stop-ephemeral-" + uuid.New().String()
+	userID := "owner-stop-ephemeral-not-deleted-" + uuid.New().String()
 	seedActiveSubscription(t, db, userID)
 
 	originalExpiry := time.Now().Add(time.Hour)
@@ -242,63 +268,74 @@ func TestStopSession_Ephemeral_MarksDeleted(t *testing.T) {
 
 	var reloaded models.Terminal
 	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
-	assert.Equal(t, "deleted", reloaded.State,
-		"ephemeral stop must mark state=deleted; tt-backend destroyed the container")
-	// ExpiresAt must NOT be touched — the original deadline is the only
-	// data we can trust about an already-destroyed container.
-	if !reloaded.ExpiresAt.Equal(originalExpiry.Truncate(time.Microsecond)) &&
-		reloaded.ExpiresAt.Sub(originalExpiry).Abs() > time.Second {
-		t.Errorf("ephemeral stop must leave ExpiresAt untouched (want ~%v, got %v)",
-			originalExpiry, reloaded.ExpiresAt)
-	}
+	assert.Equal(t, "stopped", reloaded.State,
+		"ephemeral stop must NOT mark deleted anymore (D6'): the slot stays reserved until sync confirms tt-backend reaped the container")
+	assert.Equal(t, "ephemeral", reloaded.PersistenceMode,
+		"PersistenceMode must be preserved across stop")
 }
 
 // ---------------------------------------------------------------------------
-// (d) End-to-end: stopped persistent stays in budget after original expiry.
+// (d) End-to-end: a stopped session — regardless of persistence mode —
+//     stays in budget after the original expiry, until sync confirms the
+//     container is gone. This is the user's pinned scenario.
 // ---------------------------------------------------------------------------
 
-func TestStopSession_Persistent_StillCountedInBudgetAfterOriginalExpiry(t *testing.T) {
-	// idle_until 30 minutes in the future, well past the original expiry.
-	idleUntil := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Second)
-	srv := stopOnlyTTServer(t, idleUntil.Format(time.RFC3339))
-	defer srv.Close()
-	configureTTServer(t, srv.URL)
+func TestStopSession_StillCountedInBudgetAfterOriginalExpiry(t *testing.T) {
+	cases := []struct {
+		name string
+		mode string
+	}{
+		{"persistent", "persistent"},
+		{"ephemeral", "ephemeral"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// idle_until 30 minutes in the future, well past the original expiry.
+			idleUntil := time.Now().Add(30 * time.Minute).UTC().Truncate(time.Second)
+			srv := stopOnlyTTServer(t, idleUntil.Format(time.RFC3339))
+			defer srv.Close()
+			configureTTServer(t, srv.URL)
 
-	db := freshTestDB(t)
-	userID := "owner-budget-after-stop-" + uuid.New().String()
-	seedActiveSubscription(t, db, userID)
+			db := freshTestDB(t)
+			userID := "owner-budget-after-stop-" + tc.mode + "-" + uuid.New().String()
+			seedActiveSubscription(t, db, userID)
 
-	// Original expiry already past — simulates the user's reported scenario:
-	// they stop a session whose creation-time + plan duration has just elapsed
-	// (clock is barely past). Before the fix, BudgetOccupyingScope drops it
-	// the moment now() > original ExpiresAt.
-	terminal, err := createTestTerminal(db, userID, "running", time.Now().Add(-time.Minute))
-	require.NoError(t, err)
-	terminal.PersistenceMode = "persistent"
-	terminal.SizeCPU = 2
-	terminal.SizeMemoryMB = 2048
-	require.NoError(t, db.Save(terminal).Error)
+			// Original expiry already past — simulates the user's reported scenario:
+			// they stop a session whose creation-time + plan duration has just elapsed
+			// (clock is barely past). Before D6', OccupiesSlotScope still kept the row
+			// for persistent — the old BudgetOccupyingScope would also drop it on
+			// ephemeral. D6' unifies: both modes stay counted.
+			terminal, err := createTestTerminal(db, userID, "running", time.Now().Add(-time.Minute))
+			require.NoError(t, err)
+			terminal.PersistenceMode = tc.mode
+			terminal.SizeCPU = 2
+			terminal.SizeMemoryMB = 2048
+			require.NoError(t, db.Save(terminal).Error)
 
-	svc := services.NewTerminalTrainerService(db)
-	require.NoError(t, svc.StopSession(terminal.SessionID))
+			svc := services.NewTerminalTrainerService(db)
+			require.NoError(t, svc.StopSession(terminal.SessionID))
 
-	// Sanity: row is now stopped with the extended expires_at.
-	var reloaded models.Terminal
-	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
-	require.Equal(t, "stopped", reloaded.State)
-	require.Equal(t, "persistent", reloaded.PersistenceMode,
-		"PersistenceMode must be preserved across stop")
-	require.Equal(t, 2, reloaded.SizeCPU, "SizeCPU must survive stop")
-	require.Equal(t, 2048, reloaded.SizeMemoryMB, "SizeMemoryMB must survive stop")
-	require.True(t, reloaded.ExpiresAt.After(time.Now()),
-		"after persistent stop, ExpiresAt must be in the future, got %v", reloaded.ExpiresAt)
+			// Sanity: row is now stopped with the extended expires_at.
+			var reloaded models.Terminal
+			require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
+			require.Equal(t, "stopped", reloaded.State)
+			require.Equal(t, tc.mode, reloaded.PersistenceMode,
+				"PersistenceMode must be preserved across stop")
+			require.Equal(t, 2, reloaded.SizeCPU, "SizeCPU must survive stop")
+			require.Equal(t, 2048, reloaded.SizeMemoryMB, "SizeMemoryMB must survive stop")
+			require.True(t, reloaded.ExpiresAt.After(time.Now()),
+				"after stop, ExpiresAt must be in the future, got %v", reloaded.ExpiresAt)
 
-	// Budget panel: GetBudgetUsage must include the stopped persistent.
-	qs := paymentServices.NewQuotaService(db, nil)
-	usedCPU, usedMem, err := qs.GetBudgetUsage(userID, nil)
-	require.NoError(t, err)
-	assert.Equal(t, 2, usedCPU, "stopped persistent terminal must still count CPU in budget")
-	assert.Equal(t, 2048, usedMem, "stopped persistent terminal must still count RAM in budget")
+			// Budget panel: GetBudgetUsage must include the stopped session.
+			qs := paymentServices.NewQuotaService(db, nil)
+			usedCPU, usedMem, err := qs.GetBudgetUsage(userID, nil)
+			require.NoError(t, err)
+			assert.Equal(t, 2, usedCPU,
+				"stopped %s terminal must still count CPU in budget (D6')", tc.mode)
+			assert.Equal(t, 2048, usedMem,
+				"stopped %s terminal must still count RAM in budget (D6')", tc.mode)
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -272,25 +272,18 @@ func (tts *terminalTrainerService) GetActiveUserSessions(userID string) (*[]mode
 }
 
 // StopSession arrête une session en appelant le nouvel endpoint /stop de
-// tt-backend. Le comportement de la ligne locale dépend du PersistenceMode :
+// tt-backend, puis applique la transition "stop" sur la ligne locale via
+// l'unique helper markSessionStopped.
 //
-//   - persistent : le disque est conservé, la session est résumable. On
-//     étend terminal.ExpiresAt à la fenêtre de reap réelle de tt-backend
-//     (idle_until renvoyé par /stop, ou à défaut now() + plan.MaxSessionDuration).
-//     Sans ça, BudgetOccupyingScope laisse tomber la ligne dès que l'expires_at
-//     d'origine est dépassé, alors qu'elle est toujours résumable côté
-//     tt-backend — l'utilisateur perd la capacité réservée dans le panneau
-//     "Utilisation Actuelle" et dans la garde du budget, alors qu'elle apparaît
-//     encore comme "stopped" sur /terminal-sessions (cf. getEffectiveSessionState).
-//
-//   - ephemeral (ou non renseigné) : tt-backend détruit le conteneur. La ligne
-//     locale doit refléter cette destruction : state = "deleted" (pas
-//     "stopped") — sinon /terminal-sessions affiche un fantôme et la ligne
-//     reste en cache jusqu'à un sync ultérieur.
-//
-// Aucune métrique de quota n'est mise à jour ici : la capacité terminale
-// est exclusivement régie par le moteur de budget CPU/RAM
-// (QuotaService.CheckBudget), qui lit en direct via BudgetOccupyingScope.
+// Règle (D6', décrochée 2026-05-28, supersède D6) : "un stop est un stop".
+// On ne branche PAS sur persistence_mode. Toute session arrêtée passe en
+// state="stopped" et son expires_at est étendu à la deadline de reap de
+// tt-backend (idle_until, ou fallback plan.MaxSessionDurationMinutes).
+// Tant que la ligne est "stopped" non supprimée, OccupiesSlotScope la
+// compte dans le budget — l'utilisateur garde sa capacité réservée jusqu'à
+// ce que sync (étape 5b) constate la disparition côté tt-backend et marque
+// la ligne deleted. Le cycle est symétrique entre persistent et ephemeral
+// — leur seule différence reste UX (resume vs no-resume), pas budget.
 func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	utils.Debug("StopSession called for session %s", sessionID)
 
@@ -302,35 +295,22 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	utils.Debug("Session %s current state: %s (persistence_mode=%s)",
 		sessionID, terminal.State, terminal.PersistenceMode)
 
-	// 1. Appeler le nouvel endpoint /sessions/{id}/stop de tt-backend
+	// 1. Appeler le nouvel endpoint /sessions/{id}/stop de tt-backend.
 	idleUntil, err := tts.stopSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey)
 	if err != nil {
 		// Log mais on continue : la ligne locale doit refléter l'intention
-		// même si tt-backend est temporairement injoignable. Pour une session
-		// persistante, on garde l'expires_at actuel (best-effort) ; pour une
-		// éphémère, on la marque deleted comme si la destruction avait eu lieu.
+		// même si tt-backend est temporairement injoignable. La capacité
+		// reste réservée jusqu'au prochain sync — au pire on garde un slot
+		// de plus pour quelques secondes, ce qui est préférable à
+		// l'inverse (libérer prématurément un slot que tt-backend gère
+		// toujours).
 		utils.Warn("failed to stop session in Terminal Trainer API: %v", err)
 	}
 
-	// 2. Brancher sur le mode de persistance.
-	if terminal.PersistenceMode == "persistent" {
-		terminal.State = "stopped"
-		if idleUntil != nil {
-			terminal.IdleUntil = idleUntil
-		}
-		tts.applyStoppedPersistentExpiry(terminal, idleUntil)
-	} else {
-		// Ephemeral (ou mode vide / inconnu) : le conteneur n'existe plus
-		// côté tt-backend, la ligne locale doit le refléter pour ne pas
-		// apparaître comme fantôme sur /terminal-sessions.
-		utils.Debug("Marking ephemeral session %s as deleted (container destroyed by tt-backend)", sessionID)
-		terminal.State = "deleted"
-		if idleUntil != nil {
-			// On stocke quand même idle_until si tt-backend l'a renvoyé,
-			// pour la traçabilité — mais ExpiresAt reste intouché.
-			terminal.IdleUntil = idleUntil
-		}
-	}
+	// 2. Transition unique : on délègue à markSessionStopped — même chemin
+	// que la propagation depuis sync (étape 5a). Pas de branche
+	// persistence_mode.
+	tts.markSessionStopped(terminal, idleUntil)
 
 	if err := tts.repository.UpdateTerminalSession(terminal); err != nil {
 		utils.Error("Failed to update session %s state: %v", sessionID, err)
@@ -350,53 +330,72 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	return nil
 }
 
-// applyStoppedPersistentExpiry sets terminal.ExpiresAt so the row stays
-// counted by BudgetOccupyingScope for as long as tt-backend would still
-// allow a resume. The caller is responsible for ensuring the terminal is
-// in state="stopped" + persistence_mode="persistent" before calling.
+// markSessionStopped is the SSOT for the stopped-state transition on a
+// terminal row. Every code path that wants to mark a terminal stopped —
+// user-initiated StopSession, auto-stop detected by SyncUserSessions step
+// 5a, any future trigger — MUST call this helper so the row's invariants
+// stay consistent:
 //
-// Preference order for the new ExpiresAt:
-//  1. idleUntil from tt-backend (the authoritative reap deadline)
-//  2. fallback: time.Now() + plan.MaxSessionDurationMinutes (best-effort
-//     when tt-backend didn't supply idle_until, mirrors what StartSession
-//     posts as expiry)
-//  3. if neither is available, leave ExpiresAt untouched (the only thing
-//     we can trust is the existing value)
+//   - State = "stopped"
+//   - ExpiresAt extended to the tt-backend reap deadline. Preference
+//     order: (1) idleUntil from tt-backend, (2) time.Now() +
+//     plan.MaxSessionDurationMinutes when idleUntil is nil, (3) leave
+//     ExpiresAt untouched when neither value is available.
+//   - IdleUntil populated when idleUntil is non-nil (for traceability /
+//     UI display).
 //
-// Returns true iff ExpiresAt was modified, so the caller knows to flag the
-// row for UpdateTerminalSession.
+// The helper does NOT branch on persistence_mode (D6', supersedes D6):
+// "a stop is a stop". The reservation is held until sync confirms
+// tt-backend has reaped the container.
 //
-// Why .Local() on the assigned value: the JSON reader produces UTC time
-// values (Z suffix). SQLite text-compares timestamps lexicographically and
-// "Z"-formatted values do not match the "+02:00" local serializations
-// written elsewhere in the codebase, so BudgetOccupyingScope drops the row
-// in tests. PostgreSQL handles the timezone implicitly, so production is
-// fine — but matching the convention everywhere keeps the SQLite/Postgres
-// behavior aligned.
-func (tts *terminalTrainerService) applyStoppedPersistentExpiry(
+// Returns true iff any field on the terminal was modified, so the caller
+// can decide whether to flush. Idempotent: a row already in the correct
+// shape produces no spurious DB writes.
+//
+// Why .Local() on the assigned ExpiresAt: the JSON reader produces UTC
+// time values (Z suffix). SQLite text-compares timestamps
+// lexicographically and "Z"-formatted values do not match the "+02:00"
+// local serializations written elsewhere in the codebase, so the scope
+// would drop the row in tests. PostgreSQL handles the timezone
+// implicitly, so production is fine — but matching the convention
+// everywhere keeps the SQLite/Postgres behavior aligned.
+func (tts *terminalTrainerService) markSessionStopped(
 	terminal *models.Terminal,
 	idleUntil *time.Time,
 ) bool {
-	if idleUntil != nil {
-		newExpiry := idleUntil.Local()
-		if terminal.ExpiresAt.Equal(newExpiry) {
-			return false
-		}
-		terminal.ExpiresAt = newExpiry
-		return true
+	changed := false
+
+	if terminal.State != "stopped" {
+		terminal.State = "stopped"
+		changed = true
 	}
+
+	if idleUntil != nil {
+		idleUntilLocal := idleUntil.Local()
+		if terminal.IdleUntil == nil || !terminal.IdleUntil.Equal(idleUntilLocal) {
+			terminal.IdleUntil = &idleUntilLocal
+			changed = true
+		}
+		newExpiry := idleUntilLocal
+		if !terminal.ExpiresAt.Equal(newExpiry) {
+			terminal.ExpiresAt = newExpiry
+			changed = true
+		}
+		return changed
+	}
+
 	// Fallback: plan-derived window. Mirrors StartComposedSession + StartSession.
 	if terminal.SubscriptionPlanID == nil {
-		return false
+		return changed
 	}
 	var plan paymentModels.SubscriptionPlan
 	if err := tts.db.First(&plan, "id = ?", *terminal.SubscriptionPlanID).Error; err != nil {
-		utils.Warn("applyStoppedPersistentExpiry: failed to load plan %s for terminal %s: %v — leaving ExpiresAt untouched",
+		utils.Warn("markSessionStopped: failed to load plan %s for terminal %s: %v — leaving ExpiresAt untouched",
 			terminal.SubscriptionPlanID.String(), terminal.SessionID, err)
-		return false
+		return changed
 	}
 	if plan.MaxSessionDurationMinutes <= 0 {
-		return false
+		return changed
 	}
 	terminal.ExpiresAt = time.Now().Add(time.Duration(plan.MaxSessionDurationMinutes) * time.Minute).Local()
 	return true
@@ -481,9 +480,10 @@ func (tts *terminalTrainerService) StartSession(sessionID string) error {
 //
 // Aucune métrique de quota n'est touchée : la capacité terminale est
 // exclusivement régie par le moteur de budget CPU/RAM
-// (QuotaService.CheckBudget via BudgetOccupyingScope). La ligne locale
-// passée à state="deleted" sort automatiquement de toutes les portées
-// (slot, budget) sans écriture supplémentaire.
+// (QuotaService.CheckBudget via OccupiesSlotScope). La ligne locale
+// passée à state="deleted" sort automatiquement de la portée (qui sert
+// à la fois au compte de slots et au budget, cf. D6') sans écriture
+// supplémentaire.
 func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
 	utils.Debug("DeleteSession called for session %s", sessionID)
 
@@ -750,48 +750,58 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 				needsUpdate = true
 			}
 
-			// Propager les champs de cycle de vie depuis tt-backend (source de vérité).
-			// Sans ça, une session auto-arrêtée côté tt-backend reste affichée comme
-			// "running" en local et le front continue d'afficher "Session expirée"
-			// au lieu d'offrir un bouton Reprendre.
-			if apiSession.State != "" && localSession.State != apiSession.State {
-				utils.Debug("SyncUserSessions - State mismatch for session %s: changing '%s' -> '%s'",
-					sessionID, localSession.State, apiSession.State)
-				localSession.State = apiSession.State
-				needsUpdate = true
-			}
+			// Propager persistence_mode depuis tt-backend (source de vérité
+			// pour ce champ — il pilote l'affordance Resume côté UI mais ne
+			// joue PAS dans la logique budget, cf. D6').
 			if apiSession.PersistenceMode != "" && localSession.PersistenceMode != apiSession.PersistenceMode {
 				utils.Debug("SyncUserSessions - PersistenceMode mismatch for session %s: changing '%s' -> '%s'",
 					sessionID, localSession.PersistenceMode, apiSession.PersistenceMode)
 				localSession.PersistenceMode = apiSession.PersistenceMode
 				needsUpdate = true
 			}
-			if apiSession.IdleUntil > 0 {
-				t := time.Unix(apiSession.IdleUntil, 0).UTC()
-				if localSession.IdleUntil == nil || !localSession.IdleUntil.Equal(t) {
-					localSession.IdleUntil = &t
-					needsUpdate = true
-				}
-			}
 
-			// If this sync just transitioned (or kept) the row in
-			// stopped-persistent, re-apply the same expires_at extension as
-			// StopSession (commit ae8aba7). tt-backend's auto-stop reaches
-			// the local row through this path, and without the extension
-			// expires_at stays at the original creation deadline — already
-			// in the past by the time tt-backend auto-stopped, which drops
-			// the row out of BudgetOccupyingScope and lets the budget gate
-			// allow new launches against still-resumable capacity.
+			// Propager l'état lifecycle depuis tt-backend (source de vérité).
+			// Sans ça, une session auto-arrêtée côté tt-backend reste affichée
+			// comme "running" en local et le front continue d'afficher
+			// "Session expirée" au lieu d'offrir un bouton Reprendre.
 			//
-			// Idempotent: if expires_at already equals idle_until, the
-			// helper returns false and nothing changes.
-			if localSession.State == "stopped" && localSession.PersistenceMode == "persistent" {
+			// Quand l'état cible est "stopped", on délègue à markSessionStopped
+			// (SSOT) — même chemin que la StopSession utilisateur — ce qui
+			// fixe state, IdleUntil ET ExpiresAt en une passe. Sans cette
+			// extension, expires_at resterait à la deadline de création
+			// (déjà dépassée puisque c'est précisément ce qui a déclenché
+			// l'auto-stop), et OccupiesSlotScope laisserait tomber la ligne :
+			// l'utilisateur perdrait la capacité réservée d'un coup, alors
+			// que le conteneur est toujours résumable côté tt-backend.
+			if apiSession.State == "stopped" {
 				var idleUntilPtr *time.Time
 				if apiSession.IdleUntil > 0 {
 					t := time.Unix(apiSession.IdleUntil, 0).Local()
 					idleUntilPtr = &t
 				}
-				if tts.applyStoppedPersistentExpiry(localSession, idleUntilPtr) {
+				if tts.markSessionStopped(localSession, idleUntilPtr) {
+					needsUpdate = true
+				}
+			} else if apiSession.State != "" && localSession.State != apiSession.State {
+				utils.Debug("SyncUserSessions - State mismatch for session %s: changing '%s' -> '%s'",
+					sessionID, localSession.State, apiSession.State)
+				localSession.State = apiSession.State
+				needsUpdate = true
+				// Pour les états non-stopped, on continue de propager IdleUntil
+				// tel quel — markSessionStopped ne s'applique qu'à la transition
+				// vers "stopped".
+				if apiSession.IdleUntil > 0 {
+					t := time.Unix(apiSession.IdleUntil, 0).UTC()
+					if localSession.IdleUntil == nil || !localSession.IdleUntil.Equal(t) {
+						localSession.IdleUntil = &t
+					}
+				}
+			} else if apiSession.IdleUntil > 0 {
+				// État inchangé mais idle_until potentiellement mis à jour
+				// (ex : tt-backend a recalé la deadline pendant un running).
+				t := time.Unix(apiSession.IdleUntil, 0).UTC()
+				if localSession.IdleUntil == nil || !localSession.IdleUntil.Equal(t) {
+					localSession.IdleUntil = &t
 					needsUpdate = true
 				}
 			}
@@ -2316,7 +2326,7 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 //   - Used CPU/RAM: QuotaService.GetBudgetUsage(userID, orgID) — same path as
 //     CheckBudget, so the bars cannot disagree with the budget gate.
 //   - Active sessions list: queries the terminals table through
-//     terminalModels.BudgetOccupyingScope (SSOT) so the list mirrors the
+//     terminalModels.OccupiesSlotScope (SSOT) so the list mirrors the
 //     totals. When orgID is non-nil, the listing follows
 //     sumActiveResourcesForOrg semantics: terminals owned by ANY member of
 //     the org, joined through organization_members. Otherwise it filters by
@@ -2348,7 +2358,7 @@ func (tts *terminalTrainerService) GetUserTerminalUsage(userID string, orgID *uu
 	}
 
 	// 2. Used CPU / RAM via the SSOT helper. Routes through
-	// sumActiveResources* which uses BudgetOccupyingScope.
+	// sumActiveResources* which uses OccupiesSlotScope.
 	if tts.quotaService != nil {
 		usedCPU, usedMem, usageErr := tts.quotaService.GetBudgetUsage(userID, orgID)
 		if usageErr != nil {
@@ -2358,10 +2368,10 @@ func (tts *terminalTrainerService) GetUserTerminalUsage(userID string, orgID *uu
 		resp.UsedMemoryMB = usedMem
 	}
 
-	// 3. Active sessions — same scope (BudgetOccupyingScope) as the totals.
+	// 3. Active sessions — same scope (OccupiesSlotScope) as the totals.
 	// Mirrors the user vs org branch of sumActiveResources*.
 	q := tts.db.Table("terminals").
-		Scopes(models.BudgetOccupyingScope).
+		Scopes(models.OccupiesSlotScope).
 		Select("terminals.session_id, terminals.name, terminals.instance_type, terminals.machine_size, terminals.size_cpu, terminals.size_memory_mb, terminals.state, terminals.persistence_mode, terminals.last_started_at, terminals.expires_at").
 		Order("terminals.last_started_at DESC")
 	if orgID != nil {

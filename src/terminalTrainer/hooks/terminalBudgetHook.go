@@ -10,8 +10,10 @@
 //  2. Enforces the user's (or org's) effective plan budget atomically.
 //     The check is performed inside a transaction with
 //     `SELECT ... FOR UPDATE` on the rows that contribute to current
-//     usage (running OR persistent) so two concurrent session starts
-//     cannot both observe enough budget for the same slice of resources.
+//     usage (running OR stopped — D6': "a stop is a stop", the
+//     persistence_mode distinction is UX-only and not budget logic) so
+//     two concurrent session starts cannot both observe enough budget
+//     for the same slice of resources.
 //
 // Caveat: the generic Create path is what fires this hook. The
 // production composed-session flow (terminalTrainerService.
@@ -199,12 +201,14 @@ func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 }
 
 // lockAndSumActiveResources runs the same predicate as
-// quotaService.sumActiveResources (D6: state=running OR
-// persistence_mode=persistent, AND expires_at > NOW()) but additionally
-// acquires a row lock (SELECT ... FOR UPDATE) on every contributing row.
-// On PostgreSQL this serialises concurrent session starts for the same
-// user/org pair; on SQLite the locking clause is a no-op but the sum is
-// still correct.
+// quotaService.sumActiveResources (D6', supersedes D6, locked
+// 2026-05-28: state IN ('running','stopped') AND deleted_at IS NULL
+// AND expires_at > NOW() — "a stop is a stop", the persistence_mode
+// distinction is UX-only and not budget logic), but additionally
+// acquires a row lock (SELECT ... FOR UPDATE) on every contributing
+// row. On PostgreSQL this serialises concurrent session starts for
+// the same user/org pair; on SQLite the locking clause is a no-op
+// but the sum is still correct.
 //
 // The expires_at > NOW() clause mirrors the SSOT pattern set by
 // terminalModels.OccupiesSlotScope in MR !239: past-expiry zombie rows
@@ -226,6 +230,7 @@ func lockAndSumActiveResources(tx *gorm.DB, userID string, orgID *uuid.UUID) (in
 	}
 
 	now := time.Now()
+	occupyingStates := terminalModels.TerminalStatesOccupyingSlot
 	var q *gorm.DB
 	if orgID != nil {
 		q = tx.Table("terminals").
@@ -234,14 +239,14 @@ func lockAndSumActiveResources(tx *gorm.DB, userID string, orgID *uuid.UUID) (in
 			Where("terminals.deleted_at IS NULL").
 			Where("organization_members.organization_id = ? AND organization_members.deleted_at IS NULL", *orgID).
 			Where("terminals.expires_at > ?", now).
-			Where("(terminals.state = ? OR terminals.persistence_mode = ?)", "running", "persistent")
+			Where("terminals.state IN ?", occupyingStates)
 	} else {
 		q = tx.Table("terminals").
 			Select("size_cpu, size_memory_mb").
 			Where("deleted_at IS NULL").
 			Where("user_id = ?", userID).
 			Where("expires_at > ?", now).
-			Where("(state = ? OR persistence_mode = ?)", "running", "persistent")
+			Where("state IN ?", occupyingStates)
 	}
 
 	// Acquire the lock. On dialects that don't support FOR UPDATE

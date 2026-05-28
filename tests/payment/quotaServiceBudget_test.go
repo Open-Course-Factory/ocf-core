@@ -5,14 +5,12 @@
 // The service sums per-terminal CPU/RAM footprints against the plan's
 // MaxCPU/MaxMemoryMB caps.
 //
-// Lifecycle rule under test (D6): a terminal counts against the budget
-// iff state = 'running' OR persistence_mode = 'persistent'. Ephemeral
-// non-running sessions do not count.
-//
-// non-empty and the requested size is not in it, the request is
-// rejected even if the budget would have allowed it. This is the
-// secondary advanced gate; an empty allowlist means no extra
-// restriction.
+// Lifecycle rule under test (D6' — supersedes D6, locked 2026-05-28):
+// a terminal counts against the budget iff state IN ('running','stopped')
+// AND deleted_at IS NULL AND expires_at > NOW(). The persistence_mode
+// distinction is irrelevant for quota — "a stop is a stop". Stopped
+// rows reserve their slot until tt-backend confirms the container is
+// gone (sync's step 5b then marks the row deleted).
 package payment_tests
 
 import (
@@ -214,38 +212,47 @@ func TestQuotaService_CheckBudget_ZeroBudget_Unlimited(t *testing.T) {
 	assert.Equal(t, math.MaxInt32, check.RemainingMemMB)
 }
 
-func TestQuotaService_CheckBudget_PersistentStoppedCounts(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "u-budget-persistent-stopped"
+// TestQuotaService_CheckBudget_StoppedCountsRegardlessOfPersistence pins the
+// new rule (D6', supersedes D6): every stopped session — persistent OR
+// ephemeral — counts against the budget until tt-backend confirms the
+// container is gone (at which point sync's step 5b marks the row deleted).
+// The persistence_mode distinction is UX-only, not budget logic.
+func TestQuotaService_CheckBudget_StoppedCountsRegardlessOfPersistence(t *testing.T) {
+	cases := []struct {
+		name        string
+		persistence string
+	}{
+		{"persistent", "persistent"},
+		{"ephemeral", "ephemeral"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := freshTestDB(t)
+			ensureTerminalsTable(t, db)
+			userID := "u-budget-stopped-" + tc.persistence
 
-	// Budget: 4 vCPU / 2 GiB. One terminal stopped+persistent of size M (2c / 1g).
-	// Request M again → 2c used, 2c remaining; request 2c/1g must fit.
-	plan := budgetPlan(t, db, "BudgetPersistentStopped", 4, 2048, nil)
-	insertTerminal(t, db, userID, nil, "stopped", "persistent", 2, 1024)
+			// Budget: 4 vCPU / 2 GiB. One stopped session of size M (2c / 1g)
+			// in the persistence mode under test. Request M again → 2c used,
+			// 2c remaining; an L (4c/2g) overflows and must be rejected.
+			plan := budgetPlan(t, db, "BudgetStopped-"+tc.persistence, 4, 2048, nil)
+			insertTerminal(t, db, userID, nil, "stopped", tc.persistence, 2, 1024)
 
-	// Sanity: a request that overflows must still be rejected, proving the
-	// stopped-persistent row counted.
-	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
-	require.NoError(t, err)
-	require.NotNil(t, check)
-	assert.False(t, check.Allowed, "persistent stopped session must count against budget (D6)")
-}
+			check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
+			require.NoError(t, err)
+			require.NotNil(t, check)
+			assert.False(t, check.Allowed,
+				"a stop is a stop: stopped %s session must count against budget", tc.persistence)
 
-func TestQuotaService_CheckBudget_EphemeralStoppedDoesNotCount(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "u-budget-ephemeral-stopped"
-
-	// One terminal stopped+ephemeral (4c / 2g). It must NOT count.
-	plan := budgetPlan(t, db, "BudgetEphemeralStopped", 4, 2048, nil)
-	insertTerminal(t, db, userID, nil, "stopped", "ephemeral", 4, 2048)
-
-	check, err := newQuotaSvc(t, db).CheckBudget(userID, nil, plan, 4, 2048)
-
-	require.NoError(t, err)
-	require.NotNil(t, check)
-	assert.True(t, check.Allowed, "ephemeral stopped session must NOT count (D6)")
+			// And GetBudgetUsage must reflect the reservation (the dashboard
+			// /Utilisation Actuelle bars read through the same path).
+			usedCPU, usedMem, err := newQuotaSvc(t, db).GetBudgetUsage(userID, nil)
+			require.NoError(t, err)
+			assert.Equal(t, 2, usedCPU,
+				"stopped %s session must report CPU usage", tc.persistence)
+			assert.Equal(t, 1024, usedMem,
+				"stopped %s session must report memory usage", tc.persistence)
+		})
+	}
 }
 
 // Past-expiry zombie rows must not count against the budget. Mirrors the

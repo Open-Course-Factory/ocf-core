@@ -10,12 +10,13 @@
 //   - Live counters: used_cpu, used_memory_mb (sum of CPU/RAM held by
 //     budget-occupying sessions — same predicate as the budget gate).
 //   - active_sessions: per-session list keyed by the same scope as the
-//     bars (BudgetOccupyingScope) so the list cannot disagree with the
-//     totals.
+//     bars (OccupiesSlotScope, the SSOT post-D6') so the list cannot
+//     disagree with the totals.
 //
 // Edge predicates exercised:
-//   - Stopped persistent: counted + listed (capacity reserved).
-//   - Stopped ephemeral: NOT counted, NOT listed (capacity released).
+//   - Stopped (persistent OR ephemeral): counted + listed (D6': "a stop
+//     is a stop"; the slot is reserved until sync confirms tt-backend
+//     reaped the container).
 //   - Past-expiry zombie: NOT counted, NOT listed.
 package terminalTrainer_tests
 
@@ -137,61 +138,47 @@ func TestMyTerminalUsage_RunningEphemeral(t *testing.T) {
 	assert.Equal(t, float64(1024), entry["size_memory_mb"])
 }
 
-// TestMyTerminalUsage_StoppedPersistent — stopped persistent session.
-// Capacity reserved: counted + listed with state=stopped.
-func TestMyTerminalUsage_StoppedPersistent(t *testing.T) {
-	freshTestDB(t)
-	userID := "user-stopped-pers"
-	seedPersonalPlanFor(t, userID, 8, 4096, 60, "Pro")
+// TestMyTerminalUsage_Stopped_CountedRegardlessOfPersistence — every
+// stopped session counts and appears in the list, regardless of
+// persistence_mode (D6', supersedes D6).
+func TestMyTerminalUsage_Stopped_CountedRegardlessOfPersistence(t *testing.T) {
+	cases := []struct {
+		name string
+		mode string
+	}{
+		{"persistent", "persistent"},
+		{"ephemeral", "ephemeral"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			freshTestDB(t)
+			userID := "user-stopped-" + tc.mode
+			seedPersonalPlanFor(t, userID, 8, 4096, 60, "Pro")
 
-	insertExistingTerminal(t, sharedTestDB, userID, nil, "stopped", "persistent", 4, 2048)
+			insertExistingTerminal(t, sharedTestDB, userID, nil, "stopped", tc.mode, 4, 2048)
 
-	router := mountMyUsageRouter(t, sharedTestDB, userID)
-	req := httptest.NewRequest("GET", "/terminals/my-usage", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+			router := mountMyUsageRouter(t, sharedTestDB, userID)
+			req := httptest.NewRequest("GET", "/terminals/my-usage", nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code)
-	var resp map[string]interface{}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+			require.Equal(t, http.StatusOK, w.Code)
+			var resp map[string]interface{}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
-	assert.Equal(t, float64(4), resp["used_cpu"],
-		"stopped persistent reserves CPU under BudgetOccupyingScope")
-	assert.Equal(t, float64(2048), resp["used_memory_mb"])
+			assert.Equal(t, float64(4), resp["used_cpu"],
+				"stopped %s reserves CPU under OccupiesSlotScope (D6')", tc.mode)
+			assert.Equal(t, float64(2048), resp["used_memory_mb"])
 
-	sessions, ok := resp["active_sessions"].([]interface{})
-	require.True(t, ok)
-	require.Equal(t, 1, len(sessions),
-		"stopped persistent must appear in the session list (paused = reserved)")
-	entry := sessions[0].(map[string]interface{})
-	assert.Equal(t, "stopped", entry["state"])
-	assert.Equal(t, "persistent", entry["persistence_mode"])
-}
-
-// TestMyTerminalUsage_StoppedEphemeral_Excluded — stopped ephemeral is
-// being torn down: capacity released, must not appear in the list.
-func TestMyTerminalUsage_StoppedEphemeral_Excluded(t *testing.T) {
-	freshTestDB(t)
-	userID := "user-stopped-eph"
-	seedPersonalPlanFor(t, userID, 8, 4096, 60, "Pro")
-
-	insertExistingTerminal(t, sharedTestDB, userID, nil, "stopped", "ephemeral", 2, 1024)
-
-	router := mountMyUsageRouter(t, sharedTestDB, userID)
-	req := httptest.NewRequest("GET", "/terminals/my-usage", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-
-	require.Equal(t, http.StatusOK, w.Code)
-	var resp map[string]interface{}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-
-	assert.Equal(t, float64(0), resp["used_cpu"], "stopped ephemeral must not count toward budget")
-	assert.Equal(t, float64(0), resp["used_memory_mb"])
-
-	sessions, ok := resp["active_sessions"].([]interface{})
-	require.True(t, ok)
-	assert.Equal(t, 0, len(sessions), "stopped ephemeral must be excluded from the list")
+			sessions, ok := resp["active_sessions"].([]interface{})
+			require.True(t, ok)
+			require.Equal(t, 1, len(sessions),
+				"stopped %s must appear in the session list (D6': paused = reserved)", tc.mode)
+			entry := sessions[0].(map[string]interface{})
+			assert.Equal(t, "stopped", entry["state"])
+			assert.Equal(t, tc.mode, entry["persistence_mode"])
+		})
+	}
 }
 
 // TestMyTerminalUsage_ExpiredZombie_Excluded — past-expiry rows whose state
