@@ -648,3 +648,41 @@ type OrgTerminalUsageResponse struct {
 	Quota           *SessionQuotaInfo      `json:"quota,omitempty"`
 	RemainingBySize []SizeRemainingDTO     `json:"remaining_by_size,omitempty"`
 }
+
+// MyTerminalUsageSession is one entry of the active-session list returned by
+// GET /terminals/my-usage. The list mirrors the budget bars: same scope
+// (BudgetOccupyingScope) so the two cannot disagree.
+//
+// Name falls back to InstanceType when the user-provided name is blank — the
+// list is user-facing.
+type MyTerminalUsageSession struct {
+	SessionID       string    `json:"session_id"`
+	Name            string    `json:"name"`
+	SizeKey         string    `json:"size_key"`
+	SizeCPU         int       `json:"size_cpu"`
+	SizeMemoryMB    int       `json:"size_memory_mb"`
+	State           string    `json:"state"`
+	PersistenceMode string    `json:"persistence_mode"`
+	LastStartedAt   time.Time `json:"last_started_at"`
+	ExpiresAt       time.Time `json:"expires_at"`
+}
+
+// MyTerminalUsageResponse is returned by GET /terminals/my-usage. It is the
+// live budget snapshot powering the dashboard "Utilisation Actuelle" panel.
+//
+// Plan envelope (plan_name / plan_source / plan_source_name / max_*) comes
+// from EffectivePlanService.GetUserEffectivePlan. Live counters
+// (used_cpu / used_memory_mb / active_sessions) come from QuotaService and
+// BudgetOccupyingScope so the bars and the session list cannot diverge from
+// the budget gate.
+type MyTerminalUsageResponse struct {
+	PlanName                  string                   `json:"plan_name"`
+	PlanSource                string                   `json:"plan_source"`       // "personal" | "organization"
+	PlanSourceName            string                   `json:"plan_source_name"`  // org name when source=organization, "" otherwise
+	MaxCPU                    int                      `json:"max_cpu"`           // 0 = unlimited
+	MaxMemoryMB               int                      `json:"max_memory_mb"`     // 0 = unlimited
+	MaxSessionDurationMinutes int                      `json:"max_session_duration_minutes"`
+	UsedCPU                   int                      `json:"used_cpu"`
+	UsedMemoryMB              int                      `json:"used_memory_mb"`
+	ActiveSessions            []MyTerminalUsageSession `json:"active_sessions"`
+}

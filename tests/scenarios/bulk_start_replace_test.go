@@ -113,6 +113,9 @@ func (m *mockTTService) GetOrganizationTerminalSessions(uuid.UUID) (*[]ttModels.
 func (m *mockTTService) GetOrgTerminalUsage(uuid.UUID) (*ttDto.OrgTerminalUsageResponse, error) {
 	return nil, nil
 }
+func (m *mockTTService) GetUserTerminalUsage(string, *uuid.UUID) (*ttDto.MyTerminalUsageResponse, error) {
+	return nil, nil
+}
 func (m *mockTTService) GetGroupCommandHistory(string, string, *int64, string, int, int, bool, string) ([]byte, string, error) {
 	return nil, "", nil
 }

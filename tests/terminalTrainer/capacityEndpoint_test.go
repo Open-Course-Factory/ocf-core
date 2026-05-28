@@ -124,6 +124,9 @@ func (m *metricsAwareMockService) GetOrganizationTerminalSessions(orgID uuid.UUI
 func (m *metricsAwareMockService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.OrgTerminalUsageResponse, error) {
 	panic("not implemented")
 }
+func (m *metricsAwareMockService) GetUserTerminalUsage(userID string, orgID *uuid.UUID) (*dto.MyTerminalUsageResponse, error) {
+	panic("not implemented")
+}
 func (m *metricsAwareMockService) GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool, search string) ([]byte, string, error) {
 	panic("not implemented")
 }

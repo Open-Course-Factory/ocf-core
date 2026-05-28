@@ -101,6 +101,12 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	// Capacity check: same plan-resolution chain as start-composed-session
 	// but no CheckLimit/CheckRAMAvailability — this endpoint IS the check.
 	routes.GET("/capacity-check", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), terminalController.CapacityCheck)
+	// My usage snapshot — read-only personal-or-org view used by the dashboard
+	// "Utilisation Actuelle" panel. Same middleware chain as session-options:
+	// InjectOrgContext lets the handler read ?organization_id from context;
+	// InjectEffectivePlan + RequirePlan ensure an active plan resolves before
+	// the handler runs.
+	routes.GET("/my-usage", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), terminalController.MyTerminalUsage)
 
 	// Organization terminal sessions (for trainers/managers)
 	orgRoutes := router.Group("/organizations")

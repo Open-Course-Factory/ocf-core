@@ -40,6 +40,7 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		{"/api/v1/terminals/session-options", "GET"},
 		{"/api/v1/terminals/start-composed-session", "POST"},
 		{"/api/v1/terminals/capacity-check", "GET"},
+		{"/api/v1/terminals/my-usage", "GET"},
 	}
 
 	for _, route := range terminalRoutes {
@@ -126,6 +127,11 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{Path: "/api/v1/terminals/session-options", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get session composition options for a distribution"},
 		access.RoutePermission{Path: "/api/v1/terminals/start-composed-session", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Start a composed terminal session"},
 		access.RoutePermission{Path: "/api/v1/terminals/capacity-check", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Check whether a session of the given size can be launched right now"},
+		// My usage snapshot — read-only personal-or-org view powering the
+		// dashboard "Utilisation Actuelle" panel. Layer 2 OrgRole enforcement
+		// for ?organization_id is handled by the InjectOrgContext middleware
+		// in the route chain (same pattern as session-options).
+		access.RoutePermission{Path: "/api/v1/terminals/my-usage", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get current user's live terminal usage snapshot (plan limits + used CPU/RAM + active sessions)"},
 
 		// Admin routes
 		access.RoutePermission{Path: "/api/v1/terminals/backends/:backendId/set-default", Method: "PATCH", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "Set the default terminal backend"},

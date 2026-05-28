@@ -123,6 +123,9 @@ func (m *capturingTTService) GetOrganizationTerminalSessions(uuid.UUID) (*[]ttMo
 func (m *capturingTTService) GetOrgTerminalUsage(uuid.UUID) (*ttDto.OrgTerminalUsageResponse, error) {
 	return nil, nil
 }
+func (m *capturingTTService) GetUserTerminalUsage(string, *uuid.UUID) (*ttDto.MyTerminalUsageResponse, error) {
+	return nil, nil
+}
 func (m *capturingTTService) GetGroupCommandHistory(string, string, *int64, string, int, int, bool, string) ([]byte, string, error) {
 	return nil, "", nil
 }

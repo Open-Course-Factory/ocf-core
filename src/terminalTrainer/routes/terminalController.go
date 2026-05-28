@@ -98,6 +98,12 @@ type TerminalController interface {
 	// no-side-effect query, so the frontend can drive its launch
 	// indicator from the same source of truth the launch path enforces.
 	CapacityCheck(ctx *gin.Context)
+
+	// MyTerminalUsage returns the live budget snapshot for the dashboard
+	// "Utilisation Actuelle" panel — plan envelope + used CPU/RAM +
+	// the list of sessions occupying the budget. Optionally scoped to an
+	// organization via ?organization_id=<uuid>.
+	MyTerminalUsage(ctx *gin.Context)
 }
 
 type terminalController struct {
@@ -1640,6 +1646,52 @@ func (tc *terminalController) GetOrgTerminalUsage(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Failed to get organization terminal usage",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, usage)
+}
+
+// MyTerminalUsage returns the calling user's live budget snapshot.
+//
+//	@Summary		Get current user's terminal usage snapshot
+//	@Description	Returns the live budget snapshot powering the dashboard "Utilisation Actuelle" panel: plan envelope (limits + source), used CPU/RAM, and the list of sessions occupying the budget. Optionally scoped to an organization via ?organization_id=<uuid>.
+//	@Tags			terminal
+//	@Accept			json
+//	@Produce		json
+//	@Param			organization_id	query	string	false	"Optional organization ID to scope the snapshot to an org plan + org-aggregated usage"
+//	@Security		BearerAuth
+//	@Success		200	{object}	dto.MyTerminalUsageResponse
+//	@Failure		401	{object}	errors.APIError	"Unauthorized"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/terminals/my-usage [get]
+func (tc *terminalController) MyTerminalUsage(ctx *gin.Context) {
+	userID := ctx.GetString("userId")
+	if userID == "" {
+		ctx.JSON(http.StatusUnauthorized, &errors.APIError{
+			ErrorCode:    http.StatusUnauthorized,
+			ErrorMessage: "Unauthorized",
+		})
+		return
+	}
+
+	// Org context is set by InjectOrgContext middleware when ?organization_id
+	// is present (mirrors GetSessionOptions's read of "org_context_id").
+	var orgID *uuid.UUID
+	if orgCtx, exists := ctx.Get("org_context_id"); exists {
+		if orgStr, ok := orgCtx.(string); ok && orgStr != "" {
+			if parsed, parseErr := uuid.Parse(orgStr); parseErr == nil {
+				orgID = &parsed
+			}
+		}
+	}
+
+	usage, err := tc.service.GetUserTerminalUsage(userID, orgID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to get terminal usage",
 		})
 		return
 	}

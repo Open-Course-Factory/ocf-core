@@ -89,6 +89,13 @@ type TerminalTrainerService interface {
 	GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error)
 	GetOrgTerminalUsage(orgID uuid.UUID) (*dto.OrgTerminalUsageResponse, error)
 
+	// User-facing usage snapshot — powers the dashboard "Utilisation Actuelle"
+	// panel. When orgID is non-nil, the response reflects the org's effective
+	// plan and the org-aggregated usage (mirrors GetOrgTerminalUsage's join
+	// semantics via QuotaService). Otherwise it reflects the personal plan
+	// and the user's own usage.
+	GetUserTerminalUsage(userID string, orgID *uuid.UUID) (*dto.MyTerminalUsageResponse, error)
+
 	// Group command history
 	GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool, search string) ([]byte, string, error)
 
@@ -2186,6 +2193,111 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 	} else {
 		resp.Quota = &dto.SessionQuotaInfo{Scope: "unlimited"}
 	}
+
+	return resp, nil
+}
+
+// GetUserTerminalUsage returns the live budget snapshot for the dashboard
+// "Utilisation Actuelle" panel.
+//
+// Resolution:
+//   - Plan envelope: EffectivePlanService.GetUserEffectivePlan(userID, orgID).
+//     plan_source = "organization" when result.Source == PlanSourceOrganization,
+//     else "personal". plan_source_name is the org name when source=organization.
+//   - Used CPU/RAM: QuotaService.GetBudgetUsage(userID, orgID) — same path as
+//     CheckBudget, so the bars cannot disagree with the budget gate.
+//   - Active sessions list: queries the terminals table through
+//     terminalModels.BudgetOccupyingScope (SSOT) so the list mirrors the
+//     totals. When orgID is non-nil, the listing follows
+//     sumActiveResourcesForOrg semantics: terminals owned by ANY member of
+//     the org, joined through organization_members. Otherwise it filters by
+//     terminals.user_id.
+//
+// The session list is ordered by last_started_at DESC so the newest sessions
+// come first.
+func (tts *terminalTrainerService) GetUserTerminalUsage(userID string, orgID *uuid.UUID) (*dto.MyTerminalUsageResponse, error) {
+	resp := &dto.MyTerminalUsageResponse{
+		PlanSource:     string(paymentServices.PlanSourcePersonal),
+		ActiveSessions: []dto.MyTerminalUsageSession{},
+	}
+
+	// 1. Resolve effective plan.
+	effectivePlanSvc := paymentServices.NewEffectivePlanService(tts.db)
+	planResult, err := effectivePlanSvc.GetUserEffectivePlan(userID, orgID)
+	if err == nil && planResult != nil && planResult.Plan != nil {
+		resp.PlanName = planResult.Plan.Name
+		resp.MaxCPU = planResult.Plan.MaxCPU
+		resp.MaxMemoryMB = planResult.Plan.MaxMemoryMB
+		resp.MaxSessionDurationMinutes = planResult.Plan.MaxSessionDurationMinutes
+		resp.PlanSource = string(planResult.Source)
+		if planResult.Source == paymentServices.PlanSourceOrganization && orgID != nil {
+			var org orgModels.Organization
+			if lookupErr := tts.db.First(&org, "id = ?", *orgID).Error; lookupErr == nil {
+				resp.PlanSourceName = org.Name
+			}
+		}
+	}
+
+	// 2. Used CPU / RAM via the SSOT helper. Routes through
+	// sumActiveResources* which uses BudgetOccupyingScope.
+	if tts.quotaService != nil {
+		usedCPU, usedMem, usageErr := tts.quotaService.GetBudgetUsage(userID, orgID)
+		if usageErr != nil {
+			return nil, fmt.Errorf("failed to load budget usage: %w", usageErr)
+		}
+		resp.UsedCPU = usedCPU
+		resp.UsedMemoryMB = usedMem
+	}
+
+	// 3. Active sessions — same scope (BudgetOccupyingScope) as the totals.
+	// Mirrors the user vs org branch of sumActiveResources*.
+	q := tts.db.Table("terminals").
+		Scopes(models.BudgetOccupyingScope).
+		Select("terminals.session_id, terminals.name, terminals.instance_type, terminals.machine_size, terminals.size_cpu, terminals.size_memory_mb, terminals.state, terminals.persistence_mode, terminals.last_started_at, terminals.expires_at").
+		Order("terminals.last_started_at DESC")
+	if orgID != nil {
+		q = q.Joins("JOIN organization_members ON organization_members.user_id = terminals.user_id").
+			Where("organization_members.organization_id = ? AND organization_members.deleted_at IS NULL", *orgID)
+	} else {
+		q = q.Where("terminals.user_id = ?", userID)
+	}
+
+	type sessionRow struct {
+		SessionID       string
+		Name            string
+		InstanceType    string
+		MachineSize     string
+		SizeCPU         int
+		SizeMemoryMB    int
+		State           string
+		PersistenceMode string
+		LastStartedAt   time.Time
+		ExpiresAt       time.Time
+	}
+	var rows []sessionRow
+	if err := q.Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("failed to load active sessions: %w", err)
+	}
+
+	sessions := make([]dto.MyTerminalUsageSession, 0, len(rows))
+	for _, r := range rows {
+		name := r.Name
+		if name == "" {
+			name = r.InstanceType
+		}
+		sessions = append(sessions, dto.MyTerminalUsageSession{
+			SessionID:       r.SessionID,
+			Name:            name,
+			SizeKey:         r.MachineSize,
+			SizeCPU:         r.SizeCPU,
+			SizeMemoryMB:    r.SizeMemoryMB,
+			State:           r.State,
+			PersistenceMode: r.PersistenceMode,
+			LastStartedAt:   r.LastStartedAt,
+			ExpiresAt:       r.ExpiresAt,
+		})
+	}
+	resp.ActiveSessions = sessions
 
 	return resp, nil
 }
