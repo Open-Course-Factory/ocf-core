@@ -1494,16 +1494,25 @@ func (tts *terminalTrainerService) validateBackendForOrg(orgID *uuid.UUID, reque
 		requestedBackend, org.AllowedBackends)
 }
 
-// applyNameTemplate applies template placeholders to generate terminal names
-func (tts *terminalTrainerService) applyNameTemplate(template, groupName, userEmail, userID string) string {
+// ApplyNameTemplate applies template placeholders to generate terminal names.
+// Supported placeholders: {group_name}, {user_email}, {user_id}, {machine_size}.
+// The machineSize is always rendered uppercase (e.g. "xs" -> "XS") so admins
+// get a consistent display regardless of the catalog key casing. When the
+// template is empty and a machineSize is provided, it is appended to the
+// default template so the size is visible in auto-generated session names.
+func ApplyNameTemplate(template, groupName, userEmail, userID, machineSize string) string {
 	if template == "" {
 		template = "{group_name} - {user_email}"
+		if machineSize != "" {
+			template += " - {machine_size}"
+		}
 	}
 
 	result := template
 	result = strings.ReplaceAll(result, "{group_name}", groupName)
 	result = strings.ReplaceAll(result, "{user_email}", userEmail)
 	result = strings.ReplaceAll(result, "{user_id}", userID)
+	result = strings.ReplaceAll(result, "{machine_size}", strings.ToUpper(machineSize))
 
 	return result
 }
@@ -1631,17 +1640,25 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 		}
 	}
 
+	// Resolve the machine size once: an explicit size from the request wins,
+	// otherwise we fall back to the historical default of "S" so existing
+	// admin tooling keeps the same behaviour.
+	bulkSize := request.Size
+	if bulkSize == "" {
+		bulkSize = "S"
+	}
+
 	// Create terminals for each member
 	for _, member := range activeMembers {
 		userEmail := userEmails[member.UserID]
 
 		// Generate terminal name using template
-		terminalName := tts.applyNameTemplate(request.NameTemplate, group.DisplayName, userEmail, member.UserID)
+		terminalName := ApplyNameTemplate(request.NameTemplate, group.DisplayName, userEmail, member.UserID, bulkSize)
 
 		// Create composed session input for this user
 		composedInput := dto.CreateComposedSessionInput{
 			Distribution:     request.InstanceType, // InstanceType now maps to distribution name
-			Size:             "S",                  // Default size for bulk creation
+			Size:             bulkSize,
 			Terms:            request.Terms,
 			Name:             terminalName,
 			Expiry:           request.Expiry,

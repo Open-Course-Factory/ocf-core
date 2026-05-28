@@ -392,7 +392,8 @@ type BulkCreateTerminalsRequest struct {
 	Terms          string `binding:"required" json:"terms"`
 	Expiry         int    `json:"expiry,omitempty"`
 	InstanceType   string `json:"instance_type,omitempty"`
-	NameTemplate   string `json:"name_template,omitempty"` // Template with placeholders: {group_name}, {user_email}, {user_id}
+	Size           string `json:"size,omitempty"`          // Machine size key (e.g. "xs", "s", "m", "l", "xl"); defaults to "S" when empty
+	NameTemplate   string `json:"name_template,omitempty"` // Template with placeholders: {group_name}, {user_email}, {user_id}, {machine_size}
 	Backend          string `json:"backend,omitempty"`
 	OrganizationID   string `json:"organization_id,omitempty"`
 	RecordingEnabled int    `json:"recording_enabled,omitempty"`
