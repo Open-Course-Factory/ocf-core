@@ -3036,7 +3036,12 @@ func (tts *terminalTrainerService) GetDistributions(backend string) ([]dto.TTDis
 	return distributions, nil
 }
 
-// GetCatalogSizes fetches sizes from tt-backend with a 60s TTL cache
+// GetCatalogSizes fetches sizes from tt-backend with a 60s TTL cache.
+//
+// Each entry is enriched with CPUMcpu from ocf-core's payment catalog so
+// the wire stops conflating tt-backend's cpuset integer (raw CPU) with the
+// effective budget cost. Custom sizes unknown to ocf-core's catalog land
+// with CPUMcpu=0 — the frontend treats that as "unknown, fall back to raw".
 func (tts *terminalTrainerService) GetCatalogSizes() ([]dto.TTSize, error) {
 	tts.catalogSizesMu.RLock()
 	if tts.catalogSizesCache != nil && time.Since(tts.catalogSizesCacheTime) < catalogCacheTTL {
@@ -3054,6 +3059,14 @@ func (tts *terminalTrainerService) GetCatalogSizes() ([]dto.TTSize, error) {
 	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sizes, opts)
 	if err != nil {
 		return nil, err
+	}
+
+	// Stamp the effective mCPU budget cost from the OCF catalog. Sizes the
+	// catalog doesn't know about keep CPUMcpu=0 (sentinel for "unknown").
+	for i := range sizes {
+		if cataSize, found := catalog.LookupSize(sizes[i].Key); found {
+			sizes[i].CPUMcpu = cataSize.CPU
+		}
 	}
 
 	tts.catalogSizesMu.Lock()
@@ -3116,10 +3129,21 @@ func ComputeSessionOptions(
 
 	// Evaluate each size. All catalog sizes are admitted; the budget
 	// engine sets RemainingCount per size downstream.
+	//
+	// We re-stamp CPUMcpu from the OCF catalog here so the field is
+	// authoritative regardless of whether the caller passed in sizes that
+	// already had it populated (GetCatalogSizes path) or bare TTSize
+	// literals (tests / future callers). Sizes the catalog doesn't know
+	// about keep CPUMcpu=0.
 	allowedSizes := make([]dto.SessionOptionSize, 0, len(allSizes))
 	for _, s := range allSizes {
 		if s.SortOrder < minSortOrder {
 			continue
+		}
+		if cataSize, found := catalog.LookupSize(s.Key); found {
+			s.CPUMcpu = cataSize.CPU
+		} else {
+			s.CPUMcpu = 0
 		}
 		allowedSizes = append(allowedSizes, dto.SessionOptionSize{TTSize: s, Allowed: true})
 	}

@@ -511,12 +511,28 @@ type TTDistribution struct {
 	SupportedFeatures []string `json:"supported_features,omitempty"`
 }
 
-// TTSize mirrors tt-backend's Size struct
+// TTSize mirrors tt-backend's Size struct.
+//
+// CPU is tt-backend's raw cpuset integer (the number of vCPUs pinned to the
+// container; XS=1). It is NOT the effective CPU budget cost — tt-backend
+// applies a per-size cpu_allowance (e.g. 50% for XS), so the budget engine
+// uses CPUMcpu instead.
+//
+// CPUMcpu is the effective CPU budget cost in millicores (1000 = 1 vCPU),
+// sourced from ocf-core's payment/catalog. It is authoritative for budget
+// math and for any frontend display that wants to show "0.5 vCPU" rather
+// than the misleading cpuset count. Falls back to 0 when the size key is
+// not in ocf-core's catalog (e.g. a custom tt-backend size unknown to
+// ocf-core); frontends treat 0 as "unknown, fall back to raw CPU".
 type TTSize struct {
 	Key          string `json:"key"`
 	Name         string `json:"name"`
 	Description  string `json:"description,omitempty"`
 	CPU          int    `json:"cpu"`
+	// CPUMcpu is the effective CPU budget cost in millicores (1000 = 1 vCPU).
+	// Authoritative for budget/display; falls back to 0 when the size is not
+	// in ocf-core's catalog.
+	CPUMcpu      int    `json:"cpu_mcpu"`
 	CPUAllowance string `json:"cpu_allowance"`
 	Memory       string `json:"memory"`
 	Disk         string `json:"disk"`

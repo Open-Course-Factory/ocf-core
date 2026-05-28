@@ -356,3 +356,65 @@ func TestDistributionPrefix_MustBeUsedForInstanceType(t *testing.T) {
 	assert.NotEqual(t, input.Distribution, instanceType,
 		"InstanceType must differ from Distribution (prefix vs name)")
 }
+
+// ==========================================
+// ComputeSessionOptions populates CPUMcpu (SSOT for vCPU display)
+// ==========================================
+//
+// The TTSize.CPU field carries tt-backend's raw cpuset integer (XS=1) — it
+// has historically been mistaken by the frontend for "1 vCPU" of budget
+// cost. The effective budget cost (in millicores) lives in ocf-core's
+// payment/catalog: XS=500, S=1000, M=2000, L=4000, XL=4000.
+//
+// ComputeSessionOptions must stamp CPUMcpu on every emitted SessionOptionSize
+// so the wire carries an unambiguous, authoritative budget cost. Sizes that
+// ocf-core's catalog doesn't recognize (e.g. a custom tt-backend size) land
+// with CPUMcpu=0 — the frontend treats that as "fall back to raw".
+func TestComputeSessionOptions_PopulatesCPUMcpu(t *testing.T) {
+	distro := baseDistro()
+	// Distro supports all features used by the helper sizes; we include a
+	// catalog-unknown "XXL" entry so the fallback path is also exercised.
+	sizes := append(baseSizes(), dto.TTSize{
+		Key:          "XXL",
+		Name:         "Extra Extra Large",
+		SortOrder:    60,
+		CPU:          16,
+		CPUAllowance: "400%",
+		Memory:       "8GB",
+		Disk:         "40GB",
+		Processes:    2000,
+	})
+	features := baseFeatures()
+	plan := proPlan()
+
+	opts := services.ComputeSessionOptions(distro, sizes, features, plan)
+
+	// Index sizes by key for table-driven assertions.
+	byKey := make(map[string]dto.SessionOptionSize, len(opts.AllowedSizes))
+	for _, s := range opts.AllowedSizes {
+		byKey[s.Key] = s
+	}
+
+	tests := []struct {
+		key      string
+		expected int
+		comment  string
+	}{
+		{"XS", 500, "XS is the canonical 0.5 vCPU size — the raw cpuset=1 lies about budget"},
+		{"S", 1000, "S = 1 vCPU = 1000 mCPU"},
+		{"M", 2000, "M = 2 vCPU = 2000 mCPU"},
+		{"L", 4000, "L = 4 vCPU = 4000 mCPU"},
+		{"XL", 4000, "XL shares L's CPU cost (4000 mCPU); only memory differs"},
+		{"XXL", 0, "Custom size not in OCF catalog → CPUMcpu=0 (frontend falls back to raw)"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.key, func(t *testing.T) {
+			s, ok := byKey[tc.key]
+			if !ok {
+				t.Fatalf("size %q missing from ComputeSessionOptions output", tc.key)
+			}
+			assert.Equal(t, tc.expected, s.CPUMcpu, tc.comment)
+		})
+	}
+}
