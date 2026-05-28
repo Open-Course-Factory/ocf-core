@@ -317,32 +317,8 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 		terminal.State = "stopped"
 		if idleUntil != nil {
 			terminal.IdleUntil = idleUntil
-			// .Local() normalise la zone : sans ça, SQLite compare
-			// lexicographiquement le format UTC "Z" (issu du JSON tt-backend)
-			// avec le format local "+02:00" utilisé par les autres écritures
-			// du codebase, et BudgetOccupyingScope ne retrouve plus la ligne
-			// dans les tests. En production (PostgreSQL) la conversion est
-			// implicite.
-			localIdleUntil := idleUntil.Local()
-			terminal.ExpiresAt = localIdleUntil
-		} else {
-			// Fallback : on déduit la fenêtre de reap du plan (même valeur
-			// que celle posée à la création par StartComposedSession et au
-			// resume par StartSession). Si le plan n'est pas trouvable ou
-			// n'a pas de cap positif, on laisse ExpiresAt tel quel — c'est
-			// la seule valeur dont on dispose.
-			if terminal.SubscriptionPlanID != nil {
-				var plan paymentModels.SubscriptionPlan
-				if planErr := tts.db.First(&plan, "id = ?", *terminal.SubscriptionPlanID).Error; planErr == nil {
-					if plan.MaxSessionDurationMinutes > 0 {
-						terminal.ExpiresAt = time.Now().Add(time.Duration(plan.MaxSessionDurationMinutes) * time.Minute)
-					}
-				} else {
-					utils.Warn("StopSession: failed to load plan %s for terminal %s: %v — leaving ExpiresAt untouched",
-						terminal.SubscriptionPlanID.String(), sessionID, planErr)
-				}
-			}
 		}
+		tts.applyStoppedPersistentExpiry(terminal, idleUntil)
 	} else {
 		// Ephemeral (ou mode vide / inconnu) : le conteneur n'existe plus
 		// côté tt-backend, la ligne locale doit le refléter pour ne pas
@@ -372,6 +348,58 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	}
 
 	return nil
+}
+
+// applyStoppedPersistentExpiry sets terminal.ExpiresAt so the row stays
+// counted by BudgetOccupyingScope for as long as tt-backend would still
+// allow a resume. The caller is responsible for ensuring the terminal is
+// in state="stopped" + persistence_mode="persistent" before calling.
+//
+// Preference order for the new ExpiresAt:
+//  1. idleUntil from tt-backend (the authoritative reap deadline)
+//  2. fallback: time.Now() + plan.MaxSessionDurationMinutes (best-effort
+//     when tt-backend didn't supply idle_until, mirrors what StartSession
+//     posts as expiry)
+//  3. if neither is available, leave ExpiresAt untouched (the only thing
+//     we can trust is the existing value)
+//
+// Returns true iff ExpiresAt was modified, so the caller knows to flag the
+// row for UpdateTerminalSession.
+//
+// Why .Local() on the assigned value: the JSON reader produces UTC time
+// values (Z suffix). SQLite text-compares timestamps lexicographically and
+// "Z"-formatted values do not match the "+02:00" local serializations
+// written elsewhere in the codebase, so BudgetOccupyingScope drops the row
+// in tests. PostgreSQL handles the timezone implicitly, so production is
+// fine — but matching the convention everywhere keeps the SQLite/Postgres
+// behavior aligned.
+func (tts *terminalTrainerService) applyStoppedPersistentExpiry(
+	terminal *models.Terminal,
+	idleUntil *time.Time,
+) bool {
+	if idleUntil != nil {
+		newExpiry := idleUntil.Local()
+		if terminal.ExpiresAt.Equal(newExpiry) {
+			return false
+		}
+		terminal.ExpiresAt = newExpiry
+		return true
+	}
+	// Fallback: plan-derived window. Mirrors StartComposedSession + StartSession.
+	if terminal.SubscriptionPlanID == nil {
+		return false
+	}
+	var plan paymentModels.SubscriptionPlan
+	if err := tts.db.First(&plan, "id = ?", *terminal.SubscriptionPlanID).Error; err != nil {
+		utils.Warn("applyStoppedPersistentExpiry: failed to load plan %s for terminal %s: %v — leaving ExpiresAt untouched",
+			terminal.SubscriptionPlanID.String(), terminal.SessionID, err)
+		return false
+	}
+	if plan.MaxSessionDurationMinutes <= 0 {
+		return false
+	}
+	terminal.ExpiresAt = time.Now().Add(time.Duration(plan.MaxSessionDurationMinutes) * time.Minute).Local()
+	return true
 }
 
 // resolvePlanExpirySeconds is the SSOT for converting a plan's
@@ -742,6 +770,28 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 				t := time.Unix(apiSession.IdleUntil, 0).UTC()
 				if localSession.IdleUntil == nil || !localSession.IdleUntil.Equal(t) {
 					localSession.IdleUntil = &t
+					needsUpdate = true
+				}
+			}
+
+			// If this sync just transitioned (or kept) the row in
+			// stopped-persistent, re-apply the same expires_at extension as
+			// StopSession (commit ae8aba7). tt-backend's auto-stop reaches
+			// the local row through this path, and without the extension
+			// expires_at stays at the original creation deadline — already
+			// in the past by the time tt-backend auto-stopped, which drops
+			// the row out of BudgetOccupyingScope and lets the budget gate
+			// allow new launches against still-resumable capacity.
+			//
+			// Idempotent: if expires_at already equals idle_until, the
+			// helper returns false and nothing changes.
+			if localSession.State == "stopped" && localSession.PersistenceMode == "persistent" {
+				var idleUntilPtr *time.Time
+				if apiSession.IdleUntil > 0 {
+					t := time.Unix(apiSession.IdleUntil, 0).Local()
+					idleUntilPtr = &t
+				}
+				if tts.applyStoppedPersistentExpiry(localSession, idleUntilPtr) {
 					needsUpdate = true
 				}
 			}
