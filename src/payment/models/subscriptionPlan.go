@@ -31,7 +31,13 @@ type SubscriptionPlan struct {
 
 	// Budget-based quota fields. The CPU/RAM budget is the single source
 	// of truth for resource caps.
-	MaxCPU      int `gorm:"default:0" mapstructure:"max_cpu" json:"max_cpu"`             // Total vCPU budget; 0 = unlimited
+	//
+	// MaxCPU is expressed in millicores (mCPU): 1000 mCPU = 1 vCPU. The
+	// unit matches catalog.MachineSize.CPU so size.CPU and plan.MaxCPU
+	// can be summed/compared directly without any unit conversion. The
+	// frontend converts mCPU to fractional vCPU for display ("5000 mCPU"
+	// → "5 vCPU", "500 mCPU" → "0.5 vCPU").
+	MaxCPU      int `gorm:"default:0" mapstructure:"max_cpu" json:"max_cpu"`             // Total CPU budget in mCPU (1000 = 1 vCPU); 0 = unlimited
 	MaxMemoryMB int `gorm:"default:0" mapstructure:"max_memory_mb" json:"max_memory_mb"` // Total RAM budget in MiB; 0 = unlimited
 
 	NetworkAccessEnabled       bool     `gorm:"default:false" json:"network_access_enabled"`    // Allow external network access

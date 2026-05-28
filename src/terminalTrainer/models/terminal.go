@@ -186,6 +186,10 @@ type Terminal struct {
 	// BeforeCreate hook in a later MR from the size catalog so the budget
 	// quota counter can sum CPU/RAM without re-joining against tt-backend.
 	// Existing rows remain at 0 until the backfill runs.
+	//
+	// SizeCPU is in millicores (mCPU): 1000 = 1 vCPU. Matches the unit
+	// on catalog.MachineSize.CPU and SubscriptionPlan.MaxCPU so the budget
+	// summing query stays a pure SQL aggregate without any conversion.
 	SizeCPU      int `gorm:"default:0" json:"size_cpu,omitempty"`
 	SizeMemoryMB int `gorm:"default:0" json:"size_memory_mb,omitempty"`
 	UserTerminalKey      UserTerminalKey
