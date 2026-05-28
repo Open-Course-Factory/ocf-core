@@ -877,15 +877,14 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 		return
 	}
 
-	// Set limits from effective plan (source of truth for current org context)
+	// Set limits from effective plan (source of truth for current org context).
+	// concurrent_terminals rows are no longer seeded — the budget engine
+	// (MaxCPU/MaxMemoryMB) is the sole authoritative cap for terminals.
 	if effectiveResult != nil && effectiveResult.Plan != nil {
 		plan := effectiveResult.Plan
 		for i := range *usageMetrics {
 			metric := &(*usageMetrics)[i]
-			switch metric.MetricType {
-			case "concurrent_terminals":
-				metric.LimitValue = int64(plan.MaxConcurrentTerminals)
-			case "courses_created":
+			if metric.MetricType == "courses_created" {
 				metric.LimitValue = int64(plan.MaxCourses)
 			}
 		}

@@ -203,7 +203,6 @@ func TestTerminateUserTerminals_DeletesActiveTerminals(t *testing.T) {
 		PriceAmount:            0,
 		Currency:               "eur",
 		BillingInterval:        "month",
-		MaxConcurrentTerminals: 5,
 		IsActive:               true,
 	}
 	require.NoError(t, db.Create(plan).Error)
@@ -249,7 +248,6 @@ func TestCancelOrganizationSubscription_ImmediateTerminatesTerminals(t *testing.
 		PriceAmount:            0,
 		Currency:               "eur",
 		BillingInterval:        "month",
-		MaxConcurrentTerminals: 10,
 		IsActive:               true,
 	}
 	require.NoError(t, db.Create(plan).Error)

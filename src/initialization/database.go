@@ -316,15 +316,15 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		Currency:                    "eur",
 		BillingInterval:             "month",
 		TrialDays:                   0,
-		Features:                    []string{"Unlimited restarts", "1 hour max session", "1 concurrent terminal", "XS machine", "No network access", "Ephemeral storage only"},
+		Features:                    []string{"Unlimited restarts", "1 hour max session", "1 XS machine budget", "No network access", "Ephemeral storage only"},
 		MaxConcurrentUsers:          1,
 		MaxCourses:                  -1,
 		IsActive:                    true,
 		RequiredRole:                "member",
 		UseTieredPricing:            false,
 		MaxSessionDurationMinutes:   60,
-		MaxConcurrentTerminals:      1,
-		AllowedMachineSizes:         []string{"XS"},
+		MaxCPU:                      1,   // 1 × XS
+		MaxMemoryMB:                 256, // 1 × XS
 		NetworkAccessEnabled:        false,
 		DataPersistenceEnabled:      false,
 		DataPersistenceGB:           0,
@@ -341,9 +341,10 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 
 	// Sync existing Trial plan fields to match code (handles drift on existing plans)
 	db.Model(&existing).Updates(map[string]interface{}{
-		"description":                   "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
+		"description":                    "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
 		"max_session_duration_minutes":   60,
-		"max_concurrent_terminals":       1,
+		"max_cpu":                        1,
+		"max_memory_mb":                  256,
 		"max_courses":                    -1,
 		"network_access_enabled":         false,
 		"data_persistence_enabled":       false,
@@ -352,9 +353,8 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		"command_history_retention_days": 7,
 	})
 	// JSON-serialized fields need struct-based update
-	db.Model(&existing).Select("features", "allowed_machine_sizes").Updates(paymentModels.SubscriptionPlan{
-		Features:            []string{"Unlimited restarts", "1 hour max session", "1 concurrent terminal", "XS machine", "No network access", "Ephemeral storage only"},
-		AllowedMachineSizes: []string{"XS"},
+	db.Model(&existing).Select("features").Updates(paymentModels.SubscriptionPlan{
+		Features: []string{"Unlimited restarts", "1 hour max session", "1 XS machine budget", "No network access", "Ephemeral storage only"},
 	})
 }
 
@@ -372,47 +372,47 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 
 	// Plan Member Pro (Individual)
 	memberProPlan := &paymentModels.SubscriptionPlan{
-		Name:               "Member Pro",
-		Description:        "Accès à un terminal - Utilisateur individuel",
-		PriceAmount:        1200, // 12€ per license
-		Currency:           "eur",
-		BillingInterval:    "month",
-		TrialDays:          14,
-		Features:           []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "machine_size_xs", "machine_size_s", "machine_size_m", "network_access", "data_persistence", "command_history"},
-		MaxConcurrentUsers: 1,
-		MaxCourses:         -1,
-		IsActive:           true,
-		RequiredRole:       "member", // Changed from "member_pro" (deprecated) to "member"
-		UseTieredPricing:   false,
-		MaxSessionDurationMinutes: 180,
-		MaxConcurrentTerminals:    3,
-		AllowedMachineSizes:       []string{"XS", "S", "M"},
-		NetworkAccessEnabled:      true,
-		DataPersistenceEnabled:    true,
-		DataPersistenceGB:         5,
+		Name:                        "Member Pro",
+		Description:                 "Accès à un terminal - Utilisateur individuel",
+		PriceAmount:                 1200, // 12€ per license
+		Currency:                    "eur",
+		BillingInterval:             "month",
+		TrialDays:                   14,
+		Features:                    []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "machine_size_xs", "machine_size_s", "machine_size_m", "network_access", "data_persistence", "command_history"},
+		MaxConcurrentUsers:          1,
+		MaxCourses:                  -1,
+		IsActive:                    true,
+		RequiredRole:                "member", // Changed from "member_pro" (deprecated) to "member"
+		UseTieredPricing:            false,
+		MaxSessionDurationMinutes:   180,
+		MaxCPU:                      6,    // 3 × M (2 vCPU each)
+		MaxMemoryMB:                 3072, // 3 × M (1024 MiB each)
+		NetworkAccessEnabled:        true,
+		DataPersistenceEnabled:      true,
+		DataPersistenceGB:           5,
 		CommandHistoryRetentionDays: 90,
 	}
 
 	// Plan Trainer (With Bulk Purchase & Tiered Pricing)
 	trainerPlan := &paymentModels.SubscriptionPlan{
-		Name:               "Trainer Plan",
-		Description:        "Pour formateurs - Achat en gros avec tarifs dégressifs",
-		PriceAmount:        1200, // 12€ base price per license
-		Currency:           "eur",
-		BillingInterval:    "month",
-		TrialDays:          0,
-		Features:           []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "bulk_purchase", "group_management", "machine_size_xs", "machine_size_s", "machine_size_m", "machine_size_l", "machine_size_xl", "network_access", "data_persistence", "command_history"},
-		MaxConcurrentUsers: 1,
-		MaxCourses:         -1,
-		IsActive:           true,
-		RequiredRole:       "trainer",
-		UseTieredPricing:   true,
-		MaxSessionDurationMinutes: 480,
-		MaxConcurrentTerminals:    10,
-		AllowedMachineSizes:       []string{"XS", "S", "M", "L", "XL"},
-		NetworkAccessEnabled:      true,
-		DataPersistenceEnabled:    true,
-		DataPersistenceGB:         20,
+		Name:                        "Trainer Plan",
+		Description:                 "Pour formateurs - Achat en gros avec tarifs dégressifs",
+		PriceAmount:                 1200, // 12€ base price per license
+		Currency:                    "eur",
+		BillingInterval:             "month",
+		TrialDays:                   0,
+		Features:                    []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "bulk_purchase", "group_management", "machine_size_xs", "machine_size_s", "machine_size_m", "machine_size_l", "machine_size_xl", "network_access", "data_persistence", "command_history"},
+		MaxConcurrentUsers:          1,
+		MaxCourses:                  -1,
+		IsActive:                    true,
+		RequiredRole:                "trainer",
+		UseTieredPricing:            true,
+		MaxSessionDurationMinutes:   480,
+		MaxCPU:                      40,    // 10 × XL (4 vCPU each)
+		MaxMemoryMB:                 40960, // 10 × XL (4096 MiB each)
+		NetworkAccessEnabled:        true,
+		DataPersistenceEnabled:      true,
+		DataPersistenceGB:           20,
 		CommandHistoryRetentionDays: 365,
 		PricingTiers: []paymentModels.PricingTier{
 			{MinQuantity: 1, MaxQuantity: 5, UnitAmount: 1200, Description: "1-5 licences: 12€/licence"},
@@ -900,7 +900,8 @@ func SeedPlanFeatures(db *gorm.DB) {
 		{Key: "command_history", DisplayNameEn: "Command History Recording", DisplayNameFr: "Historique des commandes", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
 		{Key: "command_history_retention_days", DisplayNameEn: "History Retention", DisplayNameFr: "Conservation de l'historique", Category: "terminal_limits", ValueType: "number", Unit: "days", DefaultValue: "0", IsActive: true},
 		{Key: "max_session_duration_minutes", DisplayNameEn: "Max Session Duration", DisplayNameFr: "Durée max de session", Category: "terminal_limits", ValueType: "number", Unit: "minutes", DefaultValue: "60", IsActive: true},
-		{Key: "max_concurrent_terminals", DisplayNameEn: "Max Concurrent Terminals", DisplayNameFr: "Terminaux simultanés max", Category: "terminal_limits", ValueType: "number", Unit: "count", DefaultValue: "1", IsActive: true},
+		{Key: "max_cpu", DisplayNameEn: "Max vCPU Budget", DisplayNameFr: "Budget vCPU max", Category: "terminal_limits", ValueType: "number", Unit: "vCPU", DefaultValue: "0", IsActive: true},
+		{Key: "max_memory_mb", DisplayNameEn: "Max Memory Budget", DisplayNameFr: "Budget mémoire max", Category: "terminal_limits", ValueType: "number", Unit: "MiB", DefaultValue: "0", IsActive: true},
 
 		// Course limits (number)
 		{Key: "max_courses", DisplayNameEn: "Max Courses", DisplayNameFr: "Nombre de cours max", Category: "course_limits", ValueType: "number", Unit: "count", DefaultValue: "-1", IsActive: true},

@@ -31,7 +31,6 @@ func createPlanWithBackendConfig(
 		Currency:                   "eur",
 		BillingInterval:            "month",
 		IsActive:                   true,
-		MaxConcurrentTerminals:     maxTerminals,
 		MaxCourses:                 5,
 		MaxSessionDurationMinutes:  60,
 		AllowedMachineSizes:        []string{"all"},

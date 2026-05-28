@@ -142,7 +142,6 @@ func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan
 
 		// Terminal-specific limits
 		MaxSessionDurationMinutes: plan.MaxSessionDurationMinutes,
-		MaxConcurrentTerminals:    plan.MaxConcurrentTerminals,
 		AllowedMachineSizes:       plan.AllowedMachineSizes,
 		NetworkAccessEnabled:      plan.NetworkAccessEnabled,
 		DataPersistenceEnabled:    plan.DataPersistenceEnabled,

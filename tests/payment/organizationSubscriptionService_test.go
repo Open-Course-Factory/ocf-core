@@ -33,7 +33,6 @@ func seedTestData(t *testing.T, db *gorm.DB) (
 		Currency:  "eur",
 		BillingInterval: "month",
 		Features: []string{"basic_features"},
-		MaxConcurrentTerminals: 1,
 		MaxCourses: 3,
 		IsActive: true,
 	}
@@ -49,7 +48,6 @@ func seedTestData(t *testing.T, db *gorm.DB) (
 		Currency:  "eur",
 		BillingInterval: "month",
 		Features: []string{"basic_features", "advanced_labs", "custom_themes"},
-		MaxConcurrentTerminals: 10,
 		MaxCourses: -1,
 		IsActive: true,
 	}
@@ -319,7 +317,6 @@ func TestOrganizationSubscriptionService_FeatureAccess(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.NotNil(t, limits)
-		assert.Equal(t, freePlan.MaxConcurrentTerminals, limits.MaxConcurrentTerminals)
 		assert.Equal(t, freePlan.MaxCourses, limits.MaxCourses)
 	})
 }
@@ -338,7 +335,6 @@ func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
 		Currency:  "eur",
 		BillingInterval: "month",
 		Features: []string{"basic_features", "advanced_labs", "custom_themes"},
-		MaxConcurrentTerminals: 10,
 		MaxCourses: -1, // Unlimited
 		IsActive: true,
 	}
@@ -367,7 +363,6 @@ func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
 		assert.Contains(t, features.AllFeatures, "basic_features")
 
 		// Numeric limits come from the HighestPlan (Premium Free) only.
-		assert.Equal(t, premiumFreePlan.MaxConcurrentTerminals, features.MaxConcurrentTerminals)
 		assert.Equal(t, premiumFreePlan.MaxCourses, features.MaxCourses)
 
 		// Should include both organizations
@@ -423,7 +418,6 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		Priority:  10,
 		PriceAmount: 500,
 		Features: []string{"feature_a", "feature_b"},
-		MaxConcurrentTerminals: 2,
 		MaxCourses: 10,
 		IsActive: true,
 	}
@@ -435,7 +429,6 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		Priority:  20,
 		PriceAmount: 1000,
 		Features: []string{"feature_b", "feature_c"},
-		MaxConcurrentTerminals: 5,
 		MaxCourses: 50,
 		IsActive: true,
 	}
@@ -447,7 +440,6 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		Priority:  30,
 		PriceAmount: 5000,
 		Features: []string{"feature_c", "feature_d", "feature_e"},
-		MaxConcurrentTerminals: -1, // Unlimited
 		MaxCourses: -1,
 		IsActive: true,
 	}
@@ -510,7 +502,6 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		assert.Contains(t, features.AllFeatures, "feature_e") // from Enterprise
 
 		// Numeric limits come from the HighestPlan only (Enterprise = -1 / unlimited).
-		assert.Equal(t, -1, features.MaxConcurrentTerminals)
 		assert.Equal(t, -1, features.MaxCourses)
 
 		// Should include all three organizations
@@ -552,7 +543,6 @@ func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *test
 		Currency:               "eur",
 		BillingInterval:        "month",
 		Features:               []string{"basic_features"},
-		MaxConcurrentTerminals: 5, // higher than Trainer Plan
 		MaxCourses:             20,
 		IsActive:               true,
 	}
@@ -560,7 +550,6 @@ func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *test
 	assert.NoError(t, err)
 
 	// Higher-priority plan with LOWER numeric limits (mirrors prod data shape).
-	// NOTE: MaxConcurrentTerminals has `gorm:"default:1"`, so we use 2 (not 0)
 	// to avoid the zero-value→default substitution. Old max() would return 5;
 	// new HighestPlan-only behaviour returns 2.
 	trainerPlan := &models.SubscriptionPlan{
@@ -571,7 +560,6 @@ func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *test
 		Currency:               "eur",
 		BillingInterval:        "month",
 		Features:               []string{"trainer_features"},
-		MaxConcurrentTerminals: 2, // intentionally lower than Member Pro's 5
 		MaxCourses:             3, // intentionally lower than Member Pro's 20
 		IsActive:               true,
 	}
@@ -634,8 +622,6 @@ func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *test
 
 	// CRITICAL: numeric limits come from HighestPlan ONLY — NOT max() across plans.
 	// Old behaviour would have returned 5 (max of 2, 5). New behaviour returns 2.
-	assert.Equal(t, 2, features.MaxConcurrentTerminals,
-		"MaxConcurrentTerminals must come from HighestPlan (Trainer Plan = 2), not max() across plans (which would give 5)")
 	assert.Equal(t, 3, features.MaxCourses,
 		"MaxCourses must come from HighestPlan (Trainer Plan = 3), not max() across plans (which would give 20)")
 

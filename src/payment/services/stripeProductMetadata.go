@@ -5,9 +5,7 @@
 // unit-tested without mocking the Stripe SDK.
 //
 // The Stripe Product metadata mirrors only what the budget engine cares
-// about: the plan ID (for reconciliation) plus MaxCPU / MaxMemoryMB. The
-// legacy count-mode keys (`max_concurrent_terminals`, `quota_model`) were
-// retired with the dual-mode cleanup.
+// about: the plan ID (for reconciliation) plus MaxCPU / MaxMemoryMB.
 package services
 
 import (

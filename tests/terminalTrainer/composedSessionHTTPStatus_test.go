@@ -217,7 +217,6 @@ func defaultTestPlan() *paymentModels.SubscriptionPlan {
 		Name:                      "Pro",
 		IsActive:                  true,
 		AllowedMachineSizes:       []string{"XS", "S", "M"},
-		MaxConcurrentTerminals:    5,
 		MaxSessionDurationMinutes: 60,
 	}
 	plan.ID = uuid.New()

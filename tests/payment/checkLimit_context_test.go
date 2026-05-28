@@ -49,7 +49,6 @@ func (m *mockEffectivePlanService) CheckEffectiveUsageLimitFromResult(result *pa
 func makePlan(maxConcurrent int) *paymentModels.SubscriptionPlan {
 	return &paymentModels.SubscriptionPlan{
 		Name:                   "Test Plan",
-		MaxConcurrentTerminals: maxConcurrent,
 		MaxCourses:             10,
 	}
 }

@@ -52,27 +52,3 @@ func GetUserOrganizationWithFeature(db *gorm.DB, userID string, feature string) 
 	return service.GetUserOrganizationWithFeature(userID, feature)
 }
 
-// GetUserEffectiveLimits returns the usage limits from the user's effective plan
-// (unified resolution: org subscription with personal fallback).
-func GetUserEffectiveLimits(db *gorm.DB, userID string) (*EffectiveLimits, error) {
-	svc := services.NewEffectivePlanService(db)
-	// nil orgID: these utility helpers run outside any HTTP request and have
-	// no org context to pass — fall back to the user's globally highest-priority
-	// plan. Callers that DO have an org context should use EffectivePlanService
-	// directly with the org ID.
-	result, err := svc.GetUserEffectivePlan(userID, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &EffectiveLimits{
-		MaxConcurrentTerminals: result.Plan.MaxConcurrentTerminals,
-		MaxCourses:             result.Plan.MaxCourses,
-	}, nil
-}
-
-// EffectiveLimits represents the aggregate limits for a user across all organizations
-type EffectiveLimits struct {
-	MaxConcurrentTerminals int
-	MaxCourses             int
-}

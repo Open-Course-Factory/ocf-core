@@ -42,7 +42,6 @@ func setupOrgAndPlan(t *testing.T) (orgID uuid.UUID, planID uuid.UUID) {
 		Currency:               "eur",
 		BillingInterval:        "month",
 		MaxCourses:             -1,
-		MaxConcurrentTerminals: 5,
 		MaxConcurrentUsers:     15,
 		IsActive:               true,
 	}

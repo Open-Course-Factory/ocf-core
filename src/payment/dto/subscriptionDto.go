@@ -20,7 +20,6 @@ type CreateSubscriptionPlanInput struct {
 	MaxCourses         int      `json:"max_courses" mapstructure:"max_courses"`
 	RequiredRole       string   `json:"required_role" mapstructure:"required_role"`
 	MaxSessionDurationMinutes      int      `json:"max_session_duration_minutes" mapstructure:"max_session_duration_minutes"`
-	MaxConcurrentTerminals         int      `json:"max_concurrent_terminals" mapstructure:"max_concurrent_terminals"`
 	AllowedMachineSizes            []string `json:"allowed_machine_sizes" mapstructure:"allowed_machine_sizes"`
 	NetworkAccessEnabled           bool     `json:"network_access_enabled" mapstructure:"network_access_enabled"`
 	DataPersistenceEnabled         bool     `json:"data_persistence_enabled" mapstructure:"data_persistence_enabled"`
@@ -46,7 +45,6 @@ type UpdateSubscriptionPlanInput struct {
 	MaxConcurrentUsers *int     `json:"max_concurrent_users,omitempty" mapstructure:"max_concurrent_users"`
 	MaxCourses         *int     `json:"max_courses,omitempty" mapstructure:"max_courses"`
 	MaxSessionDurationMinutes      *int     `json:"max_session_duration_minutes,omitempty" mapstructure:"max_session_duration_minutes"`
-	MaxConcurrentTerminals         *int     `json:"max_concurrent_terminals,omitempty" mapstructure:"max_concurrent_terminals"`
 	AllowedMachineSizes            []string `json:"allowed_machine_sizes,omitempty" mapstructure:"allowed_machine_sizes"`
 	NetworkAccessEnabled           *bool    `json:"network_access_enabled,omitempty" mapstructure:"network_access_enabled"`
 	DataPersistenceEnabled         *bool    `json:"data_persistence_enabled,omitempty" mapstructure:"data_persistence_enabled"`
@@ -83,7 +81,6 @@ type SubscriptionPlanOutput struct {
 
 	// Terminal-specific limits (for Terminal Trainer feature)
 	MaxSessionDurationMinutes int      `json:"max_session_duration_minutes"`
-	MaxConcurrentTerminals    int      `json:"max_concurrent_terminals"`
 	AllowedMachineSizes       []string `json:"allowed_machine_sizes"`
 	NetworkAccessEnabled      bool     `json:"network_access_enabled"`
 	DataPersistenceEnabled    bool     `json:"data_persistence_enabled"`

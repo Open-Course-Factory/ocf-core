@@ -37,19 +37,17 @@ type OrganizationSubscriptionService interface {
 
 // Business types for organization limits
 type OrganizationLimits struct {
-	OrganizationID         uuid.UUID
-	MaxConcurrentTerminals int
-	MaxCourses             int
-	CurrentTerminals       int
-	CurrentCourses         int
+	OrganizationID   uuid.UUID
+	MaxCourses       int
+	CurrentTerminals int
+	CurrentCourses   int
 }
 
 type UserEffectiveFeatures struct {
-	HighestPlan            *models.SubscriptionPlan
-	AllFeatures            []string
-	MaxConcurrentTerminals int
-	MaxCourses             int
-	Organizations          []OrganizationFeatureInfo
+	HighestPlan   *models.SubscriptionPlan
+	AllFeatures   []string
+	MaxCourses    int
+	Organizations []OrganizationFeatureInfo
 }
 
 type OrganizationFeatureInfo struct {
@@ -270,10 +268,9 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 
 	// Aggregate features
 	features := &UserEffectiveFeatures{
-		AllFeatures:            make([]string, 0),
-		MaxConcurrentTerminals: 0,
-		MaxCourses:             0,
-		Organizations:          make([]OrganizationFeatureInfo, 0),
+		AllFeatures:   make([]string, 0),
+		MaxCourses:    0,
+		Organizations: make([]OrganizationFeatureInfo, 0),
 	}
 
 	featureSet := make(map[string]bool)
@@ -343,7 +340,6 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 	// This keeps the effective plan internally consistent: every numeric field reflects
 	// the same plan the UI labels as the user's effective plan.
 	if features.HighestPlan != nil {
-		features.MaxConcurrentTerminals = features.HighestPlan.MaxConcurrentTerminals
 		features.MaxCourses = features.HighestPlan.MaxCourses
 	}
 

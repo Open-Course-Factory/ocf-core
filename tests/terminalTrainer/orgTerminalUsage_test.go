@@ -204,8 +204,8 @@ func TestGetOrgTerminalUsage_ResponseShape(t *testing.T) {
 	assert.Equal(t, org.ID.String(), resp["organization_id"], "organization_id must match")
 	_, hasActive := resp["active_terminals"]
 	assert.True(t, hasActive, "Response must contain active_terminals")
-	_, hasMax := resp["max_terminals"]
-	assert.True(t, hasMax, "Response must contain max_terminals")
+	_, hasOccupying := resp["occupying_slots"]
+	assert.True(t, hasOccupying, "Response must contain occupying_slots")
 	_, hasPlan := resp["plan_name"]
 	assert.True(t, hasPlan, "Response must contain plan_name")
 	_, hasFallback := resp["is_fallback"]
@@ -439,18 +439,18 @@ func TestGetOrgTerminalUsage_OccupyingSlotsAllStopped(t *testing.T) {
 	assert.Equal(t, float64(1), userEntry["occupying_slots"])
 }
 
-// TestGetOrgTerminalUsage_PlanLimitsFromSubscription verifies that max_terminals
-// is populated from the organization's subscription plan.
+// TestGetOrgTerminalUsage_PlanLimitsFromSubscription verifies that the
+// budget envelope is populated from the organization's subscription plan.
 func TestGetOrgTerminalUsage_PlanLimitsFromSubscription(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
-	// Create a subscription plan with a specific max_concurrent_terminals
 	plan := &paymentModels.SubscriptionPlan{
-		Name:                   "Pro",
-		MaxConcurrentTerminals: 5,
-		MaxCourses:             -1,
-		IsActive:               true,
-		IsCatalog:              true,
+		Name:        "Pro",
+		MaxCPU:      8,
+		MaxMemoryMB: 4096,
+		MaxCourses:  -1,
+		IsActive:    true,
+		IsCatalog:   true,
 	}
 	require.NoError(t, db.Create(plan).Error)
 
@@ -488,8 +488,10 @@ func TestGetOrgTerminalUsage_PlanLimitsFromSubscription(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
-	assert.Equal(t, float64(5), resp["max_terminals"],
-		"max_terminals should come from the organization's subscription plan")
+	quota, ok := resp["quota"].(map[string]interface{})
+	require.True(t, ok, "response must carry budget quota envelope")
+	assert.Equal(t, float64(8), quota["max_cpu"], "quota max_cpu should come from the plan")
+	assert.Equal(t, float64(4096), quota["max_memory_mb"], "quota max_memory_mb should come from the plan")
 	assert.Equal(t, "Pro", resp["plan_name"],
 		"plan_name should match the subscription plan name")
 }

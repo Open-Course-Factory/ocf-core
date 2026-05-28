@@ -2917,8 +2917,7 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 				continue
 			}
 
-			// Parse the dual-mode budget metadata once per product (new keys
-			// preferred, legacy `max_concurrent_terminals` as fallback).
+			// Parse the budget metadata once per product.
 			budgetMeta := ParsePlanProductMetadata(prod.Metadata)
 
 			// Check if plan already exists by Stripe price ID

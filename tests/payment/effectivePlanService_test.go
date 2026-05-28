@@ -15,19 +15,20 @@ import (
 	"gorm.io/gorm"
 )
 
-// createPlan is a helper that creates a SubscriptionPlan with the given name, priority, and terminal limit.
-func createPlan(t *testing.T, db *gorm.DB, name string, priority int, maxTerminals int) *models.SubscriptionPlan {
+// createPlan is a helper that creates a SubscriptionPlan with the given name and priority.
+// The trailing int parameter is retained for call-site compatibility; it is unused
+// (the legacy MaxConcurrentTerminals field has been retired in favour of the budget engine).
+func createPlan(t *testing.T, db *gorm.DB, name string, priority int, _ int) *models.SubscriptionPlan {
 	t.Helper()
 	plan := &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   name,
-		Priority:               priority,
-		PriceAmount:            0,
-		Currency:               "eur",
-		BillingInterval:        "month",
-		IsActive:               true,
-		MaxConcurrentTerminals: maxTerminals,
-		MaxCourses:             5,
+		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:            name,
+		Priority:        priority,
+		PriceAmount:     0,
+		Currency:        "eur",
+		BillingInterval: "month",
+		IsActive:        true,
+		MaxCourses:      5,
 	}
 	err := db.Create(plan).Error
 	assert.NoError(t, err)
@@ -249,194 +250,3 @@ func TestGetUserEffectivePlan_EqualPriority_PersonalWins(t *testing.T) {
 	assert.Equal(t, "Personal Plan", result.Plan.Name)
 }
 
-// --- CheckEffectiveUsageLimit tests ---
-
-func TestCheckEffectiveUsageLimit_ConcurrentTerminals_UnderLimit(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "user-under-limit"
-
-	plan := createPlan(t, db, "Basic", 5, 2)
-	createUserSubscription(t, db, userID, plan)
-
-	// No active terminals inserted — current usage = 0
-
-	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, check)
-	assert.True(t, check.Allowed)
-	assert.Equal(t, int64(0), check.CurrentUsage)
-	assert.Equal(t, int64(2), check.Limit)
-	assert.Equal(t, int64(2), check.RemainingUsage)
-	assert.Empty(t, check.Message)
-}
-
-func TestCheckEffectiveUsageLimit_ConcurrentTerminals_AtLimit(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "user-at-limit"
-
-	plan := createPlan(t, db, "Basic", 5, 2)
-	createUserSubscription(t, db, userID, plan)
-
-	// Insert 2 active terminals
-	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
-	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
-
-	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, check)
-	assert.False(t, check.Allowed)
-	assert.Equal(t, int64(2), check.CurrentUsage)
-	assert.Equal(t, int64(2), check.Limit)
-	assert.Equal(t, int64(0), check.RemainingUsage)
-	assert.Contains(t, check.Message, "Usage limit exceeded")
-}
-
-func TestCheckEffectiveUsageLimit_Unlimited(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "user-unlimited"
-
-	plan := createPlan(t, db, "Enterprise", 30, -1) // -1 = unlimited
-	createUserSubscription(t, db, userID, plan)
-
-	// Insert 10 active terminals
-	for i := 0; i < 10; i++ {
-		db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
-	}
-
-	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, check)
-	assert.True(t, check.Allowed)
-	assert.Equal(t, int64(10), check.CurrentUsage)
-	assert.Equal(t, int64(-1), check.Limit)
-	assert.Equal(t, int64(-1), check.RemainingUsage)
-	assert.Empty(t, check.Message)
-}
-
-func TestCheckEffectiveUsageLimit_NoSubscription(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "user-no-sub-limit"
-
-	// No subscription created — should return an error
-	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
-
-	assert.Error(t, err)
-	assert.Nil(t, check)
-	assert.Contains(t, err.Error(), "failed to get effective plan")
-}
-
-func TestCheckEffectiveUsageLimit_WithinLimit_WithExistingTerminals(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "user-within-limit"
-
-	plan := createPlan(t, db, "Pro", 10, 5) // max 5 concurrent terminals
-	createUserSubscription(t, db, userID, plan)
-
-	// Insert 2 active terminals — user is within the limit of 5
-	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
-	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
-
-	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, check)
-	assert.True(t, check.Allowed)
-	assert.Equal(t, int64(2), check.CurrentUsage)
-	assert.Equal(t, int64(5), check.Limit)
-	assert.Equal(t, int64(3), check.RemainingUsage)
-	assert.Empty(t, check.Message)
-}
-
-func TestCheckEffectiveUsageLimit_DeletedTerminalsNotCounted(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "user-deleted-terminals"
-
-	plan := createPlan(t, db, "Basic", 5, 2) // max 2 concurrent terminals
-	createUserSubscription(t, db, userID, plan)
-
-	// Insert 1 active terminal and 1 soft-deleted terminal
-	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
-	db.Exec("INSERT INTO terminals (id, user_id, state, deleted_at) VALUES (?, ?, ?, ?)", uuid.New().String(), userID, "running", time.Now())
-
-	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, check)
-	assert.True(t, check.Allowed)
-	assert.Equal(t, int64(1), check.CurrentUsage, "soft-deleted terminals should not be counted")
-	assert.Equal(t, int64(2), check.Limit)
-	assert.Equal(t, int64(1), check.RemainingUsage)
-}
-
-// TestCheckEffectiveUsageLimit_StoppedCountedExpiredNotCounted documents the
-// post-fix counter semantics: a stopped session still occupies a slot (it is
-// only freed by DELETE), while expired sessions do not. This replaces the
-// earlier TestCheckEffectiveUsageLimit_InactiveTerminalsNotCounted which
-// asserted the buggy behavior — see fix(payment): count stopped terminals
-// toward concurrent limit.
-func TestCheckEffectiveUsageLimit_StoppedCountedExpiredNotCounted(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "user-stopped-vs-expired"
-
-	plan := createPlan(t, db, "Basic", 5, 3) // max 3 concurrent terminals
-	createUserSubscription(t, db, userID, plan)
-
-	// 1 active + 1 stopped — both must count (2 total).
-	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "running")
-	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "stopped")
-	// 1 expired — must NOT count (slot already released).
-	db.Exec("INSERT INTO terminals (id, user_id, state) VALUES (?, ?, ?)", uuid.New().String(), userID, "deleted")
-
-	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, check)
-	assert.True(t, check.Allowed, "2 occupying + 1 increment ≤ 3 cap → allowed")
-	assert.Equal(t, int64(2), check.CurrentUsage, "active and stopped both occupy a slot; expired does not")
-	assert.Equal(t, int64(3), check.Limit)
-	assert.Equal(t, int64(1), check.RemainingUsage)
-}
-
-func TestCheckEffectiveUsageLimit_OrgPlan(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "user-org-limit-check"
-
-	// User has no personal subscription, only an org subscription
-	proPlan := createPlan(t, db, "Pro", 10, 5)
-	org, _ := createOrgWithSubscription(t, db, "org-limit", userID, proPlan)
-
-	// Insert 3 active terminals scoped to the org — the count must reflect
-	// only terminals tied to this org's context (#311 I2 fix).
-	for i := 0; i < 3; i++ {
-		db.Exec("INSERT INTO terminals (id, user_id, state, organization_id) VALUES (?, ?, ?, ?)",
-			uuid.New().String(), userID, "running", org.ID.String())
-	}
-
-	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, check)
-	assert.True(t, check.Allowed)
-	assert.Equal(t, int64(3), check.CurrentUsage)
-	assert.Equal(t, int64(5), check.Limit)
-	assert.Equal(t, int64(2), check.RemainingUsage)
-}

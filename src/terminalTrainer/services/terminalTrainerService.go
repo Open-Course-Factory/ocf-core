@@ -1953,12 +1953,10 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 	planResult, err := effectivePlanSvc.GetUserEffectivePlan(org.OwnerUserID, &orgIDPtr)
 
 	planName := "unknown"
-	maxTerminals := 0
 	isFallback := false
 	var resolvedPlan *paymentModels.SubscriptionPlan
 	if err == nil && planResult != nil && planResult.Plan != nil {
 		planName = planResult.Plan.Name
-		maxTerminals = planResult.Plan.MaxConcurrentTerminals
 		isFallback = planResult.IsFallback
 		resolvedPlan = planResult.Plan
 	}
@@ -2142,7 +2140,6 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 		OrganizationID:  orgID.String(),
 		ActiveTerminals: totalActive,
 		OccupyingSlots:  totalOccupying,
-		MaxTerminals:    maxTerminals,
 		PlanName:        planName,
 		IsFallback:      isFallback,
 		Users:           users,

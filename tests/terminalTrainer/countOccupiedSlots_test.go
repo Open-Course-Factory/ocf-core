@@ -215,7 +215,6 @@ func TestCountUserOccupiedSlots_OrgScoped(t *testing.T) {
 // JOIN organization_members ON organization_members.user_id = terminals.user_id
 // WHERE organization_members.organization_id = orgID.
 //
-// Rationale: org plan quotas (MaxConcurrentTerminals) constrain "terminals
 // launched by any member of this org", which the join captures even if a
 // member's terminal row doesn't carry the organization_id column.
 func TestCountOrgOccupiedSlots(t *testing.T) {

@@ -27,9 +27,8 @@ type SubscriptionPlan struct {
 
 	// Terminal-specific limits (new fields for terminal pricing)
 	// Note: No limit on number of sessions - only concurrent and duration limits
-	MaxSessionDurationMinutes  int      `gorm:"default:60" json:"max_session_duration_minutes"` // Max time per session
-	MaxConcurrentTerminals     int      `gorm:"default:1" json:"max_concurrent_terminals"`      // Max terminals running at once
-	AllowedMachineSizes        []string `gorm:"serializer:json" json:"allowed_machine_sizes"`   // ["XS", "S", "M", "L", "XL"]
+	MaxSessionDurationMinutes int      `gorm:"default:60" json:"max_session_duration_minutes"` // Max time per session
+	AllowedMachineSizes       []string `gorm:"serializer:json" json:"allowed_machine_sizes"`   // ["XS", "S", "M", "L", "XL"]
 
 	// Budget-based quota fields. The CPU/RAM budget is the single source
 	// of truth for resource caps; the legacy MaxConcurrentTerminals +

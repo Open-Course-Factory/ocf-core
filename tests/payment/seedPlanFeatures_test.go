@@ -17,7 +17,7 @@ import (
 // removed (e.g. the persistence consolidation in MR !239 dropped the duplicate
 // persistent_sessions_enabled / max_persistent_sessions catalog entries — the
 // canonical entry is data_persistence + data_persistence_gb).
-const expectedSeededFeatureCount = int64(23)
+const expectedSeededFeatureCount = int64(24)
 
 func TestSeedPlanFeatures_EmptyDB_SeedsAllFeatures(t *testing.T) {
 	db := freshTestDB(t)

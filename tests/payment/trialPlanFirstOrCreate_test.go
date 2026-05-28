@@ -51,9 +51,9 @@ func TestEnsureTrialPlanExists_FirstOrCreate_CreatesWhenMissing(t *testing.T) {
 	assert.True(t, plan.IsActive, "Trial plan should be active")
 	assert.Equal(t, "member", plan.RequiredRole)
 	assert.Equal(t, 60, plan.MaxSessionDurationMinutes)
-	assert.Equal(t, 1, plan.MaxConcurrentTerminals)
 	assert.Equal(t, -1, plan.MaxCourses)
 	assert.False(t, plan.NetworkAccessEnabled, "Trial plan should not have network access")
 	assert.Equal(t, 7, plan.CommandHistoryRetentionDays)
-	assert.Contains(t, plan.AllowedMachineSizes, "XS")
+	assert.Equal(t, 1, plan.MaxCPU, "Trial plan budget = 1 XS (1 vCPU)")
+	assert.Equal(t, 256, plan.MaxMemoryMB, "Trial plan budget = 1 XS (256 MiB)")
 }

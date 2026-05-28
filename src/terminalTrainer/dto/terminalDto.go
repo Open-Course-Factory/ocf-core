@@ -630,9 +630,9 @@ type SizeRemainingDTO = paymentDto.SizeRemaining
 // OrgTerminalUsageResponse is returned by GET /organizations/:id/terminal-usage.
 //
 // ActiveTerminals is the "what's running right now" display count. OccupyingSlots
-// is the quota-relevant count and matches MaxTerminals semantics (stopped sessions
-// still occupy a slot — see models.TerminalStatesOccupyingSlot). Both are
-// surfaced so the dashboard can show "5 running / 7 slots used / 10 max".
+// is the count of sessions that still occupy a slot (stopped persistent sessions
+// included — see models.TerminalStatesOccupyingSlot). The dashboard pairs both
+// with the Quota envelope to show "5 running / 7 slots used / X vCPU left".
 //
 // Budget fields (Quota, RemainingBySize) reflect the org's current CPU/RAM
 // footprint against the effective plan's caps. Plans with zero caps report
@@ -642,7 +642,6 @@ type OrgTerminalUsageResponse struct {
 	OrganizationID  string                 `json:"organization_id"`
 	ActiveTerminals int                    `json:"active_terminals"`
 	OccupyingSlots  int                    `json:"occupying_slots"`
-	MaxTerminals    int                    `json:"max_terminals"`
 	PlanName        string                 `json:"plan_name"`
 	IsFallback      bool                   `json:"is_fallback"`
 	Users           []OrgTerminalUsageUser `json:"users"`

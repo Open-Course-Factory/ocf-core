@@ -181,7 +181,6 @@ func TestResumeMiddleware_SyncsBeforeValidate(t *testing.T) {
 	plan := &paymentModels.SubscriptionPlan{
 		Name:                      "Formateur",
 		Priority:                  10,
-		MaxConcurrentTerminals:    5,
 		MaxSessionDurationMinutes: 60,
 		DataPersistenceEnabled:    true,
 		IsActive:                  true,

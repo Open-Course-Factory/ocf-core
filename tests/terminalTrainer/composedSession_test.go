@@ -81,7 +81,6 @@ func freePlan() *paymentModels.SubscriptionPlan {
 		NetworkAccessEnabled:       false,
 		DataPersistenceEnabled:     false,
 		MaxSessionDurationMinutes:  60,
-		MaxConcurrentTerminals:     1,
 		CommandHistoryRetentionDays: 0,
 	}
 }
@@ -93,7 +92,6 @@ func proPlan() *paymentModels.SubscriptionPlan {
 		NetworkAccessEnabled:       true,
 		DataPersistenceEnabled:     true,
 		MaxSessionDurationMinutes:  480,
-		MaxConcurrentTerminals:     5,
 		CommandHistoryRetentionDays: 30,
 	}
 }

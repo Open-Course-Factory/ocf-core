@@ -241,11 +241,10 @@ func (s *quotaService) GetOrgQuota(orgID uuid.UUID) (*OrganizationLimits, error)
 		Count(&currentCourses)
 
 	return &OrganizationLimits{
-		OrganizationID:         orgID,
-		MaxConcurrentTerminals: plan.MaxConcurrentTerminals,
-		MaxCourses:             plan.MaxCourses,
-		CurrentTerminals:       int(currentTerminals),
-		CurrentCourses:         int(currentCourses),
+		OrganizationID:   orgID,
+		MaxCourses:       plan.MaxCourses,
+		CurrentTerminals: int(currentTerminals),
+		CurrentCourses:   int(currentCourses),
 	}, nil
 }
 
@@ -257,28 +256,11 @@ func (s *quotaService) GetUserUsage(userID string, orgID *uuid.UUID, metric stri
 }
 
 // currentUsage centralizes the per-metric strategy for reading the
-// current value. concurrent_terminals comes from a live count via the
-// SSOT slot scope; other metrics fall back to the stored usage_metrics
-// row (which is what the legacy paths did).
-//
-// For concurrent_terminals we fail closed: if the live count fails
-// (e.g. a transient DB error), the error is surfaced to the caller so
-// the request returns 5xx rather than silently reporting near-zero
-// usage and granting unlimited terminals. Post-Phase D the materialized
-// counter is no longer kept in sync, so the previous fallback would
-// have effectively bypassed the cap.
-func (s *quotaService) currentUsage(userID string, orgID *uuid.UUID, metric string) (int64, error) {
-	switch metric {
-	case "concurrent_terminals":
-		count, err := terminalModels.CountUserOccupiedSlots(s.db, userID, orgID)
-		if err != nil {
-			utils.Error("Live terminal count failed for user %s (org=%v): %v", userID, orgID, err)
-			return 0, fmt.Errorf("failed to count user terminal slots: %w", err)
-		}
-		return count, nil
-	default:
-		return s.storedUsage(userID, metric), nil
-	}
+// current value. Terminal usage is now driven by the budget engine
+// (CheckBudget) and no longer flows through this dispatcher; the
+// remaining metric types fall back to the stored usage_metrics row.
+func (s *quotaService) currentUsage(userID string, _ *uuid.UUID, metric string) (int64, error) {
+	return s.storedUsage(userID, metric), nil
 }
 
 // storedUsage reads the persisted usage_metrics row for a user/metric.
@@ -297,11 +279,10 @@ func (s *quotaService) storedUsage(userID, metric string) int64 {
 
 // limitForMetric extracts the per-metric limit from a plan. -1 means
 // unlimited. Centralized here so future metric types can be added in
-// one place.
+// one place. Terminal-related caps are NOT here — they live on the
+// budget engine (MaxCPU/MaxMemoryMB).
 func limitForMetric(plan *models.SubscriptionPlan, metric string) int64 {
 	switch metric {
-	case "concurrent_terminals":
-		return int64(plan.MaxConcurrentTerminals)
 	case "courses_created":
 		return int64(plan.MaxCourses)
 	case "concurrent_users":

@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
@@ -229,34 +230,6 @@ func TestGetUserEffectivePlanForOrg_NonexistentOrg_Error(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to load organization")
 }
 
-// --- CheckEffectiveUsageLimitForOrg tests ---
-
-func TestCheckEffectiveUsageLimitForOrg_TeamOrg_UsesOrgPlanLimits(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "user-org-limit-for-org"
-
-	teamPlan := createPlan(t, db, "TeamPlan", 20, 3) // max 3 concurrent terminals
-	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "my-team", userID, teamPlan, organizationModels.OrgTypeTeam)
-
-	// Insert 2 active terminals scoped to the org (#311 I2 fix: the count for
-	// an org-sourced plan must be scoped to that org).
-	db.Exec("INSERT INTO terminals (id, user_id, state, organization_id) VALUES (?, ?, ?, ?)",
-		uuid.New().String(), userID, "running", teamOrg.ID.String())
-	db.Exec("INSERT INTO terminals (id, user_id, state, organization_id) VALUES (?, ?, ?, ?)",
-		uuid.New().String(), userID, "running", teamOrg.ID.String())
-
-	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, &teamOrg.ID, "concurrent_terminals", 1)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, check)
-	assert.True(t, check.Allowed)
-	assert.Equal(t, int64(2), check.CurrentUsage)
-	assert.Equal(t, int64(3), check.Limit)
-	assert.Equal(t, int64(1), check.RemainingUsage)
-}
-
 // --- Security: org membership validation tests ---
 
 // TestGetUserEffectivePlanForOrg_NonMember_TeamOrg_ShouldRejectAccess verifies that a user
@@ -291,9 +264,7 @@ func TestGetUserEffectivePlanForOrg_NonMember_TeamOrg_ShouldRejectAccess(t *test
 }
 
 // TestCheckEffectiveUsageLimitForOrg_NonMember_ShouldRejectAccess verifies that
-// CheckEffectiveUsageLimitForOrg also rejects non-member access.
-// BUG: Since it delegates to GetUserEffectivePlanForOrg which has no membership check,
-// a non-member user can query (and benefit from) another org's usage limits.
+// CheckEffectiveUsageLimit also rejects non-member access for org-scoped checks.
 func TestCheckEffectiveUsageLimitForOrg_NonMember_ShouldRejectAccess(t *testing.T) {
 	db := freshTestDB(t)
 	ensureTerminalsTable(t, db)
@@ -301,34 +272,18 @@ func TestCheckEffectiveUsageLimitForOrg_NonMember_ShouldRejectAccess(t *testing.
 	ownerUserID := "org-owner-for-limit"
 	attackerUserID := "attacker-for-limit"
 
-	// Create a generous plan for the team org
-	generousPlan := createPlan(t, db, "GenerousPlan", 50, 100) // 100 concurrent terminals
+	// Plan with a courses cap that we can exercise without touching the
+	// budget engine (the latter has its own dedicated tests).
+	generousPlan := createPlan(t, db, "GenerousPlan", 50, 0)
+	generousPlan.MaxCourses = 100
+	require.NoError(t, db.Save(generousPlan).Error)
 	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "generous-team", ownerUserID, generousPlan, organizationModels.OrgTypeTeam)
 
 	// attackerUserID is NOT a member — should not be able to check limits against this org
 
 	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(attackerUserID, &teamOrg.ID, "concurrent_terminals", 1)
+	check, err := svc.CheckEffectiveUsageLimit(attackerUserID, &teamOrg.ID, "courses_created", 1)
 
-	// EXPECTED: error indicating the user is not a member of the org
-	// CURRENT BUG: returns the org's generous limits (100 terminals) for the attacker
 	assert.Error(t, err, "should reject usage limit check for non-member user")
 	assert.Nil(t, check, "should not return usage limits for non-member user")
-}
-
-func TestCheckEffectiveUsageLimitForOrg_NilOrg_FallsBackToGlobal(t *testing.T) {
-	db := freshTestDB(t)
-	ensureTerminalsTable(t, db)
-	userID := "user-nil-org-limit"
-
-	plan := createPlan(t, db, "PersonalPlan", 5, 2)
-	createUserSubscription(t, db, userID, plan)
-
-	svc := services.NewEffectivePlanService(db)
-	check, err := svc.CheckEffectiveUsageLimit(userID, nil, "concurrent_terminals", 1)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, check)
-	assert.True(t, check.Allowed)
-	assert.Equal(t, int64(2), check.Limit)
 }

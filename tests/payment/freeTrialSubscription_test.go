@@ -35,7 +35,6 @@ func TestMultipleFreeSubscriptions_NoUniqueConstraintViolation(t *testing.T) {
 		Currency:               "eur",
 		BillingInterval:        "month",
 		MaxCourses:             5,
-		MaxConcurrentTerminals: 1,
 		IsActive:               true,
 	}
 	err := db.Create(trialPlan).Error
@@ -108,7 +107,6 @@ func TestPaidSubscriptions_UniqueConstraintEnforced(t *testing.T) {
 		Currency:               "eur",
 		BillingInterval:        "month",
 		MaxCourses:             -1, // Unlimited
-		MaxConcurrentTerminals: 5,
 		IsActive:               true,
 	}
 	err := db.Create(paidPlan).Error
@@ -234,7 +232,6 @@ func TestFreeTrialCreation_E2E(t *testing.T) {
 		BillingInterval:        "month",
 		TrialDays:              14,
 		MaxCourses:             5,
-		MaxConcurrentTerminals: 1,
 		MaxConcurrentUsers:     1,
 		IsActive:               true,
 	}

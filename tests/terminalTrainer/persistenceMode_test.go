@@ -123,7 +123,6 @@ func makePlan(persistent bool) *paymentModels.SubscriptionPlan {
 		Name:                      "test-plan",
 		IsActive:                  true,
 		AllowedMachineSizes:       []string{"S"},
-		MaxConcurrentTerminals:    5,
 		MaxSessionDurationMinutes: 60,
 		DataPersistenceEnabled:    persistent,
 	}
@@ -473,7 +472,6 @@ func TestStartComposedSession_PersistentGatedByDataPersistenceEnabled(t *testing
 		Name:                      "ssot-plan",
 		IsActive:                  true,
 		AllowedMachineSizes:       []string{"S"},
-		MaxConcurrentTerminals:    5,
 		MaxSessionDurationMinutes: 60,
 		DataPersistenceEnabled:    true,
 	}
@@ -510,7 +508,6 @@ func TestStartComposedSession_PersistentRejectedWhenDataPersistenceDisabled(t *t
 		Name:                      "ssot-plan-no-pers",
 		IsActive:                  true,
 		AllowedMachineSizes:       []string{"S"},
-		MaxConcurrentTerminals:    5,
 		MaxSessionDurationMinutes: 60,
 		DataPersistenceEnabled:    false,
 	}

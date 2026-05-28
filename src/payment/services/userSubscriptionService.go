@@ -407,15 +407,15 @@ func (ss *subscriptionService) UpgradeUserPlan(userID string, newPlanID uuid.UUI
 			return fmt.Errorf("failed to update subscription: %w", err)
 		}
 
-		// Update all usage metric limits for this user
+		// Update all usage metric limits for this user. The terminal cap is
+		// driven by the budget engine (MaxCPU/MaxMemoryMB), so only the
+		// course metric still flows through usage_metrics.
 		err := tx.Model(&models.UsageMetrics{}).
 			Where("user_id = ? AND subscription_id = ?", userID, subscription.ID).
 			Updates(map[string]any{
 				"limit_value": gorm.Expr("CASE "+
-					"WHEN metric_type = 'concurrent_terminals' THEN ? "+
 					"WHEN metric_type = 'courses_created' THEN ? "+
 					"ELSE limit_value END",
-					newPlan.MaxConcurrentTerminals,
 					newPlan.MaxCourses,
 				),
 			}).Error
@@ -496,21 +496,8 @@ func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptio
 	//       and is NOT used for feature toggling - only for display purposes
 	metrics := []models.UsageMetrics{}
 
-	// Only add terminal metrics if enabled globally
-	if featureFlags.TerminalsEnabled {
-		metrics = append(metrics, models.UsageMetrics{
-			UserID:         userID,
-			SubscriptionID: subscriptionID,
-			MetricType:     "concurrent_terminals",
-			CurrentValue:   0,
-			LimitValue:     int64(plan.MaxConcurrentTerminals),
-			PeriodStart:    periodStart,
-			PeriodEnd:      periodEnd,
-		})
-		utils.Debug("📊 Adding terminal metrics (limit: %d)", plan.MaxConcurrentTerminals)
-	} else {
-		utils.Debug("⊗ Skipping terminal metrics (globally disabled)")
-	}
+	// Terminal usage is metered by the budget engine (CPU/RAM caps on the
+	// plan), not by usage_metrics rows. No row is seeded here for terminals.
 
 	// Only add course metrics if enabled globally
 	if featureFlags.CoursesEnabled {

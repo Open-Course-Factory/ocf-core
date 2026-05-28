@@ -465,11 +465,10 @@ func (osc *organizationSubscriptionController) GetOrganizationUsageLimits(ctx *g
 	}
 
 	output := dto.OrganizationLimitsOutput{
-		OrganizationID:         limits.OrganizationID,
-		MaxConcurrentTerminals: limits.MaxConcurrentTerminals,
-		MaxCourses:             limits.MaxCourses,
-		CurrentTerminals:       limits.CurrentTerminals,
-		CurrentCourses:         limits.CurrentCourses,
+		OrganizationID:   limits.OrganizationID,
+		MaxCourses:       limits.MaxCourses,
+		CurrentTerminals: limits.CurrentTerminals,
+		CurrentCourses:   limits.CurrentCourses,
 	}
 
 	ctx.JSON(http.StatusOK, output)
@@ -513,7 +512,6 @@ func convertSubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.Subscrip
 
 		// Terminal-specific limits
 		MaxSessionDurationMinutes:  plan.MaxSessionDurationMinutes,
-		MaxConcurrentTerminals:     plan.MaxConcurrentTerminals,
 		AllowedMachineSizes:        plan.AllowedMachineSizes,
 		NetworkAccessEnabled:       plan.NetworkAccessEnabled,
 		DataPersistenceEnabled:     plan.DataPersistenceEnabled,

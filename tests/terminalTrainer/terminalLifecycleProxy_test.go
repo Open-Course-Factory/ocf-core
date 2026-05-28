@@ -105,7 +105,6 @@ func seedActiveSubscription(t *testing.T, db *gorm.DB, userID string) {
 		Currency:               "EUR",
 		BillingInterval:        "monthly",
 		MaxCourses:             10,
-		MaxConcurrentTerminals: 5,
 		IsActive:               true,
 	}
 	require.NoError(t, db.Create(plan).Error)
