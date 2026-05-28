@@ -8,8 +8,12 @@
 package terminalTrainer_tests
 
 import (
+	stderrors "errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 
 	paymentModels "soli/formations/src/payment/models"
@@ -171,4 +175,35 @@ func TestEvaluateLaunchCapacity(t *testing.T) {
 			}
 		})
 	}
+}
+
+// stubMetricsFetcher implements services.MetricsFetcher and lets a test
+// pin the metrics call's return value. Used to exercise the
+// "metrics unavailable" branch without spinning up a real terminal service.
+type stubMetricsFetcher struct {
+	resp *dto.ServerMetricsResponse
+	err  error
+}
+
+func (s *stubMetricsFetcher) GetServerMetrics(bool, string) (*dto.ServerMetricsResponse, error) {
+	return s.resp, s.err
+}
+
+// TestEnforceLaunchCapacity_PermissiveWhenMetricsFail pins the fail-open
+// posture callers depend on: a tt-backend hiccup must NOT 503 the launch
+// path. The helper must return false (allow) and leave the response writer
+// untouched so the controller can carry on to provision the session.
+func TestEnforceLaunchCapacity_PermissiveWhenMetricsFail(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+
+	plan := planAllowing("XS")
+	fetcher := &stubMetricsFetcher{err: stderrors.New("tt-backend unreachable")}
+
+	rejected := services.EnforceLaunchCapacity(ctx, plan, "XS", fetcher)
+
+	assert.False(t, rejected, "helper must allow the launch when metrics are unavailable")
+	assert.Equal(t, http.StatusOK, rec.Code, "no 503 should be written to the response on metrics failure")
+	assert.Empty(t, rec.Body.String(), "no body should be written when the helper allows the launch")
 }

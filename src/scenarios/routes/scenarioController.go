@@ -2135,28 +2135,9 @@ func (sc *scenarioController) LaunchScenario(ctx *gin.Context) {
 	// plan-max fallback the middleware used because scenarios don't carry
 	// a size in the request body. Mirrors commit 951b69c (resume path).
 	if planVal, exists := ctx.Get("subscription_plan"); exists && planVal != nil {
-		if plan, ok := planVal.(*paymentModels.SubscriptionPlan); ok && plan != nil {
-			metrics, metricsErr := sc.terminalService.GetServerMetrics(true, "")
-			if metricsErr != nil {
-				// Fail open on transient tt-backend hiccups, mirroring the
-				// create-path middleware's posture.
-				slog.Warn("scenario launch capacity check: failed to fetch server metrics", "scenario", scenario.Name, "err", metricsErr)
-			} else {
-				result := terminalServices.EvaluateLaunchCapacity(plan, size, metrics)
-				if result.Status == terminalServices.CapacityStatusCritical {
-					msg := "Server at capacity. Please try again later."
-					if result.Reason == "ram_full" {
-						msg = "Server at capacity: RAM fully utilized. Please try again later."
-					} else {
-						slog.Warn("scenario launch blocked: insufficient RAM for resolved size",
-							"scenario", scenario.Name, "size", size, "ram_available_gb", metrics.RAMAvailableGB)
-					}
-					ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
-						ErrorCode:    http.StatusServiceUnavailable,
-						ErrorMessage: msg,
-					})
-					return
-				}
+		if plan, ok := planVal.(*paymentModels.SubscriptionPlan); ok {
+			if terminalServices.EnforceLaunchCapacity(ctx, plan, size, sc.terminalService) {
+				return
 			}
 		}
 	}

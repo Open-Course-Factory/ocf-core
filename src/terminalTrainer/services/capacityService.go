@@ -8,9 +8,15 @@
 package services
 
 import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"soli/formations/src/auth/errors"
 	"soli/formations/src/payment/catalog"
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/dto"
+	"soli/formations/src/utils"
 )
 
 // CapacityStatus is a coarse-grained launch readiness signal.
@@ -131,4 +137,55 @@ func resolveRequiredRAM(_ *paymentModels.SubscriptionPlan, requestedSize string)
 // pre-flight callers.
 func EstimatePerTerminalRAMGB() float64 {
 	return float64(catalog.LargestSize.MemoryMB) / 1024.0
+}
+
+// MetricsFetcher is the narrow surface EnforceLaunchCapacity needs from the
+// terminal service. Defined here to keep capacityService.go a leaf package
+// (no upward dependency on the full TerminalTrainerService interface).
+type MetricsFetcher interface {
+	GetServerMetrics(nocache bool, backend string) (*dto.ServerMetricsResponse, error)
+}
+
+// EnforceLaunchCapacity is the SSOT for "would launching/resuming a session
+// of `sizeKey` exceed the host's safe RAM headroom?" used by the resume and
+// scenario-launch controllers. Writes a 503 + canonical "Server at capacity"
+// message to ctx and returns true when the launch must be rejected; returns
+// false to let the caller proceed.
+//
+// Permissive on missing inputs (nil plan, metrics fetch error) — matches the
+// historical CheckRAMAvailability behavior: never block on infrastructure
+// flakiness, only on confirmed insufficient host RAM.
+//
+// Callers MUST short-circuit on `true`:
+//
+//	if services.EnforceLaunchCapacity(ctx, plan, sizeKey, svc) { return }
+//
+// The read-only /terminals/capacity-check probe calls EvaluateLaunchCapacity
+// directly because it returns the structured result to the frontend, not a
+// 503 — do not route it through this helper.
+func EnforceLaunchCapacity(ctx *gin.Context, plan *paymentModels.SubscriptionPlan, sizeKey string, fetcher MetricsFetcher) bool {
+	if plan == nil {
+		return false
+	}
+	metrics, err := fetcher.GetServerMetrics(true, "")
+	if err != nil {
+		utils.Warn("capacity guard: metrics unavailable, allowing launch: %v", err)
+		return false
+	}
+	result := EvaluateLaunchCapacity(plan, sizeKey, metrics)
+	if result.Status != CapacityStatusCritical {
+		return false
+	}
+	msg := "Server at capacity. Please try again later."
+	if result.Reason == "ram_full" {
+		msg = "Server at capacity: RAM fully utilized. Please try again later."
+	} else {
+		utils.Warn("capacity guard: launch blocked for size=%q (%.2f GB available)",
+			sizeKey, metrics.RAMAvailableGB)
+	}
+	ctx.JSON(http.StatusServiceUnavailable, &errors.APIError{
+		ErrorCode:    http.StatusServiceUnavailable,
+		ErrorMessage: msg,
+	})
+	return true
 }
