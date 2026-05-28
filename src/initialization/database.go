@@ -130,6 +130,17 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&paymentModels.Invoice{})
 	db.AutoMigrate(&paymentModels.PaymentMethod{})
 	db.AutoMigrate(&paymentModels.UsageMetrics{})
+	// Defense-in-depth cleanup for a known drift bug: the dual-mode quota
+	// cleanup left a decrement-only path that drove
+	// `usage_metrics.current_value` negative for users who deleted sessions
+	// after the cleanup landed (one user observed -9). Commit 577336a fixed
+	// the live recompute on the read path; this migration scrubs the
+	// persisted bad rows so any code path that still reads the model field
+	// directly (e.g. the generic /usage-metrics entity endpoint) cannot
+	// serve a negative number. Must run AFTER AutoMigrate above so the
+	// `usage_metrics` table is guaranteed to exist; safe to keep running on
+	// every boot because clamping a row that's already at 0 is a no-op.
+	ClampNegativeConcurrentTerminalsUsage(db)
 	db.AutoMigrate(&paymentModels.BillingAddress{})
 	db.AutoMigrate(&paymentModels.PlanFeature{})
 	db.AutoMigrate(&paymentModels.WebhookEvent{}) // ✅ SECURITY: Track processed webhooks in database
@@ -650,6 +661,35 @@ func dropOrphanTerminalColumns(db *gorm.DB) {
 			continue
 		}
 		log.Printf("[MIGRATION] dropped orphan column terminals.%s", col)
+	}
+}
+
+// ClampNegativeConcurrentTerminalsUsage clamps any `usage_metrics` row whose
+// `metric_type = 'concurrent_terminals'` and `current_value < 0` back to zero.
+//
+// Why: the dual-mode quota cleanup left a decrement-only path that drove the
+// persisted value negative for users who had deleted sessions since the
+// cleanup landed (one user observed -9). Commit 577336a switched the read
+// path to live-recompute, so the dashboard now shows the truth, but the
+// drifted rows themselves are still bad data. This is defense-in-depth: if
+// any future code path bypasses the live recalc (e.g. the generic
+// `/usage-metrics` entity endpoint returns the model's CurrentValue
+// directly), at worst it shows a stale-but-non-negative number.
+//
+// Idempotent: the WHERE clause filters on `current_value < 0`, so once a row
+// is clamped to 0 the next run skips it. Safe to run on every boot.
+//
+// Exported so tests in `tests/payment/` can drive it directly.
+func ClampNegativeConcurrentTerminalsUsage(db *gorm.DB) {
+	result := db.Exec(`UPDATE usage_metrics
+		SET current_value = 0
+		WHERE metric_type = 'concurrent_terminals' AND current_value < 0`)
+	if result.Error != nil {
+		log.Printf("[MIGRATION] failed to clamp drifted concurrent_terminals rows: %v", result.Error)
+		return
+	}
+	if n := result.RowsAffected; n > 0 {
+		log.Printf("[MIGRATION] clamped %d drifted concurrent_terminals rows to zero", n)
 	}
 }
 
