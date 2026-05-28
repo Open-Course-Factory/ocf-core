@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"time"
 
 	"soli/formations/src/payment/catalog"
 	paymentDto "soli/formations/src/payment/dto"
@@ -56,12 +55,15 @@ type QuotaService interface {
 	// When MaxCPU/MaxMemoryMB on the plan are zero, the corresponding axis
 	// is treated as unlimited.
 	//
-	// Sessions counted toward the budget follow lifecycle rule D6:
-	//   (state = 'running') OR (persistence_mode = 'persistent').
-	// Ephemeral non-running sessions are excluded. Past-expiry rows are
-	// also excluded (expires_at > NOW()) to mirror OccupiesSlotScope —
-	// stale rows whose proxy session is gone but whose state column was
-	// never reset must not keep eating budget.
+	// Sessions counted toward the budget follow lifecycle rule D6, encoded
+	// in the SSOT terminalModels.BudgetOccupyingScope:
+	//   deleted_at IS NULL AND expires_at > NOW() AND
+	//     (state = 'running' OR persistence_mode = 'persistent').
+	// Ephemeral non-running sessions are excluded. Past-expiry zombie rows
+	// are also excluded — a stale row whose proxy session is gone but
+	// whose state column was never reset must not keep eating budget.
+	// The dashboard "Actifs" counter reads through the same scope, so the
+	// gate and the dashboard count cannot diverge.
 	//
 	// NOTE: This method is for read-time gating (composer UI, scenario
 	// list). It is NOT race-safe — write-time enforcement requires a
@@ -245,26 +247,34 @@ func (s *quotaService) GetUserUsage(userID string, orgID *uuid.UUID, metric stri
 // current value.
 //
 // For concurrent_terminals the count is live-recomputed via the SSOT
-// RunningDisplayScope so the dashboard always shows the truth, regardless
-// of any drift in the persisted usage_metrics row. This is the same scope
-// used by GetOrgTerminalUsage so org-level "active terminals" and
-// user-level "Actifs" agree.
+// terminalModels.BudgetOccupyingScope so the dashboard "Actifs" badge
+// reports exactly what the budget gate counts — a stopped persistent
+// session keeps its capacity reserved (D6) and must therefore appear in
+// both numbers, while a stopped ephemeral session is gone on both sides.
+// The dashboard count and the budget gate cannot drift apart because
+// they read through the same scope. The stored usage_metrics row is
+// ignored for this metric (read-only after the dual-mode cleanup) so
+// any past write-time drift cannot surface as a negative "Actifs".
 //
 // All other metrics fall back to the stored usage_metrics row.
 func (s *quotaService) currentUsage(userID string, orgID *uuid.UUID, metric string) (int64, error) {
 	if metric == "concurrent_terminals" {
-		return s.liveRunningTerminals(userID, orgID)
+		return s.liveBudgetOccupyingTerminals(userID, orgID)
 	}
 	return s.storedUsage(userID, metric), nil
 }
 
-// liveRunningTerminals counts terminals currently running for a user (or
-// for an org, when orgID is non-nil) using the canonical
-// terminalModels.RunningDisplayScope. The scope already excludes deleted
-// rows and past-expiry zombies — keeping the predicate expressed in
-// exactly one place (SSOT).
-func (s *quotaService) liveRunningTerminals(userID string, orgID *uuid.UUID) (int64, error) {
-	q := s.db.Table("terminals").Scopes(terminalModels.RunningDisplayScope)
+// liveBudgetOccupyingTerminals counts terminals currently occupying
+// budget for a user (or for an org, when orgID is non-nil) using the
+// canonical terminalModels.BudgetOccupyingScope. The scope already
+// excludes deleted rows, past-expiry zombies, and stopped ephemeral
+// rows — keeping the predicate expressed in exactly one place (SSOT).
+//
+// This is the dashboard side of the budget predicate. The budget gate
+// (CheckBudget → sumActiveResources*) uses the same scope, so the two
+// numbers can never diverge.
+func (s *quotaService) liveBudgetOccupyingTerminals(userID string, orgID *uuid.UUID) (int64, error) {
+	q := s.db.Table("terminals").Scopes(terminalModels.BudgetOccupyingScope)
 	if orgID != nil {
 		q = q.Where("terminals.organization_id = ?", orgID)
 	} else {
@@ -272,7 +282,7 @@ func (s *quotaService) liveRunningTerminals(userID string, orgID *uuid.UUID) (in
 	}
 	var count int64
 	if err := q.Count(&count).Error; err != nil {
-		utils.Error("liveRunningTerminals failed for user %s: %v", userID, err)
+		utils.Error("liveBudgetOccupyingTerminals failed for user %s: %v", userID, err)
 		return 0, err
 	}
 	return count, nil
@@ -511,21 +521,18 @@ func (s *quotaService) GetBudgetUsage(userID string, orgID *uuid.UUID) (int, int
 // sumActiveResources returns the total CPU + RAM footprint of terminals
 // counted against the budget for this user (or org).
 //
-// Counting rule (D6): a terminal counts iff state = 'running' OR
-// persistence_mode = 'persistent'. Ephemeral non-running sessions are
-// excluded; deleted rows are always excluded (deleted_at IS NULL).
+// The counting predicate is the SSOT terminalModels.BudgetOccupyingScope
+// (deleted_at IS NULL AND expires_at > NOW() AND (state = 'running' OR
+// persistence_mode = 'persistent')). See that scope's doc for the
+// rationale (design decision D6) and for why this predicate differs
+// from OccupiesSlotScope and RunningDisplayScope.
 //
-// Past-expiry rows are also excluded (expires_at > NOW()) to mirror the
-// SSOT pattern set by terminalModels.OccupiesSlotScope / RunningDisplayScope.
-// Without this clause, a stale row whose proxy session is long gone but
-// whose state column was never reset would keep eating budget — the same
-// "zombie slot" failure mode the slot count had before MR !239.
-// time.Now() is bound as a parameter (not SQL NOW()) for dialect
-// portability: SQLite (unit tests) has no NOW(); production PostgreSQL
-// does. Same rationale as OccupiesSlotScope.
+// The dashboard "Actifs" counter (liveBudgetOccupyingTerminals) reads
+// through the same scope, so the budget gate and the dashboard count
+// cannot drift apart.
 //
 // orgID:
-//   - nil    → personal scope (terminals where organization_id IS NULL).
+//   - nil    → personal scope (terminals where user_id matches).
 //   - non-nil → org scope, summed across ALL members of the org via the
 //     organization_members join (mirrors CountOrgOccupiedSlots).
 //
@@ -543,11 +550,9 @@ func (s *quotaService) sumActiveResourcesForUser(userID string) (int, int, error
 		Mem int64
 	}
 	q := s.db.Table("terminals").
-		Select("COALESCE(SUM(size_cpu), 0) AS cpu, COALESCE(SUM(size_memory_mb), 0) AS mem").
-		Where("deleted_at IS NULL").
-		Where("user_id = ?", userID).
-		Where("expires_at > ?", time.Now()).
-		Where("(state = ? OR persistence_mode = ?)", "running", "persistent")
+		Scopes(terminalModels.BudgetOccupyingScope).
+		Select("COALESCE(SUM(terminals.size_cpu), 0) AS cpu, COALESCE(SUM(terminals.size_memory_mb), 0) AS mem").
+		Where("terminals.user_id = ?", userID)
 	if err := q.Scan(&row).Error; err != nil {
 		utils.Error("sumActiveResourcesForUser failed for %s: %v", userID, err)
 		return 0, 0, err
@@ -561,16 +566,16 @@ func (s *quotaService) sumActiveResourcesForOrg(orgID uuid.UUID) (int, int, erro
 		Mem int64
 	}
 	// Mirror CountOrgOccupiedSlots: join through organization_members so
-	// we count terminals owned by any active member of the org. We also
-	// keep the direct terminals.organization_id filter to handle the
-	// post-Phase-D world where a terminal is tied to its org context.
+	// we count terminals owned by any active member of the org. The
+	// terminals.* predicates (soft-delete, expiry, state/persistence)
+	// live in BudgetOccupyingScope; the join-table filter
+	// (organization_members.deleted_at IS NULL) stays inline because
+	// the scope only knows about the terminals table.
 	q := s.db.Table("terminals").
+		Scopes(terminalModels.BudgetOccupyingScope).
 		Select("COALESCE(SUM(terminals.size_cpu), 0) AS cpu, COALESCE(SUM(terminals.size_memory_mb), 0) AS mem").
 		Joins("JOIN organization_members ON organization_members.user_id = terminals.user_id").
-		Where("terminals.deleted_at IS NULL").
-		Where("organization_members.organization_id = ? AND organization_members.deleted_at IS NULL", orgID).
-		Where("terminals.expires_at > ?", time.Now()).
-		Where("(terminals.state = ? OR terminals.persistence_mode = ?)", "running", "persistent")
+		Where("organization_members.organization_id = ? AND organization_members.deleted_at IS NULL", orgID)
 	if err := q.Scan(&row).Error; err != nil {
 		utils.Error("sumActiveResourcesForOrg failed for %s: %v", orgID, err)
 		return 0, 0, err

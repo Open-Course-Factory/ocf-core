@@ -216,12 +216,17 @@ func readLiveConcurrentTerminals(t *testing.T, db *gorm.DB, userID string) int64
 	return 0
 }
 
-// TestStopSession_LiveCountExcludesStopped is the regression guard for the
-// metric semantics under the live-recompute model: after StopSession the
-// terminal is no longer "running" (RunningDisplayScope excludes 'stopped'),
-// so the dashboard count drops to zero. The stored usage_metrics row is
-// irrelevant — the recompute overrides it.
-func TestStopSession_LiveCountExcludesStopped(t *testing.T) {
+// TestStopSession_LiveCount_IncludesStoppedPersistent pins design decision
+// D6 against the dashboard counter: a persistent session that has been
+// stopped STILL counts as "Actif" because its CPU/RAM capacity is still
+// reserved — the user can resume it without going through a budget check.
+//
+// This is the user-reported bug fix: previously the live-recalc used
+// RunningDisplayScope (state='running' only), which dropped stopped
+// persistent rows from the dashboard count even though they keep eating
+// the budget on the gate side. The dashboard and the budget gate must
+// share the same predicate (BudgetOccupyingScope).
+func TestStopSession_LiveCount_IncludesStoppedPersistent(t *testing.T) {
 	ttServer, _ := startLifecycleTTServer(t)
 	defer ttServer.Close()
 
@@ -230,13 +235,17 @@ func TestStopSession_LiveCountExcludesStopped(t *testing.T) {
 	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
 
 	db := freshTestDB(t)
-	userID := "owner-metric-stop-" + uuid.New().String()
+	userID := "owner-metric-stop-persistent-" + uuid.New().String()
 	seedActiveSubscription(t, db, userID)
 	// Seed a drifted stored value to prove it is ignored by the live recompute.
 	seedConcurrentTerminalsMetric(t, db, userID, 3)
 
 	terminal, err := createTestTerminal(db, userID, "active", time.Now().Add(time.Hour))
 	require.NoError(t, err)
+	// Mark it persistent — the lifecycle rule under test is for the
+	// persistent persistence_mode.
+	terminal.PersistenceMode = "persistent"
+	require.NoError(t, db.Save(terminal).Error)
 
 	// Sanity: with one running terminal the live count is 1, NOT the seeded 3.
 	assert.Equal(t, int64(1), readLiveConcurrentTerminals(t, db, userID),
@@ -245,11 +254,52 @@ func TestStopSession_LiveCountExcludesStopped(t *testing.T) {
 	svc := services.NewTerminalTrainerService(db)
 	require.NoError(t, svc.StopSession(terminal.SessionID))
 
-	// After stop the terminal state is 'stopped' — RunningDisplayScope filters
-	// it out, so the live count is 0.
+	// After stop the terminal state is 'stopped' but persistence_mode is
+	// 'persistent' — BudgetOccupyingScope INCLUDES it, so the live count
+	// must stay at 1. This is the bug fix: previously this came back as 0.
+	assert.Equal(t, int64(1), readLiveConcurrentTerminals(t, db, userID),
+		"after StopSession a persistent session must still count as Actif — "+
+			"its capacity is reserved (D6) and the budget gate counts it")
+}
+
+// TestStopSession_LiveCount_ExcludesStoppedEphemeral pins the inverse
+// half of D6: an ephemeral session that has been stopped is effectively
+// gone — there is no resume path, capacity is freed — so it must not
+// count against the dashboard "Actifs" counter (nor against the budget,
+// for that matter).
+func TestStopSession_LiveCount_ExcludesStoppedEphemeral(t *testing.T) {
+	ttServer, _ := startLifecycleTTServer(t)
+	defer ttServer.Close()
+
+	t.Setenv("TERMINAL_TRAINER_URL", ttServer.URL)
+	t.Setenv("TERMINAL_TRAINER_ADMIN_KEY", "test-admin-key")
+	t.Setenv("TERMINAL_TRAINER_API_VERSION", "1.0")
+
+	db := freshTestDB(t)
+	userID := "owner-metric-stop-ephemeral-" + uuid.New().String()
+	seedActiveSubscription(t, db, userID)
+	// Seed a drifted stored value to prove it is ignored by the live recompute.
+	seedConcurrentTerminalsMetric(t, db, userID, 3)
+
+	terminal, err := createTestTerminal(db, userID, "active", time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	// Default persistence_mode is 'ephemeral' — be explicit for the reader.
+	terminal.PersistenceMode = "ephemeral"
+	require.NoError(t, db.Save(terminal).Error)
+
+	// Sanity: with one running terminal the live count is 1, NOT the seeded 3.
+	assert.Equal(t, int64(1), readLiveConcurrentTerminals(t, db, userID),
+		"live recompute should report 1 active terminal, not the stored 3")
+
+	svc := services.NewTerminalTrainerService(db)
+	require.NoError(t, svc.StopSession(terminal.SessionID))
+
+	// After stop the terminal state is 'stopped' and persistence_mode is
+	// 'ephemeral' — BudgetOccupyingScope EXCLUDES it (no resume, capacity
+	// released), so the live count drops to 0.
 	assert.Equal(t, int64(0), readLiveConcurrentTerminals(t, db, userID),
-		"after StopSession the running-display count should be 0 — "+
-			"RunningDisplayScope excludes stopped terminals")
+		"after StopSession an ephemeral session must NOT count — "+
+			"there is no resume path, capacity is released")
 }
 
 // TestDeleteSession_LiveCountReturnsZero_NoNegativeDrift pins the new contract:
