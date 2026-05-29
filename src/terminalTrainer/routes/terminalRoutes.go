@@ -67,7 +67,7 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 		terminalController.StartSession,
 	)
 	// Permanently delete a session — ownership enforced via Layer 2,
-	// "stopped" state allowed.
+	// StateStopped allowed.
 	routes.DELETE("/:id", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccessAllowStopped(), terminalController.DeleteSession)
 	routes.GET("/user-sessions", middleware.AuthManagement(), terminalController.GetUserSessions)
 

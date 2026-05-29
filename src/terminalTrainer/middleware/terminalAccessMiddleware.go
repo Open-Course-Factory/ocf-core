@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
 
@@ -40,7 +41,7 @@ func (tam *TerminalAccessMiddleware) RequireTerminalAccess() gin.HandlerFunc {
 }
 
 // RequireTerminalAccessAllowStopped behaves like RequireTerminalAccess but
-// permits sessions in the "stopped" state to pass through. Used by lifecycle
+// permits sessions in the StateStopped state to pass through. Used by lifecycle
 // endpoints whose semantics include resuming or deleting a stopped session
 // (POST /:id/start, DELETE /:id) — the ownership check still runs.
 func (tam *TerminalAccessMiddleware) RequireTerminalAccessAllowStopped() gin.HandlerFunc {
@@ -146,7 +147,7 @@ func (tam *TerminalAccessMiddleware) requireTerminalAccess(allowStopped bool) gi
 					ErrorCode:    http.StatusGone,
 					ErrorMessage: "Terminal session has expired and is no longer accessible",
 				})
-			} else if reason == "stopped" {
+			} else if reason == string(models.StateStopped) {
 				if allowStopped {
 					// Lifecycle endpoint (start/delete): pass through.
 					ctx.Next()

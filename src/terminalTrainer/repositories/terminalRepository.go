@@ -211,11 +211,11 @@ func (r *terminalRepository) DeleteTerminalSession(sessionID string) error {
 // Cleanup methods
 func (r *terminalRepository) CleanupExpiredSessions() error {
 	// State is the SSOT — past-expiry rows that aren't already marked as
-	// terminated get flipped to "deleted" so they stop appearing in active
+	// terminated get flipped to StateDeleted so they stop appearing in active
 	// queries and the slot accounting is correct.
 	return r.db.Model(&models.Terminal{}).
-		Where("expires_at < NOW() AND state NOT IN ?", []string{"deleted", "stopped"}).
-		Update("state", "deleted").Error
+		Where("expires_at < NOW() AND state NOT IN ?", []models.TerminalState{models.StateDeleted, models.StateStopped}).
+		Update("state", models.StateDeleted).Error
 }
 
 func (tr *terminalRepository) GetAllActiveUserKeys() (*[]models.UserTerminalKey, error) {
@@ -274,10 +274,16 @@ func (tr *terminalRepository) GetOrphanedLocalSessions(apiSessionIDs []string) (
 	var orphanedSessions []models.Terminal
 
 	// "Alive" sessions are those whose State indicates they're still consumable.
-	// We don't include "stopped" because those are intentionally paused — they
-	// shouldn't be treated as orphans even if tt-backend doesn't list them
-	// on a /sessions sweep.
-	aliveStates := []string{"running", "resuming", "hibernating", "paused"}
+	// We don't include StateStopped because those are intentionally paused —
+	// they shouldn't be treated as orphans even if tt-backend doesn't list
+	// them on a /sessions sweep. "paused" stays as a raw literal because it
+	// is not part of the canonical TerminalState enum (legacy value).
+	aliveStates := []string{
+		string(models.StateRunning),
+		string(models.StateResuming),
+		string(models.StateHibernating),
+		"paused",
+	}
 
 	if len(apiSessionIDs) == 0 {
 		// Si aucune session côté API, toutes les sessions locales vivantes sont orphelines

@@ -282,18 +282,18 @@ func (tts *terminalTrainerService) GetActiveUserSessions(userID string) (*[]mode
 // Le comportement de la ligne locale dépend du PersistenceMode :
 //
 //   - persistent : tt-backend conserve le disque, la session est résumable.
-//     On délègue à markSessionStopped, qui passe state="stopped" et étend
+//     On délègue à markSessionStopped, qui passe state=StateStopped et étend
 //     ExpiresAt à la fenêtre de reap réelle (idleUntil renvoyé par /stop, ou
 //     fallback plan.MaxSessionDurationMinutes). Tant que la ligne est
-//     "stopped" non supprimée, OccupiesSlotScope la compte dans le budget —
+//     StateStopped non supprimée, OccupiesSlotScope la compte dans le budget —
 //     l'utilisateur garde sa capacité réservée jusqu'à ce que sync (étape 5b)
 //     constate la disparition côté tt-backend et marque la ligne deleted.
 //
 //   - ephemeral (ou non renseigné) : tt-backend détruit le conteneur
 //     immédiatement, il n'y a plus rien à garder en ligne. On passe
-//     directement state="deleted" — la ligne devient une pierre tombale,
+//     directement state=StateDeleted — la ligne devient une pierre tombale,
 //     ExpiresAt et IdleUntil sont laissés tels quels. Pas de passage par
-//     "stopped" : ce serait un état fantôme (aucun conteneur à reprendre).
+//     StateStopped : ce serait un état fantôme (aucun conteneur à reprendre).
 //     OccupiesSlotScope sort la ligne dès la transition deleted.
 //
 // Aucune métrique de quota n'est mise à jour ici : la capacité terminale
@@ -328,11 +328,11 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 	} else {
 		// Ephemeral (ou mode vide / inconnu) : le conteneur n'existe plus
 		// côté tt-backend, la ligne locale doit le refléter directement —
-		// pas de transition "stopped" intermédiaire. ExpiresAt/IdleUntil sont
-		// laissés tels quels : la ligne est une pierre tombale, les filtres
-		// aval (OccupiesSlotScope) la sortent dès le state="deleted".
+		// pas de transition StateStopped intermédiaire. ExpiresAt/IdleUntil
+		// sont laissés tels quels : la ligne est une pierre tombale, les
+		// filtres aval (OccupiesSlotScope) la sortent dès le state=StateDeleted.
 		utils.Debug("Marking ephemeral session %s as deleted (container destroyed by tt-backend)", sessionID)
-		terminal.State = "deleted"
+		terminal.State = string(models.StateDeleted)
 	}
 
 	if err := tts.repository.UpdateTerminalSession(terminal); err != nil {
@@ -359,7 +359,7 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 // 5a, any future trigger — MUST call this helper so the row's invariants
 // stay consistent:
 //
-//   - State = "stopped"
+//   - State = StateStopped
 //   - ExpiresAt extended to the tt-backend reap deadline. Preference
 //     order: (1) idleUntil from tt-backend, (2) time.Now() +
 //     plan.MaxSessionDurationMinutes when idleUntil is nil, (3) leave
@@ -388,8 +388,8 @@ func (tts *terminalTrainerService) markSessionStopped(
 ) bool {
 	changed := false
 
-	if terminal.State != "stopped" {
-		terminal.State = "stopped"
+	if terminal.State != string(models.StateStopped) {
+		terminal.State = string(models.StateStopped)
 		changed = true
 	}
 
@@ -483,7 +483,7 @@ func (tts *terminalTrainerService) StartSession(sessionID string) error {
 		return fmt.Errorf("failed to start session in Terminal Trainer API: %w", err)
 	}
 
-	terminal.State = "running"
+	terminal.State = string(models.StateRunning)
 	terminal.LastStartedAt = time.Now()
 	terminal.IdleUntil = nil
 	if expiresAtUnix > 0 {
@@ -498,13 +498,13 @@ func (tts *terminalTrainerService) StartSession(sessionID string) error {
 }
 
 // DeleteSession supprime définitivement une session via DELETE /sessions/{id}
-// de tt-backend, marque la ligne locale comme "deleted" et abandonne tout
+// de tt-backend, marque la ligne locale comme StateDeleted et abandonne tout
 // scenario session lié.
 //
 // Aucune métrique de quota n'est touchée : la capacité terminale est
 // exclusivement régie par le moteur de budget CPU/RAM
 // (QuotaService.CheckBudget via OccupiesSlotScope). La ligne locale
-// passée à state="deleted" sort automatiquement de la portée (qui sert
+// passée à state=StateDeleted sort automatiquement de la portée (qui sert
 // à la fois au compte de slots et au budget, cf. D6') sans écriture
 // supplémentaire.
 func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
@@ -516,13 +516,13 @@ func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
 	}
 
 	if err := tts.deleteSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey); err != nil {
-		// Log mais on continue : la session locale doit être marquée "deleted"
+		// Log mais on continue : la session locale doit être marquée StateDeleted
 		// même si tt-backend est injoignable, sinon l'utilisateur reste bloqué
 		// avec un slot consommé.
 		utils.Warn("failed to delete session in Terminal Trainer API: %v", err)
 	}
 
-	terminal.State = "deleted"
+	terminal.State = string(models.StateDeleted)
 	if err := tts.repository.UpdateTerminalSession(terminal); err != nil {
 		utils.Error("Failed to update session %s after delete: %v", sessionID, err)
 		return err
@@ -703,17 +703,17 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 
 		// Map SessionStatus from /sessions endpoint to terminal lifecycle state.
 		// /sessions returns SessionStatus: 0=active, 1=expired, 2=preallocated, 3+=deleted.
-		// We translate to State-space directly: 0 → "running", anything else → "deleted".
+		// We translate to State-space directly: 0 → StateRunning, anything else → StateDeleted.
 		// This is different from InstanceCreationStatus (0=started, 1=invalid_terms) used by /start and /info.
-		apiStateName := "deleted"
+		apiStateName := string(models.StateDeleted)
 		if apiSession.Status == 0 {
-			apiStateName = "running"
+			apiStateName = string(models.StateRunning)
 		}
 
 		if localSession == nil {
 			// Session existe côté API mais pas côté local
-			// Ne recréer que les sessions actives (state='running'), pas les expirées/arrêtées
-			if apiStateName == "running" {
+			// Ne recréer que les sessions actives (state=StateRunning), pas les expirées/arrêtées
+			if apiStateName == string(models.StateRunning) {
 				utils.Debug("SyncUserSessions - Creating missing running session %s (api_status=%d, state=%s)",
 					sessionID, apiSession.Status, apiStateName)
 				err := tts.createMissingLocalSession(userID, userKey, apiSession)
@@ -753,23 +753,23 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 				sessionID, localSession.State, apiSession.Status, apiStateName)
 
 			// Vérifier si le state a changé.
-			// Ne pas écraser les sessions arrêtées manuellement (state "stopped").
-			if localSession.State != apiStateName && localSession.State != "stopped" {
+			// Ne pas écraser les sessions arrêtées manuellement (state=StateStopped).
+			if localSession.State != apiStateName && localSession.State != string(models.StateStopped) {
 				utils.Debug("SyncUserSessions - State mismatch for session %s: changing '%s' -> '%s'",
 					sessionID, localSession.State, apiStateName)
 				localSession.State = apiStateName
 				needsUpdate = true
-			} else if localSession.State == "stopped" {
+			} else if localSession.State == string(models.StateStopped) {
 				utils.Debug("SyncUserSessions - Session %s is manually stopped, keeping local state", sessionID)
 			}
 
 			// Vérifier si la session a expiré selon la date.
-			// Si tt-backend la voit encore "running" mais ExpiresAt est passé,
+			// Si tt-backend la voit encore StateRunning mais ExpiresAt est passé,
 			// le sync local doit la marquer comme effacée.
 			expiryTime := time.Unix(apiSession.ExpiresAt, 0)
-			if time.Now().After(expiryTime) && apiStateName == "running" {
+			if time.Now().After(expiryTime) && apiStateName == string(models.StateRunning) {
 				utils.Debug("SyncUserSessions - Session %s expired by date, marking as deleted", sessionID)
-				localSession.State = "deleted"
+				localSession.State = string(models.StateDeleted)
 				needsUpdate = true
 			}
 
@@ -785,10 +785,10 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 
 			// Propager l'état lifecycle depuis tt-backend (source de vérité).
 			// Sans ça, une session auto-arrêtée côté tt-backend reste affichée
-			// comme "running" en local et le front continue d'afficher
+			// comme StateRunning en local et le front continue d'afficher
 			// "Session expirée" au lieu d'offrir un bouton Reprendre.
 			//
-			// Quand l'état cible est "stopped", on délègue à markSessionStopped
+			// Quand l'état cible est StateStopped, on délègue à markSessionStopped
 			// (SSOT) — même chemin que la StopSession utilisateur — ce qui
 			// fixe state, IdleUntil ET ExpiresAt en une passe. Sans cette
 			// extension, expires_at resterait à la deadline de création
@@ -796,7 +796,7 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 			// l'auto-stop), et OccupiesSlotScope laisserait tomber la ligne :
 			// l'utilisateur perdrait la capacité réservée d'un coup, alors
 			// que le conteneur est toujours résumable côté tt-backend.
-			if apiSession.State == "stopped" {
+			if apiSession.State == string(models.StateStopped) {
 				var idleUntilPtr *time.Time
 				if apiSession.IdleUntil > 0 {
 					t := time.Unix(apiSession.IdleUntil, 0).Local()
@@ -812,7 +812,7 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 				needsUpdate = true
 				// Pour les états non-stopped, on continue de propager IdleUntil
 				// tel quel — markSessionStopped ne s'applique qu'à la transition
-				// vers "stopped".
+				// vers StateStopped.
 				if apiSession.IdleUntil > 0 {
 					t := time.Unix(apiSession.IdleUntil, 0).UTC()
 					if localSession.IdleUntil == nil || !localSession.IdleUntil.Equal(t) {
@@ -857,18 +857,18 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 	// tt-backend est la SSOT pour "ce conteneur existe-t-il ?". Si une ligne
 	// locale n'apparaît plus dans /sessions (qui inclut déjà les rows expirées
 	// via include_expired=true), c'est que le conteneur a été reapé : on doit
-	// donc la marquer "deleted" — peu importe son state local actuel.
+	// donc la marquer StateDeleted — peu importe son state local actuel.
 	//
-	// L'ancien skip sur state="stopped" laissait des fantômes : une session
+	// L'ancien skip sur state=StateStopped laissait des fantômes : une session
 	// éphémère stoppée par l'utilisateur (ou auto-stoppée) restait visible
 	// sur /terminal-sessions alors qu'aucun conteneur ne pouvait plus être
-	// repris. Si le state local est déjà "deleted", on n'a rien à faire.
+	// repris. Si le state local est déjà StateDeleted, on n'a rien à faire.
 	expiredCount := 0
 	for sessionID, localSession := range localSessionsMap {
 		if _, exists := apiSessionsMap[sessionID]; !exists {
-			if localSession.State != "deleted" {
+			if localSession.State != string(models.StateDeleted) {
 				previousState := localSession.State
-				localSession.State = "deleted"
+				localSession.State = string(models.StateDeleted)
 
 				err := tts.repository.UpdateTerminalSession(localSession)
 				if err != nil {
@@ -877,7 +877,7 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 					sessionResults = append(sessionResults, dto.SyncSessionResponse{
 						SessionID:    sessionID,
 						PreviousState: previousState,
-						CurrentState:  "deleted",
+						CurrentState:  string(models.StateDeleted),
 						Updated:      true,
 						LastSyncAt:   time.Now(),
 					})
@@ -923,15 +923,15 @@ func BuildTerminalFromAPISession(userID string, userKey *models.UserTerminalKey,
 
 	// Map SessionStatus from /sessions endpoint to terminal lifecycle state.
 	// /sessions returns SessionStatus: 0=active, 1=expired. Translate to State-space.
-	stateName := "deleted"
+	stateName := string(models.StateDeleted)
 	if apiSession.Status == 0 {
-		stateName = "running"
+		stateName = string(models.StateRunning)
 	}
 
 	terminal := &models.Terminal{
 		SessionID:         apiSession.SessionID,
 		UserID:            userID,
-		State:             stateName, // Terminal lifecycle state: "running" or "deleted"
+		State:             stateName, // Terminal lifecycle state: StateRunning or StateDeleted
 		ExpiresAt:         expiresAt,
 		MachineSize:       apiSession.MachineSize, // Taille réelle depuis l'API
 		Backend:           apiSession.Backend,
@@ -1720,7 +1720,7 @@ func (tts *terminalTrainerService) GetEnumService() TerminalTrainerEnumService {
 // ValidateSessionAccess checks if a session is accessible for console operations
 // Returns: (isValid bool, reason string, error)
 // - isValid: true if session can be accessed, false otherwise
-// - reason: "active", "stopped", "expired", or other status
+// - reason: "active", StateStopped, "expired", or other status
 // - error: any error encountered during validation
 func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, checkAPI bool) (bool, string, error) {
 	// 1. Get session from local database
@@ -1735,11 +1735,11 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 	// tt-backend's authoritative session.state. The legacy parallel Status
 	// field has been removed — every reader and writer now agrees on State.
 	switch terminal.State {
-	case "running":
+	case string(models.StateRunning):
 		// continue to backend + expiration checks below
-	case "stopped":
-		return false, "stopped", nil
-	case "deleted":
+	case string(models.StateStopped):
+		return false, string(models.StateStopped), nil
+	case string(models.StateDeleted):
 		// Preserve the existing wire format the FE maps to "Session ended".
 		return false, "expired", nil
 	case "":
@@ -1766,11 +1766,11 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 
 	// 4. Check expiration time.
 	//
-	// For State="running" sessions, ExpiresAt in the past means the sync
+	// For State=StateRunning sessions, ExpiresAt in the past means the sync
 	// hasn't caught up yet — tt-backend's auto-stop will land on the next
 	// poll. The handling diverges by PersistenceMode:
 	//
-	//   - persistent: the session is resumable. Report "stopped" so the
+	//   - persistent: the session is resumable. Report StateStopped so the
 	//     lifecycle middleware's allowStopped branch lets Resume / Delete
 	//     pass through during tt-backend's graceful auto-stop window.
 	//     Otherwise the user gets a 410 when clicking Resume on a session
@@ -1780,7 +1780,7 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 	//     is correct — there is nothing to resume.
 	if time.Now().After(terminal.ExpiresAt) {
 		if terminal.PersistenceMode == "persistent" {
-			return false, "stopped", nil
+			return false, string(models.StateStopped), nil
 		}
 		return false, "expired", nil
 	}
@@ -1791,7 +1791,7 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 		if err != nil {
 			// Handle 404 = session doesn't exist in Terminal Trainer
 			if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
-				terminal.State = "deleted"
+				terminal.State = string(models.StateDeleted)
 				updateErr := tts.repository.UpdateTerminalSession(terminal)
 				if updateErr != nil {
 					utils.Warn("failed to update session %s state after API 404: %v", sessionID, updateErr)
@@ -1807,9 +1807,9 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 		// Map InstanceCreationStatus from /info endpoint to terminal lifecycle state.
 		// /info returns InstanceCreationStatus: 0=started (instance running), 6=expired (instance gone).
 		// These are different from SessionStatus (0=active, 1=expired) used by /sessions.
-		apiStateName := "deleted"
+		apiStateName := string(models.StateDeleted)
 		if apiInfo.Status == 0 {
-			apiStateName = "running"
+			apiStateName = string(models.StateRunning)
 		}
 
 		// Sync state if mismatch detected
@@ -1821,7 +1821,7 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 				utils.Warn("failed to sync session %s state from '%s' to '%s': %v",
 					sessionID, previousState, apiStateName, err)
 			}
-			if terminal.State == "running" {
+			if terminal.State == string(models.StateRunning) {
 				return true, "active", nil
 			}
 			return false, "expired", nil
@@ -2198,7 +2198,7 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 		Where("terminals.deleted_at IS NULL").
 		Where("terminals.organization_id = ?", orgID).
 		Where("terminals.expires_at > ?", time.Now()).
-		Where("(terminals.state = ? OR terminals.persistence_mode = ?)", "running", "persistent").
+		Where("(terminals.state = ? OR terminals.persistence_mode = ?)", models.StateRunning, "persistent").
 		Group("terminals.user_id").
 		Scan(&resourceRows).Error
 	if err != nil {
@@ -3648,7 +3648,7 @@ func (tts *terminalTrainerService) startComposedSession(userID string, input dto
 		SessionID:            sessionResp.SessionID,
 		UserID:               userID,
 		Name:                 input.Name,
-		State:                "running",
+		State:                string(models.StateRunning),
 		PersistenceMode:      input.PersistenceMode,
 		ExpiresAt:            expiresAt,
 		InstanceType:         input.DistributionPrefix,

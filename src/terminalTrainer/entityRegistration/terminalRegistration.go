@@ -37,7 +37,7 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 						SessionID:         input.SessionID,
 						UserID:            input.UserID,
 						Name:              input.Name,
-						State:             "running",
+						State:             string(models.StateRunning),
 						ExpiresAt:         input.ExpiresAt,
 						UserTerminalKeyID: input.TerminalTrainerKeyID,
 					}

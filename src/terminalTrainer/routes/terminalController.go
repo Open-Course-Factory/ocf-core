@@ -255,7 +255,7 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 				ErrorCode:    http.StatusGone,
 				ErrorMessage: "Terminal session has expired and is no longer accessible",
 			})
-		} else if reason == "stopped" {
+		} else if reason == string(models.StateStopped) {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
 				ErrorMessage: "Terminal session has been stopped and is no longer accessible",
@@ -958,9 +958,9 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 			// Map SessionStatus from /sessions endpoint to terminal lifecycle state.
 			// SessionStatus: 0=active, 1=expired, 2+=other. Translate to State-space
 			// so the comparison below is namespace-consistent with terminal.State.
-			apiStateName := "deleted"
+			apiStateName := string(models.StateDeleted)
 			if foundInAPI.Status == 0 {
-				apiStateName = "running"
+				apiStateName = string(models.StateRunning)
 			}
 
 			response.ExistsInAPI = true

@@ -28,7 +28,7 @@ const (
 // listing surfaces. Stopped sessions still occupy a slot because they
 // preserve disk and can be resumed — only deleted (or other
 // terminal-state) rows free a slot.
-var TerminalStatesOccupyingSlot = []string{"running", "stopped"}
+var TerminalStatesOccupyingSlot = []TerminalState{StateRunning, StateStopped}
 
 // OccupiesSlotScope is a GORM scope that filters terminals which still
 // "occupy capacity" — both in the slot sense (disk/identity reserved)
@@ -127,7 +127,7 @@ func OccupiesSlotScope(tx *gorm.DB) *gorm.DB {
 func RunningDisplayScope(tx *gorm.DB) *gorm.DB {
 	return tx.Where(
 		"terminals.state = ? AND terminals.deleted_at IS NULL AND terminals.expires_at > ?",
-		"running",
+		StateRunning,
 		time.Now(),
 	)
 }
