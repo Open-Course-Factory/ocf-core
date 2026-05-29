@@ -8,6 +8,21 @@ import (
 	"gorm.io/gorm"
 )
 
+// TerminalState is the typed lifecycle state of a terminal session. The
+// underlying string values are the wire format (GORM column + JSON field) and
+// must NOT change — they are pinned by TestTerminalStateConstants and consumed
+// by the ocf-front TerminalSession union type (src/types/terminal.ts).
+type TerminalState string
+
+const (
+	StateRunning     TerminalState = "running"
+	StateStopped     TerminalState = "stopped"
+	StateDeleted     TerminalState = "deleted"
+	StateStarting    TerminalState = "starting"
+	StateResuming    TerminalState = "resuming"
+	StateHibernating TerminalState = "hibernating"
+)
+
 // TerminalStatesOccupyingSlot are the state values that count toward
 // the "occupies a slot" predicate used by the org dashboard and other
 // listing surfaces. Stopped sessions still occupy a slot because they
