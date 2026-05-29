@@ -28,6 +28,10 @@ func HydrateSizeCatalog(db *gorm.DB) {
 		utils.Warn("size catalog hydration: tt-backend unreachable, using hardcoded fallback: %v", err)
 		return
 	}
+	if len(sizes) == 0 {
+		utils.Warn("size catalog hydration: tt-backend returned an empty catalog, using hardcoded fallback")
+		return
+	}
 
 	sources := make([]catalog.SourceSize, 0, len(sizes))
 	for _, s := range sizes {

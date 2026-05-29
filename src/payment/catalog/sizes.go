@@ -156,10 +156,24 @@ func MCPUFor(key string) int {
 // fallback", "cpu changed", "memory changed", "cpu and memory changed",
 // "parse error: ..."), then "fallback key missing from live catalog"
 // entries appended at the end in alphabetical order by key.
+//
+// Calling Hydrate with an empty input wipes the active catalog and
+// returns drift entries for every fallback key. Callers that treat
+// "tt-backend returned nothing" as a failure mode must guard upstream;
+// see HydrateSizeCatalog in src/initialization.
 func Hydrate(sources []SourceSize) []Drift {
-	// Phase 1: parse + compute drifts before mutating the active state.
+	parsed, keyToSource, drifts := parseAll(sources)
+	drifts = append(drifts, missingFallbackDrifts(parsed)...)
+	swapActive(parsed, orderedBySort(keyToSource), largestOf(parsed))
+	return drifts
+}
+
+// parseAll walks the input sources, normalizes keys, parses each
+// source into a MachineSize, and classifies drift against the
+// fallback catalog. Parse failures are reported as drift entries and
+// excluded from the parsed map.
+func parseAll(sources []SourceSize) (map[string]MachineSize, map[string]SourceSize, []Drift) {
 	parsed := make(map[string]MachineSize, len(sources))
-	orderedKeys := make([]string, 0, len(sources))
 	keyToSource := make(map[string]SourceSize, len(sources))
 	drifts := make([]Drift, 0)
 
@@ -169,7 +183,7 @@ func Hydrate(sources []SourceSize) []Drift {
 			continue
 		}
 
-		cpuPercent, err := parseAllowance(src.CPUAllowance)
+		live, err := parseSource(src)
 		if err != nil {
 			drifts = append(drifts, Drift{
 				Key:      key,
@@ -179,57 +193,81 @@ func Hydrate(sources []SourceSize) []Drift {
 			})
 			continue
 		}
-		memMB, err := parseMemory(src.Memory)
-		if err != nil {
-			drifts = append(drifts, Drift{
-				Key:      key,
-				Fallback: fallbackCatalog[key],
-				Live:     MachineSize{},
-				Reason:   fmt.Sprintf("parse error: %v", err),
-			})
-			continue
-		}
 
-		live := MachineSize{CPU: cpuPercent * 10, MemoryMB: memMB}
 		parsed[key] = live
-		orderedKeys = append(orderedKeys, key)
 		keyToSource[key] = src
 
-		fallback, present := fallbackCatalog[key]
-		switch {
-		case !present:
-			drifts = append(drifts, Drift{
-				Key:      key,
-				Fallback: MachineSize{},
-				Live:     live,
-				Reason:   "new size unknown to fallback",
-			})
-		case live.CPU != fallback.CPU && live.MemoryMB != fallback.MemoryMB:
-			drifts = append(drifts, Drift{
-				Key:      key,
-				Fallback: fallback,
-				Live:     live,
-				Reason:   "cpu and memory changed",
-			})
-		case live.CPU != fallback.CPU:
-			drifts = append(drifts, Drift{
-				Key:      key,
-				Fallback: fallback,
-				Live:     live,
-				Reason:   "cpu changed",
-			})
-		case live.MemoryMB != fallback.MemoryMB:
-			drifts = append(drifts, Drift{
-				Key:      key,
-				Fallback: fallback,
-				Live:     live,
-				Reason:   "memory changed",
-			})
+		if d, ok := classifyDrift(key, live); ok {
+			drifts = append(drifts, d)
 		}
 	}
 
-	// Fallback keys not in the live catalog — appended at the end,
-	// alphabetical order for deterministic output.
+	return parsed, keyToSource, drifts
+}
+
+// parseSource turns one raw SourceSize into a MachineSize, returning
+// the first parse error encountered.
+func parseSource(src SourceSize) (MachineSize, error) {
+	cpuPercent, err := parseAllowance(src.CPUAllowance)
+	if err != nil {
+		return MachineSize{}, err
+	}
+	memMB, err := parseMemory(src.Memory)
+	if err != nil {
+		return MachineSize{}, err
+	}
+	return MachineSize{CPU: cpuPercent * 10, MemoryMB: memMB}, nil
+}
+
+// classifyDrift reports the drift entry for one live size against the
+// fallback catalog, or (_, false) if there is no drift. A key absent
+// from the fallback yields a "new size unknown to fallback" entry; a
+// key present but with different values is classified by which axis
+// changed.
+func classifyDrift(key string, live MachineSize) (Drift, bool) {
+	fallback, present := fallbackCatalog[key]
+	if !present {
+		return Drift{
+			Key:      key,
+			Fallback: MachineSize{},
+			Live:     live,
+			Reason:   "new size unknown to fallback",
+		}, true
+	}
+
+	cpuChanged := live.CPU != fallback.CPU
+	memChanged := live.MemoryMB != fallback.MemoryMB
+	reason := driftReason(cpuChanged, memChanged)
+	if reason == "" {
+		return Drift{}, false
+	}
+	return Drift{
+		Key:      key,
+		Fallback: fallback,
+		Live:     live,
+		Reason:   reason,
+	}, true
+}
+
+// driftReason maps the (cpuChanged, memChanged) tuple to its reason
+// string. Empty string means no drift. Order-independent — replaces
+// the previous switch with its hidden "both must come first" trap.
+func driftReason(cpuChanged, memChanged bool) string {
+	switch {
+	case cpuChanged && memChanged:
+		return "cpu and memory changed"
+	case cpuChanged:
+		return "cpu changed"
+	case memChanged:
+		return "memory changed"
+	}
+	return ""
+}
+
+// missingFallbackDrifts returns one drift entry per fallback key that
+// the live catalog omits, in alphabetical order for deterministic
+// output.
+func missingFallbackDrifts(parsed map[string]MachineSize) []Drift {
 	missing := make([]string, 0)
 	for key := range fallbackCatalog {
 		if _, ok := parsed[key]; !ok {
@@ -237,35 +275,52 @@ func Hydrate(sources []SourceSize) []Drift {
 		}
 	}
 	sort.Strings(missing)
+
+	out := make([]Drift, 0, len(missing))
 	for _, key := range missing {
-		drifts = append(drifts, Drift{
+		out = append(out, Drift{
 			Key:      key,
 			Fallback: fallbackCatalog[key],
 			Live:     MachineSize{},
 			Reason:   "fallback key missing from live catalog",
 		})
 	}
+	return out
+}
 
-	// Phase 2: build new active state.
-	sort.SliceStable(orderedKeys, func(i, j int) bool {
-		return keyToSource[orderedKeys[i]].SortOrder < keyToSource[orderedKeys[j]].SortOrder
+// orderedBySort returns the parsed keys sorted by their source
+// SortOrder, the canonical iteration order for the active catalog.
+func orderedBySort(keyToSource map[string]SourceSize) []string {
+	keys := make([]string, 0, len(keyToSource))
+	for k := range keyToSource {
+		keys = append(keys, k)
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		return keyToSource[keys[i]].SortOrder < keyToSource[keys[j]].SortOrder
 	})
+	return keys
+}
 
-	newLargest := MachineSize{}
+// largestOf returns the worst-case footprint of the parsed catalog:
+// max MemoryMB, with CPU as the tiebreaker.
+func largestOf(parsed map[string]MachineSize) MachineSize {
+	largest := MachineSize{}
 	for _, size := range parsed {
-		if size.MemoryMB > newLargest.MemoryMB ||
-			(size.MemoryMB == newLargest.MemoryMB && size.CPU > newLargest.CPU) {
-			newLargest = size
+		if size.MemoryMB > largest.MemoryMB ||
+			(size.MemoryMB == largest.MemoryMB && size.CPU > largest.CPU) {
+			largest = size
 		}
 	}
+	return largest
+}
 
+// swapActive replaces the active catalog state under the write lock.
+func swapActive(parsed map[string]MachineSize, orderedKeys []string, largest MachineSize) {
 	mu.Lock()
+	defer mu.Unlock()
 	active = parsed
 	activeKeys = orderedKeys
-	activeLargest = newLargest
-	mu.Unlock()
-
-	return drifts
+	activeLargest = largest
 }
 
 // parseAllowance parses a tt-backend cpu_allowance string ("50%", "200%")

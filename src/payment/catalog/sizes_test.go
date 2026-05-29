@@ -264,7 +264,23 @@ func Test_MCPUFor(t *testing.T) {
 	assert.Equal(t, 0, MCPUFor("unknown"))
 }
 
-// --- Test 11: LargestSize after Hydrate ---------------------------------------
+// --- Test 11: Hydrate empty input wipes the active catalog -------------------
+
+// Test_Hydrate_EmptyInput_ReportsAllFallbackKeysMissing pins the leaf-package
+// contract: Hydrate is a pure transformation. An empty input wipes the active
+// catalog and reports every fallback key as missing. Callers that want to
+// treat "empty live data" as a failure must guard upstream (see
+// HydrateSizeCatalog in src/initialization).
+func Test_Hydrate_EmptyInput_ReportsAllFallbackKeysMissing(t *testing.T) {
+	resetActiveForTesting()
+	drifts := Hydrate(nil)
+	assert.Len(t, drifts, 5, "every fallback key should be reported as missing")
+
+	_, ok := LookupSize("xs")
+	assert.False(t, ok, "active catalog is empty after Hydrate(nil); caller is responsible for guarding")
+}
+
+// --- Test 12: LargestSize after Hydrate ---------------------------------------
 
 func Test_LargestSize_AfterHydrate(t *testing.T) {
 	setup(t)
