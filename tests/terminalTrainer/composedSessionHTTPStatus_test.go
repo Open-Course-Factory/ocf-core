@@ -2,6 +2,7 @@ package terminalTrainer_tests
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -159,6 +160,9 @@ func (m *mockTerminalTrainerService) GetDistributions(backend string) ([]dto.TTD
 	panic("not implemented")
 }
 func (m *mockTerminalTrainerService) GetCatalogSizes() ([]dto.TTSize, error) {
+	panic("not implemented")
+}
+func (m *mockTerminalTrainerService) FetchRawSizes(ctx context.Context) ([]dto.TTSize, error) {
 	panic("not implemented")
 }
 func (m *mockTerminalTrainerService) GetCatalogFeatures() ([]dto.TTFeature, error) {

@@ -384,7 +384,8 @@ func (s *quotaService) ComputeRemainingBySize(
 	plan *models.SubscriptionPlan,
 	usedCPU, usedMemMB int,
 ) []SizeRemaining {
-	out := make([]SizeRemaining, 0, len(catalog.CanonicalSizeKeys))
+	canonicalKeys := catalog.CanonicalSizeKeys()
+	out := make([]SizeRemaining, 0, len(canonicalKeys))
 
 	cpuUnlimited := plan == nil || plan.MaxCPU <= 0
 	memUnlimited := plan == nil || plan.MaxMemoryMB <= 0
@@ -404,7 +405,7 @@ func (s *quotaService) ComputeRemainingBySize(
 		}
 	}
 
-	for _, key := range catalog.CanonicalSizeKeys {
+	for _, key := range canonicalKeys {
 		size, ok := catalog.LookupSize(key)
 		if !ok {
 			continue

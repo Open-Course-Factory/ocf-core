@@ -1,6 +1,7 @@
 package scenarios_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -133,6 +134,9 @@ func (m *mockTTService) GetDistributions(string) ([]ttDto.TTDistribution, error)
 	return nil, nil
 }
 func (m *mockTTService) GetCatalogSizes() ([]ttDto.TTSize, error) { return nil, nil }
+func (m *mockTTService) FetchRawSizes(ctx context.Context) ([]ttDto.TTSize, error) {
+	return nil, nil
+}
 func (m *mockTTService) GetCatalogFeatures() ([]ttDto.TTFeature, error) { return nil, nil }
 func (m *mockTTService) GetSessionOptions(*paymentModels.SubscriptionPlan, string, string) (*ttDto.SessionOptionsResponse, error) {
 	return nil, nil

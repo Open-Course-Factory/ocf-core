@@ -127,7 +127,7 @@ func resolveRequiredRAM(_ *paymentModels.SubscriptionPlan, requestedSize string)
 			return ram
 		}
 	}
-	return float64(catalog.LargestSize.MemoryMB) / 1024.0
+	return float64(catalog.LargestSize().MemoryMB) / 1024.0
 }
 
 // EstimatePerTerminalRAMGB returns the per-terminal RAM estimate in GB
@@ -136,7 +136,7 @@ func resolveRequiredRAM(_ *paymentModels.SubscriptionPlan, requestedSize string)
 // Exported so it can be unit-tested directly and reused by other
 // pre-flight callers.
 func EstimatePerTerminalRAMGB() float64 {
-	return float64(catalog.LargestSize.MemoryMB) / 1024.0
+	return float64(catalog.LargestSize().MemoryMB) / 1024.0
 }
 
 // MetricsFetcher is the narrow surface EnforceLaunchCapacity needs from the

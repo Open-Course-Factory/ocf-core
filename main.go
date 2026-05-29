@@ -106,6 +106,10 @@ func main() {
 	// /admin/stripe/pending-syncs endpoint can be wired on the same instance.
 	stripeSyncQueue := payment.InitPaymentEntities(sqldb.DB)
 
+	// Hydrate the size catalog from tt-backend. Best-effort: failure
+	// leaves the hardcoded fallback active so ocf-core still boots.
+	initialization.HydrateSizeCatalog(sqldb.DB)
+
 	// Start the StripeSyncWorker: a single goroutine that polls the queue and
 	// drains pending rows to Stripe. Survives ocf-core restarts via the queue.
 	stripeSyncWorker := paymentServices.NewStripeSyncWorker(stripeSyncQueue, paymentServices.NewStripeService(sqldb.DB))

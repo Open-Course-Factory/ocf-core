@@ -57,7 +57,7 @@ func TestSizeCatalog_XSIs500Millicores(t *testing.T) {
 	}
 
 	// LargestSize is the conservative fallback. It must follow the new unit too.
-	assert.Equal(t, 4000, catalog.LargestSize.CPU,
+	assert.Equal(t, 4000, catalog.LargestSize().CPU,
 		"LargestSize.CPU must be in mCPU (4000), not the old vCPU value (4)")
 }
 

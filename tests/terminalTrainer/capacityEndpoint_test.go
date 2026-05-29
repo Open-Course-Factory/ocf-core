@@ -4,6 +4,7 @@ package terminalTrainer_tests
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -146,6 +147,9 @@ func (m *metricsAwareMockService) GetDistributions(backend string) ([]dto.TTDist
 	panic("not implemented")
 }
 func (m *metricsAwareMockService) GetCatalogSizes() ([]dto.TTSize, error) {
+	panic("not implemented")
+}
+func (m *metricsAwareMockService) FetchRawSizes(ctx context.Context) ([]dto.TTSize, error) {
 	panic("not implemented")
 }
 func (m *metricsAwareMockService) GetCatalogFeatures() ([]dto.TTFeature, error) {

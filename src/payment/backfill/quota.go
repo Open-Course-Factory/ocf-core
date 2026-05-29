@@ -240,7 +240,7 @@ func parseAllowedSizes(raw string) []string {
 // plan was unrestricted, so we fall back to the catalog's largest entry.
 func largestAllowedSize(allowed []string) catalog.MachineSize {
 	if len(allowed) == 0 {
-		return catalog.LargestSize
+		return catalog.LargestSize()
 	}
 
 	var largest catalog.MachineSize
@@ -251,14 +251,14 @@ func largestAllowedSize(allowed []string) catalog.MachineSize {
 			continue
 		}
 		if strings.EqualFold(code, "all") {
-			return catalog.LargestSize
+			return catalog.LargestSize()
 		}
 		size, ok := catalog.LookupSize(code)
 		if !ok {
 			// Unknown size: be conservative and assume the largest —
 			// this keeps the migration safe for any custom plan that
 			// snuck in a non-catalog code.
-			return catalog.LargestSize
+			return catalog.LargestSize()
 		}
 		matched = true
 		if size.CPU > largest.CPU {
@@ -269,7 +269,7 @@ func largestAllowedSize(allowed []string) catalog.MachineSize {
 		}
 	}
 	if !matched {
-		return catalog.LargestSize
+		return catalog.LargestSize()
 	}
 	return largest
 }

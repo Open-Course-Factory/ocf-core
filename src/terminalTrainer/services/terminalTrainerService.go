@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/json"
@@ -112,6 +113,12 @@ type TerminalTrainerService interface {
 	// Composed session (Phase 4)
 	GetDistributions(backend string) ([]dto.TTDistribution, error)
 	GetCatalogSizes() ([]dto.TTSize, error)
+	// FetchRawSizes performs a one-shot, uncached HTTP GET against
+	// tt-backend's /sizes endpoint. Used by the startup catalog
+	// hydration; honors the caller's context for timeout. Returns the
+	// raw tt-backend Size records (no CPUMcpu stamping — that's the
+	// catalog's job once hydrated).
+	FetchRawSizes(ctx context.Context) ([]dto.TTSize, error)
 	GetCatalogFeatures() ([]dto.TTFeature, error)
 	GetSessionOptions(plan *paymentModels.SubscriptionPlan, distribution string, backend string) (*dto.SessionOptionsResponse, error)
 	// EnrichSessionOptionsBudget populates the per-size RemainingCount /
@@ -3036,6 +3043,38 @@ func (tts *terminalTrainerService) GetDistributions(backend string) ([]dto.TTDis
 	return distributions, nil
 }
 
+// FetchRawSizes performs a one-shot, uncached HTTP GET against
+// tt-backend's /sizes endpoint. Used by the startup catalog hydration;
+// the deadline carried by ctx is honored via a per-call client timeout
+// (the lower of ctx's remaining time and the default). Returns the raw
+// tt-backend Size records — CPUMcpu stamping is the catalog's job once
+// it has been hydrated.
+func (tts *terminalTrainerService) FetchRawSizes(ctx context.Context) ([]dto.TTSize, error) {
+	url := fmt.Sprintf("%s/%s/sizes", tts.baseURL, tts.apiVersion)
+	var sizes []dto.TTSize
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
+
+	// The utils HTTP layer has no context plumbing; translate the
+	// context deadline into a client-side timeout so the hydration call
+	// cannot block startup indefinitely.
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil, ctx.Err()
+		}
+		if remaining < opts.Timeout {
+			opts.Timeout = remaining
+		}
+	}
+
+	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sizes, opts)
+	if err != nil {
+		return nil, err
+	}
+	return sizes, nil
+}
+
 // GetCatalogSizes fetches sizes from tt-backend with a 60s TTL cache.
 //
 // Each entry is enriched with CPUMcpu from ocf-core's payment catalog so
@@ -3064,9 +3103,7 @@ func (tts *terminalTrainerService) GetCatalogSizes() ([]dto.TTSize, error) {
 	// Stamp the effective mCPU budget cost from the OCF catalog. Sizes the
 	// catalog doesn't know about keep CPUMcpu=0 (sentinel for "unknown").
 	for i := range sizes {
-		if cataSize, found := catalog.LookupSize(sizes[i].Key); found {
-			sizes[i].CPUMcpu = cataSize.CPU
-		}
+		sizes[i].CPUMcpu = catalog.MCPUFor(sizes[i].Key)
 	}
 
 	tts.catalogSizesMu.Lock()
@@ -3140,11 +3177,7 @@ func ComputeSessionOptions(
 		if s.SortOrder < minSortOrder {
 			continue
 		}
-		if cataSize, found := catalog.LookupSize(s.Key); found {
-			s.CPUMcpu = cataSize.CPU
-		} else {
-			s.CPUMcpu = 0
-		}
+		s.CPUMcpu = catalog.MCPUFor(s.Key)
 		allowedSizes = append(allowedSizes, dto.SessionOptionSize{TTSize: s, Allowed: true})
 	}
 

@@ -1,6 +1,7 @@
 package scenarios_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -143,6 +144,9 @@ func (m *capturingTTService) GetDistributions(string) ([]ttDto.TTDistribution, e
 	return nil, nil
 }
 func (m *capturingTTService) GetCatalogSizes() ([]ttDto.TTSize, error) { return nil, nil }
+func (m *capturingTTService) FetchRawSizes(ctx context.Context) ([]ttDto.TTSize, error) {
+	return nil, nil
+}
 func (m *capturingTTService) GetCatalogFeatures() ([]ttDto.TTFeature, error) { return nil, nil }
 func (m *capturingTTService) GetSessionOptions(*paymentModels.SubscriptionPlan, string, string) (*ttDto.SessionOptionsResponse, error) {
 	return nil, nil
