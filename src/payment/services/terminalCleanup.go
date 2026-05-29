@@ -4,6 +4,7 @@ package services
 import (
 	"fmt"
 	organizationModels "soli/formations/src/organizations/models"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 	terminalRepo "soli/formations/src/terminalTrainer/repositories"
 	"soli/formations/src/utils"
 
@@ -11,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// TerminateUserTerminals marks active terminals as "deleted" in the database.
+// TerminateUserTerminals marks active terminals as StateDeleted in the database.
 // This is the shared implementation used by both user and organization subscription cancellation.
 //
 // Scope (closes #314): when orgID is nil, ALL of the user's terminals are
@@ -24,11 +25,11 @@ import (
 //
 // Semantics: "Terminate" releases the resources — a terminated subscription must not
 // continue to consume quota. Per the SSOT consolidation in MR !218
-// (models.OccupiesSlotScope counts state IN ('running','stopped')), "stopped"
-// terminals still occupy a slot. To actually free both the slot and the
-// CPU/RAM budget, we mark them State="deleted" — matching the canonical
-// lifecycle delete in terminalTrainerService.DeleteSession. Deleted rows
-// are excluded by OccupiesSlotScope (the single SSOT for slot + budget
+// (models.OccupiesSlotScope counts state IN (StateRunning, StateStopped)),
+// StateStopped terminals still occupy a slot. To actually free both the slot
+// and the CPU/RAM budget, we mark them State=StateDeleted — matching the
+// canonical lifecycle delete in terminalTrainerService.DeleteSession. Deleted
+// rows are excluded by OccupiesSlotScope (the single SSOT for slot + budget
 // counting), so the live counters (models.CountUserOccupiedSlots,
 // QuotaService.CheckBudget) reflect the new state without any further
 // bookkeeping.
@@ -55,10 +56,10 @@ func TerminateUserTerminals(db *gorm.DB, userID string, orgID *uuid.UUID) error 
 
 	terminatedCount := 0
 	for _, terminal := range *terminals {
-		if terminal.State == "running" {
+		if terminal.State == string(terminalModels.StateRunning) {
 			utils.Debug("Deleting terminal %s (session: %s) for user %s", terminal.ID, terminal.SessionID, userID)
 
-			terminal.State = "deleted"
+			terminal.State = string(terminalModels.StateDeleted)
 			if err := termRepository.UpdateTerminalSession(&terminal); err != nil {
 				utils.Error("Failed to update terminal %s state for user %s: %v", terminal.SessionID, userID, err)
 				continue

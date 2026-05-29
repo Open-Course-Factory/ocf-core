@@ -16,14 +16,14 @@ import (
 //
 // SSOT: Terminal.State is the canonical lifecycle field. A scenario session
 // is "zombie" if its linked terminal is no longer running — i.e. State is
-// 'stopped' or 'deleted' — or the terminal row has been removed entirely.
+// StateStopped or StateDeleted — or the terminal row has been removed entirely.
 func CleanupZombieScenarioSessions(db *gorm.DB) (int64, error) {
 	now := time.Now()
 
 	// Subquery: terminal session IDs that are no longer running
 	deadTerminals := db.Model(&terminalModels.Terminal{}).
 		Select("session_id").
-		Where("state IN ?", []string{"deleted", "stopped"})
+		Where("state IN ?", []terminalModels.TerminalState{terminalModels.StateDeleted, terminalModels.StateStopped})
 
 	// Subquery: all known terminal session IDs (GORM auto-filters soft-deleted)
 	knownTerminals := db.Model(&terminalModels.Terminal{}).
