@@ -184,7 +184,7 @@ func seedResumeTarget(t *testing.T, userID string, machineSize string) string {
 		SessionID:         sessionID,
 		UserID:            userID,
 		Name:              "ResumeTarget",
-		State:             "stopped",
+		State:             models.StateStopped,
 		PersistenceMode:   "persistent",
 		ExpiresAt:         time.Now().Add(-time.Minute),
 		InstanceType:      "",

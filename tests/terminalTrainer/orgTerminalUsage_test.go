@@ -230,7 +230,7 @@ func TestGetOrgTerminalUsage_ActiveTerminalsAggregated(t *testing.T) {
 		terminal := &models.Terminal{
 			SessionID:         "active-session-" + uuid.New().String(),
 			UserID:            "student1",
-			State:            "running",
+			State:            models.StateRunning,
 			ExpiresAt:         time.Now().Add(1 * time.Hour),
 			InstanceType:      "test",
 			MachineSize:       "S",
@@ -244,7 +244,7 @@ func TestGetOrgTerminalUsage_ActiveTerminalsAggregated(t *testing.T) {
 	stoppedTerminal := &models.Terminal{
 		SessionID:         "stopped-session-" + uuid.New().String(),
 		UserID:            "student1",
-		State:            "stopped",
+		State:            models.StateStopped,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -260,7 +260,7 @@ func TestGetOrgTerminalUsage_ActiveTerminalsAggregated(t *testing.T) {
 	outsideTerminal := &models.Terminal{
 		SessionID:         "outside-session-" + uuid.New().String(),
 		UserID:            "student1",
-		State:            "running",
+		State:            models.StateRunning,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -318,7 +318,7 @@ func TestGetOrgTerminalUsage_OccupyingSlotsIncludesStopped(t *testing.T) {
 	activeTerminal := &models.Terminal{
 		SessionID:         "active-session-" + uuid.New().String(),
 		UserID:            "student1",
-		State:            "running",
+		State:            models.StateRunning,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -332,7 +332,7 @@ func TestGetOrgTerminalUsage_OccupyingSlotsIncludesStopped(t *testing.T) {
 	stoppedTerminal := &models.Terminal{
 		SessionID:         "stopped-session-" + uuid.New().String(),
 		UserID:            "student1",
-		State:            "stopped",
+		State:            models.StateStopped,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -397,7 +397,7 @@ func TestGetOrgTerminalUsage_OccupyingSlotsAllStopped(t *testing.T) {
 	stoppedTerminal := &models.Terminal{
 		SessionID:         "stopped-only-" + uuid.New().String(),
 		UserID:            "student2",
-		State:            "stopped",
+		State:            models.StateStopped,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -519,7 +519,7 @@ func TestGetOrgTerminalUsage_PastExpiryNotCountedAsActive(t *testing.T) {
 	zombie := &models.Terminal{
 		SessionID:         "zombie-active-" + uuid.New().String(),
 		UserID:            "student1",
-		State:             "running",
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(-30 * time.Minute), // past expiry
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -571,7 +571,7 @@ func TestGetOrgTerminalUsage_FutureExpiryCountedAsActive(t *testing.T) {
 	live := &models.Terminal{
 		SessionID:         "live-active-" + uuid.New().String(),
 		UserID:            "student1",
-		State:             "running",
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(1 * time.Hour), // future
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -629,7 +629,7 @@ func TestGetOrgTerminalUsage_DisplayNameResolvedFromCasdoor(t *testing.T) {
 	terminal := &models.Terminal{
 		SessionID:         "name-test-" + uuid.New().String(),
 		UserID:            "student1",
-		State:             "running",
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -712,7 +712,7 @@ func TestGetOrgTerminalUsage_DisplayNameFallbackChain(t *testing.T) {
 		terminal := &models.Terminal{
 			SessionID:         "fallback-" + uid + "-" + uuid.New().String(),
 			UserID:            uid,
-			State:             "running",
+			State:             models.StateRunning,
 			ExpiresAt:         time.Now().Add(1 * time.Hour),
 			InstanceType:      "test",
 			MachineSize:       "S",

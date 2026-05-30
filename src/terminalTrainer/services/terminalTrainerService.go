@@ -1720,7 +1720,11 @@ func (tts *terminalTrainerService) GetEnumService() TerminalTrainerEnumService {
 // ValidateSessionAccess checks if a session is accessible for console operations
 // Returns: (isValid bool, reason string, error)
 // - isValid: true if session can be accessed, false otherwise
-// - reason: "active", "stopped", "expired", or other status
+// - reason: a denial reason string (empty when isValid). Either a terminal
+//   state name (e.g. "stopped", or any TerminalState surfaced by the default
+//   switch arm) or a non-state sentinel: "expired" (deleted / empty / expired
+//   ephemeral) or "backend_offline". Kept as string, not TerminalState,
+//   because the sentinels are not lifecycle states.
 // - error: any error encountered during validation
 func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, checkAPI bool) (bool, string, error) {
 	// 1. Get session from local database

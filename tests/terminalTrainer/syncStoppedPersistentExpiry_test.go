@@ -121,7 +121,7 @@ func TestSyncUserSessions_AutoStopped_ExtendsExpiresAtToIdleUntil(t *testing.T) 
 				SessionID:         sessionID,
 				UserID:            userID,
 				Name:              "Test Terminal",
-				State:             "running",
+				State:             models.StateRunning,
 				PersistenceMode:   tc.mode,
 				ExpiresAt:         originalExpiry,
 				InstanceType:      "",
@@ -136,7 +136,7 @@ func TestSyncUserSessions_AutoStopped_ExtendsExpiresAtToIdleUntil(t *testing.T) 
 
 			var reloaded models.Terminal
 			require.NoError(t, db.Where("session_id = ?", sessionID).First(&reloaded).Error)
-			assert.Equal(t, "stopped", reloaded.State,
+			assert.Equal(t, models.StateStopped, reloaded.State,
 				"sync must propagate tt-backend's stopped state (%s)", tc.mode)
 			assert.Equal(t, tc.mode, reloaded.PersistenceMode)
 
@@ -190,7 +190,7 @@ func TestSyncUserSessions_AutoStopped_IdleUntilZero_UsesPlanFallback(t *testing.
 				SessionID:         sessionID,
 				UserID:            userID,
 				Name:              "Test Terminal",
-				State:             "running",
+				State:             models.StateRunning,
 				PersistenceMode:   tc.mode,
 				ExpiresAt:         originalExpiry,
 				InstanceType:      "",
@@ -209,7 +209,7 @@ func TestSyncUserSessions_AutoStopped_IdleUntilZero_UsesPlanFallback(t *testing.
 
 			var reloaded models.Terminal
 			require.NoError(t, db.Where("session_id = ?", sessionID).First(&reloaded).Error)
-			assert.Equal(t, "stopped", reloaded.State)
+			assert.Equal(t, models.StateStopped, reloaded.State)
 
 			expectedLow := before.Add(60 * time.Minute).Add(-time.Second)
 			expectedHigh := after.Add(60 * time.Minute).Add(5 * time.Second)
@@ -261,7 +261,7 @@ func TestSyncUserSessions_AlreadyStopped_Idempotent(t *testing.T) {
 				SessionID:         sessionID,
 				UserID:            userID,
 				Name:              "Test Terminal",
-				State:             "stopped",
+				State:             models.StateStopped,
 				PersistenceMode:   tc.mode,
 				ExpiresAt:         idleUntilLocal,
 				IdleUntil:         &idleUntilLocal,
@@ -327,7 +327,7 @@ func TestSyncUserSessions_Running_NotTouched(t *testing.T) {
 				SessionID:         sessionID,
 				UserID:            userID,
 				Name:              "Test Terminal",
-				State:             "running",
+				State:             models.StateRunning,
 				PersistenceMode:   tc.mode,
 				ExpiresAt:         originalExpiry,
 				InstanceType:      "",
@@ -342,7 +342,7 @@ func TestSyncUserSessions_Running_NotTouched(t *testing.T) {
 
 			var reloaded models.Terminal
 			require.NoError(t, db.Where("session_id = ?", sessionID).First(&reloaded).Error)
-			assert.Equal(t, "running", reloaded.State, "running rows must stay running")
+			assert.Equal(t, models.StateRunning, reloaded.State, "running rows must stay running")
 
 			delta := reloaded.ExpiresAt.Sub(originalExpiry)
 			if delta.Abs() > time.Second {
@@ -393,7 +393,7 @@ func TestSyncUserSessions_Stopped_NoPlanNoIdleUntil_LeavesExpiresAtUnchanged(t *
 				SessionID:         sessionID,
 				UserID:            userID,
 				Name:              "Test Terminal",
-				State:             "running",
+				State:             models.StateRunning,
 				PersistenceMode:   tc.mode,
 				ExpiresAt:         originalExpiry,
 				InstanceType:      "",
@@ -408,7 +408,7 @@ func TestSyncUserSessions_Stopped_NoPlanNoIdleUntil_LeavesExpiresAtUnchanged(t *
 
 			var reloaded models.Terminal
 			require.NoError(t, db.Where("session_id = ?", sessionID).First(&reloaded).Error)
-			assert.Equal(t, "stopped", reloaded.State, "state must still propagate")
+			assert.Equal(t, models.StateStopped, reloaded.State, "state must still propagate")
 			delta := reloaded.ExpiresAt.Sub(originalExpiry)
 			if delta.Abs() > time.Second {
 				t.Errorf("with no idle_until and no plan, helper must leave ExpiresAt untouched (want ~%v, got %v)",

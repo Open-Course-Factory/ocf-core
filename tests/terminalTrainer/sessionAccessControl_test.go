@@ -47,7 +47,7 @@ func TestValidateSessionAccess_StoppedSession(t *testing.T) {
 		SessionID:         "test-stopped-session-basic",
 		UserID:            "test-user",
 		Name:              "Test Terminal",
-		State:             "stopped",
+		State:             models.StateStopped,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		UserTerminalKeyID: userKey.ID,
 	}
@@ -92,7 +92,7 @@ func TestGetAccessStatus_StoppedSession(t *testing.T) {
 		SessionID:         "test-stopped-access-status",
 		UserID:            "test-user-123",
 		Name:              "Test Terminal",
-		State:             "stopped",
+		State:             models.StateStopped,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		UserTerminalKeyID: userKey.ID,
 	}
@@ -276,7 +276,7 @@ func TestValidateSessionAccess_StateStopped_ReturnsStoppedNotExpired(t *testing.
 		SessionID:         "test-stopped-session",
 		UserID:            "test-user",
 		Name:              "Persistent",
-		State:             "stopped", // canonical SSOT — auto-stop succeeded
+		State:             models.StateStopped, // canonical SSOT — auto-stop succeeded
 		PersistenceMode:   "persistent",
 		ExpiresAt:         time.Now().Add(-time.Hour), // past — past-expiry must NOT win over State
 		UserTerminalKeyID: userKey.ID,
@@ -307,7 +307,7 @@ func TestValidateSessionAccess_StateEmpty_DeniesConservatively(t *testing.T) {
 		SessionID:         "test-legacy-session",
 		UserID:            "test-user",
 		Name:              "Legacy",
-		State:             "running",
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(time.Hour),
 		UserTerminalKeyID: userKey.ID,
 	}
@@ -339,7 +339,7 @@ func TestValidateSessionAccess_StateDeleted_ReturnsExpiredWireFormat(t *testing.
 		SessionID:         "test-deleted-session",
 		UserID:            "test-user",
 		Name:              "Deleted",
-		State:             "deleted",
+		State:             models.StateDeleted,
 		ExpiresAt:         time.Now().Add(time.Hour),
 		UserTerminalKeyID: userKey.ID,
 	}

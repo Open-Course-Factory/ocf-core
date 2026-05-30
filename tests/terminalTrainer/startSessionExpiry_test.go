@@ -116,7 +116,7 @@ func TestStartSession_SendsPlanDerivedExpiryToTTBackend(t *testing.T) {
 		SessionID:          sessionID,
 		UserID:             userID,
 		Name:               "exp-test",
-		State:              "stopped",
+		State:              models.StateStopped,
 		PersistenceMode:    "persistent",
 		ExpiresAt:          time.Now().Add(-time.Minute), // already expired
 		InstanceType:       "test",
@@ -161,7 +161,7 @@ func TestStartSession_NoPlan_DoesNotSendExpiry(t *testing.T) {
 		SessionID:         sessionID,
 		UserID:            userID,
 		Name:              "legacy-test",
-		State:             "stopped",
+		State:             models.StateStopped,
 		PersistenceMode:   "persistent",
 		ExpiresAt:         time.Now().Add(-time.Minute),
 		InstanceType:      "test",

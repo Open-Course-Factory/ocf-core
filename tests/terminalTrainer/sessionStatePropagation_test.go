@@ -174,7 +174,7 @@ func TestSyncUserSessions_PropagatesStateFromTTBackend(t *testing.T) {
 		SessionID:         sessionID,
 		UserID:            userID,
 		Name:              "Test Terminal",
-		State:             "running", // canonical SSOT — sync must flip to "stopped"
+		State:             models.StateRunning, // canonical SSOT — sync must flip to "stopped"
 		PersistenceMode:   "ephemeral",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "",

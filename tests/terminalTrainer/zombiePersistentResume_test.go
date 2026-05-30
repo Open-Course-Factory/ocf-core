@@ -41,7 +41,7 @@ func TestValidateSessionAccess_PersistentZombieRunning_ReturnsStopped(t *testing
 		SessionID:         "zombie-persistent-session",
 		UserID:            "zombie-user",
 		Name:              "Zombie Persistent",
-		State:             "running",
+		State:             models.StateRunning,
 		PersistenceMode:   "persistent",
 		ExpiresAt:         time.Now().Add(-30 * time.Second), // past — auto-stop is in flight
 		UserTerminalKeyID: userKey.ID,
@@ -71,7 +71,7 @@ func TestValidateSessionAccess_EphemeralZombieRunning_StillReturnsExpired(t *tes
 		SessionID:         "zombie-ephemeral-session",
 		UserID:            "zombie-user-ephemeral",
 		Name:              "Zombie Ephemeral",
-		State:             "running",
+		State:             models.StateRunning,
 		PersistenceMode:   "ephemeral",
 		ExpiresAt:         time.Now().Add(-30 * time.Second),
 		UserTerminalKeyID: userKey.ID,

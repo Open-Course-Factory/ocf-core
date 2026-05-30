@@ -61,7 +61,7 @@ func reinitSizeCase(t *testing.T, softDeleteFirst bool) {
 		SessionID:         sessionID,
 		UserID:            "u-reinit",
 		Name:              "original",
-		State:             "running",
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "M",
@@ -83,7 +83,7 @@ func reinitSizeCase(t *testing.T, softDeleteFirst bool) {
 		SessionID:         sessionID,
 		UserID:            "u-reinit",
 		Name:              "reinit-larger",
-		State:             "running",
+		State:             models.StateRunning,
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "L",
@@ -136,7 +136,7 @@ func TestCreateMissingLocalSession_PopulatesSizeDenorm_KnownSize(t *testing.T) {
 		ExpiresAt:   time.Now().Add(time.Hour).Unix(),
 		MachineSize: "m", // lowercase: catalog must be case-insensitive
 		Backend:     "incus-test",
-		State:       "running",
+		State:       models.StateRunning,
 	}
 
 	terminal := buildTerminalFromAPISessionForTest("u-sync-known", userKey, apiSession)
@@ -164,7 +164,7 @@ func TestCreateMissingLocalSession_UnknownSize_LeavesZero(t *testing.T) {
 		ExpiresAt:   time.Now().Add(time.Hour).Unix(),
 		MachineSize: "zz", // not in catalog
 		Backend:     "incus-test",
-		State:       "running",
+		State:       models.StateRunning,
 	}
 
 	terminal := buildTerminalFromAPISessionForTest("u-sync-unknown", userKey, apiSession)

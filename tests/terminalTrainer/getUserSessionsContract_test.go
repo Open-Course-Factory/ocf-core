@@ -48,7 +48,7 @@ func TestGetUserSessions_ResponseExposesStateNotStatus(t *testing.T) {
 		SessionID:         sessionID,
 		UserID:            "contract-user",
 		Name:              "Contract Stopped",
-		State:             "stopped",
+		State:             models.StateStopped,
 		PersistenceMode:   "persistent",
 		ExpiresAt:         time.Now().Add(time.Hour),
 		InstanceType:      "test",

@@ -205,7 +205,7 @@ func TestResumeMiddleware_SyncsBeforeValidate(t *testing.T) {
 		SessionID:         sessionID,
 		UserID:            userID,
 		Name:              "Zombie",
-		State:             "running",
+		State:             models.StateRunning,
 		PersistenceMode:   "persistent",
 		ExpiresAt:         time.Now().Add(-30 * time.Second),
 		InstanceType:      "",

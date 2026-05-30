@@ -35,7 +35,7 @@ func createTestTerminalWithOrg(t *testing.T, db *gorm.DB, userID string, orgID *
 		SessionID:         "test-session-" + uuid.New().String(),
 		UserID:            userID,
 		Name:              "Test Terminal",
-		State:            "stopped",
+		State:             models.StateStopped,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",

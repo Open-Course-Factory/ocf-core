@@ -186,7 +186,7 @@ func TestStartSession_Success(t *testing.T) {
 	// Pre-state: a stopped session.
 	terminal, err := createTestTerminal(db, userID, "stopped", time.Now().Add(time.Hour))
 	require.NoError(t, err)
-	terminal.State = "stopped"
+	terminal.State = models.StateStopped
 	idle := time.Now().Add(12 * time.Hour)
 	terminal.IdleUntil = &idle
 	require.NoError(t, db.Save(terminal).Error)
@@ -252,7 +252,7 @@ func TestStartSession_SyncsExpiresAtFromResponse(t *testing.T) {
 	pastExpiry := time.Now().Add(-10 * time.Minute)
 	terminal, err := createTestTerminal(db, userID, "stopped", pastExpiry)
 	require.NoError(t, err)
-	terminal.State = "stopped"
+	terminal.State = models.StateStopped
 	require.NoError(t, db.Save(terminal).Error)
 
 	svc := services.NewTerminalTrainerService(db)

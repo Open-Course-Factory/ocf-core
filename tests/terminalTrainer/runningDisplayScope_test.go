@@ -40,7 +40,7 @@ func TestGetTerminalSessionsByUserID_ExcludesPastExpiry(t *testing.T) {
 	live := &models.Terminal{
 		SessionID:         "live-" + uuid.New().String(),
 		UserID:            "user-rds-1",
-		State:            "running",
+		State:            models.StateRunning,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -52,7 +52,7 @@ func TestGetTerminalSessionsByUserID_ExcludesPastExpiry(t *testing.T) {
 	zombie := &models.Terminal{
 		SessionID:         "zombie-" + uuid.New().String(),
 		UserID:            "user-rds-1",
-		State:            "running",
+		State:            models.StateRunning,
 		ExpiresAt:         time.Now().Add(-30 * time.Minute),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -87,7 +87,7 @@ func TestGetTerminalSessionsByUserID_IsActiveFalseUnchanged(t *testing.T) {
 	live := &models.Terminal{
 		SessionID:         "live2-" + uuid.New().String(),
 		UserID:            "user-rds-2",
-		State:            "running",
+		State:            models.StateRunning,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -98,7 +98,7 @@ func TestGetTerminalSessionsByUserID_IsActiveFalseUnchanged(t *testing.T) {
 	stopped := &models.Terminal{
 		SessionID:         "stopped2-" + uuid.New().String(),
 		UserID:            "user-rds-2",
-		State:            "stopped",
+		State:            models.StateStopped,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -109,7 +109,7 @@ func TestGetTerminalSessionsByUserID_IsActiveFalseUnchanged(t *testing.T) {
 	zombie := &models.Terminal{
 		SessionID:         "zombie2-" + uuid.New().String(),
 		UserID:            "user-rds-2",
-		State:            "running",
+		State:            models.StateRunning,
 		ExpiresAt:         time.Now().Add(-30 * time.Minute),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -138,7 +138,7 @@ func TestGetTerminalSessionsByUserIDAndOrg_ExcludesPastExpiry(t *testing.T) {
 	live := &models.Terminal{
 		SessionID:         "live3-" + uuid.New().String(),
 		UserID:            "user-rds-3",
-		State:            "running",
+		State:            models.StateRunning,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -150,7 +150,7 @@ func TestGetTerminalSessionsByUserIDAndOrg_ExcludesPastExpiry(t *testing.T) {
 	zombie := &models.Terminal{
 		SessionID:         "zombie3-" + uuid.New().String(),
 		UserID:            "user-rds-3",
-		State:            "running",
+		State:            models.StateRunning,
 		ExpiresAt:         time.Now().Add(-30 * time.Minute),
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -193,7 +193,7 @@ func TestGetGroupCommandHistory_ExcludesPastExpiry(t *testing.T) {
 	zombie := &models.Terminal{
 		SessionID:         "zombie4-" + uuid.New().String(),
 		UserID:            "student-rds-4",
-		State:            "running",
+		State:            models.StateRunning,
 		ExpiresAt:         time.Now().Add(-30 * time.Minute), // past expiry
 		InstanceType:      "test",
 		MachineSize:       "S",
@@ -234,7 +234,7 @@ func TestGetGroupCommandHistoryStats_ExcludesPastExpiry(t *testing.T) {
 	zombie := &models.Terminal{
 		SessionID:         "zombie5-" + uuid.New().String(),
 		UserID:            "student-rds-5",
-		State:            "running",
+		State:            models.StateRunning,
 		ExpiresAt:         time.Now().Add(-30 * time.Minute),
 		InstanceType:      "test",
 		MachineSize:       "S",
