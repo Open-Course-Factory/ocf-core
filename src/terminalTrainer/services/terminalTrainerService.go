@@ -29,7 +29,6 @@ import (
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
-	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 )
 
@@ -131,22 +130,19 @@ type TerminalTrainerService interface {
 }
 
 type terminalTrainerService struct {
-	adminKey                string
-	baseURL                 string
-	apiVersion              string
-	terminalType            string
-	repository              repositories.TerminalRepository
-	orgSubscriptionService  paymentServices.OrganizationSubscriptionService
-	quotaService            paymentServices.QuotaService
-	enumService             TerminalTrainerEnumService
-	db                      *gorm.DB
-	backendCache            []dto.BackendInfo
-	backendCacheTime        time.Time
-	backendCacheMu          sync.RWMutex
-	backendCacheSF          singleflight.Group
-	catalogSizesCache       []dto.TTSize
-	catalogSizesCacheTime   time.Time
-	catalogSizesMu          sync.RWMutex
+	adminKey                 string
+	baseURL                  string
+	apiVersion               string
+	terminalType             string
+	repository               repositories.TerminalRepository
+	orgSubscriptionService   paymentServices.OrganizationSubscriptionService
+	quotaService             paymentServices.QuotaService
+	enumService              TerminalTrainerEnumService
+	db                       *gorm.DB
+	proxy                    *terminalProxyClient
+	catalogSizesCache        []dto.TTSize
+	catalogSizesCacheTime    time.Time
+	catalogSizesMu           sync.RWMutex
 	catalogFeaturesCache     []dto.TTFeature
 	catalogFeaturesCacheTime time.Time
 	catalogFeaturesMu        sync.RWMutex
@@ -166,16 +162,18 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 	baseURL := os.Getenv("TERMINAL_TRAINER_URL") // http://localhost:8090
 
 	eps := paymentServices.NewEffectivePlanService(db)
+	repository := repositories.NewTerminalRepository(db)
 	return &terminalTrainerService{
 		adminKey:               os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
 		baseURL:                baseURL,
 		apiVersion:             apiVersion,
 		terminalType:           terminalType,
-		repository:             repositories.NewTerminalRepository(db),
+		repository:             repository,
 		orgSubscriptionService: paymentServices.NewOrganizationSubscriptionService(db),
 		quotaService:           paymentServices.NewQuotaService(db, eps),
 		enumService:            NewTerminalTrainerEnumService(baseURL, apiVersion),
 		db:                     db,
+		proxy:                  newTerminalProxyClient(repository),
 	}
 }
 
@@ -183,6 +181,42 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 // tests that need to inject a fake — production code must not call this.
 func (tts *terminalTrainerService) SetQuotaServiceForTest(qs paymentServices.QuotaService) {
 	tts.quotaService = qs
+}
+
+// The following methods delegate to terminalProxyClient, which owns the
+// tt-backend HTTP layer. They keep terminalTrainerService satisfying the
+// TerminalTrainerService interface without exposing the proxy to callers.
+
+func (tts *terminalTrainerService) GetAllSessionsFromAPI(userAPIKey string) (*dto.TerminalTrainerSessionsResponse, error) {
+	return tts.proxy.GetAllSessionsFromAPI(userAPIKey)
+}
+
+func (tts *terminalTrainerService) GetSessionInfoFromAPI(sessionID string) (*dto.TerminalTrainerSessionInfo, error) {
+	return tts.proxy.GetSessionInfoFromAPI(sessionID)
+}
+
+func (tts *terminalTrainerService) GetServerMetrics(nocache bool, backend string) (*dto.ServerMetricsResponse, error) {
+	return tts.proxy.GetServerMetrics(nocache, backend)
+}
+
+func (tts *terminalTrainerService) GetBackends() ([]dto.BackendInfo, error) {
+	return tts.proxy.GetBackends()
+}
+
+func (tts *terminalTrainerService) IsBackendOnline(backendName string) (bool, error) {
+	return tts.proxy.IsBackendOnline(backendName)
+}
+
+func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*dto.BackendInfo, error) {
+	return tts.proxy.SetSystemDefaultBackend(backendID)
+}
+
+func (tts *terminalTrainerService) GetDistributions(backend string) ([]dto.TTDistribution, error) {
+	return tts.proxy.GetDistributions(backend)
+}
+
+func (tts *terminalTrainerService) FetchRawSizes(ctx context.Context) ([]dto.TTSize, error) {
+	return tts.proxy.FetchRawSizes(ctx)
 }
 
 // CreateUserKey crée une clé Terminal Trainer et la stocke en DB
@@ -263,7 +297,6 @@ func (tts *terminalTrainerService) DisableUserKey(userID string) error {
 	return tts.repository.UpdateUserTerminalKey(key)
 }
 
-
 // GetSessionInfo récupère les informations d'une session
 func (tts *terminalTrainerService) GetSessionInfo(sessionID string) (*models.Terminal, error) {
 	return tts.repository.GetTerminalSessionByID(sessionID)
@@ -311,7 +344,7 @@ func (tts *terminalTrainerService) StopSession(sessionID string) error {
 		sessionID, terminal.State, terminal.PersistenceMode)
 
 	// 1. Appeler le nouvel endpoint /sessions/{id}/stop de tt-backend.
-	idleUntil, err := tts.stopSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey)
+	idleUntil, err := tts.proxy.stopSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey)
 	if err != nil {
 		// Log mais on continue : la ligne locale doit refléter l'intention
 		// même si tt-backend est temporairement injoignable. Pour une session
@@ -478,7 +511,7 @@ func (tts *terminalTrainerService) StartSession(sessionID string) error {
 		}
 	}
 
-	expiresAtUnix, err := tts.startSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey, expirySeconds)
+	expiresAtUnix, err := tts.proxy.startSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey, expirySeconds)
 	if err != nil {
 		return fmt.Errorf("failed to start session in Terminal Trainer API: %w", err)
 	}
@@ -515,7 +548,7 @@ func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
 		return fmt.Errorf("session not found: %w", err)
 	}
 
-	if err := tts.deleteSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey); err != nil {
+	if err := tts.proxy.deleteSessionInAPI(sessionID, terminal.UserTerminalKey.APIKey); err != nil {
 		// Log mais on continue : la session locale doit être marquée StateDeleted
 		// même si tt-backend est injoignable, sinon l'utilisateur reste bloqué
 		// avec un slot consommé.
@@ -541,118 +574,6 @@ func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
 	return nil
 }
 
-// stopSessionInAPI appelle POST /sessions/{id}/stop sur tt-backend.
-// Retourne idle_until si tt-backend en propose un.
-func (tts *terminalTrainerService) stopSessionInAPI(sessionID, userAPIKey string) (*time.Time, error) {
-	url := fmt.Sprintf("%s/%s/sessions/%s/stop", tts.baseURL, tts.apiVersion, sessionID)
-
-	utils.Debug("stopSessionInAPI - calling %s", url)
-
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
-
-	var resp struct {
-		IdleUntil *time.Time `json:"idle_until,omitempty"`
-	}
-	if err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, nil, &resp, opts); err != nil {
-		return nil, err
-	}
-	return resp.IdleUntil, nil
-}
-
-// startSessionInAPI appelle POST /sessions/{id}/start sur tt-backend.
-// Retourne le nouveau expires_at (unix seconds) tel que tt-backend l'a recalculé
-// au redémarrage de l'instance. Retourne 0 si le champ est absent (instance
-// sans expiry fini côté backend) — l'appelant doit alors conserver la valeur
-// locale actuelle.
-//
-// expirySeconds, lorsqu'il est > 0, est envoyé dans le corps JSON comme
-// {"expiry": N} pour que tt-backend recalcule instance_expiry sur la base
-// de la limite du plan plutôt que sur la valeur par défaut de l'instance.
-// Quand expirySeconds == 0, le corps est nil et tt-backend utilise son défaut.
-func (tts *terminalTrainerService) startSessionInAPI(sessionID, userAPIKey string, expirySeconds int) (int64, error) {
-	url := fmt.Sprintf("%s/%s/sessions/%s/start", tts.baseURL, tts.apiVersion, sessionID)
-
-	utils.Debug("startSessionInAPI - calling %s (expiry=%d)", url, expirySeconds)
-
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
-
-	// Build body only when we have a positive expiry to forward. A nil body
-	// preserves tt-backend's instance-config default for legacy sessions.
-	var body any
-	if expirySeconds > 0 {
-		body = map[string]any{"expiry": expirySeconds}
-	}
-
-	var resp struct {
-		ExpiresAt int64 `json:"expires_at,omitempty"`
-	}
-	if err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, body, &resp, opts); err != nil {
-		return 0, err
-	}
-	return resp.ExpiresAt, nil
-}
-
-// deleteSessionInAPI appelle DELETE /sessions/{id} sur tt-backend.
-func (tts *terminalTrainerService) deleteSessionInAPI(sessionID, userAPIKey string) error {
-	url := fmt.Sprintf("%s/%s/sessions/%s", tts.baseURL, tts.apiVersion, sessionID)
-
-	utils.Debug("deleteSessionInAPI - calling %s", url)
-
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
-
-	_, err := utils.MakeExternalAPIRequest("Terminal Trainer", "DELETE", url, nil, opts)
-	return err
-}
-
-// GetAllSessionsFromAPI récupère toutes les sessions depuis l'API Terminal Trainer
-func (tts *terminalTrainerService) GetAllSessionsFromAPI(userAPIKey string) (*dto.TerminalTrainerSessionsResponse, error) {
-	// Utiliser le type d'instance par défaut configuré pour récupérer toutes les sessions
-	path := tts.buildAPIPath("/sessions", "")
-	url := fmt.Sprintf("%s%s?include_expired=true&limit=1000", tts.baseURL, path)
-
-	var sessionsResp dto.TerminalTrainerSessionsResponse
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
-
-	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sessionsResp, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	return &sessionsResp, nil
-}
-
-// GetSessionInfoFromAPI récupère les infos d'une session directement depuis l'API
-func (tts *terminalTrainerService) GetSessionInfoFromAPI(sessionID string) (*dto.TerminalTrainerSessionInfo, error) {
-	// Récupérer la session locale pour obtenir la clé API
-	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("session not found locally: %w", err)
-	}
-
-	// Construire le chemin avec version et type d'instance dynamique
-	path := tts.buildAPIPath("/info", terminal.InstanceType)
-	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, sessionID)
-
-	var sessionInfo dto.TerminalTrainerSessionInfo
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(terminal.UserTerminalKey.APIKey))
-
-	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sessionInfo, opts)
-	if err != nil {
-		// Check for 404 specifically
-		if strings.Contains(err.Error(), "404") {
-			return nil, fmt.Errorf("session not found on Terminal Trainer")
-		}
-		return nil, err
-	}
-
-	return &sessionInfo, nil
-}
-
 // SyncUserSessions synchronise toutes les sessions d'un utilisateur avec l'API comme source de vérité
 func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAllSessionsResponse, error) {
 	// 1. Récupérer la clé utilisateur
@@ -666,7 +587,7 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 	}
 
 	// 2. Récupérer TOUTES les sessions depuis l'API Terminal Trainer pour tous les types d'instances
-	apiSessions, err := tts.getAllSessionsFromAllInstanceTypes(userKey.APIKey, userID)
+	apiSessions, err := tts.proxy.getAllSessionsFromAllInstanceTypes(userKey.APIKey, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sessions from Terminal Trainer API: %w", err)
 	}
@@ -721,11 +642,11 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 					errors = append(errors, fmt.Sprintf("Failed to create missing session %s: %v", sessionID, err))
 				} else {
 					sessionResults = append(sessionResults, dto.SyncSessionResponse{
-						SessionID:    sessionID,
+						SessionID:     sessionID,
 						PreviousState: "missing",
 						CurrentState:  string(apiStateName),
-						Updated:      true,
-						LastSyncAt:   time.Now(),
+						Updated:       true,
+						LastSyncAt:    time.Now(),
 					})
 					syncedCount++
 					updatedCount++
@@ -736,11 +657,11 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 					sessionID, apiSession.Status, apiStateName)
 				// Ajouter quand même aux résultats pour le suivi
 				sessionResults = append(sessionResults, dto.SyncSessionResponse{
-					SessionID:    sessionID,
+					SessionID:     sessionID,
 					PreviousState: "missing",
 					CurrentState:  fmt.Sprintf("ignored-%s", apiStateName),
-					Updated:      false,
-					LastSyncAt:   time.Now(),
+					Updated:       false,
+					LastSyncAt:    time.Now(),
 				})
 				syncedCount++
 			}
@@ -842,11 +763,11 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 			}
 
 			sessionResults = append(sessionResults, dto.SyncSessionResponse{
-				SessionID:    sessionID,
+				SessionID:     sessionID,
 				PreviousState: string(previousState),
 				CurrentState:  string(localSession.State),
-				Updated:      needsUpdate,
-				LastSyncAt:   time.Now(),
+				Updated:       needsUpdate,
+				LastSyncAt:    time.Now(),
 			})
 			syncedCount++
 		}
@@ -875,11 +796,11 @@ func (tts *terminalTrainerService) SyncUserSessions(userID string) (*dto.SyncAll
 					errors = append(errors, fmt.Sprintf("Failed to expire orphaned session %s: %v", sessionID, err))
 				} else {
 					sessionResults = append(sessionResults, dto.SyncSessionResponse{
-						SessionID:    sessionID,
+						SessionID:     sessionID,
 						PreviousState: string(previousState),
 						CurrentState:  string(localSession.State),
-						Updated:      true,
-						LastSyncAt:   time.Now(),
+						Updated:       true,
+						LastSyncAt:    time.Now(),
 					})
 					updatedCount++
 					expiredCount++
@@ -1021,82 +942,6 @@ func (tts *terminalTrainerService) GetTerms() (string, error) {
 	return termsResp.Terms, nil
 }
 
-// buildAPIPath construit le chemin API avec version et type d'instance optionnel
-func (tts *terminalTrainerService) buildAPIPath(endpoint string, instanceType string) string {
-	path := fmt.Sprintf("/%s", tts.apiVersion)
-
-	// Utiliser le type d'instance fourni, sinon celui par défaut du service
-	if instanceType != "" {
-		path += fmt.Sprintf("/%s", instanceType)
-	} else if tts.terminalType != "" {
-		path += fmt.Sprintf("/%s", tts.terminalType)
-	}
-
-	path += endpoint
-	return path
-}
-
-// getAllSessionsFromAllInstanceTypes récupère les sessions de tous les types d'instances utilisés par l'utilisateur
-func (tts *terminalTrainerService) getAllSessionsFromAllInstanceTypes(userAPIKey, userID string) (*dto.TerminalTrainerSessionsResponse, error) {
-	// 1. Récupérer toutes les sessions locales de l'utilisateur pour connaître les types d'instances utilisés
-	localSessions, err := tts.repository.GetTerminalSessionsByUserID(userID, false)
-	if err != nil {
-		localSessions = &[]models.Terminal{} // Traiter comme liste vide si erreur
-	}
-
-	// 2. Créer un set des types d'instances utilisés (incluant le type par défaut)
-	instanceTypesUsed := make(map[string]bool)
-	instanceTypesUsed[""] = true // Toujours inclure le type par défaut
-
-	for _, session := range *localSessions {
-		if session.InstanceType != "" {
-			instanceTypesUsed[session.InstanceType] = true
-		}
-	}
-
-	// 3. Récupérer les sessions depuis chaque type d'instance utilisé
-	allSessions := make([]dto.TerminalTrainerSession, 0, len(instanceTypesUsed)*10)
-	totalCount := 0
-
-	for instanceType := range instanceTypesUsed {
-		apiResponse, err := tts.getSessionsFromInstanceType(userAPIKey, instanceType)
-		if err != nil {
-			// Log l'erreur mais continuer avec les autres types d'instances
-			utils.Warn("failed to get sessions from instance type '%s': %v", instanceType, err)
-			continue
-		}
-		allSessions = append(allSessions, apiResponse.Sessions...)
-		totalCount += apiResponse.Count
-	}
-
-	// 4. Retourner une réponse combinée
-	return &dto.TerminalTrainerSessionsResponse{
-		Sessions:       allSessions,
-		Count:          totalCount,
-		APIKeyID:       0, // Valeur par défaut car on combine plusieurs réponses
-		IncludeExpired: true,
-		Limit:          1000,
-	}, nil
-}
-
-// getSessionsFromInstanceType récupère les sessions d'un type d'instance spécifique
-func (tts *terminalTrainerService) getSessionsFromInstanceType(userAPIKey, instanceType string) (*dto.TerminalTrainerSessionsResponse, error) {
-	path := tts.buildAPIPath("/sessions", instanceType)
-	url := fmt.Sprintf("%s%s?include_expired=true&limit=1000", tts.baseURL, path)
-
-	var sessionsResp dto.TerminalTrainerSessionsResponse
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
-
-	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sessionsResp, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	return &sessionsResp, nil
-}
-
-
 // HasTerminalAccess checks if a user has access to a terminal.
 // Only terminal owners and group owners of the owner's group have access.
 func (tts *terminalTrainerService) HasTerminalAccess(terminalIDOrSessionID, userID string) (bool, error) {
@@ -1127,131 +972,6 @@ func (tts *terminalTrainerService) HasTerminalAccess(terminalIDOrSessionID, user
 	return false, nil
 }
 
-// GetServerMetrics récupère les métriques du serveur Terminal Trainer
-func (tts *terminalTrainerService) GetServerMetrics(nocache bool, backend string) (*dto.ServerMetricsResponse, error) {
-	// Skip if Terminal Trainer is not configured
-	if tts.baseURL == "" {
-		return nil, fmt.Errorf("terminal trainer not configured")
-	}
-
-	// Construire l'URL des métriques
-	path := fmt.Sprintf("/%s/metrics", tts.apiVersion)
-	url := fmt.Sprintf("%s%s", tts.baseURL, path)
-
-	// Ajouter les paramètres
-	params := []string{}
-	if nocache {
-		params = append(params, "nocache=true")
-	}
-	if backend != "" {
-		params = append(params, fmt.Sprintf("backend=%s", backend))
-	}
-	if len(params) > 0 {
-		url += "?" + strings.Join(params, "&")
-	}
-
-	// Exécuter la requête (pas besoin d'authentification selon les specs)
-	var metrics dto.ServerMetricsResponse
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithTimeout(10*time.Second))
-
-	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &metrics, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	metrics.Backend = backend
-	return &metrics, nil
-}
-
-// GetBackends retrieves all available backends from Terminal Trainer
-func (tts *terminalTrainerService) GetBackends() ([]dto.BackendInfo, error) {
-	if tts.baseURL == "" {
-		return nil, fmt.Errorf("terminal trainer not configured")
-	}
-
-	url := fmt.Sprintf("%s/%s/backends", tts.baseURL, tts.apiVersion)
-
-	var backends []dto.BackendInfo
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
-
-	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &backends, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range backends {
-		// Default Name to ID if upstream doesn't provide one
-		if backends[i].Name == "" {
-			backends[i].Name = backends[i].ID
-		}
-	}
-
-	return backends, nil
-}
-
-// getBackendsCached returns cached backends or refreshes if older than 30s.
-// Uses singleflight to coalesce concurrent cache misses into a single upstream call.
-func (tts *terminalTrainerService) getBackendsCached() ([]dto.BackendInfo, error) {
-	tts.backendCacheMu.RLock()
-	if tts.backendCache != nil && time.Since(tts.backendCacheTime) < 30*time.Second {
-		cached := make([]dto.BackendInfo, len(tts.backendCache))
-		copy(cached, tts.backendCache)
-		tts.backendCacheMu.RUnlock()
-		return cached, nil
-	}
-	tts.backendCacheMu.RUnlock()
-
-	// Use singleflight to prevent cache stampede: concurrent callers that find
-	// stale cache will share a single upstream GetBackends() call.
-	v, err, _ := tts.backendCacheSF.Do("backends", func() (interface{}, error) {
-		backends, err := tts.GetBackends()
-		if err != nil {
-			return nil, err
-		}
-
-		tts.backendCacheMu.Lock()
-		tts.backendCache = backends
-		tts.backendCacheTime = time.Now()
-		tts.backendCacheMu.Unlock()
-
-		return backends, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return v.([]dto.BackendInfo), nil
-}
-
-// getSystemDefault returns the backend ID marked as default by tt-backend.
-// Returns empty string if no backend is marked as default.
-func (tts *terminalTrainerService) getSystemDefault() string {
-	backends, err := tts.getBackendsCached()
-	if err != nil || len(backends) == 0 {
-		return ""
-	}
-	for _, b := range backends {
-		if b.IsDefault {
-			return b.ID
-		}
-	}
-	return ""
-}
-
-// invalidateBackendCache clears the cached backends so the next read
-// fetches fresh data from tt-backend.
-func (tts *terminalTrainerService) invalidateBackendCache() {
-	tts.backendCacheMu.Lock()
-	tts.backendCache = nil
-	tts.backendCacheTime = time.Time{}
-	tts.backendCacheMu.Unlock()
-	// Cancel any in-flight singleflight request that could repopulate the
-	// cache with stale data.
-	tts.backendCacheSF.Forget("backends")
-}
-
 // GetBackendsForContext returns backends filtered by org config (if set) or plan config (fallback).
 // This ensures the frontend backend selector shows the correct options for the current org/plan context.
 func (tts *terminalTrainerService) GetBackendsForContext(orgID uuid.UUID, userID string) ([]dto.BackendInfo, error) {
@@ -1280,7 +1000,7 @@ func (tts *terminalTrainerService) GetBackendsForContext(orgID uuid.UUID, userID
 	}
 
 	// Filter all backends by plan's AllowedBackends
-	allBackends, err := tts.getBackendsCached()
+	allBackends, err := tts.proxy.getBackendsCached()
 	if err != nil {
 		return nil, err
 	}
@@ -1322,7 +1042,7 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 		return nil, fmt.Errorf("organization not found: %w", err)
 	}
 
-	allBackends, err := tts.getBackendsCached()
+	allBackends, err := tts.proxy.getBackendsCached()
 	if err != nil {
 		return nil, err
 	}
@@ -1333,7 +1053,7 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 		// Priority: org default → system default → first backend in list
 		defaultID := org.DefaultBackend
 		if defaultID == "" {
-			defaultID = tts.getSystemDefault()
+			defaultID = tts.proxy.getSystemDefault()
 		}
 		if defaultID == "" && len(allBackends) > 0 {
 			defaultID = allBackends[0].ID
@@ -1359,7 +1079,7 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 
 	defaultID := org.DefaultBackend
 	if defaultID == "" {
-		defaultID = tts.getSystemDefault()
+		defaultID = tts.proxy.getSystemDefault()
 	}
 
 	var filtered []dto.BackendInfo
@@ -1372,29 +1092,6 @@ func (tts *terminalTrainerService) GetBackendsForOrganization(orgID uuid.UUID) (
 	}
 
 	return filtered, nil
-}
-
-// IsBackendOnline checks if a specific backend is connected.
-// An empty backendName means "use system default", which is assumed online
-// since tt-backend routes empty backend to its own default.
-func (tts *terminalTrainerService) IsBackendOnline(backendName string) (bool, error) {
-	if backendName == "" {
-		return true, nil
-	}
-
-	backends, err := tts.getBackendsCached()
-	if err != nil {
-		return false, err
-	}
-
-	for _, b := range backends {
-		if b.ID == backendName {
-			return b.Connected, nil
-		}
-	}
-
-	// Backend not found in list - assume offline
-	return false, nil
 }
 
 // validateBackendForContext resolves the backend using a multi-level chain:
@@ -1422,7 +1119,7 @@ func (tts *terminalTrainerService) validateBackendForContext(orgID *uuid.UUID, p
 			if plan.DefaultBackend != "" {
 				return plan.DefaultBackend, nil
 			}
-			return tts.getSystemDefault(), nil
+			return tts.proxy.getSystemDefault(), nil
 		}
 
 		// Backend requested → check against plan's AllowedBackends
@@ -1448,7 +1145,7 @@ func (tts *terminalTrainerService) validateBackendForContext(orgID *uuid.UUID, p
 	}
 
 	// Final fallback: no org config, no plan config — only system default is allowed
-	systemDefault := tts.getSystemDefault()
+	systemDefault := tts.proxy.getSystemDefault()
 	if requestedBackend == "" || requestedBackend == systemDefault {
 		return systemDefault, nil
 	}
@@ -1469,7 +1166,7 @@ func (tts *terminalTrainerService) validateBackendForOrg(orgID *uuid.UUID, reque
 	// Resolve org's effective default: org default → system default → ""
 	effectiveDefault := org.DefaultBackend
 	if effectiveDefault == "" {
-		effectiveDefault = tts.getSystemDefault()
+		effectiveDefault = tts.proxy.getSystemDefault()
 	}
 
 	// If no backend requested, use the effective default
@@ -1588,7 +1285,7 @@ func (tts *terminalTrainerService) BulkCreateTerminalsForGroup(
 	// Mirrors the logic in src/payment/middleware/ramCheckMiddleware.go.
 	// Fail-open: if metrics are unavailable, skip the check and proceed.
 	if len(activeMembers) > 0 {
-		metrics, metricsErr := tts.GetServerMetrics(true, "")
+		metrics, metricsErr := tts.proxy.GetServerMetrics(true, "")
 		if metricsErr != nil {
 			utils.Warn("bulk terminal creation: could not fetch server metrics, skipping RAM check: %v", metricsErr)
 		} else {
@@ -1719,13 +1416,13 @@ func (tts *terminalTrainerService) GetEnumService() TerminalTrainerEnumService {
 
 // ValidateSessionAccess checks if a session is accessible for console operations
 // Returns: (isValid bool, reason string, error)
-// - isValid: true if session can be accessed, false otherwise
-// - reason: a denial reason string (empty when isValid). Either a terminal
-//   state name (e.g. "stopped", or any TerminalState surfaced by the default
-//   switch arm) or a non-state sentinel: "expired" (deleted / empty / expired
-//   ephemeral) or "backend_offline". Kept as string, not TerminalState,
-//   because the sentinels are not lifecycle states.
-// - error: any error encountered during validation
+//   - isValid: true if session can be accessed, false otherwise
+//   - reason: a denial reason string (empty when isValid). Either a terminal
+//     state name (e.g. "stopped", or any TerminalState surfaced by the default
+//     switch arm) or a non-state sentinel: "expired" (deleted / empty / expired
+//     ephemeral) or "backend_offline". Kept as string, not TerminalState,
+//     because the sentinels are not lifecycle states.
+//   - error: any error encountered during validation
 func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, checkAPI bool) (bool, string, error) {
 	// 1. Get session from local database
 	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
@@ -1760,7 +1457,7 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 
 	// 3. Check backend online status
 	if terminal.Backend != "" {
-		online, err := tts.IsBackendOnline(terminal.Backend)
+		online, err := tts.proxy.IsBackendOnline(terminal.Backend)
 		if err != nil {
 			utils.Warn("failed to check backend status: %v", err)
 		} else if !online {
@@ -1791,7 +1488,7 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 
 	// 4. Optional API verification (for critical operations)
 	if checkAPI {
-		apiInfo, err := tts.GetSessionInfoFromAPI(sessionID)
+		apiInfo, err := tts.proxy.GetSessionInfoFromAPI(sessionID)
 		if err != nil {
 			// Handle 404 = session doesn't exist in Terminal Trainer
 			if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
@@ -1847,7 +1544,7 @@ func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, si
 		return nil, "", fmt.Errorf("session not found: %w", err)
 	}
 
-	path := tts.buildAPIPath("/history", terminal.InstanceType)
+	path := tts.proxy.buildAPIPath("/history", terminal.InstanceType)
 	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, neturl.QueryEscape(sessionID))
 	if since != nil {
 		url += fmt.Sprintf("&since=%d", *since)
@@ -1938,7 +1635,7 @@ func (tts *terminalTrainerService) DeleteSessionCommandHistory(sessionID string)
 		return fmt.Errorf("session not found: %w", err)
 	}
 
-	path := tts.buildAPIPath("/history", terminal.InstanceType)
+	path := tts.proxy.buildAPIPath("/history", terminal.InstanceType)
 	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, neturl.QueryEscape(sessionID))
 
 	opts := utils.DefaultHTTPClientOptions()
@@ -1969,125 +1666,6 @@ func (tts *terminalTrainerService) DeleteAllUserCommandHistory(apiKey string) (i
 	}
 
 	return result.SessionsCleared, nil
-}
-
-// SetSystemDefaultBackend sets the system-wide default backend by calling
-// tt-backend's admin API to mark the backend as default.
-func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*dto.BackendInfo, error) {
-	// Verify backend exists and is connected
-	backends, err := tts.getBackendsCached()
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch backends: %w", err)
-	}
-
-	var target *dto.BackendInfo
-	for i := range backends {
-		if backends[i].ID == backendID {
-			target = &backends[i]
-			break
-		}
-	}
-	if target == nil {
-		return nil, fmt.Errorf("backend not found: %s", backendID)
-	}
-	if !target.Connected {
-		return nil, fmt.Errorf("backend is offline: %s", backendID)
-	}
-
-	// Find the numeric DB ID by listing admin backends
-	adminBackends, err := tts.getAdminBackends()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list admin backends: %w", err)
-	}
-
-	var adminEntry *adminBackendEntry
-	for i := range adminBackends {
-		if adminBackends[i].BackendID == backendID {
-			adminEntry = &adminBackends[i]
-			break
-		}
-	}
-	if adminEntry == nil {
-		return nil, fmt.Errorf("backend not found in admin API: %s", backendID)
-	}
-
-	// Call PUT /admin/backends/{id} with is_default=true, preserving all existing fields
-	isDefault := true
-	updateReq := struct {
-		Name              string `json:"name"`
-		Description       string `json:"description,omitempty"`
-		IsDefault         *bool  `json:"is_default"`
-		IsActive          bool   `json:"is_active"`
-		ServerURL         string `json:"server_url,omitempty"`
-		ServerCertificate string `json:"server_certificate,omitempty"`
-		ClientCertificate string `json:"client_certificate,omitempty"`
-		Project           string `json:"project,omitempty"`
-		Target            string `json:"target,omitempty"`
-	}{
-		Name:              adminEntry.Name,
-		Description:       adminEntry.Description,
-		IsDefault:         &isDefault,
-		IsActive:          adminEntry.IsActive,
-		ServerURL:         adminEntry.ServerURL,
-		ServerCertificate: adminEntry.ServerCertificate,
-		ClientCertificate: adminEntry.ClientCertificate,
-		Project:           adminEntry.Project,
-		Target:            adminEntry.Target,
-	}
-
-	url := fmt.Sprintf("%s/%s/admin/backends/%d", tts.baseURL, tts.apiVersion, adminEntry.ID)
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
-
-	_, err = utils.MakeExternalAPIRequest("Terminal Trainer", "PUT", url, updateReq, opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to set default backend on tt-backend: %w", err)
-	}
-
-	// Invalidate backend cache so next read picks up the change
-	tts.invalidateBackendCache()
-
-	target.IsDefault = true
-	return target, nil
-}
-
-// adminBackendEntry represents a backend from tt-backend's admin API
-type adminBackendEntry struct {
-	ID                int64  `json:"id"`
-	BackendID         string `json:"backend_id"`
-	Name              string `json:"name"`
-	Description       string `json:"description,omitempty"`
-	IsDefault         bool   `json:"is_default"`
-	IsActive          bool   `json:"is_active"`
-	ServerURL         string `json:"server_url,omitempty"`
-	ServerCertificate string `json:"server_certificate,omitempty"`
-	ClientCertificate string `json:"client_certificate,omitempty"`
-	Project           string `json:"project,omitempty"`
-	Target            string `json:"target,omitempty"`
-	Connected         bool   `json:"connected"`
-}
-
-type adminAPIResponse struct {
-	Success bool            `json:"success"`
-	Data    json.RawMessage `json:"data"`
-}
-
-func (tts *terminalTrainerService) getAdminBackends() ([]adminBackendEntry, error) {
-	url := fmt.Sprintf("%s/%s/admin/backends", tts.baseURL, tts.apiVersion)
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
-
-	var resp adminAPIResponse
-	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &resp, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	var backends []adminBackendEntry
-	if err := json.Unmarshal(resp.Data, &backends); err != nil {
-		return nil, fmt.Errorf("failed to decode admin backends: %w", err)
-	}
-	return backends, nil
 }
 
 func (tts *terminalTrainerService) GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error) {
@@ -2793,9 +2371,9 @@ func (tts *terminalTrainerService) GetGroupCommandHistoryStats(groupID string, u
 	if len(sessionUUIDs) == 0 {
 		result := map[string]interface{}{
 			"summary": map[string]interface{}{
-				"total_commands":              0,
-				"total_sessions":              0,
-				"active_students":             0,
+				"total_commands":               0,
+				"total_sessions":               0,
+				"active_students":              0,
 				"avg_commands_per_student":     0.0,
 				"avg_time_per_student_seconds": 0,
 			},
@@ -3029,56 +2607,6 @@ func NormalizeSizeKey(key string) string {
 	return strings.ToUpper(strings.TrimSpace(key))
 }
 
-// GetDistributions fetches available distributions from tt-backend
-func (tts *terminalTrainerService) GetDistributions(backend string) ([]dto.TTDistribution, error) {
-	url := fmt.Sprintf("%s/%s/distributions", tts.baseURL, tts.apiVersion)
-	if backend != "" {
-		url += fmt.Sprintf("?backend=%s", backend)
-	}
-
-	var distributions []dto.TTDistribution
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
-
-	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &distributions, opts)
-	if err != nil {
-		return nil, err
-	}
-	return distributions, nil
-}
-
-// FetchRawSizes performs a one-shot, uncached HTTP GET against
-// tt-backend's /sizes endpoint. Used by the startup catalog hydration;
-// the deadline carried by ctx is honored via a per-call client timeout
-// (the lower of ctx's remaining time and the default). Returns the raw
-// tt-backend Size records — CPUMcpu stamping is the catalog's job once
-// it has been hydrated.
-func (tts *terminalTrainerService) FetchRawSizes(ctx context.Context) ([]dto.TTSize, error) {
-	url := fmt.Sprintf("%s/%s/sizes", tts.baseURL, tts.apiVersion)
-	var sizes []dto.TTSize
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
-
-	// The utils HTTP layer has no context plumbing; translate the
-	// context deadline into a client-side timeout so the hydration call
-	// cannot block startup indefinitely.
-	if deadline, ok := ctx.Deadline(); ok {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			return nil, ctx.Err()
-		}
-		if remaining < opts.Timeout {
-			opts.Timeout = remaining
-		}
-	}
-
-	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sizes, opts)
-	if err != nil {
-		return nil, err
-	}
-	return sizes, nil
-}
-
 // GetCatalogSizes fetches sizes from tt-backend with a 60s TTL cache.
 //
 // Each entry is enriched with CPUMcpu from ocf-core's payment catalog so
@@ -3239,7 +2767,7 @@ func ComputeSessionOptions(
 
 // GetSessionOptions validates a distribution and computes plan-intersected options
 func (tts *terminalTrainerService) GetSessionOptions(plan *paymentModels.SubscriptionPlan, distribution string, backend string) (*dto.SessionOptionsResponse, error) {
-	distributions, err := tts.GetDistributions(backend)
+	distributions, err := tts.proxy.GetDistributions(backend)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get distributions: %w", err)
 	}
@@ -3573,16 +3101,16 @@ func (tts *terminalTrainerService) startComposedSession(userID string, input dto
 
 	// Build POST body for tt-backend
 	ttReqBody := map[string]interface{}{
-		"distribution":         input.Distribution,
-		"size":                 strings.ToLower(input.Size),
-		"features":             input.Features,
-		"terms":                termsHash,
-		"expiry":               input.Expiry,
-		"hostname":             input.Hostname,
-		"packages":             input.Packages,
+		"distribution":           input.Distribution,
+		"size":                   strings.ToLower(input.Size),
+		"features":               input.Features,
+		"terms":                  termsHash,
+		"expiry":                 input.Expiry,
+		"hostname":               input.Hostname,
+		"packages":               input.Packages,
 		"history_retention_days": input.HistoryRetentionDays,
-		"recording_enabled":     input.RecordingEnabled,
-		"external_ref":          input.ExternalRef,
+		"recording_enabled":      input.RecordingEnabled,
+		"external_ref":           input.ExternalRef,
 	}
 	if input.Name != "" {
 		ttReqBody["name"] = input.Name
@@ -3674,7 +3202,7 @@ func (tts *terminalTrainerService) startComposedSession(userID string, input dto
 	}
 
 	// Build console URL
-	consolePath := tts.buildAPIPath("/console", input.DistributionPrefix)
+	consolePath := tts.proxy.buildAPIPath("/console", input.DistributionPrefix)
 	response := &dto.TerminalSessionResponse{
 		SessionID:  sessionResp.SessionID,
 		ExpiresAt:  expiresAt,
