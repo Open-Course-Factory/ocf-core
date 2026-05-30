@@ -106,7 +106,7 @@ func TestSessionOptions_BudgetMode_IncludesTopLevelQuota(t *testing.T) {
 	assert.Equal(t, 1024, opts.Quota.UsedMemoryMB)
 	assert.Equal(t, 2000, opts.Quota.RemainingCPU)
 	assert.Equal(t, 1024, opts.Quota.RemainingMemoryMB)
-	assert.Equal(t, "user", opts.Quota.Scope, "personal context → scope=user")
+	assert.Equal(t, dto.ScopeUser, opts.Quota.Scope, "personal context → scope=user")
 }
 
 // TestSessionOptions_UnlimitedPlan_UnlimitedScope — plans with zero CPU/RAM
@@ -147,6 +147,6 @@ func TestSessionOptions_BudgetMode_OrgScope(t *testing.T) {
 	svc.EnrichSessionOptionsBudget(opts, plan, "u-org", &orgID)
 
 	require.NotNil(t, opts.Quota)
-	assert.Equal(t, "organization", opts.Quota.Scope,
+	assert.Equal(t, dto.ScopeOrganization, opts.Quota.Scope,
 		"non-nil orgID → scope=organization")
 }

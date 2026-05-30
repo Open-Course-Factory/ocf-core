@@ -569,17 +569,37 @@ type SessionOptionsResponse struct {
 	Quota *SessionQuotaInfo `json:"quota,omitempty"`
 }
 
+// QuotaScope identifies which counter a session's quota is being charged
+// against. The underlying string values are the JSON wire format consumed
+// by ocf-front and must not change — pinned by
+// TestQuotaScopeConstants_PinnedWireFormat.
+//
+// Deliberately distinct from EffectivePlanSource (src/payment/services/
+// effectivePlanService.go): PlanSource answers "where does this user's plan
+// come from" (personal | organization), while QuotaScope answers "which
+// counter is this quota being charged against" (user | organization |
+// unlimited). The vocabularies differ ("personal" vs "user") and QuotaScope
+// carries a third value ("unlimited") that has no PlanSource analog —
+// emitted when the resolved plan declares no CPU/RAM caps.
+type QuotaScope string
+
+const (
+	ScopeUser         QuotaScope = "user"
+	ScopeOrganization QuotaScope = "organization"
+	ScopeUnlimited    QuotaScope = "unlimited"
+)
+
 // SessionQuotaInfo is the budget snapshot embedded in session-options and
 // org-usage responses. MaxCPU / MaxMemoryMB of 0 paired with Scope="unlimited"
 // means the plan has no budget cap (or the feature flag is off).
 type SessionQuotaInfo struct {
-	MaxCPU            int    `json:"max_cpu"`
-	MaxMemoryMB       int    `json:"max_memory_mb"`
-	UsedCPU           int    `json:"used_cpu"`
-	UsedMemoryMB      int    `json:"used_memory_mb"`
-	RemainingCPU      int    `json:"remaining_cpu"`
-	RemainingMemoryMB int    `json:"remaining_memory_mb"`
-	Scope             string `json:"scope"` // "user" | "organization" | "unlimited"
+	MaxCPU            int        `json:"max_cpu"`
+	MaxMemoryMB       int        `json:"max_memory_mb"`
+	UsedCPU           int        `json:"used_cpu"`
+	UsedMemoryMB      int        `json:"used_memory_mb"`
+	RemainingCPU      int        `json:"remaining_cpu"`
+	RemainingMemoryMB int        `json:"remaining_memory_mb"`
+	Scope             QuotaScope `json:"scope"` // see QuotaScope constants
 }
 
 // SessionOptionSize describes a size with its allowed status. RemainingCount

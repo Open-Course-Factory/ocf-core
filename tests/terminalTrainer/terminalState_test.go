@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 )
 
@@ -101,6 +102,66 @@ func TestTerminalState_JSONRoundTrip_ByteIdentical(t *testing.T) {
 			}
 
 			raw, err := json.Marshal(terminal)
+			require.NoError(t, err)
+
+			assert.True(t,
+				strings.Contains(string(raw), tc.expected),
+				"marshaled JSON must contain %q exactly; got %s", tc.expected, string(raw),
+			)
+		})
+	}
+}
+
+// TestQuotaScopeConstants_PinnedWireFormat pins the underlying string value
+// of every QuotaScope constant. These strings are the JSON wire format
+// consumed by ocf-front; renaming a constant value silently re-labels every
+// quota-bearing payload and must trip the suite loudly.
+func TestQuotaScopeConstants_PinnedWireFormat(t *testing.T) {
+	testCases := []struct {
+		name     string
+		scope    dto.QuotaScope
+		expected string
+	}{
+		{name: "user", scope: dto.ScopeUser, expected: "user"},
+		{name: "organization", scope: dto.ScopeOrganization, expected: "organization"},
+		{name: "unlimited", scope: dto.ScopeUnlimited, expected: "unlimited"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, string(tc.scope))
+		})
+	}
+}
+
+// TestQuotaScope_JSONRoundTrip_ByteIdentical pins the JSON wire format of the
+// Scope field on SessionQuotaInfo. The frontend reads this field as a
+// discriminator on session-options and org-usage responses, so the named-
+// string QuotaScope type must marshal byte-identically to the underlying
+// literal — no spaces, no quoting differences, no Go-side type info leaking
+// into the JSON.
+//
+// This test is the wire-format guarantee that justifies flipping the Go
+// field from string to QuotaScope without coordinating with the frontend.
+func TestQuotaScope_JSONRoundTrip_ByteIdentical(t *testing.T) {
+	testCases := []struct {
+		name     string
+		scope    dto.QuotaScope
+		expected string // exact substring that must appear in the JSON
+	}{
+		{name: "user", scope: dto.ScopeUser, expected: `"scope":"user"`},
+		{name: "organization", scope: dto.ScopeOrganization, expected: `"scope":"organization"`},
+		{name: "unlimited", scope: dto.ScopeUnlimited, expected: `"scope":"unlimited"`},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			info := dto.SessionQuotaInfo{
+				MaxCPU: 1000,
+				Scope:  tc.scope,
+			}
+
+			raw, err := json.Marshal(info)
 			require.NoError(t, err)
 
 			assert.True(t,

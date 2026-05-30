@@ -2333,7 +2333,7 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 			UsedMemoryMB:      totalMem,
 			RemainingCPU:      remCPU,
 			RemainingMemoryMB: remMem,
-			Scope:             "organization",
+			Scope:             dto.ScopeOrganization,
 		}
 
 		sizeRemaining := tts.quotaService.ComputeRemainingBySize(resolvedPlan, totalCPU, totalMem)
@@ -2350,7 +2350,7 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 		}
 		resp.RemainingBySize = out
 	} else {
-		resp.Quota = &dto.SessionQuotaInfo{Scope: "unlimited"}
+		resp.Quota = &dto.SessionQuotaInfo{Scope: dto.ScopeUnlimited}
 	}
 
 	return resp, nil
@@ -3295,7 +3295,7 @@ func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
 	// resolved AND the quota service is wired AND the plan declares a cap
 	// on at least one axis. Plans with MaxCPU=MaxMemoryMB=0 are unlimited
 	// and keep the envelope as-is so the frontend renders an unconstrained UI.
-	opts.Quota = &dto.SessionQuotaInfo{Scope: "unlimited"}
+	opts.Quota = &dto.SessionQuotaInfo{Scope: dto.ScopeUnlimited}
 
 	if plan == nil || tts.quotaService == nil {
 		return
@@ -3323,9 +3323,9 @@ func (tts *terminalTrainerService) EnrichSessionOptionsBudget(
 		}
 	}
 
-	scope := "user"
+	scope := dto.ScopeUser
 	if orgID != nil {
-		scope = "organization"
+		scope = dto.ScopeOrganization
 	}
 	remCPU := plan.MaxCPU - usedCPU
 	if remCPU < 0 {
