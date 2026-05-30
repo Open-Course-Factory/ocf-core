@@ -146,7 +146,7 @@ func TestGetTerminalSessionsByUserIDAndOrg(t *testing.T) {
 		terminals, err := repo.GetTerminalSessionsByUserIDAndOrg("user1", &orgID1, true)
 		require.NoError(t, err)
 		assert.Len(t, *terminals, 1)
-		assert.Equal(t, "running", (*terminals)[0].State)
+		assert.Equal(t, models.StateRunning, (*terminals)[0].State)
 	})
 }
 

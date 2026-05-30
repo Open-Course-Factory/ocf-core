@@ -79,15 +79,15 @@ func createTestTerminal(db *gorm.DB, userID string, lifecycleLabel string, userK
 // labelToState maps both legacy Status labels and canonical State values to
 // State-space. Test call sites still use "active"/"expired" for readability;
 // this keeps that ergonomic without resurrecting a parallel field.
-func labelToState(label string) string {
+func labelToState(label string) models.TerminalState {
 	switch label {
 	case "active":
-		return "running"
+		return models.StateRunning
 	case "expired":
-		return "deleted"
+		return models.StateDeleted
 	default:
 		// "running", "stopped", "deleted", "hibernating", ... all pass through.
-		return label
+		return models.TerminalState(label)
 	}
 }
 

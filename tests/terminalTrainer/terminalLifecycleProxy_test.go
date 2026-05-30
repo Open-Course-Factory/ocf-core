@@ -166,7 +166,7 @@ func TestStopSession_CallsNewStopEndpoint(t *testing.T) {
 	// Local state reflects the stop.
 	updated, err := svc.GetSessionInfo(terminal.SessionID)
 	require.NoError(t, err)
-	assert.Equal(t, "stopped", updated.State)
+	assert.Equal(t, models.StateStopped, updated.State)
 }
 
 // TestStartSession_Success verifies state transitions when starting a stopped
@@ -200,7 +200,7 @@ func TestStartSession_Success(t *testing.T) {
 
 	updated, err := svc.GetSessionInfo(terminal.SessionID)
 	require.NoError(t, err)
-	assert.Equal(t, "running", updated.State, "State should flip back to running")
+	assert.Equal(t, models.StateRunning, updated.State, "State should flip back to running")
 	assert.Nil(t, updated.IdleUntil, "IdleUntil should be cleared on start")
 	assert.False(t, updated.LastStartedAt.IsZero(), "LastStartedAt should be set")
 }

@@ -276,13 +276,14 @@ func (tr *terminalRepository) GetOrphanedLocalSessions(apiSessionIDs []string) (
 	// "Alive" sessions are those whose State indicates they're still consumable.
 	// We don't include StateStopped because those are intentionally paused —
 	// they shouldn't be treated as orphans even if tt-backend doesn't list
-	// them on a /sessions sweep. "paused" stays as a raw literal because it
-	// is not part of the canonical TerminalState enum (legacy value).
-	aliveStates := []string{
-		string(models.StateRunning),
-		string(models.StateResuming),
-		string(models.StateHibernating),
-		"paused",
+	// them on a /sessions sweep. The "paused" entry is an explicit TerminalState
+	// cast on a raw string because the literal is not part of the canonical
+	// TerminalState enum (legacy tt-backend value).
+	aliveStates := []models.TerminalState{
+		models.StateRunning,
+		models.StateResuming,
+		models.StateHibernating,
+		models.TerminalState("paused"),
 	}
 
 	if len(apiSessionIDs) == 0 {

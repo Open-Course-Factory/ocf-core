@@ -7,6 +7,7 @@ import (
 	"time"
 
 	paymentDto "soli/formations/src/payment/dto"
+	"soli/formations/src/terminalTrainer/models"
 
 	"github.com/google/uuid"
 )
@@ -24,7 +25,7 @@ type UpdateTerminalInput struct {
 	Name *string `json:"name,omitempty" mapstructure:"name"`
 	// State is the lifecycle field (running, stopped, hibernating, deleted, etc.).
 	// SSOT — the legacy `status` field has been removed.
-	State *string `json:"state,omitempty" mapstructure:"state"`
+	State *models.TerminalState `json:"state,omitempty" mapstructure:"state"`
 	// PersistenceMode allows switching a session between ephemeral and persistent
 	// when the plan permits it. Values: "ephemeral", "persistent".
 	PersistenceMode *string `json:"persistence_mode,omitempty" mapstructure:"persistence_mode"`
@@ -37,7 +38,7 @@ type TerminalOutput struct {
 	Name            string     `json:"name"` // User-friendly name for the terminal session
 	// State is the session lifecycle field (running, stopped, hibernating, deleted, etc.).
 	// SSOT — the legacy `status` field has been removed from the wire contract.
-	State           string     `json:"state"`
+	State           models.TerminalState `json:"state"`
 	// PersistenceMode is "ephemeral" or "persistent".
 	PersistenceMode string     `json:"persistence_mode,omitempty"`
 	// IdleUntil is the absolute deadline after which the session may be reaped or
@@ -153,7 +154,7 @@ type TerminalTrainerSession struct {
 	Backend     string      `json:"backend,omitempty"`
 	// State is the lifecycle field driven by tt-backend (running, stopped,
 	// hibernating, ...). tt-backend is the source of truth; ocf-core caches it.
-	State string `json:"state,omitempty" mapstructure:"state"`
+	State models.TerminalState `json:"state,omitempty" mapstructure:"state"`
 	// PersistenceMode is "ephemeral" or "persistent". A stopped persistent
 	// session is still resumable and the frontend uses this to decide between
 	// a "Resume" affordance and a "Session expirée" message.
@@ -677,9 +678,9 @@ type MyTerminalUsageSession struct {
 	Name            string    `json:"name"`
 	SizeKey         string    `json:"size_key"`
 	SizeCPU         int       `json:"size_cpu"`
-	SizeMemoryMB    int       `json:"size_memory_mb"`
-	State           string    `json:"state"`
-	PersistenceMode string    `json:"persistence_mode"`
+	SizeMemoryMB    int                  `json:"size_memory_mb"`
+	State           models.TerminalState `json:"state"`
+	PersistenceMode string               `json:"persistence_mode"`
 	LastStartedAt   time.Time `json:"last_started_at"`
 	ExpiresAt       time.Time `json:"expires_at"`
 }

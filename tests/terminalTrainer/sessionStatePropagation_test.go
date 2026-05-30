@@ -91,7 +91,7 @@ func TestTerminalTrainerSession_DeserializesLifecycleFields(t *testing.T) {
 	// the struct. The assertions name the production-side fields that need
 	// to be added (State, PersistenceMode, IdleUntil). Looked up by name so
 	// this file compiles before the fix; will assert real values after.
-	assert.Equal(t, "stopped", fieldByName(&s, "State"),
+	assert.Equal(t, models.StateStopped, fieldByName(&s, "State"),
 		"TerminalTrainerSession must expose a State field that round-trips from JSON; tt-backend's auto-stop signal is lost otherwise")
 	assert.Equal(t, "persistent", fieldByName(&s, "PersistenceMode"),
 		"TerminalTrainerSession must expose a PersistenceMode field that round-trips from JSON; frontend cannot offer Resume without it")
@@ -195,7 +195,7 @@ func TestSyncUserSessions_PropagatesStateFromTTBackend(t *testing.T) {
 	var reloaded models.Terminal
 	require.NoError(t, db.Where("session_id = ?", sessionID).First(&reloaded).Error)
 
-	assert.Equal(t, "stopped", reloaded.State,
+	assert.Equal(t, models.StateStopped, reloaded.State,
 		"terminals.state must reflect tt-backend's state field; otherwise the frontend keeps showing 'Session expirée' for resumable sessions")
 	assert.Equal(t, "persistent", reloaded.PersistenceMode,
 		"terminals.persistence_mode must reflect tt-backend's persistence_mode field; required for the Resume affordance")

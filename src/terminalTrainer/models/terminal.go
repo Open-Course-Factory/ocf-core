@@ -175,8 +175,10 @@ type Terminal struct {
 	Name                 string     `gorm:"type:varchar(255)" json:"name"` // User-friendly name for the terminal session
 	// State is the session lifecycle field driven by the proxy + persistence
 	// rules: running, stopped, hibernating, resuming, deleted, etc. It is the
-	// SSOT — every reader and writer must use this field.
-	State                string     `gorm:"type:varchar(50);default:'running'" json:"state"`
+	// SSOT — every reader and writer must use this field. The named string
+	// type pins the wire format to TerminalState's constants while giving the
+	// Go side typed comparisons and assignments.
+	State                TerminalState `gorm:"type:varchar(50);default:'running'" json:"state"`
 	// PersistenceMode controls whether the session is ephemeral (default) or
 	// persistent across stop/start cycles. Values: "ephemeral", "persistent".
 	PersistenceMode      string     `gorm:"type:varchar(20);default:'ephemeral'" json:"persistence_mode"`

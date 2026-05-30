@@ -56,10 +56,10 @@ func TerminateUserTerminals(db *gorm.DB, userID string, orgID *uuid.UUID) error 
 
 	terminatedCount := 0
 	for _, terminal := range *terminals {
-		if terminal.State == string(terminalModels.StateRunning) {
+		if terminal.State == terminalModels.StateRunning {
 			utils.Debug("Deleting terminal %s (session: %s) for user %s", terminal.ID, terminal.SessionID, userID)
 
-			terminal.State = string(terminalModels.StateDeleted)
+			terminal.State = terminalModels.StateDeleted
 			if err := termRepository.UpdateTerminalSession(&terminal); err != nil {
 				utils.Error("Failed to update terminal %s state for user %s: %v", terminal.SessionID, userID, err)
 				continue

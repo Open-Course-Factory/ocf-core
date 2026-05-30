@@ -263,7 +263,7 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 		} else {
 			ctx.JSON(http.StatusForbidden, &errors.APIError{
 				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Terminal session is not in an active state: " + reason,
+				ErrorMessage: fmt.Sprintf("Terminal session is not in an active state: %s", reason),
 			})
 		}
 		return
@@ -740,8 +740,8 @@ func (tc *terminalController) SyncSession(ctx *gin.Context) {
 		// Session non trouvée dans les résultats, créer une réponse par défaut
 		sessionResult = &dto.SyncSessionResponse{
 			SessionID:    sessionID,
-			PreviousState: terminal.State,
-			CurrentState:  terminal.State,
+			PreviousState: string(terminal.State),
+			CurrentState:  string(terminal.State),
 			Updated:      false,
 			LastSyncAt:   time.Now(),
 		}
@@ -931,10 +931,10 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 
 	response := dto.ExtendedSessionStatusResponse{
 		SessionID:       sessionID,
-		Status:          terminal.State,
+		Status:          string(terminal.State),
 		ExpiresAt:       terminal.ExpiresAt,
 		LastChecked:     time.Now(),
-		LocalStatus:     terminal.State,
+		LocalStatus:     string(terminal.State),
 		ExistsInAPI:     false,
 		ExistsLocally:   true,
 		SyncRecommended: false,
@@ -958,13 +958,13 @@ func (tc *terminalController) GetSessionStatus(ctx *gin.Context) {
 			// Map SessionStatus from /sessions endpoint to terminal lifecycle state.
 			// SessionStatus: 0=active, 1=expired, 2+=other. Translate to State-space
 			// so the comparison below is namespace-consistent with terminal.State.
-			apiStateName := string(models.StateDeleted)
+			apiStateName := models.StateDeleted
 			if foundInAPI.Status == 0 {
-				apiStateName = string(models.StateRunning)
+				apiStateName = models.StateRunning
 			}
 
 			response.ExistsInAPI = true
-			response.APIStatus = apiStateName
+			response.APIStatus = string(apiStateName)
 			response.APIExpiresAt = time.Unix(foundInAPI.ExpiresAt, 0)
 			response.SyncRecommended = terminal.State != apiStateName
 			response.StatusMatch = terminal.State == apiStateName

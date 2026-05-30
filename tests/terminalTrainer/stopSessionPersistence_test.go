@@ -172,7 +172,7 @@ func TestStopSession_Persistent_ExtendsExpiresAtToIdleUntil(t *testing.T) {
 
 	var reloaded models.Terminal
 	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
-	assert.Equal(t, "stopped", reloaded.State, "persistent stop must mark state=stopped")
+	assert.Equal(t, models.StateStopped, reloaded.State, "persistent stop must mark state=stopped")
 
 	// ExpiresAt must be aligned with idle_until (tolerate 1s clock drift /
 	// JSON round-trip truncation).
@@ -212,7 +212,7 @@ func TestStopSession_Persistent_IdleUntilNil_FallsBackToPlanDuration(t *testing.
 
 	var reloaded models.Terminal
 	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
-	assert.Equal(t, "stopped", reloaded.State, "persistent stop must mark state=stopped")
+	assert.Equal(t, models.StateStopped, reloaded.State, "persistent stop must mark state=stopped")
 
 	// ExpiresAt should be within [before+60min, after+60min+5s tolerance].
 	expectedLow := before.Add(60 * time.Minute).Add(-time.Second)
@@ -249,7 +249,7 @@ func TestStopSession_Ephemeral_MarksDeleted(t *testing.T) {
 
 	var reloaded models.Terminal
 	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
-	assert.Equal(t, "deleted", reloaded.State,
+	assert.Equal(t, models.StateDeleted, reloaded.State,
 		"ephemeral stop must mark state=deleted; tt-backend destroyed the container")
 	assert.Equal(t, "ephemeral", reloaded.PersistenceMode,
 		"PersistenceMode must be preserved across stop")
@@ -297,7 +297,7 @@ func TestStopSession_Persistent_StillCountedInBudgetAfterOriginalExpiry(t *testi
 	// Sanity: row is now stopped with the extended expires_at.
 	var reloaded models.Terminal
 	require.NoError(t, db.Where("session_id = ?", terminal.SessionID).First(&reloaded).Error)
-	require.Equal(t, "stopped", reloaded.State)
+	require.Equal(t, models.StateStopped, reloaded.State)
 	require.Equal(t, "persistent", reloaded.PersistenceMode,
 		"PersistenceMode must be preserved across stop")
 	require.Equal(t, 2, reloaded.SizeCPU, "SizeCPU must survive stop")
@@ -350,7 +350,7 @@ func TestSyncUserSessions_StoppedSession_MissingFromAPI_MarkedDeleted(t *testing
 
 	var reloaded models.Terminal
 	require.NoError(t, db.Where("session_id = ?", local.SessionID).First(&reloaded).Error)
-	assert.Equal(t, "deleted", reloaded.State,
+	assert.Equal(t, models.StateDeleted, reloaded.State,
 		"stopped local row missing from tt-backend must be marked deleted: tt-backend is SSOT for container existence")
 }
 
@@ -391,6 +391,6 @@ func TestSyncUserSessions_StoppedSession_StillInAPI_KeptStopped(t *testing.T) {
 
 	var reloaded models.Terminal
 	require.NoError(t, db.Where("session_id = ?", local.SessionID).First(&reloaded).Error)
-	assert.Equal(t, "stopped", reloaded.State,
+	assert.Equal(t, models.StateStopped, reloaded.State,
 		"stopped local row that tt-backend still acknowledges must stay stopped")
 }
