@@ -13,7 +13,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	authModels "soli/formations/src/auth/models"
@@ -130,22 +129,17 @@ type TerminalTrainerService interface {
 }
 
 type terminalTrainerService struct {
-	adminKey                 string
-	baseURL                  string
-	apiVersion               string
-	terminalType             string
-	repository               repositories.TerminalRepository
-	orgSubscriptionService   paymentServices.OrganizationSubscriptionService
-	quotaService             paymentServices.QuotaService
-	enumService              TerminalTrainerEnumService
-	db                       *gorm.DB
-	proxy                    *terminalProxyClient
-	catalogSizesCache        []dto.TTSize
-	catalogSizesCacheTime    time.Time
-	catalogSizesMu           sync.RWMutex
-	catalogFeaturesCache     []dto.TTFeature
-	catalogFeaturesCacheTime time.Time
-	catalogFeaturesMu        sync.RWMutex
+	adminKey               string
+	baseURL                string
+	apiVersion             string
+	terminalType           string
+	repository             repositories.TerminalRepository
+	orgSubscriptionService paymentServices.OrganizationSubscriptionService
+	quotaService           paymentServices.QuotaService
+	enumService            TerminalTrainerEnumService
+	db                     *gorm.DB
+	proxy                  *terminalProxyClient
+	catalog                *terminalCatalogService
 }
 
 func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
@@ -161,10 +155,12 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 
 	baseURL := os.Getenv("TERMINAL_TRAINER_URL") // http://localhost:8090
 
+	adminKey := os.Getenv("TERMINAL_TRAINER_ADMIN_KEY")
 	eps := paymentServices.NewEffectivePlanService(db)
 	repository := repositories.NewTerminalRepository(db)
+	proxy := newTerminalProxyClient(repository)
 	return &terminalTrainerService{
-		adminKey:               os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"),
+		adminKey:               adminKey,
 		baseURL:                baseURL,
 		apiVersion:             apiVersion,
 		terminalType:           terminalType,
@@ -173,7 +169,8 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		quotaService:           paymentServices.NewQuotaService(db, eps),
 		enumService:            NewTerminalTrainerEnumService(baseURL, apiVersion),
 		db:                     db,
-		proxy:                  newTerminalProxyClient(repository),
+		proxy:                  proxy,
+		catalog:                newTerminalCatalogService(proxy, baseURL, apiVersion, adminKey),
 	}
 }
 
@@ -217,6 +214,22 @@ func (tts *terminalTrainerService) GetDistributions(backend string) ([]dto.TTDis
 
 func (tts *terminalTrainerService) FetchRawSizes(ctx context.Context) ([]dto.TTSize, error) {
 	return tts.proxy.FetchRawSizes(ctx)
+}
+
+// The following methods delegate to terminalCatalogService, which owns the
+// distribution/size/feature catalog reads, their 60s TTL caches, and the
+// session-options computation.
+
+func (tts *terminalTrainerService) GetCatalogSizes() ([]dto.TTSize, error) {
+	return tts.catalog.GetCatalogSizes()
+}
+
+func (tts *terminalTrainerService) GetCatalogFeatures() ([]dto.TTFeature, error) {
+	return tts.catalog.GetCatalogFeatures()
+}
+
+func (tts *terminalTrainerService) GetSessionOptions(plan *paymentModels.SubscriptionPlan, distribution string, backend string) (*dto.SessionOptionsResponse, error) {
+	return tts.catalog.GetSessionOptions(plan, distribution, backend)
 }
 
 // CreateUserKey crée une clé Terminal Trainer et la stocke en DB
@@ -2584,216 +2597,6 @@ func (tts *terminalTrainerService) checkGroupOwnerAccess(terminalOwnerUserID, re
 		return false, err
 	}
 	return count > 0, nil
-}
-
-// ==========================================
-// Composed Session (Phase 4)
-// ==========================================
-
-const catalogCacheTTL = 60 * time.Second
-
-// featurePlanMapping maps feature keys to plan predicates.
-//
-// Persistence is intentionally NOT in this map: the persistent-vs-ephemeral
-// choice is surfaced as a persistence_mode radio (in TerminalAdvancedOptions),
-// not as a "feature" chip in the SessionComposer. It is gated upstream by
-// resolvePersistenceMode reading plan.DataPersistenceEnabled (SSOT).
-var featurePlanMapping = map[string]func(*paymentModels.SubscriptionPlan) bool{
-	"network": func(p *paymentModels.SubscriptionPlan) bool { return p.NetworkAccessEnabled },
-}
-
-// NormalizeSizeKey uppercases and trims a size key for comparison
-func NormalizeSizeKey(key string) string {
-	return strings.ToUpper(strings.TrimSpace(key))
-}
-
-// GetCatalogSizes fetches sizes from tt-backend with a 60s TTL cache.
-//
-// Each entry is enriched with CPUMcpu from ocf-core's payment catalog so
-// the wire stops conflating tt-backend's cpuset integer (raw CPU) with the
-// effective budget cost. Custom sizes unknown to ocf-core's catalog land
-// with CPUMcpu=0 — the frontend treats that as "unknown, fall back to raw".
-func (tts *terminalTrainerService) GetCatalogSizes() ([]dto.TTSize, error) {
-	tts.catalogSizesMu.RLock()
-	if tts.catalogSizesCache != nil && time.Since(tts.catalogSizesCacheTime) < catalogCacheTTL {
-		cached := tts.catalogSizesCache
-		tts.catalogSizesMu.RUnlock()
-		return cached, nil
-	}
-	tts.catalogSizesMu.RUnlock()
-
-	url := fmt.Sprintf("%s/%s/sizes", tts.baseURL, tts.apiVersion)
-	var sizes []dto.TTSize
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
-
-	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &sizes, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// Stamp the effective mCPU budget cost from the OCF catalog. Sizes the
-	// catalog doesn't know about keep CPUMcpu=0 (sentinel for "unknown").
-	for i := range sizes {
-		sizes[i].CPUMcpu = catalog.MCPUFor(sizes[i].Key)
-	}
-
-	tts.catalogSizesMu.Lock()
-	tts.catalogSizesCache = sizes
-	tts.catalogSizesCacheTime = time.Now()
-	tts.catalogSizesMu.Unlock()
-
-	return sizes, nil
-}
-
-// GetCatalogFeatures fetches features from tt-backend with a 60s TTL cache
-func (tts *terminalTrainerService) GetCatalogFeatures() ([]dto.TTFeature, error) {
-	tts.catalogFeaturesMu.RLock()
-	if tts.catalogFeaturesCache != nil && time.Since(tts.catalogFeaturesCacheTime) < catalogCacheTTL {
-		cached := tts.catalogFeaturesCache
-		tts.catalogFeaturesMu.RUnlock()
-		return cached, nil
-	}
-	tts.catalogFeaturesMu.RUnlock()
-
-	url := fmt.Sprintf("%s/%s/features", tts.baseURL, tts.apiVersion)
-	var features []dto.TTFeature
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
-
-	err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "GET", url, nil, &features, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	tts.catalogFeaturesMu.Lock()
-	tts.catalogFeaturesCache = features
-	tts.catalogFeaturesCacheTime = time.Now()
-	tts.catalogFeaturesMu.Unlock()
-
-	return features, nil
-}
-
-// ComputeSessionOptions computes allowed sizes and features given catalogs, a distribution, and a plan.
-// Exported for testing.
-func ComputeSessionOptions(
-	distro dto.TTDistribution,
-	allSizes []dto.TTSize,
-	allFeatures []dto.TTFeature,
-	plan *paymentModels.SubscriptionPlan,
-) *dto.SessionOptionsResponse {
-	// Build a lookup of size sort orders by normalized key
-	sizeSortOrder := make(map[string]int, len(allSizes))
-	for _, s := range allSizes {
-		sizeSortOrder[NormalizeSizeKey(s.Key)] = s.SortOrder
-	}
-
-	// Determine the minimum size sort order for this distribution
-	minSortOrder := 0
-	if distro.MinSizeKey != "" {
-		if so, ok := sizeSortOrder[NormalizeSizeKey(distro.MinSizeKey)]; ok {
-			minSortOrder = so
-		}
-	}
-
-	// Evaluate each size. All catalog sizes are admitted; the budget
-	// engine sets RemainingCount per size downstream.
-	//
-	// We re-stamp CPUMcpu from the OCF catalog here so the field is
-	// authoritative regardless of whether the caller passed in sizes that
-	// already had it populated (GetCatalogSizes path) or bare TTSize
-	// literals (tests / future callers). Sizes the catalog doesn't know
-	// about keep CPUMcpu=0.
-	allowedSizes := make([]dto.SessionOptionSize, 0, len(allSizes))
-	for _, s := range allSizes {
-		if s.SortOrder < minSortOrder {
-			continue
-		}
-		s.CPUMcpu = catalog.MCPUFor(s.Key)
-		allowedSizes = append(allowedSizes, dto.SessionOptionSize{TTSize: s, Allowed: true})
-	}
-
-	// Build a set of the distribution's supported features
-	supportedFeatures := make(map[string]bool, len(distro.SupportedFeatures))
-	for _, f := range distro.SupportedFeatures {
-		supportedFeatures[f] = true
-	}
-
-	// Find the minimum sort order among allowed sizes (for min_size_key feature check)
-	maxAllowedSortOrder := 0
-	for _, s := range allowedSizes {
-		if s.Allowed && s.SortOrder > maxAllowedSortOrder {
-			maxAllowedSortOrder = s.SortOrder
-		}
-	}
-
-	// Evaluate each feature
-	allowedFeatures := make([]dto.SessionOptionFeature, 0, len(allFeatures))
-	for _, f := range allFeatures {
-		opt := dto.SessionOptionFeature{
-			Key:         f.Key,
-			Name:        f.Name,
-			Description: f.Description,
-			Allowed:     true,
-		}
-
-		if !supportedFeatures[f.Key] {
-			opt.Allowed = false
-			opt.Reason = "not_supported"
-		} else if checker, ok := featurePlanMapping[f.Key]; ok && !checker(plan) {
-			opt.Allowed = false
-			opt.Reason = "plan_disabled"
-		} else if f.MinSizeKey != "" {
-			// Check if at least one allowed size meets the feature's minimum
-			featureMinSortOrder := 0
-			if so, ok := sizeSortOrder[NormalizeSizeKey(f.MinSizeKey)]; ok {
-				featureMinSortOrder = so
-			}
-			if maxAllowedSortOrder < featureMinSortOrder {
-				opt.Allowed = false
-				opt.Reason = "size_too_small"
-			}
-		}
-
-		allowedFeatures = append(allowedFeatures, opt)
-	}
-
-	return &dto.SessionOptionsResponse{
-		Distribution:    distro,
-		AllowedSizes:    allowedSizes,
-		AllowedFeatures: allowedFeatures,
-	}
-}
-
-// GetSessionOptions validates a distribution and computes plan-intersected options
-func (tts *terminalTrainerService) GetSessionOptions(plan *paymentModels.SubscriptionPlan, distribution string, backend string) (*dto.SessionOptionsResponse, error) {
-	distributions, err := tts.proxy.GetDistributions(backend)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get distributions: %w", err)
-	}
-
-	var distro *dto.TTDistribution
-	for i := range distributions {
-		if distributions[i].Name == distribution || distributions[i].Prefix == distribution {
-			distro = &distributions[i]
-			break
-		}
-	}
-	if distro == nil {
-		return nil, fmt.Errorf("distribution '%s' not found", distribution)
-	}
-
-	sizes, err := tts.GetCatalogSizes()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get catalog sizes: %w", err)
-	}
-
-	features, err := tts.GetCatalogFeatures()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get catalog features: %w", err)
-	}
-
-	return ComputeSessionOptions(*distro, sizes, features, plan), nil
 }
 
 // EnrichSessionOptionsBudget — see interface doc.
