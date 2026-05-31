@@ -34,6 +34,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	})
 
 	controller := scenarioController.NewScenarioController(db)
+	progressController := scenarioController.NewScenarioProgressController(db)
 
 	// Scenario management routes
 	scenarios := api.Group("/scenarios")
@@ -45,10 +46,10 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	sessions.POST("/start", controller.StartScenario)
 	sessions.GET("/by-terminal/:terminalId", controller.GetSessionByTerminal)
 	sessions.GET("/:id/info", controller.GetSessionInfo)
-	sessions.GET("/:id/current-step", controller.GetCurrentStep)
-	sessions.POST("/:id/verify", controller.VerifyStep)
-	sessions.POST("/:id/submit-flag", controller.SubmitFlag)
-	sessions.POST("/:id/abandon", controller.AbandonSession)
+	sessions.GET("/:id/current-step", progressController.GetCurrentStep)
+	sessions.POST("/:id/verify", progressController.VerifyStep)
+	sessions.POST("/:id/submit-flag", progressController.SubmitFlag)
+	sessions.POST("/:id/abandon", progressController.AbandonSession)
 
 	return r
 }

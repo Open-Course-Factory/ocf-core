@@ -15,6 +15,7 @@ import (
 // ScenarioRoutes registers the custom (non-CRUD) scenario endpoints
 func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.DB) {
 	controller := NewScenarioController(db)
+	progressController := NewScenarioProgressController(db)
 	middleware := auth.NewAuthMiddleware(db)
 
 	// Scenario management routes (admin/trainer)
@@ -39,14 +40,14 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	sessionRoutes.POST("/start", middleware.AuthManagement(), controller.StartScenario)
 	sessionRoutes.GET("/by-terminal/:terminalId", middleware.AuthManagement(), controller.GetSessionByTerminal)
 	sessionRoutes.GET("/:id/info", middleware.AuthManagement(), controller.GetSessionInfo)
-	sessionRoutes.GET("/:id/flags", middleware.AuthManagement(), controller.GetSessionFlags)
-	sessionRoutes.GET("/:id/current-step", middleware.AuthManagement(), controller.GetCurrentStep)
-	sessionRoutes.GET("/:id/step/:stepOrder", middleware.AuthManagement(), controller.GetStepByOrder)
-	sessionRoutes.POST("/:id/verify", middleware.AuthManagement(), rateLimiter, controller.VerifyStep)
-	sessionRoutes.POST("/:id/submit-flag", middleware.AuthManagement(), rateLimiter, controller.SubmitFlag)
-	sessionRoutes.POST("/:id/submit-quiz", middleware.AuthManagement(), rateLimiter, controller.SubmitQuiz)
-	sessionRoutes.POST("/:id/steps/:stepOrder/hints/:level/reveal", middleware.AuthManagement(), controller.RevealHint)
-	sessionRoutes.POST("/:id/abandon", middleware.AuthManagement(), controller.AbandonSession)
+	sessionRoutes.GET("/:id/flags", middleware.AuthManagement(), progressController.GetSessionFlags)
+	sessionRoutes.GET("/:id/current-step", middleware.AuthManagement(), progressController.GetCurrentStep)
+	sessionRoutes.GET("/:id/step/:stepOrder", middleware.AuthManagement(), progressController.GetStepByOrder)
+	sessionRoutes.POST("/:id/verify", middleware.AuthManagement(), rateLimiter, progressController.VerifyStep)
+	sessionRoutes.POST("/:id/submit-flag", middleware.AuthManagement(), rateLimiter, progressController.SubmitFlag)
+	sessionRoutes.POST("/:id/submit-quiz", middleware.AuthManagement(), rateLimiter, progressController.SubmitQuiz)
+	sessionRoutes.POST("/:id/steps/:stepOrder/hints/:level/reveal", middleware.AuthManagement(), progressController.RevealHint)
+	sessionRoutes.POST("/:id/abandon", middleware.AuthManagement(), progressController.AbandonSession)
 	// Budget enforcement is performed inside LaunchScenario via
 	// QuotaService.CheckBudget; no middleware-level slot counter is needed.
 	//

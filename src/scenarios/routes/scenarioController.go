@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -39,16 +38,8 @@ type ScenarioController interface {
 	SeedScenario(ctx *gin.Context)
 	UploadScenario(ctx *gin.Context)
 	StartScenario(ctx *gin.Context)
-	GetCurrentStep(ctx *gin.Context)
-	GetStepByOrder(ctx *gin.Context)
-	VerifyStep(ctx *gin.Context)
-	SubmitFlag(ctx *gin.Context)
-	SubmitQuiz(ctx *gin.Context)
-	RevealHint(ctx *gin.Context)
-	AbandonSession(ctx *gin.Context)
 	GetSessionByTerminal(ctx *gin.Context)
 	GetSessionInfo(ctx *gin.Context)
-	GetSessionFlags(ctx *gin.Context)
 	GetMySessions(ctx *gin.Context)
 	ExportScenario(ctx *gin.Context)
 	ExportScenarios(ctx *gin.Context)
@@ -72,7 +63,7 @@ type ScenarioController interface {
 }
 
 type scenarioController struct {
-	db               *gorm.DB
+	scenarioControllerBase
 	sessionService   *services.ScenarioSessionService
 	importerService  *services.ScenarioImporterService
 	exportService    *services.ScenarioExportService
@@ -99,48 +90,15 @@ func NewScenarioController(db *gorm.DB) ScenarioController {
 	})
 
 	return &scenarioController{
-		db:               db,
-		sessionService:   sessionService,
-		importerService:  importerService,
-		exportService:    exportService,
-		seedService:      seedService,
-		duplicateService: duplicateService,
-		terminalService:  terminalService,
-		groupService:     groupServices.NewGroupService(db),
+		scenarioControllerBase: scenarioControllerBase{db: db},
+		sessionService:         sessionService,
+		importerService:        importerService,
+		exportService:          exportService,
+		seedService:            seedService,
+		duplicateService:       duplicateService,
+		terminalService:        terminalService,
+		groupService:           groupServices.NewGroupService(db),
 	}
-}
-
-// getSessionIfOwned loads a session by ID and checks that the authenticated user owns it.
-func (sc *scenarioController) getSessionIfOwned(ctx *gin.Context) (*models.ScenarioSession, error) {
-	sessionID, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid session ID",
-		})
-		return nil, err
-	}
-
-	userID := ctx.GetString("userId")
-
-	var session models.ScenarioSession
-	if err := sc.db.First(&session, "id = ?", sessionID).Error; err != nil {
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Session not found",
-		})
-		return nil, err
-	}
-
-	if session.UserID != userID {
-		ctx.JSON(http.StatusForbidden, &errors.APIError{
-			ErrorCode:    http.StatusForbidden,
-			ErrorMessage: "You do not own this session",
-		})
-		return nil, fmt.Errorf("forbidden")
-	}
-
-	return &session, nil
 }
 
 // ImportScenario godoc
@@ -360,293 +318,6 @@ func (sc *scenarioController) StartScenario(ctx *gin.Context) {
 	})
 }
 
-// GetCurrentStep godoc
-// @Summary Get current step
-// @Description Get the current step content for a scenario session
-// @Tags scenario-sessions
-// @Produce json
-// @Param id path string true "Session ID"
-// @Success 200 {object} dto.CurrentStepResponse
-// @Failure 400 {object} errors.APIError
-// @Failure 403 {object} errors.APIError
-// @Failure 404 {object} errors.APIError
-// @Router /scenario-sessions/{id}/current-step [get]
-// @Security BearerAuth
-func (sc *scenarioController) GetCurrentStep(ctx *gin.Context) {
-	session, err := sc.getSessionIfOwned(ctx)
-	if err != nil {
-		return
-	}
-
-	step, err := sc.sessionService.GetCurrentStep(session.ID)
-	if err != nil {
-		slog.Error("failed to get current step", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to get current step",
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, step)
-}
-
-// GetStepByOrder godoc
-// @Summary Get step by order
-// @Description Get the content of a specific step by its order for a scenario session. Only completed or active steps can be viewed.
-// @Tags scenario-sessions
-// @Produce json
-// @Param id path string true "Session ID"
-// @Param stepOrder path int true "Step order (0-based)"
-// @Success 200 {object} dto.CurrentStepResponse
-// @Failure 400 {object} errors.APIError
-// @Failure 403 {object} errors.APIError
-// @Failure 404 {object} errors.APIError
-// @Router /scenario-sessions/{id}/step/{stepOrder} [get]
-// @Security BearerAuth
-func (sc *scenarioController) GetStepByOrder(ctx *gin.Context) {
-	session, err := sc.getSessionIfOwned(ctx)
-	if err != nil {
-		return
-	}
-
-	stepOrder, err := strconv.Atoi(ctx.Param("stepOrder"))
-	if err != nil || stepOrder < 0 {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid step order",
-		})
-		return
-	}
-
-	step, err := sc.sessionService.GetStepByOrder(session.ID, stepOrder)
-	if err != nil {
-		if err.Error() == "step is locked" {
-			ctx.JSON(http.StatusForbidden, &errors.APIError{
-				ErrorCode:    http.StatusForbidden,
-				ErrorMessage: "Step is locked",
-			})
-			return
-		}
-		slog.Error("failed to get step by order", "err", err)
-		ctx.JSON(http.StatusNotFound, &errors.APIError{
-			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "Step not found",
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, step)
-}
-
-// VerifyStep godoc
-// @Summary Verify current step
-// @Description Run the verification script for the current step
-// @Tags scenario-sessions
-// @Produce json
-// @Param id path string true "Session ID"
-// @Success 200 {object} dto.VerifyStepResponse
-// @Failure 400 {object} errors.APIError
-// @Failure 403 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
-// @Router /scenario-sessions/{id}/verify [post]
-// @Security BearerAuth
-func (sc *scenarioController) VerifyStep(ctx *gin.Context) {
-	session, err := sc.getSessionIfOwned(ctx)
-	if err != nil {
-		return
-	}
-
-	result, err := sc.sessionService.VerifyCurrentStep(session.ID)
-	if err != nil {
-		slog.Error("failed to verify step", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to verify step",
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, result)
-}
-
-// SubmitFlag godoc
-// @Summary Submit a flag
-// @Description Submit a CTF flag answer for the current step
-// @Tags scenario-sessions
-// @Accept json
-// @Produce json
-// @Param id path string true "Session ID"
-// @Param body body dto.SubmitFlagInput true "Flag submission"
-// @Success 200 {object} dto.SubmitFlagResponse
-// @Failure 400 {object} errors.APIError
-// @Failure 403 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
-// @Router /scenario-sessions/{id}/submit-flag [post]
-// @Security BearerAuth
-func (sc *scenarioController) SubmitFlag(ctx *gin.Context) {
-	session, err := sc.getSessionIfOwned(ctx)
-	if err != nil {
-		return
-	}
-
-	var input dto.SubmitFlagInput
-	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	result, err := sc.sessionService.SubmitFlag(session.ID, input.Flag)
-	if err != nil {
-		slog.Error("failed to submit flag", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to submit flag",
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, result)
-}
-
-// SubmitQuiz godoc
-// @Summary Submit quiz answers
-// @Description Submit quiz answers for the current step. Each answer is scored against the canonical correct_answer; the response includes per-question correctness and an aggregate score.
-// @Tags scenario-sessions
-// @Accept json
-// @Produce json
-// @Param id path string true "Session ID"
-// @Param body body dto.SubmitQuizInput true "Quiz answers"
-// @Success 200 {object} dto.SubmitQuizResponse
-// @Failure 400 {object} errors.APIError
-// @Failure 403 {object} errors.APIError
-// @Failure 422 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
-// @Router /scenario-sessions/{id}/submit-quiz [post]
-// @Security BearerAuth
-func (sc *scenarioController) SubmitQuiz(ctx *gin.Context) {
-	session, err := sc.getSessionIfOwned(ctx)
-	if err != nil {
-		return
-	}
-
-	var input dto.SubmitQuizInput
-	if err := ctx.ShouldBindJSON(&input); err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	result, err := sc.sessionService.SubmitQuiz(session.ID, input)
-	if err != nil {
-		// Service rejects with a domain error for invalid step type / unknown
-		// question IDs / empty answers — surface as 422 so the frontend can
-		// distinguish from a 500.
-		slog.Warn("failed to submit quiz", "err", err)
-		ctx.JSON(http.StatusUnprocessableEntity, &errors.APIError{
-			ErrorCode:    http.StatusUnprocessableEntity,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, result)
-}
-
-// RevealHint godoc
-// @Summary Reveal a progressive hint
-// @Description Reveal a progressive hint for a specific step in a scenario session. Hints must be revealed sequentially.
-// @Tags scenario-sessions
-// @Produce json
-// @Param id path string true "Session ID"
-// @Param stepOrder path int true "Step order (0-based)"
-// @Param level path int true "Hint level (1-based)"
-// @Success 200 {object} dto.RevealHintResponse
-// @Failure 400 {object} errors.APIError
-// @Failure 403 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
-// @Router /scenario-sessions/{id}/steps/{stepOrder}/hints/{level}/reveal [post]
-// @Security BearerAuth
-func (sc *scenarioController) RevealHint(ctx *gin.Context) {
-	session, err := sc.getSessionIfOwned(ctx)
-	if err != nil {
-		return
-	}
-
-	stepOrder, err := strconv.Atoi(ctx.Param("stepOrder"))
-	if err != nil || stepOrder < 0 {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid step order",
-		})
-		return
-	}
-
-	level, err := strconv.Atoi(ctx.Param("level"))
-	if err != nil || level < 1 {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Invalid hint level",
-		})
-		return
-	}
-
-	result, err := sc.sessionService.RevealHint(session.ID, stepOrder, level)
-	if err != nil {
-		slog.Error("failed to reveal hint", "err", err)
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, result)
-}
-
-// AbandonSession godoc
-// @Summary Abandon a session
-// @Description Abandon the scenario session and discard progress
-// @Tags scenario-sessions
-// @Produce json
-// @Param id path string true "Session ID"
-// @Success 200 {object} map[string]string
-// @Failure 400 {object} errors.APIError
-// @Failure 403 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
-// @Router /scenario-sessions/{id}/abandon [post]
-// @Security BearerAuth
-func (sc *scenarioController) AbandonSession(ctx *gin.Context) {
-	session, err := sc.getSessionIfOwned(ctx)
-	if err != nil {
-		return
-	}
-
-	err = sc.sessionService.AbandonSession(session.ID)
-	if err != nil {
-		slog.Error("failed to abandon session", "err", err)
-		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
-			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to abandon session",
-		})
-		return
-	}
-
-	// Stop the linked terminal session (best-effort, don't block the abandon)
-	if session.TerminalSessionID != nil && *session.TerminalSessionID != "" {
-		if stopErr := sc.terminalService.StopSession(*session.TerminalSessionID); stopErr != nil {
-			slog.Warn("failed to stop terminal session on abandon", "terminal_session_id", *session.TerminalSessionID, "err", stopErr)
-		}
-	}
-
-	ctx.JSON(http.StatusOK, dto.MessageResponse{Message: "Session abandoned"})
-}
-
 // GetSessionByTerminal godoc
 // @Summary Get scenario session by terminal
 // @Description Find the most recent scenario session linked to a terminal session
@@ -737,37 +408,6 @@ func (sc *scenarioController) GetSessionInfo(ctx *gin.Context) {
 		Grade:             session.Grade,
 		StartedAt:         session.StartedAt,
 	})
-}
-
-// GetSessionFlags returns all validated (correct) flags for a session.
-func (sc *scenarioController) GetSessionFlags(ctx *gin.Context) {
-	session, err := sc.getSessionIfOwned(ctx)
-	if err != nil {
-		return
-	}
-
-	var flags []models.ScenarioFlag
-	sc.db.Where("session_id = ? AND is_correct = ?", session.ID, true).
-		Order("step_order asc").Find(&flags)
-
-	type flagResponse struct {
-		StepOrder   int        `json:"step_order"`
-		Flag        string     `json:"flag"`
-		SubmittedAt *time.Time `json:"submitted_at,omitempty"`
-	}
-
-	result := make([]flagResponse, 0, len(flags))
-	for _, f := range flags {
-		if f.SubmittedFlag != nil {
-			result = append(result, flagResponse{
-				StepOrder:   f.StepOrder,
-				Flag:        *f.SubmittedFlag,
-				SubmittedAt: f.SubmittedAt,
-			})
-		}
-	}
-
-	ctx.JSON(http.StatusOK, result)
 }
 
 // GetMySessions godoc
@@ -1006,25 +646,25 @@ func (sc *scenarioController) hasAdminRole(ctx *gin.Context) bool {
 // buildScenarioOutput converts a Scenario model to a ScenarioOutput DTO
 func (sc *scenarioController) buildScenarioOutput(scenario *models.Scenario) dto.ScenarioOutput {
 	output := dto.ScenarioOutput{
-		ID:             scenario.ID,
-		Name:           scenario.Name,
-		Title:          scenario.Title,
-		Description:    scenario.Description,
-		Difficulty:     scenario.Difficulty,
-		EstimatedTime:  scenario.EstimatedTime,
-		InstanceType:   scenario.InstanceType,
-		OsType:         scenario.OsType,
-		SourceType:     scenario.SourceType,
+		ID:               scenario.ID,
+		Name:             scenario.Name,
+		Title:            scenario.Title,
+		Description:      scenario.Description,
+		Difficulty:       scenario.Difficulty,
+		EstimatedTime:    scenario.EstimatedTime,
+		InstanceType:     scenario.InstanceType,
+		OsType:           scenario.OsType,
+		SourceType:       scenario.SourceType,
 		FlagsEnabled:     scenario.FlagsEnabled,
 		AllowedFlagPaths: scenario.AllowedFlagPaths,
-		GshEnabled:     scenario.GshEnabled,
-		CrashTraps:     scenario.CrashTraps,
-		IntroText:      scenario.IntroText,
-		FinishText:     scenario.FinishText,
-		CreatedByID:    scenario.CreatedByID,
-		OrganizationID: scenario.OrganizationID,
-		CreatedAt:      scenario.CreatedAt,
-		UpdatedAt:      scenario.UpdatedAt,
+		GshEnabled:       scenario.GshEnabled,
+		CrashTraps:       scenario.CrashTraps,
+		IntroText:        scenario.IntroText,
+		FinishText:       scenario.FinishText,
+		CreatedByID:      scenario.CreatedByID,
+		OrganizationID:   scenario.OrganizationID,
+		CreatedAt:        scenario.CreatedAt,
+		UpdatedAt:        scenario.UpdatedAt,
 	}
 	if len(scenario.Steps) > 0 {
 		steps := make([]dto.ScenarioStepOutput, 0, len(scenario.Steps))
@@ -3304,4 +2944,3 @@ func (sc *scenarioController) PreviewScenario(ctx *gin.Context) {
 		ProvisioningPhase: session.ProvisioningPhase,
 	})
 }
-
