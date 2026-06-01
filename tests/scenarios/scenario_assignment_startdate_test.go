@@ -30,10 +30,10 @@ func setupMemberRouter(db *gorm.DB, userID string) *gin.Engine {
 		c.Next()
 	})
 
-	controller := scenarioController.NewScenarioController(db)
+	launchController := scenarioController.NewScenarioLaunchController(db)
 
 	sessions := api.Group("/scenario-sessions")
-	sessions.GET("/available", controller.GetAvailableScenarios)
+	sessions.GET("/available", launchController.GetAvailableScenarios)
 
 	return r
 }

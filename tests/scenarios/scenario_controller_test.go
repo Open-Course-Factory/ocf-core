@@ -34,6 +34,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 	})
 
 	controller := scenarioController.NewScenarioController(db)
+	launchController := scenarioController.NewScenarioLaunchController(db)
 	progressController := scenarioController.NewScenarioProgressController(db)
 
 	// Scenario management routes
@@ -43,7 +44,7 @@ func setupTestRouter(db *gorm.DB) *gin.Engine {
 
 	// Session routes
 	sessions := api.Group("/scenario-sessions")
-	sessions.POST("/start", controller.StartScenario)
+	sessions.POST("/start", launchController.StartScenario)
 	sessions.GET("/by-terminal/:terminalId", controller.GetSessionByTerminal)
 	sessions.GET("/:id/info", controller.GetSessionInfo)
 	sessions.GET("/:id/current-step", progressController.GetCurrentStep)
@@ -756,10 +757,10 @@ func setupTestRouterWithRoles(db *gorm.DB, userID string, roles []string) *gin.E
 		c.Next()
 	})
 
-	controller := scenarioController.NewScenarioController(db)
+	launchController := scenarioController.NewScenarioLaunchController(db)
 
 	sessions := api.Group("/scenario-sessions")
-	sessions.POST("/start", controller.StartScenario)
+	sessions.POST("/start", launchController.StartScenario)
 
 	return r
 }
@@ -1100,7 +1101,7 @@ func setupAvailableRouter(db *gorm.DB, userID string, roles []string) *gin.Engin
 		c.Set("userRoles", roles)
 		c.Next()
 	})
-	controller := scenarioController.NewScenarioController(db)
+	launchController := scenarioController.NewScenarioLaunchController(db)
 	sessions := api.Group("/scenario-sessions")
 	// InjectOrgContext equivalent: read organization_id from query param into gin context
 	sessions.Use(func(c *gin.Context) {
@@ -1109,7 +1110,7 @@ func setupAvailableRouter(db *gorm.DB, userID string, roles []string) *gin.Engin
 		}
 		c.Next()
 	})
-	sessions.GET("/available", controller.GetAvailableScenarios)
+	sessions.GET("/available", launchController.GetAvailableScenarios)
 	return r
 }
 

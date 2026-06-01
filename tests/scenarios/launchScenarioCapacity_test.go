@@ -125,7 +125,7 @@ func setupLaunchRouterWithProdMiddleware(t *testing.T, db *gorm.DB, userID strin
 	})
 
 	effectivePlanService := paymentServices.NewEffectivePlanService(db)
-	ctrl := scenarioController.NewScenarioController(db)
+	ctrl := scenarioController.NewScenarioLaunchController(db)
 
 	router.POST("/api/v1/scenario-sessions/launch",
 		paymentMiddleware.InjectOrgContext(),

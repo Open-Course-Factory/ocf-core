@@ -213,7 +213,7 @@ func setupPersistenceRouter(t *testing.T, db *gorm.DB, userID string) *gin.Engin
 	})
 
 	effectivePlanService := paymentServices.NewEffectivePlanService(db)
-	ctrl := scenarioController.NewScenarioController(db)
+	ctrl := scenarioController.NewScenarioLaunchController(db)
 
 	router.POST("/api/v1/scenario-sessions/launch",
 		paymentMiddleware.InjectOrgContext(),

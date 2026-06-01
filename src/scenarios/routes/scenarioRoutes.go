@@ -15,6 +15,7 @@ import (
 // ScenarioRoutes registers the custom (non-CRUD) scenario endpoints
 func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.DB) {
 	controller := NewScenarioController(db)
+	launchController := NewScenarioLaunchController(db)
 	progressController := NewScenarioProgressController(db)
 	middleware := auth.NewAuthMiddleware(db)
 
@@ -27,7 +28,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	scenarioRoutes.POST("/export", middleware.AuthManagement(), controller.ExportScenarios)
 	scenarioRoutes.POST("/import-json", middleware.AuthManagement(), controller.ImportJSON)
 	scenarioRoutes.POST("/:id/duplicate", middleware.AuthManagement(), controller.DuplicateScenario)
-	scenarioRoutes.POST("/:id/preview", middleware.AuthManagement(), controller.PreviewScenario)
+	scenarioRoutes.POST("/:id/preview", middleware.AuthManagement(), launchController.PreviewScenario)
 
 	// Session routes (students)
 	rateLimiter := scenarioMiddleware.PerUserRateLimit()
@@ -35,9 +36,9 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	sessionRoutes := router.Group("/scenario-sessions")
 	sessionRoutes.GET("/available", middleware.AuthManagement(),
 		paymentMiddleware.InjectOrgContext(),
-		controller.GetAvailableScenarios)
-	sessionRoutes.GET("/my", middleware.AuthManagement(), controller.GetMySessions)
-	sessionRoutes.POST("/start", middleware.AuthManagement(), controller.StartScenario)
+		launchController.GetAvailableScenarios)
+	sessionRoutes.GET("/my", middleware.AuthManagement(), launchController.GetMySessions)
+	sessionRoutes.POST("/start", middleware.AuthManagement(), launchController.StartScenario)
 	sessionRoutes.GET("/by-terminal/:terminalId", middleware.AuthManagement(), controller.GetSessionByTerminal)
 	sessionRoutes.GET("/:id/info", middleware.AuthManagement(), controller.GetSessionInfo)
 	sessionRoutes.GET("/:id/flags", middleware.AuthManagement(), progressController.GetSessionFlags)
@@ -69,7 +70,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 		paymentMiddleware.InjectOrgContext(),
 		paymentMiddleware.InjectEffectivePlan(effectivePlanService, db),
 		paymentMiddleware.RequirePlan(),
-		controller.LaunchScenario)
+		launchController.LaunchScenario)
 
 	// Group-level scenario import/export routes (teachers/group admins)
 	groupScenarioRoutes := router.Group("/groups/:groupId/scenarios")

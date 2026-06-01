@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"soli/formations/src/auth/errors"
+	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 
 	"github.com/gin-gonic/gin"
@@ -51,4 +52,62 @@ func (b *scenarioControllerBase) getSessionIfOwned(ctx *gin.Context) (*models.Sc
 	}
 
 	return &session, nil
+}
+
+// hasAdminRole checks if the context has admin/administrator role without writing a response.
+func (b *scenarioControllerBase) hasAdminRole(ctx *gin.Context) bool {
+	userRoles, _ := ctx.Get("userRoles")
+	if roles, ok := userRoles.([]string); ok {
+		for _, role := range roles {
+			if role == "admin" || role == "administrator" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// buildScenarioOutput converts a Scenario model to a ScenarioOutput DTO
+func (b *scenarioControllerBase) buildScenarioOutput(scenario *models.Scenario) dto.ScenarioOutput {
+	output := dto.ScenarioOutput{
+		ID:               scenario.ID,
+		Name:             scenario.Name,
+		Title:            scenario.Title,
+		Description:      scenario.Description,
+		Difficulty:       scenario.Difficulty,
+		EstimatedTime:    scenario.EstimatedTime,
+		InstanceType:     scenario.InstanceType,
+		OsType:           scenario.OsType,
+		SourceType:       scenario.SourceType,
+		FlagsEnabled:     scenario.FlagsEnabled,
+		AllowedFlagPaths: scenario.AllowedFlagPaths,
+		GshEnabled:       scenario.GshEnabled,
+		CrashTraps:       scenario.CrashTraps,
+		IntroText:        scenario.IntroText,
+		FinishText:       scenario.FinishText,
+		CreatedByID:      scenario.CreatedByID,
+		OrganizationID:   scenario.OrganizationID,
+		CreatedAt:        scenario.CreatedAt,
+		UpdatedAt:        scenario.UpdatedAt,
+	}
+	if len(scenario.Steps) > 0 {
+		steps := make([]dto.ScenarioStepOutput, 0, len(scenario.Steps))
+		for _, step := range scenario.Steps {
+			steps = append(steps, dto.ScenarioStepOutput{
+				ID:          step.ID,
+				ScenarioID:  step.ScenarioID,
+				Order:       step.Order,
+				Title:       step.Title,
+				TextContent: step.TextContent,
+				HintContent: step.HintContent,
+				HasFlag:     step.HasFlag,
+				FlagPath:    step.FlagPath,
+				FlagLevel:   step.FlagLevel,
+				CreatedAt:   step.CreatedAt,
+				UpdatedAt:   step.UpdatedAt,
+			})
+		}
+		output.Steps = steps
+	}
+	return output
 }
