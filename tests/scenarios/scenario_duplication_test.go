@@ -433,10 +433,11 @@ func setupDuplicateTestRouter(t *testing.T, db *gorm.DB, userID string, roles []
 	api.Use(access.Layer2Enforcement())
 
 	controller := scenarioController.NewScenarioController(db)
+	managementController := scenarioController.NewScenarioManagementController(db)
 	api.POST("/scenarios/:id/duplicate", controller.DuplicateScenario)
 
 	orgScenarios := api.Group("/organizations/:id/scenarios")
-	orgScenarios.POST("/:scenarioId/duplicate", controller.OrgDuplicateScenario)
+	orgScenarios.POST("/:scenarioId/duplicate", managementController.OrgDuplicateScenario)
 
 	return r
 }

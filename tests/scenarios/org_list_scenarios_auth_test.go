@@ -45,9 +45,9 @@ func setupControllerOnlyRouter(db *gorm.DB, userID string) *gin.Engine {
 		c.Next()
 	})
 	// NOTE: No Layer2Enforcement middleware — testing the raw controller behaviour
-	controller := scenarioController.NewScenarioController(db)
+	managementController := scenarioController.NewScenarioManagementController(db)
 	orgScenarios := api.Group("/organizations/:id/scenarios")
-	orgScenarios.GET("", controller.OrgListScenarios)
+	orgScenarios.GET("", managementController.OrgListScenarios)
 	return r
 }
 
@@ -76,9 +76,9 @@ func setupLayer2Router(t *testing.T, db *gorm.DB, userID string, roles []string)
 	})
 	api.Use(access.Layer2Enforcement())
 
-	controller := scenarioController.NewScenarioController(db)
+	managementController := scenarioController.NewScenarioManagementController(db)
 	orgScenarios := api.Group("/organizations/:id/scenarios")
-	orgScenarios.GET("", controller.OrgListScenarios)
+	orgScenarios.GET("", managementController.OrgListScenarios)
 	return r
 }
 

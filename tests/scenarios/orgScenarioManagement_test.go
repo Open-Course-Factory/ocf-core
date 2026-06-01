@@ -55,21 +55,21 @@ func setupOrgTestRouterWithUserAndRoles(t *testing.T, db *gorm.DB, userID string
 	// Add Layer 2 enforcement middleware
 	api.Use(access.Layer2Enforcement())
 
-	controller := scenarioController.NewScenarioController(db)
+	managementController := scenarioController.NewScenarioManagementController(db)
 
 	// Organization-level scenario routes (the new endpoints under test)
 	orgScenarios := api.Group("/organizations/:id/scenarios")
-	orgScenarios.GET("", controller.OrgListScenarios)
-	orgScenarios.POST("", controller.OrgCreateScenario)
-	orgScenarios.POST("/import-json", controller.OrgImportJSON)
-	orgScenarios.POST("/upload", controller.OrgUploadScenario)
-	orgScenarios.GET("/:scenarioId/export", controller.OrgExportScenario)
-	orgScenarios.DELETE("/:scenarioId", controller.OrgDeleteScenario)
+	orgScenarios.GET("", managementController.OrgListScenarios)
+	orgScenarios.POST("", managementController.OrgCreateScenario)
+	orgScenarios.POST("/import-json", managementController.OrgImportJSON)
+	orgScenarios.POST("/upload", managementController.OrgUploadScenario)
+	orgScenarios.GET("/:scenarioId/export", managementController.OrgExportScenario)
+	orgScenarios.DELETE("/:scenarioId", managementController.OrgDeleteScenario)
 
 	// Group-level scenario routes
 	groupScenarios := api.Group("/groups/:groupId/scenarios")
-	groupScenarios.GET("", controller.ListGroupAvailableScenarios)
-	groupScenarios.POST("", controller.GroupCreateScenario)
+	groupScenarios.GET("", managementController.ListGroupAvailableScenarios)
+	groupScenarios.POST("", managementController.GroupCreateScenario)
 
 	return r
 }
