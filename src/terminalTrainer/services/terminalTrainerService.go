@@ -1,14 +1,9 @@
 package services
 
 import (
-	"bytes"
 	"context"
-	"encoding/csv"
-	"encoding/json"
 	"fmt"
-	neturl "net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -139,6 +134,7 @@ type terminalTrainerService struct {
 	sync                   *terminalSyncService
 	lifecycle              *terminalLifecycleService
 	composer               *terminalComposer
+	history                *terminalHistoryService
 }
 
 func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
@@ -177,6 +173,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 		catalog:                catalog,
 		sync:                   sync,
 		lifecycle:              newTerminalLifecycleService(proxy, sync, repository, db),
+		history:                newTerminalHistoryService(proxy, repository, db, baseURL, apiVersion, adminKey),
 	}
 
 	// Constructed last: the composer takes the facade's CreateUserKey as a
@@ -549,140 +546,25 @@ func (tts *terminalTrainerService) ValidateSessionAccess(sessionID string, check
 	return tts.lifecycle.ValidateSessionAccess(sessionID, checkAPI)
 }
 
-// GetSessionCommandHistory retrieves command history from tt-backend
+// The following methods delegate to terminalHistoryService, which owns the
+// command-history concern: per-session and per-group history reads, group
+// history statistics, and the RGPD erasure paths. ClampHistoryLimit and the
+// history row-count caps live on that collaborator too.
+
 func (tts *terminalTrainerService) GetSessionCommandHistory(sessionID string, since *int64, format string, limit, offset int) ([]byte, string, error) {
-	// Validate format against whitelist to prevent URL parameter injection
-	if format != "" && format != "json" && format != "csv" {
-		format = "json" // default to json for unknown formats
-	}
-
-	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
-	if err != nil {
-		return nil, "", fmt.Errorf("session not found: %w", err)
-	}
-
-	path := tts.proxy.buildAPIPath("/history", terminal.InstanceType)
-	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, neturl.QueryEscape(sessionID))
-	if since != nil {
-		url += fmt.Sprintf("&since=%d", *since)
-	}
-	if format != "" {
-		url += fmt.Sprintf("&format=%s", format)
-	}
-	if limit > 0 {
-		url += fmt.Sprintf("&limit=%d", limit)
-	}
-	if offset > 0 {
-		url += fmt.Sprintf("&offset=%d", offset)
-	}
-
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(terminal.UserTerminalKey.APIKey))
-
-	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "GET", url, nil, opts)
-	if err != nil {
-		return nil, "", err
-	}
-
-	// Enforce a 10MB cap on response body to prevent OOM from oversized payloads
-	const maxResponseSize = 10 * 1024 * 1024 // 10MB
-	if len(resp.Body) > maxResponseSize {
-		return nil, "", fmt.Errorf("response body exceeds maximum allowed size (%d bytes > %d bytes)", len(resp.Body), maxResponseSize)
-	}
-
-	// Read content-type from tt-backend response when available; fall back to
-	// format-based heuristic when the upstream does not provide a header.
-	contentType := resp.Headers.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/json"
-		if format == "csv" {
-			contentType = "text/csv"
-		}
-	}
-
-	return resp.Body, contentType, nil
+	return tts.history.GetSessionCommandHistory(sessionID, since, format, limit, offset)
 }
 
-// GetSessionCommandHistoryAdmin retrieves command history for a single tt-backend
-// session UUID using the OCF admin API key. Used by trainer endpoints where the
-// requesting user is a group manager and does not own the student's session key.
-//
-// It proxies to tt-backend's bulk history endpoint with a single UUID, returning
-// the response body verbatim ({commands, total, limit, offset}). Returns the
-// raw JSON bytes plus the content type. limit defaults to 50 and is capped at
-// 1000 by tt-backend; offset defaults to 0.
 func (tts *terminalTrainerService) GetSessionCommandHistoryAdmin(sessionUUID string, limit, offset int) ([]byte, string, error) {
-	if tts.baseURL == "" || tts.adminKey == "" {
-		return nil, "", fmt.Errorf("terminal trainer not configured")
-	}
-
-	url := fmt.Sprintf("%s/%s/admin/history/bulk", tts.baseURL, tts.apiVersion)
-
-	reqBody := map[string]interface{}{
-		"session_uuids": []string{sessionUUID},
-		"limit":         limit,
-		"offset":        offset,
-		"format":        "json",
-	}
-
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
-
-	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, reqBody, opts)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to fetch session history: %w", err)
-	}
-
-	const maxResponseSize = 10 * 1024 * 1024 // 10MB
-	if len(resp.Body) > maxResponseSize {
-		return nil, "", fmt.Errorf("response body exceeds maximum allowed size (%d bytes > %d bytes)", len(resp.Body), maxResponseSize)
-	}
-
-	contentType := resp.Headers.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/json"
-	}
-	return resp.Body, contentType, nil
+	return tts.history.GetSessionCommandHistoryAdmin(sessionUUID, limit, offset)
 }
 
-// DeleteSessionCommandHistory deletes command history (RGPD right to erasure)
 func (tts *terminalTrainerService) DeleteSessionCommandHistory(sessionID string) error {
-	terminal, err := tts.repository.GetTerminalSessionByID(sessionID)
-	if err != nil {
-		return fmt.Errorf("session not found: %w", err)
-	}
-
-	path := tts.proxy.buildAPIPath("/history", terminal.InstanceType)
-	url := fmt.Sprintf("%s%s?id=%s", tts.baseURL, path, neturl.QueryEscape(sessionID))
-
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(terminal.UserTerminalKey.APIKey))
-
-	_, err = utils.MakeExternalAPIRequest("Terminal Trainer", "DELETE", url, nil, opts)
-	return err
+	return tts.history.DeleteSessionCommandHistory(sessionID)
 }
 
-// DeleteAllUserCommandHistory deletes all command history across all sessions for an API key (RGPD bulk erasure)
 func (tts *terminalTrainerService) DeleteAllUserCommandHistory(apiKey string) (int64, error) {
-	path := fmt.Sprintf("/%s/history/all", tts.apiVersion)
-	url := fmt.Sprintf("%s%s", tts.baseURL, path)
-
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(apiKey))
-
-	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "DELETE", url, nil, opts)
-	if err != nil {
-		return 0, err
-	}
-
-	var result struct {
-		SessionsCleared int64 `json:"sessions_cleared"`
-	}
-	if err := resp.DecodeJSON(&result); err != nil {
-		return 0, fmt.Errorf("failed to decode bulk delete response: %w", err)
-	}
-
-	return result.SessionsCleared, nil
+	return tts.history.DeleteAllUserCommandHistory(apiKey)
 }
 
 func (tts *terminalTrainerService) GetOrganizationTerminalSessions(orgID uuid.UUID) (*[]models.Terminal, error) {
@@ -1090,433 +972,12 @@ func (tts *terminalTrainerService) IsUserAuthorizedForSession(userID string, ter
 	return false
 }
 
-// History row-count caps.
-//
-// JSON pagination is 1k — loading more rows into the DOM is a UX/perf issue.
-// CSV export is 100k — sized for exam-scale exports (~5k observed in the field)
-// with two orders of magnitude of headroom while still bounded for memory safety.
-const (
-	defaultHistoryLimit = 50
-	maxJSONHistoryLimit = 1000
-	maxCSVHistoryLimit  = 100000
-)
-
-// ClampHistoryLimit returns the effective row limit for a command-history
-// request, applying defaults (when limit <= 0) and a format-aware ceiling
-// (1000 for JSON/default, 100000 for CSV).
-func ClampHistoryLimit(limit int, format string) int {
-	if limit <= 0 {
-		return defaultHistoryLimit
-	}
-	cap := maxJSONHistoryLimit
-	if format == "csv" {
-		cap = maxCSVHistoryLimit
-	}
-	if limit > cap {
-		return cap
-	}
-	return limit
-}
-
-// GetGroupCommandHistory aggregates command history for all active members of a group.
-// Only group owner, admin, or assistant can access this endpoint.
 func (tts *terminalTrainerService) GetGroupCommandHistory(groupID string, userID string, since *int64, format string, limit, offset int, includeStopped bool, search string) ([]byte, string, error) {
-	// Validate and default format
-	if format != "" && format != "json" && format != "csv" {
-		format = "json"
-	}
-	if format == "" {
-		format = "json"
-	}
-
-	limit = ClampHistoryLimit(limit, format)
-
-	// Parse groupID to UUID
-	groupUUID, err := uuid.Parse(groupID)
-	if err != nil {
-		return nil, "", fmt.Errorf("invalid group ID: %w", err)
-	}
-
-	// Fetch group with members from DB
-	var group groupModels.ClassGroup
-	if err := tts.db.Preload("Members").Where("id = ?", groupUUID).First(&group).Error; err != nil {
-		return nil, "", fmt.Errorf("group not found")
-	}
-
-	// Check authorization - user must be owner, admin, or assistant
-	var userMember *groupModels.GroupMember
-	for i := range group.Members {
-		if group.Members[i].UserID == userID && group.Members[i].IsActive {
-			userMember = &group.Members[i]
-			break
-		}
-	}
-	if userMember == nil || !(userMember.Role == groupModels.GroupMemberRoleOwner || userMember.Role == groupModels.GroupMemberRoleManager) {
-		return nil, "", fmt.Errorf("unauthorized: only group owner or manager can view group command history")
-	}
-
-	// Collect active member user IDs
-	var memberUserIDs []string
-	for _, m := range group.Members {
-		if m.IsActive {
-			memberUserIDs = append(memberUserIDs, m.UserID)
-		}
-	}
-
-	// Fetch terminals for all members, scoped to group's organization
-	var terminals []models.Terminal
-	query := tts.db.Where("user_id IN ?", memberUserIDs)
-	if group.OrganizationID != nil {
-		query = query.Where("organization_id = ?", *group.OrganizationID)
-	}
-	if !includeStopped {
-		// SSOT: "running display" lives in models.RunningDisplayScope.
-		// Inline `status = "active"` predicates drift away from the UI's
-		// per-second-aware view (past-expiry zombies remain in results
-		// even though their proxy session is gone).
-		query = query.Scopes(models.RunningDisplayScope)
-	}
-	if err := query.Find(&terminals).Error; err != nil {
-		return nil, "", fmt.Errorf("failed to query terminals: %w", err)
-	}
-
-	// Collect session UUIDs and track unique user IDs
-	sessionUUIDs := make([]string, 0, len(terminals))
-	userIDSet := make(map[string]bool)
-	for _, t := range terminals {
-		if t.SessionID != "" {
-			sessionUUIDs = append(sessionUUIDs, t.SessionID)
-			userIDSet[t.UserID] = true
-		}
-	}
-
-	// If no sessions found, return empty result
-	if len(sessionUUIDs) == 0 {
-		if format == "csv" {
-			var buf bytes.Buffer
-			writer := csv.NewWriter(&buf)
-			_ = writer.Write([]string{"student_name", "student_email", "session_uuid", "sequence_num", "command", "executed_at"})
-			writer.Flush()
-			return buf.Bytes(), "text/csv", nil
-		}
-		result := map[string]interface{}{
-			"commands": []interface{}{},
-			"total":    0,
-			"limit":    limit,
-			"offset":   offset,
-		}
-		body, _ := json.Marshal(result)
-		return body, "application/json", nil
-	}
-
-	// Fetch user info for enrichment using Casdoor SDK
-	type userInfo struct {
-		DisplayName string
-		Email       string
-	}
-	userInfoMap := make(map[string]userInfo)
-	for uid := range userIDSet {
-		user, err := casdoorsdk.GetUserByUserId(uid)
-		if err == nil && user != nil {
-			userInfoMap[uid] = userInfo{
-				DisplayName: user.DisplayName,
-				Email:       user.Email,
-			}
-		}
-	}
-
-	// Build sessionUUID -> userInfo map
-	sessionUserMap := make(map[string]userInfo)
-	for _, t := range terminals {
-		if t.SessionID != "" {
-			sessionUserMap[t.SessionID] = userInfoMap[t.UserID]
-		}
-	}
-
-	// Call tt-backend bulk endpoint
-	url := fmt.Sprintf("%s/%s/admin/history/bulk", tts.baseURL, tts.apiVersion)
-
-	reqBody := map[string]interface{}{
-		"session_uuids": sessionUUIDs,
-		"limit":         limit,
-		"offset":        offset,
-		"format":        "json", // Always get JSON from tt-backend, we transform to CSV ourselves if needed
-	}
-	if since != nil {
-		reqBody["since"] = *since
-	}
-	if search != "" {
-		reqBody["search"] = search
-	}
-
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
-
-	var bulkResponse struct {
-		Commands []struct {
-			SessionUUID string `json:"session_uuid"`
-			SequenceNum int    `json:"sequence_num"`
-			CommandText string `json:"command_text"`
-			ExecutedAt  int64  `json:"executed_at"`
-		} `json:"commands"`
-		Total  int `json:"total"`
-		Limit  int `json:"limit"`
-		Offset int `json:"offset"`
-	}
-
-	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, reqBody, &bulkResponse, opts)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to fetch bulk history: %w", err)
-	}
-
-	// Enrich commands with student info
-	type enrichedCommand struct {
-		StudentName  string `json:"student_name"`
-		StudentEmail string `json:"student_email"`
-		SessionUUID  string `json:"session_uuid"`
-		SequenceNum  int    `json:"sequence_num"`
-		CommandText  string `json:"command_text"`
-		ExecutedAt   int64  `json:"executed_at"`
-	}
-
-	enriched := make([]enrichedCommand, 0, len(bulkResponse.Commands))
-	for _, cmd := range bulkResponse.Commands {
-		info := sessionUserMap[cmd.SessionUUID]
-		enriched = append(enriched, enrichedCommand{
-			StudentName:  info.DisplayName,
-			StudentEmail: info.Email,
-			SessionUUID:  cmd.SessionUUID,
-			SequenceNum:  cmd.SequenceNum,
-			CommandText:  cmd.CommandText,
-			ExecutedAt:   cmd.ExecutedAt,
-		})
-	}
-
-	// Return in requested format
-	if format == "csv" {
-		var buf bytes.Buffer
-		writer := csv.NewWriter(&buf)
-		_ = writer.Write([]string{"student_name", "student_email", "session_uuid", "sequence_num", "command", "executed_at"})
-		for _, cmd := range enriched {
-			_ = writer.Write([]string{
-				cmd.StudentName,
-				cmd.StudentEmail,
-				cmd.SessionUUID,
-				strconv.Itoa(cmd.SequenceNum),
-				cmd.CommandText,
-				time.Unix(cmd.ExecutedAt, 0).UTC().Format(time.RFC3339),
-			})
-		}
-		writer.Flush()
-		return buf.Bytes(), "text/csv", nil
-	}
-
-	// JSON format (default)
-	result := map[string]interface{}{
-		"commands": enriched,
-		"total":    bulkResponse.Total,
-		"limit":    bulkResponse.Limit,
-		"offset":   bulkResponse.Offset,
-	}
-	body, _ := json.Marshal(result)
-	return body, "application/json", nil
+	return tts.history.GetGroupCommandHistory(groupID, userID, since, format, limit, offset, includeStopped, search)
 }
 
-// GetGroupCommandHistoryStats returns aggregate command history statistics for all members of a group.
-// Only group owner, admin, or assistant can access this endpoint.
 func (tts *terminalTrainerService) GetGroupCommandHistoryStats(groupID string, userID string, includeStopped bool) ([]byte, string, error) {
-	// Parse groupID to UUID
-	groupUUID, err := uuid.Parse(groupID)
-	if err != nil {
-		return nil, "", fmt.Errorf("invalid group ID: %w", err)
-	}
-
-	// Fetch group with members from DB
-	var group groupModels.ClassGroup
-	if err := tts.db.Preload("Members").Where("id = ?", groupUUID).First(&group).Error; err != nil {
-		return nil, "", fmt.Errorf("group not found")
-	}
-
-	// Check authorization - user must be owner, admin, or assistant
-	var userMember *groupModels.GroupMember
-	for i := range group.Members {
-		if group.Members[i].UserID == userID && group.Members[i].IsActive {
-			userMember = &group.Members[i]
-			break
-		}
-	}
-	if userMember == nil || !(userMember.Role == groupModels.GroupMemberRoleOwner || userMember.Role == groupModels.GroupMemberRoleManager) {
-		return nil, "", fmt.Errorf("unauthorized: only group owner or manager can view group command history stats")
-	}
-
-	// Collect active member user IDs
-	var memberUserIDs []string
-	for _, m := range group.Members {
-		if m.IsActive {
-			memberUserIDs = append(memberUserIDs, m.UserID)
-		}
-	}
-
-	// Fetch terminals for all members, scoped to group's organization
-	var terminals []models.Terminal
-	query := tts.db.Where("user_id IN ?", memberUserIDs)
-	if group.OrganizationID != nil {
-		query = query.Where("organization_id = ?", *group.OrganizationID)
-	}
-	if !includeStopped {
-		// SSOT alignment — see RunningDisplayScope rationale on the
-		// matching block in GetGroupCommandHistory above.
-		query = query.Scopes(models.RunningDisplayScope)
-	}
-	if err := query.Find(&terminals).Error; err != nil {
-		return nil, "", fmt.Errorf("failed to query terminals: %w", err)
-	}
-
-	// Collect session UUIDs and build terminal -> user mapping
-	sessionUUIDs := make([]string, 0, len(terminals))
-	userIDSet := make(map[string]bool)
-	sessionToUserID := make(map[string]string)
-	for _, t := range terminals {
-		if t.SessionID != "" {
-			sessionUUIDs = append(sessionUUIDs, t.SessionID)
-			userIDSet[t.UserID] = true
-			sessionToUserID[t.SessionID] = t.UserID
-		}
-	}
-
-	// If no sessions found, return empty stats
-	if len(sessionUUIDs) == 0 {
-		result := map[string]interface{}{
-			"summary": map[string]interface{}{
-				"total_commands":               0,
-				"total_sessions":               0,
-				"active_students":              0,
-				"avg_commands_per_student":     0.0,
-				"avg_time_per_student_seconds": 0,
-			},
-			"students": []interface{}{},
-		}
-		body, _ := json.Marshal(result)
-		return body, "application/json", nil
-	}
-
-	// Fetch user info for enrichment using Casdoor SDK
-	type userInfo struct {
-		DisplayName string
-		Email       string
-	}
-	userInfoMap := make(map[string]userInfo)
-	for uid := range userIDSet {
-		user, err := casdoorsdk.GetUserByUserId(uid)
-		if err == nil && user != nil {
-			userInfoMap[uid] = userInfo{
-				DisplayName: user.DisplayName,
-				Email:       user.Email,
-			}
-		}
-	}
-
-	// Call tt-backend bulk-stats endpoint
-	url := fmt.Sprintf("%s/%s/admin/history/bulk-stats", tts.baseURL, tts.apiVersion)
-
-	reqBody := map[string]interface{}{
-		"session_uuids": sessionUUIDs,
-	}
-
-	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(tts.adminKey))
-
-	var bulkStatsResponse struct {
-		Sessions []struct {
-			SessionUUID    string `json:"session_uuid"`
-			CommandCount   int    `json:"command_count"`
-			FirstCommandAt int64  `json:"first_command_at"`
-			LastCommandAt  int64  `json:"last_command_at"`
-		} `json:"sessions"`
-		TotalCommands int `json:"total_commands"`
-		TotalSessions int `json:"total_sessions"`
-	}
-
-	err = utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, reqBody, &bulkStatsResponse, opts)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to fetch bulk stats: %w", err)
-	}
-
-	// Build per-student stats
-	type studentStats struct {
-		StudentName      string `json:"student_name"`
-		StudentEmail     string `json:"student_email"`
-		TotalCommands    int    `json:"total_commands"`
-		SessionCount     int    `json:"session_count"`
-		TotalTimeSeconds int64  `json:"total_time_seconds"`
-		LastActiveAt     int64  `json:"last_active_at"`
-	}
-
-	studentMap := make(map[string]*studentStats)
-	for _, sess := range bulkStatsResponse.Sessions {
-		uid, ok := sessionToUserID[sess.SessionUUID]
-		if !ok {
-			continue
-		}
-		st, exists := studentMap[uid]
-		if !exists {
-			info := userInfoMap[uid]
-			st = &studentStats{
-				StudentName:  info.DisplayName,
-				StudentEmail: info.Email,
-			}
-			studentMap[uid] = st
-		}
-		st.TotalCommands += sess.CommandCount
-		st.SessionCount++
-		if sess.LastCommandAt > sess.FirstCommandAt {
-			st.TotalTimeSeconds += sess.LastCommandAt - sess.FirstCommandAt
-		}
-		if sess.LastCommandAt > st.LastActiveAt {
-			st.LastActiveAt = sess.LastCommandAt
-		}
-	}
-
-	// Convert to slice
-	students := make([]studentStats, 0, len(studentMap))
-	for _, st := range studentMap {
-		students = append(students, *st)
-	}
-
-	// Build summary
-	activeStudents := len(studentMap)
-	var avgCommandsPerStudent float64
-	var avgTimePerStudentSecs int64
-	if activeStudents > 0 {
-		avgCommandsPerStudent = float64(bulkStatsResponse.TotalCommands) / float64(activeStudents)
-		var totalTime int64
-		for _, st := range students {
-			totalTime += st.TotalTimeSeconds
-		}
-		avgTimePerStudentSecs = totalTime / int64(activeStudents)
-	}
-
-	type statsSummary struct {
-		TotalCommands         int     `json:"total_commands"`
-		TotalSessions         int     `json:"total_sessions"`
-		ActiveStudents        int     `json:"active_students"`
-		AvgCommandsPerStudent float64 `json:"avg_commands_per_student"`
-		AvgTimePerStudentSecs int64   `json:"avg_time_per_student_seconds"`
-	}
-
-	result := map[string]interface{}{
-		"summary": statsSummary{
-			TotalCommands:         bulkStatsResponse.TotalCommands,
-			TotalSessions:         bulkStatsResponse.TotalSessions,
-			ActiveStudents:        activeStudents,
-			AvgCommandsPerStudent: avgCommandsPerStudent,
-			AvgTimePerStudentSecs: avgTimePerStudentSecs,
-		},
-		"students": students,
-	}
-
-	body, _ := json.Marshal(result)
-	return body, "application/json", nil
+	return tts.history.GetGroupCommandHistoryStats(groupID, userID, includeStopped)
 }
 
 // IsUserOrgManagerOrAdmin checks if a user is an org owner/manager or a system admin

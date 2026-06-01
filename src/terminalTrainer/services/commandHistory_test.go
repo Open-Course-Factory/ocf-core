@@ -59,6 +59,36 @@ func createTestTerminalForService(t *testing.T, db *gorm.DB, userID, sessionID, 
 	return terminal
 }
 
+// newCommandHistoryTestService builds a fully-wired terminalTrainerService for
+// the command-history tests. These tests control baseURL/apiVersion/repository
+// to assert URL construction and history logic, but the public history methods
+// now delegate to the tts.history collaborator (which itself reaches tt-backend
+// through the proxy's buildAPIPath). A bare struct literal leaves history (and
+// proxy) nil → SIGSEGV, so this helper constructs both collaborators with the
+// SAME baseURL/apiVersion the test passes in.
+//
+// The proxy's apiVersion/terminalType are forced to match the test inputs so
+// buildAPIPath yields the asserted "/<apiVersion>/<instanceType>/history" path
+// regardless of any TERMINAL_TRAINER_* env vars in the runner's environment.
+func newCommandHistoryTestService(baseURL, apiVersion string, db *gorm.DB) *terminalTrainerService {
+	repo := repositories.NewTerminalRepository(db)
+
+	proxy := newTerminalProxyClient(repo)
+	proxy.baseURL = baseURL
+	proxy.apiVersion = apiVersion
+	proxy.terminalType = ""
+
+	tts := &terminalTrainerService{
+		baseURL:    baseURL,
+		apiVersion: apiVersion,
+		repository: repo,
+		db:         db,
+		proxy:      proxy,
+	}
+	tts.history = newTerminalHistoryService(proxy, repo, db, baseURL, apiVersion, tts.adminKey)
+	return tts
+}
+
 // TestGetSessionCommandHistory_URLConstruction tests that the correct URL is built with query params
 func TestGetSessionCommandHistory_URLConstruction(t *testing.T) {
 	if testing.Short() {
@@ -81,12 +111,7 @@ func TestGetSessionCommandHistory_URLConstruction(t *testing.T) {
 	db := setupTestDBForService(t)
 	_ = createTestTerminalForService(t, db, "user1", "test-session-1", "alp")
 
-	svc := &terminalTrainerService{
-		baseURL:      server.URL,
-		apiVersion:   "1.0",
-		terminalType: "",
-		repository:   repositories.NewTerminalRepository(db),
-	}
+	svc := newCommandHistoryTestService(server.URL, "1.0", db)
 
 	since := int64(1700000000)
 	body, contentType, err := svc.GetSessionCommandHistory("test-session-1", &since, "json", 0, 0)
@@ -119,11 +144,7 @@ func TestGetSessionCommandHistory_NoOptionalParams(t *testing.T) {
 	db := setupTestDBForService(t)
 	_ = createTestTerminalForService(t, db, "user1", "session-no-params", "alp")
 
-	svc := &terminalTrainerService{
-		baseURL:    server.URL,
-		apiVersion: "1.0",
-		repository: repositories.NewTerminalRepository(db),
-	}
+	svc := newCommandHistoryTestService(server.URL, "1.0", db)
 
 	body, contentType, err := svc.GetSessionCommandHistory("session-no-params", nil, "", 0, 0)
 
@@ -151,11 +172,7 @@ func TestGetSessionCommandHistory_CSVFormat(t *testing.T) {
 	db := setupTestDBForService(t)
 	_ = createTestTerminalForService(t, db, "user1", "session-csv", "alp")
 
-	svc := &terminalTrainerService{
-		baseURL:    server.URL,
-		apiVersion: "1.0",
-		repository: repositories.NewTerminalRepository(db),
-	}
+	svc := newCommandHistoryTestService(server.URL, "1.0", db)
 
 	body, contentType, err := svc.GetSessionCommandHistory("session-csv", nil, "csv", 0, 0)
 
@@ -183,11 +200,7 @@ func TestGetSessionCommandHistory_FormatWhitelist_InvalidFormat(t *testing.T) {
 	db := setupTestDBForService(t)
 	_ = createTestTerminalForService(t, db, "user1", "session-bad-format", "alp")
 
-	svc := &terminalTrainerService{
-		baseURL:    server.URL,
-		apiVersion: "1.0",
-		repository: repositories.NewTerminalRepository(db),
-	}
+	svc := newCommandHistoryTestService(server.URL, "1.0", db)
 
 	body, contentType, err := svc.GetSessionCommandHistory("session-bad-format", nil, "xml", 0, 0)
 
@@ -217,11 +230,7 @@ func TestGetSessionCommandHistory_FormatWhitelist_InjectionAttempt(t *testing.T)
 	db := setupTestDBForService(t)
 	_ = createTestTerminalForService(t, db, "user1", "session-inject", "alp")
 
-	svc := &terminalTrainerService{
-		baseURL:    server.URL,
-		apiVersion: "1.0",
-		repository: repositories.NewTerminalRepository(db),
-	}
+	svc := newCommandHistoryTestService(server.URL, "1.0", db)
 
 	// Attempt URL parameter injection via format
 	body, _, err := svc.GetSessionCommandHistory("session-inject", nil, "json&admin=true&delete=all", 0, 0)
@@ -272,11 +281,7 @@ func TestGetSessionCommandHistory_FormatWhitelist_ValidFormats(t *testing.T) {
 			}
 			_ = createTestTerminalForService(t, db, "user1", sessionID, "alp")
 
-			svc := &terminalTrainerService{
-				baseURL:    server.URL,
-				apiVersion: "1.0",
-				repository: repositories.NewTerminalRepository(db),
-			}
+			svc := newCommandHistoryTestService(server.URL, "1.0", db)
 
 			_, contentType, err := svc.GetSessionCommandHistory(sessionID, nil, tc.input, 0, 0)
 			require.NoError(t, err)
@@ -299,11 +304,7 @@ func TestGetSessionCommandHistory_SessionNotFound(t *testing.T) {
 
 	db := setupTestDBForService(t)
 
-	svc := &terminalTrainerService{
-		baseURL:    "http://localhost:9999",
-		apiVersion: "1.0",
-		repository: repositories.NewTerminalRepository(db),
-	}
+	svc := newCommandHistoryTestService("http://localhost:9999", "1.0", db)
 
 	body, contentType, err := svc.GetSessionCommandHistory("nonexistent-session", nil, "json", 0, 0)
 
@@ -331,11 +332,7 @@ func TestGetSessionCommandHistory_Pagination(t *testing.T) {
 	db := setupTestDBForService(t)
 	_ = createTestTerminalForService(t, db, "user1", "session-paginate", "alp")
 
-	svc := &terminalTrainerService{
-		baseURL:    server.URL,
-		apiVersion: "1.0",
-		repository: repositories.NewTerminalRepository(db),
-	}
+	svc := newCommandHistoryTestService(server.URL, "1.0", db)
 
 	body, contentType, err := svc.GetSessionCommandHistory("session-paginate", nil, "json", 50, 10)
 
@@ -365,11 +362,7 @@ func TestGetSessionCommandHistory_PaginationZeroValues(t *testing.T) {
 	db := setupTestDBForService(t)
 	_ = createTestTerminalForService(t, db, "user1", "session-no-paginate", "alp")
 
-	svc := &terminalTrainerService{
-		baseURL:    server.URL,
-		apiVersion: "1.0",
-		repository: repositories.NewTerminalRepository(db),
-	}
+	svc := newCommandHistoryTestService(server.URL, "1.0", db)
 
 	_, _, err := svc.GetSessionCommandHistory("session-no-paginate", nil, "", 0, 0)
 
@@ -405,11 +398,7 @@ func TestGetHistory_LargeResponse_LimitedTo10MB(t *testing.T) {
 	db := setupTestDBForService(t)
 	_ = createTestTerminalForService(t, db, "user1", "session-large", "alp")
 
-	svc := &terminalTrainerService{
-		baseURL:    server.URL,
-		apiVersion: "1.0",
-		repository: repositories.NewTerminalRepository(db),
-	}
+	svc := newCommandHistoryTestService(server.URL, "1.0", db)
 
 	body, _, err := svc.GetSessionCommandHistory("session-large", nil, "json", 0, 0)
 
@@ -440,11 +429,7 @@ func TestGetHistory_ExactlyAtLimit_Succeeds(t *testing.T) {
 	db := setupTestDBForService(t)
 	_ = createTestTerminalForService(t, db, "user1", "session-exact", "alp")
 
-	svc := &terminalTrainerService{
-		baseURL:    server.URL,
-		apiVersion: "1.0",
-		repository: repositories.NewTerminalRepository(db),
-	}
+	svc := newCommandHistoryTestService(server.URL, "1.0", db)
 
 	body, contentType, err := svc.GetSessionCommandHistory("session-exact", nil, "json", 0, 0)
 
@@ -702,11 +687,10 @@ func TestStartComposedSession_InvalidPlanType(t *testing.T) {
 
 	db := setupTestDBForService(t)
 
-	svc := &terminalTrainerService{
-		baseURL:    "http://localhost:9999",
-		apiVersion: "1.0",
-		repository: repositories.NewTerminalRepository(db),
-	}
+	// Use the production constructor so the composer collaborator is wired;
+	// StartComposedSession delegates to it. The invalid-plan-type guard fires
+	// before any tt-backend call, so baseURL is irrelevant here.
+	svc := NewTerminalTrainerService(db).(*terminalTrainerService)
 
 	composedInput := dto.CreateComposedSessionInput{
 		Distribution: "debian",
@@ -894,11 +878,7 @@ func TestGetSessionCommandHistory_403Forbidden_ReturnsError(t *testing.T) {
 	db := setupTestDBForService(t)
 	_ = createTestTerminalForService(t, db, "user1", "session-403", "alp")
 
-	svc := &terminalTrainerService{
-		baseURL:    server.URL,
-		apiVersion: "1.0",
-		repository: repositories.NewTerminalRepository(db),
-	}
+	svc := newCommandHistoryTestService(server.URL, "1.0", db)
 
 	body, _, err := svc.GetSessionCommandHistory("session-403", nil, "json", 0, 0)
 
@@ -926,11 +906,7 @@ func TestGetSessionCommandHistory_429RateLimit_ReturnsError(t *testing.T) {
 	db := setupTestDBForService(t)
 	_ = createTestTerminalForService(t, db, "user1", "session-429", "alp")
 
-	svc := &terminalTrainerService{
-		baseURL:    server.URL,
-		apiVersion: "1.0",
-		repository: repositories.NewTerminalRepository(db),
-	}
+	svc := newCommandHistoryTestService(server.URL, "1.0", db)
 
 	body, _, err := svc.GetSessionCommandHistory("session-429", nil, "json", 0, 0)
 
