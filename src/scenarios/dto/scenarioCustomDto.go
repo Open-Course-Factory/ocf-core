@@ -252,6 +252,17 @@ type AvailableScenarioOutput struct {
 	AdminOnly               bool                         `json:"admin_only,omitempty"`
 }
 
+// AssignmentProgressItem - per-scenario progress summary for a group's
+// Scenarios tab. One item per scenario that has qualifying (non-preview)
+// sessions from active group members. AvgGrade is nil when no member has
+// completed the scenario.
+type AssignmentProgressItem struct {
+	ScenarioID     uuid.UUID `json:"scenario_id"`
+	TotalCount     int       `json:"total_count"`
+	CompletedCount int       `json:"completed_count"`
+	AvgGrade       *float64  `json:"avg_grade"`
+}
+
 // MySessionResponse - DTO for a learner's own scenario session
 type MySessionResponse struct {
 	ID                uuid.UUID  `json:"id"`

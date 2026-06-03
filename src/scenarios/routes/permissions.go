@@ -47,6 +47,7 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		method string
 	}{
 		{"/api/v1/teacher/groups/:groupId/activity", "GET"},
+		{"/api/v1/teacher/groups/:groupId/assignments-progress", "GET"},
 		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results", "GET"},
 		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/analytics", "GET"},
 		{"/api/v1/teacher/groups/:groupId/sessions/:sessionId/detail", "GET"},
@@ -229,6 +230,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Path: "/api/v1/teacher/groups/:groupId/activity", Method: "GET",
 			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "View group activity overview",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/teacher/groups/:groupId/assignments-progress", Method: "GET",
+			Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
+			Description: "View per-scenario assignment progress for a group",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results", Method: "GET",

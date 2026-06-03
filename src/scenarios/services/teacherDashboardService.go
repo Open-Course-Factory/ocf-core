@@ -48,6 +48,10 @@ type GroupActivityItem struct {
 	TerminalSessionID *string   `json:"terminal_session_id,omitempty"`
 }
 
+// AssignmentProgressItem re-exports the DTO so callers reference it as
+// services.AssignmentProgressItem, consistent with the other item types here.
+type AssignmentProgressItem = dto.AssignmentProgressItem
+
 // ScenarioResultItem represents a single session result for a scenario
 type ScenarioResultItem struct {
 	SessionID      uuid.UUID  `json:"session_id"`
@@ -208,6 +212,33 @@ func (s *TeacherDashboardService) GetGroupActivity(groupID uuid.UUID) ([]GroupAc
 	}
 	enrichActivityUsers(results)
 	return results, nil
+}
+
+// GetGroupAssignmentsProgress returns one progress summary per scenario that has
+// non-preview sessions from active group members (single GROUP BY query, no N+1).
+// Shares the exact join/filter of getScenarioResults (SSOT): active membership on
+// user_id, scoped to the group, excluding preview sessions. avg_grade averages
+// only completed sessions — an in-progress session has no meaningful grade yet —
+// so it stays NULL (→ nil *float64) until at least one member completes.
+func (s *TeacherDashboardService) GetGroupAssignmentsProgress(groupID uuid.UUID) ([]AssignmentProgressItem, error) {
+	var items []AssignmentProgressItem
+	err := s.db.Raw(`
+		SELECT ss.scenario_id as scenario_id,
+		       COUNT(DISTINCT ss.user_id) as total_count,
+		       COUNT(DISTINCT CASE WHEN ss.status = 'completed' THEN ss.user_id END) as completed_count,
+		       AVG(CASE WHEN ss.status = 'completed' THEN ss.grade END) as avg_grade
+		FROM scenario_sessions ss
+		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
+		WHERE ss.is_preview = false
+		GROUP BY ss.scenario_id
+	`, groupID).Scan(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	if items == nil {
+		items = []AssignmentProgressItem{}
+	}
+	return items, nil
 }
 
 // GetScenarioResults returns sessions for a specific scenario within a group with optional pagination.

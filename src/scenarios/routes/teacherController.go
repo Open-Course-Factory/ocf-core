@@ -63,6 +63,35 @@ func (tc *TeacherController) GetGroupActivity(c *gin.Context) {
 	c.JSON(http.StatusOK, results)
 }
 
+// GetGroupAssignmentsProgress godoc
+// @Summary Get group assignments progress
+// @Description Returns one progress summary per scenario assigned to a group, aggregating active members' non-preview sessions (total, completed, average grade)
+// @Tags scenario-teacher
+// @Produce json
+// @Param groupId path string true "Group ID (UUID)"
+// @Success 200 {array} services.AssignmentProgressItem
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /teacher/groups/{groupId}/assignments-progress [get]
+// @Security BearerAuth
+func (tc *TeacherController) GetGroupAssignmentsProgress(c *gin.Context) {
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid group ID"})
+		return
+	}
+
+	results, err := tc.dashboardService.GetGroupAssignmentsProgress(groupID)
+	if err != nil {
+		slog.Error("failed to get group assignments progress", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get group assignments progress"})
+		return
+	}
+
+	c.JSON(http.StatusOK, results)
+}
+
 // GetScenarioResults godoc
 // @Summary Get scenario results
 // @Description Returns sessions for a specific scenario within a group, with optional pagination
