@@ -5,13 +5,14 @@ import (
 	"fmt"
 
 	authModels "soli/formations/src/auth/models"
+	auditModels "soli/formations/src/audit/models"
 	groupModels "soli/formations/src/groups/models"
 	organizationModels "soli/formations/src/organizations/models"
-	paymentModels "soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
 	scenarioModels "soli/formations/src/scenarios/models"
-	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -28,21 +29,54 @@ type UserDeletionService interface {
 }
 
 type userDeletionService struct {
-	db *gorm.DB
+	db          *gorm.DB
+	userService UserService
 }
 
-// NewUserDeletionService creates a new UserDeletionService
-func NewUserDeletionService(db *gorm.DB) UserDeletionService {
-	return &userDeletionService{db: db}
+// NewUserDeletionService creates a new UserDeletionService.
+//
+// userSvc is the canonical user-deletion service (Stripe cancel →
+// pseudonymize → Casdoor delete → RBAC removal). DeleteMyAccount composes it
+// rather than re-implementing the identity/billing cascade, so there is a
+// single source of truth for that security-critical ordering.
+func NewUserDeletionService(db *gorm.DB, userSvc UserService) UserDeletionService {
+	return &userDeletionService{db: db, userService: userSvc}
 }
 
-// DeleteMyAccount performs a cascade deletion of all user data from the OCF database.
-// It blocks if the user owns non-personal organizations or groups.
-// Payment/billing records are anonymized (user_id set to "deleted") rather than deleted.
-// This method does NOT handle Casdoor identity deletion or RBAC policy removal --
-// those are handled by the controller after this method succeeds.
+// DeleteMyAccount performs the self-service RGPD right-to-erasure flow for the
+// authenticated user.
+//
+// Ordering is load-bearing:
+//  1. Pre-flight 409 gates: refuse if the user still owns a non-personal org or
+//     a group. No mutation happens before these pass.
+//  2. Delegate to the canonical userService.DeleteUser FIRST. That cancels every
+//     active Stripe subscription (ABORTING on failure), pseudonymizes billing
+//     PII, deletes the Casdoor identity, and removes RBAC policies. Delegating
+//     first means a Stripe-cancel failure aborts the whole flow with ZERO
+//     OCF-side mutation, so the user can safely retry.
+//  3. OCF-side cascade: tear down terminals, delete scenario sessions, remove
+//     memberships, delete the personal org, anonymize authorship and audit logs,
+//     and delete auth tokens / settings / SSH keys.
 func (s *userDeletionService) DeleteMyAccount(userID string) error {
-	// --- Pre-flight checks: block if user owns non-personal orgs or groups ---
+	if err := s.assertNoOwnedOrgsOrGroups(userID); err != nil {
+		return err
+	}
+
+	// Delegate identity + billing teardown BEFORE any OCF-side mutation so a
+	// Stripe-cancel failure is fully retryable.
+	if err := s.userService.DeleteUser(userID); err != nil {
+		return err
+	}
+
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		return s.cascadeOCFData(tx, userID)
+	})
+}
+
+// assertNoOwnedOrgsOrGroups blocks deletion while the user still owns shared
+// resources others depend on (a non-personal org or a group). The personal org
+// is excluded — it is deleted as part of the cascade.
+func (s *userDeletionService) assertNoOwnedOrgsOrGroups(userID string) error {
 	var ownedOrgCount int64
 	if err := s.db.Model(&organizationModels.Organization{}).
 		Where("owner_user_id = ? AND organization_type != ?", userID, organizationModels.OrgTypePersonal).
@@ -63,135 +97,174 @@ func (s *userDeletionService) DeleteMyAccount(userID string) error {
 		return ErrOwnsGroups
 	}
 
-	// --- All checks passed, run cascade in a single transaction ---
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		// 1. Stop active terminal sessions
-		if err := tx.Model(&terminalModels.Terminal{}).
-			Where("user_id = ? AND status = ?", userID, "active").
-			Update("status", "stopped").Error; err != nil {
-			return fmt.Errorf("failed to stop terminals: %w", err)
-		}
+	return nil
+}
 
-		// 2. Delete terminal data (terminals first, then keys due to FK)
-		if err := tx.Where("user_id = ?", userID).Delete(&terminalModels.Terminal{}).Error; err != nil {
-			return fmt.Errorf("failed to delete terminals: %w", err)
-		}
-		if err := tx.Where("user_id = ?", userID).Delete(&terminalModels.UserTerminalKey{}).Error; err != nil {
-			return fmt.Errorf("failed to delete terminal keys: %w", err)
-		}
+// cascadeOCFData removes/anonymizes all OCF-side data for the user inside the
+// caller's transaction. Each step is a named helper so the sequence reads as a
+// checklist rather than one long block.
+func (s *userDeletionService) cascadeOCFData(tx *gorm.DB, userID string) error {
+	if err := s.terminateTerminals(tx, userID); err != nil {
+		return err
+	}
+	if err := s.deleteScenarioSessions(tx, userID); err != nil {
+		return err
+	}
+	if err := s.removeMemberships(tx, userID); err != nil {
+		return err
+	}
+	if err := s.deletePersonalOrganization(tx, userID); err != nil {
+		return err
+	}
+	if err := s.anonymizeScenarioAuthorship(tx, userID); err != nil {
+		return err
+	}
+	if err := s.anonymizeAuditLogs(tx, userID); err != nil {
+		return err
+	}
+	if err := s.deleteAuthTokens(tx, userID); err != nil {
+		return err
+	}
+	if err := s.deleteUserSettings(tx, userID); err != nil {
+		return err
+	}
+	s.deleteSSHKeys(tx, userID)
+	return nil
+}
 
-		// 3. Delete scenario sessions (GORM CASCADE handles step_progress + flags)
-		if err := tx.Where("user_id = ?", userID).Delete(&scenarioModels.ScenarioSession{}).Error; err != nil {
-			return fmt.Errorf("failed to delete scenario sessions: %w", err)
-		}
+// terminateTerminals performs the real terminal teardown (State -> StateDeleted)
+// via the canonical payment-side helper. orgID is nil so ALL of the user's
+// terminals are released. Runs on the cascade tx so it shares the connection
+// and is rolled back atomically if a later step fails.
+func (s *userDeletionService) terminateTerminals(tx *gorm.DB, userID string) error {
+	if err := paymentServices.TerminateUserTerminals(tx, userID, nil); err != nil {
+		return fmt.Errorf("failed to terminate terminals: %w", err)
+	}
+	return nil
+}
 
-		// 4. Delete auth tokens
-		if err := tx.Where("user_id = ?", userID).Delete(&authModels.TokenBlacklist{}).Error; err != nil {
-			return fmt.Errorf("failed to delete token blacklist: %w", err)
-		}
-		if err := tx.Unscoped().Where("user_id = ?", userID).Delete(&authModels.EmailVerificationToken{}).Error; err != nil {
-			return fmt.Errorf("failed to delete email verification tokens: %w", err)
-		}
-		if err := tx.Unscoped().Where("user_id = ?", userID).Delete(&authModels.PasswordResetToken{}).Error; err != nil {
-			return fmt.Errorf("failed to delete password reset tokens: %w", err)
-		}
-
-		// 5. Delete personal data
-		// SSH keys use OwnerIDs (pq.StringArray). In PostgreSQL: owner_ids && ARRAY[?]
-		// For cross-DB compatibility, use raw SQL with dialect detection.
-		dialect := tx.Dialector.Name()
-		switch dialect {
-		case "postgres":
-			if err := tx.Exec("DELETE FROM ssh_keys WHERE owner_ids && ARRAY[?]", userID).Error; err != nil {
-				utils.Warn("Failed to delete SSH keys for user %s: %v (continuing)", userID, err)
-			}
-		default:
-			// SQLite / other: delete SSH keys where owner_ids contains the user ID
-			if err := tx.Exec("DELETE FROM ssh_keys WHERE owner_ids LIKE ?", "%"+userID+"%").Error; err != nil {
-				utils.Warn("Failed to delete SSH keys for user %s: %v (continuing)", userID, err)
-			}
-		}
-
-		if err := tx.Where("user_id = ?", userID).Delete(&authModels.UserSettings{}).Error; err != nil {
-			return fmt.Errorf("failed to delete user settings: %w", err)
-		}
-
-		// 6. Remove memberships
-		if err := tx.Where("user_id = ?", userID).Delete(&organizationModels.OrganizationMember{}).Error; err != nil {
-			return fmt.Errorf("failed to delete organization memberships: %w", err)
-		}
-		if err := tx.Where("user_id = ?", userID).Delete(&groupModels.GroupMember{}).Error; err != nil {
-			return fmt.Errorf("failed to delete group memberships: %w", err)
-		}
-
-		// 7. Anonymize payment/billing records (set user_id to "deleted")
-		if err := tx.Model(&paymentModels.UserSubscription{}).
-			Where("user_id = ?", userID).
-			Updates(map[string]any{"user_id": "deleted", "purchaser_user_id": "deleted"}).Error; err != nil {
-			return fmt.Errorf("failed to anonymize user subscriptions: %w", err)
-		}
-		// Also anonymize subscriptions where user is purchaser but not user
-		if err := tx.Model(&paymentModels.UserSubscription{}).
-			Where("purchaser_user_id = ?", userID).
-			Update("purchaser_user_id", "deleted").Error; err != nil {
-			return fmt.Errorf("failed to anonymize purchaser subscriptions: %w", err)
-		}
-
-		if err := tx.Model(&paymentModels.BillingAddress{}).
-			Where("user_id = ?", userID).
-			Update("user_id", "deleted").Error; err != nil {
-			return fmt.Errorf("failed to anonymize billing addresses: %w", err)
-		}
-
-		if err := tx.Model(&paymentModels.PaymentMethod{}).
-			Where("user_id = ?", userID).
-			Update("user_id", "deleted").Error; err != nil {
-			return fmt.Errorf("failed to anonymize payment methods: %w", err)
-		}
-
-		if err := tx.Model(&paymentModels.Invoice{}).
-			Where("user_id = ?", userID).
-			Update("user_id", "deleted").Error; err != nil {
-			return fmt.Errorf("failed to anonymize invoices: %w", err)
-		}
-
-		if err := tx.Model(&paymentModels.UsageMetrics{}).
-			Where("user_id = ?", userID).
-			Update("user_id", "deleted").Error; err != nil {
-			return fmt.Errorf("failed to anonymize usage metrics: %w", err)
-		}
-
-		if err := tx.Model(&paymentModels.SubscriptionBatch{}).
-			Where("purchaser_user_id = ?", userID).
-			Update("purchaser_user_id", "deleted").Error; err != nil {
-			return fmt.Errorf("failed to anonymize subscription batches: %w", err)
-		}
-
-		// Anonymize scenario authorship (nullify created_by_id)
-		if err := tx.Model(&scenarioModels.Scenario{}).
-			Where("created_by_id = ?", userID).
-			Update("created_by_id", "").Error; err != nil {
-			return fmt.Errorf("failed to anonymize scenarios: %w", err)
-		}
-
-		if err := tx.Model(&scenarioModels.ScenarioAssignment{}).
-			Where("created_by_id = ?", userID).
-			Update("created_by_id", "").Error; err != nil {
-			return fmt.Errorf("failed to anonymize scenario assignments: %w", err)
-		}
-
-		// Anonymize audit logs (set actor_id to NULL)
-		if err := tx.Exec("UPDATE audit_logs SET actor_id = NULL WHERE actor_id = ?", userID).Error; err != nil {
-			// Non-fatal: audit logs might use UUID format for actor_id
-			utils.Warn("Failed to anonymize audit logs for user %s: %v (continuing)", userID, err)
-		}
-
-		// 8. Delete personal organization (CASCADE will remove org members + org subscription)
-		if err := tx.Where("owner_user_id = ? AND organization_type = ?", userID, organizationModels.OrgTypePersonal).
-			Delete(&organizationModels.Organization{}).Error; err != nil {
-			return fmt.Errorf("failed to delete personal organization: %w", err)
-		}
-
+// deleteScenarioSessions deletes the user's scenario sessions together with
+// their step-progress and flag rows. Children are removed explicitly rather
+// than relying on the DB-level OnDelete:CASCADE, because SQLite only enforces
+// foreign keys when `PRAGMA foreign_keys = ON` is active on the executing
+// connection — doing it in code keeps the behavior identical across dialects.
+func (s *userDeletionService) deleteScenarioSessions(tx *gorm.DB, userID string) error {
+	var sessionIDs []uuid.UUID
+	if err := tx.Model(&scenarioModels.ScenarioSession{}).
+		Where("user_id = ?", userID).
+		Pluck("id", &sessionIDs).Error; err != nil {
+		return fmt.Errorf("failed to list scenario sessions: %w", err)
+	}
+	if len(sessionIDs) == 0 {
 		return nil
-	})
+	}
+
+	if err := tx.Where("session_id IN ?", sessionIDs).Delete(&scenarioModels.ScenarioStepProgress{}).Error; err != nil {
+		return fmt.Errorf("failed to delete scenario step progress: %w", err)
+	}
+	if err := tx.Where("session_id IN ?", sessionIDs).Delete(&scenarioModels.ScenarioFlag{}).Error; err != nil {
+		return fmt.Errorf("failed to delete scenario flags: %w", err)
+	}
+	if err := tx.Where("id IN ?", sessionIDs).Delete(&scenarioModels.ScenarioSession{}).Error; err != nil {
+		return fmt.Errorf("failed to delete scenario sessions: %w", err)
+	}
+	return nil
+}
+
+// removeMemberships removes the user's org and group memberships.
+func (s *userDeletionService) removeMemberships(tx *gorm.DB, userID string) error {
+	if err := tx.Where("user_id = ?", userID).Delete(&organizationModels.OrganizationMember{}).Error; err != nil {
+		return fmt.Errorf("failed to delete organization memberships: %w", err)
+	}
+	if err := tx.Where("user_id = ?", userID).Delete(&groupModels.GroupMember{}).Error; err != nil {
+		return fmt.Errorf("failed to delete group memberships: %w", err)
+	}
+	return nil
+}
+
+// deletePersonalOrganization deletes the user's personal org (CASCADE removes
+// its members and subscription).
+func (s *userDeletionService) deletePersonalOrganization(tx *gorm.DB, userID string) error {
+	if err := tx.Where("owner_user_id = ? AND organization_type = ?", userID, organizationModels.OrgTypePersonal).
+		Delete(&organizationModels.Organization{}).Error; err != nil {
+		return fmt.Errorf("failed to delete personal organization: %w", err)
+	}
+	return nil
+}
+
+// anonymizeScenarioAuthorship empties created_by_id on scenarios and scenario
+// assignments so the content survives but no longer points at the deleted user.
+func (s *userDeletionService) anonymizeScenarioAuthorship(tx *gorm.DB, userID string) error {
+	if err := tx.Model(&scenarioModels.Scenario{}).
+		Where("created_by_id = ?", userID).
+		Update("created_by_id", "").Error; err != nil {
+		return fmt.Errorf("failed to anonymize scenarios: %w", err)
+	}
+	if err := tx.Model(&scenarioModels.ScenarioAssignment{}).
+		Where("created_by_id = ?", userID).
+		Update("created_by_id", "").Error; err != nil {
+		return fmt.Errorf("failed to anonymize scenario assignments: %w", err)
+	}
+	return nil
+}
+
+// anonymizeAuditLogs clears the actor identity and PII (actor_id, actor_email,
+// actor_ip) on the user's audit rows while preserving the events themselves.
+// AuditLog.ActorID is a uuid-typed column written via uuid.Parse(userId); the
+// Casdoor user-id IS that UUID, so the WHERE is built against the parsed UUID
+// (a raw string compare silently no-ops in PostgreSQL).
+func (s *userDeletionService) anonymizeAuditLogs(tx *gorm.DB, userID string) error {
+	parsedUUID, err := uuid.Parse(userID)
+	if err != nil {
+		// Non-UUID userID can never match the uuid-typed actor_id column.
+		utils.Warn("Skipping audit-log anonymization for non-UUID user %s: %v", userID, err)
+		return nil
+	}
+	if err := tx.Model(&auditModels.AuditLog{}).
+		Where("actor_id = ?", parsedUUID).
+		Updates(map[string]any{"actor_id": nil, "actor_email": "", "actor_ip": ""}).Error; err != nil {
+		return fmt.Errorf("failed to anonymize audit logs: %w", err)
+	}
+	return nil
+}
+
+// deleteAuthTokens deletes the user's blacklist, email-verification and
+// password-reset tokens.
+func (s *userDeletionService) deleteAuthTokens(tx *gorm.DB, userID string) error {
+	if err := tx.Where("user_id = ?", userID).Delete(&authModels.TokenBlacklist{}).Error; err != nil {
+		return fmt.Errorf("failed to delete token blacklist: %w", err)
+	}
+	if err := tx.Unscoped().Where("user_id = ?", userID).Delete(&authModels.EmailVerificationToken{}).Error; err != nil {
+		return fmt.Errorf("failed to delete email verification tokens: %w", err)
+	}
+	if err := tx.Unscoped().Where("user_id = ?", userID).Delete(&authModels.PasswordResetToken{}).Error; err != nil {
+		return fmt.Errorf("failed to delete password reset tokens: %w", err)
+	}
+	return nil
+}
+
+// deleteUserSettings deletes the user's settings row.
+func (s *userDeletionService) deleteUserSettings(tx *gorm.DB, userID string) error {
+	if err := tx.Where("user_id = ?", userID).Delete(&authModels.UserSettings{}).Error; err != nil {
+		return fmt.Errorf("failed to delete user settings: %w", err)
+	}
+	return nil
+}
+
+// deleteSSHKeys deletes SSH keys owned by the user. SshKey has no UserID column
+// — ownership is the entity-management BaseModel.OwnerIDs array (text[]). The
+// membership test differs per dialect, so detect it. Best-effort: a failure is
+// logged but does not abort the deletion.
+func (s *userDeletionService) deleteSSHKeys(tx *gorm.DB, userID string) {
+	var err error
+	switch tx.Dialector.Name() {
+	case "postgres":
+		err = tx.Exec("DELETE FROM ssh_keys WHERE owner_ids && ARRAY[?]", userID).Error
+	default:
+		// SQLite stores text[] as a serialized string; match the user id substring.
+		err = tx.Exec("DELETE FROM ssh_keys WHERE owner_ids LIKE ?", "%"+userID+"%").Error
+	}
+	if err != nil {
+		utils.Warn("Failed to delete SSH keys for user %s: %v (continuing)", userID, err)
+	}
 }
