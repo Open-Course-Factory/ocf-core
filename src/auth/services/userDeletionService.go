@@ -10,6 +10,7 @@ import (
 	organizationModels "soli/formations/src/organizations/models"
 	paymentServices "soli/formations/src/payment/services"
 	scenarioModels "soli/formations/src/scenarios/models"
+	terminalModels "soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
 
 	"github.com/google/uuid"
@@ -107,6 +108,9 @@ func (s *userDeletionService) cascadeOCFData(tx *gorm.DB, userID string) error {
 	if err := s.terminateTerminals(tx, userID); err != nil {
 		return err
 	}
+	if err := s.deleteUserTerminalKeys(tx, userID); err != nil {
+		return err
+	}
 	if err := s.deleteScenarioSessions(tx, userID); err != nil {
 		return err
 	}
@@ -129,16 +133,56 @@ func (s *userDeletionService) cascadeOCFData(tx *gorm.DB, userID string) error {
 		return err
 	}
 	s.deleteSSHKeys(tx, userID)
+
+	// Runs LAST: the steps above filter terminal rows by user_id, so the raw id
+	// must survive until they have all run. This empties it on the retained
+	// (State=StateDeleted) audit rows so no terminal row links to the erased user.
+	if err := s.anonymizeTerminalUserID(tx, userID); err != nil {
+		return err
+	}
 	return nil
 }
 
-// terminateTerminals performs the real terminal teardown (State -> StateDeleted)
-// via the canonical payment-side helper. orgID is nil so ALL of the user's
-// terminals are released. Runs on the cascade tx so it shares the connection
-// and is rolled back atomically if a later step fails.
+// terminateTerminals performs the real terminal teardown (State -> StateDeleted).
+// It first runs the canonical payment-side helper (so the running-terminal path
+// stays identical to subscription cancellation), then releases EVERY remaining
+// non-deleted terminal — stopped/hibernating sessions still occupy a slot and
+// disk, so erasure must free them too. TerminateUserTerminals is shared with the
+// license/Stripe cancel paths and intentionally only releases running terminals;
+// widening it there would wipe stopped sessions on a mere sub-cancel, so the
+// extra scope is applied here in the erasure cascade only. Runs on the cascade
+// tx so it is rolled back atomically if a later step fails.
 func (s *userDeletionService) terminateTerminals(tx *gorm.DB, userID string) error {
 	if err := paymentServices.TerminateUserTerminals(tx, userID, nil); err != nil {
 		return fmt.Errorf("failed to terminate terminals: %w", err)
+	}
+	if err := tx.Model(&terminalModels.Terminal{}).
+		Where("user_id = ? AND state <> ?", userID, terminalModels.StateDeleted).
+		Update("state", terminalModels.StateDeleted).Error; err != nil {
+		return fmt.Errorf("failed to release non-running terminals: %w", err)
+	}
+	return nil
+}
+
+// deleteUserTerminalKeys deletes the user's terminal API keys. Each
+// UserTerminalKey row holds a live tt-backend credential (APIKey) keyed by
+// UserID; leaving it behind would keep a usable credential for an erased user.
+func (s *userDeletionService) deleteUserTerminalKeys(tx *gorm.DB, userID string) error {
+	if err := tx.Where("user_id = ?", userID).Delete(&terminalModels.UserTerminalKey{}).Error; err != nil {
+		return fmt.Errorf("failed to delete user terminal keys: %w", err)
+	}
+	return nil
+}
+
+// anonymizeTerminalUserID empties user_id on the user's retained terminal rows.
+// The rows are kept (State=StateDeleted) for audit, but must not retain a link
+// to the erased identity — matching the empty-string convention used for
+// scenario authorship. Must run after the user_id-filtered terminal steps.
+func (s *userDeletionService) anonymizeTerminalUserID(tx *gorm.DB, userID string) error {
+	if err := tx.Model(&terminalModels.Terminal{}).
+		Where("user_id = ?", userID).
+		Update("user_id", "").Error; err != nil {
+		return fmt.Errorf("failed to anonymize terminal user id: %w", err)
 	}
 	return nil
 }
