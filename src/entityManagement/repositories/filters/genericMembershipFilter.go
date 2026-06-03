@@ -112,6 +112,7 @@ func (f *GenericMembershipFilter) Apply(
 					SELECT 1 FROM organization_members om
 					JOIN %s p ON p.%s = %s.%s
 					WHERE om.organization_id = p.%s
+					AND p.deleted_at IS NULL
 					AND om.user_id = ?
 					AND om.is_active = true
 					AND om.role IN (%s)
