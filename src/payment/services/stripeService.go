@@ -530,7 +530,7 @@ func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.Subscriptio
 	// Défense en profondeur : les plans gratuits (ex: Trial) sont volontairement
 	// découplés de Stripe. Si un appelant oublie le garde côté contrôleur, on
 	// refuse ici plutôt que de créer un produit Stripe €0/mois bidon.
-	if plan.PriceAmount == 0 {
+	if plan.IsFree() {
 		return nil
 	}
 
