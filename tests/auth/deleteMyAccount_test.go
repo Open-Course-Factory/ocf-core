@@ -46,6 +46,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -57,6 +58,7 @@ import (
 	authModels "soli/formations/src/auth/models"
 	userController "soli/formations/src/auth/routes/usersRoutes"
 	authServices "soli/formations/src/auth/services"
+	sqldb "soli/formations/src/db"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	groupModels "soli/formations/src/groups/models"
 	organizationModels "soli/formations/src/organizations/models"
@@ -631,4 +633,257 @@ func TestDeleteMyAccount_RemovesMembershipsTokensSettingsSSHKeys(t *testing.T) {
 	assert.Equal(t, int64(0), evTokenCount, "email verification tokens must be removed")
 	assert.Equal(t, int64(0), prTokenCount, "password reset tokens must be removed")
 	assert.Equal(t, int64(0), blacklistCount, "token blacklist entries must be removed")
+}
+
+// ===========================================================================
+// Security / RGPD blocker tests (review of reworked MR !167, issue #110).
+//
+// These pin fixes for blockers a security review found in the reworked branch.
+// They are RED until backend-dev implements the corresponding production fix.
+// ===========================================================================
+
+// seedStoppedTerminal seeds a terminal in a NON-running but non-deleted,
+// non-expired state (stopped). Such a terminal still occupies a slot
+// (TerminalStatesOccupyingSlot) and still allocates disk, so it MUST be
+// released on account erasure — but TerminateUserTerminals' running-only scope
+// silently skips it today.
+func seedStoppedTerminal(t *testing.T, db *gorm.DB, userID string) *terminalModels.Terminal {
+	t.Helper()
+	keyID := uuid.New()
+	require.NoError(t, db.Create(&terminalModels.UserTerminalKey{
+		BaseModel:   entityManagementModels.BaseModel{ID: keyID},
+		UserID:      userID,
+		APIKey:      "key-" + uuid.NewString()[:8],
+		KeyName:     "stopped-key",
+		IsActive:    true,
+		MaxSessions: 5,
+	}).Error)
+
+	term := &terminalModels.Terminal{
+		BaseModel:         entityManagementModels.BaseModel{ID: uuid.New()},
+		SessionID:         "sess-stopped-" + uuid.NewString()[:8],
+		UserID:            userID,
+		Name:              "Stopped Terminal",
+		State:             terminalModels.StateStopped,
+		ExpiresAt:         time.Now().Add(1 * time.Hour),
+		UserTerminalKeyID: keyID,
+	}
+	require.NoError(t, db.Create(term).Error)
+	return term
+}
+
+// C1 — CRITICAL: an impersonating admin must NOT be able to erase the
+// impersonated user's account. The impersonation middleware swaps the gin
+// context so userId == the victim while impersonatorId == the admin
+// (impersonationMiddleware.go: c.Set("impersonatorId", callerID)). The handler
+// has no impersonation guard, so today an admin "acting as" a user could
+// trigger an irreversible RGPD erasure of that user's account.
+//
+// Driven through the REAL gin handler (mirrors
+// TestDeleteMyAccount_RequiresConfirmation_HandlerLevel). sqldb.DB is set to a
+// seeded in-memory DB so the observable post-condition (victim's data survives)
+// is checkable; the guard MUST abort 403 before the deletion service runs, so
+// no cascade and no Casdoor delegation ever touches the victim.
+func TestDeleteMyAccount_DuringImpersonation_Forbidden(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupDeleteMyAccountDB(t)
+	victimID := newUserID()
+	adminID := newUserID()
+	// Seed a victim-owned row that the cascade WOULD remove if it ran.
+	orgID := seedOrgMembership(t, db, victimID, "member")
+
+	// Point the production handler at our seeded DB and restore afterwards so
+	// other tests in the package are unaffected.
+	prevDB := sqldb.DB
+	sqldb.DB = db
+	defer func() { sqldb.DB = prevDB }()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	// Impersonation context: acting AS the victim, but flagged as impersonated.
+	ctx.Set("userId", victimID)
+	ctx.Set("impersonatorId", adminID)
+	ctx.Request = httptest.NewRequest(http.MethodDelete, "/users/me/account",
+		strings.NewReader(`{"confirmation":"DELETE_MY_ACCOUNT"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	// Containment ONLY for the RED state: without the guard the handler falls
+	// through to the real Casdoor client (no token configured in tests) and
+	// panics. We convert that production panic into a clean test failure so it
+	// does not crash the test binary and mask the sibling RGPD tests. Once the
+	// guard aborts 403 before the deletion service, no panic occurs and this
+	// recover is a no-op — the assertions below decide pass/fail. This is NOT
+	// recovering to hide a code-under-test bug on the happy path; it is fencing
+	// off a known missing-guard panic in the deliberately-broken RED state.
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("handler reached the deletion cascade during impersonation (panicked: %v) — the impersonation guard is missing; it must abort 403 BEFORE any erasure work", r)
+			}
+		}()
+		invokeDeleteMyAccountHandler(ctx)
+	}()
+
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"an impersonating admin must be refused (403) before any erasure runs")
+
+	// No cascade ran: the victim's seeded membership must still exist. This is
+	// the observable proof that the whole erasure (including the delegated
+	// Casdoor delete) never executed — the production handler hardwires the real
+	// Casdoor client, so the no-Casdoor-call contract is asserted via surviving
+	// OCF state rather than a mock seam.
+	var orgMemberCount int64
+	db.Model(&organizationModels.OrganizationMember{}).
+		Where("organization_id = ? AND user_id = ?", orgID, victimID).Count(&orgMemberCount)
+	assert.Equal(t, int64(1), orgMemberCount,
+		"victim's data must be untouched when an impersonated session attempts erasure")
+}
+
+// H1 — the user's terminal API key must be erased. UserTerminalKey holds a
+// live tt-backend credential (APIKey) keyed by UserID; the cascade never
+// touches user_terminal_keys today, so a deleted user's API key remains valid
+// and usable. After erasure there must be no active key row for the user.
+func TestDeleteMyAccount_DeletesUserTerminalKey(t *testing.T) {
+	db := setupDeleteMyAccountDB(t)
+	userID := newUserID()
+	require.NoError(t, db.Create(&terminalModels.UserTerminalKey{
+		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
+		UserID:      userID,
+		APIKey:      "live-key",
+		KeyName:     "primary",
+		IsActive:    true,
+		MaxSessions: 5,
+	}).Error)
+
+	casdoorMock, helperMock, _ := happyMocks(userID)
+	svc := composedUserDeletionService(db, casdoorMock, helperMock)
+
+	require.NoError(t, svc.DeleteMyAccount(userID))
+
+	var keyCount int64
+	db.Model(&terminalModels.UserTerminalKey{}).Where("user_id = ?", userID).Count(&keyCount)
+	assert.Equal(t, int64(0), keyCount,
+		"the user's terminal API key (a live tt-backend credential) must be erased on account deletion")
+}
+
+// H3 — ALL non-deleted terminals must be released, not just running ones. A
+// stopped terminal still occupies a slot and disk; TerminateUserTerminals is
+// invoked with the running-only scope today, so a stopped terminal survives an
+// account erasure with its resources reserved. After erasure a stopped
+// terminal must be State=StateDeleted.
+func TestDeleteMyAccount_TerminatesStoppedTerminals(t *testing.T) {
+	db := setupDeleteMyAccountDB(t)
+	userID := newUserID()
+	term := seedStoppedTerminal(t, db, userID)
+
+	casdoorMock, helperMock, _ := happyMocks(userID)
+	svc := composedUserDeletionService(db, casdoorMock, helperMock)
+
+	require.NoError(t, svc.DeleteMyAccount(userID))
+
+	var reloaded terminalModels.Terminal
+	require.NoError(t, db.First(&reloaded, "id = ?", term.ID).Error)
+	assert.Equal(t, terminalModels.StateDeleted, reloaded.State,
+		"a stopped (non-deleted) terminal must also be released (State=StateDeleted) on erasure, not just running ones")
+}
+
+// H2 — retained terminal rows must not keep the raw user_id. The agreed fix is
+// to keep the row for audit (State=StateDeleted) but anonymize its user_id, so
+// the audit trail survives without retaining a link to the erased identity.
+// After erasure, NO terminal row may still carry the user's raw user_id.
+func TestDeleteMyAccount_AnonymizesOrReleasesTerminalUserID(t *testing.T) {
+	db := setupDeleteMyAccountDB(t)
+	userID := newUserID()
+	seedRunningTerminal(t, db, userID)
+
+	casdoorMock, helperMock, _ := happyMocks(userID)
+	svc := composedUserDeletionService(db, casdoorMock, helperMock)
+
+	require.NoError(t, svc.DeleteMyAccount(userID))
+
+	var rowsWithRawUserID int64
+	db.Model(&terminalModels.Terminal{}).Where("user_id = ?", userID).Count(&rowsWithRawUserID)
+	assert.Equal(t, int64(0), rowsWithRawUserID,
+		"no retained terminal row may keep the erased user's raw user_id — anonymize it (or drop the row) while keeping State=StateDeleted for audit")
+}
+
+// SSH-key deletion coverage (reviewer gap). The cascade's deleteSSHKeys step is
+// currently untested. SshKey ownership is the BaseModel.OwnerIDs text[] array;
+// on SQLite GORM serializes pq.StringArray{userID} as {"<userID>"} and the
+// production path matches via `owner_ids LIKE '%userID%'`. After erasure the
+// user's SSH key must be gone.
+func TestDeleteMyAccount_DeletesSSHKeys(t *testing.T) {
+	db := setupDeleteMyAccountDB(t)
+	userID := newUserID()
+	key := &authModels.SshKey{
+		BaseModel: entityManagementModels.BaseModel{ID: uuid.New(), OwnerIDs: pq.StringArray{userID}},
+		KeyName:   "user-ssh-key",
+	}
+	require.NoError(t, db.Create(key).Error)
+
+	casdoorMock, helperMock, _ := happyMocks(userID)
+	svc := composedUserDeletionService(db, casdoorMock, helperMock)
+
+	require.NoError(t, svc.DeleteMyAccount(userID))
+
+	var sshCount int64
+	db.Model(&authModels.SshKey{}).Where("id = ?", key.ID).Count(&sshCount)
+	assert.Equal(t, int64(0), sshCount,
+		"the user's SSH key (owned via OwnerIDs) must be deleted on account erasure")
+}
+
+// Post-Casdoor cascade-failure rollback (reviewer gap). After DeleteUser
+// (Stripe cancel + Casdoor delete) succeeds, the OCF-side cascade runs inside a
+// single db.Transaction. If a LATER cascade step fails, the whole transaction
+// must roll back, leaving the OCF rows touched by earlier steps unchanged; the
+// handler then returns 500 so the operator/user can retry.
+//
+// The failure is injected WITHOUT any production seam: the test DB omits the
+// user_settings table, so deleteUserSettings (a late cascade step, after the
+// terminal-teardown step) errors naturally. We then assert the earlier
+// terminal step's mutation was rolled back (terminal still StateRunning).
+func TestDeleteMyAccount_CascadeFailsAfterCasdoor_RollsBack(t *testing.T) {
+	// Migrate every table the cascade touches BEFORE deleteUserSettings, but
+	// deliberately NOT user_settings — so the cascade fails mid-transaction
+	// after the terminal teardown has already run.
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(
+		&terminalModels.UserTerminalKey{},
+		&terminalModels.Terminal{},
+		&scenarioModels.Scenario{},
+		&scenarioModels.ScenarioSession{},
+		&scenarioModels.ScenarioStepProgress{},
+		&scenarioModels.ScenarioFlag{},
+		&scenarioModels.ScenarioAssignment{},
+		&organizationModels.Organization{},
+		&organizationModels.OrganizationMember{},
+		&groupModels.ClassGroup{},
+		&groupModels.GroupMember{},
+		&authModels.TokenBlacklist{},
+		&authModels.EmailVerificationToken{},
+		&authModels.PasswordResetToken{},
+		&auditModels.AuditLog{},
+		// NOTE: authModels.UserSettings intentionally NOT migrated.
+	))
+
+	userID := newUserID()
+	term := seedRunningTerminal(t, db, userID)
+
+	casdoorMock, helperMock, _ := happyMocks(userID)
+	svc := composedUserDeletionService(db, casdoorMock, helperMock)
+
+	deletionErr := svc.DeleteMyAccount(userID)
+	require.Error(t, deletionErr,
+		"a cascade step failing after Casdoor delete must surface an error (handler maps to 500)")
+
+	// The terminal teardown (an earlier cascade step) must have been rolled
+	// back atomically with the failing step.
+	var reloaded terminalModels.Terminal
+	require.NoError(t, db.First(&reloaded, "id = ?", term.ID).Error)
+	assert.Equal(t, terminalModels.StateRunning, reloaded.State,
+		"earlier cascade mutations must roll back when a later step fails (single OCF transaction)")
 }
