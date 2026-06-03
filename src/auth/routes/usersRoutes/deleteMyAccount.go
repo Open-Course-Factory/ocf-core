@@ -4,12 +4,11 @@ import (
 	"errors"
 	"net/http"
 
-	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/services"
 	sqldb "soli/formations/src/db"
+	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/utils"
 
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
 )
 
@@ -54,8 +53,17 @@ func (uc *userController) DeleteMyAccount(ctx *gin.Context) {
 		return
 	}
 
-	// Run OCF database cascade deletion
-	deletionService := services.NewUserDeletionService(sqldb.DB)
+	// Run the full erasure flow. The service composes the canonical
+	// userService.DeleteUser (Stripe cancel → pseudonymize → Casdoor delete →
+	// RBAC removal) before the OCF-side cascade, so the handler no longer does
+	// any Casdoor / RBAC work itself.
+	deletionService := services.NewUserDeletionService(
+		sqldb.DB,
+		services.NewUserService(
+			services.NewCasdoorUserClient(),
+			paymentServices.NewPaymentDeletionHelper(sqldb.DB),
+		),
+	)
 	err := deletionService.DeleteMyAccount(userID)
 	if err != nil {
 		switch {
@@ -66,28 +74,13 @@ func (uc *userController) DeleteMyAccount(ctx *gin.Context) {
 			ctx.JSON(http.StatusConflict, gin.H{"error": "You must transfer ownership of your groups before deleting your account"})
 			return
 		default:
+			// Includes the Stripe-cancel abort: returning 5xx lets the user
+			// retry rather than silently leaving a billed-but-deleted account.
 			utils.Error("Account deletion failed for user %s: %v", userID, err)
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Account deletion failed"})
 			return
 		}
 	}
-
-	// Point of no return: delete Casdoor identity
-	user, err := casdoorsdk.GetUserByUserId(userID)
-	if err != nil {
-		utils.Error("Failed to get Casdoor user %s after DB cleanup: %v", userID, err)
-		// DB is already cleaned, return success to the user
-	} else if user != nil {
-		_, err = casdoorsdk.DeleteUser(user)
-		if err != nil {
-			utils.Error("Failed to delete Casdoor user %s: %v (DB already cleaned)", userID, err)
-		}
-	}
-
-	// Remove RBAC policies
-	opts := utils.DefaultPermissionOptions()
-	opts.WarnOnError = true
-	utils.RemoveGroupingPolicy(casdoor.Enforcer, userID, "", opts)
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Account deleted"})
 }

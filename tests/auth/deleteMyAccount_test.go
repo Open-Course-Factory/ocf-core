@@ -190,8 +190,8 @@ func seedScenario(t *testing.T, db *gorm.DB, authorID string) uuid.UUID {
 	t.Helper()
 	scenarioID := uuid.New()
 	require.NoError(t, db.Exec(
-		"INSERT INTO scenarios (id, name, title, source_type, created_by_id) VALUES (?, ?, ?, ?, ?)",
-		scenarioID, "test-scenario-"+uuid.NewString()[:8], "Test Scenario", "builtin", authorID,
+		"INSERT INTO scenarios (id, name, title, source_type, instance_type, created_by_id) VALUES (?, ?, ?, ?, ?, ?)",
+		scenarioID, "test-scenario-"+uuid.NewString()[:8], "Test Scenario", "builtin", "ubuntu:22.04", authorID,
 	).Error)
 	return scenarioID
 }

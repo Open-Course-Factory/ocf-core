@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // AuditEventType represents different categories of auditable events
@@ -101,7 +102,7 @@ const (
 // AuditLog represents a single audit trail entry
 // This provides compliance-ready logging for security, authentication, billing, and organizational events
 type AuditLog struct {
-	ID               uuid.UUID      `gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
+	ID               uuid.UUID      `gorm:"type:uuid;primary_key"`
 	EventType        AuditEventType `gorm:"type:varchar(100);not null;index"` // Type of event (see constants above)
 	Severity         AuditSeverity  `gorm:"type:varchar(20);not null;index"`  // Severity level
 
@@ -143,6 +144,18 @@ type AuditLog struct {
 
 func (AuditLog) TableName() string {
 	return "audit_logs"
+}
+
+// BeforeCreate assigns a UUID in Go when one was not supplied. The model
+// previously relied on a PostgreSQL-only `gen_random_uuid()` column default,
+// which made the table un-migratable on SQLite (used by unit tests). Generating
+// the ID in code keeps a single code path across both databases and mirrors the
+// entity-management BaseModel pattern.
+func (a *AuditLog) BeforeCreate(tx *gorm.DB) error {
+	if a.ID == uuid.Nil {
+		a.ID = uuid.New()
+	}
+	return nil
 }
 
 // AuditLogCreate is a helper struct for creating audit logs
