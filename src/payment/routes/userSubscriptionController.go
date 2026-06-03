@@ -947,6 +947,16 @@ func (sc *userSubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Co
 		return
 	}
 
+	// Les plans gratuits (ex: Trial) sont volontairement découplés de Stripe :
+	// les synchroniser créerait un produit/prix €0/mois bidon. On refuse.
+	if plan.IsFree() {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Cannot sync a free plan with Stripe: free plans are decoupled from billing",
+		})
+		return
+	}
+
 	// Créer le produit et prix dans Stripe
 	err = sc.stripeService.CreateSubscriptionPlanInStripe(plan)
 	if err != nil {
@@ -1014,7 +1024,7 @@ func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gi
 			continue
 		}
 
-		if plan.PriceAmount == 0 {
+		if plan.IsFree() {
 			// Plans gratuits (ex: Trial) sont volontairement découplés de Stripe —
 			// ne pas créer de produit/prix €0/mois bidon côté Stripe.
 			skippedPlans = append(skippedPlans, plan.Name+" (free plan)")

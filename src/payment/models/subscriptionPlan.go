@@ -72,6 +72,10 @@ type PricingTier struct {
 	Description string `json:"description,omitempty"` // e.g., "Great for small classes"
 }
 
+// IsFree reports whether the plan carries no recurring charge and therefore
+// must not be synced to Stripe as a billable product/price.
+func (s SubscriptionPlan) IsFree() bool { return s.PriceAmount <= 0 }
+
 func (s SubscriptionPlan) GetBaseModel() entityManagementModels.BaseModel {
 	return s.BaseModel
 }

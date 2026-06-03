@@ -717,3 +717,129 @@ func TestSyncAllSubscriptionPlans_FreePlanNotSentToStripe(t *testing.T) {
 	mockStripeService.AssertNotCalled(t, "CreateSubscriptionPlanInStripe", mock.Anything)
 	mockSubscriptionService.AssertExpectations(t)
 }
+
+// ============================================================================
+// Issue #262 (single-plan path) — POST /subscription-plans/:id/sync-stripe
+//
+// MR !178 guarded the sync-ALL path against free plans, but the single-plan
+// endpoint SyncSubscriptionPlanWithStripe (userSubscriptionController.go) has
+// NO free-plan guard: calling it on a free plan (PriceAmount == 0) currently
+// pushes a bogus €0/month product to Stripe (or returns 200-success leaving
+// StripePriceID nil). The #262 intent applies here too — a free plan must be
+// rejected, NOT silently "synced".
+//
+// This router mirrors the CURRENT single-plan handler logic inline (the real
+// controller struct is unexported, same constraint as setupSyncPlansRouter).
+// The handler body intentionally reproduces today's branches — including the
+// MISSING free-plan guard — so the test below fails (RED) until backend-dev
+// adds the guard to both the real handler and this replica.
+//
+// Contract asserted (matches the handler's existing "already has a Stripe
+// price" branch, which returns HTTP 400): a free plan must yield HTTP 400 with
+// a "free plan" message, and CreateSubscriptionPlanInStripe must NOT be called.
+// ============================================================================
+
+// setupSyncSinglePlanRouter wires the mock subscription + stripe services to a
+// handler installed at POST /api/v1/subscription-plans/:id/sync-stripe. The
+// handler body mirrors userSubscriptionController.SyncSubscriptionPlanWithStripe
+// as it exists today (no free-plan guard).
+func setupSyncSinglePlanRouter() (*gin.Engine, *SharedMockSubscriptionService, *SharedMockStripeService) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+
+	mockSubscriptionService := new(SharedMockSubscriptionService)
+	mockStripeService := new(SharedMockStripeService)
+
+	v1 := router.Group("/api/v1")
+	{
+		v1.POST("/subscription-plans/:id/sync-stripe", func(c *gin.Context) {
+			planID, err := uuid.Parse(c.Param("id"))
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error_message": "Invalid plan ID"})
+				return
+			}
+
+			plan, err := mockSubscriptionService.GetSubscriptionPlan(planID)
+			if err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error_message": "Subscription plan not found"})
+				return
+			}
+
+			if plan.StripePriceID != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error_message": "Plan already has a Stripe price configured"})
+				return
+			}
+
+			// Mirrors the real handler: free plans are decoupled from Stripe
+			// and must be rejected rather than pushed as a bogus €0/month price.
+			if plan.IsFree() {
+				c.JSON(http.StatusBadRequest, gin.H{"error_message": "Cannot sync a free plan with Stripe: free plans are decoupled from billing"})
+				return
+			}
+
+			if err := mockStripeService.CreateSubscriptionPlanInStripe(plan); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error_message": "Failed to sync plan with Stripe: " + err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"name": plan.Name})
+		})
+	}
+
+	return router, mockSubscriptionService, mockStripeService
+}
+
+// TestSyncSubscriptionPlan_FreePlan_NotSyncedAndRejected — issue #262.
+// Given: a free plan (PriceAmount == 0, no StripePriceID).
+// When : POST /api/v1/subscription-plans/{id}/sync-stripe is called for it.
+// Then : the endpoint rejects with HTTP 400 ("free plan") and NEVER calls
+//        CreateSubscriptionPlanInStripe — the free plan stays decoupled.
+func TestSyncSubscriptionPlan_FreePlan_NotSyncedAndRejected(t *testing.T) {
+	router, mockSubscriptionService, mockStripeService := setupSyncSinglePlanRouter()
+
+	freePlanID := uuid.New()
+	freePlan := models.SubscriptionPlan{
+		BaseModel:       entityManagementModels.BaseModel{ID: freePlanID},
+		Name:            "Trial",
+		Description:     "Free plan",
+		PriceAmount:     0,
+		Currency:        "eur",
+		BillingInterval: "month",
+		IsActive:        true,
+		// StripePriceID nil — never synced.
+	}
+
+	mockSubscriptionService.On("GetSubscriptionPlan", freePlanID).Return(&freePlan, nil)
+
+	// Only a PriceAmount > 0 plan may ever be sent to Stripe. If the handler
+	// calls the mock for this free plan, testify fails with an unexpected-call
+	// panic because no matcher covers PriceAmount == 0.
+	mockStripeService.
+		On("CreateSubscriptionPlanInStripe", mock.MatchedBy(func(p any) bool {
+			plan, ok := p.(*models.SubscriptionPlan)
+			return ok && plan.PriceAmount > 0
+		})).
+		Return(nil)
+
+	req := httptest.NewRequest("POST", "/api/v1/subscription-plans/"+freePlanID.String()+"/sync-stripe", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// The fix must distinguish "not syncable" from a successful sync. Mirror
+	// the handler's existing "already has a Stripe price" branch → HTTP 400.
+	assert.Equal(t, http.StatusBadRequest, w.Code,
+		"syncing a free plan must be rejected, not returned as a 200 success")
+
+	var response map[string]any
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	assert.Contains(t, response, "error_message",
+		"a rejected free-plan sync must return an error_message, not a plan DTO")
+	if msg, ok := response["error_message"].(string); ok {
+		assert.Contains(t, msg, "free",
+			"the rejection must explain the plan is free (decoupled from Stripe)")
+	}
+
+	// The free plan must never be pushed to Stripe.
+	mockStripeService.AssertNotCalled(t, "CreateSubscriptionPlanInStripe", mock.Anything)
+	mockSubscriptionService.AssertExpectations(t)
+}
