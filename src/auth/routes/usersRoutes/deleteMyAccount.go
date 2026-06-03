@@ -42,6 +42,14 @@ func (uc *userController) DeleteMyAccount(ctx *gin.Context) {
 		return
 	}
 
+	// Self-service erasure is irreversible — never let it run under an
+	// impersonated session (an admin "acting as" a user must not be able to
+	// delete that user's account).
+	if ctx.GetString("impersonatorId") != "" {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "Account deletion is not allowed while impersonating another user"})
+		return
+	}
+
 	// Validate confirmation body
 	var req deleteMyAccountRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {

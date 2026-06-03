@@ -708,22 +708,9 @@ func TestDeleteMyAccount_DuringImpersonation_Forbidden(t *testing.T) {
 		strings.NewReader(`{"confirmation":"DELETE_MY_ACCOUNT"}`))
 	ctx.Request.Header.Set("Content-Type", "application/json")
 
-	// Containment ONLY for the RED state: without the guard the handler falls
-	// through to the real Casdoor client (no token configured in tests) and
-	// panics. We convert that production panic into a clean test failure so it
-	// does not crash the test binary and mask the sibling RGPD tests. Once the
-	// guard aborts 403 before the deletion service, no panic occurs and this
-	// recover is a no-op — the assertions below decide pass/fail. This is NOT
-	// recovering to hide a code-under-test bug on the happy path; it is fencing
-	// off a known missing-guard panic in the deliberately-broken RED state.
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Errorf("handler reached the deletion cascade during impersonation (panicked: %v) — the impersonation guard is missing; it must abort 403 BEFORE any erasure work", r)
-			}
-		}()
-		invokeDeleteMyAccountHandler(ctx)
-	}()
+	// The guard aborts 403 before the deletion service ever constructs the real
+	// Casdoor client, so the handler returns cleanly without touching any seam.
+	invokeDeleteMyAccountHandler(ctx)
 
 	assert.Equal(t, http.StatusForbidden, w.Code,
 		"an impersonating admin must be refused (403) before any erasure runs")
