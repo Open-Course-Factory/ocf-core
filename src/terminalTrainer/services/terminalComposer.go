@@ -458,6 +458,15 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 		}
 	}
 
+	// Custom startup packages install at container boot via cloud-init, which
+	// needs egress — so they are only allowed when network is enabled for this
+	// session: the plan must permit network AND the request must enable the
+	// network feature. Reject before touching tt-backend so no container boots
+	// with a package install that would silently fail.
+	if len(input.Packages) > 0 && !(plan.NetworkAccessEnabled && input.Features["network"]) {
+		return nil, fmt.Errorf("custom packages require network access, which is not enabled for this session")
+	}
+
 	// Validate backend
 	var orgID *uuid.UUID
 	if input.OrganizationID != "" {
