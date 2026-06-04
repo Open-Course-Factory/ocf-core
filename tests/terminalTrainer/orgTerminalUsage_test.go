@@ -216,6 +216,12 @@ func TestGetOrgTerminalUsage_ResponseShape(t *testing.T) {
 
 // TestGetOrgTerminalUsage_ActiveTerminalsAggregated verifies that active terminal counts
 // are summed across all members and grouped by user correctly.
+//
+// Scoping follows the canonical member-join SSOT (organization_members), the
+// same predicate the enforced budget uses: terminals owned by a member of the
+// org count; terminals owned by a non-member are excluded even if org-tagged.
+// The "outside" terminal below is therefore owned by a NON-member so it stays
+// out of this org's dashboard.
 func TestGetOrgTerminalUsage_ActiveTerminalsAggregated(t *testing.T) {
 	db := setupTestDBWithOrgs(t)
 
@@ -253,19 +259,19 @@ func TestGetOrgTerminalUsage_ActiveTerminalsAggregated(t *testing.T) {
 	}
 	require.NoError(t, db.Create(stoppedTerminal).Error)
 
-	// Create an active terminal for student1 in a DIFFERENT org (should NOT be counted)
-	otherOrg := createTestOrgForHistory(t, db, "other-owner")
-	userKey2, err := createTestUserKey(db, "student1b")
+	// Create an active terminal owned by a NON-member but tagged to this org
+	// (should NOT be counted: member-join excludes non-members).
+	userKey2, err := createTestUserKey(db, "non-member")
 	require.NoError(t, err)
 	outsideTerminal := &models.Terminal{
 		SessionID:         "outside-session-" + uuid.New().String(),
-		UserID:            "student1",
+		UserID:            "non-member",
 		State:            models.StateRunning,
 		ExpiresAt:         time.Now().Add(1 * time.Hour),
 		InstanceType:      "test",
 		MachineSize:       "S",
 		UserTerminalKeyID: userKey2.ID,
-		OrganizationID:    &otherOrg.ID,
+		OrganizationID:    &org.ID,
 	}
 	require.NoError(t, db.Create(outsideTerminal).Error)
 

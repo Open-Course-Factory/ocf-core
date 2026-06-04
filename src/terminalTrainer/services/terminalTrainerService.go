@@ -584,10 +584,105 @@ func (tts *terminalTrainerService) GetOrganizationTerminalSessions(orgID uuid.UU
 // introducing the cycle — see code comment in GetOrgTerminalUsage below.
 var LookupCasdoorUserForOrgUsage = casdoorsdk.GetUserByUserId
 
-// GetOrgTerminalUsage returns aggregated active terminal usage for an organization:
-// the org's effective plan limits, and a per-user breakdown of active terminal counts.
+// orgUserUsageEntry is the per-user terminal footprint for an organization,
+// keyed by user_id. Every field derives from the canonical member-join
+// (organization_members) so the breakdown matches the enforced budget and
+// excludes terminals owned by non-members (even if org-tagged).
+type orgUserUsageEntry struct {
+	occupying int // slot occupancy under OccupiesSlotScope (running+stopped, live)
+	running   int // currently-running display count under RunningDisplayScope
+	cpu       int // SUM(size_cpu) under OccupiesSlotScope
+	memMB     int // SUM(size_memory_mb) under OccupiesSlotScope
+}
+
+// perUserOrgOccupancy returns the per-user terminal footprint for an org,
+// summed across the org's active members via the organization_members join.
+//
+// Both queries mirror the canonical member-join shape used by
+// quotaService.sumActiveResourcesForOrg / models.CountOrgOccupiedSlots
+// (JOIN organization_members ON organization_members.user_id =
+// terminals.user_id WHERE organization_members.organization_id = ? AND
+// organization_members.deleted_at IS NULL). This is the SSOT predicate the
+// budget gate enforces, so the dashboard breakdown cannot drift from it:
+//   - occupancy/cpu/mem route through OccupiesSlotScope (running+stopped,
+//     live), so sum(occupancy) == CountOrgOccupiedSlots and
+//     sum(cpu)/sum(mem) == GetBudgetUsage(org).
+//   - running routes through RunningDisplayScope (the "what's alive right
+//     now" display field), narrower than occupancy on purpose.
+//
+// A user with only stopped sessions appears in the occupancy set but not the
+// running set, so the two are unioned by user_id.
+func (tts *terminalTrainerService) perUserOrgOccupancy(orgID uuid.UUID) (map[string]*orgUserUsageEntry, error) {
+	const memberJoin = "JOIN organization_members ON organization_members.user_id = terminals.user_id"
+	const memberWhere = "organization_members.organization_id = ? AND organization_members.deleted_at IS NULL"
+
+	byUser := make(map[string]*orgUserUsageEntry)
+	entryFor := func(userID string) *orgUserUsageEntry {
+		e, ok := byUser[userID]
+		if !ok {
+			e = &orgUserUsageEntry{}
+			byUser[userID] = e
+		}
+		return e
+	}
+
+	// Slot occupancy + CPU/RAM footprint in one grouped query under the
+	// canonical OccupiesSlotScope member-join.
+	type occupancyRow struct {
+		UserID         string
+		OccupyingCount int64
+		SumCPU         int64
+		SumMemory      int64
+	}
+	var occupancyRows []occupancyRow
+	if err := tts.db.Table("terminals").
+		Scopes(models.OccupiesSlotScope).
+		Joins(memberJoin).
+		Where(memberWhere, orgID).
+		Select("terminals.user_id as user_id, COUNT(*) as occupying_count, " +
+			"COALESCE(SUM(terminals.size_cpu), 0) as sum_cpu, " +
+			"COALESCE(SUM(terminals.size_memory_mb), 0) as sum_memory").
+		Group("terminals.user_id").
+		Scan(&occupancyRows).Error; err != nil {
+		return nil, fmt.Errorf("failed to aggregate org slot occupancy: %w", err)
+	}
+	for _, row := range occupancyRows {
+		e := entryFor(row.UserID)
+		e.occupying = int(row.OccupyingCount)
+		e.cpu = int(row.SumCPU)
+		e.memMB = int(row.SumMemory)
+	}
+
+	// Running-only display count under the canonical RunningDisplayScope
+	// member-join.
+	type runningRow struct {
+		UserID       string
+		RunningCount int64
+	}
+	var runningRows []runningRow
+	if err := tts.db.Table("terminals").
+		Scopes(models.RunningDisplayScope).
+		Joins(memberJoin).
+		Where(memberWhere, orgID).
+		Select("terminals.user_id as user_id, COUNT(*) as running_count").
+		Group("terminals.user_id").
+		Scan(&runningRows).Error; err != nil {
+		return nil, fmt.Errorf("failed to count running org terminals: %w", err)
+	}
+	for _, row := range runningRows {
+		entryFor(row.UserID).running = int(row.RunningCount)
+	}
+
+	return byUser, nil
+}
+
+// GetOrgTerminalUsage returns aggregated terminal usage for an organization:
+// the org's effective plan limits, and a per-user breakdown. Every number
+// derives from the enforced budget SSOT (quotaService.GetBudgetUsage and the
+// OccupiesSlotScope member-join) so the dashboard cannot disagree with the
+// quota gate.
 func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.OrgTerminalUsageResponse, error) {
-	// 1. Resolve the org's effective plan via EffectivePlanService (owner's plan in the org context).
+	// Resolve the org's effective plan via EffectivePlanService (owner's plan in the org context).
 	effectivePlanSvc := paymentServices.NewEffectivePlanService(tts.db)
 
 	// Load the org to find owner
@@ -608,121 +703,14 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 		resolvedPlan = planResult.Plan
 	}
 
-	// 2. Count active terminals (what's running) per user — display field.
-	//
-	// SSOT: "currently running terminals" is owned by
-	// models.RunningDisplayScope. Both this counter and the slot counter
-	// below now route through their respective scopes so the dashboard
-	// stays internally consistent (no "1 active / 0 occupying" zombie
-	// drift). RunningDisplayScope intentionally narrows further than
-	// OccupiesSlotScope (status='active' only, not active+stopped)
-	// because "active_terminals" reports what is currently running; the
-	// slot count uses OccupiesSlotScope for quota semantics.
-	type userCount struct {
-		UserID      string
-		ActiveCount int64
-	}
-	var activeRows []userCount
-	err = tts.db.Table("terminals").
-		Scopes(models.RunningDisplayScope).
-		Where("terminals.organization_id = ?", orgID).
-		Select("terminals.user_id as user_id, COUNT(*) as active_count").
-		Group("terminals.user_id").
-		Scan(&activeRows).Error
+	// Per-user breakdown through the canonical member-join (excludes
+	// non-members even if their terminals are org-tagged).
+	byUser, err := tts.perUserOrgOccupancy(orgID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to count active terminals: %w", err)
+		return nil, err
 	}
 
-	// 3. Count quota-relevant slot occupancy per user using the SSOT scope
-	// (models.OccupiesSlotScope). Stopped sessions still occupy a slot and
-	// must be reflected separately from the running-only display count.
-	//
-	// NOTE: this uses the direct terminals.organization_id column, NOT the
-	// member-join shape of models.CountOrgOccupiedSlots. The two semantics
-	// disagree:
-	//   - dashboard (here): "terminals attributed to this org via the
-	//     terminals.organization_id column" — what dashboards historically
-	//     displayed per-user for the org.
-	//   - quota (CountOrgOccupiedSlots): "terminals owned by any member of
-	//     the org" — the production quota gate semantics.
-	// Aligning the two is a real product-behavior change; tracked separately
-	// so this security-fix branch stays behavior-preserving. We deliberately
-	// do NOT use CountOrgOccupiedSlots here for that reason, and we cannot
-	// use a flat helper anyway because this query is a GROUP BY user_id.
-	type userSlotCount struct {
-		UserID         string
-		OccupyingCount int64
-	}
-	var slotRows []userSlotCount
-	err = tts.db.Table("terminals").
-		Scopes(models.OccupiesSlotScope).
-		Select("terminals.user_id as user_id, COUNT(*) as occupying_count").
-		Where("terminals.organization_id = ?", orgID).
-		Group("terminals.user_id").
-		Scan(&slotRows).Error
-	if err != nil {
-		return nil, fmt.Errorf("failed to count slot-occupying terminals: %w", err)
-	}
-
-	// 3b. Per-user CPU + RAM footprint under the budget counting rule (D6:
-	// state='running' OR persistence_mode='persistent', expires_at > NOW(),
-	// deleted_at IS NULL). Always computed so the dashboard surfaces the
-	// breakdown; budget enforcement reads the same numbers downstream.
-	type userResourceSum struct {
-		UserID    string
-		SumCPU    int64
-		SumMemory int64
-	}
-	var resourceRows []userResourceSum
-	err = tts.db.Table("terminals").
-		Select("terminals.user_id as user_id, COALESCE(SUM(terminals.size_cpu), 0) as sum_cpu, COALESCE(SUM(terminals.size_memory_mb), 0) as sum_memory").
-		Where("terminals.deleted_at IS NULL").
-		Where("terminals.organization_id = ?", orgID).
-		Where("terminals.expires_at > ?", time.Now()).
-		Where("(terminals.state = ? OR terminals.persistence_mode = ?)", models.StateRunning, "persistent").
-		Group("terminals.user_id").
-		Scan(&resourceRows).Error
-	if err != nil {
-		return nil, fmt.Errorf("failed to sum per-user resources: %w", err)
-	}
-
-	// 4. Build per-user entries merging both counts. A user may appear in
-	// slotRows but not in activeRows (e.g. all their sessions are stopped),
-	// so we key by UserID and union the two sets.
-	type userEntry struct {
-		active    int
-		occupying int
-		cpu       int
-		memMB     int
-	}
-	byUser := make(map[string]*userEntry)
-	for _, row := range activeRows {
-		e, ok := byUser[row.UserID]
-		if !ok {
-			e = &userEntry{}
-			byUser[row.UserID] = e
-		}
-		e.active = int(row.ActiveCount)
-	}
-	for _, row := range slotRows {
-		e, ok := byUser[row.UserID]
-		if !ok {
-			e = &userEntry{}
-			byUser[row.UserID] = e
-		}
-		e.occupying = int(row.OccupyingCount)
-	}
-	for _, row := range resourceRows {
-		e, ok := byUser[row.UserID]
-		if !ok {
-			e = &userEntry{}
-			byUser[row.UserID] = e
-		}
-		e.cpu = int(row.SumCPU)
-		e.memMB = int(row.SumMemory)
-	}
-
-	// 5. Resolve DisplayName + Email per user via Casdoor. The Casdoor SDK
+	// Resolve DisplayName + Email per user via Casdoor. The Casdoor SDK
 	// has no bulk endpoint, so this is an N+1 loop. Acceptable for a
 	// dashboard with a handful of users on a ~30s auto-refresh; if the
 	// shape ever grows to hundreds of users, introduce caching at the
@@ -761,63 +749,75 @@ func (tts *terminalTrainerService) GetOrgTerminalUsage(orgID uuid.UUID) (*dto.Or
 		infoByUser[userID] = userInfo{DisplayName: label, Email: user.Email}
 	}
 
-	totalActive := 0
-	totalOccupying := 0
-	totalCPU := 0
-	totalMem := 0
+	totalRunning := 0
 	users := make([]dto.OrgTerminalUsageUser, 0, len(byUser))
 	for userID, e := range byUser {
-		totalActive += e.active
-		totalOccupying += e.occupying
-		totalCPU += e.cpu
-		totalMem += e.memMB
+		totalRunning += e.running
 		info := infoByUser[userID]
 		users = append(users, dto.OrgTerminalUsageUser{
 			UserID:         userID,
 			DisplayName:    info.DisplayName,
 			Email:          info.Email,
-			ActiveCount:    e.active,
+			ActiveCount:    e.running,
 			OccupyingSlots: e.occupying,
 			ActiveCPU:      e.cpu,
 			ActiveMemoryMB: e.memMB,
 		})
 	}
 
+	// Org totals come straight from the enforced budget SSOT, not from
+	// re-summing the per-user rows: GetBudgetUsage and CountOrgOccupiedSlots
+	// are the exact predicates the quota gate uses. By construction the
+	// per-user CPU/mem/occupancy rows (same OccupiesSlotScope member-join)
+	// sum to these, but reading the canonical totals directly keeps the
+	// headline numbers pinned to the gate.
+	occupyingSlots, err := models.CountOrgOccupiedSlots(tts.db, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count org occupied slots: %w", err)
+	}
+	usedCPU, usedMem := 0, 0
+	if tts.quotaService != nil {
+		usedCPU, usedMem, err = tts.quotaService.GetBudgetUsage("", &orgIDPtr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read org budget usage: %w", err)
+		}
+	}
+
 	resp := &dto.OrgTerminalUsageResponse{
 		OrganizationID:  orgID.String(),
-		ActiveTerminals: totalActive,
-		OccupyingSlots:  totalOccupying,
+		ActiveTerminals: totalRunning,
+		OccupyingSlots:  int(occupyingSlots),
 		PlanName:        planName,
 		IsFallback:      isFallback,
 		Users:           users,
 	}
 
-	// 6. Budget enrichment. Always emit a Quota envelope for shape
-	// stability — Scope="unlimited" signals "ignore the numeric fields".
-	// RemainingBySize is populated whenever the plan exposes a budget cap
-	// (frontend keys off the non-empty slice). Plans with zero caps on
-	// both axes are unlimited and keep the default unlimited envelope.
+	// Budget enrichment. Always emit a Quota envelope for shape stability —
+	// Scope="unlimited" signals "ignore the numeric fields". RemainingBySize
+	// is populated whenever the plan exposes a budget cap (frontend keys off
+	// the non-empty slice). Plans with zero caps on both axes are unlimited
+	// and keep the default unlimited envelope.
 	if resolvedPlan != nil && tts.quotaService != nil &&
 		(resolvedPlan.MaxCPU > 0 || resolvedPlan.MaxMemoryMB > 0) {
-		remCPU := resolvedPlan.MaxCPU - totalCPU
+		remCPU := resolvedPlan.MaxCPU - usedCPU
 		if remCPU < 0 {
 			remCPU = 0
 		}
-		remMem := resolvedPlan.MaxMemoryMB - totalMem
+		remMem := resolvedPlan.MaxMemoryMB - usedMem
 		if remMem < 0 {
 			remMem = 0
 		}
 		resp.Quota = &dto.SessionQuotaInfo{
 			MaxCPU:            resolvedPlan.MaxCPU,
 			MaxMemoryMB:       resolvedPlan.MaxMemoryMB,
-			UsedCPU:           totalCPU,
-			UsedMemoryMB:      totalMem,
+			UsedCPU:           usedCPU,
+			UsedMemoryMB:      usedMem,
 			RemainingCPU:      remCPU,
 			RemainingMemoryMB: remMem,
 			Scope:             dto.ScopeOrganization,
 		}
 
-		sizeRemaining := tts.quotaService.ComputeRemainingBySize(resolvedPlan, totalCPU, totalMem)
+		sizeRemaining := tts.quotaService.ComputeRemainingBySize(resolvedPlan, usedCPU, usedMem)
 		// Largest sizes first so the dashboard renders xl → xs by default.
 		out := make([]dto.SizeRemainingDTO, 0, len(sizeRemaining))
 		for i := len(sizeRemaining) - 1; i >= 0; i-- {
