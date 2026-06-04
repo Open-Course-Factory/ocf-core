@@ -86,3 +86,115 @@ func TestGetUserSessions_ResponseExposesStateNotStatus(t *testing.T) {
 			"State is the SSOT; the FE has migrated to read state. Leaking status "+
 			"is what caused the drifted Resume / banner regressions.")
 }
+
+// TestGetUserSessions_ResponseExposesComposedFeatures pins that the raw
+// `composed_features` JSON string round-trips through the list read path. The
+// FE owns the single canonical parser (sessionHasNetwork) that JSON-parses
+// this string to render the network on/off icon; the backend must pass the
+// string through verbatim and must NOT derive a second boolean (SSOT).
+func TestGetUserSessions_ResponseExposesComposedFeatures(t *testing.T) {
+	sessionID := "contract-session-network"
+	srv := sessionListContainingTTServer(t, sessionID, "stopped")
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
+	db := freshTestDB(t)
+	controller := terminalController.NewTerminalController(db)
+
+	userKey, err := createTestUserKey(db, "contract-user")
+	require.NoError(t, err)
+
+	terminal := &models.Terminal{
+		SessionID:         sessionID,
+		UserID:            "contract-user",
+		Name:              "Contract Network On",
+		State:             models.StateStopped,
+		PersistenceMode:   "persistent",
+		ExpiresAt:         time.Now().Add(time.Hour),
+		InstanceType:      "test",
+		MachineSize:       "S",
+		ComposedFeatures:  `{"network":true}`,
+		UserTerminalKeyID: userKey.ID,
+	}
+	require.NoError(t, db.Create(terminal).Error)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "contract-user")
+		c.Set("userRoles", []string{"user"})
+		c.Next()
+	})
+	router.GET("/terminals/user-sessions", controller.GetUserSessions)
+
+	req := httptest.NewRequest("GET", "/terminals/user-sessions", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+
+	var rows []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &rows))
+	require.Len(t, rows, 1, "expected exactly one session in the response")
+
+	// The raw composed_features JSON string must round-trip verbatim so the
+	// FE parser can derive the network status. A missing key here is exactly
+	// the silent-field-loss bug: every session would render "disconnected".
+	assert.Equal(t, `{"network":true}`, rows[0]["composed_features"],
+		"GET /terminals/user-sessions must expose the raw composed_features JSON "+
+			"so the FE can render the network on/off icon")
+}
+
+// TestGetUserSessions_OmitsEmptyComposedFeatures pins the "off" case: a session
+// without composed features omits the key (omitempty), so the FE parser sees no
+// network feature and correctly renders "disconnected".
+func TestGetUserSessions_OmitsEmptyComposedFeatures(t *testing.T) {
+	sessionID := "contract-session-no-features"
+	srv := sessionListContainingTTServer(t, sessionID, "stopped")
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
+	db := freshTestDB(t)
+	controller := terminalController.NewTerminalController(db)
+
+	userKey, err := createTestUserKey(db, "contract-user")
+	require.NoError(t, err)
+
+	terminal := &models.Terminal{
+		SessionID:         sessionID,
+		UserID:            "contract-user",
+		Name:              "Contract No Features",
+		State:             models.StateStopped,
+		PersistenceMode:   "persistent",
+		ExpiresAt:         time.Now().Add(time.Hour),
+		InstanceType:      "test",
+		MachineSize:       "S",
+		ComposedFeatures:  "",
+		UserTerminalKeyID: userKey.ID,
+	}
+	require.NoError(t, db.Create(terminal).Error)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", "contract-user")
+		c.Set("userRoles", []string{"user"})
+		c.Next()
+	})
+	router.GET("/terminals/user-sessions", controller.GetUserSessions)
+
+	req := httptest.NewRequest("GET", "/terminals/user-sessions", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+
+	var rows []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &rows))
+	require.Len(t, rows, 1, "expected exactly one session in the response")
+
+	_, hasFeatures := rows[0]["composed_features"]
+	assert.False(t, hasFeatures,
+		"an empty composed_features must be omitted from the wire (omitempty) "+
+			"so the FE renders the session as disconnected")
+}

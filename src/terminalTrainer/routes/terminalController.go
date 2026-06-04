@@ -663,9 +663,10 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 			ExpiresAt:       terminal.ExpiresAt,
 			InstanceType:    terminal.InstanceType,
 			MachineSize:     terminal.MachineSize,
-			Backend:         terminal.Backend,
-			OrganizationID:  terminal.OrganizationID,
-			CreatedAt:       terminal.CreatedAt,
+			Backend:          terminal.Backend,
+			OrganizationID:   terminal.OrganizationID,
+			ComposedFeatures: terminal.ComposedFeatures,
+			CreatedAt:        terminal.CreatedAt,
 		})
 	}
 

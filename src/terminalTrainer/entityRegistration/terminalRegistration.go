@@ -27,9 +27,10 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 						ExpiresAt:       model.ExpiresAt,
 						InstanceType:    model.InstanceType,
 						MachineSize:     model.MachineSize,
-						Backend:         model.Backend,
-						OrganizationID:  model.OrganizationID,
-						CreatedAt:       model.CreatedAt,
+						Backend:          model.Backend,
+						OrganizationID:   model.OrganizationID,
+						ComposedFeatures: model.ComposedFeatures,
+						CreatedAt:        model.CreatedAt,
 					}, nil
 				},
 				DtoToModel: func(input dto.CreateTerminalInput) *models.Terminal {

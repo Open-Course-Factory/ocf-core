@@ -50,7 +50,12 @@ type TerminalOutput struct {
 	Backend            string     `json:"backend,omitempty"`
 	OrganizationID     *uuid.UUID `json:"organization_id,omitempty"`
 	SubscriptionPlanID *uuid.UUID `json:"subscription_plan_id,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
+	// ComposedFeatures is the raw composed-session feature JSON (e.g.
+	// `{"network":true}`) passed through verbatim. The FE owns the single
+	// canonical parser that derives the network on/off status from it — the
+	// backend deliberately does NOT compute a derived boolean here (SSOT).
+	ComposedFeatures string    `json:"composed_features,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // UserTerminalKey DTOs for generic system
