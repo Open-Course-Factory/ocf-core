@@ -206,18 +206,33 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 		}, nil
 	}
 
-	// Team org → check that the user is actually a member of this org
-	var memberCount int64
-	if err := s.db.Model(&orgModels.OrganizationMember{}).
+	// Team org → check that the user is actually a member of this org and
+	// capture their role (used for role-based plan entitlements).
+	var member orgModels.OrganizationMember
+	err := s.db.
 		Where("organization_id = ? AND user_id = ? AND is_active = ?", orgID, userID, true).
-		Count(&memberCount).Error; err != nil {
-		return nil, fmt.Errorf("failed to check org membership: %w", err)
-	}
-	if memberCount == 0 {
+		First(&member).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("user %s is not a member of organization %s", userID, orgID.String())
 	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to check org membership: %w", err)
+	}
 
-	// Return that org's subscription
+	// Role-based plan entitlement: if the org maps the member's role to a
+	// specific plan, that mapping wins over the org's default subscription.
+	rolePlan, err := s.orgSubRepo.GetOrganizationRolePlan(orgID, string(member.Role))
+	if err == nil && rolePlan != nil {
+		return &EffectivePlanResult{
+			Plan:   &rolePlan.SubscriptionPlan,
+			Source: PlanSourceOrganization,
+		}, nil
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to resolve role plan for organization %s: %w", orgID.String(), err)
+	}
+
+	// No role mapping for this role → fall back to the org's default subscription
 	orgSub, err := s.orgSubRepo.GetActiveOrganizationSubscription(orgID)
 	if err != nil {
 		// Team org has no subscription — fall back to user's personal subscription.
