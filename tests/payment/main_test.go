@@ -53,6 +53,7 @@ func runTestMigrations(db *gorm.DB) error {
 		&models.UserSubscription{},
 		&models.UsageMetrics{},
 		&models.OrganizationSubscription{},
+		&models.OrganizationRolePlan{},
 		&organizationModels.Organization{},
 		&organizationModels.OrganizationMember{},
 		&models.PlanFeature{},
@@ -158,6 +159,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM usage_metrics")
 	sharedTestDB.Exec("DELETE FROM user_subscriptions")
 	sharedTestDB.Exec("DELETE FROM organization_subscriptions")
+	sharedTestDB.Exec("DELETE FROM organization_role_plans")
 	sharedTestDB.Exec("DELETE FROM organization_members")
 	sharedTestDB.Exec("DELETE FROM organizations")
 	sharedTestDB.Exec("DELETE FROM subscription_plans")

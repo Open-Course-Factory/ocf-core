@@ -123,6 +123,166 @@ func createTeamOrgWithoutSubscription(t *testing.T, db *gorm.DB, orgName string,
 	return org
 }
 
+// addOrgMemberWithRole adds an active OrganizationMember with the given role to an org.
+func addOrgMemberWithRole(t *testing.T, db *gorm.DB, orgID uuid.UUID, userID string, role organizationModels.OrganizationMemberRole) *organizationModels.OrganizationMember {
+	t.Helper()
+	member := &organizationModels.OrganizationMember{
+		BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID: orgID,
+		UserID:         userID,
+		Role:           role,
+		JoinedAt:       time.Now(),
+		IsActive:       true,
+	}
+	err := db.Omit("Metadata").Create(member).Error
+	assert.NoError(t, err)
+	return member
+}
+
+// createOrgRolePlan inserts an OrganizationRolePlan mapping (org+role -> plan).
+func createOrgRolePlan(t *testing.T, db *gorm.DB, orgID uuid.UUID, role string, plan *models.SubscriptionPlan) *models.OrganizationRolePlan {
+	t.Helper()
+	orp := &models.OrganizationRolePlan{
+		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID:     orgID,
+		Role:               role,
+		SubscriptionPlanID: plan.ID,
+	}
+	err := db.Create(orp).Error
+	assert.NoError(t, err)
+	return orp
+}
+
+// --- Role-based plan resolution tests (#357) ---
+
+// TestGetUserEffectivePlanForOrg_RoleMapping_WinsOverOrgDefault verifies that when
+// the org has a role->plan mapping for the user's role, that mapped plan is used
+// instead of the org's default OrganizationSubscription plan.
+func TestGetUserEffectivePlanForOrg_RoleMapping_WinsOverOrgDefault(t *testing.T) {
+	db := freshTestDB(t)
+
+	ownerUserID := "role-map-owner"
+	managerUserID := "role-map-manager"
+
+	basicPlan := createPlan(t, db, "Basic", 10, 0)
+	proPlan := createPlan(t, db, "Pro", 50, 0)
+
+	// Team org with default subscription = Basic
+	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "role-map-team", ownerUserID, basicPlan, organizationModels.OrgTypeTeam)
+
+	// manager user is a member with role "manager"
+	addOrgMemberWithRole(t, db, teamOrg.ID, managerUserID, "manager")
+
+	// mapping: manager -> Pro
+	createOrgRolePlan(t, db, teamOrg.ID, "manager", proPlan)
+
+	svc := services.NewEffectivePlanService(db)
+	result, err := svc.GetUserEffectivePlan(managerUserID, &teamOrg.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, services.PlanSourceOrganization, result.Source)
+	assert.Equal(t, proPlan.ID, result.Plan.ID, "manager's role mapping (Pro) should win over org default (Basic)")
+	assert.Equal(t, "Pro", result.Plan.Name)
+}
+
+// TestGetUserEffectivePlanForOrg_NoRoleMapping_FallsBackToOrgDefault verifies that
+// when there is no mapping for the user's role, resolution falls back to the org's
+// default OrganizationSubscription plan (current behavior preserved).
+func TestGetUserEffectivePlanForOrg_NoRoleMapping_FallsBackToOrgDefault(t *testing.T) {
+	db := freshTestDB(t)
+
+	ownerUserID := "role-fallback-owner"
+	memberUserID := "role-fallback-member"
+
+	basicPlan := createPlan(t, db, "Basic", 10, 0)
+	proPlan := createPlan(t, db, "Pro", 50, 0)
+
+	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "role-fallback-team", ownerUserID, basicPlan, organizationModels.OrgTypeTeam)
+
+	// plain member, no mapping for role "member"
+	addOrgMemberWithRole(t, db, teamOrg.ID, memberUserID, "member")
+
+	// mapping only for manager
+	createOrgRolePlan(t, db, teamOrg.ID, "manager", proPlan)
+
+	svc := services.NewEffectivePlanService(db)
+	result, err := svc.GetUserEffectivePlan(memberUserID, &teamOrg.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, services.PlanSourceOrganization, result.Source)
+	assert.Equal(t, basicPlan.ID, result.Plan.ID, "member with no role mapping should get org default (Basic)")
+	assert.Equal(t, "Basic", result.Plan.Name)
+}
+
+// TestGetUserEffectivePlanForOrg_ManagerVsMember_SameOrg_Diverge verifies that within
+// the SAME org, a manager and a member resolve to DIFFERENT plans driven by the
+// role mapping.
+func TestGetUserEffectivePlanForOrg_ManagerVsMember_SameOrg_Diverge(t *testing.T) {
+	db := freshTestDB(t)
+
+	ownerUserID := "diverge-owner"
+	managerUserID := "diverge-manager"
+	memberUserID := "diverge-member"
+
+	basicPlan := createPlan(t, db, "Basic", 10, 0)
+	proPlan := createPlan(t, db, "Pro", 50, 0)
+
+	// org default = Basic
+	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "diverge-team", ownerUserID, basicPlan, organizationModels.OrgTypeTeam)
+
+	addOrgMemberWithRole(t, db, teamOrg.ID, managerUserID, "manager")
+	addOrgMemberWithRole(t, db, teamOrg.ID, memberUserID, "member")
+
+	// mapping: manager -> Pro, member -> Basic
+	createOrgRolePlan(t, db, teamOrg.ID, "manager", proPlan)
+	createOrgRolePlan(t, db, teamOrg.ID, "member", basicPlan)
+
+	svc := services.NewEffectivePlanService(db)
+
+	managerResult, err := svc.GetUserEffectivePlan(managerUserID, &teamOrg.ID)
+	require.NoError(t, err)
+	require.NotNil(t, managerResult)
+	assert.Equal(t, proPlan.ID, managerResult.Plan.ID, "manager should resolve to Pro")
+	assert.Equal(t, services.PlanSourceOrganization, managerResult.Source)
+
+	memberResult, err := svc.GetUserEffectivePlan(memberUserID, &teamOrg.ID)
+	require.NoError(t, err)
+	require.NotNil(t, memberResult)
+	assert.Equal(t, basicPlan.ID, memberResult.Plan.ID, "member should resolve to Basic")
+	assert.Equal(t, services.PlanSourceOrganization, memberResult.Source)
+
+	assert.NotEqual(t, managerResult.Plan.ID, memberResult.Plan.ID,
+		"same org should yield different plans for manager vs member")
+}
+
+// TestGetUserEffectivePlanForOrg_NoRolePlanRows_BackwardCompatible verifies that a
+// team org with a default subscription and NO OrganizationRolePlan rows resolves
+// every member to the org default plan exactly as before this feature.
+func TestGetUserEffectivePlanForOrg_NoRolePlanRows_BackwardCompatible(t *testing.T) {
+	db := freshTestDB(t)
+
+	ownerUserID := "compat-owner"
+	memberUserID := "compat-member"
+
+	basicPlan := createPlan(t, db, "Basic", 10, 0)
+
+	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "compat-team", ownerUserID, basicPlan, organizationModels.OrgTypeTeam)
+	addOrgMemberWithRole(t, db, teamOrg.ID, memberUserID, "member")
+
+	// No OrganizationRolePlan rows at all.
+
+	svc := services.NewEffectivePlanService(db)
+	result, err := svc.GetUserEffectivePlan(memberUserID, &teamOrg.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, services.PlanSourceOrganization, result.Source)
+	assert.Equal(t, basicPlan.ID, result.Plan.ID, "with no role-plan rows, member gets org default (Basic)")
+	assert.Equal(t, "Basic", result.Plan.Name)
+}
+
 // --- GetUserEffectivePlanForOrg tests ---
 
 func TestGetUserEffectivePlanForOrg_NilOrg_FallsBackToGlobal(t *testing.T) {
