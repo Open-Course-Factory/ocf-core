@@ -24,6 +24,12 @@ type OrganizationSubscriptionRepository interface {
 	GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error)
 	GetUserOrganizationSubscriptions(userID string) ([]models.OrganizationSubscription, error)
 	UpdateOrganizationSubscription(subscription *models.OrganizationSubscription) error
+
+	// OrganizationRolePlan operations
+	// GetOrganizationRolePlan fetches the role→plan entitlement mapping for a
+	// given organization and member role, with its SubscriptionPlan preloaded.
+	// Returns gorm.ErrRecordNotFound when no mapping exists for that role.
+	GetOrganizationRolePlan(orgID uuid.UUID, role string) (*models.OrganizationRolePlan, error)
 }
 
 type organizationSubscriptionRepository struct {
@@ -156,5 +162,19 @@ func (r *organizationSubscriptionRepository) GetUserOrganizationSubscriptions(us
 // UpdateOrganizationSubscription updates an organization subscription
 func (r *organizationSubscriptionRepository) UpdateOrganizationSubscription(subscription *models.OrganizationSubscription) error {
 	return r.db.Save(subscription).Error
+}
+
+// GetOrganizationRolePlan retrieves the role→plan entitlement mapping for a
+// given organization and member role, with its SubscriptionPlan preloaded.
+// Returns gorm.ErrRecordNotFound when no mapping exists for that (org, role).
+func (r *organizationSubscriptionRepository) GetOrganizationRolePlan(orgID uuid.UUID, role string) (*models.OrganizationRolePlan, error) {
+	var rolePlan models.OrganizationRolePlan
+	err := r.db.Preload("SubscriptionPlan").
+		Where("organization_id = ? AND role = ?", orgID, role).
+		First(&rolePlan).Error
+	if err != nil {
+		return nil, err
+	}
+	return &rolePlan, nil
 }
 

@@ -127,6 +127,7 @@ func AutoMigrateAll(db *gorm.DB) {
 	// NOTE: The partial unique index on organization_subscriptions is
 	// created AFTER BackfillSingleActiveOrgSubscription so the cleanup of
 	// legacy duplicate rows has a chance to run first. See line ~149.
+	db.AutoMigrate(&paymentModels.OrganizationRolePlan{}) // NEW: role-based plan entitlements within an organization
 	db.AutoMigrate(&paymentModels.Invoice{})
 	db.AutoMigrate(&paymentModels.PaymentMethod{})
 	db.AutoMigrate(&paymentModels.UsageMetrics{})
