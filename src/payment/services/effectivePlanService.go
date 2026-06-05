@@ -34,9 +34,9 @@ type EffectivePlanResult struct {
 //
 // Resolution is org-context-aware: callers that know which organization the
 // user is currently acting in MUST pass that org's ID. Only callers that
-// genuinely have no org context (e.g. featureMiddleware enforcing
-// feature-availability at request entry, or featureAccess utilities used by
-// background jobs) may pass nil.
+// genuinely have no org context (e.g. feature-availability gates at request
+// entry, or utilities running outside any HTTP request) may pass nil, which
+// resolves the user's globally highest-priority plan.
 //
 // Historical context: this interface previously exposed TWO resolvers —
 // GetUserEffectivePlan (no-org, global highest priority) and
