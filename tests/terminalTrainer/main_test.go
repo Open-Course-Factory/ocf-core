@@ -45,6 +45,7 @@ func TestMain(m *testing.M) {
 		&orgModels.OrganizationMember{},
 		&paymentModels.SubscriptionPlan{},
 		&paymentModels.OrganizationSubscription{},
+		&paymentModels.OrganizationRolePlan{},
 		&paymentModels.UserSubscription{},
 		&paymentModels.UsageMetrics{},
 		&configModels.Feature{},
@@ -68,6 +69,7 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM class_groups")
 	sharedTestDB.Exec("DELETE FROM organization_members")
 	sharedTestDB.Exec("DELETE FROM organization_subscriptions")
+	sharedTestDB.Exec("DELETE FROM organization_role_plans")
 	sharedTestDB.Exec("DELETE FROM user_subscriptions")
 	sharedTestDB.Exec("DELETE FROM usage_metrics")
 	sharedTestDB.Exec("DELETE FROM organizations")
