@@ -33,7 +33,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	orgModels "soli/formations/src/organizations/models"
+	paymentServices "soli/formations/src/payment/services"
 	paymentModels "soli/formations/src/payment/models"
+	terminalModels "soli/formations/src/terminalTrainer/models"
+	terminalServices "soli/formations/src/terminalTrainer/services"
 	terminalController "soli/formations/src/terminalTrainer/routes"
 )
 
@@ -205,6 +208,100 @@ func TestMyTerminalUsage_ExpiredZombie_Excluded(t *testing.T) {
 	assert.Equal(t, float64(0), resp["used_memory_mb"])
 	sessions, _ := resp["active_sessions"].([]interface{})
 	assert.Equal(t, 0, len(sessions), "expired zombies must not appear in the list")
+}
+
+// insertReservationPlaceholder writes a live (future-expiry) StateStarting
+// reservation row with a `reserving:<uuid>` placeholder session_id — the exact
+// shape the reserve-first composed path commits before it POSTs to tt-backend.
+// Such a row MUST count toward the budget (StateStarting is in
+// TerminalStatesOccupyingSlot) but MUST be hidden from the user-facing session
+// list (no console URL; vanishes on finalize or TTL lapse). Raw SQL mirrors
+// insertExistingTerminal but pins the placeholder prefix so the predicate the
+// production list-filter keys on (IsReservationPlaceholderSessionID) is what's
+// under test.
+func insertReservationPlaceholder(t *testing.T, userID string, cpu, memMB int) string {
+	t.Helper()
+	id := uuid.New().String()
+	sessionID := terminalModels.TerminalReservationSessionIDPrefix + uuid.New().String()
+	err := sharedTestDB.Exec(`INSERT INTO terminals
+		(id, created_at, updated_at, user_id, organization_id, session_id, state, persistence_mode, size_cpu, size_memory_mb, expires_at, machine_size, user_terminal_key_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)`,
+		id, time.Now(), time.Now(), userID, nil,
+		sessionID, string(terminalModels.StateStarting), "ephemeral",
+		cpu, memMB, time.Now().Add(5*time.Minute), uuid.New().String()).Error
+	require.NoError(t, err)
+	return sessionID
+}
+
+// TestGetUserTerminalUsage_ReservationCountsBudgetButHiddenFromSessionList pins
+// the contract added by the reserve-first fix: a live reservation placeholder
+// (StateStarting, `reserving:<uuid>` session_id, future expiry) must
+//
+//   - COUNT toward the budget (so concurrent starts can't overshoot while a
+//     reservation is in flight) — proven via QuotaService.GetBudgetUsage, the
+//     exact surface the budget gate enforces, AND
+//   - be ABSENT from GetUserTerminalUsage().ActiveSessions (no console URL; a
+//     placeholder is not a real session) — while a genuinely-running session
+//     seeded alongside it IS still listed.
+//
+// The two halves together prove the fix's split: the budget SUM and the
+// per-session LIST read the same OccupiesSlotScope, but the list applies the
+// placeholder filter (IsReservationPlaceholderSessionID) the sum does not.
+func TestGetUserTerminalUsage_ReservationCountsBudgetButHiddenFromSessionList(t *testing.T) {
+	freshTestDB(t)
+	userID := "user-resv-hidden-" + uuid.New().String()[:8]
+	// Budget large enough to hold both rows so neither is reaped for over-budget.
+	seedPersonalPlanFor(t, userID, 16000, 8192, 60, "Pro")
+
+	// A genuinely-running session (normal session_id) — the contrast case that
+	// MUST stay visible in the list.
+	insertExistingTerminal(t, sharedTestDB, userID, nil, "running", "ephemeral", 2000, 1024)
+
+	// A live reservation placeholder — counts for budget, hidden from the list.
+	reservationSessionID := insertReservationPlaceholder(t, userID, 4000, 2048)
+
+	eps := paymentServices.NewEffectivePlanService(sharedTestDB)
+	qs := paymentServices.NewQuotaService(sharedTestDB, eps)
+
+	// (1) The reservation COUNTS: the budget sum is running + reservation.
+	usedCPU, usedMem, err := qs.GetBudgetUsage(userID, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 2000+4000, usedCPU,
+		"the live reservation placeholder MUST count toward the CPU budget alongside the running session")
+	assert.Equal(t, 1024+2048, usedMem,
+		"the live reservation placeholder MUST count toward the RAM budget alongside the running session")
+
+	// (2) The reservation is HIDDEN from the user-facing session list, but the
+	// real running session is still present — asserted on the production
+	// GetUserTerminalUsage struct, not on the budget sum.
+	svc := terminalServices.NewTerminalTrainerService(sharedTestDB)
+	usage, err := svc.GetUserTerminalUsage(userID, nil)
+	require.NoError(t, err)
+
+	var sawReservation, sawRunning bool
+	for _, s := range usage.ActiveSessions {
+		if terminalModels.IsReservationPlaceholderSessionID(s.SessionID) {
+			sawReservation = true
+		}
+		if s.SessionID == reservationSessionID {
+			sawReservation = true
+		}
+		if s.State == terminalModels.StateRunning && !terminalModels.IsReservationPlaceholderSessionID(s.SessionID) {
+			sawRunning = true
+		}
+	}
+	assert.False(t, sawReservation,
+		"a reservation placeholder (reserving:<uuid>) must NOT appear in the user-facing session list")
+	assert.True(t, sawRunning,
+		"a genuinely-running session must still appear in the session list — only placeholders are hidden")
+	assert.Len(t, usage.ActiveSessions, 1,
+		"exactly the one real running session is listed; the reservation is filtered out")
+
+	// The honest-predicate guard — keeps IsReservationPlaceholderSessionID from
+	// silently inverting (the list filter above depends on it). Not the point of
+	// the test, just a cheap sanity rail on the shared predicate.
+	assert.True(t, terminalModels.IsReservationPlaceholderSessionID("reserving:x"))
+	assert.False(t, terminalModels.IsReservationPlaceholderSessionID("abc"))
 }
 
 // TestMyTerminalUsage_OrgContext — when ?organization_id=<orgID> is provided,
