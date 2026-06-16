@@ -19,6 +19,13 @@ type TerminalRepository interface {
 
 	// Terminal session methods
 	CreateTerminalSession(terminal *models.Terminal) error
+	// Reservation methods back the composed-session reserve-first flow:
+	// a row is created in StateStarting inside a locked tx (so it counts
+	// toward the budget before provisioning), then either finalized to a
+	// real running session or deleted if provisioning fails.
+	CreateReservation(tx *gorm.DB, terminal *models.Terminal) error
+	FinalizeReservation(terminal *models.Terminal) error
+	DeleteReservation(reservationID uuid.UUID) error
 	GetTerminalSessionByID(sessionID string) (*models.Terminal, error)
 	GetTerminalByUUID(terminalUUID string) (*models.Terminal, error)
 	GetTerminalSessionsByUserID(userID string, isActive bool) (*[]models.Terminal, error)
@@ -116,6 +123,51 @@ func (r *terminalRepository) CreateTerminalSession(terminal *models.Terminal) er
 	}
 	// No existing record: create normally
 	return r.db.Create(terminal).Error
+}
+
+// CreateReservation inserts a budget reservation row on the caller's
+// transaction. It always takes the clean tx.Create path (never the
+// session_id-keyed reinit/restore branch of CreateTerminalSession): the
+// reservation carries a unique placeholder session_id and must persist as
+// a fresh row so it counts toward the budget under OccupiesSlotScope while
+// the container provisions.
+func (r *terminalRepository) CreateReservation(tx *gorm.DB, terminal *models.Terminal) error {
+	return tx.Create(terminal).Error
+}
+
+// FinalizeReservation promotes a committed reservation to a live session
+// once tt-backend has provisioned the container. It overwrites the
+// placeholder session_id with the real one, flips the state to running,
+// and refreshes the resource snapshot — size_cpu/size_memory_mb are
+// rewritten so a finalize at a different size can never desync the budget
+// aggregate (mirrors CreateTerminalSession's reinit branch).
+func (r *terminalRepository) FinalizeReservation(terminal *models.Terminal) error {
+	return r.db.Model(&models.Terminal{}).Where("id = ?", terminal.ID).Updates(map[string]any{
+		"session_id":            terminal.SessionID,
+		"state":                 terminal.State,
+		"name":                  terminal.Name,
+		"expires_at":            terminal.ExpiresAt,
+		"instance_type":         terminal.InstanceType,
+		"machine_size":          terminal.MachineSize,
+		"backend":               terminal.Backend,
+		"organization_id":       terminal.OrganizationID,
+		"subscription_plan_id":  terminal.SubscriptionPlanID,
+		"user_terminal_key_id":  terminal.UserTerminalKeyID,
+		"composed_distribution": terminal.ComposedDistribution,
+		"composed_size":         terminal.ComposedSize,
+		"composed_features":     terminal.ComposedFeatures,
+		"persistence_mode":      terminal.PersistenceMode,
+		"size_cpu":              terminal.SizeCPU,
+		"size_memory_mb":        terminal.SizeMemoryMB,
+	}).Error
+}
+
+// DeleteReservation hard-deletes a reservation row by primary key. Used
+// when provisioning fails: the placeholder row never represented a real
+// container, so removing it (rather than soft-deleting) immediately frees
+// the reserved budget and leaves no zombie to reconcile.
+func (r *terminalRepository) DeleteReservation(reservationID uuid.UUID) error {
+	return r.db.Unscoped().Delete(&models.Terminal{}, "id = ?", reservationID).Error
 }
 
 func (r *terminalRepository) GetTerminalSessionByID(sessionID string) (*models.Terminal, error) {

@@ -1149,35 +1149,13 @@ func (e *BudgetRejection) Error() string {
 		e.Reason, e.RemainingCPU, e.RemainingMemoryMB)
 }
 
-// EnforceBudget translates a QuotaService.CheckBudget outcome into either nil
-// (allowed) or a *BudgetRejection (rejected). Exported so tests can exercise
-// the same translation logic without standing up a full TerminalTrainerService.
-//
-// Defense-in-depth: the TerminalBudgetHook covers any code path that goes
-// through the generic Create flow, but StartComposedSession persists the
-// Terminal directly via repository.CreateTerminalSession and bypasses the
-// hook. Both call paths reuse QuotaService.CheckBudget so the rule can't
-// drift.
-func EnforceBudget(
-	quotaService paymentServices.QuotaService,
-	userID string,
-	orgID *uuid.UUID,
-	plan *paymentModels.SubscriptionPlan,
-	requestedCPU, requestedMemMB int,
-) error {
-	if quotaService == nil {
-		// Fail open at the explicit-check layer — the hook still gates the
-		// generic Create path. This branch only triggers in tests that
-		// build the service without wiring QuotaService.
-		return nil
-	}
-	check, err := quotaService.CheckBudget(userID, orgID, plan, requestedCPU, requestedMemMB)
-	if err != nil {
-		return fmt.Errorf("budget check failed: %w", err)
-	}
-	if check.Allowed {
-		return nil
-	}
+// rejectionFromBudgetCheck builds the controller-facing *BudgetRejection
+// from a QuotaService BudgetCheck verdict. The reserve-first composed
+// path runs the race-safe EnforceBudgetTx (which returns a BudgetCheck)
+// inside its reservation transaction, then reuses this translation so the
+// rejected response is identical to the unlocked EnforceBudget path the
+// controller already maps to a 403.
+func rejectionFromBudgetCheck(check paymentServices.BudgetCheck) *BudgetRejection {
 	return &BudgetRejection{
 		Reason:            check.Reason,
 		RemainingCPU:      check.RemainingCPU,

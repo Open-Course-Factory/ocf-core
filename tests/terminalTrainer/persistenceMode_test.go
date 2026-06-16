@@ -94,8 +94,12 @@ func startComposedSessionTTServer(t *testing.T) (*httptest.Server, *composedSess
 			_ = json.Unmarshal(body, &parsed)
 			rec.gotBody = parsed
 			w.Header().Set("Content-Type", "application/json")
+			// tt-backend names the session id field "id" (see
+			// dto.TerminalTrainerSessionResponse json:"id"). A unique id per
+			// call is required: the composed path finalizes each reservation
+			// to its real id, and Terminal.session_id is uniquely indexed.
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"session_id": "fake-sess-" + uuid.New().String(),
+				"id":         "fake-sess-" + uuid.New().String(),
 				"expires_at": time.Now().Add(time.Hour).Unix(),
 				"backend":    "local",
 				"status":     0,

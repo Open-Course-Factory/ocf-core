@@ -488,18 +488,13 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 		input.SizeMemoryMB = cataSize.MemoryMB
 	}
 
-	// Budget enforcement (MR-CORE-6).
-	//
-	// The TerminalBudgetHook (MR-CORE-5) is a no-op on this path because
-	// StartComposedSession bypasses the generic Create flow — terminals
-	// are persisted directly via repository.CreateTerminalSession in
-	// startComposedSession() below. We therefore call CheckBudget
-	// explicitly here.
-	//
-	// Budget enforcement: reject overspend with a structured budget error.
-	if budgetErr := c.enforceBudget(userID, orgID, plan, input.SizeCPU, input.SizeMemoryMB); budgetErr != nil {
-		return nil, budgetErr
-	}
+	// Budget enforcement happens reserve-first inside startComposedSession:
+	// the row is inserted in StateStarting within a locked transaction
+	// (QuotaService.EnforceBudgetTx) BEFORE the container is provisioned,
+	// so concurrent starts serialise on the scope and cannot overshoot.
+	// The TerminalBudgetHook stays a no-op on this path — the composed flow
+	// persists directly via the repository, bypassing the generic Create
+	// hook chain.
 
 	validatedBackend, err := c.validateBackendForContext(orgID, plan, input.Backend)
 	if err != nil {
@@ -523,20 +518,7 @@ func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateC
 	input.HistoryRetentionDays = plan.CommandHistoryRetentionDays
 	input.SubscriptionPlanID = &plan.ID
 
-	return c.startComposedSession(userID, input)
-}
-
-// enforceBudget runs the budget gate before the Terminal is persisted.
-// Returns a *BudgetRejection on overspend and nil otherwise. Thin
-// wrapper over EnforceBudget — exposes the configured QuotaService to
-// the package-private composed-session path.
-func (c *terminalComposer) enforceBudget(
-	userID string,
-	orgID *uuid.UUID,
-	plan *paymentModels.SubscriptionPlan,
-	requestedCPU, requestedMemMB int,
-) error {
-	return EnforceBudget(c.quotaService, userID, orgID, plan, requestedCPU, requestedMemMB)
+	return c.startComposedSession(userID, orgID, plan, input)
 }
 
 // resolveIdleWindowSeconds returns the org-level idle window override for the
@@ -553,8 +535,123 @@ func (c *terminalComposer) resolveIdleWindowSeconds(orgID *uuid.UUID, mode strin
 	return computeIdleWindowSeconds(&org, mode)
 }
 
-// startComposedSession is the internal method that calls tt-backend's POST /sessions endpoint
-func (c *terminalComposer) startComposedSession(userID string, input dto.CreateComposedSessionInput) (*dto.TerminalSessionResponse, error) {
+// composedFeaturesJSON serializes the enabled features of a composed
+// session as a JSON object ({"docker":true,...}). Returns "" when no
+// feature is enabled so the column stays empty rather than "{}".
+func composedFeaturesJSON(features map[string]bool) string {
+	if features == nil {
+		return ""
+	}
+	enabled := make(map[string]bool)
+	for k, v := range features {
+		if v {
+			enabled[k] = true
+		}
+	}
+	if len(enabled) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(enabled)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// reserveBudget runs the race-safe budget gate and, if the request fits,
+// inserts a StateStarting reservation row — both inside ONE locked
+// transaction so the sum and the insert serialise against concurrent
+// starts for the same scope (QuotaService.EnforceBudgetTx takes the scope
+// advisory lock + row locks on PostgreSQL; SQLite serialises writers
+// itself). The lock is released when the transaction commits, before any
+// container is provisioned.
+//
+// It returns exactly one of: a committed reservation (rejection nil), a
+// *BudgetRejection (reservation nil) when the budget is exhausted, or an
+// error for an infrastructure failure.
+func (c *terminalComposer) reserveBudget(
+	userID string,
+	orgID *uuid.UUID,
+	plan *paymentModels.SubscriptionPlan,
+	userKey *models.UserTerminalKey,
+	input dto.CreateComposedSessionInput,
+) (*models.Terminal, *BudgetRejection, error) {
+	// Unique placeholder id: Terminal.SessionID is uniquely indexed, so a
+	// shared or empty placeholder would collide between concurrent
+	// reservations and fail on the index instead of the budget gate. The
+	// real tt-backend id replaces this on finalize.
+	reservation := &models.Terminal{
+		SessionID:            "reserving:" + uuid.NewString(),
+		UserID:               userID,
+		Name:                 input.Name,
+		State:                models.StateStarting,
+		PersistenceMode:      input.PersistenceMode,
+		ExpiresAt:            time.Now().Add(reservationTTL),
+		InstanceType:         input.DistributionPrefix,
+		MachineSize:          strings.ToUpper(input.Size),
+		OrganizationID:       orgID,
+		SubscriptionPlanID:   input.SubscriptionPlanID,
+		UserTerminalKeyID:    userKey.ID,
+		ComposedDistribution: input.Distribution,
+		ComposedSize:         input.Size,
+		ComposedFeatures:     composedFeaturesJSON(input.Features),
+		SizeCPU:              input.SizeCPU,
+		SizeMemoryMB:         input.SizeMemoryMB,
+	}
+
+	var rejection *BudgetRejection
+	err := c.db.Transaction(func(tx *gorm.DB) error {
+		enforcement, enforceErr := c.quotaService.EnforceBudgetTx(tx, userID, orgID, plan, input.SizeCPU, input.SizeMemoryMB)
+		if enforceErr != nil {
+			return fmt.Errorf("budget check failed: %w", enforceErr)
+		}
+		if !enforcement.Allowed {
+			rejection = rejectionFromBudgetCheck(enforcement.BudgetCheck)
+			return nil
+		}
+		return c.repository.CreateReservation(tx, reservation)
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	if rejection != nil {
+		return nil, rejection, nil
+	}
+	return reservation, nil, nil
+}
+
+// releaseReservation hard-deletes a reservation row, returning its budget
+// to the scope. Best-effort: a failure here only leaves a starting row
+// that OccupiesSlotScope reaps once its reservationTTL expires, so the
+// caller's original error is the one worth surfacing — this logs and
+// moves on.
+func (c *terminalComposer) releaseReservation(reservationID uuid.UUID) {
+	if err := c.repository.DeleteReservation(reservationID); err != nil {
+		utils.Warn("failed to release terminal budget reservation %s: %v", reservationID, err)
+	}
+}
+
+// reservationTTL bounds how long a budget reservation row may hold its
+// slice of the CPU/RAM budget before OccupiesSlotScope's `expires_at >
+// NOW()` clause stops counting it. It must exceed the worst-case
+// tt-backend provisioning latency (so a slow-but-successful start is never
+// double-charged when the row is finalized) yet stay short enough that an
+// abandoned reservation — process crash between commit and finalize —
+// frees the budget quickly without a background sweeper.
+const reservationTTL = 3 * time.Minute
+
+// startComposedSession reserves budget atomically, then provisions the
+// container. It inserts a StateStarting row inside a locked transaction
+// (so the reservation counts under OccupiesSlotScope before any container
+// boots and concurrent starts cannot overshoot), POSTs to tt-backend's
+// /sessions endpoint OUTSIDE the lock, then finalizes the reservation to a
+// running session on success or deletes it on failure.
+func (c *terminalComposer) startComposedSession(
+	userID string,
+	orgID *uuid.UUID,
+	plan *paymentModels.SubscriptionPlan,
+	input dto.CreateComposedSessionInput,
+) (*dto.TerminalSessionResponse, error) {
 	// Get user key
 	userKey, err := c.repository.GetUserTerminalKeyByUserID(userID, true)
 	if err != nil {
@@ -562,6 +659,18 @@ func (c *terminalComposer) startComposedSession(userID string, input dto.CreateC
 	}
 	if !userKey.IsActive {
 		return nil, fmt.Errorf("user terminal trainer key is disabled")
+	}
+
+	// Reserve budget before provisioning. The reservation row is inserted
+	// in StateStarting inside a locked transaction so the budget sum and
+	// the insert serialise against concurrent starts for the same scope;
+	// the lock is released at commit, well before the tt-backend HTTP call.
+	reservation, rejection, err := c.reserveBudget(userID, orgID, plan, userKey, input)
+	if err != nil {
+		return nil, err
+	}
+	if rejection != nil {
+		return nil, rejection
 	}
 
 	// Compute terms hash
@@ -611,72 +720,43 @@ func (c *terminalComposer) startComposedSession(userID string, input dto.CreateC
 	opts := utils.DefaultHTTPClientOptions()
 	utils.ApplyOptions(&opts, utils.WithAPIKey(userKey.APIKey))
 
-	// tt-backend may stream NDJSON, use the same pattern as startSession
+	// tt-backend may stream NDJSON, use the same pattern as startSession.
+	// Any failure from here on releases the reservation so its budget is
+	// returned to the scope (the placeholder row never backed a container).
 	resp, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, ttReqBody, opts)
 	if err != nil {
+		c.releaseReservation(reservation.ID)
 		return nil, err
 	}
 
 	var sessionResp dto.TerminalTrainerSessionResponse
 	if err := resp.DecodeLastJSON(&sessionResp); err != nil {
+		c.releaseReservation(reservation.ID)
 		return nil, utils.ExternalAPIError("Terminal Trainer", "decode response", err)
 	}
 
 	if sessionResp.Status != 0 {
+		c.releaseReservation(reservation.ID)
 		errorMsg := c.enumService.FormatError("session_status", int(sessionResp.Status), "Failed to start composed session")
 		return nil, fmt.Errorf("%s", errorMsg)
 	}
 
-	// Build local terminal record
+	// Provisioning succeeded: promote the reservation to a live session.
+	// SessionID comes from tt-backend's "id" field (dto json:"id"); the
+	// finalize overwrites the placeholder id, flips state to running, and
+	// stamps the real expiry + backend. The composed fields and size
+	// snapshot were already set when the reservation was built, so the same
+	// row carries them through unchanged.
 	expiresAt := time.Unix(sessionResp.ExpiresAt, 0)
 
-	var orgID *uuid.UUID
-	if input.OrganizationID != "" {
-		parsed, err := uuid.Parse(input.OrganizationID)
-		if err == nil {
-			orgID = &parsed
-		}
-	}
+	reservation.SessionID = sessionResp.SessionID
+	reservation.State = models.StateRunning
+	reservation.ExpiresAt = expiresAt
+	reservation.Backend = sessionResp.Backend
 
-	// Serialize enabled features as JSON
-	composedFeaturesJSON := ""
-	if input.Features != nil {
-		enabledFeatures := make(map[string]bool)
-		for k, v := range input.Features {
-			if v {
-				enabledFeatures[k] = true
-			}
-		}
-		if len(enabledFeatures) > 0 {
-			if b, err := json.Marshal(enabledFeatures); err == nil {
-				composedFeaturesJSON = string(b)
-			}
-		}
-	}
-
-	terminal := &models.Terminal{
-		SessionID:            sessionResp.SessionID,
-		UserID:               userID,
-		Name:                 input.Name,
-		State:                models.StateRunning,
-		PersistenceMode:      input.PersistenceMode,
-		ExpiresAt:            expiresAt,
-		InstanceType:         input.DistributionPrefix,
-		MachineSize:          strings.ToUpper(input.Size),
-		Backend:              sessionResp.Backend,
-		OrganizationID:       orgID,
-		SubscriptionPlanID:   input.SubscriptionPlanID,
-		UserTerminalKeyID:    userKey.ID,
-		UserTerminalKey:      *userKey,
-		ComposedDistribution: input.Distribution,
-		ComposedSize:         input.Size,
-		ComposedFeatures:     composedFeaturesJSON,
-		SizeCPU:              input.SizeCPU,
-		SizeMemoryMB:         input.SizeMemoryMB,
-	}
-
-	if err := c.repository.CreateTerminalSession(terminal); err != nil {
-		return nil, fmt.Errorf("failed to save terminal session: %w", err)
+	if err := c.repository.FinalizeReservation(reservation); err != nil {
+		c.releaseReservation(reservation.ID)
+		return nil, fmt.Errorf("failed to finalize terminal session: %w", err)
 	}
 
 	// Build console URL

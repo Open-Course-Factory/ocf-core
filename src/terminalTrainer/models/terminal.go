@@ -28,7 +28,18 @@ const (
 // listing surfaces. Stopped sessions still occupy a slot because they
 // preserve disk and can be resumed — only deleted (or other
 // terminal-state) rows free a slot.
-var TerminalStatesOccupyingSlot = []TerminalState{StateRunning, StateStopped}
+//
+// StateStarting is included because the composed-session path reserves
+// budget by inserting a `starting` row INSIDE a locked transaction
+// before it provisions the container on tt-backend (see
+// terminalComposer.startComposedSession). A reservation must count
+// against the budget the moment it is committed, otherwise concurrent
+// starts would each read a pre-reservation sum and overshoot. The
+// reservation carries a short expires_at TTL, so the OccupiesSlotScope
+// `expires_at > NOW()` clause auto-reaps abandoned reservations without
+// a sweeper. Note RunningDisplayScope stays `running`-only, so a
+// transient reservation never appears in the user's live-session list.
+var TerminalStatesOccupyingSlot = []TerminalState{StateRunning, StateStopped, StateStarting}
 
 // OccupiesSlotScope is a GORM scope that filters terminals which still
 // "occupy capacity" — both in the slot sense (disk/identity reserved)
