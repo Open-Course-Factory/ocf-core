@@ -172,7 +172,8 @@ func InitTerminalHooks(db *gorm.DB) {
 	// active rows via SELECT FOR UPDATE so concurrent session starts can't
 	// race past the budget cap. Also denormalises the size's CPU/RAM
 	// footprint onto the Terminal row for race-safe future accounting.
-	budgetHook := NewTerminalBudgetHook(db, paymentServices.NewEffectivePlanService(db))
+	eps := paymentServices.NewEffectivePlanService(db)
+	budgetHook := NewTerminalBudgetHook(db, eps, paymentServices.NewQuotaService(db, eps))
 	if err := hooks.GlobalHookRegistry.RegisterHook(budgetHook); err != nil {
 		utils.Error("❌ Failed to register Terminal budget hook: %v", err)
 	} else {

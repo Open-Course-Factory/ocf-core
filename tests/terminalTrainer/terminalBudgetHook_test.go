@@ -144,10 +144,11 @@ func insertExistingTerminalWithExpiry(t *testing.T, db *gorm.DB, userID string, 
 // newHookForTest constructs the hook with a stub EffectivePlanService
 // preloaded with the given plan(s).
 func newHookForTest(db *gorm.DB, personal, org *paymentModels.SubscriptionPlan) hooks.Hook {
-	return terminalHooks.NewTerminalBudgetHook(db, &stubEffectivePlanService{
+	eps := &stubEffectivePlanService{
 		personalPlan: personal,
 		orgPlan:      org,
-	})
+	}
+	return terminalHooks.NewTerminalBudgetHook(db, eps, paymentServices.NewQuotaService(db, eps))
 }
 
 // execBeforeCreate runs the hook's Execute on a *Terminal with the given

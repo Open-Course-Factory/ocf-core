@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // QuotaService is the single source of truth for "is X within quota?".
@@ -94,6 +95,30 @@ type QuotaService interface {
 	// passthrough over sumActiveResources for callers that need to
 	// surface usage in dashboards without re-implementing the predicate.
 	GetBudgetUsage(userID string, orgID *uuid.UUID) (usedCPU, usedMemMB int, err error)
+
+	// EnforceBudgetTx is the race-safe write-time budget gate. Unlike
+	// CheckBudget (read-time, NOT race-safe — see its doc), it runs inside
+	// the caller's transaction so the usage sum and the subsequent insert
+	// are serialised against concurrent starts for the same scope.
+	//
+	// Serialisation has two layers (PostgreSQL only; SQLite serialises
+	// writers on its own so both are skipped there):
+	//   - A transaction-scoped advisory lock keyed on the scope
+	//     (org UUID when orgID != nil, else userID). This closes the
+	//     empty-budget phantom: two concurrent FIRST starts both see zero
+	//     rows, so row locks alone would let both through.
+	//   - A row-level FOR UPDATE on every contributing row, so existing
+	//     usage cannot change between the sum and the caller's insert.
+	//
+	// The usage sum reuses the SAME terminalModels.OccupiesSlotScope
+	// predicate as the unlocked CheckBudget path, so the locked and
+	// unlocked sums can never drift apart.
+	//
+	// MaxCPU/MaxMemoryMB of 0 mean unlimited on that axis. The returned
+	// BudgetEnforcement carries the BudgetCheck verdict plus the summed
+	// UsedCPU/UsedMemMB, so callers can construct their own rejection
+	// error (e.g. the hook's ErrBudgetExhausted) without re-querying.
+	EnforceBudgetTx(tx *gorm.DB, userID string, orgID *uuid.UUID, plan *models.SubscriptionPlan, requestedCPU, requestedMemMB int) (*BudgetEnforcement, error)
 }
 
 // BudgetCheck reports the outcome of a CheckBudget evaluation.
@@ -108,6 +133,16 @@ type BudgetCheck struct {
 	RemainingCPU   int
 	RemainingMemMB int
 	Reason         string
+}
+
+// BudgetEnforcement is the result of EnforceBudgetTx. It wraps the
+// BudgetCheck verdict and additionally exposes the locked usage sum
+// (UsedCPU / UsedMemMB) that produced it, so a caller can build a
+// rejection error carrying the "current" footprint without re-querying.
+type BudgetEnforcement struct {
+	BudgetCheck
+	UsedCPU   int
+	UsedMemMB int
 }
 
 // SizeRemaining is re-exported from payment/dto so existing callers
@@ -306,51 +341,7 @@ func (s *quotaService) CheckBudget(
 		return nil, fmt.Errorf("CheckBudget: sum active resources: %w", err)
 	}
 
-	// CPU axis
-	cpuUnlimited := plan.MaxCPU <= 0
-	remainingCPU := budgetUnlimited
-	if !cpuUnlimited {
-		remainingCPU = plan.MaxCPU - usedCPU - requestedCPU
-	}
-
-	// RAM axis
-	memUnlimited := plan.MaxMemoryMB <= 0
-	remainingMem := budgetUnlimited
-	if !memUnlimited {
-		remainingMem = plan.MaxMemoryMB - usedMemMB - requestedMemMB
-	}
-
-	switch {
-	case !cpuUnlimited && remainingCPU < 0:
-		// CPU axis exhausted first.
-		left := plan.MaxCPU - usedCPU
-		if left < 0 {
-			left = 0
-		}
-		return &BudgetCheck{
-			Allowed:        false,
-			RemainingCPU:   left,
-			RemainingMemMB: memRemainingForReport(plan, usedMemMB),
-			Reason:         "budget_cpu_exceeded",
-		}, nil
-	case !memUnlimited && remainingMem < 0:
-		left := plan.MaxMemoryMB - usedMemMB
-		if left < 0 {
-			left = 0
-		}
-		return &BudgetCheck{
-			Allowed:        false,
-			RemainingCPU:   cpuRemainingForReport(plan, usedCPU),
-			RemainingMemMB: left,
-			Reason:         "budget_memory_exceeded",
-		}, nil
-	}
-
-	return &BudgetCheck{
-		Allowed:        true,
-		RemainingCPU:   remainingCPU,
-		RemainingMemMB: remainingMem,
-	}, nil
+	return evaluateBudget(plan, usedCPU, usedMemMB, requestedCPU, requestedMemMB), nil
 }
 
 // cpuRemainingForReport produces the "remaining" CPU value used in
@@ -520,6 +511,171 @@ func (s *quotaService) sumActiveResourcesForUser(userID string) (int, int, error
 		return 0, 0, err
 	}
 	return int(row.CPU), int(row.Mem), nil
+}
+
+// EnforceBudgetTx — see interface doc.
+func (s *quotaService) EnforceBudgetTx(
+	tx *gorm.DB,
+	userID string,
+	orgID *uuid.UUID,
+	plan *models.SubscriptionPlan,
+	requestedCPU, requestedMemMB int,
+) (*BudgetEnforcement, error) {
+	if plan == nil {
+		return nil, fmt.Errorf("EnforceBudgetTx: plan is nil")
+	}
+
+	// (1) Serialise the scope before reading. On PostgreSQL the advisory
+	//     lock closes the empty-budget phantom (zero contributing rows ⇒
+	//     no rows to FOR UPDATE); it auto-releases at commit/rollback.
+	//     SQLite serialises writers itself, so this is skipped there.
+	if err := acquireScopeAdvisoryLock(tx, userID, orgID); err != nil {
+		return nil, fmt.Errorf("EnforceBudgetTx: advisory lock: %w", err)
+	}
+
+	// (2) Sum the LOCKED contributing rows through the same scope the
+	//     unlocked CheckBudget path uses.
+	usedCPU, usedMemMB, err := lockAndSumActiveResources(tx, userID, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("EnforceBudgetTx: lock+sum: %w", err)
+	}
+
+	check := evaluateBudget(plan, usedCPU, usedMemMB, requestedCPU, requestedMemMB)
+	return &BudgetEnforcement{
+		BudgetCheck: *check,
+		UsedCPU:     usedCPU,
+		UsedMemMB:   usedMemMB,
+	}, nil
+}
+
+// evaluateBudget is the pure axis-comparison shared by CheckBudget (read
+// path) and EnforceBudgetTx (write path): given an already-computed usage
+// sum, it produces the BudgetCheck verdict. Keeping it pure means the
+// locked and unlocked gates apply identical thresholds.
+func evaluateBudget(plan *models.SubscriptionPlan, usedCPU, usedMemMB, requestedCPU, requestedMemMB int) *BudgetCheck {
+	cpuUnlimited := plan.MaxCPU <= 0
+	remainingCPU := budgetUnlimited
+	if !cpuUnlimited {
+		remainingCPU = plan.MaxCPU - usedCPU - requestedCPU
+	}
+
+	memUnlimited := plan.MaxMemoryMB <= 0
+	remainingMem := budgetUnlimited
+	if !memUnlimited {
+		remainingMem = plan.MaxMemoryMB - usedMemMB - requestedMemMB
+	}
+
+	switch {
+	case !cpuUnlimited && remainingCPU < 0:
+		left := plan.MaxCPU - usedCPU
+		if left < 0 {
+			left = 0
+		}
+		return &BudgetCheck{
+			Allowed:        false,
+			RemainingCPU:   left,
+			RemainingMemMB: memRemainingForReport(plan, usedMemMB),
+			Reason:         "budget_cpu_exceeded",
+		}
+	case !memUnlimited && remainingMem < 0:
+		left := plan.MaxMemoryMB - usedMemMB
+		if left < 0 {
+			left = 0
+		}
+		return &BudgetCheck{
+			Allowed:        false,
+			RemainingCPU:   cpuRemainingForReport(plan, usedCPU),
+			RemainingMemMB: left,
+			Reason:         "budget_memory_exceeded",
+		}
+	}
+
+	return &BudgetCheck{
+		Allowed:        true,
+		RemainingCPU:   remainingCPU,
+		RemainingMemMB: remainingMem,
+	}
+}
+
+// acquireScopeAdvisoryLock takes a transaction-scoped PostgreSQL advisory
+// lock keyed on the budget scope ("terminal_budget:<orgUUID|userID>") so
+// the whole scope serialises regardless of how many rows currently exist.
+// This is what actually closes the empty-budget phantom that a row-level
+// FOR UPDATE cannot (there are no rows to lock on the first start). It is
+// a no-op on dialects without advisory locks (SQLite), which serialise
+// writers anyway. The lock releases automatically at commit/rollback.
+func acquireScopeAdvisoryLock(tx *gorm.DB, userID string, orgID *uuid.UUID) error {
+	if !supportsRowLock(tx) {
+		return nil
+	}
+	scopeKey := userID
+	if orgID != nil {
+		scopeKey = orgID.String()
+	}
+	return tx.Exec(
+		"SELECT pg_advisory_xact_lock(hashtext(?))",
+		"terminal_budget:"+scopeKey,
+	).Error
+}
+
+// lockAndSumActiveResources sums the CPU + RAM footprint of the rows that
+// contribute to the budget for a user (or org), composing the SSOT
+// terminalModels.OccupiesSlotScope predicate and additionally taking a
+// row lock (SELECT ... FOR UPDATE) on each contributing row. On
+// PostgreSQL/MySQL this serialises concurrent starts for the same scope
+// against existing usage; on SQLite the locking clause is skipped but the
+// sum is still correct.
+//
+// It composes the exact same scope as the unlocked sumActiveResources*
+// helpers (org variant adds the organization_members join) so the locked
+// and unlocked sums can never read different predicates. Returns
+// (0, 0, nil) when no rows match.
+//
+// The rows are SELECTed individually and summed in Go rather than via a
+// SQL SUM(): PostgreSQL forbids FOR UPDATE alongside an aggregate, and the
+// per-scope row count is bounded by the plan budget so the payload stays
+// small. The lock is scoped to the terminals table so the org variant's
+// organization_members join does not lock membership rows.
+func lockAndSumActiveResources(tx *gorm.DB, userID string, orgID *uuid.UUID) (int, int, error) {
+	var rows []struct {
+		SizeCPU      int
+		SizeMemoryMB int
+	}
+	q := tx.Table("terminals").
+		Scopes(terminalModels.OccupiesSlotScope).
+		Select("terminals.size_cpu AS size_cpu, terminals.size_memory_mb AS size_memory_mb")
+	if orgID != nil {
+		q = q.Joins("JOIN organization_members ON organization_members.user_id = terminals.user_id").
+			Where("organization_members.organization_id = ? AND organization_members.deleted_at IS NULL", *orgID)
+	} else {
+		q = q.Where("terminals.user_id = ?", userID)
+	}
+	if supportsRowLock(tx) {
+		q = q.Clauses(clause.Locking{Strength: "UPDATE", Table: clause.Table{Name: "terminals"}})
+	}
+
+	if err := q.Scan(&rows).Error; err != nil {
+		return 0, 0, err
+	}
+
+	var sumCPU, sumMem int
+	for _, r := range rows {
+		sumCPU += r.SizeCPU
+		sumMem += r.SizeMemoryMB
+	}
+	return sumCPU, sumMem, nil
+}
+
+// supportsRowLock reports whether the active GORM dialect supports
+// SELECT ... FOR UPDATE (and PostgreSQL advisory locks). We attach the
+// locking clause and advisory lock only for those dialects so unit tests
+// on SQLite keep working without syntax errors.
+func supportsRowLock(tx *gorm.DB) bool {
+	if tx == nil || tx.Dialector == nil {
+		return false
+	}
+	name := tx.Dialector.Name()
+	return name == "postgres" || name == "mysql"
 }
 
 func (s *quotaService) sumActiveResourcesForOrg(orgID uuid.UUID) (int, int, error) {

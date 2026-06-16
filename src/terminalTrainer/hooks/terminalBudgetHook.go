@@ -25,16 +25,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/payment/catalog"
+	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // Reason codes carried by ErrBudgetExhausted.Axis. Mirror the codes
@@ -78,17 +76,20 @@ func (e *ErrUnknownMachineSize) Error() string {
 type TerminalBudgetHook struct {
 	db                   *gorm.DB
 	effectivePlanService paymentServices.EffectivePlanService
+	quotaService         paymentServices.QuotaService
 	enabled              bool
 	priority             int
 }
 
-// NewTerminalBudgetHook constructs the hook. The EffectivePlanService is
-// injected so tests can stub it; in production main.go wires the
-// concrete implementation.
-func NewTerminalBudgetHook(db *gorm.DB, eps paymentServices.EffectivePlanService) hooks.Hook {
+// NewTerminalBudgetHook constructs the hook. The EffectivePlanService
+// (plan resolution) and QuotaService (race-safe budget enforcement) are
+// injected so tests can stub the former and share the latter with the
+// composed-session write path; production wiring is in InitTerminalHooks.
+func NewTerminalBudgetHook(db *gorm.DB, eps paymentServices.EffectivePlanService, quota paymentServices.QuotaService) hooks.Hook {
 	return &TerminalBudgetHook{
 		db:                   db,
 		effectivePlanService: eps,
+		quotaService:         quota,
 		enabled:              true,
 		// Run after the ownership hook (priority 10) which forces UserID
 		// to the authenticated user. We must resolve the user's plan
@@ -156,130 +157,51 @@ func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 	}
 	plan := planResult.Plan
 
-	// (4) Atomic budget check inside a transaction. The SELECT FOR UPDATE
-	//     locks every row that contributes to the current usage sum so
-	//     concurrent starts for the same scope (user / org) serialise.
-	//     On SQLite (unit tests) FOR UPDATE is a no-op but the
-	//     correctness of the budget check is still exercised; the race
-	//     test uses real PostgreSQL.
+	// (4) Atomic budget check inside a transaction. The race-safe sum +
+	//     compare lives in QuotaService.EnforceBudgetTx (shared with the
+	//     composed-session write path); it takes the scope advisory lock
+	//     plus a SELECT FOR UPDATE on contributing rows so concurrent
+	//     starts for the same scope serialise. On SQLite (unit tests)
+	//     both are skipped but the budget verdict is still exercised; the
+	//     race test uses real PostgreSQL.
 	scopeOrgID := terminal.OrganizationID
 
 	return h.db.Transaction(func(tx *gorm.DB) error {
-		usedCPU, usedMem, err := lockAndSumActiveResources(tx, terminal.UserID, scopeOrgID)
+		result, err := h.quotaService.EnforceBudgetTx(tx, terminal.UserID, scopeOrgID, plan, size.CPU, size.MemoryMB)
 		if err != nil {
-			return fmt.Errorf("terminal_budget_enforcement: lock+sum failed: %w", err)
+			return fmt.Errorf("terminal_budget_enforcement: enforce budget: %w", err)
 		}
-
-		// CPU axis
-		if plan.MaxCPU > 0 {
-			remaining := plan.MaxCPU - usedCPU
-			if size.CPU > remaining {
-				return &ErrBudgetExhausted{
-					Axis:      BudgetAxisCPU,
-					Limit:     plan.MaxCPU,
-					Current:   usedCPU,
-					Requested: size.CPU,
-				}
-			}
+		if result.Allowed {
+			return nil
 		}
-
-		// Memory axis
-		if plan.MaxMemoryMB > 0 {
-			remaining := plan.MaxMemoryMB - usedMem
-			if size.MemoryMB > remaining {
-				return &ErrBudgetExhausted{
-					Axis:      BudgetAxisMemory,
-					Limit:     plan.MaxMemoryMB,
-					Current:   usedMem,
-					Requested: size.MemoryMB,
-				}
-			}
-		}
-
-		return nil
+		return budgetExhaustedFromResult(result, plan, size)
 	})
 }
 
-// lockAndSumActiveResources runs the same predicate as
-// quotaService.sumActiveResources (D6', supersedes D6, locked
-// 2026-05-28: state IN ('running','stopped') AND deleted_at IS NULL
-// AND expires_at > NOW() — "a stop is a stop", the persistence_mode
-// distinction is UX-only and not budget logic), but additionally
-// acquires a row lock (SELECT ... FOR UPDATE) on every contributing
-// row. On PostgreSQL this serialises concurrent session starts for
-// the same user/org pair; on SQLite the locking clause is a no-op
-// but the sum is still correct.
-//
-// The expires_at > NOW() clause mirrors the SSOT pattern set by
-// terminalModels.OccupiesSlotScope in MR !239: past-expiry zombie rows
-// must not keep eating budget. time.Now() is bound as a SQL parameter
-// (not NOW() / CURRENT_TIMESTAMP) for dialect portability — SQLite has
-// no NOW(); production PostgreSQL does.
-//
-// The function returns (cpu, mem, error). When no rows match it returns
-// (0, 0, nil).
-func lockAndSumActiveResources(tx *gorm.DB, userID string, orgID *uuid.UUID) (int, int, error) {
-	// First, fetch (and lock) the candidate rows. We can't aggregate
-	// with FOR UPDATE in standard SQL — locking is row-level, so we
-	// SELECT the rows we care about, lock them, then sum in Go. The
-	// row count for a single user/org is bounded by the plan, so the
-	// payload is small.
-	var rows []struct {
-		SizeCPU      int
-		SizeMemoryMB int
+// budgetExhaustedFromResult translates a QuotaService rejection into the
+// hook's ErrBudgetExhausted sentinel, keyed off which axis the verdict
+// flagged. Limit/Current/Requested are pulled from the plan, the summed
+// usage, and the requested size so the error payload is unchanged from
+// the hook's previous inline construction.
+func budgetExhaustedFromResult(
+	result *paymentServices.BudgetEnforcement,
+	plan *paymentModels.SubscriptionPlan,
+	size catalog.MachineSize,
+) error {
+	if result.Reason == "budget_memory_exceeded" {
+		return &ErrBudgetExhausted{
+			Axis:      BudgetAxisMemory,
+			Limit:     plan.MaxMemoryMB,
+			Current:   result.UsedMemMB,
+			Requested: size.MemoryMB,
+		}
 	}
-
-	now := time.Now()
-	occupyingStates := terminalModels.TerminalStatesOccupyingSlot
-	var q *gorm.DB
-	if orgID != nil {
-		q = tx.Table("terminals").
-			Select("terminals.size_cpu AS size_cpu, terminals.size_memory_mb AS size_memory_mb").
-			Joins("JOIN organization_members ON organization_members.user_id = terminals.user_id").
-			Where("terminals.deleted_at IS NULL").
-			Where("organization_members.organization_id = ? AND organization_members.deleted_at IS NULL", *orgID).
-			Where("terminals.expires_at > ?", now).
-			Where("terminals.state IN ?", occupyingStates)
-	} else {
-		q = tx.Table("terminals").
-			Select("size_cpu, size_memory_mb").
-			Where("deleted_at IS NULL").
-			Where("user_id = ?", userID).
-			Where("expires_at > ?", now).
-			Where("state IN ?", occupyingStates)
+	return &ErrBudgetExhausted{
+		Axis:      BudgetAxisCPU,
+		Limit:     plan.MaxCPU,
+		Current:   result.UsedCPU,
+		Requested: size.CPU,
 	}
-
-	// Acquire the lock. On dialects that don't support FOR UPDATE
-	// (SQLite), GORM emits the clause as part of the statement; SQLite
-	// silently ignores trailing unsupported keywords in some build
-	// configurations and raises a syntax error in others. To stay safe
-	// for unit tests, we only attach the locking clause when the
-	// underlying driver is known to support it.
-	if supportsRowLock(tx) {
-		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
-	}
-
-	if err := q.Scan(&rows).Error; err != nil {
-		return 0, 0, err
-	}
-
-	var sumCPU, sumMem int
-	for _, r := range rows {
-		sumCPU += r.SizeCPU
-		sumMem += r.SizeMemoryMB
-	}
-	return sumCPU, sumMem, nil
-}
-
-// supportsRowLock reports whether the active GORM dialect supports
-// SELECT ... FOR UPDATE. We attach the locking clause only for those
-// dialects so unit tests on SQLite keep working without syntax errors.
-func supportsRowLock(tx *gorm.DB) bool {
-	if tx == nil || tx.Dialector == nil {
-		return false
-	}
-	name := tx.Dialector.Name()
-	return name == "postgres" || name == "mysql"
 }
 
 // IsBudgetError reports whether err is the budget-related sentinel
