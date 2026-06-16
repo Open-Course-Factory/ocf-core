@@ -612,6 +612,12 @@ func acquireScopeAdvisoryLock(tx *gorm.DB, userID string, orgID *uuid.UUID) erro
 	if orgID != nil {
 		scopeKey = orgID.String()
 	}
+	// hashtext(text) returns int4, so the single-arg pg_advisory_xact_lock
+	// collapses the key into 32-bit advisory space — two distinct scopes may
+	// rarely collide onto the same lock. That only ever over-serializes (a
+	// false sharing makes two unrelated scopes wait on each other); it never
+	// lets a real conflict through, so it is correctness-safe. Chosen over a
+	// 64-bit key (hashtextextended / two-arg int4,int4) for simplicity.
 	return tx.Exec(
 		"SELECT pg_advisory_xact_lock(hashtext(?))",
 		"terminal_budget:"+scopeKey,

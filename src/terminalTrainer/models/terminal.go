@@ -2,6 +2,7 @@ package models
 
 import (
 	entityManagementModels "soli/formations/src/entityManagement/models"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,7 +40,36 @@ const (
 // `expires_at > NOW()` clause auto-reaps abandoned reservations without
 // a sweeper. Note RunningDisplayScope stays `running`-only, so a
 // transient reservation never appears in the user's live-session list.
+//
+// GetUserTerminalUsage reads the budget SUM through OccupiesSlotScope (so
+// reservations correctly count toward the bars), but filters the
+// per-session LIST it returns to the user with
+// IsReservationPlaceholderSessionID, so a placeholder — which has no
+// console URL and may linger up to its TTL after a crash — is never shown
+// as a fake "active session".
 var TerminalStatesOccupyingSlot = []TerminalState{StateRunning, StateStopped, StateStarting}
+
+// TerminalReservationSessionIDPrefix marks a Terminal row as a budget
+// reservation placeholder rather than a real session. The composed-session
+// reserve-first flow inserts a StateStarting row before it provisions the
+// container on tt-backend, using "<prefix><uuid>" as a unique placeholder
+// session_id (the real tt-backend id replaces it on finalize). Single source
+// of truth: both the composer that builds the placeholder and the usage
+// surface that hides it key off this constant via
+// IsReservationPlaceholderSessionID, so neither side hard-codes the literal.
+const TerminalReservationSessionIDPrefix = "reserving:"
+
+// IsReservationPlaceholderSessionID reports whether a session_id is a budget
+// reservation placeholder (see TerminalReservationSessionIDPrefix). Such rows
+// count toward the budget (they hold a committed reservation) but are NOT
+// real sessions: they have no console URL and vanish on finalize or TTL
+// lapse, so the user-facing session LIST must exclude them while the budget
+// sum keeps counting them. Keying on the placeholder prefix (rather than on
+// state='starting') means a future legitimately-starting real session would
+// still be listed.
+func IsReservationPlaceholderSessionID(sessionID string) bool {
+	return strings.HasPrefix(sessionID, TerminalReservationSessionIDPrefix)
+}
 
 // OccupiesSlotScope is a GORM scope that filters terminals which still
 // "occupy capacity" — both in the slot sense (disk/identity reserved)

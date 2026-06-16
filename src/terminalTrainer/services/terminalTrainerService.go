@@ -921,6 +921,13 @@ func (tts *terminalTrainerService) GetUserTerminalUsage(userID string, orgID *uu
 
 	sessions := make([]dto.MyTerminalUsageSession, 0, len(rows))
 	for _, r := range rows {
+		// Reservation placeholders count toward the budget sum above but are
+		// not real sessions (no console URL; may linger up to their TTL after
+		// a crash). Keep them out of the user-facing list while leaving the
+		// bars unchanged. See models.IsReservationPlaceholderSessionID.
+		if models.IsReservationPlaceholderSessionID(r.SessionID) {
+			continue
+		}
 		name := r.Name
 		if name == "" {
 			name = r.InstanceType

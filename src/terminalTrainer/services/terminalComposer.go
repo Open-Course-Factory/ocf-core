@@ -581,7 +581,7 @@ func (c *terminalComposer) reserveBudget(
 	// reservations and fail on the index instead of the budget gate. The
 	// real tt-backend id replaces this on finalize.
 	reservation := &models.Terminal{
-		SessionID:            "reserving:" + uuid.NewString(),
+		SessionID:            models.TerminalReservationSessionIDPrefix + uuid.NewString(),
 		UserID:               userID,
 		Name:                 input.Name,
 		State:                models.StateStarting,
@@ -748,6 +748,19 @@ func (c *terminalComposer) startComposedSession(
 	// snapshot were already set when the reservation was built, so the same
 	// row carries them through unchanged.
 	expiresAt := time.Unix(sessionResp.ExpiresAt, 0)
+
+	// If the reservation TTL lapsed while tt-backend was provisioning, the
+	// OccupiesSlotScope `expires_at > NOW()` clause stopped counting this row,
+	// so a concurrent start may have claimed the freed budget — finalizing now
+	// can transiently overshoot the cap until one session ends. This is rare
+	// (provisioning slower than reservationTTL) and self-corrects, so we only
+	// log it for monitoring rather than failing the start.
+	if time.Now().After(reservation.ExpiresAt) {
+		utils.Warn(
+			"composed session reservation %s (user %s) finalized after its TTL (expired at %s); concurrent starts may have caused a transient budget overshoot",
+			reservation.ID, userID, reservation.ExpiresAt.Format(time.RFC3339),
+		)
+	}
 
 	reservation.SessionID = sessionResp.SessionID
 	reservation.State = models.StateRunning
