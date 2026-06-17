@@ -8,7 +8,7 @@ import (
 	"soli/formations/src/payment/services"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stripe/stripe-go/v82"
+	"github.com/stripe/stripe-go/v85"
 )
 
 func TestMapStripeCouponError_InvalidCode_ReturnsFriendlyError(t *testing.T) {
