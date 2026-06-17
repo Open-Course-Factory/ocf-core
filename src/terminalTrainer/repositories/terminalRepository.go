@@ -141,8 +141,15 @@ func (r *terminalRepository) CreateReservation(tx *gorm.DB, terminal *models.Ter
 // and refreshes the resource snapshot — size_cpu/size_memory_mb are
 // rewritten so a finalize at a different size can never desync the budget
 // aggregate (mirrors CreateTerminalSession's reinit branch).
+//
+// tt-backend can hand back the id of a prior (soft-deleted) session, and
+// session_id carries a plain unique index: a blind UPDATE of the placeholder
+// to that id would violate the constraint. So finalize restores the existing
+// row into the live session and drops the placeholder, preserving the
+// upsert-by-session_id behavior the old CreateTerminalSession provided before
+// the reserve-first refactor (see composedSessionFinalizeCollision_test.go).
 func (r *terminalRepository) FinalizeReservation(terminal *models.Terminal) error {
-	return r.db.Model(&models.Terminal{}).Where("id = ?", terminal.ID).Updates(map[string]any{
+	fields := map[string]any{
 		"session_id":            terminal.SessionID,
 		"state":                 terminal.State,
 		"name":                  terminal.Name,
@@ -159,7 +166,31 @@ func (r *terminalRepository) FinalizeReservation(terminal *models.Terminal) erro
 		"persistence_mode":      terminal.PersistenceMode,
 		"size_cpu":              terminal.SizeCPU,
 		"size_memory_mb":        terminal.SizeMemoryMB,
-	}).Error
+	}
+
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var existing models.Terminal
+		err := tx.Unscoped().
+			Where("session_id = ? AND id <> ?", terminal.SessionID, terminal.ID).
+			First(&existing).Error
+		switch {
+		case err == nil:
+			// Another row already owns this session_id (a recycled, soft-deleted
+			// session). Restore it into the live session and hard-delete the
+			// placeholder so exactly one row owns the id and the budget counts
+			// the session once.
+			fields["deleted_at"] = nil
+			if err := tx.Unscoped().Model(&existing).Updates(fields).Error; err != nil {
+				return err
+			}
+			return tx.Unscoped().Delete(&models.Terminal{}, "id = ?", terminal.ID).Error
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			// No collision: promote the placeholder in place.
+			return tx.Model(&models.Terminal{}).Where("id = ?", terminal.ID).Updates(fields).Error
+		default:
+			return err
+		}
+	})
 }
 
 // DeleteReservation hard-deletes a reservation row by primary key. Used
