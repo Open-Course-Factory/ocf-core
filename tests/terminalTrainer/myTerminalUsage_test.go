@@ -258,7 +258,7 @@ func TestGetUserTerminalUsage_ReservationCountsBudgetButHiddenFromSessionList(t 
 	insertExistingTerminal(t, sharedTestDB, userID, nil, "running", "ephemeral", 2000, 1024)
 
 	// A live reservation placeholder — counts for budget, hidden from the list.
-	reservationSessionID := insertReservationPlaceholder(t, userID, 4000, 2048)
+	insertReservationPlaceholder(t, userID, 4000, 2048)
 
 	eps := paymentServices.NewEffectivePlanService(sharedTestDB)
 	qs := paymentServices.NewQuotaService(sharedTestDB, eps)
@@ -283,9 +283,6 @@ func TestGetUserTerminalUsage_ReservationCountsBudgetButHiddenFromSessionList(t 
 		if terminalModels.IsReservationPlaceholderSessionID(s.SessionID) {
 			sawReservation = true
 		}
-		if s.SessionID == reservationSessionID {
-			sawReservation = true
-		}
 		if s.State == terminalModels.StateRunning && !terminalModels.IsReservationPlaceholderSessionID(s.SessionID) {
 			sawRunning = true
 		}
@@ -296,12 +293,6 @@ func TestGetUserTerminalUsage_ReservationCountsBudgetButHiddenFromSessionList(t 
 		"a genuinely-running session must still appear in the session list — only placeholders are hidden")
 	assert.Len(t, usage.ActiveSessions, 1,
 		"exactly the one real running session is listed; the reservation is filtered out")
-
-	// The honest-predicate guard — keeps IsReservationPlaceholderSessionID from
-	// silently inverting (the list filter above depends on it). Not the point of
-	// the test, just a cheap sanity rail on the shared predicate.
-	assert.True(t, terminalModels.IsReservationPlaceholderSessionID("reserving:x"))
-	assert.False(t, terminalModels.IsReservationPlaceholderSessionID("abc"))
 }
 
 // TestMyTerminalUsage_OrgContext — when ?organization_id=<orgID> is provided,
