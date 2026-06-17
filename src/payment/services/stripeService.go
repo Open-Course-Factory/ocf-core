@@ -332,9 +332,10 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 		AutomaticTax: &stripe.CheckoutSessionAutomaticTaxParams{
 			Enabled: stripe.Bool(true),
 		},
-		// TaxIDCollection: &stripe.CheckoutSessionTaxIDCollectionParams{
-		// 	Enabled: stripe.Bool(true),
-		// },
+		// Collect the buyer's VAT/SIRET so the Stripe invoice is a valid B2B facture.
+		TaxIDCollection: &stripe.CheckoutSessionTaxIDCollectionParams{
+			Enabled: stripe.Bool(true),
+		},
 	}
 
 	// Ajouter un coupon si fourni
@@ -464,6 +465,10 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 		},
 		// Enable automatic tax calculation (recommended for EU compliance)
 		AutomaticTax: &stripe.CheckoutSessionAutomaticTaxParams{
+			Enabled: stripe.Bool(true),
+		},
+		// Collect the buyer's VAT/SIRET so the Stripe invoice is a valid B2B facture.
+		TaxIDCollection: &stripe.CheckoutSessionTaxIDCollectionParams{
 			Enabled: stripe.Bool(true),
 		},
 	}
