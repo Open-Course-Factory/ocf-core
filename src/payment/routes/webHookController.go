@@ -76,16 +76,14 @@ func (wc *webhookController) HandleStripeWebhook(ctx *gin.Context) {
 		return
 	}
 
-	// 4 : Vérifier l'âge de l'événement (anti-replay)
-	eventTime := time.Unix(event.Created, 0)
-	if time.Since(eventTime) > 10*time.Minute {
-		utils.Debug("🕐 Event %s too old (%v), rejecting", event.ID, time.Since(eventTime))
-		ctx.JSON(http.StatusBadRequest, &authErrors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "Event too old",
-		})
-		return
-	}
+	// 4 : Log the event age for observability only — do NOT reject on age.
+	// Stripe does not refresh event.Created when it redelivers a previously
+	// failed event, so an age gate here permanently drops every retried event
+	// once the original creation is old enough. Anti-replay is already covered
+	// by (a) webhook.ConstructEvent's signature-timestamp tolerance, which
+	// rejects requests whose Stripe-Signature `t=` is stale, and (b) the DB
+	// reservation scheme below, which deduplicates by event_id.
+	utils.Debug("🕐 Processing event %s (age %v)", event.ID, time.Since(time.Unix(event.Created, 0)))
 
 	// 5 : Reserve the event atomically BEFORE processing.
 	// Uses a status-aware reservation:
