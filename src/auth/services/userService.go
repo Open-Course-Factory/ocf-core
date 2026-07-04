@@ -296,19 +296,34 @@ func (us *userService) DeleteUser(id string) error {
 		return fmt.Errorf("stripe cancellation failed, aborting user deletion: %w", err)
 	}
 
-	// Step 2: pseudonymize billing PII. Best-effort — log and continue on
+	// Step 2: erase the Stripe Customer object(s) the user owns (RGPD Art. 17).
+	// Runs AFTER cancellation (cancel-first avoids double work — deleting a
+	// customer also cancels its remaining subscriptions server-side). Fail-closed
+	// like Step 1: if Stripe still holds the customer we must not drop the Casdoor
+	// account. Discovered via a capability assertion so helper stand-ins that
+	// predate this method (test mocks) simply skip it.
+	if eraser, ok := us.paymentHelper.(interface {
+		DeleteStripeCustomersForUser(userID string) error
+	}); ok {
+		if err := eraser.DeleteStripeCustomersForUser(id); err != nil {
+			utils.Error("Aborting user deletion for %s: Stripe customer erasure failed: %v", id, err)
+			return fmt.Errorf("stripe customer erasure failed, aborting user deletion: %w", err)
+		}
+	}
+
+	// Step 3: pseudonymize billing PII. Best-effort — log and continue on
 	// failure so the user still gets deleted from the identity provider.
 	if err := us.paymentHelper.PseudonymizeBillingDataForUser(id); err != nil {
 		utils.Warn("Failed to pseudonymize billing data for user %s (continuing with deletion): %v", id, err)
 	}
 
-	// Step 3: delete from Casdoor.
+	// Step 4: delete from Casdoor.
 	if _, err := us.casdoorClient.DeleteUser(user); err != nil {
 		utils.Error("Failed to delete Casdoor user %s: %v", id, err)
 		return err
 	}
 
-	// Step 4: remove all role associations for this user. Guarded against a
+	// Step 5: remove all role associations for this user. Guarded against a
 	// nil enforcer so unit tests that don't wire Casbin can still exercise
 	// this path.
 	if casdoor.Enforcer != nil {

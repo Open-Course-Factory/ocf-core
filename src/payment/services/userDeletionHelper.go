@@ -15,10 +15,13 @@ package services
 import (
 	"errors"
 	"fmt"
+	"net/http"
 
 	"soli/formations/src/payment/models"
 	"soli/formations/src/utils"
 
+	"github.com/stripe/stripe-go/v85"
+	stripeCustomer "github.com/stripe/stripe-go/v85/customer"
 	"gorm.io/gorm"
 )
 
@@ -104,6 +107,69 @@ func (h *paymentDeletionHelper) CancelAllActiveSubscriptionsForUser(userID strin
 	}
 
 	return nil
+}
+
+// DeleteStripeCustomersForUser erases the Stripe Customer object(s) the user
+// OWNS, satisfying the RGPD / GDPR Art. 17 right to erasure (the existing flow
+// only cancelled subscriptions and pseudonymized local PII, leaving the user's
+// identifying data on Stripe indefinitely).
+//
+// Scope — only customers the user OWNS. An assigned bulk-license row has
+// user_id = the assignee but stripe_customer_id = the PURCHASER's customer, and
+// purchaser_user_id = that purchaser; deleting it when the assignee is erased
+// would wrongly destroy the purchaser's Stripe Customer. Self-purchased rows
+// have purchaser_user_id NULL (see UserSubscription: "null = self-purchase") or
+// equal to the user, so `purchaser_user_id IS NULL OR purchaser_user_id =
+// user_id` is exactly "the customer id belongs to this user". organization_
+// subscriptions customers are org-owned and out of scope.
+//
+// Fail-closed (mirrors CancelAllActiveSubscriptionsForUser): a hard Stripe error
+// aborts and returns, so the caller does not drop the Casdoor account while the
+// customer survives. Idempotent: a 404 / resource_missing (already deleted)
+// counts as success. Deleting a customer also cancels its remaining
+// subscriptions server-side, so callers run this AFTER the cancel step.
+//
+// This method is intentionally NOT part of the PaymentDeletionHelper interface:
+// the orchestration invokes it via a capability assertion, so helper stand-ins
+// that predate it (test mocks) are unaffected.
+func (h *paymentDeletionHelper) DeleteStripeCustomersForUser(userID string) error {
+	if h.db == nil {
+		return errors.New("paymentDeletionHelper: db is nil")
+	}
+
+	var customerIDs []string
+	err := h.db.Model(&models.UserSubscription{}).
+		Where("user_id = ? AND stripe_customer_id IS NOT NULL AND stripe_customer_id <> '' "+
+			"AND (purchaser_user_id IS NULL OR purchaser_user_id = user_id)", userID).
+		Distinct().
+		Pluck("stripe_customer_id", &customerIDs).Error
+	if err != nil {
+		return fmt.Errorf("failed to load Stripe customer ids for user %s: %w", userID, err)
+	}
+
+	for _, customerID := range customerIDs {
+		if _, delErr := stripeCustomer.Del(customerID, nil); delErr != nil {
+			if isStripeResourceMissing(delErr) {
+				// Already gone on Stripe's side — idempotent success.
+				utils.Info("Stripe customer %s already absent for user %s (treating as erased)", customerID, userID)
+				continue
+			}
+			return fmt.Errorf("failed to delete Stripe customer %s for user %s: %w", customerID, userID, delErr)
+		}
+		utils.Info("Deleted Stripe customer %s for user %s (RGPD erasure)", customerID, userID)
+	}
+
+	return nil
+}
+
+// isStripeResourceMissing reports whether err is a Stripe 404 / resource_missing
+// (the customer was already deleted), which erasure treats as success.
+func isStripeResourceMissing(err error) bool {
+	var se *stripe.Error
+	if errors.As(err, &se) {
+		return se.HTTPStatusCode == http.StatusNotFound || se.Code == stripe.ErrorCodeResourceMissing
+	}
+	return false
 }
 
 // PseudonymizeBillingDataForUser — see interface docstring.
