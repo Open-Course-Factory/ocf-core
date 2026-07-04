@@ -27,6 +27,7 @@ type UserSubscription struct {
 	TrialEnd                *time.Time       `json:"trial_end,omitempty"`
 	CancelAtPeriodEnd       bool             `gorm:"default:false" json:"cancel_at_period_end"`
 	CancelledAt             *time.Time       `json:"cancelled_at,omitempty"`
+	PastDueSince            *time.Time       `json:"past_due_since,omitempty"` // When the sub entered past_due (nil = not past_due); drives the dunning grace window
 	RenewalNotificationSent bool             `gorm:"default:false" json:"renewal_notification_sent"`
 	LastInvoiceID           *string          `gorm:"type:varchar(100)" json:"last_invoice_id,omitempty"`
 	AssignedByUserID        *string          `gorm:"type:varchar(100)" json:"assigned_by_user_id,omitempty"` // Admin who assigned this subscription
