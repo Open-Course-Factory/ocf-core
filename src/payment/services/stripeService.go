@@ -1290,6 +1290,8 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 	// active, matching what Stripe's customer.subscription.updated would set.
 	if userSub.Status == "past_due" {
 		userSub.Status = "active"
+		// Clear the dunning stamp so a later past_due starts a fresh grace window.
+		userSub.PastDueSince = nil
 		if updateErr := ss.repository.UpdateUserSubscription(userSub); updateErr != nil {
 			return fmt.Errorf("failed to reactivate past_due subscription %s after invoice %s: %w", userSub.ID, stripeInvoice.ID, updateErr)
 		}
@@ -1347,6 +1349,14 @@ func (ss *stripeService) handleInvoicePaymentFailed(event *stripe.Event) error {
 	}
 
 	userSub.Status = "past_due"
+	// Stamp when the sub first entered past_due — this starts the dunning grace
+	// window (#371). Do NOT overwrite an existing stamp: repeated failed invoices
+	// (Stripe retries the same overdue invoice) must not extend or reset the
+	// clock, otherwise a persistently-failing sub would never exit grace.
+	if userSub.PastDueSince == nil {
+		now := time.Now()
+		userSub.PastDueSince = &now
+	}
 	utils.Debug("⚠️ Invoice %s payment failed for subscription %s - marking as past_due", stripeInvoice.ID, userSub.StripeSubscriptionID)
 	return ss.repository.UpdateUserSubscription(userSub)
 }
