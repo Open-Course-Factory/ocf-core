@@ -130,15 +130,19 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 		licenses = make([]models.UserSubscription, input.Quantity)
 		for i := 0; i < input.Quantity; i++ {
 			licenses[i] = models.UserSubscription{
-				UserID:               "", // Unassigned
-				PurchaserUserID:      &purchaserUserID,
-				SubscriptionBatchID:  &batch.ID,
-				SubscriptionPlanID:   input.SubscriptionPlanID,
-				StripeSubscriptionID: &stripeSubscriptionID,
-				StripeCustomerID:     &customerID,
-				Status:               "pending_payment",
-				CurrentPeriodStart:   now,
-				CurrentPeriodEnd:     periodEnd,
+				UserID:              "", // Unassigned
+				PurchaserUserID:     &purchaserUserID,
+				SubscriptionBatchID: &batch.ID,
+				SubscriptionPlanID:  input.SubscriptionPlanID,
+				// StripeSubscriptionID intentionally left NULL — linkage is via
+				// SubscriptionBatchID (the batch holds the Stripe subscription id).
+				// Sharing the batch's stripe_subscription_id across N license rows
+				// collided on the partial unique index idx_user_stripe_sub_not_null,
+				// so only the first insert survived.
+				StripeCustomerID:   &customerID,
+				Status:             "pending_payment",
+				CurrentPeriodStart: now,
+				CurrentPeriodEnd:   periodEnd,
 			}
 			if err := tx.Create(&licenses[i]).Error; err != nil {
 				return fmt.Errorf("failed to create license %d: %w", i, err)

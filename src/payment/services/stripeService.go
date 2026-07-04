@@ -1439,6 +1439,15 @@ func (ss *stripeService) handleSubscriptionPaused(event *stripe.Event) error {
 		return fmt.Errorf("failed to unmarshal subscription: %w", err)
 	}
 
+	// Bulk subscriptions have no personal UserSubscription row keyed by the
+	// Stripe subscription id (their licenses are linked via the batch and leave
+	// StripeSubscriptionID NULL), so this personal-sub handler cannot resolve
+	// them. Skip gracefully — there is no per-license pause semantics.
+	if isBulkSubscription(&subscription) {
+		utils.Debug("⏸️ Skipping pause for bulk subscription %s (managed via batch)", subscription.ID)
+		return nil
+	}
+
 	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
 	if err != nil {
 		return fmt.Errorf("subscription not found in database: %w", err)
@@ -1457,6 +1466,13 @@ func (ss *stripeService) handleSubscriptionResumed(event *stripe.Event) error {
 		return fmt.Errorf("failed to unmarshal subscription: %w", err)
 	}
 
+	// Bulk subscriptions are managed via the batch and have no personal
+	// UserSubscription row keyed by the Stripe subscription id — skip gracefully.
+	if isBulkSubscription(&subscription) {
+		utils.Debug("▶️ Skipping resume for bulk subscription %s (managed via batch)", subscription.ID)
+		return nil
+	}
+
 	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
 	if err != nil {
 		return fmt.Errorf("subscription not found in database: %w", err)
@@ -1473,6 +1489,13 @@ func (ss *stripeService) handleTrialWillEnd(event *stripe.Event) error {
 	var subscription stripe.Subscription
 	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
 		return fmt.Errorf("failed to unmarshal subscription: %w", err)
+	}
+
+	// Bulk subscriptions are managed via the batch and have no personal
+	// UserSubscription row keyed by the Stripe subscription id — skip gracefully.
+	if isBulkSubscription(&subscription) {
+		utils.Debug("⏰ Skipping trial-will-end for bulk subscription %s (managed via batch)", subscription.ID)
+		return nil
 	}
 
 	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
@@ -1766,8 +1789,6 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 		CurrentPeriodEnd:         currentPeriodEnd,
 	}
 
-	batchRepo := repositories.NewSubscriptionBatchRepository(ss.db)
-
 	// Idempotency: bail out early if a batch already exists for this Stripe
 	// subscription. Without this, a redelivered event would hit the unique
 	// index on stripe_subscription_id and surface as a 500 to Stripe, and
@@ -1783,31 +1804,46 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 		return fmt.Errorf("failed to check existing subscription batch: %w", err)
 	}
 
-	if err := batchRepo.Create(batch); err != nil {
-		return fmt.Errorf("failed to create batch: %w", err)
-	}
-
-	utils.Info("✅ Created batch %s with %d licenses (status: %s)", batch.ID, quantity, batchStatus)
-
-	// Create individual license records
-	stripeSubID := subscription.ID
+	// Provision the batch and every license atomically. Previously the batch was
+	// created first and each license insert used log-and-continue, so a mid-loop
+	// failure left a paid batch with fewer licenses than TotalQuantity while the
+	// webhook still returned 200 (Stripe never retried). Now any failure rolls
+	// the whole batch back and propagates, so the controller marks the event
+	// failed and Stripe safely redelivers (the event reservation scheme makes the
+	// retry idempotent — the pre-check above skips an already-applied batch).
+	//
+	// License rows deliberately leave StripeSubscriptionID NULL: they link to the
+	// Stripe subscription through the batch (SubscriptionBatchID), and the batch
+	// row carries the Stripe subscription id. Sharing one stripe_subscription_id
+	// across N license rows collided on the partial unique index
+	// idx_user_stripe_sub_not_null (only the first row could insert), which is
+	// what silently truncated bulk provisioning to a single license.
 	stripeCustomerID := subscription.Customer.ID
-	for i := 0; i < quantity; i++ {
-		license := models.UserSubscription{
-			UserID:               "", // Unassigned
-			PurchaserUserID:      &userID,
-			SubscriptionBatchID:  &batch.ID,
-			SubscriptionPlanID:   planID,
-			StripeSubscriptionID: &stripeSubID,
-			StripeCustomerID:     &stripeCustomerID,
-			Status:               licenseStatus,
-			CurrentPeriodStart:   currentPeriodStart,
-			CurrentPeriodEnd:     currentPeriodEnd,
+	if err := ss.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(batch).Error; err != nil {
+			return fmt.Errorf("failed to create batch: %w", err)
 		}
 
-		if err := ss.repository.CreateUserSubscription(&license); err != nil {
-			utils.Error("Failed to create license %d/%d: %v", i+1, quantity, err)
+		for i := 0; i < quantity; i++ {
+			license := models.UserSubscription{
+				UserID:              "", // Unassigned
+				PurchaserUserID:     &userID,
+				SubscriptionBatchID: &batch.ID,
+				SubscriptionPlanID:  planID,
+				// StripeSubscriptionID intentionally left NULL — linkage is via
+				// SubscriptionBatchID; the batch holds the Stripe subscription id.
+				StripeCustomerID:   &stripeCustomerID,
+				Status:             licenseStatus,
+				CurrentPeriodStart: currentPeriodStart,
+				CurrentPeriodEnd:   currentPeriodEnd,
+			}
+			if err := tx.Create(&license).Error; err != nil {
+				return fmt.Errorf("failed to create license %d/%d: %w", i+1, quantity, err)
+			}
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	if batchStatus == "active" {
@@ -2229,6 +2265,17 @@ func (ss *stripeService) SyncUserSubscriptions(userID string) (*SyncSubscription
 
 // processSingleSubscription traite un abonnement Stripe individuel
 func (ss *stripeService) processSingleSubscription(sub *stripe.Subscription, result *SyncSubscriptionsResult) error {
+	// Bulk subscriptions are provisioned as a SubscriptionBatch + license rows
+	// (whose StripeSubscriptionID is NULL), not as a personal UserSubscription.
+	// Syncing one here would fabricate a spurious personal subscription for the
+	// purchaser, so skip it — bulk state is reconciled via the batch/webhook path.
+	if isBulkSubscription(sub) {
+		result.SkippedSubscriptions++
+		result.SkippedDetails = append(result.SkippedDetails,
+			fmt.Sprintf("Subscription %s: bulk purchase (managed via batch)", sub.ID))
+		return nil
+	}
+
 	// Vérifier les métadonnées requises
 	userID, userExists := sub.Metadata["user_id"]
 	planIDStr, planExists := sub.Metadata["subscription_plan_id"]
