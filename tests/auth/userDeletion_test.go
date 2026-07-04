@@ -72,6 +72,10 @@ type PaymentDeletionHelper interface {
 	// stop on failure — callers rely on "stop on first error" semantics.
 	CancelAllActiveSubscriptionsForUser(userID string) error
 
+	// DeleteStripeCustomersForUser erases the Stripe Customer object(s) the user
+	// owns (RGPD Art. 17). Fail-closed like the cancel step.
+	DeleteStripeCustomersForUser(userID string) error
+
 	// PseudonymizeBillingDataForUser replaces PII in BillingAddress and
 	// PaymentMethod rows with a neutral placeholder. Invoices must be left
 	// untouched (10-year retention, Art. L. 123-22 Code de commerce).
@@ -139,6 +143,14 @@ func (m *mockPaymentDeletionHelper) CancelAllActiveSubscriptionsForUser(userID s
 	args := m.Called(userID)
 	if m.recorder != nil {
 		m.recorder.record("payment.CancelAllActiveSubscriptionsForUser")
+	}
+	return args.Error(0)
+}
+
+func (m *mockPaymentDeletionHelper) DeleteStripeCustomersForUser(userID string) error {
+	args := m.Called(userID)
+	if m.recorder != nil {
+		m.recorder.record("payment.DeleteStripeCustomersForUser")
 	}
 	return args.Error(0)
 }
@@ -257,6 +269,7 @@ func TestDeleteUser_WithActiveStripeSubscription_CancelsStripeBeforeCasdoor(t *t
 	casdoorMock.On("GetUserByUserId", userID).Return(casdoorUser, nil)
 	casdoorMock.On("DeleteUser", casdoorUser).Return(true, nil)
 	helperMock.On("CancelAllActiveSubscriptionsForUser", userID).Return(nil)
+	helperMock.On("DeleteStripeCustomersForUser", userID).Return(nil)
 	helperMock.On("PseudonymizeBillingDataForUser", userID).Return(nil)
 
 	svc := authServices.NewUserService(casdoorMock, helperMock)
@@ -329,6 +342,7 @@ func TestDeleteUser_NoActiveSubscriptions_DeletesNormally(t *testing.T) {
 	// Helper is still called — it's responsible for checking "no active subs"
 	// and returning nil. We assert it receives the call and succeeds.
 	helperMock.On("CancelAllActiveSubscriptionsForUser", userID).Return(nil)
+	helperMock.On("DeleteStripeCustomersForUser", userID).Return(nil)
 	helperMock.On("PseudonymizeBillingDataForUser", userID).Return(nil)
 
 	svc := authServices.NewUserService(casdoorMock, helperMock)
@@ -363,6 +377,7 @@ func TestDeleteUser_MultipleActiveSubscriptions_CancelsAll(t *testing.T) {
 		casdoorMock.On("GetUserByUserId", userID).Return(casdoorUser, nil)
 		casdoorMock.On("DeleteUser", casdoorUser).Return(true, nil)
 		helperMock.On("CancelAllActiveSubscriptionsForUser", userID).Return(nil)
+	helperMock.On("DeleteStripeCustomersForUser", userID).Return(nil)
 		helperMock.On("PseudonymizeBillingDataForUser", userID).Return(nil)
 
 		svc := authServices.NewUserService(casdoorMock, helperMock)
@@ -419,6 +434,7 @@ func TestDeleteUser_PseudonymizesBillingData(t *testing.T) {
 	casdoorMock.On("GetUserByUserId", userID).Return(casdoorUser, nil)
 	casdoorMock.On("DeleteUser", casdoorUser).Return(true, nil)
 	helperMock.On("CancelAllActiveSubscriptionsForUser", userID).Return(nil)
+	helperMock.On("DeleteStripeCustomersForUser", userID).Return(nil)
 
 	// Make the pseudonymization mock actually mutate the DB so we can assert
 	// the post-condition. In production, the real helper does this work.
@@ -482,6 +498,7 @@ func TestDeleteUser_PreservesInvoices(t *testing.T) {
 	casdoorMock.On("GetUserByUserId", userID).Return(casdoorUser, nil)
 	casdoorMock.On("DeleteUser", casdoorUser).Return(true, nil)
 	helperMock.On("CancelAllActiveSubscriptionsForUser", userID).Return(nil)
+	helperMock.On("DeleteStripeCustomersForUser", userID).Return(nil)
 	helperMock.On("PseudonymizeBillingDataForUser", userID).Return(nil)
 
 	svc := authServices.NewUserService(casdoorMock, helperMock)
@@ -521,6 +538,7 @@ func TestDeleteUser_BillingPseudonymizationFailure_DoesNotAbort(t *testing.T) {
 	casdoorMock.On("GetUserByUserId", userID).Return(casdoorUser, nil)
 	casdoorMock.On("DeleteUser", casdoorUser).Return(true, nil)
 	helperMock.On("CancelAllActiveSubscriptionsForUser", userID).Return(nil)
+	helperMock.On("DeleteStripeCustomersForUser", userID).Return(nil)
 	helperMock.On("PseudonymizeBillingDataForUser", userID).
 		Return(errors.New("database write failed"))
 

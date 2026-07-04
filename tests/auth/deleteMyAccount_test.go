@@ -310,6 +310,7 @@ func happyMocks(userID string) (*mockCasdoorUserClient, *mockPaymentDeletionHelp
 	casdoorMock.On("GetUserByUserId", userID).Return(casdoorUser, nil)
 	casdoorMock.On("DeleteUser", casdoorUser).Return(true, nil)
 	helperMock.On("CancelAllActiveSubscriptionsForUser", userID).Return(nil)
+	helperMock.On("DeleteStripeCustomersForUser", userID).Return(nil)
 	helperMock.On("PseudonymizeBillingDataForUser", userID).Return(nil)
 	return casdoorMock, helperMock, rec
 }

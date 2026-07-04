@@ -245,3 +245,90 @@ func TestUserDeletion_HardStripeError_Aborts(t *testing.T) {
 			"error, mirroring CancelAllActiveSubscriptionsForUser — the caller must not "+
 			"drop the Casdoor account while the Stripe customer is still present.")
 }
+
+// -----------------------------------------------------------------------------
+// Ownership-scope follow-up (reviewer): erasure must delete the customers the
+// user OWNS — no more, no less. A bulk-license batch row carries
+// purchaser_user_id = the buyer and stripe_customer_id = the buyer's customer.
+// -----------------------------------------------------------------------------
+
+// seedBulkLicenseRow inserts a bulk-license UserSubscription: user_id is the
+// seat holder ("" when unassigned), purchaser_user_id is the buyer, and the
+// stripe_customer_id is the buyer's customer. StripeSubscriptionID is left NULL
+// (post-!269 shape).
+func seedBulkLicenseRow(t *testing.T, db *gorm.DB, userID string, purchaserUserID *string, customerID string) {
+	t.Helper()
+	priceID := "price_bulkown_" + uuid.NewString()
+	plan := &models.SubscriptionPlan{
+		Name: "Bulk Own Plan", PriceAmount: 1999, Currency: "eur",
+		BillingInterval: "month", StripePriceID: &priceID, IsActive: true,
+	}
+	require.NoError(t, db.Create(plan).Error)
+
+	require.NoError(t, db.Create(&models.UserSubscription{
+		UserID:             userID,
+		PurchaserUserID:    purchaserUserID,
+		SubscriptionPlanID: plan.ID,
+		StripeCustomerID:   &customerID,
+		Status:             "active",
+		CurrentPeriodStart: time.Now(),
+		CurrentPeriodEnd:   time.Now().Add(30 * 24 * time.Hour),
+	}).Error)
+}
+
+// 5. GREEN GUARD — erasing an ASSIGNEE must NOT delete the purchaser's Stripe
+// customer. The assigned bulk-license row has user_id = assignee but
+// purchaser_user_id = the buyer and stripe_customer_id = the buyer's customer.
+// The ownership predicate (purchaser_user_id IS NULL OR = user_id) excludes it.
+func TestUserDeletion_AssignedBulkLicense_DoesNotDeletePurchaserCustomer(t *testing.T) {
+	db := freshTestDB(t)
+	assignee := "assignee-" + uuid.NewString()
+	purchaser := "purchaser-" + uuid.NewString()
+	purchaserCustomer := "cus_purchaser_" + uuid.NewString()
+
+	seedBulkLicenseRow(t, db, assignee, &purchaser, purchaserCustomer)
+
+	helper := services.NewPaymentDeletionHelper(db)
+	cap := installCustomerDeleteBackend(t, "")
+
+	err := asCustomerEraser(t, helper).DeleteStripeCustomersForUser(assignee)
+	require.NoError(t, err)
+
+	assert.NotContains(t, cap.distinctDeleted(), purchaserCustomer,
+		"HARM CASE: deleting an assignee's account must NEVER delete the purchaser's "+
+			"Stripe customer (%s) — it belongs to the buyer, not the seat holder.", purchaserCustomer)
+	assert.Empty(t, cap.distinctDeleted(),
+		"an assignee who owns no customer of their own should trigger zero customer deletes")
+}
+
+// 6. RED — a PURE bulk PURCHASER (no personal subscription; only batch rows
+// where purchaser_user_id = them, user_id = "" or an assignee) must have THEIR
+// Stripe customer deleted on erasure.
+//
+// RED today: the ownership query filters `user_id = ?`, so a purchaser whose
+// only rows are bulk-license rows (user_id = "" / assignee) matches nothing and
+// their customer is never erased — a GDPR gap. The fix must also match rows
+// where purchaser_user_id = the user. NOTE: deleting the customer also cancels
+// its remaining subscriptions server-side, so this same broadening additionally
+// stops batch billing for a deleted purchaser.
+func TestUserDeletion_PureBulkPurchaser_CustomerIsDeleted(t *testing.T) {
+	db := freshTestDB(t)
+	purchaser := "purchaser-" + uuid.NewString()
+	purchaserCustomer := "cus_purchaser_" + uuid.NewString()
+
+	// Two unassigned batch seats bought by `purchaser` — no personal sub for them.
+	seedBulkLicenseRow(t, db, "", &purchaser, purchaserCustomer)
+	seedBulkLicenseRow(t, db, "", &purchaser, purchaserCustomer)
+
+	helper := services.NewPaymentDeletionHelper(db)
+	cap := installCustomerDeleteBackend(t, "")
+
+	err := asCustomerEraser(t, helper).DeleteStripeCustomersForUser(purchaser)
+	require.NoError(t, err)
+
+	assert.Contains(t, cap.distinctDeleted(), purchaserCustomer,
+		"RGPD: a pure bulk purchaser (no personal subscription) must still have their "+
+			"OWN Stripe customer %s erased. Today the query only matches user_id = ?, "+
+			"so a buyer whose rows are all bulk-license rows (user_id = '' / assignee) "+
+			"is missed. Fix: also match purchaser_user_id = the user.", purchaserCustomer)
+}
