@@ -16,6 +16,7 @@ import (
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
 	paymentModels "soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/models"
 	services "soli/formations/src/terminalTrainer/services"
@@ -469,6 +470,11 @@ func (tc *terminalController) StopSession(ctx *gin.Context) {
 func (tc *terminalController) StartSession(ctx *gin.Context) {
 	terminalID := ctx.Param("id")
 	userId := ctx.GetString("userId")
+
+	// Dunning gate: resuming a session is a new-session-creation path.
+	if tc.gatePastDueBeyondGrace(ctx) {
+		return
+	}
 
 	terminal, err := tc.service.GetSessionInfo(terminalID)
 	if err != nil {
@@ -1087,6 +1093,11 @@ func (tc *terminalController) GetServerMetrics(ctx *gin.Context) {
 func (tc *terminalController) BulkCreateTerminalsForGroup(ctx *gin.Context) {
 	groupID := ctx.Param("id")
 	requestingUserID := ctx.GetString("userId")
+
+	// Dunning gate: bulk terminal creation is a new-session-creation path.
+	if tc.gatePastDueBeyondGrace(ctx) {
+		return
+	}
 
 	var request dto.BulkCreateTerminalsRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
@@ -2021,8 +2032,55 @@ func (tc *terminalController) GetSessionOptions(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Failure		500	{object}	errors.APIError	"Terminal trainer error"
 //	@Router			/terminals/start-composed-session [post]
+// gatePastDueBeyondGrace rejects a NEW session-creation request when the
+// caller's effective personal subscription is past_due and its grace window
+// (PastDueGraceDays) has elapsed. It reads the EffectivePlanResult injected by
+// InjectEffectivePlan, so it must run on routes that carry that middleware. It
+// writes a 402 with the stable error code `subscription_past_due` (mirroring the
+// structured BudgetRejection response shape) and returns true when it rejected —
+// callers must return immediately.
+//
+// Only a personal past_due subscription is gated (org-sourced plans have no
+// per-user dunning stamp here). Legacy past_due rows with a NULL PastDueSince —
+// which entered past_due before this shipped — are treated as within grace so
+// they are never locked out instantly (#371); a subsequent failed invoice will
+// stamp them and start the clock.
+func (tc *terminalController) gatePastDueBeyondGrace(ctx *gin.Context) bool {
+	val, exists := ctx.Get("effective_plan_result")
+	if !exists {
+		return false
+	}
+	result, ok := val.(*paymentServices.EffectivePlanResult)
+	if !ok || result == nil || result.UserSubscription == nil {
+		return false
+	}
+	sub := result.UserSubscription
+	if sub.Status != "past_due" || sub.PastDueSince == nil {
+		return false
+	}
+	grace := time.Duration(paymentServices.PastDueGraceDays()) * 24 * time.Hour
+	if time.Since(*sub.PastDueSince) <= grace {
+		return false // still within the grace window
+	}
+
+	utils.Warn("🚫 Blocking new session for user %s: subscription past_due since %s (grace %d days elapsed)",
+		ctx.GetString("userId"), sub.PastDueSince.Format(time.RFC3339), paymentServices.PastDueGraceDays())
+	ctx.JSON(http.StatusPaymentRequired, gin.H{
+		"error_code":    "subscription_past_due",
+		"error_message": "Your subscription payment is overdue. Please update your payment method to start new sessions.",
+		"source":        "dunning",
+	})
+	ctx.Abort()
+	return true
+}
+
 func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
+
+	// Dunning gate: block new sessions for a past_due sub beyond its grace window.
+	if tc.gatePastDueBeyondGrace(ctx) {
+		return
+	}
 
 	var input dto.CreateComposedSessionInput
 	// Use ShouldBindBodyWith because the upstream CheckRAMAvailability
