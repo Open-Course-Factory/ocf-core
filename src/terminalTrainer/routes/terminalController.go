@@ -471,7 +471,8 @@ func (tc *terminalController) StartSession(ctx *gin.Context) {
 	terminalID := ctx.Param("id")
 	userId := ctx.GetString("userId")
 
-	// Dunning gate: resuming a session is a new-session-creation path.
+	// Dunning gate (MANDATORY on every new session-creation route): resuming a
+	// session is a new-session-creation path.
 	if tc.gatePastDueBeyondGrace(ctx) {
 		return
 	}
@@ -1094,7 +1095,8 @@ func (tc *terminalController) BulkCreateTerminalsForGroup(ctx *gin.Context) {
 	groupID := ctx.Param("id")
 	requestingUserID := ctx.GetString("userId")
 
-	// Dunning gate: bulk terminal creation is a new-session-creation path.
+	// Dunning gate (MANDATORY on every new session-creation route): bulk terminal
+	// creation is a new-session-creation path.
 	if tc.gatePastDueBeyondGrace(ctx) {
 		return
 	}
@@ -2034,7 +2036,15 @@ func (tc *terminalController) GetSessionOptions(ctx *gin.Context) {
 //	@Router			/terminals/start-composed-session [post]
 // gatePastDueBeyondGrace rejects a NEW session-creation request when the
 // caller's effective personal subscription is past_due and its grace window
-// (PastDueGraceDays) has elapsed. It reads the EffectivePlanResult injected by
+// (PastDueGraceDays) has elapsed.
+//
+// STRUCTURAL CONTRACT: every NEW session-creation route MUST call this helper
+// (and return on true). It is invoked today from the three gated handlers
+// (StartComposedSession, StartSession/resume, BulkCreateTerminalsForGroup); any
+// new path that provisions or resumes a terminal must add the same call, or a
+// past_due customer will slip past the dunning gate.
+//
+// It reads the EffectivePlanResult injected by
 // InjectEffectivePlan, so it must run on routes that carry that middleware. It
 // writes a 402 with the stable error code `subscription_past_due` (mirroring the
 // structured BudgetRejection response shape) and returns true when it rejected —
@@ -2077,7 +2087,8 @@ func (tc *terminalController) gatePastDueBeyondGrace(ctx *gin.Context) bool {
 func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 
-	// Dunning gate: block new sessions for a past_due sub beyond its grace window.
+	// Dunning gate (MANDATORY on every new session-creation route): block new
+	// sessions for a past_due sub beyond its grace window.
 	if tc.gatePastDueBeyondGrace(ctx) {
 		return
 	}

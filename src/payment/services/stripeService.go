@@ -977,6 +977,21 @@ func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 	}
 
 	userSub.Status = string(subscription.Status)
+	// Maintain the dunning stamp lifecycle (mirrors the invoice handlers, #371):
+	// stamp PastDueSince when the sub ENTERS past_due (only if unset, so repeated
+	// events don't reset the clock), and clear it when it LEAVES past_due.
+	// Without the clear, a recovery via customer.subscription.updated keeps a
+	// stale stamp, and the next dunning episode — where payment_failed only
+	// stamps when PastDueSince is nil — would inherit it and instantly lock the
+	// just-recovered customer out of the grace window.
+	if userSub.Status == "past_due" {
+		if userSub.PastDueSince == nil {
+			now := time.Now()
+			userSub.PastDueSince = &now
+		}
+	} else {
+		userSub.PastDueSince = nil
+	}
 	// Guard the empty items list (mirrors handleSubscriptionCreated): the period
 	// lives on the first item, so only refresh it when an item is present. An
 	// empty Items.Data would otherwise panic with index-out-of-range.
