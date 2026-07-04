@@ -300,15 +300,10 @@ func (us *userService) DeleteUser(id string) error {
 	// Runs AFTER cancellation (cancel-first avoids double work — deleting a
 	// customer also cancels its remaining subscriptions server-side). Fail-closed
 	// like Step 1: if Stripe still holds the customer we must not drop the Casdoor
-	// account. Discovered via a capability assertion so helper stand-ins that
-	// predate this method (test mocks) simply skip it.
-	if eraser, ok := us.paymentHelper.(interface {
-		DeleteStripeCustomersForUser(userID string) error
-	}); ok {
-		if err := eraser.DeleteStripeCustomersForUser(id); err != nil {
-			utils.Error("Aborting user deletion for %s: Stripe customer erasure failed: %v", id, err)
-			return fmt.Errorf("stripe customer erasure failed, aborting user deletion: %w", err)
-		}
+	// account.
+	if err := us.paymentHelper.DeleteStripeCustomersForUser(id); err != nil {
+		utils.Error("Aborting user deletion for %s: Stripe customer erasure failed: %v", id, err)
+		return fmt.Errorf("stripe customer erasure failed, aborting user deletion: %w", err)
 	}
 
 	// Step 3: pseudonymize billing PII. Best-effort — log and continue on

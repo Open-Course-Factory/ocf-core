@@ -43,6 +43,13 @@ type PaymentDeletionHelper interface {
 	// dropped while Stripe is still billing.
 	CancelAllActiveSubscriptionsForUser(userID string) error
 
+	// DeleteStripeCustomersForUser erases the Stripe Customer object(s) the user
+	// owns (RGPD / GDPR Art. 17). Fail-closed like the cancel step: the caller
+	// MUST abort deletion if this returns non-nil, so Casdoor is not dropped
+	// while Stripe still holds the customer. Idempotent: an already-deleted
+	// customer (404 / resource_missing) counts as success.
+	DeleteStripeCustomersForUser(userID string) error
+
 	// PseudonymizeBillingDataForUser replaces PII in BillingAddress and
 	// PaymentMethod rows with a neutral placeholder. Invoices are left
 	// untouched (10y legal retention). Best-effort: callers log and continue
@@ -114,24 +121,25 @@ func (h *paymentDeletionHelper) CancelAllActiveSubscriptionsForUser(userID strin
 // only cancelled subscriptions and pseudonymized local PII, leaving the user's
 // identifying data on Stripe indefinitely).
 //
-// Scope — only customers the user OWNS. An assigned bulk-license row has
-// user_id = the assignee but stripe_customer_id = the PURCHASER's customer, and
-// purchaser_user_id = that purchaser; deleting it when the assignee is erased
-// would wrongly destroy the purchaser's Stripe Customer. Self-purchased rows
-// have purchaser_user_id NULL (see UserSubscription: "null = self-purchase") or
-// equal to the user, so `purchaser_user_id IS NULL OR purchaser_user_id =
-// user_id` is exactly "the customer id belongs to this user". organization_
-// subscriptions customers are org-owned and out of scope.
+// Scope — only customers the user OWNS, captured by two cases:
+//   - self-purchase: user_id = the user AND purchaser_user_id IS NULL (the model
+//     documents PurchaserUserID as "null = self-purchase"), and
+//   - bulk purchaser: purchaser_user_id = the user — a buyer's own Stripe
+//     customer id lives on the batch's license rows, whose user_id is "" or an
+//     assignee, so matching only user_id would miss a pure bulk purchaser.
+//
+// An assigned bulk-license row (user_id = assignee, purchaser_user_id = the
+// buyer, stripe_customer_id = the buyer's customer) is excluded from an
+// assignee's erasure: it fails the self-purchase case (purchaser_user_id is not
+// NULL) and the bulk-purchaser case (purchaser_user_id != the assignee), so
+// deleting an assignee never destroys the purchaser's Stripe Customer.
+// organization_subscriptions customers are org-owned and out of scope.
 //
 // Fail-closed (mirrors CancelAllActiveSubscriptionsForUser): a hard Stripe error
 // aborts and returns, so the caller does not drop the Casdoor account while the
 // customer survives. Idempotent: a 404 / resource_missing (already deleted)
 // counts as success. Deleting a customer also cancels its remaining
 // subscriptions server-side, so callers run this AFTER the cancel step.
-//
-// This method is intentionally NOT part of the PaymentDeletionHelper interface:
-// the orchestration invokes it via a capability assertion, so helper stand-ins
-// that predate it (test mocks) are unaffected.
 func (h *paymentDeletionHelper) DeleteStripeCustomersForUser(userID string) error {
 	if h.db == nil {
 		return errors.New("paymentDeletionHelper: db is nil")
@@ -139,8 +147,8 @@ func (h *paymentDeletionHelper) DeleteStripeCustomersForUser(userID string) erro
 
 	var customerIDs []string
 	err := h.db.Model(&models.UserSubscription{}).
-		Where("user_id = ? AND stripe_customer_id IS NOT NULL AND stripe_customer_id <> '' "+
-			"AND (purchaser_user_id IS NULL OR purchaser_user_id = user_id)", userID).
+		Where("stripe_customer_id IS NOT NULL AND stripe_customer_id <> '' "+
+			"AND ((user_id = ? AND purchaser_user_id IS NULL) OR purchaser_user_id = ?)", userID, userID).
 		Distinct().
 		Pluck("stripe_customer_id", &customerIDs).Error
 	if err != nil {
