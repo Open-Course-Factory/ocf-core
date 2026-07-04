@@ -165,23 +165,30 @@ func TestStripeService_SendInvoice_IdempotencyKey(t *testing.T) {
 	cap := installIdemKeyBackend(t)
 	svc := services.NewStripeService(db)
 
-	invoiceID := "in_" + uuid.NewString()
-	require.NoError(t, svc.SendInvoice(invoiceID))
-	require.NoError(t, svc.SendInvoice(invoiceID))
+	// Match keys by each invoice's OWN send path (the id is a unique UUID, so the
+	// path is unique) rather than the generic "/send". keysMatching concatenates
+	// per-path slices in non-deterministic MAP iteration order, so indexing a
+	// combined slice positionally to mean "invoice B's key" is unsound (that was
+	// the flake). Per-invoice matching is order-independent, and the exact Len
+	// checks catch a silently-dropped request instead of reading a stale key.
+	invoiceA := "in_" + uuid.NewString()
+	require.NoError(t, svc.SendInvoice(invoiceA))
+	require.NoError(t, svc.SendInvoice(invoiceA))
 
-	keys := cap.keysMatching("/send")
-	require.Len(t, keys, 2, "expected two invoice-send POSTs")
-	require.NotEmpty(t, keys[0])
-	assert.Equal(t, keys[0], keys[1],
+	keysA := cap.keysMatching(invoiceA)
+	require.Len(t, keysA, 2, "expected exactly two send POSTs for invoice A")
+	require.NotEmpty(t, keysA[0])
+	assert.Equal(t, keysA[0], keysA[1],
 		"IDEMPOTENCY: re-sending the same invoice must reuse the SAME Idempotency-Key "+
 			"(derived from the invoice id) so the customer is not e-mailed twice. Today "+
-			"invoice.SendInvoice sets no key -> random (%q vs %q).", keys[0], keys[1])
+			"invoice.SendInvoice sets no key -> random (%q vs %q).", keysA[0], keysA[1])
 
 	// Different invoice -> different key.
-	require.NoError(t, svc.SendInvoice("in_"+uuid.NewString()))
-	allKeys := cap.keysMatching("/send")
-	require.Len(t, allKeys, 3)
-	assert.NotEqual(t, keys[0], allKeys[2], "different invoices must not share a send key")
+	invoiceB := "in_" + uuid.NewString()
+	require.NoError(t, svc.SendInvoice(invoiceB))
+	keysB := cap.keysMatching(invoiceB)
+	require.Len(t, keysB, 1, "expected exactly one send POST for invoice B")
+	assert.NotEqual(t, keysA[0], keysB[0], "different invoices must not share a send key")
 }
 
 // -----------------------------------------------------------------------------
