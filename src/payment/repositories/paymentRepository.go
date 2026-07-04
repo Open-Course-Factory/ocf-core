@@ -127,7 +127,11 @@ func (r *paymentRepository) GetActiveUserSubscription(userID string) (*models.Us
 	var subscription models.UserSubscription
 	err := r.db.
 		Preload("SubscriptionPlan").
-		Where("user_id = ? AND status IN (?)", userID, []string{"active", "trialing"}).
+		// past_due is included so a subscription in dunning still RESOLVES a plan
+		// (content + within-grace sessions keep working, consistent with
+		// GetUserSubscriptions). Access beyond the grace window is gated at
+		// session-creation, not here (#371).
+		Where("user_id = ? AND status IN (?)", userID, []string{"active", "trialing", "past_due"}).
 		Order("created_at DESC"). // Always return the newest subscription if multiple exist
 		First(&subscription).Error
 	if err != nil {

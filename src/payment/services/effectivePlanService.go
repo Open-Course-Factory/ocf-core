@@ -193,7 +193,9 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 		// Personal org → return user's personal subscription (not assigned org plans)
 		var sub models.UserSubscription
 		err := s.db.Preload("SubscriptionPlan").
-			Where("user_id = ? AND subscription_type = ? AND status IN ?", userID, "personal", []string{"active", "trialing"}).
+			// past_due included for grace consistency with resolveGlobal /
+			// GetActiveUserSubscription — dunning is gated at session-creation (#371).
+			Where("user_id = ? AND subscription_type = ? AND status IN ?", userID, "personal", []string{"active", "trialing", "past_due"}).
 			Order("created_at DESC").
 			First(&sub).Error
 		if err != nil {
