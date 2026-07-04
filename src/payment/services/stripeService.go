@@ -913,8 +913,15 @@ func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 	}
 
 	userSub.Status = string(subscription.Status)
-	userSub.CurrentPeriodStart = time.Unix(subscription.Items.Data[0].CurrentPeriodStart, 0)
-	userSub.CurrentPeriodEnd = time.Unix(subscription.Items.Data[0].CurrentPeriodEnd, 0)
+	// Guard the empty items list (mirrors handleSubscriptionCreated): the period
+	// lives on the first item, so only refresh it when an item is present. An
+	// empty Items.Data would otherwise panic with index-out-of-range.
+	if len(subscription.Items.Data) > 0 {
+		userSub.CurrentPeriodStart = time.Unix(subscription.Items.Data[0].CurrentPeriodStart, 0)
+		userSub.CurrentPeriodEnd = time.Unix(subscription.Items.Data[0].CurrentPeriodEnd, 0)
+	} else {
+		utils.Warn("⚠️ Subscription %s updated with empty items list — keeping existing period dates", subscription.ID)
+	}
 	userSub.CancelAtPeriodEnd = subscription.CancelAtPeriodEnd
 
 	if subscription.CanceledAt > 0 {
@@ -1791,6 +1798,14 @@ func (ss *stripeService) handleBulkSubscriptionUpdated(subscription *stripe.Subs
 		batch.Status = "cancelled"
 		batch.CancelledAt = &now
 		return batchRepo.Update(batch)
+	}
+
+	// Guard the empty items list: the quantity and the period dates below both
+	// read subscription.Items.Data[0], so a bulk update carrying no items would
+	// panic with index-out-of-range. Nothing to reconcile in that case.
+	if len(subscription.Items.Data) == 0 {
+		utils.Warn("⚠️ Bulk subscription %s updated with empty items list — no quantity/period change applied", subscription.ID)
+		return nil
 	}
 
 	// Check if quantity changed
