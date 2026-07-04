@@ -605,6 +605,10 @@ func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.Subscriptio
 		Metadata:    BuildPlanProductMetadata(plan),
 	}
 
+	// Deduplicate per plan: re-syncing the same plan must not create a second
+	// Stripe product. Keyed on plan.ID (stable across retries, distinct per plan).
+	productParams.SetIdempotencyKey(stripeIdempotencyKey("plan-product", plan.ID.String()))
+
 	stripeProduct, err := product.New(productParams)
 	if err != nil {
 		return fmt.Errorf("failed to create Stripe product: %w", err)
@@ -622,6 +626,10 @@ func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.Subscriptio
 			"plan_id": plan.ID.String(),
 		},
 	}
+
+	// Deduplicate per plan: a retry must reuse the same price rather than create
+	// a duplicate. Keyed on plan.ID with a distinct op prefix from the product.
+	priceParams.SetIdempotencyKey(stripeIdempotencyKey("plan-price", plan.ID.String()))
 
 	stripePrice, err := price.New(priceParams)
 	if err != nil {
@@ -2197,6 +2205,8 @@ func (ss *stripeService) GetInvoice(invoiceID string) (*stripe.Invoice, error) {
 // SendInvoice envoie une facture par email
 func (ss *stripeService) SendInvoice(invoiceID string) error {
 	params := &stripe.InvoiceSendInvoiceParams{}
+	// Deduplicate per invoice: a retried send must not e-mail the customer twice.
+	params.SetIdempotencyKey(stripeIdempotencyKey("invoice-send", invoiceID))
 	_, err := invoice.SendInvoice(invoiceID, params)
 	return err
 }
