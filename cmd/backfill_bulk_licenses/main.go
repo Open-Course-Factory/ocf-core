@@ -14,7 +14,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 
 	sqldb "soli/formations/src/db"
 	"soli/formations/src/payment/backfill"
@@ -42,13 +41,14 @@ func main() {
 	}
 
 	for _, b := range report.Batches {
-		fmt.Printf("[batch: %s] %s\n", b.BatchID, b.Reason)
+		fmt.Printf("[batch: %s status=%s] %s\n", b.BatchID, b.Status, b.Reason)
 	}
 	fmt.Printf("[backfill_bulk_licenses] total=%d skipped=%d updated=%d would_update=%d created=%d would_create=%d\n",
 		report.Total, report.Skipped, report.Updated, report.WouldUpdate, report.Created, report.WouldCreate)
 
-	if !*apply && (report.WouldUpdate > 0 || report.WouldCreate > 0) {
-		fmt.Println("[backfill_bulk_licenses] dry-run complete — pass --apply to commit")
-		os.Exit(0)
+	if *apply {
+		fmt.Println("[backfill_bulk_licenses] APPLIED — changes committed")
+	} else {
+		fmt.Println("[backfill_bulk_licenses] DRY RUN — nothing written; pass --apply to commit")
 	}
 }

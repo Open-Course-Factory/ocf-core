@@ -17,6 +17,17 @@
 // idempotent (healthy batches are skipped), and is invoked by the operator
 // command cmd/backfill_bulk_licenses — it is NOT wired into initialization.
 //
+// BACKFILL is gated on batch liveness (entitlement safety): only a live
+// (active / pending_payment) batch may have new assignable seats created.
+// A cancelled/expired (or any unknown/dead) batch is NOT paid, so growing it
+// with assignable rows would grant entitlements on a dead subscription — those
+// batches are still REPAIRED (shared id nulled, harmless) but never grown.
+// A pending_payment batch's backfilled seats mirror the creation path and stay
+// 'pending_payment' (not assignable until payment activates them). An anomalous
+// batch with zero license rows has no StripeCustomerID source, so it is skipped
+// and flagged (distinct from "healthy"). The migration only ever repairs and
+// adds — it NEVER deletes rows.
+//
 // No Rollback is provided (unlike quota.go): NULLing the shared stripe id and
 // creating rows is not cleanly reversible — the original per-row stripe ids are
 // gone and there is no marker distinguishing a backfilled row from an
@@ -34,8 +45,9 @@ import (
 // BulkLicenseBatchReport is the per-batch delta the migration emits to stdout.
 type BulkLicenseBatchReport struct {
 	BatchID  string
-	Repaired int // license rows whose shared stripe id was (or would be) nulled
-	Created  int // license rows backfilled (or that would be) to reach total_quantity
+	Status   string // the batch's status (so operators see WHY a batch was gated)
+	Repaired int    // license rows whose shared stripe id was (or would be) nulled
+	Created  int    // license rows backfilled (or that would be) to reach total_quantity
 	Reason   string
 }
 
@@ -83,28 +95,58 @@ func RunBulkLicenses(db *gorm.DB, opts Options) (*BulkLicenseReport, error) {
 				return fmt.Errorf("count legacy licenses for batch %s: %w", batch.ID, err)
 			}
 
-			toCreate := batch.TotalQuantity - int(existing)
-			if toCreate < 0 {
-				toCreate = 0
-			}
 			toRepair := int(withStripeID)
+			live := isLiveBatchStatus(batch.Status)
 
-			// Healthy batch: fully provisioned and no shared stripe id. Skip.
-			if toCreate == 0 && toRepair == 0 {
+			// Anomalous batch: no license rows at all. There is no source row to
+			// copy StripeCustomerID from, so backfilling would create nil-customer
+			// rows. Skip and flag distinctly (NOT "healthy") so an operator notices.
+			if existing == 0 {
 				report.Skipped++
 				report.Batches = append(report.Batches, BulkLicenseBatchReport{
 					BatchID: batch.ID.String(),
-					Reason:  "healthy (fully provisioned, no shared stripe id)",
+					Status:  batch.Status,
+					Reason:  "anomalous: zero license rows (no StripeCustomerID source) — not backfilled",
 				})
 				continue
 			}
 
+			// Backfill only for live (paid/payable) batches — see package doc.
+			// A dead batch is repaired below but never grown.
+			toCreate := 0
+			if live {
+				toCreate = batch.TotalQuantity - int(existing)
+				if toCreate < 0 {
+					toCreate = 0
+				}
+			}
+
+			// Nothing to do: no shared id to null and no seats to add. Skip.
+			if toRepair == 0 && toCreate == 0 {
+				report.Skipped++
+				reason := "healthy (fully provisioned, no shared stripe id)"
+				if !live {
+					reason = fmt.Sprintf("%s batch: nothing to repair (dead — not backfilled)", batch.Status)
+				}
+				report.Batches = append(report.Batches, BulkLicenseBatchReport{
+					BatchID: batch.ID.String(),
+					Status:  batch.Status,
+					Reason:  reason,
+				})
+				continue
+			}
+
+			reason := fmt.Sprintf("live batch: repair %d row(s), backfill %d to reach total_quantity %d",
+				toRepair, toCreate, batch.TotalQuantity)
+			if !live {
+				reason = fmt.Sprintf("%s batch: repair %d row(s), NO backfill (not live)", batch.Status, toRepair)
+			}
 			br := BulkLicenseBatchReport{
 				BatchID:  batch.ID.String(),
+				Status:   batch.Status,
 				Repaired: toRepair,
 				Created:  toCreate,
-				Reason: fmt.Sprintf("legacy batch: repair %d row(s), backfill %d to reach total_quantity %d",
-					toRepair, toCreate, batch.TotalQuantity),
+				Reason:   reason,
 			}
 
 			if !opts.Apply {
@@ -114,9 +156,9 @@ func RunBulkLicenses(db *gorm.DB, opts Options) (*BulkLicenseReport, error) {
 				continue
 			}
 
-			// Repair: NULL the shared stripe id on every license row carrying one,
-			// preserving all other columns (assignment: user_id / status /
-			// subscription_type stay intact).
+			// Repair (all batches, live or dead): NULL the shared stripe id on every
+			// license row carrying one, preserving all other columns (assignment:
+			// user_id / status / subscription_type stay intact).
 			if toRepair > 0 {
 				res := tx.Model(&models.UserSubscription{}).
 					Where("subscription_batch_id = ? AND stripe_subscription_id IS NOT NULL", batch.ID).
@@ -127,10 +169,19 @@ func RunBulkLicenses(db *gorm.DB, opts Options) (*BulkLicenseReport, error) {
 				report.Updated += int(res.RowsAffected)
 			}
 
-			// Backfill: create the missing assignable rows with the post-!269 shape.
-			// Copy StripeCustomerID from an existing license row (the batch has at
-			// least one). Leave StripeSubscriptionID NULL — linkage is via the batch.
+			// Backfill (live batches only): create the missing seats with the
+			// post-!269 shape. Mirror the creation path's license status — an active
+			// batch's seats are 'unassigned' (assignable); a pending_payment batch's
+			// seats stay 'pending_payment' (not assignable until payment activates
+			// them). Copy StripeCustomerID from an existing license row (guaranteed
+			// present: the zero-license case was handled above). Leave
+			// StripeSubscriptionID NULL — linkage is via the batch.
 			if toCreate > 0 {
+				licenseStatus := "unassigned"
+				if batch.Status == "pending_payment" {
+					licenseStatus = "pending_payment"
+				}
+
 				var customerID *string
 				var sample models.UserSubscription
 				if err := tx.Where("subscription_batch_id = ?", batch.ID).First(&sample).Error; err == nil {
@@ -145,7 +196,7 @@ func RunBulkLicenses(db *gorm.DB, opts Options) (*BulkLicenseReport, error) {
 						SubscriptionBatchID: &batch.ID,
 						SubscriptionPlanID:  batch.SubscriptionPlanID,
 						StripeCustomerID:    customerID,
-						Status:              "unassigned",
+						Status:              licenseStatus,
 						CurrentPeriodStart:  batch.CurrentPeriodStart,
 						CurrentPeriodEnd:    batch.CurrentPeriodEnd,
 					}
@@ -173,4 +224,18 @@ func RunBulkLicenses(db *gorm.DB, opts Options) (*BulkLicenseReport, error) {
 	}
 
 	return report, nil
+}
+
+// isLiveBatchStatus reports whether a batch is in a paid/payable state that may
+// have new assignable seats backfilled. The batch status field carries values
+// active / pending_payment (live) and cancelled / expired (dead). Any unknown
+// status is treated as NOT live, so the migration never grows a batch that
+// isn't entitled to seats.
+func isLiveBatchStatus(status string) bool {
+	switch status {
+	case "active", "pending_payment":
+		return true
+	default:
+		return false
+	}
 }
