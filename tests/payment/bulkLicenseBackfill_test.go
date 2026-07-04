@@ -46,6 +46,8 @@
 package payment_tests
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -286,4 +288,183 @@ func TestBulkLicenseBackfill_AssignedLegacyLicense_PreservesAssignment(t *testin
 
 	assert.Equal(t, 2, report.Created, "2 backfilled rows")
 	assert.Equal(t, 1, report.Updated, "1 legacy row repaired (stripe id nulled)")
+}
+
+// -----------------------------------------------------------------------------
+// Status-safety follow-up (reviewer): RunBulkLicenses loads batches with NO
+// status filter, so a legacy CANCELLED/EXPIRED batch would get its missing seats
+// backfilled as status='unassigned' — assignable via AssignLicense — granting
+// entitlements on a subscription that is no longer paid. These tests pin that
+// only ACTIVE/live batches get seats backfilled; dead batches are repaired (id
+// nulled, harmless) but never grown, anomalous batches are flagged, and no path
+// ever deletes rows.
+// -----------------------------------------------------------------------------
+
+// findBatchReport returns the per-batch report entry for batchID, or nil.
+func findBatchReport(report *backfill.BulkLicenseReport, batchID uuid.UUID) *backfill.BulkLicenseBatchReport {
+	for i := range report.Batches {
+		if report.Batches[i].BatchID == batchID.String() {
+			return &report.Batches[i]
+		}
+	}
+	return nil
+}
+
+// batchReportStatus reads an optional Status field off the per-batch report via
+// reflection, so the test compiles whether or not the dev has added it yet.
+// Returns (value, true) only when a string field named "Status" is present.
+func batchReportStatus(entry *backfill.BulkLicenseBatchReport) (string, bool) {
+	f := reflect.ValueOf(*entry).FieldByName("Status")
+	if !f.IsValid() || f.Kind() != reflect.String {
+		return "", false
+	}
+	return f.String(), true
+}
+
+// seedBatchWithStatus creates a batch with an explicit status and `licenses`
+// license rows carrying the shared stripe id (legacy shape). licenses may be 0.
+func seedBatchWithStatus(t *testing.T, db *gorm.DB, status string, totalQuantity, licenses int) (*models.SubscriptionBatch, string) {
+	t.Helper()
+	priceID := "price_bf_" + uuid.NewString()
+	plan := &models.SubscriptionPlan{
+		Name: "BF Status Plan", PriceAmount: 1999, Currency: "eur",
+		BillingInterval: "month", StripePriceID: &priceID, IsActive: true,
+	}
+	require.NoError(t, db.Create(plan).Error)
+
+	purchaser := "purchaser_" + uuid.NewString()
+	sharedStripeSubID := "sub_bf_" + uuid.NewString()
+	customerID := "cus_bf_" + uuid.NewString()
+
+	batch := &models.SubscriptionBatch{
+		PurchaserUserID: purchaser, SubscriptionPlanID: plan.ID,
+		StripeSubscriptionID: sharedStripeSubID, StripeSubscriptionItemID: "si_bf",
+		TotalQuantity: totalQuantity, AssignedQuantity: 0, Status: status,
+		CurrentPeriodStart: time.Now(), CurrentPeriodEnd: time.Now().Add(30 * 24 * time.Hour),
+	}
+	require.NoError(t, db.Create(batch).Error)
+
+	// Only the FIRST license may carry the shared (non-null) stripe id — the
+	// partial unique index forbids a second non-null duplicate (that is exactly
+	// why legacy batches kept only one row).
+	for i := 0; i < licenses; i++ {
+		lic := &models.UserSubscription{
+			UserID: "", PurchaserUserID: &purchaser, SubscriptionBatchID: &batch.ID,
+			SubscriptionPlanID: plan.ID, StripeCustomerID: &customerID, Status: "unassigned",
+			CurrentPeriodStart: batch.CurrentPeriodStart, CurrentPeriodEnd: batch.CurrentPeriodEnd,
+		}
+		if i == 0 {
+			lic.StripeSubscriptionID = &sharedStripeSubID
+		}
+		require.NoError(t, db.Create(lic).Error)
+	}
+	return batch, sharedStripeSubID
+}
+
+// 6. Dead (cancelled/expired) legacy batch: repair the shared id (harmless) but
+// NEVER backfill new assignable seats.
+func TestBulkLicenseBackfill_CancelledBatch_RepairsButNeverBackfills(t *testing.T) {
+	for _, status := range []string{"cancelled", "expired"} {
+		t.Run(status, func(t *testing.T) {
+			db := freshTestDB(t)
+			batch, _ := seedBatchWithStatus(t, db, status, 3, 1)
+
+			require.Equal(t, int64(1), countBatchLicenses(t, db, batch.ID), "precondition: 1 legacy license")
+			require.Equal(t, int64(1), countBatchLicensesWithStripeID(t, db, batch.ID), "precondition: shared stripe id present")
+
+			report, err := backfill.RunBulkLicenses(db, backfill.Options{Apply: true})
+			require.NoError(t, err)
+
+			// Repair still applies (removes the weird shared id) — harmless.
+			assert.Equal(t, int64(0), countBatchLicensesWithStripeID(t, db, batch.ID),
+				"a dead batch's shared stripe id may still be nulled (harmless cleanup)")
+
+			// But NO new seats: a %s batch is not paid, so backfilling assignable
+			// rows would grant entitlements on an unpaid subscription.
+			assert.Equal(t, int64(1), countBatchLicenses(t, db, batch.ID),
+				"SAFETY: a "+status+" batch must NEVER be backfilled — no new rows. "+
+					"Today RunBulkLicenses loads batches with no status filter and "+
+					"creates total_quantity-existing assignable rows.")
+
+			br := findBatchReport(report, batch.ID)
+			require.NotNil(t, br, "the batch must appear in the report")
+			assert.Equal(t, 0, br.Created, "no seats created for a "+status+" batch")
+
+			// Loosely pin the proposed BulkLicenseBatchReport.Status field: assert
+			// it only if the dev has added it (keeps this compiling either way).
+			if s, ok := batchReportStatus(br); ok {
+				assert.Equal(t, status, s, "per-batch report Status should carry the batch status")
+			} else {
+				t.Logf("nudge: add a `Status string` field to BulkLicenseBatchReport so "+
+					"operators can see WHY a batch was skipped (here: %q)", status)
+			}
+		})
+	}
+}
+
+// 7. Anomalous active batch: total_quantity>0 but ZERO license rows (no
+// StripeCustomerID source). Must be skipped/flagged, not silently backfilled
+// with nil-customer rows.
+func TestBulkLicenseBackfill_ZeroLicenseBatch_SkippedAndFlagged(t *testing.T) {
+	db := freshTestDB(t)
+	batch, _ := seedBatchWithStatus(t, db, "active", 2, 0)
+
+	require.Equal(t, int64(0), countBatchLicenses(t, db, batch.ID), "precondition: zero license rows")
+
+	report, err := backfill.RunBulkLicenses(db, backfill.Options{Apply: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(0), countBatchLicenses(t, db, batch.ID),
+		"SAFETY: a batch with zero license rows has no StripeCustomerID source and "+
+			"must NOT be backfilled with nil-customer rows. Today it creates "+
+			"total_quantity anomalous rows.")
+	assert.Equal(t, 0, report.Created, "nothing may be created for a zero-license batch")
+	assert.GreaterOrEqual(t, report.Skipped, 1, "a zero-license batch must be reported as skipped")
+
+	br := findBatchReport(report, batch.ID)
+	require.NotNil(t, br, "the batch must appear in the report")
+	assert.Equal(t, 0, br.Created, "zero seats created for a zero-license batch")
+	// The skip must be distinguishable from a healthy skip — don't over-pin the
+	// wording, just require the reason not to claim the batch is healthy.
+	assert.NotContains(t, strings.ToLower(br.Reason), "healthy",
+		"a zero-license batch must be flagged with a reason distinct from 'healthy'")
+}
+
+// 8. Guard: a shrunk batch (total_quantity < existing rows, from seat removal
+// history) must never have rows DELETED. Expected GREEN today (the toCreate
+// clamp already prevents negative creation and nothing deletes).
+func TestBulkLicenseBackfill_ShrunkBatch_NeverDeletesRows(t *testing.T) {
+	db := freshTestDB(t)
+
+	priceID := "price_shrunk_" + uuid.NewString()
+	plan := &models.SubscriptionPlan{
+		Name: "Shrunk Plan", PriceAmount: 1999, Currency: "eur",
+		BillingInterval: "month", StripePriceID: &priceID, IsActive: true,
+	}
+	require.NoError(t, db.Create(plan).Error)
+
+	purchaser := "purchaser_" + uuid.NewString()
+	batch := &models.SubscriptionBatch{
+		PurchaserUserID: purchaser, SubscriptionPlanID: plan.ID,
+		StripeSubscriptionID: "sub_shrunk_" + uuid.NewString(), StripeSubscriptionItemID: "si_shrunk",
+		TotalQuantity: 1, AssignedQuantity: 0, Status: "active",
+		CurrentPeriodStart: time.Now(), CurrentPeriodEnd: time.Now().Add(30 * 24 * time.Hour),
+	}
+	require.NoError(t, db.Create(batch).Error)
+
+	// 2 healthy rows (NULL stripe id, unassigned) but total_quantity is only 1.
+	for i := 0; i < 2; i++ {
+		require.NoError(t, db.Create(&models.UserSubscription{
+			UserID: "", PurchaserUserID: &purchaser, SubscriptionBatchID: &batch.ID,
+			SubscriptionPlanID: plan.ID, Status: "unassigned",
+			CurrentPeriodStart: batch.CurrentPeriodStart, CurrentPeriodEnd: batch.CurrentPeriodEnd,
+		}).Error)
+	}
+
+	report, err := backfill.RunBulkLicenses(db, backfill.Options{Apply: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(2), countBatchLicenses(t, db, batch.ID),
+		"a shrunk batch must NEVER have rows deleted — the migration only ever adds")
+	assert.Equal(t, 0, report.Created, "shrunk batch: nothing to create")
 }
