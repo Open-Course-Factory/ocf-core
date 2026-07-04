@@ -195,3 +195,18 @@ func TestGetUserEffectivePlan_PastDueSubscription_StillResolves(t *testing.T) {
 	require.NotNil(t, result.UserSubscription)
 	assert.Equal(t, "past_due", result.UserSubscription.Status)
 }
+
+// 4. Config: PastDueGraceDays defaults to 7 and honors PAYMENT_PAST_DUE_GRACE_DAYS.
+func TestPastDueGraceDays_DefaultAndEnvOverride(t *testing.T) {
+	t.Setenv("PAYMENT_PAST_DUE_GRACE_DAYS", "") // unset-equivalent
+	assert.Equal(t, 7, services.PastDueGraceDays(), "default grace window is 7 days")
+
+	t.Setenv("PAYMENT_PAST_DUE_GRACE_DAYS", "3")
+	assert.Equal(t, 3, services.PastDueGraceDays(), "env override must be honored")
+
+	t.Setenv("PAYMENT_PAST_DUE_GRACE_DAYS", "notanumber")
+	assert.Equal(t, 7, services.PastDueGraceDays(), "an invalid value falls back to the default")
+
+	t.Setenv("PAYMENT_PAST_DUE_GRACE_DAYS", "0")
+	assert.Equal(t, 0, services.PastDueGraceDays(), "0 (gate immediately) is a valid override")
+}
