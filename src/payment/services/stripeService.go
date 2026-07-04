@@ -2,6 +2,8 @@
 package services
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	auditServices "soli/formations/src/audit/services"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/utils"
+	"strings"
 	"time"
 
 	organizationModels "soli/formations/src/organizations/models"
@@ -184,6 +187,28 @@ func NewStripeService(db *gorm.DB) StripeService {
 	}
 }
 
+// stripeIdempotencyKey derives a deterministic Stripe Idempotency-Key for a
+// mutating operation. Without an explicit key, stripe-go auto-generates a fresh
+// RANDOM key on every request, so an application-level retry or double-submit is
+// never deduplicated by Stripe (it can create a second customer/subscription or
+// open a second billable checkout). The key folds the operation name together
+// with the request's significant parameters: an identical retry reuses the same
+// key (Stripe returns the cached response) while any change to a significant
+// parameter yields a new key (avoiding the 400 idempotency_error Stripe raises
+// when a key is reused with different params). The output stays well under
+// Stripe's 255-char limit (prefix + 64 hex chars).
+func stripeIdempotencyKey(operation string, parts ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
+	return operation + ":" + hex.EncodeToString(sum[:])
+}
+
+// idempotencyDateBucket returns today's UTC date (YYYY-MM-DD). Time-bucketing a
+// key lets an identical retry on the same day deduplicate, while a legitimate
+// re-attempt on a later day gets a fresh key (Stripe keys also expire after 24h).
+func idempotencyDateBucket() string {
+	return time.Now().UTC().Format("2006-01-02")
+}
+
 // CreateOrGetCustomer crée ou récupère un client Stripe
 func (ss *stripeService) CreateOrGetCustomer(userID, email, name string) (string, error) {
 	// Check if the user already has a Stripe customer ID from ANY subscription (active or inactive)
@@ -208,6 +233,10 @@ func (ss *stripeService) CreateOrGetCustomer(userID, email, name string) (string
 			"user_id": userID,
 		},
 	}
+
+	// Deduplicate per user: a retry of "create the Stripe customer for user U"
+	// must not create a second customer.
+	params.SetIdempotencyKey(stripeIdempotencyKey("customer-create", userID))
 
 	customer, err := customer.New(params)
 	if err != nil {
@@ -345,6 +374,17 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 		}
 	}
 
+	// Deduplicate a double-submitted checkout: same user + plan + coupon +
+	// billing address on the same day reuses the session instead of opening a
+	// second billable checkout. Any of those changing (e.g. a different coupon)
+	// yields a new key so Stripe does not reject it as a param mismatch.
+	billingAddrID := ""
+	if billingAddr != nil {
+		billingAddrID = billingAddr.ID.String()
+	}
+	params.SetIdempotencyKey(stripeIdempotencyKey("checkout",
+		userID, input.SubscriptionPlanID.String(), input.CouponCode, billingAddrID, idempotencyDateBucket()))
+
 	session, err := session.New(params)
 	if err != nil {
 		if input.CouponCode != "" {
@@ -479,6 +519,22 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 			{Coupon: stripe.String(input.CouponCode)},
 		}
 	}
+
+	// Deduplicate a double-submitted bulk checkout: this provisions N paid
+	// licenses, so a retry must reuse the same session rather than open a second
+	// batch. Quantity and group are significant (they change the request), so a
+	// change to either yields a new key.
+	bulkGroupID := ""
+	if input.GroupID != nil {
+		bulkGroupID = input.GroupID.String()
+	}
+	bulkBillingAddrID := ""
+	if billingAddr != nil {
+		bulkBillingAddrID = billingAddr.ID.String()
+	}
+	params.SetIdempotencyKey(stripeIdempotencyKey("checkout-bulk",
+		userID, input.SubscriptionPlanID.String(), fmt.Sprintf("%d", input.Quantity),
+		bulkGroupID, input.CouponCode, bulkBillingAddrID, idempotencyDateBucket()))
 
 	// Create checkout session
 	checkoutSession, err := session.New(params)
@@ -2874,6 +2930,15 @@ func (ss *stripeService) CreateSubscriptionWithQuantity(customerID string, plan 
 	if plan.TrialDays > 0 {
 		params.TrialPeriodDays = stripe.Int64(int64(plan.TrialDays))
 	}
+
+	// Deduplicate a retried bulk-subscription creation. No batch/subscription
+	// UUID exists yet at this point (the batch row is persisted only after this
+	// call returns), so the key is derived from the stable request identity:
+	// customer + plan + quantity + payment method, bucketed by day. A different
+	// payment method (e.g. the user retries after a card failure) yields a new
+	// key so the retry is not served a stale cached failure.
+	params.SetIdempotencyKey(stripeIdempotencyKey("subscription-create",
+		customerID, plan.ID.String(), fmt.Sprintf("%d", quantity), paymentMethodID, idempotencyDateBucket()))
 
 	sub, err := subscription.New(params)
 	if err != nil {
