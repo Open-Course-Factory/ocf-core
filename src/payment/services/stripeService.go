@@ -1924,50 +1924,73 @@ func (ss *stripeService) handleBulkSubscriptionUpdated(subscription *stripe.Subs
 
 	difference := newQuantity - batch.TotalQuantity
 
-	if difference > 0 {
-		// Adding licenses
-		stripeSubID := batch.StripeSubscriptionID
-		purchaserID := batch.PurchaserUserID
-		for i := 0; i < difference; i++ {
-			license := models.UserSubscription{
-				UserID:               "",
-				PurchaserUserID:      &purchaserID,
-				SubscriptionBatchID:  &batch.ID,
-				SubscriptionPlanID:   batch.SubscriptionPlanID,
-				StripeSubscriptionID: &stripeSubID,
-				StripeCustomerID:     &purchaserID,
-				Status:               "unassigned",
-				CurrentPeriodStart:   batch.CurrentPeriodStart,
-				CurrentPeriodEnd:     batch.CurrentPeriodEnd,
-			}
-			if err := ss.repository.CreateUserSubscription(&license); err != nil {
-				utils.Error("Failed to create additional license: %v", err)
-			}
-		}
-		utils.Info("✅ Added %d licenses to batch %s", difference, batch.ID)
-	} else {
-		// Removing licenses (only unassigned ones)
-		toRemove := -difference
-		unassignedLicenses := make([]models.UserSubscription, 0, toRemove)
-		ss.db.Where("subscription_batch_id = ? AND status = ?", batch.ID, "unassigned").
-			Limit(toRemove).
-			Find(&unassignedLicenses)
+	// Reconcile the license pool and the batch total atomically. Added license
+	// rows leave StripeSubscriptionID NULL (linkage via SubscriptionBatchID),
+	// mirroring the creation path: sharing the batch's stripe_subscription_id
+	// collided on the partial unique index idx_user_stripe_sub_not_null, so only
+	// the first added row survived and the rest were swallowed by the former
+	// log-and-continue loop. Any failure now rolls the whole delta AND the batch
+	// update back and propagates, so the webhook is marked failed and Stripe
+	// redelivers rather than leaving a partially-grown batch behind a 200.
+	purchaserID := batch.PurchaserUserID
+	stripeCustomerID := subscription.Customer.ID
+	newPeriodStart := time.Unix(subscription.Items.Data[0].CurrentPeriodStart, 0)
+	newPeriodEnd := time.Unix(subscription.Items.Data[0].CurrentPeriodEnd, 0)
 
-		if len(unassignedLicenses) < toRemove {
-			return fmt.Errorf("cannot remove %d licenses, only %d unassigned available", toRemove, len(unassignedLicenses))
+	if err := ss.db.Transaction(func(tx *gorm.DB) error {
+		if difference > 0 {
+			// Adding licenses
+			for i := 0; i < difference; i++ {
+				license := models.UserSubscription{
+					UserID:              "",
+					PurchaserUserID:     &purchaserID,
+					SubscriptionBatchID: &batch.ID,
+					SubscriptionPlanID:  batch.SubscriptionPlanID,
+					// StripeSubscriptionID left NULL — linkage via SubscriptionBatchID.
+					StripeCustomerID:   &stripeCustomerID,
+					Status:             "unassigned",
+					CurrentPeriodStart: batch.CurrentPeriodStart,
+					CurrentPeriodEnd:   batch.CurrentPeriodEnd,
+				}
+				if err := tx.Create(&license).Error; err != nil {
+					return fmt.Errorf("failed to create additional license %d/%d: %w", i+1, difference, err)
+				}
+			}
+			utils.Info("✅ Added %d licenses to batch %s", difference, batch.ID)
+		} else {
+			// Removing licenses (only unassigned ones)
+			toRemove := -difference
+			unassignedLicenses := make([]models.UserSubscription, 0, toRemove)
+			if err := tx.Where("subscription_batch_id = ? AND status = ?", batch.ID, "unassigned").
+				Limit(toRemove).
+				Find(&unassignedLicenses).Error; err != nil {
+				return fmt.Errorf("failed to list unassigned licenses: %w", err)
+			}
+
+			if len(unassignedLicenses) < toRemove {
+				return fmt.Errorf("cannot remove %d licenses, only %d unassigned available", toRemove, len(unassignedLicenses))
+			}
+
+			for i := range unassignedLicenses {
+				if err := tx.Delete(&unassignedLicenses[i]).Error; err != nil {
+					return fmt.Errorf("failed to remove license: %w", err)
+				}
+			}
+			utils.Info("✅ Removed %d licenses from batch %s", len(unassignedLicenses), batch.ID)
 		}
 
-		for _, license := range unassignedLicenses {
-			ss.db.Delete(&license)
+		// Update batch total quantity + period within the same transaction.
+		batch.TotalQuantity = newQuantity
+		batch.CurrentPeriodStart = newPeriodStart
+		batch.CurrentPeriodEnd = newPeriodEnd
+		if err := tx.Save(batch).Error; err != nil {
+			return fmt.Errorf("failed to update batch: %w", err)
 		}
-		utils.Info("✅ Removed %d licenses from batch %s", len(unassignedLicenses), batch.ID)
+		return nil
+	}); err != nil {
+		return err
 	}
-
-	// Update batch total quantity
-	batch.TotalQuantity = newQuantity
-	batch.CurrentPeriodStart = time.Unix(subscription.Items.Data[0].CurrentPeriodStart, 0)
-	batch.CurrentPeriodEnd = time.Unix(subscription.Items.Data[0].CurrentPeriodEnd, 0)
-	return batchRepo.Update(batch)
+	return nil
 }
 
 // handleBulkSubscriptionDeleted handles cancellation of bulk subscriptions

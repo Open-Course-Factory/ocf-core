@@ -386,19 +386,21 @@ func (s *bulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUs
 				return fmt.Errorf("failed to get existing license for customer ID: %w", err)
 			}
 
-			// Adding licenses
-			stripeSubID := batch.StripeSubscriptionID
+			// Adding licenses. StripeSubscriptionID is left NULL — linkage is via
+			// SubscriptionBatchID (the batch holds the Stripe subscription id).
+			// Sharing the batch's stripe_subscription_id across added rows collided
+			// on the partial unique index idx_user_stripe_sub_not_null, so only the
+			// first added license survived and the transaction then rolled back.
 			for i := 0; i < difference; i++ {
 				license := models.UserSubscription{
-					UserID:               "",
-					PurchaserUserID:      &batch.PurchaserUserID,
-					SubscriptionBatchID:  &batch.ID,
-					SubscriptionPlanID:   batch.SubscriptionPlanID,
-					StripeSubscriptionID: &stripeSubID,
-					StripeCustomerID:     existingLicense.StripeCustomerID, // Use same customer ID as existing licenses
-					Status:               "unassigned",
-					CurrentPeriodStart:   batch.CurrentPeriodStart,
-					CurrentPeriodEnd:     batch.CurrentPeriodEnd,
+					UserID:              "",
+					PurchaserUserID:     &batch.PurchaserUserID,
+					SubscriptionBatchID: &batch.ID,
+					SubscriptionPlanID:  batch.SubscriptionPlanID,
+					StripeCustomerID:    existingLicense.StripeCustomerID, // Use same customer ID as existing licenses
+					Status:              "unassigned",
+					CurrentPeriodStart:  batch.CurrentPeriodStart,
+					CurrentPeriodEnd:    batch.CurrentPeriodEnd,
 				}
 				if err := tx.Create(&license).Error; err != nil {
 					return fmt.Errorf("failed to create additional license %d: %w", i, err)
@@ -436,6 +438,17 @@ func (s *bulkLicenseService) UpdateBatchQuantity(batchID uuid.UUID, requestingUs
 		return nil
 	})
 	if err != nil {
+		// The Stripe quantity was already raised above, but the DB reconciliation
+		// failed. Revert Stripe back to the previous quantity (best-effort) so we
+		// don't bill for licenses that were never provisioned locally. This mirrors
+		// the compensation pattern in PurchaseBulkLicenses (Stripe first, then DB,
+		// undo Stripe on DB failure). The original DB error is still returned.
+		if _, revertErr := s.stripeService.UpdateSubscriptionQuantity(
+			batch.StripeSubscriptionID, batch.StripeSubscriptionItemID, oldQuantity,
+		); revertErr != nil {
+			utils.Error("Failed to revert Stripe quantity for batch %s after DB failure (Stripe at %d, DB at %d): %v",
+				batchID, newQuantity, oldQuantity, revertErr)
+		}
 		return err
 	}
 
