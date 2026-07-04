@@ -24,6 +24,7 @@ type PaymentRepository interface {
 	GetAllActiveUserSubscriptions(userID string) ([]models.UserSubscription, error)
 	GetPrimaryUserSubscription(userID string) (*models.UserSubscription, error)
 	GetActiveSubscriptionByCustomerID(customerID string) (*models.UserSubscription, error)
+	GetRecoverableSubscriptionByCustomerID(customerID string) (*models.UserSubscription, error)
 	GetUserSubscriptions(userID string, includeInactive bool) (*[]models.UserSubscription, error)
 	UpdateUserSubscription(subscription *models.UserSubscription) error
 
@@ -195,6 +196,25 @@ func (r *paymentRepository) GetActiveSubscriptionByCustomerID(customerID string)
 	err := r.db.
 		Preload("SubscriptionPlan").
 		Where("stripe_customer_id = ? AND status IN (?)", customerID, []string{"active", "trialing"}).
+		First(&subscription).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return &subscription, nil
+}
+
+// GetRecoverableSubscriptionByCustomerID returns a subscription for the customer
+// whose status is active, trialing, OR past_due. Invoice-payment webhooks use it
+// (rather than GetActiveSubscriptionByCustomerID) so a successful payment can be
+// recorded against — and cure — a past_due subscription. A successful invoice
+// payment is precisely the event that should return a past_due subscription to
+// active, which the active-only lookup can never find.
+func (r *paymentRepository) GetRecoverableSubscriptionByCustomerID(customerID string) (*models.UserSubscription, error) {
+	var subscription models.UserSubscription
+	err := r.db.
+		Preload("SubscriptionPlan").
+		Where("stripe_customer_id = ? AND status IN (?)", customerID, []string{"active", "trialing", "past_due"}).
 		First(&subscription).Error
 	if err != nil {
 		return nil, err

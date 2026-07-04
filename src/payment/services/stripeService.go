@@ -1194,8 +1194,11 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 		return err
 	}
 
-	// Try to find subscription by customer ID first
-	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
+	// Find the subscription by customer ID, INCLUDING past_due: a successful
+	// invoice payment is exactly the event that should cure a past_due
+	// subscription, so the active-only lookup would miss the one case that
+	// matters most (issue #364).
+	userSub, err := ss.repository.GetRecoverableSubscriptionByCustomerID(stripeInvoice.Customer.ID)
 
 	// Check if this is a bulk subscription by checking if there's a batch for this subscription
 	if err == nil && userSub.StripeSubscriptionID != nil && *userSub.StripeSubscriptionID != "" {
@@ -1217,6 +1220,16 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 		// If no active subscription found, try to find by metadata in the invoice
 		utils.Debug("⚠️ No active subscription found for customer %s, skipping invoice %s", stripeInvoice.Customer.ID, stripeInvoice.ID)
 		return fmt.Errorf("subscription not found for customer %s (invoice %s): %v", stripeInvoice.Customer.ID, stripeInvoice.ID, err)
+	}
+
+	// A successful invoice payment cures a past_due subscription: return it to
+	// active, matching what Stripe's customer.subscription.updated would set.
+	if userSub.Status == "past_due" {
+		userSub.Status = "active"
+		if updateErr := ss.repository.UpdateUserSubscription(userSub); updateErr != nil {
+			return fmt.Errorf("failed to reactivate past_due subscription %s after invoice %s: %w", userSub.ID, stripeInvoice.ID, updateErr)
+		}
+		utils.Info("✅ Recovered past_due subscription %s to active after successful invoice payment %s", userSub.ID, stripeInvoice.ID)
 	}
 
 	// Créer ou mettre à jour la facture
