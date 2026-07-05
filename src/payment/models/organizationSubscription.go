@@ -22,7 +22,6 @@ type OrganizationSubscription struct {
 	Status                  string           `gorm:"type:varchar(50);default:'active'" json:"status"`                                                                                            // active, cancelled, past_due, unpaid, incomplete
 	CurrentPeriodStart      time.Time        `json:"current_period_start"`
 	CurrentPeriodEnd        time.Time        `json:"current_period_end"`
-	TrialEnd                *time.Time       `json:"trial_end,omitempty"`
 	CancelAtPeriodEnd       bool             `gorm:"default:false" json:"cancel_at_period_end"`
 	CancelledAt             *time.Time       `json:"cancelled_at,omitempty"`
 	RenewalNotificationSent bool             `gorm:"default:false" json:"renewal_notification_sent"`

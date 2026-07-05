@@ -15,7 +15,6 @@ type SubscriptionPlan struct {
 	PriceAmount        int64    `json:"price_amount"` // Prix en centimes
 	Currency           string   `gorm:"type:varchar(3);default:'eur'" json:"currency"`
 	BillingInterval    string   `gorm:"type:varchar(20);default:'month'" json:"billing_interval"` // month, year
-	TrialDays          int      `gorm:"default:0" json:"trial_days"`
 	Features           []string `mapstructure:"features" gorm:"serializer:json" json:"features"`
 	MaxConcurrentUsers int      `gorm:"default:1" json:"max_concurrent_users"`
 	MaxCourses         int      `gorm:"default:-1" json:"max_courses"` // -1 = illimité

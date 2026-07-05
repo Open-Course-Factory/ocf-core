@@ -127,6 +127,10 @@ func (r *paymentRepository) GetActiveUserSubscription(userID string) (*models.Us
 	var subscription models.UserSubscription
 	err := r.db.
 		Preload("SubscriptionPlan").
+		// NOTE (#374): OCF offers no paid trials — the free Trial plan is the only
+		// "trial". `trialing` is kept here (and in the other status filters) purely
+		// as defensiveness against Stripe's subscription state machine ever
+		// reporting it; it is not a product feature.
 		Where("user_id = ? AND status IN (?)", userID, []string{"active", "trialing"}).
 		Order("created_at DESC"). // Always return the newest subscription if multiple exist
 		First(&subscription).Error

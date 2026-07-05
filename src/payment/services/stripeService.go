@@ -695,9 +695,6 @@ func (ss *stripeService) ProcessWebhook(payload []byte, signature string) error 
 	case "customer.subscription.resumed":
 		utils.Debug("▶️ Processing subscription resumed")
 		return ss.handleSubscriptionResumed(event)
-	case "customer.subscription.trial_will_end":
-		utils.Debug("⏰ Processing trial will end")
-		return ss.handleTrialWillEnd(event)
 
 	// Invoice events
 	case "invoice.created":
@@ -823,12 +820,6 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 		CurrentPeriodStart:   currentPeriodStart,
 		CurrentPeriodEnd:     currentPeriodEnd,
 		CancelAtPeriodEnd:    subscription.CancelAtPeriodEnd,
-	}
-
-	// Ajouter la date de fin d'essai si elle existe
-	if subscription.TrialEnd > 0 {
-		trialEnd := time.Unix(subscription.TrialEnd, 0)
-		userSubscription.TrialEnd = &trialEnd
 	}
 
 	// Check if this subscription is replacing a free subscription
@@ -1106,12 +1097,6 @@ func (ss *stripeService) handleOrganizationSubscriptionCreated(subscription *str
 		Quantity:             int(subscription.Items.Data[0].Quantity),
 	}
 
-	// Add trial end if exists
-	if subscription.TrialEnd > 0 {
-		trialEnd := time.Unix(subscription.TrialEnd, 0)
-		orgSubscription.TrialEnd = &trialEnd
-	}
-
 	// Get organization subscription repository
 	orgSubRepo := repositories.NewOrganizationSubscriptionRepository(ss.db)
 
@@ -1201,12 +1186,6 @@ func (ss *stripeService) handleOrganizationSubscriptionUpdated(subscription *str
 	// Update status and other fields
 	orgSub.Status = string(subscription.Status)
 	orgSub.CancelAtPeriodEnd = subscription.CancelAtPeriodEnd
-
-	// Update trial end
-	if subscription.TrialEnd > 0 {
-		trialEnd := time.Unix(subscription.TrialEnd, 0)
-		orgSub.TrialEnd = &trialEnd
-	}
 
 	// Save updates
 	if err := orgSubRepo.UpdateOrganizationSubscription(orgSub); err != nil {
@@ -1490,34 +1469,6 @@ func (ss *stripeService) handleSubscriptionResumed(event *stripe.Event) error {
 	utils.Debug("▶️ Subscription %s resumed for user %s (status: %s)", subscription.ID, userSub.UserID, subscription.Status)
 
 	return ss.repository.UpdateUserSubscription(userSub)
-}
-
-// handleTrialWillEnd traite l'alerte de fin d'essai
-func (ss *stripeService) handleTrialWillEnd(event *stripe.Event) error {
-	var subscription stripe.Subscription
-	if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
-		return fmt.Errorf("failed to unmarshal subscription: %w", err)
-	}
-
-	// Bulk subscriptions are managed via the batch and have no personal
-	// UserSubscription row keyed by the Stripe subscription id — skip gracefully.
-	if isBulkSubscription(&subscription) {
-		utils.Debug("⏰ Skipping trial-will-end for bulk subscription %s (managed via batch)", subscription.ID)
-		return nil
-	}
-
-	userSub, err := ss.repository.GetUserSubscriptionByStripeID(subscription.ID)
-	if err != nil {
-		return fmt.Errorf("subscription not found in database: %w", err)
-	}
-
-	trialEndDate := time.Unix(subscription.TrialEnd, 0)
-	utils.Debug("⏰ Trial will end for user %s on %s (subscription: %s)",
-		userSub.UserID, trialEndDate.Format("2006-01-02"), subscription.ID)
-
-	// TODO: Send notification email/webhook to user about trial ending
-	// For now, just log it
-	return nil
 }
 
 // handleInvoiceCreated traite la création d'une facture
@@ -2351,11 +2302,6 @@ func (ss *stripeService) processSingleSubscription(sub *stripe.Subscription, res
 		existingSubscription.CurrentPeriodEnd = currentPeriodEnd
 		existingSubscription.CancelAtPeriodEnd = sub.CancelAtPeriodEnd
 
-		if sub.TrialEnd > 0 {
-			trialEnd := time.Unix(sub.TrialEnd, 0)
-			existingSubscription.TrialEnd = &trialEnd
-		}
-
 		if err := ss.repository.UpdateUserSubscription(existingSubscription); err != nil {
 			return fmt.Errorf("failed to update subscription: %w", err)
 		}
@@ -2376,11 +2322,6 @@ func (ss *stripeService) processSingleSubscription(sub *stripe.Subscription, res
 			CurrentPeriodStart:   currentPeriodStart,
 			CurrentPeriodEnd:     currentPeriodEnd,
 			CancelAtPeriodEnd:    sub.CancelAtPeriodEnd,
-		}
-
-		if sub.TrialEnd > 0 {
-			trialEnd := time.Unix(sub.TrialEnd, 0)
-			userSubscription.TrialEnd = &trialEnd
 		}
 
 		if err := ss.repository.CreateUserSubscription(userSubscription); err != nil {
@@ -2534,11 +2475,6 @@ func (ss *stripeService) LinkSubscriptionToUser(stripeSubscriptionID, userID str
 		CurrentPeriodStart:   currentPeriodStart,
 		CurrentPeriodEnd:     currentPeriodEnd,
 		CancelAtPeriodEnd:    sub.CancelAtPeriodEnd,
-	}
-
-	if sub.TrialEnd > 0 {
-		trialEnd := time.Unix(sub.TrialEnd, 0)
-		userSubscription.TrialEnd = &trialEnd
 	}
 
 	// Sauvegarder en base
@@ -3007,10 +2943,6 @@ func (ss *stripeService) CreateSubscriptionWithQuantity(customerID string, plan 
 		params.DefaultPaymentMethod = stripe.String(paymentMethodID)
 	}
 
-	if plan.TrialDays > 0 {
-		params.TrialPeriodDays = stripe.Int64(int64(plan.TrialDays))
-	}
-
 	// Deduplicate a retried bulk-subscription creation. No batch/subscription
 	// UUID exists yet at this point (the batch row is persisted only after this
 	// call returns), so the key is derived from the stable request identity:
@@ -3226,14 +3158,6 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 				// Simple flat pricing
 				newPlan.UseTieredPricing = false
 				newPlan.PriceAmount = priceObj.UnitAmount
-			}
-
-			// Extract metadata if available
-			if trialDaysStr, ok := prod.Metadata["trial_days"]; ok {
-				var trialDays int
-				if _, err := fmt.Sscanf(trialDaysStr, "%d", &trialDays); err == nil {
-					newPlan.TrialDays = trialDays
-				}
 			}
 
 			// Create in database
