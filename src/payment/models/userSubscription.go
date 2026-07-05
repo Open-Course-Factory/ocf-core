@@ -24,7 +24,6 @@ type UserSubscription struct {
 	Status                  string           `gorm:"type:varchar(50);default:'active'" json:"status"` // active, cancelled, past_due, unpaid, unassigned, assigned
 	CurrentPeriodStart      time.Time        `json:"current_period_start"`
 	CurrentPeriodEnd        time.Time        `json:"current_period_end"`
-	TrialEnd                *time.Time       `json:"trial_end,omitempty"`
 	CancelAtPeriodEnd       bool             `gorm:"default:false" json:"cancel_at_period_end"`
 	CancelledAt             *time.Time       `json:"cancelled_at,omitempty"`
 	PastDueSince            *time.Time       `json:"past_due_since,omitempty"` // When the sub entered past_due (nil = not past_due); drives the dunning grace window

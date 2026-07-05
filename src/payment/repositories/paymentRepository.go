@@ -131,6 +131,10 @@ func (r *paymentRepository) GetActiveUserSubscription(userID string) (*models.Us
 		// (content + within-grace sessions keep working, consistent with
 		// GetUserSubscriptions). Access beyond the grace window is gated at
 		// session-creation, not here (#371).
+		// NOTE (#374): OCF offers no paid trials — the free Trial plan is the only
+		// "trial". `trialing` is kept here (and in the other status filters) purely
+		// as defensiveness against Stripe's subscription state machine ever
+		// reporting it; it is not a product feature.
 		Where("user_id = ? AND status IN (?)", userID, []string{"active", "trialing", "past_due"}).
 		Order("created_at DESC"). // Always return the newest subscription if multiple exist
 		First(&subscription).Error

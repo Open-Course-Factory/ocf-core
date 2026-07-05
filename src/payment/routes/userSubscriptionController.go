@@ -1442,7 +1442,6 @@ func (sc *userSubscriptionController) orgSubscriptionToUserDTO(userID string, su
 		IsPrimary:          true,
 		CurrentPeriodStart: sub.CurrentPeriodStart,
 		CurrentPeriodEnd:   sub.CurrentPeriodEnd,
-		TrialEnd:           sub.TrialEnd,
 		CancelAtPeriodEnd:  sub.CancelAtPeriodEnd,
 		CancelledAt:        sub.CancelledAt,
 		CreatedAt:          sub.CreatedAt,

@@ -33,7 +33,6 @@ type OrganizationSubscriptionOutput struct {
 	Quantity             int                    `json:"quantity"`
 	CurrentPeriodStart   time.Time              `json:"current_period_start"`
 	CurrentPeriodEnd     time.Time              `json:"current_period_end"`
-	TrialEnd             *time.Time             `json:"trial_end,omitempty"`
 	CancelAtPeriodEnd    bool                   `json:"cancel_at_period_end"`
 	CancelledAt          *time.Time             `json:"cancelled_at,omitempty"`
 	CreatedAt            time.Time              `json:"created_at"`

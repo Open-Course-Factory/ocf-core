@@ -14,7 +14,6 @@ type CreateSubscriptionPlanInput struct {
 	PriceAmount        int64    `binding:"required" json:"price_amount" mapstructure:"price_amount"`
 	Currency           string   `json:"currency" mapstructure:"currency"`
 	BillingInterval    string   `binding:"required" json:"billing_interval" mapstructure:"billing_interval"`
-	TrialDays          int      `json:"trial_days" mapstructure:"trial_days"`
 	Features           []string `json:"features" mapstructure:"features"`
 	MaxConcurrentUsers int      `json:"max_concurrent_users" mapstructure:"max_concurrent_users"`
 	MaxCourses         int      `json:"max_courses" mapstructure:"max_courses"`
@@ -70,7 +69,6 @@ type SubscriptionPlanOutput struct {
 	PriceAmount        int64     `json:"price_amount"`
 	Currency           string    `json:"currency"`
 	BillingInterval    string    `json:"billing_interval"`
-	TrialDays          int       `json:"trial_days"`
 	Features           []string  `json:"features"`
 	MaxConcurrentUsers int       `json:"max_concurrent_users"`
 	MaxCourses         int       `json:"max_courses"`
@@ -143,7 +141,6 @@ type UserSubscriptionOutput struct {
 	IsFallback           bool                   `json:"is_fallback"`       // True when using personal subscription as fallback for a team org without its own subscription
 	CurrentPeriodStart   time.Time              `json:"current_period_start"`
 	CurrentPeriodEnd     time.Time              `json:"current_period_end"`
-	TrialEnd             *time.Time             `json:"trial_end,omitempty"`
 	CancelAtPeriodEnd    bool                   `json:"cancel_at_period_end"`
 	CancelledAt          *time.Time             `json:"cancelled_at,omitempty"`
 	CreatedAt            time.Time              `json:"created_at"`

@@ -124,6 +124,9 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&paymentModels.SubscriptionBatch{})
 	db.AutoMigrate(&paymentModels.UserSubscription{})         // DEPRECATED in Phase 2 (kept for backward compat)
 	db.AutoMigrate(&paymentModels.OrganizationSubscription{}) // NEW: Phase 2 - Organization subscriptions
+	// #374: TrialEnd was removed (no paid trials); drop the orphan trial_end
+	// columns AutoMigrate leaves behind on both subscription tables.
+	dropOrphanSubscriptionTrialEndColumns(db)
 	// NOTE: The partial unique index on organization_subscriptions is
 	// created AFTER BackfillSingleActiveOrgSubscription so the cleanup of
 	// legacy duplicate rows has a chance to run first. See line ~149.
@@ -334,7 +337,6 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		PriceAmount:                 0,
 		Currency:                    "eur",
 		BillingInterval:             "month",
-		TrialDays:                   0,
 		Features:                    []string{"Unlimited restarts", "1 hour max session", "1 XS machine budget", "No network access", "Ephemeral storage only"},
 		MaxConcurrentUsers:          1,
 		MaxCourses:                  -1,
@@ -396,7 +398,6 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		PriceAmount:                 1200, // 12€ per license
 		Currency:                    "eur",
 		BillingInterval:             "month",
-		TrialDays:                   14,
 		Features:                    []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "machine_size_xs", "machine_size_s", "machine_size_m", "network_access", "data_persistence", "command_history"},
 		MaxConcurrentUsers:          1,
 		MaxCourses:                  -1,
@@ -419,7 +420,6 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		PriceAmount:                 1200, // 12€ base price per license
 		Currency:                    "eur",
 		BillingInterval:             "month",
-		TrialDays:                   0,
 		Features:                    []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "bulk_purchase", "group_management", "machine_size_xs", "machine_size_s", "machine_size_m", "machine_size_l", "machine_size_xl", "network_access", "data_persistence", "command_history"},
 		MaxConcurrentUsers:          1,
 		MaxCourses:                  -1,
@@ -627,6 +627,8 @@ func BackfillSingleActiveOrgSubscription(db *gorm.DB) {
 //     into DataPersistenceEnabled / DataPersistenceGB).
 //   - quota_model / max_concurrent_terminals / allowed_machine_sizes
 //     (dual-mode cleanup — the CPU/RAM budget is now the only quota model).
+//   - trial_days (#374 — OCF has no paid trial period; the free Trial plan is
+//     the only "trial").
 func dropOrphanSubscriptionPlanColumns(db *gorm.DB) {
 	orphans := []string{
 		"persistent_sessions_enabled",
@@ -634,6 +636,7 @@ func dropOrphanSubscriptionPlanColumns(db *gorm.DB) {
 		"quota_model",
 		"max_concurrent_terminals",
 		"allowed_machine_sizes",
+		"trial_days",
 	}
 	migrator := db.Migrator()
 	for _, col := range orphans {
@@ -645,6 +648,32 @@ func dropOrphanSubscriptionPlanColumns(db *gorm.DB) {
 			continue
 		}
 		log.Printf("[MIGRATION] dropped orphan column subscription_plans.%s", col)
+	}
+}
+
+// dropOrphanSubscriptionTrialEndColumns drops the trial_end column from
+// user_subscriptions and organization_subscriptions. OCF has no paid trial
+// period, so the TrialEnd model fields were removed (#374); AutoMigrate never
+// drops columns, so we drop them explicitly. Mirrors
+// dropOrphanSubscriptionPlanColumns and is idempotent.
+func dropOrphanSubscriptionTrialEndColumns(db *gorm.DB) {
+	migrator := db.Migrator()
+	targets := []struct {
+		name  string
+		model interface{}
+	}{
+		{"user_subscriptions", &paymentModels.UserSubscription{}},
+		{"organization_subscriptions", &paymentModels.OrganizationSubscription{}},
+	}
+	for _, t := range targets {
+		if !migrator.HasColumn(t.model, "trial_end") {
+			continue
+		}
+		if err := migrator.DropColumn(t.model, "trial_end"); err != nil {
+			log.Printf("[MIGRATION] failed to drop orphan column %s.trial_end: %v", t.name, err)
+			continue
+		}
+		log.Printf("[MIGRATION] dropped orphan column %s.trial_end", t.name)
 	}
 }
 

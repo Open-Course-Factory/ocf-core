@@ -26,7 +26,6 @@ func RegisterUserSubscription(service *ems.EntityRegistrationService) {
 						Status:               subscription.Status,
 						CurrentPeriodStart:   subscription.CurrentPeriodStart,
 						CurrentPeriodEnd:     subscription.CurrentPeriodEnd,
-						TrialEnd:             subscription.TrialEnd,
 						CancelAtPeriodEnd:    subscription.CancelAtPeriodEnd,
 						CancelledAt:          subscription.CancelledAt,
 						CreatedAt:            subscription.CreatedAt,
