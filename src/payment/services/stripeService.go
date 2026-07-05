@@ -1363,6 +1363,19 @@ func (ss *stripeService) handleInvoicePaymentFailed(event *stripe.Event) error {
 	return ss.repository.UpdateUserSubscription(userSub)
 }
 
+// Refund reconciliation semantics (see #375 / !277 review). The two handlers
+// below update Invoice.AmountRefunded from different Stripe sources:
+//   - charge.refunded SETs it from charge.amount_refunded, which is Stripe's
+//     authoritative CUMULATIVE refunded total for the charge — replay-safe by
+//     construction (the same value is written again).
+//   - credit_note.created INCREMENTs it by the note's PER-NOTE total, so
+//     multiple DISTINCT credit notes accumulate.
+// In the rare case where both mechanisms credit the SAME money, the resulting
+// AmountRefunded is ORDER-DEPENDENT (a later charge.refunded overwrites the
+// running total; a later credit note adds to it). That is acceptable:
+// AmountRefunded is a display-only field and is capped at invoice.Amount, so it
+// can never exceed 100% regardless of ordering.
+//
 // setInvoiceRefundStatus sets the invoice status from its (already-updated)
 // AmountRefunded relative to Amount. fullyRefundedHint lets a caller force
 // "refunded" when Stripe reports the source as fully refunded even if the
@@ -1442,6 +1455,16 @@ func (ss *stripeService) handleCreditNoteCreated(event *stripe.Event) error {
 		return nil
 	}
 
+	// INVARIANT (exactly-once increment): because this is an INCREMENT, its
+	// exactly-once application is load-bearing on (1) UpdateInvoice below being
+	// the TERMINAL operation of this handler, and (2) the dispatch case
+	// `return`ing this handler directly. The webhook controller marks the event
+	// `processed` only on a nil return; on ANY error it marks the reservation
+	// `failed`, which a later delivery re-claims and re-runs (the dedup pipeline
+	// short-circuits only `processed` events, not `failed` ones). So if a step
+	// were inserted AFTER the persisted increment and it failed, the retry would
+	// run this handler again and increment a SECOND time. Do not add work after
+	// UpdateInvoice, and keep the dispatch a direct return.
 	invoice.AmountRefunded += creditNote.Total
 	if invoice.Amount > 0 && invoice.AmountRefunded > invoice.Amount {
 		invoice.AmountRefunded = invoice.Amount
