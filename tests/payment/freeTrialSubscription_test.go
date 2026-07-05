@@ -230,7 +230,6 @@ func TestFreeTrialCreation_E2E(t *testing.T) {
 		PriceAmount:            0, // Free
 		Currency:               "eur",
 		BillingInterval:        "month",
-		TrialDays:              14,
 		MaxCourses:             5,
 		MaxConcurrentUsers:     1,
 		IsActive:               true,

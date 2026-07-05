@@ -39,7 +39,6 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 		PriceAmount:        2999, // 29.99 EUR
 		Currency:           "eur",
 		BillingInterval:    "month",
-		TrialDays:          14,
 		Features:           []string{"advanced_labs", "api_access", "custom_themes"},
 		MaxConcurrentUsers: 10,
 		MaxCourses:         -1, // Unlimited
@@ -59,7 +58,6 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 	assert.Equal(t, int64(2999), result.PriceAmount)
 	assert.Equal(t, "eur", result.Currency)
 	assert.Equal(t, "month", result.BillingInterval)
-	assert.Equal(t, 14, result.TrialDays)
 	assert.Equal(t, []string{"advanced_labs", "api_access", "custom_themes"}, result.Features)
 	assert.Equal(t, 10, result.MaxConcurrentUsers)
 	assert.Equal(t, -1, result.MaxCourses)
@@ -84,7 +82,6 @@ func TestConversionService_UserSubscriptionToDTO(t *testing.T) {
 	subscriptionID := uuid.New()
 	planID := uuid.New()
 	now := time.Now()
-	trialEnd := now.AddDate(0, 0, 14)
 
 	subscription := &models.UserSubscription{
 		BaseModel: emm.BaseModel{
@@ -107,7 +104,6 @@ func TestConversionService_UserSubscriptionToDTO(t *testing.T) {
 		Status: "active",
 		CurrentPeriodStart:   now,
 		CurrentPeriodEnd:     now.AddDate(0, 1, 0),
-		TrialEnd:             &trialEnd,
 		CancelAtPeriodEnd:    false,
 	}
 
@@ -122,7 +118,6 @@ func TestConversionService_UserSubscriptionToDTO(t *testing.T) {
 	assert.NotNil(t, result.StripeCustomerID)
 	assert.Equal(t, "cus_123", *result.StripeCustomerID)
 	assert.Equal(t, "active", result.Status)
-	assert.Equal(t, &trialEnd, result.TrialEnd)
 	assert.False(t, result.CancelAtPeriodEnd)
 	assert.Nil(t, result.CancelledAt)
 
@@ -436,7 +431,6 @@ func TestConversionService_SubscriptionPlanToDTO_NoBackendFields(t *testing.T) {
 		PriceAmount:               2999,
 		Currency:                  "eur",
 		BillingInterval:           "month",
-		TrialDays:                 14,
 		Features:                  []string{"terminals", "ssh"},
 		MaxConcurrentUsers:        10,
 		MaxCourses:                -1,
