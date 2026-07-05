@@ -251,3 +251,92 @@ func TestWebhook_ChargeRefunded_DuplicateDelivery_AppliesOnce(t *testing.T) {
 			"refund exactly once (deduped by the event pipeline) — AmountRefunded must be "+
 			"Amount, not 2×Amount.")
 }
+
+// -----------------------------------------------------------------------------
+// Regression guards for the two load-bearing accumulation claims (GREEN today;
+// they pin the design so a future refactor can't silently break it).
+// -----------------------------------------------------------------------------
+
+// 6. Two DISTINCT credit notes (different event AND note ids) must ACCUMULATE:
+// per-note totals sum (30 + 40 on a 100 invoice → 70). Pins increment-over-set.
+func TestWebhook_CreditNotes_DistinctNotesAccumulate(t *testing.T) {
+	db := freshTestDB(t)
+	secret := "whsec_refund_" + uuid.NewString()
+	router := newRouterWithRealService(t, db, secret)
+
+	const amount int64 = 10000
+	stripeInvoiceID := "in_" + uuid.NewString()
+	invID := seedRefundInvoice(t, db, stripeInvoiceID, amount, "paid")
+
+	// Distinct event ids; buildCreditNoteCreatedWebhook mints a fresh note id per call.
+	w1 := httptest.NewRecorder()
+	router.ServeHTTP(w1, buildSignedWebhookRequest(t, buildCreditNoteCreatedWebhook("evt_"+uuid.NewString(), stripeInvoiceID, 3000), secret))
+	require.Equal(t, http.StatusOK, w1.Code, "body: %s", w1.Body.String())
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, buildSignedWebhookRequest(t, buildCreditNoteCreatedWebhook("evt_"+uuid.NewString(), stripeInvoiceID, 4000), secret))
+	require.Equal(t, http.StatusOK, w2.Code, "body: %s", w2.Body.String())
+
+	var reloaded models.Invoice
+	require.NoError(t, db.First(&reloaded, "id = ?", invID).Error)
+	assert.Equal(t, int64(7000), reloaded.AmountRefunded,
+		"ACCUMULATE: distinct credit notes must sum (each total is per-note, not cumulative)")
+	assert.Equal(t, "partially_refunded", reloaded.Status, "70%% refunded → partially_refunded")
+}
+
+// 7. The SAME credit_note.created delivered twice (same event id, fresh
+// signatures) must apply ONCE (30, not 60). Pins that the event-id dedup
+// pipeline — not construction — protects the non-idempotent increment.
+func TestWebhook_CreditNoteCreated_DuplicateDelivery_AppliesOnce(t *testing.T) {
+	db := freshTestDB(t)
+	secret := "whsec_refund_" + uuid.NewString()
+	router := newRouterWithRealService(t, db, secret)
+
+	const amount int64 = 10000
+	stripeInvoiceID := "in_" + uuid.NewString()
+	invID := seedRefundInvoice(t, db, stripeInvoiceID, amount, "paid")
+
+	// Build ONCE (fixed event id AND note id) and deliver the identical bytes twice.
+	payload := buildCreditNoteCreatedWebhook("evt_"+uuid.NewString(), stripeInvoiceID, 3000)
+	w1 := httptest.NewRecorder()
+	router.ServeHTTP(w1, buildSignedWebhookRequest(t, payload, secret))
+	require.Equal(t, http.StatusOK, w1.Code, "body: %s", w1.Body.String())
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, buildSignedWebhookRequest(t, payload, secret))
+	require.Equal(t, http.StatusOK, w2.Code, "body: %s", w2.Body.String())
+
+	var reloaded models.Invoice
+	require.NoError(t, db.First(&reloaded, "id = ?", invID).Error)
+	assert.Equal(t, int64(3000), reloaded.AmountRefunded,
+		"IDEMPOTENCY: the increment is non-idempotent by construction — the event-id "+
+			"dedup pipeline must ensure the same credit note applies exactly once (30, not 60)")
+	assert.Equal(t, "partially_refunded", reloaded.Status)
+}
+
+// 8. Ordering: a charge.refunded SETS AmountRefunded authoritatively, overwriting
+// a prior credit-note increment on the same invoice (note 30 then charge 50 → 50).
+func TestWebhook_CreditNoteThenCharge_ChargeOverwrites(t *testing.T) {
+	db := freshTestDB(t)
+	secret := "whsec_refund_" + uuid.NewString()
+	router := newRouterWithRealService(t, db, secret)
+
+	const amount int64 = 10000
+	stripeInvoiceID := "in_" + uuid.NewString()
+	invID := seedRefundInvoice(t, db, stripeInvoiceID, amount, "paid")
+
+	// Credit note 30 → AmountRefunded 3000 (increment).
+	wn := httptest.NewRecorder()
+	router.ServeHTTP(wn, buildSignedWebhookRequest(t, buildCreditNoteCreatedWebhook("evt_"+uuid.NewString(), stripeInvoiceID, 3000), secret))
+	require.Equal(t, http.StatusOK, wn.Code, "body: %s", wn.Body.String())
+
+	// charge.refunded amount_refunded=5000 → SET to 5000 (authoritative overwrite).
+	wc := httptest.NewRecorder()
+	router.ServeHTTP(wc, buildSignedWebhookRequest(t, buildChargeRefundedWebhook("evt_"+uuid.NewString(), stripeInvoiceID, amount, 5000, false), secret))
+	require.Equal(t, http.StatusOK, wc.Code, "body: %s", wc.Body.String())
+
+	var reloaded models.Invoice
+	require.NoError(t, db.First(&reloaded, "id = ?", invID).Error)
+	assert.Equal(t, int64(5000), reloaded.AmountRefunded,
+		"ORDERING: charge.amount_refunded is Stripe's authoritative cumulative total, so "+
+			"charge.refunded SETS (overwrites) a prior credit-note increment — not 3000+5000")
+	assert.Equal(t, "partially_refunded", reloaded.Status)
+}
