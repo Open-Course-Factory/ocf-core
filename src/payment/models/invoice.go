@@ -15,9 +15,10 @@ type Invoice struct {
 	UserSubscriptionID uuid.UUID        `gorm:"not null" json:"user_subscription_id"`
 	UserSubscription   UserSubscription `gorm:"foreignKey:UserSubscriptionID" json:"user_subscription"`
 	StripeInvoiceID    string           `gorm:"type:varchar(100);uniqueIndex" json:"stripe_invoice_id"`
-	Amount             int64            `json:"amount"` // Montant en centimes
+	Amount             int64            `json:"amount"`          // Montant en centimes
+	AmountRefunded     int64            `json:"amount_refunded"` // Montant remboursé en centimes (refunds + credit notes)
 	Currency           string           `gorm:"type:varchar(3)" json:"currency"`
-	Status             string           `gorm:"type:varchar(50)" json:"status"` // paid, open, void, uncollectible
+	Status             string           `gorm:"type:varchar(50)" json:"status"` // paid, open, void, uncollectible, refunded, partially_refunded
 	InvoiceNumber      string           `gorm:"type:varchar(100)" json:"invoice_number"`
 	InvoiceDate        time.Time        `json:"invoice_date"`
 	DueDate            time.Time        `json:"due_date"`

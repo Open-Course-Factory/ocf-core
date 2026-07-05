@@ -710,6 +710,14 @@ func (ss *stripeService) ProcessWebhook(payload []byte, signature string) error 
 		utils.Debug("⚠️ Processing invoice payment failed")
 		return ss.handleInvoicePaymentFailed(event)
 
+	// Refund / credit-note events — reconcile the local Invoice record
+	case "charge.refunded":
+		utils.Debug("💸 Processing charge refunded")
+		return ss.handleChargeRefunded(event)
+	case "credit_note.created":
+		utils.Debug("🧾 Processing credit note created")
+		return ss.handleCreditNoteCreated(event)
+
 	// Payment method events
 	case "payment_method.attached":
 		utils.Debug("💳 Processing payment method attached")
@@ -1353,6 +1361,95 @@ func (ss *stripeService) handleInvoicePaymentFailed(event *stripe.Event) error {
 	}
 	utils.Debug("⚠️ Invoice %s payment failed for subscription %s - marking as past_due", stripeInvoice.ID, userSub.StripeSubscriptionID)
 	return ss.repository.UpdateUserSubscription(userSub)
+}
+
+// setInvoiceRefundStatus sets the invoice status from its (already-updated)
+// AmountRefunded relative to Amount. fullyRefundedHint lets a caller force
+// "refunded" when Stripe reports the source as fully refunded even if the
+// amounts do not line up exactly (rounding / adjustments).
+func setInvoiceRefundStatus(invoice *models.Invoice, fullyRefundedHint bool) {
+	switch {
+	case fullyRefundedHint || (invoice.Amount > 0 && invoice.AmountRefunded >= invoice.Amount):
+		invoice.Status = "refunded"
+	case invoice.AmountRefunded > 0:
+		invoice.Status = "partially_refunded"
+	}
+}
+
+// handleChargeRefunded reconciles the local Invoice when a Stripe charge is
+// refunded. charge.amount_refunded is Stripe's cumulative, authoritative
+// refunded total for the charge, so AmountRefunded is SET (never incremented)
+// from it — a redelivered event applies the identical value, so it is idempotent
+// on top of the event-id dedup pipeline.
+//
+// NOTE: stripe.Charge (API v85) no longer carries an Invoice field, so the
+// linking invoice id is read directly from the raw payload. A charge with no
+// linked invoice, or an invoice we never recorded, is a graceful no-op (return
+// nil, not an error) so Stripe does not retry.
+func (ss *stripeService) handleChargeRefunded(event *stripe.Event) error {
+	var charge stripe.Charge
+	if err := json.Unmarshal(event.Data.Raw, &charge); err != nil {
+		return fmt.Errorf("failed to unmarshal charge: %w", err)
+	}
+
+	var chargeLink struct {
+		Invoice string `json:"invoice"`
+	}
+	if err := json.Unmarshal(event.Data.Raw, &chargeLink); err != nil {
+		return fmt.Errorf("failed to read charge invoice link: %w", err)
+	}
+	if chargeLink.Invoice == "" {
+		utils.Debug("💸 charge.refunded %s has no linked invoice — nothing to reconcile", charge.ID)
+		return nil
+	}
+
+	invoice, err := ss.repository.GetInvoiceByStripeID(chargeLink.Invoice)
+	if err != nil {
+		utils.Debug("💸 No local invoice for %s (charge.refunded) — skipping", chargeLink.Invoice)
+		return nil
+	}
+
+	invoice.AmountRefunded = charge.AmountRefunded
+	setInvoiceRefundStatus(invoice, charge.Refunded)
+	utils.Info("💸 Reconciled invoice %s from charge.refunded: amount_refunded=%d status=%s",
+		chargeLink.Invoice, invoice.AmountRefunded, invoice.Status)
+	return ss.repository.UpdateInvoice(invoice)
+}
+
+// handleCreditNoteCreated reconciles the local Invoice when a Stripe credit note
+// is issued against it. A credit note credits its `total` against the invoice.
+//
+// Accumulation choice: unlike charge.amount_refunded (which is cumulative), each
+// credit note's total is PER-NOTE, so multiple DISTINCT credit notes must
+// accumulate — AmountRefunded is INCREMENTED by total. The event-id dedup
+// pipeline guarantees each distinct credit_note.created is applied exactly once,
+// so a redelivery does not double-count. The running total is capped at
+// invoice.Amount so a stray overlap with a charge.refunded for the same money
+// can never report a nonsensical >100% refund.
+func (ss *stripeService) handleCreditNoteCreated(event *stripe.Event) error {
+	var creditNote stripe.CreditNote
+	if err := json.Unmarshal(event.Data.Raw, &creditNote); err != nil {
+		return fmt.Errorf("failed to unmarshal credit note: %w", err)
+	}
+	if creditNote.Invoice == nil || creditNote.Invoice.ID == "" {
+		utils.Debug("🧾 credit_note.created %s has no linked invoice — nothing to reconcile", creditNote.ID)
+		return nil
+	}
+
+	invoice, err := ss.repository.GetInvoiceByStripeID(creditNote.Invoice.ID)
+	if err != nil {
+		utils.Debug("🧾 No local invoice for %s (credit_note.created) — skipping", creditNote.Invoice.ID)
+		return nil
+	}
+
+	invoice.AmountRefunded += creditNote.Total
+	if invoice.Amount > 0 && invoice.AmountRefunded > invoice.Amount {
+		invoice.AmountRefunded = invoice.Amount
+	}
+	setInvoiceRefundStatus(invoice, false)
+	utils.Info("🧾 Reconciled invoice %s from credit_note.created: amount_refunded=%d status=%s",
+		creditNote.Invoice.ID, invoice.AmountRefunded, invoice.Status)
+	return ss.repository.UpdateInvoice(invoice)
 }
 
 // handleCheckoutSessionCompleted traite la finalisation d'une session de checkout
