@@ -278,7 +278,12 @@ func TestHooksSimple_ConditionalExecution(t *testing.T) {
 	})
 }
 
-func TestHooksSimple_FailureHandling(t *testing.T) {
+// TestHooks_BeforeHookError_PropagatesAndAborts pins the enforcement contract
+// (issue #391): a Before* hook error propagates out of ExecuteHooks so the
+// generic service aborts the write. Previously the registry swallowed before-hook
+// errors and returned nil, which silently made ALL before-hook enforcement —
+// validation, ownership — inert through the generic service.
+func TestHooks_BeforeHookError_PropagatesAndAborts(t *testing.T) {
 	registry := hooks.NewHookRegistry()
 
 	successHook := NewSimpleTrackingHook("success-hook", "TestEntity", []hooks.HookType{hooks.BeforeCreate}, 10)
@@ -297,14 +302,48 @@ func TestHooksSimple_FailureHandling(t *testing.T) {
 
 	err := registry.ExecuteHooks(ctx)
 
-	// Currently, the registry continues on error
-	assert.NoError(t, err)
+	// New contract: the before-hook error propagates to abort the operation.
+	require.Error(t, err, "a Before* hook error must propagate to abort the write")
+	assert.Contains(t, err.Error(), "hook execution failed")
 
-	// Both hooks should have been attempted
+	// Both hooks ran (the failing one is last by priority); a Before* failure
+	// aborts anything that would have followed it.
 	assert.Equal(t, 1, successHook.GetExecutedCount())
 	assert.Equal(t, 1, failingHook.GetExecutedCount())
+}
 
-	t.Logf("✅ Hook registry continues execution on failure")
+// TestHooks_AfterHookError_RecordedButDoesNotAbort pins the other half of the
+// #391 contract: After* hooks are best-effort. An after-hook failure is recorded
+// but does NOT propagate (the write is already committed), and later after-hooks
+// still run. The failing hook is ordered FIRST here to prove the chain continues
+// past it — the opposite of the Before* abort semantics above.
+func TestHooks_AfterHookError_RecordedButDoesNotAbort(t *testing.T) {
+	registry := hooks.NewHookRegistry()
+
+	failingHook := NewSimpleFailingHook("failing-after", "TestEntity", []hooks.HookType{hooks.AfterCreate})
+	failingHook.priority = 10
+	laterHook := NewSimpleTrackingHook("later-after", "TestEntity", []hooks.HookType{hooks.AfterCreate}, 20)
+
+	_ = registry.RegisterHook(failingHook)
+	_ = registry.RegisterHook(laterHook)
+
+	ctx := &hooks.HookContext{
+		EntityName: "TestEntity",
+		HookType:   hooks.AfterCreate,
+		EntityID:   "entity-1",
+		NewEntity:  map[string]any{"test": "data"},
+		Context:    context.Background(),
+	}
+
+	err := registry.ExecuteHooks(ctx)
+
+	assert.NoError(t, err, "an After* hook error must not propagate")
+	assert.Equal(t, 1, failingHook.GetExecutedCount())
+	assert.Equal(t, 1, laterHook.GetExecutedCount(), "later after-hook must still run despite an earlier failure")
+
+	recorded := registry.GetRecentErrors(0)
+	require.Len(t, recorded, 1, "the after-hook error must be recorded")
+	assert.Equal(t, "failing-after", recorded[0].HookName)
 }
 
 func TestHooksSimple_EnableDisable(t *testing.T) {
