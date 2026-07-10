@@ -705,6 +705,25 @@ func (sc *userSubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 	// Update the plan in database (this updates both subscription and usage metric limits atomically)
 	subscription, err := sc.subscriptionService.UpgradeUserPlan(userId, newPlanID, input.ProrationBehavior)
 	if err != nil {
+		// The Stripe charge above already succeeded, but the local persistence
+		// failed. Revert the Stripe subscription back to the OLD price
+		// (best-effort) so the customer is not billed for a plan they never
+		// received. We reuse input.ProrationBehavior — the same behavior as the
+		// forward charge — so the revert issues an offsetting proration that
+		// cancels out the forward one, leaving the customer net-neutral. This
+		// mirrors the compensation pattern in bulkLicenseService.UpdateBatchQuantity
+		// (Stripe first, then DB, undo Stripe on DB failure). The original DB
+		// error is still returned to the caller.
+		if currentSubscription.SubscriptionPlan.StripePriceID != nil {
+			if _, revertErr := sc.stripeService.UpdateSubscription(
+				*currentSubscription.StripeSubscriptionID,
+				*currentSubscription.SubscriptionPlan.StripePriceID,
+				input.ProrationBehavior,
+			); revertErr != nil {
+				utils.Error("Failed to revert Stripe subscription %s to old price %s after DB failure (Stripe at new price %s): %v",
+					*currentSubscription.StripeSubscriptionID, *currentSubscription.SubscriptionPlan.StripePriceID, *newPlan.StripePriceID, revertErr)
+			}
+		}
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Failed to upgrade plan in database: " + err.Error(),
