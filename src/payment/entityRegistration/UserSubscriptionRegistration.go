@@ -48,6 +48,13 @@ func RegisterUserSubscription(service *ems.EntityRegistrationService) {
 				},
 			},
 			SubEntities: []any{models.SubscriptionPlan{}},
+			// Preload the belongs-to plan by its real (singular) field name.
+			// Without this, the legacy getPreloadString path pluralizes the
+			// sub-entity type to "SubscriptionPlans" — a relation that does not
+			// exist on UserSubscription — so a generic GetEntity (e.g. the delete
+			// pre-fetch) fails before any hook runs. DefaultIncludes routes both
+			// GetEntity and GetAllEntities through the exact-field-name preload.
+			DefaultIncludes: []string{"SubscriptionPlan"},
 		},
 	)
 }

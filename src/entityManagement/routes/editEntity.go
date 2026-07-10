@@ -300,7 +300,10 @@ func (genericController genericController) EditEntity(ctx *gin.Context) {
 
 	// Perform the update with the map (GORM Updates requires map[string]any)
 	errorUpdate := genericController.genericService.EditEntityWithUser(id, entityName, entityModelInterface, updateMap, userId, userRoles...)
-	if errors.HandleError(http.StatusNotFound, errorUpdate, ctx) {
+	if errorUpdate != nil {
+		// Map by the error's own status: a validation-hook rejection is 400, a
+		// missing row is 404, a DB failure is 500 — not a blanket 404.
+		HandleEntityError(ctx, errorUpdate)
 		return
 	}
 

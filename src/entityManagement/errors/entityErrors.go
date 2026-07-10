@@ -55,6 +55,7 @@
 package errors
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 )
@@ -250,7 +251,18 @@ func NewUnauthorizedError(userId string, resource string, action string) *Entity
 }
 
 // WrapHookError wraps a hook execution error with context.
+//
+// When a hook deliberately returns a structured *EntityError (e.g. a validation
+// failure raised by a Before* hook), its HTTP status and code are preserved so
+// the client sees the accurate status — a rejected field is a 400 client error,
+// not a generic ENT007/500 hook failure. Only opaque hook errors are wrapped as
+// ENT007.
 func WrapHookError(hookName string, entityName string, hookErr error) *EntityError {
+	var structured *EntityError
+	if errors.As(hookErr, &structured) {
+		return structured
+	}
+
 	err := *ErrHookExecutionFailed
 	err.Err = hookErr
 	err.Details = map[string]any{

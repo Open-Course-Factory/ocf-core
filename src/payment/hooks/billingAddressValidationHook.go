@@ -1,7 +1,7 @@
 package paymentHooks
 
 import (
-	"fmt"
+	entityErrors "soli/formations/src/entityManagement/errors"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/payment/models"
 
@@ -75,18 +75,21 @@ func (h *BillingAddressValidationHook) Execute(ctx *hooks.HookContext) error {
 		return nil // Not a recognized type, skip validation
 	}
 
+	// Validation failures are returned as structured EntityErrors so the generic
+	// controllers surface them as 400 client errors (WrapHookError preserves the
+	// status), not a generic ENT007/500 hook failure.
 	if hasCompany && len(companyName) > 255 {
-		return fmt.Errorf("company_name must be at most 255 characters")
+		return entityErrors.NewValidationError("company_name", "must be at most 255 characters")
 	}
 
 	if hasSiret && siret != "" {
 		if len(siret) != 14 || !isAllDigits(siret) {
-			return fmt.Errorf("siret must be exactly 14 digits")
+			return entityErrors.NewValidationError("siret", "must be exactly 14 digits")
 		}
 	}
 
 	if hasVat && len(vatNumber) > 20 {
-		return fmt.Errorf("vat_number must be at most 20 characters")
+		return entityErrors.NewValidationError("vat_number", "must be at most 20 characters")
 	}
 
 	return nil
@@ -98,13 +101,25 @@ func (h *BillingAddressValidationHook) ShouldExecute(ctx *hooks.HookContext) boo
 
 // stringField extracts a string value from an update patch map, reporting whether
 // the key was present at all so absent keys skip validation on partial updates.
+// The patch map's values may be *string (the generic PATCH path decodes the
+// pointer-field Edit DTO via mapstructure, leaving pointers) or plain string
+// (service-layer callers), so both are handled; a nil pointer is treated as absent.
 func stringField(m map[string]any, key string) (string, bool) {
 	raw, ok := m[key]
-	if !ok {
+	if !ok || raw == nil {
 		return "", false
 	}
-	s, ok := raw.(string)
-	return s, ok
+	switch v := raw.(type) {
+	case string:
+		return v, true
+	case *string:
+		if v == nil {
+			return "", false
+		}
+		return *v, true
+	default:
+		return "", false
+	}
 }
 
 func isAllDigits(s string) bool {

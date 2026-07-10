@@ -855,8 +855,10 @@ func (ss *stripeService) handleSubscriptionCreated(event *stripe.Event) error {
 					utils.Info("🔄 Deleting old free subscription %s (being replaced by paid subscription %s)",
 						replaceID, subscription.ID)
 
-					// Hard delete the free subscription
-					if err := ss.genericService.DeleteEntity(replaceID, models.UserSubscription{}, false); err != nil {
+					// Hard delete the free subscription. Pass the owner's UserID so
+					// the enforcing ownership BeforeDelete hook authorizes it (a
+					// user-less delete is rejected: "" != owner).
+					if err := ss.genericService.DeleteEntityWithUser(replaceID, models.UserSubscription{}, false, oldSub.UserID); err != nil {
 						utils.Warn("⚠️ Failed to delete old free subscription: %v", err)
 					} else {
 						utils.Info("✅ Deleted old free subscription %s", replaceID)
@@ -1520,7 +1522,10 @@ func (ss *stripeService) handleCheckoutSessionCompleted(event *stripe.Event) err
 					utils.Info("🔄 Deleting old free subscription %s for user %s (upgrading to paid)",
 						replaceSubscriptionID, userID)
 
-					err = ss.genericService.DeleteEntity(replaceSubscriptionID, models.UserSubscription{}, false)
+					// Pass the owner's UserID so the enforcing ownership
+					// BeforeDelete hook authorizes it (a user-less delete is
+					// rejected: "" != owner).
+					err = ss.genericService.DeleteEntityWithUser(replaceSubscriptionID, models.UserSubscription{}, false, oldSubscription.UserID)
 					if err != nil {
 						utils.Warn("⚠️ Failed to delete old free subscription: %v", err)
 						// Don't fail the webhook - new subscription will still be created
