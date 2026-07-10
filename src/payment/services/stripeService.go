@@ -418,15 +418,11 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 		return nil, fmt.Errorf("subscription plan not found: %w", err)
 	}
 
-	if !plan.IsActive {
-		return nil, fmt.Errorf("subscription plan is not active")
-	}
-
-	// Only catalog plans are purchasable via self-service checkout (same guard as
-	// CreateCheckoutSession) — reject a custom/unlisted plan before any
-	// Casdoor/Stripe call.
-	if !plan.IsCatalog {
-		return nil, fmt.Errorf("subscription plan is not available for purchase")
+	// A plan is bulk-purchasable iff it is active, in catalog, and carries the
+	// group_management feature. One shared guard, also used by the direct
+	// PurchaseBulkLicenses path — rejected before any Casdoor/Stripe call.
+	if err := validateBulkPurchasablePlan(plan); err != nil {
+		return nil, err
 	}
 
 	// Verify plan has Stripe price configured

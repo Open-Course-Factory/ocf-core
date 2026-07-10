@@ -94,7 +94,7 @@ func (bc *bulkLicenseController) CreateBulkCheckoutSession(ctx *gin.Context) {
 // PurchaseBulkLicenses godoc
 //
 //	@Summary		Purchase multiple licenses in bulk
-//	@Description	Create a bulk license purchase with tiered pricing. Requires group_management feature in user's plan.
+//	@Description	Create a bulk license purchase with tiered pricing. The purchased plan must include the group_management feature.
 //	@Tags			bulk-licenses
 //	@Accept			json
 //	@Produce		json
