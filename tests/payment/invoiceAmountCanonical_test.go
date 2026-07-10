@@ -197,3 +197,87 @@ func TestInvoiceAmount_PaymentSucceededUpdate_RefreshesTotal(t *testing.T) {
 			"(%d). Today it updates Status/PaidAt/DownloadURL but never Amount, so the stale %d "+
 			"survives and distorts refund-percentage math.", invTotal, staleAmount)
 }
+
+// buildPaidInvoiceWebhook builds a signed invoice.payment_succeeded event with
+// explicit number / currency / hosted_invoice_url so a test can prove the update
+// branch backfills each field. Amounts are fixed to the canonical trio.
+func buildPaidInvoiceWebhook(eventID, invoiceID, customerID, number, currency, hostedURL string) []byte {
+	now := time.Now().Unix()
+	return []byte(fmt.Sprintf(`{
+		"id": %q,
+		"object": "event",
+		"api_version": %q,
+		"type": "invoice.payment_succeeded",
+		"created": %d,
+		"data": {
+			"object": {
+				"id": %q,
+				"object": "invoice",
+				"customer": {"id": %q, "object": "customer"},
+				"status": "paid",
+				"amount_due": %d,
+				"amount_paid": %d,
+				"total": %d,
+				"currency": %q,
+				"number": %q,
+				"hosted_invoice_url": %q,
+				"created": %d,
+				"status_transitions": {"paid_at": %d}
+			}
+		}
+	}`, eventID, stripe.APIVersion, now, invoiceID, customerID,
+		invAmountDue, invAmountPaid, invTotal, currency, number, hostedURL, now, now))
+}
+
+// TestInvoiceAmount_PaymentSucceededUpdate_BackfillsInvoiceFields covers the
+// broader partial-refresh bug in the same update branch: a row inserted at
+// invoice.created has no InvoiceNumber (Stripe assigns it at finalization) and no
+// hosted URL. When payment_succeeded later hits the UPDATE branch it refreshes
+// Status/PaidAt/DownloadURL but silently drops InvoiceNumber, StripeHostedURL and
+// Currency, so those never get backfilled — StripeHostedURL in particular feeds
+// the invoice-download fallback. RED today; GREEN once the update branch copies
+// all three from the incoming event.
+func TestInvoiceAmount_PaymentSucceededUpdate_BackfillsInvoiceFields(t *testing.T) {
+	db := freshTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.Invoice{}))
+	secret := "whsec_invamt_" + uuid.NewString()
+	router := newRouterWithRealService(t, db, secret)
+
+	customerID := "cus_invamt_" + uuid.NewString()
+	seedInvoiceAmountSub(t, db, customerID)
+
+	// Seed a row as it looks straight after invoice.created: no number yet, empty
+	// hosted URL, and a placeholder currency — all of which finalization/payment
+	// should backfill.
+	stripeInvoiceID := "in_" + uuid.NewString()
+	require.NoError(t, db.Create(&models.Invoice{
+		UserID: "user_invamt", UserSubscriptionID: uuid.New(),
+		StripeInvoiceID: stripeInvoiceID, Amount: 999, Currency: "usd", Status: "open",
+		InvoiceNumber: "", StripeHostedURL: "", InvoiceDate: time.Now(),
+	}).Error)
+
+	const (
+		freshNumber    = "INV-2026-0042"
+		freshCurrency  = "eur"
+		freshHostedURL = "https://invoice.stripe.com/i/fresh"
+	)
+	payload := buildPaidInvoiceWebhook(
+		"evt_"+uuid.NewString(), stripeInvoiceID, customerID, freshNumber, freshCurrency, freshHostedURL)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, buildSignedWebhookRequest(t, payload, secret))
+	require.Equal(t, http.StatusOK, w.Code, "webhook should process; body: %s", w.Body.String())
+
+	var reloaded models.Invoice
+	require.NoError(t, db.First(&reloaded, "stripe_invoice_id = ?", stripeInvoiceID).Error)
+	require.Equal(t, "paid", reloaded.Status, "sanity: the update branch ran")
+	assert.Equal(t, freshNumber, reloaded.InvoiceNumber,
+		"REFRESH: a row inserted at invoice.created has no number until finalization; the "+
+			"payment_succeeded UPDATE branch must backfill InvoiceNumber from the event.")
+	assert.Equal(t, freshHostedURL, reloaded.StripeHostedURL,
+		"REFRESH: the UPDATE branch must backfill StripeHostedURL — it feeds the invoice-download "+
+			"fallback, so a stale/empty value breaks the download link.")
+	assert.Equal(t, freshCurrency, reloaded.Currency,
+		"REFRESH: the UPDATE branch must backfill Currency from the event, not leave the "+
+			"placeholder written at insert time.")
+}
