@@ -1317,7 +1317,7 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 		UserID:             userSub.UserID,
 		UserSubscriptionID: userSub.ID,
 		StripeInvoiceID:    stripeInvoice.ID,
-		Amount:             stripeInvoice.AmountPaid,
+		Amount:             canonicalInvoiceAmount(&stripeInvoice),
 		Currency:           string(stripeInvoice.Currency),
 		Status:             string(stripeInvoice.Status),
 		InvoiceNumber:      stripeInvoice.Number,
@@ -1337,13 +1337,20 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 	if err != nil {
 		// Facture n'existe pas, la créer
 		utils.Debug("✅ Creating invoice %s for user %s (amount: %d %s)",
-			stripeInvoice.Number, userSub.UserID, stripeInvoice.AmountPaid, stripeInvoice.Currency)
+			stripeInvoice.Number, userSub.UserID, invoiceRecord.Amount, stripeInvoice.Currency)
 		return ss.repository.CreateInvoice(invoiceRecord)
 	} else {
-		// Mettre à jour la facture existante
+		// Mettre à jour la facture existante. Refresh Amount (to canonical Total)
+		// plus the fields that are only assigned by Stripe at finalization: a row
+		// inserted at invoice.created carries no number and no hosted URL yet, and
+		// payment_succeeded is the first event that reliably has them.
 		existingInvoice.Status = invoiceRecord.Status
 		existingInvoice.PaidAt = invoiceRecord.PaidAt
 		existingInvoice.DownloadURL = invoiceRecord.DownloadURL
+		existingInvoice.Amount = invoiceRecord.Amount
+		existingInvoice.Currency = invoiceRecord.Currency
+		existingInvoice.InvoiceNumber = invoiceRecord.InvoiceNumber
+		existingInvoice.StripeHostedURL = invoiceRecord.StripeHostedURL
 		utils.Debug("✅ Updated invoice %s for user %s", stripeInvoice.Number, userSub.UserID)
 		return ss.repository.UpdateInvoice(existingInvoice)
 	}
@@ -1628,6 +1635,17 @@ func (ss *stripeService) handleSubscriptionResumed(event *stripe.Event) error {
 	return ss.repository.UpdateUserSubscription(userSub)
 }
 
+// canonicalInvoiceAmount returns the figure to persist into Invoice.Amount.
+// Total is THE canonical amount: it is tax- and credit-adjusted, unlike AmountDue
+// and AmountPaid which diverge from it (and from each other) under proration,
+// partial payment or credit-note application. Amount is also the denominator of
+// the refund-percentage computation in setInvoiceRefundStatus, so every write
+// path must derive it from Total — deriving it from any other field silently
+// distorts refund status.
+func canonicalInvoiceAmount(inv *stripe.Invoice) int64 {
+	return inv.Total
+}
+
 // handleInvoiceCreated traite la création d'une facture
 func (ss *stripeService) handleInvoiceCreated(event *stripe.Event) error {
 	var stripeInvoice stripe.Invoice
@@ -1654,7 +1672,7 @@ func (ss *stripeService) handleInvoiceCreated(event *stripe.Event) error {
 		UserID:             userSub.UserID,
 		UserSubscriptionID: userSub.ID,
 		StripeInvoiceID:    stripeInvoice.ID,
-		Amount:             stripeInvoice.AmountDue,
+		Amount:             canonicalInvoiceAmount(&stripeInvoice),
 		Currency:           string(stripeInvoice.Currency),
 		Status:             string(stripeInvoice.Status),
 		InvoiceNumber:      stripeInvoice.Number,
@@ -1665,7 +1683,7 @@ func (ss *stripeService) handleInvoiceCreated(event *stripe.Event) error {
 	}
 
 	utils.Debug("📄 Creating invoice %s for user %s (status: %s, amount: %d %s)",
-		stripeInvoice.Number, userSub.UserID, stripeInvoice.Status, stripeInvoice.AmountDue, stripeInvoice.Currency)
+		stripeInvoice.Number, userSub.UserID, stripeInvoice.Status, invoiceRecord.Amount, stripeInvoice.Currency)
 
 	return ss.repository.CreateInvoice(invoiceRecord)
 }
@@ -1692,7 +1710,7 @@ func (ss *stripeService) handleInvoiceFinalized(event *stripe.Event) error {
 			UserID:             userSub.UserID,
 			UserSubscriptionID: userSub.ID,
 			StripeInvoiceID:    stripeInvoice.ID,
-			Amount:             stripeInvoice.AmountDue,
+			Amount:             canonicalInvoiceAmount(&stripeInvoice),
 			Currency:           string(stripeInvoice.Currency),
 			Status:             "open",
 			InvoiceNumber:      stripeInvoice.Number,
@@ -2720,7 +2738,7 @@ func (ss *stripeService) processSingleInvoice(inv *stripe.Invoice, userID string
 	if existingInvoice != nil {
 		// Facture existe - mettre à jour
 		existingInvoice.Status = string(inv.Status)
-		existingInvoice.Amount = inv.Total
+		existingInvoice.Amount = canonicalInvoiceAmount(inv)
 		existingInvoice.Currency = string(inv.Currency)
 		existingInvoice.InvoiceNumber = inv.Number
 		existingInvoice.InvoiceDate = invoiceDate
@@ -2744,7 +2762,7 @@ func (ss *stripeService) processSingleInvoice(inv *stripe.Invoice, userID string
 			UserID:             userID,
 			UserSubscriptionID: userSub.ID,
 			StripeInvoiceID:    inv.ID,
-			Amount:             inv.Total,
+			Amount:             canonicalInvoiceAmount(inv),
 			Currency:           string(inv.Currency),
 			Status:             string(inv.Status),
 			InvoiceNumber:      inv.Number,
