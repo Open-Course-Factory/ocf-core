@@ -35,9 +35,10 @@ func (ps *pricingService) CalculatePricingPreview(planID uuid.UUID, quantity int
 	}
 
 	breakdown := &dto.PricingBreakdown{
-		PlanName:      plan.Name,
-		TotalQuantity: quantity,
-		Currency:      plan.Currency,
+		PlanName:            plan.Name,
+		TotalQuantity:       quantity,
+		IndividualUnitPrice: plan.PriceAmount,
+		Currency:            plan.Currency,
 	}
 
 	// If tiered pricing is not enabled, use simple flat pricing

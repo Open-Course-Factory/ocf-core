@@ -374,13 +374,14 @@ type PricingPreviewInput struct {
 }
 
 type PricingBreakdown struct {
-	PlanName         string     `json:"plan_name"`
-	TotalQuantity    int        `json:"total_quantity"`
-	TierBreakdown    []TierCost `json:"tier_breakdown"`
-	TotalMonthlyCost int64      `json:"total_monthly_cost"`    // In cents
-	AveragePerUnit   float64    `json:"average_per_license"`   // In currency (e.g., 8.33 for €8.33)
-	Savings          int64      `json:"savings_vs_individual"` // In cents
-	Currency         string     `json:"currency"`
+	PlanName            string     `json:"plan_name"`
+	TotalQuantity       int        `json:"total_quantity"`
+	TierBreakdown       []TierCost `json:"tier_breakdown"`
+	TotalMonthlyCost    int64      `json:"total_monthly_cost"`    // In cents
+	IndividualUnitPrice int64      `json:"individual_unit_price"` // In cents
+	AveragePerUnit      float64    `json:"average_per_license"`   // In currency (e.g., 8.33 for €8.33)
+	Savings             int64      `json:"savings_vs_individual"` // In cents
+	Currency            string     `json:"currency"`
 }
 
 type TierCost struct {
