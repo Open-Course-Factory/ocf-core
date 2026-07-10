@@ -16,6 +16,7 @@ import (
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type BulkLicenseService interface {
@@ -200,12 +201,17 @@ func (s *bulkLicenseService) AssignLicense(batchID uuid.UUID, requestingUserID s
 	// SQLite: the transaction boundary itself provides serialization.
 	var assignedLicense models.UserSubscription
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// Lock and re-read the batch row inside the transaction
+		// Lock and re-read the batch row inside the transaction so concurrent
+		// last-seat assignments serialize on this row instead of each reading a
+		// stale AssignedQuantity and overshooting TotalQuantity.
 		var lockedBatch models.SubscriptionBatch
 		query := tx.Where("id = ?", batchID)
-		// FOR UPDATE is PostgreSQL-specific; SQLite ignores it but serializes via its locking
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Set("gorm:query_option", "FOR UPDATE")
+		// SELECT ... FOR UPDATE. Guarded because SQLite (unit tests) rejects the
+		// locking clause as a syntax error while postgres/mysql serialize on it.
+		// The previous `gorm:query_option` was a silent no-op under GORM v2, so
+		// no lock was actually taken and the ledger could overshoot.
+		if supportsRowLock(tx) {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
 		if err := query.First(&lockedBatch).Error; err != nil {
 			return fmt.Errorf("batch not found: %w", err)
