@@ -37,8 +37,11 @@ func TestSubscriptionPlan_IsCatalog_SetToFalseViaUpdate(t *testing.T) {
 	// This matches the real-world workflow: plans are created via the admin UI
 	// (which goes through DtoToModel), then can be toggled to unlisted.
 	// Note: GORM's db.Create() skips zero-value bools when the field has
-	// gorm:"default:true", so setting IsCatalog:false at creation time
-	// requires db.Select("*").Create() — same limitation as IsActive.
+	// gorm:"default:true", so IsCatalog:false at creation time does NOT persist —
+	// the DB default (true) applies. Setting it false requires a follow-up
+	// db.Model(plan).Update("is_catalog", false) (as below); Select("*").Create()
+	// does NOT reliably persist the false bool in this GORM version. Same
+	// limitation as IsActive.
 	plan := &models.SubscriptionPlan{
 		Name:            "Custom Client Plan",
 		Description:     "Unlisted plan for a specific client",
