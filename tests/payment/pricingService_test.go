@@ -1,6 +1,7 @@
 package payment_tests
 
 import (
+	"encoding/json"
 	"testing"
 
 	entityManagementModels "soli/formations/src/entityManagement/models"
@@ -230,6 +231,68 @@ func TestPricingService_CalculatePricingPreview_EmptyTiersUsesFlatPricing(t *tes
 	assert.Equal(t, int64(4500), breakdown.TotalMonthlyCost) // 3 * 1500
 	assert.Equal(t, int64(0), breakdown.Savings)
 	assert.Len(t, breakdown.TierBreakdown, 1)
+}
+
+// TestPricingPreview_ExposesIndividualUnitPrice pins the serialized contract the
+// frontend PricingCalculator comparison table reads: preview.individual_unit_price
+// (in cents). The field was silently absent from PricingBreakdown, so the
+// "individual price per license" column always rendered €0.00. It must equal the
+// plan's PriceAmount on BOTH the flat and tiered branches. Asserting against the
+// JSON map (not a Go struct field) keeps this test compiling before the fix.
+func TestPricingPreview_ExposesIndividualUnitPrice(t *testing.T) {
+	tests := []struct {
+		name string
+		plan *models.SubscriptionPlan
+	}{
+		{
+			name: "FlatPlan",
+			plan: &models.SubscriptionPlan{
+				Name:             "Pro",
+				PriceAmount:      1000, // 10.00 EUR per license
+				Currency:         "eur",
+				UseTieredPricing: false,
+			},
+		},
+		{
+			name: "TieredPlan",
+			plan: &models.SubscriptionPlan{
+				Name:             "Business",
+				PriceAmount:      1000, // reference individual price
+				Currency:         "eur",
+				UseTieredPricing: true,
+				PricingTiers: []models.PricingTier{
+					{MinQuantity: 1, MaxQuantity: 5, UnitAmount: 1000},
+					{MinQuantity: 6, MaxQuantity: 15, UnitAmount: 800},
+					{MinQuantity: 16, MaxQuantity: 0, UnitAmount: 600},
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupPricingTestDB(t)
+			svc := services.NewPricingService(db)
+			plan := createPricingTestPlan(t, db, tc.plan)
+
+			breakdown, err := svc.CalculatePricingPreview(plan.ID, 20)
+			require.NoError(t, err)
+
+			raw, err := json.Marshal(breakdown)
+			require.NoError(t, err)
+
+			var payload map[string]any
+			require.NoError(t, json.Unmarshal(raw, &payload))
+
+			value, present := payload["individual_unit_price"]
+			require.True(t, present, "individual_unit_price missing from serialized pricing preview")
+
+			// JSON numbers decode as float64; PriceAmount is the per-license reference price in cents.
+			got, ok := value.(float64)
+			require.True(t, ok, "individual_unit_price must be a number, got %T", value)
+			assert.Equal(t, plan.PriceAmount, int64(got))
+		})
+	}
 }
 
 // --- GetTotalCost tests ---
