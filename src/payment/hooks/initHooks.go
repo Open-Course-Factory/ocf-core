@@ -29,6 +29,14 @@ func InitPaymentHooks(db *gorm.DB) paymentServices.StripeSyncQueue {
 		log.Println("✅ Plan features validation hook registered")
 	}
 
+	// Hook pour valider les champs B2B des adresses de facturation (issue #383)
+	billingValidationHook := NewBillingAddressValidationHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(billingValidationHook); err != nil {
+		log.Printf("❌ Failed to register billing address validation hook: %v", err)
+	} else {
+		log.Println("✅ Billing address validation hook registered")
+	}
+
 	// Stripe sync queue — shared between the hook (enqueues) and the worker
 	// (drains). Returned to main.go for worker + admin-endpoint wiring.
 	stripeSyncQueue := paymentServices.NewStripeSyncQueue(db)

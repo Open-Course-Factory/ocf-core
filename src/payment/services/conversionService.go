@@ -139,11 +139,11 @@ func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan
 		UpdatedAt:          plan.UpdatedAt,
 
 		// Terminal-specific limits
-		MaxSessionDurationMinutes: plan.MaxSessionDurationMinutes,
-		NetworkAccessEnabled:      plan.NetworkAccessEnabled,
-		DataPersistenceEnabled:    plan.DataPersistenceEnabled,
-		DataPersistenceGB:         plan.DataPersistenceGB,
-		AllowedTemplates:          plan.AllowedTemplates,
+		MaxSessionDurationMinutes:   plan.MaxSessionDurationMinutes,
+		NetworkAccessEnabled:        plan.NetworkAccessEnabled,
+		DataPersistenceEnabled:      plan.DataPersistenceEnabled,
+		DataPersistenceGB:           plan.DataPersistenceGB,
+		AllowedTemplates:            plan.AllowedTemplates,
 		CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
 
 		// Backend routing
@@ -336,17 +336,20 @@ func (cs *conversionService) BillingAddressToDTO(address *models.BillingAddress)
 	}
 
 	return &dto.BillingAddressOutput{
-		ID:         address.ID,
-		UserID:     address.UserID,
-		Line1:      address.Line1,
-		Line2:      address.Line2,
-		City:       address.City,
-		State:      address.State,
-		PostalCode: address.PostalCode,
-		Country:    address.Country,
-		IsDefault:  address.IsDefault,
-		CreatedAt:  address.CreatedAt,
-		UpdatedAt:  address.UpdatedAt,
+		ID:          address.ID,
+		UserID:      address.UserID,
+		Line1:       address.Line1,
+		Line2:       address.Line2,
+		City:        address.City,
+		State:       address.State,
+		PostalCode:  address.PostalCode,
+		Country:     address.Country,
+		CompanyName: address.CompanyName,
+		Siret:       address.Siret,
+		VatNumber:   address.VatNumber,
+		IsDefault:   address.IsDefault,
+		CreatedAt:   address.CreatedAt,
+		UpdatedAt:   address.UpdatedAt,
 	}, nil
 }
 

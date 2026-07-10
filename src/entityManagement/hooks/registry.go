@@ -126,14 +126,18 @@ func (hr *hookRegistry) ExecuteHooks(ctx *HookContext) error {
 		if err := hook.Execute(ctx); err != nil {
 			log.Printf("❌ Hook '%s' failed: %v", hook.GetName(), err)
 
-			// Record error for async hooks (After* types)
-			if ctx.HookType == AfterCreate || ctx.HookType == AfterUpdate || ctx.HookType == AfterDelete {
+			// Before-hooks are synchronous and gate the write: a validation or
+			// ownership failure must abort the operation, so we fail fast and let
+			// the generic service surface the error. After-hooks are best-effort
+			// (fire-and-forget) — their errors are recorded but do not fail the
+			// already-committed write.
+			switch ctx.HookType {
+			case BeforeCreate, BeforeUpdate, BeforeDelete:
+				return err
+			default:
 				hr.recordError(hook.GetName(), ctx.EntityName, ctx.HookType, ctx.EntityID, err)
+				continue
 			}
-
-			// Selon la stratégie d'erreur, on peut continuer ou arrêter
-			// Pour l'instant, on continue avec les autres hooks
-			continue
 		}
 
 		log.Printf("✅ Hook '%s' executed successfully", hook.GetName())

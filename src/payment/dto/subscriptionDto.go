@@ -9,26 +9,26 @@ import (
 
 // SubscriptionPlan DTOs
 type CreateSubscriptionPlanInput struct {
-	Name               string   `binding:"required" json:"name" mapstructure:"name"`
-	Description        string   `json:"description" mapstructure:"description"`
-	PriceAmount        int64    `binding:"required" json:"price_amount" mapstructure:"price_amount"`
-	Currency           string   `json:"currency" mapstructure:"currency"`
-	BillingInterval    string   `binding:"required" json:"billing_interval" mapstructure:"billing_interval"`
-	Features           []string `json:"features" mapstructure:"features"`
-	MaxConcurrentUsers int      `json:"max_concurrent_users" mapstructure:"max_concurrent_users"`
-	MaxCourses         int      `json:"max_courses" mapstructure:"max_courses"`
-	RequiredRole       string   `json:"required_role" mapstructure:"required_role"`
-	MaxSessionDurationMinutes      int      `json:"max_session_duration_minutes" mapstructure:"max_session_duration_minutes"`
-	NetworkAccessEnabled           bool     `json:"network_access_enabled" mapstructure:"network_access_enabled"`
-	DataPersistenceEnabled         bool     `json:"data_persistence_enabled" mapstructure:"data_persistence_enabled"`
-	DataPersistenceGB              int      `json:"data_persistence_gb" mapstructure:"data_persistence_gb"`
-	AllowedTemplates               []string `json:"allowed_templates" mapstructure:"allowed_templates"`
-	CommandHistoryRetentionDays    int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
-	DefaultBackend                 string   `json:"default_backend" mapstructure:"default_backend"`
-	AllowedBackends                []string `json:"allowed_backends" mapstructure:"allowed_backends"`
-	Priority                       int      `json:"priority" mapstructure:"priority"`
-	IsActive                       *bool    `json:"is_active" mapstructure:"is_active"`
-	IsCatalog                      *bool    `json:"is_catalog" mapstructure:"is_catalog"`
+	Name                        string   `binding:"required" json:"name" mapstructure:"name"`
+	Description                 string   `json:"description" mapstructure:"description"`
+	PriceAmount                 int64    `binding:"required" json:"price_amount" mapstructure:"price_amount"`
+	Currency                    string   `json:"currency" mapstructure:"currency"`
+	BillingInterval             string   `binding:"required" json:"billing_interval" mapstructure:"billing_interval"`
+	Features                    []string `json:"features" mapstructure:"features"`
+	MaxConcurrentUsers          int      `json:"max_concurrent_users" mapstructure:"max_concurrent_users"`
+	MaxCourses                  int      `json:"max_courses" mapstructure:"max_courses"`
+	RequiredRole                string   `json:"required_role" mapstructure:"required_role"`
+	MaxSessionDurationMinutes   int      `json:"max_session_duration_minutes" mapstructure:"max_session_duration_minutes"`
+	NetworkAccessEnabled        bool     `json:"network_access_enabled" mapstructure:"network_access_enabled"`
+	DataPersistenceEnabled      bool     `json:"data_persistence_enabled" mapstructure:"data_persistence_enabled"`
+	DataPersistenceGB           int      `json:"data_persistence_gb" mapstructure:"data_persistence_gb"`
+	AllowedTemplates            []string `json:"allowed_templates" mapstructure:"allowed_templates"`
+	CommandHistoryRetentionDays int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
+	DefaultBackend              string   `json:"default_backend" mapstructure:"default_backend"`
+	AllowedBackends             []string `json:"allowed_backends" mapstructure:"allowed_backends"`
+	Priority                    int      `json:"priority" mapstructure:"priority"`
+	IsActive                    *bool    `json:"is_active" mapstructure:"is_active"`
+	IsCatalog                   *bool    `json:"is_catalog" mapstructure:"is_catalog"`
 	// Budget-based quota fields.
 	// MaxCPU is in millicores (mCPU); 1000 mCPU = 1 vCPU. Frontends
 	// convert to fractional vCPU for display.
@@ -37,22 +37,22 @@ type CreateSubscriptionPlanInput struct {
 }
 
 type UpdateSubscriptionPlanInput struct {
-	Name               string   `json:"name,omitempty" mapstructure:"name"`
-	Description        string   `json:"description,omitempty" mapstructure:"description"`
-	IsActive           *bool    `json:"is_active,omitempty" mapstructure:"is_active"`
-	IsCatalog          *bool    `json:"is_catalog,omitempty" mapstructure:"is_catalog"`
-	Features           []string `json:"features,omitempty" mapstructure:"features"`
-	MaxConcurrentUsers *int     `json:"max_concurrent_users,omitempty" mapstructure:"max_concurrent_users"`
-	MaxCourses         *int     `json:"max_courses,omitempty" mapstructure:"max_courses"`
-	MaxSessionDurationMinutes      *int     `json:"max_session_duration_minutes,omitempty" mapstructure:"max_session_duration_minutes"`
-	NetworkAccessEnabled           *bool    `json:"network_access_enabled,omitempty" mapstructure:"network_access_enabled"`
-	DataPersistenceEnabled         *bool    `json:"data_persistence_enabled,omitempty" mapstructure:"data_persistence_enabled"`
-	DataPersistenceGB              *int     `json:"data_persistence_gb,omitempty" mapstructure:"data_persistence_gb"`
-	AllowedTemplates               []string `json:"allowed_templates,omitempty" mapstructure:"allowed_templates"`
-	CommandHistoryRetentionDays    *int     `json:"command_history_retention_days,omitempty" mapstructure:"command_history_retention_days"`
-	DefaultBackend                 string   `json:"default_backend,omitempty" mapstructure:"default_backend"`
-	AllowedBackends                []string `json:"allowed_backends,omitempty" mapstructure:"allowed_backends"`
-	Priority                       *int     `json:"priority,omitempty" mapstructure:"priority"`
+	Name                        string   `json:"name,omitempty" mapstructure:"name"`
+	Description                 string   `json:"description,omitempty" mapstructure:"description"`
+	IsActive                    *bool    `json:"is_active,omitempty" mapstructure:"is_active"`
+	IsCatalog                   *bool    `json:"is_catalog,omitempty" mapstructure:"is_catalog"`
+	Features                    []string `json:"features,omitempty" mapstructure:"features"`
+	MaxConcurrentUsers          *int     `json:"max_concurrent_users,omitempty" mapstructure:"max_concurrent_users"`
+	MaxCourses                  *int     `json:"max_courses,omitempty" mapstructure:"max_courses"`
+	MaxSessionDurationMinutes   *int     `json:"max_session_duration_minutes,omitempty" mapstructure:"max_session_duration_minutes"`
+	NetworkAccessEnabled        *bool    `json:"network_access_enabled,omitempty" mapstructure:"network_access_enabled"`
+	DataPersistenceEnabled      *bool    `json:"data_persistence_enabled,omitempty" mapstructure:"data_persistence_enabled"`
+	DataPersistenceGB           *int     `json:"data_persistence_gb,omitempty" mapstructure:"data_persistence_gb"`
+	AllowedTemplates            []string `json:"allowed_templates,omitempty" mapstructure:"allowed_templates"`
+	CommandHistoryRetentionDays *int     `json:"command_history_retention_days,omitempty" mapstructure:"command_history_retention_days"`
+	DefaultBackend              string   `json:"default_backend,omitempty" mapstructure:"default_backend"`
+	AllowedBackends             []string `json:"allowed_backends,omitempty" mapstructure:"allowed_backends"`
+	Priority                    *int     `json:"priority,omitempty" mapstructure:"priority"`
 	// Budget-based quota fields.
 	// MaxCPU is in millicores (mCPU); 1000 mCPU = 1 vCPU.
 	MaxCPU      *int `json:"max_cpu,omitempty" mapstructure:"max_cpu"`
@@ -79,10 +79,10 @@ type SubscriptionPlanOutput struct {
 	UpdatedAt          time.Time `json:"updated_at"`
 
 	// Terminal-specific limits (for Terminal Trainer feature)
-	MaxSessionDurationMinutes int      `json:"max_session_duration_minutes"`
-	NetworkAccessEnabled      bool     `json:"network_access_enabled"`
-	DataPersistenceEnabled    bool     `json:"data_persistence_enabled"`
-	DataPersistenceGB         int      `json:"data_persistence_gb"`
+	MaxSessionDurationMinutes   int      `json:"max_session_duration_minutes"`
+	NetworkAccessEnabled        bool     `json:"network_access_enabled"`
+	DataPersistenceEnabled      bool     `json:"data_persistence_enabled"`
+	DataPersistenceGB           int      `json:"data_persistence_gb"`
 	AllowedTemplates            []string `json:"allowed_templates"`
 	CommandHistoryRetentionDays int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
 
@@ -224,31 +224,43 @@ type CreateBillingAddressInput struct {
 	State      string `json:"state,omitempty" mapstructure:"state"`
 	PostalCode string `binding:"required" json:"postal_code" mapstructure:"postal_code"`
 	Country    string `binding:"required" json:"country" mapstructure:"country"`
-	SetDefault bool   `json:"set_default" mapstructure:"set_default"`
+	// B2B facturation fields (issue #383): optional. Format validation lives in a
+	// BeforeCreate/BeforeUpdate hook, NOT in binding tags — the generic entity path
+	// binds JSON into an `any`, so the struct validator never runs (#390).
+	CompanyName string `json:"company_name,omitempty" mapstructure:"company_name"`
+	Siret       string `json:"siret,omitempty" mapstructure:"siret"`
+	VatNumber   string `json:"vat_number,omitempty" mapstructure:"vat_number"`
+	SetDefault  bool   `json:"set_default" mapstructure:"set_default"`
 }
 
 type UpdateBillingAddressInput struct {
-	Line1      string `json:"line1,omitempty" mapstructure:"line1"`
-	Line2      string `json:"line2,omitempty" mapstructure:"line2"`
-	City       string `json:"city,omitempty" mapstructure:"city"`
-	State      string `json:"state,omitempty" mapstructure:"state"`
-	PostalCode string `json:"postal_code,omitempty" mapstructure:"postal_code"`
-	Country    string `json:"country,omitempty" mapstructure:"country"`
-	IsDefault  *bool  `json:"is_default,omitempty" mapstructure:"is_default"`
+	Line1       string  `json:"line1,omitempty" mapstructure:"line1"`
+	Line2       string  `json:"line2,omitempty" mapstructure:"line2"`
+	City        string  `json:"city,omitempty" mapstructure:"city"`
+	State       string  `json:"state,omitempty" mapstructure:"state"`
+	PostalCode  string  `json:"postal_code,omitempty" mapstructure:"postal_code"`
+	Country     string  `json:"country,omitempty" mapstructure:"country"`
+	CompanyName *string `json:"company_name,omitempty" mapstructure:"company_name"`
+	Siret       *string `json:"siret,omitempty" mapstructure:"siret"`
+	VatNumber   *string `json:"vat_number,omitempty" mapstructure:"vat_number"`
+	IsDefault   *bool   `json:"is_default,omitempty" mapstructure:"is_default"`
 }
 
 type BillingAddressOutput struct {
-	ID         uuid.UUID `json:"id"`
-	UserID     string    `json:"user_id"`
-	Line1      string    `json:"line1"`
-	Line2      string    `json:"line2,omitempty"`
-	City       string    `json:"city"`
-	State      string    `json:"state,omitempty"`
-	PostalCode string    `json:"postal_code"`
-	Country    string    `json:"country"`
-	IsDefault  bool      `json:"is_default"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID          uuid.UUID `json:"id"`
+	UserID      string    `json:"user_id"`
+	Line1       string    `json:"line1"`
+	Line2       string    `json:"line2,omitempty"`
+	City        string    `json:"city"`
+	State       string    `json:"state,omitempty"`
+	PostalCode  string    `json:"postal_code"`
+	Country     string    `json:"country"`
+	CompanyName string    `json:"company_name,omitempty"`
+	Siret       string    `json:"siret,omitempty"`
+	VatNumber   string    `json:"vat_number,omitempty"`
+	IsDefault   bool      `json:"is_default"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // DTOs pour les actions Stripe
