@@ -240,3 +240,40 @@ func TestBulkPurchase_PlanWithoutGroupManagement_Rejected(t *testing.T) {
 	assert.Nil(t, licenses, "no licenses may be returned when the plan lacks group_management")
 	assertNoBulkRowsPersisted(t)
 }
+
+// TestBulkCheckout_PlanWithoutGroupManagement_Rejected closes the bypass: the
+// same feature gate must also cover the Stripe checkout path
+// CreateBulkCheckoutSession (stripeService.go:425+), otherwise the direct-
+// purchase feature gate is trivially bypassable by buying through checkout
+// instead. Driven through the REAL StripeService against a fake Stripe backend
+// (captures the checkout-session POST) + fake Casdoor — mirroring
+// checkoutInputHardening_test.go, which already pins the IsCatalog rejection on
+// this path (NOT duplicated here — this asserts ONLY the group_management gate).
+//
+// RED today: an active catalog plan without group_management still creates a
+// checkout session — no error, and a POST /v1/checkout/sessions is recorded.
+func TestBulkCheckout_PlanWithoutGroupManagement_Rejected(t *testing.T) {
+	db := freshTestDB(t)
+	cap := installTaxFormCapturingStripe(t)
+	installFakeCasdoor(t, "bulkco@example.com", "Bulk Checkout Buyer")
+	svc := services.NewStripeService(db)
+
+	// seedCheckoutPlan builds an active plan with a Stripe price and IsCatalog=true
+	// but no Features, so it lacks group_management — gate 1 passes, gate 2 must fire.
+	plan := seedCheckoutPlan(t, "Catalog Bulk Plan Without Group Management", true)
+	require.NoError(t, db.Create(plan).Error)
+
+	_, err := svc.CreateBulkCheckoutSession("user_bulkco_"+uuid.NewString(), dto.CreateBulkCheckoutSessionInput{
+		SubscriptionPlanID: plan.ID,
+		Quantity:           5,
+		SuccessURL:         "https://app.test/success",
+		CancelURL:          "https://app.test/cancel",
+	})
+
+	assert.Error(t, err,
+		"FEATURE: bulk checkout must also reject a plan lacking group_management — otherwise "+
+			"the direct-purchase feature gate (PurchaseBulkLicenses) is bypassable via the Stripe "+
+			"checkout path.")
+	assert.Empty(t, cap.checkoutSessionForm(),
+		"no Stripe checkout session may be created for a plan that lacks group_management")
+}
