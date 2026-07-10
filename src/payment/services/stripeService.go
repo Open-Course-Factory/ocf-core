@@ -265,6 +265,15 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 		return nil, fmt.Errorf("subscription plan is not active")
 	}
 
+	// Only catalog plans are purchasable via self-service checkout. A custom /
+	// unlisted plan (IsCatalog=false) is assigned by an admin, not bought by
+	// anyone who happens to know its id. Rejected before any Casdoor/Stripe call.
+	// (Admin assignment goes through subscriptionService.AdminAssignSubscription,
+	// a separate path with no Stripe/IsActive/IsCatalog gate — unaffected.)
+	if !plan.IsCatalog {
+		return nil, fmt.Errorf("subscription plan is not available for purchase")
+	}
+
 	// Vérifier que le plan a un prix Stripe configuré
 	if plan.StripePriceID == nil {
 		return nil, fmt.Errorf("subscription plan does not have a Stripe price configured")
@@ -411,6 +420,13 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 
 	if !plan.IsActive {
 		return nil, fmt.Errorf("subscription plan is not active")
+	}
+
+	// Only catalog plans are purchasable via self-service checkout (same guard as
+	// CreateCheckoutSession) — reject a custom/unlisted plan before any
+	// Casdoor/Stripe call.
+	if !plan.IsCatalog {
+		return nil, fmt.Errorf("subscription plan is not available for purchase")
 	}
 
 	// Verify plan has Stripe price configured

@@ -262,7 +262,7 @@ type CreateCheckoutSessionInput struct {
 
 type CreateBulkCheckoutSessionInput struct {
 	SubscriptionPlanID uuid.UUID  `binding:"required" json:"subscription_plan_id"`
-	Quantity           int        `binding:"required,min=1" json:"quantity"`
+	Quantity           int        `binding:"required,min=1,max=1000" json:"quantity"`
 	SuccessURL         string     `binding:"required" json:"success_url"`
 	CancelURL          string     `binding:"required" json:"cancel_url"`
 	GroupID            *uuid.UUID `json:"group_id,omitempty"`
@@ -334,7 +334,7 @@ type UsageLimitCheckOutput struct {
 // DTOs for bulk license purchases
 type BulkPurchaseInput struct {
 	SubscriptionPlanID uuid.UUID  `binding:"required" json:"subscription_plan_id" mapstructure:"subscription_plan_id"`
-	Quantity           int        `binding:"required,min=1" json:"quantity" mapstructure:"quantity"`
+	Quantity           int        `binding:"required,min=1,max=1000" json:"quantity" mapstructure:"quantity"`
 	GroupID            *uuid.UUID `json:"group_id,omitempty" mapstructure:"group_id"` // Optional: link to group
 	PaymentMethodID    string     `json:"payment_method_id,omitempty" mapstructure:"payment_method_id"`
 	CouponCode         string     `json:"coupon_code,omitempty" mapstructure:"coupon_code"`
@@ -364,7 +364,7 @@ type AssignLicenseInput struct {
 }
 
 type UpdateBatchQuantityInput struct {
-	NewQuantity int `binding:"required,min=1" json:"new_quantity" mapstructure:"new_quantity"`
+	NewQuantity int `binding:"required,min=1,max=1000" json:"new_quantity" mapstructure:"new_quantity"`
 }
 
 // DTOs for pricing preview
