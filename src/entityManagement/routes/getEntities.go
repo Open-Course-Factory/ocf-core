@@ -113,10 +113,17 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 		// Owner read-scope: a non-admin caller sees only rows they own. The
 		// filter column is derived the same way the ownership hook derives it,
 		// so the injected key matches the entity's owner column exactly.
-		if userID := ctx.GetString("userId"); userID != "" {
-			column := genericController.db.Config.NamingStrategy.ColumnName("", config.OwnerField)
-			filters[column] = userID
+		userID := ctx.GetString("userId")
+		if userID == "" {
+			// Fail-closed: an unknown actor (no authenticated userId) on a
+			// read-scoped entity must see nothing, never the global unscoped
+			// set. Mirrors the get-by-id path, which already denies. Returning
+			// an empty page here is safer than skipping the owner filter.
+			respondEmptyPage(ctx)
+			return
 		}
+		column := genericController.db.Config.NamingStrategy.ColumnName("", config.OwnerField)
+		filters[column] = userID
 	}
 
 	// Use cursor pagination if cursor param is present (even if empty for first page)
@@ -189,6 +196,30 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, response)
+}
+
+// respondEmptyPage writes a zero-row page in whichever pagination shape the
+// request asked for. Used to fail closed on a read-scoped entity when the
+// acting identity is unknown, without querying the database.
+func respondEmptyPage(ctx *gin.Context) {
+	if _, hasCursor := ctx.Request.URL.Query()["cursor"]; hasCursor {
+		ctx.JSON(http.StatusOK, CursorPaginationResponse{
+			Data:    []any{},
+			HasMore: false,
+			Limit:   DefaultCursorLimit,
+			Total:   0,
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, PaginationResponse{
+		Data:            []any{},
+		Total:           0,
+		TotalPages:      0,
+		CurrentPage:     1,
+		PageSize:        DefaultPageSize,
+		HasNextPage:     false,
+		HasPreviousPage: false,
+	})
 }
 
 // applyDtoRedactor invokes the registered DtoRedactor (if any) on each item

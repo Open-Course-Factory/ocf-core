@@ -13,10 +13,10 @@ import (
 // ownershipHook is a generic Hook that enforces entity ownership checks
 // using reflection, driven by OwnershipConfig.
 type ownershipHook struct {
-	db         *gorm.DB
-	entityName string
-	config     access.OwnershipConfig
-	hookTypes  []HookType
+	entityName   string
+	config       access.OwnershipConfig
+	hookTypes    []HookType
+	entityLoader access.EntityLoader
 }
 
 // NewOwnershipHook creates a generic ownership hook for any entity.
@@ -25,10 +25,10 @@ func NewOwnershipHook(db *gorm.DB, entityName string, config access.OwnershipCon
 	hookTypes := operationsToHookTypes(config.Operations)
 
 	return &ownershipHook{
-		db:         db,
-		entityName: entityName,
-		config:     config,
-		hookTypes:  hookTypes,
+		entityName:   entityName,
+		config:       config,
+		hookTypes:    hookTypes,
+		entityLoader: access.NewGormEntityLoader(db),
 	}
 }
 
@@ -108,7 +108,12 @@ func (h *ownershipHook) verifyOwnership(ctx *HookContext) error {
 	if ctx.UserID == "" {
 		return fmt.Errorf("permission denied: unknown actor cannot modify %s", h.entityName)
 	}
-	ownerValue, err := h.loadOwnerFromDB(ctx.EntityID)
+	if ctx.EntityID == nil {
+		return fmt.Errorf("entity ID is empty for %s ownership check", h.entityName)
+	}
+	// The SQL-validated loader rejects unsafe identifiers and fails closed on a
+	// missing row (GetOwnerField returns an error when no row matches).
+	ownerValue, err := h.entityLoader.GetOwnerField(h.entityName, fmt.Sprintf("%v", ctx.EntityID), h.config.OwnerField)
 	if err != nil {
 		return err
 	}
@@ -116,31 +121,6 @@ func (h *ownershipHook) verifyOwnership(ctx *HookContext) error {
 		return fmt.Errorf("permission denied: you do not own this %s", h.entityName)
 	}
 	return nil
-}
-
-// loadOwnerFromDB loads the ownership field value from the database for the given entity ID.
-func (h *ownershipHook) loadOwnerFromDB(entityID any) (string, error) {
-	if entityID == nil || entityID == "" {
-		return "", fmt.Errorf("entity ID is empty for %s ownership check", h.entityName)
-	}
-
-	tableName := h.db.Config.NamingStrategy.TableName(h.entityName)
-	column := h.db.Config.NamingStrategy.ColumnName("", h.config.OwnerField)
-
-	var ownerValue string
-	result := h.db.Table(tableName).
-		Where("id = ?", entityID).
-		Select(column).
-		Scan(&ownerValue)
-
-	if result.Error != nil {
-		return "", fmt.Errorf("failed to load %s for ownership check: %w", h.entityName, result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return "", fmt.Errorf("%s not found (id=%v)", h.entityName, entityID)
-	}
-
-	return ownerValue, nil
 }
 
 // operationsToHookTypes converts operation strings to HookType values.

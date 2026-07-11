@@ -82,9 +82,23 @@ func SetUserResolver(resolver func(ctx *gin.Context) (string, []string, error)) 
 	}
 }
 
+// deny aborts the request with a 403 and the given detail, returning false so
+// enforcers can `return deny(ctx, X)` in a single line.
+func deny(ctx *gin.Context, detail string) bool {
+	ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+		"error":  "Access denied",
+		"detail": detail,
+	})
+	return false
+}
+
 // RegisterBuiltinEnforcers registers the default access rule handlers.
 // Called at startup. A simple project can skip specific handlers or
 // override them with custom implementations.
+//
+// Platform-admin bypass is NOT handled here: Layer2Enforcement filters admins
+// out centrally before dispatching to any enforcer, so every enforcer below
+// only ever sees a non-admin caller.
 func RegisterBuiltinEnforcers(entityLoader EntityLoader, memberChecker MembershipChecker) {
 	RegisterAccessEnforcer(Public, func(ctx *gin.Context, rule AccessRule, userID string, roles []string) bool {
 		return true
@@ -95,20 +109,12 @@ func RegisterBuiltinEnforcers(entityLoader EntityLoader, memberChecker Membershi
 	})
 
 	RegisterAccessEnforcer(AdminOnly, func(ctx *gin.Context, rule AccessRule, userID string, roles []string) bool {
-		if IsAdmin(roles) {
-			return true
-		}
-		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-			"error":  "Access denied",
-			"detail": "Administrator role required",
-		})
-		return false
+		// Admins are bypassed centrally in Layer2Enforcement, so a caller that
+		// reaches this enforcer is always a non-admin and must be denied.
+		return deny(ctx, "Administrator role required")
 	})
 
 	RegisterAccessEnforcer(EntityOwner, func(ctx *gin.Context, rule AccessRule, userID string, roles []string) bool {
-		if IsAdmin(roles) {
-			return true
-		}
 		paramName := rule.Param
 		if paramName == "" {
 			paramName = "id" // backward-compatible default
@@ -116,66 +122,36 @@ func RegisterBuiltinEnforcers(entityLoader EntityLoader, memberChecker Membershi
 		entityID := ctx.Param(paramName)
 		ownerValue, err := entityLoader.GetOwnerField(rule.Entity, entityID, rule.Field)
 		if err != nil {
-			ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"error":  "Access denied",
-				"detail": "Failed to verify entity ownership",
-			})
-			return false
+			return deny(ctx, "Failed to verify entity ownership")
 		}
 		if ownerValue == userID {
 			return true
 		}
-		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-			"error":  "Access denied",
-			"detail": "You do not own this entity",
-		})
-		return false
+		return deny(ctx, "You do not own this entity")
 	})
 
 	RegisterAccessEnforcer(GroupRole, func(ctx *gin.Context, rule AccessRule, userID string, roles []string) bool {
-		if IsAdmin(roles) {
-			return true
-		}
 		groupID := ctx.Param(rule.Param)
 		allowed, err := memberChecker.CheckGroupRole(groupID, userID, rule.MinRole)
 		if err != nil {
-			ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"error":  "Access denied",
-				"detail": "Failed to verify group membership",
-			})
-			return false
+			return deny(ctx, "Failed to verify group membership")
 		}
 		if allowed {
 			return true
 		}
-		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-			"error":  "Access denied",
-			"detail": "Insufficient group role",
-		})
-		return false
+		return deny(ctx, "Insufficient group role")
 	})
 
 	RegisterAccessEnforcer(OrgRole, func(ctx *gin.Context, rule AccessRule, userID string, roles []string) bool {
-		if IsAdmin(roles) {
-			return true
-		}
 		orgID := ctx.Param(rule.Param)
 		allowed, err := memberChecker.CheckOrgRole(orgID, userID, rule.MinRole)
 		if err != nil {
-			ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-				"error":  "Access denied",
-				"detail": "Failed to verify organization membership",
-			})
-			return false
+			return deny(ctx, "Failed to verify organization membership")
 		}
 		if allowed {
 			return true
 		}
-		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-			"error":  "Access denied",
-			"detail": "Insufficient organization role",
-		})
-		return false
+		return deny(ctx, "Insufficient organization role")
 	})
 }
 
@@ -210,6 +186,14 @@ func Layer2Enforcement() gin.HandlerFunc {
 			// JWT missing / invalid — Layer 2 is not an authentication
 			// checkpoint. Pass through so the downstream AuthManagement
 			// middleware can reject with 401.
+			ctx.Next()
+			return
+		}
+
+		// Platform admins bypass all Layer 2 checks. Centralized here so every
+		// enforcer — including custom ones — inherits the bypass and can't
+		// forget it.
+		if IsAdmin(roles) {
 			ctx.Next()
 			return
 		}

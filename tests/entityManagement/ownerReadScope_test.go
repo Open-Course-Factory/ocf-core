@@ -259,6 +259,38 @@ func TestOwnerReadScope_GetByIdAsAdmin_ReturnsOtherUsersRow(t *testing.T) {
 	assert.Equal(t, "user-B", got.UserID)
 }
 
+// --- Test 7: empty actor on a read-scoped list → zero rows (fail-closed) -----
+//
+// MR K, part 4 (NEW behavior). When the caller reached the generic list handler
+// with NO authenticated identity (userId == "") but the entity is read-scoped
+// and the caller is not admin, the handler must fail CLOSED: return zero rows,
+// never the global unscoped set.
+//
+// RED today: getEntities.go injects the owner filter only `if userID != ""`, so
+// an empty userId skips the filter entirely and the handler returns ALL rows
+// (both A's and B's). The fix must deny — inject an impossible filter (or abort)
+// so an unknown actor sees nothing.
+func TestOwnerReadScope_ListEmptyActor_ReturnsNoRows(t *testing.T) {
+	registerOwnerScopeEntity(t)
+	db := setupOwnerScopeDB(t)
+
+	seedOwnerScopeRow(t, db, "user-A", "A one")
+	seedOwnerScopeRow(t, db, "user-B", "B one")
+
+	// Empty userID → the middleware sets no "userId"; roles say non-admin member.
+	r := ownerScopeRouter(db, "", []string{"member"})
+	w := doGET(r, "/api/v1/owner-scope-entities/")
+	require.Equal(t, http.StatusOK, w.Code, "list should succeed; body=%s", w.Body.String())
+
+	var resp ownerScopeListResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	assert.Empty(t, resp.Data,
+		"an unknown actor (empty userId) on a read-scoped entity must see ZERO rows, not the global set")
+	assert.Equal(t, int64(0), resp.Total,
+		"Total must be 0 for an unknown actor on a read-scoped entity, not the global 2 (fail-open IDOR)")
+}
+
 // --- Test 6: pagination COUNT is owner-scoped -------------------------------
 
 func TestOwnerReadScope_ListPaginationCountIsOwnerScoped(t *testing.T) {

@@ -258,6 +258,44 @@ func TestOwnershipHook_BeforeDelete_OwnerAllowed(t *testing.T) {
 	assert.NoError(t, err, "Owner should be allowed to delete their own entity")
 }
 
+// --- Test 8: BeforeUpdate on a non-existent entity → denied ---
+//
+// Guards the not-found branch of the ownership check. MR K swaps the hook's own
+// loadOwnerFromDB for access.GormEntityLoader.GetOwnerField; both must fail
+// CLOSED when the entity ID does not exist. Without this guard, a loader that
+// returned ("", nil) on a missing row could silently allow an actor whose own
+// ID happened to be empty, or otherwise mask a not-found as an allow.
+func TestOwnershipHook_BeforeUpdate_EntityNotFound_Denied(t *testing.T) {
+	db := setupOwnershipTestDB(t)
+
+	// Nothing seeded for this ID — the row does not exist.
+	missingID, err := uuid.NewV7()
+	require.NoError(t, err)
+
+	config := access.OwnershipConfig{
+		OwnerField:  "UserID",
+		Operations:  []string{"create", "update", "delete"},
+		AdminBypass: true,
+	}
+
+	hook := hooks.NewOwnershipHook(db, "TestOwnedEntity", config)
+	require.NotNil(t, hook)
+
+	ctx := &hooks.HookContext{
+		EntityName: "TestOwnedEntity",
+		HookType:   hooks.BeforeUpdate,
+		UserID:     "user1", // a real, non-empty actor
+		UserRoles:  []string{"member"},
+		EntityID:   missingID.String(),
+		NewEntity:  &TestOwnedEntity{},
+		Context:    context.Background(),
+	}
+
+	err = hook.Execute(ctx)
+	assert.Error(t, err,
+		"updating an entity that does not exist must be denied (not-found must fail closed)")
+}
+
 // --- Test 7: BeforeDelete denies non-owner ---
 
 func TestOwnershipHook_BeforeDelete_NonOwnerDenied(t *testing.T) {
