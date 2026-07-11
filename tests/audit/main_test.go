@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -12,6 +13,8 @@ import (
 var sharedTestDB *gorm.DB
 
 func TestMain(m *testing.M) {
+	gin.SetMode(gin.TestMode)
+
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
