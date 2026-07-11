@@ -85,7 +85,7 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/usage-export", "GET")
 
 	// Incus UI proxy (fine-grained backend access checks in controller)
-	access.ReconcilePolicy(enforcer, "member", "/api/v1/incus-ui/:backendId/*", "(GET|POST|PUT|PATCH|DELETE)")
+	access.ReconcilePolicy(enforcer, "member", "/api/v1/incus-ui/:backendId/*path", "(GET|POST|PUT|PATCH|DELETE)")
 
 	// Declarative route permission registry
 	access.RouteRegistry.Register("Terminals",
@@ -155,12 +155,17 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		// Incus UI proxy — split into per-method entries because the Layer2
 		// registry Lookup does exact-match on method+path; a regex-style
 		// "(GET|POST|PUT|PATCH|DELETE)" method never matches concrete requests
-		// and would silently bypass the declared OrgRole rule.
-		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "backendId", MinRole: "member"}, Description: "Proxy requests to Incus UI for a backend"},
-		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "backendId", MinRole: "member"}, Description: "Proxy requests to Incus UI for a backend"},
-		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*", Method: "PUT", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "backendId", MinRole: "member"}, Description: "Proxy requests to Incus UI for a backend"},
-		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*", Method: "PATCH", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "backendId", MinRole: "member"}, Description: "Proxy requests to Incus UI for a backend"},
-		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "backendId", MinRole: "member"}, Description: "Proxy requests to Incus UI for a backend"},
+		// and would silently bypass the declared rule.
+		//
+		// The path MUST match gin's ctx.FullPath() for the `.Any("/:backendId/*path")`
+		// route (".../:backendId/*path"), otherwise Lookup misses and the rule is
+		// dead. The rule delegates to IsUserAuthorizedForBackend via IncusBackendAccess
+		// rather than OrgRole, because backendId is a backend id, not an org UUID.
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", Method: "GET", Role: "member", Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", Method: "POST", Role: "member", Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", Method: "PUT", Role: "member", Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", Method: "PATCH", Role: "member", Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
 
 		// User terminal keys
 		access.RoutePermission{Path: "/api/v1/user-terminal-keys/regenerate", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Regenerate terminal authentication key"},

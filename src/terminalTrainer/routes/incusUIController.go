@@ -13,11 +13,18 @@ import (
 	"strings"
 	"time"
 
+	access "soli/formations/src/auth/access"
 	orgModels "soli/formations/src/organizations/models"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+// IncusBackendAccess is the Layer 2 access rule type for the Incus UI proxy.
+// Its enforcer delegates to IncusUIController.IsUserAuthorizedForBackend so the
+// declarative rule and the handler share a single authorization predicate,
+// rather than OrgRole treating the backend id as an organization id.
+const IncusBackendAccess access.AccessRuleType = "incus_backend_access"
 
 // incusCookieAuth is a middleware that extracts a JWT from the "incus_token"
 // cookie and sets it as the Authorization header. This allows the iframe

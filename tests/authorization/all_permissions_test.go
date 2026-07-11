@@ -137,7 +137,7 @@ func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 		// Organization terminal routes
 		{"/api/v1/organizations/:id/terminal-sessions", "GET"},
 		// Incus UI proxy
-		{"/api/v1/incus-ui/:backendId/*", "(GET|POST|PUT|PATCH|DELETE)"},
+		{"/api/v1/incus-ui/:backendId/*path", "(GET|POST|PUT|PATCH|DELETE)"},
 	}
 
 	for _, r := range memberRoutes {

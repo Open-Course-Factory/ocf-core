@@ -1,12 +1,14 @@
 package terminalController
 
 import (
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	auth "soli/formations/src/auth"
+	access "soli/formations/src/auth/access"
 	config "soli/formations/src/configuration"
 	configRepositories "soli/formations/src/configuration/repositories"
 	paymentMiddleware "soli/formations/src/payment/middleware"
@@ -146,6 +148,22 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 		}
 	}
 	incusUIController := NewIncusUIController(db, os.Getenv("TERMINAL_TRAINER_URL"), protectedBackends, os.Getenv("TERMINAL_TRAINER_ADMIN_KEY"))
+
+	// Layer 2 backstop for the Incus UI proxy: share the handler's predicate so
+	// the declarative rule and ProxyIncusUI enforce the same policy (admin bypass
+	// lives inside IsUserAuthorizedForBackend).
+	access.RegisterAccessEnforcer(IncusBackendAccess, func(ctx *gin.Context, rule access.AccessRule, userID string, roles []string) bool {
+		backendID := ctx.Param(rule.Param)
+		if incusUIController.IsUserAuthorizedForBackend(userID, roles, backendID) {
+			return true
+		}
+		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+			"error":  "Access denied",
+			"detail": "You are not authorized to access this backend",
+		})
+		return false
+	})
+
 	incusUIRoutes := router.Group("/incus-ui")
 	incusUIRoutes.Any("/:backendId/*path", incusCookieAuth(), middleware.AuthManagement(), incusUIController.ProxyIncusUI)
 }
