@@ -26,10 +26,6 @@ type PermissionService interface {
 	// Check permissions
 	HasPermission(userID string, path string, method string) (bool, error)
 	HasEntityPermission(userID string, entityType string, entityID uuid.UUID, method string) (bool, error)
-
-	// Role-based permissions
-	GrantRolePermissions(userID string, role string) error
-	RevokeRolePermissions(userID string, role string) error
 }
 
 // EntityPermission represents a permission grant for a specific entity
@@ -169,29 +165,6 @@ func (ps *permissionService) HasEntityPermission(
 ) (bool, error) {
 	path := fmt.Sprintf("/api/v1/%s/%s", entityType, entityID)
 	return ps.HasPermission(userID, path, method)
-}
-
-// GrantRolePermissions grants all permissions associated with a role
-// This is a placeholder for future role-based permission management
-func (ps *permissionService) GrantRolePermissions(
-	userID string,
-	role string,
-) error {
-	// TODO: Implement role-based permission granting
-	// This would look up all permissions associated with a role
-	// and grant them to the user
-	utils.Debug("GrantRolePermissions not yet implemented for role: %s", role)
-	return nil
-}
-
-// RevokeRolePermissions revokes all permissions associated with a role
-func (ps *permissionService) RevokeRolePermissions(
-	userID string,
-	role string,
-) error {
-	// TODO: Implement role-based permission revoking
-	utils.Debug("RevokeRolePermissions not yet implemented for role: %s", role)
-	return nil
 }
 
 // Helper functions
