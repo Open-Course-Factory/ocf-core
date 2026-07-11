@@ -49,6 +49,8 @@ type orgScopedInvoiceRow struct {
 	StripeInvoiceID            string
 	UserID                     string
 	Amount                     int64
+	Status                     string
+	PaidAt                     *time.Time
 	OrganizationID             *string
 	OrganizationSubscriptionID *string
 }
@@ -173,4 +175,101 @@ func TestOrgInvoice_UserInvoice_Unaffected(t *testing.T) {
 		"a user invoice must not carry an OrganizationID")
 	assert.Nil(t, row.OrganizationSubscriptionID,
 		"a user invoice must not carry an OrganizationSubscriptionID")
+}
+
+// TestOrgInvoice_WebhookReplayed_SingleRow pins the replay safety of
+// persistOrgScopedInvoice: the SAME Stripe invoice delivered twice (two distinct
+// events carrying the same invoice id — the second bypasses the webhook_events
+// idempotency guard) must yield EXACTLY ONE org row, updated in place, never a
+// duplicate. GREEN post-implementation (the find-by-StripeInvoiceID → update
+// branch exists).
+//
+// Red-if-gutted: StripeInvoiceID is uniquely indexed, so removing the
+// GetInvoiceByStripeID lookup makes the second delivery attempt a fresh
+// CreateInvoice that violates the unique index and returns an error → the second
+// webhook responds 500, failing the second require(200). Either way the invariant
+// "one row, second delivery OK" catches the regression.
+func TestOrgInvoice_WebhookReplayed_SingleRow(t *testing.T) {
+	db := freshTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.Invoice{}))
+	secret := "whsec_orgreplay_" + uuid.NewString()
+	router := newRouterWithRealService(t, db, secret)
+
+	customerID := "cus_orgreplay_" + uuid.NewString()
+	orgID, orgSubID := seedOrgSubForCustomer(t, db, customerID)
+
+	stripeInvoiceID := "in_" + uuid.NewString()
+	deliver := func() *httptest.ResponseRecorder {
+		// Distinct event id each time so the webhook_events idempotency guard does
+		// NOT short-circuit the second delivery — we want persistOrgScopedInvoice
+		// to actually run twice for the same invoice.
+		payload := buildInvoiceAmountsWebhook(
+			"evt_"+uuid.NewString(), "invoice.created", stripeInvoiceID, customerID, "open",
+			invAmountDue, invAmountPaid, invTotal)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, buildSignedWebhookRequest(t, payload, secret))
+		return w
+	}
+
+	require.Equal(t, http.StatusOK, deliver().Code, "first delivery should process")
+	require.Equal(t, http.StatusOK, deliver().Code,
+		"a replayed invoice must process cleanly (update in place), not error on the "+
+			"unique stripe_invoice_id — the second insert must be avoided by the "+
+			"find-by-StripeInvoiceID lookup")
+
+	var count int64
+	require.NoError(t,
+		db.Table("invoices").Where("stripe_invoice_id = ?", stripeInvoiceID).Count(&count).Error)
+	assert.Equal(t, int64(1), count,
+		"delivering the same invoice twice must leave EXACTLY one org row, not a duplicate")
+
+	var row orgScopedInvoiceRow
+	require.NoError(t,
+		db.Table("invoices").Where("stripe_invoice_id = ?", stripeInvoiceID).Take(&row).Error)
+	require.NotNil(t, row.OrganizationID)
+	assert.Equal(t, orgID.String(), *row.OrganizationID,
+		"ownership fields must survive the replay update intact")
+	require.NotNil(t, row.OrganizationSubscriptionID)
+	assert.Equal(t, orgSubID.String(), *row.OrganizationSubscriptionID)
+	assert.Equal(t, invTotal, row.Amount, "Amount must remain canonical (Total) after replay")
+}
+
+// TestOrgInvoice_WebhookPaymentSucceeded_PersistsOrgScopedRow pins the second
+// org write path: a signed invoice.payment_succeeded for a customer that maps to
+// an org subscription (no user sub, no prior row) must persist an org-scoped row
+// with org fields set, Amount canonicalized to Total, status "paid", and PaidAt
+// populated from the event's status_transitions.paid_at — mirroring what the
+// user payment path does. GREEN post-implementation.
+func TestOrgInvoice_WebhookPaymentSucceeded_PersistsOrgScopedRow(t *testing.T) {
+	db := freshTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.Invoice{}))
+	secret := "whsec_orgpaid_" + uuid.NewString()
+	router := newRouterWithRealService(t, db, secret)
+
+	customerID := "cus_orgpaid_" + uuid.NewString()
+	orgID, orgSubID := seedOrgSubForCustomer(t, db, customerID)
+
+	stripeInvoiceID := "in_" + uuid.NewString()
+	payload := buildInvoiceAmountsWebhook(
+		"evt_"+uuid.NewString(), "invoice.payment_succeeded", stripeInvoiceID, customerID, "paid",
+		invAmountDue, invAmountPaid, invTotal)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, buildSignedWebhookRequest(t, payload, secret))
+	require.Equal(t, http.StatusOK, w.Code, "webhook should process; body: %s", w.Body.String())
+
+	var row orgScopedInvoiceRow
+	require.NoError(t,
+		db.Table("invoices").Where("stripe_invoice_id = ?", stripeInvoiceID).Take(&row).Error,
+		"an invoice.payment_succeeded for an org customer must persist an org row")
+
+	require.NotNil(t, row.OrganizationID)
+	assert.Equal(t, orgID.String(), *row.OrganizationID)
+	require.NotNil(t, row.OrganizationSubscriptionID)
+	assert.Equal(t, orgSubID.String(), *row.OrganizationSubscriptionID)
+	assert.Equal(t, invTotal, row.Amount, "org invoice Amount must be canonical Total")
+	assert.Equal(t, "paid", row.Status, "a payment_succeeded invoice must be marked paid")
+	assert.NotNil(t, row.PaidAt,
+		"PaidAt must be populated from status_transitions.paid_at, like the user path")
+	assert.Empty(t, row.UserID, "an org invoice has no user_id")
 }
