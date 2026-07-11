@@ -35,7 +35,6 @@ userController "soli/formations/src/auth/routes/usersRoutes"
 	permissionReferenceRoutes "soli/formations/src/auth/routes/permissionReferenceRoutes"
 	securityAdminController "soli/formations/src/auth/routes/securityAdminRoutes"
 	authServices "soli/formations/src/auth/services"
-	emailController "soli/formations/src/email/routes"
 	emailServices "soli/formations/src/email/services"
 	"soli/formations/src/feedback"
 	courseHooks "soli/formations/src/courses/hooks"
@@ -269,7 +268,6 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	terminalController.TerminalRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	terminalController.UserTerminalKeyRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	organizationController.OrganizationRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
-	emailController.EmailTemplateRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	securityAdminController.SecurityAdminRoutes(apiGroup, sqldb.DB)
 	permissionReferenceRoutes.PermissionReferenceRoutes(apiGroup)
 	scenarioController.ScenarioRoutes(apiGroup, &config.Configuration{}, sqldb.DB)

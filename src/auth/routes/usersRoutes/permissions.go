@@ -8,7 +8,7 @@ import (
 )
 
 // RegisterUserPermissions registers RBAC permissions for user management,
-// access control, entity hooks, email templates, and SSH routes.
+// access control, entity hooks, and SSH routes.
 func RegisterUserPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Setting up user management and access control permissions ===")
 
@@ -60,11 +60,6 @@ func RegisterUserPermissions(enforcer interfaces.EnforcerInterface) {
 			Path: "/api/v1/hooks/:hook_name/disable", Method: "POST",
 			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Disable an entity hook (admin only)",
-		},
-		access.RoutePermission{
-			Path: "/api/v1/email-templates/:id/test", Method: "POST",
-			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
-			Description: "Send a test email template (admin only)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/ssh", Method: "GET",
