@@ -274,7 +274,16 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 			// l'auto-stop), et OccupiesSlotScope laisserait tomber la ligne :
 			// l'utilisateur perdrait la capacité réservée d'un coup, alors
 			// que le conteneur est toujours résumable côté tt-backend.
-			if apiSession.State == models.StateStopped {
+			//
+			// Garde SPÉCIFIQUE à StateRevoked (et non le prédicat
+			// localStateIsAuthoritative complet) : la révocation billing laisse
+			// le conteneur vivant, donc son reaper idle finit par le rapporter
+			// "stopped" — sans cette garde, markSessionStopped ressusciterait la
+			// ligne révoquée en stopped (resumable + ré-occupe le budget),
+			// rendant sa session à un utilisateur révoqué. StateStopped, lui,
+			// DOIT continuer à passer par markSessionStopped pour rafraîchir sa
+			// deadline idle (fenêtre de reprise), d'où la garde ciblée.
+			if apiSession.State == models.StateStopped && localSession.State != models.StateRevoked {
 				var idleUntilPtr *time.Time
 				if apiSession.IdleUntil > 0 {
 					t := time.Unix(apiSession.IdleUntil, 0).Local()

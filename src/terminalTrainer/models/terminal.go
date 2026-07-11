@@ -31,6 +31,13 @@ const (
 	// The distinction is presentation only: the frontend discriminates on it
 	// (GET /terminals/user-sessions, state="revoked") to show honest
 	// revocation copy instead of the "Session Expired — time limit" banner.
+	//
+	// The label has a FINITE lifetime — it is a transient end-state banner, not
+	// a permanent terminal state. The revoked row keeps its original expires_at,
+	// so once that natural TTL passes, the ordinary expiry/orphan-reap paths flip
+	// it to "deleted" (revocation != erasure, and the honest-revocation copy has
+	// served its purpose by then). During the active window the sync guards keep
+	// it "revoked" so tt-backend cannot resurrect a revoked learner's session.
 	StateRevoked TerminalState = "revoked"
 )
 
