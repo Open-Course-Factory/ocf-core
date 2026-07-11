@@ -34,4 +34,8 @@ type TypedEntityRegistration[M any, C any, E any, O any] struct {
 	// "update"/"delete" verify ownership. The "read" op enables request-time read
 	// scoping in the generic GET handlers instead. No hand-written hook needed.
 	OwnershipConfig *access.OwnershipConfig `json:"-"`
+	// Actions declares custom REST actions beyond the generated CRUD verbs. Each
+	// is mounted by the route generator and gets its Layer 1 / Layer 2 policies
+	// registered from Role/Access at registration time.
+	Actions []ActionConfig `json:"-"`
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"reflect"
-	"regexp"
 	"strings"
 
 	"soli/formations/src/auth/casdoor"
@@ -20,28 +19,57 @@ import (
 // SwaggerRouteGenerator génère des routes documentées basées sur les métadonnées
 type SwaggerRouteGenerator struct {
 	genericController controller.GenericController
+	db                *gorm.DB
 }
 
 func NewSwaggerRouteGenerator(db *gorm.DB) *SwaggerRouteGenerator {
 	return &SwaggerRouteGenerator{
 		genericController: controller.NewGenericController(db, casdoor.Enforcer),
+		db:                db,
 	}
 }
 
-// RegisterDocumentedRoutes enregistre toutes les routes documentées
+// RegisterDocumentedRoutes enregistre toutes les routes documentées. CRUD routes
+// stay gated on the entity having a SwaggerConfig; custom actions are mounted for
+// every entity that declares them, even without a SwaggerConfig.
 func (srg *SwaggerRouteGenerator) RegisterDocumentedRoutes(router *gin.RouterGroup, authMiddleware gin.HandlerFunc) {
-	swaggerConfigs := ems.GlobalEntityRegistrationService.GetAllSwaggerConfigs()
+	service := ems.GlobalEntityRegistrationService
+	swaggerConfigs := service.GetAllSwaggerConfigs()
+	allActions := service.GetAllActions()
 
 	for entityName, config := range swaggerConfigs {
 		srg.registerEntityRoutes(router, entityName, config, authMiddleware)
+	}
+
+	for entityName, actions := range allActions {
+		srg.registerActionRoutes(router, entityName, actions, authMiddleware)
+	}
+}
+
+// registerActionRoutes mounts an entity's custom actions. Each action route runs
+// the auth middleware, then any per-action middlewares, then the handler — all
+// built from their factories with the generator's db handle.
+func (srg *SwaggerRouteGenerator) registerActionRoutes(router *gin.RouterGroup, entityName string, actions []entityManagementInterfaces.ActionConfig, authMiddleware gin.HandlerFunc) {
+	basePath := ems.ResourceBasePath(entityName)
+
+	for _, action := range actions {
+		handlers := make([]gin.HandlerFunc, 0, len(action.Middlewares)+2)
+		handlers = append(handlers, authMiddleware)
+		for _, factory := range action.Middlewares {
+			handlers = append(handlers, factory(srg.db))
+		}
+		handlers = append(handlers, action.Handler(srg.db))
+
+		fullPath := basePath + ems.ActionRelativePath(action)
+		router.Handle(action.Method, fullPath, handlers...)
+		log.Printf("  ⚡ %s %s (action %s on %s)", action.Method, fullPath, action.Name, entityName)
 	}
 }
 
 // registerEntityRoutes crée les routes pour une entité spécifique
 func (srg *SwaggerRouteGenerator) registerEntityRoutes(router *gin.RouterGroup, entityName string, config *entityManagementInterfaces.EntitySwaggerConfig, authMiddleware gin.HandlerFunc) {
 	// Déterminer le path de base (pluriel, en minuscules)
-	re := regexp.MustCompile("([a-z])([A-Z])")
-	basePath := "/" + strings.ToLower(ems.Pluralize(re.ReplaceAllString(entityName, "${1}-${2}")))
+	basePath := ems.ResourceBasePath(entityName)
 	entityGroup := router.Group(basePath)
 
 	log.Printf("📚 Registering documented routes for %s at %s", entityName, basePath)
@@ -191,9 +219,7 @@ func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]any {
 	paths := spec["paths"].(map[string]any)
 
 	for entityName, config := range swaggerConfigs {
-		re := regexp.MustCompile("([a-z])([A-Z])")
-		basePath := "/" + strings.ToLower(ems.Pluralize(re.ReplaceAllString(entityName, "${1}-${2}")))
-		//basePath := "/" + strings.ToLower(ems.Pluralize(entityName))
+		basePath := ems.ResourceBasePath(entityName)
 
 		// GET /entities (Get All)
 		if config.GetAll != nil {
@@ -234,6 +260,26 @@ func (dg *DocumentationGenerator) GenerateOpenAPISpec() map[string]any {
 				paths[pathWithId] = make(map[string]any)
 			}
 			paths[pathWithId].(map[string]any)["delete"] = dg.generateDeleteOperationSpec(config.Delete, entityName)
+		}
+	}
+
+	// Custom actions — emitted for every entity declaring them, independently of
+	// whether the entity has a SwaggerConfig.
+	for entityName, actions := range ems.GlobalEntityRegistrationService.GetAllActions() {
+		basePath := ems.ResourceBasePath(entityName)
+		tag := entityName
+		if config := swaggerConfigs[entityName]; config != nil && config.Tag != "" {
+			tag = config.Tag
+		}
+		for _, action := range actions {
+			pathKey := basePath + "/" + action.Name
+			if action.Scope == entityManagementInterfaces.ActionScopeItem {
+				pathKey = basePath + "/{id}/" + action.Name
+			}
+			if paths[pathKey] == nil {
+				paths[pathKey] = make(map[string]any)
+			}
+			paths[pathKey].(map[string]any)[strings.ToLower(action.Method)] = dg.generateActionOperationSpec(action, entityName, tag)
 		}
 	}
 
@@ -566,6 +612,80 @@ func (dg *DocumentationGenerator) generateBaseOperationSpec(operation *entityMan
 			{"Bearer": []string{}},
 		}
 	}
+
+	return spec
+}
+
+// generateActionOperationSpec builds the OpenAPI operation for a custom action.
+// Summary/tags come from action.Swagger when provided, otherwise fall back to the
+// action's Description and the entity tag. Item-scoped actions document the {id}
+// path parameter; request/response schemas are reflected from RequestDTO /
+// ResponseDTO when set.
+func (dg *DocumentationGenerator) generateActionOperationSpec(action entityManagementInterfaces.ActionConfig, entityName, tag string) map[string]any {
+	summary := action.Description
+	tags := []string{tag}
+	security := true
+	if action.Swagger != nil {
+		if action.Swagger.Summary != "" {
+			summary = action.Swagger.Summary
+		}
+		if len(action.Swagger.Tags) > 0 {
+			tags = action.Swagger.Tags
+		}
+		security = action.Swagger.Security
+	}
+
+	spec := map[string]any{
+		"summary": summary,
+		"tags":    tags,
+	}
+	if action.Description != "" {
+		spec["description"] = action.Description
+	}
+	if security {
+		spec["security"] = []map[string]any{{"Bearer": []string{}}}
+	}
+
+	if action.Scope == entityManagementInterfaces.ActionScopeItem {
+		spec["parameters"] = []map[string]any{
+			{
+				"name":        "id",
+				"in":          "path",
+				"required":    true,
+				"description": fmt.Sprintf("%s ID", entityName),
+				"schema":      map[string]any{"type": "string", "format": "uuid"},
+			},
+		}
+	}
+
+	if action.RequestDTO != nil {
+		spec["requestBody"] = map[string]any{
+			"required": true,
+			"content": map[string]any{
+				"application/json": map[string]any{
+					"schema": dg.generateSchemaFromStruct(action.RequestDTO),
+				},
+			},
+		}
+	}
+
+	responses := map[string]any{
+		"401": dg.generateErrorResponse("Unauthorized"),
+		"403": dg.generateErrorResponse("Forbidden"),
+	}
+	if action.ResponseDTO != nil {
+		responses["200"] = map[string]any{
+			"description": "Success",
+			"content": map[string]any{
+				"application/json": map[string]any{
+					"schema": dg.generateSchemaFromStruct(action.ResponseDTO),
+				},
+			},
+		}
+	} else {
+		responses["200"] = map[string]any{"description": "Success"}
+	}
+	spec["responses"] = responses
 
 	return spec
 }
