@@ -218,35 +218,13 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 	appUtils.Info("Completed entity access setup for %s", entityName)
 }
 
-// reconcileEntityPolicy compares the desired policy with the DB and only changes what differs.
-// Safe for production — never blindly removes policies.
+// reconcileEntityPolicy idempotently registers the entity CRUD policy for the
+// exact (role, path, method) triple. Delegates to access.ReconcilePolicy — the
+// single reconciler — so the entity path shares the #297 wipe-safe behavior
+// (never removes sibling methods; a code-removed method lingers as a harmless
+// over-grant, detectable via ValidatePermissionSetup).
 func reconcileEntityPolicy(enforcer interfaces.EnforcerInterface, role, path, method string) {
-	existing, err := enforcer.GetFilteredPolicy(0, role, path)
-	if err != nil {
-		appUtils.Error("Error reading policy for %s %s: %v", role, path, err)
-		enforcer.AddPolicy(role, path, method)
-		return
-	}
-
-	// Already correct — skip
-	for _, policy := range existing {
-		if len(policy) >= 3 && policy[2] == method {
-			return
-		}
-	}
-
-	// Stale policy with different method — update it
-	if len(existing) > 0 {
-		enforcer.RemoveFilteredPolicy(0, role, path)
-		appUtils.Info("Reconciled policy %s %s: %s → %s", role, path, existing[0][2], method)
-	}
-
-	_, err = enforcer.AddPolicy(role, path, method)
-	if err != nil {
-		appUtils.Error("Error adding policy %s %s %s: %v", role, path, method, err)
-	} else {
-		appUtils.Debug("Added policy: %s can %s %s", role, method, path)
-	}
+	access.ReconcilePolicy(enforcer, role, path, method)
 }
 
 func Pluralize(entityName string) string {

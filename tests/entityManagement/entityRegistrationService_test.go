@@ -179,13 +179,15 @@ func TestEntityRegistrationService_SetDefaultEntityAccesses(t *testing.T) {
 	mockEnforcer.On("LoadPolicy").Return(nil)
 
 	// OCF role "member" + all Casdoor roles that map to Member OCF role
-	// reconcileEntityPolicy calls GetFilteredPolicy first, then AddPolicy if no match found
+	// reconcileEntityPolicy delegates to access.ReconcilePolicy, which filters
+	// the EXACT (role, path, method) triple, then AddPolicy if no match found.
 	allRoles := []string{"member", "user", "student", "premium_student", "teacher", "trainer", "supervisor"}
+	methodGroup := "(" + http.MethodGet + "|" + http.MethodPost + ")"
 
 	for _, role := range allRoles {
 		// GetFilteredPolicy returns empty (no existing policy) so AddPolicy will be called
-		mockEnforcer.On("GetFilteredPolicy", 0, []string{role, "/api/v1/test-entities"}).Return([][]string{}, nil)
-		mockEnforcer.On("GetFilteredPolicy", 0, []string{role, "/api/v1/test-entities/:id"}).Return([][]string{}, nil)
+		mockEnforcer.On("GetFilteredPolicy", 0, []string{role, "/api/v1/test-entities", methodGroup}).Return([][]string{}, nil)
+		mockEnforcer.On("GetFilteredPolicy", 0, []string{role, "/api/v1/test-entities/:id", methodGroup}).Return([][]string{}, nil)
 		// List endpoint (without parameter)
 		mockEnforcer.On("AddPolicy",
 			role,
