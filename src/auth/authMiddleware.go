@@ -168,7 +168,6 @@ func GetEntityIdFromContext(ctx *gin.Context) (uuid.UUID, bool) {
 
 	if entityID == "" {
 		ctx.JSON(http.StatusBadRequest, "Entities Not Found")
-		log.Default().Fatal("Permission Middleware has been called on a method without entity ID")
 		ctx.Abort()
 		return uuid.Nil, false
 	}
