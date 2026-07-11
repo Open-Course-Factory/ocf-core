@@ -2,6 +2,7 @@ package terminalRegistration
 
 import (
 	"net/http"
+	access "soli/formations/src/auth/access"
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
@@ -34,6 +35,7 @@ func RegisterUserTerminalKey(service *ems.EntityRegistrationService) {
 					}
 				},
 			},
+			OwnershipConfig: &access.OwnershipConfig{OwnerField: "UserID", Operations: []string{"read"}, AdminBypass: true},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
 					string(authModels.Member): "(" + http.MethodGet + ")",

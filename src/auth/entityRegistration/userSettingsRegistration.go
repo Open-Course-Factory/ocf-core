@@ -3,6 +3,7 @@ package registration
 import (
 	"net/http"
 
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/dto"
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -89,6 +90,7 @@ func RegisterUserSettings(service *ems.EntityRegistrationService) {
 					return updateMap
 				},
 			},
+			OwnershipConfig: &access.OwnershipConfig{OwnerField: "UserID", Operations: []string{"read"}, AdminBypass: true},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
 					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPatch + ")",
