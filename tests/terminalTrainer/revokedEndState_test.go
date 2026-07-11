@@ -213,3 +213,131 @@ func TestSyncUserSessions_ExpiredSession_StillDeletedNotRevoked(t *testing.T) {
 		"a normal TTL expiry (reaped on tt-backend) must remain 'deleted', not 'revoked' — "+
 			"revoked is reserved for the billing-revocation cleanup path only")
 }
+
+// TestSyncUserSessions_RevokedRow_NotClobberedByStoppedContainer pins the SECOND
+// clobber path (found in review of !288). The specialized markSessionStopped
+// branch (terminalSyncService.go:277, `if apiSession.State == StateStopped`) is
+// NOT gated by the localStateIsAuthoritative guard that protects the other two
+// propagation sites (:234, :286). This path is reachable for a revoked session:
+// billing revocation leaves the container alive and the UserTerminalKey active,
+// so the sync keeps running and tt-backend's idle reaper eventually reports the
+// still-alive container as "stopped". Unguarded, the revoked row is flipped to
+// StateStopped — which re-occupies budget (StateStopped ∈
+// TerminalStatesOccupyingSlot) AND re-exposes the frontend Resume button,
+// handing a revoked learner their session back mid-revocation.
+//
+// RED today: markSessionStopped resurrects "revoked" as "stopped".
+func TestSyncUserSessions_RevokedRow_NotClobberedByStoppedContainer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	userID := "revoked-stopped-user"
+	sessionID := "sess-revoked-stopped"
+
+	// tt-backend idle-auto-stopped the still-alive container.
+	idleUntil := time.Now().Add(20 * time.Minute)
+	sessions := []dto.TerminalTrainerSession{
+		{
+			SessionID:       sessionID,
+			Status:          0,
+			ExpiresAt:       time.Now().Add(1 * time.Hour).Unix(),
+			State:           models.StateStopped,
+			PersistenceMode: "persistent",
+			IdleUntil:       idleUntil.Unix(),
+		},
+	}
+	srv := syncStubBackend(t, func() []dto.TerminalTrainerSession { return sessions })
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
+	db := freshTestDB(t)
+	userKey, err := createTestUserKey(db, userID)
+	require.NoError(t, err)
+
+	require.NoError(t, db.Create(&models.Terminal{
+		SessionID:         sessionID,
+		UserID:            userID,
+		State:             models.StateRevoked,
+		ExpiresAt:         time.Now().Add(1 * time.Hour),
+		MachineSize:       "S",
+		UserTerminalKeyID: userKey.ID,
+	}).Error)
+
+	svc := services.NewTerminalTrainerService(db)
+	_, err = svc.SyncUserSessions(userID)
+	require.NoError(t, err)
+
+	var got models.Terminal
+	require.NoError(t, db.Where("session_id = ?", sessionID).First(&got).Error)
+	assert.Equal(t, models.StateRevoked, got.State,
+		"a revoked terminal must survive an idle auto-stop on tt-backend — the stopped-container "+
+			"sync branch must not resurrect a revoked session as stopped (resumable + budget-occupying)")
+
+	// Cheap bonus: still frees the slot/budget. If the row were flipped to
+	// StateStopped (with the future idle_until as ExpiresAt) it would re-enter
+	// OccupiesSlotScope and count as 1.
+	occupied, err := models.CountUserOccupiedSlots(db, userID, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), occupied,
+		"a revoked session must not re-occupy a budget slot after an idle auto-stop sync")
+}
+
+// TestSyncUserSessions_StoppedRow_StillRefreshesIdleDeadline is the mirror guard:
+// the fix for the revoked clobber above must NOT break the legitimate path. A
+// genuinely-stopped local row whose tt-backend counterpart reports a fresh
+// idle_until must still adopt it via markSessionStopped and stay stopped. This
+// constrains the fix to guard specifically against StateRevoked at
+// terminalSyncService.go:277 — NOT against the whole localStateIsAuthoritative
+// set, since StateStopped is authoritative too but must keep flowing through
+// markSessionStopped to refresh its resume window.
+//
+// GREEN today and must stay green after the guard lands.
+func TestSyncUserSessions_StoppedRow_StillRefreshesIdleDeadline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	userID := "stopped-refresh-user"
+	sessionID := "sess-stopped-refresh"
+
+	idleUntil := time.Now().Add(25 * time.Minute).Truncate(time.Second)
+	sessions := []dto.TerminalTrainerSession{
+		{
+			SessionID:       sessionID,
+			Status:          0,
+			ExpiresAt:       time.Now().Add(-1 * time.Minute).Unix(), // stale create deadline
+			State:           models.StateStopped,
+			PersistenceMode: "persistent",
+			IdleUntil:       idleUntil.Unix(),
+		},
+	}
+	srv := syncStubBackend(t, func() []dto.TerminalTrainerSession { return sessions })
+	defer srv.Close()
+	configureTTServer(t, srv.URL)
+
+	db := freshTestDB(t)
+	userKey, err := createTestUserKey(db, userID)
+	require.NoError(t, err)
+
+	// Already stopped locally, with a stale ExpiresAt that must be refreshed.
+	require.NoError(t, db.Create(&models.Terminal{
+		SessionID:         sessionID,
+		UserID:            userID,
+		State:             models.StateStopped,
+		PersistenceMode:   "persistent",
+		ExpiresAt:         time.Now().Add(-1 * time.Minute),
+		MachineSize:       "S",
+		UserTerminalKeyID: userKey.ID,
+	}).Error)
+
+	svc := services.NewTerminalTrainerService(db)
+	_, err = svc.SyncUserSessions(userID)
+	require.NoError(t, err)
+
+	var got models.Terminal
+	require.NoError(t, db.Where("session_id = ?", sessionID).First(&got).Error)
+	assert.Equal(t, models.StateStopped, got.State,
+		"a genuinely-stopped row must stay stopped")
+	assert.WithinDuration(t, idleUntil, got.ExpiresAt, 2*time.Second,
+		"a stopped row must still adopt the tt-backend idle_until as its ExpiresAt — the revoked "+
+			"guard must not block markSessionStopped for legit stopped rows")
+}
