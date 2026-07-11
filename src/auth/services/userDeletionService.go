@@ -152,6 +152,13 @@ func (s *userDeletionService) cascadeOCFData(tx *gorm.DB, userID string) error {
 // widening it there would wipe stopped sessions on a mere sub-cancel, so the
 // extra scope is applied here in the erasure cascade only. Runs on the cascade
 // tx so it is rolled back atomically if a later step fails.
+//
+// End state is StateDeleted, NOT StateRevoked: erasure is not revocation. The
+// shared helper now marks running terminals StateRevoked (billing-lapse label),
+// but an RGPD erasure removes the account entirely, so the second pass below
+// (state <> StateDeleted) deliberately normalizes those just-revoked rows — and
+// every other non-deleted row — back to the generic terminal-delete state. No
+// "revoked" copy should survive an account that no longer exists.
 func (s *userDeletionService) terminateTerminals(tx *gorm.DB, userID string) error {
 	if err := paymentServices.TerminateUserTerminals(tx, userID, nil); err != nil {
 		return fmt.Errorf("failed to terminate terminals: %w", err)

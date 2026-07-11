@@ -215,18 +215,30 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 			previousState := localSession.State
 			needsUpdate := false
 
+			// Les états stopped (pause manuelle) et revoked (révocation billing,
+			// issue #388) font autorité côté ocf-core : tt-backend continue de
+			// lister le conteneur comme actif (TerminateUserTerminals ne met à
+			// jour que la DB, il ne détruit pas le conteneur), donc une passe de
+			// sync ne doit JAMAIS réécrire ces états vers la vérité API — sinon
+			// un utilisateur révoqué récupérerait silencieusement sa session. Un
+			// seul prédicat, appliqué partout où l'état API serait propagé sur la
+			// ligne locale (mismatch direct ci-dessous ET propagation
+			// apiSession.State plus bas).
+			localStateIsAuthoritative := localSession.State == models.StateStopped ||
+				localSession.State == models.StateRevoked
+
 			utils.Debug("SyncUserSessions - Session %s: local='%s', api_status='%d' (target_state='%s')",
 				sessionID, localSession.State, apiSession.Status, apiStateName)
 
 			// Vérifier si le state a changé.
-			// Ne pas écraser les sessions arrêtées manuellement (state=StateStopped).
-			if localSession.State != apiStateName && localSession.State != models.StateStopped {
+			if localSession.State != apiStateName && !localStateIsAuthoritative {
 				utils.Debug("SyncUserSessions - State mismatch for session %s: changing '%s' -> '%s'",
 					sessionID, localSession.State, apiStateName)
 				localSession.State = apiStateName
 				needsUpdate = true
-			} else if localSession.State == models.StateStopped {
-				utils.Debug("SyncUserSessions - Session %s is manually stopped, keeping local state", sessionID)
+			} else if localStateIsAuthoritative {
+				utils.Debug("SyncUserSessions - Session %s is %s locally (authoritative), keeping local state",
+					sessionID, localSession.State)
 			}
 
 			// Vérifier si la session a expiré selon la date.
@@ -271,7 +283,7 @@ func (s *terminalSyncService) SyncUserSessions(userID string) (*dto.SyncAllSessi
 				if s.markSessionStopped(localSession, idleUntilPtr) {
 					needsUpdate = true
 				}
-			} else if apiSession.State != "" && localSession.State != apiSession.State {
+			} else if apiSession.State != "" && localSession.State != apiSession.State && !localStateIsAuthoritative {
 				utils.Debug("SyncUserSessions - State mismatch for session %s: changing '%s' -> '%s'",
 					sessionID, localSession.State, apiSession.State)
 				localSession.State = apiSession.State

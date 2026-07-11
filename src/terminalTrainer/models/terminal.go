@@ -22,6 +22,16 @@ const (
 	StateStarting    TerminalState = "starting"
 	StateResuming    TerminalState = "resuming"
 	StateHibernating TerminalState = "hibernating"
+	// StateRevoked marks a session torn down by a billing lapse / plan
+	// revocation (subscription cancel, bulk-license revoke, org sub cancel),
+	// as opposed to a normal TTL expiry ("deleted") or a user pause
+	// ("stopped"). It is a slot- and budget-freeing END state — deliberately
+	// excluded from TerminalStatesOccupyingSlot exactly like "deleted", so a
+	// cancelled subscription stops consuming the plan the user no longer has.
+	// The distinction is presentation only: the frontend discriminates on it
+	// (GET /terminals/user-sessions, state="revoked") to show honest
+	// revocation copy instead of the "Session Expired — time limit" banner.
+	StateRevoked TerminalState = "revoked"
 )
 
 // TerminalStatesOccupyingSlot are the state values that count toward

@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// TerminateUserTerminals marks active terminals as StateDeleted in the database.
+// TerminateUserTerminals marks active terminals as StateRevoked in the database.
 // This is the shared implementation used by both user and organization subscription cancellation.
 //
 // Scope (closes #314): when orgID is nil, ALL of the user's terminals are
@@ -27,12 +27,14 @@ import (
 // continue to consume quota. Per the SSOT consolidation in MR !218
 // (models.OccupiesSlotScope counts state IN (StateRunning, StateStopped)),
 // StateStopped terminals still occupy a slot. To actually free both the slot
-// and the CPU/RAM budget, we mark them State=StateDeleted — matching the
-// canonical lifecycle delete in terminalTrainerService.DeleteSession. Deleted
-// rows are excluded by OccupiesSlotScope (the single SSOT for slot + budget
-// counting), so the live counters (models.CountUserOccupiedSlots,
-// QuotaService.CheckBudget) reflect the new state without any further
-// bookkeeping.
+// and the CPU/RAM budget we mark them State=StateRevoked — a distinct billing-
+// revocation END state (issue #388) that, like StateDeleted, is excluded from
+// OccupiesSlotScope (the single SSOT for slot + budget counting), so the live
+// counters (models.CountUserOccupiedSlots, QuotaService.CheckBudget) reflect
+// the release without any further bookkeeping. The transition is NOT forked
+// from the old "deleted" — only the label differs, so the frontend can tell a
+// revoked learner the truth instead of "Session Expired — time limit"
+// (companion ocf-front #272).
 //
 // Note: this only updates the DB lifecycle fields — it does NOT call the tt-backend API
 // to delete the actual Incus containers. Container cleanup is handled by tt-backend's own
@@ -57,9 +59,9 @@ func TerminateUserTerminals(db *gorm.DB, userID string, orgID *uuid.UUID) error 
 	terminatedCount := 0
 	for _, terminal := range *terminals {
 		if terminal.State == terminalModels.StateRunning {
-			utils.Debug("Deleting terminal %s (session: %s) for user %s", terminal.ID, terminal.SessionID, userID)
+			utils.Debug("Revoking terminal %s (session: %s) for user %s", terminal.ID, terminal.SessionID, userID)
 
-			terminal.State = terminalModels.StateDeleted
+			terminal.State = terminalModels.StateRevoked
 			if err := termRepository.UpdateTerminalSession(&terminal); err != nil {
 				utils.Error("Failed to update terminal %s state for user %s: %v", terminal.SessionID, userID, err)
 				continue

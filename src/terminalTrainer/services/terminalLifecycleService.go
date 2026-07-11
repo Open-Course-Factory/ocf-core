@@ -327,6 +327,12 @@ func (l *terminalLifecycleService) ValidateSessionAccess(sessionID string, check
 		// continue to backend + expiration checks below
 	case models.StateStopped:
 		return false, string(models.StateStopped), nil
+	case models.StateRevoked:
+		// Billing-revoked (#388): deny access and surface "revoked" verbatim so
+		// the FE shows honest revocation copy, NOT the "expired" wire format
+		// StateDeleted maps to. An explicit case (rather than the default) pins
+		// this so a future default refactor cannot silently relabel it.
+		return false, string(models.StateRevoked), nil
 	case models.StateDeleted:
 		// Preserve the existing wire format the FE maps to "Session ended".
 		return false, "expired", nil
