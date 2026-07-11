@@ -118,7 +118,12 @@ func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/terminals/sync-all", "POST"},
 		{"/api/v1/terminals/metrics", "GET"},
 		{"/api/v1/terminals/:id/console", "GET"},
-		{"/api/v1/terminals/:id/stop", "POST"},
+		// NOTE: {"/api/v1/terminals/:id/stop", "POST"} was removed here in pilot
+		// MR-F. The stop route is no longer registered by RegisterTerminalPermissions;
+		// it migrated to a declarative ActionConfig on the Terminal entity
+		// registration. Its Layer 1 policy + Layer 2 RoutePermission are now pinned
+		// by terminal_stop_action_test.go, and its ABSENCE from this module
+		// registration is asserted by TestTerminalPermissions_NoLongerOwnsStopRoute.
 		// Added in MR-E (#305)
 		{"/api/v1/terminals/:id/start", "POST"},
 		{"/api/v1/terminals/:id", "DELETE"},
