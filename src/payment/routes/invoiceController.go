@@ -20,6 +20,7 @@ import (
 
 type InvoiceController interface {
 	GetUserInvoices(ctx *gin.Context)
+	GetOrganizationInvoices(ctx *gin.Context)
 	DownloadInvoice(ctx *gin.Context)
 	SyncUserInvoices(ctx *gin.Context)
 	CleanupInvoices(ctx *gin.Context)
@@ -67,6 +68,54 @@ func (ic *invoiceController) GetUserInvoices(ctx *gin.Context) {
 	}
 
 	// Convertir vers DTO
+	invoicesDTO, err := ic.conversionService.InvoicesToDTO(invoices)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to convert invoices",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, invoicesDTO)
+}
+
+// Get Organization Invoices godoc
+//
+//	@Summary		Récupérer les factures d'une organisation
+//	@Description	Retourne les factures de l'organisation (réservé aux managers et propriétaires)
+//	@Tags			invoices
+//	@Accept			json
+//	@Produce		json
+//	@Param			id	path	string	true	"Organization ID"
+//	@Security		Bearer
+//	@Success		200	{array}		dto.InvoiceOutput
+//	@Failure		400	{object}	errors.APIError	"Invalid organization ID"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/organizations/{id}/invoices [get]
+func (ic *invoiceController) GetOrganizationInvoices(ctx *gin.Context) {
+	// Layer 2 (OrgRole, manager+) has already authorized the caller for this
+	// organization before the handler runs, so the :id param is trusted here.
+	orgID := ctx.Param("id")
+
+	parsedID, parseErr := uuid.Parse(orgID)
+	if parseErr != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID format",
+		})
+		return
+	}
+
+	invoices, err := ic.subscriptionService.GetOrganizationInvoices(parsedID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
 	invoicesDTO, err := ic.conversionService.InvoicesToDTO(invoices)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{

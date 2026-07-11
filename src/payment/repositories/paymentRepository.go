@@ -33,6 +33,7 @@ type PaymentRepository interface {
 	GetInvoice(id uuid.UUID) (*models.Invoice, error)
 	GetInvoiceByStripeID(stripeInvoiceID string) (*models.Invoice, error)
 	GetUserInvoices(userID string, limit int) (*[]models.Invoice, error)
+	GetOrganizationInvoices(organizationID uuid.UUID, limit int) (*[]models.Invoice, error)
 	UpdateInvoice(invoice *models.Invoice) error
 
 	// PaymentMethod operations
@@ -280,6 +281,26 @@ func (r *paymentRepository) GetUserInvoices(userID string, limit int) (*[]models
 	var invoices []models.Invoice
 	query := r.db.Preload("UserSubscription").
 		Where("user_id = ?", userID).
+		Order("invoice_date DESC")
+
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	err := query.Find(&invoices).Error
+	if err != nil {
+		return nil, err
+	}
+	return &invoices, nil
+}
+
+// GetOrganizationInvoices returns an organization's invoices, newest first.
+// Mirrors GetUserInvoices but scopes by organization_id. Org invoices carry no
+// user subscription, so UserSubscription is intentionally not preloaded.
+func (r *paymentRepository) GetOrganizationInvoices(organizationID uuid.UUID, limit int) (*[]models.Invoice, error) {
+	var invoices []models.Invoice
+	query := r.db.
+		Where("organization_id = ?", organizationID).
 		Order("invoice_date DESC")
 
 	if limit > 0 {

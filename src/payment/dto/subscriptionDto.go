@@ -167,20 +167,22 @@ type AdminAssignSubscriptionInput struct {
 
 // Invoice DTOs
 type InvoiceOutput struct {
-	ID               uuid.UUID              `json:"id"`
-	UserID           string                 `json:"user_id"`
-	UserSubscription UserSubscriptionOutput `json:"user_subscription"`
-	StripeInvoiceID  string                 `json:"stripe_invoice_id"`
-	Amount           int64                  `json:"amount"`
-	Currency         string                 `json:"currency"`
-	Status           string                 `json:"status"`
-	InvoiceNumber    string                 `json:"invoice_number"`
-	InvoiceDate      time.Time              `json:"invoice_date"`
-	DueDate          time.Time              `json:"due_date"`
-	PaidAt           *time.Time             `json:"paid_at,omitempty"`
-	StripeHostedURL  string                 `json:"stripe_hosted_url"`
-	DownloadURL      string                 `json:"download_url"`
-	CreatedAt        time.Time              `json:"created_at"`
+	ID                         uuid.UUID              `json:"id"`
+	UserID                     string                 `json:"user_id"`
+	UserSubscription           UserSubscriptionOutput `json:"user_subscription"`
+	OrganizationID             *uuid.UUID             `json:"organization_id,omitempty"`
+	OrganizationSubscriptionID *uuid.UUID             `json:"organization_subscription_id,omitempty"`
+	StripeInvoiceID            string                 `json:"stripe_invoice_id"`
+	Amount                     int64                  `json:"amount"`
+	Currency                   string                 `json:"currency"`
+	Status                     string                 `json:"status"`
+	InvoiceNumber              string                 `json:"invoice_number"`
+	InvoiceDate                time.Time              `json:"invoice_date"`
+	DueDate                    time.Time              `json:"due_date"`
+	PaidAt                     *time.Time             `json:"paid_at,omitempty"`
+	StripeHostedURL            string                 `json:"stripe_hosted_url"`
+	DownloadURL                string                 `json:"download_url"`
+	CreatedAt                  time.Time              `json:"created_at"`
 }
 
 // PaymentMethod DTOs

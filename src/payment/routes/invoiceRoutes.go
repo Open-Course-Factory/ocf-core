@@ -23,4 +23,10 @@ func InvoiceRoutes(router *gin.RouterGroup, config *config.Configuration, db *go
 
 	// Admin routes
 	routes.POST("/admin/cleanup", authMiddleware.AuthManagement(), invoiceController.CleanupInvoices)
+
+	// Organization-scoped invoice listing. Layer 2 (OrgRole, manager+) gates
+	// access — see RegisterPaymentPermissions.
+	orgRoutes := router.Group("/organizations/:id")
+	orgRoutes.Use(authMiddleware.AuthManagement())
+	orgRoutes.GET("/invoices", invoiceController.GetOrganizationInvoices)
 }

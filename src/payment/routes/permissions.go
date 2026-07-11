@@ -139,6 +139,11 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Get organization usage limits",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/organizations/:id/invoices", Method: "GET",
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "List organization invoices (manager+)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/users/me/features", Method: "GET",
 			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "List features available to current user",
@@ -319,6 +324,7 @@ func registerOrganizationSubscriptionPermissions(enforcer interfaces.EnforcerInt
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/subscription", "DELETE")
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/features", "GET")
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/usage-limits", "GET")
+	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/invoices", "GET")
 
 	// User feature access
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/users/me/features", "GET")

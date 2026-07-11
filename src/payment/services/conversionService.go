@@ -292,10 +292,12 @@ func (cs *conversionService) InvoiceToDTO(invoice *models.Invoice) (*dto.Invoice
 	}
 
 	return &dto.InvoiceOutput{
-		ID:               invoice.ID,
-		UserID:           invoice.UserID,
-		UserSubscription: *subscriptionOutput,
-		StripeInvoiceID:  invoice.StripeInvoiceID,
+		ID:                         invoice.ID,
+		UserID:                     invoice.UserID,
+		UserSubscription:           *subscriptionOutput,
+		OrganizationID:             invoice.OrganizationID,
+		OrganizationSubscriptionID: invoice.OrganizationSubscriptionID,
+		StripeInvoiceID:            invoice.StripeInvoiceID,
 		Amount:           invoice.Amount,
 		Currency:         invoice.Currency,
 		Status:           invoice.Status,

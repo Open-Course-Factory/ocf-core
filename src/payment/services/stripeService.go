@@ -1297,7 +1297,11 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 		// Not a bulk subscription, continue with normal processing
 	}
 	if err != nil {
-		// If no active subscription found, try to find by metadata in the invoice
+		// No user subscription — it may belong to an organization. Fall back to
+		// the shared org-scoped invoice path before treating this as an error.
+		if handled, orgErr := ss.persistOrgScopedInvoice(&stripeInvoice, string(stripeInvoice.Status)); handled || orgErr != nil {
+			return orgErr
+		}
 		utils.Debug("⚠️ No active subscription found for customer %s, skipping invoice %s", stripeInvoice.Customer.ID, stripeInvoice.ID)
 		return fmt.Errorf("subscription not found for customer %s (invoice %s): %v", stripeInvoice.Customer.ID, stripeInvoice.ID, err)
 	}
@@ -1317,7 +1321,7 @@ func (ss *stripeService) handleInvoicePaymentSucceeded(event *stripe.Event) erro
 	// Créer ou mettre à jour la facture
 	invoiceRecord := &models.Invoice{
 		UserID:             userSub.UserID,
-		UserSubscriptionID: userSub.ID,
+		UserSubscriptionID: &userSub.ID,
 		StripeInvoiceID:    stripeInvoice.ID,
 		Amount:             canonicalInvoiceAmount(&stripeInvoice),
 		Currency:           string(stripeInvoice.Currency),
@@ -1391,6 +1395,7 @@ func (ss *stripeService) handleInvoicePaymentFailed(event *stripe.Event) error {
 //     construction (the same value is written again).
 //   - credit_note.created INCREMENTs it by the note's PER-NOTE total, so
 //     multiple DISTINCT credit notes accumulate.
+//
 // In the rare case where both mechanisms credit the SAME money, the resulting
 // AmountRefunded is ORDER-DEPENDENT (a later charge.refunded overwrites the
 // running total; a later credit note adds to it). That is acceptable:
@@ -1651,6 +1656,68 @@ func canonicalInvoiceAmount(inv *stripe.Invoice) int64 {
 	return inv.Total
 }
 
+// persistOrgScopedInvoice is the organization fallback shared by all three
+// invoice webhook insert paths (created, finalized, payment_succeeded). When a
+// Stripe customer maps to NO user subscription but DOES map to an active
+// organization subscription, it upserts an org-scoped Invoice using the same
+// canonical field mapping as the user path: OrganizationID +
+// OrganizationSubscriptionID set, UserID empty, UserSubscriptionID zero, and
+// Amount canonicalized to Stripe Total.
+//
+// It returns handled=false with a nil error when no organization subscription
+// owns the customer, so the caller keeps its existing "no subscription"
+// behavior. Keeping this in ONE place is what guarantees the three insert paths
+// cannot drift — callers only supply the status string their user path uses.
+func (ss *stripeService) persistOrgScopedInvoice(inv *stripe.Invoice, status string) (handled bool, err error) {
+	orgSubRepo := repositories.NewOrganizationSubscriptionRepository(ss.db)
+	orgSub, lookupErr := orgSubRepo.GetActiveOrganizationSubscriptionByStripeCustomerID(inv.Customer.ID)
+	if lookupErr != nil {
+		// Customer maps to neither a user nor an organization subscription.
+		return false, nil
+	}
+
+	existing, findErr := ss.repository.GetInvoiceByStripeID(inv.ID)
+	if findErr != nil {
+		// No local row yet — create one scoped to the organization.
+		orgID := orgSub.OrganizationID
+		orgSubID := orgSub.ID
+		record := &models.Invoice{
+			OrganizationID:             &orgID,
+			OrganizationSubscriptionID: &orgSubID,
+			StripeInvoiceID:            inv.ID,
+			Amount:                     canonicalInvoiceAmount(inv),
+			Currency:                   string(inv.Currency),
+			Status:                     status,
+			InvoiceNumber:              inv.Number,
+			InvoiceDate:                time.Unix(inv.Created, 0),
+			DueDate:                    time.Unix(inv.DueDate, 0),
+			StripeHostedURL:            inv.HostedInvoiceURL,
+			DownloadURL:                inv.InvoicePDF,
+		}
+		if inv.StatusTransitions.PaidAt > 0 {
+			paidAt := time.Unix(inv.StatusTransitions.PaidAt, 0)
+			record.PaidAt = &paidAt
+		}
+		utils.Debug("📄 Creating org-scoped invoice %s for org %s (status: %s, amount: %d %s)",
+			inv.Number, orgSub.OrganizationID, status, record.Amount, inv.Currency)
+		return true, ss.repository.CreateInvoice(record)
+	}
+
+	// Row already exists — refresh the same fields the user update paths refresh.
+	// Ownership fields are never reassigned on update.
+	existing.Status = status
+	existing.Amount = canonicalInvoiceAmount(inv)
+	existing.Currency = string(inv.Currency)
+	existing.InvoiceNumber = inv.Number
+	existing.StripeHostedURL = inv.HostedInvoiceURL
+	existing.DownloadURL = inv.InvoicePDF
+	if inv.StatusTransitions.PaidAt > 0 {
+		paidAt := time.Unix(inv.StatusTransitions.PaidAt, 0)
+		existing.PaidAt = &paidAt
+	}
+	return true, ss.repository.UpdateInvoice(existing)
+}
+
 // handleInvoiceCreated traite la création d'une facture
 func (ss *stripeService) handleInvoiceCreated(event *stripe.Event) error {
 	var stripeInvoice stripe.Invoice
@@ -1660,6 +1727,11 @@ func (ss *stripeService) handleInvoiceCreated(event *stripe.Event) error {
 
 	userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
 	if err != nil {
+		// No user subscription for this customer — it may belong to an
+		// organization. Fall back to the shared org-scoped invoice path.
+		if handled, orgErr := ss.persistOrgScopedInvoice(&stripeInvoice, string(stripeInvoice.Status)); handled || orgErr != nil {
+			return orgErr
+		}
 		utils.Debug("⚠️ No active subscription found for customer %s (invoice %s created)",
 			stripeInvoice.Customer.ID, stripeInvoice.ID)
 		return nil // Not an error - might be a one-time invoice
@@ -1675,7 +1747,7 @@ func (ss *stripeService) handleInvoiceCreated(event *stripe.Event) error {
 	// Create invoice record with "draft" or "open" status
 	invoiceRecord := &models.Invoice{
 		UserID:             userSub.UserID,
-		UserSubscriptionID: userSub.ID,
+		UserSubscriptionID: &userSub.ID,
 		StripeInvoiceID:    stripeInvoice.ID,
 		Amount:             canonicalInvoiceAmount(&stripeInvoice),
 		Currency:           string(stripeInvoice.Currency),
@@ -1706,6 +1778,11 @@ func (ss *stripeService) handleInvoiceFinalized(event *stripe.Event) error {
 		// Invoice doesn't exist yet, create it
 		userSub, err := ss.repository.GetActiveSubscriptionByCustomerID(stripeInvoice.Customer.ID)
 		if err != nil {
+			// No user subscription — fall back to the shared org-scoped invoice
+			// path. A finalized invoice is "open".
+			if handled, orgErr := ss.persistOrgScopedInvoice(&stripeInvoice, "open"); handled || orgErr != nil {
+				return orgErr
+			}
 			utils.Debug("⚠️ No subscription found for customer %s (invoice %s finalized)",
 				stripeInvoice.Customer.ID, stripeInvoice.ID)
 			return nil
@@ -1713,7 +1790,7 @@ func (ss *stripeService) handleInvoiceFinalized(event *stripe.Event) error {
 
 		invoiceRecord := &models.Invoice{
 			UserID:             userSub.UserID,
-			UserSubscriptionID: userSub.ID,
+			UserSubscriptionID: &userSub.ID,
 			StripeInvoiceID:    stripeInvoice.ID,
 			Amount:             canonicalInvoiceAmount(&stripeInvoice),
 			Currency:           string(stripeInvoice.Currency),
@@ -2765,7 +2842,7 @@ func (ss *stripeService) processSingleInvoice(inv *stripe.Invoice, userID string
 		// Créer nouvelle facture
 		newInvoice := &models.Invoice{
 			UserID:             userID,
-			UserSubscriptionID: userSub.ID,
+			UserSubscriptionID: &userSub.ID,
 			StripeInvoiceID:    inv.ID,
 			Amount:             canonicalInvoiceAmount(inv),
 			Currency:           string(inv.Currency),

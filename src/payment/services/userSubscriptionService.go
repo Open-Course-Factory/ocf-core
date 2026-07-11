@@ -50,6 +50,7 @@ type UserSubscriptionService interface {
 
 	// Invoices - retourne des models
 	GetUserInvoices(userID string) (*[]models.Invoice, error)
+	GetOrganizationInvoices(organizationID uuid.UUID) (*[]models.Invoice, error)
 	GetInvoiceByID(id uuid.UUID) (*models.Invoice, error)
 
 	// Analytics (admin only) - type métier
@@ -240,6 +241,11 @@ func (ss *subscriptionService) SetDefaultPaymentMethod(userID string, paymentMet
 // GetUserInvoices récupère les factures d'un utilisateur
 func (ss *subscriptionService) GetUserInvoices(userID string) (*[]models.Invoice, error) {
 	return ss.repository.GetUserInvoices(userID, 50) // Limite à 50 factures
+}
+
+// GetOrganizationInvoices récupère les factures d'une organisation
+func (ss *subscriptionService) GetOrganizationInvoices(organizationID uuid.UUID) (*[]models.Invoice, error) {
+	return ss.repository.GetOrganizationInvoices(organizationID, 50) // Limite à 50 factures
 }
 
 // GetInvoiceByID récupère une facture par son ID

@@ -21,6 +21,12 @@ type OrganizationSubscriptionRepository interface {
 	GetOrganizationSubscriptionByOrgID(orgID uuid.UUID) (*models.OrganizationSubscription, error)
 	GetOrganizationSubscriptionByStripeID(stripeSubscriptionID string) (*models.OrganizationSubscription, error)
 	GetActiveOrganizationSubscription(orgID uuid.UUID) (*models.OrganizationSubscription, error)
+	// GetActiveOrganizationSubscriptionByStripeCustomerID resolves the active or
+	// trialing organization subscription that owns a Stripe customer. It is the
+	// org-side sibling of PaymentRepository.GetActiveSubscriptionByCustomerID and
+	// is the single fallback the invoice webhook handlers use when no user
+	// subscription owns the customer.
+	GetActiveOrganizationSubscriptionByStripeCustomerID(customerID string) (*models.OrganizationSubscription, error)
 	GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error)
 	GetUserOrganizationSubscriptions(userID string) ([]models.OrganizationSubscription, error)
 	UpdateOrganizationSubscription(subscription *models.OrganizationSubscription) error
@@ -123,6 +129,22 @@ func (r *organizationSubscriptionRepository) GetActiveOrganizationSubscription(o
 	var subscription models.OrganizationSubscription
 	err := r.db.Preload("SubscriptionPlan").
 		Where("organization_id = ? AND status IN (?)", orgID, []string{"active", "trialing"}).
+		Order("created_at DESC").
+		First(&subscription).Error
+	if err != nil {
+		return nil, err
+	}
+	return &subscription, nil
+}
+
+// GetActiveOrganizationSubscriptionByStripeCustomerID retrieves the active or
+// trialing subscription bound to a Stripe customer. Mirrors the user-side
+// GetActiveSubscriptionByCustomerID (same active/trialing status filter), and
+// returns the newest match if several exist.
+func (r *organizationSubscriptionRepository) GetActiveOrganizationSubscriptionByStripeCustomerID(customerID string) (*models.OrganizationSubscription, error) {
+	var subscription models.OrganizationSubscription
+	err := r.db.Preload("SubscriptionPlan").
+		Where("stripe_customer_id = ? AND status IN (?)", customerID, []string{"active", "trialing"}).
 		Order("created_at DESC").
 		First(&subscription).Error
 	if err != nil {
