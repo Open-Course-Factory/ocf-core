@@ -46,6 +46,8 @@ package authorization_tests
 // EntityOwner.
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -282,21 +284,25 @@ func TestScenariosLayer2_NoRegexMethodInCatalog(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// AUDIT: submit-quiz route (#283).
+// AUDIT: submit-quiz route (#283) — must be EntityOwner, not SelfScoped.
 //
-// The new POST /api/v1/scenario-sessions/:id/submit-quiz route must be
-// declared as SelfScoped — the controller authoritatively enforces session
-// ownership (just like /submit-flag) but unlike /submit-flag we use SelfScoped
-// per task spec because the controller's session-ownership check is the
-// authoritative gate (Layer 2 EntityOwner+":id" param pattern works fine here,
-// but the spec says SelfScoped — keep this test in sync with the spec).
+// POST /api/v1/scenario-sessions/:id/submit-quiz has the SAME shape as its
+// siblings /verify and /submit-flag: the URL `:id` is the ScenarioSession id and
+// only the session owner may submit. Those siblings are declared
+// EntityOwner{Entity:"ScenarioSession", Field:"UserID"} and are enforced by the
+// Layer2Enforcement middleware. submit-quiz was mistakenly declared SelfScoped,
+// which the middleware treats as documentation-only (the SelfScoped enforcer
+// returns true unconditionally), so Layer 2 does NOT guard it — any
+// authenticated member can submit quiz answers to another user's session unless
+// the controller happens to re-check ownership.
 //
-// If the dev agent forgets to register the route, Layer 2 silently passes the
-// request through and any authenticated user could submit answers for any
-// session. This test fails the moment the registration is missing.
+// This test pins the fix: the production registry must declare submit-quiz as
+// EntityOwner so the middleware enforces ownership like the sibling routes.
+// It is RED until src/scenarios/routes/permissions.go changes submit-quiz from
+// SelfScoped to EntityOwner{Entity:"ScenarioSession", Field:"UserID"}.
 // -----------------------------------------------------------------------------
 
-func TestScenariosLayer2_SubmitQuiz_RegisteredAsSelfScoped(t *testing.T) {
+func TestSubmitQuiz_Layer2_RegisteredAsEntityOwner(t *testing.T) {
 	access.RouteRegistry.Reset()
 	access.ResetEnforcers()
 	t.Cleanup(func() {
@@ -314,7 +320,79 @@ func TestScenariosLayer2_SubmitQuiz_RegisteredAsSelfScoped(t *testing.T) {
 	if found {
 		assert.Equal(t, "member", perm.Role,
 			"submit-quiz must be a member-role route (just like /verify and /submit-flag)")
-		assert.Equal(t, access.SelfScoped, perm.Access.Type,
-			"submit-quiz must be declared as SelfScoped — the controller enforces session ownership before reading the body")
+		assert.Equal(t, access.EntityOwner, perm.Access.Type,
+			"submit-quiz must be declared EntityOwner so Layer2Enforcement guards session ownership — SelfScoped is documentation-only and leaves the route unenforced, unlike sibling /verify and /submit-flag")
+		assert.Equal(t, "ScenarioSession", perm.Access.Entity,
+			"submit-quiz EntityOwner rule must target the ScenarioSession entity (the :id is a scenario-session id)")
+		assert.Equal(t, "UserID", perm.Access.Field,
+			"submit-quiz EntityOwner rule must check the UserID owner field")
 	}
+}
+
+// TestSubmitQuiz_Layer2_NonOwnerDenied drives the real Layer2Enforcement
+// middleware over the PRODUCTION submit-quiz declaration and asserts a
+// non-owner member is denied (403).
+//
+// RED today: submit-quiz is declared SelfScoped, whose enforcer returns true
+// unconditionally, so the request reaches the dummy 200 handler → 200, not 403.
+// GREEN once the route is EntityOwner: the enforcer loads the session owner
+// (user-B) and rejects the requester (user-A) with 403.
+func TestSubmitQuiz_Layer2_NonOwnerDenied(t *testing.T) {
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
+	t.Cleanup(func() {
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
+	})
+
+	// Use the production registration so the rule under test is the real one.
+	scenarioRoutes.RegisterScenarioPermissions(mocks.NewMockEnforcer())
+
+	// The session is owned by user-B; the request comes from user-A.
+	loader := &mockEntityLoader{ownerFieldValue: "user-B"}
+	checker := &mockMembershipChecker{}
+	access.RegisterBuiltinEnforcers(loader, checker)
+
+	r := setupTestRouter(access.Layer2Enforcement())
+	r.POST("/api/v1/scenario-sessions/:id/submit-quiz", okHandler)
+
+	req := httptest.NewRequest("POST", "/api/v1/scenario-sessions/sess-owned-by-B/submit-quiz", nil)
+	req.Header.Set("X-Test-UserId", "user-A")
+	req.Header.Set("X-Test-Roles", "member")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"non-owner member must be denied on submit-quiz — Layer 2 must enforce session ownership like /verify and /submit-flag (RED while the route is SelfScoped, which passes through)")
+}
+
+// TestSubmitQuiz_Layer2_OwnerAllowed is the green guard: the session owner
+// reaches the handler (200). It passes both before and after the fix; it guards
+// against an over-broad fix that would deny the legitimate owner.
+func TestSubmitQuiz_Layer2_OwnerAllowed(t *testing.T) {
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
+	t.Cleanup(func() {
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
+	})
+
+	scenarioRoutes.RegisterScenarioPermissions(mocks.NewMockEnforcer())
+
+	// The session is owned by user-B and the request comes from user-B.
+	loader := &mockEntityLoader{ownerFieldValue: "user-B"}
+	checker := &mockMembershipChecker{}
+	access.RegisterBuiltinEnforcers(loader, checker)
+
+	r := setupTestRouter(access.Layer2Enforcement())
+	r.POST("/api/v1/scenario-sessions/:id/submit-quiz", okHandler)
+
+	req := httptest.NewRequest("POST", "/api/v1/scenario-sessions/sess-owned-by-B/submit-quiz", nil)
+	req.Header.Set("X-Test-UserId", "user-B")
+	req.Header.Set("X-Test-Roles", "member")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code,
+		"session owner must reach the submit-quiz handler — the fix must not deny the legitimate owner")
 }

@@ -200,8 +200,8 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 		},
 		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/submit-quiz", Method: "POST",
-			Role: "member", Access: access.AccessRule{Type: access.SelfScoped},
-			Description: "Submit quiz answers for a scenario session step (controller verifies session ownership)",
+			Role: "member", Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Description: "Submit quiz answers for a scenario session step (must own the session)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/:id/steps/:stepOrder/hints/:level/reveal", Method: "POST",
