@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	access "soli/formations/src/auth/access"
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
@@ -98,6 +99,7 @@ func RegisterScenarioSession(service *ems.EntityRegistrationService) {
 			},
 			SubEntities:     []any{models.ScenarioStepProgress{}, models.ScenarioFlag{}},
 			DefaultIncludes: []string{"StepProgress", "Flags"},
+			OwnershipConfig: &access.OwnershipConfig{OwnerField: "UserID", Operations: []string{"read"}, AdminBypass: true},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
 					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
