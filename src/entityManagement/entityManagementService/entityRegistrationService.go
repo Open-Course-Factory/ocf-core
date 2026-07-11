@@ -35,6 +35,7 @@ type EntityRegistrationService struct {
 	swaggerConfigs      map[string]*entityManagementInterfaces.EntitySwaggerConfig
 	relationshipFilters map[string][]entityManagementInterfaces.RelationshipFilter
 	membershipConfigs   map[string]*entityManagementInterfaces.MembershipConfig
+	ownershipConfigs    map[string]*access.OwnershipConfig
 	defaultIncludes     map[string][]string
 	typedOps            map[string]entityManagementInterfaces.EntityOperations
 	entityRoles         map[string]entityManagementInterfaces.EntityRoles
@@ -48,6 +49,7 @@ func NewEntityRegistrationService() *EntityRegistrationService {
 		swaggerConfigs:      make(map[string]*entityManagementInterfaces.EntitySwaggerConfig),
 		relationshipFilters: make(map[string][]entityManagementInterfaces.RelationshipFilter),
 		membershipConfigs:   make(map[string]*entityManagementInterfaces.MembershipConfig),
+		ownershipConfigs:    make(map[string]*access.OwnershipConfig),
 		defaultIncludes:     make(map[string][]string),
 		typedOps:            make(map[string]entityManagementInterfaces.EntityOperations),
 		entityRoles:         make(map[string]entityManagementInterfaces.EntityRoles),
@@ -63,6 +65,7 @@ func (s *EntityRegistrationService) Reset() {
 	s.swaggerConfigs = make(map[string]*entityManagementInterfaces.EntitySwaggerConfig)
 	s.relationshipFilters = make(map[string][]entityManagementInterfaces.RelationshipFilter)
 	s.membershipConfigs = make(map[string]*entityManagementInterfaces.MembershipConfig)
+	s.ownershipConfigs = make(map[string]*access.OwnershipConfig)
 	s.defaultIncludes = make(map[string][]string)
 	s.typedOps = make(map[string]entityManagementInterfaces.EntityOperations)
 	s.entityRoles = make(map[string]entityManagementInterfaces.EntityRoles)
@@ -77,6 +80,7 @@ func (s *EntityRegistrationService) UnregisterEntity(name string) {
 	delete(s.swaggerConfigs, name)
 	delete(s.relationshipFilters, name)
 	delete(s.membershipConfigs, name)
+	delete(s.ownershipConfigs, name)
 	delete(s.defaultIncludes, name)
 	delete(s.typedOps, name)
 	delete(s.entityRoles, name)
@@ -155,6 +159,21 @@ func (s *EntityRegistrationService) GetDefaultIncludes(name string) []string {
 // HasMembershipConfig checks if an entity has a membership configuration
 func (s *EntityRegistrationService) HasMembershipConfig(name string) bool {
 	return s.membershipConfigs[name] != nil
+}
+
+// RegisterOwnershipConfig stores an entity's ownership configuration so the
+// generic read handlers can consult it (e.g. to scope list/get to the owner).
+// The write-side ownership hooks are wired separately from this registry.
+func (s *EntityRegistrationService) RegisterOwnershipConfig(name string, config *access.OwnershipConfig) {
+	if config != nil {
+		s.ownershipConfigs[name] = config
+		appUtils.Debug("Ownership config registered for entity: %s (field: %s)", name, config.OwnerField)
+	}
+}
+
+// GetOwnershipConfig retrieves the ownership configuration for an entity, or nil.
+func (s *EntityRegistrationService) GetOwnershipConfig(name string) *access.OwnershipConfig {
+	return s.ownershipConfigs[name]
 }
 
 // SetDefaultEntityAccesses est une version publique pour les tests qui accepte un enforcer
@@ -286,6 +305,7 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 	service.RegisterSubEntites(name, reg.SubEntities)
 	service.RegisterRelationshipFilters(name, reg.RelationshipFilters)
 	service.RegisterMembershipConfig(name, reg.MembershipConfig)
+	service.RegisterOwnershipConfig(name, reg.OwnershipConfig)
 	service.RegisterDefaultIncludes(name, reg.DefaultIncludes)
 
 	// Swagger config

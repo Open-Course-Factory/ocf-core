@@ -48,6 +48,16 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 		return
 	}
 
+	// Owner read-scope: a non-admin caller fetching another user's row gets the
+	// same 404 as a missing row, so ownership is not disclosed and no owner-only
+	// fields leak. Admins bypass per the entity's OwnershipConfig.
+	if config := ownerReadScope(ctx, entityName); config != nil {
+		if !ownerMatchesCaller(entity, config.OwnerField, ctx.GetString("userId")) {
+			errors.HandleError(http.StatusNotFound, &errors.APIError{ErrorMessage: "Entity Not Found"}, ctx)
+			return
+		}
+	}
+
 	var entityDto any
 
 	// Fast path: use typed operations (no reflect)

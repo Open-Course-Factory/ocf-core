@@ -109,6 +109,14 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 				filters["user_member_id"] = userID
 			}
 		}
+	} else if config := ownerReadScope(ctx, entityName); config != nil {
+		// Owner read-scope: a non-admin caller sees only rows they own. The
+		// filter column is derived the same way the ownership hook derives it,
+		// so the injected key matches the entity's owner column exactly.
+		if userID := ctx.GetString("userId"); userID != "" {
+			column := genericController.db.Config.NamingStrategy.ColumnName("", config.OwnerField)
+			filters[column] = userID
+		}
 	}
 
 	// Use cursor pagination if cursor param is present (even if empty for first page)

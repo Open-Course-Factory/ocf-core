@@ -2,6 +2,7 @@ package terminalRegistration
 
 import (
 	"net/http"
+	access "soli/formations/src/auth/access"
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
@@ -62,6 +63,11 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
 					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
 				},
+			},
+			OwnershipConfig: &access.OwnershipConfig{
+				OwnerField:  "UserID",
+				Operations:  []string{"read"},
+				AdminBypass: true,
 			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{
 				Tag: "terminals", EntityName: "Terminal",
