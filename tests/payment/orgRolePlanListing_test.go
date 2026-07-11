@@ -59,6 +59,7 @@
 package payment_tests
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -229,4 +230,115 @@ func TestOrgRolePlans_ListByOrg_AdminBypassAllowed(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code,
 		"a platform administrator must reach the org role-plan listing for any org "+
 			"via admin bypass, even without membership")
+}
+
+// setupOrgRolePlanListingRouterWithController is the same real Layer-2 harness as
+// setupOrgRolePlanListingRouter but mounts the REAL OrganizationRolePlanController
+// instead of a sentinel, so the payload (which mappings are returned, in what
+// order, with the plan preloaded) is exercised end-to-end through
+// GetOrganizationRolePlans.
+func setupOrgRolePlanListingRouterWithController(t *testing.T, db *gorm.DB, userID string, roles []string) *gin.Engine {
+	t.Helper()
+	access.RouteRegistry.Reset()
+	access.ResetEnforcers()
+	t.Cleanup(func() {
+		access.RouteRegistry.Reset()
+		access.ResetEnforcers()
+	})
+
+	mockEnforcer := mocks.NewMockEnforcer()
+	paymentController.RegisterPaymentPermissions(mockEnforcer)
+	access.RegisterBuiltinEnforcers(nil, access.NewGormMembershipChecker(db))
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	api := r.Group("/api/v1")
+	api.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Set("userRoles", roles)
+		c.Next()
+	})
+	api.Use(access.Layer2Enforcement())
+
+	controller := paymentController.NewOrganizationRolePlanController(db)
+	api.GET("/organizations/:id/role-plans", controller.GetOrganizationRolePlans)
+
+	return r
+}
+
+// TestOrgRolePlans_ListByOrg_ManagerGetsOnlyOwnOrgRows is the payload pin that was
+// deferred in the RED phase until the controller existed. It seeds role→plan
+// mappings for TWO orgs (org A: 2 distinct roles; org B: 1), lists org A as its
+// manager through the real Layer-2 harness + real controller, and asserts the
+// body contains EXACTLY org A's two mappings — org B's mapping EXCLUDED (the
+// critical assert) — each scoped to org A, ordered by role ASC, and carrying the
+// preloaded SubscriptionPlan (name populated).
+//
+// Red-if-gutted: dropping the repository's `WHERE organization_id = ?` filter
+// makes GetOrganizationRolePlans return all three mappings, so len==2, the org-B
+// exclusion, the role-ASC ordering, and the per-row organization_id assertions
+// all fail. (Verified for real by temporarily removing the WHERE clause: this
+// test failed with len 3, reverted immediately.)
+func TestOrgRolePlans_ListByOrg_ManagerGetsOnlyOwnOrgRows(t *testing.T) {
+	db := freshTestDB(t)
+
+	managerID := "orgrp-rows-manager"
+	orgA := seedSharedTeamOrg(t, db, "orgrp-rows-ownerA", managerID, orgModels.OrgRoleManager)
+	orgB := seedSharedTeamOrg(t, db, "orgrp-rows-ownerB", "orgrp-rows-memberB", orgModels.OrgRoleMember)
+
+	// Distinct plans so the preloaded plan name proves the join ran.
+	planManager := createPlan(t, db, "RolePlan-A-Manager", 10, 0)
+	planOwner := createPlan(t, db, "RolePlan-A-Owner", 20, 0)
+	planB := createPlan(t, db, "RolePlan-B-Member", 30, 0)
+
+	// Org A: two mappings on distinct roles ("manager" < "owner" ASC).
+	createOrgRolePlan(t, db, orgA.ID, "owner", planOwner)
+	createOrgRolePlan(t, db, orgA.ID, "manager", planManager)
+	// Org B: one mapping that must never leak into org A's listing.
+	createOrgRolePlan(t, db, orgB.ID, "member", planB)
+
+	router := setupOrgRolePlanListingRouterWithController(t, db, managerID, []string{"member"})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/v1/organizations/"+orgA.ID.String()+"/role-plans", nil)
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "org manager must get 200; body: %s", w.Body.String())
+
+	type rolePlanDTO struct {
+		OrganizationID     string `json:"organization_id"`
+		Role               string `json:"role"`
+		SubscriptionPlanID string `json:"subscription_plan_id"`
+		SubscriptionPlan   struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"subscription_plan"`
+	}
+	var body []rolePlanDTO
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+
+	returnedPlanIDs := make([]string, 0, len(body))
+	for _, rp := range body {
+		returnedPlanIDs = append(returnedPlanIDs, rp.SubscriptionPlanID)
+	}
+
+	// Critical assert: exactly org A's two mappings, org B's excluded.
+	require.Len(t, body, 2,
+		"the listing must return exactly org A's mappings (2), not org B's — got %v",
+		returnedPlanIDs)
+	assert.NotContains(t, returnedPlanIDs, planB.ID.String(),
+		"another org's role→plan mapping must never leak into org A's listing")
+
+	// Ordering: role ASC ("manager" before "owner").
+	assert.Equal(t, "manager", body[0].Role, "mappings must be ordered by role ASC")
+	assert.Equal(t, "owner", body[1].Role, "mappings must be ordered by role ASC")
+
+	// Every row scoped to org A, with its plan preloaded (name populated).
+	assert.Equal(t, orgA.ID.String(), body[0].OrganizationID)
+	assert.Equal(t, orgA.ID.String(), body[1].OrganizationID)
+	assert.Equal(t, planManager.ID.String(), body[0].SubscriptionPlanID)
+	assert.Equal(t, planOwner.ID.String(), body[1].SubscriptionPlanID)
+	assert.Equal(t, "RolePlan-A-Manager", body[0].SubscriptionPlan.Name,
+		"the SubscriptionPlan must be preloaded into the DTO")
+	assert.Equal(t, "RolePlan-A-Owner", body[1].SubscriptionPlan.Name,
+		"the SubscriptionPlan must be preloaded into the DTO")
 }
