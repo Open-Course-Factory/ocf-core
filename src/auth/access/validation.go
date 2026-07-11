@@ -1,7 +1,9 @@
 package access
 
 import (
+	"fmt"
 	"log"
+	"sort"
 
 	"github.com/gin-gonic/gin"
 )
@@ -55,4 +57,34 @@ func ValidatePermissionSetup(router *gin.Engine) {
 	}
 
 	log.Println("=== Permission validation complete ===")
+}
+
+// ValidatePermissionSetupStrict is the fail-fast counterpart to
+// ValidatePermissionSetup: it returns a non-nil error when any AccessRuleType
+// used in a RouteRegistry route declaration has no registered enforcer. Such a
+// route runs fail-open (Layer2Enforcement passes it through), so this is always
+// a bug. Wire it into CI (a test) and optionally an env-gated startup check so
+// a route shipped with an unregistered/typo'd rule type fails the build.
+//
+// The router param mirrors ValidatePermissionSetup's signature for symmetry and
+// future Gin-route cross-checks; the strict guarantee is about the RouteRegistry.
+func ValidatePermissionSetupStrict(_ *gin.Engine) error {
+	ref := RouteRegistry.GetReference()
+	missing := map[AccessRuleType]bool{}
+	for _, cat := range ref.Categories {
+		for _, route := range cat.Routes {
+			if getAccessEnforcer(route.Access.Type) == nil {
+				missing[route.Access.Type] = true
+			}
+		}
+	}
+	if len(missing) > 0 {
+		types := make([]string, 0, len(missing))
+		for t := range missing {
+			types = append(types, string(t))
+		}
+		sort.Strings(types) // deterministic message
+		return fmt.Errorf("permission validation failed: %d access rule type(s) used in route declarations have no registered enforcer: %v", len(types), types)
+	}
+	return nil
 }

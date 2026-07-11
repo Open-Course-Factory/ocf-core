@@ -284,6 +284,11 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 
 	// Validate permission setup
 	access.ValidatePermissionSetup(r)
+	if os.Getenv("PERMISSION_VALIDATION_STRICT") == "true" {
+		if err := access.ValidatePermissionSetupStrict(r); err != nil {
+			log.Fatalf("strict permission validation failed: %v", err)
+		}
+	}
 
 	// Run the HTTP server in a goroutine so we can wait for the shutdown signal.
 	server := &http.Server{
