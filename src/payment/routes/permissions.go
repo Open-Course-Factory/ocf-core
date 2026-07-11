@@ -3,8 +3,8 @@ package paymentController
 import (
 	"log"
 
-	"soli/formations/src/auth/interfaces"
 	access "soli/formations/src/auth/access"
+	"soli/formations/src/auth/interfaces"
 )
 
 // RegisterPaymentPermissions registers all Casbin policies for payment routes.
@@ -142,6 +142,11 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 			Path: "/api/v1/organizations/:id/invoices", Method: "GET",
 			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
 			Description: "List organization invoices (manager+)",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/organizations/:id/role-plans", Method: "GET",
+			Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"},
+			Description: "List organization role→plan mappings (manager+)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/users/me/features", Method: "GET",
@@ -325,6 +330,7 @@ func registerOrganizationSubscriptionPermissions(enforcer interfaces.EnforcerInt
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/features", "GET")
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/usage-limits", "GET")
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/invoices", "GET")
+	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/role-plans", "GET")
 
 	// User feature access
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/users/me/features", "GET")

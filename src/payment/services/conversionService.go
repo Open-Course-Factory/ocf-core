@@ -32,6 +32,10 @@ type ConversionService interface {
 	InvoiceToDTO(invoice *models.Invoice) (*dto.InvoiceOutput, error)
 	InvoicesToDTO(invoices *[]models.Invoice) (*[]dto.InvoiceOutput, error)
 
+	// Organization role plan conversions
+	OrganizationRolePlanToDTO(rolePlan *models.OrganizationRolePlan) (*dto.OrganizationRolePlanOutput, error)
+	OrganizationRolePlansToDTO(rolePlans []models.OrganizationRolePlan) ([]dto.OrganizationRolePlanOutput, error)
+
 	// Billing address conversions
 	BillingAddressToDTO(address *models.BillingAddress) (*dto.BillingAddressOutput, error)
 	BillingAddressesToDTO(addresses *[]models.BillingAddress) (*[]dto.BillingAddressOutput, error)
@@ -329,6 +333,48 @@ func (cs *conversionService) InvoicesToDTO(invoices *[]models.Invoice) (*[]dto.I
 	}
 
 	return &outputs, nil
+}
+
+// OrganizationRolePlanToDTO convertit un OrganizationRolePlan model vers DTO
+func (cs *conversionService) OrganizationRolePlanToDTO(rolePlan *models.OrganizationRolePlan) (*dto.OrganizationRolePlanOutput, error) {
+	if rolePlan == nil {
+		return nil, nil
+	}
+
+	var planOutput dto.SubscriptionPlanOutput
+	converted, err := cs.SubscriptionPlanToDTO(&rolePlan.SubscriptionPlan)
+	if err != nil {
+		return nil, err
+	}
+	if converted != nil {
+		planOutput = *converted
+	}
+
+	return &dto.OrganizationRolePlanOutput{
+		ID:                 rolePlan.ID,
+		OrganizationID:     rolePlan.OrganizationID,
+		Role:               rolePlan.Role,
+		SubscriptionPlanID: rolePlan.SubscriptionPlanID,
+		SubscriptionPlan:   planOutput,
+		CreatedAt:          rolePlan.CreatedAt,
+		UpdatedAt:          rolePlan.UpdatedAt,
+	}, nil
+}
+
+// OrganizationRolePlansToDTO convertit une liste d'OrganizationRolePlan
+func (cs *conversionService) OrganizationRolePlansToDTO(rolePlans []models.OrganizationRolePlan) ([]dto.OrganizationRolePlanOutput, error) {
+	outputs := make([]dto.OrganizationRolePlanOutput, 0, len(rolePlans))
+	for i := range rolePlans {
+		output, err := cs.OrganizationRolePlanToDTO(&rolePlans[i])
+		if err != nil {
+			return nil, err
+		}
+		if output != nil {
+			outputs = append(outputs, *output)
+		}
+	}
+
+	return outputs, nil
 }
 
 // BillingAddressToDTO convertit un BillingAddress model vers DTO

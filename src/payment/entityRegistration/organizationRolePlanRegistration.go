@@ -20,24 +20,14 @@ func RegisterOrganizationRolePlan(service *ems.EntityRegistrationService) {
 		entityManagementInterfaces.TypedEntityRegistration[models.OrganizationRolePlan, dto.CreateOrganizationRolePlanInput, dto.UpdateOrganizationRolePlanInput, dto.OrganizationRolePlanOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.OrganizationRolePlan, dto.CreateOrganizationRolePlanInput, dto.UpdateOrganizationRolePlanInput, dto.OrganizationRolePlanOutput]{
 				ModelToDto: func(rolePlan *models.OrganizationRolePlan) (dto.OrganizationRolePlanOutput, error) {
-					var planOutput dto.SubscriptionPlanOutput
-					converted, err := conversionService.SubscriptionPlanToDTO(&rolePlan.SubscriptionPlan)
+					output, err := conversionService.OrganizationRolePlanToDTO(rolePlan)
 					if err != nil {
 						return dto.OrganizationRolePlanOutput{}, err
 					}
-					if converted != nil {
-						planOutput = *converted
+					if output == nil {
+						return dto.OrganizationRolePlanOutput{}, nil
 					}
-
-					return dto.OrganizationRolePlanOutput{
-						ID:                 rolePlan.ID,
-						OrganizationID:     rolePlan.OrganizationID,
-						Role:               rolePlan.Role,
-						SubscriptionPlanID: rolePlan.SubscriptionPlanID,
-						SubscriptionPlan:   planOutput,
-						CreatedAt:          rolePlan.CreatedAt,
-						UpdatedAt:          rolePlan.UpdatedAt,
-					}, nil
+					return *output, nil
 				},
 				DtoToModel: func(input dto.CreateOrganizationRolePlanInput) *models.OrganizationRolePlan {
 					return &models.OrganizationRolePlan{

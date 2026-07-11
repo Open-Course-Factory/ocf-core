@@ -15,6 +15,7 @@ func InitPaymentRoutes(routerGroup *gin.RouterGroup, config *config.Configuratio
 	paymentController.BulkLicenseRoutes(routerGroup, config, db)
 	paymentController.PaymentMethodRoutes(routerGroup, config, db)
 	paymentController.InvoiceRoutes(routerGroup, config, db)
+	paymentController.OrganizationRolePlanRoutes(routerGroup, config, db)
 	paymentController.BillingAddressRoutes(routerGroup, config, db)
 	paymentController.UsageMetricsRoutes(routerGroup, config, db)
 	paymentController.WebhookRoutes(routerGroup, config, db)
