@@ -99,7 +99,7 @@ func RegisterScenarioSession(service *ems.EntityRegistrationService) {
 			},
 			SubEntities:     []any{models.ScenarioStepProgress{}, models.ScenarioFlag{}},
 			DefaultIncludes: []string{"StepProgress", "Flags"},
-			OwnershipConfig: &access.OwnershipConfig{OwnerField: "UserID", Operations: []string{"read"}, AdminBypass: true},
+			OwnershipConfig: &access.OwnershipConfig{OwnerField: "UserID", Operations: []string{"read", "create"}, AdminBypass: true},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
 					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",

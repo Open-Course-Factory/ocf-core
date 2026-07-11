@@ -3,7 +3,6 @@ package terminalHooks
 import (
 	"fmt"
 
-	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/entityManagement/hooks"
 	paymentServices "soli/formations/src/payment/services"
@@ -141,15 +140,6 @@ func (h *TerminalCleanupHook) Execute(ctx *hooks.HookContext) error {
 
 func InitTerminalHooks(db *gorm.DB) {
 	utils.Info("🔗 Initializing terminal hooks...")
-
-	// Register Terminal ownership hook (BeforeCreate - prevents impersonation)
-	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "Terminal", access.OwnershipConfig{
-		OwnerField: "UserID", Operations: []string{"create"}, AdminBypass: true,
-	})); err != nil {
-		utils.Error("❌ Failed to register Terminal ownership hook: %v", err)
-	} else {
-		utils.Info("✅ Terminal ownership hook registered")
-	}
 
 	// Register Terminal owner permission hook (AfterCreate - grants PATCH)
 	ownerHook := NewTerminalOwnerPermissionHook(db)

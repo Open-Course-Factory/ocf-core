@@ -3,6 +3,7 @@ package registration
 import (
 	"net/http"
 
+	access "soli/formations/src/auth/access"
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
@@ -46,6 +47,11 @@ func RegisterUserSubscription(service *ems.EntityRegistrationService) {
 					// Member has no generic CRUD access — use dedicated routes (/current, /all, /checkout, etc.)
 					string(authModels.Admin): "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
 				},
+			},
+			OwnershipConfig: &access.OwnershipConfig{
+				OwnerField:  "UserID",
+				Operations:  []string{"create", "update", "delete"},
+				AdminBypass: true,
 			},
 			SubEntities: []any{models.SubscriptionPlan{}},
 			// Preload the belongs-to plan by its real (singular) field name.

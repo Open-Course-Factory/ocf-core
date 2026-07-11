@@ -218,11 +218,14 @@ func scenarioSessionCreateRouter(t *testing.T, db *gorm.DB, userID string, roles
 	ems.GlobalEntityRegistrationService = ems.NewEntityRegistrationService()
 	scenarioRegistration.RegisterScenarioSession(ems.GlobalEntityRegistrationService)
 
-	// Live hook chain, wired exactly as production does at startup. Today this
-	// registers no ScenarioSession create hook (→ RED); MR D adds one here.
+	// Live hook chain, wired exactly as production does at startup. The
+	// ScenarioSession create ownership hook is auto-registered from the entity's
+	// OwnershipConfig by RegisterOwnershipHooks (MR L); InitScenarioHooks wires
+	// the remaining scenario authorization hooks.
 	hooks.GlobalHookRegistry.ClearAllHooks()
 	hooks.GlobalHookRegistry.DisableAllHooks(false)
 	scenarioHooks.InitScenarioHooks(db)
+	ems.RegisterOwnershipHooks(db)
 	t.Cleanup(func() {
 		hooks.GlobalHookRegistry.ClearAllHooks()
 		ems.GlobalEntityRegistrationService = originalSvc

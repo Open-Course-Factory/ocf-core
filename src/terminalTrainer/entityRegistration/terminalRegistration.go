@@ -66,7 +66,7 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 			},
 			OwnershipConfig: &access.OwnershipConfig{
 				OwnerField:  "UserID",
-				Operations:  []string{"read"},
+				Operations:  []string{"read", "create"},
 				AdminBypass: true,
 			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{

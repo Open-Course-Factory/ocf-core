@@ -121,7 +121,7 @@ OwnershipConfig: &access.OwnershipConfig{
 },
 ```
 
-This auto-generates hooks: `BeforeCreate` forces the field to the authenticated user, `BeforeUpdate`/`BeforeDelete` verify ownership. No hand-written hook files needed.
+`RegisterOwnershipHooks(db)` — called once at startup from `main.go` after all entities are registered — walks every stored `OwnershipConfig` and wires the write-side hooks from the declared `Operations`: `create` → `BeforeCreate` forces the owner field to the authenticated caller, `update`/`delete` → `BeforeUpdate`/`BeforeDelete` verify ownership. `AdminBypass` lets platform admins skip the check. The `read` op is separate — it enables request-time read scoping in the generic GET handlers, not a write hook. Declaring the config is enough; no hand-written hook files needed.
 
 ---
 

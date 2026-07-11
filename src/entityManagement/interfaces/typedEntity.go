@@ -28,5 +28,10 @@ type TypedEntityRegistration[M any, C any, E any, O any] struct {
 	RelationshipFilters []RelationshipFilter
 	MembershipConfig    *MembershipConfig
 	DefaultIncludes     []string
-	OwnershipConfig     *access.OwnershipConfig `json:"-"` // If set, auto-generates ownership hooks
+	// OwnershipConfig declares the owner field and the operations it guards.
+	// RegisterOwnershipHooks(db) (called once at startup) reads these declarations
+	// and wires the write-side hooks: "create" forces the owner to the caller,
+	// "update"/"delete" verify ownership. The "read" op enables request-time read
+	// scoping in the generic GET handlers instead. No hand-written hook needed.
+	OwnershipConfig *access.OwnershipConfig `json:"-"`
 }

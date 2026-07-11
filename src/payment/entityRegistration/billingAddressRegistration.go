@@ -3,6 +3,7 @@ package registration
 import (
 	"net/http"
 
+	access "soli/formations/src/auth/access"
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
@@ -55,6 +56,11 @@ func RegisterBillingAddress(service *ems.EntityRegistrationService) {
 					string(authModels.Member): "(" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
 					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodDelete + "|" + http.MethodPatch + ")",
 				},
+			},
+			OwnershipConfig: &access.OwnershipConfig{
+				OwnerField:  "UserID",
+				Operations:  []string{"create", "update", "delete"},
+				AdminBypass: true,
 			},
 			SwaggerConfig: &entityManagementInterfaces.EntitySwaggerConfig{
 				Tag:        "billing-addresses",

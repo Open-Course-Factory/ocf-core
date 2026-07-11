@@ -90,7 +90,7 @@ func RegisterUserSettings(service *ems.EntityRegistrationService) {
 					return updateMap
 				},
 			},
-			OwnershipConfig: &access.OwnershipConfig{OwnerField: "UserID", Operations: []string{"read"}, AdminBypass: true},
+			OwnershipConfig: &access.OwnershipConfig{OwnerField: "UserID", Operations: []string{"read", "update"}, AdminBypass: true},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
 					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPatch + ")",

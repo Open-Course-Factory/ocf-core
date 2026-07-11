@@ -176,6 +176,17 @@ func (s *EntityRegistrationService) GetOwnershipConfig(name string) *access.Owne
 	return s.ownershipConfigs[name]
 }
 
+// GetAllOwnershipConfigs returns a copy of the entityName→OwnershipConfig map for
+// every entity that declared one. RegisterOwnershipHooks walks this at startup to
+// wire the write-side ownership hooks from the declarative configs.
+func (s *EntityRegistrationService) GetAllOwnershipConfigs() map[string]*access.OwnershipConfig {
+	result := make(map[string]*access.OwnershipConfig, len(s.ownershipConfigs))
+	for name, config := range s.ownershipConfigs {
+		result[name] = config
+	}
+	return result
+}
+
 // SetDefaultEntityAccesses est une version publique pour les tests qui accepte un enforcer
 func (s *EntityRegistrationService) SetDefaultEntityAccesses(entityName string, roles entityManagementInterfaces.EntityRoles, enforcer interfaces.EnforcerInterface) {
 	s.setDefaultEntityAccesses(entityName, roles, enforcer)

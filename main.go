@@ -41,6 +41,7 @@ userController "soli/formations/src/auth/routes/usersRoutes"
 	courseHooks "soli/formations/src/courses/hooks"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	generationController "soli/formations/src/courses/routes/generationRoutes"
+	ems "soli/formations/src/entityManagement/entityManagementService"
 	genericController "soli/formations/src/entityManagement/routes"
 	paymentController "soli/formations/src/payment/routes"
 	groupHooks "soli/formations/src/groups/hooks"
@@ -155,6 +156,12 @@ func main() {
 	organizationHooks.InitOrganizationHooks(sqldb.DB) // Phase 1: Organization hooks
 	terminalHooks.InitTerminalHooks(sqldb.DB)         // Terminal permission hooks
 	scenarioHooks.InitScenarioHooks(sqldb.DB)         // Scenario assignment authorization hooks
+
+	// Auto-register the write-side ownership hooks from every entity's declared
+	// OwnershipConfig. Runs after all entities are registered (configs stored)
+	// and the DB is ready. This replaces the per-module manual NewOwnershipHook
+	// registrations that used to live in the Init*Hooks funcs above.
+	ems.RegisterOwnershipHooks(sqldb.DB)
 
 	// Register module features
 	initialization.RegisterModuleFeatures(sqldb.DB)

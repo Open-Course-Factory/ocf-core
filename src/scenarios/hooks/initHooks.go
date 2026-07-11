@@ -2,7 +2,7 @@ package scenarioHooks
 
 import (
 	"log"
-	access "soli/formations/src/auth/access"
+
 	"soli/formations/src/entityManagement/hooks"
 
 	"gorm.io/gorm"
@@ -11,16 +11,6 @@ import (
 // InitScenarioHooks registers all scenario-related hooks
 func InitScenarioHooks(db *gorm.DB) {
 	log.Println("Initializing scenario hooks...")
-
-	// Hook for forcing the owner on session creation (BeforeCreate - prevents
-	// a member from POSTing a session owned by another user_id).
-	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "ScenarioSession", access.OwnershipConfig{
-		OwnerField: "UserID", Operations: []string{"create"}, AdminBypass: true,
-	})); err != nil {
-		log.Printf("Failed to register ScenarioSession ownership hook: %v", err)
-	} else {
-		log.Println("ScenarioSession ownership hook registered")
-	}
 
 	// Hook for verifying group ownership before creating/deleting scenario assignments
 	authorizationHook := NewScenarioAssignmentAuthorizationHook(db)

@@ -4,7 +4,6 @@ package paymentHooks
 import (
 	"log"
 
-	access "soli/formations/src/auth/access"
 	"soli/formations/src/entityManagement/hooks"
 	paymentServices "soli/formations/src/payment/services"
 
@@ -47,31 +46,6 @@ func InitPaymentHooks(db *gorm.DB) paymentServices.StripeSyncQueue {
 		log.Printf("❌ Failed to register Stripe hook: %v", err)
 	} else {
 		log.Println("✅ Stripe SubscriptionPlan hook registered")
-	}
-
-	// Ownership hooks to enforce that only the owner (or admin) can modify payment entities
-	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "BillingAddress", access.OwnershipConfig{
-		OwnerField: "UserID", Operations: []string{"create", "update", "delete"}, AdminBypass: true,
-	})); err != nil {
-		log.Printf("❌ Failed to register BillingAddress ownership hook: %v", err)
-	} else {
-		log.Println("✅ BillingAddress ownership hook registered")
-	}
-
-	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "PaymentMethod", access.OwnershipConfig{
-		OwnerField: "UserID", Operations: []string{"create", "update", "delete"}, AdminBypass: true,
-	})); err != nil {
-		log.Printf("❌ Failed to register PaymentMethod ownership hook: %v", err)
-	} else {
-		log.Println("✅ PaymentMethod ownership hook registered")
-	}
-
-	if err := hooks.GlobalHookRegistry.RegisterHook(hooks.NewOwnershipHook(db, "UserSubscription", access.OwnershipConfig{
-		OwnerField: "UserID", Operations: []string{"create", "update", "delete"}, AdminBypass: true,
-	})); err != nil {
-		log.Printf("❌ Failed to register UserSubscription ownership hook: %v", err)
-	} else {
-		log.Println("✅ UserSubscription ownership hook registered")
 	}
 
 	log.Println("🔗 Payment hooks initialization complete")
