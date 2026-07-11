@@ -236,7 +236,7 @@ func seedInvoice(t *testing.T, db *gorm.DB, userID string, subID uuid.UUID) *pay
 	inv := &paymentModels.Invoice{
 		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
 		UserID:             userID,
-		UserSubscriptionID: subID,
+		UserSubscriptionID: &subID,
 		StripeInvoiceID:    "in_test_" + uuid.NewString(),
 		Amount:             1999,
 		Currency:           "EUR",

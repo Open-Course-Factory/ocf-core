@@ -42,7 +42,7 @@ func seedRefundInvoice(t *testing.T, db *gorm.DB, stripeInvoiceID string, amount
 	t.Helper()
 	require.NoError(t, db.AutoMigrate(&models.Invoice{}))
 	inv := &models.Invoice{
-		UserID: "user_refund", UserSubscriptionID: uuid.New(),
+		UserID: "user_refund", UserSubscriptionID: uuidPtr(uuid.New()),
 		StripeInvoiceID: stripeInvoiceID, Amount: amount, Currency: "eur", Status: status,
 		InvoiceNumber: "INV-REFUND", InvoiceDate: time.Now(),
 	}
