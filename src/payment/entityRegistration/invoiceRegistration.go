@@ -8,40 +8,30 @@ import (
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
 )
 
 func RegisterInvoice(service *ems.EntityRegistrationService) {
+	conversionService := paymentServices.NewConversionService()
+
 	ems.RegisterTypedEntity[models.Invoice, dto.InvoiceOutput, dto.InvoiceOutput, dto.InvoiceOutput](
 		service,
 		"Invoice",
 		entityManagementInterfaces.TypedEntityRegistration[models.Invoice, dto.InvoiceOutput, dto.InvoiceOutput, dto.InvoiceOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.Invoice, dto.InvoiceOutput, dto.InvoiceOutput, dto.InvoiceOutput]{
 				ModelToDto: func(invoice *models.Invoice) (dto.InvoiceOutput, error) {
-					// Convert the associated UserSubscription using the global typed ops
-					var subscriptionOutput dto.UserSubscriptionOutput
-					if ops, ok := ems.GlobalEntityRegistrationService.GetEntityOps("UserSubscription"); ok {
-						subOutput, err := ops.ConvertModelToDto(&invoice.UserSubscription)
-						if err == nil {
-							subscriptionOutput = subOutput.(dto.UserSubscriptionOutput)
-						}
+					// Single source of truth: delegate to ConversionService.InvoiceToDTO so
+					// the generic entity endpoint and the invoice controllers share ONE
+					// Invoice→DTO mapping (organization fields included). A second local
+					// mapper here would silently drift when the DTO gains fields.
+					output, err := conversionService.InvoiceToDTO(invoice)
+					if err != nil {
+						return dto.InvoiceOutput{}, err
 					}
-
-					return dto.InvoiceOutput{
-						ID:               invoice.ID,
-						UserID:           invoice.UserID,
-						UserSubscription: subscriptionOutput,
-						StripeInvoiceID:  invoice.StripeInvoiceID,
-						Amount:           invoice.Amount,
-						Currency:         invoice.Currency,
-						Status:           invoice.Status,
-						InvoiceNumber:    invoice.InvoiceNumber,
-						InvoiceDate:      invoice.InvoiceDate,
-						DueDate:          invoice.DueDate,
-						PaidAt:           invoice.PaidAt,
-						StripeHostedURL:  invoice.StripeHostedURL,
-						DownloadURL:      invoice.DownloadURL,
-						CreatedAt:        invoice.CreatedAt,
-					}, nil
+					if output == nil {
+						return dto.InvoiceOutput{}, nil
+					}
+					return *output, nil
 				},
 				DtoToModel: func(input dto.InvoiceOutput) *models.Invoice {
 					// Invoices are created via Stripe webhooks
