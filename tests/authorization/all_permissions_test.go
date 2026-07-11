@@ -499,8 +499,10 @@ func TestSetupUserManagementPermissions_AdminRoutes(t *testing.T) {
 		{"/api/v1/hooks", "GET"},
 		{"/api/v1/hooks/:hook_name/enable", "POST"},
 		{"/api/v1/hooks/:hook_name/disable", "POST"},
-		// Email template testing
-		{"/api/v1/email-templates/:id/test", "POST"},
+		// NOTE: email-test (/api/v1/email-templates/:id/test POST) is no longer
+		// owned by usersRoutes — it migrated to a declarative ActionConfig on the
+		// EmailTemplate registration (see email_test_action_test.go). Asserting it
+		// here would break once the dev removes the usersRoutes entry.
 	}
 
 	for _, r := range adminRoutes {

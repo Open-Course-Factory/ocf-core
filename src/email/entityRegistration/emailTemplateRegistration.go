@@ -1,10 +1,17 @@
 package registration
 
 import (
+	"net/http"
+
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/email/dto"
 	"soli/formations/src/email/models"
+	emailRoutes "soli/formations/src/email/routes"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func RegisterEmailTemplate(service *ems.EntityRegistrationService) {
@@ -96,6 +103,19 @@ func RegisterEmailTemplate(service *ems.EntityRegistrationService) {
 					Description: "Deletes an email template (cannot delete system templates)",
 					Tags:        []string{"email-templates"},
 					Security:    true,
+				},
+			},
+			Actions: []entityManagementInterfaces.ActionConfig{
+				{
+					Name:        "test",
+					Method:      http.MethodPost,
+					Scope:       entityManagementInterfaces.ActionScopeItem,
+					Handler:     func(db *gorm.DB) gin.HandlerFunc { return emailRoutes.NewTemplateController(db).SendTestEmail },
+					Role:        access.RoleAdministrator,
+					Access:      access.AccessRule{Type: access.AdminOnly},
+					Description: "Send a test email using this template (admin only)",
+					RequestDTO:  dto.TestEmailInput{},
+					ResponseDTO: dto.TemplateResponse{},
 				},
 			},
 		},
