@@ -88,15 +88,23 @@
 package terminalTrainer_tests
 
 import (
+	"bytes"
+	"encoding/csv"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/mocks"
 	orgModels "soli/formations/src/organizations/models"
+	"soli/formations/src/terminalTrainer/models"
+	"soli/formations/src/terminalTrainer/services"
 
+	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -234,4 +242,244 @@ func TestOrgUsageExport_OtherOrgManagerForbidden(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code,
 		"a manager of another org must NOT export the target org's usage — "+
 			"enforcement must scope to the :id org, not the caller's role elsewhere")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payload tests (GREEN landed in commit 7fc611b). These exercise the real
+// controller GetOrgUsageExport through NewTerminalController — the deferred pins
+// from this file's header, now that the method compiles. The controller-level
+// IsUserOrgManagerOrAdmin guard 403s a non-manager BEFORE the payload runs, so
+// every payload caller is seeded as a manager/owner of the target org.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// mountOrgUsageExport wires the REAL controller behind a mock-auth middleware
+// that stamps userId + userRoles, mirroring makeOrgUsageRequest in
+// orgTerminalUsage_test.go. No Layer2Enforcement here: authorization is pinned
+// by the sentinel tests above; these payload tests drive the handler directly.
+func mountOrgUsageExport(db *gorm.DB, userID string, roles []string) *gin.Engine {
+	ctrl := terminalController.NewTerminalController(db)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Set("userRoles", roles)
+		c.Next()
+	})
+	router.GET("/organizations/:id/usage-export", ctrl.GetOrgUsageExport)
+	return router
+}
+
+// seedExportSession inserts a terminal attributed to orgID for userID with a
+// forced created_at (GORM would otherwise stamp now()). expires_at drives the
+// duration; created_at drives both ordering and the period filter. UpdateColumn
+// bypasses hooks and leaves updated_at untouched so the row's timestamps are
+// exactly what the export must read back.
+func seedExportSession(t *testing.T, db *gorm.DB, orgID uuid.UUID, userID, size string, cpu, mem int, createdAt, expiresAt time.Time) *models.Terminal {
+	t.Helper()
+	key, err := createTestUserKey(db, userID)
+	require.NoError(t, err)
+
+	term := &models.Terminal{
+		SessionID:         "export-" + uuid.New().String(),
+		UserID:            userID,
+		State:             models.StateDeleted, // finished tombstone — must still be exported
+		ExpiresAt:         expiresAt,
+		InstanceType:      "test",
+		MachineSize:       size,
+		SizeCPU:           cpu,
+		SizeMemoryMB:      mem,
+		UserTerminalKeyID: key.ID,
+		OrganizationID:    &orgID,
+	}
+	require.NoError(t, db.Create(term).Error)
+	require.NoError(t, db.Model(&models.Terminal{}).
+		Where("id = ?", term.ID).
+		UpdateColumn("created_at", createdAt).Error)
+	return term
+}
+
+// parseCSV decodes the response body into header + data records.
+func parseCSV(t *testing.T, body []byte) (header []string, rows [][]string) {
+	t.Helper()
+	records, err := csv.NewReader(bytes.NewReader(body)).ReadAll()
+	require.NoError(t, err, "response body must be valid CSV; got: %s", string(body))
+	require.NotEmpty(t, records, "CSV must have at least a header row")
+	return records[0], records[1:]
+}
+
+// expectedHeader is the exact column contract pinned in this file's header.
+var expectedHeader = []string{
+	"member_id", "member_email", "session_id", "machine_size",
+	"cpu_millicores", "memory_mb", "started_at", "expires_at", "duration_hours",
+}
+
+// TestOrgUsageExport_ManagerGets200WithCSVRows is the payload pin: seed sessions
+// for TWO orgs plus an out-of-period session, export org A over a window as its
+// manager, and assert the CSV body contains EXACTLY org A's in-period sessions —
+// org B's row and the out-of-period row EXCLUDED (the critical assert), ordered
+// created_at ASC, with computed durations, RFC3339 timestamps, and member_email
+// resolved through the swapped Casdoor seam.
+//
+// Red-if-gutted: dropping the repository's `organization_id = ?` filter would
+// leak org B's row (len becomes 3, the exclusion assert fails); dropping the
+// created_at range would leak the out-of-period row (same failure).
+func TestOrgUsageExport_ManagerGets200WithCSVRows(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+
+	orgA := createTestOrgForHistory(t, db, "export-rows-ownerA")
+	createTestOrgMember(t, db, orgA.ID, "export-rows-manager", orgModels.OrgRoleManager)
+	orgB := createTestOrgForHistory(t, db, "export-rows-ownerB")
+
+	// Window: 2026-03-01 .. 2026-03-31 (to inclusive of the whole day).
+	utc := time.UTC
+	aliceCreated := time.Date(2026, 3, 5, 10, 0, 0, 0, utc)
+	aliceExpires := aliceCreated.Add(1 * time.Hour) // duration 1.00
+	bobCreated := time.Date(2026, 3, 10, 9, 0, 0, 0, utc)
+	bobExpires := bobCreated.Add(2*time.Hour + 30*time.Minute) // duration 2.50
+
+	alice := seedExportSession(t, db, orgA.ID, "alice", "S", 1000, 1024, aliceCreated, aliceExpires)
+	bob := seedExportSession(t, db, orgA.ID, "bob", "M", 2000, 2048, bobCreated, bobExpires)
+	// Out-of-period session for org A (created in February) — must be EXCLUDED.
+	seedExportSession(t, db, orgA.ID, "alice", "S", 1000, 1024,
+		time.Date(2026, 2, 1, 12, 0, 0, 0, utc), time.Date(2026, 2, 1, 13, 0, 0, 0, utc))
+	// In-period session belonging to org B — must be EXCLUDED (cross-org leak).
+	orgBSession := seedExportSession(t, db, orgB.ID, "carol", "L", 4000, 4096,
+		time.Date(2026, 3, 15, 8, 0, 0, 0, utc), time.Date(2026, 3, 15, 12, 0, 0, 0, utc))
+
+	// Swap the Casdoor seam so member_email is deterministic.
+	original := services.LookupCasdoorUserForOrgUsage
+	services.LookupCasdoorUserForOrgUsage = func(id string) (*casdoorsdk.User, error) {
+		switch id {
+		case "alice":
+			return &casdoorsdk.User{Id: "alice", Email: "alice@corp.example"}, nil
+		case "bob":
+			return &casdoorsdk.User{Id: "bob", Email: "bob@corp.example"}, nil
+		}
+		return nil, fmt.Errorf("user not found")
+	}
+	t.Cleanup(func() { services.LookupCasdoorUserForOrgUsage = original })
+
+	router := mountOrgUsageExport(db, "export-rows-manager", []string{"member"})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET",
+		"/organizations/"+orgA.ID.String()+"/usage-export?from=2026-03-01&to=2026-03-31", nil)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "manager must get 200; body: %s", w.Body.String())
+
+	header, rows := parseCSV(t, w.Body.Bytes())
+	assert.Equal(t, expectedHeader, header, "CSV header must match the pinned column contract")
+
+	require.Len(t, rows, 2,
+		"export must contain exactly org A's two in-period sessions — the "+
+			"out-of-period row and org B's row must be excluded; got %v", rows)
+
+	sessionIDs := []string{rows[0][2], rows[1][2]}
+	assert.NotContains(t, sessionIDs, orgBSession.SessionID,
+		"another org's session must never leak into org A's export")
+
+	// Ordering: created_at ASC → alice (03-05) before bob (03-10).
+	assert.Equal(t, alice.SessionID, rows[0][2], "rows must be ordered created_at ASC")
+	assert.Equal(t, bob.SessionID, rows[1][2], "rows must be ordered created_at ASC")
+
+	// Row 0 (alice): member_id, email, size, cpu, mem, timestamps, duration.
+	assert.Equal(t, "alice", rows[0][0], "member_id must be the session's user_id")
+	assert.Equal(t, "alice@corp.example", rows[0][1], "member_email must come from the Casdoor seam")
+	assert.Equal(t, "S", rows[0][3], "machine_size column")
+	assert.Equal(t, "1000", rows[0][4], "cpu_millicores column")
+	assert.Equal(t, "1024", rows[0][5], "memory_mb column")
+	assert.Equal(t, "1.00", rows[0][8], "duration_hours = expires-created, 2 decimals (allocated window)")
+
+	// started_at / expires_at are RFC3339 and equal the seeded instants
+	// (compared with .Equal so a UTC/offset representation difference can't flake).
+	gotStart, err := time.Parse(time.RFC3339, rows[0][6])
+	require.NoError(t, err, "started_at must be RFC3339")
+	assert.True(t, gotStart.Equal(aliceCreated), "started_at must equal created_at")
+	gotExpires, err := time.Parse(time.RFC3339, rows[0][7])
+	require.NoError(t, err, "expires_at must be RFC3339")
+	assert.True(t, gotExpires.Equal(aliceExpires), "expires_at must equal the session's expiry")
+
+	// Row 1 (bob): the 2.5h allocated window.
+	assert.Equal(t, "bob", rows[1][0])
+	assert.Equal(t, "bob@corp.example", rows[1][1])
+	assert.Equal(t, "2.50", rows[1][8], "duration_hours must be 2.50 for a 2h30m window")
+}
+
+// TestOrgUsageExport_ResponseHeaders pins the download headers: text/csv content
+// type and an attachment Content-Disposition naming org-usage-export_<from>_<to>.csv.
+func TestOrgUsageExport_ResponseHeaders(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+	org := createTestOrgForHistory(t, db, "export-headers-owner")
+	createTestOrgMember(t, db, org.ID, "export-headers-manager", orgModels.OrgRoleManager)
+
+	router := mountOrgUsageExport(db, "export-headers-manager", []string{"member"})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET",
+		"/organizations/"+org.ID.String()+"/usage-export?from=2026-03-01&to=2026-03-31", nil)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "text/csv",
+		"Content-Type must mark the response as CSV")
+	assert.Equal(t,
+		`attachment; filename="org-usage-export_2026-03-01_2026-03-31.csv"`,
+		w.Header().Get("Content-Disposition"),
+		"Content-Disposition must offer a dated org-usage-export .csv download")
+}
+
+// TestOrgUsageExport_InvalidDateParams_400 is table-driven: with the caller
+// already authorized (manager), a missing or unparseable from/to must yield 400.
+// The guard 403s first, so the manager seeding is what lets these reach the date
+// validation.
+func TestOrgUsageExport_InvalidDateParams_400(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+	org := createTestOrgForHistory(t, db, "export-400-owner")
+	createTestOrgMember(t, db, org.ID, "export-400-manager", orgModels.OrgRoleManager)
+	router := mountOrgUsageExport(db, "export-400-manager", []string{"member"})
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{"missing both", ""},
+		{"missing from", "?to=2026-03-31"},
+		{"missing to", "?from=2026-03-01"},
+		{"invalid from", "?from=03-2026-01&to=2026-03-31"},
+		{"invalid to", "?from=2026-03-01&to=notadate"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest("GET",
+				"/organizations/"+org.ID.String()+"/usage-export"+tc.query, nil)
+			router.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusBadRequest, w.Code,
+				"missing/unparseable from/to must be rejected with 400 (query %q)", tc.query)
+		})
+	}
+}
+
+// TestOrgUsageExport_EmptyPeriod_HeaderOnly200 verifies that a window with no
+// attributed sessions returns 200 with a header-only CSV (no data rows) rather
+// than an error or an empty body.
+func TestOrgUsageExport_EmptyPeriod_HeaderOnly200(t *testing.T) {
+	db := setupTestDBWithOrgs(t)
+	org := createTestOrgForHistory(t, db, "export-empty-owner")
+	createTestOrgMember(t, db, org.ID, "export-empty-manager", orgModels.OrgRoleManager)
+
+	// A session exists but OUTSIDE the requested window, so the export is empty.
+	seedExportSession(t, db, org.ID, "ghost", "S", 1000, 1024,
+		time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC),
+		time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC))
+
+	router := mountOrgUsageExport(db, "export-empty-manager", []string{"member"})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET",
+		"/organizations/"+org.ID.String()+"/usage-export?from=2026-03-01&to=2026-03-31", nil)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	header, rows := parseCSV(t, w.Body.Bytes())
+	assert.Equal(t, expectedHeader, header, "empty export must still carry the header row")
+	assert.Empty(t, rows, "an empty window must produce a header-only CSV with no data rows")
 }
