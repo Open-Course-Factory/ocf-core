@@ -302,20 +302,24 @@ func (h *OrganizationMemberValidationHook) Execute(ctx *hooks.HookContext) error
 		return fmt.Errorf("user is already a member of this organization")
 	}
 
-	// 4. Check if requesting user can manage this organization
-	if ctx.UserID != "" {
-		canManage, err := h.organizationService.CanUserManageOrganization(org.ID, ctx.UserID)
-		if err != nil {
-			return fmt.Errorf("permission check failed: %w", err)
-		}
-		if !canManage {
-			return utils.PermissionDeniedError("add members to", "organization")
-		}
+	// 4. Check if requesting user can manage this organization.
+	// Fail-closed: an unknown actor (empty UserID) reaching this externally-triggered
+	// member-add hook must be denied, never skipped. (Seeding the org creator as owner
+	// goes through the AfterCreate OwnerSetupHook, not this BeforeCreate hook.)
+	if ctx.UserID == "" {
+		return utils.PermissionDeniedError("add members to", "organization")
+	}
+	canManage, err := h.organizationService.CanUserManageOrganization(org.ID, ctx.UserID)
+	if err != nil {
+		return fmt.Errorf("permission check failed: %w", err)
+	}
+	if !canManage {
+		return utils.PermissionDeniedError("add members to", "organization")
+	}
 
-		// Set InvitedBy if not already set
-		if member.InvitedBy == "" {
-			member.InvitedBy = ctx.UserID
-		}
+	// Set InvitedBy if not already set
+	if member.InvitedBy == "" {
+		member.InvitedBy = ctx.UserID
 	}
 
 	// 5. Default role to "member" if not set
@@ -396,19 +400,22 @@ func (h *OrganizationMemberDeletionHook) Execute(ctx *hooks.HookContext) error {
 		return utils.ErrCannotRemoveOwner("organization")
 	}
 
-	// 2. Check if requesting user can manage this organization
-	if ctx.UserID != "" {
-		canManage, err := h.organizationService.CanUserManageOrganization(member.OrganizationID, ctx.UserID)
-		if err != nil {
-			return fmt.Errorf("permission check failed: %w", err)
-		}
-		if !canManage {
-			return utils.PermissionDeniedError("remove members from", "organization")
-		}
+	// 2. Check if requesting user can manage this organization.
+	// Fail-closed: an unknown actor (empty UserID) reaching this externally-triggered
+	// member-removal hook must be denied, never skipped.
+	if ctx.UserID == "" {
+		return utils.PermissionDeniedError("remove members from", "organization")
+	}
+	canManage, err := h.organizationService.CanUserManageOrganization(member.OrganizationID, ctx.UserID)
+	if err != nil {
+		return fmt.Errorf("permission check failed: %w", err)
+	}
+	if !canManage {
+		return utils.PermissionDeniedError("remove members from", "organization")
 	}
 
 	// 3. Revoke permissions from the member
-	err := h.organizationService.RevokeOrganizationPermissions(member.UserID, member.OrganizationID)
+	err = h.organizationService.RevokeOrganizationPermissions(member.UserID, member.OrganizationID)
 	if err != nil {
 		utils.Warn("Failed to revoke member permissions from user %s: %v", member.UserID, err)
 	}

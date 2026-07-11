@@ -102,6 +102,12 @@ func (h *ownershipHook) verifyOwnership(ctx *HookContext) error {
 	if h.config.AdminBypass && ctx.IsAdmin() {
 		return nil
 	}
+	// Fail-closed: an unauthenticated / unknown actor (empty UserID) must never pass
+	// an ownership check. Without this guard, an entity whose owner column is also ""
+	// would match the empty actor below ("" == "") and be silently allowed.
+	if ctx.UserID == "" {
+		return fmt.Errorf("permission denied: unknown actor cannot modify %s", h.entityName)
+	}
 	ownerValue, err := h.loadOwnerFromDB(ctx.EntityID)
 	if err != nil {
 		return err
