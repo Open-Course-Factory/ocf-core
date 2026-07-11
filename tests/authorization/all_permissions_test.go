@@ -377,11 +377,11 @@ func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/organizations/:id/scenarios/:scenarioId/duplicate", "POST"},
 		// Preview route
 		{"/api/v1/scenarios/:id/preview", "POST"},
-		// NEW: Project file routes
-		{"/api/v1/project-files/by-scenario/:scenarioId", "GET"},
+		// Project file routes — member-facing only.
+		// NOTE: /project-files/by-scenario/:scenarioId and /project-files/:id/usage
+		// are admin-only at Layer 1 and asserted in TestSetupScenarioPermissions_AdminRoutes.
 		{"/api/v1/project-files/image/:scenarioId/*", "GET"},
 		{"/api/v1/project-files/:id/content", "GET"},
-		{"/api/v1/project-files/:id/usage", "GET"},
 	}
 
 	for _, r := range memberRoutes {
@@ -411,6 +411,9 @@ func TestSetupScenarioPermissions_AdminRoutes(t *testing.T) {
 		{"/api/v1/scenarios/upload", "POST"},
 		{"/api/v1/scenarios/import-json", "POST"},
 		{"/api/v1/scenarios/:id/duplicate", "POST"},
+		// Project file admin routes (AdminOnly at Layer 2, now administrator at Layer 1).
+		{"/api/v1/project-files/by-scenario/:scenarioId", "GET"},
+		{"/api/v1/project-files/:id/usage", "GET"},
 	}
 
 	for _, r := range adminRoutes {

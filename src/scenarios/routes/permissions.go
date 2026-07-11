@@ -239,14 +239,18 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Duplicate a scenario at platform level (admin only)",
 		},
 		// Project file routes
+		// These two routes are AdminOnly at Layer 2 and the handler self-enforces
+		// isProjectFileAdmin; declaring Layer 1 as administrator makes Casbin deny
+		// non-admins at the gateway too (defense-in-depth) and keeps the declaration
+		// self-consistent with its access rule.
 		access.RoutePermission{
 			Path: "/api/v1/project-files/by-scenario/:scenarioId", Method: "GET",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.AdminOnly},
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "List project files for a scenario (admin only)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/project-files/:id/usage", Method: "GET",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.AdminOnly},
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Get project file usage info (admin only)",
 		},
 		access.RoutePermission{

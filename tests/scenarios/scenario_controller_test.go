@@ -628,6 +628,129 @@ func TestGetSessionByTerminal_IDOR_Returns403(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
+// TestGetSessionByTerminal_OtherUsersSession_Denied is the #409 regression guard
+// for GET /scenario-sessions/by-terminal/:terminalId. This route is Layer-2
+// SelfScoped (NOT middleware-enforced) — the ONLY ownership check is the handler's
+// `session.UserID != userID` guard (scenarioController.go:120-127). It is safe
+// today; this test locks that so a future refactor cannot silently drop the check.
+//
+// It complements TestGetSessionByTerminal_IDOR_Returns403 (which only asserts the
+// 403 status) by also asserting the 403 body does not DISCLOSE the non-owner
+// session's identity — a status-only assertion would still pass if the handler
+// started leaking the row before denying.
+func TestGetSessionByTerminal_OtherUsersSession_Denied(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "by-terminal-selfscope",
+		Title:        "By-terminal self-scope guard",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	terminalID := "term-owned-by-B"
+	sessionB := models.ScenarioSession{
+		ScenarioID:        scenario.ID,
+		UserID:            "user-B",
+		TerminalSessionID: &terminalID,
+		CurrentStep:       0,
+		Status:            "active",
+		StartedAt:         time.Now(),
+	}
+	require.NoError(t, db.Create(&sessionB).Error)
+
+	// Drive the REAL handler as user-A against user-B's terminal.
+	router := setupTestRouterWithUser(db, "user-A")
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/by-terminal/"+terminalID, nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"A must be denied B's session by terminal; body=%s", w.Body.String())
+	// The denial must not leak B's session identity or ownership.
+	assert.NotContains(t, w.Body.String(), sessionB.ID.String(),
+		"403 body must not disclose the non-owner session id")
+	assert.NotContains(t, w.Body.String(), "user-B",
+		"403 body must not disclose the non-owner session's UserID")
+}
+
+// setupMySessionsRouter mounts the REAL GetMySessions handler behind a middleware
+// that stamps the acting user, so the handler's service-level owner scoping
+// (ScenarioSessionService.GetMySessions → WHERE user_id = ?, scenarioSessionService.go:1004)
+// is exercised end-to-end.
+func setupMySessionsRouter(db *gorm.DB, userID string) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	api := r.Group("/api/v1")
+	api.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Next()
+	})
+
+	launchController := scenarioController.NewScenarioLaunchController(db)
+
+	sessions := api.Group("/scenario-sessions")
+	sessions.GET("/my", launchController.GetMySessions)
+
+	return r
+}
+
+// TestGetMySessions_ReturnsOnlyCallersSessions is the #409 regression guard for
+// GET /scenario-sessions/my. This route is Layer-2 SelfScoped (NOT
+// middleware-enforced) — owner scoping lives ENTIRELY in the service query
+// `WHERE user_id = ?`. It is correct today; this test locks it so a future
+// refactor cannot silently return other users' sessions. Assertion is on the
+// observable response body (the returned session ids), not a mock call.
+func TestGetMySessions_ReturnsOnlyCallersSessions(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Two distinct scenarios so both sessions can be active without tripping the
+	// (user_id, scenario_id) active-session uniqueness assumptions.
+	scenarioA := models.Scenario{Name: "my-sessions-A", Title: "A", CreatedByID: "creator-1"}
+	scenarioB := models.Scenario{Name: "my-sessions-B", Title: "B", CreatedByID: "creator-1"}
+	require.NoError(t, db.Create(&scenarioA).Error)
+	require.NoError(t, db.Create(&scenarioB).Error)
+
+	sessionA := models.ScenarioSession{
+		ScenarioID: scenarioA.ID,
+		UserID:     "user-A",
+		Status:     "active",
+		StartedAt:  time.Now(),
+	}
+	sessionB := models.ScenarioSession{
+		ScenarioID: scenarioB.ID,
+		UserID:     "user-B",
+		Status:     "active",
+		StartedAt:  time.Now(),
+	}
+	require.NoError(t, db.Create(&sessionA).Error)
+	require.NoError(t, db.Create(&sessionB).Error)
+
+	// Drive the REAL handler as user-A.
+	router := setupMySessionsRouter(db, "user-A")
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/v1/scenario-sessions/my", nil)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "GetMySessions should succeed; body=%s", w.Body.String())
+
+	var sessions []map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &sessions))
+
+	ids := map[string]bool{}
+	for _, s := range sessions {
+		if id, ok := s["id"].(string); ok {
+			ids[id] = true
+		}
+	}
+	assert.True(t, ids[sessionA.ID.String()], "A must see own session")
+	assert.False(t, ids[sessionB.ID.String()], "A must NOT see B's session (cross-user read)")
+	assert.Len(t, sessions, 1, "GetMySessions must return only the caller's sessions")
+}
+
 func TestSeedScenario_WithOsType(t *testing.T) {
 	db := setupTestDB(t)
 	router := setupTestRouter(db)
