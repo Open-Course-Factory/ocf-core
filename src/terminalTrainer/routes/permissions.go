@@ -81,6 +81,8 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/terminal-sessions", "GET")
 	// Organization terminal usage (managers/owners only — Layer 2 via OrgRole + MinRole manager)
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/terminal-usage", "GET")
+	// Organization usage CSV export (managers/owners only — Layer 2 via OrgRole + MinRole manager)
+	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/usage-export", "GET")
 
 	// Incus UI proxy (fine-grained backend access checks in controller)
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/incus-ui/:backendId/*", "(GET|POST|PUT|PATCH|DELETE)")
@@ -148,6 +150,7 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		// Organization terminal routes
 		access.RoutePermission{Path: "/api/v1/organizations/:id/terminal-sessions", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"}, Description: "List terminal sessions for an organization"},
 		access.RoutePermission{Path: "/api/v1/organizations/:id/terminal-usage", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"}, Description: "Get org-wide active terminal usage for managers/owners"},
+		access.RoutePermission{Path: "/api/v1/organizations/:id/usage-export", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"}, Description: "Export org terminal usage as CSV for a billing window (managers/owners only)"},
 
 		// Incus UI proxy — split into per-method entries because the Layer2
 		// registry Lookup does exact-match on method+path; a regex-style

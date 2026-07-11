@@ -119,6 +119,7 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	orgRoutes := router.Group("/organizations")
 	orgRoutes.GET("/:id/terminal-sessions", middleware.AuthManagement(), terminalController.GetOrganizationTerminalSessions)
 	orgRoutes.GET("/:id/terminal-usage", middleware.AuthManagement(), terminalController.GetOrgTerminalUsage)
+	orgRoutes.GET("/:id/usage-export", middleware.AuthManagement(), terminalController.GetOrgUsageExport)
 
 	// Incus UI reverse proxy (admin + org owner/manager only)
 	// The cookie-to-header middleware extracts the JWT from the incus_token

@@ -1,6 +1,7 @@
 package terminalController
 
 import (
+	"encoding/csv"
 	stderrors "errors"
 	"fmt"
 	"log/slog"
@@ -77,6 +78,7 @@ type TerminalController interface {
 	// Organization session management
 	GetOrganizationTerminalSessions(ctx *gin.Context)
 	GetOrgTerminalUsage(ctx *gin.Context)
+	GetOrgUsageExport(ctx *gin.Context)
 
 	// Group command history
 	GetGroupCommandHistory(ctx *gin.Context)
@@ -1680,6 +1682,140 @@ func (tc *terminalController) GetOrgTerminalUsage(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, usage)
+}
+
+// GetOrgUsageExport streams the org's terminal usage over a billing window as a
+// CSV, one row per session, so managers can re-invoice consumption (e.g. to an
+// OPCO). Only organization managers, owners, or platform admins may export.
+//
+// duration_hours is the ALLOCATED window (expires_at - created_at), NOT
+// wall-clock-consumed time: the Terminal model keeps no stop timestamp
+// (finished sessions become deleted tombstones), so the provisioned span is the
+// only server-derivable factual bound. group and cost columns are deliberately
+// absent — the Terminal row carries no group dimension and there is no
+// per-session price model, so either would be fabricated data.
+//
+//	@Summary		Export org terminal usage as CSV
+//	@Description	Streams one CSV row per terminal session the organization's budget paid for in the [from, to] window (to inclusive). Only accessible by organization managers, owners, or platform admins.
+//	@Tags			terminal
+//	@Produce		text/csv
+//	@Param			id		path	string	true	"Organization ID"
+//	@Param			from	query	string	true	"Start date (inclusive), YYYY-MM-DD"
+//	@Param			to		query	string	true	"End date (inclusive), YYYY-MM-DD"
+//	@Security		BearerAuth
+//	@Success		200	{string}	string	"CSV file"
+//	@Failure		400	{object}	errors.APIError	"Invalid organization ID or missing/unparseable from/to"
+//	@Failure		403	{object}	errors.APIError	"Access denied"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/organizations/{id}/usage-export [get]
+func (tc *terminalController) GetOrgUsageExport(ctx *gin.Context) {
+	orgID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid organization ID",
+		})
+		return
+	}
+
+	userID := ctx.GetString("userId")
+	isAdmin := false
+	for _, role := range ctx.GetStringSlice("userRoles") {
+		if role == "administrator" {
+			isAdmin = true
+			break
+		}
+	}
+	if !tc.service.IsUserOrgManagerOrAdmin(userID, orgID, isAdmin) {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Only organization owners, managers, or admins can access this resource",
+		})
+		return
+	}
+
+	// from/to are REQUIRED — an OPCO export always names its billing window, so
+	// there is no default period. `to` is inclusive of the whole day, so the
+	// query upper bound is to+1day (exclusive) to catch sessions started at any
+	// time on the `to` date.
+	const dayLayout = "2006-01-02"
+	fromStr := ctx.Query("from")
+	toStr := ctx.Query("to")
+	from, err := time.Parse(dayLayout, fromStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid or missing 'from' date (expected YYYY-MM-DD)",
+		})
+		return
+	}
+	to, err := time.Parse(dayLayout, toStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid or missing 'to' date (expected YYYY-MM-DD)",
+		})
+		return
+	}
+	toExclusive := to.AddDate(0, 0, 1)
+
+	// Scope by the row's organization_id (direct billing attribution — the
+	// budget the session actually consumed), which deliberately differs from
+	// GetOrgTerminalUsage's organization_members join: a member who has since
+	// left the org still consumed its budget during the period.
+	terminals, err := tc.service.GetRepository().GetTerminalSessionsForOrgUsageExport(orgID, from, toExclusive)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to export organization usage",
+		})
+		return
+	}
+
+	// Resolve member_email once per distinct user (the Casdoor SDK has no bulk
+	// endpoint) via the same swappable seam GetOrgTerminalUsage uses. Graceful
+	// degradation: an empty email on lookup failure, never a hard error —
+	// member_id (always present) stays the stable identifier.
+	emailByUser := make(map[string]string)
+	emailFor := func(userID string) string {
+		if email, resolved := emailByUser[userID]; resolved {
+			return email
+		}
+		email := ""
+		if user, lookupErr := services.LookupCasdoorUserForOrgUsage(userID); lookupErr == nil && user != nil {
+			email = user.Email
+		}
+		emailByUser[userID] = email
+		return email
+	}
+
+	filename := fmt.Sprintf("org-usage-export_%s_%s.csv", fromStr, toStr)
+	ctx.Header("Content-Type", "text/csv; charset=utf-8")
+	ctx.Header("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	ctx.Status(http.StatusOK)
+
+	w := csv.NewWriter(ctx.Writer)
+	defer w.Flush()
+	// duration_hours = expires_at - created_at, the ALLOCATED window (see the
+	// method doc for why this is not wall-clock-consumed time).
+	_ = w.Write([]string{
+		"member_id", "member_email", "session_id", "machine_size",
+		"cpu_millicores", "memory_mb", "started_at", "expires_at", "duration_hours",
+	})
+	for _, t := range *terminals {
+		durationHours := t.ExpiresAt.Sub(t.CreatedAt).Hours()
+		_ = w.Write([]string{
+			t.UserID,
+			emailFor(t.UserID),
+			t.SessionID,
+			t.MachineSize,
+			strconv.Itoa(t.SizeCPU),
+			strconv.Itoa(t.SizeMemoryMB),
+			t.CreatedAt.Format(time.RFC3339),
+			t.ExpiresAt.Format(time.RFC3339),
+			strconv.FormatFloat(durationHours, 'f', 2, 64),
+		})
+	}
 }
 
 // MyTerminalUsage returns the calling user's live budget snapshot.

@@ -3,6 +3,8 @@ package repositories
 import (
 	"errors"
 	"fmt"
+	"time"
+
 	"soli/formations/src/terminalTrainer/models"
 	"soli/formations/src/utils"
 
@@ -31,6 +33,15 @@ type TerminalRepository interface {
 	GetTerminalSessionsByUserID(userID string, isActive bool) (*[]models.Terminal, error)
 	GetTerminalSessionsByUserIDAndOrg(userID string, organizationID *uuid.UUID, isActive bool) (*[]models.Terminal, error)
 	GetTerminalSessionsByOrganizationID(orgID uuid.UUID) (*[]models.Terminal, error)
+	// GetTerminalSessionsForOrgUsageExport returns every terminal attributed to
+	// the org (terminals.organization_id) whose created_at falls in [from, to),
+	// ordered created_at ASC. Billing attribution: scoped by the row's
+	// organization_id (the budget the session actually consumed), NOT the
+	// organization_members join the live dashboard uses — a member who has
+	// since left the org still consumed its budget during the period. No state
+	// filter: running, stopped, and deleted tombstones (deleted_at NULL) all
+	// count if created_at is in range.
+	GetTerminalSessionsForOrgUsageExport(orgID uuid.UUID, from, to time.Time) (*[]models.Terminal, error)
 	UpdateTerminalSession(terminal *models.Terminal) error
 	DeleteTerminalSession(sessionID string) error
 
@@ -273,6 +284,18 @@ func (r *terminalRepository) GetTerminalSessionsByOrganizationID(orgID uuid.UUID
 	err := r.db.Preload("UserTerminalKey").
 		Where("organization_id = ?", orgID).
 		Order("created_at DESC").
+		Find(&terminals).Error
+	if err != nil {
+		return nil, err
+	}
+	return &terminals, nil
+}
+
+func (r *terminalRepository) GetTerminalSessionsForOrgUsageExport(orgID uuid.UUID, from, to time.Time) (*[]models.Terminal, error) {
+	var terminals []models.Terminal
+	err := r.db.
+		Where("organization_id = ? AND created_at >= ? AND created_at < ?", orgID, from, to).
+		Order("created_at ASC").
 		Find(&terminals).Error
 	if err != nil {
 		return nil, err
