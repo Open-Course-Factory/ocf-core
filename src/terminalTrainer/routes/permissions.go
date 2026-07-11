@@ -3,100 +3,19 @@ package terminalController
 import (
 	"log"
 
-	"soli/formations/src/auth/interfaces"
 	access "soli/formations/src/auth/access"
+	"soli/formations/src/auth/interfaces"
 )
 
 // RegisterTerminalPermissions registers all Casbin policies for terminal routes.
 func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Registering terminal module permissions ===")
 
-	// User Terminal Key routes
-	access.ReconcilePolicy(enforcer, "member", "/api/v1/user-terminal-keys/regenerate", "POST")
-	access.ReconcilePolicy(enforcer, "member", "/api/v1/user-terminal-keys/my-key", "GET")
-
-	// Terminal member routes
-	terminalRoutes := []struct {
-		path   string
-		method string
-	}{
-		{"/api/v1/terminals/user-sessions", "GET"},
-		{"/api/v1/terminals/sync-all", "POST"},
-		{"/api/v1/terminals/metrics", "GET"},
-		{"/api/v1/terminals/:id/console", "GET"},
-		{"/api/v1/terminals/:id/stop", "POST"},
-		{"/api/v1/terminals/:id/start", "POST"},
-		{"/api/v1/terminals/:id", "DELETE"},
-		{"/api/v1/terminals/:id/sync", "POST"},
-		{"/api/v1/terminals/:id/status", "GET"},
-		{"/api/v1/terminals/:id/history", "GET"},
-		{"/api/v1/terminals/:id/history", "DELETE"},
-		{"/api/v1/terminals/my-history", "DELETE"},
-		{"/api/v1/terminals/:id/access-status", "GET"},
-		{"/api/v1/terminals/consent-status", "GET"},
-		{"/api/v1/terminals/backends", "GET"},
-		{"/api/v1/terminals/distributions", "GET"},
-		{"/api/v1/terminals/sizes", "GET"},
-		{"/api/v1/terminals/session-options", "GET"},
-		{"/api/v1/terminals/start-composed-session", "POST"},
-		{"/api/v1/terminals/capacity-check", "GET"},
-		{"/api/v1/terminals/my-usage", "GET"},
-	}
-
-	for _, route := range terminalRoutes {
-		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
-	}
-
-	// Terminal admin routes
-	terminalAdminRoutes := []struct {
-		path   string
-		method string
-	}{
-		{"/api/v1/terminals/backends/:backendId/set-default", "PATCH"},
-		{"/api/v1/terminals/catalog-sizes", "GET"},
-		{"/api/v1/terminals/catalog-features", "GET"},
-		{"/api/v1/terminals/enums/status", "GET"},
-		{"/api/v1/terminals/enums/refresh", "POST"},
-	}
-
-	for _, route := range terminalAdminRoutes {
-		access.ReconcilePolicy(enforcer, "administrator", route.path, route.method)
-	}
-
-	// Group terminal routes (fine-grained group checks in controller)
-	groupTerminalRoutes := []struct {
-		path   string
-		method string
-	}{
-		{"/api/v1/class-groups/:id/bulk-create-terminals", "POST"},
-		{"/api/v1/class-groups/:id/command-history", "GET"},
-		{"/api/v1/class-groups/:id/command-history-stats", "GET"},
-	}
-
-	for _, route := range groupTerminalRoutes {
-		access.ReconcilePolicy(enforcer, "member", route.path, route.method)
-	}
-
-	// Organization terminal sessions (fine-grained org checks in controller)
-	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/terminal-sessions", "GET")
-	// Organization terminal usage (managers/owners only — Layer 2 via OrgRole + MinRole manager)
-	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/terminal-usage", "GET")
-	// Organization usage CSV export (managers/owners only — Layer 2 via OrgRole + MinRole manager)
-	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/usage-export", "GET")
-
-	// Incus UI proxy (fine-grained backend access checks in controller)
-	// Layer 1 Casbin path MUST stay "/*" (not "/*path"): AuthManagement matches
-	// this against the concrete request URL via keyMatch2, which treats "/*" as a
-	// wildcard but "/*path" as a literal suffix. The Layer 2 RouteRegistry entries
-	// below use "/*path" instead because they exact-match gin's FullPath.
-	access.ReconcilePolicy(enforcer, "member", "/api/v1/incus-ui/:backendId/*", "(GET|POST|PUT|PATCH|DELETE)")
-
-	// Declarative route permission registry
-	access.RouteRegistry.Register("Terminals",
+	access.RegisterEnforced(enforcer, "Terminals",
 		// Session management
-		access.RoutePermission{Path: "/api/v1/terminals/user-sessions", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "List current user's active terminal sessions"},
-		access.RoutePermission{Path: "/api/v1/terminals/my-history", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Delete all command history for current user"},
-		access.RoutePermission{Path: "/api/v1/terminals/sync-all", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Sync all terminal sessions for current user"},
+		access.RoutePermission{Path: "/api/v1/terminals/user-sessions", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "List current user's active terminal sessions"},
+		access.RoutePermission{Path: "/api/v1/terminals/my-history", Method: "DELETE", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Delete all command history for current user"},
+		access.RoutePermission{Path: "/api/v1/terminals/sync-all", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Sync all terminal sessions for current user"},
 
 		// Per-terminal operations.
 		//
@@ -112,68 +31,72 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		// never matches a row's `id`. Reclassify as SelfScoped — the
 		// controllers retain authoritative ownership enforcement. Same
 		// pattern as `/scenario-sessions/by-terminal/:terminalId` (#269).
-		access.RoutePermission{Path: "/api/v1/terminals/:id/console", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Connect to terminal console via WebSocket (controller-enforced ownership)"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/stop", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Stop a running terminal session (controller-enforced ownership)"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/start", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Resume a stopped terminal (controller-enforced ownership)"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Permanently delete a terminal session (controller-enforced ownership)"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/sync", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Sync terminal session state with backend (controller-enforced ownership)"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/status", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get terminal session status (controller-enforced ownership)"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/history", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get command history for a terminal session (controller-enforced ownership)"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/history", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Delete command history for a terminal session (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/console", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Connect to terminal console via WebSocket (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/stop", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Stop a running terminal session (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/start", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Resume a stopped terminal (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id", Method: "DELETE", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Permanently delete a terminal session (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/sync", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Sync terminal session state with backend (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/status", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get terminal session status (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/history", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get command history for a terminal session (controller-enforced ownership)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/history", Method: "DELETE", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Delete command history for a terminal session (controller-enforced ownership)"},
 
 		// Access status (self-scoped - checks own access level)
-		access.RoutePermission{Path: "/api/v1/terminals/:id/access-status", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Check current user's access level for a terminal"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/access-status", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Check current user's access level for a terminal"},
 
 		// Public configuration routes
-		access.RoutePermission{Path: "/api/v1/terminals/consent-status", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "Get consent policy status for command recording"},
-		access.RoutePermission{Path: "/api/v1/terminals/metrics", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "Get terminal server metrics"},
-		access.RoutePermission{Path: "/api/v1/terminals/backends", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "List available terminal backends"},
-		access.RoutePermission{Path: "/api/v1/terminals/distributions", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.Public}, Description: "List available distributions"},
-		access.RoutePermission{Path: "/api/v1/terminals/sizes", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "List available machine sizes catalog (for scenario editing UI)"},
-		access.RoutePermission{Path: "/api/v1/terminals/session-options", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get session composition options for a distribution"},
-		access.RoutePermission{Path: "/api/v1/terminals/start-composed-session", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Start a composed terminal session"},
-		access.RoutePermission{Path: "/api/v1/terminals/capacity-check", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Check whether a session of the given size can be launched right now"},
+		access.RoutePermission{Path: "/api/v1/terminals/consent-status", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.Public}, Description: "Get consent policy status for command recording"},
+		access.RoutePermission{Path: "/api/v1/terminals/metrics", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.Public}, Description: "Get terminal server metrics"},
+		access.RoutePermission{Path: "/api/v1/terminals/backends", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.Public}, Description: "List available terminal backends"},
+		access.RoutePermission{Path: "/api/v1/terminals/distributions", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.Public}, Description: "List available distributions"},
+		access.RoutePermission{Path: "/api/v1/terminals/sizes", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "List available machine sizes catalog (for scenario editing UI)"},
+		access.RoutePermission{Path: "/api/v1/terminals/session-options", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get session composition options for a distribution"},
+		access.RoutePermission{Path: "/api/v1/terminals/start-composed-session", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Start a composed terminal session"},
+		access.RoutePermission{Path: "/api/v1/terminals/capacity-check", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Check whether a session of the given size can be launched right now"},
 		// My usage snapshot — read-only personal-or-org view powering the
 		// dashboard "Utilisation Actuelle" panel. Layer 2 OrgRole enforcement
 		// for ?organization_id is handled by the InjectOrgContext middleware
 		// in the route chain (same pattern as session-options).
-		access.RoutePermission{Path: "/api/v1/terminals/my-usage", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get current user's live terminal usage snapshot (plan limits + used CPU/RAM + active sessions)"},
+		access.RoutePermission{Path: "/api/v1/terminals/my-usage", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get current user's live terminal usage snapshot (plan limits + used CPU/RAM + active sessions)"},
 
 		// Admin routes
-		access.RoutePermission{Path: "/api/v1/terminals/backends/:backendId/set-default", Method: "PATCH", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "Set the default terminal backend"},
-		access.RoutePermission{Path: "/api/v1/terminals/catalog-sizes", Method: "GET", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "List full catalog of resource sizes (admin scenario editing)"},
-		access.RoutePermission{Path: "/api/v1/terminals/catalog-features", Method: "GET", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "List full catalog of features (admin scenario editing)"},
-		access.RoutePermission{Path: "/api/v1/terminals/enums/status", Method: "GET", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "Get enum cache status for diagnostics"},
-		access.RoutePermission{Path: "/api/v1/terminals/enums/refresh", Method: "POST", Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly}, Description: "Refresh enum caches from backend"},
+		access.RoutePermission{Path: "/api/v1/terminals/backends/:backendId/set-default", Method: "PATCH", Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly}, Description: "Set the default terminal backend"},
+		access.RoutePermission{Path: "/api/v1/terminals/catalog-sizes", Method: "GET", Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly}, Description: "List full catalog of resource sizes (admin scenario editing)"},
+		access.RoutePermission{Path: "/api/v1/terminals/catalog-features", Method: "GET", Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly}, Description: "List full catalog of features (admin scenario editing)"},
+		access.RoutePermission{Path: "/api/v1/terminals/enums/status", Method: "GET", Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly}, Description: "Get enum cache status for diagnostics"},
+		access.RoutePermission{Path: "/api/v1/terminals/enums/refresh", Method: "POST", Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly}, Description: "Refresh enum caches from backend"},
 
 		// Group terminal routes
-		access.RoutePermission{Path: "/api/v1/class-groups/:id/bulk-create-terminals", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "Bulk create terminals for all group members"},
-		access.RoutePermission{Path: "/api/v1/class-groups/:id/command-history", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "Get command history for all group members"},
-		access.RoutePermission{Path: "/api/v1/class-groups/:id/command-history-stats", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "Get command history statistics for a group"},
+		access.RoutePermission{Path: "/api/v1/class-groups/:id/bulk-create-terminals", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "Bulk create terminals for all group members"},
+		access.RoutePermission{Path: "/api/v1/class-groups/:id/command-history", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "Get command history for all group members"},
+		access.RoutePermission{Path: "/api/v1/class-groups/:id/command-history-stats", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "Get command history statistics for a group"},
 
 		// Organization terminal routes
-		access.RoutePermission{Path: "/api/v1/organizations/:id/terminal-sessions", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"}, Description: "List terminal sessions for an organization"},
-		access.RoutePermission{Path: "/api/v1/organizations/:id/terminal-usage", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"}, Description: "Get org-wide active terminal usage for managers/owners"},
-		access.RoutePermission{Path: "/api/v1/organizations/:id/usage-export", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"}, Description: "Export org terminal usage as CSV for a billing window (managers/owners only)"},
+		access.RoutePermission{Path: "/api/v1/organizations/:id/terminal-sessions", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"}, Description: "List terminal sessions for an organization"},
+		access.RoutePermission{Path: "/api/v1/organizations/:id/terminal-usage", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"}, Description: "Get org-wide active terminal usage for managers/owners"},
+		access.RoutePermission{Path: "/api/v1/organizations/:id/usage-export", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"}, Description: "Export org terminal usage as CSV for a billing window (managers/owners only)"},
 
 		// Incus UI proxy — split into per-method entries because the Layer2
 		// registry Lookup does exact-match on method+path; a regex-style
 		// "(GET|POST|PUT|PATCH|DELETE)" method never matches concrete requests
 		// and would silently bypass the declared rule.
 		//
-		// The path MUST match gin's ctx.FullPath() for the `.Any("/:backendId/*path")`
-		// route (".../:backendId/*path"), otherwise Lookup misses and the rule is
-		// dead. The rule delegates to IsUserAuthorizedForBackend via IncusBackendAccess
+		// The registry path MUST match gin's ctx.FullPath() for the
+		// `.Any("/:backendId/*path")` route (".../:backendId/*path"), otherwise
+		// Lookup misses and the rule is dead. CasbinPath overrides ONLY the
+		// Layer 1 policy path back to ".../:backendId/*": AuthManagement matches
+		// that against the concrete request URL via keyMatch2, which treats "/*"
+		// as a wildcard but "/*path" as a literal suffix (the bug MR B fixed).
+		// The rule delegates to IsUserAuthorizedForBackend via IncusBackendAccess
 		// rather than OrgRole, because backendId is a backend id, not an org UUID.
-		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", Method: "GET", Role: "member", Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
-		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", Method: "POST", Role: "member", Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
-		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", Method: "PUT", Role: "member", Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
-		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", Method: "PATCH", Role: "member", Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
-		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", Method: "DELETE", Role: "member", Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", CasbinPath: "/api/v1/incus-ui/:backendId/*", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", CasbinPath: "/api/v1/incus-ui/:backendId/*", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", CasbinPath: "/api/v1/incus-ui/:backendId/*", Method: "PUT", Role: access.RoleMember, Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", CasbinPath: "/api/v1/incus-ui/:backendId/*", Method: "PATCH", Role: access.RoleMember, Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
+		access.RoutePermission{Path: "/api/v1/incus-ui/:backendId/*path", CasbinPath: "/api/v1/incus-ui/:backendId/*", Method: "DELETE", Role: access.RoleMember, Access: access.AccessRule{Type: IncusBackendAccess, Param: "backendId"}, Description: "Proxy requests to Incus UI for a backend"},
 
 		// User terminal keys
-		access.RoutePermission{Path: "/api/v1/user-terminal-keys/regenerate", Method: "POST", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Regenerate terminal authentication key"},
-		access.RoutePermission{Path: "/api/v1/user-terminal-keys/my-key", Method: "GET", Role: "member", Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get current user's terminal authentication key"},
+		access.RoutePermission{Path: "/api/v1/user-terminal-keys/regenerate", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Regenerate terminal authentication key"},
+		access.RoutePermission{Path: "/api/v1/user-terminal-keys/my-key", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Get current user's terminal authentication key"},
 	)
 
 	log.Println("=== Terminal module permissions registered ===")

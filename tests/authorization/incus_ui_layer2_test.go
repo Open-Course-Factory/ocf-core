@@ -161,10 +161,13 @@ func TestIncusUIProxy_Layer2Rule_DoesNotUseOrgRole(t *testing.T) {
 // incusUICasbinPolicy_test.go proves keyMatch2 semantics on HARD-CODED strings;
 // it cannot catch a regression in what the module actually registers — this does.
 
-// registeredIncusUILayer1Path returns the Casbin policy path the terminal module
-// registers for the Incus UI proxy (the AddPolicy call whose path is under
-// /api/v1/incus-ui/). Fails the test if it is absent or ambiguous.
-func registeredIncusUILayer1Path(t *testing.T, enforcer *mocks.MockEnforcer) string {
+// registeredIncusUILayer1Paths returns every Casbin policy path the terminal
+// module registers for the Incus UI proxy (each AddPolicy call whose path is
+// under /api/v1/incus-ui/). Since MR N derives Layer 1 from the RouteRegistry,
+// the proxy now registers one row per HTTP method (GET/POST/PUT/PATCH/DELETE)
+// rather than a single "(GET|POST|PUT|PATCH|DELETE)" regex row — so this returns
+// all five. Fails the test if none are found.
+func registeredIncusUILayer1Paths(t *testing.T, enforcer *mocks.MockEnforcer) []string {
 	t.Helper()
 	var found []string
 	for _, call := range enforcer.AddPolicyCalls {
@@ -180,15 +183,32 @@ func registeredIncusUILayer1Path(t *testing.T, enforcer *mocks.MockEnforcer) str
 			found = append(found, path)
 		}
 	}
-	require.Len(t, found, 1,
-		"expected exactly one Incus UI Layer 1 Casbin policy to be registered, got %v", found)
-	return found[0]
+	require.Len(t, found, 5,
+		"expected exactly five Incus UI Layer 1 Casbin policies (one per HTTP method) "+
+			"to be registered, got %v", found)
+	return found
 }
 
-// TestIncusUIProxy_Layer1Policy_MatchesConcreteURLs is the C1 runtime RED.
+// TestIncusUIProxy_Layer1Policy_MatchesConcreteURLs is the C1 runtime guard.
+//
+// MR N derives Layer 1 from the RouteRegistry, so the proxy now registers five
+// concrete per-method Casbin rows instead of one regex-method row. The core
+// security property is unchanged and asserted against EVERY row: each Layer 1
+// policy path must keyMatch2 the real, concrete Incus UI request URLs. If any
+// row carried the registry's /*path form instead of the CasbinPath /* override,
+// keyMatch2 would fail on real URLs and non-admins would be denied 403 (the MR B
+// bug). Running the check over all five rows proves the override applied to each.
 func TestIncusUIProxy_Layer1Policy_MatchesConcreteURLs(t *testing.T) {
 	enforcer := registerTerminalPermissionsForTest(t)
-	policyPath := registeredIncusUILayer1Path(t, enforcer)
+	policyPaths := registeredIncusUILayer1Paths(t, enforcer)
+
+	// Every registered incus-ui Layer 1 path must be the keyMatch2 wildcard form
+	// (/*), never the registry's literal-suffix /*path form.
+	for _, p := range policyPaths {
+		assert.Equal(t, "/api/v1/incus-ui/:backendId/*", p,
+			"every Incus UI Layer 1 Casbin policy path must be the keyMatch2 '/*' form "+
+				"(from the CasbinPath override), never the registry '/*path' form; got %q", p)
+	}
 
 	// Concrete request URLs (ctx.Request.URL.Path) that a real Incus UI session
 	// generates. None of these end with the literal "path", so a "/*path"
@@ -201,16 +221,19 @@ func TestIncusUIProxy_Layer1Policy_MatchesConcreteURLs(t *testing.T) {
 		"/api/v1/incus-ui/backend123/1.0/instances/foo/state", // deep nested API path
 	}
 
-	for _, url := range realURLs {
-		t.Run(url, func(t *testing.T) {
-			assert.True(t, util.KeyMatch2(url, policyPath),
-				"Layer 1 Casbin policy %q must keyMatch2 the concrete request URL %q. "+
-					"AuthManagement matches Casbin policies against ctx.Request.URL.Path with "+
-					"keyMatch2, which rewrites '/*' → '/.*' only — a '/*path' suffix becomes "+
-					"'/.*path$' and requires the URL to end with the literal 'path', so every "+
-					"real Incus UI request is denied 403. Register the Layer 1 policy path as "+
-					"'/api/v1/incus-ui/:backendId/*' (Layer 2 keeps '*path' for the exact "+
-					"FullPath match).", policyPath, url)
-		})
+	// The security property must hold for EVERY registered per-method row.
+	for _, policyPath := range policyPaths {
+		for _, url := range realURLs {
+			t.Run(policyPath+" vs "+url, func(t *testing.T) {
+				assert.True(t, util.KeyMatch2(url, policyPath),
+					"Layer 1 Casbin policy %q must keyMatch2 the concrete request URL %q. "+
+						"AuthManagement matches Casbin policies against ctx.Request.URL.Path with "+
+						"keyMatch2, which rewrites '/*' → '/.*' only — a '/*path' suffix becomes "+
+						"'/.*path$' and requires the URL to end with the literal 'path', so every "+
+						"real Incus UI request is denied 403. Register the Layer 1 policy path as "+
+						"'/api/v1/incus-ui/:backendId/*' (Layer 2 keeps '*path' for the exact "+
+						"FullPath match).", policyPath, url)
+			})
+		}
 	}
 }

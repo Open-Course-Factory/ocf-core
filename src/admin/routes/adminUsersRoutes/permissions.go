@@ -16,12 +16,10 @@ import (
 func RegisterPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Registering admin users permissions ===")
 
-	access.ReconcilePolicy(enforcer, "administrator", "/api/v1/admin/users-with-memberships", "GET")
-
-	access.RouteRegistry.Register("Admin Users",
+	access.RegisterEnforced(enforcer, "Admin Users",
 		access.RoutePermission{
 			Path: "/api/v1/admin/users-with-memberships", Method: "GET",
-			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "List all users with their organization and group memberships (admin only)",
 		},
 	)

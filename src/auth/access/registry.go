@@ -3,6 +3,8 @@ package access
 import (
 	"sort"
 	"sync"
+
+	"soli/formations/src/auth/interfaces"
 )
 
 // RouteRegistry collects route permission declarations from all modules.
@@ -74,6 +76,29 @@ func (r *routeRegistry) Reset() {
 	r.routes = make(map[string][]RoutePermission)
 	r.byRoute = make(map[string]RoutePermission)
 	r.entities = nil
+}
+
+// RegisterEnforced declares routes ONCE: it registers each RoutePermission in
+// the RouteRegistry (Layer 2) and derives its Layer 1 Casbin policy via
+// ReconcilePolicy(role, path, method). This is the single source of truth for a
+// route's authorization — the previous pattern hand-maintained a parallel Casbin
+// list that drifted (see the incus-ui path bug). Optional per-route escape hatches:
+//   - CasbinPath overrides the Layer 1 policy path (keyMatch2 wants /* where the
+//     registry exact-match wants /*path).
+//   - NoGateway declares the route in the registry but registers NO Casbin policy
+//     (route mounted without AuthManagement).
+func RegisterEnforced(enforcer interfaces.EnforcerInterface, category string, perms ...RoutePermission) {
+	RouteRegistry.Register(category, perms...)
+	for _, p := range perms {
+		if p.NoGateway {
+			continue
+		}
+		path := p.Path
+		if p.CasbinPath != "" {
+			path = p.CasbinPath
+		}
+		ReconcilePolicy(enforcer, p.Role, path, p.Method)
+	}
 }
 
 // Lookup returns the RoutePermission for a given HTTP method and path.

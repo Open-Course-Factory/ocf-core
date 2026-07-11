@@ -71,7 +71,16 @@ func TestSetupAuthPermissions_ExistingPolicies(t *testing.T) {
 		method string
 	}{
 		{"/api/v1/users/:id", "GET"},
-		{"/api/v1/users/me/*", "(GET|POST|PATCH|DELETE)"},
+		// /api/v1/users/me/* is now registered as concrete per-method Casbin rows
+		// (MR N derives Layer 1 from the RouteRegistry, which splits the old
+		// "(GET|POST|PATCH|DELETE)" regex method into one row per method). The
+		// keyMatch2 wildcard path /api/v1/users/me/* is preserved; only the method
+		// shape changed. Security property: a member policy covers all four methods
+		// on that path — assert every one is present.
+		{"/api/v1/users/me/*", "GET"},
+		{"/api/v1/users/me/*", "POST"},
+		{"/api/v1/users/me/*", "PATCH"},
+		{"/api/v1/users/me/*", "DELETE"},
 		{"/api/v1/auth/permissions", "GET"},
 		{"/api/v1/auth/me", "GET"},
 		{"/api/v1/auth/verify-status", "GET"},
@@ -136,8 +145,16 @@ func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/class-groups/:id/command-history-stats", "GET"},
 		// Organization terminal routes
 		{"/api/v1/organizations/:id/terminal-sessions", "GET"},
-		// Incus UI proxy
-		{"/api/v1/incus-ui/:backendId/*", "(GET|POST|PUT|PATCH|DELETE)"},
+		// Incus UI proxy — MR N derives Layer 1 from the RouteRegistry, so the old
+		// single "(GET|POST|PUT|PATCH|DELETE)" regex row becomes five concrete
+		// per-method Casbin rows. The CasbinPath override keeps the keyMatch2 path
+		// /api/v1/incus-ui/:backendId/* (NOT the registry's /*path form). Security
+		// property: every proxied method is policy-covered for members on that path.
+		{"/api/v1/incus-ui/:backendId/*", "GET"},
+		{"/api/v1/incus-ui/:backendId/*", "POST"},
+		{"/api/v1/incus-ui/:backendId/*", "PUT"},
+		{"/api/v1/incus-ui/:backendId/*", "PATCH"},
+		{"/api/v1/incus-ui/:backendId/*", "DELETE"},
 	}
 
 	for _, r := range memberRoutes {

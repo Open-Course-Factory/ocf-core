@@ -15,14 +15,10 @@ import (
 func RegisterAdminStripePermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Registering admin stripe pending-syncs permissions ===")
 
-	// Layer 1 (RBAC): only administrator can read pending Stripe syncs.
-	access.ReconcilePolicy(enforcer, "administrator", "/api/v1/admin/stripe/pending-syncs", "GET")
-
-	// Layer 2 (Business Logic): AdminOnly access rule.
-	access.RouteRegistry.Register("Admin Stripe",
+	access.RegisterEnforced(enforcer, "Admin Stripe",
 		access.RoutePermission{
 			Path: "/api/v1/admin/stripe/pending-syncs", Method: "GET",
-			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "List pending Stripe sync queue rows (admin only)",
 		},
 	)

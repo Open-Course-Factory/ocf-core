@@ -17,24 +17,20 @@ import (
 func RegisterImpersonationPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Registering impersonation permissions ===")
 
-	access.ReconcilePolicy(enforcer, "administrator", "/api/v1/admin/impersonate/start", "POST")
-	access.ReconcilePolicy(enforcer, "administrator", "/api/v1/admin/impersonate/stop", "POST")
-	access.ReconcilePolicy(enforcer, "administrator", "/api/v1/admin/impersonate/active", "GET")
-
-	access.RouteRegistry.Register("Impersonation",
+	access.RegisterEnforced(enforcer, "Impersonation",
 		access.RoutePermission{
 			Path: "/api/v1/admin/impersonate/start", Method: "POST",
-			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Start impersonating a user (admin only)",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/admin/impersonate/stop", Method: "POST",
-			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Stop the current impersonation session",
 		},
 		access.RoutePermission{
 			Path: "/api/v1/admin/impersonate/active", Method: "GET",
-			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Get the admin's currently active impersonation session",
 		},
 	)

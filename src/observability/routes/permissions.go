@@ -15,14 +15,10 @@ import (
 func RegisterPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Registering observability permissions ===")
 
-	// Layer 1 (RBAC): only administrator can read observability.
-	access.ReconcilePolicy(enforcer, "administrator", "/api/v1/admin/observability-metrics", "GET")
-
-	// Layer 2 (Business Logic): AdminOnly access rule.
-	access.RouteRegistry.Register("Observability",
+	access.RegisterEnforced(enforcer, "Observability",
 		access.RoutePermission{
 			Path: "/api/v1/admin/observability-metrics", Method: "GET",
-			Role: "administrator", Access: access.AccessRule{Type: access.AdminOnly},
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Get aggregated counters for Stripe sync / scenario setup / hook errors (admin only)",
 		},
 	)

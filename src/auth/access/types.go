@@ -39,6 +39,14 @@ type AccessRule struct {
 	Param   string         `json:"param,omitempty"`    // For GroupRole/OrgRole: URL param containing the ID
 }
 
+// Platform role names used as RoutePermission.Role values. They match the
+// existing Casbin role strings — modules should use these constants instead of
+// repeating the "member" / "administrator" literals.
+const (
+	RoleMember        = "member"
+	RoleAdministrator = "administrator"
+)
+
 // RoutePermission declares the full authorization contract for a single route.
 // Both Layer 1 (role-based gateway) and Layer 2 (business logic) are described here.
 type RoutePermission struct {
@@ -48,6 +56,13 @@ type RoutePermission struct {
 	Role        string     `json:"role"` // "member" or "administrator"
 	Access      AccessRule `json:"access"`
 	Description string     `json:"description"`
+	// CasbinPath overrides the Layer 1 policy path when it must differ from the
+	// Gin route pattern used for the Layer 2 registry lookup (e.g. keyMatch2
+	// wants /* where the Gin pattern is /*path).
+	CasbinPath string `json:"casbin_path,omitempty"`
+	// NoGateway declares the route in the registry but registers NO Casbin
+	// policy — for routes mounted without AuthManagement().
+	NoGateway bool `json:"no_gateway,omitempty"`
 }
 
 // EntityCRUDPermissions declares the Layer 2 rules for a generic entity's CRUD operations.
