@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/auth/interfaces"
@@ -265,11 +266,54 @@ func ActionRelativePath(a entityManagementInterfaces.ActionConfig) string {
 	return "/" + a.Name
 }
 
-// RegisterEntityActions stores the custom actions declared for an entity.
-func (s *EntityRegistrationService) RegisterEntityActions(name string, actions []entityManagementInterfaces.ActionConfig) {
-	if len(actions) > 0 {
-		s.entityActions[name] = actions
+// ValidateActionConfig returns a descriptive error when a declared action is
+// missing a required field (Name, Method, Role, Access.Type, or Handler). It is
+// called at registration so a misdeclared action fails fast rather than booting
+// silently as an unauthorized or unmountable route; the error names the entity
+// and the offending field to keep the startup log actionable.
+func ValidateActionConfig(entityName string, a entityManagementInterfaces.ActionConfig) error {
+	switch {
+	case a.Name == "":
+		return fmt.Errorf("entity %q: action config is missing Name", entityName)
+	case a.Method == "":
+		return fmt.Errorf("entity %q: action %q is missing Method", entityName, a.Name)
+	case a.Role == "":
+		return fmt.Errorf("entity %q: action %q is missing Role", entityName, a.Name)
+	case a.Access.Type == "":
+		return fmt.Errorf("entity %q: action %q is missing Access.Type", entityName, a.Name)
+	case a.Handler == nil:
+		return fmt.Errorf("entity %q: action %q has a nil Handler", entityName, a.Name)
 	}
+	return nil
+}
+
+// normalizeActionConfig canonicalizes an action's HTTP method (trim + uppercase).
+// It is the single source of truth for method normalization, shared by both
+// registration entry points so the Casbin triple, the RouteRegistry key, and the
+// gin mount can never derive divergent methods for the same action.
+func normalizeActionConfig(a entityManagementInterfaces.ActionConfig) entityManagementInterfaces.ActionConfig {
+	a.Method = strings.ToUpper(strings.TrimSpace(a.Method))
+	return a
+}
+
+// RegisterEntityActions normalizes, validates, and stores the custom actions
+// declared for an entity, returning the normalized slice so callers can wire the
+// same values into access setup without a second copy of the normalization rule.
+// A misdeclared action panics (startup fail-fast).
+func (s *EntityRegistrationService) RegisterEntityActions(name string, actions []entityManagementInterfaces.ActionConfig) []entityManagementInterfaces.ActionConfig {
+	if len(actions) == 0 {
+		return nil
+	}
+	normalized := make([]entityManagementInterfaces.ActionConfig, len(actions))
+	for i, a := range actions {
+		a = normalizeActionConfig(a)
+		if err := ValidateActionConfig(name, a); err != nil {
+			panic(err)
+		}
+		normalized[i] = a
+	}
+	s.entityActions[name] = normalized
+	return normalized
 }
 
 // GetActions returns the custom actions declared for an entity, or nil if none.
@@ -291,7 +335,20 @@ func (s *EntityRegistrationService) GetAllActions() map[string][]entityManagemen
 // Casbin policy and Layer 2 RoutePermission (keyed under the entity name as its
 // category) so custom actions are authorized exactly like CRUD routes.
 func (s *EntityRegistrationService) SetEntityActionAccesses(entityName string, actions []entityManagementInterfaces.ActionConfig, enforcer interfaces.EnforcerInterface) {
-	if len(actions) == 0 {
+	// Normalize + validate up front, ahead of the early-returns below: this entry
+	// point is independently callable, and a misdeclared action must fail fast
+	// (panic) even when the enforcer is nil — otherwise the nil-enforcer return
+	// would let a bad declaration boot silently.
+	normalized := make([]entityManagementInterfaces.ActionConfig, 0, len(actions))
+	for _, a := range actions {
+		a = normalizeActionConfig(a)
+		if err := ValidateActionConfig(entityName, a); err != nil {
+			panic(err)
+		}
+		normalized = append(normalized, a)
+	}
+
+	if len(normalized) == 0 {
 		return
 	}
 	if enforcer == nil {
@@ -300,8 +357,8 @@ func (s *EntityRegistrationService) SetEntityActionAccesses(entityName string, a
 	}
 
 	basePath := "/api/v1" + ResourceBasePath(entityName)
-	perms := make([]access.RoutePermission, 0, len(actions))
-	for _, a := range actions {
+	perms := make([]access.RoutePermission, 0, len(normalized))
+	for _, a := range normalized {
 		perms = append(perms, access.RoutePermission{
 			Path:        basePath + ActionRelativePath(a),
 			Method:      a.Method,
@@ -391,9 +448,11 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 		Delete: deriveAccessRule(reg.Roles, "DELETE", name, reg.OwnershipConfig),
 	})
 
-	// Store custom actions and set up their Layer 1 / Layer 2 access policies
-	service.RegisterEntityActions(name, reg.Actions)
-	service.SetEntityActionAccesses(name, reg.Actions, casdoor.Enforcer)
+	// Store custom actions and set up their Layer 1 / Layer 2 access policies.
+	// Normalization/validation happens once in RegisterEntityActions; feed the
+	// normalized slice into access setup so both see the same uppercase method.
+	normalizedActions := service.RegisterEntityActions(name, reg.Actions)
+	service.SetEntityActionAccesses(name, normalizedActions, casdoor.Enforcer)
 }
 
 // deriveAccessRule determines the Layer 2 access rule for an entity CRUD operation
