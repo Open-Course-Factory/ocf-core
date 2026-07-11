@@ -20,10 +20,11 @@ import (
 // SSOT-correct outcome: after TerminateUserTerminals, the user's occupied slot
 // count (as reported by models.CountUserOccupiedSlots — the canonical real-time
 // counter from MR !218) drops to zero. A "stopped" terminal still occupies a
-// slot per TerminalStatesOccupyingSlot, so the cleanup must mark terminals
-// as State="deleted" to free the slot. This guards against regressing to the
-// old stop-semantic which left users appearing over-quota after subscription
-// cancellation.
+// slot per TerminalStatesOccupyingSlot, so the billing-revocation cleanup must
+// mark terminals with a slot-freeing terminal state ("revoked" — see issue
+// #388; excluded from OccupiesSlotScope like "deleted"). This guards against
+// regressing to the old stop-semantic which left users appearing over-quota
+// after subscription cancellation.
 func TestTerminateUserTerminals_FreesQuotaSlotViaOccupiesSlotScope(t *testing.T) {
 	db := freshTestDB(t)
 	userID := "user-frees-slot"
@@ -44,7 +45,7 @@ func TestTerminateUserTerminals_FreesQuotaSlotViaOccupiesSlotScope(t *testing.T)
 	// SSOT assertion: real-time counter returns 0 — the slot has been freed.
 	after, err := terminalModels.CountUserOccupiedSlots(db, userID, nil)
 	require.NoError(t, err)
-	assert.Equal(t, int64(0), after, "after TerminateUserTerminals, the user must occupy 0 slots (terminal must be 'deleted', not 'stopped')")
+	assert.Equal(t, int64(0), after, "after TerminateUserTerminals, the user must occupy 0 slots (terminal must be slot-freeing 'revoked', not slot-occupying 'stopped')")
 }
 
 func TestTerminateOrganizationMemberTerminals_DeletesActiveTerminals(t *testing.T) {
@@ -96,12 +97,13 @@ func TestTerminateOrganizationMemberTerminals_DeletesActiveTerminals(t *testing.
 	// Execute
 	services.TerminateOrganizationMemberTerminals(db, orgID)
 
-	// Assert: all terminals should be deleted (State='deleted' is the SSOT).
-	// This frees the quota slot — stopped sessions still occupy slots per
+	// Assert: all terminals are marked 'revoked' (issue #388 — the distinct
+	// billing-revocation end state). This frees the quota slot just like the
+	// old 'deleted' did — stopped sessions still occupy slots per
 	// models.TerminalStatesOccupyingSlot.
-	var deletedCount int64
-	db.Raw("SELECT COUNT(*) FROM terminals WHERE state = 'deleted'").Scan(&deletedCount)
-	assert.Equal(t, int64(3), deletedCount)
+	var revokedCount int64
+	db.Raw("SELECT COUNT(*) FROM terminals WHERE state = 'revoked'").Scan(&revokedCount)
+	assert.Equal(t, int64(3), revokedCount)
 
 	var remainingRunning int64
 	db.Raw("SELECT COUNT(*) FROM terminals WHERE state = 'running'").Scan(&remainingRunning)
@@ -160,10 +162,10 @@ func TestTerminateOrganizationMemberTerminals_IgnoresInactiveMembers(t *testing.
 	// Execute
 	services.TerminateOrganizationMemberTerminals(db, orgID)
 
-	// Active member's terminal should be deleted (frees the quota slot)
+	// Active member's terminal should be revoked (frees the quota slot)
 	var deletedState string
 	db.Raw("SELECT state FROM terminals WHERE user_id = 'active_user'").Scan(&deletedState)
-	assert.Equal(t, "deleted", deletedState)
+	assert.Equal(t, "revoked", deletedState)
 
 	// Inactive member's terminal should remain running (member was not queried)
 	var runningState string
@@ -227,10 +229,10 @@ func TestTerminateUserTerminals_DeletesActiveTerminals(t *testing.T) {
 	err := services.TerminateUserTerminals(db, userID, nil)
 	require.NoError(t, err)
 
-	// All terminals deleted (State='deleted' is the SSOT).
-	var deletedCount int64
-	db.Raw("SELECT COUNT(*) FROM terminals WHERE user_id = ? AND state = 'deleted'", userID).Scan(&deletedCount)
-	assert.Equal(t, int64(2), deletedCount)
+	// All terminals revoked (issue #388 billing-revocation end state).
+	var revokedCount int64
+	db.Raw("SELECT COUNT(*) FROM terminals WHERE user_id = ? AND state = 'revoked'", userID).Scan(&revokedCount)
+	assert.Equal(t, int64(2), revokedCount)
 
 	// SSOT check: real-time occupied-slot count is now 0.
 	occupied, err := terminalModels.CountUserOccupiedSlots(db, userID, nil)
@@ -298,11 +300,11 @@ func TestCancelOrganizationSubscription_ImmediateTerminatesTerminals(t *testing.
 	err := svc.CancelOrganizationSubscription(orgID, false)
 	require.NoError(t, err)
 
-	// Terminal should be deleted (frees the quota slot — stopped sessions
+	// Terminal should be revoked (frees the quota slot — stopped sessions
 	// still occupy slots per models.TerminalStatesOccupyingSlot).
 	var state string
 	db.Raw("SELECT state FROM terminals WHERE user_id = 'org_member_1'").Scan(&state)
-	assert.Equal(t, "deleted", state)
+	assert.Equal(t, "revoked", state)
 }
 
 // TestTerminateOrganizationMemberTerminals_DoesNotTouchPersonalTerminals
@@ -366,10 +368,10 @@ func TestTerminateOrganizationMemberTerminals_DoesNotTouchPersonalTerminals(t *t
 	// Cancel orgA's subscription -> should terminate ONLY orgA's terminal
 	services.TerminateOrganizationMemberTerminals(db, orgA)
 
-	// orgA terminal: deleted
+	// orgA terminal: revoked (issue #388 billing-revocation end state)
 	var stateOrgA string
 	db.Raw("SELECT state FROM terminals WHERE id = ?", termOrgA.String()).Scan(&stateOrgA)
-	assert.Equal(t, "deleted", stateOrgA, "orgA terminal must be deleted")
+	assert.Equal(t, "revoked", stateOrgA, "orgA terminal must be revoked")
 
 	// orgB terminal: untouched
 	var stateOrgB string
