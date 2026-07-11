@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/organizations/dto"
@@ -440,6 +441,19 @@ func (os *organizationService) UpdateMemberRole(orgID uuid.UUID, requestingUserI
 	if newRole != models.OrgRoleOwner {
 		if err := utils.ValidateNotOwner(userID, org.OwnerUserID, "Organization"); err != nil {
 			return fmt.Errorf("cannot change the owner's role")
+		}
+	}
+
+	// Cap the assigned role at the granter's own rank: a manager must not be able
+	// to promote a member above themselves (e.g. mint an owner). The owner short-circuits
+	// the check — GetUserOrganizationRole has no row for the owner and would otherwise deny.
+	if requestingUserID != org.OwnerUserID {
+		granterRole, err := os.GetUserOrganizationRole(orgID, requestingUserID)
+		if err != nil {
+			return utils.PermissionDeniedError("update roles in", "organization")
+		}
+		if !access.IsRoleAtLeast(string(granterRole), string(newRole)) {
+			return utils.PermissionDeniedError("assign a role higher than your own in", "organization")
 		}
 	}
 

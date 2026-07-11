@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
 	"soli/formations/src/groups/dto"
 	"soli/formations/src/groups/models"
@@ -317,6 +318,20 @@ func (gs *groupService) UpdateMemberRole(groupID uuid.UUID, requestingUserID str
 	if newRole != models.GroupMemberRoleOwner {
 		if err := utils.ValidateNotOwner(userID, group.OwnerUserID, "Group"); err != nil {
 			return fmt.Errorf("cannot change the owner's role")
+		}
+	}
+
+	// Cap the assigned role at the granter's own rank so a manager cannot promote a
+	// member above themselves (e.g. mint an owner). The owner short-circuits the check;
+	// GetUserGroupRole also errors for org-based managers who manage via the org and hold
+	// no group_members row, so treat that miss as manager-equivalent rather than a denial.
+	if requestingUserID != group.OwnerUserID {
+		granterRole, err := gs.GetUserGroupRole(groupID, requestingUserID)
+		if err != nil {
+			granterRole = models.GroupMemberRoleManager
+		}
+		if !access.IsRoleAtLeast(string(granterRole), string(newRole)) {
+			return utils.PermissionDeniedError("assign a role higher than your own in", "group")
 		}
 	}
 

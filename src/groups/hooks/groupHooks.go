@@ -3,6 +3,7 @@ package groupHooks
 import (
 	"fmt"
 	"log"
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/groups/models"
 	"soli/formations/src/groups/services"
@@ -237,6 +238,26 @@ func (h *GroupMemberValidationHook) Execute(ctx *hooks.HookContext) error {
 		// Set InvitedBy if not already set
 		if member.InvitedBy == "" {
 			member.InvitedBy = ctx.UserID
+		}
+
+		// Default role to "member" if not set, so the cap below sees the effective role
+		// rather than an empty string (which IsRoleAtLeast would treat as unknown and deny).
+		if member.Role == "" {
+			member.Role = models.GroupMemberRoleMember
+		}
+
+		// Cap the assigned role at the granter's own rank so a manager cannot mint a member
+		// who outranks them (e.g. an owner). Platform administrators bypass the cap. An
+		// org-based manager who manages via the org holds no group_members row, so treat a
+		// GetUserGroupRole miss as manager-equivalent rather than a denial.
+		if !ctx.IsAdmin() {
+			granterRole, err := h.groupService.GetUserGroupRole(member.GroupID, ctx.UserID)
+			if err != nil {
+				granterRole = models.GroupMemberRoleManager
+			}
+			if !access.IsRoleAtLeast(string(granterRole), string(member.Role)) {
+				return utils.PermissionDeniedError("assign a role higher than your own in", "group")
+			}
 		}
 	}
 

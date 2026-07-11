@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/utils"
 
 	"github.com/google/uuid"
@@ -227,6 +228,20 @@ func (mms *memberManagementService) UpdateMemberRole(
 	// Cannot change owner role
 	if entity.GetOwnerUserID() == userID && newRole != mms.config.RoleOwner {
 		return utils.ErrCannotModifyOwner(mms.config.EntityType)
+	}
+
+	// Cap the assigned role at the granter's own rank so a manager cannot promote a
+	// member above themselves (e.g. mint an owner). The entity owner short-circuits the
+	// check. Roles are config strings; if a config uses names outside the standard
+	// owner/manager/member hierarchy, IsRoleAtLeast returns false and the update is denied.
+	if entity.GetOwnerUserID() != requestingUserID {
+		granterRole, err := mms.GetUserRole(entityID, requestingUserID)
+		if err != nil {
+			return utils.ErrPermissionDenied(mms.config.EntityType, "update roles in")
+		}
+		if !access.IsRoleAtLeast(granterRole, newRole) {
+			return utils.ErrPermissionDenied(mms.config.EntityType, "update roles in")
+		}
 	}
 
 	// Update role
