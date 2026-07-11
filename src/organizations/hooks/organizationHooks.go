@@ -2,6 +2,7 @@ package organizationHooks
 
 import (
 	"fmt"
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/entityManagement/hooks"
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/services"
@@ -320,6 +321,21 @@ func (h *OrganizationMemberValidationHook) Execute(ctx *hooks.HookContext) error
 	// 5. Default role to "member" if not set
 	if member.Role == "" {
 		member.Role = models.OrgRoleMember
+	}
+
+	// 5b. Cap the assigned role at the granter's own role: a granter must not mint a
+	// member who outranks them (e.g. a manager cannot create an owner). Platform
+	// administrators bypass the cap. The cap lives in the same authenticated branch as
+	// the step-4 manage check, so internal flows with an empty actor (e.g. seeding the
+	// org creator as owner) are unaffected.
+	if ctx.UserID != "" && !ctx.IsAdmin() {
+		granterRole, err := h.organizationService.GetUserOrganizationRole(org.ID, ctx.UserID)
+		if err != nil {
+			return utils.PermissionDeniedError("add members to", "organization")
+		}
+		if !access.IsRoleAtLeast(string(granterRole), string(member.Role)) {
+			return utils.PermissionDeniedError("assign a role higher than your own in", "organization")
+		}
 	}
 
 	// 6. Set JoinedAt and IsActive
