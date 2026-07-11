@@ -85,7 +85,11 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 	access.ReconcilePolicy(enforcer, "member", "/api/v1/organizations/:id/usage-export", "GET")
 
 	// Incus UI proxy (fine-grained backend access checks in controller)
-	access.ReconcilePolicy(enforcer, "member", "/api/v1/incus-ui/:backendId/*path", "(GET|POST|PUT|PATCH|DELETE)")
+	// Layer 1 Casbin path MUST stay "/*" (not "/*path"): AuthManagement matches
+	// this against the concrete request URL via keyMatch2, which treats "/*" as a
+	// wildcard but "/*path" as a literal suffix. The Layer 2 RouteRegistry entries
+	// below use "/*path" instead because they exact-match gin's FullPath.
+	access.ReconcilePolicy(enforcer, "member", "/api/v1/incus-ui/:backendId/*", "(GET|POST|PUT|PATCH|DELETE)")
 
 	// Declarative route permission registry
 	access.RouteRegistry.Register("Terminals",

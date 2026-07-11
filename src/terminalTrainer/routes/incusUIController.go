@@ -264,6 +264,14 @@ func (c *IncusUIController) ProxyIncusUI(ctx *gin.Context) {
 //   - Org owners/managers can access backends listed in their org's AllowedBackends.
 //   - Everyone else is denied.
 func (c *IncusUIController) IsUserAuthorizedForBackend(userID string, userRoles []string, backendID string) bool {
+	// "_auth" is a reserved pseudo-backend for the cookie bootstrap
+	// (POST /incus-ui/_auth/cookie) that ProxyIncusUI handles before any authz —
+	// it only echoes the caller's own JWT into a cookie. Allow it for any
+	// authenticated user so the shared Layer 2 enforcer agrees with the handler.
+	if backendID == "_auth" {
+		return true
+	}
+
 	// System administrators can access any backend
 	for _, role := range userRoles {
 		if role == "administrator" {

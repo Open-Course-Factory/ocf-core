@@ -1,9 +1,12 @@
 package authorization_tests
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/casbin/casbin/v2/util"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/mocks"
@@ -57,13 +60,17 @@ var incusUIProxyMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
 
 // registerTerminalPermissionsForTest resets the shared RouteRegistry and runs
 // the real terminal-module permission registration against a mock enforcer, so
-// the RouteRegistry reflects exactly what production wires up at startup.
-func registerTerminalPermissionsForTest(t *testing.T) {
+// the RouteRegistry reflects exactly what production wires up at startup. The
+// mock enforcer is returned so callers can inspect the Layer 1 Casbin policies
+// the module registered via ReconcilePolicy (recorded as AddPolicy calls).
+func registerTerminalPermissionsForTest(t *testing.T) *mocks.MockEnforcer {
 	t.Helper()
 	access.RouteRegistry.Reset()
 	t.Cleanup(func() { access.RouteRegistry.Reset() })
 
-	terminalController.RegisterTerminalPermissions(mocks.NewMockEnforcer())
+	enforcer := mocks.NewMockEnforcer()
+	terminalController.RegisterTerminalPermissions(enforcer)
+	return enforcer
 }
 
 // TestIncusUIProxy_Layer2Rule_IsLookupableAtRealFullPath is the guaranteed RED.
@@ -121,6 +128,89 @@ func TestIncusUIProxy_Layer2Rule_DoesNotUseOrgRole(t *testing.T) {
 					"backendId is a backend id, not an org UUID, so CheckOrgRole can never "+
 					"authorize the legitimate org manager. Use a custom AccessRuleType that "+
 					"delegates to IsUserAuthorizedForBackend.")
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// C1 (runtime) — Layer 1 Casbin policy path must match concrete request URLs
+// ---------------------------------------------------------------------------
+//
+// The prior shape-only tests assert the Layer 2 registry key (which is matched
+// against gin's FullPath ".../:backendId/*path" by exact string equality). But
+// the SAME module also registers a Layer 1 Casbin policy for the proxy via
+// ReconcilePolicy (permissions.go). Casbin's AuthManagement matches that policy
+// against the CONCRETE request URL (ctx.Request.URL.Path) using keyMatch2 — NOT
+// FullPath, NOT exact match.
+//
+// keyMatch2 only treats "/*" as a wildcard: it rewrites "/*" → "/.*". So a
+// policy path ending in "/*path" becomes the regex ".../.*path$", which forces
+// every request URL to END WITH the literal string "path". Real Incus UI URLs
+// (".../ui/assets/app.js", ".../1.0/instances", ".../_auth/cookie") do not, so
+// Casbin denies them with 403 for non-admins — the "missing Authorization
+// header" symptom.
+//
+// The two path formats are therefore DIFFERENT on purpose:
+//   - Layer 2 registry key : /api/v1/incus-ui/:backendId/*path  (exact vs FullPath)
+//   - Layer 1 Casbin policy: /api/v1/incus-ui/:backendId/*      (keyMatch2 vs URL)
+//
+// This test reads the ACTUAL Layer 1 policy path the module registers (captured
+// via the mock enforcer's AddPolicy calls) and asserts keyMatch2 matches real
+// URLs. It fails while the registered policy is ".../:backendId/*path" and
+// passes once it is reverted to ".../:backendId/*". The existing
+// incusUICasbinPolicy_test.go proves keyMatch2 semantics on HARD-CODED strings;
+// it cannot catch a regression in what the module actually registers — this does.
+
+// registeredIncusUILayer1Path returns the Casbin policy path the terminal module
+// registers for the Incus UI proxy (the AddPolicy call whose path is under
+// /api/v1/incus-ui/). Fails the test if it is absent or ambiguous.
+func registeredIncusUILayer1Path(t *testing.T, enforcer *mocks.MockEnforcer) string {
+	t.Helper()
+	var found []string
+	for _, call := range enforcer.AddPolicyCalls {
+		// ReconcilePolicy calls AddPolicy(role, path, method); path is arg 1.
+		if len(call) < 2 {
+			continue
+		}
+		path, ok := call[1].(string)
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(path, "/api/v1/incus-ui/") {
+			found = append(found, path)
+		}
+	}
+	require.Len(t, found, 1,
+		"expected exactly one Incus UI Layer 1 Casbin policy to be registered, got %v", found)
+	return found[0]
+}
+
+// TestIncusUIProxy_Layer1Policy_MatchesConcreteURLs is the C1 runtime RED.
+func TestIncusUIProxy_Layer1Policy_MatchesConcreteURLs(t *testing.T) {
+	enforcer := registerTerminalPermissionsForTest(t)
+	policyPath := registeredIncusUILayer1Path(t, enforcer)
+
+	// Concrete request URLs (ctx.Request.URL.Path) that a real Incus UI session
+	// generates. None of these end with the literal "path", so a "/*path"
+	// policy fails keyMatch2 for all of them.
+	realURLs := []string{
+		"/api/v1/incus-ui/_auth/cookie",                       // cookie bootstrap (non-admin, POST)
+		"/api/v1/incus-ui/backend123/ui/",                     // iframe initial load
+		"/api/v1/incus-ui/backend123/ui/assets/app.js",        // static asset
+		"/api/v1/incus-ui/backend123/1.0/instances",           // Incus API call
+		"/api/v1/incus-ui/backend123/1.0/instances/foo/state", // deep nested API path
+	}
+
+	for _, url := range realURLs {
+		t.Run(url, func(t *testing.T) {
+			assert.True(t, util.KeyMatch2(url, policyPath),
+				"Layer 1 Casbin policy %q must keyMatch2 the concrete request URL %q. "+
+					"AuthManagement matches Casbin policies against ctx.Request.URL.Path with "+
+					"keyMatch2, which rewrites '/*' → '/.*' only — a '/*path' suffix becomes "+
+					"'/.*path$' and requires the URL to end with the literal 'path', so every "+
+					"real Incus UI request is denied 403. Register the Layer 1 policy path as "+
+					"'/api/v1/incus-ui/:backendId/*' (Layer 2 keeps '*path' for the exact "+
+					"FullPath match).", policyPath, url)
 		})
 	}
 }
