@@ -1,6 +1,7 @@
 package registration
 
 import (
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/courses/dto"
 	"soli/formations/src/courses/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -35,6 +36,15 @@ func RegisterGeneration(service *ems.EntityRegistrationService) {
 					gen.OwnerIDs = append(gen.OwnerIDs, input.OwnerID)
 					return gen
 				},
+			},
+			// owner_ids is populated on create by the generic AddEntity controller;
+			// a future non-generic create path that skips it would make rows
+			// admin-only-visible. Scopes generic reads to the owning user.
+			OwnershipConfig: &access.OwnershipConfig{
+				OwnerField:  "OwnerIDs",
+				Operations:  []string{"read"},
+				AdminBypass: true,
+				ArrayOwner:  true,
 			},
 		},
 	)

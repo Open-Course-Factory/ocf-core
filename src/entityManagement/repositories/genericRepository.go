@@ -51,6 +51,12 @@ func (o *genericRepository) getFilterManager(entityName string) *filters.FilterM
 		manager.AddStrategy(filters.NewGenericMembershipFilter(membershipConfig))
 	}
 
+	// Array-owner read scope. Registered unconditionally: it only matches the
+	// sentinel key, which the read handler injects solely for ArrayOwner
+	// entities, so it is inert everywhere else. Registering here routes it
+	// through the page query, the offset COUNT, and the cursor query alike.
+	manager.AddStrategy(filters.NewOwnerArrayFilter())
+
 	return manager
 }
 

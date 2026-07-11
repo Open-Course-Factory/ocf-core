@@ -122,8 +122,16 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 			respondEmptyPage(ctx)
 			return
 		}
-		column := genericController.db.Config.NamingStrategy.ColumnName("", config.OwnerField)
-		filters[column] = userID
+		if config.ArrayOwner {
+			// Array-owner scope: OwnerField names an array column (owner_ids). A
+			// sentinel filter key routes to ownerArrayFilter, which emits the
+			// CONTAINS predicate. The double-underscore prefix can never collide
+			// with a real entity field name, so it is safe to inject here.
+			filters["__owner_ids_contains"] = userID
+		} else {
+			column := genericController.db.Config.NamingStrategy.ColumnName("", config.OwnerField)
+			filters[column] = userID
+		}
 	}
 
 	// Use cursor pagination if cursor param is present (even if empty for first page)

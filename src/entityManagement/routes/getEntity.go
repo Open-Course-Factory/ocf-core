@@ -52,7 +52,12 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 	// same 404 as a missing row, so ownership is not disclosed and no owner-only
 	// fields leak. Admins bypass per the entity's OwnershipConfig.
 	if config := ownerReadScope(ctx, entityName); config != nil {
-		if !ownerMatchesCaller(entity, config.OwnerField, ctx.GetString("userId")) {
+		userID := ctx.GetString("userId")
+		owned := ownerMatchesCaller(entity, config.OwnerField, userID)
+		if config.ArrayOwner {
+			owned = ownerArrayContainsCaller(entity, config.OwnerField, userID)
+		}
+		if !owned {
 			errors.HandleError(http.StatusNotFound, &errors.APIError{ErrorMessage: "Entity Not Found"}, ctx)
 			return
 		}

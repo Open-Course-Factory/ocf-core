@@ -3,6 +3,7 @@ package registration
 import (
 	"net/http"
 
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/dto"
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
@@ -36,6 +37,15 @@ func RegisterSshKey(service *ems.EntityRegistrationService) {
 					}
 					return updateMap
 				},
+			},
+			// owner_ids is populated on create by the generic AddEntity controller;
+			// a future non-generic create path that skips it would make rows
+			// admin-only-visible. Scopes the member GET list to keys the caller owns.
+			OwnershipConfig: &access.OwnershipConfig{
+				OwnerField:  "OwnerIDs",
+				Operations:  []string{"read"},
+				AdminBypass: true,
+				ArrayOwner:  true,
 			},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{

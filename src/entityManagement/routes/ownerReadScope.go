@@ -62,3 +62,33 @@ func ownerMatchesCaller(entity any, ownerField, userID string) bool {
 	}
 	return field.String() == userID
 }
+
+// ownerArrayContainsCaller reports whether the loaded entity's array owner field
+// (e.g. BaseModel.OwnerIDs) contains the calling user's ID. An empty userID, a
+// missing field, or a non-slice field is treated as a mismatch so a
+// misconfigured entity fails closed (deny) — same contract as ownerMatchesCaller.
+func ownerArrayContainsCaller(entity any, ownerField, userID string) bool {
+	if userID == "" {
+		return false
+	}
+	v := reflect.ValueOf(entity)
+	for v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return false
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return false
+	}
+	field := v.FieldByName(ownerField)
+	if !field.IsValid() || field.Kind() != reflect.Slice {
+		return false
+	}
+	for i := 0; i < field.Len(); i++ {
+		if field.Index(i).String() == userID {
+			return true
+		}
+	}
+	return false
+}

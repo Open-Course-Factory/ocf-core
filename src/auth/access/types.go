@@ -91,4 +91,8 @@ type OwnershipConfig struct {
 	OwnerField  string   `json:"owner_field"`  // e.g., "UserID"
 	Operations  []string `json:"operations"`   // e.g., ["create", "update", "delete"]
 	AdminBypass bool     `json:"admin_bypass"` // whether admins skip ownership checks
+	// ArrayOwner marks OwnerField as an array column (e.g., BaseModel.OwnerIDs,
+	// column "owner_ids") rather than a scalar owner column. Read scoping then
+	// matches rows whose array CONTAINS the caller instead of equals the caller.
+	ArrayOwner bool `json:"array_owner,omitempty"`
 }
