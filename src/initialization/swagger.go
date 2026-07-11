@@ -14,6 +14,7 @@ import (
 
 	"soli/formations/docs"
 	authController "soli/formations/src/auth"
+	"soli/formations/src/auth/access"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	swaggerGenerator "soli/formations/src/entityManagement/swagger"
@@ -58,6 +59,10 @@ func SetupCompleteSwaggerSystem(r *gin.Engine, db *gorm.DB) {
 	log.Println("  📋 Setting up auto-documented routes...")
 	routeGenerator := swaggerGenerator.NewSwaggerRouteGenerator(db)
 	docGroup := r.Group("/api/v1")
+	// Layer 2 enforcement: pass-through for generated CRUD routes (not registered
+	// by route in the RouteRegistry) but REQUIRED so custom action Access rules are
+	// actually enforced. Without it this group skips Layer 2 entirely.
+	docGroup.Use(access.Layer2Enforcement())
 	routeGenerator.RegisterDocumentedRoutes(docGroup, authMiddleware.AuthManagement())
 
 	// 🔀 ÉTAPE 2: Setup du merger Swagger

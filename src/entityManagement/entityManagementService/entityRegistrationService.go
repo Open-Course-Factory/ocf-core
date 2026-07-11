@@ -40,6 +40,7 @@ type EntityRegistrationService struct {
 	typedOps            map[string]entityManagementInterfaces.EntityOperations
 	entityRoles         map[string]entityManagementInterfaces.EntityRoles
 	dtoRedactors        map[string]DtoRedactor
+	entityActions       map[string][]entityManagementInterfaces.ActionConfig
 }
 
 func NewEntityRegistrationService() *EntityRegistrationService {
@@ -54,6 +55,7 @@ func NewEntityRegistrationService() *EntityRegistrationService {
 		typedOps:            make(map[string]entityManagementInterfaces.EntityOperations),
 		entityRoles:         make(map[string]entityManagementInterfaces.EntityRoles),
 		dtoRedactors:        make(map[string]DtoRedactor),
+		entityActions:       make(map[string][]entityManagementInterfaces.ActionConfig),
 	}
 }
 
@@ -70,6 +72,7 @@ func (s *EntityRegistrationService) Reset() {
 	s.typedOps = make(map[string]entityManagementInterfaces.EntityOperations)
 	s.entityRoles = make(map[string]entityManagementInterfaces.EntityRoles)
 	s.dtoRedactors = make(map[string]DtoRedactor)
+	s.entityActions = make(map[string][]entityManagementInterfaces.ActionConfig)
 }
 
 // UnregisterEntity removes all registrations for a specific entity
@@ -85,6 +88,7 @@ func (s *EntityRegistrationService) UnregisterEntity(name string) {
 	delete(s.typedOps, name)
 	delete(s.entityRoles, name)
 	delete(s.dtoRedactors, name)
+	delete(s.entityActions, name)
 }
 
 func (s *EntityRegistrationService) RegisterEntityInterface(name string, entityType any) {
@@ -205,11 +209,9 @@ func (s *EntityRegistrationService) setDefaultEntityAccesses(entityName string, 
 	}
 	rolesMap := roles.Roles
 
-	resourceName := Pluralize(entityName)
-	resourceName = utils.PascalToKebab(resourceName)
-	resourceName = strings.ToLower(resourceName)
-	apiGroupPath := "/api/v1/" + resourceName + "/:id" // Match single resource by ID only (not sub-paths)
-	apiListPath := "/api/v1/" + resourceName           // List endpoint without wildcard
+	basePath := "/api/v1" + ResourceBasePath(entityName)
+	apiGroupPath := basePath + "/:id" // Match single resource by ID only (not sub-paths)
+	apiListPath := basePath           // List endpoint without wildcard
 
 	appUtils.Info("Setting up entity access for %s at %s and %s", entityName, apiListPath, apiGroupPath)
 
@@ -242,6 +244,73 @@ func Pluralize(entityName string) string {
 	client := pluralize.NewClient()
 	plural := client.Plural(entityName)
 	return plural
+}
+
+// ResourceBasePath derives an entity's REST base path (leading slash, no
+// /api/v1 prefix) from its registration name, e.g. "EmailTemplate" →
+// "/email-templates". This is the single source of truth shared by the Casbin
+// policy setup (setDefaultEntityAccesses) and the route generator, so the two
+// can never derive divergent paths for the same entity.
+func ResourceBasePath(entityName string) string {
+	return "/" + utils.PascalToKebab(Pluralize(entityName))
+}
+
+// ActionRelativePath returns an action's path relative to its entity base path.
+// Item-scoped actions hang off a single instance (/:id/<name>); collection-scoped
+// actions hang off the collection (/<name>).
+func ActionRelativePath(a entityManagementInterfaces.ActionConfig) string {
+	if a.Scope == entityManagementInterfaces.ActionScopeItem {
+		return "/:id/" + a.Name
+	}
+	return "/" + a.Name
+}
+
+// RegisterEntityActions stores the custom actions declared for an entity.
+func (s *EntityRegistrationService) RegisterEntityActions(name string, actions []entityManagementInterfaces.ActionConfig) {
+	if len(actions) > 0 {
+		s.entityActions[name] = actions
+	}
+}
+
+// GetActions returns the custom actions declared for an entity, or nil if none.
+func (s *EntityRegistrationService) GetActions(name string) []entityManagementInterfaces.ActionConfig {
+	return s.entityActions[name]
+}
+
+// GetAllActions returns a copy of the entityName→actions map for every entity
+// that declared at least one action.
+func (s *EntityRegistrationService) GetAllActions() map[string][]entityManagementInterfaces.ActionConfig {
+	result := make(map[string][]entityManagementInterfaces.ActionConfig, len(s.entityActions))
+	for name, actions := range s.entityActions {
+		result[name] = actions
+	}
+	return result
+}
+
+// SetEntityActionAccesses registers, for each declared action, the Layer 1
+// Casbin policy and Layer 2 RoutePermission (keyed under the entity name as its
+// category) so custom actions are authorized exactly like CRUD routes.
+func (s *EntityRegistrationService) SetEntityActionAccesses(entityName string, actions []entityManagementInterfaces.ActionConfig, enforcer interfaces.EnforcerInterface) {
+	if len(actions) == 0 {
+		return
+	}
+	if enforcer == nil {
+		appUtils.Warn("Enforcer is nil, skipping action access setup for %s", entityName)
+		return
+	}
+
+	basePath := "/api/v1" + ResourceBasePath(entityName)
+	perms := make([]access.RoutePermission, 0, len(actions))
+	for _, a := range actions {
+		perms = append(perms, access.RoutePermission{
+			Path:        basePath + ActionRelativePath(a),
+			Method:      a.Method,
+			Role:        a.Role,
+			Access:      a.Access,
+			Description: a.Description,
+		})
+	}
+	access.RegisterEnforced(enforcer, entityName, perms...)
 }
 
 // GetAllEntityRoles returns the roles configuration for all registered entities
@@ -321,6 +390,10 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 		Update: deriveAccessRule(reg.Roles, "PATCH", name, reg.OwnershipConfig),
 		Delete: deriveAccessRule(reg.Roles, "DELETE", name, reg.OwnershipConfig),
 	})
+
+	// Store custom actions and set up their Layer 1 / Layer 2 access policies
+	service.RegisterEntityActions(name, reg.Actions)
+	service.SetEntityActionAccesses(name, reg.Actions, casdoor.Enforcer)
 }
 
 // deriveAccessRule determines the Layer 2 access rule for an entity CRUD operation
