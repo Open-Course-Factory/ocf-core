@@ -5,8 +5,8 @@ import (
 
 	auth "soli/formations/src/auth"
 	config "soli/formations/src/configuration"
+	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	paymentMiddleware "soli/formations/src/payment/middleware"
-	paymentServices "soli/formations/src/payment/services"
 	scenarioMiddleware "soli/formations/src/scenarios/middleware"
 
 	"gorm.io/gorm"
@@ -33,11 +33,15 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 
 	// Session routes (students)
 	rateLimiter := scenarioMiddleware.PerUserRateLimit()
-	effectivePlanService := paymentServices.NewEffectivePlanService(db)
 	sessionRoutes := router.Group("/scenario-sessions")
-	sessionRoutes.GET("/available", middleware.AuthManagement(),
-		paymentMiddleware.InjectOrgContext(),
-		launchController.GetAvailableScenarios)
+	// Scenarios never need CheckHostRAM at the middleware layer (host RAM is
+	// checked inside LaunchScenario against the resolved size), so the plan
+	// chain is built with a nil TerminalTrainerService here.
+	sessionRoutes.GET("/available", paymentMiddleware.WithPlanChain(
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true}, nil,
+		[]gin.HandlerFunc{middleware.AuthManagement()},
+		launchController.GetAvailableScenarios,
+	)...)
 	sessionRoutes.GET("/my", middleware.AuthManagement(), launchController.GetMySessions)
 	sessionRoutes.POST("/start", middleware.AuthManagement(), launchController.StartScenario)
 	sessionRoutes.GET("/by-terminal/:terminalId", middleware.AuthManagement(), controller.GetSessionByTerminal)
@@ -67,11 +71,11 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	// for an M scenario needing only 1 GiB. EvaluateLaunchCapacity is now
 	// called against the resolved size, mirroring commit 951b69c on the
 	// resume route.
-	sessionRoutes.POST("/launch", middleware.AuthManagement(),
-		paymentMiddleware.InjectOrgContext(),
-		paymentMiddleware.InjectEffectivePlan(effectivePlanService, db),
-		paymentMiddleware.RequirePlan(),
-		launchController.LaunchScenario)
+	sessionRoutes.POST("/launch", paymentMiddleware.WithPlanChain(
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}, nil,
+		[]gin.HandlerFunc{middleware.AuthManagement()},
+		launchController.LaunchScenario,
+	)...)
 
 	// Group-level scenario import/export routes (teachers/group admins)
 	groupScenarioRoutes := router.Group("/groups/:groupId/scenarios")

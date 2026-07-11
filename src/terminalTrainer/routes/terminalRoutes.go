@@ -11,8 +11,8 @@ import (
 	access "soli/formations/src/auth/access"
 	config "soli/formations/src/configuration"
 	configRepositories "soli/formations/src/configuration/repositories"
+	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	paymentMiddleware "soli/formations/src/payment/middleware"
-	paymentServices "soli/formations/src/payment/services"
 	terminalMiddleware "soli/formations/src/terminalTrainer/middleware"
 	terminalServices "soli/formations/src/terminalTrainer/services"
 
@@ -22,7 +22,6 @@ import (
 func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *gorm.DB) {
 	terminalController := NewTerminalController(db)
 	middleware := auth.NewAuthMiddleware(db)
-	effectivePlanService := paymentServices.NewEffectivePlanService(db)
 	terminalService := terminalServices.NewTerminalTrainerService(db)
 	terminalAccessMiddleware := terminalMiddleware.NewTerminalAccessMiddleware(db)
 
@@ -33,8 +32,12 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 
 	// Bulk operations for groups
 	groupRoutes := router.Group("/class-groups")
-	// Use effective plan middlewares for bulk creation validation
-	groupRoutes.POST("/:id/bulk-create-terminals", middleware.AuthManagement(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), terminalController.BulkCreateTerminalsForGroup)
+	// Use effective plan middlewares for bulk creation validation.
+	groupRoutes.POST("/:id/bulk-create-terminals", paymentMiddleware.WithPlanChain(
+		db, entityManagementInterfaces.PlanRequirement{RequirePlan: true}, terminalService,
+		[]gin.HandlerFunc{middleware.AuthManagement()},
+		terminalController.BulkCreateTerminalsForGroup,
+	)...)
 	groupRoutes.GET("/:id/command-history", middleware.AuthManagement(), terminalController.GetGroupCommandHistory)
 	groupRoutes.GET("/:id/command-history-stats", middleware.AuthManagement(), terminalController.GetGroupCommandHistoryStats)
 
@@ -60,14 +63,11 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	//     headroom was below that estimate (i.e. realistic production
 	//     state) every Resume 503'd, even though the session's actual
 	//     footprint had not changed since it was admitted at creation.
-	routes.POST("/:id/start",
-		middleware.AuthManagement(),
-		terminalAccessMiddleware.RequireTerminalAccessAllowStopped(),
-		paymentMiddleware.InjectOrgContext(),
-		paymentMiddleware.InjectEffectivePlan(effectivePlanService, db),
-		paymentMiddleware.RequirePlan(),
+	routes.POST("/:id/start", paymentMiddleware.WithPlanChain(
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}, terminalService,
+		[]gin.HandlerFunc{middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccessAllowStopped()},
 		terminalController.StartSession,
-	)
+	)...)
 	// Permanently delete a session — ownership enforced via Layer 2,
 	// StateStopped allowed.
 	routes.DELETE("/:id", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccessAllowStopped(), terminalController.DeleteSession)
@@ -102,20 +102,37 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	routes.GET("/sizes", middleware.AuthManagement(), terminalController.GetSizes)
 	routes.GET("/catalog-sizes", middleware.AuthManagement(), terminalController.GetCatalogSizes)
 	routes.GET("/catalog-features", middleware.AuthManagement(), terminalController.GetCatalogFeatures)
-	routes.GET("/session-options", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), terminalController.GetSessionOptions)
+	routes.GET("/session-options", paymentMiddleware.WithPlanChain(
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}, terminalService,
+		[]gin.HandlerFunc{middleware.AuthManagement()},
+		terminalController.GetSessionOptions,
+	)...)
 	// Budget enforcement (CPU/RAM cap from MaxCPU/MaxMemoryMB) is performed
 	// inside StartComposedSession via QuotaService.CheckBudget; no
-	// middleware-level slot counter is needed.
-	routes.POST("/start-composed-session", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), paymentMiddleware.CheckRAMAvailability(terminalService), terminalController.StartComposedSession)
+	// middleware-level slot counter is needed. CheckHostRAM verifies host
+	// headroom for the chosen size before the handler runs.
+	routes.POST("/start-composed-session", paymentMiddleware.WithPlanChain(
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true, CheckHostRAM: true}, terminalService,
+		[]gin.HandlerFunc{middleware.AuthManagement()},
+		terminalController.StartComposedSession,
+	)...)
 	// Capacity check: same plan-resolution chain as start-composed-session
-	// but no CheckLimit/CheckRAMAvailability — this endpoint IS the check.
-	routes.GET("/capacity-check", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), terminalController.CapacityCheck)
+	// but no CheckHostRAM — this endpoint IS the check.
+	routes.GET("/capacity-check", paymentMiddleware.WithPlanChain(
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}, terminalService,
+		[]gin.HandlerFunc{middleware.AuthManagement()},
+		terminalController.CapacityCheck,
+	)...)
 	// My usage snapshot — read-only personal-or-org view used by the dashboard
 	// "Utilisation Actuelle" panel. Same middleware chain as session-options:
 	// InjectOrgContext lets the handler read ?organization_id from context;
 	// InjectEffectivePlan + RequirePlan ensure an active plan resolves before
 	// the handler runs.
-	routes.GET("/my-usage", middleware.AuthManagement(), paymentMiddleware.InjectOrgContext(), paymentMiddleware.InjectEffectivePlan(effectivePlanService, db), paymentMiddleware.RequirePlan(), terminalController.MyTerminalUsage)
+	routes.GET("/my-usage", paymentMiddleware.WithPlanChain(
+		db, entityManagementInterfaces.PlanRequirement{OrgContext: true, RequirePlan: true}, terminalService,
+		[]gin.HandlerFunc{middleware.AuthManagement()},
+		terminalController.MyTerminalUsage,
+	)...)
 
 	// Organization terminal sessions (for trainers/managers)
 	orgRoutes := router.Group("/organizations")
