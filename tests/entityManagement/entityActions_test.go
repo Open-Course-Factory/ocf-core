@@ -595,3 +595,101 @@ func TestActionRoutes_Layer2Enforcement_AdminOnly(t *testing.T) {
 	assert.Equal(t, actionSentinelStatus, allowed.Code, "admin must be allowed through to the action handler")
 	assert.Equal(t, "action-reached", allowed.Body.String())
 }
+
+// ===========================================================================
+// MR-C — declarative plan gating on actions. An action may carry a
+// PlanRequirement (ActionConfig.Plan); the route generator turns it into
+// concrete middlewares via an injected builder set with
+// swagger.SetPlanChainBuilder. Keeping the builder injected (rather than
+// importing payment middleware into the swagger package) avoids an import
+// cycle. The two symbols below do NOT exist yet — these tests DEFINE them:
+//   - entityManagementInterfaces.PlanRequirement / ActionConfig.Plan
+//   - swagger.SetPlanChainBuilder(func(PlanRequirement) []gin.HandlerFunc)
+// ===========================================================================
+
+// planGateMarker is the query param the sentinel builder below watches: present
+// → the plan chain aborts (402), absent → it passes through.
+const planGateMarker = "plan_gate"
+const planGateStatus = http.StatusPaymentRequired
+
+// E1: fail-closed wiring. An action declaring a Plan but with NO plan-chain
+// builder set must make mounting PANIC — a plan-gated route must never mount
+// unprotected because the builder was forgotten at startup.
+func TestActionRoutes_PlanRequiredWithoutBuilder_Panics(t *testing.T) {
+	stubGlobalEnforcer(t)
+	swagger.SetPlanChainBuilder(nil) // ensure a clean, builder-less state
+	t.Cleanup(func() { swagger.SetPlanChainBuilder(nil) })
+
+	entityName := "ActionPlanNoBuilderWidget"
+	planAction := itemAction("verb")
+	planAction.Plan = &entityManagementInterfaces.PlanRequirement{RequirePlan: true}
+	ems.RegisterTypedEntity(
+		ems.GlobalEntityRegistrationService,
+		entityName,
+		actionTestRegistration([]entityManagementInterfaces.ActionConfig{planAction}, nil),
+	)
+	t.Cleanup(func() { ems.GlobalEntityRegistrationService.UnregisterEntity(entityName) })
+
+	engine := gin.New()
+	apiGroup := engine.Group("/api/v1")
+	permissive := func(c *gin.Context) { c.Next() }
+	srg := swagger.NewSwaggerRouteGenerator(nil)
+
+	require.Panics(t, func() {
+		srg.RegisterDocumentedRoutes(apiGroup, permissive)
+	}, "mounting an action with a PlanRequirement and no plan-chain builder must fail-fast (panic)")
+}
+
+// E2: position pin. With a builder set, the returned plan chain runs BETWEEN
+// the auth middleware and the action handler. A sentinel gate proves it: with
+// the marker present it aborts (handler not reached), without it the handler
+// runs. This pins that the plan chain both runs (gates the handler) and does
+// not replace it (passes through when it doesn't abort).
+func TestActionRoutes_PlanChainBuilderGatesHandler(t *testing.T) {
+	stubGlobalEnforcer(t)
+
+	swagger.SetPlanChainBuilder(func(_ entityManagementInterfaces.PlanRequirement) []gin.HandlerFunc {
+		return []gin.HandlerFunc{
+			func(c *gin.Context) {
+				if c.Query(planGateMarker) != "" {
+					c.AbortWithStatus(planGateStatus)
+					return
+				}
+				c.Next()
+			},
+		}
+	})
+	t.Cleanup(func() { swagger.SetPlanChainBuilder(nil) })
+
+	entityName := "ActionPlanGatedWidget"
+	planAction := itemAction("verb")
+	planAction.Plan = &entityManagementInterfaces.PlanRequirement{RequirePlan: true}
+	ems.RegisterTypedEntity(
+		ems.GlobalEntityRegistrationService,
+		entityName,
+		actionTestRegistration([]entityManagementInterfaces.ActionConfig{planAction}, nil),
+	)
+	t.Cleanup(func() { ems.GlobalEntityRegistrationService.UnregisterEntity(entityName) })
+
+	engine := gin.New()
+	apiGroup := engine.Group("/api/v1")
+	permissive := func(c *gin.Context) { c.Next() }
+	srg := swagger.NewSwaggerRouteGenerator(nil)
+	srg.RegisterDocumentedRoutes(apiGroup, permissive)
+
+	itemPath := "/api/v1/action-plan-gated-widgets/00000000-0000-0000-0000-000000000001/verb"
+
+	// WITH marker → plan chain aborts, handler NOT reached.
+	reqBlocked := httptest.NewRequest(http.MethodPost, itemPath+"?"+planGateMarker+"=1", nil)
+	recBlocked := httptest.NewRecorder()
+	engine.ServeHTTP(recBlocked, reqBlocked)
+	assert.Equal(t, planGateStatus, recBlocked.Code, "plan chain must gate the handler when it aborts")
+	assert.NotEqual(t, "action-reached", recBlocked.Body.String(), "handler must NOT run when the plan chain aborts")
+
+	// WITHOUT marker → plan chain passes through, handler reached.
+	reqOK := httptest.NewRequest(http.MethodPost, itemPath, nil)
+	recOK := httptest.NewRecorder()
+	engine.ServeHTTP(recOK, reqOK)
+	assert.Equal(t, actionSentinelStatus, recOK.Code, "handler must run when the plan chain passes")
+	assert.Equal(t, "action-reached", recOK.Body.String())
+}

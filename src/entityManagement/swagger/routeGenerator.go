@@ -29,6 +29,21 @@ func NewSwaggerRouteGenerator(db *gorm.DB) *SwaggerRouteGenerator {
 	}
 }
 
+// planChainBuilder converts an action's declarative PlanRequirement into the
+// concrete plan-gating middlewares. It is injected from main via
+// SetPlanChainBuilder rather than imported, because the payment middleware that
+// implements it would otherwise create a swagger→payment import cycle. A nil
+// builder means "none installed" — a plan-gated action then fails fast at mount
+// (see registerActionRoutes) instead of mounting unprotected.
+var planChainBuilder func(entityManagementInterfaces.PlanRequirement) []gin.HandlerFunc
+
+// SetPlanChainBuilder installs (or, with nil, resets) the builder that turns an
+// action's PlanRequirement into plan-gating middlewares. Called once at startup
+// from main before routes are mounted.
+func SetPlanChainBuilder(builder func(entityManagementInterfaces.PlanRequirement) []gin.HandlerFunc) {
+	planChainBuilder = builder
+}
+
 // RegisterDocumentedRoutes enregistre toutes les routes documentées. CRUD routes
 // stay gated on the entity having a SwaggerConfig; custom actions are mounted for
 // every entity that declares them, even without a SwaggerConfig.
@@ -55,6 +70,19 @@ func (srg *SwaggerRouteGenerator) registerActionRoutes(router *gin.RouterGroup, 
 	for _, action := range actions {
 		handlers := make([]gin.HandlerFunc, 0, len(action.Middlewares)+2)
 		handlers = append(handlers, authMiddleware)
+
+		// The plan-gating chain runs BETWEEN the auth middleware and the action's
+		// own middlewares/handler, so plan resolution sees the authenticated user
+		// while still guarding the handler. A PlanRequirement with no builder
+		// installed is a fail-closed startup bug: panic rather than mount the
+		// route unprotected.
+		if action.Plan != nil {
+			if planChainBuilder == nil {
+				panic(fmt.Sprintf("entity %q action %q declares a PlanRequirement but no plan-chain builder is set (call swagger.SetPlanChainBuilder at startup)", entityName, action.Name))
+			}
+			handlers = append(handlers, planChainBuilder(*action.Plan)...)
+		}
+
 		for _, factory := range action.Middlewares {
 			handlers = append(handlers, factory(srg.db))
 		}

@@ -42,13 +42,17 @@ userController "soli/formations/src/auth/routes/usersRoutes"
 	courseController "soli/formations/src/courses/routes/courseRoutes"
 	generationController "soli/formations/src/courses/routes/generationRoutes"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	genericController "soli/formations/src/entityManagement/routes"
+	swaggerGenerator "soli/formations/src/entityManagement/swagger"
+	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentController "soli/formations/src/payment/routes"
 	groupHooks "soli/formations/src/groups/hooks"
 	organizationHooks "soli/formations/src/organizations/hooks"
 	organizationController "soli/formations/src/organizations/routes"
 	terminalController "soli/formations/src/terminalTrainer/routes"
 	terminalHooks "soli/formations/src/terminalTrainer/hooks"
+	terminalServices "soli/formations/src/terminalTrainer/services"
 	scenarioHooks "soli/formations/src/scenarios/hooks"
 	scenarioController "soli/formations/src/scenarios/routes"
 	versionController "soli/formations/src/version"
@@ -285,6 +289,15 @@ userController.UsersRoutes(apiGroup, &config.Configuration{}, sqldb.DB)
 	// constructed in InitPaymentEntities so the hook, worker, and endpoint all
 	// see the same durable rows.
 	paymentController.RegisterAdminStripeRoutes(apiGroup, sqldb.DB, stripeSyncQueue)
+
+	// Install the plan-gating chain builder before routes are mounted, so any
+	// action declaring a PlanRequirement resolves into the canonical payment
+	// middlewares. Injected (not imported) to keep the swagger package free of a
+	// payment import — see swaggerGenerator.SetPlanChainBuilder.
+	planChainTerminalService := terminalServices.NewTerminalTrainerService(sqldb.DB)
+	swaggerGenerator.SetPlanChainBuilder(func(req entityManagementInterfaces.PlanRequirement) []gin.HandlerFunc {
+		return paymentMiddleware.PlanChain(sqldb.DB, req, planChainTerminalService)
+	})
 
 	// Initialize Swagger documentation
 	initialization.InitSwagger(r, sqldb.DB)
