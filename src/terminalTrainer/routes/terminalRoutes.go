@@ -41,8 +41,10 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	groupRoutes.GET("/:id/command-history", middleware.AuthManagement(), terminalController.GetGroupCommandHistory)
 	groupRoutes.GET("/:id/command-history-stats", middleware.AuthManagement(), terminalController.GetGroupCommandHistoryStats)
 
-	// Stop session requires terminal ownership (Layer 2 security check)
-	routes.POST("/:id/stop", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.StopSession)
+	// Stop session (POST /:id/stop) is mounted declaratively as a "stop"
+	// ActionConfig on the Terminal entity registration (its ownership gate is the
+	// RequireTerminalAccess middleware carried in the action's Middlewares).
+	//
 	// Resume a stopped session — slot-neutral state transition. The
 	// resumed session may consume paid features so the plan-validity gate
 	// applies, but NO capacity check is needed: the budget engine already

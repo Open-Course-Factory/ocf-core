@@ -7,7 +7,12 @@ import (
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/terminalTrainer/dto"
+	terminalMiddleware "soli/formations/src/terminalTrainer/middleware"
 	"soli/formations/src/terminalTrainer/models"
+	terminalController "soli/formations/src/terminalTrainer/routes"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func RegisterTerminal(service *ems.EntityRegistrationService) {
@@ -74,6 +79,27 @@ func RegisterTerminal(service *ems.EntityRegistrationService) {
 				GetAll: &entityManagementInterfaces.SwaggerOperation{Summary: "Récupérer tous les terminaux", Description: "Retourne la liste de tous les terminaux disponibles", Tags: []string{"terminals"}, Security: true},
 				GetOne: &entityManagementInterfaces.SwaggerOperation{Summary: "Récupérer un terminal", Description: "Retourne les détails complets d'un terminal spécifique", Tags: []string{"terminals"}, Security: true},
 				Update: &entityManagementInterfaces.SwaggerOperation{Summary: "Mettre à jour un terminal", Description: "Met à jour les informations d'un terminal (nom, statut, etc.)", Tags: []string{"terminals"}, Security: true},
+			},
+			Actions: []entityManagementInterfaces.ActionConfig{
+				{
+					Name:   "stop",
+					Method: http.MethodPost,
+					Scope:  entityManagementInterfaces.ActionScopeItem,
+					// The URL parameter `:id` here is the tt-backend `session_id`, NOT
+					// the Terminal row's primary key. EntityOwner's enforcer assumes
+					// `:id` is the PK (WHERE id = ?) and would 403 every legitimate
+					// caller, so the route stays SelfScoped and ownership is enforced by
+					// the RequireTerminalAccess middleware gate (+ the controller).
+					Middlewares: []entityManagementInterfaces.ActionHandlerFactory{
+						func(db *gorm.DB) gin.HandlerFunc {
+							return terminalMiddleware.NewTerminalAccessMiddleware(db).RequireTerminalAccess()
+						},
+					},
+					Handler:     func(db *gorm.DB) gin.HandlerFunc { return terminalController.NewTerminalController(db).StopSession },
+					Role:        access.RoleMember,
+					Access:      access.AccessRule{Type: access.SelfScoped},
+					Description: "Stop a running terminal session (controller-enforced ownership)",
+				},
 			},
 		},
 	)

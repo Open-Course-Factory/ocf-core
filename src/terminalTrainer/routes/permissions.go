@@ -32,7 +32,8 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		// controllers retain authoritative ownership enforcement. Same
 		// pattern as `/scenario-sessions/by-terminal/:terminalId` (#269).
 		access.RoutePermission{Path: "/api/v1/terminals/:id/console", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Connect to terminal console via WebSocket (controller-enforced ownership)"},
-		access.RoutePermission{Path: "/api/v1/terminals/:id/stop", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Stop a running terminal session (controller-enforced ownership)"},
+		// POST /:id/stop migrated to a "stop" ActionConfig on the Terminal entity
+		// registration (Layer 1 + Layer 2 now derived from that declaration).
 		access.RoutePermission{Path: "/api/v1/terminals/:id/start", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Resume a stopped terminal (controller-enforced ownership)"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id", Method: "DELETE", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Permanently delete a terminal session (controller-enforced ownership)"},
 		access.RoutePermission{Path: "/api/v1/terminals/:id/sync", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Sync terminal session state with backend (controller-enforced ownership)"},
