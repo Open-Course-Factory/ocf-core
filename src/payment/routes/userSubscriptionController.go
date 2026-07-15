@@ -723,6 +723,13 @@ func (sc *userSubscriptionController) UpgradeUserPlan(ctx *gin.Context) {
 				utils.Error("Failed to revert Stripe subscription %s to old price %s after DB failure (Stripe at new price %s): %v",
 					*currentSubscription.StripeSubscriptionID, *currentSubscription.SubscriptionPlan.StripePriceID, *newPlan.StripePriceID, revertErr)
 			}
+		} else {
+			// The old plan has no Stripe price, so there is no price to revert to:
+			// the customer has been charged at the new price, the DB write failed,
+			// and the divergence cannot be undone automatically. This is a genuine
+			// Stripe/DB inconsistency — log loudly so it is reconciled by hand.
+			utils.Error("MANUAL RECONCILIATION REQUIRED: Stripe subscription %s was charged at new price %s but the local plan upgrade (old plan %s) failed to persist, and the old plan has no Stripe price to revert to. The customer is billed for a plan they were not granted; reconcile Stripe and the local subscription manually.",
+				*currentSubscription.StripeSubscriptionID, *newPlan.StripePriceID, currentSubscription.SubscriptionPlanID)
 		}
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
