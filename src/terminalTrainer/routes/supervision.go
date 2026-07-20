@@ -62,16 +62,25 @@ func HasSupervisionAccess(db *gorm.DB, callerUserID string, isAdmin bool, sessio
 		return "", false
 	}
 
+	// Restrict to ACTIVE groups (L1): an inactive managing class-group grants no
+	// supervision access, mirroring checkGroupOwnerAccess's IsActive guard.
+	var activeGroupIDs []uuid.UUID
+	if err := db.Model(&groupModels.ClassGroup{}).
+		Where("id IN ? AND is_active = ?", learnerGroupIDs, true).
+		Pluck("id", &activeGroupIDs).Error; err != nil || len(activeGroupIDs) == 0 {
+		return "", false
+	}
+
 	// Of those, one the caller OWNS (ClassGroup.OwnerUserID)...
 	var owned groupModels.ClassGroup
-	if err := db.Where("id IN ? AND owner_user_id = ?", learnerGroupIDs, callerUserID).
+	if err := db.Where("id IN ? AND owner_user_id = ?", activeGroupIDs, callerUserID).
 		First(&owned).Error; err == nil {
 		return owned.ID.String(), true
 	}
 	// ...or one where the caller holds an active manager/owner membership role.
 	var membership groupModels.GroupMember
 	if err := db.Where("group_id IN ? AND user_id = ? AND is_active = ? AND role IN ?",
-		learnerGroupIDs, callerUserID, true, managerRoles).
+		activeGroupIDs, callerUserID, true, managerRoles).
 		First(&membership).Error; err == nil {
 		return membership.GroupID.String(), true
 	}
@@ -79,11 +88,24 @@ func HasSupervisionAccess(db *gorm.DB, callerUserID string, isAdmin bool, sessio
 	return "", false
 }
 
+// SupervisionStillAuthorized is the periodic re-authorization check (M1) for a
+// long-lived supervise stream: it re-evaluates HasSupervisionAccess so a stream
+// opened by a manager is torn down once their membership is deactivated or their
+// role drops below manager. Admin stays authorized.
+func SupervisionStillAuthorized(db *gorm.DB, callerUserID string, isAdmin bool, sessionID string) bool {
+	_, ok := HasSupervisionAccess(db, callerUserID, isAdmin, sessionID)
+	return ok
+}
+
 // callerManagesGroup reports whether callerUserID is manager+ of groupID (owner via
-// ClassGroup.OwnerUserID or an active manager/owner group_members role).
+// ClassGroup.OwnerUserID or an active manager/owner group_members role). An
+// inactive (or missing) group is never manageable.
 func callerManagesGroup(db *gorm.DB, groupID uuid.UUID, callerUserID string) bool {
-	var owned groupModels.ClassGroup
-	if err := db.Where("id = ? AND owner_user_id = ?", groupID, callerUserID).First(&owned).Error; err == nil {
+	var group groupModels.ClassGroup
+	if err := db.Where("id = ? AND is_active = ?", groupID, true).First(&group).Error; err != nil {
+		return false
+	}
+	if group.OwnerUserID == callerUserID {
 		return true
 	}
 	var membership groupModels.GroupMember
@@ -106,6 +128,13 @@ func PlanAllowsSupervision(plan *paymentModels.SubscriptionPlan) bool {
 // mirrored onto typed fields where the identifiers are real UUIDs) so the trail
 // answers "who supervised whom, via which group".
 func buildSupervisionAudit(event auditModels.AuditEventType, actorUserID, sessionID, groupID string) auditModels.AuditLogCreate {
+	return buildSupervisionAuditStatus(event, actorUserID, sessionID, groupID, "success")
+}
+
+// buildSupervisionAuditStatus is buildSupervisionAudit with an explicit status,
+// used to record a distinct "failed" outcome (e.g. a take-hand PATCH that could
+// not be applied) without silently swallowing the error.
+func buildSupervisionAuditStatus(event auditModels.AuditEventType, actorUserID, sessionID, groupID, status string) auditModels.AuditLogCreate {
 	meta, _ := json.Marshal(map[string]string{
 		"actor_user_id": actorUserID,
 		"session_id":    sessionID,
@@ -117,7 +146,7 @@ func buildSupervisionAudit(event auditModels.AuditEventType, actorUserID, sessio
 		TargetType: "terminal_session",
 		TargetName: sessionID,
 		Action:     string(event),
-		Status:     "success",
+		Status:     status,
 		Metadata:   string(meta),
 		SessionID:  sessionID,
 	}
@@ -147,17 +176,28 @@ func StartSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID
 }
 
 // TakeHandForSupervision performs the audit-BEFORE-act step for a trainer taking
-// the interactive hand. It re-verifies authorization (long-lived WS recheck), then
-// writes AuditEventSupervisionTakeHand FIRST — if the audit write fails, the
-// promotion is refused (fail-closed) and the caller MUST NOT promote.
-func TakeHandForSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID string, isAdmin bool, sessionID, groupID string) error {
+// the interactive hand. It (1) re-verifies group authorization (long-lived WS
+// recheck), (2) re-checks the plan feature — a plan revoked mid-session denies the
+// promotion even when authz/group are still valid — and only then (3) writes
+// AuditEventSupervisionTakeHand. If any of these fails the promotion is refused
+// (fail-closed) and the caller MUST NOT promote.
+func TakeHandForSupervision(db *gorm.DB, audit auditServices.AuditService, plan *paymentModels.SubscriptionPlan, actorUserID string, isAdmin bool, sessionID, groupID string) error {
 	if _, ok := HasSupervisionAccess(db, actorUserID, isAdmin, sessionID); !ok {
 		return fmt.Errorf("supervision not authorized")
+	}
+	if !PlanAllowsSupervision(plan) {
+		return fmt.Errorf("plan does not permit session supervision")
 	}
 	if err := audit.Log(buildSupervisionAudit(auditModels.AuditEventSupervisionTakeHand, actorUserID, sessionID, groupID)); err != nil {
 		return err
 	}
 	return nil
+}
+
+// EndSupervision emits AuditEventSupervisionStopped to bound the supervision
+// window in the audit trail. It is called when the observe WebSocket closes.
+func EndSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID string, isAdmin bool, sessionID, groupID string) error {
+	return audit.Log(buildSupervisionAudit(auditModels.AuditEventSupervisionStopped, actorUserID, sessionID, groupID))
 }
 
 // ListGroupSupervisionSessions returns the active member terminal sessions of a

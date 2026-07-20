@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sync"
@@ -20,8 +21,13 @@ import (
 	auditModels "soli/formations/src/audit/models"
 	auditServices "soli/formations/src/audit/services"
 	"soli/formations/src/auth/errors"
+	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 )
+
+// supervisionReauthInterval is how often a live supervise stream re-checks that
+// the trainer is still authorized (M1). On failure the stream is torn down.
+const supervisionReauthInterval = 30 * time.Second
 
 // isAdminFromRoles reports whether the roles slice carries the platform admin role.
 func isAdminFromRoles(roles []string) bool {
@@ -31,6 +37,37 @@ func isAdminFromRoles(roles []string) bool {
 		}
 	}
 	return false
+}
+
+// BuildSuperviseWSURL builds the tt-backend console WebSocket URL for supervision.
+// It mirrors ConnectConsole's URL construction (https→wss, else ws; path
+// /{apiVersion}[/{instanceType}]/console) and ALWAYS connects as a read-only
+// observer with control frames on (role=observer, control=1) — that query is the
+// entire read-only guarantee of supervision, so this is the single source of truth
+// for the URL build.
+func BuildSuperviseWSURL(terminalTrainerURL, apiVersion, instanceType, sessionID string) (string, error) {
+	u, err := url.Parse(terminalTrainerURL)
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme == "https" {
+		u.Scheme = "wss"
+	} else {
+		u.Scheme = "ws"
+	}
+	path := fmt.Sprintf("/%s", apiVersion)
+	if instanceType != "" {
+		path += fmt.Sprintf("/%s", instanceType)
+	}
+	path += "/console"
+	u.Path = path
+
+	q := u.Query()
+	q.Set("id", sessionID)
+	q.Set("role", "observer")
+	q.Set("control", "1")
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }
 
 // GetGroupTerminalSessions godoc
@@ -67,10 +104,20 @@ type supervisionControlMsg struct {
 	Type string `json:"type"`
 }
 
+// resolveSupervisionPlan resolves the caller's effective plan (same path used to
+// gate at WS open); nil when it cannot be resolved.
+func (tc *terminalController) resolveSupervisionPlan(userID string) *paymentModels.SubscriptionPlan {
+	res, err := paymentServices.NewEffectivePlanService(tc.db).GetUserEffectivePlan(userID, nil)
+	if err != nil || res == nil {
+		return nil
+	}
+	return res.Plan
+}
+
 // SuperviseSession godoc
 //
 //	@Summary		Supervise a learner's terminal (WebSocket, observer + take-hand)
-//	@Description	Opens a read-only observer stream onto a learner's terminal for a group manager+, and brokers take-hand/release-hand via the trainer's in-band control frames. The learner's group is derived server-side from the session record (never client-supplied); requires a plan with session supervision.
+//	@Description	Opens a read-only observer stream onto a learner's terminal for a group manager+, and brokers take-hand/release-hand via the trainer's in-band control frames. The learner's group is derived server-side from the session record (never client-supplied); requires a plan with session supervision. Authorization is re-checked periodically for the life of the stream.
 //	@Tags			terminals
 //	@Param			id	path	string	true	"Learner terminal session ID"
 //	@Security		Bearer
@@ -94,16 +141,13 @@ func (tc *terminalController) SuperviseSession(ctx *gin.Context) {
 		return
 	}
 
-	// Plan gate: the caller's effective plan must include session supervision.
-	// ANDed with the authz decision — a valid manager on a plan without the
-	// feature is still denied.
-	planResult, planErr := paymentServices.NewEffectivePlanService(tc.db).GetUserEffectivePlan(userID, nil)
-	if planErr != nil || planResult == nil || !PlanAllowsSupervision(planResult.Plan) {
+	// Plan gate (ANDed with authz): a valid manager on a plan without the feature
+	// is still denied.
+	if !PlanAllowsSupervision(tc.resolveSupervisionPlan(userID)) {
 		ctx.JSON(http.StatusForbidden, &errors.APIError{ErrorCode: http.StatusForbidden, ErrorMessage: "Your plan does not include terminal supervision"})
 		return
 	}
 
-	// Audit the start (after authorizing). A failed audit write aborts before upgrade.
 	auditSvc := auditServices.NewAuditService(tc.db)
 	if _, err := StartSupervision(tc.db, auditSvc, userID, isAdmin, sessionID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{ErrorCode: http.StatusInternalServerError, ErrorMessage: "Failed to start supervision"})
@@ -123,8 +167,11 @@ func (tc *terminalController) SuperviseSession(ctx *gin.Context) {
 		return
 	}
 
-	// Build the tt-backend console URL as an OBSERVER with control frames on.
-	wsURL, buildErr := tc.buildSuperviseWSURL(terminal.InstanceType, terminal.SessionID)
+	instanceType := terminal.InstanceType
+	if instanceType == "" {
+		instanceType = tc.terminalType
+	}
+	wsURL, buildErr := BuildSuperviseWSURL(tc.terminalTrainerURL, tc.apiVersion, instanceType, terminal.SessionID)
 	if buildErr != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{ErrorCode: http.StatusInternalServerError, ErrorMessage: "Invalid terminal trainer URL"})
 		return
@@ -146,15 +193,29 @@ func (tc *terminalController) SuperviseSession(ctx *gin.Context) {
 	}
 	defer upstream.Close()
 
-	// Keepalive pings to the browser (matches ConnectConsole / tt-backend cadence).
-	pingTicker := time.NewTicker(30 * time.Second)
-	defer pingTicker.Stop()
+	// Teardown closes BOTH connections exactly once, so either side ending unblocks
+	// the other (no half-open leak). done stops the background tickers.
+	var closeOnce sync.Once
+	teardown := func() { closeOnce.Do(func() { clientConn.Close(); upstream.Close() }) }
+	defer teardown()
 	done := make(chan struct{})
-	defer close(done)
+	var doneOnce sync.Once
+	stop := func() { doneOnce.Do(func() { close(done) }) }
+	defer stop()
+
+	// Shared broker state: our tt-backend attachment id and whether we currently
+	// hold the interactive hand.
+	var stMu sync.Mutex
+	attachmentID := ""
+	promoted := false
+
+	// Keepalive pings to the browser (matches ConnectConsole / tt-backend cadence).
 	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
 		for {
 			select {
-			case <-pingTicker.C:
+			case <-ticker.C:
 				if err := clientConn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
 					return
 				}
@@ -164,42 +225,71 @@ func (tc *terminalController) SuperviseSession(ctx *gin.Context) {
 		}
 	}()
 
-	// Our tt-backend attachment id, learned from the first control frame carrying
-	// one (the self-snapshot "joined" delivered on control-connect). Needed to
-	// address our attachment in the take-hand PATCH.
-	var attMu sync.Mutex
-	var attachmentID string
-
-	// Upstream (tt-backend) → client: forward everything, and sniff control frames
-	// (binary JSON) to capture our attachment id.
+	// M1: periodic re-authorization. On loss of access, demote (if promoted) then
+	// tear the stream down.
 	go func() {
+		ticker := time.NewTicker(supervisionReauthInterval)
+		defer ticker.Stop()
 		for {
-			mt, data, rerr := upstream.ReadMessage()
-			if rerr != nil {
-				break
-			}
-			if mt == websocket.BinaryMessage {
-				var ev struct {
-					AttachmentID string `json:"attachment_id"`
+			select {
+			case <-ticker.C:
+				if SupervisionStillAuthorized(tc.db, userID, isAdmin, sessionID) {
+					continue
 				}
-				if json.Unmarshal(data, &ev) == nil && ev.AttachmentID != "" {
-					attMu.Lock()
-					if attachmentID == "" {
-						attachmentID = ev.AttachmentID
+				stMu.Lock()
+				wasPromoted, aid := promoted, attachmentID
+				stMu.Unlock()
+				if wasPromoted && aid != "" {
+					if perr := tc.patchAttachmentRole(terminal.SessionID, aid, "observer", ownerKey.APIKey); perr != nil {
+						slog.Error("supervision demote-on-deauth PATCH failed", "session_id", sessionID, "err", perr)
 					}
-					attMu.Unlock()
 				}
-			}
-			if werr := clientConn.WriteMessage(mt, data); werr != nil {
-				break
+				slog.Warn("supervision re-authorization failed; tearing down", "session_id", sessionID, "user_id", userID)
+				teardown()
+				return
+			case <-done:
+				return
 			}
 		}
 	}()
 
-	// Client (trainer) → upstream: frame-aware allow-list. Client control bytes
-	// (binary frames) are NEVER forwarded upstream; recognized supervision control
-	// envelopes are brokered here; anything else is forwarded as terminal input
-	// (which tt-backend applies only once this attachment is interactive).
+	// Upstream (tt-backend) → client: forward everything, capture our attachment id
+	// from the first control frame that carries one.
+	go func() {
+		defer teardown()
+		for {
+			mt, data, rerr := upstream.ReadMessage()
+			if rerr != nil {
+				return
+			}
+			if mt == websocket.BinaryMessage {
+				// M2: tt-backend delivers a self-snapshot "joined" control event on
+				// control-connect, so the FIRST control frame carrying an
+				// attachment_id is ours. The explicit-self-frame hardening (never
+				// mistaking another attachment's event for our own) is tracked as
+				// tt-backend #126; until then the first-frame heuristic holds
+				// because the self-snapshot precedes any other join broadcast.
+				var ev struct {
+					AttachmentID string `json:"attachment_id"`
+				}
+				if json.Unmarshal(data, &ev) == nil && ev.AttachmentID != "" {
+					stMu.Lock()
+					if attachmentID == "" {
+						attachmentID = ev.AttachmentID
+					}
+					stMu.Unlock()
+				}
+			}
+			if werr := clientConn.WriteMessage(mt, data); werr != nil {
+				return
+			}
+		}
+	}()
+
+	// Client (trainer) → upstream: frame-aware allow-list. Binary client frames are
+	// NEVER forwarded upstream; recognized supervision control envelopes are brokered
+	// here; anything else is forwarded as terminal input (applied by tt-backend only
+	// once this attachment is interactive).
 	for {
 		mt, data, rerr := clientConn.ReadMessage()
 		if rerr != nil {
@@ -210,65 +300,48 @@ func (tc *terminalController) SuperviseSession(ctx *gin.Context) {
 		}
 		var msg supervisionControlMsg
 		if json.Unmarshal(data, &msg) == nil && (msg.Type == "take_hand" || msg.Type == "release_hand") {
-			attMu.Lock()
+			stMu.Lock()
 			aid := attachmentID
-			attMu.Unlock()
-			tc.brokerSupervisionControl(auditSvc, userID, isAdmin, sessionID, groupID, terminal.SessionID, aid, ownerKey.APIKey, msg.Type)
+			stMu.Unlock()
+			if aid == "" {
+				continue // our attachment id is not known yet; cannot address the PATCH
+			}
+			switch msg.Type {
+			case "take_hand":
+				// Re-authorize + re-check plan + audit-before-act (all inside
+				// TakeHandForSupervision); any failure denies the promotion.
+				if err := TakeHandForSupervision(tc.db, auditSvc, tc.resolveSupervisionPlan(userID), userID, isAdmin, sessionID, groupID); err != nil {
+					continue // fail-closed: no escalation
+				}
+				if perr := tc.patchAttachmentRole(terminal.SessionID, aid, "interactive", ownerKey.APIKey); perr != nil {
+					// Record the failed act distinctly; do NOT escalate.
+					slog.Error("supervision take-hand PATCH failed", "session_id", sessionID, "err", perr)
+					_ = auditSvc.Log(buildSupervisionAuditStatus(auditModels.AuditEventSupervisionTakeHand, userID, sessionID, groupID, "failed"))
+					continue
+				}
+				stMu.Lock()
+				promoted = true
+				stMu.Unlock()
+			case "release_hand":
+				if perr := tc.patchAttachmentRole(terminal.SessionID, aid, "observer", ownerKey.APIKey); perr != nil {
+					slog.Error("supervision release-hand PATCH failed", "session_id", sessionID, "err", perr)
+					continue
+				}
+				stMu.Lock()
+				promoted = false
+				stMu.Unlock()
+				_ = auditSvc.Log(buildSupervisionAudit(auditModels.AuditEventSupervisionReleased, userID, sessionID, groupID))
+			}
 			continue
 		}
 		if werr := upstream.WriteMessage(websocket.TextMessage, data); werr != nil {
 			break
 		}
 	}
-}
 
-// brokerSupervisionControl handles an in-band take_hand / release_hand request by
-// re-authorizing + auditing (fail-closed) and then driving tt-backend's REST role
-// PATCH. It never forwards the raw control message upstream.
-func (tc *terminalController) brokerSupervisionControl(audit auditServices.AuditService, userID string, isAdmin bool, sessionID, groupID, ttSessionID, attachmentID, apiKey, ctlType string) {
-	if attachmentID == "" {
-		return // our attachment id is not known yet; cannot address the PATCH
-	}
-	switch ctlType {
-	case "take_hand":
-		// Audit-before-act, fail-closed: a failed audit write blocks the promotion.
-		if err := TakeHandForSupervision(tc.db, audit, userID, isAdmin, sessionID, groupID); err != nil {
-			return
-		}
-		_ = tc.patchAttachmentRole(ttSessionID, attachmentID, "interactive", apiKey)
-	case "release_hand":
-		if err := tc.patchAttachmentRole(ttSessionID, attachmentID, "observer", apiKey); err == nil {
-			_ = audit.Log(buildSupervisionAudit(auditModels.AuditEventSupervisionReleased, userID, sessionID, groupID))
-		}
-	}
-}
-
-// buildSuperviseWSURL builds the tt-backend observer console WebSocket URL.
-func (tc *terminalController) buildSuperviseWSURL(instanceType, ttSessionID string) (string, error) {
-	u, err := url.Parse(tc.terminalTrainerURL)
-	if err != nil {
-		return "", err
-	}
-	if u.Scheme == "https" {
-		u.Scheme = "wss"
-	} else {
-		u.Scheme = "ws"
-	}
-	path := fmt.Sprintf("/%s", tc.apiVersion)
-	if instanceType != "" {
-		path += fmt.Sprintf("/%s", instanceType)
-	} else if tc.terminalType != "" {
-		path += fmt.Sprintf("/%s", tc.terminalType)
-	}
-	path += "/console"
-	u.Path = path
-
-	q := u.Query()
-	q.Set("id", ttSessionID)
-	q.Set("role", "observer")
-	q.Set("control", "1")
-	u.RawQuery = q.Encode()
-	return u.String(), nil
+	// The observe stream closed: bound the supervision window in the audit trail.
+	teardown()
+	_ = EndSupervision(tc.db, auditSvc, userID, isAdmin, sessionID, groupID)
 }
 
 // patchAttachmentRole calls tt-backend's REST role-transition endpoint to promote

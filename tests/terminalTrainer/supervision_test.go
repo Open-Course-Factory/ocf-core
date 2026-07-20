@@ -13,9 +13,12 @@ package terminalTrainer_tests
 //
 //   package terminalController (src/terminalTrainer/routes)
 //     HasSupervisionAccess(db *gorm.DB, callerUserID string, isAdmin bool, sessionID string) (groupID string, ok bool)
+//     SupervisionStillAuthorized(db *gorm.DB, callerUserID string, isAdmin bool, sessionID string) bool
 //     PlanAllowsSupervision(plan *paymentModels.SubscriptionPlan) bool
+//     BuildSuperviseWSURL(terminalTrainerURL, apiVersion, instanceType, sessionID string) (string, error)
 //     StartSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID string, isAdmin bool, sessionID string) (groupID string, err error)
-//     TakeHandForSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID string, isAdmin bool, sessionID, groupID string) error
+//     TakeHandForSupervision(db *gorm.DB, audit auditServices.AuditService, plan *paymentModels.SubscriptionPlan, actorUserID string, isAdmin bool, sessionID, groupID string) error
+//     EndSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID string, isAdmin bool, sessionID, groupID string) error
 //     ListGroupSupervisionSessions(db *gorm.DB, groupID, callerUserID string, isAdmin bool) (sessions []terminalModels.Terminal, ok bool)
 //
 //   package models (src/audit/models)
@@ -29,6 +32,7 @@ package terminalTrainer_tests
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -338,7 +342,7 @@ func TestSupervision_TakeHandAudit_UsesTakeHandEvent(t *testing.T) {
 	group, sessionID := newSupervisedSession(t, db, "group-A", trainer, "learner-A")
 	audit := &mockSupervisionAudit{}
 
-	err := terminalController.TakeHandForSupervision(db, audit, trainer, false, sessionID, group.ID.String())
+	err := terminalController.TakeHandForSupervision(db, audit, planWithSupervision(), trainer, false, sessionID, group.ID.String())
 
 	require.NoError(t, err)
 	require.Len(t, audit.logged, 1)
@@ -355,7 +359,7 @@ func TestSupervision_TakeHand_FailClosedOnAuditError(t *testing.T) {
 	group, sessionID := newSupervisedSession(t, db, "group-A", trainer, "learner-A")
 	audit := &mockSupervisionAudit{logErr: assert.AnError}
 
-	err := terminalController.TakeHandForSupervision(db, audit, trainer, false, sessionID, group.ID.String())
+	err := terminalController.TakeHandForSupervision(db, audit, planWithSupervision(), trainer, false, sessionID, group.ID.String())
 
 	require.Error(t, err, "take-hand must fail closed when the audit write fails")
 	assert.Len(t, audit.logged, 1, "the audit write must be attempted before the act (audit-before-act)")
@@ -395,4 +399,164 @@ func TestSupervision_ListGroupSessions_NonManagerDenied(t *testing.T) {
 	_, ok := terminalController.ListGroupSupervisionSessions(db, groupA.ID.String(), "learner-A", false)
 
 	assert.False(t, ok, "a plain member must NOT list the group's supervision sessions")
+}
+
+// planWithSupervision is a plan that carries the session_supervision feature.
+func planWithSupervision() *paymentModels.SubscriptionPlan {
+	return &paymentModels.SubscriptionPlan{Name: "Pro", SessionSupervisionEnabled: true}
+}
+
+// --- Review round (MR !313) --------------------------------------------------
+
+// --- R1. buildSuperviseWSURL read-only guarantee (reviewer catch) -----------
+
+// TestBuildSuperviseWSURL_ReadOnlyObserverQuery pins the read-only property of
+// the supervision WebSocket URL: it MUST connect as role=observer with the
+// control flag set, to the tt-backend console over a secure scheme. A
+// regression flipping role to interactive here silently breaks the entire
+// read-only guarantee, so this is pinned hard.
+func TestBuildSuperviseWSURL_ReadOnlyObserverQuery(t *testing.T) {
+	raw, err := terminalController.BuildSuperviseWSURL("https://tt.example.com", "1.0", "", "sess-xyz")
+	require.NoError(t, err)
+
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+
+	assert.Equal(t, "wss", u.Scheme, "an https base URL must upgrade to wss")
+	assert.True(t, strings.HasSuffix(u.Path, "/console"), "must target the tt-backend console path")
+	assert.Contains(t, u.Path, "1.0", "path must carry the api version")
+
+	q := u.Query()
+	assert.Equal(t, "observer", q.Get("role"), "supervision MUST connect as a read-only observer")
+	assert.Equal(t, "1", q.Get("control"), "supervision MUST set the control flag")
+	assert.Equal(t, "sess-xyz", q.Get("id"), "must reference the target session id")
+}
+
+// TestBuildSuperviseWSURL_PlainSchemeAndInstanceType pins the ws (non-TLS)
+// scheme for an http base and that a non-empty instance type is threaded into
+// the console path, mirroring ConnectConsole's URL construction.
+func TestBuildSuperviseWSURL_PlainSchemeAndInstanceType(t *testing.T) {
+	raw, err := terminalController.BuildSuperviseWSURL("http://tt.local:8090", "1.0", "ubuntu", "sess-1")
+	require.NoError(t, err)
+
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+
+	assert.Equal(t, "ws", u.Scheme, "an http base URL must use ws")
+	assert.Contains(t, u.Path, "ubuntu", "instance type must appear in the path when set")
+	assert.True(t, strings.HasSuffix(u.Path, "/console"))
+	assert.Equal(t, "observer", u.Query().Get("role"))
+	assert.Equal(t, "1", u.Query().Get("control"))
+}
+
+// --- R2. M1 periodic re-authorization ----------------------------------------
+
+// TestSupervisionStillAuthorized_MembershipDeactivatedMidSession_Denied pins the
+// periodic re-check: a manager authorized when the stream opened must fail
+// re-authorization once their managing membership is deactivated, so the stream
+// can be torn down mid-session.
+func TestSupervisionStillAuthorized_MembershipDeactivatedMidSession_Denied(t *testing.T) {
+	db := setupTestDB(t)
+
+	owner := "owner-A"
+	manager := "manager-A"
+	group, sessionID := newSupervisedSession(t, db, "group-A", owner, "learner-A")
+	member := createTestGroupMember(t, db, group.ID, manager, groupModels.GroupMemberRoleManager)
+
+	assert.True(t, terminalController.SupervisionStillAuthorized(db, manager, false, sessionID),
+		"manager must be authorized at stream open")
+
+	require.NoError(t, db.Model(member).Update("is_active", false).Error)
+
+	assert.False(t, terminalController.SupervisionStillAuthorized(db, manager, false, sessionID),
+		"deactivated membership must fail mid-session re-authorization")
+}
+
+// TestSupervisionStillAuthorized_RoleDroppedMidSession_Denied pins the same
+// re-check for a role demotion below manager.
+func TestSupervisionStillAuthorized_RoleDroppedMidSession_Denied(t *testing.T) {
+	db := setupTestDB(t)
+
+	owner := "owner-A"
+	manager := "manager-A"
+	group, sessionID := newSupervisedSession(t, db, "group-A", owner, "learner-A")
+	member := createTestGroupMember(t, db, group.ID, manager, groupModels.GroupMemberRoleManager)
+
+	require.True(t, terminalController.SupervisionStillAuthorized(db, manager, false, sessionID))
+
+	require.NoError(t, db.Model(member).Update("role", groupModels.GroupMemberRoleMember).Error)
+
+	assert.False(t, terminalController.SupervisionStillAuthorized(db, manager, false, sessionID),
+		"a role dropped below manager must fail mid-session re-authorization")
+}
+
+// TestSupervisionStillAuthorized_AdminStaysAuthorized pins that a platform
+// administrator remains authorized across re-checks regardless of membership.
+func TestSupervisionStillAuthorized_AdminStaysAuthorized(t *testing.T) {
+	db := setupTestDB(t)
+
+	_, sessionID := newSupervisedSession(t, db, "group-A", "trainer-A", "learner-A")
+
+	assert.True(t, terminalController.SupervisionStillAuthorized(db, "admin-user", true, sessionID),
+		"admin must stay authorized on re-check")
+}
+
+// --- R3. L1 ClassGroup.IsActive ----------------------------------------------
+
+// TestSupervision_InactiveManagingGroup_Denied pins that supervision is denied
+// when the learner's managing class-group is inactive, mirroring the existing
+// checkGroupOwnerAccess IsActive guard.
+func TestSupervision_InactiveManagingGroup_Denied(t *testing.T) {
+	db := setupTestDB(t)
+
+	trainer := "trainer-A"
+	group, sessionID := newSupervisedSession(t, db, "group-A", trainer, "learner-A")
+
+	// Deactivate after creation to bypass GORM's zero-value skip on a
+	// bool column with default:true.
+	require.NoError(t, db.Model(group).Update("is_active", false).Error)
+
+	groupID, ok := terminalController.HasSupervisionAccess(db, trainer, false, sessionID)
+
+	assert.False(t, ok, "an inactive managing group must not grant supervision access")
+	assert.Empty(t, groupID)
+}
+
+// --- R4. L2 plan re-check on take-hand ---------------------------------------
+
+// TestSupervision_TakeHand_PlanRevokedMidSession_Denied pins that take-hand
+// re-checks the plan feature: if the caller's effective plan no longer carries
+// session_supervision, the promotion is denied even though authz/group are
+// still valid. This closes the gap where the plan was only checked at WS open.
+func TestSupervision_TakeHand_PlanRevokedMidSession_Denied(t *testing.T) {
+	db := setupTestDB(t)
+
+	trainer := "trainer-A"
+	group, sessionID := newSupervisedSession(t, db, "group-A", trainer, "learner-A")
+	audit := &mockSupervisionAudit{}
+
+	planless := &paymentModels.SubscriptionPlan{Name: "Free", SessionSupervisionEnabled: false}
+
+	err := terminalController.TakeHandForSupervision(db, audit, planless, trainer, false, sessionID, group.ID.String())
+
+	assert.Error(t, err, "take-hand must be denied when the effective plan lacks session_supervision")
+}
+
+// --- R5. Stopped audit -------------------------------------------------------
+
+// TestSupervision_EndAudit_UsesStoppedEvent pins that ending supervision emits
+// AuditEventSupervisionStopped, closing the audit lifecycle started/take-hand
+// opened.
+func TestSupervision_EndAudit_UsesStoppedEvent(t *testing.T) {
+	db := setupTestDB(t)
+
+	trainer := "trainer-A"
+	group, sessionID := newSupervisedSession(t, db, "group-A", trainer, "learner-A")
+	audit := &mockSupervisionAudit{}
+
+	err := terminalController.EndSupervision(db, audit, trainer, false, sessionID, group.ID.String())
+
+	require.NoError(t, err)
+	require.Len(t, audit.logged, 1)
+	assert.Equal(t, auditModels.AuditEventSupervisionStopped, audit.logged[0].EventType)
 }
