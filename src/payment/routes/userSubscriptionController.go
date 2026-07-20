@@ -1071,6 +1071,21 @@ func (sc *userSubscriptionController) MirrorSubscriptionPlansToStripe(ctx *gin.C
 		return
 	}
 
+	// A mirror run also executes the DB → Stripe price-drift pass, so it can
+	// migrate prices too — audit each migration, gated on real runs like archival.
+	if execute && len(result.PriceMigrated) > 0 {
+		auditSvc := auditServices.NewAuditService(sc.db)
+		actorID := parseActorUUID(ctx)
+		for _, migrated := range result.PriceMigrated {
+			auditSvc.LogBilling(ctx, auditModels.AuditEventPlanPriceMigrated, actorID, nil, "stripe_price",
+				nil, "", map[string]interface{}{
+					"admin_user_id": ctx.GetString("userId"),
+					"detail":        migrated,
+					"action":        "sync_stripe_price_migration",
+				})
+		}
+	}
+
 	// Archiving a Stripe product is a destructive, billing-relevant action —
 	// record one audit event per archived product (real runs only, not dry-run).
 	if execute && len(result.Archived) > 0 {

@@ -3672,6 +3672,11 @@ func (ss *stripeService) mirrorArchiveOrphans(result *StripeSyncResult, dryRun b
 		ownedByMarker := prod.Metadata[metadataKeyManagedBy] == metadataValueManagedByOCF
 		ownedByRow := false
 		if !ownedByMarker {
+			// Legacy bridge for OCF products created before the managed_by marker
+			// existed: a matching (incl. soft-deleted) local row still proves
+			// ownership. The marker is the real proof going forward; this path only
+			// carries a theoretical UUID-collision false-positive risk (a foreign
+			// product whose plan_id happens to equal a real OCF plan UUID).
 			var deleted models.SubscriptionPlan
 			unErr := ss.db.Unscoped().First(&deleted, "id = ?", planID).Error
 			if unErr == nil {
