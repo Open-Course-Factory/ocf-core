@@ -148,6 +148,12 @@ func TestSetupTerminalPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/class-groups/:id/bulk-create-terminals", "POST"},
 		{"/api/v1/class-groups/:id/command-history", "GET"},
 		{"/api/v1/class-groups/:id/command-history-stats", "GET"},
+		// Supervision (#425) — group-scoped session list (GroupRole manager,
+		// declared in the terminal module's permissions.go) + per-session
+		// supervise WS broker (SelfScoped: controller derives the group from
+		// the session record and enforces manager+ authorization itself).
+		{"/api/v1/class-groups/:id/terminal-sessions", "GET"},
+		{"/api/v1/terminals/:id/supervise", "GET"},
 		// Organization terminal routes
 		{"/api/v1/organizations/:id/terminal-sessions", "GET"},
 		// Incus UI proxy — MR N derives Layer 1 from the RouteRegistry, so the old

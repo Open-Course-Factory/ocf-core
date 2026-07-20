@@ -71,6 +71,13 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 		access.RoutePermission{Path: "/api/v1/class-groups/:id/command-history", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "Get command history for all group members"},
 		access.RoutePermission{Path: "/api/v1/class-groups/:id/command-history-stats", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "Get command history statistics for a group"},
 
+		// Supervision (#425): group-scoped active session listing (Layer 2 GroupRole
+		// manager+). The supervise WS broker is SelfScoped — the controller derives
+		// the learner's group from the session record and enforces manager+ itself
+		// (HasSupervisionAccess), so no path :id maps to a group here.
+		access.RoutePermission{Path: "/api/v1/class-groups/:id/terminal-sessions", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "id", MinRole: "manager"}, Description: "List a class-group's active terminal sessions for supervision (manager+)"},
+		access.RoutePermission{Path: "/api/v1/terminals/:id/supervise", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Supervise a learner's terminal via WebSocket (controller-enforced group manager+ + plan gate)"},
+
 		// Organization terminal routes
 		access.RoutePermission{Path: "/api/v1/organizations/:id/terminal-sessions", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "member"}, Description: "List terminal sessions for an organization"},
 		access.RoutePermission{Path: "/api/v1/organizations/:id/terminal-usage", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.OrgRole, Param: "id", MinRole: "manager"}, Description: "Get org-wide active terminal usage for managers/owners"},

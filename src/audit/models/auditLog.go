@@ -87,6 +87,13 @@ const (
 	AuditEventImpersonationStarted AuditEventType = "impersonation_started"
 	AuditEventImpersonationStopped AuditEventType = "impersonation_stopped"
 	AuditEventImpersonationExpired AuditEventType = "impersonation_expired"
+
+	// Terminal Supervision Events (#425) — a trainer (group manager+) live-watching
+	// a learner's terminal and taking/releasing the interactive hand.
+	AuditEventSupervisionStarted  AuditEventType = "terminal.supervision.started"
+	AuditEventSupervisionStopped  AuditEventType = "terminal.supervision.stopped"
+	AuditEventSupervisionTakeHand AuditEventType = "terminal.supervision.take_hand"
+	AuditEventSupervisionReleased AuditEventType = "terminal.supervision.released"
 )
 
 // AuditSeverity represents the importance level of an audit event

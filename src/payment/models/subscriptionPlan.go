@@ -41,6 +41,7 @@ type SubscriptionPlan struct {
 
 	NetworkAccessEnabled       bool     `gorm:"default:false" json:"network_access_enabled"`    // Allow external network access
 	DataPersistenceEnabled     bool     `gorm:"default:false" json:"data_persistence_enabled"`  // Allow saving data between sessions (also gates persistent persistence_mode — SSOT)
+	SessionSupervisionEnabled  bool     `gorm:"default:false" json:"session_supervision_enabled"` // Allow trainers (group manager+) to live-supervise a learner's terminal and take the hand
 	DataPersistenceGB          int      `gorm:"default:0" json:"data_persistence_gb"`           // Storage quota in GB
 
 	AllowedTemplates           []string `gorm:"serializer:json" json:"allowed_templates"`       // Template IDs allowed

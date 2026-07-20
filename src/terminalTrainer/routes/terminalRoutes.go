@@ -30,6 +30,11 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	// Console access requires terminal ownership (Layer 2 security check)
 	routes.GET("/:id/console", middleware.AuthManagement(), terminalAccessMiddleware.RequireTerminalAccess(), terminalController.ConnectConsole)
 
+	// Supervision (#425): observe a learner's terminal + broker take-hand. The
+	// controller derives the learner's group server-side and enforces manager+
+	// (HasSupervisionAccess) plus the plan feature — hence AuthManagement only.
+	routes.GET("/:id/supervise", middleware.AuthManagement(), terminalController.SuperviseSession)
+
 	// Bulk operations for groups
 	groupRoutes := router.Group("/class-groups")
 	// Use effective plan middlewares for bulk creation validation.
@@ -40,6 +45,8 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	)...)
 	groupRoutes.GET("/:id/command-history", middleware.AuthManagement(), terminalController.GetGroupCommandHistory)
 	groupRoutes.GET("/:id/command-history-stats", middleware.AuthManagement(), terminalController.GetGroupCommandHistoryStats)
+	// Supervision (#425): a group's active member terminal sessions (manager+).
+	groupRoutes.GET("/:id/terminal-sessions", middleware.AuthManagement(), terminalController.GetGroupTerminalSessions)
 
 	// Stop session (POST /:id/stop) is mounted declaratively as a "stop"
 	// ActionConfig on the Terminal entity registration (its ownership gate is the

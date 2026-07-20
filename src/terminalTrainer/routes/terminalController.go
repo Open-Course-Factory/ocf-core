@@ -40,6 +40,8 @@ type TerminalController interface {
 
 	// Méthodes spécialisées Terminal Trainer
 	ConnectConsole(ctx *gin.Context)
+	SuperviseSession(ctx *gin.Context)
+	GetGroupTerminalSessions(ctx *gin.Context)
 	StopSession(ctx *gin.Context)
 	StartSession(ctx *gin.Context)
 	DeleteSession(ctx *gin.Context)
@@ -111,6 +113,7 @@ type TerminalController interface {
 
 type terminalController struct {
 	controller.GenericController
+	db                 *gorm.DB
 	terminalTrainerURL string
 	apiVersion         string
 	terminalType       string
@@ -130,6 +133,7 @@ func NewTerminalController(db *gorm.DB) TerminalController {
 
 	return &terminalController{
 		GenericController:  controller.NewGenericController(db, casdoor.Enforcer),
+		db:                 db,
 		terminalTrainerURL: os.Getenv("TERMINAL_TRAINER_URL"),
 		apiVersion:         apiVersion,
 		terminalType:       terminalType,
@@ -147,6 +151,7 @@ func NewTerminalControllerWithService(db *gorm.DB, svc services.TerminalTrainerS
 	terminalType := os.Getenv("TERMINAL_TRAINER_TYPE")
 	return &terminalController{
 		GenericController:  controller.NewGenericController(db, casdoor.Enforcer),
+		db:                 db,
 		terminalTrainerURL: os.Getenv("TERMINAL_TRAINER_URL"),
 		apiVersion:         apiVersion,
 		terminalType:       terminalType,
