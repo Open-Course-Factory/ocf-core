@@ -42,6 +42,7 @@ type SubscriptionController interface {
 	// Méthodes pour la synchronisation Stripe des plans d'abonnement
 	SyncSubscriptionPlanWithStripe(ctx *gin.Context)
 	SyncAllSubscriptionPlansWithStripe(ctx *gin.Context)
+	MirrorSubscriptionPlansToStripe(ctx *gin.Context)
 	ImportPlansFromStripe(ctx *gin.Context)
 
 	// Méthodes pour la synchronisation des abonnements existants
@@ -1012,54 +1013,61 @@ func (sc *userSubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Co
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/subscription-plans/sync-stripe [post]
 func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gin.Context) {
-	// Récupérer tous les plans
-	plansPtr, err := sc.subscriptionService.GetAllSubscriptionPlans(false) // Récupérer tous les plans, même inactifs
+	// Safe push (Mirror:false): create/update/migrate local plans on Stripe, but
+	// never archive a Stripe product. Per-plan failures are reported inside the
+	// result rather than aborting the whole run.
+	result, err := sc.stripeService.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
-			ErrorMessage: "Failed to retrieve subscription plans: " + err.Error(),
+			ErrorMessage: "Failed to sync plans to Stripe: " + err.Error(),
 		})
 		return
 	}
 
-	plans := *plansPtr
-	var syncedPlans []string
-	var skippedPlans []string
-	var failedPlans []map[string]any
+	ctx.JSON(http.StatusOK, result)
+}
 
-	for _, plan := range plans {
-		if plan.StripePriceID != nil {
-			// Plan déjà synchronisé
-			skippedPlans = append(skippedPlans, plan.Name+" (already synced)")
-			continue
-		}
+// Mirror Subscription Plans To Stripe godoc
+//
+//	@Summary		Mirror subscription plans to Stripe (DB → Stripe, with orphan reconciliation)
+//	@Description	Pushes all local plans to Stripe AND archives active Stripe products whose plan_id metadata matches no live local plan. Pass dry_run=true to preview the archival set without any Stripe write.
+//	@Tags			subscriptions
+//	@Accept			json
+//	@Produce		json
+//	@Param			dry_run	query	bool	false	"Preview changes without writing to Stripe"
+//	@Security		Bearer
+//	@Success		200	{object}	services.StripeSyncResult	"Sync results"
+//	@Failure		500	{object}	errors.APIError	"Internal server error"
+//	@Router			/subscription-plans/sync-stripe/mirror [post]
+func (sc *userSubscriptionController) MirrorSubscriptionPlansToStripe(ctx *gin.Context) {
+	dryRun := ctx.Query("dry_run") == "true"
 
-		if plan.IsFree() {
-			// Plans gratuits (ex: Trial) sont volontairement découplés de Stripe —
-			// ne pas créer de produit/prix €0/mois bidon côté Stripe.
-			skippedPlans = append(skippedPlans, plan.Name+" (free plan)")
-			continue
-		}
+	result, err := sc.stripeService.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true, DryRun: dryRun})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to mirror plans to Stripe: " + err.Error(),
+		})
+		return
+	}
 
-		// Tenter de synchroniser le plan
-		err := sc.stripeService.CreateSubscriptionPlanInStripe(&plan)
-		if err != nil {
-			failedPlans = append(failedPlans, map[string]any{
-				"name":  plan.Name,
-				"id":    plan.ID.String(),
-				"error": err.Error(),
-			})
-		} else {
-			syncedPlans = append(syncedPlans, plan.Name)
+	// Archiving a Stripe product is a destructive, billing-relevant action —
+	// record one audit event per archived product (real writes only, not dry-run).
+	if !dryRun && len(result.Archived) > 0 {
+		auditSvc := auditServices.NewAuditService(sc.db)
+		adminUserID := ctx.GetString("userId")
+		for _, archived := range result.Archived {
+			auditSvc.LogBilling(ctx, auditModels.AuditEventPlanProductArchived, nil, nil, "stripe_product",
+				nil, "", map[string]interface{}{
+					"admin_user_id": adminUserID,
+					"detail":        archived,
+					"action":        "mirror_archive_stripe_product",
+				})
 		}
 	}
 
-	ctx.JSON(http.StatusOK, map[string]any{
-		"synced_plans":  syncedPlans,
-		"skipped_plans": skippedPlans,
-		"failed_plans":  failedPlans,
-		"total_plans":   len(plans),
-	})
+	ctx.JSON(http.StatusOK, result)
 }
 
 // Import Plans From Stripe godoc

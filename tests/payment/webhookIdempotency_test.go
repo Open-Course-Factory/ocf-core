@@ -180,6 +180,10 @@ func (m *webhookTestStripeService) ImportPlansFromStripe() (*services.SyncPlansR
 	return nil, nil
 }
 
+func (m *webhookTestStripeService) SyncPlansToStripe(services.SyncToStripeOptions) (*services.StripeSyncResult, error) {
+	return nil, nil
+}
+
 // Compile-time check: satisfies services.StripeService.
 var _ services.StripeService = (*webhookTestStripeService)(nil)
 

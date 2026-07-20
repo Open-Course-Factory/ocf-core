@@ -156,6 +156,10 @@ func (s *bulkGatesStripeStub) ImportPlansFromStripe() (*services.SyncPlansResult
 	panic("bulkGatesStripeStub.ImportPlansFromStripe unexpectedly called")
 }
 
+func (s *bulkGatesStripeStub) SyncPlansToStripe(services.SyncToStripeOptions) (*services.StripeSyncResult, error) {
+	panic("bulkGatesStripeStub.SyncPlansToStripe unexpectedly called")
+}
+
 // assertNoBulkRowsPersisted fails if any batch or license row exists — the
 // user-observable contract when a bulk purchase is rejected: nothing is created.
 func assertNoBulkRowsPersisted(t *testing.T) {

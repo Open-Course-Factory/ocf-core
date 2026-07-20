@@ -144,6 +144,29 @@ type StripeService interface {
 
 	// Plan synchronization from Stripe
 	ImportPlansFromStripe() (*SyncPlansResult, error)
+
+	// Plan synchronization to Stripe (DB → Stripe, with optional mirror reconciliation)
+	SyncPlansToStripe(opts SyncToStripeOptions) (*StripeSyncResult, error)
+}
+
+// SyncToStripeOptions controls the direction/behaviour of SyncPlansToStripe.
+type SyncToStripeOptions struct {
+	// Mirror, when true, additionally reconciles Stripe → DB: active Stripe
+	// products whose plan_id metadata matches no live local plan are archived.
+	Mirror bool
+	// DryRun reports what WOULD change without performing any Stripe write.
+	DryRun bool
+}
+
+// StripeSyncResult reports the outcome of SyncPlansToStripe. Each slice holds
+// human-readable "<name> (<id>)" entries for one category of change.
+type StripeSyncResult struct {
+	Created       []string `json:"created"`        // plans pushed to Stripe for the first time
+	Updated       []string `json:"updated"`        // plans whose Stripe product was updated
+	PriceMigrated []string `json:"price_migrated"` // plans repointed to a new Stripe price after drift
+	Archived      []string `json:"archived"`       // orphan Stripe products archived (mirror only)
+	Skipped       []string `json:"skipped"`        // foreign Stripe products left untouched (mirror only)
+	Failed        []string `json:"failed"`         // per-item failures (operation continues)
 }
 
 // SyncPlansResult contains the results of importing plans from Stripe
@@ -3448,4 +3471,203 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 		result.ProcessedPlans, result.CreatedPlans, result.UpdatedPlans, result.SkippedPlans, len(result.FailedPlans))
 
 	return result, nil
+}
+
+// SyncPlansToStripe pushes local subscription plans to Stripe (DB → Stripe) and,
+// in Mirror mode, reconciles orphaned Stripe products back down.
+//
+// Safe mode (Mirror:false) NEVER archives a Stripe product:
+//   - a paid plan without a StripePriceID is created (product+price)   -> Created
+//   - a paid plan with a StripePriceID has its product updated always  -> Updated
+//   - if the local price drifted from the current Stripe price, a new price is
+//     created, the plan is repointed, and the old price is archived     -> PriceMigrated
+//   - free plans (IsFree) are skipped — they are intentionally decoupled from Stripe
+//
+// Mirror mode (Mirror:true) additionally archives active Stripe products whose
+// plan_id metadata matches no live local plan (a soft-deleted plan counts as not
+// live). Products WITHOUT plan_id metadata are foreign and are never touched.
+//
+// DryRun performs ZERO Stripe writes; it only reports what would change.
+func (ss *stripeService) SyncPlansToStripe(opts SyncToStripeOptions) (*StripeSyncResult, error) {
+	result := &StripeSyncResult{
+		Created:       []string{},
+		Updated:       []string{},
+		PriceMigrated: []string{},
+		Archived:      []string{},
+		Skipped:       []string{},
+		Failed:        []string{},
+	}
+
+	// --- DB → Stripe: create/update/migrate every live local plan ---
+	var plans []models.SubscriptionPlan
+	if err := ss.db.Find(&plans).Error; err != nil {
+		return nil, fmt.Errorf("failed to load subscription plans: %w", err)
+	}
+
+	for i := range plans {
+		plan := &plans[i]
+		label := fmt.Sprintf("%s (%s)", plan.Name, plan.ID.String())
+
+		// Free plans (e.g. Trial) are intentionally decoupled from Stripe.
+		if plan.IsFree() {
+			continue
+		}
+
+		// Not yet on Stripe → create product + price.
+		if plan.StripePriceID == nil {
+			if opts.DryRun {
+				result.Created = append(result.Created, label)
+				continue
+			}
+			if err := ss.CreateSubscriptionPlanInStripe(plan); err != nil {
+				result.Failed = append(result.Failed, fmt.Sprintf("%s: create failed: %v", label, err))
+				continue
+			}
+			result.Created = append(result.Created, label)
+			continue
+		}
+
+		// Already on Stripe → always push product edits (name/description/active/metadata).
+		if opts.DryRun {
+			result.Updated = append(result.Updated, label)
+		} else if err := ss.UpdateSubscriptionPlanInStripe(plan); err != nil {
+			result.Failed = append(result.Failed, fmt.Sprintf("%s: update failed: %v", label, err))
+			continue
+		} else {
+			result.Updated = append(result.Updated, label)
+		}
+
+		// Detect price drift against the CURRENT Stripe price and migrate if needed.
+		migrated, err := ss.migratePriceIfDrifted(plan, opts.DryRun)
+		if err != nil {
+			result.Failed = append(result.Failed, fmt.Sprintf("%s: price migration failed: %v", label, err))
+			continue
+		}
+		if migrated {
+			result.PriceMigrated = append(result.PriceMigrated, label)
+		}
+	}
+
+	// --- Stripe → DB reconciliation (mirror only) ---
+	if opts.Mirror {
+		if err := ss.mirrorArchiveOrphans(result, opts.DryRun); err != nil {
+			return nil, err
+		}
+	}
+
+	return result, nil
+}
+
+// migratePriceIfDrifted compares the plan's local price against the CURRENT
+// Stripe price. On drift it creates a new Stripe price, repoints the plan, and
+// archives the old price, returning true. When the price matches, it returns
+// false without any write. In dryRun it reports drift (returns true) but performs
+// no Stripe write.
+func (ss *stripeService) migratePriceIfDrifted(plan *models.SubscriptionPlan, dryRun bool) (bool, error) {
+	oldPriceID := *plan.StripePriceID
+
+	current, err := price.Get(oldPriceID, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch Stripe price %s: %w", oldPriceID, err)
+	}
+
+	currentInterval := ""
+	if current.Recurring != nil {
+		currentInterval = string(current.Recurring.Interval)
+	}
+
+	drifted := current.UnitAmount != plan.PriceAmount ||
+		string(current.Currency) != plan.Currency ||
+		currentInterval != plan.BillingInterval
+	if !drifted {
+		return false, nil
+	}
+
+	if dryRun {
+		return true, nil
+	}
+
+	// Create the replacement price. The idempotency key folds plan.ID with the
+	// target price signature: a retry reuses the same new price instead of
+	// stacking duplicates, while a genuinely different price yields a fresh key.
+	priceSignature := fmt.Sprintf("%d|%s|%s", plan.PriceAmount, plan.Currency, plan.BillingInterval)
+	priceParams := &stripe.PriceParams{
+		Product:    plan.StripeProductID,
+		UnitAmount: stripe.Int64(plan.PriceAmount),
+		Currency:   stripe.String(plan.Currency),
+		Recurring: &stripe.PriceRecurringParams{
+			Interval: stripe.String(plan.BillingInterval),
+		},
+		Metadata: map[string]string{"plan_id": plan.ID.String()},
+	}
+	priceParams.SetIdempotencyKey(stripeIdempotencyKey("plan-price-migrate", plan.ID.String(), priceSignature))
+
+	newPrice, err := price.New(priceParams)
+	if err != nil {
+		return false, fmt.Errorf("failed to create migrated Stripe price: %w", err)
+	}
+
+	// Repoint the plan to the new price using the same persistence path as create.
+	plan.StripePriceID = &newPrice.ID
+	if err := ss.genericService.EditEntity(plan.ID, "SubscriptionPlan", models.SubscriptionPlan{}, plan); err != nil {
+		return false, fmt.Errorf("failed to repoint plan to new Stripe price: %w", err)
+	}
+
+	// Archive the superseded price so it can no longer back new checkouts.
+	if _, err := price.Update(oldPriceID, &stripe.PriceParams{Active: stripe.Bool(false)}); err != nil {
+		return true, fmt.Errorf("plan repointed but failed to archive old price %s: %w", oldPriceID, err)
+	}
+
+	return true, nil
+}
+
+// mirrorArchiveOrphans lists active Stripe products and archives any whose
+// plan_id metadata matches no live local plan. Products without plan_id metadata
+// are foreign (not OCF-managed) and are reported in Skipped, never archived.
+func (ss *stripeService) mirrorArchiveOrphans(result *StripeSyncResult, dryRun bool) error {
+	productParams := &stripe.ProductListParams{}
+	productParams.Filters.AddFilter("limit", "", "100")
+	productParams.Filters.AddFilter("active", "", "true")
+
+	iter := product.List(productParams)
+	for iter.Next() {
+		prod := iter.Product()
+		label := fmt.Sprintf("%s (%s)", prod.Name, prod.ID)
+
+		planID := prod.Metadata[metadataKeyPlanID]
+		if planID == "" {
+			// Foreign product — not OCF-managed, never archived.
+			result.Skipped = append(result.Skipped, label)
+			continue
+		}
+
+		// A live plan exists and is NOT soft-deleted. GORM's default scope already
+		// excludes soft-deleted rows, so a not-found result covers both "never
+		// existed" and "soft-deleted" — exactly the orphan set to archive.
+		var plan models.SubscriptionPlan
+		err := ss.db.First(&plan, "id = ?", planID).Error
+		if err == nil {
+			// Live plan → already handled by the DB → Stripe pass; leave active.
+			continue
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			result.Failed = append(result.Failed, fmt.Sprintf("%s: plan lookup failed: %v", label, err))
+			continue
+		}
+
+		// Orphan product → archive (or only report, in dry-run).
+		if dryRun {
+			result.Archived = append(result.Archived, label)
+			continue
+		}
+		if err := ss.ArchiveSubscriptionPlanInStripe(prod.ID); err != nil {
+			result.Failed = append(result.Failed, fmt.Sprintf("%s: archive failed: %v", label, err))
+			continue
+		}
+		result.Archived = append(result.Archived, label)
+	}
+	if err := iter.Err(); err != nil {
+		return fmt.Errorf("failed to iterate Stripe products: %w", err)
+	}
+	return nil
 }

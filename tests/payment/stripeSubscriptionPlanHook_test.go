@@ -170,6 +170,10 @@ func (m *fakeStripeService) ImportPlansFromStripe() (*services.SyncPlansResult, 
 	panic("fakeStripeService.ImportPlansFromStripe unexpectedly called")
 }
 
+func (m *fakeStripeService) SyncPlansToStripe(services.SyncToStripeOptions) (*services.StripeSyncResult, error) {
+	panic("fakeStripeService.SyncPlansToStripe unexpectedly called")
+}
+
 // Compile-time assertion that fakeStripeService satisfies services.StripeService.
 var _ services.StripeService = (*fakeStripeService)(nil)
 

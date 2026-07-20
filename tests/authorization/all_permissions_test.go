@@ -311,6 +311,7 @@ func TestSetupPaymentPermissions_AdminRoutes(t *testing.T) {
 		// NEW: Subscription plan sync (admin-only)
 		{"/api/v1/subscription-plans/:id/sync-stripe", "POST"},
 		{"/api/v1/subscription-plans/sync-stripe", "POST"},
+		{"/api/v1/subscription-plans/sync-stripe/mirror", "POST"},
 		{"/api/v1/subscription-plans/import-stripe", "POST"},
 		// NEW: Stripe hooks toggle
 		{"/api/v1/hooks/stripe/toggle", "POST"},

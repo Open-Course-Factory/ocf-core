@@ -47,6 +47,7 @@ const (
 	AuditEventBulkPurchase          AuditEventType = "billing.bulk.purchase"
 	AuditEventLicenseAssigned       AuditEventType = "billing.license.assigned"
 	AuditEventLicenseRevoked        AuditEventType = "billing.license.revoked"
+	AuditEventPlanProductArchived   AuditEventType = "billing.plan.product.archived"
 
 	// Organization Events
 	AuditEventOrganizationCreated   AuditEventType = "organization.created"

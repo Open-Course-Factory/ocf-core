@@ -24,5 +24,6 @@ func SubscriptionPlanRoutes(router *gin.RouterGroup, config *config.Configuratio
 	// Routes de synchronisation Stripe (admin seulement)
 	planRoutes.POST("/:id/sync-stripe", authMiddleware.AuthManagement(), subscriptionController.SyncSubscriptionPlanWithStripe)
 	planRoutes.POST("/sync-stripe", authMiddleware.AuthManagement(), subscriptionController.SyncAllSubscriptionPlansWithStripe)
+	planRoutes.POST("/sync-stripe/mirror", authMiddleware.AuthManagement(), subscriptionController.MirrorSubscriptionPlansToStripe)
 	planRoutes.POST("/import-stripe", authMiddleware.AuthManagement(), subscriptionController.ImportPlansFromStripe)
 }

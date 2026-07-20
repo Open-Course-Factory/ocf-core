@@ -223,6 +223,11 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Sync all plans from Stripe",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/subscription-plans/sync-stripe/mirror", Method: "POST",
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Mirror plans to Stripe and archive orphan products (admin only)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/subscription-plans/import-stripe", Method: "POST",
 			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Import plans from Stripe",

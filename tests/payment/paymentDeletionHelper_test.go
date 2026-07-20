@@ -147,6 +147,10 @@ func (s *stubStripeForPDH) ImportPlansFromStripe() (*services.SyncPlansResult, e
 	panic("stubStripeForPDH: ImportPlansFromStripe not stubbed")
 }
 
+func (s *stubStripeForPDH) SyncPlansToStripe(services.SyncToStripeOptions) (*services.StripeSyncResult, error) {
+	panic("stubStripeForPDH: SyncPlansToStripe not stubbed")
+}
+
 // Compile-time assertion that the stub satisfies StripeService.
 var _ services.StripeService = (*stubStripeForPDH)(nil)
 
