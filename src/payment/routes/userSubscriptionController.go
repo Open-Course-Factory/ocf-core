@@ -1014,9 +1014,10 @@ func (sc *userSubscriptionController) SyncSubscriptionPlanWithStripe(ctx *gin.Co
 //	@Router			/subscription-plans/sync-stripe [post]
 func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gin.Context) {
 	// Safe push (Mirror:false): create/update/migrate local plans on Stripe, but
-	// never archive a Stripe product. Per-plan failures are reported inside the
-	// result rather than aborting the whole run.
-	result, err := sc.stripeService.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false})
+	// never archive a Stripe product. This endpoint has no dry-run concept, so it
+	// always executes. Per-plan failures are reported inside the result rather
+	// than aborting the whole run.
+	result, err := sc.stripeService.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -1025,25 +1026,43 @@ func (sc *userSubscriptionController) SyncAllSubscriptionPlansWithStripe(ctx *gi
 		return
 	}
 
+	// A price migration archives the old Stripe price and repoints the plan — a
+	// billing-relevant mutation. Record one audit entry per migrated plan.
+	if len(result.PriceMigrated) > 0 {
+		auditSvc := auditServices.NewAuditService(sc.db)
+		actorID := parseActorUUID(ctx)
+		for _, migrated := range result.PriceMigrated {
+			auditSvc.LogBilling(ctx, auditModels.AuditEventPlanPriceMigrated, actorID, nil, "stripe_price",
+				nil, "", map[string]interface{}{
+					"admin_user_id": ctx.GetString("userId"),
+					"detail":        migrated,
+					"action":        "sync_stripe_price_migration",
+				})
+		}
+	}
+
 	ctx.JSON(http.StatusOK, result)
 }
 
 // Mirror Subscription Plans To Stripe godoc
 //
 //	@Summary		Mirror subscription plans to Stripe (DB → Stripe, with orphan reconciliation)
-//	@Description	Pushes all local plans to Stripe AND archives active Stripe products whose plan_id metadata matches no live local plan. Pass dry_run=true to preview the archival set without any Stripe write.
+//	@Description	Pushes all local plans to Stripe AND archives active Stripe products that are provably OCF-owned but match no live local plan. SAFE BY DEFAULT: this is a dry run (report only, no Stripe writes) unless dry_run=false is passed explicitly.
 //	@Tags			subscriptions
 //	@Accept			json
 //	@Produce		json
-//	@Param			dry_run	query	bool	false	"Preview changes without writing to Stripe"
+//	@Param			dry_run	query	string	false	"Set to the exact string 'false' to actually execute; any other value (or absent) previews without writing to Stripe"
 //	@Security		Bearer
 //	@Success		200	{object}	services.StripeSyncResult	"Sync results"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/subscription-plans/sync-stripe/mirror [post]
 func (sc *userSubscriptionController) MirrorSubscriptionPlansToStripe(ctx *gin.Context) {
-	dryRun := ctx.Query("dry_run") == "true"
+	// Safe by default: only the exact string "false" opts into real execution.
+	// Absent, malformed, or any other value stays a dry run — an accidental or
+	// malformed dry_run parameter must never trigger destructive archival.
+	execute := ctx.Query("dry_run") == "false"
 
-	result, err := sc.stripeService.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true, DryRun: dryRun})
+	result, err := sc.stripeService.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true, Execute: execute})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -1053,14 +1072,14 @@ func (sc *userSubscriptionController) MirrorSubscriptionPlansToStripe(ctx *gin.C
 	}
 
 	// Archiving a Stripe product is a destructive, billing-relevant action —
-	// record one audit event per archived product (real writes only, not dry-run).
-	if !dryRun && len(result.Archived) > 0 {
+	// record one audit event per archived product (real runs only, not dry-run).
+	if execute && len(result.Archived) > 0 {
 		auditSvc := auditServices.NewAuditService(sc.db)
-		adminUserID := ctx.GetString("userId")
+		actorID := parseActorUUID(ctx)
 		for _, archived := range result.Archived {
-			auditSvc.LogBilling(ctx, auditModels.AuditEventPlanProductArchived, nil, nil, "stripe_product",
+			auditSvc.LogBilling(ctx, auditModels.AuditEventPlanProductArchived, actorID, nil, "stripe_product",
 				nil, "", map[string]interface{}{
-					"admin_user_id": adminUserID,
+					"admin_user_id": ctx.GetString("userId"),
 					"detail":        archived,
 					"action":        "mirror_archive_stripe_product",
 				})
@@ -1068,6 +1087,16 @@ func (sc *userSubscriptionController) MirrorSubscriptionPlansToStripe(ctx *gin.C
 	}
 
 	ctx.JSON(http.StatusOK, result)
+}
+
+// parseActorUUID returns the authenticated caller's user ID as a typed *uuid.UUID
+// for audit attribution, or nil when the context has no parseable user ID.
+func parseActorUUID(ctx *gin.Context) *uuid.UUID {
+	id, err := uuid.Parse(ctx.GetString("userId"))
+	if err != nil {
+		return nil
+	}
+	return &id
 }
 
 // Import Plans From Stripe godoc

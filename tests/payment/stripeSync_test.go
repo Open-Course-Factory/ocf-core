@@ -4,28 +4,36 @@
 // (stripeService.SyncPlansToStripe). These pin the INTENDED behavior of a
 // service method that does NOT exist yet:
 //
-//	type SyncToStripeOptions struct { Mirror bool; DryRun bool }
+//	type SyncToStripeOptions struct { Mirror bool; Execute bool }
 //	func (ss *stripeService) SyncPlansToStripe(opts SyncToStripeOptions) (*StripeSyncResult, error)
 //
 // Because neither SyncPlansToStripe, SyncToStripeOptions, nor StripeSyncResult
 // exist in src/, this file FAILS TO COMPILE today — that is the expected RED
 // state. Do NOT add stubs to src/ to make it compile; that is backend-dev's job.
 //
-// Behavior pinned (per the #422 plan):
-//   - Safe mode (Mirror:false):
+// Behavior pinned (per the #422 plan + MR !312 security hardening M1/M2):
+//   - Execution is SAFE BY DEFAULT (M1): SyncToStripeOptions carries an
+//     `Execute bool`. Zero-value (Execute:false) means DRY RUN — the sync
+//     computes and reports what WOULD change but performs ZERO Stripe writes.
+//     Only Execute:true actually mutates Stripe.
+//   - Safe mode (Mirror:false, Execute:true):
 //       * plan WITHOUT StripePriceID  -> create product+price   (Created)
 //       * plan WITH    StripePriceID  -> update product always  (Updated)
+//       * every created/updated product is stamped managed_by="ocf" (M2)
 //       * price drift (local price != current Stripe price)     -> new price,
 //         repoint plan, archive old price                       (PriceMigrated)
 //       * price matches                                          -> NO migration
 //       * IsFree() plan                                          -> skipped, never synced
 //       * products are NEVER archived in safe mode
-//   - Mirror mode (Mirror:true): everything safe does, PLUS reconcile Stripe ->
-//       * active product whose plan_id metadata matches no LIVE local plan
-//         (soft-deleted counts as not-live)                     -> archived (Archived)
-//       * product WITHOUT plan_id metadata                      -> skipped, NEVER archived
-//   - DryRun (Mirror:true, DryRun:true): reports what WOULD be archived but
-//     performs ZERO Stripe writes.
+//   - Mirror mode (Mirror:true, Execute:true): everything safe does, PLUS
+//     reconcile Stripe. An active orphan product (plan_id matches no LIVE local
+//     plan) is archived ONLY IF ownership is PROVABLE (M2):
+//       * metadata managed_by == "ocf", OR
+//       * plan_id matches a local plan row incl. soft-deleted (Unscoped)
+//     Otherwise (plan_id points nowhere and no marker, or NO plan_id at all) ->
+//     skipped, NEVER archived.
+//   - Default (Execute omitted, e.g. {Mirror:true}) reports would-be archives
+//     but performs ZERO Stripe writes.
 //
 // Test harness note: the existing stripeIdempotency_test.go harness
 // (installFakeStripeBackend) only records customers + checkout sessions and is
@@ -91,8 +99,8 @@ func (c *fakeStripeCatalog) recordWrite(path string) {
 	c.writePaths = append(c.writePaths, path)
 }
 
-// writeCount returns how many mutating requests hit the backend. The DryRun
-// contract requires this to be zero.
+// writeCount returns how many mutating requests hit the backend. The default
+// (Execute:false) dry-run contract requires this to be zero.
 func (c *fakeStripeCatalog) writeCount() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -414,7 +422,7 @@ func TestSyncToStripe_CreatesMissingProduct(t *testing.T) {
 
 	plan := syncPlanNoStripe(t, db, "Fresh Plan")
 
-	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false})
+	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
 	require.NoError(t, err)
 
 	assert.True(t, containsSubstr(result.Created, plan.ID.String()) || containsSubstr(result.Created, "Fresh Plan"),
@@ -424,6 +432,28 @@ func TestSyncToStripe_CreatesMissingProduct(t *testing.T) {
 	require.NotNil(t, reloaded.StripeProductID, "plan must be repointed to a new Stripe product")
 	require.NotNil(t, reloaded.StripePriceID, "plan must be repointed to a new Stripe price")
 	assert.NotNil(t, cat.getProduct(*reloaded.StripeProductID), "the created product must exist in Stripe")
+}
+
+// TestSyncToStripe_StampsManagedByMarkerOnCreate (M2): every product OCF pushes
+// to Stripe must carry a provable-ownership marker (managed_by="ocf") in its
+// metadata, so mirror reconciliation can later archive it without a local DB
+// row. Pins that BuildPlanProductMetadata stamps the marker.
+func TestSyncToStripe_StampsManagedByMarkerOnCreate(t *testing.T) {
+	db := freshTestDB(t)
+	cat := installFakeStripeCatalog(t)
+	svc := services.NewStripeService(db)
+
+	plan := syncPlanNoStripe(t, db, "Marker Plan")
+
+	_, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
+	require.NoError(t, err)
+
+	reloaded := reloadPlan(t, db, plan.ID)
+	require.NotNil(t, reloaded.StripeProductID, "plan must be repointed to a new Stripe product")
+	prod := cat.getProduct(*reloaded.StripeProductID)
+	require.NotNil(t, prod, "the created product must exist in Stripe")
+	assert.Equal(t, "ocf", prod.Metadata["managed_by"],
+		"a product created by OCF must be stamped with managed_by=ocf; got metadata %+v", prod.Metadata)
 }
 
 // TestSyncToStripe_UpdatesExistingProduct: a synced plan (no price drift) has its
@@ -439,7 +469,7 @@ func TestSyncToStripe_UpdatesExistingProduct(t *testing.T) {
 	// pushes the plan name onto the product.
 	plan, prod, _ := syncedPlan(t, db, cat, "Update Plan", 1999, 1999)
 
-	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false})
+	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
 	require.NoError(t, err)
 
 	assert.True(t, containsSubstr(result.Updated, plan.ID.String()) || containsSubstr(result.Updated, "Update Plan"),
@@ -460,7 +490,7 @@ func TestSyncToStripe_MigratesPriceOnDrift(t *testing.T) {
 	// Local plan now costs 2999; Stripe price still says 1999 -> drift.
 	plan, _, oldPrice := syncedPlan(t, db, cat, "Drift Plan", 2999, 1999)
 
-	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false})
+	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
 	require.NoError(t, err)
 
 	assert.True(t, containsSubstr(result.PriceMigrated, plan.ID.String()) || containsSubstr(result.PriceMigrated, "Drift Plan"),
@@ -487,7 +517,7 @@ func TestSyncToStripe_NoMigrationWhenPriceMatches(t *testing.T) {
 
 	plan, _, oldPrice := syncedPlan(t, db, cat, "Stable Plan", 1999, 1999)
 
-	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false})
+	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
 	require.NoError(t, err)
 
 	assert.Empty(t, result.PriceMigrated, "matching price must NOT be migrated; got %+v", result.PriceMigrated)
@@ -513,7 +543,7 @@ func TestSyncToStripe_SkipsFreePlans(t *testing.T) {
 	}
 	require.NoError(t, db.Create(plan).Error)
 
-	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false})
+	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
 	require.NoError(t, err)
 
 	// A free plan is the ONLY plan in the DB, so skipping it must leave the fake
@@ -532,26 +562,51 @@ func TestSyncToStripe_SkipsFreePlans(t *testing.T) {
 // Mirror mode (Mirror:true)
 // -----------------------------------------------------------------------------
 
-// TestMirrorSync_ArchivesOrphanWithPlanIdMetadata: an active Stripe product whose
-// plan_id metadata matches no live local plan is archived and reported.
-func TestMirrorSync_ArchivesOrphanWithPlanIdMetadata(t *testing.T) {
+// TestMirrorSync_ArchivesOrphanWithManagedByMarker (M2): an active orphan product
+// (plan_id matches no local plan) carrying the managed_by="ocf" ownership marker
+// is provably ours, so it is archived and reported.
+func TestMirrorSync_ArchivesOrphanWithManagedByMarker(t *testing.T) {
 	db := freshTestDB(t)
 	cat := installFakeStripeCatalog(t)
 	svc := services.NewStripeService(db)
 
-	orphanPlanID := uuid.NewString()
-	orphan := cat.seedProduct("Orphan Product", "no matching plan", true, map[string]string{"plan_id": orphanPlanID})
+	orphanPlanID := uuid.NewString() // no local plan row has this ID
+	orphan := cat.seedProduct("Marked Orphan", "ours, plan deleted long ago", true,
+		map[string]string{"plan_id": orphanPlanID, "managed_by": "ocf"})
 
-	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true})
+	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true, Execute: true})
 	require.NoError(t, err)
 
 	assert.True(t, containsSubstr(result.Archived, orphan.ID) || containsSubstr(result.Archived, orphanPlanID),
-		"an orphan product (plan_id matches no live plan) must be reported in Archived; got %+v", result.Archived)
-	assert.False(t, cat.getProduct(orphan.ID).Active, "the orphan product must be archived (active=false)")
+		"an orphan product with managed_by=ocf must be reported in Archived; got %+v", result.Archived)
+	assert.False(t, cat.getProduct(orphan.ID).Active, "the marked orphan product must be archived (active=false)")
+}
+
+// TestMirrorSync_SkipsOrphanWithoutOwnershipMarker (M2): an active product whose
+// plan_id matches NO local plan and carries NO managed_by marker is NOT provably
+// ours — it must be skipped and left active, never archived.
+func TestMirrorSync_SkipsOrphanWithoutOwnershipMarker(t *testing.T) {
+	db := freshTestDB(t)
+	cat := installFakeStripeCatalog(t)
+	svc := services.NewStripeService(db)
+
+	orphanPlanID := uuid.NewString() // no local plan row, and no managed_by marker
+	orphan := cat.seedProduct("Unowned Orphan", "plan_id points nowhere, no marker", true,
+		map[string]string{"plan_id": orphanPlanID})
+
+	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true, Execute: true})
+	require.NoError(t, err)
+
+	assert.True(t, cat.getProduct(orphan.ID).Active,
+		"a plan_id orphan without provable ownership must NEVER be archived")
+	assert.True(t, containsSubstr(result.Skipped, orphan.ID) || containsSubstr(result.Skipped, orphanPlanID),
+		"an orphan without provable ownership must be reported in Skipped; got %+v", result.Skipped)
+	assert.False(t, containsSubstr(result.Archived, orphan.ID) || containsSubstr(result.Archived, orphanPlanID),
+		"an orphan without provable ownership must NOT appear in Archived; got %+v", result.Archived)
 }
 
 // TestMirrorSync_SkipsProductsWithoutOcfMetadata: an active Stripe product with NO
-// plan_id metadata is left untouched (never archived) and reported in Skipped.
+// plan_id metadata at all is left untouched (never archived) and reported in Skipped.
 func TestMirrorSync_SkipsProductsWithoutOcfMetadata(t *testing.T) {
 	db := freshTestDB(t)
 	cat := installFakeStripeCatalog(t)
@@ -559,7 +614,7 @@ func TestMirrorSync_SkipsProductsWithoutOcfMetadata(t *testing.T) {
 
 	foreign := cat.seedProduct("Foreign Product", "not managed by OCF", true, map[string]string{})
 
-	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true})
+	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true, Execute: true})
 	require.NoError(t, err)
 
 	assert.True(t, cat.getProduct(foreign.ID).Active,
@@ -568,19 +623,24 @@ func TestMirrorSync_SkipsProductsWithoutOcfMetadata(t *testing.T) {
 		"a product without plan_id metadata must be reported in Skipped; got %+v", result.Skipped)
 }
 
-// TestMirrorSync_ArchivesSoftDeletedPlanProduct: a product whose plan_id points to
-// a plan that has been soft-deleted locally is treated as an orphan (the plan is
-// no longer live) and archived. This is the Unscoped case.
+// TestMirrorSync_ArchivesSoftDeletedPlanProduct (M2, Unscoped case): a product
+// whose plan_id points to a plan that has been soft-deleted locally is provably
+// ours via the DB row (found with Unscoped) and is archived — WITHOUT needing a
+// managed_by marker. The fixture deliberately carries no managed_by so this
+// pins the DB-row ownership path specifically.
 func TestMirrorSync_ArchivesSoftDeletedPlanProduct(t *testing.T) {
 	db := freshTestDB(t)
 	cat := installFakeStripeCatalog(t)
 	svc := services.NewStripeService(db)
 
+	// syncedPlan seeds the product with metadata {plan_id} only — no managed_by.
 	plan, prod, _ := syncedPlan(t, db, cat, "Deleted Plan", 1999, 1999)
+	require.NotContains(t, cat.getProduct(prod.ID).Metadata, "managed_by",
+		"fixture must have NO managed_by marker so this pins the DB-row ownership path")
 	// Soft-delete the plan: its product remains active in Stripe.
 	require.NoError(t, db.Delete(&models.SubscriptionPlan{}, "id = ?", plan.ID).Error)
 
-	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true})
+	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true, Execute: true})
 	require.NoError(t, err)
 
 	assert.True(t, containsSubstr(result.Archived, prod.ID) || containsSubstr(result.Archived, plan.ID.String()),
@@ -588,22 +648,26 @@ func TestMirrorSync_ArchivesSoftDeletedPlanProduct(t *testing.T) {
 	assert.False(t, cat.getProduct(prod.ID).Active, "the soft-deleted plan's product must be archived (active=false)")
 }
 
-// TestMirrorSync_DryRunArchivesNothing: with DryRun, an orphan that WOULD be
-// archived is reported but ZERO mutating requests hit Stripe.
-func TestMirrorSync_DryRunArchivesNothing(t *testing.T) {
+// TestMirrorSync_DefaultIsDryRun (M1): the zero-value execution flag means DRY
+// RUN. A mirror sync with no explicit Execute reports what WOULD be archived but
+// performs ZERO Stripe writes. The orphan carries managed_by=ocf so it WOULD be
+// archived under Execute — proving the report is real, not a no-op.
+func TestMirrorSync_DefaultIsDryRun(t *testing.T) {
 	db := freshTestDB(t)
 	cat := installFakeStripeCatalog(t)
 	svc := services.NewStripeService(db)
 
 	orphanPlanID := uuid.NewString()
-	orphan := cat.seedProduct("DryRun Orphan", "would be archived", true, map[string]string{"plan_id": orphanPlanID})
+	orphan := cat.seedProduct("Default DryRun Orphan", "would be archived if executed", true,
+		map[string]string{"plan_id": orphanPlanID, "managed_by": "ocf"})
 
-	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true, DryRun: true})
+	// No Execute field -> zero-value -> dry run.
+	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, 0, cat.writeCount(),
-		"DryRun must perform NO Stripe writes; observed writes to %v", cat.writePaths)
-	assert.True(t, cat.getProduct(orphan.ID).Active, "DryRun must not actually archive the orphan product")
+		"default (Execute:false) must perform NO Stripe writes; observed writes to %v", cat.writePaths)
+	assert.True(t, cat.getProduct(orphan.ID).Active, "default dry run must not actually archive the orphan product")
 	assert.True(t, containsSubstr(result.Archived, orphan.ID) || containsSubstr(result.Archived, orphanPlanID),
-		"DryRun must still REPORT what would be archived; got %+v", result.Archived)
+		"default dry run must still REPORT what would be archived; got %+v", result.Archived)
 }

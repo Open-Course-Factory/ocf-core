@@ -19,7 +19,16 @@ const (
 	metadataKeyPlanID      = "plan_id"
 	metadataKeyMaxCPU      = "max_cpu"
 	metadataKeyMaxMemoryMB = "max_memory_mb"
+	// metadataKeyManagedBy stamps provable OCF ownership on products we create,
+	// so mirror reconciliation can archive an orphan (a product whose plan_id no
+	// longer resolves to a local row) without mistaking a foreign product for ours.
+	metadataKeyManagedBy = "managed_by"
 )
+
+// metadataValueManagedByOCF is the ownership marker value written into every
+// Stripe product OCF pushes. Mirror archival requires this marker (or a matching
+// local plan row) as proof of ownership.
+const metadataValueManagedByOCF = "ocf"
 
 // PlanProductMetadata is the typed view of a Stripe Product's metadata map
 // for the fields ocf-core cares about. It is the reverse of
@@ -39,6 +48,7 @@ func BuildPlanProductMetadata(plan *models.SubscriptionPlan) map[string]string {
 		metadataKeyPlanID:      plan.ID.String(),
 		metadataKeyMaxCPU:      strconv.Itoa(plan.MaxCPU),
 		metadataKeyMaxMemoryMB: strconv.Itoa(plan.MaxMemoryMB),
+		metadataKeyManagedBy:   metadataValueManagedByOCF,
 	}
 }
 

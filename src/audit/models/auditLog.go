@@ -48,6 +48,7 @@ const (
 	AuditEventLicenseAssigned       AuditEventType = "billing.license.assigned"
 	AuditEventLicenseRevoked        AuditEventType = "billing.license.revoked"
 	AuditEventPlanProductArchived   AuditEventType = "billing.plan.product.archived"
+	AuditEventPlanPriceMigrated     AuditEventType = "billing.plan.price.migrated"
 
 	// Organization Events
 	AuditEventOrganizationCreated   AuditEventType = "organization.created"

@@ -152,10 +152,13 @@ type StripeService interface {
 // SyncToStripeOptions controls the direction/behaviour of SyncPlansToStripe.
 type SyncToStripeOptions struct {
 	// Mirror, when true, additionally reconciles Stripe → DB: active Stripe
-	// products whose plan_id metadata matches no live local plan are archived.
+	// products whose plan_id metadata matches no live local plan are archived
+	// (subject to the provable-ownership guard).
 	Mirror bool
-	// DryRun reports what WOULD change without performing any Stripe write.
-	DryRun bool
+	// Execute performs actual Stripe writes. SAFE BY DEFAULT: the zero value
+	// (Execute:false) is a DRY RUN — the sync computes and reports what WOULD
+	// change but performs ZERO Stripe writes. Only Execute:true mutates Stripe.
+	Execute bool
 }
 
 // StripeSyncResult reports the outcome of SyncPlansToStripe. Each slice holds
@@ -3484,10 +3487,12 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 //   - free plans (IsFree) are skipped — they are intentionally decoupled from Stripe
 //
 // Mirror mode (Mirror:true) additionally archives active Stripe products whose
-// plan_id metadata matches no live local plan (a soft-deleted plan counts as not
-// live). Products WITHOUT plan_id metadata are foreign and are never touched.
+// plan_id metadata matches no live local plan — but ONLY when ownership is
+// provable (product carries managed_by="ocf" OR the plan_id matches a local row
+// incl. soft-deleted). Products without provable ownership are never touched.
 //
-// DryRun performs ZERO Stripe writes; it only reports what would change.
+// Execution is SAFE BY DEFAULT: when opts.Execute is false the whole run is a
+// DRY RUN — it reports what would change but performs ZERO Stripe writes.
 func (ss *stripeService) SyncPlansToStripe(opts SyncToStripeOptions) (*StripeSyncResult, error) {
 	result := &StripeSyncResult{
 		Created:       []string{},
@@ -3497,6 +3502,9 @@ func (ss *stripeService) SyncPlansToStripe(opts SyncToStripeOptions) (*StripeSyn
 		Skipped:       []string{},
 		Failed:        []string{},
 	}
+
+	// Safe by default: any run without an explicit Execute is a dry run.
+	dryRun := !opts.Execute
 
 	// --- DB → Stripe: create/update/migrate every live local plan ---
 	var plans []models.SubscriptionPlan
@@ -3515,7 +3523,7 @@ func (ss *stripeService) SyncPlansToStripe(opts SyncToStripeOptions) (*StripeSyn
 
 		// Not yet on Stripe → create product + price.
 		if plan.StripePriceID == nil {
-			if opts.DryRun {
+			if dryRun {
 				result.Created = append(result.Created, label)
 				continue
 			}
@@ -3528,7 +3536,7 @@ func (ss *stripeService) SyncPlansToStripe(opts SyncToStripeOptions) (*StripeSyn
 		}
 
 		// Already on Stripe → always push product edits (name/description/active/metadata).
-		if opts.DryRun {
+		if dryRun {
 			result.Updated = append(result.Updated, label)
 		} else if err := ss.UpdateSubscriptionPlanInStripe(plan); err != nil {
 			result.Failed = append(result.Failed, fmt.Sprintf("%s: update failed: %v", label, err))
@@ -3538,7 +3546,7 @@ func (ss *stripeService) SyncPlansToStripe(opts SyncToStripeOptions) (*StripeSyn
 		}
 
 		// Detect price drift against the CURRENT Stripe price and migrate if needed.
-		migrated, err := ss.migratePriceIfDrifted(plan, opts.DryRun)
+		migrated, err := ss.migratePriceIfDrifted(plan, dryRun)
 		if err != nil {
 			result.Failed = append(result.Failed, fmt.Sprintf("%s: price migration failed: %v", label, err))
 			continue
@@ -3550,7 +3558,7 @@ func (ss *stripeService) SyncPlansToStripe(opts SyncToStripeOptions) (*StripeSyn
 
 	// --- Stripe → DB reconciliation (mirror only) ---
 	if opts.Mirror {
-		if err := ss.mirrorArchiveOrphans(result, opts.DryRun); err != nil {
+		if err := ss.mirrorArchiveOrphans(result, dryRun); err != nil {
 			return nil, err
 		}
 	}
@@ -3621,9 +3629,14 @@ func (ss *stripeService) migratePriceIfDrifted(plan *models.SubscriptionPlan, dr
 	return true, nil
 }
 
-// mirrorArchiveOrphans lists active Stripe products and archives any whose
-// plan_id metadata matches no live local plan. Products without plan_id metadata
-// are foreign (not OCF-managed) and are reported in Skipped, never archived.
+// mirrorArchiveOrphans lists active Stripe products and archives orphans — active
+// products whose plan_id metadata matches no LIVE local plan — but only when
+// ownership is PROVABLE (M2). Ownership is proven by either the managed_by="ocf"
+// marker on the product OR a matching local plan row found with Unscoped (a
+// soft-deleted plan counts as ownership proof). Products with no plan_id, or an
+// orphan plan_id but no ownership proof, are reported in Skipped and never
+// archived — this prevents archiving a foreign Stripe product that merely
+// happens to carry a plan_id.
 func (ss *stripeService) mirrorArchiveOrphans(result *StripeSyncResult, dryRun bool) error {
 	productParams := &stripe.ProductListParams{}
 	productParams.Filters.AddFilter("limit", "", "100")
@@ -3636,26 +3649,45 @@ func (ss *stripeService) mirrorArchiveOrphans(result *StripeSyncResult, dryRun b
 
 		planID := prod.Metadata[metadataKeyPlanID]
 		if planID == "" {
-			// Foreign product — not OCF-managed, never archived.
-			result.Skipped = append(result.Skipped, label)
+			// No plan_id at all — not OCF-managed, never archived.
+			result.Skipped = append(result.Skipped, label+": no plan_id metadata")
 			continue
 		}
 
-		// A live plan exists and is NOT soft-deleted. GORM's default scope already
-		// excludes soft-deleted rows, so a not-found result covers both "never
-		// existed" and "soft-deleted" — exactly the orphan set to archive.
-		var plan models.SubscriptionPlan
-		err := ss.db.First(&plan, "id = ?", planID).Error
-		if err == nil {
-			// Live plan → already handled by the DB → Stripe pass; leave active.
+		// A live plan (default scope excludes soft-deleted) means the product is
+		// still in use — already handled by the DB → Stripe pass; leave active.
+		var live models.SubscriptionPlan
+		liveErr := ss.db.First(&live, "id = ?", planID).Error
+		if liveErr == nil {
 			continue
 		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			result.Failed = append(result.Failed, fmt.Sprintf("%s: plan lookup failed: %v", label, err))
+		if !errors.Is(liveErr, gorm.ErrRecordNotFound) {
+			result.Failed = append(result.Failed, fmt.Sprintf("%s: plan lookup failed: %v", label, liveErr))
 			continue
 		}
 
-		// Orphan product → archive (or only report, in dry-run).
+		// Orphan candidate. Archive ONLY with provable ownership (M2):
+		//   (a) the product carries the managed_by="ocf" marker, OR
+		//   (b) the plan_id matches a local row incl. soft-deleted (Unscoped).
+		ownedByMarker := prod.Metadata[metadataKeyManagedBy] == metadataValueManagedByOCF
+		ownedByRow := false
+		if !ownedByMarker {
+			var deleted models.SubscriptionPlan
+			unErr := ss.db.Unscoped().First(&deleted, "id = ?", planID).Error
+			if unErr == nil {
+				ownedByRow = true
+			} else if !errors.Is(unErr, gorm.ErrRecordNotFound) {
+				result.Failed = append(result.Failed, fmt.Sprintf("%s: unscoped plan lookup failed: %v", label, unErr))
+				continue
+			}
+		}
+		if !ownedByMarker && !ownedByRow {
+			// plan_id points nowhere and no ownership proof → not provably ours.
+			result.Skipped = append(result.Skipped, label+": orphan without provable ownership")
+			continue
+		}
+
+		// Provably ours → archive (or only report, in dry-run).
 		if dryRun {
 			result.Archived = append(result.Archived, label)
 			continue
