@@ -297,8 +297,23 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 		return
 	}
 
-	// Construire l'URL WebSocket du Terminal Trainer
-	terminalTrainerWSURL, err := url.Parse(tc.terminalTrainerURL)
+	// Construire l'URL WebSocket du Terminal Trainer. Un contexte supervisable
+	// (propriétaire membre d'au moins un class-group) ouvre la console avec
+	// control=1 pour que l'indicateur "sous supervision" du learner s'active.
+	supervisable := SessionSupportsSupervision(tc.db, sessionID)
+	instanceType := terminal.InstanceType
+	if instanceType == "" {
+		instanceType = tc.terminalType
+	}
+	baseURL, buildErr := BuildConsoleWSURL(tc.terminalTrainerURL, tc.apiVersion, instanceType, terminal.SessionID, supervisable)
+	if buildErr != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Invalid terminal trainer URL",
+		})
+		return
+	}
+	terminalTrainerWSURL, err := url.Parse(baseURL)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -307,23 +322,9 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 		return
 	}
 
-	if terminalTrainerWSURL.Scheme == "https" {
-		terminalTrainerWSURL.Scheme = "wss"
-	} else {
-		terminalTrainerWSURL.Scheme = "ws"
-	}
-	// Construire le chemin avec version et type d'instance dynamique
-	path := fmt.Sprintf("/%s", tc.apiVersion)
-	if terminal.InstanceType != "" {
-		path += fmt.Sprintf("/%s", terminal.InstanceType)
-	} else if tc.terminalType != "" {
-		path += fmt.Sprintf("/%s", tc.terminalType)
-	}
-	path += "/console"
-	terminalTrainerWSURL.Path = path
-
+	// The base URL already carries id (+ control when supervisable); append the
+	// client-supplied width/height so the non-supervisable URL is unchanged.
 	q := terminalTrainerWSURL.Query()
-	q.Set("id", terminal.SessionID)
 	if width := ctx.Query("width"); width != "" {
 		q.Set("width", width)
 	}

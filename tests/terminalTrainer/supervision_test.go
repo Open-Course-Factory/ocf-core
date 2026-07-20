@@ -16,6 +16,8 @@ package terminalTrainer_tests
 //     SupervisionStillAuthorized(db *gorm.DB, callerUserID string, isAdmin bool, sessionID string) bool
 //     PlanAllowsSupervision(plan *paymentModels.SubscriptionPlan) bool
 //     BuildSuperviseWSURL(terminalTrainerURL, apiVersion, instanceType, sessionID string) (string, error)
+//     SessionSupportsSupervision(db *gorm.DB, sessionID string) bool
+//     BuildConsoleWSURL(terminalTrainerURL, apiVersion, instanceType, sessionID string, supervisable bool) (string, error)
 //     StartSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID string, isAdmin bool, sessionID string) (groupID string, err error)
 //     TakeHandForSupervision(db *gorm.DB, audit auditServices.AuditService, plan *paymentModels.SubscriptionPlan, actorUserID string, isAdmin bool, sessionID, groupID string) error
 //     EndSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID string, isAdmin bool, sessionID, groupID string) error
@@ -559,4 +561,84 @@ func TestSupervision_EndAudit_UsesStoppedEvent(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, audit.logged, 1)
 	assert.Equal(t, auditModels.AuditEventSupervisionStopped, audit.logged[0].EventType)
+}
+
+// --- R6. Learner console activation gate (control=1) -------------------------
+//
+// ConnectConsole (the learner's own console proxy) must request control=1 from
+// tt-backend WHEN the session's context is supervisable — that flag is what
+// activates the mandatory "being watched" indicator on the learner side — and
+// must leave the URL unchanged otherwise. backend-dev refactors ConnectConsole
+// to gate on SessionSupportsSupervision and build the URL via BuildConsoleWSURL.
+
+// TestSessionSupportsSupervision_LearnerInGroup_True pins the gate: a session
+// whose owner belongs to at least one class-group is a supervisable context.
+func TestSessionSupportsSupervision_LearnerInGroup_True(t *testing.T) {
+	db := setupTestDB(t)
+
+	_, sessionID := newSupervisedSession(t, db, "group-A", "trainer-A", "learner-A")
+
+	assert.True(t, terminalController.SessionSupportsSupervision(db, sessionID),
+		"a learner who belongs to a class-group is a supervisable context")
+}
+
+// TestSessionSupportsSupervision_StandaloneSession_False pins that a session
+// whose owner is in no class-group is NOT supervisable — the default,
+// unmonitored path.
+func TestSessionSupportsSupervision_StandaloneSession_False(t *testing.T) {
+	db := setupTestDB(t)
+
+	terminal, err := createTestTerminal(db, "solo-user", "active", uuid.Nil)
+	require.NoError(t, err)
+
+	assert.False(t, terminalController.SessionSupportsSupervision(db, terminal.SessionID),
+		"a standalone session owner in no group must not be supervisable")
+}
+
+// TestBuildConsoleWSURL_SupervisableAppendsControl pins that a supervisable
+// session's console URL requests control=1 from tt-backend.
+func TestBuildConsoleWSURL_SupervisableAppendsControl(t *testing.T) {
+	raw, err := terminalController.BuildConsoleWSURL("https://tt.example.com", "1.0", "", "sess-xyz", true)
+	require.NoError(t, err)
+
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+
+	assert.Equal(t, "wss", u.Scheme)
+	assert.True(t, strings.HasSuffix(u.Path, "/console"), "must target the tt-backend console path")
+
+	q := u.Query()
+	assert.Equal(t, "1", q.Get("control"), "a supervisable session MUST request control=1")
+	assert.Equal(t, "sess-xyz", q.Get("id"), "must reference the target session id")
+}
+
+// TestBuildConsoleWSURL_NonSupervisableOmitsControl pins that a non-supervised
+// session's console URL carries NO control param — byte-for-byte the current,
+// unmonitored console URL.
+func TestBuildConsoleWSURL_NonSupervisableOmitsControl(t *testing.T) {
+	raw, err := terminalController.BuildConsoleWSURL("https://tt.example.com", "1.0", "", "sess-xyz", false)
+	require.NoError(t, err)
+
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+
+	assert.Empty(t, u.Query().Get("control"), "a non-supervised session must NOT request control")
+	assert.NotContains(t, raw, "control", "the default console URL must be control-free")
+	assert.Equal(t, "sess-xyz", u.Query().Get("id"))
+}
+
+// TestBuildConsoleWSURL_InstanceTypeAndPlainScheme pins ws (non-TLS) scheme for
+// an http base and that a non-empty instance type is threaded into the path,
+// mirroring ConnectConsole's existing construction.
+func TestBuildConsoleWSURL_InstanceTypeAndPlainScheme(t *testing.T) {
+	raw, err := terminalController.BuildConsoleWSURL("http://tt.local:8090", "1.0", "ubuntu", "sess-1", true)
+	require.NoError(t, err)
+
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+
+	assert.Equal(t, "ws", u.Scheme, "an http base URL must use ws")
+	assert.Contains(t, u.Path, "ubuntu", "instance type must appear in the path when set")
+	assert.True(t, strings.HasSuffix(u.Path, "/console"))
+	assert.Equal(t, "1", u.Query().Get("control"))
 }

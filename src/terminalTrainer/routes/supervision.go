@@ -123,6 +123,25 @@ func PlanAllowsSupervision(plan *paymentModels.SubscriptionPlan) bool {
 	return plan != nil && plan.SessionSupervisionEnabled
 }
 
+// SessionSupportsSupervision reports whether a session is in a supervisable
+// context — i.e. its owner is an active member of at least one class-group. This
+// gates whether the learner's OWN console is opened with control frames on (so
+// the "being watched" indicator can activate). A standalone session (owner in no
+// group) stays on the default, control-free console path.
+func SessionSupportsSupervision(db *gorm.DB, sessionID string) bool {
+	var terminal terminalModels.Terminal
+	if err := db.Where("session_id = ?", sessionID).First(&terminal).Error; err != nil {
+		return false
+	}
+	var count int64
+	if err := db.Model(&groupModels.GroupMember{}).
+		Where("user_id = ? AND is_active = ?", terminal.UserID, true).
+		Count(&count).Error; err != nil {
+		return false
+	}
+	return count > 0
+}
+
 // buildSupervisionAudit assembles a content-rich audit entry for a supervision
 // event. Actor, target session, and managing group are recorded in Metadata (and
 // mirrored onto typed fields where the identifiers are real UUIDs) so the trail

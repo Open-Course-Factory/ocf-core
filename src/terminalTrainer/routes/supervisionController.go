@@ -70,6 +70,39 @@ func BuildSuperviseWSURL(terminalTrainerURL, apiVersion, instanceType, sessionID
 	return u.String(), nil
 }
 
+// BuildConsoleWSURL builds the tt-backend console WebSocket URL for a LEARNER's
+// own console (ConnectConsole), mirroring its existing construction (https→wss,
+// else ws; path /{apiVersion}[/{instanceType}]/console; query id=<sessionID>). It
+// appends control=1 IFF the session is supervisable, which is what activates the
+// learner's mandatory "being watched" indicator. Scope is base URL + id + control
+// only — the handler still appends width/height, so a non-supervisable URL stays
+// byte-for-byte identical to today's.
+func BuildConsoleWSURL(terminalTrainerURL, apiVersion, instanceType, sessionID string, supervisable bool) (string, error) {
+	u, err := url.Parse(terminalTrainerURL)
+	if err != nil {
+		return "", err
+	}
+	if u.Scheme == "https" {
+		u.Scheme = "wss"
+	} else {
+		u.Scheme = "ws"
+	}
+	path := fmt.Sprintf("/%s", apiVersion)
+	if instanceType != "" {
+		path += fmt.Sprintf("/%s", instanceType)
+	}
+	path += "/console"
+	u.Path = path
+
+	q := u.Query()
+	q.Set("id", sessionID)
+	if supervisable {
+		q.Set("control", "1")
+	}
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
 // GetGroupTerminalSessions godoc
 //
 //	@Summary		List a class-group's active terminal sessions (for supervision)
