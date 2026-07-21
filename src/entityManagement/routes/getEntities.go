@@ -134,6 +134,16 @@ func (genericController genericController) GetEntities(ctx *gin.Context) {
 		}
 	}
 
+	// Visibility scope: a non-admin caller sees only rows whose boolean flag is
+	// true. Independent of owner scope and of the caller's identity — an
+	// unauthenticated caller still gets the visible rows (e.g. the public
+	// pricing catalog), so this deliberately does NOT fail closed on a missing
+	// userId the way owner scope does above.
+	if vis := visibilityScope(ctx, entityName); vis != nil {
+		column := genericController.db.Config.NamingStrategy.ColumnName("", vis.Field)
+		filters[column] = true
+	}
+
 	// Use cursor pagination if cursor param is present (even if empty for first page)
 	if _, hasCursor := ctx.Request.URL.Query()["cursor"]; hasCursor {
 		limit, _ := strconv.Atoi(ctx.DefaultQuery("limit", strconv.Itoa(DefaultCursorLimit)))

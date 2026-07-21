@@ -96,3 +96,16 @@ type OwnershipConfig struct {
 	// matches rows whose array CONTAINS the caller instead of equals the caller.
 	ArrayOwner bool `json:"array_owner,omitempty"`
 }
+
+// VisibilityScopeConfig declares a boolean-flag read scope on a generic entity:
+// non-admin callers (including unauthenticated ones) only see rows whose Field
+// is true; admins bypass and see every row. Unlike OwnershipConfig this is not
+// keyed on the caller's identity — a missing userId still sees the visible rows
+// (e.g. the public pricing page listing catalog plans). The generic GET handlers
+// enforce it: list filters to visible rows, get-by-id returns 404 for a hidden
+// row so its existence is never disclosed.
+type VisibilityScopeConfig struct {
+	// Field is the entity's bool struct field, e.g. "IsCatalog". A row is
+	// visible to non-admins when this field is true.
+	Field string `json:"field"`
+}

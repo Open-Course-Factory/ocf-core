@@ -3,6 +3,7 @@ package registration
 import (
 	"net/http"
 
+	access "soli/formations/src/auth/access"
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
@@ -105,6 +106,11 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 				},
 				DtoToMap: nil,
 			},
+			// The generic read routes are public (Security:false). Scope them so
+			// only catalog plans (IsCatalog=true) are visible to non-admins:
+			// hidden bespoke plans and their pricing must not leak to anonymous
+			// or plain-member callers. Admins still see every plan.
+			VisibilityScope: &access.VisibilityScopeConfig{Field: "IsCatalog"},
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
 					string(authModels.Member): "(" + http.MethodGet + ")",

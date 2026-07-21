@@ -37,6 +37,7 @@ type EntityRegistrationService struct {
 	relationshipFilters map[string][]entityManagementInterfaces.RelationshipFilter
 	membershipConfigs   map[string]*entityManagementInterfaces.MembershipConfig
 	ownershipConfigs    map[string]*access.OwnershipConfig
+	visibilityScopes    map[string]*access.VisibilityScopeConfig
 	defaultIncludes     map[string][]string
 	typedOps            map[string]entityManagementInterfaces.EntityOperations
 	entityRoles         map[string]entityManagementInterfaces.EntityRoles
@@ -52,6 +53,7 @@ func NewEntityRegistrationService() *EntityRegistrationService {
 		relationshipFilters: make(map[string][]entityManagementInterfaces.RelationshipFilter),
 		membershipConfigs:   make(map[string]*entityManagementInterfaces.MembershipConfig),
 		ownershipConfigs:    make(map[string]*access.OwnershipConfig),
+		visibilityScopes:    make(map[string]*access.VisibilityScopeConfig),
 		defaultIncludes:     make(map[string][]string),
 		typedOps:            make(map[string]entityManagementInterfaces.EntityOperations),
 		entityRoles:         make(map[string]entityManagementInterfaces.EntityRoles),
@@ -69,6 +71,7 @@ func (s *EntityRegistrationService) Reset() {
 	s.relationshipFilters = make(map[string][]entityManagementInterfaces.RelationshipFilter)
 	s.membershipConfigs = make(map[string]*entityManagementInterfaces.MembershipConfig)
 	s.ownershipConfigs = make(map[string]*access.OwnershipConfig)
+	s.visibilityScopes = make(map[string]*access.VisibilityScopeConfig)
 	s.defaultIncludes = make(map[string][]string)
 	s.typedOps = make(map[string]entityManagementInterfaces.EntityOperations)
 	s.entityRoles = make(map[string]entityManagementInterfaces.EntityRoles)
@@ -85,6 +88,7 @@ func (s *EntityRegistrationService) UnregisterEntity(name string) {
 	delete(s.relationshipFilters, name)
 	delete(s.membershipConfigs, name)
 	delete(s.ownershipConfigs, name)
+	delete(s.visibilityScopes, name)
 	delete(s.defaultIncludes, name)
 	delete(s.typedOps, name)
 	delete(s.entityRoles, name)
@@ -190,6 +194,20 @@ func (s *EntityRegistrationService) GetAllOwnershipConfigs() map[string]*access.
 		result[name] = config
 	}
 	return result
+}
+
+// RegisterVisibilityScope stores an entity's boolean-flag read scope so the
+// generic GET handlers can hide rows whose flag is false from non-admin callers.
+func (s *EntityRegistrationService) RegisterVisibilityScope(name string, config *access.VisibilityScopeConfig) {
+	if config != nil {
+		s.visibilityScopes[name] = config
+		appUtils.Debug("Visibility scope registered for entity: %s (field: %s)", name, config.Field)
+	}
+}
+
+// GetVisibilityScope retrieves the visibility-scope config for an entity, or nil.
+func (s *EntityRegistrationService) GetVisibilityScope(name string) *access.VisibilityScopeConfig {
+	return s.visibilityScopes[name]
 }
 
 // SetDefaultEntityAccesses est une version publique pour les tests qui accepte un enforcer
@@ -421,6 +439,7 @@ func RegisterTypedEntity[M entityManagementInterfaces.EntityModel, C any, E any,
 	service.RegisterRelationshipFilters(name, reg.RelationshipFilters)
 	service.RegisterMembershipConfig(name, reg.MembershipConfig)
 	service.RegisterOwnershipConfig(name, reg.OwnershipConfig)
+	service.RegisterVisibilityScope(name, reg.VisibilityScope)
 	service.RegisterDefaultIncludes(name, reg.DefaultIncludes)
 
 	// Swagger config

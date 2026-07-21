@@ -63,6 +63,16 @@ func (genericController genericController) GetEntity(ctx *gin.Context) {
 		}
 	}
 
+	// Visibility scope: a non-admin caller fetching a flagged-off row gets the
+	// same 404 as a missing row, so a hidden row's existence — and its fields —
+	// are never disclosed. Admins bypass (visibilityScope returns nil for them).
+	if vis := visibilityScope(ctx, entityName); vis != nil {
+		if !entityBoolFieldIsTrue(entity, vis.Field) {
+			errors.HandleError(http.StatusNotFound, &errors.APIError{ErrorMessage: "Entity Not Found"}, ctx)
+			return
+		}
+	}
+
 	var entityDto any
 
 	// Fast path: use typed operations (no reflect)
