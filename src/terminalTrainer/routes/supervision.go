@@ -26,6 +26,7 @@ import (
 	groupModels "soli/formations/src/groups/models"
 	paymentModels "soli/formations/src/payment/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
+	"soli/formations/src/terminalTrainer/services"
 )
 
 // managerRoles are the group_members roles that grant supervision authority.
@@ -219,11 +220,31 @@ func EndSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID s
 	return audit.Log(buildSupervisionAudit(auditModels.AuditEventSupervisionStopped, actorUserID, sessionID, groupID))
 }
 
-// ListGroupSupervisionSessions returns the active member terminal sessions of a
+// SupervisionSession is a wall tile: a live member terminal enriched with the
+// learner's display identity so the trainer sees WHO owns each session, not just
+// an opaque user_id. It embeds the raw Terminal (all its JSON fields are promoted)
+// and adds the resolved name/email. UserName/UserEmail are empty when identity
+// resolution fails — the session is listed regardless (the wall never goes blank).
+type SupervisionSession struct {
+	terminalModels.Terminal
+	UserName  string `json:"user_name"`
+	UserEmail string `json:"user_email"`
+}
+
+// ListGroupSupervisionSessions returns the live member terminal sessions of a
 // single group, but only when the caller is manager+ of that group (or admin).
 // It never leaks sessions from other groups: only sessions owned by active members
 // of groupID are returned. ok=false denies a non-manager caller.
-func ListGroupSupervisionSessions(db *gorm.DB, groupID, callerUserID string, isAdmin bool) (sessions []terminalModels.Terminal, ok bool) {
+//
+// "Live" routes through models.RunningDisplayScope (the SSOT "alive right now?"
+// predicate, expiry-aware) so past-expiry zombie rows — state still 'running' but
+// their tt-backend session long gone — never render as dead, unsupervisable tiles.
+//
+// Each session is enriched with the learner's display name/email via the swappable
+// services.LookupCasdoorUserForOrgUsage seam, resolved once per unique learner id.
+// A resolver error leaves the session listed with an empty name — identity is a
+// display nicety, not a gate.
+func ListGroupSupervisionSessions(db *gorm.DB, groupID, callerUserID string, isAdmin bool) (sessions []SupervisionSession, ok bool) {
 	gid, err := uuid.Parse(groupID)
 	if err != nil {
 		return nil, false
@@ -239,13 +260,27 @@ func ListGroupSupervisionSessions(db *gorm.DB, groupID, callerUserID string, isA
 		return nil, false
 	}
 	if len(memberIDs) == 0 {
-		return []terminalModels.Terminal{}, true
+		return []SupervisionSession{}, true
 	}
 
-	var out []terminalModels.Terminal
-	if err := db.Where("user_id IN ? AND state = ?", memberIDs, terminalModels.StateRunning).
-		Find(&out).Error; err != nil {
+	var terminals []terminalModels.Terminal
+	if err := db.Scopes(terminalModels.RunningDisplayScope).
+		Where("user_id IN ?", memberIDs).
+		Find(&terminals).Error; err != nil {
 		return nil, false
+	}
+
+	identity := make(map[string]struct{ name, email string })
+	out := make([]SupervisionSession, 0, len(terminals))
+	for _, t := range terminals {
+		id, seen := identity[t.UserID]
+		if !seen {
+			if user, err := services.LookupCasdoorUserForOrgUsage(t.UserID); err == nil && user != nil {
+				id = struct{ name, email string }{user.DisplayName, user.Email}
+			}
+			identity[t.UserID] = id // cache even the empty fallback: don't re-hit Casdoor for a known-failing id
+		}
+		out = append(out, SupervisionSession{Terminal: t, UserName: id.name, UserEmail: id.email})
 	}
 	return out, true
 }
