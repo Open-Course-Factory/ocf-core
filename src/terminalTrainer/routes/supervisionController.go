@@ -137,6 +137,36 @@ type supervisionControlMsg struct {
 	Type string `json:"type"`
 }
 
+// bindSelfAttachmentID returns the attachment id the supervise proxy should be
+// bound to after observing frame `data`, given it is currently bound to `current`
+// ("" = not yet bound). It binds ONLY on the tt-backend self-snapshot control
+// frame (type=="attachment" && event=="self") carrying a non-empty attachment_id,
+// and only while not already bound (first self frame wins). Any other frame — a
+// "joined" broadcast for another attachment, a non-attachment event, or
+// malformed/empty bytes — returns `current` unchanged.
+//
+// The explicit self frame is the fix for the release-hand-demotes-the-learner
+// incident: the old "first control frame carrying an attachment_id is ours"
+// heuristic bound the learner console's id whenever tt-backend broadcast its
+// "joined" event before any self-snapshot.
+func bindSelfAttachmentID(current string, data []byte) string {
+	if current != "" {
+		return current
+	}
+	var ev struct {
+		Type         string `json:"type"`
+		Event        string `json:"event"`
+		AttachmentID string `json:"attachment_id"`
+	}
+	if json.Unmarshal(data, &ev) != nil {
+		return current
+	}
+	if ev.Type == "attachment" && ev.Event == "self" && ev.AttachmentID != "" {
+		return ev.AttachmentID
+	}
+	return current
+}
+
 // resolveSupervisionPlan resolves the caller's effective plan (same path used to
 // gate at WS open); nil when it cannot be resolved.
 func (tc *terminalController) resolveSupervisionPlan(userID string) *paymentModels.SubscriptionPlan {
@@ -286,8 +316,12 @@ func (tc *terminalController) SuperviseSession(ctx *gin.Context) {
 		}
 	}()
 
-	// Upstream (tt-backend) → client: forward everything, capture our attachment id
-	// from the first control frame that carries one.
+	// Upstream (tt-backend) → client: forward everything, and learn our OWN
+	// attachment id from tt-backend's explicit self-snapshot control frame
+	// ({"type":"attachment","event":"self",...}), sent first to every control
+	// attachment. Binding only on that frame (never a "joined" broadcast for
+	// another attachment) is what keeps take-hand / release-hand addressing the
+	// supervisor's attachment and never the learner's console.
 	go func() {
 		defer teardown()
 		for {
@@ -296,22 +330,9 @@ func (tc *terminalController) SuperviseSession(ctx *gin.Context) {
 				return
 			}
 			if mt == websocket.BinaryMessage {
-				// M2: tt-backend delivers a self-snapshot "joined" control event on
-				// control-connect, so the FIRST control frame carrying an
-				// attachment_id is ours. The explicit-self-frame hardening (never
-				// mistaking another attachment's event for our own) is tracked as
-				// tt-backend #126; until then the first-frame heuristic holds
-				// because the self-snapshot precedes any other join broadcast.
-				var ev struct {
-					AttachmentID string `json:"attachment_id"`
-				}
-				if json.Unmarshal(data, &ev) == nil && ev.AttachmentID != "" {
-					stMu.Lock()
-					if attachmentID == "" {
-						attachmentID = ev.AttachmentID
-					}
-					stMu.Unlock()
-				}
+				stMu.Lock()
+				attachmentID = bindSelfAttachmentID(attachmentID, data)
+				stMu.Unlock()
 			}
 			if werr := clientConn.WriteMessage(mt, data); werr != nil {
 				return
