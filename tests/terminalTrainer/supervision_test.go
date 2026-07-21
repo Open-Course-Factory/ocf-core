@@ -556,7 +556,7 @@ func TestSupervision_EndAudit_UsesStoppedEvent(t *testing.T) {
 	group, sessionID := newSupervisedSession(t, db, "group-A", trainer, "learner-A")
 	audit := &mockSupervisionAudit{}
 
-	err := terminalController.EndSupervision(db, audit, trainer, false, sessionID, group.ID.String())
+	err := terminalController.EndSupervision(db, audit, trainer, false, sessionID, group.ID.String(), false)
 
 	require.NoError(t, err)
 	require.Len(t, audit.logged, 1)

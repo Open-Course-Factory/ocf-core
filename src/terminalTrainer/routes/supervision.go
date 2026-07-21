@@ -63,30 +63,9 @@ func HasSupervisionAccess(db *gorm.DB, callerUserID string, isAdmin bool, sessio
 		return "", false
 	}
 
-	// Restrict to ACTIVE groups (L1): an inactive managing class-group grants no
-	// supervision access, mirroring checkGroupOwnerAccess's IsActive guard.
-	var activeGroupIDs []uuid.UUID
-	if err := db.Model(&groupModels.ClassGroup{}).
-		Where("id IN ? AND is_active = ?", learnerGroupIDs, true).
-		Pluck("id", &activeGroupIDs).Error; err != nil || len(activeGroupIDs) == 0 {
-		return "", false
-	}
-
-	// Of those, one the caller OWNS (ClassGroup.OwnerUserID)...
-	var owned groupModels.ClassGroup
-	if err := db.Where("id IN ? AND owner_user_id = ?", activeGroupIDs, callerUserID).
-		First(&owned).Error; err == nil {
-		return owned.ID.String(), true
-	}
-	// ...or one where the caller holds an active manager/owner membership role.
-	var membership groupModels.GroupMember
-	if err := db.Where("group_id IN ? AND user_id = ? AND is_active = ? AND role IN ?",
-		activeGroupIDs, callerUserID, true, managerRoles).
-		First(&membership).Error; err == nil {
-		return membership.GroupID.String(), true
-	}
-
-	return "", false
+	// Of the learner's groups, one the caller manages (active group + owner or an
+	// active manager/owner role) grants access — the single canonical predicate.
+	return callerManagesAnyGroup(db, learnerGroupIDs, callerUserID)
 }
 
 // SupervisionStillAuthorized is the periodic re-authorization check (M1) for a
@@ -98,23 +77,44 @@ func SupervisionStillAuthorized(db *gorm.DB, callerUserID string, isAdmin bool, 
 	return ok
 }
 
-// callerManagesGroup reports whether callerUserID is manager+ of groupID (owner via
-// ClassGroup.OwnerUserID or an active manager/owner group_members role). An
-// inactive (or missing) group is never manageable.
-func callerManagesGroup(db *gorm.DB, groupID uuid.UUID, callerUserID string) bool {
-	var group groupModels.ClassGroup
-	if err := db.Where("id = ? AND is_active = ?", groupID, true).First(&group).Error; err != nil {
-		return false
+// callerManagesAnyGroup returns the id of one group among candidateIDs that
+// callerUserID manages — the SINGLE canonical "manager+ of this group" predicate,
+// shared by HasSupervisionAccess (list of the learner's groups) and
+// callerManagesGroup (a single group). Management means the group is ACTIVE and the
+// caller either OWNS it (ClassGroup.OwnerUserID) or holds an active manager/owner
+// group_members role. An inactive (or missing) group is never manageable.
+// ok=false when none qualifies.
+func callerManagesAnyGroup(db *gorm.DB, candidateIDs []uuid.UUID, callerUserID string) (groupID string, ok bool) {
+	if len(candidateIDs) == 0 {
+		return "", false
 	}
-	if group.OwnerUserID == callerUserID {
-		return true
+	// Restrict to ACTIVE groups (L1): an inactive class-group grants no authority.
+	var activeIDs []uuid.UUID
+	if err := db.Model(&groupModels.ClassGroup{}).
+		Where("id IN ? AND is_active = ?", candidateIDs, true).
+		Pluck("id", &activeIDs).Error; err != nil || len(activeIDs) == 0 {
+		return "", false
 	}
+	// One the caller OWNS (ClassGroup.OwnerUserID)...
+	var owned groupModels.ClassGroup
+	if err := db.Where("id IN ? AND owner_user_id = ?", activeIDs, callerUserID).
+		First(&owned).Error; err == nil {
+		return owned.ID.String(), true
+	}
+	// ...or one where the caller holds an active manager/owner membership role.
 	var membership groupModels.GroupMember
-	if err := db.Where("group_id = ? AND user_id = ? AND is_active = ? AND role IN ?",
-		groupID, callerUserID, true, managerRoles).First(&membership).Error; err == nil {
-		return true
+	if err := db.Where("group_id IN ? AND user_id = ? AND is_active = ? AND role IN ?",
+		activeIDs, callerUserID, true, managerRoles).First(&membership).Error; err == nil {
+		return membership.GroupID.String(), true
 	}
-	return false
+	return "", false
+}
+
+// callerManagesGroup reports whether callerUserID is manager+ of groupID. It
+// delegates to callerManagesAnyGroup so the management predicate lives in one place.
+func callerManagesGroup(db *gorm.DB, groupID uuid.UUID, callerUserID string) bool {
+	_, ok := callerManagesAnyGroup(db, []uuid.UUID{groupID}, callerUserID)
+	return ok
 }
 
 // PlanAllowsSupervision reports whether the plan carries the session-supervision
@@ -214,9 +214,18 @@ func TakeHandForSupervision(db *gorm.DB, audit auditServices.AuditService, plan 
 	return nil
 }
 
-// EndSupervision emits AuditEventSupervisionStopped to bound the supervision
-// window in the audit trail. It is called when the observe WebSocket closes.
-func EndSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID string, isAdmin bool, sessionID, groupID string) error {
+// EndSupervision bounds the supervision window in the audit trail when the observe
+// WebSocket closes. If handHeld is true — the trainer disconnected while STILL
+// holding the interactive hand, with no explicit release_hand frame — it first
+// emits AuditEventSupervisionReleased so the trail can bound who held control and
+// until when, then AuditEventSupervisionStopped. When the hand was not held it
+// emits only Stopped.
+func EndSupervision(db *gorm.DB, audit auditServices.AuditService, actorUserID string, isAdmin bool, sessionID, groupID string, handHeld bool) error {
+	if handHeld {
+		if err := audit.Log(buildSupervisionAudit(auditModels.AuditEventSupervisionReleased, actorUserID, sessionID, groupID)); err != nil {
+			return err
+		}
+	}
 	return audit.Log(buildSupervisionAudit(auditModels.AuditEventSupervisionStopped, actorUserID, sessionID, groupID))
 }
 
