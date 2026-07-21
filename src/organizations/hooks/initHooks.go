@@ -43,6 +43,14 @@ func InitOrganizationHooks(db *gorm.DB) {
 		log.Println("✅ Organization member validation hook registered")
 	}
 
+	// Hook for syncing casbin groupings on member create and role change
+	memberPermissionHook := NewOrganizationMemberPermissionHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(memberPermissionHook); err != nil {
+		log.Printf("❌ Failed to register organization member permission hook: %v", err)
+	} else {
+		log.Println("✅ Organization member permission hook registered")
+	}
+
 	// Hook for validating organization member deletion
 	memberDeletionHook := NewOrganizationMemberDeletionHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(memberDeletionHook); err != nil {

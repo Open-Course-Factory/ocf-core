@@ -352,6 +352,114 @@ func (h *OrganizationMemberValidationHook) Execute(ctx *hooks.HookContext) error
 	return nil
 }
 
+// OrganizationMemberPermissionHook keeps the Casbin grouping policies in sync with an
+// OrganizationMember's role. On create it grants the base organization grouping and, for a
+// manager-grade role, the manager grouping. On a role change it grants or revokes only the
+// manager grouping, leaving base membership intact. Grant/revoke failures are logged and do
+// not fail the write, mirroring GroupMemberPermissionHook.
+type OrganizationMemberPermissionHook struct {
+	db                  *gorm.DB
+	organizationService services.OrganizationService
+	enabled             bool
+	priority            int
+}
+
+func NewOrganizationMemberPermissionHook(db *gorm.DB) hooks.Hook {
+	return &OrganizationMemberPermissionHook{
+		db:                  db,
+		organizationService: services.NewOrganizationService(db),
+		enabled:             true,
+		priority:            20, // Run after creation/update
+	}
+}
+
+func (h *OrganizationMemberPermissionHook) GetName() string {
+	return "organization_member_permission"
+}
+
+func (h *OrganizationMemberPermissionHook) GetEntityName() string {
+	return "OrganizationMember"
+}
+
+func (h *OrganizationMemberPermissionHook) GetHookTypes() []hooks.HookType {
+	return []hooks.HookType{hooks.AfterCreate, hooks.AfterUpdate}
+}
+
+func (h *OrganizationMemberPermissionHook) IsEnabled() bool {
+	return h.enabled
+}
+
+func (h *OrganizationMemberPermissionHook) GetPriority() int {
+	return h.priority
+}
+
+func (h *OrganizationMemberPermissionHook) Execute(ctx *hooks.HookContext) error {
+	switch ctx.HookType {
+	case hooks.AfterCreate:
+		return h.grantForNewMember(ctx)
+	case hooks.AfterUpdate:
+		return h.syncManagerGroupingOnRoleChange(ctx)
+	}
+	return nil
+}
+
+// grantForNewMember grants the base organization grouping to a freshly created member and,
+// for a manager-grade role (manager or owner), additionally grants the manager grouping.
+func (h *OrganizationMemberPermissionHook) grantForNewMember(ctx *hooks.HookContext) error {
+	member, ok := ctx.NewEntity.(*models.OrganizationMember)
+	if !ok {
+		return fmt.Errorf("expected *models.OrganizationMember, got %T", ctx.NewEntity)
+	}
+
+	if err := h.organizationService.GrantOrganizationPermissions(member.UserID, member.OrganizationID); err != nil {
+		utils.Warn("Failed to grant organization permissions to user %s: %v", member.UserID, err)
+	}
+
+	if member.IsManager() {
+		if err := h.organizationService.GrantOrganizationManagerPermissions(member.UserID, member.OrganizationID); err != nil {
+			utils.Warn("Failed to grant organization manager permissions to user %s: %v", member.UserID, err)
+		}
+	}
+
+	utils.Info("Synced permissions for new organization member %s (role %s) in organization %s", member.UserID, member.Role, member.OrganizationID)
+	return nil
+}
+
+// syncManagerGroupingOnRoleChange grants or revokes the manager grouping when a member's
+// role crosses the manager threshold. The base grouping is left untouched: a demoted manager
+// remains an organization member.
+func (h *OrganizationMemberPermissionHook) syncManagerGroupingOnRoleChange(ctx *hooks.HookContext) error {
+	newMember, ok := ctx.NewEntity.(*models.OrganizationMember)
+	if !ok {
+		return fmt.Errorf("expected *models.OrganizationMember, got %T", ctx.NewEntity)
+	}
+	oldMember, ok := ctx.OldEntity.(*models.OrganizationMember)
+	if !ok {
+		// Without the pre-update row we cannot tell whether the role crossed the manager
+		// threshold; skip rather than risk an incorrect grant or revoke.
+		utils.Warn("Skipping organization member permission sync: missing pre-update member for user %s", newMember.UserID)
+		return nil
+	}
+
+	if oldMember.IsManager() == newMember.IsManager() {
+		return nil
+	}
+
+	if newMember.IsManager() {
+		if err := h.organizationService.GrantOrganizationManagerPermissions(newMember.UserID, newMember.OrganizationID); err != nil {
+			utils.Warn("Failed to grant organization manager permissions to user %s: %v", newMember.UserID, err)
+		}
+		utils.Info("Promoted organization member %s to manager in organization %s", newMember.UserID, newMember.OrganizationID)
+		return nil
+	}
+
+	if err := h.organizationService.RevokeOrganizationManagerPermissions(newMember.UserID, newMember.OrganizationID); err != nil {
+		utils.Warn("Failed to revoke organization manager permissions from user %s: %v", newMember.UserID, err)
+	}
+	utils.Info("Demoted organization member %s from manager in organization %s", newMember.UserID, newMember.OrganizationID)
+	return nil
+}
+
 // OrganizationMemberDeletionHook validates business rules when removing a member from an organization
 type OrganizationMemberDeletionHook struct {
 	db                  *gorm.DB
