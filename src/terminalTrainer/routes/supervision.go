@@ -53,6 +53,13 @@ func HasSupervisionAccess(db *gorm.DB, callerUserID string, isAdmin bool, sessio
 	if err := db.Where("session_id = ?", sessionID).First(&terminal).Error; err != nil {
 		return "", false
 	}
+	// Org-context visibility rule: only a session launched in an org is supervisable,
+	// and only through a group in that SAME org — the group-side half of
+	// models.SupervisableByGroupOrgScope (its single home is on the terminals table).
+	// A personal (NULL-org) session is invisible to every teacher.
+	if terminal.OrganizationID == nil {
+		return "", false
+	}
 	learnerID := terminal.UserID
 
 	// The groups the learner is an active member of.
@@ -63,9 +70,19 @@ func HasSupervisionAccess(db *gorm.DB, callerUserID string, isAdmin bool, sessio
 		return "", false
 	}
 
-	// Of the learner's groups, one the caller manages (active group + owner or an
-	// active manager/owner role) grants access — the single canonical predicate.
-	return callerManagesAnyGroup(db, learnerGroupIDs, callerUserID)
+	// Keep only the learner's groups that share the session's org. This drops a
+	// managing group whose own org is NULL (safe default: supervises nothing) or
+	// differs from the session's — mirroring SupervisableByGroupOrgScope's equality.
+	var orgMatchedGroupIDs []uuid.UUID
+	if err := db.Model(&groupModels.ClassGroup{}).
+		Where("id IN ? AND organization_id = ?", learnerGroupIDs, *terminal.OrganizationID).
+		Pluck("id", &orgMatchedGroupIDs).Error; err != nil || len(orgMatchedGroupIDs) == 0 {
+		return "", false
+	}
+
+	// Of those, one the caller manages (active group + owner or an active
+	// manager/owner role) grants access — the single canonical predicate.
+	return callerManagesAnyGroup(db, orgMatchedGroupIDs, callerUserID)
 }
 
 // SupervisionStillAuthorized is the periodic re-authorization check (M1) for a
@@ -272,10 +289,20 @@ func ListGroupSupervisionSessions(db *gorm.DB, groupID, callerUserID string, isA
 		return []SupervisionSession{}, true
 	}
 
+	query := db.Scopes(terminalModels.RunningDisplayScope).Where("user_id IN ?", memberIDs)
+	if !isAdmin {
+		// Teachers see only sessions launched in THIS group's org (org-context
+		// visibility rule, single home: models.SupervisableByGroupOrgScope). A
+		// NULL-org group lists nothing. Admins are ops, not teachers — they bypass.
+		var group groupModels.ClassGroup
+		if err := db.Where("id = ?", gid).First(&group).Error; err != nil {
+			return nil, false
+		}
+		query = query.Scopes(terminalModels.SupervisableByGroupOrgScope(group.OrganizationID))
+	}
+
 	var terminals []terminalModels.Terminal
-	if err := db.Scopes(terminalModels.RunningDisplayScope).
-		Where("user_id IN ?", memberIDs).
-		Find(&terminals).Error; err != nil {
+	if err := query.Find(&terminals).Error; err != nil {
 		return nil, false
 	}
 

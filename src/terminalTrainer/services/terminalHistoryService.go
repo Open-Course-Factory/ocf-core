@@ -267,12 +267,12 @@ func (h *terminalHistoryService) GetGroupCommandHistory(groupID string, userID s
 		}
 	}
 
-	// Fetch terminals for all members, scoped to group's organization
+	// Fetch terminals for all members, gated by the org-context visibility rule
+	// (single home: models.SupervisableByGroupOrgScope) — a NULL-org group sees
+	// NOTHING; otherwise only same-org sessions. Same rule the supervision wall uses.
 	var terminals []models.Terminal
-	query := h.db.Where("user_id IN ?", memberUserIDs)
-	if group.OrganizationID != nil {
-		query = query.Where("organization_id = ?", *group.OrganizationID)
-	}
+	query := h.db.Where("user_id IN ?", memberUserIDs).
+		Scopes(models.SupervisableByGroupOrgScope(group.OrganizationID))
 	if !includeStopped {
 		// SSOT: "running display" lives in models.RunningDisplayScope.
 		// Inline `status = "active"` predicates drift away from the UI's
@@ -461,12 +461,12 @@ func (h *terminalHistoryService) GetGroupCommandHistoryStats(groupID string, use
 		}
 	}
 
-	// Fetch terminals for all members, scoped to group's organization
+	// Fetch terminals for all members, gated by the org-context visibility rule
+	// (single home: models.SupervisableByGroupOrgScope) — see the matching block in
+	// GetGroupCommandHistory above. A NULL-org group sees NOTHING.
 	var terminals []models.Terminal
-	query := h.db.Where("user_id IN ?", memberUserIDs)
-	if group.OrganizationID != nil {
-		query = query.Where("organization_id = ?", *group.OrganizationID)
-	}
+	query := h.db.Where("user_id IN ?", memberUserIDs).
+		Scopes(models.SupervisableByGroupOrgScope(group.OrganizationID))
 	if !includeStopped {
 		// SSOT alignment — see RunningDisplayScope rationale on the
 		// matching block in GetGroupCommandHistory above.

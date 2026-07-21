@@ -190,6 +190,33 @@ func RunningDisplayScope(tx *gorm.DB) *gorm.DB {
 	)
 }
 
+// SupervisableByGroupOrgScope is the SINGLE home of the org-context supervision
+// visibility rule on the terminals table: a session is supervisable by a
+// class-group ONLY when the terminal's organization_id is NON-NULL and equals the
+// group's organization_id. A nil groupOrg (the group carries no org) matches
+// NOTHING — the safe default that an org-less group supervises no sessions. A
+// non-null filter value also excludes NULL terminal orgs automatically (SQL
+// `NULL = value` is never true), so personal sessions never appear.
+//
+// Applied by every teacher-facing group listing surface — the supervision wall
+// (ListGroupSupervisionSessions) and group command history — so the rule lives in
+// exactly one place. HasSupervisionAccess enforces the SYMMETRIC group-side equality
+// (filtering the learner's candidate groups by the session's org) because it is
+// keyed by a terminal, not a group; teachers-only — platform admins bypass it.
+//
+// Usage:
+//
+//	db.Table("terminals").Scopes(models.SupervisableByGroupOrgScope(group.OrganizationID)).
+//	    Where("terminals.user_id IN ?", memberIDs).Find(&out)
+func SupervisableByGroupOrgScope(groupOrg *uuid.UUID) func(*gorm.DB) *gorm.DB {
+	return func(tx *gorm.DB) *gorm.DB {
+		if groupOrg == nil {
+			return tx.Where("1 = 0") // no org context → supervises nothing
+		}
+		return tx.Where("terminals.organization_id = ?", *groupOrg)
+	}
+}
+
 // CountUserOccupiedSlots returns the number of terminals owned by the
 // user that still "occupy a slot" (running or stopped, not expired,
 // not deleted). If orgID is nil, counts all terminals across all orgs

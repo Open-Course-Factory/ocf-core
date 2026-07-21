@@ -98,15 +98,28 @@ func entryContains(t *testing.T, entry auditModels.AuditLogCreate, needle string
 // newSupervisedSession creates an active group owned by ownerUserID with the
 // learner as an active member, plus an active terminal owned by the learner.
 // Returns the group and the learner's session_id.
+//
+// Org-context strengthening (#430 visibility rule): the group and the learner's
+// terminal are stamped with the SAME (freshly generated) organization_id, so
+// this fixture reflects a real org-launched session — the only context in which
+// supervision is now permitted. Every existing supervision positive relies on
+// this fixture granting access; stamping a matching org keeps them valid under
+// the "supervisable IFF terminal.org == managing group.org (both non-null)"
+// rule. The org column is inert under code that does not yet filter on it, so
+// this change is behaviour-preserving for the pre-rule code path too. Cases that
+// need a NULL / mismatched org build their sessions via newOrgSupervisedSession
+// (supervisionOrgContext_test.go) instead.
 func newSupervisedSession(t *testing.T, db *gorm.DB, groupName, ownerUserID, learnerUserID string) (*groupModels.ClassGroup, string) {
 	t.Helper()
 
+	orgID := uuid.New()
 	group := &groupModels.ClassGroup{
-		Name:        groupName,
-		DisplayName: groupName,
-		OwnerUserID: ownerUserID,
-		IsActive:    true,
-		MaxMembers:  50,
+		Name:           groupName,
+		DisplayName:    groupName,
+		OwnerUserID:    ownerUserID,
+		IsActive:       true,
+		MaxMembers:     50,
+		OrganizationID: &orgID,
 	}
 	require.NoError(t, db.Omit("Metadata").Create(group).Error)
 
@@ -117,6 +130,8 @@ func newSupervisedSession(t *testing.T, db *gorm.DB, groupName, ownerUserID, lea
 
 	terminal, err := createTestTerminal(db, learnerUserID, "active", uuid.Nil)
 	require.NoError(t, err)
+	// Match the terminal's launch context to the managing group's org.
+	require.NoError(t, db.Model(terminal).Update("organization_id", orgID).Error)
 
 	return group, terminal.SessionID
 }
