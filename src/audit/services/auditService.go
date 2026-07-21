@@ -39,6 +39,7 @@ type AuditLogFilter struct {
 	ActorID        *uuid.UUID
 	TargetID       *uuid.UUID
 	OrganizationID *uuid.UUID
+	GroupID        *uuid.UUID
 	EventType      models.AuditEventType
 	Severity       models.AuditSeverity
 	Status         string
@@ -270,6 +271,9 @@ func (as *auditService) GetAuditLogs(filter AuditLogFilter) ([]models.AuditLog, 
 	}
 	if filter.OrganizationID != nil {
 		query = query.Where("organization_id = ?", filter.OrganizationID)
+	}
+	if filter.GroupID != nil {
+		query = query.Where("group_id = ?", filter.GroupID)
 	}
 	if filter.EventType != "" {
 		query = query.Where("event_type = ?", filter.EventType)
