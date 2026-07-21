@@ -358,7 +358,12 @@ func (tc *terminalController) SuperviseSession(ctx *gin.Context) {
 			aid := attachmentID
 			stMu.Unlock()
 			if aid == "" {
-				continue // our attachment id is not known yet; cannot address the PATCH
+				// Our attachment id is not known yet; cannot address the PATCH. This
+				// should not happen once tt-backend has sent the self frame, so log it
+				// to make a mis-ordered deploy (self frame missing) debuggable.
+				slog.Warn("supervision control frame dropped: attachment id not yet bound (is tt-backend sending the self frame?)",
+					"session_id", sessionID, "type", msg.Type)
+				continue
 			}
 			switch msg.Type {
 			case "take_hand":
