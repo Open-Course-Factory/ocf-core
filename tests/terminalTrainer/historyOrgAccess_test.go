@@ -470,3 +470,86 @@ func TestGetGroupCommandHistoryStats_ScopedToOrganization(t *testing.T) {
 	assert.Equal(t, 0, len(students),
 		"Stats should show 0 students when no terminals match the group's organization")
 }
+
+// TestGetGroupCommandHistory_NullOrgGroup_ReturnsNothing pins the SAFE-DEFAULT
+// arm of the org-context supervision visibility rule (single home:
+// models.SupervisableByGroupOrgScope): a class-group whose OWN organization_id is
+// NULL supervises NOTHING, so its command history is empty even when members have
+// live terminals. This is distinct from the equality arm already covered by
+// TestGetGroupCommandHistory_ScopedToOrganization (a NON-null-org group excluding
+// a member's other-org / personal terminals).
+//
+// Regression guard for the reconciliation in ffa8505. Pre-fix this WOULD HAVE
+// FAILED: the old guard `if group.OrganizationID != nil { WHERE organization_id
+// = ... }` SKIPPED filtering entirely for a NULL-org group, so the member's
+// terminals were returned, sessionUUIDs was non-empty, and the method attempted
+// the tt-backend `/admin/history/bulk` HTTP call — which errors in tests (no real
+// backend) — so require.NoError below would fail. With SupervisableByGroupOrgScope(nil)
+// → `WHERE 1 = 0`, the query returns nothing and the method short-circuits to an
+// empty result.
+func TestGetGroupCommandHistory_NullOrgGroup_ReturnsNothing(t *testing.T) {
+	db := setupTestDBWithGroups(t)
+
+	// A group with NO organization (organization_id NULL).
+	group := createTestGroupForHistory(t, db, "trainer1", nil)
+	createTestGroupMember(t, db, group.ID, "trainer1", groupModels.GroupMemberRoleOwner)
+	createTestGroupMember(t, db, group.ID, "student1", groupModels.GroupMemberRoleMember)
+
+	// The member has terminals — one org-stamped, one personal. A NULL-org group
+	// must see NEITHER: it supervises nothing regardless of the terminal's org.
+	someOrg := createTestOrgForHistory(t, db, "some-org-owner")
+	createTestTerminalWithOrg(t, db, "student1", &someOrg.ID)
+	createTestTerminalWithOrg(t, db, "student1", nil)
+
+	service := terminalServices.NewTerminalTrainerService(db)
+	body, contentType, err := service.GetGroupCommandHistory(
+		group.ID.String(), "trainer1", nil, "json", 50, 0, true, "",
+	)
+
+	require.NoError(t, err, "a NULL-org group must resolve to an empty history, not a tt-backend call")
+	assert.Equal(t, "application/json", contentType)
+
+	var result map[string]interface{}
+	require.NoError(t, json.Unmarshal(body, &result), "Response should be valid JSON")
+
+	commands, ok := result["commands"].([]interface{})
+	require.True(t, ok, "Response should contain 'commands' array")
+	assert.Equal(t, 0, len(commands), "a NULL-org group supervises nothing → 0 commands")
+	assert.Equal(t, float64(0), result["total"], "total must be 0 for a NULL-org group")
+}
+
+// TestGetGroupCommandHistoryStats_NullOrgGroup_ReturnsEmpty is the stats-method
+// twin of TestGetGroupCommandHistory_NullOrgGroup_ReturnsNothing — the same
+// NULL-org-group safe default, pinned on GetGroupCommandHistoryStats. Same
+// pre-fix failure mode (unfiltered member terminals → tt-backend call → error).
+func TestGetGroupCommandHistoryStats_NullOrgGroup_ReturnsEmpty(t *testing.T) {
+	db := setupTestDBWithGroups(t)
+
+	group := createTestGroupForHistory(t, db, "trainer1", nil)
+	createTestGroupMember(t, db, group.ID, "trainer1", groupModels.GroupMemberRoleOwner)
+	createTestGroupMember(t, db, group.ID, "student1", groupModels.GroupMemberRoleMember)
+
+	someOrg := createTestOrgForHistory(t, db, "some-org-owner")
+	createTestTerminalWithOrg(t, db, "student1", &someOrg.ID)
+	createTestTerminalWithOrg(t, db, "student1", nil)
+
+	service := terminalServices.NewTerminalTrainerService(db)
+	body, contentType, err := service.GetGroupCommandHistoryStats(
+		group.ID.String(), "trainer1", true,
+	)
+
+	require.NoError(t, err, "a NULL-org group must resolve to empty stats, not a tt-backend call")
+	assert.Equal(t, "application/json", contentType)
+
+	var result map[string]interface{}
+	require.NoError(t, json.Unmarshal(body, &result), "Response should be valid JSON")
+
+	summary, ok := result["summary"].(map[string]interface{})
+	require.True(t, ok, "Response should contain 'summary' object")
+	assert.Equal(t, float64(0), summary["total_sessions"], "a NULL-org group supervises nothing → 0 sessions")
+	assert.Equal(t, float64(0), summary["total_commands"], "a NULL-org group supervises nothing → 0 commands")
+
+	students, ok := result["students"].([]interface{})
+	require.True(t, ok, "Response should contain 'students' array")
+	assert.Equal(t, 0, len(students), "a NULL-org group supervises nothing → 0 students")
+}
