@@ -186,7 +186,13 @@ func organizationsEntityRoles() []entityRoleDefinition {
 		{
 			entityName: "OrganizationMember",
 			routeName:  "organization-members",
-			roles:      rolesForReadOnlyMember(),
+			// Members get full CRUD at the Casbin layer; Layer 2 org-role hooks
+			// (validation on create, authorization on update, deletion guard)
+			// gate who may actually mutate a member.
+			roles: entityManagementInterfaces.EntityRoles{Roles: map[string]string{
+				memberRoles(): methodRegex(http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete),
+				adminRoles():  adminFullCRUD(),
+			}},
 		},
 	}
 }

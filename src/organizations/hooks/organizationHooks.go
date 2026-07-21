@@ -352,6 +352,121 @@ func (h *OrganizationMemberValidationHook) Execute(ctx *hooks.HookContext) error
 	return nil
 }
 
+// OrganizationMemberUpdateAuthorizationHook authorizes a role/status change on an existing
+// OrganizationMember via the generic PATCH route. It mirrors the create-side
+// OrganizationMemberValidationHook (manage check + role cap) and the delete-side
+// OrganizationMemberDeletionHook (owner protection): only an org manager/owner may change a
+// member, no one may raise a member above the granter's own role, and an owner's role may not
+// be changed through this path. Platform administrators bypass the role cap.
+type OrganizationMemberUpdateAuthorizationHook struct {
+	db                  *gorm.DB
+	organizationService services.OrganizationService
+	enabled             bool
+	priority            int
+}
+
+func NewOrganizationMemberUpdateAuthorizationHook(db *gorm.DB) hooks.Hook {
+	return &OrganizationMemberUpdateAuthorizationHook{
+		db:                  db,
+		organizationService: services.NewOrganizationService(db),
+		enabled:             true,
+		priority:            10, // Run before write, alongside the create/delete validation hooks
+	}
+}
+
+func (h *OrganizationMemberUpdateAuthorizationHook) GetName() string {
+	return "organization_member_update_authorization"
+}
+
+func (h *OrganizationMemberUpdateAuthorizationHook) GetEntityName() string {
+	return "OrganizationMember"
+}
+
+func (h *OrganizationMemberUpdateAuthorizationHook) GetHookTypes() []hooks.HookType {
+	return []hooks.HookType{hooks.BeforeUpdate}
+}
+
+func (h *OrganizationMemberUpdateAuthorizationHook) IsEnabled() bool {
+	return h.enabled
+}
+
+func (h *OrganizationMemberUpdateAuthorizationHook) GetPriority() int {
+	return h.priority
+}
+
+func (h *OrganizationMemberUpdateAuthorizationHook) Execute(ctx *hooks.HookContext) error {
+	// The loaded current row is the source of truth for org and target identity; never trust
+	// the patch for those. The patch only supplies the requested new values.
+	current, ok := ctx.OldEntity.(*models.OrganizationMember)
+	if !ok {
+		return fmt.Errorf("expected *models.OrganizationMember for OldEntity, got %T", ctx.OldEntity)
+	}
+	patch, ok := ctx.NewEntity.(map[string]any)
+	if !ok {
+		return fmt.Errorf("expected map[string]any for BeforeUpdate patch, got %T", ctx.NewEntity)
+	}
+
+	// Fail-closed: an unknown actor (empty UserID) must never reach the manage check as a
+	// skipped case. This mirrors the create/delete member hooks.
+	if ctx.UserID == "" {
+		return utils.PermissionDeniedError("update members of", "organization")
+	}
+	canManage, err := h.organizationService.CanUserManageOrganization(current.OrganizationID, ctx.UserID)
+	if err != nil {
+		return fmt.Errorf("permission check failed: %w", err)
+	}
+	if !canManage {
+		return utils.PermissionDeniedError("update members of", "organization")
+	}
+
+	requestedRole, roleChangeRequested, err := requestedRoleFromPatch(patch)
+	if err != nil {
+		return err
+	}
+	if !roleChangeRequested {
+		// A status/metadata-only patch is authorized by the manage check alone; there is no
+		// role transition to cap or owner role to protect.
+		return nil
+	}
+
+	// Owner protection: an owner's role may not be changed through this path, mirroring the
+	// delete hook's cannot-remove-owner guard. Absolute, like that guard.
+	if current.Role == models.OrgRoleOwner {
+		return utils.PermissionDeniedError("change the role of the owner of", "organization")
+	}
+
+	// Role cap: a granter must not raise a member above the granter's own role (e.g. a manager
+	// promoting to owner). Platform administrators bypass the cap, matching the create side.
+	if !ctx.IsAdmin() {
+		granterRole, err := h.organizationService.GetUserOrganizationRole(current.OrganizationID, ctx.UserID)
+		if err != nil {
+			return utils.PermissionDeniedError("update members of", "organization")
+		}
+		if !access.IsRoleAtLeast(string(granterRole), string(requestedRole)) {
+			return utils.PermissionDeniedError("assign a role higher than your own in", "organization")
+		}
+	}
+
+	utils.Debug("Authorized role change for member %s in organization %s by %s", current.UserID, current.OrganizationID, ctx.UserID)
+	return nil
+}
+
+// requestedRoleFromPatch extracts the requested role from a generic update patch. The
+// registration's DtoToMap stores the role under "role" as a models.OrganizationMemberRole
+// value. Returns (role, true, nil) when a role change is requested, ("", false, nil) when the
+// patch touches no role, and an error when the "role" value has an unexpected type.
+func requestedRoleFromPatch(patch map[string]any) (models.OrganizationMemberRole, bool, error) {
+	raw, present := patch["role"]
+	if !present {
+		return "", false, nil
+	}
+	role, ok := raw.(models.OrganizationMemberRole)
+	if !ok {
+		return "", false, fmt.Errorf("unexpected role type in update payload: %T", raw)
+	}
+	return role, true, nil
+}
+
 // OrganizationMemberPermissionHook keeps the Casbin grouping policies in sync with an
 // OrganizationMember's role. On create it grants the base organization grouping and, for a
 // manager-grade role, the manager grouping. On a role change it grants or revokes only the
