@@ -111,7 +111,7 @@ func BuildConsoleWSURL(terminalTrainerURL, apiVersion, instanceType, sessionID s
 //	@Produce		json
 //	@Param			id	path	string	true	"Class-group ID"
 //	@Security		Bearer
-//	@Success		200	{array}		models.Terminal
+//	@Success		200	{array}		terminalController.SupervisionSession
 //	@Failure		403	{object}	errors.APIError	"Not a manager of this group"
 //	@Router			/class-groups/{id}/terminal-sessions [get]
 func (tc *terminalController) GetGroupTerminalSessions(ctx *gin.Context) {
