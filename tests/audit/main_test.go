@@ -36,6 +36,7 @@ func TestMain(m *testing.M) {
 		target_type TEXT,
 		target_name TEXT,
 		organization_id TEXT,
+		group_id TEXT,
 		on_behalf_of_id TEXT,
 		action TEXT NOT NULL,
 		status TEXT NOT NULL,
@@ -55,6 +56,15 @@ func TestMain(m *testing.M) {
 	err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_on_behalf_of_id ON audit_logs(on_behalf_of_id)`).Error
 	if err != nil {
 		panic("failed to create idx_audit_logs_on_behalf_of_id: " + err.Error())
+	}
+
+	// group_id (#430): dedicated managing-group column for supervision events,
+	// replacing the OrganizationID overload. Mirrors the on_behalf_of_id column
+	// added above — the hardcoded SQLite schema must carry it because the
+	// AuditLog model uses PostgreSQL-specific defaults that block AutoMigrate.
+	err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_group_id ON audit_logs(group_id)`).Error
+	if err != nil {
+		panic("failed to create idx_audit_logs_group_id: " + err.Error())
 	}
 
 	sharedTestDB = db

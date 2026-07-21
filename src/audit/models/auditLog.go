@@ -127,6 +127,10 @@ type AuditLog struct {
 	// Organization Context (for multi-tenant filtering)
 	OrganizationID   *uuid.UUID     `gorm:"type:uuid;index"`                  // Organization context (null for personal actions)
 
+	// Group Context (managing class-group, e.g. the group through which a trainer
+	// supervises a learner) — distinct from OrganizationID, never overloaded onto it.
+	GroupID          *uuid.UUID     `gorm:"type:uuid;index" json:"group_id,omitempty"` // Managing group context (null when not group-scoped)
+
 	// Impersonation Context (who the actor was acting on behalf of)
 	OnBehalfOfID     *uuid.UUID     `gorm:"type:uuid;index" json:"on_behalf_of_id,omitempty"` // Target user when actor is impersonating
 
@@ -177,6 +181,7 @@ type AuditLogCreate struct {
 	TargetType     string
 	TargetName     string
 	OrganizationID *uuid.UUID
+	GroupID        *uuid.UUID `json:"group_id,omitempty"`
 	OnBehalfOfID   *uuid.UUID `json:"on_behalf_of_id,omitempty"`
 	Action         string
 	Status         string

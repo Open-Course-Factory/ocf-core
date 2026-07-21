@@ -192,8 +192,11 @@ func buildSupervisionAuditStatus(event auditModels.AuditEventType, actorUserID, 
 	if id, err := uuid.Parse(actorUserID); err == nil {
 		entry.ActorID = &id
 	}
+	// The managing class-group goes on the dedicated GroupID column, NOT overloaded
+	// onto OrganizationID: this builder has no way to know a real org id (no DB
+	// handle, no org param), so OrganizationID is left nil for supervision events.
 	if id, err := uuid.Parse(groupID); err == nil {
-		entry.OrganizationID = &id // reuse the org column to index by managing group
+		entry.GroupID = &id
 	}
 	return entry
 }

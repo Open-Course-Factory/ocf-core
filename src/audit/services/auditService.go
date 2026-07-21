@@ -67,6 +67,7 @@ func (as *auditService) Log(entry models.AuditLogCreate) error {
 		TargetType:     entry.TargetType,
 		TargetName:     entry.TargetName,
 		OrganizationID: entry.OrganizationID,
+		GroupID:        entry.GroupID,
 		OnBehalfOfID:   entry.OnBehalfOfID,
 		Action:         entry.Action,
 		Status:         entry.Status,
