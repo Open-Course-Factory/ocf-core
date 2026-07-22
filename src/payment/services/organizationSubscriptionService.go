@@ -318,8 +318,10 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 			features.HighestPlan = &plan
 		}
 
-		// Aggregate boolean features (union across plans — capabilities compose)
-		for _, feature := range plan.Features {
+		// Aggregate entitlements (union across plans — capabilities compose).
+		// Project each plan's TYPED fields via derivePlanEntitlements (SSOT)
+		// rather than unioning the legacy free-form plan.Features strings.
+		for _, feature := range derivePlanEntitlements(&plan) {
 			featureSet[feature] = true
 		}
 

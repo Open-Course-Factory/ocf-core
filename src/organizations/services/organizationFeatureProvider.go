@@ -4,6 +4,7 @@ import (
 	"fmt"
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	paymentRepo "soli/formations/src/payment/repositories"
+	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/utils"
 
 	"github.com/google/uuid"
@@ -41,8 +42,11 @@ func (p *OrganizationFeatureProvider) GetFeatures(entityID string) ([]string, bo
 		return []string{}, false, nil
 	}
 
-	// Extract features from subscription plan
-	features := subscription.SubscriptionPlan.Features
+	// Project the plan's TYPED capability fields into the canonical entitlement
+	// set (single source of truth), rather than returning the legacy free-form
+	// plan.Features array.
+	plan := subscription.SubscriptionPlan
+	features := paymentServices.DerivePlanEntitlements(&plan)
 	hasSubscription := true
 
 	// Additional validation: check subscription status

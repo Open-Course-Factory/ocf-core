@@ -27,6 +27,7 @@ type CreateSubscriptionPlanInput struct {
 	Priority                    int      `json:"priority" mapstructure:"priority"`
 	IsActive                    *bool    `json:"is_active" mapstructure:"is_active"`
 	IsCatalog                   *bool    `json:"is_catalog" mapstructure:"is_catalog"`
+	GroupManagementEnabled      bool     `json:"group_management_enabled" mapstructure:"group_management_enabled"`
 	// Budget-based quota fields.
 	// MaxCPU is in millicores (mCPU); 1000 mCPU = 1 vCPU. Frontends
 	// convert to fractional vCPU for display.
@@ -48,6 +49,7 @@ type UpdateSubscriptionPlanInput struct {
 	CommandHistoryRetentionDays *int     `json:"command_history_retention_days,omitempty" mapstructure:"command_history_retention_days"`
 	DefaultBackend              string   `json:"default_backend,omitempty" mapstructure:"default_backend"`
 	AllowedBackends             []string `json:"allowed_backends,omitempty" mapstructure:"allowed_backends"`
+	GroupManagementEnabled      *bool    `json:"group_management_enabled,omitempty" mapstructure:"group_management_enabled"`
 	Priority                    *int     `json:"priority,omitempty" mapstructure:"priority"`
 	// Budget-based quota fields.
 	// MaxCPU is in millicores (mCPU); 1000 mCPU = 1 vCPU.
@@ -68,6 +70,7 @@ type SubscriptionPlanOutput struct {
 	Features           []string  `json:"features"`
 	IsActive           bool      `json:"is_active"`
 	IsCatalog          bool      `json:"is_catalog"`
+	GroupManagementEnabled bool  `json:"group_management_enabled"`
 	RequiredRole       string    `json:"required_role"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`

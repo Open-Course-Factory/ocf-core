@@ -10,7 +10,6 @@ import (
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/repositories"
 	"soli/formations/src/utils"
-	"slices"
 	"strings"
 	"time"
 
@@ -62,17 +61,11 @@ func NewBulkLicenseServiceWithDeps(db *gorm.DB, stripeService StripeService) Bul
 	}
 }
 
-// bulkPurchaseFeature is the plan feature a plan must carry to be bought in bulk.
-// It mirrors the literal used when features are registered
-// (initialization/database.go) — no exported constant exists, so it is defined
-// locally to keep the gate self-contained.
-const bulkPurchaseFeature = "group_management"
-
 // validateBulkPurchasablePlan is the single rule for whether a plan may be
-// purchased in bulk: it must be active, in the public catalog, and grant the
-// group_management feature. It is called from both the direct purchase path
+// purchased in bulk: it must be active, in the public catalog, and grant group
+// management. It is called from both the direct purchase path
 // (PurchaseBulkLicenses) and the Stripe checkout path (CreateBulkCheckoutSession)
-// so the gate lives in exactly one place. A nil/empty Features slice is rejected.
+// so the gate lives in exactly one place.
 func validateBulkPurchasablePlan(plan *models.SubscriptionPlan) error {
 	if !plan.IsActive {
 		return fmt.Errorf("subscription plan is not active")
@@ -84,8 +77,9 @@ func validateBulkPurchasablePlan(plan *models.SubscriptionPlan) error {
 		return fmt.Errorf("subscription plan is not available for purchase")
 	}
 	// Bulk purchase provisions a batch of licenses for a team, so the plan must
-	// grant group management.
-	if !slices.Contains(plan.Features, bulkPurchaseFeature) {
+	// grant group management — read the typed entitlement, not the legacy
+	// features[] string.
+	if !plan.GroupManagementEnabled {
 		return fmt.Errorf("subscription plan does not support bulk purchase")
 	}
 	return nil

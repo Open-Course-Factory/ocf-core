@@ -331,8 +331,12 @@ func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
 		PriceAmount: 0, // Free so it will be active immediately
 		Currency:  "eur",
 		BillingInterval: "month",
-		Features: []string{"basic_features", "advanced_labs", "custom_themes"},
-		IsActive: true,
+		// Legacy Features[] kept for the raw-string GetUserOrganizationWithFeature
+		// path; typed entitlements drive the derived AllFeatures / CanUserAccessFeature.
+		Features:               []string{"basic_features", "advanced_labs", "custom_themes"},
+		GroupManagementEnabled: true, // derives "group_management" + "multiple_groups"
+		NetworkAccessEnabled:   true, // derives "network_access"
+		IsActive:               true,
 	}
 	err := db.Create(premiumFreePlan).Error
 	assert.NoError(t, err)
@@ -354,22 +358,22 @@ func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
 		assert.Equal(t, premiumFreePlan.Name, features.HighestPlan.Name)
 		assert.Equal(t, premiumFreePlan.Priority, features.HighestPlan.Priority)
 
-		// Should aggregate features from all organizations
-		assert.Contains(t, features.AllFeatures, "advanced_labs")
-		assert.Contains(t, features.AllFeatures, "basic_features")
+		// Should aggregate the derived entitlements from all organizations
+		assert.Contains(t, features.AllFeatures, "group_management")
+		assert.Contains(t, features.AllFeatures, "network_access")
 
 		// Should include both organizations
 		assert.Equal(t, 2, len(features.Organizations))
 	})
 
 	t.Run("Check user can access feature via any org", func(t *testing.T) {
-		// Feature from premium free plan
-		hasFeature, err := service.CanUserAccessFeature(userID, "advanced_labs")
+		// Entitlement derived from the premium free plan
+		hasFeature, err := service.CanUserAccessFeature(userID, "group_management")
 		assert.NoError(t, err)
 		assert.True(t, hasFeature)
 
-		// Feature from both plans
-		hasFeature, err = service.CanUserAccessFeature(userID, "basic_features")
+		// Another entitlement derived from the same plan
+		hasFeature, err = service.CanUserAccessFeature(userID, "network_access")
 		assert.NoError(t, err)
 		assert.True(t, hasFeature)
 
@@ -404,13 +408,15 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 	service := services.NewOrganizationSubscriptionService(db)
 	userID := "multi_org_user"
 
-	// Create three plans with different priorities and features
+	// Create three plans with different priorities and typed entitlements
+	// (with deliberate overlaps so the union across plans is exercised).
 	basicPlan := &models.SubscriptionPlan{
 		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:      "Basic",
 		Priority:  10,
 		PriceAmount: 500,
-		Features: []string{"feature_a", "feature_b"},
+		NetworkAccessEnabled:   true, // network_access
+		DataPersistenceEnabled: true, // data_persistence
 		IsActive: true,
 	}
 	db.Create(basicPlan)
@@ -420,7 +426,8 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		Name:      "Pro",
 		Priority:  20,
 		PriceAmount: 1000,
-		Features: []string{"feature_b", "feature_c"},
+		DataPersistenceEnabled:      true, // data_persistence (shared with Basic)
+		CommandHistoryRetentionDays: 30,   // command_history
 		IsActive: true,
 	}
 	db.Create(proPlan)
@@ -430,7 +437,9 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		Name:      "Enterprise",
 		Priority:  30,
 		PriceAmount: 5000,
-		Features: []string{"feature_c", "feature_d", "feature_e"},
+		CommandHistoryRetentionDays: 30,   // command_history (shared with Pro)
+		GroupManagementEnabled:      true, // group_management + multiple_groups
+		SessionSupervisionEnabled:   true, // session_supervision
 		IsActive: true,
 	}
 	db.Create(enterprisePlan)
@@ -484,12 +493,12 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		assert.Equal(t, "Enterprise", features.HighestPlan.Name)
 		assert.Equal(t, 30, features.HighestPlan.Priority)
 
-		// Should have union of all features
-		assert.Contains(t, features.AllFeatures, "feature_a") // from Basic
-		assert.Contains(t, features.AllFeatures, "feature_b") // from Basic and Pro
-		assert.Contains(t, features.AllFeatures, "feature_c") // from Pro and Enterprise
-		assert.Contains(t, features.AllFeatures, "feature_d") // from Enterprise
-		assert.Contains(t, features.AllFeatures, "feature_e") // from Enterprise
+		// Should have the union of derived entitlements across all plans
+		assert.Contains(t, features.AllFeatures, "network_access")      // from Basic
+		assert.Contains(t, features.AllFeatures, "data_persistence")    // from Basic and Pro
+		assert.Contains(t, features.AllFeatures, "command_history")     // from Pro and Enterprise
+		assert.Contains(t, features.AllFeatures, "group_management")    // from Enterprise
+		assert.Contains(t, features.AllFeatures, "session_supervision") // from Enterprise
 
 		// Should include all three organizations
 		assert.Equal(t, 3, len(features.Organizations))
@@ -517,21 +526,21 @@ func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *test
 	service := services.NewOrganizationSubscriptionService(db)
 	userID := "user_with_two_active_subs"
 
-	// Lower-priority plan.
+	// Lower-priority plan with a distinct typed entitlement.
 	memberPro := &models.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "Member Pro",
-		Priority:               10,
-		PriceAmount:            0,
-		Currency:               "eur",
-		BillingInterval:        "month",
-		Features:               []string{"basic_features"},
-		IsActive:               true,
+		BaseModel:            entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:                 "Member Pro",
+		Priority:             10,
+		PriceAmount:          0,
+		Currency:             "eur",
+		BillingInterval:      "month",
+		NetworkAccessEnabled: true, // derives "network_access"
+		IsActive:             true,
 	}
 	err := db.Create(memberPro).Error
 	assert.NoError(t, err)
 
-	// Higher-priority plan.
+	// Higher-priority plan with a distinct typed entitlement.
 	trainerPlan := &models.SubscriptionPlan{
 		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:                   "Trainer Plan",
@@ -539,7 +548,7 @@ func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *test
 		PriceAmount:            0,
 		Currency:               "eur",
 		BillingInterval:        "month",
-		Features:               []string{"trainer_features"},
+		GroupManagementEnabled: true, // derives "group_management" + "multiple_groups"
 		IsActive:               true,
 	}
 	err = db.Create(trainerPlan).Error
@@ -600,9 +609,9 @@ func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *test
 	// the same org — selection is by priority, not aggregation.
 	assert.Equal(t, "Trainer Plan", features.HighestPlan.Name)
 
-	// Boolean features remain a union (capabilities compose across plans)
-	assert.Contains(t, features.AllFeatures, "trainer_features", "feature from HighestPlan present")
-	assert.Contains(t, features.AllFeatures, "basic_features", "feature from lower-priority plan still unioned")
+	// Derived entitlements remain a union (capabilities compose across plans)
+	assert.Contains(t, features.AllFeatures, "group_management", "entitlement from HighestPlan present")
+	assert.Contains(t, features.AllFeatures, "network_access", "entitlement from lower-priority plan still unioned")
 }
 
 func TestOrganizationSubscription_Create_RespectsQuantity(t *testing.T) {

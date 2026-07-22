@@ -193,6 +193,11 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Heal users and organizations that are missing their Trial subscription (all environments)
 	ensureUsersHaveTrialPlan(db)
 	ensureOrganizationsHaveTrialPlan(db)
+
+	// Migrate the legacy features[] "group_management" string onto the typed
+	// GroupManagementEnabled entitlement so both agree during the features[]
+	// removal. Idempotent.
+	BackfillGroupManagementEntitlement(db)
 }
 
 // InitDevelopmentData sets up development data in debug mode
@@ -440,6 +445,43 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 			log.Printf("Warning: Failed to create subscription plan %s: %v\n", plan.Name, err)
 		} else {
 			log.Printf("Created subscription plan: %s\n", plan.Name)
+		}
+	}
+}
+
+// BackfillGroupManagementEntitlement sets GroupManagementEnabled=true on every
+// plan whose legacy features[] array still contains "group_management", so the
+// typed entitlement matches the historical string during the features[] removal
+// migration. Idempotent — re-runs only touch rows not already migrated. Mirrors
+// the other ensureXXX/Backfill helpers.
+//
+func BackfillGroupManagementEntitlement(db *gorm.DB) {
+	var plans []paymentModels.SubscriptionPlan
+	if err := db.Find(&plans).Error; err != nil {
+		log.Printf("Warning: BackfillGroupManagementEntitlement failed to load plans: %v\n", err)
+		return
+	}
+	for _, plan := range plans {
+		if plan.GroupManagementEnabled {
+			continue // already migrated — idempotent
+		}
+		// Match on the deserialized Features slice (serializer:json) rather than a
+		// raw JSON-text LIKE, so a substring like "group_management_extra" can
+		// never trigger a false-positive backfill.
+		hasLegacyString := false
+		for _, f := range plan.Features {
+			if f == "group_management" {
+				hasLegacyString = true
+				break
+			}
+		}
+		if !hasLegacyString {
+			continue
+		}
+		if err := db.Model(&paymentModels.SubscriptionPlan{}).
+			Where("id = ?", plan.ID).
+			Update("group_management_enabled", true).Error; err != nil {
+			log.Printf("Warning: BackfillGroupManagementEntitlement failed for plan %s: %v\n", plan.ID, err)
 		}
 	}
 }
