@@ -347,10 +347,21 @@ func TestSubscriptionPlanConverter_DtoToModel_PreservesAllowedBackends(t *testin
 		"DtoToModel must copy AllowedBackends from the create DTO — the field is on CreateSubscriptionPlanInput but the converter drops it")
 }
 
-// NOTE (write path, SessionSupervisionEnabled): there is NO test asserting the
-// create/update converter preserves SessionSupervisionEnabled because the field
-// is absent from BOTH CreateSubscriptionPlanInput and UpdateSubscriptionPlanInput
-// (subscriptionDto.go) — it cannot be expressed in a compiling assertion. The
-// fix must ADD session_supervision_enabled to both input DTOs (and wire it in
-// DtoToModel + the update path) so the capability is settable at all. This gap
-// is called out in the report to main.
+func TestSubscriptionPlanConverter_DtoToModel_PreservesSessionSupervisionEnabled(t *testing.T) {
+	ops := getSubscriptionPlanOps(t)
+
+	in := dto.CreateSubscriptionPlanInput{
+		Name:                      "Create Supervision Plan",
+		PriceAmount:               1000,
+		Currency:                  "eur",
+		BillingInterval:           "month",
+		SessionSupervisionEnabled: true,
+	}
+	out, err := ops.ConvertDtoToModel(in)
+	require.NoError(t, err)
+	model, ok := out.(*models.SubscriptionPlan)
+	require.True(t, ok, "converter must return *SubscriptionPlan, got %T", out)
+
+	assert.True(t, model.SessionSupervisionEnabled,
+		"DtoToModel must copy SessionSupervisionEnabled from the create DTO so the supervision capability is settable through the API")
+}

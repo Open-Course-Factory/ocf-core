@@ -173,6 +173,65 @@ func listContains(resp planListResponse, id string) bool {
 	return false
 }
 
+// doListWithRawQuery lists with a caller-supplied raw query string so tests can
+// probe query-param filter handling (e.g. an attacker-supplied is_catalog=false).
+func doListWithRawQuery(t *testing.T, r *gin.Engine, rawQuery string) planListResponse {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/api/v1/subscription-plans/?"+rawQuery, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "list should succeed; body=%s", w.Body.String())
+	var resp planListResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	return resp
+}
+
+// --- Filter-override defense: a caller cannot re-expose hidden plans by supplying
+// their own is_catalog filter. The security-critical invariant — NO hidden plan
+// is ever returned, and every returned row is a catalog plan — must hold for both
+// the canonical column name and a case-variant param. This guards the
+// filter-merge ordering against future refactors of the generic list handler.
+//
+// Note on the case variant: the catalog scope forces the filter on the exact
+// column key ("is_catalog"), so it OVERRIDES a caller's is_catalog=false (the
+// catalog plan stays visible). A case-variant key like IsCatalog=false is not
+// overridden and survives as an additional AND predicate — it can only NARROW
+// the result (here to zero rows), never widen it to hidden plans. Both cases are
+// therefore safe; only the canonical param keeps the catalog plan visible, so
+// the "catalog present / Total" assertions are pinned only there.
+func TestSubscriptionPlanScoping_ListWithCatalogFilterOverride_NeverExposesHiddenPlans(t *testing.T) {
+	registerSubscriptionPlanForScoping(t)
+
+	for _, rawQuery := range []string{"is_catalog=false", "IsCatalog=false"} {
+		t.Run(rawQuery, func(t *testing.T) {
+			db := freshTestDB(t)
+			catalog := seedCatalogPlan(t, db, "Solo")
+			hidden := seedHiddenPlan(t, db, "Trainer Bespoke")
+
+			r := subscriptionPlanScopingRouter(db, "", nil) // unauthenticated
+			resp := doListWithRawQuery(t, r, rawQuery)
+
+			// Security-critical: hidden plans must never appear, and every returned
+			// row must be a catalog plan — regardless of the caller-supplied filter.
+			assert.False(t, listContains(resp, hidden.ID.String()),
+				"a caller-supplied %q filter must NOT re-expose hidden plans — the catalog scope must win", rawQuery)
+			for _, d := range resp.Data {
+				assert.True(t, d.IsCatalog,
+					"every returned row must be a catalog plan despite the %q filter; got hidden plan %q", rawQuery, d.Name)
+			}
+
+			// The canonical column-name filter is overridden by the scope, so the
+			// catalog plan stays visible; the case variant may narrow to zero rows.
+			if rawQuery == "is_catalog=false" {
+				assert.True(t, listContains(resp, catalog.ID.String()),
+					"catalog plans must remain visible when the caller's filter uses the real column name")
+				assert.Equal(t, int64(1), resp.Total,
+					"Total must stay scoped to the single catalog plan")
+			}
+		})
+	}
+}
+
 // --- (a) LIST hides non-catalog plans from unauthenticated + member ---------
 
 func TestSubscriptionPlanScoping_ListAsUnauthenticated_HidesNonCatalogPlans(t *testing.T) {
