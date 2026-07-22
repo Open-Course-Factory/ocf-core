@@ -22,16 +22,24 @@
 package payment_tests
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	controller "soli/formations/src/entityManagement/routes"
 	"soli/formations/src/entityManagement/hooks"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 	entityServices "soli/formations/src/entityManagement/services"
 	"soli/formations/src/payment/dto"
 	paymentHooks "soli/formations/src/payment/hooks"
 	"soli/formations/src/payment/models"
 
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // execPlanValidation runs the plan validation hook's Execute against the given
@@ -128,6 +136,103 @@ func TestSubscriptionPlan_CreateOver500_RejectedEndToEnd(t *testing.T) {
 	require.NoError(t, sharedTestDB.Model(&models.SubscriptionPlan{}).
 		Where("name = ?", "Over Cap Plan").Count(&count).Error)
 	assert.Equal(t, int64(0), count, "a rejected over-cap plan must not be persisted")
+}
+
+// subscriptionPlanEditRouter mounts the REAL generic PATCH handler for
+// subscription-plans, so a request exercises the full controller update path:
+// BindJSON into the edit DTO → mapstructure decode → ConvertEditDtoToMap →
+// EditEntityWithUser (which fires the BeforeUpdate hooks). The caller is a
+// platform admin (SubscriptionPlan PATCH is admin-only).
+func subscriptionPlanEditRouter(db *gorm.DB, userID string, roles []string) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	gc := controller.NewGenericController(db, nil)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		if userID != "" {
+			c.Set("userId", userID)
+		}
+		if roles != nil {
+			c.Set("userRoles", roles)
+		}
+		c.Next()
+	})
+	r.PATCH("/api/v1/subscription-plans/:id", func(c *gin.Context) { gc.EditEntity(c) })
+	return r
+}
+
+// patchPlanPersistence drives a real PATCH of data_persistence_gb through the
+// generic controller and returns the recorder. The body is raw JSON so the whole
+// NewEditDto→mapstructure→map path runs — the map shape the hook reads
+// (data_persistence_gb as int vs *int) is produced by the real converter, not a
+// hand-built map, so a future converter change that alters that shape is caught.
+func patchPlanPersistence(t *testing.T, db *gorm.DB, planID uuid.UUID, gb string) *httptest.ResponseRecorder {
+	t.Helper()
+	r := subscriptionPlanEditRouter(db, "admin-1", []string{"administrator"})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/subscription-plans/"+planID.String(),
+		strings.NewReader(`{"data_persistence_gb":`+gb+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+// seedEditablePlan persists a plan at 100 GB to be updated by the PATCH tests.
+func seedEditablePlan(t *testing.T, db *gorm.DB) uuid.UUID {
+	t.Helper()
+	id := uuid.New()
+	require.NoError(t, db.Create(&models.SubscriptionPlan{
+		BaseModel:         entityManagementModels.BaseModel{ID: id},
+		Name:              "Editable Plan",
+		PriceAmount:       1000,
+		Currency:          "eur",
+		BillingInterval:   "month",
+		IsActive:          true,
+		IsCatalog:         true,
+		DataPersistenceGB: 100,
+	}).Error)
+	return id
+}
+
+// TestSubscriptionPlan_UpdateOver500_RejectedEndToEnd drives a real PATCH raising
+// data_persistence_gb to 501 through the generic controller (the actual
+// NewEditDto→mapstructure update path, with the payment hooks wired via
+// InitPaymentHooks) and asserts it is rejected (400) and nothing is persisted.
+// This locks the update-patch map shape the cap hook depends on.
+func TestSubscriptionPlan_UpdateOver500_RejectedEndToEnd(t *testing.T) {
+	db := freshTestDB(t)
+	registerSubscriptionPlanForScoping(t)
+	withPaymentHooksRegistered(t)
+
+	planID := seedEditablePlan(t, db)
+
+	w := patchPlanPersistence(t, db, planID, "501")
+	require.Equal(t, http.StatusBadRequest, w.Code,
+		"a PATCH raising data_persistence_gb above 500 must be rejected through the real edit path; body=%s", w.Body.String())
+
+	var reloaded models.SubscriptionPlan
+	require.NoError(t, db.First(&reloaded, "id = ?", planID).Error)
+	assert.Equal(t, 100, reloaded.DataPersistenceGB,
+		"a rejected over-cap update must not be persisted — the original value must survive")
+}
+
+// TestSubscriptionPlan_UpdateAt500_AcceptedEndToEnd is the GREEN-side guard that
+// the cap does not over-reject the boundary: a PATCH to exactly 500 GB succeeds
+// (204) and persists. Passes today (no enforcement) and must keep passing.
+func TestSubscriptionPlan_UpdateAt500_AcceptedEndToEnd(t *testing.T) {
+	db := freshTestDB(t)
+	registerSubscriptionPlanForScoping(t)
+	withPaymentHooksRegistered(t)
+
+	planID := seedEditablePlan(t, db)
+
+	w := patchPlanPersistence(t, db, planID, "500")
+	require.Equal(t, http.StatusNoContent, w.Code,
+		"a PATCH setting data_persistence_gb to exactly 500 must be accepted; body=%s", w.Body.String())
+
+	var reloaded models.SubscriptionPlan
+	require.NoError(t, db.First(&reloaded, "id = ?", planID).Error)
+	assert.Equal(t, 500, reloaded.DataPersistenceGB,
+		"an at-cap update must be persisted")
 }
 
 // TestSubscriptionPlan_CreateAt500_AcceptedEndToEnd is the GREEN-side guard that
