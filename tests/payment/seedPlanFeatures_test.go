@@ -17,8 +17,10 @@ import (
 // removed (e.g. the persistence consolidation in MR !239 dropped the duplicate
 // persistent_sessions_enabled / max_persistent_sessions catalog entries — the
 // canonical entry is data_persistence + data_persistence_gb; the unenforced
-// max_concurrent_users catalog entry was later removed with its plan field).
-const expectedSeededFeatureCount = int64(23)
+// max_concurrent_users entry was later removed with its plan field, and the
+// max_courses entry — the sole course_limits entry — plus the unlimited_courses
+// capability entry were removed with the course limit).
+const expectedSeededFeatureCount = int64(21)
 
 func TestSeedPlanFeatures_EmptyDB_SeedsAllFeatures(t *testing.T) {
 	db := freshTestDB(t)
@@ -54,7 +56,7 @@ func TestSeedPlanFeatures_TopsUpExistingDB(t *testing.T) {
 
 	// Simulate an older deployment that only has one feature already seeded.
 	existing := models.PlanFeature{
-		Key: "unlimited_courses", DisplayNameEn: "Unlimited Courses", DisplayNameFr: "Formations illimitées",
+		Key: "advanced_labs", DisplayNameEn: "Advanced Labs", DisplayNameFr: "TP avancés",
 		Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true,
 	}
 	require.NoError(t, db.Create(&existing).Error)
@@ -91,7 +93,7 @@ func TestSeedPlanFeatures_FeatureCategories_AllPresent(t *testing.T) {
 	db := freshTestDB(t)
 	initialization.SeedPlanFeatures(db)
 
-	expectedCategories := []string{"capabilities", "machine_sizes", "terminal_limits", "course_limits"}
+	expectedCategories := []string{"capabilities", "machine_sizes", "terminal_limits"}
 
 	for _, category := range expectedCategories {
 		var count int64

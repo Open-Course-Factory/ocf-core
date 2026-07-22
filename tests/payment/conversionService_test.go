@@ -40,7 +40,6 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 		Currency:           "eur",
 		BillingInterval:    "month",
 		Features:           []string{"advanced_labs", "api_access", "custom_themes"},
-		MaxCourses:         -1, // Unlimited
 		IsActive:           true,
 		RequiredRole:       "member_pro",
 	}
@@ -58,7 +57,6 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 	assert.Equal(t, "eur", result.Currency)
 	assert.Equal(t, "month", result.BillingInterval)
 	assert.Equal(t, []string{"advanced_labs", "api_access", "custom_themes"}, result.Features)
-	assert.Equal(t, -1, result.MaxCourses)
 	assert.True(t, result.IsActive)
 	assert.Equal(t, "member_pro", result.RequiredRole)
 	assert.Equal(t, createdAt, result.CreatedAt)
@@ -430,7 +428,6 @@ func TestConversionService_SubscriptionPlanToDTO_NoBackendFields(t *testing.T) {
 		Currency:                  "eur",
 		BillingInterval:           "month",
 		Features:                  []string{"terminals", "ssh"},
-		MaxCourses:                -1,
 		IsActive:                  true,
 		MaxSessionDurationMinutes: 120,
 		NetworkAccessEnabled:      true,

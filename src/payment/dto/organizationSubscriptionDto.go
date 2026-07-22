@@ -58,7 +58,6 @@ type OrganizationFeatureSourceInfo struct {
 // Organization usage limits
 type OrganizationLimitsOutput struct {
 	OrganizationID   uuid.UUID `json:"organization_id"`
-	MaxCourses       int       `json:"max_courses"`
 	CurrentTerminals int       `json:"current_terminals"`
 	CurrentCourses   int       `json:"current_courses"`
 }

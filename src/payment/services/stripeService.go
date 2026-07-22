@@ -3376,7 +3376,6 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 				BillingInterval:    string(priceObj.Recurring.Interval),
 				IsActive:           prod.Active,
 				StripeCreated:      true,
-				MaxCourses:         -1, // Default unlimited
 				MaxCPU:             budgetMeta.MaxCPU,
 				MaxMemoryMB:        budgetMeta.MaxMemoryMB,
 			}

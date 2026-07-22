@@ -38,7 +38,6 @@ type OrganizationSubscriptionService interface {
 // Business types for organization limits
 type OrganizationLimits struct {
 	OrganizationID   uuid.UUID
-	MaxCourses       int
 	CurrentTerminals int
 	CurrentCourses   int
 }
@@ -46,7 +45,6 @@ type OrganizationLimits struct {
 type UserEffectiveFeatures struct {
 	HighestPlan   *models.SubscriptionPlan
 	AllFeatures   []string
-	MaxCourses    int
 	Organizations []OrganizationFeatureInfo
 }
 
@@ -269,7 +267,6 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 	// Aggregate features
 	features := &UserEffectiveFeatures{
 		AllFeatures:   make([]string, 0),
-		MaxCourses:    0,
 		Organizations: make([]OrganizationFeatureInfo, 0),
 	}
 
@@ -334,13 +331,6 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 			IsOwner:          member.IsOwner(),
 			IsManager:        member.IsManager(),
 		})
-	}
-
-	// Numeric limits come from the single HighestPlan (no max-aggregation across plans).
-	// This keeps the effective plan internally consistent: every numeric field reflects
-	// the same plan the UI labels as the user's effective plan.
-	if features.HighestPlan != nil {
-		features.MaxCourses = features.HighestPlan.MaxCourses
 	}
 
 	// Convert feature set to slice

@@ -70,7 +70,6 @@ func TestEnsureUsersHaveTrialPlan_WithTrialingStatus_ShouldNotDuplicate(t *testi
 		PriceAmount:            0,
 		Currency:               "eur",
 		BillingInterval:        "month",
-		MaxCourses:             5,
 		IsActive:               true,
 	}
 	require.NoError(t, db.Create(trialPlan).Error)
@@ -147,7 +146,6 @@ func TestEnsureUsersHaveTrialPlan_WithActiveStatus_ShouldNotDuplicate(t *testing
 		PriceAmount:            0,
 		Currency:               "eur",
 		BillingInterval:        "month",
-		MaxCourses:             5,
 		IsActive:               true,
 	}
 	require.NoError(t, db.Create(trialPlan).Error)
@@ -204,7 +202,6 @@ func TestEnsureUsersHaveTrialPlan_NoSubscription_ShouldAssignTrial(t *testing.T)
 		PriceAmount:            0,
 		Currency:               "eur",
 		BillingInterval:        "month",
-		MaxCourses:             5,
 		IsActive:               true,
 	}
 	require.NoError(t, db.Create(trialPlan).Error)

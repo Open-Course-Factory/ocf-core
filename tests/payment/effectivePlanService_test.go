@@ -28,7 +28,6 @@ func createPlan(t *testing.T, db *gorm.DB, name string, priority int, _ int) *mo
 		Currency:        "eur",
 		BillingInterval: "month",
 		IsActive:        true,
-		MaxCourses:      5,
 	}
 	err := db.Create(plan).Error
 	assert.NoError(t, err)

@@ -134,7 +134,6 @@ func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan
 		Currency:           plan.Currency,
 		BillingInterval:    plan.BillingInterval,
 		Features:           plan.Features,
-		MaxCourses:         plan.MaxCourses,
 		IsActive:           plan.IsActive,
 		IsCatalog:          plan.IsCatalog,
 		RequiredRole:       plan.RequiredRole,
@@ -152,8 +151,6 @@ func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan
 		DefaultBackend:  plan.DefaultBackend,
 		AllowedBackends: plan.AllowedBackends,
 
-		// Planned features
-		PlannedFeatures:  plan.PlannedFeatures,
 		UseTieredPricing: plan.UseTieredPricing,
 		PricingTiers:     convertPricingTiersToDTO(plan.PricingTiers),
 	}, nil

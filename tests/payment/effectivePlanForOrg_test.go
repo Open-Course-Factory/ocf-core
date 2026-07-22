@@ -432,11 +432,9 @@ func TestCheckEffectiveUsageLimitForOrg_NonMember_ShouldRejectAccess(t *testing.
 	ownerUserID := "org-owner-for-limit"
 	attackerUserID := "attacker-for-limit"
 
-	// Plan with a courses cap that we can exercise without touching the
-	// budget engine (the latter has its own dedicated tests).
+	// Any active plan on the org is enough — the check is rejected at the
+	// membership layer, before any usage limit is consulted.
 	generousPlan := createPlan(t, db, "GenerousPlan", 50, 0)
-	generousPlan.MaxCourses = 100
-	require.NoError(t, db.Save(generousPlan).Error)
 	teamOrg, _ := createOrgWithSubscriptionAndType(t, db, "generous-team", ownerUserID, generousPlan, organizationModels.OrgTypeTeam)
 
 	// attackerUserID is NOT a member — should not be able to check limits against this org

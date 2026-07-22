@@ -243,12 +243,9 @@ func (s *quotaService) CheckUserQuotaWithPlan(plan *EffectivePlanResult, userID 
 // GetOrgQuota returns the active subscription's plan limits along with
 // the live occupied-slot count for the org.
 func (s *quotaService) GetOrgQuota(orgID uuid.UUID) (*OrganizationLimits, error) {
-	subscription, err := s.orgSubRepo.GetActiveOrganizationSubscription(orgID)
-	if err != nil {
+	if _, err := s.orgSubRepo.GetActiveOrganizationSubscription(orgID); err != nil {
 		return nil, fmt.Errorf("no active subscription found for organization: %w", err)
 	}
-
-	plan := subscription.SubscriptionPlan
 
 	// Count occupied slots via SSOT helper (active + stopped, not expired).
 	// See terminalModels.OccupiesSlotScope for the canonical rule.
@@ -262,7 +259,6 @@ func (s *quotaService) GetOrgQuota(orgID uuid.UUID) (*OrganizationLimits, error)
 
 	return &OrganizationLimits{
 		OrganizationID:   orgID,
-		MaxCourses:       plan.MaxCourses,
 		CurrentTerminals: int(currentTerminals),
 		CurrentCourses:   int(currentCourses),
 	}, nil
@@ -297,16 +293,12 @@ func (s *quotaService) storedUsage(userID, metric string) int64 {
 }
 
 // limitForMetric extracts the per-metric limit from a plan. -1 means
-// unlimited. Centralized here so future metric types can be added in
-// one place. Terminal-related caps are NOT here — they live on the
-// budget engine (MaxCPU/MaxMemoryMB).
+// unlimited. No plan currently enforces a numeric usage limit: the course
+// limit was removed and terminal caps live on the budget engine
+// (MaxCPU/MaxMemoryMB), so every metric is unlimited here. Kept as the single
+// place a future numeric metric would add its case back.
 func limitForMetric(plan *models.SubscriptionPlan, metric string) int64 {
-	switch metric {
-	case "courses_created":
-		return int64(plan.MaxCourses)
-	default:
-		return -1
-	}
+	return -1
 }
 
 // --- Budget quota methods -----------------------------------------------

@@ -28,7 +28,6 @@ func TestTrialPlanSync_AllFieldsReset(t *testing.T) {
 		Currency:                    "eur",
 		BillingInterval:             "month",
 		MaxSessionDurationMinutes:   999,
-		MaxCourses:                  999,
 		NetworkAccessEnabled:        true,  // should be reset to false
 		DataPersistenceEnabled:      true,  // should be reset to false
 		DataPersistenceGB:           100,   // should be reset to 0
@@ -48,7 +47,6 @@ func TestTrialPlanSync_AllFieldsReset(t *testing.T) {
 	// Fields that were already synced before this fix:
 	assert.Equal(t, "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.", synced.Description)
 	assert.Equal(t, 60, synced.MaxSessionDurationMinutes)
-	assert.Equal(t, -1, synced.MaxCourses)
 	assert.Equal(t, false, synced.NetworkAccessEnabled)
 	assert.Equal(t, 7, synced.CommandHistoryRetentionDays)
 

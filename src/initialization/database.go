@@ -338,7 +338,6 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		Currency:                    "eur",
 		BillingInterval:             "month",
 		Features:                    []string{"Unlimited restarts", "1 hour max session", "1 XS machine budget", "No network access", "Ephemeral storage only"},
-		MaxCourses:                  -1,
 		IsActive:                    true,
 		RequiredRole:                "member",
 		UseTieredPricing:            false,
@@ -364,7 +363,6 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		"max_session_duration_minutes":   60,
 		"max_cpu":                        500, // 1 × XS in mCPU (0.5 vCPU)
 		"max_memory_mb":                  256,
-		"max_courses":                    -1,
 		"network_access_enabled":         false,
 		"data_persistence_enabled":       false,
 		"data_persistence_gb":            0,
@@ -396,8 +394,7 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		PriceAmount:                 1200, // 12€ per license
 		Currency:                    "eur",
 		BillingInterval:             "month",
-		Features:                    []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "machine_size_xs", "machine_size_s", "machine_size_m", "network_access", "data_persistence", "command_history"},
-		MaxCourses:                  -1,
+		Features:                    []string{"advanced_labs", "export", "custom_themes", "machine_size_xs", "machine_size_s", "machine_size_m", "network_access", "data_persistence", "command_history"},
 		IsActive:                    true,
 		RequiredRole:                "member", // Changed from "member_pro" (deprecated) to "member"
 		UseTieredPricing:            false,
@@ -417,8 +414,7 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		PriceAmount:                 1200, // 12€ base price per license
 		Currency:                    "eur",
 		BillingInterval:             "month",
-		Features:                    []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "bulk_purchase", "group_management", "machine_size_xs", "machine_size_s", "machine_size_m", "machine_size_l", "machine_size_xl", "network_access", "data_persistence", "command_history"},
-		MaxCourses:                  -1,
+		Features:                    []string{"advanced_labs", "export", "custom_themes", "bulk_purchase", "group_management", "machine_size_xs", "machine_size_s", "machine_size_m", "machine_size_l", "machine_size_xl", "network_access", "data_persistence", "command_history"},
 		IsActive:                    true,
 		RequiredRole:                "trainer",
 		UseTieredPricing:            true,
@@ -976,7 +972,6 @@ func migrateInlineContentToProjectFiles(db *gorm.DB) {
 func SeedPlanFeatures(db *gorm.DB) {
 	features := []paymentModels.PlanFeature{
 		// Capabilities (boolean)
-		{Key: "unlimited_courses", DisplayNameEn: "Unlimited Courses", DisplayNameFr: "Formations illimitées", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
 		{Key: "advanced_labs", DisplayNameEn: "Advanced Labs", DisplayNameFr: "TP avancés", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
 		{Key: "export", DisplayNameEn: "Course Export", DisplayNameFr: "Export de cours", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
 		{Key: "custom_themes", DisplayNameEn: "Custom Themes", DisplayNameFr: "Thèmes personnalisés", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
@@ -1002,9 +997,6 @@ func SeedPlanFeatures(db *gorm.DB) {
 		{Key: "max_session_duration_minutes", DisplayNameEn: "Max Session Duration", DisplayNameFr: "Durée max de session", Category: "terminal_limits", ValueType: "number", Unit: "minutes", DefaultValue: "60", IsActive: true},
 		{Key: "max_cpu", DisplayNameEn: "Max CPU Budget", DisplayNameFr: "Budget CPU max", Category: "terminal_limits", ValueType: "number", Unit: "mCPU", DefaultValue: "0", IsActive: true},
 		{Key: "max_memory_mb", DisplayNameEn: "Max Memory Budget", DisplayNameFr: "Budget mémoire max", Category: "terminal_limits", ValueType: "number", Unit: "MiB", DefaultValue: "0", IsActive: true},
-
-		// Course limits (number)
-		{Key: "max_courses", DisplayNameEn: "Max Courses", DisplayNameFr: "Nombre de cours max", Category: "course_limits", ValueType: "number", Unit: "count", DefaultValue: "-1", IsActive: true},
 	}
 
 	created := 0

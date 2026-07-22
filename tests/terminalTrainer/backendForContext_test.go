@@ -31,7 +31,6 @@ func createPlanWithBackendConfig(
 		Currency:                   "eur",
 		BillingInterval:            "month",
 		IsActive:                   true,
-		MaxCourses:                 5,
 		MaxSessionDurationMinutes:  60,
 		DefaultBackend:             defaultBackend,
 		AllowedBackends:            allowedBackends,

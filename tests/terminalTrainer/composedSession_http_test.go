@@ -140,7 +140,6 @@ func seedBudgetPlanForUser(t *testing.T, userID string, maxCPU, maxMemMB int) uu
 		Currency:               "eur",
 		MaxCPU:                 maxCPU,
 		MaxMemoryMB:            maxMemMB,
-		MaxCourses:             10,
 	}
 	require.NoError(t, sharedTestDB.Create(plan).Error)
 	require.NoError(t, sharedTestDB.Create(&paymentModels.UserSubscription{

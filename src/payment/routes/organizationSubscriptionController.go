@@ -463,7 +463,6 @@ func (osc *organizationSubscriptionController) GetOrganizationUsageLimits(ctx *g
 
 	output := dto.OrganizationLimitsOutput{
 		OrganizationID:   limits.OrganizationID,
-		MaxCourses:       limits.MaxCourses,
 		CurrentTerminals: limits.CurrentTerminals,
 		CurrentCourses:   limits.CurrentCourses,
 	}
@@ -499,7 +498,6 @@ func convertSubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.Subscrip
 		Currency:           plan.Currency,
 		BillingInterval:    plan.BillingInterval,
 		Features:           plan.Features,
-		MaxCourses:         plan.MaxCourses,
 		IsActive:           plan.IsActive,
 		RequiredRole:       plan.RequiredRole,
 		CreatedAt:          plan.CreatedAt,
@@ -515,9 +513,6 @@ func convertSubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.Subscrip
 		// Backend routing
 		DefaultBackend:  plan.DefaultBackend,
 		AllowedBackends: plan.AllowedBackends,
-
-		// Planned features
-		PlannedFeatures: plan.PlannedFeatures,
 
 		// Tiered pricing
 		UseTieredPricing: plan.UseTieredPricing,

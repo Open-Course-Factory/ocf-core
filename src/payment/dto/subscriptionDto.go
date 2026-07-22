@@ -15,7 +15,6 @@ type CreateSubscriptionPlanInput struct {
 	Currency                    string   `json:"currency" mapstructure:"currency"`
 	BillingInterval             string   `binding:"required" json:"billing_interval" mapstructure:"billing_interval"`
 	Features                    []string `json:"features" mapstructure:"features"`
-	MaxCourses                  int      `json:"max_courses" mapstructure:"max_courses"`
 	RequiredRole                string   `json:"required_role" mapstructure:"required_role"`
 	MaxSessionDurationMinutes   int      `json:"max_session_duration_minutes" mapstructure:"max_session_duration_minutes"`
 	NetworkAccessEnabled        bool     `json:"network_access_enabled" mapstructure:"network_access_enabled"`
@@ -41,7 +40,6 @@ type UpdateSubscriptionPlanInput struct {
 	IsActive                    *bool    `json:"is_active,omitempty" mapstructure:"is_active"`
 	IsCatalog                   *bool    `json:"is_catalog,omitempty" mapstructure:"is_catalog"`
 	Features                    []string `json:"features,omitempty" mapstructure:"features"`
-	MaxCourses                  *int     `json:"max_courses,omitempty" mapstructure:"max_courses"`
 	MaxSessionDurationMinutes   *int     `json:"max_session_duration_minutes,omitempty" mapstructure:"max_session_duration_minutes"`
 	NetworkAccessEnabled        *bool    `json:"network_access_enabled,omitempty" mapstructure:"network_access_enabled"`
 	DataPersistenceEnabled      *bool    `json:"data_persistence_enabled,omitempty" mapstructure:"data_persistence_enabled"`
@@ -68,7 +66,6 @@ type SubscriptionPlanOutput struct {
 	Currency           string    `json:"currency"`
 	BillingInterval    string    `json:"billing_interval"`
 	Features           []string  `json:"features"`
-	MaxCourses         int       `json:"max_courses"`
 	IsActive           bool      `json:"is_active"`
 	IsCatalog          bool      `json:"is_catalog"`
 	RequiredRole       string    `json:"required_role"`
@@ -91,9 +88,6 @@ type SubscriptionPlanOutput struct {
 	// MaxCPU is in millicores (mCPU); 1000 mCPU = 1 vCPU.
 	MaxCPU      int `json:"max_cpu"`
 	MaxMemoryMB int `json:"max_memory_mb"`
-
-	// Planned features (announced but not yet available)
-	PlannedFeatures []string `json:"planned_features"` // Features coming soon
 
 	// Tiered pricing for volume discounts
 	UseTieredPricing bool          `json:"use_tiered_pricing"`

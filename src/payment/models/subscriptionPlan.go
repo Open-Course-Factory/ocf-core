@@ -16,7 +16,6 @@ type SubscriptionPlan struct {
 	Currency           string   `gorm:"type:varchar(3);default:'eur'" json:"currency"`
 	BillingInterval    string   `gorm:"type:varchar(20);default:'month'" json:"billing_interval"` // month, year
 	Features           []string `mapstructure:"features" gorm:"serializer:json" json:"features"`
-	MaxCourses         int      `gorm:"default:-1" json:"max_courses"` // -1 = illimité
 	IsActive           bool     `gorm:"default:true" json:"is_active"`
 	IsCatalog          bool     `gorm:"default:true" json:"is_catalog" mapstructure:"is_catalog"` // true = shown on pricing page, false = custom/unlisted plan
 	RequiredRole       string   `gorm:"type:varchar(50)" json:"required_role"`
@@ -53,9 +52,6 @@ type SubscriptionPlan struct {
 	AddonNetworkPriceID  *string `gorm:"type:varchar(100)" json:"addon_network_price_id,omitempty"`
 	AddonStoragePriceID  *string `gorm:"type:varchar(100)" json:"addon_storage_price_id,omitempty"`
 	AddonTerminalPriceID *string `gorm:"type:varchar(100)" json:"addon_terminal_price_id,omitempty"`
-
-	// Planned features (announced but not yet available)
-	PlannedFeatures []string `gorm:"serializer:json" json:"planned_features"` // Features coming soon
 
 	// Tiered pricing for volume discounts
 	UseTieredPricing bool          `gorm:"default:false" json:"use_tiered_pricing"` // Enable volume pricing

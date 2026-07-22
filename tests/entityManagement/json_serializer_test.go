@@ -264,7 +264,7 @@ func TestCamelToSnake(t *testing.T) {
 
 // TestJsonEncodeSerializedFields_RealSubscriptionPlan tests with the actual
 // SubscriptionPlan model from the payment module, ensuring real-world fields
-// like features, allowed_backends, planned_features, etc. are all encoded.
+// like features, allowed_backends, pricing_tiers, etc. are all encoded.
 func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping in short mode")
@@ -275,13 +275,12 @@ func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 		"name":              "Pro Plan",
 		"features":          []string{"terminal", "ssh", "vnc"},
 		"allowed_backends":  []string{"incus-prod", "incus-staging"},
-		"planned_features":  []string{"gpu-support"},
 		"pricing_tiers": []map[string]any{
 			{"min_quantity": 1, "max_quantity": 5, "unit_amount": 1000},
 			{"min_quantity": 6, "max_quantity": 0, "unit_amount": 800},
 		},
-		"max_courses":          10,
-		"is_active":            true,
+		"max_cpu":   10,
+		"is_active": true,
 	}
 
 	controller.JsonEncodeSerializedFields(model, updateMap)
@@ -290,7 +289,6 @@ func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 	serializedFields := []string{
 		"features",
 		"allowed_backends",
-		"planned_features",
 		"pricing_tiers",
 	}
 	for _, fieldName := range serializedFields {
@@ -301,7 +299,7 @@ func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 
 	// Non-serialized fields should remain unchanged
 	assert.Equal(t, "Pro Plan", updateMap["name"], "name should remain a string")
-	assert.Equal(t, 10, updateMap["max_courses"], "max_courses should remain an int")
+	assert.Equal(t, 10, updateMap["max_cpu"], "max_cpu should remain an int")
 	assert.Equal(t, true, updateMap["is_active"], "is_active should remain a bool")
 
 	// Verify specific decoded content

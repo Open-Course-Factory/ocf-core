@@ -28,7 +28,6 @@ func createTestPlan(t *testing.T, name string, priceAmount int64) *models.Subscr
 		PriceAmount:            priceAmount,
 		Currency:               "eur",
 		BillingInterval:        "month",
-		MaxCourses:             -1,
 		IsActive:               true,
 		RequiredRole:           "", // Empty to avoid Casdoor calls in tests
 	}

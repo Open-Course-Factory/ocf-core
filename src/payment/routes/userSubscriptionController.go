@@ -868,14 +868,10 @@ func (sc *userSubscriptionController) CheckUsageLimit(ctx *gin.Context) {
 func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 
-	// Get effective plan for limit values (org-context-aware).
-	// nil orgID falls back to globally highest-priority plan.
-	var effectiveResult *services.EffectivePlanResult
+	// Parse optional org context to scope the usage metrics.
 	var orgID string
-	var orgIDParsed *uuid.UUID
 	if orgIDStr := ctx.Query("organization_id"); orgIDStr != "" {
-		parsed, err := uuid.Parse(orgIDStr)
-		if err != nil {
+		if _, err := uuid.Parse(orgIDStr); err != nil {
 			ctx.JSON(http.StatusBadRequest, &errors.APIError{
 				ErrorCode:    http.StatusBadRequest,
 				ErrorMessage: "Invalid organization_id format",
@@ -883,11 +879,12 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 			return
 		}
 		orgID = orgIDStr
-		orgIDParsed = &parsed
 	}
-	effectiveResult, _ = sc.effectivePlanService.GetUserEffectivePlan(userId, orgIDParsed)
 
-	// Get usage metrics scoped to org context
+	// Get usage metrics scoped to org context. Each metric carries its own
+	// stored LimitValue; no plan-derived numeric limit exists anymore — the
+	// course limit was removed and terminal caps live on the CPU/RAM budget
+	// engine, so metrics here are recorded for observability only.
 	usageMetrics, err := sc.subscriptionService.GetUserUsageMetrics(userId, orgID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -901,19 +898,6 @@ func (sc *userSubscriptionController) GetUserUsage(ctx *gin.Context) {
 	if usageMetrics == nil || len(*usageMetrics) == 0 {
 		ctx.JSON(http.StatusOK, []any{})
 		return
-	}
-
-	// Set limits from effective plan (source of truth for current org context).
-	// Terminal capacity is enforced exclusively by the CPU/RAM budget engine
-	// (MaxCPU/MaxMemoryMB on the plan) and does not appear in usage_metrics.
-	if effectiveResult != nil && effectiveResult.Plan != nil {
-		plan := effectiveResult.Plan
-		for i := range *usageMetrics {
-			metric := &(*usageMetrics)[i]
-			if metric.MetricType == "courses_created" {
-				metric.LimitValue = int64(plan.MaxCourses)
-			}
-		}
 	}
 
 	// Convertir vers DTO

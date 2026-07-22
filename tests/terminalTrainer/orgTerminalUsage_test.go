@@ -454,7 +454,6 @@ func TestGetOrgTerminalUsage_PlanLimitsFromSubscription(t *testing.T) {
 		Name:        "Pro",
 		MaxCPU:      8000, // 8 vCPU in mCPU
 		MaxMemoryMB: 4096,
-		MaxCourses:  -1,
 		IsActive:    true,
 		IsCatalog:   true,
 	}

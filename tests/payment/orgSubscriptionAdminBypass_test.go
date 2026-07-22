@@ -41,7 +41,6 @@ func setupOrgAndPlan(t *testing.T) (orgID uuid.UUID, planID uuid.UUID) {
 		PriceAmount:            0,
 		Currency:               "eur",
 		BillingInterval:        "month",
-		MaxCourses:             -1,
 		IsActive:               true,
 	}
 	require.NoError(t, db.Create(plan).Error, "Failed to create test plan")

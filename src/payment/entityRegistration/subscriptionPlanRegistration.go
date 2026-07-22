@@ -40,7 +40,6 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						Currency:           plan.Currency,
 						BillingInterval:    plan.BillingInterval,
 						Features:           plan.Features,
-						MaxCourses:         plan.MaxCourses,
 						IsActive:           plan.IsActive,
 						IsCatalog:          plan.IsCatalog,
 						RequiredRole:       plan.RequiredRole,
@@ -60,9 +59,6 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 
 						// Command history
 						CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
-
-						// Planned features
-						PlannedFeatures: plan.PlannedFeatures,
 
 						// Tiered pricing
 						UseTieredPricing: plan.UseTieredPricing,
@@ -89,7 +85,6 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						Currency:                   input.Currency,
 						BillingInterval:            input.BillingInterval,
 						Features:                   input.Features,
-						MaxCourses:                 input.MaxCourses,
 						RequiredRole:               input.RequiredRole,
 						MaxSessionDurationMinutes:  input.MaxSessionDurationMinutes,
 						NetworkAccessEnabled:       input.NetworkAccessEnabled,

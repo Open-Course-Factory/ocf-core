@@ -471,12 +471,10 @@ func (r *paymentRepository) IncrementUsageMetric(userID, metricType string, incr
 				return fmt.Errorf("no active subscription found: %w", err)
 			}
 
-			// Définir la limite selon le type de métrique et le plan.
-			// Terminal usage is gated by the budget engine, not by a counter row.
-			var limit int64 = -1 // Par défaut illimité
-			if metricType == "courses_created" {
-				limit = int64(subscription.SubscriptionPlan.MaxCourses)
-			}
+			// All usage metrics are unlimited: terminal usage is gated by the
+			// budget engine, and the course limit was removed (courses_created is
+			// recorded for observability only). -1 = unlimited.
+			var limit int64 = -1
 
 			// Créer nouvelle métrique
 			now := time.Now()

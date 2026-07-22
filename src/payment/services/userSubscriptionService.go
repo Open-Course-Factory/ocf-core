@@ -378,17 +378,16 @@ func (ss *subscriptionService) UpgradeUserPlan(userID string, newPlanID uuid.UUI
 			return fmt.Errorf("failed to update subscription: %w", err)
 		}
 
-		// Update all usage metric limits for this user. The terminal cap is
-		// driven by the budget engine (MaxCPU/MaxMemoryMB), so only the
-		// course metric still flows through usage_metrics.
+		// Reset course usage limits to unlimited. The terminal cap is driven by
+		// the budget engine (MaxCPU/MaxMemoryMB); the course limit was removed,
+		// so the course metric — still recorded for observability — is unlimited
+		// (-1). This clears any finite limit left on pre-existing rows.
 		err := tx.Model(&models.UsageMetrics{}).
 			Where("user_id = ? AND subscription_id = ?", userID, subscription.ID).
 			Updates(map[string]any{
 				"limit_value": gorm.Expr("CASE "+
-					"WHEN metric_type = 'courses_created' THEN ? "+
-					"ELSE limit_value END",
-					newPlan.MaxCourses,
-				),
+					"WHEN metric_type = 'courses_created' THEN -1 "+
+					"ELSE limit_value END"),
 			}).Error
 
 		if err != nil {
@@ -470,18 +469,19 @@ func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptio
 	// Terminal usage is metered by the budget engine (CPU/RAM caps on the
 	// plan), not by usage_metrics rows. No row is seeded here for terminals.
 
-	// Only add course metrics if enabled globally
+	// Only add course metrics if enabled globally. The course limit was removed,
+	// so this metric is recorded for observability only — its limit is unlimited (-1).
 	if featureFlags.CoursesEnabled {
 		metrics = append(metrics, models.UsageMetrics{
 			UserID:         userID,
 			SubscriptionID: subscriptionID,
 			MetricType:     "courses_created",
 			CurrentValue:   0,
-			LimitValue:     int64(plan.MaxCourses),
+			LimitValue:     -1,
 			PeriodStart:    periodStart,
 			PeriodEnd:      periodEnd,
 		})
-		utils.Debug("📊 Adding course metrics (limit: %d)", plan.MaxCourses)
+		utils.Debug("📊 Adding course metrics (unlimited)")
 	} else {
 		utils.Debug("⊗ Skipping course metrics (globally disabled)")
 	}

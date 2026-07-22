@@ -100,7 +100,6 @@ func seedNetworkBudgetPlanForUser(t *testing.T, userID string, maxCPU, maxMemMB 
 		Currency:             "eur",
 		MaxCPU:               maxCPU,
 		MaxMemoryMB:          maxMemMB,
-		MaxCourses:           10,
 		NetworkAccessEnabled: networkEnabled,
 	}
 	require.NoError(t, sharedTestDB.Create(plan).Error)

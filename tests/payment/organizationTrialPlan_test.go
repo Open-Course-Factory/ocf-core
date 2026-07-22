@@ -65,7 +65,6 @@ func TestCreateOrganization_AssignsTrialPlan(t *testing.T) {
 		PriceAmount:            0,
 		Currency:               "eur",
 		BillingInterval:        "month",
-		MaxCourses:             5,
 		IsActive:               true,
 	}
 	err := db.Create(trialPlan).Error
@@ -157,7 +156,6 @@ func TestCreateOrganization_ExistingPlan_SkipsTrialAssignment(t *testing.T) {
 		PriceAmount:            0,
 		Currency:               "eur",
 		BillingInterval:        "month",
-		MaxCourses:             5,
 		IsActive:               true,
 	}
 	err := db.Create(trialPlan).Error
@@ -171,7 +169,6 @@ func TestCreateOrganization_ExistingPlan_SkipsTrialAssignment(t *testing.T) {
 		PriceAmount:            1999,
 		Currency:               "eur",
 		BillingInterval:        "month",
-		MaxCourses:             -1,
 		IsActive:               true,
 	}
 	err = db.Create(proPlan).Error

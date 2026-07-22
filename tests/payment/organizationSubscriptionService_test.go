@@ -33,7 +33,6 @@ func seedTestData(t *testing.T, db *gorm.DB) (
 		Currency:  "eur",
 		BillingInterval: "month",
 		Features: []string{"basic_features"},
-		MaxCourses: 3,
 		IsActive: true,
 	}
 	err := db.Create(freePlan).Error
@@ -48,7 +47,6 @@ func seedTestData(t *testing.T, db *gorm.DB) (
 		Currency:  "eur",
 		BillingInterval: "month",
 		Features: []string{"basic_features", "advanced_labs", "custom_themes"},
-		MaxCourses: -1,
 		IsActive: true,
 	}
 	err = db.Create(proPlan).Error
@@ -317,7 +315,6 @@ func TestOrganizationSubscriptionService_FeatureAccess(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.NotNil(t, limits)
-		assert.Equal(t, freePlan.MaxCourses, limits.MaxCourses)
 	})
 }
 
@@ -335,7 +332,6 @@ func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
 		Currency:  "eur",
 		BillingInterval: "month",
 		Features: []string{"basic_features", "advanced_labs", "custom_themes"},
-		MaxCourses: -1, // Unlimited
 		IsActive: true,
 	}
 	err := db.Create(premiumFreePlan).Error
@@ -361,9 +357,6 @@ func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
 		// Should aggregate features from all organizations
 		assert.Contains(t, features.AllFeatures, "advanced_labs")
 		assert.Contains(t, features.AllFeatures, "basic_features")
-
-		// Numeric limits come from the HighestPlan (Premium Free) only.
-		assert.Equal(t, premiumFreePlan.MaxCourses, features.MaxCourses)
 
 		// Should include both organizations
 		assert.Equal(t, 2, len(features.Organizations))
@@ -418,7 +411,6 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		Priority:  10,
 		PriceAmount: 500,
 		Features: []string{"feature_a", "feature_b"},
-		MaxCourses: 10,
 		IsActive: true,
 	}
 	db.Create(basicPlan)
@@ -429,7 +421,6 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		Priority:  20,
 		PriceAmount: 1000,
 		Features: []string{"feature_b", "feature_c"},
-		MaxCourses: 50,
 		IsActive: true,
 	}
 	db.Create(proPlan)
@@ -440,7 +431,6 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		Priority:  30,
 		PriceAmount: 5000,
 		Features: []string{"feature_c", "feature_d", "feature_e"},
-		MaxCourses: -1,
 		IsActive: true,
 	}
 	db.Create(enterprisePlan)
@@ -501,9 +491,6 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 		assert.Contains(t, features.AllFeatures, "feature_d") // from Enterprise
 		assert.Contains(t, features.AllFeatures, "feature_e") // from Enterprise
 
-		// Numeric limits come from the HighestPlan only (Enterprise = -1 / unlimited).
-		assert.Equal(t, -1, features.MaxCourses)
-
 		// Should include all three organizations
 		assert.Equal(t, 3, len(features.Organizations))
 	})
@@ -511,17 +498,13 @@ func TestOrganizationSubscriptionService_FeatureAggregation(t *testing.T) {
 
 // TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated guards the
 // "single effective plan" contract: when a user has multiple active org
-// subscriptions, all numeric limits in the returned UserEffectiveFeatures must
-// come from the highest-priority plan — NOT from a max() across plans. Boolean
-// features remain a union (capabilities compose), but numeric limits must be
-// internally consistent with the labelled plan.
+// subscriptions, the returned UserEffectiveFeatures.HighestPlan must be the
+// highest-priority plan — selected, NOT aggregated. Boolean features remain a
+// union (capabilities compose across plans).
 //
 // Regression scenario: a user has two active subs on the same org (data
-// leftover from a plan change). The lower-priority plan has a HIGHER terminal
-// cap than the higher-priority plan. The old behaviour returned max() across
-// plans, producing a confusing "Trainer Plan with max=5 from Member Pro" UI.
-// The new behaviour returns the HighestPlan's cap so the UI is internally
-// consistent.
+// leftover from a plan change). Selection must still resolve to the
+// highest-priority plan rather than mixing the two.
 func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *testing.T) {
 	db := freshTestDB(t)
 	// The scenario deliberately seeds two active subscriptions on the same
@@ -534,7 +517,7 @@ func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *test
 	service := services.NewOrganizationSubscriptionService(db)
 	userID := "user_with_two_active_subs"
 
-	// Lower-priority plan with HIGHER numeric limits.
+	// Lower-priority plan.
 	memberPro := &models.SubscriptionPlan{
 		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:                   "Member Pro",
@@ -543,15 +526,12 @@ func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *test
 		Currency:               "eur",
 		BillingInterval:        "month",
 		Features:               []string{"basic_features"},
-		MaxCourses:             20,
 		IsActive:               true,
 	}
 	err := db.Create(memberPro).Error
 	assert.NoError(t, err)
 
-	// Higher-priority plan with LOWER numeric limits (mirrors prod data shape).
-	// to avoid the zero-value→default substitution. Old max() would return 5;
-	// new HighestPlan-only behaviour returns 2.
+	// Higher-priority plan.
 	trainerPlan := &models.SubscriptionPlan{
 		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:                   "Trainer Plan",
@@ -560,7 +540,6 @@ func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *test
 		Currency:               "eur",
 		BillingInterval:        "month",
 		Features:               []string{"trainer_features"},
-		MaxCourses:             3, // intentionally lower than Member Pro's 20
 		IsActive:               true,
 	}
 	err = db.Create(trainerPlan).Error
@@ -617,13 +596,9 @@ func TestGetUserEffectiveFeatures_ReturnsHighestPlanLimits_NotAggregated(t *test
 	assert.NoError(t, err)
 	assert.NotNil(t, features)
 
-	// HighestPlan is Trainer Plan (priority 20 > 10)
+	// HighestPlan is Trainer Plan (priority 20 > 10) even with two active subs on
+	// the same org — selection is by priority, not aggregation.
 	assert.Equal(t, "Trainer Plan", features.HighestPlan.Name)
-
-	// CRITICAL: numeric limits come from HighestPlan ONLY — NOT max() across plans.
-	// Old behaviour would have returned 5 (max of 2, 5). New behaviour returns 2.
-	assert.Equal(t, 3, features.MaxCourses,
-		"MaxCourses must come from HighestPlan (Trainer Plan = 3), not max() across plans (which would give 20)")
 
 	// Boolean features remain a union (capabilities compose across plans)
 	assert.Contains(t, features.AllFeatures, "trainer_features", "feature from HighestPlan present")

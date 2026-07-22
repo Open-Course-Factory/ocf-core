@@ -135,7 +135,6 @@ func seedPlanForTerminal(t *testing.T, db *gorm.DB, terminal *models.Terminal, m
 		PriceAmount:               0,
 		Currency:                  "EUR",
 		BillingInterval:           "monthly",
-		MaxCourses:                10,
 		MaxSessionDurationMinutes: maxDurationMin,
 		IsActive:                  true,
 	}
