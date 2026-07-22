@@ -28,6 +28,14 @@ func InitPaymentHooks(db *gorm.DB) paymentServices.StripeSyncQueue {
 		log.Println("✅ Billing address validation hook registered")
 	}
 
+	// Hook pour plafonner data_persistence_gb à 500 GB sur les plans
+	planValidationHook := NewSubscriptionPlanValidationHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(planValidationHook); err != nil {
+		log.Printf("❌ Failed to register subscription plan validation hook: %v", err)
+	} else {
+		log.Println("✅ Subscription plan validation hook registered")
+	}
+
 	// Stripe sync queue — shared between the hook (enqueues) and the worker
 	// (drains). Returned to main.go for worker + admin-endpoint wiring.
 	stripeSyncQueue := paymentServices.NewStripeSyncQueue(db)
