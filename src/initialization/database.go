@@ -209,6 +209,10 @@ func InitDevelopmentData(db *gorm.DB) {
 		setupExternalUsersData()
 		syncCasdoorRolesToCasbin()
 		ensureUsersHaveTrialPlan(db)
+		// Self-heal any legacy-style seed (features[] "group_management" but the
+		// typed bool unset) so a first-run dev/test bulk purchase is not spuriously
+		// rejected. Runs AFTER SetupDefaultSubscriptionPlans. Idempotent.
+		BackfillGroupManagementEntitlement(db)
 	}
 }
 
@@ -428,6 +432,7 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		MaxMemoryMB:                 40960, // 10 × XL (4096 MiB each)
 		NetworkAccessEnabled:        true,
 		DataPersistenceEnabled:      true,
+		GroupManagementEnabled:      true, // typed entitlement gates bulk purchase (was the legacy features[] "group_management" string)
 		DataPersistenceGB:           20,
 		CommandHistoryRetentionDays: 365,
 		PricingTiers: []paymentModels.PricingTier{
