@@ -9,6 +9,7 @@ import (
 	entityManagementInterfaces "soli/formations/src/entityManagement/interfaces"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
 )
 
 func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
@@ -39,7 +40,7 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						PriceAmount:        plan.PriceAmount,
 						Currency:           plan.Currency,
 						BillingInterval:    plan.BillingInterval,
-						Features:           plan.Features,
+						Features:           paymentServices.DerivePlanEntitlements(plan),
 						IsActive:           plan.IsActive,
 						IsCatalog:          plan.IsCatalog,
 						RequiredRole:       plan.RequiredRole,
@@ -85,7 +86,6 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						PriceAmount:                input.PriceAmount,
 						Currency:                   input.Currency,
 						BillingInterval:            input.BillingInterval,
-						Features:                   input.Features,
 						RequiredRole:               input.RequiredRole,
 						MaxSessionDurationMinutes:  input.MaxSessionDurationMinutes,
 						NetworkAccessEnabled:       input.NetworkAccessEnabled,

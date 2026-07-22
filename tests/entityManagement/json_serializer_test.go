@@ -272,9 +272,8 @@ func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 
 	model := paymentModels.SubscriptionPlan{}
 	updateMap := map[string]any{
-		"name":              "Pro Plan",
-		"features":          []string{"terminal", "ssh", "vnc"},
-		"allowed_backends":  []string{"incus-prod", "incus-staging"},
+		"name":             "Pro Plan",
+		"allowed_backends": []string{"incus-prod", "incus-staging"},
 		"pricing_tiers": []map[string]any{
 			{"min_quantity": 1, "max_quantity": 5, "unit_amount": 1000},
 			{"min_quantity": 6, "max_quantity": 0, "unit_amount": 800},
@@ -287,7 +286,6 @@ func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 
 	// All serializer:json fields should be encoded to strings
 	serializedFields := []string{
-		"features",
 		"allowed_backends",
 		"pricing_tiers",
 	}
@@ -303,13 +301,8 @@ func TestJsonEncodeSerializedFields_RealSubscriptionPlan(t *testing.T) {
 	assert.Equal(t, true, updateMap["is_active"], "is_active should remain a bool")
 
 	// Verify specific decoded content
-	var features []string
-	err := json.Unmarshal([]byte(updateMap["features"].(string)), &features)
-	assert.NoError(t, err)
-	assert.Equal(t, []string{"terminal", "ssh", "vnc"}, features)
-
 	var backends []string
-	err = json.Unmarshal([]byte(updateMap["allowed_backends"].(string)), &backends)
+	err := json.Unmarshal([]byte(updateMap["allowed_backends"].(string)), &backends)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"incus-prod", "incus-staging"}, backends)
 }

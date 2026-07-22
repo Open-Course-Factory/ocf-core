@@ -22,7 +22,6 @@ func InitPaymentEntities(db *gorm.DB) paymentServices.StripeSyncQueue {
 	registration.RegisterInvoice(ems.GlobalEntityRegistrationService)
 	registration.RegisterBillingAddress(ems.GlobalEntityRegistrationService)
 	registration.RegisterUsageMetrics(ems.GlobalEntityRegistrationService)
-	registration.RegisterPlanFeature(ems.GlobalEntityRegistrationService)
 	registration.RegisterOrganizationRolePlan(ems.GlobalEntityRegistrationService)
 
 	log.Println("✅ Payment entities registered successfully")

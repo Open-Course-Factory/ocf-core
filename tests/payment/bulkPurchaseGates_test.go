@@ -182,8 +182,8 @@ func TestBulkPurchase_NonCatalogPlan_Rejected(t *testing.T) {
 		Name:      "Bespoke Admin Plan",
 		Currency:  "eur",
 		IsActive:  true,
-		IsCatalog: false,                        // the bug: active but not catalog
-		Features:  []string{"group_management"}, // isolate gate 1 (gate 2 would pass)
+		IsCatalog:              false, // the bug: active but not catalog
+		GroupManagementEnabled: true,  // isolate gate 1 (the group-management gate passes)
 	}
 	require.NoError(t, db.Create(plan).Error)
 	// GORM skips the zero-value bool on a gorm:"default:true" field, so is_catalog
@@ -222,8 +222,8 @@ func TestBulkPurchase_PlanWithoutGroupManagement_Rejected(t *testing.T) {
 		Name:      "Catalog Plan Without Group Management",
 		Currency:  "eur",
 		IsActive:  true,
-		IsCatalog: true,                       // gate 1 passes
-		Features:  []string{"network_access"}, // lacks group_management
+		IsCatalog: true, // gate 1 passes
+		// GroupManagementEnabled defaults false → lacks the group-management gate
 	}
 	require.NoError(t, db.Create(plan).Error)
 

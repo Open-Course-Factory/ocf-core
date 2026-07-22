@@ -20,14 +20,6 @@ import (
 func InitPaymentHooks(db *gorm.DB) paymentServices.StripeSyncQueue {
 	log.Println("🔗 Initializing payment hooks...")
 
-	// Hook pour valider les features des plans (priority 5 - runs before Stripe)
-	validationHook := NewPlanFeaturesValidationHook(db)
-	if err := hooks.GlobalHookRegistry.RegisterHook(validationHook); err != nil {
-		log.Printf("❌ Failed to register plan features validation hook: %v", err)
-	} else {
-		log.Println("✅ Plan features validation hook registered")
-	}
-
 	// Hook pour valider les champs B2B des adresses de facturation (issue #383)
 	billingValidationHook := NewBillingAddressValidationHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(billingValidationHook); err != nil {

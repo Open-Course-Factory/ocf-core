@@ -1,6 +1,7 @@
 package initialization
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -153,7 +154,6 @@ func AutoMigrateAll(db *gorm.DB) {
 	// catalog/plan values start at 500) and is left alone.
 	RescaleVCPUToMillicores(db)
 	db.AutoMigrate(&paymentModels.BillingAddress{})
-	db.AutoMigrate(&paymentModels.PlanFeature{})
 	db.AutoMigrate(&paymentModels.WebhookEvent{}) // ✅ SECURITY: Track processed webhooks in database
 	db.AutoMigrate(&paymentModels.StripeSync{})   // Persistent Stripe sync queue (issue #326)
 
@@ -171,9 +171,6 @@ func AutoMigrateAll(db *gorm.DB) {
 
 	// Migrate inline scripts/markdown to ProjectFile records
 	migrateInlineContentToProjectFiles(db)
-
-	// Seed default data (idempotent - safe for all environments)
-	SeedPlanFeatures(db)
 
 	// Ensure the free Trial plan always exists (regardless of environment)
 	EnsureTrialPlanExists(db)
@@ -346,7 +343,6 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		PriceAmount:                 0,
 		Currency:                    "eur",
 		BillingInterval:             "month",
-		Features:                    []string{"Unlimited restarts", "1 hour max session", "1 XS machine budget", "No network access", "Ephemeral storage only"},
 		IsActive:                    true,
 		RequiredRole:                "member",
 		UseTieredPricing:            false,
@@ -378,10 +374,6 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		"is_active":                      true,
 		"command_history_retention_days": 7,
 	})
-	// JSON-serialized fields need struct-based update
-	db.Model(&existing).Select("features").Updates(paymentModels.SubscriptionPlan{
-		Features: []string{"Unlimited restarts", "1 hour max session", "1 XS machine budget", "No network access", "Ephemeral storage only"},
-	})
 }
 
 // SetupDefaultSubscriptionPlans initializes default subscription plans
@@ -403,7 +395,6 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		PriceAmount:                 1200, // 12€ per license
 		Currency:                    "eur",
 		BillingInterval:             "month",
-		Features:                    []string{"advanced_labs", "export", "custom_themes", "machine_size_xs", "machine_size_s", "machine_size_m", "network_access", "data_persistence", "command_history"},
 		IsActive:                    true,
 		RequiredRole:                "member", // Changed from "member_pro" (deprecated) to "member"
 		UseTieredPricing:            false,
@@ -423,7 +414,6 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		PriceAmount:                 1200, // 12€ base price per license
 		Currency:                    "eur",
 		BillingInterval:             "month",
-		Features:                    []string{"advanced_labs", "export", "custom_themes", "bulk_purchase", "group_management", "machine_size_xs", "machine_size_s", "machine_size_m", "machine_size_l", "machine_size_xl", "network_access", "data_persistence", "command_history"},
 		IsActive:                    true,
 		RequiredRole:                "trainer",
 		UseTieredPricing:            true,
@@ -455,26 +445,38 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 }
 
 // BackfillGroupManagementEntitlement sets GroupManagementEnabled=true on every
-// plan whose legacy features[] array still contains "group_management", so the
-// typed entitlement matches the historical string during the features[] removal
-// migration. Idempotent — re-runs only touch rows not already migrated. Mirrors
-// the other ensureXXX/Backfill helpers.
-//
+// plan whose legacy features[] JSON still contains "group_management", so the
+// typed entitlement matches the historical string. The model no longer has a
+// Features field, so this reads the RAW `features` column (an orphaned JSON-text
+// column left behind by the removal) and decodes it in Go, exact-matching the
+// element to avoid substring false positives. Idempotent — re-runs only touch
+// rows not already migrated. Mirrors the other ensureXXX/Backfill helpers.
 func BackfillGroupManagementEntitlement(db *gorm.DB) {
-	var plans []paymentModels.SubscriptionPlan
-	if err := db.Find(&plans).Error; err != nil {
+	type planRow struct {
+		ID                     uuid.UUID
+		Features               string // raw JSON array text from the orphan column
+		GroupManagementEnabled bool
+	}
+	var rows []planRow
+	if err := db.Table("subscription_plans").
+		Select("id, features, group_management_enabled").
+		Scan(&rows).Error; err != nil {
 		log.Printf("Warning: BackfillGroupManagementEntitlement failed to load plans: %v\n", err)
 		return
 	}
-	for _, plan := range plans {
-		if plan.GroupManagementEnabled {
+	for _, r := range rows {
+		if r.GroupManagementEnabled {
 			continue // already migrated — idempotent
 		}
-		// Match on the deserialized Features slice (serializer:json) rather than a
-		// raw JSON-text LIKE, so a substring like "group_management_extra" can
-		// never trigger a false-positive backfill.
+		if r.Features == "" {
+			continue
+		}
+		var features []string
+		if err := json.Unmarshal([]byte(r.Features), &features); err != nil {
+			continue // unparseable legacy value — nothing to migrate
+		}
 		hasLegacyString := false
-		for _, f := range plan.Features {
+		for _, f := range features {
 			if f == "group_management" {
 				hasLegacyString = true
 				break
@@ -483,10 +485,10 @@ func BackfillGroupManagementEntitlement(db *gorm.DB) {
 		if !hasLegacyString {
 			continue
 		}
-		if err := db.Model(&paymentModels.SubscriptionPlan{}).
-			Where("id = ?", plan.ID).
+		if err := db.Table("subscription_plans").
+			Where("id = ?", r.ID).
 			Update("group_management_enabled", true).Error; err != nil {
-			log.Printf("Warning: BackfillGroupManagementEntitlement failed for plan %s: %v\n", plan.ID, err)
+			log.Printf("Warning: BackfillGroupManagementEntitlement failed for plan %s: %v\n", r.ID, err)
 		}
 	}
 }
@@ -1010,63 +1012,5 @@ func migrateInlineContentToProjectFiles(db *gorm.DB) {
 		if err != nil {
 			log.Printf("[MIGRATION] Failed to migrate inline content for scenario %s: %v", scenario.ID, err)
 		}
-	}
-}
-
-// SeedPlanFeatures populates the plan_features catalog table with default features.
-// Idempotent: each row is created only if a row with the same key does not yet exist,
-// so this safely tops up an existing DB when new features are added in code.
-func SeedPlanFeatures(db *gorm.DB) {
-	features := []paymentModels.PlanFeature{
-		// Capabilities (boolean)
-		{Key: "advanced_labs", DisplayNameEn: "Advanced Labs", DisplayNameFr: "TP avancés", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "export", DisplayNameEn: "Course Export", DisplayNameFr: "Export de cours", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "custom_themes", DisplayNameEn: "Custom Themes", DisplayNameFr: "Thèmes personnalisés", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "bulk_purchase", DisplayNameEn: "Bulk License Purchase", DisplayNameFr: "Achat de licences en volume", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "group_management", DisplayNameEn: "Group Management", DisplayNameFr: "Gestion des groupes", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "api_access", DisplayNameEn: "API Access", DisplayNameFr: "Accès API", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "analytics", DisplayNameEn: "Analytics Dashboard", DisplayNameFr: "Tableau de bord analytique", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "priority_support", DisplayNameEn: "Priority Support", DisplayNameFr: "Support prioritaire", Category: "capabilities", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-
-		// Machine sizes (boolean)
-		{Key: "machine_size_xs", DisplayNameEn: "XS Machine (0.5 CPU, 256MB)", DisplayNameFr: "Machine XS (0.5 CPU, 256Mo)", Category: "machine_sizes", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "machine_size_s", DisplayNameEn: "S Machine (1 CPU, 512MB)", DisplayNameFr: "Machine S (1 CPU, 512Mo)", Category: "machine_sizes", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "machine_size_m", DisplayNameEn: "M Machine (2 CPU, 1GB)", DisplayNameFr: "Machine M (2 CPU, 1Go)", Category: "machine_sizes", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "machine_size_l", DisplayNameEn: "L Machine (4 CPU, 4GB)", DisplayNameFr: "Machine L (4 CPU, 4Go)", Category: "machine_sizes", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "machine_size_xl", DisplayNameEn: "XL Machine (8 CPU, 8GB)", DisplayNameFr: "Machine XL (8 CPU, 8Go)", Category: "machine_sizes", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-
-		// Terminal limits (mixed types)
-		{Key: "network_access", DisplayNameEn: "External Network Access", DisplayNameFr: "Accès réseau externe", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "data_persistence", DisplayNameEn: "Persistent Storage", DisplayNameFr: "Stockage persistant", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "data_persistence_gb", DisplayNameEn: "Storage Quota", DisplayNameFr: "Quota de stockage", Category: "terminal_limits", ValueType: "number", Unit: "GB", DefaultValue: "0", IsActive: true},
-		{Key: "command_history", DisplayNameEn: "Command History Recording", DisplayNameFr: "Historique des commandes", Category: "terminal_limits", ValueType: "boolean", DefaultValue: "false", IsActive: true},
-		{Key: "command_history_retention_days", DisplayNameEn: "History Retention", DisplayNameFr: "Conservation de l'historique", Category: "terminal_limits", ValueType: "number", Unit: "days", DefaultValue: "0", IsActive: true},
-		{Key: "max_session_duration_minutes", DisplayNameEn: "Max Session Duration", DisplayNameFr: "Durée max de session", Category: "terminal_limits", ValueType: "number", Unit: "minutes", DefaultValue: "60", IsActive: true},
-		{Key: "max_cpu", DisplayNameEn: "Max CPU Budget", DisplayNameFr: "Budget CPU max", Category: "terminal_limits", ValueType: "number", Unit: "mCPU", DefaultValue: "0", IsActive: true},
-		{Key: "max_memory_mb", DisplayNameEn: "Max Memory Budget", DisplayNameFr: "Budget mémoire max", Category: "terminal_limits", ValueType: "number", Unit: "MiB", DefaultValue: "0", IsActive: true},
-	}
-
-	created := 0
-	err := db.Transaction(func(tx *gorm.DB) error {
-		for _, feature := range features {
-			// FirstOrCreate keyed on the unique `key` column makes this idempotent:
-			// existing rows are left untouched, new rows are inserted.
-			var existing paymentModels.PlanFeature
-			result := tx.Where("key = ?", feature.Key).Attrs(feature).FirstOrCreate(&existing)
-			if result.Error != nil {
-				return fmt.Errorf("failed to seed plan feature %s: %w", feature.Key, result.Error)
-			}
-			if result.RowsAffected > 0 {
-				created++
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		log.Printf("Error seeding plan features: %v\n", err)
-		return
-	}
-	if created > 0 {
-		log.Printf("Seeded %d new plan features (catalog now has %d entries)\n", created, len(features))
 	}
 }

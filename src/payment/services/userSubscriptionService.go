@@ -441,7 +441,6 @@ func (ss *subscriptionService) UpdateUsageMetricLimits(userID string, newPlanID 
 
 // InitializeUsageMetrics creates usage metric records for a new subscription
 // Only creates metrics for features enabled in global feature flags
-// Note: plan.Features array is for display purposes only (user-facing descriptions)
 func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptionID uuid.UUID, planID uuid.UUID) error {
 	// Get the plan
 	plan, err := ss.GetSubscriptionPlan(planID)
@@ -455,15 +454,13 @@ func (ss *subscriptionService) InitializeUsageMetrics(userID string, subscriptio
 
 	utils.Debug("🔍 Feature flags - Terminals: %v, Courses: %v, Labs: %v",
 		featureFlags.TerminalsEnabled, featureFlags.CoursesEnabled, featureFlags.LabsEnabled)
-	utils.Debug("🔍 Plan '%s' (Features array is for display only, not used for toggling)", plan.Name)
+	utils.Debug("🔍 Plan '%s'", plan.Name)
 
 	now := time.Now()
 	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	periodEnd := periodStart.AddDate(0, 1, 0)
 
 	// Build metrics list based on ONLY global feature flags
-	// NOTE: plan.Features array contains user-facing descriptions ("Unlimited restarts", etc.)
-	//       and is NOT used for feature toggling - only for display purposes
 	metrics := []models.UsageMetrics{}
 
 	// Terminal usage is metered by the budget engine (CPU/RAM caps on the

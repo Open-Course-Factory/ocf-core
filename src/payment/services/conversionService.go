@@ -133,7 +133,7 @@ func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan
 		PriceAmount:        plan.PriceAmount,
 		Currency:           plan.Currency,
 		BillingInterval:    plan.BillingInterval,
-		Features:           plan.Features,
+		Features:           derivePlanEntitlements(plan),
 		IsActive:           plan.IsActive,
 		IsCatalog:          plan.IsCatalog,
 		RequiredRole:       plan.RequiredRole,

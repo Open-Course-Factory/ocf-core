@@ -39,7 +39,7 @@ func TestBulkPurchase_GroupManagementBoolTrue_NoLegacyString_Allowed(t *testing.
 		Currency:  "eur",
 		IsActive:  true,
 		IsCatalog: true,
-		Features:  []string{}, // NO legacy "group_management" string
+		// No legacy features[] — the typed bool alone must gate.
 	}
 	require.NoError(t, db.Create(plan).Error)
 	// GORM skips the zero-value bool on a default field at Create; force it true.
@@ -72,10 +72,13 @@ func TestBulkPurchase_LegacyStringOnly_BoolFalse_Rejected(t *testing.T) {
 		Currency:  "eur",
 		IsActive:  true,
 		IsCatalog: true,
-		Features:  []string{"group_management"}, // legacy string present
 		// GroupManagementEnabled defaults to false — the typed entitlement is absent
 	}
 	require.NoError(t, db.Create(plan).Error)
+	// The legacy "group_management" string lives ONLY in the raw features column
+	// (seeded directly so this test survives the model.Features field removal).
+	// It must NOT re-enable bulk purchase now that the gate is typed.
+	seedLegacyFeaturesColumn(t, db, planID, `["group_management"]`)
 
 	batch, licenses, err := svc.PurchaseBulkLicenses("buyer-legacygate", dto.BulkPurchaseInput{
 		SubscriptionPlanID: planID,

@@ -46,14 +46,15 @@ func seedTypedGroupPlan(t *testing.T, db *gorm.DB) *models.SubscriptionPlan {
 		IsCatalog:            true,
 		GroupManagementEnabled: true,
 		NetworkAccessEnabled: true,
-		Features:             []string{}, // empty legacy array
 	}
 	require.NoError(t, db.Create(plan).Error)
 	return plan
 }
 
-// seedLegacyStringPlan creates a plan with legacy Features strings but all typed
-// entitlement fields false.
+// seedLegacyStringPlan creates a plan whose legacy "group_management" /
+// "legacy_only_string" live ONLY in the raw features column (the model field is
+// gone), with all typed entitlement fields false — so the derived paths must
+// surface nothing from those strings.
 func seedLegacyStringPlan(t *testing.T, db *gorm.DB) *models.SubscriptionPlan {
 	t.Helper()
 	plan := &models.SubscriptionPlan{
@@ -64,10 +65,10 @@ func seedLegacyStringPlan(t *testing.T, db *gorm.DB) *models.SubscriptionPlan {
 		BillingInterval: "month",
 		IsActive:        true,
 		IsCatalog:       true,
-		Features:        []string{"group_management", "legacy_only_string"},
 		// all typed entitlement fields default false
 	}
 	require.NoError(t, db.Create(plan).Error)
+	seedLegacyFeaturesColumn(t, db, plan.ID, `["group_management","legacy_only_string"]`)
 	return plan
 }
 

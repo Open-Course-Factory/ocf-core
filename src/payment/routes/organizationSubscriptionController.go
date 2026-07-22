@@ -375,7 +375,7 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 			OrganizationID:       org.OrganizationID,
 			OrganizationName:     org.OrganizationName,
 			Role:                 role,
-			ContributingFeatures: org.SubscriptionPlan.Features,
+			ContributingFeatures: services.DerivePlanEntitlements(&org.SubscriptionPlan),
 		}
 	}
 
@@ -497,7 +497,7 @@ func convertSubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.Subscrip
 		PriceAmount:        plan.PriceAmount,
 		Currency:           plan.Currency,
 		BillingInterval:    plan.BillingInterval,
-		Features:           plan.Features,
+		Features:           services.DerivePlanEntitlements(plan),
 		IsActive:           plan.IsActive,
 		RequiredRole:       plan.RequiredRole,
 		CreatedAt:          plan.CreatedAt,

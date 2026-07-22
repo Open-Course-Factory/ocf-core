@@ -32,7 +32,7 @@ func seedTestData(t *testing.T, db *gorm.DB) (
 		PriceAmount: 0,
 		Currency:  "eur",
 		BillingInterval: "month",
-		Features: []string{"basic_features"},
+		NetworkAccessEnabled: true, // derives "network_access"
 		IsActive: true,
 	}
 	err := db.Create(freePlan).Error
@@ -46,7 +46,7 @@ func seedTestData(t *testing.T, db *gorm.DB) (
 		PriceAmount: 1200,
 		Currency:  "eur",
 		BillingInterval: "month",
-		Features: []string{"basic_features", "advanced_labs", "custom_themes"},
+		GroupManagementEnabled: true, // derives "group_management" + "multiple_groups"
 		IsActive: true,
 	}
 	err = db.Create(proPlan).Error
@@ -293,21 +293,7 @@ func TestOrganizationSubscriptionService_FeatureAccess(t *testing.T) {
 		assert.NotNil(t, features)
 		assert.Equal(t, freePlan.Name, features.Name)
 		assert.Equal(t, freePlan.Priority, features.Priority)
-		assert.Contains(t, features.Features, "basic_features")
-	})
-
-	t.Run("Check organization has feature", func(t *testing.T) {
-		hasFeature, err := service.CanOrganizationAccessFeature(org1.ID, "basic_features")
-
-		assert.NoError(t, err)
-		assert.True(t, hasFeature)
-	})
-
-	t.Run("Check organization does not have feature", func(t *testing.T) {
-		hasFeature, err := service.CanOrganizationAccessFeature(org1.ID, "non_existent_feature")
-
-		assert.NoError(t, err)
-		assert.False(t, hasFeature)
+		assert.True(t, features.NetworkAccessEnabled, "typed entitlement carried on the returned plan")
 	})
 
 	t.Run("Get organization usage limits", func(t *testing.T) {
@@ -331,9 +317,7 @@ func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
 		PriceAmount: 0, // Free so it will be active immediately
 		Currency:  "eur",
 		BillingInterval: "month",
-		// Legacy Features[] kept for the raw-string GetUserOrganizationWithFeature
-		// path; typed entitlements drive the derived AllFeatures / CanUserAccessFeature.
-		Features:               []string{"basic_features", "advanced_labs", "custom_themes"},
+		// Typed entitlements drive the derived AllFeatures aggregation.
 		GroupManagementEnabled: true, // derives "group_management" + "multiple_groups"
 		NetworkAccessEnabled:   true, // derives "network_access"
 		IsActive:               true,
@@ -364,32 +348,6 @@ func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
 
 		// Should include both organizations
 		assert.Equal(t, 2, len(features.Organizations))
-	})
-
-	t.Run("Check user can access feature via any org", func(t *testing.T) {
-		// Entitlement derived from the premium free plan
-		hasFeature, err := service.CanUserAccessFeature(userID, "group_management")
-		assert.NoError(t, err)
-		assert.True(t, hasFeature)
-
-		// Another entitlement derived from the same plan
-		hasFeature, err = service.CanUserAccessFeature(userID, "network_access")
-		assert.NoError(t, err)
-		assert.True(t, hasFeature)
-
-		// Non-existent feature
-		hasFeature, err = service.CanUserAccessFeature(userID, "non_existent")
-		assert.NoError(t, err)
-		assert.False(t, hasFeature)
-	})
-
-	t.Run("Get organization that provides specific feature", func(t *testing.T) {
-		// Advanced labs only in premium free plan (org1)
-		org, err := service.GetUserOrganizationWithFeature(userID, "advanced_labs")
-
-		assert.NoError(t, err)
-		assert.NotNil(t, org)
-		assert.Equal(t, org1.ID, org.ID)
 	})
 
 	t.Run("User with no organization subscriptions", func(t *testing.T) {

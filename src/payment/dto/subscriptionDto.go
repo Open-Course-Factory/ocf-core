@@ -14,7 +14,6 @@ type CreateSubscriptionPlanInput struct {
 	PriceAmount                 int64    `binding:"required" json:"price_amount" mapstructure:"price_amount"`
 	Currency                    string   `json:"currency" mapstructure:"currency"`
 	BillingInterval             string   `binding:"required" json:"billing_interval" mapstructure:"billing_interval"`
-	Features                    []string `json:"features" mapstructure:"features"`
 	RequiredRole                string   `json:"required_role" mapstructure:"required_role"`
 	MaxSessionDurationMinutes   int      `json:"max_session_duration_minutes" mapstructure:"max_session_duration_minutes"`
 	NetworkAccessEnabled        bool     `json:"network_access_enabled" mapstructure:"network_access_enabled"`
@@ -40,7 +39,6 @@ type UpdateSubscriptionPlanInput struct {
 	Description                 string   `json:"description,omitempty" mapstructure:"description"`
 	IsActive                    *bool    `json:"is_active,omitempty" mapstructure:"is_active"`
 	IsCatalog                   *bool    `json:"is_catalog,omitempty" mapstructure:"is_catalog"`
-	Features                    []string `json:"features,omitempty" mapstructure:"features"`
 	MaxSessionDurationMinutes   *int     `json:"max_session_duration_minutes,omitempty" mapstructure:"max_session_duration_minutes"`
 	NetworkAccessEnabled        *bool    `json:"network_access_enabled,omitempty" mapstructure:"network_access_enabled"`
 	DataPersistenceEnabled      *bool    `json:"data_persistence_enabled,omitempty" mapstructure:"data_persistence_enabled"`
@@ -67,6 +65,8 @@ type SubscriptionPlanOutput struct {
 	PriceAmount        int64     `json:"price_amount"`
 	Currency           string    `json:"currency"`
 	BillingInterval    string    `json:"billing_interval"`
+	// Features is the projection of the plan's typed capability fields (see
+	// DerivePlanEntitlements), no longer a free-form list. Converters populate it.
 	Features           []string  `json:"features"`
 	IsActive           bool      `json:"is_active"`
 	IsCatalog          bool      `json:"is_catalog"`

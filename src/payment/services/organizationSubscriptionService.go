@@ -26,13 +26,10 @@ type OrganizationSubscriptionService interface {
 
 	// Feature access (for members)
 	GetOrganizationFeatures(orgID uuid.UUID) (*models.SubscriptionPlan, error)
-	CanOrganizationAccessFeature(orgID uuid.UUID, feature string) (bool, error)
 	GetOrganizationUsageLimits(orgID uuid.UUID) (*OrganizationLimits, error)
 
 	// User-level feature aggregation
 	GetUserEffectiveFeatures(userID string) (*UserEffectiveFeatures, error)
-	CanUserAccessFeature(userID string, feature string) (bool, error)
-	GetUserOrganizationWithFeature(userID string, feature string) (*organizationModels.Organization, error)
 }
 
 // Business types for organization limits
@@ -224,23 +221,6 @@ func (oss *organizationSubscriptionService) GetOrganizationFeatures(orgID uuid.U
 	return &subscription.SubscriptionPlan, nil
 }
 
-// CanOrganizationAccessFeature checks if an organization has access to a specific feature
-func (oss *organizationSubscriptionService) CanOrganizationAccessFeature(orgID uuid.UUID, feature string) (bool, error) {
-	plan, err := oss.GetOrganizationFeatures(orgID)
-	if err != nil {
-		return false, err
-	}
-
-	// Check if feature is in the plan's features list
-	for _, f := range plan.Features {
-		if f == feature {
-			return true, nil
-		}
-	}
-
-	return false, nil
-}
-
 // GetOrganizationUsageLimits returns the current usage and limits for an organization.
 //
 // Thin wrapper kept for backward compatibility with existing callers and
@@ -343,60 +323,3 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 	return features, nil
 }
 
-// CanUserAccessFeature checks if user can access a feature through any organization
-func (oss *organizationSubscriptionService) CanUserAccessFeature(userID string, feature string) (bool, error) {
-	features, err := oss.GetUserEffectiveFeatures(userID)
-	if err != nil {
-		return false, err
-	}
-
-	for _, f := range features.AllFeatures {
-		if f == feature {
-			return true, nil
-		}
-	}
-
-	return false, nil
-}
-
-// GetUserOrganizationWithFeature returns the organization that provides a specific feature
-// If multiple organizations provide the feature, returns the one with highest priority plan
-func (oss *organizationSubscriptionService) GetUserOrganizationWithFeature(userID string, feature string) (*organizationModels.Organization, error) {
-	subscriptions, err := oss.repository.GetUserOrganizationSubscriptions(userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user organization subscriptions: %w", err)
-	}
-
-	// First pass: find the best matching subscription (no DB queries in loop)
-	var bestSub *models.OrganizationSubscription
-	highestPriority := -1
-
-	for i, sub := range subscriptions {
-		plan := sub.SubscriptionPlan
-
-		hasFeature := false
-		for _, f := range plan.Features {
-			if f == feature {
-				hasFeature = true
-				break
-			}
-		}
-
-		if hasFeature && plan.Priority > highestPriority {
-			bestSub = &subscriptions[i]
-			highestPriority = plan.Priority
-		}
-	}
-
-	if bestSub == nil {
-		return nil, fmt.Errorf("no organization provides feature: %s", feature)
-	}
-
-	// Single query: fetch only the winning organization
-	var bestOrg organizationModels.Organization
-	if err := oss.db.Where("id = ?", bestSub.OrganizationID).First(&bestOrg).Error; err != nil {
-		return nil, fmt.Errorf("failed to get organization %s: %w", bestSub.OrganizationID, err)
-	}
-
-	return &bestOrg, nil
-}

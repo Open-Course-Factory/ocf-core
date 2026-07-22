@@ -38,10 +38,11 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 		StripePriceID:      ptrString("price_123"),
 		PriceAmount:        2999, // 29.99 EUR
 		Currency:           "eur",
-		BillingInterval:    "month",
-		Features:           []string{"advanced_labs", "api_access", "custom_themes"},
-		IsActive:           true,
-		RequiredRole:       "member_pro",
+		BillingInterval:        "month",
+		GroupManagementEnabled: true, // derives "group_management" + "multiple_groups"
+		NetworkAccessEnabled:   true, // derives "network_access"
+		IsActive:               true,
+		RequiredRole:           "member_pro",
 	}
 
 	result, err := conversionService.SubscriptionPlanToDTO(plan)
@@ -56,7 +57,8 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 	assert.Equal(t, int64(2999), result.PriceAmount)
 	assert.Equal(t, "eur", result.Currency)
 	assert.Equal(t, "month", result.BillingInterval)
-	assert.Equal(t, []string{"advanced_labs", "api_access", "custom_themes"}, result.Features)
+	assert.ElementsMatch(t, []string{"group_management", "multiple_groups", "network_access"}, result.Features,
+		"Features is now the projection of the plan's typed entitlements")
 	assert.True(t, result.IsActive)
 	assert.Equal(t, "member_pro", result.RequiredRole)
 	assert.Equal(t, createdAt, result.CreatedAt)
@@ -427,7 +429,6 @@ func TestConversionService_SubscriptionPlanToDTO_NoBackendFields(t *testing.T) {
 		PriceAmount:               2999,
 		Currency:                  "eur",
 		BillingInterval:           "month",
-		Features:                  []string{"terminals", "ssh"},
 		IsActive:                  true,
 		MaxSessionDurationMinutes: 120,
 		NetworkAccessEnabled:      true,

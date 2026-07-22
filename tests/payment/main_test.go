@@ -56,7 +56,6 @@ func runTestMigrations(db *gorm.DB) error {
 		&models.OrganizationRolePlan{},
 		&organizationModels.Organization{},
 		&organizationModels.OrganizationMember{},
-		&models.PlanFeature{},
 		&configModels.Feature{},
 		&models.SubscriptionBatch{},
 		&groupModels.ClassGroup{},
@@ -65,6 +64,15 @@ func runTestMigrations(db *gorm.DB) error {
 		&models.PaymentMethod{},
 	); err != nil {
 		return err
+	}
+
+	// The SubscriptionPlan.Features model field was removed, but the raw
+	// `features` column lives on in prod as an orphan (AutoMigrate never drops
+	// it) and the group-management backfill still reads it. Re-create that
+	// orphan column here so raw-column-seeding tests (backfill, legacy-string
+	// guards) mirror prod.
+	if !db.Migrator().HasColumn(&models.SubscriptionPlan{}, "features") {
+		db.Exec("ALTER TABLE subscription_plans ADD COLUMN features TEXT")
 	}
 
 	// Create the partial unique index that enforces "at most one
@@ -163,7 +171,6 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM organization_members")
 	sharedTestDB.Exec("DELETE FROM organizations")
 	sharedTestDB.Exec("DELETE FROM subscription_plans")
-	sharedTestDB.Exec("DELETE FROM plan_features")
 	sharedTestDB.Exec("DELETE FROM features")
 	sharedTestDB.Exec("DELETE FROM billing_addresses")
 	sharedTestDB.Exec("DELETE FROM payment_methods")

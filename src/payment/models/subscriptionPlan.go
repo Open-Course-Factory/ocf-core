@@ -15,7 +15,10 @@ type SubscriptionPlan struct {
 	PriceAmount        int64    `json:"price_amount"` // Prix en centimes
 	Currency           string   `gorm:"type:varchar(3);default:'eur'" json:"currency"`
 	BillingInterval    string   `gorm:"type:varchar(20);default:'month'" json:"billing_interval"` // month, year
-	Features           []string `mapstructure:"features" gorm:"serializer:json" json:"features"`
+	// NOTE: the free-form Features []string field was removed — plan capabilities
+	// are typed columns now, projected via DerivePlanEntitlements. The raw
+	// `features` DB column is left orphaned (AutoMigrate never drops it); the
+	// startup backfill still reads it to migrate legacy group_management.
 	IsActive           bool     `gorm:"default:true" json:"is_active"`
 	IsCatalog          bool     `gorm:"default:true" json:"is_catalog" mapstructure:"is_catalog"` // true = shown on pricing page, false = custom/unlisted plan
 	RequiredRole       string   `gorm:"type:varchar(50)" json:"required_role"`
