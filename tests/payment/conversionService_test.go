@@ -40,7 +40,6 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 		Currency:           "eur",
 		BillingInterval:    "month",
 		Features:           []string{"advanced_labs", "api_access", "custom_themes"},
-		MaxConcurrentUsers: 10,
 		MaxCourses:         -1, // Unlimited
 		IsActive:           true,
 		RequiredRole:       "member_pro",
@@ -59,7 +58,6 @@ func TestConversionService_SubscriptionPlanToDTO(t *testing.T) {
 	assert.Equal(t, "eur", result.Currency)
 	assert.Equal(t, "month", result.BillingInterval)
 	assert.Equal(t, []string{"advanced_labs", "api_access", "custom_themes"}, result.Features)
-	assert.Equal(t, 10, result.MaxConcurrentUsers)
 	assert.Equal(t, -1, result.MaxCourses)
 	assert.True(t, result.IsActive)
 	assert.Equal(t, "member_pro", result.RequiredRole)
@@ -432,12 +430,10 @@ func TestConversionService_SubscriptionPlanToDTO_NoBackendFields(t *testing.T) {
 		Currency:                  "eur",
 		BillingInterval:           "month",
 		Features:                  []string{"terminals", "ssh"},
-		MaxConcurrentUsers:        10,
 		MaxCourses:                -1,
 		IsActive:                  true,
 		MaxSessionDurationMinutes: 120,
 		NetworkAccessEnabled:      true,
-		AllowedTemplates:          []string{"tmpl-1"},
 	}
 
 	result, err := conversionService.SubscriptionPlanToDTO(plan)
@@ -449,7 +445,6 @@ func TestConversionService_SubscriptionPlanToDTO_NoBackendFields(t *testing.T) {
 	assert.Equal(t, int64(2999), result.PriceAmount)
 	assert.Equal(t, 120, result.MaxSessionDurationMinutes)
 	assert.True(t, result.NetworkAccessEnabled)
-	assert.Equal(t, []string{"tmpl-1"}, result.AllowedTemplates)
 }
 
 // Test de performance pour vérifier que les conversions sont rapides

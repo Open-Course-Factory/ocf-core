@@ -35,7 +35,6 @@ func TestTrialPlanSync_AllFieldsReset(t *testing.T) {
 		IsActive:                    false, // should be reset to true
 		CommandHistoryRetentionDays: 999,
 		Features:                    []string{"tampered"},
-		AllowedTemplates:            []string{"tampered-template"},
 	}
 	require.NoError(t, db.Create(&driftedPlan).Error, "failed to seed drifted Trial plan")
 

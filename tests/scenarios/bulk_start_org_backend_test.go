@@ -215,7 +215,6 @@ func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 	plan := paymentModels.SubscriptionPlan{
 		Name:                        "Test Plan",
 		IsActive:                    true,
-		MaxConcurrentUsers:          10,
 		MaxSessionDurationMinutes:   240,
 		CommandHistoryRetentionDays: 30,
 	}

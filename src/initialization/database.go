@@ -338,7 +338,6 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		Currency:                    "eur",
 		BillingInterval:             "month",
 		Features:                    []string{"Unlimited restarts", "1 hour max session", "1 XS machine budget", "No network access", "Ephemeral storage only"},
-		MaxConcurrentUsers:          1,
 		MaxCourses:                  -1,
 		IsActive:                    true,
 		RequiredRole:                "member",
@@ -349,7 +348,6 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		NetworkAccessEnabled:        false,
 		DataPersistenceEnabled:      false,
 		DataPersistenceGB:           0,
-		AllowedTemplates:            []string{"ubuntu-basic", "alpine-basic"},
 		CommandHistoryRetentionDays: 7,
 	}).FirstOrCreate(&existing)
 	if result.Error != nil {
@@ -399,7 +397,6 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		Currency:                    "eur",
 		BillingInterval:             "month",
 		Features:                    []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "machine_size_xs", "machine_size_s", "machine_size_m", "network_access", "data_persistence", "command_history"},
-		MaxConcurrentUsers:          1,
 		MaxCourses:                  -1,
 		IsActive:                    true,
 		RequiredRole:                "member", // Changed from "member_pro" (deprecated) to "member"
@@ -421,7 +418,6 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		Currency:                    "eur",
 		BillingInterval:             "month",
 		Features:                    []string{"unlimited_courses", "advanced_labs", "export", "custom_themes", "bulk_purchase", "group_management", "machine_size_xs", "machine_size_s", "machine_size_m", "machine_size_l", "machine_size_xl", "network_access", "data_persistence", "command_history"},
-		MaxConcurrentUsers:          1,
 		MaxCourses:                  -1,
 		IsActive:                    true,
 		RequiredRole:                "trainer",
@@ -1009,7 +1005,6 @@ func SeedPlanFeatures(db *gorm.DB) {
 
 		// Course limits (number)
 		{Key: "max_courses", DisplayNameEn: "Max Courses", DisplayNameFr: "Nombre de cours max", Category: "course_limits", ValueType: "number", Unit: "count", DefaultValue: "-1", IsActive: true},
-		{Key: "max_concurrent_users", DisplayNameEn: "Max Concurrent Users", DisplayNameFr: "Utilisateurs simultanés max", Category: "course_limits", ValueType: "number", Unit: "count", DefaultValue: "1", IsActive: true},
 	}
 
 	created := 0

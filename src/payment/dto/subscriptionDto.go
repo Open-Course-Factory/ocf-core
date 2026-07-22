@@ -15,7 +15,6 @@ type CreateSubscriptionPlanInput struct {
 	Currency                    string   `json:"currency" mapstructure:"currency"`
 	BillingInterval             string   `binding:"required" json:"billing_interval" mapstructure:"billing_interval"`
 	Features                    []string `json:"features" mapstructure:"features"`
-	MaxConcurrentUsers          int      `json:"max_concurrent_users" mapstructure:"max_concurrent_users"`
 	MaxCourses                  int      `json:"max_courses" mapstructure:"max_courses"`
 	RequiredRole                string   `json:"required_role" mapstructure:"required_role"`
 	MaxSessionDurationMinutes   int      `json:"max_session_duration_minutes" mapstructure:"max_session_duration_minutes"`
@@ -23,7 +22,6 @@ type CreateSubscriptionPlanInput struct {
 	DataPersistenceEnabled      bool     `json:"data_persistence_enabled" mapstructure:"data_persistence_enabled"`
 	SessionSupervisionEnabled   bool     `json:"session_supervision_enabled" mapstructure:"session_supervision_enabled"`
 	DataPersistenceGB           int      `json:"data_persistence_gb" mapstructure:"data_persistence_gb"`
-	AllowedTemplates            []string `json:"allowed_templates" mapstructure:"allowed_templates"`
 	CommandHistoryRetentionDays int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
 	DefaultBackend              string   `json:"default_backend" mapstructure:"default_backend"`
 	AllowedBackends             []string `json:"allowed_backends" mapstructure:"allowed_backends"`
@@ -43,14 +41,12 @@ type UpdateSubscriptionPlanInput struct {
 	IsActive                    *bool    `json:"is_active,omitempty" mapstructure:"is_active"`
 	IsCatalog                   *bool    `json:"is_catalog,omitempty" mapstructure:"is_catalog"`
 	Features                    []string `json:"features,omitempty" mapstructure:"features"`
-	MaxConcurrentUsers          *int     `json:"max_concurrent_users,omitempty" mapstructure:"max_concurrent_users"`
 	MaxCourses                  *int     `json:"max_courses,omitempty" mapstructure:"max_courses"`
 	MaxSessionDurationMinutes   *int     `json:"max_session_duration_minutes,omitempty" mapstructure:"max_session_duration_minutes"`
 	NetworkAccessEnabled        *bool    `json:"network_access_enabled,omitempty" mapstructure:"network_access_enabled"`
 	DataPersistenceEnabled      *bool    `json:"data_persistence_enabled,omitempty" mapstructure:"data_persistence_enabled"`
 	SessionSupervisionEnabled   *bool    `json:"session_supervision_enabled,omitempty" mapstructure:"session_supervision_enabled"`
 	DataPersistenceGB           *int     `json:"data_persistence_gb,omitempty" mapstructure:"data_persistence_gb"`
-	AllowedTemplates            []string `json:"allowed_templates,omitempty" mapstructure:"allowed_templates"`
 	CommandHistoryRetentionDays *int     `json:"command_history_retention_days,omitempty" mapstructure:"command_history_retention_days"`
 	DefaultBackend              string   `json:"default_backend,omitempty" mapstructure:"default_backend"`
 	AllowedBackends             []string `json:"allowed_backends,omitempty" mapstructure:"allowed_backends"`
@@ -72,7 +68,6 @@ type SubscriptionPlanOutput struct {
 	Currency           string    `json:"currency"`
 	BillingInterval    string    `json:"billing_interval"`
 	Features           []string  `json:"features"`
-	MaxConcurrentUsers int       `json:"max_concurrent_users"`
 	MaxCourses         int       `json:"max_courses"`
 	IsActive           bool      `json:"is_active"`
 	IsCatalog          bool      `json:"is_catalog"`
@@ -86,7 +81,6 @@ type SubscriptionPlanOutput struct {
 	DataPersistenceEnabled      bool     `json:"data_persistence_enabled"`
 	SessionSupervisionEnabled   bool     `json:"session_supervision_enabled" mapstructure:"session_supervision_enabled"`
 	DataPersistenceGB           int      `json:"data_persistence_gb"`
-	AllowedTemplates            []string `json:"allowed_templates"`
 	CommandHistoryRetentionDays int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
 
 	// Backend routing

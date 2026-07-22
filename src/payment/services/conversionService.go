@@ -134,7 +134,6 @@ func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan
 		Currency:           plan.Currency,
 		BillingInterval:    plan.BillingInterval,
 		Features:           plan.Features,
-		MaxConcurrentUsers: plan.MaxConcurrentUsers,
 		MaxCourses:         plan.MaxCourses,
 		IsActive:           plan.IsActive,
 		IsCatalog:          plan.IsCatalog,
@@ -147,7 +146,6 @@ func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan
 		NetworkAccessEnabled:        plan.NetworkAccessEnabled,
 		DataPersistenceEnabled:      plan.DataPersistenceEnabled,
 		DataPersistenceGB:           plan.DataPersistenceGB,
-		AllowedTemplates:            plan.AllowedTemplates,
 		CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
 
 		// Backend routing

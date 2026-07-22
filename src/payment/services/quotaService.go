@@ -276,7 +276,7 @@ func (s *quotaService) GetOrgQuota(orgID uuid.UUID) (*OrganizationLimits, error)
 // (CheckBudget on SubscriptionPlan.MaxCPU / MaxMemoryMB, fed by
 // sumActiveResources*) is the sole authoritative quota gate for terminals.
 // The metric dispatcher only serves the remaining numeric metrics
-// (courses_created, concurrent_users, ...).
+// (courses_created, ...).
 func (s *quotaService) currentUsage(userID string, orgID *uuid.UUID, metric string) (int64, error) {
 	_ = orgID // org-scoped usage rows do not exist for the remaining metrics.
 	return s.storedUsage(userID, metric), nil
@@ -304,8 +304,6 @@ func limitForMetric(plan *models.SubscriptionPlan, metric string) int64 {
 	switch metric {
 	case "courses_created":
 		return int64(plan.MaxCourses)
-	case "concurrent_users":
-		return int64(plan.MaxConcurrentUsers)
 	default:
 		return -1
 	}

@@ -499,7 +499,6 @@ func convertSubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.Subscrip
 		Currency:           plan.Currency,
 		BillingInterval:    plan.BillingInterval,
 		Features:           plan.Features,
-		MaxConcurrentUsers: plan.MaxConcurrentUsers,
 		MaxCourses:         plan.MaxCourses,
 		IsActive:           plan.IsActive,
 		RequiredRole:       plan.RequiredRole,
@@ -511,7 +510,6 @@ func convertSubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.Subscrip
 		NetworkAccessEnabled:       plan.NetworkAccessEnabled,
 		DataPersistenceEnabled:     plan.DataPersistenceEnabled,
 		DataPersistenceGB:          plan.DataPersistenceGB,
-		AllowedTemplates:           plan.AllowedTemplates,
 		CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
 
 		// Backend routing

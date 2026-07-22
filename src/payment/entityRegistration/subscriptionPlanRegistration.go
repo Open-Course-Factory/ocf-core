@@ -40,7 +40,6 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						Currency:           plan.Currency,
 						BillingInterval:    plan.BillingInterval,
 						Features:           plan.Features,
-						MaxConcurrentUsers: plan.MaxConcurrentUsers,
 						MaxCourses:         plan.MaxCourses,
 						IsActive:           plan.IsActive,
 						IsCatalog:          plan.IsCatalog,
@@ -54,7 +53,6 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						DataPersistenceEnabled:    plan.DataPersistenceEnabled,
 						SessionSupervisionEnabled: plan.SessionSupervisionEnabled,
 						DataPersistenceGB:         plan.DataPersistenceGB,
-						AllowedTemplates:          plan.AllowedTemplates,
 
 						// Backend routing
 						DefaultBackend:  plan.DefaultBackend,
@@ -91,7 +89,6 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						Currency:                   input.Currency,
 						BillingInterval:            input.BillingInterval,
 						Features:                   input.Features,
-						MaxConcurrentUsers:         input.MaxConcurrentUsers,
 						MaxCourses:                 input.MaxCourses,
 						RequiredRole:               input.RequiredRole,
 						MaxSessionDurationMinutes:  input.MaxSessionDurationMinutes,
@@ -99,7 +96,6 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						DataPersistenceEnabled:     input.DataPersistenceEnabled,
 						SessionSupervisionEnabled:  input.SessionSupervisionEnabled,
 						DataPersistenceGB:          input.DataPersistenceGB,
-						AllowedTemplates:           input.AllowedTemplates,
 						CommandHistoryRetentionDays: input.CommandHistoryRetentionDays,
 						DefaultBackend:             input.DefaultBackend,
 						AllowedBackends:            input.AllowedBackends,

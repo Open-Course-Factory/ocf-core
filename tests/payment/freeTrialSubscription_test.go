@@ -231,7 +231,6 @@ func TestFreeTrialCreation_E2E(t *testing.T) {
 		Currency:               "eur",
 		BillingInterval:        "month",
 		MaxCourses:             5,
-		MaxConcurrentUsers:     1,
 		IsActive:               true,
 	}
 	err := db.Create(trialPlan).Error

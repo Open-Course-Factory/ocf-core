@@ -16,7 +16,6 @@ type SubscriptionPlan struct {
 	Currency           string   `gorm:"type:varchar(3);default:'eur'" json:"currency"`
 	BillingInterval    string   `gorm:"type:varchar(20);default:'month'" json:"billing_interval"` // month, year
 	Features           []string `mapstructure:"features" gorm:"serializer:json" json:"features"`
-	MaxConcurrentUsers int      `gorm:"default:1" json:"max_concurrent_users"`
 	MaxCourses         int      `gorm:"default:-1" json:"max_courses"` // -1 = illimité
 	IsActive           bool     `gorm:"default:true" json:"is_active"`
 	IsCatalog          bool     `gorm:"default:true" json:"is_catalog" mapstructure:"is_catalog"` // true = shown on pricing page, false = custom/unlisted plan
@@ -25,7 +24,7 @@ type SubscriptionPlan struct {
 	CreationError      *string  `gorm:"type:text" json:"creation_error,omitempty"`
 
 	// Terminal-specific limits (new fields for terminal pricing)
-	// Note: No limit on number of sessions - only concurrent and duration limits
+	// Note: No limit on number of sessions - only a per-session duration limit
 	MaxSessionDurationMinutes int `gorm:"default:60" json:"max_session_duration_minutes"` // Max time per session
 
 	// Budget-based quota fields. The CPU/RAM budget is the single source
@@ -44,7 +43,6 @@ type SubscriptionPlan struct {
 	SessionSupervisionEnabled  bool     `gorm:"default:false" json:"session_supervision_enabled"` // Allow trainers (group manager+) to live-supervise a learner's terminal and take the hand
 	DataPersistenceGB          int      `gorm:"default:0" json:"data_persistence_gb"`           // Storage quota in GB
 
-	AllowedTemplates           []string `gorm:"serializer:json" json:"allowed_templates"`       // Template IDs allowed
 	CommandHistoryRetentionDays int     `gorm:"default:0" json:"command_history_retention_days" mapstructure:"command_history_retention_days"` // days to retain command history (minimum 1)
 
 	// Backend routing (applies when org has no backend config)
