@@ -708,6 +708,13 @@ func (c *terminalComposer) startComposedSession(
 	if input.IdleWindowSeconds != nil {
 		ttReqBody["idle_window_seconds"] = *input.IdleWindowSeconds
 	}
+	// Forward the plan's storage quota so tt-backend sizes the persistent
+	// volume. Only meaningful for a persistent session; a zero/absent quota
+	// keeps tt-backend's unsized default, so the key is omitted then (same
+	// "add only when meaningful" convention as idle_window_seconds above).
+	if input.PersistenceMode == PersistenceModePersistent && plan != nil && plan.DataPersistenceGB > 0 {
+		ttReqBody["persistence_size_gb"] = plan.DataPersistenceGB
+	}
 
 	// Build URL
 	url := fmt.Sprintf("%s/%s/sessions", c.baseURL, c.apiVersion)
