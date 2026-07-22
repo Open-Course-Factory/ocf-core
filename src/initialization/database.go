@@ -191,10 +191,12 @@ func AutoMigrateAll(db *gorm.DB) {
 	ensureUsersHaveTrialPlan(db)
 	ensureOrganizationsHaveTrialPlan(db)
 
-	// Migrate the legacy features[] "group_management" string onto the typed
-	// GroupManagementEnabled entitlement so both agree during the features[]
-	// removal. Idempotent.
-	BackfillGroupManagementEntitlement(db)
+	// Drop the orphan subscription_plans columns whose Go fields were removed.
+	// This runs LAST and subsumes the standalone group-management backfill: it
+	// performs a FINAL backfill pass reading the raw `features` column, THEN drops
+	// it (and the other orphan columns), so no later startup step reads a dropped
+	// column. Idempotent.
+	DropOrphanPlanColumns(db)
 }
 
 // InitDevelopmentData sets up development data in debug mode
@@ -206,10 +208,10 @@ func InitDevelopmentData(db *gorm.DB) {
 		setupExternalUsersData()
 		syncCasdoorRolesToCasbin()
 		ensureUsersHaveTrialPlan(db)
-		// Self-heal any legacy-style seed (features[] "group_management" but the
-		// typed bool unset) so a first-run dev/test bulk purchase is not spuriously
-		// rejected. Runs AFTER SetupDefaultSubscriptionPlans. Idempotent.
-		BackfillGroupManagementEntitlement(db)
+		// NOTE: the legacy features[] "group_management" self-heal is no longer
+		// needed here — DropOrphanPlanColumns (run in AutoMigrateAll) performs the
+		// final backfill and drops the `features` column, and the dev seed sets the
+		// typed GroupManagementEnabled bool directly.
 	}
 }
 
@@ -685,6 +687,62 @@ func dropOrphanSubscriptionPlanColumns(db *gorm.DB) {
 			continue
 		}
 		if err := migrator.DropColumn(&paymentModels.SubscriptionPlan{}, col); err != nil {
+			log.Printf("[MIGRATION] failed to drop orphan column subscription_plans.%s: %v", col, err)
+			continue
+		}
+		log.Printf("[MIGRATION] dropped orphan column subscription_plans.%s", col)
+	}
+}
+
+// orphanPlanColumns are the subscription_plans columns whose Go model fields were
+// deleted across prior cleanup campaigns but which still exist physically in prod
+// (AutoMigrate adds columns, never drops them). DropOrphanPlanColumns removes them.
+var orphanPlanColumns = []string{
+	"max_concurrent_users",
+	"allowed_templates",
+	"max_courses",
+	"planned_features",
+	"features",
+	"addon_network_price_id",
+	"addon_storage_price_id",
+	"addon_terminal_price_id",
+}
+
+// DropOrphanPlanColumns is the guarded one-time migration that removes the
+// orphanPlanColumns from subscription_plans.
+//
+// Ordering — final backfill THEN drop: the `features` column is the last reader
+// of the legacy features[] "group_management" string. This migration runs a FINAL
+// BackfillGroupManagementEntitlement pass (reading the raw `features` column while
+// it still exists) BEFORE dropping the columns, and it SUBSUMES the standalone
+// recurring backfill calls that used to run at startup — once `features` is gone,
+// no later step may read it. Guarded on HasColumn(features) so the backfill is
+// skipped once the column is dropped.
+//
+// Mechanism — raw ALTER, not migrator.DropColumn: GORM's Migrator().DropColumn is
+// a silent no-op on gorm.io/driver/sqlite (returns nil, the column survives), so
+// the test-env drops would never take effect. Postgres (prod) executes DropColumn
+// correctly, but a raw `ALTER TABLE ... DROP COLUMN` is equivalent there and is the
+// only mechanism that also works on SQLite. Each drop is guarded on HasColumn,
+// standing in for the `DROP COLUMN IF EXISTS` that SQLite lacks.
+//
+// Idempotent: a second run finds the columns already gone (HasColumn false) and is
+// a no-op; an already-migrated plan (GroupManagementEnabled=true) is left untouched
+// by the backfill.
+func DropOrphanPlanColumns(db *gorm.DB) {
+	migrator := db.Migrator()
+
+	// FINAL backfill pass — must read the raw `features` column before it is
+	// dropped below, so no future startup step needs it.
+	if migrator.HasColumn(&paymentModels.SubscriptionPlan{}, "features") {
+		BackfillGroupManagementEntitlement(db)
+	}
+
+	for _, col := range orphanPlanColumns {
+		if !migrator.HasColumn(&paymentModels.SubscriptionPlan{}, col) {
+			continue
+		}
+		if err := db.Exec("ALTER TABLE subscription_plans DROP COLUMN " + col).Error; err != nil {
 			log.Printf("[MIGRATION] failed to drop orphan column subscription_plans.%s: %v", col, err)
 			continue
 		}
