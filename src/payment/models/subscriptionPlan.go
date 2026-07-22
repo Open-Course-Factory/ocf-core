@@ -52,11 +52,6 @@ type SubscriptionPlan struct {
 	DefaultBackend  string   `gorm:"type:varchar(255);default:''" json:"default_backend"`
 	AllowedBackends []string `gorm:"serializer:json" json:"allowed_backends"` // Empty = no restriction
 
-	// Add-on pricing (Stripe Price IDs for metered/add-on billing)
-	AddonNetworkPriceID  *string `gorm:"type:varchar(100)" json:"addon_network_price_id,omitempty"`
-	AddonStoragePriceID  *string `gorm:"type:varchar(100)" json:"addon_storage_price_id,omitempty"`
-	AddonTerminalPriceID *string `gorm:"type:varchar(100)" json:"addon_terminal_price_id,omitempty"`
-
 	// Tiered pricing for volume discounts
 	UseTieredPricing bool          `gorm:"default:false" json:"use_tiered_pricing"` // Enable volume pricing
 	PricingTiers     []PricingTier `gorm:"serializer:json" json:"pricing_tiers"`    // Tier definitions

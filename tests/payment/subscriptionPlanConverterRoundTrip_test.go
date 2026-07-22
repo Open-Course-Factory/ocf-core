@@ -61,11 +61,8 @@ import (
 // them SHOULD be exposed is a product decision (reported to main), not a test
 // concern.
 var outputContractExclusions = map[string]string{
-	"stripe_created":         "internal Stripe-sync bookkeeping flag; not a plan attribute",
-	"creation_error":         "internal Stripe-sync error surface (omitempty); not a plan attribute",
-	"addon_network_price_id": "internal Stripe Price ID for add-on billing; not currently exposed",
-	"addon_storage_price_id": "internal Stripe Price ID for add-on billing; not currently exposed",
-	"addon_terminal_price_id": "internal Stripe Price ID for add-on billing; not currently exposed",
+	"stripe_created": "internal Stripe-sync bookkeeping flag; not a plan attribute",
+	"creation_error": "internal Stripe-sync error surface (omitempty); not a plan attribute",
 }
 
 // setSentinel assigns a distinctive non-zero value to a settable reflect.Value,
