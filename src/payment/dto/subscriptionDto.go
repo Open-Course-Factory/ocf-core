@@ -21,6 +21,7 @@ type CreateSubscriptionPlanInput struct {
 	MaxSessionDurationMinutes   int      `json:"max_session_duration_minutes" mapstructure:"max_session_duration_minutes"`
 	NetworkAccessEnabled        bool     `json:"network_access_enabled" mapstructure:"network_access_enabled"`
 	DataPersistenceEnabled      bool     `json:"data_persistence_enabled" mapstructure:"data_persistence_enabled"`
+	SessionSupervisionEnabled   bool     `json:"session_supervision_enabled" mapstructure:"session_supervision_enabled"`
 	DataPersistenceGB           int      `json:"data_persistence_gb" mapstructure:"data_persistence_gb"`
 	AllowedTemplates            []string `json:"allowed_templates" mapstructure:"allowed_templates"`
 	CommandHistoryRetentionDays int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
@@ -47,6 +48,7 @@ type UpdateSubscriptionPlanInput struct {
 	MaxSessionDurationMinutes   *int     `json:"max_session_duration_minutes,omitempty" mapstructure:"max_session_duration_minutes"`
 	NetworkAccessEnabled        *bool    `json:"network_access_enabled,omitempty" mapstructure:"network_access_enabled"`
 	DataPersistenceEnabled      *bool    `json:"data_persistence_enabled,omitempty" mapstructure:"data_persistence_enabled"`
+	SessionSupervisionEnabled   *bool    `json:"session_supervision_enabled,omitempty" mapstructure:"session_supervision_enabled"`
 	DataPersistenceGB           *int     `json:"data_persistence_gb,omitempty" mapstructure:"data_persistence_gb"`
 	AllowedTemplates            []string `json:"allowed_templates,omitempty" mapstructure:"allowed_templates"`
 	CommandHistoryRetentionDays *int     `json:"command_history_retention_days,omitempty" mapstructure:"command_history_retention_days"`
@@ -82,6 +84,7 @@ type SubscriptionPlanOutput struct {
 	MaxSessionDurationMinutes   int      `json:"max_session_duration_minutes"`
 	NetworkAccessEnabled        bool     `json:"network_access_enabled"`
 	DataPersistenceEnabled      bool     `json:"data_persistence_enabled"`
+	SessionSupervisionEnabled   bool     `json:"session_supervision_enabled" mapstructure:"session_supervision_enabled"`
 	DataPersistenceGB           int      `json:"data_persistence_gb"`
 	AllowedTemplates            []string `json:"allowed_templates"`
 	CommandHistoryRetentionDays int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`

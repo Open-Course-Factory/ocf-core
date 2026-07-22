@@ -52,8 +52,13 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						MaxSessionDurationMinutes: plan.MaxSessionDurationMinutes,
 						NetworkAccessEnabled:      plan.NetworkAccessEnabled,
 						DataPersistenceEnabled:    plan.DataPersistenceEnabled,
+						SessionSupervisionEnabled: plan.SessionSupervisionEnabled,
 						DataPersistenceGB:         plan.DataPersistenceGB,
 						AllowedTemplates:          plan.AllowedTemplates,
+
+						// Backend routing
+						DefaultBackend:  plan.DefaultBackend,
+						AllowedBackends: plan.AllowedBackends,
 
 						// Command history
 						CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
@@ -92,9 +97,12 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						MaxSessionDurationMinutes:  input.MaxSessionDurationMinutes,
 						NetworkAccessEnabled:       input.NetworkAccessEnabled,
 						DataPersistenceEnabled:     input.DataPersistenceEnabled,
+						SessionSupervisionEnabled:  input.SessionSupervisionEnabled,
 						DataPersistenceGB:          input.DataPersistenceGB,
 						AllowedTemplates:           input.AllowedTemplates,
 						CommandHistoryRetentionDays: input.CommandHistoryRetentionDays,
+						DefaultBackend:             input.DefaultBackend,
+						AllowedBackends:            input.AllowedBackends,
 						Priority:                   input.Priority,
 						IsActive:                   isActive,
 						IsCatalog:                  isCatalog,
