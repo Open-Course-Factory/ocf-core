@@ -11,7 +11,6 @@ import (
 	"soli/formations/src/auth/models"
 	sqldb "soli/formations/src/db"
 	organizationServices "soli/formations/src/organizations/services"
-	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	ttServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
@@ -408,26 +407,17 @@ func createDefaultUserSettings(userID string) error {
 
 // AssignFreeTrialPlan assigns the free Trial plan to a new user
 func AssignFreeTrialPlan(userID string) error {
-	// Find the free Trial plan (price_amount = 0, name = "Trial")
-	var trialPlan paymentModels.SubscriptionPlan
-	result := sqldb.DB.Where("name = ? AND price_amount = 0 AND is_active = true", "Trial").First(&trialPlan)
-	if result.Error != nil {
-		return fmt.Errorf("could not find active Trial plan: %v", result.Error)
-	}
-
-	// Check if user already has a subscription
-	var existingSub paymentModels.UserSubscription
-	existingResult := sqldb.DB.Where("user_id = ? AND status = ?", userID, "active").First(&existingSub)
-	if existingResult.Error == nil {
-		utils.Info("User %s already has an active subscription, skipping Trial assignment", userID)
-		return nil // User already has a subscription
-	}
-
-	// Create subscription using the subscription service
-	subscriptionService := paymentServices.NewSubscriptionService(sqldb.DB)
-	_, err := subscriptionService.CreateUserSubscription(userID, trialPlan.ID)
+	// Delegates to the payment-side helper so the "already has a subscription"
+	// test uses the canonical entitling predicate. This function previously
+	// checked status='active' alone, which meant a user in dunning (past_due)
+	// was handed a second subscription on top of the one they already held.
+	assigned, err := paymentServices.EnsureFreeTrialAssigned(sqldb.DB, userID)
 	if err != nil {
-		return fmt.Errorf("failed to create Trial subscription: %w", err)
+		return err
+	}
+	if !assigned {
+		utils.Info("User %s already has an entitling subscription, skipping Trial assignment", userID)
+		return nil
 	}
 
 	utils.Info("Successfully assigned Trial plan to user %s", userID)
