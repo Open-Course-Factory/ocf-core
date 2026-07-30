@@ -531,9 +531,13 @@ func (ss *subscriptionService) AdminAssignSubscription(userID string, planID uui
 	var subscription *models.UserSubscription
 
 	err = ss.db.Transaction(func(tx *gorm.DB) error {
-		// Check for existing active subscription
+		// Replace whatever subscription still grants the user access, not just an
+		// 'active' one. Checking for 'active' alone left a past_due or trialing
+		// subscription in place alongside the newly assigned one, and
+		// GetPrimaryUserSubscription resolves by plan priority — so the superseded
+		// plan could keep winning after an admin had reassigned the user.
 		var existingSub models.UserSubscription
-		findErr := tx.Where("user_id = ? AND status = ?", userID, "active").First(&existingSub).Error
+		findErr := tx.Scopes(models.ScopeEntitling).Where("user_id = ?", userID).First(&existingSub).Error
 		if findErr == nil {
 			// Cancel the existing subscription before assigning the new one
 			existingSub.Status = "replaced"

@@ -86,6 +86,11 @@ func (r *organizationSubscriptionRepository) CreateOrganizationSubscriptionAtomi
 // nil with zero affected rows when the org has no prior active subscription.
 func deactivatePreviousOrgSubscription(tx *gorm.DB, orgID uuid.UUID) error {
 	return tx.Model(&models.OrganizationSubscription{}).
+		// Deliberately NOT the entitling predicate: this upholds the same
+		// "one active subscription per organization" invariant as the partial
+		// UNIQUE INDEX below in models/organizationSubscription.go, whose WHERE
+		// clause states exactly this set. Widening it here would cancel rows the
+		// index never constrained. Change the two together.
 		Where("organization_id = ? AND status IN ?", orgID, []string{"active", "trialing"}).
 		Updates(map[string]interface{}{
 			"status":       "cancelled",
@@ -128,11 +133,14 @@ func (r *organizationSubscriptionRepository) GetOrganizationSubscriptionByStripe
 	return &subscription, nil
 }
 
-// GetActiveOrganizationSubscription retrieves the active subscription for an organization
+// GetActiveOrganizationSubscription retrieves the entitling subscription for an
+// organization. Entitling, so an org in dunning still resolves its plan — the
+// same grace behaviour the user side has always had.
 func (r *organizationSubscriptionRepository) GetActiveOrganizationSubscription(orgID uuid.UUID) (*models.OrganizationSubscription, error) {
 	var subscription models.OrganizationSubscription
 	err := r.db.Preload("SubscriptionPlan").
-		Where("organization_id = ? AND status IN (?)", orgID, []string{"active", "trialing"}).
+		Scopes(models.ScopeEntitling).
+		Where("organization_id = ?", orgID).
 		Order("created_at DESC").
 		First(&subscription).Error
 	if err != nil {
@@ -148,7 +156,8 @@ func (r *organizationSubscriptionRepository) GetActiveOrganizationSubscription(o
 func (r *organizationSubscriptionRepository) GetActiveOrganizationSubscriptionByStripeCustomerID(customerID string) (*models.OrganizationSubscription, error) {
 	var subscription models.OrganizationSubscription
 	err := r.db.Preload("SubscriptionPlan").
-		Where("stripe_customer_id = ? AND status IN (?)", customerID, []string{"active", "trialing"}).
+		Scopes(models.ScopeBillable).
+		Where("stripe_customer_id = ?", customerID).
 		Order("created_at DESC").
 		First(&subscription).Error
 	if err != nil {
@@ -161,7 +170,9 @@ func (r *organizationSubscriptionRepository) GetActiveOrganizationSubscriptionBy
 func (r *organizationSubscriptionRepository) GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error) {
 	var subscriptions []models.OrganizationSubscription
 	err := r.db.Preload("SubscriptionPlan").
-		Where("status IN (?)", []string{"active", "trialing"}).
+		// Billable: this is an operational listing of cleanly-paid org
+		// subscriptions, not a gate deciding anyone's access.
+		Scopes(models.ScopeBillable).
 		Order("created_at DESC").
 		Find(&subscriptions).Error
 	if err != nil {
@@ -176,8 +187,11 @@ func (r *organizationSubscriptionRepository) GetUserOrganizationSubscriptions(us
 	var subscriptions []models.OrganizationSubscription
 	err := r.db.Preload("SubscriptionPlan").
 		Joins("JOIN organization_members ON organization_members.organization_id = organization_subscriptions.organization_id").
+		// Entitling: this feeds effectivePlanService.resolveGlobal and
+		// GetUserEffectiveFeatures, both of which decide what the user may do.
+		// Qualified column, so the canonical set is used rather than the scope.
 		Where("organization_members.user_id = ? AND organization_members.is_active = ? AND organization_subscriptions.status IN (?)",
-			userID, true, []string{"active", "trialing"}).
+			userID, true, models.EntitlingStatuses()).
 		Find(&subscriptions).Error
 	if err != nil {
 		return nil, err

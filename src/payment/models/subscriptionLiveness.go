@@ -1,4 +1,4 @@
-package services
+package models
 
 import "gorm.io/gorm"
 
@@ -7,9 +7,13 @@ import "gorm.io/gorm"
 // Before this file the question was answered inline in 22 places with three
 // different status sets, and they had drifted apart: some checked `active`
 // alone, some `active, trialing`, some `active, trialing, past_due`. That is not
-// merely duplication, it produced wrong behaviour — AssignFreeTrialPlan decided
-// "this user already has a subscription" with `active` alone, so a user sitting
-// in dunning was handed a SECOND subscription on top of the one they had.
+// merely duplication, it produced wrong behaviour — the free-plan assignment
+// decided "this user already has a subscription" with `active` alone, so a user
+// sitting in dunning was handed a SECOND subscription on top of the one they had.
+//
+// It lives in models rather than services because the repository layer needs it
+// too, and services already imports repositories — the reverse edge would be an
+// import cycle. Both layers can depend on models.
 //
 // There are deliberately TWO predicates, not one, because entitlement and
 // billing genuinely disagree about dunning:
@@ -18,7 +22,10 @@ import "gorm.io/gorm"
 //     subscription in dunning keeps content and within-grace sessions working,
 //     and access beyond the grace window is cut at session creation, not here.
 //   - Billable: the subscription is cleanly paid. `past_due` is excluded, since
-//     it is precisely the not-paid case.
+//     it is precisely the not-paid case. GetActiveSubscriptionByCustomerID and
+//     GetRecoverableSubscriptionByCustomerID are the canonical illustration of
+//     the pair: a successful invoice payment must be able to find and cure a
+//     past_due subscription, which the billable lookup can never see.
 //
 // Entitling is always a superset of Billable; a test pins that, because the
 // inverse would mean charging someone for access they do not have.
@@ -34,6 +41,9 @@ var (
 
 // EntitlingStatuses returns the statuses under which a subscription grants access.
 // The slice is copied so callers cannot mutate the canonical definition.
+//
+// Prefer ScopeEntitling; use this when the column needs table qualification, as
+// in a join where a bare `status` would be ambiguous.
 func EntitlingStatuses() []string {
 	return append([]string(nil), entitlingStatuses...)
 }
@@ -57,8 +67,6 @@ func IsBillable(status string) bool {
 // ScopeEntitling is a GORM scope filtering any subscription table down to rows
 // that currently grant access. Both user_subscriptions and
 // organization_subscriptions carry a `status` column, so one scope serves both.
-//
-// Use this rather than re-spelling the status list at the call site.
 func ScopeEntitling(tx *gorm.DB) *gorm.DB {
 	return tx.Where("status IN ?", entitlingStatuses)
 }

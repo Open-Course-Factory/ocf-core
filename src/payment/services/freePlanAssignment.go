@@ -42,7 +42,7 @@ func FindFreePlan(db *gorm.DB) (*models.SubscriptionPlan, error) {
 // checking only for 'active' handed them a second one on top of it.
 func EnsureFreeTrialAssigned(db *gorm.DB, userID string) (bool, error) {
 	var existing models.UserSubscription
-	err := db.Scopes(ScopeEntitling).Where("user_id = ?", userID).First(&existing).Error
+	err := db.Scopes(models.ScopeEntitling).Where("user_id = ?", userID).First(&existing).Error
 	switch {
 	case err == nil:
 		return false, nil

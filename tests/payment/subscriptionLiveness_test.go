@@ -28,29 +28,29 @@ import (
 // TestEntitlingStatuses_IncludeDunningGrace pins that a subscription in dunning
 // still entitles its holder — the behaviour documented at paymentRepository.go:131.
 func TestEntitlingStatuses_IncludeDunningGrace(t *testing.T) {
-	assert.True(t, services.IsEntitling("active"), "active must entitle")
-	assert.True(t, services.IsEntitling("past_due"),
+	assert.True(t, models.IsEntitling("active"), "active must entitle")
+	assert.True(t, models.IsEntitling("past_due"),
 		"past_due must entitle: dunning keeps content and within-grace sessions working")
-	assert.False(t, services.IsEntitling("cancelled"), "cancelled must not entitle")
-	assert.False(t, services.IsEntitling("unpaid"), "unpaid must not entitle")
-	assert.False(t, services.IsEntitling(""), "empty status must not entitle")
+	assert.False(t, models.IsEntitling("cancelled"), "cancelled must not entitle")
+	assert.False(t, models.IsEntitling("unpaid"), "unpaid must not entitle")
+	assert.False(t, models.IsEntitling(""), "empty status must not entitle")
 }
 
 // TestBillableStatuses_ExcludeDunning pins the narrower predicate used for billing
 // operations, where a past_due subscription is explicitly NOT cleanly paid.
 func TestBillableStatuses_ExcludeDunning(t *testing.T) {
-	assert.True(t, services.IsBillable("active"), "active must be billable")
-	assert.False(t, services.IsBillable("past_due"),
+	assert.True(t, models.IsBillable("active"), "active must be billable")
+	assert.False(t, models.IsBillable("past_due"),
 		"past_due must not count as billable — it is precisely the not-paid case")
-	assert.False(t, services.IsBillable("cancelled"), "cancelled must not be billable")
+	assert.False(t, models.IsBillable("cancelled"), "cancelled must not be billable")
 }
 
 // TestEntitlingIsSupersetOfBillable guards the relationship between the two
 // predicates, so a future edit cannot make a subscription billable but not
 // entitling — which would charge someone for access they do not have.
 func TestEntitlingIsSupersetOfBillable(t *testing.T) {
-	for _, status := range services.BillableStatuses() {
-		assert.True(t, services.IsEntitling(status),
+	for _, status := range models.BillableStatuses() {
+		assert.True(t, models.IsEntitling(status),
 			"status %q is billable but not entitling — that would charge for absent access", status)
 	}
 }
@@ -79,7 +79,7 @@ func TestScopeEntitling_FiltersAtTheQueryLevel(t *testing.T) {
 	}
 
 	var live []models.UserSubscription
-	require.NoError(t, db.Scopes(services.ScopeEntitling).
+	require.NoError(t, db.Scopes(models.ScopeEntitling).
 		Where("user_id = ?", userID).Find(&live).Error)
 
 	require.Len(t, live, 2, "only active and past_due entitle")
@@ -162,6 +162,52 @@ func TestEnsureFreeTrialAssigned_IsIdempotent(t *testing.T) {
 	require.Len(t, subs, 1, "repeated calls must never stack subscriptions")
 	assert.Equal(t, "personal", subs[0].SubscriptionType,
 		"the DB default must still apply through the shared path — effectivePlanService filters on it")
+}
+
+// TestAdminAssignReplacesADunningSubscription pins that an admin reassignment
+// supersedes whatever still entitles the user, not only an 'active' row.
+//
+// Checking for 'active' alone left the old subscription live alongside the new
+// one, and GetPrimaryUserSubscription resolves by plan priority — so a user
+// reassigned from a high-priority plan while in dunning kept the old plan.
+func TestAdminAssignReplacesADunningSubscription(t *testing.T) {
+	db := freshTestDB(t)
+
+	oldPlan := &models.SubscriptionPlan{
+		Name: "Old high priority", PriceAmount: 1990, Currency: "eur",
+		BillingInterval: "month", IsActive: true, Priority: 20,
+	}
+	newPlan := &models.SubscriptionPlan{
+		Name: "New low priority", PriceAmount: 600, Currency: "eur",
+		BillingInterval: "month", IsActive: true, Priority: 5,
+	}
+	require.NoError(t, db.Create(oldPlan).Error)
+	require.NoError(t, db.Create(newPlan).Error)
+	defer func() {
+		db.Where("subscription_plan_id IN ?", []uuid.UUID{oldPlan.ID, newPlan.ID}).
+			Unscoped().Delete(&models.UserSubscription{})
+		db.Unscoped().Delete(oldPlan)
+		db.Unscoped().Delete(newPlan)
+	}()
+
+	userID := uuid.New().String()
+	require.NoError(t, db.Create(&models.UserSubscription{
+		UserID: userID, SubscriptionPlanID: oldPlan.ID, Status: "past_due",
+		SubscriptionType:   "personal",
+		CurrentPeriodStart: time.Now().AddDate(0, -1, 0), CurrentPeriodEnd: time.Now().AddDate(0, 0, 5),
+	}).Error)
+
+	_, err := services.NewSubscriptionService(db).
+		AdminAssignSubscription(userID, newPlan.ID, 30, "admin-under-test")
+	require.NoError(t, err)
+
+	var live []models.UserSubscription
+	require.NoError(t, db.Scopes(models.ScopeEntitling).
+		Where("user_id = ?", userID).Find(&live).Error)
+
+	require.Len(t, live, 1, "the dunning subscription must be superseded, not left alongside")
+	assert.Equal(t, newPlan.ID, live[0].SubscriptionPlanID,
+		"the newly assigned plan must be the one that survives")
 }
 
 // TestFindFreePlan_MissingPlanIsAnError pins that a broken catalogue surfaces as an

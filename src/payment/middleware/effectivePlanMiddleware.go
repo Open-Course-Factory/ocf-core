@@ -164,7 +164,8 @@ func InjectEffectivePlan(effectivePlanService services.EffectivePlanService, db 
 func resolveOrgPlanForAdmin(db *gorm.DB, orgID uuid.UUID) *services.EffectivePlanResult {
 	var orgSub models.OrganizationSubscription
 	err := db.Preload("SubscriptionPlan").
-		Where("organization_id = ? AND status IN ?", orgID, []string{"active", "trialing"}).
+		Scopes(models.ScopeEntitling).
+		Where("organization_id = ?", orgID).
 		First(&orgSub).Error
 	if err != nil {
 		utils.Debug("Admin fallback: no active subscription for org %s: %v", orgID, err)

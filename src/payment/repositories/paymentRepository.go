@@ -128,15 +128,8 @@ func (r *paymentRepository) GetActiveUserSubscription(userID string) (*models.Us
 	var subscription models.UserSubscription
 	err := r.db.
 		Preload("SubscriptionPlan").
-		// past_due is included so a subscription in dunning still RESOLVES a plan
-		// (content + within-grace sessions keep working, consistent with
-		// GetUserSubscriptions). Access beyond the grace window is gated at
-		// session-creation, not here (#371).
-		// NOTE (#374): OCF offers no paid trials — the free Trial plan is the only
-		// "trial". `trialing` is kept here (and in the other status filters) purely
-		// as defensiveness against Stripe's subscription state machine ever
-		// reporting it; it is not a product feature.
-		Where("user_id = ? AND status IN (?)", userID, []string{"active", "trialing", "past_due"}).
+		Scopes(models.ScopeEntitling).
+		Where("user_id = ?", userID).
 		Order("created_at DESC"). // Always return the newest subscription if multiple exist
 		First(&subscription).Error
 	if err != nil {
@@ -146,12 +139,19 @@ func (r *paymentRepository) GetActiveUserSubscription(userID string) (*models.Us
 	return &subscription, nil
 }
 
-// GetAllActiveUserSubscriptions returns ALL active subscriptions for a user (personal + assigned)
+// GetAllActiveUserSubscriptions returns every entitling subscription for a user
+// (personal + assigned). It backs GetPrimaryUserSubscription, i.e. "which plan
+// does this user get?", so it uses the entitling predicate.
+//
+// This previously excluded past_due while GetActiveUserSubscription included it,
+// so a user in dunning resolved a plan through one method and "no active
+// subscription found" through the other, depending on which call site they hit.
 func (r *paymentRepository) GetAllActiveUserSubscriptions(userID string) ([]models.UserSubscription, error) {
 	var subscriptions []models.UserSubscription
 	err := r.db.
 		Preload("SubscriptionPlan").
-		Where("user_id = ? AND status IN (?)", userID, []string{"active", "trialing"}).
+		Scopes(models.ScopeEntitling).
+		Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Find(&subscriptions).Error
 	if err != nil {
@@ -200,11 +200,15 @@ func (r *paymentRepository) GetPrimaryUserSubscription(userID string) (*models.U
 	return &subscriptions[0], nil
 }
 
+// GetActiveSubscriptionByCustomerID deliberately uses the BILLABLE predicate, not
+// the entitling one: it must not return a past_due subscription. Callers that need
+// to find and cure one use GetRecoverableSubscriptionByCustomerID below.
 func (r *paymentRepository) GetActiveSubscriptionByCustomerID(customerID string) (*models.UserSubscription, error) {
 	var subscription models.UserSubscription
 	err := r.db.
 		Preload("SubscriptionPlan").
-		Where("stripe_customer_id = ? AND status IN (?)", customerID, []string{"active", "trialing"}).
+		Scopes(models.ScopeBillable).
+		Where("stripe_customer_id = ?", customerID).
 		First(&subscription).Error
 	if err != nil {
 		return nil, err
@@ -223,7 +227,8 @@ func (r *paymentRepository) GetRecoverableSubscriptionByCustomerID(customerID st
 	var subscription models.UserSubscription
 	err := r.db.
 		Preload("SubscriptionPlan").
-		Where("stripe_customer_id = ? AND status IN (?)", customerID, []string{"active", "trialing", "past_due"}).
+		Scopes(models.ScopeEntitling).
+		Where("stripe_customer_id = ?", customerID).
 		First(&subscription).Error
 	if err != nil {
 		return nil, err
@@ -237,7 +242,7 @@ func (r *paymentRepository) GetUserSubscriptions(userID string, includeInactive 
 	query := r.db.Preload("SubscriptionPlan").Where("user_id = ?", userID)
 
 	if !includeInactive {
-		query = query.Where("status IN (?)", []string{"active", "trialing", "past_due"})
+		query = query.Scopes(models.ScopeEntitling)
 	}
 
 	err := query.Order("created_at DESC").Find(&subscriptions).Error
@@ -521,9 +526,10 @@ func (r *paymentRepository) GetSubscriptionAnalytics(startDate, endDate time.Tim
 		Where("created_at BETWEEN ? AND ?", startDate, endDate).
 		Count(&analytics.TotalSubscriptions)
 
-	// Active subscriptions
+	// Active subscriptions. Billable, not entitling: a dashboard counting "active
+	// subscriptions" is asking how many are cleanly paid, so dunning is excluded.
 	r.db.Model(&models.UserSubscription{}).
-		Where("status IN (?)", []string{"active", "trialing"}).
+		Scopes(models.ScopeBillable).
 		Count(&analytics.ActiveSubscriptions)
 
 	// Cancelled subscriptions
@@ -556,7 +562,9 @@ func (r *paymentRepository) GetSubscriptionAnalytics(startDate, endDate time.Tim
 	r.db.Model(&models.UserSubscription{}).
 		Select("subscription_plans.name as plan_name, COUNT(*) as count").
 		Joins("JOIN subscription_plans ON user_subscription.subscription_plan_id = subscription_plans.id").
-		Where("user_subscription.status IN (?)", []string{"active", "trialing"}).
+		// Qualified column, so the canonical set is used directly rather than the
+		// scope — a bare `status` would be ambiguous across this join.
+		Where("user_subscription.status IN (?)", models.BillableStatuses()).
 		Group("subscription_plans.name").
 		Scan(&planCounts)
 

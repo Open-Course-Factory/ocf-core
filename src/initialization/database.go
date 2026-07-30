@@ -559,7 +559,7 @@ func ensureOrganizationsHaveTrialPlan(db *gorm.DB) {
 		// this now includes past_due: an org in dunning has a subscription, and
 		// stacking a Trial underneath it was never intended.
 		var existingSub paymentModels.OrganizationSubscription
-		subResult := db.Scopes(paymentServices.ScopeEntitling).
+		subResult := db.Scopes(paymentModels.ScopeEntitling).
 			Where("organization_id = ?", org.ID).First(&existingSub)
 		if subResult.Error == nil {
 			continue

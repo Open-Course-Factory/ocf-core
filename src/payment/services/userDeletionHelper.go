@@ -88,12 +88,13 @@ func (h *paymentDeletionHelper) CancelAllActiveSubscriptionsForUser(userID strin
 		return errors.New("paymentDeletionHelper: db is nil")
 	}
 
-	activeStatuses := []string{"active", "trialing", "past_due"}
-
+	// Entitling: on account erasure every subscription that still grants anything
+	// must be cancelled at Stripe, dunning included — a past_due subscription is
+	// still a live Stripe object that would keep billing.
 	var subs []models.UserSubscription
 	err := h.db.
-		Where("user_id = ? AND status IN ? AND stripe_subscription_id IS NOT NULL AND stripe_subscription_id <> ''",
-			userID, activeStatuses).
+		Scopes(models.ScopeEntitling).
+		Where("user_id = ? AND stripe_subscription_id IS NOT NULL AND stripe_subscription_id <> ''", userID).
 		Find(&subs).Error
 	if err != nil {
 		return fmt.Errorf("failed to load active subscriptions for user %s: %w", userID, err)
