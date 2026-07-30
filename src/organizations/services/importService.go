@@ -12,7 +12,6 @@ import (
 	"soli/formations/src/organizations/dto"
 	organizationModels "soli/formations/src/organizations/models"
 	orgUtils "soli/formations/src/organizations/utils"
-	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	ttServices "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
@@ -591,23 +590,18 @@ func (s *importService) addUserToOrganization(userID string, orgID uuid.UUID) er
 // because importing auth/services creates a circular dependency.
 // Keep in sync with the original.
 func (s *importService) assignFreeTrialPlan(userID string) error {
-	var trialPlan paymentModels.SubscriptionPlan
-	result := s.db.Where("name = ? AND price_amount = 0 AND is_active = true", "Trial").First(&trialPlan)
-	if result.Error != nil {
-		return fmt.Errorf("could not find active Trial plan: %v", result.Error)
-	}
-
-	var existingSub paymentModels.UserSubscription
-	existingResult := s.db.Where("user_id = ? AND status = ?", userID, "active").First(&existingSub)
-	if existingResult.Error == nil {
-		utils.Info("User %s already has an active subscription, skipping Trial assignment", userID)
-		return nil
-	}
-
-	subscriptionService := paymentServices.NewSubscriptionService(s.db)
-	_, err := subscriptionService.CreateUserSubscription(userID, trialPlan.ID)
+	// Was a hand-maintained copy of auth/services.AssignFreeTrialPlan, kept because
+	// importing auth/services from here is a cycle. The logic now lives in
+	// payment/services, which both callers may import, so the copy is gone — along
+	// with the drift it had already accumulated: it tested status='active' alone,
+	// so a user in dunning was handed a second subscription on top.
+	assigned, err := paymentServices.EnsureFreeTrialAssigned(s.db, userID)
 	if err != nil {
-		return fmt.Errorf("failed to create Trial subscription: %w", err)
+		return err
+	}
+	if !assigned {
+		utils.Info("User %s already has an entitling subscription, skipping Trial assignment", userID)
+		return nil
 	}
 
 	utils.Info("Successfully assigned Trial plan to user %s", userID)

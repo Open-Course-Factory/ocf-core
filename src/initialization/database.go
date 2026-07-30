@@ -21,6 +21,7 @@ import (
 	groupModels "soli/formations/src/groups/models"
 	organizationModels "soli/formations/src/organizations/models"
 	paymentModels "soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
 	scenarioModels "soli/formations/src/scenarios/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	testtools "soli/formations/tests/testTools"
@@ -500,10 +501,10 @@ func BackfillGroupManagementEntitlement(db *gorm.DB) {
 // where the subscription assignment failed during user creation (e.g. due to
 // initialization order issues or Casdoor resets).
 func ensureUsersHaveTrialPlan(db *gorm.DB) {
-	var trialPlan paymentModels.SubscriptionPlan
-	result := db.Where("name = ? AND price_amount = 0 AND is_active = true", "Trial").First(&trialPlan)
-	if result.Error != nil {
-		log.Printf("[TRIAL-SYNC] Could not find active Trial plan: %v", result.Error)
+	// Fail fast on a missing free plan so a broken catalogue logs once here rather
+	// than once per user inside the loop.
+	if _, err := paymentServices.FindFreePlan(db); err != nil {
+		log.Printf("[TRIAL-SYNC] %v", err)
 		return
 	}
 
@@ -519,25 +520,14 @@ func ensureUsersHaveTrialPlan(db *gorm.DB) {
 			continue
 		}
 
-		var existingSub paymentModels.UserSubscription
-		subResult := db.Where("user_id = ? AND status IN ?", user.Id, []string{"active", "trialing"}).First(&existingSub)
-		if subResult.Error == nil {
-			continue // User already has an active subscription
-		}
-
-		now := time.Now()
-		newSub := paymentModels.UserSubscription{
-			UserID:             user.Id,
-			SubscriptionPlanID: trialPlan.ID,
-			Status:             "active",
-			CurrentPeriodStart: now,
-			CurrentPeriodEnd:   now.AddDate(1, 0, 0),
-			SubscriptionType:   "personal",
-		}
-
-		if err := db.Create(&newSub).Error; err != nil {
+		// Shares the assignment path with signup and bulk import: same liveness
+		// test, and usage metrics get initialised, which the inline copy skipped.
+		assigned, err := paymentServices.EnsureFreeTrialAssigned(db, user.Id)
+		if err != nil {
 			log.Printf("[TRIAL-SYNC] Failed to assign Trial plan to user %s: %v", user.Id, err)
-		} else {
+			continue
+		}
+		if assigned {
 			fixed++
 		}
 	}
@@ -553,10 +543,9 @@ func ensureUsersHaveTrialPlan(db *gorm.DB) {
 // failed during organization creation (e.g. due to initialization order issues).
 // Mirrors ensureUsersHaveTrialPlan but for organizations.
 func ensureOrganizationsHaveTrialPlan(db *gorm.DB) {
-	var trialPlan paymentModels.SubscriptionPlan
-	result := db.Where("name = ? AND price_amount = 0 AND is_active = true", "Trial").First(&trialPlan)
-	if result.Error != nil {
-		log.Printf("[ORG-TRIAL-SYNC] Could not find active Trial plan: %v", result.Error)
+	trialPlan, err := paymentServices.FindFreePlan(db)
+	if err != nil {
+		log.Printf("[ORG-TRIAL-SYNC] %v", err)
 		return
 	}
 
@@ -566,11 +555,14 @@ func ensureOrganizationsHaveTrialPlan(db *gorm.DB) {
 
 	fixed := 0
 	for _, org := range orgs {
-		// Check if org already has an active or trialing OrganizationSubscription
+		// An org already holding an entitling subscription needs no Trial. Note
+		// this now includes past_due: an org in dunning has a subscription, and
+		// stacking a Trial underneath it was never intended.
 		var existingSub paymentModels.OrganizationSubscription
-		subResult := db.Where("organization_id = ? AND status IN ?", org.ID, []string{"active", "trialing"}).First(&existingSub)
+		subResult := db.Scopes(paymentServices.ScopeEntitling).
+			Where("organization_id = ?", org.ID).First(&existingSub)
 		if subResult.Error == nil {
-			continue // Org already has an active subscription
+			continue
 		}
 
 		now := time.Now()
@@ -623,6 +615,11 @@ func BackfillSingleActiveOrgSubscription(db *gorm.DB) {
 	}
 
 	var rows []row
+	// Deliberately NOT the entitling predicate. This backfill enforces the same
+	// invariant as the partial UNIQUE INDEX on organization_subscriptions
+	// (models/organizationSubscription.go), whose WHERE clause is literally
+	// `status IN ('active','trialing')`. The two must state the same set or the
+	// backfill cancels rows the index never constrained. Change them together.
 	if err := db.Table("organization_subscriptions").
 		Select("id, organization_id, created_at").
 		Where("status IN ? AND deleted_at IS NULL", []string{"active", "trialing"}).

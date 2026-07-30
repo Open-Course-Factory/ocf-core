@@ -129,3 +129,47 @@ func TestFreeTrialNotAssignedOverDunningSubscription(t *testing.T) {
 	require.NoError(t, db.Where("user_id = ?", userID).Find(&subs).Error)
 	assert.Len(t, subs, 1, "must not stack a second subscription onto a past_due one")
 }
+
+// TestEnsureFreeTrialAssigned_IsIdempotent pins the property the three call sites
+// depend on — signup, the startup healing loop, and bulk import all invoke this
+// repeatedly over the same users, so a second call must be a no-op rather than a
+// second subscription.
+func TestEnsureFreeTrialAssigned_IsIdempotent(t *testing.T) {
+	db := freshTestDB(t)
+
+	trialPlan := &models.SubscriptionPlan{
+		Name: services.FreePlanName, PriceAmount: 0, Currency: "eur",
+		BillingInterval: "month", IsActive: true, Priority: 0,
+	}
+	require.NoError(t, db.Create(trialPlan).Error)
+	defer func() {
+		db.Where("subscription_plan_id = ?", trialPlan.ID).Unscoped().Delete(&models.UserSubscription{})
+		db.Unscoped().Delete(trialPlan)
+	}()
+
+	userID := uuid.New().String()
+
+	assigned, err := services.EnsureFreeTrialAssigned(db, userID)
+	require.NoError(t, err)
+	assert.True(t, assigned, "first call assigns the free plan")
+
+	assigned, err = services.EnsureFreeTrialAssigned(db, userID)
+	require.NoError(t, err)
+	assert.False(t, assigned, "second call must be a no-op")
+
+	var subs []models.UserSubscription
+	require.NoError(t, db.Where("user_id = ?", userID).Find(&subs).Error)
+	require.Len(t, subs, 1, "repeated calls must never stack subscriptions")
+	assert.Equal(t, "personal", subs[0].SubscriptionType,
+		"the DB default must still apply through the shared path — effectivePlanService filters on it")
+}
+
+// TestFindFreePlan_MissingPlanIsAnError pins that a broken catalogue surfaces as an
+// error rather than silently assigning nothing.
+func TestFindFreePlan_MissingPlanIsAnError(t *testing.T) {
+	db := freshTestDB(t)
+
+	plan, err := services.FindFreePlan(db)
+	assert.Error(t, err, "absent free plan must be an error, not a nil plan and nil error")
+	assert.Nil(t, plan)
+}
