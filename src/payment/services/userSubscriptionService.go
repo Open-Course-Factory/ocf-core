@@ -505,12 +505,23 @@ func (ss *subscriptionService) AdminAssignSubscription(userID string, planID uui
 		return nil, fmt.Errorf("invalid plan ID: %w", err)
 	}
 
-	if durationDays <= 0 {
-		durationDays = 365
-	}
-
 	if durationDays > 3650 {
 		return nil, fmt.Errorf("duration exceeds maximum of 3650 days (10 years)")
+	}
+
+	// Capture the caller's intent BEFORE the billing-period default below. Zero
+	// means "no entitlement deadline", not "expire in a year": admin assignment is
+	// how bespoke and org plans are granted, and silently revoking those after 365
+	// days would be a surprise nobody asked for. The 365-day default still applies
+	// to CurrentPeriodEnd, which is a billing-window display and always has.
+	var expiresAt *time.Time
+	if durationDays > 0 {
+		deadline := time.Now().AddDate(0, 0, durationDays)
+		expiresAt = &deadline
+	}
+
+	if durationDays <= 0 {
+		durationDays = 365
 	}
 
 	// Validate userID is not empty
@@ -560,7 +571,11 @@ func (ss *subscriptionService) AdminAssignSubscription(userID string, planID uui
 			Status:             "active",
 			CurrentPeriodStart: now,
 			CurrentPeriodEnd:   now.AddDate(0, 0, durationDays),
-			AssignedByUserID:   assignedBy,
+			// The deadline the liveness predicate actually enforces. Until #440 the
+			// requested duration was stored only in CurrentPeriodEnd, which nothing
+			// read, so an assignment "for 3 days" granted access forever.
+			ExpiresAt:        expiresAt,
+			AssignedByUserID: assignedBy,
 		}
 
 		if err := tx.Create(subscription).Error; err != nil {

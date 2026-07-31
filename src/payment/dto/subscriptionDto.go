@@ -159,7 +159,11 @@ type UserSubscriptionOutput struct {
 type AdminAssignSubscriptionInput struct {
 	UserID       string    `binding:"required" json:"user_id"`
 	PlanID       uuid.UUID `binding:"required" json:"plan_id"`
-	DurationDays int       `json:"duration_days" binding:"min=0,max=3650"` // 0 = default 365, max 10 years
+	// DurationDays sets the entitlement deadline (#440). Zero means NO deadline —
+	// the assignment is open-ended, which is what granting a bespoke or org plan
+	// means. It still defaults the displayed billing window to 365 days, as it
+	// always has; the two are different questions and only the deadline is enforced.
+	DurationDays int `json:"duration_days" binding:"min=0,max=3650"`
 }
 
 // Invoice DTOs

@@ -1,6 +1,10 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 // Subscription liveness — the single owner of "does this subscription still count?".
 //
@@ -91,9 +95,21 @@ func IsBillable(status string) bool {
 
 // ScopeEntitling is a GORM scope filtering any subscription table down to rows
 // that currently grant access. Both user_subscriptions and
-// organization_subscriptions carry a `status` column, so one scope serves both.
+// organization_subscriptions carry `status` and `expires_at`, so one scope
+// serves both — and must, since a column present on only one table would break
+// the other's plan resolution outright.
+//
+// Two terms, because a subscription can stop entitling two different ways:
+// its status changes (Stripe drives that), or its window closes (#440). The
+// second is what a prepaid pack needs — it has no Stripe subscription to flip a
+// status for it, so without a deadline it would grant access forever.
+//
+// NULL expires_at means no deadline, so every row that predates this and every
+// ordinary recurring subscription is unaffected. That default is deliberate:
+// treating absent as expired would have revoked access silently and en masse.
 func ScopeEntitling(tx *gorm.DB) *gorm.DB {
-	return tx.Where("status IN ?", entitlingStatuses)
+	return tx.Where("status IN ?", entitlingStatuses).
+		Where("expires_at IS NULL OR expires_at > ?", time.Now())
 }
 
 // ScopeBillable is the billing-side counterpart of ScopeEntitling.
