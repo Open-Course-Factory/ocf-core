@@ -515,8 +515,33 @@ func BackfillGroupManagementEntitlement(db *gorm.DB) {
 // Idempotent: it only touches rows where the flag is still false, so a plan an
 // admin has deliberately unmarked is not re-marked on the next restart.
 func BackfillBulkPurchasableFromGroupManagement(db *gorm.DB) {
+	// Seed ONCE. "Where bulk_purchasable = false" is not a once-guard — it is the
+	// condition that re-marks, so an administrator who deliberately unmarks a
+	// legacy plan would find it sellable again after the next restart. Treat any
+	// already-marked plan as proof the seeding has happened.
+	//
+	// Limitation, accepted: if every plan is unmarked the seeding runs again. That
+	// is indistinguishable from a fresh database without a migrations ledger, and
+	// unmarking the entire catalogue is not a state worth carrying machinery for.
+	var alreadyMarked int64
+	if err := db.Model(&paymentModels.SubscriptionPlan{}).
+		Where("bulk_purchasable = ?", true).Count(&alreadyMarked).Error; err != nil {
+		log.Printf("[MIGRATION] BackfillBulkPurchasableFromGroupManagement probe failed: %v", err)
+		return
+	}
+	if alreadyMarked > 0 {
+		return
+	}
+
+	// The old gate was IsActive AND IsCatalog AND GroupManagementEnabled — all
+	// three. Replaying only the group-management half would MARK PLANS THAT WERE
+	// NEVER SELLABLE: a hidden bespoke plan carrying group management was rejected
+	// before (IsCatalog=false) and would become bulk-purchasable by any eligible
+	// trainer. Catalog membership is therefore part of the replay, even though it
+	// is no longer part of the gate.
 	res := db.Model(&paymentModels.SubscriptionPlan{}).
-		Where("group_management_enabled = ? AND bulk_purchasable = ?", true, false).
+		Where("group_management_enabled = ? AND is_catalog = ? AND bulk_purchasable = ?",
+			true, true, false).
 		Update("bulk_purchasable", true)
 	if res.Error != nil {
 		log.Printf("[MIGRATION] BackfillBulkPurchasableFromGroupManagement failed: %v", res.Error)
