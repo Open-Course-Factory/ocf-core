@@ -47,13 +47,13 @@ func SetPlanChainBuilder(builder func(entityManagementInterfaces.PlanRequirement
 // RegisterDocumentedRoutes enregistre toutes les routes documentées. CRUD routes
 // stay gated on the entity having a SwaggerConfig; custom actions are mounted for
 // every entity that declares them, even without a SwaggerConfig.
-func (srg *SwaggerRouteGenerator) RegisterDocumentedRoutes(router *gin.RouterGroup, authMiddleware gin.HandlerFunc) {
+func (srg *SwaggerRouteGenerator) RegisterDocumentedRoutes(router *gin.RouterGroup, authMiddleware gin.HandlerFunc, identifyMiddleware gin.HandlerFunc) {
 	service := ems.GlobalEntityRegistrationService
 	swaggerConfigs := service.GetAllSwaggerConfigs()
 	allActions := service.GetAllActions()
 
 	for entityName, config := range swaggerConfigs {
-		srg.registerEntityRoutes(router, entityName, config, authMiddleware)
+		srg.registerEntityRoutes(router, entityName, config, authMiddleware, identifyMiddleware)
 	}
 
 	for entityName, actions := range allActions {
@@ -95,7 +95,7 @@ func (srg *SwaggerRouteGenerator) registerActionRoutes(router *gin.RouterGroup, 
 }
 
 // registerEntityRoutes crée les routes pour une entité spécifique
-func (srg *SwaggerRouteGenerator) registerEntityRoutes(router *gin.RouterGroup, entityName string, config *entityManagementInterfaces.EntitySwaggerConfig, authMiddleware gin.HandlerFunc) {
+func (srg *SwaggerRouteGenerator) registerEntityRoutes(router *gin.RouterGroup, entityName string, config *entityManagementInterfaces.EntitySwaggerConfig, authMiddleware gin.HandlerFunc, identifyMiddleware gin.HandlerFunc) {
 	// Déterminer le path de base (pluriel, en minuscules)
 	basePath := ems.ResourceBasePath(entityName)
 	entityGroup := router.Group(basePath)
@@ -108,7 +108,10 @@ func (srg *SwaggerRouteGenerator) registerEntityRoutes(router *gin.RouterGroup, 
 		if config.GetAll.Security {
 			entityGroup.GET("", authMiddleware, handler)
 		} else {
-			entityGroup.GET("", handler)
+			// Public read, but still identify the caller when a token is present:
+			// a VisibilityScope widens for administrators, and with no middleware
+			// at all userRoles is never set so an admin looks anonymous (#444).
+			entityGroup.GET("", identifyMiddleware, handler)
 		}
 		log.Printf("  ✅ GET %s (GetAll)", basePath)
 	}
@@ -119,7 +122,7 @@ func (srg *SwaggerRouteGenerator) registerEntityRoutes(router *gin.RouterGroup, 
 		if config.GetOne.Security {
 			entityGroup.GET("/:id", authMiddleware, handler)
 		} else {
-			entityGroup.GET("/:id", handler)
+			entityGroup.GET("/:id", identifyMiddleware, handler)
 		}
 		log.Printf("  ✅ GET %s/:id (GetOne)", basePath)
 	}

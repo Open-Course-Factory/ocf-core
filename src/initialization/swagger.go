@@ -63,7 +63,7 @@ func SetupCompleteSwaggerSystem(r *gin.Engine, db *gorm.DB) {
 	// by route in the RouteRegistry) but REQUIRED so custom action Access rules are
 	// actually enforced. Without it this group skips Layer 2 entirely.
 	docGroup.Use(access.Layer2Enforcement())
-	routeGenerator.RegisterDocumentedRoutes(docGroup, authMiddleware.AuthManagement())
+	routeGenerator.RegisterDocumentedRoutes(docGroup, authMiddleware.AuthManagement(), authMiddleware.IdentifyIfPresent())
 
 	// 🔀 ÉTAPE 2: Setup du merger Swagger
 	log.Println("  🔀 Setting up Swagger spec merger...")

@@ -229,7 +229,7 @@ func TestActionRoutes_MountWithoutSwaggerConfig(t *testing.T) {
 	permissive := func(c *gin.Context) { c.Next() }
 
 	srg := swagger.NewSwaggerRouteGenerator(nil)
-	srg.RegisterDocumentedRoutes(apiGroup, permissive)
+	srg.RegisterDocumentedRoutes(apiGroup, permissive, permissive)
 
 	// (a) The route is registered on the engine at the item-scoped path.
 	routeFound := false
@@ -428,7 +428,7 @@ func TestActionRoutes_NormalizeMethodOnMount(t *testing.T) {
 	srg := swagger.NewSwaggerRouteGenerator(nil)
 
 	require.NotPanics(t, func() {
-		srg.RegisterDocumentedRoutes(apiGroup, permissive)
+		srg.RegisterDocumentedRoutes(apiGroup, permissive, permissive)
 	}, "mounting a lowercase-method action must not panic (method must be normalized to POST before router.Handle)")
 
 	routeFound := false
@@ -466,7 +466,7 @@ func TestActionRoutes_CollectionScope_MountsAndReachable(t *testing.T) {
 	apiGroup := engine.Group("/api/v1")
 	permissive := func(c *gin.Context) { c.Next() }
 	srg := swagger.NewSwaggerRouteGenerator(nil)
-	srg.RegisterDocumentedRoutes(apiGroup, permissive)
+	srg.RegisterDocumentedRoutes(apiGroup, permissive, permissive)
 
 	// Collection scope mounts directly under the base path — no /:id segment.
 	wantPath := "/api/v1/action-collection-widgets/verb"
@@ -531,7 +531,7 @@ func TestActionRoutes_AuthMiddlewareGatesHandler(t *testing.T) {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 	}
 	srg := swagger.NewSwaggerRouteGenerator(nil)
-	srg.RegisterDocumentedRoutes(apiGroup, rejectingAuth)
+	srg.RegisterDocumentedRoutes(apiGroup, rejectingAuth, rejectingAuth)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/action-auth-gate-widgets/00000000-0000-0000-0000-000000000001/verb", nil)
 	rec := httptest.NewRecorder()
@@ -577,7 +577,7 @@ func TestActionRoutes_Layer2Enforcement_AdminOnly(t *testing.T) {
 		apiGroup.Use(injectIdentity(userID, roles))
 		apiGroup.Use(access.Layer2Enforcement())
 		srg := swagger.NewSwaggerRouteGenerator(nil)
-		srg.RegisterDocumentedRoutes(apiGroup, permissive)
+		srg.RegisterDocumentedRoutes(apiGroup, permissive, permissive)
 
 		req := httptest.NewRequest(http.MethodPost, actionPath, nil)
 		rec := httptest.NewRecorder()
@@ -636,7 +636,7 @@ func TestActionRoutes_PlanRequiredWithoutBuilder_Panics(t *testing.T) {
 	srg := swagger.NewSwaggerRouteGenerator(nil)
 
 	require.Panics(t, func() {
-		srg.RegisterDocumentedRoutes(apiGroup, permissive)
+		srg.RegisterDocumentedRoutes(apiGroup, permissive, permissive)
 	}, "mounting an action with a PlanRequirement and no plan-chain builder must fail-fast (panic)")
 }
 
@@ -675,7 +675,7 @@ func TestActionRoutes_PlanChainBuilderGatesHandler(t *testing.T) {
 	apiGroup := engine.Group("/api/v1")
 	permissive := func(c *gin.Context) { c.Next() }
 	srg := swagger.NewSwaggerRouteGenerator(nil)
-	srg.RegisterDocumentedRoutes(apiGroup, permissive)
+	srg.RegisterDocumentedRoutes(apiGroup, permissive, permissive)
 
 	itemPath := "/api/v1/action-plan-gated-widgets/00000000-0000-0000-0000-000000000001/verb"
 

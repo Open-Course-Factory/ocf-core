@@ -18,6 +18,9 @@ import (
 
 type AuthMiddleware interface {
 	AuthManagement() gin.HandlerFunc
+	// IdentifyIfPresent attaches an identity when one is supplied, and never
+	// rejects. For public routes whose response depends on who is asking.
+	IdentifyIfPresent() gin.HandlerFunc
 }
 
 type authMiddleware struct {
@@ -134,6 +137,53 @@ func (am *authMiddleware) AuthManagement() gin.HandlerFunc {
 		if impersonationHandler != nil {
 			impersonationHandler(ctx)
 		}
+	}
+}
+
+// IdentifyIfPresent authenticates the caller when a usable token is supplied and
+// otherwise lets the request through anonymously. It never rejects.
+//
+// It exists for routes that are deliberately PUBLIC but whose response still
+// depends on who is asking. The subscription-plan catalogue is the case that
+// forced it: its read routes are declared Security=false so the public pricing
+// page can fetch them without a session, which meant the route was mounted with
+// no auth middleware at all — so userRoles was never populated and the
+// VisibilityScope predicate could not recognise an administrator. Admins were
+// therefore shown only catalogue plans and could not see, let alone edit, the
+// hidden ones (#444).
+//
+// Deliberately NOT an authorization step: it performs no Casbin permission check
+// and grants nothing. It only answers "is there a valid identity attached to this
+// request?", so downstream read scoping can widen for admins. Any route that must
+// REFUSE anonymous callers keeps using AuthManagement.
+//
+// Fails open by design — a malformed, expired or revoked token yields an
+// anonymous request rather than an error, because the route is public. The
+// consequence is only that the caller sees the public projection.
+func (am *authMiddleware) IdentifyIfPresent() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		userId, tokenJTI, err := casdoor.ParseUserIDFromRequest(ctx)
+		if err != nil || userId == "" {
+			ctx.Next()
+			return
+		}
+		if isTokenBlacklisted(tokenJTI) {
+			ctx.Next()
+			return
+		}
+		if err := casdoor.Enforcer.LoadPolicy(); err != nil {
+			ctx.Next()
+			return
+		}
+		userRoles, errRoles := casdoor.Enforcer.GetRolesForUser(userId)
+		if errRoles != nil {
+			ctx.Next()
+			return
+		}
+
+		ctx.Set("userRoles", userRoles)
+		ctx.Set("userId", userId)
+		ctx.Next()
 	}
 }
 
