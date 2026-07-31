@@ -26,6 +26,7 @@ func BulkLicenseRoutes(router *gin.RouterGroup, configuration *config.Configurat
 	batchRoutes.Use(authMiddleware.AuthManagement())
 	{
 		batchRoutes.POST("/create-checkout-session", bulkController.CreateBulkCheckoutSession) // Create Stripe checkout session for bulk purchase
+		batchRoutes.GET("/purchasable-plans", bulkController.ListPurchasableSeatPlans)         // Seat products this trainer may buy
 		batchRoutes.GET("", bulkController.GetMyBatches)                                       // List my batches
 		batchRoutes.GET("/:id", bulkController.GetBatchDetails)                                // Get batch details
 		batchRoutes.GET("/:id/licenses", bulkController.GetBatchLicenses)                      // List licenses in batch

@@ -256,6 +256,11 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Create batch checkout session",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/subscription-batches/purchasable-plans", Method: "GET",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "List the seat products the caller may buy for learners",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/subscription-batches", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserUserID"},
 			Description: "List owned subscription batches",

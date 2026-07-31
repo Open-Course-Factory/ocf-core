@@ -18,6 +18,7 @@ import (
 type BulkLicenseController interface {
 	CreateBulkCheckoutSession(ctx *gin.Context)
 	PurchaseBulkLicenses(ctx *gin.Context)
+	ListPurchasableSeatPlans(ctx *gin.Context)
 	GetMyBatches(ctx *gin.Context)
 	GetBatchDetails(ctx *gin.Context)
 	GetBatchLicenses(ctx *gin.Context)
@@ -164,6 +165,34 @@ func (c *bulkLicenseController) PurchaseBulkLicenses(ctx *gin.Context) {
 //	@Success		200	{array}		dto.SubscriptionBatchOutput
 //	@Failure		500	{object}	errors.APIError
 //	@Router			/subscription-batches [get]
+// ListPurchasableSeatPlans godoc
+//
+//	@Summary		List the seat products this trainer may buy for learners
+//	@Description	Seat plans are hidden from the public catalogue, so they need their own listing. Returns only what a purchase would actually accept, plus whether the caller may buy at all.
+//	@Tags			bulk-licenses
+//	@Produce		json
+//	@Security		Bearer
+//	@Success		200	{object}	dto.PurchasableSeatPlansOutput
+//	@Failure		500	{object}	errors.APIError
+//	@Router			/subscription-batches/purchasable-plans [get]
+func (c *bulkLicenseController) ListPurchasableSeatPlans(ctx *gin.Context) {
+	userID := ctx.GetString("userId")
+
+	out, err := c.bulkService.ListPurchasableSeatPlans(userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to list purchasable seat plans",
+		})
+		return
+	}
+
+	// An ineligible caller is a 200 with can_purchase=false, not a 403: the
+	// screen needs to explain why buying is unavailable, and "you have no plan
+	// that allows it" is an answer rather than an error.
+	ctx.JSON(http.StatusOK, out)
+}
+
 func (c *bulkLicenseController) GetMyBatches(ctx *gin.Context) {
 	userID := ctx.GetString("userId")
 

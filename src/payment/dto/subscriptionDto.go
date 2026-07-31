@@ -434,6 +434,31 @@ type ProspectivePricingOutput struct {
 	Points   []ProspectivePricingPoint `json:"points"`
 }
 
+// PurchasableSeatPlan is a seat product offered to a trainer, carrying just
+// enough to price an order. Deliberately leaner than SubscriptionPlanOutput:
+// these are hidden plans, so only what the purchase screen needs travels.
+type PurchasableSeatPlan struct {
+	ID               uuid.UUID     `json:"id"`
+	Name             string        `json:"name"`
+	Description      string        `json:"description"`
+	Currency         string        `json:"currency"`
+	BillingInterval  string        `json:"billing_interval"`
+	PriceAmount      int64         `json:"price_amount"`
+	UseTieredPricing bool          `json:"use_tiered_pricing"`
+	PricingTiers     []PricingTier `json:"pricing_tiers"`
+}
+
+// PurchasableSeatPlansOutput answers "what may this trainer buy for learners?".
+//
+// CanPurchase is returned alongside the list rather than left to be inferred
+// from an empty one: "you are not allowed" and "there is nothing for sale" are
+// different answers and the UI must say which.
+type PurchasableSeatPlansOutput struct {
+	CanPurchase bool                  `json:"can_purchase"`
+	Reason      string                `json:"reason,omitempty"`
+	Plans       []PurchasableSeatPlan `json:"plans"`
+}
+
 // SeatPricingCheckInput carries BOTH seat ladders, because the invariants that
 // matter belong to the pair and neither plan can validate itself.
 type SeatPricingCheckInput struct {

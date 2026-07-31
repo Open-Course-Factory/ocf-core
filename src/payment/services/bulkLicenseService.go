@@ -20,6 +20,9 @@ import (
 )
 
 type BulkLicenseService interface {
+	// ListPurchasableSeatPlans answers "what may this trainer buy for learners?".
+	// Seat plans are hidden from the catalogue, so they need their own listing.
+	ListPurchasableSeatPlans(purchaserUserID string) (*dto.PurchasableSeatPlansOutput, error)
 	PurchaseBulkLicenses(purchaserUserID string, input dto.BulkPurchaseInput) (*models.SubscriptionBatch, *[]models.UserSubscription, error)
 	AssignLicense(batchID uuid.UUID, requestingUserID string, targetUserID string) (*models.UserSubscription, error)
 	RevokeLicense(licenseID uuid.UUID, requestingUserID string) error
@@ -103,6 +106,69 @@ func validateBulkPurchaser(db *gorm.DB, purchaserUserID string) error {
 }
 
 // PurchaseBulkLicenses creates a batch purchase and individual license records
+// ListPurchasableSeatPlans returns the seat products this user may buy for
+// learners, plus whether they may buy at all.
+//
+// It exists because seat plans are deliberately hidden (is_catalog=false, so
+// they never reach the public pricing page), which means VisibilityScope hides
+// them from every non-admin — including the trainer they were created for. The
+// purchase screen would otherwise have nothing to list.
+//
+// It reuses validateBulkPurchaser and validateBulkPurchasablePlan rather than
+// restating either rule. A listing that drifts from the gate is worse than no
+// listing: it advertises a product and then refuses the sale.
+//
+// An ineligible caller gets an empty list, not a filtered one — these are hidden
+// products and someone who cannot buy them has no reason to see their prices.
+func (s *bulkLicenseService) ListPurchasableSeatPlans(purchaserUserID string) (*dto.PurchasableSeatPlansOutput, error) {
+	out := &dto.PurchasableSeatPlansOutput{Plans: []dto.PurchasableSeatPlan{}}
+
+	if err := validateBulkPurchaser(s.db, purchaserUserID); err != nil {
+		out.CanPurchase = false
+		out.Reason = err.Error()
+		return out, nil
+	}
+	out.CanPurchase = true
+
+	var plans []models.SubscriptionPlan
+	if err := s.db.Where("bulk_purchasable = ?", true).
+		Order("price_amount ASC").Find(&plans).Error; err != nil {
+		return nil, fmt.Errorf("failed to load seat plans: %w", err)
+	}
+
+	for i := range plans {
+		plan := &plans[i]
+		// The gate is the filter: anything that would be refused at purchase is
+		// not offered here.
+		if err := validateBulkPurchasablePlan(plan); err != nil {
+			continue
+		}
+
+		tiers := make([]dto.PricingTier, 0, len(plan.PricingTiers))
+		for _, t := range plan.PricingTiers {
+			tiers = append(tiers, dto.PricingTier{
+				MinQuantity: t.MinQuantity,
+				MaxQuantity: t.MaxQuantity,
+				UnitAmount:  t.UnitAmount,
+				Description: t.Description,
+			})
+		}
+
+		out.Plans = append(out.Plans, dto.PurchasableSeatPlan{
+			ID:               plan.ID,
+			Name:             plan.Name,
+			Description:      plan.Description,
+			Currency:         plan.Currency,
+			BillingInterval:  plan.BillingInterval,
+			PriceAmount:      plan.PriceAmount,
+			UseTieredPricing: plan.UseTieredPricing,
+			PricingTiers:     tiers,
+		})
+	}
+
+	return out, nil
+}
+
 func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input dto.BulkPurchaseInput) (*models.SubscriptionBatch, *[]models.UserSubscription, error) {
 	// Get the subscription plan
 	plan, err := s.planRepository.GetByID(input.SubscriptionPlanID)
