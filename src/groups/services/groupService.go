@@ -6,7 +6,6 @@ import (
 
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/casdoor"
-	"soli/formations/src/groups/dto"
 	"soli/formations/src/groups/models"
 	"soli/formations/src/groups/repositories"
 	organizationModels "soli/formations/src/organizations/models"
@@ -17,8 +16,12 @@ import (
 )
 
 type GroupService interface {
-	// Group management
-	CreateGroup(userID string, input dto.CreateGroupInput) (*models.ClassGroup, error)
+	// Group management.
+	//
+	// There is deliberately no CreateGroup here. Groups are created through the
+	// generic entity route, and the placement rules this service used to hold —
+	// org membership, manager role, group limit — live in
+	// GroupPlacementValidationHook, on the path that actually runs (#452).
 	GetGroup(groupID uuid.UUID, includeMembers bool) (*models.ClassGroup, error)
 	GetUserGroups(userID string) (*[]models.ClassGroup, error)
 	GetGroupsByOwner(ownerUserID string) (*[]models.ClassGroup, error)
@@ -54,84 +57,6 @@ func NewGroupService(db *gorm.DB) GroupService {
 		repository: repositories.NewGroupRepository(db),
 		db:         db,
 	}
-}
-
-// CreateGroup creates a new group and automatically adds the creator as owner
-func (gs *groupService) CreateGroup(userID string, input dto.CreateGroupInput) (*models.ClassGroup, error) {
-	// Check if group name is unique for this user
-	existingGroup, _ := gs.repository.GetGroupByNameAndOwner(input.Name, userID)
-	if existingGroup != nil {
-		return nil, fmt.Errorf("you already have a group with this name")
-	}
-
-	// NEW: Validate organization access (OrganizationID is now mandatory)
-	// Check if user is a manager or owner in the organization
-	var orgMember organizationModels.OrganizationMember
-	result := gs.db.Where("organization_id = ? AND user_id = ?", input.OrganizationID, userID).First(&orgMember)
-	if result.Error != nil {
-		return nil, fmt.Errorf("you are not a member of this organization")
-	}
-	if !orgMember.IsManager() {
-		return nil, fmt.Errorf("only organization managers can create groups in this organization")
-	}
-
-	// Check if organization has reached its group limit
-	var org organizationModels.Organization
-	if err := gs.db.Where("id = ?", input.OrganizationID).Preload("Groups").First(&org).Error; err != nil {
-		return nil, fmt.Errorf("organization not found")
-	}
-	if org.HasReachedGroupLimit() {
-		return nil, fmt.Errorf("organization has reached its group limit (%d groups)", org.MaxGroups)
-	}
-
-	// Create group
-	group := &models.ClassGroup{
-		Name:               input.Name,
-		DisplayName:        input.DisplayName,
-		Description:        input.Description,
-		OwnerUserID:        userID,
-		OrganizationID:     &input.OrganizationID, // Now required, convert to pointer for model
-		SubscriptionPlanID: input.SubscriptionPlanID,
-		MaxMembers:         input.MaxMembers,
-		ExpiresAt:          input.ExpiresAt,
-		Metadata:           input.Metadata,
-		IsActive:           true,
-	}
-
-	if group.MaxMembers == 0 {
-		group.MaxMembers = 50 // Default limit
-	}
-
-	createdGroup, err := gs.repository.CreateGroup(group)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create group: %w", err)
-	}
-
-	// Automatically add creator as owner-member
-	ownerMember := &models.GroupMember{
-		GroupID:   createdGroup.ID,
-		UserID:    userID,
-		Role:      models.GroupMemberRoleOwner,
-		InvitedBy: userID,
-		JoinedAt:  time.Now(),
-		IsActive:  true,
-	}
-
-	err = gs.repository.AddGroupMember(ownerMember)
-	if err != nil {
-		// Rollback group creation if adding owner fails
-		gs.repository.DeleteGroup(createdGroup.ID)
-		return nil, fmt.Errorf("failed to add owner to group: %w", err)
-	}
-
-	// Grant permissions to the owner
-	err = gs.GrantGroupPermissionsToUser(userID, createdGroup.ID)
-	if err != nil {
-		utils.Warn("Failed to grant permissions to group owner: %v", err)
-	}
-
-	utils.Info("Group created: %s (ID: %s) by user %s", createdGroup.Name, createdGroup.ID, userID)
-	return createdGroup, nil
 }
 
 // GetGroup retrieves a group by ID

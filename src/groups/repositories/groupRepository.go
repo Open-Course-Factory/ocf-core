@@ -12,7 +12,6 @@ type GroupRepository interface {
 	// Group operations
 	CreateGroup(group *models.ClassGroup) (*models.ClassGroup, error)
 	GetGroupByID(groupID uuid.UUID, includeMembers bool) (*models.ClassGroup, error)
-	GetGroupByNameAndOwner(name, ownerUserID string) (*models.ClassGroup, error)
 	GetGroupsByUserID(userID string) (*[]models.ClassGroup, error)
 	GetGroupsByOwner(ownerUserID string) (*[]models.ClassGroup, error)
 	GetGroupsByOrganization(organizationID uuid.UUID, includes []string) (*[]models.ClassGroup, error)
@@ -54,16 +53,6 @@ func (gr *groupRepository) GetGroupByID(groupID uuid.UUID, includeMembers bool) 
 	}
 
 	err := query.First(&group).Error
-	if err != nil {
-		return nil, err
-	}
-	return &group, nil
-}
-
-// GetGroupByNameAndOwner retrieves a group by name and owner
-func (gr *groupRepository) GetGroupByNameAndOwner(name, ownerUserID string) (*models.ClassGroup, error) {
-	var group models.ClassGroup
-	err := gr.db.Where("name = ? AND owner_user_id = ?", name, ownerUserID).First(&group).Error
 	if err != nil {
 		return nil, err
 	}

@@ -11,6 +11,15 @@ import (
 func InitGroupHooks(db *gorm.DB) {
 	log.Println("🔗 Initializing group hooks...")
 
+	// Hook validating that a group may live in the organization it names.
+	// Registered first because it gates the write.
+	placementHook := NewGroupPlacementValidationHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(placementHook); err != nil {
+		log.Printf("❌ Failed to register group placement validation hook: %v", err)
+	} else {
+		log.Println("✅ Group placement validation hook registered")
+	}
+
 	// Hook for setting up group owner and creating owner member
 	ownerSetupHook := NewGroupOwnerSetupHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(ownerSetupHook); err != nil {

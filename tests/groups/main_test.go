@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	groupModels "soli/formations/src/groups/models"
+	organizationModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
 
 	"gorm.io/driver/sqlite"
@@ -26,6 +27,14 @@ func TestMain(m *testing.M) {
 		&models.SubscriptionPlan{},
 		&models.UserSubscription{},
 		&models.SubscriptionBatch{},
+		&models.OrganizationSubscription{},
+		// resolveForOrg consults the role-plan table before falling back to the
+		// org's default subscription, and treats any error other than
+		// ErrRecordNotFound as fatal — so an unmigrated table here reports "no
+		// plan" rather than "no role mapping".
+		&models.OrganizationRolePlan{},
+		&organizationModels.Organization{},
+		&organizationModels.OrganizationMember{},
 		&groupModels.ClassGroup{},
 		&groupModels.GroupMember{},
 	)
@@ -43,6 +52,10 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM class_groups")
 	sharedTestDB.Exec("DELETE FROM subscription_batches")
 	sharedTestDB.Exec("DELETE FROM user_subscriptions")
+	sharedTestDB.Exec("DELETE FROM organization_subscriptions")
+	sharedTestDB.Exec("DELETE FROM organization_role_plans")
+	sharedTestDB.Exec("DELETE FROM organization_members")
+	sharedTestDB.Exec("DELETE FROM organizations")
 	sharedTestDB.Exec("DELETE FROM subscription_plans")
 	return sharedTestDB
 }
