@@ -359,6 +359,16 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 	// from all plans. Numeric limits come from HighestPlan only — no max-aggregation,
 	// so the response is internally consistent (machine sizes, terminal cap, etc. all
 	// originate from the same plan).
+	// HighestPlan can legitimately be nil — every contributing subscription may
+	// point at a deleted plan. Converting nil produced a zero-value plan that
+	// looked real to the frontend, whose gray-out logic then hid everything (#451).
+	if features.HighestPlan == nil {
+		ctx.JSON(http.StatusNotFound, &errors.APIError{
+			ErrorCode:    http.StatusNotFound,
+			ErrorMessage: "No plan applies to this user",
+		})
+		return
+	}
 	effectivePlan := convertSubscriptionPlanToOutput(features.HighestPlan)
 	effectivePlan.Features = features.AllFeatures
 
@@ -383,7 +393,7 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 		UserID:                  userID,
 		EffectiveFeatures:       effectivePlan,
 		SourceOrganizations:     sourceOrgs,
-		HasPersonalSubscription: false,
+		HasPersonalSubscription: features.HasPersonalSubscription,
 	}
 
 	ctx.JSON(http.StatusOK, output)
@@ -413,12 +423,13 @@ func (osc *organizationSubscriptionController) GetOrganizationFeatures(ctx *gin.
 		return
 	}
 
-	// Get features
-	plan, err := osc.orgSubService.GetOrganizationFeatures(orgID)
+	// Scoped to the caller: a team org has no plan of its own, so "what can be
+	// done here" is answered by the acting member's entitlement (#451).
+	plan, err := osc.orgSubService.GetOrganizationFeatures(orgID, ctx.GetString("userId"))
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,
-			ErrorMessage: "No active subscription found for this organization",
+			ErrorMessage: "No plan applies for this user in this organization",
 		})
 		return
 	}
