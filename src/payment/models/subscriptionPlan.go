@@ -60,6 +60,16 @@ type SubscriptionPlan struct {
 	// the default must stay false — GORM omits zero-value bools on Create, so a
 	// `default:true` bool cannot be set to false through the entity API.
 	BulkPurchasable bool `gorm:"default:false" json:"bulk_purchasable" mapstructure:"bulk_purchasable"`
+
+	// SeatUnit says what ONE purchased unit buys, and exists because nothing else
+	// distinguishes the two seat products: both are billing_interval=month, and
+	// only the meaning of a unit differs — a seat for a month, or one learner for
+	// one day. Without it a purchase screen cannot turn "12 learners for 3 days"
+	// into a quantity, nor compare the two products against each other.
+	//
+	// Empty means seat_month; resolve it through EffectiveSeatUnit rather than
+	// testing for "" at the call site, so the fallback lives in one place.
+	SeatUnit string `gorm:"type:varchar(20);default:''" json:"seat_unit" mapstructure:"seat_unit"`
 	DataPersistenceGB          int      `gorm:"default:0" json:"data_persistence_gb"`           // Storage quota in GB
 
 	CommandHistoryRetentionDays int     `gorm:"default:0" json:"command_history_retention_days" mapstructure:"command_history_retention_days"` // days to retain command history (minimum 1)
@@ -79,6 +89,24 @@ type PricingTier struct {
 	MaxQuantity int    `json:"max_quantity"`          // End of tier (0 = unlimited)
 	UnitAmount  int64  `json:"unit_amount"`           // Price per license in cents
 	Description string `json:"description,omitempty"` // e.g., "Great for small classes"
+}
+
+// Seat units. One purchased unit of a seat product buys either a seat for a
+// billing period, or one learner for one day — the prepaid pack's quantity is
+// learners x days, which is exactly why it needs a unit of its own.
+const (
+	SeatUnitSeatMonth  = "seat_month"
+	SeatUnitLearnerDay = "learner_day"
+)
+
+// EffectiveSeatUnit resolves the unit, defaulting an unset value to seat_month.
+// Every seat plan that predates this column is per-seat, so that is the safe
+// reading rather than a guess.
+func (s SubscriptionPlan) EffectiveSeatUnit() string {
+	if s.SeatUnit == SeatUnitLearnerDay {
+		return SeatUnitLearnerDay
+	}
+	return SeatUnitSeatMonth
 }
 
 // IsFree reports whether the plan carries no recurring charge and therefore

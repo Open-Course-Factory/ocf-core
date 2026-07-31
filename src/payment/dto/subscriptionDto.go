@@ -28,6 +28,7 @@ type CreateSubscriptionPlanInput struct {
 	IsCatalog                   *bool    `json:"is_catalog" mapstructure:"is_catalog"`
 	GroupManagementEnabled      bool     `json:"group_management_enabled" mapstructure:"group_management_enabled"`
 	BulkPurchasable             bool     `json:"bulk_purchasable" mapstructure:"bulk_purchasable"`
+	SeatUnit                    string   `json:"seat_unit" mapstructure:"seat_unit"`
 	// Budget-based quota fields.
 	// MaxCPU is in millicores (mCPU); 1000 mCPU = 1 vCPU. Frontends
 	// convert to fractional vCPU for display.
@@ -50,6 +51,7 @@ type UpdateSubscriptionPlanInput struct {
 	AllowedBackends             []string `json:"allowed_backends,omitempty" mapstructure:"allowed_backends"`
 	GroupManagementEnabled      *bool    `json:"group_management_enabled,omitempty" mapstructure:"group_management_enabled"`
 	BulkPurchasable             *bool    `json:"bulk_purchasable,omitempty" mapstructure:"bulk_purchasable"`
+	SeatUnit                    string   `json:"seat_unit,omitempty" mapstructure:"seat_unit"`
 	Priority                    *int     `json:"priority,omitempty" mapstructure:"priority"`
 	// Budget-based quota fields.
 	// MaxCPU is in millicores (mCPU); 1000 mCPU = 1 vCPU.
@@ -74,6 +76,7 @@ type SubscriptionPlanOutput struct {
 	IsCatalog          bool      `json:"is_catalog"`
 	GroupManagementEnabled bool  `json:"group_management_enabled"`
 	BulkPurchasable        bool  `json:"bulk_purchasable"`
+	SeatUnit               string `json:"seat_unit"`
 	RequiredRole       string    `json:"required_role"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
@@ -446,6 +449,9 @@ type PurchasableSeatPlan struct {
 	PriceAmount      int64         `json:"price_amount"`
 	UseTieredPricing bool          `json:"use_tiered_pricing"`
 	PricingTiers     []PricingTier `json:"pricing_tiers"`
+	// SeatUnit is always resolved, never empty: the screen must know whether a
+	// unit is a seat-month or a learner-day to turn an order into a quantity.
+	SeatUnit string `json:"seat_unit"`
 }
 
 // PurchasableSeatPlansOutput answers "what may this trainer buy for learners?".

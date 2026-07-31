@@ -163,6 +163,7 @@ func (s *bulkLicenseService) ListPurchasableSeatPlans(purchaserUserID string) (*
 			PriceAmount:      plan.PriceAmount,
 			UseTieredPricing: plan.UseTieredPricing,
 			PricingTiers:     tiers,
+			SeatUnit:         plan.EffectiveSeatUnit(),
 		})
 	}
 

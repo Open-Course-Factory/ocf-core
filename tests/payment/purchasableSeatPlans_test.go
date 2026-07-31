@@ -121,6 +121,34 @@ func TestPurchasableSeats_IneligibleBuyerGetsNothing(t *testing.T) {
 	assert.NotEmpty(t, out.Reason, "the UI needs to explain the refusal, not just show nothing")
 }
 
+// TestPurchasableSeats_ResolvesTheSeatUnit pins the field the purchase screen
+// needs to turn an order into a quantity. Nothing else distinguishes the two seat
+// products — both are billing_interval=month — so an unresolved unit leaves the
+// screen unable to price "12 learners for 3 days" at all.
+func TestPurchasableSeats_ResolvesTheSeatUnit(t *testing.T) {
+	db := freshTestDB(t)
+	const buyer = "buyer-units"
+	seedTrainerWithGroupManagement(t, db, buyer)
+
+	monthly := seedSellableSeat(t, db, "Siège élève — mensuel", true)
+	pack := seedSellableSeat(t, db, "Siège élève — pack jours", true)
+	require.NoError(t, db.Model(pack).Update("seat_unit", models.SeatUnitLearnerDay).Error)
+	_ = monthly // left with an UNSET unit on purpose
+
+	out, err := services.NewBulkLicenseServiceWithDeps(db, &bulkGatesStripeStub{}).
+		ListPurchasableSeatPlans(buyer)
+	require.NoError(t, err)
+
+	units := map[string]string{}
+	for _, p := range out.Plans {
+		units[p.Name] = p.SeatUnit
+	}
+	assert.Equal(t, models.SeatUnitLearnerDay, units["Siège élève — pack jours"])
+	assert.Equal(t, models.SeatUnitSeatMonth, units["Siège élève — mensuel"],
+		"an unset unit must resolve to seat_month — every plan predating the column is per-seat, "+
+			"and the screen must never receive an empty unit to interpret")
+}
+
 // TestPurchasableSeats_OffersOnlyWhatAPurchaseWouldAccept is the anti-drift
 // guard. Anything listed here must pass the purchase gate; a plan that is not a
 // seat product, or is retired, must never be offered.
