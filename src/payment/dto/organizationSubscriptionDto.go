@@ -46,6 +46,22 @@ type UserEffectiveFeaturesOutput struct {
 	EffectiveFeatures       SubscriptionPlanOutput          `json:"effective_features"`       // Aggregated maximum features
 	SourceOrganizations     []OrganizationFeatureSourceInfo `json:"source_organizations"`     // Orgs contributing features
 	HasPersonalSubscription bool                            `json:"has_personal_subscription"` // Always false for now
+
+	// CanRunClassrooms is the backend's verdict on whether this user may create
+	// class groups, convert an organization to a team, or buy learner seats.
+	//
+	// It is served as a verdict rather than left to be inferred from the features
+	// list because clients inferring it disagreed with the backend and with each
+	// other (#453). A client MUST read this instead of testing EffectiveFeatures
+	// for "group_management": the features list is a UNION across the user's
+	// organizations, which answers "is this available to them somewhere" — a
+	// different and more permissive question, useful only for gray-out
+	// affordances.
+	CanRunClassrooms bool `json:"can_run_classrooms"`
+
+	// ClassroomDeniedReason is a machine-readable refusal code, empty when
+	// CanRunClassrooms. Clients translate it; it is not a display string.
+	ClassroomDeniedReason string `json:"classroom_denied_reason,omitempty"`
 }
 
 type OrganizationFeatureSourceInfo struct {

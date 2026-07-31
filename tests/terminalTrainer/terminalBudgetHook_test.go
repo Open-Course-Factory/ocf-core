@@ -77,6 +77,18 @@ func (s *stubEffectivePlanService) CheckEffectiveUsageLimit(userID string, orgID
 	return nil, errors.New("not implemented in stub")
 }
 
+// CanRunClassrooms resolves through this stub's own GetUserEffectivePlan so the
+// verdict tracks whatever plan the test set up, rather than being a second,
+// independently-stubbed answer — the exact split that made this predicate drift
+// in production (#453).
+func (s *stubEffectivePlanService) CanRunClassrooms(userID string, orgID *uuid.UUID) paymentServices.ClassroomEntitlement {
+	result, err := s.GetUserEffectivePlan(userID, orgID)
+	if err != nil || result == nil {
+		return paymentServices.ClassroomEntitlement{Reason: paymentServices.ClassroomDeniedNoPlan}
+	}
+	return paymentServices.ClassroomEntitlementFor(result.Plan)
+}
+
 func (s *stubEffectivePlanService) CheckEffectiveUsageLimitFromResult(result *paymentServices.EffectivePlanResult, userID string, metricType string, increment int64) (*paymentServices.UsageLimitCheck, error) {
 	return nil, errors.New("not implemented in stub")
 }

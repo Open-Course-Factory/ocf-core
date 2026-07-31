@@ -335,11 +335,17 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 		}
 
 		effectivePlan := convertSubscriptionPlanToOutput(result.Plan)
+		// Read the verdict off the plan just resolved, not by resolving again:
+		// a second resolution can legitimately return a different plan, and the
+		// verdict would then not describe the plan reported beside it.
+		verdict := services.ClassroomEntitlementFor(result.Plan)
 		output := dto.UserEffectiveFeaturesOutput{
 			UserID:                  userID,
 			EffectiveFeatures:       effectivePlan,
 			SourceOrganizations:     nil, // Single org context, no aggregation
 			HasPersonalSubscription: result.Source == services.PlanSourcePersonal,
+			CanRunClassrooms:        verdict.Allowed,
+			ClassroomDeniedReason:   verdict.Reason,
 		}
 		ctx.JSON(http.StatusOK, output)
 		return
@@ -379,11 +385,19 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 		}
 	}
 
+	// The verdict comes from HighestPlan, NOT from the union in
+	// effectivePlan.Features. The union answers "is this available to them
+	// somewhere", which is the gray-out question; entitlement is a property of the
+	// one plan that actually applies.
+	verdict := services.ClassroomEntitlementFor(features.HighestPlan)
+
 	output := dto.UserEffectiveFeaturesOutput{
 		UserID:                  userID,
 		EffectiveFeatures:       effectivePlan,
 		SourceOrganizations:     sourceOrgs,
 		HasPersonalSubscription: false,
+		CanRunClassrooms:        verdict.Allowed,
+		ClassroomDeniedReason:   verdict.Reason,
 	}
 
 	ctx.JSON(http.StatusOK, output)

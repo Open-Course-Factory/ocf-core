@@ -6,6 +6,7 @@ import (
 	authDto "soli/formations/src/auth/dto"
 	authModels "soli/formations/src/auth/models"
 	ems "soli/formations/src/entityManagement/entityManagementService"
+	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/utils"
 
 	"github.com/google/uuid"
@@ -82,8 +83,18 @@ func (s *userPermissionsService) GetUserPermissions(userID string) (*authDto.Use
 	hasAnySubscription := s.hasAnySubscriptionGeneric(entityMemberships)
 
 	// 8. Build quick access flags
-	canCreateOrganization := isSystemAdmin || true                // For now, all authenticated users can create orgs
-	canCreateGroup := isSystemAdmin || len(entityMemberships) > 0 // Can create groups if member of any entity
+	canCreateOrganization := isSystemAdmin || true // For now, all authenticated users can create orgs
+
+	// Creating a group is a classroom capability, so the answer comes from the
+	// entitlement service rather than from membership. The previous rule —
+	// "member of any entity" — was structurally always true, because every user is
+	// a member of their own personal organization, so the flag reported yes to
+	// everyone including learners on a Trial (#453).
+	//
+	// No org context: this endpoint describes the user, not a workspace they are
+	// currently acting in.
+	canCreateGroup := isSystemAdmin ||
+		paymentServices.NewEffectivePlanService(s.db).CanRunClassrooms(userID, nil).Allowed
 
 	result := &authDto.UserPermissionsOutput{
 		UserID:        userID,

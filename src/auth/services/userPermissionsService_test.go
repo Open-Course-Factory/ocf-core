@@ -280,7 +280,13 @@ func TestUserPermissionsService_GetUserPermissions_WithOrganizations(t *testing.
 	assert.Equal(t, "Test Organization", result.OrganizationMemberships[0].OrganizationName)
 	assert.Equal(t, "owner", result.OrganizationMemberships[0].Role)
 	assert.True(t, result.OrganizationMemberships[0].IsOwner)
-	assert.True(t, result.CanCreateGroup) // Can create groups because member of org
+	// CanCreateGroup follows the user's PLAN, not their memberships (#453). This
+	// fixture's org holds no subscription, so nothing grants classrooms and the
+	// answer is no — under the previous rule ("member of any entity") it was yes,
+	// which made the flag structurally true for everyone, learners included.
+	// The rule itself is covered by the unit tests on classroomEntitlementFor.
+	assert.False(t, result.CanCreateGroup,
+		"org membership alone must not grant group creation — only a plan does")
 }
 
 func TestUserPermissionsService_GetUserPermissions_WithGroups(t *testing.T) {

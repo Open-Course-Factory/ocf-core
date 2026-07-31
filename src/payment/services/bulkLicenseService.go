@@ -89,20 +89,27 @@ func validateBulkPurchasablePlan(plan *models.SubscriptionPlan) error {
 }
 
 // validateBulkPurchaser is the rule for whether a USER may buy licences for
-// others: their own effective plan must grant group management.
+// others. Buying seats is a classroom capability, so it defers to
+// CanRunClassrooms rather than reading the plan flag again — the two answers
+// drifting apart is what let a trainer see a seat catalogue the purchase then
+// refused (#453).
 //
 // Resolved with no org context on purpose — a batch is owned by the purchaser,
 // not by an organization, so the question is whether this user holds such a plan
 // anywhere.
+//
+// The wording of each refusal stays here: the rule is shared, but "you cannot buy
+// licences" is a purchase-screen sentence, not something the entitlement service
+// should know how to say.
 func validateBulkPurchaser(db *gorm.DB, purchaserUserID string) error {
-	result, err := NewEffectivePlanService(db).GetUserEffectivePlan(purchaserUserID, nil)
-	if err != nil || result == nil || result.Plan == nil {
+	verdict := NewEffectivePlanService(db).CanRunClassrooms(purchaserUserID, nil)
+	if verdict.Allowed {
+		return nil
+	}
+	if verdict.Reason == ClassroomDeniedNoPlan {
 		return fmt.Errorf("no active subscription plan allows purchasing licenses")
 	}
-	if !result.Plan.GroupManagementEnabled {
-		return fmt.Errorf("your subscription plan does not allow purchasing licenses for a group")
-	}
-	return nil
+	return fmt.Errorf("your subscription plan does not allow purchasing licenses for a group")
 }
 
 // PurchaseBulkLicenses creates a batch purchase and individual license records

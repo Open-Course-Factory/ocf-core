@@ -67,6 +67,19 @@ type EffectivePlanService interface {
 	// skipping the plan resolution DB round-trip. Used by CheckLimit middleware when
 	// InjectEffectivePlan has already placed the result in the Gin context.
 	CheckEffectiveUsageLimitFromResult(result *EffectivePlanResult, userID string, metricType string, increment int64) (*UsageLimitCheck, error)
+
+	// CanRunClassrooms is the single owner of "may this user run classrooms?" —
+	// create class groups, convert an organization to a team, buy seats for
+	// learners. It lives here because the hard part of the question is plan
+	// resolution, which this service already owns.
+	//
+	// orgID has the same semantics as GetUserEffectivePlan: pass the org when the
+	// caller is acting inside one, nil only when there is genuinely no org context.
+	//
+	// Every gate on classroom capability MUST call this rather than reading
+	// GroupManagementEnabled off a plan it resolved itself. Five call sites did the
+	// latter and returned three different answers for the same user (#453).
+	CanRunClassrooms(userID string, orgID *uuid.UUID) ClassroomEntitlement
 }
 
 type effectivePlanService struct {
