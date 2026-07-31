@@ -199,6 +199,98 @@ func CamelToSnake(s string) string {
 	return result.String()
 }
 
+// RetainRequestedFields narrows an update map to the fields the caller actually
+// sent (#443).
+//
+// EditEntity decodes a sparse PATCH body into a FULL edit-DTO struct and then
+// converts that whole struct to a map. Fields nobody mentioned therefore arrive
+// as zero values — nil pointers, empty strings, false — and GORM's Updates(map)
+// writes every key it is given. A one-field PATCH consequently blanked the rest
+// of the row. Observed on subscription plans: PATCH {"is_catalog": false}
+// returned 204 and wiped the name, both budget fields and every capability flag.
+//
+// Presence in the request is the only sound signal. A zero value cannot be told
+// apart from "unset" once it is in the struct, and PATCH semantics require that
+// callers can genuinely set false or "" — so the decision has to be made against
+// the inbound map, before that information is lost.
+//
+// Conservative on purpose: a key that maps to no DTO field is left alone, since a
+// converter may inject one and removing it would break whatever it was for.
+func RetainRequestedFields(editDto any, inbound map[string]any, updateMap map[string]any) {
+	if updateMap == nil || inbound == nil || editDto == nil {
+		return
+	}
+
+	t := reflect.TypeOf(editDto)
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return
+	}
+
+	for _, field := range requestFieldKeys(t) {
+		if _, sent := inbound[field.requestKey]; sent {
+			continue
+		}
+		delete(updateMap, field.updateKey)
+	}
+}
+
+// fieldKeys pairs the name a field carries in the request body with the name it
+// carries in the update map. They usually match, but a mapstructure tag may
+// rename one side.
+type fieldKeys struct {
+	requestKey string
+	updateKey  string
+}
+
+func requestFieldKeys(t reflect.Type) []fieldKeys {
+	var out []fieldKeys
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+
+		if field.Anonymous {
+			ft := field.Type
+			for ft.Kind() == reflect.Ptr {
+				ft = ft.Elem()
+			}
+			if ft.Kind() == reflect.Struct {
+				out = append(out, requestFieldKeys(ft)...)
+			}
+			continue
+		}
+
+		jsonKey := ""
+		if tag := field.Tag.Get("json"); tag != "" && tag != "-" {
+			jsonKey = strings.SplitN(tag, ",", 2)[0]
+		}
+		msKey := ""
+		if tag := field.Tag.Get("mapstructure"); tag != "" && tag != "-" {
+			msKey = strings.SplitN(tag, ",", 2)[0]
+		}
+
+		snake := CamelToSnake(field.Name)
+		requestKey := jsonKey
+		if requestKey == "" {
+			requestKey = msKey
+		}
+		if requestKey == "" {
+			requestKey = snake
+		}
+		updateKey := msKey
+		if updateKey == "" {
+			updateKey = jsonKey
+		}
+		if updateKey == "" {
+			updateKey = snake
+		}
+
+		out = append(out, fieldKeys{requestKey: requestKey, updateKey: updateKey})
+	}
+	return out
+}
+
 func (genericController genericController) EditEntity(ctx *gin.Context) {
 	entityName := GetEntityNameFromPath(ctx.FullPath())
 
@@ -280,6 +372,13 @@ func (genericController genericController) EditEntity(ctx *gin.Context) {
 		if fallbackErr == nil {
 			fallbackDecoder.Decode(decodedData)
 		}
+	}
+
+	// Narrow the map to what the caller actually asked to change. Without this a
+	// sparse PATCH writes the whole struct — zero values included — and blanks
+	// every column the request did not mention (#443).
+	if inboundMap, ok := entityPatchDtoInput.(map[string]any); ok {
+		RetainRequestedFields(decodedData, inboundMap, updateMap)
 	}
 
 	// Parse the entity ID from URL
