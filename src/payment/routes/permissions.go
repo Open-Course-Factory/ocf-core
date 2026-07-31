@@ -213,6 +213,11 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Reset usage metric counter (admin only)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/subscription-plans/pricing-preview", Method: "POST",
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Price a prospective tier ladder before saving it (admin only)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/subscription-plans/:id/sync-stripe", Method: "POST",
 			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Sync single plan from Stripe",

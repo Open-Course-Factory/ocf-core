@@ -20,6 +20,9 @@ func SubscriptionPlanRoutes(router *gin.RouterGroup, config *config.Configuratio
 
 	// Pricing preview (public route - no auth required)
 	planRoutes.GET("/pricing-preview", subscriptionController.GetPricingPreview)
+	// Prospective ladders are an admin authoring tool, unlike the GET above which
+	// prices a published plan for anyone considering it.
+	planRoutes.POST("/pricing-preview", authMiddleware.AuthManagement(), subscriptionController.PreviewProspectivePricing)
 
 	// Routes de synchronisation Stripe (admin seulement)
 	planRoutes.POST("/:id/sync-stripe", authMiddleware.AuthManagement(), subscriptionController.SyncSubscriptionPlanWithStripe)

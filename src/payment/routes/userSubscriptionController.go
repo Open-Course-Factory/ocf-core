@@ -38,6 +38,7 @@ type SubscriptionController interface {
 
 	// Pricing preview
 	GetPricingPreview(ctx *gin.Context)
+	PreviewProspectivePricing(ctx *gin.Context)
 
 	// Méthodes pour la synchronisation Stripe des plans d'abonnement
 	SyncSubscriptionPlanWithStripe(ctx *gin.Context)
@@ -1407,6 +1408,41 @@ func (sc *userSubscriptionController) GetPricingPreview(ctx *gin.Context) {
 				ErrorMessage: "Failed to calculate pricing preview",
 			})
 		}
+		return
+	}
+
+	ctx.JSON(http.StatusOK, preview)
+}
+
+// PreviewProspectivePricing prices a tier ladder that has not been saved.
+//
+//	@Summary		Preview pricing for a prospective tier set
+//	@Description	Prices an unsaved graduated ladder at each requested quantity, so an administrator can judge brackets before committing them (admin only)
+//	@Tags			subscription-plans
+//	@Accept			json
+//	@Produce		json
+//	@Param			input	body		dto.ProspectivePricingInput	true	"Prospective tiers and the quantities to price"
+//	@Success		200		{object}	dto.ProspectivePricingOutput
+//	@Failure		400		{object}	errors.APIError
+//	@Failure		403		{object}	errors.APIError
+//	@Security		Bearer
+//	@Router			/subscription-plans/pricing-preview [post]
+func (sc *userSubscriptionController) PreviewProspectivePricing(ctx *gin.Context) {
+	var input dto.ProspectivePricingInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: fmt.Sprintf("Invalid input: %v", err),
+		})
+		return
+	}
+
+	preview, err := services.NewPricingService(sc.db).PreviewProspectiveTiers(input)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
 		return
 	}
 

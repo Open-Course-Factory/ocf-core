@@ -402,6 +402,34 @@ type TierCost struct {
 	Subtotal  int64  `json:"subtotal"`   // Total for this tier in cents
 }
 
+// ProspectivePricingInput prices a tier set that has NOT been saved, so an admin
+// can judge brackets before committing them. Graduated brackets are easy to get
+// wrong in a way that is invisible without the resulting totals: a first bracket
+// wider than a typical order gives most customers no discount at all.
+type ProspectivePricingInput struct {
+	// Tiers is the prospective ladder. Empty means untiered, and FlatAmount applies.
+	Tiers []PricingTier `json:"tiers"`
+	// FlatAmount is the per-unit price used when Tiers is empty, in cents.
+	FlatAmount int64  `json:"flat_amount"`
+	Currency   string `json:"currency"`
+	// Quantities to price. Required: an empty list would return an empty table,
+	// which reads as "these brackets cost nothing".
+	Quantities []int `json:"quantities" binding:"required,min=1"`
+}
+
+// ProspectivePricingPoint is one row of the admin's preview table.
+type ProspectivePricingPoint struct {
+	Quantity      int        `json:"quantity"`
+	Total         int64      `json:"total"`          // cents
+	PerUnit       float64    `json:"per_unit"`       // currency units, e.g. 8.00
+	TierBreakdown []TierCost `json:"tier_breakdown"` // how the total was reached
+}
+
+type ProspectivePricingOutput struct {
+	Currency string                    `json:"currency"`
+	Points   []ProspectivePricingPoint `json:"points"`
+}
+
 // ==========================================
 // Invoice Cleanup DTOs
 // ==========================================
