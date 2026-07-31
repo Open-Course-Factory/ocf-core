@@ -124,7 +124,7 @@ func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ct
 		ID:                   subscription.ID,
 		OrganizationID:       subscription.OrganizationID,
 		SubscriptionPlanID:   subscription.SubscriptionPlanID,
-		SubscriptionPlan:     convertSubscriptionPlanToOutput(&subscription.SubscriptionPlan),
+		SubscriptionPlan:     EmbeddedPlanOutput(&subscription.SubscriptionPlan),
 		StripeSubscriptionID: subscription.StripeSubscriptionID,
 		StripeCustomerID:     subscription.StripeCustomerID,
 		Status:               subscription.Status,
@@ -179,7 +179,7 @@ func (osc *organizationSubscriptionController) GetOrganizationSubscription(ctx *
 		ID:                   subscription.ID,
 		OrganizationID:       subscription.OrganizationID,
 		SubscriptionPlanID:   subscription.SubscriptionPlanID,
-		SubscriptionPlan:     convertSubscriptionPlanToOutput(&subscription.SubscriptionPlan),
+		SubscriptionPlan:     EmbeddedPlanOutput(&subscription.SubscriptionPlan),
 		StripeSubscriptionID: subscription.StripeSubscriptionID,
 		StripeCustomerID:     subscription.StripeCustomerID,
 		Status:               subscription.Status,
@@ -221,7 +221,7 @@ func (osc *organizationSubscriptionController) GetAllOrganizationSubscriptions(c
 			ID:                   sub.ID,
 			OrganizationID:       sub.OrganizationID,
 			SubscriptionPlanID:   sub.SubscriptionPlanID,
-			SubscriptionPlan:     convertSubscriptionPlanToOutput(&sub.SubscriptionPlan),
+			SubscriptionPlan:     EmbeddedPlanOutput(&sub.SubscriptionPlan),
 			StripeSubscriptionID: sub.StripeSubscriptionID,
 			StripeCustomerID:     sub.StripeCustomerID,
 			Status:               sub.Status,
@@ -468,6 +468,23 @@ func (osc *organizationSubscriptionController) GetOrganizationUsageLimits(ctx *g
 	}
 
 	ctx.JSON(http.StatusOK, output)
+}
+
+// EmbeddedPlanOutput converts a plan association into an optional output.
+//
+// It returns nil when the association never loaded. GORM's Preload honours soft
+// deletes, so a subscription pointing at a deleted plan keeps the zero-value
+// struct — and converting that yields {name: "", currency: "", price_amount: 0},
+// which is indistinguishable from a real free plan and blew up the admin
+// organizations panel when "" reached Intl.NumberFormat.
+//
+// Absence is detected on the ID, not the amount: a 0 EUR plan is a real plan.
+func EmbeddedPlanOutput(plan *models.SubscriptionPlan) *dto.SubscriptionPlanOutput {
+	if plan == nil || plan.ID == uuid.Nil {
+		return nil
+	}
+	out := convertSubscriptionPlanToOutput(plan)
+	return &out
 }
 
 // Helper function to convert subscription plan model to output DTO

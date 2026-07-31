@@ -26,7 +26,7 @@ type OrganizationSubscriptionOutput struct {
 	ID                   uuid.UUID              `json:"id"`
 	OrganizationID       uuid.UUID              `json:"organization_id"`
 	SubscriptionPlanID   uuid.UUID              `json:"subscription_plan_id"`
-	SubscriptionPlan     SubscriptionPlanOutput `json:"subscription_plan"`
+	SubscriptionPlan     *SubscriptionPlanOutput `json:"subscription_plan,omitempty"`
 	StripeSubscriptionID *string                `json:"stripe_subscription_id,omitempty"` // Nullable for incomplete subscriptions
 	StripeCustomerID     string                 `json:"stripe_customer_id"`
 	Status               string                 `json:"status"`
