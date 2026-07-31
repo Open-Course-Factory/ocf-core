@@ -44,6 +44,22 @@ type SubscriptionPlan struct {
 	DataPersistenceEnabled     bool     `gorm:"default:false" json:"data_persistence_enabled"`  // Allow saving data between sessions (also gates persistent persistence_mode — SSOT)
 	SessionSupervisionEnabled  bool     `gorm:"default:false" json:"session_supervision_enabled"` // Allow trainers (group manager+) to live-supervise a learner's terminal and take the hand
 	GroupManagementEnabled     bool     `gorm:"default:false" json:"group_management_enabled" mapstructure:"group_management_enabled"` // Typed entitlement: plan grants group management (replaces the legacy features[] "group_management" string)
+
+	// BulkPurchasable marks a plan as sellable in bulk — i.e. it is a seat
+	// product a trainer buys on behalf of learners.
+	//
+	// It exists because bulk-sellability and public visibility are different
+	// questions that were previously answered by one flag: the gate required
+	// IsCatalog, so a learner seat could not be both sellable and hidden from
+	// the pricing page. It is also distinct from GroupManagementEnabled, which
+	// is now checked on the PURCHASER's plan — requiring it on the plan being
+	// sold meant students inherited group management and could buy seats
+	// themselves.
+	//
+	// Default false: a plan is not a seat product unless someone says so. Note
+	// the default must stay false — GORM omits zero-value bools on Create, so a
+	// `default:true` bool cannot be set to false through the entity API.
+	BulkPurchasable bool `gorm:"default:false" json:"bulk_purchasable" mapstructure:"bulk_purchasable"`
 	DataPersistenceGB          int      `gorm:"default:0" json:"data_persistence_gb"`           // Storage quota in GB
 
 	CommandHistoryRetentionDays int     `gorm:"default:0" json:"command_history_retention_days" mapstructure:"command_history_retention_days"` // days to retain command history (minimum 1)

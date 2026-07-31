@@ -1,37 +1,27 @@
 // tests/payment/bulkPurchaseGates_test.go
 //
-// RED-phase tests for the 2026-07-10 review, finding I2: the direct bulk-
-// purchase path bulkLicenseService.PurchaseBulkLicenses is missing two gates
-// that BOTH checkout paths already enforce.
+// Originally the RED-phase tests for the 2026-07-10 review (finding I2): the
+// direct bulk-purchase path was missing gates the checkout paths enforced.
 //
-// SSOT context — the canonical predicates these tests pin already exist on the
-// checkout paths and are exercised by checkoutInputHardening_test.go:
-//   1. IsCatalog gate. CreateCheckoutSession (stripeService.go ~:273) and
-//      CreateBulkCheckoutSession (~:428) both reject an active-but-non-catalog
-//      plan with "subscription plan is not available for purchase".
-//      PurchaseBulkLicenses (bulkLicenseService.go:72) only checks IsActive, so
-//      an active bespoke/admin plan (IsCatalog=false) can be bulk-purchased by
-//      any Member who knows its UUID.
-//   2. group_management feature gate. The handler godoc
-//      (bulkLicenseController.go:97) documents « Requires group_management
-//      feature in user's plan », but PurchaseBulkLicenses never checks it.
+// #441 then split the gate in two — BulkPurchasable on the plan being sold,
+// GroupManagementEnabled on the purchaser's own plan — so the two direct-path
+// tests here were removed rather than repaired (see the note below where they
+// stood). What remains is the bypass test: whatever the gate is, the Stripe
+// checkout path must apply it too, or the direct path's gate is worthless.
 //
-// Both gates sit BEFORE the Casdoor/Stripe calls, so the fix rejects the
-// purchase before any external side effect. These tests drive the REAL
-// PurchaseBulkLicenses with a fake Casdoor (so GetUserByUserId resolves) and an
-// injected full StripeService stub (so the happy path would otherwise complete),
-// then assert the purchase is rejected AND no batch/license rows are persisted.
+// The shared fixtures below — bulkGatesStripeStub and installFakeCasdoor — are
+// used by the replacement tests in bulkPurchaseGateSplit_test.go, so this file
+// stays the home of the bulk-purchase test harness.
 //
-// RED today: with no gate, the purchase SUCCEEDS — it returns a batch and
-// persists rows — so require.Error and the zero-row assertions fail. That is the
-// precise red signal: "purchase succeeded but should have been rejected".
+// Tests drive the REAL service with a fake Casdoor (so GetUserByUserId resolves)
+// and an injected StripeService stub (so the happy path would otherwise
+// complete), then assert user-observable outcomes: rejection AND no rows.
 package payment_tests
 
 import (
 	"testing"
 	"time"
 
-	entityManagementModels "soli/formations/src/entityManagement/models"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
 	"soli/formations/src/payment/services"
@@ -171,79 +161,24 @@ func assertNoBulkRowsPersisted(t *testing.T) {
 	assert.Equal(t, int64(0), licenseCount, "no licenses may be persisted when the purchase is rejected")
 }
 
-// TestBulkPurchase_NonCatalogPlan_Rejected isolates gate 1: an ACTIVE plan with
-// IsCatalog=false must not be bulk-purchasable, mirroring the checkout paths.
-// The plan is given the group_management feature so gate 2 would pass — this
-// test fails ONLY on the missing IsCatalog gate.
-func TestBulkPurchase_NonCatalogPlan_Rejected(t *testing.T) {
-	db := freshTestDB(t)
-	installFakeCasdoor(t, "noncatalog@example.com", "Non Catalog Buyer")
-	svc := services.NewBulkLicenseServiceWithDeps(db, &bulkGatesStripeStub{})
-
-	planID := uuid.New()
-	plan := &models.SubscriptionPlan{
-		BaseModel: entityManagementModels.BaseModel{ID: planID},
-		Name:      "Bespoke Admin Plan",
-		Currency:  "eur",
-		IsActive:  true,
-		IsCatalog:              false, // the bug: active but not catalog
-		GroupManagementEnabled: true,  // isolate gate 1 (the group-management gate passes)
-	}
-	require.NoError(t, db.Create(plan).Error)
-	// GORM skips the zero-value bool on a gorm:"default:true" field, so is_catalog
-	// persists TRUE at Create; force it false via a follow-up Update (the pattern
-	// subscriptionPlan_catalog_test.go / checkoutInputHardening_test.go use).
-	require.NoError(t, db.Model(plan).Update("is_catalog", false).Error)
-
-	batch, licenses, err := svc.PurchaseBulkLicenses("buyer-noncatalog", dto.BulkPurchaseInput{
-		SubscriptionPlanID: planID,
-		Quantity:           3,
-	})
-
-	require.Error(t, err,
-		"CATALOG: an active but non-catalog plan (IsCatalog=false) must be rejected on the "+
-			"direct bulk-purchase path, exactly as CreateCheckoutSession/CreateBulkCheckoutSession "+
-			"reject it. Today PurchaseBulkLicenses only checks IsActive, so a bespoke/admin plan "+
-			"is bulk-purchasable by any Member who knows its UUID.")
-	assert.Nil(t, batch, "no batch may be returned for a rejected non-catalog plan")
-	assert.Nil(t, licenses, "no licenses may be returned for a rejected non-catalog plan")
-	assertNoBulkRowsPersisted(t)
-}
-
-// TestBulkPurchase_PlanWithoutGroupManagement_Rejected isolates gate 2: an
-// active CATALOG plan that lacks the group_management feature must not be bulk-
-// purchasable — the handler godoc says « Requires group_management feature »,
-// but no such check exists. IsCatalog=true so gate 1 passes and this test fails
-// ONLY on the missing feature gate.
-func TestBulkPurchase_PlanWithoutGroupManagement_Rejected(t *testing.T) {
-	db := freshTestDB(t)
-	installFakeCasdoor(t, "nogroupmgmt@example.com", "No Group Mgmt Buyer")
-	svc := services.NewBulkLicenseServiceWithDeps(db, &bulkGatesStripeStub{})
-
-	planID := uuid.New()
-	plan := &models.SubscriptionPlan{
-		BaseModel: entityManagementModels.BaseModel{ID: planID},
-		Name:      "Catalog Plan Without Group Management",
-		Currency:  "eur",
-		IsActive:  true,
-		IsCatalog: true, // gate 1 passes
-		// GroupManagementEnabled defaults false → lacks the group-management gate
-	}
-	require.NoError(t, db.Create(plan).Error)
-
-	batch, licenses, err := svc.PurchaseBulkLicenses("buyer-nogroupmgmt", dto.BulkPurchaseInput{
-		SubscriptionPlanID: planID,
-		Quantity:           2,
-	})
-
-	require.Error(t, err,
-		"FEATURE: a plan lacking the group_management feature must be rejected on the bulk-"+
-			"purchase path — the handler godoc documents « Requires group_management feature », "+
-			"but PurchaseBulkLicenses never enforces it.")
-	assert.Nil(t, batch, "no batch may be returned when the plan lacks group_management")
-	assert.Nil(t, licenses, "no licenses may be returned when the plan lacks group_management")
-	assertNoBulkRowsPersisted(t)
-}
+// The two direct-path gate tests that lived here — "non-catalog plan rejected"
+// and "plan without group_management rejected" — were removed by #441 rather
+// than repaired, because their premises stopped being true:
+//
+//   - IsCatalog no longer gates bulk purchase. It answers "is this listed on the
+//     public pricing page?", which is a different question from "is this a seat
+//     product?". A learner seat is deliberately both hidden and sellable.
+//   - group_management moved to the PURCHASER's plan. Requiring it on the plan
+//     being sold would have handed students group management along with their
+//     seat, and let them buy seats of their own.
+//
+// Both tests kept passing after the split, but only because the new
+// BulkPurchasable gate happened to reject their fixtures — they would have gone
+// on asserting a rule the code no longer implements. Their replacements live in
+// bulkPurchaseGateSplit_test.go, which pins each question separately.
+//
+// The checkout-path test below is kept and re-targeted, because "checkout must
+// not bypass the direct path's gate" is still exactly the right thing to pin.
 
 // TestBulkCheckout_PlanWithoutGroupManagement_Rejected closes the bypass: the
 // same feature gate must also cover the Stripe checkout path
@@ -256,17 +191,19 @@ func TestBulkPurchase_PlanWithoutGroupManagement_Rejected(t *testing.T) {
 //
 // RED today: an active catalog plan without group_management still creates a
 // checkout session — no error, and a POST /v1/checkout/sessions is recorded.
-func TestBulkCheckout_PlanWithoutGroupManagement_Rejected(t *testing.T) {
+func TestBulkCheckout_PurchaserWithoutGroupManagement_Rejected(t *testing.T) {
 	db := freshTestDB(t)
 	cap := installTaxFormCapturingStripe(t)
 	installFakeCasdoor(t, "bulkco@example.com", "Bulk Checkout Buyer")
 	svc := services.NewStripeService(db)
 
-	// seedCheckoutPlan builds an active plan with a Stripe price and IsCatalog=true
-	// but no Features, so it lacks group_management — gate 1 passes, gate 2 must fire.
-	plan := seedCheckoutPlan(t, "Catalog Bulk Plan Without Group Management", true)
+	// A perfectly sellable seat product: the plan side of the gate passes, so the
+	// only thing under test is the purchaser side.
+	plan := seedCheckoutPlan(t, "Sellable Seat Plan", true)
 	require.NoError(t, db.Create(plan).Error)
+	require.NoError(t, db.Model(plan).Update("bulk_purchasable", true).Error)
 
+	// The buyer holds no plan granting group management.
 	_, err := svc.CreateBulkCheckoutSession("user_bulkco_"+uuid.NewString(), dto.CreateBulkCheckoutSessionInput{
 		SubscriptionPlanID: plan.ID,
 		Quantity:           5,
@@ -275,9 +212,9 @@ func TestBulkCheckout_PlanWithoutGroupManagement_Rejected(t *testing.T) {
 	})
 
 	assert.Error(t, err,
-		"FEATURE: bulk checkout must also reject a plan lacking group_management — otherwise "+
-			"the direct-purchase feature gate (PurchaseBulkLicenses) is bypassable via the Stripe "+
-			"checkout path.")
+		"PURCHASER: bulk checkout must apply the same buyer-side gate as PurchaseBulkLicenses — "+
+			"otherwise the direct path's gate is trivially bypassable by buying through Stripe "+
+			"checkout instead.")
 	assert.Empty(t, cap.checkoutSessionForm(),
-		"no Stripe checkout session may be created for a plan that lacks group_management")
+		"no Stripe checkout session may be created for an ineligible purchaser")
 }

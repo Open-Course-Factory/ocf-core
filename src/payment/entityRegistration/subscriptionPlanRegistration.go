@@ -53,6 +53,7 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						DataPersistenceEnabled:    plan.DataPersistenceEnabled,
 						SessionSupervisionEnabled: plan.SessionSupervisionEnabled,
 						GroupManagementEnabled:    plan.GroupManagementEnabled,
+						BulkPurchasable:           plan.BulkPurchasable,
 						DataPersistenceGB:         plan.DataPersistenceGB,
 
 						// Backend routing
@@ -92,6 +93,7 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 						DataPersistenceEnabled:     input.DataPersistenceEnabled,
 						SessionSupervisionEnabled:  input.SessionSupervisionEnabled,
 						GroupManagementEnabled:     input.GroupManagementEnabled,
+						BulkPurchasable:            input.BulkPurchasable,
 						DataPersistenceGB:          input.DataPersistenceGB,
 						CommandHistoryRetentionDays: input.CommandHistoryRetentionDays,
 						DefaultBackend:             input.DefaultBackend,

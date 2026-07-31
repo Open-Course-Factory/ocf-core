@@ -444,10 +444,14 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 		return nil, fmt.Errorf("subscription plan not found: %w", err)
 	}
 
-	// A plan is bulk-purchasable iff it is active, in catalog, and carries the
-	// group_management feature. One shared guard, also used by the direct
-	// PurchaseBulkLicenses path — rejected before any Casdoor/Stripe call.
+	// Two shared guards, also used by the direct PurchaseBulkLicenses path, so
+	// checkout cannot be used to bypass either: the plan must be a sellable seat
+	// product, and the buyer's own plan must grant group management. Both run
+	// before any Casdoor/Stripe call.
 	if err := validateBulkPurchasablePlan(plan); err != nil {
+		return nil, err
+	}
+	if err := validateBulkPurchaser(ss.db, userID); err != nil {
 		return nil, err
 	}
 

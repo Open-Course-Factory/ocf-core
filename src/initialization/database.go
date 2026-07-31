@@ -180,6 +180,10 @@ func AutoMigrateAll(db *gorm.DB) {
 	// the backfill and the index migration below, which now speak only of 'active'.
 	MigrateTrialingStatusToActive(db)
 
+	// #441: seed the new BulkPurchasable flag from the rule it replaces, so plans
+	// that were sellable in bulk yesterday still are today.
+	BackfillBulkPurchasableFromGroupManagement(db)
+
 	// Enforce "one active subscription per organization" on existing data.
 	// Runs BEFORE ensureOrganizationsHaveTrialPlan so the latter sees a
 	// clean state (zero or one active sub per org). Idempotent and safe
@@ -497,6 +501,30 @@ func BackfillGroupManagementEntitlement(db *gorm.DB) {
 			Update("group_management_enabled", true).Error; err != nil {
 			log.Printf("Warning: BackfillGroupManagementEntitlement failed for plan %s: %v\n", r.ID, err)
 		}
+	}
+}
+
+// BackfillBulkPurchasableFromGroupManagement marks the plans that were already
+// bulk-purchasable under the old gate (#441).
+//
+// Until the gate was split, a plan was sellable in bulk precisely when it
+// granted group management. Introducing the explicit BulkPurchasable flag with a
+// default of false would therefore have silently stopped every existing bulk
+// purchase, so the old rule is replayed once to seed the new flag.
+//
+// Idempotent: it only touches rows where the flag is still false, so a plan an
+// admin has deliberately unmarked is not re-marked on the next restart.
+func BackfillBulkPurchasableFromGroupManagement(db *gorm.DB) {
+	res := db.Model(&paymentModels.SubscriptionPlan{}).
+		Where("group_management_enabled = ? AND bulk_purchasable = ?", true, false).
+		Update("bulk_purchasable", true)
+	if res.Error != nil {
+		log.Printf("[MIGRATION] BackfillBulkPurchasableFromGroupManagement failed: %v", res.Error)
+		return
+	}
+	if res.RowsAffected > 0 {
+		log.Printf("[MIGRATION] marked %d plan(s) bulk-purchasable from the legacy group-management rule",
+			res.RowsAffected)
 	}
 }
 

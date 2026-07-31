@@ -276,12 +276,15 @@ func TestStripeService_CreateBulkCheckoutSession_IdempotencyKey_StableAcrossRetr
 	installFakeCasdoor(t, "bulk@example.com", "Bulk User")
 	svc := services.NewStripeService(db)
 
+	userID := "user_bulk_" + uuid.NewString()
+
 	plan := activeStripePlan(t, db, "Bulk Plan")
-	// The bulk-purchase paths now require the plan to carry the typed
-	// GroupManagementEnabled entitlement (the legacy features[] string no longer
-	// gates). Grant it on this bulk-path fixture only — the shared activeStripePlan
-	// helper stays entitlement-less for the individual-path callers.
-	require.NoError(t, db.Model(plan).Update("group_management_enabled", true).Error)
+	// Since #441 the bulk paths ask two separate questions: the plan must be a
+	// sellable seat product, and the BUYER's own plan must grant group
+	// management. Set both up on this bulk-path fixture only — the shared
+	// activeStripePlan helper stays plain for the individual-path callers.
+	require.NoError(t, db.Model(plan).Update("bulk_purchasable", true).Error)
+	seedTrainerWithGroupManagement(t, db, userID)
 
 	input := dto.CreateBulkCheckoutSessionInput{
 		SubscriptionPlanID: plan.ID,
@@ -290,7 +293,6 @@ func TestStripeService_CreateBulkCheckoutSession_IdempotencyKey_StableAcrossRetr
 		CancelURL:          "https://app.test/cancel",
 	}
 
-	userID := "user_bulk_" + uuid.NewString()
 	_, err := svc.CreateBulkCheckoutSession(userID, input)
 	require.NoError(t, err, "first CreateBulkCheckoutSession should succeed against fakes")
 	_, err = svc.CreateBulkCheckoutSession(userID, input)

@@ -61,26 +61,43 @@ func NewBulkLicenseServiceWithDeps(db *gorm.DB, stripeService StripeService) Bul
 	}
 }
 
-// validateBulkPurchasablePlan is the single rule for whether a plan may be
-// purchased in bulk: it must be active, in the public catalog, and grant group
-// management. It is called from both the direct purchase path
+// validateBulkPurchasablePlan is the single rule for whether a plan may be SOLD
+// in bulk. It is called from both the direct purchase path
 // (PurchaseBulkLicenses) and the Stripe checkout path (CreateBulkCheckoutSession)
 // so the gate lives in exactly one place.
+//
+// It deliberately says nothing about who is buying — that is
+// validateBulkPurchaser's job. The two used to be one check on the plan being
+// bought, which made a learner seat impossible to model: the gate demanded
+// IsCatalog (so a seat could not be hidden from the pricing page) and
+// GroupManagementEnabled (so students would have inherited group management,
+// and could have bought seats themselves).
 func validateBulkPurchasablePlan(plan *models.SubscriptionPlan) error {
 	if !plan.IsActive {
 		return fmt.Errorf("subscription plan is not active")
 	}
-	// Only catalog plans are purchasable via self-service; a custom/unlisted plan
-	// (IsCatalog=false) is assigned by an admin, not bought by anyone who knows
-	// its id. Same wording as the individual checkout path.
-	if !plan.IsCatalog {
-		return fmt.Errorf("subscription plan is not available for purchase")
+	// Sellability is an explicit property of the product, independent of whether
+	// it appears on the public pricing page: a learner seat is bought by trainers
+	// but must not be listed as a public SKU.
+	if !plan.BulkPurchasable {
+		return fmt.Errorf("subscription plan is not available for bulk purchase")
 	}
-	// Bulk purchase provisions a batch of licenses for a team, so the plan must
-	// grant group management — read the typed entitlement, not the legacy
-	// features[] string.
-	if !plan.GroupManagementEnabled {
-		return fmt.Errorf("subscription plan does not support bulk purchase")
+	return nil
+}
+
+// validateBulkPurchaser is the rule for whether a USER may buy licences for
+// others: their own effective plan must grant group management.
+//
+// Resolved with no org context on purpose — a batch is owned by the purchaser,
+// not by an organization, so the question is whether this user holds such a plan
+// anywhere.
+func validateBulkPurchaser(db *gorm.DB, purchaserUserID string) error {
+	result, err := NewEffectivePlanService(db).GetUserEffectivePlan(purchaserUserID, nil)
+	if err != nil || result == nil || result.Plan == nil {
+		return fmt.Errorf("no active subscription plan allows purchasing licenses")
+	}
+	if !result.Plan.GroupManagementEnabled {
+		return fmt.Errorf("your subscription plan does not allow purchasing licenses for a group")
 	}
 	return nil
 }
@@ -94,6 +111,10 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 	}
 
 	if err := validateBulkPurchasablePlan(plan); err != nil {
+		return nil, nil, err
+	}
+
+	if err := validateBulkPurchaser(s.db, purchaserUserID); err != nil {
 		return nil, nil, err
 	}
 

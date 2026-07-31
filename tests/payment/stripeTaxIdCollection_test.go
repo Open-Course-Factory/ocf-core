@@ -130,13 +130,15 @@ func TestStripeService_CreateBulkCheckoutSession_EnablesTaxIdCollection(t *testi
 	installFakeCasdoor(t, "bulkvat@example.com", "Bulk VAT Buyer")
 	svc := services.NewStripeService(db)
 	plan := activeStripePlan(t, db, "Bulk Tax Plan")
-	// The bulk-purchase paths now require the plan to carry the typed
-	// GroupManagementEnabled entitlement (the legacy features[] string no longer
-	// gates). Grant it on this bulk-path fixture only — the shared activeStripePlan
-	// helper stays entitlement-less for the individual-path callers.
-	require.NoError(t, db.Model(plan).Update("group_management_enabled", true).Error)
+	// Since #441 the bulk paths ask two separate questions: the plan must be a
+	// sellable seat product, and the BUYER's own plan must grant group
+	// management. Set both up on this bulk-path fixture only — the shared
+	// activeStripePlan helper stays plain for the individual-path callers.
+	require.NoError(t, db.Model(plan).Update("bulk_purchasable", true).Error)
+	buyerID := "user_bulktax_" + uuid.NewString()
+	seedTrainerWithGroupManagement(t, db, buyerID)
 
-	_, err := svc.CreateBulkCheckoutSession("user_bulktax_"+uuid.NewString(), dto.CreateBulkCheckoutSessionInput{
+	_, err := svc.CreateBulkCheckoutSession(buyerID, dto.CreateBulkCheckoutSessionInput{
 		SubscriptionPlanID: plan.ID,
 		Quantity:           5,
 		SuccessURL:         "https://app.test/success",
