@@ -347,7 +347,9 @@ func TestOrganizationSubscriptionService_FeatureAccess(t *testing.T) {
 	assert.NoError(t, err)
 
 	t.Run("Get organization features", func(t *testing.T) {
-		features, err := service.GetOrganizationFeatures(org1.ID)
+		// Scoped to the caller since #451: the org's own subscription is no
+		// longer the only source, so "features here" depends on who is asking.
+		features, err := service.GetOrganizationFeatures(org1.ID, userID)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, features)
@@ -410,14 +412,17 @@ func TestOrganizationSubscriptionService_UserEffectiveFeatures(t *testing.T) {
 		assert.Equal(t, 2, len(features.Organizations))
 	})
 
-	t.Run("User with no organization subscriptions", func(t *testing.T) {
+	t.Run("User with no subscription at all", func(t *testing.T) {
+		// #451 widened this: a personal plan now counts, so "no organization
+		// subscriptions" is no longer the same thing as "no features". Only a
+		// user with neither has nothing.
 		noSubUser := "user_no_subs"
 
 		features, err := service.GetUserEffectiveFeatures(noSubUser)
 
 		assert.Error(t, err)
 		assert.Nil(t, features)
-		assert.Contains(t, err.Error(), "no organization subscriptions")
+		assert.Contains(t, err.Error(), "no subscription")
 	})
 }
 
