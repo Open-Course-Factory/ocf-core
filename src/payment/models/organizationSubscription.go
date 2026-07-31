@@ -37,9 +37,22 @@ func (os OrganizationSubscription) GetReferenceObject() string {
 	return "OrganizationSubscription"
 }
 
+const (
+	// UniqueActiveOrgSubscriptionIndexName is the current partial unique index.
+	// Exported because tests that seed legacy multi-active state must drop the
+	// real index — hardcoding the name there let it silently drift out of sync
+	// when the index was versioned, and the tests then failed on inserts they
+	// believed were unconstrained.
+	UniqueActiveOrgSubscriptionIndexName = "idx_unique_active_org_subscription_v2"
+
+	// legacyUniqueActiveOrgSubscriptionIndexName is the pre-#439 index, whose
+	// WHERE clause still counted 'trialing' as occupying the active slot.
+	legacyUniqueActiveOrgSubscriptionIndexName = "idx_unique_active_org_subscription"
+)
+
 // MigrateUniqueActiveOrgSubscriptionIndex creates a partial unique index that
-// enforces "at most one active/trialing OrganizationSubscription per
-// organization" at the database level.
+// enforces "at most one active OrganizationSubscription per organization" at
+// the database level.
 //
 // This is the canonical defense against multi-pod races where two writers
 // (e.g. an admin assign and a Stripe webhook firing simultaneously) both
@@ -49,15 +62,28 @@ func (os OrganizationSubscription) GetReferenceObject() string {
 // concurrent inserts.
 //
 // We use a raw partial-index migration (rather than a GORM `uniqueIndex` tag)
-// because GORM's struct-tag parser does not reliably emit multi-column WHERE
-// clauses across dialects (`status IN ('active','trialing') AND deleted_at
-// IS NULL`). The same pattern is already used by scenarios:
+// because GORM's struct-tag parser does not reliably emit partial WHERE clauses
+// across dialects. The same pattern is already used by scenarios:
 // MigrateUniqueActiveSessionIndex.
+//
+// #439: the original index spelled `status IN ('active','trialing')`. Editing
+// that string in place would have been a no-op on every existing database,
+// because this function returns early when the index already exists. The index
+// is therefore versioned: the legacy one is dropped by name and the current one
+// created fresh. MigrateTrialingStatusToActive must run FIRST, or rows still
+// sitting in 'trialing' fall outside the new index and lose the uniqueness
+// guarantee it exists to provide.
 func MigrateUniqueActiveOrgSubscriptionIndex(db *gorm.DB) {
-	indexName := "idx_unique_active_org_subscription"
+	// Raw DROP rather than Migrator().DropIndex: the gorm sqlite driver has
+	// silently no-op'd schema drops before (see the orphan-column migration),
+	// and a silent no-op here would leave the old definition in force, still
+	// treating 'trialing' as occupying an organization's one active slot.
+	if err := db.Exec(fmt.Sprintf(`DROP INDEX IF EXISTS %s`, legacyUniqueActiveOrgSubscriptionIndexName)).Error; err != nil {
+		fmt.Printf("MigrateUniqueActiveOrgSubscriptionIndex: failed to drop legacy index: %v\n", err)
+	}
 
-	// Idempotent: skip if the index is already in place.
-	if db.Migrator().HasIndex(&OrganizationSubscription{}, indexName) {
+	// Idempotent: skip if the current index is already in place.
+	if db.Migrator().HasIndex(&OrganizationSubscription{}, UniqueActiveOrgSubscriptionIndexName) {
 		return
 	}
 
@@ -66,13 +92,13 @@ func MigrateUniqueActiveOrgSubscriptionIndex(db *gorm.DB) {
 	switch dialect {
 	case "postgres":
 		sql = fmt.Sprintf(
-			`CREATE UNIQUE INDEX %s ON organization_subscriptions (organization_id) WHERE status IN ('active', 'trialing') AND deleted_at IS NULL`,
-			indexName,
+			`CREATE UNIQUE INDEX %s ON organization_subscriptions (organization_id) WHERE status = 'active' AND deleted_at IS NULL`,
+			UniqueActiveOrgSubscriptionIndexName,
 		)
 	case "sqlite":
 		sql = fmt.Sprintf(
-			`CREATE UNIQUE INDEX IF NOT EXISTS %s ON organization_subscriptions (organization_id) WHERE status IN ('active', 'trialing') AND deleted_at IS NULL`,
-			indexName,
+			`CREATE UNIQUE INDEX IF NOT EXISTS %s ON organization_subscriptions (organization_id) WHERE status = 'active' AND deleted_at IS NULL`,
+			UniqueActiveOrgSubscriptionIndexName,
 		)
 	default:
 		fmt.Printf("MigrateUniqueActiveOrgSubscriptionIndex: unsupported dialect %s, skipping\n", dialect)

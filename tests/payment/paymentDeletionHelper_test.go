@@ -156,8 +156,14 @@ var _ services.StripeService = (*stubStripeForPDH)(nil)
 
 // TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIterates
 // exercises the three behaviors the interface docstring commits to:
-//  1. Only subscriptions in status active/trialing/past_due with a non-empty
+//  1. Only entitling subscriptions (active/past_due) with a non-empty
 //     StripeSubscriptionID are cancelled — all other rows are skipped.
+//
+// KNOWN GAP, pre-existing and not introduced by #439: a subscription in a
+// non-entitling status (unpaid, incomplete) that still carries a live Stripe
+// subscription ID is NOT cancelled here, so it survives account erasure at
+// Stripe. The 'unpaid' row below pins today's behaviour rather than endorsing
+// it; widening the selection is a separate decision about erasure semantics.
 //  2. When multiple subscriptions qualify, every one of them is cancelled
 //     (the loop iterates, it does not stop after the first).
 //  3. If Stripe returns an error on one subscription, CancelAllActive…
@@ -175,7 +181,7 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 		}).Error)
 
 		now := time.Now()
-		// Eligible rows: active, trialing, past_due, each with a stripe ID.
+		// Eligible rows: the entitling statuses, each with a stripe ID.
 		eligible := []models.UserSubscription{
 			{
 				BaseModel:            entityManagementModels.BaseModel{ID: uuid.New()},
@@ -183,15 +189,6 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 				SubscriptionPlanID:   planID,
 				Status:               "active",
 				StripeSubscriptionID: pdhStrPtr("sub_active_1"),
-				CurrentPeriodStart:   now,
-				CurrentPeriodEnd:     now.Add(30 * 24 * time.Hour),
-			},
-			{
-				BaseModel:            entityManagementModels.BaseModel{ID: uuid.New()},
-				UserID:               userID,
-				SubscriptionPlanID:   planID,
-				Status:               "trialing",
-				StripeSubscriptionID: pdhStrPtr("sub_trialing_1"),
 				CurrentPeriodStart:   now,
 				CurrentPeriodEnd:     now.Add(30 * 24 * time.Hour),
 			},
@@ -212,9 +209,19 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 		// Ineligible rows that MUST be skipped:
 		// - cancelled status
 		// - incomplete status
+		// - unpaid status (see the KNOWN GAP note on this test)
 		// - active but nil stripe ID
 		// - different user
 		ineligible := []models.UserSubscription{
+			{
+				BaseModel:            entityManagementModels.BaseModel{ID: uuid.New()},
+				UserID:               userID,
+				SubscriptionPlanID:   planID,
+				Status:               "unpaid",
+				StripeSubscriptionID: pdhStrPtr("sub_unpaid_1"),
+				CurrentPeriodStart:   now,
+				CurrentPeriodEnd:     now.Add(30 * 24 * time.Hour),
+			},
 			{
 				BaseModel:            entityManagementModels.BaseModel{ID: uuid.New()},
 				UserID:               userID,
@@ -261,9 +268,9 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 		err := helper.CancelAllActiveSubscriptionsForUser(userID)
 		require.NoError(t, err)
 
-		// Exactly the three eligible stripe IDs were cancelled, with
+		// Exactly the entitling stripe IDs were cancelled, with
 		// cancelAtPeriodEnd=false (immediate cancellation).
-		require.Len(t, stub.cancelCalls, 3)
+		require.Len(t, stub.cancelCalls, 2)
 		gotIDs := map[string]bool{}
 		for _, c := range stub.cancelCalls {
 			gotIDs[c.subscriptionID] = true
@@ -271,11 +278,12 @@ func TestPaymentDeletionHelper_CancelAllActiveSubscriptionsForUser_FiltersAndIte
 				"cancelAtPeriodEnd must be false for account deletion")
 		}
 		assert.True(t, gotIDs["sub_active_1"])
-		assert.True(t, gotIDs["sub_trialing_1"])
 		assert.True(t, gotIDs["sub_pastdue_1"])
 		// Explicit negative assertions.
 		assert.False(t, gotIDs["sub_cancelled_1"], "cancelled subs must not be re-cancelled")
 		assert.False(t, gotIDs["sub_incomplete_1"], "incomplete subs must not be cancelled")
+		assert.False(t, gotIDs["sub_unpaid_1"],
+			"unpaid subs are not cancelled today — see the KNOWN GAP note above")
 		assert.False(t, gotIDs["sub_other_user"], "other users' subs must not be touched")
 	})
 

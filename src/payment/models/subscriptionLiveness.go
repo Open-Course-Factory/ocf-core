@@ -30,14 +30,39 @@ import "gorm.io/gorm"
 // Entitling is always a superset of Billable; a test pins that, because the
 // inverse would mean charging someone for access they do not have.
 //
-// `trialing` is carried in both sets purely as defensiveness against Stripe's
-// state machine reporting it — OCF sells no paid trials. Its removal is tracked
-// separately (#439) and is a one-line change now that the sets live here; note
-// it also appears in a partial UNIQUE INDEX on organization_subscriptions.
+// `trialing` was removed in #439: OCF sells no paid trials, so the free Trial
+// *plan* is the only "trial" and the status was never a product state — it was
+// carried purely as defensiveness against Stripe's state machine reporting it.
+// Removing it required more than editing these slices, because the status was
+// also baked into a partial UNIQUE INDEX on organization_subscriptions and into
+// existing rows; see MigrateUniqueActiveOrgSubscriptionIndex and
+// MigrateTrialingStatusToActive.
+//
+// Defensiveness did not disappear with it, it moved somewhere honest: an
+// unmodelled status now surfaces as a warning at the Stripe ingestion point
+// (see IsKnownStatus) instead of silently landing in the database as a row that
+// entitles nobody.
 var (
-	entitlingStatuses = []string{"active", "trialing", "past_due"}
-	billableStatuses  = []string{"active", "trialing"}
+	entitlingStatuses = []string{"active", "past_due"}
+	billableStatuses  = []string{"active"}
 )
+
+// knownStatuses is every status OCF models. It is deliberately wider than the
+// two predicates: cancelled and unpaid are perfectly well understood, they just
+// do not entitle. The point of the set is to tell "understood and not entitling"
+// apart from "we have never seen this before", which is the case that must be
+// loud — a subscription silently stuck in an unrecognised status entitles
+// nobody and looks, from the outside, exactly like a billing bug.
+var knownStatuses = []string{
+	"active", "past_due", "cancelled", "unpaid",
+	"incomplete", "incomplete_expired", "paused", "replaced",
+}
+
+// IsKnownStatus reports whether OCF models this subscription status at all.
+// A false result means the status should be surfaced, not swallowed.
+func IsKnownStatus(status string) bool {
+	return containsStatus(knownStatuses, status)
+}
 
 // EntitlingStatuses returns the statuses under which a subscription grants access.
 // The slice is copied so callers cannot mutate the canonical definition.

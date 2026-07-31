@@ -538,9 +538,13 @@ func (r *paymentRepository) GetSubscriptionAnalytics(startDate, endDate time.Tim
 		Where("cancelled_at BETWEEN ? AND ?", startDate, endDate).
 		Count(&analytics.CancelledSubscriptions)
 
-	// Trial subscriptions
+	// Trial subscriptions. Counted by PLAN, not by a 'trialing' status: OCF sells
+	// no paid trials, so the status never occurred and this metric read 0 forever.
+	// The free Trial plan is what "trial" means here (#439).
 	r.db.Model(&models.UserSubscription{}).
-		Where("status = ?", "trialing").
+		Joins("JOIN subscription_plans ON subscription_plans.id = user_subscriptions.subscription_plan_id").
+		Where("subscription_plans.price_amount = 0").
+		Where("user_subscriptions.status IN (?)", models.EntitlingStatuses()).
 		Count(&analytics.TrialSubscriptions)
 
 	// Revenue calculation

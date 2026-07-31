@@ -75,8 +75,8 @@ func runTestMigrations(db *gorm.DB) error {
 		db.Exec("ALTER TABLE subscription_plans ADD COLUMN features TEXT")
 	}
 
-	// Create the partial unique index that enforces "at most one
-	// active/trialing OrganizationSubscription per org" at the DB level.
+	// Create the partial unique index that enforces "at most one active
+	// OrganizationSubscription per org" at the DB level.
 	models.MigrateUniqueActiveOrgSubscriptionIndex(db)
 
 	// Create tables with PostgreSQL-specific defaults using raw SQL for SQLite compatibility

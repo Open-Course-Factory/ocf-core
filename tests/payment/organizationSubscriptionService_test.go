@@ -595,7 +595,7 @@ func TestOrganizationSubscription_Create_RespectsQuantity(t *testing.T) {
 }
 
 func TestOrganizationSubscriptionRepository_GetAllActiveOrganizationSubscriptions(t *testing.T) {
-	t.Run("Returns active and trialing subscriptions with plan details preloaded", func(t *testing.T) {
+	t.Run("Returns active subscriptions across orgs with plan details preloaded", func(t *testing.T) {
 		db := freshTestDB(t)
 		freePlan, proPlan, org1, org2, _ := seedTestData(t, db)
 		repo := repositories.NewOrganizationSubscriptionRepository(db)
@@ -613,17 +613,19 @@ func TestOrganizationSubscriptionRepository_GetAllActiveOrganizationSubscription
 		err := db.Create(activeSub).Error
 		assert.NoError(t, err)
 
-		// Create a trialing subscription for org2
-		trialingSub := &models.OrganizationSubscription{
+		// A second active subscription, on a different org. This was a 'trialing'
+		// row until #439 retired that status; the point of the case is that the
+		// method spans organizations, which an active row makes equally well.
+		activeSub2 := &models.OrganizationSubscription{
 			BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
 			OrganizationID:     org2.ID,
 			SubscriptionPlanID: proPlan.ID,
-			Status:             "trialing",
+			Status:             "active",
 			CurrentPeriodStart: time.Now(),
 			CurrentPeriodEnd:   time.Now().AddDate(0, 1, 0),
 			Quantity:           5,
 		}
-		err = db.Create(trialingSub).Error
+		err = db.Create(activeSub2).Error
 		assert.NoError(t, err)
 
 		// Call the new method
@@ -640,13 +642,14 @@ func TestOrganizationSubscriptionRepository_GetAllActiveOrganizationSubscription
 				"SubscriptionPlan.Name should be loaded")
 		}
 
-		// Verify we got both active and trialing
-		statuses := make(map[string]bool)
+		// Both orgs' subscriptions come back, and only active ones do.
+		orgs := make(map[uuid.UUID]bool)
 		for _, sub := range subscriptions {
-			statuses[sub.Status] = true
+			assert.Equal(t, "active", sub.Status, "only active subscriptions are returned")
+			orgs[sub.OrganizationID] = true
 		}
-		assert.True(t, statuses["active"], "Should include active subscriptions")
-		assert.True(t, statuses["trialing"], "Should include trialing subscriptions")
+		assert.True(t, orgs[org1.ID], "should span org1")
+		assert.True(t, orgs[org2.ID], "should span org2")
 	})
 
 	t.Run("Excludes cancelled and incomplete subscriptions", func(t *testing.T) {
@@ -722,17 +725,17 @@ func TestOrganizationSubscriptionService_GetAllActiveOrganizationSubscriptions(t
 		err := db.Create(activeSub).Error
 		assert.NoError(t, err)
 
-		// Create a trialing subscription for org2
-		trialingSub := &models.OrganizationSubscription{
+		// Second org, also active (was 'trialing' before #439 retired the status).
+		activeSub2 := &models.OrganizationSubscription{
 			BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
 			OrganizationID:     org2.ID,
 			SubscriptionPlanID: proPlan.ID,
-			Status:             "trialing",
+			Status:             "active",
 			CurrentPeriodStart: time.Now(),
 			CurrentPeriodEnd:   time.Now().AddDate(0, 1, 0),
 			Quantity:           3,
 		}
-		err = db.Create(trialingSub).Error
+		err = db.Create(activeSub2).Error
 		assert.NoError(t, err)
 
 		// Call the new service method

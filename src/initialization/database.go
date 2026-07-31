@@ -176,6 +176,10 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Ensure the free Trial plan always exists (regardless of environment)
 	EnsureTrialPlanExists(db)
 
+	// #439: retire the 'trialing' status from existing rows. Must run BEFORE both
+	// the backfill and the index migration below, which now speak only of 'active'.
+	MigrateTrialingStatusToActive(db)
+
 	// Enforce "one active subscription per organization" on existing data.
 	// Runs BEFORE ensureOrganizationsHaveTrialPlan so the latter sees a
 	// clean state (zero or one active sub per org). Idempotent and safe
@@ -496,6 +500,34 @@ func BackfillGroupManagementEntitlement(db *gorm.DB) {
 	}
 }
 
+// MigrateTrialingStatusToActive converts subscriptions still sitting in the
+// removed 'trialing' status over to 'active' (#439).
+//
+// OCF never sold paid trials, so in practice this touches zero rows. It exists
+// because the one outcome the removal must not produce is a row that silently
+// stops entitling: once 'trialing' leaves the entitling predicate, any row left
+// in it grants nothing while still looking live in the database.
+//
+// Converting is safe against the organization uniqueness invariant: the legacy
+// partial index permitted at most one active-OR-trialing subscription per org,
+// so no org can be holding both and no conversion can collide.
+//
+// Must run BEFORE MigrateUniqueActiveOrgSubscriptionIndex, which narrows that
+// index to 'active' alone.
+func MigrateTrialingStatusToActive(db *gorm.DB) {
+	for _, table := range []string{"user_subscriptions", "organization_subscriptions"} {
+		res := db.Exec(fmt.Sprintf("UPDATE %s SET status = 'active' WHERE status = 'trialing'", table))
+		if res.Error != nil {
+			log.Printf("[TRIALING-MIGRATION] Failed to convert trialing rows in %s: %v", table, res.Error)
+			continue
+		}
+		if res.RowsAffected > 0 {
+			log.Printf("[TRIALING-MIGRATION] Converted %d trialing subscription(s) to active in %s",
+				res.RowsAffected, table)
+		}
+	}
+}
+
 // ensureUsersHaveTrialPlan checks all Casdoor users and assigns the free Trial
 // plan to any user who doesn't have an active subscription. This heals cases
 // where the subscription assignment failed during user creation (e.g. due to
@@ -618,11 +650,11 @@ func BackfillSingleActiveOrgSubscription(db *gorm.DB) {
 	// Deliberately NOT the entitling predicate. This backfill enforces the same
 	// invariant as the partial UNIQUE INDEX on organization_subscriptions
 	// (models/organizationSubscription.go), whose WHERE clause is literally
-	// `status IN ('active','trialing')`. The two must state the same set or the
-	// backfill cancels rows the index never constrained. Change them together.
+	// `status = 'active'`. The two must state the same set or the backfill
+	// cancels rows the index never constrained. Change them together.
 	if err := db.Table("organization_subscriptions").
 		Select("id, organization_id, created_at").
-		Where("status IN ? AND deleted_at IS NULL", []string{"active", "trialing"}).
+		Where("status = ? AND deleted_at IS NULL", "active").
 		Order("organization_id, created_at DESC").
 		Scan(&rows).Error; err != nil {
 		log.Printf("[ORG-SUB-BACKFILL] Failed to scan org subscriptions: %v", err)

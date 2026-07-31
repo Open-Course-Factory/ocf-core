@@ -100,7 +100,7 @@ func TestAssignOrgSubscription_DeactivatesPrevious(t *testing.T) {
 	// Exactly one active subscription remains, and it points at Pro.
 	var activeCount int64
 	require.NoError(t, db.Model(&models.OrganizationSubscription{}).
-		Where("organization_id = ? AND status IN ?", org.ID, []string{"active", "trialing"}).
+		Where("organization_id = ? AND status = ?", org.ID, "active").
 		Count(&activeCount).Error)
 	assert.Equal(t, int64(1), activeCount, "expected exactly one active subscription per org")
 
@@ -125,7 +125,7 @@ func TestAssignOrgSubscription_NoOpWhenNoPrior(t *testing.T) {
 	// Exactly one active subscription, and no rows were spuriously cancelled.
 	var activeCount int64
 	require.NoError(t, db.Model(&models.OrganizationSubscription{}).
-		Where("organization_id = ? AND status IN ?", org.ID, []string{"active", "trialing"}).
+		Where("organization_id = ? AND status = ?", org.ID, "active").
 		Count(&activeCount).Error)
 	assert.Equal(t, int64(1), activeCount)
 
@@ -201,8 +201,11 @@ func insertOrgSubAtTime(t *testing.T, db *gorm.DB, orgID, planID uuid.UUID, crea
 // any concurrent test that relies on the unique-active-org-sub invariant.
 func withoutUniqueActiveOrgSubIndex(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	const indexName = "idx_unique_active_org_subscription"
-	require.NoError(t, db.Exec(`DROP INDEX IF EXISTS `+indexName).Error)
+	// Take the name from the migration rather than repeating it: when the index
+	// was versioned in #439 a hardcoded copy here silently stopped dropping
+	// anything, and these tests then failed seeding state they believed was
+	// unconstrained.
+	require.NoError(t, db.Exec(`DROP INDEX IF EXISTS `+models.UniqueActiveOrgSubscriptionIndexName).Error)
 	t.Cleanup(func() {
 		// Recreate so the next test's fresh DB inherits the index again.
 		models.MigrateUniqueActiveOrgSubscriptionIndex(db)

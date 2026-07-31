@@ -81,17 +81,17 @@ func (r *organizationSubscriptionRepository) CreateOrganizationSubscriptionAtomi
 	})
 }
 
-// deactivatePreviousOrgSubscription marks any existing active or trialing
-// subscription for the given organization as cancelled. Idempotent: returns
-// nil with zero affected rows when the org has no prior active subscription.
+// deactivatePreviousOrgSubscription marks any existing active subscription for
+// the given organization as cancelled. Idempotent: returns nil with zero
+// affected rows when the org has no prior active subscription.
 func deactivatePreviousOrgSubscription(tx *gorm.DB, orgID uuid.UUID) error {
 	return tx.Model(&models.OrganizationSubscription{}).
 		// Deliberately NOT the entitling predicate: this upholds the same
 		// "one active subscription per organization" invariant as the partial
-		// UNIQUE INDEX below in models/organizationSubscription.go, whose WHERE
-		// clause states exactly this set. Widening it here would cancel rows the
+		// UNIQUE INDEX in models/organizationSubscription.go, whose WHERE clause
+		// states exactly this status. Widening it here would cancel rows the
 		// index never constrained. Change the two together.
-		Where("organization_id = ? AND status IN ?", orgID, []string{"active", "trialing"}).
+		Where("organization_id = ? AND status = ?", orgID, "active").
 		Updates(map[string]interface{}{
 			"status":       "cancelled",
 			"cancelled_at": time.Now(),

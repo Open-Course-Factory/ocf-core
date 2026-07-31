@@ -1,15 +1,19 @@
 // tests/payment/orgSubscriptionUniqueConstraint_test.go
 //
-// Tests the DB-level partial unique index that enforces "at most one
-// active/trialing subscription per organization". This is the canonical
-// defense against multi-pod races (e.g. admin assign + Stripe webhook firing
-// at the same time, both passing the in-process deactivate check before
-// inserting their new rows).
+// Tests the DB-level partial unique index that enforces "at most one active
+// subscription per organization". This is the canonical defense against
+// multi-pod races (e.g. admin assign + Stripe webhook firing at the same time,
+// both passing the in-process deactivate check before inserting their new rows).
 //
 // The partial predicate is:
 //
 //	UNIQUE (organization_id)
-//	WHERE status IN ('active', 'trialing') AND deleted_at IS NULL
+//	WHERE status = 'active' AND deleted_at IS NULL
+//
+// It spanned ('active','trialing') until #439 retired the trialing status.
+// Note it has never covered past_due, so an org can hold an active and a
+// past_due subscription simultaneously and both entitle — a pre-existing gap
+// that removing trialing neither caused nor closed.
 package payment_tests
 
 import (
@@ -128,19 +132,39 @@ func TestOrgSubscription_PartialUniqueIndex_AllowsSoftDeletedThenActive(t *testi
 		"active insert must succeed when only soft-deleted rows exist for the org")
 }
 
-// TestOrgSubscription_PartialUniqueIndex_RejectsTrialingThenActive guards the
-// multi-status predicate: 'trialing' is treated as an active state and must
-// collide with a subsequent 'active' insert for the same org.
-func TestOrgSubscription_PartialUniqueIndex_RejectsTrialingThenActive(t *testing.T) {
+// TestOrgSubscription_PartialUniqueIndex_IgnoresTerminalStatuses guards the
+// narrowed predicate (#439). The index used to span active AND trialing, so a
+// trialing row occupied an organization's single slot. Now only 'active' does:
+// a row in a terminal status must not block a fresh active subscription, or an
+// organization whose subscription lapsed could never be given a new one.
+func TestOrgSubscription_PartialUniqueIndex_IgnoresTerminalStatuses(t *testing.T) {
+	for _, status := range []string{"cancelled", "incomplete", "unpaid"} {
+		t.Run(status, func(t *testing.T) {
+			db := freshTestDB(t)
+			planID, orgID := seedOrgAndPlanForUniqueTest(t, db)
+
+			_, err := insertOrgSubWithStatus(t, db, orgID, planID, status)
+			require.NoError(t, err, "first %s insert should succeed", status)
+
+			_, err = insertOrgSubWithStatus(t, db, orgID, planID, "active")
+			require.NoError(t, err,
+				"a %s row must not occupy the organization's active slot", status)
+		})
+	}
+}
+
+// TestOrgSubscription_TrialingNoLongerOccupiesTheActiveSlot pins the specific
+// consequence of #439 on any row that somehow still carries the retired status:
+// it is inert with respect to the index. MigrateTrialingStatusToActive converts
+// such rows at startup, so this is the belt to that migration's braces.
+func TestOrgSubscription_TrialingNoLongerOccupiesTheActiveSlot(t *testing.T) {
 	db := freshTestDB(t)
 	planID, orgID := seedOrgAndPlanForUniqueTest(t, db)
 
 	_, err := insertOrgSubWithStatus(t, db, orgID, planID, "trialing")
-	require.NoError(t, err, "first trialing insert should succeed")
+	require.NoError(t, err, "a legacy trialing row should still insert")
 
 	_, err = insertOrgSubWithStatus(t, db, orgID, planID, "active")
-	assert.Error(t, err,
-		"active insert must be rejected when a trialing row already exists for the same org")
-	assert.True(t, isUniqueViolation(err),
-		"expected a unique-constraint violation, got: %v", err)
+	require.NoError(t, err,
+		"the retired trialing status must no longer block an active subscription")
 }

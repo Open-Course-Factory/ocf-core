@@ -1,15 +1,22 @@
 // tests/payment/trialPlanHeal_test.go
-// Regression tests for ensureUsersHaveTrialPlan heal function.
+// Regression tests for the startup heal that assigns the free Trial plan to
+// users who are missing a subscription (issue #244).
 //
-// Bug: The heal function queries `status = 'active'` only, but
-// GetActiveUserSubscription uses `status IN ('active', 'trialing')`.
-// A user with a 'trialing' subscription gets a duplicate Trial plan
-// assignment on every server restart.
+// The original bug: the heal query tested `status = 'active'` while
+// GetActiveUserSubscription tested a wider set, so a user whose subscription
+// sat in a non-active-but-live status was handed a duplicate Trial on every
+// server restart.
 //
-// These tests replicate the exact DB query used by ensureUsersHaveTrialPlan
-// (which is unexported and calls casdoorsdk.GetUsers(), making it impossible
-// to call directly in unit tests). By running the same query logic against
-// the test DB we can prove the bug without mocking the Casdoor SDK.
+// These tests used to work around ensureUsersHaveTrialPlan being unexported and
+// calling casdoorsdk.GetUsers() by re-implementing its WHERE clause inline. That
+// meant they asserted against a *copy* of the logic: the copy could stay green
+// while production drifted, which is exactly what happened. The per-user
+// decision now lives in EnsureFreeTrialAssigned, which the heal loop calls, so
+// these tests exercise the real code path.
+//
+// The scenario status is 'past_due' rather than 'trialing': #439 retired
+// trialing, and past_due is the surviving entitling-but-not-active case, which
+// carries the identical risk.
 package payment_tests
 
 import (
@@ -18,6 +25,7 @@ import (
 
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	paymentModels "soli/formations/src/payment/models"
+	paymentServices "soli/formations/src/payment/services"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -25,135 +33,72 @@ import (
 	"gorm.io/gorm"
 )
 
-// simulateHealQueryForUser runs the exact same DB query that
-// ensureUsersHaveTrialPlan uses to decide whether a user already has a
-// subscription. It returns true if the heal function would consider this user
-// as "needs a Trial plan" (i.e. the query finds no subscription).
-//
-// This isolates the buggy WHERE clause:
-//
-//	db.Where("user_id = ? AND status = ?", userID, "active")
-//
-// instead of the correct:
-//
-//	db.Where("user_id = ? AND status IN (?)", userID, []string{"active", "trialing"})
-func simulateHealQueryForUser(db *gorm.DB, userID string) bool {
-	var existingSub paymentModels.UserSubscription
-	subResult := db.Where("user_id = ? AND status IN ?", userID, []string{"active", "trialing"}).First(&existingSub)
-	// Returns true when the heal function would create a new subscription
-	// (i.e. no matching row was found → subResult.Error != nil)
-	return subResult.Error != nil
+// seedFreeTrialPlan creates the free plan the heal path looks up by name.
+func seedFreeTrialPlan(t *testing.T, db *gorm.DB) *paymentModels.SubscriptionPlan {
+	t.Helper()
+	plan := &paymentModels.SubscriptionPlan{
+		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:            paymentServices.FreePlanName,
+		Description:     "Free trial plan",
+		Priority:        0,
+		PriceAmount:     0,
+		Currency:        "eur",
+		BillingInterval: "month",
+		IsActive:        true,
+	}
+	require.NoError(t, db.Create(plan).Error)
+	return plan
 }
 
-// TestEnsureUsersHaveTrialPlan_WithTrialingStatus_ShouldNotDuplicate is the
-// primary regression test for issue #244.
-//
-// It proves that the heal function creates a DUPLICATE subscription for a user
-// who already has a 'trialing' subscription, because the query only checks
-// status = 'active' and misses the trialing subscription entirely.
-//
-// EXPECTED (after the fix): the heal function recognises 'trialing' as an
-// active subscription and skips the user → subscription count stays at 1.
-//
-// ACTUAL (before the fix / current state): the heal function does NOT see the
-// trialing subscription and creates a second one → subscription count becomes 2.
-// The test therefore FAILS until the fix is applied.
-func TestEnsureUsersHaveTrialPlan_WithTrialingStatus_ShouldNotDuplicate(t *testing.T) {
+// countSubscriptions returns how many subscription rows a user holds, in any status.
+func countSubscriptions(t *testing.T, db *gorm.DB, userID string) int64 {
+	t.Helper()
+	var n int64
+	require.NoError(t, db.Model(&paymentModels.UserSubscription{}).
+		Where("user_id = ?", userID).Count(&n).Error)
+	return n
+}
+
+// TestEnsureUsersHaveTrialPlan_WithDunningStatus_ShouldNotDuplicate is the
+// primary regression test for #244: a user holding a subscription that entitles
+// them but is not 'active' must not be handed a second one by the heal loop.
+func TestEnsureUsersHaveTrialPlan_WithDunningStatus_ShouldNotDuplicate(t *testing.T) {
 	db := freshTestDB(t)
+	trialPlan := seedFreeTrialPlan(t, db)
 
-	// Seed a Trial plan (required by the heal function)
-	trialPlan := &paymentModels.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "Trial",
-		Description:            "Free trial plan",
-		Priority:               0,
-		PriceAmount:            0,
-		Currency:               "eur",
-		BillingInterval:        "month",
-		IsActive:               true,
-	}
-	require.NoError(t, db.Create(trialPlan).Error)
-
-	// Create a user (represented by a Casdoor UUID string)
 	userID := uuid.New().String()
-
-	// Seed a 'trialing' subscription for this user.
-	// This is the real-world scenario: Stripe sets status to 'trialing'
-	// during the checkout trial period.
 	now := time.Now()
-	existingSub := &paymentModels.UserSubscription{
+	require.NoError(t, db.Create(&paymentModels.UserSubscription{
 		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
 		UserID:             userID,
 		SubscriptionPlanID: trialPlan.ID,
-		Status:             "trialing", // <-- the status the heal function misses
+		Status:             "past_due", // entitling, but not 'active'
 		SubscriptionType:   "personal",
 		CurrentPeriodStart: now.AddDate(0, -1, 0),
 		CurrentPeriodEnd:   now.AddDate(0, 1, 0),
-	}
-	require.NoError(t, db.Create(existingSub).Error)
+	}).Error)
 
-	// ── Confirm the precondition: user has exactly 1 subscription ──────────
-	var initialCount int64
-	db.Model(&paymentModels.UserSubscription{}).
-		Where("user_id = ?", userID).
-		Count(&initialCount)
-	require.Equal(t, int64(1), initialCount, "precondition: user should start with 1 subscription")
+	require.Equal(t, int64(1), countSubscriptions(t, db, userID),
+		"precondition: user should start with 1 subscription")
 
-	// ── Simulate what ensureUsersHaveTrialPlan does for this user ───────────
-	// The function uses status = 'active' only.  If the query misses the
-	// trialing subscription it will insert a second one.
-	healWouldCreateDuplicate := simulateHealQueryForUser(db, userID)
+	assigned, err := paymentServices.EnsureFreeTrialAssigned(db, userID)
+	require.NoError(t, err)
 
-	if healWouldCreateDuplicate {
-		// Replicate the insert the heal function would make
-		newSub := paymentModels.UserSubscription{
-			BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
-			UserID:             userID,
-			SubscriptionPlanID: trialPlan.ID,
-			Status:             "active",
-			CurrentPeriodStart: now,
-			CurrentPeriodEnd:   now.AddDate(1, 0, 0),
-			SubscriptionType:   "personal",
-		}
-		require.NoError(t, db.Create(&newSub).Error, "heal function created a duplicate subscription unexpectedly")
-	}
-
-	// ── Assert: user should still have exactly 1 subscription ──────────────
-	// This FAILS before the fix because the heal query misses 'trialing' status
-	// and creates a second subscription.
-	var finalCount int64
-	db.Model(&paymentModels.UserSubscription{}).
-		Where("user_id = ?", userID).
-		Count(&finalCount)
-
-	assert.Equal(t, int64(1), finalCount,
-		"REGRESSION: ensureUsersHaveTrialPlan created a duplicate subscription for a user "+
-			"who already has a 'trialing' subscription. The heal query must check "+
-			"status IN ('active', 'trialing') instead of status = 'active'.")
+	assert.False(t, assigned,
+		"a user in dunning already holds a subscription — the heal must skip them")
+	assert.Equal(t, int64(1), countSubscriptions(t, db, userID),
+		"REGRESSION: the heal stacked a second subscription onto a past_due one")
 }
 
-// TestEnsureUsersHaveTrialPlan_WithActiveStatus_ShouldNotDuplicate verifies
-// the baseline case (status = 'active') still works correctly after the fix.
-// This test should pass both before and after the fix.
+// TestEnsureUsersHaveTrialPlan_WithActiveStatus_ShouldNotDuplicate is the
+// baseline: an already-active user is skipped.
 func TestEnsureUsersHaveTrialPlan_WithActiveStatus_ShouldNotDuplicate(t *testing.T) {
 	db := freshTestDB(t)
-
-	trialPlan := &paymentModels.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "Trial",
-		Description:            "Free trial plan",
-		Priority:               0,
-		PriceAmount:            0,
-		Currency:               "eur",
-		BillingInterval:        "month",
-		IsActive:               true,
-	}
-	require.NoError(t, db.Create(trialPlan).Error)
+	trialPlan := seedFreeTrialPlan(t, db)
 
 	userID := uuid.New().String()
 	now := time.Now()
-
-	existingSub := &paymentModels.UserSubscription{
+	require.NoError(t, db.Create(&paymentModels.UserSubscription{
 		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
 		UserID:             userID,
 		SubscriptionPlanID: trialPlan.ID,
@@ -161,79 +106,61 @@ func TestEnsureUsersHaveTrialPlan_WithActiveStatus_ShouldNotDuplicate(t *testing
 		SubscriptionType:   "personal",
 		CurrentPeriodStart: now.AddDate(0, -1, 0),
 		CurrentPeriodEnd:   now.AddDate(0, 1, 0),
-	}
-	require.NoError(t, db.Create(existingSub).Error)
+	}).Error)
 
-	healWouldCreateDuplicate := simulateHealQueryForUser(db, userID)
+	assigned, err := paymentServices.EnsureFreeTrialAssigned(db, userID)
+	require.NoError(t, err)
 
-	if healWouldCreateDuplicate {
-		newSub := paymentModels.UserSubscription{
-			BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
-			UserID:             userID,
-			SubscriptionPlanID: trialPlan.ID,
-			Status:             "active",
-			CurrentPeriodStart: now,
-			CurrentPeriodEnd:   now.AddDate(1, 0, 0),
-			SubscriptionType:   "personal",
-		}
-		require.NoError(t, db.Create(&newSub).Error)
-	}
-
-	var finalCount int64
-	db.Model(&paymentModels.UserSubscription{}).
-		Where("user_id = ?", userID).
-		Count(&finalCount)
-
-	assert.Equal(t, int64(1), finalCount,
-		"user with 'active' subscription should not get a duplicate after heal")
+	assert.False(t, assigned, "an active user must be skipped")
+	assert.Equal(t, int64(1), countSubscriptions(t, db, userID),
+		"user with an active subscription should not get a duplicate")
 }
 
-// TestEnsureUsersHaveTrialPlan_NoSubscription_ShouldAssignTrial verifies that
-// a user with NO subscription at all does receive one from the heal function.
-// This is the intended happy path and must keep working after the fix.
+// TestEnsureUsersHaveTrialPlan_NoSubscription_ShouldAssignTrial is the happy
+// path the heal exists for.
 func TestEnsureUsersHaveTrialPlan_NoSubscription_ShouldAssignTrial(t *testing.T) {
 	db := freshTestDB(t)
-
-	trialPlan := &paymentModels.SubscriptionPlan{
-		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:                   "Trial",
-		Description:            "Free trial plan",
-		Priority:               0,
-		PriceAmount:            0,
-		Currency:               "eur",
-		BillingInterval:        "month",
-		IsActive:               true,
-	}
-	require.NoError(t, db.Create(trialPlan).Error)
+	trialPlan := seedFreeTrialPlan(t, db)
 
 	userID := uuid.New().String()
-	// Deliberately do NOT create any subscription for this user.
+	// Deliberately no subscription for this user.
 
-	healWouldCreateDuplicate := simulateHealQueryForUser(db, userID)
+	assigned, err := paymentServices.EnsureFreeTrialAssigned(db, userID)
+	require.NoError(t, err)
 
-	// The heal function SHOULD create a subscription here (user has none)
-	assert.True(t, healWouldCreateDuplicate,
-		"heal function should assign a Trial plan to a user with no subscription")
+	assert.True(t, assigned, "a user with no subscription should receive the free plan")
+	require.Equal(t, int64(1), countSubscriptions(t, db, userID),
+		"user with no prior subscription should end with exactly 1")
 
+	var sub paymentModels.UserSubscription
+	require.NoError(t, db.Where("user_id = ?", userID).First(&sub).Error)
+	assert.Equal(t, trialPlan.ID, sub.SubscriptionPlanID, "must be the free plan")
+	assert.Equal(t, "active", sub.Status)
+}
+
+// TestEnsureUsersHaveTrialPlan_TerminalStatusIsNotASubscription pins the other
+// side of the predicate: a cancelled subscription does not count as holding one,
+// so the user is healed rather than left with no plan at all.
+func TestEnsureUsersHaveTrialPlan_TerminalStatusIsNotASubscription(t *testing.T) {
+	db := freshTestDB(t)
+	trialPlan := seedFreeTrialPlan(t, db)
+
+	userID := uuid.New().String()
 	now := time.Now()
-	if healWouldCreateDuplicate {
-		newSub := paymentModels.UserSubscription{
-			BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
-			UserID:             userID,
-			SubscriptionPlanID: trialPlan.ID,
-			Status:             "active",
-			CurrentPeriodStart: now,
-			CurrentPeriodEnd:   now.AddDate(1, 0, 0),
-			SubscriptionType:   "personal",
-		}
-		require.NoError(t, db.Create(&newSub).Error)
-	}
+	require.NoError(t, db.Create(&paymentModels.UserSubscription{
+		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+		UserID:             userID,
+		SubscriptionPlanID: trialPlan.ID,
+		Status:             "cancelled",
+		SubscriptionType:   "personal",
+		CurrentPeriodStart: now.AddDate(0, -2, 0),
+		CurrentPeriodEnd:   now.AddDate(0, -1, 0),
+	}).Error)
 
-	var finalCount int64
-	db.Model(&paymentModels.UserSubscription{}).
-		Where("user_id = ?", userID).
-		Count(&finalCount)
+	assigned, err := paymentServices.EnsureFreeTrialAssigned(db, userID)
+	require.NoError(t, err)
 
-	assert.Equal(t, int64(1), finalCount,
-		"user with no prior subscription should have exactly 1 Trial subscription after heal")
+	assert.True(t, assigned, "a cancelled subscription does not entitle — heal the user")
+	assert.Equal(t, int64(2), countSubscriptions(t, db, userID),
+		"the cancelled row is kept for history alongside the new free subscription")
 }

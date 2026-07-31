@@ -625,6 +625,24 @@ func (ss *stripeService) CreatePortalSession(userID string, input dto.CreatePort
 }
 
 // CreateSubscriptionPlanInStripe crée un produit et un prix dans Stripe
+// adoptStripeSubscriptionStatus returns the status to persist for a Stripe
+// subscription, warning when Stripe reports one OCF does not model.
+//
+// Removing 'trialing' (#439) removed a status the codebase carried "just in
+// case Stripe reports it". That caution was reasonable; keeping a phantom
+// product state to express it was not. An unmodelled status still persists
+// faithfully — Stripe stays the source of truth — but it no longer does so
+// silently, because a subscription stuck in a status nothing recognises
+// entitles nobody and is indistinguishable from a billing failure.
+func adoptStripeSubscriptionStatus(status stripe.SubscriptionStatus, subscriptionID string) string {
+	s := string(status)
+	if !models.IsKnownStatus(s) {
+		utils.Warn("Stripe reported unmodelled subscription status %q for subscription %s — "+
+			"it will not entitle the holder; map it or add it to knownStatuses", s, subscriptionID)
+	}
+	return s
+}
+
 func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.SubscriptionPlan) error {
 	// Défense en profondeur : les plans gratuits (ex: Trial) sont volontairement
 	// découplés de Stripe. Si un appelant oublie le garde côté contrôleur, on
@@ -1015,7 +1033,7 @@ func (ss *stripeService) handleSubscriptionUpdated(event *stripe.Event) error {
 		}
 	}
 
-	userSub.Status = string(subscription.Status)
+	userSub.Status = adoptStripeSubscriptionStatus(subscription.Status, subscription.ID)
 	// Maintain the dunning stamp lifecycle (mirrors the invoice handlers, #371):
 	// stamp PastDueSince when the sub ENTERS past_due (only if unset, so repeated
 	// events don't reset the clock), and clear it when it LEAVES past_due.
@@ -1247,7 +1265,7 @@ func (ss *stripeService) handleOrganizationSubscriptionUpdated(subscription *str
 	}
 
 	// Update status and other fields
-	orgSub.Status = string(subscription.Status)
+	orgSub.Status = adoptStripeSubscriptionStatus(subscription.Status, subscription.ID)
 	orgSub.CancelAtPeriodEnd = subscription.CancelAtPeriodEnd
 
 	// Save updates
@@ -1665,7 +1683,7 @@ func (ss *stripeService) handleSubscriptionResumed(event *stripe.Event) error {
 		return fmt.Errorf("subscription not found in database: %w", err)
 	}
 
-	userSub.Status = string(subscription.Status) // Should be "active"
+	userSub.Status = adoptStripeSubscriptionStatus(subscription.Status, subscription.ID) // Should be "active"
 	utils.Debug("▶️ Subscription %s resumed for user %s (status: %s)", subscription.ID, userSub.UserID, subscription.Status)
 
 	return ss.repository.UpdateUserSubscription(userSub)
@@ -2580,7 +2598,7 @@ func (ss *stripeService) processSingleSubscription(sub *stripe.Subscription, res
 
 	if existingSubscription != nil {
 		// Abonnement existe - mettre à jour
-		existingSubscription.Status = string(sub.Status)
+		existingSubscription.Status = adoptStripeSubscriptionStatus(sub.Status, sub.ID)
 		existingSubscription.CurrentPeriodStart = currentPeriodStart
 		existingSubscription.CurrentPeriodEnd = currentPeriodEnd
 		existingSubscription.CancelAtPeriodEnd = sub.CancelAtPeriodEnd
