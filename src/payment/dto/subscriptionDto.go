@@ -430,6 +430,52 @@ type ProspectivePricingOutput struct {
 	Points   []ProspectivePricingPoint `json:"points"`
 }
 
+// SeatPricingCheckInput carries BOTH seat ladders, because the invariants that
+// matter belong to the pair and neither plan can validate itself.
+type SeatPricingCheckInput struct {
+	MonthlyTiers []PricingTier `json:"monthly_tiers"`
+	MonthlyFlat  int64         `json:"monthly_flat"` // per seat/month when untiered, cents
+	PackTiers    []PricingTier `json:"pack_tiers"`
+	PackFlat     int64         `json:"pack_flat"` // per learner-day when untiered, cents
+	// IndividualPlanAmount is the individual plan a seat must undercut (Solo).
+	// Zero disables that check.
+	IndividualPlanAmount int64 `json:"individual_plan_amount"`
+	SeatCounts           []int `json:"seat_counts" binding:"required,min=1"`
+	// WorkingWeekDays is the run length that must stay cheaper than a month.
+	// Defaults to 5.
+	WorkingWeekDays int `json:"working_week_days"`
+	// MaxDaysToProbe bounds the crossover search. Defaults to 31.
+	MaxDaysToProbe int `json:"max_days_to_probe"`
+}
+
+// SeatPricingCheckPoint reports the two ladders side by side at one seat count.
+type SeatPricingCheckPoint struct {
+	Seats          int     `json:"seats"`
+	MonthlyTotal   int64   `json:"monthly_total"`
+	MonthlyPerSeat float64 `json:"monthly_per_seat"`
+	WeekTotal      int64   `json:"week_total"`
+	WeekPerSeat    float64 `json:"week_per_seat"`
+	// CrossoverDay is the first day count at which the month becomes cheaper.
+	// 0 means the pack never catches the month within the probed range.
+	CrossoverDay int `json:"crossover_day"`
+}
+
+// SeatPricingViolation is machine-readable so the admin UI can translate it;
+// Detail is an English fallback, not the display string.
+type SeatPricingViolation struct {
+	Code   string `json:"code"`
+	Seats  int    `json:"seats,omitempty"`
+	Detail string `json:"detail"`
+}
+
+type SeatPricingCheckOutput struct {
+	// OK is true when no invariant was violated. Derived, but returned explicitly
+	// so a caller cannot mistake "violations array absent" for "everything fine".
+	OK         bool                    `json:"ok"`
+	Points     []SeatPricingCheckPoint `json:"points"`
+	Violations []SeatPricingViolation  `json:"violations"`
+}
+
 // ==========================================
 // Invoice Cleanup DTOs
 // ==========================================

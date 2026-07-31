@@ -218,6 +218,11 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Price a prospective tier ladder before saving it (admin only)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/subscription-plans/seat-pricing-check", Method: "POST",
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Check the seat pricing ladders against their cross-plan invariants (admin only)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/subscription-plans/:id/sync-stripe", Method: "POST",
 			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
 			Description: "Sync single plan from Stripe",

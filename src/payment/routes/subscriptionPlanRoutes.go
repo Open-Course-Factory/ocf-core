@@ -23,6 +23,7 @@ func SubscriptionPlanRoutes(router *gin.RouterGroup, config *config.Configuratio
 	// Prospective ladders are an admin authoring tool, unlike the GET above which
 	// prices a published plan for anyone considering it.
 	planRoutes.POST("/pricing-preview", authMiddleware.AuthManagement(), subscriptionController.PreviewProspectivePricing)
+	planRoutes.POST("/seat-pricing-check", authMiddleware.AuthManagement(), subscriptionController.CheckSeatPricingCoherence)
 
 	// Routes de synchronisation Stripe (admin seulement)
 	planRoutes.POST("/:id/sync-stripe", authMiddleware.AuthManagement(), subscriptionController.SyncSubscriptionPlanWithStripe)

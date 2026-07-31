@@ -39,6 +39,7 @@ type SubscriptionController interface {
 	// Pricing preview
 	GetPricingPreview(ctx *gin.Context)
 	PreviewProspectivePricing(ctx *gin.Context)
+	CheckSeatPricingCoherence(ctx *gin.Context)
 
 	// Méthodes pour la synchronisation Stripe des plans d'abonnement
 	SyncSubscriptionPlanWithStripe(ctx *gin.Context)
@@ -1447,6 +1448,43 @@ func (sc *userSubscriptionController) PreviewProspectivePricing(ctx *gin.Context
 	}
 
 	ctx.JSON(http.StatusOK, preview)
+}
+
+// CheckSeatPricingCoherence validates the two seat ladders against each other.
+//
+//	@Summary		Check the seat pricing pair for coherence
+//	@Description	Validates the monthly seat ladder and the day-pack ladder against the invariants that belong to the pair — a working week must stay cheaper than a month, a seat must undercut the individual plan, and no bracket may be unreachable (admin only)
+//	@Tags			subscription-plans
+//	@Accept			json
+//	@Produce		json
+//	@Param			input	body		dto.SeatPricingCheckInput	true	"Both prospective ladders and the seat counts to check"
+//	@Success		200		{object}	dto.SeatPricingCheckOutput
+//	@Failure		400		{object}	errors.APIError
+//	@Failure		403		{object}	errors.APIError
+//	@Security		Bearer
+//	@Router			/subscription-plans/seat-pricing-check [post]
+func (sc *userSubscriptionController) CheckSeatPricingCoherence(ctx *gin.Context) {
+	var input dto.SeatPricingCheckInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: fmt.Sprintf("Invalid input: %v", err),
+		})
+		return
+	}
+
+	report, err := services.NewSeatPricingChecker().Check(input)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	// A failing check is a valid answer, not an HTTP error: the admin is asking
+	// what is wrong with a ladder they have not saved.
+	ctx.JSON(http.StatusOK, report)
 }
 
 // AdminAssignSubscription godoc
