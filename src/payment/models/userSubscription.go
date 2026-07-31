@@ -25,6 +25,17 @@ type UserSubscription struct {
 	CurrentPeriodStart      time.Time        `json:"current_period_start"`
 	CurrentPeriodEnd        time.Time        `json:"current_period_end"`
 	CancelAtPeriodEnd       bool             `gorm:"default:false" json:"cancel_at_period_end"`
+	// ExpiresAt is OCF's entitlement deadline: NULL means no deadline.
+	//
+	// Deliberately NOT CurrentPeriodEnd, which mirrors Stripe's billing window and
+	// is zero on rows Stripe has not filled in — making the liveness predicate read
+	// that would have silently un-entitled every such row. It is also a different
+	// question: when does billing renew, versus when does access stop. One column
+	// answering both is how the liveness rule fragmented in the first place.
+	//
+	// Set for admin assignments with a duration and for prepaid packs, which have
+	// no Stripe subscription to flip a status for them (#440).
+	ExpiresAt *time.Time `gorm:"index" json:"expires_at,omitempty"`
 	CancelledAt             *time.Time       `json:"cancelled_at,omitempty"`
 	PastDueSince            *time.Time       `json:"past_due_since,omitempty"` // When the sub entered past_due (nil = not past_due); drives the dunning grace window
 	RenewalNotificationSent bool             `gorm:"default:false" json:"renewal_notification_sent"`
