@@ -11,8 +11,6 @@ import (
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/repositories"
 	orgUtils "soli/formations/src/organizations/utils"
-	paymentModels "soli/formations/src/payment/models"
-	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -130,12 +128,15 @@ func (os *organizationService) CreateOrganization(userID string, input dto.Creat
 		utils.Warn("Failed to grant manager permissions to organization owner: %v", err)
 	}
 
-	// Assign free Trial plan to new organization (mirrors user trial assignment)
-	errTrialSubscription := assignOrgTrialPlan(os.db, createdOrg)
-	if errTrialSubscription != nil {
-		utils.Warn("Could not create Trial subscription for organization %s: %v", createdOrg.ID, errTrialSubscription)
-		// Don't fail org creation for this, just log warning
-	}
+	// No Trial is assigned here. A team org is a container for groups, not a
+	// billing entity: it holds no plan of its own and inherits the acting
+	// member's entitlement, so the owner's paid plan applies inside the org they
+	// created to use it. Auto-assigning a free Trial made that Trial outrank the
+	// owner's paid plan for as long as the org existed — resolveForOrg prefers
+	// any org subscription over the personal fallback (#448).
+	//
+	// A structure (school/OF) still gets a plan, admin-assigned, which
+	// legitimately overrides the inheritance.
 
 	utils.Info("Organization created: %s (ID: %s) by user %s", createdOrg.Name, createdOrg.ID, userID)
 	return createdOrg, nil
@@ -724,30 +725,3 @@ func (os *organizationService) RevokeOrganizationManagerPermissions(userID strin
 // assignOrgTrialPlan assigns the free Trial subscription plan to a newly created
 // organization. Mirrors the user trial assignment pattern in auth/services/userService.go.
 // Skips if the organization already has an explicit SubscriptionPlanID set.
-func assignOrgTrialPlan(db *gorm.DB, org *models.Organization) error {
-	// Skip if the org already has a SubscriptionPlanID set (explicit plan provided in input)
-	if org.SubscriptionPlanID != nil {
-		utils.Info("Organization %s already has a subscription plan, skipping Trial assignment", org.ID)
-		return nil
-	}
-
-	// Look up the active free Trial plan
-	var trialPlan paymentModels.SubscriptionPlan
-	result := db.Where("name = ? AND price_amount = 0 AND is_active = true", "Trial").First(&trialPlan)
-	if result.Error != nil {
-		return fmt.Errorf("could not find active Trial plan: %v", result.Error)
-	}
-
-	// Create organization subscription using the existing subscription service
-	orgSubService := paymentServices.NewOrganizationSubscriptionService(db)
-	_, err := orgSubService.CreateOrganizationSubscription(org.ID, trialPlan.ID, org.OwnerUserID, 1, false)
-	if err != nil {
-		return fmt.Errorf("failed to create Trial subscription: %w", err)
-	}
-
-	// Update the org's SubscriptionPlanID in memory so the caller sees it
-	org.SubscriptionPlanID = &trialPlan.ID
-
-	utils.Info("Successfully assigned Trial plan to organization %s", org.ID)
-	return nil
-}

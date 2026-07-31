@@ -1,11 +1,21 @@
 // tests/payment/organizationTrialPlan_test.go
-// Tests for auto-assigning the Trial subscription plan to team organizations
-// when they are created via organizationService.CreateOrganization().
+//
+// #448 inverted the premise of this file. Creating a team org used to
+// auto-assign a free Trial subscription; it no longer does, and must not.
+//
+// resolveForOrg prefers any org subscription over the personal fallback, so an
+// auto-assigned free Trial outranked the owner's paid personal plan for as long
+// as the org existed. A trainer who bought Formateur and then created an org to
+// run classrooms lost the plan inside that very org.
+//
+// A team org is a container for groups, not a billing entity: it holds no plan
+// of its own and inherits the acting member's entitlement. A structure
+// (school/OF) still gets one admin-assigned, which legitimately overrides.
 //
 // These tests verify that:
-// 1. Creating a team org auto-assigns the Trial plan subscription
-// 2. Org creation still succeeds if no Trial plan exists (graceful degradation)
-// 3. If the creation input already includes a SubscriptionPlanID, the Trial plan is not overridden
+// 1. Creating a team org assigns NO subscription, so inheritance can happen
+// 2. Org creation succeeds whether or not a Trial plan exists in the catalog
+// 3. An explicit SubscriptionPlanID on the input is still preserved on the org
 package payment_tests
 
 import (
@@ -50,10 +60,10 @@ func testDBForOrgService(t *testing.T) *gorm.DB {
 	return db
 }
 
-// TestCreateOrganization_AssignsTrialPlan verifies that creating a team
-// organization via CreateOrganization automatically creates an active
-// OrganizationSubscription with the Trial plan for that org.
-func TestCreateOrganization_AssignsTrialPlan(t *testing.T) {
+// TestCreateOrganization_AssignsNoSubscription is the #448 regression: a Trial
+// plan existing in the catalog must not be attached to a new team org, because
+// doing so shadows the owner's paid personal plan.
+func TestCreateOrganization_AssignsNoSubscription(t *testing.T) {
 	db := testDBForOrgService(t)
 
 	// Seed a Trial plan
@@ -86,28 +96,15 @@ func TestCreateOrganization_AssignsTrialPlan(t *testing.T) {
 	require.NoError(t, err, "Organization creation should succeed")
 	require.NotNil(t, org, "Organization should not be nil")
 
-	// ASSERT: The org should now have an active OrganizationSubscription
-	// with the Trial plan.
+	// ASSERT: no subscription at all. The org must stay planless so the effective
+	// plan resolves to the acting member's entitlement.
 	sub, err := orgSubService.GetOrganizationSubscription(org.ID)
-	assert.NoError(t, err, "Should find an active subscription for the new org")
-	assert.NotNil(t, sub, "OrganizationSubscription should exist")
+	assert.Error(t, err, "a new team org must hold no subscription of its own")
+	assert.Nil(t, sub,
+		"an auto-assigned Trial outranks the owner's paid plan — that is #448")
 
-	if sub != nil {
-		assert.Equal(t, trialPlan.ID, sub.SubscriptionPlanID,
-			"The subscription should be for the Trial plan")
-		assert.Equal(t, "active", sub.Status,
-			"The subscription should be active (Trial is free)")
-		assert.Equal(t, org.ID, sub.OrganizationID,
-			"The subscription should belong to the created org")
-	}
-
-	// Also verify that the Organization.SubscriptionPlanID field was set
-	assert.NotNil(t, org.SubscriptionPlanID,
-		"Organization.SubscriptionPlanID should be set after trial assignment")
-	if org.SubscriptionPlanID != nil {
-		assert.Equal(t, trialPlan.ID, *org.SubscriptionPlanID,
-			"Organization.SubscriptionPlanID should point to the Trial plan")
-	}
+	assert.Nil(t, org.SubscriptionPlanID,
+		"nothing was purchased or assigned, so the org must claim no plan either")
 }
 
 // TestCreateOrganization_NoTrialPlan_Succeeds verifies that if no Trial plan
@@ -141,10 +138,10 @@ func TestCreateOrganization_NoTrialPlan_Succeeds(t *testing.T) {
 	}
 }
 
-// TestCreateOrganization_ExistingPlan_SkipsTrialAssignment verifies that when
-// the CreateOrganizationInput already has a SubscriptionPlanID set, the system
-// does NOT override it with the Trial plan.
-func TestCreateOrganization_ExistingPlan_SkipsTrialAssignment(t *testing.T) {
+// TestCreateOrganization_ExistingPlan_IsPreserved verifies that an explicit
+// SubscriptionPlanID on the input survives creation untouched — the path a
+// structure's bespoke plan comes in through.
+func TestCreateOrganization_ExistingPlan_IsPreserved(t *testing.T) {
 	db := testDBForOrgService(t)
 
 	// Create both a Trial plan and a Pro plan

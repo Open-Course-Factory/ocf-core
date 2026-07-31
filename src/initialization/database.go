@@ -196,9 +196,14 @@ func AutoMigrateAll(db *gorm.DB) {
 	// closes #312.
 	paymentModels.MigrateUniqueActiveOrgSubscriptionIndex(db)
 
-	// Heal users and organizations that are missing their Trial subscription (all environments)
+	// Heal users that are missing their Trial subscription (all environments).
+	//
+	// Organizations are deliberately NOT healed: a team org holds no plan of its
+	// own and inherits the acting member's entitlement. Granting one a free Trial
+	// made that Trial outrank its owner's paid plan, because resolveForOrg prefers
+	// any org subscription over the personal fallback — so every trainer who
+	// created an org lost the plan they had just bought, on every restart (#448).
 	ensureUsersHaveTrialPlan(db)
-	ensureOrganizationsHaveTrialPlan(db)
 
 	// Drop the orphan subscription_plans columns whose Go fields were removed.
 	// This runs LAST and subsumes the standalone group-management backfill: it
@@ -627,55 +632,6 @@ func ensureUsersHaveTrialPlan(db *gorm.DB) {
 // OrganizationSubscription. This heals cases where the subscription assignment
 // failed during organization creation (e.g. due to initialization order issues).
 // Mirrors ensureUsersHaveTrialPlan but for organizations.
-func ensureOrganizationsHaveTrialPlan(db *gorm.DB) {
-	trialPlan, err := paymentServices.FindFreePlan(db)
-	if err != nil {
-		log.Printf("[ORG-TRIAL-SYNC] %v", err)
-		return
-	}
-
-	// Find all active team organizations
-	var orgs []organizationModels.Organization
-	db.Where("organization_type = ? AND is_active = true", "team").Find(&orgs)
-
-	fixed := 0
-	for _, org := range orgs {
-		// An org already holding an entitling subscription needs no Trial. Note
-		// this now includes past_due: an org in dunning has a subscription, and
-		// stacking a Trial underneath it was never intended.
-		var existingSub paymentModels.OrganizationSubscription
-		subResult := db.Scopes(paymentModels.ScopeEntitling).
-			Where("organization_id = ?", org.ID).First(&existingSub)
-		if subResult.Error == nil {
-			continue
-		}
-
-		now := time.Now()
-		newSub := paymentModels.OrganizationSubscription{
-			OrganizationID:     org.ID,
-			SubscriptionPlanID: trialPlan.ID,
-			Status:             "active",
-			CurrentPeriodStart: now,
-			CurrentPeriodEnd:   now.AddDate(1, 0, 0),
-			Quantity:           1,
-		}
-
-		if err := db.Create(&newSub).Error; err != nil {
-			log.Printf("[ORG-TRIAL-SYNC] Failed to assign Trial plan to organization %s: %v", org.ID, err)
-		} else {
-			// Also update Organization.SubscriptionPlanID if not set
-			if org.SubscriptionPlanID == nil {
-				db.Model(&org).Update("subscription_plan_id", trialPlan.ID)
-			}
-			fixed++
-		}
-	}
-
-	if fixed > 0 {
-		log.Printf("[ORG-TRIAL-SYNC] Assigned Trial plan to %d organizations that were missing subscriptions", fixed)
-	}
-}
-
 // BackfillSingleActiveOrgSubscription enforces the "one active subscription
 // per organization" invariant on the existing data. For each org with more
 // than one active (or trialing) subscription, it keeps the most recently
