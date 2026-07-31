@@ -647,6 +647,66 @@ func adoptStripeSubscriptionStatus(status stripe.SubscriptionStatus, subscriptio
 	return s
 }
 
+// stripeTierParams converts a local graduated ladder into Stripe tier params.
+//
+// Stripe tiers are contiguous and identified only by their ceiling, so a bracket
+// contributes its MaxQuantity as up_to; the open bracket (MaxQuantity 0) becomes
+// up_to=inf. Without that last one Stripe refuses any quantity beyond the final
+// ceiling.
+func stripeTierParams(tiers []models.PricingTier) []*stripe.PriceTierParams {
+	out := make([]*stripe.PriceTierParams, 0, len(tiers))
+	for _, t := range tiers {
+		tier := &stripe.PriceTierParams{UnitAmount: stripe.Int64(t.UnitAmount)}
+		if t.MaxQuantity > 0 {
+			tier.UpTo = stripe.Int64(int64(t.MaxQuantity))
+		} else {
+			tier.UpToInf = stripe.Bool(true)
+		}
+		out = append(out, tier)
+	}
+	return out
+}
+
+// applyPricing sets either a flat unit amount or a graduated ladder on price
+// params. A tiered price must NOT also carry a flat unit_amount — Stripe rejects
+// that — so the two are mutually exclusive here, in one place used by both the
+// create and the migrate paths.
+func applyPricing(params *stripe.PriceParams, plan *models.SubscriptionPlan) {
+	if plan.UseTieredPricing && len(plan.PricingTiers) > 0 {
+		params.BillingScheme = stripe.String("tiered")
+		// Graduated, not volume: brackets stack, so the bill never drops when the
+		// customer buys more. Volume inverts at every boundary.
+		params.TiersMode = stripe.String("graduated")
+		params.Tiers = stripeTierParams(plan.PricingTiers)
+		return
+	}
+	params.UnitAmount = stripe.Int64(plan.PriceAmount)
+}
+
+// tiersMatch reports whether a Stripe price already carries this exact ladder.
+//
+// Comparing tiers is what makes a tiered price syncable at all: Stripe returns
+// unit_amount=null (→ 0) for one, while the import stores the first tier's amount
+// in PriceAmount, so a unit-amount comparison reports drift forever and every
+// executed sync replaces the ladder with a flat price.
+func tiersMatch(current *stripe.Price, tiers []models.PricingTier) bool {
+	if current == nil || len(current.Tiers) != len(tiers) {
+		return false
+	}
+	for i, want := range tiers {
+		got := current.Tiers[i]
+		if got == nil || got.UnitAmount != want.UnitAmount {
+			return false
+		}
+		// Stripe reports the open tier as up_to=null (→ 0), matching our
+		// MaxQuantity=0 convention.
+		if got.UpTo != int64(want.MaxQuantity) {
+			return false
+		}
+	}
+	return true
+}
+
 func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.SubscriptionPlan) error {
 	// Défense en profondeur : les plans gratuits (ex: Trial) sont volontairement
 	// découplés de Stripe. Si un appelant oublie le garde côté contrôleur, on
@@ -676,9 +736,8 @@ func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.Subscriptio
 
 	// 2. Créer le prix Stripe
 	priceParams := &stripe.PriceParams{
-		Product:    stripe.String(stripeProduct.ID),
-		UnitAmount: stripe.Int64(plan.PriceAmount),
-		Currency:   stripe.String(plan.Currency),
+		Product:  stripe.String(stripeProduct.ID),
+		Currency: stripe.String(plan.Currency),
 		Recurring: &stripe.PriceRecurringParams{
 			Interval: stripe.String(plan.BillingInterval),
 		},
@@ -686,6 +745,7 @@ func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.Subscriptio
 			"plan_id": plan.ID.String(),
 		},
 	}
+	applyPricing(priceParams, plan)
 
 	// Deduplicate per plan: a retry must reuse the same price rather than create
 	// a duplicate. Keyed on plan.ID with a distinct op prefix from the product.
@@ -3596,7 +3656,12 @@ func (ss *stripeService) SyncPlansToStripe(opts SyncToStripeOptions) (*StripeSyn
 func (ss *stripeService) migratePriceIfDrifted(plan *models.SubscriptionPlan, dryRun bool) (bool, error) {
 	oldPriceID := *plan.StripePriceID
 
-	current, err := price.Get(oldPriceID, nil)
+	// Tiers are only returned when expanded. Without this a tiered price comes
+	// back with an empty Tiers slice and looks like every other tiered price.
+	getParams := &stripe.PriceParams{}
+	getParams.AddExpand("tiers")
+
+	current, err := price.Get(oldPriceID, getParams)
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch Stripe price %s: %w", oldPriceID, err)
 	}
@@ -3606,7 +3671,15 @@ func (ss *stripeService) migratePriceIfDrifted(plan *models.SubscriptionPlan, dr
 		currentInterval = string(current.Recurring.Interval)
 	}
 
-	drifted := current.UnitAmount != plan.PriceAmount ||
+	// Compare like with like: a tiered price has no meaningful unit_amount, so
+	// comparing one against PriceAmount reports drift forever and the sync
+	// replaces the ladder with a flat price on every run.
+	pricingDrifted := current.UnitAmount != plan.PriceAmount
+	if plan.UseTieredPricing && len(plan.PricingTiers) > 0 {
+		pricingDrifted = !tiersMatch(current, plan.PricingTiers)
+	}
+
+	drifted := pricingDrifted ||
 		string(current.Currency) != plan.Currency ||
 		currentInterval != plan.BillingInterval
 	if !drifted {
@@ -3622,14 +3695,16 @@ func (ss *stripeService) migratePriceIfDrifted(plan *models.SubscriptionPlan, dr
 	// stacking duplicates, while a genuinely different price yields a fresh key.
 	priceSignature := fmt.Sprintf("%d|%s|%s", plan.PriceAmount, plan.Currency, plan.BillingInterval)
 	priceParams := &stripe.PriceParams{
-		Product:    plan.StripeProductID,
-		UnitAmount: stripe.Int64(plan.PriceAmount),
-		Currency:   stripe.String(plan.Currency),
+		Product:  plan.StripeProductID,
+		Currency: stripe.String(plan.Currency),
 		Recurring: &stripe.PriceRecurringParams{
 			Interval: stripe.String(plan.BillingInterval),
 		},
 		Metadata: map[string]string{"plan_id": plan.ID.String()},
 	}
+	// The replacement must carry the ladder too, or migrating a tiered plan
+	// silently flattens it — the very failure this function is being fixed for.
+	applyPricing(priceParams, plan)
 	priceParams.SetIdempotencyKey(stripeIdempotencyKey("plan-price-migrate", plan.ID.String(), priceSignature))
 
 	newPrice, err := price.New(priceParams)
