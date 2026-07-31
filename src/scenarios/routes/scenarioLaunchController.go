@@ -427,9 +427,14 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 	// CPU/RAM against the scenario's required size.
 	effectivePlanService := paymentServices.NewEffectivePlanService(sc.db)
 	var resolvedPlan *paymentModels.SubscriptionPlan
+	// The pool the plan draws on, which is not necessarily the org in the request
+	// — see #457. Used below so a scenario marked launchable here is one the
+	// launch gate will actually accept.
+	var budgetScope *uuid.UUID
 	planResult, planErr := effectivePlanService.GetUserEffectivePlan(userID, orgID)
 	if planErr == nil && planResult != nil && planResult.Plan != nil {
 		resolvedPlan = planResult.Plan
+		budgetScope = planResult.ScopeOrganizationID
 	}
 
 	budgetGateActive := resolvedPlan != nil
@@ -487,7 +492,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		// Budget gate: the scenario's required size must fit in the user's
 		// remaining CPU/RAM budget.
 		if budgetGateActive && item.Launchable && resolvedSize != "" {
-			fits, fitErr := quotaSvc.RemainingBudgetFits(userID, orgID, resolvedPlan, resolvedSize)
+			fits, fitErr := quotaSvc.RemainingBudgetFits(userID, budgetScope, resolvedPlan, resolvedSize)
 			if fitErr != nil {
 				slog.Warn("budget fit check failed for scenario", "scenario", s.Name, "err", fitErr)
 			} else if !fits {

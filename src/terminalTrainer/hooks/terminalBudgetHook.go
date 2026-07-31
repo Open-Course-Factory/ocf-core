@@ -164,7 +164,14 @@ func (h *TerminalBudgetHook) Execute(ctx *hooks.HookContext) error {
 	//     starts for the same scope serialise. On SQLite (unit tests)
 	//     both are skipped but the budget verdict is still exercised; the
 	//     race test uses real PostgreSQL.
-	scopeOrgID := terminal.OrganizationID
+	//
+	// The scope comes from the RESOLVED PLAN, not from terminal.OrganizationID.
+	// Those differ whenever the request omits organization_id: plan resolution
+	// still returns an organization's plan (resolveGlobal picks the highest-priority
+	// one the user holds anywhere), while the request-derived scope would be nil and
+	// count only this user's own terminals. Omitting one optional parameter thus
+	// turned a school's shared pool into a per-member copy of it (#457).
+	scopeOrgID := planResult.ScopeOrganizationID
 
 	return h.db.Transaction(func(tx *gorm.DB) error {
 		result, err := h.quotaService.EnforceBudgetTx(tx, terminal.UserID, scopeOrgID, plan, size.CPU, size.MemoryMB)

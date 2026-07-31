@@ -599,9 +599,18 @@ func (c *terminalComposer) reserveBudget(
 		SizeMemoryMB:         input.SizeMemoryMB,
 	}
 
+	// The budget pool comes from the plan that resolves, not from the request's
+	// organization. Passing orgID straight through meant a request that omitted
+	// organization_id was counted personally while still holding an organization's
+	// plan — one shared pool per member instead of one for the organization (#457).
+	//
+	// The reservation row keeps orgID: that records where the session was launched,
+	// which is a different question from which budget it consumes.
+	scopeOrgID := c.quotaService.BudgetScopeFor(userID, orgID)
+
 	var rejection *BudgetRejection
 	err := c.db.Transaction(func(tx *gorm.DB) error {
-		enforcement, enforceErr := c.quotaService.EnforceBudgetTx(tx, userID, orgID, plan, input.SizeCPU, input.SizeMemoryMB)
+		enforcement, enforceErr := c.quotaService.EnforceBudgetTx(tx, userID, scopeOrgID, plan, input.SizeCPU, input.SizeMemoryMB)
 		if enforceErr != nil {
 			return fmt.Errorf("budget check failed: %w", enforceErr)
 		}

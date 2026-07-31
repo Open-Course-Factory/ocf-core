@@ -70,6 +70,27 @@ type QuotaService interface {
 	// observe enough budget for the same slice of resources.
 	CheckBudget(userID string, orgID *uuid.UUID, plan *models.SubscriptionPlan, requestedCPU, requestedMemMB int) (*BudgetCheck, error)
 
+	// BudgetScopeFor answers "which pool does this user's budget draw on right
+	// now?" — the organization whose members share it, or nil for a personal
+	// budget counted for this user alone.
+	//
+	// requestOrgID is the organization the caller is acting in, and is only an
+	// INPUT to plan resolution: the answer comes from the plan that resolves, not
+	// from the request. Those differ, and the difference was the bug: a request
+	// that omitted organization_id still resolved an organization's plan while
+	// being counted personally, so every member of a school could hold the school's
+	// entire budget at once (#457).
+	//
+	// Callers that already hold an EffectivePlanResult should read
+	// ScopeOrganizationID off it instead — this exists for paths that hold only a
+	// bare plan.
+	//
+	// Total by design: when no plan resolves, the answer is requestOrgID unchanged.
+	// A caller in that position is enforcing against a plan supplied out of band and
+	// has no better information than the request, so this degrades to the previous
+	// behaviour rather than failing a launch or inventing a scope.
+	BudgetScopeFor(userID string, requestOrgID *uuid.UUID) *uuid.UUID
+
 	// ComputeRemainingBySize returns the per-size remaining count after
 	// accounting for usedCPU / usedMemMB. The formula is
 	//
@@ -197,14 +218,11 @@ func (s *quotaService) CheckUserQuotaWithPlan(plan *EffectivePlanResult, userID 
 
 	limit := limitForMetric(plan.Plan, metric)
 
-	// Derive the org scope from the resolved plan so the slot count matches
-	// the limit being checked. Plans sourced from an organization carry the
-	// OrganizationSubscription; personal plans leave orgID nil (global count).
-	var orgID *uuid.UUID
-	if plan.Source == PlanSourceOrganization && plan.OrganizationSubscription != nil {
-		id := plan.OrganizationSubscription.OrganizationID
-		orgID = &id
-	}
+	// The resolved plan states its own scope, so the slot count always matches the
+	// limit being checked. This used to be derived from OrganizationSubscription,
+	// which org role-plans leave nil — so a role-plan's limit was compared against a
+	// globally-counted usage (#457).
+	orgID := plan.ScopeOrganizationID
 
 	currentUsage, err := s.currentUsage(userID, orgID, metric)
 	if err != nil {
@@ -314,6 +332,15 @@ func limitForMetric(plan *models.SubscriptionPlan, metric string) int64 {
 // an unlimited (zero-cap) plan. Chosen as math.MaxInt32 so JSON callers
 // can recognise it without special-casing.
 const budgetUnlimited = math.MaxInt32
+
+// BudgetScopeFor — see interface doc.
+func (s *quotaService) BudgetScopeFor(userID string, requestOrgID *uuid.UUID) *uuid.UUID {
+	result, err := s.effectivePlanService.GetUserEffectivePlan(userID, requestOrgID)
+	if err != nil || result == nil {
+		return requestOrgID
+	}
+	return result.ScopeOrganizationID
+}
 
 // CheckBudget — see interface doc.
 func (s *quotaService) CheckBudget(
