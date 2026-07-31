@@ -667,11 +667,19 @@ func stripeTierParams(tiers []models.PricingTier) []*stripe.PriceTierParams {
 	return out
 }
 
-// applyPricing sets either a flat unit amount or a graduated ladder on price
-// params. A tiered price must NOT also carry a flat unit_amount — Stripe rejects
-// that — so the two are mutually exclusive here, in one place used by both the
-// create and the migrate paths.
-func applyPricing(params *stripe.PriceParams, plan *models.SubscriptionPlan) {
+// ApplyPricing sets the tax behaviour and either a flat unit amount or a
+// graduated ladder on price params. A tiered price must NOT also carry a flat
+// unit_amount — Stripe rejects that — so the two are mutually exclusive here, in
+// one place used by both the create and the migrate paths.
+func ApplyPricing(params *stripe.PriceParams, plan *models.SubscriptionPlan) {
+	// OCF announces prices excluding VAT, and the public pricing page says so.
+	// A price that leaves this unset inherits the Stripe account default instead,
+	// which for EUR resolves to inclusive — turning the announced amount into the
+	// gross and shaving 16.7% off it. Stripe accepts tax_behavior once and never
+	// again, so it belongs next to the amount rather than in a dashboard toggle
+	// the code cannot see.
+	params.TaxBehavior = stripe.String("exclusive")
+
 	if plan.UseTieredPricing && len(plan.PricingTiers) > 0 {
 		params.BillingScheme = stripe.String("tiered")
 		// Graduated, not volume: brackets stack, so the bill never drops when the
@@ -745,7 +753,7 @@ func (ss *stripeService) CreateSubscriptionPlanInStripe(plan *models.Subscriptio
 			"plan_id": plan.ID.String(),
 		},
 	}
-	applyPricing(priceParams, plan)
+	ApplyPricing(priceParams, plan)
 
 	// Deduplicate per plan: a retry must reuse the same price rather than create
 	// a duplicate. Keyed on plan.ID with a distinct op prefix from the product.
@@ -3704,7 +3712,7 @@ func (ss *stripeService) migratePriceIfDrifted(plan *models.SubscriptionPlan, dr
 	}
 	// The replacement must carry the ladder too, or migrating a tiered plan
 	// silently flattens it — the very failure this function is being fixed for.
-	applyPricing(priceParams, plan)
+	ApplyPricing(priceParams, plan)
 	priceParams.SetIdempotencyKey(stripeIdempotencyKey("plan-price-migrate", plan.ID.String(), priceSignature))
 
 	newPrice, err := price.New(priceParams)
