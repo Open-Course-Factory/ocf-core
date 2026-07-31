@@ -117,43 +117,18 @@ func (cs *conversionService) UserSubscriptionsToDTO(subscriptions *[]models.User
 	return &outputs, nil
 }
 
-// SubscriptionPlanToDTO convertit un SubscriptionPlan model vers DTO
+// SubscriptionPlanToDTO convertit un SubscriptionPlan model vers DTO.
+//
+// Delegates to SubscriptionPlanToOutput, the single producer. This function used
+// to build the DTO itself and dropped six fields doing so — including the budget
+// caps, whose zero value means "unlimited" (#454).
 func (cs *conversionService) SubscriptionPlanToDTO(plan *models.SubscriptionPlan) (*dto.SubscriptionPlanOutput, error) {
 	if plan == nil {
 		return nil, nil
 	}
 
-	return &dto.SubscriptionPlanOutput{
-		ID:                 plan.ID,
-		Name:               plan.Name,
-		Description:        plan.Description,
-		Priority:           plan.Priority,
-		StripeProductID:    plan.StripeProductID,
-		StripePriceID:      plan.StripePriceID,
-		PriceAmount:        plan.PriceAmount,
-		Currency:           plan.Currency,
-		BillingInterval:    plan.BillingInterval,
-		Features:           derivePlanEntitlements(plan),
-		IsActive:           plan.IsActive,
-		IsCatalog:          plan.IsCatalog,
-		RequiredRole:       plan.RequiredRole,
-		CreatedAt:          plan.CreatedAt,
-		UpdatedAt:          plan.UpdatedAt,
-
-		// Terminal-specific limits
-		MaxSessionDurationMinutes:   plan.MaxSessionDurationMinutes,
-		NetworkAccessEnabled:        plan.NetworkAccessEnabled,
-		DataPersistenceEnabled:      plan.DataPersistenceEnabled,
-		DataPersistenceGB:           plan.DataPersistenceGB,
-		CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
-
-		// Backend routing
-		DefaultBackend:  plan.DefaultBackend,
-		AllowedBackends: plan.AllowedBackends,
-
-		UseTieredPricing: plan.UseTieredPricing,
-		PricingTiers:     convertPricingTiersToDTO(plan.PricingTiers),
-	}, nil
+	out := SubscriptionPlanToOutput(plan)
+	return &out, nil
 }
 
 // SubscriptionPlansToDTO convertit une liste de SubscriptionPlan
@@ -472,21 +447,4 @@ func (cs *conversionService) populateBatchOwnerInfo(output *dto.UserSubscription
 	// Populate batch owner information
 	output.BatchOwnerName = &user.DisplayName
 	output.BatchOwnerEmail = &user.Email
-}
-
-// convertPricingTiersToDTO converts model PricingTiers to DTO PricingTiers
-func convertPricingTiersToDTO(tiers []models.PricingTier) []dto.PricingTier {
-	if tiers == nil {
-		return nil
-	}
-	result := make([]dto.PricingTier, len(tiers))
-	for i, tier := range tiers {
-		result[i] = dto.PricingTier{
-			MinQuantity: tier.MinQuantity,
-			MaxQuantity: tier.MaxQuantity,
-			UnitAmount:  tier.UnitAmount,
-			Description: tier.Description,
-		}
-	}
-	return result
 }

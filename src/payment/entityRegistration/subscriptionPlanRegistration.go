@@ -18,60 +18,11 @@ func RegisterSubscriptionPlan(service *ems.EntityRegistrationService) {
 		"SubscriptionPlan",
 		entityManagementInterfaces.TypedEntityRegistration[models.SubscriptionPlan, dto.CreateSubscriptionPlanInput, dto.UpdateSubscriptionPlanInput, dto.SubscriptionPlanOutput]{
 			Converters: entityManagementInterfaces.TypedEntityConverters[models.SubscriptionPlan, dto.CreateSubscriptionPlanInput, dto.UpdateSubscriptionPlanInput, dto.SubscriptionPlanOutput]{
+				// The DTO has exactly one producer (#454); this registration used to be
+				// the only complete one of three, which is why the other two could drop
+				// six fields without anyone noticing.
 				ModelToDto: func(plan *models.SubscriptionPlan) (dto.SubscriptionPlanOutput, error) {
-					// Convert model PricingTiers to DTO PricingTiers
-					pricingTiers := make([]dto.PricingTier, len(plan.PricingTiers))
-					for i, tier := range plan.PricingTiers {
-						pricingTiers[i] = dto.PricingTier{
-							MinQuantity: tier.MinQuantity,
-							MaxQuantity: tier.MaxQuantity,
-							UnitAmount:  tier.UnitAmount,
-							Description: tier.Description,
-						}
-					}
-
-					return dto.SubscriptionPlanOutput{
-						ID:                 plan.ID,
-						Name:               plan.Name,
-						Description:        plan.Description,
-						Priority:           plan.Priority,
-						StripeProductID:    plan.StripeProductID,
-						StripePriceID:      plan.StripePriceID,
-						PriceAmount:        plan.PriceAmount,
-						Currency:           plan.Currency,
-						BillingInterval:    plan.BillingInterval,
-						Features:           paymentServices.DerivePlanEntitlements(plan),
-						IsActive:           plan.IsActive,
-						IsCatalog:          plan.IsCatalog,
-						RequiredRole:       plan.RequiredRole,
-						CreatedAt:          plan.CreatedAt,
-						UpdatedAt:          plan.UpdatedAt,
-
-						// Terminal-specific limits
-						MaxSessionDurationMinutes: plan.MaxSessionDurationMinutes,
-						NetworkAccessEnabled:      plan.NetworkAccessEnabled,
-						DataPersistenceEnabled:    plan.DataPersistenceEnabled,
-						SessionSupervisionEnabled: plan.SessionSupervisionEnabled,
-						GroupManagementEnabled:    plan.GroupManagementEnabled,
-						BulkPurchasable:           plan.BulkPurchasable,
-						SeatUnit:                  plan.SeatUnit,
-						DataPersistenceGB:         plan.DataPersistenceGB,
-
-						// Backend routing
-						DefaultBackend:  plan.DefaultBackend,
-						AllowedBackends: plan.AllowedBackends,
-
-						// Command history
-						CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
-
-						// Tiered pricing
-						UseTieredPricing: plan.UseTieredPricing,
-						PricingTiers:     pricingTiers,
-
-						// Budget-based quota
-						MaxCPU:      plan.MaxCPU,
-						MaxMemoryMB: plan.MaxMemoryMB,
-					}, nil
+					return paymentServices.SubscriptionPlanToOutput(plan), nil
 				},
 				DtoToModel: func(input dto.CreateSubscriptionPlanInput) *models.SubscriptionPlan {
 					isActive := true

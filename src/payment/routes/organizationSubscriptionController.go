@@ -497,56 +497,12 @@ func EmbeddedPlanOutput(plan *models.SubscriptionPlan) *dto.SubscriptionPlanOutp
 	return &out
 }
 
-// Helper function to convert subscription plan model to output DTO
+// convertSubscriptionPlanToOutput delegates to the single producer,
+// services.SubscriptionPlanToOutput.
+//
+// It used to build the DTO itself and silently dropped IsCatalog and the five
+// capability flags, so this package reported hidden plans as catalog ones and
+// group-management plans as lacking it (#454).
 func convertSubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.SubscriptionPlanOutput {
-	if plan == nil {
-		return dto.SubscriptionPlanOutput{}
-	}
-
-	// Convert model PricingTiers to DTO PricingTiers
-	pricingTiers := make([]dto.PricingTier, len(plan.PricingTiers))
-	for i, tier := range plan.PricingTiers {
-		pricingTiers[i] = dto.PricingTier{
-			MinQuantity: tier.MinQuantity,
-			MaxQuantity: tier.MaxQuantity,
-			UnitAmount:  tier.UnitAmount,
-			Description: tier.Description,
-		}
-	}
-
-	return dto.SubscriptionPlanOutput{
-		ID:                 plan.ID,
-		Name:               plan.Name,
-		Description:        plan.Description,
-		Priority:           plan.Priority,
-		StripeProductID:    plan.StripeProductID,
-		StripePriceID:      plan.StripePriceID,
-		PriceAmount:        plan.PriceAmount,
-		Currency:           plan.Currency,
-		BillingInterval:    plan.BillingInterval,
-		Features:           services.DerivePlanEntitlements(plan),
-		IsActive:           plan.IsActive,
-		RequiredRole:       plan.RequiredRole,
-		CreatedAt:          plan.CreatedAt,
-		UpdatedAt:          plan.UpdatedAt,
-
-		// Terminal-specific limits
-		MaxSessionDurationMinutes:  plan.MaxSessionDurationMinutes,
-		NetworkAccessEnabled:       plan.NetworkAccessEnabled,
-		DataPersistenceEnabled:     plan.DataPersistenceEnabled,
-		DataPersistenceGB:          plan.DataPersistenceGB,
-		CommandHistoryRetentionDays: plan.CommandHistoryRetentionDays,
-
-		// Backend routing
-		DefaultBackend:  plan.DefaultBackend,
-		AllowedBackends: plan.AllowedBackends,
-
-		// Tiered pricing
-		UseTieredPricing: plan.UseTieredPricing,
-		PricingTiers:     pricingTiers,
-
-		// Budget-based quota
-		MaxCPU:      plan.MaxCPU,
-		MaxMemoryMB: plan.MaxMemoryMB,
-	}
+	return services.SubscriptionPlanToOutput(plan)
 }
