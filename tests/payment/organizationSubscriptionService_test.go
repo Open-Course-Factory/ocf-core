@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
@@ -121,16 +122,31 @@ func TestOrganizationSubscriptionService_CreateFreePlan(t *testing.T) {
 		assert.False(t, sub.CurrentPeriodEnd.IsZero())
 	})
 
-	t.Run("Create paid organization subscription", func(t *testing.T) {
+	t.Run("Paid organization subscription is refused", func(t *testing.T) {
+		// #450: this used to return an `incomplete` row "awaiting Stripe". Nothing
+		// creates a Stripe checkout carrying organization_id, so that webhook could
+		// never arrive — the row was permanent and the caller was told it worked.
+		// Team orgs are not self-service purchasable; see isAdminAssigned below.
 		db := freshTestDB(t)
 		_, proPlan, org2, _, userID := seedTestData(t, db)
 		service := services.NewOrganizationSubscriptionService(db)
 
 		sub, err := service.CreateOrganizationSubscription(org2.ID, proPlan.ID, userID, 1, false)
 
+		assert.Error(t, err)
+		assert.Nil(t, sub)
+	})
+
+	t.Run("Paid organization subscription is allowed when admin-assigned", func(t *testing.T) {
+		db := freshTestDB(t)
+		_, proPlan, org2, _, userID := seedTestData(t, db)
+		service := services.NewOrganizationSubscriptionService(db)
+
+		sub, err := service.CreateOrganizationSubscription(org2.ID, proPlan.ID, userID, 1, true)
+
 		assert.NoError(t, err)
-		assert.NotNil(t, sub)
-		assert.Equal(t, "incomplete", sub.Status) // Paid plans start incomplete
+		require.NotNil(t, sub)
+		assert.Equal(t, "active", sub.Status, "the 'contact us' path bypasses Stripe entirely")
 	})
 
 	t.Run("Create subscription for non-existent organization", func(t *testing.T) {

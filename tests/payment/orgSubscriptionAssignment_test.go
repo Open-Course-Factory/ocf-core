@@ -163,9 +163,19 @@ func TestAssignOrgSubscription_IncompletePaidPlanDoesNotCancelActive(t *testing.
 	}
 	require.NoError(t, db.Create(paidPlan).Error)
 
-	incomplete, err := service.CreateOrganizationSubscription(org.ID, paidPlan.ID, userID, 1, false)
-	require.NoError(t, err)
-	require.Equal(t, "incomplete", incomplete.Status)
+	// #450 removed the service path that produced this state — a paid org plan is
+	// now refused outright rather than parked as `incomplete`. The invariant it
+	// guarded still matters, though: inserting a non-active row must not cancel
+	// the org's coverage. Legacy `incomplete` rows exist in production data, and
+	// admin assignment still writes through the same atomic insert. So the row is
+	// now created directly, which is what the comment above always described.
+	require.NoError(t, db.Create(&models.OrganizationSubscription{
+		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID:     org.ID,
+		SubscriptionPlanID: paidPlan.ID,
+		Status:             "incomplete",
+		Quantity:           1,
+	}).Error)
 
 	// The original active subscription must still be active.
 	var stillActive models.OrganizationSubscription

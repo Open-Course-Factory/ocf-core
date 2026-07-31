@@ -124,9 +124,19 @@ func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID
 			utils.Info("Creating free organization subscription for org %s (plan: %s)", orgID, plan.Name)
 		}
 	} else {
-		// PAID PLAN: Will be activated by Stripe webhook
-		subscription.Status = "incomplete"
-		utils.Debug("Creating incomplete organization subscription for org %s (will be activated by Stripe)", orgID)
+		// A paid org plan cannot be bought here. Nothing creates a Stripe checkout
+		// carrying organization_id, so the "activated by Stripe webhook" this used
+		// to wait for could never arrive — it recorded an `incomplete` row, told
+		// the caller it had succeeded, and charged nobody (#450).
+		//
+		// Team orgs are not self-service purchasable by design: structures are
+		// "contact us" and get their plan admin-assigned, trainers buy personally
+		// and their orgs inherit. Refusing keeps that unrepresentable state
+		// unrepresentable.
+		return nil, fmt.Errorf(
+			"plan %q is paid and cannot be subscribed to by an organization directly: "+
+				"organization plans are assigned by an administrator, or inherited from the "+
+				"owner's personal plan", plan.Name)
 	}
 
 	// Use the atomic variant so any existing active/trialing subscription
