@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,18 +41,32 @@ import (
 // ---------------------------------------------------------------------------
 
 // recorder captures the (method, path) of each call into the fake tt-backend.
+//
+// A mutex, not an atomic.Value. httptest serves every request on its own
+// goroutine, and load-append-store is three operations: each is atomic on its
+// own, but the sequence is not. Two concurrent requests — the terminal-trainer
+// enum fetch racing a lifecycle call — would both read the same slice and the
+// second Store would drop the first's entry.
+//
+// The lost call then made sawCall report false for a request that was actually
+// made, so TestStartSession_Success failed intermittently in CI and never
+// locally, where the enum fetch usually lost the race.
 type recorder struct {
-	calls atomic.Value // []string of "METHOD path"
+	mu    sync.Mutex
+	calls []string // "METHOD path"
 }
 
 func (r *recorder) record(method, path string) {
-	cur, _ := r.calls.Load().([]string)
-	r.calls.Store(append(cur, method+" "+path))
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, method+" "+path)
 }
 
+// all returns a copy: the server may still be recording while a test reads.
 func (r *recorder) all() []string {
-	cur, _ := r.calls.Load().([]string)
-	return cur
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.calls...)
 }
 
 func (r *recorder) sawCall(method, pathSuffix string) bool {
