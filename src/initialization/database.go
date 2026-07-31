@@ -27,6 +27,64 @@ import (
 	testtools "soli/formations/tests/testTools"
 )
 
+// SweepAutoAssignedOrgTrials cancels the free Trial subscriptions that team
+// organizations were automatically given before #448.
+//
+// Those Trials were never bought or chosen: they were assigned on creation and
+// re-healed at every startup. Because resolveForOrg prefers any org subscription
+// over the personal fallback, each one outranked its owner's paid personal plan
+// — a trainer who bought Formateur lost it inside the very org they created to
+// use it. Removing the auto-assignment fixes new orgs; existing ones need this.
+//
+// Scoped to the free plan on team organizations. A deliberately assigned Trial
+// would be swept too, and that is intended rather than collateral: Trial has
+// group_management_enabled = false, so holding one actively disables classroom
+// features, and inheriting is never worse than holding a free plan.
+//
+// Cancelled rather than deleted — the record is real history, and 'cancelled'
+// releases the partial unique index on one active subscription per org, which a
+// soft delete alone would not.
+//
+// Idempotent: once swept, the WHERE matches nothing.
+func SweepAutoAssignedOrgTrials(db *gorm.DB) {
+	freePlan, err := paymentServices.FindFreePlan(db)
+	if err != nil {
+		log.Printf("[ORG-TRIAL-SWEEP] no free plan found, nothing to sweep: %v", err)
+		return
+	}
+
+	teamOrgIDs := db.Model(&organizationModels.Organization{}).
+		Select("id").
+		Where("organization_type = ?", "team")
+
+	now := time.Now()
+	res := db.Model(&paymentModels.OrganizationSubscription{}).
+		Scopes(paymentModels.ScopeEntitling).
+		Where("subscription_plan_id = ?", freePlan.ID).
+		Where("organization_id IN (?)", teamOrgIDs).
+		Updates(map[string]any{"status": "cancelled", "cancelled_at": now})
+	if res.Error != nil {
+		log.Printf("[ORG-TRIAL-SWEEP] failed to cancel auto-assigned org Trials: %v", res.Error)
+		return
+	}
+
+	// The denormalised pointer has to follow, or the org keeps advertising a plan
+	// whose subscription was just cancelled (#449).
+	ptr := db.Model(&organizationModels.Organization{}).
+		Where("organization_type = ?", "team").
+		Where("subscription_plan_id = ?", freePlan.ID).
+		Update("subscription_plan_id", nil)
+	if ptr.Error != nil {
+		log.Printf("[ORG-TRIAL-SWEEP] failed to clear organization plan pointers: %v", ptr.Error)
+	}
+
+	if res.RowsAffected > 0 || ptr.RowsAffected > 0 {
+		log.Printf("[ORG-TRIAL-SWEEP] cancelled %d auto-assigned org Trial subscription(s) "+
+			"and cleared %d plan pointer(s); those orgs now inherit their members' plans",
+			res.RowsAffected, ptr.RowsAffected)
+	}
+}
+
 // AutoMigrateAll performs database migrations for all entities
 func AutoMigrateAll(db *gorm.DB) {
 	// Course entities
@@ -204,6 +262,12 @@ func AutoMigrateAll(db *gorm.DB) {
 	// any org subscription over the personal fallback — so every trainer who
 	// created an org lost the plan they had just bought, on every restart (#448).
 	ensureUsersHaveTrialPlan(db)
+
+	// One-shot cleanup for #448. Removing the auto-assignment stopped new team
+	// orgs acquiring a shadowing Trial, but every org created before that still
+	// holds one — and a Trial outranks its owner's paid plan, so those trainers
+	// stay locked out of the classroom features they paid for until this runs.
+	SweepAutoAssignedOrgTrials(db)
 
 	// Drop the orphan subscription_plans columns whose Go fields were removed.
 	// This runs LAST and subsumes the standalone group-management backfill: it
