@@ -147,11 +147,7 @@ func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID
 		return nil, err
 	}
 
-	// Update Organization.SubscriptionPlanID
-	err = oss.db.Model(&org).Update("subscription_plan_id", planID).Error
-	if err != nil {
-		utils.Warn("Failed to update organization subscription_plan_id: %v", err)
-	}
+	oss.syncOrgPlanPointer(orgID)
 
 	return oss.GetOrganizationSubscriptionByID(subscription.ID)
 }
@@ -179,13 +175,7 @@ func (oss *organizationSubscriptionService) UpdateOrganizationSubscription(orgID
 		return nil, fmt.Errorf("failed to update subscription: %w", err)
 	}
 
-	// Update Organization.SubscriptionPlanID
-	err = oss.db.Model(&organizationModels.Organization{}).
-		Where("id = ?", orgID).
-		Update("subscription_plan_id", planID).Error
-	if err != nil {
-		utils.Warn("Failed to update organization subscription_plan_id: %v", err)
-	}
+	oss.syncOrgPlanPointer(orgID)
 
 	return oss.repository.GetOrganizationSubscription(subscription.ID)
 }
@@ -211,6 +201,8 @@ func (oss *organizationSubscriptionService) CancelOrganizationSubscription(orgID
 		return err
 	}
 
+	oss.syncOrgPlanPointer(orgID)
+
 	// Terminate active terminals for org members on immediate cancellation.
 	// For cancel-at-period-end, terminals are terminated when Stripe fires
 	// the subscription.deleted webhook at the end of the billing period.
@@ -219,6 +211,33 @@ func (oss *organizationSubscriptionService) CancelOrganizationSubscription(orgID
 	}
 
 	return nil
+}
+
+// syncOrgPlanPointer recomputes organizations.subscription_plan_id from the org's
+// active subscription.
+//
+// That column is a denormalised copy of "which plan does this org have", and the
+// active subscription is what actually decides it. Keeping the copy meant two
+// expressions of one rule, and they drifted: it was written on a purchase that
+// never activated (marc-corp claimed Formateur while running Trial) and never
+// cleared on cancellation, so an org kept advertising a plan it no longer had —
+// which ocf-front renders as a "has subscription" badge.
+//
+// So the column gets exactly one writer, and that writer derives rather than
+// assumes. Call it after any change to the org's subscription state; never set
+// the column directly at a call site (#449).
+func (oss *organizationSubscriptionService) syncOrgPlanPointer(orgID uuid.UUID) {
+	var planID *uuid.UUID
+	if sub, err := oss.repository.GetActiveOrganizationSubscription(orgID); err == nil && sub != nil {
+		planID = &sub.SubscriptionPlanID
+	}
+
+	err := oss.db.Model(&organizationModels.Organization{}).
+		Where("id = ?", orgID).
+		Update("subscription_plan_id", planID).Error
+	if err != nil {
+		utils.Warn("Failed to sync organization %s subscription_plan_id: %v", orgID, err)
+	}
 }
 
 // GetOrganizationFeatures returns the subscription plan features for an organization
