@@ -107,6 +107,18 @@ func (s *effectivePlanService) CanRunClassrooms(userID string, orgID *uuid.UUID)
 	return classroomEntitlementFor(result.Plan)
 }
 
+// CanPurchaseSeats — see EffectivePlanService.
+//
+// Resolves the user's OWN subscription only. Same rule, narrower reach: spending
+// follows the plan you hold, not one you benefit from through membership.
+func (s *effectivePlanService) CanPurchaseSeats(userID string) ClassroomEntitlement {
+	sub, err := s.paymentRepo.GetActiveUserSubscription(userID)
+	if err != nil || sub == nil {
+		return ClassroomEntitlement{Reason: ClassroomDeniedNoPlan}
+	}
+	return classroomEntitlementFor(&sub.SubscriptionPlan)
+}
+
 // refuseOnOrgContext checks the organization-shaped preconditions, returning
 // refused=true with the verdict when one fails.
 //

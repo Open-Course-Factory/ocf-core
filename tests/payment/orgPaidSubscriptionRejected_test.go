@@ -42,14 +42,22 @@ func seedOrgForSubscription(t *testing.T, db *gorm.DB, userID string) *organizat
 	return org
 }
 
+// seedPlan creates a plan suitable for assigning to an ORGANIZATION.
+//
+// GroupManagementEnabled is set because that is now the rule for org-assignable
+// plans (#458): an organization's plan overrides its members' own, so an
+// individual plan landing there silently downgrades everyone. Tests that need a
+// plan which must be REFUSED should build it inline rather than widening this
+// helper.
 func seedPlan(t *testing.T, db *gorm.DB, name string, amount int64) *models.SubscriptionPlan {
 	t.Helper()
 	plan := &models.SubscriptionPlan{
-		BaseModel:   entityManagementModels.BaseModel{ID: uuid.New()},
-		Name:        name,
-		PriceAmount: amount,
-		Currency:    "eur",
-		IsActive:    true,
+		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:                   name,
+		PriceAmount:            amount,
+		Currency:               "eur",
+		IsActive:               true,
+		GroupManagementEnabled: true,
 	}
 	require.NoError(t, db.Create(plan).Error)
 	return plan

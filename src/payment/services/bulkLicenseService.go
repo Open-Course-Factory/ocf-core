@@ -94,15 +94,16 @@ func validateBulkPurchasablePlan(plan *models.SubscriptionPlan) error {
 // drifting apart is what let a trainer see a seat catalogue the purchase then
 // refused (#453).
 //
-// Resolved with no org context on purpose — a batch is owned by the purchaser,
-// not by an organization, so the question is whether this user holds such a plan
-// anywhere.
+// Resolved against the purchaser's OWN plan, not one they inherit: a batch is
+// owned by the buyer, not by an organization, and a teacher does not spend on the
+// strength of their school's subscription — the school's subscription is what
+// decides for the school (#461).
 //
 // The wording of each refusal stays here: the rule is shared, but "you cannot buy
 // licences" is a purchase-screen sentence, not something the entitlement service
 // should know how to say.
 func validateBulkPurchaser(db *gorm.DB, purchaserUserID string) error {
-	verdict := NewEffectivePlanService(db).CanRunClassrooms(purchaserUserID, nil)
+	verdict := NewEffectivePlanService(db).CanPurchaseSeats(purchaserUserID)
 	if verdict.Allowed {
 		return nil
 	}

@@ -25,7 +25,9 @@ func seedTestData(t *testing.T, db *gorm.DB) (
 	*organizationModels.Organization,
 	string,
 ) {
-	// Create free plan
+	// Create free plan. Org-assignable, because most tests below use it as an
+	// ORGANIZATION's subscription and an individual plan may no longer govern one
+	// (#458). A plan that must be refused is built inline where that is the point.
 	freePlan := &models.SubscriptionPlan{
 		BaseModel: entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:      "Free",
@@ -34,6 +36,7 @@ func seedTestData(t *testing.T, db *gorm.DB) (
 		Currency:  "eur",
 		BillingInterval: "month",
 		NetworkAccessEnabled: true, // derives "network_access"
+		GroupManagementEnabled: true,
 		IsActive: true,
 	}
 	err := db.Create(freePlan).Error
@@ -105,20 +108,62 @@ func seedTestData(t *testing.T, db *gorm.DB) (
 func TestOrganizationSubscriptionService_CreateFreePlan(t *testing.T) {
 	t.Run("Create free organization subscription", func(t *testing.T) {
 		db := freshTestDB(t)
-		freePlan, _, org1, _, userID := seedTestData(t, db)
+		_, _, org1, _, userID := seedTestData(t, db)
 		service := services.NewOrganizationSubscriptionService(db)
 
-		sub, err := service.CreateOrganizationSubscription(org1.ID, freePlan.ID, userID, false)
+		// A free plan meant for organizations. seedTestData's free plan is an
+		// INDIVIDUAL one — zero-price and network access only — and an individual
+		// plan may no longer govern an organization (#458), which the subtest below
+		// pins.
+		freeOrgPlan := &models.SubscriptionPlan{
+			BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
+			Name:                   "École / OF (sur devis)",
+			PriceAmount:            0,
+			Currency:               "eur",
+			BillingInterval:        "month",
+			IsActive:               true,
+			GroupManagementEnabled: true,
+		}
+		require.NoError(t, db.Create(freeOrgPlan).Error)
+
+		sub, err := service.CreateOrganizationSubscription(org1.ID, freeOrgPlan.ID, userID, false)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, sub)
 		assert.Equal(t, org1.ID, sub.OrganizationID)
-		assert.Equal(t, freePlan.ID, sub.SubscriptionPlanID)
+		assert.Equal(t, freeOrgPlan.ID, sub.SubscriptionPlanID)
 		assert.Equal(t, "active", sub.Status)
 
 		// Free plans should be active immediately
 		assert.False(t, sub.CurrentPeriodStart.IsZero())
 		assert.False(t, sub.CurrentPeriodEnd.IsZero())
+	})
+
+	// #458: an organization's plan overrides its members' own, unconditionally and
+	// by design — a school's subscription decides for the school. That makes
+	// assigning an INDIVIDUAL plan quietly destructive: everyone in the
+	// organization silently drops to it. Being free is not the point; being an
+	// individual plan is.
+	t.Run("Individual plan is refused for an organization", func(t *testing.T) {
+		db := freshTestDB(t)
+		_, _, org1, _, userID := seedTestData(t, db)
+		service := services.NewOrganizationSubscriptionService(db)
+
+		individual := &models.SubscriptionPlan{
+			BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
+			Name:            "Solo",
+			PriceAmount:     1200,
+			Currency:        "eur",
+			BillingInterval: "month",
+			IsActive:        true,
+			// No GroupManagementEnabled: this is a plan for one person.
+		}
+		require.NoError(t, db.Create(individual).Error)
+
+		sub, err := service.CreateOrganizationSubscription(org1.ID, individual.ID, userID, true)
+
+		assert.Error(t, err, "an individual plan must not be assignable to an organization")
+		assert.Nil(t, sub)
 	})
 
 	t.Run("Paid organization subscription is refused", func(t *testing.T) {

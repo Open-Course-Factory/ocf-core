@@ -691,11 +691,6 @@ func ensureUsersHaveTrialPlan(db *gorm.DB) {
 	}
 }
 
-// ensureOrganizationsHaveTrialPlan checks all active team organizations and
-// assigns the free Trial plan to any organization that doesn't have an active
-// OrganizationSubscription. This heals cases where the subscription assignment
-// failed during organization creation (e.g. due to initialization order issues).
-// Mirrors ensureUsersHaveTrialPlan but for organizations.
 // BackfillSingleActiveOrgSubscription enforces the "one active subscription
 // per organization" invariant on the existing data. For each org with more
 // than one active (or trialing) subscription, it keeps the most recently

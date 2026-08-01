@@ -748,6 +748,3 @@ func (os *organizationService) RevokeOrganizationManagerPermissions(userID strin
 	return nil
 }
 
-// assignOrgTrialPlan assigns the free Trial subscription plan to a newly created
-// organization. Mirrors the user trial assignment pattern in auth/services/userService.go.
-// Skips if the organization already has an explicit SubscriptionPlanID set.

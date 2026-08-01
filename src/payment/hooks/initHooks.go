@@ -36,6 +36,16 @@ func InitPaymentHooks(db *gorm.DB) paymentServices.StripeSyncQueue {
 		log.Println("✅ Subscription plan validation hook registered")
 	}
 
+	// Hook keeping an individual plan from being mapped to a role inside an
+	// organization — the second door onto the same mistake the org-subscription
+	// path guards, and the one resolveForOrg consults first (#458).
+	rolePlanValidationHook := NewOrganizationRolePlanValidationHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(rolePlanValidationHook); err != nil {
+		log.Printf("❌ Failed to register organization role plan validation hook: %v", err)
+	} else {
+		log.Println("✅ Organization role plan validation hook registered")
+	}
+
 	// Stripe sync queue — shared between the hook (enqueues) and the worker
 	// (drains). Returned to main.go for worker + admin-endpoint wiring.
 	stripeSyncQueue := paymentServices.NewStripeSyncQueue(db)

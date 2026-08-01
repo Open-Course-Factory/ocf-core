@@ -99,6 +99,13 @@ func (s *stubEffectivePlanService) CheckEffectiveUsageLimit(userID string, orgID
 // verdict tracks whatever plan the test set up, rather than being a second,
 // independently-stubbed answer — the exact split that made this predicate drift
 // in production (#453).
+// CanPurchaseSeats mirrors the real service's narrower resolution: the plan the
+// user holds themselves. This stub has no notion of inheritance, so the personal
+// plan is that plan.
+func (s *stubEffectivePlanService) CanPurchaseSeats(userID string) paymentServices.ClassroomEntitlement {
+	return paymentServices.ClassroomEntitlementFor(s.personalPlan)
+}
+
 func (s *stubEffectivePlanService) CanRunClassrooms(userID string, orgID *uuid.UUID) paymentServices.ClassroomEntitlement {
 	result, err := s.GetUserEffectivePlan(userID, orgID)
 	if err != nil || result == nil {

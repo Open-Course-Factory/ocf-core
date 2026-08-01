@@ -115,6 +115,10 @@ func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID
 		return nil, fmt.Errorf("invalid plan ID: %w", err)
 	}
 
+	if err := ValidateOrgAssignablePlan(&plan); err != nil {
+		return nil, err
+	}
+
 	now := time.Now()
 
 	subscription := &models.OrganizationSubscription{

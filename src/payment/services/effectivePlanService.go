@@ -97,6 +97,19 @@ type EffectivePlanService interface {
 	// GroupManagementEnabled off a plan it resolved itself. Five call sites did the
 	// latter and returned three different answers for the same user (#453).
 	CanRunClassrooms(userID string, orgID *uuid.UUID) ClassroomEntitlement
+
+	// CanPurchaseSeats reports whether this user may buy licences for other people.
+	//
+	// It applies the same rule as CanRunClassrooms but over a narrower resolution:
+	// ONLY the plan the user holds themselves, bought or assigned as a seat. A plan
+	// inherited from an organization does not travel — a teacher does not buy seats
+	// on the strength of their school's subscription, because the school's
+	// subscription is what decides for the school (#461).
+	//
+	// Distinct from CanRunClassrooms(userID, nil): that answers "does any plan this
+	// user benefits from grant classrooms", which is the right question for a
+	// capability flag and the wrong one for spending.
+	CanPurchaseSeats(userID string) ClassroomEntitlement
 }
 
 type effectivePlanService struct {
