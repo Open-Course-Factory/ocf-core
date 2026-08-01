@@ -108,7 +108,6 @@ func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ct
 		orgID,
 		input.SubscriptionPlanID,
 		userID,
-		input.Quantity,
 		isAdmin(ctx),
 	)
 	if err != nil {
@@ -128,7 +127,6 @@ func (osc *organizationSubscriptionController) CreateOrganizationSubscription(ct
 		StripeSubscriptionID: subscription.StripeSubscriptionID,
 		StripeCustomerID:     subscription.StripeCustomerID,
 		Status:               subscription.Status,
-		Quantity:             subscription.Quantity,
 		CurrentPeriodStart:   subscription.CurrentPeriodStart,
 		CurrentPeriodEnd:     subscription.CurrentPeriodEnd,
 		CancelAtPeriodEnd:    subscription.CancelAtPeriodEnd,
@@ -183,7 +181,6 @@ func (osc *organizationSubscriptionController) GetOrganizationSubscription(ctx *
 		StripeSubscriptionID: subscription.StripeSubscriptionID,
 		StripeCustomerID:     subscription.StripeCustomerID,
 		Status:               subscription.Status,
-		Quantity:             subscription.Quantity,
 		CurrentPeriodStart:   subscription.CurrentPeriodStart,
 		CurrentPeriodEnd:     subscription.CurrentPeriodEnd,
 		CancelAtPeriodEnd:    subscription.CancelAtPeriodEnd,
@@ -225,7 +222,6 @@ func (osc *organizationSubscriptionController) GetAllOrganizationSubscriptions(c
 			StripeSubscriptionID: sub.StripeSubscriptionID,
 			StripeCustomerID:     sub.StripeCustomerID,
 			Status:               sub.Status,
-			Quantity:             sub.Quantity,
 			CurrentPeriodStart:   sub.CurrentPeriodStart,
 			CurrentPeriodEnd:     sub.CurrentPeriodEnd,
 			CancelAtPeriodEnd:    sub.CancelAtPeriodEnd,

@@ -44,7 +44,7 @@ func TestOrgPlanPointer_SetWhenSubscriptionActivates(t *testing.T) {
 	bespoke := seedPlan(t, db, "École / OF", 49900)
 
 	_, err := services.NewOrganizationSubscriptionService(db).
-		CreateOrganizationSubscription(org.ID, bespoke.ID, userID, 1, true)
+		CreateOrganizationSubscription(org.ID, bespoke.ID, userID, true)
 	require.NoError(t, err)
 
 	ptr := orgPlanPointer(t, db, org.ID)
@@ -61,7 +61,7 @@ func TestOrgPlanPointer_ClearedOnImmediateCancel(t *testing.T) {
 	bespoke := seedPlan(t, db, "École / OF", 49900)
 
 	svc := services.NewOrganizationSubscriptionService(db)
-	_, err := svc.CreateOrganizationSubscription(org.ID, bespoke.ID, userID, 1, true)
+	_, err := svc.CreateOrganizationSubscription(org.ID, bespoke.ID, userID, true)
 	require.NoError(t, err)
 	require.NotNil(t, orgPlanPointer(t, db, org.ID), "precondition: the org holds a plan")
 
@@ -80,7 +80,7 @@ func TestOrgPlanPointer_KeptWhenCancellingAtPeriodEnd(t *testing.T) {
 	bespoke := seedPlan(t, db, "École / OF", 49900)
 
 	svc := services.NewOrganizationSubscriptionService(db)
-	_, err := svc.CreateOrganizationSubscription(org.ID, bespoke.ID, userID, 1, true)
+	_, err := svc.CreateOrganizationSubscription(org.ID, bespoke.ID, userID, true)
 	require.NoError(t, err)
 
 	require.NoError(t, svc.CancelOrganizationSubscription(org.ID, true))
@@ -100,7 +100,7 @@ func TestOrgPlanPointer_RefusedPurchaseLeavesItAlone(t *testing.T) {
 	formateur := seedPlan(t, db, "Formateur", 1990)
 
 	_, _ = services.NewOrganizationSubscriptionService(db).
-		CreateOrganizationSubscription(org.ID, formateur.ID, userID, 1, false)
+		CreateOrganizationSubscription(org.ID, formateur.ID, userID, false)
 
 	assert.Nil(t, orgPlanPointer(t, db, org.ID))
 }

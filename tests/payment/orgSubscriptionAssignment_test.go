@@ -84,7 +84,7 @@ func TestAssignOrgSubscription_DeactivatesPrevious(t *testing.T) {
 	service := services.NewOrganizationSubscriptionService(db)
 
 	// First assignment: Free plan, active.
-	first, err := service.CreateOrganizationSubscription(org.ID, freePlan.ID, userID, 1, false)
+	first, err := service.CreateOrganizationSubscription(org.ID, freePlan.ID, userID, false)
 	require.NoError(t, err)
 	require.Equal(t, "active", first.Status)
 
@@ -92,7 +92,7 @@ func TestAssignOrgSubscription_DeactivatesPrevious(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 
 	// Second assignment: Pro plan.
-	second, err := service.CreateOrganizationSubscription(org.ID, proPlan.ID, userID, 1, false)
+	second, err := service.CreateOrganizationSubscription(org.ID, proPlan.ID, userID, false)
 	require.NoError(t, err)
 	require.Equal(t, "active", second.Status)
 	require.NotEqual(t, first.ID, second.ID)
@@ -118,7 +118,7 @@ func TestAssignOrgSubscription_NoOpWhenNoPrior(t *testing.T) {
 	service := services.NewOrganizationSubscriptionService(db)
 
 	// Fresh org with no prior subscription.
-	first, err := service.CreateOrganizationSubscription(org.ID, freePlan.ID, userID, 1, false)
+	first, err := service.CreateOrganizationSubscription(org.ID, freePlan.ID, userID, false)
 	require.NoError(t, err)
 	require.Equal(t, "active", first.Status)
 
@@ -146,7 +146,7 @@ func TestAssignOrgSubscription_IncompletePaidPlanDoesNotCancelActive(t *testing.
 
 	// First: free plan, active.
 	service := services.NewOrganizationSubscriptionService(db)
-	first, err := service.CreateOrganizationSubscription(org.ID, freePlan.ID, userID, 1, false)
+	first, err := service.CreateOrganizationSubscription(org.ID, freePlan.ID, userID, false)
 	require.NoError(t, err)
 	require.Equal(t, "active", first.Status)
 
@@ -174,7 +174,6 @@ func TestAssignOrgSubscription_IncompletePaidPlanDoesNotCancelActive(t *testing.
 		OrganizationID:     org.ID,
 		SubscriptionPlanID: paidPlan.ID,
 		Status:             "incomplete",
-		Quantity:           1,
 	}).Error)
 
 	// The original active subscription must still be active.
@@ -192,8 +191,8 @@ func insertOrgSubAtTime(t *testing.T, db *gorm.DB, orgID, planID uuid.UUID, crea
 	require.NoError(t, db.Exec(`
 		INSERT INTO organization_subscriptions
 			(id, created_at, updated_at, organization_id, subscription_plan_id,
-			 stripe_customer_id, status, quantity, current_period_start, current_period_end)
-		VALUES (?, ?, ?, ?, ?, '', 'active', 1, ?, ?)
+			 stripe_customer_id, status, current_period_start, current_period_end)
+		VALUES (?, ?, ?, ?, ?, '', 'active', ?, ?)
 	`, id, createdAt, createdAt, orgID, planID, createdAt, createdAt.AddDate(1, 0, 0)).Error)
 	return id
 }
@@ -323,7 +322,7 @@ func TestAssignOrgSubscription_AtomicCancelPreservesIntegrityOnFailure(t *testin
 	freePlan, _, org, userID := seedOrgAndTwoPlans(t, db)
 	service := services.NewOrganizationSubscriptionService(db)
 
-	first, err := service.CreateOrganizationSubscription(org.ID, freePlan.ID, userID, 1, false)
+	first, err := service.CreateOrganizationSubscription(org.ID, freePlan.ID, userID, false)
 	require.NoError(t, err)
 	require.Equal(t, "active", first.Status)
 
@@ -337,7 +336,6 @@ func TestAssignOrgSubscription_AtomicCancelPreservesIntegrityOnFailure(t *testin
 		Status:             "active",
 		CurrentPeriodStart: time.Now(),
 		CurrentPeriodEnd:   time.Now().AddDate(1, 0, 0),
-		Quantity:           1,
 	}
 	err = repo.CreateOrganizationSubscriptionAtomic(bogus)
 	// SQLite may or may not enforce the not-null on a nil UUID; only assert

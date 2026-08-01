@@ -157,7 +157,6 @@ func TestExpiry_AppliesToOrganizationSubscriptionsToo(t *testing.T) {
 		Status:             "active",
 		CurrentPeriodStart: time.Now().AddDate(0, 0, -1),
 		CurrentPeriodEnd:   time.Now().AddDate(0, 1, 0),
-		Quantity:           1,
 		ExpiresAt:          &past,
 	}).Error)
 

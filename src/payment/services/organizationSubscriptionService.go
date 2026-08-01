@@ -17,7 +17,12 @@ type OrganizationSubscriptionService interface {
 	// Subscription management
 	GetOrganizationSubscription(orgID uuid.UUID) (*models.OrganizationSubscription, error)
 	GetOrganizationSubscriptionByID(id uuid.UUID) (*models.OrganizationSubscription, error)
-	CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string, quantity int, isAdminAssigned bool) (*models.OrganizationSubscription, error)
+	// CreateOrganizationSubscription assigns a plan to an organization.
+	//
+	// It takes no seat quantity: an organization's plan is not sold per seat.
+	// Seats are a trainer's licence batch, counted on SubscriptionBatch, and a
+	// school or OF is on a bespoke plan whose terms are the plan itself (#456).
+	CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string, isAdminAssigned bool) (*models.OrganizationSubscription, error)
 	UpdateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID) (*models.OrganizationSubscription, error)
 	CancelOrganizationSubscription(orgID uuid.UUID, cancelAtPeriodEnd bool) error
 
@@ -86,7 +91,7 @@ func (oss *organizationSubscriptionService) GetAllActiveOrganizationSubscription
 // For free plans (PriceAmount == 0), creates an active subscription
 // For paid plans, creates an incomplete subscription that will be activated by Stripe webhook
 // When isAdminAssigned is true, paid plans are activated immediately (no Stripe flow)
-func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string, quantity int, isAdminAssigned bool) (*models.OrganizationSubscription, error) {
+func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID uuid.UUID, planID uuid.UUID, ownerUserID string, isAdminAssigned bool) (*models.OrganizationSubscription, error) {
 	// Verify the organization exists
 	var org organizationModels.Organization
 	if err := oss.db.Where("id = ?", orgID).First(&org).Error; err != nil {
@@ -112,15 +117,9 @@ func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID
 
 	now := time.Now()
 
-	// Default to 1 seat if quantity is not provided or invalid
-	if quantity <= 0 {
-		quantity = 1
-	}
-
 	subscription := &models.OrganizationSubscription{
 		OrganizationID:     orgID,
 		SubscriptionPlanID: planID,
-		Quantity:           quantity,
 	}
 
 	// FREE PLAN or ADMIN-ASSIGNED: Activate immediately without Stripe

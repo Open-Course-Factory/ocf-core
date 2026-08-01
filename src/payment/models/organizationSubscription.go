@@ -37,7 +37,19 @@ type OrganizationSubscription struct {
 	CancelledAt             *time.Time       `json:"cancelled_at,omitempty"`
 	RenewalNotificationSent bool             `gorm:"default:false" json:"renewal_notification_sent"`
 	LastInvoiceID           *string          `gorm:"type:varchar(100)" json:"last_invoice_id,omitempty"`
-	Quantity                int              `gorm:"default:1" json:"quantity"` // Number of seats/licenses
+
+	// There is deliberately no Quantity here.
+	//
+	// It meant "number of seats" and was written, echoed in three DTO builders,
+	// and read by no gate anywhere — an organization on a five-seat subscription
+	// could add members up to MaxMembers and every one of them inherited the plan.
+	// It is also unnecessary under the current model: a trainer buys the licences
+	// he needs personally and distributes them as seats, where the count lives on
+	// SubscriptionBatch.TotalQuantity and IS enforced; a school or OF is on a
+	// bespoke plan whose terms are the plan, not a seat count (#456).
+	//
+	// AutoMigrate never drops columns, so `quantity` remains orphaned in the
+	// database, like the plan `features` column before it.
 }
 
 func (os OrganizationSubscription) GetBaseModel() entityManagementModels.BaseModel {

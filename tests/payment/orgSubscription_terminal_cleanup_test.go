@@ -272,7 +272,6 @@ func TestCancelOrganizationSubscription_ImmediateTerminatesTerminals(t *testing.
 		OrganizationID:     orgID,
 		SubscriptionPlanID: plan.ID,
 		Status:             "active",
-		Quantity:           5,
 		CurrentPeriodStart: time.Now(),
 		CurrentPeriodEnd:   time.Now().Add(30 * 24 * time.Hour),
 	}

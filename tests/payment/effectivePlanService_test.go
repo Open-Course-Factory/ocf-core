@@ -87,7 +87,6 @@ func createOrgWithSubscription(t *testing.T, db *gorm.DB, orgName string, userID
 		Status:             "active",
 		CurrentPeriodStart: time.Now(),
 		CurrentPeriodEnd:   time.Now().AddDate(1, 0, 0),
-		Quantity:           1,
 	}
 	err = db.Create(orgSub).Error
 	assert.NoError(t, err)

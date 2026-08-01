@@ -71,7 +71,7 @@ func TestPaidOrgSubscription_IsRejected(t *testing.T) {
 	formateur := seedPlan(t, db, "Formateur", 1990)
 
 	sub, err := services.NewOrganizationSubscriptionService(db).
-		CreateOrganizationSubscription(org.ID, formateur.ID, userID, 1, false)
+		CreateOrganizationSubscription(org.ID, formateur.ID, userID, false)
 
 	require.Error(t, err, "a paid org plan cannot be self-service purchased — there is no checkout for it")
 	assert.Nil(t, sub)
@@ -89,7 +89,7 @@ func TestPaidOrgSubscription_AdminAssignedStillWorks(t *testing.T) {
 	bespoke := seedPlan(t, db, "École / OF", 49900)
 
 	sub, err := services.NewOrganizationSubscriptionService(db).
-		CreateOrganizationSubscription(org.ID, bespoke.ID, userID, 1, true)
+		CreateOrganizationSubscription(org.ID, bespoke.ID, userID, true)
 
 	require.NoError(t, err)
 	require.NotNil(t, sub)
@@ -106,7 +106,7 @@ func TestFreeOrgSubscription_StillWorks(t *testing.T) {
 	free := seedPlan(t, db, "École / OF (sur devis)", 0)
 
 	sub, err := services.NewOrganizationSubscriptionService(db).
-		CreateOrganizationSubscription(org.ID, free.ID, userID, 1, false)
+		CreateOrganizationSubscription(org.ID, free.ID, userID, false)
 
 	require.NoError(t, err)
 	require.NotNil(t, sub)
@@ -122,7 +122,7 @@ func TestPaidOrgSubscription_LeavesThePlanPointerAlone(t *testing.T) {
 	formateur := seedPlan(t, db, "Formateur", 1990)
 
 	_, _ = services.NewOrganizationSubscriptionService(db).
-		CreateOrganizationSubscription(org.ID, formateur.ID, userID, 1, false)
+		CreateOrganizationSubscription(org.ID, formateur.ID, userID, false)
 
 	var reloaded organizationModels.Organization
 	require.NoError(t, db.First(&reloaded, "id = ?", org.ID).Error)

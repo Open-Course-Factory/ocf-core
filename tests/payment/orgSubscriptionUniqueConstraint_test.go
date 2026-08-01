@@ -48,7 +48,6 @@ func insertOrgSubWithStatus(
 		StripeCustomerID:   "cus_test_" + uuid.NewString()[:8],
 		CurrentPeriodStart: time.Now(),
 		CurrentPeriodEnd:   time.Now().AddDate(1, 0, 0),
-		Quantity:           1,
 	}
 	err := db.Create(sub).Error
 	return sub.ID, err

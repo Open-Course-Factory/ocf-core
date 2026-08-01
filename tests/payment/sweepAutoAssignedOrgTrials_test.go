@@ -50,7 +50,6 @@ func seedOrgWithSubscription(
 		OrganizationID:     org.ID,
 		SubscriptionPlanID: plan.ID,
 		Status:             "active",
-		Quantity:           1,
 		CurrentPeriodStart: time.Now(),
 		CurrentPeriodEnd:   time.Now().AddDate(1, 0, 0),
 	}).Error)

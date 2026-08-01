@@ -11,14 +11,12 @@ import (
 type CreateOrganizationSubscriptionInput struct {
 	SubscriptionPlanID uuid.UUID `binding:"required" json:"subscription_plan_id" mapstructure:"subscription_plan_id"`
 	PaymentMethodID    string    `json:"payment_method_id,omitempty" mapstructure:"payment_method_id"` // Stripe Payment Method ID
-	Quantity           int       `json:"quantity" mapstructure:"quantity"`                             // Number of seats/licenses
 	CouponCode         string    `json:"coupon_code,omitempty" mapstructure:"coupon_code"`
 }
 
 type UpdateOrganizationSubscriptionInput struct {
 	SubscriptionPlanID *uuid.UUID `json:"subscription_plan_id,omitempty" mapstructure:"subscription_plan_id"`
 	Status             string     `json:"status,omitempty" mapstructure:"status"`
-	Quantity           *int       `json:"quantity,omitempty" mapstructure:"quantity"`
 	CancelAtPeriodEnd  *bool      `json:"cancel_at_period_end,omitempty" mapstructure:"cancel_at_period_end"`
 }
 
@@ -30,7 +28,6 @@ type OrganizationSubscriptionOutput struct {
 	StripeSubscriptionID *string                `json:"stripe_subscription_id,omitempty"` // Nullable for incomplete subscriptions
 	StripeCustomerID     string                 `json:"stripe_customer_id"`
 	Status               string                 `json:"status"`
-	Quantity             int                    `json:"quantity"`
 	CurrentPeriodStart   time.Time              `json:"current_period_start"`
 	CurrentPeriodEnd     time.Time              `json:"current_period_end"`
 	CancelAtPeriodEnd    bool                   `json:"cancel_at_period_end"`
