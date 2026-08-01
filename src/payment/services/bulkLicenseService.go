@@ -192,6 +192,14 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 		return nil, nil, err
 	}
 
+	// What this purchase actually buys: how many people it covers, what Stripe
+	// charges for, and when it stops. Resolved before any Stripe call so an
+	// invalid pack shape is refused without taking money (#455).
+	terms, err := ResolvePackTerms(plan, input.Quantity, input.DurationDays, time.Now())
+	if err != nil {
+		return nil, nil, err
+	}
+
 	// Get user from Casdoor to fetch/create Stripe customer
 	user, err := casdoorsdk.GetUserByUserId(purchaserUserID)
 	if err != nil {
@@ -210,7 +218,7 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 	stripeSub, err := s.stripeService.CreateSubscriptionWithQuantity(
 		customerID, // Use Stripe customer ID, not user UUID
 		plan,
-		input.Quantity,
+		terms.BillingUnits, // learner-days for a pack, seats for a monthly plan
 		input.PaymentMethodID,
 	)
 	if err != nil {
@@ -223,6 +231,12 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 	now := time.Unix(stripeSub.Items.Data[0].CurrentPeriodStart, 0)
 	periodEnd := time.Unix(stripeSub.Items.Data[0].CurrentPeriodEnd, 0)
 
+	// A pack ends when its days run out, not when Stripe's billing window closes.
+	// Leaving the Stripe window here is what made a three-day pack last a month.
+	if terms.ExpiresAt != nil {
+		periodEnd = *terms.ExpiresAt
+	}
+
 	// Create batch record with pending_payment status
 	// Will be activated by webhook when invoice.payment_succeeded fires
 	batch := &models.SubscriptionBatch{
@@ -231,7 +245,7 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 		GroupID:                  input.GroupID,
 		StripeSubscriptionID:     stripeSubscriptionID,
 		StripeSubscriptionItemID: stripeSubscriptionItemID,
-		TotalQuantity:            input.Quantity,
+		TotalQuantity:            terms.Licences,
 		AssignedQuantity:         0,
 		Status:                   "pending_payment", // Wait for payment before activating
 		CurrentPeriodStart:       now,
@@ -247,8 +261,8 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 		}
 
 		// Create licenses AFTER batch so batch.ID is populated by GORM's BeforeCreate hook
-		licenses = make([]models.UserSubscription, input.Quantity)
-		for i := 0; i < input.Quantity; i++ {
+		licenses = make([]models.UserSubscription, terms.Licences)
+		for i := 0; i < terms.Licences; i++ {
 			licenses[i] = models.UserSubscription{
 				UserID:              "", // Unassigned
 				PurchaserUserID:     &purchaserUserID,
@@ -263,6 +277,11 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 				Status:             "pending_payment",
 				CurrentPeriodStart: now,
 				CurrentPeriodEnd:   periodEnd,
+				// The entitlement deadline. ScopeEntitling already excludes rows
+				// past it, so an expired pack licence stops granting anything
+				// without a sweeper — which is why ExpiresAt exists separately
+				// from the Stripe billing window (see UserSubscription).
+				ExpiresAt: terms.ExpiresAt,
 			}
 			if err := tx.Create(&licenses[i]).Error; err != nil {
 				return fmt.Errorf("failed to create license %d: %w", i, err)
@@ -281,7 +300,8 @@ func (s *bulkLicenseService) PurchaseBulkLicenses(purchaserUserID string, input 
 		return nil, nil, fmt.Errorf("failed to create batch records: %w", err)
 	}
 
-	utils.Info("Bulk purchase created: %d licenses for plan %s by user %s", input.Quantity, plan.Name, purchaserUserID)
+	utils.Info("Bulk purchase created: %d licences (%d billing units) for plan %s by user %s",
+		terms.Licences, terms.BillingUnits, plan.Name, purchaserUserID)
 
 	return batch, &licenses, nil
 }

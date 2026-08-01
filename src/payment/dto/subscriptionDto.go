@@ -278,9 +278,13 @@ type CreateCheckoutSessionInput struct {
 	AllowReplace       bool      `json:"allow_replace,omitempty"` // Allow replacing free subscription with paid one
 }
 
+// CreateBulkCheckoutSessionInput mirrors BulkPurchaseInput for the Stripe
+// checkout path: Quantity is the number of LEARNERS, and the billing units are
+// derived by ResolvePackTerms rather than sent by the client (#455).
 type CreateBulkCheckoutSessionInput struct {
 	SubscriptionPlanID uuid.UUID  `binding:"required" json:"subscription_plan_id"`
 	Quantity           int        `binding:"required,min=1,max=1000" json:"quantity"`
+	DurationDays       int        `json:"duration_days,omitempty"`
 	SuccessURL         string     `binding:"required" json:"success_url"`
 	CancelURL          string     `binding:"required" json:"cancel_url"`
 	GroupID            *uuid.UUID `json:"group_id,omitempty"`
@@ -350,12 +354,22 @@ type UsageLimitCheckOutput struct {
 }
 
 // DTOs for bulk license purchases
+// BulkPurchaseInput describes a trainer buying licences for learners.
+//
+// Quantity is the number of LEARNERS to cover, in both product families. It used
+// to be the number of billing units, which the frontend computed as learners ×
+// days for a prepaid pack — so the backend created that many month-long seats
+// (#455). What Stripe charges for is derived from these two by ResolvePackTerms,
+// not sent by the client.
 type BulkPurchaseInput struct {
-	SubscriptionPlanID uuid.UUID  `binding:"required" json:"subscription_plan_id" mapstructure:"subscription_plan_id"`
-	Quantity           int        `binding:"required,min=1,max=1000" json:"quantity" mapstructure:"quantity"`
-	GroupID            *uuid.UUID `json:"group_id,omitempty" mapstructure:"group_id"` // Optional: link to group
-	PaymentMethodID    string     `json:"payment_method_id,omitempty" mapstructure:"payment_method_id"`
-	CouponCode         string     `json:"coupon_code,omitempty" mapstructure:"coupon_code"`
+	SubscriptionPlanID uuid.UUID `binding:"required" json:"subscription_plan_id" mapstructure:"subscription_plan_id"`
+	Quantity           int       `binding:"required,min=1,max=1000" json:"quantity" mapstructure:"quantity"`
+	// DurationDays is the pack length. Required for a learner-day plan, rejected
+	// for a per-seat one.
+	DurationDays    int        `json:"duration_days,omitempty" mapstructure:"duration_days"`
+	GroupID         *uuid.UUID `json:"group_id,omitempty" mapstructure:"group_id"` // Optional: link to group
+	PaymentMethodID string     `json:"payment_method_id,omitempty" mapstructure:"payment_method_id"`
+	CouponCode      string     `json:"coupon_code,omitempty" mapstructure:"coupon_code"`
 }
 
 type SubscriptionBatchOutput struct {

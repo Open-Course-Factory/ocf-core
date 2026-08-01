@@ -459,6 +459,13 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 		return nil, fmt.Errorf("subscription plan does not have a Stripe price configured")
 	}
 
+	// Same resolver as the direct purchase path, so checkout cannot buy a pack
+	// shape the other path would refuse (#455).
+	terms, err := ResolvePackTerms(plan, input.Quantity, input.DurationDays, time.Now())
+	if err != nil {
+		return nil, err
+	}
+
 	// Get user from Casdoor
 	user, err := casdoorsdk.GetUserByUserId(userID)
 	if err != nil {
@@ -499,12 +506,22 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 		// Don't fail checkout if this fails
 	}
 
-	// Build metadata for checkout session and subscription
+	// Build metadata for checkout session and subscription.
+	//
+	// `quantity` is the number of LICENCES, which for a learner-day pack is NOT
+	// what Stripe is charging for — the line item below carries the billing units
+	// (learners × days). The webhook creates one licence per `quantity` and must
+	// not create one per billing unit, which is the bug this split fixes (#455).
+	// `duration_days` lets the webhook rebuild the same terms and stamp the same
+	// deadline.
 	metadata := map[string]string{
 		"user_id":              userID,
 		"subscription_plan_id": input.SubscriptionPlanID.String(),
-		"quantity":             fmt.Sprintf("%d", input.Quantity),
+		"quantity":             fmt.Sprintf("%d", terms.Licences),
 		"bulk_purchase":        "true",
+	}
+	if terms.DurationDays > 0 {
+		metadata["duration_days"] = fmt.Sprintf("%d", terms.DurationDays)
 	}
 
 	if input.GroupID != nil {
@@ -521,8 +538,10 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 		Mode: stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{
-				Price:    stripe.String(*plan.StripePriceID),
-				Quantity: stripe.Int64(int64(input.Quantity)),
+				Price: stripe.String(*plan.StripePriceID),
+				// Billing units, not licences: a learner-day pack is priced per
+				// learner-day, so ten learners for three days is thirty units.
+				Quantity: stripe.Int64(int64(terms.BillingUnits)),
 			},
 		},
 		SuccessURL: stripe.String(input.SuccessURL),
@@ -1847,6 +1866,16 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 		return fmt.Errorf("invalid quantity: %w", err)
 	}
 
+	// Pack length, absent for a per-seat product. Written by
+	// CreateBulkCheckoutSession so this path can rebuild the same terms and stamp
+	// the same deadline as the direct purchase path (#455).
+	packDurationDays := 0
+	if daysStr, exists := subscription.Metadata["duration_days"]; exists {
+		if _, err := fmt.Sscanf(daysStr, "%d", &packDurationDays); err != nil {
+			return fmt.Errorf("invalid duration_days in bulk subscription metadata: %w", err)
+		}
+	}
+
 	// Get group_id if present
 	var groupID *uuid.UUID
 	if groupIDStr, exists := subscription.Metadata["group_id"]; exists {
@@ -1871,7 +1900,19 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 		return fmt.Errorf("failed to get subscription plan: %w", err)
 	}
 
-	utils.Info("📦 Creating bulk subscription batch for user %s: %d licenses of plan %s", userID, quantity, plan.Name)
+	// Rebuild the purchase terms through the same resolver the buying paths used,
+	// anchored to the Stripe period start so the batch and its licences share one
+	// deadline (#455).
+	terms, err := ResolvePackTerms(plan, quantity, packDurationDays, currentPeriodStart)
+	if err != nil {
+		return fmt.Errorf("failed to resolve pack terms for bulk subscription %s: %w", subscription.ID, err)
+	}
+	if terms.ExpiresAt != nil {
+		// A pack ends when its days run out, not when Stripe's billing window does.
+		currentPeriodEnd = *terms.ExpiresAt
+	}
+
+	utils.Info("📦 Creating bulk subscription batch for user %s: %d licences of plan %s", userID, terms.Licences, plan.Name)
 
 	// CRITICAL: Check if payment already succeeded (race condition)
 	// If subscription status is "active", payment already succeeded before this webhook
@@ -1890,7 +1931,7 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 		GroupID:                  groupID,
 		StripeSubscriptionID:     subscription.ID,
 		StripeSubscriptionItemID: stripeSubscriptionItemID,
-		TotalQuantity:            quantity,
+		TotalQuantity:            terms.Licences,
 		AssignedQuantity:         0,
 		Status:                   batchStatus,
 		CurrentPeriodStart:       currentPeriodStart,
@@ -1932,7 +1973,7 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 			return fmt.Errorf("failed to create batch: %w", err)
 		}
 
-		for i := 0; i < quantity; i++ {
+		for i := 0; i < terms.Licences; i++ {
 			license := models.UserSubscription{
 				UserID:              "", // Unassigned
 				PurchaserUserID:     &userID,
@@ -1944,9 +1985,11 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 				Status:             licenseStatus,
 				CurrentPeriodStart: currentPeriodStart,
 				CurrentPeriodEnd:   currentPeriodEnd,
+				// Entitlement deadline for a prepaid pack; nil for a monthly seat.
+				ExpiresAt: terms.ExpiresAt,
 			}
 			if err := tx.Create(&license).Error; err != nil {
-				return fmt.Errorf("failed to create license %d/%d: %w", i+1, quantity, err)
+				return fmt.Errorf("failed to create license %d/%d: %w", i+1, terms.Licences, err)
 			}
 		}
 		return nil
