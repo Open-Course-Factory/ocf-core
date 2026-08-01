@@ -93,6 +93,17 @@ func (oss *organizationSubscriptionService) CreateOrganizationSubscription(orgID
 		return nil, fmt.Errorf("organization not found: %w", err)
 	}
 
+	// A personal organization cannot hold a subscription. Plan resolution
+	// short-circuits personal orgs to the user's own subscription, so a row
+	// created here would never be read — the assignment appeared to succeed,
+	// changed nothing, and reported no error, which is the worst of the three
+	// (#458). Refusing makes the ignored state unrepresentable instead.
+	if org.IsPersonalOrg() {
+		return nil, fmt.Errorf(
+			"organization %q is personal and cannot hold a subscription: personal "+
+				"workspaces use their owner's own plan", org.Name)
+	}
+
 	// Get the plan to check if it's free
 	var plan models.SubscriptionPlan
 	if err := oss.db.Where("id = ?", planID).First(&plan).Error; err != nil {

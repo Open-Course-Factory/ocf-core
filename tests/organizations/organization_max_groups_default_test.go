@@ -18,6 +18,13 @@ import (
 // applyMaxGroupsDefault reproduces the default-assignment logic from both
 // organizationService.go and organizationRegistration.go so we can verify
 // it in isolation without a database.
+// applyMaxGroupsDefault mirrors the default-assignment logic in
+// organizationRegistration.go so it can be verified without a database.
+//
+// It reads the exported constants rather than repeating the numbers: this helper
+// was itself a copy of the copies, and it hardcoded a MaxMembers default of 50
+// while the model and ConvertToTeam used 100 — so it agreed with the bug and
+// asserted it (#458).
 func applyMaxGroupsDefault(input dto.CreateOrganizationInput) *models.Organization {
 	org := &models.Organization{
 		Name:       input.Name,
@@ -26,10 +33,10 @@ func applyMaxGroupsDefault(input dto.CreateOrganizationInput) *models.Organizati
 		IsActive:   true,
 	}
 	if org.MaxGroups == 0 {
-		org.MaxGroups = 250
+		org.MaxGroups = models.DefaultTeamMaxGroups
 	}
 	if org.MaxMembers == 0 {
-		org.MaxMembers = 50
+		org.MaxMembers = models.DefaultTeamMaxMembers
 	}
 	return org
 }
@@ -45,7 +52,18 @@ func TestOrganizationCreate_WithoutMaxGroups_ShouldDefault250(t *testing.T) {
 
 	org := applyMaxGroupsDefault(input)
 
-	assert.Equal(t, 250, org.MaxGroups, "default max_groups should be 250 for team organizations")
+	assert.Equal(t, models.DefaultTeamMaxGroups, org.MaxGroups,
+		"default max_groups should be the team default for team organizations")
+}
+
+// The member default had two values — 100 in the model and ConvertToTeam, 50 in
+// the entity registration — so which limit an organization got depended on which
+// endpoint created it (#458).
+func TestOrganizationCreate_WithoutMaxMembers_ShouldUseTheSingleTeamDefault(t *testing.T) {
+	org := applyMaxGroupsDefault(dto.CreateOrganizationInput{Name: "my-org"})
+
+	assert.Equal(t, models.DefaultTeamMaxMembers, org.MaxMembers,
+		"every creation path must land on the same member default")
 }
 
 // TestOrganizationCreate_WithExplicitMaxGroups_ShouldPreserveValue verifies that

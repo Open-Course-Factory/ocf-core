@@ -116,10 +116,13 @@ func RegisterOrganization(service *ems.EntityRegistrationService) {
 						IsActive:           true,
 					}
 					if org.MaxGroups == 0 {
-						org.MaxGroups = 250
+						org.MaxGroups = models.DefaultTeamMaxGroups
 					}
 					if org.MaxMembers == 0 {
-						org.MaxMembers = 50
+						// Was 50 here while the model and ConvertToTeam used 100, so
+						// the limit an organization got depended on which endpoint
+						// created it (#458).
+						org.MaxMembers = models.DefaultTeamMaxMembers
 					}
 					return org
 				},

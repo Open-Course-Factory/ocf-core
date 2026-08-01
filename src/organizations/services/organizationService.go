@@ -11,6 +11,7 @@ import (
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/repositories"
 	orgUtils "soli/formations/src/organizations/utils"
+	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/utils"
 
 	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
@@ -57,6 +58,15 @@ type OrganizationService interface {
 type organizationService struct {
 	repository repositories.OrganizationRepository
 	db         *gorm.DB
+}
+
+// classroomEntitlement builds the entitlement service on demand.
+//
+// Built here rather than injected because organizations is constructed in many
+// places (hooks, controller, import) and threading a payment dependency through
+// all of them buys nothing: the service is stateless over the same *gorm.DB.
+func (os *organizationService) classroomEntitlement() paymentServices.EffectivePlanService {
+	return paymentServices.NewEffectivePlanService(os.db)
 }
 
 func NewOrganizationService(db *gorm.DB) OrganizationService {
@@ -162,9 +172,9 @@ func (os *organizationService) CreatePersonalOrganization(userID string, userDis
 		DisplayName:      displayName,
 		Description:      "Your personal workspace",
 		OwnerUserID:      userID,
-		OrganizationType: models.OrgTypePersonal, // Personal organization type
-		MaxGroups:        -1,                     // Unlimited for personal orgs
-		MaxMembers:       1,                      // Only owner
+		OrganizationType: models.OrgTypePersonal,
+		MaxGroups:        models.PersonalMaxGroups,
+		MaxMembers:       models.PersonalMaxMembers,
 		IsActive:         true,
 	}
 
@@ -215,6 +225,22 @@ func (os *organizationService) ConvertToTeam(orgID uuid.UUID, requestingUserID s
 		return nil, fmt.Errorf("organization is already a team organization")
 	}
 
+	// The plan comes first. A team organization exists to run classes, so
+	// converting without a plan that grants them produces an organization its
+	// owner cannot use — which is precisely what the frontend's convert-to-team
+	// banner was built to avoid, while the endpoint behind it checked nothing
+	// (#458).
+	//
+	// Resolved with no org context: the question is whether this user holds such
+	// a plan at all, not what applies inside the personal org being converted —
+	// personal orgs resolve to the personal subscription anyway, and asking in
+	// their context would refuse on the personal-org rule itself.
+	if verdict := os.classroomEntitlement().CanRunClassrooms(requestingUserID, nil); !verdict.Allowed {
+		return nil, fmt.Errorf(
+			"your subscription plan does not allow running classes, so converting to a "+
+				"team organization would create one you cannot use")
+	}
+
 	// Prepare updates
 	updates := make(map[string]any)
 	updates["organization_type"] = models.OrgTypeTeam
@@ -231,8 +257,8 @@ func (os *organizationService) ConvertToTeam(orgID uuid.UUID, requestingUserID s
 	}
 
 	// Update limits to team defaults
-	updates["max_groups"] = 250  // Team default
-	updates["max_members"] = 100 // Team default
+	updates["max_groups"] = models.DefaultTeamMaxGroups
+	updates["max_members"] = models.DefaultTeamMaxMembers
 
 	// Update is_personal for backward compatibility (since direct updates bypass BeforeSave hook)
 	updates["is_personal"] = false

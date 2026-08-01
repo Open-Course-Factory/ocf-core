@@ -17,6 +17,32 @@ const (
 )
 
 // Organization represents a collection of groups and users (company, school, department)
+// Default limits for a team organization.
+//
+// These are the single source: the GORM column defaults below, the entity
+// registration and ConvertToTeam all use them. They were three separate
+// literals, and the registration disagreed — it created organizations with a
+// MaxMembers of 50 while the model and the conversion path used 100, so the limit
+// an organization got depended on which endpoint created it (#458).
+//
+// Struct tags cannot interpolate constants, so the `default:` tags below repeat
+// the numbers; the test in tests/organizations pins them to these constants so
+// the two cannot drift.
+const (
+	DefaultTeamMaxGroups  = 250
+	DefaultTeamMaxMembers = 100
+)
+
+// Limits for a personal organization.
+//
+// MaxMembers is 1 because a personal workspace is for its owner alone.
+// MaxGroups is not a limit at all: groups are refused in personal organizations
+// structurally, by GroupPlacementValidationHook, whatever this says (#452).
+const (
+	PersonalMaxGroups  = 0
+	PersonalMaxMembers = 1
+)
+
 type Organization struct {
 	entityManagementModels.BaseModel
 	Name               string           `gorm:"type:varchar(255);not null;index" json:"name"`
