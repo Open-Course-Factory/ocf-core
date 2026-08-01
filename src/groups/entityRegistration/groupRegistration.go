@@ -69,9 +69,16 @@ func RegisterGroup(service *ems.EntityRegistrationService) {
 					return updates
 				},
 			},
+			// Member gets the full CRUD set: a trainer who creates a class must be
+			// able to rename, deactivate and delete it. PATCH and DELETE were absent,
+			// so those were administrator-only while the UI offered both buttons
+			// (#459).
+			//
+			// The gate on "which group" is GroupWriteAuthorizationHook, not this
+			// policy — Layer 1 only decides which methods a role may use at all.
 			Roles: entityManagementInterfaces.EntityRoles{
 				Roles: map[string]string{
-					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + ")",
+					string(authModels.Member): "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 					string(authModels.Admin):  "(" + http.MethodGet + "|" + http.MethodPost + "|" + http.MethodPatch + "|" + http.MethodDelete + ")",
 				},
 			},

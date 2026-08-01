@@ -395,7 +395,7 @@ func TestGroupAuthorization_DeleteBypassesMembershipFilter(t *testing.T) {
 
 // Test 11: Prove GroupCleanupHook BeforeDelete only does cleanup, no ownership check
 // VULNERABILITY: No BeforeDelete hook validates that the requesting user owns the group
-func TestGroupAuthorization_BeforeDeleteDoesNotValidateOwnership(t *testing.T) {
+func TestGroupAuthorization_BeforeDeleteRejectsUsersWhoCannotManageTheGroup(t *testing.T) {
 	db, genericService := setupGroupTestEnvironment(t)
 
 	ownerID := "user-owner-group-011"
@@ -403,25 +403,47 @@ func TestGroupAuthorization_BeforeDeleteDoesNotValidateOwnership(t *testing.T) {
 
 	group := createGroup(t, db, genericService, ownerID)
 
-	// VULNERABILITY: No BeforeDelete hook validates that the requesting user owns the group.
-	// The GroupCleanupHook.Execute only revokes member permissions; it does NOT check
-	// whether ctx.UserID == group.OwnerUserID. Any user who passes the Casbin check
-	// can trigger deletion without an ownership validation at the hook level.
-
-	// Simulate BeforeDelete with an attacker's userID
+	// This test used to assert the OPPOSITE, documenting a hole: no BeforeDelete
+	// hook validated who was deleting, so anyone past the Casbin gate could
+	// destroy any group. Casbin only decides which METHODS a role may use, never
+	// which row — so with DELETE granted to Member (#459) that was the whole
+	// authorization story.
+	//
+	// GroupWriteAuthorizationHook now answers "may this user change this group",
+	// via GroupService.CanUserManageGroup: the group's owner, a group manager, or
+	// a manager of the owning organization.
 	beforeCtx := &hooks.HookContext{
 		EntityName: "ClassGroup",
 		HookType:   hooks.BeforeDelete,
 		NewEntity:  group,
 		EntityID:   group.ID,
-		UserID:     attackerID, // NOT the owner
+		UserID:     attackerID, // NOT the owner, not a member, no org role
 	}
 
-	// The hook should NOT return an error because it doesn't validate ownership
 	err := hooks.GlobalHookRegistry.ExecuteHooks(beforeCtx)
-	assert.NoError(t, err,
-		"BeforeDelete hook does NOT validate ownership - it only performs cleanup. "+
-			"This means any user who passes Casbin auth can trigger group deletion.")
+
+	assert.Error(t, err,
+		"a user who cannot manage the group must not be able to delete it — "+
+			"before-hooks gate the write, and this is the only row-level check there is")
+}
+
+// The owner is still allowed: a gate that refuses everyone is not a fix.
+func TestGroupAuthorization_BeforeDeleteAllowsTheOwner(t *testing.T) {
+	db, genericService := setupGroupTestEnvironment(t)
+
+	ownerID := "user-owner-group-011b"
+	group := createGroup(t, db, genericService, ownerID)
+
+	beforeCtx := &hooks.HookContext{
+		EntityName: "ClassGroup",
+		HookType:   hooks.BeforeDelete,
+		NewEntity:  group,
+		EntityID:   group.ID,
+		UserID:     ownerID,
+	}
+
+	assert.NoError(t, hooks.GlobalHookRegistry.ExecuteHooks(beforeCtx),
+		"the group's owner must still be able to delete it")
 }
 
 // ============================================================================
@@ -451,7 +473,7 @@ func TestGroupAuthorization_OwnerHTTPDelete(t *testing.T) {
 
 // Test: Full HTTP DELETE by stranger via controller (no Casbin auth middleware in this test,
 // so we test the controller directly - the auth middleware is what would return 403)
-func TestGroupAuthorization_StrangerHTTPDeleteWithoutAuthMiddleware(t *testing.T) {
+func TestGroupAuthorization_StrangerHTTPDeleteIsRefusedWithoutAuthMiddleware(t *testing.T) {
 	db, genericService := setupGroupTestEnvironment(t)
 
 	ownerID := "user-owner-http-013"
@@ -467,10 +489,17 @@ func TestGroupAuthorization_StrangerHTTPDeleteWithoutAuthMiddleware(t *testing.T
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	// Without auth middleware, the controller does NOT check Casbin permissions.
-	// The controller will succeed (204) because DeleteEntity has no ownership check.
-	// This proves that the Casbin auth middleware is the SOLE authorization boundary.
-	assert.Equal(t, http.StatusNoContent, w.Code,
-		"Without auth middleware, even a stranger can delete - "+
-			"proving the controller/repository has no built-in ownership check")
+	// This asserted 204 before #459, documenting that Casbin was the SOLE
+	// authorization boundary — remove the middleware and a stranger could delete
+	// anything. That was tolerable only while Member lacked DELETE entirely.
+	//
+	// Now the write path carries its own row-level check, so the refusal survives
+	// without the middleware. Defense in depth, not a replacement for it: the
+	// middleware still decides whether the method is reachable at all.
+	assert.Equal(t, http.StatusForbidden, w.Code,
+		"a stranger must be refused by the write path itself, not only by the auth middleware")
+
+	var count int64
+	db.Model(&groupModels.ClassGroup{}).Where("id = ?", group.ID).Count(&count)
+	assert.Equal(t, int64(1), count, "the group must survive a refused delete")
 }
