@@ -143,9 +143,14 @@ func (gs *groupService) AddMembersToGroup(groupID uuid.UUID, requestingUserID st
 		return err
 	}
 
-	// Check if group is expired
-	if err := utils.ValidateNotExpired(group.ExpiresAt, groupID, "group"); err != nil {
-		return err
+	// Check if group is expired. Asks the model, which is what
+	// GroupMemberValidationHook asks too — one owner for "is this class over".
+	//
+	// This used to call utils.ValidateNotExpired, which type-asserted its `any`
+	// argument to `*any`. A *time.Time can never match that, so the function
+	// always returned nil and expiry was never enforced on this path at all.
+	if group.IsExpired() {
+		return utils.ErrEntityExpired("group", groupID)
 	}
 
 	// Add each member

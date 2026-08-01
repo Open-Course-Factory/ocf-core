@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -112,14 +113,39 @@ func ValidateActive(isActive bool, id uuid.UUID, entityType string) error {
 // Usage:
 //
 //	err := ValidateNotExpired(group.ExpiresAt, group.ID, "group")
+// ValidateNotExpired reports whether a deadline has passed.
+//
+// The previous implementation asserted its `any` argument to `*any`, which a
+// *time.Time can never satisfy — so it returned nil for every input and enforced
+// nothing. Its only caller has moved to ClassGroup.IsExpired(), the model's own
+// answer.
+//
+// Kept, working, for callers that hold a bare deadline and no model to ask. A nil
+// or zero deadline means "no deadline", never "expired": absent must not read as
+// over.
 func ValidateNotExpired(expiresAt any, id uuid.UUID, entityType string) error {
-	// Handle *time.Time
-	if expiry, ok := expiresAt.(*any); ok && expiry != nil {
-		// Check if expired
-		// Note: this is a simplified check, real implementation would use time.Now()
-		return ErrEntityExpired(entityType, id)
+	var deadline time.Time
+
+	switch v := expiresAt.(type) {
+	case nil:
+		return nil
+	case *time.Time:
+		if v == nil {
+			return nil
+		}
+		deadline = *v
+	case time.Time:
+		deadline = v
+	default:
+		// An unrecognised type cannot be judged. Refusing here would block writes
+		// on a caller's type mistake; the compiler is the right place to catch it.
+		return nil
 	}
-	return nil
+
+	if deadline.IsZero() || time.Now().Before(deadline) {
+		return nil
+	}
+	return ErrEntityExpired(entityType, id)
 }
 
 // ValidateStringNotEmpty checks if a string is not empty

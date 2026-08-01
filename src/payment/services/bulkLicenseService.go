@@ -5,6 +5,7 @@ import (
 	"fmt"
 	access "soli/formations/src/auth/access"
 	groupModels "soli/formations/src/groups/models"
+	groupServices "soli/formations/src/groups/services"
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/dto"
 	"soli/formations/src/payment/models"
@@ -919,27 +920,26 @@ func (s *bulkLicenseService) canUserManageBatch(batch *models.SubscriptionBatch,
 // autoAddUserToGroup adds a user to a group as a member via direct DB insert.
 // Checks for existing membership to avoid duplicates.
 // Failures are non-blocking: logged as warnings but never affect license assignment.
+// autoAddUserToGroup enrols a learner in the batch's linked group when a licence
+// is assigned to them.
+//
+// It delegates to GroupService.AddMembersToGroup rather than inserting the row
+// itself. The direct insert skipped everything that path does: it ignored the
+// group's MaxMembers and expiry, and — worse — never granted the Casbin
+// permissions, so the learner ended up with a group_members row and no binding,
+// a member of a group they could not see.
+//
+// Failures stay non-blocking: the licence is already assigned and paid for, and
+// an enrolment problem must not undo that. They are logged, and the trainer can
+// add the learner by hand.
 func (s *bulkLicenseService) autoAddUserToGroup(groupID uuid.UUID, purchaserUserID string, targetUserID string) {
-	// Check if user is already an active member
-	var count int64
-	if err := s.db.Model(&groupModels.GroupMember{}).
-		Where("group_id = ? AND user_id = ? AND is_active = ?", groupID, targetUserID, true).
-		Count(&count).Error; err != nil {
-		utils.Warn("Auto-add to group: failed to check existing membership: %v", err)
-		return
-	}
-	if count > 0 {
-		return // already a member
-	}
-
-	member := &groupModels.GroupMember{
-		GroupID:  groupID,
-		UserID:   targetUserID,
-		Role:     groupModels.GroupMemberRoleMember,
-		JoinedAt: time.Now(),
-		IsActive: true,
-	}
-	if err := s.db.Omit("Metadata").Create(member).Error; err != nil {
+	err := groupServices.NewGroupService(s.db).AddMembersToGroup(
+		groupID,
+		purchaserUserID,
+		[]string{targetUserID},
+		groupModels.GroupMemberRoleMember,
+	)
+	if err != nil {
 		utils.Warn("Auto-add user %s to group %s failed (non-blocking): %v", targetUserID, groupID, err)
 	}
 }

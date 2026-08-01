@@ -174,6 +174,16 @@ func RemoveGroupingPolicy(enforcer interfaces.EnforcerInterface, userID, roleID 
 // 1. Add user to role group "group:abc-def-ghi"
 // 2. Grant GET|POST permissions on "/api/v1/groups/abc-def-ghi" to the role
 func GrantEntityAccess(enforcer interfaces.EnforcerInterface, userID, entityType, entityID, methods string, opts PermissionOptions) error {
+	// No enforcer means no authorization backend to write to — startup before
+	// Casbin is wired, a CLI task, a unit test. Callers here are already
+	// best-effort (WarnOnError), so a nil enforcer must degrade the same way
+	// rather than panicking and taking the caller's operation down with it.
+	if enforcer == nil {
+		Warn("GrantEntityAccess: no enforcer configured, skipping grant of %s on %s:%s to %s",
+			methods, entityType, entityID, userID)
+		return nil
+	}
+
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
 			return fmt.Errorf("failed to load policy: %w", err)
@@ -227,6 +237,14 @@ func RevokeEntityAccess(enforcer interfaces.EnforcerInterface, userID, entityTyp
 //
 // This grants GET|POST on "/api/v1/groups/abc/members"
 func GrantEntitySubResourceAccess(enforcer interfaces.EnforcerInterface, roleID, entityType, entityID, subResource, methods string, opts PermissionOptions) error {
+	// See GrantEntityAccess: a nil enforcer degrades to a warning rather than
+	// panicking inside a best-effort grant.
+	if enforcer == nil {
+		Warn("GrantEntitySubResourceAccess: no enforcer configured, skipping grant of %s on %s:%s/%s",
+			methods, entityType, entityID, subResource)
+		return nil
+	}
+
 	if opts.LoadPolicyFirst {
 		if err := enforcer.LoadPolicy(); err != nil {
 			return fmt.Errorf("failed to load policy: %w", err)
