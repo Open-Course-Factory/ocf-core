@@ -273,15 +273,29 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 	// No role mapping for this role → fall back to the org's default subscription
 	orgSub, err := s.orgSubRepo.GetActiveOrganizationSubscription(orgID)
 	if err != nil {
-		// Team org has no subscription — fall back to user's personal subscription.
-		// Calling resolveGlobal here, not GetUserEffectivePlan(userID, nil), to
-		// keep the fallback explicit and avoid any future recursion confusion.
-		result, fallbackErr := s.resolveGlobal(userID)
-		if fallbackErr != nil {
+		// Team org has no subscription — fall back to the plan this user holds
+		// THEMSELVES: bought personally, or assigned to them as a seat.
+		//
+		// Deliberately not resolveGlobal, which also considers plans inherited
+		// through membership of OTHER organizations. That let any member of a
+		// school create their own team organization — they are its owner, so every
+		// role check passes — and re-host the school's plan inside it, consuming
+		// the school's contract in a workspace the school cannot see (#461).
+		//
+		// A plan you hold follows you; a plan you merely benefit from somewhere
+		// else does not.
+		sub, fallbackErr := s.paymentRepo.GetActiveUserSubscription(userID)
+		if fallbackErr != nil || sub == nil {
 			return nil, fmt.Errorf("no active subscription for organization %s and no personal fallback: %w", orgID.String(), fallbackErr)
 		}
-		result.IsFallback = true
-		return result, nil
+		return &EffectivePlanResult{
+			Plan:             &sub.SubscriptionPlan,
+			Source:           PlanSourcePersonal,
+			UserSubscription: sub,
+			IsFallback:       true,
+			// ScopeOrganizationID stays nil: a personally-held plan is a personal
+			// budget, counted for this user alone, even inside an organization.
+		}, nil
 	}
 	return &EffectivePlanResult{
 		Plan:                     &orgSub.SubscriptionPlan,
