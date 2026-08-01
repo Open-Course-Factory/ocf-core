@@ -1,6 +1,7 @@
 package services
 
 import (
+	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/models"
 
 	"github.com/google/uuid"
@@ -16,6 +17,18 @@ const (
 	// ClassroomDeniedPlanLacksGroupManagement: a plan resolved, but it does not
 	// grant group management.
 	ClassroomDeniedPlanLacksGroupManagement = "plan_lacks_group_management"
+
+	// ClassroomDeniedNotOrgMember: asked in the context of an organization the
+	// user does not belong to.
+	ClassroomDeniedNotOrgMember = "not_org_member"
+
+	// ClassroomDeniedInsufficientOrgRole: the organization's plan grants
+	// classrooms, but this member ranks below teacher — the student case in a
+	// school, where everyone inherits the plan and only staff may run classes.
+	ClassroomDeniedInsufficientOrgRole = "insufficient_org_role"
+
+	// ClassroomDeniedPersonalOrg: personal organizations hold no groups at all.
+	ClassroomDeniedPersonalOrg = "personal_organization"
 )
 
 // ClassroomEntitlement is the verdict on "may this user run classrooms?" —
@@ -67,13 +80,62 @@ func ClassroomEntitlementFor(plan *models.SubscriptionPlan) ClassroomEntitlement
 
 // CanRunClassrooms — see EffectivePlanService.
 //
+// Two questions, depending on whether an organization is named:
+//
+//   - orgID != nil — "may this user run classes IN THIS organization?" Answers on
+//     the organization's shape, the user's rank in it, and the plan that applies
+//     there. All three, because in a school every member inherits a plan that
+//     grants classrooms and only the role separates a teacher from a student.
+//   - orgID == nil — "does this user's plan allow classrooms at all?" Plan only.
+//     A trainer who has just bought Formateur and not yet created a team org
+//     manages nothing, and must still be able to buy seats.
+//
 // Resolution failure and "no subscription" are deliberately the same verdict:
 // GetUserEffectivePlan reports both as an error, and both mean the same thing
 // here — no plan grants this. Failing closed is the only safe reading.
 func (s *effectivePlanService) CanRunClassrooms(userID string, orgID *uuid.UUID) ClassroomEntitlement {
+	if orgID != nil {
+		if verdict, refused := s.refuseOnOrgContext(userID, *orgID); refused {
+			return verdict
+		}
+	}
+
 	result, err := s.GetUserEffectivePlan(userID, orgID)
 	if err != nil || result == nil {
 		return ClassroomEntitlement{Reason: ClassroomDeniedNoPlan}
 	}
 	return classroomEntitlementFor(result.Plan)
+}
+
+// refuseOnOrgContext checks the organization-shaped preconditions, returning
+// refused=true with the verdict when one fails.
+//
+// These run BEFORE plan resolution so a refusal names the gate that actually
+// closed. Resolving first would collapse "you are not a member" into "no plan",
+// because resolveForOrg rejects non-members itself — and a user told to upgrade
+// their plan when the real problem is their role will upgrade and still be stuck.
+func (s *effectivePlanService) refuseOnOrgContext(userID string, orgID uuid.UUID) (ClassroomEntitlement, bool) {
+	var org orgModels.Organization
+	if err := s.db.First(&org, "id = ?", orgID).Error; err != nil {
+		return ClassroomEntitlement{Reason: ClassroomDeniedNotOrgMember}, true
+	}
+	if org.IsPersonalOrg() {
+		return ClassroomEntitlement{Reason: ClassroomDeniedPersonalOrg}, true
+	}
+
+	var member orgModels.OrganizationMember
+	err := s.db.
+		Where("organization_id = ? AND user_id = ? AND is_active = ?", orgID, userID, true).
+		First(&member).Error
+	if err != nil {
+		return ClassroomEntitlement{Reason: ClassroomDeniedNotOrgMember}, true
+	}
+
+	// CanManageGroups owns the role threshold; restating it here as a comparison
+	// would be the second copy that starts the drift.
+	if !member.CanManageGroups() {
+		return ClassroomEntitlement{Reason: ClassroomDeniedInsufficientOrgRole}, true
+	}
+
+	return ClassroomEntitlement{}, false
 }

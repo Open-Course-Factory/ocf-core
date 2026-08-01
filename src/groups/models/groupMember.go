@@ -1,8 +1,10 @@
 package models
 
 import (
-	entityManagementModels "soli/formations/src/entityManagement/models"
 	"time"
+
+	access "soli/formations/src/auth/access"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 
 	"github.com/google/uuid"
 )
@@ -67,18 +69,13 @@ func (gm *GroupMember) CanEditGroup() bool {
 	return gm.IsManager()
 }
 
-// GetRolePriority returns a priority number for role comparison (higher = more permissions)
+// GetRolePriority returns a priority number for role comparison (higher = more permissions).
+//
+// Delegates to the single hierarchy in auth/access. It used to carry its own
+// switch, so a role registered through access.RegisterRole ranked 0 here — below
+// member — while ranking correctly everywhere else (#460).
 func (gm *GroupMember) GetRolePriority() int {
-	switch gm.Role {
-	case GroupMemberRoleOwner:
-		return 100
-	case GroupMemberRoleManager:
-		return 50
-	case GroupMemberRoleMember:
-		return 10
-	default:
-		return 0
-	}
+	return access.RolePriority(string(gm.Role))
 }
 
 // HasHigherRoleThan checks if this member has a higher role than another

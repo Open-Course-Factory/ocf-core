@@ -219,34 +219,32 @@ func (h *GroupPlacementValidationHook) countGroups(orgID, excludeGroupID uuid.UU
 }
 
 // validateCaller enforces what this particular user may do with this organization.
+//
+// One call: CanRunClassrooms owns membership, rank and plan together, resolved in
+// the target organization's context — so a trainer gets the plan he actually holds
+// there (his own, in the team org he created, which owns no plan; the school's,
+// inside a school), and a student in a school is refused on rank even though he
+// inherits a plan that grants classrooms.
+//
+// The hook translates the refusal code into a sentence; it does not re-derive the
+// verdict. A second copy of any of these three checks is how this rule drifted
+// into five disagreeing versions in the first place.
 func (h *GroupPlacementValidationHook) validateCaller(userID string, org *organizationModels.Organization) error {
-	var member organizationModels.OrganizationMember
-	err := h.db.
-		Where("organization_id = ? AND user_id = ? AND is_active = ?", org.ID, userID, true).
-		First(&member).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	verdict := h.plans.CanRunClassrooms(userID, &org.ID)
+	if verdict.Allowed {
+		return nil
+	}
+
+	switch verdict.Reason {
+	case paymentServices.ClassroomDeniedNotOrgMember:
 		return fmt.Errorf("you are not a member of this organization")
-	}
-	if err != nil {
-		return fmt.Errorf("failed to check organization membership: %w", err)
-	}
-
-	// CanManageGroups is the model's own answer to this question. Restating it as a
-	// role comparison here would be a second copy of the same rule, which is the
-	// habit that produced this issue in the first place.
-	if !member.CanManageGroups() {
-		return fmt.Errorf("only organization managers can create groups in this organization")
-	}
-
-	// Entitlement is resolved in the target organization's context, so a trainer
-	// gets the plan he actually holds there: his own, for the team org he created
-	// (which owns no plan), or the school's, inside a school.
-	if verdict := h.plans.CanRunClassrooms(userID, &org.ID); !verdict.Allowed {
-		if verdict.Reason == paymentServices.ClassroomDeniedNoPlan {
-			return fmt.Errorf("no active subscription plan allows managing groups")
-		}
+	case paymentServices.ClassroomDeniedInsufficientOrgRole:
+		return fmt.Errorf("only organization teachers and managers can create groups in this organization")
+	case paymentServices.ClassroomDeniedPersonalOrg:
+		return fmt.Errorf("a personal organization cannot hold groups — convert it to a team organization first")
+	case paymentServices.ClassroomDeniedNoPlan:
+		return fmt.Errorf("no active subscription plan allows managing groups")
+	default:
 		return fmt.Errorf("your subscription plan does not allow managing groups")
 	}
-
-	return nil
 }

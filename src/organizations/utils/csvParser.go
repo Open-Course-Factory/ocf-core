@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/organizations/dto"
 
 	"golang.org/x/text/encoding/charmap"
@@ -479,8 +480,9 @@ func validateMembershipRow(membership dto.MembershipImportRow, rowNum int) []dto
 		})
 	}
 
-	// Validate role
-	validRoles := map[string]bool{"member": true, "manager": true, "owner": true}
+	// Validate role against the single hierarchy rather than a literal list, so a
+	// role registered in auth/access is importable the day it exists instead of
+	// being rejected by a copy nobody remembered to update (#460).
 	if membership.Role == "" {
 		errors = append(errors, dto.ImportError{
 			Row:     rowNum,
@@ -489,12 +491,12 @@ func validateMembershipRow(membership dto.MembershipImportRow, rowNum int) []dto
 			Message: "Role is required",
 			Code:    dto.ErrCodeValidation,
 		})
-	} else if !validRoles[strings.ToLower(membership.Role)] {
+	} else if !access.IsKnownRole(strings.ToLower(membership.Role)) {
 		errors = append(errors, dto.ImportError{
 			Row:     rowNum,
 			File:    "memberships",
 			Field:   "role",
-			Message: fmt.Sprintf("Invalid role '%s'. Must be one of: member, manager, owner", membership.Role),
+			Message: fmt.Sprintf("Invalid role '%s'. Must be one of: %s", membership.Role, access.KnownRolesForMessage()),
 			Code:    dto.ErrCodeInvalidRole,
 		})
 	}

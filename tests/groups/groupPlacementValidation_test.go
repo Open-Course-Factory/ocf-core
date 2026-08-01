@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/entityManagement/hooks"
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	groupHooks "soli/formations/src/groups/hooks"
@@ -99,6 +100,50 @@ func seedOrg(
 	return org.ID
 }
 
+// seedSchool creates a team org that OWNS a classroom-granting plan, which is the
+// school / OF shape: every member inherits it, so the plan gate passes for
+// students as well as staff and only the role separates them.
+func seedSchool(t *testing.T, db *gorm.DB, ownerID string) uuid.UUID {
+	t.Helper()
+
+	orgID := seedOrg(t, db, organizationModels.OrgTypeTeam, 250, ownerID, organizationModels.OrgRoleOwner)
+
+	plan := paymentModels.SubscriptionPlan{
+		BaseModel:              entityManagementModels.BaseModel{ID: uuid.New()},
+		Name:                   "Ecole / OF",
+		Priority:               30,
+		IsActive:               true,
+		GroupManagementEnabled: true,
+	}
+	require.NoError(t, db.Create(&plan).Error)
+
+	require.NoError(t, db.Create(&paymentModels.OrganizationSubscription{
+		BaseModel:          entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID:     orgID,
+		SubscriptionPlanID: plan.ID,
+		StripeCustomerID:   "cus_test_school",
+		Status:             "active",
+		CurrentPeriodStart: time.Now().Add(-time.Hour),
+		CurrentPeriodEnd:   time.Now().Add(24 * time.Hour),
+	}).Error)
+
+	return orgID
+}
+
+// enrol adds a member to an existing organization with the given role.
+func enrol(t *testing.T, db *gorm.DB, orgID uuid.UUID, userID string, role organizationModels.OrganizationMemberRole) {
+	t.Helper()
+
+	require.NoError(t, db.Omit("Metadata").Create(&organizationModels.OrganizationMember{
+		BaseModel:      entityManagementModels.BaseModel{ID: uuid.New()},
+		OrganizationID: orgID,
+		UserID:         userID,
+		Role:           role,
+		JoinedAt:       time.Now(),
+		IsActive:       true,
+	}).Error)
+}
+
 // runPlacementCreate runs the hook for a create of a group placed in orgID.
 func runPlacementCreate(t *testing.T, db *gorm.DB, userID string, orgID *uuid.UUID, platformRoles ...string) error {
 	t.Helper()
@@ -147,7 +192,34 @@ func TestGroupPlacement_RejectsPlainMemberOfOrganization(t *testing.T) {
 	err := runPlacementCreate(t, db, placementTrainerID, &orgID)
 
 	require.Error(t, err, "a plain member must not create groups even with a classroom plan")
-	require.Contains(t, err.Error(), "managers")
+	require.Contains(t, err.Error(), "teachers and managers")
+}
+
+// --- the school case (#460) -------------------------------------------------
+//
+// In a school every member inherits the org's plan, so the plan gate passes for
+// students too. The ROLE is what separates staff from students, and these two
+// tests are the pair that proves it: same org, same plan, different rank.
+
+func TestGroupPlacement_TeacherInASchoolMayCreateClasses(t *testing.T) {
+	db := freshTestDB(t)
+	orgID := seedSchool(t, db, placementTrainerID)
+	enrol(t, db, orgID, "teacher-marie", organizationModels.OrganizationMemberRole(access.RoleTeacher))
+
+	require.NoError(t, runPlacementCreate(t, db, "teacher-marie", &orgID),
+		"a teacher holds the classroom threshold without organization administration")
+}
+
+func TestGroupPlacement_StudentInASchoolMayNotCreateClasses(t *testing.T) {
+	db := freshTestDB(t)
+	orgID := seedSchool(t, db, placementTrainerID)
+	enrol(t, db, orgID, "student-karim", organizationModels.OrgRoleMember)
+
+	err := runPlacementCreate(t, db, "student-karim", &orgID)
+
+	require.Error(t, err,
+		"a student inherits the school's plan, so only the role can refuse them")
+	require.Contains(t, err.Error(), "teachers and managers")
 }
 
 // The case that opened the issue: a personal organization is advertised as

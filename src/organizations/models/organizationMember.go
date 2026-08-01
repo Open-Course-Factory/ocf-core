@@ -1,8 +1,10 @@
 package models
 
 import (
-	entityManagementModels "soli/formations/src/entityManagement/models"
 	"time"
+
+	access "soli/formations/src/auth/access"
+	entityManagementModels "soli/formations/src/entityManagement/models"
 
 	"github.com/google/uuid"
 )
@@ -67,23 +69,24 @@ func (om *OrganizationMember) CanManageMembers() bool {
 	return om.IsManager()
 }
 
-// CanManageGroups checks if this member can create/manage groups in the organization
+// CanManageGroups checks if this member can create/manage groups in the organization.
+//
+// This is the canonical answer to that question — the group placement hook and the
+// classroom entitlement both defer to it rather than restating a role comparison.
+//
+// The threshold is teacher, not manager: running a class and administering the
+// organization are different jobs (#460).
 func (om *OrganizationMember) CanManageGroups() bool {
-	return om.IsManager()
+	return access.IsRoleAtLeast(string(om.Role), access.RoleMinimumForClassrooms)
 }
 
-// GetRolePriority returns a priority number for role comparison (higher = more permissions)
+// GetRolePriority returns a priority number for role comparison (higher = more permissions).
+//
+// Delegates to the single hierarchy in auth/access. It used to carry its own
+// switch, so a role registered through access.RegisterRole ranked 0 here — below
+// member — while ranking correctly everywhere else (#460).
 func (om *OrganizationMember) GetRolePriority() int {
-	switch om.Role {
-	case OrgRoleOwner:
-		return 100
-	case OrgRoleManager:
-		return 50
-	case OrgRoleMember:
-		return 10
-	default:
-		return 0
-	}
+	return access.RolePriority(string(om.Role))
 }
 
 // HasHigherRoleThan checks if this member has a higher role than another
