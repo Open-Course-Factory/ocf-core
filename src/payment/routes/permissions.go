@@ -250,9 +250,15 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 	)
 
 	access.RegisterEnforced(enforcer, "Bulk Licenses",
+		// The two id-less routes are SelfScoped, not EntityOwner: the EntityOwner
+		// enforcer verifies ownership through the :id path param, and with no
+		// param it fail-closes — denying every non-admin (admins bypass Layer 2,
+		// which is how this went unnoticed). Both handlers scope to the caller
+		// themselves (GetMyBatches via GetAccessibleBatches(userID), checkout via
+		// the authenticated userID + validateBulkPurchaser).
 		access.RoutePermission{
 			Path: "/api/v1/subscription-batches/create-checkout-session", Method: "POST",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserUserID"},
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Create batch checkout session",
 		},
 		access.RoutePermission{
@@ -262,7 +268,7 @@ func RegisterPaymentPermissions(enforcer interfaces.EnforcerInterface) {
 		},
 		access.RoutePermission{
 			Path: "/api/v1/subscription-batches", Method: "GET",
-			Role: access.RoleMember, Access: access.AccessRule{Type: access.EntityOwner, Entity: "SubscriptionBatch", Field: "PurchaserUserID"},
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "List owned subscription batches",
 		},
 		access.RoutePermission{
