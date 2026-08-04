@@ -36,6 +36,7 @@ package payment_tests
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -61,6 +62,7 @@ import (
 type stripeIdemCapture struct {
 	mu            sync.Mutex
 	keys          map[string][]string // logical name -> idempotency keys, in request order
+	payloads      map[string][]string // logical name -> raw request bodies, in request order
 	sessionSeq    int                 // counter for generated checkout session ids
 	sessionStatus map[string]string   // session id -> live status ("open" when unset)
 	replay        map[string]string   // idempotency key -> cached create response body
@@ -88,6 +90,15 @@ func (c *stripeIdemCapture) setSessionStatus(id, status string) {
 	c.sessionStatus[id] = status
 }
 
+// getPayloads returns the raw request bodies recorded under a logical name.
+func (c *stripeIdemCapture) getPayloads(name string) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]string, len(c.payloads[name]))
+	copy(out, c.payloads[name])
+	return out
+}
+
 // installFakeStripeBackend points the global stripe backend at a local server
 // that captures Idempotency-Key headers and returns minimal valid JSON. Globals
 // (backend + key) are restored on cleanup.
@@ -100,6 +111,7 @@ func installFakeStripeBackend(t *testing.T) *stripeIdemCapture {
 
 	cap := &stripeIdemCapture{
 		keys:          map[string][]string{},
+		payloads:      map[string][]string{},
 		sessionStatus: map[string]string{},
 		replay:        map[string]string{},
 	}
@@ -145,6 +157,16 @@ func installFakeStripeBackend(t *testing.T) *stripeIdemCapture {
 		case strings.HasSuffix(path, "/customers"):
 			cap.record("customer_create", key)
 			fmt.Fprint(w, `{"id":"cus_test_fake","object":"customer"}`)
+		case strings.Contains(path, "/subscriptions/") && r.Method == http.MethodPost:
+			// Subscription UPDATE — recorded with its body so tests can assert
+			// on scheduled changes (e.g. cancel_at for prepaid packs).
+			body, _ := io.ReadAll(r.Body)
+			id := path[strings.LastIndex(path, "/")+1:]
+			cap.mu.Lock()
+			cap.keys["subscription_update"] = append(cap.keys["subscription_update"], key)
+			cap.payloads["subscription_update"] = append(cap.payloads["subscription_update"], string(body))
+			cap.mu.Unlock()
+			fmt.Fprintf(w, `{"id":%q,"object":"subscription"}`, id)
 		default:
 			fmt.Fprint(w, `{}`)
 		}

@@ -1954,6 +1954,17 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 	if terms.ExpiresAt != nil {
 		// A pack ends when its days run out, not when Stripe's billing window does.
 		currentPeriodEnd = *terms.ExpiresAt
+
+		// And Stripe must know it: the pack was checked out in subscription mode
+		// against a monthly recurring price, so without a scheduled cancellation
+		// it renews and re-bills the purchaser for an entitlement that already
+		// died. Scheduled BEFORE provisioning: if this call fails the event
+		// errors and Stripe redelivers with nothing committed, whereas after the
+		// commit the idempotent pre-check below would skip the retry and the
+		// cancellation would be lost for good.
+		if err := ss.schedulePackCancellation(subscription.ID, *terms.ExpiresAt); err != nil {
+			return fmt.Errorf("failed to schedule pack cancellation on Stripe subscription %s: %w", subscription.ID, err)
+		}
 	}
 
 	utils.Info("📦 Creating bulk subscription batch for user %s: %d licences of plan %s", userID, terms.Licences, plan.Name)
@@ -2048,6 +2059,18 @@ func (ss *stripeService) handleBulkSubscriptionCreated(subscription *stripe.Subs
 	}
 
 	return nil
+}
+
+// schedulePackCancellation asks Stripe to end a subscription at the pack
+// deadline, so a prepaid pack's billing stops exactly where its entitlement
+// does. Idempotent: re-setting the same cancel_at is a no-op on Stripe's side.
+// (Free function scope: the webhook handlers shadow the `subscription` package
+// with their parameter name.)
+func (ss *stripeService) schedulePackCancellation(stripeSubscriptionID string, expiresAt time.Time) error {
+	_, err := subscription.Update(stripeSubscriptionID, &stripe.SubscriptionParams{
+		CancelAt: stripe.Int64(expiresAt.Unix()),
+	})
+	return err
 }
 
 // handleBulkSubscriptionUpdated handles quantity changes in bulk subscriptions
