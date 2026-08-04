@@ -367,6 +367,7 @@ func TestSetupScenarioPermissions_MemberRoutes(t *testing.T) {
 		{"/api/v1/scenario-sessions/:id/flags", "GET"},
 		{"/api/v1/scenario-sessions/:id/steps/:stepOrder/hints/:level/reveal", "POST"},
 		// Teacher dashboard (existing)
+		{"/api/v1/teacher/groups", "GET"},
 		{"/api/v1/teacher/groups/:groupId/activity", "GET"},
 		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/results", "GET"},
 		{"/api/v1/teacher/groups/:groupId/scenarios/:scenarioId/analytics", "GET"},

@@ -215,28 +215,26 @@ func (s *TeacherDashboardService) GetGroupActivity(groupID uuid.UUID) ([]GroupAc
 }
 
 // GetGroupAssignmentsProgress returns one progress summary per scenario that has
-// non-preview sessions from active group members (single GROUP BY query, no N+1).
-// Shares the exact join/filter of getScenarioResults (SSOT): active membership on
+// non-preview sessions from active group members. It is the single-group view of
+// assignmentsProgressByGroup (teacherGroupsService.go), which owns the join and
+// filters — the same ones getScenarioResults uses (SSOT): active membership on
 // user_id, scoped to the group, excluding preview sessions. avg_grade averages
 // only completed sessions — an in-progress session has no meaningful grade yet —
 // so it stays NULL (→ nil *float64) until at least one member completes.
 func (s *TeacherDashboardService) GetGroupAssignmentsProgress(groupID uuid.UUID) ([]AssignmentProgressItem, error) {
-	var items []AssignmentProgressItem
-	err := s.db.Raw(`
-		SELECT ss.scenario_id as scenario_id,
-		       COUNT(DISTINCT ss.user_id) as total_count,
-		       COUNT(DISTINCT CASE WHEN ss.status = 'completed' THEN ss.user_id END) as completed_count,
-		       AVG(CASE WHEN ss.status = 'completed' THEN ss.grade END) as avg_grade
-		FROM scenario_sessions ss
-		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
-		WHERE ss.is_preview = false
-		GROUP BY ss.scenario_id
-	`, groupID).Scan(&items).Error
+	byGroup, err := s.assignmentsProgressByGroup([]uuid.UUID{groupID})
 	if err != nil {
 		return nil, err
 	}
-	if items == nil {
-		items = []AssignmentProgressItem{}
+	rows := byGroup[groupID]
+	items := make([]AssignmentProgressItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, AssignmentProgressItem{
+			ScenarioID:     row.ScenarioID,
+			TotalCount:     row.StartedCount,
+			CompletedCount: row.CompletedCount,
+			AvgGrade:       row.AvgGrade,
+		})
 	}
 	return items, nil
 }

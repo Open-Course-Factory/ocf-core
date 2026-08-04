@@ -6,9 +6,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/mocks"
 	scenarioController "soli/formations/src/scenarios/routes"
 )
+
+// TestSetupScenarioPermissions_TeacherGroupsList_DeclaredSelfScoped guards the
+// Layer 2 half of GET /api/v1/teacher/groups. A missing declaration would leave
+// the route with no enforcement at all — and unlike its siblings it carries no
+// :groupId, so it cannot fall back to GroupRole: the handler is what scopes the
+// result to the caller, which is exactly what SelfScoped documents.
+func TestSetupScenarioPermissions_TeacherGroupsList_DeclaredSelfScoped(t *testing.T) {
+	access.RouteRegistry.Reset()
+	t.Cleanup(access.RouteRegistry.Reset)
+
+	scenarioController.RegisterScenarioPermissions(mocks.NewMockEnforcer())
+
+	perm, found := access.RouteRegistry.Lookup("GET", "/api/v1/teacher/groups")
+	require.True(t, found, "GET /api/v1/teacher/groups must be declared in the RouteRegistry")
+	assert.Equal(t, access.SelfScoped, perm.Access.Type)
+	assert.Equal(t, access.RoleMember, perm.Role)
+}
 
 // TestSetupScenarioPermissions_GroupLevelRoutes verifies that RegisterScenarioPermissions
 // registers Casbin policies for the group-level scenario routes (upload, import-json,

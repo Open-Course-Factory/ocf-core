@@ -93,6 +93,14 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 
 	access.RegisterEnforced(enforcer, "Teacher Dashboard",
 		access.RoutePermission{
+			// Self-scoped rather than GroupRole: there is no :groupId to enforce on.
+			// The handler derives the classes from the authenticated caller id, so
+			// no client input can widen the scope.
+			Path: "/api/v1/teacher/groups", Method: "GET",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "List the classes the authenticated user owns or manages, with per-class aggregates",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/activity", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "View group activity overview",

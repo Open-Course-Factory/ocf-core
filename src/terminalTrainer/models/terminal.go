@@ -200,7 +200,9 @@ func RunningDisplayScope(tx *gorm.DB) *gorm.DB {
 //
 // Applied by every teacher-facing group listing surface — the supervision wall
 // (ListGroupSupervisionSessions) and group command history — so the rule lives in
-// exactly one place. HasSupervisionAccess enforces the SYMMETRIC group-side equality
+// exactly one place. SupervisableByJoinedGroupOrgScope below is its multi-group
+// form; the two must always change together. HasSupervisionAccess enforces the
+// SYMMETRIC group-side equality
 // (filtering the learner's candidate groups by the session's org) because it is
 // keyed by a terminal, not a group; teachers-only — platform admins bypass it.
 //
@@ -214,6 +216,33 @@ func SupervisableByGroupOrgScope(groupOrg *uuid.UUID) func(*gorm.DB) *gorm.DB {
 			return tx.Where("1 = 0") // no org context → supervises nothing
 		}
 		return tx.Where("terminals.organization_id = ?", *groupOrg)
+	}
+}
+
+// SupervisableByJoinedGroupOrgScope is SupervisableByGroupOrgScope for a query
+// that spans SEVERAL groups at once: instead of comparing terminals.organization_id
+// against one known org, it correlates it with the organization_id of a joined
+// class_groups row (aliased groupAlias). Same rule, same NULL semantics — a group
+// with no org matches nothing, and a personal (NULL-org) terminal is never
+// supervisable — expressed per-row so a single aggregate can serve a whole
+// dashboard instead of one query per group.
+//
+// It lives next to SupervisableByGroupOrgScope on purpose: the org-context
+// supervision visibility rule has exactly two shapes and both must change
+// together. Prefer the single-group form whenever the org is already in hand.
+//
+// groupAlias is supplied by the calling query, never by a request, so it is
+// interpolated directly.
+//
+// Usage:
+//
+//	db.Table("terminals").
+//	    Joins("JOIN group_members gm ON gm.user_id = terminals.user_id").
+//	    Joins("JOIN class_groups cg ON cg.id = gm.group_id").
+//	    Scopes(models.SupervisableByJoinedGroupOrgScope("cg"))
+func SupervisableByJoinedGroupOrgScope(groupAlias string) func(*gorm.DB) *gorm.DB {
+	return func(tx *gorm.DB) *gorm.DB {
+		return tx.Where(groupAlias + ".organization_id IS NOT NULL AND terminals.organization_id = " + groupAlias + ".organization_id")
 	}
 }
 

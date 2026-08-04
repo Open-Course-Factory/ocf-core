@@ -34,6 +34,30 @@ func NewTeacherController(db *gorm.DB) *TeacherController {
 	}
 }
 
+// GetMyGroups godoc
+// @Summary List the classes the caller teaches
+// @Description Returns one dashboard row per class-group the authenticated user owns or
+// @Description manages: member count, live terminal sessions, and each active scenario
+// @Description assignment with its progress. Self-scoped — the groups are derived from the
+// @Description authenticated caller, never from a client-supplied user id, and platform
+// @Description administrators get their OWN classes like anyone else.
+// @Tags scenario-teacher
+// @Produce json
+// @Success 200 {array} services.TeacherGroupSummary
+// @Failure 500 {object} map[string]string
+// @Router /teacher/groups [get]
+// @Security BearerAuth
+func (tc *TeacherController) GetMyGroups(c *gin.Context) {
+	summaries, err := tc.dashboardService.GetManagedGroupsOverview(c.GetString("userId"))
+	if err != nil {
+		slog.Error("failed to get managed groups overview", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get managed groups"})
+		return
+	}
+
+	c.JSON(http.StatusOK, summaries)
+}
+
 // GetGroupActivity godoc
 // @Summary Get group activity
 // @Description Returns all active scenario sessions for members of a group
