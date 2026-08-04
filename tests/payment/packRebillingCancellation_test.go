@@ -71,6 +71,125 @@ func buildBulkPackCreatedWebhook(eventID, stripeSubID, planID string, learners, 
 	}`, eventID, stripe.APIVersion, now, stripeSubID, planID, learners, durationDays, now, end))
 }
 
+// buildBulkPackUpdatedWebhook builds a signed customer.subscription.updated event
+// for a bulk subscription that is STILL ACTIVE but carries a scheduled future
+// end (cancel_at) — exactly what Stripe emits right after the pack's own
+// schedulePackCancellation call.
+func buildBulkPackUpdatedWebhook(eventID, stripeSubID, planID string, learners int, cancelAt int64) []byte {
+	now := time.Now().Unix()
+	end := time.Now().Add(30 * 24 * time.Hour).Unix()
+	return []byte(fmt.Sprintf(`{
+		"id": %q,
+		"object": "event",
+		"api_version": %q,
+		"type": "customer.subscription.updated",
+		"created": %d,
+		"data": {
+			"object": {
+				"id": %q,
+				"object": "subscription",
+				"customer": {"id": "cus_pack_days", "object": "customer"},
+				"status": "active",
+				"cancel_at": %d,
+				"canceled_at": %d,
+				"cancel_at_period_end": false,
+				"metadata": {
+					"user_id": "user_pack_days",
+					"subscription_plan_id": %q,
+					"quantity": "%d",
+					"duration_days": "3",
+					"bulk_purchase": "true"
+				},
+				"items": {
+					"object": "list",
+					"data": [{
+						"id": "si_pack_days",
+						"object": "subscription_item",
+						"quantity": %d,
+						"current_period_start": %d,
+						"current_period_end": %d,
+						"price": {"id": "price_pack_days", "object": "price", "currency": "eur"}
+					}]
+				}
+			}
+		}
+	}`, eventID, stripe.APIVersion, now, stripeSubID, cancelAt, now, planID, learners, learners, now, end))
+}
+
+// TestWebhook_BulkPackUpdated_ScheduledEndDoesNotCancelBatch pins that the
+// pack's own scheduled Stripe cancellation (cancel_at = pack deadline, status
+// still active) must NOT cancel the batch: the seats live until the deadline,
+// which entitlement expiry already enforces. Without this the fix that stops
+// monthly re-billing kills every pack at birth — the batch shows ANNULÉ with
+// all its seats cancelled seconds after purchase.
+func TestWebhook_BulkPackUpdated_ScheduledEndDoesNotCancelBatch(t *testing.T) {
+	db := freshTestDB(t)
+	webhookSecret := "whsec_packupd_" + uuid.NewString()
+	router := newRouterWithRealService(t, db, webhookSecret)
+
+	priceID := "price_pack_days"
+	plan := &models.SubscriptionPlan{
+		Name:             "Pack Jours Upd Test",
+		PriceAmount:      165,
+		Currency:         "eur",
+		BillingInterval:  "month",
+		StripePriceID:    &priceID,
+		IsActive:         true,
+		SeatUnit:         models.SeatUnitLearnerDay,
+		BulkPurchasable:  true,
+		UseTieredPricing: true,
+	}
+	require.NoError(t, db.Create(plan).Error)
+
+	const learners = 4
+	stripeSubID := "sub_packupd_" + uuid.NewString()
+	deadline := time.Now().Add(3 * 24 * time.Hour)
+	batch := &models.SubscriptionBatch{
+		PurchaserUserID:      "user_pack_days",
+		SubscriptionPlanID:   plan.ID,
+		StripeSubscriptionID: stripeSubID,
+		TotalQuantity:        learners,
+		Status:               "active",
+		CurrentPeriodStart:   time.Now(),
+		CurrentPeriodEnd:     deadline,
+	}
+	require.NoError(t, db.Create(batch).Error)
+	for i := 0; i < learners; i++ {
+		require.NoError(t, db.Create(&models.UserSubscription{
+			PurchaserUserID:     &batch.PurchaserUserID,
+			SubscriptionBatchID: &batch.ID,
+			SubscriptionPlanID:  plan.ID,
+			Status:              "unassigned",
+			CurrentPeriodStart:  batch.CurrentPeriodStart,
+			CurrentPeriodEnd:    batch.CurrentPeriodEnd,
+			ExpiresAt:           &deadline,
+		}).Error)
+	}
+
+	eventID := "evt_packupd_" + uuid.NewString()
+	payload := buildBulkPackUpdatedWebhook(eventID, stripeSubID, plan.ID.String(), learners, deadline.Unix())
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/stripe", bytes.NewReader(payload))
+	req.Header.Set("Stripe-Signature", signStripeWebhook(t, payload, webhookSecret))
+	req.Header.Set("User-Agent", "Stripe/1.0 (+https://stripe.com/docs/webhooks)")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "updated webhook must process (body: %s)", w.Body.String())
+
+	var reloaded models.SubscriptionBatch
+	require.NoError(t, db.First(&reloaded, "id = ?", batch.ID).Error)
+	assert.Equal(t, "active", reloaded.Status,
+		"a SCHEDULED future end (the pack's own cancel_at) must not cancel the batch — "+
+			"the seats live until the deadline")
+	assert.Nil(t, reloaded.CancelledAt)
+
+	var cancelled int64
+	db.Model(&models.UserSubscription{}).
+		Where("subscription_batch_id = ? AND status = ?", batch.ID, "cancelled").
+		Count(&cancelled)
+	assert.Zero(t, cancelled, "no licence may be cancelled by a scheduled future end")
+}
+
 // TestWebhook_BulkPackCreated_SchedulesStripeCancellationAtPackExpiry — see the
 // file header for the re-billing scenario this pins.
 func TestWebhook_BulkPackCreated_SchedulesStripeCancellationAtPackExpiry(t *testing.T) {

@@ -2118,9 +2118,21 @@ func (ss *stripeService) handleBulkSubscriptionUpdated(subscription *stripe.Subs
 	wasCancelled := batch.CancelledAt != nil
 
 	if subscription.CanceledAt > 0 && !wasCancelled {
-		// This is a NEW cancellation (canceled_at just got set)
-		isBeingCancelled = true
-		utils.Info("🚫 Bulk subscription %s is being cancelled (canceled_at: %d)", subscription.ID, subscription.CanceledAt)
+		// A SCHEDULED future end on a still-active subscription is not a
+		// cancellation happening now — it is the pack's own cancel_at (set at
+		// provisioning so a prepaid pack never re-bills). Stripe stamps
+		// canceled_at when the schedule is requested, so without this guard
+		// every pack batch would be cancelled seconds after purchase.
+		scheduledFutureEnd := subscription.Status == stripe.SubscriptionStatusActive &&
+			subscription.CancelAt > 0 && time.Unix(subscription.CancelAt, 0).After(time.Now())
+		if scheduledFutureEnd {
+			utils.Info("⏳ Bulk subscription %s has a scheduled end at %d — batch stays active until then",
+				subscription.ID, subscription.CancelAt)
+		} else {
+			// This is a NEW cancellation (canceled_at just got set)
+			isBeingCancelled = true
+			utils.Info("🚫 Bulk subscription %s is being cancelled (canceled_at: %d)", subscription.ID, subscription.CanceledAt)
+		}
 	}
 
 	// If subscription is cancelled, terminate all terminals and cancel all licenses
