@@ -418,6 +418,52 @@ func TestStripeService_CreateBulkCheckoutSession_IdempotencyKey_StableAcrossRetr
 		keys[0], keys[1])
 }
 
+// TestStripeService_CreateBulkCheckoutSession_ReissuesWhenSessionConsumed pins
+// the consumed-session heal on the BULK path: buying the same seat pack twice
+// on the same day (e.g. a trainer re-ordering after a completed purchase whose
+// batch was since deleted) must get a FRESH open session, not a replay of the
+// consumed one.
+func TestStripeService_CreateBulkCheckoutSession_ReissuesWhenSessionConsumed(t *testing.T) {
+	db := freshTestDB(t)
+	cap := installFakeStripeBackend(t)
+	installFakeCasdoor(t, "rebulk@example.com", "Rebulk User")
+	svc := services.NewStripeService(db)
+
+	userID := "user_rebulk_" + uuid.NewString()
+	plan := activeStripePlan(t, db, "Rebulk Plan")
+	require.NoError(t, db.Model(plan).Update("bulk_purchasable", true).Error)
+	seedTrainerWithGroupManagement(t, db, userID)
+
+	input := dto.CreateBulkCheckoutSessionInput{
+		SubscriptionPlanID: plan.ID,
+		Quantity:           4,
+		SuccessURL:         "https://app.test/success",
+		CancelURL:          "https://app.test/cancel",
+	}
+
+	first, err := svc.CreateBulkCheckoutSession(userID, input)
+	require.NoError(t, err)
+
+	// The trainer pays: the session is consumed on Stripe's side. No batch row
+	// exists in this fake setup (no webhook ran), so the generation
+	// discriminator cannot move — exactly the case the live-status walk covers.
+	cap.setSessionStatus(first.SessionID, "complete")
+
+	second, err := svc.CreateBulkCheckoutSession(userID, input)
+	require.NoError(t, err)
+	assert.NotEqual(t, first.SessionID, second.SessionID,
+		"HEAL: a re-buy after the first bulk session was consumed must get a "+
+			"FRESH open session, not a replay dead-ending on Stripe's "+
+			"'you're all done here' page")
+
+	// A double-submit of the re-attempt must land on the SAME fresh session.
+	third, err := svc.CreateBulkCheckoutSession(userID, input)
+	require.NoError(t, err)
+	assert.Equal(t, second.SessionID, third.SessionID,
+		"IDEMPOTENCY: retrying the re-attempt must deduplicate onto the same "+
+			"fresh session instead of opening another billable checkout")
+}
+
 // activeStripePlan seeds an active SubscriptionPlan with a Stripe price ID so the
 // checkout methods pass their plan validation and reach session.New.
 func activeStripePlan(t *testing.T, db *gorm.DB, name string) *models.SubscriptionPlan {

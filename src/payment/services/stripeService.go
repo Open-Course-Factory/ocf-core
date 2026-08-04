@@ -636,9 +636,22 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 	if billingAddr != nil {
 		bulkBillingAddrID = billingAddr.ID.String()
 	}
-	params.SetIdempotencyKey(stripeIdempotencyKey("checkout-bulk",
+
+	// Discriminator that moves exactly when a bulk purchase completes: the
+	// buyer's total number of batches. Same rationale as the personal checkout
+	// path — without it, buying the same pack twice on the same day replays the
+	// CONSUMED session of the first purchase and strands the buyer on Stripe's
+	// dead-end page.
+	var batchGeneration int64
+	ss.db.Model(&models.SubscriptionBatch{}).
+		Where("purchaser_user_id = ?", userID).Count(&batchGeneration)
+
+	bulkKeyParts := []string{
 		userID, input.SubscriptionPlanID.String(), fmt.Sprintf("%d", input.Quantity),
-		bulkGroupID, input.CouponCode, bulkBillingAddrID, idempotencyDateBucket()))
+		bulkGroupID, input.CouponCode, bulkBillingAddrID, idempotencyDateBucket(),
+		fmt.Sprintf("gen%d", batchGeneration),
+	}
+	params.SetIdempotencyKey(stripeIdempotencyKey("checkout-bulk", bulkKeyParts...))
 
 	// Create checkout session
 	checkoutSession, err := session.New(params)
@@ -649,6 +662,24 @@ func (ss *stripeService) CreateBulkCheckoutSession(userID string, input dto.Crea
 			}
 		}
 		return nil, fmt.Errorf("failed to create bulk checkout session: %w", err)
+	}
+
+	// Safety net for consumed sessions the generation discriminator cannot see
+	// (webhook never landed, or the earlier batch was permanently deleted): same
+	// live-status walk as the personal checkout path.
+	for hop := 0; hop < maxConsumedSessionReissues; hop++ {
+		liveSession, liveErr := session.Get(checkoutSession.ID, nil)
+		if liveErr != nil || liveSession.Status == stripe.CheckoutSessionStatusOpen {
+			break
+		}
+		utils.Info("♻️ Idempotent bulk checkout key returned %s session %s — issuing a fresh session",
+			liveSession.Status, checkoutSession.ID)
+		params.SetIdempotencyKey(stripeIdempotencyKey("checkout-bulk",
+			append(bulkKeyParts, checkoutSession.ID)...))
+		checkoutSession, err = session.New(params)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create bulk checkout session: %w", err)
+		}
 	}
 
 	utils.Info("✅ Created bulk license checkout session for user %s (plan: %s, quantity: %d)",
