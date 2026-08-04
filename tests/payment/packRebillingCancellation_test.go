@@ -74,8 +74,9 @@ func buildBulkPackCreatedWebhook(eventID, stripeSubID, planID string, learners, 
 // buildBulkPackUpdatedWebhook builds a signed customer.subscription.updated event
 // for a bulk subscription that is STILL ACTIVE but carries a scheduled future
 // end (cancel_at) — exactly what Stripe emits right after the pack's own
-// schedulePackCancellation call.
-func buildBulkPackUpdatedWebhook(eventID, stripeSubID, planID string, learners int, cancelAt int64) []byte {
+// schedulePackCancellation call. The item quantity is the BILLING UNITS
+// (learners × days), as on the real subscription — not the licence count.
+func buildBulkPackUpdatedWebhook(eventID, stripeSubID, planID string, learners, billingUnits int, cancelAt int64) []byte {
 	now := time.Now().Unix()
 	end := time.Now().Add(30 * 24 * time.Hour).Unix()
 	return []byte(fmt.Sprintf(`{
@@ -113,7 +114,7 @@ func buildBulkPackUpdatedWebhook(eventID, stripeSubID, planID string, learners i
 				}
 			}
 		}
-	}`, eventID, stripe.APIVersion, now, stripeSubID, cancelAt, now, planID, learners, learners, now, end))
+	}`, eventID, stripe.APIVersion, now, stripeSubID, cancelAt, now, planID, learners, billingUnits, now, end))
 }
 
 // TestWebhook_BulkPackUpdated_ScheduledEndDoesNotCancelBatch pins that the
@@ -167,7 +168,9 @@ func TestWebhook_BulkPackUpdated_ScheduledEndDoesNotCancelBatch(t *testing.T) {
 	}
 
 	eventID := "evt_packupd_" + uuid.NewString()
-	payload := buildBulkPackUpdatedWebhook(eventID, stripeSubID, plan.ID.String(), learners, deadline.Unix())
+	const durationDays = 3
+	payload := buildBulkPackUpdatedWebhook(eventID, stripeSubID, plan.ID.String(),
+		learners, learners*durationDays, deadline.Unix())
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/stripe", bytes.NewReader(payload))
 	req.Header.Set("Stripe-Signature", signStripeWebhook(t, payload, webhookSecret))
 	req.Header.Set("User-Agent", "Stripe/1.0 (+https://stripe.com/docs/webhooks)")
@@ -188,6 +191,17 @@ func TestWebhook_BulkPackUpdated_ScheduledEndDoesNotCancelBatch(t *testing.T) {
 		Where("subscription_batch_id = ? AND status = ?", batch.ID, "cancelled").
 		Count(&cancelled)
 	assert.Zero(t, cancelled, "no licence may be cancelled by a scheduled future end")
+
+	// And the quantity reconciliation must read the item quantity as BILLING
+	// UNITS for a pack: 12 learner-days is still 4 licences, not 12 (#455 on
+	// the update path — without the conversion the batch inflates to 12 seats).
+	var licenceCount int64
+	db.Model(&models.UserSubscription{}).
+		Where("subscription_batch_id = ?", batch.ID).Count(&licenceCount)
+	assert.EqualValues(t, learners, licenceCount,
+		"the update handler must not create licences out of billing units")
+	require.NoError(t, db.First(&reloaded, "id = ?", batch.ID).Error)
+	assert.Equal(t, learners, reloaded.TotalQuantity)
 }
 
 // TestWebhook_BulkPackCreated_SchedulesStripeCancellationAtPackExpiry — see the

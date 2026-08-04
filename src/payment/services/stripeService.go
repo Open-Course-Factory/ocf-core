@@ -2174,8 +2174,22 @@ func (ss *stripeService) handleBulkSubscriptionUpdated(subscription *stripe.Subs
 		return nil
 	}
 
-	// Check if quantity changed
+	// Check if quantity changed. The Stripe item quantity is BILLING UNITS: for
+	// a learner-day pack that is licences × days, not licences — convert before
+	// comparing, or the pack's own scheduled-end update event "reconciles" 4
+	// seats into 12 (#455 on the update path).
 	newQuantity := int(subscription.Items.Data[0].Quantity)
+	if daysStr, ok := subscription.Metadata["duration_days"]; ok {
+		packDays := 0
+		if _, err := fmt.Sscanf(daysStr, "%d", &packDays); err == nil && packDays > 0 {
+			if newQuantity%packDays != 0 {
+				utils.Warn("⚠️ Bulk subscription %s: item quantity %d not divisible by pack length %d — skipping reconciliation",
+					subscription.ID, newQuantity, packDays)
+				return nil
+			}
+			newQuantity /= packDays
+		}
+	}
 	if newQuantity == batch.TotalQuantity {
 		utils.Debug("ℹ️ Batch quantity unchanged: %d", newQuantity)
 		return nil // No change
