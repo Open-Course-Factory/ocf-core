@@ -234,6 +234,14 @@ func idempotencyDateBucket() string {
 	return time.Now().UTC().Format("2006-01-02")
 }
 
+// maxConsumedSessionReissues bounds the consumed-checkout-session recovery in
+// CreateCheckoutSession. The subscription-count discriminator in the key
+// already gives a re-buy after a completed purchase a fresh session with zero
+// hops; a reissue only happens when a session was consumed WITHOUT the
+// discriminator moving (payment whose webhook never landed, so no new
+// subscription row). One hop resolves that case — 3 is margin, not capacity.
+const maxConsumedSessionReissues = 3
+
 // CreateOrGetCustomer crée ou récupère un client Stripe
 func (ss *stripeService) CreateOrGetCustomer(userID, email, name string) (string, error) {
 	// Check if the user already has a Stripe customer ID from ANY subscription (active or inactive)
@@ -450,7 +458,7 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 	// forever), so fetch the LIVE status and, while the session is no longer
 	// open, reissue with the consumed session's id folded into the key — each
 	// hop deterministic, so a double-submit still deduplicates.
-	for hop := 0; hop < 3; hop++ {
+	for hop := 0; hop < maxConsumedSessionReissues; hop++ {
 		liveSession, liveErr := session.Get(checkoutSession.ID, nil)
 		if liveErr != nil || liveSession.Status == stripe.CheckoutSessionStatusOpen {
 			break
