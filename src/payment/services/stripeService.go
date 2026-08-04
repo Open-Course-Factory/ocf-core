@@ -419,7 +419,7 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 	params.SetIdempotencyKey(stripeIdempotencyKey("checkout",
 		userID, input.SubscriptionPlanID.String(), input.CouponCode, billingAddrID, idempotencyDateBucket()))
 
-	session, err := session.New(params)
+	checkoutSession, err := session.New(params)
 	if err != nil {
 		if input.CouponCode != "" {
 			if couponErr := MapStripeCouponError(err); couponErr != err {
@@ -429,9 +429,34 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 		return nil, fmt.Errorf("failed to create checkout session: %w", err)
 	}
 
+	// The deduplicated key can hand back a session already consumed earlier the
+	// same day (buy → cancel → re-buy the same plan), which would strand the
+	// customer on Stripe's "you're all done here" page. The idempotent replay
+	// carries the ORIGINAL response (status "open" forever), so the live status
+	// must be fetched. While the session is no longer open, reissue with the
+	// consumed session's id folded into the key. Each re-buy adds one hop, so
+	// this walks the day's chain of consumed sessions to the first open one —
+	// every hop stays deterministic, and a double-submit at any point still
+	// deduplicates against the same session instead of opening a second one.
+	for hop := 0; hop < 8; hop++ {
+		liveSession, liveErr := session.Get(checkoutSession.ID, nil)
+		if liveErr != nil || liveSession.Status == stripe.CheckoutSessionStatusOpen {
+			break
+		}
+		utils.Info("♻️ Idempotent checkout key returned %s session %s — issuing a fresh session",
+			liveSession.Status, checkoutSession.ID)
+		params.SetIdempotencyKey(stripeIdempotencyKey("checkout",
+			userID, input.SubscriptionPlanID.String(), input.CouponCode, billingAddrID,
+			idempotencyDateBucket(), checkoutSession.ID))
+		checkoutSession, err = session.New(params)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create checkout session: %w", err)
+		}
+	}
+
 	return &dto.CheckoutSessionOutput{
-		SessionID: session.ID,
-		URL:       session.URL,
+		SessionID: checkoutSession.ID,
+		URL:       checkoutSession.URL,
 	}, nil
 }
 

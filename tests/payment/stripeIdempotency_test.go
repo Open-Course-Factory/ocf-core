@@ -59,8 +59,11 @@ import (
 // -----------------------------------------------------------------------------
 
 type stripeIdemCapture struct {
-	mu   sync.Mutex
-	keys map[string][]string // logical name -> idempotency keys, in request order
+	mu            sync.Mutex
+	keys          map[string][]string // logical name -> idempotency keys, in request order
+	sessionSeq    int                 // counter for generated checkout session ids
+	sessionStatus map[string]string   // session id -> live status ("open" when unset)
+	replay        map[string]string   // idempotency key -> cached create response body
 }
 
 func (c *stripeIdemCapture) record(name, key string) {
@@ -77,6 +80,14 @@ func (c *stripeIdemCapture) get(name string) []string {
 	return out
 }
 
+// setSessionStatus marks a checkout session's LIVE status, served on GET. Lets a
+// test simulate a session consumed by a completed (or expired) payment.
+func (c *stripeIdemCapture) setSessionStatus(id, status string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sessionStatus[id] = status
+}
+
 // installFakeStripeBackend points the global stripe backend at a local server
 // that captures Idempotency-Key headers and returns minimal valid JSON. Globals
 // (backend + key) are restored on cleanup.
@@ -87,7 +98,11 @@ func (c *stripeIdemCapture) get(name string) []string {
 func installFakeStripeBackend(t *testing.T) *stripeIdemCapture {
 	t.Helper()
 
-	cap := &stripeIdemCapture{keys: map[string][]string{}}
+	cap := &stripeIdemCapture{
+		keys:          map[string][]string{},
+		sessionStatus: map[string]string{},
+		replay:        map[string]string{},
+	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Header.Get("Idempotency-Key")
@@ -95,9 +110,34 @@ func installFakeStripeBackend(t *testing.T) *stripeIdemCapture {
 
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case strings.Contains(path, "checkout/sessions") && r.Method == http.MethodGet:
+			// Session RETRIEVE serves the LIVE status ("open" unless a test
+			// consumed the session via setSessionStatus).
+			id := path[strings.LastIndex(path, "/")+1:]
+			cap.mu.Lock()
+			status := cap.sessionStatus[id]
+			cap.mu.Unlock()
+			if status == "" {
+				status = "open"
+			}
+			fmt.Fprintf(w, `{"id":%q,"object":"checkout.session","status":%q,"url":"https://checkout.stripe.test/pay/%s"}`, id, status, id)
 		case strings.Contains(path, "checkout/sessions"):
-			cap.record("checkout_session", key)
-			fmt.Fprint(w, `{"id":"cs_test_fake","object":"checkout.session","url":"https://checkout.stripe.test/pay/cs_test_fake"}`)
+			// Session CREATE with faithful idempotent replay: a reused key
+			// returns the ORIGINAL cached response (as real Stripe does), a new
+			// key mints a fresh session that is "open" at creation time.
+			cap.mu.Lock()
+			cap.keys["checkout_session"] = append(cap.keys["checkout_session"], key)
+			body, replayed := cap.replay[key]
+			if !replayed || key == "" {
+				cap.sessionSeq++
+				id := fmt.Sprintf("cs_test_fake_%d", cap.sessionSeq)
+				body = fmt.Sprintf(`{"id":%q,"object":"checkout.session","status":"open","url":"https://checkout.stripe.test/pay/%s"}`, id, id)
+				if key != "" {
+					cap.replay[key] = body
+				}
+			}
+			cap.mu.Unlock()
+			fmt.Fprint(w, body)
 		case strings.Contains(path, "/customers/"):
 			// customer UPDATE (path has an id segment) — not asserted on.
 			cap.record("customer_update", key)
@@ -262,6 +302,49 @@ func TestStripeService_CreateCheckoutSession_IdempotencyKey_StableAcrossRetries(
 			"params.SetIdempotencyKey(<stable identity from userID + planID + intent>) "+
 			"in CreateCheckoutSession before session.New.",
 		keys[0], keys[1])
+}
+
+// TestStripeService_CreateCheckoutSession_ReissuesWhenSessionConsumed pins the
+// consumed-session heal: the day-bucketed idempotency key means a buy → cancel →
+// re-buy of the same plan on the same day replays a checkout session that was
+// already completed, stranding the customer on Stripe's "you're all done here"
+// page. CreateCheckoutSession must detect the consumed session via its LIVE
+// status and reissue a fresh one — deterministically, so a double-submit of the
+// re-attempt still deduplicates onto the same fresh session.
+func TestStripeService_CreateCheckoutSession_ReissuesWhenSessionConsumed(t *testing.T) {
+	db := freshTestDB(t)
+	cap := installFakeStripeBackend(t)
+	installFakeCasdoor(t, "rebuy@example.com", "Rebuy User")
+	svc := services.NewStripeService(db)
+
+	plan := activeStripePlan(t, db, "Rebuy Plan")
+	input := dto.CreateCheckoutSessionInput{
+		SubscriptionPlanID: plan.ID,
+		SuccessURL:         "https://app.test/success",
+		CancelURL:          "https://app.test/cancel",
+	}
+	userID := "user_rebuy_" + uuid.NewString()
+
+	first, err := svc.CreateCheckoutSession(userID, input, nil)
+	require.NoError(t, err)
+
+	// The customer pays: the session is consumed on Stripe's side.
+	cap.setSessionStatus(first.SessionID, "complete")
+
+	second, err := svc.CreateCheckoutSession(userID, input, nil)
+	require.NoError(t, err)
+	assert.NotEqual(t, first.SessionID, second.SessionID,
+		"HEAL: a re-buy after the first session was consumed must get a FRESH open "+
+			"session, not a replay of the completed one (which dead-ends on Stripe's "+
+			"'you're all done here' page)")
+
+	// A double-submit of the re-attempt must land on the SAME fresh session —
+	// the heal walks the same consumed-session chain deterministically.
+	third, err := svc.CreateCheckoutSession(userID, input, nil)
+	require.NoError(t, err)
+	assert.Equal(t, second.SessionID, third.SessionID,
+		"IDEMPOTENCY: retrying the re-attempt must deduplicate onto the same fresh "+
+			"session instead of opening yet another billable checkout")
 }
 
 // TestStripeService_CreateBulkCheckoutSession_IdempotencyKey_StableAcrossRetries
