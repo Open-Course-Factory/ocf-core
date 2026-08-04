@@ -143,8 +143,11 @@ type UserSubscriptionOutput struct {
 	CurrentPeriodEnd     time.Time              `json:"current_period_end"`
 	CancelAtPeriodEnd    bool                   `json:"cancel_at_period_end"`
 	CancelledAt          *time.Time             `json:"cancelled_at,omitempty"`
-	CreatedAt            time.Time              `json:"created_at"`
-	UpdatedAt            time.Time              `json:"updated_at"`
+	// ExpiresAt is the entitlement deadline for prepaid packs (nil for open-ended
+	// subscriptions) — surfaced so screens can show when a seat stops working.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 
 	// Bulk license assignment information (only present if from bulk purchase)
 	SubscriptionBatchID *uuid.UUID `json:"subscription_batch_id,omitempty"`

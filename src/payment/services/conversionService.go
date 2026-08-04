@@ -75,6 +75,7 @@ func (cs *conversionService) UserSubscriptionToDTO(subscription *models.UserSubs
 		CurrentPeriodEnd:     subscription.CurrentPeriodEnd,
 		CancelAtPeriodEnd:    subscription.CancelAtPeriodEnd,
 		CancelledAt:          subscription.CancelledAt,
+		ExpiresAt:            subscription.ExpiresAt,
 		CreatedAt:            subscription.CreatedAt,
 		UpdatedAt:            subscription.UpdatedAt,
 	}
