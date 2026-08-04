@@ -416,8 +416,23 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 	if billingAddr != nil {
 		billingAddrID = billingAddr.ID.String()
 	}
-	params.SetIdempotencyKey(stripeIdempotencyKey("checkout",
-		userID, input.SubscriptionPlanID.String(), input.CouponCode, billingAddrID, idempotencyDateBucket()))
+
+	// Discriminator that moves exactly when a purchase completes: the user's
+	// total number of subscription rows (any status). A double-submit leaves it
+	// unchanged (same key → deduplicated), while a re-buy after a completed
+	// purchase sees the row the webhook created and gets a fresh key by
+	// construction — without it, the day bucket replays the CONSUMED session of
+	// the earlier purchase and strands the customer on Stripe's dead-end page.
+	subscriptionGeneration := 0
+	if subs, subsErr := ss.repository.GetUserSubscriptions(userID, true); subsErr == nil && subs != nil {
+		subscriptionGeneration = len(*subs)
+	}
+
+	baseKeyParts := []string{
+		userID, input.SubscriptionPlanID.String(), input.CouponCode, billingAddrID,
+		idempotencyDateBucket(), fmt.Sprintf("gen%d", subscriptionGeneration),
+	}
+	params.SetIdempotencyKey(stripeIdempotencyKey("checkout", baseKeyParts...))
 
 	checkoutSession, err := session.New(params)
 	if err != nil {
@@ -429,16 +444,13 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 		return nil, fmt.Errorf("failed to create checkout session: %w", err)
 	}
 
-	// The deduplicated key can hand back a session already consumed earlier the
-	// same day (buy → cancel → re-buy the same plan), which would strand the
-	// customer on Stripe's "you're all done here" page. The idempotent replay
-	// carries the ORIGINAL response (status "open" forever), so the live status
-	// must be fetched. While the session is no longer open, reissue with the
-	// consumed session's id folded into the key. Each re-buy adds one hop, so
-	// this walks the day's chain of consumed sessions to the first open one —
-	// every hop stays deterministic, and a double-submit at any point still
-	// deduplicates against the same session instead of opening a second one.
-	for hop := 0; hop < 8; hop++ {
+	// Safety net for consumed sessions the generation discriminator cannot see
+	// (e.g. a payment whose webhook never landed, so no new subscription row):
+	// the idempotent replay carries the ORIGINAL response (status "open"
+	// forever), so fetch the LIVE status and, while the session is no longer
+	// open, reissue with the consumed session's id folded into the key — each
+	// hop deterministic, so a double-submit still deduplicates.
+	for hop := 0; hop < 3; hop++ {
 		liveSession, liveErr := session.Get(checkoutSession.ID, nil)
 		if liveErr != nil || liveSession.Status == stripe.CheckoutSessionStatusOpen {
 			break
@@ -446,8 +458,7 @@ func (ss *stripeService) CreateCheckoutSession(userID string, input dto.CreateCh
 		utils.Info("♻️ Idempotent checkout key returned %s session %s — issuing a fresh session",
 			liveSession.Status, checkoutSession.ID)
 		params.SetIdempotencyKey(stripeIdempotencyKey("checkout",
-			userID, input.SubscriptionPlanID.String(), input.CouponCode, billingAddrID,
-			idempotencyDateBucket(), checkoutSession.ID))
+			append(baseKeyParts, checkoutSession.ID)...))
 		checkoutSession, err = session.New(params)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create checkout session: %w", err)
