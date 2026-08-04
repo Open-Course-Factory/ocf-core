@@ -12,8 +12,15 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 	log.Println("=== Registering terminal module permissions ===")
 
 	access.RegisterEnforced(enforcer, "Terminals",
-		// Session management
-		access.RoutePermission{Path: "/api/v1/terminals/user-sessions", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "List current user's active terminal sessions"},
+		// Session management.
+		//
+		// user-sessions is self-scoped UNTIL a `group_id` query param is passed,
+		// which widens it to that class-group's members for a manager+ of the group
+		// (#464). GroupScopedSelf carries that conditional rule: the built-in
+		// GroupRole cannot, because it reads a PATH parameter, and plain SelfScoped
+		// would advertise a route that never reads another user's data. Its enforcer
+		// (wired in TerminalRoutes) shares MayListGroupSessions with the handler.
+		access.RoutePermission{Path: "/api/v1/terminals/user-sessions", Method: "GET", Role: access.RoleMember, Access: access.AccessRule{Type: GroupScopedSelf, Param: "group_id"}, Description: "List current user's terminal sessions, or a class-group's member sessions with ?group_id (manager+)"},
 		access.RoutePermission{Path: "/api/v1/terminals/my-history", Method: "DELETE", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Delete all command history for current user"},
 		access.RoutePermission{Path: "/api/v1/terminals/sync-all", Method: "POST", Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped}, Description: "Sync all terminal sessions for current user"},
 

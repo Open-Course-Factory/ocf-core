@@ -14,6 +14,7 @@ import (
 	config "soli/formations/src/configuration"
 	"time"
 
+	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
 	paymentModels "soli/formations/src/payment/models"
@@ -599,12 +600,47 @@ func (tc *terminalController) DeleteSession(ctx *gin.Context) {
 //	@Produce		json
 //	@Param			user_id				query	string	false	"Filter sessions for a specific user (administrators only)"
 //	@Param			organization_id		query	string	false	"Filter sessions by organization UUID"
+//	@Param			group_id			query	string	false	"Widen the listing to a class-group's members (manager+ of that group, or administrator). Supersedes user_id and organization_id, which the group itself determines."
 //	@Security		Bearer
 //	@Success		200	{array}		dto.TerminalOutput
 //	@Failure		400	{object}	errors.APIError	"Bad request"
+//	@Failure		403	{object}	errors.APIError	"Not a manager of the requested group"
 //	@Failure		500	{object}	errors.APIError	"Internal server error"
 //	@Router			/terminals/user-sessions [get]
 func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
+	// group_id widens the listing beyond the caller; without it (or with it
+	// empty, which is how a UI spells "all groups") nothing changes.
+	if groupID := ctx.Query("group_id"); groupID != "" {
+		tc.listGroupMemberSessions(ctx, groupID)
+		return
+	}
+	tc.listOwnSessions(ctx)
+}
+
+// listGroupMemberSessions serves GET /terminals/user-sessions?group_id=… — the
+// teacher's view of a class-group's sessions. Authorization is NOT decided here:
+// it delegates to ListGroupMemberSessions, which shares its predicate with the
+// supervision wall, and refuses with the same 403 that wall returns.
+//
+// No pre-list tt-backend sync runs on this path: syncing would mean one upstream
+// round-trip per member, and the teacher's read must not pay for that.
+func (tc *terminalController) listGroupMemberSessions(ctx *gin.Context, groupID string) {
+	terminals, allowed := ListGroupMemberSessions(
+		tc.db, groupID, ctx.GetString("userId"), access.IsAdmin(ctx.GetStringSlice("userRoles")))
+	if !allowed {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "You are not a manager of this group",
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, toTerminalOutputs(terminals))
+}
+
+// listOwnSessions serves the self-scoped GET /terminals/user-sessions: the
+// caller's own sessions, optionally narrowed to an organization, or another
+// user's sessions when a platform administrator passes user_id.
+func (tc *terminalController) listOwnSessions(ctx *gin.Context) {
 	userId := ctx.GetString("userId")
 	organizationID := ctx.Query("organization_id")
 
@@ -664,28 +700,33 @@ func (tc *terminalController) GetUserSessions(ctx *gin.Context) {
 		return
 	}
 
-	// Convertir vers DTOs
-	var terminalOutputs []dto.TerminalOutput
-	for _, terminal := range *terminals {
-		terminalOutputs = append(terminalOutputs, dto.TerminalOutput{
-			ID:              terminal.ID,
-			SessionID:       terminal.SessionID,
-			UserID:          terminal.UserID,
-			Name:            terminal.Name,
-			State:           terminal.State,
-			PersistenceMode: terminal.PersistenceMode,
-			IdleUntil:       terminal.IdleUntil,
-			ExpiresAt:       terminal.ExpiresAt,
-			InstanceType:    terminal.InstanceType,
-			MachineSize:     terminal.MachineSize,
+	ctx.JSON(http.StatusOK, toTerminalOutputs(*terminals))
+}
+
+// toTerminalOutputs maps terminal rows onto the session-list wire shape shared by
+// every GET /terminals/user-sessions variant, so the self-scoped and group-scoped
+// listings can never expose different fields.
+func toTerminalOutputs(terminals []models.Terminal) []dto.TerminalOutput {
+	var outputs []dto.TerminalOutput
+	for _, terminal := range terminals {
+		outputs = append(outputs, dto.TerminalOutput{
+			ID:               terminal.ID,
+			SessionID:        terminal.SessionID,
+			UserID:           terminal.UserID,
+			Name:             terminal.Name,
+			State:            terminal.State,
+			PersistenceMode:  terminal.PersistenceMode,
+			IdleUntil:        terminal.IdleUntil,
+			ExpiresAt:        terminal.ExpiresAt,
+			InstanceType:     terminal.InstanceType,
+			MachineSize:      terminal.MachineSize,
 			Backend:          terminal.Backend,
 			OrganizationID:   terminal.OrganizationID,
 			ComposedFeatures: terminal.ComposedFeatures,
 			CreatedAt:        terminal.CreatedAt,
 		})
 	}
-
-	ctx.JSON(http.StatusOK, terminalOutputs)
+	return outputs
 }
 
 // Sync Session godoc

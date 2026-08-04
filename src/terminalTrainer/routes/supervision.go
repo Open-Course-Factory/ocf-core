@@ -29,12 +29,6 @@ import (
 	"soli/formations/src/terminalTrainer/services"
 )
 
-// managerRoles are the group_members roles that grant supervision authority.
-var managerRoles = []groupModels.GroupMemberRole{
-	groupModels.GroupMemberRoleOwner,
-	groupModels.GroupMemberRoleManager,
-}
-
 // HasSupervisionAccess decides whether callerUserID may supervise the learner who
 // owns sessionID, deriving the learner's group SERVER-SIDE from the session
 // record. It returns the id of the group the caller manages and through which
@@ -81,7 +75,8 @@ func HasSupervisionAccess(db *gorm.DB, callerUserID string, isAdmin bool, sessio
 	}
 
 	// Of those, one the caller manages (active group + owner or an active
-	// manager/owner role) grants access — the single canonical predicate.
+	// manager/owner role) grants access — the single canonical predicate
+	// (groupSessionScope.go).
 	return callerManagesAnyGroup(db, orgMatchedGroupIDs, callerUserID)
 }
 
@@ -91,46 +86,6 @@ func HasSupervisionAccess(db *gorm.DB, callerUserID string, isAdmin bool, sessio
 // role drops below manager. Admin stays authorized.
 func SupervisionStillAuthorized(db *gorm.DB, callerUserID string, isAdmin bool, sessionID string) bool {
 	_, ok := HasSupervisionAccess(db, callerUserID, isAdmin, sessionID)
-	return ok
-}
-
-// callerManagesAnyGroup returns the id of one group among candidateIDs that
-// callerUserID manages — the SINGLE canonical "manager+ of this group" predicate,
-// shared by HasSupervisionAccess (list of the learner's groups) and
-// callerManagesGroup (a single group). Management means the group is ACTIVE and the
-// caller either OWNS it (ClassGroup.OwnerUserID) or holds an active manager/owner
-// group_members role. An inactive (or missing) group is never manageable.
-// ok=false when none qualifies.
-func callerManagesAnyGroup(db *gorm.DB, candidateIDs []uuid.UUID, callerUserID string) (groupID string, ok bool) {
-	if len(candidateIDs) == 0 {
-		return "", false
-	}
-	// Restrict to ACTIVE groups (L1): an inactive class-group grants no authority.
-	var activeIDs []uuid.UUID
-	if err := db.Model(&groupModels.ClassGroup{}).
-		Where("id IN ? AND is_active = ?", candidateIDs, true).
-		Pluck("id", &activeIDs).Error; err != nil || len(activeIDs) == 0 {
-		return "", false
-	}
-	// One the caller OWNS (ClassGroup.OwnerUserID)...
-	var owned groupModels.ClassGroup
-	if err := db.Where("id IN ? AND owner_user_id = ?", activeIDs, callerUserID).
-		First(&owned).Error; err == nil {
-		return owned.ID.String(), true
-	}
-	// ...or one where the caller holds an active manager/owner membership role.
-	var membership groupModels.GroupMember
-	if err := db.Where("group_id IN ? AND user_id = ? AND is_active = ? AND role IN ?",
-		activeIDs, callerUserID, true, managerRoles).First(&membership).Error; err == nil {
-		return membership.GroupID.String(), true
-	}
-	return "", false
-}
-
-// callerManagesGroup reports whether callerUserID is manager+ of groupID. It
-// delegates to callerManagesAnyGroup so the management predicate lives in one place.
-func callerManagesGroup(db *gorm.DB, groupID uuid.UUID, callerUserID string) bool {
-	_, ok := callerManagesAnyGroup(db, []uuid.UUID{groupID}, callerUserID)
 	return ok
 }
 
@@ -262,50 +217,28 @@ type SupervisionSession struct {
 
 // ListGroupSupervisionSessions returns the live member terminal sessions of a
 // single group, but only when the caller is manager+ of that group (or admin).
-// It never leaks sessions from other groups: only sessions owned by active members
-// of groupID are returned. ok=false denies a non-manager caller.
+// Authorization and member scoping are delegated to MayListGroupSessions /
+// groupMemberSessions (groupSessionScope.go), shared with the group filter on
+// GET /terminals/user-sessions, so the two listings can never diverge on who
+// sees what. ok=false denies a non-manager caller.
 //
-// "Live" routes through models.RunningDisplayScope (the SSOT "alive right now?"
-// predicate, expiry-aware) so past-expiry zombie rows — state still 'running' but
-// their tt-backend session long gone — never render as dead, unsupervisable tiles.
+// The supervision-specific narrowing is "live": models.RunningDisplayScope (the
+// SSOT "alive right now?" predicate, expiry-aware) so past-expiry zombie rows —
+// state still 'running' but their tt-backend session long gone — never render as
+// dead, unsupervisable tiles.
 //
 // Each session is enriched with the learner's display name/email via the swappable
 // services.LookupCasdoorUserForOrgUsage seam, resolved once per unique learner id.
 // A resolver error leaves the session listed with an empty name — identity is a
 // display nicety, not a gate.
 func ListGroupSupervisionSessions(db *gorm.DB, groupID, callerUserID string, isAdmin bool) (sessions []SupervisionSession, ok bool) {
-	gid, err := uuid.Parse(groupID)
+	gid, allowed := MayListGroupSessions(db, groupID, callerUserID, isAdmin)
+	if !allowed {
+		return nil, false
+	}
+
+	terminals, err := groupMemberSessions(db, gid, isAdmin, terminalModels.RunningDisplayScope)
 	if err != nil {
-		return nil, false
-	}
-	if !isAdmin && !callerManagesGroup(db, gid, callerUserID) {
-		return nil, false
-	}
-
-	var memberIDs []string
-	if err := db.Model(&groupModels.GroupMember{}).
-		Where("group_id = ? AND is_active = ?", gid, true).
-		Pluck("user_id", &memberIDs).Error; err != nil {
-		return nil, false
-	}
-	if len(memberIDs) == 0 {
-		return []SupervisionSession{}, true
-	}
-
-	query := db.Scopes(terminalModels.RunningDisplayScope).Where("user_id IN ?", memberIDs)
-	if !isAdmin {
-		// Teachers see only sessions launched in THIS group's org (org-context
-		// visibility rule, single home: models.SupervisableByGroupOrgScope). A
-		// NULL-org group lists nothing. Admins are ops, not teachers — they bypass.
-		var group groupModels.ClassGroup
-		if err := db.Where("id = ?", gid).First(&group).Error; err != nil {
-			return nil, false
-		}
-		query = query.Scopes(terminalModels.SupervisableByGroupOrgScope(group.OrganizationID))
-	}
-
-	var terminals []terminalModels.Terminal
-	if err := query.Find(&terminals).Error; err != nil {
 		return nil, false
 	}
 

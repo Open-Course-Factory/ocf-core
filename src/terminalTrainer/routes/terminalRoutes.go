@@ -25,6 +25,25 @@ func TerminalRoutes(router *gin.RouterGroup, config *config.Configuration, db *g
 	terminalService := terminalServices.NewTerminalTrainerService(db)
 	terminalAccessMiddleware := terminalMiddleware.NewTerminalAccessMiddleware(db)
 
+	// Layer 2 backstop for the group-widened session listing (#464): share the
+	// handler's predicate so the declarative rule and GetUserSessions enforce the
+	// same policy. With no group id in the query the route stays self-scoped and
+	// the handler filters by userId itself, as SelfScoped routes always have.
+	access.RegisterAccessEnforcer(GroupScopedSelf, func(ctx *gin.Context, rule access.AccessRule, userID string, roles []string) bool {
+		groupID := ctx.Query(rule.Param)
+		if groupID == "" {
+			return true
+		}
+		if _, allowed := MayListGroupSessions(db, groupID, userID, access.IsAdmin(roles)); allowed {
+			return true
+		}
+		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+			"error":  "Access denied",
+			"detail": "You are not a manager of this group",
+		})
+		return false
+	})
+
 	routes := router.Group("/terminals")
 
 	// Console access requires terminal ownership (Layer 2 security check)

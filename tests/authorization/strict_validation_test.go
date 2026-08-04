@@ -120,11 +120,12 @@ func registerAllProductionPermissions() {
 // test fails in CI instead of the route silently degrading to pass-through in
 // production.
 //
-// KEY: the production enforcer set is RegisterBuiltinEnforcers PLUS the
-// IncusBackendAccess enforcer, which main.go does NOT register in the builtin
-// block — it is wired inside IncusUIRoutes() (terminalRoutes.go), because its
-// closure needs the live IncusUIController. This test must register a stub for
-// IncusBackendAccess to mirror production; otherwise it false-positives (see
+// KEY: the production enforcer set is RegisterBuiltinEnforcers PLUS the two
+// terminal-module enforcers main.go does NOT register in the builtin block,
+// because their closures need a live dependency: IncusBackendAccess (wired in
+// IncusUIRoutes(), needs the IncusUIController) and GroupScopedSelf (wired in
+// TerminalRoutes(), needs the *gorm.DB). This test must register a stub for each
+// to mirror production; otherwise it false-positives (see
 // TestValidatePermissionSetupStrict_ProductionMissingIncusEnforcer_Fails, which
 // documents exactly that gap).
 func TestPermissionSetup_ProductionRoutesHaveEnforcers_Strict(t *testing.T) {
@@ -137,9 +138,14 @@ func TestPermissionSetup_ProductionRoutesHaveEnforcers_Strict(t *testing.T) {
 
 	// Full production enforcer set.
 	access.RegisterBuiltinEnforcers(&mockEntityLoader{}, &mockMembershipChecker{})
-	// IncusBackendAccess is registered outside RegisterBuiltinEnforcers in
-	// production (terminalRoutes.go:IncusUIRoutes). Mirror it here with a stub.
+	// Both terminal-module rule types are registered outside
+	// RegisterBuiltinEnforcers in production (terminalRoutes.go: IncusUIRoutes
+	// and TerminalRoutes). Mirror them here with stubs.
 	access.RegisterAccessEnforcer(terminalController.IncusBackendAccess,
+		func(ctx *gin.Context, rule access.AccessRule, userID string, roles []string) bool {
+			return true
+		})
+	access.RegisterAccessEnforcer(terminalController.GroupScopedSelf,
 		func(ctx *gin.Context, rule access.AccessRule, userID string, roles []string) bool {
 			return true
 		})
@@ -154,11 +160,11 @@ func TestPermissionSetup_ProductionRoutesHaveEnforcers_Strict(t *testing.T) {
 }
 
 // TestValidatePermissionSetupStrict_ProductionMissingIncusEnforcer_Fails locks in
-// the load-bearing finding: IncusBackendAccess is the one production rule type
-// whose enforcer is NOT registered by RegisterBuiltinEnforcers. If main.go ever
-// calls ValidatePermissionSetupStrict BEFORE IncusUIRoutes() has wired that
-// enforcer, startup must fail loudly. This test proves strict validation does
-// catch that ordering bug.
+// the load-bearing finding: some production rule types are NOT registered by
+// RegisterBuiltinEnforcers, IncusBackendAccess among them. If main.go ever calls
+// ValidatePermissionSetupStrict BEFORE IncusUIRoutes() has wired that enforcer,
+// startup must fail loudly. This test proves strict validation does catch that
+// ordering bug.
 func TestValidatePermissionSetupStrict_ProductionMissingIncusEnforcer_Fails(t *testing.T) {
 	access.RouteRegistry.Reset()
 	access.ResetEnforcers()
