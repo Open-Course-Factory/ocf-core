@@ -242,7 +242,13 @@ func SupervisableByGroupOrgScope(groupOrg *uuid.UUID) func(*gorm.DB) *gorm.DB {
 //	    Scopes(models.SupervisableByJoinedGroupOrgScope("cg"))
 func SupervisableByJoinedGroupOrgScope(groupAlias string) func(*gorm.DB) *gorm.DB {
 	return func(tx *gorm.DB) *gorm.DB {
-		return tx.Where(groupAlias + ".organization_id IS NOT NULL AND terminals.organization_id = " + groupAlias + ".organization_id")
+		// Both sides are CAST to text because the live schema disagrees on the
+		// column type: terminals.organization_id is text (pre-uuid migration era)
+		// while class_groups.organization_id is uuid. A bound parameter gets
+		// coerced, so the single-group form never trips on this — a correlated
+		// column-to-column comparison does (42883 on PostgreSQL). Casting both
+		// sides works on every schema vintage and on SQLite in tests.
+		return tx.Where(groupAlias + ".organization_id IS NOT NULL AND CAST(terminals.organization_id AS TEXT) = CAST(" + groupAlias + ".organization_id AS TEXT)")
 	}
 }
 
