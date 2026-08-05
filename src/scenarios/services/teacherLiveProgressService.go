@@ -570,8 +570,7 @@ func laterTime(current, candidate *time.Time) *time.Time {
 // "idle", two surfaces.
 //
 // It counts LEARNERS, one per learner regardless of how many terminals they
-// hold. It feeds TeacherGroupSummary.IdleSessionCount, whose name follows the
-// frontend's wire contract rather than these semantics — see the field comment.
+// hold, and feeds TeacherGroupSummary.IdleMemberCount.
 func (s *TeacherDashboardService) idleMemberCountsByGroup(groupIDs []uuid.UUID) (map[uuid.UUID]int, error) {
 	counts := make(map[uuid.UUID]int, len(groupIDs))
 	if len(groupIDs) == 0 {

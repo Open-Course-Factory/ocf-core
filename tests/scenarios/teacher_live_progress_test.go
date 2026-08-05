@@ -429,7 +429,7 @@ func TestGetManagedGroupsOverview_ConnectedButStaleLearner_CountsAsIdle(t *testi
 
 	summary := items[0]
 	assert.Equal(t, 2, summary.LiveSessionCount)
-	assert.Equal(t, 1, summary.IdleSessionCount, "only the learner with stale activity is idle")
+	assert.Equal(t, 1, summary.IdleMemberCount, "only the learner with stale activity is idle")
 	assert.Equal(t, int(services.LearnerIdleThreshold.Minutes()), summary.IdleThresholdMinutes,
 		"the threshold travels with the count so the UI label cannot drift from the predicate")
 }
@@ -461,15 +461,15 @@ func TestGetManagedGroupsOverview_DisconnectedLearner_NotCountedAsIdle(t *testin
 	items, err := svc.GetManagedGroupsOverview("teacher-absent")
 	require.NoError(t, err)
 	require.Len(t, items, 1)
-	assert.Equal(t, 0, items[0].IdleSessionCount, "no live session means absent, not idle")
+	assert.Equal(t, 0, items[0].IdleMemberCount, "no live session means absent, not idle")
 }
 
-// TestGetMyGroupsAPI_NobodyIdle_SendsZeroRatherThanOmitting pins the wire
-// contract the console builds against (ocf-front !310): idle_session_count is
+// TestGetMyGroupsAPI_NobodyIdle_SendsExplicitZeroIdleMemberCount pins the wire
+// contract the console builds against (ocf-front !310): idle_member_count is
 // OPTIONAL, and its absence means "not computed", never "nobody". A class where
 // everyone is working must therefore serialise an explicit 0 — dropping the key
 // would render as "unknown" and lose a real answer.
-func TestGetMyGroupsAPI_NobodyIdle_SendsZeroRatherThanOmitting(t *testing.T) {
+func TestGetMyGroupsAPI_NobodyIdle_SendsExplicitZeroIdleMemberCount(t *testing.T) {
 	db := setupTestDB(t)
 	orgID := uuid.New()
 	group := createClassGroup(t, db, "busy-class", "teacher-wire", &orgID)
@@ -486,7 +486,7 @@ func TestGetMyGroupsAPI_NobodyIdle_SendsZeroRatherThanOmitting(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &raw))
 	require.Len(t, raw, 1)
 
-	idle, present := raw[0]["idle_session_count"]
+	idle, present := raw[0]["idle_member_count"]
 	require.True(t, present, "the key must be sent even when it is zero")
 	assert.EqualValues(t, 0, idle)
 	assert.EqualValues(t, int(services.LearnerIdleThreshold.Minutes()), raw[0]["idle_threshold_minutes"])

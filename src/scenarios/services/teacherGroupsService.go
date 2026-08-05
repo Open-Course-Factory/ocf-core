@@ -42,21 +42,20 @@ type TeacherGroupSummary struct {
 	// running right now and visible to this teacher (see the org-context rule
 	// in terminalTrainer/models.SupervisableByJoinedGroupOrgScope).
 	LiveSessionCount int `json:"live_session_count"`
-	// IdleSessionCount is how many present LEARNERS have gone quiet — isLearnerIdle
+	// IdleMemberCount is how many present learners have gone quiet — isLearnerIdle
 	// (teacherLiveProgressService.go), the same predicate the per-learner class
 	// view marks a row Idle with, so the console badge and the class view can
 	// never disagree about who is stuck.
 	//
-	// Despite the name, it counts distinct learners, ONE per learner however many
-	// terminals they hold — unlike LiveSessionCount above, which counts sessions.
-	// "3 inactifs" on the console names three people who may need help, which is
-	// the question the badge answers. The name follows the wire contract the
-	// frontend declared for it (ocf-front !310); the Go identifier matches so the
-	// field greps across the stack.
+	// It counts distinct MEMBERS, one per learner however many terminals they
+	// hold — deliberately not "sessions" like LiveSessionCount above. "3 inactifs"
+	// names three people who may need help, and naming this one for sessions next
+	// to a neighbour that genuinely counts sessions would invite rendering the two
+	// as a numerator and denominator they cannot form.
 	//
 	// Always sent, 0 included: 0 means "nobody is idle", never "not computed".
-	IdleSessionCount int `json:"idle_session_count"`
-	// IdleThresholdMinutes is the window IdleSessionCount was computed with, sent
+	IdleMemberCount int `json:"idle_member_count"`
+	// IdleThresholdMinutes is the window IdleMemberCount was computed with, sent
 	// so the UI can label the badge ("N inactifs > 10 min") from the value that
 	// actually produced it instead of hard-coding a copy that drifts.
 	IdleThresholdMinutes int                      `json:"idle_threshold_minutes"`
@@ -209,7 +208,7 @@ func buildTeacherGroupSummary(
 		IsExpired:        group.IsExpired(),
 		MemberCount:          memberCount,
 		LiveSessionCount:     liveCount,
-		IdleSessionCount:     idleCount,
+		IdleMemberCount:      idleCount,
 		IdleThresholdMinutes: int(LearnerIdleThreshold.Minutes()),
 		Assignments:          assignments,
 	}
