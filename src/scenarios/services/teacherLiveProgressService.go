@@ -568,6 +568,10 @@ func laterTime(current, candidate *time.Time) *time.Time {
 // aggregate of the same predicate the per-learner view applies, evaluated in Go
 // against two batched lookups rather than re-spelled as SQL — one definition of
 // "idle", two surfaces.
+//
+// It counts LEARNERS, one per learner regardless of how many terminals they
+// hold. It feeds TeacherGroupSummary.IdleSessionCount, whose name follows the
+// frontend's wire contract rather than these semantics — see the field comment.
 func (s *TeacherDashboardService) idleMemberCountsByGroup(groupIDs []uuid.UUID) (map[uuid.UUID]int, error) {
 	counts := make(map[uuid.UUID]int, len(groupIDs))
 	if len(groupIDs) == 0 {
