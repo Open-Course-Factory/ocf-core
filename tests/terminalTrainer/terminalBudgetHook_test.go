@@ -114,6 +114,14 @@ func (s *stubEffectivePlanService) CanRunClassrooms(userID string, orgID *uuid.U
 	return paymentServices.ClassroomEntitlementFor(result.Plan)
 }
 
+// ClassroomEntitlementInOrg mirrors the real service, minus the organization-shape
+// gate: this stub holds no organizations, so there is no shape to refuse on. It
+// stays consistent with this stub's CanRunClassrooms, which is the property the
+// budget tests rely on.
+func (s *stubEffectivePlanService) ClassroomEntitlementInOrg(userID string, orgID uuid.UUID, plan *paymentModels.SubscriptionPlan) paymentServices.ClassroomEntitlement {
+	return paymentServices.ClassroomEntitlementFor(plan)
+}
+
 func (s *stubEffectivePlanService) CheckEffectiveUsageLimitFromResult(result *paymentServices.EffectivePlanResult, userID string, metricType string, increment int64) (*paymentServices.UsageLimitCheck, error) {
 	return nil, errors.New("not implemented in stub")
 }

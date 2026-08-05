@@ -74,6 +74,13 @@ func classroomEntitlementFor(plan *models.SubscriptionPlan) ClassroomEntitlement
 
 // ClassroomEntitlementFor is the exported accessor for classroomEntitlementFor,
 // for packages that hold a resolved plan and need the same verdict.
+//
+// It applies the PLAN half of the rule only, so it is correct exactly when there is
+// no organization in hand — "does the plan this user holds grant classrooms at all".
+// A caller that knows which organization the answer is about must use
+// ClassroomEntitlementInOrg instead: the organization's shape and the caller's rank
+// in it decide before the plan does, and skipping them is how the /users/me/features
+// endpoint came to advertise classrooms inside personal organizations (#475).
 func ClassroomEntitlementFor(plan *models.SubscriptionPlan) ClassroomEntitlement {
 	return classroomEntitlementFor(plan)
 }
@@ -105,6 +112,19 @@ func (s *effectivePlanService) CanRunClassrooms(userID string, orgID *uuid.UUID)
 		return ClassroomEntitlement{Reason: ClassroomDeniedNoPlan}
 	}
 	return classroomEntitlementFor(result.Plan)
+}
+
+// ClassroomEntitlementInOrg — see EffectivePlanService.
+//
+// Same verdict as CanRunClassrooms(userID, &orgID), for a caller that has already
+// resolved the plan applying in that organization. Both entry points share the two
+// halves of the rule — refuseOnOrgContext for the organization, classroomEntitlementFor
+// for the plan — so neither can answer what the other would not.
+func (s *effectivePlanService) ClassroomEntitlementInOrg(userID string, orgID uuid.UUID, plan *models.SubscriptionPlan) ClassroomEntitlement {
+	if verdict, refused := s.refuseOnOrgContext(userID, orgID); refused {
+		return verdict
+	}
+	return classroomEntitlementFor(plan)
 }
 
 // CanPurchaseSeats — see EffectivePlanService.
