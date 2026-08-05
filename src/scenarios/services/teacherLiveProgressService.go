@@ -6,9 +6,13 @@ package services
 // nothing. GetGroupLiveProgress answers it once, keyed per learner: presence,
 // scenario position, and assignment results on a single row.
 //
-// The invariant the whole file exists to protect: EVERY active member of the
-// class gets a row. The surface invigilates exams, so a learner who has done
-// nothing must read as "not started" — never be silently absent from the list.
+// The invariant the whole file exists to protect: EVERY apprenant of the class
+// gets a row. The surface invigilates exams, so a learner who has done nothing
+// must read as "not started" — never be silently absent from the list.
+//
+// Its counterpart since #480: the invigilator is not invigilated. Teaching staff
+// hold class memberships too (the creator is auto-enrolled as owner), and
+// groupModels.LearnerRoles decides which of those memberships are apprenants.
 //
 // Nothing here re-derives a predicate that already has a home. Presence uses the
 // terminal scopes shared with the supervision wall, the assignment list comes
@@ -113,17 +117,19 @@ type LearnerAssignmentProgress struct {
 	CompletedAt               *time.Time `json:"completed_at,omitempty"`
 }
 
-// GetGroupLiveProgress returns one row per ACTIVE member of groupID, joining
-// supervision presence, scenario position and assignment results.
+// GetGroupLiveProgress returns one row per ACTIVE APPRENANT of groupID, joining
+// supervision presence, scenario position and assignment results. Staff
+// memberships get no row — a teacher does not invigilate themselves (#480).
 //
 // Cost is a constant seven queries regardless of class size: the group, its
-// members, its assignments, live terminals, learner attempts, those attempts'
+// learners, its assignments, live terminals, learner attempts, those attempts'
 // step progress, and the assigned scenarios' steps. Identity resolution adds no
 // SQL (cached Casdoor lookups).
 //
-// An unknown group, a group with no active member, and a group with no
-// assignment all yield a valid (non-nil) slice rather than an error: the caller
-// has already cleared Layer 2, so "nothing to show" is an answer, not a fault.
+// An unknown group, a group with no apprenant (a staff-only class included), and
+// a group with no assignment all yield a valid (non-nil) slice rather than an
+// error: the caller has already cleared Layer 2, so "nothing to show" is an
+// answer, not a fault.
 func (s *TeacherDashboardService) GetGroupLiveProgress(groupID uuid.UUID) ([]LearnerLiveProgress, error) {
 	var group groupModels.ClassGroup
 	if err := s.db.Where("id = ?", groupID).First(&group).Error; err != nil {
@@ -131,24 +137,25 @@ func (s *TeacherDashboardService) GetGroupLiveProgress(groupID uuid.UUID) ([]Lea
 		return []LearnerLiveProgress{}, nil
 	}
 
-	var memberIDs []string
+	var learnerIDs []string
 	if err := s.db.Model(&groupModels.GroupMember{}).
 		Where("group_id = ? AND is_active = ?", groupID, true).
+		Scopes(groupModels.LearnerRoleScope("group_members")).
 		Order("user_id ASC").
-		Pluck("user_id", &memberIDs).Error; err != nil {
-		return nil, fmt.Errorf("failed to load class members: %w", err)
+		Pluck("user_id", &learnerIDs).Error; err != nil {
+		return nil, fmt.Errorf("failed to load class learners: %w", err)
 	}
-	if len(memberIDs) == 0 {
+	if len(learnerIDs) == 0 {
 		return []LearnerLiveProgress{}, nil
 	}
 
-	sources, err := s.loadLiveProgressSources(group, memberIDs)
+	sources, err := s.loadLiveProgressSources(group, learnerIDs)
 	if err != nil {
 		return nil, err
 	}
 
-	rows := make([]LearnerLiveProgress, 0, len(memberIDs))
-	for _, userID := range memberIDs {
+	rows := make([]LearnerLiveProgress, 0, len(learnerIDs))
+	for _, userID := range learnerIDs {
 		rows = append(rows, buildLearnerLiveProgress(userID, sources))
 	}
 	resolveUserIdentities(rows,
@@ -204,9 +211,9 @@ type learnerSessionRow struct {
 }
 
 // loadLiveProgressSources runs the whole batched query plan behind one class
-// view. Every lookup is keyed by the class's member list or its assignments, so
+// view. Every lookup is keyed by the class's learner list or its assignments, so
 // the query count does not grow with class size.
-func (s *TeacherDashboardService) loadLiveProgressSources(group groupModels.ClassGroup, memberIDs []string) (liveProgressSources, error) {
+func (s *TeacherDashboardService) loadLiveProgressSources(group groupModels.ClassGroup, learnerIDs []string) (liveProgressSources, error) {
 	assignmentsByGroup, err := s.activeAssignmentsByGroup([]uuid.UUID{group.ID})
 	if err != nil {
 		return liveProgressSources{}, fmt.Errorf("failed to load class assignments: %w", err)
@@ -214,11 +221,11 @@ func (s *TeacherDashboardService) loadLiveProgressSources(group groupModels.Clas
 	assignments := assignmentsByGroup[group.ID]
 	scenarioIDs := assignedScenarioIDs(assignments)
 
-	presence, err := s.livePresenceByUser(group.OrganizationID, memberIDs)
+	presence, err := s.livePresenceByUser(group.OrganizationID, learnerIDs)
 	if err != nil {
 		return liveProgressSources{}, err
 	}
-	sessions, err := s.learnerAttemptsByScenario(memberIDs, scenarioIDs)
+	sessions, err := s.learnerAttemptsByScenario(learnerIDs, scenarioIDs)
 	if err != nil {
 		return liveProgressSources{}, err
 	}
@@ -250,7 +257,10 @@ func assignedScenarioIDs(assignments []groupAssignmentRow) []uuid.UUID {
 	return ids
 }
 
-// livePresenceByUser maps each present member to their live terminal session id.
+// livePresenceByUser maps each present learner to their live terminal session
+// id. The caller passes an already learner-filtered id list, so this query needs
+// no role predicate of its own.
+//
 // Both halves of "present" come from their single homes in terminalTrainer/models
 // — RunningDisplayScope for "alive right now", SupervisableByGroupOrgScope for
 // "visible to this class" — so a row can never disagree with the supervision wall
@@ -265,9 +275,9 @@ func assignedScenarioIDs(assignments []groupAssignmentRow) []uuid.UUID {
 // listing: this row sits next to TeacherGroupSummary.LiveSessionCount, which is
 // computed without a bypass, and a view where one learner shows "connected" while
 // the class counter says zero is worse than a strict answer.
-func (s *TeacherDashboardService) livePresenceByUser(groupOrgID *uuid.UUID, memberIDs []string) (map[string]string, error) {
-	presence := make(map[string]string, len(memberIDs))
-	if len(memberIDs) == 0 {
+func (s *TeacherDashboardService) livePresenceByUser(groupOrgID *uuid.UUID, learnerIDs []string) (map[string]string, error) {
+	presence := make(map[string]string, len(learnerIDs))
+	if len(learnerIDs) == 0 {
 		return presence, nil
 	}
 
@@ -277,7 +287,7 @@ func (s *TeacherDashboardService) livePresenceByUser(groupOrgID *uuid.UUID, memb
 	}
 	err := s.db.Table("terminals").
 		Select("terminals.user_id as user_id, terminals.session_id as session_id").
-		Where("terminals.user_id IN ?", memberIDs).
+		Where("terminals.user_id IN ?", learnerIDs).
 		Scopes(terminalModels.RunningDisplayScope, terminalModels.SupervisableByGroupOrgScope(groupOrgID)).
 		Order("terminals.created_at DESC").
 		Scan(&rows).Error
@@ -297,8 +307,8 @@ func (s *TeacherDashboardService) livePresenceByUser(groupOrgID *uuid.UUID, memb
 // learnerAttemptsByScenario returns the attempt that represents each learner's
 // standing on each assigned scenario, keyed by (learner, scenario) and carrying
 // the timestamps the class view renders.
-func (s *TeacherDashboardService) learnerAttemptsByScenario(memberIDs []string, scenarioIDs []uuid.UUID) (map[learnerScenarioKey]learnerSessionRow, error) {
-	attempts, err := s.chooseLearnerAttempts(memberIDs, scenarioIDs)
+func (s *TeacherDashboardService) learnerAttemptsByScenario(learnerIDs []string, scenarioIDs []uuid.UUID) (map[learnerScenarioKey]learnerSessionRow, error) {
+	attempts, err := s.chooseLearnerAttempts(learnerIDs, scenarioIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -311,9 +321,9 @@ func (s *TeacherDashboardService) learnerAttemptsByScenario(memberIDs []string, 
 // chooseLearnerAttempts loads every non-preview attempt the class's members made
 // at the assigned scenarios and keeps one per (learner, scenario) — see
 // supersedesAttempt for which one and why.
-func (s *TeacherDashboardService) chooseLearnerAttempts(memberIDs []string, scenarioIDs []uuid.UUID) (map[learnerScenarioKey]learnerSessionRow, error) {
+func (s *TeacherDashboardService) chooseLearnerAttempts(learnerIDs []string, scenarioIDs []uuid.UUID) (map[learnerScenarioKey]learnerSessionRow, error) {
 	chosen := make(map[learnerScenarioKey]learnerSessionRow)
-	if len(memberIDs) == 0 || len(scenarioIDs) == 0 {
+	if len(learnerIDs) == 0 || len(scenarioIDs) == 0 {
 		return chosen, nil
 	}
 
@@ -326,7 +336,7 @@ func (s *TeacherDashboardService) chooseLearnerAttempts(memberIDs []string, scen
 		WHERE ss.user_id IN ? AND ss.scenario_id IN ?
 		  AND ss.is_preview = false AND ss.deleted_at IS NULL
 		ORDER BY ss.started_at ASC
-	`, memberIDs, scenarioIDs).Scan(&rows).Error
+	`, learnerIDs, scenarioIDs).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to load learner sessions: %w", err)
 	}
@@ -563,14 +573,16 @@ func laterTime(current, candidate *time.Time) *time.Time {
 	return current
 }
 
-// idleMemberCountsByGroup counts, per group, the members isLearnerIdle flags:
+// idleMemberCountsByGroup counts, per group, the APPRENANTS isLearnerIdle flags:
 // present in the class, but with stale scenario activity. It is the cross-class
 // aggregate of the same predicate the per-learner view applies, evaluated in Go
 // against two batched lookups rather than re-spelled as SQL — one definition of
 // "idle", two surfaces.
 //
 // It counts LEARNERS, one per learner regardless of how many terminals they
-// hold, and feeds TeacherGroupSummary.IdleMemberCount.
+// hold, and feeds TeacherGroupSummary.IdleMemberCount. Both halves restrict to
+// groupModels.LearnerRoles, so an enrolled teacher who left a terminal open
+// never lands in the "N inactifs" badge.
 func (s *TeacherDashboardService) idleMemberCountsByGroup(groupIDs []uuid.UUID) (map[uuid.UUID]int, error) {
 	counts := make(map[uuid.UUID]int, len(groupIDs))
 	if len(groupIDs) == 0 {
@@ -600,10 +612,13 @@ func (s *TeacherDashboardService) idleMemberCountsByGroup(groupIDs []uuid.UUID) 
 	return counts, nil
 }
 
-// livePresentMembersByGroup lists, per group, the active members with a live
+// livePresentMembersByGroup lists, per group, the active APPRENANTS with a live
 // supervisable terminal. It is the multi-group form of livePresenceByUser and
 // uses the joined org scope, which CASTs both sides because the live schema has
 // terminals.organization_id as text and class_groups.organization_id as uuid.
+//
+// Unlike livePresenceByUser it joins group_members itself rather than receiving
+// a filtered id list, so it applies groupModels.LearnerRoleScope directly.
 func (s *TeacherDashboardService) livePresentMembersByGroup(groupIDs []uuid.UUID) (map[uuid.UUID]map[string]bool, error) {
 	present := make(map[uuid.UUID]map[string]bool, len(groupIDs))
 	if len(groupIDs) == 0 {
@@ -619,11 +634,15 @@ func (s *TeacherDashboardService) livePresentMembersByGroup(groupIDs []uuid.UUID
 		Joins("JOIN group_members gm ON gm.user_id = terminals.user_id AND gm.is_active = ? AND gm.deleted_at IS NULL", true).
 		Joins("JOIN class_groups cg ON cg.id = gm.group_id AND cg.deleted_at IS NULL").
 		Where("gm.group_id IN ?", groupIDs).
-		Scopes(terminalModels.RunningDisplayScope, terminalModels.SupervisableByJoinedGroupOrgScope("cg")).
+		Scopes(
+			terminalModels.RunningDisplayScope,
+			terminalModels.SupervisableByJoinedGroupOrgScope("cg"),
+			groupModels.LearnerRoleScope("gm"),
+		).
 		Group("gm.group_id, gm.user_id").
 		Scan(&rows).Error
 	if err != nil {
-		return nil, fmt.Errorf("failed to load present members: %w", err)
+		return nil, fmt.Errorf("failed to load present learners: %w", err)
 	}
 	for _, row := range rows {
 		if present[row.GroupID] == nil {
@@ -634,16 +653,22 @@ func (s *TeacherDashboardService) livePresentMembersByGroup(groupIDs []uuid.UUID
 	return present, nil
 }
 
-// staleActivityMembersByGroup lists, per group, the members whose last scenario
-// interaction on that group's ACTIVE assignments predates `before`.
+// staleActivityMembersByGroup lists, per group, the APPRENANTS whose last
+// scenario interaction on that group's ACTIVE assignments predates `before`.
 //
 // It answers the staleness half of "idle" for a caller's whole class list. The
 // per-learner counterpart is summarizeProgressTimestamps feeding isLearnerIdle;
 // the comparison is spelled twice — once as this HAVING clause, once in Go —
 // because one surface counts across many classes while the other reports a
 // timestamp for a single row. Both are driven by LearnerIdleThreshold, and both
-// read the same population (non-preview sessions on the group's active
-// assignments), so they must change together.
+// read the same population (non-preview sessions of learner-role members on the
+// group's active assignments), so they must change together.
+//
+// The role list is bound from groupModels.LearnerRoles rather than spelled out,
+// since raw SQL cannot take its LearnerRoleScope. Restricting here is belt and
+// braces — idleMemberCountsByGroup only ever looks these users up among the
+// already learner-filtered present ones — but it keeps the returned set honest
+// for anyone who reads it on its own.
 //
 // Only the group/user pair is selected: SQLite loses a column's datetime
 // affinity through MAX(), so the aggregate stays inside HAVING where it is
@@ -663,12 +688,13 @@ func (s *TeacherDashboardService) staleActivityMembersByGroup(groupIDs []uuid.UU
 		FROM scenario_step_progress sp
 		JOIN scenario_sessions ss ON ss.id = sp.session_id AND ss.is_preview = false AND ss.deleted_at IS NULL
 		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id IN ? AND gm.is_active = true AND gm.deleted_at IS NULL
+		     AND gm.role IN ?
 		JOIN scenario_assignments sa ON sa.scenario_id = ss.scenario_id AND sa.group_id = gm.group_id
 		     AND sa.is_active = true AND sa.deleted_at IS NULL
 		WHERE sp.deleted_at IS NULL
 		GROUP BY gm.group_id, ss.user_id
 		HAVING MAX(sp.updated_at) < ?
-	`, groupIDs, before).Scan(&rows).Error
+	`, groupIDs, groupModels.LearnerRoles, before).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to load scenario activity: %w", err)
 	}

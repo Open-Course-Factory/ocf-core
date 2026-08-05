@@ -12,6 +12,32 @@ var ManagerRoles = []GroupMemberRole{
 	GroupMemberRoleManager,
 }
 
+// LearnerRoles is the SINGLE definition of which membership roles make someone
+// an apprenant (issue #480), and the complement of ManagerRoles above.
+//
+// Teaching staff are on the roster like everyone else — the creator is
+// auto-enrolled with the owner role by GroupOwnerSetupHook — so "active member"
+// is NOT the population any learner-facing figure is about: how many apprenants
+// a class has, how many of them are connected or idle, and who a teacher
+// invigilates all filter on this list instead.
+//
+// The pair lives in one file on purpose: adding a role means deciding, right
+// here, which side of the apprenant / staff line it falls on. A role that is on
+// neither list disappears from both views.
+var LearnerRoles = []GroupMemberRole{
+	GroupMemberRoleMember,
+}
+
+// LearnerRoleScope narrows a query that already reads group_members under
+// `alias` to learner-role memberships, so no call site spells the role list out.
+// Raw-SQL callers, which no Scope can reach, bind LearnerRoles to their own
+// `role IN ?` instead.
+func LearnerRoleScope(alias string) func(*gorm.DB) *gorm.DB {
+	return func(tx *gorm.DB) *gorm.DB {
+		return tx.Where(alias+".role IN ?", LearnerRoles)
+	}
+}
+
 // ManagedByScope is the single home of the "callerUserID manages this class-group"
 // predicate as a composable WHERE clause on class_groups: the caller either OWNS
 // the group (ClassGroup.OwnerUserID) or holds an ACTIVE manager/owner membership

@@ -94,6 +94,81 @@ func TestGetManagedGroupsOverview_OwnedAndManagedGroups_ReturnsOnlyThose(t *test
 	assert.Equal(t, 2, byID[ownedA.ID].MemberCount, "student-1 and student-2")
 	assert.Equal(t, 1, byID[ownedB.ID].MemberCount, "student-3")
 	assert.Equal(t, 1, byID[managed.ID].MemberCount, "the caller's own manager membership counts as a member row")
+
+	// #480: member_count keeps its all-memberships meaning (capacity), while
+	// learner_count answers "how many apprenants". They differ exactly where a
+	// staff membership sits on the roster.
+	assert.Equal(t, 2, byID[ownedA.ID].LearnerCount)
+	assert.Equal(t, 1, byID[ownedB.ID].LearnerCount)
+	assert.Equal(t, 0, byID[managed.ID].LearnerCount, "a manager membership is staff, not an apprenant")
+}
+
+// TestGetManagedGroupsOverview_StaffMemberships_ExcludedFromLearnerCount is the
+// #480 decision in one row: teaching staff hold class memberships (the creator
+// is auto-enrolled with the owner role), so "N apprenants" must count role
+// `member` only, while member_count keeps counting the whole roster because the
+// capacity surfaces are built on it.
+func TestGetManagedGroupsOverview_StaffMemberships_ExcludedFromLearnerCount(t *testing.T) {
+	db := setupTestDB(t)
+	const teacher = "teacher-1"
+
+	group := createClassGroup(t, db, "mixed-roster", teacher, nil)
+	addGroupMember(t, db, group.ID, teacher, groupModels.GroupMemberRoleOwner)
+	addGroupMember(t, db, group.ID, "assistant", groupModels.GroupMemberRoleManager)
+	addGroupMember(t, db, group.ID, "student-1", groupModels.GroupMemberRoleMember)
+	addGroupMember(t, db, group.ID, "student-2", groupModels.GroupMemberRoleMember)
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	items, err := svc.GetManagedGroupsOverview(teacher)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+
+	assert.Equal(t, 4, items[0].MemberCount, "the whole roster, staff included — capacity")
+	assert.Equal(t, 2, items[0].LearnerCount, "only the two apprenants")
+}
+
+// TestGetManagedGroupsOverview_StaffOnlyClass_ReportsZeroLearners pins the
+// zero-learner class (#480): a class where only the teacher and an assistant are
+// enrolled has no apprenant, so every learner-facing figure reads 0 and the
+// completion rate divides by a learner count of zero without blowing up.
+func TestGetManagedGroupsOverview_StaffOnlyClass_ReportsZeroLearners(t *testing.T) {
+	db := setupTestDB(t)
+	const teacher = "teacher-1"
+
+	orgID := uuid.New()
+	group := createClassGroup(t, db, "staff-only", teacher, &orgID)
+	addGroupMember(t, db, group.ID, teacher, groupModels.GroupMemberRoleOwner)
+	addGroupMember(t, db, group.ID, "assistant", groupModels.GroupMemberRoleManager)
+
+	// Both staff members are running supervisable terminals.
+	future := time.Now().Add(time.Hour)
+	createTerminalSession(t, db, teacher, terminalModels.StateRunning, &orgID, future)
+	createTerminalSession(t, db, "assistant", terminalModels.StateRunning, &orgID, future)
+
+	// And the teacher completed the assigned scenario while preparing it.
+	scenario := createTestScenarioNoOrg(t, db, "prepared-by-teacher")
+	createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group")
+	now := time.Now()
+	require.NoError(t, db.Create(&models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: teacher, Status: "completed",
+		Grade: floatPtr(100.0), StartedAt: now.Add(-time.Hour), CompletedAt: &now,
+	}).Error)
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	items, err := svc.GetManagedGroupsOverview(teacher)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+
+	row := items[0]
+	assert.Equal(t, 2, row.MemberCount)
+	assert.Equal(t, 0, row.LearnerCount)
+	assert.Equal(t, 0, row.LiveSessionCount, "staff terminals are not learners connecting")
+	assert.Equal(t, 0, row.IdleMemberCount)
+
+	require.Len(t, row.Assignments, 1)
+	assert.Equal(t, 0, row.Assignments[0].StartedCount, "the teacher's own run is not class progress")
+	assert.Equal(t, 0, row.Assignments[0].CompletedCount)
+	assert.Zero(t, row.Assignments[0].ClassCompletionRate, "no apprenant means no rate, not a division by zero")
 }
 
 // TestGetManagedGroupsOverview_PlainStudent_ReturnsEmptyList verifies a learner
@@ -189,15 +264,19 @@ func TestGetManagedGroupsOverview_GroupWithNoActivity_ReturnsZeroedRow(t *testin
 	row := items[0]
 	assert.Equal(t, group.ID, row.GroupID)
 	assert.Equal(t, 0, row.MemberCount)
+	assert.Equal(t, 0, row.LearnerCount)
 	assert.Equal(t, 0, row.LiveSessionCount)
 	assert.NotNil(t, row.Assignments, "must be an empty slice, not nil")
 	assert.Empty(t, row.Assignments)
 }
 
 // TestGetManagedGroupsOverview_LiveSessionCount_CountsOnlyInOrgRunningSessions
-// verifies the live count reflects ONLY the group's own active members' sessions
+// verifies the live count reflects ONLY the group's own APPRENANTS' sessions
 // that are running right now AND were launched in the group's organization —
 // the same org-context visibility rule the supervision wall applies.
+//
+// #480: the count reads "X/N connectés" next to the learner count, so a teacher
+// or assistant who opens a terminal must not push the numerator past N.
 func TestGetManagedGroupsOverview_LiveSessionCount_CountsOnlyInOrgRunningSessions(t *testing.T) {
 	db := setupTestDB(t)
 	const teacher = "teacher-1"
@@ -207,11 +286,14 @@ func TestGetManagedGroupsOverview_LiveSessionCount_CountsOnlyInOrgRunningSession
 	future := time.Now().Add(time.Hour)
 
 	group := createClassGroup(t, db, "org-class", teacher, &orgID)
+	addGroupMember(t, db, group.ID, teacher, groupModels.GroupMemberRoleOwner)
 	addGroupMember(t, db, group.ID, "student-1", groupModels.GroupMemberRoleMember)
 	addGroupMember(t, db, group.ID, "student-2", groupModels.GroupMemberRoleMember)
 
 	// The one session that must be counted.
 	createTerminalSession(t, db, "student-1", terminalModels.StateRunning, &orgID, future)
+	// The teacher's own terminal is live and in-org, but they are not an apprenant.
+	createTerminalSession(t, db, teacher, terminalModels.StateRunning, &orgID, future)
 	// Same member, but launched OUTSIDE the group's org — invisible to the teacher.
 	createTerminalSession(t, db, "student-1", terminalModels.StateRunning, &otherOrgID, future)
 	// A personal (NULL-org) session is never supervisable.
@@ -227,6 +309,8 @@ func TestGetManagedGroupsOverview_LiveSessionCount_CountsOnlyInOrgRunningSession
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, 1, items[0].LiveSessionCount)
+	assert.Equal(t, 2, items[0].LearnerCount, "the owner membership is staff")
+	assert.Equal(t, 3, items[0].MemberCount)
 }
 
 // TestGetManagedGroupsOverview_OrglessGroup_CountsNoLiveSessions pins the safe
@@ -260,6 +344,9 @@ func TestGetManagedGroupsOverview_Assignments_CarryProgressAggregates(t *testing
 	for _, uid := range []string{"student-1", "student-2", "student-3"} {
 		addGroupMember(t, db, group.ID, uid, groupModels.GroupMemberRoleMember)
 	}
+	// #480: staff on the roster must not move the class figures in either
+	// direction — neither the counts nor the rate's denominator.
+	addGroupMember(t, db, group.ID, teacher, groupModels.GroupMemberRoleOwner)
 
 	scenario := createTestScenarioNoOrg(t, db, "linux-basics")
 	assignment := createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group")
@@ -282,6 +369,11 @@ func TestGetManagedGroupsOverview_Assignments_CarryProgressAggregates(t *testing
 		ScenarioID: scenario.ID, UserID: "student-3", Status: "completed",
 		Grade: floatPtr(10.0), IsPreview: true, StartedAt: now, CompletedAt: &now,
 	}).Error)
+	// Neither must the teacher's own non-preview run through the scenario (#480).
+	require.NoError(t, db.Create(&models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: teacher, Status: "completed",
+		Grade: floatPtr(100.0), StartedAt: now.Add(-3 * time.Hour), CompletedAt: &now,
+	}).Error)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)
 	items, err := svc.GetManagedGroupsOverview(teacher)
@@ -297,10 +389,10 @@ func TestGetManagedGroupsOverview_Assignments_CarryProgressAggregates(t *testing
 	started := byScenario[scenario.ID]
 	assert.Equal(t, assignment.ID, started.AssignmentID)
 	assert.Equal(t, scenario.Title, started.ScenarioTitle)
-	assert.Equal(t, 2, started.StartedCount, "student-1 and student-2, preview excluded")
+	assert.Equal(t, 2, started.StartedCount, "student-1 and student-2, preview and teacher excluded")
 	assert.Equal(t, 1, started.CompletedCount)
 	assert.InDelta(t, 100.0/3.0, started.ClassCompletionRate, 0.001,
-		"1 of 3 class members completed, as a 0..100 percentage")
+		"1 of the 3 APPRENANTS completed (#480: the owner is not in the denominator), as a 0..100 percentage")
 	require.NotNil(t, started.AvgGrade)
 	assert.InDelta(t, 80.0, *started.AvgGrade, 0.01)
 
@@ -317,12 +409,18 @@ func TestGetManagedGroupsOverview_Assignments_CarryProgressAggregates(t *testing
 // already expresses ScenarioAnalytics.CompletionRate as a 0..100 percentage, and
 // a silent "normalisation" to a fraction here would make every consumer wrong by
 // 100x on a page nobody thought to re-open.
+//
+// #480 pins the DENOMINATOR alongside the scale: the rate feeds "3/12 terminé"
+// on a learner-facing row, so it divides by the apprenant count. The class here
+// carries a manager on top of its single learner precisely so a denominator that
+// slipped back to member_count would read 50 instead of 100.
 func TestGetManagedGroupsOverview_ClassCompletionRate_IsAPercentageNotAFraction(t *testing.T) {
 	db := setupTestDB(t)
 	const teacher = "teacher-1"
 
 	group := createClassGroup(t, db, "everyone-finished", teacher, nil)
 	addGroupMember(t, db, group.ID, "student-1", groupModels.GroupMemberRoleMember)
+	addGroupMember(t, db, group.ID, "assistant", groupModels.GroupMemberRoleManager)
 
 	scenario := createTestScenarioNoOrg(t, db, "finished-by-all")
 	createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group")
@@ -340,7 +438,7 @@ func TestGetManagedGroupsOverview_ClassCompletionRate_IsAPercentageNotAFraction(
 	require.Len(t, items[0].Assignments, 1)
 
 	assert.InDelta(t, 100.0, items[0].Assignments[0].ClassCompletionRate, 0.001,
-		"the whole class completed — 100, not 1")
+		"the whole class completed — 100, not 1, and not 50 over a roster of 2")
 }
 
 // TestGetManagedGroupsOverview_MultipleGroups_AggregatesStayPerGroup guards the
@@ -419,6 +517,7 @@ func TestGetManagedGroupsOverview_InactiveMembership_GrantsNothingAndCountsNothi
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, 1, items[0].MemberCount, "only current-student is active")
+	assert.Equal(t, 1, items[0].LearnerCount, "and they are an apprenant")
 }
 
 // --- controller tests ------------------------------------------------------
@@ -431,6 +530,7 @@ func TestTeacherGroupsEndpoint_ReturnsCallerGroupsAsJSON(t *testing.T) {
 	const teacher = "teacher-http"
 
 	group := createClassGroup(t, db, "http-class", teacher, nil)
+	addGroupMember(t, db, group.ID, teacher, groupModels.GroupMemberRoleOwner)
 	addGroupMember(t, db, group.ID, "student-1", groupModels.GroupMemberRoleMember)
 
 	router := setupRealTeacherRouter(t, db, teacher, []string{"member"})
@@ -444,8 +544,15 @@ func TestTeacherGroupsEndpoint_ReturnsCallerGroupsAsJSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 	require.Len(t, response, 1)
 	assert.Equal(t, group.ID.String(), response[0]["group_id"])
-	assert.EqualValues(t, 1, response[0]["member_count"])
 	assert.Equal(t, "owner", response[0]["caller_role"])
+
+	// #480 wire contract: both keys ship, and they differ on a class whose owner
+	// is enrolled. learner_count is always sent, 0 included — its absence would
+	// read as "not computed", never as "no apprenant".
+	assert.EqualValues(t, 2, response[0]["member_count"], "the whole roster")
+	learners, present := response[0]["learner_count"]
+	require.True(t, present, "learner_count must be sent on every row")
+	assert.EqualValues(t, 1, learners, "student-1 only")
 }
 
 // TestTeacherGroupsEndpoint_StudentGetsEmptyJSONArray checks the learner path

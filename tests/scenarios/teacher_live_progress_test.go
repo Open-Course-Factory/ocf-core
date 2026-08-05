@@ -23,9 +23,10 @@ import (
 // previously separate answers — supervision presence, scenario position, and
 // assignment results — into one row per ACTIVE group member.
 //
-// The invariant these tests exist to protect: EVERY active member gets a row.
-// The view is used to invigilate exams, so a learner who has done nothing must
-// appear as "not started", never vanish.
+// The invariant these tests exist to protect: EVERY active LEARNER-role member
+// gets a row. The view is used to invigilate exams, so a learner who has done
+// nothing must appear as "not started", never vanish — while the teaching staff
+// running the exam are not among the people being invigilated (#480).
 
 // --- seeding helpers -------------------------------------------------------
 
@@ -283,6 +284,54 @@ func TestGetGroupLiveProgress_InactiveMember_Excluded(t *testing.T) {
 	assert.Equal(t, "student-active", rows[0].UserID)
 }
 
+// TestGetGroupLiveProgress_StaffMemberships_AreNotInvigilated is the #480
+// decision on this surface: the class owner and an assistant hold active
+// memberships, but the invigilator is not among the invigilated. Exactly the
+// apprenants get a row.
+func TestGetGroupLiveProgress_StaffMemberships_AreNotInvigilated(t *testing.T) {
+	db := setupTestDB(t)
+	orgID := uuid.New()
+	group := createClassGroup(t, db, "invigilated-class", "teacher-lp", &orgID)
+	addGroupMember(t, db, group.ID, "teacher-lp", groupModels.GroupMemberRoleOwner)
+	addGroupMember(t, db, group.ID, "assistant-lp", groupModels.GroupMemberRoleManager)
+	addGroupMember(t, db, group.ID, "student-a", groupModels.GroupMemberRoleMember)
+	addGroupMember(t, db, group.ID, "student-b", groupModels.GroupMemberRoleMember)
+
+	// The teacher is working in the class org too — presence must not conjure a row.
+	createTerminalSession(t, db, "teacher-lp", terminalModels.StateRunning, &orgID, time.Now().Add(time.Hour))
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	rows, err := svc.GetGroupLiveProgress(group.ID)
+	require.NoError(t, err)
+	require.Len(t, rows, 2, "the two apprenants, neither the owner nor the assistant")
+
+	byUser := liveProgressByUserID(rows)
+	assert.Contains(t, byUser, "student-a")
+	assert.Contains(t, byUser, "student-b")
+	assert.NotContains(t, byUser, "teacher-lp")
+	assert.NotContains(t, byUser, "assistant-lp")
+}
+
+// TestGetGroupLiveProgress_StaffOnlyClass_ReturnsEmptySlice pins the zero-learner
+// class (#480): a class carrying only its teaching staff has nobody to
+// invigilate, and that answer marshals to [] rather than null.
+func TestGetGroupLiveProgress_StaffOnlyClass_ReturnsEmptySlice(t *testing.T) {
+	db := setupTestDB(t)
+	orgID := uuid.New()
+	group := createClassGroup(t, db, "no-apprenant-class", "teacher-lp", &orgID)
+	addGroupMember(t, db, group.ID, "teacher-lp", groupModels.GroupMemberRoleOwner)
+	addGroupMember(t, db, group.ID, "assistant-lp", groupModels.GroupMemberRoleManager)
+
+	scenario := seedScenarioWithSteps(t, db, "staff-only-scenario", "Only step")
+	createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group")
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	rows, err := svc.GetGroupLiveProgress(group.ID)
+	require.NoError(t, err)
+	assert.NotNil(t, rows, "must be an empty slice, not nil")
+	assert.Empty(t, rows)
+}
+
 // TestGetGroupLiveProgress_EmptyGroup_ReturnsEmptySlice pins the zero-input case:
 // a class with no member marshals to [], never null, so the frontend can render
 // it without a nil guard.
@@ -331,10 +380,12 @@ func TestGetGroupLiveProgressAPI_Manager_Returns200(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	var rows []services.LearnerLiveProgress
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &rows))
-	require.Len(t, rows, 2, "both the manager and the student hold active memberships")
+	// Was 2 before #480, when the calling manager's own membership produced a row.
+	require.Len(t, rows, 1, "the apprenant only — the manager reading the page is not invigilated")
 
 	byUser := liveProgressByUserID(rows)
 	require.Contains(t, byUser, "student-api")
+	assert.NotContains(t, byUser, "teacher-manager")
 	assert.NotNil(t, byUser["student-api"].Assignments, "assignments marshal as [], never null")
 }
 
@@ -395,12 +446,16 @@ func TestGetManagedGroupsOverview_ConnectedButStaleLearner_CountsAsIdle(t *testi
 	group := createClassGroup(t, db, "idle-class", "teacher-idle", &orgID)
 	addGroupMember(t, db, group.ID, "student-stale", groupModels.GroupMemberRoleMember)
 	addGroupMember(t, db, group.ID, "student-busy", groupModels.GroupMemberRoleMember)
+	// #480: the teacher sits in the same class, connected, and has not touched a
+	// step in an hour. Both learner-facing figures must ignore them.
+	addGroupMember(t, db, group.ID, "teacher-idle", groupModels.GroupMemberRoleOwner)
 
 	scenario := seedScenarioWithSteps(t, db, "idle-scenario", "One", "Two")
 	createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group")
 
 	createTerminalSession(t, db, "student-stale", terminalModels.StateRunning, &orgID, time.Now().Add(time.Hour))
 	createTerminalSession(t, db, "student-busy", terminalModels.StateRunning, &orgID, time.Now().Add(time.Hour))
+	createTerminalSession(t, db, "teacher-idle", terminalModels.StateRunning, &orgID, time.Now().Add(time.Hour))
 
 	stale := models.ScenarioSession{
 		ScenarioID: scenario.ID, UserID: "student-stale", Status: "active",
@@ -412,14 +467,20 @@ func TestGetManagedGroupsOverview_ConnectedButStaleLearner_CountsAsIdle(t *testi
 		CurrentStep: 0, StartedAt: time.Now().Add(-2 * time.Hour),
 	}
 	require.NoError(t, db.Create(&busy).Error)
+	teacherRun := models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "teacher-idle", Status: "active",
+		CurrentStep: 0, StartedAt: time.Now().Add(-2 * time.Hour),
+	}
+	require.NoError(t, db.Create(&teacherRun).Error)
 
-	// GORM stamps updated_at on write, so both rows start "just active"; age the
-	// stale learner's activity past the threshold.
+	// GORM stamps updated_at on write, so all rows start "just active"; age the
+	// stale learner's and the teacher's activity past the threshold.
 	seedStepProgress(t, db, stale.ID, 0, "active", 0, nil)
 	seedStepProgress(t, db, busy.ID, 0, "active", 0, nil)
+	seedStepProgress(t, db, teacherRun.ID, 0, "active", 0, nil)
 	longAgo := time.Now().Add(-90 * time.Minute)
 	require.NoError(t, db.Model(&models.ScenarioStepProgress{}).
-		Where("session_id = ?", stale.ID).
+		Where("session_id IN ?", []uuid.UUID{stale.ID, teacherRun.ID}).
 		UpdateColumn("updated_at", longAgo).Error)
 
 	svc := services.NewTeacherDashboardService(db, nil, nil)
@@ -428,8 +489,9 @@ func TestGetManagedGroupsOverview_ConnectedButStaleLearner_CountsAsIdle(t *testi
 	require.Len(t, items, 1)
 
 	summary := items[0]
-	assert.Equal(t, 2, summary.LiveSessionCount)
-	assert.Equal(t, 1, summary.IdleMemberCount, "only the learner with stale activity is idle")
+	assert.Equal(t, 2, summary.LearnerCount, "the owner membership is staff")
+	assert.Equal(t, 2, summary.LiveSessionCount, "the teacher's own terminal is not a learner connecting")
+	assert.Equal(t, 1, summary.IdleMemberCount, "only the LEARNER with stale activity is idle")
 	assert.Equal(t, int(services.LearnerIdleThreshold.Minutes()), summary.IdleThresholdMinutes,
 		"the threshold travels with the count so the UI label cannot drift from the predicate")
 }

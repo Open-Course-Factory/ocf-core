@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	groupModels "soli/formations/src/groups/models"
 	terminalModels "soli/formations/src/terminalTrainer/models"
@@ -35,14 +36,28 @@ type TeacherGroupSummary struct {
 	IsActive   bool       `json:"is_active"`
 	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
 	IsExpired  bool       `json:"is_expired"`
-	// MemberCount counts ACTIVE memberships, the same population every other
-	// teacher aggregate is computed over.
+	// MemberCount counts the WHOLE active roster, teaching staff included. It is
+	// the capacity figure — what fills against ClassGroup.MaxMembers and what an
+	// invitation consumes — and deliberately NOT the number of apprenants; see
+	// LearnerCount below, which is the same population minus the staff.
 	MemberCount int `json:"member_count"`
-	// LiveSessionCount is how many terminal sessions of those members are
+	// LearnerCount counts the active memberships in groupModels.LearnerRoles —
+	// the apprenants (issue #480). Every learner-facing figure on this row is
+	// computed over that population: LiveSessionCount, IdleMemberCount, and the
+	// denominator of TeacherGroupAssignment.ClassCompletionRate.
+	//
+	// It is the pair of MemberCount above, and the two are kept as one pair on
+	// purpose: a class of 3 students whose teacher and assistant are enrolled
+	// reports member_count 5 and learner_count 3, and reading either as the other
+	// is the bug this field exists to end.
+	LearnerCount int `json:"learner_count"`
+	// LiveSessionCount is how many terminal sessions of those LEARNERS are
 	// running right now and visible to this teacher (see the org-context rule
-	// in terminalTrainer/models.SupervisableByJoinedGroupOrgScope).
+	// in terminalTrainer/models.SupervisableByJoinedGroupOrgScope). It renders as
+	// the numerator of "X/N connectés" over LearnerCount, so a teacher opening
+	// their own terminal must not push it past N.
 	LiveSessionCount int `json:"live_session_count"`
-	// IdleMemberCount is how many present learners have gone quiet — isLearnerIdle
+	// IdleMemberCount is how many present LEARNERS have gone quiet — isLearnerIdle
 	// (teacherLiveProgressService.go), the same predicate the per-learner class
 	// view marks a row Idle with, so the console badge and the class view can
 	// never disagree about who is stuck.
@@ -72,11 +87,19 @@ type TeacherGroupAssignment struct {
 	ScenarioTitle string     `json:"scenario_title"`
 	StartDate     *time.Time `json:"start_date,omitempty"`
 	Deadline      *time.Time `json:"deadline,omitempty"`
-	// StartedCount / CompletedCount count DISTINCT active members, not sessions.
+	// StartedCount / CompletedCount count DISTINCT active APPRENANTS, not
+	// sessions and not staff: a teacher walking through their own scenario is
+	// preparation, not class progress (#480).
 	StartedCount   int `json:"started_count"`
 	CompletedCount int `json:"completed_count"`
-	// ClassCompletionRate is a PERCENTAGE (0..100) of CompletedCount over the
-	// CLASS size — "how much of my class is done" — and is 0 for an empty class.
+	// ClassCompletionRate is a PERCENTAGE (0..100) of CompletedCount over
+	// TeacherGroupSummary.LearnerCount — "how much of my class is done" — and is
+	// 0 for a class with no apprenant.
+	//
+	// The denominator is the learner count, not the roster (#480): this feeds
+	// "3/12 terminé" on a learner-facing row, so enrolled teaching staff must
+	// neither dilute the rate nor, being excluded from the numerator too, ever
+	// push it past 100.
 	//
 	// It is deliberately NOT named completion_rate: ScenarioAnalytics.CompletionRate
 	// (teacherDashboardService.go) is a different metric that happens to answer a
@@ -99,9 +122,13 @@ type TeacherGroupAssignment struct {
 // administrator sees the classes they personally manage, exactly like anyone
 // else; the platform-wide view belongs to the admin surfaces.
 //
-// Cost is a constant five queries regardless of how many classes the caller has:
-// the groups, then four aggregates batched over their ids. An empty caller id or
-// a caller with no classes short-circuits to an empty (non-nil) slice.
+// Cost does not grow with the number of classes the caller has: the groups are
+// loaded once, then every aggregate is batched over their ids. An empty caller
+// id or a caller with no classes short-circuits to an empty (non-nil) slice.
+//
+// Nothing is cached, so a role change (a student promoted to assistant, a
+// manager demoted) moves every figure on the next request — the counts derive
+// from group_members.role at read time.
 func (s *TeacherDashboardService) GetManagedGroupsOverview(callerUserID string) ([]TeacherGroupSummary, error) {
 	// An absent caller id must never fall through to `owner_user_id = ''`.
 	if callerUserID == "" {
@@ -124,15 +151,7 @@ func (s *TeacherDashboardService) GetManagedGroupsOverview(callerUserID string) 
 		groupIDs[i] = group.ID
 	}
 
-	memberCounts, err := s.activeMemberCountsByGroup(groupIDs)
-	if err != nil {
-		return nil, err
-	}
-	liveCounts, err := s.liveSessionCountsByGroup(groupIDs)
-	if err != nil {
-		return nil, err
-	}
-	idleCounts, err := s.idleMemberCountsByGroup(groupIDs)
+	headcounts, err := s.headcountsByGroup(groupIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -147,19 +166,64 @@ func (s *TeacherDashboardService) GetManagedGroupsOverview(callerUserID string) 
 
 	summaries := make([]TeacherGroupSummary, 0, len(groups))
 	for _, group := range groups {
-		memberCount := memberCounts[group.ID]
+		counts := headcounts[group.ID]
 		summaries = append(summaries, buildTeacherGroupSummary(
-			group, callerUserID, memberCount, liveCounts[group.ID], idleCounts[group.ID],
-			buildAssignmentItems(assignments[group.ID], progress[group.ID], memberCount),
+			group, callerUserID, counts,
+			buildAssignmentItems(assignments[group.ID], progress[group.ID], counts.learners),
 		))
 	}
 	return summaries, nil
 }
 
+// groupHeadcounts bundles the batched per-class counts a dashboard row is built
+// from. They are named rather than passed as a row of interchangeable ints
+// because three of the four are about APPRENANTS and one deliberately is not —
+// see TeacherGroupSummary.MemberCount and .LearnerCount.
+type groupHeadcounts struct {
+	members      int
+	learners     int
+	liveSessions int
+	idleLearners int
+}
+
+// headcountsByGroup runs the count queries behind the dashboard rows and pivots
+// them per class. A group absent from a query keeps that count at zero, which is
+// the honest answer for a class with nothing going on.
+func (s *TeacherDashboardService) headcountsByGroup(groupIDs []uuid.UUID) (map[uuid.UUID]groupHeadcounts, error) {
+	memberCounts, err := s.activeMemberCountsByGroup(groupIDs)
+	if err != nil {
+		return nil, err
+	}
+	learnerCounts, err := s.activeLearnerCountsByGroup(groupIDs)
+	if err != nil {
+		return nil, err
+	}
+	liveCounts, err := s.liveSessionCountsByGroup(groupIDs)
+	if err != nil {
+		return nil, err
+	}
+	idleCounts, err := s.idleMemberCountsByGroup(groupIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	headcounts := make(map[uuid.UUID]groupHeadcounts, len(groupIDs))
+	for _, groupID := range groupIDs {
+		headcounts[groupID] = groupHeadcounts{
+			members:      memberCounts[groupID],
+			learners:     learnerCounts[groupID],
+			liveSessions: liveCounts[groupID],
+			idleLearners: idleCounts[groupID],
+		}
+	}
+	return headcounts, nil
+}
+
 // buildAssignmentItems pairs each of a class's active assignments with the
-// progress its members made on that scenario. An assignment with no matching
-// progress row keeps the zero value — assigned but untouched.
-func buildAssignmentItems(assignments []groupAssignmentRow, progress []scenarioProgressRow, classSize int) []TeacherGroupAssignment {
+// progress its apprenants made on that scenario, rating each against
+// learnerCount. An assignment with no matching progress row keeps the zero value
+// — assigned but untouched.
+func buildAssignmentItems(assignments []groupAssignmentRow, progress []scenarioProgressRow, learnerCount int) []TeacherGroupAssignment {
 	progressByScenario := make(map[uuid.UUID]scenarioProgressRow, len(progress))
 	for _, row := range progress {
 		progressByScenario[row.ScenarioID] = row
@@ -176,7 +240,7 @@ func buildAssignmentItems(assignments []groupAssignmentRow, progress []scenarioP
 			Deadline:       assignment.Deadline,
 			StartedCount:        done.StartedCount,
 			CompletedCount:      done.CompletedCount,
-			ClassCompletionRate: classCompletionPercent(done.CompletedCount, classSize),
+			ClassCompletionRate: classCompletionPercent(done.CompletedCount, learnerCount),
 			AvgGrade:            done.AvgGrade,
 		})
 	}
@@ -189,7 +253,7 @@ func buildAssignmentItems(assignments []groupAssignmentRow, progress []scenarioP
 func buildTeacherGroupSummary(
 	group groupModels.ClassGroup,
 	callerUserID string,
-	memberCount, liveCount, idleCount int,
+	counts groupHeadcounts,
 	assignments []TeacherGroupAssignment,
 ) TeacherGroupSummary {
 	callerRole := string(groupModels.GroupMemberRoleManager)
@@ -206,23 +270,26 @@ func buildTeacherGroupSummary(
 		IsActive:         group.IsActive,
 		ExpiresAt:        group.ExpiresAt,
 		IsExpired:        group.IsExpired(),
-		MemberCount:          memberCount,
-		LiveSessionCount:     liveCount,
-		IdleMemberCount:      idleCount,
+		MemberCount:          counts.members,
+		LearnerCount:         counts.learners,
+		LiveSessionCount:     counts.liveSessions,
+		IdleMemberCount:      counts.idleLearners,
 		IdleThresholdMinutes: int(LearnerIdleThreshold.Minutes()),
 		Assignments:          assignments,
 	}
 }
 
-// classCompletionPercent returns the share of the class that completed, on the
-// 0..100 scale the rest of the teacher API already uses for rates. It guards the
-// empty class: a group with no active member has no meaningful rate, and 0 is the
-// honest answer rather than a division by zero.
-func classCompletionPercent(completed, classSize int) float64 {
-	if classSize <= 0 {
+// classCompletionPercent returns the share of the class's APPRENANTS that
+// completed, on the 0..100 scale the rest of the teacher API already uses for
+// rates. Both sides count learners only (#480), so the result cannot exceed 100.
+//
+// It guards the learner-less class: a group carrying only its teaching staff has
+// no meaningful rate, and 0 is the honest answer rather than a division by zero.
+func classCompletionPercent(completed, learnerCount int) float64 {
+	if learnerCount <= 0 {
 		return 0
 	}
-	return float64(completed) / float64(classSize) * 100.0
+	return float64(completed) / float64(learnerCount) * 100.0
 }
 
 // groupCountRow carries one grouped COUNT keyed by class-group. The column is
@@ -241,28 +308,49 @@ func countsByGroupID(rows []groupCountRow) map[uuid.UUID]int {
 	return counts
 }
 
-// activeMemberCountsByGroup counts the ACTIVE memberships of each group in one
-// grouped query — the same population the per-group teacher aggregates join on.
+// activeMemberCountsByGroup counts the WHOLE active roster of each group,
+// teaching staff included — the capacity population behind
+// TeacherGroupSummary.MemberCount.
 func (s *TeacherDashboardService) activeMemberCountsByGroup(groupIDs []uuid.UUID) (map[uuid.UUID]int, error) {
+	return s.countMembershipsByGroup(groupIDs, nil)
+}
+
+// activeLearnerCountsByGroup counts the APPRENANTS of each group — the same
+// active roster restricted to groupModels.LearnerRoles, which owns the
+// definition of who that is.
+func (s *TeacherDashboardService) activeLearnerCountsByGroup(groupIDs []uuid.UUID) (map[uuid.UUID]int, error) {
+	return s.countMembershipsByGroup(groupIDs, groupModels.LearnerRoleScope("group_members"))
+}
+
+// countMembershipsByGroup counts memberships per group in one grouped query,
+// under an optional extra restriction. The active-membership half is written
+// once here so the roster count and the learner count can never disagree about
+// who is on the roster at all — they differ by the role filter and nothing else.
+func (s *TeacherDashboardService) countMembershipsByGroup(groupIDs []uuid.UUID, roleScope func(*gorm.DB) *gorm.DB) (map[uuid.UUID]int, error) {
 	if len(groupIDs) == 0 {
 		return map[uuid.UUID]int{}, nil
 	}
-	var rows []groupCountRow
-	if err := s.db.Model(&groupModels.GroupMember{}).
+	query := s.db.Model(&groupModels.GroupMember{}).
 		Select("group_id, COUNT(*) as total").
-		Where("group_id IN ? AND is_active = ?", groupIDs, true).
-		Group("group_id").
-		Scan(&rows).Error; err != nil {
+		Where("group_id IN ? AND is_active = ?", groupIDs, true)
+	if roleScope != nil {
+		query = query.Scopes(roleScope)
+	}
+
+	var rows []groupCountRow
+	if err := query.Group("group_id").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	return countsByGroupID(rows), nil
 }
 
 // liveSessionCountsByGroup counts, per group, the terminal sessions of its
-// active members that are alive right now AND visible to a teacher of that
-// group. Both predicates come from their single homes in terminalTrainer/models
-// (RunningDisplayScope, SupervisableByJoinedGroupOrgScope) rather than being
-// re-spelled here, so the dashboard can never disagree with the supervision wall.
+// active APPRENANTS that are alive right now AND visible to a teacher of that
+// group. Every predicate comes from its single home — RunningDisplayScope and
+// SupervisableByJoinedGroupOrgScope in terminalTrainer/models, LearnerRoleScope
+// in groups/models — rather than being re-spelled here, so the dashboard can
+// never disagree with the supervision wall about liveness, nor with
+// TeacherGroupSummary.LearnerCount about who is an apprenant.
 func (s *TeacherDashboardService) liveSessionCountsByGroup(groupIDs []uuid.UUID) (map[uuid.UUID]int, error) {
 	if len(groupIDs) == 0 {
 		return map[uuid.UUID]int{}, nil
@@ -273,7 +361,11 @@ func (s *TeacherDashboardService) liveSessionCountsByGroup(groupIDs []uuid.UUID)
 		Joins("JOIN group_members gm ON gm.user_id = terminals.user_id AND gm.is_active = ? AND gm.deleted_at IS NULL", true).
 		Joins("JOIN class_groups cg ON cg.id = gm.group_id AND cg.deleted_at IS NULL").
 		Where("gm.group_id IN ?", groupIDs).
-		Scopes(terminalModels.RunningDisplayScope, terminalModels.SupervisableByJoinedGroupOrgScope("cg")).
+		Scopes(
+			terminalModels.RunningDisplayScope,
+			terminalModels.SupervisableByJoinedGroupOrgScope("cg"),
+			groupModels.LearnerRoleScope("gm"),
+		).
 		Group("gm.group_id").
 		Scan(&rows).Error
 	if err != nil {
@@ -332,19 +424,28 @@ type scenarioProgressRow struct {
 }
 
 // assignmentsProgressByGroup aggregates, for every group at once, one row per
-// scenario its active members have a non-preview session on: how many distinct
-// members started it, how many completed it, and the average grade over
-// COMPLETED sessions only (NULL — hence nil — until someone finishes, since an
-// in-progress session has no meaningful grade yet).
+// scenario its active APPRENANTS have a non-preview session on: how many
+// distinct learners started it, how many completed it, and the average grade
+// over COMPLETED sessions only (NULL — hence nil — until someone finishes, since
+// an in-progress session has no meaningful grade yet).
+//
+// Teaching staff are excluded on the same grounds preview sessions are (#480):
+// a teacher running the scenario is preparing it, not making class progress, and
+// counting them would let CompletedCount exceed the learner count these figures
+// are rendered against.
 //
 // This is the shared internal behind the single-group GetGroupAssignmentsProgress:
-// the join and filters (active membership on user_id, is_preview = false) are
-// written once so the per-class tab and the cross-class dashboard cannot drift.
+// the join and filters (learner-role active membership on user_id,
+// is_preview = false) are written once so the per-class tab and the cross-class
+// dashboard cannot drift.
 func (s *TeacherDashboardService) assignmentsProgressByGroup(groupIDs []uuid.UUID) (map[uuid.UUID][]scenarioProgressRow, error) {
 	if len(groupIDs) == 0 {
 		return map[uuid.UUID][]scenarioProgressRow{}, nil
 	}
 	var rows []scenarioProgressRow
+	// Raw SQL cannot take groupModels.LearnerRoleScope, so the role list itself
+	// is bound from groupModels.LearnerRoles — still one definition of who counts
+	// as an apprenant, only the `IN` spelled locally.
 	err := s.db.Raw(`
 		SELECT gm.group_id as group_id,
 		       ss.scenario_id as scenario_id,
@@ -353,10 +454,11 @@ func (s *TeacherDashboardService) assignmentsProgressByGroup(groupIDs []uuid.UUI
 		       AVG(CASE WHEN ss.status = 'completed' THEN ss.grade END) as avg_grade
 		FROM scenario_sessions ss
 		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id IN ? AND gm.is_active = true
+		     AND gm.role IN ?
 		WHERE ss.is_preview = false
 		GROUP BY gm.group_id, ss.scenario_id
 		ORDER BY gm.group_id, ss.scenario_id
-	`, groupIDs).Scan(&rows).Error
+	`, groupIDs, groupModels.LearnerRoles).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
