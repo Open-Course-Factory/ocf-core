@@ -150,40 +150,47 @@ func fetchUserMap(userIDs []string) map[string]userInfo {
 	return m
 }
 
-func enrichActivityUsers(items []GroupActivityItem) {
+// resolveUserIdentities attaches display name and email to a slice of
+// teacher-facing rows: it collects the distinct user ids `userIDOf` yields,
+// resolves them in one cached batch, then writes each result back through
+// `apply`. Single home for a pass every teacher surface needs — activity,
+// scenario results, and the live class view all differ only in which field holds
+// the user id and which fields receive the identity.
+//
+// An empty user id is never looked up: an unowned row is a data fault, not a
+// reason to hit Casdoor.
+func resolveUserIdentities[T any](items []T, userIDOf func(T) string, apply func(*T, userInfo)) {
 	ids := make([]string, 0, len(items))
-	seen := make(map[string]bool)
+	seen := make(map[string]bool, len(items))
 	for _, item := range items {
-		if !seen[item.UserID] {
-			ids = append(ids, item.UserID)
-			seen[item.UserID] = true
+		id := userIDOf(item)
+		if id != "" && !seen[id] {
+			ids = append(ids, id)
+			seen[id] = true
 		}
 	}
 	userMap := fetchUserMap(ids)
 	for i := range items {
-		if info, ok := userMap[items[i].UserID]; ok {
-			items[i].UserName = info.Name
-			items[i].UserEmail = info.Email
+		if info, ok := userMap[userIDOf(items[i])]; ok {
+			apply(&items[i], info)
 		}
 	}
 }
 
+func enrichActivityUsers(items []GroupActivityItem) {
+	resolveUserIdentities(items,
+		func(item GroupActivityItem) string { return item.UserID },
+		func(item *GroupActivityItem, info userInfo) {
+			item.UserName, item.UserEmail = info.Name, info.Email
+		})
+}
+
 func enrichResultUsers(items []ScenarioResultItem) {
-	ids := make([]string, 0, len(items))
-	seen := make(map[string]bool)
-	for _, item := range items {
-		if !seen[item.UserID] {
-			ids = append(ids, item.UserID)
-			seen[item.UserID] = true
-		}
-	}
-	userMap := fetchUserMap(ids)
-	for i := range items {
-		if info, ok := userMap[items[i].UserID]; ok {
-			items[i].UserName = info.Name
-			items[i].UserEmail = info.Email
-		}
-	}
+	resolveUserIdentities(items,
+		func(item ScenarioResultItem) string { return item.UserID },
+		func(item *ScenarioResultItem, info userInfo) {
+			item.UserName, item.UserEmail = info.Name, info.Email
+		})
 }
 
 // TeacherDashboardService provides teacher-facing queries for group activity and scenario results
@@ -275,7 +282,7 @@ func (s *TeacherDashboardService) getScenarioResults(groupID, scenarioID uuid.UU
 		SELECT ss.id as session_id, ss.user_id, ss.status, ss.grade, ss.started_at, ss.completed_at, ss.current_step,
 		       (SELECT COUNT(*) FROM scenario_steps WHERE scenario_id = ss.scenario_id AND deleted_at IS NULL) as total_steps,
 		       (SELECT COUNT(*) FROM scenario_step_progress WHERE session_id = ss.id AND status = 'completed') as completed_steps,
-		       (SELECT COALESCE(SUM(hints_revealed), 0) FROM scenario_step_progress WHERE session_id = ss.id) as total_hints_used
+		       ` + sessionHintsUsedExpr + ` as total_hints_used
 		FROM scenario_sessions ss
 		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
 		WHERE ss.scenario_id = ? AND ss.is_preview = false
@@ -1060,19 +1067,34 @@ func (s *TeacherDashboardService) loadScenarioGraph(scenarioIDs []uuid.UUID) (*s
 	}, nil
 }
 
-// loadSessionTracking runs the per-session-keyed query plan: step progress and
-// flag submissions, both grouped by session ID. Independent from scenario data.
-func (s *TeacherDashboardService) loadSessionTracking(sessionIDs []uuid.UUID) (*sessionTracking, error) {
-	// Load all step progress for all sessions in one query, group by session.
+// stepProgressBySession loads the step progress of every given session in ONE
+// query, grouped by session and ordered so each session's steps read in order.
+// Single home for the batched progress fetch behind the bulk session details and
+// the live class view. An empty input yields an empty map without touching the DB.
+func (s *TeacherDashboardService) stepProgressBySession(sessionIDs []uuid.UUID) (map[uuid.UUID][]models.ScenarioStepProgress, error) {
+	progressBySession := make(map[uuid.UUID][]models.ScenarioStepProgress, len(sessionIDs))
+	if len(sessionIDs) == 0 {
+		return progressBySession, nil
+	}
+
 	var allProgress []models.ScenarioStepProgress
 	if err := s.db.Where("session_id IN ?", sessionIDs).
 		Order("step_order ASC, created_at ASC").
 		Find(&allProgress).Error; err != nil {
 		return nil, fmt.Errorf("failed to load step progress: %w", err)
 	}
-	progressBySession := make(map[uuid.UUID][]models.ScenarioStepProgress, len(sessionIDs))
 	for _, p := range allProgress {
 		progressBySession[p.SessionID] = append(progressBySession[p.SessionID], p)
+	}
+	return progressBySession, nil
+}
+
+// loadSessionTracking runs the per-session-keyed query plan: step progress and
+// flag submissions, both grouped by session ID. Independent from scenario data.
+func (s *TeacherDashboardService) loadSessionTracking(sessionIDs []uuid.UUID) (*sessionTracking, error) {
+	progressBySession, err := s.stepProgressBySession(sessionIDs)
+	if err != nil {
+		return nil, err
 	}
 
 	// Load all flag submissions in one query, grouped by session.

@@ -106,6 +106,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "View group activity overview",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/teacher/groups/:groupId/live-progress", Method: "GET",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
+			Description: "View the merged per-learner live class view (presence + scenario position + results)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/teacher/groups/:groupId/assignments-progress", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.GroupRole, Param: "groupId", MinRole: "manager"},
 			Description: "View per-scenario assignment progress for a group",

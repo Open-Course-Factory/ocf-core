@@ -108,6 +108,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	teacherRoutes := router.Group("/teacher")
 	teacherRoutes.GET("/groups", middleware.AuthManagement(), teacherCtrl.GetMyGroups)
 	teacherRoutes.GET("/groups/:groupId/activity", middleware.AuthManagement(), teacherCtrl.GetGroupActivity)
+	teacherRoutes.GET("/groups/:groupId/live-progress", middleware.AuthManagement(), teacherCtrl.GetGroupLiveProgress)
 	teacherRoutes.GET("/groups/:groupId/assignments-progress", middleware.AuthManagement(), teacherCtrl.GetGroupAssignmentsProgress)
 	teacherRoutes.GET("/groups/:groupId/scenarios/:scenarioId/results", middleware.AuthManagement(), teacherCtrl.GetScenarioResults)
 	teacherRoutes.GET("/groups/:groupId/scenarios/:scenarioId/analytics", middleware.AuthManagement(), teacherCtrl.GetScenarioAnalytics)

@@ -487,6 +487,7 @@ func setupRealTeacherRouter(t *testing.T, db *gorm.DB, userID string, roles []st
 	teacher := api.Group("/teacher")
 	teacher.GET("/groups", ctrl.GetMyGroups)
 	teacher.GET("/groups/:groupId/activity", ctrl.GetGroupActivity)
+	teacher.GET("/groups/:groupId/live-progress", ctrl.GetGroupLiveProgress)
 	teacher.GET("/groups/:groupId/scenarios/:scenarioId/results", ctrl.GetScenarioResults)
 	teacher.GET("/groups/:groupId/scenarios/:scenarioId/analytics", ctrl.GetScenarioAnalytics)
 	teacher.POST("/groups/:groupId/scenarios/:scenarioId/bulk-start", ctrl.BulkStartScenario)

@@ -41,8 +41,17 @@ type TeacherGroupSummary struct {
 	// LiveSessionCount is how many terminal sessions of those members are
 	// running right now and visible to this teacher (see the org-context rule
 	// in terminalTrainer/models.SupervisableByJoinedGroupOrgScope).
-	LiveSessionCount int                      `json:"live_session_count"`
-	Assignments      []TeacherGroupAssignment `json:"assignments"`
+	LiveSessionCount int `json:"live_session_count"`
+	// IdleMemberCount is how many of those present learners have gone quiet —
+	// isLearnerIdle (teacherLiveProgressService.go), the same predicate the
+	// per-learner class view marks a row Idle with, so the console badge and the
+	// class view can never disagree about who is stuck.
+	IdleMemberCount int `json:"idle_member_count"`
+	// IdleThresholdMinutes is the window IdleMemberCount was computed with, sent
+	// so the UI can label the badge ("N inactifs > 10 min") from the value that
+	// actually produced it instead of hard-coding a copy that drifts.
+	IdleThresholdMinutes int                      `json:"idle_threshold_minutes"`
+	Assignments          []TeacherGroupAssignment `json:"assignments"`
 }
 
 // TeacherGroupAssignment is one active scenario assignment on a dashboard row,
@@ -115,6 +124,10 @@ func (s *TeacherDashboardService) GetManagedGroupsOverview(callerUserID string) 
 	if err != nil {
 		return nil, err
 	}
+	idleCounts, err := s.idleMemberCountsByGroup(groupIDs)
+	if err != nil {
+		return nil, err
+	}
 	assignments, err := s.activeAssignmentsByGroup(groupIDs)
 	if err != nil {
 		return nil, err
@@ -128,7 +141,7 @@ func (s *TeacherDashboardService) GetManagedGroupsOverview(callerUserID string) 
 	for _, group := range groups {
 		memberCount := memberCounts[group.ID]
 		summaries = append(summaries, buildTeacherGroupSummary(
-			group, callerUserID, memberCount, liveCounts[group.ID],
+			group, callerUserID, memberCount, liveCounts[group.ID], idleCounts[group.ID],
 			buildAssignmentItems(assignments[group.ID], progress[group.ID], memberCount),
 		))
 	}
@@ -168,7 +181,7 @@ func buildAssignmentItems(assignments []groupAssignmentRow, progress []scenarioP
 func buildTeacherGroupSummary(
 	group groupModels.ClassGroup,
 	callerUserID string,
-	memberCount, liveCount int,
+	memberCount, liveCount, idleCount int,
 	assignments []TeacherGroupAssignment,
 ) TeacherGroupSummary {
 	callerRole := string(groupModels.GroupMemberRoleManager)
@@ -185,9 +198,11 @@ func buildTeacherGroupSummary(
 		IsActive:         group.IsActive,
 		ExpiresAt:        group.ExpiresAt,
 		IsExpired:        group.IsExpired(),
-		MemberCount:      memberCount,
-		LiveSessionCount: liveCount,
-		Assignments:      assignments,
+		MemberCount:          memberCount,
+		LiveSessionCount:     liveCount,
+		IdleMemberCount:      idleCount,
+		IdleThresholdMinutes: int(LearnerIdleThreshold.Minutes()),
+		Assignments:          assignments,
 	}
 }
 
