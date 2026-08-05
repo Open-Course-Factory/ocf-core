@@ -86,8 +86,15 @@ type PaginatedScenarioResults struct {
 
 // ScenarioAnalytics represents aggregated analytics for a scenario within a group
 type ScenarioAnalytics struct {
-	TotalSessions         int64    `json:"total_sessions"`
-	CompletedCount        int64    `json:"completed_count"`
+	TotalSessions  int64 `json:"total_sessions"`
+	CompletedCount int64 `json:"completed_count"`
+	// CompletionRate is a PERCENTAGE (0..100) of completed SESSIONS over TOTAL
+	// SESSIONS: a learner who retries a scenario counts once per attempt.
+	//
+	// Not to be confused with TeacherGroupAssignment.ClassCompletionRate
+	// (teacherGroupsService.go), which is the share of the CLASS that finished —
+	// distinct members over class size. Same 0..100 scale, different denominators;
+	// the two are not interchangeable and must not be unified under one name.
 	CompletionRate        float64  `json:"completion_rate"`
 	AvgGrade              *float64 `json:"avg_grade,omitempty"`
 	AvgCompletionTimeSecs *float64 `json:"avg_completion_time_seconds,omitempty"`

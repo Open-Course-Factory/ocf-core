@@ -58,10 +58,18 @@ type TeacherGroupAssignment struct {
 	// StartedCount / CompletedCount count DISTINCT active members, not sessions.
 	StartedCount   int `json:"started_count"`
 	CompletedCount int `json:"completed_count"`
-	// CompletionRate is CompletedCount over the CLASS size (0 when the class is
-	// empty) — "how much of my class is done", not "of those who started".
-	CompletionRate float64  `json:"completion_rate"`
-	AvgGrade       *float64 `json:"avg_grade"`
+	// ClassCompletionRate is a PERCENTAGE (0..100) of CompletedCount over the
+	// CLASS size — "how much of my class is done" — and is 0 for an empty class.
+	//
+	// It is deliberately NOT named completion_rate: ScenarioAnalytics.CompletionRate
+	// (teacherDashboardService.go) is a different metric that happens to answer a
+	// similar-sounding question. That one divides completed SESSIONS by TOTAL
+	// SESSIONS, so a learner who retries counts twice; this one divides distinct
+	// members who finished by the size of the class. Both are percentages, but they
+	// can never be compared or swapped, and sharing a field name invited exactly
+	// that. Keep the two definitions in sync only in SCALE — never merge them.
+	ClassCompletionRate float64  `json:"class_completion_rate"`
+	AvgGrade            *float64 `json:"avg_grade"`
 }
 
 // GetManagedGroupsOverview returns one summary row per class-group callerUserID
@@ -145,10 +153,10 @@ func buildAssignmentItems(assignments []groupAssignmentRow, progress []scenarioP
 			ScenarioTitle:  assignment.ScenarioTitle,
 			StartDate:      assignment.StartDate,
 			Deadline:       assignment.Deadline,
-			StartedCount:   done.StartedCount,
-			CompletedCount: done.CompletedCount,
-			CompletionRate: completionRate(done.CompletedCount, classSize),
-			AvgGrade:       done.AvgGrade,
+			StartedCount:        done.StartedCount,
+			CompletedCount:      done.CompletedCount,
+			ClassCompletionRate: classCompletionPercent(done.CompletedCount, classSize),
+			AvgGrade:            done.AvgGrade,
 		})
 	}
 	return items
@@ -183,13 +191,15 @@ func buildTeacherGroupSummary(
 	}
 }
 
-// completionRate guards the empty class: a group with no active member has no
-// meaningful rate, and 0 is the honest answer rather than a division by zero.
-func completionRate(completed, classSize int) float64 {
+// classCompletionPercent returns the share of the class that completed, on the
+// 0..100 scale the rest of the teacher API already uses for rates. It guards the
+// empty class: a group with no active member has no meaningful rate, and 0 is the
+// honest answer rather than a division by zero.
+func classCompletionPercent(completed, classSize int) float64 {
 	if classSize <= 0 {
 		return 0
 	}
-	return float64(completed) / float64(classSize)
+	return float64(completed) / float64(classSize) * 100.0
 }
 
 // groupCountRow carries one grouped COUNT keyed by class-group. The column is

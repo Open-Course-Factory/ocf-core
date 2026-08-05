@@ -299,7 +299,8 @@ func TestGetManagedGroupsOverview_Assignments_CarryProgressAggregates(t *testing
 	assert.Equal(t, scenario.Title, started.ScenarioTitle)
 	assert.Equal(t, 2, started.StartedCount, "student-1 and student-2, preview excluded")
 	assert.Equal(t, 1, started.CompletedCount)
-	assert.InDelta(t, 1.0/3.0, started.CompletionRate, 0.001, "1 of 3 class members completed")
+	assert.InDelta(t, 100.0/3.0, started.ClassCompletionRate, 0.001,
+		"1 of 3 class members completed, as a 0..100 percentage")
 	require.NotNil(t, started.AvgGrade)
 	assert.InDelta(t, 80.0, *started.AvgGrade, 0.01)
 
@@ -307,8 +308,39 @@ func TestGetManagedGroupsOverview_Assignments_CarryProgressAggregates(t *testing
 	assert.Equal(t, untouched.Title, idle.ScenarioTitle)
 	assert.Equal(t, 0, idle.StartedCount)
 	assert.Equal(t, 0, idle.CompletedCount)
-	assert.Zero(t, idle.CompletionRate)
+	assert.Zero(t, idle.ClassCompletionRate)
 	assert.Nil(t, idle.AvgGrade, "nobody completed it")
+}
+
+// TestGetManagedGroupsOverview_ClassCompletionRate_IsAPercentageNotAFraction
+// pins the SCALE. A whole class finishing must read 100, not 1 — the teacher API
+// already expresses ScenarioAnalytics.CompletionRate as a 0..100 percentage, and
+// a silent "normalisation" to a fraction here would make every consumer wrong by
+// 100x on a page nobody thought to re-open.
+func TestGetManagedGroupsOverview_ClassCompletionRate_IsAPercentageNotAFraction(t *testing.T) {
+	db := setupTestDB(t)
+	const teacher = "teacher-1"
+
+	group := createClassGroup(t, db, "everyone-finished", teacher, nil)
+	addGroupMember(t, db, group.ID, "student-1", groupModels.GroupMemberRoleMember)
+
+	scenario := createTestScenarioNoOrg(t, db, "finished-by-all")
+	createScenarioAssignment(t, db, scenario.ID, &group.ID, nil, "group")
+
+	now := time.Now()
+	require.NoError(t, db.Create(&models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "student-1", Status: "completed",
+		Grade: floatPtr(70.0), StartedAt: now.Add(-time.Hour), CompletedAt: &now,
+	}).Error)
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	items, err := svc.GetManagedGroupsOverview(teacher)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Len(t, items[0].Assignments, 1)
+
+	assert.InDelta(t, 100.0, items[0].Assignments[0].ClassCompletionRate, 0.001,
+		"the whole class completed — 100, not 1")
 }
 
 // TestGetManagedGroupsOverview_MultipleGroups_AggregatesStayPerGroup guards the
