@@ -331,10 +331,12 @@ func (osc *organizationSubscriptionController) GetUserEffectiveFeatures(ctx *gin
 		}
 
 		effectivePlan := convertSubscriptionPlanToOutput(result.Plan)
-		// Read the verdict off the plan just resolved, not by resolving again:
-		// a second resolution can legitimately return a different plan, and the
-		// verdict would then not describe the plan reported beside it.
-		verdict := services.ClassroomEntitlementFor(result.Plan)
+		// Reuses the plan just resolved rather than resolving again: a second
+		// resolution can legitimately return a different plan, and the verdict would
+		// then not describe the plan reported beside it. The organization is passed
+		// too, because in an org context the plan is only half the rule — a personal
+		// organization runs no classes whatever plan its owner bought (#475).
+		verdict := osc.effectivePlanService.ClassroomEntitlementInOrg(userID, orgID, result.Plan)
 		output := dto.UserEffectiveFeaturesOutput{
 			UserID:                  userID,
 			EffectiveFeatures:       effectivePlan,

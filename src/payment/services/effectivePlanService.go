@@ -98,6 +98,18 @@ type EffectivePlanService interface {
 	// latter and returned three different answers for the same user (#453).
 	CanRunClassrooms(userID string, orgID *uuid.UUID) ClassroomEntitlement
 
+	// ClassroomEntitlementInOrg is CanRunClassrooms(userID, &orgID) for a caller
+	// that has ALREADY resolved the plan applying in that organization — the
+	// features endpoint, which needs the plan for its response anyway and would
+	// otherwise resolve it twice per request.
+	//
+	// It exists because the alternative that endpoint reached for —
+	// ClassroomEntitlementFor(resolvedPlan) — silently drops the organization half
+	// of the rule. A personal organization then reported classrooms available on the
+	// strength of the buyer's own plan, while the ClassGroup placement hook refused
+	// the create (#475).
+	ClassroomEntitlementInOrg(userID string, orgID uuid.UUID, plan *models.SubscriptionPlan) ClassroomEntitlement
+
 	// CanPurchaseSeats reports whether this user may buy licences for other people.
 	//
 	// It applies the same rule as CanRunClassrooms but over a narrower resolution:
