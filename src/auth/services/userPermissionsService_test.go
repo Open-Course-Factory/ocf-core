@@ -236,7 +236,12 @@ func TestUserPermissionsService_GetUserPermissions_BasicPermissions(t *testing.T
 	assert.Len(t, result.Permissions, 2)
 	assert.Len(t, result.Roles, 1) // Mock returns 1 role: "member"
 	assert.False(t, result.IsSystemAdmin)
-	assert.True(t, result.CanCreateOrganization) // All users can create orgs
+	// user123 holds no subscription, and creating a team organization is the
+	// teaching tier's capability — the flag used to be a literal true, which
+	// offered every learner a form the backend refuses (#476).
+	assert.False(t, result.CanCreateOrganization)
+	assert.False(t, result.CanCreateGroup,
+		"both flags answer the same classroom question and must not diverge")
 }
 
 func TestUserPermissionsService_GetUserPermissions_WithOrganizations(t *testing.T) {

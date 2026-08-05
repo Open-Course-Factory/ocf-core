@@ -83,18 +83,25 @@ func (s *userPermissionsService) GetUserPermissions(userID string) (*authDto.Use
 	hasAnySubscription := s.hasAnySubscriptionGeneric(entityMemberships)
 
 	// 8. Build quick access flags
-	canCreateOrganization := isSystemAdmin || true // For now, all authenticated users can create orgs
-
+	//
 	// Creating a group is a classroom capability, so the answer comes from the
 	// entitlement service rather than from membership. The previous rule —
 	// "member of any entity" — was structurally always true, because every user is
 	// a member of their own personal organization, so the flag reported yes to
 	// everyone including learners on a Trial (#453).
 	//
-	// No org context: this endpoint describes the user, not a workspace they are
-	// currently acting in.
-	canCreateGroup := isSystemAdmin ||
+	// Creating an organization is the same capability seen one level up: a team
+	// organization exists to hold classes, so the tier that grants classes is the
+	// tier that grants organizations. This flag used to be a literal `true`, which
+	// invited every learner into a creation form the backend now refuses (#476) —
+	// one verdict, asked once, so the button and the endpoint cannot disagree.
+	//
+	// No org context on either: this endpoint describes the user, not a workspace
+	// they are currently acting in.
+	canRunClassrooms := isSystemAdmin ||
 		paymentServices.NewEffectivePlanService(s.db).CanRunClassrooms(userID, nil).Allowed
+	canCreateOrganization := canRunClassrooms
+	canCreateGroup := canRunClassrooms
 
 	result := &authDto.UserPermissionsOutput{
 		UserID:        userID,
