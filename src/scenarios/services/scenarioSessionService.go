@@ -1037,17 +1037,22 @@ func (s *ScenarioSessionService) GetMySessions(userID string) ([]dto.MySessionRe
 	return result, nil
 }
 
-// AbandonSession marks a session as abandoned. Only active sessions can be abandoned.
+// AbandonSession marks a session as abandoned. Applies to active AND
+// provisioning sessions — the provisioning overlay's cancel button is an
+// abandon, and refusing it left the user with an unkillable setup. The
+// running setup goroutine is safe against this: all its status writes are
+// gated on WHERE status='provisioning', so once we flip to abandoned here
+// it can no longer resurrect the session.
 func (s *ScenarioSessionService) AbandonSession(sessionID uuid.UUID) error {
 	result := s.db.Model(&models.ScenarioSession{}).
-		Where("id = ? AND status = ?", sessionID, "active").
+		Where("id = ? AND status IN ?", sessionID, []string{"active", "provisioning"}).
 		Update("status", "abandoned")
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to abandon session: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("session not found or not active")
+		return fmt.Errorf("session not found or not abandonable")
 	}
 
 	return nil

@@ -89,6 +89,15 @@ func newLaunchTTBackend(t *testing.T, ramAvailableGB, ramPercent float64) *httpt
 					"default_size_key": "M",
 				},
 			})
+		case r.Method == http.MethodGet && r.URL.Path == "/1.0/features":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[]`))
+		case r.Method == http.MethodGet && r.URL.Path == "/1.0/terms":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"terms": "test terms",
+				"hash":  "test-terms-hash",
+			})
 		case r.Method == http.MethodGet && r.URL.Path == "/1.0/sizes":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode([]map[string]any{

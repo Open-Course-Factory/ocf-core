@@ -11,6 +11,7 @@ import (
 	"soli/formations/src/auth/errors"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
+	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/dto"
@@ -731,6 +732,15 @@ func (sc *scenarioLaunchController) resolveScenarioBackendAndDistribution(
 // @Router /scenario-sessions/launch [post]
 // @Security BearerAuth
 func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
+	// Dunning gate (MANDATORY on every new session-creation route): launching
+	// a scenario provisions a terminal. The route carries InjectEffectivePlan,
+	// so the gate has its EffectivePlanResult. Without this, a past_due
+	// customer could keep starting sessions through scenarios after the
+	// terminal routes locked them out.
+	if paymentMiddleware.GatePastDueBeyondGrace(ctx) {
+		return
+	}
+
 	var input dto.LaunchScenarioInput
 	if err := ctx.ShouldBindJSON(&input); err != nil {
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
@@ -884,6 +894,12 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, plan)
 	if termErr != nil {
 		slog.Error("failed to create terminal session for scenario", "scenario", scenario.Name, "userID", userID, "err", termErr)
+		// Budget exhaustion answers the same structured 403 the terminal
+		// creation route emits — the launcher renders honest budget copy
+		// from it instead of a generic failure.
+		if terminalServices.WriteBudgetRejection(ctx, termErr, userID) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: termErr.Error(),
@@ -1096,6 +1112,13 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		return
 	}
 
+	// Dunning gate (MANDATORY on every new session-creation route): preview
+	// provisions a real terminal. This route has no InjectEffectivePlan
+	// middleware, so gate on the manually-resolved result.
+	if paymentMiddleware.GatePastDueBeyondGraceForResult(ctx, planResult) {
+		return
+	}
+
 	// Terminal launch budget enforcement is performed downstream by
 	// StartComposedSession via QuotaService.CheckBudget; no separate slot
 	// check is needed here.
@@ -1120,6 +1143,9 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, planResult.Plan)
 	if termErr != nil {
 		slog.Error("failed to create terminal session for scenario preview", "scenario", scenario.Name, "userID", userID, "err", termErr)
+		if terminalServices.WriteBudgetRejection(ctx, termErr, userID) {
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
 			ErrorMessage: "Failed to start terminal session. Please try again or contact support.",
