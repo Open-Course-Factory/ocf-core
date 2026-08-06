@@ -1,14 +1,7 @@
 package scenarios_test
 
-// Red-phase tests for quiz answer submission (#283).
-//
-// These tests assert the EXPECTED API of a new SubmitQuiz path on
-// ScenarioSessionService. They will fail to compile until:
-//   - dto.SubmitQuizInput is defined: { Answers map[uuid.UUID]string }
-//   - dto.SubmitQuizResponse is defined with: Score float64, CorrectCount int,
-//     Total int, NextStep *int, PerQuestionResults []QuizQuestionResult
-//   - ScenarioSessionService.SubmitQuiz(sessionID, input) is implemented
-//   - ScenarioStepProgress gains StepType, QuizScore, QuizAnswers fields
+// Quiz answer submission (#283): scoring, per-question feedback, progress
+// persistence, and input validation on ScenarioSessionService.SubmitQuiz.
 //
 // PerQuestionResults (incl. CorrectAnswer + Explanation) is only returned in
 // learning mode (show_immediate_feedback=true). In exam mode the breakdown is

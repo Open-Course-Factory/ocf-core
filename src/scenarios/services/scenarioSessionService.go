@@ -814,21 +814,33 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		}
 	}
 
+	// The per-question breakdown carries correct_answer + explanation, and
+	// anything in the HTTP response is readable from the browser's devtools.
+	// In exam mode (show_immediate_feedback=false) the teacher chose to
+	// withhold answers, so the breakdown is never even built — the flag gates
+	// the API payload, not just what the UI renders (§7.5, decided 2026-08-06).
+	revealBreakdown := currentStep.ShowImmediateFeedback
+
 	total := len(questions)
 	correctCount := 0
-	results := make([]dto.QuizQuestionResult, 0, total)
+	var results []dto.QuizQuestionResult
+	if revealBreakdown {
+		results = make([]dto.QuizQuestionResult, 0, total)
+	}
 	for _, q := range questions {
 		submitted := input.Answers[q.ID]
 		correct := subtle.ConstantTimeCompare([]byte(submitted), []byte(q.CorrectAnswer)) == 1
 		if correct {
 			correctCount++
 		}
-		results = append(results, dto.QuizQuestionResult{
-			QuestionID:    q.ID,
-			Correct:       correct,
-			CorrectAnswer: q.CorrectAnswer,
-			Explanation:   q.Explanation,
-		})
+		if revealBreakdown {
+			results = append(results, dto.QuizQuestionResult{
+				QuestionID:    q.ID,
+				Correct:       correct,
+				CorrectAnswer: q.CorrectAnswer,
+				Explanation:   q.Explanation,
+			})
+		}
 	}
 
 	score := 0.0
@@ -839,15 +851,6 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 	answersJSON, err := json.Marshal(input.Answers)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode answers: %w", err)
-	}
-
-	// Exam mode (show_immediate_feedback=false) means the teacher chose to
-	// withhold answers: return the score line only. The breakdown carries
-	// correct_answer + explanation, and anything in the HTTP response is
-	// readable from the browser's devtools — so the flag must gate the API
-	// payload, not just what the UI renders (plan §7.5, decided 2026-08-06).
-	if !currentStep.ShowImmediateFeedback {
-		results = nil
 	}
 
 	response := &dto.SubmitQuizResponse{
