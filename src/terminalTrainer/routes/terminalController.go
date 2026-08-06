@@ -20,6 +20,7 @@ import (
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/terminalTrainer/dto"
+	"soli/formations/src/terminalTrainer/httperrors"
 	"soli/formations/src/terminalTrainer/models"
 	services "soli/formations/src/terminalTrainer/services"
 	"soli/formations/src/utils"
@@ -2288,9 +2289,9 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 	sessionResponse, err := tc.service.StartComposedSession(userID, input, planInterface)
 	if err != nil {
 		// Structured budget rejection — shared writer (see
-		// services.WriteBudgetRejection) so terminal create and scenario
+		// httperrors.WriteBudgetRejection) so terminal create and scenario
 		// launch/preview answer the identical 403 shape.
-		if services.WriteBudgetRejection(ctx, err, userID) {
+		if httperrors.WriteBudgetRejection(ctx, err, userID) {
 			return
 		}
 

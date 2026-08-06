@@ -1,4 +1,8 @@
-package services
+// Package httperrors holds the HTTP renderings of terminal-trainer service
+// errors that more than one routes package must emit identically. It is a
+// leaf: services stay HTTP-free, and controllers depend on this instead of
+// re-encoding the shapes.
+package httperrors
 
 import (
 	stderrors "errors"
@@ -6,6 +10,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	services "soli/formations/src/terminalTrainer/services"
 )
 
 // WriteBudgetRejection writes the canonical structured 403 for a
@@ -14,12 +20,8 @@ import (
 // funnel its StartComposedSession error through this before falling back to a
 // generic status, so budget exhaustion always reaches the frontend with
 // source=budget + a coarse reason instead of a raw 500.
-//
-// Writing HTTP from this package follows the EnforceLaunchCapacity precedent:
-// the response shape lives next to the type it serialises, so the controllers
-// cannot drift apart.
 func WriteBudgetRejection(ctx *gin.Context, err error, userID string) bool {
-	var budgetErr *BudgetRejection
+	var budgetErr *services.BudgetRejection
 	if !stderrors.As(err, &budgetErr) {
 		return false
 	}

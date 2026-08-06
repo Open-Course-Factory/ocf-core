@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,6 +37,7 @@ import (
 	entityManagementModels "soli/formations/src/entityManagement/models"
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/scenarios/models"
+	scenarioController "soli/formations/src/scenarios/routes"
 	"soli/formations/src/scenarios/services"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 )
@@ -105,12 +107,13 @@ func TestLaunchScenario_402sWhenSubscriptionPastDueBeyondGrace(t *testing.T) {
 		w.Body.String())
 }
 
-func TestLaunchScenario_403sStructuredWhenBudgetExhausted(t *testing.T) {
-	db := freshTestDB(t)
-	userID := "launch-budget-user"
-
-	// Plan whose RAM budget (256 MiB) cannot fit the scenario's resolved M
-	// size (1 GiB) — reserveBudget must reject before any tt-backend call.
+// seedBudgetExhaustedUser prepares a user whose plan's RAM budget (256 MiB)
+// cannot fit an M scenario (1 GiB) — reserveBudget must reject before any
+// tt-backend call. The tt user key is pre-seeded so the flow reaches the
+// budget check instead of failing on key auto-provisioning (the fake
+// tt-backend serves no admin endpoints). Returns the seeded M scenario.
+func seedBudgetExhaustedUser(t *testing.T, db *gorm.DB, userID, scenarioName string) *models.Scenario {
+	t.Helper()
 	plan := &paymentModels.SubscriptionPlan{
 		BaseModel:                 entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:                      "Tiny",
@@ -132,8 +135,8 @@ func TestLaunchScenario_403sStructuredWhenBudgetExhausted(t *testing.T) {
 	}).Error)
 
 	scenario := &models.Scenario{
-		Name:         "launch-budget-test",
-		Title:        "Launch Budget Test",
+		Name:         scenarioName,
+		Title:        scenarioName,
 		InstanceType: "M",
 		OsType:       "deb",
 		IsPublic:     true,
@@ -141,15 +144,59 @@ func TestLaunchScenario_403sStructuredWhenBudgetExhausted(t *testing.T) {
 	}
 	require.NoError(t, db.Create(scenario).Error)
 
-	// Pre-seed the tt user key so the launch reaches the budget check
-	// instead of failing on key auto-provisioning (the fake tt-backend
-	// serves no admin endpoints).
+	seedUserTTKey(t, db, userID)
+	return scenario
+}
+
+// seedUserTTKey pre-seeds the tt user key so flows reach their gate under
+// test instead of failing on key auto-provisioning (the fake tt-backend
+// serves no admin endpoints).
+func seedUserTTKey(t *testing.T, db *gorm.DB, userID string) {
+	t.Helper()
 	require.NoError(t, db.Create(&terminalModels.UserTerminalKey{
 		UserID:   userID,
 		APIKey:   "test-user-key",
 		KeyName:  "test",
 		IsActive: true,
 	}).Error)
+}
+
+// assertStructuredBudget403 pins the shared response contract of
+// httperrors.WriteBudgetRejection for any session-creating route.
+func assertStructuredBudget403(t *testing.T, code int, body string) {
+	t.Helper()
+	require.Equal(t, http.StatusForbidden, code,
+		"budget exhaustion must answer the structured 403 the terminal route "+
+			"emits, not a generic 500. Got %d. Body: %s", code, body)
+	assert.Contains(t, body, `"source":"budget"`,
+		"403 body must carry source=budget. Got %q", body)
+	assert.Contains(t, body, "budget_exhausted",
+		"403 body must carry the coarse budget_exhausted reason (never the "+
+			"per-axis internal reason). Got %q", body)
+}
+
+// setupPreviewRouterWithAdminStub wires POST /scenarios/:id/preview as
+// production registers it — bare AuthManagement, no plan-chain middleware
+// (PreviewScenario resolves its plan manually). The admin role stub passes
+// the preview authorization options.
+func setupPreviewRouterWithAdminStub(t *testing.T, db *gorm.DB, userID string) *gin.Engine {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("userId", userID)
+		c.Set("userRoles", []string{"admin"})
+		c.Next()
+	})
+	ctrl := scenarioController.NewScenarioLaunchController(db)
+	router.POST("/api/v1/scenarios/:id/preview", ctrl.PreviewScenario)
+	return router
+}
+
+func TestLaunchScenario_403sStructuredWhenBudgetExhausted(t *testing.T) {
+	db := freshTestDB(t)
+	userID := "launch-budget-user"
+	scenario := seedBudgetExhaustedUser(t, db, userID, "launch-budget-test")
 
 	ttSrv := newLaunchTTBackend(t, 8.0, 25.0)
 	configureTTServerForLaunch(t, ttSrv.URL)
@@ -163,15 +210,60 @@ func TestLaunchScenario_403sStructuredWhenBudgetExhausted(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusForbidden, w.Code,
-		"budget exhaustion on scenario launch must answer the structured 403 "+
-			"the terminal route emits, not a generic 500. Got %d. Body: %s",
+	assertStructuredBudget403(t, w.Code, w.Body.String())
+}
+
+func TestPreviewScenario_402sWhenSubscriptionPastDueBeyondGrace(t *testing.T) {
+	db := freshTestDB(t)
+	userID := "preview-dunning-user"
+	seedPastDuePlan(t, db, userID)
+	// Preview provisions the tt user key before resolving the plan, so the
+	// key must exist for the request to reach the dunning gate.
+	seedUserTTKey(t, db, userID)
+
+	scenario := &models.Scenario{
+		Name:         "preview-dunning-test",
+		Title:        "Preview Dunning Test",
+		InstanceType: "M",
+		OsType:       "deb",
+		IsPublic:     true,
+		CreatedByID:  userID,
+	}
+	require.NoError(t, db.Create(scenario).Error)
+
+	ttSrv := newLaunchTTBackend(t, 8.0, 25.0)
+	configureTTServerForLaunch(t, ttSrv.URL)
+
+	router := setupPreviewRouterWithAdminStub(t, db, userID)
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/scenarios/"+scenario.ID.String()+"/preview", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusPaymentRequired, w.Code,
+		"preview provisions a real terminal — a past_due sub beyond grace "+
+			"must be gated exactly like launch. Got %d. Body: %s",
 		w.Code, w.Body.String())
-	assert.Contains(t, w.Body.String(), `"source":"budget"`,
-		"403 body must carry source=budget. Got %q", w.Body.String())
-	assert.Contains(t, w.Body.String(), "budget_exhausted",
-		"403 body must carry the coarse budget_exhausted reason (never the "+
-			"per-axis internal reason). Got %q", w.Body.String())
+	assert.Contains(t, w.Body.String(), "subscription_past_due")
+}
+
+func TestPreviewScenario_403sStructuredWhenBudgetExhausted(t *testing.T) {
+	db := freshTestDB(t)
+	userID := "preview-budget-user"
+	scenario := seedBudgetExhaustedUser(t, db, userID, "preview-budget-test")
+
+	ttSrv := newLaunchTTBackend(t, 8.0, 25.0)
+	configureTTServerForLaunch(t, ttSrv.URL)
+
+	router := setupPreviewRouterWithAdminStub(t, db, userID)
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/scenarios/"+scenario.ID.String()+"/preview", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assertStructuredBudget403(t, w.Code, w.Body.String())
 }
 
 func TestAbandonSession_AllowedDuringProvisioning(t *testing.T) {
