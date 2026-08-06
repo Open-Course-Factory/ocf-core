@@ -841,6 +841,15 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		return nil, fmt.Errorf("failed to encode answers: %w", err)
 	}
 
+	// Exam mode (show_immediate_feedback=false) means the teacher chose to
+	// withhold answers: return the score line only. The breakdown carries
+	// correct_answer + explanation, and anything in the HTTP response is
+	// readable from the browser's devtools — so the flag must gate the API
+	// payload, not just what the UI renders (plan §7.5, decided 2026-08-06).
+	if !currentStep.ShowImmediateFeedback {
+		results = nil
+	}
+
 	response := &dto.SubmitQuizResponse{
 		Score:              score,
 		CorrectCount:       correctCount,

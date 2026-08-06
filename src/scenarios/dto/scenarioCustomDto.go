@@ -93,18 +93,22 @@ type SubmitQuizInput struct {
 	Answers map[uuid.UUID]string `json:"answers" binding:"required"`
 }
 
-// SubmitQuizResponse - DTO for quiz submission results
+// SubmitQuizResponse - DTO for quiz submission results.
+// PerQuestionResults is only populated in learning mode
+// (show_immediate_feedback=true); exam mode returns the score line alone so
+// the correct answers never reach the learner's browser.
 type SubmitQuizResponse struct {
 	Score              float64              `json:"score"`
 	CorrectCount       int                  `json:"correct_count"`
 	Total              int                  `json:"total"`
-	PerQuestionResults []QuizQuestionResult `json:"per_question_results"`
+	PerQuestionResults []QuizQuestionResult `json:"per_question_results,omitempty"`
 	NextStep           *int                 `json:"next_step,omitempty"`
 }
 
-// QuizQuestionResult - per-question result returned after submission.
-// Once submitted, the correct_answer is no longer secret — exposing it here
-// (and the explanation) lets the learner see what they got right/wrong.
+// QuizQuestionResult - per-question result returned after a LEARNING-mode
+// submission, where revealing the correct answer and explanation is the
+// point. Exam mode omits these entirely (the teacher's flag controls the
+// API payload, not just the UI rendering).
 type QuizQuestionResult struct {
 	QuestionID    uuid.UUID `json:"question_id"`
 	Correct       bool      `json:"correct"`

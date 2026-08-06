@@ -10,10 +10,11 @@ package scenarios_test
 //   - ScenarioSessionService.SubmitQuiz(sessionID, input) is implemented
 //   - ScenarioStepProgress gains StepType, QuizScore, QuizAnswers fields
 //
-// Per task spec, PerQuestionResults MAY include CorrectAnswer (since after
-// submission the answer is no longer secret). We assert that when the answer
-// is exposed it matches the expected value, but tolerate either shape by only
-// requiring the per-question correctness flag.
+// PerQuestionResults (incl. CorrectAnswer + Explanation) is only returned in
+// learning mode (show_immediate_feedback=true). In exam mode the breakdown is
+// omitted entirely: the flag is the teacher's control over whether answers
+// ever reach the learner's browser, so it must gate the API response, not
+// just the UI rendering (scenarios-e2e-test-plan.md §7.5, decided 2026-08-06).
 
 import (
 	"testing"
@@ -42,6 +43,9 @@ func quizFixture(t *testing.T, withFollowingStep bool) (uuid.UUID, []uuid.UUID) 
 
 	step0 := models.ScenarioStep{
 		ScenarioID: scenario.ID, Order: 0, Title: "Quiz Step", StepType: "quiz",
+		// Learning mode: the per-question breakdown (incl. correct answers)
+		// is returned. Exam mode (false) omits it — see the ExamMode test.
+		ShowImmediateFeedback: true,
 	}
 	require.NoError(t, db.Create(&step0).Error)
 
@@ -326,4 +330,74 @@ func TestSubmitQuiz_WrongQuestionIds_ReturnsError(t *testing.T) {
 
 	assert.Error(t, err, "answers referencing non-existent question IDs must error")
 	assert.Nil(t, result)
+}
+
+// TestSubmitQuiz_ExamMode_OmitsPerQuestionResults — with
+// show_immediate_feedback=false the teacher has chosen to withhold answers:
+// the response must carry the score line ONLY. Anything more ships the
+// correct answers to the learner's browser where devtools can read them,
+// making "exam mode" purely cosmetic (§7.5).
+func TestSubmitQuiz_ExamMode_OmitsPerQuestionResults(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID, qIDs := quizFixture(t, true)
+
+	// Flip the fixture's quiz step to exam mode.
+	require.NoError(t, sharedTestDB.Model(&models.ScenarioStep{}).
+		Where("step_type = ?", "quiz").
+		Update("show_immediate_feedback", false).Error)
+
+	input := dto.SubmitQuizInput{
+		Answers: map[uuid.UUID]string{
+			qIDs[0]: "ls",     // correct
+			qIDs[1]: "false",  // wrong
+			qIDs[2]: "/root",  // correct
+		},
+	}
+
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	result, err := svc.SubmitQuiz(sessionID, input)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Empty(t, result.PerQuestionResults,
+		"exam mode must not return per-question results — the breakdown "+
+			"carries correct answers and explanations")
+	// The score line and advancement stay intact.
+	assert.InDelta(t, 2.0/3.0, result.Score, 0.01)
+	assert.Equal(t, 2, result.CorrectCount)
+	assert.Equal(t, 3, result.Total)
+	require.NotNil(t, result.NextStep, "exam mode still advances")
+}
+
+// TestSubmitQuiz_LearningMode_ExposesCorrectAnswers — with
+// show_immediate_feedback=true the breakdown is the point: correct answers
+// and explanations are deliberately revealed after submission.
+func TestSubmitQuiz_LearningMode_ExposesCorrectAnswers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID, qIDs := quizFixture(t, true)
+
+	input := dto.SubmitQuizInput{
+		Answers: map[uuid.UUID]string{
+			qIDs[0]: "cd", // wrong on purpose — reveal must include the right answer
+			qIDs[1]: "true",
+			qIDs[2]: "/root",
+		},
+	}
+
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	result, err := svc.SubmitQuiz(sessionID, input)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, result.PerQuestionResults, 3)
+	byID := make(map[uuid.UUID]dto.QuizQuestionResult, 3)
+	for _, r := range result.PerQuestionResults {
+		byID[r.QuestionID] = r
+	}
+	assert.Equal(t, "ls", byID[qIDs[0]].CorrectAnswer,
+		"learning mode reveals the correct answer after submission")
 }
