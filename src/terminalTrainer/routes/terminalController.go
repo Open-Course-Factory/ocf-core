@@ -4,7 +4,6 @@ import (
 	"encoding/csv"
 	stderrors "errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +16,7 @@ import (
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
 	controller "soli/formations/src/entityManagement/routes"
+	paymentMiddleware "soli/formations/src/payment/middleware"
 	paymentModels "soli/formations/src/payment/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/terminalTrainer/dto"
@@ -180,7 +180,15 @@ var upgrader = websocket.Upgrader{
 		if origin == "" {
 			return true // No origin header (e.g. non-browser clients)
 		}
-		return config.IsOriginAllowed(origin)
+		if !config.IsOriginAllowed(origin) {
+			// The browser only ever sees an opaque close (1006) when the
+			// upgrade is refused — without this log the origin rejection is
+			// indistinguishable from any other console failure, server-side
+			// included.
+			utils.Warn("console websocket upgrade refused: origin %q not in the frontend allowlist (url %s)", origin, r.URL.Path)
+			return false
+		}
+		return true
 	},
 }
 
@@ -334,13 +342,13 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 	}
 	terminalTrainerWSURL.RawQuery = q.Encode()
 
-	// Upgrade la connexion cliente vers WebSocket
+	// Upgrade la connexion cliente vers WebSocket. On failure gorilla has
+	// ALREADY written its own HTTP response (403 for a rejected origin, 400
+	// otherwise) — writing a second JSON body onto the hijacked connection
+	// corrupts the response. Log and return.
 	clientConn, err := upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, &errors.APIError{
-			ErrorCode:    http.StatusBadRequest,
-			ErrorMessage: "WebSocket upgrade failed",
-		})
+		utils.Warn("console websocket upgrade failed for session %s: %v", sessionID, err)
 		return
 	}
 	defer clientConn.Close()
@@ -2236,54 +2244,12 @@ func (tc *terminalController) GetSessionOptions(ctx *gin.Context) {
 //	@Failure		403	{object}	errors.APIError	"Access denied"
 //	@Failure		500	{object}	errors.APIError	"Terminal trainer error"
 //	@Router			/terminals/start-composed-session [post]
-// gatePastDueBeyondGrace rejects a NEW session-creation request when the
-// caller's effective personal subscription is past_due and its grace window
-// (PastDueGraceDays) has elapsed.
-//
-// STRUCTURAL CONTRACT: every NEW session-creation route MUST call this helper
-// (and return on true). It is invoked today from the three gated handlers
-// (StartComposedSession, StartSession/resume, BulkCreateTerminalsForGroup); any
-// new path that provisions or resumes a terminal must add the same call, or a
-// past_due customer will slip past the dunning gate.
-//
-// It reads the EffectivePlanResult injected by
-// InjectEffectivePlan, so it must run on routes that carry that middleware. It
-// writes a 402 with the stable error code `subscription_past_due` (mirroring the
-// structured BudgetRejection response shape) and returns true when it rejected —
-// callers must return immediately.
-//
-// Only a personal past_due subscription is gated (org-sourced plans have no
-// per-user dunning stamp here). Legacy past_due rows with a NULL PastDueSince —
-// which entered past_due before this shipped — are treated as within grace so
-// they are never locked out instantly (#371); a subsequent failed invoice will
-// stamp them and start the clock.
+// gatePastDueBeyondGrace delegates to the shared dunning gate — the logic
+// moved to paymentMiddleware.GatePastDueBeyondGrace so the scenario
+// launch/preview routes enforce the exact same rule (it living here as a
+// private method is how they shipped without it).
 func (tc *terminalController) gatePastDueBeyondGrace(ctx *gin.Context) bool {
-	val, exists := ctx.Get("effective_plan_result")
-	if !exists {
-		return false
-	}
-	result, ok := val.(*paymentServices.EffectivePlanResult)
-	if !ok || result == nil || result.UserSubscription == nil {
-		return false
-	}
-	sub := result.UserSubscription
-	if sub.Status != "past_due" || sub.PastDueSince == nil {
-		return false
-	}
-	grace := time.Duration(paymentServices.PastDueGraceDays()) * 24 * time.Hour
-	if time.Since(*sub.PastDueSince) <= grace {
-		return false // still within the grace window
-	}
-
-	utils.Warn("🚫 Blocking new session for user %s: subscription past_due since %s (grace %d days elapsed)",
-		ctx.GetString("userId"), sub.PastDueSince.Format(time.RFC3339), paymentServices.PastDueGraceDays())
-	ctx.JSON(http.StatusPaymentRequired, gin.H{
-		"error_code":    "subscription_past_due",
-		"error_message": "Your subscription payment is overdue. Please update your payment method to start new sessions.",
-		"source":        "dunning",
-	})
-	ctx.Abort()
-	return true
+	return paymentMiddleware.GatePastDueBeyondGrace(ctx)
 }
 
 func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
@@ -2321,34 +2287,10 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 
 	sessionResponse, err := tc.service.StartComposedSession(userID, input, planInterface)
 	if err != nil {
-		// Structured budget rejection — MR-CORE-6. Carries the rejection
-		// reason and remaining axes so the frontend can render a helpful
-		// "Budget exhausted" panel rather than a generic 500.
-		//
-		// The HTTP body deliberately collapses the CPU- and RAM-axis
-		// granular reasons into the single "budget_exhausted" code
-		// (matches the scenario controller's behaviour and the locked UX
-		// decision that customers see size-count language, not vCPU/RAM).
-		// The granular reason is logged server-side for debugging.
-		var budgetErr *services.BudgetRejection
-		if stderrors.As(err, &budgetErr) {
-			publicReason := coarseBudgetReason(budgetErr.Reason)
-			if publicReason != budgetErr.Reason {
-				slog.Debug("collapsing budget axis reason for HTTP response",
-					"internal_reason", budgetErr.Reason,
-					"public_reason", publicReason,
-					"user_id", userID)
-			}
-			ctx.JSON(http.StatusForbidden, gin.H{
-				"error_code":    http.StatusForbidden,
-				"error_message": budgetErr.Error(),
-				"source":        "budget",
-				"reason":        publicReason,
-				"remaining": gin.H{
-					"cpu":       budgetErr.RemainingCPU,
-					"memory_mb": budgetErr.RemainingMemoryMB,
-				},
-			})
+		// Structured budget rejection — shared writer (see
+		// services.WriteBudgetRejection) so terminal create and scenario
+		// launch/preview answer the identical 403 shape.
+		if services.WriteBudgetRejection(ctx, err, userID) {
 			return
 		}
 
@@ -2371,19 +2313,6 @@ func (tc *terminalController) StartComposedSession(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, sessionResponse)
-}
-
-// coarseBudgetReason collapses the granular CPU- and RAM-axis reasons
-// emitted by QuotaService into a single customer-facing code. The API
-// surface speaks in size-count language; leaking the axis (CPU vs RAM)
-// invites users to game one axis at the expense of the other.
-func coarseBudgetReason(internal string) string {
-	switch internal {
-	case "budget_cpu_exceeded", "budget_memory_exceeded":
-		return "budget_exhausted"
-	default:
-		return internal
-	}
 }
 
 // CapacityCheck godoc
