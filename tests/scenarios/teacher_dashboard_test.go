@@ -356,6 +356,66 @@ func TestGetScenarioAnalytics_Success(t *testing.T) {
 	assert.InDelta(t, 100.0, *analytics.AvgGrade, 0.01) // only completed sessions count for grade avg
 }
 
+// TestGetScenarioAnalytics_ExclusionsAndAvgTime pins the aggregate contract
+// ahead of the lean-loader rewrite: preview sessions and inactive members are
+// excluded from every number, and the average completion time is the mean
+// duration of completed sessions only.
+func TestGetScenarioAnalytics_ExclusionsAndAvgTime(t *testing.T) {
+	db := setupTestDB(t)
+
+	groupID := uuid.New()
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: "student-1", Role: "member", JoinedAt: time.Now(), IsActive: true,
+	}).Error)
+	// IsActive must be flipped post-create: the model's gorm default:true
+	// rewrites an explicit false on Create (known footgun).
+	require.NoError(t, db.Omit("Metadata").Create(&groupModels.GroupMember{
+		GroupID: groupID, UserID: "student-gone", Role: "member", JoinedAt: time.Now(),
+	}).Error)
+	require.NoError(t, db.Model(&groupModels.GroupMember{}).
+		Where("group_id = ? AND user_id = ?", groupID, "student-gone").
+		Update("is_active", false).Error)
+
+	scenario := models.Scenario{
+		Name: "analytics-excl-test", Title: "Analytics Exclusions", InstanceType: "ubuntu:22.04", CreatedByID: "c1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	// Completed in exactly 30 minutes, grade 80.
+	started := time.Now().Add(-time.Hour)
+	completed := started.Add(30 * time.Minute)
+	grade := 80.0
+	require.NoError(t, db.Create(&models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "student-1", Status: "completed",
+		StartedAt: started, CompletedAt: &completed, Grade: &grade,
+	}).Error)
+
+	// Preview session (trainer dry-run): excluded from every aggregate.
+	require.NoError(t, db.Create(&models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "student-1", Status: "completed", IsPreview: true,
+		StartedAt: started, CompletedAt: &completed, Grade: &grade,
+	}).Error)
+
+	// Session of a deactivated member: excluded too.
+	require.NoError(t, db.Create(&models.ScenarioSession{
+		ScenarioID: scenario.ID, UserID: "student-gone", Status: "completed",
+		StartedAt: started, CompletedAt: &completed, Grade: &grade,
+	}).Error)
+
+	svc := services.NewTeacherDashboardService(db, nil, nil)
+	analytics, err := svc.GetScenarioAnalytics(groupID, scenario.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), analytics.TotalSessions,
+		"preview sessions and inactive members must not count")
+	assert.Equal(t, int64(1), analytics.CompletedCount)
+	assert.InDelta(t, 100.0, analytics.CompletionRate, 0.01)
+	require.NotNil(t, analytics.AvgGrade)
+	assert.InDelta(t, 80.0, *analytics.AvgGrade, 0.01)
+	require.NotNil(t, analytics.AvgCompletionTimeSecs)
+	assert.InDelta(t, 1800.0, *analytics.AvgCompletionTimeSecs, 1.0,
+		"avg completion time must be the mean duration of completed sessions")
+}
+
 // --- Bulk start tests ---
 
 func TestBulkStartScenario_Success(t *testing.T) {

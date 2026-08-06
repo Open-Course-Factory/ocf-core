@@ -351,21 +351,39 @@ func (s *TeacherDashboardService) getScenarioResults(groupID, scenarioID uuid.UU
 
 // GetScenarioAnalytics computes aggregate statistics for a scenario within a group.
 // Calculations are done in Go to avoid SQLite vs PostgreSQL syntax differences.
+//
+// It deliberately does NOT reuse getScenarioResults: that loader serves the
+// paginated results TABLE (per-row step/hint subqueries, Casdoor identity
+// enrichment, partial-grade computation for active sessions) and the
+// aggregates below use none of it. Reusing it made this endpoint load every
+// session unbounded, run one grade query per active session and one Casdoor
+// HTTP call per cold user — seconds per scenario on a real class, times one
+// call per scenario on the analytics page.
 func (s *TeacherDashboardService) GetScenarioAnalytics(groupID, scenarioID uuid.UUID) (*ScenarioAnalytics, error) {
-	paginated, err := s.getScenarioResults(groupID, scenarioID, nil, nil, false)
-	if err != nil {
+	var rows []struct {
+		Status      string
+		Grade       *float64
+		StartedAt   time.Time
+		CompletedAt *time.Time
+	}
+	if err := s.db.Raw(`
+		SELECT ss.status, ss.grade, ss.started_at, ss.completed_at
+		FROM scenario_sessions ss
+		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
+		WHERE ss.scenario_id = ? AND ss.is_preview = false
+	`, groupID, scenarioID).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 
 	analytics := &ScenarioAnalytics{}
-	analytics.TotalSessions = int64(len(paginated.Items))
+	analytics.TotalSessions = int64(len(rows))
 
 	var gradeSum float64
 	var gradeCount int64
 	var timeSum float64
 	var timeCount int64
 
-	for _, r := range paginated.Items {
+	for _, r := range rows {
 		if r.Status == "completed" {
 			analytics.CompletedCount++
 			if r.Grade != nil {
