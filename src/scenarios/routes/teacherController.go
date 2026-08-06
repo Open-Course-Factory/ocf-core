@@ -10,12 +10,16 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	paymentMiddleware "soli/formations/src/payment/middleware"
+	paymentServices "soli/formations/src/payment/services"
+	scenarioModels "soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	ttServices "soli/formations/src/terminalTrainer/services"
 )
 
 // TeacherController handles teacher-facing dashboard endpoints
 type TeacherController struct {
+	db               *gorm.DB
 	dashboardService *services.TeacherDashboardService
 	sessionService   *services.ScenarioSessionService
 	terminalService  ttServices.TerminalTrainerService
@@ -28,6 +32,7 @@ func NewTeacherController(db *gorm.DB) *TeacherController {
 	terminalService := ttServices.NewTerminalTrainerService(db)
 	sessionService := services.NewScenarioSessionService(db, flagService, verificationService)
 	return &TeacherController{
+		db:               db,
 		dashboardService: services.NewTeacherDashboardService(db, terminalService, sessionService),
 		sessionService:   sessionService,
 		terminalService:  terminalService,
@@ -453,6 +458,27 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 	}
 
 	trainerID := c.GetString("userId")
+
+	// Dunning gate (MANDATORY on every new session-creation route): bulk-start
+	// provisions terminals for the whole class on the TEACHER's initiative, so
+	// the TEACHER's past_due subscription blocks the launch — members are
+	// typically on assigned/org plans with no personal dunning stamp, and the
+	// payer-side actor here is the caller (decided 2026-08-07). The plan is
+	// resolved against the scenario's org, mirroring the per-member resolution
+	// inside BulkStartScenario; a failed resolution does not block (the
+	// service reports its own errors).
+	var scenarioOrg struct{ OrganizationID *uuid.UUID }
+	if err := tc.db.Model(&scenarioModels.Scenario{}).
+		Select("organization_id").
+		Where("id = ?", scenarioID).
+		First(&scenarioOrg).Error; err == nil {
+		planResult, planErr := paymentServices.NewEffectivePlanService(tc.db).
+			GetUserEffectivePlan(trainerID, scenarioOrg.OrganizationID)
+		if planErr == nil && paymentMiddleware.GatePastDueBeyondGraceForResult(c, planResult) {
+			return
+		}
+	}
+
 	result, err := tc.dashboardService.BulkStartScenario(groupID, scenarioID, req.InstanceType, req.Backend, req.SessionDurationMinutes, trainerID)
 	if err != nil {
 		slog.Error("failed to bulk start scenario", "err", err)
