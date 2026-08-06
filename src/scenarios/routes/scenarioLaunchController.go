@@ -18,6 +18,7 @@ import (
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 	terminalDto "soli/formations/src/terminalTrainer/dto"
+	"soli/formations/src/terminalTrainer/httperrors"
 	terminalModels "soli/formations/src/terminalTrainer/models"
 	terminalServices "soli/formations/src/terminalTrainer/services"
 
@@ -897,7 +898,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		// Budget exhaustion answers the same structured 403 the terminal
 		// creation route emits — the launcher renders honest budget copy
 		// from it instead of a generic failure.
-		if terminalServices.WriteBudgetRejection(ctx, termErr, userID) {
+		if httperrors.WriteBudgetRejection(ctx, termErr, userID) {
 			return
 		}
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
@@ -1143,7 +1144,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	terminalResp, termErr := sc.terminalService.StartComposedSession(userID, composedInput, planResult.Plan)
 	if termErr != nil {
 		slog.Error("failed to create terminal session for scenario preview", "scenario", scenario.Name, "userID", userID, "err", termErr)
-		if terminalServices.WriteBudgetRejection(ctx, termErr, userID) {
+		if httperrors.WriteBudgetRejection(ctx, termErr, userID) {
 			return
 		}
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
