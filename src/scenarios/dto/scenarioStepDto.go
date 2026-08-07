@@ -26,6 +26,8 @@ type CreateScenarioStepInput struct {
 	ForegroundScriptID *uuid.UUID `json:"foreground_script_id,omitempty" mapstructure:"foreground_script_id"`
 	TextFileID         *uuid.UUID `json:"text_file_id,omitempty" mapstructure:"text_file_id"`
 	HintFileID         *uuid.UUID `json:"hint_file_id,omitempty" mapstructure:"hint_file_id"`
+	IntroEffectFileID  *uuid.UUID `json:"intro_effect_file_id,omitempty" mapstructure:"intro_effect_file_id"`
+	OutroEffectFileID  *uuid.UUID `json:"outro_effect_file_id,omitempty" mapstructure:"outro_effect_file_id"`
 }
 
 // EditScenarioStepInput - DTO for editing a scenario step (partial updates)
@@ -47,6 +49,8 @@ type EditScenarioStepInput struct {
 	ForegroundScriptID *uuid.UUID `json:"foreground_script_id,omitempty" mapstructure:"foreground_script_id"`
 	TextFileID         *uuid.UUID `json:"text_file_id,omitempty" mapstructure:"text_file_id"`
 	HintFileID         *uuid.UUID `json:"hint_file_id,omitempty" mapstructure:"hint_file_id"`
+	IntroEffectFileID  *uuid.UUID `json:"intro_effect_file_id,omitempty" mapstructure:"intro_effect_file_id"`
+	OutroEffectFileID  *uuid.UUID `json:"outro_effect_file_id,omitempty" mapstructure:"outro_effect_file_id"`
 }
 
 // ScenarioStepOutput - DTO for scenario step responses (admin-only entity).
@@ -71,6 +75,8 @@ type ScenarioStepOutput struct {
 	ForegroundScriptID *uuid.UUID `json:"foreground_script_id,omitempty"`
 	TextFileID         *uuid.UUID `json:"text_file_id,omitempty"`
 	HintFileID         *uuid.UUID `json:"hint_file_id,omitempty"`
+	IntroEffectFileID  *uuid.UUID `json:"intro_effect_file_id,omitempty"`
+	OutroEffectFileID  *uuid.UUID `json:"outro_effect_file_id,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
 	Questions          []ScenarioStepQuestionOutput `json:"questions,omitempty"`

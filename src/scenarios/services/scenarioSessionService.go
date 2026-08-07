@@ -486,6 +486,8 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 		StepType:    normalizeStepType(currentStep.StepType),
 		TextContent: textContent,
 		ShowImmediateFeedback: currentStep.ShowImmediateFeedback,
+		IntroEffectURL: effectContentURL(currentStep.IntroEffectFileID),
+		OutroEffectURL: effectContentURL(currentStep.OutroEffectFileID),
 	}
 
 	// Quiz steps: populate the sanitized question list (no correct_answer/explanation)
@@ -525,6 +527,16 @@ func stepPositionInfo(steps []models.ScenarioStep, order int) (int, []int) {
 		}
 	}
 	return position, orders
+}
+
+// effectContentURL builds the frontend-facing URL for a step's effect asset.
+// No /api/v1 prefix: the frontend's axios interceptor adds it. Empty when the
+// step has no asset.
+func effectContentURL(fileID *uuid.UUID) string {
+	if fileID == nil {
+		return ""
+	}
+	return fmt.Sprintf("/project-files/%s/content", fileID.String())
 }
 
 // normalizeStepType returns the canonical step_type string. Empty values from
@@ -612,6 +624,8 @@ func (s *ScenarioSessionService) GetStepByOrder(sessionID uuid.UUID, stepOrder i
 		StepType:    normalizeStepType(targetStep.StepType),
 		TextContent: textContent,
 		ShowImmediateFeedback: targetStep.ShowImmediateFeedback,
+		IntroEffectURL: effectContentURL(targetStep.IntroEffectFileID),
+		OutroEffectURL: effectContentURL(targetStep.OutroEffectFileID),
 	}
 
 	if response.StepType == "quiz" {

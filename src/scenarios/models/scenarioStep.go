@@ -27,6 +27,14 @@ type ScenarioStep struct {
 	ForegroundScriptID *uuid.UUID `gorm:"type:uuid;index" json:"foreground_script_id,omitempty" mapstructure:"foreground_script_id"`
 	TextFileID         *uuid.UUID `gorm:"type:uuid;index" json:"text_file_id,omitempty" mapstructure:"text_file_id"`
 	HintFileID         *uuid.UUID `gorm:"type:uuid;index" json:"hint_file_id,omitempty" mapstructure:"hint_file_id"`
+	IntroEffectFileID  *uuid.UUID `gorm:"type:uuid;index" json:"intro_effect_file_id,omitempty" mapstructure:"intro_effect_file_id"`
+	OutroEffectFileID  *uuid.UUID `gorm:"type:uuid;index" json:"outro_effect_file_id,omitempty" mapstructure:"outro_effect_file_id"`
+	// IntroEffectCast/OutroEffectCast carry asciicast v2 content transiently
+	// from importer/seeder input into createProjectFilesForScenario, which
+	// persists them as ProjectFiles (ContentType "cast") and sets the FKs
+	// above. Cast content is never stored inline on the step row.
+	IntroEffectCast string `gorm:"-" json:"-"`
+	OutroEffectCast string `gorm:"-" json:"-"`
 	Hints            []ScenarioStepHint     `gorm:"foreignKey:StepID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"hints,omitempty"`
 	Questions        []ScenarioStepQuestion `gorm:"foreignKey:StepID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"questions,omitempty"`
 }

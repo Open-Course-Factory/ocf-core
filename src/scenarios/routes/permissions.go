@@ -276,6 +276,19 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.Public},
 			Description: "Get scenario image (public to all authenticated users)",
 		},
+		// Step effect assets (asciicast recordings). Admin-only for now, like
+		// the project-file admin routes; the handler re-checks isProjectFileAdmin
+		// (defense-in-depth).
+		access.RoutePermission{
+			Path: "/api/v1/scenario-steps/:id/effect/:kind", Method: "POST",
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Upload a step intro/outro effect asset (admin only)",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/scenario-steps/:id/effect/:kind", Method: "DELETE",
+			Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly},
+			Description: "Delete a step intro/outro effect asset (admin only)",
+		},
 	)
 
 	log.Println("=== Scenario permissions setup completed ===")

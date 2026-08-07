@@ -38,6 +38,8 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						ForegroundScriptID: model.ForegroundScriptID,
 						TextFileID:         model.TextFileID,
 						HintFileID:         model.HintFileID,
+						IntroEffectFileID:  model.IntroEffectFileID,
+						OutroEffectFileID:  model.OutroEffectFileID,
 						CreatedAt:          model.CreatedAt,
 						UpdatedAt:          model.UpdatedAt,
 					}
@@ -94,6 +96,8 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						ForegroundScriptID: input.ForegroundScriptID,
 						TextFileID:         input.TextFileID,
 						HintFileID:         input.HintFileID,
+						IntroEffectFileID:  input.IntroEffectFileID,
+						OutroEffectFileID:  input.OutroEffectFileID,
 					}
 				},
 				DtoToMap: func(input dto.EditScenarioStepInput) map[string]any {
@@ -148,6 +152,12 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 					}
 					if input.HintFileID != nil {
 						updates["hint_file_id"] = *input.HintFileID
+					}
+					if input.IntroEffectFileID != nil {
+						updates["intro_effect_file_id"] = *input.IntroEffectFileID
+					}
+					if input.OutroEffectFileID != nil {
+						updates["outro_effect_file_id"] = *input.OutroEffectFileID
 					}
 					return updates
 				},

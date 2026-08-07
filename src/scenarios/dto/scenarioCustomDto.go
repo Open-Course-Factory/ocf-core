@@ -82,6 +82,11 @@ type CurrentStepResponse struct {
 	TextContent     string                `json:"text_content,omitempty"`
 	Questions       []CurrentStepQuestion `json:"questions,omitempty"`
 	ShowImmediateFeedback bool            `json:"show_immediate_feedback"`
+	// IntroEffectURL/OutroEffectURL point at the step's asciicast effect
+	// assets (ProjectFile content routes, WITHOUT the /api/v1 prefix — the
+	// frontend's axios interceptor adds it). Empty when the step has none.
+	IntroEffectURL string `json:"intro_effect_url,omitempty"`
+	OutroEffectURL string `json:"outro_effect_url,omitempty"`
 }
 
 // CurrentStepQuestion - sanitized public DTO for a quiz question.
@@ -175,6 +180,10 @@ type SeedStepInput struct {
 	HasFlag               bool                `json:"has_flag"`
 	FlagPath              string              `json:"flag_path"`
 	Questions             []SeedQuestionInput `json:"questions,omitempty"`
+	// Inline asciicast v2 content for the step's intro/outro terminal effects.
+	// Stored as ProjectFiles (ContentType "cast"), never inline on the step.
+	IntroEffectCast string `json:"intro_effect_cast,omitempty" binding:"max=1200000"`
+	OutroEffectCast string `json:"outro_effect_cast,omitempty" binding:"max=1200000"`
 }
 
 // ScenarioExportStepQuestionOutput — quiz question shape inside a scenario export
@@ -203,6 +212,8 @@ type ScenarioExportStepOutput struct {
 	FlagPath              string                             `json:"flag_path,omitempty"`
 	FlagLevel             int                                `json:"flag_level,omitempty"`
 	Questions             []ScenarioExportStepQuestionOutput `json:"questions,omitempty"`
+	IntroEffectCast       string                             `json:"intro_effect_cast,omitempty"`
+	OutroEffectCast       string                             `json:"outro_effect_cast,omitempty"`
 }
 
 // ScenarioExportOutput — full scenario data for JSON export/re-import

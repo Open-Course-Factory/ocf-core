@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"mime"
 	"os"
 	"path/filepath"
@@ -60,6 +61,8 @@ type KillerCodaStep struct {
 	Hint       string `json:"hint"`       // OCF extension: path to hint.md
 	HasFlag    *bool  `json:"has_flag"`   // OCF extension: per-step flag override (nil = use scenario default)
 	FlagPath   string `json:"flag_path"`  // OCF extension: where to place flag in container
+	IntroEffect string `json:"intro_effect,omitempty"` // OCF extension: path to intro asciicast (.cast)
+	OutroEffect string `json:"outro_effect,omitempty"` // OCF extension: path to outro asciicast (.cast)
 }
 
 // KillerCodaBackend describes the backend image to use
@@ -340,6 +343,8 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 			ForegroundScript: readFileContent(dirPath, kcStep.Foreground),
 			HasFlag:          stepHasFlag,
 			FlagPath:         kcStep.FlagPath,
+			IntroEffectCast:  readValidCast(dirPath, kcStep.IntroEffect, i),
+			OutroEffectCast:  readValidCast(dirPath, kcStep.OutroEffect, i),
 		}
 
 		// Build progressive hints from hint content
@@ -450,13 +455,34 @@ func readStepExtensions(dirPath string, stepDir string) (*stepExtensions, error)
 	return &sidecar, nil
 }
 
+// readValidCast reads an asciicast effect file and returns its content, or ""
+// (with a warning) when the file is missing or not a valid asciicast v2 —
+// an invalid effect must never fail a whole scenario import.
+func readValidCast(dirPath string, relPath string, stepIndex int) string {
+	if relPath == "" {
+		return ""
+	}
+	content := readFileContent(dirPath, relPath)
+	if content == "" {
+		slog.Warn("effect cast file missing or unreadable, skipping", "step_index", stepIndex, "path", relPath)
+		return ""
+	}
+	if err := ValidateAsciicastV2(content); err != nil {
+		slog.Warn("invalid effect cast file, skipping", "step_index", stepIndex, "path", relPath, "err", err)
+		return ""
+	}
+	return content
+}
+
 // stepRelPathInfo holds KillerCoda original relative paths for a step's files.
 type stepRelPathInfo struct {
-	Verify     string
-	Background string
-	Foreground string
-	Text       string
-	Hint       string
+	Verify      string
+	Background  string
+	Foreground  string
+	Text        string
+	Hint        string
+	IntroEffect string
+	OutroEffect string
 }
 
 // buildStepRelPaths extracts the original KillerCoda relative paths from the index
@@ -466,11 +492,13 @@ func buildStepRelPaths(index *KillerCodaIndex) []stepRelPathInfo {
 	for i, kcStep := range index.Details.Steps {
 		stepDir := fmt.Sprintf("step%d", i+1)
 		result[i] = stepRelPathInfo{
-			Verify:     defaultRelPath(kcStep.Verify, stepDir+"/verify.sh"),
-			Background: defaultRelPath(kcStep.Background, stepDir+"/background.sh"),
-			Foreground: defaultRelPath(kcStep.Foreground, stepDir+"/foreground.sh"),
-			Text:       defaultRelPath(kcStep.Text, stepDir+"/text.md"),
-			Hint:       defaultRelPath(kcStep.Hint, stepDir+"/hint.md"),
+			Verify:      defaultRelPath(kcStep.Verify, stepDir+"/verify.sh"),
+			Background:  defaultRelPath(kcStep.Background, stepDir+"/background.sh"),
+			Foreground:  defaultRelPath(kcStep.Foreground, stepDir+"/foreground.sh"),
+			Text:        defaultRelPath(kcStep.Text, stepDir+"/text.md"),
+			Hint:        defaultRelPath(kcStep.Hint, stepDir+"/hint.md"),
+			IntroEffect: defaultRelPath(kcStep.IntroEffect, stepDir+"/intro.cast"),
+			OutroEffect: defaultRelPath(kcStep.OutroEffect, stepDir+"/outro.cast"),
 		}
 	}
 	return result
@@ -504,7 +532,7 @@ func collectProjectFileIDs(tx *gorm.DB, scenarioID uuid.UUID) []uuid.UUID {
 
 	// Step-level FKs
 	var steps []models.ScenarioStep
-	tx.Select("verify_script_id, background_script_id, foreground_script_id, text_file_id, hint_file_id").
+	tx.Select("verify_script_id, background_script_id, foreground_script_id, text_file_id, hint_file_id, intro_effect_file_id, outro_effect_file_id").
 		Where("scenario_id = ?", scenarioID).Find(&steps)
 	for _, step := range steps {
 		if step.VerifyScriptID != nil {
@@ -521,6 +549,12 @@ func collectProjectFileIDs(tx *gorm.DB, scenarioID uuid.UUID) []uuid.UUID {
 		}
 		if step.HintFileID != nil {
 			ids = append(ids, *step.HintFileID)
+		}
+		if step.IntroEffectFileID != nil {
+			ids = append(ids, *step.IntroEffectFileID)
+		}
+		if step.OutroEffectFileID != nil {
+			ids = append(ids, *step.OutroEffectFileID)
 		}
 	}
 
@@ -615,11 +649,13 @@ func createProjectFilesForScenario(tx *gorm.DB, dbScenario *models.Scenario, src
 		} else {
 			stepDir := fmt.Sprintf("step%d", dbStep.Order+1)
 			relPaths = stepRelPathInfo{
-				Verify:     stepDir + "/verify.sh",
-				Background: stepDir + "/background.sh",
-				Foreground: stepDir + "/foreground.sh",
-				Text:       stepDir + "/text.md",
-				Hint:       stepDir + "/hint.md",
+				Verify:      stepDir + "/verify.sh",
+				Background:  stepDir + "/background.sh",
+				Foreground:  stepDir + "/foreground.sh",
+				Text:        stepDir + "/text.md",
+				Hint:        stepDir + "/hint.md",
+				IntroEffect: stepDir + "/intro.cast",
+				OutroEffect: stepDir + "/outro.cast",
 			}
 		}
 
@@ -705,6 +741,40 @@ func createProjectFilesForScenario(tx *gorm.DB, dbScenario *models.Scenario, src
 			}
 			if err := tx.Model(&dbStep).Update("hint_file_id", file.ID).Error; err != nil {
 				return fmt.Errorf("failed to update hint_file_id: %w", err)
+			}
+		}
+
+		if srcStep.IntroEffectCast != "" {
+			file := models.ProjectFile{
+				Name:        "intro.cast",
+				RelPath:     relPaths.IntroEffect,
+				ContentType: "cast",
+				Content:     srcStep.IntroEffectCast,
+				StorageType: "database",
+				SizeBytes:   int64(len(srcStep.IntroEffectCast)),
+			}
+			if err := tx.Create(&file).Error; err != nil {
+				return fmt.Errorf("failed to create intro effect ProjectFile: %w", err)
+			}
+			if err := tx.Model(&dbStep).Update("intro_effect_file_id", file.ID).Error; err != nil {
+				return fmt.Errorf("failed to update intro_effect_file_id: %w", err)
+			}
+		}
+
+		if srcStep.OutroEffectCast != "" {
+			file := models.ProjectFile{
+				Name:        "outro.cast",
+				RelPath:     relPaths.OutroEffect,
+				ContentType: "cast",
+				Content:     srcStep.OutroEffectCast,
+				StorageType: "database",
+				SizeBytes:   int64(len(srcStep.OutroEffectCast)),
+			}
+			if err := tx.Create(&file).Error; err != nil {
+				return fmt.Errorf("failed to create outro effect ProjectFile: %w", err)
+			}
+			if err := tx.Model(&dbStep).Update("outro_effect_file_id", file.ID).Error; err != nil {
+				return fmt.Errorf("failed to update outro_effect_file_id: %w", err)
 			}
 		}
 	}

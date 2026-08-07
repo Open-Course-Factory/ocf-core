@@ -97,6 +97,8 @@ func (c *projectFileController) GetContent(ctx *gin.Context) {
 		contentType = "text/markdown; charset=utf-8"
 	case "script":
 		contentType = "text/x-shellscript; charset=utf-8"
+	case "cast":
+		contentType = "application/x-asciicast"
 	}
 
 	ctx.Data(http.StatusOK, contentType, []byte(file.Content))

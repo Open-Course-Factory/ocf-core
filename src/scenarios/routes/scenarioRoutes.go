@@ -95,6 +95,12 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	orgScenarioRoutes.DELETE("/:scenarioId", middleware.AuthManagement(), managementController.OrgDeleteScenario)
 	orgScenarioRoutes.POST("/:scenarioId/duplicate", middleware.AuthManagement(), managementController.OrgDuplicateScenario)
 
+	// Step effect asset routes (asciicast intro/outro recordings, admin-only)
+	effectsCtrl := NewScenarioEffectsController(db)
+	stepEffectRoutes := router.Group("/scenario-steps")
+	stepEffectRoutes.POST("/:id/effect/:kind", middleware.AuthManagement(), effectsCtrl.UploadEffect)
+	stepEffectRoutes.DELETE("/:id/effect/:kind", middleware.AuthManagement(), effectsCtrl.DeleteEffect)
+
 	// ProjectFile custom routes
 	projectFileCtrl := NewProjectFileController(db)
 	projectFileRoutes := router.Group("/project-files")

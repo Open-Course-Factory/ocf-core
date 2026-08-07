@@ -208,6 +208,16 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 					newStep.HintFileID = &newID
 				}
 			}
+			if srcStep.IntroEffectFileID != nil {
+				if newID, ok := fileIDMap[*srcStep.IntroEffectFileID]; ok {
+					newStep.IntroEffectFileID = &newID
+				}
+			}
+			if srcStep.OutroEffectFileID != nil {
+				if newID, ok := fileIDMap[*srcStep.OutroEffectFileID]; ok {
+					newStep.OutroEffectFileID = &newID
+				}
+			}
 
 			if err := tx.Create(&newStep).Error; err != nil {
 				return fmt.Errorf("failed to create step copy: %w", err)
@@ -289,6 +299,12 @@ func collectReferencedFileIDs(scenario *models.Scenario) []uuid.UUID {
 		}
 		if step.HintFileID != nil {
 			ids = append(ids, *step.HintFileID)
+		}
+		if step.IntroEffectFileID != nil {
+			ids = append(ids, *step.IntroEffectFileID)
+		}
+		if step.OutroEffectFileID != nil {
+			ids = append(ids, *step.OutroEffectFileID)
 		}
 	}
 	return ids

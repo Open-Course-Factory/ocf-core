@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -21,6 +22,20 @@ type ScenarioSeedService struct {
 // NewScenarioSeedService creates a new seed service
 func NewScenarioSeedService(db *gorm.DB) *ScenarioSeedService {
 	return &ScenarioSeedService{db: db}
+}
+
+// validCastOrEmpty returns the cast content when it is a valid asciicast v2,
+// or "" with a warning — an invalid effect never fails a whole seed (mirrors
+// the archive importer's warn-and-skip behavior).
+func validCastOrEmpty(content string, stepIndex int, kind string) string {
+	if content == "" {
+		return ""
+	}
+	if err := ValidateAsciicastV2(content); err != nil {
+		slog.Warn("invalid seed effect cast, skipping", "step_index", stepIndex, "kind", kind, "err", err)
+		return ""
+	}
+	return content
 }
 
 // SeedScenario creates or updates a scenario with all its steps from a SeedScenarioInput.
@@ -71,6 +86,8 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			ForegroundScript:      st.ForegroundScript,
 			HasFlag:               st.HasFlag,
 			FlagPath:              st.FlagPath,
+			IntroEffectCast:       validCastOrEmpty(st.IntroEffectCast, i, "intro"),
+			OutroEffectCast:       validCastOrEmpty(st.OutroEffectCast, i, "outro"),
 		}
 
 		// Build progressive hints from hint content

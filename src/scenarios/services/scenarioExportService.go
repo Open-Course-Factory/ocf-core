@@ -125,6 +125,8 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dt
 			FlagPath:              step.FlagPath,
 			FlagLevel:             step.FlagLevel,
 			Questions:             questions,
+			IntroEffectCast:       ResolveScriptContent(s.db, step.IntroEffectFileID, ""),
+			OutroEffectCast:       ResolveScriptContent(s.db, step.OutroEffectFileID, ""),
 		})
 	}
 
@@ -221,6 +223,18 @@ func (s *ScenarioExportService) buildArchive(scenario *models.Scenario) ([]byte,
 				return nil, err
 			}
 		}
+		introCast := ResolveScriptContent(s.db, step.IntroEffectFileID, "")
+		if introCast != "" {
+			if err := addFileToZip(w, resolveRelPath(s.db, step.IntroEffectFileID, stepDir+"/intro.cast"), []byte(introCast)); err != nil {
+				return nil, err
+			}
+		}
+		outroCast := ResolveScriptContent(s.db, step.OutroEffectFileID, "")
+		if outroCast != "" {
+			if err := addFileToZip(w, resolveRelPath(s.db, step.OutroEffectFileID, stepDir+"/outro.cast"), []byte(outroCast)); err != nil {
+				return nil, err
+			}
+		}
 
 		// Write OCF-specific extension data as a sidecar file so KillerCoda
 		// compatibility (index.json schema) is preserved. Only write when
@@ -300,6 +314,13 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 		kcStep.HasFlag = &hasFlag
 		if step.FlagPath != "" {
 			kcStep.FlagPath = step.FlagPath
+		}
+
+		if step.IntroEffectFileID != nil {
+			kcStep.IntroEffect = resolveRelPath(s.db, step.IntroEffectFileID, stepDir+"/intro.cast")
+		}
+		if step.OutroEffectFileID != nil {
+			kcStep.OutroEffect = resolveRelPath(s.db, step.OutroEffectFileID, stepDir+"/outro.cast")
 		}
 
 		details.Steps = append(details.Steps, kcStep)
