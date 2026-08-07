@@ -56,7 +56,7 @@ type KillerCodaStep struct {
 	Text       string `json:"text"`       // path to text.md
 	Verify     string `json:"verify"`     // path to verify.sh
 	Background string `json:"background"` // path to background.sh
-	Foreground string `json:"foreground"` // path to foreground.sh
+	Foreground string `json:"foreground"` // path to foreground.sh — imported and re-exported, never executed (see ScenarioStep.ForegroundScript)
 	Hint       string `json:"hint"`       // OCF extension: path to hint.md
 	HasFlag    *bool  `json:"has_flag"`   // OCF extension: per-step flag override (nil = use scenario default)
 	FlagPath   string `json:"flag_path"`  // OCF extension: where to place flag in container

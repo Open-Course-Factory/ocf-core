@@ -18,6 +18,14 @@ type ScenarioStep struct {
 	HintContent      string    `gorm:"type:text" json:"hint_content,omitempty"`      // markdown
 	VerifyScript     string    `gorm:"type:text" json:"-"`
 	BackgroundScript string    `gorm:"type:text" json:"-"`
+	// ForegroundScript is stored, imported, duplicated and exported, but never
+	// executed. In KillerCoda a foreground script runs inside the learner's
+	// visible shell; the only exec path OCF has is tt-backend POST /1.0/exec,
+	// which is non-interactive, so there is no counterpart to
+	// ScenarioSessionService.executeBackgroundScript and none can be written
+	// without an interactive exec channel. The field is kept for archive
+	// round-trip fidelity only — a step that needs to run something must use
+	// BackgroundScript.
 	ForegroundScript string    `gorm:"type:text" json:"-"`
 	HasFlag          bool               `gorm:"default:false" json:"has_flag"`
 	FlagPath         string             `gorm:"type:varchar(500)" json:"flag_path,omitempty"` // where to place the flag file in the container

@@ -28,6 +28,11 @@ type Scenario struct {
 	FlagsEnabled   bool       `gorm:"default:false" json:"flags_enabled"`
 	FlagSecret       string     `gorm:"type:varchar(500)" json:"-"` // never exposed in API
 	AllowedFlagPaths string     `gorm:"type:text" json:"allowed_flag_paths,omitempty" mapstructure:"allowed_flag_paths"` // comma-separated allowed path prefixes; empty = defaults
+	// Deprecated: nothing reads GshEnabled. The in-terminal gsh helper was
+	// dropped — ScenarioPanel already carries goal, hints, verify, flag and
+	// quiz. The column, the DTOs and the import/export plumbing stay so that
+	// archives written before the drop still round-trip byte-for-byte; the
+	// editor surface was removed from ocf-front. Do not build on this flag.
 	GshEnabled     bool       `gorm:"default:false" json:"gsh_enabled"`
 	CrashTraps     bool       `gorm:"default:false" json:"crash_traps"`
 	Objectives     string     `gorm:"type:text" json:"objectives,omitempty"`
