@@ -18,6 +18,7 @@ import (
 	groupModels "soli/formations/src/groups/models"
 	paymentServices "soli/formations/src/payment/services"
 	"soli/formations/src/scenarios/dto"
+	"soli/formations/src/scenarios/repositories"
 	"soli/formations/src/scenarios/models"
 	ttDto "soli/formations/src/terminalTrainer/dto"
 	ttServices "soli/formations/src/terminalTrainer/services"
@@ -196,13 +197,19 @@ func enrichResultUsers(items []ScenarioResultItem) {
 // TeacherDashboardService provides teacher-facing queries for group activity and scenario results
 type TeacherDashboardService struct {
 	db              *gorm.DB
+	sessionRepo     repositories.ScenarioSessionRepository
 	terminalService ttServices.TerminalTrainerService
 	sessionService  *ScenarioSessionService
 }
 
 // NewTeacherDashboardService creates a new teacher dashboard service
 func NewTeacherDashboardService(db *gorm.DB, terminalService ttServices.TerminalTrainerService, sessionService *ScenarioSessionService) *TeacherDashboardService {
-	return &TeacherDashboardService{db: db, terminalService: terminalService, sessionService: sessionService}
+	return &TeacherDashboardService{
+		db:              db,
+		sessionRepo:     repositories.NewScenarioSessionRepository(db),
+		terminalService: terminalService,
+		sessionService:  sessionService,
+	}
 }
 
 // GetGroupActivity returns active sessions for all members of a group (single JOIN query, no N+1)
@@ -360,18 +367,8 @@ func (s *TeacherDashboardService) getScenarioResults(groupID, scenarioID uuid.UU
 // HTTP call per cold user — seconds per scenario on a real class, times one
 // call per scenario on the analytics page.
 func (s *TeacherDashboardService) GetScenarioAnalytics(groupID, scenarioID uuid.UUID) (*ScenarioAnalytics, error) {
-	var rows []struct {
-		Status      string
-		Grade       *float64
-		StartedAt   time.Time
-		CompletedAt *time.Time
-	}
-	if err := s.db.Raw(`
-		SELECT ss.status, ss.grade, ss.started_at, ss.completed_at
-		FROM scenario_sessions ss
-		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
-		WHERE ss.scenario_id = ? AND ss.is_preview = false
-	`, groupID, scenarioID).Scan(&rows).Error; err != nil {
+	rows, err := s.sessionRepo.GetSessionAggregatesForGroupScenario(groupID, scenarioID)
+	if err != nil {
 		return nil, err
 	}
 
