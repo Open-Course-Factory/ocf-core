@@ -41,9 +41,16 @@ const (
 	// silently discarding the trainer's choice.
 	//
 	// /etc/bash.bashrc rather than /etc/profile.d: the console attaches a
-	// NON-login bash, which never runs profile.d. On Debian /etc/profile
-	// sources bash.bashrc for interactive shells, so this one file covers the
+	// NON-login bash, which never runs profile.d. On Debian /etc/profile also
+	// sources bash.bashrc for interactive shells, so this one file reaches the
 	// login and non-login cases both.
+	//
+	// Note what this does NOT fix. The image installs the MOTD hook itself to
+	// /etc/profile.d/zz-ocf-motd.sh and nothing sources it from bash.bashrc, so
+	// on today's image the hook never fires for the console and step 0 banners
+	// do not render at all — wherever the effect is put. That is an image-side
+	// gap tracked against the challenge-image work, not something this file can
+	// close; the export is written so it is already correct when it lands.
 	ocfBashrcPath = "/etc/bash.bashrc"
 
 	// ocfEffectMarker makes the append idempotent. Provisioning can be replayed
@@ -185,11 +192,13 @@ func (s *ScenarioSessionService) deliverStepZeroIntro(terminalSessionID string, 
 	// The hook reads the effect from the environment, so it has to be exported
 	// into the learner's shell rather than written beside the text.
 	//
-	// PREPENDED, not appended. The image adds its MOTD-sourcing block to the end
-	// of bash.bashrc at build time; an export appended after that block would be
-	// set only once the hook had already run and fallen back to its default —
-	// the trainer's effect discarded a third time over. Going in at the top is
-	// what makes the export visible to the hook.
+	// PREPENDED, not appended: an environment variable has to be set before
+	// whatever reads it runs. Nothing sources the hook from this file yet, so
+	// today the order is not observable either way — but a sourcing block added
+	// later will almost certainly be appended, and an export sitting below it
+	// would be set only after the hook had already read its default. Going in at
+	// the top is the order that survives that change; appending is the one that
+	// would quietly stop working.
 	//
 	// effectNamePattern has already constrained this to a bare identifier, and
 	// the marker keeps a replayed provisioning from stacking exports.
