@@ -29,7 +29,7 @@ type FlagServiceInterface interface {
 type VerificationServiceInterface interface {
 	VerifyStep(terminalSessionID string, step *models.ScenarioStep) (passed bool, output string, err error)
 	PushFile(sessionID string, targetPath string, content string, mode string) error
-	ExecInContainer(sessionID string, command []string, timeout int) (exitCode int, stdout string, stderr string, err error)
+	ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (exitCode int, stdout string, stderr string, err error)
 }
 
 // defaultAllowedFlagPaths is the fallback list of allowed path prefixes for flag deployment
@@ -403,7 +403,9 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 			Order:            -1, // sentinel value for logging
 			BackgroundScript: setupScript,
 		}
-		if err := s.executeBackgroundScript(terminalSessionID, setupStep); err != nil {
+		// The scenario-level setup script is not a step and has no "current"
+		// flag; crash_traps scenarios hand it the whole set through config.json.
+		if err := s.executeBackgroundScript(terminalSessionID, setupStep, nil); err != nil {
 			slog.Error("scenario setup script failed", "session_id", sessionID, "err", err)
 			s.db.Model(&models.ScenarioSession{}).
 				Where("id = ? AND status = ?", sessionID, "provisioning").
@@ -425,7 +427,7 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 		s.db.Model(&models.ScenarioSession{}).
 			Where("id = ? AND status = ?", sessionID, "provisioning").
 			Update("provisioning_phase", "step_setup")
-		if err := s.executeBackgroundScript(terminalSessionID, step); err != nil {
+		if err := s.executeBackgroundScript(terminalSessionID, step, stepProvisioningEnv(scenario, flags, step.Order)); err != nil {
 			slog.Error("step 0 setup failed", "session_id", sessionID, "err", err)
 			s.db.Model(&models.ScenarioSession{}).
 				Where("id = ? AND status = ?", sessionID, "provisioning").
@@ -530,12 +532,39 @@ func (s *ScenarioSessionService) provisionNextStep(session *models.ScenarioSessi
 	return dto.StepProvisioningStatus{}
 }
 
+// ocfFlagCurrentEnv carries a step's own flag into its background script.
+// The OCF_ prefix is load-bearing: challenge content plants decoy environment
+// variables of its own, and a platform-owned name is what makes a leak audit
+// ("does any process still expose it?") greppable.
+const ocfFlagCurrentEnv = "OCF_FLAG_CURRENT"
+
+// stepProvisioningEnv builds the environment a step's background script runs
+// with: its own flag, and nothing else.
+//
+// Passing the whole flag set would defeat the point. A learner who reaches
+// root-equivalent inside the container — levels 7 and 9 hold NOPASSWD sudo by
+// design — could then read every later level's flag out of one process
+// environment and skip the rest of the run.
+//
+// Returns nil when there is nothing to pass, so a scenario without flags sends
+// exactly the request it sends today rather than an empty, confusing variable.
+func stepProvisioningEnv(scenario *models.Scenario, flags []models.ScenarioFlag, stepOrder int) map[string]string {
+	if scenario == nil || !scenario.FlagsEnabled {
+		return nil
+	}
+	flag := findFlagByStepOrder(flags, stepOrder)
+	if flag == nil || flag.ExpectedFlag == "" {
+		return nil
+	}
+	return map[string]string{ocfFlagCurrentEnv: flag.ExpectedFlag}
+}
+
 // runStepProvisioning executes a step's background script and then deploys the
 // step's flag. The flag is deployed even when the script failed: the advance is
 // already committed, and a learner facing a half-provisioned level is better
 // served by having the flag in place than by having nothing.
 func (s *ScenarioSessionService) runStepProvisioning(terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, step *models.ScenarioStep) error {
-	scriptErr := s.executeBackgroundScript(terminalSessionID, step)
+	scriptErr := s.executeBackgroundScript(terminalSessionID, step, stepProvisioningEnv(scenario, flags, step.Order))
 	flagErr := s.deploySingleFlagToContainer(terminalSessionID, scenario, flags, step.Order)
 	if scriptErr != nil {
 		return scriptErr
@@ -1666,7 +1695,7 @@ func effectiveTimeout(step *models.ScenarioStep) int {
 // Small scripts (<=4000 bytes) are passed inline via /bin/sh -c.
 // Large scripts are pushed as temp files via PushFile, then executed from disk
 // and cleaned up afterward, to avoid tt-backend's 4KB exec argument limit.
-func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID string, step *models.ScenarioStep) error {
+func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID string, step *models.ScenarioStep, env map[string]string) error {
 	// Resolve background script from ProjectFile if available
 	bgScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript)
 	if bgScript == "" {
@@ -1696,6 +1725,7 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 		exitCode, stdout, stderr, err = s.verificationService.ExecInContainer(
 			terminalSessionID,
 			[]string{interpreter, "-c", bgScript},
+			env,
 			timeout,
 		)
 	} else {
@@ -1708,12 +1738,14 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 		exitCode, stdout, stderr, err = s.verificationService.ExecInContainer(
 			terminalSessionID,
 			[]string{interpreter, tmpPath},
+			env,
 			timeout,
 		)
-		// Best-effort cleanup
+		// Best-effort cleanup — no env, the flag has nothing to do with rm.
 		_, _, _, _ = s.verificationService.ExecInContainer(
 			terminalSessionID,
 			[]string{"rm", "-f", tmpPath},
+			nil,
 			5,
 		)
 	}

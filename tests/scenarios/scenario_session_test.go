@@ -46,7 +46,10 @@ func (m *mockFlagService) ValidateFlag(expected string, submitted string) bool {
 type execCall struct {
 	sessionID string
 	command   []string
-	timeout   int
+	// env is what tt-backend forwards to Incus as the process environment.
+	// It is where per-step secrets travel, so tests assert on it directly.
+	env     map[string]string
+	timeout int
 }
 
 type mockVerificationService struct {
@@ -65,8 +68,8 @@ func (m *mockVerificationService) PushFile(sessionID string, targetPath string, 
 	return nil
 }
 
-func (m *mockVerificationService) ExecInContainer(sessionID string, command []string, timeout int) (int, string, string, error) {
-	m.execCalls = append(m.execCalls, execCall{sessionID, command, timeout})
+func (m *mockVerificationService) ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (int, string, string, error) {
+	m.execCalls = append(m.execCalls, execCall{sessionID, command, env, timeout})
 	if m.execErr != nil {
 		return -1, "", "", m.execErr
 	}
