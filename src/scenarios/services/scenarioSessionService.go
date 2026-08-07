@@ -578,6 +578,102 @@ func (s *ScenarioSessionService) failStepProvisioning(sessionID uuid.UUID) {
 		})
 }
 
+// ReprovisionCurrentStep re-runs the current step's background script against
+// the learner's existing container. It is the recovery path for a failed
+// advance: the advance itself is never rolled back, so the only way back into a
+// playable state is to retry the setup.
+//
+// force exports FORCE=1 into the script so it redoes work its idempotency
+// markers would otherwise skip.
+func (s *ScenarioSessionService) ReprovisionCurrentStep(sessionID uuid.UUID, force bool) (*dto.ReprovisionStepResponse, error) {
+	session, err := s.loadReprovisionableSession(sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	step := findStepByOrder(session.Scenario.Steps, session.CurrentStep)
+	if step == nil {
+		return nil, fmt.Errorf("current step (order=%d) not found", session.CurrentStep)
+	}
+
+	runnable, err := s.resolveRunnableStep(step, force)
+	if err != nil {
+		return nil, err
+	}
+
+	if runsAsynchronously(runnable) {
+		// The async path enters from "active", so a session the previous
+		// attempt left in setup_failed has to be cleared first. From there the
+		// goroutine owns the outcome.
+		s.setSessionRunState(session.ID, "active")
+		if !s.startAsyncStepProvisioning(session, runnable) {
+			return nil, fmt.Errorf("session is no longer active")
+		}
+		return &dto.ReprovisionStepResponse{StepOrder: step.Order, Status: "provisioning"}, nil
+	}
+
+	// Synchronous: run first, then record the outcome, so a failed retry never
+	// leaves the session claiming to be playable.
+	if err := s.runStepProvisioning(*session.TerminalSessionID, &session.Scenario, session.Flags, runnable); err != nil {
+		observability.Metrics.ScenarioStepProvisioningFailed.Add(1)
+		slog.Error("step reprovisioning failed", "session_id", session.ID, "step_order", step.Order, "err", err)
+		s.setSessionRunState(session.ID, "setup_failed")
+		return nil, fmt.Errorf("step provisioning failed: %w", err)
+	}
+	s.setSessionRunState(session.ID, "active")
+	return &dto.ReprovisionStepResponse{StepOrder: step.Order, Status: "active"}, nil
+}
+
+// setSessionRunState moves a session between the two states reprovisioning can
+// produce. The guard restricts it to the states reprovisioning accepts, so an
+// abandon racing the retry still wins.
+func (s *ScenarioSessionService) setSessionRunState(sessionID uuid.UUID, status string) {
+	s.db.Model(&models.ScenarioSession{}).
+		Where("id = ? AND status IN ?", sessionID, []string{"active", "setup_failed"}).
+		Updates(map[string]any{
+			"status":             status,
+			"provisioning_phase": "",
+		})
+}
+
+// loadReprovisionableSession loads a session and rejects the states in which
+// re-running a step's setup makes no sense. A session already provisioning has
+// a goroutine on the job; a completed or abandoned one has no run to repair.
+func (s *ScenarioSessionService) loadReprovisionableSession(sessionID uuid.UUID) (*models.ScenarioSession, error) {
+	var session models.ScenarioSession
+	if err := s.db.Preload("Scenario.Steps", func(db *gorm.DB) *gorm.DB {
+		return db.Order("\"order\" ASC")
+	}).Preload("Flags").First(&session, "id = ?", sessionID).Error; err != nil {
+		return nil, fmt.Errorf("session not found: %w", err)
+	}
+	if session.Status != "active" && session.Status != "setup_failed" {
+		return nil, fmt.Errorf("session status %q cannot be reprovisioned", session.Status)
+	}
+	if session.TerminalSessionID == nil {
+		return nil, fmt.Errorf("no terminal session attached")
+	}
+	return &session, nil
+}
+
+// resolveRunnableStep returns a copy of the step carrying its background script
+// inline, optionally force-flagged. The copy is needed because
+// executeBackgroundScript re-reads the script from the ProjectFile whenever
+// BackgroundScriptID is set, which would discard the injected flag.
+func (s *ScenarioSessionService) resolveRunnableStep(step *models.ScenarioStep, force bool) (*models.ScenarioStep, error) {
+	script := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript)
+	if script == "" {
+		return nil, fmt.Errorf("current step has no background script to run")
+	}
+	if force {
+		script = injectForceFlag(script)
+	}
+
+	runnable := *step
+	runnable.BackgroundScriptID = nil
+	runnable.BackgroundScript = script
+	return &runnable, nil
+}
+
 // GetCurrentStep returns the current step content for a session.
 // While setup is running the response carries status "provisioning" instead of
 // step content, so the frontend can show its loading state. Setup is no longer

@@ -52,6 +52,22 @@ type VerifyStepResponse struct {
 	NextStepProvisioning bool `json:"next_step_provisioning,omitempty"`
 }
 
+// ReprovisionStepInput - DTO for re-running the current step's setup
+type ReprovisionStepInput struct {
+	// Force tells the step script to redo work its idempotency markers would
+	// otherwise skip (exported as FORCE=1).
+	Force bool `json:"force,omitempty"`
+}
+
+// ReprovisionStepResponse - DTO for a reprovisioning request
+type ReprovisionStepResponse struct {
+	StepOrder int `json:"step_order"`
+	// Status is the session status right after the call: "provisioning" when
+	// the setup runs in the background and the client must poll until it
+	// clears, "active" when it already finished.
+	Status string `json:"status"`
+}
+
 // SubmitFlagInput - DTO for submitting a flag answer
 type SubmitFlagInput struct {
 	Flag string `json:"flag" binding:"required,max=1000"`

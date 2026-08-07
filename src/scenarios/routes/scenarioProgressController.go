@@ -27,6 +27,7 @@ type ScenarioProgressController interface {
 	SubmitQuiz(ctx *gin.Context)
 	RevealHint(ctx *gin.Context)
 	AbandonSession(ctx *gin.Context)
+	ReprovisionStep(ctx *gin.Context)
 	GetSessionFlags(ctx *gin.Context)
 }
 
@@ -341,6 +342,54 @@ func (pc *scenarioProgressController) AbandonSession(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, dto.MessageResponse{Message: "Session abandoned"})
+}
+
+// ReprovisionStep godoc
+// @Summary Re-run the current step's setup
+// @Description Re-run the current step's background script in the learner's container. Available to the session owner when the session is active or its setup failed. Step scripts are expected to be idempotent; pass force to make the script redo work it already marked as done.
+// @Tags scenario-sessions
+// @Accept json
+// @Produce json
+// @Param id path string true "Session ID"
+// @Param body body dto.ReprovisionStepInput false "Reprovisioning options"
+// @Success 200 {object} dto.ReprovisionStepResponse
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenario-sessions/{id}/reprovision-step [post]
+// @Security BearerAuth
+func (pc *scenarioProgressController) ReprovisionStep(ctx *gin.Context) {
+	session, err := pc.getSessionIfOwned(ctx)
+	if err != nil {
+		return
+	}
+
+	// The body is optional — an empty POST means "retry, without forcing".
+	var input dto.ReprovisionStepInput
+	if ctx.Request.ContentLength > 0 {
+		if err := ctx.ShouldBindJSON(&input); err != nil {
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: err.Error(),
+			})
+			return
+		}
+	}
+
+	result, err := pc.sessionService.ReprovisionCurrentStep(session.ID, input.Force)
+	if err != nil {
+		// Every rejection here is about the session's own state or content
+		// (wrong status, no script, script failed) — a 400 tells the client the
+		// retry is not going to work as-is, which a 500 would not.
+		slog.Warn("failed to reprovision step", "session_id", session.ID, "err", err)
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
 }
 
 // GetSessionFlags returns all validated (correct) flags for a session.

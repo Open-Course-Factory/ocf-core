@@ -80,6 +80,11 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Abandon a session (must own the session)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/scenario-sessions/:id/reprovision-step", Method: "POST",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.EntityOwner, Entity: "ScenarioSession", Field: "UserID"},
+			Description: "Re-run the current step's setup script (must own the session)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/scenario-sessions/launch", Method: "POST",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Launch a scenario with auto-provisioned terminal",
