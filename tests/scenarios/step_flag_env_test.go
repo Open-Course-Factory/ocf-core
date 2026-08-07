@@ -228,6 +228,14 @@ func findPushTo(t *testing.T, svc *bgTrackingVerificationService, targetPath str
 // crash_traps scenarios are the ones the env channel exists for: their flags
 // must exist nowhere on disk, so the step script gets the value through the
 // environment and no flag file is ever written.
+//
+// Keep both assertions in this one test. They come from different code paths —
+// stepProvisioningEnv supplies the environment, deploySingleFlagToContainer
+// declines to write the file — and the security property only holds while both
+// do. Split apart, each half looks redundant with a test elsewhere in this file
+// and invites deletion; worse, an author who "helpfully" restores the file write
+// for crash_traps so the flag is "available to the learner" puts every flag back
+// on disk with nothing failing.
 func TestBackgroundScript_CrashTraps_PassesFlagInEnvAndWritesNoFlagFile(t *testing.T) {
 	db := setupTestDB(t)
 	session := flaggedTwoStepSession(t, db, "flag-env-crash-traps", models.ScenarioStep{
