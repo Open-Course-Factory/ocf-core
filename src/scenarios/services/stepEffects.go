@@ -184,12 +184,23 @@ func (s *ScenarioSessionService) deliverStepZeroIntro(terminalSessionID string, 
 
 	// The hook reads the effect from the environment, so it has to be exported
 	// into the learner's shell rather than written beside the text.
-	// effectNamePattern has already constrained this to a bare identifier;
-	// grep-then-append keeps a replayed provisioning from stacking exports.
+	//
+	// PREPENDED, not appended. The image adds its MOTD-sourcing block to the end
+	// of bash.bashrc at build time; an export appended after that block would be
+	// set only once the hook had already run and fallen back to its default —
+	// the trainer's effect discarded a third time over. Going in at the top is
+	// what makes the export visible to the hook.
+	//
+	// effectNamePattern has already constrained this to a bare identifier, and
+	// the marker keeps a replayed provisioning from stacking exports.
 	s.execBestEffort(terminalSessionID, sessionID, "step 0 intro effect",
 		[]string{"/bin/sh", "-c",
 			`grep -q '` + ocfEffectMarker + `' ` + ocfBashrcPath + ` 2>/dev/null && exit 0
-printf '%s\nexport OCF_MOTD_EFFECT=%s\n' '` + ocfEffectMarker + `' "$1" >> ` + ocfBashrcPath,
+tmp=$(mktemp) || exit 1
+printf '%s\nexport OCF_MOTD_EFFECT=%s\n' '` + ocfEffectMarker + `' "$1" > "$tmp"
+cat ` + ocfBashrcPath + ` >> "$tmp" 2>/dev/null
+cat "$tmp" > ` + ocfBashrcPath + `
+rm -f "$tmp"`,
 			"sh", banner.Effect})
 }
 

@@ -224,7 +224,12 @@ func TestStepBanners_StepZeroIntroIsStagedAsMotd(t *testing.T) {
 			// The console attaches a non-login bash, which never runs
 			// profile.d — the export has to land where that shell reads it.
 			assert.Contains(t, joined, "/etc/bash.bashrc")
-			assert.Contains(t, joined, "grep -q", "the append must be idempotent across replayed provisioning")
+			assert.Contains(t, joined, "grep -q", "the write must be idempotent across replayed provisioning")
+			// The image appends its MOTD-sourcing block to the END of
+			// bash.bashrc, so an export placed after it would be set only once
+			// the hook had already run and defaulted. It has to go in first.
+			assert.Contains(t, joined, "cat "+"/etc/bash.bashrc"+" >> ",
+				"the export must be prepended, not appended, or the hook reads its default instead")
 		}
 	}
 	assert.True(t, wroteText, "step 0's intro text must be staged for the login shell")
