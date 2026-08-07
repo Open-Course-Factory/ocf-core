@@ -722,9 +722,15 @@ func TestScenarioSessionService_VerifyAndAdvance_ExecutesNextBackgroundScript(t 
 	assert.True(t, result.Passed)
 	require.NotNil(t, result.NextStep)
 	assert.Equal(t, 1, *result.NextStep)
+	assert.True(t, result.NextStepProvisioning, "next step has a background script, so the advance reports provisioning")
+
+	// The default step timeout (60s) is past the async threshold, so the script
+	// runs in a goroutine and the session parks in "provisioning" until it lands.
+	assert.Equal(t, "active", waitForSetupDone(t, db, session.ID))
+
 	require.True(t, len(verifySvc.execCalls) >= 1)
 	assert.Equal(t, []string{"/bin/sh", "-c", "set -e\necho step1-init"}, verifySvc.execCalls[len(verifySvc.execCalls)-1].command)
-	assert.Equal(t, 30, verifySvc.execCalls[len(verifySvc.execCalls)-1].timeout)
+	assert.Equal(t, 60, verifySvc.execCalls[len(verifySvc.execCalls)-1].timeout)
 }
 
 func TestScenarioSessionService_VerifyLastStep_NoBackgroundExec(t *testing.T) {
@@ -832,6 +838,11 @@ func TestScenarioSessionService_SubmitFlag_AdvanceExecutesBackgroundScript(t *te
 	assert.True(t, result.Correct)
 	require.NotNil(t, result.NextStep)
 	assert.Equal(t, 1, *result.NextStep)
+	assert.True(t, result.NextStepProvisioning, "next step has a background script, so the advance reports provisioning")
+
+	// Default timeouts put step provisioning on a goroutine — wait for it.
+	assert.Equal(t, "active", waitForSetupDone(t, db, session.ID))
+
 	require.True(t, len(verifySvc.execCalls) >= 1)
 	assert.Equal(t, []string{"/bin/sh", "-c", "set -e\necho flag-advance"}, verifySvc.execCalls[len(verifySvc.execCalls)-1].command)
 }

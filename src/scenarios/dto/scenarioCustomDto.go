@@ -45,6 +45,11 @@ type VerifyStepResponse struct {
 	Passed   bool   `json:"passed"`
 	Output   string `json:"output,omitempty"`
 	NextStep *int   `json:"next_step,omitempty"`
+	// NextStepProvisioning tells the client the next step needs work done in
+	// the container (a background script, a flag to place) before it is
+	// playable. When that work is slow it runs asynchronously and the session
+	// reports status "provisioning" until it lands.
+	NextStepProvisioning bool `json:"next_step_provisioning,omitempty"`
 }
 
 // SubmitFlagInput - DTO for submitting a flag answer
@@ -57,6 +62,8 @@ type SubmitFlagResponse struct {
 	Correct  bool   `json:"correct"`
 	Message  string `json:"message,omitempty"`
 	NextStep *int   `json:"next_step,omitempty"`
+	// NextStepProvisioning — see VerifyStepResponse.
+	NextStepProvisioning bool `json:"next_step_provisioning,omitempty"`
 }
 
 // CurrentStepResponse - DTO for current step information
@@ -111,6 +118,8 @@ type SubmitQuizResponse struct {
 	Total              int                  `json:"total"`
 	PerQuestionResults []QuizQuestionResult `json:"per_question_results,omitempty"`
 	NextStep           *int                 `json:"next_step,omitempty"`
+	// NextStepProvisioning — see VerifyStepResponse.
+	NextStepProvisioning bool `json:"next_step_provisioning,omitempty"`
 }
 
 // QuizQuestionResult - per-question result returned after a LEARNING-mode

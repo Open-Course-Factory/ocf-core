@@ -33,6 +33,11 @@ type observabilityMetrics struct {
 	ScenarioSetupPanic           atomic.Uint64
 	ScenarioSetupFailed          atomic.Uint64
 	TerminalStopOnCleanupFailure atomic.Uint64
+
+	// Mid-scenario per-step provisioning (the advance path, not step 0).
+	// These were previously silent: the sync branch swallowed its error.
+	ScenarioStepProvisioningFailed atomic.Uint64
+	ScenarioStepProvisioningPanic  atomic.Uint64
 }
 
 // Metrics is the global observability metrics singleton, accessed by both

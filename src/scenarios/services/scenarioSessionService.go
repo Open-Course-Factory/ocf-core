@@ -59,6 +59,29 @@ func isFlagPathAllowed(flagPath string, allowedPrefixes []string) bool {
 	return false
 }
 
+// findStepByOrder returns the step whose Order matches, or nil. Step orders are
+// data-driven (0- or 1-based depending on the authoring path), so every lookup
+// goes through the Order field rather than through slice indexing.
+func findStepByOrder(steps []models.ScenarioStep, order int) *models.ScenarioStep {
+	for i := range steps {
+		if steps[i].Order == order {
+			return &steps[i]
+		}
+	}
+	return nil
+}
+
+// findFlagByStepOrder returns the flag generated for a given step, or nil when
+// the step has none.
+func findFlagByStepOrder(flags []models.ScenarioFlag, order int) *models.ScenarioFlag {
+	for i := range flags {
+		if flags[i].StepOrder == order {
+			return &flags[i]
+		}
+	}
+	return nil
+}
+
 // TerminalStopFunc is a callback to stop a terminal session (injected from controller layer)
 type TerminalStopFunc func(terminalSessionID string) error
 
@@ -418,9 +441,148 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 	slog.Info("scenario session setup complete", "session_id", sessionID)
 }
 
+// asyncProvisioningThresholdSeconds is the point past which a step's
+// provisioning is taken off the advance request. Holding the learner's
+// verify/submit response open for longer than this reads as a hang, so the
+// work moves to a goroutine and the session reports "provisioning" instead.
+const asyncProvisioningThresholdSeconds = 15
+
+// runsAsynchronously is the single owner of the sync-versus-async provisioning
+// rule: a step opts in explicitly, or its timeout is long enough that running
+// it inline would stall the learner's request.
+func runsAsynchronously(step *models.ScenarioStep) bool {
+	return step.BackgroundAsync || effectiveTimeout(step) > asyncProvisioningThresholdSeconds
+}
+
+// provisionNextStep prepares the container for the step the session just
+// advanced to: it runs that step's background script and deploys its flag.
+// It reports whether the next step has any provisioning work at all — the
+// value the advance responses expose as next_step_provisioning.
+//
+// The advance itself is never rolled back when provisioning fails. By the time
+// this runs the flag is burned and the progress row is committed; a failure
+// surfaces as a "setup_failed" session the learner can retry through
+// reprovision-step.
+func (s *ScenarioSessionService) provisionNextStep(session *models.ScenarioSession, nextStepOrder int) bool {
+	if session.TerminalSessionID == nil {
+		return false
+	}
+	step := findStepByOrder(session.Scenario.Steps, nextStepOrder)
+	if step == nil {
+		return false
+	}
+
+	hasScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript) != ""
+	hasFlag := findFlagByStepOrder(session.Flags, nextStepOrder) != nil
+	if !hasScript && !hasFlag {
+		return false
+	}
+
+	if hasScript && runsAsynchronously(step) {
+		s.startAsyncStepProvisioning(session, step)
+		return true
+	}
+
+	if err := s.runStepProvisioning(*session.TerminalSessionID, &session.Scenario, session.Flags, step); err != nil {
+		observability.Metrics.ScenarioStepProvisioningFailed.Add(1)
+		slog.Error("step provisioning failed", "session_id", session.ID, "step_order", step.Order, "err", err)
+	}
+	return true
+}
+
+// runStepProvisioning executes a step's background script and then deploys the
+// step's flag. The flag is deployed even when the script failed: the advance is
+// already committed, and a learner facing a half-provisioned level is better
+// served by having the flag in place than by having nothing.
+func (s *ScenarioSessionService) runStepProvisioning(terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, step *models.ScenarioStep) error {
+	err := s.executeBackgroundScript(terminalSessionID, step)
+	s.deploySingleFlagToContainer(terminalSessionID, scenario, flags, step.Order)
+	return err
+}
+
+// startAsyncStepProvisioning moves the session to "provisioning" and runs the
+// step's setup in a goroutine. The transition is guarded so an abandon racing
+// the advance is not resurrected; if it lost the race no goroutine is spawned
+// and the call reports false.
+func (s *ScenarioSessionService) startAsyncStepProvisioning(session *models.ScenarioSession, step *models.ScenarioStep) bool {
+	result := s.db.Model(&models.ScenarioSession{}).
+		Where("id = ? AND status IN ?", session.ID, []string{"active", "in_progress"}).
+		Updates(map[string]any{
+			"status":             "provisioning",
+			"provisioning_phase": "step_setup",
+		})
+	if result.Error != nil {
+		slog.Error("failed to mark session provisioning", "session_id", session.ID, "step_order", step.Order, "err", result.Error)
+		return false
+	}
+	if result.RowsAffected == 0 {
+		slog.Warn("skipping async step provisioning: session no longer active", "session_id", session.ID, "step_order", step.Order)
+		return false
+	}
+
+	go s.runAsyncStepProvisioning(session.ID, *session.TerminalSessionID, &session.Scenario, session.Flags, step)
+	return true
+}
+
+// runAsyncStepProvisioning is the goroutine body behind
+// startAsyncStepProvisioning. It mirrors runStep0Setup's safety pattern — panic
+// recovery, every status write guarded on the session still being in
+// "provisioning" — with one deliberate difference: a mid-scenario failure
+// leaves the terminal running. The learner already has a working shell, and
+// killing it would cost them the whole run for one bad level.
+func (s *ScenarioSessionService) runAsyncStepProvisioning(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, step *models.ScenarioStep) {
+	defer func() {
+		if r := recover(); r != nil {
+			observability.Metrics.ScenarioStepProvisioningPanic.Add(1)
+			slog.Error("step provisioning panic recovered",
+				"session_id", sessionID,
+				"step_order", step.Order,
+				"panic", r,
+				"stack", string(debug.Stack()))
+			s.failStepProvisioning(sessionID)
+		}
+	}()
+
+	if err := s.runStepProvisioning(terminalSessionID, scenario, flags, step); err != nil {
+		observability.Metrics.ScenarioStepProvisioningFailed.Add(1)
+		slog.Error("step provisioning failed", "session_id", sessionID, "step_order", step.Order, "err", err)
+		s.failStepProvisioning(sessionID)
+		return
+	}
+
+	result := s.db.Model(&models.ScenarioSession{}).
+		Where("id = ? AND status = ?", sessionID, "provisioning").
+		Updates(map[string]any{
+			"status":             "active",
+			"provisioning_phase": "",
+		})
+	if result.Error != nil {
+		slog.Error("step provisioning active-transition failed", "session_id", sessionID, "err", result.Error)
+		return
+	}
+	if result.RowsAffected == 0 {
+		slog.Warn("step provisioning complete but row no longer in provisioning (likely abandoned mid-setup)", "session_id", sessionID)
+		return
+	}
+	slog.Info("step provisioning complete", "session_id", sessionID, "step_order", step.Order)
+}
+
+// failStepProvisioning records a mid-scenario provisioning failure. The
+// terminal is intentionally left running, unlike the step 0 failure path.
+func (s *ScenarioSessionService) failStepProvisioning(sessionID uuid.UUID) {
+	s.db.Model(&models.ScenarioSession{}).
+		Where("id = ? AND status = ?", sessionID, "provisioning").
+		Updates(map[string]any{
+			"status":             "setup_failed",
+			"provisioning_phase": "",
+		})
+}
+
 // GetCurrentStep returns the current step content for a session.
-// If the session is still provisioning (step 0 setup running), returns a
-// response with status "provisioning" so the frontend can show a loading state.
+// While setup is running the response carries status "provisioning" instead of
+// step content, so the frontend can show its loading state. Setup is no longer
+// step 0's privilege — a step can provision mid-scenario — so these responses
+// report the session's real step order rather than a hardcoded 0.
 func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.CurrentStepResponse, error) {
 	var session models.ScenarioSession
 	if err := s.db.Preload("Scenario.Steps", func(db *gorm.DB) *gorm.DB {
@@ -431,7 +593,7 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 
 	if session.Status == "provisioning" {
 		return &dto.CurrentStepResponse{
-			StepOrder:  0,
+			StepOrder:  session.CurrentStep,
 			TotalSteps: len(session.Scenario.Steps),
 			Title:      "Setting up environment...",
 			Status:     "provisioning",
@@ -440,7 +602,7 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 
 	if session.Status == "setup_failed" {
 		return &dto.CurrentStepResponse{
-			StepOrder:  0,
+			StepOrder:  session.CurrentStep,
 			TotalSteps: len(session.Scenario.Steps),
 			Title:      "Environment setup failed",
 			Status:     "setup_failed",
@@ -725,16 +887,8 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 		return nil, txErr
 	}
 
-	// Execute background script for the next step (after successful DB transaction),
-	// then deploy the next step's flag (after the script created any needed directories).
-	if response.Passed && response.NextStep != nil && session.TerminalSessionID != nil {
-		for i := range session.Scenario.Steps {
-			if session.Scenario.Steps[i].Order == *response.NextStep {
-				_ = s.executeBackgroundScript(*session.TerminalSessionID, &session.Scenario.Steps[i])
-				break
-			}
-		}
-		s.deploySingleFlagToContainer(*session.TerminalSessionID, &session.Scenario, session.Flags, *response.NextStep)
+	if response.Passed && response.NextStep != nil {
+		response.NextStepProvisioning = s.provisionNextStep(&session, *response.NextStep)
 	}
 
 	return response, nil
@@ -759,16 +913,8 @@ func (s *ScenarioSessionService) completeInfoStep(session *models.ScenarioSessio
 		return nil, txErr
 	}
 
-	// Run the next step's background script and deploy its flag (mirrors the
-	// terminal verify path).
-	if response.NextStep != nil && session.TerminalSessionID != nil {
-		for i := range session.Scenario.Steps {
-			if session.Scenario.Steps[i].Order == *response.NextStep {
-				_ = s.executeBackgroundScript(*session.TerminalSessionID, &session.Scenario.Steps[i])
-				break
-			}
-		}
-		s.deploySingleFlagToContainer(*session.TerminalSessionID, &session.Scenario, session.Flags, *response.NextStep)
+	if response.NextStep != nil {
+		response.NextStepProvisioning = s.provisionNextStep(session, *response.NextStep)
 	}
 
 	return response, nil
@@ -919,16 +1065,8 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 		return nil, txErr
 	}
 
-	// Run the next step's background script + deploy its flag (mirrors the
-	// terminal verify path).
-	if response.NextStep != nil && session.TerminalSessionID != nil {
-		for i := range session.Scenario.Steps {
-			if session.Scenario.Steps[i].Order == *response.NextStep {
-				_ = s.executeBackgroundScript(*session.TerminalSessionID, &session.Scenario.Steps[i])
-				break
-			}
-		}
-		s.deploySingleFlagToContainer(*session.TerminalSessionID, &session.Scenario, session.Flags, *response.NextStep)
+	if response.NextStep != nil {
+		response.NextStepProvisioning = s.provisionNextStep(&session, *response.NextStep)
 	}
 
 	return response, nil
@@ -1013,16 +1151,8 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 		return nil, txErr
 	}
 
-	// Execute background script for the next step, then deploy its flag
-	// (after the script created any needed directories).
-	if response.NextStep != nil && session.TerminalSessionID != nil {
-		for i := range session.Scenario.Steps {
-			if session.Scenario.Steps[i].Order == *response.NextStep {
-				_ = s.executeBackgroundScript(*session.TerminalSessionID, &session.Scenario.Steps[i])
-				break
-			}
-		}
-		s.deploySingleFlagToContainer(*session.TerminalSessionID, &session.Scenario, session.Flags, *response.NextStep)
+	if response.NextStep != nil {
+		response.NextStepProvisioning = s.provisionNextStep(&session, *response.NextStep)
 	}
 
 	return response, nil
@@ -1263,26 +1393,13 @@ func (s *ScenarioSessionService) deploySingleFlagToContainer(terminalSessionID s
 		return
 	}
 
-	// Find the flag for this step
-	var flag *models.ScenarioFlag
-	for i := range flags {
-		if flags[i].StepOrder == stepOrder {
-			flag = &flags[i]
-			break
-		}
-	}
+	flag := findFlagByStepOrder(flags, stepOrder)
 	if flag == nil {
 		return // No flag for this step (step may not have HasFlag enabled)
 	}
 
-	// Find the step definition for FlagPath
-	var step *models.ScenarioStep
-	for i := range scenario.Steps {
-		if scenario.Steps[i].Order == stepOrder {
-			step = &scenario.Steps[i]
-			break
-		}
-	}
+	// The step definition carries FlagPath
+	step := findStepByOrder(scenario.Steps, stepOrder)
 	if step == nil {
 		return
 	}
@@ -1363,7 +1480,7 @@ const maxInlineScriptSize = 4000
 // setup (user creation, service provisioning, package installs, etc.).
 const (
 	bgScriptTimeoutStep0   = 300 // 5 minutes for initial setup
-	bgScriptTimeoutDefault = 30  // subsequent steps, unless the step overrides it
+	bgScriptTimeoutDefault = 60  // subsequent steps, unless the step overrides it
 )
 
 // effectiveTimeout resolves how long a step's background script may run.
@@ -1382,7 +1499,6 @@ func effectiveTimeout(step *models.ScenarioStep) int {
 
 // executeBackgroundScript runs a step's background script in the student's container.
 // Returns nil on success, an error if the script could not be pushed/executed or exited non-zero.
-// For non-step-0 scripts the caller may choose to ignore the error (best-effort).
 //
 // Small scripts (<=4000 bytes) are passed inline via /bin/sh -c.
 // Large scripts are pushed as temp files via PushFile, then executed from disk

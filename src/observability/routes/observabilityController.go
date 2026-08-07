@@ -67,9 +67,11 @@ func snapshot() map[string]any {
 			},
 		},
 		"scenarios": map[string]any{
-			"setup_panics":             m.ScenarioSetupPanic.Load(),
-			"setup_failed_transitions": m.ScenarioSetupFailed.Load(),
-			"terminal_stop_failures":   m.TerminalStopOnCleanupFailure.Load(),
+			"setup_panics":               m.ScenarioSetupPanic.Load(),
+			"setup_failed_transitions":   m.ScenarioSetupFailed.Load(),
+			"terminal_stop_failures":     m.TerminalStopOnCleanupFailure.Load(),
+			"step_provisioning_failures": m.ScenarioStepProvisioningFailed.Load(),
+			"step_provisioning_panics":   m.ScenarioStepProvisioningPanic.Load(),
 		},
 		"hooks": map[string]any{
 			"recent_errors": recent,
