@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"mime"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -364,7 +365,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 
 		// Apply step extensions sidecar (extensions.json) if present — overrides step_type
 		// and adds quiz questions without changing the KillerCoda index.json schema.
-		stepDir := fmt.Sprintf("step%d", i+1)
+		stepDir := stepDirFor(kcStep, i)
 		if sidecar, err := readStepExtensions(dirPath, stepDir); err != nil {
 			return nil, fmt.Errorf("failed to parse %s/extensions.json: %w", stepDir, err)
 		} else if sidecar != nil {
@@ -419,6 +420,26 @@ type stepExtensionsQuestion struct {
 	CorrectAnswer string `json:"correct_answer,omitempty"`
 	Explanation   string `json:"explanation,omitempty"`
 	Points        int    `json:"points,omitempty"`
+}
+
+// stepDirFor resolves the directory holding a step's sidecar files.
+//
+// The authored layout is the source of truth, read off whichever file path the
+// step already declares: the step{N} convention this used to assume is 1-based,
+// while scenarios written against a 0-based level numbering ship step0..stepN
+// and had their sidecars silently read from the neighbouring step's directory.
+// The index-derived name stays as the fallback for steps that declare no paths.
+func stepDirFor(kcStep KillerCodaStep, index int) string {
+	for _, declared := range []string{kcStep.Text, kcStep.Verify, kcStep.Background, kcStep.Foreground, kcStep.Hint} {
+		if declared == "" {
+			continue
+		}
+		// index.json paths are always slash-separated, whatever the host OS.
+		if dir := path.Dir(declared); dir != "." && dir != "/" && dir != ".." {
+			return dir
+		}
+	}
+	return fmt.Sprintf("step%d", index+1)
 }
 
 // readStepExtensions attempts to read step{N}/extensions.json from dirPath. Returns

@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -175,6 +177,49 @@ func TestScenarioImporter_ReadsStepProvisioningFieldsFromIndexJSON(t *testing.T)
 	assert.False(t, scenario.Steps[0].BackgroundAsync)
 	assert.Equal(t, 120, scenario.Steps[1].BackgroundTimeoutSeconds)
 	assert.True(t, scenario.Steps[1].BackgroundAsync)
+}
+
+// The sidecar directory used to be derived as step{i+1}, which is wrong for
+// scenarios numbering their levels from zero (step0..stepN) — every step read
+// its neighbour's extensions.json, so quiz steps came back as terminal steps
+// and the last step's sidecar was ignored entirely.
+func TestScenarioImporter_ZeroIndexedStepDirs_ReadTheirOwnSidecar(t *testing.T) {
+	db := setupTestDB(t)
+	importer := services.NewScenarioImporterService(db)
+	dir := t.TempDir()
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "step0"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "step1"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "step0", "text.md"), []byte("level zero"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "step1", "text.md"), []byte("level one"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "step1", "extensions.json"),
+		[]byte(`{"step_type":"quiz","questions":[{"order":1,"question_text":"Which shell?","question_type":"single_choice","correct_answer":"bash"}]}`), 0o644))
+
+	index, err := importer.ParseIndexJSON([]byte(`{
+		"title": "Zero indexed layout",
+		"details": {
+			"intro": {"text": "intro.md"},
+			"steps": [
+				{"title": "Level 0", "text": "step0/text.md"},
+				{"title": "Level 1", "text": "step1/text.md"}
+			],
+			"finish": {"text": "finish.md"}
+		},
+		"backend": {"imageid": "ubuntu:22.04"}
+	}`))
+	require.NoError(t, err)
+
+	scenario, err := importer.BuildScenarioFromIndex(index, dir, "creator-1", nil, "upload")
+	require.NoError(t, err)
+	require.Len(t, scenario.Steps, 2)
+
+	assert.Empty(t, scenario.Steps[0].StepType,
+		"step0 declares no sidecar and must not inherit step1's")
+	assert.Empty(t, scenario.Steps[0].Questions)
+
+	assert.Equal(t, "quiz", scenario.Steps[1].StepType)
+	require.Len(t, scenario.Steps[1].Questions, 1)
+	assert.Equal(t, "Which shell?", scenario.Steps[1].Questions[0].QuestionText)
 }
 
 func TestDuplicateScenario_CopiesStepProvisioningFields(t *testing.T) {
