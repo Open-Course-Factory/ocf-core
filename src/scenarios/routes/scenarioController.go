@@ -44,6 +44,7 @@ type scenarioController struct {
 	seedService      *services.ScenarioSeedService
 	duplicateService *services.ScenarioDuplicateService
 	groupService     groupServices.GroupService
+	sessionService   *services.ScenarioSessionService
 }
 
 // NewScenarioController creates a new scenario controller with its service dependencies
@@ -55,6 +56,7 @@ func NewScenarioController(db *gorm.DB) ScenarioController {
 		seedService:            services.NewScenarioSeedService(db),
 		duplicateService:       services.NewScenarioDuplicateService(db),
 		groupService:           groupServices.NewGroupService(db),
+		sessionService:         services.NewScenarioSessionService(db, services.NewFlagService(), services.NewVerificationService()),
 	}
 }
 
@@ -107,8 +109,7 @@ func (sc *scenarioController) GetSessionByTerminal(ctx *gin.Context) {
 		return
 	}
 
-	var session models.ScenarioSession
-	err := sc.db.Where("terminal_session_id = ?", terminalID).Order("created_at DESC").First(&session).Error
+	session, err := sc.sessionService.FindSessionByTerminal(terminalID)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, &errors.APIError{
 			ErrorCode:    http.StatusNotFound,

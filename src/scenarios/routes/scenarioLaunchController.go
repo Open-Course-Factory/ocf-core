@@ -54,6 +54,12 @@ func NewScenarioLaunchController(db *gorm.DB) *scenarioLaunchController {
 		return terminalService.StopSession(terminalSessionID)
 	})
 
+	// Subscribe to SIGKILLed console shells so a crash trap can end the run.
+	// terminalTrainer publishes the event rather than calling us directly: it
+	// is the lower layer (scenarios imports it, not the reverse), so this is
+	// the mirror image of the terminal-stop callback above.
+	terminalServices.SetConsoleShellKilledObserver(sessionService.EndCrashTrapRun)
+
 	return &scenarioLaunchController{
 		scenarioControllerBase: scenarioControllerBase{db: db},
 		sessionService:         sessionService,
