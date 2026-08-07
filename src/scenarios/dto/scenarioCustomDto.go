@@ -61,7 +61,15 @@ type SubmitFlagResponse struct {
 
 // CurrentStepResponse - DTO for current step information
 type CurrentStepResponse struct {
-	StepOrder       int                   `json:"step_order"`
+	StepOrder int `json:"step_order"`
+	// Position is the step's 1-based index among the scenario's ordered
+	// steps — the ONLY value clients may display as "step N of M". Orders
+	// are data-driven (0- or 1-based depending on authoring path), so
+	// arithmetic on StepOrder renders "Étape 3 / 2" on 1-based scenarios.
+	Position int `json:"position"`
+	// StepOrders lists every step's Order in display order, so a client can
+	// map a display position back to the order it must navigate to.
+	StepOrders      []int                 `json:"step_orders,omitempty"`
 	TotalSteps      int                   `json:"total_steps"`
 	Title           string                `json:"title"`
 	Text            string                `json:"text,omitempty"`

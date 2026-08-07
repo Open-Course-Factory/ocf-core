@@ -472,8 +472,11 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 	textContent := ResolveScriptContent(s.db, currentStep.TextFileID, currentStep.TextContent)
 	hintContent := ResolveScriptContent(s.db, currentStep.HintFileID, currentStep.HintContent)
 
+	position, stepOrders := stepPositionInfo(session.Scenario.Steps, currentStep.Order)
 	response := &dto.CurrentStepResponse{
 		StepOrder:   currentStep.Order,
+		Position:    position,
+		StepOrders:  stepOrders,
 		TotalSteps:  len(session.Scenario.Steps),
 		Title:       currentStep.Title,
 		Text:        textContent,
@@ -507,6 +510,21 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 	}
 
 	return response, nil
+}
+
+// stepPositionInfo returns the 1-based display position of the step with the
+// given order among the (already order-sorted) steps, plus the full ordered
+// list of orders. Position 0 means the order was not found.
+func stepPositionInfo(steps []models.ScenarioStep, order int) (int, []int) {
+	orders := make([]int, len(steps))
+	position := 0
+	for i := range steps {
+		orders[i] = steps[i].Order
+		if steps[i].Order == order {
+			position = i + 1
+		}
+	}
+	return position, orders
 }
 
 // normalizeStepType returns the canonical step_type string. Empty values from
@@ -580,8 +598,11 @@ func (s *ScenarioSessionService) GetStepByOrder(sessionID uuid.UUID, stepOrder i
 	textContent := ResolveScriptContent(s.db, targetStep.TextFileID, targetStep.TextContent)
 	hintContent := ResolveScriptContent(s.db, targetStep.HintFileID, targetStep.HintContent)
 
+	position, stepOrders := stepPositionInfo(session.Scenario.Steps, targetStep.Order)
 	response := &dto.CurrentStepResponse{
 		StepOrder:   targetStep.Order,
+		Position:    position,
+		StepOrders:  stepOrders,
 		TotalSteps:  len(session.Scenario.Steps),
 		Title:       targetStep.Title,
 		Text:        textContent,
