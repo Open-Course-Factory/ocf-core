@@ -221,6 +221,10 @@ func TestStepBanners_StepZeroIntroIsStagedAsMotd(t *testing.T) {
 		if strings.Contains(joined, "OCF_MOTD_EFFECT") {
 			wroteEffect = true
 			assert.Equal(t, "beams", call.command[len(call.command)-1])
+			// The console attaches a non-login bash, which never runs
+			// profile.d — the export has to land where that shell reads it.
+			assert.Contains(t, joined, "/etc/bash.bashrc")
+			assert.Contains(t, joined, "grep -q", "the append must be idempotent across replayed provisioning")
 		}
 	}
 	assert.True(t, wroteText, "step 0's intro text must be staged for the login shell")

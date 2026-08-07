@@ -36,10 +36,20 @@ const (
 	// on. Writing the file instead defers the banner to first shell.
 	ocfMotdPath = "/etc/ocf-motd.txt"
 
-	// ocfMotdEffectPath carries step 0's effect to the same hook, which reads
-	// it from the shell environment. Without this the hook falls back to its
-	// own default and the trainer's chosen effect is silently discarded.
-	ocfMotdEffectPath = "/etc/profile.d/zz-ocf-motd-effect.sh"
+	// ocfBashrcPath carries step 0's effect to the MOTD hook, which reads it
+	// from the shell environment and otherwise falls back to its own default —
+	// silently discarding the trainer's choice.
+	//
+	// /etc/bash.bashrc rather than /etc/profile.d: the console attaches a
+	// NON-login bash, which never runs profile.d. On Debian /etc/profile
+	// sources bash.bashrc for interactive shells, so this one file covers the
+	// login and non-login cases both.
+	ocfBashrcPath = "/etc/bash.bashrc"
+
+	// ocfEffectMarker makes the append idempotent. Provisioning can be replayed
+	// (reprovision, a re-entered step), and without the marker each pass would
+	// stack another export.
+	ocfEffectMarker = "# ocf-motd-effect"
 
 	// bannerTimeoutSeconds bounds the exec. ocf-banner caps its own render at
 	// 5s; this is the outer bound on the round trip.
@@ -172,11 +182,15 @@ func (s *ScenarioSessionService) deliverStepZeroIntro(terminalSessionID string, 
 	s.execBestEffort(terminalSessionID, sessionID, "step 0 intro text",
 		[]string{"/bin/sh", "-c", `printf '%s\n' "$1" > ` + ocfMotdPath, "sh", banner.Text})
 
-	// The login hook reads the effect from the environment and otherwise falls
-	// back to its own default, which would quietly ignore the trainer's choice.
-	// effectNamePattern has already constrained this to a bare identifier.
+	// The hook reads the effect from the environment, so it has to be exported
+	// into the learner's shell rather than written beside the text.
+	// effectNamePattern has already constrained this to a bare identifier;
+	// grep-then-append keeps a replayed provisioning from stacking exports.
 	s.execBestEffort(terminalSessionID, sessionID, "step 0 intro effect",
-		[]string{"/bin/sh", "-c", `printf 'OCF_MOTD_EFFECT=%s\nexport OCF_MOTD_EFFECT\n' "$1" > ` + ocfMotdEffectPath, "sh", banner.Effect})
+		[]string{"/bin/sh", "-c",
+			`grep -q '` + ocfEffectMarker + `' ` + ocfBashrcPath + ` 2>/dev/null && exit 0
+printf '%s\nexport OCF_MOTD_EFFECT=%s\n' '` + ocfEffectMarker + `' "$1" >> ` + ocfBashrcPath,
+			"sh", banner.Effect})
 }
 
 // execBestEffort runs a container command whose failure is not worth failing
