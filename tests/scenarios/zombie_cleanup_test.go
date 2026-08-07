@@ -216,3 +216,49 @@ func TestCleanupZombieScenarioSessions_IgnoresCompletedSessions(t *testing.T) {
 	assert.Equal(t, "completed", s.Status, "completed session must stay completed")
 	assert.NotNil(t, s.Grade)
 }
+
+func TestCleanupStuckProvisioningSessions_ReleasesStalledSessions(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "reaper-scenario",
+		Title:        "Reaper scenario",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	newSession := func(user string, status string, age time.Duration) *models.ScenarioSession {
+		s := models.ScenarioSession{
+			ScenarioID:        scenario.ID,
+			UserID:            user,
+			CurrentStep:       0,
+			Status:            status,
+			ProvisioningPhase: "step_setup",
+			StartedAt:         time.Now(),
+		}
+		require.NoError(t, db.Create(&s).Error)
+		require.NoError(t, db.Model(&models.ScenarioSession{}).
+			Where("id = ?", s.ID).
+			Update("updated_at", time.Now().Add(-age)).Error)
+		return &s
+	}
+
+	stalled := newSession("student-stalled", "provisioning", 15*time.Minute)
+	recent := newSession("student-recent", "provisioning", 2*time.Minute)
+	active := newSession("student-active", "active", 15*time.Minute)
+
+	count, err := services.CleanupStuckProvisioningSessions(db)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+
+	assert.Equal(t, "setup_failed", sessionStatus(t, db, stalled.ID),
+		"a session whose setup goroutine died must be released — the unique partial index covers 'provisioning' and would otherwise block every restart")
+	assert.Equal(t, "provisioning", sessionStatus(t, db, recent.ID),
+		"a setup still inside its budget is not a zombie")
+	assert.Equal(t, "active", sessionStatus(t, db, active.ID))
+
+	var reaped models.ScenarioSession
+	require.NoError(t, db.First(&reaped, "id = ?", stalled.ID).Error)
+	assert.Equal(t, "", reaped.ProvisioningPhase)
+}
