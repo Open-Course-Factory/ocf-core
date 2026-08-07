@@ -464,17 +464,25 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 	slog.Info("scenario session setup complete", "session_id", sessionID)
 }
 
-// asyncProvisioningThresholdSeconds is the point past which a step's
+// asyncProvisioningThresholdSeconds is the declared budget past which a step's
 // provisioning is taken off the advance request. Holding the learner's
-// verify/submit response open for longer than this reads as a hang, so the
-// work moves to a goroutine and the session reports "provisioning" instead.
+// verify/submit response open for longer than this reads as a hang, so the work
+// moves to a goroutine and the session reports "provisioning" instead.
 const asyncProvisioningThresholdSeconds = 15
 
 // runsAsynchronously is the single owner of the sync-versus-async provisioning
-// rule: a step opts in explicitly, or its timeout is long enough that running
-// it inline would stall the learner's request.
+// rule: a step either opts in explicitly, or declares a budget long enough that
+// running it inline would stall the learner's request.
+//
+// It reads BackgroundTimeoutSeconds directly rather than effectiveTimeout on
+// purpose. A timeout is a ceiling, not an expected duration — a step allowed 60s
+// usually finishes in well under a second — so the fallback default says nothing
+// about how long a step actually takes. Deciding from effectiveTimeout would
+// make every step that declares nothing async, which is exactly the behaviour
+// change these fields exist to avoid. Zero means unspecified, and unspecified
+// keeps today's behaviour.
 func runsAsynchronously(step *models.ScenarioStep) bool {
-	return step.BackgroundAsync || effectiveTimeout(step) > asyncProvisioningThresholdSeconds
+	return step.BackgroundAsync || step.BackgroundTimeoutSeconds > asyncProvisioningThresholdSeconds
 }
 
 // provisionNextStep prepares the container for the step the session just
@@ -1635,7 +1643,7 @@ const maxInlineScriptSize = 4000
 // setup (user creation, service provisioning, package installs, etc.).
 const (
 	bgScriptTimeoutStep0   = 300 // 5 minutes for initial setup
-	bgScriptTimeoutDefault = 60  // subsequent steps, unless the step overrides it
+	bgScriptTimeoutDefault = 30  // subsequent steps, unless the step overrides it
 )
 
 // effectiveTimeout resolves how long a step's background script may run.

@@ -75,7 +75,11 @@ func sessionStatus(t *testing.T, db *gorm.DB, sessionID any) string {
 // Timeout resolution
 // -----------------------------------------------------------------------------
 
-func TestBackgroundScript_LaterStep_UsesRaisedDefaultTimeout(t *testing.T) {
+// A step that declares nothing must behave exactly as it did before these
+// fields existed: same 30s budget, same inline execution, same "active"
+// throughout. This is the no-op guarantee the whole MR rests on — without it,
+// every existing scenario changes behaviour on deploy.
+func TestProvisionNextStep_StepDeclaringNothing_KeepsTodaysBehaviour(t *testing.T) {
 	db := setupTestDB(t)
 	session := twoStepSession(t, db, "timeout-default", models.ScenarioStep{
 		BackgroundScript: "echo provisioning",
@@ -84,13 +88,45 @@ func TestBackgroundScript_LaterStep_UsesRaisedDefaultTimeout(t *testing.T) {
 	verifySvc := &bgTrackingVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
-	_, err := sessionSvc.VerifyCurrentStep(session.ID)
+	result, err := sessionSvc.VerifyCurrentStep(session.ID)
 	require.NoError(t, err)
-	require.Equal(t, "active", waitForSetupDone(t, db, session.ID))
 
+	// No wait anywhere: the script has already run by the time the call returns.
 	require.Len(t, verifySvc.execCalls, 1)
-	assert.Equal(t, 60, verifySvc.execCalls[0].timeout,
-		"steps past step 0 get the raised 60s default, not the old 30s")
+	assert.Equal(t, 30, verifySvc.execCalls[0].timeout)
+	assert.Equal(t, "active", sessionStatus(t, db, session.ID))
+	assert.False(t, result.NextStepProvisioning)
+	assert.Zero(t, result.ProvisioningTimeoutSeconds)
+}
+
+// The threshold reads the declared budget, never the fallback default. A ceiling
+// is not an expected duration, so an unset timeout says nothing about how long a
+// step takes and must not opt it into async.
+func TestProvisionNextStep_ThresholdIgnoresTheDefaultTimeout(t *testing.T) {
+	db := setupTestDB(t)
+
+	// 30 (the default) is above the 15s threshold, so deciding from the
+	// effective timeout would make this async. Declaring 30 explicitly does.
+	declared := twoStepSession(t, db, "threshold-declared", models.ScenarioStep{
+		BackgroundScript:         "echo declared",
+		BackgroundTimeoutSeconds: 30,
+	})
+	inherited := twoStepSession(t, db, "threshold-inherited", models.ScenarioStep{
+		BackgroundScript: "echo inherited",
+	})
+
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &bgTrackingVerificationService{})
+
+	declaredResult, err := sessionSvc.VerifyCurrentStep(declared.ID)
+	require.NoError(t, err)
+	assert.True(t, declaredResult.NextStepProvisioning,
+		"an author who declares 30s asked for a budget above the threshold")
+	assert.Equal(t, "active", waitForSetupDone(t, db, declared.ID))
+
+	inheritedResult, err := sessionSvc.VerifyCurrentStep(inherited.ID)
+	require.NoError(t, err)
+	assert.False(t, inheritedResult.NextStepProvisioning,
+		"the same 30s arrived by default, which is a ceiling and not a declaration")
 }
 
 func TestBackgroundScript_PerStepTimeout_OverridesDefault(t *testing.T) {
@@ -255,10 +291,11 @@ func TestProvisionNextStep_BackgroundAsyncFlag_RunsInBackgroundDespiteShortTimeo
 	require.Len(t, verifySvc.execCalls, 1)
 }
 
-func TestProvisionNextStep_AsyncOnDefaultTimeout_ReportsThatTimeout(t *testing.T) {
+func TestProvisionNextStep_AsyncFlagWithNoTimeout_ReportsTheDefaultBudget(t *testing.T) {
 	db := setupTestDB(t)
-	session := twoStepSession(t, db, "async-default-timeout", models.ScenarioStep{
-		BackgroundScript: "echo default budget",
+	session := twoStepSession(t, db, "async-default-budget", models.ScenarioStep{
+		BackgroundScript: "echo opted in, no budget declared",
+		BackgroundAsync:  true,
 	})
 
 	verifySvc := &bgTrackingVerificationService{}
@@ -267,9 +304,12 @@ func TestProvisionNextStep_AsyncOnDefaultTimeout_ReportsThatTimeout(t *testing.T
 	result, err := sessionSvc.VerifyCurrentStep(session.ID)
 	require.NoError(t, err)
 	assert.True(t, result.NextStepProvisioning)
-	assert.Equal(t, 60, result.ProvisioningTimeoutSeconds)
+	assert.Equal(t, 30, result.ProvisioningTimeoutSeconds,
+		"opting into async without declaring a budget still runs on the default one")
 
 	assert.Equal(t, "active", waitForSetupDone(t, db, session.ID))
+	require.Len(t, verifySvc.execCalls, 1)
+	assert.Equal(t, 30, verifySvc.execCalls[0].timeout)
 }
 
 func TestProvisionNextStep_AsyncFailure_MarksSetupFailedAndKeepsTheTerminal(t *testing.T) {
@@ -497,6 +537,7 @@ func TestSubmitQuiz_NextStepProvisioning_ReportsTheNextStepsScript(t *testing.T)
 		Order:            1,
 		Title:            "After the quiz",
 		BackgroundScript: "echo post-quiz setup",
+		BackgroundAsync:  true,
 	}).Error)
 
 	question := models.ScenarioStepQuestion{
