@@ -60,6 +60,12 @@ type KillerCodaStep struct {
 	Hint       string `json:"hint"`       // OCF extension: path to hint.md
 	HasFlag    *bool  `json:"has_flag"`   // OCF extension: per-step flag override (nil = use scenario default)
 	FlagPath   string `json:"flag_path"`  // OCF extension: where to place flag in container
+	// OCF extension: per-step banner rendered in the learner's terminal.
+	// Effect name plus text; both must be set for anything to render.
+	IntroEffect string `json:"intro_effect,omitempty"`
+	IntroText   string `json:"intro_text,omitempty"`
+	OutroEffect string `json:"outro_effect,omitempty"`
+	OutroText   string `json:"outro_text,omitempty"`
 }
 
 // KillerCodaBackend describes the backend image to use
@@ -338,6 +344,10 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 			VerifyScript:     readFileContent(dirPath, kcStep.Verify),
 			BackgroundScript: readFileContent(dirPath, kcStep.Background),
 			ForegroundScript: readFileContent(dirPath, kcStep.Foreground),
+			IntroEffect:      kcStep.IntroEffect,
+			IntroText:        kcStep.IntroText,
+			OutroEffect:      kcStep.OutroEffect,
+			OutroText:        kcStep.OutroText,
 			HasFlag:          stepHasFlag,
 			FlagPath:         kcStep.FlagPath,
 		}

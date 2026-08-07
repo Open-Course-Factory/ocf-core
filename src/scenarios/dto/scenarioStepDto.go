@@ -18,6 +18,10 @@ type CreateScenarioStepInput struct {
 	VerifyScript       string     `json:"verify_script,omitempty" mapstructure:"verify_script"`
 	BackgroundScript   string     `json:"background_script,omitempty" mapstructure:"background_script"`
 	ForegroundScript   string     `json:"foreground_script,omitempty" mapstructure:"foreground_script"`
+	IntroEffect        string     `json:"intro_effect,omitempty" mapstructure:"intro_effect"`
+	IntroText          string     `json:"intro_text,omitempty" mapstructure:"intro_text" binding:"max=500"`
+	OutroEffect        string     `json:"outro_effect,omitempty" mapstructure:"outro_effect"`
+	OutroText          string     `json:"outro_text,omitempty" mapstructure:"outro_text" binding:"max=500"`
 	HasFlag            bool       `json:"has_flag,omitempty" mapstructure:"has_flag"`
 	FlagPath           string     `json:"flag_path,omitempty" mapstructure:"flag_path"`
 	FlagLevel          int        `json:"flag_level,omitempty" mapstructure:"flag_level"`
@@ -39,6 +43,10 @@ type EditScenarioStepInput struct {
 	VerifyScript       *string    `json:"verify_script,omitempty" mapstructure:"verify_script"`
 	BackgroundScript   *string    `json:"background_script,omitempty" mapstructure:"background_script"`
 	ForegroundScript   *string    `json:"foreground_script,omitempty" mapstructure:"foreground_script"`
+	IntroEffect        *string    `json:"intro_effect,omitempty" mapstructure:"intro_effect"`
+	IntroText          *string    `json:"intro_text,omitempty" mapstructure:"intro_text" binding:"omitempty,max=500"`
+	OutroEffect        *string    `json:"outro_effect,omitempty" mapstructure:"outro_effect"`
+	OutroText          *string    `json:"outro_text,omitempty" mapstructure:"outro_text" binding:"omitempty,max=500"`
 	HasFlag            *bool      `json:"has_flag,omitempty" mapstructure:"has_flag"`
 	FlagPath           *string    `json:"flag_path,omitempty" mapstructure:"flag_path"`
 	FlagLevel          *int       `json:"flag_level,omitempty" mapstructure:"flag_level"`
@@ -63,6 +71,10 @@ type ScenarioStepOutput struct {
 	VerifyScript       string     `json:"verify_script,omitempty"`
 	BackgroundScript   string     `json:"background_script,omitempty"`
 	ForegroundScript   string     `json:"foreground_script,omitempty"`
+	IntroEffect        string     `json:"intro_effect,omitempty"`
+	IntroText          string     `json:"intro_text,omitempty"`
+	OutroEffect        string     `json:"outro_effect,omitempty"`
+	OutroText          string     `json:"outro_text,omitempty"`
 	HasFlag            bool       `json:"has_flag"`
 	FlagPath           string     `json:"flag_path,omitempty"`
 	FlagLevel          int        `json:"flag_level"`
