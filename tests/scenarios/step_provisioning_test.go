@@ -1,6 +1,7 @@
 package scenarios_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -144,7 +145,7 @@ func TestBackgroundScript_Step0_PerStepTimeoutOverridesInitialSetupBudget(t *tes
 // Sync versus async
 // -----------------------------------------------------------------------------
 
-func TestProvisionNextStep_ShortTimeout_RunsBeforeTheResponseReturns(t *testing.T) {
+func TestProvisionNextStep_ShortTimeout_RunsInlineAndReportsNothing(t *testing.T) {
 	db := setupTestDB(t)
 	session := twoStepSession(t, db, "sync-short", models.ScenarioStep{
 		BackgroundScript:         "echo quick",
@@ -156,13 +157,81 @@ func TestProvisionNextStep_ShortTimeout_RunsBeforeTheResponseReturns(t *testing.
 
 	result, err := sessionSvc.VerifyCurrentStep(session.ID)
 	require.NoError(t, err)
-	assert.True(t, result.NextStepProvisioning)
 
-	// No wait: a synchronous branch has already run the script by now, and the
-	// session never left "active".
+	// next_step_provisioning means "async started, go poll". Setup that
+	// finished inline has nothing for the client to wait on.
+	assert.False(t, result.NextStepProvisioning)
+	assert.Zero(t, result.ProvisioningTimeoutSeconds)
+	assert.False(t, result.NextStepProvisioningFailed)
+
+	// No wait: the synchronous branch has already run the script by now, and
+	// the session never left "active".
 	require.Len(t, verifySvc.execCalls, 1)
 	assert.Equal(t, 5, verifySvc.execCalls[0].timeout)
 	assert.Equal(t, "active", sessionStatus(t, db, session.ID))
+}
+
+func TestProvisionNextStep_SyncFailure_ReportsFailureAndKeepsTheAdvance(t *testing.T) {
+	db := setupTestDB(t)
+	session := twoStepSession(t, db, "sync-failure", models.ScenarioStep{
+		BackgroundScript:         "echo will fail",
+		BackgroundTimeoutSeconds: 5,
+	})
+
+	verifySvc := &bgTrackingVerificationService{execErr: fmt.Errorf("container unreachable")}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	result, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err, "the advance stands — the step is already completed and the flag burned")
+	require.NotNil(t, result.NextStep)
+
+	assert.True(t, result.NextStepProvisioningFailed,
+		"a silent inline failure would leave the learner on a half-built level reading it as an impossible puzzle")
+	assert.False(t, result.NextStepProvisioning, "nothing is running in the background to poll for")
+
+	// The session stays usable: reprovision-step is the retry, not a restart.
+	assert.Equal(t, "active", sessionStatus(t, db, session.ID))
+}
+
+func TestProvisionNextStep_SyncFailure_LeaksNoScriptOutput(t *testing.T) {
+	db := setupTestDB(t)
+	session := twoStepSession(t, db, "sync-failure-quiet", models.ScenarioStep{
+		BackgroundScript:         "echo will fail",
+		BackgroundTimeoutSeconds: 5,
+	})
+
+	// Background scripts hold flags and puzzle internals, so no part of the
+	// failure may reach the learner's browser — only the boolean.
+	secret := "flag{leaked-through-stderr}"
+	verifySvc := &bgTrackingVerificationService{execErr: fmt.Errorf("script failed: %s", secret)}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	result, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err)
+
+	payload, marshalErr := json.Marshal(result)
+	require.NoError(t, marshalErr)
+	assert.NotContains(t, string(payload), secret)
+	assert.NotContains(t, string(payload), "script failed")
+}
+
+func TestProvisionNextStep_FlagDeployFailure_ReportsFailure(t *testing.T) {
+	db := setupTestDB(t)
+	session := twoStepSession(t, db, "flag-push-failure", models.ScenarioStep{
+		HasFlag:  true,
+		FlagPath: "/tmp/the_flag",
+	})
+	require.NoError(t, db.Create(&models.ScenarioFlag{
+		SessionID: session.ID, StepOrder: 1, ExpectedFlag: "flag{never-lands}",
+	}).Error)
+
+	verifySvc := &bgTrackingVerificationService{pushFileErr: fmt.Errorf("container filesystem full")}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	result, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err)
+	assert.True(t, result.NextStepProvisioningFailed,
+		"a flag that never landed leaves the step unsolvable, exactly like a failed script")
 }
 
 func TestProvisionNextStep_BackgroundAsyncFlag_RunsInBackgroundDespiteShortTimeout(t *testing.T) {
@@ -179,9 +248,28 @@ func TestProvisionNextStep_BackgroundAsyncFlag_RunsInBackgroundDespiteShortTimeo
 	result, err := sessionSvc.VerifyCurrentStep(session.ID)
 	require.NoError(t, err)
 	assert.True(t, result.NextStepProvisioning)
+	assert.Equal(t, 5, result.ProvisioningTimeoutSeconds,
+		"the client derives its poll ceiling from the step's own timeout, not a constant")
 
 	assert.Equal(t, "active", waitForSetupDone(t, db, session.ID))
 	require.Len(t, verifySvc.execCalls, 1)
+}
+
+func TestProvisionNextStep_AsyncOnDefaultTimeout_ReportsThatTimeout(t *testing.T) {
+	db := setupTestDB(t)
+	session := twoStepSession(t, db, "async-default-timeout", models.ScenarioStep{
+		BackgroundScript: "echo default budget",
+	})
+
+	verifySvc := &bgTrackingVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	result, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err)
+	assert.True(t, result.NextStepProvisioning)
+	assert.Equal(t, 60, result.ProvisioningTimeoutSeconds)
+
+	assert.Equal(t, "active", waitForSetupDone(t, db, session.ID))
 }
 
 func TestProvisionNextStep_AsyncFailure_MarksSetupFailedAndKeepsTheTerminal(t *testing.T) {
@@ -214,7 +302,7 @@ func TestProvisionNextStep_AsyncFailure_MarksSetupFailedAndKeepsTheTerminal(t *t
 	assert.Equal(t, "completed", progress.Status)
 }
 
-func TestProvisionNextStep_AbandonedMidAdvance_DoesNotResurrectTheSession(t *testing.T) {
+func TestProvisionNextStep_AbandonedSession_NeverTouchesTheContainer(t *testing.T) {
 	db := setupTestDB(t)
 	session := twoStepSession(t, db, "async-abandoned", models.ScenarioStep{
 		BackgroundScript: "echo provisioning",
@@ -227,10 +315,121 @@ func TestProvisionNextStep_AbandonedMidAdvance_DoesNotResurrectTheSession(t *tes
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
 	_, err := sessionSvc.VerifyCurrentStep(session.ID)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, services.ErrSessionNotActive)
 
 	assert.Equal(t, "abandoned", sessionStatus(t, db, session.ID))
-	assert.Len(t, verifySvc.execCalls, 0, "no goroutine is spawned for a session that is gone")
+	assert.Len(t, verifySvc.execCalls, 0)
+}
+
+func TestCurrentStepProvisioningTimeout_OnlyWhileProvisioning(t *testing.T) {
+	db := setupTestDB(t)
+	session := twoStepSession(t, db, "info-timeout", models.ScenarioStep{
+		BackgroundScript:         "echo long setup",
+		BackgroundTimeoutSeconds: 120,
+	})
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &bgTrackingVerificationService{})
+
+	// A client that reloads mid-provisioning never saw the advance response, so
+	// session info has to carry the ceiling too.
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("id = ?", session.ID).
+		Updates(map[string]any{"current_step": 1, "status": "provisioning"}).Error)
+
+	var provisioning models.ScenarioSession
+	require.NoError(t, db.First(&provisioning, "id = ?", session.ID).Error)
+	assert.Equal(t, 120, sessionSvc.CurrentStepProvisioningTimeout(&provisioning))
+
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("id = ?", session.ID).Update("status", "active").Error)
+
+	// Fresh struct: reloading into the previous one would keep its stale status.
+	var active models.ScenarioSession
+	require.NoError(t, db.First(&active, "id = ?", session.ID).Error)
+	assert.Zero(t, sessionSvc.CurrentStepProvisioningTimeout(&active),
+		"an active session is not waiting on anything")
+}
+
+// -----------------------------------------------------------------------------
+// Session-status guard on the advance endpoints
+//
+// Step setup can now run mid-scenario, so a second browser tab submitting while
+// the container is being rebuilt would race the provisioning. Every advance
+// entry point refuses anything but an active session.
+// -----------------------------------------------------------------------------
+
+func TestAdvanceEndpoints_RejectSubmissionsWhileProvisioning(t *testing.T) {
+	db := setupTestDB(t)
+
+	// One provisioning session reused across the endpoints — none of them may
+	// get as far as touching the container.
+	session := twoStepSession(t, db, "guard-provisioning", models.ScenarioStep{
+		HasFlag: true,
+	})
+	require.NoError(t, db.Create(&models.ScenarioFlag{
+		SessionID: session.ID, StepOrder: 0, ExpectedFlag: "flag{guarded}",
+	}).Error)
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("id = ?", session.ID).
+		Updates(map[string]any{"status": "provisioning", "provisioning_phase": "step_setup"}).Error)
+
+	verifySvc := &bgTrackingVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{validateRes: true}, verifySvc)
+
+	t.Run("verify", func(t *testing.T) {
+		_, err := sessionSvc.VerifyCurrentStep(session.ID)
+		require.ErrorIs(t, err, services.ErrSessionNotActive)
+		assert.Contains(t, err.Error(), "still being prepared")
+	})
+
+	t.Run("submit flag", func(t *testing.T) {
+		_, err := sessionSvc.SubmitFlag(session.ID, "flag{guarded}")
+		require.ErrorIs(t, err, services.ErrSessionNotActive)
+	})
+
+	t.Run("submit quiz", func(t *testing.T) {
+		_, err := sessionSvc.SubmitQuiz(session.ID, dto.SubmitQuizInput{
+			Answers: map[uuid.UUID]string{uuid.New(): "whatever"},
+		})
+		require.ErrorIs(t, err, services.ErrSessionNotActive)
+	})
+
+	t.Run("reveal hint", func(t *testing.T) {
+		_, err := sessionSvc.RevealHint(session.ID, 0, 1)
+		require.ErrorIs(t, err, services.ErrSessionNotActive)
+	})
+
+	assert.Len(t, verifySvc.execCalls, 0, "no submission may reach the container while it is being rebuilt")
+	assert.Len(t, verifySvc.pushFileCalls, 0)
+
+	// The flag was not consumed — the learner can still submit it once setup lands.
+	var flag models.ScenarioFlag
+	require.NoError(t, db.First(&flag, "session_id = ?", session.ID).Error)
+	assert.Equal(t, 0, flag.FlagAttempts)
+}
+
+func TestAdvanceEndpoints_AcceptSubmissionsOnceProvisioningClears(t *testing.T) {
+	db := setupTestDB(t)
+	session := twoStepSession(t, db, "guard-cleared", models.ScenarioStep{
+		TextContent: "nothing to provision",
+	})
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("id = ?", session.ID).
+		Updates(map[string]any{"status": "provisioning", "provisioning_phase": "step_setup"}).Error)
+
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &bgTrackingVerificationService{})
+
+	_, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.ErrorIs(t, err, services.ErrSessionNotActive)
+
+	// The async goroutine's success transition, replayed.
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("id = ?", session.ID).
+		Updates(map[string]any{"status": "active", "provisioning_phase": ""}).Error)
+
+	result, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err)
+	assert.True(t, result.Passed)
+	require.NotNil(t, result.NextStep)
 }
 
 // -----------------------------------------------------------------------------
@@ -253,7 +452,7 @@ func TestVerifyStep_NextStepProvisioning_FalseWhenNextStepNeedsNothing(t *testin
 	assert.Len(t, verifySvc.pushFileCalls, 0)
 }
 
-func TestVerifyStep_NextStepProvisioning_TrueForFlagOnlyStep(t *testing.T) {
+func TestVerifyStep_FlagOnlyStep_DeploysInlineAndReportsNothing(t *testing.T) {
 	db := setupTestDB(t)
 	session := twoStepSession(t, db, "flag-only", models.ScenarioStep{
 		HasFlag:  true,
@@ -270,9 +469,10 @@ func TestVerifyStep_NextStepProvisioning_TrueForFlagOnlyStep(t *testing.T) {
 
 	result, err := sessionSvc.VerifyCurrentStep(session.ID)
 	require.NoError(t, err)
-	assert.True(t, result.NextStepProvisioning, "a flag to place is provisioning work too")
 
-	// Deploying a flag has no script, so it stays on the request path.
+	// Placing a flag is one push with no script — it never goes async, so the
+	// step is playable the moment the response lands.
+	assert.False(t, result.NextStepProvisioning)
 	assert.Equal(t, "active", sessionStatus(t, db, session.ID))
 	require.Len(t, verifySvc.pushFileCalls, 1)
 	assert.Equal(t, "/tmp/the_flag", verifySvc.pushFileCalls[0].targetPath)

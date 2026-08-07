@@ -1,6 +1,7 @@
 package scenarioController
 
 import (
+	stderrors "errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -55,6 +56,21 @@ func NewScenarioProgressController(db *gorm.DB) ScenarioProgressController {
 		sessionService:         sessionService,
 		terminalService:        terminalService,
 	}
+}
+
+// abortIfSessionNotActive answers 409 when a learner action was rejected
+// because of the session's state rather than its content. The distinction
+// matters to the client: a step whose setup is still running is worth
+// retrying in a moment, an abandoned session never is.
+func (pc *scenarioProgressController) abortIfSessionNotActive(ctx *gin.Context, err error) bool {
+	if !stderrors.Is(err, services.ErrSessionNotActive) {
+		return false
+	}
+	ctx.JSON(http.StatusConflict, &errors.APIError{
+		ErrorCode:    http.StatusConflict,
+		ErrorMessage: err.Error(),
+	})
+	return true
 }
 
 // GetCurrentStep godoc
@@ -156,6 +172,9 @@ func (pc *scenarioProgressController) VerifyStep(ctx *gin.Context) {
 
 	result, err := pc.sessionService.VerifyCurrentStep(session.ID)
 	if err != nil {
+		if pc.abortIfSessionNotActive(ctx, err) {
+			return
+		}
 		slog.Error("failed to verify step", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -198,6 +217,9 @@ func (pc *scenarioProgressController) SubmitFlag(ctx *gin.Context) {
 
 	result, err := pc.sessionService.SubmitFlag(session.ID, input.Flag)
 	if err != nil {
+		if pc.abortIfSessionNotActive(ctx, err) {
+			return
+		}
 		slog.Error("failed to submit flag", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -241,6 +263,9 @@ func (pc *scenarioProgressController) SubmitQuiz(ctx *gin.Context) {
 
 	result, err := pc.sessionService.SubmitQuiz(session.ID, input)
 	if err != nil {
+		if pc.abortIfSessionNotActive(ctx, err) {
+			return
+		}
 		// Service rejects with a domain error for invalid step type / unknown
 		// question IDs / empty answers — surface as 422 so the frontend can
 		// distinguish from a 500.
@@ -295,6 +320,9 @@ func (pc *scenarioProgressController) RevealHint(ctx *gin.Context) {
 
 	result, err := pc.sessionService.RevealHint(session.ID, stepOrder, level)
 	if err != nil {
+		if pc.abortIfSessionNotActive(ctx, err) {
+			return
+		}
 		slog.Error("failed to reveal hint", "err", err)
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
