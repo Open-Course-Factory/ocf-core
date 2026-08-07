@@ -18,6 +18,8 @@ type CreateScenarioStepInput struct {
 	VerifyScript       string     `json:"verify_script,omitempty" mapstructure:"verify_script"`
 	BackgroundScript   string     `json:"background_script,omitempty" mapstructure:"background_script"`
 	ForegroundScript   string     `json:"foreground_script,omitempty" mapstructure:"foreground_script"`
+	BackgroundTimeoutSeconds int  `json:"background_timeout_seconds,omitempty" mapstructure:"background_timeout_seconds"`
+	BackgroundAsync    bool       `json:"background_async,omitempty" mapstructure:"background_async"`
 	HasFlag            bool       `json:"has_flag,omitempty" mapstructure:"has_flag"`
 	FlagPath           string     `json:"flag_path,omitempty" mapstructure:"flag_path"`
 	FlagLevel          int        `json:"flag_level,omitempty" mapstructure:"flag_level"`
@@ -39,6 +41,8 @@ type EditScenarioStepInput struct {
 	VerifyScript       *string    `json:"verify_script,omitempty" mapstructure:"verify_script"`
 	BackgroundScript   *string    `json:"background_script,omitempty" mapstructure:"background_script"`
 	ForegroundScript   *string    `json:"foreground_script,omitempty" mapstructure:"foreground_script"`
+	BackgroundTimeoutSeconds *int `json:"background_timeout_seconds,omitempty" mapstructure:"background_timeout_seconds"`
+	BackgroundAsync    *bool      `json:"background_async,omitempty" mapstructure:"background_async"`
 	HasFlag            *bool      `json:"has_flag,omitempty" mapstructure:"has_flag"`
 	FlagPath           *string    `json:"flag_path,omitempty" mapstructure:"flag_path"`
 	FlagLevel          *int       `json:"flag_level,omitempty" mapstructure:"flag_level"`
@@ -63,6 +67,8 @@ type ScenarioStepOutput struct {
 	VerifyScript       string     `json:"verify_script,omitempty"`
 	BackgroundScript   string     `json:"background_script,omitempty"`
 	ForegroundScript   string     `json:"foreground_script,omitempty"`
+	BackgroundTimeoutSeconds int  `json:"background_timeout_seconds,omitempty"`
+	BackgroundAsync    bool       `json:"background_async,omitempty"`
 	HasFlag            bool       `json:"has_flag"`
 	FlagPath           string     `json:"flag_path,omitempty"`
 	FlagLevel          int        `json:"flag_level"`

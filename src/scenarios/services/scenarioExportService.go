@@ -121,6 +121,8 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dt
 			VerifyScript:          ResolveScriptContent(s.db, step.VerifyScriptID, step.VerifyScript),
 			BackgroundScript:      ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript),
 			ForegroundScript:      ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript),
+			BackgroundTimeoutSeconds: step.BackgroundTimeoutSeconds,
+			BackgroundAsync:       step.BackgroundAsync,
 			HasFlag:               step.HasFlag,
 			FlagPath:              step.FlagPath,
 			FlagLevel:             step.FlagLevel,
@@ -301,6 +303,8 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 		if step.FlagPath != "" {
 			kcStep.FlagPath = step.FlagPath
 		}
+		kcStep.BackgroundTimeoutSeconds = step.BackgroundTimeoutSeconds
+		kcStep.BackgroundAsync = step.BackgroundAsync
 
 		details.Steps = append(details.Steps, kcStep)
 	}

@@ -1358,13 +1358,27 @@ func (s *ScenarioSessionService) deployChallengeConfig(terminalSessionID string,
 // are pushed as temp files and executed from disk.
 const maxInlineScriptSize = 4000
 
-// Background script execution timeouts.
+// Background script execution timeouts, in seconds.
 // Step 0 gets a longer timeout because it typically runs the full environment
 // setup (user creation, service provisioning, package installs, etc.).
 const (
 	bgScriptTimeoutStep0   = 300 // 5 minutes for initial setup
-	bgScriptTimeoutDefault = 30  // 30 seconds for subsequent steps
+	bgScriptTimeoutDefault = 30  // subsequent steps, unless the step overrides it
 )
+
+// effectiveTimeout resolves how long a step's background script may run.
+// An explicit per-step value always wins; otherwise the initial setup (step 0,
+// and the order=-1 sentinel used for the scenario-level setup script) gets the
+// long budget and later steps the default.
+func effectiveTimeout(step *models.ScenarioStep) int {
+	if step.BackgroundTimeoutSeconds > 0 {
+		return step.BackgroundTimeoutSeconds
+	}
+	if step.Order <= 0 {
+		return bgScriptTimeoutStep0
+	}
+	return bgScriptTimeoutDefault
+}
 
 // executeBackgroundScript runs a step's background script in the student's container.
 // Returns nil on success, an error if the script could not be pushed/executed or exited non-zero.
@@ -1383,10 +1397,7 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 		return fmt.Errorf("verification service not available")
 	}
 
-	timeout := bgScriptTimeoutDefault
-	if step.Order <= 0 {
-		timeout = bgScriptTimeoutStep0
-	}
+	timeout := effectiveTimeout(step)
 
 	var exitCode int
 	var stderr string

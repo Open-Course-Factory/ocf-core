@@ -60,6 +60,11 @@ type KillerCodaStep struct {
 	Hint       string `json:"hint"`       // OCF extension: path to hint.md
 	HasFlag    *bool  `json:"has_flag"`   // OCF extension: per-step flag override (nil = use scenario default)
 	FlagPath   string `json:"flag_path"`  // OCF extension: where to place flag in container
+	// OCF extension: provisioning budget for this step's background script.
+	// 0 means "engine default"; anything above the async threshold moves the
+	// step's setup off the advance request.
+	BackgroundTimeoutSeconds int  `json:"background_timeout_seconds,omitempty"`
+	BackgroundAsync          bool `json:"background_async,omitempty"`
 }
 
 // KillerCodaBackend describes the backend image to use
@@ -338,6 +343,8 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 			VerifyScript:     readFileContent(dirPath, kcStep.Verify),
 			BackgroundScript: readFileContent(dirPath, kcStep.Background),
 			ForegroundScript: readFileContent(dirPath, kcStep.Foreground),
+			BackgroundTimeoutSeconds: kcStep.BackgroundTimeoutSeconds,
+			BackgroundAsync:  kcStep.BackgroundAsync,
 			HasFlag:          stepHasFlag,
 			FlagPath:         kcStep.FlagPath,
 		}

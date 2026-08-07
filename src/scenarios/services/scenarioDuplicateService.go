@@ -177,6 +177,8 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 				VerifyScript:     srcStep.VerifyScript,
 				BackgroundScript: srcStep.BackgroundScript,
 				ForegroundScript: srcStep.ForegroundScript,
+				BackgroundTimeoutSeconds: srcStep.BackgroundTimeoutSeconds,
+				BackgroundAsync:  srcStep.BackgroundAsync,
 				HasFlag:          srcStep.HasFlag,
 				FlagPath:         srcStep.FlagPath,
 				FlagLevel:        srcStep.FlagLevel,
