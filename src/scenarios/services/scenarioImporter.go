@@ -95,6 +95,12 @@ type KillerCodaOCF struct {
 	// reason a challenge written for a purpose-built image ran on the generic
 	// one instead.
 	CompatibleInstanceTypes []string `json:"compatible_instance_types,omitempty"`
+	// RequiredFeatures names the session features the scenario cannot run
+	// without — currently "network". The ocf-base Incus profile is NIC-less by
+	// design, so a scenario whose setup script installs packages must ask for
+	// network here or its apt-get resolves nothing and provisioning fails with
+	// a bare exit 100.
+	RequiredFeatures []string `json:"required_features,omitempty"`
 }
 
 // KillerCodaAssets describes files to copy into the environment
@@ -171,6 +177,7 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 				"difficulty":      scenario.Difficulty,
 				"estimated_time":  scenario.EstimatedTime,
 				"instance_type":   scenario.InstanceType,
+				"required_features":  scenario.RequiredFeatures,
 				"flags_enabled":      scenario.FlagsEnabled,
 				"allowed_flag_paths": scenario.AllowedFlagPaths,
 				"flag_secret":        scenario.FlagSecret,
@@ -206,6 +213,22 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 			if len(oldFileIDs) > 0 {
 				if err := tx.Where("id IN ?", oldFileIDs).Delete(&models.ProjectFile{}).Error; err != nil {
 					return fmt.Errorf("failed to delete old project files: %w", err)
+				}
+			}
+
+			// Replace the declared images. The scenario-level Updates above
+			// cannot carry them (they are rows, not columns), so a re-import
+			// used to leave the previous list in place — or, for a scenario
+			// first imported before the field existed, no list at all. The
+			// resolver then fell back to matching on os_type and picked
+			// whichever image the backend happened to offer first.
+			if err := tx.Where("scenario_id = ?", existing.ID).Delete(&models.ScenarioInstanceType{}).Error; err != nil {
+				return fmt.Errorf("failed to delete old compatible instance types: %w", err)
+			}
+			for i := range scenario.CompatibleInstanceTypes {
+				scenario.CompatibleInstanceTypes[i].ScenarioID = existing.ID
+				if err := tx.Create(&scenario.CompatibleInstanceTypes[i]).Error; err != nil {
+					return fmt.Errorf("failed to create compatible instance type: %w", err)
 				}
 			}
 
@@ -287,11 +310,18 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	crashTraps := false
 	gshEnabled := false
 	var compatibleInstanceTypes []models.ScenarioInstanceType
+	requiredFeatures := ""
 	if index.Extensions != nil && index.Extensions.OCF != nil {
 		flagsEnabled = index.Extensions.OCF.Flags
 		crashTraps = index.Extensions.OCF.CrashTraps
 		gshEnabled = index.Extensions.OCF.GshEnabled
 		compatibleInstanceTypes = BuildCompatibleInstanceTypes(index.Extensions.OCF.CompatibleInstanceTypes)
+
+		var featErr error
+		requiredFeatures, featErr = EncodeRequiredFeatures(index.Extensions.OCF.RequiredFeatures)
+		if featErr != nil {
+			return nil, featErr
+		}
 	}
 
 	// Generate flag secret if flags are enabled
@@ -329,6 +359,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		Difficulty:     index.Difficulty,
 		EstimatedTime:  index.Time,
 		InstanceType:   index.Backend.ImageID,
+		RequiredFeatures: requiredFeatures,
 		SourceType:     sourceType,
 		FlagsEnabled:   flagsEnabled,
 		FlagSecret:     flagSecret,

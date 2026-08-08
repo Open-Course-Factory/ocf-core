@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -24,14 +25,24 @@ func NewScenarioExportService(db *gorm.DB) *ScenarioExportService {
 	return &ScenarioExportService{db: db}
 }
 
+// withExportAssociations preloads everything an export has to read.
+//
+// It is one function rather than three copies of the same Preload chain
+// because the three entry points had already drifted: all of them loaded
+// steps, none loaded the declared images, and the omission only showed up as
+// an archive that re-imported without its image requirement.
+func withExportAssociations(db *gorm.DB) *gorm.DB {
+	byOrder := func(db *gorm.DB) *gorm.DB { return db.Order("\"order\" ASC") }
+	return db.
+		Preload("Steps", byOrder).
+		Preload("Steps.Questions", byOrder).
+		Preload("CompatibleInstanceTypes")
+}
+
 // ExportAsJSON loads a scenario with steps and returns the export DTO
 func (s *ScenarioExportService) ExportAsJSON(scenarioID uuid.UUID) (*dto.ScenarioExportOutput, error) {
 	var scenario models.Scenario
-	if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).Preload("Steps.Questions", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).First(&scenario, "id = ?", scenarioID).Error; err != nil {
+	if err := withExportAssociations(s.db).First(&scenario, "id = ?", scenarioID).Error; err != nil {
 		return nil, fmt.Errorf("scenario not found: %w", err)
 	}
 
@@ -42,11 +53,7 @@ func (s *ScenarioExportService) ExportAsJSON(scenarioID uuid.UUID) (*dto.Scenari
 // Returns (zipBytes, filename, error).
 func (s *ScenarioExportService) ExportAsArchive(scenarioID uuid.UUID) ([]byte, string, error) {
 	var scenario models.Scenario
-	if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).Preload("Steps.Questions", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).First(&scenario, "id = ?", scenarioID).Error; err != nil {
+	if err := withExportAssociations(s.db).First(&scenario, "id = ?", scenarioID).Error; err != nil {
 		return nil, "", fmt.Errorf("scenario not found: %w", err)
 	}
 
@@ -62,11 +69,7 @@ func (s *ScenarioExportService) ExportAsArchive(scenarioID uuid.UUID) ([]byte, s
 // ExportMultipleAsJSON loads multiple scenarios with steps and returns export DTOs
 func (s *ScenarioExportService) ExportMultipleAsJSON(scenarioIDs []uuid.UUID) ([]dto.ScenarioExportOutput, error) {
 	var scenarios []models.Scenario
-	if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).Preload("Steps.Questions", func(db *gorm.DB) *gorm.DB {
-		return db.Order("\"order\" ASC")
-	}).Where("id IN ?", scenarioIDs).Find(&scenarios).Error; err != nil {
+	if err := withExportAssociations(s.db).Where("id IN ?", scenarioIDs).Find(&scenarios).Error; err != nil {
 		return nil, fmt.Errorf("failed to load scenarios: %w", err)
 	}
 
@@ -327,13 +330,34 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 		Backend:     KillerCodaBackend{ImageID: scenario.InstanceType},
 	}
 
-	// Add OCF extensions if any are enabled
-	if scenario.FlagsEnabled || scenario.CrashTraps || scenario.GshEnabled {
+	// Add OCF extensions if the scenario carries any.
+	//
+	// The image and feature requirements belong here too: an export that drops
+	// them hands back an archive that re-imports as a scenario with no image
+	// requirement and no network, which then resolves onto an arbitrary
+	// distribution and fails provisioning on its first apt-get. Export is how a
+	// scenario moves between environments, so a lossy one is a silent
+	// downgrade, not a cosmetic gap.
+	declaredImages := make([]string, 0, len(scenario.CompatibleInstanceTypes))
+	for _, cit := range SortInstanceTypesByPriority(scenario.CompatibleInstanceTypes) {
+		declaredImages = append(declaredImages, cit.InstanceType)
+	}
+	requiredFeatures, featErr := scenario.GetRequiredFeatures()
+	if featErr != nil {
+		slog.Warn("scenario has unparseable required_features, exporting without them",
+			"scenario_id", scenario.ID, "err", featErr)
+		requiredFeatures = nil
+	}
+
+	if scenario.FlagsEnabled || scenario.CrashTraps || scenario.GshEnabled ||
+		len(declaredImages) > 0 || len(requiredFeatures) > 0 {
 		index.Extensions = &KillerCodaExtensions{
 			OCF: &KillerCodaOCF{
-				Flags:      scenario.FlagsEnabled,
-				CrashTraps: scenario.CrashTraps,
-				GshEnabled: scenario.GshEnabled,
+				Flags:                   scenario.FlagsEnabled,
+				CrashTraps:              scenario.CrashTraps,
+				GshEnabled:              scenario.GshEnabled,
+				CompatibleInstanceTypes: declaredImages,
+				RequiredFeatures:        requiredFeatures,
 			},
 		}
 	}

@@ -1,10 +1,54 @@
 package services
 
 import (
+	"encoding/json"
+	"fmt"
+	"sort"
 	"strings"
 
 	"soli/formations/src/scenarios/models"
 )
+
+// SortInstanceTypesByPriority returns the declared images in the order the
+// author meant them to be tried: priority ascending, lowest first.
+//
+// It copies rather than sorting in place because callers hold these as a
+// preloaded association, and reordering a GORM-loaded slice underneath the
+// parent struct has bitten this codebase before. Both the launch resolver and
+// the exporter read the order, and they must agree — an export that renumbers
+// preferences would re-import as a different scenario.
+func SortInstanceTypesByPriority(types []models.ScenarioInstanceType) []models.ScenarioInstanceType {
+	sorted := make([]models.ScenarioInstanceType, len(types))
+	copy(sorted, types)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].Priority < sorted[j].Priority
+	})
+	return sorted
+}
+
+// EncodeRequiredFeatures renders authored feature names into the JSON-array
+// text that Scenario.RequiredFeatures stores and GetRequiredFeatures parses.
+//
+// Empty in, empty out — and deliberately so: "" is the column's "requires
+// nothing" value, whereas "[]" would parse to an empty slice and read the same
+// downstream while making every export noisier. Blank names are dropped so a
+// trailing comma in authored content cannot produce a feature called "".
+func EncodeRequiredFeatures(names []string) (string, error) {
+	cleaned := make([]string, 0, len(names))
+	for _, name := range names {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			cleaned = append(cleaned, trimmed)
+		}
+	}
+	if len(cleaned) == 0 {
+		return "", nil
+	}
+	encoded, err := json.Marshal(cleaned)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode required_features: %w", err)
+	}
+	return string(encoded), nil
+}
 
 // ResolveStepType decides the step_type stored for an authored step.
 //

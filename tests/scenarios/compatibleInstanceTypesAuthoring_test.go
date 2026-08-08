@@ -103,6 +103,89 @@ func TestImportScenario_WithoutDeclarationLeavesTheListEmpty(t *testing.T) {
 			"this change is additive and must not invent a requirement")
 }
 
+// TestImportScenario_ReplacesCompatibleInstanceTypesOnReimport covers the other
+// half of the upsert. Import is how the challenges repository ships a fix, and
+// re-importing an existing scenario went through an Updates(map) that lists
+// columns only — so the declaration, which lives in rows, was never written.
+// A scenario first imported before the field existed stayed at zero declared
+// images no matter how often it was re-imported, and kept resolving by os_type
+// onto whichever image the backend offered first.
+func TestImportScenario_ReplacesCompatibleInstanceTypesOnReimport(t *testing.T) {
+	db := setupTestDB(t)
+	importer := services.NewScenarioImporterService(db)
+
+	writeScenarioDir := func(declared string) string {
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "step1"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "intro.md"), []byte("intro"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "finish.md"), []byte("finish"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "step1", "text.md"), []byte("level"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "index.json"), []byte(`{
+			"title": "Reimported Image Requirement",
+			"details": {
+				"intro": {"text": "intro.md"},
+				"steps": [{"title": "Level 0", "text": "step1/text.md"}],
+				"finish": {"text": "finish.md"}
+			},
+			"backend": {"imageid": "s"},
+			"extensions": {"ocf": {"compatible_instance_types": [`+declared+`]}}
+		}`), 0o644))
+		return dir
+	}
+
+	first, err := importer.ImportFromDirectory(writeScenarioDir(`"debian"`), "cit-reimport-user", nil, "")
+	require.NoError(t, err)
+
+	second, err := importer.ImportFromDirectory(writeScenarioDir(`"rogueLite"`), "cit-reimport-user", nil, "")
+	require.NoError(t, err)
+	require.Equal(t, first.ID, second.ID, "the second import must upsert the same scenario")
+
+	types := loadInstanceTypes(t, second.ID)
+	require.Len(t, types, 1,
+		"re-importing must replace the declaration, not append to it nor leave the "+
+			"stale one in place — otherwise a corrected scenario keeps its old image")
+	assert.Equal(t, "rogueLite", types[0].InstanceType)
+}
+
+// TestImportScenario_ReimportDropsRemovedDeclaration pins the empty case, which
+// is the one silent-state-destruction usually gets wrong in the other
+// direction: withdrawing every declared image must actually withdraw them and
+// hand the scenario back to os_type matching.
+func TestImportScenario_ReimportDropsRemovedDeclaration(t *testing.T) {
+	db := setupTestDB(t)
+	importer := services.NewScenarioImporterService(db)
+
+	writeScenarioDir := func(extensions string) string {
+		dir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "step1"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "intro.md"), []byte("intro"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "finish.md"), []byte("finish"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "step1", "text.md"), []byte("level"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "index.json"), []byte(`{
+			"title": "Withdrawn Image Requirement",
+			"details": {
+				"intro": {"text": "intro.md"},
+				"steps": [{"title": "Level 0", "text": "step1/text.md"}],
+				"finish": {"text": "finish.md"}
+			},
+			"backend": {"imageid": "s"}`+extensions+`
+		}`), 0o644))
+		return dir
+	}
+
+	_, err := importer.ImportFromDirectory(
+		writeScenarioDir(`, "extensions": {"ocf": {"compatible_instance_types": ["rogueLite"]}}`),
+		"cit-withdraw-user", nil, "")
+	require.NoError(t, err)
+
+	second, err := importer.ImportFromDirectory(writeScenarioDir(""), "cit-withdraw-user", nil, "")
+	require.NoError(t, err)
+
+	assert.Empty(t, loadInstanceTypes(t, second.ID),
+		"an author who removes the declaration is saying the scenario is no longer "+
+			"tied to those images; keeping them would pin it to an image it no longer names")
+}
+
 func TestSeedScenario_CarriesCompatibleInstanceTypes(t *testing.T) {
 	db := setupTestDB(t)
 	seeder := services.NewScenarioSeedService(db)
