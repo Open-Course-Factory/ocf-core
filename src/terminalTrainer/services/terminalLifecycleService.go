@@ -398,6 +398,24 @@ func (l *terminalLifecycleService) ValidateSessionAccess(sessionID string, check
 			return false, "", fmt.Errorf("failed to validate session with API: %w", err)
 		}
 
+		// A container that still exists but is no longer running settles the
+		// question here. InstanceCreationStatus cannot express that case — it
+		// only separates "instance record exists" from "instance is gone" — so
+		// a crashed or powered-off environment used to answer 0 and pass the
+		// gate, and the learner reconnected forever into a dead container.
+		//
+		// Deliberately not written to the local row: the stopped transition has
+		// to fix IdleUntil and ExpiresAt together (markSessionStopped, in the
+		// sync service) or the row silently drops out of budget scope. The next
+		// sync pass owns that write; this is only the gate verdict.
+		//
+		// A nil InstanceRunning is an older tt-backend with no opinion, not a
+		// "no" — treating its silence as bad news would lock every learner out
+		// of a healthy terminal during a staggered deploy.
+		if apiInfo.Status == 0 && apiInfo.InstanceRunning != nil && !*apiInfo.InstanceRunning {
+			return false, string(models.StateStopped), nil
+		}
+
 		// Map InstanceCreationStatus from /info endpoint to terminal lifecycle state.
 		// /info returns InstanceCreationStatus: 0=started (instance running), 6=expired (instance gone).
 		// These are different from SessionStatus (0=active, 1=expired) used by /sessions.

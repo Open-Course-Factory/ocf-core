@@ -190,6 +190,15 @@ type TerminalTrainerSessionInfo struct {
 	FQDN        string      `json:"fqdn,omitempty"`
 	MachineSize string      `json:"machine_size,omitempty"` // XS, S, M, L, XL
 	Backend     string      `json:"backend,omitempty"`
+	// InstanceRunning is tt-backend's answer to "is the container actually
+	// running right now". It is the only field that separates a container that
+	// is present but stopped from one that is running — Status merely says
+	// whether the instance record still exists.
+	//
+	// A nil pointer means a tt-backend that predates the field and therefore
+	// has no opinion, which is NOT the same as false: ocf-core and tt-backend
+	// deploy independently.
+	InstanceRunning *bool `json:"instance_running,omitempty"`
 }
 
 // SyncSessionResponse représente le résultat de synchronisation d'une session.
