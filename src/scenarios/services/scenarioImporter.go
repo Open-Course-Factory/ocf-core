@@ -358,6 +358,8 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 			BackgroundAsync:  kcStep.BackgroundAsync,
 			HasFlag:          stepHasFlag,
 			FlagPath:         kcStep.FlagPath,
+			// index.json has no step_type; a sidecar may still declare one below.
+			StepType: ResolveStepType("", stepHasFlag),
 		}
 
 		// Build progressive hints from hint content
@@ -379,7 +381,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		if sidecar, err := readStepExtensions(dirPath, stepDir); err != nil {
 			return nil, fmt.Errorf("failed to parse %s/extensions.json: %w", stepDir, err)
 		} else if sidecar != nil {
-			step.StepType = sidecar.StepType
+			step.StepType = ResolveStepType(sidecar.StepType, step.HasFlag)
 			step.ShowImmediateFeedback = sidecar.ShowImmediateFeedback
 			if len(sidecar.Questions) > 0 {
 				questions := make([]models.ScenarioStepQuestion, len(sidecar.Questions))
@@ -482,9 +484,10 @@ func readStepExtensions(dirPath string, stepDir string) (*stepExtensions, error)
 	if err := json.Unmarshal(data, &sidecar); err != nil {
 		return nil, fmt.Errorf("invalid extensions.json: %w", err)
 	}
-	if sidecar.StepType == "" {
-		sidecar.StepType = "terminal"
-	}
+	// A sidecar that declares no step_type is left blank on purpose: the caller
+	// runs it through ResolveStepType, which needs to see "nothing declared" to
+	// tell a flag step apart from a deliberately-terminal one. Defaulting here
+	// erased that distinction before the caller could use it.
 	return &sidecar, nil
 }
 

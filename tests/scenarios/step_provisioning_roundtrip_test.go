@@ -213,8 +213,12 @@ func TestScenarioImporter_ZeroIndexedStepDirs_ReadTheirOwnSidecar(t *testing.T) 
 	require.NoError(t, err)
 	require.Len(t, scenario.Steps, 2)
 
-	assert.Empty(t, scenario.Steps[0].StepType,
-		"step0 declares no sidecar and must not inherit step1's")
+	// The claim is that step0 does not inherit step1's sidecar, so what matters
+	// is that it is not "quiz". It resolves to "terminal" rather than the empty
+	// string because the importer now derives a step's type up front — a step
+	// with no flag and no declared type is a terminal step.
+	assert.Equal(t, "terminal", scenario.Steps[0].StepType,
+		"step0 declares no sidecar and must not inherit step1's quiz type")
 	assert.Empty(t, scenario.Steps[0].Questions)
 
 	assert.Equal(t, "quiz", scenario.Steps[1].StepType)

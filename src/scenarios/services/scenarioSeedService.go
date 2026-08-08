@@ -62,7 +62,7 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 		newSteps[i] = models.ScenarioStep{
 			Order:                 i,
 			Title:                 st.Title,
-			StepType:              st.StepType,
+			StepType:              ResolveStepType(st.StepType, st.HasFlag),
 			ShowImmediateFeedback: st.ShowImmediateFeedback,
 			TextContent:           st.TextContent,
 			HintContent:           st.HintContent,
