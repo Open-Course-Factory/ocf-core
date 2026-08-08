@@ -22,11 +22,18 @@ func NewScenarioDuplicateService(db *gorm.DB) *ScenarioDuplicateService {
 	return &ScenarioDuplicateService{db: db}
 }
 
-// DuplicateScenario creates a deep copy of the source scenario including Steps, Hints,
-// CompatibleInstanceTypes, and ProjectFiles. FK references (script IDs) on steps and
-// scenario are remapped to the newly created ProjectFile copies.
+// DuplicateScenario creates a deep copy of the source scenario including Steps,
+// Hints, quiz Questions, CompatibleInstanceTypes, and ProjectFiles. FK
+// references (script IDs) on steps and scenario are remapped to the newly
+// created ProjectFile copies.
 //
 // NOT duplicated: ScenarioAssignments, ScenarioSessions, Flags, StepProgress.
+//
+// Step fields are copied field by field, which makes an omission silent — the
+// copy saves cleanly and nothing fails. Adding a column to ScenarioStep means
+// adding it here too; TestDuplicateScenario_StepsAreFieldCompleteAgainstSource
+// compares every field by reflection so a forgotten one fails a test instead of
+// shipping.
 func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID string, orgID *uuid.UUID) (*models.Scenario, error) {
 	// Load source scenario with all relations
 	var source models.Scenario
@@ -36,6 +43,9 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 		}).
 		Preload("Steps.Hints", func(db *gorm.DB) *gorm.DB {
 			return db.Order("level ASC")
+		}).
+		Preload("Steps.Questions", func(db *gorm.DB) *gorm.DB {
+			return db.Order("\"order\" ASC")
 		}).
 		Preload("CompatibleInstanceTypes").
 		First(&source, "id = ?", sourceID).Error; err != nil {
@@ -169,17 +179,19 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 		// 4. Copy Steps (with updated FK refs)
 		for _, srcStep := range source.Steps {
 			newStep := models.ScenarioStep{
-				ScenarioID:       newScenario.ID,
-				Order:            srcStep.Order,
-				Title:            srcStep.Title,
-				TextContent:      srcStep.TextContent,
-				HintContent:      srcStep.HintContent,
-				VerifyScript:     srcStep.VerifyScript,
-				BackgroundScript: srcStep.BackgroundScript,
-				ForegroundScript: srcStep.ForegroundScript,
-				HasFlag:          srcStep.HasFlag,
-				FlagPath:         srcStep.FlagPath,
-				FlagLevel:        srcStep.FlagLevel,
+				ScenarioID:            newScenario.ID,
+				Order:                 srcStep.Order,
+				Title:                 srcStep.Title,
+				StepType:              srcStep.StepType,
+				ShowImmediateFeedback: srcStep.ShowImmediateFeedback,
+				TextContent:           srcStep.TextContent,
+				HintContent:           srcStep.HintContent,
+				VerifyScript:          srcStep.VerifyScript,
+				BackgroundScript:      srcStep.BackgroundScript,
+				ForegroundScript:      srcStep.ForegroundScript,
+				HasFlag:               srcStep.HasFlag,
+				FlagPath:              srcStep.FlagPath,
+				FlagLevel:             srcStep.FlagLevel,
 			}
 
 			// Remap step-level FK refs
@@ -224,9 +236,27 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 					return fmt.Errorf("failed to create hint copy: %w", err)
 				}
 			}
+
+			// 6. Copy quiz Questions (linked to new step ID). Without these a
+			// duplicated quiz step renders as an exam with nothing in it.
+			for _, srcQuestion := range srcStep.Questions {
+				newQuestion := models.ScenarioStepQuestion{
+					StepID:        newStep.ID,
+					Order:         srcQuestion.Order,
+					QuestionText:  srcQuestion.QuestionText,
+					QuestionType:  srcQuestion.QuestionType,
+					Options:       srcQuestion.Options,
+					CorrectAnswer: srcQuestion.CorrectAnswer,
+					Explanation:   srcQuestion.Explanation,
+					Points:        srcQuestion.Points,
+				}
+				if err := tx.Create(&newQuestion).Error; err != nil {
+					return fmt.Errorf("failed to create question copy: %w", err)
+				}
+			}
 		}
 
-		// 6. Copy CompatibleInstanceTypes
+		// 7. Copy CompatibleInstanceTypes
 		for _, srcIT := range source.CompatibleInstanceTypes {
 			newIT := models.ScenarioInstanceType{
 				ScenarioID:   newScenario.ID,
@@ -253,6 +283,9 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 		}).
 		Preload("Steps.Hints", func(db *gorm.DB) *gorm.DB {
 			return db.Order("level ASC")
+		}).
+		Preload("Steps.Questions", func(db *gorm.DB) *gorm.DB {
+			return db.Order("\"order\" ASC")
 		}).
 		Preload("CompatibleInstanceTypes").
 		First(&result, "id = ?", newScenario.ID).Error; err != nil {
