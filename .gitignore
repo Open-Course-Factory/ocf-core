@@ -47,3 +47,11 @@ local_themes/
 /ocf-server
 /mark_existing_users_verified
 /update_email_verification_template
+
+# Local-only files that must never be committed. These sat untracked for months
+# and were swept into a merge commit by `git add -u` (caught and amended before
+# any push) — `-u` stages anything already in the index, so it is not the safe
+# alternative to `git add .` it looks like. Ignoring them removes the trap.
+.env.backup-*
+casdoor-rehash
+local_*_tmp/
