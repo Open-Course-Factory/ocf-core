@@ -200,7 +200,7 @@ func TestDeployFlags_DisallowedPathRewrittenToDefault(t *testing.T) {
 	assert.Empty(t, verifySvc.pushCalls, "disallowed path should be rejected, no PushFile call expected")
 }
 
-func TestDeployFlags_EmptyPathUsesDefault(t *testing.T) {
+func TestDeployFlags_EmptyPathDeploysNothing(t *testing.T) {
 	db := setupTestDB(t)
 
 	scenario := models.Scenario{
@@ -228,10 +228,14 @@ func TestDeployFlags_EmptyPathUsesDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
-	// Empty path should use the default /tmp/.flag_step_N
-	require.Len(t, verifySvc.pushCalls, 1)
-	assert.Equal(t, "/tmp/.flag_step_0", verifySvc.pushCalls[0].targetPath,
-		"empty FlagPath should default to /tmp/.flag_step_<order>")
+	// A step that declares no path places its own flag, through its background
+	// script, which receives the value in OCF_FLAG_CURRENT. Writing a fallback
+	// put the answer at a guessable /tmp path and solved, by listing /tmp, any
+	// step whose point was working out where to look. crash_traps already
+	// skipped deployment for the same reason; the rule is about who owns
+	// placement, not about that one flavour of scenario.
+	assert.Empty(t, verifySvc.pushCalls,
+		"a step with no FlagPath must have nothing written on its behalf")
 }
 
 func TestDeployFlags_CrashTraps_EmptyPathSkipped(t *testing.T) {
