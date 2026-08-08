@@ -36,27 +36,16 @@ const (
 	// on. Writing the file instead defers the banner to first shell.
 	ocfMotdPath = "/etc/ocf-motd.txt"
 
-	// ocfBashrcPath carries step 0's effect to the MOTD hook, which reads it
-	// from the shell environment and otherwise falls back to its own default —
-	// silently discarding the trainer's choice.
+	// ocfMotdEffectPath carries step 0's effect to the same hook, exactly the
+	// way the text does. It reads the first line, tolerates a trailing newline,
+	// and falls back to its own default for anything malformed.
 	//
-	// /etc/bash.bashrc rather than /etc/profile.d: the console attaches a
-	// NON-login bash, which never runs profile.d. On Debian /etc/profile also
-	// sources bash.bashrc for interactive shells, so this one file reaches the
-	// login and non-login cases both.
-	//
-	// Note what this does NOT fix. The image installs the MOTD hook itself to
-	// /etc/profile.d/zz-ocf-motd.sh and nothing sources it from bash.bashrc, so
-	// on today's image the hook never fires for the console and step 0 banners
-	// do not render at all — wherever the effect is put. That is an image-side
-	// gap tracked against the challenge-image work, not something this file can
-	// close; the export is written so it is already correct when it lands.
-	ocfBashrcPath = "/etc/bash.bashrc"
-
-	// ocfEffectMarker makes the append idempotent. Provisioning can be replayed
-	// (reprovision, a re-entered step), and without the marker each pass would
-	// stack another export.
-	ocfEffectMarker = "# ocf-motd-effect"
+	// This used to be an exported environment variable, which made it depend on
+	// sourcing order and on the export reaching the right shell at all. Three
+	// separate failures came out of that asymmetry and every one was silent,
+	// because an unset variable simply means the default wins. A file has none
+	// of those failure modes.
+	ocfMotdEffectPath = "/etc/ocf-motd-effect.txt"
 
 	// bannerTimeoutSeconds bounds the exec. ocf-banner caps its own render at
 	// 5s; this is the outer bound on the round trip.
@@ -189,28 +178,13 @@ func (s *ScenarioSessionService) deliverStepZeroIntro(terminalSessionID string, 
 	s.execBestEffort(terminalSessionID, sessionID, "step 0 intro text",
 		[]string{"/bin/sh", "-c", `printf '%s\n' "$1" > ` + ocfMotdPath, "sh", banner.Text})
 
-	// The hook reads the effect from the environment, so it has to be exported
-	// into the learner's shell rather than written beside the text.
-	//
-	// PREPENDED, not appended: an environment variable has to be set before
-	// whatever reads it runs. Nothing sources the hook from this file yet, so
-	// today the order is not observable either way — but a sourcing block added
-	// later will almost certainly be appended, and an export sitting below it
-	// would be set only after the hook had already read its default. Going in at
-	// the top is the order that survives that change; appending is the one that
-	// would quietly stop working.
-	//
-	// effectNamePattern has already constrained this to a bare identifier, and
-	// the marker keeps a replayed provisioning from stacking exports.
+	// Written the same way as the text, for the same reason: a positional
+	// parameter rather than part of the command string, so nothing in it can be
+	// interpreted however it is authored. effectNamePattern has already
+	// constrained this to a bare identifier, which is narrower than what the
+	// hook accepts, so whatever reaches the file passes its validation.
 	s.execBestEffort(terminalSessionID, sessionID, "step 0 intro effect",
-		[]string{"/bin/sh", "-c",
-			`grep -q '` + ocfEffectMarker + `' ` + ocfBashrcPath + ` 2>/dev/null && exit 0
-tmp=$(mktemp) || exit 1
-printf '%s\nexport OCF_MOTD_EFFECT=%s\n' '` + ocfEffectMarker + `' "$1" > "$tmp"
-cat ` + ocfBashrcPath + ` >> "$tmp" 2>/dev/null
-cat "$tmp" > ` + ocfBashrcPath + `
-rm -f "$tmp"`,
-			"sh", banner.Effect})
+		[]string{"/bin/sh", "-c", `printf '%s\n' "$1" > ` + ocfMotdEffectPath, "sh", banner.Effect})
 }
 
 // execBestEffort runs a container command whose failure is not worth failing

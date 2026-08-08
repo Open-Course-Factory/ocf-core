@@ -218,19 +218,14 @@ func TestStepBanners_StepZeroIntroIsStagedAsMotd(t *testing.T) {
 			assert.NotContains(t, call.command[2], "Bienvenue",
 				"the text must not be interpolated into the command string")
 		}
-		if strings.Contains(joined, "OCF_MOTD_EFFECT") {
+		if strings.Contains(joined, "/etc/ocf-motd-effect.txt") {
 			wroteEffect = true
+			// The effect travels as a file, exactly like the text — no
+			// environment variable, so no sourcing order and no shell to get
+			// wrong. It is a positional parameter here too.
 			assert.Equal(t, "beams", call.command[len(call.command)-1])
-			// The console attaches a non-login bash, which never runs
-			// profile.d — the export has to land where that shell reads it.
-			assert.Contains(t, joined, "/etc/bash.bashrc")
-			assert.Contains(t, joined, "grep -q", "the write must be idempotent across replayed provisioning")
-			// An environment variable must be set before whatever reads it
-			// runs. Nothing sources the hook from bash.bashrc yet, so this is
-			// not observable today — but a sourcing block added later will be
-			// appended, and an export below it would never be seen.
-			assert.Contains(t, joined, "cat "+"/etc/bash.bashrc"+" >> ",
-				"the export must be prepended, so it still precedes a sourcing block added later")
+			assert.NotContains(t, call.command[2], "beams",
+				"the effect must not be interpolated into the command string")
 		}
 	}
 	assert.True(t, wroteText, "step 0's intro text must be staged for the login shell")
