@@ -89,6 +89,12 @@ type KillerCodaOCF struct {
 	Flags      bool `json:"flags"`
 	CrashTraps bool `json:"crash_traps"`
 	GshEnabled bool `json:"gsh_enabled"`
+	// CompatibleInstanceTypes names the distributions this scenario is built
+	// for, most preferred first. Without it a scenario can only be matched on
+	// os_type, which is a family ("some Debian") rather than an identity — the
+	// reason a challenge written for a purpose-built image ran on the generic
+	// one instead.
+	CompatibleInstanceTypes []string `json:"compatible_instance_types,omitempty"`
 }
 
 // KillerCodaAssets describes files to copy into the environment
@@ -280,10 +286,12 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	flagsEnabled := false
 	crashTraps := false
 	gshEnabled := false
+	var compatibleInstanceTypes []models.ScenarioInstanceType
 	if index.Extensions != nil && index.Extensions.OCF != nil {
 		flagsEnabled = index.Extensions.OCF.Flags
 		crashTraps = index.Extensions.OCF.CrashTraps
 		gshEnabled = index.Extensions.OCF.GshEnabled
+		compatibleInstanceTypes = BuildCompatibleInstanceTypes(index.Extensions.OCF.CompatibleInstanceTypes)
 	}
 
 	// Generate flag secret if flags are enabled
@@ -331,6 +339,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		SetupScript:    setupScript,
 		CreatedByID:    createdByID,
 		OrganizationID: orgID,
+		CompatibleInstanceTypes: compatibleInstanceTypes,
 	}
 
 	// Build steps

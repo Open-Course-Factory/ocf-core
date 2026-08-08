@@ -198,7 +198,10 @@ type SeedScenarioInput struct {
 	IntroText        string          `json:"intro_text" binding:"max=65536"`
 	FinishText       string          `json:"finish_text" binding:"max=65536"`
 	SetupScript      string          `json:"setup_script,omitempty"`
-	Steps            []SeedStepInput `json:"steps" binding:"required,min=1"`
+	// CompatibleInstanceTypes names the distributions this scenario is built
+	// for, most preferred first. Leave empty to keep matching on os_type alone.
+	CompatibleInstanceTypes []string        `json:"compatible_instance_types,omitempty"`
+	Steps                   []SeedStepInput `json:"steps" binding:"required,min=1"`
 }
 
 // SeedQuestionInput - DTO for a quiz question inside a SeedStepInput

@@ -1,5 +1,11 @@
 package services
 
+import (
+	"strings"
+
+	"soli/formations/src/scenarios/models"
+)
+
 // ResolveStepType decides the step_type stored for an authored step.
 //
 // It exists because ScenarioStep.StepType carries gorm:"default:'terminal'",
@@ -34,3 +40,28 @@ const (
 	StepTypeTerminal = "terminal"
 	StepTypeFlag     = "flag"
 )
+
+// BuildCompatibleInstanceTypes turns an authored, preference-ordered list of
+// distribution names into ScenarioInstanceType rows.
+//
+// Declaration order is the preference order: resolveDistribution tries these
+// by Priority ascending, so position in the authored list becomes Priority.
+// Blank names are dropped rather than stored, since an empty InstanceType can
+// never match a distribution and would only occupy a priority slot.
+//
+// Shared by the import and seed paths so an authored scenario means the same
+// thing however it reaches the platform.
+func BuildCompatibleInstanceTypes(names []string) []models.ScenarioInstanceType {
+	types := make([]models.ScenarioInstanceType, 0, len(names))
+	for _, name := range names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		types = append(types, models.ScenarioInstanceType{
+			InstanceType: trimmed,
+			Priority:     len(types),
+		})
+	}
+	return types
+}

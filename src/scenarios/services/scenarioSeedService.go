@@ -56,6 +56,8 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 		}
 	}
 
+	compatibleInstanceTypes := BuildCompatibleInstanceTypes(input.CompatibleInstanceTypes)
+
 	// Build new steps
 	newSteps := make([]models.ScenarioStep, len(input.Steps))
 	for i, st := range input.Steps {
@@ -156,6 +158,19 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			if err := tx.Where("scenario_id = ?", existing.ID).Delete(&models.ScenarioStep{}).Error; err != nil {
 				return fmt.Errorf("failed to delete old steps: %w", err)
 			}
+			// Replace the image declaration rather than adding to it, so a
+			// re-seed converges on what the scenario now says instead of
+			// leaving a corrected scenario still matching its old image.
+			if err := tx.Unscoped().Where("scenario_id = ?", existing.ID).
+				Delete(&models.ScenarioInstanceType{}).Error; err != nil {
+				return fmt.Errorf("failed to delete old instance types: %w", err)
+			}
+			for i := range compatibleInstanceTypes {
+				compatibleInstanceTypes[i].ScenarioID = existing.ID
+				if err := tx.Create(&compatibleInstanceTypes[i]).Error; err != nil {
+					return fmt.Errorf("failed to create instance type: %w", err)
+				}
+			}
 			// Delete old ProjectFiles (orphaned from previous imports)
 			if len(oldFileIDs) > 0 {
 				if err := tx.Where("id IN ?", oldFileIDs).Delete(&models.ProjectFile{}).Error; err != nil {
@@ -220,6 +235,7 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			OrganizationID: orgID,
 		}
 		scenario.Steps = newSteps
+		scenario.CompatibleInstanceTypes = compatibleInstanceTypes
 
 		if err := s.db.Create(&scenario).Error; err != nil {
 			return nil, false, fmt.Errorf("failed to create scenario: %w", err)
