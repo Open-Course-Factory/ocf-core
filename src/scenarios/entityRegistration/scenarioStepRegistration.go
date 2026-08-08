@@ -34,6 +34,8 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						IntroText:          model.IntroText,
 						OutroEffect:        model.OutroEffect,
 						OutroText:          model.OutroText,
+						BackgroundTimeoutSeconds: model.BackgroundTimeoutSeconds,
+						BackgroundAsync:    model.BackgroundAsync,
 						HasFlag:            model.HasFlag,
 						FlagPath:           model.FlagPath,
 						FlagLevel:          model.FlagLevel,
@@ -94,6 +96,8 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						IntroText:          input.IntroText,
 						OutroEffect:        input.OutroEffect,
 						OutroText:          input.OutroText,
+						BackgroundTimeoutSeconds: input.BackgroundTimeoutSeconds,
+						BackgroundAsync:    input.BackgroundAsync,
 						HasFlag:            input.HasFlag,
 						FlagPath:           input.FlagPath,
 						FlagLevel:          input.FlagLevel,
@@ -144,6 +148,12 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 					}
 					if input.OutroText != nil {
 						updates["outro_text"] = *input.OutroText
+					}
+					if input.BackgroundTimeoutSeconds != nil {
+						updates["background_timeout_seconds"] = *input.BackgroundTimeoutSeconds
+					}
+					if input.BackgroundAsync != nil {
+						updates["background_async"] = *input.BackgroundAsync
 					}
 					if input.HasFlag != nil {
 						updates["has_flag"] = *input.HasFlag

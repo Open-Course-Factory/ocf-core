@@ -7,7 +7,7 @@ package authorization_tests
 // the Layer2Enforcement middleware. The module exposes three enforcer types
 // (SelfScoped routes are documentation-only and not audited here):
 //
-//   - EntityOwner (8 routes, Entity="ScenarioSession", Field="UserID"):
+//   - EntityOwner (9 routes, Entity="ScenarioSession", Field="UserID"):
 //       GET    /api/v1/scenario-sessions/:id/info
 //       GET    /api/v1/scenario-sessions/:id/flags
 //       GET    /api/v1/scenario-sessions/:id/current-step
@@ -16,6 +16,7 @@ package authorization_tests
 //       POST   /api/v1/scenario-sessions/:id/submit-flag
 //       POST   /api/v1/scenario-sessions/:id/steps/:stepOrder/hints/:level/reveal
 //       POST   /api/v1/scenario-sessions/:id/abandon
+//       POST   /api/v1/scenario-sessions/:id/reprovision-step
 //
 //   - GroupRole (11 routes, MinRole="manager", Param="groupId"):
 //       Teacher dashboard (7 routes under /api/v1/teacher/groups/:groupId/...)
@@ -92,6 +93,7 @@ var scenariosAuditEntityOwnerRoutes = []scenariosAuditRoute{
 	{method: "POST", registeredPath: "/api/v1/scenario-sessions/:id/submit-flag", requestPath: "/api/v1/scenario-sessions/sess-audit-flag/submit-flag", scopeID: "sess-audit-flag", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "id"},
 	{method: "POST", registeredPath: "/api/v1/scenario-sessions/:id/steps/:stepOrder/hints/:level/reveal", requestPath: "/api/v1/scenario-sessions/sess-audit-hint/steps/1/hints/2/reveal", scopeID: "sess-audit-hint", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "id"},
 	{method: "POST", registeredPath: "/api/v1/scenario-sessions/:id/abandon", requestPath: "/api/v1/scenario-sessions/sess-audit-aban/abandon", scopeID: "sess-audit-aban", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "id"},
+	{method: "POST", registeredPath: "/api/v1/scenario-sessions/:id/reprovision-step", requestPath: "/api/v1/scenario-sessions/sess-audit-repro/reprovision-step", scopeID: "sess-audit-repro", ruleType: access.EntityOwner, entity: "ScenarioSession", field: "UserID", paramName: "id"},
 }
 
 // scenariosAuditGroupRoutes — 11 GroupRole(manager) routes. All key off

@@ -222,7 +222,7 @@ func (s *TeacherDashboardService) GetGroupActivity(groupID uuid.UUID) ([]GroupAc
 		FROM scenario_sessions ss
 		JOIN scenarios sc ON sc.id = ss.scenario_id
 		JOIN group_members gm ON gm.user_id = ss.user_id AND gm.group_id = ? AND gm.is_active = true
-		WHERE ss.status = 'active' AND ss.is_preview = false
+		WHERE ss.status IN ('active', 'provisioning') AND ss.is_preview = false
 		ORDER BY ss.started_at DESC
 	`, groupID).Scan(&results).Error
 	if err != nil {
@@ -659,10 +659,13 @@ func (s *TeacherDashboardService) ResetGroupScenarioSessions(groupID uuid.UUID, 
 		return 0, nil
 	}
 
-	// Abandon all active/in_progress sessions for these users on this scenario
+	// Abandon every session these users could still resume on this scenario.
+	// Same status list as the unassign hook in scenarioAssignmentHooks.go —
+	// a reset that skipped 'provisioning' would leave the learner unable to
+	// restart, the unique partial index covering that status too.
 	result := s.db.Model(&models.ScenarioSession{}).
 		Where("user_id IN ? AND scenario_id = ? AND status IN ?",
-			memberUserIDs, scenarioID, []string{"active", "in_progress"}).
+			memberUserIDs, scenarioID, []string{"active", "in_progress", "provisioning"}).
 		Updates(map[string]any{"status": "abandoned"})
 
 	if result.Error != nil {

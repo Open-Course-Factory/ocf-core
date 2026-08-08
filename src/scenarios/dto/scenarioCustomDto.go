@@ -16,8 +16,13 @@ type SessionResponse struct {
 	CurrentStep       int       `json:"current_step"`
 	Status            string    `json:"status"`
 	ProvisioningPhase string    `json:"provisioning_phase,omitempty"`
-	Grade             *float64  `json:"grade,omitempty"`
-	StartedAt         time.Time `json:"started_at"`
+	// ProvisioningTimeoutSeconds is the running step's effective timeout, set
+	// only while Status is "provisioning". A client that polls this endpoint
+	// after a reload never saw the advance response, so it needs the ceiling
+	// from here to know when to stop waiting.
+	ProvisioningTimeoutSeconds int       `json:"provisioning_timeout_seconds,omitempty"`
+	Grade                      *float64  `json:"grade,omitempty"`
+	StartedAt                  time.Time `json:"started_at"`
 }
 
 // MessageResponse - DTO for simple message responses
@@ -40,11 +45,54 @@ type StartScenarioInput struct {
 	InstanceType      string `json:"instance_type,omitempty"`
 }
 
+// StepProvisioningStatus reports what happened to the container after an
+// advance. It is embedded in every advance response (and so inlined in their
+// JSON) so the three endpoints speak one language about it.
+//
+// The three fields are mutually exclusive in practice: setup either moved to
+// the background, failed inline, or finished inline with nothing to report.
+type StepProvisioningStatus struct {
+	// NextStepProvisioning is true only when setup actually moved to the
+	// background and the session is now "provisioning". The client must poll
+	// the session until it clears before showing the step. Setup that ran and
+	// finished inline reports nothing — the step is already playable.
+	NextStepProvisioning bool `json:"next_step_provisioning,omitempty"`
+	// ProvisioningTimeoutSeconds is the step's effective timeout, set only
+	// alongside NextStepProvisioning. Clients derive their poll ceiling from
+	// it rather than guessing a constant that a long step would outlive.
+	ProvisioningTimeoutSeconds int `json:"provisioning_timeout_seconds,omitempty"`
+	// NextStepProvisioningFailed is true when setup ran inline and failed. The
+	// advance still stands (the flag is burned, it is never rolled back), so
+	// this is the client's cue to offer a retry via reprovision-step.
+	//
+	// Deliberately a bare boolean: background scripts carry flags, passwords
+	// and puzzle internals, so no script output may reach the learner. The
+	// details stay in the server log.
+	NextStepProvisioningFailed bool `json:"next_step_provisioning_failed,omitempty"`
+}
+
 // VerifyStepResponse - DTO for verify step results
 type VerifyStepResponse struct {
 	Passed   bool   `json:"passed"`
 	Output   string `json:"output,omitempty"`
 	NextStep *int   `json:"next_step,omitempty"`
+	StepProvisioningStatus
+}
+
+// ReprovisionStepInput - DTO for re-running the current step's setup
+type ReprovisionStepInput struct {
+	// Force tells the step script to redo work its idempotency markers would
+	// otherwise skip (exported as FORCE=1).
+	Force bool `json:"force,omitempty"`
+}
+
+// ReprovisionStepResponse - DTO for a reprovisioning request
+type ReprovisionStepResponse struct {
+	StepOrder int `json:"step_order"`
+	// Status is the session status right after the call: "provisioning" when
+	// the setup runs in the background and the client must poll until it
+	// clears, "active" when it already finished.
+	Status string `json:"status"`
 }
 
 // SubmitFlagInput - DTO for submitting a flag answer
@@ -57,6 +105,7 @@ type SubmitFlagResponse struct {
 	Correct  bool   `json:"correct"`
 	Message  string `json:"message,omitempty"`
 	NextStep *int   `json:"next_step,omitempty"`
+	StepProvisioningStatus
 }
 
 // CurrentStepResponse - DTO for current step information
@@ -111,6 +160,7 @@ type SubmitQuizResponse struct {
 	Total              int                  `json:"total"`
 	PerQuestionResults []QuizQuestionResult `json:"per_question_results,omitempty"`
 	NextStep           *int                 `json:"next_step,omitempty"`
+	StepProvisioningStatus
 }
 
 // QuizQuestionResult - per-question result returned after a LEARNING-mode
@@ -176,6 +226,8 @@ type SeedStepInput struct {
 	IntroText             string              `json:"intro_text,omitempty" binding:"max=500"`
 	OutroEffect           string              `json:"outro_effect,omitempty"`
 	OutroText             string              `json:"outro_text,omitempty" binding:"max=500"`
+	BackgroundTimeoutSeconds int              `json:"background_timeout_seconds,omitempty"`
+	BackgroundAsync       bool                `json:"background_async,omitempty"`
 	HasFlag               bool                `json:"has_flag"`
 	FlagPath              string              `json:"flag_path"`
 	Questions             []SeedQuestionInput `json:"questions,omitempty"`
@@ -207,6 +259,8 @@ type ScenarioExportStepOutput struct {
 	IntroText             string                             `json:"intro_text,omitempty"`
 	OutroEffect           string                             `json:"outro_effect,omitempty"`
 	OutroText             string                             `json:"outro_text,omitempty"`
+	BackgroundTimeoutSeconds int                             `json:"background_timeout_seconds,omitempty"`
+	BackgroundAsync       bool                               `json:"background_async,omitempty"`
 	HasFlag               bool                               `json:"has_flag"`
 	FlagPath              string                             `json:"flag_path,omitempty"`
 	FlagLevel             int                                `json:"flag_level,omitempty"`

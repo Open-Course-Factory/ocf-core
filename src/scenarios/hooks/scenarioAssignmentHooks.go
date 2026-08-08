@@ -209,10 +209,13 @@ func (h *ScenarioAssignmentAuthorizationHook) handleAfterDelete(ctx *hooks.HookC
 		return nil
 	}
 
-	// Abandon all active/in_progress sessions for these users on this scenario
+	// Abandon every session these users could still resume on this scenario.
+	// "provisioning" belongs in the list: leaving one behind hands the learner a
+	// session for a scenario they are no longer assigned to, and the unique
+	// partial index (which covers 'provisioning') then blocks a fresh start.
 	result := h.db.Model(&models.ScenarioSession{}).
 		Where("user_id IN ? AND scenario_id = ? AND status IN ?",
-			memberUserIDs, assignment.ScenarioID, []string{"active", "in_progress"}).
+			memberUserIDs, assignment.ScenarioID, []string{"active", "in_progress", "provisioning"}).
 		Updates(map[string]any{"status": "abandoned"})
 
 	if result.Error != nil {

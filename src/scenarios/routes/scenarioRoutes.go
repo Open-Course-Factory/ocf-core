@@ -54,6 +54,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	sessionRoutes.POST("/:id/submit-quiz", middleware.AuthManagement(), rateLimiter, progressController.SubmitQuiz)
 	sessionRoutes.POST("/:id/steps/:stepOrder/hints/:level/reveal", middleware.AuthManagement(), progressController.RevealHint)
 	sessionRoutes.POST("/:id/abandon", middleware.AuthManagement(), progressController.AbandonSession)
+	sessionRoutes.POST("/:id/reprovision-step", middleware.AuthManagement(), rateLimiter, progressController.ReprovisionStep)
 	// Budget enforcement is performed inside LaunchScenario via
 	// QuotaService.CheckBudget; no middleware-level slot counter is needed.
 	//

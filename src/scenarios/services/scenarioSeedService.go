@@ -73,6 +73,8 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			IntroText:             st.IntroText,
 			OutroEffect:           st.OutroEffect,
 			OutroText:             st.OutroText,
+			BackgroundTimeoutSeconds: st.BackgroundTimeoutSeconds,
+			BackgroundAsync:       st.BackgroundAsync,
 			HasFlag:               st.HasFlag,
 			FlagPath:              st.FlagPath,
 		}

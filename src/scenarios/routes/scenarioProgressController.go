@@ -1,6 +1,7 @@
 package scenarioController
 
 import (
+	stderrors "errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -27,6 +28,7 @@ type ScenarioProgressController interface {
 	SubmitQuiz(ctx *gin.Context)
 	RevealHint(ctx *gin.Context)
 	AbandonSession(ctx *gin.Context)
+	ReprovisionStep(ctx *gin.Context)
 	GetSessionFlags(ctx *gin.Context)
 }
 
@@ -54,6 +56,21 @@ func NewScenarioProgressController(db *gorm.DB) ScenarioProgressController {
 		sessionService:         sessionService,
 		terminalService:        terminalService,
 	}
+}
+
+// abortIfSessionNotActive answers 409 when a learner action was rejected
+// because of the session's state rather than its content. The distinction
+// matters to the client: a step whose setup is still running is worth
+// retrying in a moment, an abandoned session never is.
+func (pc *scenarioProgressController) abortIfSessionNotActive(ctx *gin.Context, err error) bool {
+	if !stderrors.Is(err, services.ErrSessionNotActive) {
+		return false
+	}
+	ctx.JSON(http.StatusConflict, &errors.APIError{
+		ErrorCode:    http.StatusConflict,
+		ErrorMessage: err.Error(),
+	})
+	return true
 }
 
 // GetCurrentStep godoc
@@ -155,6 +172,9 @@ func (pc *scenarioProgressController) VerifyStep(ctx *gin.Context) {
 
 	result, err := pc.sessionService.VerifyCurrentStep(session.ID)
 	if err != nil {
+		if pc.abortIfSessionNotActive(ctx, err) {
+			return
+		}
 		slog.Error("failed to verify step", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -197,6 +217,9 @@ func (pc *scenarioProgressController) SubmitFlag(ctx *gin.Context) {
 
 	result, err := pc.sessionService.SubmitFlag(session.ID, input.Flag)
 	if err != nil {
+		if pc.abortIfSessionNotActive(ctx, err) {
+			return
+		}
 		slog.Error("failed to submit flag", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -240,6 +263,9 @@ func (pc *scenarioProgressController) SubmitQuiz(ctx *gin.Context) {
 
 	result, err := pc.sessionService.SubmitQuiz(session.ID, input)
 	if err != nil {
+		if pc.abortIfSessionNotActive(ctx, err) {
+			return
+		}
 		// Service rejects with a domain error for invalid step type / unknown
 		// question IDs / empty answers — surface as 422 so the frontend can
 		// distinguish from a 500.
@@ -294,6 +320,9 @@ func (pc *scenarioProgressController) RevealHint(ctx *gin.Context) {
 
 	result, err := pc.sessionService.RevealHint(session.ID, stepOrder, level)
 	if err != nil {
+		if pc.abortIfSessionNotActive(ctx, err) {
+			return
+		}
 		slog.Error("failed to reveal hint", "err", err)
 		ctx.JSON(http.StatusBadRequest, &errors.APIError{
 			ErrorCode:    http.StatusBadRequest,
@@ -341,6 +370,54 @@ func (pc *scenarioProgressController) AbandonSession(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, dto.MessageResponse{Message: "Session abandoned"})
+}
+
+// ReprovisionStep godoc
+// @Summary Re-run the current step's setup
+// @Description Re-run the current step's background script in the learner's container. Available to the session owner when the session is active or its setup failed. Step scripts are expected to be idempotent; pass force to make the script redo work it already marked as done.
+// @Tags scenario-sessions
+// @Accept json
+// @Produce json
+// @Param id path string true "Session ID"
+// @Param body body dto.ReprovisionStepInput false "Reprovisioning options"
+// @Success 200 {object} dto.ReprovisionStepResponse
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenario-sessions/{id}/reprovision-step [post]
+// @Security BearerAuth
+func (pc *scenarioProgressController) ReprovisionStep(ctx *gin.Context) {
+	session, err := pc.getSessionIfOwned(ctx)
+	if err != nil {
+		return
+	}
+
+	// The body is optional — an empty POST means "retry, without forcing".
+	var input dto.ReprovisionStepInput
+	if ctx.Request.ContentLength > 0 {
+		if err := ctx.ShouldBindJSON(&input); err != nil {
+			ctx.JSON(http.StatusBadRequest, &errors.APIError{
+				ErrorCode:    http.StatusBadRequest,
+				ErrorMessage: err.Error(),
+			})
+			return
+		}
+	}
+
+	result, err := pc.sessionService.ReprovisionCurrentStep(session.ID, input.Force)
+	if err != nil {
+		// Every rejection here is about the session's own state or content
+		// (wrong status, no script, script failed) — a 400 tells the client the
+		// retry is not going to work as-is, which a 500 would not.
+		slog.Warn("failed to reprovision step", "session_id", session.ID, "err", err)
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, result)
 }
 
 // GetSessionFlags returns all validated (correct) flags for a session.

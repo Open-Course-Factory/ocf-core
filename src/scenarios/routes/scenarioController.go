@@ -166,16 +166,17 @@ func (sc *scenarioController) GetSessionInfo(ctx *gin.Context) {
 		terminalSessionID = *session.TerminalSessionID
 	}
 	ctx.JSON(http.StatusOK, dto.SessionResponse{
-		ID:                session.ID.String(),
-		ScenarioID:        session.ScenarioID.String(),
-		UserID:            session.UserID,
-		TrainerID:         session.TrainerID,
-		TerminalSessionID: terminalSessionID,
-		CurrentStep:       session.CurrentStep,
-		Status:            session.Status,
-		ProvisioningPhase: session.ProvisioningPhase,
-		Grade:             session.Grade,
-		StartedAt:         session.StartedAt,
+		ID:                         session.ID.String(),
+		ScenarioID:                 session.ScenarioID.String(),
+		UserID:                     session.UserID,
+		TrainerID:                  session.TrainerID,
+		TerminalSessionID:          terminalSessionID,
+		CurrentStep:                session.CurrentStep,
+		Status:                     session.Status,
+		ProvisioningPhase:          session.ProvisioningPhase,
+		ProvisioningTimeoutSeconds: sc.sessionService.CurrentStepProvisioningTimeout(session),
+		Grade:                      session.Grade,
+		StartedAt:                  session.StartedAt,
 	})
 }
 

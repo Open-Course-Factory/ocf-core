@@ -39,6 +39,15 @@ type ScenarioStep struct {
 	IntroText        string             `gorm:"type:varchar(500)" json:"intro_text,omitempty" mapstructure:"intro_text"`
 	OutroEffect      string             `gorm:"type:varchar(64)" json:"outro_effect,omitempty" mapstructure:"outro_effect"`
 	OutroText        string             `gorm:"type:varchar(500)" json:"outro_text,omitempty" mapstructure:"outro_text"`
+	// BackgroundTimeoutSeconds overrides the engine's timeout for this step's
+	// background script. 0 means "use the engine default", which depends on
+	// whether the step is the initial setup or a later one.
+	BackgroundTimeoutSeconds int `gorm:"default:0" json:"background_timeout_seconds,omitempty" mapstructure:"background_timeout_seconds"`
+	// BackgroundAsync forces this step's provisioning off the advance request
+	// and into a background goroutine, moving the session to "provisioning"
+	// until it finishes. Long timeouts imply it; this flag opts a step in
+	// regardless of its timeout.
+	BackgroundAsync  bool               `gorm:"default:false" json:"background_async,omitempty" mapstructure:"background_async"`
 	HasFlag          bool               `gorm:"default:false" json:"has_flag"`
 	FlagPath         string             `gorm:"type:varchar(500)" json:"flag_path,omitempty"` // where to place the flag file in the container
 	FlagLevel        int                `gorm:"default:0" json:"flag_level"`

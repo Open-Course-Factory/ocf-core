@@ -58,18 +58,6 @@ const (
 // banner text it is also written into a shell snippet for the MOTD path.
 var effectNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
 
-// findStepByOrder returns the step with the given Order, or nil. Step orders
-// are data-driven (0- or 1-based depending on the authoring path), so lookups
-// go through Order rather than slice position.
-func findStepByOrder(steps []models.ScenarioStep, order int) *models.ScenarioStep {
-	for i := range steps {
-		if steps[i].Order == order {
-			return &steps[i]
-		}
-	}
-	return nil
-}
-
 // stepBanner is one renderable banner: an effect and the line it draws.
 type stepBanner struct {
 	Effect string
