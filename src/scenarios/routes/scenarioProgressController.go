@@ -51,6 +51,12 @@ func NewScenarioProgressController(db *gorm.DB) ScenarioProgressController {
 		return terminalService.StopSession(terminalSessionID)
 	})
 
+	// Same reason and same direction: the session service must be able to close
+	// a container's provisioning window without importing terminalTrainer.
+	sessionService.SetTerminalBuildCompleteFunc(func(terminalSessionID string) error {
+		return terminalService.BuildComplete(terminalSessionID)
+	})
+
 	return &scenarioProgressController{
 		scenarioControllerBase: scenarioControllerBase{db: db},
 		sessionService:         sessionService,

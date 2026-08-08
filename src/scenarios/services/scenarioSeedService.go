@@ -63,6 +63,11 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 		return nil, false, featErr
 	}
 
+	buildFeatures, buildFeatErr := EncodeRequiredFeatures(input.BuildFeatures)
+	if buildFeatErr != nil {
+		return nil, false, buildFeatErr
+	}
+
 	// Build new steps
 	newSteps := make([]models.ScenarioStep, len(input.Steps))
 	for i, st := range input.Steps {
@@ -136,6 +141,7 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 				"allowed_flag_paths": input.AllowedFlagPaths,
 				"flag_secret":        flagSecret,
 				"required_features":  requiredFeatures,
+				"build_features":     buildFeatures,
 				"gsh_enabled":    input.GshEnabled,
 				"crash_traps":    input.CrashTraps,
 				"intro_text":     input.IntroText,
@@ -233,6 +239,7 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			AllowedFlagPaths: input.AllowedFlagPaths,
 			FlagSecret:       flagSecret,
 			RequiredFeatures: requiredFeatures,
+			BuildFeatures:    buildFeatures,
 			GshEnabled:     input.GshEnabled,
 			CrashTraps:     input.CrashTraps,
 			IntroText:      input.IntroText,

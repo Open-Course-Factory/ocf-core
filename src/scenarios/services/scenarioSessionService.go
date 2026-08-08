@@ -105,12 +105,18 @@ func requireActiveSession(session *models.ScenarioSession) error {
 // TerminalStopFunc is a callback to stop a terminal session (injected from controller layer)
 type TerminalStopFunc func(terminalSessionID string) error
 
+// TerminalBuildCompleteFunc is a callback that ends a session's provisioning
+// window, removing the features it held only to be built (injected from the
+// controller layer, same reason as TerminalStopFunc: no import cycle).
+type TerminalBuildCompleteFunc func(terminalSessionID string) error
+
 // ScenarioSessionService manages the lifecycle of a student's scenario session
 type ScenarioSessionService struct {
 	db                  *gorm.DB
 	flagService         FlagServiceInterface
 	verificationService VerificationServiceInterface
 	stopTerminal        TerminalStopFunc
+	buildComplete       TerminalBuildCompleteFunc
 }
 
 // NewScenarioSessionService creates a new session service with its dependencies
@@ -125,6 +131,34 @@ func NewScenarioSessionService(db *gorm.DB, flagService FlagServiceInterface, ve
 // SetTerminalStopFunc sets the callback used to stop terminal sessions on failure
 func (s *ScenarioSessionService) SetTerminalStopFunc(fn TerminalStopFunc) {
 	s.stopTerminal = fn
+}
+
+// SetTerminalBuildCompleteFunc sets the callback that takes away the features a
+// container held only while it was being provisioned.
+func (s *ScenarioSessionService) SetTerminalBuildCompleteFunc(fn TerminalBuildCompleteFunc) {
+	s.buildComplete = fn
+}
+
+// finishBuild closes the provisioning window, taking back any feature the
+// container was given only to be built.
+//
+// Called on every exit from setup — success, setup failure, or panic — because
+// the container outlives a failed setup: the learner sees an error state and
+// the row is torn down later, and until then a NIC nobody intended is still
+// attached. A scenario that declared no build features costs one call that
+// removes nothing.
+//
+// Best-effort by design. Failing to close the window must not turn a working
+// scenario into a failed one, so it is logged loudly rather than escalated —
+// the session is usable, just more connected than it should be.
+func (s *ScenarioSessionService) finishBuild(sessionID uuid.UUID, terminalSessionID string) {
+	if s.buildComplete == nil || terminalSessionID == "" {
+		return
+	}
+	if err := s.buildComplete(terminalSessionID); err != nil {
+		slog.Error("scenario build window left open — session still holds its build-time features",
+			"session_id", sessionID, "terminal_session_id", terminalSessionID, "err", err)
+	}
 }
 
 // tryStopTerminal stops the linked terminal session (best-effort, logs on failure)
@@ -309,6 +343,10 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 				// banner silently never appears.
 				s.deliverStepZeroIntro(*session.TerminalSessionID, &scenario.Steps[0], session.ID)
 				s.warnIfEffectsUnsupported(*session.TerminalSessionID, &scenario, session.ID)
+				// Nothing ran, but the container was still created with the
+				// build features attached — a scenario can declare them and
+				// have no scripts. Close the window here too.
+				s.finishBuild(session.ID, *session.TerminalSessionID)
 			}
 		}
 	}
@@ -381,6 +419,12 @@ func (s *ScenarioSessionService) PreviewScenario(userID string, scenarioID uuid.
 // the session from "provisioning" to "active" once setup completes, or to
 // "setup_failed" if the script fails.
 func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag) {
+	// Deferred rather than placed at the end: this function returns from a
+	// dozen points — setup failures, an abandoned session, a recovered panic —
+	// and every one of them leaves a container still holding the network its
+	// setup asked for.
+	defer s.finishBuild(sessionID, terminalSessionID)
+
 	defer func() {
 		if r := recover(); r != nil {
 			observability.Metrics.ScenarioSetupPanic.Add(1)

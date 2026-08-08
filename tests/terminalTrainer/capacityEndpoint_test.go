@@ -396,3 +396,7 @@ func TestCheckRAMAvailability_NoBodyFallsBackToPlanMax(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code,
 		"no body must fall back to plan max (defensive)")
 }
+
+// BuildComplete satisfies TerminalTrainerService. These tests never exercise
+// the provisioning window, so the stub reports success without recording.
+func (m *metricsAwareMockService) BuildComplete(sessionID string) error { return nil }

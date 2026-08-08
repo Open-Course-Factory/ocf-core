@@ -714,6 +714,14 @@ func (c *terminalComposer) startComposedSession(
 	if input.PersistenceMode != "" {
 		ttReqBody["persistence_mode"] = input.PersistenceMode
 	}
+	// Sent only when asked for. Build features are not plan-gated — the plan
+	// governs what the learner may reach, and this window belongs to the
+	// scenario's own setup scripts, which the platform authored. Omitting the
+	// key entirely keeps the request identical for every session that does not
+	// use them.
+	if len(input.BuildFeatures) > 0 {
+		ttReqBody["build_features"] = input.BuildFeatures
+	}
 	if input.IdleWindowSeconds != nil {
 		ttReqBody["idle_window_seconds"] = *input.IdleWindowSeconds
 	}

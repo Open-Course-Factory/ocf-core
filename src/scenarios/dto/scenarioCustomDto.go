@@ -210,6 +210,9 @@ type SeedScenarioInput struct {
 	// disagreeing about what a scenario is allowed to declare — re-seeding a
 	// scenario silently dropped the requirement it was imported with.
 	RequiredFeatures        []string        `json:"required_features,omitempty"`
+	// BuildFeatures names features held only while the container is
+	// provisioned, then removed. Same meaning as the archive importer's field.
+	BuildFeatures           []string        `json:"build_features,omitempty"`
 	Steps                   []SeedStepInput `json:"steps" binding:"required,min=1"`
 }
 

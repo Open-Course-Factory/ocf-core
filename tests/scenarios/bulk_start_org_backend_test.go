@@ -268,3 +268,7 @@ func TestBulkStartScenario_PassesOrganizationID(t *testing.T) {
 	assert.Equal(t, 1, result.Created, "should report 1 created session")
 	assert.Empty(t, result.Errors, "should have no errors")
 }
+
+// BuildComplete satisfies TerminalTrainerService. These tests never exercise
+// the provisioning window, so the stub reports success without recording.
+func (m *capturingTTService) BuildComplete(sessionID string) error { return nil }

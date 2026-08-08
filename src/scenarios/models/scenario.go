@@ -42,6 +42,12 @@ type Scenario struct {
 	CreatedByID    string     `gorm:"type:varchar(255)" json:"created_by_id"`
 	OrganizationID *uuid.UUID `gorm:"type:uuid;index" json:"organization_id,omitempty"`
 	IsPublic       bool       `gorm:"default:false" json:"is_public"`
+	// BuildFeatures names session features attached only while the container is
+	// provisioned, then removed. A scenario that installs packages needs the
+	// network to build and never again; asking for it in RequiredFeatures buys a
+	// whole session of egress and puts the scenario out of reach of every plan
+	// that does not grant internet access.
+	BuildFeatures  string     `gorm:"type:text" json:"build_features,omitempty" mapstructure:"build_features"`
 	SetupScript    string     `gorm:"type:text" json:"setup_script,omitempty"`
 	SetupScriptID  *uuid.UUID `gorm:"type:uuid;index" json:"setup_script_id,omitempty" mapstructure:"setup_script_id"`
 	IntroFileID    *uuid.UUID `gorm:"type:uuid;index" json:"intro_file_id,omitempty" mapstructure:"intro_file_id"`
@@ -75,7 +81,35 @@ func (s Scenario) GetRequiredFeatures() ([]string, error) {
 
 // GetFeaturesMap returns required features as a map[string]bool for composed sessions
 func (s Scenario) GetFeaturesMap() (map[string]bool, error) {
-	features, err := s.GetRequiredFeatures()
+	return featureNamesToMap(s.GetRequiredFeatures())
+}
+
+// GetBuildFeatures parses the BuildFeatures JSON array field
+func (s Scenario) GetBuildFeatures() ([]string, error) {
+	if s.BuildFeatures == "" {
+		return nil, nil
+	}
+	var features []string
+	if err := json.Unmarshal([]byte(s.BuildFeatures), &features); err != nil {
+		return nil, fmt.Errorf("invalid build_features format (must be JSON array): %w", err)
+	}
+	return features, nil
+}
+
+// GetBuildFeaturesMap returns build-only features as a map[string]bool for
+// composed sessions. These are attached to provision the container and taken
+// away once it is built — see the build_features field.
+func (s Scenario) GetBuildFeaturesMap() (map[string]bool, error) {
+	return featureNamesToMap(s.GetBuildFeatures())
+}
+
+// featureNamesToMap converts a feature-name list into the map shape the
+// composed-session API takes, propagating the parse error unchanged.
+//
+// Taking the accessor's two return values directly keeps required and build
+// features on one conversion: they are the same list in the same shape sent to
+// the same endpoint, and two copies would be free to drift.
+func featureNamesToMap(features []string, err error) (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
