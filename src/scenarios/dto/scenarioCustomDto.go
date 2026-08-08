@@ -201,6 +201,15 @@ type SeedScenarioInput struct {
 	// CompatibleInstanceTypes names the distributions this scenario is built
 	// for, most preferred first. Leave empty to keep matching on os_type alone.
 	CompatibleInstanceTypes []string        `json:"compatible_instance_types,omitempty"`
+	// RequiredFeatures names the session features the scenario cannot run
+	// without — currently "network". Same meaning as the archive importer's
+	// field: the ocf-base profile is NIC-less, so a scenario whose setup
+	// installs packages must ask for network or apt resolves nothing.
+	//
+	// The importer learned this and seeding did not, which left the two paths
+	// disagreeing about what a scenario is allowed to declare — re-seeding a
+	// scenario silently dropped the requirement it was imported with.
+	RequiredFeatures        []string        `json:"required_features,omitempty"`
 	Steps                   []SeedStepInput `json:"steps" binding:"required,min=1"`
 }
 
