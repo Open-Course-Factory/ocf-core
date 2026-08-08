@@ -1752,15 +1752,21 @@ func (s *ScenarioSessionService) deploySingleFlagToContainer(terminalSessionID s
 		return nil
 	}
 
-	// Determine the target path for the flag file
+	// Determine the target path for the flag file.
+	//
+	// No declared path means the scenario places the flag itself — through its
+	// background script, which receives the value in OCF_FLAG_CURRENT. Writing
+	// one anyway put the answer at a guessable /tmp path, which is a leak in
+	// exactly the way the crash_traps branch below already said it was: a step
+	// whose whole point is that the learner must work out where to look is
+	// solved by listing /tmp instead.
+	//
+	// crash_traps kept its own early return for the same reason (setup.sh
+	// places flags from config.json there); the rule was always about who owns
+	// placement, never about that one flavour of scenario.
 	flagPath := step.FlagPath
 	if flagPath == "" {
-		// For crash_traps scenarios, setup.sh handles flag placement via config.json.
-		// Do NOT write a fallback file — it would leak all flags as world-readable files in /tmp/.
-		if scenario.CrashTraps {
-			return nil
-		}
-		flagPath = fmt.Sprintf("/tmp/.flag_step_%d", flag.StepOrder)
+		return nil
 	}
 
 	// Validate flag path - prevent path traversal
