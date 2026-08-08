@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"soli/formations/src/scenarios/models"
 
@@ -14,6 +15,10 @@ import (
 
 // FlagService generates and validates per-student, per-step unique flags using HMAC-SHA256
 type FlagService struct{}
+
+// generatedFlagPrefix marks a token this service minted, as opposed to an
+// answer a scenario chose for itself.
+const generatedFlagPrefix = "FLAG{"
 
 // NewFlagService creates a new FlagService instance
 func NewFlagService() *FlagService {
@@ -48,7 +53,18 @@ func (s *FlagService) GenerateFlags(scenario *models.Scenario, sessionID uuid.UU
 
 // ValidateFlag checks if a submitted flag matches the expected flag for a step.
 // Uses constant-time comparison to prevent timing attacks.
+// A generated flag is a token copied from the screen, so it is compared byte
+// for byte. A scenario-chosen answer is a word a human types — "Tuesday",
+// "tuesday", " Tuesday " are the same answer, and marking two of them wrong
+// teaches nothing about the shell.
+//
+// The distinction is the generated format itself: everything this service mints
+// is FLAG{...}, so anything else came from a scenario.
 func (s *FlagService) ValidateFlag(expected string, submitted string) bool {
+	if !strings.HasPrefix(expected, generatedFlagPrefix) {
+		expected = strings.ToLower(strings.TrimSpace(expected))
+		submitted = strings.ToLower(strings.TrimSpace(submitted))
+	}
 	return subtle.ConstantTimeCompare([]byte(expected), []byte(submitted)) == 1
 }
 
@@ -60,5 +76,5 @@ func (s *FlagService) computeFlag(secret string, sessionID uuid.UUID, stepOrder 
 	hash := mac.Sum(nil)
 	hexStr := hex.EncodeToString(hash)
 
-	return fmt.Sprintf("FLAG{%s}", hexStr[:16])
+	return fmt.Sprintf("%s%s}", generatedFlagPrefix, hexStr[:16])
 }

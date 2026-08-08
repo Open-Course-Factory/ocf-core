@@ -109,3 +109,7 @@ func BuildCompatibleInstanceTypes(names []string) []models.ScenarioInstanceType 
 	}
 	return types
 }
+
+// ParseStepAnswerForTest exposes parseStepAnswer to the tests package, which
+// lives outside this package by convention.
+func ParseStepAnswerForTest(stdout string) string { return parseStepAnswer(stdout) }

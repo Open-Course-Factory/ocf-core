@@ -455,7 +455,7 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 		}
 		// The scenario-level setup script is not a step and has no "current"
 		// flag; crash_traps scenarios hand it the whole set through config.json.
-		if err := s.executeBackgroundScript(terminalSessionID, setupStep, nil); err != nil {
+		if _, err := s.executeBackgroundScript(terminalSessionID, setupStep, nil); err != nil {
 			slog.Error("scenario setup script failed", "session_id", sessionID, "err", err)
 			s.db.Model(&models.ScenarioSession{}).
 				Where("id = ? AND status = ?", sessionID, "provisioning").
@@ -477,7 +477,7 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 		s.db.Model(&models.ScenarioSession{}).
 			Where("id = ? AND status = ?", sessionID, "provisioning").
 			Update("provisioning_phase", "step_setup")
-		if err := s.executeBackgroundScript(terminalSessionID, step, stepProvisioningEnv(scenario, flags, step.Order)); err != nil {
+		if _, err := s.executeBackgroundScript(terminalSessionID, step, stepProvisioningEnv(scenario, flags, step.Order)); err != nil {
 			slog.Error("step 0 setup failed", "session_id", sessionID, "err", err)
 			s.db.Model(&models.ScenarioSession{}).
 				Where("id = ? AND status = ?", sessionID, "provisioning").
@@ -617,12 +617,78 @@ func stepProvisioningEnv(scenario *models.Scenario, flags []models.ScenarioFlag,
 	return map[string]string{ocfFlagCurrentEnv: flag.ExpectedFlag}
 }
 
+// stepAnswerMarker lets a background script tell OCF what the answer to its own
+// step is, by printing it: "OCF_ANSWER: Tuesday".
+//
+// It exists because some questions only have an answer once the session picks
+// one. "What day of the week was this date?" is a fine exercise and a poor
+// flag: with a fixed date the answer is the same for every student and travels
+// between them in one message. The scenario draws the date per session, so only
+// the scenario knows the answer — and it needs a way to say so.
+//
+// Carried on the script's stdout, which is already read, rather than through a
+// file: a file costs a second round trip into the container on every flag step,
+// to serve the few that use this.
+//
+// The learner is root and could read the answer out of the container. That is
+// fine — they could equally run `date -d` instead of `cal`. What they cannot do
+// is tell a classmate, because the classmate's session asks a different
+// question.
+const stepAnswerMarker = "OCF_ANSWER:"
+
+// parseStepAnswer returns the answer a background script declared, or "".
+//
+// The last marker wins, so a script that recomputes is not betrayed by an
+// earlier draft, and a line that merely mentions the marker mid-sentence is
+// ignored: it has to start the line.
+func parseStepAnswer(stdout string) string {
+	answer := ""
+	for _, line := range strings.Split(stdout, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, stepAnswerMarker) {
+			answer = strings.TrimSpace(strings.TrimPrefix(trimmed, stepAnswerMarker))
+		}
+	}
+	return answer
+}
+
+// adoptScriptChosenAnswer replaces a step's generated flag with the answer its
+// background script declared, when it declared one.
+//
+// Silent when there is none: that is every step that does not use the
+// mechanism. A failure to store leaves the generated token in place, which
+// makes the step unanswerable rather than answerable by the wrong word — the
+// safer direction, and it is logged.
+func (s *ScenarioSessionService) adoptScriptChosenAnswer(stdout string, flags []models.ScenarioFlag, step *models.ScenarioStep) {
+	if !step.HasFlag {
+		return
+	}
+	answer := parseStepAnswer(stdout)
+	if answer == "" {
+		return
+	}
+	flag := findFlagByStepOrder(flags, step.Order)
+	if flag == nil {
+		return
+	}
+
+	if err := s.db.Model(&models.ScenarioFlag{}).
+		Where("session_id = ? AND step_order = ?", flag.SessionID, flag.StepOrder).
+		Update("expected_flag", answer).Error; err != nil {
+		slog.Error("step answer declared but not stored; the step keeps its generated flag and cannot be answered",
+			"session_id", flag.SessionID, "step_order", flag.StepOrder, "err", err)
+		return
+	}
+	flag.ExpectedFlag = answer
+}
+
 // runStepProvisioning executes a step's background script and then deploys the
 // step's flag. The flag is deployed even when the script failed: the advance is
 // already committed, and a learner facing a half-provisioned level is better
 // served by having the flag in place than by having nothing.
 func (s *ScenarioSessionService) runStepProvisioning(terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, step *models.ScenarioStep) error {
-	scriptErr := s.executeBackgroundScript(terminalSessionID, step, stepProvisioningEnv(scenario, flags, step.Order))
+	stdout, scriptErr := s.executeBackgroundScript(terminalSessionID, step, stepProvisioningEnv(scenario, flags, step.Order))
+	s.adoptScriptChosenAnswer(stdout, flags, step)
 	flagErr := s.deploySingleFlagToContainer(terminalSessionID, scenario, flags, step.Order)
 	if scriptErr != nil {
 		return scriptErr
@@ -1859,14 +1925,14 @@ func effectiveTimeout(step *models.ScenarioStep) int {
 // Small scripts (<=4000 bytes) are passed inline via /bin/sh -c.
 // Large scripts are pushed as temp files via PushFile, then executed from disk
 // and cleaned up afterward, to avoid tt-backend's 4KB exec argument limit.
-func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID string, step *models.ScenarioStep, env map[string]string) error {
+func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID string, step *models.ScenarioStep, env map[string]string) (string, error) {
 	// Resolve background script from ProjectFile if available
 	bgScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript)
 	if bgScript == "" {
-		return nil
+		return "", nil
 	}
 	if s.verificationService == nil {
-		return fmt.Errorf("verification service not available")
+		return "", fmt.Errorf("verification service not available")
 	}
 
 	timeout := effectiveTimeout(step)
@@ -1903,7 +1969,7 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 		tmpPath := fmt.Sprintf("/root/.ocf_bg_%d.sh", step.Order)
 		if pushErr := s.verificationService.PushFile(terminalSessionID, tmpPath, bgScript, "0700"); pushErr != nil {
 			slog.Warn("failed to push background script to container", "step_order", step.Order, "err", pushErr)
-			return fmt.Errorf("failed to push script: %w", pushErr)
+			return "", fmt.Errorf("failed to push script: %w", pushErr)
 		}
 		exitCode, stdout, stderr, err = s.verificationService.ExecInContainer(
 			terminalSessionID,
@@ -1922,12 +1988,12 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 
 	if err != nil {
 		slog.Error("background script failed to execute", "step_order", step.Order, "err", err, "stdout", truncateLog(stdout), "stderr", truncateLog(stderr))
-		return fmt.Errorf("script execution failed: %w", err)
+		return stdout, fmt.Errorf("script execution failed: %w", err)
 	}
 	if exitCode != 0 {
 		slog.Error("background script exited with non-zero code", "step_order", step.Order, "exit_code", exitCode, "stdout", truncateLog(stdout), "stderr", truncateLog(stderr))
-		return fmt.Errorf("script exited with code %d: %s", exitCode, stderr)
+		return stdout, fmt.Errorf("script exited with code %d: %s", exitCode, stderr)
 	}
 	slog.Info("background script completed", "step_order", step.Order, "exit_code", 0)
-	return nil
+	return stdout, nil
 }
