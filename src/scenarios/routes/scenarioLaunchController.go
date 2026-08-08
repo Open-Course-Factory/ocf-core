@@ -1,6 +1,7 @@
 package scenarioController
 
 import (
+	stderrors "errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -494,7 +495,13 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		_, resolvedDist, resolvedSize, _, resolveErr := sc.resolveScenarioBackendAndDistribution(s, orgID)
 		item.Launchable = resolveErr == nil && resolvedDist != ""
 		if resolveErr != nil {
+			// Separate reasons because they need different fixes: a missing
+			// declared image is "install it on this backend", while
+			// no_distribution is "nothing here fits this scenario at all".
 			item.BlockReason = "no_distribution"
+			if stderrors.Is(resolveErr, errDeclaredImageUnavailable) {
+				item.BlockReason = "declared_image_unavailable"
+			}
 		}
 
 		// Budget gate: the scenario's required size must fit in the user's
@@ -584,6 +591,15 @@ func applySizeFallback(scenario models.Scenario, requested string, dist terminal
 // `sizes` is nil/empty (catalog fetch failed), the requested size is passed
 // through unchanged — tt-backend's `validateComposition()` remains the final
 // authority and will reject truly invalid sizes.
+// errDeclaredImageUnavailable marks a scenario that named the images it needs
+// when none of them exist on the chosen backend.
+//
+// It is deliberately distinct from the generic "nothing matched" failure: the
+// two are different operator problems. This one means "install the missing
+// distribution on this backend"; the generic one means "no image anywhere fits
+// this scenario's os_type, size and features".
+var errDeclaredImageUnavailable = stderrors.New("declared instance type unavailable")
+
 func resolveDistribution(scenario models.Scenario, distributions []terminalDto.TTDistribution, sizes []terminalDto.TTSize) (distName string, size string, features map[string]bool, err error) {
 	requiredFeatures, featErr := scenario.GetRequiredFeatures()
 	if featErr != nil {
@@ -616,7 +632,20 @@ func resolveDistribution(scenario models.Scenario, distributions []terminalDto.T
 				}
 			}
 		}
-		// No CompatibleInstanceType matched — fall through to OsType matching
+		// Nothing the scenario named is available here. Naming images is a
+		// statement of requirement, so substituting one the author never
+		// approved is refused: that silent substitution is how a challenge ran
+		// on the generic Debian base for months, in production, unnoticed.
+		//
+		// A scenario naming several images has already said which substitutions
+		// are acceptable — they are simply lower-priority entries in this list,
+		// and one of them would have matched above.
+		wanted := make([]string, 0, len(sorted))
+		for _, cit := range sorted {
+			wanted = append(wanted, cit.InstanceType)
+		}
+		return "", "", nil, fmt.Errorf("%w: scenario requires one of [%s]",
+			errDeclaredImageUnavailable, strings.Join(wanted, ", "))
 	}
 
 	for _, dist := range distributions {
