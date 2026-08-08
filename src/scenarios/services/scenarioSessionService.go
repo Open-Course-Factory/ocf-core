@@ -512,19 +512,32 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 	return response, nil
 }
 
-// stepPositionInfo returns the 1-based display position of the step with the
-// given order among the (already order-sorted) steps, plus the full ordered
-// list of orders. Position 0 means the order was not found.
-func stepPositionInfo(steps []models.ScenarioStep, order int) (int, []int) {
-	orders := make([]int, len(steps))
-	position := 0
+// StepPosition returns the 1-based display position of the step with the given
+// order among the (already order-sorted) steps. 0 means the order was not
+// found.
+//
+// Exported because it is the single answer to "which level is this?", and every
+// surface that labels a step for a learner has to give the same one. Orders are
+// data-driven — 0-based from a KillerCoda import, 1-based from the editor — so
+// `order + 1` is right for some scenarios and off by one for others. The
+// validated-flags list showed raw orders and so numbered the first level 0.
+func StepPosition(steps []models.ScenarioStep, order int) int {
 	for i := range steps {
-		orders[i] = steps[i].Order
 		if steps[i].Order == order {
-			position = i + 1
+			return i + 1
 		}
 	}
-	return position, orders
+	return 0
+}
+
+// stepPositionInfo returns the step's display position plus the full ordered
+// list of orders, which clients use to map any order to its position locally.
+func stepPositionInfo(steps []models.ScenarioStep, order int) (int, []int) {
+	orders := make([]int, len(steps))
+	for i := range steps {
+		orders[i] = steps[i].Order
+	}
+	return StepPosition(steps, order), orders
 }
 
 // normalizeStepType returns the canonical step_type string. Empty values from

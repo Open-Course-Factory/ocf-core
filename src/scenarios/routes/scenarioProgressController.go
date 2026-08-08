@@ -354,8 +354,17 @@ func (pc *scenarioProgressController) GetSessionFlags(ctx *gin.Context) {
 	pc.db.Where("session_id = ? AND is_correct = ?", session.ID, true).
 		Order("step_order asc").Find(&flags)
 
+	// Step orders are data-driven, so the caller cannot turn one into a level
+	// number on its own — see services.StepPosition. Without this the flags
+	// list labelled the first level "0".
+	var steps []models.ScenarioStep
+	pc.db.Where("scenario_id = ?", session.ScenarioID).Order("\"order\" asc").Find(&steps)
+
 	type flagResponse struct {
-		StepOrder   int        `json:"step_order"`
+		StepOrder int `json:"step_order"`
+		// Position is the 1-based level this flag was captured on, which is
+		// what the learner is shown everywhere else.
+		Position    int        `json:"position"`
 		Flag        string     `json:"flag"`
 		SubmittedAt *time.Time `json:"submitted_at,omitempty"`
 	}
@@ -365,6 +374,7 @@ func (pc *scenarioProgressController) GetSessionFlags(ctx *gin.Context) {
 		if f.SubmittedFlag != nil {
 			result = append(result, flagResponse{
 				StepOrder:   f.StepOrder,
+				Position:    services.StepPosition(steps, f.StepOrder),
 				Flag:        *f.SubmittedFlag,
 				SubmittedAt: f.SubmittedAt,
 			})
