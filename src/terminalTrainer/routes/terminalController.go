@@ -404,15 +404,53 @@ func (tc *terminalController) ConnectConsole(ctx *gin.Context) {
 		}
 	}()
 
+	relayTerminalToClient(terminalConn, clientConn, terminal.SessionID)
+}
+
+// consoleRelayConn is the narrow part of *websocket.Conn the console relay
+// needs, so the relay can be exercised without a live tt-backend.
+type consoleRelayConn interface {
+	ReadMessage() (messageType int, data []byte, err error)
+	WriteMessage(messageType int, data []byte) error
+}
+
+// relayTerminalToClient pumps tt-backend's console output to the browser until
+// either side goes away, then relays tt-backend's close frame.
+//
+// Relaying the close frame is what lets the browser tell "your shell died with
+// exit code N" from "the network dropped": without it, breaking out of the
+// loop leaves gorilla to close the socket silently and the browser sees 1006
+// (abnormal closure), which the terminal component renders as a recoverable
+// "still running — Reconnect" overlay even when the run is over.
+func relayTerminalToClient(terminalConn, clientConn consoleRelayConn, terminalSessionID string) {
 	for {
 		messageType, data, err := terminalConn.ReadMessage()
 		if err != nil {
-			break
+			var closeErr *websocket.CloseError
+			if stderrors.As(err, &closeErr) {
+				services.ReportConsoleClose(terminalSessionID, closeErr.Code)
+				forwardConsoleCloseFrame(clientConn, closeErr)
+			}
+			return
 		}
 		if err := clientConn.WriteMessage(messageType, data); err != nil {
-			break
+			return
 		}
 	}
+}
+
+// forwardConsoleCloseFrame passes tt-backend's close code and reason through to
+// the browser unchanged.
+//
+// 1005 and 1006 are synthesised by gorilla when the peer sent no close frame
+// at all; RFC 6455 forbids putting them on the wire, so those closures stay
+// silent and the browser keeps its own abnormal-closure handling.
+func forwardConsoleCloseFrame(clientConn consoleRelayConn, closeErr *websocket.CloseError) {
+	if closeErr.Code == websocket.CloseNoStatusReceived || closeErr.Code == websocket.CloseAbnormalClosure {
+		return
+	}
+	_ = clientConn.WriteMessage(websocket.CloseMessage,
+		websocket.FormatCloseMessage(closeErr.Code, closeErr.Text))
 }
 
 // Stop Session godoc

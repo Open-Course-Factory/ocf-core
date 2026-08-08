@@ -1125,6 +1125,69 @@ func (s *ScenarioSessionService) AbandonSession(sessionID uuid.UUID) error {
 	return nil
 }
 
+// FindSessionByTerminal returns the most recent scenario session attached to a
+// terminal session, or an error when the terminal is not running one (an
+// ordinary dashboard terminal, typically).
+//
+// Canonical owner of the "which run is this terminal running?" lookup: the
+// by-terminal endpoint the frontend polls and the crash-trap permadeath path
+// must never disagree about which run a reused terminal belongs to.
+func (s *ScenarioSessionService) FindSessionByTerminal(terminalSessionID string) (*models.ScenarioSession, error) {
+	var session models.ScenarioSession
+	err := s.db.Where("terminal_session_id = ?", terminalSessionID).
+		Order("created_at DESC").
+		First(&session).Error
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+// EndCrashTrapRun applies permadeath: the learner's shell was SIGKILLed, so if
+// it was running a crash_traps scenario the run is over — the session is
+// abandoned and the container stopped.
+//
+// Only crash_traps scenarios arm this. Anywhere else (an ordinary scenario, or
+// a terminal with no scenario session at all) a killed shell stays the
+// recoverable accident it has always been, and this is a no-op.
+//
+// Called from a websocket teardown with no request to answer and nobody
+// waiting on a result, so it reports through logs rather than an error: every
+// "nothing to do here" branch is an expected outcome, not a failure.
+func (s *ScenarioSessionService) EndCrashTrapRun(terminalSessionID string) {
+	if terminalSessionID == "" {
+		return
+	}
+
+	session, err := s.FindSessionByTerminal(terminalSessionID)
+	if err != nil {
+		return // plain terminal, not a scenario run
+	}
+
+	var scenario models.Scenario
+	if err := s.db.Select("id", "crash_traps").
+		First(&scenario, "id = ?", session.ScenarioID).Error; err != nil {
+		slog.Warn("could not read the scenario behind a killed shell",
+			"session_id", session.ID, "scenario_id", session.ScenarioID, "err", err)
+		return
+	}
+	if !scenario.CrashTraps {
+		return
+	}
+
+	if err := s.AbandonSession(session.ID); err != nil {
+		// AbandonSession only matches active/provisioning rows, so this is the
+		// ordinary outcome for a run that had already ended.
+		slog.Debug("crash-trap kill hit a run that was already over",
+			"session_id", session.ID, "status", session.Status)
+		return
+	}
+	s.tryStopTerminal(terminalSessionID, session.ID)
+	slog.Info("crash trap ended the run: the learner's shell was killed",
+		"session_id", session.ID, "scenario_id", session.ScenarioID,
+		"terminal_session_id", terminalSessionID)
+}
+
 // RevealHint reveals a progressive hint for a given step in a session.
 // Hints must be revealed sequentially (level 1 before level 2, etc.).
 // Re-reading an already revealed hint is idempotent.
