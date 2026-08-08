@@ -442,3 +442,25 @@ func (l *terminalLifecycleService) ValidateSessionAccess(sessionID string, check
 
 	return true, "active", nil
 }
+
+// BuildComplete tells tt-backend the container is provisioned, so the features
+// it was given only to be built come off.
+//
+// Failing here leaves the session usable but still holding whatever the build
+// needed — network, in every case today. That is a security regression rather
+// than a broken session, so the error is returned for the caller to log and
+// retry, never swallowed.
+func (l *terminalLifecycleService) BuildComplete(sessionID string) error {
+	terminal, err := l.repository.GetTerminalSessionByID(sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+
+	dropped, err := l.proxy.buildCompleteInAPI(sessionID, terminal.UserTerminalKey.APIKey)
+	if err != nil {
+		return fmt.Errorf("build-complete failed for session %s: %w", sessionID, err)
+	}
+
+	utils.Debug("BuildComplete for session %s removed profiles %v", sessionID, dropped)
+	return nil
+}

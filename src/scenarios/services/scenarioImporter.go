@@ -101,6 +101,12 @@ type KillerCodaOCF struct {
 	// network here or its apt-get resolves nothing and provisioning fails with
 	// a bare exit 100.
 	RequiredFeatures []string `json:"required_features,omitempty"`
+	// BuildFeatures names features the scenario needs only while its container
+	// is being provisioned — network, for a setup that installs packages. They
+	// are removed once the build finishes, so a scenario can install what it
+	// needs without granting the learner a session's worth of egress, and
+	// without being locked out of every plan that has no internet access.
+	BuildFeatures    []string `json:"build_features,omitempty"`
 }
 
 // KillerCodaAssets describes files to copy into the environment
@@ -311,6 +317,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	gshEnabled := false
 	var compatibleInstanceTypes []models.ScenarioInstanceType
 	requiredFeatures := ""
+	buildFeatures := ""
 	if index.Extensions != nil && index.Extensions.OCF != nil {
 		flagsEnabled = index.Extensions.OCF.Flags
 		crashTraps = index.Extensions.OCF.CrashTraps
@@ -319,6 +326,11 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 
 		var featErr error
 		requiredFeatures, featErr = EncodeRequiredFeatures(index.Extensions.OCF.RequiredFeatures)
+		if featErr != nil {
+			return nil, featErr
+		}
+
+		buildFeatures, featErr = EncodeRequiredFeatures(index.Extensions.OCF.BuildFeatures)
 		if featErr != nil {
 			return nil, featErr
 		}
@@ -360,6 +372,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		EstimatedTime:  index.Time,
 		InstanceType:   index.Backend.ImageID,
 		RequiredFeatures: requiredFeatures,
+		BuildFeatures:    buildFeatures,
 		SourceType:     sourceType,
 		FlagsEnabled:   flagsEnabled,
 		FlagSecret:     flagSecret,

@@ -122,6 +122,9 @@ type TerminalTrainerService interface {
 	// refuses (#457). nil means the budget is the user's own.
 	EnrichSessionOptionsBudget(opts *dto.SessionOptionsResponse, plan *paymentModels.SubscriptionPlan, userID string, budgetScopeOrgID *uuid.UUID)
 	StartComposedSession(userID string, input dto.CreateComposedSessionInput, planInterface any) (*dto.TerminalSessionResponse, error)
+	// BuildComplete removes the features a session held only while it was
+	// being provisioned. Called once the scenario's setup has run.
+	BuildComplete(sessionID string) error
 }
 
 type terminalTrainerService struct {
@@ -357,6 +360,10 @@ func (tts *terminalTrainerService) StartSession(sessionID string) error {
 
 func (tts *terminalTrainerService) DeleteSession(sessionID string) error {
 	return tts.lifecycle.DeleteSession(sessionID)
+}
+
+func (tts *terminalTrainerService) BuildComplete(sessionID string) error {
+	return tts.lifecycle.BuildComplete(sessionID)
 }
 
 // The following methods delegate to terminalSyncService, which owns the

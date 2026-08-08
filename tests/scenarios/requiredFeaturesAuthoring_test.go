@@ -158,3 +158,75 @@ func TestExportScenario_KeepsImageAndFeatureRequirements(t *testing.T) {
 		"images must be exported in priority order, not storage order — the first "+
 			"entry is the image the author actually wants")
 }
+
+// Build-time features: what a scenario needs to be provisioned and not to be
+// played. Declaring one must NOT grant it to the learner — that separation is
+// the whole point, and it is what lets a scenario install packages while still
+// running on a plan with no internet access.
+
+func TestImportScenario_CarriesBuildFeatures(t *testing.T) {
+	db := setupTestDB(t)
+	importer := services.NewScenarioImporterService(db)
+
+	dir := writeFeatureScenarioDir(t, "Builds With The Network",
+		`, "extensions": {"ocf": {"build_features": ["network"]}}`)
+
+	scenario, err := importer.ImportFromDirectory(dir, "bf-import-user", nil, "")
+	require.NoError(t, err)
+
+	build, err := scenario.GetBuildFeatures()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"network"}, build)
+
+	required, err := scenario.GetRequiredFeatures()
+	require.NoError(t, err)
+	assert.Empty(t, required,
+		"a build-time declaration must not become a session entitlement: the "+
+			"container is online while it is built and offline while it is played")
+}
+
+func TestImportScenario_BuildAndRequiredFeaturesAreIndependent(t *testing.T) {
+	db := setupTestDB(t)
+	importer := services.NewScenarioImporterService(db)
+
+	dir := writeFeatureScenarioDir(t, "Both Kinds",
+		`, "extensions": {"ocf": {"required_features": ["persistence"], "build_features": ["network"]}}`)
+
+	scenario, err := importer.ImportFromDirectory(dir, "bf-import-both", nil, "")
+	require.NoError(t, err)
+
+	required, err := scenario.GetRequiredFeatures()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"persistence"}, required)
+
+	build, err := scenario.GetBuildFeatures()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"network"}, build)
+}
+
+func TestScenario_BuildFeaturesMapIsNilWhenNothingIsDeclared(t *testing.T) {
+	db := setupTestDB(t)
+	importer := services.NewScenarioImporterService(db)
+
+	scenario, err := importer.ImportFromDirectory(
+		writeFeatureScenarioDir(t, "Builds Offline", ""), "bf-import-none", nil, "")
+	require.NoError(t, err)
+
+	assert.Empty(t, scenario.BuildFeatures,
+		"silence must stay silence rather than becoming \"[]\"")
+
+	m, err := scenario.GetBuildFeaturesMap()
+	require.NoError(t, err)
+	assert.Nil(t, m,
+		"an empty map and a nil map are not the same downstream: the composed "+
+			"request omits build_features entirely only when this is nil")
+}
+
+func TestScenario_BuildFeaturesMapRejectsAMalformedDeclaration(t *testing.T) {
+	scenario := models.Scenario{BuildFeatures: "network"} // not a JSON array
+
+	_, err := scenario.GetBuildFeaturesMap()
+	assert.Error(t, err,
+		"a bad declaration must be reported, not silently read as no features — "+
+			"the launch logs it and provisions without them")
+}

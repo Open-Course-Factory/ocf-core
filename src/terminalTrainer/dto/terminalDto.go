@@ -482,6 +482,10 @@ type CreateComposedSessionInput struct {
 	Distribution     string          `binding:"required" json:"distribution"`
 	Size             string          `binding:"required" json:"size"`
 	Features         map[string]bool `json:"features"`
+	// BuildFeatures are attached to provision the container and removed once
+	// the caller reports the build finished. Forwarded verbatim to tt-backend,
+	// which owns the attach/drop; see its ComposeSessionRequest.BuildFeatures.
+	BuildFeatures    map[string]bool `json:"build_features,omitempty"`
 	Terms            string          `binding:"required" json:"terms"`
 	Name             string          `json:"name,omitempty"`
 	Expiry           int             `json:"expiry,omitempty"`

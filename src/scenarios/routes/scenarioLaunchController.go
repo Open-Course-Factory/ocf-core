@@ -54,6 +54,12 @@ func NewScenarioLaunchController(db *gorm.DB) *scenarioLaunchController {
 		return terminalService.StopSession(terminalSessionID)
 	})
 
+	// Same reason and same direction: the session service must be able to close
+	// a container's provisioning window without importing terminalTrainer.
+	sessionService.SetTerminalBuildCompleteFunc(func(terminalSessionID string) error {
+		return terminalService.BuildComplete(terminalSessionID)
+	})
+
 	// Subscribe to SIGKILLed console shells so a crash trap can end the run.
 	// terminalTrainer publishes the event rather than calling us directly: it
 	// is the lower layer (scenarios imports it, not the reverse), so this is
@@ -910,6 +916,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		Distribution:     distName,
 		Size:             size,
 		Features:         features,
+		BuildFeatures:    scenarioBuildFeatures(scenario),
 		Terms:            terms,
 		Name:             fmt.Sprintf("scenario-%s", scenario.Title),
 		Hostname:         scenario.Hostname,
@@ -956,6 +963,23 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		Status:            session.Status,
 		ProvisioningPhase: session.ProvisioningPhase,
 	})
+}
+
+// scenarioBuildFeatures reads the features a scenario needs only while its
+// container is being provisioned.
+//
+// A bad declaration is a scenario-authoring error, not a reason to refuse the
+// launch: the run proceeds without them and whatever the setup needed them for
+// fails visibly during provisioning, where the trainer can see it, rather than
+// as an opaque refusal here.
+func scenarioBuildFeatures(scenario models.Scenario) map[string]bool {
+	features, err := scenario.GetBuildFeaturesMap()
+	if err != nil {
+		slog.Error("scenario has an unreadable build_features declaration; provisioning without it",
+			"scenario", scenario.Name, "err", err)
+		return nil
+	}
+	return features
 }
 
 // checkScenarioAccess checks if a user has access to a scenario via group or org assignments
@@ -1160,6 +1184,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		Distribution:     distName,
 		Size:             size,
 		Features:         features,
+		BuildFeatures:    scenarioBuildFeatures(scenario),
 		Terms:            terms,
 		Name:             fmt.Sprintf("preview-%s", scenario.Title),
 		Hostname:         scenario.Hostname,

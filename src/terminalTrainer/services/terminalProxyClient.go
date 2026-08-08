@@ -556,3 +556,26 @@ func (p *terminalProxyClient) getAdminBackends() ([]adminBackendEntry, error) {
 	}
 	return backends, nil
 }
+
+// buildCompleteInAPI calls POST /sessions/{id}/build-complete on tt-backend,
+// which removes the features the container was given only to be provisioned.
+//
+// Returns the profiles tt-backend actually removed, so the caller can log what
+// happened rather than assume. An empty list is a normal answer: the session
+// declared no build features, or a retry found them already gone.
+func (p *terminalProxyClient) buildCompleteInAPI(sessionID, userAPIKey string) ([]string, error) {
+	url := fmt.Sprintf("%s/%s/sessions/%s/build-complete", p.baseURL, p.apiVersion, sessionID)
+
+	utils.Debug("buildCompleteInAPI - calling %s", url)
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(userAPIKey))
+
+	var resp struct {
+		DroppedProfiles []string `json:"dropped_profiles"`
+	}
+	if err := utils.MakeExternalAPIJSONRequest("Terminal Trainer", "POST", url, nil, &resp, opts); err != nil {
+		return nil, err
+	}
+	return resp.DroppedProfiles, nil
+}

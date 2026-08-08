@@ -336,3 +336,7 @@ func TestStartComposedSession_ServerError_ShouldReturn500(t *testing.T) {
 
 	svc.AssertExpectations(t)
 }
+
+// BuildComplete satisfies TerminalTrainerService. These tests never exercise
+// the provisioning window, so the stub reports success without recording.
+func (m *mockTerminalTrainerService) BuildComplete(sessionID string) error { return nil }

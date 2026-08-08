@@ -295,3 +295,7 @@ func TestBulkStartScenario_ReplacesInProgressSessions(t *testing.T) {
 	assert.Equal(t, 0, result.Skipped, "should not skip any members")
 	assert.Empty(t, result.Errors, "should have no errors")
 }
+
+// BuildComplete satisfies TerminalTrainerService. These tests never exercise
+// the provisioning window, so the stub reports success without recording.
+func (m *mockTTService) BuildComplete(sessionID string) error { return nil }
