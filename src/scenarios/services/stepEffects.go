@@ -106,15 +106,28 @@ func scenarioUsesEffects(scenario *models.Scenario) bool {
 //
 // Step 0's intro is not drawn here; it is delivered as a MOTD at container
 // setup, because at that point no console has attached yet.
-func (s *ScenarioSessionService) emitStepTransitionBanners(session *models.ScenarioSession, fromOrder, toOrder int) {
+// emitOutroBanner draws the banner belonging to the step the learner just
+// finished. It must run BEFORE the next step is provisioned: that provisioning
+// executes the next step's background script, which may itself write to the
+// learner's terminal, and the outro then lands after output from a step the
+// learner has not reached yet — reading as if the two steps had swapped.
+func (s *ScenarioSessionService) emitOutroBanner(session *models.ScenarioSession, fromOrder int) {
 	if session.TerminalSessionID == nil || s.verificationService == nil {
 		return
 	}
-
 	if from := findStepByOrder(session.Scenario.Steps, fromOrder); from != nil {
 		if banner, ok := outroBanner(from); ok {
 			s.drawBanner(*session.TerminalSessionID, banner, session.ID, fromOrder)
 		}
+	}
+}
+
+// emitIntroBanner draws the banner of the step being entered. It runs AFTER
+// provisioning, so the environment the banner announces actually exists by the
+// time the learner reads it.
+func (s *ScenarioSessionService) emitIntroBanner(session *models.ScenarioSession, toOrder int) {
+	if session.TerminalSessionID == nil || s.verificationService == nil {
+		return
 	}
 	if to := findStepByOrder(session.Scenario.Steps, toOrder); to != nil {
 		if banner, ok := introBanner(to); ok {

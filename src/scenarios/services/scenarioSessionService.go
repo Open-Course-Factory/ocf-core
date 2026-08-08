@@ -1096,8 +1096,9 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	}
 
 	if response.Passed && response.NextStep != nil {
+		s.emitOutroBanner(&session, leftStep)
 		response.StepProvisioningStatus = s.provisionNextStep(&session, *response.NextStep)
-		s.emitStepTransitionBanners(&session, leftStep, *response.NextStep)
+		s.emitIntroBanner(&session, *response.NextStep)
 	}
 
 	return response, nil
@@ -1127,8 +1128,9 @@ func (s *ScenarioSessionService) completeInfoStep(session *models.ScenarioSessio
 	}
 
 	if response.NextStep != nil {
+		s.emitOutroBanner(session, leftStep)
 		response.StepProvisioningStatus = s.provisionNextStep(session, *response.NextStep)
-		s.emitStepTransitionBanners(session, leftStep, *response.NextStep)
+		s.emitIntroBanner(session, *response.NextStep)
 	}
 
 	return response, nil
@@ -1282,8 +1284,9 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 	}
 
 	if response.NextStep != nil {
+		s.emitOutroBanner(&session, leftStep)
 		response.StepProvisioningStatus = s.provisionNextStep(&session, *response.NextStep)
-		s.emitStepTransitionBanners(&session, leftStep, *response.NextStep)
+		s.emitIntroBanner(&session, *response.NextStep)
 	}
 
 	return response, nil
@@ -1370,8 +1373,9 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 	}
 
 	if response.NextStep != nil {
+		s.emitOutroBanner(&session, leftStep)
 		response.StepProvisioningStatus = s.provisionNextStep(&session, *response.NextStep)
-		s.emitStepTransitionBanners(&session, leftStep, *response.NextStep)
+		s.emitIntroBanner(&session, *response.NextStep)
 	}
 
 	return response, nil
