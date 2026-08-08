@@ -138,7 +138,10 @@ func TestExecuteBackgroundScript_LargeScript_UsesPushFile(t *testing.T) {
 	// Large script: should use PushFile then ExecInContainer with temp path, then cleanup
 	require.Len(t, verifySvc.pushFileCalls, 1, "PushFile should be called once")
 	assert.Equal(t, "test-terminal", verifySvc.pushFileCalls[0].sessionID)
-	assert.Equal(t, "/tmp/.ocf_bg_0.sh", verifySvc.pushFileCalls[0].targetPath)
+	// /root/, not /tmp/: the pushed file is the step's provisioning logic, and
+	// challenge scenarios train learners to go looking. A world-readable path
+	// would hand them the answers.
+	assert.Equal(t, "/root/.ocf_bg_0.sh", verifySvc.pushFileCalls[0].targetPath)
 	// Content has "set -e" injected after the shebang
 	expectedScript := "#!/bin/bash\nset -e\n" + strings.Repeat("echo 'line of script padding to make it large enough'\n", 100)
 	assert.Equal(t, expectedScript, verifySvc.pushFileCalls[0].content)
@@ -148,11 +151,11 @@ func TestExecuteBackgroundScript_LargeScript_UsesPushFile(t *testing.T) {
 	require.Len(t, verifySvc.execCalls, 2, "ExecInContainer should be called twice (run + cleanup)")
 
 	// First exec: run the script from temp file (uses /bin/bash from shebang)
-	assert.Equal(t, []string{"/bin/bash", "/tmp/.ocf_bg_0.sh"}, verifySvc.execCalls[0].command)
+	assert.Equal(t, []string{"/bin/bash", "/root/.ocf_bg_0.sh"}, verifySvc.execCalls[0].command)
 	assert.Equal(t, 300, verifySvc.execCalls[0].timeout) // step 0 gets 5-minute timeout
 
 	// Second exec: cleanup rm -f
-	assert.Equal(t, []string{"rm", "-f", "/tmp/.ocf_bg_0.sh"}, verifySvc.execCalls[1].command)
+	assert.Equal(t, []string{"rm", "-f", "/root/.ocf_bg_0.sh"}, verifySvc.execCalls[1].command)
 	assert.Equal(t, 5, verifySvc.execCalls[1].timeout)
 }
 

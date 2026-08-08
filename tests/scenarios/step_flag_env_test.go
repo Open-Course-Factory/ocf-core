@@ -209,7 +209,7 @@ func TestBackgroundScript_LargeScript_CarriesFlagOnRunButNotOnCleanup(t *testing
 	// The flag travels in the environment, never inside the script written to
 	// disk. (The step's own flag *file* is a separate, deliberate push — see
 	// the crash_traps test below for the scenarios that suppress it.)
-	scriptPush := findPushTo(t, verifySvc, "/tmp/.ocf_bg_1.sh")
+	scriptPush := findPushTo(t, verifySvc, "/root/.ocf_bg_1.sh")
 	assert.NotContains(t, scriptPush.content, "flag{step-one}")
 }
 
