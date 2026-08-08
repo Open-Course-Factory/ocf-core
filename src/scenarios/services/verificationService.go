@@ -40,13 +40,23 @@ type execResponse struct {
 }
 
 // ExecInContainer runs a command inside a container and returns the result.
-func (s *VerificationService) ExecInContainer(sessionID string, command []string, timeout int) (exitCode int, stdout string, stderr string, err error) {
+//
+// env is the only safe channel for secrets. tt-backend forwards it to Incus as
+// the process environment, so values land in /proc/PID/environ — readable by
+// the process owner alone, never in argv (world-readable via /proc), never on
+// disk. Anything secret belongs here rather than in the command line. Pass nil
+// when there is nothing to set: the request is then byte-identical to one from
+// before this parameter existed.
+func (s *VerificationService) ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (exitCode int, stdout string, stderr string, err error) {
 	url := fmt.Sprintf("%s/1.0/exec", s.ttBackendURL)
 
 	payload := map[string]any{
 		"session_id": sessionID,
 		"command":    command,
 		"timeout":    timeout,
+	}
+	if len(env) > 0 {
+		payload["env"] = env
 	}
 
 	var result execResponse
@@ -96,9 +106,12 @@ func (s *VerificationService) VerifyStep(terminalSessionID string, step *models.
 
 	// Execute the verify script inline with a 10s timeout.
 	// Parse the shebang to use the correct interpreter (e.g., bash vs sh).
+	// No env: a verify script checks the learner's work, so handing it the
+	// step's flag would only widen the flag's exposure for nothing.
 	exitCode, stdout, stderr, err := s.ExecInContainer(
 		terminalSessionID,
 		[]string{parseShebang(step.VerifyScript), "-c", step.VerifyScript},
+		nil,
 		10,
 	)
 	if err != nil {

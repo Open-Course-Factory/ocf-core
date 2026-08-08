@@ -171,7 +171,7 @@ func (p *panickingVerificationService) PushFile(sessionID string, targetPath str
 	return nil
 }
 
-func (p *panickingVerificationService) ExecInContainer(sessionID string, command []string, timeout int) (int, string, string, error) {
+func (p *panickingVerificationService) ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (int, string, string, error) {
 	panic("simulated nil-deref inside ExecInContainer")
 }
 

@@ -131,9 +131,11 @@ func (s *ScenarioSessionService) emitStepTransitionBanners(session *models.Scena
 // non-zero result here means the helper itself is absent — an older or stock
 // image. That is expected and logged at debug volume, never surfaced.
 func (s *ScenarioSessionService) drawBanner(terminalSessionID string, banner stepBanner, sessionID uuid.UUID, stepOrder int) {
+	// No env: a banner carries the trainer's own words, never a flag.
 	exitCode, _, stderr, err := s.verificationService.ExecInContainer(
 		terminalSessionID,
 		[]string{ocfBannerPath, banner.Effect, banner.Text},
+		nil,
 		bannerTimeoutSeconds,
 	)
 	if err != nil {
@@ -178,7 +180,7 @@ func (s *ScenarioSessionService) deliverStepZeroIntro(terminalSessionID string, 
 // execBestEffort runs a container command whose failure is not worth failing
 // anything over, and says so in the log rather than silently.
 func (s *ScenarioSessionService) execBestEffort(terminalSessionID string, sessionID uuid.UUID, what string, command []string) {
-	exitCode, _, stderr, err := s.verificationService.ExecInContainer(terminalSessionID, command, bannerTimeoutSeconds)
+	exitCode, _, stderr, err := s.verificationService.ExecInContainer(terminalSessionID, command, nil, bannerTimeoutSeconds)
 	if err != nil {
 		slog.Info("could not deliver "+what, "session_id", sessionID, "err", err)
 		return
@@ -204,6 +206,7 @@ func (s *ScenarioSessionService) warnIfEffectsUnsupported(terminalSessionID stri
 	exitCode, _, _, err := s.verificationService.ExecInContainer(
 		terminalSessionID,
 		[]string{"/bin/sh", "-c", "command -v tte >/dev/null 2>&1"},
+		nil,
 		bannerTimeoutSeconds,
 	)
 	if err != nil {

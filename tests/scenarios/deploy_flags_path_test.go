@@ -33,7 +33,7 @@ func (c *capturingVerificationService) PushFile(sessionID string, targetPath str
 	return nil
 }
 
-func (c *capturingVerificationService) ExecInContainer(sessionID string, command []string, timeout int) (int, string, string, error) {
+func (c *capturingVerificationService) ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (int, string, string, error) {
 	return 0, "", "", nil
 }
 

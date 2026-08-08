@@ -40,7 +40,7 @@ func TestVerificationService_ExecInContainer_Success(t *testing.T) {
 
 	svc := newTestVerificationService(server.URL)
 
-	exitCode, stdout, stderr, err := svc.ExecInContainer("session-123", []string{"echo", "hello"}, 5)
+	exitCode, stdout, stderr, err := svc.ExecInContainer("session-123", []string{"echo", "hello"}, nil, 5)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, exitCode)
@@ -61,7 +61,7 @@ func TestVerificationService_ExecInContainer_Failure(t *testing.T) {
 
 	svc := newTestVerificationService(server.URL)
 
-	exitCode, stdout, stderr, err := svc.ExecInContainer("session-123", []string{"bad-command"}, 5)
+	exitCode, stdout, stderr, err := svc.ExecInContainer("session-123", []string{"bad-command"}, nil, 5)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, exitCode)
@@ -199,7 +199,7 @@ func TestVerificationService_ExecInContainer_ServerError(t *testing.T) {
 
 	svc := newTestVerificationService(server.URL)
 
-	exitCode, stdout, stderr, err := svc.ExecInContainer("session-123", []string{"echo"}, 5)
+	exitCode, stdout, stderr, err := svc.ExecInContainer("session-123", []string{"echo"}, nil, 5)
 
 	assert.Error(t, err)
 	assert.Equal(t, -1, exitCode)

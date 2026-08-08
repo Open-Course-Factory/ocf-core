@@ -47,8 +47,8 @@ func (m *bgTrackingVerificationService) PushFile(sessionID string, targetPath st
 	return m.pushFileErr
 }
 
-func (m *bgTrackingVerificationService) ExecInContainer(sessionID string, command []string, timeout int) (int, string, string, error) {
-	m.execCalls = append(m.execCalls, execCall{sessionID, command, timeout})
+func (m *bgTrackingVerificationService) ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (int, string, string, error) {
+	m.execCalls = append(m.execCalls, execCall{sessionID, command, env, timeout})
 	if m.execErr != nil {
 		return -1, "", "", m.execErr
 	}
