@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -494,6 +493,8 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		// Determine launchability by checking distribution compatibility.
 		_, resolvedDist, resolvedSize, _, resolveErr := sc.resolveScenarioBackendAndDistribution(s, orgID)
 		item.Launchable = resolveErr == nil && resolvedDist != ""
+		item.ResolvedDistribution = resolvedDist
+		item.ResolvedSize = resolvedSize
 		if resolveErr != nil {
 			// Separate reasons because they need different fixes: a missing
 			// declared image is "install it on this backend", while
@@ -609,12 +610,7 @@ func resolveDistribution(scenario models.Scenario, distributions []terminalDto.T
 
 	// Priority path: if CompatibleInstanceTypes is populated, try matching by name first
 	if len(scenario.CompatibleInstanceTypes) > 0 {
-		// Sort by priority ascending (lower number = higher priority)
-		sorted := make([]models.ScenarioInstanceType, len(scenario.CompatibleInstanceTypes))
-		copy(sorted, scenario.CompatibleInstanceTypes)
-		sort.Slice(sorted, func(i, j int) bool {
-			return sorted[i].Priority < sorted[j].Priority
-		})
+		sorted := services.SortInstanceTypesByPriority(scenario.CompatibleInstanceTypes)
 
 		for _, cit := range sorted {
 			for _, dist := range distributions {

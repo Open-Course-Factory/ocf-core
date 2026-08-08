@@ -325,6 +325,16 @@ type AvailableScenarioOutput struct {
 	Launchable              bool                         `json:"launchable"`
 	BlockReason             string                       `json:"block_reason,omitempty"`
 	AvailableInstanceTypes  []string                     `json:"available_instance_types,omitempty"`
+	// ResolvedDistribution and ResolvedSize are what a launch would actually
+	// use, after image matching and size fallback. InstanceType above is only
+	// what the scenario asked for, and the two diverge routinely — an unknown
+	// size falls back, and a scenario naming no image gets whichever the
+	// backend offers. Callers must display these, never re-derive them:
+	// duplicating the resolution rules in a client is how a launcher came to
+	// label a distribution name as an unknown machine size.
+	// Both are empty when resolution failed; BlockReason says why.
+	ResolvedDistribution string `json:"resolved_distribution,omitempty"`
+	ResolvedSize         string `json:"resolved_size,omitempty"`
 	IsPublic                bool                         `json:"is_public"`
 	AdminOnly               bool                         `json:"admin_only,omitempty"`
 }
