@@ -69,6 +69,10 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			VerifyScript:          st.VerifyScript,
 			BackgroundScript:      st.BackgroundScript,
 			ForegroundScript:      st.ForegroundScript,
+			IntroEffect:           st.IntroEffect,
+			IntroText:             st.IntroText,
+			OutroEffect:           st.OutroEffect,
+			OutroText:             st.OutroText,
 			HasFlag:               st.HasFlag,
 			FlagPath:              st.FlagPath,
 		}

@@ -259,6 +259,12 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 				if len(session.Flags) > 0 {
 					s.deploySingleFlagToContainer(*session.TerminalSessionID, &scenario, session.Flags, 0)
 				}
+				// A step 0 carrying a banner but no scripts never reaches
+				// runStep0Setup, so stage its intro here too. Without this the
+				// simplest scenarios are exactly the ones whose configured
+				// banner silently never appears.
+				s.deliverStepZeroIntro(*session.TerminalSessionID, &scenario.Steps[0], session.ID)
+				s.warnIfEffectsUnsupported(*session.TerminalSessionID, &scenario, session.ID)
 			}
 		}
 	}
@@ -399,6 +405,14 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 	if len(flags) > 0 {
 		s.deploySingleFlagToContainer(terminalSessionID, scenario, flags, 0)
 	}
+
+	// Step 0's intro cannot be drawn now — no console has attached yet — so it
+	// is staged as the MOTD and rendered when the learner's shell starts.
+	s.deliverStepZeroIntro(terminalSessionID, step, sessionID)
+
+	// Say so once, loudly, if this scenario wants banners on an image that
+	// cannot draw them. The symptom is otherwise just "nothing happens".
+	s.warnIfEffectsUnsupported(terminalSessionID, scenario, sessionID)
 
 	// Transition to active — only if still provisioning (not abandoned meanwhile)
 	result := s.db.Model(&models.ScenarioSession{}).
@@ -702,6 +716,10 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	}
 
 	// Wrap all DB updates in a transaction for consistency
+	// Captured before the transaction: advanceToNextStep updates current_step
+	// through GORM, which writes the new value back onto this struct, so after
+	// the transaction session.CurrentStep is already the step just entered.
+	leftStep := session.CurrentStep
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
 		// Update step progress verify attempts
 		if err := tx.Model(&models.ScenarioStepProgress{}).
@@ -735,6 +753,7 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 			}
 		}
 		s.deploySingleFlagToContainer(*session.TerminalSessionID, &session.Scenario, session.Flags, *response.NextStep)
+		s.emitStepTransitionBanners(&session, leftStep, *response.NextStep)
 	}
 
 	return response, nil
@@ -747,6 +766,10 @@ func (s *ScenarioSessionService) completeInfoStep(session *models.ScenarioSessio
 	now := time.Now()
 	response := &dto.VerifyStepResponse{Passed: true}
 
+	// Captured before the transaction: advanceToNextStep updates current_step
+	// through GORM, which writes the new value back onto this struct, so after
+	// the transaction session.CurrentStep is already the step just entered.
+	leftStep := session.CurrentStep
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
 		nextStep, err := s.advanceToNextStep(tx, session, now)
 		if err != nil {
@@ -769,6 +792,7 @@ func (s *ScenarioSessionService) completeInfoStep(session *models.ScenarioSessio
 			}
 		}
 		s.deploySingleFlagToContainer(*session.TerminalSessionID, &session.Scenario, session.Flags, *response.NextStep)
+		s.emitStepTransitionBanners(session, leftStep, *response.NextStep)
 	}
 
 	return response, nil
@@ -883,6 +907,10 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 
 	now := time.Now()
 	scoreCopy := score
+	// Captured before the transaction: advanceToNextStep updates current_step
+	// through GORM, which writes the new value back onto this struct, so after
+	// the transaction session.CurrentStep is already the step just entered.
+	leftStep := session.CurrentStep
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
 		// Persist the score + answer payload + step_type on the progress row
 		// so the teacher dashboard can report per-attempt grades without
@@ -929,6 +957,7 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 			}
 		}
 		s.deploySingleFlagToContainer(*session.TerminalSessionID, &session.Scenario, session.Flags, *response.NextStep)
+		s.emitStepTransitionBanners(&session, leftStep, *response.NextStep)
 	}
 
 	return response, nil
@@ -990,6 +1019,10 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 	// For correct flags, update the flag record inside the transaction to ensure
 	// atomicity with step advancement — if the transaction fails, the flag
 	// won't be incorrectly marked as correct while the step hasn't advanced.
+	// Captured before the transaction: advanceToNextStep updates current_step
+	// through GORM, which writes the new value back onto this struct, so after
+	// the transaction session.CurrentStep is already the step just entered.
+	leftStep := session.CurrentStep
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
 		// Update flag record inside the transaction
 		if err := tx.Model(flag).Updates(map[string]any{
@@ -1023,6 +1056,7 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 			}
 		}
 		s.deploySingleFlagToContainer(*session.TerminalSessionID, &session.Scenario, session.Flags, *response.NextStep)
+		s.emitStepTransitionBanners(&session, leftStep, *response.NextStep)
 	}
 
 	return response, nil

@@ -30,6 +30,10 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						VerifyScript:       model.VerifyScript,
 						BackgroundScript:   model.BackgroundScript,
 						ForegroundScript:   model.ForegroundScript,
+						IntroEffect:        model.IntroEffect,
+						IntroText:          model.IntroText,
+						OutroEffect:        model.OutroEffect,
+						OutroText:          model.OutroText,
 						HasFlag:            model.HasFlag,
 						FlagPath:           model.FlagPath,
 						FlagLevel:          model.FlagLevel,
@@ -86,6 +90,10 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 						VerifyScript:       input.VerifyScript,
 						BackgroundScript:   input.BackgroundScript,
 						ForegroundScript:   input.ForegroundScript,
+						IntroEffect:        input.IntroEffect,
+						IntroText:          input.IntroText,
+						OutroEffect:        input.OutroEffect,
+						OutroText:          input.OutroText,
 						HasFlag:            input.HasFlag,
 						FlagPath:           input.FlagPath,
 						FlagLevel:          input.FlagLevel,
@@ -124,6 +132,18 @@ func RegisterScenarioStep(service *ems.EntityRegistrationService) {
 					}
 					if input.ForegroundScript != nil {
 						updates["foreground_script"] = *input.ForegroundScript
+					}
+					if input.IntroEffect != nil {
+						updates["intro_effect"] = *input.IntroEffect
+					}
+					if input.IntroText != nil {
+						updates["intro_text"] = *input.IntroText
+					}
+					if input.OutroEffect != nil {
+						updates["outro_effect"] = *input.OutroEffect
+					}
+					if input.OutroText != nil {
+						updates["outro_text"] = *input.OutroText
 					}
 					if input.HasFlag != nil {
 						updates["has_flag"] = *input.HasFlag

@@ -27,6 +27,18 @@ type ScenarioStep struct {
 	// round-trip fidelity only — a step that needs to run something must use
 	// BackgroundScript.
 	ForegroundScript string    `gorm:"type:text" json:"-"`
+	// Intro/outro banners. The trainer picks an effect by name and types a
+	// line; the engine turns that into an ocf-banner call in the container, so
+	// nobody has to write shell to get one. Empty effect or empty text means no
+	// banner — both are required for anything to render.
+	//
+	// These hold an effect NAME and the TEXT, never a rendered asset: tte draws
+	// live inside the container, and a step configured with an effect still
+	// runs unchanged on an image that has no tte.
+	IntroEffect      string             `gorm:"type:varchar(64)" json:"intro_effect,omitempty" mapstructure:"intro_effect"`
+	IntroText        string             `gorm:"type:varchar(500)" json:"intro_text,omitempty" mapstructure:"intro_text"`
+	OutroEffect      string             `gorm:"type:varchar(64)" json:"outro_effect,omitempty" mapstructure:"outro_effect"`
+	OutroText        string             `gorm:"type:varchar(500)" json:"outro_text,omitempty" mapstructure:"outro_text"`
 	HasFlag          bool               `gorm:"default:false" json:"has_flag"`
 	FlagPath         string             `gorm:"type:varchar(500)" json:"flag_path,omitempty"` // where to place the flag file in the container
 	FlagLevel        int                `gorm:"default:0" json:"flag_level"`

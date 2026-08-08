@@ -121,6 +121,10 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dt
 			VerifyScript:          ResolveScriptContent(s.db, step.VerifyScriptID, step.VerifyScript),
 			BackgroundScript:      ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript),
 			ForegroundScript:      ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript),
+			IntroEffect:           step.IntroEffect,
+			IntroText:             step.IntroText,
+			OutroEffect:           step.OutroEffect,
+			OutroText:             step.OutroText,
 			HasFlag:               step.HasFlag,
 			FlagPath:              step.FlagPath,
 			FlagLevel:             step.FlagLevel,
@@ -294,6 +298,11 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 		if fgScript != "" {
 			kcStep.Foreground = resolveRelPath(s.db, step.ForegroundScriptID, stepDir+"/foreground.sh")
 		}
+
+		kcStep.IntroEffect = step.IntroEffect
+		kcStep.IntroText = step.IntroText
+		kcStep.OutroEffect = step.OutroEffect
+		kcStep.OutroText = step.OutroText
 
 		// Set per-step flag override if different from scenario default
 		hasFlag := step.HasFlag

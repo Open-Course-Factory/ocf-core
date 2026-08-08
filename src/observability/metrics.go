@@ -33,6 +33,11 @@ type observabilityMetrics struct {
 	ScenarioSetupPanic           atomic.Uint64
 	ScenarioSetupFailed          atomic.Uint64
 	TerminalStopOnCleanupFailure atomic.Uint64
+
+	// A scenario configured step banners but landed on an image without tte,
+	// so none of them will render. Counted because the symptom otherwise is
+	// simply "nothing happened".
+	ScenarioEffectsUnsupported atomic.Uint64
 }
 
 // Metrics is the global observability metrics singleton, accessed by both
