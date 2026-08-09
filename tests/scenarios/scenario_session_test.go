@@ -65,6 +65,10 @@ func (m *mockVerificationService) PushFile(sessionID string, targetPath string, 
 	return nil
 }
 
+func (m *mockVerificationService) WriteToConsole(sessionID string, text string) error {
+	return nil
+}
+
 func (m *mockVerificationService) ExecInContainer(sessionID string, command []string, timeout int) (int, string, string, error) {
 	m.execCalls = append(m.execCalls, execCall{sessionID, command, timeout})
 	if m.execErr != nil {

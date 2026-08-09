@@ -1,8 +1,10 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"soli/formations/src/scenarios/models"
@@ -80,6 +82,44 @@ func (s *VerificationService) PushFile(sessionID string, targetPath string, cont
 	_, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, payload, opts)
 	if err != nil {
 		return fmt.Errorf("push file to container failed: %w", err)
+	}
+
+	return nil
+}
+
+// ErrNoLiveConsole means the learner has no console attached, so there is no
+// shell to type into. It is a normal condition — they may not have opened their
+// terminal yet — and callers skip rather than fail on it.
+var ErrNoLiveConsole = errors.New("session has no live console")
+
+// WriteToConsole types text into the learner's live shell, as if they had
+// entered it themselves.
+//
+// This is how a step's foreground script runs. It is NOT ExecInContainer with
+// the output redirected: that would run in a separate process with its own
+// environment, so `cd`, `export` and shell functions would have no effect on the
+// shell the learner is actually using — which is the whole point of a foreground
+// script.
+//
+// tt-backend answers 409 when nothing is attached; that becomes ErrNoLiveConsole
+// so the caller can tell "nobody was watching" from "the write failed".
+func (s *VerificationService) WriteToConsole(sessionID string, text string) error {
+	url := fmt.Sprintf("%s/1.0/sessions/%s/console/input", s.ttBackendURL, sessionID)
+
+	payload := map[string]any{
+		"data":           text,
+		"append_newline": true,
+	}
+
+	opts := utils.DefaultHTTPClientOptions()
+	utils.ApplyOptions(&opts, utils.WithAPIKey(s.ttAPIKey))
+
+	_, err := utils.MakeExternalAPIRequest("Terminal Trainer", "POST", url, payload, opts)
+	if err != nil {
+		if strings.Contains(err.Error(), "409") {
+			return ErrNoLiveConsole
+		}
+		return fmt.Errorf("write to console failed: %w", err)
 	}
 
 	return nil

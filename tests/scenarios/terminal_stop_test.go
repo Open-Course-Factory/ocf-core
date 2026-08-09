@@ -171,6 +171,11 @@ func (p *panickingVerificationService) PushFile(sessionID string, targetPath str
 	return nil
 }
 
+// No console in these tests; the foreground path is exercised elsewhere.
+func (p *panickingVerificationService) WriteToConsole(sessionID string, text string) error {
+	return nil
+}
+
 func (p *panickingVerificationService) ExecInContainer(sessionID string, command []string, timeout int) (int, string, string, error) {
 	panic("simulated nil-deref inside ExecInContainer")
 }

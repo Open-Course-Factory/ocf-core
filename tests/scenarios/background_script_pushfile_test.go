@@ -34,8 +34,16 @@ func waitForSetupDone(t *testing.T, db *gorm.DB, sessionID any) string {
 type bgTrackingVerificationService struct {
 	execCalls     []execCall
 	pushFileCalls []pushFileCall
+	consoleWrites []consoleWrite
 	execErr       error
 	pushFileErr   error
+	consoleErr    error
+}
+
+// consoleWrite records a foreground script typed into the learner's shell.
+type consoleWrite struct {
+	sessionID string
+	text      string
 }
 
 func (m *bgTrackingVerificationService) VerifyStep(terminalSessionID string, step *models.ScenarioStep) (bool, string, error) {
@@ -53,6 +61,11 @@ func (m *bgTrackingVerificationService) ExecInContainer(sessionID string, comman
 		return -1, "", "", m.execErr
 	}
 	return 0, "", "", nil
+}
+
+func (m *bgTrackingVerificationService) WriteToConsole(sessionID string, text string) error {
+	m.consoleWrites = append(m.consoleWrites, consoleWrite{sessionID, text})
+	return m.consoleErr
 }
 
 func TestExecuteBackgroundScript_SmallScript_UsesInline(t *testing.T) {

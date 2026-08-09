@@ -18,6 +18,15 @@ type ScenarioStep struct {
 	HintContent      string    `gorm:"type:text" json:"hint_content,omitempty"`      // markdown
 	VerifyScript     string    `gorm:"type:text" json:"-"`
 	BackgroundScript string    `gorm:"type:text" json:"-"`
+	// ForegroundScript is typed into the learner's own shell at the end of the
+	// step's provisioning, matching KillerCoda's semantics: the learner watches
+	// it run, and anything it changes about the shell — cd, export, a function —
+	// persists for them. That is what distinguishes it from BackgroundScript,
+	// which runs in a separate non-interactive exec they never see.
+	//
+	// Delivery is best-effort. It needs a console attached, so a learner who has
+	// not opened their terminal simply misses it; the level itself is already
+	// provisioned by the time this runs, so nothing is left unsolvable.
 	ForegroundScript string    `gorm:"type:text" json:"-"`
 	// BackgroundTimeoutSeconds overrides the engine's timeout for this step's
 	// background script. 0 means "use the engine default", which depends on
