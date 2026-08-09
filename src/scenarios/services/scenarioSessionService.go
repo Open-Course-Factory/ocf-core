@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
@@ -83,6 +84,27 @@ func findFlagByStepOrder(flags []models.ScenarioFlag, order int) *models.Scenari
 	return nil
 }
 
+// Session status vocabulary for the provisioning lifecycle. Declared together
+// because the answers to "may the learner act", "may this be reprovisioned" and
+// "may setup start" were each written out by hand at their call site and had
+// already drifted: one accepted a status the others rejected, and the
+// difference was invisible until an action was silently refused.
+//
+// The wider status set ("completed", "abandoned", …) still travels as literals
+// elsewhere in the package; these are the ones this engine decides on.
+const (
+	statusActive       = "active"
+	statusInProgress   = "in_progress"
+	statusProvisioning = "provisioning"
+	statusSetupFailed  = "setup_failed"
+)
+
+// reprovisionableStatuses are the states from which re-running a step's setup
+// makes sense: a run in progress, or one whose setup already failed. A session
+// already provisioning has a goroutine on the job; a completed or abandoned one
+// has no run to repair.
+var reprovisionableStatuses = []string{statusActive, statusInProgress, statusSetupFailed}
+
 // ErrSessionNotActive marks a learner action rejected because the session is
 // not in a state that accepts it. Controllers match on it to answer 409 rather
 // than a generic failure, so the frontend can retry instead of giving up.
@@ -92,11 +114,14 @@ var ErrSessionNotActive = errors.New("session is not active")
 // session right now". Provisioning is the case that matters: step setup can now
 // run mid-scenario, so a second browser tab could otherwise submit against a
 // container being rebuilt under it.
+// in_progress is accepted alongside active: it is the historical name for a
+// running session and still appears on rows created before the rename, so
+// rejecting it would lock those learners out of verify and submit entirely.
 func requireActiveSession(session *models.ScenarioSession) error {
-	if session.Status == "active" {
+	if session.Status == statusActive || session.Status == statusInProgress {
 		return nil
 	}
-	if session.Status == "provisioning" {
+	if session.Status == statusProvisioning {
 		return fmt.Errorf("%w: the environment for this step is still being prepared", ErrSessionNotActive)
 	}
 	return fmt.Errorf("%w: session is %s", ErrSessionNotActive, session.Status)
@@ -468,6 +493,15 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 // provisioning is taken off the advance request. Holding the learner's
 // verify/submit response open for longer than this reads as a hang, so the work
 // moves to a goroutine and the session reports "provisioning" instead.
+//
+// It sits BELOW bgScriptTimeoutDefault on purpose, which looks like the rule
+// contradicting itself and is not. A step that declares nothing keeps running
+// inline under the default ceiling, because that is what it did before these
+// fields existed and this feature is not allowed to change it. The threshold
+// governs only what an author explicitly asked for. So declaring 30 is a
+// statement — "this step really takes that long, take it off the request" —
+// while inheriting 30 is a ceiling nobody claimed, and the two are treated
+// differently by design.
 const asyncProvisioningThresholdSeconds = 15
 
 // runsAsynchronously is the single owner of the sync-versus-async provisioning
@@ -510,7 +544,8 @@ func (s *ScenarioSessionService) provisionNextStep(session *models.ScenarioSessi
 	}
 
 	if hasScript && runsAsynchronously(step) {
-		if !s.startAsyncStepProvisioning(session, step) {
+		// An advance may only start setup on a session that is actually running.
+		if !s.startAsyncStepProvisioning(session, step, []string{statusActive, statusInProgress}) {
 			// The session was abandoned out from under the advance; there is
 			// nobody left to poll.
 			return dto.StepProvisioningStatus{}
@@ -549,11 +584,17 @@ func (s *ScenarioSessionService) runStepProvisioning(terminalSessionID string, s
 // step's setup in a goroutine. The transition is guarded so an abandon racing
 // the advance is not resurrected; if it lost the race no goroutine is spawned
 // and the call reports false.
-func (s *ScenarioSessionService) startAsyncStepProvisioning(session *models.ScenarioSession, step *models.ScenarioStep) bool {
+//
+// fromStatuses is the caller's business, not this function's: an advance may
+// only start setup on a running session, while a retry legitimately starts from
+// one whose setup already failed. Passing it in is what lets the retry go
+// straight to "provisioning" — clearing setup_failed first would mean two
+// writes, with the session briefly claiming to be playable in between.
+func (s *ScenarioSessionService) startAsyncStepProvisioning(session *models.ScenarioSession, step *models.ScenarioStep, fromStatuses []string) bool {
 	result := s.db.Model(&models.ScenarioSession{}).
-		Where("id = ? AND status IN ?", session.ID, []string{"active", "in_progress"}).
+		Where("id = ? AND status IN ?", session.ID, fromStatuses).
 		Updates(map[string]any{
-			"status":             "provisioning",
+			"status":             statusProvisioning,
 			"provisioning_phase": "step_setup",
 		})
 	if result.Error != nil {
@@ -614,13 +655,22 @@ func (s *ScenarioSessionService) runAsyncStepProvisioning(sessionID uuid.UUID, t
 
 // failStepProvisioning records a mid-scenario provisioning failure. The
 // terminal is intentionally left running, unlike the step 0 failure path.
+//
+// A failure to record the failure is logged rather than dropped: this is the
+// path that gets the session out of "provisioning", so if it silently does
+// nothing the learner waits on a state that will only clear when the reaper
+// gets to it, minutes later.
 func (s *ScenarioSessionService) failStepProvisioning(sessionID uuid.UUID) {
-	s.db.Model(&models.ScenarioSession{}).
+	result := s.db.Model(&models.ScenarioSession{}).
 		Where("id = ? AND status = ?", sessionID, "provisioning").
 		Updates(map[string]any{
 			"status":             "setup_failed",
 			"provisioning_phase": "",
 		})
+	if result.Error != nil {
+		slog.Error("failed to record step provisioning failure",
+			"session_id", sessionID, "err", result.Error)
+	}
 }
 
 // ReprovisionCurrentStep re-runs the current step's background script against
@@ -647,14 +697,13 @@ func (s *ScenarioSessionService) ReprovisionCurrentStep(sessionID uuid.UUID, for
 	}
 
 	if runsAsynchronously(runnable) {
-		// The async path enters from "active", so a session the previous
-		// attempt left in setup_failed has to be cleared first. From there the
-		// goroutine owns the outcome.
-		s.setSessionRunState(session.ID, "active")
-		if !s.startAsyncStepProvisioning(session, runnable) {
+		// Straight to "provisioning" from whichever state the retry was
+		// accepted in, including setup_failed. From there the goroutine owns
+		// the outcome.
+		if !s.startAsyncStepProvisioning(session, runnable, reprovisionableStatuses) {
 			return nil, fmt.Errorf("session is no longer active")
 		}
-		return &dto.ReprovisionStepResponse{StepOrder: step.Order, Status: "provisioning"}, nil
+		return &dto.ReprovisionStepResponse{StepOrder: step.Order, Status: statusProvisioning}, nil
 	}
 
 	// Synchronous: run first, then record the outcome, so a failed retry never
@@ -662,23 +711,27 @@ func (s *ScenarioSessionService) ReprovisionCurrentStep(sessionID uuid.UUID, for
 	if err := s.runStepProvisioning(*session.TerminalSessionID, &session.Scenario, session.Flags, runnable); err != nil {
 		observability.Metrics.ScenarioStepProvisioningFailed.Add(1)
 		slog.Error("step reprovisioning failed", "session_id", session.ID, "step_order", step.Order, "err", err)
-		s.setSessionRunState(session.ID, "setup_failed")
+		s.setSessionRunState(session.ID, statusSetupFailed)
 		return nil, fmt.Errorf("step provisioning failed: %w", err)
 	}
-	s.setSessionRunState(session.ID, "active")
-	return &dto.ReprovisionStepResponse{StepOrder: step.Order, Status: "active"}, nil
+	s.setSessionRunState(session.ID, statusActive)
+	return &dto.ReprovisionStepResponse{StepOrder: step.Order, Status: statusActive}, nil
 }
 
 // setSessionRunState moves a session between the two states reprovisioning can
-// produce. The guard restricts it to the states reprovisioning accepts, so an
-// abandon racing the retry still wins.
+// produce. The guard restricts it to reprovisionableStatuses, so an abandon
+// racing the retry still wins.
 func (s *ScenarioSessionService) setSessionRunState(sessionID uuid.UUID, status string) {
-	s.db.Model(&models.ScenarioSession{}).
-		Where("id = ? AND status IN ?", sessionID, []string{"active", "setup_failed"}).
+	result := s.db.Model(&models.ScenarioSession{}).
+		Where("id = ? AND status IN ?", sessionID, reprovisionableStatuses).
 		Updates(map[string]any{
 			"status":             status,
 			"provisioning_phase": "",
 		})
+	if result.Error != nil {
+		slog.Error("failed to set session run state",
+			"session_id", sessionID, "status", status, "err", result.Error)
+	}
 }
 
 // loadReprovisionableSession loads a session and rejects the states in which
@@ -691,7 +744,7 @@ func (s *ScenarioSessionService) loadReprovisionableSession(sessionID uuid.UUID)
 	}).Preload("Flags").First(&session, "id = ?", sessionID).Error; err != nil {
 		return nil, fmt.Errorf("session not found: %w", err)
 	}
-	if session.Status != "active" && session.Status != "setup_failed" {
+	if !slices.Contains(reprovisionableStatuses, session.Status) {
 		return nil, fmt.Errorf("session status %q cannot be reprovisioned", session.Status)
 	}
 	if session.TerminalSessionID == nil {
@@ -1644,15 +1697,36 @@ const maxInlineScriptSize = 4000
 const (
 	bgScriptTimeoutStep0   = 300 // 5 minutes for initial setup
 	bgScriptTimeoutDefault = 30  // subsequent steps, unless the step overrides it
+
+	// MaxBackgroundTimeoutSeconds is the ceiling on what a step may declare.
+	//
+	// It exists because a declared timeout is not a private matter between a
+	// step and its script: CleanupStuckProvisioningSessions writes off any
+	// session that has been provisioning for too long, and it cannot know which
+	// step is running. Without a ceiling a step could declare a budget longer
+	// than the reaper's patience, get reaped mid-run, and then have its own
+	// success discarded — the goroutine's status write is guarded on
+	// "provisioning", which the reaper has already cleared. The session would
+	// sit in setup_failed having actually succeeded.
+	//
+	// So the two must be bound together rather than chosen independently. This
+	// is the value the reaper derives its cutoff from; see
+	// stuckProvisioningTimeout.
+	MaxBackgroundTimeoutSeconds = 600
 )
 
 // effectiveTimeout resolves how long a step's background script may run.
 // An explicit per-step value always wins; otherwise the initial setup (step 0,
 // and the order=-1 sentinel used for the scenario-level setup script) gets the
 // long budget and later steps the default.
+//
+// The clamp is here, at the single point every caller reads the value through,
+// rather than only at the API boundary: BackgroundTimeoutSeconds also arrives
+// by import, by seed and by duplication, and none of those pass through the
+// entity DTOs. Clamping on read is the one place none of them can bypass.
 func effectiveTimeout(step *models.ScenarioStep) int {
 	if step.BackgroundTimeoutSeconds > 0 {
-		return step.BackgroundTimeoutSeconds
+		return min(step.BackgroundTimeoutSeconds, MaxBackgroundTimeoutSeconds)
 	}
 	if step.Order <= 0 {
 		return bgScriptTimeoutStep0

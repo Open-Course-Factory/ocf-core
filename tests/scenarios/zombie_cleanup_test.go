@@ -262,3 +262,48 @@ func TestCleanupStuckProvisioningSessions_ReleasesStalledSessions(t *testing.T) 
 	require.NoError(t, db.First(&reaped, "id = ?", stalled.ID).Error)
 	assert.Equal(t, "", reaped.ProvisioningPhase)
 }
+
+// The reaper's patience and what a step may declare are one rule, not two.
+//
+// A step can ask for up to MaxBackgroundTimeoutSeconds. If the reaper's cutoff
+// were chosen independently and landed below that, a step running inside its
+// own declared budget would be written off mid-run — and worse, silently: the
+// goroutine's success is written with a WHERE status = 'provisioning' guard,
+// which the reaper has already cleared, so the update matches nothing and the
+// session stays setup_failed having actually succeeded.
+//
+// This pins the ordering rather than the numbers, so raising either constant
+// alone fails here instead of in a learner's session.
+func TestCleanupStuckProvisioningSessions_SparesAStepInsideItsDeclaredBudget(t *testing.T) {
+	db := setupTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "budget-scenario",
+		Title:        "Budget scenario",
+		InstanceType: "ubuntu:22.04",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	// A session that has been provisioning for exactly the longest budget a
+	// step is allowed to declare. It is at the edge of legitimate, not past it.
+	atCeiling := models.ScenarioSession{
+		ScenarioID:        scenario.ID,
+		UserID:            "student-at-ceiling",
+		Status:            "provisioning",
+		ProvisioningPhase: "step_setup",
+		StartedAt:         time.Now(),
+	}
+	require.NoError(t, db.Create(&atCeiling).Error)
+	require.NoError(t, db.Model(&models.ScenarioSession{}).
+		Where("id = ?", atCeiling.ID).
+		Update("updated_at",
+			time.Now().Add(-time.Duration(services.MaxBackgroundTimeoutSeconds)*time.Second)).Error)
+
+	count, err := services.CleanupStuckProvisioningSessions(db)
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(0), count)
+	assert.Equal(t, "provisioning", sessionStatus(t, db, atCeiling.ID),
+		"a step still inside the budget it was allowed to declare is not stuck")
+}

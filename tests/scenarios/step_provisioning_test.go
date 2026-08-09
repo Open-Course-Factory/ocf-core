@@ -147,6 +147,34 @@ func TestBackgroundScript_PerStepTimeout_OverridesDefault(t *testing.T) {
 	assert.Equal(t, 120, verifySvc.execCalls[0].timeout)
 }
 
+// A declared timeout is clamped, and the clamp is applied on read rather than
+// at the API boundary. Nothing validates this field on the way in — it also
+// arrives by import, by seed and by duplication, none of which pass through the
+// entity DTOs — so a scenario can carry any value at all. Left unclamped it
+// would outlive the stuck-provisioning reaper, which writes off the session and
+// then silently discards the script's eventual success.
+func TestBackgroundScript_PerStepTimeout_IsClampedToTheCeiling(t *testing.T) {
+	db := setupTestDB(t)
+	session := twoStepSession(t, db, "timeout-absurd", models.ScenarioStep{
+		BackgroundScript:         "echo forever",
+		BackgroundTimeoutSeconds: 99999,
+	})
+
+	verifySvc := &bgTrackingVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	result, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err)
+	require.Equal(t, "active", waitForSetupDone(t, db, session.ID))
+
+	require.Len(t, verifySvc.execCalls, 1)
+	assert.Equal(t, services.MaxBackgroundTimeoutSeconds, verifySvc.execCalls[0].timeout,
+		"the script must not be given longer than the reaper will wait")
+	// The client is told the same clamped value, so its own poll ceiling is
+	// derived from what the backend will really do.
+	assert.Equal(t, services.MaxBackgroundTimeoutSeconds, result.ProvisioningTimeoutSeconds)
+}
+
 func TestBackgroundScript_Step0_PerStepTimeoutOverridesInitialSetupBudget(t *testing.T) {
 	db := setupTestDB(t)
 
