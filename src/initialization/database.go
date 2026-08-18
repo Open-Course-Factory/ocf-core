@@ -506,47 +506,45 @@ func EnsureFreePlanExists(db *gorm.DB) {
 		}
 	}
 
-	// Use FirstOrCreate to atomically find or create the Trial plan, preventing TOCTOU race
-	// when two pods start simultaneously. Attrs are applied only on creation.
+	// The free tier is described in the same catalogue as the paid plans — it is
+	// an offer, not an implementation detail — so its values are read from there
+	// rather than repeated here. Repeating them is how the seed and the free-plan
+	// sync came to disagree about the description.
+	template, err := paymentServices.FreePlanTemplate()
+	if err != nil {
+		log.Printf("Warning: cannot read the free plan from the catalogue: %v\n", err)
+		return
+	}
+
+	// FirstOrCreate is atomic, preventing a TOCTOU race when two pods start
+	// simultaneously. Attrs are applied only on creation.
 	var existing paymentModels.SubscriptionPlan
 	result := db.Where("name = ? AND price_amount = 0", paymentServices.FreePlanName).
-		Attrs(paymentModels.SubscriptionPlan{
-		Name:                        paymentServices.FreePlanName,
-		Description:                 "Découvrez la plateforme gratuitement : une machine XS éphémère, sessions d'une heure, sans accès réseau.",
-		IsDefaultFree:               true,
-		PriceAmount:                 0,
-		Currency:                    "eur",
-		BillingInterval:             "month",
-		IsActive:                    true,
-		RequiredRole:                "member",
-		UseTieredPricing:            false,
-		MaxSessionDurationMinutes:   60,
-		MaxCPU:                      500, // 1 × XS (500 mCPU = 0.5 vCPU)
-		MaxMemoryMB:                 256, // 1 × XS
-		NetworkAccessEnabled:        false,
-		DataPersistenceEnabled:      false,
-		DataPersistenceGB:           0,
-		CommandHistoryRetentionDays: 7,
-	}).FirstOrCreate(&existing)
+		Attrs(template).
+		FirstOrCreate(&existing)
 	if result.Error != nil {
-		log.Printf("Warning: Failed to find or create Trial plan: %v\n", result.Error)
+		log.Printf("Warning: Failed to find or create the %s plan: %v\n", paymentServices.FreePlanName, result.Error)
 		return
 	}
 	if result.RowsAffected > 0 {
 		log.Printf("Created missing %s plan", paymentServices.FreePlanName)
 	}
 
-	// Sync existing Trial plan fields to match code (handles drift on existing plans)
+	// Re-assert the governed fields on every startup, so a plan edited by hand
+	// drifts back to the offer. Sourced from the same template as the creation
+	// above — the two used to be separate literals, and only one of them was
+	// updated when the free tier was renamed.
 	db.Model(&existing).Updates(map[string]interface{}{
-		"description":                    "Découvrez la plateforme gratuitement : une machine XS éphémère, sessions d'une heure, sans accès réseau.",
-		"max_session_duration_minutes":   60,
-		"max_cpu":                        500, // 1 × XS in mCPU (0.5 vCPU)
-		"max_memory_mb":                  256,
-		"network_access_enabled":         false,
-		"data_persistence_enabled":       false,
-		"data_persistence_gb":            0,
-		"is_active":                      true,
-		"command_history_retention_days": 7,
+		"description":                    template.Description,
+		"max_session_duration_minutes":   template.MaxSessionDurationMinutes,
+		"max_cpu":                        template.MaxCPU,
+		"max_memory_mb":                  template.MaxMemoryMB,
+		"network_access_enabled":         template.NetworkAccessEnabled,
+		"data_persistence_enabled":       template.DataPersistenceEnabled,
+		"data_persistence_gb":            template.DataPersistenceGB,
+		"is_active":                      template.IsActive,
+		"is_default_free":                true,
+		"command_history_retention_days": template.CommandHistoryRetentionDays,
 	})
 }
 
@@ -562,124 +560,19 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		return // Paid plans déjà créés
 	}
 
-	// Solo — the individual paid tier. 12€/month, XL ceiling, 8-hour sessions.
-	//
-	// Eight hours rather than the three this plan used to allow: a real training
-	// day is seven, and the short cap was a launch blocker rather than a policy.
-	soloPlan := &paymentModels.SubscriptionPlan{
-		Name:                        "Solo",
-		Description:                 "Pour apprendre et préparer ses supports : machines jusqu'à XL, sessions de 8 h, réseau et persistance.",
-		PriceAmount:                 1200, // 12€/mois
-		Currency:                    "eur",
-		BillingInterval:             "month",
-		Priority:                    20,
-		IsActive:                    true,
-		IsCatalog:                   true,
-		RequiredRole:                "member",
-		UseTieredPricing:            false,
-		MaxSessionDurationMinutes:   480,
-		MaxCPU:                      6000, // XL ceiling
-		MaxMemoryMB:                 6144, // XL ceiling
-		NetworkAccessEnabled:        true,
-		DataPersistenceEnabled:      true,
-		DataPersistenceGB:           5,
-		CommandHistoryRetentionDays: 90,
+	// The offer itself lives in src/payment/services/catalogue.json, which the
+	// production bootstrap script reads too. Defining it here as well is how a
+	// price ends up correct in one environment and stale in the other.
+	catalogue, err := paymentServices.PaidCatalogue()
+	if err != nil {
+		log.Printf("Warning: cannot read the plan catalogue: %v\n", err)
+		return
 	}
 
-	// Formateur — the classroom plan. 39€/month flat.
-	//
-	// It carries NO per-licence ladder: learners are sold as their own seat
-	// products below. The old 12/10/8/6 ladder priced the same thing a second
-	// time, from a second row, in a shape (volume) the offer no longer uses.
-	formateurPlan := &paymentModels.SubscriptionPlan{
-		Name:                        "Formateur",
-		Description:                 "Pour animer des formations : mêmes machines que Solo, classes, supervision et achat de sièges apprenants.",
-		PriceAmount:                 3900, // 39€/mois
-		Currency:                    "eur",
-		BillingInterval:             "month",
-		Priority:                    40,
-		IsActive:                    true,
-		IsCatalog:                   true,
-		RequiredRole:                "member",
-		UseTieredPricing:            false,
-		MaxSessionDurationMinutes:   480,
-		MaxCPU:                      6000,
-		MaxMemoryMB:                 6144,
-		NetworkAccessEnabled:        true,
-		DataPersistenceEnabled:      true,
-		DataPersistenceGB:           20,
-		GroupManagementEnabled:      true,
-		SessionSupervisionEnabled:   true,
-		CommandHistoryRetentionDays: 365,
+	plans := make([]*paymentModels.SubscriptionPlan, 0, len(catalogue))
+	for i := range catalogue {
+		plans = append(plans, &catalogue[i])
 	}
-
-	// The two learner-seat products.
-	//
-	// Hidden (IsCatalog=false): a seat is bought BY a trainer FOR learners, never
-	// off the public pricing page. BulkPurchasable is what makes them sellable in
-	// bulk — deliberately separate from IsCatalog, so a seat can be sellable and
-	// unlisted at once, and from GroupManagementEnabled, which stays false here so
-	// that holding a seat never confers the right to buy more.
-	//
-	// Tiers are GRADUATED, not volume: under volume pricing an 11th seat made the
-	// whole order cheaper than 10, so the bill fell as the class grew. Each
-	// bracket must therefore stay contiguous with the previous one and strictly
-	// cheaper per unit.
-	seatMonthlyPlan := &paymentModels.SubscriptionPlan{
-		Name:                        "Siège élève — mensuel",
-		Description:                 "Un siège apprenant, facturé au mois. Tarif dégressif par paliers.",
-		PriceAmount:                 900, // 9€ — the first bracket, and the Stripe base price
-		Currency:                    "eur",
-		BillingInterval:             "month",
-		Priority:                    15,
-		IsActive:                    true,
-		IsCatalog:                   false,
-		RequiredRole:                "member",
-		BulkPurchasable:             true,
-		SeatUnit:                    paymentModels.SeatUnitSeatMonth,
-		UseTieredPricing:            true,
-		MaxSessionDurationMinutes:   480,
-		MaxCPU:                      2000, // one M machine per learner
-		MaxMemoryMB:                 2048,
-		NetworkAccessEnabled:        true,
-		DataPersistenceEnabled:      true,
-		DataPersistenceGB:           2, // learner seats get 2 GB of persistence
-		CommandHistoryRetentionDays: 90,
-		PricingTiers: []paymentModels.PricingTier{
-			{MinQuantity: 1, MaxQuantity: 10, UnitAmount: 900, Description: "1-10 sièges : 9€/siège/mois"},
-			{MinQuantity: 11, MaxQuantity: 30, UnitAmount: 700, Description: "11-30 sièges : 7€/siège/mois"},
-			{MinQuantity: 31, MaxQuantity: 0, UnitAmount: 550, Description: "31 sièges et plus : 5,50€/siège/mois"},
-		},
-	}
-
-	seatPackPlan := &paymentModels.SubscriptionPlan{
-		Name:                        "Siège élève — pack jours",
-		Description:                 "Un apprenant pour une journée, prépayé. La quantité est le nombre d'apprenants multiplié par le nombre de jours.",
-		PriceAmount:                 165, // 1,65€ per learner-day — the first bracket
-		Currency:                    "eur",
-		BillingInterval:             "month",
-		Priority:                    15,
-		IsActive:                    true,
-		IsCatalog:                   false,
-		RequiredRole:                "member",
-		BulkPurchasable:             true,
-		SeatUnit:                    paymentModels.SeatUnitLearnerDay,
-		UseTieredPricing:            true,
-		MaxSessionDurationMinutes:   480,
-		MaxCPU:                      2000,
-		MaxMemoryMB:                 2048,
-		NetworkAccessEnabled:        true,
-		DataPersistenceEnabled:      true,
-		DataPersistenceGB:           2,
-		CommandHistoryRetentionDays: 90,
-		PricingTiers: []paymentModels.PricingTier{
-			{MinQuantity: 1, MaxQuantity: 60, UnitAmount: 165, Description: "1-60 jours-apprenant : 1,65€"},
-			{MinQuantity: 61, MaxQuantity: 200, UnitAmount: 125, Description: "61-200 jours-apprenant : 1,25€"},
-			{MinQuantity: 201, MaxQuantity: 0, UnitAmount: 105, Description: "201 jours-apprenant et plus : 1,05€"},
-		},
-	}
-
-	plans := []*paymentModels.SubscriptionPlan{soloPlan, formateurPlan, seatMonthlyPlan, seatPackPlan}
 
 	for _, plan := range plans {
 		// Read the intent BEFORE Create: GORM omits zero-value bools on insert for
