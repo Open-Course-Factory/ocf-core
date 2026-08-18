@@ -28,7 +28,8 @@ func TestMultipleFreeSubscriptions_NoUniqueConstraintViolation(t *testing.T) {
 
 	// Create a free trial plan
 	trialPlan := &models.SubscriptionPlan{
-		Name:                   "Trial",
+		Name:                   services.FreePlanName,
+		IsDefaultFree:          true, // FindFreePlan elects by marker, not by name
 		Description:            "Free trial plan for testing",
 		Priority:               0,
 		PriceAmount:            0, // Free plan

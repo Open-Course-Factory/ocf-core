@@ -231,8 +231,18 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Migrate inline scripts/markdown to ProjectFile records
 	migrateInlineContentToProjectFiles(db)
 
-	// Ensure the free Trial plan always exists (regardless of environment)
-	EnsureTrialPlanExists(db)
+	// Give the public plans the names the offer uses. Runs BEFORE the two routines
+	// below: EnsureFreePlanExists keys on the current name and would otherwise
+	// create a second free plan beside the one being renamed, and MarkDefaultFreePlan
+	// looks the row up by that name.
+	RenameLegacyPlans(db)
+
+	// Elect the plan new signups receive. Runs before EnsureFreePlanExists so an
+	// existing free plan is marked rather than duplicated.
+	MarkDefaultFreePlan(db)
+
+	// Ensure the free default plan always exists (regardless of environment)
+	EnsureFreePlanExists(db)
 
 	// #439: retire the 'trialing' status from existing rows. Must run BEFORE both
 	// the backfill and the index migration below, which now speak only of 'active'.
@@ -404,15 +414,87 @@ func syncCasdoorRolesToCasbin() {
 	log.Println("[ROLE-SYNC] Casdoor-to-Casbin role sync complete")
 }
 
-// EnsureTrialPlanExists ensures the free Trial plan always exists in the database
+// RenameLegacyPlans gives the three public plans the names the offer actually
+// uses. It renames the ROW: these are the same commercial products, carrying
+// live subscriptions and Stripe ids, so creating new plans beside them would
+// strand every existing customer on a plan nobody sells.
+//
+// Skips a rename whose target name is already taken by a different row — that
+// means the catalogue has already been named, and two plans sharing a name is
+// worse than one keeping an old one.
+//
+// Idempotent: once renamed, the WHERE matches nothing.
+func RenameLegacyPlans(db *gorm.DB) {
+	renames := []struct{ from, to string }{
+		{paymentServices.LegacyFreePlanName, paymentServices.FreePlanName},
+		{"Member Pro", "Solo"},
+		{"Trainer Plan", "Formateur"},
+	}
+
+	for _, r := range renames {
+		var taken int64
+		db.Model(&paymentModels.SubscriptionPlan{}).Where("name = ?", r.to).Count(&taken)
+		if taken > 0 {
+			continue
+		}
+		res := db.Model(&paymentModels.SubscriptionPlan{}).
+			Where("name = ?", r.from).
+			Update("name", r.to)
+		if res.Error != nil {
+			log.Printf("[PLAN-RENAME] failed to rename %q to %q: %v", r.from, r.to, res.Error)
+			continue
+		}
+		if res.RowsAffected > 0 {
+			log.Printf("[PLAN-RENAME] renamed %q to %q (%d row)", r.from, r.to, res.RowsAffected)
+		}
+	}
+}
+
+// MarkDefaultFreePlan elects the single plan new signups are given.
+//
+// The election used to be "the plan named Trial", which is why naming the offer
+// needed this: FindFreePlan now reads the typed marker, and this is what puts it
+// on the right row in a database that predates the column.
+//
+// Runs after RenameLegacyPlans, so it matches the current name; falls back to
+// the legacy one for a database migrated out of order.
+func MarkDefaultFreePlan(db *gorm.DB) {
+	var marked int64
+	db.Model(&paymentModels.SubscriptionPlan{}).Where("is_default_free = ?", true).Count(&marked)
+	if marked == 1 {
+		return
+	}
+	if marked > 1 {
+		log.Printf("[FREE-PLAN] %d plans claim to be the default free plan; leaving them alone "+
+			"— pick one by hand, this routine will not choose for you", marked)
+		return
+	}
+
+	var plan paymentModels.SubscriptionPlan
+	err := db.Where("price_amount = 0 AND name IN ?",
+		[]string{paymentServices.FreePlanName, paymentServices.LegacyFreePlanName}).
+		Order("created_at ASC").First(&plan).Error
+	if err != nil {
+		// Nothing to elect yet: a fresh database gets its marker from the seed.
+		return
+	}
+	if err := db.Model(&plan).Update("is_default_free", true).Error; err != nil {
+		log.Printf("[FREE-PLAN] failed to mark %q as the default free plan: %v", plan.Name, err)
+		return
+	}
+	log.Printf("[FREE-PLAN] marked %q as the default free plan", plan.Name)
+}
+
+// EnsureFreePlanExists ensures the free default plan always exists in the database
 // and keeps its key fields in sync with the code-defined values.
-func EnsureTrialPlanExists(db *gorm.DB) {
-	// Clean up duplicate Trial plans (keep oldest, delete newer duplicates)
+func EnsureFreePlanExists(db *gorm.DB) {
+	// Clean up duplicate free plans (keep oldest, delete newer duplicates)
 	var duplicates []paymentModels.SubscriptionPlan
-	db.Where("name = ? AND price_amount = 0", "Trial").Order("created_at ASC").Find(&duplicates)
+	db.Where("name = ? AND price_amount = 0", paymentServices.FreePlanName).
+		Order("created_at ASC").Find(&duplicates)
 	if len(duplicates) > 1 {
 		for _, dup := range duplicates[1:] {
-			log.Printf("[TRIAL-PLAN] Removing duplicate Trial plan %s", dup.ID)
+			log.Printf("[FREE-PLAN] Removing duplicate free plan %s", dup.ID)
 			// Reassign any org subscriptions pointing to the duplicate
 			db.Model(&paymentModels.OrganizationSubscription{}).
 				Where("subscription_plan_id = ?", dup.ID).
@@ -427,9 +509,11 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 	// Use FirstOrCreate to atomically find or create the Trial plan, preventing TOCTOU race
 	// when two pods start simultaneously. Attrs are applied only on creation.
 	var existing paymentModels.SubscriptionPlan
-	result := db.Where("name = ? AND price_amount = 0", "Trial").Attrs(paymentModels.SubscriptionPlan{
-		Name:                        "Trial",
-		Description:                 "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
+	result := db.Where("name = ? AND price_amount = 0", paymentServices.FreePlanName).
+		Attrs(paymentModels.SubscriptionPlan{
+		Name:                        paymentServices.FreePlanName,
+		Description:                 "Découvrez la plateforme gratuitement : une machine XS éphémère, sessions d'une heure, sans accès réseau.",
+		IsDefaultFree:               true,
 		PriceAmount:                 0,
 		Currency:                    "eur",
 		BillingInterval:             "month",
@@ -449,12 +533,12 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		return
 	}
 	if result.RowsAffected > 0 {
-		log.Println("Created missing Trial plan")
+		log.Printf("Created missing %s plan", paymentServices.FreePlanName)
 	}
 
 	// Sync existing Trial plan fields to match code (handles drift on existing plans)
 	db.Model(&existing).Updates(map[string]interface{}{
-		"description":                    "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
+		"description":                    "Découvrez la plateforme gratuitement : une machine XS éphémère, sessions d'une heure, sans accès réseau.",
 		"max_session_duration_minutes":   60,
 		"max_cpu":                        500, // 1 × XS in mCPU (0.5 vCPU)
 		"max_memory_mb":                  256,
@@ -469,7 +553,7 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 // SetupDefaultSubscriptionPlans initializes default subscription plans
 func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 	// Always ensure Trial plan exists first
-	EnsureTrialPlanExists(db)
+	EnsureFreePlanExists(db)
 
 	// Vérifier si les other plans existent déjà
 	var count int64
@@ -478,59 +562,145 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		return // Paid plans déjà créés
 	}
 
-	// Plan Member Pro (Individual)
-	memberProPlan := &paymentModels.SubscriptionPlan{
-		Name:                        "Member Pro",
-		Description:                 "Accès à un terminal - Utilisateur individuel",
-		PriceAmount:                 1200, // 12€ per license
+	// Solo — the individual paid tier. 12€/month, XL ceiling, 8-hour sessions.
+	//
+	// Eight hours rather than the three this plan used to allow: a real training
+	// day is seven, and the short cap was a launch blocker rather than a policy.
+	soloPlan := &paymentModels.SubscriptionPlan{
+		Name:                        "Solo",
+		Description:                 "Pour apprendre et préparer ses supports : machines jusqu'à XL, sessions de 8 h, réseau et persistance.",
+		PriceAmount:                 1200, // 12€/mois
 		Currency:                    "eur",
 		BillingInterval:             "month",
+		Priority:                    20,
 		IsActive:                    true,
-		RequiredRole:                "member", // Changed from "member_pro" (deprecated) to "member"
+		IsCatalog:                   true,
+		RequiredRole:                "member",
 		UseTieredPricing:            false,
-		MaxSessionDurationMinutes:   180,
-		MaxCPU:                      6000, // 3 × M (2000 mCPU each)
-		MaxMemoryMB:                 3072, // 3 × M (1024 MiB each)
+		MaxSessionDurationMinutes:   480,
+		MaxCPU:                      6000, // XL ceiling
+		MaxMemoryMB:                 6144, // XL ceiling
 		NetworkAccessEnabled:        true,
 		DataPersistenceEnabled:      true,
 		DataPersistenceGB:           5,
 		CommandHistoryRetentionDays: 90,
 	}
 
-	// Plan Trainer (With Bulk Purchase & Tiered Pricing)
-	trainerPlan := &paymentModels.SubscriptionPlan{
-		Name:                        "Trainer Plan",
-		Description:                 "Pour formateurs - Achat en gros avec tarifs dégressifs",
-		PriceAmount:                 1200, // 12€ base price per license
+	// Formateur — the classroom plan. 39€/month flat.
+	//
+	// It carries NO per-licence ladder: learners are sold as their own seat
+	// products below. The old 12/10/8/6 ladder priced the same thing a second
+	// time, from a second row, in a shape (volume) the offer no longer uses.
+	formateurPlan := &paymentModels.SubscriptionPlan{
+		Name:                        "Formateur",
+		Description:                 "Pour animer des formations : mêmes machines que Solo, classes, supervision et achat de sièges apprenants.",
+		PriceAmount:                 3900, // 39€/mois
 		Currency:                    "eur",
 		BillingInterval:             "month",
+		Priority:                    40,
 		IsActive:                    true,
-		RequiredRole:                "trainer",
-		UseTieredPricing:            true,
+		IsCatalog:                   true,
+		RequiredRole:                "member",
+		UseTieredPricing:            false,
 		MaxSessionDurationMinutes:   480,
-		MaxCPU:                      40000, // 10 × XL (4000 mCPU each)
-		MaxMemoryMB:                 40960, // 10 × XL (4096 MiB each)
+		MaxCPU:                      6000,
+		MaxMemoryMB:                 6144,
 		NetworkAccessEnabled:        true,
 		DataPersistenceEnabled:      true,
-		GroupManagementEnabled:      true, // typed entitlement gates bulk purchase (was the legacy features[] "group_management" string)
 		DataPersistenceGB:           20,
+		GroupManagementEnabled:      true,
+		SessionSupervisionEnabled:   true,
 		CommandHistoryRetentionDays: 365,
+	}
+
+	// The two learner-seat products.
+	//
+	// Hidden (IsCatalog=false): a seat is bought BY a trainer FOR learners, never
+	// off the public pricing page. BulkPurchasable is what makes them sellable in
+	// bulk — deliberately separate from IsCatalog, so a seat can be sellable and
+	// unlisted at once, and from GroupManagementEnabled, which stays false here so
+	// that holding a seat never confers the right to buy more.
+	//
+	// Tiers are GRADUATED, not volume: under volume pricing an 11th seat made the
+	// whole order cheaper than 10, so the bill fell as the class grew. Each
+	// bracket must therefore stay contiguous with the previous one and strictly
+	// cheaper per unit.
+	seatMonthlyPlan := &paymentModels.SubscriptionPlan{
+		Name:                        "Siège élève — mensuel",
+		Description:                 "Un siège apprenant, facturé au mois. Tarif dégressif par paliers.",
+		PriceAmount:                 900, // 9€ — the first bracket, and the Stripe base price
+		Currency:                    "eur",
+		BillingInterval:             "month",
+		Priority:                    15,
+		IsActive:                    true,
+		IsCatalog:                   false,
+		RequiredRole:                "member",
+		BulkPurchasable:             true,
+		SeatUnit:                    paymentModels.SeatUnitSeatMonth,
+		UseTieredPricing:            true,
+		MaxSessionDurationMinutes:   480,
+		MaxCPU:                      2000, // one M machine per learner
+		MaxMemoryMB:                 2048,
+		NetworkAccessEnabled:        true,
+		DataPersistenceEnabled:      true,
+		DataPersistenceGB:           2, // learner seats get 2 GB of persistence
+		CommandHistoryRetentionDays: 90,
 		PricingTiers: []paymentModels.PricingTier{
-			{MinQuantity: 1, MaxQuantity: 5, UnitAmount: 1200, Description: "1-5 licences: 12€/licence"},
-			{MinQuantity: 6, MaxQuantity: 15, UnitAmount: 1000, Description: "6-15 licences: 10€/licence"},
-			{MinQuantity: 16, MaxQuantity: 30, UnitAmount: 800, Description: "16-30 licences: 8€/licence"},
-			{MinQuantity: 31, MaxQuantity: 0, UnitAmount: 600, Description: "31+ licences: 6€/licence (illimité)"},
+			{MinQuantity: 1, MaxQuantity: 10, UnitAmount: 900, Description: "1-10 sièges : 9€/siège/mois"},
+			{MinQuantity: 11, MaxQuantity: 30, UnitAmount: 700, Description: "11-30 sièges : 7€/siège/mois"},
+			{MinQuantity: 31, MaxQuantity: 0, UnitAmount: 550, Description: "31 sièges et plus : 5,50€/siège/mois"},
 		},
 	}
 
-	plans := []*paymentModels.SubscriptionPlan{memberProPlan, trainerPlan}
+	seatPackPlan := &paymentModels.SubscriptionPlan{
+		Name:                        "Siège élève — pack jours",
+		Description:                 "Un apprenant pour une journée, prépayé. La quantité est le nombre d'apprenants multiplié par le nombre de jours.",
+		PriceAmount:                 165, // 1,65€ per learner-day — the first bracket
+		Currency:                    "eur",
+		BillingInterval:             "month",
+		Priority:                    15,
+		IsActive:                    true,
+		IsCatalog:                   false,
+		RequiredRole:                "member",
+		BulkPurchasable:             true,
+		SeatUnit:                    paymentModels.SeatUnitLearnerDay,
+		UseTieredPricing:            true,
+		MaxSessionDurationMinutes:   480,
+		MaxCPU:                      2000,
+		MaxMemoryMB:                 2048,
+		NetworkAccessEnabled:        true,
+		DataPersistenceEnabled:      true,
+		DataPersistenceGB:           2,
+		CommandHistoryRetentionDays: 90,
+		PricingTiers: []paymentModels.PricingTier{
+			{MinQuantity: 1, MaxQuantity: 60, UnitAmount: 165, Description: "1-60 jours-apprenant : 1,65€"},
+			{MinQuantity: 61, MaxQuantity: 200, UnitAmount: 125, Description: "61-200 jours-apprenant : 1,25€"},
+			{MinQuantity: 201, MaxQuantity: 0, UnitAmount: 105, Description: "201 jours-apprenant et plus : 1,05€"},
+		},
+	}
+
+	plans := []*paymentModels.SubscriptionPlan{soloPlan, formateurPlan, seatMonthlyPlan, seatPackPlan}
 
 	for _, plan := range plans {
+		// Read the intent BEFORE Create: GORM omits zero-value bools on insert for
+		// a column declared `default:true`, then writes the applied default back
+		// into the struct — so after Create, a plan meant to be hidden reports
+		// IsCatalog=true and its own intent is gone. Same defect as #447 on the
+		// entity API.
+		wantsHiding := !plan.IsCatalog
+
 		if err := db.Create(plan).Error; err != nil {
 			log.Printf("Warning: Failed to create subscription plan %s: %v\n", plan.Name, err)
-		} else {
-			log.Printf("Created subscription plan: %s\n", plan.Name)
+			continue
 		}
+		// Writing it back explicitly is the documented workaround; Select("*") on
+		// Create does not work despite older comments saying so.
+		if wantsHiding {
+			if err := db.Model(plan).Update("is_catalog", false).Error; err != nil {
+				log.Printf("Warning: Failed to hide plan %s from the catalogue: %v\n", plan.Name, err)
+			}
+		}
+		log.Printf("Created subscription plan: %s\n", plan.Name)
 	}
 }
 

@@ -70,6 +70,11 @@ func TestSweep_CancelsTeamOrgTrial(t *testing.T) {
 	trial := seedPlan(t, db, "Trial", 0)
 	org := seedOrgWithSubscription(t, db, organizationModels.OrgTypeTeam, trial)
 
+	// The startup sequence: the legacy free plan is renamed and elected before
+	// anything looks it up. The sweep resolves the free plan through that
+	// election, so skipping these would test an arrangement production never has.
+	initialization.RenameLegacyPlans(db)
+	initialization.MarkDefaultFreePlan(db)
 	initialization.SweepAutoAssignedOrgTrials(db)
 
 	assert.Equal(t, "cancelled", subscriptionStatus(t, db, org.ID),
@@ -86,6 +91,8 @@ func TestSweep_LeavesBespokeOrgPlansAlone(t *testing.T) {
 	bespoke := seedPlan(t, db, "École / OF", 49900)
 	org := seedOrgWithSubscription(t, db, organizationModels.OrgTypeTeam, bespoke)
 
+	initialization.RenameLegacyPlans(db)
+	initialization.MarkDefaultFreePlan(db)
 	initialization.SweepAutoAssignedOrgTrials(db)
 
 	assert.Equal(t, "active", subscriptionStatus(t, db, org.ID))
@@ -100,6 +107,11 @@ func TestSweep_IsIdempotent(t *testing.T) {
 	trial := seedPlan(t, db, "Trial", 0)
 	org := seedOrgWithSubscription(t, db, organizationModels.OrgTypeTeam, trial)
 
+	// The startup sequence: the legacy free plan is renamed and elected before
+	// anything looks it up. The sweep resolves the free plan through that
+	// election, so skipping these would test an arrangement production never has.
+	initialization.RenameLegacyPlans(db)
+	initialization.MarkDefaultFreePlan(db)
 	initialization.SweepAutoAssignedOrgTrials(db)
 	var first models.OrganizationSubscription
 	require.NoError(t, db.Where("organization_id = ?", org.ID).First(&first).Error)

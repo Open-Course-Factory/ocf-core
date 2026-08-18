@@ -1,19 +1,20 @@
 // tests/payment/trialPlanSync_test.go
-// Tests that EnsureTrialPlanExists resets all Trial plan fields on every startup,
+// Tests that EnsureFreePlanExists resets all Trial plan fields on every startup,
 // not just the subset originally included in the sync block.
 package payment_tests
 
 import (
 	"testing"
 
-	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/initialization"
+	paymentModels "soli/formations/src/payment/models"
+	"soli/formations/src/payment/services"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestTrialPlanSync_AllFieldsReset verifies that EnsureTrialPlanExists resets
+// TestTrialPlanSync_AllFieldsReset verifies that EnsureFreePlanExists resets
 // every governed field — including DataPersistenceEnabled, DataPersistenceGB,
 // NetworkAccessEnabled, and IsActive — even when they have been manually altered
 // in the database.
@@ -22,7 +23,7 @@ func TestTrialPlanSync_AllFieldsReset(t *testing.T) {
 
 	// Seed a Trial plan whose fields have drifted from the expected defaults.
 	driftedPlan := paymentModels.SubscriptionPlan{
-		Name:                        "Trial",
+		Name:                        services.FreePlanName,
 		Description:                 "Tampered description",
 		PriceAmount:                 0,
 		Currency:                    "eur",
@@ -37,14 +38,14 @@ func TestTrialPlanSync_AllFieldsReset(t *testing.T) {
 	require.NoError(t, db.Create(&driftedPlan).Error, "failed to seed drifted Trial plan")
 
 	// Act: run the sync function (the code-under-test path for an existing plan).
-	initialization.EnsureTrialPlanExists(db)
+	initialization.EnsureFreePlanExists(db)
 
 	// Reload from DB.
 	var synced paymentModels.SubscriptionPlan
-	require.NoError(t, db.Where("name = ? AND price_amount = 0", "Trial").First(&synced).Error)
+	require.NoError(t, db.Where("name = ? AND price_amount = 0", services.FreePlanName).First(&synced).Error)
 
 	// Fields that were already synced before this fix:
-	assert.Equal(t, "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.", synced.Description)
+	assert.Equal(t, "Découvrez la plateforme gratuitement : une machine XS éphémère, sessions d'une heure, sans accès réseau.", synced.Description)
 	assert.Equal(t, 60, synced.MaxSessionDurationMinutes)
 	assert.Equal(t, false, synced.NetworkAccessEnabled)
 	assert.Equal(t, 7, synced.CommandHistoryRetentionDays)

@@ -45,6 +45,17 @@ type SubscriptionPlan struct {
 	SessionSupervisionEnabled  bool     `gorm:"default:false" json:"session_supervision_enabled"` // Allow trainers (group manager+) to live-supervise a learner's terminal and take the hand
 	GroupManagementEnabled     bool     `gorm:"default:false" json:"group_management_enabled" mapstructure:"group_management_enabled"` // Typed entitlement: plan grants group management (replaces the legacy features[] "group_management" string)
 
+	// IsDefaultFree marks the ONE plan new signups are given automatically.
+	//
+	// It exists because that plan used to be selected by its name, "Trial" — so
+	// giving it the customer-facing name the offer actually uses would have broken
+	// signup auto-assignment and then silently spawned a duplicate free plan, the
+	// seed recreating what the lookup could no longer find. A commercial name is
+	// not an identifier: it changes when marketing changes.
+	//
+	// Exactly one row carries it; MarkDefaultFreePlan enforces that at startup.
+	IsDefaultFree bool `gorm:"default:false" json:"is_default_free" mapstructure:"is_default_free"`
+
 	// BulkPurchasable marks a plan as sellable in bulk — i.e. it is a seat
 	// product a trainer buys on behalf of learners.
 	//
