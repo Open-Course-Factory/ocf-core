@@ -63,7 +63,11 @@ func TestSeed_PublicCatalogueMatchesTheDecidedOffer(t *testing.T) {
 	assert.False(t, solo.GroupManagementEnabled, "Solo runs no classrooms")
 
 	formateur := seededPlan(t, db, "Formateur")
-	assert.EqualValues(t, 3900, formateur.PriceAmount, "Formateur is 39€/month")
+	// 19,90 € and not the 39 € of the April offer: that 39 € priced a pay-per-session
+	// credit (3 days × 12 learners). July made Formateur a flat monthly base and moved
+	// learners out into their own seat products, so the base price followed. Confirmed
+	// against the configured Stripe sandbox on 2026-08-18.
+	assert.EqualValues(t, 1990, formateur.PriceAmount, "Formateur is 19,90€/month")
 	assert.True(t, formateur.IsCatalog)
 	assert.Equal(t, 480, formateur.MaxSessionDurationMinutes)
 	assert.True(t, formateur.GroupManagementEnabled, "Formateur is the classroom plan")

@@ -39,7 +39,7 @@
   {
     "name": "Formateur",
     "description": "Pour animer des formations : mêmes machines que Solo, classes, supervision et achat de sièges apprenants.",
-    "price_amount": 3900,
+    "price_amount": 1990,
     "currency": "eur",
     "billing_interval": "month",
     "priority": 40,
@@ -77,9 +77,24 @@
     "command_history_retention_days": 90,
     "use_tiered_pricing": true,
     "pricing_tiers": [
-      { "min_quantity": 1, "max_quantity": 10, "unit_amount": 900, "description": "1-10 sièges : 9€/siège/mois" },
-      { "min_quantity": 11, "max_quantity": 30, "unit_amount": 700, "description": "11-30 sièges : 7€/siège/mois" },
-      { "min_quantity": 31, "max_quantity": 0, "unit_amount": 550, "description": "31 sièges et plus : 5,50€/siège/mois" }
+      {
+        "min_quantity": 1,
+        "max_quantity": 5,
+        "unit_amount": 900,
+        "description": "1-5 sièges : 9€/siège/mois"
+      },
+      {
+        "min_quantity": 6,
+        "max_quantity": 15,
+        "unit_amount": 700,
+        "description": "6-15 sièges : 7€/siège/mois"
+      },
+      {
+        "min_quantity": 16,
+        "max_quantity": 0,
+        "unit_amount": 550,
+        "description": "16 sièges et plus : 5,50€/siège/mois"
+      }
     ]
   },
   {
@@ -103,9 +118,24 @@
     "command_history_retention_days": 90,
     "use_tiered_pricing": true,
     "pricing_tiers": [
-      { "min_quantity": 1, "max_quantity": 60, "unit_amount": 165, "description": "1-60 jours-apprenant : 1,65€" },
-      { "min_quantity": 61, "max_quantity": 200, "unit_amount": 125, "description": "61-200 jours-apprenant : 1,25€" },
-      { "min_quantity": 201, "max_quantity": 0, "unit_amount": 105, "description": "201 jours-apprenant et plus : 1,05€" }
+      {
+        "min_quantity": 1,
+        "max_quantity": 30,
+        "unit_amount": 165,
+        "description": "1-30 jours-apprenant : 1,65€"
+      },
+      {
+        "min_quantity": 31,
+        "max_quantity": 60,
+        "unit_amount": 125,
+        "description": "31-60 jours-apprenant : 1,25€"
+      },
+      {
+        "min_quantity": 61,
+        "max_quantity": 0,
+        "unit_amount": 105,
+        "description": "61 jours-apprenant et plus : 1,05€"
+      }
     ]
   }
 ]
