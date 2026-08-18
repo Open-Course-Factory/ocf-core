@@ -258,21 +258,6 @@ func (oss *organizationSubscriptionService) syncOrgPlanPointer(orgID uuid.UUID) 
 	}
 }
 
-// planDidLoad reports whether a plan association actually resolved.
-//
-// GORM's Preload honours soft deletes, so a subscription pointing at a deleted
-// plan keeps the zero-value struct rather than failing. Treating that as a plan
-// is how {"name": "", "id": "00000000-..."} reached the frontend and greyed out
-// every gated feature (#451). The ID is the test, not the amount — a 0 EUR plan
-// is a real plan.
-//
-// One predicate, used everywhere a plan association is consumed here: applying
-// it in only some of them is what let the zero value back in through the
-// personal-plan path after it had been shut out of the organization one.
-func planDidLoad(p *models.SubscriptionPlan) bool {
-	return p != nil && p.ID != uuid.Nil
-}
-
 // GetOrganizationFeatures returns the plan that actually applies inside an
 // organization for a given member.
 //

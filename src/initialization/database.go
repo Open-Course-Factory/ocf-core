@@ -269,6 +269,16 @@ func AutoMigrateAll(db *gorm.DB) {
 	// stay locked out of the classroom features they paid for until this runs.
 	SweepAutoAssignedOrgTrials(db)
 
+	// Report subscriptions whose plan no longer exists. Resolution now refuses
+	// them (#481), which protects the platform but shows the user a missing
+	// entitlement and the operator nothing — this names the rows to repair.
+	if report := paymentServices.ReportDanglingPlanReferences(db); report.Any() {
+		log.Printf("[PLAN-REFERENCES] dangling plan references found — these subscriptions "+
+			"cannot resolve and grant nothing until repaired: %d user subscription(s), "+
+			"%d organization subscription(s), %d organization role plan(s)",
+			report.UserSubscriptions, report.OrganizationSubscriptions, report.OrganizationRolePlans)
+	}
+
 	// Drop the orphan subscription_plans columns whose Go fields were removed.
 	// This runs LAST and subsumes the standalone group-management backfill: it
 	// performs a FINAL backfill pass reading the raw `features` column, THEN drops
