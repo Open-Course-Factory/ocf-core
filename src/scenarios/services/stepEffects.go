@@ -88,9 +88,9 @@ func newStepBanner(effect, text string) (stepBanner, bool) {
 	return stepBanner{Effect: effect, Text: text}, true
 }
 
-// scenarioUsesEffects reports whether any step in the scenario configures a
+// ScenarioUsesEffects reports whether any step in the scenario configures a
 // banner, which is what decides that the container needs tte at all.
-func scenarioUsesEffects(scenario *models.Scenario) bool {
+func ScenarioUsesEffects(scenario *models.Scenario) bool {
 	for i := range scenario.Steps {
 		if _, ok := introBanner(&scenario.Steps[i]); ok {
 			return true
@@ -220,7 +220,7 @@ func (s *ScenarioSessionService) execBestEffort(terminalSessionID string, sessio
 // not happened the effects simply never appear, and without this the trainer
 // and the operator both have nothing to go on.
 func (s *ScenarioSessionService) warnIfEffectsUnsupported(terminalSessionID string, scenario *models.Scenario, sessionID uuid.UUID) {
-	if s.verificationService == nil || !scenarioUsesEffects(scenario) {
+	if s.verificationService == nil || !ScenarioUsesEffects(scenario) {
 		return
 	}
 

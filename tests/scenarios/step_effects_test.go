@@ -329,3 +329,29 @@ func TestStepBanners_BannerFailureNeverFailsTheAdvance(t *testing.T) {
 type assertAnError struct{}
 
 func (assertAnError) Error() string { return "container unreachable" }
+
+// A scenario that configures a banner must arrive on a machine able to draw it,
+// whatever image it resolved to. Before the effects feature existed this was a
+// property of the image, so a scenario ran its animations only where somebody
+// had remembered to bake the renderer in — and where they had not, the banner
+// silently printed as plain text.
+func TestScenarioUsesEffects_DetectsEitherBanner(t *testing.T) {
+	cases := []struct {
+		name string
+		step models.ScenarioStep
+		want bool
+	}{
+		{"intro configured", models.ScenarioStep{IntroEffect: "beams", IntroText: "Niveau 2"}, true},
+		{"outro configured", models.ScenarioStep{OutroEffect: "decrypt", OutroText: "Niveau 1 terminé"}, true},
+		{"effect without text", models.ScenarioStep{IntroEffect: "beams"}, false},
+		{"text without effect", models.ScenarioStep{IntroText: "Niveau 2"}, false},
+		{"nothing configured", models.ScenarioStep{}, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			scenario := models.Scenario{Steps: []models.ScenarioStep{tc.step}}
+			assert.Equal(t, tc.want, services.ScenarioUsesEffects(&scenario))
+		})
+	}
+}

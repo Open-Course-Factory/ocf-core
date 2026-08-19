@@ -961,7 +961,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	composedInput := terminalDto.CreateComposedSessionInput{
 		Distribution:     distName,
 		Size:             size,
-		Features:         features,
+		Features:         withEffectsFeature(features, scenario),
 		BuildFeatures:    scenarioBuildFeatures(scenario),
 		Terms:            terms,
 		Name:             fmt.Sprintf("scenario-%s", scenario.Title),
@@ -1237,7 +1237,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	composedInput := terminalDto.CreateComposedSessionInput{
 		Distribution:     distName,
 		Size:             size,
-		Features:         features,
+		Features:         withEffectsFeature(features, scenario),
 		BuildFeatures:    scenarioBuildFeatures(scenario),
 		Terms:            terms,
 		Name:             fmt.Sprintf("preview-%s", scenario.Title),
@@ -1286,3 +1286,29 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 		ProvisioningPhase: session.ProvisioningPhase,
 	})
 }
+
+// withEffectsFeature asks the platform for the banner renderer whenever the
+// scenario configures a banner.
+//
+// Effects used to be a property of whichever image the scenario happened to
+// resolve to: animations worked if somebody had baked the renderer into that
+// image, and when they had not the banner degraded to plain text with nothing
+// reported anywhere. Requesting the capability here makes the machine follow
+// the content — a trainer fills in the intro and outro fields and the session
+// arrives able to draw them, on any distribution.
+//
+// The feature is always-available on the tt-backend side precisely so this does
+// not reintroduce a per-image list somebody has to maintain.
+func withEffectsFeature(features map[string]bool, scenario models.Scenario) map[string]bool {
+	if !services.ScenarioUsesEffects(&scenario) {
+		return features
+	}
+	if features == nil {
+		features = map[string]bool{}
+	}
+	features[effectsFeatureKey] = true
+	return features
+}
+
+// effectsFeatureKey is tt-backend's catalog key for the banner renderer.
+const effectsFeatureKey = "effects"
