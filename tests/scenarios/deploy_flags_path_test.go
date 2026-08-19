@@ -33,10 +33,12 @@ func (c *capturingVerificationService) PushFile(sessionID string, targetPath str
 	return nil
 }
 
+func (c *capturingVerificationService) WriteToConsole(sessionID string, text string) error {
+	return nil
+}
 func (c *capturingVerificationService) ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (int, string, string, error) {
 	return 0, "", "", nil
 }
-
 
 func TestDeployFlags_WorldPathPreserved(t *testing.T) {
 	db := setupTestDB(t)

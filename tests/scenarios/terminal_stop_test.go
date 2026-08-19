@@ -44,7 +44,9 @@ func (t *terminalStopTracker) CalledWith() []string {
 }
 
 // waitForSessionStatus polls the DB until the session reaches a target status or times out
-func waitForSessionStatus(t *testing.T, db interface{ First(dest interface{}, conds ...interface{}) interface{ Error() error } }, sessionID interface{}, targetStatuses []string, timeout time.Duration) string {
+func waitForSessionStatus(t *testing.T, db interface {
+	First(dest interface{}, conds ...interface{}) interface{ Error() error }
+}, sessionID interface{}, targetStatuses []string, timeout time.Duration) string {
 	t.Helper()
 	// This is a simplified helper — we use raw GORM since it's what the tests use
 	return "" // placeholder
@@ -171,6 +173,10 @@ func (p *panickingVerificationService) PushFile(sessionID string, targetPath str
 	return nil
 }
 
+// No console in these tests; the foreground path is exercised elsewhere.
+func (p *panickingVerificationService) WriteToConsole(sessionID string, text string) error {
+	return nil
+}
 func (p *panickingVerificationService) ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (int, string, string, error) {
 	panic("simulated nil-deref inside ExecInContainer")
 }
@@ -178,7 +184,7 @@ func (p *panickingVerificationService) ExecInContainer(sessionID string, command
 // TestRunStep0Setup_RecoversFromPanic_TransitionsToSetupFailed locks the
 // contract that runStep0Setup MUST recover from any panic in its body so
 // the ocf-core process does not crash. After recovery the session row must
-// be marked status='setup_failed' with provisioning_phase='' and the linked
+// be marked status='setup_failed' with provisioning_phase=” and the linked
 // terminal must be stopped via the configured TerminalStopFunc.
 //
 // Without `defer recover()` at the top of runStep0Setup, the goroutine

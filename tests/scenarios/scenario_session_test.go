@@ -68,6 +68,9 @@ func (m *mockVerificationService) PushFile(sessionID string, targetPath string, 
 	return nil
 }
 
+func (m *mockVerificationService) WriteToConsole(sessionID string, text string) error {
+	return nil
+}
 func (m *mockVerificationService) ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (int, string, string, error) {
 	m.execCalls = append(m.execCalls, execCall{sessionID, command, env, timeout})
 	if m.execErr != nil {
@@ -75,7 +78,6 @@ func (m *mockVerificationService) ExecInContainer(sessionID string, command []st
 	}
 	return 0, "", "", nil
 }
-
 
 func TestScenarioSessionService_StartScenario(t *testing.T) {
 	db := setupTestDB(t)
@@ -543,7 +545,7 @@ func TestScenarioSessionService_ConcurrentStartNoDuplicates(t *testing.T) {
 		terminal := terminalModels.Terminal{
 			SessionID:         fmt.Sprintf("terminal-%d", i),
 			UserID:            "student-concurrent",
-			State:            "running",
+			State:             "running",
 			ExpiresAt:         time.Now().Add(1 * time.Hour),
 			InstanceType:      "ubuntu:22.04",
 			UserTerminalKeyID: utk.ID,

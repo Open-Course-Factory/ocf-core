@@ -30,6 +30,10 @@ type FlagServiceInterface interface {
 type VerificationServiceInterface interface {
 	VerifyStep(terminalSessionID string, step *models.ScenarioStep) (passed bool, output string, err error)
 	PushFile(sessionID string, targetPath string, content string, mode string) error
+	// WriteToConsole types text into the learner's live shell. Distinct from
+	// ExecInContainer: that runs in a separate process, this runs in the shell
+	// the learner is watching, which is what a foreground script requires.
+	WriteToConsole(sessionID string, text string) error
 	ExecInContainer(sessionID string, command []string, env map[string]string, timeout int) (exitCode int, stdout string, stderr string, err error)
 }
 
@@ -599,7 +603,12 @@ func (s *ScenarioSessionService) provisionNextStep(session *models.ScenarioSessi
 
 	hasScript := ResolveScriptContent(s.db, step.BackgroundScriptID, step.BackgroundScript) != ""
 	hasFlag := findFlagByStepOrder(session.Flags, nextStepOrder) != nil
-	if !hasScript && !hasFlag {
+	// The foreground script counts as work too. Leaving it out of this check
+	// meant a step that declared only a foreground script fell out here and was
+	// never run at all — the one shape where it is the entire content of the
+	// step.
+	hasForeground := ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript) != ""
+	if !hasScript && !hasFlag && !hasForeground {
 		return dto.StepProvisioningStatus{}
 	}
 
@@ -721,6 +730,8 @@ func (s *ScenarioSessionService) adoptScriptChosenAnswer(stdout string, flags []
 // step's flag. The flag is deployed even when the script failed: the advance is
 // already committed, and a learner facing a half-provisioned level is better
 // served by having the flag in place than by having nothing.
+//
+// The foreground script runs last, after the environment it acts on exists.
 func (s *ScenarioSessionService) runStepProvisioning(terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, step *models.ScenarioStep) error {
 	stdout, scriptErr := s.executeBackgroundScript(terminalSessionID, step, stepProvisioningEnv(scenario, flags, step.Order))
 	s.adoptScriptChosenAnswer(stdout, flags, step)
@@ -728,9 +739,49 @@ func (s *ScenarioSessionService) runStepProvisioning(terminalSessionID string, s
 	if scriptErr != nil {
 		return scriptErr
 	}
-	// A flag that never landed leaves the step unsolvable just as surely as a
-	// failed script, so it counts as a provisioning failure too.
-	return flagErr
+	if flagErr != nil {
+		// A flag that never landed leaves the step unsolvable just as surely as
+		// a failed script, so it counts as a provisioning failure too.
+		return flagErr
+	}
+	s.runForegroundScript(terminalSessionID, step)
+	return nil
+}
+
+// runForegroundScript types a step's foreground script into the learner's own
+// shell, which is what distinguishes it from the background script: it runs
+// where the learner is looking, in their session, so they see it happen and its
+// effects on the shell — a cd, an export, a function — persist for them.
+//
+// Best-effort by design, and the only path here that is. A foreground script is
+// a demonstration: KillerCoda scenarios use it to show a command rather than to
+// build the level, and the level itself is already provisioned by the time this
+// runs. Failing the advance over a demonstration would cost the learner a step
+// they had legitimately earned.
+//
+// The commonest reason it does nothing is that no console is attached — the
+// learner has not opened their terminal, or has closed it. That is not a fault,
+// and it is logged at info rather than as an error so it does not read as one
+// in an operator's logs.
+func (s *ScenarioSessionService) runForegroundScript(terminalSessionID string, step *models.ScenarioStep) {
+	if s.verificationService == nil {
+		return
+	}
+
+	script := ResolveScriptContent(s.db, step.ForegroundScriptID, step.ForegroundScript)
+	if script == "" {
+		return
+	}
+
+	err := s.verificationService.WriteToConsole(terminalSessionID, script)
+	switch {
+	case err == nil:
+		slog.Info("foreground script sent to console", "step_order", step.Order)
+	case errors.Is(err, ErrNoLiveConsole):
+		slog.Info("skipping foreground script: no console attached", "step_order", step.Order)
+	default:
+		slog.Warn("failed to send foreground script to console", "step_order", step.Order, "err", err)
+	}
 }
 
 // startAsyncStepProvisioning moves the session to "provisioning" and runs the
@@ -999,17 +1050,17 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 
 	position, stepOrders := stepPositionInfo(session.Scenario.Steps, currentStep.Order)
 	response := &dto.CurrentStepResponse{
-		StepOrder:   currentStep.Order,
-		Position:    position,
-		StepOrders:  stepOrders,
-		TotalSteps:  len(session.Scenario.Steps),
-		Title:       currentStep.Title,
-		Text:        textContent,
-		Hint:        hintContent,
-		Status:      stepStatus,
-		HasFlag:     currentStep.HasFlag,
-		StepType:    normalizeStepType(currentStep.StepType),
-		TextContent: textContent,
+		StepOrder:             currentStep.Order,
+		Position:              position,
+		StepOrders:            stepOrders,
+		TotalSteps:            len(session.Scenario.Steps),
+		Title:                 currentStep.Title,
+		Text:                  textContent,
+		Hint:                  hintContent,
+		Status:                stepStatus,
+		HasFlag:               currentStep.HasFlag,
+		StepType:              normalizeStepType(currentStep.StepType),
+		TextContent:           textContent,
 		ShowImmediateFeedback: currentStep.ShowImmediateFeedback,
 	}
 
@@ -1138,17 +1189,17 @@ func (s *ScenarioSessionService) GetStepByOrder(sessionID uuid.UUID, stepOrder i
 
 	position, stepOrders := stepPositionInfo(session.Scenario.Steps, targetStep.Order)
 	response := &dto.CurrentStepResponse{
-		StepOrder:   targetStep.Order,
-		Position:    position,
-		StepOrders:  stepOrders,
-		TotalSteps:  len(session.Scenario.Steps),
-		Title:       targetStep.Title,
-		Text:        textContent,
-		Hint:        hintContent,
-		Status:      stepStatus,
-		HasFlag:     targetStep.HasFlag,
-		StepType:    normalizeStepType(targetStep.StepType),
-		TextContent: textContent,
+		StepOrder:             targetStep.Order,
+		Position:              position,
+		StepOrders:            stepOrders,
+		TotalSteps:            len(session.Scenario.Steps),
+		Title:                 targetStep.Title,
+		Text:                  textContent,
+		Hint:                  hintContent,
+		Status:                stepStatus,
+		HasFlag:               targetStep.HasFlag,
+		StepType:              normalizeStepType(targetStep.StepType),
+		TextContent:           textContent,
 		ShowImmediateFeedback: targetStep.ShowImmediateFeedback,
 	}
 
