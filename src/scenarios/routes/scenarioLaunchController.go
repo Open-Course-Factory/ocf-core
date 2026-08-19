@@ -672,9 +672,9 @@ func resolveDistribution(scenario models.Scenario, distributions []terminalDto.T
 					if resolvedSize == "" {
 						resolvedSize = dist.DefaultSizeKey
 					}
-					featuresMap, featMapErr := scenario.GetFeaturesMap()
+					featuresMap, featMapErr := scenarioFeatures(scenario)
 					if featMapErr != nil {
-						return "", "", nil, fmt.Errorf("invalid scenario configuration: %w", featMapErr)
+						return "", "", nil, featMapErr
 					}
 					return dist.Name, applySizeFallback(scenario, resolvedSize, dist, sizes), featuresMap, nil
 				}
@@ -718,9 +718,9 @@ func resolveDistribution(scenario models.Scenario, distributions []terminalDto.T
 		if size == "" && dist.DefaultSizeKey != "" {
 			size = dist.DefaultSizeKey
 		}
-		featuresMap, featMapErr := scenario.GetFeaturesMap()
+		featuresMap, featMapErr := scenarioFeatures(scenario)
 		if featMapErr != nil {
-			return "", "", nil, fmt.Errorf("invalid scenario configuration: %w", featMapErr)
+			return "", "", nil, featMapErr
 		}
 		return dist.Name, applySizeFallback(scenario, size, dist, sizes), featuresMap, nil
 	}
@@ -961,7 +961,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	composedInput := terminalDto.CreateComposedSessionInput{
 		Distribution:     distName,
 		Size:             size,
-		Features:         withEffectsFeature(features, scenario),
+		Features:         features,
 		BuildFeatures:    scenarioBuildFeatures(scenario),
 		Terms:            terms,
 		Name:             fmt.Sprintf("scenario-%s", scenario.Title),
@@ -1237,7 +1237,7 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	composedInput := terminalDto.CreateComposedSessionInput{
 		Distribution:     distName,
 		Size:             size,
-		Features:         withEffectsFeature(features, scenario),
+		Features:         features,
 		BuildFeatures:    scenarioBuildFeatures(scenario),
 		Terms:            terms,
 		Name:             fmt.Sprintf("preview-%s", scenario.Title),
@@ -1287,27 +1287,32 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 	})
 }
 
-// withEffectsFeature asks the platform for the banner renderer whenever the
-// scenario configures a banner.
+// scenarioFeatures is everything the scenario's machine has to provide: the
+// features the scenario declares, plus the renderer that a configured banner
+// cannot be drawn without.
 //
-// Effects used to be a property of whichever image the scenario happened to
-// resolve to: animations worked if somebody had baked the renderer into that
-// image, and when they had not the banner degraded to plain text with nothing
-// reported anywhere. Requesting the capability here makes the machine follow
-// the content — a trainer fills in the intro and outro fields and the session
-// arrives able to draw them, on any distribution.
+// The renderer is derived rather than declared — a trainer fills in an intro
+// and an outro, not a capability list — and it is derived here, where the
+// feature set is built, so that every caller gets the complete answer. Adding
+// it at the call sites instead meant each one had to remember, and the launch
+// and the preview are not the only two places that resolve a scenario.
 //
-// The feature is always-available on the tt-backend side precisely so this does
-// not reintroduce a per-image list somebody has to maintain.
-func withEffectsFeature(features map[string]bool, scenario models.Scenario) map[string]bool {
+// Before this, whether a banner animated depended on the image the scenario
+// happened to land on: it worked where somebody had baked a renderer in, and
+// printed plain text with no explanation anywhere else.
+func scenarioFeatures(scenario models.Scenario) (map[string]bool, error) {
+	features, err := scenario.GetFeaturesMap()
+	if err != nil {
+		return nil, fmt.Errorf("invalid scenario configuration: %w", err)
+	}
 	if !services.ScenarioUsesEffects(&scenario) {
-		return features
+		return features, nil
 	}
 	if features == nil {
 		features = map[string]bool{}
 	}
 	features[effectsFeatureKey] = true
-	return features
+	return features, nil
 }
 
 // effectsFeatureKey is tt-backend's catalog key for the banner renderer.
