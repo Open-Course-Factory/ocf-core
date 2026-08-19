@@ -3541,6 +3541,8 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 //   - if the local price drifted from the current Stripe price, a new price is
 //     created, the plan is repointed, and the old price is archived     -> PriceMigrated
 //   - free plans (IsFree) are skipped — they are intentionally decoupled from Stripe
+//   - an inactive plan that is not yet on Stripe is skipped — a retired offer is
+//     not published; one already on Stripe keeps syncing so its withdrawal does
 //
 // Mirror mode (Mirror:true) additionally archives active Stripe products whose
 // plan_id metadata matches no live local plan — but ONLY when ownership is
@@ -3574,6 +3576,20 @@ func (ss *stripeService) SyncPlansToStripe(opts SyncToStripeOptions) (*StripeSyn
 
 		// Free plans (e.g. Trial) are intentionally decoupled from Stripe.
 		if plan.IsFree() {
+			continue
+		}
+
+		// An inactive plan is not on sale, so it has no business being published
+		// to the payment processor: a retired offer would sit in the Dashboard as
+		// an active product forever, and appear in reports of things customers
+		// can buy.
+		//
+		// Only the CREATE path is skipped. A plan that is already on Stripe keeps
+		// syncing, because that is how deactivation reaches Stripe at all —
+		// UpdateSubscriptionPlanInStripe pushes the active flag, so cutting those
+		// runs would strand a withdrawn plan as purchasable.
+		if !plan.IsActive && plan.StripePriceID == nil {
+			result.Skipped = append(result.Skipped, fmt.Sprintf("%s: inactive, not published", label))
 			continue
 		}
 
