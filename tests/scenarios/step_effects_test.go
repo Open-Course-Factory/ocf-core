@@ -84,8 +84,36 @@ func TestStepBanners_AdvanceDrawsOutroThenIntro(t *testing.T) {
 
 	// Order matters to the learner: the level they finished is acknowledged
 	// before the next one announces itself.
-	assert.Equal(t, []string{ocfBanner, "decrypt", "Niveau 1 terminé"}, calls[0])
-	assert.Equal(t, []string{ocfBanner, "beams", "Niveau 2 débloqué"}, calls[1])
+	//
+	// The outro holds the alternate screen and the intro resumes it, so the two
+	// banners bracket one uninterrupted screen instead of each restoring the
+	// learner's shell on the way out. Without the pairing the prompt flashes
+	// back between them and the learner waits out the provisioning in front of
+	// a terminal the next level has not been built for.
+	assert.Equal(t, []string{ocfBanner, "--hold", "decrypt", "Niveau 1 terminé"}, calls[0])
+	assert.Equal(t, []string{ocfBanner, "--resume", "beams", "Niveau 2 débloqué"}, calls[1])
+}
+
+// The hold is a promise that something will replace the screen. An outro with no
+// intro after it must not make that promise, or the learner is left waiting in
+// front of a screen nothing is coming to fill.
+func TestStepBanners_OutroWithoutAnIntroDoesNotHoldTheScreen(t *testing.T) {
+	db := setupTestDB(t)
+	session := effectsSession(t, db, "banners-outro-only",
+		models.ScenarioStep{OutroEffect: "decrypt", OutroText: "Niveau 1 terminé"},
+		models.ScenarioStep{}, // the next level announces nothing
+	)
+
+	verifySvc := &bgTrackingVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	_, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err)
+
+	calls := bannerCalls(verifySvc)
+	require.Len(t, calls, 1)
+	assert.Equal(t, []string{ocfBanner, "decrypt", "Niveau 1 terminé"}, calls[0],
+		"nothing follows this banner, so it must restore the terminal itself")
 }
 
 func TestStepBanners_EffectWithoutTextDrawsNothing(t *testing.T) {
@@ -147,8 +175,12 @@ func TestStepBanners_TextIsNeverInterpretedAsShell(t *testing.T) {
 
 	// The whole hostile string arrives as ONE argument, unmodified and
 	// unsplit — it is data handed to ocf-banner, never a fragment of a command.
-	require.Len(t, calls[0], 3, "exactly interpreter-free argv: helper, effect, text")
-	assert.Equal(t, hostile, calls[0][2])
+	// Asserted by position from the end rather than by a fixed argv length: the
+	// text is always the last argument, and pinning the length instead would
+	// turn any new flag into a spurious security failure while proving nothing
+	// more.
+	assert.Equal(t, hostile, calls[0][len(calls[0])-1])
+	assert.Equal(t, ocfBanner, calls[0][0])
 
 	// And no shell is involved anywhere in the invocation.
 	for _, arg := range calls[0] {

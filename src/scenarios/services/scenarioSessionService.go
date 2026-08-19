@@ -827,6 +827,9 @@ func (s *ScenarioSessionService) runAsyncStepProvisioning(sessionID uuid.UUID, t
 		observability.Metrics.ScenarioStepProvisioningFailed.Add(1)
 		slog.Error("step provisioning failed", "session_id", sessionID, "step_order", step.Order, "err", err)
 		s.failStepProvisioning(sessionID)
+		if _, hasIntro := introBanner(step); hasIntro {
+			s.releaseHeldScreen(&terminalSessionID)
+		}
 		return
 	}
 
@@ -845,6 +848,14 @@ func (s *ScenarioSessionService) runAsyncStepProvisioning(sessionID uuid.UUID, t
 		return
 	}
 	slog.Info("step provisioning complete", "session_id", sessionID, "step_order", step.Order)
+
+	// The intro is drawn here rather than when provisioning was handed off, so
+	// it announces a level that actually exists — and so the transition screen
+	// the outro held stays up for the whole wait instead of being taken down at
+	// the moment the wait begins.
+	if banner, ok := introBanner(step); ok {
+		s.drawBanner(terminalSessionID, banner, sessionID, step.Order, "--resume")
+	}
 }
 
 // failStepProvisioning records a mid-scenario provisioning failure. The
@@ -1313,9 +1324,7 @@ func (s *ScenarioSessionService) VerifyCurrentStep(sessionID uuid.UUID) (*dto.Ve
 	}
 
 	if response.Passed && response.NextStep != nil {
-		s.emitOutroBanner(&session, leftStep)
-		response.StepProvisioningStatus = s.provisionNextStep(&session, *response.NextStep)
-		s.emitIntroBanner(&session, *response.NextStep)
+		response.StepProvisioningStatus = s.runStepTransition(&session, leftStep, *response.NextStep)
 	}
 
 	return response, nil
@@ -1345,9 +1354,7 @@ func (s *ScenarioSessionService) completeInfoStep(session *models.ScenarioSessio
 	}
 
 	if response.NextStep != nil {
-		s.emitOutroBanner(session, leftStep)
-		response.StepProvisioningStatus = s.provisionNextStep(session, *response.NextStep)
-		s.emitIntroBanner(session, *response.NextStep)
+		response.StepProvisioningStatus = s.runStepTransition(session, leftStep, *response.NextStep)
 	}
 
 	return response, nil
@@ -1501,9 +1508,7 @@ func (s *ScenarioSessionService) SubmitQuiz(sessionID uuid.UUID, input dto.Submi
 	}
 
 	if response.NextStep != nil {
-		s.emitOutroBanner(&session, leftStep)
-		response.StepProvisioningStatus = s.provisionNextStep(&session, *response.NextStep)
-		s.emitIntroBanner(&session, *response.NextStep)
+		response.StepProvisioningStatus = s.runStepTransition(&session, leftStep, *response.NextStep)
 	}
 
 	return response, nil
@@ -1590,9 +1595,7 @@ func (s *ScenarioSessionService) SubmitFlag(sessionID uuid.UUID, submittedFlag s
 	}
 
 	if response.NextStep != nil {
-		s.emitOutroBanner(&session, leftStep)
-		response.StepProvisioningStatus = s.provisionNextStep(&session, *response.NextStep)
-		s.emitIntroBanner(&session, *response.NextStep)
+		response.StepProvisioningStatus = s.runStepTransition(&session, leftStep, *response.NextStep)
 	}
 
 	return response, nil

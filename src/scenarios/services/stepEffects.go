@@ -8,6 +8,8 @@ import (
 
 	"soli/formations/src/observability"
 	"soli/formations/src/scenarios/models"
+
+	"soli/formations/src/scenarios/dto"
 )
 
 // Per-step intro/outro banners.
@@ -131,7 +133,11 @@ func (s *ScenarioSessionService) emitIntroBanner(session *models.ScenarioSession
 	}
 	if to := findStepByOrder(session.Scenario.Steps, toOrder); to != nil {
 		if banner, ok := introBanner(to); ok {
-			s.drawBanner(*session.TerminalSessionID, banner, session.ID, toOrder)
+			// --resume is inert when no screen is held, so the terminal's own
+			// state decides whether this continues a held transition. Threading
+			// a flag from the outro would be the engine guessing at something
+			// the container already knows.
+			s.drawBanner(*session.TerminalSessionID, banner, session.ID, toOrder, "--resume")
 		}
 	}
 }
@@ -143,11 +149,13 @@ func (s *ScenarioSessionService) emitIntroBanner(session *models.ScenarioSession
 // ocf-banner exits 0 on every path it controls, including a missing tte, so a
 // non-zero result here means the helper itself is absent — an older or stock
 // image. That is expected and logged at debug volume, never surfaced.
-func (s *ScenarioSessionService) drawBanner(terminalSessionID string, banner stepBanner, sessionID uuid.UUID, stepOrder int) {
+func (s *ScenarioSessionService) drawBanner(terminalSessionID string, banner stepBanner, sessionID uuid.UUID, stepOrder int, args ...string) {
 	// No env: a banner carries the trainer's own words, never a flag.
+	argv := append([]string{ocfBannerPath}, args...)
+	argv = append(argv, banner.Effect, banner.Text)
 	exitCode, _, stderr, err := s.verificationService.ExecInContainer(
 		terminalSessionID,
-		[]string{ocfBannerPath, banner.Effect, banner.Text},
+		argv,
 		nil,
 		bannerTimeoutSeconds,
 	)
@@ -234,5 +242,85 @@ func (s *ScenarioSessionService) warnIfEffectsUnsupported(terminalSessionID stri
 			"scenario", scenario.Name,
 			"instance_type", scenario.InstanceType,
 			"hint", "run this scenario on a challenge image that ships tte; installing it at setup needs the network feature, which is disabled by default")
+	}
+}
+
+// runStepTransition carries the learner from one step to the next: the outro of
+// the level they finished, the provisioning of the level they are entering, and
+// its intro.
+//
+// When both banners exist the alternate screen is held across the gap, so the
+// learner does not drop back to their shell mid-transition and wait there in
+// front of a terminal the next level has not been built for yet. With only one
+// of the two banners there is nothing coming to replace a held screen, so the
+// screen is not held.
+//
+// The hold is released on every path that does not end in an intro. It also
+// expires on its own inside the container, because none of these paths run if
+// the engine dies mid-transition.
+func (s *ScenarioSessionService) runStepTransition(session *models.ScenarioSession, fromOrder, toOrder int) dto.StepProvisioningStatus {
+	from := findStepByOrder(session.Scenario.Steps, fromOrder)
+	to := findStepByOrder(session.Scenario.Steps, toOrder)
+
+	var outro stepBanner
+	hasOutro, hasIntro := false, false
+	if from != nil {
+		outro, hasOutro = outroBanner(from)
+	}
+	if to != nil {
+		_, hasIntro = introBanner(to)
+	}
+
+	// A screen is only held when a banner is coming to replace it.
+	held := hasOutro && hasIntro
+
+	if hasOutro && session.TerminalSessionID != nil && s.verificationService != nil {
+		if held {
+			s.drawBanner(*session.TerminalSessionID, outro, session.ID, fromOrder, "--hold")
+		} else {
+			s.drawBanner(*session.TerminalSessionID, outro, session.ID, fromOrder)
+		}
+	}
+
+	status := s.provisionNextStep(session, toOrder)
+
+	switch {
+	case status.NextStepProvisioning:
+		// Setup moved to a goroutine. The intro belongs to whoever finishes it:
+		// drawing it here would announce a level whose environment is still
+		// being built, and would drop the held screen at the very moment the
+		// learner most needs something other than an idle prompt to look at.
+		return status
+	case status.NextStepProvisioningFailed:
+		// The panel takes over with an infrastructure error. Give the terminal
+		// back rather than leaving the learner in front of a waiting screen for
+		// something that is not coming — but only if this transition actually
+		// held one. A scenario with no banners must not pay for an extra exec
+		// on every failure.
+		if held {
+			s.releaseHeldScreen(session.TerminalSessionID)
+		}
+		return status
+	}
+
+	s.emitIntroBanner(session, toOrder)
+	return status
+}
+
+// releaseHeldScreen takes down a held transition screen. Safe to call when
+// nothing is held — ocf-banner checks the terminal's own state rather than
+// trusting the engine's belief about it — so callers do not have to track
+// whether a hold is outstanding.
+func (s *ScenarioSessionService) releaseHeldScreen(terminalSessionID *string) {
+	if terminalSessionID == nil || s.verificationService == nil {
+		return
+	}
+	if _, _, _, err := s.verificationService.ExecInContainer(
+		*terminalSessionID,
+		[]string{ocfBannerPath, "--release"},
+		nil,
+		bannerTimeoutSeconds,
+	); err != nil {
+		slog.Debug("could not release the held transition screen", "err", err)
 	}
 }
