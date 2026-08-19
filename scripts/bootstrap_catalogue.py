@@ -116,9 +116,10 @@ def main():
     print(f"  curl -X POST '{args.api}/api/v1/subscription-plans/sync-stripe?dry_run=true'  -H 'Authorization: Bearer …'")
     print("  # read the plan of record: expect `created` for each paid plan, no `archived`")
     print(f"  curl -X POST '{args.api}/api/v1/subscription-plans/sync-stripe?dry_run=false' -H 'Authorization: Bearer …'")
-    print("\nThen confirm every created price carries tax_behavior=exclusive — EUR infers")
-    print("INCLUSIVE when unset, which turns an announced HT price into TTC, and the")
-    print("setting is one-way per price.")
+    print("\nThen confirm every created price carries the tax_behavior its plan declares")
+    print("in catalogue.json — inclusive for the announced-TTC plans, exclusive for any")
+    print("plan quoted net. EUR infers INCLUSIVE when unset, and the setting is one-way")
+    print("per price, so a wrong one is only fixable by creating another price.")
 
 
 if __name__ == "__main__":

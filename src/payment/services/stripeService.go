@@ -760,18 +760,41 @@ func stripeTierParams(tiers []models.PricingTier) []*stripe.PriceTierParams {
 	return out
 }
 
+// taxBehaviorOf reads the plan's stated tax behaviour, falling back to the one
+// every price created before the field existed carries.
+//
+// The fallback is deliberately "exclusive" rather than the Stripe default:
+// inheriting would mean inclusive for EUR, and a plan that forgot to say would
+// quietly hand 16.7% of its announced amount to the tax line.
+func taxBehaviorOf(plan *models.SubscriptionPlan) string {
+	switch plan.TaxBehavior {
+	case "inclusive", "exclusive":
+		return plan.TaxBehavior
+	case "":
+		return "exclusive"
+	default:
+		utils.Warn("Plan %s declares an unknown tax_behavior %q; treating it as exclusive",
+			plan.Name, plan.TaxBehavior)
+		return "exclusive"
+	}
+}
+
 // ApplyPricing sets the tax behaviour and either a flat unit amount or a
 // graduated ladder on price params. A tiered price must NOT also carry a flat
 // unit_amount — Stripe rejects that — so the two are mutually exclusive here, in
 // one place used by both the create and the migrate paths.
 func ApplyPricing(params *stripe.PriceParams, plan *models.SubscriptionPlan) {
-	// OCF announces prices excluding VAT, and the public pricing page says so.
-	// A price that leaves this unset inherits the Stripe account default instead,
-	// which for EUR resolves to inclusive — turning the announced amount into the
-	// gross and shaving 16.7% off it. Stripe accepts tax_behavior once and never
-	// again, so it belongs next to the amount rather than in a dashboard toggle
-	// the code cannot see.
-	params.TaxBehavior = stripe.String("exclusive")
+	// The plan says whether its amount already contains VAT, because the two are
+	// one statement — 11.90 is different money read each way — and because the
+	// offer is mixed by design: what a learner is shown must be what they pay,
+	// while a seat sold to an organisation is quoted net.
+	//
+	// Never left unset. An unset behaviour inherits the Stripe account default,
+	// which for EUR resolves to inclusive, so an amount announced net would
+	// silently become gross and lose 16.7%. Stripe accepts the answer once per
+	// price and never again, which is why it lives beside the amount rather than
+	// in a dashboard toggle the code cannot see.
+	params.TaxBehavior = stripe.String(taxBehaviorOf(plan))
 
 	if plan.UseTieredPricing && len(plan.PricingTiers) > 0 {
 		params.BillingScheme = stripe.String("tiered")
@@ -3427,16 +3450,16 @@ func (ss *stripeService) ImportPlansFromStripe() (*SyncPlansResult, error) {
 
 			// Plan doesn't exist - create it
 			newPlan := &models.SubscriptionPlan{
-				Name:               prod.Name,
-				Description:        prod.Description,
-				StripeProductID:    &prod.ID,
-				StripePriceID:      &priceObj.ID,
-				Currency:           string(priceObj.Currency),
-				BillingInterval:    string(priceObj.Recurring.Interval),
-				IsActive:           prod.Active,
-				StripeCreated:      true,
-				MaxCPU:             budgetMeta.MaxCPU,
-				MaxMemoryMB:        budgetMeta.MaxMemoryMB,
+				Name:            prod.Name,
+				Description:     prod.Description,
+				StripeProductID: &prod.ID,
+				StripePriceID:   &priceObj.ID,
+				Currency:        string(priceObj.Currency),
+				BillingInterval: string(priceObj.Recurring.Interval),
+				IsActive:        prod.Active,
+				StripeCreated:   true,
+				MaxCPU:          budgetMeta.MaxCPU,
+				MaxMemoryMB:     budgetMeta.MaxMemoryMB,
 			}
 
 			// Handle tiered pricing (volume/graduated pricing in Stripe)

@@ -49,6 +49,7 @@ func SubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.SubscriptionPla
 		PriceAmount:     plan.PriceAmount,
 		Currency:        plan.Currency,
 		BillingInterval: plan.BillingInterval,
+		TaxBehavior:     plan.TaxBehavior,
 		Features:        derivePlanEntitlements(plan),
 		IsActive:        plan.IsActive,
 		IsCatalog:       plan.IsCatalog,
