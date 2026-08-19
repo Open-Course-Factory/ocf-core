@@ -8,14 +8,14 @@ import (
 
 // SessionResponse - DTO for scenario session information
 type SessionResponse struct {
-	ID                string    `json:"id"`
-	ScenarioID        string    `json:"scenario_id"`
-	UserID            string    `json:"user_id"`
-	TrainerID         *string   `json:"trainer_id,omitempty"`
-	TerminalSessionID string    `json:"terminal_session_id"`
-	CurrentStep       int       `json:"current_step"`
-	Status            string    `json:"status"`
-	ProvisioningPhase string    `json:"provisioning_phase,omitempty"`
+	ID                string  `json:"id"`
+	ScenarioID        string  `json:"scenario_id"`
+	UserID            string  `json:"user_id"`
+	TrainerID         *string `json:"trainer_id,omitempty"`
+	TerminalSessionID string  `json:"terminal_session_id"`
+	CurrentStep       int     `json:"current_step"`
+	Status            string  `json:"status"`
+	ProvisioningPhase string  `json:"provisioning_phase,omitempty"`
 	// ProvisioningTimeoutSeconds is the running step's effective timeout, set
 	// only while Status is "provisioning". A client that polls this endpoint
 	// after a reload never saw the advance response, so it needs the ceiling
@@ -118,19 +118,19 @@ type CurrentStepResponse struct {
 	Position int `json:"position"`
 	// StepOrders lists every step's Order in display order, so a client can
 	// map a display position back to the order it must navigate to.
-	StepOrders      []int                 `json:"step_orders,omitempty"`
-	TotalSteps      int                   `json:"total_steps"`
-	Title           string                `json:"title"`
-	Text            string                `json:"text,omitempty"`
-	Hint            string                `json:"hint,omitempty"`
-	HintsTotalCount int                   `json:"hints_total_count"`
-	HintsRevealed   int                   `json:"hints_revealed"`
-	Status          string                `json:"status"`
-	HasFlag         bool                  `json:"has_flag"`
-	StepType        string                `json:"step_type"`
-	TextContent     string                `json:"text_content,omitempty"`
-	Questions       []CurrentStepQuestion `json:"questions,omitempty"`
-	ShowImmediateFeedback bool            `json:"show_immediate_feedback"`
+	StepOrders            []int                 `json:"step_orders,omitempty"`
+	TotalSteps            int                   `json:"total_steps"`
+	Title                 string                `json:"title"`
+	Text                  string                `json:"text,omitempty"`
+	Hint                  string                `json:"hint,omitempty"`
+	HintsTotalCount       int                   `json:"hints_total_count"`
+	HintsRevealed         int                   `json:"hints_revealed"`
+	Status                string                `json:"status"`
+	HasFlag               bool                  `json:"has_flag"`
+	StepType              string                `json:"step_type"`
+	TextContent           string                `json:"text_content,omitempty"`
+	Questions             []CurrentStepQuestion `json:"questions,omitempty"`
+	ShowImmediateFeedback bool                  `json:"show_immediate_feedback"`
 }
 
 // CurrentStepQuestion - sanitized public DTO for a quiz question.
@@ -183,24 +183,24 @@ type RevealHintResponse struct {
 
 // SeedScenarioInput - DTO for seeding a scenario with inline content (admin/testing)
 type SeedScenarioInput struct {
-	Title         string          `json:"title" binding:"required,max=1000"`
-	Description   string          `json:"description" binding:"max=1000"`
-	Difficulty    string          `json:"difficulty"`
-	EstimatedTime string          `json:"estimated_time"`
-	InstanceType  string          `json:"instance_type"`
-	Hostname      string          `json:"hostname,omitempty"`
-	OsType        string          `json:"os_type"`
-	FlagsEnabled     bool            `json:"flags_enabled"`
-	AllowedFlagPaths string          `json:"allowed_flag_paths,omitempty"`
-	GshEnabled       bool            `json:"gsh_enabled"`
-	CrashTraps       bool            `json:"crash_traps"`
-	IsPublic         bool            `json:"is_public"`
-	IntroText        string          `json:"intro_text" binding:"max=65536"`
-	FinishText       string          `json:"finish_text" binding:"max=65536"`
-	SetupScript      string          `json:"setup_script,omitempty"`
+	Title            string `json:"title" binding:"required,max=1000"`
+	Description      string `json:"description" binding:"max=1000"`
+	Difficulty       string `json:"difficulty"`
+	EstimatedTime    string `json:"estimated_time"`
+	InstanceType     string `json:"instance_type"`
+	Hostname         string `json:"hostname,omitempty"`
+	OsType           string `json:"os_type"`
+	FlagsEnabled     bool   `json:"flags_enabled"`
+	AllowedFlagPaths string `json:"allowed_flag_paths,omitempty"`
+	GshEnabled       bool   `json:"gsh_enabled"`
+	CrashTraps       bool   `json:"crash_traps"`
+	IsPublic         bool   `json:"is_public"`
+	IntroText        string `json:"intro_text" binding:"max=65536"`
+	FinishText       string `json:"finish_text" binding:"max=65536"`
+	SetupScript      string `json:"setup_script,omitempty"`
 	// CompatibleInstanceTypes names the distributions this scenario is built
 	// for, most preferred first. Leave empty to keep matching on os_type alone.
-	CompatibleInstanceTypes []string        `json:"compatible_instance_types,omitempty"`
+	CompatibleInstanceTypes []string `json:"compatible_instance_types,omitempty"`
 	// RequiredFeatures names the session features the scenario cannot run
 	// without — currently "network". Same meaning as the archive importer's
 	// field: the ocf-base profile is NIC-less, so a scenario whose setup
@@ -209,11 +209,11 @@ type SeedScenarioInput struct {
 	// The importer learned this and seeding did not, which left the two paths
 	// disagreeing about what a scenario is allowed to declare — re-seeding a
 	// scenario silently dropped the requirement it was imported with.
-	RequiredFeatures        []string        `json:"required_features,omitempty"`
+	RequiredFeatures []string `json:"required_features,omitempty"`
 	// BuildFeatures names features held only while the container is
 	// provisioned, then removed. Same meaning as the archive importer's field.
-	BuildFeatures           []string        `json:"build_features,omitempty"`
-	Steps                   []SeedStepInput `json:"steps" binding:"required,min=1"`
+	BuildFeatures []string        `json:"build_features,omitempty"`
+	Steps         []SeedStepInput `json:"steps" binding:"required,min=1"`
 }
 
 // SeedQuestionInput - DTO for a quiz question inside a SeedStepInput
@@ -229,23 +229,23 @@ type SeedQuestionInput struct {
 
 // SeedStepInput - DTO for a single step in a seed scenario
 type SeedStepInput struct {
-	Title                 string              `json:"title" binding:"required,max=1000"`
-	StepType              string              `json:"step_type,omitempty"`
-	ShowImmediateFeedback bool                `json:"show_immediate_feedback,omitempty"`
-	TextContent           string              `json:"text_content" binding:"max=65536"`
-	HintContent           string              `json:"hint_content" binding:"max=65536"`
-	VerifyScript          string              `json:"verify_script"`
-	BackgroundScript      string              `json:"background_script"`
-	ForegroundScript      string              `json:"foreground_script"`
-	IntroEffect           string              `json:"intro_effect,omitempty"`
-	IntroText             string              `json:"intro_text,omitempty" binding:"max=500"`
-	OutroEffect           string              `json:"outro_effect,omitempty"`
-	OutroText             string              `json:"outro_text,omitempty" binding:"max=500"`
-	BackgroundTimeoutSeconds int              `json:"background_timeout_seconds,omitempty"`
-	BackgroundAsync       bool                `json:"background_async,omitempty"`
-	HasFlag               bool                `json:"has_flag"`
-	FlagPath              string              `json:"flag_path"`
-	Questions             []SeedQuestionInput `json:"questions,omitempty"`
+	Title                    string              `json:"title" binding:"required,max=1000"`
+	StepType                 string              `json:"step_type,omitempty"`
+	ShowImmediateFeedback    bool                `json:"show_immediate_feedback,omitempty"`
+	TextContent              string              `json:"text_content" binding:"max=65536"`
+	HintContent              string              `json:"hint_content" binding:"max=65536"`
+	VerifyScript             string              `json:"verify_script"`
+	BackgroundScript         string              `json:"background_script"`
+	ForegroundScript         string              `json:"foreground_script"`
+	IntroEffect              string              `json:"intro_effect,omitempty"`
+	IntroText                string              `json:"intro_text,omitempty" binding:"max=500"`
+	OutroEffect              string              `json:"outro_effect,omitempty"`
+	OutroText                string              `json:"outro_text,omitempty" binding:"max=500"`
+	BackgroundTimeoutSeconds int                 `json:"background_timeout_seconds,omitempty"`
+	BackgroundAsync          bool                `json:"background_async,omitempty"`
+	HasFlag                  bool                `json:"has_flag"`
+	FlagPath                 string              `json:"flag_path"`
+	Questions                []SeedQuestionInput `json:"questions,omitempty"`
 }
 
 // ScenarioExportStepQuestionOutput — quiz question shape inside a scenario export
@@ -261,45 +261,45 @@ type ScenarioExportStepQuestionOutput struct {
 
 // ScenarioExportStepOutput — full step data including scripts (for export only)
 type ScenarioExportStepOutput struct {
-	Order                 int                                `json:"order"`
-	Title                 string                             `json:"title"`
-	StepType              string                             `json:"step_type,omitempty"`
-	ShowImmediateFeedback bool                               `json:"show_immediate_feedback,omitempty"`
-	TextContent           string                             `json:"text_content,omitempty"`
-	HintContent           string                             `json:"hint_content,omitempty"`
-	VerifyScript          string                             `json:"verify_script,omitempty"`
-	BackgroundScript      string                             `json:"background_script,omitempty"`
-	ForegroundScript      string                             `json:"foreground_script,omitempty"`
-	IntroEffect           string                             `json:"intro_effect,omitempty"`
-	IntroText             string                             `json:"intro_text,omitempty"`
-	OutroEffect           string                             `json:"outro_effect,omitempty"`
-	OutroText             string                             `json:"outro_text,omitempty"`
-	BackgroundTimeoutSeconds int                             `json:"background_timeout_seconds,omitempty"`
-	BackgroundAsync       bool                               `json:"background_async,omitempty"`
-	HasFlag               bool                               `json:"has_flag"`
-	FlagPath              string                             `json:"flag_path,omitempty"`
-	FlagLevel             int                                `json:"flag_level,omitempty"`
-	Questions             []ScenarioExportStepQuestionOutput `json:"questions,omitempty"`
+	Order                    int                                `json:"order"`
+	Title                    string                             `json:"title"`
+	StepType                 string                             `json:"step_type,omitempty"`
+	ShowImmediateFeedback    bool                               `json:"show_immediate_feedback,omitempty"`
+	TextContent              string                             `json:"text_content,omitempty"`
+	HintContent              string                             `json:"hint_content,omitempty"`
+	VerifyScript             string                             `json:"verify_script,omitempty"`
+	BackgroundScript         string                             `json:"background_script,omitempty"`
+	ForegroundScript         string                             `json:"foreground_script,omitempty"`
+	IntroEffect              string                             `json:"intro_effect,omitempty"`
+	IntroText                string                             `json:"intro_text,omitempty"`
+	OutroEffect              string                             `json:"outro_effect,omitempty"`
+	OutroText                string                             `json:"outro_text,omitempty"`
+	BackgroundTimeoutSeconds int                                `json:"background_timeout_seconds,omitempty"`
+	BackgroundAsync          bool                               `json:"background_async,omitempty"`
+	HasFlag                  bool                               `json:"has_flag"`
+	FlagPath                 string                             `json:"flag_path,omitempty"`
+	FlagLevel                int                                `json:"flag_level,omitempty"`
+	Questions                []ScenarioExportStepQuestionOutput `json:"questions,omitempty"`
 }
 
 // ScenarioExportOutput — full scenario data for JSON export/re-import
 // Designed to match SeedScenarioInput so the exported JSON can be re-imported directly
 type ScenarioExportOutput struct {
-	Title         string                     `json:"title"`
-	Description   string                     `json:"description,omitempty"`
-	Difficulty    string                     `json:"difficulty,omitempty"`
-	EstimatedTime string                     `json:"estimated_time,omitempty"`
-	InstanceType  string                     `json:"instance_type"`
-	OsType        string                     `json:"os_type,omitempty"`
+	Title            string                     `json:"title"`
+	Description      string                     `json:"description,omitempty"`
+	Difficulty       string                     `json:"difficulty,omitempty"`
+	EstimatedTime    string                     `json:"estimated_time,omitempty"`
+	InstanceType     string                     `json:"instance_type"`
+	OsType           string                     `json:"os_type,omitempty"`
 	FlagsEnabled     bool                       `json:"flags_enabled"`
 	AllowedFlagPaths string                     `json:"allowed_flag_paths,omitempty"`
 	GshEnabled       bool                       `json:"gsh_enabled"`
 	CrashTraps       bool                       `json:"crash_traps"`
 	IsPublic         bool                       `json:"is_public"`
-	IntroText     string                     `json:"intro_text,omitempty"`
-	FinishText    string                     `json:"finish_text,omitempty"`
-	SetupScript   string                     `json:"setup_script,omitempty"`
-	Steps         []ScenarioExportStepOutput `json:"steps"`
+	IntroText        string                     `json:"intro_text,omitempty"`
+	FinishText       string                     `json:"finish_text,omitempty"`
+	SetupScript      string                     `json:"setup_script,omitempty"`
+	Steps            []ScenarioExportStepOutput `json:"steps"`
 }
 
 // ExportScenariosInput — request body for bulk export
@@ -347,8 +347,8 @@ type AvailableScenarioOutput struct {
 	// Both are empty when resolution failed; BlockReason says why.
 	ResolvedDistribution string `json:"resolved_distribution,omitempty"`
 	ResolvedSize         string `json:"resolved_size,omitempty"`
-	IsPublic                bool                         `json:"is_public"`
-	AdminOnly               bool                         `json:"admin_only,omitempty"`
+	IsPublic             bool   `json:"is_public"`
+	AdminOnly            bool   `json:"admin_only,omitempty"`
 }
 
 // AssignmentProgressItem - per-scenario progress summary for a group's
