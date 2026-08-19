@@ -337,6 +337,13 @@ type AvailableScenarioOutput struct {
 	Launchable              bool                         `json:"launchable"`
 	BlockReason             string                       `json:"block_reason,omitempty"`
 	AvailableInstanceTypes  []string                     `json:"available_instance_types,omitempty"`
+	// ActiveSessionID and ActiveTerminalSessionID name the run the learner
+	// already has of this scenario, when there is one. They come from the same
+	// evaluation the launch path uses, so a card can offer Resume from this one
+	// response instead of correlating it against a separately fetched session
+	// list that may be older than the page.
+	ActiveSessionID         string `json:"active_session_id,omitempty"`
+	ActiveTerminalSessionID string `json:"active_terminal_session_id,omitempty"`
 	// ResolvedDistribution and ResolvedSize are what a launch would actually
 	// use, after image matching and size fallback. InstanceType above is only
 	// what the scenario asked for, and the two diverge routinely — an unknown

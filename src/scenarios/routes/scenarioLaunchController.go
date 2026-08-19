@@ -238,6 +238,17 @@ func (sc *scenarioLaunchController) StartScenario(ctx *gin.Context) {
 
 	session, err := sc.sessionService.StartScenario(userID, scenarioID, input.TerminalSessionID)
 	if err != nil {
+		if stderrors.Is(err, services.ErrActiveSessionExists) {
+			// A conflict the learner can resolve by resuming, not a fault.
+			// Reported with a reason so the client can offer that instead of a
+			// retry that would fail identically.
+			ctx.JSON(http.StatusConflict, gin.H{
+				"error_code":    http.StatusConflict,
+				"error_message": "A run of this scenario is already in progress.",
+				"reason":        blockReasonSessionExists,
+			})
+			return
+		}
 		slog.Error("failed to start scenario", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,
@@ -457,6 +468,22 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 		quotaSvc = paymentServices.NewQuotaService(sc.db, effectivePlanService)
 	}
 
+	// A run the learner already has is the other thing that stops a launch, and
+	// it is evaluated by the same rule the launch path applies — see
+	// ScenarioSessionService.GetResumableSessions. Reported here so the card can
+	// offer Resume rather than a Launch that would come back 409.
+	scenarioIDs := make([]uuid.UUID, 0, len(scenarios))
+	for _, s := range scenarios {
+		scenarioIDs = append(scenarioIDs, s.ID)
+	}
+	resumableSessions, resumableErr := sc.sessionService.GetResumableSessions(userID, scenarioIDs)
+	if resumableErr != nil {
+		// Not fatal: without this the card falls back to offering a launch, and
+		// the launch itself still refuses with 409. Losing the whole listing
+		// would be the worse trade.
+		slog.Warn("could not load existing scenario sessions", "err", resumableErr)
+	}
+
 	// Convert to enriched output with launchability info
 	output := make([]dto.AvailableScenarioOutput, 0, len(scenarios))
 	for _, s := range scenarios {
@@ -505,9 +532,9 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			// Separate reasons because they need different fixes: a missing
 			// declared image is "install it on this backend", while
 			// no_distribution is "nothing here fits this scenario at all".
-			item.BlockReason = "no_distribution"
+			item.BlockReason = blockReasonNoDistribution
 			if stderrors.Is(resolveErr, errDeclaredImageUnavailable) {
-				item.BlockReason = "declared_image_unavailable"
+				item.BlockReason = blockReasonDeclaredImageUnavail
 			}
 		}
 
@@ -519,7 +546,16 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 				slog.Warn("budget fit check failed for scenario", "scenario", s.Name, "err", fitErr)
 			} else if !fits {
 				item.Launchable = false
-				item.BlockReason = "budget_exhausted"
+				item.BlockReason = blockReasonBudgetExhausted
+			}
+		}
+
+		if existing := resumableSessions[s.ID]; existing != nil {
+			item.Launchable = false
+			item.BlockReason = blockReasonSessionExists
+			item.ActiveSessionID = existing.ID.String()
+			if existing.TerminalSessionID != nil {
+				item.ActiveTerminalSessionID = *existing.TerminalSessionID
 			}
 		}
 
@@ -606,6 +642,16 @@ func applySizeFallback(scenario models.Scenario, requested string, dist terminal
 // distribution on this backend"; the generic one means "no image anywhere fits
 // this scenario's os_type, size and features".
 var errDeclaredImageUnavailable = stderrors.New("declared instance type unavailable")
+
+// Block reasons are a contract with the launcher, which switches its copy on
+// them. Named here so the endpoint that emits one and the endpoint that refuses
+// a launch for the same cause cannot drift apart in spelling.
+const (
+	blockReasonNoDistribution       = "no_distribution"
+	blockReasonDeclaredImageUnavail = "declared_image_unavailable"
+	blockReasonBudgetExhausted      = "budget_exhausted"
+	blockReasonSessionExists        = "session_exists"
+)
 
 func resolveDistribution(scenario models.Scenario, distributions []terminalDto.TTDistribution, sizes []terminalDto.TTSize) (distName string, size string, features map[string]bool, err error) {
 	requiredFeatures, featErr := scenario.GetRequiredFeatures()
@@ -949,6 +995,14 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	// Create scenario session
 	session, startErr := sc.sessionService.StartScenario(userID, scenarioID, terminalResp.SessionID)
 	if startErr != nil {
+		if stderrors.Is(startErr, services.ErrActiveSessionExists) {
+			ctx.JSON(http.StatusConflict, gin.H{
+				"error_code":    http.StatusConflict,
+				"error_message": "A run of this scenario is already in progress.",
+				"reason":        blockReasonSessionExists,
+			})
+			return
+		}
 		slog.Error("failed to start scenario session", "userID", userID, "scenarioID", scenarioID, "err", startErr)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,

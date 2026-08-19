@@ -114,6 +114,13 @@ var reprovisionableStatuses = []string{statusActive, statusInProgress, statusSet
 // than a generic failure, so the frontend can retry instead of giving up.
 var ErrSessionNotActive = errors.New("session is not active")
 
+// ErrActiveSessionExists is returned when the learner already has a run of this
+// scenario that is still usable. It is a conflict the caller can act on — resume
+// the existing run — not a failure, so it must not reach the client as a 500:
+// an opaque server error reads as "the scenario is broken" and sends the learner
+// back to relaunch, which fails again for the same reason.
+var ErrActiveSessionExists = errors.New("active session already exists for this scenario")
+
 // requireActiveSession is the single owner of "may the learner act on this
 // session right now". Provisioning is the case that matters: step setup can now
 // run mid-scenario, so a second browser tab could otherwise submit against a
@@ -245,41 +252,24 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 			}
 		}
 
-		// Check for existing active session inside the transaction to prevent race conditions
-		var existingSession models.ScenarioSession
-		if err := tx.Where("user_id = ? AND scenario_id = ? AND status IN ?", userID, scenarioID, []string{"in_progress", "active", "provisioning", "setup_failed"}).First(&existingSession).Error; err == nil {
-			// setup_failed sessions are always auto-abandoned — the environment is broken
-			shouldAbandon := existingSession.Status == "setup_failed"
-
-			if !shouldAbandon {
-				// For other statuses, check if the terminal is still alive
-				if existingSession.TerminalSessionID == nil {
-					// Orphan session with no terminal — auto-abandon
-					shouldAbandon = true
-				} else {
-					// Look up the terminal record
-					var terminal terminalModels.Terminal
-					if err := tx.Where("session_id = ?", *existingSession.TerminalSessionID).First(&terminal).Error; err != nil {
-						// Terminal not found (deleted or soft-deleted) — auto-abandon
-						shouldAbandon = true
-					} else if terminal.State != terminalModels.StateRunning {
-						// Terminal exists but is expired/stopped/deleted — auto-abandon
-						shouldAbandon = true
-					}
-				}
+		// One rule, evaluated in the transaction so a concurrent launch cannot
+		// slip past it. GetResumableSession answers the same question read-only
+		// for the availability endpoint.
+		existingSession, resumable, findErr := findExistingSession(tx, userID, scenarioID)
+		if findErr != nil {
+			return findErr
+		}
+		if existingSession != nil {
+			if resumable {
+				return ErrActiveSessionExists
 			}
-
-			if shouldAbandon {
-				slog.Info("auto-abandoning zombie scenario session",
-					"session_id", existingSession.ID,
-					"terminal_session_id", existingSession.TerminalSessionID,
-					"user_id", userID,
-				)
-				if err := tx.Model(&existingSession).Update("status", "abandoned").Error; err != nil {
-					return fmt.Errorf("failed to abandon zombie session: %w", err)
-				}
-			} else {
-				return fmt.Errorf("active session already exists for this scenario")
+			slog.Info("auto-abandoning zombie scenario session",
+				"session_id", existingSession.ID,
+				"terminal_session_id", existingSession.TerminalSessionID,
+				"user_id", userID,
+			)
+			if err := tx.Model(existingSession).Update("status", "abandoned").Error; err != nil {
+				return fmt.Errorf("failed to abandon zombie session: %w", err)
 			}
 		}
 
@@ -2121,4 +2111,113 @@ func (s *ScenarioSessionService) executeBackgroundScript(terminalSessionID strin
 	}
 	slog.Info("background script completed", "step_order", step.Order, "exit_code", 0)
 	return stdout, nil
+}
+
+// findExistingSession reports the session that stands between this learner and a
+// new run of this scenario, and whether it is still usable.
+//
+// A session in one of the blocking statuses is not automatically a live run: its
+// terminal may be gone or stopped underneath it. Such a session is a zombie and
+// the caller may abandon it; a session whose terminal is still running is a real
+// run the learner should resume rather than relaunch.
+//
+// This is the single definition of that rule. The launch path evaluates it inside
+// its transaction and acts on it; the availability endpoint evaluates it read-only
+// through GetResumableSession, so the button and the card cannot disagree.
+func findExistingSession(db *gorm.DB, userID string, scenarioID uuid.UUID) (*models.ScenarioSession, bool, error) {
+	var existing models.ScenarioSession
+	err := db.Where("user_id = ? AND scenario_id = ? AND status IN ?",
+		userID, scenarioID, blockingSessionStatuses).First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to check for an existing session: %w", err)
+	}
+
+	var terminal *terminalModels.Terminal
+	if existing.TerminalSessionID != nil {
+		var t terminalModels.Terminal
+		if err := db.Where("session_id = ?", *existing.TerminalSessionID).First(&t).Error; err == nil {
+			terminal = &t
+		}
+	}
+	return &existing, sessionIsResumable(&existing, terminal), nil
+}
+
+// sessionIsResumable is the rule itself, expressed once over data both callers
+// already hold. A session in a blocking status is only a real run when its
+// terminal is still running; setup_failed is never resumable because the
+// environment it describes is broken, and a session with no terminal — or one
+// whose terminal has been deleted — has nothing left to return to.
+func sessionIsResumable(session *models.ScenarioSession, terminal *terminalModels.Terminal) bool {
+	if session.Status == "setup_failed" || session.TerminalSessionID == nil {
+		return false
+	}
+	return terminal != nil && terminal.State == terminalModels.StateRunning
+}
+
+// GetResumableSession returns the live run of this scenario for this learner, or
+// nil. Read-only: unlike the launch path it never abandons a zombie, because a
+// listing must not mutate the sessions it is describing.
+func (s *ScenarioSessionService) GetResumableSession(userID string, scenarioID uuid.UUID) (*models.ScenarioSession, error) {
+	existing, resumable, err := findExistingSession(s.db, userID, scenarioID)
+	if err != nil || !resumable {
+		return nil, err
+	}
+	return existing, nil
+}
+
+// blockingSessionStatuses are the statuses that occupy the one-run-per-scenario
+// slot. Anything else (completed, abandoned, expired) leaves the learner free to
+// start again.
+var blockingSessionStatuses = []string{"in_progress", "active", "provisioning", "setup_failed"}
+
+// GetResumableSessions answers GetResumableSession for many scenarios at once,
+// in two queries. The availability endpoint lists every scenario a learner can
+// see, so asking per scenario would reproduce the per-row lookup that made the
+// class analytics page slow.
+func (s *ScenarioSessionService) GetResumableSessions(userID string, scenarioIDs []uuid.UUID) (map[uuid.UUID]*models.ScenarioSession, error) {
+	resumable := make(map[uuid.UUID]*models.ScenarioSession)
+	if len(scenarioIDs) == 0 {
+		return resumable, nil
+	}
+
+	var sessions []models.ScenarioSession
+	if err := s.db.Where("user_id = ? AND scenario_id IN ? AND status IN ?",
+		userID, scenarioIDs, blockingSessionStatuses).Find(&sessions).Error; err != nil {
+		return nil, fmt.Errorf("failed to list existing sessions: %w", err)
+	}
+	if len(sessions) == 0 {
+		return resumable, nil
+	}
+
+	terminalIDs := make([]string, 0, len(sessions))
+	for _, session := range sessions {
+		if session.TerminalSessionID != nil {
+			terminalIDs = append(terminalIDs, *session.TerminalSessionID)
+		}
+	}
+	terminalsByID := make(map[string]*terminalModels.Terminal, len(terminalIDs))
+	if len(terminalIDs) > 0 {
+		var terminals []terminalModels.Terminal
+		if err := s.db.Where("session_id IN ?", terminalIDs).Find(&terminals).Error; err != nil {
+			return nil, fmt.Errorf("failed to list session terminals: %w", err)
+		}
+		for i := range terminals {
+			terminalsByID[terminals[i].SessionID] = &terminals[i]
+		}
+	}
+
+	for i := range sessions {
+		session := &sessions[i]
+		var terminal *terminalModels.Terminal
+		if session.TerminalSessionID != nil {
+			terminal = terminalsByID[*session.TerminalSessionID]
+		}
+		if sessionIsResumable(session, terminal) {
+			resumable[session.ScenarioID] = session
+		}
+	}
+	return resumable, nil
 }
