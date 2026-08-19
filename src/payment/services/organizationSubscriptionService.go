@@ -30,7 +30,7 @@ type OrganizationSubscriptionService interface {
 	GetAllActiveOrganizationSubscriptions() ([]models.OrganizationSubscription, error)
 
 	// Feature access (for members)
-	GetOrganizationFeatures(orgID uuid.UUID) (*models.SubscriptionPlan, error)
+	GetOrganizationFeatures(orgID uuid.UUID, userID string) (*models.SubscriptionPlan, error)
 	GetOrganizationUsageLimits(orgID uuid.UUID) (*OrganizationLimits, error)
 
 	// User-level feature aggregation
@@ -48,6 +48,10 @@ type UserEffectiveFeatures struct {
 	HighestPlan   *models.SubscriptionPlan
 	AllFeatures   []string
 	Organizations []OrganizationFeatureInfo
+	// HasPersonalSubscription reports whether the user's own plan contributed.
+	// The DTO field existed with the comment "Always false for now" — it is the
+	// normal case now that trainers buy personally and their orgs inherit.
+	HasPersonalSubscription bool
 }
 
 type OrganizationFeatureInfo struct {
@@ -254,14 +258,23 @@ func (oss *organizationSubscriptionService) syncOrgPlanPointer(orgID uuid.UUID) 
 	}
 }
 
-// GetOrganizationFeatures returns the subscription plan features for an organization
-func (oss *organizationSubscriptionService) GetOrganizationFeatures(orgID uuid.UUID) (*models.SubscriptionPlan, error) {
-	subscription, err := oss.repository.GetActiveOrganizationSubscription(orgID)
+// GetOrganizationFeatures returns the plan that actually applies inside an
+// organization for a given member.
+//
+// It asks EffectivePlanService rather than reading the org's own subscription,
+// because a team org holds no plan of its own and inherits the acting member's.
+// Reading the subscription directly made this endpoint 404 for a healthy org
+// while GET /terminals/session-options returned every machine size for the same
+// user and org — two endpoints answering one question two ways (#451).
+func (oss *organizationSubscriptionService) GetOrganizationFeatures(orgID uuid.UUID, userID string) (*models.SubscriptionPlan, error) {
+	result, err := NewEffectivePlanService(oss.db).GetUserEffectivePlan(userID, &orgID)
 	if err != nil {
-		return nil, fmt.Errorf("no active subscription found for organization: %w", err)
+		return nil, fmt.Errorf("no plan applies for user %s in organization %s: %w", userID, orgID, err)
 	}
-
-	return &subscription.SubscriptionPlan, nil
+	if result == nil || !planDidLoad(result.Plan) {
+		return nil, fmt.Errorf("no plan applies for user %s in organization %s", userID, orgID)
+	}
+	return result.Plan, nil
 }
 
 // GetOrganizationUsageLimits returns the current usage and limits for an organization.
@@ -283,10 +296,6 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 		return nil, fmt.Errorf("failed to get user organization subscriptions: %w", err)
 	}
 
-	if len(subscriptions) == 0 {
-		return nil, fmt.Errorf("user has no organization subscriptions")
-	}
-
 	// Aggregate features
 	features := &UserEffectiveFeatures{
 		AllFeatures:   make([]string, 0),
@@ -295,6 +304,24 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 
 	featureSet := make(map[string]bool)
 	var highestPriority int = -1
+
+	// The personal plan comes first, because under the current model it is where
+	// a trainer's entitlements live: they buy Formateur personally and their orgs
+	// inherit it. Aggregating organizations alone made that plan invisible here,
+	// so a paying trainer's features came back empty (#451).
+	if personal, perr := NewEffectivePlanService(oss.db).GetUserEffectivePlan(userID, nil); perr == nil &&
+		personal != nil && planDidLoad(personal.Plan) {
+		features.HasPersonalSubscription = true
+		features.HighestPlan = personal.Plan
+		highestPriority = personal.Plan.Priority
+		for _, feature := range derivePlanEntitlements(personal.Plan) {
+			featureSet[feature] = true
+		}
+	}
+
+	if len(subscriptions) == 0 && features.HighestPlan == nil {
+		return nil, fmt.Errorf("user has no subscription, personal or organizational")
+	}
 
 	// Batch-fetch all organizations and member records in 2 queries (not 2N)
 	orgIDs := make([]uuid.UUID, 0, len(subscriptions))
@@ -334,6 +361,12 @@ func (oss *organizationSubscriptionService) GetUserEffectiveFeatures(userID stri
 		}
 
 		plan := sub.SubscriptionPlan
+
+		if !planDidLoad(&plan) {
+			utils.Warn("Organization %s has a subscription whose plan did not load "+
+				"(deleted plan %s); skipping it", sub.OrganizationID, sub.SubscriptionPlanID)
+			continue
+		}
 
 		// Track highest priority plan
 		if plan.Priority > highestPriority {

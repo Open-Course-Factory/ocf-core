@@ -22,8 +22,8 @@ func TestSetupDefaultSubscriptionPlans_TrainerPlanHasGroupManagementEntitlement(
 	initialization.SetupDefaultSubscriptionPlans(db)
 
 	var trainer models.SubscriptionPlan
-	require.NoError(t, db.Where("name = ?", "Trainer Plan").First(&trainer).Error,
-		"SetupDefaultSubscriptionPlans must seed the Trainer plan")
+	require.NoError(t, db.Where("name = ?", "Formateur").First(&trainer).Error,
+		"SetupDefaultSubscriptionPlans must seed the Formateur plan")
 	assert.True(t, trainer.GroupManagementEnabled,
 		"the seeded Trainer plan must carry the typed GroupManagementEnabled entitlement so bulk purchase is gated on first run")
 }

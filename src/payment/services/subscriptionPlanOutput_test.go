@@ -53,6 +53,7 @@ func fullyPopulatedPlan() *models.SubscriptionPlan {
 		GroupManagementEnabled:    true,
 		BulkPurchasable:           true,
 		SeatUnit:                  models.SeatUnitLearnerDay,
+		IsDefaultFree:             true,
 		NetworkAccessEnabled:      true,
 		DataPersistenceEnabled:    true,
 		SessionSupervisionEnabled: true,

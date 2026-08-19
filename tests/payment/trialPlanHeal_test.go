@@ -40,6 +40,7 @@ func seedFreeTrialPlan(t *testing.T, db *gorm.DB) *paymentModels.SubscriptionPla
 		BaseModel:       entityManagementModels.BaseModel{ID: uuid.New()},
 		Name:            paymentServices.FreePlanName,
 		Description:     "Free trial plan",
+		IsDefaultFree:   true, // the election FindFreePlan reads, made at startup
 		Priority:        0,
 		PriceAmount:     0,
 		Currency:        "eur",

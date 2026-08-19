@@ -1,0 +1,141 @@
+[
+  {
+    "name": "Découverte",
+    "description": "Découvrez la plateforme gratuitement : une machine XS éphémère, sessions d'une heure, sans accès réseau.",
+    "price_amount": 0,
+    "currency": "eur",
+    "billing_interval": "month",
+    "priority": 0,
+    "is_active": true,
+    "is_catalog": true,
+    "is_default_free": true,
+    "required_role": "member",
+    "max_session_duration_minutes": 60,
+    "max_cpu": 500,
+    "max_memory_mb": 256,
+    "network_access_enabled": false,
+    "data_persistence_enabled": false,
+    "data_persistence_gb": 0,
+    "command_history_retention_days": 7
+  },
+  {
+    "name": "Solo",
+    "description": "Pour apprendre et préparer ses supports : machines jusqu'à XL, sessions de 8 h, réseau et persistance.",
+    "price_amount": 1200,
+    "currency": "eur",
+    "billing_interval": "month",
+    "priority": 20,
+    "is_active": true,
+    "is_catalog": true,
+    "required_role": "member",
+    "max_session_duration_minutes": 480,
+    "max_cpu": 6000,
+    "max_memory_mb": 6144,
+    "network_access_enabled": true,
+    "data_persistence_enabled": true,
+    "data_persistence_gb": 5,
+    "command_history_retention_days": 90
+  },
+  {
+    "name": "Formateur",
+    "description": "Pour animer des formations : mêmes machines que Solo, classes, supervision et achat de sièges apprenants.",
+    "price_amount": 1990,
+    "currency": "eur",
+    "billing_interval": "month",
+    "priority": 40,
+    "is_active": true,
+    "is_catalog": true,
+    "required_role": "member",
+    "max_session_duration_minutes": 480,
+    "max_cpu": 6000,
+    "max_memory_mb": 6144,
+    "network_access_enabled": true,
+    "data_persistence_enabled": true,
+    "data_persistence_gb": 20,
+    "group_management_enabled": true,
+    "session_supervision_enabled": true,
+    "command_history_retention_days": 365
+  },
+  {
+    "name": "Siège élève — mensuel",
+    "description": "Un siège apprenant, facturé au mois. Tarif dégressif par paliers.",
+    "price_amount": 900,
+    "currency": "eur",
+    "billing_interval": "month",
+    "priority": 15,
+    "is_active": true,
+    "is_catalog": false,
+    "required_role": "member",
+    "bulk_purchasable": true,
+    "seat_unit": "seat_month",
+    "max_session_duration_minutes": 480,
+    "max_cpu": 2000,
+    "max_memory_mb": 2048,
+    "network_access_enabled": true,
+    "data_persistence_enabled": true,
+    "data_persistence_gb": 2,
+    "command_history_retention_days": 90,
+    "use_tiered_pricing": true,
+    "pricing_tiers": [
+      {
+        "min_quantity": 1,
+        "max_quantity": 5,
+        "unit_amount": 900,
+        "description": "1-5 sièges : 9€/siège/mois"
+      },
+      {
+        "min_quantity": 6,
+        "max_quantity": 15,
+        "unit_amount": 700,
+        "description": "6-15 sièges : 7€/siège/mois"
+      },
+      {
+        "min_quantity": 16,
+        "max_quantity": 0,
+        "unit_amount": 550,
+        "description": "16 sièges et plus : 5,50€/siège/mois"
+      }
+    ]
+  },
+  {
+    "name": "Siège élève — pack jours",
+    "description": "Un apprenant pour une journée, prépayé. La quantité est le nombre d'apprenants multiplié par le nombre de jours.",
+    "price_amount": 165,
+    "currency": "eur",
+    "billing_interval": "month",
+    "priority": 15,
+    "is_active": true,
+    "is_catalog": false,
+    "required_role": "member",
+    "bulk_purchasable": true,
+    "seat_unit": "learner_day",
+    "max_session_duration_minutes": 480,
+    "max_cpu": 2000,
+    "max_memory_mb": 2048,
+    "network_access_enabled": true,
+    "data_persistence_enabled": true,
+    "data_persistence_gb": 2,
+    "command_history_retention_days": 90,
+    "use_tiered_pricing": true,
+    "pricing_tiers": [
+      {
+        "min_quantity": 1,
+        "max_quantity": 30,
+        "unit_amount": 165,
+        "description": "1-30 jours-apprenant : 1,65€"
+      },
+      {
+        "min_quantity": 31,
+        "max_quantity": 60,
+        "unit_amount": 125,
+        "description": "31-60 jours-apprenant : 1,25€"
+      },
+      {
+        "min_quantity": 61,
+        "max_quantity": 0,
+        "unit_amount": 105,
+        "description": "61 jours-apprenant et plus : 1,05€"
+      }
+    ]
+  }
+]

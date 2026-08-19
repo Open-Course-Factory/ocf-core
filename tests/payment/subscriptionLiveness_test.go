@@ -140,6 +140,7 @@ func TestEnsureFreeTrialAssigned_IsIdempotent(t *testing.T) {
 	trialPlan := &models.SubscriptionPlan{
 		Name: services.FreePlanName, PriceAmount: 0, Currency: "eur",
 		BillingInterval: "month", IsActive: true, Priority: 0,
+		IsDefaultFree: true, // the election FindFreePlan reads
 	}
 	require.NoError(t, db.Create(trialPlan).Error)
 	defer func() {

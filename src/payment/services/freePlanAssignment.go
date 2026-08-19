@@ -9,24 +9,26 @@ import (
 	"gorm.io/gorm"
 )
 
-// FreePlanName is the name the free default plan must carry.
+// FreePlanName is the customer-facing name the free default plan is SEEDED with.
 //
-// This is a constraint, not a preference: the free plan is selected BY NAME in
-// several places, and the startup seed recreates a plan with this name when none
-// exists. Renaming the row (e.g. to a customer-facing "Découverte") therefore
-// breaks signup auto-assignment and then silently spawns a duplicate free plan.
-// Giving the plan a customer-facing name requires replacing the name lookup with
-// a typed marker first; until then, this constant is the single place the literal
-// should appear.
-const FreePlanName = "Trial"
+// It is a label, not an identifier. The plan is found through the typed
+// SubscriptionPlan.IsDefaultFree marker, precisely so that renaming it — which
+// marketing may do again — cannot break signup auto-assignment or make the seed
+// recreate a plan the lookup can no longer see.
+const FreePlanName = "Découverte"
+
+// LegacyFreePlanName is the name the free plan carried before the offer was
+// named. Only the startup migrations still reference it, to find the row that
+// predates the marker.
+const LegacyFreePlanName = "Trial"
 
 // FindFreePlan returns the active free default plan, or an error if it is absent.
 func FindFreePlan(db *gorm.DB) (*models.SubscriptionPlan, error) {
 	var plan models.SubscriptionPlan
-	err := db.Where("name = ? AND price_amount = 0 AND is_active = ?", FreePlanName, true).
+	err := db.Where("is_default_free = ? AND price_amount = 0 AND is_active = ?", true, true).
 		First(&plan).Error
 	if err != nil {
-		return nil, fmt.Errorf("could not find active %s plan: %w", FreePlanName, err)
+		return nil, fmt.Errorf("could not find the active default free plan: %w", err)
 	}
 	return &plan, nil
 }

@@ -59,6 +59,7 @@ func SubscriptionPlanToOutput(plan *models.SubscriptionPlan) dto.SubscriptionPla
 		// Capability flags
 		GroupManagementEnabled:    plan.GroupManagementEnabled,
 		BulkPurchasable:           plan.BulkPurchasable,
+		IsDefaultFree:             plan.IsDefaultFree,
 		SeatUnit:                  plan.SeatUnit,
 		NetworkAccessEnabled:      plan.NetworkAccessEnabled,
 		DataPersistenceEnabled:    plan.DataPersistenceEnabled,

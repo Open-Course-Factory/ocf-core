@@ -231,8 +231,18 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Migrate inline scripts/markdown to ProjectFile records
 	migrateInlineContentToProjectFiles(db)
 
-	// Ensure the free Trial plan always exists (regardless of environment)
-	EnsureTrialPlanExists(db)
+	// Give the public plans the names the offer uses. Runs BEFORE the two routines
+	// below: EnsureFreePlanExists keys on the current name and would otherwise
+	// create a second free plan beside the one being renamed, and MarkDefaultFreePlan
+	// looks the row up by that name.
+	RenameLegacyPlans(db)
+
+	// Elect the plan new signups receive. Runs before EnsureFreePlanExists so an
+	// existing free plan is marked rather than duplicated.
+	MarkDefaultFreePlan(db)
+
+	// Ensure the free default plan always exists (regardless of environment)
+	EnsureFreePlanExists(db)
 
 	// #439: retire the 'trialing' status from existing rows. Must run BEFORE both
 	// the backfill and the index migration below, which now speak only of 'active'.
@@ -268,6 +278,16 @@ func AutoMigrateAll(db *gorm.DB) {
 	// holds one — and a Trial outranks its owner's paid plan, so those trainers
 	// stay locked out of the classroom features they paid for until this runs.
 	SweepAutoAssignedOrgTrials(db)
+
+	// Report subscriptions whose plan no longer exists. Resolution now refuses
+	// them (#481), which protects the platform but shows the user a missing
+	// entitlement and the operator nothing — this names the rows to repair.
+	if report := paymentServices.ReportDanglingPlanReferences(db); report.Any() {
+		log.Printf("[PLAN-REFERENCES] dangling plan references found — these subscriptions "+
+			"cannot resolve and grant nothing until repaired: %d user subscription(s), "+
+			"%d organization subscription(s), %d organization role plan(s)",
+			report.UserSubscriptions, report.OrganizationSubscriptions, report.OrganizationRolePlans)
+	}
 
 	// Drop the orphan subscription_plans columns whose Go fields were removed.
 	// This runs LAST and subsumes the standalone group-management backfill: it
@@ -394,15 +414,87 @@ func syncCasdoorRolesToCasbin() {
 	log.Println("[ROLE-SYNC] Casdoor-to-Casbin role sync complete")
 }
 
-// EnsureTrialPlanExists ensures the free Trial plan always exists in the database
+// RenameLegacyPlans gives the three public plans the names the offer actually
+// uses. It renames the ROW: these are the same commercial products, carrying
+// live subscriptions and Stripe ids, so creating new plans beside them would
+// strand every existing customer on a plan nobody sells.
+//
+// Skips a rename whose target name is already taken by a different row — that
+// means the catalogue has already been named, and two plans sharing a name is
+// worse than one keeping an old one.
+//
+// Idempotent: once renamed, the WHERE matches nothing.
+func RenameLegacyPlans(db *gorm.DB) {
+	renames := []struct{ from, to string }{
+		{paymentServices.LegacyFreePlanName, paymentServices.FreePlanName},
+		{"Member Pro", "Solo"},
+		{"Trainer Plan", "Formateur"},
+	}
+
+	for _, r := range renames {
+		var taken int64
+		db.Model(&paymentModels.SubscriptionPlan{}).Where("name = ?", r.to).Count(&taken)
+		if taken > 0 {
+			continue
+		}
+		res := db.Model(&paymentModels.SubscriptionPlan{}).
+			Where("name = ?", r.from).
+			Update("name", r.to)
+		if res.Error != nil {
+			log.Printf("[PLAN-RENAME] failed to rename %q to %q: %v", r.from, r.to, res.Error)
+			continue
+		}
+		if res.RowsAffected > 0 {
+			log.Printf("[PLAN-RENAME] renamed %q to %q (%d row)", r.from, r.to, res.RowsAffected)
+		}
+	}
+}
+
+// MarkDefaultFreePlan elects the single plan new signups are given.
+//
+// The election used to be "the plan named Trial", which is why naming the offer
+// needed this: FindFreePlan now reads the typed marker, and this is what puts it
+// on the right row in a database that predates the column.
+//
+// Runs after RenameLegacyPlans, so it matches the current name; falls back to
+// the legacy one for a database migrated out of order.
+func MarkDefaultFreePlan(db *gorm.DB) {
+	var marked int64
+	db.Model(&paymentModels.SubscriptionPlan{}).Where("is_default_free = ?", true).Count(&marked)
+	if marked == 1 {
+		return
+	}
+	if marked > 1 {
+		log.Printf("[FREE-PLAN] %d plans claim to be the default free plan; leaving them alone "+
+			"— pick one by hand, this routine will not choose for you", marked)
+		return
+	}
+
+	var plan paymentModels.SubscriptionPlan
+	err := db.Where("price_amount = 0 AND name IN ?",
+		[]string{paymentServices.FreePlanName, paymentServices.LegacyFreePlanName}).
+		Order("created_at ASC").First(&plan).Error
+	if err != nil {
+		// Nothing to elect yet: a fresh database gets its marker from the seed.
+		return
+	}
+	if err := db.Model(&plan).Update("is_default_free", true).Error; err != nil {
+		log.Printf("[FREE-PLAN] failed to mark %q as the default free plan: %v", plan.Name, err)
+		return
+	}
+	log.Printf("[FREE-PLAN] marked %q as the default free plan", plan.Name)
+}
+
+// EnsureFreePlanExists ensures the free default plan always exists in the database
 // and keeps its key fields in sync with the code-defined values.
-func EnsureTrialPlanExists(db *gorm.DB) {
-	// Clean up duplicate Trial plans (keep oldest, delete newer duplicates)
+func EnsureFreePlanExists(db *gorm.DB) {
+	// Clean up duplicate free plans (keep oldest, delete newer duplicates)
 	var duplicates []paymentModels.SubscriptionPlan
-	db.Where("name = ? AND price_amount = 0", "Trial").Order("created_at ASC").Find(&duplicates)
+	db.Where("name = ? AND price_amount = 0", paymentServices.FreePlanName).
+		Order("created_at ASC").Find(&duplicates)
 	if len(duplicates) > 1 {
 		for _, dup := range duplicates[1:] {
-			log.Printf("[TRIAL-PLAN] Removing duplicate Trial plan %s", dup.ID)
+			log.Printf("[FREE-PLAN] Removing duplicate free plan %s", dup.ID)
 			// Reassign any org subscriptions pointing to the duplicate
 			db.Model(&paymentModels.OrganizationSubscription{}).
 				Where("subscription_plan_id = ?", dup.ID).
@@ -414,52 +506,52 @@ func EnsureTrialPlanExists(db *gorm.DB) {
 		}
 	}
 
-	// Use FirstOrCreate to atomically find or create the Trial plan, preventing TOCTOU race
-	// when two pods start simultaneously. Attrs are applied only on creation.
+	// The free tier is described in the same catalogue as the paid plans — it is
+	// an offer, not an implementation detail — so its values are read from there
+	// rather than repeated here. Repeating them is how the seed and the free-plan
+	// sync came to disagree about the description.
+	template, err := paymentServices.FreePlanTemplate()
+	if err != nil {
+		log.Printf("Warning: cannot read the free plan from the catalogue: %v\n", err)
+		return
+	}
+
+	// FirstOrCreate is atomic, preventing a TOCTOU race when two pods start
+	// simultaneously. Attrs are applied only on creation.
 	var existing paymentModels.SubscriptionPlan
-	result := db.Where("name = ? AND price_amount = 0", "Trial").Attrs(paymentModels.SubscriptionPlan{
-		Name:                        "Trial",
-		Description:                 "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
-		PriceAmount:                 0,
-		Currency:                    "eur",
-		BillingInterval:             "month",
-		IsActive:                    true,
-		RequiredRole:                "member",
-		UseTieredPricing:            false,
-		MaxSessionDurationMinutes:   60,
-		MaxCPU:                      500, // 1 × XS (500 mCPU = 0.5 vCPU)
-		MaxMemoryMB:                 256, // 1 × XS
-		NetworkAccessEnabled:        false,
-		DataPersistenceEnabled:      false,
-		DataPersistenceGB:           0,
-		CommandHistoryRetentionDays: 7,
-	}).FirstOrCreate(&existing)
+	result := db.Where("name = ? AND price_amount = 0", paymentServices.FreePlanName).
+		Attrs(template).
+		FirstOrCreate(&existing)
 	if result.Error != nil {
-		log.Printf("Warning: Failed to find or create Trial plan: %v\n", result.Error)
+		log.Printf("Warning: Failed to find or create the %s plan: %v\n", paymentServices.FreePlanName, result.Error)
 		return
 	}
 	if result.RowsAffected > 0 {
-		log.Println("Created missing Trial plan")
+		log.Printf("Created missing %s plan", paymentServices.FreePlanName)
 	}
 
-	// Sync existing Trial plan fields to match code (handles drift on existing plans)
+	// Re-assert the governed fields on every startup, so a plan edited by hand
+	// drifts back to the offer. Sourced from the same template as the creation
+	// above — the two used to be separate literals, and only one of them was
+	// updated when the free tier was renamed.
 	db.Model(&existing).Updates(map[string]interface{}{
-		"description":                    "Free plan for testing the platform. 1 hour sessions, no network access. Perfect for trying out terminals.",
-		"max_session_duration_minutes":   60,
-		"max_cpu":                        500, // 1 × XS in mCPU (0.5 vCPU)
-		"max_memory_mb":                  256,
-		"network_access_enabled":         false,
-		"data_persistence_enabled":       false,
-		"data_persistence_gb":            0,
-		"is_active":                      true,
-		"command_history_retention_days": 7,
+		"description":                    template.Description,
+		"max_session_duration_minutes":   template.MaxSessionDurationMinutes,
+		"max_cpu":                        template.MaxCPU,
+		"max_memory_mb":                  template.MaxMemoryMB,
+		"network_access_enabled":         template.NetworkAccessEnabled,
+		"data_persistence_enabled":       template.DataPersistenceEnabled,
+		"data_persistence_gb":            template.DataPersistenceGB,
+		"is_active":                      template.IsActive,
+		"is_default_free":                true,
+		"command_history_retention_days": template.CommandHistoryRetentionDays,
 	})
 }
 
 // SetupDefaultSubscriptionPlans initializes default subscription plans
 func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 	// Always ensure Trial plan exists first
-	EnsureTrialPlanExists(db)
+	EnsureFreePlanExists(db)
 
 	// Vérifier si les other plans existent déjà
 	var count int64
@@ -468,59 +560,40 @@ func SetupDefaultSubscriptionPlans(db *gorm.DB) {
 		return // Paid plans déjà créés
 	}
 
-	// Plan Member Pro (Individual)
-	memberProPlan := &paymentModels.SubscriptionPlan{
-		Name:                        "Member Pro",
-		Description:                 "Accès à un terminal - Utilisateur individuel",
-		PriceAmount:                 1200, // 12€ per license
-		Currency:                    "eur",
-		BillingInterval:             "month",
-		IsActive:                    true,
-		RequiredRole:                "member", // Changed from "member_pro" (deprecated) to "member"
-		UseTieredPricing:            false,
-		MaxSessionDurationMinutes:   180,
-		MaxCPU:                      6000, // 3 × M (2000 mCPU each)
-		MaxMemoryMB:                 3072, // 3 × M (1024 MiB each)
-		NetworkAccessEnabled:        true,
-		DataPersistenceEnabled:      true,
-		DataPersistenceGB:           5,
-		CommandHistoryRetentionDays: 90,
+	// The offer itself lives in src/payment/services/catalogue.json, which the
+	// production bootstrap script reads too. Defining it here as well is how a
+	// price ends up correct in one environment and stale in the other.
+	catalogue, err := paymentServices.PaidCatalogue()
+	if err != nil {
+		log.Printf("Warning: cannot read the plan catalogue: %v\n", err)
+		return
 	}
 
-	// Plan Trainer (With Bulk Purchase & Tiered Pricing)
-	trainerPlan := &paymentModels.SubscriptionPlan{
-		Name:                        "Trainer Plan",
-		Description:                 "Pour formateurs - Achat en gros avec tarifs dégressifs",
-		PriceAmount:                 1200, // 12€ base price per license
-		Currency:                    "eur",
-		BillingInterval:             "month",
-		IsActive:                    true,
-		RequiredRole:                "trainer",
-		UseTieredPricing:            true,
-		MaxSessionDurationMinutes:   480,
-		MaxCPU:                      40000, // 10 × XL (4000 mCPU each)
-		MaxMemoryMB:                 40960, // 10 × XL (4096 MiB each)
-		NetworkAccessEnabled:        true,
-		DataPersistenceEnabled:      true,
-		GroupManagementEnabled:      true, // typed entitlement gates bulk purchase (was the legacy features[] "group_management" string)
-		DataPersistenceGB:           20,
-		CommandHistoryRetentionDays: 365,
-		PricingTiers: []paymentModels.PricingTier{
-			{MinQuantity: 1, MaxQuantity: 5, UnitAmount: 1200, Description: "1-5 licences: 12€/licence"},
-			{MinQuantity: 6, MaxQuantity: 15, UnitAmount: 1000, Description: "6-15 licences: 10€/licence"},
-			{MinQuantity: 16, MaxQuantity: 30, UnitAmount: 800, Description: "16-30 licences: 8€/licence"},
-			{MinQuantity: 31, MaxQuantity: 0, UnitAmount: 600, Description: "31+ licences: 6€/licence (illimité)"},
-		},
+	plans := make([]*paymentModels.SubscriptionPlan, 0, len(catalogue))
+	for i := range catalogue {
+		plans = append(plans, &catalogue[i])
 	}
-
-	plans := []*paymentModels.SubscriptionPlan{memberProPlan, trainerPlan}
 
 	for _, plan := range plans {
+		// Read the intent BEFORE Create: GORM omits zero-value bools on insert for
+		// a column declared `default:true`, then writes the applied default back
+		// into the struct — so after Create, a plan meant to be hidden reports
+		// IsCatalog=true and its own intent is gone. Same defect as #447 on the
+		// entity API.
+		wantsHiding := !plan.IsCatalog
+
 		if err := db.Create(plan).Error; err != nil {
 			log.Printf("Warning: Failed to create subscription plan %s: %v\n", plan.Name, err)
-		} else {
-			log.Printf("Created subscription plan: %s\n", plan.Name)
+			continue
 		}
+		// Writing it back explicitly is the documented workaround; Select("*") on
+		// Create does not work despite older comments saying so.
+		if wantsHiding {
+			if err := db.Model(plan).Update("is_catalog", false).Error; err != nil {
+				log.Printf("Warning: Failed to hide plan %s from the catalogue: %v\n", plan.Name, err)
+			}
+		}
+		log.Printf("Created subscription plan: %s\n", plan.Name)
 	}
 }
 

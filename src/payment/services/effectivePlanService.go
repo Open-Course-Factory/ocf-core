@@ -170,8 +170,14 @@ func (s *effectivePlanService) resolveGlobal(userID string) (*EffectivePlanResul
 		utils.Warn("Failed to get personal subscription for user %s: %v", userID, err)
 	}
 	if err == nil && sub != nil {
-		personalSub = sub
-		personalPlan = &sub.SubscriptionPlan
+		// A dangling reference is skipped rather than fatal here: this branch has
+		// other candidates to consider, and refusing the user outright when one of
+		// their plans is broken would be closing more than the hole (#481).
+		if ensurePlanLoaded(&sub.SubscriptionPlan,
+			fmt.Sprintf("user subscription %s", sub.ID)) == nil {
+			personalSub = sub
+			personalPlan = &sub.SubscriptionPlan
+		}
 	}
 
 	// 2. Get organization subscriptions
@@ -187,6 +193,10 @@ func (s *effectivePlanService) resolveGlobal(userID string) (*EffectivePlanResul
 
 	for i := range orgSubs {
 		plan := orgSubs[i].SubscriptionPlan
+		if ensurePlanLoaded(&plan,
+			fmt.Sprintf("organization subscription %s", orgSubs[i].ID)) != nil {
+			continue
+		}
 		if plan.Priority > highestOrgPriority {
 			highestOrgPriority = plan.Priority
 			bestOrgSub = &orgSubs[i]
@@ -257,6 +267,10 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 		if err != nil {
 			return nil, fmt.Errorf("no active personal subscription for user %s: %w", userID, err)
 		}
+		if planErr := ensurePlanLoaded(&sub.SubscriptionPlan,
+			fmt.Sprintf("user subscription %s", sub.ID)); planErr != nil {
+			return nil, planErr
+		}
 		return &EffectivePlanResult{
 			Plan:             &sub.SubscriptionPlan,
 			Source:           PlanSourcePersonal,
@@ -281,6 +295,10 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 	// specific plan, that mapping wins over the org's default subscription.
 	rolePlan, err := s.orgSubRepo.GetOrganizationRolePlan(orgID, string(member.Role))
 	if err == nil && rolePlan != nil {
+		if planErr := ensurePlanLoaded(&rolePlan.SubscriptionPlan,
+			fmt.Sprintf("role plan %s", rolePlan.ID)); planErr != nil {
+			return nil, planErr
+		}
 		return &EffectivePlanResult{
 			Plan:   &rolePlan.SubscriptionPlan,
 			Source: PlanSourceOrganization,
@@ -313,6 +331,10 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 		if fallbackErr != nil || sub == nil {
 			return nil, fmt.Errorf("no active subscription for organization %s and no personal fallback: %w", orgID.String(), fallbackErr)
 		}
+		if planErr := ensurePlanLoaded(&sub.SubscriptionPlan,
+			fmt.Sprintf("user subscription %s", sub.ID)); planErr != nil {
+			return nil, planErr
+		}
 		return &EffectivePlanResult{
 			Plan:             &sub.SubscriptionPlan,
 			Source:           PlanSourcePersonal,
@@ -321,6 +343,14 @@ func (s *effectivePlanService) resolveForOrg(userID string, orgID uuid.UUID) (*E
 			// ScopeOrganizationID stays nil: a personally-held plan is a personal
 			// budget, counted for this user alone, even inside an organization.
 		}, nil
+	}
+	// No skipping here, unlike resolveGlobal: this organization HAS a subscription,
+	// so falling through to the personal fallback would answer with someone else's
+	// plan and count its budget against the wrong pool. A broken reference is an
+	// operator problem, not an entitlement (#481).
+	if planErr := ensurePlanLoaded(&orgSub.SubscriptionPlan,
+		fmt.Sprintf("organization subscription %s", orgSub.ID)); planErr != nil {
+		return nil, planErr
 	}
 	return &EffectivePlanResult{
 		Plan:                     &orgSub.SubscriptionPlan,

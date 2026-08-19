@@ -74,6 +74,10 @@ type SubscriptionPlanOutput struct {
 	Features           []string  `json:"features"`
 	IsActive           bool      `json:"is_active"`
 	IsCatalog          bool      `json:"is_catalog"`
+	// IsDefaultFree is read-only: which plan new signups receive is elected at
+	// startup, not chosen per request. There is deliberately no input field for
+	// it — two plans claiming the election is a worse state than none.
+	IsDefaultFree      bool      `json:"is_default_free"`
 	GroupManagementEnabled bool  `json:"group_management_enabled"`
 	BulkPurchasable        bool  `json:"bulk_purchasable"`
 	SeatUnit               string `json:"seat_unit"`
