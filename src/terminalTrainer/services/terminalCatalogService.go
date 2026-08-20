@@ -57,7 +57,11 @@ func newTerminalCatalogService(proxy *terminalProxyClient, baseURL, apiVersion, 
 
 const catalogCacheTTL = 60 * time.Second
 
-// featurePlanMapping maps feature keys to plan predicates.
+// featurePlanMapping maps feature keys to plan predicates. Each predicate
+// dereferences the plan, so callers must treat a nil plan as "no entitlement
+// resolved" and refuse the feature rather than consult the predicate —
+// InjectEffectivePlan stores result.Plan verbatim, and that can be nil on an
+// otherwise valid result.
 //
 // Persistence is intentionally NOT in this map: the persistent-vs-ephemeral
 // choice is surfaced as a persistence_mode radio (in TerminalAdvancedOptions),
@@ -205,7 +209,7 @@ func ComputeSessionOptions(
 		if !f.AlwaysAvailable && !supportedFeatures[f.Key] {
 			opt.Allowed = false
 			opt.Reason = "not_supported"
-		} else if checker, ok := featurePlanMapping[f.Key]; ok && !checker(plan) {
+		} else if checker, ok := featurePlanMapping[f.Key]; ok && (plan == nil || !checker(plan)) {
 			opt.Allowed = false
 			opt.Reason = "plan_disabled"
 		} else if f.MinSizeKey != "" {

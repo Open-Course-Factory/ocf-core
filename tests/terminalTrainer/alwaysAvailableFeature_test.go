@@ -57,9 +57,7 @@ func debianLikeCatalog() (dto.TTDistribution, []dto.TTSize, []dto.TTFeature) {
 	return distro, sizes, features
 }
 
-// networkEnabledPlan is the plan these cases run under. It must not be nil:
-// featurePlanMapping["network"] dereferences the plan, so ComputeSessionOptions
-// panics on a nil one — noted, not fixed here.
+// networkEnabledPlan is the plan these cases run under.
 func networkEnabledPlan() *paymentModels.SubscriptionPlan {
 	return &paymentModels.SubscriptionPlan{
 		BaseModel:            entityManagementModels.BaseModel{ID: uuid.New()},
@@ -96,4 +94,26 @@ func TestComputeSessionOptions_OrdinaryFeatureStillNeedsImageSupport(t *testing.
 		"a feature that needs image support must stay refused when the image "+
 			"does not declare it — always_available is the exception, not the rule")
 	assert.Equal(t, "not_supported", docker.Reason)
+}
+
+// A user can reach GET /terminals/session-options with a resolved effective
+// plan whose Plan is nil — InjectEffectivePlan stores result.Plan verbatim, and
+// the launch path guards against exactly that shape. featurePlanMapping's
+// predicates dereference the plan, so an unguarded nil crashed the request
+// instead of answering it.
+func TestComputeSessionOptions_NilPlanRefusesPlanGatedFeaturesInsteadOfPanicking(t *testing.T) {
+	distro, sizes, features := debianLikeCatalog()
+
+	var opts *dto.SessionOptionsResponse
+	require.NotPanics(t, func() {
+		opts = services.ComputeSessionOptions(distro, sizes, features, nil)
+	}, "no plan is an answerable state, not a crash")
+
+	network := featureOption(t, opts, "network")
+	assert.False(t, network.Allowed,
+		"a feature gated on a plan predicate cannot be granted without a plan")
+	assert.Equal(t, "plan_disabled", network.Reason)
+
+	assert.True(t, featureOption(t, opts, "effects").Allowed,
+		"a feature that needs no plan and no image support stays available")
 }
