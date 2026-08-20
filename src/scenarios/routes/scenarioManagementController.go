@@ -1048,7 +1048,8 @@ func (sc *scenarioManagementController) ListGroupAvailableScenarios(ctx *gin.Con
 	// These are available for assignment whether or not they have a ScenarioAssignment
 	if group.OrganizationID != nil {
 		var orgScenarios []models.Scenario
-		if err := sc.db.Where("organization_id = ?", group.OrganizationID).
+		if err := sc.db.Scopes(models.NotArchived).
+			Where("organization_id = ?", group.OrganizationID).
 			Preload("Steps").
 			Find(&orgScenarios).Error; err != nil {
 			slog.Error("failed to fetch org scenarios", "err", err)
@@ -1070,7 +1071,7 @@ func (sc *scenarioManagementController) ListGroupAvailableScenarios(ctx *gin.Con
 	var groupAssignments []models.ScenarioAssignment
 	if err := sc.db.Where("group_id = ? AND scope = ? AND is_active = true",
 		groupID, "group").
-		Preload("Scenario").Preload("Scenario.Steps").
+		Preload("Scenario", models.NotArchived).Preload("Scenario.Steps").
 		Find(&groupAssignments).Error; err != nil {
 		slog.Error("failed to fetch group scenario assignments", "err", err)
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{

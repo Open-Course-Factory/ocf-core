@@ -134,6 +134,12 @@ func (sc *scenarioLaunchController) StartScenario(ctx *gin.Context) {
 		return
 	}
 
+	// An archived scenario cannot start a new run, on a fresh terminal or on
+	// one the learner already has.
+	if sc.rejectIfArchived(ctx, &scenario) {
+		return
+	}
+
 	// Size check: terminal size must be >= scenario required size
 	requiredSize := scenario.InstanceType // stores size like "M", "XL"
 	machineSize := terminal.MachineSize   // actual terminal size like "L"
@@ -330,7 +336,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 	var scenarios []models.Scenario
 
 	if sc.hasAdminRole(ctx) {
-		if err := sc.db.Preload("CompatibleInstanceTypes").Find(&scenarios).Error; err != nil {
+		if err := sc.db.Scopes(models.NotArchived).Preload("CompatibleInstanceTypes").Find(&scenarios).Error; err != nil {
 			slog.Error("failed to fetch all scenarios", "err", err)
 			ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 				ErrorCode:    http.StatusInternalServerError,
@@ -380,6 +386,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			now := time.Now()
 			combined := strings.Join(conditions, " OR ")
 			query := sc.db.Distinct().
+				Scopes(models.NotArchived).
 				Preload("CompatibleInstanceTypes").
 				Joins("JOIN scenario_assignments sa ON sa.scenario_id = scenarios.id").
 				Where("sa.is_active = true AND (sa.deadline IS NULL OR sa.deadline > ?) AND (sa.start_date IS NULL OR sa.start_date <= ?)", now, now).
@@ -397,7 +404,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 
 		// Also include public scenarios
 		var publicScenarios []models.Scenario
-		sc.db.Preload("CompatibleInstanceTypes").Where("is_public = ?", true).Find(&publicScenarios)
+		sc.db.Scopes(models.NotArchived).Preload("CompatibleInstanceTypes").Where("is_public = ?", true).Find(&publicScenarios)
 		// Merge, avoiding duplicates
 		existingIDs := make(map[uuid.UUID]bool)
 		for _, s := range scenarios {
@@ -854,6 +861,10 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 		return
 	}
 
+	if sc.rejectIfArchived(ctx, &scenario) {
+		return
+	}
+
 	// Check assignment access: admin OR user has group/org assignment
 	if !sc.hasAdminRole(ctx) {
 		hasAccess, err := sc.checkScenarioAccess(userID, scenarioID)
@@ -1113,6 +1124,10 @@ func (sc *scenarioLaunchController) PreviewScenario(ctx *gin.Context) {
 			ErrorCode:    http.StatusNotFound,
 			ErrorMessage: "Scenario not found",
 		})
+		return
+	}
+
+	if sc.rejectIfArchived(ctx, &scenario) {
 		return
 	}
 

@@ -100,6 +100,7 @@ type ScenarioOutput struct {
 	SetupScriptID  *uuid.UUID         `json:"setup_script_id,omitempty"`
 	IntroFileID    *uuid.UUID         `json:"intro_file_id,omitempty"`
 	FinishFileID   *uuid.UUID         `json:"finish_file_id,omitempty"`
+	ArchivedAt     *time.Time         `json:"archived_at,omitempty"`
 	CreatedAt      time.Time          `json:"created_at"`
 	UpdatedAt      time.Time          `json:"updated_at"`
 	Steps                  []ScenarioStepOutput          `json:"steps,omitempty"`

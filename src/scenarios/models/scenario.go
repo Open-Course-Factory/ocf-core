@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	entityManagementModels "soli/formations/src/entityManagement/models"
 
@@ -52,6 +53,8 @@ type Scenario struct {
 	SetupScriptID  *uuid.UUID `gorm:"type:uuid;index" json:"setup_script_id,omitempty" mapstructure:"setup_script_id"`
 	IntroFileID    *uuid.UUID `gorm:"type:uuid;index" json:"intro_file_id,omitempty" mapstructure:"intro_file_id"`
 	FinishFileID   *uuid.UUID `gorm:"type:uuid;index" json:"finish_file_id,omitempty" mapstructure:"finish_file_id"`
+	// ArchivedAt retires the scenario without deleting it — see NotArchived.
+	ArchivedAt     *time.Time `gorm:"index" json:"archived_at,omitempty" mapstructure:"archived_at"`
 
 	// Relations
 	Steps                  []ScenarioStep         `gorm:"foreignKey:ScenarioID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"steps,omitempty"`
@@ -61,6 +64,11 @@ type Scenario struct {
 // Implement interfaces for entity management system
 func (s Scenario) GetBaseModel() entityManagementModels.BaseModel {
 	return s.BaseModel
+}
+
+// IsArchived reports whether the scenario has been retired.
+func (s Scenario) IsArchived() bool {
+	return s.ArchivedAt != nil
 }
 
 func (s Scenario) GetReferenceObject() string {

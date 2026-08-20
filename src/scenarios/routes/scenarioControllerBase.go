@@ -54,6 +54,21 @@ func (b *scenarioControllerBase) getSessionIfOwned(ctx *gin.Context) (*models.Sc
 	return &session, nil
 }
 
+// rejectIfArchived answers the request and reports true when the scenario has
+// been retired. Archiving stops new runs only — sessions already in flight are
+// left to finish, so this belongs on the launch entry points and not on the
+// session-progress routes.
+func (b *scenarioControllerBase) rejectIfArchived(ctx *gin.Context, scenario *models.Scenario) bool {
+	if !scenario.IsArchived() {
+		return false
+	}
+	ctx.JSON(http.StatusConflict, &errors.APIError{
+		ErrorCode:    http.StatusConflict,
+		ErrorMessage: models.ErrScenarioArchived.Error(),
+	})
+	return true
+}
+
 // hasAdminRole checks if the context has admin/administrator role without writing a response.
 func (b *scenarioControllerBase) hasAdminRole(ctx *gin.Context) bool {
 	userRoles, _ := ctx.Get("userRoles")
@@ -87,6 +102,7 @@ func (b *scenarioControllerBase) buildScenarioOutput(scenario *models.Scenario) 
 		FinishText:       scenario.FinishText,
 		CreatedByID:      scenario.CreatedByID,
 		OrganizationID:   scenario.OrganizationID,
+		ArchivedAt:       scenario.ArchivedAt,
 		CreatedAt:        scenario.CreatedAt,
 		UpdatedAt:        scenario.UpdatedAt,
 	}

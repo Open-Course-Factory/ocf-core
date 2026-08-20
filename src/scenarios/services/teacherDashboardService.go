@@ -464,6 +464,12 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 		return nil, fmt.Errorf("scenario not found: %w", err)
 	}
 
+	// A retired scenario cannot be started for a whole class either. Sessions
+	// already running are untouched — see models.NotArchived.
+	if scenario.IsArchived() {
+		return nil, models.ErrScenarioArchived
+	}
+
 	result := &BulkStartResult{
 		NoKeyUsers: make([]UserKeyMissing, 0),
 		Errors:     make([]BulkStartError, 0),

@@ -1,6 +1,7 @@
 package scenarioController
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -481,6 +482,10 @@ func (tc *TeacherController) BulkStartScenario(c *gin.Context) {
 
 	result, err := tc.dashboardService.BulkStartScenario(groupID, scenarioID, req.InstanceType, req.Backend, req.SessionDurationMinutes, trainerID)
 	if err != nil {
+		if errors.Is(err, scenarioModels.ErrScenarioArchived) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		slog.Error("failed to bulk start scenario", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -21,6 +21,13 @@ func InitScenarioHooks(db *gorm.DB) {
 	}
 
 	// Hook for gating scenario PATCH/DELETE on manageable scenarios
+	archivedHook := NewScenarioAssignmentArchivedHook(db)
+	if err := hooks.GlobalHookRegistry.RegisterHook(archivedHook); err != nil {
+		log.Printf("Failed to register scenario assignment archived hook: %v", err)
+	} else {
+		log.Println("Scenario assignment archived hook registered")
+	}
+
 	scenarioAuthHook := NewScenarioAuthorizationHook(db)
 	if err := hooks.GlobalHookRegistry.RegisterHook(scenarioAuthHook); err != nil {
 		log.Printf("Failed to register scenario authorization hook: %v", err)

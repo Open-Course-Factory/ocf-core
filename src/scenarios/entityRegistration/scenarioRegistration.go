@@ -48,6 +48,7 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						SetupScriptID:  model.SetupScriptID,
 						IntroFileID:    model.IntroFileID,
 						FinishFileID:   model.FinishFileID,
+						ArchivedAt:     model.ArchivedAt,
 						CreatedAt:      model.CreatedAt,
 						UpdatedAt:      model.UpdatedAt,
 					}

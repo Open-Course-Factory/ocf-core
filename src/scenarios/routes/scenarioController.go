@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"soli/formations/src/auth/access"
 	"soli/formations/src/auth/errors"
@@ -35,6 +36,8 @@ type ScenarioController interface {
 	ExportScenarios(ctx *gin.Context)
 	ImportJSON(ctx *gin.Context)
 	DuplicateScenario(ctx *gin.Context)
+	ArchiveScenario(ctx *gin.Context)
+	UnarchiveScenario(ctx *gin.Context)
 }
 
 type scenarioController struct {
@@ -631,4 +634,120 @@ func (sc *scenarioController) DuplicateScenario(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, sc.buildScenarioOutput(newScenario))
+}
+
+// loadManageableScenario loads the scenario named by the :id parameter and
+// checks the caller may manage it — the same rule that guards PATCH, DELETE
+// and export (creator, org manager, group manager, or platform admin). It
+// answers the request and returns nil when the caller may not.
+func (sc *scenarioController) loadManageableScenario(ctx *gin.Context) *models.Scenario {
+	scenarioID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid scenario ID",
+		})
+		return nil
+	}
+
+	var scenario models.Scenario
+	if err := sc.db.Where("id = ?", scenarioID).First(&scenario).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			ctx.JSON(http.StatusNotFound, &errors.APIError{
+				ErrorCode:    http.StatusNotFound,
+				ErrorMessage: "Scenario not found",
+			})
+			return nil
+		}
+		slog.Error("failed to load scenario", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Internal error",
+		})
+		return nil
+	}
+
+	userRoles, _ := ctx.Get("userRoles")
+	roles, _ := userRoles.([]string)
+	if access.IsAdmin(roles) {
+		return &scenario
+	}
+
+	allowed, err := scenarioHooks.CanManageScenario(sc.db, sc.groupService, &scenario, ctx.GetString("userId"))
+	if err != nil {
+		slog.Error("failed to check scenario manage permission", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Internal error",
+		})
+		return nil
+	}
+	if !allowed {
+		ctx.JSON(http.StatusForbidden, &errors.APIError{
+			ErrorCode:    http.StatusForbidden,
+			ErrorMessage: "Access denied",
+		})
+		return nil
+	}
+
+	return &scenario
+}
+
+// ArchiveScenario godoc
+// @Summary Archive a scenario
+// @Description Retires a scenario: it stops being listed, assignable and launchable, while past sessions, grades and flags keep referring to it. Sessions already running are left to finish.
+// @Tags scenarios
+// @Produce json
+// @Param id path string true "Scenario ID"
+// @Success 200 {object} dto.ScenarioOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenarios/{id}/archive [post]
+// @Security BearerAuth
+func (sc *scenarioController) ArchiveScenario(ctx *gin.Context) {
+	now := time.Now()
+	sc.setScenarioArchivedAt(ctx, &now)
+}
+
+// UnarchiveScenario godoc
+// @Summary Unarchive a scenario
+// @Description Puts an archived scenario back in service.
+// @Tags scenarios
+// @Produce json
+// @Param id path string true "Scenario ID"
+// @Success 200 {object} dto.ScenarioOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenarios/{id}/unarchive [post]
+// @Security BearerAuth
+func (sc *scenarioController) UnarchiveScenario(ctx *gin.Context) {
+	sc.setScenarioArchivedAt(ctx, nil)
+}
+
+// setScenarioArchivedAt writes archived_at explicitly rather than through the
+// loaded struct, so a nil value clears the column instead of being skipped as
+// a zero value.
+func (sc *scenarioController) setScenarioArchivedAt(ctx *gin.Context, at *time.Time) {
+	scenario := sc.loadManageableScenario(ctx)
+	if scenario == nil {
+		return
+	}
+
+	if err := sc.db.Model(&models.Scenario{}).
+		Where("id = ?", scenario.ID).
+		Update("archived_at", at).Error; err != nil {
+		slog.Error("failed to update scenario archived state", "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to update scenario",
+		})
+		return
+	}
+
+	scenario.ArchivedAt = at
+	ctx.JSON(http.StatusOK, sc.buildScenarioOutput(scenario))
 }
