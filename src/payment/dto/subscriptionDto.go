@@ -9,11 +9,15 @@ import (
 
 // SubscriptionPlan DTOs
 type CreateSubscriptionPlanInput struct {
-	Name                        string   `binding:"required" json:"name" mapstructure:"name"`
-	Description                 string   `json:"description" mapstructure:"description"`
-	PriceAmount                 int64    `binding:"required" json:"price_amount" mapstructure:"price_amount"`
-	Currency                    string   `json:"currency" mapstructure:"currency"`
-	BillingInterval             string   `binding:"required" json:"billing_interval" mapstructure:"billing_interval"`
+	Name            string `binding:"required" json:"name" mapstructure:"name"`
+	Description     string `json:"description" mapstructure:"description"`
+	PriceAmount     int64  `binding:"required" json:"price_amount" mapstructure:"price_amount"`
+	Currency        string `json:"currency" mapstructure:"currency"`
+	BillingInterval string `binding:"required" json:"billing_interval" mapstructure:"billing_interval"`
+	// TaxBehavior travels with the amount: a plan created without it falls back
+	// to exclusive, and since Stripe accepts the answer once per price, a
+	// dropped field here is only fixable by creating a second price.
+	TaxBehavior                 string   `json:"tax_behavior" mapstructure:"tax_behavior"`
 	RequiredRole                string   `json:"required_role" mapstructure:"required_role"`
 	MaxSessionDurationMinutes   int      `json:"max_session_duration_minutes" mapstructure:"max_session_duration_minutes"`
 	NetworkAccessEnabled        bool     `json:"network_access_enabled" mapstructure:"network_access_enabled"`
@@ -60,38 +64,41 @@ type UpdateSubscriptionPlanInput struct {
 }
 
 type SubscriptionPlanOutput struct {
-	ID                 uuid.UUID `json:"id"`
-	Name               string    `json:"name"`
-	Description        string    `json:"description"`
-	Priority           int       `json:"priority"` // Higher = better tier (0=Free, 10=Basic, 20=Pro, 30=Premium)
-	StripeProductID    *string   `json:"stripe_product_id"`
-	StripePriceID      *string   `json:"stripe_price_id"`
-	PriceAmount        int64     `json:"price_amount"`
-	Currency           string    `json:"currency"`
-	BillingInterval    string    `json:"billing_interval"`
+	ID              uuid.UUID `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	Priority        int       `json:"priority"` // Higher = better tier (0=Free, 10=Basic, 20=Pro, 30=Premium)
+	StripeProductID *string   `json:"stripe_product_id"`
+	StripePriceID   *string   `json:"stripe_price_id"`
+	PriceAmount     int64     `json:"price_amount"`
+	Currency        string    `json:"currency"`
+	BillingInterval string    `json:"billing_interval"`
+	// TaxBehavior lets a client say whether the amount it renders includes VAT
+	// instead of assuming one answer for the whole catalogue.
+	TaxBehavior string `json:"tax_behavior,omitempty"`
 	// Features is the projection of the plan's typed capability fields (see
 	// DerivePlanEntitlements), no longer a free-form list. Converters populate it.
-	Features           []string  `json:"features"`
-	IsActive           bool      `json:"is_active"`
-	IsCatalog          bool      `json:"is_catalog"`
+	Features  []string `json:"features"`
+	IsActive  bool     `json:"is_active"`
+	IsCatalog bool     `json:"is_catalog"`
 	// IsDefaultFree is read-only: which plan new signups receive is elected at
 	// startup, not chosen per request. There is deliberately no input field for
 	// it — two plans claiming the election is a worse state than none.
-	IsDefaultFree      bool      `json:"is_default_free"`
-	GroupManagementEnabled bool  `json:"group_management_enabled"`
-	BulkPurchasable        bool  `json:"bulk_purchasable"`
-	SeatUnit               string `json:"seat_unit"`
-	RequiredRole       string    `json:"required_role"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	IsDefaultFree          bool      `json:"is_default_free"`
+	GroupManagementEnabled bool      `json:"group_management_enabled"`
+	BulkPurchasable        bool      `json:"bulk_purchasable"`
+	SeatUnit               string    `json:"seat_unit"`
+	RequiredRole           string    `json:"required_role"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 
 	// Terminal-specific limits (for Terminal Trainer feature)
-	MaxSessionDurationMinutes   int      `json:"max_session_duration_minutes"`
-	NetworkAccessEnabled        bool     `json:"network_access_enabled"`
-	DataPersistenceEnabled      bool     `json:"data_persistence_enabled"`
-	SessionSupervisionEnabled   bool     `json:"session_supervision_enabled" mapstructure:"session_supervision_enabled"`
-	DataPersistenceGB           int      `json:"data_persistence_gb"`
-	CommandHistoryRetentionDays int      `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
+	MaxSessionDurationMinutes   int  `json:"max_session_duration_minutes"`
+	NetworkAccessEnabled        bool `json:"network_access_enabled"`
+	DataPersistenceEnabled      bool `json:"data_persistence_enabled"`
+	SessionSupervisionEnabled   bool `json:"session_supervision_enabled" mapstructure:"session_supervision_enabled"`
+	DataPersistenceGB           int  `json:"data_persistence_gb"`
+	CommandHistoryRetentionDays int  `json:"command_history_retention_days" mapstructure:"command_history_retention_days"`
 
 	// Backend routing
 	DefaultBackend  string   `json:"default_backend"`
@@ -167,8 +174,8 @@ type UserSubscriptionOutput struct {
 
 // Admin subscription assignment
 type AdminAssignSubscriptionInput struct {
-	UserID       string    `binding:"required" json:"user_id"`
-	PlanID       uuid.UUID `binding:"required" json:"plan_id"`
+	UserID string    `binding:"required" json:"user_id"`
+	PlanID uuid.UUID `binding:"required" json:"plan_id"`
 	// DurationDays sets the entitlement deadline (#440). Zero means NO deadline —
 	// the assignment is open-ended, which is what granting a bespoke or org plan
 	// means. It still defaults the displayed billing window to 365 days, as it

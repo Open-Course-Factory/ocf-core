@@ -68,6 +68,8 @@ func fullyPopulatedPlan() *models.SubscriptionPlan {
 		MaxCPU:      16000,
 		MaxMemoryMB: 16384,
 
+		TaxBehavior: "inclusive",
+
 		UseTieredPricing: true,
 		PricingTiers: []models.PricingTier{
 			{MinQuantity: 1, MaxQuantity: 5, UnitAmount: 3900, Description: "small"},

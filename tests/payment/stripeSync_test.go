@@ -17,19 +17,19 @@
 //     computes and reports what WOULD change but performs ZERO Stripe writes.
 //     Only Execute:true actually mutates Stripe.
 //   - Safe mode (Mirror:false, Execute:true):
-//       * plan WITHOUT StripePriceID  -> create product+price   (Created)
-//       * plan WITH    StripePriceID  -> update product always  (Updated)
-//       * every created/updated product is stamped managed_by="ocf" (M2)
-//       * price drift (local price != current Stripe price)     -> new price,
-//         repoint plan, archive old price                       (PriceMigrated)
-//       * price matches                                          -> NO migration
-//       * IsFree() plan                                          -> skipped, never synced
-//       * products are NEVER archived in safe mode
+//   - plan WITHOUT StripePriceID  -> create product+price   (Created)
+//   - plan WITH    StripePriceID  -> update product always  (Updated)
+//   - every created/updated product is stamped managed_by="ocf" (M2)
+//   - price drift (local price != current Stripe price)     -> new price,
+//     repoint plan, archive old price                       (PriceMigrated)
+//   - price matches                                          -> NO migration
+//   - IsFree() plan                                          -> skipped, never synced
+//   - products are NEVER archived in safe mode
 //   - Mirror mode (Mirror:true, Execute:true): everything safe does, PLUS
 //     reconcile Stripe. An active orphan product (plan_id matches no LIVE local
 //     plan) is archived ONLY IF ownership is PROVABLE (M2):
-//       * metadata managed_by == "ocf", OR
-//       * plan_id matches a local plan row incl. soft-deleted (Unscoped)
+//   - metadata managed_by == "ocf", OR
+//   - plan_id matches a local plan row incl. soft-deleted (Unscoped)
 //     Otherwise (plan_id points nowhere and no marker, or NO plan_id at all) ->
 //     skipped, NEVER archived.
 //   - Default (Execute omitted, e.g. {Mirror:true}) reports would-be archives
@@ -556,6 +556,64 @@ func TestSyncToStripe_SkipsFreePlans(t *testing.T) {
 	reloaded := reloadPlan(t, db, plan.ID)
 	assert.Nil(t, reloaded.StripeProductID, "a free plan must not be linked to a Stripe product")
 	assert.Nil(t, reloaded.StripePriceID, "a free plan must not be linked to a Stripe price")
+}
+
+// A retired plan is not on sale, so it must not be published to Stripe. Without
+// this, the first live sync of the real catalogue would have created a product
+// for "Member Pro (retiré)" — an offer nobody can buy, sitting in the Dashboard
+// as purchasable for good.
+func TestSyncToStripe_DoesNotPublishAnInactivePlan(t *testing.T) {
+	db := freshTestDB(t)
+	cat := installFakeStripeCatalog(t)
+	svc := services.NewStripeService(db)
+
+	plan := &models.SubscriptionPlan{
+		Name:            "Retired Plan",
+		PriceAmount:     490,
+		Currency:        "eur",
+		BillingInterval: "month",
+		IsActive:        false,
+	}
+	require.NoError(t, db.Create(plan).Error)
+	// IsActive carries gorm:"default:true", so Create omits the false zero value
+	// and the column default writes true instead. The deactivation has to be a
+	// second, explicit write or the fixture silently describes an active plan.
+	require.NoError(t, db.Model(plan).Update("is_active", false).Error)
+
+	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, cat.writeCount(),
+		"a retired plan must trigger NO Stripe writes; observed writes to %v", cat.writePaths)
+	assert.False(t, containsSubstr(result.Created, plan.ID.String()),
+		"a retired plan must not be created in Stripe")
+	assert.True(t, containsSubstr(result.Skipped, plan.ID.String()),
+		"the skip must be reported, not silent — an operator reading the run has to see it was considered")
+
+	reloaded := reloadPlan(t, db, plan.ID)
+	assert.Nil(t, reloaded.StripePriceID, "a retired plan must not be linked to a Stripe price")
+}
+
+// The skip is narrow on purpose: a plan ALREADY on Stripe keeps syncing when it
+// is deactivated, because pushing the product update is exactly how the
+// withdrawal reaches Stripe. Skipping those would strand a retired offer as
+// purchasable — the opposite of what the rule is for.
+func TestSyncToStripe_StillSyncsAnInactivePlanThatIsAlreadyPublished(t *testing.T) {
+	db := freshTestDB(t)
+	cat := installFakeStripeCatalog(t)
+	svc := services.NewStripeService(db)
+
+	// Published first, withdrawn second — the order a real retirement happens in.
+	plan, _, _ := syncedPlan(t, db, cat, "Withdrawn Plan", 490, 490)
+	require.NoError(t, db.Model(plan).Update("is_active", false).Error)
+
+	result, err := svc.SyncPlansToStripe(services.SyncToStripeOptions{Mirror: false, Execute: true})
+	require.NoError(t, err)
+
+	assert.True(t, containsSubstr(result.Updated, plan.ID.String()) || containsSubstr(result.Updated, "Withdrawn Plan"),
+		"an already-published plan must keep syncing so its deactivation reaches Stripe; got %+v", result)
+	assert.False(t, containsSubstr(result.Skipped, plan.ID.String()),
+		"the skip is for unpublished plans only")
 }
 
 // -----------------------------------------------------------------------------

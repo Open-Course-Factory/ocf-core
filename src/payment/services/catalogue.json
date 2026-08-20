@@ -16,12 +16,13 @@
     "network_access_enabled": false,
     "data_persistence_enabled": false,
     "data_persistence_gb": 0,
-    "command_history_retention_days": 7
+    "command_history_retention_days": 7,
+    "tax_behavior": "inclusive"
   },
   {
     "name": "Solo",
     "description": "Pour apprendre et préparer ses supports : machines jusqu'à XL, sessions de 8 h, réseau et persistance.",
-    "price_amount": 1200,
+    "price_amount": 1190,
     "currency": "eur",
     "billing_interval": "month",
     "priority": 20,
@@ -34,7 +35,8 @@
     "network_access_enabled": true,
     "data_persistence_enabled": true,
     "data_persistence_gb": 5,
-    "command_history_retention_days": 90
+    "command_history_retention_days": 90,
+    "tax_behavior": "inclusive"
   },
   {
     "name": "Formateur",
@@ -54,12 +56,13 @@
     "data_persistence_gb": 20,
     "group_management_enabled": true,
     "session_supervision_enabled": true,
-    "command_history_retention_days": 365
+    "command_history_retention_days": 365,
+    "tax_behavior": "inclusive"
   },
   {
     "name": "Siège élève — mensuel",
     "description": "Un siège apprenant, facturé au mois. Tarif dégressif par paliers.",
-    "price_amount": 900,
+    "price_amount": 1000,
     "currency": "eur",
     "billing_interval": "month",
     "priority": 15,
@@ -80,27 +83,28 @@
       {
         "min_quantity": 1,
         "max_quantity": 5,
-        "unit_amount": 900,
-        "description": "1-5 sièges : 9€/siège/mois"
+        "unit_amount": 1000,
+        "description": "1-5 sièges : 10€/siège/mois TTC"
       },
       {
         "min_quantity": 6,
         "max_quantity": 15,
-        "unit_amount": 700,
-        "description": "6-15 sièges : 7€/siège/mois"
+        "unit_amount": 800,
+        "description": "6-15 sièges : 8€/siège/mois TTC"
       },
       {
         "min_quantity": 16,
         "max_quantity": 0,
-        "unit_amount": 550,
-        "description": "16 sièges et plus : 5,50€/siège/mois"
+        "unit_amount": 600,
+        "description": "16 sièges et plus : 6€/siège/mois TTC"
       }
-    ]
+    ],
+    "tax_behavior": "inclusive"
   },
   {
     "name": "Siège élève — pack jours",
     "description": "Un apprenant pour une journée, prépayé. La quantité est le nombre d'apprenants multiplié par le nombre de jours.",
-    "price_amount": 165,
+    "price_amount": 200,
     "currency": "eur",
     "billing_interval": "month",
     "priority": 15,
@@ -121,21 +125,22 @@
       {
         "min_quantity": 1,
         "max_quantity": 30,
-        "unit_amount": 165,
-        "description": "1-30 jours-apprenant : 1,65€"
+        "unit_amount": 200,
+        "description": "1-30 jours-apprenant : 2€ TTC"
       },
       {
         "min_quantity": 31,
         "max_quantity": 60,
-        "unit_amount": 125,
-        "description": "31-60 jours-apprenant : 1,25€"
+        "unit_amount": 150,
+        "description": "31-60 jours-apprenant : 1,50€ TTC"
       },
       {
         "min_quantity": 61,
         "max_quantity": 0,
-        "unit_amount": 105,
-        "description": "61 jours-apprenant et plus : 1,05€"
+        "unit_amount": 125,
+        "description": "61 jours-apprenant et plus : 1,25€ TTC"
       }
-    ]
+    ],
+    "tax_behavior": "inclusive"
   }
 ]

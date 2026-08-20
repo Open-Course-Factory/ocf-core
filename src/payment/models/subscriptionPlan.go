@@ -7,23 +7,33 @@ import (
 // SubscriptionPlan represents a subscription plan
 type SubscriptionPlan struct {
 	entityManagementModels.BaseModel
-	Name               string   `gorm:"type:varchar(100);not null" json:"name"`
-	Description        string   `gorm:"type:text" json:"description"`
-	Priority           int      `gorm:"default:0" json:"priority"` // Higher number = higher tier (0=Free, 10=Basic, 20=Pro, 30=Premium, etc.)
-	StripeProductID    *string  `gorm:"type:varchar(100);uniqueIndex:idx_stripe_product_not_null,where:stripe_product_id IS NOT NULL" json:"stripe_product_id"`
-	StripePriceID      *string  `gorm:"type:varchar(100);uniqueIndex:idx_stripe_price_not_null,where:stripe_price_id IS NOT NULL" json:"stripe_price_id"`
-	PriceAmount        int64    `json:"price_amount"` // Prix en centimes
-	Currency           string   `gorm:"type:varchar(3);default:'eur'" json:"currency"`
-	BillingInterval    string   `gorm:"type:varchar(20);default:'month'" json:"billing_interval"` // month, year
+	Name            string  `gorm:"type:varchar(100);not null" json:"name"`
+	Description     string  `gorm:"type:text" json:"description"`
+	Priority        int     `gorm:"default:0" json:"priority"` // Higher number = higher tier (0=Free, 10=Basic, 20=Pro, 30=Premium, etc.)
+	StripeProductID *string `gorm:"type:varchar(100);uniqueIndex:idx_stripe_product_not_null,where:stripe_product_id IS NOT NULL" json:"stripe_product_id"`
+	StripePriceID   *string `gorm:"type:varchar(100);uniqueIndex:idx_stripe_price_not_null,where:stripe_price_id IS NOT NULL" json:"stripe_price_id"`
+	PriceAmount     int64   `json:"price_amount"` // Prix en centimes
+	Currency        string  `gorm:"type:varchar(3);default:'eur'" json:"currency"`
+	BillingInterval string  `gorm:"type:varchar(20);default:'month'" json:"billing_interval"` // month, year
+	// TaxBehavior says whether PriceAmount already contains VAT ("inclusive")
+	// or has it added at checkout ("exclusive"). It travels with the amount
+	// because the two are one statement: 11.90 means different money under each
+	// reading, and Stripe accepts the answer once per price and never again.
+	//
+	// Empty means "exclusive", which is what every price created before this
+	// field existed carries. It is not a default anyone should rely on — the
+	// catalogue states it per plan — but an inferred value here would resolve to
+	// inclusive for EUR, silently turning an announced amount into the gross.
+	TaxBehavior string `gorm:"type:varchar(10)" json:"tax_behavior,omitempty"`
 	// NOTE: the free-form Features []string field was removed — plan capabilities
 	// are typed columns now, projected via DerivePlanEntitlements. The raw
 	// `features` DB column is left orphaned (AutoMigrate never drops it); the
 	// startup backfill still reads it to migrate legacy group_management.
-	IsActive           bool     `gorm:"default:true" json:"is_active"`
-	IsCatalog          bool     `gorm:"default:true" json:"is_catalog" mapstructure:"is_catalog"` // true = shown on pricing page, false = custom/unlisted plan
-	RequiredRole       string   `gorm:"type:varchar(50)" json:"required_role"`
-	StripeCreated      bool     `gorm:"default:false" json:"stripe_created"`
-	CreationError      *string  `gorm:"type:text" json:"creation_error,omitempty"`
+	IsActive      bool    `gorm:"default:true" json:"is_active"`
+	IsCatalog     bool    `gorm:"default:true" json:"is_catalog" mapstructure:"is_catalog"` // true = shown on pricing page, false = custom/unlisted plan
+	RequiredRole  string  `gorm:"type:varchar(50)" json:"required_role"`
+	StripeCreated bool    `gorm:"default:false" json:"stripe_created"`
+	CreationError *string `gorm:"type:text" json:"creation_error,omitempty"`
 
 	// Terminal-specific limits (new fields for terminal pricing)
 	// Note: No limit on number of sessions - only a per-session duration limit
@@ -40,10 +50,10 @@ type SubscriptionPlan struct {
 	MaxCPU      int `gorm:"default:0" mapstructure:"max_cpu" json:"max_cpu"`             // Total CPU budget in mCPU (1000 = 1 vCPU); 0 = unlimited
 	MaxMemoryMB int `gorm:"default:0" mapstructure:"max_memory_mb" json:"max_memory_mb"` // Total RAM budget in MiB; 0 = unlimited
 
-	NetworkAccessEnabled       bool     `gorm:"default:false" json:"network_access_enabled"`    // Allow external network access
-	DataPersistenceEnabled     bool     `gorm:"default:false" json:"data_persistence_enabled"`  // Allow saving data between sessions (also gates persistent persistence_mode — SSOT)
-	SessionSupervisionEnabled  bool     `gorm:"default:false" json:"session_supervision_enabled"` // Allow trainers (group manager+) to live-supervise a learner's terminal and take the hand
-	GroupManagementEnabled     bool     `gorm:"default:false" json:"group_management_enabled" mapstructure:"group_management_enabled"` // Typed entitlement: plan grants group management (replaces the legacy features[] "group_management" string)
+	NetworkAccessEnabled      bool `gorm:"default:false" json:"network_access_enabled"`                                           // Allow external network access
+	DataPersistenceEnabled    bool `gorm:"default:false" json:"data_persistence_enabled"`                                         // Allow saving data between sessions (also gates persistent persistence_mode — SSOT)
+	SessionSupervisionEnabled bool `gorm:"default:false" json:"session_supervision_enabled"`                                      // Allow trainers (group manager+) to live-supervise a learner's terminal and take the hand
+	GroupManagementEnabled    bool `gorm:"default:false" json:"group_management_enabled" mapstructure:"group_management_enabled"` // Typed entitlement: plan grants group management (replaces the legacy features[] "group_management" string)
 
 	// IsDefaultFree marks the ONE plan new signups are given automatically.
 	//
@@ -80,10 +90,10 @@ type SubscriptionPlan struct {
 	//
 	// Empty means seat_month; resolve it through EffectiveSeatUnit rather than
 	// testing for "" at the call site, so the fallback lives in one place.
-	SeatUnit string `gorm:"type:varchar(20);default:''" json:"seat_unit" mapstructure:"seat_unit"`
-	DataPersistenceGB          int      `gorm:"default:0" json:"data_persistence_gb"`           // Storage quota in GB
+	SeatUnit          string `gorm:"type:varchar(20);default:''" json:"seat_unit" mapstructure:"seat_unit"`
+	DataPersistenceGB int    `gorm:"default:0" json:"data_persistence_gb"` // Storage quota in GB
 
-	CommandHistoryRetentionDays int     `gorm:"default:0" json:"command_history_retention_days" mapstructure:"command_history_retention_days"` // days to retain command history (minimum 1)
+	CommandHistoryRetentionDays int `gorm:"default:0" json:"command_history_retention_days" mapstructure:"command_history_retention_days"` // days to retain command history (minimum 1)
 
 	// Backend routing (applies when org has no backend config)
 	DefaultBackend  string   `gorm:"type:varchar(255);default:''" json:"default_backend"`

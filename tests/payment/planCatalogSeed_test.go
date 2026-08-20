@@ -50,7 +50,7 @@ func TestSeed_PublicCatalogueMatchesTheDecidedOffer(t *testing.T) {
 	assert.False(t, decouverte.DataPersistenceEnabled)
 
 	solo := seededPlan(t, db, "Solo")
-	assert.EqualValues(t, 1200, solo.PriceAmount, "Solo is 12€/month")
+	assert.EqualValues(t, 1190, solo.PriceAmount, "Solo is 11,90€/month, VAT included")
 	assert.True(t, solo.IsCatalog)
 	// 8 hours, not 180 minutes: a real training day is 7 hours, and the old cap
 	// was flagged as a launch blocker rather than a preference.
@@ -66,8 +66,10 @@ func TestSeed_PublicCatalogueMatchesTheDecidedOffer(t *testing.T) {
 	// 19,90 € and not the 39 € of the April offer: that 39 € priced a pay-per-session
 	// credit (3 days × 12 learners). July made Formateur a flat monthly base and moved
 	// learners out into their own seat products, so the base price followed. Confirmed
-	// against the configured Stripe sandbox on 2026-08-18.
-	assert.EqualValues(t, 1990, formateur.PriceAmount, "Formateur is 19,90€/month")
+	// against the configured Stripe sandbox on 2026-08-18. The amount is unchanged by
+	// the move to VAT-included pricing on 2026-08-19 — what changed is that 19,90 € is
+	// now what the customer pays rather than what OCF receives.
+	assert.EqualValues(t, 1990, formateur.PriceAmount, "Formateur is 19,90€/month, VAT included")
 	assert.True(t, formateur.IsCatalog)
 	assert.Equal(t, 480, formateur.MaxSessionDurationMinutes)
 	assert.True(t, formateur.GroupManagementEnabled, "Formateur is the classroom plan")
@@ -105,9 +107,10 @@ func TestSeed_LearnerSeatProducts(t *testing.T) {
 	assert.False(t, monthly.GroupManagementEnabled,
 		"a learner holding a seat must not inherit the right to buy seats")
 	require.Len(t, monthly.PricingTiers, 3)
-	assert.EqualValues(t, 900, monthly.PricingTiers[0].UnitAmount)
-	assert.EqualValues(t, 700, monthly.PricingTiers[1].UnitAmount)
-	assert.EqualValues(t, 550, monthly.PricingTiers[2].UnitAmount)
+	assert.EqualValues(t, 1000, monthly.PricingTiers[0].UnitAmount)
+	assert.Equal(t, "inclusive", monthly.TaxBehavior, "seat ladders are announced VAT-included")
+	assert.EqualValues(t, 800, monthly.PricingTiers[1].UnitAmount)
+	assert.EqualValues(t, 600, monthly.PricingTiers[2].UnitAmount)
 
 	pack := seededPlan(t, db, "Siège élève — pack jours")
 	assert.False(t, pack.IsCatalog)
@@ -115,9 +118,9 @@ func TestSeed_LearnerSeatProducts(t *testing.T) {
 	assert.Equal(t, models.SeatUnitLearnerDay, pack.EffectiveSeatUnit())
 	assert.True(t, pack.UseTieredPricing)
 	require.Len(t, pack.PricingTiers, 3)
-	assert.EqualValues(t, 165, pack.PricingTiers[0].UnitAmount)
-	assert.EqualValues(t, 125, pack.PricingTiers[1].UnitAmount)
-	assert.EqualValues(t, 105, pack.PricingTiers[2].UnitAmount)
+	assert.EqualValues(t, 200, pack.PricingTiers[0].UnitAmount)
+	assert.EqualValues(t, 150, pack.PricingTiers[1].UnitAmount)
+	assert.EqualValues(t, 125, pack.PricingTiers[2].UnitAmount)
 }
 
 // TestSeed_TiersAreGraduatedAndContiguous guards the property the shape was
@@ -227,4 +230,23 @@ func TestRenameLegacyPlans_LeavesAnAlreadyNamedCatalogueAlone(t *testing.T) {
 	after := seededPlan(t, db, "Formateur")
 	assert.Equal(t, before.ID, after.ID)
 	assert.Equal(t, before.PriceAmount, after.PriceAmount)
+}
+
+// Every plan states whether its amount includes VAT, and none leaves it to be
+// inferred.
+//
+// This is the assertion that guards real money. Stripe accepts tax_behavior once
+// per price and never again, and an unset value does not fail — it inherits the
+// account default, which for EUR resolves to inclusive. A plan announced net
+// would therefore be created gross, hand 16.7% of its price to the tax line, and
+// be unfixable except by creating a second price and migrating subscribers.
+func TestSeed_EveryPlanStatesWhetherItsPriceIncludesVAT(t *testing.T) {
+	plans, err := services.DecidedCatalogue()
+	require.NoError(t, err)
+	require.NotEmpty(t, plans)
+
+	for _, plan := range plans {
+		assert.Contains(t, []string{"inclusive", "exclusive"}, plan.TaxBehavior,
+			"plan %q must say whether its amount includes VAT; unset means Stripe infers it", plan.Name)
+	}
 }
