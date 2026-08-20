@@ -295,6 +295,9 @@ func AutoMigrateAll(db *gorm.DB) {
 	// it (and the other orphan columns), so no later startup step reads a dropped
 	// column. Idempotent.
 	DropOrphanPlanColumns(db)
+
+	// Same treatment for scenarios.gsh_enabled, whose Go field is gone.
+	DropOrphanScenarioColumns(db)
 }
 
 // InitDevelopmentData sets up development data in debug mode
@@ -876,6 +879,43 @@ var orphanPlanColumns = []string{
 	"addon_network_price_id",
 	"addon_storage_price_id",
 	"addon_terminal_price_id",
+}
+
+// orphanScenarioColumns are the scenarios columns whose Go model fields were
+// removed. AutoMigrate adds columns and never drops them, so they survive in
+// prod until something takes them out.
+//
+// gsh_enabled: the in-terminal gsh helper was dropped — ScenarioPanel already
+// carries goal, hints, verify, flag and quiz — and the flag was read by nothing
+// afterwards. The editor surface went in ocf-front !324; this removes the
+// column, the DTOs and the import/export plumbing behind it.
+var orphanScenarioColumns = []string{
+	"gsh_enabled",
+}
+
+// DropOrphanScenarioColumns is the guarded one-time migration that removes the
+// orphanScenarioColumns from scenarios.
+//
+// Same mechanism as DropOrphanPlanColumns, and for the same reason: GORM's
+// Migrator().DropColumn is a silent no-op on gorm.io/driver/sqlite, so this
+// issues the raw ALTER and guards it on HasColumn for idempotency.
+//
+// Nothing needs a final read here — unlike `features`, this column was already
+// inert before it was deleted, so there is nothing to back up or migrate out of
+// it.
+func DropOrphanScenarioColumns(db *gorm.DB) {
+	migrator := db.Migrator()
+
+	for _, col := range orphanScenarioColumns {
+		if !migrator.HasColumn(&scenarioModels.Scenario{}, col) {
+			continue
+		}
+		if err := db.Exec("ALTER TABLE scenarios DROP COLUMN " + col).Error; err != nil {
+			log.Printf("[MIGRATION] failed to drop orphan column scenarios.%s: %v", col, err)
+			continue
+		}
+		log.Printf("[MIGRATION] dropped orphan column scenarios.%s", col)
+	}
 }
 
 // DropOrphanPlanColumns is the guarded one-time migration that removes the

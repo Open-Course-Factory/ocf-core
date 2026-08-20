@@ -70,7 +70,6 @@ type localScenarioInputExt struct {
 	InstanceType  string              `json:"instance_type"`
 	OsType        string              `json:"os_type,omitempty"`
 	FlagsEnabled  bool                `json:"flags_enabled,omitempty"`
-	GshEnabled    bool                `json:"gsh_enabled,omitempty"`
 	CrashTraps    bool                `json:"crash_traps,omitempty"`
 	IsPublic      bool                `json:"is_public,omitempty"`
 	IntroText     string              `json:"intro_text,omitempty"`

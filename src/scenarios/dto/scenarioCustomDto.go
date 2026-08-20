@@ -192,7 +192,6 @@ type SeedScenarioInput struct {
 	OsType           string `json:"os_type"`
 	FlagsEnabled     bool   `json:"flags_enabled"`
 	AllowedFlagPaths string `json:"allowed_flag_paths,omitempty"`
-	GshEnabled       bool   `json:"gsh_enabled"`
 	CrashTraps       bool   `json:"crash_traps"`
 	IsPublic         bool   `json:"is_public"`
 	IntroText        string `json:"intro_text" binding:"max=65536"`
@@ -293,7 +292,6 @@ type ScenarioExportOutput struct {
 	OsType           string                     `json:"os_type,omitempty"`
 	FlagsEnabled     bool                       `json:"flags_enabled"`
 	AllowedFlagPaths string                     `json:"allowed_flag_paths,omitempty"`
-	GshEnabled       bool                       `json:"gsh_enabled"`
 	CrashTraps       bool                       `json:"crash_traps"`
 	IsPublic         bool                       `json:"is_public"`
 	IntroText        string                     `json:"intro_text,omitempty"`

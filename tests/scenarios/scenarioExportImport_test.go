@@ -33,7 +33,6 @@ func TestExportService_ExportAsJSON_Success(t *testing.T) {
 		SourceType:    "seed",
 		FlagsEnabled:  true,
 		FlagSecret:    "test-secret",
-		GshEnabled:    true,
 		CrashTraps:    false,
 		IntroText:     "# Welcome",
 		FinishText:    "# Done",
@@ -79,7 +78,6 @@ func TestExportService_ExportAsJSON_Success(t *testing.T) {
 	assert.Equal(t, "ubuntu:22.04", export.InstanceType)
 	assert.Equal(t, "deb", export.OsType)
 	assert.True(t, export.FlagsEnabled)
-	assert.True(t, export.GshEnabled)
 	assert.False(t, export.CrashTraps)
 	assert.Equal(t, "# Welcome", export.IntroText)
 	assert.Equal(t, "# Done", export.FinishText)
@@ -129,7 +127,6 @@ func TestExportService_ExportAsArchive_Success(t *testing.T) {
 		SourceType:    "seed",
 		FlagsEnabled:  true,
 		FlagSecret:    "secret",
-		GshEnabled:    false,
 		CrashTraps:    true,
 		IntroText:     "# Intro Text",
 		FinishText:    "# Finish Text",
@@ -199,7 +196,6 @@ func TestExportService_ExportAsArchive_Success(t *testing.T) {
 	require.NotNil(t, index.Extensions.OCF)
 	assert.True(t, index.Extensions.OCF.Flags)
 	assert.True(t, index.Extensions.OCF.CrashTraps)
-	assert.False(t, index.Extensions.OCF.GshEnabled)
 
 	// Check intro and finish
 	assert.Equal(t, "# Intro Text", fileMap["intro.md"])
@@ -299,7 +295,6 @@ func TestSeedService_Create_Success(t *testing.T) {
 		InstanceType:  "ubuntu:22.04",
 		OsType:        "deb",
 		FlagsEnabled:  true,
-		GshEnabled:    false,
 		CrashTraps:    true,
 		IntroText:     "# Intro",
 		FinishText:    "# Finish",
@@ -550,7 +545,6 @@ func TestExportImport_JSONRoundtrip(t *testing.T) {
 		InstanceType:  "ubuntu:22.04",
 		OsType:        "deb",
 		FlagsEnabled:  true,
-		GshEnabled:    true,
 		CrashTraps:    false,
 		IntroText:     "# Welcome",
 		FinishText:    "# Bye",
@@ -590,7 +584,6 @@ func TestExportImport_JSONRoundtrip(t *testing.T) {
 		InstanceType:  export.InstanceType,
 		OsType:        export.OsType,
 		FlagsEnabled:  export.FlagsEnabled,
-		GshEnabled:    export.GshEnabled,
 		CrashTraps:    export.CrashTraps,
 		IntroText:     export.IntroText,
 		FinishText:    export.FinishText,
@@ -621,7 +614,6 @@ func TestExportImport_JSONRoundtrip(t *testing.T) {
 	assert.Equal(t, "ubuntu:22.04", reimported.InstanceType)
 	assert.Equal(t, "deb", reimported.OsType)
 	assert.True(t, reimported.FlagsEnabled)
-	assert.True(t, reimported.GshEnabled)
 	assert.False(t, reimported.CrashTraps)
 	assert.Equal(t, "# Welcome", reimported.IntroText)
 	assert.Equal(t, "# Bye", reimported.FinishText)

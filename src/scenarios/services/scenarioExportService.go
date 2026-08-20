@@ -146,7 +146,6 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dt
 		OsType:        scenario.OsType,
 		FlagsEnabled:     scenario.FlagsEnabled,
 		AllowedFlagPaths: scenario.AllowedFlagPaths,
-		GshEnabled:       scenario.GshEnabled,
 		CrashTraps:    scenario.CrashTraps,
 		IsPublic:      scenario.IsPublic,
 		IntroText:     introText,
@@ -349,13 +348,12 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 		requiredFeatures = nil
 	}
 
-	if scenario.FlagsEnabled || scenario.CrashTraps || scenario.GshEnabled ||
+	if scenario.FlagsEnabled || scenario.CrashTraps ||
 		len(declaredImages) > 0 || len(requiredFeatures) > 0 {
 		index.Extensions = &KillerCodaExtensions{
 			OCF: &KillerCodaOCF{
 				Flags:                   scenario.FlagsEnabled,
 				CrashTraps:              scenario.CrashTraps,
-				GshEnabled:              scenario.GshEnabled,
 				CompatibleInstanceTypes: declaredImages,
 				RequiredFeatures:        requiredFeatures,
 			},

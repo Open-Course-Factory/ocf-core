@@ -96,7 +96,6 @@ func (b *scenarioControllerBase) buildScenarioOutput(scenario *models.Scenario) 
 		SourceType:       scenario.SourceType,
 		FlagsEnabled:     scenario.FlagsEnabled,
 		AllowedFlagPaths: scenario.AllowedFlagPaths,
-		GshEnabled:       scenario.GshEnabled,
 		CrashTraps:       scenario.CrashTraps,
 		IntroText:        scenario.IntroText,
 		FinishText:       scenario.FinishText,

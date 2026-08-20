@@ -38,7 +38,6 @@ func createFullSourceScenario(t *testing.T, db *gorm.DB, orgID *uuid.UUID) model
 		SourceType:     "upload",
 		FlagsEnabled:   true,
 		FlagSecret:     "original-secret-that-should-not-be-copied",
-		GshEnabled:     true,
 		CrashTraps:     false,
 		Objectives:     "Learn to duplicate",
 		Prerequisites:  "None",
@@ -208,7 +207,6 @@ func TestDuplicateScenario_Success(t *testing.T) {
 	assert.Equal(t, source.Hostname, result.Hostname)
 	assert.Equal(t, source.OsType, result.OsType)
 	assert.Equal(t, source.FlagsEnabled, result.FlagsEnabled)
-	assert.Equal(t, source.GshEnabled, result.GshEnabled)
 	assert.Equal(t, source.CrashTraps, result.CrashTraps)
 	assert.Equal(t, source.Objectives, result.Objectives)
 	assert.Equal(t, source.Prerequisites, result.Prerequisites)

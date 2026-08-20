@@ -111,7 +111,6 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 			FlagsEnabled:     source.FlagsEnabled,
 			AllowedFlagPaths: source.AllowedFlagPaths,
 			FlagSecret:       flagSecret,
-			GshEnabled:     source.GshEnabled,
 			CrashTraps:     source.CrashTraps,
 			Objectives:     source.Objectives,
 			Prerequisites:  source.Prerequisites,

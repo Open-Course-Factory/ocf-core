@@ -59,8 +59,7 @@ func TestScenarioImporter_ParseIndexJSON_Valid(t *testing.T) {
 		"extensions": {
 			"ocf": {
 				"flags": true,
-				"crash_traps": true,
-				"gsh_enabled": false
+				"crash_traps": true
 			}
 		}
 	}`)
@@ -85,7 +84,6 @@ func TestScenarioImporter_ParseIndexJSON_Valid(t *testing.T) {
 	require.NotNil(t, index.Extensions.OCF)
 	assert.True(t, index.Extensions.OCF.Flags)
 	assert.True(t, index.Extensions.OCF.CrashTraps)
-	assert.False(t, index.Extensions.OCF.GshEnabled)
 	require.NotNil(t, index.Details.Assets)
 	assert.Len(t, index.Details.Assets.Host01, 1)
 	assert.Equal(t, "setup.sh", index.Details.Assets.Host01[0].File)
@@ -187,7 +185,6 @@ func TestScenarioImporter_BuildScenarioFromIndex(t *testing.T) {
 			OCF: &services.KillerCodaOCF{
 				Flags:      true,
 				CrashTraps: false,
-				GshEnabled: true,
 			},
 		},
 	}
@@ -208,7 +205,6 @@ func TestScenarioImporter_BuildScenarioFromIndex(t *testing.T) {
 	assert.True(t, scenario.FlagsEnabled)
 	assert.NotEmpty(t, scenario.FlagSecret)
 	assert.Len(t, scenario.FlagSecret, 64) // 32 bytes hex = 64 chars
-	assert.True(t, scenario.GshEnabled)
 	assert.False(t, scenario.CrashTraps)
 	assert.Equal(t, "# Welcome to the lab", scenario.IntroText)
 	assert.Equal(t, "# Congratulations!", scenario.FinishText)

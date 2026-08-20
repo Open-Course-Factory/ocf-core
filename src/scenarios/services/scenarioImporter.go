@@ -88,7 +88,6 @@ type KillerCodaExtensions struct {
 type KillerCodaOCF struct {
 	Flags      bool `json:"flags"`
 	CrashTraps bool `json:"crash_traps"`
-	GshEnabled bool `json:"gsh_enabled"`
 	// CompatibleInstanceTypes names the distributions this scenario is built
 	// for, most preferred first. Without it a scenario can only be matched on
 	// os_type, which is a family ("some Debian") rather than an identity — the
@@ -187,7 +186,6 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 				"flags_enabled":      scenario.FlagsEnabled,
 				"allowed_flag_paths": scenario.AllowedFlagPaths,
 				"flag_secret":        scenario.FlagSecret,
-				"gsh_enabled":     scenario.GshEnabled,
 				"crash_traps":     scenario.CrashTraps,
 				"intro_text":      scenario.IntroText,
 				"finish_text":     scenario.FinishText,
@@ -314,14 +312,12 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 	// Determine OCF extensions
 	flagsEnabled := false
 	crashTraps := false
-	gshEnabled := false
 	var compatibleInstanceTypes []models.ScenarioInstanceType
 	requiredFeatures := ""
 	buildFeatures := ""
 	if index.Extensions != nil && index.Extensions.OCF != nil {
 		flagsEnabled = index.Extensions.OCF.Flags
 		crashTraps = index.Extensions.OCF.CrashTraps
-		gshEnabled = index.Extensions.OCF.GshEnabled
 		compatibleInstanceTypes = BuildCompatibleInstanceTypes(index.Extensions.OCF.CompatibleInstanceTypes)
 
 		var featErr error
@@ -376,7 +372,6 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		SourceType:     sourceType,
 		FlagsEnabled:   flagsEnabled,
 		FlagSecret:     flagSecret,
-		GshEnabled:     gshEnabled,
 		CrashTraps:     crashTraps,
 		IntroText:      introText,
 		FinishText:     finishText,

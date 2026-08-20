@@ -486,7 +486,6 @@ func TestSeedScenario_Success(t *testing.T) {
 		"estimated_time": "15m",
 		"instance_type":  "ubuntu:22.04",
 		"flags_enabled":  true,
-		"gsh_enabled":    false,
 		"crash_traps":    true,
 		"intro_text":     "# Welcome",
 		"finish_text":    "# Done",

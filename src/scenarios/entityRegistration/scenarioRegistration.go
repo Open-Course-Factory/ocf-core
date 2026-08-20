@@ -35,7 +35,6 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						SourcePath:     model.SourcePath,
 						FlagsEnabled:     model.FlagsEnabled,
 						AllowedFlagPaths: model.AllowedFlagPaths,
-						GshEnabled:     model.GshEnabled,
 						CrashTraps:     model.CrashTraps,
 						Objectives:     model.Objectives,
 						Prerequisites:  model.Prerequisites,
@@ -144,7 +143,6 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						SourcePath:     input.SourcePath,
 						FlagsEnabled:     input.FlagsEnabled,
 						AllowedFlagPaths: input.AllowedFlagPaths,
-						GshEnabled:     input.GshEnabled,
 						CrashTraps:     input.CrashTraps,
 						Objectives:     input.Objectives,
 						Prerequisites:  input.Prerequisites,
@@ -205,9 +203,6 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 					}
 					if input.AllowedFlagPaths != nil {
 						updates["allowed_flag_paths"] = *input.AllowedFlagPaths
-					}
-					if input.GshEnabled != nil {
-						updates["gsh_enabled"] = *input.GshEnabled
 					}
 					if input.CrashTraps != nil {
 						updates["crash_traps"] = *input.CrashTraps

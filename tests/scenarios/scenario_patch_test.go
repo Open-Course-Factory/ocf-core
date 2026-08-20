@@ -159,7 +159,6 @@ func TestPATCHScenario_InstanceTypePersists(t *testing.T) {
 		"source_type":    "builtin",
 		"flags_enabled":  false,
 		"crash_traps":    false,
-		"gsh_enabled":    false,
 		"is_public":      false,
 	}
 	body, _ := json.Marshal(patchBody)
