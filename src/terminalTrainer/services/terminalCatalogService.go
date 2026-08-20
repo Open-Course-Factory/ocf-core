@@ -202,7 +202,7 @@ func ComputeSessionOptions(
 			Allowed:     true,
 		}
 
-		if !supportedFeatures[f.Key] {
+		if !f.AlwaysAvailable && !supportedFeatures[f.Key] {
 			opt.Allowed = false
 			opt.Reason = "not_supported"
 		} else if checker, ok := featurePlanMapping[f.Key]; ok && !checker(plan) {

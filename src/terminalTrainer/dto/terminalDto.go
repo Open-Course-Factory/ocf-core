@@ -568,6 +568,13 @@ type TTFeature struct {
 	MinSizeKey     string `json:"min_size_key,omitempty"`
 	DefaultEnabled bool   `json:"default_enabled"`
 	SortOrder      int    `json:"sort_order"`
+	// AlwaysAvailable marks a feature that installs itself into the container
+	// at session start rather than attaching a device or a prepared profile.
+	// Such a feature works on any image, so it is offered regardless of the
+	// image's supported_features — tt-backend sets this precisely so that
+	// every image does not have to be edited before the capability can be
+	// used. tt-backend owns the rule; this field mirrors it.
+	AlwaysAvailable bool `json:"always_available"`
 }
 
 // SessionOptionsResponse is returned by GET /terminals/session-options.
