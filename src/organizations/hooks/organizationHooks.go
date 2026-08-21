@@ -4,11 +4,13 @@ import (
 	"fmt"
 	access "soli/formations/src/auth/access"
 	"soli/formations/src/entityManagement/hooks"
+	groupModels "soli/formations/src/groups/models"
 	"soli/formations/src/organizations/models"
 	"soli/formations/src/organizations/services"
 	"soli/formations/src/utils"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -237,7 +239,64 @@ func (h *OrganizationCleanupHook) Execute(ctx *hooks.HookContext) error {
 		}
 	}
 
+	if err := h.archiveOrganizationClasses(org.ID); err != nil {
+		// The organization is going either way; a class left active is a
+		// visibility problem to fix, not a reason to keep the organization.
+		utils.Warn("Failed to archive classes of organization %s: %v", org.ID, err)
+	}
+
 	utils.Info("Organization deleted: %s (ID: %s)", org.Name, org.ID)
+	return nil
+}
+
+// archiveOrganizationClasses retires the classes of an organization being
+// deleted, instead of leaving them behind or destroying them.
+//
+// Deleting an organization soft-deletes its row and nothing else, so its
+// class_groups stayed live: a class whose organization no longer exists went on
+// appearing on its teacher's console, and every surface reading it went on
+// answering. Deleting them outright is the other extreme — past results name the
+// class they were earned in, and that has to keep resolving.
+//
+// Archiving is expressed with the flags that already mean it, rather than a new
+// column:
+//
+//   - class_groups.is_active = false is what "archived" already means for a
+//     class; ManagedByScope's contract is that authority ANDs this flag, so an
+//     archived class grants nothing.
+//   - group_members.is_active = false stands the roster down, and that is what
+//     makes the classes admin-only: CheckGroupRole only counts memberships with
+//     is_active = true, so every non-administrator now fails the group gate,
+//     while platform admins bypass Layer 2 entirely. The same flag drops the
+//     class out of GetGroupsByUserID, so it also stops being listed.
+//
+// Nothing is deleted: the rows, the roster and the results all survive for the
+// administrator who has to answer for them later.
+func (h *OrganizationCleanupHook) archiveOrganizationClasses(orgID uuid.UUID) error {
+	var groupIDs []uuid.UUID
+	if err := h.db.Model(&groupModels.ClassGroup{}).
+		Where("organization_id = ?", orgID).
+		Pluck("id", &groupIDs).Error; err != nil {
+		return fmt.Errorf("failed to list classes: %w", err)
+	}
+	if len(groupIDs) == 0 {
+		return nil
+	}
+
+	if err := h.db.Model(&groupModels.ClassGroup{}).
+		Where("id IN ?", groupIDs).
+		Update("is_active", false).Error; err != nil {
+		return fmt.Errorf("failed to archive classes: %w", err)
+	}
+
+	// Deactivate rather than delete: who was in the class stays answerable.
+	if err := h.db.Model(&groupModels.GroupMember{}).
+		Where("group_id IN ?", groupIDs).
+		Update("is_active", false).Error; err != nil {
+		return fmt.Errorf("failed to stand down class rosters: %w", err)
+	}
+
+	utils.Info("Archived %d class(es) of organization %s", len(groupIDs), orgID)
 	return nil
 }
 
