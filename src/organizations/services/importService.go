@@ -427,6 +427,16 @@ func (s *importService) processUser(user dto.UserImportRow, orgID uuid.UUID, upd
 	// Add user to organization
 	s.addUserToOrganization(createdUser.Id, orgID)
 
+	// Personal organization (same as normal registration). An imported learner
+	// is a user like any other: without this they own no workspace of their own
+	// and belong to exactly one organization, which is not a state registration
+	// can produce and not one the rest of the product expects.
+	if _, err := NewOrganizationService(s.db).CreatePersonalOrganization(
+		createdUser.Id, createdUser.DisplayName,
+	); err != nil {
+		utils.Warn("Could not create personal organization for imported user %s: %v", createdUser.Id, err)
+	}
+
 	// Assign free Trial plan (same as normal registration)
 	if err := s.assignFreeTrialPlan(createdUser.Id); err != nil {
 		utils.Warn("Could not assign Trial plan to imported user %s: %v", createdUser.Id, err)
