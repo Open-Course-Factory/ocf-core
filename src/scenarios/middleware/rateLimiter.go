@@ -1,7 +1,11 @@
 package middleware
 
 import (
+	"log/slog"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,15 +27,63 @@ var (
 )
 
 const (
-	maxRequests     = 10
-	windowSize      = time.Minute
-	cleanupInterval = 5 * time.Minute
-	staleThreshold  = 2 * time.Minute
+	defaultMaxRequests = 10
+	windowSize         = time.Minute
+	cleanupInterval    = 5 * time.Minute
+	staleThreshold     = 2 * time.Minute
+
+	// Raises the ceiling, and ONLY outside production. See resolveMaxRequests.
+	maxRequestsEnvVar = "SCENARIO_RATE_LIMIT_PER_MINUTE"
 )
+
+// nonProductionEnvironments may raise the limit. This is an allow-list rather
+// than a "not production" test on purpose: an unset or unrecognised
+// ENVIRONMENT is exactly the shape a misconfigured deployment has, and it must
+// never be the thing that unlocks a weaker limit.
+var nonProductionEnvironments = map[string]bool{
+	"development": true,
+	"dev":         true,
+	"test":        true,
+}
+
+// resolveMaxRequests returns the per-user ceiling for a window.
+//
+// The limit is a policy — it keeps one learner from hammering the container
+// fleet — so production always gets the shipped default and there is no way to
+// raise it there. A disposable environment protects nothing and pays a real
+// cost for the limiter: playing a scenario end to end spends most of its wall
+// clock waiting out a window rather than testing anything, because every step
+// checks twice (refuse before the work, accept after).
+//
+// It is read when the middleware is BUILT, not per request, so it lands after
+// the .env file has been loaded and cannot be changed under a running server.
+func resolveMaxRequests() int {
+	if !nonProductionEnvironments[strings.ToLower(os.Getenv("ENVIRONMENT"))] {
+		return defaultMaxRequests
+	}
+
+	raw := os.Getenv(maxRequestsEnvVar)
+	if raw == "" {
+		return defaultMaxRequests
+	}
+
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		slog.Warn("ignoring scenario rate limit override: not a positive whole number",
+			"var", maxRequestsEnvVar, "value", raw, "using", defaultMaxRequests)
+		return defaultMaxRequests
+	}
+
+	slog.Info("scenario rate limit raised for a non-production environment",
+		"var", maxRequestsEnvVar, "limit", n, "default", defaultMaxRequests)
+	return n
+}
 
 // PerUserRateLimit returns a Gin middleware that limits requests to
 // maxRequests per windowSize per authenticated user.
 func PerUserRateLimit() gin.HandlerFunc {
+	maxRequests := resolveMaxRequests()
+
 	return func(ctx *gin.Context) {
 		userID := ctx.GetString("userId")
 		if userID == "" {
