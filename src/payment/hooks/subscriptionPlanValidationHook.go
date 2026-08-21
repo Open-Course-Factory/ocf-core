@@ -83,7 +83,45 @@ func (h *SubscriptionPlanValidationHook) Execute(ctx *hooks.HookContext) error {
 		return entityErrors.NewValidationError("data_persistence_gb", "must be at most 500 GB")
 	}
 
+	// A tax behaviour that is neither inclusive nor exclusive is not a typo the
+	// caller can be trusted to have meant: taxBehaviorOf falls back to exclusive,
+	// so accepting one quietly turns an announced TTC price into a net one and
+	// bills 20% on top of an amount that already contained it. Stripe takes the
+	// answer once per price, so the mistake outlives the request that made it.
+	if behavior, stated := taxBehaviorField(ctx.NewEntity); stated {
+		if behavior != "inclusive" && behavior != "exclusive" {
+			return entityErrors.NewValidationError(
+				"tax_behavior", `must be "inclusive" or "exclusive"`)
+		}
+	}
+
 	return nil
+}
+
+// taxBehaviorField reads a stated tax behaviour from either shape the generic
+// service supplies, reporting whether it was stated at all — an absent key is a
+// partial update, and an empty string is the legacy "never said" that
+// taxBehaviorOf already answers for.
+func taxBehaviorField(entity any) (string, bool) {
+	switch v := entity.(type) {
+	case *models.SubscriptionPlan:
+		return v.TaxBehavior, v.TaxBehavior != ""
+	case map[string]any:
+		raw, ok := v["tax_behavior"]
+		if !ok || raw == nil {
+			return "", false
+		}
+		switch s := raw.(type) {
+		case string:
+			return s, s != ""
+		case *string:
+			if s == nil {
+				return "", false
+			}
+			return *s, *s != ""
+		}
+	}
+	return "", false
 }
 
 func (h *SubscriptionPlanValidationHook) ShouldExecute(ctx *hooks.HookContext) bool {

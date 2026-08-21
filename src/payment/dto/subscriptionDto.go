@@ -57,6 +57,20 @@ type UpdateSubscriptionPlanInput struct {
 	BulkPurchasable             *bool    `json:"bulk_purchasable,omitempty" mapstructure:"bulk_purchasable"`
 	SeatUnit                    string   `json:"seat_unit,omitempty" mapstructure:"seat_unit"`
 	Priority                    *int     `json:"priority,omitempty" mapstructure:"priority"`
+	// What the plan costs, and whether that amount already contains VAT.
+	//
+	// These were absent, so the endpoint accepted them and silently kept the old
+	// figures: the catalogue reconcile (scripts/bootstrap_catalogue.py) could
+	// bring a stale plan's description and priority back in line while leaving
+	// its price and tax behaviour exactly as they were — which is the half that
+	// decides what the customer is charged.
+	//
+	// A pointer, so that omitting the field leaves the amount alone rather than
+	// rewriting it to zero. Changing either only restates the plan of record;
+	// Stripe is reached by the sync afterwards, which creates the replacement
+	// price because neither can be altered on an existing one.
+	PriceAmount *int64 `json:"price_amount,omitempty" mapstructure:"price_amount"`
+	TaxBehavior string `json:"tax_behavior,omitempty" mapstructure:"tax_behavior"`
 	// Budget-based quota fields.
 	// MaxCPU is in millicores (mCPU); 1000 mCPU = 1 vCPU.
 	MaxCPU      *int `json:"max_cpu,omitempty" mapstructure:"max_cpu"`

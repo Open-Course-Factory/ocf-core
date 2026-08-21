@@ -84,6 +84,9 @@ type fakeStripePrice struct {
 	Interval   string
 	Active     bool
 	Metadata   map[string]string
+	// A real Stripe price always reports one; leaving it empty made the double
+	// disagree with every live price and hid tax-behaviour drift from the sync.
+	TaxBehavior string
 }
 
 type fakeStripeCatalog struct {
@@ -136,6 +139,9 @@ func (c *fakeStripeCatalog) seedPrice(productID string, amount int64, currency, 
 		Interval:   interval,
 		Active:     true,
 		Metadata:   metadata,
+		// Matches what ApplyPricing would have set for a plan that states no
+		// behaviour, so a seeded price is not drifted against its own plan.
+		TaxBehavior: "exclusive",
 	}
 	c.prices[p.ID] = p
 	return p
@@ -166,12 +172,13 @@ func productJSON(p *fakeStripeProduct) map[string]any {
 
 func priceJSON(p *fakeStripePrice) map[string]any {
 	return map[string]any{
-		"id":          p.ID,
-		"object":      "price",
-		"product":     p.Product,
-		"unit_amount": p.UnitAmount,
-		"currency":    p.Currency,
-		"active":      p.Active,
+		"id":           p.ID,
+		"object":       "price",
+		"product":      p.Product,
+		"unit_amount":  p.UnitAmount,
+		"currency":     p.Currency,
+		"active":       p.Active,
+		"tax_behavior": p.TaxBehavior,
 		"recurring": map[string]any{
 			"object":   "recurring",
 			"interval": p.Interval,
@@ -246,13 +253,14 @@ func installFakeStripeCatalog(t *testing.T) *fakeStripeCatalog {
 			cat.priceSeq++
 			amount, _ := strconv.ParseInt(r.PostForm.Get("unit_amount"), 10, 64)
 			p := &fakeStripePrice{
-				ID:         fmt.Sprintf("price_new_%d", cat.priceSeq),
-				Product:    r.PostForm.Get("product"),
-				UnitAmount: amount,
-				Currency:   r.PostForm.Get("currency"),
-				Interval:   r.PostForm.Get("recurring[interval]"),
-				Active:     true,
-				Metadata:   formMetadata(r.PostForm),
+				ID:          fmt.Sprintf("price_new_%d", cat.priceSeq),
+				Product:     r.PostForm.Get("product"),
+				UnitAmount:  amount,
+				Currency:    r.PostForm.Get("currency"),
+				Interval:    r.PostForm.Get("recurring[interval]"),
+				Active:      true,
+				Metadata:    formMetadata(r.PostForm),
+				TaxBehavior: r.PostForm.Get("tax_behavior"),
 			}
 			cat.prices[p.ID] = p
 			writeJSON(w, priceJSON(p))

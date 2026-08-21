@@ -70,8 +70,11 @@ func gradTierJSON(id string, tiers [][2]int64) string {
 		}
 		parts = append(parts, `{"up_to":`+upTo+`,"unit_amount":`+jsonNum(t[1])+`}`)
 	}
+	// A real price always states its tax behaviour; "exclusive" is what
+	// ApplyPricing sets for a plan that declares none, so a price built here is
+	// not drifted against the plan these tests seed.
 	return `{"id":"` + id + `","object":"price","currency":"eur","unit_amount":null,` +
-		`"billing_scheme":"tiered","tiers_mode":"graduated",` +
+		`"billing_scheme":"tiered","tiers_mode":"graduated","tax_behavior":"exclusive",` +
 		`"recurring":{"interval":"month"},"tiers":[` + strings.Join(parts, ",") + `]}`
 }
 

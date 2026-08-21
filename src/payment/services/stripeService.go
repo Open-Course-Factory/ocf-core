@@ -3669,7 +3669,18 @@ func (ss *stripeService) migratePriceIfDrifted(plan *models.SubscriptionPlan, dr
 		pricingDrifted = !tiersMatch(current, plan.PricingTiers)
 	}
 
+	// Tax behaviour is part of the price, not a label on it: 19.90 inclusive and
+	// 19.90 exclusive are different money, and only one of them is the offer.
+	// It belongs in this comparison precisely because Stripe accepts the answer
+	// once per price and never again — a price carrying the wrong behaviour
+	// cannot be corrected in place, so a sync that does not notice leaves it
+	// wrong forever. Without this a plan whose amount happens not to have moved
+	// keeps billing the old behaviour through every reconcile that claims to
+	// have brought it back in line.
+	taxBehaviorDrifted := string(current.TaxBehavior) != taxBehaviorOf(plan)
+
 	drifted := pricingDrifted ||
+		taxBehaviorDrifted ||
 		string(current.Currency) != plan.Currency ||
 		currentInterval != plan.BillingInterval
 	if !drifted {
@@ -3683,7 +3694,12 @@ func (ss *stripeService) migratePriceIfDrifted(plan *models.SubscriptionPlan, dr
 	// Create the replacement price. The idempotency key folds plan.ID with the
 	// target price signature: a retry reuses the same new price instead of
 	// stacking duplicates, while a genuinely different price yields a fresh key.
-	priceSignature := fmt.Sprintf("%d|%s|%s", plan.PriceAmount, plan.Currency, plan.BillingInterval)
+	// The signature carries the tax behaviour too. Without it, correcting a
+	// price whose ONLY fault is its behaviour reuses the key of the price that
+	// already carries the wrong one — and the retry hands back that same wrong
+	// price instead of creating the replacement.
+	priceSignature := fmt.Sprintf("%d|%s|%s|%s",
+		plan.PriceAmount, plan.Currency, plan.BillingInterval, taxBehaviorOf(plan))
 	priceParams := &stripe.PriceParams{
 		Product:  plan.StripeProductID,
 		Currency: stripe.String(plan.Currency),
