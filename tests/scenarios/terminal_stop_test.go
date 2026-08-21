@@ -2,14 +2,18 @@ package scenarios_test
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"soli/formations/src/scenarios/models"
+	scenarioController "soli/formations/src/scenarios/routes"
 	"soli/formations/src/scenarios/services"
 )
 
@@ -115,49 +119,66 @@ func TestRunStep0Setup_StopsTerminalOnFailure(t *testing.T) {
 	assert.Contains(t, calls, terminalID, "terminal stop should have been called with the correct terminal session ID")
 }
 
-func TestAbandonSession_StopsTerminalViaService(t *testing.T) {
+// TestAbandonSession_DestroysTerminal locks the contract that abandoning a
+// scenario destroys the learner's container rather than stopping it. A stopped
+// session keeps its slice of the plan's CPU/RAM budget — stop means "keep this
+// machine for me" — so stopping on abandon drains the learner's allowance one
+// abandoned run at a time until nothing will launch.
+func TestAbandonSession_DestroysTerminal(t *testing.T) {
 	db := setupTestDB(t)
 
-	// Create a scenario without setup script (so it goes directly to active)
 	scenario := models.Scenario{
-		Name:         "abandon-stop-test",
-		Title:        "Abandon Stop Test",
+		Name:         "abandon-destroy-test",
+		Title:        "Abandon Destroy Test",
 		InstanceType: "ubuntu:22.04",
 		CreatedByID:  "creator-abandon-1",
 	}
 	require.NoError(t, db.Create(&scenario).Error)
 
-	step := models.ScenarioStep{
+	require.NoError(t, db.Create(&models.ScenarioStep{
 		ScenarioID:  scenario.ID,
 		Order:       0,
 		Title:       "Step 1",
 		TextContent: "First step",
+	}).Error)
+
+	terminalID := "terminal-abandon-1"
+	session := models.ScenarioSession{
+		ScenarioID:        scenario.ID,
+		UserID:            "test-user-123",
+		CurrentStep:       0,
+		Status:            "active",
+		StartedAt:         time.Now(),
+		TerminalSessionID: &terminalID,
 	}
-	require.NoError(t, db.Create(&step).Error)
+	require.NoError(t, db.Create(&session).Error)
 
-	flagSvc := &mockFlagService{}
-	verifySvc := &mockVerificationService{}
-	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
+	ttMock := newMockTTService()
 
-	// Start scenario — no setup script, so it's immediately active
-	session, err := sessionSvc.StartScenario("student-abandon-1", scenario.ID, "terminal-abandon-1")
-	require.NoError(t, err)
-	assert.Equal(t, "active", session.Status)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	api := router.Group("/api/v1")
+	api.Use(func(c *gin.Context) {
+		c.Set("userId", "test-user-123")
+		c.Set("userRoles", []string{"admin"})
+		c.Next()
+	})
+	progressController := scenarioController.NewScenarioProgressControllerWithTerminalService(db, ttMock)
+	api.POST("/scenario-sessions/:id/abandon", progressController.AbandonSession)
 
-	// Abandon the session via the service
-	err = sessionSvc.AbandonSession(session.ID)
-	require.NoError(t, err)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/scenario-sessions/"+session.ID.String()+"/abandon", nil)
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
 
-	// Verify session is now abandoned
 	var dbSession models.ScenarioSession
 	require.NoError(t, db.First(&dbSession, "id = ?", session.ID).Error)
 	assert.Equal(t, "abandoned", dbSession.Status)
 
-	// NOTE: The AbandonSession service method does NOT call the terminal stop function.
-	// Terminal stopping on abandon is handled at the controller layer (scenarioController.AbandonSession),
-	// which calls sc.terminalService.StopSession directly.
-	// This is a design choice — the service layer only manages session state,
-	// while the controller layer orchestrates the terminal cleanup.
+	assert.Equal(t, []string{terminalID}, ttMock.DeletedSessions(),
+		"abandoning must destroy the learner's container, so its budget is released")
+	assert.Empty(t, ttMock.StoppedSessions(),
+		"a stopped container still holds plan budget — abandon must not merely stop it")
 }
 
 // panickingVerificationService panics on ExecInContainer to simulate an

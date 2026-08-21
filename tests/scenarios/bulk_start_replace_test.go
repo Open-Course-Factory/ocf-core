@@ -2,6 +2,7 @@ package scenarios_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,6 +24,13 @@ import (
 
 type mockTTService struct {
 	keys map[string]*ttModels.UserTerminalKey // pre-populated user keys
+
+	// Calls made against the learner's container, in order, so a test can
+	// tell "stopped" from "destroyed" — the two mean different things to the
+	// plan's budget.
+	mu         sync.Mutex
+	stoppedIDs []string
+	deletedIDs []string
 }
 
 func newMockTTService() *mockTTService {
@@ -53,7 +61,7 @@ func (m *mockTTService) GetTerms() (string, error) {
 
 // --- Stubs for the rest of the interface (not called by BulkStartScenario) ---
 
-func (m *mockTTService) DisableUserKey(string) error { return nil }
+func (m *mockTTService) DisableUserKey(string) error                       { return nil }
 func (m *mockTTService) GetSessionInfo(string) (*ttModels.Terminal, error) { return nil, nil }
 func (m *mockTTService) GetTerminalByUUID(string) (*ttModels.Terminal, error) {
 	return nil, nil
@@ -61,9 +69,31 @@ func (m *mockTTService) GetTerminalByUUID(string) (*ttModels.Terminal, error) {
 func (m *mockTTService) GetActiveUserSessions(string) (*[]ttModels.Terminal, error) {
 	return nil, nil
 }
-func (m *mockTTService) StopSession(string) error   { return nil }
-func (m *mockTTService) StartSession(string) error  { return nil }
-func (m *mockTTService) DeleteSession(string) error { return nil }
+func (m *mockTTService) StopSession(sessionID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stoppedIDs = append(m.stoppedIDs, sessionID)
+	return nil
+}
+func (m *mockTTService) StartSession(string) error { return nil }
+func (m *mockTTService) DeleteSession(sessionID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deletedIDs = append(m.deletedIDs, sessionID)
+	return nil
+}
+
+func (m *mockTTService) StoppedSessions() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.stoppedIDs...)
+}
+
+func (m *mockTTService) DeletedSessions() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.deletedIDs...)
+}
 func (m *mockTTService) HasTerminalAccess(string, string) (bool, error) {
 	return false, nil
 }
@@ -106,7 +136,7 @@ func (m *mockTTService) GetSessionCommandHistory(string, *int64, string, int, in
 func (m *mockTTService) GetSessionCommandHistoryAdmin(string, int, int) ([]byte, string, error) {
 	return nil, "", nil
 }
-func (m *mockTTService) DeleteSessionCommandHistory(string) error      { return nil }
+func (m *mockTTService) DeleteSessionCommandHistory(string) error          { return nil }
 func (m *mockTTService) DeleteAllUserCommandHistory(string) (int64, error) { return 0, nil }
 func (m *mockTTService) GetOrganizationTerminalSessions(uuid.UUID) (*[]ttModels.Terminal, error) {
 	return nil, nil

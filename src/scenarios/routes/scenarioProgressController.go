@@ -41,10 +41,16 @@ type scenarioProgressController struct {
 // NewScenarioProgressController creates a controller for scenario progress
 // tracking with its service dependencies.
 func NewScenarioProgressController(db *gorm.DB) ScenarioProgressController {
+	return NewScenarioProgressControllerWithTerminalService(db, terminalServices.NewTerminalTrainerService(db))
+}
+
+// NewScenarioProgressControllerWithTerminalService builds the same controller
+// against a caller-supplied terminal service, so a test can observe what a
+// learner action does to the container without reaching tt-backend.
+func NewScenarioProgressControllerWithTerminalService(db *gorm.DB, terminalService terminalServices.TerminalTrainerService) ScenarioProgressController {
 	flagService := services.NewFlagService()
 	verificationService := services.NewVerificationService()
 	sessionService := services.NewScenarioSessionService(db, flagService, verificationService)
-	terminalService := terminalServices.NewTerminalTrainerService(db)
 
 	// Wire terminal stop callback so the session service can stop terminals on setup failure
 	sessionService.SetTerminalStopFunc(func(terminalSessionID string) error {
@@ -368,10 +374,17 @@ func (pc *scenarioProgressController) AbandonSession(ctx *gin.Context) {
 		return
 	}
 
-	// Stop the linked terminal session (best-effort, don't block the abandon)
+	// Destroy the linked terminal session (best-effort, don't block the abandon).
+	//
+	// Stopping it was not enough: a stopped session keeps its slice of the
+	// plan's CPU/RAM budget, by design — stop means "keep this machine for
+	// me". Abandoning a scenario says the opposite, so the machine has to go,
+	// or the learner's allowance drains one abandoned run at a time until
+	// nothing will launch and the catalogue simply reports every scenario as
+	// unavailable, with nothing pointing at the cause.
 	if session.TerminalSessionID != nil && *session.TerminalSessionID != "" {
-		if stopErr := pc.terminalService.StopSession(*session.TerminalSessionID); stopErr != nil {
-			slog.Warn("failed to stop terminal session on abandon", "terminal_session_id", *session.TerminalSessionID, "err", stopErr)
+		if delErr := pc.terminalService.DeleteSession(*session.TerminalSessionID); delErr != nil {
+			slog.Warn("failed to delete terminal session on abandon", "terminal_session_id", *session.TerminalSessionID, "err", delErr)
 		}
 	}
 
