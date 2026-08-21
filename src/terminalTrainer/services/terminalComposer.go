@@ -399,6 +399,12 @@ func (c *terminalComposer) validateBackendForOrg(orgID *uuid.UUID, requestedBack
 }
 
 // StartComposedSession validates inputs against the plan and starts a composed session
+// sessionCreateTimeout bounds the one call that provisions a container, rather
+// than leaving it on the 30s default meant for ordinary API traffic. It matches
+// the 180s the frontend allows a scenario launch, so the two ends of the same
+// request agree on how long provisioning may take.
+const sessionCreateTimeout = 3 * time.Minute
+
 func (c *terminalComposer) StartComposedSession(userID string, input dto.CreateComposedSessionInput, planInterface any) (*dto.TerminalSessionResponse, error) {
 	plan, ok := planInterface.(*paymentModels.SubscriptionPlan)
 	if !ok {
@@ -741,8 +747,20 @@ func (c *terminalComposer) startComposedSession(
 
 	utils.Debug("StartComposedSession - POST %s", url)
 
+	// This call builds a container: tt-backend pulls or copies an image, boots
+	// the instance, waits for it, and only then answers. The shared default is
+	// 30s, which is a sensible bound for an API call and far too short for
+	// provisioning — a Debian image on a cold host takes longer than that
+	// routinely.
+	//
+	// Timing out here is worse than slow. tt-backend keeps building and the
+	// container comes up; only our side has given up, so the reservation is
+	// released, the learner is told the launch failed, and the instance is left
+	// running with nothing referencing it. Every retry leaks another one.
+	//
+	// Three minutes matches what the frontend already allows the launch call.
 	opts := utils.DefaultHTTPClientOptions()
-	utils.ApplyOptions(&opts, utils.WithAPIKey(userKey.APIKey))
+	utils.ApplyOptions(&opts, utils.WithAPIKey(userKey.APIKey), utils.WithTimeout(sessionCreateTimeout))
 
 	// tt-backend may stream NDJSON, use the same pattern as startSession.
 	// Any failure from here on releases the reservation so its budget is
