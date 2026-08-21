@@ -30,6 +30,18 @@ type GroupService interface {
 	DeleteGroup(groupID uuid.UUID, ownerUserID string) error
 
 	// Member management
+	//
+	// EnrolMember is the single owner of "what it takes to be in a group": the
+	// group_members row AND the Casbin grant that goes with it. Both are
+	// required — CheckGroupRole reads the row and nothing else, so a caller that
+	// writes only the row produces a member every GroupRole gate refuses.
+	//
+	// It deliberately performs no permission check of its own. Callers that need
+	// one do it first (AddMembersToGroup), and the two callers that cannot are
+	// exactly why this exists: a group's owner is enrolled before there is
+	// anyone to authorise them, and the bulk import authorises at the
+	// organization level before any group exists.
+	EnrolMember(groupID uuid.UUID, userID string, role models.GroupMemberRole, invitedBy string) error
 	AddMembersToGroup(groupID uuid.UUID, requestingUserID string, userIDs []string, role models.GroupMemberRole) error
 	RemoveMemberFromGroup(groupID uuid.UUID, requestingUserID string, userID string) error
 	UpdateMemberRole(groupID uuid.UUID, requestingUserID string, userID string, newRole models.GroupMemberRole) error
@@ -122,6 +134,31 @@ func (gs *groupService) DeleteGroup(groupID uuid.UUID, requestingUserID string) 
 }
 
 // AddMembersToGroup adds multiple members to a group
+// EnrolMember writes the membership row and grants the matching Casbin
+// permissions. See the interface for why it does not authorise the caller.
+func (gs *groupService) EnrolMember(groupID uuid.UUID, userID string, role models.GroupMemberRole, invitedBy string) error {
+	member := &models.GroupMember{
+		GroupID:   groupID,
+		UserID:    userID,
+		Role:      role,
+		InvitedBy: invitedBy,
+		JoinedAt:  time.Now(),
+		IsActive:  true,
+	}
+
+	if err := gs.repository.AddGroupMember(member); err != nil {
+		return fmt.Errorf("failed to add user %s to group %s: %w", userID, groupID, err)
+	}
+
+	// A missing grant degrades what the member may reach; it does not undo the
+	// membership, and the row is what authorization reads. Warn, don't fail.
+	if err := gs.GrantGroupPermissionsToUser(userID, groupID); err != nil {
+		utils.Warn("Failed to grant group permissions to user %s: %v", userID, err)
+	}
+
+	return nil
+}
+
 func (gs *groupService) AddMembersToGroup(groupID uuid.UUID, requestingUserID string, userIDs []string, role models.GroupMemberRole) error {
 	// Check if user can manage this group
 	canManage, err := gs.CanUserManageGroup(groupID, requestingUserID)
@@ -162,25 +199,9 @@ func (gs *groupService) AddMembersToGroup(groupID uuid.UUID, requestingUserID st
 			continue
 		}
 
-		member := &models.GroupMember{
-			GroupID:   groupID,
-			UserID:    userID,
-			Role:      role,
-			InvitedBy: requestingUserID,
-			JoinedAt:  time.Now(),
-			IsActive:  true,
-		}
-
-		err = gs.repository.AddGroupMember(member)
-		if err != nil {
-			utils.Error("Failed to add user %s to group %s: %v", userID, groupID, err)
+		if err = gs.EnrolMember(groupID, userID, role, requestingUserID); err != nil {
+			utils.Error("%v", err)
 			continue
-		}
-
-		// Grant group permissions to new member
-		err = gs.GrantGroupPermissionsToUser(userID, groupID)
-		if err != nil {
-			utils.Warn("Failed to grant permissions to user %s: %v", userID, err)
 		}
 
 		utils.Info("User %s added to group %s with role %s", userID, groupID, role)

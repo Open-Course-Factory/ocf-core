@@ -72,26 +72,13 @@ func (h *GroupOwnerSetupHook) Execute(ctx *hooks.HookContext) error {
 		// Add owner as member and grant permissions
 		userID := group.OwnerUserID
 
-		// Add owner as a member with owner role
-		member := &models.GroupMember{
-			GroupID:   group.ID,
-			UserID:    userID,
-			Role:      models.GroupMemberRoleOwner,
-			InvitedBy: userID,
-			JoinedAt:  group.CreatedAt,
-			IsActive:  true,
-		}
-
-		err := h.db.Create(member).Error
-		if err != nil {
+		// Add owner as a member with owner role, through the one function that
+		// knows a membership is a row plus a grant.
+		if err := h.groupService.EnrolMember(
+			group.ID, userID, models.GroupMemberRoleOwner, userID,
+		); err != nil {
 			utils.Error("Failed to add owner as member: %v", err)
 			return fmt.Errorf("failed to add owner as member: %w", err)
-		}
-
-		// Grant permissions to the owner
-		err = h.groupService.GrantGroupPermissionsToUser(userID, group.ID)
-		if err != nil {
-			utils.Warn("Failed to grant permissions to group owner: %v", err)
 		}
 
 		utils.Info("Group created: %s (ID: %s) by user %s", group.Name, group.ID, userID)

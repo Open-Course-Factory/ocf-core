@@ -9,6 +9,7 @@ import (
 
 	"soli/formations/src/auth/casdoor"
 	groupModels "soli/formations/src/groups/models"
+	groupServices "soli/formations/src/groups/services"
 	"soli/formations/src/organizations/dto"
 	organizationModels "soli/formations/src/organizations/models"
 	orgUtils "soli/formations/src/organizations/utils"
@@ -37,12 +38,14 @@ type ImportService interface {
 type importService struct {
 	db              *gorm.DB
 	terminalService ttServices.TerminalTrainerService
+	groupService    groupServices.GroupService
 }
 
 func NewImportService(db *gorm.DB) ImportService {
 	return &importService{
 		db:              db,
 		terminalService: ttServices.NewTerminalTrainerService(db),
+		groupService:    groupServices.NewGroupService(db),
 	}
 }
 
@@ -291,7 +294,7 @@ func (s *importService) ImportOrganizationData(
 	// 7. Process memberships
 	if membershipsFile != nil {
 		for i, membership := range memberships {
-			err := s.processMembership(membership, emailToUserID, groupNameToID, orgID, ownerUserID, dryRun)
+			err := s.processMembership(membership, emailToUserID, groupNameToID, ownerUserID, dryRun)
 			if err != nil {
 				response.Errors = append(response.Errors, dto.ImportError{
 					Row:     i + 2,
@@ -501,6 +504,19 @@ func (s *importService) processGroup(group dto.GroupImportRow, orgID uuid.UUID, 
 		return uuid.Nil, fmt.Errorf("failed to create group: %w", err)
 	}
 
+	// Writing the row directly bypasses GroupOwnerSetupHook, which is what
+	// normally enrols the creator. Setting OwnerUserID above is not enough:
+	// CheckGroupRole reads group_members and never looks at owner_user_id, so
+	// without this the importer fails every GroupRole gate on the class they
+	// just created — they cannot list the scenarios they could assign to it,
+	// assign one, bulk-start it, or read its results, and each refusal reads as
+	// an empty list rather than an error.
+	if err := s.groupService.EnrolMember(
+		newGroup.ID, ownerUserID, groupModels.GroupMemberRoleOwner, ownerUserID,
+	); err != nil {
+		return uuid.Nil, fmt.Errorf("failed to enrol group owner: %w", err)
+	}
+
 	utils.Debug("Created group: %s (ID: %s)", group.GroupName, newGroup.ID)
 	return newGroup.ID, nil
 }
@@ -510,7 +526,6 @@ func (s *importService) processMembership(
 	membership dto.MembershipImportRow,
 	emailToUserID map[string]string,
 	groupNameToID map[string]uuid.UUID,
-	orgID uuid.UUID,
 	inviterID string,
 	dryRun bool,
 ) error {
@@ -537,17 +552,16 @@ func (s *importService) processMembership(
 		return nil
 	}
 
-	// Create membership
-	newMember := groupModels.GroupMember{
-		GroupID:   groupID,
-		UserID:    userID,
-		Role:      groupModels.GroupMemberRole(strings.ToLower(membership.Role)),
-		InvitedBy: inviterID,
-		JoinedAt:  time.Now(),
-		IsActive:  true,
-	}
-
-	if err := s.db.Create(&newMember).Error; err != nil {
+	// Through the service, not db.Create: a membership is the row AND the Casbin
+	// grant, and writing only the row leaves an imported learner without the
+	// group permissions the same person would have had if a teacher had added
+	// them by hand.
+	if err := s.groupService.EnrolMember(
+		groupID,
+		userID,
+		groupModels.GroupMemberRole(strings.ToLower(membership.Role)),
+		inviterID,
+	); err != nil {
 		return fmt.Errorf("failed to create membership: %w", err)
 	}
 
