@@ -2125,7 +2125,7 @@ func (tc *terminalController) GetConsentStatus(ctx *gin.Context) {
 //	@Router			/terminals/distributions [get]
 func (tc *terminalController) GetDistributions(ctx *gin.Context) {
 	backend := ctx.Query("backend")
-	distributions, err := tc.service.GetDistributions(backend)
+	distributions, err := tc.service.GetOfferedDistributions(backend)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
 			ErrorCode:    http.StatusInternalServerError,

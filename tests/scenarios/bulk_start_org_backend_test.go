@@ -143,6 +143,9 @@ func (m *capturingTTService) IsUserOrgManagerOrAdmin(string, uuid.UUID, bool) bo
 func (m *capturingTTService) GetDistributions(string) ([]ttDto.TTDistribution, error) {
 	return nil, nil
 }
+func (m *capturingTTService) GetOfferedDistributions(string) ([]ttDto.TTDistribution, error) {
+	return nil, nil
+}
 func (m *capturingTTService) GetCatalogSizes() ([]ttDto.TTSize, error) { return nil, nil }
 func (m *capturingTTService) FetchRawSizes(ctx context.Context) ([]ttDto.TTSize, error) {
 	return nil, nil

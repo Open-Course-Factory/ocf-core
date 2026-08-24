@@ -102,6 +102,7 @@ type TerminalTrainerService interface {
 
 	// Composed session (Phase 4)
 	GetDistributions(backend string) ([]dto.TTDistribution, error)
+	GetOfferedDistributions(backend string) ([]dto.TTDistribution, error)
 	GetCatalogSizes() ([]dto.TTSize, error)
 	// FetchRawSizes performs a one-shot, uncached HTTP GET against
 	// tt-backend's /sizes endpoint. Used by the startup catalog
@@ -230,12 +231,18 @@ func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*d
 	return tts.proxy.SetSystemDefaultBackend(backendID)
 }
 
-// GetDistributions delegates to the catalog service, which curates the raw
-// tt-backend list down to what a person may be offered. It used to proxy
-// straight through — the one catalog read that bypassed the service owning the
-// catalog concern, which is how scenario base images reached the picker.
+// GetDistributions returns every distribution the backend can run.
+//
+// This is the one to call when resolving an image by name — the scenario
+// launcher does, and a scenario naming a withheld image must still start.
 func (tts *terminalTrainerService) GetDistributions(backend string) ([]dto.TTDistribution, error) {
-	return tts.catalog.GetDistributions(backend)
+	return tts.proxy.GetDistributions(backend)
+}
+
+// GetOfferedDistributions returns only what a person may pick, and belongs to
+// presentation. See terminalCatalogService.GetOfferedDistributions.
+func (tts *terminalTrainerService) GetOfferedDistributions(backend string) ([]dto.TTDistribution, error) {
+	return tts.catalog.GetOfferedDistributions(backend)
 }
 
 func (tts *terminalTrainerService) FetchRawSizes(ctx context.Context) ([]dto.TTSize, error) {

@@ -146,6 +146,9 @@ func (m *metricsAwareMockService) IsUserOrgManagerOrAdmin(userID string, orgID u
 func (m *metricsAwareMockService) GetDistributions(backend string) ([]dto.TTDistribution, error) {
 	panic("not implemented")
 }
+func (m *metricsAwareMockService) GetOfferedDistributions(backend string) ([]dto.TTDistribution, error) {
+	panic("not implemented")
+}
 func (m *metricsAwareMockService) GetCatalogSizes() ([]dto.TTSize, error) {
 	panic("not implemented")
 }

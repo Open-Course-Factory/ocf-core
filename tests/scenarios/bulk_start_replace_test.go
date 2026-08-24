@@ -163,6 +163,9 @@ func (m *mockTTService) IsUserOrgManagerOrAdmin(string, uuid.UUID, bool) bool { 
 func (m *mockTTService) GetDistributions(string) ([]ttDto.TTDistribution, error) {
 	return nil, nil
 }
+func (m *mockTTService) GetOfferedDistributions(string) ([]ttDto.TTDistribution, error) {
+	return nil, nil
+}
 func (m *mockTTService) GetCatalogSizes() ([]ttDto.TTSize, error) { return nil, nil }
 func (m *mockTTService) FetchRawSizes(ctx context.Context) ([]ttDto.TTSize, error) {
 	return nil, nil

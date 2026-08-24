@@ -1,13 +1,17 @@
 package terminalTrainer_tests
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	configModels "soli/formations/src/configuration/models"
 	"soli/formations/src/terminalTrainer/dto"
 	"soli/formations/src/terminalTrainer/services"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ============================================================
@@ -106,4 +110,51 @@ func TestParseDistributionNames_TolerantOfSpacingAndTrailingCommas(t *testing.T)
 	parsed := services.ParseDistributionNames(strings.Split(" alpine-xs , Challenge-Deb ,", ","))
 
 	assert.Equal(t, map[string]bool{"alpine-xs": true, "challenge-deb": true}, parsed)
+}
+
+// ============================================================
+// Withholding an image from the menu must not uninstall it
+//
+// The scenario launcher resolves the images a scenario declares against the
+// distribution list, and refuses to substitute one the author never approved.
+// So if the curated list were the one it saw, adding `challenge-deb` to the
+// setting would not merely hide it — it would make linux-rogue-lite-v2
+// unlaunchable, because that scenario names it and nothing else it could fall
+// back to.
+//
+// Hence two reads. GetDistributions stays complete and is what resolves names;
+// GetOfferedDistributions is the curated one and belongs to presentation.
+// ============================================================
+
+func TestGetDistributions_StaysCompleteForNameResolution(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "distributions") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"name":"Debian"},{"name":"challenge-deb"}]`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	// Build the service first: newCatalogTestService calls freshTestDB, which
+	// truncates the shared tables — seeding the setting before it would wipe it.
+	svc := newCatalogTestService(t, srv.URL)
+	require.NoError(t, sharedTestDB.Create(&configModels.Feature{
+		Key:   services.UnlistedDistributionsKey,
+		Name:  "unlisted",
+		Value: "challenge-deb",
+	}).Error)
+
+	offered, err := svc.GetOfferedDistributions("")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"Debian"}, namesOf(offered),
+		"the picker must not offer a withheld image")
+
+	all, err := svc.GetDistributions("")
+	require.NoError(t, err)
+	assert.Contains(t, namesOf(all), "challenge-deb",
+		"the launcher resolves declared images against this list — withholding one "+
+			"from the menu must not make the scenario that requires it unlaunchable")
 }

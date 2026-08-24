@@ -159,6 +159,9 @@ func (m *mockTerminalTrainerService) IsUserOrgManagerOrAdmin(userID string, orgI
 func (m *mockTerminalTrainerService) GetDistributions(backend string) ([]dto.TTDistribution, error) {
 	panic("not implemented")
 }
+func (m *mockTerminalTrainerService) GetOfferedDistributions(backend string) ([]dto.TTDistribution, error) {
+	panic("not implemented")
+}
 func (m *mockTerminalTrainerService) GetCatalogSizes() ([]dto.TTSize, error) {
 	panic("not implemented")
 }

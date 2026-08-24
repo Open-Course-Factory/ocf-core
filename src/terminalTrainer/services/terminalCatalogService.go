@@ -134,17 +134,18 @@ func ParseDistributionNames(names []string) map[string]bool {
 	return set
 }
 
-// GetDistributions returns the distributions a person may pick.
+// GetOfferedDistributions returns the distributions a person may pick.
 //
 // tt-backend answers with every instance config it can run; deciding which of
 // those are *offered* is a product question, and this service is where the
 // other two catalog reads already have their product rules applied. Without
 // this the picker showed scenario base images beside Debian and Ubuntu.
 //
-// GetSessionOptions deliberately does NOT go through here: an unlisted
-// distribution stays perfectly launchable by name, which is what the scenario
-// engine relies on.
-func (c *terminalCatalogService) GetDistributions(backend string) ([]dto.TTDistribution, error) {
+// Only presentation should call this. Anything resolving an image by name —
+// the scenario launcher above all — must use GetDistributions, or a withheld
+// image stops resolving and the scenario that declares it becomes unlaunchable.
+// Hiding a thing from a menu must not uninstall it.
+func (c *terminalCatalogService) GetOfferedDistributions(backend string) ([]dto.TTDistribution, error) {
 	distributions, err := c.proxy.GetDistributions(backend)
 	if err != nil {
 		return nil, err
