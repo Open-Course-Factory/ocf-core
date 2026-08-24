@@ -1,6 +1,7 @@
 package terminalTrainer_tests
 
 import (
+	"strings"
 	"testing"
 
 	"soli/formations/src/terminalTrainer/dto"
@@ -88,4 +89,21 @@ func TestFilterListedDistributions_EmptyExclusionListKeepsEverything(t *testing.
 func TestFilterListedDistributions_NoDistributionsIsNotACrash(t *testing.T) {
 	listed := services.FilterListedDistributions(nil, map[string]bool{"alpine-xs": true})
 	assert.Empty(t, listed)
+}
+
+// An unset setting must withhold nothing. The subtlety is that
+// strings.Split("", ",") returns []string{""} rather than an empty slice, so a
+// naive parse would build a set containing "" and start comparing against it.
+func TestParseDistributionNames_EmptySettingWithholdsNothing(t *testing.T) {
+	for _, stored := range []string{"", "   ", ",", " , , "} {
+		parsed := services.ParseDistributionNames(strings.Split(stored, ","))
+		assert.Empty(t, parsed, "stored value %q must withhold nothing", stored)
+	}
+}
+
+func TestParseDistributionNames_TolerantOfSpacingAndTrailingCommas(t *testing.T) {
+	// This value is typed by a person into a text field in the admin panel.
+	parsed := services.ParseDistributionNames(strings.Split(" alpine-xs , Challenge-Deb ,", ","))
+
+	assert.Equal(t, map[string]bool{"alpine-xs": true, "challenge-deb": true}, parsed)
 }

@@ -78,27 +78,19 @@ var featurePlanMapping = map[string]func(*paymentModels.SubscriptionPlan) bool{
 // Curation: what a person may be offered
 // ==========================================
 
-// defaultUnlistedDistributions are the instance configs tt-backend can run but
-// that nobody should be offered when starting a terminal.
+// Which distributions are withheld is deployment policy, not a constant.
 //
-//   - challenge-deb is the Rogue-Lite scenario base image. The scenario engine
-//     launches it by name; it is not a menu entry.
-//   - alpine-xs carries no size metadata at all, so choosing it leaves the size
-//     step with nothing to offer.
+// The names live in tt-backend's instances table and in scenario content
+// (`challenge-deb` appears in challenges/linux-rogueLite/index.json), neither
+// of which ocf-core owns or validates. A literal here would be coupled to both
+// through a bare string: rename the image and the code silently stops matching,
+// which is the drift this service exists to avoid. And the list is not the same
+// everywhere — `alpine-xs` is leftover data in one database, not a fact about
+// the product.
 //
-// This list is ocf-core's to keep, not tt-backend's: an entry is unlisted
-// because of what *this* service knows about it, and tt-backend has no notion
-// of a scenario. It cannot be derived from scenario_instance_types either —
-// that column records which images a scenario is *compatible with*, and real
-// distributions appear in it (prod lists `debian` next to `challenge-deb`), so
-// deriving the rule from it would hide the catalogue's own defaults.
-var defaultUnlistedDistributions = []string{"alpine-xs", "challenge-deb"}
-
-// DefaultUnlistedDistributions is what the setting is seeded with. Returns a
-// copy so a caller cannot reshape the package default.
-func DefaultUnlistedDistributions() []string {
-	return append([]string(nil), defaultUnlistedDistributions...)
-}
+// So the code supplies the mechanism and the deployment supplies the list. An
+// unset setting hides nothing, which fails visibly — an uncurated image shows
+// up in the picker — rather than silently matching the wrong name.
 
 // Why features are NOT curated here, unlike distributions:
 //
@@ -116,20 +108,17 @@ func DefaultUnlistedDistributions() []string {
 // picker. It holds a comma-separated list of distribution names.
 const UnlistedDistributionsKey = "terminals.unlisted_distributions"
 
-// unlistedDistributions returns the names to withhold from the picker.
-//
-// The database is the source of truth so an administrator can change it without
-// a redeploy. A stored empty value means "list everything" — that is a real
-// choice, so it must not fall back to the defaults, or clearing the field in
-// the admin panel would silently do nothing.
+// unlistedDistributions returns the names to withhold from the picker, as the
+// administrator set them. Absent or empty means withhold nothing.
 func (c *terminalCatalogService) unlistedDistributions() map[string]bool {
-	names := defaultUnlistedDistributions
-	if c.features != nil {
-		if setting, err := c.features.GetFeatureByKey(UnlistedDistributionsKey); err == nil && setting != nil {
-			names = strings.Split(setting.Value, ",")
-		}
+	if c.features == nil {
+		return nil
 	}
-	return ParseDistributionNames(names)
+	setting, err := c.features.GetFeatureByKey(UnlistedDistributionsKey)
+	if err != nil || setting == nil {
+		return nil
+	}
+	return ParseDistributionNames(strings.Split(setting.Value, ","))
 }
 
 // ParseDistributionNames normalizes a list of names into a lookup set,
