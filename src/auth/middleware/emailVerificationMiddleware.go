@@ -3,7 +3,8 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/casdoor/casdoor-go-sdk/casdoorsdk"
+	"soli/formations/src/auth/services"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -32,9 +33,12 @@ func (m *emailVerificationMiddleware) RequireVerifiedEmail() gin.HandlerFunc {
 			return
 		}
 
-		// Get user from Casdoor
-		user, err := casdoorsdk.GetUserByUserId(userId)
-		if err != nil || user == nil {
+		// Ask the verification service rather than reading the Casdoor flag
+		// here. That flag alone once refused 36 accounts that had genuinely
+		// confirmed their address, because the service's PostgreSQL fallback
+		// lived on the other side of this decision.
+		verified, err := services.NewEmailVerificationService(m.db).IsEmailVerified(userId)
+		if err != nil {
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":   "UNAUTHORIZED",
 				"message": "User not found",
@@ -42,8 +46,7 @@ func (m *emailVerificationMiddleware) RequireVerifiedEmail() gin.HandlerFunc {
 			return
 		}
 
-		// Check verification status using native Casdoor field
-		if !user.EmailVerified {
+		if !verified {
 			ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error":    "EMAIL_NOT_VERIFIED",
 				"message":  "Please verify your email address to access this resource",

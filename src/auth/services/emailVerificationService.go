@@ -21,7 +21,39 @@ var (
 	ErrInvalidToken = errors.New("invalid verification token")
 	ErrTokenExpired = errors.New("verification token expired")
 	ErrTokenUsed    = errors.New("verification token already used")
+	// ErrVerificationNotPersisted means the identity provider accepted the call
+	// and changed nothing. Distinct from a transport error: retrying the same
+	// write will not help, but the token must survive so the user can.
+	ErrVerificationNotPersisted = errors.New("identity provider did not persist the verification")
 )
+
+// Swappable seams for the Casdoor calls, so tests can drive the responses that
+// actually caused incidents without standing up an identity provider.
+var (
+	readCasdoorUser = casdoorsdk.GetUserByUserId
+	// UpdateUserForColumns, never UpdateUser: with no column list Casdoor
+	// applies a default whitelist that carries `properties` but omits
+	// `email_verified`, so the flag silently never lands.
+	writeCasdoorUserColumns = casdoorsdk.UpdateUserForColumns
+)
+
+// SwapCasdoorUserWriter replaces the read and write seams for a test and
+// returns a function restoring them.
+func SwapCasdoorUserWriter(
+	read func(userID string) (*casdoorsdk.User, error),
+	write func(user *casdoorsdk.User, columns []string) (bool, error),
+) func() {
+	prevRead, prevWrite := readCasdoorUser, writeCasdoorUserColumns
+	readCasdoorUser, writeCasdoorUserColumns = read, write
+	return func() { readCasdoorUser, writeCasdoorUserColumns = prevRead, prevWrite }
+}
+
+// SwapCasdoorUserReader replaces only the read seam for a test.
+func SwapCasdoorUserReader(read func(userID string) (*casdoorsdk.User, error)) func() {
+	prev := readCasdoorUser
+	readCasdoorUser = read
+	return func() { readCasdoorUser = prev }
+}
 
 type VerificationStatus struct {
 	Verified   bool   `json:"verified"`
@@ -158,7 +190,7 @@ func (s *emailVerificationService) VerifyEmail(token string) error {
 
 	// Update user's email verification status in Casdoor BEFORE marking token as used.
 	// If Casdoor fails, the token remains valid so the user can retry.
-	user, err := casdoorsdk.GetUserByUserId(verificationToken.UserID)
+	user, err := readCasdoorUser(verificationToken.UserID)
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
 	}
@@ -175,8 +207,19 @@ func (s *emailVerificationService) VerifyEmail(token string) error {
 	}
 	user.Properties["email_verified_at"] = time.Now().Format(time.RFC3339)
 
-	if _, err := casdoorsdk.UpdateUser(user); err != nil {
+	// Name both columns. Casdoor's default whitelist covers `properties` but
+	// not `email_verified`, which is how production ended up full of accounts
+	// carrying an email_verified_at stamp next to a false flag.
+	affected, err := writeCasdoorUserColumns(user, []string{"email_verified", "properties"})
+	if err != nil {
 		return fmt.Errorf("failed to update user verification status: %w", err)
+	}
+	// A nil error only means the call was accepted. Without this the token
+	// below gets burned over a write that never happened, and the user is left
+	// unverifiable for good.
+	if !affected {
+		utils.Warn("Casdoor accepted the verification write for user %s but changed nothing", verificationToken.UserID)
+		return ErrVerificationNotPersisted
 	}
 
 	// Atomically claim the token: UPDATE … SET used_at = now WHERE id = ? AND used_at IS NULL.
@@ -253,21 +296,27 @@ func (s *emailVerificationService) ResendVerification(email string) error {
 	return nil
 }
 
-// IsEmailVerified checks if a user's email is verified using native Casdoor field
+// IsEmailVerified is the single answer to "is this address confirmed?".
+//
+// It used to read the Casdoor flag alone while /auth/me and /auth/verify-status
+// also consulted a spent token in PostgreSQL. Those two rules drifted, and the
+// gap was invisible from either side: the interface showed a verified account
+// while RequireVerifiedEmail — built on this function — returned 403 on every
+// payment route. Both callers now share GetVerificationStatus, so there is one
+// rule left to be wrong.
 func (s *emailVerificationService) IsEmailVerified(userID string) (bool, error) {
-	user, err := casdoorsdk.GetUserByUserId(userID)
+	status, err := s.GetVerificationStatus(userID)
 	if err != nil {
-		return false, fmt.Errorf("failed to get user: %w", err)
+		return false, err
 	}
-
-	return user.EmailVerified, nil
+	return status.Verified, nil
 }
 
 // GetVerificationStatus returns the verification status for a user.
 // It checks Casdoor first, then falls back to PostgreSQL if Casdoor
 // is unavailable or reports the email as unverified.
 func (s *emailVerificationService) GetVerificationStatus(userID string) (*VerificationStatus, error) {
-	user, err := casdoorsdk.GetUserByUserId(userID)
+	user, err := readCasdoorUser(userID)
 	if err != nil {
 		// Casdoor unavailable — fall back to PostgreSQL
 		return s.getVerificationStatusFromDB(userID)
