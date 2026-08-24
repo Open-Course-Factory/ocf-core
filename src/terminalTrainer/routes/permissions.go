@@ -68,6 +68,8 @@ func RegisterTerminalPermissions(enforcer interfaces.EnforcerInterface) {
 
 		// Admin routes
 		access.RoutePermission{Path: "/api/v1/terminals/backends/:backendId/set-default", Method: "PATCH", Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly}, Description: "Set the default terminal backend"},
+		access.RoutePermission{Path: "/api/v1/terminals/admin/distribution-catalog", Method: "GET", Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly}, Description: "List every distribution with its launcher visibility"},
+		access.RoutePermission{Path: "/api/v1/terminals/admin/distribution-catalog", Method: "PUT", Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly}, Description: "Set which distributions the launcher offers"},
 		access.RoutePermission{Path: "/api/v1/terminals/catalog-sizes", Method: "GET", Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly}, Description: "List full catalog of resource sizes (admin scenario editing)"},
 		access.RoutePermission{Path: "/api/v1/terminals/catalog-features", Method: "GET", Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly}, Description: "List full catalog of features (admin scenario editing)"},
 		access.RoutePermission{Path: "/api/v1/terminals/enums/status", Method: "GET", Role: access.RoleAdministrator, Access: access.AccessRule{Type: access.AdminOnly}, Description: "Get enum cache status for diagnostics"},

@@ -95,6 +95,8 @@ type TerminalController interface {
 
 	// Composed session (Phase 4)
 	GetDistributions(ctx *gin.Context)
+	GetDistributionCatalog(ctx *gin.Context)
+	UpdateDistributionCatalog(ctx *gin.Context)
 	GetCatalogSizes(ctx *gin.Context)
 	GetCatalogFeatures(ctx *gin.Context)
 	GetSizes(ctx *gin.Context)

@@ -162,6 +162,9 @@ func (m *mockTerminalTrainerService) GetDistributions(backend string) ([]dto.TTD
 func (m *mockTerminalTrainerService) GetOfferedDistributions(backend string) ([]dto.TTDistribution, error) {
 	panic("not implemented")
 }
+func (m *mockTerminalTrainerService) SetWithheldDistributions([]string) error {
+	return nil
+}
 func (m *mockTerminalTrainerService) GetCatalogSizes() ([]dto.TTSize, error) {
 	panic("not implemented")
 }

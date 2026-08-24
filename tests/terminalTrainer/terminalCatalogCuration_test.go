@@ -158,3 +158,61 @@ func TestGetDistributions_StaysCompleteForNameResolution(t *testing.T) {
 		"the launcher resolves declared images against this list — withholding one "+
 			"from the menu must not make the scenario that requires it unlaunchable")
 }
+
+// ============================================================
+// Saving from the admin screen
+//
+// The screen sends the whole set of withheld names, so what the boxes say is
+// what is stored. Joining happens next to the splitting, so a caller cannot
+// store a value the reader will not understand.
+// ============================================================
+
+func TestSetWithheldDistributions_RoundTripsThroughTheSetting(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "distributions") {
+			_, _ = w.Write([]byte(`[{"name":"Debian"},{"name":"Alpine"},{"name":"challenge-deb"}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	svc := newCatalogTestService(t, srv.URL)
+
+	require.NoError(t, svc.SetWithheldDistributions([]string{"challenge-deb"}))
+
+	offered, err := svc.GetOfferedDistributions("")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"Debian", "Alpine"}, namesOf(offered))
+
+	// Unticking it again must bring it back — the screen is the only writer, so
+	// a set that cannot be emptied would strand an image out of sight for good.
+	require.NoError(t, svc.SetWithheldDistributions(nil))
+
+	offered, err = svc.GetOfferedDistributions("")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"Debian", "Alpine", "challenge-deb"}, namesOf(offered))
+}
+
+func TestSetWithheldDistributions_DropsBlanksAndDuplicates(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "distributions") {
+			_, _ = w.Write([]byte(`[{"name":"Debian"},{"name":"challenge-deb"}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	svc := newCatalogTestService(t, srv.URL)
+
+	require.NoError(t, svc.SetWithheldDistributions(
+		[]string{" challenge-deb ", "", "Challenge-Deb", "   "}))
+
+	offered, err := svc.GetOfferedDistributions("")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"Debian"}, namesOf(offered),
+		"whitespace and repeats must not change what is withheld")
+}

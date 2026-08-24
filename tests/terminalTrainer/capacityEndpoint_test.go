@@ -149,6 +149,9 @@ func (m *metricsAwareMockService) GetDistributions(backend string) ([]dto.TTDist
 func (m *metricsAwareMockService) GetOfferedDistributions(backend string) ([]dto.TTDistribution, error) {
 	panic("not implemented")
 }
+func (m *metricsAwareMockService) SetWithheldDistributions([]string) error {
+	return nil
+}
 func (m *metricsAwareMockService) GetCatalogSizes() ([]dto.TTSize, error) {
 	panic("not implemented")
 }

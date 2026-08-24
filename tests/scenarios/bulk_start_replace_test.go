@@ -166,6 +166,9 @@ func (m *mockTTService) GetDistributions(string) ([]ttDto.TTDistribution, error)
 func (m *mockTTService) GetOfferedDistributions(string) ([]ttDto.TTDistribution, error) {
 	return nil, nil
 }
+func (m *mockTTService) SetWithheldDistributions([]string) error {
+	return nil
+}
 func (m *mockTTService) GetCatalogSizes() ([]ttDto.TTSize, error) { return nil, nil }
 func (m *mockTTService) FetchRawSizes(ctx context.Context) ([]ttDto.TTSize, error) {
 	return nil, nil

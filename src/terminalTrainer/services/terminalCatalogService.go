@@ -121,6 +121,31 @@ func (c *terminalCatalogService) unlistedDistributions() map[string]bool {
 	return ParseDistributionNames(strings.Split(setting.Value, ","))
 }
 
+// SetWithheldDistributions replaces the withheld set.
+//
+// Takes names rather than a free-text string so the caller cannot store a value
+// the reader will not understand: the join happens here, next to the split.
+// Blanks are dropped, so an empty list stores an empty value and withholds
+// nothing — which is a real choice, not a mistake.
+func (c *terminalCatalogService) SetWithheldDistributions(names []string) error {
+	if c.features == nil {
+		return fmt.Errorf("no settings store configured")
+	}
+
+	cleaned := make([]string, 0, len(names))
+	seen := make(map[string]bool, len(names))
+	for _, n := range names {
+		trimmed := strings.TrimSpace(n)
+		if trimmed == "" || seen[strings.ToLower(trimmed)] {
+			continue
+		}
+		seen[strings.ToLower(trimmed)] = true
+		cleaned = append(cleaned, trimmed)
+	}
+
+	return c.features.UpdateFeatureValue(UnlistedDistributionsKey, strings.Join(cleaned, ","))
+}
+
 // ParseDistributionNames normalizes a list of names into a lookup set,
 // discarding blanks so a trailing comma or a stray space cannot hide a
 // distribution called "". Exported for testing.

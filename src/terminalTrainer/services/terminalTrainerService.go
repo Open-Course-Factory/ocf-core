@@ -103,6 +103,7 @@ type TerminalTrainerService interface {
 	// Composed session (Phase 4)
 	GetDistributions(backend string) ([]dto.TTDistribution, error)
 	GetOfferedDistributions(backend string) ([]dto.TTDistribution, error)
+	SetWithheldDistributions(names []string) error
 	GetCatalogSizes() ([]dto.TTSize, error)
 	// FetchRawSizes performs a one-shot, uncached HTTP GET against
 	// tt-backend's /sizes endpoint. Used by the startup catalog
@@ -243,6 +244,11 @@ func (tts *terminalTrainerService) GetDistributions(backend string) ([]dto.TTDis
 // presentation. See terminalCatalogService.GetOfferedDistributions.
 func (tts *terminalTrainerService) GetOfferedDistributions(backend string) ([]dto.TTDistribution, error) {
 	return tts.catalog.GetOfferedDistributions(backend)
+}
+
+// SetWithheldDistributions replaces the set withheld from the picker.
+func (tts *terminalTrainerService) SetWithheldDistributions(names []string) error {
+	return tts.catalog.SetWithheldDistributions(names)
 }
 
 func (tts *terminalTrainerService) FetchRawSizes(ctx context.Context) ([]dto.TTSize, error) {
