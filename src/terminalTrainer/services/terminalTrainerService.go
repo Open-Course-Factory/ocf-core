@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	configRepositories "soli/formations/src/configuration/repositories"
 	groupModels "soli/formations/src/groups/models"
 	orgModels "soli/formations/src/organizations/models"
 	"soli/formations/src/payment/catalog"
@@ -163,7 +164,7 @@ func NewTerminalTrainerService(db *gorm.DB) TerminalTrainerService {
 	repository := repositories.NewTerminalRepository(db)
 	proxy := newTerminalProxyClient(repository)
 	sync := newTerminalSyncService(proxy, repository, db)
-	catalog := newTerminalCatalogService(proxy, baseURL, apiVersion, adminKey)
+	catalog := newTerminalCatalogService(proxy, baseURL, apiVersion, adminKey, configRepositories.NewFeatureRepository(db))
 	quotaService := paymentServices.NewQuotaService(db, eps)
 	enumService := NewTerminalTrainerEnumService(baseURL, apiVersion)
 
@@ -229,8 +230,12 @@ func (tts *terminalTrainerService) SetSystemDefaultBackend(backendID string) (*d
 	return tts.proxy.SetSystemDefaultBackend(backendID)
 }
 
+// GetDistributions delegates to the catalog service, which curates the raw
+// tt-backend list down to what a person may be offered. It used to proxy
+// straight through — the one catalog read that bypassed the service owning the
+// catalog concern, which is how scenario base images reached the picker.
 func (tts *terminalTrainerService) GetDistributions(backend string) ([]dto.TTDistribution, error) {
-	return tts.proxy.GetDistributions(backend)
+	return tts.catalog.GetDistributions(backend)
 }
 
 func (tts *terminalTrainerService) FetchRawSizes(ctx context.Context) ([]dto.TTSize, error) {

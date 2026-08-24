@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	configRepositories "soli/formations/src/configuration/repositories"
 	"soli/formations/src/payment/catalog"
 	paymentModels "soli/formations/src/payment/models"
 	"soli/formations/src/terminalTrainer/dto"
@@ -29,6 +30,7 @@ type terminalCatalogService struct {
 	baseURL    string
 	apiVersion string
 	adminKey   string
+	features   configRepositories.FeatureRepository
 
 	catalogSizesCache        []dto.TTSize
 	catalogSizesCacheTime    time.Time
@@ -42,12 +44,13 @@ type terminalCatalogService struct {
 // through the supplied proxy (distributions) and connection settings (sizes,
 // features). The proxy is shared with the facade so both reuse the same HTTP
 // configuration.
-func newTerminalCatalogService(proxy *terminalProxyClient, baseURL, apiVersion, adminKey string) *terminalCatalogService {
+func newTerminalCatalogService(proxy *terminalProxyClient, baseURL, apiVersion, adminKey string, features configRepositories.FeatureRepository) *terminalCatalogService {
 	return &terminalCatalogService{
 		proxy:      proxy,
 		baseURL:    baseURL,
 		apiVersion: apiVersion,
 		adminKey:   adminKey,
+		features:   features,
 	}
 }
 
@@ -69,6 +72,107 @@ const catalogCacheTTL = 60 * time.Second
 // resolvePersistenceMode reading plan.DataPersistenceEnabled (SSOT).
 var featurePlanMapping = map[string]func(*paymentModels.SubscriptionPlan) bool{
 	"network": func(p *paymentModels.SubscriptionPlan) bool { return p.NetworkAccessEnabled },
+}
+
+// ==========================================
+// Curation: what a person may be offered
+// ==========================================
+
+// defaultUnlistedDistributions are the instance configs tt-backend can run but
+// that nobody should be offered when starting a terminal.
+//
+//   - challenge-deb is the Rogue-Lite scenario base image. The scenario engine
+//     launches it by name; it is not a menu entry.
+//   - alpine-xs carries no size metadata at all, so choosing it leaves the size
+//     step with nothing to offer.
+//
+// This list is ocf-core's to keep, not tt-backend's: an entry is unlisted
+// because of what *this* service knows about it, and tt-backend has no notion
+// of a scenario. It cannot be derived from scenario_instance_types either —
+// that column records which images a scenario is *compatible with*, and real
+// distributions appear in it (prod lists `debian` next to `challenge-deb`), so
+// deriving the rule from it would hide the catalogue's own defaults.
+var defaultUnlistedDistributions = []string{"alpine-xs", "challenge-deb"}
+
+// DefaultUnlistedDistributions is what the setting is seeded with. Returns a
+// copy so a caller cannot reshape the package default.
+func DefaultUnlistedDistributions() []string {
+	return append([]string(nil), defaultUnlistedDistributions...)
+}
+
+// Why features are NOT curated here, unlike distributions:
+//
+// session-options is consumed for more than the chip list. `network` drives the
+// launcher's network toggle, whose visibility is derived from that entry being
+// present and allowed; and `effects` must stay present and allowed or every
+// scenario carrying a banner becomes unlaunchable — the always_available
+// regression fixed in 0.46.0. Dropping either from the payload re-breaks a
+// dedicated control or a whole feature.
+//
+// So which features are offered as *chips* is a rendering decision and stays
+// with the component that renders them. It is not duplicated here.
+
+// UnlistedDistributionsKey is the setting an administrator edits to curate the
+// picker. It holds a comma-separated list of distribution names.
+const UnlistedDistributionsKey = "terminals.unlisted_distributions"
+
+// unlistedDistributions returns the names to withhold from the picker.
+//
+// The database is the source of truth so an administrator can change it without
+// a redeploy. A stored empty value means "list everything" — that is a real
+// choice, so it must not fall back to the defaults, or clearing the field in
+// the admin panel would silently do nothing.
+func (c *terminalCatalogService) unlistedDistributions() map[string]bool {
+	names := defaultUnlistedDistributions
+	if c.features != nil {
+		if setting, err := c.features.GetFeatureByKey(UnlistedDistributionsKey); err == nil && setting != nil {
+			names = strings.Split(setting.Value, ",")
+		}
+	}
+	return ParseDistributionNames(names)
+}
+
+// ParseDistributionNames normalizes a list of names into a lookup set,
+// discarding blanks so a trailing comma or a stray space cannot hide a
+// distribution called "". Exported for testing.
+func ParseDistributionNames(names []string) map[string]bool {
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		if trimmed := strings.TrimSpace(n); trimmed != "" {
+			set[strings.ToLower(trimmed)] = true
+		}
+	}
+	return set
+}
+
+// GetDistributions returns the distributions a person may pick.
+//
+// tt-backend answers with every instance config it can run; deciding which of
+// those are *offered* is a product question, and this service is where the
+// other two catalog reads already have their product rules applied. Without
+// this the picker showed scenario base images beside Debian and Ubuntu.
+//
+// GetSessionOptions deliberately does NOT go through here: an unlisted
+// distribution stays perfectly launchable by name, which is what the scenario
+// engine relies on.
+func (c *terminalCatalogService) GetDistributions(backend string) ([]dto.TTDistribution, error) {
+	distributions, err := c.proxy.GetDistributions(backend)
+	if err != nil {
+		return nil, err
+	}
+	return FilterListedDistributions(distributions, c.unlistedDistributions()), nil
+}
+
+// FilterListedDistributions drops the unlisted names. Exported for testing.
+func FilterListedDistributions(distributions []dto.TTDistribution, unlisted map[string]bool) []dto.TTDistribution {
+	listed := make([]dto.TTDistribution, 0, len(distributions))
+	for _, d := range distributions {
+		if unlisted[strings.ToLower(d.Name)] {
+			continue
+		}
+		listed = append(listed, d)
+	}
+	return listed
 }
 
 // NormalizeSizeKey uppercases and trims a size key for comparison
