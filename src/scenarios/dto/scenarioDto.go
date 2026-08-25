@@ -24,6 +24,8 @@ type CreateScenarioInput struct {
 	FlagsEnabled     bool       `json:"flags_enabled,omitempty" mapstructure:"flags_enabled"`
 	AllowedFlagPaths string     `json:"allowed_flag_paths,omitempty" mapstructure:"allowed_flag_paths"`
 	CrashTraps     bool       `json:"crash_traps,omitempty" mapstructure:"crash_traps"`
+	DefaultLocale  string     `json:"default_locale,omitempty" mapstructure:"default_locale"`
+	Locales        string     `json:"locales,omitempty" mapstructure:"locales"`
 	Objectives     string     `json:"objectives,omitempty" mapstructure:"objectives" binding:"omitempty,max=5000"`
 	Prerequisites  string     `json:"prerequisites,omitempty" mapstructure:"prerequisites" binding:"omitempty,max=5000"`
 	IntroText      string     `json:"intro_text,omitempty" mapstructure:"intro_text"`
@@ -55,6 +57,8 @@ type EditScenarioInput struct {
 	FlagsEnabled     *bool      `json:"flags_enabled,omitempty" mapstructure:"flags_enabled"`
 	AllowedFlagPaths *string    `json:"allowed_flag_paths,omitempty" mapstructure:"allowed_flag_paths"`
 	CrashTraps     *bool      `json:"crash_traps,omitempty" mapstructure:"crash_traps"`
+	DefaultLocale  *string    `json:"default_locale,omitempty" mapstructure:"default_locale"`
+	Locales        *string    `json:"locales,omitempty" mapstructure:"locales"`
 	Objectives     *string    `json:"objectives,omitempty" mapstructure:"objectives" binding:"omitempty,max=5000"`
 	Prerequisites  *string    `json:"prerequisites,omitempty" mapstructure:"prerequisites" binding:"omitempty,max=5000"`
 	IntroText      *string    `json:"intro_text,omitempty" mapstructure:"intro_text"`
@@ -86,6 +90,11 @@ type ScenarioOutput struct {
 	FlagsEnabled     bool               `json:"flags_enabled"`
 	AllowedFlagPaths string             `json:"allowed_flag_paths,omitempty"`
 	CrashTraps     bool               `json:"crash_traps"`
+	// Which languages this scenario is offered in, and which one its own
+	// fields are written in. Without these on the output an editor cannot
+	// know a scenario is translatable at all.
+	DefaultLocale  string             `json:"default_locale,omitempty"`
+	Locales        string             `json:"locales,omitempty"`
 	Objectives     string             `json:"objectives,omitempty"`
 	Prerequisites  string             `json:"prerequisites,omitempty"`
 	IntroText      string             `json:"intro_text,omitempty"`
