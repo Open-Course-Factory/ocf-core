@@ -43,6 +43,17 @@ type Scenario struct {
 	// whole session of egress and puts the scenario out of reach of every plan
 	// that does not grant internet access.
 	BuildFeatures  string     `gorm:"type:text" json:"build_features,omitempty" mapstructure:"build_features"`
+
+	// DefaultLocale names the language the scenario's own fields are written
+	// in. Empty means the content is simply itself — which is every scenario
+	// that exists today, and stays valid.
+	DefaultLocale string `gorm:"type:varchar(10)" json:"default_locale,omitempty" mapstructure:"default_locale"`
+
+	// Locales is the JSON array of languages this scenario is offered in,
+	// including the default. It is a declaration, not a measurement: a language
+	// listed here may still be half translated, which is what the coverage
+	// report is for.
+	Locales string `gorm:"type:text" json:"locales,omitempty" mapstructure:"locales"`
 	SetupScript    string     `gorm:"type:text" json:"setup_script,omitempty"`
 	SetupScriptID  *uuid.UUID `gorm:"type:uuid;index" json:"setup_script_id,omitempty" mapstructure:"setup_script_id"`
 	IntroFileID    *uuid.UUID `gorm:"type:uuid;index" json:"intro_file_id,omitempty" mapstructure:"intro_file_id"`
@@ -84,6 +95,20 @@ func (s Scenario) GetRequiredFeatures() ([]string, error) {
 // GetFeaturesMap returns required features as a map[string]bool for composed sessions
 func (s Scenario) GetFeaturesMap() (map[string]bool, error) {
 	return featureNamesToMap(s.GetRequiredFeatures())
+}
+
+// GetLocales parses the Locales JSON array. A scenario that declares none is
+// single-language, and callers must treat that as "nothing to translate"
+// rather than defaulting to a language nobody asked for.
+func (s Scenario) GetLocales() ([]string, error) {
+	if s.Locales == "" {
+		return nil, nil
+	}
+	var locales []string
+	if err := json.Unmarshal([]byte(s.Locales), &locales); err != nil {
+		return nil, fmt.Errorf("invalid locales format (must be JSON array): %w", err)
+	}
+	return locales, nil
 }
 
 // GetBuildFeatures parses the BuildFeatures JSON array field

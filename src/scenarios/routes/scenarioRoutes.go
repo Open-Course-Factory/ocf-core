@@ -30,6 +30,7 @@ func ScenarioRoutes(router *gin.RouterGroup, _ *config.Configuration, db *gorm.D
 	scenarioRoutes.POST("/import-json", middleware.AuthManagement(), controller.ImportJSON)
 	scenarioRoutes.POST("/:id/duplicate", middleware.AuthManagement(), controller.DuplicateScenario)
 	scenarioRoutes.POST("/:id/preview", middleware.AuthManagement(), launchController.PreviewScenario)
+	scenarioRoutes.GET("/:id/translation-coverage", middleware.AuthManagement(), controller.GetTranslationCoverage)
 	scenarioRoutes.POST("/:id/archive", middleware.AuthManagement(), controller.ArchiveScenario)
 	scenarioRoutes.POST("/:id/unarchive", middleware.AuthManagement(), controller.UnarchiveScenario)
 

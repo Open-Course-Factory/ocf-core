@@ -36,6 +36,7 @@ type ScenarioController interface {
 	ExportScenarios(ctx *gin.Context)
 	ImportJSON(ctx *gin.Context)
 	DuplicateScenario(ctx *gin.Context)
+	GetTranslationCoverage(ctx *gin.Context)
 	ArchiveScenario(ctx *gin.Context)
 	UnarchiveScenario(ctx *gin.Context)
 }
@@ -690,6 +691,45 @@ func (sc *scenarioController) loadManageableScenario(ctx *gin.Context) *models.S
 func (sc *scenarioController) ArchiveScenario(ctx *gin.Context) {
 	now := time.Now()
 	sc.setScenarioArchivedAt(ctx, &now)
+}
+
+// GetTranslationCoverage godoc
+// @Summary Report how completely each locale covers a scenario
+// @Description Per declared locale: how many steps are translated, how many are
+// @Description stale against the source they were written from, and whether the
+// @Description locale is complete enough to be offered to a learner.
+// @Tags scenarios
+// @Produce json
+// @Param id path string true "Scenario ID"
+// @Success 200 {array} services.LocaleCoverage
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Failure 500 {object} errors.APIError
+// @Router /scenarios/{id}/translation-coverage [get]
+// @Security BearerAuth
+func (sc *scenarioController) GetTranslationCoverage(ctx *gin.Context) {
+	scenario := sc.loadManageableScenario(ctx)
+	if scenario == nil {
+		return
+	}
+
+	coverage, err := services.TranslationCoverage(sc.db, scenario.ID)
+	if err != nil {
+		slog.Error("failed to compute translation coverage", "scenario_id", scenario.ID, "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to compute translation coverage",
+		})
+		return
+	}
+
+	// A scenario declaring no locales has nothing to report. Answer with an
+	// empty array rather than null, so a client can render it without a
+	// special case.
+	if coverage == nil {
+		coverage = []services.LocaleCoverage{}
+	}
+	ctx.JSON(http.StatusOK, coverage)
 }
 
 // UnarchiveScenario godoc
