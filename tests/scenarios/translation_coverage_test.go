@@ -162,3 +162,46 @@ func TestTranslationCoverage_NoLocalesDeclared_ReportsNothing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, all)
 }
+
+// The editor marks each step in its list, so the coverage report says what
+// state every step is in — not just how many are in each.
+//
+// Per step and server-side on purpose: deciding staleness needs the source
+// hash, and a client that recomputed it would be a second implementation of the
+// one rule that says whether a translation still matches its source.
+func TestTranslationCoverage_ReportsStatePerStep(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
+	translateStep(t, db, steps[0], services.StepSourceHash(steps[0])) // current
+	translateStep(t, db, steps[1], "written-against-something-else")  // stale
+	// steps[2] left untranslated
+
+	coverage := coverageFor(t, db, scenario.ID, "fr")
+
+	require.Len(t, coverage.Steps, 3)
+	byStep := map[uuid.UUID]string{}
+	for _, s := range coverage.Steps {
+		byStep[s.StepID] = s.State
+	}
+	assert.Equal(t, "translated", byStep[steps[0].ID])
+	assert.Equal(t, "stale", byStep[steps[1].ID])
+	assert.Equal(t, "missing", byStep[steps[2].ID])
+}
+
+// The default locale needs no per-step detail: it is the content itself, and
+// every step is trivially current.
+func TestTranslationCoverage_DefaultLocale_ReportsEveryStepTranslated(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario, _ := coverageScenario(t, `["en","fr"]`)
+
+	coverage := coverageFor(t, db, scenario.ID, "en")
+
+	require.Len(t, coverage.Steps, 3)
+	for _, s := range coverage.Steps {
+		assert.Equal(t, "translated", s.State)
+	}
+}
