@@ -36,6 +36,8 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						FlagsEnabled:     model.FlagsEnabled,
 						AllowedFlagPaths: model.AllowedFlagPaths,
 						CrashTraps:     model.CrashTraps,
+						DefaultLocale:  model.DefaultLocale,
+						Locales:        model.Locales,
 						Objectives:     model.Objectives,
 						Prerequisites:  model.Prerequisites,
 						IntroText:      model.IntroText,
@@ -144,6 +146,8 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						FlagsEnabled:     input.FlagsEnabled,
 						AllowedFlagPaths: input.AllowedFlagPaths,
 						CrashTraps:     input.CrashTraps,
+						DefaultLocale:  input.DefaultLocale,
+						Locales:        input.Locales,
 						Objectives:     input.Objectives,
 						Prerequisites:  input.Prerequisites,
 						IntroText:      input.IntroText,
@@ -203,6 +207,12 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 					}
 					if input.AllowedFlagPaths != nil {
 						updates["allowed_flag_paths"] = *input.AllowedFlagPaths
+					}
+					if input.DefaultLocale != nil {
+						updates["default_locale"] = *input.DefaultLocale
+					}
+					if input.Locales != nil {
+						updates["locales"] = *input.Locales
 					}
 					if input.CrashTraps != nil {
 						updates["crash_traps"] = *input.CrashTraps
