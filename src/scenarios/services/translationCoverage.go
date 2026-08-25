@@ -161,3 +161,31 @@ func coverageForLocale(
 	coverage.Complete = coverage.Missing == 0 && coverage.Stale == 0
 	return coverage
 }
+
+// LaunchableLocales names the languages a learner may actually start this
+// scenario in.
+//
+// Derived from the coverage report rather than from the declaration, so a
+// locale withdraws itself the moment its source is edited — nobody has to
+// remember to un-offer it. That is the difference this whole mechanism buys:
+// an out-of-date translation stops being offered instead of quietly shipping.
+//
+// Empty means the scenario is single-language and a launcher should show no
+// picker at all, rather than one with a single entry.
+func LaunchableLocales(db *gorm.DB, scenarioID uuid.UUID) ([]string, error) {
+	coverage, err := TranslationCoverage(db, scenarioID)
+	if err != nil {
+		return nil, err
+	}
+
+	launchable := make([]string, 0, len(coverage))
+	for _, locale := range coverage {
+		if locale.Complete {
+			launchable = append(launchable, locale.Locale)
+		}
+	}
+	if len(launchable) == 0 {
+		return nil, nil
+	}
+	return launchable, nil
+}

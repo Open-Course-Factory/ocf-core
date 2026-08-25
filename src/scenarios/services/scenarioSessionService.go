@@ -210,6 +210,25 @@ func (s *ScenarioSessionService) tryStopTerminal(terminalSessionID string, sessi
 
 // StartScenario creates a new scenario session for a student.
 // It creates the session, step progress records, generates flags, and returns session info.
+// assertLocaleLaunchable refuses a locale the scenario does not fully cover.
+// The empty locale — every session that predates this feature — is always
+// allowed and means the scenario's own content.
+func (s *ScenarioSessionService) assertLocaleLaunchable(scenarioID uuid.UUID, locale string) error {
+	if locale == "" {
+		return nil
+	}
+	launchable, err := LaunchableLocales(s.db, scenarioID)
+	if err != nil {
+		return fmt.Errorf("failed to resolve available languages: %w", err)
+	}
+	for _, available := range launchable {
+		if available == locale {
+			return nil
+		}
+	}
+	return fmt.Errorf("this scenario is not available in %q", locale)
+}
+
 func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UUID, terminalSessionID string, locale string) (*models.ScenarioSession, error) {
 	// Load scenario with steps
 	var scenario models.Scenario
@@ -227,6 +246,14 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 	// hardcoded 0. Editor-created scenarios use 1-based ordering; legacy
 	// seeded ones may use 0-based. Either way, GetCurrentStep looks up
 	// the step whose Order matches CurrentStep, so seed it from data.
+	// A language the scenario cannot actually deliver is refused rather than
+	// quietly downgraded. A learner who asked for French and silently got
+	// English would read correct text describing the wrong world — the failure
+	// looks like a broken scenario, not like a missing translation.
+	if err := s.assertLocaleLaunchable(scenarioID, locale); err != nil {
+		return nil, err
+	}
+
 	firstStepOrder := scenario.Steps[0].Order
 
 	now := time.Now()

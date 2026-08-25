@@ -506,6 +506,21 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			IsPublic:      s.IsPublic,
 		}
 
+		// A scenario offered in more than one language says so here, so the card
+		// can present the choice without asking a second endpoint.
+		//
+		// Guarded on the declaration the row already carries: resolving coverage
+		// costs a handful of queries per scenario, and this runs once per card in
+		// the catalogue. Single-language scenarios — which is all of them today —
+		// pay nothing.
+		if s.Locales != "" {
+			if locales, err := services.LaunchableLocales(sc.db, s.ID); err != nil {
+				slog.Warn("failed to resolve available languages", "scenario_id", s.ID, "err", err)
+			} else {
+				item.AvailableLocales = locales
+			}
+		}
+
 		// Convert compatible instance types
 		if len(s.CompatibleInstanceTypes) > 0 {
 			types := make([]dto.ScenarioInstanceTypeOutput, 0, len(s.CompatibleInstanceTypes))
