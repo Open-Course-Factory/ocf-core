@@ -495,6 +495,22 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 
 	// Execute scenario-level setup script first (global environment preparation)
 	setupScript := ResolveScriptContent(s.db, scenario.SetupScriptID, scenario.SetupScript)
+
+	// The world's vocabulary goes in before anything that builds the world.
+	// Generated here, per session, because the locale is a property of the
+	// session: a scenario seeded with one language's lexicon baked in could
+	// only ever build that language's world.
+	install, lexErr := s.lexiconInstall(scenario.ID, locale)
+	if lexErr != nil {
+		slog.Error("cannot build the world's vocabulary", "session_id", sessionID, "err", lexErr)
+		s.db.Model(&models.ScenarioSession{}).
+			Where("id = ? AND status = ?", sessionID, "provisioning").
+			Updates(map[string]any{"status": "setup_failed", "provisioning_phase": ""})
+		s.tryStopTerminal(terminalSessionID, sessionID)
+		return
+	}
+	setupScript = install + setupScript
+
 	if setupScript != "" {
 		slog.Info("executing scenario setup script", "session_id", sessionID, "script_len", len(setupScript))
 		// Create a temporary step-like structure for executeBackgroundScript
@@ -687,6 +703,34 @@ func stepProvisioningEnv(scenario *models.Scenario, flags []models.ScenarioFlag,
 	}
 	env[ocfFlagCurrentEnv] = flag.ExpectedFlag
 	return env
+}
+
+// lexiconInstall builds the shell that writes a scenario's vocabulary into the
+// container, or "" when the scenario has none — which is every scenario that
+// predates this and stays working untouched.
+//
+// The heredoc delimiter is quoted: the lexicon is data at this point, and
+// letting the provisioning shell expand it would resolve every path against the
+// host rather than writing it out.
+func (s *ScenarioSessionService) lexiconInstall(scenarioID uuid.UUID, locale string) (string, error) {
+	if locale == "" {
+		var scenario models.Scenario
+		if err := s.db.Select("default_locale").First(&scenario, "id = ?", scenarioID).Error; err != nil {
+			return "", err
+		}
+		locale = scenario.DefaultLocale
+	}
+	if locale == "" {
+		// No locale at all means a scenario that never declared languages. Its
+		// scripts name their own world, as they always have.
+		return "", nil
+	}
+
+	body, err := GenerateLexicon(s.db, scenarioID, locale)
+	if err != nil || body == "" {
+		return "", err
+	}
+	return fmt.Sprintf("cat > %s <<'OCF_LEXICON'\n%sOCF_LEXICON\n", LexiconContainerPath, body), nil
 }
 
 // provisioningLocaleEnv tells the container which language it is being built

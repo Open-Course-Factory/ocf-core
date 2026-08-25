@@ -3,6 +3,7 @@ package services
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"strings"
 
 	"soli/formations/src/scenarios/models"
 
@@ -177,9 +178,18 @@ func LaunchableLocales(db *gorm.DB, scenarioID uuid.UUID) ([]string, error) {
 		return nil, err
 	}
 
+	// A language whose vocabulary is incomplete cannot be offered however well
+	// its prose reads. Untranslated prose is English in a French world —
+	// awkward, still playable. An unnamed room means the setup script cannot
+	// build the world at all, and the learner gets an empty container.
+	unnamed, err := localesMissingVocabulary(db, scenarioID)
+	if err != nil {
+		return nil, err
+	}
+
 	launchable := make([]string, 0, len(coverage))
 	for _, locale := range coverage {
-		if locale.Complete {
+		if locale.Complete && !unnamed[locale.Locale] {
 			launchable = append(launchable, locale.Locale)
 		}
 	}
@@ -187,4 +197,23 @@ func LaunchableLocales(db *gorm.DB, scenarioID uuid.UUID) ([]string, error) {
 		return nil, nil
 	}
 	return launchable, nil
+}
+
+// localesMissingVocabulary names the languages that cannot build the world.
+//
+// Derived from the same validation the editor shows, so "the editor says this
+// is fine" and "the launcher offers it" cannot disagree.
+func localesMissingVocabulary(db *gorm.DB, scenarioID uuid.UUID) (map[string]bool, error) {
+	problems, err := ValidateLexicon(db, scenarioID)
+	if err != nil {
+		return nil, err
+	}
+
+	missing := map[string]bool{}
+	for _, problem := range problems {
+		if locale, _, found := strings.Cut(problem, ":"); found {
+			missing[locale] = true
+		}
+	}
+	return missing, nil
 }
