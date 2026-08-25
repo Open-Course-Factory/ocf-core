@@ -25,7 +25,27 @@ type LocaleCoverage struct {
 	Stale      int    `json:"stale"`
 	Missing    int    `json:"missing"`
 	Complete   bool   `json:"complete"`
+
+	// Steps says what state each step is in, in scenario order, so an editor
+	// can mark its list without a second request. Decided here rather than in
+	// the client: staleness needs the source hash, and a client recomputing it
+	// would be a second implementation of the one rule that says whether a
+	// translation still matches what it was written from.
+	Steps []StepTranslationState `json:"steps"`
 }
+
+// StepTranslationState is one step's standing in one locale.
+type StepTranslationState struct {
+	StepID uuid.UUID `json:"step_id"`
+	Order  int       `json:"order"`
+	State  string    `json:"state"` // translated, stale, or missing
+}
+
+const (
+	StateTranslated = "translated"
+	StateStale      = "stale"
+	StateMissing    = "missing"
+)
 
 // StepSourceHash fingerprints the prose a translation was written against.
 //
@@ -59,7 +79,7 @@ func TranslationCoverage(db *gorm.DB, scenarioID uuid.UUID) ([]LocaleCoverage, e
 	}
 
 	var steps []models.ScenarioStep
-	if err := db.Where("scenario_id = ?", scenarioID).Find(&steps).Error; err != nil {
+	if err := db.Where("scenario_id = ?", scenarioID).Order("\"order\" ASC").Find(&steps).Error; err != nil {
 		return nil, err
 	}
 
@@ -97,29 +117,44 @@ func coverageForLocale(
 	translated map[uuid.UUID]models.ScenarioStepTranslation,
 	locale string,
 ) LocaleCoverage {
-	coverage := LocaleCoverage{Locale: locale, TotalSteps: len(steps)}
+	coverage := LocaleCoverage{
+		Locale:     locale,
+		TotalSteps: len(steps),
+		Steps:      make([]StepTranslationState, 0, len(steps)),
+	}
 
 	// The default locale is the content itself. There is nothing to translate
 	// and nothing that can go stale against it.
 	if locale == scenario.DefaultLocale {
 		coverage.Translated = len(steps)
 		coverage.Complete = true
+		for _, step := range steps {
+			coverage.Steps = append(coverage.Steps, StepTranslationState{
+				StepID: step.ID, Order: step.Order, State: StateTranslated,
+			})
+		}
 		return coverage
 	}
 
 	for _, step := range steps {
-		translation, ok := translated[step.ID]
-		if !ok {
+		state := StateMissing
+		if translation, ok := translated[step.ID]; ok {
+			coverage.Translated++
+			// An empty hash is not proof of freshness, it is the absence of
+			// proof. Reporting it as current would tell a trainer a translation
+			// is up to date when nothing ever checked.
+			if translation.SourceHash == StepSourceHash(step) {
+				state = StateTranslated
+			} else {
+				state = StateStale
+				coverage.Stale++
+			}
+		} else {
 			coverage.Missing++
-			continue
 		}
-		coverage.Translated++
-		// An empty hash is not proof of freshness, it is the absence of proof.
-		// Reporting it as current would tell a trainer a translation is up to
-		// date when nothing ever checked.
-		if translation.SourceHash != StepSourceHash(step) {
-			coverage.Stale++
-		}
+		coverage.Steps = append(coverage.Steps, StepTranslationState{
+			StepID: step.ID, Order: step.Order, State: state,
+		})
 	}
 
 	coverage.Complete = coverage.Missing == 0 && coverage.Stale == 0
