@@ -24,6 +24,13 @@ type ScenarioSession struct {
 	TrainerID         *string    `gorm:"type:varchar(255)" json:"trainer_id,omitempty" mapstructure:"trainer_id"`
 	IsPreview         bool       `gorm:"default:false" json:"is_preview,omitempty" mapstructure:"is_preview"`
 
+	// Locale is fixed when the session starts and never changes. The container
+	// was built in one language — its directories carry that language's names —
+	// so a learner who switches the interface mid-run must keep reading the
+	// language their world is actually in, or the text will send them to rooms
+	// that do not exist. Empty means the scenario's default.
+	Locale string `gorm:"type:varchar(10)" json:"locale,omitempty" mapstructure:"locale"`
+
 	// Relations
 	StepProgress []ScenarioStepProgress `gorm:"foreignKey:SessionID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"step_progress,omitempty"`
 	Flags        []ScenarioFlag         `gorm:"foreignKey:SessionID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"flags,omitempty"`

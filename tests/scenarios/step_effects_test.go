@@ -239,7 +239,7 @@ func TestStepBanners_StepZeroIntroIsStagedAsMotd(t *testing.T) {
 	verifySvc := &bgTrackingVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-zero", scenario.ID, "terminal-banners-zero")
+	session, err := sessionSvc.StartScenario("student-zero", scenario.ID, "terminal-banners-zero", "")
 	require.NoError(t, err)
 	require.Equal(t, "active", waitForSetupDone(t, db, session.ID))
 
@@ -298,7 +298,7 @@ func TestStepBanners_StepZeroIntroIsStagedWithoutAnyScripts(t *testing.T) {
 	verifySvc := &bgTrackingVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-no-scripts", scenario.ID, "terminal-no-scripts")
+	session, err := sessionSvc.StartScenario("student-no-scripts", scenario.ID, "terminal-no-scripts", "")
 	require.NoError(t, err)
 	assert.Equal(t, "active", session.Status, "no scripts means no provisioning phase")
 

@@ -45,7 +45,7 @@ func seedRunOnTerminal(t *testing.T, db *gorm.DB, name string, crashTraps bool, 
 	}).Error)
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
-	session, err := sessionSvc.StartScenario("student-"+name, scenario.ID, terminalSessionID)
+	session, err := sessionSvc.StartScenario("student-"+name, scenario.ID, terminalSessionID, "")
 	require.NoError(t, err)
 	require.Equal(t, "active", session.Status,
 		"a scenario without a setup script starts active")

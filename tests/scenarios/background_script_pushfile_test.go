@@ -94,7 +94,7 @@ func TestExecuteBackgroundScript_SmallScript_UsesInline(t *testing.T) {
 	verifySvc := &bgTrackingVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal", "")
 
 	require.NoError(t, err)
 	require.NotNil(t, session)
@@ -138,7 +138,7 @@ func TestExecuteBackgroundScript_LargeScript_UsesPushFile(t *testing.T) {
 	verifySvc := &bgTrackingVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal", "")
 
 	require.NoError(t, err)
 	require.NotNil(t, session)
@@ -195,7 +195,7 @@ func TestExecuteBackgroundScript_EmptyScript_NoOp(t *testing.T) {
 	verifySvc := &bgTrackingVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal", "")
 
 	require.NoError(t, err)
 	require.NotNil(t, session)
@@ -234,7 +234,7 @@ func TestExecuteBackgroundScript_PushFileFails_LogsAndReturns(t *testing.T) {
 	}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal", "")
 
 	// Session should still succeed (background script failure is best-effort)
 	require.NoError(t, err)

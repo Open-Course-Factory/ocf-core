@@ -43,6 +43,7 @@ type StartScenarioInput struct {
 	TerminalSessionID string `json:"terminal_session_id" binding:"required"`
 	Backend           string `json:"backend,omitempty"`
 	InstanceType      string `json:"instance_type,omitempty"`
+	Locale            string `json:"locale,omitempty"`
 }
 
 // StepProvisioningStatus reports what happened to the container after an
@@ -310,6 +311,16 @@ type LaunchScenarioInput struct {
 	ScenarioID     string `json:"scenario_id" binding:"required"`
 	Backend        string `json:"backend,omitempty"`
 	OrganizationID string `json:"organization_id,omitempty"`
+
+	// Locale the session is built and read in. Empty means the scenario's own
+	// content, which is what every client sends today.
+	//
+	// Deliberately not defaulted from the account's preferred language here.
+	// Choosing a default needs to know which locales this scenario actually
+	// offers — a scenario with no French would otherwise be stamped French and
+	// silently serve English anyway — and that belongs with the launcher, which
+	// is where a learner picks.
+	Locale string `json:"locale,omitempty"`
 }
 
 // LaunchScenarioResponse - DTO for launch scenario result

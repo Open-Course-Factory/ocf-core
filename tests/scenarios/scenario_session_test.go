@@ -108,7 +108,7 @@ func TestScenarioSessionService_StartScenario(t *testing.T) {
 
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal-123")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal-123", "")
 
 	require.NoError(t, err)
 	assert.NotEqual(t, uuid.Nil, session.ID)
@@ -149,7 +149,7 @@ func TestScenarioSessionService_StartScenario_NoSteps(t *testing.T) {
 
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, &mockVerificationService{})
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal-456")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal-456", "")
 
 	assert.Error(t, err)
 	assert.Nil(t, session)
@@ -566,7 +566,7 @@ func TestScenarioSessionService_ConcurrentStartNoDuplicates(t *testing.T) {
 	for i := 0; i < goroutines; i++ {
 		go func(idx int) {
 			defer wg.Done()
-			session, err := sessionSvc.StartScenario("student-concurrent", scenario.ID, fmt.Sprintf("terminal-%d", idx))
+			session, err := sessionSvc.StartScenario("student-concurrent", scenario.ID, fmt.Sprintf("terminal-%d", idx), "")
 			results[idx] = session
 			errs[idx] = err
 		}(i)
@@ -624,7 +624,7 @@ func TestScenarioSessionService_StartScenario_ExecutesBackgroundScript(t *testin
 	verifySvc := &mockVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal", "")
 
 	require.NoError(t, err)
 	require.NotNil(t, session)
@@ -669,7 +669,7 @@ func TestScenarioSessionService_StartScenario_SkipsEmptyBackgroundScript(t *test
 	verifySvc := &mockVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal", "")
 
 	require.NoError(t, err)
 	require.NotNil(t, session)
@@ -953,7 +953,7 @@ func TestScenarioSessionService_BackgroundScript_Error_DoesNotFailStart(t *testi
 	verifySvc := &mockVerificationService{execErr: fmt.Errorf("container unavailable")}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "test-terminal", "")
 
 	require.NoError(t, err)
 	require.NotNil(t, session)

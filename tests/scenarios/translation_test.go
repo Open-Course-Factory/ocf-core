@@ -1,0 +1,193 @@
+package scenarios_test
+
+import (
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+
+	"soli/formations/src/scenarios/models"
+	"soli/formations/src/scenarios/services"
+)
+
+// setupTranslatedSession builds a scenario whose single step has English
+// content, optionally a French translation, and a session pinned to a locale.
+//
+// The locale lives on the session rather than being read per request: the
+// container was built in one language and cannot be rebuilt, so a learner who
+// switches the interface mid-run must keep reading the language their world is
+// actually in.
+func setupTranslatedSession(t *testing.T, sessionLocale string, translate func(*gorm.DB, uuid.UUID)) uuid.UUID {
+	t.Helper()
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name:         "translated-" + sessionLocale,
+		Title:        "Down to the Cellar",
+		InstanceType: "debian",
+		CreatedByID:  "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	step := models.ScenarioStep{
+		ScenarioID:  scenario.ID,
+		Order:       0,
+		Title:       "Down to the Cellar",
+		StepType:    "terminal",
+		TextContent: "Make your way down to the Cellar.",
+		HintContent: "Use cd to move.",
+	}
+	require.NoError(t, db.Create(&step).Error)
+
+	if translate != nil {
+		translate(db, step.ID)
+	}
+
+	session := models.ScenarioSession{
+		ScenarioID:  scenario.ID,
+		UserID:      "student-1",
+		CurrentStep: 0,
+		Status:      "active",
+		StartedAt:   time.Now(),
+		Locale:      sessionLocale,
+	}
+	require.NoError(t, db.Create(&session).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepProgress{
+		SessionID: session.ID,
+		StepOrder: 0,
+		Status:    "active",
+	}).Error)
+
+	return session.ID
+}
+
+func frenchStep(db *gorm.DB, stepID uuid.UUID) {
+	db.Create(&models.ScenarioStepTranslation{
+		StepID:      stepID,
+		Locale:      "fr",
+		Title:       "Descendre a la Cave",
+		TextContent: "Descendez jusqu'a la Cave.",
+		HintContent: "Utilisez cd pour vous deplacer.",
+	})
+}
+
+func currentStep(t *testing.T, sessionID uuid.UUID) *dtoCurrentStep {
+	t.Helper()
+	svc := services.NewScenarioSessionService(sharedTestDB, &mockFlagService{}, &mockVerificationService{})
+	response, err := svc.GetCurrentStep(sessionID)
+	require.NoError(t, err)
+	require.NotNil(t, response)
+	return &dtoCurrentStep{Title: response.Title, Text: response.Text, Hint: response.Hint}
+}
+
+type dtoCurrentStep struct{ Title, Text, Hint string }
+
+// A session pinned to French must read the French step, not the English one.
+func TestGetCurrentStep_SessionLocale_ServesTheTranslation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID := setupTranslatedSession(t, "fr", frenchStep)
+
+	step := currentStep(t, sessionID)
+
+	assert.Equal(t, "Descendre a la Cave", step.Title)
+	assert.Equal(t, "Descendez jusqu'a la Cave.", step.Text)
+	assert.Equal(t, "Utilisez cd pour vous deplacer.", step.Hint)
+}
+
+// A session with no locale is every session that exists today. It must keep
+// reading exactly what it read before.
+func TestGetCurrentStep_NoLocale_ServesTheDefaultContent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID := setupTranslatedSession(t, "", frenchStep)
+
+	step := currentStep(t, sessionID)
+
+	assert.Equal(t, "Down to the Cellar", step.Title)
+	assert.Equal(t, "Make your way down to the Cellar.", step.Text)
+}
+
+// A locale with no translation for this step falls back to the default rather
+// than serving an empty step.
+func TestGetCurrentStep_UntranslatedLocale_FallsBackToDefault(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID := setupTranslatedSession(t, "es", frenchStep)
+
+	step := currentStep(t, sessionID)
+
+	assert.Equal(t, "Down to the Cellar", step.Title)
+	assert.Equal(t, "Make your way down to the Cellar.", step.Text)
+}
+
+// A translation that fills only some fields must not blank the others: an empty
+// column is an untranslated field, not an instruction to serve nothing.
+func TestGetCurrentStep_PartialTranslation_KeepsDefaultForEmptyFields(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	sessionID := setupTranslatedSession(t, "fr", func(db *gorm.DB, stepID uuid.UUID) {
+		db.Create(&models.ScenarioStepTranslation{
+			StepID: stepID,
+			Locale: "fr",
+			Title:  "Descendre a la Cave",
+		})
+	})
+
+	step := currentStep(t, sessionID)
+
+	assert.Equal(t, "Descendre a la Cave", step.Title)
+	assert.Equal(t, "Make your way down to the Cellar.", step.Text,
+		"an untranslated field keeps the default rather than becoming empty")
+}
+
+// A session's language has to reach the container, because the world's own
+// directory names are built from it. It travels the same channel the current
+// step's flag already uses.
+func TestBackgroundScript_SessionLocale_ReachesTheContainer(t *testing.T) {
+	db := setupTestDB(t)
+	session := twoStepSession(t, db, "locale-env", models.ScenarioStep{
+		BackgroundScript:         "echo building in $OCF_LANG",
+		BackgroundTimeoutSeconds: 5,
+	})
+	require.NoError(t, db.Model(session).Update("locale", "fr").Error)
+	session.Locale = "fr"
+
+	verifySvc := &bgTrackingVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	_, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err)
+
+	require.Len(t, verifySvc.execCalls, 1)
+	assert.Equal(t, "fr", verifySvc.execCalls[0].env["OCF_LANG"],
+		"the container has to know which language its world was built in")
+}
+
+// A session with no locale is every session that exists today: it must send
+// exactly what it sent before, which for a scenario without flags is nothing at
+// all.
+func TestBackgroundScript_NoLocale_SendsNoEnvAtAll(t *testing.T) {
+	db := setupTestDB(t)
+	session := twoStepSession(t, db, "locale-env-absent", models.ScenarioStep{
+		BackgroundScript:         "echo no locale here",
+		BackgroundTimeoutSeconds: 5,
+	})
+
+	verifySvc := &bgTrackingVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	_, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err)
+
+	require.Len(t, verifySvc.execCalls, 1)
+	assert.Nil(t, verifySvc.execCalls[0].env,
+		"an empty OCF_LANG would be a visible difference for every session that predates locales")
+}

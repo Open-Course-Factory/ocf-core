@@ -64,7 +64,7 @@ func TestDeployFlags_WorldPathPreserved(t *testing.T) {
 	flagSvc := services.NewFlagService()
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc", "")
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
@@ -98,7 +98,7 @@ func TestDeployFlags_TmpPathPreserved(t *testing.T) {
 	flagSvc := services.NewFlagService()
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc", "")
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
@@ -130,7 +130,7 @@ func TestDeployFlags_HomePathPreserved(t *testing.T) {
 	flagSvc := services.NewFlagService()
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc", "")
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
@@ -162,7 +162,7 @@ func TestDeployFlags_PathTraversalRejected(t *testing.T) {
 	flagSvc := services.NewFlagService()
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc", "")
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
@@ -194,7 +194,7 @@ func TestDeployFlags_DisallowedPathRewrittenToDefault(t *testing.T) {
 	flagSvc := services.NewFlagService()
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc", "")
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
@@ -226,7 +226,7 @@ func TestDeployFlags_EmptyPathDeploysNothing(t *testing.T) {
 	flagSvc := services.NewFlagService()
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc", "")
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
@@ -266,7 +266,7 @@ func TestDeployFlags_CrashTraps_EmptyPathSkipped(t *testing.T) {
 	flagSvc := services.NewFlagService()
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc", "")
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
@@ -309,7 +309,7 @@ func TestDeployFlags_CustomAllowedPaths_Accepted(t *testing.T) {
 	flagSvc := services.NewFlagService()
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc", "")
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
@@ -344,7 +344,7 @@ func TestDeployFlags_CustomAllowedPaths_Rejected(t *testing.T) {
 	flagSvc := services.NewFlagService()
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc", "")
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
@@ -378,7 +378,7 @@ func TestDeployFlags_EmptyAllowedPaths_FallsBackToDefaults(t *testing.T) {
 	flagSvc := services.NewFlagService()
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc", "")
 	require.NoError(t, err)
 	require.NotNil(t, session)
 
@@ -413,7 +413,7 @@ func TestDeployFlags_CrashTraps_CustomPathStillDeployed(t *testing.T) {
 	flagSvc := services.NewFlagService()
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-abc", "")
 	require.NoError(t, err)
 	require.NotNil(t, session)
 

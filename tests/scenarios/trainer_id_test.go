@@ -86,7 +86,7 @@ func TestScenarioSession_TrainerID_NilOnSelfStart(t *testing.T) {
 	verifySvc := &mockVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
-	session, err := sessionSvc.StartScenario(studentUserID, scenario.ID, "terminal-self-001")
+	session, err := sessionSvc.StartScenario(studentUserID, scenario.ID, "terminal-self-001", "")
 	require.NoError(t, err)
 	require.NotNil(t, session)
 

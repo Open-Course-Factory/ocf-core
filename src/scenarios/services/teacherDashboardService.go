@@ -616,7 +616,9 @@ func (s *TeacherDashboardService) BulkStartScenario(groupID uuid.UUID, scenarioI
 				termSessionID = *terminalSessionID
 			}
 
-			session, startErr := s.sessionService.StartScenario(member.UserID, scenarioID, termSessionID)
+			// A bulk start has no per-learner language yet; each session gets the
+			// scenario's own content until the launcher can offer a choice.
+			session, startErr := s.sessionService.StartScenario(member.UserID, scenarioID, termSessionID, "")
 			if startErr != nil {
 				utils.Warn("BulkStartScenario - Failed to start scenario for user %s: %v", member.UserID, startErr)
 				mu.Lock()

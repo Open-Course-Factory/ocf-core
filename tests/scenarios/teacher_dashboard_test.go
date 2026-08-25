@@ -641,7 +641,7 @@ func TestGradeCalculation_ViaVerifyCurrentStep(t *testing.T) {
 	verifySvc := &mockVerificationService{passed: true, output: "OK"}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-gv", scenario.ID, terminalID)
+	session, err := sessionSvc.StartScenario("student-gv", scenario.ID, terminalID, "")
 	require.NoError(t, err)
 
 	// Complete all 3 steps

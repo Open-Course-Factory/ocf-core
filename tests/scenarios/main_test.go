@@ -39,6 +39,8 @@ func TestMain(m *testing.M) {
 		&models.ScenarioFlag{},
 		&models.ScenarioAssignment{},
 		&models.ScenarioInstanceType{},
+		&models.ScenarioTranslation{},
+		&models.ScenarioStepTranslation{},
 		&groupModels.ClassGroup{},
 		&groupModels.GroupMember{},
 		&terminalModels.Terminal{},
@@ -71,6 +73,8 @@ func freshTestDB(t *testing.T) *gorm.DB {
 	sharedTestDB.Exec("DELETE FROM scenario_instance_types")
 	sharedTestDB.Exec("DELETE FROM scenario_step_questions")
 	sharedTestDB.Exec("DELETE FROM scenario_step_hints")
+	sharedTestDB.Exec("DELETE FROM scenario_step_translations")
+	sharedTestDB.Exec("DELETE FROM scenario_translations")
 	sharedTestDB.Exec("DELETE FROM scenario_steps")
 	sharedTestDB.Exec("DELETE FROM scenarios")
 	sharedTestDB.Exec("DELETE FROM project_files")

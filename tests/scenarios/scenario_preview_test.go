@@ -168,7 +168,7 @@ func TestPreviewScenario_ExcludedFromResults(t *testing.T) {
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, nil)
 
 	// Create a normal session
-	normalSession, err := sessionSvc.StartScenario("creator-1", scenario.ID, "terminal-normal")
+	normalSession, err := sessionSvc.StartScenario("creator-1", scenario.ID, "terminal-normal", "")
 	require.NoError(t, err)
 	require.NotNil(t, normalSession)
 

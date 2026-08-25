@@ -44,7 +44,7 @@ func startScenarioWithLiveTerminal(t *testing.T, name string) (svc *services.Sce
 	}).Error)
 
 	svc = services.NewScenarioSessionService(db, &mockFlagService{}, &bgTrackingVerificationService{})
-	_, err := svc.StartScenario("student-1", scenario.ID, "live-terminal")
+	_, err := svc.StartScenario("student-1", scenario.ID, "live-terminal", "")
 	require.NoError(t, err)
 	return svc, scenario, "student-1"
 }
@@ -52,7 +52,7 @@ func startScenarioWithLiveTerminal(t *testing.T, name string) (svc *services.Sce
 func TestStartScenarioWithLiveRunReturnsTypedConflict(t *testing.T) {
 	svc, scenario, userID := startScenarioWithLiveTerminal(t, "dup-launch-conflict")
 
-	_, err := svc.StartScenario(userID, scenario.ID, "")
+	_, err := svc.StartScenario(userID, scenario.ID, "", "")
 
 	require.ErrorIs(t, err, services.ErrActiveSessionExists,
 		"a second launch must be a conflict the caller can act on, not an opaque failure")

@@ -191,7 +191,7 @@ func TestBackgroundScript_Step0_PerStepTimeoutOverridesInitialSetupBudget(t *tes
 	verifySvc := &bgTrackingVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-step0-override")
+	session, err := sessionSvc.StartScenario("student-1", scenario.ID, "terminal-step0-override", "")
 	require.NoError(t, err)
 	require.Equal(t, "active", waitForSetupDone(t, db, session.ID))
 

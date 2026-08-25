@@ -36,7 +36,7 @@ func TestStartScenario_WithSetupScript_SetsProvisioningPhase(t *testing.T) {
 	verifySvc := &mockVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-prov-1", scenario.ID, "terminal-prov-1")
+	session, err := sessionSvc.StartScenario("student-prov-1", scenario.ID, "terminal-prov-1", "")
 	require.NoError(t, err)
 
 	// Session should be provisioning with setup_script phase. We assert only
@@ -75,7 +75,7 @@ func TestStartScenario_WithoutSetupScript_NoProvisioningPhase(t *testing.T) {
 	verifySvc := &mockVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session, err := sessionSvc.StartScenario("student-no-setup-1", scenario.ID, "terminal-no-setup-1")
+	session, err := sessionSvc.StartScenario("student-no-setup-1", scenario.ID, "terminal-no-setup-1", "")
 	require.NoError(t, err)
 
 	// Session should be active with no provisioning phase

@@ -242,7 +242,7 @@ func (sc *scenarioLaunchController) StartScenario(ctx *gin.Context) {
 		}
 	}
 
-	session, err := sc.sessionService.StartScenario(userID, scenarioID, input.TerminalSessionID)
+	session, err := sc.sessionService.StartScenario(userID, scenarioID, input.TerminalSessionID, input.Locale)
 	if err != nil {
 		if stderrors.Is(err, services.ErrActiveSessionExists) {
 			// A conflict the learner can resolve by resuming, not a fault.
@@ -1004,7 +1004,7 @@ func (sc *scenarioLaunchController) LaunchScenario(ctx *gin.Context) {
 	}
 
 	// Create scenario session
-	session, startErr := sc.sessionService.StartScenario(userID, scenarioID, terminalResp.SessionID)
+	session, startErr := sc.sessionService.StartScenario(userID, scenarioID, terminalResp.SessionID, input.Locale)
 	if startErr != nil {
 		if stderrors.Is(startErr, services.ErrActiveSessionExists) {
 			ctx.JSON(http.StatusConflict, gin.H{

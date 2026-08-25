@@ -58,7 +58,7 @@ func TestStartScenario_ZombieSession_ExpiredTerminal_AutoAbandons(t *testing.T) 
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
 	// Start a scenario session on the old (now expired) terminal — this should succeed
-	session1, err := sessionSvc.StartScenario("student-zombie-1", scenario.ID, "terminal-old")
+	session1, err := sessionSvc.StartScenario("student-zombie-1", scenario.ID, "terminal-old", "")
 	require.NoError(t, err)
 	require.NotNil(t, session1)
 	assert.Equal(t, "active", session1.Status)
@@ -84,7 +84,7 @@ func TestStartScenario_ZombieSession_ExpiredTerminal_AutoAbandons(t *testing.T) 
 
 	// Try to start the SAME scenario again on the new terminal.
 	// The old session's terminal is expired, so it should be auto-abandoned.
-	session2, err := sessionSvc.StartScenario("student-zombie-1", scenario.ID, "terminal-new")
+	session2, err := sessionSvc.StartScenario("student-zombie-1", scenario.ID, "terminal-new", "")
 	require.NoError(t, err, "should auto-abandon zombie session with expired terminal")
 	require.NotNil(t, session2)
 	assert.Equal(t, "active", session2.Status)
@@ -138,7 +138,7 @@ func TestStartScenario_ZombieSession_StoppedTerminal_AutoAbandons(t *testing.T) 
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
 	// Start a session on the stopped terminal
-	session1, err := sessionSvc.StartScenario("student-zombie-2", scenario.ID, "terminal-stopped")
+	session1, err := sessionSvc.StartScenario("student-zombie-2", scenario.ID, "terminal-stopped", "")
 	require.NoError(t, err)
 	require.NotNil(t, session1)
 
@@ -162,7 +162,7 @@ func TestStartScenario_ZombieSession_StoppedTerminal_AutoAbandons(t *testing.T) 
 	require.NoError(t, db.Create(&newTerminal).Error)
 
 	// Try to start the same scenario again — should auto-abandon the zombie
-	session2, err := sessionSvc.StartScenario("student-zombie-2", scenario.ID, "terminal-new-2")
+	session2, err := sessionSvc.StartScenario("student-zombie-2", scenario.ID, "terminal-new-2", "")
 	require.NoError(t, err, "should auto-abandon zombie session with stopped terminal")
 	require.NotNil(t, session2)
 	assert.NotEqual(t, session1.ID, session2.ID)
@@ -234,7 +234,7 @@ func TestStartScenario_ZombieSession_DeletedTerminal_AutoAbandons(t *testing.T) 
 	}
 	require.NoError(t, db.Create(&newTerminal).Error)
 
-	session2, err := sessionSvc.StartScenario("student-zombie-3", scenario.ID, "terminal-real")
+	session2, err := sessionSvc.StartScenario("student-zombie-3", scenario.ID, "terminal-real", "")
 	require.NoError(t, err, "should auto-abandon zombie session with deleted terminal")
 	require.NotNil(t, session2)
 
@@ -286,7 +286,7 @@ func TestStartScenario_ActiveTerminal_StillBlocks(t *testing.T) {
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
 	// Start a session on the active terminal — should succeed
-	session1, err := sessionSvc.StartScenario("student-active-1", scenario.ID, "terminal-1")
+	session1, err := sessionSvc.StartScenario("student-active-1", scenario.ID, "terminal-1", "")
 	require.NoError(t, err)
 	require.NotNil(t, session1)
 
@@ -310,7 +310,7 @@ func TestStartScenario_ActiveTerminal_StillBlocks(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&otherTerminal).Error)
 
-	session2, err := sessionSvc.StartScenario("student-active-1", scenario.ID, "terminal-2")
+	session2, err := sessionSvc.StartScenario("student-active-1", scenario.ID, "terminal-2", "")
 	assert.Error(t, err, "should block when existing session has an active terminal")
 	assert.Nil(t, session2)
 	assert.Contains(t, err.Error(), "active session already exists")
@@ -380,7 +380,7 @@ func TestStartScenario_ZombieSession_NilTerminalID_AutoAbandons(t *testing.T) {
 	verifySvc := &mockVerificationService{}
 	sessionSvc := services.NewScenarioSessionService(db, flagSvc, verifySvc)
 
-	session2, err := sessionSvc.StartScenario("student-zombie-nil", scenario.ID, "terminal-nil-test")
+	session2, err := sessionSvc.StartScenario("student-zombie-nil", scenario.ID, "terminal-nil-test", "")
 	require.NoError(t, err, "should auto-abandon zombie session with nil terminal ID")
 	require.NotNil(t, session2)
 

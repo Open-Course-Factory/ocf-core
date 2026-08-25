@@ -91,7 +91,7 @@ func TestRunStep0Setup_StopsTerminalOnFailure(t *testing.T) {
 
 	// Start scenario — this triggers runStep0Setup in a goroutine
 	terminalID := "terminal-stop-test-1"
-	session, err := sessionSvc.StartScenario("student-stop-1", scenario.ID, terminalID)
+	session, err := sessionSvc.StartScenario("student-stop-1", scenario.ID, terminalID, "")
 	require.NoError(t, err)
 
 	// Session should be in provisioning state initially
@@ -244,7 +244,7 @@ func TestRunStep0Setup_RecoversFromPanic_TransitionsToSetupFailed(t *testing.T) 
 	sessionSvc.SetTerminalStopFunc(tracker.StopFunc())
 
 	terminalID := "terminal-panic-recovery-1"
-	session, err := sessionSvc.StartScenario("student-panic-1", scenario.ID, terminalID)
+	session, err := sessionSvc.StartScenario("student-panic-1", scenario.ID, terminalID, "")
 	require.NoError(t, err)
 	require.Equal(t, "provisioning", session.Status,
 		"session should be provisioning before the goroutine runs")

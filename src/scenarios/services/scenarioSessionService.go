@@ -210,7 +210,7 @@ func (s *ScenarioSessionService) tryStopTerminal(terminalSessionID string, sessi
 
 // StartScenario creates a new scenario session for a student.
 // It creates the session, step progress records, generates flags, and returns session info.
-func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UUID, terminalSessionID string) (*models.ScenarioSession, error) {
+func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UUID, terminalSessionID string, locale string) (*models.ScenarioSession, error) {
 	// Load scenario with steps
 	var scenario models.Scenario
 	if err := s.db.Preload("Steps", func(db *gorm.DB) *gorm.DB {
@@ -237,6 +237,7 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 		CurrentStep:       firstStepOrder,
 		Status:            "active",
 		StartedAt:         now,
+		Locale:            locale,
 	}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -349,7 +350,7 @@ func (s *ScenarioSessionService) StartScenario(userID string, scenarioID uuid.UU
 				session.Status = "provisioning"
 				session.ProvisioningPhase = "setup_script"
 
-				go s.runStep0Setup(session.ID, *session.TerminalSessionID, &scenario, session.Flags)
+				go s.runStep0Setup(session.ID, *session.TerminalSessionID, &scenario, session.Flags, session.Locale)
 			} else {
 				// No scripts — deploy flag and stay active. Best-effort: the
 				// helper logs, and reprovision-step is the retry.
@@ -420,7 +421,9 @@ func (s *ScenarioSessionService) PreviewScenario(userID string, scenarioID uuid.
 	}
 
 	// Delegate to StartScenario for session creation
-	session, err := s.StartScenario(userID, scenarioID, terminalSessionID)
+	// Preview runs in the scenario's own language: there is no learner here to
+	// have chosen one.
+	session, err := s.StartScenario(userID, scenarioID, terminalSessionID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -437,7 +440,7 @@ func (s *ScenarioSessionService) PreviewScenario(userID string, scenarioID uuid.
 // runStep0Setup runs the step 0 background script asynchronously and transitions
 // the session from "provisioning" to "active" once setup completes, or to
 // "setup_failed" if the script fails.
-func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag) {
+func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, locale string) {
 	// Deferred rather than placed at the end: this function returns from a
 	// dozen points — setup failures, an abandoned session, a recovered panic —
 	// and every one of them leaves a container still holding the network its
@@ -474,7 +477,7 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 		}
 		// The scenario-level setup script is not a step and has no "current"
 		// flag; crash_traps scenarios hand it the whole set through config.json.
-		if _, err := s.executeBackgroundScript(terminalSessionID, setupStep, nil); err != nil {
+		if _, err := s.executeBackgroundScript(terminalSessionID, setupStep, provisioningLocaleEnv(locale)); err != nil {
 			slog.Error("scenario setup script failed", "session_id", sessionID, "err", err)
 			s.db.Model(&models.ScenarioSession{}).
 				Where("id = ? AND status = ?", sessionID, "provisioning").
@@ -496,7 +499,7 @@ func (s *ScenarioSessionService) runStep0Setup(sessionID uuid.UUID, terminalSess
 		s.db.Model(&models.ScenarioSession{}).
 			Where("id = ? AND status = ?", sessionID, "provisioning").
 			Update("provisioning_phase", "step_setup")
-		if _, err := s.executeBackgroundScript(terminalSessionID, step, stepProvisioningEnv(scenario, flags, step.Order)); err != nil {
+		if _, err := s.executeBackgroundScript(terminalSessionID, step, stepProvisioningEnv(scenario, flags, step.Order, locale)); err != nil {
 			slog.Error("step 0 setup failed", "session_id", sessionID, "err", err)
 			s.db.Model(&models.ScenarioSession{}).
 				Where("id = ? AND status = ?", sessionID, "provisioning").
@@ -615,7 +618,7 @@ func (s *ScenarioSessionService) provisionNextStep(session *models.ScenarioSessi
 		}
 	}
 
-	if err := s.runStepProvisioning(*session.TerminalSessionID, &session.Scenario, session.Flags, step); err != nil {
+	if err := s.runStepProvisioning(*session.TerminalSessionID, &session.Scenario, session.Flags, step, session.Locale); err != nil {
 		observability.Metrics.ScenarioStepProvisioningFailed.Add(1)
 		slog.Error("step provisioning failed", "session_id", session.ID, "step_order", step.Order, "err", err)
 		return dto.StepProvisioningStatus{NextStepProvisioningFailed: true}
@@ -630,6 +633,9 @@ func (s *ScenarioSessionService) provisionNextStep(session *models.ScenarioSessi
 // ("does any process still expose it?") greppable.
 const ocfFlagCurrentEnv = "OCF_FLAG_CURRENT"
 
+// ocfLocaleEnv names the language a session's world is built in.
+const ocfLocaleEnv = "OCF_LANG"
+
 // stepProvisioningEnv builds the environment a step's background script runs
 // with: its own flag, and nothing else.
 //
@@ -640,15 +646,35 @@ const ocfFlagCurrentEnv = "OCF_FLAG_CURRENT"
 //
 // Returns nil when there is nothing to pass, so a scenario without flags sends
 // exactly the request it sends today rather than an empty, confusing variable.
-func stepProvisioningEnv(scenario *models.Scenario, flags []models.ScenarioFlag, stepOrder int) map[string]string {
+func stepProvisioningEnv(scenario *models.Scenario, flags []models.ScenarioFlag, stepOrder int, locale string) map[string]string {
+	env := provisioningLocaleEnv(locale)
 	if scenario == nil || !scenario.FlagsEnabled {
-		return nil
+		return env
 	}
 	flag := findFlagByStepOrder(flags, stepOrder)
 	if flag == nil || flag.ExpectedFlag == "" {
+		return env
+	}
+	if env == nil {
+		env = map[string]string{}
+	}
+	env[ocfFlagCurrentEnv] = flag.ExpectedFlag
+	return env
+}
+
+// provisioningLocaleEnv tells the container which language it is being built
+// in. Content reads it to pick the right world vocabulary, so it has to reach
+// the scenario's setup script as well as each step's — the setup script is
+// where the world's names are installed, and a locale that arrived one step
+// late would build an English world for a French session.
+//
+// Nil rather than an empty map when there is no locale: callers pass this
+// straight through, and every session that exists today has none.
+func provisioningLocaleEnv(locale string) map[string]string {
+	if locale == "" {
 		return nil
 	}
-	return map[string]string{ocfFlagCurrentEnv: flag.ExpectedFlag}
+	return map[string]string{ocfLocaleEnv: locale}
 }
 
 // stepAnswerMarker lets a background script tell OCF what the answer to its own
@@ -722,8 +748,8 @@ func (s *ScenarioSessionService) adoptScriptChosenAnswer(stdout string, flags []
 // served by having the flag in place than by having nothing.
 //
 // The foreground script runs last, after the environment it acts on exists.
-func (s *ScenarioSessionService) runStepProvisioning(terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, step *models.ScenarioStep) error {
-	stdout, scriptErr := s.executeBackgroundScript(terminalSessionID, step, stepProvisioningEnv(scenario, flags, step.Order))
+func (s *ScenarioSessionService) runStepProvisioning(terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, step *models.ScenarioStep, locale string) error {
+	stdout, scriptErr := s.executeBackgroundScript(terminalSessionID, step, stepProvisioningEnv(scenario, flags, step.Order, locale))
 	s.adoptScriptChosenAnswer(stdout, flags, step)
 	flagErr := s.deploySingleFlagToContainer(terminalSessionID, scenario, flags, step.Order)
 	if scriptErr != nil {
@@ -800,7 +826,7 @@ func (s *ScenarioSessionService) startAsyncStepProvisioning(session *models.Scen
 		return false
 	}
 
-	go s.runAsyncStepProvisioning(session.ID, *session.TerminalSessionID, &session.Scenario, session.Flags, step)
+	go s.runAsyncStepProvisioning(session.ID, *session.TerminalSessionID, &session.Scenario, session.Flags, step, session.Locale)
 	return true
 }
 
@@ -810,7 +836,7 @@ func (s *ScenarioSessionService) startAsyncStepProvisioning(session *models.Scen
 // "provisioning" — with one deliberate difference: a mid-scenario failure
 // leaves the terminal running. The learner already has a working shell, and
 // killing it would cost them the whole run for one bad level.
-func (s *ScenarioSessionService) runAsyncStepProvisioning(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, step *models.ScenarioStep) {
+func (s *ScenarioSessionService) runAsyncStepProvisioning(sessionID uuid.UUID, terminalSessionID string, scenario *models.Scenario, flags []models.ScenarioFlag, step *models.ScenarioStep, locale string) {
 	defer func() {
 		if r := recover(); r != nil {
 			observability.Metrics.ScenarioStepProvisioningPanic.Add(1)
@@ -823,7 +849,7 @@ func (s *ScenarioSessionService) runAsyncStepProvisioning(sessionID uuid.UUID, t
 		}
 	}()
 
-	if err := s.runStepProvisioning(terminalSessionID, scenario, flags, step); err != nil {
+	if err := s.runStepProvisioning(terminalSessionID, scenario, flags, step, locale); err != nil {
 		observability.Metrics.ScenarioStepProvisioningFailed.Add(1)
 		slog.Error("step provisioning failed", "session_id", sessionID, "step_order", step.Order, "err", err)
 		s.failStepProvisioning(sessionID)
@@ -913,7 +939,7 @@ func (s *ScenarioSessionService) ReprovisionCurrentStep(sessionID uuid.UUID, for
 
 	// Synchronous: run first, then record the outcome, so a failed retry never
 	// leaves the session claiming to be playable.
-	if err := s.runStepProvisioning(*session.TerminalSessionID, &session.Scenario, session.Flags, runnable); err != nil {
+	if err := s.runStepProvisioning(*session.TerminalSessionID, &session.Scenario, session.Flags, runnable, session.Locale); err != nil {
 		observability.Metrics.ScenarioStepProvisioningFailed.Add(1)
 		slog.Error("step reprovisioning failed", "session_id", session.ID, "step_order", step.Order, "err", err)
 		s.setSessionRunState(session.ID, statusSetupFailed)
@@ -1045,9 +1071,10 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 		}
 	}
 
-	// Resolve text/hint content from ProjectFile if available
-	textContent := ResolveScriptContent(s.db, currentStep.TextFileID, currentStep.TextContent)
-	hintContent := ResolveScriptContent(s.db, currentStep.HintFileID, currentStep.HintContent)
+	// Resolve the step's prose in the language this session was started in.
+	stepText := ResolveStepText(s.db, *currentStep, session.Locale)
+	textContent := stepText.Text
+	hintContent := stepText.Hint
 
 	position, stepOrders := stepPositionInfo(session.Scenario.Steps, currentStep.Order)
 	response := &dto.CurrentStepResponse{
@@ -1055,7 +1082,7 @@ func (s *ScenarioSessionService) GetCurrentStep(sessionID uuid.UUID) (*dto.Curre
 		Position:              position,
 		StepOrders:            stepOrders,
 		TotalSteps:            len(session.Scenario.Steps),
-		Title:                 currentStep.Title,
+		Title:                 stepText.Title,
 		Text:                  textContent,
 		Hint:                  hintContent,
 		Status:                stepStatus,
