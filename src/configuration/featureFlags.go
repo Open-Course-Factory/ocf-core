@@ -22,7 +22,7 @@ type FeatureFlagsProvider interface {
 // This is the fallback method when database is not available
 func GetFeatureFlags() FeatureFlags {
 	return FeatureFlags{
-		CoursesEnabled:   GetEnvBool("FEATURE_COURSES_ENABLED", true),
+		CoursesEnabled:   GetEnvBool("FEATURE_COURSES_ENABLED", false),
 		LabsEnabled:      GetEnvBool("FEATURE_LABS_ENABLED", true),
 		TerminalsEnabled: GetEnvBool("FEATURE_TERMINALS_ENABLED", true),
 	}
