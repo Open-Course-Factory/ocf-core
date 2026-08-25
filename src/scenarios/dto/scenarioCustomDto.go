@@ -365,6 +365,16 @@ type AvailableScenarioOutput struct {
 	ResolvedSize         string `json:"resolved_size,omitempty"`
 	IsPublic             bool   `json:"is_public"`
 	AdminOnly            bool   `json:"admin_only,omitempty"`
+
+	// AvailableLocales are the languages this scenario can actually be started
+	// in — the ones whose translation is complete and current, never merely
+	// declared. Empty means single-language, and a launcher should show no
+	// picker rather than one with a single entry.
+	//
+	// Like ResolvedDistribution above, this is resolved here on purpose:
+	// deciding in a client which languages look ready enough is how the same
+	// rule ends up written twice and drifting.
+	AvailableLocales []string `json:"available_locales,omitempty"`
 }
 
 // AssignmentProgressItem - per-scenario progress summary for a group's
