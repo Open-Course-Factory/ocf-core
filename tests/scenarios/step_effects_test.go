@@ -67,6 +67,7 @@ func effectsSession(t *testing.T, db *gorm.DB, name string, step0, step1 models.
 }
 
 func TestStepBanners_AdvanceDrawsOutroThenIntro(t *testing.T) {
+	t.Setenv("FEATURE_SCENARIO_EFFECTS_ENABLED", "true")
 	db := setupTestDB(t)
 	session := effectsSession(t, db, "banners-order",
 		models.ScenarioStep{OutroEffect: "decrypt", OutroText: "Niveau 1 terminé"},
@@ -98,6 +99,7 @@ func TestStepBanners_AdvanceDrawsOutroThenIntro(t *testing.T) {
 // intro after it must not make that promise, or the learner is left waiting in
 // front of a screen nothing is coming to fill.
 func TestStepBanners_OutroWithoutAnIntroDoesNotHoldTheScreen(t *testing.T) {
+	t.Setenv("FEATURE_SCENARIO_EFFECTS_ENABLED", "true")
 	db := setupTestDB(t)
 	session := effectsSession(t, db, "banners-outro-only",
 		models.ScenarioStep{OutroEffect: "decrypt", OutroText: "Niveau 1 terminé"},
@@ -117,6 +119,7 @@ func TestStepBanners_OutroWithoutAnIntroDoesNotHoldTheScreen(t *testing.T) {
 }
 
 func TestStepBanners_EffectWithoutTextDrawsNothing(t *testing.T) {
+	t.Setenv("FEATURE_SCENARIO_EFFECTS_ENABLED", "true")
 	db := setupTestDB(t)
 	session := effectsSession(t, db, "banners-half-configured",
 		models.ScenarioStep{OutroEffect: "decrypt"}, // no text
@@ -136,6 +139,7 @@ func TestStepBanners_EffectWithoutTextDrawsNothing(t *testing.T) {
 // The no-regression guarantee: a scenario that configures no effects must
 // behave exactly as it did before these fields existed.
 func TestStepBanners_ScenarioWithoutEffects_IssuesNoExtraExec(t *testing.T) {
+	t.Setenv("FEATURE_SCENARIO_EFFECTS_ENABLED", "true")
 	db := setupTestDB(t)
 	session := effectsSession(t, db, "banners-absent",
 		models.ScenarioStep{},
@@ -156,6 +160,7 @@ func TestStepBanners_ScenarioWithoutEffects_IssuesNoExtraExec(t *testing.T) {
 // argv element to an exec that spawns no shell, so shell metacharacters are
 // inert by construction rather than by escaping.
 func TestStepBanners_TextIsNeverInterpretedAsShell(t *testing.T) {
+	t.Setenv("FEATURE_SCENARIO_EFFECTS_ENABLED", "true")
 	db := setupTestDB(t)
 
 	hostile := "$(touch /tmp/pwned) `id` ; rm -rf / ; echo 'still text'"
@@ -192,6 +197,7 @@ func TestStepBanners_TextIsNeverInterpretedAsShell(t *testing.T) {
 // An effect name is written into a shell snippet on the MOTD path, so unlike
 // the text it has to be constrained rather than merely quoted.
 func TestStepBanners_RejectsAnEffectNameThatIsNotAnIdentifier(t *testing.T) {
+	t.Setenv("FEATURE_SCENARIO_EFFECTS_ENABLED", "true")
 	db := setupTestDB(t)
 	session := effectsSession(t, db, "banners-bad-effect",
 		models.ScenarioStep{},
@@ -211,6 +217,7 @@ func TestStepBanners_RejectsAnEffectNameThatIsNotAnIdentifier(t *testing.T) {
 // console attaches, so its intro cannot be drawn — it is staged as the MOTD
 // the image renders at first login instead.
 func TestStepBanners_StepZeroIntroIsStagedAsMotd(t *testing.T) {
+	t.Setenv("FEATURE_SCENARIO_EFFECTS_ENABLED", "true")
 	db := setupTestDB(t)
 
 	scenario := models.Scenario{
@@ -270,6 +277,7 @@ func TestStepBanners_StepZeroIntroIsStagedAsMotd(t *testing.T) {
 // still has to stage the banner, or configuring one on a script-free scenario
 // silently does nothing.
 func TestStepBanners_StepZeroIntroIsStagedWithoutAnyScripts(t *testing.T) {
+	t.Setenv("FEATURE_SCENARIO_EFFECTS_ENABLED", "true")
 	db := setupTestDB(t)
 
 	scenario := models.Scenario{
@@ -305,6 +313,7 @@ func TestStepBanners_StepZeroIntroIsStagedWithoutAnyScripts(t *testing.T) {
 }
 
 func TestStepBanners_BannerFailureNeverFailsTheAdvance(t *testing.T) {
+	t.Setenv("FEATURE_SCENARIO_EFFECTS_ENABLED", "true")
 	db := setupTestDB(t)
 	session := effectsSession(t, db, "banners-failure",
 		models.ScenarioStep{OutroEffect: "decrypt", OutroText: "done"},
@@ -336,6 +345,7 @@ func (assertAnError) Error() string { return "container unreachable" }
 // had remembered to bake the renderer in — and where they had not, the banner
 // silently printed as plain text.
 func TestScenarioUsesEffects_DetectsEitherBanner(t *testing.T) {
+	t.Setenv("FEATURE_SCENARIO_EFFECTS_ENABLED", "true")
 	cases := []struct {
 		name string
 		step models.ScenarioStep
@@ -354,4 +364,44 @@ func TestScenarioUsesEffects_DetectsEitherBanner(t *testing.T) {
 			assert.Equal(t, tc.want, services.ScenarioUsesEffects(&scenario))
 		})
 	}
+}
+
+// The kill switch. Banners cost ~25s of renderer install at scenario startup,
+// so they are off by default; the scenario keeps its configured effects and
+// only stops drawing them.
+//
+// Asserted on a scenario that DOES configure banners, because the switch is
+// worth nothing if it only silences scenarios that were already silent.
+func TestStepBanners_DisabledByDefault_IssuesNoExec(t *testing.T) {
+	db := setupTestDB(t)
+	session := effectsSession(t, db, "banners-disabled",
+		models.ScenarioStep{OutroEffect: "decrypt", OutroText: "Niveau 1 terminé"},
+		models.ScenarioStep{IntroEffect: "beams", IntroText: "Niveau 2 débloqué"},
+	)
+
+	verifySvc := &bgTrackingVerificationService{}
+	sessionSvc := services.NewScenarioSessionService(db, &mockFlagService{}, verifySvc)
+
+	_, err := sessionSvc.VerifyCurrentStep(session.ID)
+	require.NoError(t, err)
+
+	assert.Empty(t, verifySvc.execCalls,
+		"effects are off, so a configured banner must not reach the container")
+}
+
+// And the half that saves the 25 seconds: with effects off the launch must not
+// ask tt-backend for the renderer, or it would install it for banners nobody
+// will ever see.
+func TestStepBanners_Disabled_ScenarioNoLongerNeedsTheRenderer(t *testing.T) {
+	scenario := models.Scenario{
+		Steps: []models.ScenarioStep{
+			{IntroEffect: "beams", IntroText: "Niveau 2 débloqué"},
+		},
+	}
+
+	assert.False(t, services.ScenarioUsesEffects(&scenario))
+
+	t.Setenv("FEATURE_SCENARIO_EFFECTS_ENABLED", "true")
+	assert.True(t, services.ScenarioUsesEffects(&scenario),
+		"the switch must restore the banners, not discard the scenario's configuration")
 }

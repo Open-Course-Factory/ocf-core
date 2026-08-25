@@ -1320,6 +1320,13 @@ func scenarioFeatures(scenario models.Scenario) (map[string]bool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid scenario configuration: %w", err)
 	}
+	if !services.EffectsEnabled() {
+		// A scenario may also name the feature itself. Dropping it here keeps the
+		// switch's promise: off means no renderer is installed, whatever asked
+		// for it, since with banners silenced nothing would ever use it.
+		delete(features, effectsFeatureKey)
+		return features, nil
+	}
 	if !services.ScenarioUsesEffects(&scenario) {
 		return features, nil
 	}

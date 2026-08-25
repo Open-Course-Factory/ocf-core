@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	config "soli/formations/src/configuration"
 	"soli/formations/src/observability"
 	"soli/formations/src/scenarios/models"
 
@@ -78,6 +79,9 @@ func outroBanner(step *models.ScenarioStep) (stepBanner, bool) {
 }
 
 func newStepBanner(effect, text string) (stepBanner, bool) {
+	if !EffectsEnabled() {
+		return stepBanner{}, false
+	}
 	if effect == "" || text == "" {
 		return stepBanner{}, false
 	}
@@ -86,6 +90,28 @@ func newStepBanner(effect, text string) (stepBanner, bool) {
 		return stepBanner{}, false
 	}
 	return stepBanner{Effect: effect, Text: text}, true
+}
+
+// effectsEnabledEnv turns step banners off platform-wide.
+//
+// Banners cost about 25 seconds at scenario startup: the renderer is a pipx
+// install into a container that does not ship one, and it is paid on the
+// learner's first machine, not once. Off is the current default because the
+// animation does not yet earn that wait — the scenarios keep their configured
+// effects in the database, so the switch is the only thing to flip when it does.
+//
+// The gate lives in newStepBanner rather than at the call sites because that is
+// where "this step has a banner" is decided, and every consequence follows from
+// that one answer: no banner means ScenarioUsesEffects reports false, so the
+// launch never asks tt-backend for the `effects` feature and no install happens,
+// and no exec is issued at step transitions or for the step 0 MOTD. A gate at
+// the call sites instead would have to be repeated in all four places, and the
+// one that got forgotten would still pay the install.
+const effectsEnabledEnv = "FEATURE_SCENARIO_EFFECTS_ENABLED"
+
+// EffectsEnabled reports whether step banners are drawn at all.
+func EffectsEnabled() bool {
+	return config.GetEnvBool(effectsEnabledEnv, false)
 }
 
 // ScenarioUsesEffects reports whether any step in the scenario configures a

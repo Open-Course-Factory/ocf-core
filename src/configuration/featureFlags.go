@@ -22,9 +22,9 @@ type FeatureFlagsProvider interface {
 // This is the fallback method when database is not available
 func GetFeatureFlags() FeatureFlags {
 	return FeatureFlags{
-		CoursesEnabled:   getEnvBool("FEATURE_COURSES_ENABLED", true),
-		LabsEnabled:      getEnvBool("FEATURE_LABS_ENABLED", true),
-		TerminalsEnabled: getEnvBool("FEATURE_TERMINALS_ENABLED", true),
+		CoursesEnabled:   GetEnvBool("FEATURE_COURSES_ENABLED", true),
+		LabsEnabled:      GetEnvBool("FEATURE_LABS_ENABLED", true),
+		TerminalsEnabled: GetEnvBool("FEATURE_TERMINALS_ENABLED", true),
 	}
 }
 
@@ -40,8 +40,8 @@ func GetFeatureFlagsFromDB(repo interface {
 	}
 }
 
-// getEnvBool reads a boolean from environment variable
-func getEnvBool(key string, defaultValue bool) bool {
+// GetEnvBool reads a boolean from environment variable
+func GetEnvBool(key string, defaultValue bool) bool {
 	val := strings.ToLower(os.Getenv(key))
 	if val == "" {
 		return defaultValue
