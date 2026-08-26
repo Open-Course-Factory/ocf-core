@@ -68,8 +68,16 @@ func GenerateLexicon(db *gorm.DB, scenarioID uuid.UUID, locale string) (string, 
 			return "", fmt.Errorf("lexicon: %q has no name in %q", entry.Key, locale)
 		}
 
-		if entry.Kind == "token" {
+		switch entry.Kind {
+		case "token":
 			tokenLines = append(tokenLines, fmt.Sprintf("T_%s=%s", entry.Key, shellQuote(name)))
+			continue
+		case "message":
+			// What a check says when it refuses. Same shape as a token — a key,
+			// one wording per language, nowhere in the world — but read by a
+			// person rather than grepped for, which is why it keeps its own
+			// prefix instead of being filed among the world's text.
+			tokenLines = append(tokenLines, fmt.Sprintf("M_%s=%s", entry.Key, shellQuote(name)))
 			continue
 		}
 
@@ -235,14 +243,16 @@ func ValidateLexicon(db *gorm.DB, scenarioID uuid.UUID) ([]string, error) {
 				continue
 			}
 
-			// Only places are typed as paths; tokens are read out of files, and
-			// flagging their accents would train people to ignore this.
-			if entry.Kind != "token" && !shellSafeName.MatchString(name) {
+			// Only places are typed as paths. Tokens are read out of files and
+			// messages are read by a person, so both carry accents and
+			// punctuation freely — flagging those would train people to ignore
+			// this.
+			if entry.Kind != "token" && entry.Kind != "message" && !shellSafeName.MatchString(name) {
 				problems = append(problems, fmt.Sprintf(
 					"%s: %s is called %q, which cannot be typed as a path", locale, entry.Key, name))
 			}
 
-			if entry.Kind == "token" {
+			if entry.Kind == "token" || entry.Kind == "message" {
 				continue
 			}
 			slot := entry.ParentKey + "/" + name
