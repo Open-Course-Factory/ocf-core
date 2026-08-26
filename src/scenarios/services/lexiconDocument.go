@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -228,11 +229,11 @@ func findScriptLiterals(db *gorm.DB, scenarioID uuid.UUID) ([]string, error) {
 		if script == "" {
 			return
 		}
-		stripped := stripMachinery(script)
+		stripped := stripMachinery(scriptCode(script))
 		// Every name in the script, not just the first: an author replacing one
 		// and finding another still there learns to distrust the list.
 		for _, name := range sortedNames {
-			if strings.Contains(stripped, name) {
+			if namedAsAPath(stripped, name) {
 				found = append(found, fmt.Sprintf(
 					"%s names %q directly — use $P_%s or $W_%s", where, name, wanted[name], wanted[name]))
 			}
@@ -247,6 +248,48 @@ func findScriptLiterals(db *gorm.DB, scenarioID uuid.UUID) ([]string, error) {
 		report(label+" foreground", step.ForegroundScript)
 	}
 	return found, nil
+}
+
+// heredocStart matches the line that opens a heredoc, capturing its delimiter.
+var heredocStart = regexp.MustCompile(`<<-?\s*'?"?([A-Za-z_][A-Za-z0-9_]*)'?"?`)
+
+// scriptCode is the part of a script that is code.
+//
+// A heredoc body is not: it is written out verbatim as the sign a learner
+// reads or the contents of a file they open. A name there is prose, and
+// advising "use $P_CHEST" would put a shell variable into the text instead of
+// expanding it. Translating that text is the content pass's job, not this one's.
+func scriptCode(script string) string {
+	var kept []string
+	terminator := ""
+
+	for _, line := range strings.Split(script, "\n") {
+		if terminator != "" {
+			if strings.TrimSpace(line) == terminator {
+				terminator = ""
+			}
+			continue
+		}
+		if match := heredocStart.FindStringSubmatch(line); match != nil {
+			terminator = match[1]
+		}
+
+		// Comments and printed lines are prose too. A comment explains, and an
+		// echo is read by the learner — replacing either with $P_CHEST would
+		// put a variable name where a sentence belongs. Both are translated by
+		// the content pass, not by referencing the vocabulary.
+		trimmed := strings.TrimSpace(line)
+		// A printed line is prose wherever the echo sits — real scripts write
+		// `... || { echo "still in the Cellar"; exit 1; }`, and only checking
+		// the start of the line would call that a path.
+		if strings.HasPrefix(trimmed, "#") ||
+			strings.Contains(line, "echo ") ||
+			strings.Contains(line, "printf ") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
 }
 
 // stripMachinery removes paths that are the same in every language, so a name
@@ -266,4 +309,23 @@ func stripMachinery(script string) string {
 		}
 	}
 	return strings.Join(kept, " ")
+}
+
+// namedAsAPath reports a name only where it is being used as one.
+//
+// A room mentioned in a sentence is prose; a room written as "/World/Castle" or
+// handed to `find -name "spider_*"` is a path this script will not find in
+// another language. Matching the bare word instead would report every
+// explanation containing it, and a checker that cries wolf gets skimmed.
+func namedAsAPath(script, name string) bool {
+	if strings.Contains(script, "/"+name) {
+		return true
+	}
+	for _, field := range strings.Fields(script) {
+		bare := strings.Trim(field, `"'`)
+		if bare == name || strings.HasPrefix(bare, name+"*") {
+			return true
+		}
+	}
+	return false
 }

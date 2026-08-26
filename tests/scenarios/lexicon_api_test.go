@@ -210,3 +210,67 @@ func TestLexiconDocument_NoVocabulary_ReportsNoLiterals(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, document.ScriptLiterals)
 }
+
+// A name inside a heredoc is prose, not a path, and must not be reported as one.
+//
+// A quoted heredoc is written out verbatim: the sign a learner reads, the
+// contents of a file. Telling an author to replace it with $P_CHEST is wrong
+// advice — it would put a shell variable into the text rather than expand it.
+// That is translation work, and it belongs to the content pass.
+func TestLexiconDocument_NamesInsideHeredocs_AreNotReported(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario := lexiconScenario(t)
+
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "Sign",
+		BackgroundScript: "mkdir -p \"$P_CELLAR\"\ncat > \"$P_CELLAR/sign\" << 'EOF'\nThe Cellar is dark.\nEOF\necho done",
+	}).Error)
+
+	document, err := services.LoadLexiconDocument(db, scenario.ID)
+
+	require.NoError(t, err)
+	assert.Empty(t, document.ScriptLiterals)
+}
+
+// Code after a heredoc closes is code again, and a room named there is still a
+// room named there.
+func TestLexiconDocument_CodeAfterAHeredoc_IsStillChecked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario := lexiconScenario(t)
+
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "Sign",
+		BackgroundScript: "cat > /tmp/sign << 'EOF'\nnothing to see\nEOF\nmkdir -p /World/Castle/Cellar",
+	}).Error)
+
+	document, err := services.LoadLexiconDocument(db, scenario.ID)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, document.ScriptLiterals)
+	assert.Contains(t, strings.Join(document.ScriptLiterals, " | "), "Cellar")
+}
+
+// A comment and a printed message are prose as much as a heredoc is. Advising
+// "$P_CHEST" in an explanation, or in the sentence a learner reads when a check
+// refuses, would put a variable name where a sentence belongs.
+func TestLexiconDocument_CommentsAndMessages_AreNotReported(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario := lexiconScenario(t)
+
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "Check",
+		VerifyScript: "# the Cellar has to be empty by now\n" +
+			"[ -z \"$(ls \"$P_CELLAR\")\" ] || { echo \"There is still something in the Cellar!\"; exit 1; }",
+	}).Error)
+
+	document, err := services.LoadLexiconDocument(db, scenario.ID)
+
+	require.NoError(t, err)
+	assert.Empty(t, document.ScriptLiterals)
+}
