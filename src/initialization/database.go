@@ -161,6 +161,10 @@ func AutoMigrateAll(db *gorm.DB) {
 	// Scenario entities
 	db.AutoMigrate(&scenarioModels.ProjectFile{})
 	db.AutoMigrate(&scenarioModels.Scenario{})
+	// After the model, never before: the estimate is carried into a column that
+	// AutoMigrate has just created, and the prose one is dropped only once it
+	// has somewhere to land.
+	scenarioModels.MigrateEstimatedTimeToMinutes(db)
 	db.AutoMigrate(&scenarioModels.ScenarioStep{})
 	db.AutoMigrate(&scenarioModels.ScenarioStepHint{})
 	db.AutoMigrate(&scenarioModels.ScenarioSession{})

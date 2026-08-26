@@ -28,12 +28,26 @@ type KillerCodaIndex struct {
 	Title       string                `json:"title"`
 	Description string                `json:"description"`
 	Difficulty  string                `json:"difficulty"`
+	// KillerCoda writes a duration for a person to read ("15 minutes"), and an
+	// archive from there must keep importing. Ours writes the number, so no
+	// rule has to guess what the author meant.
 	Time        string                `json:"time"`
+	TimeMinutes int                   `json:"time_minutes"`
 	Intro       KillerCodaFile        `json:"intro"`
 	Finish      KillerCodaFile        `json:"finish"`
 	Details     KillerCodaDetails     `json:"details"`
 	Backend     KillerCodaBackend     `json:"backend"`
 	Extensions  *KillerCodaExtensions `json:"extensions,omitempty"`
+}
+
+// estimatedMinutes prefers the number over the prose. An archive carrying both
+// was written by us, and the number is what we wrote; one carrying only prose
+// came from KillerCoda, where reading it is the best that can be done.
+func (index KillerCodaIndex) estimatedMinutes() int {
+	if index.TimeMinutes > 0 {
+		return index.TimeMinutes
+	}
+	return models.ParseLegacyEstimatedTime(index.Time)
 }
 
 // KillerCodaDetails holds the scenario structure (intro, steps, finish)
@@ -180,7 +194,7 @@ func (s *ScenarioImporterService) ImportFromDirectory(dirPath string, createdByI
 				"title":           scenario.Title,
 				"description":     scenario.Description,
 				"difficulty":      scenario.Difficulty,
-				"estimated_time":  scenario.EstimatedTime,
+				"estimated_time_minutes": scenario.EstimatedTimeMinutes,
 				"instance_type":   scenario.InstanceType,
 				"required_features":  scenario.RequiredFeatures,
 				"flags_enabled":      scenario.FlagsEnabled,
@@ -365,7 +379,7 @@ func (s *ScenarioImporterService) BuildScenarioFromIndex(index *KillerCodaIndex,
 		Title:          index.Title,
 		Description:    index.Description,
 		Difficulty:     index.Difficulty,
-		EstimatedTime:  index.Time,
+		EstimatedTimeMinutes:  index.estimatedMinutes(),
 		InstanceType:   index.Backend.ImageID,
 		RequiredFeatures: requiredFeatures,
 		BuildFeatures:    buildFeatures,

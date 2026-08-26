@@ -38,7 +38,7 @@ func RegisterScenarioAssignment(service *ems.EntityRegistrationService) {
 							Title:          model.Scenario.Title,
 							Description:    model.Scenario.Description,
 							Difficulty:     model.Scenario.Difficulty,
-							EstimatedTime:  model.Scenario.EstimatedTime,
+							EstimatedTimeMinutes:  model.Scenario.EstimatedTimeMinutes,
 							InstanceType:   model.Scenario.InstanceType,
 							OsType:         model.Scenario.OsType,
 							SourceType:     model.Scenario.SourceType,

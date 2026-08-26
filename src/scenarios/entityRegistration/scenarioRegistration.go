@@ -24,7 +24,7 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						Title:          model.Title,
 						Description:    model.Description,
 						Difficulty:     model.Difficulty,
-						EstimatedTime:  model.EstimatedTime,
+						EstimatedTimeMinutes:  model.EstimatedTimeMinutes,
 						InstanceType:   model.InstanceType,
 						Hostname:       model.Hostname,
 						OsType:           model.OsType,
@@ -134,7 +134,7 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 						Title:          input.Title,
 						Description:    input.Description,
 						Difficulty:     input.Difficulty,
-						EstimatedTime:  input.EstimatedTime,
+						EstimatedTimeMinutes:  input.EstimatedTimeMinutes,
 						InstanceType:   input.InstanceType,
 						Hostname:       input.Hostname,
 						OsType:           input.OsType,
@@ -175,8 +175,8 @@ func RegisterScenario(service *ems.EntityRegistrationService) {
 					if input.Difficulty != nil {
 						updates["difficulty"] = *input.Difficulty
 					}
-					if input.EstimatedTime != nil {
-						updates["estimated_time"] = *input.EstimatedTime
+					if input.EstimatedTimeMinutes != nil {
+						updates["estimated_time_minutes"] = *input.EstimatedTimeMinutes
 					}
 					if input.InstanceType != nil {
 						updates["instance_type"] = *input.InstanceType

@@ -17,7 +17,10 @@ type Scenario struct {
 	Title          string     `gorm:"type:varchar(500);not null" json:"title"`
 	Description    string     `gorm:"type:text" json:"description,omitempty"`
 	Difficulty     string     `gorm:"type:varchar(50)" json:"difficulty"`        // beginner, intermediate, advanced
-	EstimatedTime  string     `gorm:"type:varchar(100)" json:"estimated_time"`   // e.g. "30m", "1h"
+	// Minutes, not prose. It used to hold "90 minutes", which is a sentence in
+	// one language: a French learner read it in English, and the three spellings
+	// in use ("90 minutes", "10m", "") could not be compared or summed.
+	EstimatedTimeMinutes int  `gorm:"not null;default:0" json:"estimated_time_minutes"`
 	InstanceType   string     `gorm:"type:varchar(255);not null" json:"instance_type"` // Incus image id
 	Hostname       string     `gorm:"type:varchar(63)" json:"hostname,omitempty"`
 	OsType           string     `gorm:"type:varchar(50)" json:"os_type,omitempty"`  // deb, rpm, apk, pacman

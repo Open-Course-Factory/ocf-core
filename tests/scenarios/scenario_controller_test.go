@@ -483,7 +483,7 @@ func TestSeedScenario_Success(t *testing.T) {
 		"title":          "My Seed Scenario",
 		"description":    "A test scenario created via seed",
 		"difficulty":     "beginner",
-		"estimated_time": "15m",
+		"estimated_time_minutes": 15,
 		"instance_type":  "ubuntu:22.04",
 		"flags_enabled":  true,
 		"crash_traps":    true,

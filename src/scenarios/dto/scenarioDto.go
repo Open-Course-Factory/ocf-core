@@ -12,7 +12,7 @@ type CreateScenarioInput struct {
 	Title          string     `json:"title" mapstructure:"title" binding:"required"`
 	Description    string     `json:"description,omitempty" mapstructure:"description"`
 	Difficulty     string     `json:"difficulty,omitempty" mapstructure:"difficulty" binding:"omitempty,oneof=beginner intermediate advanced"`
-	EstimatedTime  string     `json:"estimated_time,omitempty" mapstructure:"estimated_time"`
+	EstimatedTimeMinutes int  `json:"estimated_time_minutes,omitempty" mapstructure:"estimated_time_minutes"`
 	InstanceType   string     `json:"instance_type" mapstructure:"instance_type" binding:"required"`
 	Hostname       string     `json:"hostname,omitempty" mapstructure:"hostname" binding:"omitempty,max=63"`
 	OsType           string     `json:"os_type,omitempty" mapstructure:"os_type" binding:"omitempty,oneof=deb rpm apk pacman"`
@@ -45,7 +45,7 @@ type EditScenarioInput struct {
 	Title          *string    `json:"title,omitempty" mapstructure:"title"`
 	Description    *string    `json:"description,omitempty" mapstructure:"description"`
 	Difficulty     *string    `json:"difficulty,omitempty" mapstructure:"difficulty" binding:"omitempty,oneof=beginner intermediate advanced"`
-	EstimatedTime  *string    `json:"estimated_time,omitempty" mapstructure:"estimated_time"`
+	EstimatedTimeMinutes *int  `json:"estimated_time_minutes,omitempty" mapstructure:"estimated_time_minutes"`
 	InstanceType   *string    `json:"instance_type,omitempty" mapstructure:"instance_type"`
 	Hostname       *string    `json:"hostname,omitempty" mapstructure:"hostname" binding:"omitempty,max=63"`
 	OsType           *string    `json:"os_type,omitempty" mapstructure:"os_type" binding:"omitempty,oneof=deb rpm apk pacman"`
@@ -78,7 +78,7 @@ type ScenarioOutput struct {
 	Title          string             `json:"title"`
 	Description    string             `json:"description,omitempty"`
 	Difficulty     string             `json:"difficulty"`
-	EstimatedTime  string             `json:"estimated_time"`
+	EstimatedTimeMinutes int        `json:"estimated_time_minutes"`
 	InstanceType   string             `json:"instance_type"`
 	Hostname       string             `json:"hostname,omitempty"`
 	OsType           string             `json:"os_type,omitempty"`

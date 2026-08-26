@@ -141,7 +141,7 @@ func (s *ScenarioExportService) buildExportOutput(scenario *models.Scenario) *dt
 		Title:         scenario.Title,
 		Description:   scenario.Description,
 		Difficulty:    scenario.Difficulty,
-		EstimatedTime: scenario.EstimatedTime,
+		EstimatedTimeMinutes: scenario.EstimatedTimeMinutes,
 		InstanceType:  scenario.InstanceType,
 		OsType:        scenario.OsType,
 		FlagsEnabled:     scenario.FlagsEnabled,
@@ -324,7 +324,7 @@ func (s *ScenarioExportService) buildKillerCodaIndex(scenario *models.Scenario) 
 		Title:       scenario.Title,
 		Description: scenario.Description,
 		Difficulty:  scenario.Difficulty,
-		Time:        scenario.EstimatedTime,
+		TimeMinutes: scenario.EstimatedTimeMinutes,
 		Details:     details,
 		Backend:     KillerCodaBackend{ImageID: scenario.InstanceType},
 	}
