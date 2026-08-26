@@ -105,7 +105,13 @@ func TestTranslationStamp_StampedTranslation_ReadsAsCurrent(t *testing.T) {
 	hook := scenarioHooks.NewScenarioStepTranslationStampHook(db)
 
 	for _, step := range steps {
-		translation := &models.ScenarioStepTranslation{StepID: step.ID, Locale: "fr", Title: "Etape"}
+		// Everything the source fills: the point of this test is that stamping
+		// makes a finished translation read as current, and a half-filled one
+		// now reads as partial for reasons of its own.
+		translation := &models.ScenarioStepTranslation{
+			StepID: step.ID, Locale: "fr",
+			Title: "Etape", TextContent: "Texte", HintContent: "Indice",
+		}
 		require.NoError(t, hook.Execute(&hooks.HookContext{
 			EntityName: "ScenarioStepTranslation",
 			HookType:   hooks.BeforeCreate,
