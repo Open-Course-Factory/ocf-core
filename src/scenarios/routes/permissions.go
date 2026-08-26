@@ -252,6 +252,16 @@ func RegisterScenarioPermissions(enforcer interfaces.EnforcerInterface) {
 			Description: "Import scenarios from JSON (admin only)",
 		},
 		access.RoutePermission{
+			Path: "/api/v1/scenarios/:id/lexicon", Method: "GET",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Read a scenario's world vocabulary (controller verifies CanManageScenario)",
+		},
+		access.RoutePermission{
+			Path: "/api/v1/scenarios/:id/lexicon", Method: "PUT",
+			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
+			Description: "Replace a scenario's world vocabulary (controller verifies CanManageScenario)",
+		},
+		access.RoutePermission{
 			Path: "/api/v1/scenarios/:id/translation-coverage", Method: "GET",
 			Role: access.RoleMember, Access: access.AccessRule{Type: access.SelfScoped},
 			Description: "Report translation coverage per locale (controller verifies CanManageScenario: creator, org manager, group manager, or admin)",

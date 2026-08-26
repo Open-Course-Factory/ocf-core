@@ -37,6 +37,8 @@ type ScenarioController interface {
 	ImportJSON(ctx *gin.Context)
 	DuplicateScenario(ctx *gin.Context)
 	GetTranslationCoverage(ctx *gin.Context)
+	GetLexicon(ctx *gin.Context)
+	ReplaceLexicon(ctx *gin.Context)
 	ArchiveScenario(ctx *gin.Context)
 	UnarchiveScenario(ctx *gin.Context)
 }
@@ -730,6 +732,89 @@ func (sc *scenarioController) GetTranslationCoverage(ctx *gin.Context) {
 		coverage = []services.LocaleCoverage{}
 	}
 	ctx.JSON(http.StatusOK, coverage)
+}
+
+// GetLexicon godoc
+// @Summary Read a scenario's vocabulary
+// @Description Every object the scenario's world is built from, what each
+// @Description language calls it, and anything wrong with the set.
+// @Tags scenarios
+// @Produce json
+// @Param id path string true "Scenario ID"
+// @Success 200 {object} dto.LexiconDocumentOutput
+// @Failure 403 {object} errors.APIError
+// @Failure 404 {object} errors.APIError
+// @Router /scenarios/{id}/lexicon [get]
+// @Security BearerAuth
+func (sc *scenarioController) GetLexicon(ctx *gin.Context) {
+	scenario := sc.loadManageableScenario(ctx)
+	if scenario == nil {
+		return
+	}
+
+	document, err := services.LoadLexiconDocument(sc.db, scenario.ID)
+	if err != nil {
+		slog.Error("failed to load lexicon", "scenario_id", scenario.ID, "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Failed to load the scenario's vocabulary",
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, document)
+}
+
+// ReplaceLexicon godoc
+// @Summary Replace a scenario's vocabulary
+// @Description Stores the whole vocabulary at once. A lexicon that is merely
+// @Description unfinished is stored and its gaps reported; one that cannot
+// @Description resolve — an unknown parent, a room inside itself, a key used
+// @Description twice — is refused and nothing is changed.
+// @Tags scenarios
+// @Accept json
+// @Produce json
+// @Param id path string true "Scenario ID"
+// @Param lexicon body dto.ReplaceLexiconInput true "The whole vocabulary"
+// @Success 200 {object} dto.LexiconDocumentOutput
+// @Failure 400 {object} errors.APIError
+// @Failure 403 {object} errors.APIError
+// @Router /scenarios/{id}/lexicon [put]
+// @Security BearerAuth
+func (sc *scenarioController) ReplaceLexicon(ctx *gin.Context) {
+	scenario := sc.loadManageableScenario(ctx)
+	if scenario == nil {
+		return
+	}
+
+	var input dto.ReplaceLexiconInput
+	if err := ctx.ShouldBindJSON(&input); err != nil {
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: "Invalid vocabulary: " + err.Error(),
+		})
+		return
+	}
+
+	if err := services.ReplaceLexicon(sc.db, scenario.ID, input.Entries); err != nil {
+		// A vocabulary that cannot resolve is the caller's mistake, and the
+		// message names which entry — an editor has to be able to point at it.
+		ctx.JSON(http.StatusBadRequest, &errors.APIError{
+			ErrorCode:    http.StatusBadRequest,
+			ErrorMessage: err.Error(),
+		})
+		return
+	}
+
+	document, err := services.LoadLexiconDocument(sc.db, scenario.ID)
+	if err != nil {
+		slog.Error("failed to reload lexicon after save", "scenario_id", scenario.ID, "err", err)
+		ctx.JSON(http.StatusInternalServerError, &errors.APIError{
+			ErrorCode:    http.StatusInternalServerError,
+			ErrorMessage: "Saved, but the vocabulary could not be read back",
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, document)
 }
 
 // UnarchiveScenario godoc
