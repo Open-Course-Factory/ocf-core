@@ -1,6 +1,7 @@
 package scenarios_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -131,4 +132,81 @@ func TestLexiconDocument_DuplicateKey_IsRefused(t *testing.T) {
 	})
 
 	require.Error(t, err)
+}
+
+// A script that still names a room is the thing the lexicon exists to remove,
+// and nothing else would notice it.
+//
+// It works — in the language it was written in. It is only when a second
+// language exists that the script sends that learner somewhere their disk does
+// not have, by which point the scenario looks broken rather than untranslated.
+func TestLexiconDocument_ScriptNamingARoom_IsReported(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario := lexiconScenario(t)
+
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "Go down",
+		VerifyScript: `[ "$(pwd)" = "/World/Castle/Cellar" ]`,
+	}).Error)
+
+	document, err := services.LoadLexiconDocument(db, scenario.ID)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, document.ScriptLiterals)
+	assert.Contains(t, strings.Join(document.ScriptLiterals, " | "), "Cellar")
+}
+
+// A script that composes from the vocabulary is what this is asking for, and
+// must not be nagged about.
+func TestLexiconDocument_ScriptUsingTheVocabulary_IsQuiet(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario := lexiconScenario(t)
+
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "Go down",
+		VerifyScript: `[ "$(pwd)" = "$P_CELLAR" ]`,
+	}).Error)
+
+	document, err := services.LoadLexiconDocument(db, scenario.ID)
+
+	require.NoError(t, err)
+	assert.Empty(t, document.ScriptLiterals)
+}
+
+// Machinery keeps its own name. /etc and /opt are the same in every language,
+// and flagging them would train an author to ignore the list.
+func TestLexiconDocument_MachineryPaths_AreNotReported(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario := lexiconScenario(t)
+
+	require.NoError(t, db.Create(&models.ScenarioStep{
+		ScenarioID: scenario.ID, Order: 0, Title: "Compare",
+		VerifyScript: `diff -q "$P_CELLAR/ledger" /opt/gsh/ledger`,
+	}).Error)
+
+	document, err := services.LoadLexiconDocument(db, scenario.ID)
+
+	require.NoError(t, err)
+	assert.Empty(t, document.ScriptLiterals)
+}
+
+// A scenario with no vocabulary is not told its scripts are wrong: there is
+// nothing yet to say what its world is called.
+func TestLexiconDocument_NoVocabulary_ReportsNoLiterals(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, _, steps := coverageScenario(t, `["en","fr"]`)
+	require.NoError(t, db.Model(&steps[0]).Update("verify_script", `[ -d /World/Castle ]`).Error)
+
+	document, err := services.LoadLexiconDocument(db, steps[0].ScenarioID)
+
+	require.NoError(t, err)
+	assert.Empty(t, document.ScriptLiterals)
 }

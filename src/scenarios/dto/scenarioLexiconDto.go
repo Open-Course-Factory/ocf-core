@@ -32,6 +32,14 @@ type LexiconEntryOutput struct {
 type LexiconDocumentOutput struct {
 	Entries  []LexiconEntryOutput `json:"entries"`
 	Problems []string             `json:"problems"`
+
+	// ScriptLiterals are scripts still naming a room instead of composing from
+	// the vocabulary. Reported here because it is the one thing that would
+	// otherwise go unnoticed: such a script works in the language it was
+	// written in, and only sends a learner somewhere their disk does not have
+	// once a second language exists — at which point the scenario looks broken
+	// rather than untranslated.
+	ScriptLiterals []string `json:"script_literals"`
 }
 
 // ReplaceLexiconInput is the whole document, as sent.

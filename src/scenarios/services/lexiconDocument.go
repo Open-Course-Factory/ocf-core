@@ -2,6 +2,8 @@ package services
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
@@ -39,6 +41,15 @@ func LoadLexiconDocument(db *gorm.DB, scenarioID uuid.UUID) (*dto.LexiconDocumen
 	document.Problems = problems
 	if document.Problems == nil {
 		document.Problems = []string{}
+	}
+
+	literals, err := findScriptLiterals(db, scenarioID)
+	if err != nil {
+		return nil, err
+	}
+	document.ScriptLiterals = literals
+	if document.ScriptLiterals == nil {
+		document.ScriptLiterals = []string{}
 	}
 	return document, nil
 }
@@ -158,4 +169,101 @@ func assertResolvable(entries []dto.LexiconEntryInput) error {
 		}
 	}
 	return nil
+}
+
+// machineryPrefixes are paths that mean the same thing in every language: a
+// library the scenario installs, a pristine copy it compares against, the
+// system files it edits. Flagging them would train an author to ignore the list.
+var machineryPrefixes = []string{"/etc", "/opt", "/usr", "/var", "/tmp", "/root", "/bin", "/sbin", "/proc", "/dev"}
+
+// findScriptLiterals reports scripts that still name a room.
+//
+// Matched against the default locale's names, because that is what an author
+// writes by hand. A scenario with no vocabulary is not told its scripts are
+// wrong — there is nothing yet to say what its world is called.
+func findScriptLiterals(db *gorm.DB, scenarioID uuid.UUID) ([]string, error) {
+	var scenario models.Scenario
+	if err := db.First(&scenario, "id = ?", scenarioID).Error; err != nil {
+		return nil, err
+	}
+	locale := scenario.DefaultLocale
+	if locale == "" {
+		return nil, nil
+	}
+
+	entries, names, err := loadLexicon(db, scenarioID)
+	if err != nil || len(entries) == 0 {
+		return nil, err
+	}
+
+	// Short names are words before they are rooms: "left" and "hall" appear in
+	// ordinary English, and reporting those would bury the real ones.
+	wanted := map[string]string{}
+	for _, entry := range entries {
+		name := names[entry.ID][locale]
+		if len(strings.Trim(name, "._*-")) > 3 {
+			wanted[name] = entry.Key
+		}
+	}
+	if len(wanted) == 0 {
+		return nil, nil
+	}
+
+	var steps []models.ScenarioStep
+	if err := db.Where("scenario_id = ?", scenarioID).Order("\"order\" ASC").Find(&steps).Error; err != nil {
+		return nil, err
+	}
+
+	// Sorted, so the same script always reports the same way. Iterating the map
+	// directly made which name got named depend on Go's map ordering, and a
+	// checker that says something different each run is one nobody trusts.
+	sortedNames := make([]string, 0, len(wanted))
+	for name := range wanted {
+		sortedNames = append(sortedNames, name)
+	}
+	sort.Strings(sortedNames)
+
+	var found []string
+	report := func(where, script string) {
+		if script == "" {
+			return
+		}
+		stripped := stripMachinery(script)
+		// Every name in the script, not just the first: an author replacing one
+		// and finding another still there learns to distrust the list.
+		for _, name := range sortedNames {
+			if strings.Contains(stripped, name) {
+				found = append(found, fmt.Sprintf(
+					"%s names %q directly — use $P_%s or $W_%s", where, name, wanted[name], wanted[name]))
+			}
+		}
+	}
+
+	report("the setup script", scenario.SetupScript)
+	for _, step := range steps {
+		label := fmt.Sprintf("step %d (%s)", step.Order, step.Title)
+		report(label+" verify", step.VerifyScript)
+		report(label+" background", step.BackgroundScript)
+		report(label+" foreground", step.ForegroundScript)
+	}
+	return found, nil
+}
+
+// stripMachinery removes paths that are the same in every language, so a name
+// appearing only inside one is not reported.
+func stripMachinery(script string) string {
+	var kept []string
+	for _, field := range strings.Fields(script) {
+		machinery := false
+		for _, prefix := range machineryPrefixes {
+			if strings.Contains(field, prefix+"/") {
+				machinery = true
+				break
+			}
+		}
+		if !machinery {
+			kept = append(kept, field)
+		}
+	}
+	return strings.Join(kept, " ")
 }
