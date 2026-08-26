@@ -171,6 +171,9 @@ func AutoMigrateAll(db *gorm.DB) {
 	db.AutoMigrate(&scenarioModels.ScenarioStepQuestion{})
 	db.AutoMigrate(&scenarioModels.ScenarioTranslation{})
 	db.AutoMigrate(&scenarioModels.ScenarioStepTranslation{})
+	// Widen the lexicon key index before the model rebuilds it: an earlier
+	// shape could not express one object sitting in two places.
+	scenarioModels.MigrateLexiconKeyIndex(db)
 	db.AutoMigrate(&scenarioModels.ScenarioLexiconEntry{})
 	db.AutoMigrate(&scenarioModels.ScenarioLexiconName{})
 
