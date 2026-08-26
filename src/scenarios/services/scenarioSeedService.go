@@ -165,9 +165,46 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 			).Delete(&models.ScenarioStepQuestion{}).Error; err != nil {
 				return fmt.Errorf("failed to delete old questions: %w", err)
 			}
-			// Delete old steps
-			if err := tx.Where("scenario_id = ?", existing.ID).Delete(&models.ScenarioStep{}).Error; err != nil {
-				return fmt.Errorf("failed to delete old steps: %w", err)
+			// Steps keep their identity across a re-seed, matched by order.
+			//
+			// Content is authored in files and pushed repeatedly; a translation
+			// is written once, by hand, and may live only here. Replacing every
+			// step would detach them all silently — the work still stored,
+			// attached to a row nothing reads, and the scenario simply reading
+			// untranslated again.
+			//
+			// Reusing the row also makes an edit behave the way it should: the
+			// translation survives and its source hash no longer matches, so it
+			// reports as stale rather than disappearing.
+			var previous []models.ScenarioStep
+			if err := tx.Where("scenario_id = ?", existing.ID).
+				Order("\"order\" ASC").Find(&previous).Error; err != nil {
+				return fmt.Errorf("failed to load existing steps: %w", err)
+			}
+			reusable := make(map[int]models.ScenarioStep, len(previous))
+			for _, step := range previous {
+				reusable[step.Order] = step
+			}
+
+			// Steps the scenario no longer has go, and their translations with
+			// them: a language reporting work for a step nobody can reach is
+			// worse than one honestly short.
+			keep := make(map[int]bool, len(newSteps))
+			for i := range newSteps {
+				keep[newSteps[i].Order] = true
+			}
+			for order, step := range reusable {
+				if keep[order] {
+					continue
+				}
+				if err := tx.Where("step_id = ?", step.ID).
+					Delete(&models.ScenarioStepTranslation{}).Error; err != nil {
+					return fmt.Errorf("failed to delete translations of a removed step: %w", err)
+				}
+				if err := tx.Delete(&models.ScenarioStep{}, "id = ?", step.ID).Error; err != nil {
+					return fmt.Errorf("failed to delete a removed step: %w", err)
+				}
+				delete(reusable, order)
 			}
 			// Replace the image declaration rather than adding to it, so a
 			// re-seed converges on what the scenario now says instead of
@@ -189,9 +226,19 @@ func (s *ScenarioSeedService) SeedScenario(input dto.SeedScenarioInput, userID s
 				}
 			}
 
-			// Create new steps
+			// Write the steps, reusing the row that already held each order.
 			for i := range newSteps {
 				newSteps[i].ScenarioID = existing.ID
+				if kept, ok := reusable[newSteps[i].Order]; ok {
+					newSteps[i].ID = kept.ID
+					newSteps[i].CreatedAt = kept.CreatedAt
+					if err := tx.Model(&models.ScenarioStep{}).Where("id = ?", kept.ID).
+						Select("*").Omit("id", "created_at", "deleted_at", "scenario_id").
+						Updates(&newSteps[i]).Error; err != nil {
+						return fmt.Errorf("failed to update step: %w", err)
+					}
+					continue
+				}
 				if err := tx.Create(&newSteps[i]).Error; err != nil {
 					return fmt.Errorf("failed to create step: %w", err)
 				}
