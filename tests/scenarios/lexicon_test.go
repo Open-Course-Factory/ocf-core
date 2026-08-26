@@ -346,3 +346,90 @@ func TestLexiconDocument_SameKeySamePlace_IsRefused(t *testing.T) {
 
 	require.Error(t, err)
 }
+
+// A message is what a check says to the learner when it refuses.
+//
+// Same shape as a text token — a key, one wording per language, no place in the
+// world — but a different audience, and that difference is worth keeping in the
+// data: a token is grepped for inside a file, a message is read by a person.
+func TestLexicon_MessagesAreNamedButHaveNoPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario := lexiconScenario(t)
+
+	entry := models.ScenarioLexiconEntry{
+		ScenarioID: scenario.ID, Key: "NOT_THE_SHORT_WAY", Kind: "message", Position: 99,
+	}
+	require.NoError(t, db.Create(&entry).Error)
+	require.NoError(t, db.Create(&models.ScenarioLexiconName{
+		EntryID: entry.ID, Locale: "en", Name: "You got here, but by counting steps upwards.",
+	}).Error)
+	require.NoError(t, db.Create(&models.ScenarioLexiconName{
+		EntryID: entry.ID, Locale: "fr", Name: "Vous y êtes, mais en comptant les niveaux.",
+	}).Error)
+
+	fr, err := services.GenerateLexicon(db, scenario.ID, "fr")
+
+	require.NoError(t, err)
+	assert.Contains(t, fr, "M_NOT_THE_SHORT_WAY=")
+	assert.Contains(t, fr, "Vous y êtes, mais en comptant les niveaux.")
+	assert.NotContains(t, fr, "P_NOT_THE_SHORT_WAY=", "a sentence is nowhere in the world")
+	assert.NotContains(t, fr, "W_NOT_THE_SHORT_WAY=", "and it is not the name of anything")
+}
+
+// A message is prose: it carries accents, apostrophes and punctuation, and none
+// of that is the shell-safety problem a path name would be.
+func TestLexiconValidate_AccentedMessage_IsAllowed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario := lexiconScenario(t)
+
+	entry := models.ScenarioLexiconEntry{
+		ScenarioID: scenario.ID, Key: "REFUSED", Kind: "message", Position: 98,
+	}
+	require.NoError(t, db.Create(&entry).Error)
+	for locale, text := range map[string]string{
+		"en": "You are not there yet — try again.",
+		"fr": "Vous n'y êtes pas encore — réessayez.",
+	} {
+		require.NoError(t, db.Create(&models.ScenarioLexiconName{
+			EntryID: entry.ID, Locale: locale, Name: text,
+		}).Error)
+	}
+
+	problems, err := services.ValidateLexicon(db, scenario.ID)
+
+	require.NoError(t, err)
+	assert.Empty(t, problems)
+}
+
+// A language missing a message cannot be offered: a learner would fail a step
+// and be told why in a language they did not choose.
+func TestLaunchableLocales_UntranslatedMessage_IsNotOffered(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario := lexiconScenario(t)
+
+	step := models.ScenarioStep{ScenarioID: scenario.ID, Order: 0, Title: "First", StepType: "info"}
+	require.NoError(t, db.Create(&step).Error)
+	require.NoError(t, db.Create(&models.ScenarioStepTranslation{
+		StepID: step.ID, Locale: "fr", Title: "Premiere",
+		SourceHash: services.StepSourceHash(step),
+	}).Error)
+
+	entry := models.ScenarioLexiconEntry{
+		ScenarioID: scenario.ID, Key: "ENGLISH_ONLY", Kind: "message", Position: 97,
+	}
+	require.NoError(t, db.Create(&entry).Error)
+	require.NoError(t, db.Create(&models.ScenarioLexiconName{
+		EntryID: entry.ID, Locale: "en", Name: "Not quite.",
+	}).Error)
+
+	offered, err := services.LaunchableLocales(db, scenario.ID)
+
+	require.NoError(t, err)
+	assert.NotContains(t, offered, "fr", "a French run would explain its refusals in English")
+}
