@@ -31,7 +31,7 @@ func createFullSourceScenario(t *testing.T, db *gorm.DB, orgID *uuid.UUID) model
 		Title:          "Test Scenario",
 		Description:    "A test scenario for duplication",
 		Difficulty:     "intermediate",
-		EstimatedTime:  "30m",
+		EstimatedTimeMinutes:  30,
 		InstanceType:   "ubuntu:22.04",
 		Hostname:       "lab-host",
 		OsType:         "deb",
@@ -202,7 +202,7 @@ func TestDuplicateScenario_Success(t *testing.T) {
 	assert.Equal(t, "Test Scenario (Copy)", result.Title)
 	assert.Equal(t, source.Description, result.Description)
 	assert.Equal(t, source.Difficulty, result.Difficulty)
-	assert.Equal(t, source.EstimatedTime, result.EstimatedTime)
+	assert.Equal(t, source.EstimatedTimeMinutes, result.EstimatedTimeMinutes)
 	assert.Equal(t, source.InstanceType, result.InstanceType)
 	assert.Equal(t, source.Hostname, result.Hostname)
 	assert.Equal(t, source.OsType, result.OsType)

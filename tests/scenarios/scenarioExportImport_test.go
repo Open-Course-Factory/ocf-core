@@ -27,7 +27,7 @@ func TestExportService_ExportAsJSON_Success(t *testing.T) {
 		Title:         "Export Test",
 		Description:   "A test scenario for export",
 		Difficulty:    "beginner",
-		EstimatedTime: "15m",
+		EstimatedTimeMinutes: 15,
 		InstanceType:  "ubuntu:22.04",
 		OsType:        "deb",
 		SourceType:    "seed",
@@ -74,7 +74,7 @@ func TestExportService_ExportAsJSON_Success(t *testing.T) {
 	assert.Equal(t, "Export Test", export.Title)
 	assert.Equal(t, "A test scenario for export", export.Description)
 	assert.Equal(t, "beginner", export.Difficulty)
-	assert.Equal(t, "15m", export.EstimatedTime)
+	assert.Equal(t, 15, export.EstimatedTimeMinutes)
 	assert.Equal(t, "ubuntu:22.04", export.InstanceType)
 	assert.Equal(t, "deb", export.OsType)
 	assert.True(t, export.FlagsEnabled)
@@ -122,7 +122,7 @@ func TestExportService_ExportAsArchive_Success(t *testing.T) {
 		Title:         "Archive Test",
 		Description:   "Archive scenario",
 		Difficulty:    "intermediate",
-		EstimatedTime: "30m",
+		EstimatedTimeMinutes: 30,
 		InstanceType:  "debian:12",
 		SourceType:    "seed",
 		FlagsEnabled:  true,
@@ -185,7 +185,7 @@ func TestExportService_ExportAsArchive_Success(t *testing.T) {
 	assert.Equal(t, "Archive Test", index.Title)
 	assert.Equal(t, "Archive scenario", index.Description)
 	assert.Equal(t, "intermediate", index.Difficulty)
-	assert.Equal(t, "30m", index.Time)
+	assert.Equal(t, 30, index.TimeMinutes)
 	assert.Equal(t, "debian:12", index.Backend.ImageID)
 	require.Len(t, index.Details.Steps, 2)
 	assert.Equal(t, "Navigate", index.Details.Steps[0].Title)
@@ -291,7 +291,7 @@ func TestSeedService_Create_Success(t *testing.T) {
 		Title:         "Seed Create Test",
 		Description:   "Testing seed create",
 		Difficulty:    "beginner",
-		EstimatedTime: "10m",
+		EstimatedTimeMinutes: 10,
 		InstanceType:  "ubuntu:22.04",
 		OsType:        "deb",
 		FlagsEnabled:  true,
@@ -541,7 +541,7 @@ func TestExportImport_JSONRoundtrip(t *testing.T) {
 		Title:         "Roundtrip Test",
 		Description:   "Testing roundtrip",
 		Difficulty:    "advanced",
-		EstimatedTime: "1h",
+		EstimatedTimeMinutes: 60,
 		InstanceType:  "ubuntu:22.04",
 		OsType:        "deb",
 		FlagsEnabled:  true,
@@ -580,7 +580,7 @@ func TestExportImport_JSONRoundtrip(t *testing.T) {
 		Title:         export.Title + " (reimported)",
 		Description:   export.Description,
 		Difficulty:    export.Difficulty,
-		EstimatedTime: export.EstimatedTime,
+		EstimatedTimeMinutes: export.EstimatedTimeMinutes,
 		InstanceType:  export.InstanceType,
 		OsType:        export.OsType,
 		FlagsEnabled:  export.FlagsEnabled,
@@ -610,7 +610,7 @@ func TestExportImport_JSONRoundtrip(t *testing.T) {
 	// Verify content matches
 	assert.Equal(t, "Testing roundtrip", reimported.Description)
 	assert.Equal(t, "advanced", reimported.Difficulty)
-	assert.Equal(t, "1h", reimported.EstimatedTime)
+	assert.Equal(t, 60, reimported.EstimatedTimeMinutes)
 	assert.Equal(t, "ubuntu:22.04", reimported.InstanceType)
 	assert.Equal(t, "deb", reimported.OsType)
 	assert.True(t, reimported.FlagsEnabled)

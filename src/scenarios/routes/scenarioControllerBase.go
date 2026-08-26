@@ -90,7 +90,7 @@ func (b *scenarioControllerBase) buildScenarioOutput(scenario *models.Scenario) 
 		Title:            scenario.Title,
 		Description:      scenario.Description,
 		Difficulty:       scenario.Difficulty,
-		EstimatedTime:    scenario.EstimatedTime,
+		EstimatedTimeMinutes:    scenario.EstimatedTimeMinutes,
 		InstanceType:     scenario.InstanceType,
 		OsType:           scenario.OsType,
 		SourceType:       scenario.SourceType,

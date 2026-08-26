@@ -199,7 +199,7 @@ func TestScenarioImporter_BuildScenarioFromIndex(t *testing.T) {
 	assert.Equal(t, "Linux Basics Lab", scenario.Title)
 	assert.Equal(t, "Learn Linux commands", scenario.Description)
 	assert.Equal(t, "beginner", scenario.Difficulty)
-	assert.Equal(t, "30m", scenario.EstimatedTime)
+	assert.Equal(t, 30, scenario.EstimatedTimeMinutes)
 	assert.Equal(t, "ubuntu:22.04", scenario.InstanceType)
 	assert.Equal(t, "builtin", scenario.SourceType)
 	assert.True(t, scenario.FlagsEnabled)

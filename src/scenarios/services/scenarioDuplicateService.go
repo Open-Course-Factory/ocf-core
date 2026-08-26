@@ -100,7 +100,7 @@ func (s *ScenarioDuplicateService) DuplicateScenario(sourceID uuid.UUID, userID 
 			Title:          source.Title + " (Copy)",
 			Description:    source.Description,
 			Difficulty:     source.Difficulty,
-			EstimatedTime:  source.EstimatedTime,
+			EstimatedTimeMinutes:  source.EstimatedTimeMinutes,
 			InstanceType:   source.InstanceType,
 			Hostname:       source.Hostname,
 			OsType:         source.OsType,

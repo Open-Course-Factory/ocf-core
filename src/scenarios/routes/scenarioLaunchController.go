@@ -500,7 +500,7 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			Title:         s.Title,
 			Description:   s.Description,
 			Difficulty:    s.Difficulty,
-			EstimatedTime: s.EstimatedTime,
+			EstimatedTimeMinutes: s.EstimatedTimeMinutes,
 			InstanceType:  s.InstanceType,
 			OsType:        s.OsType,
 			IsPublic:      s.IsPublic,

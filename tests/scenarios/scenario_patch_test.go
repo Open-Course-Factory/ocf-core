@@ -146,7 +146,7 @@ func TestPATCHScenario_InstanceTypePersists(t *testing.T) {
 		"name":           "test-scenario-patch",
 		"title":          "Updated Title",
 		"difficulty":     "",
-		"estimated_time": "",
+		"estimated_time_minutes": 0,
 		"description":    "",
 		"intro_text":     "",
 		"finish_text":    "",

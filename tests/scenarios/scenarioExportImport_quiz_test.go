@@ -66,7 +66,7 @@ type localScenarioInputExt struct {
 	Title         string              `json:"title"`
 	Description   string              `json:"description,omitempty"`
 	Difficulty    string              `json:"difficulty,omitempty"`
-	EstimatedTime string              `json:"estimated_time,omitempty"`
+	EstimatedTimeMinutes string              `json:"estimated_time,omitempty"`
 	InstanceType  string              `json:"instance_type"`
 	OsType        string              `json:"os_type,omitempty"`
 	FlagsEnabled  bool                `json:"flags_enabled,omitempty"`

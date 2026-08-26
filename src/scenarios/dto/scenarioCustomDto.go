@@ -187,7 +187,7 @@ type SeedScenarioInput struct {
 	Title            string `json:"title" binding:"required,max=1000"`
 	Description      string `json:"description" binding:"max=1000"`
 	Difficulty       string `json:"difficulty"`
-	EstimatedTime    string `json:"estimated_time"`
+	EstimatedTimeMinutes int `json:"estimated_time_minutes"`
 	InstanceType     string `json:"instance_type"`
 	Hostname         string `json:"hostname,omitempty"`
 	OsType           string `json:"os_type"`
@@ -288,7 +288,7 @@ type ScenarioExportOutput struct {
 	Title            string                     `json:"title"`
 	Description      string                     `json:"description,omitempty"`
 	Difficulty       string                     `json:"difficulty,omitempty"`
-	EstimatedTime    string                     `json:"estimated_time,omitempty"`
+	EstimatedTimeMinutes int                    `json:"estimated_time_minutes,omitempty"`
 	InstanceType     string                     `json:"instance_type"`
 	OsType           string                     `json:"os_type,omitempty"`
 	FlagsEnabled     bool                       `json:"flags_enabled"`
@@ -338,7 +338,7 @@ type AvailableScenarioOutput struct {
 	Title                   string                       `json:"title"`
 	Description             string                       `json:"description,omitempty"`
 	Difficulty              string                       `json:"difficulty"`
-	EstimatedTime           string                       `json:"estimated_time"`
+	EstimatedTimeMinutes    int                          `json:"estimated_time_minutes"`
 	InstanceType            string                       `json:"instance_type"`
 	OsType                  string                       `json:"os_type,omitempty"`
 	CompatibleInstanceTypes []ScenarioInstanceTypeOutput `json:"compatible_instance_types,omitempty"`
