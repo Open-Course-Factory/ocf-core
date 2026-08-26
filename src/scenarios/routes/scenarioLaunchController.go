@@ -519,6 +519,13 @@ func (sc *scenarioLaunchController) GetAvailableScenarios(ctx *gin.Context) {
 			} else {
 				item.AvailableLocales = locales
 			}
+			// The card's own words in each language, so the picker beside them
+			// can change what it is describing without another request.
+			if text, err := services.ScenarioTextByLocale(sc.db, s); err != nil {
+				slog.Warn("failed to resolve card text", "scenario_id", s.ID, "err", err)
+			} else {
+				item.LocalisedText = text
+			}
 		}
 
 		// Convert compatible instance types
