@@ -44,49 +44,85 @@ func StepSourceHash(step models.ScenarioStep) string {
 }
 
 // TranslationCoverage reports every locale the scenario declares.
-func TranslationCoverage(db *gorm.DB, scenarioID uuid.UUID) ([]LocaleCoverage, error) {
-	var scenario models.Scenario
-	if err := db.First(&scenario, "id = ?", scenarioID).Error; err != nil {
-		return nil, err
+// coverageSource is everything a report is computed from, read in one place so
+// that the report itself stays arithmetic rather than arithmetic mixed with I/O.
+type coverageSource struct {
+	scenario     models.Scenario
+	locales      []string
+	steps        []models.ScenarioStep
+	translations []models.ScenarioStepTranslation
+}
+
+// loadCoverageSource reads the scenario, its steps, and the translations
+// belonging to those steps.
+//
+// It stops early twice, and both are about not asking a question whose answer
+// is already known: a scenario declaring no language is not translated, and a
+// scenario with no steps has nothing for a translation to point at.
+func loadCoverageSource(db *gorm.DB, scenarioID uuid.UUID) (coverageSource, error) {
+	var source coverageSource
+
+	if err := db.First(&source.scenario, "id = ?", scenarioID).Error; err != nil {
+		return source, err
 	}
 
-	locales, err := scenario.GetLocales()
+	locales, err := source.scenario.GetLocales()
 	if err != nil {
-		return nil, err
+		return source, err
 	}
+	source.locales = locales
 	if len(locales) == 0 {
-		return nil, nil
+		return source, nil
 	}
 
-	var steps []models.ScenarioStep
-	if err := db.Where("scenario_id = ?", scenarioID).Find(&steps).Error; err != nil {
-		return nil, err
+	if err := db.Where("scenario_id = ?", scenarioID).Find(&source.steps).Error; err != nil {
+		return source, err
+	}
+	if len(source.steps) == 0 {
+		return source, nil
 	}
 
-	var translations []models.ScenarioStepTranslation
-	if len(steps) > 0 {
-		stepIDs := make([]uuid.UUID, len(steps))
-		for i, step := range steps {
-			stepIDs[i] = step.ID
-		}
-		if err := db.Where("step_id IN ?", stepIDs).Find(&translations).Error; err != nil {
-			return nil, err
-		}
+	stepIDs := make([]uuid.UUID, len(source.steps))
+	for i, step := range source.steps {
+		stepIDs[i] = step.ID
 	}
+	if err := db.Where("step_id IN ?", stepIDs).Find(&source.translations).Error; err != nil {
+		return source, err
+	}
+	return source, nil
+}
 
-	byLocaleAndStep := make(map[string]map[uuid.UUID]models.ScenarioStepTranslation, len(locales))
+// indexByLocaleAndStep arranges the translations so a locale's report can find
+// each step's translation directly, rather than walking the whole set per step.
+func indexByLocaleAndStep(
+	translations []models.ScenarioStepTranslation,
+) map[string]map[uuid.UUID]models.ScenarioStepTranslation {
+	indexed := map[string]map[uuid.UUID]models.ScenarioStepTranslation{}
 	for _, translation := range translations {
-		perStep, ok := byLocaleAndStep[translation.Locale]
+		perStep, ok := indexed[translation.Locale]
 		if !ok {
 			perStep = map[uuid.UUID]models.ScenarioStepTranslation{}
-			byLocaleAndStep[translation.Locale] = perStep
+			indexed[translation.Locale] = perStep
 		}
 		perStep[translation.StepID] = translation
 	}
+	return indexed
+}
 
-	report := make([]LocaleCoverage, 0, len(locales))
-	for _, locale := range locales {
-		report = append(report, coverageForLocale(scenario, steps, byLocaleAndStep[locale], locale))
+func TranslationCoverage(db *gorm.DB, scenarioID uuid.UUID) ([]LocaleCoverage, error) {
+	source, err := loadCoverageSource(db, scenarioID)
+	if err != nil {
+		return nil, err
+	}
+	if len(source.locales) == 0 {
+		return nil, nil
+	}
+
+	indexed := indexByLocaleAndStep(source.translations)
+
+	report := make([]LocaleCoverage, 0, len(source.locales))
+	for _, locale := range source.locales {
+		report = append(report, coverageForLocale(source.scenario, source.steps, indexed[locale], locale))
 	}
 	return report, nil
 }
