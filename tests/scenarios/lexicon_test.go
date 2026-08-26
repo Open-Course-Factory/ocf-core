@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"soli/formations/src/scenarios/dto"
 	"soli/formations/src/scenarios/models"
 	"soli/formations/src/scenarios/services"
 )
@@ -298,4 +299,50 @@ func TestLaunchableLocales_IncompleteLexicon_IsNotOffered(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, offered, "fr", "a world with an unnamed room cannot be built")
 	assert.Contains(t, offered, "en")
+}
+
+// One object can sit in more than one place, and must stay one object.
+//
+// The crown is in the Treasury until a learner moves it to the Chest. If those
+// were two entries they could be named differently, and the mission that moves
+// it would be moving something that does not arrive. So a key may repeat under
+// different parents: one name, one W_, and a P_ per place it can be.
+func TestLexicon_OneObjectInTwoPlaces_KeepsOneName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario := lexiconScenario(t)
+
+	require.NoError(t, services.ReplaceLexicon(db, scenario.ID, []dto.LexiconEntryInput{
+		{Key: "ROOT", Kind: "place", Names: map[string]string{"en": "World", "fr": "Monde"}},
+		{Key: "TREASURY", ParentKey: "ROOT", Kind: "place", Names: map[string]string{"en": "Treasury", "fr": "Tresor"}},
+		{Key: "CHEST", ParentKey: "ROOT", Kind: "place", Names: map[string]string{"en": "Chest", "fr": "Coffre"}},
+		{Key: "CROWN", ParentKey: "TREASURY", Kind: "place", Names: map[string]string{"en": "crown", "fr": "couronne"}},
+		{Key: "CROWN", ParentKey: "CHEST", Kind: "place", Names: map[string]string{"en": "crown", "fr": "couronne"}},
+	}))
+
+	fr, err := services.GenerateLexicon(db, scenario.ID, "fr")
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(fr, "W_CROWN="), "one object, one name")
+	assert.Contains(t, fr, "P_TREASURY_CROWN=/Monde/Tresor/couronne")
+	assert.Contains(t, fr, "P_CHEST_CROWN=/Monde/Coffre/couronne")
+	assert.NotContains(t, fr, "\nP_CROWN=", "an unqualified path would name only one of the two places")
+}
+
+// The same key in the same place twice is still a mistake: it would be one
+// entry claiming to be two.
+func TestLexiconDocument_SameKeySamePlace_IsRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario := lexiconScenario(t)
+
+	err := services.ReplaceLexicon(db, scenario.ID, []dto.LexiconEntryInput{
+		{Key: "ROOT", Kind: "place", Names: map[string]string{"en": "World"}},
+		{Key: "CHEST", ParentKey: "ROOT", Kind: "place", Names: map[string]string{"en": "Chest"}},
+		{Key: "CHEST", ParentKey: "ROOT", Kind: "place", Names: map[string]string{"en": "Box"}},
+	})
+
+	require.Error(t, err)
 }

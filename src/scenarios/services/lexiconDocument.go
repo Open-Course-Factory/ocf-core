@@ -113,14 +113,33 @@ func ReplaceLexicon(db *gorm.DB, scenarioID uuid.UUID, entries []dto.LexiconEntr
 // assertResolvable rejects a lexicon no amount of naming could rescue.
 func assertResolvable(entries []dto.LexiconEntryInput) error {
 	byKey := make(map[string]dto.LexiconEntryInput, len(entries))
+	positions := map[string]int{}
+	occupied := map[string]bool{}
+
 	for _, entry := range entries {
 		if entry.Key == "" {
 			return fmt.Errorf("lexicon: an entry has no key")
 		}
-		if _, taken := byKey[entry.Key]; taken {
-			return fmt.Errorf("lexicon: %q is used twice, so scripts naming it would mean two things", entry.Key)
+		// The same key in the same place twice is one entry claiming to be two.
+		// In two different places it is one object that can be in either — the
+		// crown before and after a learner moves it.
+		slot := entry.ParentKey + "/" + entry.Key
+		if occupied[slot] {
+			return fmt.Errorf("lexicon: %q appears twice in the same place", entry.Key)
 		}
+		occupied[slot] = true
+		positions[entry.Key]++
 		byKey[entry.Key] = entry
+	}
+
+	// A repeated key has no single place, so nothing can be inside it: a child
+	// would have two possible paths and no way to say which was meant.
+	for _, entry := range entries {
+		if entry.ParentKey != "" && positions[entry.ParentKey] > 1 {
+			return fmt.Errorf(
+				"lexicon: %q sits inside %q, which is in more than one place — nothing can be inside an object that moves",
+				entry.Key, entry.ParentKey)
+		}
 	}
 
 	for _, entry := range entries {

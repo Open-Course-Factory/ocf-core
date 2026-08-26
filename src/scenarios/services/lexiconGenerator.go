@@ -51,7 +51,15 @@ func GenerateLexicon(db *gorm.DB, scenarioID uuid.UUID, locale string) (string, 
 		return "", err
 	}
 
+	// A key occupying more than one place needs its paths told apart, and one
+	// occupying a single place should not be burdened with a parent in its name.
+	positions := map[string]int{}
+	for _, entry := range ordered {
+		positions[entry.Key]++
+	}
+
 	paths := map[string]string{}
+	emittedName := map[string]bool{}
 	var placeLines, tokenLines []string
 
 	for _, entry := range ordered {
@@ -65,7 +73,10 @@ func GenerateLexicon(db *gorm.DB, scenarioID uuid.UUID, locale string) (string, 
 			continue
 		}
 
-		placeLines = append(placeLines, fmt.Sprintf("W_%s=%s", entry.Key, shellQuote(name)))
+		if !emittedName[entry.Key] {
+			emittedName[entry.Key] = true
+			placeLines = append(placeLines, fmt.Sprintf("W_%s=%s", entry.Key, shellQuote(name)))
+		}
 		if entry.Kind == "stem" {
 			// A stem names a fragment shared by other objects; it is nowhere in
 			// particular, so it has no path.
@@ -73,8 +84,14 @@ func GenerateLexicon(db *gorm.DB, scenarioID uuid.UUID, locale string) (string, 
 		}
 
 		parent := paths[entry.ParentKey]
-		paths[entry.Key] = parent + "/" + name
-		placeLines = append(placeLines, fmt.Sprintf("P_%s=%s", entry.Key, shellQuote(paths[entry.Key])))
+		full := parent + "/" + name
+
+		slot := entry.Key
+		if positions[entry.Key] > 1 && entry.ParentKey != "" {
+			slot = entry.ParentKey + "_" + entry.Key
+		}
+		paths[slot] = full
+		placeLines = append(placeLines, fmt.Sprintf("P_%s=%s", slot, shellQuote(full)))
 	}
 
 	out := []string{lexiconHeader, "OCF_LOCALE=" + locale, ""}
@@ -130,9 +147,15 @@ func orderParentsFirst(entries []models.ScenarioLexiconEntry) ([]models.Scenario
 	var ordered []models.ScenarioLexiconEntry
 	placed := map[string]bool{}
 
+	// Placement is tracked per place, not per key: an object that sits in two
+	// rooms is two positions of one object, and keying on the name alone would
+	// silently drop the second — leaving a mission moving something to a
+	// destination the world never built.
+	slotOf := func(e models.ScenarioLexiconEntry) string { return e.ParentKey + "/" + e.Key }
+
 	var place func(models.ScenarioLexiconEntry, map[string]bool) error
 	place = func(entry models.ScenarioLexiconEntry, seen map[string]bool) error {
-		if placed[entry.Key] {
+		if placed[slotOf(entry)] {
 			return nil
 		}
 		if seen[entry.Key] {
@@ -149,7 +172,7 @@ func orderParentsFirst(entries []models.ScenarioLexiconEntry) ([]models.Scenario
 				return err
 			}
 		}
-		placed[entry.Key] = true
+		placed[slotOf(entry)] = true
 		ordered = append(ordered, entry)
 		return nil
 	}
