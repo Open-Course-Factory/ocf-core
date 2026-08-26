@@ -191,3 +191,79 @@ func TestBackgroundScript_NoLocale_SendsNoEnvAtAll(t *testing.T) {
 	assert.Nil(t, verifySvc.execCalls[0].env,
 		"an empty OCF_LANG would be a visible difference for every session that predates locales")
 }
+
+// The catalogue card has to be able to switch with the picker beside it, so
+// every offered language's title and description travel with the scenario.
+//
+// Sent together rather than fetched per choice: the learner is changing a
+// dropdown, and a card that went blank while it asked the server would make
+// choosing a language feel like loading a page.
+func TestScenarioCardText_CarriesEveryOfferedLanguage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name: "card", Title: "Down to the Cellar", Description: "A castle adventure.",
+		InstanceType: "debian", CreatedByID: "creator-1",
+		DefaultLocale: "en", Locales: `["en","fr"]`,
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioTranslation{
+		ScenarioID: scenario.ID, Locale: "fr",
+		Title: "Descendre a la Cave", Description: "Une aventure au chateau.",
+	}).Error)
+
+	text, err := services.ScenarioTextByLocale(db, scenario)
+
+	require.NoError(t, err)
+	assert.Equal(t, "Down to the Cellar", text["en"].Title, "the default language is the scenario itself")
+	assert.Equal(t, "Descendre a la Cave", text["fr"].Title)
+	assert.Equal(t, "Une aventure au chateau.", text["fr"].Description)
+}
+
+// A language that has not been given a card title falls back to the original
+// rather than showing an empty card.
+func TestScenarioCardText_UntranslatedLanguage_KeepsTheOriginal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name: "card-partial", Title: "Down to the Cellar", Description: "A castle adventure.",
+		InstanceType: "debian", CreatedByID: "creator-1",
+		DefaultLocale: "en", Locales: `["en","fr"]`,
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioTranslation{
+		ScenarioID: scenario.ID, Locale: "fr", Title: "Descendre a la Cave",
+	}).Error)
+
+	text, err := services.ScenarioTextByLocale(db, scenario)
+
+	require.NoError(t, err)
+	assert.Equal(t, "Descendre a la Cave", text["fr"].Title)
+	assert.Equal(t, "A castle adventure.", text["fr"].Description,
+		"an untranslated description reads in the original, never blank")
+}
+
+// A single-language scenario carries nothing: there is no choice to preview.
+func TestScenarioCardText_SingleLanguage_CarriesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name: "card-single", Title: "Down to the Cellar",
+		InstanceType: "debian", CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	text, err := services.ScenarioTextByLocale(db, scenario)
+
+	require.NoError(t, err)
+	assert.Empty(t, text)
+}

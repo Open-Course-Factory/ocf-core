@@ -375,6 +375,18 @@ type AvailableScenarioOutput struct {
 	// deciding in a client which languages look ready enough is how the same
 	// rule ends up written twice and drifting.
 	AvailableLocales []string `json:"available_locales,omitempty"`
+
+	// LocalisedText is this card's title and description in each language it is
+	// offered in. Sent with the card rather than fetched per choice: the picker
+	// sits beside these words, and a card that blanked while it asked the
+	// server would make choosing a language feel like loading a page.
+	LocalisedText map[string]ScenarioText `json:"localised_text,omitempty"`
+}
+
+// ScenarioText is what a catalogue card shows, in one language.
+type ScenarioText struct {
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
 }
 
 // AssignmentProgressItem - per-scenario progress summary for a group's
