@@ -43,11 +43,14 @@ func coverageScenario(t *testing.T, locales string) (*gorm.DB, models.Scenario, 
 
 func translateStep(t *testing.T, db *gorm.DB, step models.ScenarioStep, hash string) {
 	t.Helper()
+	// Every field the source fills: these tests mean a step that is finished,
+	// and leaving the hint out would now make it partial rather than translated.
 	require.NoError(t, db.Create(&models.ScenarioStepTranslation{
 		StepID:      step.ID,
 		Locale:      "fr",
 		Title:       "Etape",
 		TextContent: "Allez a la Cave.",
+		HintContent: "Utilisez cd.",
 		SourceHash:  hash,
 	}).Error)
 }
@@ -204,4 +207,76 @@ func TestTranslationCoverage_DefaultLocale_ReportsEveryStepTranslated(t *testing
 	for _, s := range coverage.Steps {
 		assert.Equal(t, "translated", s.State)
 	}
+}
+
+// A translation that fills only some of what the source fills is not a
+// translated step.
+//
+// Counting it as one is how a language comes to be offered while most of its
+// steps still read in the original: a title in French over an English body is
+// worse than an honest gap, because nothing reports it and the learner meets it
+// mid-run.
+func TestTranslationCoverage_TitleOnlyTranslation_IsNotComplete(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
+	for _, step := range steps {
+		require.NoError(t, db.Create(&models.ScenarioStepTranslation{
+			StepID: step.ID, Locale: "fr",
+			Title:      "Titre",
+			SourceHash: services.StepSourceHash(step),
+		}).Error)
+	}
+
+	coverage := coverageFor(t, db, scenario.ID, "fr")
+
+	assert.False(t, coverage.Complete, "a French title over an English body is not a French step")
+	assert.Equal(t, 3, coverage.Partial)
+	for _, s := range coverage.Steps {
+		assert.Equal(t, "partial", s.State)
+	}
+}
+
+// Filling everything the source fills is what counts.
+func TestTranslationCoverage_EveryFilledFieldTranslated_IsComplete(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
+	for _, step := range steps {
+		require.NoError(t, db.Create(&models.ScenarioStepTranslation{
+			StepID: step.ID, Locale: "fr",
+			Title: "Titre", TextContent: "Texte", HintContent: "Indice",
+			SourceHash: services.StepSourceHash(step),
+		}).Error)
+	}
+
+	coverage := coverageFor(t, db, scenario.ID, "fr")
+
+	assert.True(t, coverage.Complete)
+	assert.Equal(t, 0, coverage.Partial)
+}
+
+// A field the source leaves empty is not something to translate, so a step with
+// no hint is not held back for want of a translated hint.
+func TestTranslationCoverage_SourceWithNoHint_NeedsNoTranslatedHint(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db, scenario, steps := coverageScenario(t, `["en","fr"]`)
+	for _, step := range steps {
+		require.NoError(t, db.Model(&step).Update("hint_content", "").Error)
+		var fresh models.ScenarioStep
+		require.NoError(t, db.First(&fresh, "id = ?", step.ID).Error)
+		require.NoError(t, db.Create(&models.ScenarioStepTranslation{
+			StepID: fresh.ID, Locale: "fr",
+			Title: "Titre", TextContent: "Texte",
+			SourceHash: services.StepSourceHash(fresh),
+		}).Error)
+	}
+
+	coverage := coverageFor(t, db, scenario.ID, "fr")
+
+	assert.True(t, coverage.Complete)
 }

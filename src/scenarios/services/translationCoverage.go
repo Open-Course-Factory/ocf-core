@@ -25,7 +25,13 @@ type LocaleCoverage struct {
 	Translated int    `json:"translated"`
 	Stale      int    `json:"stale"`
 	Missing    int    `json:"missing"`
-	Complete   bool   `json:"complete"`
+
+	// Partial counts steps whose translation fills less than the source does —
+	// a French title over an English body. Counted apart from missing because
+	// they are different jobs: one is untouched, the other is half done and
+	// looks finished.
+	Partial  int  `json:"partial"`
+	Complete bool `json:"complete"`
 
 	// Steps says what state each step is in, in scenario order, so an editor
 	// can mark its list without a second request. Decided here rather than in
@@ -44,9 +50,31 @@ type StepTranslationState struct {
 
 const (
 	StateTranslated = "translated"
+	StatePartial    = "partial"
 	StateStale      = "stale"
 	StateMissing    = "missing"
 )
+
+// coversTheSource reports whether a translation fills everything the step
+// fills.
+//
+// A field the source leaves empty is not something to translate, so a step with
+// no hint is not held back for want of a translated hint. A field the source
+// fills and the translation does not is the learner reading the original
+// mid-run, which is exactly what a completeness gate is for.
+func coversTheSource(step models.ScenarioStep, translation models.ScenarioStepTranslation) bool {
+	pairs := [][2]string{
+		{step.Title, translation.Title},
+		{step.TextContent, translation.TextContent},
+		{step.HintContent, translation.HintContent},
+	}
+	for _, pair := range pairs {
+		if pair[0] != "" && pair[1] == "" {
+			return false
+		}
+	}
+	return true
+}
 
 // StepSourceHash fingerprints the prose a translation was written against.
 //
@@ -141,14 +169,18 @@ func coverageForLocale(
 		state := StateMissing
 		if translation, ok := translated[step.ID]; ok {
 			coverage.Translated++
+			switch {
 			// An empty hash is not proof of freshness, it is the absence of
 			// proof. Reporting it as current would tell a trainer a translation
 			// is up to date when nothing ever checked.
-			if translation.SourceHash == StepSourceHash(step) {
-				state = StateTranslated
-			} else {
+			case translation.SourceHash != StepSourceHash(step):
 				state = StateStale
 				coverage.Stale++
+			case !coversTheSource(step, translation):
+				state = StatePartial
+				coverage.Partial++
+			default:
+				state = StateTranslated
 			}
 		} else {
 			coverage.Missing++
@@ -158,7 +190,7 @@ func coverageForLocale(
 		})
 	}
 
-	coverage.Complete = coverage.Missing == 0 && coverage.Stale == 0
+	coverage.Complete = coverage.Missing == 0 && coverage.Stale == 0 && coverage.Partial == 0
 	return coverage
 }
 
