@@ -56,6 +56,57 @@ func overlay(field *string, translated string) {
 	}
 }
 
+// ScenarioProse is everything a learner reads that is not a step: the card's
+// words, the briefing that opens the session, and the text that closes it.
+type ScenarioProse struct {
+	Title       string
+	Description string
+	Intro       string
+	Finish      string
+}
+
+// ResolveScenarioText assembles a scenario's own prose for one locale.
+//
+// The steps already resolve this way, and the briefing did not: it was fetched
+// straight off the scenario, so a session played in French opened with an
+// English welcome and closed with an English farewell. Same text, two paths,
+// one of which forgot — so this is the path, and the card's per-locale map
+// below lays its two fields over the same rule.
+//
+// Empty locale short-circuits, and an untranslated field keeps the original:
+// prose that falls back is merely untranslated, which is not the same hazard as
+// a path that falls back and points at a directory nobody has.
+func ResolveScenarioText(db *gorm.DB, scenario models.Scenario, locale string) ScenarioProse {
+	prose := ScenarioProse{
+		Title:       scenario.Title,
+		Description: scenario.Description,
+		Intro:       ResolveScriptContent(db, scenario.IntroFileID, scenario.IntroText),
+		Finish:      ResolveScriptContent(db, scenario.FinishFileID, scenario.FinishText),
+	}
+	if locale == "" {
+		return prose
+	}
+
+	var translation models.ScenarioTranslation
+	if err := db.Where("scenario_id = ? AND locale = ?", scenario.ID, locale).
+		First(&translation).Error; err != nil {
+		return prose
+	}
+
+	applyScenarioTranslation(&prose, translation)
+	return prose
+}
+
+// applyScenarioTranslation is the one place a scenario's translation is laid
+// over its defaults, so the card and the player cannot disagree about what a
+// half-filled translation means.
+func applyScenarioTranslation(prose *ScenarioProse, translation models.ScenarioTranslation) {
+	overlay(&prose.Title, translation.Title)
+	overlay(&prose.Description, translation.Description)
+	overlay(&prose.Intro, translation.IntroText)
+	overlay(&prose.Finish, translation.FinishText)
+}
+
 // ScenarioTextByLocale gives a card its text in every language it is offered
 // in, keyed by locale.
 //
@@ -88,12 +139,13 @@ func ScenarioTextByLocale(db *gorm.DB, scenario models.Scenario) (map[string]dto
 
 	text := make(map[string]dto.ScenarioText, len(locales))
 	for _, locale := range locales {
-		entry := dto.ScenarioText{Title: scenario.Title, Description: scenario.Description}
+		prose := ScenarioProse{Title: scenario.Title, Description: scenario.Description}
 		if translation, ok := byLocale[locale]; ok {
-			overlay(&entry.Title, translation.Title)
-			overlay(&entry.Description, translation.Description)
+			applyScenarioTranslation(&prose, translation)
 		}
-		text[locale] = entry
+		// The card shows two of the four; the rows are read in one query here
+		// rather than per locale, because this runs over the whole catalogue.
+		text[locale] = dto.ScenarioText{Title: prose.Title, Description: prose.Description}
 	}
 	return text, nil
 }

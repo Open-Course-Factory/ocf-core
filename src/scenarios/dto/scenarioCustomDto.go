@@ -23,6 +23,19 @@ type SessionResponse struct {
 	ProvisioningTimeoutSeconds int       `json:"provisioning_timeout_seconds,omitempty"`
 	Grade                      *float64  `json:"grade,omitempty"`
 	StartedAt                  time.Time `json:"started_at"`
+	// ScenarioText is the scenario's own prose in the language this session was
+	// started in. Served from here rather than left to the client to fetch,
+	// because the session is what knows the locale — a client asking the plain
+	// scenario endpoint gets the source language and has no way to tell.
+	ScenarioText *SessionScenarioText `json:"scenario_text,omitempty"`
+}
+
+// SessionScenarioText is the briefing, the farewell, and the names around them.
+type SessionScenarioText struct {
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	IntroText   string `json:"intro_text,omitempty"`
+	FinishText  string `json:"finish_text,omitempty"`
 }
 
 // MessageResponse - DTO for simple message responses

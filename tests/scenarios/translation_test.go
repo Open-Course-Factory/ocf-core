@@ -267,3 +267,111 @@ func TestScenarioCardText_SingleLanguage_CarriesNothing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, text)
 }
+
+// ---------------------------------------------------------------------------
+// The briefing, in the language the session is being played in
+// ---------------------------------------------------------------------------
+
+// The steps were resolved for the session's locale from the start; the briefing
+// was read straight off the scenario. So a session played entirely in French —
+// French world, French steps, French refusals — opened with an English welcome
+// and closed with an English farewell, and nothing in the suite looked at
+// either.
+func TestResolveScenarioText_UsesTheSessionsLanguage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name: "briefing", Title: "GameShell Basics", Description: "A castle adventure.",
+		IntroText: "Welcome to the castle!", FinishText: "The adventure ends.",
+		InstanceType: "debian", CreatedByID: "creator-1",
+		DefaultLocale: "en", Locales: `["en","fr"]`,
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioTranslation{
+		ScenarioID: scenario.ID, Locale: "fr",
+		Title: "GameShell — les bases", Description: "Une aventure au chateau.",
+		IntroText: "Bienvenue au chateau !", FinishText: "L'aventure se termine.",
+	}).Error)
+
+	french := services.ResolveScenarioText(db, scenario, "fr")
+
+	assert.Equal(t, "Bienvenue au chateau !", french.Intro, "the briefing opens the session")
+	assert.Equal(t, "L'aventure se termine.", french.Finish, "and this closes it")
+	assert.Equal(t, "GameShell — les bases", french.Title)
+	assert.Equal(t, "Une aventure au chateau.", french.Description)
+}
+
+// No locale is every session that existed before this feature.
+func TestResolveScenarioText_NoLocale_IsTheScenarioItself(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name: "untranslated", Title: "GameShell Basics",
+		IntroText: "Welcome to the castle!",
+		InstanceType: "debian", CreatedByID: "creator-1",
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+
+	assert.Equal(t, "Welcome to the castle!", services.ResolveScenarioText(db, scenario, "").Intro)
+}
+
+// A half-filled translation keeps the original for what it does not carry.
+// Prose that falls back is merely untranslated; the alternative is a session
+// that opens on a blank briefing.
+func TestResolveScenarioText_PartialTranslation_KeepsWhatIsMissing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name: "half", Title: "GameShell Basics",
+		IntroText: "Welcome to the castle!", FinishText: "The adventure ends.",
+		InstanceType: "debian", CreatedByID: "creator-1",
+		DefaultLocale: "en", Locales: `["en","fr"]`,
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioTranslation{
+		ScenarioID: scenario.ID, Locale: "fr",
+		IntroText: "Bienvenue au chateau !",
+	}).Error)
+
+	french := services.ResolveScenarioText(db, scenario, "fr")
+
+	assert.Equal(t, "Bienvenue au chateau !", french.Intro)
+	assert.Equal(t, "The adventure ends.", french.Finish, "untranslated, so the original stands")
+	assert.Equal(t, "GameShell Basics", french.Title)
+}
+
+// The card and the player must agree about what a translation means. They read
+// the same rows through the same overlay, and this is what says so.
+func TestScenarioCardText_AgreesWithTheSessionResolver(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	db := freshTestDB(t)
+
+	scenario := models.Scenario{
+		Name: "agree", Title: "GameShell Basics", Description: "A castle adventure.",
+		InstanceType: "debian", CreatedByID: "creator-1",
+		DefaultLocale: "en", Locales: `["en","fr"]`,
+	}
+	require.NoError(t, db.Create(&scenario).Error)
+	require.NoError(t, db.Create(&models.ScenarioTranslation{
+		ScenarioID: scenario.ID, Locale: "fr",
+		Title: "GameShell — les bases", Description: "Une aventure au chateau.",
+	}).Error)
+
+	card, err := services.ScenarioTextByLocale(db, scenario)
+	require.NoError(t, err)
+	session := services.ResolveScenarioText(db, scenario, "fr")
+
+	assert.Equal(t, card["fr"].Title, session.Title)
+	assert.Equal(t, card["fr"].Description, session.Description)
+}

@@ -133,20 +133,49 @@ func (sc *scenarioController) GetSessionByTerminal(ctx *gin.Context) {
 		return
 	}
 
+	ctx.JSON(http.StatusOK, sc.sessionResponse(session))
+}
+
+// sessionResponse describes a session the same way wherever it is asked for.
+//
+// Two handlers answer with a session — one found by its id, one by its terminal
+// — and the player uses both. Built in two places, a field added for one is
+// simply absent from the other, which is how the briefing came to be resolved
+// on one path and not the other.
+func (sc *scenarioController) sessionResponse(session *models.ScenarioSession) dto.SessionResponse {
 	terminalSessionID := ""
 	if session.TerminalSessionID != nil {
 		terminalSessionID = *session.TerminalSessionID
 	}
-	ctx.JSON(http.StatusOK, dto.SessionResponse{
-		ID:                session.ID.String(),
-		ScenarioID:        session.ScenarioID.String(),
-		UserID:            session.UserID,
-		TrainerID:         session.TrainerID,
-		TerminalSessionID: terminalSessionID,
-		CurrentStep:       session.CurrentStep,
-		Status:            session.Status,
-		StartedAt:         session.StartedAt,
-	})
+
+	response := dto.SessionResponse{
+		ID:                         session.ID.String(),
+		ScenarioID:                 session.ScenarioID.String(),
+		UserID:                     session.UserID,
+		TrainerID:                  session.TrainerID,
+		TerminalSessionID:          terminalSessionID,
+		CurrentStep:                session.CurrentStep,
+		Status:                     session.Status,
+		ProvisioningPhase:          session.ProvisioningPhase,
+		ProvisioningTimeoutSeconds: sc.sessionService.CurrentStepProvisioningTimeout(session),
+		Grade:                      session.Grade,
+		StartedAt:                  session.StartedAt,
+	}
+
+	// The scenario's prose in the language this session was started in. The
+	// steps have always resolved this way; the briefing was read straight off
+	// the scenario, so a French session opened with an English welcome.
+	var scenario models.Scenario
+	if err := sc.db.First(&scenario, "id = ?", session.ScenarioID).Error; err == nil {
+		prose := services.ResolveScenarioText(sc.db, scenario, session.Locale)
+		response.ScenarioText = &dto.SessionScenarioText{
+			Title:       prose.Title,
+			Description: prose.Description,
+			IntroText:   prose.Intro,
+			FinishText:  prose.Finish,
+		}
+	}
+	return response
 }
 
 // GetSessionInfo godoc
@@ -167,23 +196,7 @@ func (sc *scenarioController) GetSessionInfo(ctx *gin.Context) {
 		return
 	}
 
-	terminalSessionID := ""
-	if session.TerminalSessionID != nil {
-		terminalSessionID = *session.TerminalSessionID
-	}
-	ctx.JSON(http.StatusOK, dto.SessionResponse{
-		ID:                         session.ID.String(),
-		ScenarioID:                 session.ScenarioID.String(),
-		UserID:                     session.UserID,
-		TrainerID:                  session.TrainerID,
-		TerminalSessionID:          terminalSessionID,
-		CurrentStep:                session.CurrentStep,
-		Status:                     session.Status,
-		ProvisioningPhase:          session.ProvisioningPhase,
-		ProvisioningTimeoutSeconds: sc.sessionService.CurrentStepProvisioningTimeout(session),
-		Grade:                      session.Grade,
-		StartedAt:                  session.StartedAt,
-	})
+	ctx.JSON(http.StatusOK, sc.sessionResponse(session))
 }
 
 // SeedScenario godoc
